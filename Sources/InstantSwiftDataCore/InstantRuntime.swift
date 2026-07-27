@@ -1480,6 +1480,7 @@ private struct InstantSharedRootWriteTarget: Hashable, Sendable {
 }
 
 private struct InstantAppliedServerTransaction: Sendable {
+  var transaction: InstantStoreTransaction
   var application: InstantServerTransactionApplicationResult
   var confirmedMutation: PendingMutation?
   var mergedAttributeCount: Int
@@ -2198,16 +2199,30 @@ public final class InstantRuntime: Sendable {
     }
     let transactionID = transaction.id.trimmingCharacters(in: .whitespacesAndNewlines)
 
-    var transaction = transaction
-    transaction.id = transactionID.isEmpty ? processedTransactionID : transactionID
+    var baseTransaction = transaction
+    baseTransaction.id = transactionID.isEmpty ? processedTransactionID : transactionID
     let metadataUpdatedAt = receivedAt ?? configuration.now()
     let confirmingMutationID = confirmingMutationID?
       .trimmingCharacters(in: .whitespacesAndNewlines)
       .nilIfEmpty
+    let persistedLiveQueryResults = liveQueryResultReplacements.map {
+      InstantPersistedLiveQueryResult(
+        replacement: $0,
+        updatedAt: metadataUpdatedAt
+      )
+    }
 
     for _ in 0..<5 {
       recordActorHop(.persistence)
       let state = try await persistence.loadState()
+      var transaction = baseTransaction
+      if !liveQueryResultReplacements.isEmpty {
+        recordActorHop(.persistence)
+        let retractions = try await persistence.liveQueryReplacementRetractions(
+          for: liveQueryResultReplacements
+        )
+        transaction.operations.insert(contentsOf: retractions, at: 0)
+      }
       let prunedOutbox = InstantOutbox.pruningConfirmed(
         through: processedTransactionID,
         in: state.snapshot.outbox
@@ -2230,7 +2245,19 @@ public final class InstantRuntime: Sendable {
       if transaction.operations.isEmpty, removedFailedWriteTriples == 0 {
         recordActorHop(.persistence)
         let didSave =
-          if storeAttributesChanged, outboxChanged {
+          if !persistedLiveQueryResults.isEmpty {
+            try await persistence.saveLiveRefresh(
+              InstantPersistenceSnapshot(store: storeSnapshot, outbox: outboxSnapshot),
+              queryResults: persistedLiveQueryResults,
+              storeChanged: storeAttributesChanged,
+              outboxChanged: outboxChanged,
+              metadataKey: processedTransactionIDMetadataKey,
+              metadataValue: processedTransactionID,
+              metadataUpdatedAt: metadataUpdatedAt,
+              expectedStoreRevision: state.storeRevision,
+              expectedOutboxRevision: state.outboxRevision
+            )
+          } else if storeAttributesChanged, outboxChanged {
             try await persistence.saveSnapshot(
               InstantPersistenceSnapshot(store: storeSnapshot, outbox: outboxSnapshot),
               metadataKey: processedTransactionIDMetadataKey,
@@ -2265,7 +2292,7 @@ public final class InstantRuntime: Sendable {
               expectedStoreRevision: state.storeRevision,
               expectedOutboxRevision: state.outboxRevision
             )
-        }
+          }
         if didSave {
           recordActorHop(.store)
           await store.replaceSnapshot(storeSnapshot)
@@ -2289,6 +2316,7 @@ public final class InstantRuntime: Sendable {
             await publishMutationLifecycle(mutation)
           }
           return InstantAppliedServerTransaction(
+            transaction: transaction,
             application: application,
             confirmedMutation: confirmation?.mutation,
             mergedAttributeCount: mergedAttributeCount
@@ -2305,7 +2333,19 @@ public final class InstantRuntime: Sendable {
       )
       recordActorHop(.persistence)
       let didSave =
-        if outboxChanged {
+        if !persistedLiveQueryResults.isEmpty {
+          try await persistence.saveLiveRefresh(
+            InstantPersistenceSnapshot(store: prepared.snapshot, outbox: outboxSnapshot),
+            queryResults: persistedLiveQueryResults,
+            storeChanged: true,
+            outboxChanged: outboxChanged,
+            metadataKey: processedTransactionIDMetadataKey,
+            metadataValue: processedTransactionID,
+            metadataUpdatedAt: metadataUpdatedAt,
+            expectedStoreRevision: state.storeRevision,
+            expectedOutboxRevision: state.outboxRevision
+          )
+        } else if outboxChanged {
           try await persistence.saveSnapshot(
             InstantPersistenceSnapshot(store: prepared.snapshot, outbox: outboxSnapshot),
             metadataKey: processedTransactionIDMetadataKey,
@@ -2342,6 +2382,7 @@ public final class InstantRuntime: Sendable {
           await publishMutationLifecycle(mutation)
         }
         return InstantAppliedServerTransaction(
+          transaction: transaction,
           application: application,
           confirmedMutation: confirmation?.mutation,
           mergedAttributeCount: mergedAttributeCount
@@ -2367,14 +2408,8 @@ public final class InstantRuntime: Sendable {
         existingAttributes: state.snapshot.store.attributes,
         receivedAt: receivedAt
       )
-      let retractions = await liveQueryResultState.replacementRetractions(
-        for: translated.queryResultReplacements
-      )
-      var transaction = translated.transaction
-      transaction.operations.insert(contentsOf: retractions, at: 0)
-
       let applied = try await performApplyServerTransaction(
-        transaction,
+        translated.transaction,
         processedTransactionID: translated.processedTransactionID,
         receivedAt: receivedAt,
         confirmingMutationID: translated.confirmationMutationID,
@@ -2385,7 +2420,7 @@ public final class InstantRuntime: Sendable {
 
       await leaveOperationGate()
       return InstantLiveRefreshApplicationResult(
-        transaction: transaction,
+        transaction: applied.transaction,
         application: applied.application,
         confirmedMutation: applied.confirmedMutation,
         insertedTripleCount: translated.transaction.operations.count,
@@ -2843,7 +2878,7 @@ public final class InstantRuntime: Sendable {
       return await store.observe(plan)
     }
 
-    let existingPageInfo = await liveQueryResultState.pageInfo(for: registrationKey)
+    let existingPageInfo = await liveQueryPageInfo(for: registrationKey)
     let stream = await store.observeLiveQuery(
       plan,
       registrationKey: registrationKey,
@@ -2977,7 +3012,7 @@ public final class InstantRuntime: Sendable {
       await recordConnectionError(error)
       throw error
     }
-    let pageInfo = await liveQueryResultState.pageInfo(for: registrationKey)
+    let pageInfo = await liveQueryPageInfo(for: registrationKey)
     return try await materializeLocalQueryOnce(
       plan,
       remotePageInfo: pageInfo.map(InstantQueryRemotePageInfo.ready)
@@ -2986,6 +3021,30 @@ public final class InstantRuntime: Sendable {
 
   package func queryLocally(_ plan: InstantQueryPlan) async throws -> InstantQueryEmission {
     try await materializeLocalQueryOnce(plan, enforcesConnectionFreshness: false)
+  }
+
+  private func liveQueryPageInfo(for registrationKey: String) async -> InstantQueryPageInfo? {
+    if let pageInfo = await liveQueryResultState.pageInfo(for: registrationKey) {
+      return pageInfo
+    }
+    do {
+      recordActorHop(.persistence)
+      guard let result = try await persistence.liveQueryResult(key: registrationKey) else {
+        return nil
+      }
+      await liveQueryResultState.record(result)
+      return result.pageInfo
+    } catch {
+      InstantDiagnostics.shared.record(
+        error: error,
+        subsystem: "instant-swift-data-core",
+        category: "query",
+        event: "live-query-result.load-failed",
+        message: "Could not load the persisted live query result.",
+        metadata: ["registrationKey": registrationKey]
+      )
+      return nil
+    }
   }
 
   private func materializeLocalQueryOnce(

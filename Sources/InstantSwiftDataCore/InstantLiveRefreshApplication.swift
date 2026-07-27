@@ -36,7 +36,32 @@ struct InstantLiveQueryResultReplacement: Sendable {
   var pageInfo: InstantQueryPageInfo?
 }
 
-private struct InstantLiveTripleIdentity: Hashable, Sendable {
+struct InstantPersistedLiveQueryResult: Hashable, Codable, Sendable {
+  var key: String
+  var triples: [InstantTriple]
+  var pageInfo: InstantQueryPageInfo?
+  var updatedAt: InstantTimestamp
+
+  init(
+    replacement: InstantLiveQueryResultReplacement,
+    updatedAt: InstantTimestamp
+  ) {
+    self.key = replacement.key
+    self.triples = Dictionary(
+      replacement.triples.map { (InstantLiveTripleIdentity($0), $0) },
+      uniquingKeysWith: { _, latest in latest }
+    )
+    .values
+    .sorted {
+      ($0.entityID, $0.attributeID, $0.value.comparableKey)
+        < ($1.entityID, $1.attributeID, $1.value.comparableKey)
+    }
+    self.pageInfo = replacement.pageInfo
+    self.updatedAt = updatedAt
+  }
+}
+
+struct InstantLiveTripleIdentity: Hashable, Sendable {
   var entityID: String
   var attributeID: String
   var value: InstantValue
@@ -49,52 +74,20 @@ private struct InstantLiveTripleIdentity: Hashable, Sendable {
 }
 
 actor InstantLiveQueryResultState {
-  private var triplesByQuery: [String: [InstantLiveTripleIdentity: InstantTriple]] = [:]
   private var pageInfoByQuery: [String: InstantQueryPageInfo] = [:]
-
-  func replacementRetractions(
-    for replacements: [InstantLiveQueryResultReplacement]
-  ) -> [InstantTripleOperation] {
-    var prospective = triplesByQuery
-    var removed: [InstantLiveTripleIdentity: InstantTriple] = [:]
-    for replacement in replacements {
-      let next = Self.index(replacement.triples)
-      let previous = prospective[replacement.key] ?? [:]
-      for (identity, triple) in previous where next[identity] == nil {
-        removed[identity] = triple
-      }
-      prospective[replacement.key] = next
-    }
-
-    let retained = Set(prospective.values.flatMap(\.keys))
-    return removed.keys
-      .filter { !retained.contains($0) }
-      .sorted {
-        ($0.entityID, $0.attributeID, String(describing: $0.value))
-          < ($1.entityID, $1.attributeID, String(describing: $1.value))
-      }
-      .compactMap { removed[$0] }
-      .map(InstantTripleOperation.retract)
-  }
 
   func record(_ replacements: [InstantLiveQueryResultReplacement]) {
     for replacement in replacements {
-      triplesByQuery[replacement.key] = Self.index(replacement.triples)
       pageInfoByQuery[replacement.key] = replacement.pageInfo
     }
   }
 
-  func pageInfo(for key: String) -> InstantQueryPageInfo? {
-    pageInfoByQuery[key]
+  func record(_ result: InstantPersistedLiveQueryResult) {
+    pageInfoByQuery[result.key] = result.pageInfo
   }
 
-  private static func index(
-    _ triples: [InstantTriple]
-  ) -> [InstantLiveTripleIdentity: InstantTriple] {
-    Dictionary(
-      triples.map { (InstantLiveTripleIdentity($0), $0) },
-      uniquingKeysWith: { _, latest in latest }
-    )
+  func pageInfo(for key: String) -> InstantQueryPageInfo? {
+    pageInfoByQuery[key]
   }
 }
 

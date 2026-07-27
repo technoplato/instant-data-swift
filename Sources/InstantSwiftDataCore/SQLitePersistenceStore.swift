@@ -627,6 +627,39 @@ public actor SQLitePersistenceStore {
         )
       }
     }
+    try withSQLiteBusyRetry {
+      try migrate(name: "0011_live_query_result_ownership") {
+        try execute(
+          """
+          CREATE TABLE IF NOT EXISTS instant_live_query_results (
+            query_key TEXT PRIMARY KEY NOT NULL,
+            triple_count INTEGER NOT NULL,
+            updated_at_ms INTEGER NOT NULL,
+            json TEXT NOT NULL
+          )
+          """
+        )
+        try execute(
+          """
+          CREATE TABLE IF NOT EXISTS instant_live_query_triples (
+            query_key TEXT NOT NULL,
+            entity_id TEXT NOT NULL,
+            attribute_id TEXT NOT NULL,
+            value_json TEXT NOT NULL,
+            PRIMARY KEY (query_key, entity_id, attribute_id, value_json),
+            FOREIGN KEY (query_key) REFERENCES instant_live_query_results (query_key)
+              ON DELETE CASCADE
+          )
+          """
+        )
+        try execute(
+          """
+          CREATE INDEX IF NOT EXISTS instant_live_query_triples_identity_idx
+          ON instant_live_query_triples (entity_id, attribute_id, value_json, query_key)
+          """
+        )
+      }
+    }
     try Self.securePersistenceFiles(at: fileURL)
     InstantDiagnostics.shared.record(
       .notice,
@@ -804,6 +837,54 @@ public actor SQLitePersistenceStore {
       "SELECT json FROM instant_query_cache WHERE query_id = ? ORDER BY updated_at_ms, cache_key",
       [.text(queryID)]
     )
+  }
+
+  func liveQueryResult(key: String) throws -> InstantPersistedLiveQueryResult? {
+    try liveQueryResultWithoutTransaction(key: key)
+  }
+
+  func liveQueryReplacementRetractions(
+    for replacements: [InstantLiveQueryResultReplacement]
+  ) throws -> [InstantTripleOperation] {
+    guard !replacements.isEmpty else { return [] }
+    return try readTransaction {
+      let replacementKeys = Set(replacements.map(\.key))
+      var prospective: [String: [InstantLiveTripleIdentity: InstantTriple]] = [:]
+      for key in replacementKeys {
+        let triples = try liveQueryResultWithoutTransaction(key: key)?.triples ?? []
+        prospective[key] = Self.indexLiveTriples(triples)
+      }
+
+      var removed: [InstantLiveTripleIdentity: InstantTriple] = [:]
+      for replacement in replacements {
+        let next = Self.indexLiveTriples(replacement.triples)
+        let previous = prospective[replacement.key] ?? [:]
+        for (identity, triple) in previous where next[identity] == nil {
+          removed[identity] = triple
+        }
+        prospective[replacement.key] = next
+      }
+
+      let retainedByReplacements = Set(prospective.values.flatMap(\.keys))
+      var retractions: [InstantTriple] = []
+      for identity in removed.keys where !retainedByReplacements.contains(identity) {
+        if try liveQueryTripleHasOwnerWithoutTransaction(
+          identity,
+          excludingQueryKeys: replacementKeys
+        ) {
+          continue
+        }
+        if let triple = removed[identity] {
+          retractions.append(triple)
+        }
+      }
+      return retractions
+        .sorted {
+          ($0.entityID, $0.attributeID, $0.value.comparableKey)
+            < ($1.entityID, $1.attributeID, $1.value.comparableKey)
+        }
+        .map(InstantTripleOperation.retract)
+    }
   }
 
   public func pruneQueryCache(
@@ -2106,6 +2187,78 @@ public actor SQLitePersistenceStore {
     return didSave
   }
 
+  func saveLiveRefresh(
+    _ snapshot: InstantPersistenceSnapshot,
+    queryResults: [InstantPersistedLiveQueryResult],
+    storeChanged: Bool,
+    outboxChanged: Bool,
+    metadataKey: String,
+    metadataValue: String,
+    metadataUpdatedAt: InstantTimestamp,
+    expectedStoreRevision: Int64,
+    expectedOutboxRevision: Int64
+  ) throws -> Bool {
+    let previousState = cachedState
+    let bumpsStoreRevision = storeChanged || !queryResults.isEmpty
+    let didSave = try transaction {
+      guard
+        try loadMetadataRevisionWithoutTransaction(Self.storeRevisionKey) == expectedStoreRevision,
+        try loadMetadataRevisionWithoutTransaction(Self.outboxRevisionKey) == expectedOutboxRevision
+      else {
+        return false
+      }
+      if storeChanged {
+        if let previousState,
+          previousState.storeRevision == expectedStoreRevision,
+          previousState.outboxRevision == expectedOutboxRevision
+        {
+          try saveStoreSnapshotDiffWithoutTransaction(
+            from: previousState.snapshot.store,
+            to: snapshot.store
+          )
+        } else {
+          try saveStoreSnapshotWithoutTransaction(snapshot.store)
+        }
+      }
+      if outboxChanged {
+        if let previousState,
+          previousState.storeRevision == expectedStoreRevision,
+          previousState.outboxRevision == expectedOutboxRevision
+        {
+          try saveOutboxDiffWithoutTransaction(
+            from: previousState.snapshot.outbox,
+            to: snapshot.outbox
+          )
+        } else {
+          try saveOutboxWithoutTransaction(snapshot.outbox)
+        }
+      }
+      for result in queryResults {
+        try saveLiveQueryResultWithoutTransaction(result)
+      }
+      try saveMetadataValueWithoutTransaction(
+        metadataValue,
+        key: metadataKey,
+        updatedAt: metadataUpdatedAt
+      )
+      if bumpsStoreRevision {
+        _ = try bumpMetadataRevisionWithoutTransaction(Self.storeRevisionKey)
+      }
+      if outboxChanged {
+        _ = try bumpMetadataRevisionWithoutTransaction(Self.outboxRevisionKey)
+      }
+      return true
+    }
+    if didSave {
+      cachedState = InstantPersistenceState(
+        snapshot: snapshot,
+        storeRevision: expectedStoreRevision + (bumpsStoreRevision ? 1 : 0),
+        outboxRevision: expectedOutboxRevision + (outboxChanged ? 1 : 0)
+      )
+    }
+    return didSave
+  }
+
   public func saveQueryCache(
     _ entry: InstantCachedQuery,
     expectedStoreRevision: Int64
@@ -2369,6 +2522,50 @@ public actor SQLitePersistenceStore {
     }
   }
 
+  private func liveQueryResultWithoutTransaction(
+    key: String
+  ) throws -> InstantPersistedLiveQueryResult? {
+    let results: [InstantPersistedLiveQueryResult] = try selectJSON(
+      "SELECT json FROM instant_live_query_results WHERE query_key = ? LIMIT 1",
+      [.text(key)]
+    )
+    return results.first
+  }
+
+  private func liveQueryTripleHasOwnerWithoutTransaction(
+    _ identity: InstantLiveTripleIdentity,
+    excludingQueryKeys: Set<String>
+  ) throws -> Bool {
+    var sql =
+      """
+      SELECT query_key
+      FROM instant_live_query_triples
+      WHERE entity_id = ? AND attribute_id = ? AND value_json = ?
+      """
+    var bindings: [SQLiteBinding] = [
+      .text(identity.entityID),
+      .text(identity.attributeID),
+      .text(try encode(identity.value)),
+    ]
+    if !excludingQueryKeys.isEmpty {
+      sql += " AND query_key NOT IN ("
+        + Array(repeating: "?", count: excludingQueryKeys.count).joined(separator: ", ")
+        + ")"
+      bindings.append(contentsOf: excludingQueryKeys.sorted().map(SQLiteBinding.text))
+    }
+    sql += " LIMIT 1"
+    return try selectScalar(sql, bindings) != nil
+  }
+
+  private static func indexLiveTriples(
+    _ triples: [InstantTriple]
+  ) -> [InstantLiveTripleIdentity: InstantTriple] {
+    Dictionary(
+      triples.map { (InstantLiveTripleIdentity($0), $0) },
+      uniquingKeysWith: { _, latest in latest }
+    )
+  }
+
   private func saveStoreSnapshotWithoutTransaction(_ snapshot: InstantStoreSnapshot) throws {
     try execute("DELETE FROM instant_attributes")
     try execute("DELETE FROM instant_triples")
@@ -2587,6 +2784,47 @@ public actor SQLitePersistenceStore {
         .int(entry.updatedAt.milliseconds),
       ]
     )
+  }
+
+  private func saveLiveQueryResultWithoutTransaction(
+    _ result: InstantPersistedLiveQueryResult
+  ) throws {
+    try execute(
+      """
+      INSERT INTO instant_live_query_results
+        (query_key, triple_count, updated_at_ms, json)
+      VALUES (?, ?, ?, ?)
+      ON CONFLICT(query_key) DO UPDATE SET
+        triple_count = excluded.triple_count,
+        updated_at_ms = excluded.updated_at_ms,
+        json = excluded.json
+      """,
+      [
+        .text(result.key),
+        .int(Int64(result.triples.count)),
+        .int(result.updatedAt.milliseconds),
+        .text(try encode(result)),
+      ]
+    )
+    try execute(
+      "DELETE FROM instant_live_query_triples WHERE query_key = ?",
+      [.text(result.key)]
+    )
+    for triple in result.triples {
+      try execute(
+        """
+        INSERT OR REPLACE INTO instant_live_query_triples
+          (query_key, entity_id, attribute_id, value_json)
+        VALUES (?, ?, ?, ?)
+        """,
+        [
+          .text(result.key),
+          .text(triple.entityID),
+          .text(triple.attributeID),
+          .text(try encode(triple.value)),
+        ]
+      )
+    }
   }
 
   private func saveMetadataValueWithoutTransaction(

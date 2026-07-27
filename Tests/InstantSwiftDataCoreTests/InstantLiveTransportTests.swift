@@ -1654,9 +1654,10 @@ struct InstantLiveTransportTests {
         result: result
       ),
     ])
+    let cacheURL = try temporaryLiveCacheURL()
     var configuration = InstantRuntimeConfiguration(
       appID: "runtime-live-page-info",
-      persistenceURL: try temporaryLiveCacheURL(),
+      persistenceURL: cacheURL,
       initialAttributes: TodoExample.attributes,
       liveTransport: session.transport
     )
@@ -1665,8 +1666,13 @@ struct InstantLiveTransportTests {
 
     let emission = try await runtime.queryOnce(plan)
     let endCursor = try #require(emission.pageInfo?.endCursor)
+    let registrationKey = try InstantLiveQueryEncoder.registrationKey(for: query)
+    let persistedResult = try #require(
+      try await runtime.persistence.liveQueryResult(key: registrationKey)
+    )
 
     expectNoDifference(emission.pageInfo?.hasNextPage, true)
+    expectNoDifference(persistedResult.pageInfo, emission.pageInfo)
     expectNoDifference(endCursor.entityID, "todo-live-page-info")
     expectNoDifference(
       endCursor.sortValue,
@@ -2325,6 +2331,159 @@ struct InstantLiveTransportTests {
     )
     let syncState = try await runtime.syncState()
     expectNoDifference(syncState.processedTransactionID, "server-tx-100")
+  }
+
+  @Test
+  func liveQueryReplacementRetractsPersistedRowsAfterRelaunch() async throws {
+    let cacheURL = try temporaryLiveCacheURL()
+    let createdAt = InstantTimestamp(milliseconds: 1_700_000_000_123)
+    let query: InstantLiveJSONValue = .object([
+      TodoExample.namespace: .object([
+        "$": .object([
+          "where": .object(["isCompleted": .bool(false)])
+        ])
+      ])
+    ])
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "live-query-result-relaunch",
+        persistenceURL: cacheURL,
+        initialAttributes: TodoExample.attributes
+      )
+    )
+    _ = try await runtime.applyLiveRefresh(
+      InstantLiveRefreshOK(
+        clientEventID: "event-live-query-result-initial",
+        processedTransactionID: "server-live-query-result-initial",
+        attrs: .todoServerAttrs,
+        computations: [
+          .todoJoinRowsComputation(
+            query: query,
+            entityID: "persisted-live-query-todo",
+            text: "Owned before relaunch",
+            isCompleted: false,
+            createdAt: createdAt,
+            processedTransactionID: "server-live-query-result-initial"
+          )
+        ]
+      ),
+      receivedAt: InstantTimestamp(milliseconds: createdAt.milliseconds + 1)
+    )
+
+    let registrationKey = try InstantLiveQueryEncoder.registrationKey(for: query)
+    let persistedResult = try #require(
+      try await runtime.persistence.liveQueryResult(key: registrationKey)
+    )
+    expectNoDifference(persistedResult.key, registrationKey)
+    expectNoDifference(persistedResult.triples.count, 4)
+
+    let relaunched = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "live-query-result-relaunch",
+        persistenceURL: cacheURL,
+        initialAttributes: TodoExample.attributes
+      )
+    )
+    let replacement = try await relaunched.applyLiveRefresh(
+      InstantLiveRefreshOK(
+        clientEventID: "event-live-query-result-empty",
+        processedTransactionID: "server-live-query-result-empty",
+        attrs: [],
+        computations: [.todoEmptyJoinRowsComputation(query: query)]
+      ),
+      receivedAt: InstantTimestamp(milliseconds: createdAt.milliseconds + 2)
+    )
+
+    expectNoDifference(
+      replacement.transaction.operations.compactMap(\.retractedEntityID),
+      Array(repeating: "persisted-live-query-todo", count: 4)
+    )
+    let replacementSnapshots = try await relaunched.query(TodoExample.query)
+    expectNoDifference(replacementSnapshots, [])
+    let persistedReplacement = try #require(
+      try await relaunched.persistence.liveQueryResult(key: registrationKey)
+    )
+    expectNoDifference(persistedReplacement.triples, [])
+  }
+
+  @Test
+  func liveQueryReplacementRetainsRowsOwnedByAnotherPersistedQuery() async throws {
+    let cacheURL = try temporaryLiveCacheURL()
+    let createdAt = InstantTimestamp(milliseconds: 1_700_000_000_456)
+    let incompleteQuery: InstantLiveJSONValue = .object([
+      TodoExample.namespace: .object([
+        "$": .object([
+          "where": .object(["isCompleted": .bool(false)])
+        ])
+      ])
+    ])
+    let recentQuery: InstantLiveJSONValue = .object([
+      TodoExample.namespace: .object([
+        "$": .object([
+          "where": .object(["createdAt": .object(["$gte": .number(0)])])
+        ])
+      ])
+    ])
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "live-query-shared-ownership",
+        persistenceURL: cacheURL,
+        initialAttributes: TodoExample.attributes
+      )
+    )
+    for (query, suffix) in [(incompleteQuery, "incomplete"), (recentQuery, "recent")] {
+      _ = try await runtime.applyLiveRefresh(
+        InstantLiveRefreshOK(
+          clientEventID: "event-shared-\(suffix)",
+          processedTransactionID: "server-shared-\(suffix)",
+          attrs: .todoServerAttrs,
+          computations: [
+            .todoJoinRowsComputation(
+              query: query,
+              entityID: "shared-live-query-todo",
+              text: "Owned by two queries",
+              isCompleted: false,
+              createdAt: createdAt,
+              processedTransactionID: "server-shared-\(suffix)"
+            )
+          ]
+        )
+      )
+    }
+
+    let relaunched = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "live-query-shared-ownership",
+        persistenceURL: cacheURL,
+        initialAttributes: TodoExample.attributes
+      )
+    )
+    let firstReplacement = try await relaunched.applyLiveRefresh(
+      InstantLiveRefreshOK(
+        clientEventID: "event-shared-incomplete-empty",
+        processedTransactionID: "server-shared-incomplete-empty",
+        attrs: [],
+        computations: [.todoEmptyJoinRowsComputation(query: incompleteQuery)]
+      )
+    )
+    expectNoDifference(firstReplacement.transaction.operations, [])
+    let retainedSnapshots = try await relaunched.query(TodoExample.query)
+    expectNoDifference(
+      try TodoExample.decode(retainedSnapshots).map(\.id),
+      ["shared-live-query-todo"]
+    )
+
+    let finalReplacement = try await relaunched.applyLiveRefresh(
+      InstantLiveRefreshOK(
+        clientEventID: "event-shared-recent-empty",
+        processedTransactionID: "server-shared-recent-empty",
+        attrs: [],
+        computations: [.todoEmptyJoinRowsComputation(query: recentQuery)]
+      )
+    )
+    expectNoDifference(finalReplacement.transaction.operations.count, 4)
+    let finalSnapshots = try await relaunched.query(TodoExample.query)
+    expectNoDifference(finalSnapshots, [])
   }
 
   @Test
@@ -3320,6 +3479,11 @@ private extension InstantTripleOperation {
     guard case let .insert(triple) = self else { return nil }
     return triple.attributeID
   }
+
+  var retractedEntityID: String? {
+    guard case let .retract(triple) = self else { return nil }
+    return triple.entityID
+  }
 }
 
 private extension Array where Element == InstantLiveJSONValue {
@@ -3335,6 +3499,7 @@ private extension Array where Element == InstantLiveJSONValue {
 
 private extension InstantLiveJSONValue {
   static func todoJoinRowsComputation(
+    query: InstantLiveJSONValue? = nil,
     entityID: String,
     text: String,
     isCompleted: Bool,
@@ -3342,9 +3507,7 @@ private extension InstantLiveJSONValue {
     processedTransactionID: String
   ) -> Self {
     .object([
-      "instaql-query": .object([
-        TodoExample.namespace: .object([:])
-      ]),
+      "instaql-query": query ?? .object([TodoExample.namespace: .object([:])]),
       "instaql-result": .array([
         .object([
           "data": .object([
@@ -3383,6 +3546,22 @@ private extension InstantLiveJSONValue {
         ])
       ]),
       "processed-tx-id": .string(processedTransactionID),
+    ])
+  }
+
+  static func todoEmptyJoinRowsComputation(query: InstantLiveJSONValue) -> Self {
+    .object([
+      "instaql-query": query,
+      "instaql-result": .array([
+        .object([
+          "data": .object([
+            "datalog-result": .object([
+              "join-rows": .array([])
+            ])
+          ]),
+          "child-nodes": .array([]),
+        ])
+      ]),
     ])
   }
 
