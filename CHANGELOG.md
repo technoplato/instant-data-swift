@@ -4,6 +4,21 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## July 27th, 2026 at 9:45:23 a.m. EDT — `d3e6e704121d` Add dependency-controlled Instant IDs
+
+- **Implementation commit:** `d3e6e704121d0c4c4431a7b346a6c1d49f6e5312`
+- **Change:** Generate typed entity IDs through the Point-Free UUID dependency
+- **Details:**
+  - Add `InstantID<Entity>()` with canonical lowercase UUID formatting for concise new-entity creation.
+  - Preserve `init(rawValue:)` for server, imported, and domain-defined IDs and document the module boundary in ADR 0002.
+- **Files:**
+  - `Sources/InstantSwiftData/InstantTypedAPI.swift` — Add the dependency-controlled initializer without coupling the core module to Dependencies.
+  - `Tests/InstantSwiftDataTests/TypedAPITests.swift` — Prove a UUID override deterministically controls the generated typed ID.
+  - `docs/adr/0002-dependency-controlled-instant-ids.md` — Record before/after usage, reasoning, and consequences.
+- **User context (verbatim):**
+  > Add dependency-controlled IDs ... without broadening the application/library sync boundary.
+- **SpecStory:** unavailable — Codex desktop sessions are not supported by the documented SpecStory CLI capture workflow, so no durable session URI is available.
+
 ## July 27th, 2026 at 9:30:14 a.m. EDT — `0bda5d56651a` Isolate malformed outbox mutations
 
 - **Implementation commit:** `0bda5d56651ac8e1b5e107b7a5a74ccc4f6c7a68`
