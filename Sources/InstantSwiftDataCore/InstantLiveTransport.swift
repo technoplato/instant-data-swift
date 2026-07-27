@@ -332,19 +332,22 @@ public struct InstantLiveErrorMessage: Hashable, Sendable {
   public var status: Int?
   public var type: String?
   public var hint: InstantLiveJSONValue?
+  public var originalEvent: InstantLiveMessage?
 
   public init(
     clientEventID: String?,
     message: String,
     status: Int? = nil,
     type: String? = nil,
-    hint: InstantLiveJSONValue? = nil
+    hint: InstantLiveJSONValue? = nil,
+    originalEvent: InstantLiveMessage? = nil
   ) {
     self.clientEventID = clientEventID
     self.message = message
     self.status = status
     self.type = type
     self.hint = hint
+    self.originalEvent = originalEvent
   }
 }
 
@@ -652,13 +655,22 @@ public enum InstantLiveServerEvent: Hashable, Sendable {
       )
 
     case "error":
+      let originalEvent = message.fields["original-event"]?.objectValue.flatMap {
+        object -> InstantLiveMessage? in
+        guard let op = object["op"]?.stringValue else { return nil }
+        var fields = object
+        fields["op"] = nil
+        let clientEventID = fields.removeValue(forKey: "client-event-id")?.stringValue
+        return InstantLiveMessage(op: op, clientEventID: clientEventID, fields: fields)
+      }
       self = .error(
         InstantLiveErrorMessage(
           clientEventID: message.clientEventID,
           message: message.fields["message"]?.stringValue ?? "Instant live transport error.",
           status: message.fields["status"]?.intValue,
           type: message.fields["type"]?.stringValue,
-          hint: message.fields["hint"]
+          hint: message.fields["hint"],
+          originalEvent: originalEvent
         )
       )
 

@@ -885,6 +885,10 @@ private actor InstantRuntimeLiveSession {
     )
   }
 
+  func retireRejectedQuery(key: String) {
+    registeredQueries[key] = nil
+  }
+
   func refreshRegisteredQueries() async throws {
     guard let session, isOpened, let makeID else { return }
     for key in registeredQueries.keys.sorted() {
@@ -1443,8 +1447,14 @@ private struct InstantAppliedServerTransaction: Sendable {
 }
 
 private actor InstantLiveQueryAcknowledgementState {
+  private enum Outcome: Sendable {
+    case acknowledged
+    case rejected(InstantError)
+  }
+
   private var revisions: [String: Int] = [:]
-  private var waiters: [String: [UUID: AsyncStream<Void>.Continuation]] = [:]
+  private var outcomes: [String: (revision: Int, outcome: Outcome)] = [:]
+  private var waiters: [String: [UUID: AsyncThrowingStream<Void, Error>.Continuation]] = [:]
 
   func revision(for key: String) -> Int {
     revisions[key, default: 0]
@@ -1452,6 +1462,7 @@ private actor InstantLiveQueryAcknowledgementState {
 
   func record(key: String) {
     revisions[key, default: 0] += 1
+    outcomes[key] = (revisions[key, default: 0], .acknowledged)
     let continuations = waiters.removeValue(forKey: key).map { Array($0.values) } ?? []
     for continuation in continuations {
       continuation.yield(())
@@ -1459,13 +1470,38 @@ private actor InstantLiveQueryAcknowledgementState {
     }
   }
 
-  func wait(for key: String, after observedRevision: Int) async {
-    if revisions[key, default: 0] > observedRevision { return }
+  func reject(key: String, error: InstantError) {
+    revisions[key, default: 0] += 1
+    outcomes[key] = (revisions[key, default: 0], .rejected(error))
+    let continuations = waiters.removeValue(forKey: key).map { Array($0.values) } ?? []
+    for continuation in continuations {
+      continuation.finish(throwing: error)
+    }
+  }
+
+  func wait(for key: String, after observedRevision: Int) async throws {
+    if revisions[key, default: 0] > observedRevision {
+      if let outcome = outcomes[key], outcome.revision > observedRevision {
+        try resolve(outcome.outcome)
+      }
+      return
+    }
     let id = UUID()
-    let stream = AsyncStream<Void>(bufferingPolicy: .bufferingNewest(1)) { continuation in
+    let stream = AsyncThrowingStream<Void, Error>(bufferingPolicy: .bufferingNewest(1)) {
+      continuation in
       if revisions[key, default: 0] > observedRevision {
-        continuation.yield(())
-        continuation.finish()
+        if let outcome = outcomes[key], outcome.revision > observedRevision {
+          switch outcome.outcome {
+          case .acknowledged:
+            continuation.yield(())
+            continuation.finish()
+          case let .rejected(error):
+            continuation.finish(throwing: error)
+          }
+        } else {
+          continuation.yield(())
+          continuation.finish()
+        }
       } else {
         waiters[key, default: [:]][id] = continuation
         continuation.onTermination = { @Sendable _ in
@@ -1476,7 +1512,13 @@ private actor InstantLiveQueryAcknowledgementState {
       }
     }
     var iterator = stream.makeAsyncIterator()
-    _ = await iterator.next()
+    _ = try await iterator.next()
+  }
+
+  private func resolve(_ outcome: Outcome) throws {
+    if case let .rejected(error) = outcome {
+      throw error
+    }
   }
 
   private func cancelWaiter(key: String, id: UUID) {
@@ -2732,9 +2774,18 @@ public final class InstantRuntime: Sendable {
         operation: "run Instant live query",
         timeoutMilliseconds: 10_000
       ) {
-        await self.liveQueryAcknowledgements.wait(for: registrationKey, after: observedRevision)
+        try await self.liveQueryAcknowledgements.wait(
+          for: registrationKey,
+          after: observedRevision
+        )
       }
     } catch {
+      if let error = error as? InstantError,
+        error.operation == "run Instant live query",
+        error.code == .permissionRejected || error.code == .validationFailed
+      {
+        throw error
+      }
       await recordConnectionError(error)
       throw error
     }
@@ -2899,6 +2950,7 @@ public final class InstantRuntime: Sendable {
 
   private func startLiveMutationDeliveryIfNeeded() {
     guard configuration.liveTransport != nil else { return }
+    guard configuration.autoConnectLiveTransport else { return }
     Task { [weak self] in
       guard let self else { return }
       do {
@@ -3499,6 +3551,32 @@ public final class InstantRuntime: Sendable {
         clientEventID: error.clientEventID?.nilIfEmpty,
         message: error.message
       ) {
+        return
+      }
+      if let originalEvent = error.originalEvent,
+        originalEvent.op == "add-query",
+        let query = originalEvent.fields["q"]
+      {
+        let registrationKey = try InstantLiveQueryEncoder.registrationKey(for: query)
+        let rejection = InstantError(
+          code: error.status == 401 || error.status == 403
+            ? .permissionRejected
+            : .validationFailed,
+          operation: "run Instant live query",
+          serverEventID: originalEvent.clientEventID ?? error.clientEventID,
+          message: error.message,
+          recovery: "Inspect the rejected query and its Instant permissions without reconnecting the healthy live session."
+        )
+        await liveSession.retireRejectedQuery(key: registrationKey)
+        await liveQueryAcknowledgements.reject(key: registrationKey, error: rejection)
+        InstantDiagnostics.shared.record(
+          error: rejection,
+          subsystem: "instant-swift-data-core",
+          category: "query",
+          event: "query.live-rejected",
+          message: "Instant rejected one live query without interrupting the shared socket.",
+          metadata: ["registrationKey": registrationKey]
+        )
         return
       }
       throw InstantError(

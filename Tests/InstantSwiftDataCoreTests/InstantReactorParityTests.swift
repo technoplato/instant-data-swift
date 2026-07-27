@@ -716,6 +716,160 @@ struct InstantReactorParityTests {
   }
 
   @Test
+  func rejectedQueryDoesNotReconnectOrInterruptHealthyQuery() async throws {
+    let rejectedPlan = InstantQueryPlan(
+      id: "reactor.rejected-query",
+      namespace: TodoExample.namespace,
+      filters: [.equals(field: "text", value: .string("rejected"))]
+    )
+    let healthyPlan = TodoExample.query
+    let rejectedQuery = try InstantLiveQueryEncoder.encode(rejectedPlan)
+    let healthyQuery = try InstantLiveQueryEncoder.encode(healthyPlan)
+    let createdAt = InstantTimestamp(milliseconds: 1_700_000_065_000)
+    let firstSession = LiveReactorParitySession(messages: [
+      liveReactorInitOK(attrs: liveReactorTodoServerAttrs, sessionID: "query-error-isolation")
+    ])
+    let reconnectSession = LiveReactorParitySession(messages: [
+      liveReactorInitOK(attrs: liveReactorTodoServerAttrs, sessionID: "unexpected-reconnect")
+    ])
+    let transport = LiveReactorParityTransport(sessions: [firstSession, reconnectSession])
+    var configuration = InstantRuntimeConfiguration(
+      appID: "reactor-query-error-isolation",
+      persistenceURL: try temporaryReactorParityCacheURL(),
+      initialAttributes: TodoExample.attributes,
+      liveTransport: transport.transport
+    )
+    configuration.liveReconnectSleep = { _ in }
+    let runtime = try await InstantRuntime.bootstrap(configuration: configuration)
+    let rejectedStream = await runtime.observe(rejectedPlan)
+    let healthyStream = await runtime.observe(healthyPlan)
+    var rejectedIterator = rejectedStream.makeAsyncIterator()
+    var healthyIterator = healthyStream.makeAsyncIterator()
+    _ = try #require(await rejectedIterator.next())
+    _ = try #require(await healthyIterator.next())
+
+    _ = try await runtime.connect()
+    await firstSession.waitForSentMessageCount(3)
+    await firstSession.enqueue(
+      InstantLiveMessage(
+        op: "error",
+        clientEventID: "event-rejected-query",
+        fields: [
+          "message": .string("The query is not permitted."),
+          "original-event": .object([
+            "client-event-id": .string("event-rejected-query"),
+            "op": .string("add-query"),
+            "q": rejectedQuery,
+          ]),
+          "status": .number(400),
+        ]
+      )
+    )
+    await firstSession.enqueue(
+      liveReactorAddQueryOK(
+        query: healthyQuery,
+        processedTransactionID: "server-tx-healthy-after-query-error",
+        result: liveReactorTodoQueryResult(
+          id: "todo-healthy-after-query-error",
+          text: "healthy query survived",
+          createdAt: createdAt
+        )
+      )
+    )
+    try await Task.sleep(for: .milliseconds(100))
+
+    let connectionRequests = await transport.connectionRequests()
+    try #require(
+      connectionRequests.count == 1,
+      "A rejected query must remain isolated to its operation without reconnecting the socket."
+    )
+    let healthyEmission = try #require(await healthyIterator.next())
+    expectNoDifference(
+      try TodoExample.decode(healthyEmission.values).map(\.text),
+      ["healthy query survived"]
+    )
+    let status = try await runtime.connectionStatus()
+    expectNoDifference(status.state, .opened)
+    _ = try await runtime.closeConnection()
+  }
+
+  @Test
+  func rejectedQueryOnceFailsPromptlyWithoutClosingTheSocket() async throws {
+    let plan = InstantQueryPlan(
+      id: "reactor.rejected-query-once",
+      namespace: TodoExample.namespace,
+      filters: [.equals(field: "text", value: .string("forbidden"))]
+    )
+    let query = try InstantLiveQueryEncoder.encode(plan)
+    let session = LiveReactorParitySession(messages: [
+      liveReactorInitOK(attrs: liveReactorTodoServerAttrs, sessionID: "query-once-error")
+    ])
+    let transport = LiveReactorParityTransport(sessions: [session])
+    var configuration = InstantRuntimeConfiguration(
+      appID: "reactor-query-once-error",
+      persistenceURL: try temporaryReactorParityCacheURL(),
+      initialAttributes: TodoExample.attributes,
+      liveTransport: transport.transport
+    )
+    configuration.autoConnectLiveTransport = true
+    let runtime = try await InstantRuntime.bootstrap(configuration: configuration)
+    _ = try await runtime.connect()
+    let queryResult = RejectedQueryResult()
+    let queryTask = Task {
+      do {
+        _ = try await runtime.queryOnce(plan)
+        await queryResult.succeeded()
+      } catch let error as InstantError {
+        await queryResult.failed(error)
+      } catch {
+        await queryResult.failedUnexpectedly(error)
+      }
+    }
+    defer { queryTask.cancel() }
+    try await instantLiveWithTimeout(
+      operation: "wait for rejected one-shot query registration",
+      timeoutMilliseconds: 500
+    ) {
+      await session.waitForSentMessageCount(2)
+    }
+    let addQuery = try #require(await session.sentMessages().last)
+    let eventID = try #require(addQuery.clientEventID)
+    await session.enqueue(
+      InstantLiveMessage(
+        op: "error",
+        clientEventID: addQuery.clientEventID,
+        fields: [
+          "message": .string("The query is forbidden."),
+          "original-event": .object([
+            "client-event-id": .string(eventID),
+            "op": .string("add-query"),
+            "q": query,
+          ]),
+          "status": .number(403),
+        ]
+      )
+    )
+
+    let deadline = ContinuousClock.now.advanced(by: .milliseconds(500))
+    while !(await queryResult.isFinished), ContinuousClock.now < deadline {
+      try await Task.sleep(for: .milliseconds(1))
+    }
+    let result = await queryResult.snapshot()
+    try #require(result.isFinished, "The rejected query should fail promptly.")
+    expectNoDifference(result.unexpectedError, nil)
+    let error = try #require(result.error)
+    expectNoDifference(error.code, .permissionRejected)
+    expectNoDifference(error.operation, "run Instant live query")
+    expectNoDifference(error.message, "The query is forbidden.")
+    let connectionRequests = await transport.connectionRequests()
+    expectNoDifference(connectionRequests.count, 1)
+    let status = try await runtime.connectionStatus()
+    expectNoDifference(status.state, .opened)
+    _ = await queryTask.result
+    _ = try await runtime.closeConnection()
+  }
+
+  @Test
   func runtimeReconnectBacksOffAndFlushesOnlyUnacknowledgedWork() async throws {
     let cacheURL = try temporaryReactorParityCacheURL()
     let query: InstantLiveJSONValue = .object([TodoExample.namespace: .object([:])])
@@ -2391,6 +2545,36 @@ struct InstantReactorParityTests {
     let persistedIDs = try await relaunchedRuntime.localIDs()
     expectNoDifference(relaunchedID, firstID, reactorGetLocalIDSource)
     expectNoDifference(persistedIDs, [InstantLocalID(name: "id", entityID: firstID)], reactorGetLocalIDSource)
+  }
+}
+
+private actor RejectedQueryResult {
+  struct Snapshot: Sendable {
+    var error: InstantError?
+    var isFinished: Bool
+    var unexpectedError: String?
+  }
+
+  private(set) var isFinished = false
+  private var error: InstantError?
+  private var unexpectedError: String?
+
+  func succeeded() {
+    isFinished = true
+  }
+
+  func failed(_ error: InstantError) {
+    self.error = error
+    isFinished = true
+  }
+
+  func failedUnexpectedly(_ error: Error) {
+    unexpectedError = String(describing: error)
+    isFinished = true
+  }
+
+  func snapshot() -> Snapshot {
+    Snapshot(error: error, isFinished: isFinished, unexpectedError: unexpectedError)
   }
 }
 
