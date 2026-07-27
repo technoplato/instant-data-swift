@@ -5299,6 +5299,11 @@ struct TypedAPITests {
     expectNoDifference(fetch.wrappedValue.count, 2)
     expectNoDifference(fetch.loadError, nil)
     expectNoDifference(fetch.isLoading, false)
+    try await waitForTypedCondition(
+      operation: "wait for dynamic Fetch request observations"
+    ) {
+      await recorder.counts().observationCount == 4
+    }
     let plans = await recorder.queryPlans()
     expectNoDifference(
       plans.filter {
@@ -5320,7 +5325,6 @@ struct TypedAPITests {
     )
     let counts = await recorder.counts()
     expectNoDifference(counts.queryCount, 4)
-    expectNoDifference(counts.observationCount, 4)
   }
 
   @Test
