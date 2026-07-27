@@ -4,6 +4,19 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## July 27th, 2026 at 11:35:57 a.m. EDT — `f5e0ce1724ee` Document live query cursor preservation
+
+- **Implementation commit:** `f5e0ce1724ee1bee3f11f7e7c873cf5fcfc8dad6`
+- **Change:** Document live query cursor preservation
+- **Details:**
+  - Record why server-provided four-value cursors remain private wire state beside typed public cursor fields and why locally constructed cursors cannot safely be guessed for live queries.
+  - Document the before/after pagination flow, optimistic leading-page consequence, verification evidence, and bounded infinite-query follow-up boundary.
+- **Files:**
+  - `docs/adr/0006-preserve-live-query-cursors.md` — Preserve the accepted cursor and page-info design decision with compilable before/after syntax.
+- **User context (verbatim):**
+  > upstream mirroring of reactor
+- **SpecStory:** unavailable — Codex desktop goal task; no durable SpecStory CLI capture URI is available.
+
 ## July 27th, 2026 at 11:34:55 a.m. EDT — `11edea370b20` Preserve live query pagination cursors
 
 - **Implementation commit:** `11edea370b20bd273fa5e0cfa5de632ff7ffa224`

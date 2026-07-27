@@ -75,8 +75,10 @@ persisted artifacts outrank code reading whenever they disagree.
   materialization, and exact `after`/`before` re-encoding, including inclusive
   options. Hand-built local cursors still fail live encoding with the existing
   actionable error. The complete 55-test live transport suite and the focused
-  remote-page-window regression passed. This closes the cursor prerequisite;
-  bounded forward/reverse infinite-query subscriptions remain the next port.
+  remote-page-window regression passed. ADR 0006 records the accepted private
+  wire-state design and before/after syntax. This closes the cursor
+  prerequisite; bounded forward/reverse infinite-query subscriptions remain
+  the next port.
 - 2026-07-27 — Exposed direct composite request execution in `f3e9fe0`.
   `InstantFetchRequest.load` and `subscribe` now let actors and TCA effects use
   the same library-owned multi-query transformation, combination, and
