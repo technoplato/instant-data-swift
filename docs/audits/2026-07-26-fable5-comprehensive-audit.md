@@ -122,8 +122,9 @@ persisted artifacts outrank code reading whenever they disagree.
   remote logging a prerequisite (`d3969e7`); the standalone Watch probe embeds
   clean-build provenance (`e15d6f9`); and relay diagnostics use the logger
   configured during Instant bootstrap (`2f9d947`). The Watch recorder now also
-  authorizes long-form audio streaming before opening Deepgram and treats
-  constrained or expensive socket failures as immediate evidence (`bb6ca86`).
+  activates its recording session asynchronously before opening Deepgram,
+  keeps the recording-compatible default route policy, and treats constrained
+  or expensive socket failures as immediate evidence (`bb6ca86`, `8753938`).
 - 2026-07-27 — Completed the revised ReplayKit code scope. Scribe already
   embeds `RPSystemBroadcastPickerView` from `a888ec9`; `62157d2` now correlates
   transcript attribution to the audio-frame source span and uses the exact
@@ -138,9 +139,11 @@ persisted artifacts outrank code reading whenever they disagree.
   hierarchy-derived tap.
 - 2026-07-27 — Final package verification passed after stabilizing only
   asynchronous test evidence: Scribe ran 445 tests in 47 suites
-  (`/tmp/fable5-scribe-full-final-3.log`), and Instant ran 1,193 tests in 102
+  (`/tmp/fable5-scribe-final-full.log`), and Instant ran 1,193 tests in 102
   suites (`/tmp/fable5-instant-full-final-9.log`). The performance-safety suite
-  also remained green at 10 tests (`/tmp/fable5-performance-safety-final.log`).
+  also remained green at 10 tests (`/tmp/fable5-scribe-final-perf.log`), and two
+  final sanitizer passes each inspected 19 artifacts without requiring a
+  change (`/tmp/fable5-scribe-final-sanitize-{1,2}.log`).
 - 2026-07-26 — Committed baselines in both repos (`f70044d`, `4d30691`).
   Confirmed no secrets in diffs (only env-var names/test fixtures; API keys go
   through KeychainClient).
@@ -185,7 +188,8 @@ Severity: P0 correctness/data-loss, P1 behavior/perf, P2 ergonomics, P3 polish.
   upserts, the remaining dynamic/composite fetch surface, broader DocC, and a
   unified fetch status remain proposed rather than being claimed complete.
 - **Device evidence:** Watch credential recovery, relay timing, diagnostic
-  logger handoff, streaming authorization, recording-compatible audio policy,
+  logger handoff, asynchronous recording activation, recording-compatible
+  audio policy,
   Watch-probe provenance/timestamp, ReplayKit source correlation, the clear
   fallback label, and the embedded broadcast picker are covered by focused
   tests. The final clean Watch probe also built, installed, launched, and wrote
