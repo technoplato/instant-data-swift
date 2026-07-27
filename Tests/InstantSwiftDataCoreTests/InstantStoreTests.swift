@@ -1209,6 +1209,58 @@ struct InstantStoreTests {
   }
 
   @Test
+  func runtimePrunesUnloadedQueryCacheRowsWhilePreservingActiveObservations() async throws {
+    let source = persistedObjectSource(
+      "PersistedObject garbage collects unloaded query subscriptions while preserving loaded keys "
+        + "[adapted: Swift protects active store observations during automatic cache pruning.]"
+    )
+    let cacheURL = try temporaryCacheURL()
+    var configuration = InstantRuntimeConfiguration(
+      appID: "runtime-query-cache-pruning",
+      persistenceURL: cacheURL,
+      initialAttributes: TodoExample.attributes,
+      now: { InstantTimestamp(milliseconds: 100) }
+    )
+    configuration.queryCachePruningPolicy = InstantQueryCachePruningPolicy(maxEntries: 1)
+    let runtime = try await InstantRuntime.bootstrap(configuration: configuration)
+    let observedPlan = InstantQueryPlan(id: "cache-a", namespace: "todos")
+    let transientPlan = InstantQueryPlan(id: "cache-b", namespace: "todos")
+    let finalPlan = InstantQueryPlan(id: "cache-c", namespace: "todos")
+
+    _ = try await runtime.queryOnce(observedPlan)
+    let observation = await runtime.observe(observedPlan)
+    let observerTask = Task {
+      for await _ in observation {
+        if Task.isCancelled { return }
+      }
+    }
+    #expect(await runtime.store.activeObservationCount() == 1)
+
+    _ = try await runtime.queryOnce(transientPlan)
+    let protectedCacheKeys = try await runtime.cachedQueries().map(\.cacheKey).sorted()
+    expectNoDifference(
+      protectedCacheKeys,
+      [observedPlan.cacheKey, transientPlan.cacheKey].sorted(),
+      source
+    )
+
+    observerTask.cancel()
+    await observerTask.value
+    for _ in 0..<100 where await runtime.store.activeObservationCount() != 0 {
+      await Task.yield()
+    }
+    #expect(await runtime.store.activeObservationCount() == 0)
+
+    _ = try await runtime.queryOnce(finalPlan)
+    let finalCacheKeys = try await runtime.cachedQueries().map(\.cacheKey)
+    expectNoDifference(
+      finalCacheKeys,
+      [finalPlan.cacheKey],
+      source
+    )
+  }
+
+  @Test
   func observeUsesItsBootstrappedSnapshotWithoutRereadingTheDatabase() async throws {
     let cacheURL = try temporaryCacheURL()
     let createdAt = InstantTimestamp(milliseconds: 1_700_000_000_000)

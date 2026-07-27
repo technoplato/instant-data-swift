@@ -1184,6 +1184,10 @@ public actor InstantStore {
   func activeObservationCount() -> Int {
     observers.count
   }
+
+  func activeQueryCacheKeys() -> Set<String> {
+    Set(observers.values.map(\.plan.cacheKey))
+  }
 }
 
 extension InstantValue {

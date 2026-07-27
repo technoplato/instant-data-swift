@@ -30,6 +30,11 @@ public struct InstantRuntimeConfiguration: Sendable {
   public var startupTrace: InstantStartupTrace = .disabled
   package var actorHopRecorder: InstantActorHopRecorder?
   package var isLocalOnly: Bool
+  var queryCachePruningPolicy = InstantQueryCachePruningPolicy(
+    maxAgeMilliseconds: 1_000 * 60 * 60 * 24 * 7 * 52,
+    maxEntries: 1_000,
+    maxEncodedJSONBytes: 1_000_000
+  )
   var liveReconnectSleep: @Sendable (UInt64) async throws -> Void = { milliseconds in
     try await Task.sleep(nanoseconds: milliseconds * 1_000_000)
   }
@@ -2927,6 +2932,7 @@ public final class InstantRuntime: Sendable {
           expectedStoreRevision: state.storeRevision
         )
         if didSave {
+          await pruneQueryCache(preserving: plan.cacheKey)
           await leaveOperationGate()
           return emission
         }
@@ -2936,6 +2942,44 @@ public final class InstantRuntime: Sendable {
     } catch {
       await leaveOperationGate()
       throw error
+    }
+  }
+
+  private func pruneQueryCache(preserving cacheKey: String) async {
+    recordActorHop(.store)
+    var preservedCacheKeys = await store.activeQueryCacheKeys()
+    preservedCacheKeys.insert(cacheKey)
+    do {
+      recordActorHop(.persistence)
+      let result = try await persistence.pruneQueryCache(
+        policy: configuration.queryCachePruningPolicy,
+        now: configuration.now(),
+        preservingCacheKeys: preservedCacheKeys
+      )
+      guard !result.removedCacheKeys.isEmpty else { return }
+      InstantDiagnostics.shared.record(
+        .debug,
+        subsystem: "instant-swift-data-core",
+        category: "query",
+        event: "query-cache.pruned",
+        message: "Pruned unloaded persisted query results after materialization.",
+        metadata: [
+          "preservedCount": String(preservedCacheKeys.count),
+          "remainingCount": String(result.remainingEntryCount),
+          "removedCount": String(result.removedCacheKeys.count),
+        ],
+        correlationID: cacheKey
+      )
+    } catch {
+      InstantDiagnostics.shared.record(
+        error: error,
+        subsystem: "instant-swift-data-core",
+        category: "query",
+        event: "query-cache.prune-failed",
+        message: "Could not prune persisted query results after materialization.",
+        metadata: ["preservedCount": String(preservedCacheKeys.count)],
+        correlationID: cacheKey
+      )
     }
   }
 
