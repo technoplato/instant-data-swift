@@ -4,6 +4,23 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## July 27th, 2026 at 10:13:28 a.m. EDT — `0ba57bdbdc5e` Amortize persisted query cache pruning
+
+- **Implementation commit:** `0ba57bdbdc5e4375e91189c9b1fe40cb69bb7a4a`
+- **Change:** Amortize persisted query cache pruning
+- **Details:**
+  - Prune stale persisted query rows during runtime bootstrap, then scan only every 64 successful cache writes instead of on every one-shot materialization.
+  - Preserve the existing active-observation protection when a periodic prune runs, and keep pruning failures non-fatal.
+  - Refresh the deterministic actor-hop fixture for the bootstrap scan and prove both relaunch pruning and active-key retention.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — Add bootstrap pruning and the thread-safe write cadence.
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — Keep bootstrap plus retention in one persistence actor call.
+  - `Tests/InstantSwiftDataCoreTests/InstantStoreTests.swift` — Cover relaunch pruning and force one-write cadence for active-observation behavior.
+  - `Tests/InstantSwiftDataCoreTests/BenchmarkTests.swift` — Pin the added bootstrap persistence hop.
+- **User context (verbatim):**
+  > implement and verify prioritized performance ... and Instant Reactor ... improvements
+- **SpecStory:** unavailable — Codex desktop sessions are not supported by the documented SpecStory CLI capture workflow, so no durable session URI is available.
+
 ## July 27th, 2026 at 10:05:15 a.m. EDT — `760afdb4dee3` Add read-only local client facet
 
 - **Implementation commit:** `760afdb4dee3ce23408d48b233bb8501bf481181`
