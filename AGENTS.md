@@ -50,3 +50,26 @@
   owned work promptly, and coordinate immediately when another agent leaves
   related work uncommitted. Keep this repository and
   `../tools/realtime-voice-sqlite-instant` clean at handoff.
+
+<!-- change-log-skill:start -->
+## Change log, commits, and build provenance
+
+- Use the global `$change-log` skill for repository changes.
+- Inspect Git state first and preserve unrelated work. Stage only explicit
+  task-owned paths.
+- Commit each coherent verified increment. Do not commit every edit, wait for an
+  oversized batch, or leave finished task-owned work uncommitted.
+- Use two commits: implementation first; then prepend `CHANGELOG.md` with the
+  implementation SHA using `python3 scripts/change-log/record_change.py` and make
+  a changelog-only ledger commit. Do not recursively log the ledger commit.
+- Every entry uses machine-local human time including seconds, year, and timezone;
+  records the commit and subject, change details, files and reasons, short
+  verbatim user statements, and a durable SpecStory URI or exact absence reason.
+- Capture terminal Codex context with `specstory run codex` or
+  `specstory sync codex --local-time-zone`. Public sharing requires explicit
+  user authorization. Do not invent SpecStory links for Codex desktop tasks.
+- Produce installable or distributable builds only from a clean commit. Run
+  `python3 scripts/change-log/build_provenance.py` from the real build and compile
+  or embed its output in the binary. Log the embedded commit, branch, dirty=false,
+  local/ISO build time, host, source root, and artifact location at startup.
+<!-- change-log-skill:end -->
