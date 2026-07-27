@@ -4,6 +4,21 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## July 27th, 2026 at 9:59:16 a.m. EDT — `da5010dee7b7` Scope store observer invalidation by namespace
+
+- **Implementation commit:** `da5010dee7b70a0ee65891b2859ebc4fd8e3d2f2`
+- **Change:** Skip query re-materialization for flat observers in namespaces untouched by a store commit
+- **Details:**
+  - Resolve changed entity namespaces from both the pre-commit and prepared indexes, including incoming reference targets.
+  - Stay conservative for relationship includes and paths, schema changes, and unresolved entity namespaces while deduplicating and publishing only affected flat query plans.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantStore.swift` — Gate observer materialization by safely resolved namespace dependencies.
+  - `Sources/InstantSwiftDataCore/TripleIndexes.swift` — Resolve the namespaces represented by an entity's direct and incoming-reference indexes.
+  - `Tests/InstantSwiftDataCoreTests/InstantStoreTests.swift` — Prove a todo commit does not materialize an unrelated users observer.
+- **User context (verbatim):**
+  > implement and verify prioritized performance ... improvements across both repositories
+- **SpecStory:** unavailable — Codex desktop sessions are not supported by the documented SpecStory CLI capture workflow, so no durable session URI is available.
+
 ## July 27th, 2026 at 9:56:00 a.m. EDT — `c0a030425a31` Prune persisted query cache automatically
 
 - **Implementation commit:** `c0a030425a3191d600649fd8e69740d32ff21f7c`
