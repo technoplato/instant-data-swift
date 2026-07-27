@@ -325,6 +325,46 @@ public struct InstantSwiftDataClient: Sendable {
     }
   }
 
+  /// Returns a read-only client facet that serves ordinary queries and observations from the
+  /// already-bootstrapped local runtime without requiring a live server acknowledgement.
+  ///
+  /// Inject this facet at a composition boundary for startup, preview, or diagnostic reads that
+  /// explicitly accept last-known local state. Mutations and remote capabilities are unavailable.
+  public func localReader() throws -> Self {
+    guard let runtime else {
+      throw InstantError(
+        code: .implementationFailed,
+        operation: "create local InstantSwiftData reader",
+        message: "A local reader requires a bootstrapped Instant runtime.",
+        recovery: "Bootstrap InstantSwiftDataClient before deriving its local reader facet."
+      )
+    }
+    let readOnlyError = InstantError(
+      code: .implementationFailed,
+      operation: "mutate through local InstantSwiftData reader",
+      message: "The local reader facet does not support mutations.",
+      recovery: "Use the ordinary injected client for mutations and remote capabilities."
+    )
+    return Self(
+      transact: { _ in throw readOnlyError },
+      queryOnce: { plan in
+        try await runtime.queryLocally(plan)
+      },
+      query: { plan in
+        try await runtime.queryLocally(plan).values
+      },
+      observe: { plan in
+        await runtime.observeLocally(plan)
+      },
+      pendingMutations: {
+        await runtime.pendingMutations()
+      },
+      localID: { name in
+        try await runtime.localID(named: name)
+      }
+    )
+  }
+
   public init(
     transact: @escaping @Sendable (InstantStoreTransaction) async throws
       -> InstantStoreMutationResult,

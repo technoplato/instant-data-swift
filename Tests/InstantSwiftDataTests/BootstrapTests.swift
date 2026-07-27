@@ -300,6 +300,60 @@ struct BootstrapTests {
   }
 
   @Test
+  func localReaderUsesTheBootstrappedRuntimeWithoutTheLiveFreshnessGate() async throws {
+    let persistenceURL = FileManager.default.temporaryDirectory
+      .appendingPathComponent("local-reader-\(UUID().uuidString).sqlite")
+    defer { try? FileManager.default.removeItem(at: persistenceURL) }
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "local-reader",
+        persistenceURL: persistenceURL,
+        initialAttributes: TodoExample.attributes
+      )
+    )
+    let client = InstantSwiftDataClient(runtime: runtime)
+    _ = try await client.transact(
+      InstantStoreTransaction(
+        id: "tx-local-reader",
+        operations: TodoExample.createOperations(
+          id: "todo-local-reader",
+          text: "Read local state",
+          createdAt: InstantTimestamp(milliseconds: 1_700_000_000_000),
+          transactionID: "tx-local-reader"
+        )
+      )
+    )
+    _ = try await client.closeConnection()
+
+    do {
+      _ = try await client.query(TodoExample.query)
+      Issue.record("Expected the live client to reject a closed one-shot query.")
+    } catch let error as InstantError {
+      expectNoDifference(error.code, .networkFailed)
+    }
+
+    let localReader = try client.localReader()
+    let snapshots = try await localReader.query(TodoExample.query)
+    let records = try TodoExample.decode(snapshots)
+    expectNoDifference(records.map(\.text), ["Read local state"])
+
+    let observation = await localReader.observe(TodoExample.query)
+    var iterator = observation.makeAsyncIterator()
+    let observed = try #require(await iterator.next())
+    expectNoDifference(try TodoExample.decode(observed.values).map(\.text), ["Read local state"])
+
+    do {
+      _ = try await localReader.transact(
+        InstantStoreTransaction(id: "tx-local-reader-rejected", operations: [])
+      )
+      Issue.record("Expected the local reader facet to reject mutations.")
+    } catch let error as InstantError {
+      expectNoDifference(error.code, .implementationFailed)
+      expectNoDifference(error.operation, "mutate through local InstantSwiftData reader")
+    }
+  }
+
+  @Test
   func bootstrapUsesLocalMagicCodeExchangeByDefault() async throws {
     let appID = "local-magic-code-default-\(UUID().uuidString)"
     let fixedDate = Date(timeIntervalSince1970: 1_700_000_000)

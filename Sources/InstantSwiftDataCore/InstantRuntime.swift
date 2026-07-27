@@ -2596,6 +2596,28 @@ public final class InstantRuntime: Sendable {
     _ plan: InstantQueryPlan,
     remotePageInfo: InstantQueryRemotePageInfo? = nil
   ) async -> AsyncStream<InstantQueryEmission> {
+    await observe(
+      plan,
+      remotePageInfo: remotePageInfo,
+      connectsToLiveTransport: true
+    )
+  }
+
+  package func observeLocally(
+    _ plan: InstantQueryPlan
+  ) async -> AsyncStream<InstantQueryEmission> {
+    await observe(
+      plan,
+      remotePageInfo: nil,
+      connectsToLiveTransport: false
+    )
+  }
+
+  private func observe(
+    _ plan: InstantQueryPlan,
+    remotePageInfo: InstantQueryRemotePageInfo?,
+    connectsToLiveTransport: Bool
+  ) async -> AsyncStream<InstantQueryEmission> {
     let startupStopwatch = configuration.startupTrace.started(
       "query.observe",
       metadata: ["namespace": plan.namespace]
@@ -2609,7 +2631,8 @@ public final class InstantRuntime: Sendable {
       metadata: [
         "appID": configuration.appID,
         "namespace": plan.namespace,
-        "transport": configuration.liveTransport == nil ? "local-cache" : "websocket",
+        "transport": connectsToLiveTransport && configuration.liveTransport != nil
+          ? "websocket" : "local-cache",
       ],
       correlationID: plan.id
     )
@@ -2649,7 +2672,7 @@ public final class InstantRuntime: Sendable {
       since: startupStopwatch,
       metadata: ["namespace": plan.namespace]
     )
-    guard configuration.liveTransport != nil else {
+    guard connectsToLiveTransport, configuration.liveTransport != nil else {
       InstantDiagnostics.shared.record(
         .debug,
         subsystem: "instant-swift-data-core",
@@ -2783,7 +2806,7 @@ public final class InstantRuntime: Sendable {
       )
       let emission = try await usesLiveTransport
         ? queryOnceThroughLive(plan)
-        : materializeLocalQueryOnce(plan)
+        : materializeLocalQueryOnce(plan, enforcesConnectionFreshness: true)
       InstantDiagnostics.shared.record(
         .notice,
         subsystem: "instant-swift-data-core",
@@ -2864,7 +2887,14 @@ public final class InstantRuntime: Sendable {
     return try await materializeLocalQueryOnce(plan)
   }
 
-  private func materializeLocalQueryOnce(_ plan: InstantQueryPlan) async throws
+  package func queryLocally(_ plan: InstantQueryPlan) async throws -> InstantQueryEmission {
+    try await materializeLocalQueryOnce(plan, enforcesConnectionFreshness: false)
+  }
+
+  private func materializeLocalQueryOnce(
+    _ plan: InstantQueryPlan,
+    enforcesConnectionFreshness: Bool = true
+  ) async throws
     -> InstantQueryEmission
   {
     await enterOperationGate()
@@ -2884,7 +2914,8 @@ public final class InstantRuntime: Sendable {
             recovery: issue.recovery
           )
         }
-        if !configuration.isLocalOnly,
+        if enforcesConnectionFreshness,
+          !configuration.isLocalOnly,
           try await persistedConnectionState() == .closed
         {
           recordActorHop(.persistence)
