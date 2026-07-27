@@ -239,7 +239,19 @@ struct InstantInfiniteQueryParityTests {
     try await upsertNumberEntries(
       [("update-5-60", 15)],
       transactionID: "tx-update-sixty-to-fifteen",
+      timestamp: InstantTimestamp(milliseconds: 1_767_226_600_000),
       in: runtime
+    )
+    let current = try await runtime.query(
+      infiniteItemsQuery(limit: 10, order: InstantQueryOrder("value"))
+    )
+    expectNoDifference(
+      current.compactMap { entity in
+        guard case .one(.number(let value)) = entity.values["value"] else { return nil }
+        return Int(value)
+      },
+      [10, 15, 20, 30, 40, 50],
+      infiniteUpdateSource
     )
     let reordered = try #require(await iterator.next())
     expectNoDifference(loadedValues(reordered), [10, 15, 20], infiniteUpdateSource)
@@ -387,9 +399,12 @@ private func upsertNumberItems(
 private func upsertNumberEntries(
   _ entries: [(id: String, value: Int)],
   transactionID: String,
+  timestamp: InstantTimestamp? = nil,
   in runtime: InstantRuntime
 ) async throws {
-  let txTime = InstantTimestamp(milliseconds: infiniteQueryTimestamp(for: transactionID))
+  let txTime = timestamp ?? InstantTimestamp(
+    milliseconds: infiniteQueryTimestamp(for: transactionID)
+  )
   try await runtime.transact(
     InstantStoreTransaction(
       id: transactionID,

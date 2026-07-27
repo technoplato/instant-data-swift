@@ -59,7 +59,7 @@ struct InstantSharingSourceParityTests {
     try await model.move(
       fromOffsets: [2],
       toOffset: 0,
-      updatedAt: fixture.now,
+      updatedAt: InstantTimestamp(milliseconds: fixture.now.milliseconds + 1_000),
       transactionID: "tx-source-reminders-lists-move"
     )
 
