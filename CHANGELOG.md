@@ -4,6 +4,26 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## July 27th, 2026 at 1:05:29 p.m. EDT — `82b74dd2267d` Harden durable live query refreshes
+
+- **Implementation commit:** `82b74dd2267d325c500852cb43a850d1c5783172`
+- **Change:** Harden durable live query refreshes
+- **Details:**
+  - Reject stale live refresh CAS attempts atomically across the store, outbox, ownership rows, server watermark, revisions, and cached state; preserve pre-0011 global triples without inventing ownership.
+  - Normalize duplicate canonical live computations deterministically so only the final result contributes operations or persisted ownership, and serialize observer registration with pruning through the runtime operation gate.
+  - Verify independent and third-runtime reopen behavior, lazy persisted page-info recovery, bootstrap replacement and orphan collection, confirmed and lookup-dependent mutation protection, the default sixty-fourth-write cadence, and the deterministic prune-registration interleaving.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantLiveRefreshApplication.swift` — Normalize same-key live computations with final-result-wins semantics.
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — Serialize live observer registration with durable pruning and expose a deterministic test interleaving hook.
+  - `Tests/InstantSwiftDataCoreTests/InstantLiveTransportTests.swift` — Prove relaunch, page-info, final-result, bootstrap, cadence, and registration-prune behavior.
+  - `Tests/InstantSwiftDataCoreTests/InstantStoreTests.swift` — Prove atomic stale-CAS rejection, migration safety, and pending mutation retention.
+  - `docs/adr/0009-bound-live-query-result-retention.md` — Record the registration and pruning serialization guarantee.
+- **User context (verbatim):**
+  > independent post-retention hardening slice
+  > duplicate same-canonical-key computations in one applyLiveRefresh normalized deterministically final-result-wins
+  > Fix registration/prune serialization canonically and add a deterministic interleaving regression
+- **SpecStory:** unavailable — Codex desktop task; no durable SpecStory CLI capture URI is available.
+
 ## July 27th, 2026 at 12:39:13 p.m. EDT — `5f75dc984510` Bound live query result retention
 
 - **Implementation commit:** `5f75dc984510e26fc80502b8550bee33b525e397`
