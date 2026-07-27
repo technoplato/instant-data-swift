@@ -125,6 +125,8 @@ persisted artifacts outrank code reading whenever they disagree.
   activates its recording session asynchronously before opening Deepgram,
   keeps the recording-compatible default route policy, and treats constrained
   or expensive socket failures as immediate evidence (`bb6ca86`, `8753938`).
+  The eight-second auto-run window now begins only after capture, WAV append,
+  and Deepgram streaming are active (`6699ea5`).
 - 2026-07-27 — Completed the revised ReplayKit code scope. Scribe already
   embeds `RPSystemBroadcastPickerView` from `a888ec9`; `62157d2` now correlates
   transcript attribution to the audio-frame source span and uses the exact
@@ -138,8 +140,8 @@ persisted artifacts outrank code reading whenever they disagree.
   available tooling cannot capture a watchOS hierarchy or safely synthesize a
   hierarchy-derived tap.
 - 2026-07-27 — Final package verification passed after stabilizing only
-  asynchronous test evidence: Scribe ran 445 tests in 47 suites
-  (`/tmp/fable5-scribe-final-full.log`), and Instant ran 1,193 tests in 102
+  asynchronous test evidence: Scribe ran 446 tests in 47 suites
+  (`/tmp/fable5-scribe-full-final-5.log`), and Instant ran 1,193 tests in 102
   suites (`/tmp/fable5-instant-full-final-9.log`). The performance-safety suite
   also remained green at 10 tests (`/tmp/fable5-scribe-final-perf.log`), and two
   final sanitizer passes each inspected 19 artifacts without requiring a
