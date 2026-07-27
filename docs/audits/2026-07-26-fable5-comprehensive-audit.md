@@ -69,6 +69,14 @@ persisted artifacts outrank code reading whenever they disagree.
 
 ## Progress log
 
+- 2026-07-27 — Preserved canonical live query pagination metadata in
+  `11edea3`. Per-namespace server page info and opaque four-value cursors now
+  survive refresh translation, per-query state, Codable persistence, one-shot
+  materialization, and exact `after`/`before` re-encoding, including inclusive
+  options. Hand-built local cursors still fail live encoding with the existing
+  actionable error. The complete 55-test live transport suite and the focused
+  remote-page-window regression passed. This closes the cursor prerequisite;
+  bounded forward/reverse infinite-query subscriptions remain the next port.
 - 2026-07-27 — Exposed direct composite request execution in `f3e9fe0`.
   `InstantFetchRequest.load` and `subscribe` now let actors and TCA effects use
   the same library-owned multi-query transformation, combination, and
@@ -182,7 +190,7 @@ Severity: P0 correctness/data-loss, P1 behavior/perf, P2 ergonomics, P3 polish.
 | R-A3 | P1 | Fixed `d7dd19d` | A rejected `add-query` retires only the correlated registration and leaves the shared socket and healthy observations intact. |
 | R-A4 | P1 | Fixed `cabc467` | Remaining optimistic mutations are rebased above the authoritative server snapshot so later local writes stay visible. |
 | S-C2/C11 | P1 | Fixed `fa2210b`, `17c2d62` | Live projection omits cumulative joined-text rewrites, finalization writes the fallback text once, and snapshot mutations are serialized in submission order. |
-| S-C3/C4 | P1 | Partial `da5010d` | Commits now skip flat observers in untouched namespaces while relationship-dependent plans remain conservative; infinite-query windowing still needs separate review. |
+| S-C3/C4 | P1 | Partial `da5010d`, `11edea3` | Commits skip flat observers in untouched namespaces, and canonical server page info plus opaque cursors now survive the live query path; infinite-query observation still needs bounded forward/reverse chunk subscriptions. |
 | S-C5 | P1 | Fixed `21be1b8`, `760afdb`, `cb88d6c` | Scribe's local startup and capture projection loaders use a read-only facet of the already bootstrapped live runtime; live one-shot queries remain freshness-sensitive and no second SQLite runtime or public `queryLocal` was added. |
 | S-C6/C7 | P1/P2 | Fixed `e12be12`, `1d8db69` | Microphone PCM retains 256 newest buffers with drop diagnostics; Watch relay timing uses a 4,096-entry circular buffer and refuses false attribution after eviction. |
 | R-A8 | P2 | Partial `c0a0304`, `0ba57bd` | Persisted per-query results are pruned at bootstrap and every 64 successful writes while active observations remain protected; global triple retention still needs a separate reachability policy. |
@@ -195,9 +203,12 @@ Severity: P0 correctness/data-loss, P1 behavior/perf, P2 ergonomics, P3 polish.
 - **Infinite query transport windowing:** still open within `S-C3/C4`.
   Namespace-scoped invalidation removes unrelated re-materialization, but the
   Swift infinite-query observer still subscribes to an unbounded namespace and
-  applies its visible window locally. Correct upstream-style forward/reverse
-  cursor subscriptions require a dedicated behavioral port; this audit does
-  not disguise that work with a larger arbitrary limit.
+  applies its visible window locally. Canonical server page info and opaque
+  cursors are now preserved end to end in `11edea3`, closing the prerequisite
+  that previously made correct chunk frontiers impossible. Upstream-style
+  bounded forward/reverse cursor subscriptions still require a dedicated
+  behavioral port; this audit does not disguise that work with a larger
+  arbitrary limit.
 - **Global triple reachability:** still open within `R-A8`. Persisted per-query
   cache rows now have production retention, but deleting triples that are no
   longer reachable from any active or cached query needs a separate ownership

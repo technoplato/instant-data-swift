@@ -6,6 +6,15 @@ commit SHA, and high-level reason. Changelog-only bookkeeping commits are
 visible in Git history but are not self-recorded because a commit cannot
 contain its own final SHA.
 
+## July 27, 2026 at 11:34:56 AM EDT
+
+- Repository: `instant-data-swift`
+- Commit: `11edea370b20bd273fa5e0cfa5de632ff7ffa224`
+- High-level reason: Preserve canonical live query page information and opaque
+  Reactor cursors through decoding, persistence, one-shot materialization, and
+  exact after/before re-encoding so bounded remote pagination can use server
+  frontiers without reconstructing lossy client cursors.
+
 ## July 27, 2026 at 11:21:38 AM EDT
 
 - Repository: `instant-data-swift`
