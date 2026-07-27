@@ -6,6 +6,22 @@ commit SHA, and high-level reason. Changelog-only bookkeeping commits are
 visible in Git history but are not self-recorded because a commit cannot
 contain its own final SHA.
 
+## July 27, 2026 at 9:14:49 AM EDT
+
+- Repository: `realtime-voice-sqlite-instant` (Scribe)
+- Commit: `d3969e79955eb8f63400bd623600cea7d026d593`
+- High-level reason: Restore a saved Watch credential through the phone relay,
+  persist validated replacements on the phone, inject relay credential sources
+  explicitly, and keep remote diagnostics off the credential critical path.
+
+## July 27, 2026 at 9:14:44 AM EDT
+
+- Repository: `realtime-voice-sqlite-instant` (Scribe)
+- Commit: `578d9835801628609ecbaf9bad46fdb79a054c2e`
+- High-level reason: Attach build provenance to structured diagnostics, record
+  startup milestones locally, and preserve a privacy-safe local checkpoint when
+  a remote diagnostic write fails.
+
 ## July 27, 2026 at 9:12:06 AM EDT
 
 - Repository: `instant-data-swift`
