@@ -1805,7 +1805,7 @@ struct InstantLiveTransportTests {
   }
 
   @Test
-  func runtimeLiveMutationKeepsPendingAndReportsMissingServerAttribute() async throws {
+  func runtimeLiveMutationEncodingFailureDoesNotBlockTheFollowingMutation() async throws {
     let incompleteAttrs = Array(Array<InstantLiveJSONValue>.todoServerAttrs.dropLast())
     let session = InstantRuntimeScriptedLiveSession(messages: [
       .initOK(clientEventID: "event-init", attrs: incompleteAttrs)
@@ -1822,25 +1822,44 @@ struct InstantLiveTransportTests {
     let createdAt = InstantTimestamp(milliseconds: 1_700_000_000_790)
     try await runtime.transact(
       InstantStoreTransaction(
-        id: "tx-runtime-live-schema-error",
+        id: "a-runtime-live-schema-error",
         operations: TodoExample.createOperations(
           id: "runtime-live-schema-error-todo",
           text: "Keep pending until schema matches",
           createdAt: createdAt,
-          transactionID: "tx-runtime-live-schema-error"
+          transactionID: "a-runtime-live-schema-error"
         )
       ),
       createdAt: createdAt
     )
+    let updateAt = InstantTimestamp(milliseconds: createdAt.milliseconds + 1)
+    try await runtime.transact(
+      InstantStoreTransaction(
+        id: "b-runtime-live-healthy",
+        operations: TodoExample.updateTextOperations(
+          id: "runtime-live-schema-error-todo",
+          text: "Deliver the valid update",
+          updatedAt: updateAt,
+          transactionID: "b-runtime-live-healthy"
+        )
+      ),
+      createdAt: updateAt
+    )
+    await session.waitForSentMessageCount(2)
 
     let status = try await runtime.connectionStatus()
-    expectNoDifference(status.state, .errored)
-    #expect(status.lastErrorMessage?.contains("todos/createdAt") == true)
-    #expect(status.lastErrorMessage?.contains("Deploy a schema") == true)
+    expectNoDifference(status.state, .opened)
     let sentOps = await session.sentMessages().map(\.op)
-    expectNoDifference(sentOps, ["init"])
-    let pending = await runtime.pendingMutations()
-    expectNoDifference(pending.map(\.id), ["tx-runtime-live-schema-error"])
+    expectNoDifference(sentOps, ["init", "transact"])
+    let outbox = await runtime.outboxMutations()
+    expectNoDifference(outbox.map(\.id), [
+      "a-runtime-live-schema-error",
+      "b-runtime-live-healthy",
+    ])
+    expectNoDifference(outbox.map(\.status), [.failed, .pending])
+    #expect(outbox[0].failureMessage?.contains("todos/createdAt") == true)
+    let lastClientEventID = await session.sentMessages().last?.clientEventID
+    expectNoDifference(lastClientEventID, "b-runtime-live-healthy")
     _ = try await runtime.closeConnection()
   }
 

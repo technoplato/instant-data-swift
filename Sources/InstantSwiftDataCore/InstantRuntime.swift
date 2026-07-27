@@ -430,6 +430,11 @@ private actor InstantRuntimeActiveRoomPresenceState {
   }
 }
 
+private struct InstantLiveMutationEncodingFailure: Sendable {
+  var message: String
+  var mutationID: String
+}
+
 private actor InstantRuntimeLiveSession {
   private struct RegisteredQuery: Sendable {
     var query: InstantLiveJSONValue
@@ -1023,15 +1028,31 @@ private actor InstantRuntimeLiveSession {
     return false
   }
 
-  func sendMutations(_ mutations: [InstantTransportMutation]) async throws {
-    guard let session, isOpened else { return }
+  @discardableResult
+  func sendMutations(
+    _ mutations: [InstantTransportMutation]
+  ) async throws -> [InstantLiveMutationEncodingFailure] {
+    guard let session, isOpened else { return [] }
+    var encodingFailures: [InstantLiveMutationEncodingFailure] = []
     for mutation in mutations.sorted(by: Self.mutationOrder) where mutation.status == .pending {
       guard inFlightMutationIDs.insert(mutation.mutationID).inserted else { continue }
+      let txSteps: [InstantTransportStep]
       do {
-        let txSteps = try InstantLiveMutationEncoder.resolveAttributeIDs(
+        txSteps = try InstantLiveMutationEncoder.resolveAttributeIDs(
           in: mutation.txSteps,
           attrs: serverAttributes
         )
+      } catch {
+        inFlightMutationIDs.remove(mutation.mutationID)
+        encodingFailures.append(
+          InstantLiveMutationEncodingFailure(
+            message: String(describing: error),
+            mutationID: mutation.mutationID
+          )
+        )
+        continue
+      }
+      do {
         try await send(
           try .transact(txSteps, clientEventID: mutation.mutationID),
           through: session
@@ -1041,6 +1062,7 @@ private actor InstantRuntimeLiveSession {
         throw error
       }
     }
+    return encodingFailures
   }
 
   func joinRoom(
@@ -3182,9 +3204,10 @@ public final class InstantRuntime: Sendable {
           await operationGate.leave()
           enteredOperationGate = false
           recordActorHop(.liveSession)
-          try await liveSession.sendMutations(
+          let encodingFailures = try await liveSession.sendMutations(
             await outboxTransportMutations().filter { $0.status == .pending }
           )
+          try await persistLiveMutationEncodingFailures(encodingFailures)
         } catch {
           if enteredOperationGate {
             recordActorHop(.operationGate)
@@ -3897,11 +3920,63 @@ public final class InstantRuntime: Sendable {
     guard configuration.liveTransport != nil else { return }
     do {
       recordActorHop(.liveSession)
-      try await liveSession.sendMutations(
+      let encodingFailures = try await liveSession.sendMutations(
         await outboxTransportMutations().filter { $0.status == .pending }
       )
+      try await persistLiveMutationEncodingFailures(encodingFailures)
     } catch {
       await recordConnectionError(error)
+    }
+  }
+
+  private func persistLiveMutationEncodingFailures(
+    _ failures: [InstantLiveMutationEncodingFailure]
+  ) async throws {
+    guard !failures.isEmpty else { return }
+    let results = failures.map {
+      InstantMutationTransportResult(
+        mutationID: $0.mutationID,
+        outcome: .failed,
+        message: $0.message
+      )
+    }
+    let mutationIDs = Set(failures.map(\.mutationID))
+    await enterOperationGate()
+    do {
+      for _ in 0..<5 {
+        recordActorHop(.persistence)
+        let state = try await persistence.loadState()
+        let update = InstantOutbox.applyingTransportResults(
+          results,
+          in: state.snapshot.outbox,
+          allowedMutationIDs: mutationIDs
+        )
+        guard !update.failed.isEmpty else {
+          recordActorHop(.outbox)
+          await outbox.replace(with: state.snapshot.outbox)
+          await leaveOperationGate()
+          return
+        }
+        recordActorHop(.persistence)
+        let didSave = try await persistence.saveOutbox(
+          update.mutations,
+          expectedOutboxRevision: state.outboxRevision
+        )
+        if didSave {
+          recordActorHop(.outbox)
+          await outbox.replace(with: update.mutations)
+          _ = try? await publishConnectionStatusWithGateHeld()
+          for mutation in update.failed {
+            await publishMutationLifecycle(mutation)
+          }
+          await leaveOperationGate()
+          return
+        }
+      }
+      throw outboxChangedDuringStatusUpdate(id: failures[0].mutationID)
+    } catch {
+      await leaveOperationGate()
+      throw error
     }
   }
 
