@@ -213,9 +213,7 @@ struct TripleIndexes: Hashable, Codable, Sendable {
     eav.values
       .flatMap(\.values)
       .flatMap(\.values)
-      .sorted {
-        Self.lexicographicallyPrecedes(Self.tripleSortKey($0), Self.tripleSortKey($1))
-      }
+      .sorted(by: Self.triplePrecedes)
   }
 
   var tripleCount: Int {
@@ -224,6 +222,25 @@ struct TripleIndexes: Hashable, Codable, Sendable {
         count += valuesByValue.count
       }
     }
+  }
+
+  var newestTransactionTimeMilliseconds: Int64? {
+    var newest: Int64?
+    for attributesByID in eav.values {
+      for valuesByValue in attributesByID.values {
+        for triple in valuesByValue.values {
+          let milliseconds = triple.txTime.milliseconds
+          if let newestMilliseconds = newest {
+            if milliseconds > newestMilliseconds {
+              newest = milliseconds
+            }
+          } else {
+            newest = milliseconds
+          }
+        }
+      }
+    }
+    return newest
   }
 
   func triples(entityID: String) -> [InstantTriple] {
@@ -2750,8 +2767,14 @@ struct TripleIndexes: Hashable, Codable, Sendable {
     }
   }
 
-  private static func tripleSortKey(_ triple: InstantTriple) -> [String] {
-    [triple.entityID, triple.attributeID, triple.value.comparableKey]
+  private static func triplePrecedes(_ lhs: InstantTriple, _ rhs: InstantTriple) -> Bool {
+    if lhs.entityID != rhs.entityID {
+      return lhs.entityID < rhs.entityID
+    }
+    if lhs.attributeID != rhs.attributeID {
+      return lhs.attributeID < rhs.attributeID
+    }
+    return lhs.value.comparableKey < rhs.value.comparableKey
   }
 
   private static func lexicographicallyPrecedes(_ lhs: [String], _ rhs: [String]) -> Bool {

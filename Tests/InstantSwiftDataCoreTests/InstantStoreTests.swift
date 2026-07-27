@@ -7,6 +7,79 @@ import Testing
 @Suite(.serialized)
 struct InstantStoreTests {
   @Test
+  func tripleIndexesFindTheNewestTransactionTimeWithoutSnapshotOrdering() {
+    let indexes = TripleIndexes(
+      triples: [
+        InstantTriple(
+          entityID: "recording-2",
+          attributeID: "recordings/transcript",
+          value: .json(.object(["text": .string("a long transcript payload")])),
+          txID: "tx-20",
+          txTime: InstantTimestamp(milliseconds: 20)
+        ),
+        InstantTriple(
+          entityID: "recording-1",
+          attributeID: "recordings/title",
+          value: .string("First"),
+          txID: "tx-30",
+          txTime: InstantTimestamp(milliseconds: 30)
+        ),
+        InstantTriple(
+          entityID: "recording-3",
+          attributeID: "recordings/title",
+          value: .string("Third"),
+          txID: "tx-10",
+          txTime: InstantTimestamp(milliseconds: 10)
+        ),
+      ]
+    )
+
+    expectNoDifference(indexes.newestTransactionTimeMilliseconds, 30)
+  }
+
+  @Test
+  func tripleIndexesKeepDeterministicSnapshotOrdering() {
+    let timestamp = InstantTimestamp(milliseconds: 1)
+    let indexes = TripleIndexes(
+      triples: [
+        InstantTriple(
+          entityID: "recording-2",
+          attributeID: "recordings/title",
+          value: .string("Second"),
+          txID: "entity-2",
+          txTime: timestamp
+        ),
+        InstantTriple(
+          entityID: "recording-1",
+          attributeID: "recordings/title",
+          value: .number(2),
+          txID: "value-2",
+          txTime: timestamp
+        ),
+        InstantTriple(
+          entityID: "recording-1",
+          attributeID: "recordings/created-at",
+          value: .number(1),
+          txID: "attribute-first",
+          txTime: timestamp
+        ),
+        InstantTriple(
+          entityID: "recording-1",
+          attributeID: "recordings/title",
+          value: .number(10),
+          txID: "value-10",
+          txTime: timestamp
+        ),
+      ]
+    )
+
+    expectNoDifference(
+      indexes.triples.map(\.txID),
+      ["attribute-first", "value-10", "value-2", "entity-2"]
+    )
+  }
+
+  @Test
   func persistenceFilesRestrictRefreshSessionsToTheCurrentUser() async throws {
     let cacheURL = try temporaryCacheURL()
     let store = try SQLitePersistenceStore(fileURL: cacheURL)

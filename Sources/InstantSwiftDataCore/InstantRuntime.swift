@@ -2665,10 +2665,8 @@ public final class InstantRuntime: Sendable {
     for mutation in mutations.sorted(by: PendingMutation.creationOrder)
     where mutation.status == .pending
       || (mutation.status == .confirmed && mutation.serverTransactionID != nil) {
-      let newestServerTimestamp = preparedRebase.indexes.triples
-        .lazy
-        .map(\.txTime.milliseconds)
-        .max() ?? 0
+      let newestServerTimestamp =
+        preparedRebase.indexes.newestTransactionTimeMilliseconds ?? 0
       let optimisticTimestamp = InstantTimestamp(
         milliseconds: newestServerTimestamp == Int64.max
           ? newestServerTimestamp
