@@ -33,7 +33,14 @@ persisted artifacts outrank code reading whenever they disagree.
   and harden storage runtime
 - `realtime-voice-sqlite-instant` baseline commit: `4d30691` — feat: checkpoint
   watch companion speech relay and diagnostics
-- Baseline build/test results: pending (this section will be updated).
+- Fresh Scribe baseline on local `main`: 423 tests in 45 suites passed on
+  2026-07-27 before the first new fix.
+- Fresh `instant-data-swift` baseline: 1,184 tests ran, but the incremental
+  build reported 121 issues. The failures include process-level CLI tests
+  rejecting a stale executable and a benchmark binary asserting the previous
+  11/5 actor-hop contract even though current source asserts 12/6. A clean
+  scratch-path rerun is in progress before any product code or expectations
+  change.
 
 ## Logging / evidence inventory
 
@@ -62,6 +69,21 @@ persisted artifacts outrank code reading whenever they disagree.
 
 ## Progress log
 
+- 2026-07-27 — Fast-forwarded both local `main` branches after creating
+  timestamped backup branches. Added cross-repository commit discipline and a
+  newest-first SHA journal. Both worktrees were clean before new fixes.
+- 2026-07-27 — Recovered and read the full OpenCode export
+  `realtime-voice-sqlite-instant/session-ses_05fd.md`. The original Reactor,
+  API ergonomics, and Scribe performance agents returned substantive reports;
+  the original Watch and ReplayKit agents returned empty results and were
+  relaunched.
+- 2026-07-27 — Queried the newest 200 remote Instant diagnostic rows through
+  the protected observer. They cover only 2026-07-26 20:08:51–20:09:58 EDT,
+  iOS, Scribe commit `4d30691`; they are useful baseline evidence but are too
+  old to validate today's Watch relay or `main` behavior.
+- 2026-07-27 — Closed the remaining off-main pasteboard crash seam in Scribe.
+  Commit `7f4ce7e` makes `ClipboardClient.currentContent` async, performs live
+  reads through `MainActor.run`, and adds a focused compile-enforced test.
 - 2026-07-26 — Committed baselines in both repos (`f70044d`, `4d30691`).
   Confirmed no secrets in diffs (only env-var names/test fixtures; API keys go
   through KeychainClient).
@@ -70,8 +92,24 @@ persisted artifacts outrank code reading whenever they disagree.
 
 ## Findings
 
-(Populated as audit agents report. Severity: P0 correctness/data-loss,
-P1 behavior/perf, P2 ergonomics, P3 polish.)
+Severity: P0 correctness/data-loss, P1 behavior/perf, P2 ergonomics, P3 polish.
+
+| ID | Severity | Status | Finding |
+| --- | --- | --- | --- |
+| S-C1 | P0 | Fixed `7f4ce7e` | `bugs/crash1.txt` proves AppKit pasteboard access crashed off-main; `currentContent` was the last synchronous live entry point. |
+| R-B1 | P1 | Open | Room registration is not observer-reference-counted; one consumer leaving can unregister a room still used by another and freeze presence. |
+| R-A1 | P1 | Open | Pending mutations created in the same millisecond are tie-broken by random UUID, so replay/rebase order can invert. |
+| R-A2 | P1 | Open | One mutation with an unresolvable attribute aborts the delivery loop and can poison every reconnect. |
+| R-A3 | P1 | Open | One rejected `add-query` can tear down the shared socket instead of failing only its observation. |
+| R-A4 | P1 | Open | Failed optimistic cardinality-one writes or deletes can leave holes until a server refresh because rollback removes failed triples without restoring overwritten server triples. |
+| S-C2/C11 | P1 | Open | Every interim transcript can trigger full projection, diffing, persistence, and full joined-text rewriting, creating out-of-order saves and roughly quadratic cumulative work. |
+| S-C3/C4 | P1 | Open | Commits re-materialize unrelated observers, while infinite observations remove limits before client-side windowing. |
+| S-C5 | P1 | Open | Live one-shot queries can wait ten seconds and fail despite valid local state; the fix must preserve ordinary query APIs or use an injected local-only client, never public `queryLocal`. |
+| S-C6/C7 | P1/P2 | Open | Microphone PCM and Watch relay timing collections need explicit bounds and drop diagnostics. |
+| R-A8 | P2 | Open | Global triples and per-query tracking lack a complete garbage-collection policy. |
+| API-B1/B2/B3 | P2 | Proposed | Generate or centralize entity snapshot decoding and whole-model upserts to remove repeated stringly application boilerplate. |
+| API-B5/B6/B7 | P2 | Proposed | Complete dynamic fetch parity and expose library-owned decoded/composite observation for TCA and actor consumers. |
+| API-B8/B10/B13 | P2 | Proposed | Add dependency-controlled IDs, faceted clients, DocC, and unified fetch status without broadening the application/library sync boundary. |
 
 ## Decisions
 

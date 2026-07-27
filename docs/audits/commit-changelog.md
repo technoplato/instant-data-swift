@@ -6,6 +6,13 @@ commit SHA, and high-level reason. Changelog-only bookkeeping commits are
 visible in Git history but are not self-recorded because a commit cannot
 contain its own final SHA.
 
+## July 27, 2026 at 8:28:05 AM EDT
+
+- Repository: `realtime-voice-sqlite-instant` (Scribe)
+- Commit: `7f4ce7eef4c92d3c8e129993dd5beeea32ec2e99`
+- High-level reason: Close the remaining pasteboard crash path by making the
+  clipboard read dependency async and isolating every live read to MainActor.
+
 ## July 27, 2026 at 8:22:56 AM EDT
 
 - Repository: `realtime-voice-sqlite-instant` (Scribe)
