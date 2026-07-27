@@ -45,6 +45,8 @@ public struct InstantRuntimeConfiguration: Sendable {
   var liveReconnectSleep: @Sendable (UInt64) async throws -> Void = { milliseconds in
     try await Task.sleep(nanoseconds: milliseconds * 1_000_000)
   }
+  var onLiveQueryResultPruneActiveKeysCapturedForTesting:
+    (@Sendable (Set<String>) async -> Void)? = nil
 
   public init(
     appID: String,
@@ -2814,6 +2816,35 @@ public final class InstantRuntime: Sendable {
       )
       return Self.emptyObservation(plan)
     }
+    let usesLiveTransport = connectsToLiveTransport && configuration.liveTransport != nil
+    let liveRegistration: (query: InstantLiveJSONValue, key: String)?
+    if usesLiveTransport {
+      do {
+        let query = try InstantLiveQueryEncoder.encode(plan)
+        liveRegistration = (
+          query: query,
+          key: try InstantLiveQueryEncoder.registrationKey(for: query)
+        )
+      } catch {
+        liveRegistration = nil
+        await recordConnectionError(error)
+        InstantDiagnostics.shared.record(
+          error: error,
+          subsystem: "instant-swift-data-core",
+          category: "query",
+          event: "query-observation.encoding-failed",
+          message: "Could not encode a live query observation.",
+          metadata: ["namespace": plan.namespace],
+          correlationID: plan.id
+        )
+      }
+    } else {
+      liveRegistration = nil
+    }
+
+    if liveRegistration != nil {
+      await enterOperationGate()
+    }
     recordActorHop(.store)
     let localRegistrationStopwatch = configuration.startupTrace.stopwatch()
     let stream = await store.observe(plan, remotePageInfo: remotePageInfo)
@@ -2827,37 +2858,22 @@ public final class InstantRuntime: Sendable {
       since: startupStopwatch,
       metadata: ["namespace": plan.namespace]
     )
-    guard connectsToLiveTransport, configuration.liveTransport != nil else {
-      InstantDiagnostics.shared.record(
-        .debug,
-        subsystem: "instant-swift-data-core",
-        category: "query",
-        event: "query-observation.local-registered",
-        message: "Registered a local-cache query observation.",
-        metadata: ["namespace": plan.namespace],
-        correlationID: plan.id
-      )
+    guard let liveRegistration else {
+      if !usesLiveTransport {
+        InstantDiagnostics.shared.record(
+          .debug,
+          subsystem: "instant-swift-data-core",
+          category: "query",
+          event: "query-observation.local-registered",
+          message: "Registered a local-cache query observation.",
+          metadata: ["namespace": plan.namespace],
+          correlationID: plan.id
+        )
+      }
       return stream
     }
-
-    let query: InstantLiveJSONValue
-    let registrationKey: String
-    do {
-      query = try InstantLiveQueryEncoder.encode(plan)
-      registrationKey = try InstantLiveQueryEncoder.registrationKey(for: query)
-    } catch {
-      await recordConnectionError(error)
-      InstantDiagnostics.shared.record(
-        error: error,
-        subsystem: "instant-swift-data-core",
-        category: "query",
-        event: "query-observation.encoding-failed",
-        message: "Could not encode a live query observation.",
-        metadata: ["namespace": plan.namespace],
-        correlationID: plan.id
-      )
-      return stream
-    }
+    let query = liveRegistration.query
+    let registrationKey = liveRegistration.key
 
     do {
       try await liveSession.registerQuery(
@@ -2865,6 +2881,7 @@ public final class InstantRuntime: Sendable {
         key: registrationKey,
         clientEventID: configuration.makeID()
       )
+      await leaveOperationGate()
       let isLiveSessionOpen = await liveSession.isOpen
       configuration.startupTrace.milestone(
         "query.live-registration",
@@ -2892,6 +2909,7 @@ public final class InstantRuntime: Sendable {
         correlationID: plan.id
       )
     } catch {
+      await leaveOperationGate()
       await recordConnectionError(error)
       InstantDiagnostics.shared.record(
         error: error,
@@ -2954,6 +2972,7 @@ public final class InstantRuntime: Sendable {
       return await store.observe(plan)
     }
 
+    await enterOperationGate()
     let existingPageInfo = await liveQueryPageInfo(for: registrationKey)
     let stream = await store.observeLiveQuery(
       plan,
@@ -2966,7 +2985,9 @@ public final class InstantRuntime: Sendable {
         key: registrationKey,
         clientEventID: configuration.makeID()
       )
+      await leaveOperationGate()
     } catch {
+      await leaveOperationGate()
       await recordConnectionError(error)
     }
     return Self.liveObservation(stream) { [weak self] in
@@ -3057,12 +3078,19 @@ public final class InstantRuntime: Sendable {
     let observedRevision = await liveQueryAcknowledgements.revision(for: registrationKey)
 
     try await ensureLiveConnectionIfNeeded()
-    try await liveSession.registerQuery(
-      query,
-      key: registrationKey,
-      clientEventID: configuration.makeID(),
-      requiresServerAcknowledgement: true
-    )
+    await enterOperationGate()
+    do {
+      try await liveSession.registerQuery(
+        query,
+        key: registrationKey,
+        clientEventID: configuration.makeID(),
+        requiresServerAcknowledgement: true
+      )
+      await leaveOperationGate()
+    } catch {
+      await leaveOperationGate()
+      throw error
+    }
     defer {
       Task {
         do {
@@ -3282,6 +3310,11 @@ public final class InstantRuntime: Sendable {
     now: InstantTimestamp
   ) async throws -> InstantLiveQueryResultPruningResult {
     let activeQueryKeys = await liveSession.activeQueryKeys()
+    if let onActiveKeysCaptured =
+      configuration.onLiveQueryResultPruneActiveKeysCapturedForTesting
+    {
+      await onActiveKeysCaptured(activeQueryKeys)
+    }
     recordActorHop(.persistence)
     let application = try await persistence.pruneLiveQueryResults(
       policy: policy,

@@ -95,6 +95,12 @@ actor InstantLiveQueryResultState {
   }
 }
 
+private struct InstantTranslatedLiveComputation {
+  var queryKey: String?
+  var operations: [InstantTripleOperation]
+  var queryResultReplacement: InstantLiveQueryResultReplacement?
+}
+
 enum InstantLiveRefreshTranslator {
   static func translate(
     _ refreshOK: InstantLiveRefreshOK,
@@ -110,8 +116,8 @@ enum InstantLiveRefreshTranslator {
       existingAttributes: existingAttributes,
       serverAttributes: serverAttributes
     )
-    var translatedOperations: [InstantTripleOperation] = []
-    var queryResultReplacements: [InstantLiveQueryResultReplacement] = []
+    var translatedComputations: [InstantTranslatedLiveComputation] = []
+    var finalComputationIndexByQueryKey: [String: Int] = [:]
     for computation in refreshOK.computations {
       let computationOperations = try operations(
         from: computation,
@@ -119,25 +125,47 @@ enum InstantLiveRefreshTranslator {
         defaultTxTime: receivedAt,
         attributes: attributeContext
       )
-      translatedOperations.append(contentsOf: computationOperations)
+      var queryKey: String?
+      var queryResultReplacement: InstantLiveQueryResultReplacement?
       if let query = computation.objectValue?["instaql-query"] {
         let key = try InstantLiveQueryEncoder.registrationKey(for: query)
-        queryResultReplacements.append(
-          InstantLiveQueryResultReplacement(
-            key: key,
-            triples: computationOperations.compactMap {
-              guard case let .insert(triple) = $0 else { return nil }
-              return triple
-            },
-            pageInfo: try pageInfo(
-              from: computation,
-              query: query,
-              attributes: attributeContext
-            )
+        queryKey = key
+        queryResultReplacement = InstantLiveQueryResultReplacement(
+          key: key,
+          triples: computationOperations.compactMap {
+            guard case let .insert(triple) = $0 else { return nil }
+            return triple
+          },
+          pageInfo: try pageInfo(
+            from: computation,
+            query: query,
+            attributes: attributeContext
           )
         )
       }
+      let computationIndex = translatedComputations.count
+      translatedComputations.append(
+        InstantTranslatedLiveComputation(
+          queryKey: queryKey,
+          operations: computationOperations,
+          queryResultReplacement: queryResultReplacement
+        )
+      )
+      if let queryKey {
+        finalComputationIndexByQueryKey[queryKey] = computationIndex
+      }
     }
+    let normalizedComputations = translatedComputations.enumerated().compactMap {
+      indexedComputation -> InstantTranslatedLiveComputation? in
+      let (index, computation) = indexedComputation
+      guard computation.queryKey.map({ finalComputationIndexByQueryKey[$0] == index }) ?? true
+      else { return nil }
+      return computation
+    }
+    let translatedOperations = normalizedComputations.flatMap(\.operations)
+    let queryResultReplacements = normalizedComputations.compactMap(
+      \.queryResultReplacement
+    )
 
     return InstantLiveRefreshTranslation(
       transaction: InstantStoreTransaction(id: processedTransactionID, operations: translatedOperations),

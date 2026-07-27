@@ -1211,6 +1211,178 @@ struct InstantStoreTests {
   }
 
   @Test
+  func staleLiveRefreshSaveRejectsEveryDurableComponentAtomically() async throws {
+    let cacheURL = try temporaryCacheURL()
+    let metadataKey = "sync.processed_transaction_id:stale-live-refresh"
+    let staleStore = try SQLitePersistenceStore(fileURL: cacheURL)
+    let writerStore = try SQLitePersistenceStore(fileURL: cacheURL)
+    try await staleStore.bootstrap()
+    try await writerStore.bootstrap()
+    let staleState = try await staleStore.loadState()
+    expectNoDifference(staleState.storeRevision, 0)
+    expectNoDifference(staleState.outboxRevision, 0)
+
+    let writerResult = persistedLiveTodoResult(
+      key: "query-writer",
+      entityID: "writer-todo",
+      text: "Committed writer state",
+      updatedAt: InstantTimestamp(milliseconds: 1)
+    )
+    let writerTransaction = InstantStoreTransaction(
+      id: "writer-outbox",
+      operations: writerResult.triples.map(InstantTripleOperation.insert)
+    )
+    let writerSnapshot = InstantPersistenceSnapshot(
+      store: InstantStoreSnapshot(
+        attributes: TodoExample.attributes,
+        triples: writerResult.triples
+      ),
+      outbox: [
+        PendingMutation(
+          id: writerTransaction.id,
+          createdAt: InstantTimestamp(milliseconds: 1),
+          transaction: writerTransaction
+        )
+      ]
+    )
+    let writerDidSave = try await writerStore.saveLiveRefresh(
+      writerSnapshot,
+      queryResults: [writerResult],
+      storeChanged: true,
+      outboxChanged: true,
+      metadataKey: metadataKey,
+      metadataValue: "writer-watermark",
+      metadataUpdatedAt: InstantTimestamp(milliseconds: 1),
+      expectedStoreRevision: staleState.storeRevision,
+      expectedOutboxRevision: staleState.outboxRevision
+    )
+    expectNoDifference(writerDidSave, true)
+
+    let committedReopen = try SQLitePersistenceStore(fileURL: cacheURL)
+    try await committedReopen.bootstrap()
+    let committedState = try await committedReopen.loadState()
+    expectNoDifference(committedState.storeRevision, 1)
+    expectNoDifference(committedState.outboxRevision, 1)
+    let committedWatermark = try await committedReopen.loadMetadataValue(key: metadataKey)
+    expectNoDifference(committedWatermark, "writer-watermark")
+    expectNoDifference(
+      try liveQueryOwnershipCounts(at: cacheURL),
+      LiveQueryOwnershipCounts(resultRows: 1, tripleRows: 4)
+    )
+
+    let rejectedResult = persistedLiveTodoResult(
+      key: "query-rejected",
+      entityID: "rejected-todo",
+      text: "Must never become durable",
+      updatedAt: InstantTimestamp(milliseconds: 2)
+    )
+    let rejectedTransaction = InstantStoreTransaction(
+      id: "rejected-outbox",
+      operations: rejectedResult.triples.map(InstantTripleOperation.insert)
+    )
+    let rejectedSnapshot = InstantPersistenceSnapshot(
+      store: InstantStoreSnapshot(
+        attributes: TodoExample.attributes,
+        triples: rejectedResult.triples
+      ),
+      outbox: [
+        PendingMutation(
+          id: rejectedTransaction.id,
+          createdAt: InstantTimestamp(milliseconds: 2),
+          transaction: rejectedTransaction
+        )
+      ]
+    )
+    let staleDidSave = try await staleStore.saveLiveRefresh(
+      rejectedSnapshot,
+      queryResults: [rejectedResult],
+      storeChanged: true,
+      outboxChanged: true,
+      metadataKey: metadataKey,
+      metadataValue: "rejected-watermark",
+      metadataUpdatedAt: InstantTimestamp(milliseconds: 2),
+      expectedStoreRevision: staleState.storeRevision,
+      expectedOutboxRevision: staleState.outboxRevision
+    )
+    expectNoDifference(staleDidSave, false)
+
+    let staleReload = try await staleStore.loadStateWithSource()
+    expectNoDifference(staleReload.source, .sqlite)
+    expectNoDifference(staleReload.state, committedState)
+    let cachedReload = try await staleStore.loadStateWithSource()
+    expectNoDifference(cachedReload.source, .memory)
+    expectNoDifference(cachedReload.state, committedState)
+
+    let finalReopen = try SQLitePersistenceStore(fileURL: cacheURL)
+    try await finalReopen.bootstrap()
+    let finalState = try await finalReopen.loadState()
+    expectNoDifference(finalState, committedState)
+    let finalWriterResult = try #require(
+      try await finalReopen.liveQueryResult(key: writerResult.key)
+    )
+    expectNoDifference(finalWriterResult, writerResult)
+    #expect(try await finalReopen.liveQueryResult(key: rejectedResult.key) == nil)
+    let finalWatermark = try await finalReopen.loadMetadataValue(key: metadataKey)
+    expectNoDifference(finalWatermark, "writer-watermark")
+    expectNoDifference(
+      try liveQueryOwnershipCounts(at: cacheURL),
+      LiveQueryOwnershipCounts(resultRows: 1, tripleRows: 4)
+    )
+  }
+
+  @Test
+  func liveQueryOwnershipMigrationDoesNotClaimLegacyGlobalTriples() async throws {
+    let cacheURL = try temporaryCacheURL()
+    let legacyResult = persistedLiveTodoResult(
+      key: "legacy-unowned-query",
+      entityID: "legacy-unowned-todo",
+      text: "Predates ownership metadata",
+      updatedAt: InstantTimestamp(milliseconds: 1)
+    )
+    let legacyStore = try SQLitePersistenceStore(fileURL: cacheURL)
+    try await legacyStore.bootstrap()
+    try await legacyStore.saveStoreSnapshot(
+      InstantStoreSnapshot(
+        attributes: TodoExample.attributes,
+        triples: legacyResult.triples
+      )
+    )
+    await legacyStore.simulateUnexpectedConnectionCloseForTesting()
+    try removeLiveQueryOwnershipSchemaForMigrationTest(at: cacheURL)
+
+    let migratedStore = try SQLitePersistenceStore(fileURL: cacheURL)
+    try await migratedStore.bootstrap()
+    let migratedState = try await migratedStore.loadState()
+
+    expectNoDifference(
+      Set(migratedState.snapshot.store.attributes),
+      Set(TodoExample.attributes)
+    )
+    expectNoDifference(
+      Set(migratedState.snapshot.store.triples),
+      Set(legacyResult.triples)
+    )
+    expectNoDifference(
+      try liveQueryOwnershipCounts(at: cacheURL),
+      LiveQueryOwnershipCounts(resultRows: 0, tripleRows: 0)
+    )
+    #expect(try await migratedStore.liveQueryResult(key: legacyResult.key) == nil)
+    let legacyRetractions = try await migratedStore.liveQueryReplacementRetractions(
+      for: [
+        InstantLiveQueryResultReplacement(
+          key: legacyResult.key,
+          triples: [],
+          pageInfo: nil
+        )
+      ]
+    )
+    expectNoDifference(
+      legacyRetractions,
+      []
+    )
+  }
+
+  @Test
   func liveQueryResultPruningBoundsUnloadedKeysAtUpstreamMaximum() async throws {
     let cacheURL = try temporaryCacheURL()
     let store = try SQLitePersistenceStore(fileURL: cacheURL)
@@ -1483,6 +1655,125 @@ struct InstantStoreTests {
     expectNoDifference(application.result.remainingQueryKeys, [result.key])
     let snapshots = try await runtime.query(TodoExample.query)
     expectNoDifference(try TodoExample.decode(snapshots).map(\.text), ["Pending optimistic text"])
+  }
+
+  @Test
+  func liveQueryResultPruningPreservesConfirmedMutationUntilServerWatermarkArrives() async throws {
+    let cacheURL = try temporaryCacheURL()
+    let persistence = try SQLitePersistenceStore(fileURL: cacheURL)
+    try await persistence.bootstrap()
+    let result = persistedLiveTodoResult(
+      key: "query-confirmed-not-watermarked",
+      entityID: "confirmed-not-watermarked-todo",
+      text: "Server baseline",
+      updatedAt: InstantTimestamp(milliseconds: 1)
+    )
+    var mutation = PendingMutation(
+      id: "confirmed-not-watermarked",
+      createdAt: InstantTimestamp(milliseconds: 2),
+      transaction: InstantStoreTransaction(
+        id: "confirmed-not-watermarked",
+        operations: TodoExample.updateTextOperations(
+          id: "confirmed-not-watermarked-todo",
+          text: "Confirmed transport result awaiting refresh",
+          updatedAt: InstantTimestamp(milliseconds: 2),
+          transactionID: "confirmed-not-watermarked"
+        )
+      ),
+      status: .confirmed
+    )
+    mutation.serverTransactionID = "server-confirmed-not-watermarked"
+    let didSave = try await persistence.saveLiveRefresh(
+      InstantPersistenceSnapshot(
+        store: InstantStoreSnapshot(
+          attributes: TodoExample.attributes,
+          triples: result.triples
+        ),
+        outbox: [mutation]
+      ),
+      queryResults: [result],
+      storeChanged: true,
+      outboxChanged: true,
+      metadataKey: "sync.processed_transaction_id:confirmed-not-watermarked",
+      metadataValue: "earlier-server-transaction",
+      metadataUpdatedAt: InstantTimestamp(milliseconds: 2),
+      expectedStoreRevision: 0,
+      expectedOutboxRevision: 0
+    )
+    expectNoDifference(didSave, true)
+
+    let application = try await persistence.pruneLiveQueryResults(
+      policy: InstantLiveQueryResultPruningPolicy(maxEntries: 0),
+      now: InstantTimestamp(milliseconds: 3)
+    )
+
+    expectNoDifference(application.result.removedQueryKeys, [])
+    expectNoDifference(application.result.remainingQueryKeys, [result.key])
+    expectNoDifference(application.state.snapshot.store.triples, result.triples)
+  }
+
+  @Test
+  func liveQueryResultPruningPreservesAllBaselinesForLookupDependentMutation() async throws {
+    let cacheURL = try temporaryCacheURL()
+    let persistence = try SQLitePersistenceStore(fileURL: cacheURL)
+    try await persistence.bootstrap()
+    let first = persistedLiveTodoResult(
+      key: "query-lookup-protection-first",
+      entityID: "lookup-protection-first",
+      text: "First server baseline",
+      updatedAt: InstantTimestamp(milliseconds: 1)
+    )
+    let second = persistedLiveTodoResult(
+      key: "query-lookup-protection-second",
+      entityID: "lookup-protection-second",
+      text: "Second server baseline",
+      updatedAt: InstantTimestamp(milliseconds: 2)
+    )
+    let lookup = InstantLookupRef(
+      attributeID: "todos/id",
+      value: .string("lookup-protection-first")
+    )
+    let mutation = PendingMutation(
+      id: "lookup-dependent-mutation",
+      createdAt: InstantTimestamp(milliseconds: 3),
+      transaction: InstantStoreTransaction(
+        id: "lookup-dependent-mutation",
+        operations: [.deleteEntityByLookup(lookup)]
+      )
+    )
+    let didSave = try await persistence.saveLiveRefresh(
+      InstantPersistenceSnapshot(
+        store: InstantStoreSnapshot(
+          attributes: TodoExample.attributes,
+          triples: first.triples + second.triples
+        ),
+        outbox: [mutation]
+      ),
+      queryResults: [first, second],
+      storeChanged: true,
+      outboxChanged: true,
+      metadataKey: "test.lookup-dependent-live-query-protection",
+      metadataValue: "seeded",
+      metadataUpdatedAt: InstantTimestamp(milliseconds: 3),
+      expectedStoreRevision: 0,
+      expectedOutboxRevision: 0
+    )
+    expectNoDifference(didSave, true)
+
+    let application = try await persistence.pruneLiveQueryResults(
+      policy: InstantLiveQueryResultPruningPolicy(maxEntries: 0),
+      now: InstantTimestamp(milliseconds: 4)
+    )
+
+    expectNoDifference(application.result.removedQueryKeys, [])
+    expectNoDifference(
+      application.result.remainingQueryKeys,
+      [first.key, second.key]
+    )
+    expectNoDifference(
+      Set(application.state.snapshot.store.triples),
+      Set(first.triples + second.triples)
+    )
   }
 
   @Test
@@ -18178,6 +18469,98 @@ struct InstantStoreTests {
     )
   }
 
+  private func liveQueryOwnershipCounts(at url: URL) throws -> LiveQueryOwnershipCounts {
+    try withLiveQueryOwnershipDatabase(
+      at: url,
+      flags: SQLITE_OPEN_READONLY | SQLITE_OPEN_FULLMUTEX
+    ) { connection in
+      var statement: OpaquePointer?
+      guard sqlite3_prepare_v2(
+        connection,
+        """
+        SELECT
+          (SELECT COUNT(*) FROM instant_live_query_results),
+          (SELECT COUNT(*) FROM instant_live_query_triples)
+        """,
+        -1,
+        &statement,
+        nil
+      ) == SQLITE_OK,
+        sqlite3_step(statement) == SQLITE_ROW
+      else {
+        defer { sqlite3_finalize(statement) }
+        throw InstantError(
+          code: .persistenceFailed,
+          operation: "read live query ownership counts",
+          message: String(cString: sqlite3_errmsg(connection)),
+          recovery: "Check the temporary test database."
+        )
+      }
+      defer { sqlite3_finalize(statement) }
+      return LiveQueryOwnershipCounts(
+        resultRows: sqlite3_column_int64(statement, 0),
+        tripleRows: sqlite3_column_int64(statement, 1)
+      )
+    }
+  }
+
+  private func removeLiveQueryOwnershipSchemaForMigrationTest(at url: URL) throws {
+    try withLiveQueryOwnershipDatabase(
+      at: url,
+      flags: SQLITE_OPEN_READWRITE | SQLITE_OPEN_FULLMUTEX
+    ) { connection in
+      var errorMessage: UnsafeMutablePointer<CChar>?
+      guard sqlite3_exec(
+        connection,
+        """
+        PRAGMA foreign_keys = OFF;
+        DELETE FROM instant_schema_migrations
+        WHERE name = '0011_live_query_result_ownership';
+        DROP TABLE instant_live_query_triples;
+        DROP TABLE instant_live_query_results;
+        PRAGMA foreign_keys = ON;
+        """,
+        nil,
+        nil,
+        &errorMessage
+      ) == SQLITE_OK
+      else {
+        let message = errorMessage.map { String(cString: $0) }
+          ?? String(cString: sqlite3_errmsg(connection))
+        sqlite3_free(errorMessage)
+        throw InstantError(
+          code: .persistenceFailed,
+          operation: "restore pre-0011 live query schema",
+          message: message,
+          recovery: "Check the temporary test database."
+        )
+      }
+    }
+  }
+
+  private func withLiveQueryOwnershipDatabase<Result>(
+    at url: URL,
+    flags: Int32,
+    _ operation: (OpaquePointer) throws -> Result
+  ) throws -> Result {
+    var connection: OpaquePointer?
+    guard sqlite3_open_v2(url.path, &connection, flags, nil) == SQLITE_OK,
+      let connection
+    else {
+      defer { sqlite3_close(connection) }
+      throw InstantError(
+        code: .persistenceFailed,
+        operation: "open live query ownership test database",
+        message: connection.map { String(cString: sqlite3_errmsg($0)) }
+          ?? "SQLite could not open \(url.path).",
+        recovery: "Check the temporary test database."
+      )
+    }
+    defer { sqlite3_close(connection) }
+    sqlite3_busy_timeout(connection, 10_000)
+    return try operation(connection)
+  }
+
   private func encodedQueryCacheByteCount(_ entry: InstantCachedQuery) throws -> Int {
     let encoder = JSONEncoder()
     encoder.outputFormatting = [.sortedKeys]
@@ -18564,6 +18947,11 @@ private struct LegacyCachedQuery: Encodable, Sendable {
   var emission: InstantQueryEmission
   var updatedAt: InstantTimestamp
   var storeRevision: Int64
+}
+
+private struct LiveQueryOwnershipCounts: Equatable {
+  var resultRows: Int64
+  var tripleRows: Int64
 }
 
 private actor MutationTransportRecorder {

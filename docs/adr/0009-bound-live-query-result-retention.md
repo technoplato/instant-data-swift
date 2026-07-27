@@ -34,7 +34,10 @@ live-result writes.
 
 Retention follows these rules:
 
-1. Every currently registered live query key is protected.
+1. Every currently registered live query key is protected. Local observer setup
+   and live-session registration share the same operation gate as pruning, so a
+   key cannot become active after the protection snapshot but before SQLite
+   collection and in-memory store replacement finish.
 2. Reference-counted query cancellation unloads in-memory page information
    only after the final observer leaves; the durable result remains cached.
 3. A query result containing an entity touched by a pending optimistic
@@ -84,5 +87,8 @@ baseline beneath a pending strict update; and prove final observer
 unsubscription makes the durable result and its four newly orphaned triples
 collectable. They also prove bootstrap and write-cadence collection, plus final
 semantic-identity collection when the current materialization has newer
-transaction metadata than the removed result. The store, live-transport, and
-parity suites cover the surrounding persistence and lifecycle behavior.
+transaction metadata than the removed result. A deterministic interleaving
+test pauses pruning after its active-key snapshot, starts a live observation,
+and proves observer setup waits for collection and store replacement before it
+can register or emit. The store, live-transport, and parity suites cover the
+surrounding persistence and lifecycle behavior.

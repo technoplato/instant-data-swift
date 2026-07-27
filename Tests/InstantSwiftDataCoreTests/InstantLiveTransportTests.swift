@@ -1659,6 +1659,7 @@ struct InstantLiveTransportTests {
       appID: "runtime-live-page-info",
       persistenceURL: cacheURL,
       initialAttributes: TodoExample.attributes,
+      now: { InstantTimestamp(milliseconds: createdAt.milliseconds + 2) },
       liveTransport: session.transport
     )
     configuration.autoConnectLiveTransport = true
@@ -1700,6 +1701,26 @@ struct InstantLiveTransportTests {
     )
     await session.waitForSentMessageCount(3)
     _ = try await runtime.closeConnection()
+
+    let relaunchedSession = InstantRuntimeScriptedLiveSession(messages: [
+      liveReactorInitOK(
+        attrs: liveReactorTodoServerAttrs,
+        sessionID: "runtime-live-page-info-relaunch"
+      ),
+      .addQueryExists(clientEventID: "event-query-relaunch", query: query),
+    ])
+    configuration.liveTransport = relaunchedSession.transport
+    let relaunched = try await InstantRuntime.bootstrap(configuration: configuration)
+    _ = try await relaunched.connect()
+    let relaunchedEmission = try await relaunched.queryOnce(plan)
+
+    expectNoDifference(relaunchedEmission.pageInfo, emission.pageInfo)
+    expectNoDifference(
+      relaunchedEmission.pageInfo?.endCursor?.liveTuple,
+      cursor
+    )
+    await relaunchedSession.waitForSentMessageCount(3)
+    _ = try await relaunched.closeConnection()
   }
 
   @Test
@@ -2406,6 +2427,90 @@ struct InstantLiveTransportTests {
       try await relaunched.persistence.liveQueryResult(key: registrationKey)
     )
     expectNoDifference(persistedReplacement.triples, [])
+
+    let thirdRuntime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "live-query-result-relaunch",
+        persistenceURL: cacheURL,
+        initialAttributes: TodoExample.attributes,
+        now: { InstantTimestamp(milliseconds: createdAt.milliseconds + 2) }
+      )
+    )
+    let thirdSnapshots = try await thirdRuntime.query(TodoExample.query)
+    expectNoDifference(thirdSnapshots, [])
+    let thirdPersistedResult = try #require(
+      try await thirdRuntime.persistence.liveQueryResult(key: registrationKey)
+    )
+    expectNoDifference(thirdPersistedResult.triples, [])
+    let thirdSyncState = try await thirdRuntime.syncState()
+    expectNoDifference(thirdSyncState.processedTransactionID, "server-live-query-result-empty")
+  }
+
+  @Test
+  func duplicateCanonicalLiveComputationsUseOnlyTheFinalResult() async throws {
+    let cacheURL = try temporaryLiveCacheURL()
+    let createdAt = InstantTimestamp(milliseconds: 1_700_000_000_321)
+    let query: InstantLiveJSONValue = .object([
+      TodoExample.namespace: .object([
+        "$": .object([
+          "where": .object(["isCompleted": .bool(false)])
+        ])
+      ])
+    ])
+    let refresh = InstantLiveRefreshOK(
+      clientEventID: "event-duplicate-canonical-query",
+      processedTransactionID: "server-duplicate-canonical-query",
+      attrs: .todoServerAttrs,
+      computations: [
+        .todoJoinRowsComputation(
+          query: query,
+          entityID: "duplicate-canonical-todo",
+          text: "Earlier result must not leak",
+          isCompleted: false,
+          createdAt: createdAt,
+          processedTransactionID: "server-duplicate-canonical-query"
+        ),
+        .todoEmptyJoinRowsComputation(query: query),
+      ]
+    )
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "duplicate-canonical-live-computations",
+        persistenceURL: cacheURL,
+        initialAttributes: TodoExample.attributes,
+        now: { InstantTimestamp(milliseconds: createdAt.milliseconds + 1) }
+      )
+    )
+
+    let result = try await runtime.applyLiveRefresh(
+      refresh,
+      receivedAt: createdAt
+    )
+
+    expectNoDifference(result.insertedTripleCount, 0)
+    expectNoDifference(result.transaction.operations, [])
+    let snapshots = try await runtime.query(TodoExample.query)
+    expectNoDifference(snapshots, [])
+    let registrationKey = try InstantLiveQueryEncoder.registrationKey(for: query)
+    let persistedResult = try #require(
+      try await runtime.persistence.liveQueryResult(key: registrationKey)
+    )
+    expectNoDifference(persistedResult.triples, [])
+
+    let reopened = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "duplicate-canonical-live-computations",
+        persistenceURL: cacheURL,
+        initialAttributes: TodoExample.attributes,
+        now: { InstantTimestamp(milliseconds: createdAt.milliseconds + 1) }
+      )
+    )
+    let reopenedSnapshots = try await reopened.query(TodoExample.query)
+    expectNoDifference(reopenedSnapshots, [])
+    let reopenedPersistedResult = try #require(
+      try await reopened.persistence.liveQueryResult(key: registrationKey)
+    )
+    expectNoDifference(reopenedPersistedResult.triples, [])
   }
 
   @Test
@@ -2556,6 +2661,85 @@ struct InstantLiveTransportTests {
   }
 
   @Test
+  func liveQueryRegistrationCannotEnterBetweenPruneSnapshotAndStoreReplacement() async throws {
+    let cacheURL = try temporaryLiveCacheURL()
+    let createdAt = InstantTimestamp(milliseconds: 1_700_000_000_900)
+    let query = try InstantLiveQueryEncoder.encode(TodoExample.query)
+    let registrationKey = try InstantLiveQueryEncoder.registrationKey(for: query)
+    let barrier = InstantLiveQueryPruneBarrier()
+    let recorder = InstantActorHopRecorder()
+    var configuration = InstantRuntimeConfiguration(
+      appID: "live-query-prune-registration-serialization",
+      persistenceURL: cacheURL,
+      initialAttributes: TodoExample.attributes,
+      now: { InstantTimestamp(milliseconds: createdAt.milliseconds + 1) },
+      liveTransport: .local
+    )
+    configuration.actorHopRecorder = recorder
+    configuration.liveQueryResultPruningPolicy = InstantLiveQueryResultPruningPolicy(
+      maxEntries: 0
+    )
+    configuration.liveQueryResultPruningWriteInterval = 100
+    configuration.onLiveQueryResultPruneActiveKeysCapturedForTesting = { keys in
+      await barrier.pauseAfterCapture(keys)
+    }
+    let runtime = try await InstantRuntime.bootstrap(configuration: configuration)
+    _ = try await runtime.applyLiveRefresh(
+      InstantLiveRefreshOK(
+        clientEventID: "event-prune-registration-race",
+        processedTransactionID: "server-prune-registration-race",
+        attrs: .todoServerAttrs,
+        computations: [
+          .todoJoinRowsComputation(
+            query: query,
+            entityID: "prune-registration-race-todo",
+            text: "Must not emit before a racing prune finishes",
+            isCompleted: false,
+            createdAt: createdAt,
+            processedTransactionID: "server-prune-registration-race"
+          )
+        ]
+      ),
+      receivedAt: createdAt
+    )
+    #expect(try await runtime.persistence.liveQueryResult(key: registrationKey) != nil)
+
+    await barrier.arm()
+    let actorHopBaseline = recorder.baseline()
+    let prune = Task {
+      try await runtime.pruneLiveQueryResults(
+        policy: InstantLiveQueryResultPruningPolicy(maxEntries: 0),
+        now: InstantTimestamp(milliseconds: createdAt.milliseconds + 1)
+      )
+    }
+    let capturedKeys = await barrier.waitForCapture()
+    expectNoDifference(capturedKeys, [])
+
+    let observation = Task {
+      await runtime.observe(TodoExample.query)
+    }
+    let registrationWaitedAtGate = await waitForOperationGateHopCount(
+      2,
+      recorder: recorder,
+      since: actorHopBaseline
+    )
+    #expect(
+      registrationWaitedAtGate,
+      "The live registration must queue behind the prune operation gate."
+    )
+    await barrier.release()
+
+    let pruneResult = try await prune.value
+    expectNoDifference(pruneResult.removedQueryKeys, [registrationKey])
+    expectNoDifference(pruneResult.removedOrphanedTripleCount, 4)
+    let stream = await observation.value
+    var iterator = stream.makeAsyncIterator()
+    let firstEmission = try #require(await iterator.next())
+    expectNoDifference(firstEmission.values, [])
+    #expect(try await runtime.persistence.liveQueryResult(key: registrationKey) == nil)
+  }
+
+  @Test
   func liveQueryRetentionPrunesUnloadedResultOnConfiguredWriteCadence() async throws {
     let cacheURL = try temporaryLiveCacheURL()
     let firstTimestamp = InstantTimestamp(milliseconds: 1_700_000_001_000)
@@ -2613,14 +2797,89 @@ struct InstantLiveTransportTests {
   }
 
   @Test
+  func liveQueryRetentionUsesTheDefaultSixtyFourthWriteCadence() async throws {
+    let cacheURL = try temporaryLiveCacheURL()
+    let baseTimestamp = InstantTimestamp(milliseconds: 1_700_000_002_000)
+    var configuration = InstantRuntimeConfiguration(
+      appID: "live-query-default-write-cadence",
+      persistenceURL: cacheURL,
+      initialAttributes: TodoExample.attributes,
+      now: { InstantTimestamp(milliseconds: baseTimestamp.milliseconds + 64) }
+    )
+    configuration.liveQueryResultPruningPolicy = InstantLiveQueryResultPruningPolicy(
+      maxEntries: 63
+    )
+    let runtime = try await InstantRuntime.bootstrap(configuration: configuration)
+    var keys: [String] = []
+
+    for index in 0..<64 {
+      let entityID = String(format: "default-cadence-%02d", index)
+      let timestamp = InstantTimestamp(milliseconds: baseTimestamp.milliseconds + Int64(index))
+      let query: InstantLiveJSONValue = .object([
+        TodoExample.namespace: .object([
+          "$": .object(["where": .object(["id": .string(entityID)])])
+        ])
+      ])
+      keys.append(try InstantLiveQueryEncoder.registrationKey(for: query))
+      _ = try await runtime.applyLiveRefresh(
+        InstantLiveRefreshOK(
+          clientEventID: "event-\(entityID)",
+          processedTransactionID: "server-\(entityID)",
+          attrs: .todoServerAttrs,
+          computations: [
+            .todoJoinRowsComputation(
+              query: query,
+              entityID: entityID,
+              text: entityID,
+              isCompleted: false,
+              createdAt: timestamp,
+              processedTransactionID: "server-\(entityID)"
+            )
+          ]
+        ),
+        receivedAt: timestamp
+      )
+      if index == 62 {
+        #expect(try await runtime.persistence.liveQueryResult(key: keys[0]) != nil)
+      }
+    }
+
+    #expect(try await runtime.persistence.liveQueryResult(key: keys[0]) == nil)
+    #expect(try await runtime.persistence.liveQueryResult(key: keys[63]) != nil)
+    let remaining = try await TodoExample.decode(runtime.query(TodoExample.query))
+    expectNoDifference(
+      remaining.map(\.id),
+      (1..<64).map { String(format: "default-cadence-%02d", $0) }
+    )
+  }
+
+  @Test
   func liveQueryRetentionPrunesPersistedResultsDuringBootstrap() async throws {
     let cacheURL = try temporaryLiveCacheURL()
     let persistence = try SQLitePersistenceStore(fileURL: cacheURL)
     try await persistence.bootstrap()
+    let olderTriples: [InstantTriple] = TodoExample.createOperations(
+      id: "bootstrap-retention-older",
+      text: "Collected during bootstrap",
+      createdAt: InstantTimestamp(milliseconds: 1),
+      transactionID: "server-bootstrap-retention-older"
+    ).compactMap { operation -> InstantTriple? in
+      guard case let .insert(triple) = operation else { return nil }
+      return triple
+    }
+    let newerTriples: [InstantTriple] = TodoExample.createOperations(
+      id: "bootstrap-retention-newer",
+      text: "Retained during bootstrap",
+      createdAt: InstantTimestamp(milliseconds: 2),
+      transactionID: "server-bootstrap-retention-newer"
+    ).compactMap { operation -> InstantTriple? in
+      guard case let .insert(triple) = operation else { return nil }
+      return triple
+    }
     let older = InstantPersistedLiveQueryResult(
       replacement: InstantLiveQueryResultReplacement(
         key: "bootstrap-retention-older",
-        triples: [],
+        triples: olderTriples,
         pageInfo: nil
       ),
       updatedAt: InstantTimestamp(milliseconds: 1)
@@ -2628,16 +2887,21 @@ struct InstantLiveTransportTests {
     let newer = InstantPersistedLiveQueryResult(
       replacement: InstantLiveQueryResultReplacement(
         key: "bootstrap-retention-newer",
-        triples: [],
+        triples: newerTriples,
         pageInfo: nil
       ),
       updatedAt: InstantTimestamp(milliseconds: 2)
     )
     let state = try await persistence.loadState()
     let didSave = try await persistence.saveLiveRefresh(
-      state.snapshot,
+      InstantPersistenceSnapshot(
+        store: InstantStoreSnapshot(
+          attributes: TodoExample.attributes,
+          triples: olderTriples + newerTriples
+        )
+      ),
       queryResults: [older, newer],
-      storeChanged: false,
+      storeChanged: true,
       outboxChanged: false,
       metadataKey: "test.live-query-result-bootstrap-pruning",
       metadataValue: "seeded",
@@ -2660,6 +2924,18 @@ struct InstantLiveTransportTests {
 
     #expect(try await runtime.persistence.liveQueryResult(key: older.key) == nil)
     #expect(try await runtime.persistence.liveQueryResult(key: newer.key) != nil)
+    let bootstrapSnapshots = try await runtime.query(TodoExample.query)
+    expectNoDifference(
+      try TodoExample.decode(bootstrapSnapshots).map(\.id),
+      ["bootstrap-retention-newer"]
+    )
+    let independentReopen = try SQLitePersistenceStore(fileURL: cacheURL)
+    try await independentReopen.bootstrap()
+    let independentState = try await independentReopen.loadState()
+    expectNoDifference(
+      Set(independentState.snapshot.store.triples),
+      Set(newerTriples)
+    )
   }
 
   @Test
@@ -3397,6 +3673,54 @@ private final class InstantLiveEvidenceRecorder: @unchecked Sendable {
     defer { lock.unlock() }
     return recordedRows
   }
+}
+
+private actor InstantLiveQueryPruneBarrier {
+  private var isArmed = false
+  private var capturedKeys: Set<String>?
+  private var captureWaiter: CheckedContinuation<Set<String>, Never>?
+  private var releaseWaiter: CheckedContinuation<Void, Never>?
+
+  func arm() {
+    isArmed = true
+  }
+
+  func pauseAfterCapture(_ keys: Set<String>) async {
+    guard isArmed else { return }
+    capturedKeys = keys
+    captureWaiter?.resume(returning: keys)
+    captureWaiter = nil
+    await withCheckedContinuation { continuation in
+      releaseWaiter = continuation
+    }
+  }
+
+  func waitForCapture() async -> Set<String> {
+    if let capturedKeys { return capturedKeys }
+    return await withCheckedContinuation { continuation in
+      captureWaiter = continuation
+    }
+  }
+
+  func release() {
+    isArmed = false
+    releaseWaiter?.resume()
+    releaseWaiter = nil
+  }
+}
+
+private func waitForOperationGateHopCount(
+  _ count: Int,
+  recorder: InstantActorHopRecorder,
+  since baseline: InstantActorHopBaseline
+) async -> Bool {
+  for _ in 0..<1_000 {
+    if recorder.summary(since: baseline).breakdown["operation-gate", default: 0] >= count {
+      return true
+    }
+    await Task.yield()
+  }
+  return recorder.summary(since: baseline).breakdown["operation-gate", default: 0] >= count
 }
 
 private func temporaryLiveCacheURL() throws -> URL {
