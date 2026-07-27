@@ -6,6 +6,15 @@ commit SHA, and high-level reason. Changelog-only bookkeeping commits are
 visible in Git history but are not self-recorded because a commit cannot
 contain its own final SHA.
 
+## July 27, 2026 at 12:55:33 PM EDT
+
+- Repository: `realtime-voice-sqlite-instant` (Scribe)
+- Commit: `0c71d6e4b2c7266d42ba508d5377ee0184aa0617`
+- High-level reason: Bound diagnostic action-key extraction to known TCA enum
+  wrappers so payload cases cannot replace the real leaf action or trigger an
+  unbounded CustomDump traversal; refresh the committed heart-rate snapshot and
+  restore the 466-test Scribe suite.
+
 ## July 27, 2026 at 12:39:15 PM EDT
 
 - Repository: `instant-data-swift`
