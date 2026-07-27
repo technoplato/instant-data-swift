@@ -326,6 +326,19 @@ struct TypedAPITests {
   }
 
   @Test
+  func defaultInstantIDUsesDependencyControlledUUID() {
+    let fixedUUID = UUID(uuidString: "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE")!
+
+    withDependencies {
+      $0.uuid = .constant(fixedUUID)
+    } operation: {
+      let id = InstantID<TypedTodo>()
+
+      expectNoDifference(id.rawValue, "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee")
+    }
+  }
+
+  @Test
   func instantEntityMacroGeneratedSchemaHelpersDriveTypedAPI() async throws {
     let dueAt = Date(timeIntervalSince1970: 1_700_000_123)
     let todoID = InstantID<MacroGeneratedTodo>(rawValue: "macro-generated-todo")

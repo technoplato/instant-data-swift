@@ -2,6 +2,13 @@ import Dependencies
 import Foundation
 import InstantSwiftDataCore
 
+extension InstantID {
+  public init() {
+    @Dependency(\.uuid) var uuid
+    self.init(rawValue: uuid().uuidString.lowercased())
+  }
+}
+
 public protocol InstantValueRepresentable: Sendable {
   var instantValue: InstantValue { get }
 }
