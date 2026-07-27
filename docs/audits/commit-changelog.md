@@ -6,6 +6,14 @@ commit SHA, and high-level reason. Changelog-only bookkeeping commits are
 visible in Git history but are not self-recorded because a commit cannot
 contain its own final SHA.
 
+## July 27, 2026 at 10:40:47 AM EDT
+
+- Repository: `instant-data-swift`
+- Commit: `c399e0080ac882c641d032fc2d661bb7a088c8dd`
+- High-level reason: Reconcile the final audit with the Watch probe's
+  recording-compatible asynchronous activation policy and the authoritative
+  Scribe package, performance-safety, and artifact-sanitization evidence.
+
 ## July 27, 2026 at 10:40:18 AM EDT
 
 - Repository: `instant-data-swift`
