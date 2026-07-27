@@ -6,6 +6,27 @@ commit SHA, and high-level reason. Changelog-only bookkeeping commits are
 visible in Git history but are not self-recorded because a commit cannot
 contain its own final SHA.
 
+## July 27, 2026 at 8:22:56 AM EDT
+
+- Repository: `realtime-voice-sqlite-instant` (Scribe)
+- Commit: `4755a03f48778aa3dcfdfadbcad38c1793d2c8e2`
+- High-level reason: Establish shared commit discipline in Scribe so parallel
+  work is staged deliberately, journaled centrally, and handed off cleanly.
+
+## July 27, 2026 at 8:22:28 AM EDT
+
+- Repository: `realtime-voice-sqlite-instant` (Scribe)
+- Commit: `0e22a68a9440a3db68a46be45723bc1a08a223be`
+- High-level reason: Preserve the existing parallel Watch companion auth,
+  speech relay, wire-format, test, and session-record work before auditing it.
+
+## July 27, 2026 at 8:21:39 AM EDT
+
+- Repository: `instant-data-swift`
+- Commit: `52cf4bcf7783146402a0c600c9ef256e12580beb`
+- High-level reason: Establish the cross-repository commit journal and require
+  small verified commits plus clean parallel-agent handoffs.
+
 ## July 27, 2026 at 8:20:35 AM EDT
 
 - Repository: `instant-data-swift`
