@@ -44,6 +44,8 @@ public struct InstantStartupStopwatch: Sendable {
 ///
 /// Live traces emit unified-log events and feed the existing structured Instant diagnostics sink. A
 /// custom recorder can be supplied in tests or performance harnesses without changing app features.
+// SAFETY: Immutable stored properties and the Sendable recorder closure make concurrent access safe;
+// no actor or lock is required after initialization.
 public final class InstantStartupTrace: @unchecked Sendable {
   public let id: String
 

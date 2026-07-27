@@ -2447,7 +2447,18 @@ public final class InstantRuntime: Sendable {
     for mutation in mutations.sorted(by: PendingMutation.creationOrder)
     where mutation.status == .pending
       || (mutation.status == .confirmed && mutation.serverTransactionID != nil) {
-      let operations = mutation.transaction.operations.filter(\.isRebasedLocalWrite)
+      let newestServerTimestamp = preparedRebase.indexes.triples
+        .lazy
+        .map(\.txTime.milliseconds)
+        .max() ?? 0
+      let optimisticTimestamp = InstantTimestamp(
+        milliseconds: newestServerTimestamp == Int64.max
+          ? newestServerTimestamp
+          : newestServerTimestamp + 1
+      )
+      let operations = mutation.transaction.operations
+        .filter(\.isRebasedLocalWrite)
+        .map { $0.rebased(at: optimisticTimestamp) }
       guard !operations.isEmpty else { continue }
       preparedRebase = try await store.prepare(
         InstantStoreTransaction(id: mutation.transaction.id, operations: operations),
@@ -7487,6 +7498,58 @@ private extension InstantTripleOperation {
       .requireTripleExists,
       .ruleParams, .ruleParamsByLookup:
       return false
+    }
+  }
+
+  func rebased(at timestamp: InstantTimestamp) -> Self {
+    switch self {
+    case var .merge(triple):
+      triple.txTime = timestamp
+      return .merge(triple)
+
+    case let .mergeByLookup(entity, attributeID, value, txID, _):
+      return .mergeByLookup(
+        entity: entity,
+        attributeID: attributeID,
+        value: value,
+        txID: txID,
+        txTime: timestamp
+      )
+
+    case var .insert(triple):
+      triple.txTime = timestamp
+      return .insert(triple)
+
+    case let .insertByLookup(entity, attributeID, value, txID, _):
+      return .insertByLookup(
+        entity: entity,
+        attributeID: attributeID,
+        value: value,
+        txID: txID,
+        txTime: timestamp
+      )
+
+    case var .retract(triple):
+      triple.txTime = timestamp
+      return .retract(triple)
+
+    case let .retractByLookup(entity, attributeID, value, txID, _):
+      return .retractByLookup(
+        entity: entity,
+        attributeID: attributeID,
+        value: value,
+        txID: txID,
+        txTime: timestamp
+      )
+
+    case .deleteEntity, .deleteEntityInNamespace, .deleteEntityByLookup:
+      return self
+
+    case .requireEntityMissing, .requireEntityMissingByLookup,
+      .requireEntityExists, .requireEntityExistsByLookup,
+      .requireTripleExists,
+      .ruleParams, .ruleParamsByLookup:
+      return self
     }
   }
 }
