@@ -4,6 +4,27 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## July 27th, 2026 at 1:42:56 p.m. EDT — `e228326c4059` Wait for server-acknowledged mutations
+
+- **Implementation commit:** `e228326c4059227aa0171495cbe902110ebcf9c5`
+- **Change:** Wait for server-acknowledged mutations
+- **Details:**
+  - Add an explicit live delivery boundary that waits for the durable outbox to empty through server acknowledgements, reconnects a closed client, reports live connection errors, honors cancellation, and times out without invoking the separately injected local flush transport.
+  - Replay pending mutations in creation order and retain an older cardinality-one write while a queued successor writes the same entity and attribute, preserving valid full upserts without allowing isolated stale retries to overwrite newer visible state.
+  - Verify three focused delivery tests, the causal outbox regression, 28 macro XCTest tests, 1,220 Swift Testing tests across 103 suites, and a live four-lane Swift-writer matrix in which both TypeScript and Swift observers received all five rows within the two-second budget.
+- **Files:**
+  - `Sources/InstantSwiftData/InstantSwiftData.swift` — Expose the bounded server-acknowledgement waiter without locally confirming the outbox.
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — Preserve causally required pending writes while retaining stale-write filtering after successor acknowledgement.
+  - `Tests/InstantSwiftDataCoreTests/InstantLiveTransportTests.swift` — Prove queued-successor preservation and isolated stale retry filtering.
+  - `Tests/InstantSwiftDataTests/MutationDeliveryTests.swift` — Prove acknowledgement polling, reconnect, timeout, and no local flush.
+  - `docs/adr/0010-wait-for-server-acknowledged-mutations.md` — Record the local-first durability boundary, replay decision, and live latency evidence.
+- **User context (verbatim):**
+  > IMMEDIATE writes locally
+  > low latency remote reads
+  > upstream mirroring of reactor
+  > ensure that all the test suite still passes.
+- **SpecStory:** unavailable — Codex desktop goal task; no durable SpecStory CLI capture URI is available.
+
 ## July 27th, 2026 at 1:05:29 p.m. EDT — `82b74dd2267d` Harden durable live query refreshes
 
 - **Implementation commit:** `82b74dd2267d325c500852cb43a850d1c5783172`
