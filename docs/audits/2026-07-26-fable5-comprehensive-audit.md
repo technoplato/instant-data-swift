@@ -84,6 +84,10 @@ persisted artifacts outrank code reading whenever they disagree.
 - 2026-07-27 — Closed the remaining off-main pasteboard crash seam in Scribe.
   Commit `7f4ce7e` makes `ClipboardClient.currentContent` async, performs live
   reads through `MainActor.run`, and adds a focused compile-enforced test.
+- 2026-07-27 — Wired persisted query-cache pruning into the production
+  one-shot materialization path in `c0a0304`. Active observation keys and the
+  completing query remain protected; unloaded rows are bounded by the
+  Reactor-compatible age, entry-count, and adapted encoded-size policy.
 - 2026-07-26 — Committed baselines in both repos (`f70044d`, `4d30691`).
   Confirmed no secrets in diffs (only env-var names/test fixtures; API keys go
   through KeychainClient).
@@ -106,7 +110,7 @@ Severity: P0 correctness/data-loss, P1 behavior/perf, P2 ergonomics, P3 polish.
 | S-C3/C4 | P1 | Open | Commits re-materialize unrelated observers, while infinite observations remove limits before client-side windowing. |
 | S-C5 | P1 | Open | Live one-shot queries can wait ten seconds and fail despite valid local state; the fix must preserve ordinary query APIs or use an injected local-only client, never public `queryLocal`. |
 | S-C6/C7 | P1/P2 | Open | Microphone PCM and Watch relay timing collections need explicit bounds and drop diagnostics. |
-| R-A8 | P2 | Open | Global triples and per-query tracking lack a complete garbage-collection policy. |
+| R-A8 | P2 | Partial `c0a0304` | Persisted per-query results are now pruned in production while active observations remain protected; global triple retention still needs a separate reachability policy. |
 | API-B1/B2/B3 | P2 | Proposed | Generate or centralize entity snapshot decoding and whole-model upserts to remove repeated stringly application boilerplate. |
 | API-B5/B6/B7 | P2 | Proposed | Complete dynamic fetch parity and expose library-owned decoded/composite observation for TCA and actor consumers. |
 | API-B8/B10/B13 | P2 | Proposed | Add dependency-controlled IDs, faceted clients, DocC, and unified fetch status without broadening the application/library sync boundary. |

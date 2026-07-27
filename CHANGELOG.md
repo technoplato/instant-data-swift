@@ -4,6 +4,21 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## July 27th, 2026 at 9:56:00 a.m. EDT — `c0a030425a31` Prune persisted query cache automatically
+
+- **Implementation commit:** `c0a030425a3191d600649fd8e69740d32ff21f7c`
+- **Change:** Apply the Reactor query-subscription retention policy on production one-shot cache writes
+- **Details:**
+  - Enforce the upstream one-year, 1,000-entry, and adapted one-megabyte encoded-row limits after successful query materialization.
+  - Preserve cache keys owned by active store observations and the query that just completed, then emit structured diagnostics for pruning work or failures without discarding a valid query result.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — Invoke bounded cache retention after successful one-shot persistence.
+  - `Sources/InstantSwiftDataCore/InstantStore.swift` — Expose the active observation cache-key set to the runtime.
+  - `Tests/InstantSwiftDataCoreTests/InstantStoreTests.swift` — Prove active observations remain protected and become reclaimable after cancellation.
+- **User context (verbatim):**
+  > implement and verify prioritized performance ... and Instant Reactor ... improvements
+- **SpecStory:** unavailable — Codex desktop sessions are not supported by the documented SpecStory CLI capture workflow, so no durable session URI is available.
+
 ## July 27th, 2026 at 9:48:11 a.m. EDT — `7ec460ab9d76` Add typed snapshot value decoding
 
 - **Implementation commit:** `7ec460ab9d76362209c8a5b0e76e9664a6740cfb`
