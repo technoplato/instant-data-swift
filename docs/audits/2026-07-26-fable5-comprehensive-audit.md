@@ -69,6 +69,20 @@ persisted artifacts outrank code reading whenever they disagree.
 
 ## Progress log
 
+- 2026-07-27 at 2:13:24 PM EDT — Repeated the final physical acceptance gate
+  from clean Scribe commit `ffec2a52403d857f3d8d504e27ca5bd422878619`
+  with embedded `dirty=false` provenance generated at 2:03:47 PM EDT. The
+  paired Series 9 reported Developer Mode enabled, DDI services available, and
+  a connected tunnel. A serialized physical `ScribeSharedWatch` build compiled
+  the iOS app, iOS widget, ReplayKit broadcast upload extension, Watch app, and
+  Watch widget and resolved their development provisioning profiles. All five
+  products then failed exclusively at private-key use with
+  `errSecInternalComponent`; `security show-keychain-info` independently
+  reported `User interaction is not allowed`. The protected Instant observer's
+  newest 200 rows ended at 9:43:00 AM EDT on older clean commit `a1b1f1a` and
+  contained zero rows from `ffec2a5`, so there is no current-head remote runtime
+  evidence to substitute for installation. No current-head bundle was signed,
+  installed, launched, or exercised.
 - 2026-07-27 — Closed deterministic short-lived writer data loss in
   `e228326` and adopted the boundary in Scribe `30068d5`. The default injected
   flush transport is local, so the former Scribe waiter could confirm and
