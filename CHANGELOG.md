@@ -4,6 +4,20 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## July 27th, 2026 at 9:12:06 a.m. EDT — `ac10cb376523` Reference-count live room joins
+
+- **Implementation commit:** `ac10cb37652315a4d81d488de1848ebd2cc8af9d`
+- **Change:** Keep shared Reactor rooms joined until their final observer leaves
+- **Details:**
+  - Count local observers for each room registration instead of treating every leave as final.
+  - Send `leave-room` only when the last local observer departs, preserving the shared subscription for remaining observers.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantReactorParity.swift` — Track room observer counts and remove registrations only at zero.
+  - `Tests/InstantSwiftDataCoreTests/InstantReactorParityTests.swift` — Prove that duplicate joins require matching leaves before a server leave is sent.
+- **User context (verbatim):**
+  > maintain a human-readable timestamped commit audit journal and clean worktrees
+- **SpecStory:** unavailable — Codex desktop sessions are not supported by the documented SpecStory CLI capture workflow, so no durable session URI is available.
+
 ## July 27th, 2026 at 9:09:40 a.m. EDT — `2739e7e52982` Isolate automatic fetch generations
 
 - **Implementation commit:** `2739e7e5298215af04768d2b2ddcf6c1f0340b62`
