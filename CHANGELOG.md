@@ -4,6 +4,32 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## July 27th, 2026 at 10:35:33 a.m. EDT — `a4245d762055` Allow nonblocking cookie sync under suite load
+
+- **Implementation commit:** `a4245d7620552df9aa272b22d8a6eca82f1ca9eb`
+- **Change:** Allow nonblocking cookie sync under suite load
+- **Details:**
+  - Wait against a five-second monotonic deadline instead of one hundred scheduler-dependent sleeps for deliberately nonblocking utility-priority startup cookie sync.
+  - Keep the production task off the bootstrap critical path while making parity assertions resilient under the full parallel suite.
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantCookieSyncParityTests.swift` — Use an elapsed-time deadline for asynchronous cookie-sync evidence.
+- **User context (verbatim):**
+  > ensure that all the test suite still passes.
+- **SpecStory:** unavailable — Codex desktop sessions are not supported by the documented SpecStory CLI capture workflow, so no durable session URI is available.
+
+## July 27th, 2026 at 10:35:29 a.m. EDT — `af4a545cd73c` Wait for composite fetch observations
+
+- **Implementation commit:** `af4a545cd73c74750107520fe590eac98af92f73`
+- **Change:** Wait for composite fetch observations
+- **Details:**
+  - Wait for all four automatic composite observations with the existing bounded typed-condition helper before asserting recorder totals.
+  - Keep dynamic load values, exact query plans, and exact query and observation counts covered without sampling asynchronous registration prematurely.
+- **Files:**
+  - `Tests/InstantSwiftDataTests/TypedAPITests.swift` — Make the composite observation-count assertion deterministic under the full parallel suite.
+- **User context (verbatim):**
+  > with focused tests and passing full test suites.
+- **SpecStory:** unavailable — Codex desktop task; no durable SpecStory CLI capture URI is available.
+
 ## July 27th, 2026 at 10:27:04 a.m. EDT — `b6f72262a5dd` Stabilize live transport bootstrap expectation
 
 - **Implementation commit:** `b6f72262a5dd662dc2f17b6ce10442f669dcc0d5`

@@ -14,6 +14,14 @@ contain its own final SHA.
   recording-compatible default route policy while retaining asynchronous
   activation required before opening its Deepgram WebSocket.
 
+## July 27, 2026 at 10:30:34 AM EDT
+
+- Repository: `instant-data-swift`
+- Commit: `af4a545cd73c74750107520fe590eac98af92f73`
+- High-level reason: Wait for all automatic composite-fetch observations with
+  a bounded condition before asserting recorder totals, preserving exact
+  observation coverage without sampling asynchronous task registration.
+
 ## July 27, 2026 at 10:29:38 AM EDT
 
 - Repository: `realtime-voice-sqlite-instant` (Scribe)
