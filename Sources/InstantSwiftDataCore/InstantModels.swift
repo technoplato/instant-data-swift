@@ -955,6 +955,7 @@ public struct InstantQueryCursor: Hashable, Codable, Sendable {
   public var entityID: String
   public var sortValue: InstantValue?
   public var inclusive: Bool
+  var liveTuple: [InstantLiveJSONValue]?
 
   public init(entityID: String, sortValue: InstantValue? = nil, inclusive: Bool = false) {
     precondition(
@@ -964,6 +965,27 @@ public struct InstantQueryCursor: Hashable, Codable, Sendable {
     self.entityID = entityID
     self.sortValue = sortValue
     self.inclusive = inclusive
+    self.liveTuple = nil
+  }
+
+  init(
+    entityID: String,
+    sortValue: InstantValue?,
+    inclusive: Bool,
+    liveTuple: [InstantLiveJSONValue]
+  ) {
+    precondition(
+      !entityID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+      "InstantQueryCursor entityID must not be empty."
+    )
+    precondition(
+      liveTuple.count == 4,
+      "Canonical Instant live cursors must contain exactly four values."
+    )
+    self.entityID = entityID
+    self.sortValue = sortValue
+    self.inclusive = inclusive
+    self.liveTuple = liveTuple
   }
 }
 

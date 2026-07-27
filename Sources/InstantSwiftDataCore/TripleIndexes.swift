@@ -995,7 +995,10 @@ struct TripleIndexes: Hashable, Codable, Sendable {
       }
       returnedPageInfo = pageInfo
 
-    case .some(.ready(_)), .some(.waiting), .none:
+    case let .ready(pageInfo)?:
+      returnedPageInfo = pageInfo
+
+    case .some(.waiting), .none:
       break
     }
 

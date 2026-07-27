@@ -1589,6 +1589,170 @@ struct InstantLiveTransportTests {
   }
 
   @Test
+  func runtimeLiveQueryOncePreservesOpaqueServerPageInfoCursor() async throws {
+    let createdAt = InstantTimestamp(milliseconds: 1_700_000_000_123)
+    let plan = InstantQueryPlan(
+      id: "runtime-live-page-info",
+      namespace: TodoExample.namespace,
+      order: InstantQueryOrder("createdAt"),
+      limit: 1
+    )
+    let query = try InstantLiveQueryEncoder.encode(plan)
+    let cursor: [InstantLiveJSONValue] = [
+      .string("todo-live-page-info"),
+      .string("server-todos-created-at"),
+      .number(Double(createdAt.milliseconds)),
+      .number(Double(createdAt.milliseconds)),
+    ]
+    var result = liveReactorTodoQueryResult(
+      id: "todo-live-page-info",
+      text: "Preserve opaque cursor",
+      createdAt: createdAt
+    )
+    guard case var .object(node) = result[0],
+      case var .object(data)? = node["data"]
+    else {
+      Issue.record("Expected canonical live query result data.")
+      return
+    }
+    data["page-info"] = .object([
+      TodoExample.namespace: .object([
+        "start-cursor": .array(cursor),
+        "end-cursor": .array(cursor),
+        "has-next-page?": .bool(true),
+        "has-previous-page?": .bool(false),
+      ])
+    ])
+    node["data"] = .object(data)
+    result[0] = .object(node)
+    let translated = try InstantLiveRefreshTranslator.translate(
+      InstantLiveRefreshOK(
+        clientEventID: nil,
+        processedTransactionID: "live-page-info-translation",
+        attrs: liveReactorTodoServerAttrs,
+        computations: [
+          .object([
+            "instaql-query": query,
+            "instaql-result": .array(result),
+          ])
+        ]
+      ),
+      existingAttributes: TodoExample.attributes,
+      receivedAt: createdAt
+    )
+    let translatedPageInfo = try #require(
+      translated.queryResultReplacements.first?.pageInfo
+    )
+    expectNoDifference(translatedPageInfo.hasNextPage, true)
+    expectNoDifference(translatedPageInfo.endCursor?.entityID, "todo-live-page-info")
+
+    let session = InstantRuntimeScriptedLiveSession(messages: [
+      liveReactorInitOK(attrs: liveReactorTodoServerAttrs),
+      liveReactorAddQueryOK(
+        query: query,
+        processedTransactionID: "live-page-info-1",
+        result: result
+      ),
+    ])
+    var configuration = InstantRuntimeConfiguration(
+      appID: "runtime-live-page-info",
+      persistenceURL: try temporaryLiveCacheURL(),
+      initialAttributes: TodoExample.attributes,
+      liveTransport: session.transport
+    )
+    configuration.autoConnectLiveTransport = true
+    let runtime = try await InstantRuntime.bootstrap(configuration: configuration)
+
+    let emission = try await runtime.queryOnce(plan)
+    let endCursor = try #require(emission.pageInfo?.endCursor)
+
+    expectNoDifference(emission.pageInfo?.hasNextPage, true)
+    expectNoDifference(endCursor.entityID, "todo-live-page-info")
+    expectNoDifference(
+      endCursor.sortValue,
+      .date(Date(timeIntervalSince1970: Double(createdAt.milliseconds) / 1_000))
+    )
+    expectNoDifference(
+      try InstantLiveQueryEncoder.encode(
+        InstantQueryPlan(
+          id: "runtime-live-page-info-next",
+          namespace: TodoExample.namespace,
+          order: InstantQueryOrder("createdAt"),
+          limit: 1,
+          after: endCursor
+        )
+      ),
+      .object([
+        TodoExample.namespace: .object([
+          "$": .object([
+            "after": .array(cursor),
+            "limit": .number(1),
+            "order": .object(["createdAt": .string("asc")]),
+          ])
+        ])
+      ])
+    )
+    await session.waitForSentMessageCount(3)
+    _ = try await runtime.closeConnection()
+  }
+
+  @Test
+  func liveQueryEncoderRoundTripsOpaqueInclusiveCursors() throws {
+    let tuple: [InstantLiveJSONValue] = [
+      .string("todo-live-page-info"),
+      .string("server-todos-created-at"),
+      .number(1_700_000_000_123),
+      .number(1_700_000_000_123),
+    ]
+    let cursor = InstantQueryCursor(
+      entityID: "todo-live-page-info",
+      sortValue: .date(Date(timeIntervalSince1970: 1_700_000_000.123)),
+      inclusive: true,
+      liveTuple: tuple
+    )
+    let roundTripped = try JSONDecoder().decode(
+      InstantQueryCursor.self,
+      from: JSONEncoder().encode(cursor)
+    )
+
+    expectNoDifference(roundTripped, cursor)
+    expectNoDifference(
+      try InstantLiveQueryEncoder.encode(
+        InstantQueryPlan(
+          id: "runtime-live-page-info-after-inclusive",
+          namespace: TodoExample.namespace,
+          after: roundTripped
+        )
+      ),
+      .object([
+        TodoExample.namespace: .object([
+          "$": .object([
+            "after": .array(tuple),
+            "afterInclusive": .bool(true),
+          ])
+        ])
+      ])
+    )
+    expectNoDifference(
+      try InstantLiveQueryEncoder.encode(
+        InstantQueryPlan(
+          id: "runtime-live-page-info-before-inclusive",
+          namespace: TodoExample.namespace,
+          before: roundTripped
+        )
+      ),
+      .object([
+        TodoExample.namespace: .object([
+          "$": .object([
+            "before": .array(tuple),
+            "beforeInclusive": .bool(true),
+          ])
+        ])
+      ])
+    )
+  }
+
+  @Test
   func runtimeLiveSessionSendsAndConfirmsDurableOutboxMutation() async throws {
     let session = InstantRuntimeScriptedLiveSession(messages: [
       .initOK(clientEventID: "event-init", attrs: .todoServerAttrs)

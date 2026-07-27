@@ -2922,7 +2922,11 @@ public final class InstantRuntime: Sendable {
       await recordConnectionError(error)
       throw error
     }
-    return try await materializeLocalQueryOnce(plan)
+    let pageInfo = await liveQueryResultState.pageInfo(for: registrationKey)
+    return try await materializeLocalQueryOnce(
+      plan,
+      remotePageInfo: pageInfo.map(InstantQueryRemotePageInfo.ready)
+    )
   }
 
   package func queryLocally(_ plan: InstantQueryPlan) async throws -> InstantQueryEmission {
@@ -2931,7 +2935,8 @@ public final class InstantRuntime: Sendable {
 
   private func materializeLocalQueryOnce(
     _ plan: InstantQueryPlan,
-    enforcesConnectionFreshness: Bool = true
+    enforcesConnectionFreshness: Bool = true,
+    remotePageInfo: InstantQueryRemotePageInfo? = nil
   ) async throws
     -> InstantQueryEmission
   {
@@ -2988,7 +2993,7 @@ public final class InstantRuntime: Sendable {
         recordActorHop(.store)
         await store.replaceSnapshot(state.snapshot.store)
         recordActorHop(.store)
-        let emission = await store.materializeEmission(plan)
+        let emission = await store.materializeEmission(plan, remotePageInfo: remotePageInfo)
         recordActorHop(.persistence)
         let didSave = try await persistence.saveQueryCache(
           InstantCachedQuery(

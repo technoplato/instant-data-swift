@@ -33,6 +33,7 @@ struct InstantLiveRefreshTranslation: Sendable {
 struct InstantLiveQueryResultReplacement: Sendable {
   var key: String
   var triples: [InstantTriple]
+  var pageInfo: InstantQueryPageInfo?
 }
 
 private struct InstantLiveTripleIdentity: Hashable, Sendable {
@@ -49,6 +50,7 @@ private struct InstantLiveTripleIdentity: Hashable, Sendable {
 
 actor InstantLiveQueryResultState {
   private var triplesByQuery: [String: [InstantLiveTripleIdentity: InstantTriple]] = [:]
+  private var pageInfoByQuery: [String: InstantQueryPageInfo] = [:]
 
   func replacementRetractions(
     for replacements: [InstantLiveQueryResultReplacement]
@@ -78,7 +80,12 @@ actor InstantLiveQueryResultState {
   func record(_ replacements: [InstantLiveQueryResultReplacement]) {
     for replacement in replacements {
       triplesByQuery[replacement.key] = Self.index(replacement.triples)
+      pageInfoByQuery[replacement.key] = replacement.pageInfo
     }
+  }
+
+  func pageInfo(for key: String) -> InstantQueryPageInfo? {
+    pageInfoByQuery[key]
   }
 
   private static func index(
@@ -124,7 +131,12 @@ enum InstantLiveRefreshTranslator {
             triples: computationOperations.compactMap {
               guard case let .insert(triple) = $0 else { return nil }
               return triple
-            }
+            },
+            pageInfo: try pageInfo(
+              from: computation,
+              query: query,
+              attributes: attributeContext
+            )
           )
         )
       }
@@ -136,6 +148,76 @@ enum InstantLiveRefreshTranslator {
       confirmationMutationID: confirmationMutationID,
       attributesToMerge: attributeContext.attributesToMerge,
       queryResultReplacements: queryResultReplacements
+    )
+  }
+
+  private static func pageInfo(
+    from computation: InstantLiveJSONValue,
+    query: InstantLiveJSONValue,
+    attributes: InstantLiveRefreshAttributeContext
+  ) throws -> InstantQueryPageInfo? {
+    guard let namespace = query.objectValue?.keys.sorted().first,
+      let result = computation.objectValue?["instaql-result"]?.arrayValue?.first,
+      let rawPageInfo = result.objectValue?["data"]?.objectValue?["page-info"]
+    else {
+      return nil
+    }
+    guard let pageInfoByNamespace = rawPageInfo.objectValue else {
+      throw decodeError(message: "Expected live query page-info to be an object.")
+    }
+    guard let rawNamespacePageInfo = pageInfoByNamespace[namespace] else {
+      return nil
+    }
+    if case .null = rawNamespacePageInfo {
+      return nil
+    }
+    guard let namespacePageInfo = rawNamespacePageInfo.objectValue else {
+      throw decodeError(
+        message: "Expected live query page-info for namespace '\(namespace)' to be an object."
+      )
+    }
+    return InstantQueryPageInfo(
+      startCursor: try cursor(
+        from: namespacePageInfo["start-cursor"],
+        namespace: namespace,
+        attributes: attributes
+      ),
+      endCursor: try cursor(
+        from: namespacePageInfo["end-cursor"],
+        namespace: namespace,
+        attributes: attributes
+      ),
+      hasPreviousPage: namespacePageInfo["has-previous-page?"]?.boolValue ?? false,
+      hasNextPage: namespacePageInfo["has-next-page?"]?.boolValue ?? false
+    )
+  }
+
+  private static func cursor(
+    from value: InstantLiveJSONValue?,
+    namespace: String,
+    attributes: InstantLiveRefreshAttributeContext
+  ) throws -> InstantQueryCursor? {
+    guard let value else { return nil }
+    if case .null = value { return nil }
+    guard let tuple = value.arrayValue, tuple.count == 4,
+      let entityID = tuple[0].stringValue,
+      !entityID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+      let serverAttributeID = tuple[1].stringValue
+    else {
+      throw decodeError(
+        message:
+          "Expected live query cursor for namespace '\(namespace)' to be an opaque "
+          + "[entity-id, attribute-id, value, tx-time] tuple."
+      )
+    }
+    let localAttributeID = attributes.localAttributeID(forServerAttributeID: serverAttributeID)
+    let attribute = attributes.attribute(forLocalAttributeID: localAttributeID)
+      ?? attributes.attribute(forServerAttributeID: serverAttributeID)
+    return InstantQueryCursor(
+      entityID: entityID,
+      sortValue: try instantValue(from: tuple[2], attribute: attribute),
+      inclusive: false,
+      liveTuple: tuple
     )
   }
 

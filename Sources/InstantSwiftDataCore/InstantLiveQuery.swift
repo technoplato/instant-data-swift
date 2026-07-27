@@ -96,16 +96,6 @@ enum InstantLiveQueryEncoder {
     before: InstantQueryCursor?,
     selectedFields: [String]?
   ) throws -> [String: InstantLiveJSONValue] {
-    if after != nil || before != nil {
-      throw validationError(
-        namespace: namespace,
-        path: after != nil ? "after" : "before",
-        message:
-          "Canonical Instant cursors are opaque four-element tuples and cannot be reconstructed "
-          + "from InstantQueryCursor. Preserve the server cursor before running this query live."
-      )
-    }
-
     var options: [String: InstantLiveJSONValue] = [:]
     if !filters.isEmpty {
       options["where"] = try whereValue(filters, namespace: namespace)
@@ -124,13 +114,44 @@ enum InstantLiveQueryEncoder {
     if let first {
       options["first"] = .number(Double(first))
     }
+    if let after {
+      guard let liveTuple = after.liveTuple else {
+        throw opaqueCursorValidationError(namespace: namespace, path: "after")
+      }
+      options["after"] = .array(liveTuple)
+      if after.inclusive {
+        options["afterInclusive"] = .bool(true)
+      }
+    }
     if let last {
       options["last"] = .number(Double(last))
+    }
+    if let before {
+      guard let liveTuple = before.liveTuple else {
+        throw opaqueCursorValidationError(namespace: namespace, path: "before")
+      }
+      options["before"] = .array(liveTuple)
+      if before.inclusive {
+        options["beforeInclusive"] = .bool(true)
+      }
     }
     if let selectedFields {
       options["fields"] = .array(selectedFields.map(InstantLiveJSONValue.string))
     }
     return options
+  }
+
+  private static func opaqueCursorValidationError(
+    namespace: String,
+    path: String
+  ) -> InstantError {
+    validationError(
+      namespace: namespace,
+      path: path,
+      message:
+        "Canonical Instant cursors are opaque four-element tuples and cannot be reconstructed "
+        + "from InstantQueryCursor. Preserve the server cursor before running this query live."
+    )
   }
 
   private static func whereValue(
