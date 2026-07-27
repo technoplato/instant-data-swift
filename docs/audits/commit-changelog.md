@@ -6,6 +6,15 @@ commit SHA, and high-level reason. Changelog-only bookkeeping commits are
 visible in Git history but are not self-recorded because a commit cannot
 contain its own final SHA.
 
+## July 27, 2026 at 12:39:15 PM EDT
+
+- Repository: `instant-data-swift`
+- Commit: `5f75dc984510e26fc80502b8550bee33b525e397`
+- High-level reason: Apply Reactor-aligned age, entry, and owned-triple bounds
+  to durable live query results; preserve active and optimistic owners; and
+  transactionally collect only global triples whose final semantic owner is
+  gone.
+
 ## July 27, 2026 at 12:28:17 PM EDT
 
 - Repository: `realtime-voice-sqlite-instant` (Scribe)

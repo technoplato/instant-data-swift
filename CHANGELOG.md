@@ -4,6 +4,30 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## July 27th, 2026 at 12:39:13 p.m. EDT — `5f75dc984510` Bound live query result retention
+
+- **Implementation commit:** `5f75dc984510e26fc80502b8550bee33b525e397`
+- **Change:** Bound live query result retention
+- **Details:**
+  - Apply Reactor querySubs retention defaults of 52 weeks, 1,000 unloaded results, and 1,000,000 owned triples at bootstrap and on a bounded write cadence.
+  - Protect active registrations and mutation baselines, unload only after the final observer, and collect global triples only after the final semantic owner disappears.
+  - Verify bootstrap, cadence, strict-age, entry-budget, triple-budget, shared-owner, optimistic-write, relaunch, and newer-transaction-metadata cases; the 439-test store, live, and parity selection passes.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — Enforce retention during bootstrap and live writes while reference-counting active registrations.
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — Prune durable ownership transactionally and collect newly orphaned global triples.
+  - `Sources/InstantSwiftDataCore/InstantLiveRefreshApplication.swift` — Unload in-memory page information with the final live observer.
+  - `Sources/InstantSwiftDataCore/InstantParityCoverage.swift` — Map bounded live ownership to upstream PersistedObject garbage-collection cases.
+  - `Tests/InstantSwiftDataCoreTests/InstantStoreTests.swift` — Prove retention budgets, strict age, shared ownership, mutation protection, and semantic-identity collection.
+  - `Tests/InstantSwiftDataCoreTests/InstantLiveTransportTests.swift` — Prove active registration, cancellation, cadence, bootstrap, and relaunch behavior.
+  - `Tests/InstantSwiftDataCoreTests/BenchmarkTests.swift` — Pin the added bootstrap persistence hop.
+  - `Tests/InstantSwiftDataCoreTests/InstantStoreParityTests.swift` — Verify the updated upstream parity provenance.
+  - `docs/adr/0009-bound-live-query-result-retention.md` — Record the accepted ownership-retention and reachability policy.
+- **User context (verbatim):**
+  > Store/query tracking lacks sufficient garbage collection.
+  > upstream mirroring of reactor
+  > ensure that all the test suite still passes.
+- **SpecStory:** unavailable — Codex desktop goal task; no durable SpecStory CLI capture URI is available.
+
 ## July 27th, 2026 at 12:10:17 p.m. EDT — `f9c5e9f12fc3` Persist live query result ownership
 
 - **Implementation commit:** `f9c5e9f12fc34435659c6a7c6a6ca4fec1b248e5`
