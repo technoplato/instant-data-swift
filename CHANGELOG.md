@@ -4,6 +4,21 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## July 27th, 2026 at 4:06:35 p.m. EDT — `c0514a7c3dff` Avoid sorting snapshots during live mutation rebases
+
+- **Implementation commit:** `c0514a7c3dff580766b6bc689271f5c8c1a7d571`
+- **Change:** Avoid full snapshot sorting during each optimistic live-data rebase
+- **Details:**
+  - Scan the nested triple index linearly for the newest transaction timestamp, preserving deterministic snapshot ordering only for callers that actually request a snapshot. This removes the repeated sort/comparable-key hot path captured simultaneously on iPhone and Apple Watch.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — Uses the linear newest-timestamp scan while rebasing optimistic mutations.
+  - `Sources/InstantSwiftDataCore/TripleIndexes.swift` — Adds the scan and avoids temporary sort-key arrays for deterministic snapshots.
+  - `Tests/InstantSwiftDataCoreTests/InstantStoreTests.swift` — Locks newest-timestamp and snapshot-order behavior.
+- **User context (verbatim):**
+  > the recording froze
+  > I don't think they're syncing properly.
+- **SpecStory:** unavailable — Codex desktop task; no verified SpecStory GUI capture URI is available.
+
 ## July 27th, 2026 at 2:14:06 p.m. EDT — `442dc5e9182c` Record repeated signing acceptance boundary
 
 - **Implementation commit:** `442dc5e9182c98f9c3af6ac88d410f956d9aa084`

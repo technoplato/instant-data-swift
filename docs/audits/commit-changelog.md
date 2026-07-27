@@ -6,6 +6,14 @@ commit SHA, and high-level reason. Changelog-only bookkeeping commits are
 visible in Git history but are not self-recorded because a commit cannot
 contain its own final SHA.
 
+## July 27, 2026 at 4:06:21 PM EDT
+
+- Repository: `instant-data-swift`
+- Commit: `c0514a7c3dff580766b6bc689271f5c8c1a7d571`
+- High-level reason: Remove repeated full-snapshot sorting from optimistic
+  live-data rebases after physical iPhone and Apple Watch CPU reports
+  identified it as the shared recording-freeze hot path.
+
 ## July 27, 2026 at 2:14:01 PM EDT
 
 - Repository: `instant-data-swift`
