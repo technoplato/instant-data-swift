@@ -4,6 +4,21 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## July 27th, 2026 at 9:48:11 a.m. EDT — `7ec460ab9d76` Add typed snapshot value decoding
+
+- **Implementation commit:** `7ec460ab9d76362209c8a5b0e76e9664a6740cfb`
+- **Change:** Decode cardinality-one snapshot fields through schema-owned typed attribute paths
+- **Details:**
+  - Add `InstantEntitySnapshot.value(_:)` for values that are both Instant-representable and decodable.
+  - Preserve precise diagnostics and reject attribute paths from a different entity namespace.
+- **Files:**
+  - `Sources/InstantSwiftData/InstantTypedAPI.swift` — Delegate typed snapshot access to the existing wire-value decoder.
+  - `Tests/InstantSwiftDataTests/TypedAPITests.swift` — Prove typed string, Boolean, and date decoding plus namespace rejection.
+  - `docs/adr/0003-typed-snapshot-values.md` — Record the stringly before state, typed API, scope, and consequences.
+- **User context (verbatim):**
+  > Generate or centralize entity snapshot decoding ... to remove repeated stringly application boilerplate.
+- **SpecStory:** unavailable — Codex desktop sessions are not supported by the documented SpecStory CLI capture workflow, so no durable session URI is available.
+
 ## July 27th, 2026 at 9:45:23 a.m. EDT — `d3e6e704121d` Add dependency-controlled Instant IDs
 
 - **Implementation commit:** `d3e6e704121d0c4c4431a7b346a6c1d49f6e5312`
