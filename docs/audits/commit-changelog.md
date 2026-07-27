@@ -6,6 +6,14 @@ commit SHA, and high-level reason. Changelog-only bookkeeping commits are
 visible in Git history but are not self-recorded because a commit cannot
 contain its own final SHA.
 
+## July 27, 2026 at 4:20:15 PM EDT
+
+- Repository: `realtime-voice-sqlite-instant`
+- Commit: `d20544726099fbe95c4c3332434097851ceac3e8`
+- High-level reason: Keep live Watch heart-rate samples associated with the
+  requesting iPhone recording, bound the relay, replace indefinite waiting
+  with an actionable timeout, and expose the full recovery message.
+
 ## July 27, 2026 at 4:06:21 PM EDT
 
 - Repository: `instant-data-swift`
