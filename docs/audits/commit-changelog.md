@@ -6,6 +6,15 @@ commit SHA, and high-level reason. Changelog-only bookkeeping commits are
 visible in Git history but are not self-recorded because a commit cannot
 contain its own final SHA.
 
+## July 27, 2026 at 1:55:54 PM EDT
+
+- Repository: `instant-data-swift`
+- Commit: `c211737939daaba1641dfce5b7cf700d3743778d`
+- High-level reason: Availability-gate the Duration-based live delivery waiter
+  so InstantSwiftData continues compiling for its iOS 15 and watchOS 8 package
+  deployment targets while newer Scribe targets use the explicit server-ack
+  boundary.
+
 ## July 27, 2026 at 1:43:44 PM EDT
 
 - Repository: `realtime-voice-sqlite-instant` (Scribe)

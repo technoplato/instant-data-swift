@@ -4,6 +4,20 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## July 27th, 2026 at 1:55:58 p.m. EDT — `c211737939da` Gate mutation delivery wait by platform availability
+
+- **Implementation commit:** `c211737939daaba1641dfce5b7cf700d3743778d`
+- **Change:** Gate mutation delivery wait by platform availability
+- **Details:**
+  - Mark the Duration- and ContinuousClock-based server-acknowledgement boundary available on macOS 13, iOS 16, tvOS 16, and watchOS 9 without raising InstantSwiftData's broader iOS 15 and watchOS 8 package deployment targets.
+  - Verify all three MutationDeliveryTests and a serialized unsigned Scribe physical-device scheme compile that covers the library's iOS 15 and watchOS 8 deployment contexts.
+- **Files:**
+  - `Sources/InstantSwiftData/InstantSwiftData.swift` — Preserve older-platform package compilation while exposing the acknowledgement waiter to supported application targets.
+- **User context (verbatim):**
+  > ensure that all the test suite still passes.
+  > Apple Watch
+- **SpecStory:** unavailable — Codex desktop goal task; no durable SpecStory CLI capture URI is available.
+
 ## July 27th, 2026 at 1:42:56 p.m. EDT — `e228326c4059` Wait for server-acknowledged mutations
 
 - **Implementation commit:** `e228326c4059227aa0171495cbe902110ebcf9c5`
