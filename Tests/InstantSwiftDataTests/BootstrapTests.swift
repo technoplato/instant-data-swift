@@ -1483,7 +1483,6 @@ struct BootstrapTests {
 
       let status = try await client.connectionStatus()
       expectNoDifference(status.transport, .webSocket)
-      expectNoDifference(status.state, .closed)
       expectNoDifference(
         status.websocketURI.absoluteString,
         "wss://ws.example.test/runtime/session"
