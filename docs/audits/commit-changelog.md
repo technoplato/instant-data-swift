@@ -6,6 +6,14 @@ commit SHA, and high-level reason. Changelog-only bookkeeping commits are
 visible in Git history but are not self-recorded because a commit cannot
 contain its own final SHA.
 
+## July 27, 2026 at 10:43:16 AM EDT
+
+- Repository: `realtime-voice-sqlite-instant` (Scribe)
+- Commit: `6699ea5f5ce4542d066cebbb815bf6d6b9ee4cf2`
+- High-level reason: Start the Watch probe's eight-second auto-run window only
+  after capture, WAV append, and Deepgram streaming report active, so physical
+  startup latency cannot consume the diagnostic recording window.
+
 ## July 27, 2026 at 10:40:47 AM EDT
 
 - Repository: `instant-data-swift`
