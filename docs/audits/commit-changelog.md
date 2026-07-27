@@ -6,6 +6,15 @@ commit SHA, and high-level reason. Changelog-only bookkeeping commits are
 visible in Git history but are not self-recorded because a commit cannot
 contain its own final SHA.
 
+## July 27, 2026 at 12:08:06 PM EDT
+
+- Repository: `realtime-voice-sqlite-instant` (Scribe)
+- Commit: `7db22dc7ab01f38b4c92e2dec15364fedfdca4e5`
+- High-level reason: Add strict live Apple Watch heart-rate measurement to
+  active recordings using an acknowledged WatchConnectivity control channel,
+  a HealthKit workout session, fresh-sample enforcement, and recording UI on
+  both the Watch and paired iPhone.
+
 ## July 27, 2026 at 12:01:58 PM EDT
 
 - Repository: `instant-data-swift`
