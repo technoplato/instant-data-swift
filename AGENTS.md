@@ -35,3 +35,18 @@
   tests. Distinguish deterministic local evidence, protocol/mock evidence,
   credentialed Swift/TypeScript boundary evidence, and installed-app/UI
   evidence.
+- Commit methodically in small, coherent, test-driven slices. Immediately
+  before every commit, re-check `git status`, stage only the intended paths,
+  inspect the complete staged diff, and include the high-level reason in the
+  commit message.
+- After every substantive commit in this repository or
+  `../tools/realtime-voice-sqlite-instant`, add a newest-first entry to
+  `docs/audits/commit-changelog.md` with a human-readable timestamp including
+  seconds in `America/New_York`, the repository name, the full commit SHA, and
+  the high-level reason. A changelog-only commit cannot contain its own final
+  SHA; identify that bookkeeping commit through Git history rather than a
+  self-referential entry.
+- Multiple agents may work directly on `main`. Preserve their changes, commit
+  owned work promptly, and coordinate immediately when another agent leaves
+  related work uncommitted. Keep this repository and
+  `../tools/realtime-voice-sqlite-instant` clean at handoff.
