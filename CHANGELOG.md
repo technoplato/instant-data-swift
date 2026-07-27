@@ -4,6 +4,19 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## July 27th, 2026 at 10:27:04 a.m. EDT — `b6f72262a5dd` Stabilize live transport bootstrap expectation
+
+- **Implementation commit:** `b6f72262a5dd662dc2f17b6ce10442f669dcc0d5`
+- **Change:** Stabilize live transport bootstrap expectation
+- **Details:**
+  - Stop asserting the transient pre-connect state when live transport bootstrap intentionally starts an asynchronous automatic connection.
+  - Continue proving the injected WebSocket metadata plus explicit opened and closed states through connect and close operations.
+- **Files:**
+  - `Tests/InstantSwiftDataTests/BootstrapTests.swift` — Remove the race-prone initial state assertion while retaining behavior checks.
+- **User context (verbatim):**
+  > ensure that all the test suite still passes.
+- **SpecStory:** unavailable — Codex desktop sessions are not supported by the documented SpecStory CLI capture workflow, so no durable session URI is available.
+
 ## July 27th, 2026 at 10:23:39 a.m. EDT — `b7eaceccec88` Stabilize concurrent composite fetch fixtures
 
 - **Implementation commit:** `b7eaceccec880bdfbb6b747a9c0335bae9ca509f`
