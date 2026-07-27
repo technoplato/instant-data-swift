@@ -4,6 +4,19 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## July 27th, 2026 at 2:14:06 p.m. EDT — `442dc5e9182c` Record repeated signing acceptance boundary
+
+- **Implementation commit:** `442dc5e9182c98f9c3af6ac88d410f956d9aa084`
+- **Change:** Record the repeated current-head physical signing boundary
+- **Details:**
+  - Captured a clean reproducible Scribe Watch build that compiled the iOS app, widgets, ReplayKit extension, and Watch app before every final product failed exclusively at Apple Development private-key use.
+  - Recorded that the paired Watch was development-ready while the protected Instant log window contained no current-head events, so installation and runtime evidence remain unavailable rather than inferred.
+- **Files:**
+  - `docs/audits/2026-07-26-fable5-comprehensive-audit.md` — Preserve timestamped signing, device-readiness, provenance, and remote-log acceptance evidence.
+- **User context (verbatim):**
+  > all the relevant information for reproducible logability
+- **SpecStory:** unavailable — No durable SpecStory URI is available because this work is running in Codex desktop and no captured Codex CLI session was verified.
+
 ## July 27th, 2026 at 2:00:20 p.m. EDT — `c6f8e8404831` Record final delivery and device acceptance evidence
 
 - **Implementation commit:** `c6f8e84048312857c195a1d1d9206d6bd8edfe0c`
