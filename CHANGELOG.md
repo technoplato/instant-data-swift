@@ -4,6 +4,33 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## July 27th, 2026 at 11:02:24 a.m. EDT — `865ead6e6708` Record physical Watch transcription proof
+
+- **Implementation commit:** `865ead6e670851aae223d3b61582dcbef2d9102f`
+- **Change:** Record physical Watch transcription proof and the production policy port
+- **Details:**
+  - Replace prepared-only Watch evidence with the retained complete PCM, WAV, Deepgram, and final-transcript chronology from the clean physical probe.
+  - Record production AudioCaptureClient authorization at 3fe73a0, a successful generic ScribeSharedWatch build, and the 447-test final Scribe suite.
+  - Keep production persistence, repeated cold-start reliability, signed post-port deployment, and physical ReplayKit broadcast as explicit acceptance boundaries.
+- **Files:**
+  - `docs/audits/2026-07-26-fable5-comprehensive-audit.md` — Reconcile the durable cross-repository audit with the final physical and production Watch evidence.
+- **User context (verbatim):**
+  > maintain a human-readable timestamped commit audit journal and clean worktrees
+  > Apple Watch reliability
+- **SpecStory:** unavailable — Codex desktop task; no durable SpecStory CLI capture URI is available.
+
+## July 27th, 2026 at 11:02:24 a.m. EDT — `5aa73734891a` Record final Watch and suite evidence
+
+- **Implementation commit:** `5aa73734891a439075a1a3997d03818feaed2ace`
+- **Change:** Record final Watch auto-run and 446-test suite evidence
+- **Details:**
+  - Update the audit after the active-only Watch auto-run timing fix and the final 446-test Scribe package pass.
+- **Files:**
+  - `docs/audits/2026-07-26-fable5-comprehensive-audit.md` — Preserve the then-current final Watch timing and package-suite evidence.
+- **User context (verbatim):**
+  > maintain a human-readable timestamped commit audit journal and clean worktrees
+- **SpecStory:** unavailable — Codex desktop task; no durable SpecStory CLI capture URI is available.
+
 ## July 27th, 2026 at 10:41:17 a.m. EDT — `c399e0080ac8` Reconcile final verification evidence
 
 - **Implementation commit:** `c399e0080ac882c641d032fc2d661bb7a088c8dd`
