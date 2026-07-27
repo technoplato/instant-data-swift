@@ -4,6 +4,26 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## July 27th, 2026 at 12:10:17 p.m. EDT — `f9c5e9f12fc3` Persist live query result ownership
+
+- **Implementation commit:** `f9c5e9f12fc34435659c6a7c6a6ca4fec1b248e5`
+- **Change:** Persist live query result ownership
+- **Details:**
+  - Persist canonical live query result triples and page information in normalized SQLite ownership tables, atomically with the global store, outbox reconciliation, and server checkpoint.
+  - Compute authoritative replacement retractions from durable ownership after relaunch while preserving triples still owned by another persisted query.
+  - Lazily restore persisted page information and verify the complete 57-test live transport suite plus focused relaunch, shared-owner, and cursor persistence cases.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantLiveRefreshApplication.swift` — Model deterministic persisted query results and retain only page-info memory state.
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — Recompute ownership-aware retractions per CAS attempt and commit live refresh state atomically.
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — Add the ownership schema, indexed owner lookup, and atomic live-refresh persistence.
+  - `Tests/InstantSwiftDataCoreTests/InstantLiveTransportTests.swift` — Prove relaunch retraction, shared ownership, and persisted page information.
+  - `docs/adr/0008-persist-live-query-result-ownership.md` — Record the durable ownership decision and GC boundary.
+- **User context (verbatim):**
+  > upstream mirroring of reactor
+  > IMMEDIATE writes locally
+  > low latency remote reads
+- **SpecStory:** unavailable — Codex desktop goal task; no durable SpecStory CLI capture URI is available.
+
 ## July 27th, 2026 at 12:01:54 p.m. EDT — `f6041883ed4b` Bound live infinite query subscriptions
 
 - **Implementation commit:** `f6041883ed4b5bae5324311d7c64baa279b8fcae`

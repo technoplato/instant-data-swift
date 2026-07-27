@@ -69,6 +69,15 @@ persisted artifacts outrank code reading whenever they disagree.
 
 ## Progress log
 
+- 2026-07-27 — Persisted authoritative live-query ownership in `f9c5e9f`.
+  Canonical query results and page information now update atomically with the
+  global store, outbox reconciliation, and processed server checkpoint. A
+  relaunched runtime retracts rows removed by a replacement, while the
+  normalized ownership index preserves triples still held by another durable
+  query without preloading the retained corpus. All 57 live-transport tests
+  pass, including focused relaunch, shared-owner, and persisted-cursor cases.
+  ADR 0008 records the crash-consistency boundary; bounded retention and
+  orphan-only collection remain the next R-A8 slice.
 - 2026-07-27 — Closed live infinite-query transport windowing in `f604188`.
   The live runtime now registers only a limited starter, limited forward and
   reverse chunks, or frozen inclusive cursor intervals; forward paging and
@@ -206,17 +215,18 @@ Severity: P0 correctness/data-loss, P1 behavior/perf, P2 ergonomics, P3 polish.
 | S-C3/C4 | P1 | Fixed `da5010d`, `11edea3`, `f604188` | Commits skip flat observers in untouched namespaces, canonical server page info and opaque cursors survive the live path, and live infinite queries use limited or cursor-bounded forward/reverse subscriptions with atomic observer windows. |
 | S-C5 | P1 | Fixed `21be1b8`, `760afdb`, `cb88d6c` | Scribe's local startup and capture projection loaders use a read-only facet of the already bootstrapped live runtime; live one-shot queries remain freshness-sensitive and no second SQLite runtime or public `queryLocal` was added. |
 | S-C6/C7 | P1/P2 | Fixed `e12be12`, `1d8db69` | Microphone PCM retains 256 newest buffers with drop diagnostics; Watch relay timing uses a 4,096-entry circular buffer and refuses false attribution after eviction. |
-| R-A8 | P2 | Partial `c0a0304`, `0ba57bd` | Persisted per-query results are pruned at bootstrap and every 64 successful writes while active observations remain protected; global triple retention still needs a separate reachability policy. |
+| R-A8 | P2 | Partial `c0a0304`, `0ba57bd`, `f9c5e9f` | Persisted materialized query rows have production retention, and authoritative live results now carry durable normalized triple ownership so replacements remain correct across relaunch and shared queries; applying retention to those ownership rows and collecting only newly orphaned global triples remains open. |
 | API-B1/B2/B3 | P2 | Partial `7ec460a` | Typed schema-owned snapshot decoding now removes string keys for cardinality-one values; macro-generated whole-model upserts remain a separate ergonomic follow-up. |
 | API-B5/B6/B7 | P2 | Partial `f3e9fe0` | Dynamic `FetchOne` and composite `Fetch` replacement plus decoded subscriptions already exist; direct `InstantFetchRequest` load/subscription now exposes library-owned composite observation to TCA and actors. A general composite SwiftUI modifier remains intentionally separate because request keys are not globally `Hashable`. |
 | API-B8/B10/B13 | P2 | Partial `d3e6e70`, `760afdb` | Dependency-controlled typed IDs and a read-only local client facet are implemented with ADRs; broader DocC and unified fetch-status work remain. |
 
 ## Acceptance boundaries and retained follow-ups
 
-- **Global triple reachability:** still open within `R-A8`. Persisted per-query
-  cache rows now have production retention, but deleting triples that are no
-  longer reachable from any active or cached query needs a separate ownership
-  and offline-retention policy.
+- **Global triple reachability:** partially closed within `R-A8`. Durable,
+  normalized query ownership now makes replacement and shared-owner decisions
+  correct across relaunch. Retention still needs to prune unloaded ownership
+  rows by age/count/triple budget and delete only triples newly orphaned by
+  that prune while protecting active queries and optimistic writes.
 - **Ergonomic breadth:** typed snapshot values, dependency-controlled IDs, the
   local-reader facet, and direct composite request execution are accepted,
   ADR-backed increments. Dynamic `FetchOne` and composite `Fetch` replacement
