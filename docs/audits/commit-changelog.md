@@ -6,6 +6,14 @@ commit SHA, and high-level reason. Changelog-only bookkeeping commits are
 visible in Git history but are not self-recorded because a commit cannot
 contain its own final SHA.
 
+## July 28, 2026 at 8:00:43 AM EDT
+
+- Repository: `realtime-voice-sqlite-instant` (Scribe)
+- Commit: `9ce87285f352aa467642ba94b8bb58d2399d98c4`
+- High-level reason: Add bounded transcript voice commands and a bottom-pinned
+  full-screen reader, disable all automatic heart-rate workout consumption,
+  document the guest App Clip path, and expose the supported CarPlay surfaces.
+
 ## July 27, 2026 at 8:49:00 PM EDT
 
 - Repository: `realtime-voice-sqlite-instant` (Scribe)
