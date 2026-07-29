@@ -6,6 +6,23 @@ commit SHA, and high-level reason. Changelog-only bookkeeping commits are
 visible in Git history but are not self-recorded because a commit cannot
 contain its own final SHA.
 
+## July 29, 2026 at 6:15:36 PM EDT
+
+- Repository: `realtime-voice-sqlite-instant` (Scribe)
+- Commit: `df9e06ed78e5fdb0aa2d049cc5d95d839a086f6b`
+- High-level reason: Enable installed Scribe builds to send privacy-filtered
+  diagnostics to the dedicated Instant app by default, with a durable
+  device-local Settings opt-out and live delivery gating. The shared-index
+  commit also links the concurrent issue 035 watcher work.
+
+## July 29, 2026 at 6:11:57 PM EDT
+
+- Repository: `realtime-voice-sqlite-instant` (Scribe)
+- Commit: `458e5154be773c1d411f60c88f219642b3274d58`
+- High-level reason: Create and immediately claim issue 040 as P0 before
+  implementation, with an identity-keyed recording-chat multiwindow contract
+  for iPadOS, macOS, and visionOS.
+
 ## July 29, 2026 at 6:10:43 PM EDT
 
 - Repository: `realtime-voice-sqlite-instant` (Scribe)
