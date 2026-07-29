@@ -6,6 +6,15 @@ commit SHA, and high-level reason. Changelog-only bookkeeping commits are
 visible in Git history but are not self-recorded because a commit cannot
 contain its own final SHA.
 
+## July 29, 2026 at 6:45:59 PM EDT
+
+- Repository: `realtime-voice-sqlite-instant` (Scribe)
+- Commit: `8b7f8a29e0887b011dbbf752383608283204f791`
+- High-level reason: Make physical-device signing repeatable without Xcode by
+  securely bootstrapping the isolated ScribeBuild keychain once, unlocking it
+  from an encrypted login-Keychain credential, and selecting it explicitly for
+  every deployment build.
+
 ## July 29, 2026 at 6:34:02 PM EDT
 
 - Repository: `realtime-voice-sqlite-instant` (Scribe)
