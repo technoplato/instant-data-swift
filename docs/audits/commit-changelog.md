@@ -13,6 +13,14 @@ contain its own final SHA.
 - High-level reason: Correct the public-sharing LaunchAgent to the installed
   Node path proven by a live loopback and Cloudflare-hosted health check.
 
+## July 29, 2026 at 6:10:36 PM EDT
+
+- Repository: `realtime-voice-sqlite-instant` (Scribe)
+- Commit: `5d38fbddb474e75960352a2e483c8134618e2097`
+- High-level reason: Consolidate build provenance and speech-provider controls
+  into Settings and adapt the recording surface for wide iPad layouts with
+  focused presentation and layout tests.
+
 ## July 29, 2026 at 6:08:52 PM EDT
 
 - Repository: `realtime-voice-sqlite-instant` (Scribe)
