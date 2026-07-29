@@ -11,3 +11,7 @@ validation/ts-runner/.generated/
 validation/ts-runner/.generated-contract.*/
 Examples/RecipesV3/RecipesV3.local.xcconfig
 Examples/VoiceTrailV3/VoiceTrailV3.local.xcconfig
+upstream/instant/
+upstream/instant-ios-sdk/
+upstream/sharing-instant/
+upstream/sqlite-data/
