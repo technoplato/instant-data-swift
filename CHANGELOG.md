@@ -4,6 +4,26 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## July 29th, 2026 at 1:30:30 p.m. EDT — `2b2517e25635` Make the SwiftPM package self-contained
+
+- **Implementation commit:** `2b2517e256351f7e82286424aa83b4055b7e174c`
+- **Change:** Publish a self-contained Swift package
+- **Details:**
+  - Removed all reference-only Git submodules so SwiftPM consumers fetch only the Instant Swift Data package and its declared dependencies.
+  - Kept the exact optional reference revisions in upstream documentation and added a validation gate that rejects future tracked submodules.
+- **Files:**
+  - `.gitignore` — Keep optional reference checkouts local.
+  - `.gitmodules` — Remove recursive reference-only package fetches.
+  - `upstream/README.md` — Preserve exact optional reference revisions and clone instructions.
+  - `upstream/instant` — Stop publishing the Instant reference gitlink.
+  - `upstream/instant-ios-sdk` — Stop publishing the historical SDK gitlink.
+  - `upstream/sharing-instant` — Stop publishing the historical Sharing experiment gitlink.
+  - `upstream/sqlite-data` — Stop publishing the SQLiteData reference gitlink.
+  - `validation/verify-swiftpm-publication.sh` — Reject submodules from the publishable package surface.
+- **User context (verbatim):**
+  > sharing instant was reference. We don't need sharing instant
+- **SpecStory:** unavailable — Codex desktop session; no verified durable SpecStory URI is available, and public sharing was not authorized.
+
 ## July 29th, 2026 at 1:20:26 p.m. EDT — `0584ffb6c148` Normalize current commit references after identity rewrite
 
 - **Implementation commit:** `0584ffb6c1488461e5d52081f5c88412e4cb82d5`

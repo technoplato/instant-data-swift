@@ -6,6 +6,14 @@ commit SHA, and high-level reason. Changelog-only bookkeeping commits are
 visible in Git history but are not self-recorded because a commit cannot
 contain its own final SHA.
 
+## July 29, 2026 at 1:30:07 PM EDT
+
+- Repository: `instant-data-swift`
+- Commit: `2b2517e256351f7e82286424aa83b4055b7e174c`
+- High-level reason: Make the published SwiftPM package self-contained by
+  removing reference-only Git submodules, preserving their optional local
+  checkout pins in documentation, and adding a publication-surface check.
+
 ## July 29, 2026 at 1:20:15 PM EDT
 
 - Repository: `instant-data-swift`
