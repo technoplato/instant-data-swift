@@ -9,7 +9,7 @@ contain its own final SHA.
 ## July 29, 2026 at 5:54:36 PM EDT
 
 - Repository: `realtime-voice-sqlite-instant` (Scribe)
-- Commit: `59a33ea75a3bb0e2d6f513bc295c22160615d52f`
+- Commit: `59a33eada1012e6cd3dd779b30b1e8a91b6e6c90`
 - High-level reason: Correct the screenshot symptom to measurable
   capture-to-chat visibility latency, preserve Settings and iPad layout as
   active requests, and separate the first passive room/thread watcher
