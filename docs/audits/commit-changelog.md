@@ -6,6 +6,32 @@ commit SHA, and high-level reason. Changelog-only bookkeeping commits are
 visible in Git history but are not self-recorded because a commit cannot
 contain its own final SHA.
 
+## July 29, 2026 at 5:19:30 PM EDT
+
+- Repository: `realtime-voice-sqlite-instant` (Scribe)
+- Commit: `d33e1c00d0a9afe66743317eb7ceea4ba3be9aa2`
+- High-level reason: Detect two seconds of exact-zero physical-device
+  microphone PCM before any real signal, preserve active route evidence, stop
+  the false live pipeline, and present an actionable retry with focused
+  teardown and diagnostic coverage.
+
+## July 29, 2026 at 5:19:30 PM EDT
+
+- Repository: `realtime-voice-sqlite-instant` (Scribe)
+- Commit: `9ceb673ca9e933affc9c21a6a94709a81a0edfd5`
+- High-level reason: Version the reusable Scribe feedback-intake skill with
+  physical-device recording/media retrieval, non-overwrite defaults, fresh-log
+  chronology, parser tests, prioritized issue intake, and immutable
+  addressing/fixing commit links.
+
+## July 29, 2026 at 5:19:30 PM EDT
+
+- Repository: `realtime-voice-sqlite-instant` (Scribe)
+- Commit: `dab216bbf646355db4fea33d8e3f0a11c80aaa97`
+- High-level reason: Rank the physical-device backlog, add exact issue
+  timestamps and P0-P4 priorities, preserve the all-zero iPad evidence and
+  lower-priority map direction, and require commit-linked work logs.
+
 ## July 29, 2026 at 4:55:56 PM EDT
 
 - Repository: `realtime-voice-sqlite-instant` (Scribe)
