@@ -6,6 +6,14 @@ commit SHA, and high-level reason. Changelog-only bookkeeping commits are
 visible in Git history but are not self-recorded because a commit cannot
 contain its own final SHA.
 
+## July 29, 2026 at 6:34:02 PM EDT
+
+- Repository: `realtime-voice-sqlite-instant` (Scribe)
+- Commit: `3d8f9ad18965c5e8fe28c0e96417da4d14fc7756`
+- High-level reason: Keep the shared passive-watcher controls buildable on
+  watchOS with typed Picker bindings while preserving the existing Menu and
+  rounded text-field presentation on supported platforms.
+
 ## July 29, 2026 at 6:30:20 PM EDT
 
 - Repository: `realtime-voice-sqlite-instant` (Scribe)
