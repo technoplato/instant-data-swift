@@ -6,6 +6,14 @@ commit SHA, and high-level reason. Changelog-only bookkeeping commits are
 visible in Git history but are not self-recorded because a commit cannot
 contain its own final SHA.
 
+## July 29, 2026 at 10:33:08 AM EDT
+
+- Repository: `realtime-voice-sqlite-instant` (Scribe)
+- Commit: `b83d138aa163e1e1381632abc314cfdfca8a9a9f`
+- High-level reason: Package top-level SwiftPM runtime frameworks in the
+  installed macOS wrapper so the LiveKit-enabled Scribe host can launch instead
+  of aborting in dyld before startup.
+
 ## July 29, 2026 at 10:08:43 AM EDT
 
 - Repository: `realtime-voice-sqlite-instant` (Scribe)
