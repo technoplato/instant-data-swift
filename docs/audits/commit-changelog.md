@@ -6,6 +6,13 @@ commit SHA, and high-level reason. Changelog-only bookkeeping commits are
 visible in Git history but are not self-recorded because a commit cannot
 contain its own final SHA.
 
+## July 29, 2026 at 6:10:43 PM EDT
+
+- Repository: `realtime-voice-sqlite-instant` (Scribe)
+- Commit: `5d4a9b36e63d47b19b7013b4c85973ec7f0f8037`
+- High-level reason: Correct the public-sharing LaunchAgent to the installed
+  Node path proven by a live loopback and Cloudflare-hosted health check.
+
 ## July 29, 2026 at 6:08:52 PM EDT
 
 - Repository: `realtime-voice-sqlite-instant` (Scribe)
