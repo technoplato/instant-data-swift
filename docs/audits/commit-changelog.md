@@ -6,6 +6,15 @@ commit SHA, and high-level reason. Changelog-only bookkeeping commits are
 visible in Git history but are not self-recorded because a commit cannot
 contain its own final SHA.
 
+## July 29, 2026 at 5:50:21 PM EDT
+
+- Repository: `realtime-voice-sqlite-instant` (Scribe)
+- Commit: `598ad5f4a55fe364a023472b45f33d38f95425dc`
+- High-level reason: Record clean physical-iPad build, install, launch, process,
+  provider, transcript, and plugged-in microphone evidence; preserve
+  interaction-dependent acceptance gaps; and track the newly observed unused
+  iPad display area without assuming its windowing cause.
+
 ## July 29, 2026 at 5:41:07 PM EDT
 
 - Repository: `realtime-voice-sqlite-instant` (Scribe)
