@@ -6,6 +6,14 @@ commit SHA, and high-level reason. Changelog-only bookkeeping commits are
 visible in Git history but are not self-recorded because a commit cannot
 contain its own final SHA.
 
+## July 29, 2026 at 7:02:13 PM EDT
+
+- Repository: `realtime-voice-sqlite-instant` (Scribe)
+- Commit: `315e1a25b8570d19af87a003628f4193336e6568`
+- High-level reason: Replace the forgotten-password custom build keychain with
+  one-time command-line signing permissions on the existing login-keychain
+  Apple Development keys, without storing a second password.
+
 ## July 29, 2026 at 6:45:59 PM EDT
 
 - Repository: `realtime-voice-sqlite-instant` (Scribe)
