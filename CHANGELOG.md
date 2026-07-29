@@ -4,6 +4,24 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## July 29th, 2026 at 1:20:26 p.m. EDT — `0584ffb6c148` Normalize current commit references after identity rewrite
+
+- **Implementation commit:** `0584ffb6c1488461e5d52081f5c88412e4cb82d5`
+- **Change:** Reconcile Instant and cross-repository references after technoplato identity normalization
+- **Details:**
+  - Applied both verified old-to-new maps to every current tracked Instant, Scribe audit, design, screen, and benchmark SHA reference.
+  - Preserved external upstream revisions and all non-reference content, validated benchmark JSON, and verified no mapped old SHA remains.
+- **Files:**
+  - `CHANGELOG.md` — Replace historical Instant implementation SHAs with rewritten equivalents.
+  - `docs/audits/commit-changelog.md` — Update the cross-repository Scribe and Instant lookup ledger.
+  - `docs/audits/2026-07-26-fable5-comprehensive-audit.md` — Keep historical audit baselines resolvable.
+  - `docs/v3-e2e-port-plan.md` — Repoint the detailed implementation timeline to rewritten commits.
+  - `validation/benchmarks/v1-cross-sdk-performance-2026-07-19.json` — Preserve benchmark evidence against the rewritten Swift revision.
+- **User context (verbatim):**
+  > make a backup, one-time backup lookup map of old commits, new commits
+  > Again, scribe, all techno-plato.
+- **SpecStory:** unavailable — Codex desktop session; no verified durable SpecStory URI is available, and public sharing was not authorized.
+
 ## July 27th, 2026 at 4:06:35 p.m. EDT — `598ec0b2459e` Avoid sorting snapshots during live mutation rebases
 
 - **Implementation commit:** `598ec0b2459e83aef66d13ad3480410f51c29f52`
