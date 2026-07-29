@@ -6,6 +6,15 @@ commit SHA, and high-level reason. Changelog-only bookkeeping commits are
 visible in Git history but are not self-recorded because a commit cannot
 contain its own final SHA.
 
+## July 29, 2026 at 1:42:48 PM EDT
+
+- Repository: `realtime-voice-sqlite-instant` (Scribe)
+- Commit: `02677bb3328cc7813c28bec07bd875b932f847d5`
+- High-level reason: Pin stable Scribe builds to exact published
+  `instant-data-swift` and Point-Free `swift-sharing` releases, preserve a
+  no-worktree editable-package workflow, and embed and verify dependency
+  revisions alongside the Scribe commit.
+
 ## July 29, 2026 at 1:30:07 PM EDT
 
 - Repository: `instant-data-swift`
