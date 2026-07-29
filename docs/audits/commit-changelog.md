@@ -6,6 +6,14 @@ commit SHA, and high-level reason. Changelog-only bookkeeping commits are
 visible in Git history but are not self-recorded because a commit cannot
 contain its own final SHA.
 
+## July 29, 2026 at 1:56:40 PM EDT
+
+- Repository: `realtime-voice-sqlite-instant` (Scribe)
+- Commit: `a1ffc654b500a2fe2253401deaa8ebbfdcf13ee2`
+- High-level reason: Build the iOS and Watch deployment products through their
+  concrete Xcode targets while retaining the verified shared scheme for Apple
+  TV, with regression coverage for the target-versus-scheme contract.
+
 ## July 29, 2026 at 1:42:48 PM EDT
 
 - Repository: `realtime-voice-sqlite-instant` (Scribe)
