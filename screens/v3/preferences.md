@@ -13,8 +13,8 @@ This is an intentional exception to the normal-feature boundary: delivery
 status and flush are the user-visible purpose of this Preferences section.
 Recording, playback, and list features do not coordinate outbox or reconnect.
 
-Implementation status (2026-07-18): commits `4ddf46b`, `ff71165`, and
-`7176dfa` compile and test the recorded `@ConnectionStatus`,
+Implementation status (2026-07-18): commits `50ca3a3`, `b766c53`, and
+`46483ec` compile and test the recorded `@ConnectionStatus`,
 `@InstantSyncStatus`, and `@InstantStorageStatus` surface. Sync phases come
 from the canonical connection observer; storage sizes come from the real
 SQLite/file runtime; manual flush and typed download clearing retain explicit

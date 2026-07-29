@@ -140,8 +140,8 @@ while Swift's normal live observer decodes and projects the exact refreshed
 values. The aggregate evidence fails unless both shapes match, both child
 commands succeed, the worktree is clean, and there are no unexpected warnings.
 The six recognized Instant-managed schema-normalization warnings remain
-explicit in the evidence. A clean passing example for commit `771ed4c` is
-`/private/tmp/instant-data-swift-recording-bidirectional-clean-771ed4c-20260718/evidence.json`.
+explicit in the evidence. A clean passing example for commit `08ae040` is
+`/private/tmp/instant-data-swift-recording-bidirectional-clean-08ae040-20260718/evidence.json`.
 
 Room declarations are client-side type metadata in the canonical Instant SDK:
 the schema migration ignores them and a fresh server pull reports `rooms: {}`.
@@ -150,9 +150,9 @@ The recording-action generated-contract gate therefore compiles the local
 three topic payloads. Server-normalized verification accepts omitted rooms but
 still rejects a nonempty server room shape that disagrees with the Swift
 contract. Live presence/topic traffic remains a separate runtime boundary gate.
-The clean generated-room milestone at commit `8b979c0` also reran the existing
+The clean generated-room milestone at commit `0f6ce0a` also reran the existing
 bidirectional recording data contract successfully; its evidence is
-`/private/tmp/instant-data-swift-playback-schema-clean-8b979c0-20260718/evidence.json`.
+`/private/tmp/instant-data-swift-playback-schema-clean-0f6ce0a-20260718/evidence.json`.
 
 The auth contract has a guarded verifier that creates a fresh disposable user
 and refresh token through the canonical TypeScript Admin SDK, then runs the
@@ -248,7 +248,7 @@ Swift and TypeScript cell merges, observes full reset and peer disconnect, and
 removes its temporary credential file. The server currently pulls the pushed
 `i.json()` board state as `i.any()`; verification keeps JSON as the source
 contract and records the exact `server-json-as-any` warning. Clean evidence
-for revision `59a5e2d` is in
+for revision `4f9c488` is in
 `/tmp/instant-data-swift-merge-tile-game-v3-20260719T045650Z/evidence.json`.
 
 The Stroopwafel V3 verifier ports the pinned multiplayer demo through the
@@ -268,7 +268,7 @@ its owned point to 1, Swift observes that update and wins at 13, and both sides
 observe `GAME_COMPLETED` with the room's `currentGameId` cleared. The verifier
 records normalized system, canonical-link-name, JSON-as-any, and managed-email
 warnings explicitly, rejects any other warning class, emits no credentials, and
-removes its temporary credential file. Clean evidence for revision `3584c15`
+removes its temporary credential file. Clean evidence for revision `7d5ddc4`
 is in
 `/tmp/instant-data-swift-stroopwafel-v3-20260719T054351Z/evidence.json`.
 
@@ -285,7 +285,7 @@ cache, exact 12-byte stream content, exact 7-byte downloaded content, and one
 selective 4-byte audio deletion while retaining the transcript. The pinned
 TypeScript contract checks the same values, warnings must remain empty, and the
 temporary `.instant.env` credential file is removed on exit. Clean evidence for
-revision `1e81ab1` is in
+revision `3c94e90` is in
 `/tmp/instant-data-swift-preferences-contract-20260719T001942Z/evidence.json`.
 
 Both aggregate verifiers refuse dirty worktrees for acceptance evidence and

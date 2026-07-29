@@ -7,7 +7,7 @@
     "benchmarkEvidence": {
       "command": "validation/run-cross-sdk-benchmark-comparison.sh",
       "iterations": 5,
-      "swiftRevision": "08a92953e4d1bf1c0775196e3f5e061b3ee3fc14",
+      "swiftRevision": "76af3ddd0ea21a3ad601ea5212709821d586d495",
       "upstreamRevision": "e71017612aed4031710a35e2fcace30d38d557ac",
       "summary": {
         "workloadCount": 15,
@@ -22,7 +22,7 @@
         "details": {
           "contractVersion": 1,
           "iterations": 5,
-          "swiftRevision": "08a92953e4d1bf1c0775196e3f5e061b3ee3fc14",
+          "swiftRevision": "76af3ddd0ea21a3ad601ea5212709821d586d495",
           "upstreamRevision": "e71017612aed4031710a35e2fcace30d38d557ac",
           "versions": {
             "typeScriptCore": "1.0.49",
@@ -280,7 +280,7 @@
         "details": {
           "contractVersion": 1,
           "iterations": 5,
-          "swiftRevision": "08a92953e4d1bf1c0775196e3f5e061b3ee3fc14",
+          "swiftRevision": "76af3ddd0ea21a3ad601ea5212709821d586d495",
           "upstreamRevision": "e71017612aed4031710a35e2fcace30d38d557ac",
           "versions": {
             "typeScriptCore": "1.0.49",
@@ -491,7 +491,7 @@
     },
     "liveTransportEvidence": {
       "command": "validation/verify-todos-v3-app-live.sh",
-      "swiftRevision": "08a92953e4d1bf1c0775196e3f5e061b3ee3fc14",
+      "swiftRevision": "76af3ddd0ea21a3ad601ea5212709821d586d495",
       "upstreamRevision": "e71017612aed4031710a35e2fcace30d38d557ac",
       "typeScriptCoreVersion": "1.0.49",
       "compilerWarningCount": 0,

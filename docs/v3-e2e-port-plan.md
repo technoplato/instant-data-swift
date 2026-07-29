@@ -19,42 +19,42 @@ As of 2026-07-19:
 - The live WebSocket protocol can be exercised in opt-in validation commands,
   including one Swift-to-TypeScript and one TypeScript-to-Swift boundary proof.
 - The normal runtime now owns an authenticated live session and a continuous
-  server-event receiver. Commit `af88570` routes `refresh-ok` through the normal
+  server-event receiver. Commit `bb20209` routes `refresh-ok` through the normal
   runtime, persists canonical join rows and the transaction checkpoint, and
   publishes the result to public query observers.
-- Commit `ecf2145` encodes canonical Instant query objects, installs and
+- Commit `2e17b23` encodes canonical Instant query objects, installs and
   reference-counts active queries, applies initial `add-query-ok` results, sends
   `remove-query` on cancellation, and restores active queries when a session is
   opened again.
-- Commit `378b76f` drains the durable outbox through the owned live session,
+- Commit `c2c4835` drains the durable outbox through the owned live session,
   rewrites local attribute identities to the server UUIDs from `init-ok`,
   correlates `transact-ok` and server errors, persists retryable failures, and
   resumes pending sends after relaunch.
-- Commit `abe63c5` reconnects established live sessions automatically with the
+- Commit `76241b5` reconnects established live sessions automatically with the
   canonical immediate-then-bounded backoff progression, publishes transient
   drops as closed rather than terminal errors, reinstalls active queries,
   resends only unacknowledged durable mutations, and cancels reconnect work on
   explicit close.
-- Commits `4138549` and `44c11b1` encode the canonical room wire messages,
+- Commits `6b6e59d` and `e044adc` encode the canonical room wire messages,
   idempotently join active rooms, queue presence and topic data until
   `join-room-ok`, rejoin with current presence after reconnect, flush newer
-  queued data once, and send `leave-room` on cleanup. Commits `a98fe60` and
-  `1ab3b99` apply and record incoming `refresh-presence`, `patch-presence`, and
+  queued data once, and send `leave-room` on cleanup. Commits `35d0e53` and
+  `c090098` apply and record incoming `refresh-presence`, `patch-presence`, and
   `server-broadcast` events through public ephemeral observers.
-- Commit `ef00fc8` encodes canonical stream subscribe/unsubscribe and reader
-  resume state. Commits `121cf3d` and `dd59d2f` register public stream-content
+- Commit `37b2599` encodes canonical stream subscribe/unsubscribe and reader
+  resume state. Commits `22984f4` and `bb3947d` register public stream-content
   observers with the owned live session, restore them after reconnect, and
   unsubscribe with the active subscription event id.
-- Commits `f362b38` and `02ad087` reconnect on retryable `stream-append`
-  failures without publishing failed content. Commits `029a3db` and `677398e`
+- Commits `62e78c6` and `9f9cdc9` reconnect on retryable `stream-append`
+  failures without publishing failed content. Commits `4440888` and `1158c31`
   materialize inline appends with UTF-8 byte overlap, persist and publish the
   resulting snapshot, and advance reconnect state only after persistence.
   Canonical file-backed append fetching remains a separate stream packet.
 - The V3 API direction is documented in
   `INSTANT_DATA_API_DESIGN_PREFERENCES_V3.md` and `screens/v3/`.
-- The prior screen syntax is preserved under `screens/v2/` in commit `d11b1cf`.
-  The five V3 screen probes were committed in `5316f24` and `edce7da`.
-- Packet 0 restored the deterministic validation baseline in commit `e0350ba`.
+- The prior screen syntax is preserved under `screens/v2/` in commit `75842c0`.
+  The five V3 screen probes were committed in `7d0d5e1` and `56dcc4a`.
+- Packet 0 restored the deterministic validation baseline in commit `0f73821`.
   The gate passed 811 Swift tests, 28 dedicated macro snapshot tests, generated
   schema and permissions verification, and the local Swift/TypeScript E2E
   orchestrator. Its evidence directory was
@@ -71,14 +71,14 @@ As of 2026-07-19:
   preparation replacement; canonical owner/member/recording/transcription
   refs; start, finish, and attachment mutations; typed optimistic and accepted
   callbacks; rejection recovery without callback replay; exact transport
-  mutation/precondition shapes; and durable relaunch state. Commit `33028f6`
+  mutation/precondition shapes; and durable relaunch state. Commit `264e753`
   adds the same five-entity, five-link contract as a Swift-owned schema and
-  permissions example with CLI generation and verification. Commits `8ebc352`
-  and `9c8a338` pin the TypeScript SDK/compiler/lockfile and type-check generated
-  and server-readback artifacts with hashes. Commits `c0a70d1` and `e27c446`
+  permissions example with CLI generation and verification. Commits `af59e2e`
+  and `5e7f29c` pin the TypeScript SDK/compiler/lockfile and type-check generated
+  and server-readback artifacts with hashes. Commits `f4b36f1` and `0afc54e`
   verify server-normalized schema and permissions while reporting Instant's
-  six known system-schema additions as stable warnings. Commits `b711a7b`,
-  `baaaf39`, `e7bde06`, and `8b88488` define the exact 18-step Swift recording
+  six known system-schema additions as stable warnings. Commits `03c3966`,
+  `b9c40ab`, `916772b`, and `cf04c9c` define the exact 18-step Swift recording
   graph, route it through the live-transaction validator, and type-check/test
   the matching nested query and projection against the canonical TypeScript
   SDK. The core reconnect packet's earlier explicit E2E evidence is
@@ -100,8 +100,8 @@ As of 2026-07-19:
   refresh-token verification, durable restoration, sign-out invalidation, and
   rejection by both Swift and the canonical TypeScript SDK are now covered by
   the later Packet 6 acceptance gate.
-- Commit `eb35a31` makes the recording contract install reproducible from a
-  clean checkout using the pinned Instant CLI. The clean-head run at `b711a7b`
+- Commit `5dc9d1a` makes the recording contract install reproducible from a
+  clean checkout using the pinned Instant CLI. The clean-head run at `03c3966`
   created ephemeral app `a5dfcd81-6392-4f81-afda-6f2b59756a56`, pushed the
   Swift-generated schema and permissions, pulled both back, verified their
   normalized Swift shapes, and type-checked the pulled files. Non-secret
@@ -109,23 +109,23 @@ As of 2026-07-19:
   `/tmp/instant-data-swift-recording-contract-live-20260718T1557/evidence.json`;
   the temporary app expires automatically and its admin token was removed from
   the retained artifacts.
-- Commits `0144185` through `771ed4c` close the recording-action data-plane
-  acceptance case in both directions. The clean-head run at `771ed4c` created
+- Commits `af0fcc8` through `08ae040` close the recording-action data-plane
+  acceptance case in both directions. The clean-head run at `08ae040` created
   an ephemeral app, installed and read back the generated schema and
   permissions, wrote the exact linked graph through Swift and queried it with
   the pinned TypeScript SDK, then wrote and finished the graph through
   TypeScript while the normal Swift live observer decoded the exact refresh.
   Both comparisons passed with zero compiler or runtime warnings. Non-secret
   evidence is in
-  `/private/tmp/instant-data-swift-recording-bidirectional-clean-771ed4c-20260718/evidence.json`.
-- Commits `a7c1ad3`, `9fe9c25`, and `031e4fe` compile the playback room seam.
+  `/private/tmp/instant-data-swift-recording-bidirectional-clean-08ae040-20260718/evidence.json`.
+- Commits `fbc34ad`, `347154c`, and `6688a31` compile the playback room seam.
   Typed room identity, join/leave, dynamic replacement, hosted SwiftUI
   invalidation, exact Codable presence publication and decoding, typed topic
   publication callbacks and observation, cancellation cleanup, and room-schema
   topic constraints passed 885 Swift tests across 30 suites. Presence is
   resolved as wrapper-owned state plus explicit dynamic room/publication input
   from `.presence(_:in:publishing:)`.
-- Commit `8b979c0` adds the typed `recording.playback` presence and topic
+- Commit `0f6ce0a` adds the typed `recording.playback` presence and topic
   declaration to the Swift-owned recording schema and strictly compiles valid
   plus deliberately invalid `joinRoom`, presence, and topic calls against the
   pinned canonical TypeScript SDK. The canonical schema migration does not
@@ -133,16 +133,16 @@ As of 2026-07-19:
   readback verifies entities, links, and permissions while the generated local
   schema remains the room type authority. The clean existing recording-data
   contract rerun passed in both directions at
-  `/private/tmp/instant-data-swift-playback-schema-clean-8b979c0-20260718/evidence.json`.
+  `/private/tmp/instant-data-swift-playback-schema-clean-0f6ce0a-20260718/evidence.json`.
   That run revalidates the shared data plane; it does not replace the live
   presence/topic boundary.
-- Commit `2390aa0` proves that live presence/topic boundary in both directions.
+- Commit `7c6d0c1` proves that live presence/topic boundary in both directions.
   Authenticated Swift and canonical TypeScript 1.0.49 peers join the same typed
   `recording.playback` room and observe exact presence plus `reaction`,
   `commentDraft`, and `commentCommitted` payloads with zero compiler/runtime
   warnings. Clean evidence is in
-  `/tmp/instant-data-swift-playback-room-clean-2390aa0-20260718/evidence.json`.
-- Commits `45daf84` through `ece3022` extend that boundary through an injected
+  `/tmp/instant-data-swift-playback-room-clean-7c6d0c1-20260718/evidence.json`.
+- Commits `5e9c80e` through `f1ddcea` extend that boundary through an injected
   transport loss and automatic room rejoin. The source port first proves the
   pinned Reactor room loop accepts fresh peer presence and broadcasts after
   rejoin. The live gate then creates a fresh getadb app, pushes the
@@ -152,9 +152,9 @@ As of 2026-07-19:
   management. The shared TypeScript contract type-checks under the pinned SDK,
   compiler/runtime warnings are zero, and all 907 Swift tests in 35 suites plus
   the complete TypeScript contract/fixture suite pass. Clean evidence for
-  revision `ece3022` is in
-  `/tmp/instant-data-swift-playback-room-reconnect-clean-ece3022-20260718T1957Z/evidence.json`.
-- Commits `4ddf46b` through `02e06cf` compile and live-prove the preferences
+  revision `f1ddcea` is in
+  `/tmp/instant-data-swift-playback-room-reconnect-clean-f1ddcea-20260718T1957Z/evidence.json`.
+- Commits `50ca3a3` through `cd8a230` compile and live-prove the preferences
   sync and storage source contracts. `@InstantSyncStatus` renders cached, connecting,
   connected, authenticated, reconnecting, offline, and failed phases from the
   canonical connection observer and exposes explicit manual-flush callbacks.
@@ -163,17 +163,17 @@ As of 2026-07-19:
   downloads and reports one explicit completion callback. The fresh getadb
   gate proves connected-to-authenticated state plus exact 12-byte stream cache,
   7-byte downloaded cache, and selective 4-byte audio deletion. Clean evidence
-  for revision `1e81ab1` is in
+  for revision `3c94e90` is in
   `/tmp/instant-data-swift-preferences-contract-20260719T001942Z/evidence.json`.
-- Commit `1e81ab1` adds the runnable `voicetrail-v3` executable and a shared app
+- Commit `3c94e90` adds the runnable `voicetrail-v3` executable and a shared app
   target containing auth, recordings, capture, playback, and preferences. The
   focused app tests compile every settled screen, prove recording-to-playback
   routing, and verify local/live bootstrap selection. Full verification is
   green at 917 Swift tests in 39 suites plus the complete TypeScript contract
   and fixture suite.
-- Commits `6e649b0` through `636c922` move capture start, attachment, and finish
+- Commits `70a7689` through `6613a48` move capture start, attachment, and finish
   into the shared app target and add the first clean aggregate app gate. A
-  fresh app at revision `636c922` verified generated schema and permissions,
+  fresh app at revision `6613a48` verified generated schema and permissions,
   the actual app-model recording/transcription/attachment flow observed through
   the canonical TypeScript SDK with its exact finished state, bidirectional
   recording graph compatibility,
@@ -181,26 +181,26 @@ As of 2026-07-19:
   reconnect, preferences storage cleanup, and auth invalidation with zero
   compiler/runtime warnings. Evidence is in
   `/tmp/instant-data-swift-voice-trail-v3-app-20260719T004933Z/evidence.json`.
-- Commits `7cad7ee` and `1dcee4b` make the VoiceTrail app the authority for the
+- Commits `60ac865` and `d357f8a` make the VoiceTrail app the authority for the
   playback room type and all presence/reaction/comment payloads, removing the
-  validator's parallel payload models. The clean aggregate rerun at `1dcee4b`
+  validator's parallel payload models. The clean aggregate rerun at `d357f8a`
   proves those exact app-owned payloads in both directions before and after a
   forced reconnect, with zero warnings. Evidence is in
   `/tmp/instant-data-swift-voice-trail-v3-app-20260719T005834Z/evidence.json`.
-- Commits `f1b4d30` and `58b7496` add the first non-VoiceTrail Packet 8 app:
+- Commits `da397c2` and `2fc2cd1` add the first non-VoiceTrail Packet 8 app:
   a runnable `todos-v3` SwiftUI executable and shared `TodosV3App` target. It
   uses the desired `@InstantEntity`, `@FetchAll`, typed-message, call-site
   callback, room, and presence syntax. Focused model tests and the full package
   gate pass at 922 Swift tests in 42 suites.
-- The Todos live boundary is complete through `122d4e0`. A clean fresh-app run
+- The Todos live boundary is complete through `d655e60`. A clean fresh-app run
   installs and reads back the generated schema and permissions, proves the
   exact Swift-to-TypeScript and TypeScript-to-typed-Swift rows, observes one
   canonical TypeScript room peer, queues exactly one Swift mutation while
   disconnected, and observes that exact row in TypeScript after reconnect and
   server acceptance. Compiler/runtime warnings are zero. Evidence is in
   `/tmp/instant-data-swift-todos-v3-20260719T012426Z/evidence.json`.
-- The standalone Auth app boundary is complete through `08df094`, `319aa3c`,
-  `236b6aa`, `a9783c9`, and `9c0b683`. `auth-v3` compiles the settled
+- The standalone Auth app boundary is complete through `d715ea0`, `e4c27b2`,
+  `2d0ff69`, `f6a858f`, and `d55b465`. `auth-v3` compiles the settled
   `@InstantAuth` call-site callback syntax with the exact five-provider
   catalog. VoiceTrail now consumes those app-owned user, provider, and login
   screen types instead of maintaining parallel definitions. The clean
@@ -209,7 +209,7 @@ As of 2026-07-19:
   token rejection through canonical TypeScript with zero warnings. Evidence
   is in
   `/tmp/instant-data-swift-auth-v3-app-20260719T013823Z/evidence.json`.
-- The canonical Mobile Chat boundary is complete through `5f3276a`.
+- The canonical Mobile Chat boundary is complete through `802baed`.
   `MobileChatV3App` and the `mobile-chat-v3` executable own the exact upstream
   `$users`, `profiles`, `channels`, and `messages` graph; authenticated profile,
   channel, and message mutations; `chat` presence; and `typing`/`emoji` topics.
@@ -219,7 +219,7 @@ As of 2026-07-19:
   both room payload directions plus disconnect cleanup, and rejected a
   cross-user message edit with zero compiler/runtime warnings. Evidence is in
   `/tmp/instant-data-swift-mobile-chat-v3-20260719T021910Z/evidence.json`.
-- The canonical Typing Indicator recipe boundary is complete through `2c36ab7`.
+- The canonical Typing Indicator recipe boundary is complete through `a9281a4`.
   `PresenceRecipesV3App` and the `presence-recipes-v3` executable own the
   source-pinned room/presence surface for `typing-indicator-example/1234`.
   The fresh-app gate proves the exact initial-absence, active `true`, inactive
@@ -228,8 +228,8 @@ As of 2026-07-19:
   room schema and empty permissions round trips, strict TypeScript compilation,
   and five pinned server system-schema warnings. Evidence is in
   `/tmp/instant-data-swift-typing-indicator-v3-20260719T025123Z/evidence.json`.
-- The canonical Reactions recipe boundary is complete through `e84679b`, with
-  the final clean live gate recorded at `e1f100a` before the executable-only
+- The canonical Reactions recipe boundary is complete through `5933c17`, with
+  the final clean live gate recorded at `57fb6d7` before the executable-only
   recipe navigation commit.
   Source-first app, schema, CLI, TypeScript, live-support, and Swift-evidence
   tests pin `topics-example/123`, the `emoji` topic, the exact
@@ -242,7 +242,7 @@ As of 2026-07-19:
   strict-typecheck, with five pinned server system-schema warnings and zero
   compiler/runtime warnings. Evidence is in
   `/tmp/instant-data-swift-reactions-v3-20260719T032236Z/evidence.json`.
-- The canonical Avatar Stack recipe boundary is complete through `22980dc`.
+- The canonical Avatar Stack recipe boundary is complete through `20d763f`.
   Source-first app, generated-schema, CLI, TypeScript, Swift-evidence,
   remote-peer-count, and credential-redaction tests pin
   `avatars-example/avatars-example-1234`, exact name-only app presence,
@@ -253,8 +253,8 @@ As of 2026-07-19:
   `{name}` presence in both Swift/TypeScript directions. Final evidence is in
   `/tmp/instant-data-swift-avatar-stack-v3-20260719T034215Z/evidence.json` and
   contains no refresh or admin credentials.
-- The canonical Cursors recipe boundary is complete through `fb946c0`, with
-  its clean fresh-app proof recorded at `e09d871`. Source-first Swift and
+- The canonical Cursors recipe boundary is complete through `6ba9917`, with
+  its clean fresh-app proof recorded at `1a74796`. Source-first Swift and
   TypeScript contracts pin `cursors-example/123`, the dynamic
   `cursors-space-default--cursors-example-123` presence key, exact
   `{x, y, xPercent, yPercent, color}` cursor payload, viewport normalization,
@@ -265,7 +265,7 @@ As of 2026-07-19:
   and asserts the exact five server system-schema warnings with zero compiler
   or runtime warnings. Evidence is in
   `/tmp/instant-data-swift-cursors-v3-20260719T040045Z/evidence.json`.
-- The canonical Custom Cursors recipe boundary is complete through `8f3e9e2`.
+- The canonical Custom Cursors recipe boundary is complete through `f11c42f`.
   Source-first Swift, generated-schema, CLI, TypeScript, live-support, and
   Swift-evidence contracts pin `cursors-example/124`, the dynamic
   `cursors-space-default--cursors-example-124` key, required top-level `name`,
@@ -276,7 +276,7 @@ As of 2026-07-19:
   drift, and records the five exact server system-schema warnings with zero
   compiler or runtime warnings. Evidence is in
   `/tmp/instant-data-swift-custom-cursors-v3-20260719T042442Z/evidence.json`.
-- The canonical Merge Tile Game boundary is complete through `59a5e2d`, with
+- The canonical Merge Tile Game boundary is complete through `4f9c488`, with
   its clean fresh-app proof recorded at the same revision. The app-owned `boards` entity,
   `@FetchOne`, typed initialize/merge/reset messages, and
   `tile-game-example/_defaultRoomId` color presence preserve the fixed 4x4
@@ -286,7 +286,7 @@ As of 2026-07-19:
   removes the remote peer on disconnect. Server readback preserves the Swift
   JSON contract through the explicit `server-json-as-any` warning. Evidence is
   in `/tmp/instant-data-swift-merge-tile-game-v3-20260719T045650Z/evidence.json`.
-- The canonical Stroopwafel boundary is complete through `3584c15`. The
+- The canonical Stroopwafel boundary is complete through `7d5ddc4`. The
   source-first Swift and TypeScript contracts pin
   `jsventures/stroopwafel@7f5e2379464d932c0e4681655cbf022f8d9c2614`, its
   four-entity/four-link durable graph, 17 allow rules, wrapper-owned
@@ -299,7 +299,7 @@ As of 2026-07-19:
   distinct from ordinary two-element JSON arrays. Evidence is in
   `/tmp/instant-data-swift-stroopwafel-v3-20260719T054351Z/evidence.json` with
   zero compiler/runtime warnings.
-- The canonical Reminders boundary is complete through `e72c99a`. The
+- The canonical Reminders boundary is complete through `44172c8`. The
   source-first Swift app, generated schema and permissions, canonical
   TypeScript contract, and fresh-app verifier preserve the six-namespace,
   nine-link sharing graph; UUID tag identity with human titles; `Date`
@@ -312,7 +312,7 @@ As of 2026-07-19:
   `/tmp/instant-data-swift-reminders-v3-20260719T070753Z/evidence.json`. The
   post-port aggregate passes 1,049 Swift Testing cases across 76 suites plus
   the complete TypeScript typecheck, contract, live-support, and fixture matrix.
-- The canonical SyncUps boundary is complete through `b689469`. The app owns
+- The canonical SyncUps boundary is complete through `0fc0bcd`. The app owns
   the three upstream entities, all 16 themes, two required cascading parent
   links, list/detail/form/recording screens, speech authorization and
   recognition, sound, settings, clock behavior, generated schema and
@@ -324,11 +324,11 @@ As of 2026-07-19:
   canonical `Date` objects, authenticated Swift state, zero pending mutations,
   and zero compiler/runtime warnings at
   `/tmp/instant-data-swift-syncups-v3-20260719T073704Z/evidence.json`. The
-  post-port aggregate at `194ef4d` passes 1,067 Swift Testing cases across 83
+  post-port aggregate at `9b3459e` passes 1,067 Swift Testing cases across 83
   suites, the `syncups-v3` build, and the complete TypeScript typecheck,
   contract, live-support, and fixture matrix.
 - The canonical App Builder and Storage boundary is complete through
-  `7f9acc5`. `AppBuilderV3App` owns the authenticated owner list, build detail,
+  `47fe061`. `AppBuilderV3App` owns the authenticated owner list, build detail,
   generation model, streaming reasoning/code updates, platform-app creation,
   uploaded `App.tsx`, linked `$files` record, failure cleanup, runnable host,
   generated schema, and source-pinned permissions. Swift file uploads now use
@@ -344,7 +344,7 @@ As of 2026-07-19:
   post-port aggregate passes 1,083 Swift Testing cases across 90 suites, 28
   macro tests, the `app-builder-v3` build, and the complete TypeScript
   typecheck, contract, live-support, and fixture matrix.
-- Commits `1d77c27`, `a3238fe`, `f0daf86`, and `217c4a7` close the remaining
+- Commits `3e82d17`, `a49d4dc`, `2d80f71`, and `3bdf619` close the remaining
   local live-reader stream packet. The runtime now fetches canonical signed
   `stream-append` files in order while prefetching the next response, discards
   overlap in bytes across file and inline segments, preserves split UTF-8
@@ -353,13 +353,13 @@ As of 2026-07-19:
   Client-id and stream-id readers can start from an empty cache; the first
   canonical append persists its server-resolved metadata and publishes
   identical snapshots to both selector forms.
-- Commits `3499955`, `806780a`, `468637d`, and `972e12a` add the canonical
+- Commits `c771823`, `0696899`, `78dcc8d`, and `3d35c09` add the canonical
   writer half: exact `start-stream`/`append-stream` shapes, correlated
   server-issued ids, unflushed UTF-8 buffering, reconnect with the original
   token, resend after the server-confirmed byte offset, and terminal
-  `stream-flushed` acknowledgement before socket teardown. Commit `dc2e3da`
+  `stream-flushed` acknowledgement before socket teardown. Commit `ecc873b`
   adds the runnable `streams-v3` app and its app-owned async reader/writer
-  model. Commits `ebc0994` through `2ec8a17` add the fresh-app contract gate.
+  model. Commits `7a0eacb` through `27f4460` add the fresh-app contract gate.
   The clean run proves exact 24-byte content in both Swift-to-TypeScript and
   TypeScript-to-Swift directions, distinct server-issued stream ids,
   authenticated Swift state, two `$streams` allow rules, five expected system
@@ -367,7 +367,7 @@ As of 2026-07-19:
   `/tmp/instant-data-swift-streams-v3-20260719T092305Z/evidence.json`. The
   post-port aggregate passes 1,096 Swift Testing cases across 92 suites plus 28
   macro tests, the `streams-v3` build, and the complete TypeScript typecheck.
-- The CloudKitDemo-equivalent boundary is complete through `f3ee07c`.
+- The CloudKitDemo-equivalent boundary is complete through `cc74d99`.
   `CloudKitDemoV3App` owns the runnable shared-counter UI, typed create,
   increment, participant grant, role-replacement, and revocation messages, and
   the existing `v3_shared_lists`/`v3_shares`/`v3_share_memberships` wire model.
@@ -580,17 +580,17 @@ Gate:
 - `$users`, `$files`, forward/reverse links, required/optional values, and share
   metadata match canonical TypeScript shapes.
 
-Current evidence: commits `81890b2`, `952255c`, `7e68005`, `875ca2d`,
-`1bf2914`, and `c4c9a26` port the SQLiteData sharing tests first, define the
+Current evidence: commits `2a0a407`, `398b51f`, `a23109c`, `3285b6a`,
+`86c7309`, and `e3c91f5` port the SQLiteData sharing tests first, define the
 Swift-owned sharing schema and permissions, round-trip and type-check the
 generated TypeScript, and prove real owner/reader/writer/outsider behavior on
-an ephemeral Instant app. Commits `cd6c066` through `072fd05` then prove the
+an ephemeral Instant app. Commits `6f92647` through `5c67ba2` then prove the
 remaining runtime boundary: rejected Swift reader optimism reconciles through
 `[1, 2, 1]` with no pending mutation, the Swift writer observes `[1, 3]` with
 no failure, and real auth survives relaunch before Swift sign-out invalidates
-the token for both SDKs. The clean aggregate gate at `072fd05` passed with zero
+the token for both SDKs. The clean aggregate gate at `5c67ba2` passed with zero
 compiler warnings; evidence is in
-`/tmp/instant-data-swift-v0.3-clean-worktree-072fd05-final-20260718/evidence.json`.
+`/tmp/instant-data-swift-v0.3-clean-worktree-5c67ba2-final-20260718/evidence.json`.
 The milestone is complete once the same clean gate is bound to this updated
 record by the annotated `v0.3.0-schema-auth-sharing` tag.
 
@@ -609,7 +609,7 @@ Gate:
   streams are exercised through app-facing adapters.
 
 Current evidence: the required VoiceTrail and example-app sequence is complete
-through `f3ee07c`. The final CloudKitDemo-equivalent gate created a fresh app,
+through `cc74d99`. The final CloudKitDemo-equivalent gate created a fresh app,
 pushed and pulled the Swift-owned sharing schema and permissions without
 drift, strictly type-checked the server-normalized TypeScript, and proved exact
 shared-counter values and roles in both SDK directions. Its evidence is at
@@ -630,7 +630,7 @@ The `v0.4.0-apps-e2e` matrix closes the syntax, app-port, live data-plane,
 schema, permissions, auth, sharing, storage, room, presence/topic, and stream
 acceptance rows. The remaining work is narrower than another port phase.
 
-The artifact-aware parity gap is closed through `ffc9ea3`. The coverage reader
+The artifact-aware parity gap is closed through `e061349`. The coverage reader
 now accepts the strict CloudKitDemo V3 fresh-app shape as evidence for both
 live-transport directions without changing the static source ledger, and the
 fresh-app gate writes its own `swift-coverage-final.json`. The clean run at
@@ -642,7 +642,7 @@ app boundaries, artifact-aware zero-blocked coverage, benchmark comparison,
 full Swift suite, isolated macro lane, runnable products, and complete
 TypeScript matrix into one archiveable command.
 
-The performance packet is complete through `08a9295`. The release-mode gate
+The performance packet is complete through `76af3dd`. The release-mode gate
 compares 15 equivalent logical workloads across Swift and canonical TypeScript
 1.0.49, including durable enqueue, offline restore, and reconnect outbox drain.
 Swift is slower in all 15 measurements on the recorded Apple M1 Max, so the
@@ -654,7 +654,7 @@ offline enqueue, and real reconnect drain with zero compiler/runtime warnings.
 The combined checked evidence is
 `validation/benchmarks/v1-cross-sdk-performance-2026-07-19.json`.
 
-The clean gate passed at revision `95bd966` and is bound to the annotated
+The clean gate passed at revision `b104b38` and is bound to the annotated
 `v1.0.0` tag. Evidence is in
 `/tmp/instant-data-swift-v1-release-20260719T103430Z/evidence.json`: 1,106 Swift
 tests across 96 suites, 28 isolated macro tests, all 14 runnable products, the
@@ -731,7 +731,7 @@ Commit target: `Compile V3 recordings list fetch lifecycle`.
 
 Purpose: make V3 mutations compile and preserve optimistic/server semantics.
 
-Commits `4e5fea1`, `524028f`, and `2fbcb29` add durable transaction-specific
+Commits `57df2ad`, `7cab218`, and `a05243b` add durable transaction-specific
 lifecycle events, the public `InstantMessage`/`db.send` surface, and the
 VoiceTrail rename fixture. The tests prove optimistic and accepted callbacks
 once, failure once, passive-refresh isolation, and retry without replay.
@@ -763,15 +763,15 @@ Purpose: reach real bidirectional sync as quickly as possible.
 
 Commit targets, split if needed:
 
-1. `Own authenticated live session in runtime` — implemented in `1c627e8`.
+1. `Own authenticated live session in runtime` — implemented in `26cde9e`.
 2. `Apply live refreshes through public subscriptions` — implemented in
-   `af88570` and `ecf2145`.
-3. `Drain durable outbox through live session` — implemented in `378b76f`.
+   `bb20209` and `2e17b23`.
+3. `Drain durable outbox through live session` — implemented in `c2c4835`.
 4. `Reconnect and restore live runtime state` — query and durable-outbox
-   restoration implemented in `abe63c5`; outgoing room/presence/topic
-   restoration implemented in `4138549` and `44c11b1`; incoming ephemeral
-   room events implemented in `a98fe60`; stream reader restore, retry, and
-   inline materialization implemented through `029a3db`. File-backed stream
+   restoration implemented in `76241b5`; outgoing room/presence/topic
+   restoration implemented in `6b6e59d` and `e044adc`; incoming ephemeral
+   room events implemented in `35d0e53`; stream reader restore, retry, and
+   inline materialization implemented through `4440888`. File-backed stream
    fetching and remaining storage transport are still open.
 
 Each commit must have its own boundary case and pass the existing local suite.
@@ -792,8 +792,8 @@ Purpose: make “exact shape” reproducible.
 - Treat unknown fields, lossy number/date conversion, missing required fields,
   and enum decode failures as explicit warnings or errors with stable codes.
 
-The dependency and generated-contract subgate is complete through `8ebc352`,
-`9c8a338`, and `510f5e5`: no `latest` dependencies remain, the pnpm lockfile is
+The dependency and generated-contract subgate is complete through `af59e2e`,
+`5e7f29c`, and `d402c8e`: no `latest` dependencies remain, the pnpm lockfile is
 committed, generated and pulled recording artifacts type-check against
 `@instantdb/core`/`admin`/`instant-cli` 1.0.49 and TypeScript 5.9.3, and evidence
 records the upstream revision and artifact hashes. The remaining Packet 4 work
@@ -819,7 +819,7 @@ Commit targets:
 2. `Install and verify generated contract on ephemeral app`
 
 The recording-action acceptance instance of both targets is complete through
-`8ebc352`–`e27c446` and `eb35a31`. The checked-in live command creates a fresh
+`af59e2e`–`0afc54e` and `5dc9d1a`. The checked-in live command creates a fresh
 ephemeral app, pushes, pulls, verifies, type-checks, emits non-secret evidence,
 and refuses dirty-worktree or upstream-revision drift. Broader app schemas and
 permission sets remain future Packet 5 inputs.
@@ -830,9 +830,9 @@ Purpose: make permissions meaningful end to end.
 
 - Implement the V3 `@InstantAuth` state machine over real transport. The public
   state owner, provider contract, executable syntax fixture, local lifecycle,
-  and durable relaunch proof are implemented in `c82b3ca` through `2e7c9d5`.
+  and durable relaunch proof are implemented in `5557982` through `72ebc49`.
   Credentialed server verification, restoration, sign-out invalidation, and
-  rejection by both SDKs are implemented through `c2847fa`.
+  rejection by both SDKs are implemented through `6fa5410`.
 - Prove session restoration and sign-out invalidation.
 - Create owner/reader/writer identities and a share link.
 - Prove allowed and rejected reads/writes from both SDKs.
@@ -852,7 +852,7 @@ reader, writer, and outsider identities, launches the normal Swift WebSocket
 runtime as the reader, and writes non-secret aggregate evidence. The Swift
 reader must observe server value `1`, optimistic rejected value `2`, and
 refetched server value `1`, with zero pending mutations and one retained failed
-mutation. Commit `fd52385` adds the Swift-side allowed writer path, and the
+mutation. Commit `a2193a9` adds the Swift-side allowed writer path, and the
 aggregate `validation/verify-v0.3-schema-auth-sharing.sh` gate now requires all
 schema, permission, reader, writer, restoration, sign-out, and invalidation
 assertions together on one clean revision.
@@ -869,13 +869,13 @@ Implement in independently gated commits:
 - `@InstantSyncStatus`
 - queryable `$files` and upload/delete progress
 - `@Room`, `@Presence`, and `@Topic` — compiling and lifecycle-tested through
-  `a7c1ad3`, `9fe9c25`, `031e4fe`, and generated-schema typechecking in
-  `8b979c0`; canonical cross-SDK boundary pending
-- `@LocalID` — compiling and lifecycle-tested through `709b58d`
+  `fbc34ad`, `347154c`, `6688a31`, and generated-schema typechecking in
+  `0f6ce0a`; canonical cross-SDK boundary pending
+- `@LocalID` — compiling and lifecycle-tested through `bd9b2d9`
 - composite `@Fetch` and `@InstantFetchBuilder`
 - recording-specific message flows — start, finish, attachment, canonical refs,
   rejection, relaunch, and exact bidirectional live SDK projection covered
-  through `4a9b7eb`, `33028f6`, and `771ed4c`
+  through `fe6c1aa`, `264e753`, and `08ae040`
 - playback-specific room/presence/topic flows
 
 Every wrapper must have local lifecycle tests and a canonical TypeScript
@@ -937,15 +937,15 @@ The release harness must prove each applicable row in both directions:
 
 ## Immediate Next Step
 
-The V3 recordings-list boundary is complete through `ea978d0`, `99ab8a0`,
-`4bba77f`, `d7f92ce`, and `6fa8019`. The fixture now uses canonical
+The V3 recordings-list boundary is complete through `45deb47`, `e070de0`,
+`263cc44`, `ede4c11`, and `a4be9fe`. The fixture now uses canonical
 `v3_capture_recordings` owner/readers/writers links plus the share and
 viewer-filtered membership graph; the public syntax remains `@FetchAll` plus
 `.instantFetch($rows, rowsQuery)`. The live gate creates a fresh app, installs
 the Swift-generated VoiceTrail schema and permissions, type-checks the exact
 TypeScript graph, and proves owner, reader, reader-to-writer replacement,
 revocation-to-empty, and cancellation through the normal Swift WebSocket
-runtime. Clean evidence for revision `6fa8019` is at
+runtime. Clean evidence for revision `a4be9fe` is at
 `/tmp/instant-data-swift-voice-trail-recordings-20260718T234408Z/evidence.json`.
 
 That gate also closed two cross-SDK runtime gaps: typed relation predicates now
@@ -954,31 +954,31 @@ each query's authoritative triple set while retaining triples still owned by
 another active query. Full verification is green at 912 Swift tests in 37
 suites plus the generated-contract and TypeScript fixture suites.
 
-The playback disconnect/rejoin boundary is complete through `45daf84`,
-`2faa5bf`, `3f916f6`, `66049f5`, and `ece3022`. The recorded `@Room`,
+The playback disconnect/rejoin boundary is complete through `5e9c80e`,
+`93d9de7`, `cf2d798`, `dff3133`, and `f1ddcea`. The recorded `@Room`,
 `@Presence`, and `@Topic` syntax did not need to change. The source chain is
 the pinned Reactor room loop, the Swift parity test, the shared TypeScript
 payload contract, and `validation/verify-playback-room-contract-live.sh`.
-Clean evidence for revision `ece3022` is at
-`/tmp/instant-data-swift-playback-room-reconnect-clean-ece3022-20260718T1957Z/evidence.json`.
+Clean evidence for revision `f1ddcea` is at
+`/tmp/instant-data-swift-playback-room-reconnect-clean-f1ddcea-20260718T1957Z/evidence.json`.
 
-The preferences boundary is complete through `4ddf46b`, `ff71165`, `7176dfa`,
-`cd8f8d5`, `6038411`, `9e6868f`, `5214b59`, `15fb55f`, and `02e06cf`. The syntax in `screens/v3/preferences.md` remains the
+The preferences boundary is complete through `50ca3a3`, `b766c53`, `46483ec`,
+`c8b2854`, `74ba88d`, `78fbeb1`, `7668796`, `0619101`, and `cd8a230`. The syntax in `screens/v3/preferences.md` remains the
 target: `@ConnectionStatus`, `@InstantSyncStatus`, and `@InstantStorageStatus`
 own observation and renderable state, while flush and clear-download actions
 use call-site callbacks. The source tests cover every recorded sync phase and
 exact local-cache, stream-cache, and downloaded-file measurements. The clean
-fresh-app gate at revision `1e81ab1` authenticates the public wrapper, measures
+fresh-app gate at revision `3c94e90` authenticates the public wrapper, measures
 12 stream bytes and 7 downloaded bytes, clears exactly one 4-byte audio file,
 and retains the transcript with zero warnings.
 
-The first integrated live packet is complete through `6e649b0`, `e970238`,
-`9bc6fc2`, `28b6cc7`, `75a02c4`, and `636c922`. `VoiceTrailV3App` owns the five
+The first integrated live packet is complete through `70a7689`, `1dd8ca7`,
+`06f2f44`, `f9b1909`, `1459f15`, and `6613a48`. `VoiceTrailV3App` owns the five
 settled screens and
 `voicetrail-v3` is the thin executable host. The capture screen now sends its
 public start, attachment, and finish messages; its local app test verifies the
 exact durable recording, transcription, and attachment shapes. The clean
-aggregate gate at `636c922` creates a fresh app, pushes and reads back the
+aggregate gate at `6613a48` creates a fresh app, pushes and reads back the
 generated contract, drives create, attachment, and finish through the same
 `db.send` server-acceptance lifecycle as the capture screen, and observes the
 exact final graph through canonical TypeScript: recording `finished`, duration
@@ -987,13 +987,13 @@ It also runs the recordings, playback, preferences, and auth live contracts on
 the same app with zero compiler/runtime warnings. Evidence is at
 `/tmp/instant-data-swift-voice-trail-v3-app-20260719T004933Z/evidence.json`.
 
-The playback binding is complete in `7cad7ee` and `1dcee4b`. The app target now
+The playback binding is complete in `60ac865` and `d357f8a`. The app target now
 owns `recording.playback`, presence, reaction, comment-draft, and
 comment-committed payloads. The clean aggregate rerun proves those app types in
 both directions before and after forced reconnect. Evidence is at
 `/tmp/instant-data-swift-voice-trail-v3-app-20260719T005834Z/evidence.json`.
 
-The Todos app boundary is complete through `122d4e0`. `todos-v3` is a thin
+The Todos app boundary is complete through `d655e60`. `todos-v3` is a thin
 runnable SwiftUI host over the shared `TodosV3App` target. Its clean fresh-app
 gate proves the requested `@InstantEntity`, `@FetchAll`, typed-message, room,
 presence, and offline/reconnect surface through the real Swift and canonical
@@ -1002,7 +1002,7 @@ offline mutation before reconnect, then zero pending mutations after server
 acceptance. Evidence is at
 `/tmp/instant-data-swift-todos-v3-20260719T012426Z/evidence.json`.
 
-The standalone Auth boundary is complete through `9c0b683`. `auth-v3` is a
+The standalone Auth boundary is complete through `d55b465`. `auth-v3` is a
 thin runnable SwiftUI host over `AuthV3App`; the shared module owns the user,
 five-provider catalog, bootstrap, and login screen. VoiceTrail consumes that
 same module. Its clean fresh-app gate proves app-owned `signedIn`, relaunch,
@@ -1010,7 +1010,7 @@ and `signedOut` states around the canonical server-verified token lifecycle,
 including TypeScript rejection after invalidation. Evidence is at
 `/tmp/instant-data-swift-auth-v3-app-20260719T013823Z/evidence.json`.
 
-The Mobile Chat app boundary is complete through `5f3276a`. The desired syntax
+The Mobile Chat app boundary is complete through `802baed`. The desired syntax
 is no longer an open design question for this slice: the app target compiles it,
 the source-first schema and live-evidence tests pin it, and the clean getadb gate
 proves it against canonical TypeScript SDK 1.0.49. Evidence is at
@@ -1019,7 +1019,7 @@ verification is green at 939 Swift Testing cases across 48 suites, 28 macro
 tests, and the complete TypeScript typecheck, contract, and fixture matrix.
 
 The first presence recipe boundary, Typing Indicator, is complete through
-`2c36ab7`. The app and helper tests pin the exact upstream
+`a9281a4`. The app and helper tests pin the exact upstream
 `typing-indicator-example/1234` room, `id` and `chat-input` keys, one-second
 timeout replacement, write-only behavior, and cleanup. The clean fresh-app gate
 proves the four exact presence frames in both directions without widening or
@@ -1030,8 +1030,8 @@ and zero compiler/runtime warnings. Evidence is at
 Full verification is green at 950 Swift Testing cases across 51 suites, 28 macro
 tests, and the complete TypeScript typecheck, contract, and fixture matrix.
 
-The Reactions topic recipe is complete through `e84679b`, with its final clean
-live evidence recorded at `e1f100a`. The desired
+The Reactions topic recipe is complete through `5933c17`, with its final clean
+live evidence recorded at `57fb6d7`. The desired
 `@Room`/`@Topic` syntax compiles in `PresenceRecipesV3App`, and the clean
 fresh-app gate proves the exact payload in both directions plus unsubscribe
 cleanup. Evidence is at
@@ -1040,8 +1040,8 @@ verification is green at 960 Swift Testing cases across 54 suites, 28 macro
 tests, the `presence-recipes-v3` build, and the complete TypeScript typecheck,
 contract, and fixture matrix.
 
-The Avatar Stack presence recipe is complete through `22980dc`; credential
-redaction was source-tested first in `cb1777d` and implemented in `7af4dd7`.
+The Avatar Stack presence recipe is complete through `20d763f`; credential
+redaction was source-tested first in `7c52795` and implemented in `83d4d54`.
 The runnable host
 compiles the exact name-only `@Room`/`@Presence` surface while the wrapper keeps
 peer ids out of app presence JSON. The gate proves both SDK directions, one
@@ -1052,8 +1052,8 @@ Full verification is green at 971 Swift Testing cases across 57 suites, 28
 macro tests, the `presence-recipes-v3` build, and the complete TypeScript
 typecheck, contract, live-support, and fixture matrix.
 
-The canonical Cursors presence recipe is complete through `fb946c0`, with its
-fresh-app gate recorded at `e09d871`. The shared host compiles the desired
+The canonical Cursors presence recipe is complete through `6ba9917`, with its
+fresh-app gate recorded at `1a74796`. The shared host compiles the desired
 `@Room`/`@Presence` surface, and the exact dynamic cursor-space payload is
 generated, verified, strict-typechecked, and observed through both Swift and
 canonical TypeScript SDK 1.0.49. Clear removes the remote cursor while keeping
@@ -1069,7 +1069,7 @@ verification is green at 982 Swift Testing cases across 60 suites, 28 macro
 tests, the `presence-recipes-v3` build, and the complete TypeScript typecheck,
 contract, live-support, and fixture matrix.
 
-The canonical Custom Cursors presence recipe is complete through `8f3e9e2`.
+The canonical Custom Cursors presence recipe is complete through `f11c42f`.
 The shared host compiles the desired `@Room`/`@Presence` surface with required
 top-level `name`, exact dynamic cursor data, and the canonical encoded avatar
 URL. The clean fresh-app gate proves Swift name/cursor publication in
@@ -1087,7 +1087,7 @@ Full verification is green at 992 Swift Testing cases across 63 suites, the
 `presence-recipes-v3` build, and the complete TypeScript typecheck, contract,
 live-support, and fixture matrix.
 
-The canonical Merge Tile Game recipe is complete through `59a5e2d`, with its
+The canonical Merge Tile Game recipe is complete through `4f9c488`, with its
 clean fresh-app gate recorded at the same revision. The runnable host compiles the app-owned
 `@FetchOne` board, typed initialize/merge/reset messages, and
 `@Room`/`@Presence` color surface. Canonical TypeScript observes Swift's
@@ -1106,7 +1106,7 @@ Full verification is green at 1,007 Swift Testing cases across 66 suites, the
 `presence-recipes-v3` build, and the complete TypeScript typecheck, contract,
 live-support, and fixture matrix.
 
-The canonical Stroopwafel app is complete through `3584c15`. Its pinned source
+The canonical Stroopwafel app is complete through `7d5ddc4`. Its pinned source
 tests define the desired syntax and exact durable graph before implementation;
 the runnable SwiftUI host, generated schema/permissions, canonical TypeScript
 contract, and fresh-app verifier now pass together. The final gate records four
@@ -1121,7 +1121,7 @@ The post-port aggregate is green at 1,027 Swift Testing cases across 71
 suites, the `stroopwafel-v3` build, and the complete TypeScript typecheck,
 contract, live-support, and fixture matrix.
 
-The canonical Reminders app is complete through `e72c99a`. The clean fresh-app
+The canonical Reminders app is complete through `44172c8`. The clean fresh-app
 gate records six namespaces, 29 attributes, nine links, 21 allow rules, exact
 normalized server warnings, canonical TypeScript `Date` objects, both data
 directions, reader write denial before writer promotion, outsider invisibility,
@@ -1130,17 +1130,17 @@ and zero compiler/runtime warnings at
 post-port aggregate is green at 1,049 Swift Testing cases across 76 suites and
 the complete TypeScript typecheck, contract, live-support, and fixture matrix.
 
-The canonical SyncUps app is complete through `b689469`. The clean fresh-app
+The canonical SyncUps app is complete through `0fc0bcd`. The clean fresh-app
 gate records three entities, nine attributes, two required links, twelve allow
 rules, the two exact server-canonical link-name warnings, canonical TypeScript
 `Date` objects, both nested data directions, authenticated Swift state, zero
 pending mutations, and zero compiler/runtime warnings at
 `/tmp/instant-data-swift-syncups-v3-20260719T073704Z/evidence.json`. The
-post-port aggregate at `194ef4d` is green at 1,067 Swift Testing cases across
+post-port aggregate at `9b3459e` is green at 1,067 Swift Testing cases across
 83 suites, the `syncups-v3` build, and the complete TypeScript typecheck,
 contract, live-support, and fixture matrix.
 
-The canonical App Builder and Storage slice is complete through `7f9acc5`.
+The canonical App Builder and Storage slice is complete through `47fe061`.
 The clean fresh-app gate records three authored namespaces, thirteen authored
 attributes, two links, five allow rules, eight exact server-normalization
 warnings, both generated-code directions, server-issued file ids, canonical
@@ -1154,7 +1154,7 @@ unsupported non-indexed server order.
 The post-port aggregate passes 1,083 Swift Testing cases across 90 suites, 28
 macro tests, the runnable app build, and the complete TypeScript matrix.
 
-The Streams V3 boundary is complete through `2ec8a17`. The clean fresh-app
+The Streams V3 boundary is complete through `27f4460`. The clean fresh-app
 gate proves exact ordered UTF-8 content and server-issued identities in both
 SDK directions using the pinned AI-chat and resumable-stream sources. The
 runtime packet also covers file-backed reads, cancellation, bounded retries,
@@ -1164,7 +1164,7 @@ acknowledgement. Evidence is at
 post-port aggregate passes 1,096 Swift Testing cases across 92 suites plus 28
 macro tests.
 
-Packet 8 is complete through `f3ee07c`. The final CloudKitDemo-equivalent app
+Packet 8 is complete through `cc74d99`. The final CloudKitDemo-equivalent app
 uses the settled sharing namespaces and public wrappers, and its clean
 fresh-app boundary proves owner, read-only, read-write, denial, role
 replacement, revocation, exact cross-SDK increments, visible share state, and

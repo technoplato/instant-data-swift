@@ -16,7 +16,7 @@ the wrappers emit cached and optimistic state first and own live observation;
 the screen never fetches, subscribes, or merges those values manually.
 
 Implementation status (2026-07-18): the room/presence/topic surface is proven
-through automatic disconnect and rejoin at `ece3022`. A fresh credentialed app
+through automatic disconnect and rejoin at `f1ddcea`. A fresh credentialed app
 observed exact presence plus all three topic payloads in both directions before
 and after the forced Swift transport loss, with no call-site socket management.
 The recorded syntax is settled for app integration.

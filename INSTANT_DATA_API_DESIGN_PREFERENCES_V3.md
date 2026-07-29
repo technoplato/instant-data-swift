@@ -774,7 +774,7 @@ current user's value. Observation is keyed only by room identity, while current
 presence has its own encoded task identity, so playback updates publish without
 restarting the listener subscription. `@Topic` owns typed topic state and
 call-site publication callbacks; `.instantTopic(_:in:)` attaches it to the
-matching room schema. Commits `a7c1ad3`, `9fe9c25`, and `031e4fe` are the
+matching room schema. Commits `fbc34ad`, `347154c`, and `6688a31` are the
 compiling and lifecycle-tested baseline.
 
 Decision, 2026-07-18: playback time crosses the room boundary as

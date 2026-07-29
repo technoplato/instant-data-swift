@@ -4,9 +4,9 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
-## July 27th, 2026 at 4:06:35 p.m. EDT — `c0514a7c3dff` Avoid sorting snapshots during live mutation rebases
+## July 27th, 2026 at 4:06:35 p.m. EDT — `598ec0b2459e` Avoid sorting snapshots during live mutation rebases
 
-- **Implementation commit:** `c0514a7c3dff580766b6bc689271f5c8c1a7d571`
+- **Implementation commit:** `598ec0b2459e83aef66d13ad3480410f51c29f52`
 - **Change:** Avoid full snapshot sorting during each optimistic live-data rebase
 - **Details:**
   - Scan the nested triple index linearly for the newest transaction timestamp, preserving deterministic snapshot ordering only for callers that actually request a snapshot. This removes the repeated sort/comparable-key hot path captured simultaneously on iPhone and Apple Watch.
@@ -19,9 +19,9 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
   > I don't think they're syncing properly.
 - **SpecStory:** unavailable — Codex desktop task; no verified SpecStory GUI capture URI is available.
 
-## July 27th, 2026 at 2:14:06 p.m. EDT — `442dc5e9182c` Record repeated signing acceptance boundary
+## July 27th, 2026 at 2:14:06 p.m. EDT — `4f077bc71c4e` Record repeated signing acceptance boundary
 
-- **Implementation commit:** `442dc5e9182c98f9c3af6ac88d410f956d9aa084`
+- **Implementation commit:** `4f077bc71c4e81a73850cb866f5b17619b430c90`
 - **Change:** Record the repeated current-head physical signing boundary
 - **Details:**
   - Captured a clean reproducible Scribe Watch build that compiled the iOS app, widgets, ReplayKit extension, and Watch app before every final product failed exclusively at Apple Development private-key use.
@@ -32,9 +32,9 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
   > all the relevant information for reproducible logability
 - **SpecStory:** unavailable — No durable SpecStory URI is available because this work is running in Codex desktop and no captured Codex CLI session was verified.
 
-## July 27th, 2026 at 2:00:20 p.m. EDT — `c6f8e8404831` Record final delivery and device acceptance evidence
+## July 27th, 2026 at 2:00:20 p.m. EDT — `10ad6819c0d8` Record final delivery and device acceptance evidence
 
-- **Implementation commit:** `c6f8e84048312857c195a1d1d9206d6bd8edfe0c`
+- **Implementation commit:** `10ad6819c0d8cf321c80e8289f32ed27f9111ef0`
 - **Change:** Record final delivery and device acceptance evidence
 - **Details:**
   - Reconcile the durable cross-repository audit with the short-lived writer data-loss root cause, server-acknowledgement and causal replay fixes, platform availability contract, and final full-suite counts.
@@ -48,9 +48,9 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
   > ensure that all the test suite still passes.
 - **SpecStory:** unavailable — Codex desktop goal task; no durable SpecStory CLI capture URI is available.
 
-## July 27th, 2026 at 1:55:58 p.m. EDT — `c211737939da` Gate mutation delivery wait by platform availability
+## July 27th, 2026 at 1:55:58 p.m. EDT — `981427972ac3` Gate mutation delivery wait by platform availability
 
-- **Implementation commit:** `c211737939daaba1641dfce5b7cf700d3743778d`
+- **Implementation commit:** `981427972ac338838f08706ed161eb855ac8016d`
 - **Change:** Gate mutation delivery wait by platform availability
 - **Details:**
   - Mark the Duration- and ContinuousClock-based server-acknowledgement boundary available on macOS 13, iOS 16, tvOS 16, and watchOS 9 without raising InstantSwiftData's broader iOS 15 and watchOS 8 package deployment targets.
@@ -62,9 +62,9 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
   > Apple Watch
 - **SpecStory:** unavailable — Codex desktop goal task; no durable SpecStory CLI capture URI is available.
 
-## July 27th, 2026 at 1:42:56 p.m. EDT — `e228326c4059` Wait for server-acknowledged mutations
+## July 27th, 2026 at 1:42:56 p.m. EDT — `27b65349097e` Wait for server-acknowledged mutations
 
-- **Implementation commit:** `e228326c4059227aa0171495cbe902110ebcf9c5`
+- **Implementation commit:** `27b65349097e233b434100654693ccb543d34e93`
 - **Change:** Wait for server-acknowledged mutations
 - **Details:**
   - Add an explicit live delivery boundary that waits for the durable outbox to empty through server acknowledgements, reconnects a closed client, reports live connection errors, honors cancellation, and times out without invoking the separately injected local flush transport.
@@ -83,9 +83,9 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
   > ensure that all the test suite still passes.
 - **SpecStory:** unavailable — Codex desktop goal task; no durable SpecStory CLI capture URI is available.
 
-## July 27th, 2026 at 1:05:29 p.m. EDT — `82b74dd2267d` Harden durable live query refreshes
+## July 27th, 2026 at 1:05:29 p.m. EDT — `36e871c147e4` Harden durable live query refreshes
 
-- **Implementation commit:** `82b74dd2267d325c500852cb43a850d1c5783172`
+- **Implementation commit:** `36e871c147e4040f105de408e66c6a2e81baea95`
 - **Change:** Harden durable live query refreshes
 - **Details:**
   - Reject stale live refresh CAS attempts atomically across the store, outbox, ownership rows, server watermark, revisions, and cached state; preserve pre-0011 global triples without inventing ownership.
@@ -103,9 +103,9 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
   > Fix registration/prune serialization canonically and add a deterministic interleaving regression
 - **SpecStory:** unavailable — Codex desktop task; no durable SpecStory CLI capture URI is available.
 
-## July 27th, 2026 at 12:39:13 p.m. EDT — `5f75dc984510` Bound live query result retention
+## July 27th, 2026 at 12:39:13 p.m. EDT — `6386abc892aa` Bound live query result retention
 
-- **Implementation commit:** `5f75dc984510e26fc80502b8550bee33b525e397`
+- **Implementation commit:** `6386abc892aa0ef8516b9dd283efb59c57200a26`
 - **Change:** Bound live query result retention
 - **Details:**
   - Apply Reactor querySubs retention defaults of 52 weeks, 1,000 unloaded results, and 1,000,000 owned triples at bootstrap and on a bounded write cadence.
@@ -127,9 +127,9 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
   > ensure that all the test suite still passes.
 - **SpecStory:** unavailable — Codex desktop goal task; no durable SpecStory CLI capture URI is available.
 
-## July 27th, 2026 at 12:10:17 p.m. EDT — `f9c5e9f12fc3` Persist live query result ownership
+## July 27th, 2026 at 12:10:17 p.m. EDT — `cb1b7217f4d3` Persist live query result ownership
 
-- **Implementation commit:** `f9c5e9f12fc34435659c6a7c6a6ca4fec1b248e5`
+- **Implementation commit:** `cb1b7217f4d366fd548651e416c31b8cbea91b8f`
 - **Change:** Persist live query result ownership
 - **Details:**
   - Persist canonical live query result triples and page information in normalized SQLite ownership tables, atomically with the global store, outbox reconciliation, and server checkpoint.
@@ -147,9 +147,9 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
   > low latency remote reads
 - **SpecStory:** unavailable — Codex desktop goal task; no durable SpecStory CLI capture URI is available.
 
-## July 27th, 2026 at 12:01:54 p.m. EDT — `f6041883ed4b` Bound live infinite query subscriptions
+## July 27th, 2026 at 12:01:54 p.m. EDT — `c5667b402dff` Bound live infinite query subscriptions
 
-- **Implementation commit:** `f6041883ed4b5bae5324311d7c64baa279b8fcae`
+- **Implementation commit:** `c5667b402dffd792622b24b21955dbf50a74eaaa`
 - **Change:** Bound live infinite query subscriptions
 - **Details:**
   - Port Instant's limited starter, inclusive forward, inverted reverse, frozen interval, and next-page subscription coordinator so live infinite queries never register an unbounded namespace query.
@@ -167,9 +167,9 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
   > ensure that all the test suite still passes.
 - **SpecStory:** unavailable — Codex desktop goal task; no durable SpecStory CLI capture URI is available.
 
-## July 27th, 2026 at 11:35:57 a.m. EDT — `f5e0ce1724ee` Document live query cursor preservation
+## July 27th, 2026 at 11:35:57 a.m. EDT — `0b3183e1f45c` Document live query cursor preservation
 
-- **Implementation commit:** `f5e0ce1724ee1bee3f11f7e7c873cf5fcfc8dad6`
+- **Implementation commit:** `0b3183e1f45ccf870f44d35a31bde3714696da69`
 - **Change:** Document live query cursor preservation
 - **Details:**
   - Record why server-provided four-value cursors remain private wire state beside typed public cursor fields and why locally constructed cursors cannot safely be guessed for live queries.
@@ -180,9 +180,9 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
   > upstream mirroring of reactor
 - **SpecStory:** unavailable — Codex desktop goal task; no durable SpecStory CLI capture URI is available.
 
-## July 27th, 2026 at 11:34:55 a.m. EDT — `11edea370b20` Preserve live query pagination cursors
+## July 27th, 2026 at 11:34:55 a.m. EDT — `2c2117ae0ca1` Preserve live query pagination cursors
 
-- **Implementation commit:** `11edea370b20bd273fa5e0cfa5de632ff7ffa224`
+- **Implementation commit:** `2c2117ae0ca1e84eab8b422b51629919815bf259`
 - **Change:** Preserve live query pagination cursors
 - **Details:**
   - Decode canonical per-namespace page-info from live query results and retain it through one-shot materialization instead of replacing server pagination metadata with local estimates.
@@ -200,9 +200,9 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
   > upstream mirroring of reactor
 - **SpecStory:** unavailable — Codex desktop goal task; no durable SpecStory CLI capture URI is available.
 
-## July 27th, 2026 at 11:21:35 a.m. EDT — `f3e9fe041f1e` Expose direct composite fetch requests
+## July 27th, 2026 at 11:21:35 a.m. EDT — `c429e815bb0b` Expose direct composite fetch requests
 
-- **Implementation commit:** `f3e9fe041f1e67e0410c3a585cf162f941cca08f`
+- **Implementation commit:** `c429e815bb0be013b76db96228a503bec7ac37bd`
 - **Change:** Expose direct composite fetch requests
 - **Details:**
   - Let actors and TCA effects load or subscribe to InstantFetchRequest directly while reusing the same library-owned combination and cancellation machinery as @Fetch.
@@ -215,13 +215,13 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
   > upstream mirroring of ergonomics of sqlite-data
 - **SpecStory:** unavailable — Codex desktop goal task; no durable SpecStory CLI capture URI is available.
 
-## July 27th, 2026 at 11:02:24 a.m. EDT — `865ead6e6708` Record physical Watch transcription proof
+## July 27th, 2026 at 11:02:24 a.m. EDT — `9ce8dccda4c6` Record physical Watch transcription proof
 
-- **Implementation commit:** `865ead6e670851aae223d3b61582dcbef2d9102f`
+- **Implementation commit:** `9ce8dccda4c67b17a7d0e3d6c7ceabe85730d431`
 - **Change:** Record physical Watch transcription proof and the production policy port
 - **Details:**
   - Replace prepared-only Watch evidence with the retained complete PCM, WAV, Deepgram, and final-transcript chronology from the clean physical probe.
-  - Record production AudioCaptureClient authorization at 3fe73a0, a successful generic ScribeSharedWatch build, and the 447-test final Scribe suite.
+  - Record production AudioCaptureClient authorization at ac50d0d, a successful generic ScribeSharedWatch build, and the 447-test final Scribe suite.
   - Keep production persistence, repeated cold-start reliability, signed post-port deployment, and physical ReplayKit broadcast as explicit acceptance boundaries.
 - **Files:**
   - `docs/audits/2026-07-26-fable5-comprehensive-audit.md` — Reconcile the durable cross-repository audit with the final physical and production Watch evidence.
@@ -230,9 +230,9 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
   > Apple Watch reliability
 - **SpecStory:** unavailable — Codex desktop task; no durable SpecStory CLI capture URI is available.
 
-## July 27th, 2026 at 11:02:24 a.m. EDT — `5aa73734891a` Record final Watch and suite evidence
+## July 27th, 2026 at 11:02:24 a.m. EDT — `f742678c8c0f` Record final Watch and suite evidence
 
-- **Implementation commit:** `5aa73734891a439075a1a3997d03818feaed2ace`
+- **Implementation commit:** `f742678c8c0f51884e78eb9061a15c91c79615f1`
 - **Change:** Record final Watch auto-run and 446-test suite evidence
 - **Details:**
   - Update the audit after the active-only Watch auto-run timing fix and the final 446-test Scribe package pass.
@@ -242,9 +242,9 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
   > maintain a human-readable timestamped commit audit journal and clean worktrees
 - **SpecStory:** unavailable — Codex desktop task; no durable SpecStory CLI capture URI is available.
 
-## July 27th, 2026 at 10:41:17 a.m. EDT — `c399e0080ac8` Reconcile final verification evidence
+## July 27th, 2026 at 10:41:17 a.m. EDT — `d8f5c2219f37` Reconcile final verification evidence
 
-- **Implementation commit:** `c399e0080ac882c641d032fc2d661bb7a088c8dd`
+- **Implementation commit:** `d8f5c2219f3751993a517e708ebeff4bf1992be7`
 - **Change:** Reconcile final verification evidence
 - **Details:**
   - Align the durable audit with the Watch probe recording-compatible asynchronous activation policy.
@@ -255,9 +255,9 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
   > maintain a human-readable timestamped commit audit journal and clean worktrees
 - **SpecStory:** unavailable — Codex desktop task; no durable SpecStory CLI capture URI is available.
 
-## July 27th, 2026 at 10:40:22 a.m. EDT — `01782d294545` Record final cross-repository verification
+## July 27th, 2026 at 10:40:22 a.m. EDT — `0e2dc17922dc` Record final cross-repository verification
 
-- **Implementation commit:** `01782d2945459b0c382ebb7cd6476595fcae482b`
+- **Implementation commit:** `0e2dc17922dc276630601e4e27fa88d77c2d53ab`
 - **Change:** Record final cross-repository verification
 - **Details:**
   - Record the exact passing Scribe, Instant, and performance-safety suite totals and their canonical local logs.
@@ -268,9 +268,9 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
   > maintain a human-readable timestamped commit audit journal and clean worktrees
 - **SpecStory:** unavailable — Codex desktop task; no durable SpecStory CLI capture URI is available.
 
-## July 27th, 2026 at 10:35:33 a.m. EDT — `a4245d762055` Allow nonblocking cookie sync under suite load
+## July 27th, 2026 at 10:35:33 a.m. EDT — `10f685d52705` Allow nonblocking cookie sync under suite load
 
-- **Implementation commit:** `a4245d7620552df9aa272b22d8a6eca82f1ca9eb`
+- **Implementation commit:** `10f685d52705c14d01266c36df9b64feaab19c31`
 - **Change:** Allow nonblocking cookie sync under suite load
 - **Details:**
   - Wait against a five-second monotonic deadline instead of one hundred scheduler-dependent sleeps for deliberately nonblocking utility-priority startup cookie sync.
@@ -281,9 +281,9 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
   > ensure that all the test suite still passes.
 - **SpecStory:** unavailable — Codex desktop sessions are not supported by the documented SpecStory CLI capture workflow, so no durable session URI is available.
 
-## July 27th, 2026 at 10:35:29 a.m. EDT — `af4a545cd73c` Wait for composite fetch observations
+## July 27th, 2026 at 10:35:29 a.m. EDT — `ef9eebdb2b96` Wait for composite fetch observations
 
-- **Implementation commit:** `af4a545cd73c74750107520fe590eac98af92f73`
+- **Implementation commit:** `ef9eebdb2b96444b8db4ba61c797f33ac935f687`
 - **Change:** Wait for composite fetch observations
 - **Details:**
   - Wait for all four automatic composite observations with the existing bounded typed-condition helper before asserting recorder totals.
@@ -294,9 +294,9 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
   > with focused tests and passing full test suites.
 - **SpecStory:** unavailable — Codex desktop task; no durable SpecStory CLI capture URI is available.
 
-## July 27th, 2026 at 10:27:04 a.m. EDT — `b6f72262a5dd` Stabilize live transport bootstrap expectation
+## July 27th, 2026 at 10:27:04 a.m. EDT — `c238c4e7ae29` Stabilize live transport bootstrap expectation
 
-- **Implementation commit:** `b6f72262a5dd662dc2f17b6ce10442f669dcc0d5`
+- **Implementation commit:** `c238c4e7ae29154f46f923e4c7bd1eb3a01bbc65`
 - **Change:** Stabilize live transport bootstrap expectation
 - **Details:**
   - Stop asserting the transient pre-connect state when live transport bootstrap intentionally starts an asynchronous automatic connection.
@@ -307,9 +307,9 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
   > ensure that all the test suite still passes.
 - **SpecStory:** unavailable — Codex desktop sessions are not supported by the documented SpecStory CLI capture workflow, so no durable session URI is available.
 
-## July 27th, 2026 at 10:23:39 a.m. EDT — `b7eaceccec88` Stabilize concurrent composite fetch fixtures
+## July 27th, 2026 at 10:23:39 a.m. EDT — `83939c376899` Stabilize concurrent composite fetch fixtures
 
-- **Implementation commit:** `b7eaceccec880bdfbb6b747a9c0335bae9ca509f`
+- **Implementation commit:** `83939c376899f6fe2b30e5c6789f2482b3f034e2`
 - **Change:** Stabilize concurrent composite fetch fixtures
 - **Details:**
   - Resolve mock query results by plan instead of task completion order so concurrent composite loads remain deterministic.
@@ -321,9 +321,9 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
   > ensure that all the test suite still passes.
 - **SpecStory:** unavailable — Codex desktop sessions are not supported by the documented SpecStory CLI capture workflow, so no durable session URI is available.
 
-## July 27th, 2026 at 10:18:42 a.m. EDT — `25d6b9718b47` Stabilize query cache retention fixtures
+## July 27th, 2026 at 10:18:42 a.m. EDT — `1657fba57650` Stabilize query cache retention fixtures
 
-- **Implementation commit:** `25d6b9718b475657af5d4553f1434c17a6342862`
+- **Implementation commit:** `1657fba57650f1fdf4c84343ee93ef48f19120f0`
 - **Change:** Stabilize query cache retention fixtures
 - **Details:**
   - Document the lock protecting the pruning cadence's unchecked Sendable state.
@@ -336,9 +336,9 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
   > ensure that all the test suite still passes.
 - **SpecStory:** unavailable — Codex desktop sessions are not supported by the documented SpecStory CLI capture workflow, so no durable session URI is available.
 
-## July 27th, 2026 at 10:14:54 a.m. EDT — `91578fe1e6b3` Correct amortized pruning benchmark contract
+## July 27th, 2026 at 10:14:54 a.m. EDT — `0a1129fa639a` Correct amortized pruning benchmark contract
 
-- **Implementation commit:** `91578fe1e6b3da54b52939f0d8736da99b68343f`
+- **Implementation commit:** `0a1129fa639a416a57ce262e3be7b0a18a0f4935`
 - **Change:** Correct the amortized pruning benchmark contract
 - **Details:**
   - Restore the offline-relaunch actor-hop fixture to 11 after bootstrap pruning was folded into the existing persistence bootstrap actor call.
@@ -349,9 +349,9 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
   > But we also want to really be focusing on performance.
 - **SpecStory:** unavailable — Codex desktop sessions are not supported by the documented SpecStory CLI capture workflow, so no durable session URI is available.
 
-## July 27th, 2026 at 10:13:28 a.m. EDT — `0ba57bdbdc5e` Amortize persisted query cache pruning
+## July 27th, 2026 at 10:13:28 a.m. EDT — `d1066e817f50` Amortize persisted query cache pruning
 
-- **Implementation commit:** `0ba57bdbdc5e4375e91189c9b1fe40cb69bb7a4a`
+- **Implementation commit:** `d1066e817f5048abfd8eb5746eddf41b7edf3538`
 - **Change:** Amortize persisted query cache pruning
 - **Details:**
   - Prune stale persisted query rows during runtime bootstrap, then scan only every 64 successful cache writes instead of on every one-shot materialization.
@@ -366,9 +366,9 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
   > implement and verify prioritized performance ... and Instant Reactor ... improvements
 - **SpecStory:** unavailable — Codex desktop sessions are not supported by the documented SpecStory CLI capture workflow, so no durable session URI is available.
 
-## July 27th, 2026 at 10:05:15 a.m. EDT — `760afdb4dee3` Add read-only local client facet
+## July 27th, 2026 at 10:05:15 a.m. EDT — `96cc06864fe7` Add read-only local client facet
 
-- **Implementation commit:** `760afdb4dee3ce23408d48b233bb8501bf481181`
+- **Implementation commit:** `96cc06864fe7928a3609ac3388a63451aa4a2cb1`
 - **Change:** Derive an injectable local-reader facet from an already bootstrapped Instant client
 - **Details:**
   - Reuse the live client's runtime, in-memory store, and SQLite connection for ordinary local `query`, `queryOnce`, and observation APIs without server acknowledgement or live query registration.
@@ -382,9 +382,9 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
   > Instant Reactor and SQLiteData ergonomic parity
 - **SpecStory:** unavailable — Codex desktop sessions are not supported by the documented SpecStory CLI capture workflow, so no durable session URI is available.
 
-## July 27th, 2026 at 9:59:16 a.m. EDT — `da5010dee7b7` Scope store observer invalidation by namespace
+## July 27th, 2026 at 9:59:16 a.m. EDT — `b812a2c3a1b1` Scope store observer invalidation by namespace
 
-- **Implementation commit:** `da5010dee7b70a0ee65891b2859ebc4fd8e3d2f2`
+- **Implementation commit:** `b812a2c3a1b13d0d3e90b927a1b4232afd80be7e`
 - **Change:** Skip query re-materialization for flat observers in namespaces untouched by a store commit
 - **Details:**
   - Resolve changed entity namespaces from both the pre-commit and prepared indexes, including incoming reference targets.
@@ -397,9 +397,9 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
   > implement and verify prioritized performance ... improvements across both repositories
 - **SpecStory:** unavailable — Codex desktop sessions are not supported by the documented SpecStory CLI capture workflow, so no durable session URI is available.
 
-## July 27th, 2026 at 9:56:00 a.m. EDT — `c0a030425a31` Prune persisted query cache automatically
+## July 27th, 2026 at 9:56:00 a.m. EDT — `a488b43452ce` Prune persisted query cache automatically
 
-- **Implementation commit:** `c0a030425a3191d600649fd8e69740d32ff21f7c`
+- **Implementation commit:** `a488b43452ceaf2c620775737b99a9cca0d08468`
 - **Change:** Apply the Reactor query-subscription retention policy on production one-shot cache writes
 - **Details:**
   - Enforce the upstream one-year, 1,000-entry, and adapted one-megabyte encoded-row limits after successful query materialization.
@@ -412,9 +412,9 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
   > implement and verify prioritized performance ... and Instant Reactor ... improvements
 - **SpecStory:** unavailable — Codex desktop sessions are not supported by the documented SpecStory CLI capture workflow, so no durable session URI is available.
 
-## July 27th, 2026 at 9:48:11 a.m. EDT — `7ec460ab9d76` Add typed snapshot value decoding
+## July 27th, 2026 at 9:48:11 a.m. EDT — `870a4083e2eb` Add typed snapshot value decoding
 
-- **Implementation commit:** `7ec460ab9d76362209c8a5b0e76e9664a6740cfb`
+- **Implementation commit:** `870a4083e2eb895c776bc2634e0f69a4b3de6cb6`
 - **Change:** Decode cardinality-one snapshot fields through schema-owned typed attribute paths
 - **Details:**
   - Add `InstantEntitySnapshot.value(_:)` for values that are both Instant-representable and decodable.
@@ -427,9 +427,9 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
   > Generate or centralize entity snapshot decoding ... to remove repeated stringly application boilerplate.
 - **SpecStory:** unavailable — Codex desktop sessions are not supported by the documented SpecStory CLI capture workflow, so no durable session URI is available.
 
-## July 27th, 2026 at 9:45:23 a.m. EDT — `d3e6e704121d` Add dependency-controlled Instant IDs
+## July 27th, 2026 at 9:45:23 a.m. EDT — `e965771ebe8b` Add dependency-controlled Instant IDs
 
-- **Implementation commit:** `d3e6e704121d0c4c4431a7b346a6c1d49f6e5312`
+- **Implementation commit:** `e965771ebe8b9bdb69a4fe4d96014ab0114e98dd`
 - **Change:** Generate typed entity IDs through the Point-Free UUID dependency
 - **Details:**
   - Add `InstantID<Entity>()` with canonical lowercase UUID formatting for concise new-entity creation.
@@ -442,9 +442,9 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
   > Add dependency-controlled IDs ... without broadening the application/library sync boundary.
 - **SpecStory:** unavailable — Codex desktop sessions are not supported by the documented SpecStory CLI capture workflow, so no durable session URI is available.
 
-## July 27th, 2026 at 9:30:14 a.m. EDT — `0bda5d56651a` Isolate malformed outbox mutations
+## July 27th, 2026 at 9:30:14 a.m. EDT — `657a74a16e53` Isolate malformed outbox mutations
 
-- **Implementation commit:** `0bda5d56651ac8e1b5e107b7a5a74ccc4f6c7a68`
+- **Implementation commit:** `657a74a16e5347c729d94fcc68ceaad60875e4ba`
 - **Change:** Fail only an unencodable live mutation and continue sending later healthy mutations
 - **Details:**
   - Separate attribute-resolution failures from socket-send failures inside the live session.
@@ -456,9 +456,9 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
   > One mutation with an unresolvable attribute aborts the delivery loop and can poison every reconnect.
 - **SpecStory:** unavailable — Codex desktop sessions are not supported by the documented SpecStory CLI capture workflow, so no durable session URI is available.
 
-## July 27th, 2026 at 9:30:14 a.m. EDT — `ea1ca27e3cd0` Preserve same-millisecond outbox order
+## July 27th, 2026 at 9:30:14 a.m. EDT — `43b65eeffaff` Preserve same-millisecond outbox order
 
-- **Implementation commit:** `ea1ca27e3cd0be0414ea328ef9e1ab1e10f7278d`
+- **Implementation commit:** `43b65eeffafff3b6a54ea8caf8943a329901ab95`
 - **Change:** Preserve insertion order for default-timestamp mutations created in the same millisecond
 - **Details:**
   - Advance implicit mutation timestamps above the newest durable outbox timestamp, including after compare-and-swap retries.
@@ -470,9 +470,9 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
   > Pending mutations created in the same millisecond are tie-broken by random UUID, so replay/rebase order can invert.
 - **SpecStory:** unavailable — Codex desktop sessions are not supported by the documented SpecStory CLI capture workflow, so no durable session URI is available.
 
-## July 27th, 2026 at 9:12:06 a.m. EDT — `ac10cb376523` Reference-count live room joins
+## July 27th, 2026 at 9:12:06 a.m. EDT — `fdd4c1e399f0` Reference-count live room joins
 
-- **Implementation commit:** `ac10cb37652315a4d81d488de1848ebd2cc8af9d`
+- **Implementation commit:** `fdd4c1e399f02e7e30ae967aa8b18d8fffdfc0e2`
 - **Change:** Keep shared Reactor rooms joined until their final observer leaves
 - **Details:**
   - Count local observers for each room registration instead of treating every leave as final.
@@ -484,9 +484,9 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
   > maintain a human-readable timestamped commit audit journal and clean worktrees
 - **SpecStory:** unavailable — Codex desktop sessions are not supported by the documented SpecStory CLI capture workflow, so no durable session URI is available.
 
-## July 27th, 2026 at 9:09:40 a.m. EDT — `2739e7e52982` Isolate automatic fetch generations
+## July 27th, 2026 at 9:09:40 a.m. EDT — `d2b1e5c0f27a` Isolate automatic fetch generations
 
-- **Implementation commit:** `2739e7e5298215af04768d2b2ddcf6c1f0340b62`
+- **Implementation commit:** `d2b1e5c0f27a2b161f7d3346a9bdb7ae4058992a`
 - **Change:** Prevent automatic fetch observation from superseding explicit tasks
 - **Details:**
   - Reserve a generation for automatic observation and require that generation when installing its subscription.
@@ -497,9 +497,9 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
   > commit methodically and include a changelog with all of our commits where we write updates at the top
 - **SpecStory:** unavailable — Codex desktop sessions are not supported by the documented SpecStory CLI capture workflow, so no durable session URI is available.
 
-## July 27th, 2026 at 9:09:40 a.m. EDT — `aab5dec69a27` Stabilize ordering parity fixtures
+## July 27th, 2026 at 9:09:40 a.m. EDT — `62eb6067d032` Stabilize ordering parity fixtures
 
-- **Implementation commit:** `aab5dec69a27493df3df5b8b54ed5c417405f0f5`
+- **Implementation commit:** `62eb6067d032271c2f805dc8543543eba8b3dede`
 - **Change:** Make ordering parity fixtures model genuinely later edits
 - **Details:**
   - Give the infinite-query reorder mutation an explicit timestamp beyond the fixture hash range and assert the complete local ordering before checking the visible window.
@@ -511,9 +511,9 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
   > commit methodically and include a changelog with all of our commits where we write updates at the top
 - **SpecStory:** unavailable — Codex desktop sessions are not supported by the documented SpecStory CLI capture workflow, so no durable session URI is available.
 
-## July 27th, 2026 at 9:09:40 a.m. EDT — `cabc4677fbb4` Fix optimistic mutation rebasing
+## July 27th, 2026 at 9:09:40 a.m. EDT — `8f43f3f5258d` Fix optimistic mutation rebasing
 
-- **Implementation commit:** `cabc4677fbb4f81741669d919c818b9d86762fd7`
+- **Implementation commit:** `8f43f3f5258da82f5d788abe854914a49450fba1`
 - **Change:** Keep later optimistic mutations visible over server refreshes
 - **Details:**
   - Rebase each remaining optimistic mutation with a timestamp newer than the authoritative server snapshot, matching upstream Reactor overlay semantics.
@@ -525,9 +525,9 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
   > commit methodically and include a changelog with all of our commits where we write updates at the top
 - **SpecStory:** unavailable — Codex desktop sessions are not supported by the documented SpecStory CLI capture workflow, so no durable session URI is available.
 
-## July 27th, 2026 at 9:09:40 a.m. EDT — `6a185835b571` Adopt intent changelog workflow
+## July 27th, 2026 at 9:09:40 a.m. EDT — `e2dba6ba9ce0` Adopt intent changelog workflow
 
-- **Implementation commit:** `6a185835b57162af967880f93ea8731f7ad20242`
+- **Implementation commit:** `e2dba6ba9ce08a5ec107bade582bc86cfd6e4f8e`
 - **Change:** Adopt the repository intent-ledger workflow
 - **Details:**
   - Add the change-log discipline to repository instructions and establish a newest-first human-readable ledger.
@@ -541,9 +541,9 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
   > commit methodically and include a changelog with all of our commits where we write updates at the top
 - **SpecStory:** unavailable — Codex desktop sessions are not supported by the documented SpecStory CLI capture workflow, so no durable session URI is available.
 
-## July 27th, 2026 at 8:55:43 a.m. EDT — `d7dd19d499ce` Fix live query error isolation
+## July 27th, 2026 at 8:55:43 a.m. EDT — `3a0c2c53cf28` Fix live query error isolation
 
-- **Implementation commit:** `d7dd19d499ce8bf3643c5cbb2967fab7746963ed`
+- **Implementation commit:** `3a0c2c53cf28296ea56617d6d868dfa6a73f0383`
 - **Change:** Isolate rejected live queries and prevent stale manual-delivery sends
 - **Details:**
   - Preserve the server original-event so add-query failures retire only the rejected registration, fail queryOnce promptly, and leave the shared socket opened for healthy queries.
