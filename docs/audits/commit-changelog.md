@@ -15,6 +15,14 @@ contain its own final SHA.
   device-local Settings opt-out and live delivery gating. The shared-index
   commit also links the concurrent issue 035 watcher work.
 
+## July 29, 2026 at 6:13:56 PM EDT
+
+- Repository: `realtime-voice-sqlite-instant` (Scribe)
+- Commit: `a9ce1d8b6148c592c78028312fc879e9b1a5fb91`
+- High-level reason: Add the smallest recording-scoped passive watcher with
+  visible agent presence, persisted GPT target settings, stable transcript
+  threads, terse offline responses, lifecycle controls, and focused tests.
+
 ## July 29, 2026 at 6:11:57 PM EDT
 
 - Repository: `realtime-voice-sqlite-instant` (Scribe)
