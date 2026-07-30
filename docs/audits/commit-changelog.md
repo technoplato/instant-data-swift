@@ -14,6 +14,14 @@ contain its own final SHA.
   Swift schema, align their encoded shape and legacy default with Foldkit, and
   prove lossless Instant payload persistence with focused tests.
 
+## July 30, 2026 at 12:01:59 AM EDT
+
+- Repository: `realtime-voice-sqlite-instant` (Scribe)
+- Commit: `1f1351782e247059a82f5e10a1148ad4dfe107ca`
+- High-level reason: Limit default-on process-memory sampling to the requested
+  initial iOS, iPadOS, and macOS platform set so shared Watch and visionOS hosts
+  do not start performance instrumentation.
+
 ## July 29, 2026 at 11:58:01 PM EDT
 
 - Repository: `realtime-voice-sqlite-instant` (Scribe)
