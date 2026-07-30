@@ -59,7 +59,7 @@ import Foundation
       )
       let listener: NWListener
       do {
-        listener = try NWListener(using: parameters, on: networkPort)
+        listener = try NWListener(using: parameters)
       } catch {
         throw InstantNetworkDesertError.wrap(
           error,

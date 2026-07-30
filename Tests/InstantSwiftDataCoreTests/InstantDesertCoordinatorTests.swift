@@ -474,6 +474,41 @@ struct InstantDesertCoordinatorTests {
     }
 
     @Test
+    func networkFrameworkHostBindsAnExplicitLoopbackPort() async throws {
+      let appID = "desert-network-explicit-port"
+      var selectedHost: InstantNetworkDesertHost?
+      var selectedPort: UInt16?
+      var lastBindingError: (any Error)?
+      for explicitPort in UInt16(49_000)...UInt16(49_100) {
+        do {
+          selectedHost = try await InstantNetworkDesertHost.start(
+            appID: appID,
+            host: "127.0.0.1",
+            port: explicitPort
+          )
+          selectedPort = explicitPort
+          break
+        } catch {
+          lastBindingError = error
+        }
+      }
+      if selectedHost == nil, let lastBindingError { throw lastBindingError }
+      let host = try #require(selectedHost)
+      let explicitPort = try #require(selectedPort)
+      expectNoDifference(host.port, explicitPort)
+      let session = try await InstantLiveTransportClient.networkFramework(
+        host: "127.0.0.1",
+        port: explicitPort
+      ).connect(InstantLiveSessionRequest(appID: appID))
+      try await session.send(.initMessage(appID: appID, clientEventID: "explicit-port-init"))
+      let response = try await receiveDesertMessage(from: session)
+      expectNoDifference(response.op, "init-ok")
+
+      await session.close()
+      await host.stop()
+    }
+
+    @Test
     func cancellingNetworkFrameworkReadinessDoesNotStrandThePeer() async throws {
       let connection = Task {
         try await InstantLiveTransportClient.networkFramework(
