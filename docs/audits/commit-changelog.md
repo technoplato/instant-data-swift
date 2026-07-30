@@ -6,6 +6,15 @@ commit SHA, and high-level reason. Changelog-only bookkeeping commits are
 visible in Git history but are not self-recorded because a commit cannot
 contain its own final SHA.
 
+## July 30, 2026 at 6:59:48 AM EDT
+
+- Repository: `realtime-voice-sqlite-instant` (Scribe)
+- Commit: `55556b7045b4b278c044ca20ef3d316e63bf0827`
+- High-level reason: Build recording-scoped Instant listener rooms, a
+  standalone Mac stream-agent CLI, hidden passive responses, allow-listed TCA
+  actions, explicit Apple system TTS, and a fully local Apple SpeechAnalyzer
+  and Foundation Models intelligence mode.
+
 ## July 30, 2026 at 6:13:15 AM EDT
 
 - Repository: `foldkit`
