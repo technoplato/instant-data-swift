@@ -139,8 +139,14 @@ for line_number, record in records:
         errors.append(f"{label}: expected ok=true.")
     if record.get("route") != "desert":
         errors.append(f"{label}: expected route='desert'.")
-    if record.get("transport") != "in-process":
-        errors.append(f"{label}: expected transport='in-process'.")
+    if record.get("hostAdapter") != "network-framework-host":
+        errors.append(f"{label}: expected hostAdapter='network-framework-host'.")
+    if record.get("peerAdapter") != "network-framework-peer":
+        errors.append(f"{label}: expected peerAdapter='network-framework-peer'.")
+    if record.get("hostTransport") != "in-process":
+        errors.append(f"{label}: expected hostTransport='in-process'.")
+    if record.get("peerTransport") != "network-framework":
+        errors.append(f"{label}: expected peerTransport='network-framework'.")
     phase = record.get("phase")
     if not isinstance(phase, str) or not phase.strip():
         errors.append(f"{label}: expected a nonempty phase.")

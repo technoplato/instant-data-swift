@@ -532,7 +532,9 @@ public actor InstantDesertCoordinator {
           reason: "Desert query options must be an object."
         )
       }
-      let unsupported = options.keys.filter { $0 != "order" && $0 != "where" }.sorted()
+      let unsupported = options.keys.filter {
+        $0 != "order" && $0 != "where" && $0 != "limit"
+      }.sorted()
       guard unsupported.isEmpty else {
         throw unsupportedQuery(
           path: "q.\(namespace).$.\(unsupported[0])",
@@ -550,6 +552,18 @@ public actor InstantDesertCoordinator {
             path: "q.\(namespace).$.where",
             reason:
               "The desert prototype currently supports only one exact top-level string id filter."
+          )
+        }
+      }
+      if let limitValue = options["limit"] {
+        guard case .number(let limit) = limitValue,
+          limit == 1,
+          options["where"]?.objectValue?["id"]?.stringValue?.isEmpty == false
+        else {
+          throw unsupportedQuery(
+            path: "q.\(namespace).$.limit",
+            reason:
+              "The desert prototype supports limit 1 only with one exact top-level string id filter."
           )
         }
       }
@@ -572,7 +586,7 @@ public actor InstantDesertCoordinator {
       path: path,
       message: reason,
       recovery:
-        "Use a single namespace query with optional ordering or one exact top-level string id filter."
+        "Use a single namespace query with optional ordering or one exact top-level string id filter, optionally limited to one result."
     )
   }
 

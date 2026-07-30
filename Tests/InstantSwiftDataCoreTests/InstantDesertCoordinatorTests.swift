@@ -348,7 +348,7 @@ struct InstantDesertCoordinatorTests {
   }
 
   @Test
-  func exactTopLevelIDFilterReturnsOnlyTheRequestedEntity() async throws {
+  func exactTopLevelIDFilterWithFetchOneLimitReturnsOnlyTheRequestedEntity() async throws {
     let appID = "desert-exact-id-filter"
     let coordinator = InstantDesertCoordinator(
       appID: appID,
@@ -370,7 +370,8 @@ struct InstantDesertCoordinatorTests {
     let query: InstantLiveJSONValue = .object([
       "todos": .object([
         "$": .object([
-          "where": .object(["id": .string("wanted-todo")])
+          "where": .object(["id": .string("wanted-todo")]),
+          "limit": .number(1),
         ])
       ])
     ])

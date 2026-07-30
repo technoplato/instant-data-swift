@@ -151,9 +151,26 @@ public typealias AuthAppConfiguration = AuthV3AppConfiguration
 
     private func sendMagicCodeButtonTapped() {
       auth.sendMagicCode(
-        onChallengeSent: { challenge in message = "Code sent to \(challenge.email)" },
+        onChallengeSent: { challenge in
+          if let code = Self.autofillCode(challenge) {
+            auth.magicCode = code
+          }
+          message = Self.challengeMessage(challenge)
+        },
         onFailure: { error in message = error.recoveryMessage }
       )
+    }
+
+    static func challengeMessage(_ challenge: InstantMagicCodeChallenge) -> String {
+      guard let code = autofillCode(challenge) else {
+        return "Code sent to \(challenge.email)"
+      }
+      return "Code sent to \(challenge.email). Local code: \(code)"
+    }
+
+    static func autofillCode(_ challenge: InstantMagicCodeChallenge) -> String? {
+      let code = challenge.code.trimmingCharacters(in: .whitespacesAndNewlines)
+      return code.isEmpty ? nil : code
     }
 
     private func verifyMagicCodeButtonTapped() {

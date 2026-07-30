@@ -13,10 +13,8 @@ struct RecipesV3DesertSmokeTests {
   @Test(arguments: InstantRecipeV3.allCases)
   func twoClientDesertSmoke(recipe: InstantRecipeV3) async throws {
     let appID = "recipes-desert-\(recipe.rawValue)-\(UUID().uuidString)"
-    let coordinator = InstantDesertCoordinator(
-      appID: appID,
-      initialAttributes: RecipesV3AppConfiguration.initialAttributes
-    )
+    let transports = try await desertSmokeTransports(appID: appID)
+    defer { Task { await transports.stop() } }
     let hostDirectory = try temporaryDirectory(named: "\(recipe.rawValue)-host")
     let peerDirectory = try temporaryDirectory(named: "\(recipe.rawValue)-peer")
     defer {
@@ -27,22 +25,24 @@ struct RecipesV3DesertSmokeTests {
     let host = try await desertClient(
       appID: appID,
       persistenceURL: hostDirectory.appendingPathComponent("cache.sqlite"),
-      coordinator: coordinator,
-      adapter: "recipe-smoke-host"
+      transport: transports.host,
+      transportKind: transports.hostKind,
+      adapter: "network-framework-host"
     )
     let peer = try await desertClient(
       appID: appID,
       persistenceURL: peerDirectory.appendingPathComponent("cache.sqlite"),
-      coordinator: coordinator,
-      adapter: "recipe-smoke-peer"
+      transport: transports.peer,
+      transportKind: transports.peerKind,
+      adapter: "network-framework-peer"
     )
 
     let hostStatus = try await host.connect()
     let peerStatus = try await peer.connect()
     expectNoDifference(hostStatus.syncRoute.route, .desert)
-    expectNoDifference(hostStatus.transport, .inProcess)
+    expectNoDifference(hostStatus.transport, transports.hostKind)
     expectNoDifference(peerStatus.syncRoute.route, .desert)
-    expectNoDifference(peerStatus.transport, .inProcess)
+    expectNoDifference(peerStatus.transport, transports.peerKind)
 
     let phase: String
     switch recipe {
@@ -112,11 +112,12 @@ struct RecipesV3DesertSmokeTests {
 
     case .auth:
       try await smokeAuth(host: host, peer: peer)
-      phase = "independent-local-auth-sessions"
+      phase = "independent-local-guest-and-magic-code-sessions"
     }
 
     _ = try await host.closeConnection()
     _ = try await peer.closeConnection()
+    await transports.stop()
 
     let evidence = RecipesV3DesertSmokeEvidence(
       recipe: recipe.rawValue,
@@ -124,7 +125,8 @@ struct RecipesV3DesertSmokeTests {
       route: hostStatus.syncRoute.route.rawValue,
       hostAdapter: hostStatus.syncRoute.adapter,
       peerAdapter: peerStatus.syncRoute.adapter,
-      transport: hostStatus.transport.rawValue,
+      hostTransport: hostStatus.transport.rawValue,
+      peerTransport: peerStatus.transport.rawValue,
       phase: phase,
       ok: true
     )
@@ -140,15 +142,56 @@ private struct RecipesV3DesertSmokeEvidence: Codable, Sendable {
   var route: String
   var hostAdapter: String
   var peerAdapter: String
-  var transport: String
+  var hostTransport: String
+  var peerTransport: String
   var phase: String
   var ok: Bool
+}
+
+private struct RecipesV3DesertSmokeTransports: Sendable {
+  var host: InstantLiveTransportClient
+  var hostKind: InstantRuntimeTransportKind
+  var peer: InstantLiveTransportClient
+  var peerKind: InstantRuntimeTransportKind
+  var stop: @Sendable () async -> Void
+}
+
+private func desertSmokeTransports(
+  appID: String
+) async throws -> RecipesV3DesertSmokeTransports {
+  #if canImport(Network)
+    let host = try await InstantNetworkDesertHost.start(
+      appID: appID,
+      initialAttributes: RecipesV3AppConfiguration.initialAttributes,
+      port: 0
+    )
+    return RecipesV3DesertSmokeTransports(
+      host: host.transport,
+      hostKind: .inProcess,
+      peer: .networkFramework(host: "127.0.0.1", port: host.port),
+      peerKind: .networkFramework,
+      stop: { await host.stop() }
+    )
+  #else
+    let coordinator = InstantDesertCoordinator(
+      appID: appID,
+      initialAttributes: RecipesV3AppConfiguration.initialAttributes
+    )
+    return RecipesV3DesertSmokeTransports(
+      host: coordinator.transport,
+      hostKind: .inProcess,
+      peer: coordinator.transport,
+      peerKind: .inProcess,
+      stop: {}
+    )
+  #endif
 }
 
 private func desertClient(
   appID: String,
   persistenceURL: URL,
-  coordinator: InstantDesertCoordinator,
+  transport: InstantLiveTransportClient,
+  transportKind: InstantRuntimeTransportKind,
   adapter: String
 ) async throws -> InstantSwiftDataClient {
   var dependencies = DependencyValues()
@@ -174,8 +217,8 @@ private func desertClient(
   )
   dependencies.instantDesertSyncTransportFactory = InstantSyncTransportFactory(
     adapter: adapter,
-    transport: .inProcess,
-    makeTransport: { coordinator.transport }
+    transport: transportKind,
+    makeTransport: { transport }
   )
   try await dependencies.bootstrapInstantSwiftData(
     appID: appID,
@@ -376,6 +419,7 @@ private func smokeMergeTileGame(
   host: InstantSwiftDataClient,
   peer: InstantSwiftDataClient
 ) async throws {
+  let fetchOneQuery = MergeTileGameV3Board.fixedQuery.limit(1)
   let room = InstantRoomHandle(
     type: MergeTileGameV3Room.roomType,
     id: MergeTileGameV3Room.defaultRoomID
@@ -393,7 +437,7 @@ private func smokeMergeTileGame(
     }
   }
 
-  let peerInitialized = await peer.subscribe(MergeTileGameV3Board.fixedQuery)
+  let peerInitialized = await peer.subscribe(fetchOneQuery)
   try await transact(InitializeMergeTileGameV3Board(), using: host)
   try await requireEmission("peer observe initialized Merge Tile board") {
     for try await boards in peerInitialized {
@@ -403,7 +447,7 @@ private func smokeMergeTileGame(
   }
   peerInitialized.cancel()
 
-  let peerPainted = await peer.subscribe(MergeTileGameV3Board.fixedQuery)
+  let peerPainted = await peer.subscribe(fetchOneQuery)
   try await transact(
     PaintMergeTileGameV3Cell(row: 0, column: 0, color: "#e76f51"),
     using: host
@@ -416,7 +460,7 @@ private func smokeMergeTileGame(
   }
   peerPainted.cancel()
 
-  let hostMerged = await host.subscribe(MergeTileGameV3Board.fixedQuery)
+  let hostMerged = await host.subscribe(fetchOneQuery)
   try await transact(
     PaintMergeTileGameV3Cell(row: 0, column: 1, color: "#2a9d8f"),
     using: peer
@@ -434,7 +478,7 @@ private func smokeMergeTileGame(
   }
   hostMerged.cancel()
 
-  let peerReset = await peer.subscribe(MergeTileGameV3Board.fixedQuery)
+  let peerReset = await peer.subscribe(fetchOneQuery)
   try await transact(ResetMergeTileGameV3Board(), using: host)
   try await requireEmission("peer observe Merge Tile reset") {
     for try await boards in peerReset {
@@ -465,6 +509,32 @@ private func smokeAuth(
   let preservedPeerSession = try await peer.authSession()
   expectNoDifference(signedOutHostSession, nil)
   expectNoDifference(preservedPeerSession?.userID, peerSession.userID)
+
+  let email = "desert-smoke@example.com"
+  let challenge = try await host.sendMagicCode(email: email)
+  #expect(challenge.code.count == 6)
+  let magicCodeSession = try await host.signInWithMagicCode(
+    email: email,
+    code: challenge.code
+  )
+  expectNoDifference(magicCodeSession.email, email)
+  let restoredMagicCodeSession = try await host.authSession()
+  let stillPreservedPeerSession = try await peer.authSession()
+  expectNoDifference(restoredMagicCodeSession?.userID, magicCodeSession.userID)
+  expectNoDifference(stillPreservedPeerSession?.userID, peerSession.userID)
+
+  let peerEmail = "desert-peer-smoke@example.com"
+  let peerChallenge = try await peer.sendMagicCode(email: peerEmail)
+  #expect(peerChallenge.code.count == 6)
+  let peerMagicCodeSession = try await peer.signInWithMagicCode(
+    email: peerEmail,
+    code: peerChallenge.code
+  )
+  expectNoDifference(peerMagicCodeSession.email, peerEmail)
+  let finalPeerSession = try await peer.authSession()
+  let finalHostSession = try await host.authSession()
+  expectNoDifference(finalPeerSession, peerMagicCodeSession)
+  expectNoDifference(finalHostSession, magicCodeSession)
 }
 
 private func transact<Message: InstantMessage>(

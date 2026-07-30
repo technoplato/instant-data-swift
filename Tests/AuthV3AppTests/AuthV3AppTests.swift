@@ -54,5 +54,29 @@ import Testing
         )
       )
     }
+
+    @Test @MainActor
+    func localMagicCodeChallengeIsVisibleAndReadyForManualVerification() {
+      let localChallenge = InstantMagicCodeChallenge(
+        appID: "auth-local",
+        email: "desert@example.com",
+        code: "246810",
+        createdAt: InstantTimestamp(milliseconds: 1_000),
+        expiresAt: InstantTimestamp(milliseconds: 61_000)
+      )
+      expectNoDifference(
+        AuthV3LoginScreen.challengeMessage(localChallenge),
+        "Code sent to desert@example.com. Local code: 246810"
+      )
+      expectNoDifference(AuthV3LoginScreen.autofillCode(localChallenge), "246810")
+
+      var remoteChallenge = localChallenge
+      remoteChallenge.code = ""
+      expectNoDifference(
+        AuthV3LoginScreen.challengeMessage(remoteChallenge),
+        "Code sent to desert@example.com"
+      )
+      expectNoDifference(AuthV3LoginScreen.autofillCode(remoteChallenge), nil)
+    }
   }
 #endif
