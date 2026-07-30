@@ -6,6 +6,14 @@ commit SHA, and high-level reason. Changelog-only bookkeeping commits are
 visible in Git history but are not self-recorded because a commit cannot
 contain its own final SHA.
 
+## July 30, 2026 at 5:41:53 PM EDT
+
+- Repository: `realtime-voice-sqlite-instant` (Scribe)
+- Commit: `240019f98d9c62da359da9de6c1847238dea4458`
+- High-level reason: Restore iPhone, watchOS, and unsupported-platform builds
+  after the screen-recording permission dependency became required, while
+  retaining macOS as the only live permission-request implementation.
+
 ## July 30, 2026 at 3:07:35 PM EDT
 
 - Repository: `realtime-voice-sqlite-instant` (Scribe)
