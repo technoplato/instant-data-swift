@@ -4,6 +4,24 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## July 30th, 2026 at 3:58:36 p.m. EDT — `1fea8bbef4d7` Fail loudly when a Desert host disappears
+
+- **Implementation commit:** `1fea8bbef4d764a7f1f8d18a410da362bd348d90`
+- **Change:** Fail loudly when an established Desert host disappears
+- **Details:**
+  - Publish a reconnectable closed status when an established Desert transport ends, keep that state available to late observers through failed retries, and serialize automatic reconnect against explicit close.
+  - Block Recipes after host loss while retaining the mode toggle, then verify recovery to Normal with real loopback Network.framework coverage.
+  - Preserve initial-failure and cloud reconnect behavior, including isolated operation errors and upstream silent-reconnect parity.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — Preserve Desert reconnect intent, publish closed transport state, and make explicit close win retry races.
+  - `Tests/InstantSwiftDataCoreTests/InstantDesertCoordinatorTests.swift` — Reproduce host loss over a real loopback peer and cover failed retry, late subscription, and explicit close.
+  - `Tests/RecipesV3AppTests/RecipesV3AppTests.swift` — Verify the Recipes catalog fails loudly while its toggle can recover to Normal.
+  - `Examples/RecipesV3/README.md` — Document established-host loss and recovery behavior.
+  - `docs/plans/desert-island-sync.md` — Record the implemented closed-versus-errored transport contract.
+- **User context (verbatim):**
+  > For testing let’s allow us to set the library to use that mode even if network is available but fail loudly if the smoke tests and existing demos don’t work
+- **SpecStory:** unavailable — Unavailable: this Codex desktop task has no verified SpecStory capture URI.
+
 ## July 30th, 2026 at 3:32:18 p.m. EDT — `fee8962e61d0` Compile the Recipes mode bar on watchOS
 
 - **Implementation commit:** `fee8962e61d0276f92f6eecac75bcf6d273f30bb`
