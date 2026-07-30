@@ -6,6 +6,15 @@ commit SHA, and high-level reason. Changelog-only bookkeeping commits are
 visible in Git history but are not self-recorded because a commit cannot
 contain its own final SHA.
 
+## July 30, 2026 at 11:53:46 AM EDT
+
+- Repository: `instant-data-swift`
+- Commit: `0b400dd979c8a2ed8d91a1e395c002e31b04ea03`
+- High-level reason: Keep all eight Recipes V3 screens honest in forced Desert
+  mode, preserve per-item mutation rejection isolation while blocking a truly
+  closed route through reconnect, and document the exact Mac/iOS loopback
+  launch path and prototype boundaries.
+
 ## July 30, 2026 at 11:36:44 AM EDT
 
 - Repository: `instant-data-swift`

@@ -4,6 +4,26 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## July 30th, 2026 at 11:53:43 a.m. EDT — `0b400dd979c8` Make every recipe honest in desert mode
+
+- **Implementation commit:** `0b400dd979c8a2ed8d91a1e395c002e31b04ea03`
+- **Change:** Make every Recipes V3 screen honest and recoverable in forced Desert mode
+- **Details:**
+  - Hide unusable cloud-provider auth actions in forced Desert mode while keeping guest and visible local magic-code flows available.
+  - Keep required-route closure visibly blocking through reconnect, clear it only after open/authenticated recovery, and preserve per-item mutation rejection isolation.
+  - Document exact Mac host and iOS Simulator peer commands, all eight recipe paths, the strict Network.framework smoke topology, and the prototype's physical-device/security limits.
+- **Files:**
+  - `Sources/AuthV3App/AuthApp.swift` — Present only auth actions the selected offline route can perform.
+  - `Sources/RecipesV3App/RecipesV3App.swift` — Carry route capability into recipes and reduce connection failures without hiding isolated mutation errors.
+  - `Tests/AuthV3AppTests/AuthV3AppTests.swift` — Regress external-provider availability and offline guidance.
+  - `Tests/RecipesV3AppTests/RecipesV3AppTests.swift` — Regress route capability plus closed, reconnecting, recovered, and isolated rejection states.
+  - `Examples/RecipesV3/README.md` — Publish exact forced-Desert launch and validation recipes.
+  - `docs/plans/desert-island-sync.md` — Record implemented loopback scope separately from future Apple nearby transports.
+- **User context (verbatim):**
+  > Get the rest of the recipes working with this approach
+  > continue working please until these are function
+- **SpecStory:** unavailable — This work was performed in Codex desktop; no verified Codex CLI capture exists for /Users/laptop/Sync/desert, and public sharing was not authorized.
+
 ## July 30th, 2026 at 11:36:52 a.m. EDT — `8707058d0f9a` Exercise all recipes over the desert bridge
 
 - **Implementation commit:** `8707058d0f9a31a01ba2906c4a2379412fff5ba2`
