@@ -6,6 +6,14 @@ commit SHA, and high-level reason. Changelog-only bookkeeping commits are
 visible in Git history but are not self-recorded because a commit cannot
 contain its own final SHA.
 
+## July 29, 2026 at 11:14:35 PM EDT
+
+- Repository: `realtime-voice-sqlite-instant` (Scribe)
+- Commit: `5b46d0bdeb4dc2f1847af5dd0cf84569a9c47b3a`
+- High-level reason: Replace the lossy Mac bootstrap notification race with a
+  latched default-store installation rendezvous so the resident screen-stream
+  listener starts whether InstantDB becomes ready before or after AppKit launch.
+
 ## July 29, 2026 at 11:02:46 PM EDT
 
 - Repository: `realtime-voice-sqlite-instant` (Scribe)
