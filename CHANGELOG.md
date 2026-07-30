@@ -4,6 +4,20 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## July 30th, 2026 at 1:11:58 p.m. EDT — `ac6ee60fb2b0` Optimize large Instant snapshot materialization
+
+- **Implementation commit:** `ac6ee60fb2b0435578138a22e8fbc798224a2d9a`
+- **Change:** Optimize diagnostics-sized triple snapshot materialization
+- **Details:**
+  - Materialize deterministic snapshots by walking the existing entity and attribute index order instead of flattening and globally stable-sorting every triple.
+  - Added a 50,000-entity sparse debug-log-shaped regression test; the three focused TripleIndexes tests passed and the large case completed in 0.497 seconds.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/TripleIndexes.swift` — Remove the full-triple global sort and intermediate flattened arrays observed in the live Scribe CPU sample.
+  - `Tests/InstantSwiftDataCoreTests/InstantStoreTests.swift` — Protect deterministic ordering and large sparse snapshot behavior.
+- **User context (verbatim):**
+  > diagnose all the way down to the instantdb swift layer
+- **SpecStory:** unavailable — Unavailable: this Codex desktop task exposed no verified SpecStory capture URI.
+
 ## July 29th, 2026 at 1:30:30 p.m. EDT — `2b2517e25635` Make the SwiftPM package self-contained
 
 - **Implementation commit:** `2b2517e256351f7e82286424aa83b4055b7e174c`
