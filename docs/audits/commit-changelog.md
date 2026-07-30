@@ -6,6 +6,14 @@ commit SHA, and high-level reason. Changelog-only bookkeeping commits are
 visible in Git history but are not self-recorded because a commit cannot
 contain its own final SHA.
 
+## July 30, 2026 at 1:22:59 AM EDT
+
+- Repository: `realtime-voice-sqlite-instant` (Scribe)
+- Commit: `c3300c2cd44d54ae5d891aca62d3042dda5d1725`
+- High-level reason: Install the supplied Scribe artwork as the shared app icon
+  for iPhone, iPad, App Clip, Mac, Apple Watch, Apple Vision Pro, and Apple TV,
+  with platform-specific asset catalog variants validated by Apple's compiler.
+
 ## July 30, 2026 at 1:21:52 AM EDT
 
 - Repository: `realtime-voice-sqlite-instant` (Scribe)
