@@ -25,6 +25,23 @@ and the decision to trust a peer. The library continues to own local
 materialization, optimistic observation, the durable outbox, reconnection,
 delivery, and per-item rejection isolation.
 
+## Prototype status (July 30, 2026)
+
+The first executable slice on the `desert` branch is intentionally narrower
+than the complete plan below. It connects the Recipes Todos host on macOS to a
+Recipes Todos peer on iOS Simulator through a loopback-only Network.framework
+TCP adapter, while both use the ordinary Instant query, observation, and
+mutation APIs. Forced startup waits for that connection and presents a blocking
+error instead of silently falling back to cloud.
+
+This is same-host, same-session evidence—not yet a durable or secure nearby
+database. The coordinator is memory-only, the unauthenticated adapter rejects
+non-loopback binding, and unsupported query shapes fail rather than returning
+an authoritative but incomplete result. Bonjour/discovery, pairing and trust,
+encryption, physical-device LAN or peer-to-peer testing, Bluetooth,
+WatchConnectivity, coordinator persistence, and the all-demo forced-mode smoke
+inventory remain explicit follow-up phases.
+
 "Desert mode" means a required non-cloud replication route. It must never mean
 "try nearby, then quietly use the Internet."
 

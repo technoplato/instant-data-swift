@@ -24,5 +24,7 @@
 	<string>$(INSTANT_APP_ID)</string>
 	<key>LSMinimumSystemVersion</key>
 	<string>$(MACOSX_DEPLOYMENT_TARGET)</string>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>Instant Recipes uses the local network to host direct Desert sync for nearby devices.</string>
 </dict>
 </plist>

@@ -17,23 +17,82 @@ private actor BootstrapLiveConnectionProbe {
   }
 }
 
+private actor BootstrapSyncFactoryProbe {
+  private var invocationCount = 0
+
+  func recordInvocation() {
+    invocationCount += 1
+  }
+
+  func count() -> Int {
+    invocationCount
+  }
+}
+
+private actor BootstrapEffectProbe {
+  private var invocations: [String: Int] = [:]
+
+  func record(_ effect: String) {
+    invocations[effect, default: 0] += 1
+  }
+
+  func count(_ effect: String) -> Int {
+    invocations[effect, default: 0]
+  }
+}
+
+// SAFETY: Every access to events is serialized by the private NSLock.
+private final class BootstrapTraceProbe: @unchecked Sendable {
+  private let lock = NSLock()
+  private var events: [InstantStartupTraceEvent] = []
+
+  func record(_ event: InstantStartupTraceEvent) {
+    lock.lock()
+    events.append(event)
+    lock.unlock()
+  }
+
+  func snapshot() -> [InstantStartupTraceEvent] {
+    lock.lock()
+    defer { lock.unlock() }
+    return events
+  }
+}
+
 private actor BootstrapLiveTestSession {
   private var queued: [InstantLiveMessage] = []
   private var waiters: [CheckedContinuation<InstantLiveMessage, Error>] = []
   private var isClosed = false
 
   func send(_ message: InstantLiveMessage) {
-    guard message.op == "init" else { return }
-    yield(
-      InstantLiveMessage(
-        op: "init-ok",
-        clientEventID: message.clientEventID,
-        fields: [
-          "session-id": .string("bootstrap-live-test-session"),
-          "attrs": .array([]),
-        ]
+    switch message.op {
+    case "init":
+      yield(
+        InstantLiveMessage(
+          op: "init-ok",
+          clientEventID: message.clientEventID,
+          fields: [
+            "session-id": .string("bootstrap-live-test-session"),
+            "attrs": .array([]),
+          ]
+        )
       )
-    )
+
+    case "add-query":
+      yield(
+        InstantLiveMessage(
+          op: "add-query-ok",
+          clientEventID: message.clientEventID,
+          fields: [
+            "q": message.fields["q"] ?? .object([:]),
+            "result": .array([]),
+          ]
+        )
+      )
+
+    default:
+      break
+    }
   }
 
   func receive() async throws -> InstantLiveMessage {
@@ -59,6 +118,17 @@ private actor BootstrapLiveTestSession {
     } else {
       queued.append(message)
     }
+  }
+}
+
+private func makeBootstrapLiveTestTransport() -> InstantLiveTransportClient {
+  InstantLiveTransportClient { _ in
+    let session = BootstrapLiveTestSession()
+    return InstantLiveWebSocketSession(
+      send: { message in await session.send(message) },
+      receive: { try await session.receive() },
+      close: { await session.close() }
+    )
   }
 }
 
@@ -297,6 +367,272 @@ struct BootstrapTests {
       expectNoDifference(status.state, .authenticated)
       _ = try await client.closeConnection()
     }
+  }
+
+  @Test
+  func forcedDesertRouteUsesOnlyTheDesertFactory() async throws {
+    let appID = "forced-desert-route-\(UUID().uuidString)"
+    let persistenceURL = FileManager.default.temporaryDirectory
+      .appendingPathComponent("\(appID).sqlite")
+    let legacyProbe = BootstrapLiveConnectionProbe()
+    let cloudFactoryProbe = BootstrapSyncFactoryProbe()
+    let desertFactoryProbe = BootstrapSyncFactoryProbe()
+    let effectProbe = BootstrapEffectProbe()
+    let sourceFile = FileManager.default.temporaryDirectory
+      .appendingPathComponent("\(appID)-desert-file.txt")
+    try Data("desert-local-file".utf8).write(to: sourceFile)
+    defer { try? FileManager.default.removeItem(at: persistenceURL) }
+    defer { try? FileManager.default.removeItem(at: sourceFile) }
+
+    try await withDependencies {
+      $0.instantSyncRoutePolicy = .desertRequired
+      $0.instantLiveTransport = InstantLiveTransportClient { request in
+        await legacyProbe.record(request)
+        let session = BootstrapLiveTestSession()
+        return InstantLiveWebSocketSession(
+          send: { message in await session.send(message) },
+          receive: { try await session.receive() },
+          close: { await session.close() }
+        )
+      }
+      $0.instantCloudSyncTransportFactory = InstantSyncTransportFactory(
+        adapter: "cloud-test-adapter",
+        transport: .webSocket,
+        makeTransport: {
+          await cloudFactoryProbe.recordInvocation()
+          throw InstantError(
+            code: .implementationFailed,
+            operation: "make cloud test transport",
+            message: "The forced desert route resolved the cloud factory.",
+            recovery: "Keep cloud transport resolution out of the forced desert branch."
+          )
+        }
+      )
+      $0.instantDesertSyncTransportFactory = InstantSyncTransportFactory(
+        adapter: "in-process-desert",
+        transport: .inProcess,
+        makeTransport: {
+          await desertFactoryProbe.recordInvocation()
+          return makeBootstrapLiveTestTransport()
+        }
+      )
+      $0.instantMagicCodeExchange = InstantMagicCodeExchange(
+        send: { _ in
+          await effectProbe.record("magic-code")
+          throw InstantError(
+            code: .networkFailed,
+            operation: "cloud magic-code trap",
+            message: "The forced Desert route invoked cloud auth.",
+            recovery: "Use the local auth effect in forced Desert mode."
+          )
+        },
+        verify: { _ in
+          await effectProbe.record("magic-code")
+          throw InstantError(
+            code: .networkFailed,
+            operation: "cloud magic-code trap",
+            message: "The forced Desert route invoked cloud auth.",
+            recovery: "Use the local auth effect in forced Desert mode."
+          )
+        }
+      )
+      $0.instantGuestAuthenticator = InstantGuestAuthenticator { _ in
+        await effectProbe.record("guest-auth")
+        throw InstantError(
+          code: .networkFailed,
+          operation: "cloud guest-auth trap",
+          message: "The forced Desert route invoked cloud guest auth.",
+          recovery: "Use the local guest authenticator in forced Desert mode."
+        )
+      }
+      $0.instantStorageTransport = InstantStorageTransportClient(
+        upload: { _ in
+          await effectProbe.record("storage")
+          throw InstantError(
+            code: .networkFailed,
+            operation: "cloud storage trap",
+            message: "The forced Desert route invoked cloud storage.",
+            recovery: "Keep storage local until a Desert storage adapter exists."
+          )
+        },
+        delete: { _ in
+          await effectProbe.record("storage")
+          throw InstantError(
+            code: .networkFailed,
+            operation: "cloud storage trap",
+            message: "The forced Desert route invoked cloud storage.",
+            recovery: "Keep storage local until a Desert storage adapter exists."
+          )
+        }
+      )
+      try await $0.bootstrapInstantSwiftData(
+        appID: appID,
+        persistenceURL: persistenceURL,
+        context: .test,
+        initialAttributes: TodoExample.attributes
+      )
+    } operation: {
+      @Dependency(\.defaultInstantSwiftData) var client
+      let runtime = try #require(client.runtime)
+      expectNoDifference(
+        runtime.configuration.syncRoute,
+        InstantSyncRouteDescriptor(
+          route: .desert,
+          adapter: "in-process-desert",
+          transport: .inProcess
+        )
+      )
+
+      let snapshots = try await client.query(TodoExample.query)
+      expectNoDifference(snapshots, [])
+
+      let challenge = try await client.sendMagicCode(email: "desert@example.com")
+      expectNoDifference(challenge.code.count, 6)
+      _ = try await client.signInAsGuest()
+      let storedFile = try await client.uploadFile(from: sourceFile)
+      expectNoDifference(storedFile.name, sourceFile.lastPathComponent)
+
+      let status = try await client.connectionStatus()
+      expectNoDifference(status.syncRoute, runtime.configuration.syncRoute)
+      expectNoDifference(status.transport, .inProcess)
+      _ = try await client.closeConnection()
+    }
+
+    let desertFactoryInvocationCount = await desertFactoryProbe.count()
+    let cloudFactoryInvocationCount = await cloudFactoryProbe.count()
+    let legacyRequests = await legacyProbe.snapshot()
+    let authInvocationCount = await effectProbe.count("magic-code")
+    let guestAuthInvocationCount = await effectProbe.count("guest-auth")
+    let storageInvocationCount = await effectProbe.count("storage")
+    expectNoDifference(desertFactoryInvocationCount, 1)
+    expectNoDifference(cloudFactoryInvocationCount, 0)
+    expectNoDifference(legacyRequests, [])
+    expectNoDifference(authInvocationCount, 0)
+    expectNoDifference(guestAuthInvocationCount, 0)
+    expectNoDifference(storageInvocationCount, 0)
+  }
+
+  @Test
+  func currentRouteUsesAnExplicitCloudFactoryBeforeTheLegacyTransport() async throws {
+    let appID = "explicit-cloud-route-\(UUID().uuidString)"
+    let persistenceURL = FileManager.default.temporaryDirectory
+      .appendingPathComponent("\(appID).sqlite")
+    let legacyProbe = BootstrapLiveConnectionProbe()
+    let cloudFactoryProbe = BootstrapSyncFactoryProbe()
+    defer { try? FileManager.default.removeItem(at: persistenceURL) }
+
+    try await withDependencies {
+      $0.instantSyncRoutePolicy = .current
+      $0.instantLiveTransport = InstantLiveTransportClient { request in
+        await legacyProbe.record(request)
+        let session = BootstrapLiveTestSession()
+        return InstantLiveWebSocketSession(
+          send: { message in await session.send(message) },
+          receive: { try await session.receive() },
+          close: { await session.close() }
+        )
+      }
+      $0.instantCloudSyncTransportFactory = InstantSyncTransportFactory(
+        adapter: "cloud-in-process-test",
+        transport: .inProcess,
+        makeTransport: {
+          await cloudFactoryProbe.recordInvocation()
+          return makeBootstrapLiveTestTransport()
+        }
+      )
+      try await $0.bootstrapInstantSwiftData(
+        appID: appID,
+        persistenceURL: persistenceURL,
+        context: .test,
+        initialAttributes: TodoExample.attributes
+      )
+    } operation: {
+      @Dependency(\.defaultInstantSwiftData) var client
+      let runtime = try #require(client.runtime)
+      let expectedRoute = InstantSyncRouteDescriptor(
+        route: .cloud,
+        adapter: "cloud-in-process-test",
+        transport: .inProcess
+      )
+      expectNoDifference(runtime.configuration.syncRoute, expectedRoute)
+      let status = try await client.connectionStatus()
+      expectNoDifference(status.syncRoute, expectedRoute)
+      _ = try await client.closeConnection()
+    }
+
+    let cloudFactoryInvocationCount = await cloudFactoryProbe.count()
+    let legacyRequests = await legacyProbe.snapshot()
+    expectNoDifference(cloudFactoryInvocationCount, 1)
+    expectNoDifference(legacyRequests, [])
+  }
+
+  @Test
+  func forcedDesertRouteWithoutABackendFailsBeforeCreatingPersistence() async throws {
+    let appID = "missing-desert-route-\(UUID().uuidString)"
+    let persistenceURL = FileManager.default.temporaryDirectory
+      .appendingPathComponent("\(appID).sqlite")
+    let legacyProbe = BootstrapLiveConnectionProbe()
+    let cloudFactoryProbe = BootstrapSyncFactoryProbe()
+    let traceProbe = BootstrapTraceProbe()
+    let startupTrace = InstantStartupTrace(id: "missing-desert-route") {
+      traceProbe.record($0)
+    }
+    defer { try? FileManager.default.removeItem(at: persistenceURL) }
+
+    do {
+      try await withDependencies {
+        $0.instantSyncRoutePolicy = .desertRequired
+        $0.instantLiveTransport = InstantLiveTransportClient { request in
+          await legacyProbe.record(request)
+          let session = BootstrapLiveTestSession()
+          return InstantLiveWebSocketSession(
+            send: { message in await session.send(message) },
+            receive: { try await session.receive() },
+            close: { await session.close() }
+          )
+        }
+        $0.instantCloudSyncTransportFactory = InstantSyncTransportFactory(
+          adapter: "cloud-test-adapter",
+          transport: .webSocket,
+          makeTransport: {
+            await cloudFactoryProbe.recordInvocation()
+            return makeBootstrapLiveTestTransport()
+          }
+        )
+        try await $0.bootstrapInstantSwiftData(
+          appID: appID,
+          persistenceURL: persistenceURL,
+          context: .test,
+          initialAttributes: TodoExample.attributes,
+          startupTrace: startupTrace
+        )
+      } operation: {
+        Issue.record("Expected a missing forced desert backend to fail bootstrap.")
+      }
+      Issue.record("Expected a missing forced desert backend to throw.")
+    } catch let error as InstantError {
+      expectNoDifference(error.code, .implementationFailed)
+      expectNoDifference(error.operation, "bootstrap Instant desert route")
+      expectNoDifference(
+        error.message,
+        "Desert sync is required, but no desert transport factory is installed."
+      )
+      expectNoDifference(
+        error.recovery,
+        "Install DependencyValues.instantDesertSyncTransportFactory before bootstrapping."
+      )
+    } catch {
+      Issue.record("Unexpected error: \(error)")
+    }
+
+    #expect(!FileManager.default.fileExists(atPath: persistenceURL.path))
+    let cloudFactoryInvocationCount = await cloudFactoryProbe.count()
+    let legacyRequests = await legacyProbe.snapshot()
+    expectNoDifference(cloudFactoryInvocationCount, 0)
+    expectNoDifference(legacyRequests, [])
+    let routeTrace = traceProbe.snapshot().filter { $0.phase == "dependencies.bootstrap" }
+    expectNoDifference(routeTrace.map(\.kind), [.started, .failed])
+    expectNoDifference(routeTrace.last?.metadata["requestedSyncRoute"], "desert-required")
   }
 
   @Test
@@ -1480,9 +1816,13 @@ struct BootstrapTests {
       )
     } operation: {
       @Dependency(\.defaultInstantSwiftData) var client
+      let runtime = try #require(client.runtime)
+
+      expectNoDifference(runtime.configuration.syncRoute, .cloudWebSocket)
 
       let status = try await client.connectionStatus()
       expectNoDifference(status.transport, .webSocket)
+      expectNoDifference(status.syncRoute, .cloudWebSocket)
       expectNoDifference(
         status.websocketURI.absoluteString,
         "wss://ws.example.test/runtime/session"

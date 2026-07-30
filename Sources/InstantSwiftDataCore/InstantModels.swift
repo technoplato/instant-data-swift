@@ -797,6 +797,8 @@ public enum InstantRuntimeTransportKind: String, Codable, Sendable {
   case localCacheOnly = "local-cache-only"
   case webSocket = "websocket"
   case serverSentEvents = "sse"
+  case inProcess = "in-process"
+  case networkFramework = "network-framework"
 }
 
 public struct InstantConnectionStatus: Hashable, Codable, Sendable {
@@ -804,6 +806,7 @@ public struct InstantConnectionStatus: Hashable, Codable, Sendable {
   public var apiURI: URL
   public var websocketURI: URL
   public var transport: InstantRuntimeTransportKind
+  public var syncRoute: InstantSyncRouteDescriptor
   public var state: InstantConnectionState
   public var isAuthenticated: Bool
   public var userID: String?
@@ -821,18 +824,84 @@ public struct InstantConnectionStatus: Hashable, Codable, Sendable {
     userID: String?,
     pendingMutationCount: Int,
     processedTransactionID: String?,
-    lastErrorMessage: String? = nil
+    lastErrorMessage: String? = nil,
+    syncRoute: InstantSyncRouteDescriptor? = nil
   ) {
     self.appID = appID
     self.apiURI = apiURI
     self.websocketURI = websocketURI
     self.transport = transport
+    self.syncRoute = syncRoute ?? Self.defaultSyncRoute(for: transport)
     self.state = state
     self.isAuthenticated = isAuthenticated
     self.userID = userID
     self.pendingMutationCount = pendingMutationCount
     self.processedTransactionID = processedTransactionID
     self.lastErrorMessage = lastErrorMessage
+  }
+
+  private enum CodingKeys: String, CodingKey {
+    case appID
+    case apiURI
+    case websocketURI
+    case transport
+    case syncRoute
+    case state
+    case isAuthenticated
+    case userID
+    case pendingMutationCount
+    case processedTransactionID
+    case lastErrorMessage
+  }
+
+  public init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    let transport = try container.decode(
+      InstantRuntimeTransportKind.self,
+      forKey: .transport
+    )
+    self.appID = try container.decode(String.self, forKey: .appID)
+    self.apiURI = try container.decode(URL.self, forKey: .apiURI)
+    self.websocketURI = try container.decode(URL.self, forKey: .websocketURI)
+    self.transport = transport
+    self.syncRoute =
+      try container.decodeIfPresent(InstantSyncRouteDescriptor.self, forKey: .syncRoute)
+      ?? Self.defaultSyncRoute(for: transport)
+    self.state = try container.decode(InstantConnectionState.self, forKey: .state)
+    self.isAuthenticated = try container.decode(Bool.self, forKey: .isAuthenticated)
+    self.userID = try container.decodeIfPresent(String.self, forKey: .userID)
+    self.pendingMutationCount = try container.decode(Int.self, forKey: .pendingMutationCount)
+    self.processedTransactionID = try container.decodeIfPresent(
+      String.self,
+      forKey: .processedTransactionID
+    )
+    self.lastErrorMessage = try container.decodeIfPresent(
+      String.self,
+      forKey: .lastErrorMessage
+    )
+  }
+
+  private static func defaultSyncRoute(
+    for transport: InstantRuntimeTransportKind
+  ) -> InstantSyncRouteDescriptor {
+    switch transport {
+    case .localCacheOnly:
+      return .localCache
+
+    case .webSocket, .serverSentEvents:
+      return InstantSyncRouteDescriptor(
+        route: .cloud,
+        adapter: transport.rawValue,
+        transport: transport
+      )
+
+    case .inProcess, .networkFramework:
+      return InstantSyncRouteDescriptor(
+        route: .desert,
+        adapter: transport.rawValue,
+        transport: transport
+      )
+    }
   }
 }
 

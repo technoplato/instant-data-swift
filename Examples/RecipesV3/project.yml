@@ -26,6 +26,7 @@ targets:
       Release: RecipesV3.xcconfig
     settings:
       base:
+        ENABLE_USER_SCRIPT_SANDBOXING: NO
         PRODUCT_BUNDLE_IDENTIFIER: com.technoplato.InstantSwiftData.RecipesV3iOS
         PRODUCT_NAME: Instant Recipes
         GENERATE_INFOPLIST_FILE: NO
@@ -34,6 +35,24 @@ targets:
         OTHER_SWIFT_FLAGS: "$(inherited) -parse-as-library"
         SWIFT_VERSION: "6.0"
         TARGETED_DEVICE_FAMILY: "1,2"
+    postBuildScripts:
+      - name: Embed clean Git build provenance
+        basedOnDependencyAnalysis: false
+        script: |
+          set -euo pipefail
+          provenance="$DERIVED_FILE_DIR/BuildProvenance.json"
+          artifact="$TARGET_BUILD_DIR/$WRAPPER_NAME"
+          resources="$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH"
+          python3 "$SRCROOT/../../scripts/change-log/build_provenance.py" \
+            --repo "$SRCROOT/../.." \
+            --output "$provenance" \
+            --artifact-location "$artifact" \
+            --project-name "InstantRecipesV3" \
+            --configuration "$CONFIGURATION" \
+            --platform "$PLATFORM_NAME" \
+            --architecture "$ARCHS"
+          mkdir -p "$resources"
+          cp "$provenance" "$resources/BuildProvenance.json"
 
   InstantRecipesV3macOS:
     type: application
@@ -48,6 +67,7 @@ targets:
       Release: RecipesV3.xcconfig
     settings:
       base:
+        ENABLE_USER_SCRIPT_SANDBOXING: NO
         PRODUCT_BUNDLE_IDENTIFIER: com.technoplato.InstantSwiftData.RecipesV3macOS
         PRODUCT_NAME: Instant Recipes
         GENERATE_INFOPLIST_FILE: NO
@@ -55,6 +75,24 @@ targets:
         MACOSX_DEPLOYMENT_TARGET: "14.0"
         OTHER_SWIFT_FLAGS: "$(inherited) -parse-as-library"
         SWIFT_VERSION: "6.0"
+    postBuildScripts:
+      - name: Embed clean Git build provenance
+        basedOnDependencyAnalysis: false
+        script: |
+          set -euo pipefail
+          provenance="$DERIVED_FILE_DIR/BuildProvenance.json"
+          artifact="$TARGET_BUILD_DIR/$WRAPPER_NAME"
+          resources="$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH"
+          python3 "$SRCROOT/../../scripts/change-log/build_provenance.py" \
+            --repo "$SRCROOT/../.." \
+            --output "$provenance" \
+            --artifact-location "$artifact" \
+            --project-name "InstantRecipesV3" \
+            --configuration "$CONFIGURATION" \
+            --platform "$PLATFORM_NAME" \
+            --architecture "$ARCHS"
+          mkdir -p "$resources"
+          cp "$provenance" "$resources/BuildProvenance.json"
 
   InstantRecipesV3tvOS:
     type: application

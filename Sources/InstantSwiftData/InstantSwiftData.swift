@@ -3313,6 +3313,54 @@ extension InstantLiveTransportKey: DependencyKey {
   }
 }
 
+private enum InstantSyncRoutePolicyKey: TestDependencyKey {
+  static var testValue: InstantSyncRoutePolicy {
+    .current
+  }
+
+  static var previewValue: InstantSyncRoutePolicy {
+    .current
+  }
+}
+
+extension InstantSyncRoutePolicyKey: DependencyKey {
+  static var liveValue: InstantSyncRoutePolicy {
+    .current
+  }
+}
+
+private enum InstantCloudSyncTransportFactoryKey: TestDependencyKey {
+  static var testValue: InstantSyncTransportFactory? {
+    nil
+  }
+
+  static var previewValue: InstantSyncTransportFactory? {
+    nil
+  }
+}
+
+extension InstantCloudSyncTransportFactoryKey: DependencyKey {
+  static var liveValue: InstantSyncTransportFactory? {
+    nil
+  }
+}
+
+private enum InstantDesertSyncTransportFactoryKey: TestDependencyKey {
+  static var testValue: InstantSyncTransportFactory? {
+    nil
+  }
+
+  static var previewValue: InstantSyncTransportFactory? {
+    nil
+  }
+}
+
+extension InstantDesertSyncTransportFactoryKey: DependencyKey {
+  static var liveValue: InstantSyncTransportFactory? {
+    nil
+  }
+}
+
 private enum InstantUserCookieSyncClientKey: TestDependencyKey {
   static var testValue: InstantUserCookieSyncClient {
     .local
@@ -3465,6 +3513,21 @@ extension DependencyValues {
     set { self[InstantLiveTransportKey.self] = newValue }
   }
 
+  public var instantSyncRoutePolicy: InstantSyncRoutePolicy {
+    get { self[InstantSyncRoutePolicyKey.self] }
+    set { self[InstantSyncRoutePolicyKey.self] = newValue }
+  }
+
+  public var instantCloudSyncTransportFactory: InstantSyncTransportFactory? {
+    get { self[InstantCloudSyncTransportFactoryKey.self] }
+    set { self[InstantCloudSyncTransportFactoryKey.self] = newValue }
+  }
+
+  public var instantDesertSyncTransportFactory: InstantSyncTransportFactory? {
+    get { self[InstantDesertSyncTransportFactoryKey.self] }
+    set { self[InstantDesertSyncTransportFactoryKey.self] = newValue }
+  }
+
   public var instantUserCookieSyncClient: InstantUserCookieSyncClient {
     get { self[InstantUserCookieSyncClientKey.self] }
     set { self[InstantUserCookieSyncClientKey.self] = newValue }
@@ -3528,27 +3591,105 @@ extension DependencyValues {
     liveShareContract: InstantLiveShareContract? = nil,
     startupTrace: InstantStartupTrace = .live()
   ) async throws {
+    let routePolicy = self.instantSyncRoutePolicy
     let bootstrapStopwatch = startupTrace.started(
       "dependencies.bootstrap",
       metadata: [
         "appID": appID,
         "context": context.rawValue,
+        "requestedSyncRoute": routePolicy.rawValue,
       ]
     )
+    let liveTransport: InstantLiveTransportClient?
+    let syncRoute: InstantSyncRouteDescriptor
+    do {
+      switch routePolicy {
+      case .current:
+        if let cloudFactory = self.instantCloudSyncTransportFactory {
+          liveTransport = try await cloudFactory.makeTransport()
+          syncRoute = cloudFactory.routeDescriptor(for: .cloud)
+        } else if let currentTransport = self.instantLiveTransport {
+          liveTransport = currentTransport
+          syncRoute = .cloudWebSocket
+        } else {
+          liveTransport = nil
+          syncRoute = .localCache
+        }
+
+      case .desertRequired:
+        guard let desertFactory = self.instantDesertSyncTransportFactory else {
+          throw InstantError(
+            code: .implementationFailed,
+            operation: "bootstrap Instant desert route",
+            message: "Desert sync is required, but no desert transport factory is installed.",
+            recovery:
+              "Install DependencyValues.instantDesertSyncTransportFactory before bootstrapping."
+          )
+        }
+        liveTransport = try await desertFactory.makeTransport()
+        syncRoute = desertFactory.routeDescriptor(for: .desert)
+      }
+    } catch {
+      startupTrace.failed(
+        "dependencies.bootstrap",
+        error: error,
+        since: bootstrapStopwatch,
+        metadata: ["requestedSyncRoute": routePolicy.rawValue]
+      )
+      InstantDiagnostics.shared.record(
+        error: error,
+        subsystem: "instant-swift-data",
+        category: "bootstrap",
+        event: "sync-route.resolution-failed",
+        message: "Instant sync route resolution failed before persistence bootstrap.",
+        metadata: [
+          "appID": appID,
+          "requestedSyncRoute": routePolicy.rawValue,
+        ]
+      )
+      throw error
+    }
+
     let date = self.date
     let uuid = self.uuid
-    let magicCodeExchange = self.instantMagicCodeExchange
-    let refreshTokenVerifier = self.instantRefreshTokenVerifier
-    let guestAuthenticator = self.instantGuestAuthenticator
-    let idTokenExchange = self.instantIDTokenExchange
-    let oauthExchange = self.instantOAuthExchange
-    let authTokenInvalidator = self.instantAuthTokenInvalidator
-    let mutationTransport = self.instantMutationTransport
-    let storageTransport = self.instantStorageTransport
-    let liveTransport = self.instantLiveTransport
-    let userCookieSyncClient = self.instantUserCookieSyncClient
-    let platformAppClient = self.instantPlatformAppClient
-    let appBuilderCodeGenerator = self.appBuilderCodeGenerator
+    let magicCodeExchange: InstantMagicCodeExchange
+    let refreshTokenVerifier: InstantRefreshTokenVerifier
+    let guestAuthenticator: InstantGuestAuthenticator
+    let idTokenExchange: InstantIDTokenExchange
+    let oauthExchange: InstantOAuthExchange
+    let authTokenInvalidator: InstantAuthTokenInvalidator
+    let mutationTransport: InstantMutationTransportClient
+    let storageTransport: InstantStorageTransportClient?
+    let userCookieSyncClient: InstantUserCookieSyncClient
+    let platformAppClient: InstantPlatformAppClient
+    let appBuilderCodeGenerator: AppBuilderCodeGeneratorClient
+    switch routePolicy {
+    case .current:
+      magicCodeExchange = self.instantMagicCodeExchange
+      refreshTokenVerifier = self.instantRefreshTokenVerifier
+      guestAuthenticator = self.instantGuestAuthenticator
+      idTokenExchange = self.instantIDTokenExchange
+      oauthExchange = self.instantOAuthExchange
+      authTokenInvalidator = self.instantAuthTokenInvalidator
+      mutationTransport = self.instantMutationTransport
+      storageTransport = self.instantStorageTransport
+      userCookieSyncClient = self.instantUserCookieSyncClient
+      platformAppClient = self.instantPlatformAppClient
+      appBuilderCodeGenerator = self.appBuilderCodeGenerator
+
+    case .desertRequired:
+      magicCodeExchange = .local
+      refreshTokenVerifier = .local
+      guestAuthenticator = .local
+      idTokenExchange = .local
+      oauthExchange = .local
+      authTokenInvalidator = .local
+      mutationTransport = .local
+      storageTransport = nil
+      userCookieSyncClient = .local
+      platformAppClient = .local
+      appBuilderCodeGenerator = .local
+    }
     let url =
       persistenceURL
       ?? Self.defaultInstantSwiftDataPersistenceURL(
@@ -3558,31 +3699,32 @@ extension DependencyValues {
       )
 
     var runtimeConfiguration = InstantRuntimeConfiguration(
-        appID: appID,
-        apiURI: apiURI,
-        websocketURI: websocketURI,
-        firstPartyURL: firstPartyURL,
-        persistenceURL: url,
-        initialAttributes: initialAttributes,
-        now: {
-          InstantTimestamp(milliseconds: Int64((date().timeIntervalSince1970 * 1000).rounded()))
-        },
-        makeID: {
-          uuid().uuidString.lowercased()
-        },
-        refreshTokenVerifier: refreshTokenVerifier,
-        guestAuthenticator: guestAuthenticator,
-        magicCodeExchange: magicCodeExchange,
-        idTokenExchange: idTokenExchange,
-        oauthExchange: oauthExchange,
-        authTokenInvalidator: authTokenInvalidator,
-        mutationTransport: mutationTransport,
-        liveTransport: liveTransport,
-        liveShareContract: liveShareContract,
-        userCookieSyncClient: userCookieSyncClient,
-        platformAppClient: platformAppClient,
-        appBuilderCodeGenerator: appBuilderCodeGenerator
-      )
+      appID: appID,
+      apiURI: apiURI,
+      websocketURI: websocketURI,
+      firstPartyURL: firstPartyURL,
+      persistenceURL: url,
+      initialAttributes: initialAttributes,
+      now: {
+        InstantTimestamp(milliseconds: Int64((date().timeIntervalSince1970 * 1_000).rounded()))
+      },
+      makeID: {
+        uuid().uuidString.lowercased()
+      },
+      refreshTokenVerifier: refreshTokenVerifier,
+      guestAuthenticator: guestAuthenticator,
+      magicCodeExchange: magicCodeExchange,
+      idTokenExchange: idTokenExchange,
+      oauthExchange: oauthExchange,
+      authTokenInvalidator: authTokenInvalidator,
+      mutationTransport: mutationTransport,
+      liveTransport: liveTransport,
+      syncRoute: syncRoute,
+      liveShareContract: liveShareContract,
+      userCookieSyncClient: userCookieSyncClient,
+      platformAppClient: platformAppClient,
+      appBuilderCodeGenerator: appBuilderCodeGenerator
+    )
     runtimeConfiguration.startupTrace = startupTrace
     runtimeConfiguration.autoConnectLiveTransport = liveTransport != nil
     startupTrace.completed(
@@ -3590,6 +3732,8 @@ extension DependencyValues {
       durationMilliseconds: 0,
       metadata: [
         "autoConnect": String(runtimeConfiguration.autoConnectLiveTransport),
+        "syncRoute": syncRoute.route.rawValue,
+        "adapter": syncRoute.adapter,
         "persistenceFile": url.lastPathComponent,
       ]
     )

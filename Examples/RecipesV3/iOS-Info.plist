@@ -24,6 +24,8 @@
 	<string>$(INSTANT_APP_ID)</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>Instant Recipes uses the local network to sync directly with a nearby Desert host.</string>
 	<key>UILaunchScreen</key>
 	<dict/>
 	<key>UISupportedInterfaceOrientations</key>

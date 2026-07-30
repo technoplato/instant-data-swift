@@ -22,6 +22,7 @@ public struct InstantRuntimeConfiguration: Sendable {
   public var authTokenInvalidator: InstantAuthTokenInvalidator
   public var mutationTransport: InstantMutationTransportClient
   public var liveTransport: InstantLiveTransportClient?
+  public var syncRoute: InstantSyncRouteDescriptor
   public var autoConnectLiveTransport: Bool
   public var liveShareContract: InstantLiveShareContract?
   public var userCookieSyncClient: InstantUserCookieSyncClient
@@ -177,6 +178,7 @@ public struct InstantRuntimeConfiguration: Sendable {
     authTokenInvalidator: InstantAuthTokenInvalidator = .local,
     mutationTransport: InstantMutationTransportClient = .local,
     liveTransport: InstantLiveTransportClient? = nil,
+    syncRoute: InstantSyncRouteDescriptor? = nil,
     liveShareContract: InstantLiveShareContract? = nil,
     userCookieSyncClient: InstantUserCookieSyncClient = .live,
     platformAppClient: InstantPlatformAppClient = .local,
@@ -198,6 +200,7 @@ public struct InstantRuntimeConfiguration: Sendable {
     self.authTokenInvalidator = authTokenInvalidator
     self.mutationTransport = mutationTransport
     self.liveTransport = liveTransport
+    self.syncRoute = syncRoute ?? (liveTransport == nil ? .localCache : .cloudWebSocket)
     self.autoConnectLiveTransport = false
     self.liveShareContract = liveShareContract
     self.userCookieSyncClient = userCookieSyncClient
@@ -507,6 +510,7 @@ private actor InstantRuntimeLiveSession {
   private var sessionID: String?
   private var isOpened = false
   private var generation = 0
+  private var syncRoute: InstantSyncRouteDescriptor = .localCache
 
   var isOpen: Bool {
     isOpened
@@ -701,19 +705,26 @@ private actor InstantRuntimeLiveSession {
   func open(
     request: InstantLiveSessionRequest,
     transport: InstantLiveTransportClient,
+    syncRoute: InstantSyncRouteDescriptor,
     makeID: @escaping @Sendable () -> String
   ) async throws {
+    self.syncRoute = syncRoute
     InstantDiagnostics.shared.record(
       .debug,
       subsystem: "instant-swift-data-core",
       category: "transport",
-      event: "websocket.session-opening",
-      message: "Opening a low-level Instant WebSocket session.",
+      event: "live-transport.session-opening",
+      message: "Opening a low-level Instant live transport session.",
       metadata: [
         "appID": request.appID,
-        "websocketHost": request.websocketURI.host ?? "unknown",
         "hasRefreshToken": String(request.refreshToken?.isEmpty == false),
-      ]
+        "syncRoute": syncRoute.route.rawValue,
+        "adapter": syncRoute.adapter,
+        "transport": syncRoute.transport.rawValue,
+      ].merging(
+        syncRoute.transport == .webSocket
+          ? ["endpointHost": request.websocketURI.host ?? "unknown"] : [:]
+      ) { current, _ in current }
     )
     generation += 1
     receiverTask?.cancel()
@@ -750,7 +761,7 @@ private actor InstantRuntimeLiveSession {
             code: .networkFailed,
             operation: "open Instant live session",
             message: "Instant live init-ok did not include a session-id.",
-            recovery: "Inspect the Instant runtime WebSocket init response."
+            recovery: "Inspect the Instant live transport init response."
           )
         }
         self.session = opened
@@ -762,12 +773,15 @@ private actor InstantRuntimeLiveSession {
           .notice,
           subsystem: "instant-swift-data-core",
           category: "transport",
-          event: "websocket.session-opened",
-          message: "Low-level Instant WebSocket session opened.",
+          event: "live-transport.session-opened",
+          message: "Low-level Instant live transport session opened.",
           metadata: [
             "appID": request.appID,
             "sessionID": initOK.sessionID,
             "serverAttributeCount": String(initOK.attrs.count),
+            "syncRoute": syncRoute.route.rawValue,
+            "adapter": syncRoute.adapter,
+            "transport": syncRoute.transport.rawValue,
           ]
         )
 
@@ -777,7 +791,7 @@ private actor InstantRuntimeLiveSession {
           operation: "open Instant live session",
           serverEventID: error.clientEventID,
           message: error.message,
-          recovery: "Inspect the Instant runtime WebSocket init request and credentials."
+          recovery: "Inspect the Instant live transport init request and credentials."
         )
 
       default:
@@ -785,7 +799,7 @@ private actor InstantRuntimeLiveSession {
           code: .networkFailed,
           operation: "open Instant live session",
           message: "Expected init-ok from Instant live transport, received \(event.op).",
-          recovery: "Inspect the Instant runtime WebSocket protocol handling."
+          recovery: "Inspect the Instant live transport protocol handling."
         )
       }
       for room in registeredRooms.keys.sorted(by: Self.roomOrder) {
@@ -822,9 +836,14 @@ private actor InstantRuntimeLiveSession {
         error: error,
         subsystem: "instant-swift-data-core",
         category: "transport",
-        event: "websocket.session-open-failed",
-        message: "Low-level Instant WebSocket session failed to open.",
-        metadata: ["appID": request.appID]
+        event: "live-transport.session-open-failed",
+        message: "Low-level Instant live transport session failed to open.",
+        metadata: [
+          "appID": request.appID,
+          "syncRoute": syncRoute.route.rawValue,
+          "adapter": syncRoute.adapter,
+          "transport": syncRoute.transport.rawValue,
+        ]
       )
       throw error
     }
@@ -1168,12 +1187,15 @@ private actor InstantRuntimeLiveSession {
       .trace,
       subsystem: "instant-swift-data-core",
       category: "transport",
-      event: "websocket.message-decoded",
-      message: "Decoded an Instant WebSocket server message.",
+      event: "live-transport.message-decoded",
+      message: "Decoded an Instant live transport server message.",
       metadata: [
         "op": event.op,
         "generation": String(generation),
         "sessionID": sessionID ?? "none",
+        "syncRoute": syncRoute.route.rawValue,
+        "adapter": syncRoute.adapter,
+        "transport": syncRoute.transport.rawValue,
       ]
     )
     switch event {
@@ -1276,12 +1298,15 @@ private actor InstantRuntimeLiveSession {
       .trace,
       subsystem: "instant-swift-data-core",
       category: "transport",
-      event: "websocket.message-sending",
-      message: "Sending an Instant WebSocket message.",
+      event: "live-transport.message-sending",
+      message: "Sending an Instant live transport message.",
       metadata: [
         "op": message.op,
         "fieldCount": String(message.fields.count),
         "sessionID": sessionID ?? "none",
+        "syncRoute": syncRoute.route.rawValue,
+        "adapter": syncRoute.adapter,
+        "transport": syncRoute.transport.rawValue,
       ],
       correlationID: message.clientEventID
     )
@@ -1296,9 +1321,14 @@ private actor InstantRuntimeLiveSession {
         .trace,
         subsystem: "instant-swift-data-core",
         category: "transport",
-        event: "websocket.message-sent",
-        message: "Sent an Instant WebSocket message.",
-        metadata: ["op": message.op],
+        event: "live-transport.message-sent",
+        message: "Sent an Instant live transport message.",
+        metadata: [
+          "op": message.op,
+          "syncRoute": syncRoute.route.rawValue,
+          "adapter": syncRoute.adapter,
+          "transport": syncRoute.transport.rawValue,
+        ],
         correlationID: message.clientEventID
       )
     } catch {
@@ -1306,9 +1336,14 @@ private actor InstantRuntimeLiveSession {
         error: error,
         subsystem: "instant-swift-data-core",
         category: "transport",
-        event: "websocket.message-send-failed",
-        message: "Failed to send an Instant WebSocket message.",
-        metadata: ["op": message.op],
+        event: "live-transport.message-send-failed",
+        message: "Failed to send an Instant live transport message.",
+        metadata: [
+          "op": message.op,
+          "syncRoute": syncRoute.route.rawValue,
+          "adapter": syncRoute.adapter,
+          "transport": syncRoute.transport.rawValue,
+        ],
         correlationID: message.clientEventID
       )
       throw error
@@ -1710,6 +1745,7 @@ public final class InstantRuntime: Sendable {
     do {
       let validationStopwatch = startupTrace.stopwatch()
       try validateEndpoints(configuration)
+      try validateSyncRoute(configuration)
       try validateInitialAttributes(configuration.initialAttributes)
       startupTrace.completed("runtime.validation", since: validationStopwatch)
 
@@ -1968,6 +2004,49 @@ public final class InstantRuntime: Sendable {
         )
       }
     }
+  }
+
+  private static func validateSyncRoute(_ configuration: InstantRuntimeConfiguration) throws {
+    let route = configuration.syncRoute
+    switch route.route {
+    case .localCache:
+      guard configuration.liveTransport == nil else {
+        throw syncRouteValidationFailed(
+          path: "liveTransport",
+          message: "A local-cache sync route cannot install a live transport."
+        )
+      }
+      guard route.transport == .localCacheOnly else {
+        throw syncRouteValidationFailed(
+          path: "syncRoute.transport",
+          message: "A local-cache sync route must use the local-cache-only transport."
+        )
+      }
+
+    case .cloud, .desert:
+      guard configuration.liveTransport != nil else {
+        throw syncRouteValidationFailed(
+          path: "liveTransport",
+          message: "The \(route.route.rawValue) sync route requires a live transport."
+        )
+      }
+      guard route.transport != .localCacheOnly else {
+        throw syncRouteValidationFailed(
+          path: "syncRoute.transport",
+          message: "The \(route.route.rawValue) sync route cannot use the local-cache-only transport."
+        )
+      }
+    }
+  }
+
+  private static func syncRouteValidationFailed(path: String, message: String) -> InstantError {
+    InstantError(
+      code: .validationFailed,
+      operation: "bootstrap sync route configuration",
+      path: path,
+      message: message,
+      recovery: "Install a live transport for cloud or desert sync, or select the local-cache route."
+    )
   }
 
   private static func endpointValidationFailed(name: String, requirement: String) -> InstantError {
@@ -2787,7 +2866,9 @@ public final class InstantRuntime: Sendable {
         "appID": configuration.appID,
         "namespace": plan.namespace,
         "transport": connectsToLiveTransport && configuration.liveTransport != nil
-          ? "websocket" : "local-cache",
+          ? configuration.syncRoute.transport.rawValue : "local-cache-only",
+        "syncRoute": configuration.syncRoute.route.rawValue,
+        "adapter": configuration.syncRoute.adapter,
       ],
       correlationID: plan.id
     )
@@ -2897,12 +2978,14 @@ public final class InstantRuntime: Sendable {
           : "query-observation.live-pending",
         message: isLiveSessionOpen
           ? "Registered a live Instant query observation."
-          : "The live query will register automatically when the WebSocket session opens.",
+          : "The live query will register automatically when the live transport session opens.",
         metadata: [
           "namespace": plan.namespace,
           "registrationKey": registrationKey,
           "autoConnect": String(configuration.autoConnectLiveTransport),
           "liveSessionOpen": String(isLiveSessionOpen),
+          "syncRoute": configuration.syncRoute.route.rawValue,
+          "adapter": configuration.syncRoute.adapter,
         ],
         correlationID: plan.id
       )
@@ -3027,7 +3110,10 @@ public final class InstantRuntime: Sendable {
         metadata: [
           "appID": configuration.appID,
           "namespace": plan.namespace,
-          "transport": usesLiveTransport ? "websocket" : "local-cache",
+          "transport": usesLiveTransport
+            ? configuration.syncRoute.transport.rawValue : "local-cache-only",
+          "syncRoute": configuration.syncRoute.route.rawValue,
+          "adapter": configuration.syncRoute.adapter,
         ],
         correlationID: plan.id
       )
@@ -3542,18 +3628,23 @@ public final class InstantRuntime: Sendable {
     onlyIfNeeded: Bool = false
   ) async throws -> InstantConnectionStatus {
     let startedAt = Date()
+    var connectionMetadata = [
+      "appID": configuration.appID,
+      "transport": configuration.syncRoute.transport.rawValue,
+      "syncRoute": configuration.syncRoute.route.rawValue,
+      "adapter": configuration.syncRoute.adapter,
+      "isReconnect": String(!reportsFailure),
+    ]
+    if configuration.syncRoute.transport == .webSocket {
+      connectionMetadata["endpointHost"] = configuration.websocketURI.host ?? "unknown"
+    }
     InstantDiagnostics.shared.record(
       .info,
       subsystem: "instant-swift-data-core",
       category: "connection",
       event: "connection.open-started",
       message: "Opening the Instant connection.",
-      metadata: [
-        "appID": configuration.appID,
-        "transport": configuration.liveTransport == nil ? "local-cache" : "websocket",
-        "isReconnect": String(!reportsFailure),
-        "websocketHost": configuration.websocketURI.host ?? "unknown",
-      ]
+      metadata: connectionMetadata
     )
     await connectionGate.enter()
     var enteredConnectionGate = true
@@ -3603,6 +3694,7 @@ public final class InstantRuntime: Sendable {
               refreshToken: session?.refreshToken
             ),
             transport: liveTransport,
+            syncRoute: configuration.syncRoute,
             makeID: configuration.makeID
           )
           recordActorHop(.operationGate)
@@ -3753,7 +3845,7 @@ public final class InstantRuntime: Sendable {
       appID: configuration.appID,
       apiURI: configuration.apiURI,
       websocketURI: configuration.websocketURI,
-      transport: configuration.liveTransport == nil ? .localCacheOnly : .webSocket,
+      transport: configuration.syncRoute.transport,
       state: connectionState(
         storedState,
         isAuthenticated: session != nil,
@@ -3763,7 +3855,8 @@ public final class InstantRuntime: Sendable {
       userID: session?.userID,
       pendingMutationCount: state.snapshot.outbox.filter { $0.status == .pending }.count,
       processedTransactionID: processedTransactionID,
-      lastErrorMessage: lastErrorMessage
+      lastErrorMessage: lastErrorMessage,
+      syncRoute: configuration.syncRoute
     )
   }
 
@@ -3893,12 +3986,15 @@ public final class InstantRuntime: Sendable {
       .debug,
       subsystem: "instant-swift-data-core",
       category: "transport",
-      event: "websocket.event-received",
-      message: "Received an Instant WebSocket event.",
+      event: "live-transport.event-received",
+      message: "Received an Instant live transport event.",
       metadata: [
         "appID": configuration.appID,
         "op": event.op,
         "serverAttributeCount": String(serverAttributes.count),
+        "syncRoute": configuration.syncRoute.route.rawValue,
+        "adapter": configuration.syncRoute.adapter,
+        "transport": configuration.syncRoute.transport.rawValue,
       ]
     )
     switch event {
@@ -4063,7 +4159,7 @@ public final class InstantRuntime: Sendable {
         operation: "receive Instant live server event",
         serverEventID: error.clientEventID,
         message: error.message,
-        recovery: "Inspect the Instant runtime WebSocket event and reconnect."
+        recovery: "Inspect the Instant live transport event and reconnect."
       )
 
     case .initOK, .joinRoomOK, .leaveRoomOK, .startStreamOK,
