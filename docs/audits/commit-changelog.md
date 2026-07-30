@@ -6,6 +6,15 @@ commit SHA, and high-level reason. Changelog-only bookkeeping commits are
 visible in Git history but are not self-recorded because a commit cannot
 contain its own final SHA.
 
+## July 30, 2026 at 7:34:02 AM EDT
+
+- Repository: `realtime-voice-sqlite-instant` (Scribe)
+- Commit: `f9d93a6751f9522f19c2b51ca8f4281781e5be15`
+- High-level reason: Add participant-attributed SharePlay transcription with
+  mandatory confirmed alphanumeric display names, Apple message-source identity
+  binding, bounded reliable replay, spoof-resistant contribution IDs, validated
+  party timelines, and persistence through Scribe's existing recording path.
+
 ## July 30, 2026 at 7:29:28 AM EDT
 
 - Repository: `realtime-voice-sqlite-instant` (Scribe)
