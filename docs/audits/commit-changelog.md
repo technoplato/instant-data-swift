@@ -6,6 +6,14 @@ commit SHA, and high-level reason. Changelog-only bookkeeping commits are
 visible in Git history but are not self-recorded because a commit cannot
 contain its own final SHA.
 
+## July 30, 2026 at 7:05:52 AM EDT
+
+- Repository: `realtime-voice-sqlite-instant` (Scribe)
+- Commit: `61c54fc52f6a558c476cdfbba0ced72f24375a09`
+- High-level reason: Preserve a first-class `Planned` workflow state across the
+  Swift issue model and typed Node CLI so structured library feature intake is
+  not flattened during realtime Instant upsert.
+
 ## July 30, 2026 at 7:02:23 AM EDT
 
 - Repository: `realtime-voice-sqlite-instant` (Scribe)
