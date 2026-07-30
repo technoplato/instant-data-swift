@@ -81,7 +81,10 @@ owned Desert host, and then starts a fresh runtime. Normal and Desert use
 separate app and persistence identities, so the prototype does not imply that
 Desert mutations will reconcile into cloud when switching back. If a peer
 cannot connect, the error blocks the recipes but the Desert setting remains
-available so the app can return to Normal.
+available so the app can return to Normal. If an established peer loses its
+host, the runtime publishes **Closed** with the transport diagnostic before it
+retries; the recipes remain blocked and the same setting can recover the app to
+Normal.
 
 The selected client is scoped through the SwiftUI recipe subtree. Automatic
 `@FetchAll`, `@FetchOne`, and `@Fetch` observation plus room, presence, topic,

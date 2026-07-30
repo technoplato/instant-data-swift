@@ -1093,6 +1093,101 @@ struct RecipesV3AppTests {
     await model.shutdown()
   }
 
+  @Test @MainActor
+  func connectedInteractiveDesertPeerFailsLoudlyAfterHostStopsAndCanSwitchToNormal()
+    async throws
+  {
+    let appID = "desert-connected-host-loss"
+    let host = try await InstantNetworkDesertHost.start(
+      appID: appID,
+      initialAttributes: RecipesV3AppConfiguration.initialAttributes,
+      host: "127.0.0.1",
+      port: 0
+    )
+    let temporaryDirectory = FileManager.default.temporaryDirectory
+      .appendingPathComponent("recipes-desert-host-loss-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(
+      at: temporaryDirectory,
+      withIntermediateDirectories: true
+    )
+    defer { try? FileManager.default.removeItem(at: temporaryDirectory) }
+
+    var storedMode = RecipesV3DemoMode.desert
+    let model = RecipesV3DemoModel(
+      configuration: RecipesV3DemoConfiguration(
+        normal: RecipesV3AppConfiguration(
+          appID: "desert-host-loss-normal",
+          persistenceURL: temporaryDirectory.appendingPathComponent("normal.sqlite"),
+          syncRoute: .localOnly,
+          profileID: "host-loss-profile"
+        ),
+        desert: RecipesV3AppConfiguration(
+          appID: appID,
+          persistenceURL: temporaryDirectory.appendingPathComponent("desert.sqlite"),
+          syncRoute: .desertRequired(
+            RecipesV3DesertEndpoint(
+              role: .peer,
+              host: "127.0.0.1",
+              port: host.port
+            )
+          ),
+          profileID: "host-loss-profile"
+        )
+      ),
+      modeStorage: RecipesV3ModeStorage(
+        load: { storedMode },
+        save: { storedMode = $0 }
+      ),
+      configureDependencies: {
+        $0.date = .constant(Date(timeIntervalSince1970: 1_800_000_000))
+        $0.uuid = .constant(
+          UUID(uuidString: "00000000-0000-0000-0000-000000000050")!
+        )
+      }
+    )
+
+    do {
+      let desertBootstrap = try #require(model.bootstrapModel)
+      _ = try await startClient(in: model)
+      let connectedDeadline = ContinuousClock.now + .seconds(3)
+      while desertBootstrap.connectionStatus?.state != .opened,
+        ContinuousClock.now < connectedDeadline
+      {
+        try await Task.sleep(for: .milliseconds(20))
+      }
+      expectNoDifference(desertBootstrap.connectionStatus?.state, .opened)
+
+      await host.stop()
+      let failedDeadline = ContinuousClock.now + .seconds(3)
+      while desertBootstrap.errorMessage == nil,
+        ContinuousClock.now < failedDeadline
+      {
+        try await Task.sleep(for: .milliseconds(20))
+      }
+
+      expectNoDifference(desertBootstrap.connectionStatus?.state, .closed)
+      #expect(desertBootstrap.errorMessage != nil)
+      #expect(desertBootstrap.client != nil)
+      expectNoDifference(model.mode, .desert)
+      #expect(model.allowsModeSelection)
+
+      model.mode = .normal
+      try await waitForModeTransition(model)
+      _ = try await startClient(in: model)
+      expectNoDifference(model.mode, .normal)
+      expectNoDifference(storedMode, .normal)
+      expectNoDifference(model.activeConfiguration?.syncRoute, .localOnly)
+      #expect(model.bootstrapModel?.errorMessage == nil)
+    } catch {
+      await host.stop()
+      await model.shutdown()
+      throw error
+    }
+
+    await host.stop()
+    await model.shutdown()
+  }
+
   @Test
   func combinedSchemaContainsEveryDurableRecipeNamespace() {
     expectNoDifference(

@@ -512,6 +512,66 @@ struct InstantDesertCoordinatorTests {
     }
 
     @Test
+    func networkFrameworkRuntimePublishesHostLossBeforeRetrying() async throws {
+      // Upstream Reactor.js `_transportOnClose` publishes CLOSED before it
+      // schedules reconnect. Swift adapts that observable transition for a
+      // required Desert route while retaining durable retry diagnostics.
+      let appID = "desert-network-host-loss-status"
+      let cacheURL = try temporaryDesertCacheURL("network-host-loss-status")
+      defer {
+        try? FileManager.default.removeItem(at: cacheURL.deletingLastPathComponent())
+      }
+      let host = try await InstantNetworkDesertHost.start(
+        appID: appID,
+        initialAttributes: TodoExample.attributes,
+        port: 0
+      )
+      let configuration = InstantRuntimeConfiguration(
+        appID: appID,
+        persistenceURL: cacheURL,
+        initialAttributes: TodoExample.attributes,
+        liveTransport: .networkFramework(host: "127.0.0.1", port: host.port),
+        syncRoute: InstantSyncRouteDescriptor(
+          route: .desert,
+          adapter: "network-framework-peer",
+          transport: .networkFramework
+        )
+      )
+      let runtime = try await InstantRuntime.bootstrap(configuration: configuration)
+      _ = try await runtime.connect()
+      let statuses = try await runtime.observeConnectionStatus()
+
+      await host.stop()
+      let closed = try await instantLiveWithTimeout(
+        operation: "wait for fail-loud desert host loss",
+        timeoutMilliseconds: 2_000
+      ) {
+        try #require(await statuses.first { $0.state == .closed })
+      }
+
+      expectNoDifference(closed.syncRoute.route, .desert)
+      #expect(closed.lastErrorMessage?.contains("closed the TCP connection") == true)
+      var failedRetry = try await runtime.connectionStatus()
+      let failedRetryDeadline = ContinuousClock.now + .seconds(3)
+      while failedRetry.lastErrorMessage == closed.lastErrorMessage,
+        ContinuousClock.now < failedRetryDeadline
+      {
+        try await Task.sleep(for: .milliseconds(20))
+        failedRetry = try await runtime.connectionStatus()
+      }
+      expectNoDifference(failedRetry.state, .closed)
+      #expect(failedRetry.lastErrorMessage != closed.lastErrorMessage)
+      let lateStatuses = try await runtime.observeConnectionStatus()
+      let lateSubscriber = try #require(await lateStatuses.first { _ in true })
+      expectNoDifference(lateSubscriber.state, .closed)
+      expectNoDifference(lateSubscriber.lastErrorMessage, failedRetry.lastErrorMessage)
+      _ = try await runtime.closeConnection()
+      try await Task.sleep(for: .milliseconds(100))
+      let explicitlyClosed = try await runtime.connectionStatus()
+      expectNoDifference(explicitlyClosed.state, .closed)
+    }
+
+    @Test
     func networkFrameworkHostBindsAnExplicitLoopbackPort() async throws {
       let appID = "desert-network-explicit-port"
       var selectedHost: InstantNetworkDesertHost?

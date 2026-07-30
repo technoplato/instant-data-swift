@@ -186,6 +186,11 @@ for every executable.
    catalog between Normal and Desert at the composition root. A failed peer
    keeps the setting reachable so the user can recover to Normal without a
    cloud fallback.
+8. An established Desert peer publishes a transient `closed` transport status
+   with the durable failure diagnostic before reconnecting. Recipes blocks on
+   that route loss without confusing it with an isolated `.errored` mutation
+   rejection, and clears the block only after a successful reconnect or mode
+   switch.
 
 The prototype coordinator speaks enough of the existing Instant server
 protocol to reuse `InstantRuntimeLiveSession` and the current

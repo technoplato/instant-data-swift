@@ -3720,9 +3720,16 @@ public final class InstantRuntime: Sendable {
           recordActorHop(.operationGate)
           await operationGate.enter()
           enteredOperationGate = true
-          try await saveErroredConnectionMetadataWithGateHeld(message: String(describing: error))
-          if reportsFailure {
+          if !reportsFailure, configuration.syncRoute.route == .desert {
+            try await saveReconnectableTransportFailureWithGateHeld(
+              message: String(describing: error)
+            )
             _ = try? await publishConnectionStatusWithGateHeld()
+          } else {
+            try await saveErroredConnectionMetadataWithGateHeld(message: String(describing: error))
+            if reportsFailure {
+              _ = try? await publishConnectionStatusWithGateHeld()
+            }
           }
           throw error
         }
@@ -3925,6 +3932,22 @@ public final class InstantRuntime: Sendable {
     )
   }
 
+  private func saveReconnectableTransportFailureWithGateHeld(message: String) async throws {
+    let now = configuration.now()
+    recordActorHop(.persistence)
+    try await persistence.saveMetadataValue(
+      InstantConnectionState.opened.rawValue,
+      key: connectionStateMetadataKey,
+      updatedAt: now
+    )
+    recordActorHop(.persistence)
+    try await persistence.saveMetadataValue(
+      message,
+      key: connectionLastErrorMetadataKey,
+      updatedAt: now
+    )
+  }
+
   private func recordConnectionError(_ error: Error) async {
     await operationGate.enter()
     do {
@@ -3939,14 +3962,16 @@ public final class InstantRuntime: Sendable {
     await scheduleReconnect(
       after: error,
       event: "connection.receive-loop-failed",
-      message: "Instant live receive loop ended with an error."
+      message: "Instant live receive loop ended with an error.",
+      establishedTransportClosed: true
     )
   }
 
   private func scheduleReconnect(
     after error: Error,
     event: String,
-    message: String
+    message: String,
+    establishedTransportClosed: Bool = false
   ) async {
     InstantDiagnostics.shared.record(
       error: error,
@@ -3962,18 +3987,33 @@ public final class InstantRuntime: Sendable {
       await recordConnectionError(error)
       return
     }
+    await connectionGate.enter()
     await operationGate.enter()
+    var shouldReconnect = true
     do {
-      try await saveErroredConnectionMetadataWithGateHeld(message: String(describing: error))
+      if try await persistedConnectionState() == .closed {
+        shouldReconnect = false
+      } else if establishedTransportClosed, configuration.syncRoute.route == .desert {
+        // Match Reactor's transport-close notification while reserving
+        // persisted `.closed` for an explicit user-requested shutdown.
+        try await saveReconnectableTransportFailureWithGateHeld(
+          message: String(describing: error)
+        )
+        _ = try await publishConnectionStatusWithGateHeld()
+      } else {
+        try await saveErroredConnectionMetadataWithGateHeld(message: String(describing: error))
+      }
       await operationGate.leave()
     } catch {
       await operationGate.leave()
     }
+    await connectionGate.leave()
+    guard shouldReconnect else { return }
     await reconnectController.start(
       sleep: configuration.liveReconnectSleep,
       reconnect: { [weak self] in
         guard let self else { throw CancellationError() }
-        _ = try await self.connectLiveSession(reportsFailure: false)
+        _ = try await self.connectLiveSession(reportsFailure: false, onlyIfNeeded: true)
       }
     )
   }
