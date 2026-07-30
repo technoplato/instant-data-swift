@@ -6,6 +6,23 @@ commit SHA, and high-level reason. Changelog-only bookkeeping commits are
 visible in Git history but are not self-recorded because a commit cannot
 contain its own final SHA.
 
+## July 29, 2026 at 11:02:46 PM EDT
+
+- Repository: `realtime-voice-sqlite-instant` (Scribe)
+- Commit: `8ee3ed92ccebbea1b07c4f194c8ec5bcc3569024`
+- High-level reason: Extract the portable Swift issue and attachment wire
+  contract into a dependency-light SPM leaf module, keep issue behavior and
+  InstantDB transport in separate dependent targets, align the TypeScript
+  Effect schema, and make complaint screenshots durable issue attachments.
+
+## July 29, 2026 at 11:02:45 PM EDT
+
+- Repository: `realtime-voice-sqlite-instant` (Scribe)
+- Commit: `3c3d07b99ac040b737a6d534dba90017d8ccd999`
+- High-level reason: Give normal and full-screen short transcripts one shared
+  top-leading layout policy so the first transcript row no longer sits near
+  the bottom of an otherwise empty viewport.
+
 ## July 29, 2026 at 10:51:15 PM EDT
 
 - Repository: `realtime-voice-sqlite-instant` (Scribe)
