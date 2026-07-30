@@ -4,6 +4,22 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## July 30th, 2026 at 7:51:10 a.m. EDT — `29d6abe60a6a` Plan forced desert-island synchronization
+
+- **Implementation commit:** `29d6abe60a6a5f807b128c5ff7d4bc43d4233811`
+- **Change:** Plan forced desert-island synchronization over Apple transports
+- **Details:**
+  - Separate discovery and pairing, framed message channels, and replication authority so each carrier can evolve without changing the application-facing Instant API.
+  - Specify a fail-loud desertRequired route that selects its backend before cloud construction and forbids cloud probing, timeout fallback, and local-cache-only masquerading.
+  - Phase Network.framework and Bonjour first, then Wi-Fi Aware, CoreBluetooth, WatchConnectivity, and optional proximity aids behind one replication-session contract and evidence ladder.
+  - Record the exact bootstrap seam, complete demo and executable smoke inventory, and durable Instant Tools feature 046.
+- **Files:**
+  - `docs/plans/desert-island-sync.md` — Record the researched architecture, phased delivery plan, forced-mode gates, smoke-test contract, and feature intake.
+- **User context (verbatim):**
+  > Plan out and research how we can make instant db sync over different network agnostic transports.
+  > For testing let’s allow us to set the library to use that mode even if network is available but fail loudly if the smoke tests and existing demos don’t work.
+- **SpecStory:** unavailable — This work was performed in Codex desktop; SpecStory 2.5.0 found no Codex CLI session for /Users/laptop/Sync/desert, `.specstory/history` is absent, and public sharing was not authorized.
+
 ## July 29th, 2026 at 1:30:30 p.m. EDT — `2b2517e25635` Make the SwiftPM package self-contained
 
 - **Implementation commit:** `2b2517e256351f7e82286424aa83b4055b7e174c`

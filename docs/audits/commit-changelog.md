@@ -6,6 +6,29 @@ commit SHA, and high-level reason. Changelog-only bookkeeping commits are
 visible in Git history but are not self-recorded because a commit cannot
 contain its own final SHA.
 
+## July 30, 2026 at 7:50:58 AM EDT
+
+- Repository: `instant-data-swift`
+- Commit: `29d6abe60a6a5f807b128c5ff7d4bc43d4233811`
+- High-level reason: Research and specify forced desert-island synchronization
+  over network-agnostic Apple transports, including an explicit fail-loud
+  route, phased carrier plan, and manifest-complete demo smoke contract.
+
+## July 30, 2026 at 7:05:37 AM EDT
+
+- Repository: `realtime-voice-sqlite-instant` (Scribe)
+- Commit: `61c54fc52f6a558c476cdfbba0ced72f24375a09`
+- High-level reason: Add `Planned` as a first-class portable issue status so
+  future library features can be recorded without a lossy status fallback.
+
+## July 30, 2026 at 7:02:09 AM EDT
+
+- Repository: `realtime-voice-sqlite-instant` (Scribe)
+- Commit: `4707a45f7be4559a2f050966a78998fa8798b154`
+- High-level reason: Add typed structured issue upsert and query tooling with
+  deterministic identity and lossless source documents so library features can
+  be tracked without Markdown parsing.
+
 ## July 30, 2026 at 6:13:15 AM EDT
 
 - Repository: `foldkit`
