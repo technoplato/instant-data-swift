@@ -114,7 +114,7 @@ extension RecipesV3ConfigurationError: CustomStringConvertible {
     case .invalidValue(let key, let value, let expected):
       "Invalid \(key) value ‘\(value)’; expected \(expected)."
     case .unsupportedDesertRecipe(let recipe):
-      "The Desert prototype supports the Todos recipe only; ‘\(recipe)’ requires a later adapter."
+      "The ‘\(recipe)’ recipe does not support the selected Desert transport capabilities."
     }
   }
 }
@@ -210,9 +210,6 @@ public struct RecipesV3AppConfiguration: Hashable, Sendable {
       arguments: arguments
     )
     let launchRecipe = recipeName.flatMap(InstantRecipeV3.init(pathName:))
-    if case .desertRequired = syncRoute, let launchRecipe, launchRecipe != .todos {
-      throw RecipesV3ConfigurationError.unsupportedDesertRecipe(launchRecipe.rawValue)
-    }
     return Self(
       appID: configuredAppID ?? "recipes-v3-local",
       persistenceURL: normalizedConfigurationValue(
@@ -377,9 +374,6 @@ public struct RecipesV3AppConfiguration: Hashable, Sendable {
           case .cloud:
             dependencies.instantLiveTransport = .live
           case .desertRequired(let endpoint):
-            if let launchRecipe = configuration.launchRecipe, launchRecipe != .todos {
-              throw RecipesV3ConfigurationError.unsupportedDesertRecipe(launchRecipe.rawValue)
-            }
             dependencies.instantSyncRoutePolicy = .desertRequired
             switch endpoint.role {
             case .host:
@@ -475,8 +469,8 @@ public struct RecipesV3AppConfiguration: Hashable, Sendable {
       return false
     }
 
-    fileprivate var visibleRecipes: [InstantRecipeV3] {
-      isDesertRequired ? [.todos] : InstantRecipeV3.allCases
+    var visibleRecipes: [InstantRecipeV3] {
+      InstantRecipeV3.allCases
     }
   }
 

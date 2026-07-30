@@ -194,11 +194,9 @@ struct RecipesV3AppTests {
   }
 
   @Test
-  func forcedDesertModeRejectsRecipesOutsideThePrototypeLane() {
-    #expect(
-      throws: RecipesV3ConfigurationError.unsupportedDesertRecipe("auth")
-    ){
-      try RecipesV3AppConfiguration.validatedEnvironment(
+  func forcedDesertModeAcceptsEveryCatalogRecipe() throws {
+    for recipe in InstantRecipeV3.allCases {
+      let configuration = try RecipesV3AppConfiguration.validatedEnvironment(
         [:],
         arguments: [
           "recipes-v3",
@@ -207,11 +205,22 @@ struct RecipesV3AppTests {
           "--desert-role", "peer",
           "--desert-host", "127.0.0.1",
           "--desert-port", "8787",
-          "--recipe", "auth",
+          "--recipe", recipe.rawValue,
         ],
         infoDictionary: [:]
       )
+
+      expectNoDifference(configuration.launchRecipe, recipe)
     }
+  }
+
+  @Test
+  func forcedDesertCatalogKeepsEveryRecipeVisible() {
+    let route = RecipesV3SyncRoute.desertRequired(
+      RecipesV3DesertEndpoint(role: .host, host: "127.0.0.1", port: 8787)
+    )
+
+    expectNoDifference(route.visibleRecipes, InstantRecipeV3.allCases)
   }
 
   @Test @MainActor

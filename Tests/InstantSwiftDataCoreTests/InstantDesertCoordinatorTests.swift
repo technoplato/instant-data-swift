@@ -348,6 +348,42 @@ struct InstantDesertCoordinatorTests {
   }
 
   @Test
+  func exactTopLevelIDFilterReturnsOnlyTheRequestedEntity() async throws {
+    let appID = "desert-exact-id-filter"
+    let coordinator = InstantDesertCoordinator(
+      appID: appID,
+      initialAttributes: TodoExample.attributes
+    )
+    let session = try await initializedDesertSession(coordinator: coordinator, appID: appID)
+
+    for (index, id) in ["wanted-todo", "other-todo"].enumerated() {
+      try await session.send(
+        .transact(
+          desertTodoSteps(id: id, text: id),
+          clientEventID: "seed-\(index)"
+        )
+      )
+      _ = try await receiveDesertMessage(from: session)
+      _ = try await receiveDesertMessage(from: session)
+    }
+
+    let query: InstantLiveJSONValue = .object([
+      "todos": .object([
+        "$": .object([
+          "where": .object(["id": .string("wanted-todo")])
+        ])
+      ])
+    ])
+    try await session.send(.addQuery(query, clientEventID: "wanted-query"))
+    let response = try await receiveDesertMessage(from: session)
+
+    expectNoDifference(response.op, "add-query-ok")
+    expectNoDifference(Set(desertEntityIDs(in: response)), ["wanted-todo"])
+
+    await session.close()
+  }
+
+  @Test
   func publicRuntimePresenceAndTopicsUseCanonicalDesertEnvelopes() async throws {
     let appID = "desert-room-envelopes"
     let coordinator = InstantDesertCoordinator(appID: appID)
@@ -624,6 +660,12 @@ private func desertTextValues(in message: InstantLiveMessage) -> [String] {
     guard values.count >= 3, values[1].stringValue == "todos/text" else { return nil }
     return values[2].stringValue
   }.sorted()
+}
+
+private func desertEntityIDs(in message: InstantLiveMessage) -> [String] {
+  desertTriples(in: message).compactMap { values in
+    values.first?.stringValue
+  }
 }
 
 private func desertTransactionTimes(in message: InstantLiveMessage) -> [Int64] {

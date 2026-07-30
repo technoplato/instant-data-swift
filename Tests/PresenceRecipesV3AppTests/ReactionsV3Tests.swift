@@ -84,6 +84,20 @@ struct ReactionsV3Tests {
   }
 
   @Test
+  func locallyAnimatedReactionIsNotAnimatedAgainByItsTopicEcho() {
+    let model = ReactionsV3Model()
+    let payload = model.reactionButtonTapped(
+      .heart,
+      directionAngle: 45,
+      rotationAngle: 270
+    )
+
+    model.observe([payload])
+
+    expectNoDifference(model.animations.map(\.payload), [payload])
+  }
+
+  @Test
   func sourcePortAnimatesEachObservedValidPayloadOnceAndIgnoresUnknownNames() {
     let model = ReactionsV3Model()
     let fire = ReactionsV3Payload(name: "fire", directionAngle: 10, rotationAngle: 20)

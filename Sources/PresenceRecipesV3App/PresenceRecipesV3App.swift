@@ -235,6 +235,7 @@ public final class ReactionsV3Model: ObservableObject {
   @Published public private(set) var animations: [ReactionsV3Animation] = []
 
   private var observedMessageCount = 0
+  private var locallyAnimatedPayloads: [ReactionsV3Payload] = []
 
   public init() {}
 
@@ -249,6 +250,7 @@ public final class ReactionsV3Model: ObservableObject {
       directionAngle: directionAngle,
       rotationAngle: rotationAngle
     )
+    locallyAnimatedPayloads.append(payload)
     animate(payload)
     return payload
   }
@@ -260,6 +262,10 @@ public final class ReactionsV3Model: ObservableObject {
     let newPayloads = payloads.dropFirst(observedMessageCount)
     observedMessageCount = payloads.count
     for payload in newPayloads {
+      if let localIndex = locallyAnimatedPayloads.firstIndex(of: payload) {
+        locallyAnimatedPayloads.remove(at: localIndex)
+        continue
+      }
       animate(payload)
     }
   }

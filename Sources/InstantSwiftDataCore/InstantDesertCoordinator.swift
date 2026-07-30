@@ -470,11 +470,11 @@ public actor InstantDesertCoordinator {
   }
 
   private func canonicalResult(for query: InstantLiveJSONValue) -> InstantLiveJSONValue {
-    let namespaces = Set(
-      query.objectValue?.keys.filter { !$0.hasPrefix("$") } ?? []
-    )
+    let namespaces = Set(query.objectValue?.keys.filter { !$0.hasPrefix("$") } ?? [])
+    let exactEntityID = exactTopLevelEntityID(in: query)
     let matching = triples.values.filter { triple in
-      namespaces.isEmpty || namespaces.contains(attributeNamespace(triple.attributeID))
+      (namespaces.isEmpty || namespaces.contains(attributeNamespace(triple.attributeID)))
+        && (exactEntityID == nil || triple.entityID == exactEntityID)
     }
     let byEntity = Dictionary(grouping: matching, by: \.entityID)
     let joinRows: [InstantLiveJSONValue] = byEntity.keys.sorted().map { entityID in
@@ -532,15 +532,37 @@ public actor InstantDesertCoordinator {
           reason: "Desert query options must be an object."
         )
       }
-      let unsupported = options.keys.filter { $0 != "order" }.sorted()
+      let unsupported = options.keys.filter { $0 != "order" && $0 != "where" }.sorted()
       guard unsupported.isEmpty else {
         throw unsupportedQuery(
           path: "q.\(namespace).$.\(unsupported[0])",
           reason:
-            "The desert prototype does not implement filters, pagination, cursors, limits, offsets, or field selection."
+            "The desert prototype does not implement pagination, cursors, limits, offsets, or field selection."
         )
       }
+      if let whereValue = options["where"] {
+        guard case .object(let whereFields) = whereValue,
+          whereFields.count == 1,
+          let id = whereFields["id"]?.stringValue,
+          !id.isEmpty
+        else {
+          throw unsupportedQuery(
+            path: "q.\(namespace).$.where",
+            reason:
+              "The desert prototype currently supports only one exact top-level string id filter."
+          )
+        }
+      }
     }
+  }
+
+  private func exactTopLevelEntityID(in query: InstantLiveJSONValue) -> String? {
+    guard let namespace = query.objectValue?.keys.first,
+      let body = query.objectValue?[namespace]?.objectValue,
+      let options = body["$"]?.objectValue,
+      let whereFields = options["where"]?.objectValue
+    else { return nil }
+    return whereFields["id"]?.stringValue
   }
 
   private func unsupportedQuery(path: String, reason: String) -> InstantError {
@@ -549,7 +571,8 @@ public actor InstantDesertCoordinator {
       operation: "validate Instant desert query",
       path: path,
       message: reason,
-      recovery: "Use a single unfiltered namespace query while running the desert prototype."
+      recovery:
+        "Use a single namespace query with optional ordering or one exact top-level string id filter."
     )
   }
 
