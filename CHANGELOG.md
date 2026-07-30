@@ -4,6 +4,22 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## July 30th, 2026 at 12:55:33 p.m. EDT — `b95f60abf4fd` Fix iOS Recipes navigation below status banner
+
+- **Implementation commit:** `b95f60abf4fdd9585d39b1a4f45a27e08f2b104b`
+- **Change:** Keep iOS Recipes navigation reachable below the Desert status banner
+- **Details:**
+  - Render the non-watchOS transport banner and NavigationStack as layout siblings so the iOS 26 back-button toolbar is no longer squeezed behind the banner.
+  - Preserve the watchOS navigation-only layout and the existing tvOS and Apple-platform banner materials.
+  - Add a focused source-level regression that rejects a top safe-area inset around the catalog navigation container.
+- **Files:**
+  - `Sources/RecipesV3App/RecipesV3App.swift` — Place the shared transport banner outside the navigation container without changing recipe composition.
+  - `Tests/RecipesV3AppTests/RecipesV3AppTests.swift` — Lock the container order that keeps the iOS back control visible.
+- **User context (verbatim):**
+  > continue working please until these are function
+  > Go ahead and get a prototype working and try it on iOS sim and Mac
+- **SpecStory:** unavailable — This work was performed in Codex desktop; no verified Codex CLI capture exists for /Users/laptop/Sync/desert, and public sharing was not authorized.
+
 ## July 30th, 2026 at 11:53:43 a.m. EDT — `0b400dd979c8` Make every recipe honest in desert mode
 
 - **Implementation commit:** `0b400dd979c8a2ed8d91a1e395c002e31b04ea03`

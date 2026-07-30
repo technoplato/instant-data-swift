@@ -6,6 +6,14 @@ commit SHA, and high-level reason. Changelog-only bookkeeping commits are
 visible in Git history but are not self-recorded because a commit cannot
 contain its own final SHA.
 
+## July 30, 2026 at 12:55:36 PM EDT
+
+- Repository: `instant-data-swift`
+- Commit: `b95f60abf4fdd9585d39b1a4f45a27e08f2b104b`
+- High-level reason: Keep the shared Recipes transport banner outside the
+  navigation container so iOS 26 renders a complete, reachable back control
+  while preserving every recipe and platform-specific banner treatment.
+
 ## July 30, 2026 at 11:53:46 AM EDT
 
 - Repository: `instant-data-swift`
