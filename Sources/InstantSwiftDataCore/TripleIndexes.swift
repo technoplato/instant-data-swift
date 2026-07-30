@@ -210,10 +210,22 @@ struct TripleIndexes: Hashable, Codable, Sendable {
   }
 
   var triples: [InstantTriple] {
-    eav.values
-      .flatMap(\.values)
-      .flatMap(\.values)
-      .sorted(by: Self.triplePrecedes)
+    var triples: [InstantTriple] = []
+    triples.reserveCapacity(tripleCount)
+    for entityID in eav.keys.sorted() {
+      guard let attributesByID = eav[entityID] else { continue }
+      for attributeID in attributesByID.keys.sorted() {
+        guard let valuesByValue = attributesByID[attributeID] else { continue }
+        if valuesByValue.count == 1, let triple = valuesByValue.values.first {
+          triples.append(triple)
+        } else {
+          triples.append(
+            contentsOf: valuesByValue.values.sorted(by: Self.triplePrecedes)
+          )
+        }
+      }
+    }
+    return triples
   }
 
   var tripleCount: Int {

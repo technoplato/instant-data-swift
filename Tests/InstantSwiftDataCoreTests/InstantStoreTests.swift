@@ -80,6 +80,32 @@ struct InstantStoreTests {
   }
 
   @Test
+  func tripleIndexesMaterializeLargeSparseSnapshotsInIndexOrder() {
+    let timestamp = InstantTimestamp(milliseconds: 1)
+    let triples = (0..<50_000).reversed().map { index in
+      InstantTriple(
+        entityID: "debug-log-\(String(format: "%05d", index))",
+        attributeID: index.isMultiple(of: 2) ? "debugLogs/name" : "debugLogs/timestampMs",
+        value: .number(Double(index)),
+        txID: "tx-\(index)",
+        txTime: timestamp
+      )
+    }
+    let indexes = TripleIndexes(triples: triples)
+
+    let snapshot = indexes.triples
+
+    expectNoDifference(snapshot.count, 50_000)
+    expectNoDifference(snapshot.first?.entityID, "debug-log-00000")
+    expectNoDifference(snapshot.last?.entityID, "debug-log-49999")
+    #expect(
+      zip(snapshot, snapshot.dropFirst()).allSatisfy { lhs, rhs in
+        lhs.entityID < rhs.entityID
+      }
+    )
+  }
+
+  @Test
   func persistenceFilesRestrictRefreshSessionsToTheCurrentUser() async throws {
     let cacheURL = try temporaryCacheURL()
     let store = try SQLitePersistenceStore(fileURL: cacheURL)
