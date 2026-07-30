@@ -6,6 +6,14 @@ commit SHA, and high-level reason. Changelog-only bookkeeping commits are
 visible in Git history but are not self-recorded because a commit cannot
 contain its own final SHA.
 
+## July 30, 2026 at 7:44:40 AM EDT
+
+- Repository: `realtime-voice-sqlite-instant` (Scribe)
+- Commit: `ae4f941823a8e78a0d8ab8643458a1b42035dc81`
+- High-level reason: Add default-on Apple performance diagnostics using
+  MetricKit on macOS and iOS/iPadOS, with a bounded process-memory fallback on
+  watchOS and privacy-filtered remote summaries.
+
 ## July 30, 2026 at 7:39:11 AM EDT
 
 - Repository: `realtime-voice-sqlite-instant` (Scribe)
