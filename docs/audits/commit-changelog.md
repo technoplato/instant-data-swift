@@ -6,6 +6,14 @@ commit SHA, and high-level reason. Changelog-only bookkeeping commits are
 visible in Git history but are not self-recorded because a commit cannot
 contain its own final SHA.
 
+## July 30, 2026 at 8:50:12 AM EDT
+
+- Repository: `instant-data-swift`
+- Commit: `c26c661493a4b8247ae1f1c8ec9bca48d31e5fb2`
+- High-level reason: Stabilize XcodeGen's local-package identity across named
+  worktrees and check in the regenerated provenance phases so clean Mac and
+  iOS Simulator builds remain reproducible from the active checkout.
+
 ## July 30, 2026 at 8:46:21 AM EDT
 
 - Repository: `instant-data-swift`

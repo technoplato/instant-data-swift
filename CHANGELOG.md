@@ -4,6 +4,21 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## July 30th, 2026 at 8:50:10 a.m. EDT — `c26c661493a4` Stabilize generated Recipes project across worktrees
+
+- **Implementation commit:** `c26c661493a4b8247ae1f1c8ec9bca48d31e5fb2`
+- **Change:** Keep the generated Recipes project reproducible in named worktrees
+- **Details:**
+  - Generate through a temporary package-root alias named instant-data-swift so XcodeGen does not rewrite tracked package names and identifiers from the current worktree basename.
+  - Check in the regenerated macOS and iOS provenance build phases and verify two consecutive generations produce the same project checksum.
+- **Files:**
+  - `Examples/RecipesV3/generate-project.sh` — Normalize XcodeGen package identity without redirecting compilation away from the active checkout.
+  - `Examples/RecipesV3/InstantRecipesV3.xcodeproj/project.pbxproj` — Track the generated clean-build provenance phases and sandbox settings used by Xcode builds.
+- **User context (verbatim):**
+  > Do these explorations specifically in a worktree called desert in branch same name
+  > Go ahead and get a prototype working and try it on iOS sim and Mac
+- **SpecStory:** unavailable — This work was performed in Codex desktop; no verified Codex CLI capture exists for /Users/laptop/Sync/desert, and public sharing was not authorized.
+
 ## July 30th, 2026 at 8:46:14 a.m. EDT — `5f7762b4f481` Prototype forced desert sync on Network.framework
 
 - **Implementation commit:** `5f7762b4f48145dc5d722567399de4099c7a82e1`
