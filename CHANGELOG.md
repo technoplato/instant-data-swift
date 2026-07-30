@@ -4,6 +4,20 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## July 30th, 2026 at 8:53:45 a.m. EDT — `32d36be23d1b` Bind explicit desert ports through one Network endpoint
+
+- **Implementation commit:** `32d36be23d1be1a1796fc19c4724e2e5d9dac0ba`
+- **Change:** Make explicit loopback Desert ports launch correctly on macOS
+- **Details:**
+  - Bind the Network.framework listener through requiredLocalEndpoint only, avoiding the duplicate explicit-port configuration that produced POSIX EINVAL in the built Mac app.
+  - Add an explicit nonzero loopback-port host and peer round-trip regression and re-verify 139 focused bootstrap, route, app, and coordinator tests.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantNetworkDesertTransport.swift` — Construct one unambiguous listener endpoint for explicit and ephemeral loopback ports.
+  - `Tests/InstantSwiftDataCoreTests/InstantDesertCoordinatorTests.swift` — Exercise the same explicit-port launch shape used by the Mac host and Simulator peer.
+- **User context (verbatim):**
+  > Go ahead and get a prototype working and try it on iOS sim and Mac
+- **SpecStory:** unavailable — This work was performed in Codex desktop; no verified Codex CLI capture exists for /Users/laptop/Sync/desert, and public sharing was not authorized.
+
 ## July 30th, 2026 at 8:50:10 a.m. EDT — `c26c661493a4` Stabilize generated Recipes project across worktrees
 
 - **Implementation commit:** `c26c661493a4b8247ae1f1c8ec9bca48d31e5fb2`

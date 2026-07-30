@@ -6,6 +6,14 @@ commit SHA, and high-level reason. Changelog-only bookkeeping commits are
 visible in Git history but are not self-recorded because a commit cannot
 contain its own final SHA.
 
+## July 30, 2026 at 8:53:47 AM EDT
+
+- Repository: `instant-data-swift`
+- Commit: `32d36be23d1be1a1796fc19c4724e2e5d9dac0ba`
+- High-level reason: Remove duplicate Network.framework port binding so the
+  provenance-built Mac host can open the explicit loopback endpoint used by
+  the iOS Simulator peer, with an exact regression round trip.
+
 ## July 30, 2026 at 8:50:12 AM EDT
 
 - Repository: `instant-data-swift`
