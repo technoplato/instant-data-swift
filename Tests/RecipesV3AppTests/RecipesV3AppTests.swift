@@ -224,6 +224,118 @@ struct RecipesV3AppTests {
   }
 
   @Test @MainActor
+  func authCompositionAllowsExternalProvidersOnlyOutsideDesertMode() {
+    let desertRoute = RecipesV3SyncRoute.desertRequired(
+      RecipesV3DesertEndpoint(role: .peer, host: "127.0.0.1", port: 8787)
+    )
+
+    expectNoDifference(
+      [
+        RecipesV3SyncRoute.localOnly.allowsExternalAuthProviders,
+        RecipesV3SyncRoute.cloud.allowsExternalAuthProviders,
+        desertRoute.allowsExternalAuthProviders,
+      ],
+      [true, true, false]
+    )
+
+    let screen = RecipesV3RecipeScreen(
+      recipe: .auth,
+      profileID: "desert-profile",
+      syncRoute: desertRoute
+    )
+    expectNoDifference(screen.syncRoute, desertRoute)
+  }
+
+  @Test
+  func requiredDesertTransportErrorClearsOnlyAfterRecoverySucceeds() {
+    var blockingError: RecipesV3BlockingError?
+
+    blockingError = RecipesV3BlockingError.reducing(
+      blockingError,
+      state: .opened,
+      lastErrorMessage: nil,
+      requiresHealthyConnection: true
+    )
+    expectNoDifference(blockingError, nil)
+
+    blockingError = RecipesV3BlockingError.reducing(
+      blockingError,
+      state: .errored,
+      lastErrorMessage: "Mutation rejected.",
+      requiresHealthyConnection: true
+    )
+    expectNoDifference(blockingError, nil)
+
+    blockingError = RecipesV3BlockingError.reducing(
+      blockingError,
+      state: .closed,
+      lastErrorMessage: nil,
+      requiresHealthyConnection: true
+    )
+    expectNoDifference(
+      blockingError,
+      .transport("The required Desert connection is no longer available.")
+    )
+
+    blockingError = RecipesV3BlockingError.reducing(
+      blockingError,
+      state: .connecting,
+      lastErrorMessage: nil,
+      requiresHealthyConnection: true
+    )
+    expectNoDifference(
+      blockingError,
+      .transport("The required Desert connection is no longer available.")
+    )
+
+    blockingError = RecipesV3BlockingError.reducing(
+      blockingError,
+      state: .opened,
+      lastErrorMessage: nil,
+      requiresHealthyConnection: true
+    )
+    expectNoDifference(blockingError, nil)
+
+    blockingError = RecipesV3BlockingError.reducing(
+      blockingError,
+      state: .connecting,
+      lastErrorMessage: nil,
+      requiresHealthyConnection: true
+    )
+    expectNoDifference(
+      blockingError,
+      .transport("The required Desert connection is reconnecting.")
+    )
+
+    blockingError = RecipesV3BlockingError.reducing(
+      blockingError,
+      state: .authenticated,
+      lastErrorMessage: nil,
+      requiresHealthyConnection: true
+    )
+    expectNoDifference(blockingError, nil)
+  }
+
+  @Test
+  func healthyTransportStatusDoesNotClearABootstrapError() {
+    for state in [
+      InstantConnectionState.connecting,
+      .opened,
+      .authenticated,
+    ] {
+      expectNoDifference(
+        RecipesV3BlockingError.reducing(
+          .bootstrap("Initial bootstrap failed."),
+          state: state,
+          lastErrorMessage: nil,
+          requiresHealthyConnection: true
+        ),
+        .bootstrap("Initial bootstrap failed.")
+      )
+    }
+  }
+
+  @Test @MainActor
   func unreachableForcedDesertPeerFailsBeforePublishingAClient() async throws {
     let reservation = try await InstantNetworkDesertHost.start(
       appID: "desert-port-reservation",

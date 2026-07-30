@@ -1,8 +1,10 @@
 # Desert-island synchronization over Apple transports
 
-Status: proposed feature and implementation plan. This document is not evidence
-that peer-to-peer synchronization is implemented or that live synchronization
-has been demonstrated.
+Status: loopback Recipes V3 prototype plus implementation plan. The `desert`
+branch now demonstrates forced non-cloud synchronization for all eight Recipes
+V3 demos through an in-process coordinator host and an actual
+Network.framework loopback peer. This is not evidence of physical-device,
+router/LAN, direct peer-to-peer, Bluetooth, or Watch synchronization.
 
 Tracked feature: [Instant Tools feature 046](https://issues.knophy.com/issues/046), Instant
 entity `6b831f06-e880-4ee0-839f-e75707a4241d`. In the sibling Instant Tools
@@ -27,20 +29,44 @@ delivery, and per-item rejection isolation.
 
 ## Prototype status (July 30, 2026)
 
-The first executable slice on the `desert` branch is intentionally narrower
-than the complete plan below. It connects the Recipes Todos host on macOS to a
-Recipes Todos peer on iOS Simulator through a loopback-only Network.framework
-TCP adapter, while both use the ordinary Instant query, observation, and
-mutation APIs. Forced startup waits for that connection and presents a blocking
-error instead of silently falling back to cloud.
+The executable slice on the `desert` branch is intentionally narrower than the
+complete plan below. It enables all eight Recipes V3 demos—Todos, Cursors,
+Custom Cursors, Reactions, Typing Indicator, Avatar Stack, Merge Tile Game, and
+Auth—under a forced Desert route. A host client talks directly to an in-process
+coordinator while an actual Network.framework TCP peer crosses the loopback
+listener. Both clients use the ordinary Instant query, observation, mutation,
+room, topic, presence, and auth APIs appropriate to each recipe. Forced startup
+waits for the required connection and presents a blocking error instead of
+silently falling back to cloud.
+
+The strict gate is:
+
+```sh
+validation/verify-recipes-v3-desert-smoke.sh
+```
+
+It runs one parameterized two-client contract for every
+`InstantRecipeV3.allCases` value and then validates exactly eight JSONL evidence
+records. Missing, duplicate, unexpected, skipped, unsupported, wrong-route, or
+wrong-adapter results fail nonzero. The expected host is
+`network-framework-host` with transport `in-process`; the expected peer is
+`network-framework-peer` with transport `network-framework`.
+
+The Merge Tile recipe exercises its canonical exact top-level string `id`
+filter with `limit(1)`. Broader filters, nested queries, pagination, offsets,
+and field selection remain unsupported and fail loudly. Auth exercises guest
+and local magic-code sign-in on each client, including local-code autofill in
+the UI. Those auth sessions are deliberately independent; they are not
+replicated or trusted identities. Cloud-backed provider auth is unavailable in
+forced Desert mode.
 
 This is same-host, same-session evidence—not yet a durable or secure nearby
 database. The coordinator is memory-only, the unauthenticated adapter rejects
 non-loopback binding, and unsupported query shapes fail rather than returning
 an authoritative but incomplete result. Bonjour/discovery, pairing and trust,
 encryption, physical-device LAN or peer-to-peer testing, Bluetooth,
-WatchConnectivity, coordinator persistence, and the all-demo forced-mode smoke
-inventory remain explicit follow-up phases.
+WatchConnectivity, coordinator persistence, wider router/LAN support, and a
+repository-wide forced-mode demo inventory remain explicit follow-up phases.
 
 "Desert mode" means a required non-cloud replication route. It must never mean
 "try nearby, then quietly use the Internet."
@@ -94,62 +120,52 @@ Upstream references:
 
 ## Current repository seam audit
 
-The current code already has a useful session factory, but it does not yet have
-a route abstraction:
+The Phase 0 route seam is now implemented:
 
-- `Sources/InstantSwiftDataCore/InstantLiveTransport.swift` defines
-  `InstantLiveTransportClient.connect`. Its `.live` value does not create a
-  socket until `connect` runs; that call creates and resumes the
-  `URLSessionWebSocketTask`.
-- `Sources/InstantSwiftData/InstantSwiftData.swift` exposes
-  `DependencyValues.instantLiveTransport`. `bootstrapInstantSwiftData` reads the
-  optional value, puts it into `InstantRuntimeConfiguration`, and enables
-  automatic connection whenever it is non-nil.
-- `Sources/InstantSwiftDataCore/InstantRuntime.swift` uses non-nil
-  `liveTransport` as a proxy for every remote behavior. Queries, mutations,
-  rooms, streams, storage, connection status, and diagnostics consequently
-  describe any injected backend as WebSocket/live.
-- `autoConnectLiveTransport = false` is not a forced-route control. Public
-  `connect()` still opens the configured transport manually.
-- `bootstrapLocalInstantSwiftData` correctly avoids the live transport, but it
-  is process-local cache behavior. It is not nearby-device replication.
+- `Sources/InstantSwiftDataCore/InstantSyncRoute.swift` defines the typed
+  `current` and `desertRequired` policies, the selected-route descriptor, and a
+  transport factory that keeps route identity separate from carrier identity.
+- `DependencyValues` exposes distinct cloud and Desert transport factories.
+  `bootstrapInstantSwiftData` resolves only the selected factory. A required
+  Desert route with no factory throws a stable `InstantError` before persistence
+  bootstrap; it does not probe or fall back to cloud.
+- `InstantRuntimeConfiguration`, connection status, and diagnostics carry the
+  explicit selected route, adapter, and transport instead of describing every
+  active backend as a cloud WebSocket.
+- `InstantDesertCoordinator` supplies the memory-only authority used by the
+  prototype. `InstantNetworkDesertHost` exposes it through a loopback-only
+  Network.framework listener.
+- The Recipes V3 composition root validates the forced-route launch
+  configuration, starts either the host or peer adapter, waits for the required
+  connection, shows route/adapter status, and makes all eight recipes visible.
+- `bootstrapLocalInstantSwiftData` remains process-local cache behavior. It is
+  not Desert replication.
 
-Nine app composition roots independently reduce the decision to an
-`enablesLiveSync` Boolean and then install `.live`: AppBuilder, Auth,
-CloudKitDemo, Recipes, Reminders, Stroopwafel, SyncUps, Todos, and VoiceTrail.
-That Boolean cannot represent a required desert route. MobileChat,
-PresenceRecipes, and Streams package executables do not currently bootstrap
-Instant at all, so they must initially fail the desert smoke inventory as
-uncovered rather than being skipped.
+Other application composition roots still commonly reduce configuration to an
+`enablesLiveSync` Boolean and install the cloud `.live` transport. The current
+all-eight gate is therefore a Recipes V3 gate, not evidence that every
+repository executable supports forced Desert mode.
 
-### Exact Phase 0 move
+### Implemented Phase 0 behavior
 
-Make route selection once in `DependencyValues.bootstrapInstantSwiftData`,
-before resolving either transport:
+1. Route selection happens in `DependencyValues.bootstrapInstantSwiftData`
+   before transport resolution.
+2. Cloud and Desert factories are distinct, and the focused tests install a
+   cloud trap to prove the forced lane does not instantiate it.
+3. A missing required Desert factory fails immediately with a typed error.
+4. The runtime receives an explicit route descriptor; Desert route and
+   Network.framework/in-process carrier identities remain distinct.
+5. Route, adapter, and transport are exposed in connection status and
+   diagnostics.
+6. The Recipes host and peer use ordinary public APIs against the selected
+   backend. Cloud-backed provider auth remains unavailable in that lane.
 
-1. Add a typed route policy with a default cloud/current case and a
-   `desertRequired` case.
-2. Inject cloud and desert session factories through distinct dependency keys.
-   Factory values—not merely already-selected session clients—let a test prove
-   the unselected cloud implementation was never instantiated.
-3. Resolve only the factory selected by the route policy. A missing required
-   desert factory throws a stable `InstantError` before SQLite/runtime bootstrap,
-   with no timeout, probe, or fallback.
-4. Pass an explicit route descriptor into `InstantRuntimeConfiguration`. Keep
-   route separate from carrier: the route can be desert while the carrier is
-   LAN TCP/QUIC, Wi-Fi Aware, BLE L2CAP, or WatchConnectivity.
-5. Replace `liveTransport != nil` checks that really mean “a replication
-   backend is active” with the explicit descriptor. Update connection/query
-   diagnostics so desert is never reported as cloud WebSocket.
-6. In desert-required mode, do not resolve or schedule cloud-capable auth,
-   storage, cookie-sync, or stream-file effects unless the selected replication
-   contract explicitly needs an offline implementation.
-
-If the first coordinator speaks the existing Instant server protocol, it can
-reuse `InstantRuntimeLiveSession` and the current query/outbox/ack machinery.
-If it uses a new replica protocol, the backend boundary must move below that
-server-specific session, because the current session expects `init-ok`, query
-results, transaction acknowledgements, rooms, presence, and stream events.
+The prototype coordinator speaks enough of the existing Instant server
+protocol to reuse `InstantRuntimeLiveSession` and the current
+query/outbox/acknowledgement machinery. If a later version introduces a new
+replica protocol, the backend boundary must move below that server-specific
+session, because the current session expects `init-ok`, query results,
+transaction acknowledgements, rooms, presence, and stream events.
 
 The upstream TypeScript online listener is not an isolation seam. Its initial
 startup proceeds to socket creation, and later online/offline notifications
@@ -158,31 +174,36 @@ construction rather than in a reachability callback.
 
 ### Current demo and smoke inventory
 
-`Package.swift` currently declares 16 executable products: 12 UI demos, the
-Reminders demo CLI, and three tool executables. Eight additional Xcode example
-hosts appear across the Recipes, Reminders, and VoiceTrail `project.yml` files.
-The existing example build scripts prove compilation only, and
-`validation/run-e2e.sh` uses a fixed list that can legitimately emit skipped
-remote evidence. Neither is a desert smoke gate.
+`validation/verify-recipes-v3-desert-smoke.sh` is the strict Recipes V3 gate. It
+exercises all eight `InstantRecipeV3` cases through one in-process host and one
+actual loopback Network.framework peer, using ordinary public APIs. Its JSONL
+records contain `recipe`, `appID`, `route`, `hostAdapter`, `peerAdapter`,
+`hostTransport`, `peerTransport`, `phase`, and `ok`.
 
-The forced lane should derive SwiftPM executables from the manifest:
+The validator requires exactly one successful record for each of:
 
-```sh
-swift package dump-package \
-  | jq -r '.products[] | select(.type | has("executable")) | .name'
+```text
+todos
+cursors
+custom-cursors
+reactions
+typing-indicator
+avatar-stack
+merge-tile-game
+auth
 ```
 
-It should separately enumerate Xcode hosts from their `project.yml` files,
-classify tooling products explicitly, and require every remaining target to map
-to one smoke contract. A target is a failure—not a skip—when it is missing,
-duplicated, unclassified, unsupported, or not run.
+It rejects cloud, local-cache-only, wrong-route, missing, duplicate,
+unexpected, empty-phase, `skip`, `unsupported`, and `not-run` evidence. This is
+stronger than compilation, but it is still same-process/loopback protocol
+evidence rather than installed physical-device evidence.
 
-Each contract must exercise bootstrap, a first ordinary public query, a typed
-mutation, and an observed result through a deterministic in-memory desert
-coordinator. JSONL evidence should contain `target`, `selectedRoute`, `adapter`,
-`phase`, and `cloudFactoryInvocationCount`. The runner returns nonzero for any
-cloud factory call, cloud/WebSocket/local-cache-only adapter, wrong route,
-missing phase, empty result, or `skip`/`unsupported`/`not_run` record.
+The broader repository still declares executables and Xcode hosts outside
+Recipes V3. A future repository-wide gate should derive SwiftPM executables
+from the manifest, separately enumerate Xcode hosts from their `project.yml`
+files, classify tooling products explicitly, and require every remaining
+target to map to one smoke contract. Missing or unsupported targets must fail
+rather than skip.
 
 The strongest existing test homes are:
 
@@ -377,6 +398,12 @@ lane. The lane may inject the deterministic in-memory coordinator until a
 physical adapter is appropriate, but it must exercise the real library route
 selection and public data APIs.
 
+The Recipes V3 slice now satisfies this contract for its eight catalog entries:
+the parameterized test derives cases from `InstantRecipeV3.allCases`, crosses an
+actual Network.framework loopback connection for the peer, and emits strict
+machine-readable evidence. Extending the same fail-loud coverage to executable
+products outside Recipes V3 remains future work.
+
 The smoke runner must:
 
 - enumerate the existing demo/example targets rather than maintain a silently
@@ -396,9 +423,13 @@ the smoke harness converts that error into a loud test failure.
 
 Report each tier separately:
 
-1. deterministic in-memory tests;
-2. protocol tests over fault-injected channels;
-3. adapter tests on loopback or supported simulators;
+1. deterministic in-memory tests — implemented for the coordinator and route
+   seam;
+2. protocol tests over fault-injected channels — partially implemented;
+3. adapter tests on loopback or supported simulators — implemented for a
+   same-process host plus an actual Network.framework loopback peer, with
+   macOS/iOS Simulator launch paths documented in
+   `Examples/RecipesV3/README.md`;
 4. physical devices on the same router with Internet blocked;
 5. physical supported iPhone/iPad devices with no router using Wi-Fi Aware or
    an appropriate peer-to-peer Network.framework path;
@@ -411,24 +442,27 @@ Compilation, fixtures, and local-only clients are not live-sync evidence.
 
 ### Phase 0 — seam and fail-loud mode
 
-- Fit route policy to the existing bootstrap dependency.
-- Add `desertRequired` with a fake/in-memory backend.
-- Prove cloud transport is untouched when forced.
-- Add the typed missing-backend error and route diagnostics.
-- Add forced-desert lanes to existing tests and demo smoke inventory.
+- Completed for the library route seam and all eight Recipes V3 catalog
+  entries: typed `desertRequired`, distinct factories, cloud trap, typed
+  missing-backend failure, route diagnostics, and a strict all-eight gate.
+- Still required: extend the same explicit forced lane and fail-loud inventory
+  beyond Recipes V3 to the repository's other demos and executables.
 
 ### Phase 1 — local coordinator protocol
 
-- Define versioned handshake, mutation, acknowledgement/rejection, catch-up,
-  and snapshot frames.
-- Reuse the existing store, optimistic observation, and durable outbox.
-- Add two-replica deterministic and process-restart tests.
+- A memory-only prototype currently speaks enough of the existing Instant
+  session protocol for the eight Recipes contracts, including entity state
+  changes, presence, topics, and local auth.
+- Still required: a durable/versioned coordinator, catch-up and snapshot
+  semantics, coordinator restart/process-restart tests, trust, encryption, and
+  explicit schema/authorization rejection policy.
 - Specify schema mismatch, authorization rejection, and coordinator-loss UX.
 
 ### Phase 2 — router/LAN Network.framework adapter
 
-- Bonjour application-service discovery and listener/browser lifecycle.
-- Reliable framed TCP or QUIC channel.
+- A loopback-only Network.framework TCP listener/peer prototype is implemented.
+- Still required: non-loopback router/LAN binding, Bonjour application-service
+  discovery, and listener/browser lifecycle.
 - Local-network privacy declarations and actionable denial state.
 - Physical Mac/iPhone/iPad testing with WAN blocked.
 
@@ -457,6 +491,11 @@ Compilation, fixtures, and local-only clients are not live-sync evidence.
 - Research a true peer mesh separately; do not hide it behind the carrier API.
 
 ## Feature acceptance criteria
+
+The loopback Recipes prototype satisfies route forcing, cloud isolation,
+fail-loud bootstrap, unchanged public APIs, and the eight-recipe subset of the
+smoke requirement. The remaining criteria below still govern the broader
+feature; the prototype is not full feature acceptance.
 
 - A composition root can force desert mode while Internet is available.
 - Forced mode never creates or falls back to a cloud connection.
@@ -495,7 +534,7 @@ evidence requirements, and an object-valued lossless source document.
   "status": "Planned",
   "priority": "P1",
   "area": "transport-and-offline-sync",
-  "observed": "Instant Data Swift does not yet expose a verified non-cloud replication route that nearby Apple devices can be forced to use when Internet access is available or absent.",
+  "observed": "Instant Data Swift now exposes a forced same-host loopback prototype for Recipes V3, but it does not yet expose a durable, discovered, trusted, encrypted, non-loopback route verified between nearby physical Apple devices.",
   "expected": "Applications can require a non-cloud replication backend while retaining ordinary Instant query, observation, and mutation APIs. Discovery, message transport, and replica authority are independently replaceable, and forced mode never probes or falls back to cloud.",
   "successCriteria": [
     "Forcing desert mode while Internet is available never creates a cloud connection.",
@@ -510,13 +549,17 @@ evidence requirements, and an object-valued lossless source document.
 }
 ```
 
+## Resolved prototype decisions
+
+- `DependencyValues.bootstrapInstantSwiftData` owns route selection without
+  widening the ordinary query, observation, or mutation APIs.
+- The memory-only prototype coordinator speaks the existing Instant session
+  protocol rather than introducing a second replica protocol.
+- Hosting is explicit. There is no discovery, automatic leader election, or
+  implicit cloud bridge.
+
 ## Open decisions
 
-- Which existing internal dependency should own route selection without
-  widening the public data API?
-- Should the first coordinator speak the existing Instant server protocol or a
-  smaller replica protocol adapted below the store? This requires source-level
-  parity analysis before implementation.
 - Which platforms can host versus only join a coordinator in version one?
 - What exact app-owned trust artifact enters the library after pairing?
 - What conflict policy applies when a desert session later reconnects to an

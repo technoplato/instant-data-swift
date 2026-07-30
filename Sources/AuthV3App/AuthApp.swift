@@ -96,8 +96,11 @@ public typealias AuthAppConfiguration = AuthV3AppConfiguration
     private var auth
 
     @State private var message = "Signed out"
+    private let allowsExternalProviders: Bool
 
-    public init() {}
+    public init(allowsExternalProviders: Bool = true) {
+      self.allowsExternalProviders = allowsExternalProviders
+    }
 
     public var body: some View {
       Form {
@@ -118,8 +121,15 @@ public typealias AuthAppConfiguration = AuthV3AppConfiguration
         }
 
         Section("Providers") {
-          ForEach(auth.providers) { provider in
-            Button(provider.title) { providerButtonTapped(provider) }
+          if let notice = Self.externalProvidersNotice(
+            allowsExternalProviders: allowsExternalProviders
+          ) {
+            Text(notice)
+              .foregroundStyle(.secondary)
+          } else {
+            ForEach(auth.providers) { provider in
+              Button(provider.title) { providerButtonTapped(provider) }
+            }
           }
         }
       }
@@ -171,6 +181,14 @@ public typealias AuthAppConfiguration = AuthV3AppConfiguration
     static func autofillCode(_ challenge: InstantMagicCodeChallenge) -> String? {
       let code = challenge.code.trimmingCharacters(in: .whitespacesAndNewlines)
       return code.isEmpty ? nil : code
+    }
+
+    static func externalProvidersNotice(allowsExternalProviders: Bool) -> String? {
+      guard !allowsExternalProviders else { return nil }
+      return """
+        External providers are unavailable in this offline configuration. \
+        Use guest or local magic code.
+        """
     }
 
     private func verifyMagicCodeButtonTapped() {

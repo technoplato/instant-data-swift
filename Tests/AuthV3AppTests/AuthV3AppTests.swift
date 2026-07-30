@@ -78,5 +78,24 @@ import Testing
       )
       expectNoDifference(AuthV3LoginScreen.autofillCode(remoteChallenge), nil)
     }
+
+    @Test @MainActor
+    func externalProviderAvailabilityIsExplicitForOfflineConfigurations() {
+      expectNoDifference(
+        AuthV3LoginScreen.externalProvidersNotice(allowsExternalProviders: true),
+        nil
+      )
+      expectNoDifference(
+        AuthV3LoginScreen.externalProvidersNotice(allowsExternalProviders: false),
+        """
+        External providers are unavailable in this offline configuration. \
+        Use guest or local magic code.
+        """
+      )
+
+      let screen = AuthV3LoginScreen(allowsExternalProviders: false)
+      let view: any View = screen
+      _ = view
+    }
   }
 #endif

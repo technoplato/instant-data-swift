@@ -83,6 +83,15 @@ public enum RecipesV3SyncRoute: Hashable, Sendable {
   case cloud
   case desertRequired(RecipesV3DesertEndpoint)
 
+  public var allowsExternalAuthProviders: Bool {
+    switch self {
+    case .localOnly, .cloud:
+      true
+    case .desertRequired:
+      false
+    }
+  }
+
   public var statusTitle: String {
     switch self {
     case .localOnly:
@@ -96,6 +105,61 @@ public enum RecipesV3SyncRoute: Hashable, Sendable {
       case .peer:
         "Desert peer · \(endpoint.host):\(endpoint.port)"
       }
+    }
+  }
+}
+
+enum RecipesV3BlockingError: Equatable, Sendable {
+  case bootstrap(String)
+  case transport(String)
+
+  var message: String {
+    switch self {
+    case .bootstrap(let message), .transport(let message):
+      message
+    }
+  }
+
+  static func reducing(
+    _ current: Self?,
+    state: InstantConnectionState,
+    lastErrorMessage: String?,
+    requiresHealthyConnection: Bool
+  ) -> Self? {
+    guard requiresHealthyConnection else { return current }
+
+    switch state {
+    case .closed:
+      if case .bootstrap = current {
+        return current
+      }
+      return .transport(
+        lastErrorMessage
+          ?? "The required Desert connection is no longer available."
+      )
+
+    case .connecting:
+      if case .bootstrap = current {
+        return current
+      }
+      return current
+        ?? .transport("The required Desert connection is reconnecting.")
+
+    case .opened, .authenticated:
+      guard let current else { return nil }
+      switch current {
+      case .bootstrap:
+        return current
+      case .transport:
+        return nil
+      }
+
+    case .errored:
+      // Runtime operation rejection is intentionally isolated per item but is
+      // also represented by `.errored`. Keep the catalog available and let its
+      // status banner plus the owning recipe surface that failure. A truly
+      // unavailable required route transitions to `.closed`.
+      return current
     }
   }
 }
@@ -332,6 +396,7 @@ public struct RecipesV3AppConfiguration: Hashable, Sendable {
     private let canStart: Bool
     private let configureDependencies: (inout DependencyValues) -> Void
     private var desertHost: InstantNetworkDesertHost?
+    private var blockingError: RecipesV3BlockingError?
     private var statusTask: Task<Void, Never>?
     private var task: Task<Void, Never>?
 
@@ -358,7 +423,9 @@ public struct RecipesV3AppConfiguration: Hashable, Sendable {
       )
       self.canStart = false
       self.configureDependencies = { _ in }
-      self.errorMessage = String(describing: configurationError)
+      let message = String(describing: configurationError)
+      self.blockingError = .bootstrap(message)
+      self.errorMessage = message
     }
 
     public func startIfNeeded() {
@@ -420,7 +487,7 @@ public struct RecipesV3AppConfiguration: Hashable, Sendable {
           self?.desertHost = startedDesertHost
           self?.connectionStatus = status
           self?.client = client
-          self?.errorMessage = nil
+          self?.setBlockingError(nil)
           self?.observeConnectionStatus(
             client: client,
             requiresHealthyConnection: configuration.syncRoute.isDesertRequired
@@ -430,7 +497,7 @@ public struct RecipesV3AppConfiguration: Hashable, Sendable {
           if let startedDesertHost {
             await startedDesertHost.stop()
           }
-          self?.errorMessage = String(describing: error)
+          self?.setBlockingError(.bootstrap(String(describing: error)))
           self?.task = nil
         }
       }
@@ -447,19 +514,28 @@ public struct RecipesV3AppConfiguration: Hashable, Sendable {
           for await status in statuses {
             guard let self else { return }
             self.connectionStatus = status
-            if requiresHealthyConnection, status.state == .errored || status.state == .closed {
-              self.errorMessage =
-                status.lastErrorMessage
-                ?? "The required Desert connection is no longer available."
+            let blockingError = RecipesV3BlockingError.reducing(
+              self.blockingError,
+              state: status.state,
+              lastErrorMessage: status.lastErrorMessage,
+              requiresHealthyConnection: requiresHealthyConnection
+            )
+            if blockingError != self.blockingError {
+              self.setBlockingError(blockingError)
             }
           }
         } catch is CancellationError {
         } catch {
           if requiresHealthyConnection {
-            self?.errorMessage = String(describing: error)
+            self?.setBlockingError(.transport(String(describing: error)))
           }
         }
       }
+    }
+
+    private func setBlockingError(_ blockingError: RecipesV3BlockingError?) {
+      self.blockingError = blockingError
+      self.errorMessage = blockingError?.message
     }
   }
 
@@ -565,7 +641,11 @@ public struct RecipesV3AppConfiguration: Hashable, Sendable {
           }
           .navigationTitle("Recipes")
           .navigationDestination(for: InstantRecipeV3.self) { recipe in
-            RecipesV3RecipeScreen(recipe: recipe, profileID: profileID)
+            RecipesV3RecipeScreen(
+              recipe: recipe,
+              profileID: profileID,
+              syncRoute: syncRoute
+            )
           }
         #else
           List {
@@ -585,7 +665,11 @@ public struct RecipesV3AppConfiguration: Hashable, Sendable {
           }
           .navigationTitle("Instant Recipes")
           .navigationDestination(for: InstantRecipeV3.self) { recipe in
-            RecipesV3RecipeScreen(recipe: recipe, profileID: profileID)
+            RecipesV3RecipeScreen(
+              recipe: recipe,
+              profileID: profileID,
+              syncRoute: syncRoute
+            )
           }
         #endif
       }
@@ -649,10 +733,16 @@ public struct RecipesV3AppConfiguration: Hashable, Sendable {
   public struct RecipesV3RecipeScreen: View {
     public var recipe: InstantRecipeV3
     public var profileID: String
+    public var syncRoute: RecipesV3SyncRoute
 
-    public init(recipe: InstantRecipeV3, profileID: String) {
+    public init(
+      recipe: InstantRecipeV3,
+      profileID: String,
+      syncRoute: RecipesV3SyncRoute = .localOnly
+    ) {
       self.recipe = recipe
       self.profileID = profileID
+      self.syncRoute = syncRoute
     }
 
     @ViewBuilder
@@ -680,7 +770,9 @@ public struct RecipesV3AppConfiguration: Hashable, Sendable {
       case .mergeTileGame:
         MergeTileGameV3Screen(profileID: profileID)
       case .auth:
-        AuthV3LoginScreen()
+        AuthV3LoginScreen(
+          allowsExternalProviders: syncRoute.allowsExternalAuthProviders
+        )
       }
     }
   }
