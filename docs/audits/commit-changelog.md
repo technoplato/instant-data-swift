@@ -6,6 +6,14 @@ commit SHA, and high-level reason. Changelog-only bookkeeping commits are
 visible in Git history but are not self-recorded because a commit cannot
 contain its own final SHA.
 
+## July 29, 2026 at 11:20:34 PM EDT
+
+- Repository: `realtime-voice-sqlite-instant` (Scribe)
+- Commit: `f2509f88f2fdf6fdb7854384aaa82c0039c2b6d2`
+- High-level reason: Enable the iOS multi-scene capability required for the
+  existing identity-keyed SwiftUI recording-chat window actions to create real
+  iPadOS windows, with a focused manifest regression test.
+
 ## July 29, 2026 at 11:18:05 PM EDT
 
 - Repository: `realtime-voice-sqlite-instant` (Scribe)
