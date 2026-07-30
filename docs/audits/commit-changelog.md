@@ -6,6 +6,15 @@ commit SHA, and high-level reason. Changelog-only bookkeeping commits are
 visible in Git history but are not self-recorded because a commit cannot
 contain its own final SHA.
 
+## July 30, 2026 at 8:19:31 AM EDT
+
+- Repository: `realtime-voice-sqlite-instant` (Scribe)
+- Commit: `8b02035d5b9d3f347ef3eb18d98fc4b354c7f334`
+- High-level reason: Add a fail-closed standalone YouTube comment plugin with
+  exact microphone grammar, explicit final confirmation, bounded unique
+  transcript/audio provenance matching, scoped Google OAuth identity
+  verification, and durable exactly-once publication receipts and audit.
+
 ## July 30, 2026 at 7:45:33 AM EDT
 
 - Repository: `foldkit`
