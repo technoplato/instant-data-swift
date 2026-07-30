@@ -4,6 +4,18 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## July 30th, 2026 at 3:32:18 p.m. EDT — `fee8962e61d0` Compile the Recipes mode bar on watchOS
+
+- **Implementation commit:** `fee8962e61d0276f92f6eecac75bcf6d273f30bb`
+- **Change:** Compile the Recipes mode bar on watchOS
+- **Details:**
+  - Treat watchOS like tvOS for the Recipes transport bar background so the shared Recipes demo compiles without using the unavailable ShapeStyle.bar material.
+- **Files:**
+  - `Sources/RecipesV3App/RecipesV3App.swift` — Guard the bar material and retain a supported color background on watchOS.
+- **User context (verbatim):**
+  > continue working please until these are function
+- **SpecStory:** unavailable — Unavailable: this Codex desktop task has no verified SpecStory capture URI.
+
 ## July 30th, 2026 at 3:24:19 p.m. EDT — `fac01a2470f0` Add switchable Recipes desert mode
 
 - **Implementation commit:** `fac01a2470f08b39a78f3d7a69b3bd11342f9554`

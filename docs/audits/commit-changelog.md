@@ -6,6 +6,14 @@ commit SHA, and high-level reason. Changelog-only bookkeeping commits are
 visible in Git history but are not self-recorded because a commit cannot
 contain its own final SHA.
 
+## July 30, 2026 at 3:32:18 PM EDT
+
+- Repository: `instant-data-swift`
+- Commit: `fee8962e61d0276f92f6eecac75bcf6d273f30bb`
+- High-level reason: Keep the shared Recipes V3 mode bar buildable on watchOS
+  by avoiding the platform-unavailable bar material while retaining the
+  supported appearance on the other Apple platforms.
+
 ## July 30, 2026 at 3:24:25 PM EDT
 
 - Repository: `instant-data-swift`
