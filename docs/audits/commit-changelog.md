@@ -6,6 +6,15 @@ commit SHA, and high-level reason. Changelog-only bookkeeping commits are
 visible in Git history but are not self-recorded because a commit cannot
 contain its own final SHA.
 
+## July 30, 2026 at 3:07:35 PM EDT
+
+- Repository: `realtime-voice-sqlite-instant` (Scribe)
+- Commit: `66a0f0926fd5607388c5d1b206846f86a51ae0c6`
+- High-level reason: Bind Screen Recording recovery to Scribe's stable Apple
+  Development identity, isolate ad-hoc QA builds, promote only verified signed
+  bundles, and prevent stale ScreenCaptureKit failures from stopping a
+  replacement capture session.
+
 ## July 30, 2026 at 3:02:21 PM EDT
 
 - Repository: `realtime-voice-sqlite-instant` (Scribe)
