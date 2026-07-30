@@ -4,6 +4,30 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## July 30th, 2026 at 9:57:27 a.m. EDT — `88223770c12c` Enable all Recipes V3 desert lanes
+
+- **Implementation commit:** `88223770c12ccd468ba413fb4aa7e0932a00b137`
+- **Change:** Run every Recipes V3 demo through forced Desert synchronization
+- **Details:**
+  - Expose all eight catalog recipes in forced Desert mode while keeping cloud construction outside the selected route.
+  - Add the exact top-level string id query needed by Merge Tile Game and preserve loud rejection for unsupported query shapes.
+  - Suppress the sender's persisted Reactions topic echo so one local action produces one animation.
+  - Add a two-client ordinary-public-API smoke matrix and a strict JSONL gate that fails on any missing, duplicate, skipped, unsupported, wrong-route, or wrong-transport recipe result.
+  - Verify the focused fail-loud gate and the complete 1,250-test Swift suite across 106 suites.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantDesertCoordinator.swift` — Support the exact id filter used by the canonical Merge Tile Game query.
+  - `Sources/PresenceRecipesV3App/PresenceRecipesV3App.swift` — Deduplicate the sender's locally animated Reactions topic echo.
+  - `Sources/RecipesV3App/RecipesV3App.swift` — Permit and display every catalog recipe when Desert is forced.
+  - `Tests/InstantSwiftDataCoreTests/InstantDesertCoordinatorTests.swift` — Regress exact id filtering without widening unsupported query capabilities.
+  - `Tests/PresenceRecipesV3AppTests/ReactionsV3Tests.swift` — Prove one local reaction is animated only once after its topic echo.
+  - `Tests/RecipesV3AppTests/RecipesV3AppTests.swift` — Cover all-recipe forced configuration and catalog visibility.
+  - `Tests/RecipesV3AppTests/RecipesV3DesertSmokeTests.swift` — Exercise all eight recipe contracts between two real forced-Desert clients.
+  - `validation/verify-recipes-v3-desert-smoke.sh` — Require complete machine-readable success evidence for the full recipe catalog.
+- **User context (verbatim):**
+  > Get the rest of the recipes working with this approach
+  > For testing let’s allow us to set the library to use that mode even if network is available but fail loudly if the smoke tests and existing demos don’t work.
+- **SpecStory:** unavailable — This work was performed in Codex desktop; no verified Codex CLI capture exists for /Users/laptop/Sync/desert, and public sharing was not authorized.
+
 ## July 30th, 2026 at 9:01:09 a.m. EDT — `209713ebd66e` Normalize desert coordinator managed ids
 
 - **Implementation commit:** `209713ebd66ea060e284b001f46cae9aaf3a6332`

@@ -6,6 +6,15 @@ commit SHA, and high-level reason. Changelog-only bookkeeping commits are
 visible in Git history but are not self-recorded because a commit cannot
 contain its own final SHA.
 
+## July 30, 2026 at 9:57:28 AM EDT
+
+- Repository: `instant-data-swift`
+- Commit: `88223770c12ccd468ba413fb4aa7e0932a00b137`
+- High-level reason: Enable every Recipes V3 catalog lane in forced Desert
+  mode, add the exact board-id query needed by Merge Tile Game, suppress local
+  Reactions topic echoes, and require complete two-client JSONL smoke evidence
+  for all eight recipes.
+
 ## July 30, 2026 at 9:01:12 AM EDT
 
 - Repository: `instant-data-swift`
