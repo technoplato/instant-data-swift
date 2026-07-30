@@ -6,6 +6,14 @@ commit SHA, and high-level reason. Changelog-only bookkeeping commits are
 visible in Git history but are not self-recorded because a commit cannot
 contain its own final SHA.
 
+## July 30, 2026 at 7:21:13 AM EDT
+
+- Repository: `realtime-voice-sqlite-instant` (Scribe)
+- Commit: `54a0aa9613004a4141c850a2d20761ab504fc233`
+- High-level reason: Add a typed YouTube comment plugin tool target and
+  room-scoped stable tool identifiers while preserving global identifiers and
+  shared recording-tool defaults, with focused contract tests.
+
 ## July 30, 2026 at 7:16:51 AM EDT
 
 - Repository: `realtime-voice-sqlite-instant` (Scribe)
