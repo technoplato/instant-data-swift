@@ -1080,7 +1080,7 @@ public struct RecipesV3DemoConfiguration: Hashable, Sendable {
       .font(.caption)
       .padding(.horizontal)
       .padding(.vertical, 8)
-      #if os(tvOS)
+      #if os(tvOS) || os(watchOS)
         .background(Color.black.opacity(0.2))
       #else
         .background(.bar)
