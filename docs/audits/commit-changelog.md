@@ -6,6 +6,14 @@ commit SHA, and high-level reason. Changelog-only bookkeeping commits are
 visible in Git history but are not self-recorded because a commit cannot
 contain its own final SHA.
 
+## July 30, 2026 at 1:48:35 PM EDT
+
+- Repository: `realtime-voice-sqlite-instant` (Scribe)
+- Commit: `920d11257e707bb43364affb6bb0f598d8ed5e59`
+- High-level reason: Add a private, disabled-by-default image-analysis domain,
+  Apple Foundation Models adapter, byte- and profile-bound idempotency, portable
+  capture provenance, and fail-closed Instant schema permissions.
+
 ## July 30, 2026 at 1:46:31 PM EDT
 
 - Repository: `realtime-voice-sqlite-instant` (Scribe)
