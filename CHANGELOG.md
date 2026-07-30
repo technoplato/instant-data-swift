@@ -4,6 +4,38 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## July 30th, 2026 at 8:46:14 a.m. EDT — `5f7762b4f481` Prototype forced desert sync on Network.framework
+
+- **Implementation commit:** `5f7762b4f48145dc5d722567399de4099c7a82e1`
+- **Change:** Prototype fail-loud desert sync between macOS and iOS Simulator
+- **Details:**
+  - Resolve a typed desert-required route before cloud-capable effects so forced mode cannot probe or fall back to InstantDB cloud.
+  - Add a same-session in-memory coordinator plus a loopback-only length-framed Network.framework transport with atomic transactions, canonical snapshots, cancellation-safe readiness, and loud unsupported-query failures.
+  - Wire the Recipes Todos host and peer launch paths, connection-state UI, Local Network purpose strings, and clean-build provenance for Mac and iOS Simulator smoke testing.
+  - Preserve the existing public Recipes configuration surface and verify 1,245 Swift tests across 105 suites after the independent lifecycle review.
+  - Keep feature 046 as the durable Planned P1 tracker while documenting that discovery, trust, encryption, physical-device carriers, coordinator persistence, and all-demo coverage remain follow-up work.
+- **Files:**
+  - `Examples/RecipesV3/iOS-Info.plist` — Explain local-network use to the iOS runtime.
+  - `Examples/RecipesV3/macOS-Info.plist` — Explain local-network use to the macOS runtime.
+  - `Examples/RecipesV3/project.yml` — Embed clean Git build provenance in the iOS and macOS demo bundles.
+  - `Sources/InstantSwiftData/InstantSwiftData.swift` — Select forced desert transports before cloud dependencies and install the typed runtime route.
+  - `Sources/InstantSwiftDataCore/InstantDesertCoordinator.swift` — Provide the prototype replication authority for queries, mutations, presence, and topics.
+  - `Sources/InstantSwiftDataCore/InstantModels.swift` — Expose desert transport kinds and route-aware connection status with backward-compatible decoding.
+  - `Sources/InstantSwiftDataCore/InstantNetworkDesertTransport.swift` — Bridge live messages over cancellation-safe loopback Network.framework framing.
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — Validate and report the selected sync route throughout runtime connection behavior.
+  - `Sources/InstantSwiftDataCore/InstantSyncRoute.swift` — Define the transport-independent route policy, descriptor, and factory seam.
+  - `Sources/RecipesV3App/RecipesV3App.swift` — Configure fail-loud Todos host and peer modes and render their real connection state.
+  - `Sources/RecipesV3Executable/main.swift` — Validate forced-mode launch arguments and log embedded build provenance.
+  - `Tests/InstantSwiftDataCoreTests/InstantDesertCoordinatorTests.swift` — Cover replication, atomicity, rooms, transport framing, shutdown, timeout, and cancellation.
+  - `Tests/InstantSwiftDataCoreTests/InstantSyncRouteSeamTests.swift` — Lock runtime route and transport invariants and status decoding compatibility.
+  - `Tests/InstantSwiftDataTests/BootstrapTests.swift` — Prove forced Desert isolation from cloud factories and effects.
+  - `Tests/RecipesV3AppTests/RecipesV3AppTests.swift` — Cover launch configuration, unreachable peers, and preserved public API compatibility.
+  - `docs/plans/desert-island-sync.md` — Record the implemented slice and its explicit security, durability, transport, and demo limitations.
+- **User context (verbatim):**
+  > Go ahead and get a prototype working and try it on iOS sim and Mac
+  > For testing let’s allow us to set the library to use that mode even if network is available but fail loudly if the smoke tests and existing demos don’t work.
+- **SpecStory:** unavailable — This work was performed in Codex desktop; no verified Codex CLI capture exists for /Users/laptop/Sync/desert, and public sharing was not authorized.
+
 ## July 30th, 2026 at 7:51:10 a.m. EDT — `29d6abe60a6a` Plan forced desert-island synchronization
 
 - **Implementation commit:** `29d6abe60a6a5f807b128c5ff7d4bc43d4233811`

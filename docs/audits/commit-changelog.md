@@ -6,6 +6,15 @@ commit SHA, and high-level reason. Changelog-only bookkeeping commits are
 visible in Git history but are not self-recorded because a commit cannot
 contain its own final SHA.
 
+## July 30, 2026 at 8:46:21 AM EDT
+
+- Repository: `instant-data-swift`
+- Commit: `5f7762b4f48145dc5d722567399de4099c7a82e1`
+- High-level reason: Prototype a forced, fail-loud Desert route with an
+  in-memory replication coordinator and loopback Network.framework bridge,
+  then wire and test a provenance-bearing macOS host and iOS Simulator Todos
+  peer without constructing or falling back to cloud sync.
+
 ## July 30, 2026 at 7:50:58 AM EDT
 
 - Repository: `instant-data-swift`
