@@ -47,6 +47,9 @@ public actor InstantDesertCoordinator {
       InstantTimestamp(milliseconds: Int64(Date().timeIntervalSince1970 * 1_000))
     }
   ) {
+    // Generated schemas omit managed ids, so advertise the same normalized attributes
+    // the store uses.
+    let initialAttributes = AttributeStore(attributes: initialAttributes).attributes
     self.appID = appID
     self.initialAttributes = initialAttributes
     self.now = now

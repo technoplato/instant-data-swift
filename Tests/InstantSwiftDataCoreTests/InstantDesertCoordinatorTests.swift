@@ -77,9 +77,10 @@ struct InstantDesertCoordinatorTests {
   @Test
   func twoRuntimesPropagateTodoMutationThroughPublicObservation() async throws {
     let appID = "desert-two-runtime"
+    let generatedAttributes = TodoExample.attributes.filter { !$0.primaryKey }
     let coordinator = InstantDesertCoordinator(
       appID: appID,
-      initialAttributes: TodoExample.attributes,
+      initialAttributes: generatedAttributes,
       now: { InstantTimestamp(milliseconds: 1_900_000_000_000) }
     )
     let route = InstantSyncRouteDescriptor(
@@ -95,7 +96,7 @@ struct InstantDesertCoordinatorTests {
       configuration: InstantRuntimeConfiguration(
         appID: appID,
         persistenceURL: firstCache,
-        initialAttributes: TodoExample.attributes,
+        initialAttributes: generatedAttributes,
         liveTransport: coordinator.transport,
         syncRoute: route
       )
@@ -104,7 +105,7 @@ struct InstantDesertCoordinatorTests {
       configuration: InstantRuntimeConfiguration(
         appID: appID,
         persistenceURL: secondCache,
-        initialAttributes: TodoExample.attributes,
+        initialAttributes: generatedAttributes,
         liveTransport: coordinator.transport,
         syncRoute: route
       )
