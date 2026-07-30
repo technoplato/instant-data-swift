@@ -6,6 +6,14 @@ commit SHA, and high-level reason. Changelog-only bookkeeping commits are
 visible in Git history but are not self-recorded because a commit cannot
 contain its own final SHA.
 
+## July 30, 2026 at 7:39:11 AM EDT
+
+- Repository: `realtime-voice-sqlite-instant` (Scribe)
+- Commit: `cfd923ad28421b623fc27160201f8d3a8fe7f280`
+- High-level reason: Add discoverable Codex interface metadata for the typed
+  realtime Scribe issue-tracker skill, validated by the official skill checker
+  and a strict zero-finding skill audit.
+
 ## July 30, 2026 at 7:34:56 AM EDT
 
 - Repository: `realtime-voice-sqlite-instant` (Scribe)
