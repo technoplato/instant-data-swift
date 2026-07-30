@@ -6,6 +6,14 @@ commit SHA, and high-level reason. Changelog-only bookkeeping commits are
 visible in Git history but are not self-recorded because a commit cannot
 contain its own final SHA.
 
+## July 30, 2026 at 11:42:45 AM EDT
+
+- Repository: `realtime-voice-sqlite-instant` (Scribe)
+- Commit: `152b0e75c1b1360cd5f25fc8c2b1624361e9b224`
+- High-level reason: Document the committed typed append-log JSON contract and
+  clarify that scribe-issue-tracker owns lifecycle while
+  instantdb-log-observer owns structured evidence emission and observation.
+
 ## July 30, 2026 at 11:34:25 AM EDT
 
 - Repository: `realtime-voice-sqlite-instant` (Scribe)
