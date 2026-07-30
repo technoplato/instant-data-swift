@@ -6,6 +6,15 @@ commit SHA, and high-level reason. Changelog-only bookkeeping commits are
 visible in Git history but are not self-recorded because a commit cannot
 contain its own final SHA.
 
+## July 30, 2026 at 7:28:45 AM EDT
+
+- Repository: `realtime-voice-sqlite-instant` (Scribe)
+- Commit: `dd251fb15bdd588f9df862117523828a2bba52a2`
+- High-level reason: Complete the typed realtime Instant issue cutover after
+  exact reconciliation of all 45 legacy source documents, remove the Markdown
+  catalog/import target, and route agent guidance, feedback intake, persistent
+  corrections/preferences, log tagging, and source-path hypotheses through the CLI.
+
 ## July 30, 2026 at 7:25:32 AM EDT
 
 - Repository: `foldkit`
