@@ -6,6 +6,15 @@ commit SHA, and high-level reason. Changelog-only bookkeeping commits are
 visible in Git history but are not self-recorded because a commit cannot
 contain its own final SHA.
 
+## July 29, 2026 at 11:50:27 PM EDT
+
+- Repository: `realtime-voice-sqlite-instant` (Scribe)
+- Commit: `caaee133d7a340f6a9327d78e78e41a5fa08bc29`
+- High-level reason: Make Scribe complaint intake explicitly event-driven,
+  require measurable success criteria and independent before/after QA, and
+  return issue 042 to the open queue when physical behavior proof remains
+  inconclusive.
+
 ## July 29, 2026 at 11:36:32 PM EDT
 
 - Repository: `realtime-voice-sqlite-instant` (Scribe)
