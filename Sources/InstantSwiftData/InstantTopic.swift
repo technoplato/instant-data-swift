@@ -22,6 +22,7 @@
 
     public let name: String
 
+    private var installedClient: InstantSwiftDataClient?
     private var room: InstantRoomHandle?
     private var observationGeneration = 0
     private let localUserID = UUID().uuidString.lowercased()
@@ -100,13 +101,13 @@
     public func publish(
       _ message: Message,
       onPublished: @escaping @MainActor @Sendable
-        (InstantTopicPublishedEvent<Message>) -> Void = { _ in },
+      (InstantTopicPublishedEvent<Message>) -> Void = { _ in },
       onFailure: @escaping @MainActor @Sendable (InstantError) -> Void = { _ in }
     ) -> Task<Void, Never> {
       @Dependency(\.defaultInstantSwiftData) var client
       return publish(
         message,
-        using: client,
+        using: installedClient ?? client,
         onPublished: onPublished,
         onFailure: onFailure
       )
@@ -117,7 +118,7 @@
       _ message: Message,
       using client: InstantSwiftDataClient,
       onPublished: @escaping @MainActor @Sendable
-        (InstantTopicPublishedEvent<Message>) -> Void = { _ in },
+      (InstantTopicPublishedEvent<Message>) -> Void = { _ in },
       onFailure: @escaping @MainActor @Sendable (InstantError) -> Void = { _ in }
     ) -> Task<Void, Never> {
       let room = self.room
@@ -162,6 +163,10 @@
         }
       }
     }
+
+    fileprivate func installDefaultClient(_ client: InstantSwiftDataClient) {
+      installedClient = client
+    }
   }
 
   @MainActor
@@ -179,6 +184,7 @@
     Message: Codable & Sendable,
     Name: InstantRoomTopic
   >: DynamicProperty {
+    @Dependency(\.defaultInstantSwiftData) private var dependencyClient
     private let topicReference: InstantTopicReference<Message>
     @StateObject private var topicObserver: InstantTopic<Message>
 
@@ -202,6 +208,7 @@
 
     public mutating func update() {
       topicReference.value = topicObserver
+      topicObserver.installDefaultClient(dependencyClient)
     }
 
     public func task(
@@ -223,6 +230,25 @@
     }
   }
 
+  @MainActor
+  private struct InstantTopicDependencyModifier<
+    Message: Codable & Sendable,
+    Name: InstantRoomTopic
+  >: ViewModifier {
+    @Dependency(\.defaultInstantSwiftData) private var client
+
+    let topic: Topic<Message, Name>
+    let room: InstantRoom<Name.RoomSchema>
+
+    func body(content: Content) -> some View {
+      content.instantTopic(
+        topic,
+        in: room,
+        using: client
+      )
+    }
+  }
+
   extension View {
     public func instantTopic<
       Message: Codable & Sendable,
@@ -231,8 +257,12 @@
       _ topic: Topic<Message, Name>,
       in room: InstantRoom<Name.RoomSchema>
     ) -> some View {
-      @Dependency(\.defaultInstantSwiftData) var client
-      return instantTopic(topic, in: room, using: client)
+      modifier(
+        InstantTopicDependencyModifier(
+          topic: topic,
+          room: room
+        )
+      )
     }
 
     public func instantTopic<

@@ -2,6 +2,7 @@ import AuthV3App
 import Dependencies
 import Foundation
 import InstantSwiftData
+import Observation
 import PresenceRecipesV3App
 import TodosV3App
 
@@ -109,6 +110,73 @@ public enum RecipesV3SyncRoute: Hashable, Sendable {
   }
 }
 
+public enum RecipesV3DemoMode: String, CaseIterable, Hashable, Identifiable, Sendable {
+  case normal
+  case desert
+
+  public var id: String { rawValue }
+
+  public var title: String {
+    switch self {
+    case .normal:
+      "Normal"
+    case .desert:
+      "Desert"
+    }
+  }
+
+  var isDesert: Bool {
+    get { self == .desert }
+    set { self = newValue ? .desert : .normal }
+  }
+}
+
+@MainActor
+struct RecipesV3ModeStorage {
+  static let userDefaultsKey = "instant-recipes-v3.sync-mode"
+
+  private let loadMode: () -> RecipesV3DemoMode?
+  private let saveMode: (RecipesV3DemoMode) -> Void
+
+  init(
+    load: @escaping () -> RecipesV3DemoMode?,
+    save: @escaping (RecipesV3DemoMode) -> Void
+  ) {
+    self.loadMode = load
+    self.saveMode = save
+  }
+
+  func load() -> RecipesV3DemoMode? {
+    loadMode()
+  }
+
+  func save(_ mode: RecipesV3DemoMode) {
+    saveMode(mode)
+  }
+
+  static func userDefaults(suiteName: String? = nil) -> Self {
+    Self(
+      load: {
+        let defaults =
+          suiteName.flatMap(UserDefaults.init(suiteName:))
+          ?? UserDefaults.standard
+        return defaults.string(forKey: userDefaultsKey)
+          .flatMap(RecipesV3DemoMode.init(rawValue:))
+      },
+      save: { mode in
+        let defaults =
+          suiteName.flatMap(UserDefaults.init(suiteName:))
+          ?? UserDefaults.standard
+        defaults.set(mode.rawValue, forKey: userDefaultsKey)
+      }
+    )
+  }
+
+  static var live: Self {
+    userDefaults()
+  }
+}
+
 enum RecipesV3BlockingError: Equatable, Sendable {
   case bootstrap(String)
   case transport(String)
@@ -167,6 +235,7 @@ enum RecipesV3BlockingError: Equatable, Sendable {
 public enum RecipesV3ConfigurationError: Error, Equatable, Sendable {
   case missingValue(String)
   case invalidValue(key: String, value: String, expected: String)
+  case unavailableDemoMode(RecipesV3DemoMode)
   case unsupportedDesertRecipe(String)
 }
 
@@ -177,6 +246,8 @@ extension RecipesV3ConfigurationError: CustomStringConvertible {
       "Desert mode requires \(key)."
     case .invalidValue(let key, let value, let expected):
       "Invalid \(key) value ‘\(value)’; expected \(expected)."
+    case .unavailableDemoMode(let mode):
+      "The \(mode.title) demo mode is unavailable because this launch has no matching transport configuration."
     case .unsupportedDesertRecipe(let recipe):
       "The ‘\(recipe)’ recipe does not support the selected Desert transport capabilities."
     }
@@ -232,21 +303,20 @@ public struct RecipesV3AppConfiguration: Hashable, Sendable {
     infoDictionary: [String: Any] = Bundle.main.infoDictionary ?? [:],
     makeProfileID: () -> String = { UUID().uuidString.lowercased() }
   ) -> Self {
-    let configuredAppID = normalizedConfigurationValue(
-      environment["INSTANT_APP_ID"]
-        ?? launchOption("--instant-app-id", in: arguments)
-        ?? infoDictionary["InstantAppID"] as? String
-    )
+    let configuredAppID =
+      normalizedConfigurationValue(environment["INSTANT_APP_ID"])
+      ?? launchOption("--instant-app-id", in: arguments)
+      ?? normalizedConfigurationValue(
+        infoDictionary["InstantAppID"] as? String
+      )
     let recipeName =
       normalizedConfigurationValue(environment["INSTANT_RECIPE"])
       ?? launchRecipeName(in: arguments)
     return Self(
       appID: configuredAppID ?? "recipes-v3-local",
-      persistenceURL: normalizedConfigurationValue(
-        environment["INSTANT_PERSISTENCE_PATH"]
-          ?? launchOption("--persistence-path", in: arguments)
-      )
-      .map(URL.init(fileURLWithPath:)),
+      persistenceURL: (normalizedConfigurationValue(environment["INSTANT_PERSISTENCE_PATH"])
+        ?? launchOption("--persistence-path", in: arguments))
+        .map(URL.init(fileURLWithPath:)),
       syncRoute: configuredAppID == nil ? .localOnly : .cloud,
       profileID: normalizedConfigurationValue(environment["INSTANT_RECIPE_PROFILE_ID"])
         ?? makeProfileID(),
@@ -260,11 +330,12 @@ public struct RecipesV3AppConfiguration: Hashable, Sendable {
     infoDictionary: [String: Any] = Bundle.main.infoDictionary ?? [:],
     makeProfileID: () -> String = { UUID().uuidString.lowercased() }
   ) throws -> Self {
-    let configuredAppID = normalizedConfigurationValue(
-      environment["INSTANT_APP_ID"]
-        ?? launchOption("--instant-app-id", in: arguments)
-        ?? infoDictionary["InstantAppID"] as? String
-    )
+    let configuredAppID =
+      normalizedConfigurationValue(environment["INSTANT_APP_ID"])
+      ?? launchOption("--instant-app-id", in: arguments)
+      ?? normalizedConfigurationValue(
+        infoDictionary["InstantAppID"] as? String
+      )
     let recipeName =
       normalizedConfigurationValue(environment["INSTANT_RECIPE"])
       ?? launchRecipeName(in: arguments)
@@ -276,11 +347,9 @@ public struct RecipesV3AppConfiguration: Hashable, Sendable {
     let launchRecipe = recipeName.flatMap(InstantRecipeV3.init(pathName:))
     return Self(
       appID: configuredAppID ?? "recipes-v3-local",
-      persistenceURL: normalizedConfigurationValue(
-        environment["INSTANT_PERSISTENCE_PATH"]
-          ?? launchOption("--persistence-path", in: arguments)
-      )
-      .map(URL.init(fileURLWithPath:)),
+      persistenceURL: (normalizedConfigurationValue(environment["INSTANT_PERSISTENCE_PATH"])
+        ?? launchOption("--persistence-path", in: arguments))
+        .map(URL.init(fileURLWithPath:)),
       syncRoute: syncRoute,
       profileID: normalizedConfigurationValue(environment["INSTANT_RECIPE_PROFILE_ID"])
         ?? makeProfileID(),
@@ -294,7 +363,7 @@ public struct RecipesV3AppConfiguration: Hashable, Sendable {
       + AuthV3User.instantAttributes
   }
 
-  private static func normalizedConfigurationValue(_ value: String?) -> String? {
+  fileprivate static func normalizedConfigurationValue(_ value: String?) -> String? {
     guard let value = value?.trimmingCharacters(in: .whitespacesAndNewlines),
       !value.isEmpty,
       !value.contains("$(")
@@ -307,9 +376,9 @@ public struct RecipesV3AppConfiguration: Hashable, Sendable {
     environment: [String: String],
     arguments: [String]
   ) throws -> RecipesV3SyncRoute {
-    let configuredRoute = normalizedConfigurationValue(
-      environment["INSTANT_SWIFT_DATA_SYNC_ROUTE"]
-        ?? launchOption("--sync-route", in: arguments)
+    let configuredRoute = configuredSyncRoute(
+      environment: environment,
+      arguments: arguments
     )
 
     switch configuredRoute {
@@ -320,46 +389,225 @@ public struct RecipesV3AppConfiguration: Hashable, Sendable {
       guard configuredAppID != nil else {
         throw RecipesV3ConfigurationError.missingValue("INSTANT_APP_ID")
       }
-      let roleValue = normalizedConfigurationValue(
-        environment["INSTANT_DESERT_ROLE"]
-          ?? launchOption("--desert-role", in: arguments)
-      )
-      guard let roleValue else {
-        throw RecipesV3ConfigurationError.missingValue("INSTANT_DESERT_ROLE")
-      }
-      guard let role = RecipesV3DesertRole(rawValue: roleValue) else {
-        throw RecipesV3ConfigurationError.invalidValue(
-          key: "INSTANT_DESERT_ROLE",
-          value: roleValue,
-          expected: "host or peer"
-        )
-      }
-
       guard
-        let host = normalizedConfigurationValue(
-          environment["INSTANT_DESERT_HOST"]
-            ?? launchOption("--desert-host", in: arguments)
+        let endpoint = try desertEndpoint(
+          environment: environment,
+          arguments: arguments,
+          defaultEndpoint: nil
         )
       else {
-        throw RecipesV3ConfigurationError.missingValue("INSTANT_DESERT_HOST")
+        throw RecipesV3ConfigurationError.missingValue("INSTANT_DESERT_ROLE")
       }
+      return .desertRequired(endpoint)
 
-      let portValue = normalizedConfigurationValue(
-        environment["INSTANT_DESERT_PORT"]
-          ?? launchOption("--desert-port", in: arguments)
+    case let configuredRoute?:
+      throw RecipesV3ConfigurationError.invalidValue(
+        key: "INSTANT_SWIFT_DATA_SYNC_ROUTE",
+        value: configuredRoute,
+        expected: "current or desert-required"
       )
-      guard let portValue else {
-        throw RecipesV3ConfigurationError.missingValue("INSTANT_DESERT_PORT")
+    }
+  }
+
+  fileprivate static func configuredSyncRoute(
+    environment: [String: String],
+    arguments: [String]
+  ) -> String? {
+    normalizedConfigurationValue(environment["INSTANT_SWIFT_DATA_SYNC_ROUTE"])
+      ?? launchOption("--sync-route", in: arguments)
+  }
+
+  fileprivate static func desertEndpoint(
+    environment: [String: String],
+    arguments: [String],
+    defaultEndpoint: RecipesV3DesertEndpoint?
+  ) throws -> RecipesV3DesertEndpoint? {
+    let roleValue =
+      normalizedConfigurationValue(environment["INSTANT_DESERT_ROLE"])
+      ?? launchOption("--desert-role", in: arguments)
+    let hostValue =
+      normalizedConfigurationValue(environment["INSTANT_DESERT_HOST"])
+      ?? launchOption("--desert-host", in: arguments)
+    let portValue =
+      normalizedConfigurationValue(environment["INSTANT_DESERT_PORT"])
+      ?? launchOption("--desert-port", in: arguments)
+    guard roleValue != nil || hostValue != nil || portValue != nil else {
+      return defaultEndpoint
+    }
+    guard let roleValue else {
+      throw RecipesV3ConfigurationError.missingValue("INSTANT_DESERT_ROLE")
+    }
+    guard let role = RecipesV3DesertRole(rawValue: roleValue) else {
+      throw RecipesV3ConfigurationError.invalidValue(
+        key: "INSTANT_DESERT_ROLE",
+        value: roleValue,
+        expected: "host or peer"
+      )
+    }
+    guard let hostValue else {
+      throw RecipesV3ConfigurationError.missingValue("INSTANT_DESERT_HOST")
+    }
+    guard let portValue else {
+      throw RecipesV3ConfigurationError.missingValue("INSTANT_DESERT_PORT")
+    }
+    guard let port = UInt16(portValue), port > 0 else {
+      throw RecipesV3ConfigurationError.invalidValue(
+        key: "INSTANT_DESERT_PORT",
+        value: portValue,
+        expected: "an integer from 1 through 65535"
+      )
+    }
+    return RecipesV3DesertEndpoint(
+      role: role,
+      host: hostValue,
+      port: port
+    )
+  }
+
+  fileprivate static func launchOption(_ name: String, in arguments: [String]) -> String? {
+    guard let optionIndex = arguments.lastIndex(of: name) else { return nil }
+    let valueIndex = arguments.index(after: optionIndex)
+    guard arguments.indices.contains(valueIndex) else { return nil }
+    return normalizedConfigurationValue(arguments[valueIndex])
+  }
+
+  private static func launchRecipeName(in arguments: [String]) -> String? {
+    launchOption("--recipe", in: arguments)
+  }
+}
+
+public struct RecipesV3DemoConfiguration: Hashable, Sendable {
+  public let normal: RecipesV3AppConfiguration
+  public let desert: RecipesV3AppConfiguration?
+  public let forcedMode: RecipesV3DemoMode?
+
+  private let forcedConfiguration: RecipesV3AppConfiguration?
+
+  public init(
+    normal: RecipesV3AppConfiguration,
+    desert: RecipesV3AppConfiguration?
+  ) {
+    self.normal = normal
+    self.desert = desert
+    self.forcedMode = nil
+    self.forcedConfiguration = nil
+  }
+
+  fileprivate init(
+    forcedConfiguration: RecipesV3AppConfiguration,
+    mode: RecipesV3DemoMode
+  ) {
+    self.normal = forcedConfiguration
+    self.desert = mode == .desert ? forcedConfiguration : nil
+    self.forcedMode = mode
+    self.forcedConfiguration = forcedConfiguration
+  }
+
+  public var allowsModeSelection: Bool {
+    forcedMode == nil && desert != nil
+  }
+
+  public static var platformDefaultDesertEndpoint: RecipesV3DesertEndpoint? {
+    #if os(macOS)
+      RecipesV3DesertEndpoint(
+        role: .host,
+        host: "127.0.0.1",
+        port: 49_800
+      )
+    #elseif os(iOS) && targetEnvironment(simulator)
+      RecipesV3DesertEndpoint(
+        role: .peer,
+        host: "127.0.0.1",
+        port: 49_800
+      )
+    #else
+      nil
+    #endif
+  }
+
+  public func resolvedMode(
+    storedMode: RecipesV3DemoMode?
+  ) -> RecipesV3DemoMode {
+    if let forcedMode {
+      return forcedMode
+    }
+    guard storedMode == .desert, desert != nil else {
+      return .normal
+    }
+    return .desert
+  }
+
+  public func appConfiguration(
+    for mode: RecipesV3DemoMode
+  ) throws -> RecipesV3AppConfiguration {
+    if let forcedConfiguration, forcedMode == mode {
+      return forcedConfiguration
+    }
+    switch mode {
+    case .normal:
+      guard forcedMode == nil else {
+        throw RecipesV3ConfigurationError.unavailableDemoMode(mode)
       }
-      guard let port = UInt16(portValue), port > 0 else {
-        throw RecipesV3ConfigurationError.invalidValue(
-          key: "INSTANT_DESERT_PORT",
-          value: portValue,
-          expected: "an integer from 1 through 65535"
+      return normal
+    case .desert:
+      guard let desert else {
+        throw RecipesV3ConfigurationError.unavailableDemoMode(mode)
+      }
+      return desert
+    }
+  }
+
+  public static func validatedEnvironment(
+    _ environment: [String: String] = ProcessInfo.processInfo.environment,
+    arguments: [String] = ProcessInfo.processInfo.arguments,
+    infoDictionary: [String: Any] = Bundle.main.infoDictionary ?? [:],
+    defaultDesertEndpoint: RecipesV3DesertEndpoint? = platformDefaultDesertEndpoint,
+    makeProfileID: () -> String = { UUID().uuidString.lowercased() }
+  ) throws -> Self {
+    let configuredRoute = RecipesV3AppConfiguration.configuredSyncRoute(
+      environment: environment,
+      arguments: arguments
+    )
+    let launchConfiguration = try RecipesV3AppConfiguration.validatedEnvironment(
+      environment,
+      arguments: arguments,
+      infoDictionary: infoDictionary,
+      makeProfileID: makeProfileID
+    )
+
+    switch configuredRoute {
+    case "desert-required":
+      return Self(
+        forcedConfiguration: launchConfiguration,
+        mode: .desert
+      )
+
+    case "current":
+      return Self(
+        forcedConfiguration: launchConfiguration,
+        mode: .normal
+      )
+
+    case nil:
+      let endpoint = try RecipesV3AppConfiguration.desertEndpoint(
+        environment: environment,
+        arguments: arguments,
+        defaultEndpoint: defaultDesertEndpoint
+      )
+      let desertConfiguration = endpoint.map { endpoint in
+        RecipesV3AppConfiguration(
+          appID: desertAppID(for: launchConfiguration),
+          persistenceURL: desertPersistenceURL(
+            from: launchConfiguration.persistenceURL
+          ),
+          syncRoute: .desertRequired(endpoint),
+          profileID: launchConfiguration.profileID,
+          launchRecipe: launchConfiguration.launchRecipe
         )
       }
-      return .desertRequired(
-        RecipesV3DesertEndpoint(role: role, host: host, port: port)
+      return Self(
+        normal: launchConfiguration,
+        desert: desertConfiguration
       )
 
     case let configuredRoute?:
@@ -371,15 +619,26 @@ public struct RecipesV3AppConfiguration: Hashable, Sendable {
     }
   }
 
-  private static func launchOption(_ name: String, in arguments: [String]) -> String? {
-    guard let optionIndex = arguments.lastIndex(of: name) else { return nil }
-    let valueIndex = arguments.index(after: optionIndex)
-    guard arguments.indices.contains(valueIndex) else { return nil }
-    return normalizedConfigurationValue(arguments[valueIndex])
+  private static func desertAppID(
+    for normalConfiguration: RecipesV3AppConfiguration
+  ) -> String {
+    switch normalConfiguration.syncRoute {
+    case .localOnly:
+      return "recipes-v3-desert"
+    case .cloud, .desertRequired:
+      return "\(normalConfiguration.appID)-desert"
+    }
   }
 
-  private static func launchRecipeName(in arguments: [String]) -> String? {
-    launchOption("--recipe", in: arguments)
+  private static func desertPersistenceURL(from url: URL?) -> URL? {
+    guard let url else { return nil }
+    let fileExtension = url.pathExtension
+    let stem = url.deletingPathExtension().lastPathComponent
+    let filename =
+      fileExtension.isEmpty
+      ? "\(stem)-desert"
+      : "\(stem)-desert.\(fileExtension)"
+    return url.deletingLastPathComponent().appendingPathComponent(filename)
   }
 }
 
@@ -398,7 +657,9 @@ public struct RecipesV3AppConfiguration: Hashable, Sendable {
     private var desertHost: InstantNetworkDesertHost?
     private var blockingError: RecipesV3BlockingError?
     private var statusTask: Task<Void, Never>?
+    private var stopTask: Task<Void, Never>?
     private var task: Task<Void, Never>?
+    private var generation: UInt64 = 0
 
     public init(configuration: RecipesV3AppConfiguration) {
       self.configuration = configuration
@@ -429,12 +690,17 @@ public struct RecipesV3AppConfiguration: Hashable, Sendable {
     }
 
     public func startIfNeeded() {
-      guard canStart, client == nil, task == nil else { return }
-      task = Task { @MainActor [weak self, configuration] in
+      guard canStart, client == nil, task == nil, stopTask == nil else { return }
+      generation &+= 1
+      let generation = generation
+      let configureDependencies = configureDependencies
+      task = Task {
+        @MainActor [weak self, configuration, configureDependencies] in
         var startedDesertHost: InstantNetworkDesertHost?
+        var startedClient: InstantSwiftDataClient?
         do {
           var dependencies = DependencyValues()
-          self?.configureDependencies(&dependencies)
+          configureDependencies(&dependencies)
           switch configuration.syncRoute {
           case .localOnly:
             break
@@ -476,6 +742,7 @@ public struct RecipesV3AppConfiguration: Hashable, Sendable {
             initialAttributes: RecipesV3AppConfiguration.initialAttributes
           )
           let client = dependencies.defaultInstantSwiftData
+          startedClient = client
           let status: InstantConnectionStatus
           switch configuration.syncRoute {
           case .desertRequired:
@@ -483,36 +750,87 @@ public struct RecipesV3AppConfiguration: Hashable, Sendable {
           case .localOnly, .cloud:
             status = try await client.connectionStatus()
           }
-          prepareDependencies { $0.defaultInstantSwiftData = client }
-          self?.desertHost = startedDesertHost
-          self?.connectionStatus = status
-          self?.client = client
-          self?.setBlockingError(nil)
-          self?.observeConnectionStatus(
+          try Task.checkCancellation()
+          guard let self, self.generation == generation, self.stopTask == nil else {
+            throw CancellationError()
+          }
+          self.desertHost = startedDesertHost
+          self.connectionStatus = status
+          self.client = client
+          self.setBlockingError(nil)
+          self.observeConnectionStatus(
             client: client,
-            requiresHealthyConnection: configuration.syncRoute.isDesertRequired
+            requiresHealthyConnection: configuration.syncRoute.isDesertRequired,
+            generation: generation
           )
-          self?.task = nil
+          if self.generation == generation {
+            self.task = nil
+          }
         } catch {
+          if let startedClient {
+            _ = try? await startedClient.closeConnection()
+          }
           if let startedDesertHost {
             await startedDesertHost.stop()
           }
-          self?.setBlockingError(.bootstrap(String(describing: error)))
-          self?.task = nil
+          guard let self, self.generation == generation else { return }
+          if !Task.isCancelled, !(error is CancellationError) {
+            self.setBlockingError(.bootstrap(String(describing: error)))
+          }
+          self.task = nil
         }
       }
     }
 
+    public func stop() async {
+      if let stopTask {
+        await stopTask.value
+        return
+      }
+
+      generation &+= 1
+      let startupTask = task
+      task = nil
+      startupTask?.cancel()
+
+      let observationTask = statusTask
+      statusTask = nil
+      observationTask?.cancel()
+
+      let client = client
+      let desertHost = desertHost
+      self.client = nil
+      self.desertHost = nil
+
+      connectionStatus = nil
+      setBlockingError(nil)
+
+      let cleanupTask = Task { @MainActor in
+        await startupTask?.value
+        if let client {
+          _ = try? await client.closeConnection()
+        }
+        await observationTask?.value
+        if let desertHost {
+          await desertHost.stop()
+        }
+      }
+      stopTask = cleanupTask
+      await cleanupTask.value
+      stopTask = nil
+    }
+
     private func observeConnectionStatus(
       client: InstantSwiftDataClient,
-      requiresHealthyConnection: Bool
+      requiresHealthyConnection: Bool,
+      generation: UInt64
     ) {
       statusTask?.cancel()
       statusTask = Task { @MainActor [weak self, client] in
         do {
           let statuses = try await client.observeConnectionStatus()
           for await status in statuses {
-            guard let self else { return }
+            guard let self, self.generation == generation else { return }
             self.connectionStatus = status
             let blockingError = RecipesV3BlockingError.reducing(
               self.blockingError,
@@ -526,8 +844,11 @@ public struct RecipesV3AppConfiguration: Hashable, Sendable {
           }
         } catch is CancellationError {
         } catch {
-          if requiresHealthyConnection {
-            self?.setBlockingError(.transport(String(describing: error)))
+          if requiresHealthyConnection,
+            let self,
+            self.generation == generation
+          {
+            self.setBlockingError(.transport(String(describing: error)))
           }
         }
       }
@@ -537,6 +858,142 @@ public struct RecipesV3AppConfiguration: Hashable, Sendable {
       self.blockingError = blockingError
       self.errorMessage = blockingError?.message
     }
+  }
+
+  @MainActor
+  @Observable
+  public final class RecipesV3DemoModel {
+    public var mode: RecipesV3DemoMode {
+      didSet {
+        modeDidChange(from: oldValue)
+      }
+    }
+
+    public private(set) var bootstrapModel: RecipesV3BootstrapModel?
+    public private(set) var isSwitchingMode = false
+
+    public let configuration: RecipesV3DemoConfiguration
+
+    @ObservationIgnored
+    private let configureDependencies: (inout DependencyValues) -> Void
+    @ObservationIgnored private let modeStorage: RecipesV3ModeStorage
+    @ObservationIgnored private var isCorrectingMode = false
+    @ObservationIgnored private var transitionTask: Task<Void, Never>?
+
+    public convenience init(configuration: RecipesV3DemoConfiguration) {
+      self.init(
+        configuration: configuration,
+        modeStorage: .live,
+        configureDependencies: { _ in }
+      )
+    }
+
+    init(
+      configuration: RecipesV3DemoConfiguration,
+      modeStorage: RecipesV3ModeStorage,
+      configureDependencies: @escaping (inout DependencyValues) -> Void = { _ in }
+    ) {
+      self.configuration = configuration
+      self.modeStorage = modeStorage
+      self.configureDependencies = configureDependencies
+      let mode = configuration.resolvedMode(
+        storedMode: modeStorage.load()
+      )
+      self.mode = mode
+      do {
+        self.bootstrapModel = RecipesV3BootstrapModel(
+          configuration: try configuration.appConfiguration(for: mode),
+          configureDependencies: configureDependencies
+        )
+      } catch {
+        self.bootstrapModel = RecipesV3BootstrapModel(
+          configurationError: error
+        )
+      }
+    }
+
+    public init(configurationError: any Error) {
+      let bootstrapModel = RecipesV3BootstrapModel(
+        configurationError: configurationError
+      )
+      self.configuration = RecipesV3DemoConfiguration(
+        forcedConfiguration: bootstrapModel.configuration,
+        mode: .normal
+      )
+      self.modeStorage = .live
+      self.configureDependencies = { _ in }
+      self.mode = .normal
+      self.bootstrapModel = bootstrapModel
+    }
+
+    public var allowsModeSelection: Bool {
+      configuration.allowsModeSelection && !isSwitchingMode
+    }
+
+    public var activeConfiguration: RecipesV3AppConfiguration? {
+      try? configuration.appConfiguration(for: mode)
+    }
+
+    public func shutdown() async {
+      let transitionTask = transitionTask
+      self.transitionTask = nil
+      transitionTask?.cancel()
+      await transitionTask?.value
+
+      let bootstrapModel = bootstrapModel
+      self.bootstrapModel = nil
+      if let bootstrapModel {
+        await bootstrapModel.stop()
+      }
+      isSwitchingMode = false
+    }
+
+    private func modeDidChange(from previousMode: RecipesV3DemoMode) {
+      guard !isCorrectingMode, mode != previousMode else { return }
+      guard configuration.allowsModeSelection, !isSwitchingMode else {
+        restoreMode(previousMode)
+        return
+      }
+
+      let requestedMode = mode
+      let requestedConfiguration: RecipesV3AppConfiguration
+      do {
+        requestedConfiguration = try configuration.appConfiguration(
+          for: requestedMode
+        )
+      } catch {
+        restoreMode(previousMode)
+        return
+      }
+      let previousBootstrap = bootstrapModel
+      modeStorage.save(requestedMode)
+      bootstrapModel = nil
+      isSwitchingMode = true
+
+      transitionTask = Task { @MainActor [weak self, previousBootstrap] in
+        if let previousBootstrap {
+          await previousBootstrap.stop()
+        }
+        guard !Task.isCancelled, let self else { return }
+        guard self.mode == requestedMode else {
+          self.isSwitchingMode = false
+          return
+        }
+        self.bootstrapModel = RecipesV3BootstrapModel(
+          configuration: requestedConfiguration,
+          configureDependencies: self.configureDependencies
+        )
+        self.isSwitchingMode = false
+        self.transitionTask = nil
+      }
+    }
+
+    private func restoreMode(_ mode: RecipesV3DemoMode) {
+      isCorrectingMode = true
+      self.mode = mode
+      isCorrectingMode = false
+    }
+
   }
 
   extension RecipesV3SyncRoute {
@@ -552,11 +1009,175 @@ public struct RecipesV3AppConfiguration: Hashable, Sendable {
 
   @MainActor
   @available(iOS 17.0, macOS 14.0, tvOS 17.0, watchOS 10.0, *)
-  public struct RecipesV3BootstrapScreen: View {
-    @StateObject private var model: RecipesV3BootstrapModel
+  public struct RecipesV3DemoScreen: View {
+    public let model: RecipesV3DemoModel
 
-    public init(model: RecipesV3BootstrapModel) {
-      _model = StateObject(wrappedValue: model)
+    public init(model: RecipesV3DemoModel) {
+      self.model = model
+    }
+
+    public var body: some View {
+      VStack(spacing: 0) {
+        if let bootstrapModel = model.bootstrapModel {
+          RecipesV3ObservedModeBar(
+            model: model,
+            bootstrapModel: bootstrapModel
+          )
+          RecipesV3BootstrapScreen(
+            model: bootstrapModel,
+            showsTransportStatus: false
+          )
+          .id(ObjectIdentifier(bootstrapModel))
+        } else {
+          RecipesV3ModeBar(
+            model: model,
+            connectionStatus: nil,
+            errorMessage: nil
+          )
+          ProgressView("Switching sync mode")
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+      }
+    }
+  }
+
+  @MainActor
+  @available(iOS 17.0, macOS 14.0, tvOS 17.0, watchOS 10.0, *)
+  private struct RecipesV3ObservedModeBar: View {
+    @Bindable var model: RecipesV3DemoModel
+    @ObservedObject var bootstrapModel: RecipesV3BootstrapModel
+
+    var body: some View {
+      RecipesV3ModeBar(
+        model: model,
+        connectionStatus: bootstrapModel.connectionStatus,
+        errorMessage: bootstrapModel.errorMessage
+      )
+    }
+  }
+
+  @MainActor
+  @available(iOS 17.0, macOS 14.0, tvOS 17.0, watchOS 10.0, *)
+  private struct RecipesV3ModeBar: View {
+    @Bindable var model: RecipesV3DemoModel
+    let connectionStatus: InstantConnectionStatus?
+    let errorMessage: String?
+
+    var body: some View {
+      HStack(spacing: 12) {
+        Label(statusTitle, systemImage: statusSymbol)
+        .foregroundStyle(statusColor)
+        .lineLimit(2)
+        .accessibilityIdentifier("recipes-v3-transport-status")
+        Spacer(minLength: 8)
+        Toggle("Desert", isOn: $model.mode.isDesert)
+        .disabled(!model.allowsModeSelection)
+        .accessibilityLabel("Desert mode")
+        .accessibilityValue(model.mode.title)
+        .accessibilityHint(modeControlHint)
+        .accessibilityIdentifier("recipes-v3-mode-toggle")
+      }
+      .font(.caption)
+      .padding(.horizontal)
+      .padding(.vertical, 8)
+      #if os(tvOS)
+        .background(Color.black.opacity(0.2))
+      #else
+        .background(.bar)
+      #endif
+    }
+
+    private var route: RecipesV3SyncRoute? {
+      model.activeConfiguration?.syncRoute
+    }
+
+    private var statusTitle: String {
+      if model.isSwitchingMode {
+        return "\(routeTitle) · Switching"
+      }
+      if errorMessage != nil {
+        return "\(routeTitle) · Error"
+      }
+      guard let route else {
+        return "Sync mode unavailable"
+      }
+      if route == .localOnly {
+        return route.statusTitle
+      }
+      guard let connectionStatus else {
+        return "\(route.statusTitle) · Opening"
+      }
+      switch connectionStatus.state {
+      case .opened, .authenticated:
+        return "\(route.statusTitle) · Connected"
+      case .connecting:
+        return "\(route.statusTitle) · Connecting"
+      case .closed:
+        return "\(route.statusTitle) · Closed"
+      case .errored:
+        return "\(route.statusTitle) · Error"
+      }
+    }
+
+    private var statusSymbol: String {
+      if model.isSwitchingMode { return "arrow.triangle.2.circlepath" }
+      if errorMessage != nil || route == nil {
+        return "exclamationmark.triangle.fill"
+      }
+      if route == .localOnly { return "externaldrive" }
+      if connectionStatus?.state == .errored || connectionStatus?.state == .closed {
+        return "exclamationmark.triangle.fill"
+      }
+      if connectionStatus == nil || connectionStatus?.state == .connecting {
+        return "arrow.triangle.2.circlepath"
+      }
+      return "bolt.horizontal.circle.fill"
+    }
+
+    private var statusColor: Color {
+      if model.isSwitchingMode || route == .localOnly { return .secondary }
+      if errorMessage != nil || route == nil
+        || connectionStatus?.state == .errored
+        || connectionStatus?.state == .closed
+      {
+        return .red
+      }
+      if connectionStatus == nil || connectionStatus?.state == .connecting {
+        return .secondary
+      }
+      return .green
+    }
+
+    private var routeTitle: String {
+      model.activeConfiguration?.syncRoute.statusTitle ?? "Sync mode unavailable"
+    }
+
+    private var modeControlHint: String {
+      if model.isSwitchingMode {
+        return "Wait for the current sync mode change to finish."
+      }
+      if model.configuration.forcedMode != nil {
+        return "The sync mode is fixed by the launch configuration."
+      }
+      if model.configuration.desert == nil {
+        return "Interactive Desert mode is available in the macOS and iOS Simulator demos."
+      }
+      return "Switches every recipe between its normal route and the required Desert route."
+    }
+  }
+
+  @MainActor
+  @available(iOS 17.0, macOS 14.0, tvOS 17.0, watchOS 10.0, *)
+  public struct RecipesV3BootstrapScreen: View {
+    @ObservedObject private var model: RecipesV3BootstrapModel
+    private let showsTransportStatus: Bool
+
+    public init(
+      model: RecipesV3BootstrapModel,
+      showsTransportStatus: Bool = true
+    ) {
+      self.model = model
+      self.showsTransportStatus = showsTransportStatus
     }
 
     public var body: some View {
@@ -572,13 +1193,16 @@ public struct RecipesV3AppConfiguration: Hashable, Sendable {
               .foregroundStyle(.secondary)
           }
           .padding()
-        } else if model.client != nil {
+          .accessibilityIdentifier("recipes-v3-bootstrap-error")
+        } else if let client = model.client {
           RecipesV3CatalogScreen(
             profileID: model.configuration.profileID,
             launchRecipe: model.configuration.launchRecipe,
             syncRoute: model.configuration.syncRoute,
-            connectionStatus: model.connectionStatus
+            connectionStatus: model.connectionStatus,
+            showsTransportStatus: showsTransportStatus
           )
+          .dependency(\.defaultInstantSwiftData, client)
         } else {
           ProgressView("Opening Instant Recipes")
         }
@@ -594,6 +1218,7 @@ public struct RecipesV3AppConfiguration: Hashable, Sendable {
     private let profileID: String
     private let syncRoute: RecipesV3SyncRoute
     private let connectionStatus: InstantConnectionStatus?
+    private let showsTransportStatus: Bool
 
     public init(
       profileID: String,
@@ -611,11 +1236,13 @@ public struct RecipesV3AppConfiguration: Hashable, Sendable {
       profileID: String,
       launchRecipe: InstantRecipeV3? = nil,
       syncRoute: RecipesV3SyncRoute,
-      connectionStatus: InstantConnectionStatus? = nil
+      connectionStatus: InstantConnectionStatus? = nil,
+      showsTransportStatus: Bool = true
     ) {
       self.profileID = profileID
       self.syncRoute = syncRoute
       self.connectionStatus = connectionStatus
+      self.showsTransportStatus = showsTransportStatus
       _path = State(initialValue: launchRecipe.map { [$0] } ?? [])
     }
 
@@ -623,8 +1250,12 @@ public struct RecipesV3AppConfiguration: Hashable, Sendable {
       #if os(watchOS)
         catalogNavigation
       #else
-        VStack(spacing: 0) {
-          transportStatusBanner
+        if showsTransportStatus {
+          VStack(spacing: 0) {
+            transportStatusBanner
+            catalogNavigation
+          }
+        } else {
           catalogNavigation
         }
       #endif
@@ -634,14 +1265,16 @@ public struct RecipesV3AppConfiguration: Hashable, Sendable {
       NavigationStack(path: $path) {
         #if os(watchOS)
           List {
-            Section {
-              Label(
-                syncRoute.statusTitle,
-                systemImage: syncRoute == .localOnly
-                  ? "externaldrive"
-                  : "bolt.horizontal.circle.fill"
-              )
-              .foregroundStyle(syncRoute == .localOnly ? Color.secondary : Color.green)
+            if showsTransportStatus {
+              Section {
+                Label(
+                  syncRoute.statusTitle,
+                  systemImage: syncRoute == .localOnly
+                    ? "externaldrive"
+                    : "bolt.horizontal.circle.fill"
+                )
+                .foregroundStyle(syncRoute == .localOnly ? Color.secondary : Color.green)
+              }
             }
 
             ForEach(syncRoute.visibleRecipes) { recipe in
@@ -704,6 +1337,7 @@ public struct RecipesV3AppConfiguration: Hashable, Sendable {
         #else
           .background(.bar)
         #endif
+        .accessibilityIdentifier("recipes-v3-transport-status")
       }
     #endif
 

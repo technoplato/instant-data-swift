@@ -64,6 +64,43 @@ Simulator peer over `127.0.0.1`. It does not discover peers and is not evidence
 for physical devices, a router/LAN, direct peer-to-peer Wi-Fi, Bluetooth, or
 WatchConnectivity.
 
+### Switch modes in the demo apps
+
+The macOS and iOS Simulator apps expose a persistent **Desert** setting in the
+status bar. Start the Mac app first and turn Desert on so it hosts
+`127.0.0.1:49800`, then turn Desert on in the iOS Simulator app so it joins as a
+peer. The status must reach **Connected** before a Desert recipe is usable.
+
+Turning Desert off returns every recipe to **Normal** mode. Normal means
+InstantDB cloud when the app has a configured `INSTANT_APP_ID`, or the existing
+local-only runtime when it does not. The setting is stored independently in
+each app installation.
+
+A mode change removes the current recipe screens, closes their client, stops an
+owned Desert host, and then starts a fresh runtime. Normal and Desert use
+separate app and persistence identities, so the prototype does not imply that
+Desert mutations will reconcile into cloud when switching back. If a peer
+cannot connect, the error blocks the recipes but the Desert setting remains
+available so the app can return to Normal.
+
+The selected client is scoped through the SwiftUI recipe subtree. Automatic
+`@FetchAll`, `@FetchOne`, and `@Fetch` observation plus room, presence, topic,
+topic-publish, and auth helpers all consume that same scoped client; switching
+does not mutate a process-global dependency that an outgoing recipe could still
+use during cleanup.
+
+The interactive default is intentionally limited to the currently verified Mac
+host plus iOS Simulator peer topology. Explicit endpoint environment values can
+configure another host or peer, but they do not constitute physical-device,
+LAN, Bluetooth, or WatchConnectivity evidence.
+
+Explicit `INSTANT_SWIFT_DATA_SYNC_ROUTE=current` and
+`INSTANT_SWIFT_DATA_SYNC_ROUTE=desert-required` launches lock the setting to the
+requested route and ignore the saved preference. This keeps automation and the
+strict smoke gate deterministic.
+
+### Force a mode for automation
+
 Build from a clean `desert` commit first:
 
 ```bash

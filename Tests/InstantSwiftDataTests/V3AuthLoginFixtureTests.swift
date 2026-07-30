@@ -1,8 +1,9 @@
 import CustomDump
 import Dependencies
 import Foundation
-import InstantSwiftData
 import Testing
+
+@testable import InstantSwiftData
 
 #if canImport(SwiftUI)
   import SwiftUI
@@ -223,6 +224,102 @@ import Testing
     }
 
     @Test @MainActor
+    func installedClientOwnsEveryDefaultAuthAction() async {
+      let installedOperations = V3AuthOperationRecorder()
+      let fallbackOperations = V3AuthOperationRecorder()
+      let installedClient = v3AuthRoutingClient(
+        recorder: installedOperations,
+        userIDPrefix: "installed"
+      )
+      let fallbackClient = v3AuthRoutingClient(
+        recorder: fallbackOperations,
+        userIDPrefix: "fallback"
+      )
+      let provider = AuthProvider.apple(clientName: "apple-ios", presentation: .native)
+      let credential = InstantAuthProviderCredential(
+        providerID: provider.id,
+        payload: .idToken(value: "apple-token", nonce: "apple-nonce")
+      )
+
+      await withDependencies {
+        $0.defaultInstantSwiftData = fallbackClient
+        $0.instantAuthProviderAuthorizer = InstantAuthProviderAuthorizer { _ in credential }
+      } operation: {
+        let state = InstantAuthState<V3VoiceTrailUser>(
+          providers: V3VoiceTrailAuthProviders.all
+        )
+        state.installDefaultClient(installedClient)
+
+        state.email = "person@example.com"
+        await state.sendMagicCode().value
+        state.magicCode = "123456"
+        await state.verifyMagicCode().value
+        await state.signInAsGuest().value
+        await state.signOut().value
+        await state.signIn(provider).value
+      }
+
+      let routedOperations = await installedOperations.values()
+      let fallbackValues = await fallbackOperations.values()
+      expectNoDifference(
+        routedOperations,
+        ["send-magic-code", "verify-magic-code", "guest", "sign-out", "provider"]
+      )
+      expectNoDifference(fallbackValues, [])
+    }
+
+    @Test @MainActor
+    func runtimeLessCopyIsStableWhileReplacementRestartsAndTeardownCancels() async throws {
+      let lifecycle = V3AuthLifecycleRecorder()
+      let client = v3AuthLifecycleClient(recorder: lifecycle)
+      let clientCopy = client
+      let replacementClient = v3AuthLifecycleClient(recorder: lifecycle)
+      var state: InstantAuthState<V3VoiceTrailUser>? = InstantAuthState(
+        providers: V3VoiceTrailAuthProviders.all
+      )
+      weak let weakState = state
+
+      state?.installDefaultClient(client)
+      state?.startObservationIfNeeded()
+      try await waitForV3AuthAsyncCondition(operation: "start auth observation") {
+        await lifecycle.snapshot().observationStarts == 1
+      }
+
+      state?.installDefaultClient(clientCopy)
+      state?.installDefaultClient(clientCopy)
+      state?.installDefaultClient(clientCopy)
+      try await Task.sleep(for: .milliseconds(20))
+      let stableSnapshot = await lifecycle.snapshot()
+      expectNoDifference(
+        stableSnapshot,
+        V3AuthLifecycleRecorder.Snapshot(
+          observationStarts: 1,
+          observationTerminations: 0,
+          actionStarts: 0,
+          actionCancellations: 0
+        )
+      )
+
+      state?.installDefaultClient(replacementClient)
+      try await waitForV3AuthAsyncCondition(operation: "replace auth observation client") {
+        let snapshot = await lifecycle.snapshot()
+        return snapshot.observationStarts == 2 && snapshot.observationTerminations == 1
+      }
+
+      let activeAction = state?.signInAsGuest()
+      try await waitForV3AuthAsyncCondition(operation: "start auth action") {
+        await lifecycle.snapshot().actionStarts == 1
+      }
+      state = nil
+      #expect(weakState === nil)
+      try await waitForV3AuthAsyncCondition(operation: "tear down auth work") {
+        let snapshot = await lifecycle.snapshot()
+        return snapshot.observationTerminations == 2 && snapshot.actionCancellations == 1
+      }
+      await activeAction?.value
+    }
+
+    @Test @MainActor
     func providerActionExchangesTypedCredentialAndFiresCallbacksOnce() async throws {
       let provider = AuthProvider.apple(clientName: "apple-ios", presentation: .native)
       let credential = InstantAuthProviderCredential(
@@ -377,6 +474,57 @@ import Testing
     }
   }
 
+  private actor V3AuthOperationRecorder {
+    private var operations: [String] = []
+
+    func record(_ operation: String) {
+      operations.append(operation)
+    }
+
+    func values() -> [String] {
+      operations
+    }
+  }
+
+  private actor V3AuthLifecycleRecorder {
+    struct Snapshot: Equatable, Sendable {
+      var observationStarts: Int
+      var observationTerminations: Int
+      var actionStarts: Int
+      var actionCancellations: Int
+    }
+
+    private var observationStarts = 0
+    private var observationTerminations = 0
+    private var actionStarts = 0
+    private var actionCancellations = 0
+
+    func observationStarted() {
+      observationStarts += 1
+    }
+
+    func observationTerminated() {
+      observationTerminations += 1
+    }
+
+    func actionStarted() {
+      actionStarts += 1
+    }
+
+    func actionCancelled() {
+      actionCancellations += 1
+    }
+
+    func snapshot() -> Snapshot {
+      Snapshot(
+        observationStarts: observationStarts,
+        observationTerminations: observationTerminations,
+        actionStarts: actionStarts,
+        actionCancellations: actionCancellations
+      )
+    }
+  }
+
   private actor V3AuthChallengeGate {
     private var didStart = false
     private var startWaiters: [CheckedContinuation<Void, Never>] = []
@@ -465,12 +613,20 @@ import Testing
   }
 
   private func v3AuthClient(
+    observeAuthSession:
+      @escaping @Sendable () async throws -> AsyncStream<InstantAuthSession?> = {
+        AsyncStream { $0.finish() }
+      },
     signInAsGuest: @escaping @Sendable () async throws -> InstantAuthSession = {
       v3AuthSession(userID: "unused-guest", isGuest: true)
     },
     sendMagicCode: @escaping @Sendable (String) async throws -> InstantMagicCodeChallenge = {
       v3AuthChallenge(email: $0)
     },
+    signInWithMagicCode:
+      @escaping @Sendable (String, String) async throws -> InstantAuthSession = { _, _ in
+        v3AuthSession(userID: "unused-magic-code", isGuest: false)
+      },
     signOutWithOptions: @escaping @Sendable (Bool) async throws -> Void = { _ in },
     signInWithIDToken:
       @escaping @Sendable (String, String, String?) async throws
@@ -491,10 +647,63 @@ import Testing
       observe: { _ in AsyncStream { $0.finish() } },
       pendingMutations: { [] },
       localID: { "v3-auth-\($0)" },
+      observeAuthSession: observeAuthSession,
       signInAsGuest: signInAsGuest,
       sendMagicCode: sendMagicCode,
+      signInWithMagicCode: signInWithMagicCode,
       signInWithIDToken: signInWithIDToken,
       signOutWithOptions: signOutWithOptions
+    )
+  }
+
+  private func v3AuthRoutingClient(
+    recorder: V3AuthOperationRecorder,
+    userIDPrefix: String
+  ) -> InstantSwiftDataClient {
+    v3AuthClient(
+      signInAsGuest: {
+        await recorder.record("guest")
+        return v3AuthSession(userID: "\(userIDPrefix)-guest", isGuest: true)
+      },
+      sendMagicCode: { email in
+        await recorder.record("send-magic-code")
+        return v3AuthChallenge(email: email)
+      },
+      signInWithMagicCode: { _, _ in
+        await recorder.record("verify-magic-code")
+        return v3AuthSession(userID: "\(userIDPrefix)-magic-code", isGuest: false)
+      },
+      signOutWithOptions: { _ in
+        await recorder.record("sign-out")
+      },
+      signInWithIDToken: { _, _, _ in
+        await recorder.record("provider")
+        return v3AuthSession(userID: "\(userIDPrefix)-provider", isGuest: false)
+      }
+    )
+  }
+
+  private func v3AuthLifecycleClient(
+    recorder: V3AuthLifecycleRecorder
+  ) -> InstantSwiftDataClient {
+    v3AuthClient(
+      observeAuthSession: {
+        await recorder.observationStarted()
+        let stream = AsyncStream<InstantAuthSession?>.makeStream()
+        stream.continuation.onTermination = { @Sendable _ in
+          Task { await recorder.observationTerminated() }
+        }
+        return stream.stream
+      },
+      signInAsGuest: {
+        await recorder.actionStarted()
+        return try await withTaskCancellationHandler {
+          try await Task.sleep(for: .seconds(60))
+          return v3AuthSession(userID: "unexpected-finished-action", isGuest: true)
+        } onCancel: {
+          Task { await recorder.actionCancelled() }
+        }
+      }
     )
   }
 
@@ -511,6 +720,22 @@ import Testing
       operation: operation,
       message: "Timed out waiting for V3 auth state.",
       recovery: "Inspect the auth session observation and action lifecycle."
+    )
+  }
+
+  private func waitForV3AuthAsyncCondition(
+    operation: String,
+    condition: @escaping @Sendable () async -> Bool
+  ) async throws {
+    for _ in 0..<100 {
+      if await condition() { return }
+      try await Task.sleep(for: .milliseconds(10))
+    }
+    throw InstantError(
+      code: .validationFailed,
+      operation: operation,
+      message: "Timed out waiting for V3 auth lifecycle.",
+      recovery: "Inspect the auth dependency installation and teardown lifecycle."
     )
   }
 #endif

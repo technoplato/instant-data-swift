@@ -360,6 +360,26 @@ import Testing
         #expect(renders.values.first == false)
         #expect(renders.values.contains(true))
       }
+
+      @Test @MainActor
+      func scopedClientOwnsDefaultTopicPublicationInAHostedSwiftUIView() async throws {
+        let recorder = V3PlaybackTopicRecorder()
+        let client = v3PlaybackTopicClient(recorder)
+        let hostingView = NSHostingView(
+          rootView: V3PlaybackScopedTopicRoutingFixture(recorder: recorder)
+            .dependency(\.defaultInstantSwiftData, client)
+        )
+        hostingView.frame = NSRect(x: 0, y: 0, width: 320, height: 80)
+        hostingView.layoutSubtreeIfNeeded()
+
+        try await waitForV3PlaybackRoomCondition(
+          operation: "wait for hosted scoped topic publication"
+        ) {
+          await recorder.published().count == 1
+        }
+
+        withExtendedLifetime(hostingView) {}
+      }
     #endif
   }
 
@@ -410,6 +430,38 @@ import Testing
             $room,
             V3PlaybackRooms.activeRecording("recording-hosted")
           )
+      }
+    }
+
+    @MainActor
+    private struct V3PlaybackScopedTopicRoutingFixture: View {
+      @Room private var room: InstantRoom<V3PlaybackRoomSchema> =
+        V3PlaybackRooms.activeRecording("recording-scoped-topic")
+      @Topic(V3PlaybackRoomSchema.Topic.reaction)
+      private var reactions: InstantTopic<V3PlaybackReaction>
+      @State private var didPublish = false
+
+      let recorder: V3PlaybackTopicRecorder
+
+      var body: some View {
+        Text("Scoped topic")
+          .instantTopic($reactions, in: room)
+          .task {
+            do {
+              try await waitForV3PlaybackRoomCondition(
+                operation: "wait for hosted scoped topic observation"
+              ) {
+                await recorder.observed().count == 1
+              }
+              guard !didPublish else { return }
+              didPublish = true
+              await reactions.publish(
+                V3PlaybackReaction(emoji: "sparkles", offsetSeconds: 2)
+              ).value
+            } catch {
+              Issue.record(error)
+            }
+          }
       }
     }
 

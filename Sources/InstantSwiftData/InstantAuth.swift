@@ -47,6 +47,11 @@ public struct InstantAuthUser<Entity: InstantEntityModel>: Hashable, Sendable {
 
   @MainActor
   public final class InstantAuthState<User: InstantEntityModel>: ObservableObject {
+    private enum ClientIdentity: Equatable {
+      case runtime(ObjectIdentifier)
+      case runtimeLess(ObjectIdentifier)
+    }
+
     @Published public var email = ""
     @Published public var magicCode = ""
     @Published public private(set) var mode: InstantAuthMode = .enteringEmail
@@ -68,27 +73,36 @@ public struct InstantAuthUser<Entity: InstantEntityModel>: Hashable, Sendable {
       status == .working
     }
 
+    @Dependency(\.defaultInstantSwiftData) private var fallbackClient
+    private var installedClient: InstantSwiftDataClient?
     private var actionGeneration = 0
     private var activeAction: Task<Void, Never>?
+    private var observationGeneration = 0
     private var observationTask: Task<Void, Never>?
 
     public init(providers: [AuthProvider]) {
       self.providers = providers.filter { $0.kind != .magicCode }
     }
 
+    deinit {
+      activeAction?.cancel()
+      observationTask?.cancel()
+    }
+
     public func startObservationIfNeeded() {
-      @Dependency(\.defaultInstantSwiftData) var client
-      startObservationIfNeeded(using: client)
+      startObservationIfNeeded(using: defaultClient)
     }
 
     public func startObservationIfNeeded(using client: InstantSwiftDataClient) {
       guard observationTask == nil else { return }
+      observationGeneration += 1
+      let generation = observationGeneration
       observationTask = Task { @MainActor [weak self] in
         do {
           let subscription = try await client.subscribeAuthSession()
           for try await session in subscription {
             try Task.checkCancellation()
-            guard let self else { return }
+            guard let self, self.observationGeneration == generation else { return }
             self.session = session
             if !self.isBusy {
               self.status = session.map(InstantAuthStatus.signedIn) ?? .signedOut
@@ -96,16 +110,30 @@ public struct InstantAuthUser<Entity: InstantEntityModel>: Hashable, Sendable {
           }
         } catch is CancellationError {
         } catch {
-          guard let self else { return }
+          guard let self, self.observationGeneration == generation else { return }
           self.status = .failed(Self.authError(error, operation: "observe Instant auth"))
         }
-        self?.observationTask = nil
+        guard let self, self.observationGeneration == generation else { return }
+        self.observationTask = nil
       }
     }
 
     public func stopObservation() {
+      observationGeneration += 1
       observationTask?.cancel()
       observationTask = nil
+    }
+
+    func installDefaultClient(_ client: InstantSwiftDataClient) {
+      let previousIdentity = Self.identity(of: defaultClient)
+      let nextIdentity = Self.identity(of: client)
+      let shouldRestartObservation =
+        observationTask != nil && previousIdentity != nextIdentity
+      installedClient = client
+      if shouldRestartObservation {
+        stopObservation()
+        startObservationIfNeeded(using: client)
+      }
     }
 
     public func resetMagicCode() {
@@ -121,9 +149,8 @@ public struct InstantAuthUser<Entity: InstantEntityModel>: Hashable, Sendable {
       },
       onFailure: @escaping @MainActor @Sendable (InstantError) -> Void = { _ in }
     ) -> Task<Void, Never> {
-      @Dependency(\.defaultInstantSwiftData) var client
       return sendMagicCode(
-        using: client,
+        using: defaultClient,
         onChallengeSent: onChallengeSent,
         onFailure: onFailure
       )
@@ -168,8 +195,11 @@ public struct InstantAuthUser<Entity: InstantEntityModel>: Hashable, Sendable {
       onSignedIn: @escaping @MainActor @Sendable (InstantAuthSignedInEvent) -> Void = { _ in },
       onFailure: @escaping @MainActor @Sendable (InstantError) -> Void = { _ in }
     ) -> Task<Void, Never> {
-      @Dependency(\.defaultInstantSwiftData) var client
-      return verifyMagicCode(using: client, onSignedIn: onSignedIn, onFailure: onFailure)
+      return verifyMagicCode(
+        using: defaultClient,
+        onSignedIn: onSignedIn,
+        onFailure: onFailure
+      )
     }
 
     @discardableResult
@@ -215,8 +245,11 @@ public struct InstantAuthUser<Entity: InstantEntityModel>: Hashable, Sendable {
       onSignedIn: @escaping @MainActor @Sendable (InstantAuthSignedInEvent) -> Void = { _ in },
       onFailure: @escaping @MainActor @Sendable (InstantError) -> Void = { _ in }
     ) -> Task<Void, Never> {
-      @Dependency(\.defaultInstantSwiftData) var client
-      return signInAsGuest(using: client, onSignedIn: onSignedIn, onFailure: onFailure)
+      return signInAsGuest(
+        using: defaultClient,
+        onSignedIn: onSignedIn,
+        onFailure: onFailure
+      )
     }
 
     @discardableResult
@@ -255,9 +288,8 @@ public struct InstantAuthUser<Entity: InstantEntityModel>: Hashable, Sendable {
       onSignedOut: @escaping @MainActor @Sendable () -> Void = {},
       onFailure: @escaping @MainActor @Sendable (InstantError) -> Void = { _ in }
     ) -> Task<Void, Never> {
-      @Dependency(\.defaultInstantSwiftData) var client
       return signOut(
-        using: client,
+        using: defaultClient,
         invalidateToken: invalidateToken,
         onSignedOut: onSignedOut,
         onFailure: onFailure
@@ -307,11 +339,10 @@ public struct InstantAuthUser<Entity: InstantEntityModel>: Hashable, Sendable {
       onSignedIn: @escaping @MainActor @Sendable (InstantAuthSignedInEvent) -> Void = { _ in },
       onFailure: @escaping @MainActor @Sendable (InstantError) -> Void = { _ in }
     ) -> Task<Void, Never> {
-      @Dependency(\.defaultInstantSwiftData) var client
       @Dependency(\.instantAuthProviderAuthorizer) var authorizer
       return signIn(
         provider,
-        using: client,
+        using: defaultClient,
         authorizer: authorizer,
         onProviderCompleted: onProviderCompleted,
         onSignedIn: onSignedIn,
@@ -469,6 +500,15 @@ public struct InstantAuthUser<Entity: InstantEntityModel>: Hashable, Sendable {
         recovery: "Inspect the auth provider configuration and retry the action."
       )
     }
+
+    private var defaultClient: InstantSwiftDataClient {
+      installedClient ?? fallbackClient
+    }
+
+    private static func identity(of client: InstantSwiftDataClient) -> ClientIdentity {
+      client.runtime.map { .runtime(ObjectIdentifier($0)) }
+        ?? .runtimeLess(client.dependencyIdentityValue)
+    }
   }
 
   @dynamicMemberLookup
@@ -491,6 +531,7 @@ public struct InstantAuthUser<Entity: InstantEntityModel>: Hashable, Sendable {
   public struct InstantAuth<User: InstantEntityModel, Providers: InstantAuthProviderCatalog>:
     DynamicProperty
   {
+    @Dependency(\.defaultInstantSwiftData) private var dependencyClient
     @StateObject private var state: InstantAuthState<User>
 
     public init(_ user: User.Type, providers: Providers.Type) {
@@ -509,7 +550,8 @@ public struct InstantAuthUser<Entity: InstantEntityModel>: Hashable, Sendable {
     }
 
     public mutating func update() {
-      state.startObservationIfNeeded()
+      state.installDefaultClient(dependencyClient)
+      state.startObservationIfNeeded(using: dependencyClient)
     }
   }
 #endif

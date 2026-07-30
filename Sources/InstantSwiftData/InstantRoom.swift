@@ -254,6 +254,17 @@ public struct Room<Schema: InstantRoomSchema>: @unchecked Sendable {
 }
 
 #if canImport(SwiftUI)
+  private struct InstantRoomDependencyModifier<Schema: InstantRoomSchema>: ViewModifier {
+    @Dependency(\.defaultInstantSwiftData) private var client
+
+    let room: Room<Schema>
+    let value: InstantRoom<Schema>
+
+    func body(content: Content) -> some View {
+      content.instantRoom(room, value, using: client)
+    }
+  }
+
   @MainActor
   extension Room: DynamicProperty {
     public mutating func update() {
@@ -266,8 +277,12 @@ public struct Room<Schema: InstantRoomSchema>: @unchecked Sendable {
       _ room: Room<Schema>,
       _ value: InstantRoom<Schema>
     ) -> some View {
-      @Dependency(\.defaultInstantSwiftData) var client
-      return instantRoom(room, value, using: client)
+      modifier(
+        InstantRoomDependencyModifier(
+          room: room,
+          value: value
+        )
+      )
     }
 
     public func instantRoom<Schema: InstantRoomSchema>(

@@ -138,6 +138,19 @@ The Phase 0 route seam is now implemented:
 - The Recipes V3 composition root validates the forced-route launch
   configuration, starts either the host or peer adapter, waits for the required
   connection, shows route/adapter status, and makes all eight recipes visible.
+- The shared Recipes native shell also offers a persisted Normal/Desert setting
+  for the verified Mac-host/iOS-Simulator-peer topology. A change removes the
+  recipe subtree, closes the old client, stops an owned host, and only then
+  publishes a new composition-root bootstrap.
+- The composition root scopes the selected client through the recipe subtree.
+  Automatic fetch observation, room/presence/topic helpers, topic publication,
+  and auth observation/actions resolve that scoped client, while outgoing
+  recipe cleanup remains attached to its original runtime.
+- Interactive Normal mode retains the preexisting cloud-or-local selection.
+  Interactive Desert mode uses a distinct app id and persistence path so
+  switching modes does not masquerade as implemented cloud reconciliation.
+  Explicit `current` or `desert-required` launch configuration remains locked
+  and takes precedence over the saved setting.
 - `bootstrapLocalInstantSwiftData` remains process-local cache behavior. It is
   not Desert replication.
 
@@ -145,6 +158,16 @@ Other application composition roots still commonly reduce configuration to an
 `enablesLiveSync` Boolean and install the cloud `.live` transport. The current
 all-eight gate is therefore a Recipes V3 gate, not evidence that every
 repository executable supports forced Desert mode.
+
+One helper seam remains before arbitrary app subtrees can treat SwiftUI
+dependency scoping as exhaustive: declaration-driven automatic `@FetchAll`,
+`@FetchOne`, and `@Fetch` observation uses the scoped client, but projected
+default calls such as `$rows.load()` and `$rows.subscribe()` still resolve the
+task-local dependency unless the caller uses their explicit `using:` overload.
+None of the eight Recipes screens calls those projected APIs. A later
+repository-wide composition pass should install the scoped client into those
+operations or require the explicit overload before claiming the same behavior
+for every executable.
 
 ### Implemented Phase 0 behavior
 
@@ -159,6 +182,10 @@ repository executable supports forced Desert mode.
    diagnostics.
 6. The Recipes host and peer use ordinary public APIs against the selected
    backend. Cloud-backed provider auth remains unavailable in that lane.
+7. The Mac and iOS Simulator Recipes apps can persistently switch the entire
+   catalog between Normal and Desert at the composition root. A failed peer
+   keeps the setting reachable so the user can recover to Normal without a
+   cloud fallback.
 
 The prototype coordinator speaks enough of the existing Instant server
 protocol to reuse `InstantRuntimeLiveSession` and the current

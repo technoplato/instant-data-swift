@@ -243,18 +243,36 @@
     var value: JSONValue?
   }
 
+  @MainActor
+  private struct InstantPresenceDependencyModifier<Schema: InstantRoomSchema>: ViewModifier {
+    @Dependency(\.defaultInstantSwiftData) private var client
+
+    let presence: Presence<Schema.Presence>
+    let room: InstantRoom<Schema>
+    let currentValue: Schema.Presence?
+
+    func body(content: Content) -> some View {
+      content.presence(
+        presence,
+        in: room,
+        publishing: currentValue,
+        using: client
+      )
+    }
+  }
+
   extension View {
     public func presence<Schema: InstantRoomSchema>(
       _ presence: Presence<Schema.Presence>,
       in room: InstantRoom<Schema>,
       publishing currentValue: Schema.Presence?
     ) -> some View {
-      @Dependency(\.defaultInstantSwiftData) var client
-      return self.presence(
-        presence,
-        in: room,
-        publishing: currentValue,
-        using: client
+      modifier(
+        InstantPresenceDependencyModifier(
+          presence: presence,
+          room: room,
+          currentValue: currentValue
+        )
       )
     }
 

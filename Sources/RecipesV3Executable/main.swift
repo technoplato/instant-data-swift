@@ -4,27 +4,27 @@ import SwiftUI
 
 @main
 struct RecipesV3Executable: App {
-  @StateObject private var bootstrap: RecipesV3BootstrapModel
+  @State private var demo: RecipesV3DemoModel
 
   init() {
     Self.logBuildProvenance()
     do {
-      let configuration = try RecipesV3AppConfiguration.validatedEnvironment()
-      _bootstrap = StateObject(
-        wrappedValue: RecipesV3BootstrapModel(
+      let configuration = try RecipesV3DemoConfiguration.validatedEnvironment()
+      _demo = State(
+        initialValue: RecipesV3DemoModel(
           configuration: configuration
         )
       )
     } catch {
-      _bootstrap = StateObject(
-        wrappedValue: RecipesV3BootstrapModel(configurationError: error)
+      _demo = State(
+        initialValue: RecipesV3DemoModel(configurationError: error)
       )
     }
   }
 
   var body: some Scene {
     WindowGroup {
-      RecipesV3BootstrapScreen(model: bootstrap)
+      RecipesV3DemoScreen(model: demo)
     }
   }
 

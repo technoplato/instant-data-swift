@@ -24,9 +24,16 @@ public macro InstantRelation(reverse: String, reverseMember: String? = nil) =
 public macro InstantWire(_ valueType: InstantValueType) =
   #externalMacro(module: "InstantSwiftDataMacros", type: "InstantWireMacro")
 
+private final class InstantSwiftDataClientIdentity: @unchecked Sendable {}
+
 public struct InstantSwiftDataClient: Sendable {
   public let runtime: InstantRuntime?
+  private let dependencyIdentity = InstantSwiftDataClientIdentity()
   fileprivate var supportsAutomaticFetchObservation = true
+
+  var dependencyIdentityValue: ObjectIdentifier {
+    ObjectIdentifier(dependencyIdentity)
+  }
 
   private var transactOperation:
     @Sendable (InstantStoreTransaction) async throws -> InstantStoreMutationResult
@@ -2890,6 +2897,21 @@ private final class FetchOperationStorage<Value: Sendable>: @unchecked Sendable 
       startAutomaticFetchObservation(storage: storage, subscribe: subscribe)
     }
   }
+
+  func startAutomaticObservationIfNeeded(
+    storage: FetchStorage<Value>,
+    using client: InstantSwiftDataClient
+  ) {
+    guard client.supportsAutomaticFetchObservation else { return }
+    let subscribe = value.subscribe
+    if let subscribe {
+      startAutomaticFetchObservation(
+        storage: storage,
+        using: client,
+        subscribe: subscribe
+      )
+    }
+  }
 }
 
 // SAFETY: Swift's runtime weak-reference lock protects reads and deallocation zeroing.
@@ -4199,6 +4221,7 @@ public struct InfiniteQuery<Element: InstantEntityModel>: @unchecked Sendable {
 public struct FetchAll<Element: Sendable>: @unchecked Sendable {
   private let storageReference: LockedValueStorage<FetchStorage<[Element]>>
   #if canImport(SwiftUI)
+    @Dependency(\.defaultInstantSwiftData) private var dependencyClient
     @StateObject private var storageObserver: FetchStorage<[Element]>
   #endif
   private let operations: FetchOperationStorage<[Element]>
@@ -5049,6 +5072,7 @@ extension FetchAll {
 public struct FetchOne<Value: Sendable>: Sendable {
   private let storageReference: LockedValueStorage<FetchStorage<Value>>
   #if canImport(SwiftUI)
+    @Dependency(\.defaultInstantSwiftData) private var dependencyClient
     @StateObject private var storageObserver: FetchStorage<Value>
   #endif
   private let operations: FetchOperationStorage<Value>
@@ -6361,6 +6385,7 @@ private func combineLatest<A: Sendable, B: Sendable>(
 public struct Fetch<Value: Sendable>: Sendable {
   private let storageReference: LockedValueStorage<FetchStorage<Value>>
   #if canImport(SwiftUI)
+    @Dependency(\.defaultInstantSwiftData) private var dependencyClient
     @StateObject private var storageObserver: FetchStorage<Value>
   #endif
   private let operations: FetchOperationStorage<Value>
@@ -8470,19 +8495,28 @@ public struct Shares: Sendable {
   extension FetchAll: DynamicProperty {
     public mutating func update() {
       storageReference.value = storageObserver
-      operations.startAutomaticObservationIfNeeded(storage: storageObserver)
+      operations.startAutomaticObservationIfNeeded(
+        storage: storageObserver,
+        using: dependencyClient
+      )
     }
   }
   @MainActor extension FetchOne: DynamicProperty {
     public mutating func update() {
       storageReference.value = storageObserver
-      operations.startAutomaticObservationIfNeeded(storage: storageObserver)
+      operations.startAutomaticObservationIfNeeded(
+        storage: storageObserver,
+        using: dependencyClient
+      )
     }
   }
   @MainActor extension Fetch: DynamicProperty {
     public mutating func update() {
       storageReference.value = storageObserver
-      operations.startAutomaticObservationIfNeeded(storage: storageObserver)
+      operations.startAutomaticObservationIfNeeded(
+        storage: storageObserver,
+        using: dependencyClient
+      )
     }
   }
   @MainActor extension ConnectionStatus: DynamicProperty {
