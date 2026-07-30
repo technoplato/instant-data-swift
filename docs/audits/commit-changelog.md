@@ -6,6 +6,14 @@ commit SHA, and high-level reason. Changelog-only bookkeeping commits are
 visible in Git history but are not self-recorded because a commit cannot
 contain its own final SHA.
 
+## July 30, 2026 at 2:15:55 AM EDT
+
+- Repository: `realtime-voice-sqlite-instant` (Scribe)
+- Commit: `4f4b9070c790d86eebd5813394ed6428628f8263`
+- High-level reason: Restore the iPhone and iPad transcriber Settings gear by
+  moving it into the recording sidebar's rendered navigation toolbar while
+  preserving root ownership of selection and the Settings sheet.
+
 ## July 30, 2026 at 2:05:07 AM EDT
 
 - Repository: `realtime-voice-sqlite-instant` (Scribe)
