@@ -620,6 +620,17 @@ public struct RecipesV3AppConfiguration: Hashable, Sendable {
     }
 
     public var body: some View {
+      #if os(watchOS)
+        catalogNavigation
+      #else
+        VStack(spacing: 0) {
+          transportStatusBanner
+          catalogNavigation
+        }
+      #endif
+    }
+
+    private var catalogNavigation: some View {
       NavigationStack(path: $path) {
         #if os(watchOS)
           List {
@@ -654,10 +665,10 @@ public struct RecipesV3AppConfiguration: Hashable, Sendable {
                 NavigationLink(value: recipe) {
                   VStack(alignment: .leading, spacing: 4) {
                     Label(recipe.title, systemImage: recipe.systemImage)
-                    .font(.headline)
+                      .font(.headline)
                     Text(recipe.summary)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                      .font(.caption)
+                      .foregroundStyle(.secondary)
                   }
                 }
               }
@@ -673,27 +684,28 @@ public struct RecipesV3AppConfiguration: Hashable, Sendable {
           }
         #endif
       }
-      #if !os(watchOS)
-        .safeAreaInset(edge: .top, spacing: 0) {
-          HStack {
-            Label(
-              statusTitle,
-              systemImage: statusSymbol
-            )
-            .foregroundStyle(statusColor)
-            Spacer()
-          }
-          .font(.caption)
-          .padding(.horizontal)
-          .padding(.vertical, 8)
-          #if os(tvOS)
-            .background(Color.black.opacity(0.2))
-          #else
-            .background(.bar)
-          #endif
-        }
-      #endif
     }
+
+    #if !os(watchOS)
+      private var transportStatusBanner: some View {
+        HStack {
+          Label(
+            statusTitle,
+            systemImage: statusSymbol
+          )
+          .foregroundStyle(statusColor)
+          Spacer()
+        }
+        .font(.caption)
+        .padding(.horizontal)
+        .padding(.vertical, 8)
+        #if os(tvOS)
+          .background(Color.black.opacity(0.2))
+        #else
+          .background(.bar)
+        #endif
+      }
+    #endif
 
     private var statusTitle: String {
       guard syncRoute.isDesertRequired, let connectionStatus else {

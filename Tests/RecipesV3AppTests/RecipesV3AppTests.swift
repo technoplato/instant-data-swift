@@ -247,6 +247,44 @@ struct RecipesV3AppTests {
   }
 
   @Test
+  func catalogKeepsTransportBannerOutsideNavigationContainer() throws {
+    let packageRoot = URL(fileURLWithPath: #filePath)
+      .deletingLastPathComponent()
+      .deletingLastPathComponent()
+      .deletingLastPathComponent()
+    let source = try String(
+      contentsOf: packageRoot.appendingPathComponent(
+        "Sources/RecipesV3App/RecipesV3App.swift"
+      ),
+      encoding: .utf8
+    )
+    let catalogStart = try #require(
+      source.range(of: "public struct RecipesV3CatalogScreen: View {")
+    )
+    let catalogEnd = try #require(
+      source.range(of: "public struct RecipesV3RecipeScreen: View {")
+    )
+    let catalogSource = source[catalogStart.lowerBound..<catalogEnd.lowerBound]
+
+    let catalogLines = catalogSource.split(separator: "\n").map {
+      $0.trimmingCharacters(in: .whitespaces)
+    }
+    let containerLine = try #require(
+      catalogLines.firstIndex(of: "VStack(spacing: 0) {")
+    )
+    expectNoDifference(
+      Array(catalogLines[containerLine...containerLine + 3]),
+      [
+        "VStack(spacing: 0) {",
+        "transportStatusBanner",
+        "catalogNavigation",
+        "}",
+      ]
+    )
+    #expect(catalogSource.contains(".safeAreaInset(edge: .top") == false)
+  }
+
+  @Test
   func requiredDesertTransportErrorClearsOnlyAfterRecoverySucceeds() {
     var blockingError: RecipesV3BlockingError?
 
