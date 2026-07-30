@@ -6,6 +6,14 @@ commit SHA, and high-level reason. Changelog-only bookkeeping commits are
 visible in Git history but are not self-recorded because a commit cannot
 contain its own final SHA.
 
+## July 30, 2026 at 10:01:56 AM EDT
+
+- Repository: `instant-data-swift`
+- Commit: `ebfdbf6b772d571ad7f5ff43273381f93e5f6006`
+- High-level reason: Replace the unavailable tvOS bar material with a
+  platform-supported status-banner background so the all-platform Recipes
+  build remains fail-loud and portable after exposing every Desert recipe.
+
 ## July 30, 2026 at 9:57:28 AM EDT
 
 - Repository: `instant-data-swift`

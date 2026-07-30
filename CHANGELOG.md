@@ -4,6 +4,21 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## July 30th, 2026 at 10:02:00 a.m. EDT — `ebfdbf6b772d` Keep the Recipes status banner portable
+
+- **Implementation commit:** `ebfdbf6b772d571ad7f5ff43273381f93e5f6006`
+- **Change:** Keep the forced Desert status banner buildable on tvOS
+- **Details:**
+  - Use a tvOS-supported color background while preserving the bar material on macOS and iOS.
+  - Resolve the fail-loud all-platform build error exposed after enabling every recipe without changing shared route or recipe state.
+  - Re-run 46 focused Recipes and presence tests before the clean all-platform rebuild.
+- **Files:**
+  - `Sources/RecipesV3App/RecipesV3App.swift` — Select a tvOS-compatible status-banner background at compile time.
+- **User context (verbatim):**
+  > Get the rest of the recipes working with this approach
+  > fail loudly if the smoke tests and existing demos don’t work
+- **SpecStory:** unavailable — This work was performed in Codex desktop; no verified Codex CLI capture exists for /Users/laptop/Sync/desert, and public sharing was not authorized.
+
 ## July 30th, 2026 at 9:57:27 a.m. EDT — `88223770c12c` Enable all Recipes V3 desert lanes
 
 - **Implementation commit:** `88223770c12ccd468ba413fb4aa7e0932a00b137`
