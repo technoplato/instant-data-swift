@@ -6,6 +6,15 @@ commit SHA, and high-level reason. Changelog-only bookkeeping commits are
 visible in Git history but are not self-recorded because a commit cannot
 contain its own final SHA.
 
+## July 30, 2026 at 6:13:15 AM EDT
+
+- Repository: `foldkit`
+- Commit: `80c1969ade21ff69dc15fde3e43988f4c9f63ee1`
+- High-level reason: Add and package a Foldkit-native companion skill family
+  for composable architecture, Schema modeling, Effect dependencies, shared
+  state, navigation, testing, views, and portable client hosts without
+  importing the separate ts-pfw runtime contract.
+
 ## July 30, 2026 at 2:36:38 AM EDT
 
 - Repository: `realtime-voice-sqlite-instant` (Scribe)
