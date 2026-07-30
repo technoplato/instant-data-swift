@@ -119,6 +119,7 @@
 			buildPhases = (
 				D8C1149A269CC9667F98E852 /* Sources */,
 				3A0FDFCDF474FF0B30E70A92 /* Frameworks */,
+				4FCF3123E0E37E01B455AB6E /* Embed clean Git build provenance */,
 			);
 			buildRules = (
 			);
@@ -138,6 +139,7 @@
 			buildPhases = (
 				8D18097FDEB14772A584A725 /* Sources */,
 				5B7A10E72773B1D4F3CA2444 /* Frameworks */,
+				161FBFB9480918829B629742 /* Embed clean Git build provenance */,
 			);
 			buildRules = (
 			);
@@ -225,6 +227,47 @@
 		};
 /* End PBXProject section */
 
+/* Begin PBXShellScriptBuildPhase section */
+		161FBFB9480918829B629742 /* Embed clean Git build provenance */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			name = "Embed clean Git build provenance";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "set -euo pipefail\nprovenance=\"$DERIVED_FILE_DIR/BuildProvenance.json\"\nartifact=\"$TARGET_BUILD_DIR/$WRAPPER_NAME\"\nresources=\"$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH\"\npython3 \"$SRCROOT/../../scripts/change-log/build_provenance.py\" \\\n  --repo \"$SRCROOT/../..\" \\\n  --output \"$provenance\" \\\n  --artifact-location \"$artifact\" \\\n  --project-name \"InstantRecipesV3\" \\\n  --configuration \"$CONFIGURATION\" \\\n  --platform \"$PLATFORM_NAME\" \\\n  --architecture \"$ARCHS\"\nmkdir -p \"$resources\"\ncp \"$provenance\" \"$resources/BuildProvenance.json\"\n";
+		};
+		4FCF3123E0E37E01B455AB6E /* Embed clean Git build provenance */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			name = "Embed clean Git build provenance";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "set -euo pipefail\nprovenance=\"$DERIVED_FILE_DIR/BuildProvenance.json\"\nartifact=\"$TARGET_BUILD_DIR/$WRAPPER_NAME\"\nresources=\"$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH\"\npython3 \"$SRCROOT/../../scripts/change-log/build_provenance.py\" \\\n  --repo \"$SRCROOT/../..\" \\\n  --output \"$provenance\" \\\n  --artifact-location \"$artifact\" \\\n  --project-name \"InstantRecipesV3\" \\\n  --configuration \"$CONFIGURATION\" \\\n  --platform \"$PLATFORM_NAME\" \\\n  --architecture \"$ARCHS\"\nmkdir -p \"$resources\"\ncp \"$provenance\" \"$resources/BuildProvenance.json\"\n";
+		};
+/* End PBXShellScriptBuildPhase section */
+
 /* Begin PBXSourcesBuildPhase section */
 		5539EC9C789A48D3D7E1777B /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
@@ -285,6 +328,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				COMBINE_HIDPI_IMAGES = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = "macOS-Info.plist";
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -306,6 +350,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				COMBINE_HIDPI_IMAGES = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = "macOS-Info.plist";
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -327,6 +372,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = "iOS-Info.plist";
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
@@ -349,6 +395,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = "iOS-Info.plist";
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
