@@ -4,6 +4,26 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## July 30th, 2026 at 11:36:52 a.m. EDT — `8707058d0f9a` Exercise all recipes over the desert bridge
+
+- **Implementation commit:** `8707058d0f9a31a01ba2906c4a2379412fff5ba2`
+- **Change:** Run every Recipes V3 contract across the real Desert network bridge
+- **Details:**
+  - Accept the exact id-filtered limit-one query emitted by @FetchOne while preserving loud rejection for broader pagination.
+  - Expose and prefill nonempty local magic codes without changing cloud challenges that intentionally return no code.
+  - Move the strict eight-recipe smoke from two in-process clients to an in-process host plus a Network.framework peer, and verify both guest and magic-code Auth independently.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantDesertCoordinator.swift` — Support only the exact FetchOne limit-one query shape required by Merge Tile Game.
+  - `Sources/AuthV3App/AuthApp.swift` — Make local magic-code verification usable from the offline recipe UI.
+  - `Tests/InstantSwiftDataCoreTests/InstantDesertCoordinatorTests.swift` — Regress the id-filtered FetchOne wire query without widening pagination support.
+  - `Tests/AuthV3AppTests/AuthV3AppTests.swift` — Preserve cloud messaging while proving local code visibility and autofill.
+  - `Tests/RecipesV3AppTests/RecipesV3DesertSmokeTests.swift` — Exercise all eight recipe contracts through a real Network.framework peer.
+  - `validation/verify-recipes-v3-desert-smoke.sh` — Reject missing recipes or the wrong host, peer, route, adapter, and transport evidence.
+- **User context (verbatim):**
+  > Get the rest of the recipes working with this approach
+  > continue working please until these are function
+- **SpecStory:** unavailable — This work was performed in Codex desktop; no verified Codex CLI capture exists for /Users/laptop/Sync/desert, and public sharing was not authorized.
+
 ## July 30th, 2026 at 10:02:00 a.m. EDT — `ebfdbf6b772d` Keep the Recipes status banner portable
 
 - **Implementation commit:** `ebfdbf6b772d571ad7f5ff43273381f93e5f6006`

@@ -6,6 +6,15 @@ commit SHA, and high-level reason. Changelog-only bookkeeping commits are
 visible in Git history but are not self-recorded because a commit cannot
 contain its own final SHA.
 
+## July 30, 2026 at 11:36:44 AM EDT
+
+- Repository: `instant-data-swift`
+- Commit: `8707058d0f9a31a01ba2906c4a2379412fff5ba2`
+- High-level reason: Exercise every Recipes V3 contract through an actual
+  Network.framework Desert peer, support the exact Merge Tile `@FetchOne`
+  limit-one query, and make local magic-code Auth usable without weakening
+  fail-loud cloud and query boundaries.
+
 ## July 30, 2026 at 10:01:56 AM EDT
 
 - Repository: `instant-data-swift`
