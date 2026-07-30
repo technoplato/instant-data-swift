@@ -602,7 +602,11 @@ public struct RecipesV3AppConfiguration: Hashable, Sendable {
           .font(.caption)
           .padding(.horizontal)
           .padding(.vertical, 8)
-          .background(.bar)
+          #if os(tvOS)
+            .background(Color.black.opacity(0.2))
+          #else
+            .background(.bar)
+          #endif
         }
       #endif
     }
