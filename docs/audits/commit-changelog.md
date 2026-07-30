@@ -6,6 +6,14 @@ commit SHA, and high-level reason. Changelog-only bookkeeping commits are
 visible in Git history but are not self-recorded because a commit cannot
 contain its own final SHA.
 
+## July 30, 2026 at 9:01:12 AM EDT
+
+- Repository: `instant-data-swift`
+- Commit: `209713ebd66ea060e284b001f46cae9aaf3a6332`
+- High-level reason: Normalize the Desert coordinator's generated schema through
+  the runtime attribute store so managed ids are advertised and real app
+  mutations can resolve, acknowledge, and refresh connected peers.
+
 ## July 30, 2026 at 8:53:47 AM EDT
 
 - Repository: `instant-data-swift`

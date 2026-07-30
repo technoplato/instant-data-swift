@@ -4,6 +4,20 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## July 30th, 2026 at 9:01:09 a.m. EDT — `209713ebd66e` Normalize desert coordinator managed ids
+
+- **Implementation commit:** `209713ebd66ea060e284b001f46cae9aaf3a6332`
+- **Change:** Normalize managed ids for desert replication
+- **Details:**
+  - Normalize coordinator attributes through the same AttributeStore path as runtime caches so generated schemas advertise synthesized namespace id attributes to connected peers.
+  - Exercise the exact generated-schema shape without managed ids in the two-runtime public observation test, covering transaction encoding, acknowledgement, and peer refresh.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantDesertCoordinator.swift` — Normalize generated schemas before constructing coordinator lookup and init-ok representations.
+  - `Tests/InstantSwiftDataCoreTests/InstantDesertCoordinatorTests.swift` — Regress cross-runtime creation when the input schema omits managed primary keys.
+- **User context (verbatim):**
+  > Go ahead and get a prototype working and try it on iOS sim and Mac
+- **SpecStory:** unavailable — This work was performed in Codex desktop; no verified Codex CLI capture exists for /Users/laptop/Sync/desert, and public sharing was not authorized.
+
 ## July 30th, 2026 at 8:53:45 a.m. EDT — `32d36be23d1b` Bind explicit desert ports through one Network endpoint
 
 - **Implementation commit:** `32d36be23d1be1a1796fc19c4724e2e5d9dac0ba`
