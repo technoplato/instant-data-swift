@@ -6,6 +6,14 @@ commit SHA, and high-level reason. Changelog-only bookkeeping commits are
 visible in Git history but are not self-recorded because a commit cannot
 contain its own final SHA.
 
+## July 30, 2026 at 12:02:05 AM EDT
+
+- Repository: `realtime-voice-sqlite-instant` (Scribe)
+- Commit: `c2d1c2737f9e65a71044deb6162d37f91e54f3f5`
+- High-level reason: Add typed issue success criteria to the dependency-light
+  Swift schema, align their encoded shape and legacy default with Foldkit, and
+  prove lossless Instant payload persistence with focused tests.
+
 ## July 29, 2026 at 11:58:01 PM EDT
 
 - Repository: `realtime-voice-sqlite-instant` (Scribe)
