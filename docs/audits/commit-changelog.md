@@ -6,6 +6,13 @@ commit SHA, and high-level reason. Changelog-only bookkeeping commits are
 visible in Git history but are not self-recorded because a commit cannot
 contain its own final SHA.
 
+## July 30, 2026 at 2:28:47 AM EDT
+
+- Repository: `realtime-voice-sqlite-instant` (Scribe)
+- Commit: `f1064d4d27eeaa4e968b7f626fd12e464cd38e96`
+- High-level reason: Freeze the selected transcriber identity at recording
+  start so an unavailable Apple session cannot be mislabeled as Deepgram.
+
 ## July 30, 2026 at 2:15:55 AM EDT
 
 - Repository: `realtime-voice-sqlite-instant` (Scribe)
