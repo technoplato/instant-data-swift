@@ -6,6 +6,14 @@ commit SHA, and high-level reason. Changelog-only bookkeeping commits are
 visible in Git history but are not self-recorded because a commit cannot
 contain its own final SHA.
 
+## July 30, 2026 at 3:24:25 PM EDT
+
+- Repository: `instant-data-swift`
+- Commit: `fac01a2470f08b39a78f3d7a69b3bd11342f9554`
+- High-level reason: Let every Recipes V3 screen switch persistently between
+  Normal and fail-loud Desert runtimes while keeping storage, dependencies,
+  transport ownership, auth work, and teardown scoped to the selected client.
+
 ## July 30, 2026 at 3:02:21 PM EDT
 
 - Repository: `realtime-voice-sqlite-instant` (Scribe)

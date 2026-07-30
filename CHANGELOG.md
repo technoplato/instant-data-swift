@@ -4,6 +4,33 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## July 30th, 2026 at 3:24:19 p.m. EDT — `fac01a2470f0` Add switchable Recipes desert mode
+
+- **Implementation commit:** `fac01a2470f08b39a78f3d7a69b3bd11342f9554`
+- **Change:** Add a persistent Normal/Desert mode setting to the shared Recipes V3 demo and move every recipe onto the selected scoped Instant client.
+- **Details:**
+  - Mac defaults to a loopback Desert host and iOS Simulator defaults to its peer; explicit current or desert-required launch routes remain locked for deterministic automation.
+  - Mode transitions remove the outgoing recipe subtree, close its client, stop an owned host, and only then bootstrap the replacement runtime with separate Normal and Desert persistence identities.
+  - Fetch observation, rooms, presence, topic publication, and auth observation/actions honor the scoped client; failed Desert peers remain recoverable through the visible mode toggle without cloud fallback.
+  - Focused lifecycle tests, fail-loud route tests, and the strict all-eight Recipes Desert smoke gate cover the implemented composition boundary.
+- **Files:**
+  - `Examples/RecipesV3/README.md` — Document interactive mode use, identity isolation, automation locking, and prototype limits.
+  - `Sources/InstantSwiftData/InstantAuth.swift` — Route auth observation and default actions through the scoped client and cancel owned work on teardown.
+  - `Sources/InstantSwiftData/InstantPresence.swift` — Resolve the SwiftUI-scoped client through a DynamicProperty modifier.
+  - `Sources/InstantSwiftData/InstantRoom.swift` — Resolve the SwiftUI-scoped client through a DynamicProperty modifier.
+  - `Sources/InstantSwiftData/InstantSwiftData.swift` — Give clients stable copy identity and route automatic FetchAll, FetchOne, and Fetch observation through the scoped client.
+  - `Sources/InstantSwiftData/InstantTopic.swift` — Route topic observation and default publication through the scoped client.
+  - `Sources/RecipesV3App/RecipesV3App.swift` — Implement persisted mode configuration, fail-loud switching, teardown ordering, UI status, and recipe-scoped dependency composition.
+  - `Sources/RecipesV3Executable/main.swift` — Install the shared app-level demo mode model at the native composition root.
+  - `Tests/InstantSwiftDataTests/V3AuthLoginFixtureTests.swift` — Verify scoped auth actions, stable and replacement client identity, and teardown cancellation.
+  - `Tests/InstantSwiftDataTests/V3PlaybackFixtureTests.swift` — Verify default topic publication uses the installed SwiftUI-scoped client.
+  - `Tests/RecipesV3AppTests/RecipesV3AppTests.swift` — Verify persistence, precedence, switching, recovery, helper routing, and actual separated mutations.
+  - `docs/plans/desert-island-sync.md` — Record the implemented toggle seam, evidence boundary, and remaining projected-fetch follow-up.
+- **User context (verbatim):**
+  > Can you add a setting to toggle desert desert mode and normal mode, please for the demo apps
+  > Get the rest of the recipes working with this approach
+- **SpecStory:** unavailable — This work was performed in Codex desktop; no verified Codex CLI capture exists for /Users/laptop/Sync/desert, and public sharing was not authorized.
+
 ## July 30th, 2026 at 12:55:33 p.m. EDT — `b95f60abf4fd` Fix iOS Recipes navigation below status banner
 
 - **Implementation commit:** `b95f60abf4fdd9585d39b1a4f45a27e08f2b104b`
