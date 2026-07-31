@@ -6,6 +6,15 @@ commit SHA, and high-level reason. Changelog-only bookkeeping commits are
 visible in Git history but are not self-recorded because a commit cannot
 contain its own final SHA.
 
+## July 31, 2026 at 10:29:31 AM EDT
+
+- Repository: `realtime-voice-sqlite-instant` (Scribe)
+- Commit: `e31a56a7a20502c264db1ada0ef8ad8d5876f0ab`
+- High-level reason: Make explicitly requested physical-device deployment fail
+  closed when the target is absent or unready, add exact CoreDevice ID and name
+  selection without fallback, and bind plan and result evidence to that same
+  device identity.
+
 ## July 31, 2026 at 10:20:24 AM EDT
 
 - Repository: `realtime-voice-sqlite-instant` (Scribe)
