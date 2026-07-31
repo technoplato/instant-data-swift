@@ -6,6 +6,15 @@ commit SHA, and high-level reason. Changelog-only bookkeeping commits are
 visible in Git history but are not self-recorded because a commit cannot
 contain its own final SHA.
 
+## July 31, 2026 at 3:37:08 PM EDT
+
+- Repository: `realtime-voice-sqlite-instant` (Scribe)
+- Commit: `c109f7a369df5fffe75d76c1f8c3ffb202d06a53`
+- High-level reason: Defer the restricted user-assigned device-name entitlement
+  until Apple grants it for the iOS bundle, retain the exact restoration patch
+  in an immutable named stash, and add a root index explaining the blocker,
+  fallback behavior, and post-approval recovery steps.
+
 ## July 31, 2026 at 11:26:16 AM EDT
 
 - Repository: `realtime-voice-sqlite-instant` (Scribe)
