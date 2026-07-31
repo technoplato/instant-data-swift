@@ -6,6 +6,16 @@ commit SHA, and high-level reason. Changelog-only bookkeeping commits are
 visible in Git history but are not self-recorded because a commit cannot
 contain its own final SHA.
 
+## July 31, 2026 at 10:20:24 AM EDT
+
+- Repository: `realtime-voice-sqlite-instant` (Scribe)
+- Commit: `ecbfe82e268be472669f5103bc95b808372245e3`
+- High-level reason: Remove dedicated diagnostics-store preparation from the
+  startup critical path, bound and preserve queued evidence, stop active-recording
+  system-surface churn, keep system-audio transcription provider-neutral, and
+  add ReplayKit source diagnostics that distinguish missing callbacks,
+  conversion failures, and all-zero PCM.
+
 ## July 30, 2026 at 6:25:00 PM EDT
 
 - Repository: `realtime-voice-sqlite-instant` (Scribe)
