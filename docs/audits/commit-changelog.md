@@ -6,6 +6,40 @@ commit SHA, and high-level reason. Changelog-only bookkeeping commits are
 visible in Git history but are not self-recorded because a commit cannot
 contain its own final SHA.
 
+## August 1, 2026 at 1:14:47 AM EDT
+
+- Repository: `realtime-voice-sqlite-instant` (Scribe)
+- Commit: `68d5aad21486aa49fdde1c30f88e6d260b0268b2`
+- High-level reason: Preserve sanitized physical-iPad evidence for Recordings
+  175 and 176 with exact persisted counts, PCM duration and signal facts, build
+  provenance, and hashes while explicitly leaving screenshot causation unproven.
+
+## August 1, 2026 at 1:13:20 AM EDT
+
+- Repository: `realtime-voice-sqlite-instant` (Scribe)
+- Commit: `f3f8f33e5516ce1e00ac55067f35e11d7ea47fa0`
+- High-level reason: Add a dependency-controlled TCA health snapshot pipeline
+  that reads Voice Memos and local Instant Swift Data metadata without mutation,
+  establishes a start-now watermark, and persists only salted memo identities
+  plus aggregate Scribe counts and deltas in a private host-local SQLite store.
+
+## August 1, 2026 at 1:10:54 AM EDT
+
+- Repository: `realtime-voice-sqlite-instant` (Scribe)
+- Commit: `9185d36968a03af6f4e708787a6f4fedc78252bd`
+- High-level reason: Add a serialized regression gate with a deterministic
+  recording corpus, exact focused Instant Swift Data tests, stale-binary
+  fingerprinting, strict sub-minute acceptance, and honest separation of
+  credentialed, simulator, resource, and physical evidence lanes.
+
+## August 1, 2026 at 1:10:31 AM EDT
+
+- Repository: `realtime-voice-sqlite-instant` (Scribe)
+- Commit: `64b845fab3685d26f0bf2481333701e9db12ee94`
+- High-level reason: Preserve the latest persisted transcription word count in
+  cold recording-list projections until real timeline sections hydrate, while
+  keeping hydrated timeline words authoritative.
+
 ## July 31, 2026 at 3:37:08 PM EDT
 
 - Repository: `realtime-voice-sqlite-instant` (Scribe)
