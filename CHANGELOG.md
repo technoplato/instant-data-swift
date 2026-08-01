@@ -4,6 +4,18 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## August 1st, 2026 at 9:52:24 a.m. EDT — `6ec3cb6ac70f` docs: create Point-Free style README with comprehensive feature list and quick start guide
+
+- **Implementation commit:** `6ec3cb6ac70f135e9d8c68ceac7985795607b70d`
+- **Change:** docs: create Point-Free style README with comprehensive feature list
+- **Details:**
+  - Rewrote README.md to follow Point-Free's concise README style with what it is, why use it, quick start, code comparison tables, feature breakdown, testing, and pre-release disclaimer.
+- **Files:**
+  - `README.md` — Updated to Point-Free styled README
+- **User context (verbatim):**
+  > So I'd like you to create a README here with a comprehensive list of features. Model the README after the way point free does README's, they're very nice and concise. What it is, why you would use it, how to use it, disclaimers that it's pre-release, things like that.
+- **SpecStory:** unavailable — Codex desktop turn without specstory recording
+
 ## July 30th, 2026 at 1:11:58 p.m. EDT — `ac6ee60fb2b0` Optimize large Instant snapshot materialization
 
 - **Implementation commit:** `ac6ee60fb2b0435578138a22e8fbc798224a2d9a`
