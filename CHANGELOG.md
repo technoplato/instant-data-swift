@@ -4,6 +4,18 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## August 1st, 2026 at 9:56:47 a.m. EDT — `2a50ed044f10` docs: add InstantDB open-source platform-agnostic sync details to README
+
+- **Implementation commit:** `2a50ed044f10d026e9374585d273ae1414cb6127`
+- **Change:** docs: add InstantDB open-source platform-agnostic sync details to README
+- **Details:**
+  - Updated README.md to emphasize InstantDB as an open-source, platform-agnostic real-time sync database supporting TypeScript, React, React Native, Vue, Svelte, and Swift.
+- **Files:**
+  - `README.md` — Add InstantDB platform support overview
+- **User context (verbatim):**
+  > Note that InstantDB is an open source platform agnostic sync engine with first-class support for TypeScript of all sorts and sizes, React, React Native, View, Svelte.
+- **SpecStory:** unavailable — Codex desktop turn without specstory recording
+
 ## August 1st, 2026 at 9:52:24 a.m. EDT — `6ec3cb6ac70f` docs: create Point-Free style README with comprehensive feature list and quick start guide
 
 - **Implementation commit:** `6ec3cb6ac70f135e9d8c68ceac7985795607b70d`

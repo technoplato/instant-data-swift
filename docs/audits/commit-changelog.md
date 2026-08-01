@@ -6,6 +6,18 @@ commit SHA, and high-level reason. Changelog-only bookkeeping commits are
 visible in Git history but are not self-recorded because a commit cannot
 contain its own final SHA.
 
+## August 1, 2026 at 9:56:50 AM EDT
+
+- Repository: `instant-data-swift`
+- Commit: `2a50ed044f10d026e9374585d273ae1414cb6127`
+- High-level reason: Update README with InstantDB open-source platform-agnostic sync details across TypeScript, React, React Native, Vue, Svelte, and Swift.
+
+## August 1, 2026 at 9:54:30 AM EDT
+
+- Repository: `realtime-voice-sqlite-instant` (Scribe)
+- Commit: `5c982a7c30ef891bba44f8896b59d403cad5774c`
+- High-level reason: Audit repository secrets, extract environment variables template to .env.example, and author comprehensive README.
+
 ## August 1, 2026 at 9:52:35 AM EDT
 
 - Repository: `instant-data-swift`
