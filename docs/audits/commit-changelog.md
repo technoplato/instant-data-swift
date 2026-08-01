@@ -6,6 +6,12 @@ commit SHA, and high-level reason. Changelog-only bookkeeping commits are
 visible in Git history but are not self-recorded because a commit cannot
 contain its own final SHA.
 
+## August 1, 2026 at 10:02:20 AM EDT
+
+- Repository: `instant-data-swift`
+- Commit: `d86fe4a6c0b70c11c8b8573205c35ada954be8c3`
+- High-level reason: Add root MIT LICENSE file.
+
 ## August 1, 2026 at 9:56:50 AM EDT
 
 - Repository: `instant-data-swift`

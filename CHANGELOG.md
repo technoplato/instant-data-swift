@@ -4,6 +4,18 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## August 1st, 2026 at 10:02:22 a.m. EDT — `d86fe4a6c0b7` docs: add MIT LICENSE file
+
+- **Implementation commit:** `d86fe4a6c0b70c11c8b8573205c35ada954be8c3`
+- **Change:** docs: add MIT LICENSE file
+- **Details:**
+  - Added standard root MIT LICENSE file matching the license declaration in README.md.
+- **Files:**
+  - `LICENSE` — Add root MIT LICENSE file
+- **User context (verbatim):**
+  > Any reason not to make it public?
+- **SpecStory:** unavailable — Codex desktop turn without specstory recording
+
 ## August 1st, 2026 at 9:56:47 a.m. EDT — `2a50ed044f10` docs: add InstantDB open-source platform-agnostic sync details to README
 
 - **Implementation commit:** `2a50ed044f10d026e9374585d273ae1414cb6127`
