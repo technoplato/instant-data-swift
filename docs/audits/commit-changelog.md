@@ -6,6 +6,24 @@ commit SHA, and high-level reason. Changelog-only bookkeeping commits are
 visible in Git history but are not self-recorded because a commit cannot
 contain its own final SHA.
 
+## August 1, 2026 at 5:02:23 PM EDT
+
+- Repository: `instant-data-swift`
+- Commit: `5ae2f6b7d6f5c2904918544f7e1a578798163626`
+- High-level reason: Add newest-first PROGRESS.md tracking library-side work driven by the Scribe production-readiness plan (seam defects under diagnosis, planned RecipesV3 latency/large-list validation recipes, dedicated E2E test database with Instant-room semaphore).
+
+## August 1, 2026 at 5:02:23 PM EDT
+
+- Repository: `realtime-voice-sqlite-instant` (Scribe)
+- Commit: `3bf8a8b915514937c812ea14244433baf6887d38`
+- High-level reason: Author production-readiness master plan (docs/production-readiness-plan.md), newest-first PROGRESS.md, and getadb test-database provisioning documentation (.env.example placeholders, .gitignore coverage for .env.test).
+
+## August 1, 2026 at 10:12:45 AM EDT
+
+- Repository: `realtime-voice-sqlite-instant` (Scribe)
+- Commit: `ca1bb950b7f30440699d6d3385e7e51b811efb63`
+- High-level reason: Quote node labels and link titles in README.md Mermaid diagram to prevent syntax rendering errors.
+
 ## August 1, 2026 at 10:02:20 AM EDT
 
 - Repository: `instant-data-swift`
