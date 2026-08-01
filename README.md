@@ -29,14 +29,17 @@ Instant Swift Data is a fast, modern persistence and real-time synchronization l
 
 ## What is it?
 
-**Instant Swift Data** brings the developer experience of SwiftData and Point-Free's SQLiteData to [InstantDB](https://www.instantdb.com)—a real-time, client-side graph database. Instead of storing data exclusively in a local SQLite file or coupling sync to CloudKit, Instant Swift Data pairs a local SQLite cache with InstantDB's real-time WebSocket protocol.
+**Instant Swift Data** brings the developer experience of SwiftData and Point-Free's SQLiteData to [InstantDB](https://www.instantdb.com)—an **open-source**, platform-agnostic real-time database and sync engine. 
 
-With Instant Swift Data, you define your schema using declarative Swift value types (`struct`), query and observe data in SwiftUI using reactive property wrappers (`@FetchAll`, `@FetchOne`, `@Fetch`), and execute optimistic mutations locally that instantly sync across all connected clients (iOS, macOS, watchOS, tvOS, and Web).
+InstantDB provides first-class support for **TypeScript** (of all shapes and sizes), **React**, **React Native**, **Vue**, and **Svelte** on the web and mobile. **Instant Swift Data** extends this ecosystem to native Apple platforms, pairing a local SQLite cache with InstantDB's real-time WebSocket protocol.
+
+With Instant Swift Data, you define your schema using declarative Swift value types (`struct`), query and observe data in SwiftUI using reactive property wrappers (`@FetchAll`, `@FetchOne`, `@Fetch`), and execute optimistic mutations locally that instantly sync across all connected clients (iOS, macOS, watchOS, tvOS, Web, and backend services).
 
 ---
 
 ## Why Instant Swift Data?
 
+* **Open Source & Platform Agnostic**: Powered by InstantDB's open-source sync engine, enabling seamless real-time data sharing between native Swift apps and web/mobile clients built with TypeScript, React, React Native, Vue, or Svelte.
 * **SwiftData & SQLiteData Ergonomics**: Define models using familiar attributes and macros (`@InstantEntity`), and bind live queries directly to SwiftUI views with `@FetchAll` and `@FetchOne`.
 * **Real-Time Graph Synchronization**: Data syncs automatically across devices via InstantDB. Changes made on one device (or web app) instantly push to all other subscribed clients.
 * **Pure Value-Type Semantics**: Models are immutable Swift `struct`s, eliminating data races, reference cycle leaks, and threading issues common with `NSManagedObject` and reference-based ORMs.
