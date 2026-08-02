@@ -19,9 +19,9 @@ public struct AuthV3AppConfiguration: Hashable, Sendable {
     let configuredAppID = environment["INSTANT_APP_ID"]?
       .trimmingCharacters(in: .whitespacesAndNewlines)
     return Self(
-      appID: configuredAppID.flatMap { $0.isEmpty ? nil : $0 } ?? "auth-v3-local",
+      appID: configuredAppID.flatMap { $0.isEmpty ? nil : $0 } ?? "28c98cc4-e65b-41be-a5bc-204827f5d364",
       persistenceURL: environment["INSTANT_PERSISTENCE_PATH"].map(URL.init(fileURLWithPath:)),
-      enablesLiveSync: configuredAppID?.isEmpty == false
+      enablesLiveSync: true
     )
   }
 }
