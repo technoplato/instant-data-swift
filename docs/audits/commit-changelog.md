@@ -6,6 +6,16 @@ commit SHA, and high-level reason. Changelog-only bookkeeping commits are
 visible in Git history but are not self-recorded because a commit cannot
 contain its own final SHA.
 
+## August 2, 2026 at 5:34:02 PM EDT
+
+- Repository: `realtime-voice-sqlite-instant` (Scribe)
+- Commit: `653fb7d02ce39c82ca7cadfb1e436e5ae6faa015`
+- High-level reason: Integrate the proven shared AuthV3 account surface into
+  iPhone/iPad Settings and Mac General Settings through one TCA route, with
+  platform-owned Apple client names, shared Google/callback configuration,
+  guest/canonical session projection, loud failure state, and 4/4 focused tests
+  for issues #113 and #131.
+
 ## August 2, 2026 at 5:30:25 PM EDT
 
 - Repository: `instant-data-swift`
