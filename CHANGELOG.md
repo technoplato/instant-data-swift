@@ -4,6 +4,22 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## August 2nd, 2026 at 6:39:31 p.m. EDT — `71ccbcf13250` Reconcile accepted writes only after exact authoritative removal
+
+- **Implementation commit:** `71ccbcf132508376adb0281fd100821e1ff6c12f`
+- **Change:** Reconcile accepted writes only after exact authoritative removal
+- **Details:**
+  - Match upstream retractTriple semantics: a cardinality-one retract proves whole-slot absence only when the exact EAV value existed before the prepared authoritative transaction and the key is absent afterward.
+  - Keep server-accepted insert, retract, and merge receipts fail-closed when an unrelated retract is a no-op, including a base-absent accepted insert across relaunch; reconcile a matching-base retraction without resurrecting optimistic JSON.
+  - Verification: the committed predecessor reproduced RED with one test and two assertions; the final focused pair passed 2/2, the complete coupled gate passed 139 tests in eight suites with zero unexpected failures and five asserted known diagnostics, both library targets build, and independent review found no remaining P0/P1/P2.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — Use prepared before/final EAV state to distinguish exact authoritative removal from unrelated retract no-ops.
+  - `Tests/InstantSwiftDataCoreTests/InstantFailedMutationDiscardTests.swift` — Cover matching retraction, base-absent unrelated retraction, three accepted write shapes, persistence, and relaunch.
+  - `PROGRESS.md` — Preserve the immutable predecessor SHA, RED/GREEN sequencing correction, exact final gate, and reviewer clearance.
+- **User context (verbatim):**
+  > 17% usage remaining, please ensure you again are thoroughly documenting everything such that a cutoff would be easy to handoff to another agent. carry on
+- **SpecStory:** unavailable — Unavailable: this implementation was performed in the Codex desktop application and no verified SpecStory desktop capture URI is available.
+
 ## August 2nd, 2026 at 6:29:52 p.m. EDT — `8d02a7a8d6b7` Require explicit server acceptance and atomic rejection recovery
 
 - **Implementation commit:** `8d02a7a8d6b7000dea42be0b534e96761e3b1daf`

@@ -6,6 +6,16 @@ commit SHA, and high-level reason. Changelog-only bookkeeping commits are
 visible in Git history but are not self-recorded because a commit cannot
 contain its own final SHA.
 
+## August 2, 2026 at 6:39:23 PM EDT
+
+- Repository: `instant-data-swift`
+- Commit: `71ccbcf132508376adb0281fd100821e1ff6c12f`
+- High-level reason: Match upstream exact-value retract semantics by
+  reconciling a retained server-accepted write only when the prepared
+  authoritative transition proves the exact EAV existed before and its
+  cardinality-one key is absent afterward; base-absent and unrelated retracts
+  remain fail-closed, with the complete 139-test gate green.
+
 ## August 2, 2026 at 6:29:55 PM EDT
 
 - Repository: `instant-data-swift`
