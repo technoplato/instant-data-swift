@@ -1,5 +1,6 @@
 import CustomDump
 import Foundation
+import InstantSwiftData
 import PresenceRecipesV3App
 import Testing
 
@@ -84,19 +85,54 @@ struct ReactionsV3Tests {
   }
 
   @Test
-  func sourcePortAnimatesEachObservedValidPayloadOnceAndIgnoresUnknownNames() {
+  func sourcePortAnimatesDistinctTopicEventsEvenWhenTheirPayloadsMatch() {
     let model = ReactionsV3Model()
-    let fire = ReactionsV3Payload(name: "fire", directionAngle: 10, rotationAngle: 20)
-    let unknown = ReactionsV3Payload(name: "sparkle", directionAngle: 30, rotationAngle: 40)
-    let wave = ReactionsV3Payload(name: "wave", directionAngle: 50, rotationAngle: 60)
+    let heart = ReactionsV3Payload(name: "heart", directionAngle: 10, rotationAngle: 20)
 
-    model.observe([fire, unknown])
-    model.observe([fire, unknown, wave])
-    model.observe([fire, unknown, wave])
+    model.observe([
+      InstantTopicReceivedEvent(id: "event-1", message: heart, isLocal: false)
+    ])
+    model.observe([
+      InstantTopicReceivedEvent(id: "event-2", message: heart, isLocal: false)
+    ])
 
     expectNoDifference(
       model.animations.map(\.payload),
-      [fire, wave]
+      [heart, heart]
     )
+  }
+
+  @Test
+  func sourcePortIgnoresAReplayedEventIDAndUnknownReactionName() {
+    let model = ReactionsV3Model()
+    let fire = ReactionsV3Payload(name: "fire", directionAngle: 10, rotationAngle: 20)
+    let unknown = ReactionsV3Payload(name: "sparkle", directionAngle: 30, rotationAngle: 40)
+
+    model.observe([
+      InstantTopicReceivedEvent(id: "fire-event", message: fire, isLocal: false),
+      InstantTopicReceivedEvent(id: "unknown-event", message: unknown, isLocal: false),
+    ])
+    model.observe([
+      InstantTopicReceivedEvent(id: "fire-event", message: fire, isLocal: false),
+      InstantTopicReceivedEvent(id: "unknown-event", message: unknown, isLocal: false),
+    ])
+
+    expectNoDifference(model.animations.map(\.payload), [fire])
+  }
+
+  @Test
+  func sourcePortDoesNotDuplicateTheImmediateAnimationForALocalTopicEvent() {
+    let model = ReactionsV3Model()
+    let heart = model.reactionButtonTapped(
+      .heart,
+      directionAngle: 45,
+      rotationAngle: 270
+    )
+
+    model.observe([
+      InstantTopicReceivedEvent(id: "local-event", message: heart, isLocal: true)
+    ])
+
+    expectNoDifference(model.animations.map(\.payload), [heart])
   }
 }

@@ -45,8 +45,8 @@
         )
       )
       .instantTopic($reactions, in: room)
-      .onChange(of: reactions.messages) { _, messages in
-        model.observe(messages)
+      .onChange(of: reactions.events) { _, events in
+        model.observe(events)
       }
     }
 

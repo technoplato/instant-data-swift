@@ -269,6 +269,7 @@ import Testing
           V3PublishedTopic(
             room: try #require(room.handle),
             topic: "reaction",
+            userID: try #require(published.first?.userID),
             payload: .object(
               [
                 "emoji": .string("heart"),
@@ -310,6 +311,17 @@ import Testing
       expectNoDifference(topic.wrappedValue.loadError, nil)
       expectNoDifference(topic.wrappedValue.isLoading, false)
 
+      expectNoDifference(
+        topic.wrappedValue.events,
+        [
+          InstantTopicReceivedEvent(
+            id: "topic-message-remote",
+            message: V3PlaybackReaction(emoji: "sparkles", offsetSeconds: 4.25),
+            isLocal: false
+          )
+        ]
+      )
+
       observationTask.cancel()
       do {
         try await observationTask.value
@@ -323,6 +335,89 @@ import Testing
       ) {
         await recorder.terminationCount() == 1
       }
+    }
+
+    @Test @MainActor
+    func topicWrapperPreservesEventIdentitySourceAndABoundedWindow() async throws {
+      let recorder = V3PlaybackTopicRecorder()
+      let client = v3PlaybackTopicClient(recorder)
+      let room = V3PlaybackRooms.activeRecording("recording-topic-events")
+      let topic = Topic<V3PlaybackReaction, V3PlaybackRoomSchema.Topic>(.reaction)
+      let observationTask = Task { @MainActor in
+        try await topic.task(in: room, using: client)
+      }
+      defer { observationTask.cancel() }
+
+      try await waitForV3PlaybackRoomCondition(
+        operation: "wait for typed topic event observation"
+      ) {
+        await recorder.observed().count == 1
+      }
+
+      let publishTask = topic.wrappedValue.publish(
+        V3PlaybackReaction(emoji: "heart", offsetSeconds: 1),
+        using: client
+      )
+      await publishTask.value
+      let localUserID = try #require(await recorder.published().first?.userID)
+      let handle = try #require(room.handle)
+
+      await recorder.yield([
+        InstantRoomTopicMessage(
+          id: "local-event",
+          appID: "playback-test",
+          room: handle,
+          topic: "reaction",
+          userID: localUserID,
+          payload: .object(["emoji": .string("heart"), "offsetSeconds": .number(1)]),
+          createdAt: InstantTimestamp(milliseconds: 2_000)
+        ),
+        InstantRoomTopicMessage(
+          id: "remote-event",
+          appID: "playback-test",
+          room: handle,
+          topic: "reaction",
+          userID: "remote-user",
+          payload: .object(["emoji": .string("heart"), "offsetSeconds": .number(1)]),
+          createdAt: InstantTimestamp(milliseconds: 2_001)
+        ),
+      ])
+
+      try await waitForV3PlaybackRoomCondition(
+        operation: "wait for typed topic event identities"
+      ) {
+        await MainActor.run { topic.wrappedValue.events.count == 2 }
+      }
+      expectNoDifference(topic.wrappedValue.events.map(\.id), ["local-event", "remote-event"])
+      expectNoDifference(topic.wrappedValue.events.map(\.isLocal), [true, false])
+
+      await recorder.yield(
+        (0..<140).map { index in
+          InstantRoomTopicMessage(
+            id: "event-\(index)",
+            appID: "playback-test",
+            room: handle,
+            topic: "reaction",
+            userID: "remote-user",
+            payload: .object(
+              [
+                "emoji": .string("wave"),
+                "offsetSeconds": .number(Double(index)),
+              ]
+            ),
+            createdAt: InstantTimestamp(milliseconds: Int64(3_000 + index))
+          )
+        }
+      )
+
+      try await waitForV3PlaybackRoomCondition(
+        operation: "wait for bounded typed topic event window"
+      ) {
+        await MainActor.run { topic.wrappedValue.events.last?.id == "event-139" }
+      }
+      expectNoDifference(topic.wrappedValue.events.count, 128)
+      expectNoDifference(topic.wrappedValue.events.first?.id, "event-12")
+      expectNoDifference(topic.wrappedValue.events.last?.id, "event-139")
     }
 
     #if os(macOS)
@@ -540,6 +635,7 @@ import Testing
   private struct V3PublishedTopic: Equatable, Sendable {
     var room: InstantRoomHandle
     var topic: String
+    var userID: String
     var payload: JSONValue
   }
 
@@ -656,9 +752,14 @@ import Testing
       observe: { _ in AsyncStream { $0.finish() } },
       pendingMutations: { [] },
       localID: { $0 },
-      publishRoomTopicMessage: { room, topic, _, payload in
+      publishRoomTopicMessage: { room, topic, userID, payload in
         await recorder.recordPublished(
-          V3PublishedTopic(room: room, topic: topic, payload: payload)
+          V3PublishedTopic(
+            room: room,
+            topic: topic,
+            userID: userID ?? "",
+            payload: payload
+          )
         )
         return InstantRoomTopicMessage(
           id: "topic-message-1",

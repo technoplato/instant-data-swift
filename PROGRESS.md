@@ -6,6 +6,72 @@ production-readiness plan
 Commit-level history stays in `docs/audits/commit-changelog.md`; this file is
 the narrative of what the library must prove and why.
 
+## 2026-08-02 17:39:10 EDT — Recipes reaction, touch cursor, and logical presence fixes green
+
+- The bounded upstream-parity implementation for #127–#129 is now source
+  complete and independently rerun from scratch
+  `/private/tmp/instant-ack-review-build`. Exact selector:
+  `swift test --scratch-path /private/tmp/instant-ack-review-build --jobs 1 --filter 'ReactionsV3Tests|CustomCursorsV3Tests|AvatarStackV3Tests|V3PlaybackFixtureTests'`.
+  It exited 0: 25 tests in 4 suites passed in 0.101 seconds after a 51.90-second
+  incremental build.
+- `InstantTopic` now preserves a bounded 128-event typed window with server
+  event ID and local-source identity while keeping the existing `messages`
+  projection source-compatible. `ReactionsV3Model` uses a bounded 256-ID
+  replay guard, animates distinct identical-payload events, ignores replay of
+  the same ID, and suppresses the persisted local echo because the sender
+  already animates immediately.
+- Custom Cursors now renders explicit touch-device local feedback and an
+  accessible draggable local cursor on iPhone/iPad. Avatar Stack projects one
+  row per logical `userID` in first-seen order instead of exposing every stale
+  authenticated session. The focused app and wrapper tests cover both paths.
+- Root reviewed the complete task-owned diff and `git diff --check` passes.
+  Existing strict-format debt remains in larger pre-existing files, while the
+  newly changed focused test files and Reactions screen lint clean; no unrelated
+  broad formatting rewrite was performed.
+- #130's per-mount color change remains documented as canonical upstream
+  behavior, not a defect. Its initial board asymmetry remains open. No physical
+  iPhone/iPad post-fix behavior pass is claimed; that requires a clean committed
+  build after the separate acknowledgement slice lands.
+
+## 2026-08-02 17:37:24 EDT — Genuine server acceptance is 15/15 green
+
+- The source-compatible acknowledgement contract now records confirmation
+  provenance and emits `.serverAccepted` only for transaction-specific proof:
+  a WebSocket `transact-ok` correlated by client event ID, or a mutation
+  transport result that explicitly declares equivalent server acceptance.
+  Manual confirmation, the default local transport, local drain, and a generic
+  query refresh can still update their existing local bookkeeping but cannot
+  release `sendAwaitingServerAcceptance`. This is the exact upstream
+  `Reactor.js` refresh-versus-`transact-ok` distinction tracked under issue
+  #043, rather than a new Swift-only acceptance policy.
+- `InstantSwiftDataClient` now exposes runtime-backed failed-mutation listing,
+  retry, and discard. `InstantError` and the recovery result carry a
+  machine-readable local-state disposition: retained for retry, discarded, or
+  retained unknown. Legacy `InstantError` JSON without the optional field still
+  decodes.
+- Exact GREEN command:
+  `swift test --scratch-path /private/tmp/instant-ack-review-build --filter InstantMessageServerAcceptanceTests`.
+  Result: 15/15 Swift Testing tests passed, 0 failures, 0.497 seconds. The gate
+  includes four false-acceptance regressions, both genuine acceptance sources,
+  retained/discarded rejection state, structured server metadata, disposition
+  race prevention, timeout/cancellation durability, runtime-less fail-fast,
+  and legacy error decoding.
+- Terminal rejection implementation is now source-compiling: a known rejected
+  optimistic layer and its later successors are stripped in reverse, the
+  rejected inverse is applied, successors are replayed with rebuilt inverses,
+  and store/outbox/errored connection metadata persist in one SQLite
+  transaction. Exact compile gate:
+  `swift build --scratch-path /private/tmp/instant-ack-review-build --target InstantSwiftDataCore`;
+  result: exit 0, target build complete in 13.33 seconds. Heuristic removal by
+  matching transaction IDs has been deleted; direct retry/discard of a legacy
+  row missing both inverse and overlay state now fails loud with
+  `retainedUnknown`.
+- This remains an unstaged, uncommitted landing candidate while regressions are
+  added for zero-query rejection, relaunch, retry-once/discard, successor
+  replay, and future-skewed legacy update/delete rows. Generic live-refresh
+  tests that previously treated a matching checkpoint as acceptance must also
+  be updated to the upstream contract before the broader acceptance sweep.
+
 ## 2026-08-02 17:27:43 EDT — Recipes topic, cursor, and presence defects reach upstream-backed RED boundary
 
 - `/root/recipes_presence` claimed typed issues #127–#130 and owns only the

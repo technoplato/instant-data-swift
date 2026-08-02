@@ -84,4 +84,19 @@ struct AvatarStackV3Tests {
     expectNoDifference(model.peers.map(\.name), ["Alice", "Betty"])
     expectNoDifference(model.onlineCount, 3)
   }
+
+  @Test
+  func authenticatedSessionsProjectOneRowPerLogicalUserInFirstSeenOrder() {
+    let model = AvatarStackV3Model(profileID: "self-session")
+    model.updatePresence([
+      AvatarStackV3Presence(userID: "remote-a", name: "Alice"),
+      AvatarStackV3Presence(userID: "remote-b", name: "Betty"),
+      AvatarStackV3Presence(userID: "remote-a", name: "Alice stale session"),
+      AvatarStackV3Presence(userID: "remote-b", name: "Betty stale session"),
+    ])
+
+    expectNoDifference(model.peers.map(\.userID), ["remote-a", "remote-b"])
+    expectNoDifference(model.peers.map(\.name), ["Alice", "Betty"])
+    expectNoDifference(model.onlineCount, 3)
+  }
 }

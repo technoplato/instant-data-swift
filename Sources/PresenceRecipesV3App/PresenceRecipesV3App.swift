@@ -234,7 +234,9 @@ public struct ReactionsV3Animation: Equatable, Identifiable, Sendable {
 public final class ReactionsV3Model: ObservableObject {
   @Published public private(set) var animations: [ReactionsV3Animation] = []
 
-  private var observedMessageCount = 0
+  private let maximumObservedEventIDCount = 256
+  private var observedEventIDs: Set<String> = []
+  private var observedEventIDOrder: [String] = []
 
   public init() {}
 
@@ -253,19 +255,26 @@ public final class ReactionsV3Model: ObservableObject {
     return payload
   }
 
-  public func observe(_ payloads: [ReactionsV3Payload]) {
-    if payloads.count < observedMessageCount {
-      observedMessageCount = 0
-    }
-    let newPayloads = payloads.dropFirst(observedMessageCount)
-    observedMessageCount = payloads.count
-    for payload in newPayloads {
-      animate(payload)
+  public func observe(_ events: [InstantTopicReceivedEvent<ReactionsV3Payload>]) {
+    for event in events {
+      guard recordEventIDIfNew(event.id), !event.isLocal else { continue }
+      animate(event.message)
     }
   }
 
   public func dismissAnimation(id: ReactionsV3Animation.ID) {
     animations.removeAll { $0.id == id }
+  }
+
+  private func recordEventIDIfNew(_ id: String) -> Bool {
+    guard observedEventIDs.insert(id).inserted else { return false }
+    observedEventIDOrder.append(id)
+
+    if observedEventIDOrder.count > maximumObservedEventIDCount {
+      let expiredID = observedEventIDOrder.removeFirst()
+      observedEventIDs.remove(expiredID)
+    }
+    return true
   }
 
   private func animate(_ payload: ReactionsV3Payload) {
@@ -348,8 +357,12 @@ public final class AvatarStackV3Model: ObservableObject {
   }
 
   public func updatePresence(_ values: [AvatarStackV3Presence]) {
-    currentUser = values.first { $0.userID == profileID } ?? presence
-    peers = values.filter { $0.userID != profileID }
+    var seenUserIDs: Set<String> = []
+    let uniqueValues = values.filter { value in
+      seenUserIDs.insert(value.userID).inserted
+    }
+    currentUser = uniqueValues.first { $0.userID == profileID } ?? presence
+    peers = uniqueValues.filter { $0.userID != profileID }
   }
 }
 
@@ -574,6 +587,10 @@ public final class CustomCursorsV3Model: ObservableObject {
 
   public let profileID: String
   public let color: String
+
+  public var localCursor: CustomCursorsV3Presence? {
+    presence.cursor == nil ? nil : presence
+  }
 
   public init(profileID: String, name: String, color: String) {
     self.profileID = profileID

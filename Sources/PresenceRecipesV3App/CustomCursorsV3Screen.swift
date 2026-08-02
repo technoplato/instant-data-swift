@@ -87,6 +87,24 @@
           .italic()
           .frame(maxWidth: .infinity, maxHeight: .infinity)
 
+        HStack(spacing: 10) {
+          customCursor(name: model.presence.name, color: model.color)
+          VStack(alignment: .leading, spacing: 2) {
+            Text(model.presence.name)
+              .font(.subheadline.bold())
+            Text("Drag anywhere to move your cursor")
+              .font(.caption)
+              .foregroundStyle(.secondary)
+          }
+        }
+        .padding(10)
+        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 12))
+        .padding(12)
+        .allowsHitTesting(false)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Your custom cursor, \(model.presence.name)")
+        .accessibilityHint("Drag anywhere to move it")
+
         ForEach(model.peers) { peer in
           if let cursor = peer.cursor {
             customCursor(name: peer.name, color: cursor.color)
@@ -99,9 +117,11 @@
           }
         }
 
-        #if os(tvOS) || os(watchOS)
-          if let cursor = model.presence.cursor {
-            customCursor(name: model.presence.name, color: cursor.color)
+        #if os(iOS) || os(tvOS) || os(watchOS)
+          if let localCursor = model.localCursor,
+            let cursor = localCursor.cursor
+          {
+            customCursor(name: localCursor.name, color: cursor.color)
               .position(
                 x: proxy.size.width * cursor.xPercent / 100,
                 y: proxy.size.height * cursor.yPercent / 100
@@ -110,6 +130,8 @@
         #endif
       }
       .contentShape(Rectangle())
+      .accessibilityLabel("Custom cursor canvas")
+      .accessibilityHint("Drag anywhere to move your custom cursor")
 
       #if os(tvOS)
         surface.overlay(alignment: .bottom) { tvCursorControls }

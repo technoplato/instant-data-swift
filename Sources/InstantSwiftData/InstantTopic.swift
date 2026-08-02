@@ -4,6 +4,23 @@
   import Foundation
   import SwiftUI
 
+  public struct InstantTopicReceivedEvent<Message: Codable & Sendable>:
+    Identifiable,
+    Sendable
+  {
+    public var id: String
+    public var message: Message
+    public var isLocal: Bool
+
+    public init(id: String, message: Message, isLocal: Bool) {
+      self.id = id
+      self.message = message
+      self.isLocal = isLocal
+    }
+  }
+
+  extension InstantTopicReceivedEvent: Equatable where Message: Equatable {}
+
   public struct InstantTopicPublishedEvent<Message: Codable & Sendable>: Sendable {
     public var topicID: String
     public var message: Message
@@ -16,6 +33,7 @@
 
   @MainActor
   public final class InstantTopic<Message: Codable & Sendable>: ObservableObject {
+    @Published public private(set) var events: [InstantTopicReceivedEvent<Message>] = []
     @Published public private(set) var messages: [Message] = []
     @Published public private(set) var loadError: InstantError?
     @Published public private(set) var isLoading = false
@@ -25,6 +43,7 @@
     private var room: InstantRoomHandle?
     private var observationGeneration = 0
     private let localUserID = UUID().uuidString.lowercased()
+    private let maximumReceivedEventCount = 128
 
     fileprivate init(name: String) {
       self.name = name
@@ -37,6 +56,7 @@
       observationGeneration += 1
       let generation = observationGeneration
       self.room = room
+      events = []
       messages = []
       loadError = nil
       isLoading = true
@@ -54,9 +74,18 @@
           guard observationGeneration == generation else {
             throw CancellationError()
           }
-          messages = try rawMessages.map {
-            try InstantRoomCodableJSON.decode(Message.self, from: $0.payload)
+          let decodedEvents = try rawMessages.map { rawMessage in
+            InstantTopicReceivedEvent(
+              id: rawMessage.id,
+              message: try InstantRoomCodableJSON.decode(
+                Message.self,
+                from: rawMessage.payload
+              ),
+              isLocal: rawMessage.userID == localUserID
+            )
           }
+          messages = decodedEvents.map(\.message)
+          events = Array(decodedEvents.suffix(maximumReceivedEventCount))
           loadError = nil
           isLoading = false
         }

@@ -80,6 +80,41 @@ struct CustomCursorsV3Tests {
   }
 
   @Test
+  func touchMovementExposesVisibleLocalCustomCursorFeedbackUntilTheGestureEnds() {
+    let model = CustomCursorsV3Model(
+      profileID: "local-session",
+      name: "custom-avatar-name",
+      color: "#123456"
+    )
+
+    expectNoDifference(model.localCursor, nil)
+
+    model.movePointer(
+      clientX: 150,
+      clientY: 90,
+      frame: CursorsV3Frame(left: 100, top: 50, width: 200, height: 100)
+    )
+
+    expectNoDifference(
+      model.localCursor,
+      CustomCursorsV3Presence(
+        userID: "local-session",
+        name: "custom-avatar-name",
+        cursor: CursorsV3Cursor(
+          x: 150,
+          y: 90,
+          xPercent: 25,
+          yPercent: 40,
+          color: "#123456"
+        )
+      )
+    )
+
+    model.clearPointer()
+    expectNoDifference(model.localCursor, nil)
+  }
+
+  @Test
   func sourcePortProjectsOnlyRemoteNamedPeersWithActiveCursors() {
     let model = CustomCursorsV3Model(
       profileID: "local-session",
