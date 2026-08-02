@@ -61,6 +61,29 @@ struct MutationDeliveryTests {
     expectNoDifference(counts.flush, 0)
   }
 
+  @Test
+  func failedMutationCannotLookLikeCompletedDelivery() async throws {
+    let probe = MutationDeliveryProbe(
+      pendingResponses: [[Self.failedMutation]],
+      connectionState: .errored
+    )
+    let client = Self.client(probe: probe)
+
+    do {
+      try await client.waitForAllPendingMutations(
+        timeout: .seconds(1),
+        pollInterval: .zero
+      )
+      Issue.record("Expected a failed outbox mutation to fail the delivery boundary.")
+    } catch let error as InstantError {
+      expectNoDifference(error.code, .permissionRejected)
+      expectNoDifference(error.operation, "wait for pending mutations")
+      expectNoDifference(error.localID, "tx-failed-delivery")
+      expectNoDifference(error.serverEventID, nil)
+      expectNoDifference(error.message, "permission denied while delivering")
+    }
+  }
+
   private static let pendingMutation = PendingMutation(
     id: "tx-pending-delivery",
     createdAt: InstantTimestamp(milliseconds: 1_700_000_000_000),
@@ -68,6 +91,17 @@ struct MutationDeliveryTests {
       id: "tx-pending-delivery",
       operations: []
     )
+  )
+
+  private static let failedMutation = PendingMutation(
+    id: "tx-failed-delivery",
+    createdAt: InstantTimestamp(milliseconds: 1_700_000_000_001),
+    transaction: InstantStoreTransaction(
+      id: "tx-failed-delivery",
+      operations: []
+    ),
+    status: .failed,
+    failureMessage: "permission denied while delivering"
   )
 
   private static func client(probe: MutationDeliveryProbe) -> InstantSwiftDataClient {

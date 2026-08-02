@@ -107,9 +107,7 @@ enum InstantLiveRefreshTranslator {
     existingAttributes: [InstantAttribute],
     receivedAt: InstantTimestamp
   ) throws -> InstantLiveRefreshTranslation {
-    let confirmationMutationID = nonEmpty(refreshOK.processedTransactionID)
-      ?? nonEmpty(refreshOK.clientEventID)
-    let processedTransactionID = confirmationMutationID
+    let processedTransactionID = nonEmpty(refreshOK.processedTransactionID)
       ?? "live-refresh-\(receivedAt.milliseconds)"
     let serverAttributes = try refreshOK.attrs.map(parseAttribute)
     let attributeContext = InstantLiveRefreshAttributeContext(
@@ -170,7 +168,7 @@ enum InstantLiveRefreshTranslator {
     return InstantLiveRefreshTranslation(
       transaction: InstantStoreTransaction(id: processedTransactionID, operations: translatedOperations),
       processedTransactionID: processedTransactionID,
-      confirmationMutationID: confirmationMutationID,
+      confirmationMutationID: nil,
       attributesToMerge: attributeContext.attributesToMerge,
       queryResultReplacements: queryResultReplacements
     )

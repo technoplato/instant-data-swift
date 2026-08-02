@@ -1206,6 +1206,61 @@ public struct InstantSwiftDataClient: Sendable {
     await pendingMutationsOperation()
   }
 
+  public func failedMutations() async throws -> [PendingMutation] {
+    guard let runtime else {
+      throw InstantError(
+        code: .implementationFailed,
+        operation: "list failed Instant mutations",
+        message: "This Instant Swift Data client has no runtime outbox lifecycle.",
+        recovery: "Use a runtime-backed client to inspect retained failed mutations."
+      )
+    }
+    return await runtime.failedMutations()
+  }
+
+  @discardableResult
+  public func retryFailedMutation(id: String) async throws -> InstantFailedMutationResolution {
+    guard let runtime else {
+      throw InstantError(
+        code: .implementationFailed,
+        operation: "retry failed Instant mutation",
+        localID: id,
+        message: "This Instant Swift Data client has no runtime outbox lifecycle.",
+        recovery: "Use a runtime-backed client to retry retained failed mutations."
+      )
+    }
+    let mutation = try await runtime.retryFailedMutation(id: id)
+    return InstantFailedMutationResolution(
+      mutation: mutation,
+      localStateDisposition: .retainedForRetry
+    )
+  }
+
+  @discardableResult
+  public func discardFailedMutation(id: String) async throws -> InstantFailedMutationResolution {
+    guard let runtime else {
+      throw InstantError(
+        code: .implementationFailed,
+        operation: "discard failed Instant mutation",
+        localID: id,
+        message: "This Instant Swift Data client has no runtime outbox lifecycle.",
+        recovery: "Use a runtime-backed client to discard retained failed mutations."
+      )
+    }
+    do {
+      let mutation = try await runtime.discardFailedMutation(id: id)
+      return InstantFailedMutationResolution(
+        mutation: mutation,
+        localStateDisposition: .discarded
+      )
+    } catch var error as InstantError {
+      if error.localMutationDisposition == nil {
+        error.localMutationDisposition = .retainedUnknown
+      }
+      throw error
+    }
+  }
+
   /// Waits until every locally persisted mutation has been acknowledged by the live server.
   ///
   /// Transactions remain local-first: this method does not block `transact`. It is intended for
@@ -1238,8 +1293,24 @@ public struct InstantSwiftDataClient: Sendable {
     let deadline = clock.now.advanced(by: timeout)
     while true {
       try Task.checkCancellation()
-      let pending = await pendingMutations()
-      guard !pending.isEmpty else { return }
+      let mutations =
+        if let runtime {
+          await runtime.mutationDeliveryBarrierMutations()
+        } else {
+          await pendingMutations()
+        }
+      if let failed = mutations.first(where: { $0.status == .failed }) {
+        throw failed.rejectionError(
+          operation: "wait for pending mutations",
+          recovery: "Inspect the failed outbox mutation before retrying or discarding it."
+        )
+      }
+      let outstanding = mutations.filter { mutation in
+        mutation.status == .pending
+          || (mutation.status == .confirmed
+            && mutation.confirmationSource?.provesServerAcceptance != true)
+      }
+      guard !outstanding.isEmpty else { return }
 
       let status = try await connectionStatus()
       switch status.state {
@@ -1251,18 +1322,35 @@ public struct InstantSwiftDataClient: Sendable {
           operation: "wait for pending mutations",
           message:
             status.lastErrorMessage
-            ?? "The live Instant connection failed with \(pending.count) pending mutation(s).",
+            ?? "The live Instant connection failed with \(outstanding.count) unacknowledged mutation(s).",
           recovery: "Reconnect and retry after inspecting the live transport error."
         )
-      case .connecting, .opened, .authenticated:
+      case .connecting:
         break
+      case .opened, .authenticated:
+        await runtime?.sendOutstandingMutationsToLiveSession()
       }
 
       guard clock.now < deadline else {
+        let localOnlyConfirmation = outstanding.first { mutation in
+          mutation.status == .confirmed
+            && mutation.confirmationSource?.provesServerAcceptance != true
+        }
+        let message: String
+        if let localOnlyConfirmation {
+          message =
+            "Mutation '\(localOnlyConfirmation.id)' was confirmed only by "
+            + "\(localOnlyConfirmation.confirmationSource?.rawValue ?? "an unknown local source"), "
+            + "not by the Instant server before the delivery timeout."
+        } else {
+          message =
+            "Timed out waiting for \(outstanding.count) mutation(s) to be acknowledged by Instant."
+        }
         throw InstantError(
           code: .networkFailed,
           operation: "wait for pending mutations",
-          message: "Timed out waiting for \(pending.count) pending mutation(s) to be acknowledged.",
+          localID: localOnlyConfirmation?.id,
+          message: message,
           recovery: "Keep the process alive longer or inspect the live Instant connection."
         )
       }

@@ -130,7 +130,7 @@ import Testing
       expectNoDifference(callbacks.accepted, [])
       expectNoDifference(callbacks.failures, [])
 
-      _ = try await runtime.confirmMutation(id: mutationID)
+      _ = try await runtime.flushPendingMutations()
       await task.value
       expectNoDifference(callbacks.optimistic.count, 1)
       expectNoDifference(callbacks.accepted.map(\.recordingID), ["recording-created"])
@@ -203,7 +203,7 @@ import Testing
       )
 
       _ = try await runtime.retryMutation(id: mutationID)
-      _ = try await runtime.confirmMutation(id: mutationID)
+      _ = try await runtime.flushPendingMutations()
       try await Task.sleep(nanoseconds: 10_000_000)
 
       expectNoDifference(callbacks.optimistic.count, 1)
@@ -228,7 +228,7 @@ import Testing
         V3CreateRecordingSession(prepared: prepared, title: "Finish notes")
       )
       let createMutationID = try await waitForV3RecordingActionMutation(runtime)
-      _ = try await runtime.confirmMutation(id: createMutationID)
+      _ = try await runtime.flushPendingMutations()
       await createTask.value
 
       let attachmentCallbacks = V3RecordingAttachmentCallbacks()
@@ -269,7 +269,7 @@ import Testing
       expectNoDifference(attachmentCallbacks.accepted, [])
       expectNoDifference(attachmentCallbacks.failures, [])
 
-      _ = try await runtime.confirmMutation(id: attachmentMutationID)
+      _ = try await runtime.flushPendingMutations()
       await attachmentTask.value
       expectNoDifference(attachmentCallbacks.optimistic.count, 1)
       expectNoDifference(attachmentCallbacks.accepted.map(\.attachmentID), [
@@ -313,7 +313,7 @@ import Testing
       expectNoDifference(finishCallbacks.accepted, [])
       expectNoDifference(finishCallbacks.failures, [])
 
-      _ = try await runtime.confirmMutation(id: finishMutationID)
+      _ = try await runtime.flushPendingMutations()
       await finishTask.value
       expectNoDifference(finishCallbacks.optimistic.count, 1)
       expectNoDifference(finishCallbacks.accepted.map(\.durationMilliseconds), [12_750])
@@ -349,7 +349,7 @@ import Testing
         V3CreateRecordingSession(prepared: prepared, title: "Rejected actions")
       )
       let createMutationID = try await waitForV3RecordingActionMutation(runtime)
-      _ = try await runtime.confirmMutation(id: createMutationID)
+      _ = try await runtime.flushPendingMutations()
       await createTask.value
 
       let attachmentCallbacks = V3RecordingAttachmentCallbacks()
@@ -383,7 +383,7 @@ import Testing
         ["attachment creation denied"]
       )
       _ = try await runtime.retryMutation(id: attachmentMutationID)
-      _ = try await runtime.confirmMutation(id: attachmentMutationID)
+      _ = try await runtime.flushPendingMutations()
       try await Task.sleep(nanoseconds: 10_000_000)
       expectNoDifference(attachmentCallbacks.optimistic.count, 1)
       expectNoDifference(attachmentCallbacks.accepted, [])
@@ -418,7 +418,7 @@ import Testing
         ["recording finish denied"]
       )
       _ = try await runtime.retryMutation(id: finishMutationID)
-      _ = try await runtime.confirmMutation(id: finishMutationID)
+      _ = try await runtime.flushPendingMutations()
       try await Task.sleep(nanoseconds: 10_000_000)
       expectNoDifference(finishCallbacks.optimistic.count, 1)
       expectNoDifference(finishCallbacks.accepted, [])
@@ -1204,7 +1204,18 @@ import Testing
           V3CaptureRecording.instantAttributes
           + V3CaptureTranscription.instantAttributes
           + V3CaptureMember.instantAttributes
-          + V3CaptureAttachment.instantAttributes
+          + V3CaptureAttachment.instantAttributes,
+        mutationTransport: InstantMutationTransportClient { request in
+          InstantMutationTransportResponse(
+            results: request.mutations.map {
+              InstantMutationTransportResult(
+                mutationID: $0.mutationID,
+                outcome: .confirmed,
+                acceptance: .serverAccepted
+              )
+            }
+          )
+        }
       )
     )
   }

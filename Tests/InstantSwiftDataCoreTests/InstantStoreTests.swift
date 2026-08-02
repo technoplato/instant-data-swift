@@ -4,8 +4,88 @@ import SQLite3
 @testable import InstantSwiftDataCore
 import Testing
 
+private enum LiveQueryPruningReceipt: String, CaseIterable, Sendable {
+  case manual
+  case localDrain
+  case localTransport
+  case serverTransport
+  case legacyFailed
+
+  var status: InstantMutationStatus {
+    self == .legacyFailed ? .failed : .confirmed
+  }
+
+  var confirmationSource: InstantMutationConfirmationSource? {
+    switch self {
+    case .manual: .manual
+    case .localDrain: .localDrain
+    case .localTransport: .localTransport
+    case .serverTransport: .serverTransport
+    case .legacyFailed: nil
+    }
+  }
+
+  var optimisticOverlayState: InstantOptimisticOverlayState? {
+    self == .legacyFailed ? nil : .applied
+  }
+}
+
 @Suite(.serialized)
 struct InstantStoreTests {
+  @Test
+  func rollbackPreparationIsScopedToChangedEntitiesInLargeStore() async throws {
+    let attribute = InstantAttribute(
+      id: "largeRows/value",
+      namespace: "largeRows",
+      name: "value",
+      valueType: .number
+    )
+    let timestamp = InstantTimestamp(milliseconds: 1)
+    let triples = (0..<50_000).map { index in
+      InstantTriple(
+        entityID: "large-row-\(index)",
+        attributeID: attribute.id,
+        value: .number(Double(index)),
+        txID: "seed-\(index)",
+        txTime: timestamp
+      )
+    }
+    let store = InstantStore(
+      snapshot: InstantStoreSnapshot(attributes: [attribute], triples: triples)
+    )
+    let prepared = try await store.prepareCurrent(
+      InstantStoreTransaction(
+        id: "tx-one-row-of-50k",
+        operations: [
+          .merge(
+            InstantTriple(
+              entityID: "large-row-25000",
+              attributeID: attribute.id,
+              value: .number(99_999),
+              txID: "tx-one-row-of-50k",
+              txTime: InstantTimestamp(milliseconds: 2)
+            )
+          )
+        ]
+      )
+    )
+
+    let inspectedTripleVersions =
+      prepared.previousChangedEntityTriples.values.reduce(0) { $0 + $1.count }
+      + prepared.changedEntityTriples.values.reduce(0) { $0 + $1.count }
+    expectNoDifference(prepared.result.tripleCount, 50_000)
+    expectNoDifference(prepared.result.changedEntityIDs, ["large-row-25000"])
+    expectNoDifference(inspectedTripleVersions, 2)
+
+    let rollback = try #require(
+      InstantRuntime.rollbackTransaction(
+        mutationID: "tx-one-row-of-50k",
+        prepared: prepared
+      )
+    )
+    expectNoDifference(rollback.operations.count, 2)
+  }
+
   @Test
   func tripleIndexesFindTheNewestTransactionTimeWithoutSnapshotOrdering() {
     let indexes = TripleIndexes(
@@ -1853,6 +1933,76 @@ struct InstantStoreTests {
       outboxChanged: true,
       metadataKey: "test.lookup-dependent-live-query-protection",
       metadataValue: "seeded",
+      metadataUpdatedAt: InstantTimestamp(milliseconds: 3),
+      expectedStoreRevision: 0,
+      expectedOutboxRevision: 0
+    )
+    expectNoDifference(didSave, true)
+
+    let application = try await persistence.pruneLiveQueryResults(
+      policy: InstantLiveQueryResultPruningPolicy(maxEntries: 0),
+      now: InstantTimestamp(milliseconds: 4)
+    )
+
+    expectNoDifference(application.result.removedQueryKeys, [])
+    expectNoDifference(
+      application.result.remainingQueryKeys,
+      [first.key, second.key]
+    )
+    expectNoDifference(
+      Set(application.state.snapshot.store.triples),
+      Set(first.triples + second.triples)
+    )
+  }
+
+  @Test(arguments: LiveQueryPruningReceipt.allCases)
+  fileprivate func liveQueryResultPruningPreservesLookupBaselinesForOutstandingOrUnknownOptimism(
+    receipt: LiveQueryPruningReceipt
+  ) async throws {
+    let cacheURL = try temporaryCacheURL()
+    let persistence = try SQLitePersistenceStore(fileURL: cacheURL)
+    try await persistence.bootstrap()
+    let firstEntityID = "protected-lookup-first-\(receipt.rawValue)"
+    let first = persistedLiveTodoResult(
+      key: "query-protected-lookup-first-\(receipt.rawValue)",
+      entityID: firstEntityID,
+      text: "First server baseline",
+      updatedAt: InstantTimestamp(milliseconds: 1)
+    )
+    let second = persistedLiveTodoResult(
+      key: "query-protected-lookup-second-\(receipt.rawValue)",
+      entityID: "protected-lookup-second-\(receipt.rawValue)",
+      text: "Second server baseline",
+      updatedAt: InstantTimestamp(milliseconds: 2)
+    )
+    let lookup = InstantLookupRef(
+      attributeID: "todos/id",
+      value: .string(firstEntityID)
+    )
+    var mutation = PendingMutation(
+      id: "protected-lookup-\(receipt.rawValue)",
+      createdAt: InstantTimestamp(milliseconds: 3),
+      transaction: InstantStoreTransaction(
+        id: "protected-lookup-\(receipt.rawValue)",
+        operations: [.deleteEntityByLookup(lookup)]
+      ),
+      status: receipt.status
+    )
+    mutation.confirmationSource = receipt.confirmationSource
+    mutation.optimisticOverlayState = receipt.optimisticOverlayState
+    let didSave = try await persistence.saveLiveRefresh(
+      InstantPersistenceSnapshot(
+        store: InstantStoreSnapshot(
+          attributes: TodoExample.attributes,
+          triples: first.triples + second.triples
+        ),
+        outbox: [mutation]
+      ),
+      queryResults: [first, second],
+      storeChanged: true,
+      outboxChanged: true,
+      metadataKey: "test.local-confirmation-lookup-live-query-protection",
+      metadataValue: receipt.rawValue,
       metadataUpdatedAt: InstantTimestamp(milliseconds: 3),
       expectedStoreRevision: 0,
       expectedOutboxRevision: 0

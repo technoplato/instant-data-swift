@@ -6,6 +6,73 @@ production-readiness plan
 Commit-level history stays in `docs/audits/commit-changelog.md`; this file is
 the narrative of what the library must prove and why.
 
+## 2026-08-02 18:28:43 EDT — #117 acknowledgement/rejection slice cleared for landing
+
+- This is the cutoff-safe replacement for the older partial 15/15 and 39/39
+  checkpoints. The acknowledgement/rejection contract is tracked by typed issue
+  #117; issue #043 is the Scribe recording-title consumer and was named in some
+  immutable older notes by mistake. Do not rewrite those historical commits:
+  use #117 for this library slice and cross-reference #043 only when the title
+  allocator consumes it.
+- With all writers interrupted and the source snapshot frozen, the exact coupled
+  selector
+  `swift test --scratch-path /private/tmp/instant-ack-review-build --filter
+  'InstantMessageServerAcceptanceTests|InstantFailedMutationDiscardTests|MutationDeliveryTests|InstantMutationLifecycleTests|V3RecordingActionFixtureTests|V3RecordingsListFixtureTests|InstantLiveTransportTests|rollbackPreparationIsScopedToChangedEntitiesInLargeStore|liveQueryResultPruningPreservesLookupBaselinesForOutstandingOrUnknownOptimism'`
+  exited 0: 136 tests in 8 suites passed in 0.906 seconds with zero unexpected
+  failures and exactly five asserted known issues. One is the intentional live
+  schema-quarantine diagnostic; four are fail-loud diagnostics proving legacy
+  unknown update/delete rows remain untouched in pending and failed states.
+- The 50,000-row inverse-capture regression is included in that final gate and
+  also passed independently in 0.188 seconds. Explicit cached target builds
+  exited 0 for both
+  `InstantSwiftDataCore` (1.59 seconds) and `InstantSwiftData` (2.30 seconds),
+  and `git diff --check` is clean.
+- The four independent-review blockers from 17:54 are now covered: every
+  terminal failure route uses atomic overlay removal; discarding an older
+  failed predecessor rebuilds and persists later inverses; local/manual/drain
+  confirmation is durable but cannot satisfy the server-acceptance barrier;
+  and overlapping same-ID automatic-retry reservations are reference counted.
+  Root also corrected two final regressions: an older optimistic mutation cannot
+  erase a newer local state even though all retained local receipts remain
+  wire-sendable, and the encoding-quarantine test now updates an independent
+  healthy entity rather than a create that rejection correctly removed.
+- A post-review diagnostic edit deliberately forced a real Runtime recompile and
+  superseded the earlier cached 126-test observation: Swift rejected `await` on
+  the right side of an `||` autoclosure in the active-retry guard. The guard now
+  awaits the reservation first and compares the local Boolean. The final 136-test
+  gate above is after that compile fix. It also proves an externally refused
+  retry/discard reports the exact durable `.retainedForRetry` state while the
+  owning rejection disposition is suspended. Adjacent manual-confirmation logs
+  now say local confirmation rather than falsely claiming server acceptance.
+- The final review found two adjacent refresh/pruning gaps and both now have
+  focused regressions. A generic server-accepted transport receipt without a
+  transaction watermark is removed only when authoritative refresh operations
+  cover every materialized effect: cardinality-many insert/retract operations
+  require exact value evidence; cardinality-one replacement requires an
+  authoritative insert; JSON merge requires the exact merge patch or a full
+  replacement insert; entity and entity-plus-namespace deletes remain scoped;
+  and lookup-based writes fail closed. An unrelated entity refresh retains and
+  replays the receipt. The post-rebuild five-case operation-coverage selector
+  passed 5/5 in 38.88 seconds. Live-query pruning
+  protects every outbox row whose optimistic overlay is not explicitly
+  `.removed`, including manual/drain/local transport, server transport, and a
+  legacy failed row with unknown (`nil`) overlay metadata. The five-case lookup
+  matrix failed before that semantic predicate and passes now.
+- One first expanded run had 131/132 passing when the unrelated opaque-cursor
+  live-query harness hit its 10-second timeout. The exact failure-only rerun
+  passed 1/1 in 0.023 seconds, and the immediately following complete selector
+  is superseded by the 136/136 green result above. This is recorded as timing
+  evidence, not hidden or relabeled as a product failure.
+- The complete current implementation boundary is 20 source/test files, not the
+  earlier 18-file audit. The two additional V3 fixture suites are required
+  contract migrations: their local `confirmMutation` shortcuts now inject an
+  explicitly server-accepting transport and call `flushPendingMutations`.
+  `PROGRESS.md` is the only documentation path to stage with that source set.
+  Nothing is staged or committed yet. The independent reviewer completed a
+  final read-only inspection and explicitly reported no remaining P0, P1, or
+  P2 findings. No Scribe build, simulator install, or physical-device
+  acceptance is claimed by this gate.
+
 ## 2026-08-02 17:54:11 EDT — P1 acknowledgement slice is no-ship pending four review blockers
 
 - Independent source review found four correctness gaps after the earlier 39/39

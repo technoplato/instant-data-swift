@@ -6,8 +6,21 @@ import Testing
 @Suite(.serialized)
 struct InstantMutationLifecycleTests {
   @Test
-  func durableConfirmationPublishesTransactionSpecificAcceptance() async throws {
-    let runtime = try await mutationLifecycleRuntime("accepted")
+  func explicitServerTransportPublishesTransactionSpecificAcceptance() async throws {
+    let runtime = try await mutationLifecycleRuntime(
+      "accepted",
+      mutationTransport: InstantMutationTransportClient { request in
+        InstantMutationTransportResponse(
+          results: request.mutations.map {
+            InstantMutationTransportResult(
+              mutationID: $0.mutationID,
+              outcome: .confirmed,
+              acceptance: .serverAccepted
+            )
+          }
+        )
+      }
+    )
     let lifecycle = try await runtime.observeMutationLifecycle(id: "tx-accepted")
     var iterator = lifecycle.makeAsyncIterator()
     let initial = await iterator.next()
@@ -24,7 +37,7 @@ struct InstantMutationLifecycleTests {
         )
       )
     )
-    _ = try await runtime.confirmMutation(id: "tx-accepted")
+    _ = try await runtime.flushPendingMutations()
 
     guard case let .serverAccepted(mutation) = await iterator.next() else {
       Issue.record("Expected transaction-specific server acceptance.")
@@ -65,14 +78,18 @@ struct InstantMutationLifecycleTests {
   }
 }
 
-private func mutationLifecycleRuntime(_ suffix: String) async throws -> InstantRuntime {
+private func mutationLifecycleRuntime(
+  _ suffix: String,
+  mutationTransport: InstantMutationTransportClient = .local
+) async throws -> InstantRuntime {
   let cacheURL = FileManager.default.temporaryDirectory
     .appendingPathComponent("instant-mutation-lifecycle-\(suffix)-\(UUID().uuidString).sqlite")
   return try await InstantRuntime.bootstrap(
     configuration: InstantRuntimeConfiguration(
       appID: "mutation-lifecycle-\(suffix)",
       persistenceURL: cacheURL,
-      initialAttributes: TodoExample.attributes
+      initialAttributes: TodoExample.attributes,
+      mutationTransport: mutationTransport
     )
   )
 }

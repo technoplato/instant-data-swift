@@ -33,14 +33,25 @@ public struct InstantMutationTransportResult: Hashable, Codable, Sendable, Ident
     case failed
   }
 
+  public enum Acceptance: String, Codable, Sendable {
+    case serverAccepted
+  }
+
   public var id: String { mutationID }
   public var mutationID: String
   public var outcome: Outcome
+  public var acceptance: Acceptance?
   public var message: String?
 
-  public init(mutationID: String, outcome: Outcome, message: String? = nil) {
+  public init(
+    mutationID: String,
+    outcome: Outcome,
+    acceptance: Acceptance? = nil,
+    message: String? = nil
+  ) {
     self.mutationID = mutationID
     self.outcome = outcome
+    self.acceptance = acceptance
     self.message = message
   }
 }
@@ -75,7 +86,8 @@ public struct InstantMutationTransportClient: Sendable {
     @Sendable (InstantMutationTransportRequest) async throws -> InstantMutationTransportResponse
 
   public init(
-    send: @escaping @Sendable (InstantMutationTransportRequest) async throws
+    send:
+      @escaping @Sendable (InstantMutationTransportRequest) async throws
       -> InstantMutationTransportResponse
   ) {
     self.send = send

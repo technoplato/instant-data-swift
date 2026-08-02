@@ -21,11 +21,107 @@ public struct InstantPreparedMessage<Change: Sendable>: Sendable {
   }
 }
 
+public enum InstantMessageFailureDisposition: Hashable, Sendable {
+  case retainForRetry
+  case discard
+}
+
 extension InstantSwiftDataClient {
+  /// Sends one typed message and returns its change only after Instant accepts the mutation.
+  ///
+  /// The optimistic write remains durable on timeout or cancellation. Server rejection also
+  /// remains retained for retry unless `onServerRejected` explicitly returns `.discard`.
+  @available(macOS 13, iOS 16, tvOS 16, watchOS 9, *)
+  public func sendAwaitingServerAcceptance<Message: InstantMessage>(
+    _ message: Message,
+    timeout: Duration = .seconds(10),
+    onServerRejected:
+      @escaping @Sendable (InstantError) async -> InstantMessageFailureDisposition = { _ in
+        .retainForRetry
+      }
+  ) async throws -> Message.Change {
+    guard timeout >= .zero else {
+      throw InstantError(
+        code: .validationFailed,
+        operation: "send Instant message awaiting server acceptance",
+        message: "The server acknowledgement timeout must be greater than or equal to zero.",
+        recovery: "Pass a non-negative timeout."
+      )
+    }
+    guard let runtime else {
+      throw InstantError(
+        code: .implementationFailed,
+        operation: "send Instant message awaiting server acceptance",
+        message: "This Instant Swift Data client has no runtime lifecycle.",
+        recovery: "Use a runtime-backed client when server acknowledgement is required."
+      )
+    }
+
+    let prepared = try await message.prepare(using: self)
+    guard !prepared.mutations.isEmpty else {
+      throw InstantError(
+        code: .validationFailed,
+        operation: "send Instant message awaiting server acceptance",
+        message: "The prepared message did not contain any mutations.",
+        recovery: "Return at least one typed mutation from InstantMessage.prepare(using:)."
+      )
+    }
+
+    let transactionID = runtime.configuration.makeID()
+    return try await runtime.withAutomaticMutationRetrySuspended(id: transactionID) {
+      let lifecycle = try await runtime.observeMutationLifecycle(id: transactionID)
+      let mutations = prepared.mutations
+      _ = try await transact(id: transactionID) {
+        for mutation in mutations {
+          mutation
+        }
+      }
+
+      let event = try await awaitInstantMessageTerminalLifecycle(
+        lifecycle,
+        transactionID: transactionID,
+        timeout: timeout
+      )
+      switch event {
+      case .serverAccepted:
+        return prepared.change
+
+      case .failed(let mutation):
+        var error = mutation.rejectionError(
+          operation: "send Instant message awaiting server acceptance",
+          recovery: "Inspect the deployed schema and permissions, then retry the action."
+        )
+        if await onServerRejected(error) == .discard {
+          do {
+            _ = try await runtime.discardFailedMutation(
+              id: mutation.id,
+              allowingActiveDisposition: true
+            )
+            error.localMutationDisposition = .discarded
+          } catch var discardError as InstantError {
+            discardError.localMutationDisposition = .retainedUnknown
+            throw discardError
+          }
+        }
+        throw error
+
+      case .waiting:
+        throw InstantError(
+          code: .implementationFailed,
+          operation: "send Instant message awaiting server acceptance",
+          localID: transactionID,
+          message: "The mutation lifecycle returned a non-terminal waiting event.",
+          recovery: "Inspect the mutation lifecycle observer implementation."
+        )
+      }
+    }
+  }
+
   @discardableResult
   public func send<Message: InstantMessage>(
     _ message: Message,
-    onOptimisticCommit: @escaping @MainActor @Sendable (borrowing Message.Change) -> Void = { _ in },
+    onOptimisticCommit:
+      @escaping @MainActor @Sendable (borrowing Message.Change) -> Void = { _ in },
     onServerAccepted: @escaping @MainActor @Sendable (borrowing Message.Change) -> Void = { _ in },
     onFailure: @escaping @MainActor @Sendable (InstantError) -> Void = { _ in }
   ) -> Task<Void, Never> {
@@ -114,13 +210,9 @@ extension InstantSwiftDataClient {
               correlationID: transactionID
             )
             return
-          case let .failed(mutation):
-            let error = InstantError(
-              code: .permissionRejected,
+          case .failed(let mutation):
+            let error = mutation.rejectionError(
               operation: "send Instant message",
-              localID: mutation.id,
-              serverEventID: mutation.id,
-              message: mutation.failureMessage ?? "The Instant server rejected the mutation.",
               recovery: "Inspect the deployed schema and permissions, then retry the action."
             )
             InstantDiagnostics.shared.record(
@@ -173,5 +265,55 @@ extension InstantSwiftDataClient {
         await onFailure(wrappedError)
       }
     }
+  }
+}
+
+@available(macOS 13, iOS 16, tvOS 16, watchOS 9, *)
+private func awaitInstantMessageTerminalLifecycle(
+  _ lifecycle: AsyncStream<InstantMutationLifecycleEvent>,
+  transactionID: String,
+  timeout: Duration
+) async throws -> InstantMutationLifecycleEvent {
+  try await withThrowingTaskGroup(of: InstantMutationLifecycleEvent.self) { group in
+    group.addTask {
+      for await event in lifecycle {
+        try Task.checkCancellation()
+        switch event {
+        case .waiting:
+          continue
+        case .serverAccepted, .failed:
+          return event
+        }
+      }
+      try Task.checkCancellation()
+      throw InstantError(
+        code: .implementationFailed,
+        operation: "send Instant message awaiting server acceptance",
+        localID: transactionID,
+        message: "The mutation lifecycle ended before a server result arrived.",
+        recovery: "Inspect the runtime lifecycle observer and live connection."
+      )
+    }
+    group.addTask {
+      try await ContinuousClock().sleep(for: timeout)
+      throw InstantError(
+        code: .networkFailed,
+        operation: "send Instant message awaiting server acceptance",
+        localID: transactionID,
+        message: "Timed out waiting for mutation '\(transactionID)' to be accepted by Instant.",
+        recovery: "Inspect the live connection and retained outbox mutation before retrying."
+      )
+    }
+    defer { group.cancelAll() }
+    guard let event = try await group.next() else {
+      throw InstantError(
+        code: .implementationFailed,
+        operation: "send Instant message awaiting server acceptance",
+        localID: transactionID,
+        message: "No mutation lifecycle task produced a result.",
+        recovery: "Inspect the acknowledgement task group implementation."
+      )
+    }
+    return event
   }
 }

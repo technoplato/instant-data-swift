@@ -282,7 +282,7 @@ import Testing
       try await Task.sleep(nanoseconds: 10_000_000)
       expectNoDifference(recorder.accepted, [])
 
-      _ = try await runtime.confirmMutation(id: mutationID)
+      _ = try await runtime.flushPendingMutations()
       await task.value
       expectNoDifference(recorder.optimistic.count, 1)
       expectNoDifference(recorder.accepted.map(\.newTitle), ["Edited walk title"])
@@ -330,7 +330,7 @@ import Testing
       )
 
       _ = try await runtime.retryMutation(id: mutationID)
-      _ = try await runtime.confirmMutation(id: mutationID)
+      _ = try await runtime.flushPendingMutations()
       try await Task.sleep(nanoseconds: 10_000_000)
       expectNoDifference(recorder.optimistic.count, 1)
       expectNoDifference(recorder.accepted, [])
@@ -941,7 +941,18 @@ import Testing
       configuration: InstantRuntimeConfiguration(
         appID: "v3-recordings-message-\(suffix)",
         persistenceURL: cacheURL,
-        initialAttributes: V3RecordingListRow.instantAttributes
+        initialAttributes: V3RecordingListRow.instantAttributes,
+        mutationTransport: InstantMutationTransportClient { request in
+          InstantMutationTransportResponse(
+            results: request.mutations.map {
+              InstantMutationTransportResult(
+                mutationID: $0.mutationID,
+                outcome: .confirmed,
+                acceptance: .serverAccepted
+              )
+            }
+          )
+        }
       )
     )
     let client = InstantSwiftDataClient(runtime: runtime)
@@ -955,7 +966,7 @@ import Testing
         V3RecordingListRow.durationMilliseconds.set(0)
       )
     }
-    _ = try await runtime.confirmMutation(id: "seed-\(suffix)")
+    _ = try await runtime.flushPendingMutations()
     return (client, runtime)
   }
 

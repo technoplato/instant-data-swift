@@ -24,6 +24,7 @@ struct PreparedStoreMutation: Sendable {
   var sequence: Int64
   var attributes: AttributeStore
   var indexes: TripleIndexes
+  var previousChangedEntityTriples: [String: [InstantTriple]]
   private var preparedSnapshot: InstantStoreSnapshot?
 
   var snapshot: InstantStoreSnapshot {
@@ -50,6 +51,7 @@ struct PreparedStoreMutation: Sendable {
       sequence: sequence,
       attributes: attributes,
       indexes: TripleIndexes(triples: snapshot.triples, attributes: attributes),
+      previousChangedEntityTriples: [:],
       snapshot: snapshot
     )
   }
@@ -59,12 +61,14 @@ struct PreparedStoreMutation: Sendable {
     sequence: Int64,
     attributes: AttributeStore,
     indexes: TripleIndexes,
+    previousChangedEntityTriples: [String: [InstantTriple]] = [:],
     snapshot: InstantStoreSnapshot? = nil
   ) {
     self.result = result
     self.sequence = sequence
     self.attributes = attributes
     self.indexes = indexes
+    self.previousChangedEntityTriples = previousChangedEntityTriples
     self.preparedSnapshot = snapshot
   }
 }
@@ -438,11 +442,17 @@ public actor InstantStore {
       tripleCount: indexes.tripleCount,
       emissions: []
     )
+    let previousChangedEntityTriples = Dictionary(
+      uniqueKeysWithValues: changedEntityIDs.map { entityID in
+        (entityID, initialIndexes.triples(entityID: entityID))
+      }
+    )
     return PreparedStoreMutation(
       result: result,
       sequence: nextSequence,
       attributes: attributes,
-      indexes: indexes
+      indexes: indexes,
+      previousChangedEntityTriples: previousChangedEntityTriples
     )
   }
 
@@ -538,7 +548,8 @@ public actor InstantStore {
       result: result,
       sequence: sequence,
       attributes: prepared.attributes,
-      indexes: prepared.indexes
+      indexes: prepared.indexes,
+      previousChangedEntityTriples: prepared.previousChangedEntityTriples
     )
   }
 

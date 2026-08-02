@@ -332,6 +332,8 @@ public struct InstantLiveErrorMessage: Hashable, Sendable {
   public var status: Int?
   public var type: String?
   public var hint: InstantLiveJSONValue?
+  public var traceID: String?
+  public var originalEventTraceID: String?
   public var originalEvent: InstantLiveMessage?
 
   public init(
@@ -340,6 +342,8 @@ public struct InstantLiveErrorMessage: Hashable, Sendable {
     status: Int? = nil,
     type: String? = nil,
     hint: InstantLiveJSONValue? = nil,
+    traceID: String? = nil,
+    originalEventTraceID: String? = nil,
     originalEvent: InstantLiveMessage? = nil
   ) {
     self.clientEventID = clientEventID
@@ -347,6 +351,8 @@ public struct InstantLiveErrorMessage: Hashable, Sendable {
     self.status = status
     self.type = type
     self.hint = hint
+    self.traceID = traceID
+    self.originalEventTraceID = originalEventTraceID
     self.originalEvent = originalEvent
   }
 }
@@ -670,6 +676,8 @@ public enum InstantLiveServerEvent: Hashable, Sendable {
           status: message.fields["status"]?.intValue,
           type: message.fields["type"]?.stringValue,
           hint: message.fields["hint"],
+          traceID: message.fields["trace-id"]?.stringValue,
+          originalEventTraceID: originalEvent?.fields["trace-id"]?.stringValue,
           originalEvent: originalEvent
         )
       )

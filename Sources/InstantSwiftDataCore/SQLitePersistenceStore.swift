@@ -38,6 +38,12 @@ struct InstantPersistenceStateLoad: Sendable {
   var source: InstantPersistenceStateSource
 }
 
+struct InstantPersistenceMetadataEntry: Sendable {
+  var key: String
+  var value: String
+  var updatedAt: InstantTimestamp
+}
+
 private struct StoredTripleKey: Hashable {
   var entityID: String
   var attributeID: String
@@ -1126,6 +1132,58 @@ public actor SQLitePersistenceStore {
     return didSave
   }
 
+  func saveOutbox(
+    _ mutations: [PendingMutation],
+    metadataEntries: [InstantPersistenceMetadataEntry],
+    deletingMetadataKeys: [String] = [],
+    expectedStoreRevision: Int64,
+    expectedOutboxRevision: Int64
+  ) throws -> Bool {
+    let previousState = cachedState
+    let didSave = try transaction {
+      guard
+        try loadMetadataRevisionWithoutTransaction(Self.storeRevisionKey) == expectedStoreRevision,
+        try loadMetadataRevisionWithoutTransaction(Self.outboxRevisionKey) == expectedOutboxRevision
+      else {
+        return false
+      }
+      if let previousState,
+        previousState.storeRevision == expectedStoreRevision,
+        previousState.outboxRevision == expectedOutboxRevision
+      {
+        try saveOutboxDiffWithoutTransaction(
+          from: previousState.snapshot.outbox,
+          to: mutations
+        )
+      } else {
+        try saveOutboxWithoutTransaction(mutations)
+      }
+      for entry in metadataEntries {
+        try saveMetadataValueWithoutTransaction(
+          entry.value,
+          key: entry.key,
+          updatedAt: entry.updatedAt
+        )
+      }
+      for key in deletingMetadataKeys {
+        try deleteMetadataValueWithoutTransaction(key: key)
+      }
+      _ = try bumpMetadataRevisionWithoutTransaction(Self.outboxRevisionKey)
+      return true
+    }
+    if didSave, var previousState,
+      previousState.storeRevision == expectedStoreRevision,
+      previousState.outboxRevision == expectedOutboxRevision
+    {
+      previousState.snapshot.outbox = mutations
+      previousState.outboxRevision += 1
+      cachedState = previousState
+    } else if didSave {
+      cachedState = nil
+    }
+    return didSave
+  }
+
   public func loadAuthSession(key: String) throws -> InstantAuthSession? {
     let rows: [InstantAuthSession] = try selectJSON(
       "SELECT json FROM instant_auth_sessions WHERE key = ? LIMIT 1",
@@ -2193,10 +2251,59 @@ public actor SQLitePersistenceStore {
     return didSave
   }
 
+  func saveSnapshot(
+    _ snapshot: InstantPersistenceSnapshot,
+    replacing previousSnapshot: InstantPersistenceSnapshot,
+    metadataEntries: [InstantPersistenceMetadataEntry],
+    deletingMetadataKeys: [String] = [],
+    expectedStoreRevision: Int64,
+    expectedOutboxRevision: Int64
+  ) throws -> Bool {
+    let didSave = try transaction {
+      guard
+        try loadMetadataRevisionWithoutTransaction(Self.storeRevisionKey) == expectedStoreRevision,
+        try loadMetadataRevisionWithoutTransaction(Self.outboxRevisionKey) == expectedOutboxRevision
+      else {
+        return false
+      }
+      try saveStoreSnapshotDiffWithoutTransaction(
+        from: previousSnapshot.store,
+        to: snapshot.store
+      )
+      try saveOutboxDiffWithoutTransaction(
+        from: previousSnapshot.outbox,
+        to: snapshot.outbox
+      )
+      for entry in metadataEntries {
+        try saveMetadataValueWithoutTransaction(
+          entry.value,
+          key: entry.key,
+          updatedAt: entry.updatedAt
+        )
+      }
+      for key in deletingMetadataKeys {
+        try deleteMetadataValueWithoutTransaction(key: key)
+      }
+      _ = try bumpMetadataRevisionWithoutTransaction(Self.storeRevisionKey)
+      _ = try bumpMetadataRevisionWithoutTransaction(Self.outboxRevisionKey)
+      return true
+    }
+    if didSave {
+      cachedState = InstantPersistenceState(
+        snapshot: snapshot,
+        storeRevision: expectedStoreRevision + 1,
+        outboxRevision: expectedOutboxRevision + 1
+      )
+    }
+    return didSave
+  }
+
   func saveLocalMutation(
     changedEntityTriples: [String: [InstantTriple]],
     outbox: [PendingMutation],
     pendingMutation: PendingMutation,
+    metadataEntries: [InstantPersistenceMetadataEntry] = [],
+    deletingMetadataKeys: [String] = [],
     expectedStoreRevision: Int64,
     expectedOutboxRevision: Int64
   ) throws -> Bool {
@@ -2245,6 +2352,16 @@ public actor SQLitePersistenceStore {
           .text(try encode(pendingMutation)),
         ]
       )
+      for entry in metadataEntries {
+        try saveMetadataValueWithoutTransaction(
+          entry.value,
+          key: entry.key,
+          updatedAt: entry.updatedAt
+        )
+      }
+      for key in deletingMetadataKeys {
+        try deleteMetadataValueWithoutTransaction(key: key)
+      }
       _ = try bumpMetadataRevisionWithoutTransaction(Self.storeRevisionKey)
       _ = try bumpMetadataRevisionWithoutTransaction(Self.outboxRevisionKey)
       return true
@@ -2948,8 +3065,7 @@ public actor SQLitePersistenceStore {
   ) -> (entityIDs: Set<String>, preservesAllQueryResults: Bool) {
     var entityIDs: Set<String> = []
     var preservesAllQueryResults = false
-    for mutation in mutations where mutation.status == .pending
-      || (mutation.status == .confirmed && mutation.serverTransactionID != nil)
+    for mutation in mutations where mutation.optimisticOverlayState != .removed
     {
       for operation in mutation.transaction.operations {
         switch operation {
@@ -3329,6 +3445,13 @@ public actor SQLitePersistenceStore {
         .text(value),
         .int(updatedAt.milliseconds),
       ]
+    )
+  }
+
+  private func deleteMetadataValueWithoutTransaction(key: String) throws {
+    try execute(
+      "DELETE FROM instant_sync_metadata WHERE key = ?",
+      [.text(key)]
     )
   }
 

@@ -256,7 +256,7 @@ struct TripleIndexes: Hashable, Codable, Sendable {
   }
 
   func triples(entityID: String) -> [InstantTriple] {
-    eav[entityID]?.values.flatMap(\.values) ?? []
+    (eav[entityID]?.values.flatMap(\.values) ?? []).sorted(by: Self.triplePrecedes)
   }
 
   func namespaces(entityID: String, attributes: AttributeStore) -> Set<String> {

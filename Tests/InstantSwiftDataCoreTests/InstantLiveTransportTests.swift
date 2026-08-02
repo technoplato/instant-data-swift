@@ -159,15 +159,34 @@ struct InstantLiveTransportTests {
     )
 
     try await runtime.confirmMutation(id: "tx-newer")
-    let staleOnlyTransport = try #require(
-      await runtime.outboxTransportMutations().first { $0.mutationID == "tx-older" }
+    let retainedTransports = await runtime.outboxTransportMutations()
+    expectNoDifference(retainedTransports.map(\.mutationID), [
+      "tx-seed",
+      "tx-older",
+      "tx-newer",
+    ])
+    let retainedOlderTransport = try #require(
+      retainedTransports.first { $0.mutationID == "tx-older" }
     )
     #expect(
-      !staleOnlyTransport.txSteps.contains { step in
+      retainedOlderTransport.txSteps.contains { step in
         guard
           case let .addTriple(_, attributeID, value, _) = step,
           attributeID == "todos/text",
           value == .string("Older value")
+        else { return false }
+        return true
+      }
+    )
+    let retainedNewerTransport = try #require(
+      retainedTransports.last { $0.mutationID == "tx-newer" }
+    )
+    #expect(
+      retainedNewerTransport.txSteps.contains { step in
+        guard
+          case let .addTriple(_, attributeID, value, _) = step,
+          attributeID == "todos/text",
+          value == .string("Newer value")
         else { return false }
         return true
       }
@@ -2016,42 +2035,59 @@ struct InstantLiveTransportTests {
     let session = InstantRuntimeScriptedLiveSession(messages: [
       .initOK(clientEventID: "event-init", attrs: incompleteAttrs)
     ])
+    let cacheURL = try temporaryLiveCacheURL()
     let runtime = try await InstantRuntime.bootstrap(
       configuration: InstantRuntimeConfiguration(
         appID: "runtime-live-outbox-schema-error",
-        persistenceURL: temporaryLiveCacheURL(),
+        persistenceURL: cacheURL,
         initialAttributes: TodoExample.attributes,
         liveTransport: session.transport
       )
     )
     _ = try await runtime.connect()
     let createdAt = InstantTimestamp(milliseconds: 1_700_000_000_790)
-    try await runtime.transact(
-      InstantStoreTransaction(
-        id: "a-runtime-live-schema-error",
-        operations: TodoExample.createOperations(
-          id: "runtime-live-schema-error-todo",
-          text: "Keep pending until schema matches",
-          createdAt: createdAt,
-          transactionID: "a-runtime-live-schema-error"
-        )
-      ),
-      createdAt: createdAt
-    )
     let updateAt = InstantTimestamp(milliseconds: createdAt.milliseconds + 1)
-    try await runtime.transact(
+    _ = try await runtime.applyServerTransaction(
       InstantStoreTransaction(
-        id: "b-runtime-live-healthy",
-        operations: TodoExample.updateTextOperations(
-          id: "runtime-live-schema-error-todo",
-          text: "Deliver the valid update",
-          updatedAt: updateAt,
-          transactionID: "b-runtime-live-healthy"
+        id: "server-runtime-live-healthy-base",
+        operations: TodoExample.createOperations(
+          id: "runtime-live-healthy-todo",
+          text: "Healthy base",
+          createdAt: createdAt,
+          transactionID: "server-runtime-live-healthy-base"
         )
-      ),
-      createdAt: updateAt
+      )
     )
-    await session.waitForSentMessageCount(2)
+    try await withKnownIssue {
+      try await runtime.transact(
+        InstantStoreTransaction(
+          id: "a-runtime-live-schema-error",
+          operations: TodoExample.createOperations(
+            id: "runtime-live-schema-error-todo",
+            text: "Keep pending until schema matches",
+            createdAt: createdAt,
+            transactionID: "a-runtime-live-schema-error"
+          )
+        ),
+        createdAt: createdAt
+      )
+      try await runtime.transact(
+        InstantStoreTransaction(
+          id: "b-runtime-live-healthy",
+          operations: TodoExample.updateTextOperations(
+            id: "runtime-live-healthy-todo",
+            text: "Deliver the valid update",
+            updatedAt: updateAt,
+            transactionID: "b-runtime-live-healthy"
+          )
+        ),
+        createdAt: updateAt
+      )
+      await session.waitForSentMessageCount(2)
+    } matching: { issue in
+      issue.description.contains("quarantined")
+        || issue.description.contains("todos/createdAt")
+    }
 
     let status = try await runtime.connectionStatus()
     expectNoDifference(status.state, .opened)
@@ -2064,9 +2100,26 @@ struct InstantLiveTransportTests {
     ])
     expectNoDifference(outbox.map(\.status), [.failed, .pending])
     #expect(outbox[0].failureMessage?.contains("todos/createdAt") == true)
+    expectNoDifference(outbox[0].optimisticOverlayState, .removed)
+    expectNoDifference(outbox[0].rollbackTransaction, nil)
+    let immediate = try await TodoExample.decode(runtime.query(TodoExample.query))
+    expectNoDifference(immediate.map(\.text), ["Deliver the valid update"])
     let lastClientEventID = await session.sentMessages().last?.clientEventID
     expectNoDifference(lastClientEventID, "b-runtime-live-healthy")
     _ = try await runtime.closeConnection()
+    let relaunched = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "runtime-live-outbox-schema-error",
+        persistenceURL: cacheURL,
+        initialAttributes: TodoExample.attributes
+      )
+    )
+    let durable = try await TodoExample.decode(relaunched.store.materialize(TodoExample.query))
+    expectNoDifference(durable.map(\.text), ["Deliver the valid update"])
+    let durableFailure = try #require(await relaunched.outboxMutations().first)
+    expectNoDifference(durableFailure.id, "a-runtime-live-schema-error")
+    expectNoDifference(durableFailure.optimisticOverlayState, .removed)
+    expectNoDifference(durableFailure.rollbackTransaction, nil)
   }
 
   @Test
@@ -2168,11 +2221,13 @@ struct InstantLiveTransportTests {
         ]
       )
     )
-    let failed = try #require(
-      await runtime.observeConnectionStatus().first { $0.state == .errored }
-    )
+    let failedOutbox = try await waitForLiveOutbox(runtime) {
+      $0.contains { $0.id == "tx-runtime-live-retry" && $0.status == .failed }
+    }
+    let failed = try await runtime.connectionStatus()
     expectNoDifference(failed.lastErrorMessage, "permission denied")
-    let failedMutation = try #require(await runtime.outboxMutations().first)
+    expectNoDifference(failed.state, .errored)
+    let failedMutation = try #require(failedOutbox.first)
     expectNoDifference(failedMutation.status, .failed)
     expectNoDifference(failedMutation.failureMessage, "permission denied")
 
@@ -2189,9 +2244,9 @@ struct InstantLiveTransportTests {
         transactionID: "server-tx-runtime-retry"
       )
     )
-    let confirmed = try #require(
-      await runtime.observeConnectionStatus().first { $0.pendingMutationCount == 0 }
-    )
+    _ = try await waitForLiveOutbox(runtime) { $0.isEmpty }
+    let confirmed = try await runtime.connectionStatus()
+    expectNoDifference(confirmed.pendingMutationCount, 0)
     expectNoDifference(confirmed.state, .opened)
     let remainingOutbox = await runtime.outboxMutations()
     expectNoDifference(remainingOutbox, [])
@@ -3001,7 +3056,7 @@ struct InstantLiveTransportTests {
   }
 
   @Test
-  func liveRefreshConfirmsMatchingLocalMutationAfterApplyingServerState() async throws {
+  func liveRefreshDoesNotConfirmMatchingLocalMutationWithoutTransactOK() async throws {
     let cacheURL = try temporaryLiveCacheURL()
     let localCreatedAt = InstantTimestamp(milliseconds: 1_700_000_000_000)
     let serverCreatedAt = InstantTimestamp(milliseconds: localCreatedAt.milliseconds + 50)
@@ -3047,26 +3102,26 @@ struct InstantLiveTransportTests {
       receivedAt: InstantTimestamp(milliseconds: serverCreatedAt.milliseconds + 1)
     )
 
-    expectNoDifference(result.confirmedMutation?.id, "server-tx-local")
-    expectNoDifference(result.application.pendingMutationCount, 0)
+    expectNoDifference(result.confirmedMutation?.id, nil)
+    expectNoDifference(result.application.pendingMutationCount, 1)
     let finalPendingMutations = await runtime.pendingMutations()
-    expectNoDifference(finalPendingMutations, [])
+    expectNoDifference(finalPendingMutations.map(\.id), ["server-tx-local"])
     let finalTodos = try await runtime.query(TodoExample.query)
     expectNoDifference(
       try TodoExample.decode(finalTodos),
       [
         TodoRecord(
           id: "local-todo",
-          text: "Server confirmed text",
-          isCompleted: true,
-          createdAt: serverCreatedAt
+          text: "Local optimistic text",
+          isCompleted: false,
+          createdAt: localCreatedAt
         )
       ]
     )
   }
 
   @Test
-  func liveRefreshRebasesRemainingOptimisticMutationAfterConfirmation() async throws {
+  func liveRefreshRebasesAllOptimisticMutationsWithoutConfirmingThem() async throws {
     let cacheURL = try temporaryLiveCacheURL()
     let createdAt = InstantTimestamp(milliseconds: 1_700_000_000_000)
     let updatedAt = InstantTimestamp(milliseconds: createdAt.milliseconds + 10)
@@ -3120,14 +3175,14 @@ struct InstantLiveTransportTests {
 
     let result = try await runtime.applyLiveRefresh(refresh)
 
-    expectNoDifference(result.confirmedMutation?.id, "tx-create")
-    expectNoDifference(result.application.pendingMutationCount, 1)
+    expectNoDifference(result.confirmedMutation?.id, nil)
+    expectNoDifference(result.application.pendingMutationCount, 2)
     let pendingMutationIDs = await runtime.pendingMutations().map(\.id)
-    expectNoDifference(pendingMutationIDs, ["tx-update"])
+    expectNoDifference(pendingMutationIDs, ["tx-create", "tx-update"])
     let todoSnapshots = try await runtime.query(TodoExample.query)
     let todos = try TodoExample.decode(todoSnapshots)
     expectNoDifference(todos.map(\.text), ["Second optimistic text"])
-    expectNoDifference(todos.map(\.isCompleted), [true])
+    expectNoDifference(todos.map(\.isCompleted), [false])
 
     let relaunchedRuntime = try await InstantRuntime.bootstrap(
       configuration: InstantRuntimeConfiguration(
@@ -3140,11 +3195,11 @@ struct InstantLiveTransportTests {
     let relaunchedTodos = try TodoExample.decode(relaunchedSnapshots)
     expectNoDifference(relaunchedTodos.map(\.text), ["Second optimistic text"])
     let relaunchedPendingMutationIDs = await relaunchedRuntime.pendingMutations().map(\.id)
-    expectNoDifference(relaunchedPendingMutationIDs, ["tx-update"])
+    expectNoDifference(relaunchedPendingMutationIDs, ["tx-create", "tx-update"])
   }
 
   @Test
-  func emptyLiveRefreshConfirmsMatchingMutationWithoutDroppingOptimisticRows() async throws {
+  func emptyLiveRefreshDoesNotConfirmMatchingMutationOrDropOptimisticRows() async throws {
     let cacheURL = try temporaryLiveCacheURL()
     let createdAt = InstantTimestamp(milliseconds: 1_700_000_000_000)
     let runtime = try await InstantRuntime.bootstrap(
@@ -3177,10 +3232,10 @@ struct InstantLiveTransportTests {
     )
 
     expectNoDifference(result.insertedTripleCount, 0)
-    expectNoDifference(result.confirmedMutation?.id, "tx-empty-confirm")
-    expectNoDifference(result.application.pendingMutationCount, 0)
+    expectNoDifference(result.confirmedMutation?.id, nil)
+    expectNoDifference(result.application.pendingMutationCount, 1)
     let pendingMutations = await runtime.pendingMutations()
-    expectNoDifference(pendingMutations, [])
+    expectNoDifference(pendingMutations.map(\.id), ["tx-empty-confirm"])
     let syncState = try await runtime.syncState()
     expectNoDifference(syncState.processedTransactionID, "tx-empty-confirm")
     let todoSnapshots = try await runtime.query(TodoExample.query)
@@ -3908,6 +3963,26 @@ private actor InstantRuntimeBlockedLiveTransport {
       releaseContinuation = continuation
     }
   }
+}
+
+private func waitForLiveOutbox(
+  _ runtime: InstantRuntime,
+  matching predicate: ([PendingMutation]) -> Bool
+) async throws -> [PendingMutation] {
+  var latest: [PendingMutation] = []
+  for _ in 0..<2_000 {
+    latest = await runtime.outboxMutations()
+    if predicate(latest) {
+      return latest
+    }
+    try await Task.sleep(for: .milliseconds(1))
+  }
+  throw InstantError(
+    code: .implementationFailed,
+    operation: "wait for bounded live outbox state",
+    message: "The live outbox did not reach the expected state. Latest statuses: \(latest.map { "\($0.id):\($0.status.rawValue)" }).",
+    recovery: "Inspect the live mutation handler and its persisted outbox transition."
+  )
 }
 
 private extension InstantLiveMessage {

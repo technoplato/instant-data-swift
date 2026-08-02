@@ -31,16 +31,30 @@ actor InstantOutbox {
     mutations
   }
 
-  func confirming(id: String) -> InstantOutboxUpdate? {
-    Self.confirming(id: id, in: mutations)
+  func confirming(
+    id: String,
+    source: InstantMutationConfirmationSource = .manual
+  ) -> InstantOutboxUpdate? {
+    Self.confirming(id: id, source: source, in: mutations)
   }
 
-  static func confirming(id: String, in mutations: [PendingMutation]) -> InstantOutboxUpdate? {
+  static func confirming(
+    id: String,
+    source: InstantMutationConfirmationSource = .manual,
+    in mutations: [PendingMutation]
+  ) -> InstantOutboxUpdate? {
     guard let index = mutations.firstIndex(where: { $0.id == id }) else { return nil }
     var nextMutations = mutations
-    var mutation = nextMutations.remove(at: index)
+    var mutation = nextMutations[index]
     mutation.status = .confirmed
     mutation.failureMessage = nil
+    mutation.failure = nil
+    mutation.confirmationSource = source
+    if source.provesServerAcceptance {
+      nextMutations.remove(at: index)
+    } else {
+      nextMutations[index] = mutation
+    }
     return InstantOutboxUpdate(mutation: mutation, mutations: nextMutations)
   }
 
@@ -53,7 +67,9 @@ actor InstantOutbox {
     var nextMutations = mutations
     nextMutations[index].status = .confirmed
     nextMutations[index].failureMessage = nil
+    nextMutations[index].failure = nil
     nextMutations[index].serverTransactionID = serverTransactionID
+    nextMutations[index].confirmationSource = .webSocketTransactOK
     return InstantOutboxUpdate(
       mutation: nextMutations[index],
       mutations: nextMutations
@@ -97,12 +113,44 @@ actor InstantOutbox {
     message: String,
     in mutations: [PendingMutation]
   ) -> InstantOutboxUpdate? {
+    failing(
+      id: id,
+      failure: InstantMutationFailure(
+        code: PendingMutation.failureCode(message: message),
+        message: message
+      ),
+      in: mutations
+    )
+  }
+
+  static func failing(
+    id: String,
+    failure: InstantMutationFailure,
+    in mutations: [PendingMutation]
+  ) -> InstantOutboxUpdate? {
     guard let index = mutations.firstIndex(where: { $0.id == id }) else { return nil }
     var nextMutations = mutations
     nextMutations[index].status = .failed
-    nextMutations[index].failureMessage = message
+    nextMutations[index].failureMessage = failure.message
+    nextMutations[index].failure = failure
     nextMutations[index].serverTransactionID = nil
+    nextMutations[index].confirmationSource = nil
     return InstantOutboxUpdate(mutation: nextMutations[index], mutations: nextMutations)
+  }
+
+  static func discardingFailed(
+    id: String,
+    in mutations: [PendingMutation]
+  ) -> InstantOutboxUpdate? {
+    guard let index = mutations.firstIndex(where: { $0.id == id }),
+      mutations[index].status == .failed
+    else { return nil }
+    var nextMutations = mutations
+    let mutation = nextMutations.remove(at: index)
+    return InstantOutboxUpdate(
+      mutation: mutation,
+      mutations: nextMutations.sorted(by: PendingMutation.creationOrder)
+    )
   }
 
   func retrying(id: String) -> InstantOutboxUpdate? {
@@ -114,7 +162,9 @@ actor InstantOutbox {
     var nextMutations = mutations
     nextMutations[index].status = .pending
     nextMutations[index].failureMessage = nil
+    nextMutations[index].failure = nil
     nextMutations[index].serverTransactionID = nil
+    nextMutations[index].confirmationSource = nil
     return InstantOutboxUpdate(mutation: nextMutations[index], mutations: nextMutations)
   }
 
@@ -134,7 +184,10 @@ actor InstantOutbox {
       var confirmedMutation = mutation
       confirmedMutation.status = .confirmed
       confirmedMutation.failureMessage = nil
+      confirmedMutation.failure = nil
+      confirmedMutation.confirmationSource = .localDrain
       confirmed.append(confirmedMutation)
+      remaining.append(confirmedMutation)
       remainingLimit -= 1
     }
 
@@ -158,14 +211,28 @@ actor InstantOutbox {
 
       switch result.outcome {
       case .confirmed:
-        var mutation = nextMutations.remove(at: index)
+        var mutation = nextMutations[index]
         mutation.status = .confirmed
         mutation.failureMessage = nil
+        mutation.failure = nil
+        mutation.confirmationSource = result.acceptance == .serverAccepted
+          ? .serverTransport
+          : .localTransport
+        // Unlike WebSocket transact-ok, generic transport proof has no server transaction
+        // watermark. Retain its reconciliation metadata until an authoritative refresh can strip
+        // the optimistic layer before installing the server value.
+        nextMutations[index] = mutation
         confirmed.append(mutation)
 
       case .failed:
+        let message = result.message ?? "The Instant mutation transport rejected the mutation."
         nextMutations[index].status = .failed
-        nextMutations[index].failureMessage = result.message
+        nextMutations[index].failureMessage = message
+        nextMutations[index].failure = InstantMutationFailure(
+          code: PendingMutation.failureCode(message: message),
+          message: message
+        )
+        nextMutations[index].confirmationSource = nil
         failed.append(nextMutations[index])
       }
     }

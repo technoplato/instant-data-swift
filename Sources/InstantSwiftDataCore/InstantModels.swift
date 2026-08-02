@@ -754,6 +754,62 @@ public enum InstantMutationStatus: String, Codable, Sendable {
   case failed
 }
 
+public enum InstantMutationConfirmationSource: String, Hashable, Codable, Sendable {
+  case manual
+  case localDrain
+  case localTransport
+  case serverTransport
+  case webSocketTransactOK
+
+  public var provesServerAcceptance: Bool {
+    switch self {
+    case .serverTransport, .webSocketTransactOK:
+      true
+    case .manual, .localDrain, .localTransport:
+      false
+    }
+  }
+}
+
+public enum InstantMutationLocalStateDisposition: String, Hashable, Codable, Sendable {
+  case retainedForRetry
+  case discarded
+  case retainedUnknown
+}
+
+package enum InstantOptimisticOverlayState: String, Hashable, Codable, Sendable {
+  case applied
+  case removed
+}
+
+package struct InstantMutationFailure: Hashable, Codable, Sendable {
+  package var code: InstantError.Code
+  package var message: String
+  package var status: Int?
+  package var type: String?
+  package var hint: InstantLiveJSONValue?
+  package var traceID: String?
+  package var originalEventTraceID: String?
+
+  package init(
+    code: InstantError.Code,
+    message: String,
+    status: Int? = nil,
+    type: String? = nil,
+    hint: InstantLiveJSONValue? = nil,
+    traceID: String? = nil,
+    originalEventTraceID: String? = nil
+  ) {
+    self.code = code
+    self.message = message
+    self.status = status
+    self.type = type
+    self.hint = hint
+    self.traceID = traceID
+    self.originalEventTraceID = originalEventTraceID
+  }
+}
+
 public struct PendingMutation: Hashable, Codable, Sendable, Identifiable {
   public var id: String
   public var createdAt: InstantTimestamp
@@ -761,6 +817,10 @@ public struct PendingMutation: Hashable, Codable, Sendable, Identifiable {
   public var status: InstantMutationStatus
   public var failureMessage: String?
   package var serverTransactionID: String?
+  package var confirmationSource: InstantMutationConfirmationSource?
+  package var rollbackTransaction: InstantStoreTransaction?
+  package var failure: InstantMutationFailure?
+  package var optimisticOverlayState: InstantOptimisticOverlayState?
 
   public init(
     id: String,
@@ -775,6 +835,40 @@ public struct PendingMutation: Hashable, Codable, Sendable, Identifiable {
     self.status = status
     self.failureMessage = failureMessage
     self.serverTransactionID = nil
+    self.confirmationSource = nil
+    self.rollbackTransaction = nil
+    self.failure = nil
+    self.optimisticOverlayState = .applied
+  }
+
+  package func rejectionError(operation: String, recovery: String) -> InstantError {
+    InstantError(
+      code: failure?.code ?? Self.failureCode(message: failureMessage),
+      operation: operation,
+      localID: id,
+      serverStatus: failure?.status,
+      serverType: failure?.type,
+      serverHint: failure?.hint,
+      serverTraceID: failure?.traceID,
+      serverOriginalEventTraceID: failure?.originalEventTraceID,
+      localMutationDisposition: optimisticOverlayState == nil
+        ? .retainedUnknown
+        : .retainedForRetry,
+      message: failure?.message ?? failureMessage ?? "The Instant server rejected the mutation.",
+      recovery: recovery
+    )
+  }
+
+  package static func failureCode(message: String?) -> InstantError.Code {
+    let message = message?.lowercased() ?? ""
+    if message.contains("permission")
+      || message.contains("unauthorized")
+      || message.contains("forbidden")
+      || message.contains("perms-pass")
+    {
+      return .permissionRejected
+    }
+    return .validationFailed
   }
 
   static func creationOrder(_ lhs: Self, _ rhs: Self) -> Bool {
@@ -782,6 +876,19 @@ public struct PendingMutation: Hashable, Codable, Sendable, Identifiable {
       return lhs.id < rhs.id
     }
     return lhs.createdAt < rhs.createdAt
+  }
+}
+
+public struct InstantFailedMutationResolution: Hashable, Codable, Sendable {
+  public var mutation: PendingMutation
+  public var localStateDisposition: InstantMutationLocalStateDisposition
+
+  public init(
+    mutation: PendingMutation,
+    localStateDisposition: InstantMutationLocalStateDisposition
+  ) {
+    self.mutation = mutation
+    self.localStateDisposition = localStateDisposition
   }
 }
 
