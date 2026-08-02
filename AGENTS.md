@@ -39,6 +39,12 @@
   before every commit, re-check `git status`, stage only the intended paths,
   inspect the complete staged diff, and include the high-level reason in the
   commit message.
+- The user has limited ChatGPT and Sol Ultra access. Written continuity is a
+  required deliverable: at each coherent checkpoint, update `PROGRESS.md` with
+  immutable commits, verification evidence, active ownership, blockers, and
+  exact continuation steps. Never leave the only restartable account in chat
+  context. Keep increments small enough to review and resume, then mirror each
+  substantive commit through `CHANGELOG.md` and the cross-repository audit.
 - After every substantive commit in this repository or
   `../tools/realtime-voice-sqlite-instant`, add a newest-first entry to
   `docs/audits/commit-changelog.md` with a human-readable timestamp including
