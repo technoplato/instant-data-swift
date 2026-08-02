@@ -4,6 +4,20 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## August 2nd, 2026 at 5:55:23 p.m. EDT — `95cc1f03cf53` Record acknowledgement review blockers
+
+- **Implementation commit:** `95cc1f03cf533696ac3fb1ac86e7977c1f130f17`
+- **Change:** Record acknowledgement review blockers
+- **Details:**
+  - Preserve the 39/39 acceptance and rollback evidence without mislabeling it sufficient for shipment.
+  - Record four independent-review blockers: atomic transport/encoding rejection rollback, successor inverse rebuilding, local-only confirmation provenance at the server-delivery barrier, and same-ID reservation ownership.
+  - Expand the exact task-owned source/test boundary and record the regression, review, commit, and ledger sequence required before the editable ABI is stable for Scribe #059.
+- **Files:**
+  - `PROGRESS.md` — Make the acknowledgement no-ship boundary and continuation commands cutoff-safe.
+- **User context (verbatim):**
+  > 17% usage remaining, please ensure you again are thoroughly documenting everything such that a cutoff would be easy to handoff to another agent.
+- **SpecStory:** unavailable — Unavailable: this implementation was performed in the Codex desktop application and no verified SpecStory desktop capture URI is available.
+
 ## August 2nd, 2026 at 5:41:40 p.m. EDT — `671e37050929` Fix repeated Recipes reactions and presence projection
 
 - **Implementation commit:** `671e370509294195992f6482aced9b7b169c4bc1`
