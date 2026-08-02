@@ -6,6 +6,15 @@ commit SHA, and high-level reason. Changelog-only bookkeeping commits are
 visible in Git history but are not self-recorded because a commit cannot
 contain its own final SHA.
 
+## August 2, 2026 at 1:47:30 PM EDT
+
+- Repository: `realtime-voice-sqlite-instant` (Scribe)
+- Commit: `03d95f864a74e959e8ef914e259dd9449dfa8556`
+- High-level reason: Enable the signed Sign in with Apple capability across the
+  iPhone/iPad host and both Mac packaging paths, with a focused regression that
+  keeps the entitlement present while physical provisioning and account
+  completion remain explicit unverified acceptance lanes for #113.
+
 ## August 2, 2026 at 1:14:58 PM EDT
 
 - Repository: `realtime-voice-sqlite-instant` (Scribe)
