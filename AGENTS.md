@@ -22,6 +22,11 @@
 - Preserve upstream parity deliberately. Inspect the corresponding vendored
   Instant TypeScript and SQLiteData source/tests before changing behavior, and
   record exact versus adapted behavior when porting a test or API.
+- For tricky synchronization, optimistic-state, rejection, reconnect, query,
+  auth, and persistence edge cases, defer to the vendored upstream Instant
+  implementation first. Prefer the same state transition and test shape over a
+  novel local design; when Swift's architecture requires an adaptation, name
+  the upstream source and document precisely why the implementation differs.
 - Treat `docs/adr/0001-application-sync-boundary.md` as canonical. Applications
   own schema, query/observation lifetime and dynamic inputs, mutations, auth,
   and sharing. The library owns cache/materialization, optimistic observation,
