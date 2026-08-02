@@ -62,6 +62,10 @@ public struct InstantSwiftDataClient: Sendable {
     @Sendable (String, String, String?) async throws -> InstantAuthSession
   private var signInWithOAuthOperation:
     @Sendable (String, String?) async throws -> InstantAuthSession
+  private var promoteGuestWithIDTokenOperation:
+    @Sendable (String, String, String?) async throws -> InstantGuestPromotionResult
+  private var promoteGuestWithOAuthOperation:
+    @Sendable (String, String?) async throws -> InstantGuestPromotionResult
   private var oauthAuthorizationURLOperation: @Sendable (String, URL) throws -> URL
   private var issuerURIOperation: @Sendable () throws -> URL
   private var signOutOperation: @Sendable (Bool) async throws -> Void
@@ -202,6 +206,23 @@ public struct InstantSwiftDataClient: Sendable {
     }
     self.signInWithOAuthOperation = { code, codeVerifier in
       try await runtime.signInWithOAuth(code: code, codeVerifier: codeVerifier)
+    }
+    self.promoteGuestWithIDTokenOperation = { clientName, idToken, nonce in
+      InstantGuestPromotionResult(
+        try await runtime.promoteGuestWithIDToken(
+          clientName: clientName,
+          idToken: idToken,
+          nonce: nonce
+        )
+      )
+    }
+    self.promoteGuestWithOAuthOperation = { code, codeVerifier in
+      InstantGuestPromotionResult(
+        try await runtime.promoteGuestWithOAuth(
+          code: code,
+          codeVerifier: codeVerifier
+        )
+      )
     }
     self.oauthAuthorizationURLOperation = { clientName, redirectURL in
       try runtime.oauthAuthorizationURL(clientName: clientName, redirectURL: redirectURL)
@@ -401,6 +422,10 @@ public struct InstantSwiftDataClient: Sendable {
       (@Sendable (String, String, String?) async throws -> InstantAuthSession)? = nil,
     signInWithOAuth:
       (@Sendable (String, String?) async throws -> InstantAuthSession)? = nil,
+    promoteGuestWithIDToken:
+      (@Sendable (String, String, String?) async throws -> InstantGuestPromotionResult)? = nil,
+    promoteGuestWithOAuth:
+      (@Sendable (String, String?) async throws -> InstantGuestPromotionResult)? = nil,
     signOutWithOptions: (@Sendable (Bool) async throws -> Void)? = nil,
     joinRoom: (@Sendable (InstantRoomHandle) async throws -> InstantRoomHandle)? = nil,
     leaveRoom: (@Sendable (InstantRoomHandle) async throws -> InstantRoomHandle)? = nil,
@@ -512,6 +537,8 @@ public struct InstantSwiftDataClient: Sendable {
       signOut: signOut,
       signInWithIDToken: signInWithIDToken,
       signInWithOAuth: signInWithOAuth,
+      promoteGuestWithIDToken: promoteGuestWithIDToken,
+      promoteGuestWithOAuth: promoteGuestWithOAuth,
       signOutWithOptions: signOutWithOptions,
       joinRoom: joinRoom,
       leaveRoom: leaveRoom,
@@ -590,6 +617,10 @@ public struct InstantSwiftDataClient: Sendable {
       (@Sendable (String, String, String?) async throws -> InstantAuthSession)? = nil,
     signInWithOAuth:
       (@Sendable (String, String?) async throws -> InstantAuthSession)? = nil,
+    promoteGuestWithIDToken:
+      (@Sendable (String, String, String?) async throws -> InstantGuestPromotionResult)? = nil,
+    promoteGuestWithOAuth:
+      (@Sendable (String, String?) async throws -> InstantGuestPromotionResult)? = nil,
     signOutWithOptions: (@Sendable (Bool) async throws -> Void)? = nil,
     joinRoom: (@Sendable (InstantRoomHandle) async throws -> InstantRoomHandle)? = nil,
     leaveRoom: (@Sendable (InstantRoomHandle) async throws -> InstantRoomHandle)? = nil,
@@ -681,6 +712,13 @@ public struct InstantSwiftDataClient: Sendable {
       message: "No auth client has been configured.",
       recovery:
         "Bootstrap Instant Swift Data before using auth, or override auth closures in tests."
+    )
+    let guestPromotionError = InstantError(
+      code: .implementationFailed,
+      operation: "promote guest account",
+      message: "No atomic guest-promotion client has been configured.",
+      recovery:
+        "Bootstrap a runtime-backed InstantSwiftDataClient or inject the guest-promotion operations in tests and previews."
     )
     let transportError = InstantError(
       code: .implementationFailed,
@@ -792,6 +830,10 @@ public struct InstantSwiftDataClient: Sendable {
     self.signInWithRefreshTokenOperation = signInWithRefreshToken ?? { _, _ in throw authError }
     self.signInWithIDTokenOperation = signInWithIDToken ?? { _, _, _ in throw authError }
     self.signInWithOAuthOperation = signInWithOAuth ?? { _, _ in throw authError }
+    self.promoteGuestWithIDTokenOperation =
+      promoteGuestWithIDToken ?? { _, _, _ in throw guestPromotionError }
+    self.promoteGuestWithOAuthOperation =
+      promoteGuestWithOAuth ?? { _, _ in throw guestPromotionError }
     self.oauthAuthorizationURLOperation = oauthAuthorizationURL ?? { _, _ in throw authError }
     self.issuerURIOperation = issuerURI ?? { throw authError }
     self.signOutOperation =
@@ -974,6 +1016,12 @@ public struct InstantSwiftDataClient: Sendable {
         throw error
       },
       signInWithOAuth: { _, _ in
+        throw error
+      },
+      promoteGuestWithIDToken: { _, _, _ in
+        throw error
+      },
+      promoteGuestWithOAuth: { _, _ in
         throw error
       },
       signOutWithOptions: { _ in
@@ -1311,6 +1359,21 @@ public struct InstantSwiftDataClient: Sendable {
     codeVerifier: String? = nil
   ) async throws -> InstantAuthSession {
     try await signInWithOAuthOperation(code, codeVerifier)
+  }
+
+  func performGuestPromotionWithIDToken(
+    clientName: String,
+    idToken: String,
+    nonce: String?
+  ) async throws -> InstantGuestPromotionResult {
+    try await promoteGuestWithIDTokenOperation(clientName, idToken, nonce)
+  }
+
+  func performGuestPromotionWithOAuth(
+    code: String,
+    codeVerifier: String?
+  ) async throws -> InstantGuestPromotionResult {
+    try await promoteGuestWithOAuthOperation(code, codeVerifier)
   }
 
   public func oauthAuthorizationURL(

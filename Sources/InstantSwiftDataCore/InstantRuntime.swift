@@ -1743,6 +1743,7 @@ public final class InstantRuntime: Sendable {
   private let sharesObservers =
     InstantSnapshotObservers<InstantSharesObservationKey, [InstantShareSnapshot]>()
   private let operationGate = AsyncSerialGate()
+  private let authPromotionGate = AsyncSerialGate()
   private let connectionGate = AsyncSerialGate()
   private let mutationFlushGate = AsyncSerialGate()
   private let queryCachePruningCadence = InstantQueryCachePruningCadence()
@@ -5103,6 +5104,66 @@ public final class InstantRuntime: Sendable {
     return session
   }
 
+  public func promoteGuestWithIDToken(
+    clientName rawClientName: String,
+    idToken rawIDToken: String,
+    nonce rawNonce: String? = nil
+  ) async throws -> InstantGuestPromotionExchangeResult {
+    let clientName = rawClientName.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !clientName.isEmpty else {
+      throw authValidationFailed(
+        operation: "promote guest with id token",
+        message: "Client name must not be empty.",
+        recovery: "Pass the Instant OAuth client name, for example 'apple'."
+      )
+    }
+    let idToken = rawIDToken.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !idToken.isEmpty else {
+      throw authValidationFailed(
+        operation: "promote guest with id token",
+        message: "ID token must not be empty.",
+        recovery: "Pass the ID token returned by the native OAuth provider."
+      )
+    }
+
+    await authPromotionGate.enter()
+    do {
+      try Task.checkCancellation()
+      let guest = try await guestPromotionSnapshot()
+      let now = configuration.now()
+      let verification = try await configuration.idTokenExchange.signIn(
+        InstantIDTokenSignInRequest(
+          appID: configuration.appID,
+          apiURI: configuration.apiURI,
+          clientName: clientName,
+          idToken: idToken,
+          nonce: rawNonce,
+          refreshToken: guest.refreshToken,
+          signedInAt: now,
+          makeID: configuration.makeID
+        )
+      )
+      let session = promotedAuthSession(
+        userID: verification.userID,
+        refreshToken: verification.refreshToken,
+        email: verification.email,
+        imageURL: verification.imageURL,
+        type: verification.type,
+        timestamp: now
+      )
+      let result = try await commitGuestPromotion(
+        guest: guest.session,
+        promoted: session,
+        linkEvidence: verification.guestPromotionLinkEvidence
+      )
+      await authPromotionGate.leave()
+      return result
+    } catch {
+      await authPromotionGate.leave()
+      throw error
+    }
+  }
+
   public func signInWithOAuth(
     code rawCode: String,
     codeVerifier rawCodeVerifier: String? = nil
@@ -5144,6 +5205,164 @@ public final class InstantRuntime: Sendable {
     )
     try await saveAuthSession(session)
     return session
+  }
+
+  public func promoteGuestWithOAuth(
+    code rawCode: String,
+    codeVerifier rawCodeVerifier: String? = nil
+  ) async throws -> InstantGuestPromotionExchangeResult {
+    let code = rawCode.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !code.isEmpty else {
+      throw authValidationFailed(
+        operation: "promote guest with oauth",
+        message: "OAuth authorization code must not be empty.",
+        recovery: "Pass the authorization code returned by the OAuth callback."
+      )
+    }
+
+    await authPromotionGate.enter()
+    do {
+      try Task.checkCancellation()
+      let guest = try await guestPromotionSnapshot()
+      let now = configuration.now()
+      let verification = try await configuration.oauthExchange.signIn(
+        InstantOAuthSignInRequest(
+          appID: configuration.appID,
+          apiURI: configuration.apiURI,
+          code: code,
+          codeVerifier: rawCodeVerifier,
+          refreshToken: guest.refreshToken,
+          signedInAt: now,
+          makeID: configuration.makeID
+        )
+      )
+      let session = promotedAuthSession(
+        userID: verification.userID,
+        refreshToken: verification.refreshToken,
+        email: verification.email,
+        imageURL: verification.imageURL,
+        type: verification.type,
+        timestamp: now
+      )
+      let result = try await commitGuestPromotion(
+        guest: guest.session,
+        promoted: session,
+        linkEvidence: verification.guestPromotionLinkEvidence
+      )
+      await authPromotionGate.leave()
+      return result
+    } catch {
+      await authPromotionGate.leave()
+      throw error
+    }
+  }
+
+  private func guestPromotionSnapshot() async throws -> (
+    session: InstantAuthSession,
+    refreshToken: String
+  ) {
+    guard let session = try await authSession(), session.isGuest else {
+      throw InstantError(
+        code: .authFailed,
+        operation: "promote guest account",
+        message: "Guest promotion requires an active guest session.",
+        recovery:
+          "Sign in as a guest first, then exchange the provider credential without signing out."
+      )
+    }
+    guard
+      let refreshToken = session.refreshToken?.trimmingCharacters(in: .whitespacesAndNewlines),
+      !refreshToken.isEmpty
+    else {
+      throw InstantError(
+        code: .authFailed,
+        operation: "promote guest account",
+        message: "The active guest session has no refresh token to link during provider exchange.",
+        recovery: "Create a fresh online guest session before connecting an auth provider."
+      )
+    }
+    return (session, refreshToken)
+  }
+
+  private func promotedAuthSession(
+    userID: String,
+    refreshToken: String?,
+    email: String?,
+    imageURL: String?,
+    type: InstantAuthUserType?,
+    timestamp: InstantTimestamp
+  ) -> InstantAuthSession {
+    InstantAuthSession(
+      appID: configuration.appID,
+      userID: userID,
+      refreshToken: refreshToken,
+      isGuest: false,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+      email: email,
+      imageURL: imageURL,
+      type: type ?? .user
+    )
+  }
+
+  private func commitGuestPromotion(
+    guest: InstantAuthSession,
+    promoted: InstantAuthSession,
+    linkEvidence: InstantGuestPromotionLinkEvidence?
+  ) async throws -> InstantGuestPromotionExchangeResult {
+    // The provider exchange has already succeeded and may have consumed a one-time credential.
+    // Cancellation can suppress stale UI callbacks, but it must not discard this server result.
+    await operationGate.enter()
+    do {
+      let current = try await persistence.loadAuthSession(key: authSessionKey)
+      guard current == guest else {
+        let error = InstantError(
+          code: .authFailed,
+          operation: "promote guest account",
+          message:
+            "Provider exchange succeeded, but the local auth session changed before promotion could be committed.",
+          recovery:
+            "Keep the current session and reconcile it with Instant before retrying; the provider credential may already be consumed."
+        )
+        InstantDiagnostics.shared.record(
+          error: error,
+          subsystem: "instant-swift-data-core",
+          category: "auth",
+          event: "guest-promotion.compare-and-swap-diverged",
+          message: "Refused to overwrite auth after a successful guest-promotion exchange.",
+          metadata: [
+            "guestUserID": guest.userID,
+            "promotedUserID": promoted.userID,
+            "currentUserID": current?.userID ?? "signed-out",
+            "currentIsGuest": current.map { String($0.isGuest) } ?? "none",
+          ]
+        )
+        throw error
+      }
+      try await persistAuthSessionWithGateHeld(promoted)
+      await operationGate.leave()
+    } catch {
+      await operationGate.leave()
+      throw error
+    }
+
+    recordPersistedAuthSession(promoted)
+    await reconnectAfterAuthChangeIfNeeded()
+    _ = try? await syncUserCookieToEndpoint(promoted)
+
+    let disposition: InstantGuestPromotionExchangeDisposition
+    if promoted.userID == guest.userID {
+      disposition = .upgradedInPlace
+    } else if linkEvidence == .instantServerAcceptedGuestToken {
+      disposition = .linkedToExistingUser
+    } else {
+      disposition = .identityChangedWithoutVerifiedLink
+    }
+    return InstantGuestPromotionExchangeResult(
+      guestUserID: guest.userID,
+      session: promoted,
+      disposition: disposition
+    )
   }
 
   public func oauthAuthorizationURL(
@@ -7576,23 +7795,9 @@ public final class InstantRuntime: Sendable {
   private func saveAuthSession(_ session: InstantAuthSession) async throws {
     await operationGate.enter()
     do {
-      try await persistence.saveAuthSession(session, key: authSessionKey)
-      await authSessionObservers.yield(session)
-      _ = try? await publishConnectionStatusWithGateHeld()
+      try await persistAuthSessionWithGateHeld(session)
       await operationGate.leave()
-      InstantDiagnostics.shared.record(
-        .debug,
-        subsystem: "instant-swift-data-core",
-        category: "auth",
-        event: "auth-session.persisted",
-        message: "Persisted and published an Instant auth session.",
-        metadata: [
-          "appID": session.appID,
-          "userID": session.userID,
-          "isGuest": String(session.isGuest),
-          "hasRefreshToken": String(session.refreshToken?.isEmpty == false),
-        ]
-      )
+      recordPersistedAuthSession(session)
     } catch {
       await operationGate.leave()
       InstantDiagnostics.shared.record(
@@ -7611,6 +7816,28 @@ public final class InstantRuntime: Sendable {
     }
     await reconnectAfterAuthChangeIfNeeded()
     _ = try? await syncUserCookieToEndpoint(session)
+  }
+
+  private func persistAuthSessionWithGateHeld(_ session: InstantAuthSession) async throws {
+    try await persistence.saveAuthSession(session, key: authSessionKey)
+    await authSessionObservers.yield(session)
+    _ = try? await publishConnectionStatusWithGateHeld()
+  }
+
+  private func recordPersistedAuthSession(_ session: InstantAuthSession) {
+    InstantDiagnostics.shared.record(
+      .debug,
+      subsystem: "instant-swift-data-core",
+      category: "auth",
+      event: "auth-session.persisted",
+      message: "Persisted and published an Instant auth session.",
+      metadata: [
+        "appID": session.appID,
+        "userID": session.userID,
+        "isGuest": String(session.isGuest),
+        "hasRefreshToken": String(session.refreshToken?.isEmpty == false),
+      ]
+    )
   }
 
   private func outboxMutationNotFound(id: String) -> InstantError {

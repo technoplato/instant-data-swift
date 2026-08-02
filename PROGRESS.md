@@ -6,6 +6,31 @@ production-readiness plan
 Commit-level history stays in `docs/audits/commit-changelog.md`; this file is
 the narrative of what the library must prove and why.
 
+## 2026-08-02 — Native provider auth and atomic guest promotion
+
+- The reviewed auth slice adds native Sign in with Apple token exchange with a
+  raw/hashed nonce pair, callback-safe OAuth with state and PKCE, Google/GitHub/
+  enterprise provider configuration, and explicit actionable configuration
+  failures instead of guessing a browser fallback.
+- Guest promotion is atomic across the provider exchange and exact persisted
+  guest-session compare-and-swap. Cancellation before exchange remains
+  cancellable; after a successful non-idempotent exchange, the returned server
+  state is committed only when the exact guest still owns local auth. A
+  divergence fails loudly and records that the provider credential may already
+  have been consumed.
+- `InstantSwiftDataClient` exposes injectable ID-token and OAuth promotion
+  operations, so reducers, previews, and deterministic tests use the same
+  public dependency seam as the live runtime. Legacy provider convenience
+  properties remain source-compatible under deprecation.
+- Independent review is green after fixing late singleton callbacks, missing
+  callback URLs, pre-state OAuth error trust, cancellation-after-success, the
+  injectable value-client seam, compatibility properties, and a false-pass
+  fixture. `swift test --filter Auth` passes 62 tests across 13 suites; focused
+  promotion/provider/UI coverage passes as part of that gate.
+- This is library and test acceptance only. A clean Scribe build still must
+  complete Apple, Google, guest-to-new-identity, and linked-existing-user flows
+  on physical iPhone, physical iPad, and Mac with before/after Instant evidence.
+
 ## 2026-08-02 — Scribe recovery continuation
 
 - Implementation `e87765b8cd8c5c2830494ee05c9686f7edb9f4d4` prevents a

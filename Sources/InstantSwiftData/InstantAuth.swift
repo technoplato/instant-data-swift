@@ -17,13 +17,24 @@ public enum InstantAuthStatus: Hashable, Sendable {
   case failed(InstantError)
 }
 
+public enum InstantAuthIdentityTransition: Hashable, Sendable {
+  case signedIn
+  case guestPromoted(InstantGuestPromotionResult)
+}
+
 public struct InstantAuthSignedInEvent: Hashable, Sendable {
   public var session: InstantAuthSession
   public var providerID: InstantAuthProviderID
+  public var identityTransition: InstantAuthIdentityTransition
 
-  public init(session: InstantAuthSession, providerID: InstantAuthProviderID) {
+  public init(
+    session: InstantAuthSession,
+    providerID: InstantAuthProviderID,
+    identityTransition: InstantAuthIdentityTransition = .signedIn
+  ) {
     self.session = session
     self.providerID = providerID
+    self.identityTransition = identityTransition
   }
 }
 
@@ -54,6 +65,14 @@ public struct InstantAuthUser<Entity: InstantEntityModel>: Hashable, Sendable {
     @Published public private(set) var session: InstantAuthSession?
 
     public let providers: [AuthProvider]
+
+    /// Providers that complete through an external credential exchange.
+    ///
+    /// Magic code remains available through `sendMagicCode` and `verifyMagicCode`, but it should
+    /// not be rendered as a provider button that calls `signIn(_:)`.
+    public var credentialProviders: [AuthProvider] {
+      providers.filter { $0.kind != .magicCode }
+    }
 
     public var user: InstantAuthUser<User>? {
       session.map {
@@ -351,14 +370,13 @@ public struct InstantAuthUser<Entity: InstantEntityModel>: Hashable, Sendable {
             )
           }
           onProviderCompleted(credential)
-          let session = try await Self.exchange(
+          let event = try await Self.exchange(
             credential,
             provider: provider,
             using: client
           )
           try Task.checkCancellation()
           guard let self, self.actionGeneration == generation else { return }
-          let event = InstantAuthSignedInEvent(session: session, providerID: provider.id)
           self.finishSignedIn(event, generation: generation)
           onSignedIn(event)
         } catch is CancellationError {
@@ -430,7 +448,8 @@ public struct InstantAuthUser<Entity: InstantEntityModel>: Hashable, Sendable {
       _ credential: InstantAuthProviderCredential,
       provider: AuthProvider,
       using client: InstantSwiftDataClient
-    ) async throws -> InstantAuthSession {
+    ) async throws -> InstantAuthSignedInEvent {
+      let isPromotingGuest = try await client.authSession()?.isGuest == true
       switch (provider.kind, credential.payload) {
       case (.idToken, .idToken(let value, let nonce)):
         guard let clientName = provider.clientName, !clientName.isEmpty else {
@@ -441,14 +460,44 @@ public struct InstantAuthUser<Entity: InstantEntityModel>: Hashable, Sendable {
             recovery: "Declare the provider with its configured Instant client name."
           )
         }
-        return try await client.signInWithIDToken(
-          clientName: clientName,
-          idToken: value,
-          nonce: nonce
-        )
+        if isPromotingGuest {
+          let result = try await client.promoteGuestWithIDToken(
+            clientName: clientName,
+            idToken: value,
+            nonce: nonce
+          )
+          return InstantAuthSignedInEvent(
+            session: result.session,
+            providerID: provider.id,
+            identityTransition: .guestPromoted(result)
+          )
+        } else {
+          let session = try await client.signInWithIDToken(
+            clientName: clientName,
+            idToken: value,
+            nonce: nonce
+          )
+          return InstantAuthSignedInEvent(session: session, providerID: provider.id)
+        }
 
       case (.authorizationCode, .authorizationCode(let value, let codeVerifier)):
-        return try await client.signInWithOAuth(code: value, codeVerifier: codeVerifier)
+        if isPromotingGuest {
+          let result = try await client.promoteGuestWithOAuth(
+            code: value,
+            codeVerifier: codeVerifier
+          )
+          return InstantAuthSignedInEvent(
+            session: result.session,
+            providerID: provider.id,
+            identityTransition: .guestPromoted(result)
+          )
+        } else {
+          let session = try await client.signInWithOAuth(
+            code: value,
+            codeVerifier: codeVerifier
+          )
+          return InstantAuthSignedInEvent(session: session, providerID: provider.id)
+        }
 
       default:
         throw InstantError(

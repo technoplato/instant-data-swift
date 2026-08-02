@@ -34,25 +34,27 @@ public struct InstantOAuthVerification: Hashable, Codable, Sendable {
   public var email: String?
   public var imageURL: String?
   public var type: InstantAuthUserType?
+  public var guestPromotionLinkEvidence: InstantGuestPromotionLinkEvidence?
 
   public init(
     userID: String,
     refreshToken: String? = nil,
     email: String? = nil,
     imageURL: String? = nil,
-    type: InstantAuthUserType? = nil
+    type: InstantAuthUserType? = nil,
+    guestPromotionLinkEvidence: InstantGuestPromotionLinkEvidence? = nil
   ) {
     self.userID = userID
     self.refreshToken = refreshToken
     self.email = email
     self.imageURL = imageURL
     self.type = type
+    self.guestPromotionLinkEvidence = guestPromotionLinkEvidence
   }
 }
 
 public struct InstantOAuthExchange: Sendable {
-  public var signIn:
-    @Sendable (InstantOAuthSignInRequest) async throws -> InstantOAuthVerification
+  public var signIn: @Sendable (InstantOAuthSignInRequest) async throws -> InstantOAuthVerification
 
   public init(
     signIn: @escaping @Sendable (InstantOAuthSignInRequest) async throws
@@ -98,7 +100,10 @@ extension InstantOAuthExchange {
         refreshToken: decoded.user.refreshToken,
         email: decoded.user.email,
         imageURL: decoded.user.imageURL,
-        type: decoded.user.type
+        type: decoded.user.type,
+        guestPromotionLinkEvidence: request.refreshToken == nil
+          ? nil
+          : .instantServerAcceptedGuestToken
       )
     }
   }

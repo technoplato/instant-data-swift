@@ -2,6 +2,7 @@ import CustomDump
 import Foundation
 import InstantSwiftData
 import Testing
+
 @testable import AuthV3App
 
 #if canImport(SwiftUI)
@@ -17,11 +18,16 @@ import Testing
 
       expectNoDifference(
         AuthV3Providers.all.map(\.id.rawValue),
-        ["magic-code", "apple", "google", "github", "enterprise-oidc"]
+        ["magic-code", "apple", "google"]
       )
       expectNoDifference(
         AuthV3Providers.all.map(\.kind),
-        [.magicCode, .idToken, .idToken, .authorizationCode, .authorizationCode]
+        [.magicCode, .idToken, .authorizationCode]
+      )
+      let auth = InstantAuthState<AuthV3User>(providers: AuthV3Providers.all)
+      expectNoDifference(
+        auth.credentialProviders.map(\.id.rawValue),
+        ["apple", "google"]
       )
       expectNoDifference(AuthV3User.instantNamespace, "$users")
 
@@ -44,14 +50,54 @@ import Testing
       )
       expectNoDifference(
         AuthV3AppConfiguration.environment([
-          "INSTANT_APP_ID": "auth-live",
+          "INSTANT_APP_ID": "28c98cc4-e65b-41be-a5bc-204827f5d364",
           "INSTANT_PERSISTENCE_PATH": "/tmp/auth-v3.sqlite",
         ]),
         AuthV3AppConfiguration(
-          appID: "auth-live",
+          appID: "28c98cc4-e65b-41be-a5bc-204827f5d364",
           persistenceURL: URL(fileURLWithPath: "/tmp/auth-v3.sqlite"),
           enablesLiveSync: true
         )
+      )
+    }
+
+    @Test
+    func providerConfigurationKeepsDashboardNamesAndCallbackAppOwned() throws {
+      let redirectURL = try #require(URL(string: "scribe-auth://oauth-callback"))
+      let providers = AuthV3Providers.providers(
+        configuration: AuthV3ProviderConfiguration(
+          appleClientName: "apple-scribe",
+          applePresentation: .native,
+          googleClientName: "google-scribe",
+          googlePresentation: .externalBrowser,
+          browserRedirectURL: redirectURL
+        )
+      )
+
+      expectNoDifference(providers.map(\.clientName), [nil, "apple-scribe", "google-scribe"])
+      expectNoDifference(providers.map(\.kind), [.magicCode, .idToken, .authorizationCode])
+      expectNoDifference(providers.last?.redirectURL, redirectURL)
+    }
+
+    @Test
+    func legacyProviderPropertiesRemainSourceCompatible() {
+      expectNoDifference(
+        [
+          AuthV3Providers.apple.id.rawValue,
+          AuthV3Providers.google.id.rawValue,
+          AuthV3Providers.github.id.rawValue,
+          AuthV3Providers.enterprise.id.rawValue,
+        ],
+        ["apple", "google", "github", "enterprise-oidc"]
+      )
+      expectNoDifference(
+        [
+          AuthV3Providers.apple.clientName,
+          AuthV3Providers.google.clientName,
+          AuthV3Providers.github.clientName,
+          AuthV3Providers.enterprise.clientName,
+        ],
+        ["apple", "google-ios", "github-web", "enterprise-oidc"]
       )
     }
   }

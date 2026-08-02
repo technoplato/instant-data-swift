@@ -19,11 +19,10 @@ public struct AuthV3AppConfiguration: Hashable, Sendable {
     let configuredAppID = environment["INSTANT_APP_ID"]?
       .trimmingCharacters(in: .whitespacesAndNewlines)
     let isValidUUID = configuredAppID.flatMap(UUID.init(uuidString:)) != nil
-    let effectiveAppID = isValidUUID ? configuredAppID! : "28c98cc4-e65b-41be-a5bc-204827f5d364"
     return Self(
-      appID: effectiveAppID,
+      appID: isValidUUID ? configuredAppID ?? "auth-v3-local" : "auth-v3-local",
       persistenceURL: environment["INSTANT_PERSISTENCE_PATH"].map(URL.init(fileURLWithPath:)),
-      enablesLiveSync: true
+      enablesLiveSync: isValidUUID
     )
   }
 }
@@ -52,6 +51,14 @@ public typealias AuthAppConfiguration = AuthV3AppConfiguration
           var dependencies = DependencyValues()
           if configuration.enablesLiveSync {
             dependencies.instantLiveTransport = .live
+          } else {
+            dependencies.instantMagicCodeExchange = .local
+            dependencies.instantRefreshTokenVerifier = .local
+            dependencies.instantGuestAuthenticator = .local
+            dependencies.instantIDTokenExchange = .local
+            dependencies.instantOAuthExchange = .local
+            dependencies.instantAuthTokenInvalidator = .local
+            dependencies.instantStorageTransport = nil
           }
           try await dependencies.bootstrapInstantSwiftData(
             appID: configuration.appID,
@@ -81,7 +88,7 @@ public typealias AuthAppConfiguration = AuthV3AppConfiguration
     public var body: some View {
       Group {
         if model.client != nil {
-          AuthV3LoginScreen()
+          AuthV3LoginScreen(allowsProviderSignIn: model.configuration.enablesLiveSync)
         } else if let errorMessage = model.errorMessage {
           Text(errorMessage)
         } else {
@@ -97,84 +104,239 @@ public typealias AuthAppConfiguration = AuthV3AppConfiguration
     @InstantAuth(AuthV3User.self, providers: AuthV3Providers.self)
     private var auth
 
-    @State private var message = "Signed out"
-    @State private var logText = "--- Debug Console Started ---\n"
+    @State private var message: String?
+    private let allowsProviderSignIn: Bool
 
-    public init() {}
+    public init(allowsProviderSignIn: Bool = true) {
+      self.allowsProviderSignIn = allowsProviderSignIn
+    }
 
     public var body: some View {
-      HSplitView {
-        Form {
-          if let session = auth.session {
-            Section("Signed In") {
-              Text("User ID: \(session.userID)")
-              if let email = auth.user?.email {
-                Text("Email: \(email)")
-              }
-              Button("Log out") {
-                log("Action: Log out initiated")
-                auth.signOut(
-                  onSignedOut: {
-                    message = "Signed out"
-                    log("Event: Signed out successfully")
-                  },
-                  onFailure: { error in
-                    message = error.recoveryMessage
-                    log("Error on signOut: \(error.message) | Recovery: \(error.recovery)")
-                  }
+      ZStack {
+        LinearGradient(
+          colors: [Color.accentColor.opacity(0.16), Color.clear],
+          startPoint: .topLeading,
+          endPoint: .bottomTrailing
+        )
+        .ignoresSafeArea()
+
+        ScrollView {
+          VStack(spacing: 20) {
+            header
+            if let message {
+              statusCard(message)
+            }
+            if let session = auth.session {
+              if session.isGuest {
+                guestAccountCard(session)
+                providerCard(
+                  title: "Keep your guest work",
+                  detail: "Connect Apple or Google without signing out first."
                 )
-              }
-            }
-          } else {
-            Section("Instant Auth") {
-              Text(message)
-              TextField("Email", text: $auth.email)
-
-              if showsMagicCode {
-                TextField("Code", text: $auth.magicCode)
-                Button("Verify code", action: verifyMagicCodeButtonTapped)
-                Button("Use a different email", action: auth.resetMagicCode)
-                  .buttonStyle(.plain)
               } else {
-                Button("Send magic code", action: sendMagicCodeButtonTapped)
+                signedInCard(session)
               }
-
-              Button("Continue as guest", action: guestButtonTapped)
-            }
-
-            Section("Providers") {
-              ForEach(auth.providers) { provider in
-                Button(provider.title) { providerButtonTapped(provider) }
-              }
+            } else {
+              emailCard
+              providerCard(
+                title: "Or use an account",
+                detail: "Your provider credential is exchanged directly with Instant."
+              )
+              guestCard
             }
           }
+          .frame(maxWidth: 520)
+          .padding(.horizontal, 24)
+          .padding(.vertical, 40)
         }
         .disabled(auth.isBusy)
-        .overlay {
-          if auth.isBusy { ProgressView() }
-        }
-        .frame(minWidth: 300)
 
-        VStack(alignment: .leading, spacing: 8) {
-          HStack {
-            Text("Debug Logs (/tmp/instant-auth-debug.log)")
-              .font(.caption)
-              .bold()
-            Spacer()
-            Button("Clear") {
-              logText = ""
-            }
-            .font(.caption)
+        if auth.isBusy {
+          ZStack {
+            Color.black.opacity(0.08).ignoresSafeArea()
+            ProgressView("Working…")
+              .padding(.horizontal, 24)
+              .padding(.vertical, 18)
+              .background(.regularMaterial, in: Capsule())
           }
-
-          TextEditor(text: .constant(logText))
-            .font(.system(.body, design: .monospaced))
-            .background(Color.black.opacity(0.05))
-            .cornerRadius(6)
         }
-        .padding(8)
-        .frame(minWidth: 320)
       }
+    }
+
+    private var header: some View {
+      VStack(spacing: 10) {
+        Image(systemName: "person.crop.circle.badge.checkmark")
+          .font(.system(size: 46, weight: .medium))
+          .foregroundStyle(Color.accentColor)
+          .accessibilityHidden(true)
+        Text("Welcome")
+          .font(.largeTitle.bold())
+        Text("A secure, durable Instant account starts here.")
+          .font(.subheadline)
+          .foregroundStyle(.secondary)
+          .multilineTextAlignment(.center)
+      }
+    }
+
+    private var emailCard: some View {
+      authCard {
+        VStack(alignment: .leading, spacing: 16) {
+          sectionHeader(
+            title: showsMagicCode ? "Enter your code" : "Sign in with email",
+            detail: showsMagicCode
+              ? "Use the one-time code sent to \(auth.email)."
+              : "We’ll send a one-time code. No password required."
+          )
+
+          if showsMagicCode {
+            TextField("One-time code", text: $auth.magicCode)
+              .textFieldStyle(.roundedBorder)
+              .textContentType(.oneTimeCode)
+              .onSubmit(verifyMagicCodeButtonTapped)
+            Button(action: verifyMagicCodeButtonTapped) {
+              Text("Verify and continue").frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.large)
+            Button("Use a different email") {
+              message = nil
+              auth.resetMagicCode()
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(Color.accentColor)
+          } else {
+            TextField("Email address", text: $auth.email)
+              .textFieldStyle(.roundedBorder)
+              .textContentType(.emailAddress)
+              .onSubmit(sendMagicCodeButtonTapped)
+            Button(action: sendMagicCodeButtonTapped) {
+              Label("Send one-time code", systemImage: "envelope")
+                .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.large)
+          }
+        }
+      }
+    }
+
+    private var guestCard: some View {
+      authCard {
+        VStack(alignment: .leading, spacing: 14) {
+          sectionHeader(
+            title: "Not ready to choose?",
+            detail: "Start as a guest, then connect an account later from this screen."
+          )
+          Button(action: guestButtonTapped) {
+            Label("Continue as guest", systemImage: "person.crop.circle.dashed")
+              .frame(maxWidth: .infinity)
+          }
+          .buttonStyle(.bordered)
+          .controlSize(.large)
+        }
+      }
+    }
+
+    private func providerCard(title: String, detail: String) -> some View {
+      authCard {
+        VStack(alignment: .leading, spacing: 14) {
+          sectionHeader(title: title, detail: detail)
+          if allowsProviderSignIn {
+            ForEach(auth.credentialProviders) { provider in
+              Button {
+                providerButtonTapped(provider)
+              } label: {
+                Label(provider.title, systemImage: provider.systemImage)
+                  .frame(maxWidth: .infinity)
+              }
+              .buttonStyle(.bordered)
+              .controlSize(.large)
+            }
+          } else {
+            Label(
+              "Add a valid INSTANT_APP_ID to enable Apple and Google sign-in.",
+              systemImage: "wrench.and.screwdriver"
+            )
+            .font(.footnote)
+            .foregroundStyle(.secondary)
+          }
+        }
+      }
+    }
+
+    private func guestAccountCard(_ session: InstantAuthSession) -> some View {
+      authCard {
+        VStack(alignment: .leading, spacing: 12) {
+          Label("Guest session", systemImage: "person.crop.circle.dashed")
+            .font(.headline)
+          Text(
+            "This device has a guest identity. Connect a provider below while this session is active so Instant can upgrade or link it."
+          )
+          .font(.subheadline)
+          .foregroundStyle(.secondary)
+          Text(session.userID)
+            .font(.caption.monospaced())
+            .foregroundStyle(.secondary)
+            .textSelection(.enabled)
+          Button("Discard guest session", role: .destructive, action: signOutButtonTapped)
+            .buttonStyle(.bordered)
+        }
+      }
+    }
+
+    private func signedInCard(_ session: InstantAuthSession) -> some View {
+      authCard {
+        VStack(alignment: .leading, spacing: 14) {
+          Label("Account connected", systemImage: "checkmark.seal.fill")
+            .font(.headline)
+            .foregroundStyle(.green)
+          if let email = auth.user?.email {
+            Text(email).font(.title3.weight(.semibold))
+          }
+          Text(session.userID)
+            .font(.caption.monospaced())
+            .foregroundStyle(.secondary)
+            .textSelection(.enabled)
+          Button("Sign out", role: .destructive, action: signOutButtonTapped)
+            .buttonStyle(.bordered)
+        }
+      }
+    }
+
+    private func statusCard(_ text: String) -> some View {
+      HStack(alignment: .top, spacing: 12) {
+        Image(systemName: "info.circle.fill")
+          .foregroundStyle(Color.accentColor)
+        Text(text)
+          .font(.subheadline)
+          .frame(maxWidth: .infinity, alignment: .leading)
+      }
+      .padding(16)
+      .background(Color.accentColor.opacity(0.09), in: RoundedRectangle(cornerRadius: 16))
+      .accessibilityElement(children: .combine)
+    }
+
+    private func sectionHeader(title: String, detail: String) -> some View {
+      VStack(alignment: .leading, spacing: 5) {
+        Text(title).font(.headline)
+        Text(detail)
+          .font(.subheadline)
+          .foregroundStyle(.secondary)
+      }
+    }
+
+    private func authCard<Content: View>(
+      @ViewBuilder content: () -> Content
+    ) -> some View {
+      content()
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(22)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .overlay {
+          RoundedRectangle(cornerRadius: 22, style: .continuous)
+            .stroke(Color.primary.opacity(0.08), lineWidth: 1)
+        }
+        .shadow(color: Color.black.opacity(0.06), radius: 20, y: 8)
     }
 
     private var showsMagicCode: Bool {
@@ -184,85 +346,74 @@ public typealias AuthAppConfiguration = AuthV3AppConfiguration
       }
     }
 
-    private func log(_ entry: String) {
-      let formatted = "[\(ISO8601DateFormatter().string(from: Date()))] \(entry)\n"
-      logText += formatted
-      appendToFile(formatted)
-    }
-
-    private func appendToFile(_ text: String) {
-      let logURL = URL(fileURLWithPath: "/tmp/instant-auth-debug.log")
-      if let handle = try? FileHandle(forWritingTo: logURL) {
-        handle.seekToEndOfFile()
-        if let data = text.data(using: .utf8) {
-          handle.write(data)
-        }
-        try? handle.close()
-      } else {
-        try? text.write(to: logURL, atomically: true, encoding: .utf8)
-      }
-    }
-
     private func providerButtonTapped(_ provider: AuthProviderSelection) {
-      log("Action: providerButtonTapped -> \(provider.title) (\(provider.id.rawValue))")
       auth.signIn(
         provider,
-        onProviderCompleted: { credential in
-          message = "Received \(credential.providerID.rawValue) credential"
-          log("Event: onProviderCompleted for \(credential.providerID.rawValue)")
-        },
         onSignedIn: { event in
-          message = "Signed in as \(event.session.userID)"
-          log("Event: onSignedIn -> User ID: \(event.session.userID)")
+          message = signedInMessage(event)
         },
         onFailure: { error in
-          message = error.recoveryMessage
-          log("Error on signIn (\(provider.id.rawValue)): message='\(error.message)' recovery='\(error.recovery)' operation='\(error.operation)'")
+          message = error.description
         }
       )
     }
 
     private func sendMagicCodeButtonTapped() {
-      log("Action: sendMagicCode to \(auth.email)")
       auth.sendMagicCode(
         onChallengeSent: { challenge in
           message = "Code sent to \(challenge.email)"
-          log("Event: onChallengeSent to \(challenge.email)")
         },
         onFailure: { error in
-          message = error.recoveryMessage
-          log("Error on sendMagicCode: '\(error.message)' recovery='\(error.recovery)'")
+          message = error.description
         }
       )
     }
 
     private func verifyMagicCodeButtonTapped() {
-      log("Action: verifyMagicCode with \(auth.magicCode)")
       auth.verifyMagicCode(
         onSignedIn: { event in
-          message = "Signed in as \(event.session.userID)"
-          log("Event: onSignedIn -> User ID: \(event.session.userID)")
+          message = signedInMessage(event)
         },
         onFailure: { error in
-          message = error.recoveryMessage
-          log("Error on verifyMagicCode: '\(error.message)' recovery='\(error.recovery)'")
+          message = error.description
         }
       )
     }
 
     private func guestButtonTapped() {
-      log("Action: guestButtonTapped")
       auth.signInAsGuest(
-        onSignedIn: { event in
-          message = "Guest \(event.session.userID)"
-          log("Event: onSignedIn as Guest -> User ID: \(event.session.userID)")
+        onSignedIn: { _ in
+          message = "Guest session created. Connect Apple or Google below whenever you’re ready."
         },
         onFailure: { error in
-          message = error.recoveryMessage
-          log("Error on signInAsGuest: '\(error.message)' recovery='\(error.recovery)'")
+          message = error.description
         }
       )
     }
+
+    private func signOutButtonTapped() {
+      auth.signOut(
+        onSignedOut: { message = "Signed out." },
+        onFailure: { error in message = error.description }
+      )
+    }
+
+    private func signedInMessage(_ event: InstantAuthSignedInEvent) -> String {
+      switch event.identityTransition {
+      case .signedIn:
+        return "Account connected successfully."
+      case .guestPromoted(let result):
+        switch result.disposition {
+        case .upgradedInPlace:
+          return "Account connected. Your guest identity was upgraded in place."
+        case .linkedToExistingUser:
+          return
+            "Account connected to an existing user. The guest identity remains linked; guest-owned records require linked-guest permissions and were not automatically transferred."
+        case .identityChangedWithoutVerifiedLink:
+          return
+            "Account connected as a different user, but this auth exchange could not verify a guest link. Guest-owned records may remain inaccessible until linkage is confirmed."
+        }
+      }
+    }
   }
 #endif
-

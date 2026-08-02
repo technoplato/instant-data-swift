@@ -261,6 +261,116 @@ import Testing
       )
       expectNoDifference(state.status, .signedIn(session))
     }
+
+    @Test @MainActor
+    func providerActionPromotesGuestThroughInjectedValueClientOperation() async throws {
+      let provider = AuthProvider.apple(clientName: "apple-ios", presentation: .native)
+      let credential = InstantAuthProviderCredential(
+        providerID: provider.id,
+        payload: .idToken(value: "apple-token", nonce: "apple-nonce")
+      )
+      let guest = v3AuthSession(userID: "value-client-guest", isGuest: true)
+      let promoted = v3AuthSession(userID: "value-client-primary", isGuest: false)
+      let promotion = InstantGuestPromotionResult(
+        guestUserID: guest.userID,
+        session: promoted,
+        disposition: .linkedToExistingUser
+      )
+      let exchange = V3AuthProviderExchangeRecorder(session: promoted)
+      let client = v3AuthClient(
+        authSession: { guest },
+        signInWithIDToken: { _, _, _ in
+          throw InstantError(
+            code: .implementationFailed,
+            operation: "ordinary id-token sign in",
+            message: "Guest promotion must not use the ordinary sign-in operation.",
+            recovery: "Invoke the injected atomic guest-promotion operation."
+          )
+        },
+        promoteGuestWithIDToken: { clientName, token, nonce in
+          await exchange.record(clientName: clientName, token: token, nonce: nonce)
+          return promotion
+        }
+      )
+      let state = InstantAuthState<V3VoiceTrailUser>(
+        providers: V3VoiceTrailAuthProviders.all
+      )
+      let callbacks = V3AuthCallbackRecorder()
+
+      await state.signIn(
+        provider,
+        using: client,
+        authorizer: InstantAuthProviderAuthorizer { _ in credential },
+        onSignedIn: { callbacks.signedIn.append($0) },
+        onFailure: { callbacks.failures.append($0) }
+      ).value
+
+      let event = try #require(callbacks.signedIn.first)
+      let result = try requireGuestPromotion(event.identityTransition)
+      let exchangedValues = await exchange.values()
+      expectNoDifference(callbacks.failures, [])
+      expectNoDifference(result, promotion)
+      expectNoDifference(
+        exchangedValues,
+        [.init(clientName: "apple-ios", token: "apple-token", nonce: "apple-nonce")]
+      )
+      expectNoDifference(state.status, .signedIn(promoted))
+    }
+
+    @Test @MainActor
+    func providerActionSurfacesLinkedGuestConflictWithoutClaimingRecordTransfer() async throws {
+      let provider = AuthProvider.apple(clientName: "apple-ios", presentation: .native)
+      let credential = InstantAuthProviderCredential(
+        providerID: provider.id,
+        payload: .idToken(value: "apple-token", nonce: "apple-nonce")
+      )
+      let cacheURL = v3AuthCacheURL("linked-guest")
+      defer { try? FileManager.default.removeItem(at: cacheURL) }
+      let runtime = try await InstantRuntime.bootstrap(
+        configuration: InstantRuntimeConfiguration(
+          appID: "v3-auth-test",
+          persistenceURL: cacheURL,
+          makeID: { "guest-user" },
+          guestAuthenticator: InstantGuestAuthenticator { _ in
+            InstantGuestAuthVerification(
+              userID: "guest-user",
+              refreshToken: "guest-refresh-token"
+            )
+          },
+          idTokenExchange: InstantIDTokenExchange { _ in
+            InstantIDTokenVerification(
+              userID: "existing-primary",
+              refreshToken: "primary-refresh-token",
+              type: .user,
+              guestPromotionLinkEvidence: .instantServerAcceptedGuestToken
+            )
+          }
+        )
+      )
+      let client = InstantSwiftDataClient(runtime: runtime)
+      _ = try await client.signInAsGuest()
+      let state = InstantAuthState<V3VoiceTrailUser>(
+        providers: V3VoiceTrailAuthProviders.all
+      )
+      let callbacks = V3AuthCallbackRecorder()
+
+      await state.signIn(
+        provider,
+        using: client,
+        authorizer: InstantAuthProviderAuthorizer { _ in credential },
+        onSignedIn: { callbacks.signedIn.append($0) },
+        onFailure: { callbacks.failures.append($0) }
+      ).value
+
+      let event = try #require(callbacks.signedIn.first)
+      expectNoDifference(callbacks.failures, [])
+      let result = try requireGuestPromotion(event.identityTransition)
+      expectNoDifference(result.guestUserID, "guest-user")
+      expectNoDifference(result.session.userID, "existing-primary")
+      expectNoDifference(result.disposition, .linkedToExistingUser)
+      expectNoDifference(result.requiresLinkedGuestAccess, true)
+      expectNoDifference(state.status, .signedIn(result.session))
+    }
   }
 
   @MainActor
@@ -465,6 +575,7 @@ import Testing
   }
 
   private func v3AuthClient(
+    authSession: @escaping @Sendable () async throws -> InstantAuthSession? = { nil },
     signInAsGuest: @escaping @Sendable () async throws -> InstantAuthSession = {
       v3AuthSession(userID: "unused-guest", isGuest: true)
     },
@@ -476,7 +587,9 @@ import Testing
       @escaping @Sendable (String, String, String?) async throws
       -> InstantAuthSession = { _, _, _ in
         v3AuthSession(userID: "unused-id-token", isGuest: false)
-      }
+      },
+    promoteGuestWithIDToken:
+      (@Sendable (String, String, String?) async throws -> InstantGuestPromotionResult)? = nil
   ) -> InstantSwiftDataClient {
     InstantSwiftDataClient(
       transact: { transaction in
@@ -491,11 +604,27 @@ import Testing
       observe: { _ in AsyncStream { $0.finish() } },
       pendingMutations: { [] },
       localID: { "v3-auth-\($0)" },
+      authSession: authSession,
       signInAsGuest: signInAsGuest,
       sendMagicCode: sendMagicCode,
       signInWithIDToken: signInWithIDToken,
+      promoteGuestWithIDToken: promoteGuestWithIDToken,
       signOutWithOptions: signOutWithOptions
     )
+  }
+
+  private func requireGuestPromotion(
+    _ transition: InstantAuthIdentityTransition
+  ) throws -> InstantGuestPromotionResult {
+    guard case .guestPromoted(let result) = transition else {
+      throw InstantError(
+        code: .validationFailed,
+        operation: "require guest promotion fixture",
+        message: "Expected a guest-promotion identity transition.",
+        recovery: "Route active guest provider exchanges through atomic promotion."
+      )
+    }
+    return result
   }
 
   private func waitForV3AuthCondition(
