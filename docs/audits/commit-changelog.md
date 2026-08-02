@@ -6,6 +6,16 @@ commit SHA, and high-level reason. Changelog-only bookkeeping commits are
 visible in Git history but are not self-recorded because a commit cannot
 contain its own final SHA.
 
+## August 2, 2026 at 2:22:59 PM EDT
+
+- Repository: `instant-data-swift`
+- Commit: `f13ee441dabbcdf3144a0cd42dfa9f00c1ebdf37`
+- High-level reason: Add callback-safe native Apple auth, state/PKCE browser
+  OAuth for Google and other providers, and atomic exact-guest-token promotion
+  with injectable client seams, truthful linked-existing-user outcomes, a
+  polished sample surface, independent review, and 62 passing auth tests for
+  Scribe issue #113.
+
 ## August 2, 2026 at 2:18:49 PM EDT
 
 - Repository: `realtime-voice-sqlite-instant` (Scribe)

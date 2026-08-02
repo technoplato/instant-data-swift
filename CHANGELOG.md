@@ -4,6 +4,35 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## August 2nd, 2026 at 2:22:55 p.m. EDT — `f13ee441dabb` Add native auth and atomic guest promotion
+
+- **Implementation commit:** `f13ee441dabbcdf3144a0cd42dfa9f00c1ebdf37`
+- **Change:** Add callback-safe native auth and atomic guest promotion
+- **Details:**
+  - Add native Sign in with Apple with raw/hashed nonce, app-owned browser OAuth callbacks with state and PKCE, and provider configuration for Apple and Google.
+  - Promote an active guest by forwarding the exact guest refresh token and committing the non-idempotent exchange only through an exact persisted-session compare-and-swap; surface linked-existing-user semantics without claiming record transfer.
+  - Expose injectable atomic promotion operations through InstantSwiftDataClient, preserve deprecated provider conveniences for source compatibility, and replace the sample debug console with a polished guest/account flow.
+  - Independent final review is green and swift test --filter Auth passes 62 tests across 13 suites; physical Scribe acceptance remains issue #113.
+- **Files:**
+  - `Sources/InstantSwiftData/InstantAuthProvider.swift` — Implement nonce-safe Apple authorization and callback-safe browser OAuth state, PKCE, cancellation, and window presentation.
+  - `Sources/InstantSwiftData/InstantGuestPromotion.swift` — Expose truthful guest upgrade and linked-existing-user outcomes.
+  - `Sources/InstantSwiftData/InstantSwiftData.swift` — Add injectable atomic guest-promotion operations to the public client seam.
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — Serialize promotion, forward the exact guest session, and commit through a loud compare-and-swap boundary.
+  - `Sources/InstantSwiftDataCore/InstantGuestPromotionExchange.swift` — Model server link evidence and atomic exchange disposition.
+  - `Sources/InstantSwiftDataCore/InstantIDTokenExchange.swift` — Attest when the canonical endpoint accepted an exact guest token.
+  - `Sources/InstantSwiftDataCore/InstantOAuthExchange.swift` — Attest when the canonical OAuth endpoint accepted an exact guest token.
+  - `Sources/InstantSwiftData/InstantAuth.swift` — Route active-guest provider sign-in through atomic promotion and report the identity transition.
+  - `Sources/AuthV3App/AuthApp.swift` — Present a polished email, guest, provider, promotion, and signed-in surface.
+  - `Sources/AuthV3App/AuthModels.swift` — Configure app-owned provider client names and callbacks while preserving compatibility properties.
+  - `Tests/InstantSwiftDataTests/InstantGuestPromotionTests.swift` — Prove same-ID upgrade, linked existing user, cancellation after server success, exact guest forwarding, and compare-and-swap divergence.
+  - `Tests/InstantSwiftDataTests/InstantAuthProviderTests.swift` — Prove PKCE, callback state validation, redirect URLs, and stale-attempt isolation.
+  - `Tests/InstantSwiftDataTests/V3AuthLoginFixtureTests.swift` — Prove the public injected value-client promotion seam and remove a false-pass transition assertion.
+  - `Tests/AuthV3AppTests/AuthV3AppTests.swift` — Prove provider configuration, catalog behavior, and source-compatible convenience properties.
+  - `PROGRESS.md` — Preserve verification, review corrections, and remaining physical acceptance lanes.
+- **User context (verbatim):**
+  > if I have a guest account, I can log in with another account and my records will be linked.
+- **SpecStory:** unavailable — Codex desktop task; SpecStory capture is unavailable for this GUI session.
+
 ## August 2nd, 2026 at 11:27:24 a.m. EDT — `0f78572e02a1` Speed persisted state loading with bounded batch decoding
 
 - **Implementation commit:** `0f78572e02a17189409fc918b912188e9d50680a`
