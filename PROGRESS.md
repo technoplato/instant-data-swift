@@ -6,6 +6,80 @@ production-readiness plan
 Commit-level history stays in `docs/audits/commit-changelog.md`; this file is
 the narrative of what the library must prove and why.
 
+## 2026-08-02 17:54:11 EDT — P1 acknowledgement slice is no-ship pending four review blockers
+
+- Independent source review found four correctness gaps after the earlier 39/39
+  focused pass. That pass remains useful regression evidence, but it is
+  explicitly insufficient for landing or shipping until all four gaps have
+  focused tests and the complete acknowledgement gate is green.
+- First, generic mutation-transport failures and live mutation-encoding
+  failures must use the same atomic optimistic-overlay removal as WebSocket
+  rejection; merely marking their outbox rows failed can leave rejected data
+  visible in the cache. Second, explicit discard of an older applied failed
+  mutation must rebuild and persist every later successor's inverse so a later
+  rejection restores the true server base.
+- Third, manual confirmation, local drain, and the default local mutation
+  transport must not make `waitForAllPendingMutations` return success. Those
+  local-only confirmations now require durable provenance that the delivery
+  barrier can inspect and reject as not proving server acknowledgement. Fourth,
+  automatic-retry reservations for the same mutation need reference counts so
+  one overlapping owner cannot release another owner's protection.
+- `/root/instant_ack_blockers` owns the acknowledgement/rejection sources and
+  focused tests through final verification, independent rereview, task-owned
+  commits, and immutable ledgers. Required supporting paths include
+  `InstantLiveTransport.swift`, `InstantStore.swift`, `TripleIndexes.swift`,
+  `InstantMutationLifecycleTests.swift`, `InstantStoreTests.swift`, and
+  `MutationDeliveryTests.swift` in addition to the implementation and focused
+  test paths listed in the 17:46 checkpoint. Recipes/presence commits
+  `671e3705` and `f64d6a38` are concurrent committed work and must remain
+  untouched.
+- Current next boundary: finish the four RED/GREEN regressions, replace stale V3
+  fixture calls that treat manual confirmation as server proof, rerun focused
+  acknowledgement/rejection/live-transport/lifecycle suites plus a clean core
+  build and diff checks, then obtain the reviewer's line-precise reread. Nothing
+  in this slice is staged or committed yet.
+
+## 2026-08-02 17:46:11 EDT — P1 acknowledgement and rollback candidate is cutoff-safe
+
+- The upstream-backed acceptance boundary tracked under issue #043 is now a
+  coherent unstaged landing candidate. Only WebSocket `transact-ok` or an
+  explicitly server-accepted mutation transport result releases a waiting
+  typed message. Local transport flush, manual confirmation, local drain, and
+  generic refresh remain non-accepting. The three former refresh-confirmation
+  tests now prove that matching server checkpoints rebase and retain local
+  optimism without resolving the transaction.
+- Terminal rejection no longer depends on an active query. In one SQLite
+  transaction it strips later optimistic successors in reverse, applies the
+  rejected mutation's exact inverse, replays successors with rebuilt durable
+  inverses, marks the failed overlay removed with its obsolete inverse cleared,
+  and persists the failed row plus errored connection metadata. Focused proof
+  covers immediate local query state, relaunch, exactly one retry, a second
+  rejection, explicit discard, and a successor that is itself later rejected.
+- Legacy rows missing both inverse and overlay-state metadata are never changed
+  by a transaction-ID heuristic. Retry and discard throw
+  `localMutationDisposition = retainedUnknown`; server refresh reports the
+  issue and fails closed before touching the cache. Future-skewed update and
+  delete fixtures prove the visible local state stays unchanged through all
+  three refused paths. The reportIssue emissions are asserted as two expected
+  known issues, so the loud development diagnostic is itself test evidence.
+- Exact decisive gate:
+  `swift test --scratch-path /private/tmp/instant-ack-review-build --filter 'InstantMessageServerAcceptanceTests|InstantFailedMutationDiscardTests|liveRefreshDoesNotConfirmMatchingLocalMutationWithoutTransactOK|liveRefreshRebasesAllOptimisticMutationsWithoutConfirmingThem|emptyLiveRefreshDoesNotConfirmMatchingMutationOrDropOptimisticRows'`.
+  Result: 39/39 tests in three suites passed, 0 unexpected failures, 0.573
+  seconds, with exactly two expected known issues for the legacy refresh
+  warnings. `git diff --check` passes. Strict Swift format lint passes for the
+  two new focused suites and the small public API/error/message transport files.
+- Owned implementation surface for independent review:
+  `InstantMessage.swift`, `InstantSwiftData.swift`, `InstantError.swift`,
+  `InstantLiveRefreshApplication.swift`, `InstantModels.swift`,
+  `InstantMutationTransport.swift`, `InstantRuntime.swift`, `Outbox.swift`, and
+  `SQLitePersistenceStore.swift`; owned tests are
+  `InstantMessageServerAcceptanceTests.swift`,
+  `InstantFailedMutationDiscardTests.swift`, and the three renamed refresh
+  cases in `InstantLiveTransportTests.swift`. Other dirty source/test files are
+  concurrent work and remain untouched. Nothing in this slice is staged or
+  committed; the only remaining boundary is root's independent source review,
+  followed by a task-owned commit and immutable ledgers if approved.
+
 ## 2026-08-02 17:39:10 EDT — Recipes reaction, touch cursor, and logical presence fixes green
 
 - The bounded upstream-parity implementation for #127–#129 is now source
