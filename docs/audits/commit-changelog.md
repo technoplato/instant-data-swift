@@ -6,6 +6,12 @@ commit SHA, and high-level reason. Changelog-only bookkeeping commits are
 visible in Git history but are not self-recorded because a commit cannot
 contain its own final SHA.
 
+## August 2, 2026 at 10:57:23 AM EDT
+
+- Repository: `realtime-voice-sqlite-instant` (Scribe)
+- Commit: `38a822c3b81cc92f32f98a63bf31c9e9ae33f6fa`
+- High-level reason: Recover the active microphone capture graph after input-hardware changes without changing recording identity, serialize teardown against recovery, and keep automatic audio-session reclaim alive in bounded retry windows when iOS omits the interruption-ended notification.
+
 ## August 2, 2026 at 10:34:43 AM EDT
 
 - Repository: `instant-data-swift`
