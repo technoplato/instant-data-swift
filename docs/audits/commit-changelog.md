@@ -6,6 +6,12 @@ commit SHA, and high-level reason. Changelog-only bookkeeping commits are
 visible in Git history but are not self-recorded because a commit cannot
 contain its own final SHA.
 
+## August 1, 2026 at 9:38:07 PM EDT
+
+- Repository: `instant-data-swift`
+- Commit: `0d0fbc3d5acb3308fe6c652fe57904a6d080aa50`
+- High-level reason: Stop a schema-drifted mutation from stalling the whole outbox — bounded flush batches, in-flight acknowledgement timeout, IssueReporting visibility for quarantines/deep backlog, and keeping a healthy connection open when recording a quarantine fails. Reconstructed from a Scribe device outbox holding 691 pending mutations.
+
 ## August 1, 2026 at 5:02:23 PM EDT
 
 - Repository: `instant-data-swift`
