@@ -6,6 +6,24 @@ commit SHA, and high-level reason. Changelog-only bookkeeping commits are
 visible in Git history but are not self-recorded because a commit cannot
 contain its own final SHA.
 
+## August 2, 2026 at 4:29:34 PM EDT
+
+- Repository: `instant-data-swift`
+- Commit: `6408c8ec1982bda51442a6e517c4d900c7818734`
+- High-level reason: Route app-owned Apple and Google provider metadata into
+  the runnable Recipes auth surface, register its OAuth callback, enable the
+  signed Apple capability on iOS and macOS, and protect the packaging contract
+  with focused tests for issue #113.
+
+## August 2, 2026 at 4:26:07 PM EDT
+
+- Repository: `instant-data-swift`
+- Commit: `ff736a0ae8c01b251d75507e8e9cbba5162d6fc1`
+- High-level reason: Require canonical upstream Instant TypeScript behavior as
+  the starting point for tricky synchronization, optimistic-state, rejection,
+  reconnect, query, auth, and persistence edge cases; preserve its transition
+  and test shape and document necessary Swift adaptations for issue #043.
+
 ## August 2, 2026 at 4:24:56 PM EDT
 
 - Repository: `realtime-voice-sqlite-instant` (Scribe)

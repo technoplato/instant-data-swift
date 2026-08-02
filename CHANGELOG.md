@@ -4,6 +4,45 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## August 2nd, 2026 at 4:30:10 p.m. EDT — `6408c8ec1982` Configure Recipes native provider login
+
+- **Implementation commit:** `6408c8ec1982bda51442a6e517c4d900c7818734`
+- **Change:** Wire Recipes native-provider metadata and Apple capabilities into the runnable hosts
+- **Details:**
+  - Issue #113 Recipes now injects app-owned Apple and Google client names plus the instant-recipes-v3 OAuth callback into the shared auth screen.
+  - The iOS and macOS targets register the callback scheme and signed Sign in with Apple entitlement; focused configuration and packaging tests protect the contract.
+  - This commit establishes a traceable build source; physical provider completion remains an explicit computer-use acceptance lane.
+- **Files:**
+  - `Sources/AuthV3App/AuthApp.swift` — Allow the host app to inject provider configuration into the auth state.
+  - `Sources/RecipesV3App/RecipesV3App.swift` — Propagate app-owned provider metadata from bundle configuration to the Recipes auth surface.
+  - `Tests/RecipesV3AppTests/RecipesV3AppTests.swift` — Prove environment and bundle provider metadata routing.
+  - `Tests/RecipesV3AppTests/RecipesV3PackagingContractTests.swift` — Prove callback registration and Apple entitlement packaging.
+  - `Examples/RecipesV3/iOS-Info.plist` — Register the iOS callback scheme and provider client names.
+  - `Examples/RecipesV3/macOS-Info.plist` — Register the macOS callback scheme and provider client names.
+  - `Examples/RecipesV3/RecipesV3iOS.entitlements` — Enable Sign in with Apple for the iOS host.
+  - `Examples/RecipesV3/RecipesV3macOS.entitlements` — Enable Sign in with Apple for the macOS host.
+  - `Examples/RecipesV3/project.yml` — Attach target-specific auth entitlements to generated projects.
+  - `Examples/RecipesV3/InstantRecipesV3.xcodeproj/project.pbxproj` — Regenerate the checked-in Xcode project with auth entitlements.
+- **User context (verbatim):**
+  > Make sure apple login and google login work fully end to end with computer use
+  > can you have the off agent launch the recipes app?
+- **SpecStory:** unavailable — Codex desktop GUI task; SpecStory captures Codex CLI sessions and no verified desktop capture URI is available.
+
+## August 2nd, 2026 at 4:30:09 p.m. EDT — `ff736a0ae8c0` Document upstream-first Instant policy
+
+- **Implementation commit:** `ff736a0ae8c01b251d75507e8e9cbba5162d6fc1`
+- **Change:** Require upstream-first handling for tricky Instant edge cases
+- **Details:**
+  - Issue #043 now requires inspecting canonical upstream TypeScript behavior before changing Swift synchronization, optimistic state, rejection, reconnect, query, auth, or persistence semantics.
+  - Swift adaptations must preserve the upstream transition and test shape and document why platform constraints require any difference.
+- **Files:**
+  - `AGENTS.md` — Make canonical upstream Instant the default design reference for tricky edge cases.
+  - `docs/audits/commit-changelog.md` — Cross-reference the paired Scribe policy commit in the immutable audit ledger.
+- **User context (verbatim):**
+  > are we looking at how upstream instant handles this too?
+  > we should always deffer to upstream for handling tricky edge cases and attmept to implement a solution similar to theirs rather than reinvent the wheel.
+- **SpecStory:** unavailable — Codex desktop GUI task; SpecStory captures Codex CLI sessions and no verified desktop capture URI is available.
+
 ## August 2nd, 2026 at 2:22:55 p.m. EDT — `f13ee441dabb` Add native auth and atomic guest promotion
 
 - **Implementation commit:** `f13ee441dabbcdf3144a0cd42dfa9f00c1ebdf37`
