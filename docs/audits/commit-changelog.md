@@ -6,6 +6,18 @@ commit SHA, and high-level reason. Changelog-only bookkeeping commits are
 visible in Git history but are not self-recorded because a commit cannot
 contain its own final SHA.
 
+## August 1, 2026 at 10:07:28 PM EDT
+
+- Repository: `instant-data-swift`
+- Commit: `3f4e8926c6b7845ecb3f46a0ab7316328ba2a0e8`
+- High-level reason: Add a package-benchmark suite (the tool TCA2 uses) measuring wall clock, CPU, malloc, peak resident memory, and throughput for local write, read, and cold store reopen — first run: write p50 28ms, query p50 41ms, reopen p50 117ms.
+
+## August 1, 2026 at 10:07:28 PM EDT
+
+- Repository: `instant-data-swift`
+- Commit: `4fbc07fb6421b7591e3dea61bc409ad20b2aa299`
+- High-level reason: Recover mutations quarantined by schema or permission drift by retrying deploy-fixable failures on a fresh session, so the 463 and 1 stranded field mutations can deliver once the deployment lands.
+
 ## August 1, 2026 at 9:38:07 PM EDT
 
 - Repository: `instant-data-swift`
