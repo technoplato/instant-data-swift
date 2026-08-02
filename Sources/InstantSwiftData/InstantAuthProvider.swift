@@ -193,9 +193,40 @@ private enum InstantAuthProviderAuthorizerKey: TestDependencyKey {
 
 extension InstantAuthProviderAuthorizerKey: DependencyKey {
   static let liveValue = InstantAuthProviderAuthorizer { provider in
+    @Dependency(\.defaultInstantSwiftData) var client
+
+    if provider.presentation == .externalBrowser || provider.kind == .authorizationCode {
+      #if canImport(AuthenticationServices)
+      guard let clientName = provider.clientName else {
+        throw InstantError(
+          code: .validationFailed,
+          operation: "authorize with browser",
+          message: "Provider missing clientName.",
+          recovery: "Set clientName on AuthProvider."
+        )
+      }
+      return try await BrowserOAuthAuthorizer.shared.authorize(
+        clientName: clientName,
+        providerID: provider.id,
+        client: client
+      )
+      #endif
+    }
+
     if provider.id.rawValue == "apple" {
       #if canImport(AuthenticationServices)
-      return try await AppleIDAuthorizer.shared.authorize(provider: provider)
+      do {
+        return try await AppleIDAuthorizer.shared.authorize(provider: provider)
+      } catch let error as NSError where error.domain == ASAuthorizationError.errorDomain && error.code == 1000 {
+        if let clientName = provider.clientName {
+          return try await BrowserOAuthAuthorizer.shared.authorize(
+            clientName: clientName,
+            providerID: provider.id,
+            client: client
+          )
+        }
+        throw error
+      }
       #else
       throw InstantError(
         code: .implementationFailed,
@@ -218,6 +249,69 @@ extension DependencyValues {
 }
 
 #if canImport(AuthenticationServices)
+@MainActor
+public final class BrowserOAuthAuthorizer: NSObject, ASWebAuthenticationPresentationContextProviding {
+  public static let shared = BrowserOAuthAuthorizer()
+
+  public func authorize(
+    clientName: String,
+    providerID: InstantAuthProviderID,
+    client: InstantSwiftDataClient
+  ) async throws -> InstantAuthProviderCredential {
+    let callbackScheme = "instantauth"
+    guard let redirectURL = URL(string: "\(callbackScheme)://oauth-callback") else {
+      throw InstantError(
+        code: .validationFailed,
+        operation: "authorize with browser",
+        message: "Failed to construct callback URL.",
+        recovery: "Check callback scheme format."
+      )
+    }
+    let authURL = try client.oauthAuthorizationURL(clientName: clientName, redirectURL: redirectURL)
+
+    return try await withCheckedThrowingContinuation { continuation in
+      let session = ASWebAuthenticationSession(
+        url: authURL,
+        callbackURLScheme: callbackScheme
+      ) { callbackURL, error in
+        if let error = error {
+          continuation.resume(throwing: error)
+          return
+        }
+        guard let callbackURL = callbackURL,
+              let components = URLComponents(url: callbackURL, resolvingAgainstBaseURL: false),
+              let code = components.queryItems?.first(where: { $0.name == "code" })?.value else {
+          continuation.resume(throwing: InstantError(
+            code: .authFailed,
+            operation: "authorize with browser",
+            message: "No authorization code returned from OAuth callback URL.",
+            recovery: "Complete authentication in the browser window."
+          ))
+          return
+        }
+        let credential = InstantAuthProviderCredential(
+          providerID: providerID,
+          payload: .authorizationCode(value: code, codeVerifier: nil)
+        )
+        continuation.resume(returning: credential)
+      }
+      session.presentationContextProvider = self
+      session.prefersEphemeralWebBrowserSession = false
+      session.start()
+    }
+  }
+
+  public func presentationAnchor(for session: ASWebAuthenticationSession) -> ASPresentationAnchor {
+    #if os(macOS)
+    return NSApplication.shared.keyWindow ?? NSApplication.shared.windows.first ?? NSWindow()
+    #elseif os(iOS)
+    return UIApplication.shared.windows.first { $0.isKeyWindow } ?? UIApplication.shared.windows.first ?? UIWindow()
+    #else
+    fatalError("Unsupported OS")
+    #endif
+  }
+}
+
 @MainActor
 public final class AppleIDAuthorizer: NSObject, ASAuthorizationControllerDelegate, ASAuthorizationControllerPresentationContextProviding {
   public static let shared = AppleIDAuthorizer()
@@ -269,7 +363,19 @@ public final class AppleIDAuthorizer: NSObject, ASAuthorizationControllerDelegat
     didCompleteWithError error: Error
   ) {
     Task { @MainActor in
-      self.continuation?.resume(throwing: error)
+      let nsError = error as NSError
+      let descriptiveError: Error
+      if nsError.domain == ASAuthorizationError.errorDomain && nsError.code == 1000 {
+        descriptiveError = InstantError(
+          code: .authFailed,
+          operation: "sign in with apple",
+          message: "Native Apple Sign-In requires a signed macOS/iOS App Bundle with the 'com.apple.developer.applesignin' entitlement (ASAuthorizationError Code 1000).",
+          recovery: "Run this target from an Xcode .app bundle with Sign In with Apple enabled, or use external browser presentation."
+        )
+      } else {
+        descriptiveError = error
+      }
+      self.continuation?.resume(throwing: descriptiveError)
       self.continuation = nil
     }
   }
@@ -285,4 +391,5 @@ public final class AppleIDAuthorizer: NSObject, ASAuthorizationControllerDelegat
   }
 }
 #endif
+
 
