@@ -6,6 +6,12 @@ commit SHA, and high-level reason. Changelog-only bookkeeping commits are
 visible in Git history but are not self-recorded because a commit cannot
 contain its own final SHA.
 
+## August 2, 2026 at 1:14:58 PM EDT
+
+- Repository: `realtime-voice-sqlite-instant` (Scribe)
+- Commit: `9b22efe8ac1ff33b909a47bc137aa32c1c1184f8`
+- High-level reason: Record the returned-device recovery boundary with immutable E2E and system-surface SHAs, exact auth-worker ownership, verified guest-promotion semantics, the Mac inline-response contract, the iPhone thermal lane, and the safe continuation order for #035, #044, #089, #099, #113, and #116.
+
 ## August 2, 2026 at 1:11:46 PM EDT
 
 - Repository: `realtime-voice-sqlite-instant` (Scribe)
