@@ -100,7 +100,7 @@ public enum AuthV3Providers: InstantAuthProviderCatalog {
     extraFields: AuthV3User.Signup.self
   )
   public static let apple = AuthProvider.apple(
-    clientName: "apple-ios",
+    clientName: "apple",
     presentation: .native
   )
   public static let google = AuthProvider.google(

@@ -217,8 +217,10 @@ extension InstantAuthProviderAuthorizerKey: DependencyKey {
       #if canImport(AuthenticationServices)
       do {
         return try await AppleIDAuthorizer.shared.authorize(provider: provider)
-      } catch let error as NSError where error.domain == ASAuthorizationError.errorDomain && error.code == 1000 {
-        if let clientName = provider.clientName {
+      } catch {
+        let nsError = error as NSError
+        if nsError.domain == ASAuthorizationError.errorDomain && nsError.code == 1000 {
+          let clientName = provider.clientName ?? "apple"
           return try await BrowserOAuthAuthorizer.shared.authorize(
             clientName: clientName,
             providerID: provider.id,
@@ -363,19 +365,7 @@ public final class AppleIDAuthorizer: NSObject, ASAuthorizationControllerDelegat
     didCompleteWithError error: Error
   ) {
     Task { @MainActor in
-      let nsError = error as NSError
-      let descriptiveError: Error
-      if nsError.domain == ASAuthorizationError.errorDomain && nsError.code == 1000 {
-        descriptiveError = InstantError(
-          code: .authFailed,
-          operation: "sign in with apple",
-          message: "Native Apple Sign-In requires a signed macOS/iOS App Bundle with the 'com.apple.developer.applesignin' entitlement (ASAuthorizationError Code 1000).",
-          recovery: "Run this target from an Xcode .app bundle with Sign In with Apple enabled, or use external browser presentation."
-        )
-      } else {
-        descriptiveError = error
-      }
-      self.continuation?.resume(throwing: descriptiveError)
+      self.continuation?.resume(throwing: error)
       self.continuation = nil
     }
   }

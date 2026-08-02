@@ -18,8 +18,10 @@ public struct AuthV3AppConfiguration: Hashable, Sendable {
   ) -> Self {
     let configuredAppID = environment["INSTANT_APP_ID"]?
       .trimmingCharacters(in: .whitespacesAndNewlines)
+    let isValidUUID = configuredAppID.flatMap(UUID.init(uuidString:)) != nil
+    let effectiveAppID = isValidUUID ? configuredAppID! : "28c98cc4-e65b-41be-a5bc-204827f5d364"
     return Self(
-      appID: configuredAppID.flatMap { $0.isEmpty ? nil : $0 } ?? "28c98cc4-e65b-41be-a5bc-204827f5d364",
+      appID: effectiveAppID,
       persistenceURL: environment["INSTANT_PERSISTENCE_PATH"].map(URL.init(fileURLWithPath:)),
       enablesLiveSync: true
     )
