@@ -6,6 +6,12 @@ commit SHA, and high-level reason. Changelog-only bookkeeping commits are
 visible in Git history but are not self-recorded because a commit cannot
 contain its own final SHA.
 
+## August 2, 2026 at 11:26:44 AM EDT
+
+- Repository: `realtime-voice-sqlite-instant` (Scribe)
+- Commit: `de0ee7df1b6052e072ee208e76507dac6f3661ea`
+- High-level reason: Replace the startup-blocking diagnostics Instant database with bounded crash-recoverable device JSONL, one process-long tailnet WebSocket, durable collector acknowledgements, protected-evidence retention, opt-out lifecycle enforcement, and a loopback-only launchd-supervised collector.
+
 ## August 2, 2026 at 10:59:06 AM EDT
 
 - Repository: `realtime-voice-sqlite-instant` (Scribe)
