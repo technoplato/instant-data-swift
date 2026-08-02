@@ -4,6 +4,21 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## August 2nd, 2026 at 10:26:31 a.m. EDT — `e87765b8cd8c` Prevent deep outbox mutation starvation
+
+- **Implementation commit:** `e87765b8cd8c5c2830494ee05c9686f7edb9f4d4`
+- **Change:** Prevent deep outbox mutation starvation
+- **Details:**
+  - Register one-shot queries before reconnect so add-query precedes a persisted mutation backlog.
+  - Bound in-flight delivery by both mutation count and 256 low-level transaction steps, refilling only after acknowledgements.
+  - Reserve and clear the full in-flight tuple across actor reentrancy, timeout, error, close, and reconnect paths.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — Prioritize queries and implement acknowledgement-driven weighted delivery.
+  - `Tests/InstantSwiftDataCoreTests/InstantOutboxDeliveryStallTests.swift` — Cover query ordering, weighted refills, and immediate-ack reentrancy.
+- **User context (verbatim):**
+  > commit it so it isn't drifiting in git dirty state
+- **SpecStory:** unavailable — Unavailable: this work ran in Codex desktop and no verified SpecStory capture URI was exposed.
+
 ## August 1st, 2026 at 10:02:22 a.m. EDT — `d86fe4a6c0b7` docs: add MIT LICENSE file
 
 - **Implementation commit:** `d86fe4a6c0b70c11c8b8573205c35ada954be8c3`
