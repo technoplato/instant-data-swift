@@ -116,5 +116,5 @@ public enum AuthV3Providers: InstantAuthProviderCatalog {
     clientName: "enterprise-oidc"
   )
 
-  public static let all = [magicCode, apple, google, github, enterprise]
+  public static let all = [magicCode, apple]
 }

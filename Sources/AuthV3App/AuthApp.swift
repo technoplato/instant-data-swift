@@ -101,25 +101,40 @@ public typealias AuthAppConfiguration = AuthV3AppConfiguration
 
     public var body: some View {
       Form {
-        Section("Instant Auth") {
-          Text(message)
-          TextField("Email", text: $auth.email)
+        if let session = auth.session {
+          Section("Signed In") {
+            Text("User ID: \(session.userID)")
+            if let email = auth.user?.email {
+              Text("Email: \(email)")
+            }
+            Button("Log out") {
+              auth.signOut(
+                onSignedOut: { message = "Signed out" },
+                onFailure: { error in message = error.recoveryMessage }
+              )
+            }
+          }
+        } else {
+          Section("Instant Auth") {
+            Text(message)
+            TextField("Email", text: $auth.email)
 
-          if showsMagicCode {
-            TextField("Code", text: $auth.magicCode)
-            Button("Verify code", action: verifyMagicCodeButtonTapped)
-            Button("Use a different email", action: auth.resetMagicCode)
-              .buttonStyle(.plain)
-          } else {
-            Button("Send magic code", action: sendMagicCodeButtonTapped)
+            if showsMagicCode {
+              TextField("Code", text: $auth.magicCode)
+              Button("Verify code", action: verifyMagicCodeButtonTapped)
+              Button("Use a different email", action: auth.resetMagicCode)
+                .buttonStyle(.plain)
+            } else {
+              Button("Send magic code", action: sendMagicCodeButtonTapped)
+            }
+
+            Button("Continue as guest", action: guestButtonTapped)
           }
 
-          Button("Continue as guest", action: guestButtonTapped)
-        }
-
-        Section("Providers") {
-          ForEach(auth.providers) { provider in
-            Button(provider.title) { providerButtonTapped(provider) }
+          Section("Providers") {
+            ForEach(auth.providers) { provider in
+              Button(provider.title) { providerButtonTapped(provider) }
+            }
           }
         }
       }

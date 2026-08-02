@@ -170,6 +170,16 @@ public struct InstantAuthProviderAuthorizer: Sendable {
   }
 }
 
+#if canImport(AuthenticationServices)
+import AuthenticationServices
+#endif
+#if canImport(AppKit)
+import AppKit
+#endif
+#if canImport(UIKit)
+import UIKit
+#endif
+
 private enum InstantAuthProviderAuthorizerKey: TestDependencyKey {
   static let testValue = InstantAuthProviderAuthorizer { provider in
     throw InstantError(
@@ -182,7 +192,22 @@ private enum InstantAuthProviderAuthorizerKey: TestDependencyKey {
 }
 
 extension InstantAuthProviderAuthorizerKey: DependencyKey {
-  static let liveValue = testValue
+  static let liveValue = InstantAuthProviderAuthorizer { provider in
+    if provider.id.rawValue == "apple" {
+      #if canImport(AuthenticationServices)
+      return try await AppleIDAuthorizer.shared.authorize(provider: provider)
+      #else
+      throw InstantError(
+        code: .implementationFailed,
+        operation: "authorize with apple",
+        message: "AuthenticationServices is not available on this platform.",
+        recovery: "Run on iOS or macOS."
+      )
+      #endif
+    }
+
+    return try await testValue.authorize(provider)
+  }
 }
 
 extension DependencyValues {
@@ -191,3 +216,73 @@ extension DependencyValues {
     set { self[InstantAuthProviderAuthorizerKey.self] = newValue }
   }
 }
+
+#if canImport(AuthenticationServices)
+@MainActor
+public final class AppleIDAuthorizer: NSObject, ASAuthorizationControllerDelegate, ASAuthorizationControllerPresentationContextProviding {
+  public static let shared = AppleIDAuthorizer()
+
+  private var continuation: CheckedContinuation<InstantAuthProviderCredential, Error>?
+
+  public func authorize(provider: AuthProvider) async throws -> InstantAuthProviderCredential {
+    return try await withCheckedThrowingContinuation { continuation in
+      self.continuation = continuation
+      let appleIDProvider = ASAuthorizationAppleIDProvider()
+      let request = appleIDProvider.createRequest()
+      request.requestedScopes = [.fullName, .email]
+
+      let controller = ASAuthorizationController(authorizationRequests: [request])
+      controller.delegate = self
+      controller.presentationContextProvider = self
+      controller.performRequests()
+    }
+  }
+
+  public nonisolated func authorizationController(
+    controller: ASAuthorizationController,
+    didCompleteWithAuthorization authorization: ASAuthorization
+  ) {
+    Task { @MainActor in
+      if let appleIDCredential = authorization.credential as? ASAuthorizationAppleIDCredential,
+         let identityTokenData = appleIDCredential.identityToken,
+         let identityToken = String(data: identityTokenData, encoding: .utf8) {
+        let credential = InstantAuthProviderCredential(
+          providerID: InstantAuthProviderID(rawValue: "apple"),
+          payload: .idToken(value: identityToken, nonce: nil)
+        )
+        self.continuation?.resume(returning: credential)
+        self.continuation = nil
+      } else {
+        self.continuation?.resume(throwing: InstantError(
+          code: .implementationFailed,
+          operation: "authorize with apple",
+          message: "Failed to extract identity token from Apple credential.",
+          recovery: "Try signing in with Apple again or verify system settings."
+        ))
+        self.continuation = nil
+      }
+    }
+  }
+
+  public nonisolated func authorizationController(
+    controller: ASAuthorizationController,
+    didCompleteWithError error: Error
+  ) {
+    Task { @MainActor in
+      self.continuation?.resume(throwing: error)
+      self.continuation = nil
+    }
+  }
+
+  public func presentationAnchor(for controller: ASAuthorizationController) -> ASPresentationAnchor {
+    #if os(macOS)
+    return NSApplication.shared.keyWindow ?? NSApplication.shared.windows.first ?? NSWindow()
+    #elseif os(iOS)
+    return UIApplication.shared.windows.first { $0.isKeyWindow } ?? UIApplication.shared.windows.first ?? UIWindow()
+    #else
+    fatalError("Unsupported OS")
+    #endif
+  }
+}
+#endif
+
