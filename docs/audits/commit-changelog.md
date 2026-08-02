@@ -6,6 +6,12 @@ commit SHA, and high-level reason. Changelog-only bookkeeping commits are
 visible in Git history but are not self-recorded because a commit cannot
 contain its own final SHA.
 
+## August 2, 2026 at 11:27:29 AM EDT
+
+- Repository: `instant-data-swift`
+- Commit: `0f78572e02a17189409fc918b912188e9d50680a`
+- High-level reason: Reduce eager SQLite state-load time with bounded 1 MiB/1,024-row JSON arrays and two decode slots, preserve exact ordering and outbox semantics, add loud row-range/path failures and per-collection tracing, and retain a release profiler plus explicit memory and physical-acceptance boundaries.
+
 ## August 2, 2026 at 11:26:44 AM EDT
 
 - Repository: `realtime-voice-sqlite-instant` (Scribe)

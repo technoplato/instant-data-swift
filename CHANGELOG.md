@@ -4,6 +4,27 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## August 2nd, 2026 at 11:27:24 a.m. EDT — `0f78572e02a1` Speed persisted state loading with bounded batch decoding
+
+- **Implementation commit:** `0f78572e02a17189409fc918b912188e9d50680a`
+- **Change:** Reduce eager persisted-state cold-load time with bounded concurrent JSON decoding
+- **Details:**
+  - Batch ordered SQLite JSON rows into at most 1,024 rows or roughly 1 MiB and decode with exactly two concurrent slots while preserving eager state, outbox, and SQL ordering semantics.
+  - Emit per-collection startup phases with row count, batch count, encoded bytes, strategy, and concurrency, and fail malformed persisted rows loudly with their exact batch row range and database path.
+  - Add a release profiler that runs only against a caller-supplied disposable SQLite copy and records phase-level cold-start measurements without mutating the backed-up originals.
+  - On three fresh copied-backup runs, reduce iPhone runtime median from 4,923 ms to 3,142 ms and iPad from 1,009 ms to 692 ms; retain the explicit claim boundary that these are Mac release-harness timings, not installed-device acceptance.
+  - Accept a measured 37,142,528-byte (11.45 percent) transient maximum-RSS increase after rejecting a 4 MiB variant that added roughly 96 MiB; the under-200-ms target still requires a separate lazy or compact persistent projection.
+  - Verify 7 startup tests, 2 mutation lifecycle tests, 6 outbox stall tests, 3 persistence atomicity/diff tests, 27 reactor parity tests, release profiler build, targeted formatting, and a clean diff check.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — Implement bounded ordered batch assembly, two-slot JSON decoding, collection tracing, and loud row-range/path failures.
+  - `Tests/InstantSwiftDataCoreTests/InstantStartupTraceTests.swift` — Prove large-store ordering and trace metadata, malformed-row failure evidence, and optional copied-store profiling.
+  - `benchmarks/Package.swift` — Expose the release cold-start profiler as a dedicated executable product.
+  - `benchmarks/Profiler/main.swift` — Measure runtime and persisted-state phases against a disposable SQLite copy.
+- **User context (verbatim):**
+  > make on-disk launch/list loading instantaneous with a target under 200 ms or as close as evidence allows
+  > please, please, please, as you go, make comprehensive progress updates to the document and sync
+- **SpecStory:** unavailable — Unavailable: this work is running in Codex desktop, and no verified SpecStory CLI capture URI exists for this GUI task.
+
 ## August 2nd, 2026 at 10:34:42 a.m. EDT — `b92d5f0976e9` Require restartable library checkpoints
 
 - **Implementation commit:** `b92d5f0976e99bea2712973b5e1f5cfce48c9429`
