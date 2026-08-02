@@ -150,6 +150,92 @@ struct InstantOutboxDeliveryStallTests {
     )
     #expect(firstPass > 0, "A bounded flush must still make progress")
   }
+
+  /// A mutation quarantined because the server was missing a schema attribute
+  /// must deliver once that attribute is deployed. The field devices held 463
+  /// and 1 such mutations that no reconnect would ever have retried.
+  @Test
+  func quarantinedMutationDeliversAfterTheSchemaIsDeployed() async throws {
+    let cacheURL = try temporaryOutboxStallCacheURL()
+    let createdAt = InstantTimestamp(milliseconds: 1_700_000_060_000)
+    let driftedAttribute = "todos/deployedLater"
+    let driftedSession = LiveReactorParitySession(messages: [
+      liveReactorInitOK(attrs: liveReactorTodoServerAttrs)
+    ])
+    let driftedRuntime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "outbox-stall-recovery",
+        persistenceURL: cacheURL,
+        initialAttributes: TodoExample.attributes,
+        liveTransport: driftedSession.transport
+      )
+    )
+    try await driftedRuntime.transact(
+      InstantStoreTransaction(
+        id: "tx-outbox-recovery",
+        operations: [
+          .insert(
+            InstantTriple(
+              entityID: "todo-outbox-recovery",
+              attributeID: driftedAttribute,
+              value: .string("queued before the deployment"),
+              txID: "tx-outbox-recovery",
+              txTime: createdAt
+            )
+          )
+        ]
+      ),
+      createdAt: createdAt
+    )
+    try await withKnownIssue {
+      _ = try await driftedRuntime.connect()
+      try? await Task.sleep(nanoseconds: 200_000_000)
+    } matching: { issue in
+      issue.description.contains("quarantined")
+    }
+    let quarantinedSends = await driftedSession.sentMessages()
+      .filter { $0.op == "transact" }
+      .count
+    expectNoDifference(quarantinedSends, 0, outboxStallSource)
+
+    // The schema is deployed, then the app relaunches against the same store.
+    let deployedAttrs =
+      liveReactorTodoServerAttrs + [
+        .object([
+          "cardinality": .string("one"),
+          "forward-identity": .array([
+            .string("identity-server-todos-deployed-later"),
+            .string(TodoExample.namespace),
+            .string("deployedLater"),
+          ]),
+          "id": .string("server-todos-deployed-later"),
+          "unique?": .bool(false),
+          "value-type": .string("string"),
+        ])
+      ]
+    let deployedSession = LiveReactorParitySession(messages: [
+      liveReactorInitOK(attrs: deployedAttrs)
+    ])
+    let deployedRuntime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "outbox-stall-recovery",
+        persistenceURL: cacheURL,
+        initialAttributes: TodoExample.attributes,
+        liveTransport: deployedSession.transport
+      )
+    )
+    _ = try await deployedRuntime.connect()
+    try? await Task.sleep(nanoseconds: 200_000_000)
+
+    let recoveredEventIDs = await deployedSession.sentMessages()
+      .filter { $0.op == "transact" }
+      .compactMap(\.clientEventID)
+    expectNoDifference(
+      recoveredEventIDs.contains("tx-outbox-recovery"),
+      true,
+      outboxStallSource
+    )
+  }
 }
 
 /// Mirrors the private tuning constants so the test fails loudly if they move.

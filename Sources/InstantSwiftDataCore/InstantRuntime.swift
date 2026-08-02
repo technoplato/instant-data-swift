@@ -4199,6 +4199,17 @@ public final class InstantRuntime: Sendable {
       || message.contains("transaction timed out")
       || message.contains("service unavailable")
       || message.contains("temporarily unavailable")
+      || isDeployFixableMutationFailureMessage(message)
+  }
+
+  /// Failures a schema or permission deployment resolves. Retrying them on a
+  /// fresh session — which re-reads the server's attributes and rules — lets a
+  /// quarantined write deliver once the deployment lands, instead of stranding
+  /// the work that was queued while the server was behind.
+  private static func isDeployFixableMutationFailureMessage(_ message: String) -> Bool {
+    message.contains("could not resolve")
+      || message.contains("permission denied")
+      || message.contains("perms-pass")
   }
 
   private func retryPersistedTransientMutationFailuresWithGateHeld() async throws {
