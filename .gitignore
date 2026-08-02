@@ -15,5 +15,5 @@ upstream/instant/
 upstream/instant-ios-sdk/
 upstream/sharing-instant/
 upstream/sqlite-data/
-Benchmarks/.build/
-Benchmarks/.index-build/
+benchmarks/.build/
+benchmarks/.index-build/
