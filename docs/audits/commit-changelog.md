@@ -6,6 +6,12 @@ commit SHA, and high-level reason. Changelog-only bookkeeping commits are
 visible in Git history but are not self-recorded because a commit cannot
 contain its own final SHA.
 
+## August 1, 2026 at 11:54:55 PM EDT
+
+- Repository: `instant-data-swift`
+- Commit: `be978ea30743b1aa05f03dd2ceae4fdf1bf77bbd`
+- High-level reason: Enforce UUID validation on INSTANT_APP_ID environment variable in AuthV3AppConfiguration to prevent non-UUID strings (like 'auth-v3-local') from reaching InstantDB server OAuth endpoints.
+
 ## August 1, 2026 at 11:45:40 PM EDT
 
 - Repository: `instant-data-swift`
