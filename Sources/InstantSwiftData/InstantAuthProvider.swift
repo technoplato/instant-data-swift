@@ -246,7 +246,7 @@ extension InstantAuthProviderAuthorizerKey: DependencyKey {
             recovery: "Declare '\(provider.id.rawValue)' with presentation: .externalBrowser."
           )
         }
-        #if canImport(AuthenticationServices) && canImport(CryptoKit) && (canImport(AppKit) || canImport(UIKit))
+        #if canImport(AuthenticationServices) && canImport(CryptoKit) && (canImport(AppKit) || canImport(UIKit)) && !os(watchOS)
           return try await BrowserOAuthAuthorizer.shared.authorize(
             provider: provider,
             client: client
@@ -280,7 +280,7 @@ extension InstantAuthProviderAuthorizerKey: DependencyKey {
               "Inject InstantAuthProviderAuthorizer from the provider SDK, or configure this provider for external-browser OAuth."
           )
         }
-        #if canImport(AuthenticationServices) && canImport(CryptoKit) && (canImport(AppKit) || canImport(UIKit))
+        #if canImport(AuthenticationServices) && canImport(CryptoKit) && (canImport(AppKit) || canImport(UIKit)) && !os(watchOS)
           return try await AppleIDAuthorizer.shared.authorize(provider: provider)
         #else
           throw InstantError(
@@ -503,7 +503,7 @@ extension Collection {
   }
 }
 
-#if canImport(AuthenticationServices) && canImport(CryptoKit) && (canImport(AppKit) || canImport(UIKit))
+#if canImport(AuthenticationServices) && canImport(CryptoKit) && (canImport(AppKit) || canImport(UIKit)) && !os(watchOS)
   @MainActor
   private func instantAuthPresentationAnchor() -> ASPresentationAnchor? {
     #if canImport(AppKit) && !targetEnvironment(macCatalyst)
