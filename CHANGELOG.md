@@ -4,6 +4,21 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## August 2nd, 2026 at 7:06:28 p.m. EDT — `460b7ca01e04` Exclude watchOS from the presentation-based auth authorizers
+
+- **Implementation commit:** `460b7ca01e049dd45338a0a1766c90195655d33d`
+- **Change:** Exclude watchOS from the presentation-based auth authorizers
+- **Details:**
+  - canImport(UIKit) is true on watchOS, so the browser-OAuth and Apple ID authorizer guards admitted a platform that has no ASPresentationAnchor, UIApplication.connectedScenes, UIWindowScene, or presentation-context protocols; the declared .watchOS(.v8) platform failed with 13 unavailability errors.
+  - Adding !os(watchOS) routes watchOS to the pre-existing #else branch that already throws a clear 'unavailable on this platform' InstantError. No new code path; tvOS and macCatalyst guards intentionally untouched.
+  - Found while building Scribe for the physical iPhone: its iOS app embeds ScribeSharedWatch, so the watchOS slice must compile for any device build. The failing build reported 216 failures rooted in this one file.
+  - Verified both directions: with the fix reverted, xcodebuild -scheme InstantSwiftData -destination 'generic/platform=watchOS' fails with the same 13 errors; with it applied, BUILD SUCCEEDED. swift test --filter Auth passes 71 tests in 15 suites; the eight-suite coupled acknowledgement selector still passes 139 tests with five asserted known diagnostics.
+- **Files:**
+  - `Sources/InstantSwiftData/InstantAuthProvider.swift` — Add !os(watchOS) to the three authorizer availability guards so watchOS takes the unsupported-platform branch.
+- **User context (verbatim):**
+  > and if you could, please put priority on installing the app if it's ready on my iPhone so I can test it while I go do errands
+- **SpecStory:** unavailable — Unavailable: this work ran in Claude Code and no verified SpecStory capture URI is available for this session.
+
 ## August 2nd, 2026 at 6:39:31 p.m. EDT — `71ccbcf13250` Reconcile accepted writes only after exact authoritative removal
 
 - **Implementation commit:** `71ccbcf132508376adb0281fd100821e1ff6c12f`

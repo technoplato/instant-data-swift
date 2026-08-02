@@ -6,6 +6,20 @@ commit SHA, and high-level reason. Changelog-only bookkeeping commits are
 visible in Git history but are not self-recorded because a commit cannot
 contain its own final SHA.
 
+## August 2, 2026 at 7:06:28 PM EDT
+
+- Repository: `instant-data-swift`
+- Commit: `460b7ca01e049dd45338a0a1766c90195655d33d`
+- High-level reason: Restore the declared `.watchOS(.v8)` platform. The
+  browser-OAuth and Apple ID authorizer guards relied on `canImport(UIKit)`,
+  which is true on watchOS even though the platform has no
+  `ASPresentationAnchor`, `UIApplication.connectedScenes`, or
+  presentation-context protocols, so the module failed to compile with 13
+  unavailability errors. Adding `!os(watchOS)` routes watchOS to the existing
+  unsupported-platform branch. Found while building Scribe for the physical
+  iPhone, whose iOS app embeds the `ScribeSharedWatch` companion. Published as
+  tag `v1.2.1`; tag `v1.2.0` at `01ac62bd` does not compile for watchOS.
+
 ## August 2, 2026 at 6:39:23 PM EDT
 
 - Repository: `instant-data-swift`
