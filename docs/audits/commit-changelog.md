@@ -6,6 +6,12 @@ commit SHA, and high-level reason. Changelog-only bookkeeping commits are
 visible in Git history but are not self-recorded because a commit cannot
 contain its own final SHA.
 
+## August 1, 2026 at 11:40:40 PM EDT
+
+- Repository: `instant-data-swift`
+- Commit: `4a5f309e088d22384a86acdf2cfecfef2ef3ecfa`
+- High-level reason: Implement ASWebAuthenticationSession browser OAuth authorizer with automatic fallback for Apple Sign-In when running in development/un-entitled binary builds.
+
 ## August 1, 2026 at 11:18:00 PM EDT
 
 - Repository: `instant-data-swift`
