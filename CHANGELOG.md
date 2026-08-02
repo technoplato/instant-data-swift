@@ -4,6 +4,20 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## August 2nd, 2026 at 10:34:42 a.m. EDT — `b92d5f0976e9` Require restartable library checkpoints
+
+- **Implementation commit:** `b92d5f0976e99bea2712973b5e1f5cfce48c9429`
+- **Change:** Require restartable library checkpoints
+- **Details:**
+  - Standardize the limited-plan continuity rule in the Instant library and persist the active Scribe outbox/startup work, owned performance files, evidence boundaries, and exact cross-repository handoff location.
+- **Files:**
+  - `AGENTS.md` — Require immutable progress, verification, ownership, blockers, and continuation steps at coherent checkpoints.
+  - `PROGRESS.md` — Record the committed starvation fix and current physical-copy startup profiling lane.
+- **User context (verbatim):**
+  > I'm on a very limited plan for ChatGPT and access to Sol Ultra yourself.
+  > standardizing those conventions across my own machine
+- **SpecStory:** unavailable — Unavailable: this continuation is running in Codex desktop, and no verified SpecStory CLI capture URI exists for this GUI task.
+
 ## August 2nd, 2026 at 10:26:31 a.m. EDT — `e87765b8cd8c` Prevent deep outbox mutation starvation
 
 - **Implementation commit:** `e87765b8cd8c5c2830494ee05c9686f7edb9f4d4`
