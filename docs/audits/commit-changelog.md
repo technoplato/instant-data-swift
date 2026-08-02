@@ -6,6 +6,17 @@ commit SHA, and high-level reason. Changelog-only bookkeeping commits are
 visible in Git history but are not self-recorded because a commit cannot
 contain its own final SHA.
 
+## August 2, 2026 at 7:21:33 PM EDT
+
+- Repository: `realtime-voice-sqlite-instant` (Scribe)
+- Commit: `8b7db0813ec8282a906d3287a80a016723180143`
+- High-level reason: Isolate the generic real-Instant Swift E2E writer in a
+  fresh per-report HOME/Application Support/database tree so the test cannot
+  open the production CLI cache or inherit legacy outbox mutations. The
+  platform/local-root contract passes 25/25, and credentialed diagnostics
+  delivered 5/5 and 25/25 rows while correctly retaining the strict latency
+  failure (25-row p95 214.2 ms against the 100 ms target).
+
 ## August 2, 2026 at 7:06:28 PM EDT
 
 - Repository: `instant-data-swift`
