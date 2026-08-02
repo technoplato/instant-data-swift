@@ -101,14 +101,21 @@ public typealias AuthAppConfiguration = AuthV3AppConfiguration
 
   @MainActor
   public struct AuthV3LoginScreen: View {
-    @InstantAuth(AuthV3User.self, providers: AuthV3Providers.self)
-    private var auth
+    @StateObject private var auth: InstantAuthState<AuthV3User>
 
     @State private var message: String?
     private let allowsProviderSignIn: Bool
 
-    public init(allowsProviderSignIn: Bool = true) {
+    public init(
+      allowsProviderSignIn: Bool = true,
+      providerConfiguration: AuthV3ProviderConfiguration = .environment()
+    ) {
       self.allowsProviderSignIn = allowsProviderSignIn
+      _auth = StateObject(
+        wrappedValue: InstantAuthState(
+          providers: AuthV3Providers.providers(configuration: providerConfiguration)
+        )
+      )
     }
 
     public var body: some View {
@@ -161,6 +168,7 @@ public typealias AuthAppConfiguration = AuthV3AppConfiguration
           }
         }
       }
+      .task { auth.startObservationIfNeeded() }
     }
 
     private var header: some View {

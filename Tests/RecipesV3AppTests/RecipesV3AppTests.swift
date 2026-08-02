@@ -26,7 +26,10 @@ struct RecipesV3AppTests {
   func environmentConfigurationEnablesLiveSyncAndLaunchesARecipe() {
     let configuration = RecipesV3AppConfiguration.environment(
       [
+        "INSTANT_APPLE_AUTH_CLIENT_NAME": "apple-ios",
         "INSTANT_APP_ID": "app-123",
+        "INSTANT_GOOGLE_AUTH_CLIENT_NAME": "google-web",
+        "INSTANT_OAUTH_REDIRECT_URL": "instant-recipes-v3://oauth-callback",
         "INSTANT_PERSISTENCE_PATH": "/tmp/instant-recipes.sqlite",
         "INSTANT_RECIPE": "custom-cursors",
         "INSTANT_RECIPE_PROFILE_ID": "profile-123",
@@ -43,8 +46,15 @@ struct RecipesV3AppTests {
         persistenceURL: URL(fileURLWithPath: "/tmp/instant-recipes.sqlite"),
         enablesLiveSync: true,
         profileID: "profile-123",
-        launchRecipe: .customCursors
+        launchRecipe: .customCursors,
+        authProviderConfiguration: configuration.authProviderConfiguration
       )
+    )
+    expectNoDifference(configuration.authProviderConfiguration.appleClientName, "apple-ios")
+    expectNoDifference(configuration.authProviderConfiguration.googleClientName, "google-web")
+    expectNoDifference(
+      configuration.authProviderConfiguration.browserRedirectURL,
+      URL(string: "instant-recipes-v3://oauth-callback")
     )
   }
 
@@ -65,6 +75,33 @@ struct RecipesV3AppTests {
         profileID: "generated-profile",
         launchRecipe: .mergeTileGame
       )
+    )
+    expectNoDifference(
+      configuration.authProviderConfiguration.browserRedirectURL,
+      URL(string: "instant-recipes-v3://oauth-callback")
+    )
+  }
+
+  @Test
+  func bundleConfigurationUsesAppOwnedProviderMetadata() {
+    let configuration = RecipesV3AppConfiguration.environment(
+      [:],
+      arguments: ["recipes-v3"],
+      infoDictionary: [
+        "InstantAppID": "app-from-bundle",
+        "InstantAppleAuthClientName": "apple-mac",
+        "InstantGoogleAuthClientName": "google",
+        "InstantOAuthRedirectURL": "instant-recipes-v3://oauth-callback",
+      ],
+      makeProfileID: { "generated-profile" }
+    )
+
+    expectNoDifference(configuration.appID, "app-from-bundle")
+    expectNoDifference(configuration.authProviderConfiguration.appleClientName, "apple-mac")
+    expectNoDifference(configuration.authProviderConfiguration.googleClientName, "google")
+    expectNoDifference(
+      configuration.authProviderConfiguration.browserRedirectURL,
+      URL(string: "instant-recipes-v3://oauth-callback")
     )
   }
 

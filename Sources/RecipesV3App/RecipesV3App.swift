@@ -67,19 +67,24 @@ public struct RecipesV3AppConfiguration: Hashable, Sendable {
   public var enablesLiveSync: Bool
   public var profileID: String
   public var launchRecipe: InstantRecipeV3?
+  public var authProviderConfiguration: AuthV3ProviderConfiguration
 
   public init(
     appID: String,
     persistenceURL: URL? = nil,
     enablesLiveSync: Bool,
     profileID: String,
-    launchRecipe: InstantRecipeV3? = nil
+    launchRecipe: InstantRecipeV3? = nil,
+    authProviderConfiguration: AuthV3ProviderConfiguration = AuthV3ProviderConfiguration(
+      browserRedirectURL: URL(string: "instant-recipes-v3://oauth-callback")
+    )
   ) {
     self.appID = appID
     self.persistenceURL = persistenceURL
     self.enablesLiveSync = enablesLiveSync
     self.profileID = profileID
     self.launchRecipe = launchRecipe
+    self.authProviderConfiguration = authProviderConfiguration
   }
 
   public static func environment(
@@ -91,15 +96,33 @@ public struct RecipesV3AppConfiguration: Hashable, Sendable {
     let configuredAppID = normalizedConfigurationValue(
       environment["INSTANT_APP_ID"] ?? infoDictionary["InstantAppID"] as? String
     )
-    let recipeName = normalizedConfigurationValue(environment["INSTANT_RECIPE"])
+    let recipeName =
+      normalizedConfigurationValue(environment["INSTANT_RECIPE"])
       ?? launchRecipeName(in: arguments)
+    var authEnvironment = environment
+    authEnvironment["INSTANT_APPLE_AUTH_CLIENT_NAME"] =
+      normalizedConfigurationValue(
+        environment["INSTANT_APPLE_AUTH_CLIENT_NAME"]
+          ?? infoDictionary["InstantAppleAuthClientName"] as? String
+      ) ?? "apple"
+    authEnvironment["INSTANT_GOOGLE_AUTH_CLIENT_NAME"] =
+      normalizedConfigurationValue(
+        environment["INSTANT_GOOGLE_AUTH_CLIENT_NAME"]
+          ?? infoDictionary["InstantGoogleAuthClientName"] as? String
+      ) ?? "google"
+    authEnvironment["INSTANT_OAUTH_REDIRECT_URL"] =
+      normalizedConfigurationValue(
+        environment["INSTANT_OAUTH_REDIRECT_URL"]
+          ?? infoDictionary["InstantOAuthRedirectURL"] as? String
+      ) ?? "instant-recipes-v3://oauth-callback"
     return Self(
       appID: configuredAppID ?? "recipes-v3-local",
       persistenceURL: environment["INSTANT_PERSISTENCE_PATH"].map(URL.init(fileURLWithPath:)),
       enablesLiveSync: configuredAppID != nil,
       profileID: normalizedConfigurationValue(environment["INSTANT_RECIPE_PROFILE_ID"])
         ?? makeProfileID(),
-      launchRecipe: recipeName.flatMap(InstantRecipeV3.init(pathName:))
+      launchRecipe: recipeName.flatMap(InstantRecipeV3.init(pathName:)),
+      authProviderConfiguration: AuthV3ProviderConfiguration.environment(authEnvironment)
     )
   }
 
@@ -180,7 +203,8 @@ public struct RecipesV3AppConfiguration: Hashable, Sendable {
           RecipesV3CatalogScreen(
             profileID: model.configuration.profileID,
             launchRecipe: model.configuration.launchRecipe,
-            isLive: model.configuration.enablesLiveSync
+            isLive: model.configuration.enablesLiveSync,
+            authProviderConfiguration: model.configuration.authProviderConfiguration
           )
         } else if let errorMessage = model.errorMessage {
           VStack(spacing: 12) {
@@ -207,14 +231,19 @@ public struct RecipesV3AppConfiguration: Hashable, Sendable {
     @State private var path: [InstantRecipeV3]
     private let profileID: String
     private let isLive: Bool
+    private let authProviderConfiguration: AuthV3ProviderConfiguration
 
     public init(
       profileID: String,
       launchRecipe: InstantRecipeV3? = nil,
-      isLive: Bool = false
+      isLive: Bool = false,
+      authProviderConfiguration: AuthV3ProviderConfiguration = AuthV3ProviderConfiguration(
+        browserRedirectURL: URL(string: "instant-recipes-v3://oauth-callback")
+      )
     ) {
       self.profileID = profileID
       self.isLive = isLive
+      self.authProviderConfiguration = authProviderConfiguration
       _path = State(initialValue: launchRecipe.map { [$0] } ?? [])
     }
 
@@ -238,36 +267,46 @@ public struct RecipesV3AppConfiguration: Hashable, Sendable {
           }
           .navigationTitle("Recipes")
           .navigationDestination(for: InstantRecipeV3.self) { recipe in
-            RecipesV3RecipeScreen(recipe: recipe, profileID: profileID)
+            RecipesV3RecipeScreen(
+              recipe: recipe,
+              profileID: profileID,
+              allowsProviderSignIn: isLive,
+              authProviderConfiguration: authProviderConfiguration
+            )
           }
         #else
-        List {
-          Section {
-            Label(
-              isLive ? "Connected to InstantDB" : "Local data only",
-              systemImage: isLive ? "bolt.horizontal.circle.fill" : "externaldrive"
-            )
-            .foregroundStyle(isLive ? .green : .secondary)
-          }
+          List {
+            Section {
+              Label(
+                isLive ? "Connected to InstantDB" : "Local data only",
+                systemImage: isLive ? "bolt.horizontal.circle.fill" : "externaldrive"
+              )
+              .foregroundStyle(isLive ? .green : .secondary)
+            }
 
-          Section {
-            ForEach(InstantRecipeV3.allCases) { recipe in
-              NavigationLink(value: recipe) {
-                VStack(alignment: .leading, spacing: 4) {
-                  Label(recipe.title, systemImage: recipe.systemImage)
-                    .font(.headline)
-                  Text(recipe.summary)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+            Section {
+              ForEach(InstantRecipeV3.allCases) { recipe in
+                NavigationLink(value: recipe) {
+                  VStack(alignment: .leading, spacing: 4) {
+                    Label(recipe.title, systemImage: recipe.systemImage)
+                      .font(.headline)
+                    Text(recipe.summary)
+                      .font(.caption)
+                      .foregroundStyle(.secondary)
+                  }
                 }
               }
             }
           }
-        }
-        .navigationTitle("Instant Recipes")
-        .navigationDestination(for: InstantRecipeV3.self) { recipe in
-          RecipesV3RecipeScreen(recipe: recipe, profileID: profileID)
-        }
+          .navigationTitle("Instant Recipes")
+          .navigationDestination(for: InstantRecipeV3.self) { recipe in
+            RecipesV3RecipeScreen(
+              recipe: recipe,
+              profileID: profileID,
+              allowsProviderSignIn: isLive,
+              authProviderConfiguration: authProviderConfiguration
+            )
+          }
         #endif
       }
     }
@@ -278,10 +317,21 @@ public struct RecipesV3AppConfiguration: Hashable, Sendable {
   public struct RecipesV3RecipeScreen: View {
     public var recipe: InstantRecipeV3
     public var profileID: String
+    public var allowsProviderSignIn: Bool
+    public var authProviderConfiguration: AuthV3ProviderConfiguration
 
-    public init(recipe: InstantRecipeV3, profileID: String) {
+    public init(
+      recipe: InstantRecipeV3,
+      profileID: String,
+      allowsProviderSignIn: Bool = true,
+      authProviderConfiguration: AuthV3ProviderConfiguration = AuthV3ProviderConfiguration(
+        browserRedirectURL: URL(string: "instant-recipes-v3://oauth-callback")
+      )
+    ) {
       self.recipe = recipe
       self.profileID = profileID
+      self.allowsProviderSignIn = allowsProviderSignIn
+      self.authProviderConfiguration = authProviderConfiguration
     }
 
     @ViewBuilder
@@ -309,7 +359,10 @@ public struct RecipesV3AppConfiguration: Hashable, Sendable {
       case .mergeTileGame:
         MergeTileGameV3Screen(profileID: profileID)
       case .auth:
-        AuthV3LoginScreen()
+        AuthV3LoginScreen(
+          allowsProviderSignIn: allowsProviderSignIn,
+          providerConfiguration: authProviderConfiguration
+        )
       }
     }
   }

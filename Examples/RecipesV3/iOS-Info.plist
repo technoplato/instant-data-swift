@@ -6,6 +6,19 @@
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>
 	<string>Instant Recipes</string>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>CFBundleURLName</key>
+			<string>com.technoplato.InstantSwiftData.RecipesV3.auth</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>instant-recipes-v3</string>
+			</array>
+		</dict>
+	</array>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -22,6 +35,12 @@
 	<string>1</string>
 	<key>InstantAppID</key>
 	<string>$(INSTANT_APP_ID)</string>
+	<key>InstantAppleAuthClientName</key>
+	<string>apple</string>
+	<key>InstantGoogleAuthClientName</key>
+	<string>google</string>
+	<key>InstantOAuthRedirectURL</key>
+	<string>instant-recipes-v3://oauth-callback</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>UILaunchScreen</key>

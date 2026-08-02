@@ -28,6 +28,7 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.technoplato.InstantSwiftData.RecipesV3iOS
         PRODUCT_NAME: Instant Recipes
+        CODE_SIGN_ENTITLEMENTS: RecipesV3iOS.entitlements
         GENERATE_INFOPLIST_FILE: NO
         INFOPLIST_FILE: iOS-Info.plist
         IPHONEOS_DEPLOYMENT_TARGET: "17.0"
@@ -50,6 +51,7 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.technoplato.InstantSwiftData.RecipesV3macOS
         PRODUCT_NAME: Instant Recipes
+        CODE_SIGN_ENTITLEMENTS: RecipesV3macOS.entitlements
         GENERATE_INFOPLIST_FILE: NO
         INFOPLIST_FILE: macOS-Info.plist
         MACOSX_DEPLOYMENT_TARGET: "14.0"
