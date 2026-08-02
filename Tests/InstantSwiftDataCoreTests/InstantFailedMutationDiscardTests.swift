@@ -1536,6 +1536,66 @@ struct InstantFailedMutationDiscardTests {
   }
 
   @Test
+  func serverAcceptedInsertWithoutBaseIgnoresUnrelatedAuthoritativeRetraction() async throws {
+    let cacheURL = temporaryDiscardCacheURL("server-accepted-empty-insert-retraction")
+    let runtime = try await serverAcceptedCoverageRuntime(
+      cacheURL: cacheURL,
+      attributes: [jsonSettingsAttribute],
+      acceptsTransport: true
+    )
+    let entityID = "empty-insert-retraction-row"
+    try await runtime.transact(
+      InstantStoreTransaction(
+        id: "tx-empty-insert-accepted",
+        operations: [
+          .insert(
+            coverageJSONTriple(
+              entityID: entityID,
+              value: .object(["accepted": .bool(true)]),
+              transactionID: "tx-empty-insert-accepted",
+              milliseconds: 100
+            )
+          )
+        ]
+      ),
+      createdAt: InstantTimestamp(milliseconds: 100)
+    )
+    _ = try await runtime.flushPendingMutations()
+
+    _ = try await runtime.applyServerTransaction(
+      InstantStoreTransaction(
+        id: "server-empty-insert-unrelated-retraction",
+        operations: [
+          .retract(
+            coverageJSONTriple(
+              entityID: entityID,
+              value: .object(["unrelated": .bool(true)]),
+              transactionID: "server-empty-insert-unrelated-retraction",
+              milliseconds: 50
+            )
+          )
+        ]
+      )
+    )
+    let afterUnrelatedRetraction = try await coverageJSONValue(
+      runtime: runtime,
+      entityID: entityID
+    )
+    expectNoDifference(afterUnrelatedRetraction, .object(["accepted": .bool(true)]))
+    let retainedOutbox = try await runtime.persistence.loadState().snapshot.outbox
+    expectNoDifference(retainedOutbox.map(\.id), ["tx-empty-insert-accepted"])
+
+    let relaunched = try await serverAcceptedCoverageRuntime(
+      cacheURL: cacheURL,
+      attributes: [jsonSettingsAttribute]
+    )
+    let durableValue = try await coverageJSONValue(runtime: relaunched, entityID: entityID)
+    expectNoDifference(durableValue, .object(["accepted": .bool(true)]))
+    let durableOutbox = try await relaunched.persistence.loadState().snapshot.outbox
+    expectNoDifference(durableOutbox.map(\.id), ["tx-empty-insert-accepted"])
+  }
+
+  @Test
   func serverAcceptedJSONMergeWaitsForCoveredPatchOrFullReplacement() async throws {
     let cacheURL = temporaryDiscardCacheURL("server-accepted-json-merge-coverage")
     let runtime = try await serverAcceptedCoverageRuntime(
@@ -1688,6 +1748,83 @@ struct InstantFailedMutationDiscardTests {
     expectNoDifference(durableAfterRetraction, nil)
     let relaunchedOutbox = try await relaunched.persistence.loadState().snapshot.outbox
     expectNoDifference(relaunchedOutbox, [])
+  }
+
+  @Test(arguments: CardinalityOneAcceptedWrite.allCases)
+  fileprivate func serverAcceptedCardinalityOneWriteIgnoresUnrelatedAuthoritativeRetraction(
+    write: CardinalityOneAcceptedWrite
+  ) async throws {
+    let cacheURL = temporaryDiscardCacheURL(
+      "server-accepted-cardinality-one-unrelated-retraction-\(write.rawValue)"
+    )
+    let runtime = try await serverAcceptedCoverageRuntime(
+      cacheURL: cacheURL,
+      attributes: [jsonSettingsAttribute],
+      acceptsTransport: true
+    )
+    let entityID = "cardinality-one-unrelated-retraction-\(write.rawValue)"
+    let mutationID = "tx-cardinality-one-unrelated-retraction-\(write.rawValue)"
+    let authoritativeBase = coverageJSONTriple(
+      entityID: entityID,
+      value: .object(["base": .string("server")]),
+      transactionID: "server-cardinality-one-base-\(write.rawValue)",
+      milliseconds: 10
+    )
+    _ = try await runtime.applyServerTransaction(
+      InstantStoreTransaction(
+        id: "server-cardinality-one-base-\(write.rawValue)",
+        operations: [.insert(authoritativeBase)]
+      )
+    )
+    try await runtime.transact(
+      InstantStoreTransaction(
+        id: mutationID,
+        operations: [
+          write.operation(
+            entityID: entityID,
+            mutationID: mutationID,
+            authoritativeBase: authoritativeBase
+          )
+        ]
+      ),
+      createdAt: InstantTimestamp(milliseconds: 100)
+    )
+    _ = try await runtime.flushPendingMutations()
+
+    _ = try await runtime.applyServerTransaction(
+      InstantStoreTransaction(
+        id: "server-cardinality-one-unrelated-retraction-\(write.rawValue)",
+        operations: [
+          .retract(
+            coverageJSONTriple(
+              entityID: entityID,
+              value: .object(["unrelated": .string("server")]),
+              transactionID: "server-cardinality-one-unrelated-retraction-\(write.rawValue)",
+              milliseconds: 50
+            )
+          )
+        ]
+      )
+    )
+    let afterUnrelatedRetraction = try await coverageJSONValue(
+      runtime: runtime,
+      entityID: entityID
+    )
+    expectNoDifference(afterUnrelatedRetraction, write.expectedValue)
+    let retainedOutbox = try await runtime.persistence.loadState().snapshot.outbox
+    expectNoDifference(retainedOutbox.map(\.id), [mutationID])
+
+    let relaunched = try await serverAcceptedCoverageRuntime(
+      cacheURL: cacheURL,
+      attributes: [jsonSettingsAttribute]
+    )
+    let durableAfterUnrelatedRetraction = try await coverageJSONValue(
+      runtime: relaunched,
+      entityID: entityID
+    )
+    expectNoDifference(durableAfterUnrelatedRetraction, write.expectedValue)
+    let relaunchedOutbox = try await relaunched.persistence.loadState().snapshot.outbox
+    expectNoDifference(relaunchedOutbox.map(\.id), [mutationID])
   }
 
   private func assertMixedTransportBatchPreservesAcceptedSuccessor(
@@ -2511,6 +2648,63 @@ private enum LocalConfirmationRoute: String, CaseIterable, Sendable {
       .localDrain
     case .localTransport:
       .localTransport
+    }
+  }
+}
+
+private enum CardinalityOneAcceptedWrite: String, CaseIterable, Sendable {
+  case insert
+  case retract
+  case merge
+
+  func operation(
+    entityID: String,
+    mutationID: String,
+    authoritativeBase: InstantTriple
+  ) -> InstantTripleOperation {
+    switch self {
+    case .insert:
+      .insert(
+        coverageJSONTriple(
+          entityID: entityID,
+          value: .object(["replacement": .string("accepted")]),
+          transactionID: mutationID,
+          milliseconds: 100
+        )
+      )
+    case .retract:
+      .retract(
+        InstantTriple(
+          entityID: authoritativeBase.entityID,
+          attributeID: authoritativeBase.attributeID,
+          value: authoritativeBase.value,
+          txID: mutationID,
+          txTime: InstantTimestamp(milliseconds: 100)
+        )
+      )
+    case .merge:
+      .merge(
+        coverageJSONTriple(
+          entityID: entityID,
+          value: .object(["accepted": .bool(true)]),
+          transactionID: mutationID,
+          milliseconds: 100
+        )
+      )
+    }
+  }
+
+  var expectedValue: JSONValue? {
+    switch self {
+    case .insert:
+      .object(["replacement": .string("accepted")])
+    case .retract:
+      nil
+    case .merge:
+      .object([
+        "accepted": .bool(true),
+        "base": .string("server"),
+      ])
     }
   }
 }

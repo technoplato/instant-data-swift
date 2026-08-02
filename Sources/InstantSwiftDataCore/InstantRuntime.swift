@@ -2878,7 +2878,9 @@ public final class InstantRuntime: Sendable {
     var preparedRebase = preparedServer
     let authoritativeCoverage = InstantAuthoritativeWriteCoverage(
       operations: authoritativeOperations,
-      attributes: preparedServer.attributes
+      attributes: preparedServer.attributes,
+      previousChangedEntityTriples: preparedServer.previousChangedEntityTriples,
+      changedEntityTriples: preparedServer.changedEntityTriples
     )
     let reconciledServerTransportIDs = Set(
       mutations.compactMap { mutation in
@@ -9142,9 +9144,26 @@ private struct InstantAuthoritativeWriteCoverage: Sendable {
 
   init(
     operations: [InstantTripleOperation],
-    attributes: AttributeStore
+    attributes: AttributeStore,
+    previousChangedEntityTriples: [String: [InstantTriple]],
+    changedEntityTriples: [String: [InstantTriple]]
   ) {
     self.attributes = attributes
+    let previousValues = Set(
+      previousChangedEntityTriples.values.lazy.flatMap { triples in
+        triples.lazy.map {
+          let key = InstantVisibleWriteKey(entityID: $0.entityID, attributeID: $0.attributeID)
+          return InstantAuthoritativeWriteValue(key: key, value: $0.value)
+        }
+      }
+    )
+    let changedKeys = Set(
+      changedEntityTriples.values.lazy.flatMap { triples in
+        triples.lazy.map {
+          InstantVisibleWriteKey(entityID: $0.entityID, attributeID: $0.attributeID)
+        }
+      }
+    )
     for operation in operations {
       switch operation {
       case let .insert(triple):
@@ -9159,7 +9178,17 @@ private struct InstantAuthoritativeWriteCoverage: Sendable {
           entityID: triple.entityID,
           attributeID: triple.attributeID
         )
-        exactValues.insert(InstantAuthoritativeWriteValue(key: key, value: triple.value))
+        // Upstream retracts an exact EAV value, even for cardinality-one attributes. Treat
+        // it as whole-slot replacement evidence only when this authoritative transition
+        // actually removed that exact value and left the entity/attribute key absent.
+        let value = InstantAuthoritativeWriteValue(key: key, value: triple.value)
+        if attributes[triple.attributeID]?.cardinality == .one,
+          previousValues.contains(value),
+          !changedKeys.contains(key)
+        {
+          replacementKeys.insert(key)
+        }
+        exactValues.insert(value)
       case let .merge(triple):
         let key = InstantVisibleWriteKey(
           entityID: triple.entityID,

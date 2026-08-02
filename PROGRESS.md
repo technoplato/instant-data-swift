@@ -6,6 +6,40 @@ production-readiness plan
 Commit-level history stays in `docs/audits/commit-changelog.md`; this file is
 the narrative of what the library must prove and why.
 
+## 2026-08-02 18:38:48 EDT — #117 cardinality-one retract follow-up is cleared for landing
+
+- Implementation commit `8d02a7a8d6b7000dea42be0b534e96761e3b1daf`
+  and ledger commit `4ca8d60f2a5022688ee73c3b88f3e8a1b5cd0476`
+  landed the acknowledgement/rejection slice, but a delayed worker test exposed
+  one sequencing error immediately afterward: the commit contains
+  `serverAcceptedJSONMergeReconcilesAgainstAuthoritativeRetraction`, while the
+  corresponding runtime rule arrived after that commit.
+- The committed source was reproduced RED with that one selector: one test
+  failed with two assertions because the accepted merge receipt remained in
+  the outbox after a matching authoritative cardinality-one retract. The first
+  broad fix made that positive case pass but was correctly rejected in review:
+  upstream retracts one exact EAV value, not the whole cardinality-one key.
+- The final rule now reconciles only when the exact retracted EAV value existed
+  in `previousChangedEntityTriples` and the key is absent from the prepared
+  final `changedEntityTriples`. A base-absent accepted insert plus unrelated
+  retract remains retained across relaunch, while a matching-base retract
+  reconciles without resurrecting the accepted merge. Focused proof passed 2/2
+  in 0.045 seconds; a three-route insert/retract/merge table also stays green.
+- The exact eight-suite coupled selector from the next entry then passed 139
+  tests in 0.976 seconds with zero unexpected failures and the same five
+  asserted known diagnostics. This supersedes the earlier 136- and 137-test
+  snapshots. Explicit cached target builds also passed for
+  `InstantSwiftDataCore` in 1.82 seconds and `InstantSwiftData` in 1.28 seconds;
+  `git diff --check` is clean.
+- The follow-up implementation boundary is exactly
+  `Sources/InstantSwiftDataCore/InstantRuntime.swift`,
+  `Tests/InstantSwiftDataCoreTests/InstantFailedMutationDiscardTests.swift`,
+  and this progress entry. It will land as a separate immutable
+  implementation/ledger pair rather than rewriting the already published
+  SHAs. Final independent read-only review explicitly found no remaining P0,
+  P1, or P2 and confirmed the before/final transition matches upstream
+  `retractTriple` semantics.
+
 ## 2026-08-02 18:28:43 EDT — #117 acknowledgement/rejection slice cleared for landing
 
 - This is the cutoff-safe replacement for the older partial 15/15 and 39/39
