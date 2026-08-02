@@ -6,6 +6,12 @@ commit SHA, and high-level reason. Changelog-only bookkeeping commits are
 visible in Git history but are not self-recorded because a commit cannot
 contain its own final SHA.
 
+## August 2, 2026 at 12:28:13 PM EDT
+
+- Repository: `realtime-voice-sqlite-instant` (Scribe)
+- Commit: `1e3297dda65698f52e08a1c791cc1b256510fa9f`
+- High-level reason: Add a disposable 128 KiB startup recording projection that renders cached and valid-empty libraries before canonical bootstrap, reconciles only paired fresh pages, isolates cache paths by database/persistence/account/E2E participant identity, and strictly bounds corrupt quarantine while retaining physical under-200 ms acceptance as an explicit open lane for #059.
+
 ## August 2, 2026 at 12:17:53 PM EDT
 
 - Repository: `realtime-voice-sqlite-instant` (Scribe)
