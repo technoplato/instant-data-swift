@@ -13,6 +13,13 @@ let package = Package(
   ],
   targets: [
     .executableTarget(
+      name: "InstantColdStartProfiler",
+      dependencies: [
+        .product(name: "InstantSwiftDataCore", package: "instant-data-swift")
+      ],
+      path: "Profiler"
+    ),
+    .executableTarget(
       name: "InstantSwiftDataBenchmarking",
       dependencies: [
         .product(name: "InstantSwiftDataCore", package: "instant-data-swift"),
@@ -20,7 +27,7 @@ let package = Package(
         .product(name: "BenchmarkPlugin", package: "package-benchmark"),
       ],
       path: "Benchmarks/InstantSwiftDataBenchmarking"
-    )
+    ),
   ],
   swiftLanguageModes: [.v6]
 )

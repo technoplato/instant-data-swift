@@ -134,6 +134,44 @@ private struct LiveQueryResultStorageRow: Sendable {
   var tripleCount: Int
 }
 
+private let instantPersistenceDecodeQueue = DispatchQueue(
+  label: "com.instantdb.swift.persistence-decode",
+  qos: .userInitiated,
+  attributes: .concurrent
+)
+
+private final class JSONBatchDecodeResults<Value: Sendable>: @unchecked Sendable {
+  private let lock = NSLock()
+  private var storage: [Int: Result<[Value], InstantError>] = [:]
+
+  func store(_ result: Result<[Value], InstantError>, at index: Int) {
+    lock.withLock { storage[index] = result }
+  }
+
+  func joined(batchCount: Int) throws -> [Value] {
+    try lock.withLock {
+      var values: [Value]?
+      for index in 0..<batchCount {
+        guard let result = storage.removeValue(forKey: index) else {
+          throw InstantError(
+            code: .implementationFailed,
+            operation: "assemble persisted JSON rows",
+            message: "Decoded SQLite JSON batch \(index) was missing.",
+            recovery: "Report this missing persistence batch to the Instant Swift maintainer."
+          )
+        }
+        let batch = try result.get()
+        if values == nil {
+          values = batch
+        } else {
+          values?.append(contentsOf: batch)
+        }
+      }
+      return values ?? []
+    }
+  }
+}
+
 public actor SQLitePersistenceStore {
   private let fileURL: URL
   private let startupTrace: InstantStartupTrace
@@ -835,19 +873,48 @@ public actor SQLitePersistenceStore {
   }
 
   private func loadSnapshotWithoutTransaction() throws -> InstantPersistenceSnapshot {
-    let attributes: [InstantAttribute] = try selectJSON(
-      "SELECT json FROM instant_attributes ORDER BY id"
+    let attributes: [InstantAttribute] = try loadStateCollection(
+      phase: "sqlite.state-load.attributes",
+      sql: "SELECT json FROM instant_attributes ORDER BY id"
     )
-    let triples: [InstantTriple] = try selectJSON(
-      "SELECT json FROM instant_triples ORDER BY entity_id, attribute_id, value_json"
+    let triples: [InstantTriple] = try loadStateCollection(
+      phase: "sqlite.state-load.triples",
+      sql: "SELECT json FROM instant_triples ORDER BY entity_id, attribute_id, value_json"
     )
-    let outbox: [PendingMutation] = try selectJSON(
-      "SELECT json FROM instant_outbox ORDER BY created_at_ms, mutation_id"
+    let outbox: [PendingMutation] = try loadStateCollection(
+      phase: "sqlite.state-load.outbox",
+      sql: "SELECT json FROM instant_outbox ORDER BY created_at_ms, mutation_id"
     )
     return InstantPersistenceSnapshot(
       store: InstantStoreSnapshot(attributes: attributes, triples: triples),
       outbox: outbox
     )
+  }
+
+  private func loadStateCollection<Value: Decodable & Sendable>(
+    phase: String,
+    sql: String
+  ) throws -> [Value] {
+    let stopwatch = startupTrace.stopwatch()
+    do {
+      let selection: (values: [Value], batchCount: Int, encodedByteCount: Int) =
+        try selectBatchedJSON(sql)
+      startupTrace.completed(
+        phase,
+        since: stopwatch,
+        metadata: [
+          "count": String(selection.values.count),
+          "decodeBatchCount": String(selection.batchCount),
+          "decodeConcurrency": "2",
+          "decodeStrategy": "batched-json-array",
+          "encodedByteCount": String(selection.encodedByteCount),
+        ]
+      )
+      return selection.values
+    } catch {
+      startupTrace.failed(phase, error: error, since: stopwatch)
+      throw error
+    }
   }
 
   public func loadQueryCache() throws -> [InstantCachedQuery] {
@@ -2641,6 +2708,101 @@ public actor SQLitePersistenceStore {
         throw persistenceError(operation: "decode row", message: "SQLite JSON was not UTF-8.")
       }
       values.append(try decoder.decode(Value.self, from: data))
+    }
+  }
+
+  private func selectBatchedJSON<Value: Decodable & Sendable>(
+    _ sql: String,
+    maxRowsPerBatch: Int = 1_024,
+    maxEncodedBytesPerBatch: Int = 1_024 * 1_024
+  ) throws -> (values: [Value], batchCount: Int, encodedByteCount: Int) {
+    var statement: OpaquePointer?
+    try prepare(sql, statement: &statement)
+    defer { sqlite3_finalize(statement) }
+
+    let decodeResults = JSONBatchDecodeResults<Value>()
+    let decodeGroup = DispatchGroup()
+    let decodeSlots = DispatchSemaphore(value: 2)
+    let persistencePath = fileURL.path
+    var batchData = Data()
+    batchData.reserveCapacity(maxEncodedBytesPerBatch + 1)
+    batchData.append(0x5B)
+    var batchRowCount = 0
+    var totalRowCount = 0
+    var batchCount = 0
+    var encodedByteCount = 0
+
+    func flushBatch() {
+      guard batchRowCount > 0 else { return }
+      batchData.append(0x5D)
+      let data = batchData
+      let batchIndex = batchCount
+      let firstRowNumber = totalRowCount - batchRowCount + 1
+      let lastRowNumber = totalRowCount
+      decodeSlots.wait()
+      decodeGroup.enter()
+      instantPersistenceDecodeQueue.async {
+        defer {
+          decodeSlots.signal()
+          decodeGroup.leave()
+        }
+        do {
+          decodeResults.store(
+            .success(try JSONDecoder().decode([Value].self, from: data)),
+            at: batchIndex
+          )
+        } catch {
+          decodeResults.store(
+            .failure(
+              InstantError(
+                code: .persistenceFailed,
+                operation: "decode persisted JSON rows",
+                message:
+                  "SQLite JSON rows \(firstRowNumber)-\(lastRowNumber) could not be decoded: \(error)",
+                recovery:
+                  "Inspect the local SQLite cache at \(persistencePath), then retry the command."
+              )
+            ),
+            at: batchIndex
+          )
+        }
+      }
+      batchCount += 1
+      batchData = Data()
+      batchData.reserveCapacity(maxEncodedBytesPerBatch + 1)
+      batchData.append(0x5B)
+      batchRowCount = 0
+    }
+
+    defer { decodeGroup.wait() }
+    while true {
+      let code = sqlite3_step(statement)
+      if code == SQLITE_DONE {
+        flushBatch()
+        decodeGroup.wait()
+        return (try decodeResults.joined(batchCount: batchCount), batchCount, encodedByteCount)
+      }
+      guard code == SQLITE_ROW else {
+        throw persistenceError(operation: "read SQL", message: lastErrorMessage())
+      }
+      guard let bytes = sqlite3_column_text(statement, 0) else {
+        throw persistenceError(operation: "decode row", message: "SQLite returned a NULL JSON row.")
+      }
+      let byteCount = Int(sqlite3_column_bytes(statement, 0))
+      let separatorByteCount = batchRowCount == 0 ? 0 : 1
+      if batchRowCount > 0,
+        batchRowCount >= maxRowsPerBatch
+          || batchData.count + separatorByteCount + byteCount + 1 > maxEncodedBytesPerBatch
+      {
+        flushBatch()
+      }
+      if batchRowCount > 0 {
+        batchData.append(0x2C)
+      }
+      batchData.append(bytes, count: byteCount)
+      batchRowCount += 1
+      totalRowCount += 1
+      encodedByteCount += byteCount
     }
   }
 
