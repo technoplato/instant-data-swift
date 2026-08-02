@@ -6,6 +6,15 @@ commit SHA, and high-level reason. Changelog-only bookkeeping commits are
 visible in Git history but are not self-recorded because a commit cannot
 contain its own final SHA.
 
+## August 2, 2026 at 5:41:40 PM EDT
+
+- Repository: `instant-data-swift`
+- Commit: `671e370509294195992f6482aced9b7b169c4bc1`
+- High-level reason: Preserve topic event identity so repeated equal-payload
+  Recipes reactions animate across devices, expose touch-device custom cursor
+  feedback, and project Avatar Stack presence once per logical user, with 25/25
+  focused wrapper and app regressions green for issues #127–#129.
+
 ## August 2, 2026 at 5:34:02 PM EDT
 
 - Repository: `realtime-voice-sqlite-instant` (Scribe)

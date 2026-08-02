@@ -4,6 +4,30 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## August 2nd, 2026 at 5:41:40 p.m. EDT — `671e37050929` Fix repeated Recipes reactions and presence projection
+
+- **Implementation commit:** `671e370509294195992f6482aced9b7b169c4bc1`
+- **Change:** Fix repeated Recipes reactions and presence projection
+- **Details:**
+  - Preserve typed topic event identity so equal reaction payloads still animate independently while replayed IDs and local echoes do not duplicate.
+  - Render a draggable local custom cursor on touch devices and deduplicate Avatar Stack presence by logical user ID in first-seen order.
+  - Focused verification passed: 25 tests across ReactionsV3Tests, CustomCursorsV3Tests, AvatarStackV3Tests, and V3PlaybackFixtureTests; physical iPhone/iPad acceptance remains open.
+- **Files:**
+  - `Sources/InstantSwiftData/InstantTopic.swift` — Add bounded event identities and local-source metadata.
+  - `Sources/PresenceRecipesV3App/CustomCursorsV3Screen.swift` — Render touch-device local cursor feedback.
+  - `Sources/PresenceRecipesV3App/PresenceRecipesV3App.swift` — Deduplicate reaction event IDs and logical presence users.
+  - `Sources/PresenceRecipesV3App/ReactionsV3Screen.swift` — Observe event identities instead of only payload arrays.
+  - `Tests/InstantSwiftDataTests/V3PlaybackFixtureTests.swift` — Cover event identity, local source, and bounded history.
+  - `Tests/PresenceRecipesV3AppTests/AvatarStackV3Tests.swift` — Cover logical-user deduplication.
+  - `Tests/PresenceRecipesV3AppTests/CustomCursorsV3Tests.swift` — Cover local touch cursor lifecycle.
+  - `Tests/PresenceRecipesV3AppTests/ReactionsV3Tests.swift` — Cover repeated payloads, replay, and local echo.
+  - `PROGRESS.md` — Preserve verification and remaining acceptance work.
+- **User context (verbatim):**
+  > The animation plays on the iPhone, but not on the iPad.
+  > Custom cursors is not doing anything.
+  > this duplicates if I leave and rejoin
+- **SpecStory:** unavailable — Unavailable: this implementation was performed in the Codex desktop application and no verified SpecStory desktop capture URI is available.
+
 ## August 2nd, 2026 at 5:30:19 p.m. EDT — `5d506d7a393c` Record cutoff-safe Instant recovery checkpoint
 
 - **Implementation commit:** `5d506d7a393c0e340445190677c5f151b53b0791`
