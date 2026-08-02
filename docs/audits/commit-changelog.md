@@ -6,6 +6,12 @@ commit SHA, and high-level reason. Changelog-only bookkeeping commits are
 visible in Git history but are not self-recorded because a commit cannot
 contain its own final SHA.
 
+## August 2, 2026 at 1:03:30 PM EDT
+
+- Repository: `realtime-voice-sqlite-instant` (Scribe)
+- Commit: `6fe4be91321e5598471932ac5b1387b9a3c196fb`
+- High-level reason: Harden the simulator-only real-audio Instant matrix so nine independent Mac/iPhone/iPad writer-observer lanes require exact fixture PCM, deterministic transcript projection, materialized storage bytes, guest identity separation, publication-anchored latency, private issue-tagged local JSONL, bounded artifacts, and clean participant shutdown for #089 and #116.
+
 ## August 2, 2026 at 12:43:34 PM EDT
 
 - Repository: `realtime-voice-sqlite-instant` (Scribe)
