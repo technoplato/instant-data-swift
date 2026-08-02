@@ -82,7 +82,13 @@ let package = Package(
       ],
       swiftSettings: strictConcurrencySettings
     ),
-    .target(name: "InstantSwiftDataCore", swiftSettings: strictConcurrencySettings),
+    .target(
+      name: "InstantSwiftDataCore",
+      dependencies: [
+        .product(name: "IssueReporting", package: "xctest-dynamic-overlay")
+      ],
+      swiftSettings: strictConcurrencySettings
+    ),
     .target(
       name: "InstantSwiftDataSchema",
       dependencies: ["InstantSwiftDataCore"],

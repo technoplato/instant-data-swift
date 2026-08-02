@@ -1,4 +1,5 @@
 import Foundation
+import IssueReporting
 
 public struct InstantRuntimeConfiguration: Sendable {
   public static let defaultAPIURI = URL(string: "https://api.instantdb.com")!
@@ -496,6 +497,16 @@ private actor InstantRuntimeLiveSession {
   private var registeredQueries: [String: RegisteredQuery] = [:]
   private var serverAttributes: [InstantLiveJSONValue] = []
   private var inFlightMutationIDs: Set<String> = []
+  /// When each in-flight mutation was written to the transport, so an
+  /// unacknowledged mutation is retried instead of blocking its queue forever.
+  private var inFlightMutationDeadlines: [String: Date] = [:]
+  private var hasReportedDeepOutbox = false
+  /// Bounds one flush so a deep backlog cannot starve the session's queries.
+  static let maximumMutationsPerFlush = 50
+  /// An online write that is not acknowledged this quickly is a real problem,
+  /// not a slow network: surface it and retry rather than waiting minutes.
+  static let inFlightMutationTimeout: TimeInterval = 10
+  static let deepOutboxReportingThreshold = 100
   private var registeredRooms: [InstantRoomHandle: RegisteredRoom] = [:]
   private var registeredStreamReaders: [String: RegisteredStreamReader] = [:]
   private var pendingStreamStarts:
@@ -725,6 +736,7 @@ private actor InstantRuntimeLiveSession {
     sessionID = nil
     serverAttributes = []
     inFlightMutationIDs.removeAll()
+    inFlightMutationDeadlines.removeAll()
     for room in Array(registeredRooms.keys) {
       registeredRooms[room]?.isConnected = false
     }
@@ -1054,8 +1066,17 @@ private actor InstantRuntimeLiveSession {
     _ mutations: [InstantTransportMutation]
   ) async throws -> [InstantLiveMutationEncodingFailure] {
     guard let session, isOpened else { return [] }
+    reclaimExpiredInFlightMutations()
     var encodingFailures: [InstantLiveMutationEncodingFailure] = []
-    for mutation in mutations.sorted(by: Self.mutationOrder) where mutation.status == .pending {
+    let pending = mutations
+      .sorted(by: Self.mutationOrder)
+      .filter { $0.status == .pending }
+    reportDeepOutboxIfNeeded(pendingCount: pending.count)
+    var sentCount = 0
+    for mutation in pending {
+      // A bounded batch keeps a large backlog from monopolizing the transport,
+      // which previously starved the session's own queries until they timed out.
+      guard sentCount < Self.maximumMutationsPerFlush else { break }
       guard inFlightMutationIDs.insert(mutation.mutationID).inserted else { continue }
       let txSteps: [InstantTransportStep]
       do {
@@ -1065,6 +1086,18 @@ private actor InstantRuntimeLiveSession {
         )
       } catch {
         inFlightMutationIDs.remove(mutation.mutationID)
+        inFlightMutationDeadlines[mutation.mutationID] = nil
+        reportIssue(
+          """
+          Instant quarantined a mutation it can never deliver.
+
+          \(String(describing: error))
+
+          Mutation: \(mutation.mutationID)
+          Deploy the schema (npx instant-cli push schema) so this attribute \
+          exists on the server, then the quarantined mutation can be retried.
+          """
+        )
         encodingFailures.append(
           InstantLiveMutationEncodingFailure(
             message: String(describing: error),
@@ -1078,12 +1111,62 @@ private actor InstantRuntimeLiveSession {
           try .transact(txSteps, clientEventID: mutation.mutationID),
           through: session
         )
+        inFlightMutationDeadlines[mutation.mutationID] =
+          Date().addingTimeInterval(Self.inFlightMutationTimeout)
+        sentCount += 1
       } catch {
         inFlightMutationIDs.remove(mutation.mutationID)
+        inFlightMutationDeadlines[mutation.mutationID] = nil
         throw error
       }
     }
     return encodingFailures
+  }
+
+  /// Whether pending work remains that a later flush should pick up.
+  func hasUndeliveredMutations(_ mutations: [InstantTransportMutation]) -> Bool {
+    mutations.contains {
+      $0.status == .pending && !inFlightMutationIDs.contains($0.mutationID)
+    }
+  }
+
+  /// Releases mutations the server never acknowledged so the next flush retries
+  /// them, instead of leaving them blocked for the lifetime of the session.
+  private func reclaimExpiredInFlightMutations() {
+    let now = Date()
+    let expired = inFlightMutationDeadlines.filter { $0.value <= now }.map(\.key)
+    guard !expired.isEmpty else { return }
+    for mutationID in expired {
+      inFlightMutationIDs.remove(mutationID)
+      inFlightMutationDeadlines[mutationID] = nil
+    }
+    reportIssue(
+      """
+      Instant did not acknowledge \(expired.count) mutation(s) within \
+      \(Int(Self.inFlightMutationTimeout))s and is retrying them.
+
+      If this repeats, the device is writing faster than the transport can \
+      confirm. Inspect the Instant WebSocket endpoint and server response.
+      """
+    )
+  }
+
+  private func reportDeepOutboxIfNeeded(pendingCount: Int) {
+    guard pendingCount >= Self.deepOutboxReportingThreshold else {
+      hasReportedDeepOutbox = false
+      return
+    }
+    guard !hasReportedDeepOutbox else { return }
+    hasReportedDeepOutbox = true
+    reportIssue(
+      """
+      Instant has \(pendingCount) undelivered mutations queued locally.
+
+      Local writes are durable, but nothing is reaching the server. Check the \
+      connection state and any quarantined mutation reported above; a single \
+      undeliverable mutation or a failing transport will hold the whole queue.
+      """
+    )
   }
 
   func joinRoom(
@@ -1182,10 +1265,12 @@ private actor InstantRuntimeLiveSession {
     case let .transactOK(transactOK):
       if let clientEventID = transactOK.clientEventID {
         inFlightMutationIDs.remove(clientEventID)
+        inFlightMutationDeadlines[clientEventID] = nil
       }
     case let .error(error):
       if let clientEventID = error.clientEventID {
         inFlightMutationIDs.remove(clientEventID)
+        inFlightMutationDeadlines[clientEventID] = nil
         pendingStreamStarts[clientEventID]?.finish(
           throwing: InstantError(
             code: .networkFailed,
@@ -1352,6 +1437,7 @@ private actor InstantRuntimeLiveSession {
     self.receiverTask = nil
     serverAttributes = []
     inFlightMutationIDs.removeAll()
+    inFlightMutationDeadlines.removeAll()
     for room in Array(registeredRooms.keys) {
       registeredRooms[room]?.isConnected = false
     }
@@ -1607,6 +1693,10 @@ public final class InstantRuntime: Sendable {
   public static let cookieSyncLastUpdatedMetadataKey = "lastSyncedUserCookie"
   public static let cookieSyncIntervalMilliseconds: Int64 = 24 * 60 * 60 * 1000
   private static let authUsersNamespace = "$users"
+  /// How many bounded batches one delivery attempt drains before yielding to
+  /// the next trigger, so a deep backlog converges without a burst.
+  static let maximumFlushPassesPerDelivery = 20
+  static let flushPassPauseNanoseconds: UInt64 = 100_000_000
 
   public let configuration: InstantRuntimeConfiguration
   public let store: InstantStore
@@ -3616,7 +3706,21 @@ public final class InstantRuntime: Sendable {
           let encodingFailures = try await liveSession.sendMutations(
             await outboxTransportMutations().filter { $0.status == .pending }
           )
-          try await persistLiveMutationEncodingFailures(encodingFailures)
+          // Recording a quarantined mutation must never tear down a healthy
+          // connection: the write is already durable locally, and closing here
+          // left every later mutation undeliverable.
+          do {
+            try await persistLiveMutationEncodingFailures(encodingFailures)
+          } catch {
+            reportIssue(
+              """
+              Instant could not record \(encodingFailures.count) quarantined \
+              mutation(s), but the connection stays open.
+
+              \(String(describing: error))
+              """
+            )
+          }
         } catch {
           if enteredOperationGate {
             recordActorHop(.operationGate)
@@ -4329,14 +4433,33 @@ public final class InstantRuntime: Sendable {
 
   private func sendPendingMutationsToLiveSession() async {
     guard configuration.liveTransport != nil else { return }
-    do {
-      recordActorHop(.liveSession)
-      let encodingFailures = try await liveSession.sendMutations(
-        await outboxTransportMutations().filter { $0.status == .pending }
-      )
-      try await persistLiveMutationEncodingFailures(encodingFailures)
-    } catch {
-      await recordConnectionError(error)
+    // Each flush is bounded, so a backlog drains over several passes rather
+    // than flooding the transport in one burst.
+    for _ in 0..<Self.maximumFlushPassesPerDelivery {
+      do {
+        recordActorHop(.liveSession)
+        let pending = await outboxTransportMutations().filter { $0.status == .pending }
+        let encodingFailures = try await liveSession.sendMutations(pending)
+        do {
+          try await persistLiveMutationEncodingFailures(encodingFailures)
+        } catch {
+          reportIssue(
+            """
+            Instant could not record \(encodingFailures.count) quarantined \
+            mutation(s), but delivery continues.
+
+            \(String(describing: error))
+            """
+          )
+        }
+        guard await liveSession.hasUndeliveredMutations(pending) else { return }
+        // Let acknowledgements arrive before the next batch so confirmed
+        // mutations leave the queue instead of being resent.
+        try? await Task.sleep(nanoseconds: Self.flushPassPauseNanoseconds)
+      } catch {
+        await recordConnectionError(error)
+        return
+      }
     }
   }
 
