@@ -6,6 +6,16 @@ commit SHA, and high-level reason. Changelog-only bookkeeping commits are
 visible in Git history but are not self-recorded because a commit cannot
 contain its own final SHA.
 
+## August 2, 2026 at 2:18:49 PM EDT
+
+- Repository: `realtime-voice-sqlite-instant` (Scribe)
+- Commit: `3636f17c8954549e2762d8382186c25b68f2d7a6`
+- High-level reason: Preserve physical-iPad proof that the Home Screen widget
+  routes into recording but the enabled built-in microphone returns an exact
+  all-zero WAV, while the local row/media survive behind 901 pending Instant
+  mutations and disappear from the UI after relaunch despite zero remote rows
+  for #023 and #026.
+
 ## August 2, 2026 at 1:59:36 PM EDT
 
 - Repository: `realtime-voice-sqlite-instant` (Scribe)
