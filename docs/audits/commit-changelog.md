@@ -6,6 +6,16 @@ commit SHA, and high-level reason. Changelog-only bookkeeping commits are
 visible in Git history but are not self-recorded because a commit cannot
 contain its own final SHA.
 
+## August 2, 2026 at 6:29:55 PM EDT
+
+- Repository: `instant-data-swift`
+- Commit: `8d02a7a8d6b7000dea42be0b534e96761e3b1daf`
+- High-level reason: Require explicit WebSocket or server-transport
+  acknowledgement before resolving mutation delivery, atomically remove known
+  optimistic effects on terminal rejection while rebuilding successors, and
+  fail closed when authoritative refresh does not cover every materialized
+  effect; the coupled 136-test gate and independent P0/P1/P2 review are green.
+
 ## August 2, 2026 at 6:11:30 PM EDT
 
 - Repository: `realtime-voice-sqlite-instant` (Scribe)

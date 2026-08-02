@@ -4,6 +4,41 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## August 2nd, 2026 at 6:29:52 p.m. EDT — `8d02a7a8d6b7` Require explicit server acceptance and atomic rejection recovery
+
+- **Implementation commit:** `8d02a7a8d6b7000dea42be0b534e96761e3b1daf`
+- **Change:** Require explicit server acceptance and atomic rejection recovery
+- **Details:**
+  - Resolve mutation delivery only from WebSocket transact-ok or an explicitly server-accepted transport receipt; local, manual, and drain confirmation remains durable and wire-sendable without satisfying the server barrier.
+  - On terminal rejection, atomically remove known optimistic effects, preserve and rebuild successor inverses, persist structured failure state, and expose guarded retry/discard operations while legacy unknown rows fail loud and closed.
+  - Reconcile accepted receipts only from authoritative operations that cover every materialized effect, and retain all non-removed optimism through live-query pruning.
+  - Verification: 136 tests across eight coupled suites passed with zero unexpected failures and five asserted known diagnostics; both InstantSwiftDataCore and InstantSwiftData targets build; independent review reported no remaining P0, P1, or P2 findings.
+- **Files:**
+  - `Sources/InstantSwiftData/InstantMessage.swift` — Require server-proven acknowledgement before completing typed messages.
+  - `Sources/InstantSwiftData/InstantSwiftData.swift` — Expose failed-mutation recovery and server delivery behavior.
+  - `Sources/InstantSwiftDataCore/InstantError.swift` — Model structured mutation rejection and retained recovery outcomes.
+  - `Sources/InstantSwiftDataCore/InstantLiveRefreshApplication.swift` — Apply authoritative refresh without falsely confirming local-only receipts.
+  - `Sources/InstantSwiftDataCore/InstantLiveTransport.swift` — Preserve receipt provenance through live transport.
+  - `Sources/InstantSwiftDataCore/InstantModels.swift` — Persist acknowledgement provenance and optimistic overlay state.
+  - `Sources/InstantSwiftDataCore/InstantMutationTransport.swift` — Distinguish local confirmation from explicit server acceptance.
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — Implement atomic rejection, successor replay, guarded retry/discard, and operation-aware reconciliation.
+  - `Sources/InstantSwiftDataCore/InstantStore.swift` — Keep non-removed optimistic lookup baselines during pruning.
+  - `Sources/InstantSwiftDataCore/Outbox.swift` — Persist failed mutation state and recovery metadata.
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — Make rollback and failure persistence transactional.
+  - `Sources/InstantSwiftDataCore/TripleIndexes.swift` — Support precise rollback bookkeeping.
+  - `Tests/InstantSwiftDataCoreTests/InstantFailedMutationDiscardTests.swift` — Cover rejection, relaunch, retry, discard, legacy fail-closed, and operation-aware refresh cases.
+  - `Tests/InstantSwiftDataCoreTests/InstantLiveTransportTests.swift` — Cover live rejection and refresh/pruning semantics.
+  - `Tests/InstantSwiftDataCoreTests/InstantMutationLifecycleTests.swift` — Cover durable mutation lifecycle transitions.
+  - `Tests/InstantSwiftDataCoreTests/InstantStoreTests.swift` — Cover optimistic lookup pruning and large-store rollback scope.
+  - `Tests/InstantSwiftDataTests/InstantMessageServerAcceptanceTests.swift` — Prove typed messages wait for real server acceptance.
+  - `Tests/InstantSwiftDataTests/MutationDeliveryTests.swift` — Prove delivery barrier provenance behavior.
+  - `Tests/InstantSwiftDataTests/V3RecordingActionFixtureTests.swift` — Migrate fixture acknowledgement to explicit server transport.
+  - `Tests/InstantSwiftDataTests/V3RecordingsListFixtureTests.swift` — Migrate fixture acknowledgement to explicit server transport.
+  - `PROGRESS.md` — Preserve the exact final gate, reviewer clearance, and device-evidence boundary.
+- **User context (verbatim):**
+  > 17% usage remaining, please ensure you again are thoroughly documenting everything such that a cutoff would be easy to handoff to another agent. carry on
+- **SpecStory:** unavailable — Unavailable: this implementation was performed in the Codex desktop application and no verified SpecStory desktop capture URI is available.
+
 ## August 2nd, 2026 at 5:55:23 p.m. EDT — `95cc1f03cf53` Record acknowledgement review blockers
 
 - **Implementation commit:** `95cc1f03cf533696ac3fb1ac86e7977c1f130f17`
