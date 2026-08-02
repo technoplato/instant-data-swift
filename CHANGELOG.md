@@ -4,6 +4,19 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## August 2nd, 2026 at 5:30:19 p.m. EDT — `5d506d7a393c` Record cutoff-safe Instant recovery checkpoint
+
+- **Implementation commit:** `5d506d7a393c0e340445190677c5f151b53b0791`
+- **Change:** Record cutoff-safe Instant recovery checkpoint
+- **Details:**
+  - Preserve issue #043 acknowledgement RED contracts, Recipes issues #127–#130 topic/cursor/presence diagnoses, physical auth evidence boundaries, exact dirty ownership, tests, and remaining acceptance gates before implementation landing.
+- **Files:**
+  - `PROGRESS.md` — Capture newest-first library and Recipes worker boundaries, tests, and no-ship findings.
+  - `docs/audits/commit-changelog.md` — Record the matching Scribe cutoff handoff implementation SHA across repositories.
+- **User context (verbatim):**
+  > 17% usage remaining, please ensure you again are thoroughly documenting everything such that a cutoff would be easy to handoff to another agent.
+- **SpecStory:** unavailable — Codex desktop GUI task; no verified SpecStory CLI capture URI exists for this GUI session.
+
 ## August 2nd, 2026 at 4:30:10 p.m. EDT — `6408c8ec1982` Configure Recipes native provider login
 
 - **Implementation commit:** `6408c8ec1982bda51442a6e517c4d900c7818734`
