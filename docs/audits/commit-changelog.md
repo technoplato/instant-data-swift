@@ -6,6 +6,18 @@ commit SHA, and high-level reason. Changelog-only bookkeeping commits are
 visible in Git history but are not self-recorded because a commit cannot
 contain its own final SHA.
 
+## August 3, 2026 at 6:42:32 PM EDT
+
+- Repository: `realtime-voice-sqlite-instant` (Scribe)
+- Commit: `46e20a2c80611e4b832e7e386ba819ba9029ee1b`
+- High-level reason: Isolate the Mac-side claim failure for the livestream (#003) with a terminal-driven probe rather than UI guesswork. `scripts/screen-stream/probe-mac-claim.mjs` writes a fresh unexpired `screenStreamSessions` request in exactly the shape the phone produces and polls for 60 s; the running Mac never claimed it. Ruled out the false negatives first: permissions grant `view: "true"`, the Mac process was alive with two established TLS connections, and every session since 2026-07-29 is likewise unclaimed. Narrows the cause to the Mac Instant store never installing as default (where an `AsyncSerialGate` stall would present, and the deployed build pins published 1.2.2 without the fix) or `observeAll` never emitting — and notes that the remote log lane, dead since 2026-07-30, is installed by that same bootstrap, so both symptoms may be one defect.
+
+## August 3, 2026 at 6:42:32 PM EDT (build blockers)
+
+- Repository: `realtime-voice-sqlite-instant` (Scribe)
+- Commits: `082dd0f8b5253e5f02ccc9fae122020c39a0cc95`, `0ee348982516d680508d7aef2dc168ed45f5f8c8`, `749e06d21ff3c97b9ebf0f1fa418865d0a82c3a7`
+- High-level reason: Clear three blockers that prevented any provenance-checked device install. `.claude/settings.local.json` was ignored only by the user-level global gitignore, which the SwiftPM plugin sandbox cannot read, so every reproducible build failed "requires a clean worktree" while the tree looked clean outside the sandbox. Two genuine bugs in the checkpointed code stored JavaScript's `MAX_SAFE_INTEGER` in an untyped `Int`, which overflows on watchOS `arm64_32`; `SharedModels` then failed to emit for the watch leg and took the whole embedded iOS scheme down, which was the root of all 150 device-build failures and is invisible to the 64-bit macOS test suite.
+
 ## August 3, 2026 at 5:06:55 PM EDT
 
 - Repository: `instant-data-swift`
