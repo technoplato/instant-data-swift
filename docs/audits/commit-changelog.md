@@ -6,6 +6,18 @@ commit SHA, and high-level reason. Changelog-only bookkeeping commits are
 visible in Git history but are not self-recorded because a commit cannot
 contain its own final SHA.
 
+## August 3, 2026 at 2:39:23 PM EDT
+
+- Repository: `realtime-voice-sqlite-instant` (Scribe)
+- Commit: `6430fd0d6b725c3e7bfdf9b5ceb74fea56822465`
+- High-level reason: Point the diagnostics status probe at the port the collector actually listens on, because the Foldkit portal squatting the old port answers `/health` with a 404 rather than refusing and so disguised a healthy collector as a broken one; document the tailnet TLS prerequisite whose absence kept the shipping diagnostics lane dark, along with its device-visible `NSURLError -1004` / POSIX 61 signature and the fact that `tailscale cert` writes a private key into the working directory.
+
+## August 3, 2026 at 2:37:05 PM EDT
+
+- Repository: `realtime-voice-sqlite-instant` (Scribe)
+- Commit: `3dbc3a4ff6d1384cce2ab99d6fdc109ce2a7e103`
+- High-level reason: Restore supervision of the shipping diagnostics collector by binding it to a free port instead of evicting an unrelated project that has held 8765 since 2026-07-26, and scope the installer's dirty-tree guard to the files launchd actually executes so unrelated in-flight work on shared `main` can no longer block a clean install — the repository-wide check could only be satisfied by committing another agent's uncommitted changes.
+
 ## August 3, 2026 at 2:32:51 PM EDT
 
 - Repository: `realtime-voice-sqlite-instant` (Scribe)
