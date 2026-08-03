@@ -33,6 +33,39 @@
   persistent outbox/reconnection, delivery, and rejection isolation.
 - Do not add a public `queryLocal`. Select local-only behavior with an injected
   local-only `InstantSwiftDataClient` that uses ordinary public APIs.
+- This library and its primary consumer, Scribe
+  (`../tools/realtime-voice-sqlite-instant`), are developed together and both
+  change daily. Scribe consumes this checkout directly through the
+  `Packages/instant-data-swift` symlink, so library changes reach a real device
+  immediately and a Scribe symptom is as likely to originate here as in the app.
+  Reproduce against Scribe's actual workload before declaring a fix, and
+  remember that reinstalling Scribe does not reset library state — the triple
+  cache and the outbox are persistent on disk.
+- Scribe is an always-on voice recorder, so this library's steady-state cost is
+  a user-visible property: it holds a live websocket, a persistent outbox, and a
+  local triple store while the phone is in a pocket. Connection churn, a backoff
+  that resets instead of growing, retrying while the OS reports no network path,
+  an outbox that never drains, and per-change full-result recomputation all
+  present to the user as a hot phone and a dead battery. Backoff, reachability
+  gating, and retry cadence are correctness behavior with upstream parity
+  obligations — see `Reactor.js` `_scheduleReconnect`, whose `_reconnectTimeoutMs`
+  lives on the reactor and is reset only on `init-ok`, and which skips the
+  attempt entirely when `_isOnline` is false. Any divergence needs a cited
+  reason.
+- Prove attribution from evidence before naming a layer, and say which kind of
+  evidence you have. Reading a plausible defect in this library's source is a
+  hypothesis, not a diagnosis: on 2026-08-03 a retry storm on a device was
+  attributed to this library's reconnect controller purely from code reading,
+  when the failing socket belonged to the application's own `InstantDBLogger`
+  and the library's sync socket had emitted no errors at all. Two checks would
+  have caught it immediately — the observed retry intervals did not match the
+  accused code's delay formula, and the log subsystem named a different
+  component. Match measured timings against the specific formula you are
+  blaming, confirm the subsystem actually belongs to the layer you are
+  accusing, and state plainly when a conclusion is inference rather than
+  measurement. Release thresholds and the commands that measure them live in
+  `../tools/realtime-voice-sqlite-instant/docs/performance-budget.md`; when a
+  change moves one of those numbers, record the measured before/after.
 - Keep explicit flush/status APIs limited to CLI, diagnostics, tests, and real
   user-visible operations. Keep entity delivery independent from media
   transfer and preserve per-item or per-stream rejection isolation.
