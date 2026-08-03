@@ -18,6 +18,12 @@ contain its own final SHA.
 - Commits: `082dd0f8b5253e5f02ccc9fae122020c39a0cc95`, `0ee348982516d680508d7aef2dc168ed45f5f8c8`, `749e06d21ff3c97b9ebf0f1fa418865d0a82c3a7`
 - High-level reason: Clear three blockers that prevented any provenance-checked device install. `.claude/settings.local.json` was ignored only by the user-level global gitignore, which the SwiftPM plugin sandbox cannot read, so every reproducible build failed "requires a clean worktree" while the tree looked clean outside the sandbox. Two genuine bugs in the checkpointed code stored JavaScript's `MAX_SAFE_INTEGER` in an untyped `Int`, which overflows on watchOS `arm64_32`; `SharedModels` then failed to emit for the watch leg and took the whole embedded iOS scheme down, which was the root of all 150 device-build failures and is invisible to the 64-bit macOS test suite.
 
+## August 3, 2026 at 7:19:04 PM EDT
+
+- Repository: `realtime-voice-sqlite-instant` (Scribe)
+- Commits: `5919c9e672b922e659615542a4002a44bbb1ce68`, `f5c4dc3` (see Git history for the full SHA)
+- High-level reason: Fix the Mac half of the livestream (#003) and narrow what remains. The Instant store was started by a SwiftUI view's `.task` and cancelled by its `.onDisappear` with a per-view `@StateObject`, so on a macOS app that deliberately outlives its windows, closing one cancelled the shared bootstrap — taking down both the screen-stream claim loop and the real remote logger at once, which is why both went silent on 2026-07-30 with no error reported. The store is now process-wide and started from `applicationDidFinishLaunching`; on-device logs confirm the claim loop starts for the first time. Separately, `observeScreenStreamSessions` swallowed every subscription error into an empty catch and then finished the stream, leaving the Mac in a silent one-second retry loop; failures are now loud through `reportIssue` and a structured event. What remains is precise and library-side per ADR 0001: the `screenStreamSessions` subscription stays alive and never delivers a first batch, with the `AsyncSerialGate` stall (absent from the pinned published 1.2.2) as the leading hypothesis.
+
 ## August 3, 2026 at 5:06:55 PM EDT
 
 - Repository: `instant-data-swift`
