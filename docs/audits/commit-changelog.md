@@ -6,6 +6,60 @@ commit SHA, and high-level reason. Changelog-only bookkeeping commits are
 visible in Git history but are not self-recorded because a commit cannot
 contain its own final SHA.
 
+## August 3, 2026 at 12:49:11 PM EDT
+
+- Repository: `realtime-voice-sqlite-instant` (Scribe)
+- Commit: `9fdadc081e81e9e688c0c117d94eebcf6697e986`
+- High-level reason: End the ReplayKit broadcast when the recording stops, via a Darwin notification the extension honours, because only the extension can call finishBroadcastWithError. (#066, #120)
+
+## August 3, 2026 at 12:23:16 PM EDT
+
+- Repository: `realtime-voice-sqlite-instant` (Scribe)
+- Commit: `66b30f5e57bdc2e94615fa678a2d34212c384eda`
+- High-level reason: Remove a DragGesture(minimumDistance: 0) that claimed every touch in the recording timeline so rows opened on swipes, and make the system-video frame interval configurable end to end. (#140)
+
+## August 3, 2026 at 10:23:20 AM EDT
+
+- Repository: `realtime-voice-sqlite-instant` (Scribe)
+- Commit: `39bd55cd7d2edc4ebc3d6f104f22cc7abc90c23c`
+- High-level reason: Make the broadcast panel's video toggle and picker work: the toggle guarded on !isRecording while its panel only renders during recording, and the picker searched only RPSystemBroadcastPickerView's direct subviews for a button that is nested deeper. (#140)
+
+## August 3, 2026 at 8:38:14 AM EDT
+
+- Repository: `realtime-voice-sqlite-instant` (Scribe)
+- Commit: `7f7e1ddad4a6b995854c86379d5eebe162cd1dd7`
+- High-level reason: Unlink ScreenStreamClientLive from the broadcast upload extension, which had pulled LiveKitWebRTC and RustLiveKitUniFFI into an appex with no Frameworks directory on its runpath, so dyld killed the extension at launch every time. Root cause of system audio being dead since c409dec on 2026-07-28; verified on the physical iPhone. (#066)
+
+## August 3, 2026 at 6:24:51 AM EDT
+
+- Repository: `realtime-voice-sqlite-instant` (Scribe)
+- Commit: `fedeae5301c87f1424a1df13905b85e01b2bcff1`
+- High-level reason: Guard a Mac-only Process/Pipe call site so ScribeSharedSupport compiles for iOS, watchOS, tvOS and visionOS again; the entire iOS app had been unbuildable since bdf0173. (#138)
+
+## August 3, 2026 at 6:09:43 AM EDT
+
+- Repository: `realtime-voice-sqlite-instant` (Scribe)
+- Commit: `5b18ed77e4cc5a043db2bc4f744654301c733f93`
+- High-level reason: Give the broadcast upload extension a diagnostic lane that is not the channel under suspicion: a heartbeat written by whole-file replacement, mirrored into the shared UserDefaults suite and readable after the extension exits. (#066)
+
+## August 3, 2026 at 3:24:09 AM EDT
+
+- Repository: `realtime-voice-sqlite-instant` (Scribe)
+- Commit: `823d547e669f6545224cc9b76bc3e581a64b2b0f`
+- High-level reason: Align the E2E latency gate to the 200 ms target #089 actually states; the previous 100 ms sat below this location's measured network floor to api.instantdb.com, so it failed on something no client change could reach.
+
+## August 3, 2026 at 3:24:00 AM EDT
+
+- Repository: `realtime-voice-sqlite-instant` (Scribe)
+- Commit: `654e07549bad14da4ab51dcd02981aac8d954aed`
+- High-level reason: Pin with a focused test that one unrelated terminal outbox row no longer silences the InstantDB diagnostics lane, giving #135 criterion 3 the evidence d829490 shipped without.
+
+## August 3, 2026 at 3:23:50 AM EDT
+
+- Repository: `realtime-voice-sqlite-instant` (Scribe)
+- Commit: `5a4f552774bca07f3253cc4a3128da29b07e2ea4`
+- High-level reason: Give the stream listener per-segment isolation so one unanswerable segment stops losing the developer's speech, and stop a failed remote write leaving presence claiming a listener is both observing and stopped. Five focused tests verified to fail against the pre-fix source. (#137)
+
 ## August 2, 2026 at 7:21:33 PM EDT
 
 - Repository: `realtime-voice-sqlite-instant` (Scribe)
