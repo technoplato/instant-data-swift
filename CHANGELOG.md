@@ -4,6 +4,24 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## August 3rd, 2026 at 5:06:49 p.m. EDT — `4b596d4ec9b4` Honor cancellation in AsyncSerialGate and name the holder when it stalls
+
+- **Implementation commit:** `4b596d4ec9b42ba8c62dada1aa52cf22442c82ae`
+- **Change:** Honor cancellation in AsyncSerialGate and name the holder when it stalls
+- **Details:**
+  - The old 23-line gate parked cancelled waiters forever: non-throwing withCheckedContinuation, no cancellation handler, waiter never removed. Scribe's session request effect uses cancelInFlight, so each Retry automatic setup tap parked another waiter and made the 10-second stall worse (Scribe #003, blocker 1).
+  - enterUnlessCancelled honors cancellation only before acquisition so a started critical section still completes and cannot leave half-applied optimistic state; a caller that throws never acquired the gate and must not leave it. InstantRuntime.transact adopts it; the four gates are labelled operation, auth-promotion, connection, mutation-flush.
+  - A stall watchdog (default 5000 ms) reports the holder function, hold duration, longest waiter, queue depth, and repeat count through InstantDiagnostics (which is not the Instant lane, so a stalled gate cannot swallow its own diagnosis) plus reportIssue.
+  - Upstream parity verified directly: upstream/instant/client/packages/core/src/Reactor.js contains no mutex, semaphore, lock, or serial queue — the JS reactor is single-event-loop — so the gate is a documented Swift-side adaptation with standard structured-concurrency cancellation.
+  - Verified: swift test --filter AsyncSerialGate green (8 tests including cancellation-while-queued, FIFO-preserving middle-waiter cancellation, stall reporting start/stop); full package suite exit 0. This continues work an earlier agent left uncompiled; it built and passed unmodified.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/AsyncSerialGate.swift` — Four-state waiter machine, cancellation-aware entry, labelled stall watchdog
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — transact enters the operation gate cancellation-aware; gates are labelled; wrappers pass the real caller name
+  - `Tests/InstantSwiftDataCoreTests/AsyncSerialGateTests.swift` — Pin FIFO order, cancellation behavior before and while queued, and stall reporting
+- **User context (verbatim):**
+  > your sole job is to get the live stream from the iOS and iPad clients working to the Mac
+- **SpecStory:** unavailable — Unavailable: this work ran in Claude Code and no verified SpecStory capture URI is available for this session.
+
 ## August 2nd, 2026 at 9:29:14 p.m. EDT — `1ac73a1bce16` Isolate unretryable legacy rows from the live-connect retry sweep
 
 - **Implementation commit:** `1ac73a1bce165920deb83f06c7d7070c652cacf2`
