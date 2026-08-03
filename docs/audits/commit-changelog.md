@@ -6,6 +6,12 @@ commit SHA, and high-level reason. Changelog-only bookkeeping commits are
 visible in Git history but are not self-recorded because a commit cannot
 contain its own final SHA.
 
+## August 3, 2026 at 4:18:52 PM EDT
+
+- Repository: `realtime-voice-sqlite-instant` (Scribe)
+- Commit: `1b5321e068d6a44bdb280c83006e8601fddab2dd`
+- High-level reason: Correct the livestream diagnosis and reorder the work behind it. `ScreenStreamClientLive.captureVideo` and `captureAppAudio` have zero callers anywhere in the repository, so the LiveKit publisher is fed by nothing at all — the broadcast extension's JPEG frames terminate in the recording transcript instead — which means the prior framing of "the carrier is too slow to reach video rate" was wrong and fixing the session-request stall alone would have connected a room and published an empty track, presenting as a LiveKit or token defect. Records the revised order (bridge the existing frames into the publisher first to prove room connect, token, publish and render end to end, then fix the stall, then replace the file carrier with LiveKit's Unix-domain-socket path), the developer's requirement that publish cadence respect the existing `videoSampleInterval` setting rather than a second throttle that would silently multiply it, the per-frame performance measurement points the bridge must leave behind given the device already leads energy use at ~25% of one core and 40.3 °C, and the state of three subagents terminated mid-task by an account usage limit — including uncommitted and never-compiled `AsyncSerialGate` cancellation work in this repository, and a proven-compiling WebRTC-free 16-file broadcast closure whose host-side symbol collisions argue for forking `client-sdk-swift` rather than vendoring it.
+
 ## August 3, 2026 at 2:41:06 PM EDT
 
 - Repository: `realtime-voice-sqlite-instant` (Scribe)
