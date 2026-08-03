@@ -17,6 +17,21 @@ contain its own final SHA.
   delivered 5/5 and 25/25 rows while correctly retaining the strict latency
   failure (25-row p95 214.2 ms against the 100 ms target).
 
+## August 2, 2026 at 8:06:12 PM EDT
+
+- Repository: `instant-data-swift`
+- Commit: `1ac73a1bce165920deb83f06c7d7070c652cacf2`
+- High-level reason: Stop one unretryable legacy outbox row from taking down
+  the whole live connection. Rows written before durable optimistic-overlay
+  metadata carry the deploy-fixable "could not resolve" message, so the
+  connect-time retry sweep selected them and threw `retainedUnknown`; the
+  live-connect catch then closed the socket, stored an `errored` connection
+  state and rethrew, repeating on every reconnect. That silenced queries, all
+  later mutations, and the separate diagnostic-log client, presenting on the
+  physical iPhone and iPad as an indefinite "Loading recordings…" with no
+  error. The row is now retained and reported while the sweep continues.
+  Tracked as issue #134 (P0).
+
 ## August 2, 2026 at 7:06:28 PM EDT
 
 - Repository: `instant-data-swift`

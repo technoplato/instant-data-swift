@@ -4,6 +4,24 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## August 2nd, 2026 at 9:29:14 p.m. EDT — `1ac73a1bce16` Isolate unretryable legacy rows from the live-connect retry sweep
+
+- **Implementation commit:** `1ac73a1bce165920deb83f06c7d7070c652cacf2`
+- **Change:** Isolate unretryable legacy rows from the live-connect retry sweep
+- **Details:**
+  - Tracked as issue #134 (https://issues.knophy.com/issues/134), P0.
+  - Upgraded devices carry failed outbox rows with no optimisticOverlayState or rollbackTransaction; their deploy-fixable 'could not resolve' message put them in the automatic retry sweep, where performRetryMutationWithGateHeld threw retainedUnknown.
+  - That sweep runs inside the live-connect path, whose catch closes the socket, saves an errored connection state and rethrows, so every reconnect repeated it. One legacy row stopped add-query registration, all later mutations, and the separate diagnostic-log client.
+  - Field evidence: physical iPhone and iPad both showed an indefinite 'Loading recordings...' with no error and emitted zero remote diagnostics after upgrading; the E2E sync probe exited 1 on mutation 66846455-3e98-4596-8667-9ea2fb099180.
+  - Retain and report the row, then continue the sweep, matching the existing rule that a quarantined mutation must never tear down a healthy connection. Only .retainedUnknown is isolated; persistence and transport failures still abort.
+  - Verified RED then GREEN: without the change connect() throws and the mutation queued behind the legacy row is never transacted. With it, the coupled selector plus the outbox-stall suite pass 146 tests in 9 suites with zero unexpected failures.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — Isolate and report retainedUnknown rows per mutation instead of aborting the connect-time retry sweep.
+  - `Tests/InstantSwiftDataCoreTests/InstantOutboxDeliveryStallTests.swift` — Reproduce the upgraded-device outbox shape and pin that one legacy row cannot block connect or later delivery.
+- **User context (verbatim):**
+  > There's, like, broken triples or broken entities or something like that, and we're needing to recover them. I don't wanna reinstall and uninstall and reinstall the app, because I would like to fix this underlying issue with the library and the application and give it the ability to recover.
+- **SpecStory:** unavailable — Unavailable: this work ran in Claude Code and no verified SpecStory capture URI is available for this session.
+
 ## August 2nd, 2026 at 7:06:28 p.m. EDT — `460b7ca01e04` Exclude watchOS from the presentation-based auth authorizers
 
 - **Implementation commit:** `460b7ca01e049dd45338a0a1766c90195655d33d`
