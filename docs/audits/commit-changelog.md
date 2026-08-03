@@ -6,6 +6,12 @@ commit SHA, and high-level reason. Changelog-only bookkeeping commits are
 visible in Git history but are not self-recorded because a commit cannot
 contain its own final SHA.
 
+## August 3, 2026 at 2:41:06 PM EDT
+
+- Repository: `realtime-voice-sqlite-instant` (Scribe)
+- Commit: `c7a236377030000fc23be3b8596e25c42499c52c`
+- High-level reason: Record that Scribe and `instant-data-swift` are co-developed through a symlink so a Scribe symptom is as likely to originate in the library (and a reinstall does not rule it out, because the cache and outbox persist on disk); add `docs/performance-budget.md` as the release gate, written against the measured 2026-08-03 sysdiagnose baseline with a measurement command beside every threshold; symlink `CLAUDE.md` to `AGENTS.md` so the canonical instructions cannot drift.
+
 ## August 3, 2026 at 2:39:23 PM EDT
 
 - Repository: `realtime-voice-sqlite-instant` (Scribe)
