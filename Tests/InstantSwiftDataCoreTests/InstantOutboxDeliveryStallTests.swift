@@ -459,6 +459,113 @@ struct InstantOutboxDeliveryStallTests {
       outboxStallSource
     )
   }
+
+  /// The 2026-08-02 upgrade failure. A device that upgraded to the
+  /// acknowledgement release still carried `failed` rows written by an earlier
+  /// version, so those rows have neither `optimisticOverlayState` nor
+  /// `rollbackTransaction`. Refusing to guess at their local cache effect is
+  /// correct. Aborting the whole live-connect path over one of them is not.
+  ///
+  /// Their stored message is the deploy-fixable "could not resolve …" text, so
+  /// the automatic retry sweep selects them on *every* connect. The sweep's
+  /// unguarded `try` propagated out of the open path, which closed the socket,
+  /// stored an `errored` connection state, and rethrew — so the next reconnect
+  /// repeated it forever. Queries never registered, later mutations never sent,
+  /// and the separate diagnostic-log client went silent for the same reason.
+  /// In Scribe this presented as an indefinite "Loading recordings…".
+  ///
+  /// One poisoned legacy row must be isolated and reported, never allowed to
+  /// stop unrelated delivery.
+  @Test
+  func legacyUnknownFailedMutationDoesNotAbortLiveConnect() async throws {
+    let cacheURL = try temporaryOutboxStallCacheURL()
+    let createdAt = InstantTimestamp(milliseconds: 1_700_000_060_000)
+    let seedRuntime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "outbox-stall-legacy-unknown",
+        persistenceURL: cacheURL,
+        initialAttributes: TodoExample.attributes
+      )
+    )
+    try await seedRuntime.transact(
+      InstantStoreTransaction(
+        id: "tx-outbox-legacy-unknown",
+        operations: TodoExample.createOperations(
+          id: "todo-outbox-legacy-unknown",
+          text: "written by an earlier release",
+          createdAt: createdAt,
+          transactionID: "tx-outbox-legacy-unknown"
+        )
+      ),
+      createdAt: createdAt
+    )
+    let queuedAt = InstantTimestamp(milliseconds: createdAt.milliseconds + 1)
+    try await seedRuntime.transact(
+      InstantStoreTransaction(
+        id: "tx-outbox-after-legacy",
+        operations: TodoExample.createOperations(
+          id: "todo-outbox-after-legacy",
+          text: "queued behind the legacy row",
+          createdAt: queuedAt,
+          transactionID: "tx-outbox-after-legacy"
+        )
+      ),
+      createdAt: queuedAt
+    )
+    // Exactly the shape an upgraded device carries: failed, deploy-fixable
+    // message, and no durable optimistic-overlay or rollback metadata.
+    _ = try await seedRuntime.migrateLocalPersistenceSnapshot(
+      name: "outbox-stall-legacy-unknown"
+    ) { snapshot in
+      var snapshot = snapshot
+      guard
+        let index = snapshot.outbox.firstIndex(where: { $0.id == "tx-outbox-legacy-unknown" })
+      else { return snapshot }
+      snapshot.outbox[index].status = .failed
+      snapshot.outbox[index].failureMessage =
+        "Could not resolve 'todos/attributeTheServerNeverReceived' from the attrs returned by init-ok."
+      snapshot.outbox[index].rollbackTransaction = nil
+      snapshot.outbox[index].optimisticOverlayState = nil
+      return snapshot
+    }
+
+    let liveSession = LiveReactorParitySession(messages: [
+      liveReactorInitOK(attrs: liveReactorTodoServerAttrs)
+    ])
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "outbox-stall-legacy-unknown",
+        persistenceURL: cacheURL,
+        initialAttributes: TodoExample.attributes,
+        liveTransport: liveSession.transport
+      )
+    )
+
+    // The unrecoverable row is reported, because it still needs a human or an
+    // authoritative recovery. It must not take the connection down with it.
+    try await withKnownIssue {
+      _ = try await runtime.connect()
+      try? await Task.sleep(nanoseconds: 300_000_000)
+    } matching: { issue in
+      issue.description.contains("predates durable optimistic-overlay")
+        || issue.description.contains("tx-outbox-legacy-unknown")
+    }
+
+    let transactedEventIDs = await liveSession.sentMessages()
+      .filter { $0.op == "transact" }
+      .compactMap(\.clientEventID)
+    expectNoDifference(
+      transactedEventIDs.contains("tx-outbox-after-legacy"),
+      true,
+      outboxStallSource
+    )
+
+    // The legacy row is retained untouched, not silently retried or discarded.
+    let outbox = try await runtime.persistence.loadState().snapshot.outbox
+    let legacy = try #require(outbox.first { $0.id == "tx-outbox-legacy-unknown" })
+    expectNoDifference(legacy.status, .failed, outboxStallSource)
+    expectNoDifference(legacy.optimisticOverlayState == nil, true, outboxStallSource)
+  }
 }
 
 /// Mirrors the private tuning constants so the test fails loudly if they move.

@@ -4454,7 +4454,31 @@ public final class InstantRuntime: Sendable {
       return mutation.id
     }
     for id in retryIDs {
-      _ = try await performRetryMutationWithGateHeld(id: id)
+      do {
+        _ = try await performRetryMutationWithGateHeld(id: id)
+      } catch let error as InstantError
+        where error.localMutationDisposition == .retainedUnknown
+      {
+        // A row written before durable optimistic-overlay metadata existed can
+        // never be retried automatically, because its local cache effect is
+        // unknowable. Refusing it is correct; aborting this sweep is not.
+        //
+        // This sweep runs inside the live-connect path, so rethrowing closed
+        // the socket, stored an `errored` connection state, and rethrew to the
+        // caller. Every reconnect then repeated it, which meant one upgraded
+        // device row stopped queries registering, stopped every later mutation,
+        // and silenced the separate diagnostic-log client. Retain it, report it
+        // for an authoritative recovery, and keep delivering everything else.
+        reportIssue(
+          """
+          Instant retained mutation '\(id)' and skipped its automatic retry; \
+          the connection stays open.
+
+          \(String(describing: error))
+          """
+        )
+        continue
+      }
     }
   }
 
