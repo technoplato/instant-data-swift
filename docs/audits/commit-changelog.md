@@ -6,6 +6,30 @@ commit SHA, and high-level reason. Changelog-only bookkeeping commits are
 visible in Git history but are not self-recorded because a commit cannot
 contain its own final SHA.
 
+## August 3, 2026 at 5:06:55 PM EDT
+
+- Repository: `instant-data-swift`
+- Commit: `4b596d4ec9b42ba8c62dada1aa52cf22442c82ae`
+- High-level reason: Honor cancellation in `AsyncSerialGate` and name the holder when it stalls. The old 23-line gate parked cancelled waiters forever (non-throwing continuation, no cancellation handler), so Scribe's cancel-in-flight session-request retries each made the stall permanently worse; `transact` now enters the operation gate cancellation-aware (honored only before acquisition so a started critical section still completes), the four runtime gates are labelled, and a watchdog reports the holding function, longest waiter, and queue depth through `InstantDiagnostics` and `reportIssue` instead of stalling silently. Verified against upstream: `Reactor.js` has no equivalent primitive because the JS reactor is a single event loop, making this a documented Swift-side adaptation. Continues an earlier agent's uncompiled work; it built and all 8 gate tests plus the full suite passed unmodified.
+
+## August 3, 2026 at 5:05:10 PM EDT
+
+- Repository: `realtime-voice-sqlite-instant` (Scribe)
+- Commit: `8e79caa0201c12684609df2de0e39c4a8f2b498e`
+- High-level reason: Link the live screen publisher into the iPhone app and record the decision. The phone linked only `ScribeSharedAppCore`, whose closure deliberately contains no LiveKit, so no publisher could ever have run on device regardless of reducer wiring; `project.yml` now links `ScreenStreamFeature` (mirroring the Mac target), the host app registers the live client with `prepareDependencies` so the linker cannot dead-strip the conformance, and the #066 linkage test pins the new product list while the appex allowlist stays `SystemAudioBroadcastHandoff` only. Decision recorded as Scribe ADR 0001.
+
+## August 3, 2026 at 5:03:35 PM EDT
+
+- Repository: `realtime-voice-sqlite-instant` (Scribe)
+- Commit: `55c08113995164d82c6045a8794800adb8dda3be`
+- High-level reason: Wire the `Recording` reducer to start, feed, and stop the screen publisher (#003). Start on ReplayKit broadcast activity with a ready saved configuration, forward every JPEG frame with no second throttle so `videoSampleInterval` stays the only rate control, stop on broadcast end and every teardown path, log loud named failures with the exact fix, and exclude the Mac by data (`automatesScreenStreamPublisher`) because it holds a subscriber-only grant in the same App Group slot. Seven TestStore tests pin the behavior.
+
+## August 3, 2026 at 5:01:20 PM EDT
+
+- Repository: `realtime-voice-sqlite-instant` (Scribe)
+- Commit: `c0fc4ac0da5ba1b785f7ea817c269b397e4c46f2`
+- High-level reason: Build the missing host-side bridge from broadcast JPEG frames to the LiveKit publisher (#003). `captureVideo` had zero callers; this adds the `ScreenStreamPublisherClient` seam, the JPEG→BGRA `CMSampleBuffer` converter, a strictly increasing host-side publish timeline that refuses to inherit the #143 clock reset, and a live bridge session reporting `framesReceived` vs `framesPublished` on every event so frame loss can never be silent again.
+
 ## August 3, 2026 at 4:18:52 PM EDT
 
 - Repository: `realtime-voice-sqlite-instant` (Scribe)
