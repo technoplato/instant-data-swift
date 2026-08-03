@@ -6,6 +6,12 @@ commit SHA, and high-level reason. Changelog-only bookkeeping commits are
 visible in Git history but are not self-recorded because a commit cannot
 contain its own final SHA.
 
+## August 3, 2026 at 2:32:51 PM EDT
+
+- Repository: `realtime-voice-sqlite-instant` (Scribe)
+- Commit: `1b586060af1d024085ae9c50b1e27dc220607c8a`
+- High-level reason: Teach the Instant schema drift gate the pulled `rooms` root key so its comparison runs again instead of failing closed on every invocation; record and enforce the decision not to compare rooms (they are client-side declarations the pull echoes, never server state), and report an unrecognized root key as a named unsupported-feature failure. (#144)
+
 ## August 3, 2026 at 12:49:11 PM EDT
 
 - Repository: `realtime-voice-sqlite-instant` (Scribe)
