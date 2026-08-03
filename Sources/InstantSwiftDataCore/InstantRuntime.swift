@@ -1767,10 +1767,10 @@ public final class InstantRuntime: Sendable {
   private let streamContentObservers = InstantStreamContentObservers()
   private let sharesObservers =
     InstantSnapshotObservers<InstantSharesObservationKey, [InstantShareSnapshot]>()
-  private let operationGate = AsyncSerialGate()
-  private let authPromotionGate = AsyncSerialGate()
-  private let connectionGate = AsyncSerialGate()
-  private let mutationFlushGate = AsyncSerialGate()
+  private let operationGate = AsyncSerialGate(label: "operation")
+  private let authPromotionGate = AsyncSerialGate(label: "auth-promotion")
+  private let connectionGate = AsyncSerialGate(label: "connection")
+  private let mutationFlushGate = AsyncSerialGate(label: "mutation-flush")
   private let queryCachePruningCadence = InstantQueryCachePruningCadence()
   private let liveQueryResultPruningCadence = InstantQueryCachePruningCadence()
   private let liveSession = InstantRuntimeLiveSession()
@@ -2179,7 +2179,10 @@ public final class InstantRuntime: Sendable {
     )
     var enteredOperationGate = false
     do {
-      await enterOperationGate()
+      // A cancelled caller must not keep a queue slot and then run the write
+      // anyway. Cancellation is honored only before acquisition, so a
+      // transaction that has already started still commits atomically.
+      try await enterOperationGateUnlessCancelled()
       enteredOperationGate = true
       let result = try await performTransact(transaction, createdAt: createdAt, source: source)
       await leaveOperationGate()
@@ -9025,9 +9028,18 @@ public final class InstantRuntime: Sendable {
     configuration.actorHopRecorder?.record(boundary)
   }
 
-  private func enterOperationGate() async {
+  /// `operation` defaults to the caller's own function so a stalled gate names
+  /// the function that is actually holding it rather than this wrapper.
+  private func enterOperationGate(operation: String = #function) async {
     recordActorHop(.operationGate)
-    await operationGate.enter()
+    await operationGate.enter(operation: operation)
+  }
+
+  /// Cancellation-aware variant for callers that already throw. A caller that
+  /// throws here never acquired the gate and must not leave it.
+  private func enterOperationGateUnlessCancelled(operation: String = #function) async throws {
+    recordActorHop(.operationGate)
+    try await operationGate.enterUnlessCancelled(operation: operation)
   }
 
   private func leaveOperationGate() async {
@@ -9035,9 +9047,9 @@ public final class InstantRuntime: Sendable {
     await operationGate.leave()
   }
 
-  private func enterMutationFlushGate() async {
+  private func enterMutationFlushGate(operation: String = #function) async {
     recordActorHop(.mutationFlushGate)
-    await mutationFlushGate.enter()
+    await mutationFlushGate.enter(operation: operation)
   }
 
   private func leaveMutationFlushGate() async {
