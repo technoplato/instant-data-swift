@@ -4,6 +4,27 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## August 4th, 2026 at 12:13:51 p.m. EDT — `3e625416e2db` Inventory every SQLiteData test and close Instant ergonomics parity gaps
+
+- **Implementation commit:** `3e625416e2db9376606bcecaff97043de4073c94`
+- **Change:** Inventory all Point-Free SQLiteData tests and close Instant ergonomics parity gaps
+- **Details:**
+  - 261 upstream runtime tests at vendored 0c79d7a (57 core / 186 CloudKit / 18 examples), dual-method + subagent verified.
+  - New ergonomics ports: date roundtrip and assertQuery-style materialization dumps; empty batches and selection edges linked.
+  - 222 inventory parity records complete coverage; CloudKit SyncEngine and SQL-only surfaces marked notApplicable with human callouts.
+  - InstantSQLiteDataParityReconciliationTests enforces commit pin, count, full coverage, and real Swift test names.
+- **Files:**
+  - `docs/porting/upstream-sqlitedata-test-inventory.md` — Complete greppable inventory of SQLiteData tests
+  - `docs/porting/swift-sqlitedata-port-gap-analysis.md` — Gap analysis and human-attention boundaries
+  - `Tests/InstantSwiftDataCoreTests/InstantSQLiteDataErgonomicsParityTests.swift` — Ported date roundtrip and assertQuery-style dumps
+  - `Tests/InstantSwiftDataCoreTests/InstantSQLiteDataParityReconciliationTests.swift` — Enforcement suite for SQLiteData parity claims
+  - `Sources/InstantSwiftDataCore/InstantParityCoverage.swift` — 222 inventory records so every upstream test is claimed
+- **User context (verbatim):**
+  > follow the same procedure for porting tests From SQ-like data from point free
+  > first identify all tests that they have. then verify with subagent that our count is accurate
+  > Call out anything that needs human attention and then get going
+- **SpecStory:** unavailable — Grok session continuing Claude fable handoff; no SpecStory share URI authorized.
+
 ## August 4th, 2026 at 11:34:35 a.m. EDT — `c4badb4bf6b0` Port upstream's Zeneca deep-join benchmark and measure Swift against TypeScript
 
 - **Implementation commit:** `c4badb4bf6b0deb1d44e0fc98fd1f9a827c0f86e`

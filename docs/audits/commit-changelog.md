@@ -6,6 +6,16 @@ commit SHA, and high-level reason. Changelog-only bookkeeping commits are
 visible in Git history but are not self-recorded because a commit cannot
 contain its own final SHA.
 
+## August 4, 2026 at 12:13:51 PM EDT
+
+- Repository: `instant-data-swift`
+- Commit: `3e625416e2db9376606bcecaff97043de4073c94`
+- Reason: Same inventory/port procedure as Instant TypeScript, applied to
+  Point-Free SQLiteData: 261 runtime tests enumerated at vendored `0c79d7a`
+  (dual-method + subagent), gap analysis with CloudKit/SQL human boundaries,
+  ergonomics ports for date roundtrip and assertQuery-style dumps, full parity
+  registry coverage, and reconciliation tests that fail on drift.
+
 ## August 4, 2026 at 11:34:35 AM EDT
 
 - Repository: `instant-data-swift`
