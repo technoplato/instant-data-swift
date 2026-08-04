@@ -1089,25 +1089,83 @@ private actor InstantRuntimeLiveSession {
   func sendMutations(
     _ mutations: [InstantTransportMutation]
   ) async throws -> [InstantLiveMutationEncodingFailure] {
-    guard let session, isOpened else { return [] }
+    guard let session, isOpened else {
+      InstantDiagnostics.shared.record(
+        .warning,
+        subsystem: "instant-swift-data-core",
+        category: "outbox",
+        event: "outbox.flush.skipped-not-open",
+        message: "Skipped an outbox flush because the live session is not open.",
+        metadata: [
+          "pendingInputCount": String(mutations.count),
+          "sessionPresent": String(session != nil),
+          "isOpened": String(isOpened),
+        ]
+      )
+      return []
+    }
     reclaimExpiredInFlightMutations()
     var encodingFailures: [InstantLiveMutationEncodingFailure] = []
     let pending = mutations
       .sorted(by: Self.mutationOrder)
       .filter { $0.status == .pending }
     reportDeepOutboxIfNeeded(pendingCount: pending.count)
+    var sentCount = 0
+    var skippedAlreadyInFlight = 0
+    var stoppedForMutationBudget = false
+    var stoppedForStepBudget = false
+    InstantDiagnostics.shared.record(
+      .info,
+      subsystem: "instant-swift-data-core",
+      category: "outbox",
+      event: "outbox.flush.started",
+      message: "Starting an Instant outbox flush against the live transport.",
+      metadata: [
+        "pendingCount": String(pending.count),
+        "inFlightMutationCount": String(inFlightMutationIDs.count),
+        "inFlightStepCount": String(inFlightMutationStepCounts.values.reduce(0, +)),
+        "maxMutationsPerFlush": String(Self.maximumMutationsPerFlush),
+        "maxStepsInFlight": String(Self.maximumTransactionStepsInFlight),
+      ]
+    )
     for mutation in pending {
       let inFlightMutationCount = inFlightMutationIDs.count
       let inFlightStepCount = inFlightMutationStepCounts.values.reduce(0, +)
-      guard inFlightMutationCount < Self.maximumMutationsPerFlush else { break }
+      if inFlightMutationCount >= Self.maximumMutationsPerFlush {
+        stoppedForMutationBudget = true
+        break
+      }
       let mutationStepCount = mutation.txSteps.count
       let fitsStepBudget =
         inFlightStepCount + mutationStepCount <= Self.maximumTransactionStepsInFlight
       // Preserve outbox order. Wait for an acknowledgement when the next
       // mutation does not fit, except that an empty window admits one oversize
       // mutation so it cannot become a permanent head-of-line blocker.
-      guard fitsStepBudget || inFlightMutationCount == 0 else { break }
-      guard inFlightMutationIDs.insert(mutation.mutationID).inserted else { continue }
+      if !(fitsStepBudget || inFlightMutationCount == 0) {
+        stoppedForStepBudget = true
+        InstantDiagnostics.shared.record(
+          .notice,
+          subsystem: "instant-swift-data-core",
+          category: "outbox",
+          event: "outbox.flush.head-of-line-wait",
+          message:
+            "Outbox flush stopped at a head-of-line mutation that does not fit the in-flight step budget.",
+          metadata: [
+            "mutationID": mutation.mutationID,
+            "mutationStepCount": String(mutationStepCount),
+            "inFlightMutationCount": String(inFlightMutationCount),
+            "inFlightStepCount": String(inFlightStepCount),
+            "maxStepsInFlight": String(Self.maximumTransactionStepsInFlight),
+            "oversizeHead": String(mutationStepCount > Self.maximumTransactionStepsInFlight),
+          ],
+          correlationID: mutation.mutationID
+        )
+        break
+      }
+      guard inFlightMutationIDs.insert(mutation.mutationID).inserted else {
+        skippedAlreadyInFlight += 1
+        continue
+      }
       let txSteps: [InstantTransportStep]
       do {
         txSteps = try InstantLiveMutationEncoder.resolveAttributeIDs(
@@ -1118,6 +1176,18 @@ private actor InstantRuntimeLiveSession {
         inFlightMutationIDs.remove(mutation.mutationID)
         inFlightMutationStepCounts[mutation.mutationID] = nil
         inFlightMutationDeadlines[mutation.mutationID] = nil
+        InstantDiagnostics.shared.record(
+          error: error,
+          subsystem: "instant-swift-data-core",
+          category: "outbox",
+          event: "outbox.mutation.encoding-quarantined",
+          message: "Quarantined a mutation that cannot be encoded against server attributes.",
+          metadata: [
+            "mutationID": mutation.mutationID,
+            "mutationStepCount": String(mutationStepCount),
+          ],
+          correlationID: mutation.mutationID
+        )
         reportIssue(
           """
           Instant quarantined a mutation it can never deliver.
@@ -1145,17 +1215,65 @@ private actor InstantRuntimeLiveSession {
       inFlightMutationDeadlines[mutation.mutationID] =
         Date().addingTimeInterval(Self.inFlightMutationTimeout)
       do {
+        InstantDiagnostics.shared.record(
+          .info,
+          subsystem: "instant-swift-data-core",
+          category: "outbox",
+          event: "outbox.mutation.send",
+          message: "Sending an outbox mutation on the live Instant transport.",
+          metadata: [
+            "mutationID": mutation.mutationID,
+            "mutationStepCount": String(mutationStepCount),
+            "resolvedStepCount": String(txSteps.count),
+            "inFlightMutationCount": String(inFlightMutationIDs.count),
+            "inFlightStepCount": String(
+              inFlightMutationStepCounts.values.reduce(0, +)
+            ),
+            "ackTimeoutSeconds": String(Int(Self.inFlightMutationTimeout)),
+          ],
+          correlationID: mutation.mutationID
+        )
         try await send(
           try .transact(txSteps, clientEventID: mutation.mutationID),
           through: session
         )
+        sentCount += 1
       } catch {
         inFlightMutationIDs.remove(mutation.mutationID)
         inFlightMutationStepCounts[mutation.mutationID] = nil
         inFlightMutationDeadlines[mutation.mutationID] = nil
+        InstantDiagnostics.shared.record(
+          error: error,
+          subsystem: "instant-swift-data-core",
+          category: "outbox",
+          event: "outbox.mutation.send-failed",
+          message: "Live transport send failed for an outbox mutation.",
+          metadata: [
+            "mutationID": mutation.mutationID,
+            "mutationStepCount": String(mutationStepCount),
+          ],
+          correlationID: mutation.mutationID
+        )
         throw error
       }
     }
+    InstantDiagnostics.shared.record(
+      .info,
+      subsystem: "instant-swift-data-core",
+      category: "outbox",
+      event: "outbox.flush.finished",
+      message: "Finished one Instant outbox flush pass.",
+      metadata: [
+        "pendingCount": String(pending.count),
+        "sentCount": String(sentCount),
+        "encodingFailureCount": String(encodingFailures.count),
+        "skippedAlreadyInFlight": String(skippedAlreadyInFlight),
+        "stoppedForMutationBudget": String(stoppedForMutationBudget),
+        "stoppedForStepBudget": String(stoppedForStepBudget),
+        "inFlightMutationCount": String(inFlightMutationIDs.count),
+        "inFlightStepCount": String(inFlightMutationStepCounts.values.reduce(0, +)),
+      ]
+    )
     return encodingFailures
   }
 
@@ -1169,7 +1287,34 @@ private actor InstantRuntimeLiveSession {
       inFlightMutationIDs.remove(mutationID)
       inFlightMutationStepCounts[mutationID] = nil
       inFlightMutationDeadlines[mutationID] = nil
+      InstantDiagnostics.shared.record(
+        .warning,
+        subsystem: "instant-swift-data-core",
+        category: "outbox",
+        event: "outbox.mutation.ack-timeout-reclaim",
+        message:
+          "Reclaimed an in-flight mutation that received no server acknowledgement within the timeout.",
+        metadata: [
+          "mutationID": mutationID,
+          "ackTimeoutSeconds": String(Int(Self.inFlightMutationTimeout)),
+          "remainingInFlightCount": String(inFlightMutationIDs.count),
+        ],
+        correlationID: mutationID
+      )
     }
+    InstantDiagnostics.shared.record(
+      .warning,
+      subsystem: "instant-swift-data-core",
+      category: "outbox",
+      event: "outbox.mutation.ack-timeout-batch",
+      message:
+        "Instant did not acknowledge in-flight mutation(s) within the timeout and is retrying them.",
+      metadata: [
+        "expiredCount": String(expired.count),
+        "ackTimeoutSeconds": String(Int(Self.inFlightMutationTimeout)),
+        "expiredMutationIDs": expired.prefix(12).joined(separator: ","),
+      ]
+    )
     reportIssue(
       """
       Instant did not acknowledge \(expired.count) mutation(s) within \
@@ -1188,6 +1333,19 @@ private actor InstantRuntimeLiveSession {
     }
     guard !hasReportedDeepOutbox else { return }
     hasReportedDeepOutbox = true
+    InstantDiagnostics.shared.record(
+      .error,
+      subsystem: "instant-swift-data-core",
+      category: "outbox",
+      event: "outbox.deep-pending",
+      message:
+        "Instant has a deep undelivered outbox; local writes are durable but not reaching the server.",
+      metadata: [
+        "pendingCount": String(pendingCount),
+        "deepOutboxThreshold": String(Self.deepOutboxReportingThreshold),
+        "inFlightMutationCount": String(inFlightMutationIDs.count),
+      ]
+    )
     reportIssue(
       """
       Instant has \(pendingCount) undelivered mutations queued locally.
@@ -1410,12 +1568,15 @@ private actor InstantRuntimeLiveSession {
         try await session.send(message)
       }
       InstantDiagnostics.shared.record(
-        .trace,
+        message.op == "transact" || message.op == "add-query" ? .info : .trace,
         subsystem: "instant-swift-data-core",
         category: "transport",
         event: "websocket.message-sent",
         message: "Sent an Instant WebSocket message.",
-        metadata: ["op": message.op],
+        metadata: [
+          "op": message.op,
+          "clientEventID": message.clientEventID ?? "",
+        ],
         correlationID: message.clientEventID
       )
     } catch {
@@ -3491,8 +3652,31 @@ public final class InstantRuntime: Sendable {
         error.operation == "run Instant live query",
         error.code == .permissionRejected || error.code == .validationFailed
       {
+        InstantDiagnostics.shared.record(
+          error: error,
+          subsystem: "instant-swift-data-core",
+          category: "query",
+          event: "query.live-rejected",
+          message: "Live query was rejected by Instant validation or permissions.",
+          metadata: ["registrationKey": registrationKey],
+          correlationID: plan.id
+        )
         throw error
       }
+      InstantDiagnostics.shared.record(
+        error: error,
+        subsystem: "instant-swift-data-core",
+        category: "query",
+        event: "query.live-ack-timeout",
+        message:
+          "Live query did not receive a server acknowledgement within the timeout.",
+        metadata: [
+          "registrationKey": registrationKey,
+          "namespace": plan.namespace,
+          "timeoutMilliseconds": "10000",
+        ],
+        correlationID: plan.id
+      )
       await recordConnectionError(error)
       throw error
     }
@@ -4358,6 +4542,17 @@ public final class InstantRuntime: Sendable {
       guard let clientEventID = transactOK.clientEventID?.nilIfEmpty,
         let transactionID = transactOK.transactionID?.nilIfEmpty
       else {
+        InstantDiagnostics.shared.record(
+          .error,
+          subsystem: "instant-swift-data-core",
+          category: "outbox",
+          event: "outbox.mutation.transact-ok-malformed",
+          message: "Received transact-ok without client-event-id or tx-id.",
+          metadata: [
+            "clientEventIDPresent": String(transactOK.clientEventID?.nilIfEmpty != nil),
+            "transactionIDPresent": String(transactOK.transactionID?.nilIfEmpty != nil),
+          ]
+        )
         throw InstantError(
           code: .decodeFailed,
           operation: "confirm Instant live transaction",
@@ -4365,6 +4560,18 @@ public final class InstantRuntime: Sendable {
           recovery: "Inspect the canonical Instant transact-ok payload."
         )
       }
+      InstantDiagnostics.shared.record(
+        .notice,
+        subsystem: "instant-swift-data-core",
+        category: "outbox",
+        event: "outbox.mutation.transact-ok",
+        message: "Server acknowledged an outbox mutation (transact-ok).",
+        metadata: [
+          "mutationID": clientEventID,
+          "serverTransactionID": transactionID,
+        ],
+        correlationID: clientEventID
+      )
       _ = try await acceptMutationIfPresent(
         id: clientEventID,
         serverTransactionID: transactionID
@@ -4410,6 +4617,21 @@ public final class InstantRuntime: Sendable {
         })
       {
         if Self.isRetryableMutationError(error) {
+          InstantDiagnostics.shared.record(
+            .warning,
+            subsystem: "instant-swift-data-core",
+            category: "outbox",
+            event: "outbox.mutation.server-error-retryable",
+            message: "Server returned a retryable error for an outbox mutation.",
+            metadata: [
+              "mutationID": clientEventID,
+              "errorMessage": error.message,
+              "serverStatus": error.status.map(String.init) ?? "",
+              "serverType": error.type ?? "",
+              "serverTraceID": error.traceID ?? "",
+            ],
+            correlationID: clientEventID
+          )
           throw InstantError(
             code: .networkFailed,
             operation: "receive retryable Instant live mutation error",
@@ -4423,6 +4645,22 @@ public final class InstantRuntime: Sendable {
             recovery: "Reconnect and resend the durable pending mutation."
           )
         }
+        InstantDiagnostics.shared.record(
+          .error,
+          subsystem: "instant-swift-data-core",
+          category: "outbox",
+          event: "outbox.mutation.server-error-terminal",
+          message: "Server permanently rejected an outbox mutation.",
+          metadata: [
+            "mutationID": clientEventID,
+            "errorMessage": error.message,
+            "serverStatus": error.status.map(String.init) ?? "",
+            "serverType": error.type ?? "",
+            "serverTraceID": error.traceID ?? "",
+            "serverHint": error.hint.map { String(describing: $0) } ?? "",
+          ],
+          correlationID: clientEventID
+        )
         _ = try await failMutation(
           id: clientEventID,
           failure: Self.mutationFailure(from: error)

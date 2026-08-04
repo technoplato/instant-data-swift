@@ -91,7 +91,11 @@ public struct InstantDiagnosticsStatus: Hashable, Sendable {
   }
 }
 
-// SAFETY: mutable configuration, sequence, and error state are protected by `lock`.
+/// Optional sink for Instant diagnostic entries so host apps can dual-write them
+/// into their own collectors (for example Scribe's Tailscale WebSocket lane).
+public typealias InstantDiagnosticHandler = @Sendable (InstantDiagnosticEntry) -> Void
+
+// SAFETY: mutable configuration, sequence, handlers, and error state are protected by `lock`.
 public final class InstantDiagnostics: @unchecked Sendable {
   public static let shared = InstantDiagnostics(configuration: .environment())
 
@@ -119,6 +123,7 @@ public final class InstantDiagnostics: @unchecked Sendable {
   private var configuration: InstantDiagnosticsConfiguration
   private var sequence: UInt64 = 0
   private var lastWriteError: String?
+  private var handlers: [UUID: InstantDiagnosticHandler] = [:]
 
   public init(
     configuration: InstantDiagnosticsConfiguration,
@@ -155,6 +160,23 @@ public final class InstantDiagnostics: @unchecked Sendable {
     }
   }
 
+  /// Registers a host-app sink for every diagnostic that meets the minimum level.
+  /// Returns a token that must be passed to `removeHandler` when the sink is torn down.
+  @discardableResult
+  public func addHandler(_ handler: @escaping InstantDiagnosticHandler) -> UUID {
+    let token = UUID()
+    lock.withLock {
+      handlers[token] = handler
+    }
+    return token
+  }
+
+  public func removeHandler(_ token: UUID) {
+    lock.withLock {
+      handlers[token] = nil
+    }
+  }
+
   public var status: InstantDiagnosticsStatus {
     lock.withLock {
       InstantDiagnosticsStatus(
@@ -177,15 +199,18 @@ public final class InstantDiagnostics: @unchecked Sendable {
     line: UInt = #line,
     function: String = #function
   ) {
+    var entry: InstantDiagnosticEntry?
+    var fileURL: URL?
+    var activeHandlers: [InstantDiagnosticHandler] = []
     lock.withLock {
-      guard let fileURL = configuration.fileURL,
-        level.priority >= configuration.minimumLevel.priority
-      else {
-        return
-      }
+      guard level.priority >= configuration.minimumLevel.priority else { return }
+      // Emit when a host sink or a file path is configured. File path alone is
+      // still supported for CLI/tools; Scribe installs a handler so events reach
+      // the Tailscale dual-write collector even when the file path is unset.
+      guard configuration.fileURL != nil || !handlers.isEmpty else { return }
 
       sequence &+= 1
-      let entry = InstantDiagnosticEntry(
+      entry = InstantDiagnosticEntry(
         schemaVersion: 1,
         timestampMilliseconds: Int64((Date().timeIntervalSince1970 * 1_000).rounded()),
         sequence: sequence,
@@ -204,15 +229,25 @@ public final class InstantDiagnostics: @unchecked Sendable {
         line: line,
         function: Self.bounded(function, limit: 256)
       )
+      fileURL = configuration.fileURL
+      activeHandlers = Array(handlers.values)
+    }
 
+    guard let entry else { return }
+
+    if let fileURL {
       do {
         var data = try encoder.encode(entry)
         data.append(0x0A)
         try Self.append(data, to: fileURL)
-        lastWriteError = nil
+        lock.withLock { lastWriteError = nil }
       } catch {
-        lastWriteError = String(describing: error)
+        lock.withLock { lastWriteError = String(describing: error) }
       }
+    }
+
+    for handler in activeHandlers {
+      handler(entry)
     }
   }
 

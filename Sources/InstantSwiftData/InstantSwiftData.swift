@@ -1291,6 +1291,17 @@ public struct InstantSwiftDataClient: Sendable {
 
     let clock = ContinuousClock()
     let deadline = clock.now.advanced(by: timeout)
+    InstantDiagnostics.shared.record(
+      .info,
+      subsystem: "instant-swift-data",
+      category: "outbox",
+      event: "outbox.wait-all.started",
+      message: "Waiting for every pending Instant outbox mutation to be server-accepted.",
+      metadata: [
+        "timeout": String(describing: timeout),
+        "pollInterval": String(describing: pollInterval),
+      ]
+    )
     while true {
       try Task.checkCancellation()
       let mutations =
@@ -1300,6 +1311,24 @@ public struct InstantSwiftDataClient: Sendable {
           await pendingMutations()
         }
       if let failed = mutations.first(where: { $0.status == .failed }) {
+        InstantDiagnostics.shared.record(
+          .error,
+          subsystem: "instant-swift-data",
+          category: "outbox",
+          event: "outbox.wait-all.failed-mutation",
+          message: "waitForAllPendingMutations hit a failed outbox mutation.",
+          metadata: [
+            "mutationID": failed.id,
+            "failureMessage": failed.failureMessage ?? "",
+            "pendingCount": String(
+              mutations.filter {
+                $0.status == .pending
+                  || ($0.status == .confirmed && !$0.provesServerAcceptance)
+              }.count
+            ),
+          ],
+          correlationID: failed.id
+        )
         throw failed.rejectionError(
           operation: "wait for pending mutations",
           recovery: "Inspect the failed outbox mutation before retrying or discarding it."
@@ -1309,7 +1338,17 @@ public struct InstantSwiftDataClient: Sendable {
         mutation.status == .pending
           || (mutation.status == .confirmed && !mutation.provesServerAcceptance)
       }
-      guard !outstanding.isEmpty else { return }
+      guard !outstanding.isEmpty else {
+        InstantDiagnostics.shared.record(
+          .info,
+          subsystem: "instant-swift-data",
+          category: "outbox",
+          event: "outbox.wait-all.completed",
+          message: "All pending Instant outbox mutations are server-accepted.",
+          metadata: [:]
+        )
+        return
+      }
 
       let status = try await connectionStatus()
       switch status.state {
@@ -1344,6 +1383,20 @@ public struct InstantSwiftDataClient: Sendable {
           message =
             "Timed out waiting for \(outstanding.count) mutation(s) to be acknowledged by Instant."
         }
+        InstantDiagnostics.shared.record(
+          .error,
+          subsystem: "instant-swift-data",
+          category: "outbox",
+          event: "outbox.wait-all.timeout",
+          message: message,
+          metadata: [
+            "outstandingCount": String(outstanding.count),
+            "connectionState": status.state.rawValue,
+            "pendingMutationCount": String(status.pendingMutationCount),
+            "sampleMutationIDs": outstanding.prefix(8).map(\.id).joined(separator: ","),
+            "timeout": String(describing: timeout),
+          ]
+        )
         throw InstantError(
           code: .networkFailed,
           operation: "wait for pending mutations",
