@@ -6,6 +6,30 @@ commit SHA, and high-level reason. Changelog-only bookkeeping commits are
 visible in Git history but are not self-recorded because a commit cannot
 contain its own final SHA.
 
+## August 4, 2026 at 10:19:57 AM EDT
+
+- Repository: `instant-data-swift`
+- Commit: `900050e68ee08714f09422182b14a3322b06ab2b`
+- Tag: `v1.3.1` moved here — **still local, NOT pushed**
+- Reason: Stop counting every triple on every prepare. Third instance of the
+  same shape as `04f1b668`, and the one that dominated once the outbox resend
+  loop was gone: `TripleIndexes.tripleCount` walked every entity × attribute ×
+  value, and `InstantStore.prepare` reads it on every applied transaction and
+  every terminal-failure removal. Sampled on a Mac holding ~400% CPU against an
+  883,388-triple store, that single getter was 2,400 of 5,301 samples, reached
+  through `failMutation → prepareTerminalFailureRemoval → prepare`. Now
+  maintained by `insert` and `removeNormalized`, which already read the slot
+  they are about to write, so the delta is exact for the cases that are easy to
+  get wrong — identical re-insert, cardinality-one eviction, retracting an
+  absent triple. `Codable` is now explicit so only eav/aev/vae are encoded and
+  the count is recomputed on decode: adding a derived field to the wire format
+  would have stopped persisted caches from decoding, which is precisely the
+  migration failure behind `3ebc6704`. Measured on a copy of the real store,
+  one transaction through `prepare`: 0.0744 s → 0.0119 s. **Relevant to the
+  Scribe repository:** with all three fixes the Mac converged to 7–26% CPU
+  after ~150 s and its outbox drained (pending 256 → 110) for the first time,
+  where before it held 200–400% indefinitely against an unchanging store.
+
 ## August 4, 2026 at 9:59:35 AM EDT
 
 - Repository: `instant-data-swift`
