@@ -1,3 +1,9 @@
+## 2026-08-04 15:32:18 EDT
+
+- **Repository:** realtime-voice-sqlite-instant
+- **Commit:** be0d24be3d4f07b54405f49844a692dec0a8cdda
+- **Reason:** Restrict recording/transcription Instant access to owner, linked guest, and share members (schema, perms, write-path ownership, reader/writer share helpers).
+
 # Cross-Repository Commit Changelog
 
 Newest entries go at the top. Timestamps include seconds and use Eastern Time
