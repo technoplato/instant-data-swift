@@ -6,6 +6,12 @@ commit SHA, and high-level reason. Changelog-only bookkeeping commits are
 visible in Git history but are not self-recorded because a commit cannot
 contain its own final SHA.
 
+## August 3, 2026 at 11:39:21 PM EDT
+
+- Repository: `instant-data-swift`
+- Commit: `a52ab0911d4e78e1b7b33f610240fe55c74f069b`
+- High-level reason: Fix the library-side blocker behind the Mac livestream (#003) and, more broadly, behind every stale device. Instant stores attributes as data, so a client can only materialize namespaces whose attributes it holds, and query observation refuses to subscribe to a namespace it cannot validate. The client decoded the attribute set the server sends in every `init-ok` but kept it in memory; attributes only became durable as a side effect of a query result for a namespace it already knew. That deadlocks for every namespace it did not: no attributes means no subscription, no subscription means no result, no result means the attributes never arrive — silently, with a healthy-looking connection. The Mac's cache was frozen at 133 attributes over 16 namespaces since 2026-07-03 and blind to 21 namespaces, `screenStreamSessions` and `debugLogs` among them, which explains why the Mac never saw a stream request and why the remote log lane went quiet. Upstream applies the set on every `init-ok` (`Reactor.js:640`); this now does the same on the connect path, merging rather than replacing so a namespace/name pair the device already holds keeps the local attribute id its triples and pending mutations reference. Proven against the real server on a copy of the Mac's own cache: 0 → 16 `screenStreamSessions` attributes and 16 → 37 namespaces after one connect, and unchanged with the call removed. Decision recorded in ADR 0011.
+
 ## August 3, 2026 at 6:42:32 PM EDT
 
 - Repository: `realtime-voice-sqlite-instant` (Scribe)
