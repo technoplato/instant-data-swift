@@ -858,6 +858,57 @@ struct InstantQueryExecutionParityTests {
     )
   }
 
+  /// Ports upstream's only benchmark, `instaql.bench.ts` `big query`, as a
+  /// behavioral correctness pin.
+  ///
+  /// Source:
+  /// `upstream/instant/client/packages/core/__tests__/src/instaql.bench.ts`
+  /// at vendored commit `e71017612aed4031710a35e2fcace30d38d557ac`.
+  ///
+  /// The query is four join levels with a cycle —
+  /// `users → bookshelves → {books, users → bookshelves}` — over the Zeneca
+  /// fixture. The package-benchmark counterpart is
+  /// `LocalRead.deepJoin.zeneca` in
+  /// `benchmarks/Benchmarks/InstantSwiftDataBenchmarking/Benchmarks.swift`;
+  /// the TypeScript counterpart already lives in
+  /// `benchmarks/upstream-instant/observe.ts` as `core.instaql.big-query.zeneca`.
+  @Test
+  func upstreamInstaQLBigQueryDeepJoinMaterializes() async throws {
+    let fixture = try await UpstreamInstantFixture.zeneca()
+    let source = instaQLBenchSource("big query")
+    let users = await fixture.query(upstreamZenecaBigQueryPlan)
+
+    // Upstream's vitest bench only times the call; the observe harness asserts
+    // a non-empty user set. Pin the full shape so a join regression fails here
+    // rather than only as a slower number in the benchmark suite.
+    expectParityEqual(users.count, 4, source)
+    expectParityEqual(
+      users.compactMap { $0.string("handle") }.sorted(),
+      ["alex", "joe", "nicolegf", "stopa"],
+      source
+    )
+
+    let nestedBookshelves = users.flatMap { $0.links?["bookshelves"] ?? [] }
+    #expect(
+      !nestedBookshelves.isEmpty,
+      "\(source): expected bookshelves under users for the deep-join query."
+    )
+    #expect(
+      nestedBookshelves.contains { !($0.links?["books"] ?? []).isEmpty },
+      "\(source): expected books nested under at least one bookshelf."
+    )
+    #expect(
+      nestedBookshelves.contains { !($0.links?["users"] ?? []).isEmpty },
+      "\(source): expected the reverse users edge that closes the cycle."
+    )
+    #expect(
+      nestedBookshelves
+        .flatMap { $0.links?["users"] ?? [] }
+        .contains { !($0.links?["bookshelves"] ?? []).isEmpty },
+      "\(source): expected bookshelves under the nested users (the cycle)."
+    )
+  }
+
   @Test
   func upstreamInstaQLMissingNamespacesAndAttributes() async throws {
     let fixture = try await UpstreamInstantFixture.zeneca()
@@ -1800,11 +1851,45 @@ struct InstantQueryExecutionParityTests {
 private let upstreamInstaQLTestSource =
   "upstream/instant/client/packages/core/__tests__/src/instaql.test.ts"
 
+private let upstreamInstaQLBenchSource =
+  "upstream/instant/client/packages/core/__tests__/src/instaql.bench.ts"
+
 private let upstreamDatalogTestSource =
   "upstream/instant/client/packages/core/__tests__/src/datalog.test.ts"
 
+/// The exact deep-join plan upstream times in `instaql.bench.ts` `big query`.
+private let upstreamZenecaBigQueryPlan = InstantQueryPlan(
+  id: "users.big-query.zeneca",
+  namespace: "users",
+  includes: [
+    InstantQueryInclude(
+      "bookshelves",
+      query: InstantQueryIncludePlan(
+        id: "bookshelves.big-query",
+        namespace: "bookshelves",
+        includes: [
+          InstantQueryInclude("books"),
+          InstantQueryInclude(
+            "users",
+            direction: .reverse,
+            query: InstantQueryIncludePlan(
+              id: "users.nested.big-query",
+              namespace: "users",
+              includes: [InstantQueryInclude("bookshelves")]
+            )
+          ),
+        ]
+      )
+    )
+  ]
+)
+
 private func instaQLSource(_ testName: String) -> String {
   "\(upstreamInstaQLTestSource) \(testName)"
+}
+
+private func instaQLBenchSource(_ testName: String) -> String {
+  "\(upstreamInstaQLBenchSource) \(testName)"
 }
 
 private func datalogSource(_ testName: String) -> String {

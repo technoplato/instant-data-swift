@@ -28,7 +28,7 @@ benchmark).
 | — recorded `exact` | 30 |
 | — recorded `adapted` | 140 |
 | — recorded `notApplicable` | 1 |
-| Upstream benchmarks with a Swift equivalent | **0 / 1** |
+| Upstream benchmarks with a Swift equivalent | **1 / 1** |
 
 The two counts that looked like large gaps on first pass were **false alarms**,
 and both were checked case-by-case rather than by record count:
@@ -103,37 +103,22 @@ a port. Resolve it, do not delete the Swift test.
 
 ## 3. What needs writing
 
-### 3.1 The benchmark — **the one real missing artifact**
+### 3.1 The benchmark — **ported; measured numbers still open**
 
-Upstream's only benchmark, `instaql.bench.ts` `big query`, has **no Swift
-equivalent and no parity record.**
-
-What exists on the Swift side today:
+Upstream's only benchmark, `instaql.bench.ts` `big query`, now has:
 
 | Where | What |
 | --- | --- |
-| `benchmarks/Benchmarks/InstantSwiftDataBenchmarking/Benchmarks.swift` | `LocalWrite.transact.100`, `LocalRead.queryOnce.after1kWrites`, `LocalStore.reopen.with1kEntities` |
-| `benchmarks/upstream-instant/{write,observe,shared}.ts` | TypeScript counterparts for cross-SDK comparison |
-| `Tests/…/InstantCrossSDKBenchmarkTests.swift` | pins that both SDKs run equivalent operation counts |
-| `Tests/…/BenchmarkTests.swift` | `benchmark.local.todos` determinism |
+| `upstreamInstaQLBigQueryDeepJoinMaterializes` | correctness pin for the four-level cyclic join over Zeneca |
+| `LocalRead.deepJoin.zeneca` in package-benchmark | times the same plan on an in-memory store |
+| `core.instaql.big-query.zeneca` in `benchmarks/upstream-instant/observe.ts` | TypeScript counterpart (already present; not a new file) |
+| `instant.instaql.bench.big-query` parity record | links the upstream `bench('big query')` name to the Swift test |
 
-All three Swift workloads are **write/reopen** shaped. None of them is a
-**deep-join read against a fixed fixture**, which is precisely what upstream's
-one benchmark measures. So the comparison the user asked for — "similar, equal, if
-not better" — currently cannot be made at all on that axis.
-
-To write:
-
-1. `LocalRead.deepJoin.zeneca` in the Swift benchmark suite: load the same
-   `data/zeneca/{attrs,triples}.json` fixture and run the same four-level cyclic
-   query (`users → bookshelves → {books, users → bookshelves}`).
-2. `benchmarks/upstream-instant/deep-join.ts` running upstream's identical query,
-   so the cross-SDK harness compares like with like on the same fixture.
-3. A record `instant.instaql.bench.big-query` with a new
-   `InstantParityCoverageSourceKind` for benchmarks, so the bench is tracked the
-   same way tests are.
-4. Extend `InstantCrossSDKBenchmarkTests` to pin the new workload's operation
-   count, matching how the existing three are pinned.
+Measured (step 5): Swift `LocalRead.deepJoin.zeneca` p50 **23 ms** wall clock
+(201 samples, release, arm64) versus TypeScript
+`core.instaql.big-query.zeneca` p50 **4.707 ms** — about **4.9× slower**.
+Numbers live in `INSTANT_DATA_PERFORMANCE_BENCHMARKS.md`. Closing the gap is
+a performance task, not a missing port.
 
 ### 3.2 Nothing else
 
@@ -191,8 +176,8 @@ it.
 | 1 | Fix the stale `staticFetch…` names (§2.1) | **done** — 5 records, including a `staticFetchRequest…` variant found by the new suite |
 | 2 | Add the reconciliation tests (§4) | **done** — 6 invariants, all passing |
 | 3 | Replace paraphrased `sourceTestName`s with upstream literals (§2.2), resolve §2.3 | **done** — see below |
-| 4 | Port `instaql.bench.ts` (§3.1) — Swift workload, TS counterpart, record, cross-SDK pin | open |
-| 5 | Record measured Swift-vs-TypeScript numbers for the deep-join query | open |
+| 4 | Port `instaql.bench.ts` (§3.1) — Swift workload, existing TS counterpart, parity record | **done** |
+| 5 | Record measured Swift-vs-TypeScript numbers for the deep-join query | **done** — Swift ~4.9× slower; see performance doc |
 
 ### What step 3 turned up
 

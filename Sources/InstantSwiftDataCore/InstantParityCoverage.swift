@@ -1314,6 +1314,17 @@ public enum InstantSwiftDataParityCoverage {
       notes: "Swift InstaQL projection keeps one-to-one linked results array-shaped when cardinality inference is disabled, matching the upstream no-inference branch."
     ),
     instant(
+      id: "instant.instaql.bench.big-query",
+      sourceFile: instaQLBenchSource,
+      sourceTestName: "big query",
+      swiftFile: queryExecutionSwiftFile,
+      swiftTestName: "upstreamInstaQLBigQueryDeepJoinMaterializes",
+      surface: "query-benchmark",
+      status: .adapted,
+      notes:
+        "Ports upstream's only core benchmark (instaql.bench.ts over the Zeneca fixture). The Swift test pins the four-level cyclic join shape; LocalRead.deepJoin.zeneca in package-benchmark times the same plan; benchmarks/upstream-instant/observe.ts already times core.instaql.big-query.zeneca on the TypeScript side."
+    ),
+    instant(
       id: "instant.query.simple-where",
       sourceFile: instaQLSource,
       sourceTestName: "Simple Where",
@@ -3370,6 +3381,8 @@ public enum InstantSwiftDataParityCoverage {
     "upstream/instant/client/packages/core/__tests__/src/store.test.ts"
   private static let instaQLSource =
     "upstream/instant/client/packages/core/__tests__/src/instaql.test.ts"
+  private static let instaQLBenchSource =
+    "upstream/instant/client/packages/core/__tests__/src/instaql.bench.ts"
   private static let instaQLInferenceSource =
     "upstream/instant/client/packages/core/__tests__/src/instaqlInference.test.ts"
   private static let simpleE2ESource =

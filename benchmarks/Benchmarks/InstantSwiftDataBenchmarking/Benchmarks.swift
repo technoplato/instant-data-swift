@@ -66,4 +66,21 @@ let benchmarks = { @Sendable in
     blackHole(try await reopened.queryOnce(benchmarkPlan))
     benchmark.stopMeasurement()
   }
+
+  // Ports upstream's only core benchmark (`instaql.bench.ts` `big query`):
+  // a four-level cyclic join over the fixed Zeneca fixture, no network, no I/O.
+  // Correctness is pinned by
+  // `upstreamInstaQLBigQueryDeepJoinMaterializes` in the unit suite; this
+  // workload exists so Swift-vs-TypeScript join cost can be compared on the
+  // same plan (TS: `core.instaql.big-query.zeneca` in observe.ts).
+  Benchmark("LocalRead.deepJoin.zeneca") { benchmark in
+    let store = try loadZenecaStore()
+    // Load cost is setup, not the join path under measurement.
+    blackHole(await store.materialize(zenecaBigQueryPlan))
+    benchmark.startMeasurement()
+    for _ in benchmark.scaledIterations {
+      blackHole(await store.materialize(zenecaBigQueryPlan))
+    }
+    benchmark.stopMeasurement()
+  }
 }

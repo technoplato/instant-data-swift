@@ -14,7 +14,8 @@ import Testing
 /// - Pinned commit: `e71017612aed4031710a35e2fcace30d38d557ac` (2026-06-11)
 /// - Inventory of that commit:
 ///   `docs/porting/upstream-typescript-test-inventory.md`
-///   (186 declarations / 225 runtime cases / 1 benchmark)
+///   (186 test declarations / 225 runtime cases / 1 benchmark, counted once the
+///   extractor also walks `*.bench.ts`)
 ///
 /// The vendored checkout — not any other clone on the machine — is the source of
 /// truth, because every `sourceFile` in the registry is written relative to it
@@ -145,21 +146,23 @@ struct InstantUpstreamParityReconciliationTests {
     let files = Set(tests.map(\.file))
     let declarations = Set(tests.map { "\($0.file):\($0.line)" })
 
+    // 19 unit/e2e test files + 1 bench file (`instaql.bench.ts`).
     #expect(
-      files.count == 19,
-      "Expected 19 upstream core test files, found \(files.count): \(files.sorted())"
+      files.count == 20,
+      "Expected 20 upstream core test/bench files, found \(files.count): \(files.sorted())"
     )
     #expect(
-      declarations.count == 186,
-      "Expected 186 upstream declarations, found \(declarations.count)."
+      declarations.count == 187,
+      "Expected 187 upstream declarations (186 tests + 1 bench), found \(declarations.count)."
     )
     #expect(
-      tests.count == 225,
+      tests.count == 226,
       """
-      Expected 225 upstream runtime cases, found \(tests.count). Either upstream \
-      changed — re-run the inventory in docs/porting/ and update these pins — or \
-      the extractor stopped recognizing a declaration form, which would make \
-      citedUpstreamTestNamesExist and everyUpstreamTestHasARecord pass vacuously.
+      Expected 226 upstream runtime cases (225 tests + 1 bench), found \(tests.count). \
+      Either upstream changed — re-run the inventory in docs/porting/ and update \
+      these pins — or the extractor stopped recognizing a declaration form, which \
+      would make citedUpstreamTestNamesExist and everyUpstreamTestHasARecord pass \
+      vacuously.
       """
     )
   }
@@ -258,21 +261,28 @@ struct InstantUpstreamParityReconciliationTests {
 
     for case let url as URL in walker {
       let name = url.lastPathComponent
-      guard name.hasSuffix(".test.ts") || name.hasSuffix(".test.js") else { continue }
+      let isTest = name.hasSuffix(".test.ts") || name.hasSuffix(".test.js")
+      let isBench = name.hasSuffix(".bench.ts") || name.hasSuffix(".bench.js")
+      guard isTest || isBench else { continue }
       guard let source = try? String(contentsOf: url, encoding: .utf8) else { continue }
 
-      var identifiers: Set<String> = ["test", "it"]
+      // Vitest's `bench(...)` is a first-class entry point in *.bench.ts files.
+      // Upstream has only one today (`big query`); counting it here means a missing
+      // parity record for a new bench fails the suite the same way a missing test does.
+      var identifiers: Set<String> = isBench ? ["bench"] : ["test", "it"]
       let full = NSRange(source.startIndex..., in: source)
-      for match in factoryBinding.matches(in: source, range: full) {
-        if let r = Range(match.range(at: 1), in: source) { identifiers.insert(String(source[r])) }
-      }
-      for match in aliasImport.matches(in: source, range: full) {
-        guard let r = Range(match.range(at: 1), in: source) else { continue }
-        for clause in source[r].components(separatedBy: ",") {
-          let bound = clause.components(separatedBy: " as ").last ?? clause
-          let trimmed = bound.trimmingCharacters(in: .whitespacesAndNewlines)
-          guard !trimmed.isEmpty, trimmed != "makeE2ETest", trimmed != "apiUrl" else { continue }
-          identifiers.insert(trimmed)
+      if isTest {
+        for match in factoryBinding.matches(in: source, range: full) {
+          if let r = Range(match.range(at: 1), in: source) { identifiers.insert(String(source[r])) }
+        }
+        for match in aliasImport.matches(in: source, range: full) {
+          guard let r = Range(match.range(at: 1), in: source) else { continue }
+          for clause in source[r].components(separatedBy: ",") {
+            let bound = clause.components(separatedBy: " as ").last ?? clause
+            let trimmed = bound.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty, trimmed != "makeE2ETest", trimmed != "apiUrl" else { continue }
+            identifiers.insert(trimmed)
+          }
         }
       }
 

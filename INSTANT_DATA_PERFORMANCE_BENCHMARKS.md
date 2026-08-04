@@ -103,6 +103,23 @@ Existing upstream Vitest bench:
 | ----------- | -------: | -------: | -------: | ------: |
 | `big query` | 2.920 ms | 3.179 ms | 8.832 ms |     172 |
 
+Swift package-benchmark counterpart (same fixture + plan, recorded
+2026-08-04 on `laptop.local`, Darwin 25.5.0 arm64, release build):
+
+```sh
+cd benchmarks && swift package benchmark --filter 'LocalRead.deepJoin.zeneca'
+```
+
+| Metric                        |    p50 |    p90 |   p99 | Samples |
+| ----------------------------- | -----: | -----: | ----: | ------: |
+| `LocalRead.deepJoin.zeneca` wall clock | 23 ms | 24 ms | 25 ms |     201 |
+| throughput                    | 43 / s | 42 / s | 41 / s |     201 |
+
+Versus the TypeScript observe suite below (`core.instaql.big-query.zeneca`
+p50 4.707 ms), Swift is currently ~**4.9× slower** on this deep-join path.
+That misses the target of p50 ≤ 1.00× TS; the port is complete and the gap
+is now a measurable performance task rather than a missing workload.
+
 New observing suite:
 
 | Metric                                          |       p50 |       p95 |          Result | Swift Target                     |
