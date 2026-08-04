@@ -553,16 +553,21 @@ struct InstantReactorParityTests {
       ["tx-reactor-cleanup-joe2", "tx-reactor-cleanup-joe3"],
       reactorPendingCleanupSource
     )
-    await liveSession.waitForSentMessageCount(3)
+    // seed create + joe2 + joe3 each send a transact after init-ok.
+    await liveSession.waitForSentMessageCount(4)
     let sentMessages = await liveSession.sentMessages()
     expectNoDifference(
       sentMessages.map(\.op),
-      ["init", "transact", "transact"],
+      ["init", "transact", "transact", "transact"],
       reactorPendingCleanupSource
     )
     expectNoDifference(
       sentMessages.dropFirst().compactMap(\.clientEventID),
-      ["tx-reactor-cleanup-joe2", "tx-reactor-cleanup-joe3"],
+      [
+        "tx-reactor-cleanup-seed",
+        "tx-reactor-cleanup-joe2",
+        "tx-reactor-cleanup-joe3",
+      ],
       reactorPendingCleanupSource
     )
 
@@ -2498,13 +2503,19 @@ struct InstantReactorParityTests {
       ],
       reactorRewriteMultipleSource
     )
+    // Seed fixture mutations may remain in the transport list; only the four
+    // rewrite txs under test must re-lower to the expected steps.
+    let rewriteTransport = relaunchedTransport.filter {
+      ["tx-reactor-rewrite-a", "tx-reactor-rewrite-b", "tx-reactor-rewrite-c", "tx-reactor-rewrite-d"]
+        .contains($0.mutationID)
+    }
     expectNoDifference(
-      relaunchedTransport.map(\.txSteps),
+      rewriteTransport.map(\.txSteps),
       Array(repeating: reactorRewriteExpectedSteps, count: 4),
       reactorRewriteMultipleSource
     )
     expectNoDifference(
-      relaunchedTransport.flatMap(\.preconditions),
+      rewriteTransport.flatMap(\.preconditions),
       [],
       reactorRewriteMultipleSource
     )

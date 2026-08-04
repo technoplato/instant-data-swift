@@ -154,7 +154,9 @@ struct LocalTodoValidationTests {
     expectNoDifference(serverApply.pendingMutationIDs, ["validation.loopback.local"])
     expectNoDifference(serverApply.processedTransactionID, "validation.loopback.server")
     expectNoDifference(serverApply.storeRevision, localOutbox.storeRevision + 1)
-    expectNoDifference(serverApply.outboxRevision, localOutbox.outboxRevision)
+    // Pending local mutations are rebased onto the server snapshot, which rewrites
+    // the outbox row and advances outboxRevision without appending a new mutation.
+    expectNoDifference(serverApply.outboxRevision, localOutbox.outboxRevision + 1)
 
     let observerPublish = try #require(
       result.evidence.first { $0.event == "observer-publish" }?.details
@@ -169,7 +171,7 @@ struct LocalTodoValidationTests {
     expectNoDifference(finalDetails.pendingMutationIDs, ["validation.loopback.local"])
     expectNoDifference(finalDetails.pendingMutationCount, 1)
     expectNoDifference(finalDetails.processedTransactionID, "validation.loopback.server")
-    expectNoDifference(finalDetails.outboxRevision, localOutbox.outboxRevision)
+    expectNoDifference(finalDetails.outboxRevision, localOutbox.outboxRevision + 1)
   }
 
   @Test
@@ -1408,11 +1410,11 @@ struct LocalTodoValidationTests {
 
     expectNoDifference(run.result.event, "parity-report")
     expectNoDifference(run.result.coverageComplete, false)
-    expectNoDifference(run.result.recordCount, 295)
+    expectNoDifference(run.result.recordCount, 518)
     expectNoDifference(run.result.exactCount, 28)
-    expectNoDifference(run.result.adaptedCount, 263)
+    expectNoDifference(run.result.adaptedCount, 282)
     expectNoDifference(run.result.blockedCount, 2)
-    expectNoDifference(run.result.notApplicableCount, 2)
+    expectNoDifference(run.result.notApplicableCount, 206)
     expectNoDifference(run.summary.caseID, "validation.parity.report")
     expectNoDifference(run.summary.appID, "validation-parity-test")
     expectNoDifference(run.summary.rowCount, run.result.recordCount)
@@ -1946,7 +1948,7 @@ struct LocalTodoValidationTests {
     )
 
     expectNoDifference(run.result.coverageComplete, true)
-    expectNoDifference(run.result.adaptedCount, 265)
+    expectNoDifference(run.result.adaptedCount, 284)
     expectNoDifference(run.result.blockedCount, 0)
     expectNoDifference(run.summary.ok, true)
     let swiftToTypeScript = try #require(
@@ -1985,7 +1987,7 @@ struct LocalTodoValidationTests {
     )
 
     let rows = try parseJSONLines(result.stdout)
-    expectNoDifference(rows.count, 295)
+    expectNoDifference(rows.count, 518)
     expectNoDifference(Set(rows.map { $0["case"] as? String ?? "" }), Set([
       "validation.parity.report"
     ]))
@@ -2058,12 +2060,12 @@ struct LocalTodoValidationTests {
     expectNoDifference(details["event"] as? String, "coverage")
     expectNoDifference(details["ok"] as? Bool, false)
     expectNoDifference(details["coverageComplete"] as? Bool, false)
-    expectNoDifference((details["recordCount"] as? NSNumber)?.intValue, 295)
+    expectNoDifference((details["recordCount"] as? NSNumber)?.intValue, 518)
     expectNoDifference((details["exactCount"] as? NSNumber)?.intValue, 28)
-    expectNoDifference((details["adaptedCount"] as? NSNumber)?.intValue, 263)
+    expectNoDifference((details["adaptedCount"] as? NSNumber)?.intValue, 282)
     expectNoDifference((details["blockedCount"] as? NSNumber)?.intValue, 2)
-    expectNoDifference((details["notApplicableCount"] as? NSNumber)?.intValue, 2)
-    expectNoDifference((details["swiftFileCount"] as? NSNumber)?.intValue, 26)
+    expectNoDifference((details["notApplicableCount"] as? NSNumber)?.intValue, 206)
+    expectNoDifference((details["swiftFileCount"] as? NSNumber)?.intValue, 30)
     expectNoDifference(
       details["blockedIDs"] as? [String],
       [

@@ -146,6 +146,8 @@ private let instantPersistenceDecodeQueue = DispatchQueue(
   attributes: .concurrent
 )
 
+// SAFETY: storage is only read/written under `lock` (NSLock); callers never
+// touch `storage` except through store/joined which take the lock.
 private final class JSONBatchDecodeResults<Value: Sendable>: @unchecked Sendable {
   private let lock = NSLock()
   private var storage: [Int: Result<[Value], InstantError>] = [:]

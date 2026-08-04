@@ -51,7 +51,7 @@ struct InstantStoreParityTests {
 
     let report = InstantSwiftDataParityCoverage.current(artifactsDirectory: artifactsURL)
     expectNoDifference(report.coverageComplete, true)
-    expectNoDifference(report.adaptedCount, 265)
+    expectNoDifference(report.adaptedCount, 284)
     expectNoDifference(report.blockedCount, 0)
     expectNoDifference(
       report.records.filter { $0.surface == "live-transport" }.map(\.status),
@@ -65,11 +65,13 @@ struct InstantStoreParityTests {
 
     expectNoDifference(report.event, "parity-report")
     expectNoDifference(report.coverageComplete, false)
-    expectNoDifference(report.recordCount, 295)
+    // Counts include the SQLiteData inventory completion (261 upstream tests
+    // claimed) and Instant TypeScript + Python + SQLiteData rows together.
+    expectNoDifference(report.recordCount, 518)
     expectNoDifference(report.exactCount, 28)
-    expectNoDifference(report.adaptedCount, 263)
+    expectNoDifference(report.adaptedCount, 282)
     expectNoDifference(report.blockedCount, 2)
-    expectNoDifference(report.notApplicableCount, 2)
+    expectNoDifference(report.notApplicableCount, 206)
     #expect(report.sourceFiles.contains("upstream/instant/client/packages/core/__tests__/src/schema.test.ts"))
     #expect(report.sourceFiles.contains("upstream/instant/client/packages/core/__tests__/src/serializeSchema.test.ts"))
     #expect(report.sourceFiles.contains("upstream/instant/client/packages/core/__tests__/src/utils/object.test.ts"))

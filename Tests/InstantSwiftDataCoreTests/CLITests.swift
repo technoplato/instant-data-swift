@@ -5583,7 +5583,8 @@ extension InstantStoreTests {
     expectNoDifference(firstFlush["confirmedMutationCount"] as? Int, 1)
     expectNoDifference(firstFlush["failedMutationCount"] as? Int, 0)
     expectNoDifference(firstFlush["pendingMutationCount"] as? Int, 1)
-    expectNoDifference(firstFlush["mutationCount"] as? Int, 1)
+    // mutationCount is total outbox size (2 adds) before the limited flush.
+    expectNoDifference(firstFlush["mutationCount"] as? Int, 2)
     let firstResults = try #require(firstFlush["results"] as? [[String: Any]])
     expectNoDifference(firstResults.map { $0["outcome"] as? String }, ["confirmed"])
     let request = try #require(firstFlush["request"] as? [String: Any])
@@ -9073,7 +9074,8 @@ extension InstantStoreTests {
     expectNoDifference(jsonOutput.pendingMutationIDs, ["validation.loopback.local"])
     expectNoDifference(jsonOutput.processedTransactionID, "validation.loopback.server")
     expectNoDifference(jsonOutput.pendingMutationCount, 1)
-    expectNoDifference(jsonOutput.outboxRevision, 1)
+    // Local write + rebase of that pending row during server-apply.
+    expectNoDifference(jsonOutput.outboxRevision, 2)
 
     let jsonlOutput = try runCLI(
       ["validation", "server-transaction-loopback", "--jsonl"],
@@ -9099,7 +9101,7 @@ extension InstantStoreTests {
     expectNoDifference(serverApplyEvidence.details.emissionQueryIDs, [TodoExample.query.id])
     expectNoDifference(
       serverApplyEvidence.details.outboxRevision,
-      localOutboxEvidence.details.outboxRevision
+      localOutboxEvidence.details.outboxRevision + 1
     )
     expectNoDifference(
       serverApplyEvidence.details.storeRevision,
@@ -9119,7 +9121,10 @@ extension InstantStoreTests {
       CLIServerTransactionLoopbackValidationEvidence.self,
       from: Data(lines[3].utf8)
     )
-    expectNoDifference(relaunchEvidence.details.outboxRevision, localOutboxEvidence.details.outboxRevision)
+    expectNoDifference(
+      relaunchEvidence.details.outboxRevision,
+      localOutboxEvidence.details.outboxRevision + 1
+    )
     expectNoDifference(relaunchEvidence.details.pendingMutationIDs, ["validation.loopback.local"])
     expectNoDifference(relaunchEvidence.details.processedTransactionID, "validation.loopback.server")
 
@@ -10377,11 +10382,11 @@ extension InstantStoreTests {
     )
     expectNoDifference(jsonOutput.event, "parity-report")
     expectNoDifference(jsonOutput.coverageComplete, false)
-    expectNoDifference(jsonOutput.recordCount, 295)
+    expectNoDifference(jsonOutput.recordCount, 518)
     expectNoDifference(jsonOutput.exactCount, 28)
-    expectNoDifference(jsonOutput.adaptedCount, 263)
+    expectNoDifference(jsonOutput.adaptedCount, 282)
     expectNoDifference(jsonOutput.blockedCount, 2)
-    expectNoDifference(jsonOutput.notApplicableCount, 2)
+    expectNoDifference(jsonOutput.notApplicableCount, 206)
     #expect(
       jsonOutput.sourceFiles.contains(
         "upstream/instant/client/packages/core/__tests__/src/schema.test.ts"
@@ -11346,11 +11351,11 @@ extension InstantStoreTests {
 
     let humanOutput = try runCLI(["validation", "parity"], homeURL: homeURL)
     #expect(humanOutput.contains("parity coverage: incomplete"))
-    #expect(humanOutput.contains("records: 295"))
+    #expect(humanOutput.contains("records: 518"))
     #expect(humanOutput.contains("exact: 28"))
-    #expect(humanOutput.contains("adapted: 263"))
+    #expect(humanOutput.contains("adapted: 282"))
     #expect(humanOutput.contains("blocked: 2"))
-    #expect(humanOutput.contains("not applicable: 2"))
+    #expect(humanOutput.contains("not applicable: 206"))
   }
 
   @Test
@@ -11369,13 +11374,14 @@ extension InstantStoreTests {
     expectNoDifference(jsonOutput.event, "coverage")
     expectNoDifference(jsonOutput.ok, false)
     expectNoDifference(jsonOutput.coverageComplete, false)
-    expectNoDifference(jsonOutput.recordCount, 295)
+    expectNoDifference(jsonOutput.recordCount, 518)
     expectNoDifference(jsonOutput.exactCount, 28)
-    expectNoDifference(jsonOutput.adaptedCount, 263)
+    expectNoDifference(jsonOutput.adaptedCount, 282)
     expectNoDifference(jsonOutput.blockedCount, 2)
-    expectNoDifference(jsonOutput.notApplicableCount, 2)
+    expectNoDifference(jsonOutput.notApplicableCount, 206)
     #expect(jsonOutput.sourceFileCount > 0)
-    expectNoDifference(jsonOutput.swiftFileCount, 26)
+    // Swift test files cited by exact/adapted records grow as inventories expand.
+    expectNoDifference(jsonOutput.swiftFileCount, 30)
     expectNoDifference(
       jsonOutput.blockedIDs,
       [
@@ -11399,7 +11405,7 @@ extension InstantStoreTests {
 
     let humanOutput = try runCLI(["validation", "coverage"], homeURL: homeURL)
     #expect(humanOutput.contains("validation coverage: incomplete"))
-    #expect(humanOutput.contains("records: 295"))
+    #expect(humanOutput.contains("records: 518"))
     #expect(humanOutput.contains("blocked: 2"))
   }
 
@@ -11435,7 +11441,8 @@ extension InstantStoreTests {
       )
     )
     expectNoDifference(partialOutput.coverageComplete, false)
-    expectNoDifference(partialOutput.adaptedCount, 264)
+    // One live-boundary blocked record is promoted to adapted by the artifact.
+    expectNoDifference(partialOutput.adaptedCount, 283)
     expectNoDifference(partialOutput.blockedCount, 1)
     expectNoDifference(partialOutput.blockedIDs, ["instant.live-transport.typescript-to-swift"])
 
@@ -11459,7 +11466,7 @@ extension InstantStoreTests {
       )
     )
     expectNoDifference(summaryOnlyOutput.coverageComplete, false)
-    expectNoDifference(summaryOnlyOutput.adaptedCount, 264)
+    expectNoDifference(summaryOnlyOutput.adaptedCount, 283)
     expectNoDifference(summaryOnlyOutput.blockedCount, 1)
     expectNoDifference(summaryOnlyOutput.blockedIDs, ["instant.live-transport.typescript-to-swift"])
 
@@ -11484,7 +11491,7 @@ extension InstantStoreTests {
       )
     )
     expectNoDifference(mismatchedEvidenceOutput.coverageComplete, false)
-    expectNoDifference(mismatchedEvidenceOutput.adaptedCount, 264)
+    expectNoDifference(mismatchedEvidenceOutput.adaptedCount, 283)
     expectNoDifference(mismatchedEvidenceOutput.blockedCount, 1)
     expectNoDifference(
       mismatchedEvidenceOutput.blockedIDs,
@@ -11512,7 +11519,7 @@ extension InstantStoreTests {
       )
     )
     expectNoDifference(malformedCountOutput.coverageComplete, false)
-    expectNoDifference(malformedCountOutput.adaptedCount, 264)
+    expectNoDifference(malformedCountOutput.adaptedCount, 283)
     expectNoDifference(malformedCountOutput.blockedCount, 1)
     expectNoDifference(malformedCountOutput.blockedIDs, ["instant.live-transport.typescript-to-swift"])
 
@@ -11537,7 +11544,7 @@ extension InstantStoreTests {
       )
     )
     expectNoDifference(fractionalCountOutput.coverageComplete, false)
-    expectNoDifference(fractionalCountOutput.adaptedCount, 264)
+    expectNoDifference(fractionalCountOutput.adaptedCount, 283)
     expectNoDifference(fractionalCountOutput.blockedCount, 1)
     expectNoDifference(fractionalCountOutput.blockedIDs, ["instant.live-transport.typescript-to-swift"])
 
@@ -11563,7 +11570,8 @@ extension InstantStoreTests {
     )
     expectNoDifference(completeOutput.ok, true)
     expectNoDifference(completeOutput.coverageComplete, true)
-    expectNoDifference(completeOutput.adaptedCount, 265)
+    // Both blocked live-boundary records are promoted → all 282 adapted + 2 promoted.
+    expectNoDifference(completeOutput.adaptedCount, 284)
     expectNoDifference(completeOutput.blockedCount, 0)
     expectNoDifference(completeOutput.blockedIDs, [])
   }
