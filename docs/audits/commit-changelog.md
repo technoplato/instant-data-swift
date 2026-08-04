@@ -6,6 +6,65 @@ commit SHA, and high-level reason. Changelog-only bookkeeping commits are
 visible in Git history but are not self-recorded because a commit cannot
 contain its own final SHA.
 
+## August 4, 2026 at 7:07:52 AM EDT
+
+- Repository: `instant-data-swift`
+- Commit: `04f1b6682bf23c17103da501174d50e27fb38bd5`
+- Reason: Stop the write path from scaling with the size of the schema. A Mac
+  Scribe process sat at 99.5% CPU across three cooperative-pool threads for 136
+  minutes, applying server transactions against the diagnostics store (343
+  attributes, 883,388 triples, 7,928-deep outbox) and never returning to its
+  event loop. `AttributeStore.namespaces` rebuilt a `Set` from the whole
+  attribute table on every read while `validateWriteValue` reads it twice per
+  triple, so each write was O(attributes); it is now maintained beside the other
+  derived lookup indexes. `newestWriteTime` materialised an array per write key
+  to take a maximum, and `visibleWriteFilter` asks for it once per key across the
+  entire outbox on every inbound server event; it is now `lazy`. Measured at
+  2,000 writes with attribute count varied: 800 attributes went 1.825 s → 0.025 s,
+  and the growth from 100 → 800 attributes went 7.1× → flat. **Relevant to the
+  Scribe repository:** the app looked disconnected — a screen-stream session
+  stayed `requested` and was never claimed — when it was actually saturated, so
+  "the Mac went quiet" was a CPU-starvation symptom, not a transport failure.
+  Evidence is linked to issue 125, which owns the complementary half (why the
+  diagnostics store grew that large). Still unfixed and named there:
+  `sendOutstandingMutationsToLiveSession` rescans the entire outbox on every
+  inbound server event, which remains O(outbox) per event.
+
+## August 4, 2026 at 7:41:18 AM EDT
+
+- Repository: `realtime-voice-sqlite-instant`
+- Commit: `f991e9b8675203d1c9c60b1f0dae68ceb0c79d1e`
+- Reason: Make the unlaunchable macOS build loud, and offer a reproducible way
+  past it. The macOS app has been unlaunchable since 2026-08-02 (issue #141):
+  it declares `com.apple.developer.applesignin`, macOS honours that restricted
+  entitlement only when an embedded provisioning profile grants it, and the
+  installer embeds no profile — so launchd refuses to spawn the process before
+  any application code runs, leaving the app's own logs empty while the
+  installer reports success. The default path now warns with the unauthorized
+  entitlement, the missing profile path, and the exact error about to appear;
+  `--strip-unprofiled-entitlements` opts into a launchable local build and says
+  plainly that Sign in with Apple is absent from it. Issue #141 records that the
+  choice among its three fixes is a product decision about signing identity, so
+  this deliberately leaves that decision open and only removes the silence.
+  Previously the only working macOS build was a hand-re-signed artifact that no
+  repository change could reproduce.
+
+## August 4, 2026 at 7:07:52 AM EDT
+
+- Repository: `realtime-voice-sqlite-instant`
+- Commits: `65076f1cdb5fbbd0abd7fb748f0a85a26e5f6b63`,
+  `6f035076d6e76366549ec3922a54e09149631f12` (WIP checkpoint)
+- Reason: Make five seconds the timeout everywhere in `AGENTS.md`. Written down
+  after the wedged Mac above went undiagnosed while a probe sat on a 60-second
+  watch and reported nothing: a long timeout does not make a stall less likely,
+  it only delays discovery and turns a loud failure into a hang that reads as
+  "still working". Work that legitimately needs longer is a progress-reporting
+  problem, not a timeout problem. The second commit checkpoints another agent's
+  untracked `docs/core-module-extraction-audit.md` unmodified, because the macOS
+  installer refuses to build from a dirty checkout and `AGENTS.md` names a WIP
+  checkpoint as the way to preserve another agent's in-flight work rather than
+  stashing it.
+
 ## August 4, 2026 at 5:10:00 AM EDT
 
 - Repository: `realtime-voice-sqlite-instant`
