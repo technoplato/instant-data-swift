@@ -6,6 +6,24 @@ commit SHA, and high-level reason. Changelog-only bookkeeping commits are
 visible in Git history but are not self-recorded because a commit cannot
 contain its own final SHA.
 
+## August 4, 2026 at 11:04:13 AM EDT
+
+- Repository: `instant-data-swift`
+- Commit: `a4c445ad97b4b8ca17ad1a0b56e284957cd6fba2`
+- Reason: Make "we have parity with upstream" a measurement instead of an
+  assertion. Added `docs/porting/upstream-typescript-test-inventory.md` (every
+  one of the 175 declarations / 211 runtime cases in `@instantdb/core`, with
+  file, line and greppable name, plus the single benchmark) and
+  `docs/porting/swift-port-gap-analysis.md` (that inventory reconciled against
+  `InstantParityCoverage.swift` and the 1338 Swift tests). Counts converged
+  across three independent methods run twice consecutively. All 175 upstream
+  declarations resolve to a parity record; date coercion and the `Where OR`
+  table were verified case-by-case rather than by record count and are
+  complete. Real gaps found: a stale Swift test name cited by four records,
+  ~20 records storing paraphrases where upstream's literal test name belongs,
+  and no Swift equivalent for upstream's `instaql.bench.ts` deep-join
+  benchmark.
+
 ## August 4, 2026 at 10:19:57 AM EDT
 
 - Repository: `instant-data-swift`
