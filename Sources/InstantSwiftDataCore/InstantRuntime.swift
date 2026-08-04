@@ -934,6 +934,12 @@ private actor InstantRuntimeLiveSession {
     Set(registeredQueries.keys)
   }
 
+  /// The raw attribute payload the server sent in the current session's `init-ok`, or the most
+  /// recent `refresh-ok` that carried one.
+  func currentServerAttributes() -> [InstantLiveJSONValue] {
+    serverAttributes
+  }
+
   func mutationReservationCountsForTesting() -> (
     ids: Int,
     stepCounts: Int,
@@ -2963,6 +2969,97 @@ public final class InstantRuntime: Sendable {
     return snapshot.attributes.filter { previousAttributes[$0.id] != $0 }.count
   }
 
+  /// The attributes this device holds durably, as opposed to the ones a live session happens to
+  /// be holding in memory.
+  package func persistedStoreAttributes() async throws -> [InstantAttribute] {
+    await enterOperationGate()
+    do {
+      recordActorHop(.persistence)
+      let attributes = try await persistence.loadState().snapshot.store.attributes
+      await leaveOperationGate()
+      return attributes
+    } catch {
+      await leaveOperationGate()
+      throw error
+    }
+  }
+
+  /// Writes the server's attribute set into the local cache.
+  ///
+  /// Instant models attributes as data: a device can only materialize namespaces it holds
+  /// attributes for, and query observation refuses to subscribe to a namespace it cannot
+  /// validate. A device that keeps the server's attribute set in memory only therefore goes
+  /// permanently blind to every namespace added to the schema after its last sync — it never
+  /// subscribes, so it never receives the payload that would have taught it the namespace.
+  ///
+  /// Upstream applies the set on every `init-ok`
+  /// (`upstream/instant/client/packages/core/src/Reactor.js` line 640, `this._setAttrs(msg.attrs)`).
+  /// Upstream replaces its whole in-memory attr store there and keeps locally minted attributes
+  /// separately in `optimisticAttrs()`; this client persists a single attribute set, so it
+  /// merges instead — a namespace/name pair the device already holds keeps its local attribute
+  /// id, because local triples and pending mutations reference that id.
+  ///
+  /// The caller must already hold the operation gate.
+  @discardableResult
+  private func applyServerAttributesWithGateHeld(
+    _ serverAttributes: [InstantLiveJSONValue]
+  ) async throws -> Int {
+    guard !serverAttributes.isEmpty else { return 0 }
+    for _ in 0..<5 {
+      recordActorHop(.persistence)
+      let state = try await persistence.loadState()
+      let attributesToMerge = try InstantLiveRefreshTranslator.attributesToMerge(
+        serverAttributes: serverAttributes,
+        existingAttributes: state.snapshot.store.attributes
+      )
+      guard !attributesToMerge.isEmpty else { return 0 }
+      var storeSnapshot = state.snapshot.store
+      let mergedCount = mergeLiveRefreshAttributes(attributesToMerge, into: &storeSnapshot)
+      guard mergedCount > 0 else { return 0 }
+      recordActorHop(.persistence)
+      let didSave = try await persistence.saveStoreSnapshot(
+        storeSnapshot,
+        replacing: state.snapshot.store,
+        expectedStoreRevision: state.storeRevision,
+        expectedOutboxRevision: state.outboxRevision
+      )
+      if didSave {
+        // Merge into the live store rather than replacing its snapshot: the persisted triples
+        // are the ones this loop read, and the in-memory store may already carry newer
+        // optimistic ones.
+        recordActorHop(.store)
+        _ = await store.mergeAttributesIfChanged(attributesToMerge)
+        InstantDiagnostics.shared.record(
+          .notice,
+          subsystem: "instant-swift-data-core",
+          category: "connection",
+          event: "connection.server-attributes-applied",
+          message: "Stored attributes the server sent for namespaces this device did not have.",
+          metadata: [
+            "appID": configuration.appID,
+            "mergedAttributeCount": String(mergedCount),
+            "serverAttributeCount": String(serverAttributes.count),
+            "namespaces": Set(attributesToMerge.map(\.namespace)).sorted()
+              .joined(separator: ","),
+          ]
+        )
+        return mergedCount
+      }
+      recordActorHop(.persistence)
+      let reloaded = try await persistence.loadState()
+      recordActorHop(.store)
+      await store.replaceSnapshot(reloaded.snapshot.store)
+      recordActorHop(.outbox)
+      await outbox.replace(with: reloaded.snapshot.outbox)
+    }
+    throw InstantError(
+      code: .persistenceFailed,
+      operation: "apply server attributes",
+      message: "The local Instant cache changed repeatedly while storing the server's attributes.",
+      recovery: "Retry the connection after other writers finish updating the shared cache."
+    )
+  }
+
   @discardableResult
   package func migrateLocalPersistenceSnapshot(
     name: String,
@@ -3060,7 +3157,10 @@ public final class InstantRuntime: Sendable {
       since: schemaSnapshotStopwatch,
       metadata: ["namespace": plan.namespace]
     )
-    if TripleIndexes.validate(plan, attributes: AttributeStore(attributes: attributes)) != nil {
+    if let issue = TripleIndexes.validate(
+      plan,
+      attributes: AttributeStore(attributes: attributes)
+    ) {
       InstantDiagnostics.shared.record(
         .warning,
         subsystem: "instant-swift-data-core",
@@ -3069,6 +3169,17 @@ public final class InstantRuntime: Sendable {
         message: "Query observation failed schema validation and will emit no values.",
         metadata: ["namespace": plan.namespace],
         correlationID: plan.id
+      )
+      // A stream that stays empty forever reads exactly like a namespace with no rows, which is
+      // how a device kept serving stale data for weeks without anyone noticing. Say it out loud.
+      reportIssue(
+        """
+        Instant will emit nothing for the '\(plan.namespace)' query '\(plan.id)'.
+
+        \(issue.message)
+
+        \(issue.recovery)
+        """
       )
       return Self.emptyObservation(plan)
     }
@@ -3866,9 +3977,16 @@ public final class InstantRuntime: Sendable {
             transport: liveTransport,
             makeID: configuration.makeID
           )
+          recordActorHop(.liveSession)
+          let openedServerAttributes = await liveSession.currentServerAttributes()
           recordActorHop(.operationGate)
           await operationGate.enter()
           enteredOperationGate = true
+          // Store the server's attribute set before anything reads the cache. Namespaces added
+          // to the schema after this device's last sync are unknown to it until this runs, and
+          // an unknown namespace cannot even be subscribed to, so nothing else would ever
+          // deliver them.
+          try await applyServerAttributesWithGateHeld(openedServerAttributes)
           try await retryPersistedTransientMutationFailuresWithGateHeld()
           recordActorHop(.operationGate)
           await operationGate.leave()

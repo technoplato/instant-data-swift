@@ -102,6 +102,23 @@ private struct InstantTranslatedLiveComputation {
 }
 
 enum InstantLiveRefreshTranslator {
+  /// The attributes a raw server attribute payload adds to what this device already holds.
+  ///
+  /// Instant stores attributes as data, so a device only knows the namespaces whose attributes
+  /// it has. This applies the same reconciliation `refresh-ok` uses: a namespace/name pair the
+  /// device already has keeps its local attribute id, because local triples and pending
+  /// mutations reference that id; only pairs the device has never seen are new.
+  static func attributesToMerge(
+    serverAttributes: [InstantLiveJSONValue],
+    existingAttributes: [InstantAttribute]
+  ) throws -> [InstantAttribute] {
+    InstantLiveRefreshAttributeContext(
+      existingAttributes: existingAttributes,
+      serverAttributes: try serverAttributes.map(parseAttribute)
+    )
+    .attributesToMerge
+  }
+
   static func translate(
     _ refreshOK: InstantLiveRefreshOK,
     existingAttributes: [InstantAttribute],
