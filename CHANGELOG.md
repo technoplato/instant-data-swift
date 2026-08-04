@@ -4,6 +4,25 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## August 4th, 2026 at 11:28:13 a.m. EDT — `5d28f49070ef` Make upstream parity checkable and re-baseline the inventory on the vendored checkout
+
+- **Implementation commit:** `5d28f49070efbecc49fc32ab02a66b730af881f5`
+- **Change:** Make upstream parity checkable against the vendored InstantDB TypeScript suite
+- **Details:**
+  - Re-baselined inventory and gap analysis on vendored e7101761: 19 files, 186 declarations, 225 runtime cases.
+  - Fixed stale Swift test names and paraphrased sourceTestNames in InstantParityCoverage so both sides resolve literally.
+  - Added InstantUpstreamParityReconciliationTests with six source invariants (Swift names, both sides named, cited upstream names, surface counts, full coverage, pinned commit).
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantParityCoverage.swift` — Literal upstream/Swift names for parity claims
+  - `Tests/InstantSwiftDataCoreTests/InstantUpstreamParityReconciliationTests.swift` — Source-invariant suite that fails when parity drifts
+  - `docs/porting/upstream-typescript-test-inventory.md` — Corrected to the vendored commit surface
+  - `docs/porting/swift-port-gap-analysis.md` — Status of hygiene work and remaining deep-join bench port
+- **User context (verbatim):**
+  > list out every single test for instantdb upstream typescript
+  > Our goal is to port all of the tests to Swift
+  > ensure in the header comment for the file you reference the full filepath of upstream and the commit sha from which you're porting!
+- **SpecStory:** unavailable — Continued from Claude Code session 8aa90e99-adb6-4b7e-b76e-e208b4706568 (fable:livestream); no SpecStory share URI authorized for this handoff.
+
 ## August 3rd, 2026 at 11:39:09 p.m. EDT — `a52ab0911d4e` Persist the server attribute set on every connect
 
 - **Implementation commit:** `a52ab0911d4e78e1b7b33f610240fe55c74f069b`

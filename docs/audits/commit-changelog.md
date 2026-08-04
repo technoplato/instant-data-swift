@@ -6,6 +6,19 @@ commit SHA, and high-level reason. Changelog-only bookkeeping commits are
 visible in Git history but are not self-recorded because a commit cannot
 contain its own final SHA.
 
+## August 4, 2026 at 11:28:18 AM EDT
+
+- Repository: `instant-data-swift`
+- Commit: `5d28f49070efbecc49fc32ab02a66b730af881f5`
+- Reason: Finish the inventory re-baseline against the package's own vendored
+  InstantDB checkout (`e7101761`, 19 files / 186 declarations / 225 runtime
+  cases) and close the loop that made parity checkable. Fixed stale Swift test
+  names and paraphrased `sourceTestName`s in `InstantParityCoverage`, and added
+  `InstantUpstreamParityReconciliationTests` so renames, invented upstream
+  names, missing records, and a moved vendored commit fail the suite. The only
+  remaining open porting item from the gap analysis is the
+  `instaql.bench.ts` deep-join benchmark.
+
 ## August 4, 2026 at 11:04:13 AM EDT
 
 - Repository: `instant-data-swift`
