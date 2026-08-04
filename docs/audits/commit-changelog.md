@@ -1,3 +1,9 @@
+## 2026-08-04 17:12:23 EDT
+
+- **Repository:** realtime-voice-sqlite-instant
+- **Commit:** `0156b980d46f9912f6ad38acf666269f25bb1691`
+- **Reason:** Rename the Mac app to Scribe and embed the real AppIcon so Spotlight no longer shows a generic "Scribe Shared" Application tile.
+
 ## 2026-08-04 16:15:34 EDT
 
 - **repository:** realtime-voice-sqlite-instant
