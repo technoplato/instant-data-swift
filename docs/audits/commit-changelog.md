@@ -1,3 +1,9 @@
+## 2026-08-04 15:44:40 EDT
+
+- **Repository:** realtime-voice-sqlite-instant
+- **Commit:** 1112c4f045934212bf5a1d3a1ff393bada86dfb8
+- **Reason:** Add private Instant segment-range shares for partial transcript access.
+
 ## 2026-08-04 15:32:18 EDT
 
 - **Repository:** realtime-voice-sqlite-instant
