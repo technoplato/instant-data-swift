@@ -1,3 +1,9 @@
+## 2026-08-04 15:59:36 EDT
+
+- **Repository:** instant-data-swift
+- **Commit:** 43015b16fec14a49157915fb88c51a323a813618
+- **Reason:** Detailed handoff for typed Instant permissions result builder + custom bindings.
+
 ## 2026-08-04 15:55:21 EDT
 
 - **Repository:** instant-data-swift
