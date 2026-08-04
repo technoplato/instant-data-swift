@@ -3306,6 +3306,2228 @@ public enum InstantSwiftDataParityCoverage {
       status: .adapted,
       notes: "The CloudKitDemo remote-share analogue is adapted as local Instant validation evidence: an owner creates and shares a counter root, an invitee accepts and sees shared metadata, reader writes are rejected before cache/outbox mutation, writer promotion allows mutation, and a fresh relaunch preserves the shared counter, role, members, and share ids. This remains local/mock-remote evidence; live Instant transport is still tracked by the dedicated live transport blockers."
     ),
+    // MARK: - SQLiteData inventory completion (upstream 0c79d7a)
+    // One record per previously unclaimed upstream runtime test.
+    sqlite(
+      id: "sqlite.inv.remindersliststests-move",
+      sourceFile: "upstream/sqlite-data/Examples/RemindersTests/RemindersListsTests.swift",
+      sourceTestName: "move",
+      swiftFile: "Tests/InstantSwiftDataCoreTests/InstantSharingSourceParityTests.swift",
+      swiftTestName: "remindersListsModelMovesSourceListToFront",
+      surface: "reminders-example",
+      status: .adapted,
+      notes: "Reminders lists model reorders a list to the front (SQLiteData RemindersListsTests.move)."
+    ),
+    sqlite(
+      id: "sqlite.inv.searchreminderstests-deletecompleted",
+      sourceFile: "upstream/sqlite-data/Examples/RemindersTests/SearchRemindersTests.swift",
+      sourceTestName: "deleteCompleted",
+      swiftFile: "Tests/InstantSwiftDataCoreTests/InstantStoreTests.swift",
+      swiftTestName: "searchRemindersModelPortsBasicsShowCompletedAndDeleteCompleted",
+      surface: "reminders-example",
+      status: .adapted,
+      notes: "Search reminders deletes completed rows through Instant mutations."
+    ),
+    sqlite(
+      id: "sqlite.inv.syncupformtests-savenew",
+      sourceFile: "upstream/sqlite-data/Examples/SyncUpTests/SyncUpFormTests.swift",
+      sourceTestName: "saveNew",
+      swiftFile: "Tests/InstantSwiftDataCoreTests/InstantStoreTests.swift",
+      swiftTestName: "syncUpFormModelSavesNewDraftWithNonBlankAttendees",
+      surface: "syncups-example",
+      status: .adapted,
+      notes: "SyncUp form saves a new draft with attendees (SQLiteData saveNew)."
+    ),
+    sqlite(
+      id: "sqlite.inv.assertquerytests-assertquerybasic",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/AssertQueryTests.swift",
+      sourceTestName: "assertQueryBasic",
+      swiftFile: "Tests/InstantSwiftDataCoreTests/InstantSQLiteDataErgonomicsParityTests.swift",
+      swiftTestName: "assertQueryStyleMaterializationSnapshotsMatchExpectedTables",
+      surface: "query-snapshot",
+      status: .adapted,
+      notes: "Adapted assertQuery/assertQueryBasic: customDump of Instant materialization instead of SQL result tables."
+    ),
+    sqlite(
+      id: "sqlite.inv.assertquerytests-assertqueryrecord",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/AssertQueryTests.swift",
+      sourceTestName: "assertQueryRecord",
+      swiftFile: "Tests/InstantSwiftDataCoreTests/InstantSQLiteDataErgonomicsParityTests.swift",
+      swiftTestName: "assertQueryStyleMaterializationSnapshotsMatchExpectedTables",
+      surface: "query-snapshot",
+      status: .adapted,
+      notes: "Adapted assertQuery/assertQueryRecord: customDump of Instant materialization instead of SQL result tables."
+    ),
+    sqlite(
+      id: "sqlite.inv.assertquerytests-assertquerybasicupdate",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/AssertQueryTests.swift",
+      sourceTestName: "assertQueryBasicUpdate",
+      swiftFile: "Tests/InstantSwiftDataCoreTests/InstantSQLiteDataErgonomicsParityTests.swift",
+      swiftTestName: "assertQueryStyleMaterializationSnapshotsMatchExpectedTables",
+      surface: "query-snapshot",
+      status: .adapted,
+      notes: "Adapted assertQuery/assertQueryBasicUpdate: customDump of Instant materialization instead of SQL result tables."
+    ),
+    sqlite(
+      id: "sqlite.inv.assertquerytests-assertqueryrecordupdate",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/AssertQueryTests.swift",
+      sourceTestName: "assertQueryRecordUpdate",
+      swiftFile: "Tests/InstantSwiftDataCoreTests/InstantSQLiteDataErgonomicsParityTests.swift",
+      swiftTestName: "assertQueryStyleMaterializationSnapshotsMatchExpectedTables",
+      surface: "query-snapshot",
+      status: .adapted,
+      notes: "Adapted assertQuery/assertQueryRecordUpdate: customDump of Instant materialization instead of SQL result tables."
+    ),
+    sqlite(
+      id: "sqlite.inv.assertquerytests-assertqueryempty",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/AssertQueryTests.swift",
+      sourceTestName: "assertQueryEmpty",
+      swiftFile: "Tests/InstantSwiftDataCoreTests/InstantSQLiteDataErgonomicsParityTests.swift",
+      swiftTestName: "assertQueryStyleMaterializationSnapshotsMatchExpectedTables",
+      surface: "query-snapshot",
+      status: .adapted,
+      notes: "Adapted assertQuery/assertQueryEmpty: customDump of Instant materialization instead of SQL result tables."
+    ),
+    sqlite(
+      id: "sqlite.inv.assertquerytests-assertqueryfailsnoresultsnonemptysnapshot",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/AssertQueryTests.swift",
+      sourceTestName: "assertQueryFailsNoResultsNonEmptySnapshot",
+      swiftFile: "Tests/InstantSwiftDataCoreTests/InstantSQLiteDataErgonomicsParityTests.swift",
+      swiftTestName: "assertQueryStyleMaterializationSnapshotsMatchExpectedTables",
+      surface: "query-snapshot",
+      status: .adapted,
+      notes: "Adapted assertQuery/assertQueryFailsNoResultsNonEmptySnapshot: customDump of Instant materialization instead of SQL result tables."
+    ),
+    sqlite(
+      id: "sqlite.inv.assertquerytests-assertquerybasicincludesql",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/AssertQueryTests.swift",
+      sourceTestName: "assertQueryBasicIncludeSQL",
+      swiftFile: "",
+      swiftTestName: "",
+      surface: "query-snapshot",
+      status: .notApplicable,
+      notes: "assertQuery includeSQL dumps raw SQL. Instant query plans are not SQL."
+    ),
+    sqlite(
+      id: "sqlite.inv.assertquerytests-assertqueryrecordincludesql",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/AssertQueryTests.swift",
+      sourceTestName: "assertQueryRecordIncludeSQL",
+      swiftFile: "",
+      swiftTestName: "",
+      surface: "query-snapshot",
+      status: .notApplicable,
+      notes: "assertQuery includeSQL dumps raw SQL. Instant query plans are not SQL."
+    ),
+    sqlite(
+      id: "sqlite.inv.accountlifecycletests-signoutclearsuserdatabaseandmetadatabase",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/CloudKitTests/AccountLifecycleTests.swift",
+      sourceTestName: "signOutClearsUserDatabaseAndMetadatabase",
+      swiftFile: "",
+      swiftTestName: "",
+      surface: "cloudkit-syncengine",
+      status: .notApplicable,
+      notes: "CloudKit SyncEngine test `signOutClearsUserDatabaseAndMetadatabase`. Instant sync is InstantDB optimistic outbox + websocket, not CloudKit. Domain analogues live in Instant sharing/outbox suites; this CloudKit plumbing does not map 1:1."
+    ),
+    sqlite(
+      id: "sqlite.inv.accountlifecycletests-signinuploadslocalrecordstocloudkit",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/CloudKitTests/AccountLifecycleTests.swift",
+      sourceTestName: "signInUploadsLocalRecordsToCloudKit",
+      swiftFile: "",
+      swiftTestName: "",
+      surface: "cloudkit-syncengine",
+      status: .notApplicable,
+      notes: "CloudKit SyncEngine test `signInUploadsLocalRecordsToCloudKit`. Instant sync is InstantDB optimistic outbox + websocket, not CloudKit. Domain analogues live in Instant sharing/outbox suites; this CloudKit plumbing does not map 1:1."
+    ),
+    sqlite(
+      id: "sqlite.inv.accountlifecycletests-signinuploadslocalrecordstocloudkit-skipexistingcloudkitrecords",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/CloudKitTests/AccountLifecycleTests.swift",
+      sourceTestName: "signInUploadsLocalRecordsToCloudKit_SkipExistingCloudKitRecords",
+      swiftFile: "",
+      swiftTestName: "",
+      surface: "cloudkit-syncengine",
+      status: .notApplicable,
+      notes: "CloudKit SyncEngine test `signInUploadsLocalRecordsToCloudKit_SkipExistingCloudKitRecords`. Instant sync is InstantDB optimistic outbox + websocket, not CloudKit. Domain analogues live in Instant sharing/outbox suites; this CloudKit plumbing does not map 1:1."
+    ),
+    sqlite(
+      id: "sqlite.inv.accountlifecycletests-createsharedrecordwhilesoftloggedout",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/CloudKitTests/AccountLifecycleTests.swift",
+      sourceTestName: "createSharedRecordWhileSoftLoggedOut",
+      swiftFile: "",
+      swiftTestName: "",
+      surface: "cloudkit-syncengine",
+      status: .notApplicable,
+      notes: "CloudKit SyncEngine test `createSharedRecordWhileSoftLoggedOut`. Instant sync is InstantDB optimistic outbox + websocket, not CloudKit. Domain analogues live in Instant sharing/outbox suites; this CloudKit plumbing does not map 1:1."
+    ),
+    sqlite(
+      id: "sqlite.inv.accountlifecycletests-donotuploadexistingdatatocloudkitwhensignedout",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/CloudKitTests/AccountLifecycleTests.swift",
+      sourceTestName: "doNotUploadExistingDataToCloudKitWhenSignedOut",
+      swiftFile: "",
+      swiftTestName: "",
+      surface: "cloudkit-syncengine",
+      status: .notApplicable,
+      notes: "CloudKit SyncEngine test `doNotUploadExistingDataToCloudKitWhenSignedOut`. Instant sync is InstantDB optimistic outbox + websocket, not CloudKit. Domain analogues live in Instant sharing/outbox suites; this CloudKit plumbing does not map 1:1."
+    ),
+    sqlite(
+      id: "sqlite.inv.applifecycletests-sendchangesonbackground",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/CloudKitTests/AppLifecycleTests.swift",
+      sourceTestName: "sendChangesOnBackground",
+      swiftFile: "",
+      swiftTestName: "",
+      surface: "cloudkit-syncengine",
+      status: .notApplicable,
+      notes: "CloudKit SyncEngine test `sendChangesOnBackground`. Instant sync is InstantDB optimistic outbox + websocket, not CloudKit. Domain analogues live in Instant sharing/outbox suites; this CloudKit plumbing does not map 1:1."
+    ),
+    sqlite(
+      id: "sqlite.inv.applifecycletests-background-whilenotrunning",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/CloudKitTests/AppLifecycleTests.swift",
+      sourceTestName: "background_whileNotRunning",
+      swiftFile: "",
+      swiftTestName: "",
+      surface: "cloudkit-syncengine",
+      status: .notApplicable,
+      notes: "CloudKit SyncEngine test `background_whileNotRunning`. Instant sync is InstantDB optimistic outbox + websocket, not CloudKit. Domain analogues live in Instant sharing/outbox suites; this CloudKit plumbing does not map 1:1."
+    ),
+    sqlite(
+      id: "sqlite.inv.applifecycletests-sendsharedchanges",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/CloudKitTests/AppLifecycleTests.swift",
+      sourceTestName: "sendSharedChanges",
+      swiftFile: "",
+      swiftTestName: "",
+      surface: "cloudkit-syncengine",
+      status: .notApplicable,
+      notes: "CloudKit SyncEngine test `sendSharedChanges`. Instant sync is InstantDB optimistic outbox + websocket, not CloudKit. Domain analogues live in Instant sharing/outbox suites; this CloudKit plumbing does not map 1:1."
+    ),
+    sqlite(
+      id: "sqlite.inv.assetstests-basics",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/CloudKitTests/AssetsTests.swift",
+      sourceTestName: "basics",
+      swiftFile: "",
+      swiftTestName: "",
+      surface: "cloudkit-syncengine",
+      status: .notApplicable,
+      notes: "CloudKit SyncEngine test `basics`. Instant sync is InstantDB optimistic outbox + websocket, not CloudKit. Domain analogues live in Instant sharing/outbox suites; this CloudKit plumbing does not map 1:1."
+    ),
+    sqlite(
+      id: "sqlite.inv.assetstests-receiveasset",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/CloudKitTests/AssetsTests.swift",
+      sourceTestName: "receiveAsset",
+      swiftFile: "",
+      swiftTestName: "",
+      surface: "cloudkit-syncengine",
+      status: .notApplicable,
+      notes: "CloudKit SyncEngine test `receiveAsset`. Instant sync is InstantDB optimistic outbox + websocket, not CloudKit. Domain analogues live in Instant sharing/outbox suites; this CloudKit plumbing does not map 1:1."
+    ),
+    sqlite(
+      id: "sqlite.inv.assetstests-receiveupdatedasset",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/CloudKitTests/AssetsTests.swift",
+      sourceTestName: "receiveUpdatedAsset",
+      swiftFile: "",
+      swiftTestName: "",
+      surface: "cloudkit-syncengine",
+      status: .notApplicable,
+      notes: "CloudKit SyncEngine test `receiveUpdatedAsset`. Instant sync is InstantDB optimistic outbox + websocket, not CloudKit. Domain analogues live in Instant sharing/outbox suites; this CloudKit plumbing does not map 1:1."
+    ),
+    sqlite(
+      id: "sqlite.inv.assetstests-receiveassetthenreceiveupdate",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/CloudKitTests/AssetsTests.swift",
+      sourceTestName: "receiveAssetThenReceiveUpdate",
+      swiftFile: "",
+      swiftTestName: "",
+      surface: "cloudkit-syncengine",
+      status: .notApplicable,
+      notes: "CloudKit SyncEngine test `receiveAssetThenReceiveUpdate`. Instant sync is InstantDB optimistic outbox + websocket, not CloudKit. Domain analogues live in Instant sharing/outbox suites; this CloudKit plumbing does not map 1:1."
+    ),
+    sqlite(
+      id: "sqlite.inv.assetstests-assetreceivedbeforeparentrecord",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/CloudKitTests/AssetsTests.swift",
+      sourceTestName: "assetReceivedBeforeParentRecord",
+      swiftFile: "",
+      swiftTestName: "",
+      surface: "cloudkit-syncengine",
+      status: .notApplicable,
+      notes: "CloudKit SyncEngine test `assetReceivedBeforeParentRecord`. Instant sync is InstantDB optimistic outbox + websocket, not CloudKit. Domain analogues live in Instant sharing/outbox suites; this CloudKit plumbing does not map 1:1."
+    ),
+    sqlite(
+      id: "sqlite.inv.atomictests-editconflictandnewrecord",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/CloudKitTests/AtomicTests.swift",
+      sourceTestName: "editConflictAndNewRecord",
+      swiftFile: "",
+      swiftTestName: "",
+      surface: "cloudkit-syncengine",
+      status: .notApplicable,
+      notes: "CloudKit SyncEngine test `editConflictAndNewRecord`. Instant sync is InstantDB optimistic outbox + websocket, not CloudKit. Domain analogues live in Instant sharing/outbox suites; this CloudKit plumbing does not map 1:1."
+    ),
+    sqlite(
+      id: "sqlite.inv.atomictests-editconflictanddeleterecord",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/CloudKitTests/AtomicTests.swift",
+      sourceTestName: "editConflictAndDeleteRecord",
+      swiftFile: "",
+      swiftTestName: "",
+      surface: "cloudkit-syncengine",
+      status: .notApplicable,
+      notes: "CloudKit SyncEngine test `editConflictAndDeleteRecord`. Instant sync is InstantDB optimistic outbox + websocket, not CloudKit. Domain analogues live in Instant sharing/outbox suites; this CloudKit plumbing does not map 1:1."
+    ),
+    sqlite(
+      id: "sqlite.inv.attachedmetadatabasetests-basics",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/CloudKitTests/AttachedMetadatabaseTests.swift",
+      sourceTestName: "basics",
+      swiftFile: "",
+      swiftTestName: "",
+      surface: "cloudkit-syncengine",
+      status: .notApplicable,
+      notes: "CloudKit SyncEngine test `basics`. Instant sync is InstantDB optimistic outbox + websocket, not CloudKit. Domain analogues live in Instant sharing/outbox suites; this CloudKit plumbing does not map 1:1."
+    ),
+    sqlite(
+      id: "sqlite.inv.cloudkittests-setup",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/CloudKitTests/CloudKitTests.swift",
+      sourceTestName: "setUp",
+      swiftFile: "",
+      swiftTestName: "",
+      surface: "cloudkit-syncengine",
+      status: .notApplicable,
+      notes: "CloudKit SyncEngine test `setUp`. Instant sync is InstantDB optimistic outbox + websocket, not CloudKit. Domain analogues live in Instant sharing/outbox suites; this CloudKit plumbing does not map 1:1."
+    ),
+    sqlite(
+      id: "sqlite.inv.cloudkittests-teardownandresetup",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/CloudKitTests/CloudKitTests.swift",
+      sourceTestName: "tearDownAndReSetUp",
+      swiftFile: "",
+      swiftTestName: "",
+      surface: "cloudkit-syncengine",
+      status: .notApplicable,
+      notes: "CloudKit SyncEngine test `tearDownAndReSetUp`. Instant sync is InstantDB optimistic outbox + websocket, not CloudKit. Domain analogues live in Instant sharing/outbox suites; this CloudKit plumbing does not map 1:1."
+    ),
+    sqlite(
+      id: "sqlite.inv.cloudkittests-addandremovefunctions",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/CloudKitTests/CloudKitTests.swift",
+      sourceTestName: "addAndRemoveFunctions",
+      swiftFile: "",
+      swiftTestName: "",
+      surface: "cloudkit-syncengine",
+      status: .notApplicable,
+      notes: "CloudKit SyncEngine test `addAndRemoveFunctions`. Instant sync is InstantDB optimistic outbox + websocket, not CloudKit. Domain analogues live in Instant sharing/outbox suites; this CloudKit plumbing does not map 1:1."
+    ),
+    sqlite(
+      id: "sqlite.inv.cloudkittests-insertupdatedelete",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/CloudKitTests/CloudKitTests.swift",
+      sourceTestName: "insertUpdateDelete",
+      swiftFile: "",
+      swiftTestName: "",
+      surface: "cloudkit-syncengine",
+      status: .notApplicable,
+      notes: "CloudKit SyncEngine test `insertUpdateDelete`. Instant sync is InstantDB optimistic outbox + websocket, not CloudKit. Domain analogues live in Instant sharing/outbox suites; this CloudKit plumbing does not map 1:1."
+    ),
+    sqlite(
+      id: "sqlite.inv.cloudkittests-remoteserverrecordupdate",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/CloudKitTests/CloudKitTests.swift",
+      sourceTestName: "remoteServerRecordUpdate",
+      swiftFile: "",
+      swiftTestName: "",
+      surface: "cloudkit-syncengine",
+      status: .notApplicable,
+      notes: "CloudKit SyncEngine test `remoteServerRecordUpdate`. Instant sync is InstantDB optimistic outbox + websocket, not CloudKit. Domain analogues live in Instant sharing/outbox suites; this CloudKit plumbing does not map 1:1."
+    ),
+    sqlite(
+      id: "sqlite.inv.cloudkittests-remoteserversendsrecordwithnochanges",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/CloudKitTests/CloudKitTests.swift",
+      sourceTestName: "remoteServerSendsRecordWithNoChanges",
+      swiftFile: "",
+      swiftTestName: "",
+      surface: "cloudkit-syncengine",
+      status: .notApplicable,
+      notes: "CloudKit SyncEngine test `remoteServerSendsRecordWithNoChanges`. Instant sync is InstantDB optimistic outbox + websocket, not CloudKit. Domain analogues live in Instant sharing/outbox suites; this CloudKit plumbing does not map 1:1."
+    ),
+    sqlite(
+      id: "sqlite.inv.cloudkittests-remoteserverrecordupdatewitholdrecord",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/CloudKitTests/CloudKitTests.swift",
+      sourceTestName: "remoteServerRecordUpdateWithOldRecord",
+      swiftFile: "",
+      swiftTestName: "",
+      surface: "cloudkit-syncengine",
+      status: .notApplicable,
+      notes: "CloudKit SyncEngine test `remoteServerRecordUpdateWithOldRecord`. Instant sync is InstantDB optimistic outbox + websocket, not CloudKit. Domain analogues live in Instant sharing/outbox suites; this CloudKit plumbing does not map 1:1."
+    ),
+    sqlite(
+      id: "sqlite.inv.cloudkittests-remoteserverrecorddeleted",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/CloudKitTests/CloudKitTests.swift",
+      sourceTestName: "remoteServerRecordDeleted",
+      swiftFile: "",
+      swiftTestName: "",
+      surface: "cloudkit-syncengine",
+      status: .notApplicable,
+      notes: "CloudKit SyncEngine test `remoteServerRecordDeleted`. Instant sync is InstantDB optimistic outbox + websocket, not CloudKit. Domain analogues live in Instant sharing/outbox suites; this CloudKit plumbing does not map 1:1."
+    ),
+    sqlite(
+      id: "sqlite.inv.cloudkittests-cascadingdeletionorder",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/CloudKitTests/CloudKitTests.swift",
+      sourceTestName: "cascadingDeletionOrder",
+      swiftFile: "",
+      swiftTestName: "",
+      surface: "cloudkit-syncengine",
+      status: .notApplicable,
+      notes: "CloudKit SyncEngine test `cascadingDeletionOrder`. Instant sync is InstantDB optimistic outbox + websocket, not CloudKit. Domain analogues live in Instant sharing/outbox suites; this CloudKit plumbing does not map 1:1."
+    ),
+    sqlite(
+      id: "sqlite.inv.cloudkittests-sendchanges",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/CloudKitTests/CloudKitTests.swift",
+      sourceTestName: "sendChanges",
+      swiftFile: "",
+      swiftTestName: "",
+      surface: "cloudkit-syncengine",
+      status: .notApplicable,
+      notes: "CloudKit SyncEngine test `sendChanges`. Instant sync is InstantDB optimistic outbox + websocket, not CloudKit. Domain analogues live in Instant sharing/outbox suites; this CloudKit plumbing does not map 1:1."
+    ),
+    sqlite(
+      id: "sqlite.inv.cloudkittests-generatedcolumns",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/CloudKitTests/CloudKitTests.swift",
+      sourceTestName: "generatedColumns",
+      swiftFile: "",
+      swiftTestName: "",
+      surface: "cloudkit-syncengine",
+      status: .notApplicable,
+      notes: "CloudKit SyncEngine test `generatedColumns`. Instant sync is InstantDB optimistic outbox + websocket, not CloudKit. Domain analogues live in Instant sharing/outbox suites; this CloudKit plumbing does not map 1:1."
+    ),
+    sqlite(
+      id: "sqlite.inv.fetchrecordzonechangestests-saveextrafieldstosyncmetadata",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/CloudKitTests/FetchRecordZoneChangesTests.swift",
+      sourceTestName: "saveExtraFieldsToSyncMetadata",
+      swiftFile: "",
+      swiftTestName: "",
+      surface: "cloudkit-syncengine",
+      status: .notApplicable,
+      notes: "CloudKit SyncEngine test `saveExtraFieldsToSyncMetadata`. Instant sync is InstantDB optimistic outbox + websocket, not CloudKit. Domain analogues live in Instant sharing/outbox suites; this CloudKit plumbing does not map 1:1."
+    ),
+    sqlite(
+      id: "sqlite.inv.fetchrecordzonechangestests-remotechangeparentrelationship",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/CloudKitTests/FetchRecordZoneChangesTests.swift",
+      sourceTestName: "remoteChangeParentRelationship",
+      swiftFile: "",
+      swiftTestName: "",
+      surface: "cloudkit-syncengine",
+      status: .notApplicable,
+      notes: "CloudKit SyncEngine test `remoteChangeParentRelationship`. Instant sync is InstantDB optimistic outbox + websocket, not CloudKit. Domain analogues live in Instant sharing/outbox suites; this CloudKit plumbing does not map 1:1."
+    ),
+    sqlite(
+      id: "sqlite.inv.fetchrecordzonechangestests-editrecordreceivedfromcloudkit",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/CloudKitTests/FetchRecordZoneChangesTests.swift",
+      sourceTestName: "editRecordReceivedFromCloudKit",
+      swiftFile: "",
+      swiftTestName: "",
+      surface: "cloudkit-syncengine",
+      status: .notApplicable,
+      notes: "CloudKit SyncEngine test `editRecordReceivedFromCloudKit`. Instant sync is InstantDB optimistic outbox + websocket, not CloudKit. Domain analogues live in Instant sharing/outbox suites; this CloudKit plumbing does not map 1:1."
+    ),
+    sqlite(
+      id: "sqlite.inv.fetchrecordzonechangestests-receivenewrecordfromcloudkit-childbeforeparent",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/CloudKitTests/FetchRecordZoneChangesTests.swift",
+      sourceTestName: "receiveNewRecordFromCloudKit_ChildBeforeParent",
+      swiftFile: "",
+      swiftTestName: "",
+      surface: "cloudkit-syncengine",
+      status: .notApplicable,
+      notes: "CloudKit SyncEngine test `receiveNewRecordFromCloudKit_ChildBeforeParent`. Instant sync is InstantDB optimistic outbox + websocket, not CloudKit. Domain analogues live in Instant sharing/outbox suites; this CloudKit plumbing does not map 1:1."
+    ),
+    sqlite(
+      id: "sqlite.inv.fetchrecordzonechangestests-deletemultiplerecords",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/CloudKitTests/FetchRecordZoneChangesTests.swift",
+      sourceTestName: "deleteMultipleRecords",
+      swiftFile: "",
+      swiftTestName: "",
+      surface: "cloudkit-syncengine",
+      status: .notApplicable,
+      notes: "CloudKit SyncEngine test `deleteMultipleRecords`. Instant sync is InstantDB optimistic outbox + websocket, not CloudKit. Domain analogues live in Instant sharing/outbox suites; this CloudKit plumbing does not map 1:1."
+    ),
+    sqlite(
+      id: "sqlite.inv.fetchrecordzonechangestests-receiverecord-singlefieldprimarykey",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/CloudKitTests/FetchRecordZoneChangesTests.swift",
+      sourceTestName: "receiveRecord_SingleFieldPrimaryKey",
+      swiftFile: "",
+      swiftTestName: "",
+      surface: "cloudkit-syncengine",
+      status: .notApplicable,
+      notes: "CloudKit SyncEngine test `receiveRecord_SingleFieldPrimaryKey`. Instant sync is InstantDB optimistic outbox + websocket, not CloudKit. Domain analogues live in Instant sharing/outbox suites; this CloudKit plumbing does not map 1:1."
+    ),
+    sqlite(
+      id: "sqlite.inv.fetchrecordzonechangestests-renameprimarykey",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/CloudKitTests/FetchRecordZoneChangesTests.swift",
+      sourceTestName: "renamePrimaryKey",
+      swiftFile: "",
+      swiftTestName: "",
+      surface: "cloudkit-syncengine",
+      status: .notApplicable,
+      notes: "CloudKit SyncEngine test `renamePrimaryKey`. Instant sync is InstantDB optimistic outbox + websocket, not CloudKit. Domain analogues live in Instant sharing/outbox suites; this CloudKit plumbing does not map 1:1."
+    ),
+    sqlite(
+      id: "sqlite.inv.fetchrecordzonechangestests-createtaglocallythencreatesametagremotely",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/CloudKitTests/FetchRecordZoneChangesTests.swift",
+      sourceTestName: "createTagLocallyThenCreateSameTagRemotely",
+      swiftFile: "",
+      swiftTestName: "",
+      surface: "cloudkit-syncengine",
+      status: .notApplicable,
+      notes: "CloudKit SyncEngine test `createTagLocallyThenCreateSameTagRemotely`. Instant sync is InstantDB optimistic outbox + websocket, not CloudKit. Domain analogues live in Instant sharing/outbox suites; this CloudKit plumbing does not map 1:1."
+    ),
+    sqlite(
+      id: "sqlite.inv.fetchrecordzonechangestests-createtagremotelythencreatesametaglocally",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/CloudKitTests/FetchRecordZoneChangesTests.swift",
+      sourceTestName: "createTagRemotelyThenCreateSameTagLocally",
+      swiftFile: "",
+      swiftTestName: "",
+      surface: "cloudkit-syncengine",
+      status: .notApplicable,
+      notes: "CloudKit SyncEngine test `createTagRemotelyThenCreateSameTagLocally`. Instant sync is InstantDB optimistic outbox + websocket, not CloudKit. Domain analogues live in Instant sharing/outbox suites; this CloudKit plumbing does not map 1:1."
+    ),
+    sqlite(
+      id: "sqlite.inv.fetchrecordzonechangestests-invalidrecordname",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/CloudKitTests/FetchRecordZoneChangesTests.swift",
+      sourceTestName: "invalidRecordName",
+      swiftFile: "",
+      swiftTestName: "",
+      surface: "cloudkit-syncengine",
+      status: .notApplicable,
+      notes: "CloudKit SyncEngine test `invalidRecordName`. Instant sync is InstantDB optimistic outbox + websocket, not CloudKit. Domain analogues live in Instant sharing/outbox suites; this CloudKit plumbing does not map 1:1."
+    ),
+    sqlite(
+      id: "sqlite.inv.fetchrecordzonechangestests-syncinvalidrecordid",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/CloudKitTests/FetchRecordZoneChangesTests.swift",
+      sourceTestName: "syncInvalidRecordID",
+      swiftFile: "",
+      swiftTestName: "",
+      surface: "cloudkit-syncengine",
+      status: .notApplicable,
+      notes: "CloudKit SyncEngine test `syncInvalidRecordID`. Instant sync is InstantDB optimistic outbox + websocket, not CloudKit. Domain analogues live in Instant sharing/outbox suites; this CloudKit plumbing does not map 1:1."
+    ),
+    sqlite(
+      id: "sqlite.inv.fetcheddatabasechangestests-deletesyncenginezone",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/CloudKitTests/FetchedDatabaseChangesTests.swift",
+      sourceTestName: "deleteSyncEngineZone",
+      swiftFile: "",
+      swiftTestName: "",
+      surface: "cloudkit-syncengine",
+      status: .notApplicable,
+      notes: "CloudKit SyncEngine test `deleteSyncEngineZone`. Instant sync is InstantDB optimistic outbox + websocket, not CloudKit. Domain analogues live in Instant sharing/outbox suites; this CloudKit plumbing does not map 1:1."
+    ),
+    sqlite(
+      id: "sqlite.inv.fetcheddatabasechangestests-deletesyncenginezone-encrypteddatareset",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/CloudKitTests/FetchedDatabaseChangesTests.swift",
+      sourceTestName: "deleteSyncEngineZone_EncryptedDataReset",
+      swiftFile: "",
+      swiftTestName: "",
+      surface: "cloudkit-syncengine",
+      status: .notApplicable,
+      notes: "CloudKit SyncEngine test `deleteSyncEngineZone_EncryptedDataReset`. Instant sync is InstantDB optimistic outbox + websocket, not CloudKit. Domain analogues live in Instant sharing/outbox suites; this CloudKit plumbing does not map 1:1."
+    ),
+    sqlite(
+      id: "sqlite.inv.foreignkeyconstrainttests-receivechildbeforeparent",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/CloudKitTests/ForeignKeyConstraintTests.swift",
+      sourceTestName: "receiveChildBeforeParent",
+      swiftFile: "",
+      swiftTestName: "",
+      surface: "cloudkit-syncengine",
+      status: .notApplicable,
+      notes: "CloudKit SyncEngine test `receiveChildBeforeParent`. Instant sync is InstantDB optimistic outbox + websocket, not CloudKit. Domain analogues live in Instant sharing/outbox suites; this CloudKit plumbing does not map 1:1."
+    ),
+    sqlite(
+      id: "sqlite.inv.foreignkeyconstrainttests-remotecreatesrecordabc-localreceivesac-remotedeletesbc",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/CloudKitTests/ForeignKeyConstraintTests.swift",
+      sourceTestName: "remoteCreatesRecordABC_localReceivesAC_remoteDeletesBC",
+      swiftFile: "",
+      swiftTestName: "",
+      surface: "cloudkit-syncengine",
+      status: .notApplicable,
+      notes: "CloudKit SyncEngine test `remoteCreatesRecordABC_localReceivesAC_remoteDeletesBC`. Instant sync is InstantDB optimistic outbox + websocket, not CloudKit. Domain analogues live in Instant sharing/outbox suites; this CloudKit plumbing does not map 1:1."
+    ),
+    sqlite(
+      id: "sqlite.inv.foreignkeyconstrainttests-receivechildrecordbeforeparent-receivechildandparentrecord",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/CloudKitTests/ForeignKeyConstraintTests.swift",
+      sourceTestName: "receiveChildRecordBeforeParent_ReceiveChildAndParentRecord",
+      swiftFile: "",
+      swiftTestName: "",
+      surface: "cloudkit-syncengine",
+      status: .notApplicable,
+      notes: "CloudKit SyncEngine test `receiveChildRecordBeforeParent_ReceiveChildAndParentRecord`. Instant sync is InstantDB optimistic outbox + websocket, not CloudKit. Domain analogues live in Instant sharing/outbox suites; this CloudKit plumbing does not map 1:1."
+    ),
+    sqlite(
+      id: "sqlite.inv.foreignkeyconstrainttests-receivechild-relaunch-receiveparent",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/CloudKitTests/ForeignKeyConstraintTests.swift",
+      sourceTestName: "receiveChild_Relaunch_ReceiveParent",
+      swiftFile: "",
+      swiftTestName: "",
+      surface: "cloudkit-syncengine",
+      status: .notApplicable,
+      notes: "CloudKit SyncEngine test `receiveChild_Relaunch_ReceiveParent`. Instant sync is InstantDB optimistic outbox + websocket, not CloudKit. Domain analogues live in Instant sharing/outbox suites; this CloudKit plumbing does not map 1:1."
+    ),
+    sqlite(
+      id: "sqlite.inv.foreignkeyconstrainttests-changeparentrelationshiptounknownrecord",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/CloudKitTests/ForeignKeyConstraintTests.swift",
+      sourceTestName: "changeParentRelationshipToUnknownRecord",
+      swiftFile: "",
+      swiftTestName: "",
+      surface: "cloudkit-syncengine",
+      status: .notApplicable,
+      notes: "CloudKit SyncEngine test `changeParentRelationshipToUnknownRecord`. Instant sync is InstantDB optimistic outbox + websocket, not CloudKit. Domain analogues live in Instant sharing/outbox suites; this CloudKit plumbing does not map 1:1."
+    ),
+    sqlite(
+      id: "sqlite.inv.foreignkeyconstrainttests-changeparentrelationship-remotelythenlocally",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/CloudKitTests/ForeignKeyConstraintTests.swift",
+      sourceTestName: "changeParentRelationship_RemotelyThenLocally",
+      swiftFile: "",
+      swiftTestName: "",
+      surface: "cloudkit-syncengine",
+      status: .notApplicable,
+      notes: "CloudKit SyncEngine test `changeParentRelationship_RemotelyThenLocally`. Instant sync is InstantDB optimistic outbox + websocket, not CloudKit. Domain analogues live in Instant sharing/outbox suites; this CloudKit plumbing does not map 1:1."
+    ),
+    sqlite(
+      id: "sqlite.inv.foreignkeyconstrainttests-changeparentrelationship-remotefirstedited-localsecondedited-sendbatch-receivecloudkit",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/CloudKitTests/ForeignKeyConstraintTests.swift",
+      sourceTestName: "changeParentRelationship_RemoteFirstEdited_LocalSecondEdited_SendBatch_ReceiveCloudKit",
+      swiftFile: "",
+      swiftTestName: "",
+      surface: "cloudkit-syncengine",
+      status: .notApplicable,
+      notes: "CloudKit SyncEngine test `changeParentRelationship_RemoteFirstEdited_LocalSecondEdited_SendBatch_ReceiveCloudKit`. Instant sync is InstantDB optimistic outbox + websocket, not CloudKit. Domain analogues live in Instant sharing/outbox suites; this CloudKit plumbing does not map 1:1."
+    ),
+    sqlite(
+      id: "sqlite.inv.foreignkeyconstrainttests-cascadingdeletes",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/CloudKitTests/ForeignKeyConstraintTests.swift",
+      sourceTestName: "cascadingDeletes",
+      swiftFile: "",
+      swiftTestName: "",
+      surface: "cloudkit-syncengine",
+      status: .notApplicable,
+      notes: "CloudKit SyncEngine test `cascadingDeletes`. Instant sync is InstantDB optimistic outbox + websocket, not CloudKit. Domain analogues live in Instant sharing/outbox suites; this CloudKit plumbing does not map 1:1."
+    ),
+    sqlite(
+      id: "sqlite.inv.foreignkeyconstrainttests-insertforeignkeyconstraintfailure",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/CloudKitTests/ForeignKeyConstraintTests.swift",
+      sourceTestName: "insertForeignKeyConstraintFailure",
+      swiftFile: "",
+      swiftTestName: "",
+      surface: "cloudkit-syncengine",
+      status: .notApplicable,
+      notes: "CloudKit SyncEngine test `insertForeignKeyConstraintFailure`. Instant sync is InstantDB optimistic outbox + websocket, not CloudKit. Domain analogues live in Instant sharing/outbox suites; this CloudKit plumbing does not map 1:1."
+    ),
+    sqlite(
+      id: "sqlite.inv.foreignkeyconstrainttests-batchassociations",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/CloudKitTests/ForeignKeyConstraintTests.swift",
+      sourceTestName: "batchAssociations",
+      swiftFile: "",
+      swiftTestName: "",
+      surface: "cloudkit-syncengine",
+      status: .notApplicable,
+      notes: "CloudKit SyncEngine test `batchAssociations`. Instant sync is InstantDB optimistic outbox + websocket, not CloudKit. Domain analogues live in Instant sharing/outbox suites; this CloudKit plumbing does not map 1:1."
+    ),
+    sqlite(
+      id: "sqlite.inv.mergeconflicttests-merge-clientrecordupdatedbeforeserverrecord",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/CloudKitTests/MergeConflictTests.swift",
+      sourceTestName: "merge_clientRecordUpdatedBeforeServerRecord",
+      swiftFile: "",
+      swiftTestName: "",
+      surface: "cloudkit-syncengine",
+      status: .notApplicable,
+      notes: "CloudKit SyncEngine test `merge_clientRecordUpdatedBeforeServerRecord`. Instant sync is InstantDB optimistic outbox + websocket, not CloudKit. Domain analogues live in Instant sharing/outbox suites; this CloudKit plumbing does not map 1:1."
+    ),
+    sqlite(
+      id: "sqlite.inv.mergeconflicttests-serverrecordupdatedbeforeclientrecord",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/CloudKitTests/MergeConflictTests.swift",
+      sourceTestName: "serverRecordUpdatedBeforeClientRecord",
+      swiftFile: "",
+      swiftTestName: "",
+      surface: "cloudkit-syncengine",
+      status: .notApplicable,
+      notes: "CloudKit SyncEngine test `serverRecordUpdatedBeforeClientRecord`. Instant sync is InstantDB optimistic outbox + websocket, not CloudKit. Domain analogues live in Instant sharing/outbox suites; this CloudKit plumbing does not map 1:1."
+    ),
+    sqlite(
+      id: "sqlite.inv.mergeconflicttests-serverandclienteditdifferentfields",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/CloudKitTests/MergeConflictTests.swift",
+      sourceTestName: "serverAndClientEditDifferentFields",
+      swiftFile: "",
+      swiftTestName: "",
+      surface: "cloudkit-syncengine",
+      status: .notApplicable,
+      notes: "CloudKit SyncEngine test `serverAndClientEditDifferentFields`. Instant sync is InstantDB optimistic outbox + websocket, not CloudKit. Domain analogues live in Instant sharing/outbox suites; this CloudKit plumbing does not map 1:1."
+    ),
+    sqlite(
+      id: "sqlite.inv.mergeconflicttests-serverrecordeditedafterclientbutprocessedbeforeclient",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/CloudKitTests/MergeConflictTests.swift",
+      sourceTestName: "serverRecordEditedAfterClientButProcessedBeforeClient",
+      swiftFile: "",
+      swiftTestName: "",
+      surface: "cloudkit-syncengine",
+      status: .notApplicable,
+      notes: "CloudKit SyncEngine test `serverRecordEditedAfterClientButProcessedBeforeClient`. Instant sync is InstantDB optimistic outbox + websocket, not CloudKit. Domain analogues live in Instant sharing/outbox suites; this CloudKit plumbing does not map 1:1."
+    ),
+    sqlite(
+      id: "sqlite.inv.mergeconflicttests-serverrecordeditedandprocessedbeforeclient",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/CloudKitTests/MergeConflictTests.swift",
+      sourceTestName: "serverRecordEditedAndProcessedBeforeClient",
+      swiftFile: "",
+      swiftTestName: "",
+      surface: "cloudkit-syncengine",
+      status: .notApplicable,
+      notes: "CloudKit SyncEngine test `serverRecordEditedAndProcessedBeforeClient`. Instant sync is InstantDB optimistic outbox + websocket, not CloudKit. Domain analogues live in Instant sharing/outbox suites; this CloudKit plumbing does not map 1:1."
+    ),
+    sqlite(
+      id: "sqlite.inv.mergeconflicttests-serverrecordeditedbeforeclientbutprocessedafterclient",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/CloudKitTests/MergeConflictTests.swift",
+      sourceTestName: "serverRecordEditedBeforeClientButProcessedAfterClient",
+      swiftFile: "",
+      swiftTestName: "",
+      surface: "cloudkit-syncengine",
+      status: .notApplicable,
+      notes: "CloudKit SyncEngine test `serverRecordEditedBeforeClientButProcessedAfterClient`. Instant sync is InstantDB optimistic outbox + websocket, not CloudKit. Domain analogues live in Instant sharing/outbox suites; this CloudKit plumbing does not map 1:1."
+    ),
+    sqlite(
+      id: "sqlite.inv.mergeconflicttests-mergewithnullablefields",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/CloudKitTests/MergeConflictTests.swift",
+      sourceTestName: "mergeWithNullableFields",
+      swiftFile: "",
+      swiftTestName: "",
+      surface: "cloudkit-syncengine",
+      status: .notApplicable,
+      notes: "CloudKit SyncEngine test `mergeWithNullableFields`. Instant sync is InstantDB optimistic outbox + websocket, not CloudKit. Domain analogues live in Instant sharing/outbox suites; this CloudKit plumbing does not map 1:1."
+    ),
+    sqlite(
+      id: "sqlite.inv.metadatatests-parentrecordnameupdatesaftermovingremindertodifferentlist",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/CloudKitTests/MetadataTests.swift",
+      sourceTestName: "parentRecordNameUpdatesAfterMovingReminderToDifferentList",
+      swiftFile: "",
+      swiftTestName: "",
+      surface: "cloudkit-syncengine",
+      status: .notApplicable,
+      notes: "CloudKit SyncEngine test `parentRecordNameUpdatesAfterMovingReminderToDifferentList`. Instant sync is InstantDB optimistic outbox + websocket, not CloudKit. Domain analogues live in Instant sharing/outbox suites; this CloudKit plumbing does not map 1:1."
+    ),
+    sqlite(
+      id: "sqlite.inv.metadatatests-noparentrecordforrecordswithmultipleforeignkeys",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/CloudKitTests/MetadataTests.swift",
+      sourceTestName: "noParentRecordForRecordsWithMultipleForeignKeys",
+      swiftFile: "",
+      swiftTestName: "",
+      surface: "cloudkit-syncengine",
+      status: .notApplicable,
+      notes: "CloudKit SyncEngine test `noParentRecordForRecordsWithMultipleForeignKeys`. Instant sync is InstantDB optimistic outbox + websocket, not CloudKit. Domain analogues live in Instant sharing/outbox suites; this CloudKit plumbing does not map 1:1."
+    ),
+    sqlite(
+      id: "sqlite.inv.metadatatests-metadatafields",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/CloudKitTests/MetadataTests.swift",
+      sourceTestName: "metadataFields",
+      swiftFile: "",
+      swiftTestName: "",
+      surface: "cloudkit-syncengine",
+      status: .notApplicable,
+      notes: "CloudKit SyncEngine test `metadataFields`. Instant sync is InstantDB optimistic outbox + websocket, not CloudKit. Domain analogues live in Instant sharing/outbox suites; this CloudKit plumbing does not map 1:1."
+    ),
+    sqlite(
+      id: "sqlite.inv.metadatatests-hasmetadatahelper",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/CloudKitTests/MetadataTests.swift",
+      sourceTestName: "hasMetadataHelper",
+      swiftFile: "",
+      swiftTestName: "",
+      surface: "cloudkit-syncengine",
+      status: .notApplicable,
+      notes: "CloudKit SyncEngine test `hasMetadataHelper`. Instant sync is InstantDB optimistic outbox + websocket, not CloudKit. Domain analogues live in Instant sharing/outbox suites; this CloudKit plumbing does not map 1:1."
+    ),
+    sqlite(
+      id: "sqlite.inv.metadatatests-observation",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/CloudKitTests/MetadataTests.swift",
+      sourceTestName: "observation",
+      swiftFile: "",
+      swiftTestName: "",
+      surface: "cloudkit-syncengine",
+      status: .notApplicable,
+      notes: "CloudKit SyncEngine test `observation`. Instant sync is InstantDB optimistic outbox + websocket, not CloudKit. Domain analogues live in Instant sharing/outbox suites; this CloudKit plumbing does not map 1:1."
+    ),
+    sqlite(
+      id: "sqlite.inv.metadatatests-observation-generatedcolumn",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/CloudKitTests/MetadataTests.swift",
+      sourceTestName: "observation_GeneratedColumn",
+      swiftFile: "",
+      swiftTestName: "",
+      surface: "cloudkit-syncengine",
+      status: .notApplicable,
+      notes: "CloudKit SyncEngine test `observation_GeneratedColumn`. Instant sync is InstantDB optimistic outbox + websocket, not CloudKit. Domain analogues live in Instant sharing/outbox suites; this CloudKit plumbing does not map 1:1."
+    ),
+    sqlite(
+      id: "sqlite.inv.mockclouddatabasetests-fetchrecordinunknownzone",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/CloudKitTests/MockCloudDatabaseTests.swift",
+      sourceTestName: "fetchRecordInUnknownZone",
+      swiftFile: "",
+      swiftTestName: "",
+      surface: "cloudkit-syncengine",
+      status: .notApplicable,
+      notes: "CloudKit SyncEngine test `fetchRecordInUnknownZone`. Instant sync is InstantDB optimistic outbox + websocket, not CloudKit. Domain analogues live in Instant sharing/outbox suites; this CloudKit plumbing does not map 1:1."
+    ),
+    sqlite(
+      id: "sqlite.inv.mockclouddatabasetests-fetchunknownrecord",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/CloudKitTests/MockCloudDatabaseTests.swift",
+      sourceTestName: "fetchUnknownRecord",
+      swiftFile: "",
+      swiftTestName: "",
+      surface: "cloudkit-syncengine",
+      status: .notApplicable,
+      notes: "CloudKit SyncEngine test `fetchUnknownRecord`. Instant sync is InstantDB optimistic outbox + websocket, not CloudKit. Domain analogues live in Instant sharing/outbox suites; this CloudKit plumbing does not map 1:1."
+    ),
+    sqlite(
+      id: "sqlite.inv.mockclouddatabasetests-assetsusetemporarydirectory",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/CloudKitTests/MockCloudDatabaseTests.swift",
+      sourceTestName: "assetsUseTemporaryDirectory",
+      swiftFile: "",
+      swiftTestName: "",
+      surface: "cloudkit-syncengine",
+      status: .notApplicable,
+      notes: "CloudKit SyncEngine test `assetsUseTemporaryDirectory`. Instant sync is InstantDB optimistic outbox + websocket, not CloudKit. Domain analogues live in Instant sharing/outbox suites; this CloudKit plumbing does not map 1:1."
+    ),
+    sqlite(
+      id: "sqlite.inv.mockclouddatabasetests-savetransaction-childbeforeparent",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/CloudKitTests/MockCloudDatabaseTests.swift",
+      sourceTestName: "saveTransaction_ChildBeforeParent",
+      swiftFile: "",
+      swiftTestName: "",
+      surface: "cloudkit-syncengine",
+      status: .notApplicable,
+      notes: "CloudKit SyncEngine test `saveTransaction_ChildBeforeParent`. Instant sync is InstantDB optimistic outbox + websocket, not CloudKit. Domain analogues live in Instant sharing/outbox suites; this CloudKit plumbing does not map 1:1."
+    ),
+    sqlite(
+      id: "sqlite.inv.mockclouddatabasetests-savetransaction-childnoparent",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/CloudKitTests/MockCloudDatabaseTests.swift",
+      sourceTestName: "saveTransaction_ChildNoParent",
+      swiftFile: "",
+      swiftTestName: "",
+      surface: "cloudkit-syncengine",
+      status: .notApplicable,
+      notes: "CloudKit SyncEngine test `saveTransaction_ChildNoParent`. Instant sync is InstantDB optimistic outbox + websocket, not CloudKit. Domain analogues live in Instant sharing/outbox suites; this CloudKit plumbing does not map 1:1."
+    ),
+    sqlite(
+      id: "sqlite.inv.mockclouddatabasetests-saveinunknownzone",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/CloudKitTests/MockCloudDatabaseTests.swift",
+      sourceTestName: "saveInUnknownZone",
+      swiftFile: "",
+      swiftTestName: "",
+      surface: "cloudkit-syncengine",
+      status: .notApplicable,
+      notes: "CloudKit SyncEngine test `saveInUnknownZone`. Instant sync is InstantDB optimistic outbox + websocket, not CloudKit. Domain analogues live in Instant sharing/outbox suites; this CloudKit plumbing does not map 1:1."
+    ),
+    sqlite(
+      id: "sqlite.inv.mockclouddatabasetests-deletetransaction-parentbeforechild",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/CloudKitTests/MockCloudDatabaseTests.swift",
+      sourceTestName: "deleteTransaction_ParentBeforeChild",
+      swiftFile: "",
+      swiftTestName: "",
+      surface: "cloudkit-syncengine",
+      status: .notApplicable,
+      notes: "CloudKit SyncEngine test `deleteTransaction_ParentBeforeChild`. Instant sync is InstantDB optimistic outbox + websocket, not CloudKit. Domain analogues live in Instant sharing/outbox suites; this CloudKit plumbing does not map 1:1."
+    ),
+    sqlite(
+      id: "sqlite.inv.mockclouddatabasetests-deleteunknownrecord",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/CloudKitTests/MockCloudDatabaseTests.swift",
+      sourceTestName: "deleteUnknownRecord",
+      swiftFile: "",
+      swiftTestName: "",
+      surface: "cloudkit-syncengine",
+      status: .notApplicable,
+      notes: "CloudKit SyncEngine test `deleteUnknownRecord`. Instant sync is InstantDB optimistic outbox + websocket, not CloudKit. Domain analogues live in Instant sharing/outbox suites; this CloudKit plumbing does not map 1:1."
+    ),
+    sqlite(
+      id: "sqlite.inv.mockclouddatabasetests-deleterecordinunknownzone",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/CloudKitTests/MockCloudDatabaseTests.swift",
+      sourceTestName: "deleteRecordInUnknownZone",
+      swiftFile: "",
+      swiftTestName: "",
+      surface: "cloudkit-syncengine",
+      status: .notApplicable,
+      notes: "CloudKit SyncEngine test `deleteRecordInUnknownZone`. Instant sync is InstantDB optimistic outbox + websocket, not CloudKit. Domain analogues live in Instant sharing/outbox suites; this CloudKit plumbing does not map 1:1."
+    ),
+    sqlite(
+      id: "sqlite.inv.mockclouddatabasetests-deletetransaction-deleteparentbutnotchild",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/CloudKitTests/MockCloudDatabaseTests.swift",
+      sourceTestName: "deleteTransaction_DeleteParentButNotChild",
+      swiftFile: "",
+      swiftTestName: "",
+      surface: "cloudkit-syncengine",
+      status: .notApplicable,
+      notes: "CloudKit SyncEngine test `deleteTransaction_DeleteParentButNotChild`. Instant sync is InstantDB optimistic outbox + websocket, not CloudKit. Domain analogues live in Instant sharing/outbox suites; this CloudKit plumbing does not map 1:1."
+    ),
+    sqlite(
+      id: "sqlite.inv.mockclouddatabasetests-deleteunknownzone",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/CloudKitTests/MockCloudDatabaseTests.swift",
+      sourceTestName: "deleteUnknownZone",
+      swiftFile: "",
+      swiftTestName: "",
+      surface: "cloudkit-syncengine",
+      status: .notApplicable,
+      notes: "CloudKit SyncEngine test `deleteUnknownZone`. Instant sync is InstantDB optimistic outbox + websocket, not CloudKit. Domain analogues live in Instant sharing/outbox suites; this CloudKit plumbing does not map 1:1."
+    ),
+    sqlite(
+      id: "sqlite.inv.mockclouddatabasetests-accounttemporarilyavailable",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/CloudKitTests/MockCloudDatabaseTests.swift",
+      sourceTestName: "accountTemporarilyAvailable",
+      swiftFile: "",
+      swiftTestName: "",
+      surface: "cloudkit-syncengine",
+      status: .notApplicable,
+      notes: "CloudKit SyncEngine test `accountTemporarilyAvailable`. Instant sync is InstantDB optimistic outbox + websocket, not CloudKit. Domain analogues live in Instant sharing/outbox suites; this CloudKit plumbing does not map 1:1."
+    ),
+    sqlite(
+      id: "sqlite.inv.mockclouddatabasetests-noaccount",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/CloudKitTests/MockCloudDatabaseTests.swift",
+      sourceTestName: "noAccount",
+      swiftFile: "",
+      swiftTestName: "",
+      surface: "cloudkit-syncengine",
+      status: .notApplicable,
+      notes: "CloudKit SyncEngine test `noAccount`. Instant sync is InstantDB optimistic outbox + websocket, not CloudKit. Domain analogues live in Instant sharing/outbox suites; this CloudKit plumbing does not map 1:1."
+    ),
+    sqlite(
+      id: "sqlite.inv.mockclouddatabasetests-accountnotdetermined",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/CloudKitTests/MockCloudDatabaseTests.swift",
+      sourceTestName: "accountNotDetermined",
+      swiftFile: "",
+      swiftTestName: "",
+      surface: "cloudkit-syncengine",
+      status: .notApplicable,
+      notes: "CloudKit SyncEngine test `accountNotDetermined`. Instant sync is InstantDB optimistic outbox + websocket, not CloudKit. Domain analogues live in Instant sharing/outbox suites; this CloudKit plumbing does not map 1:1."
+    ),
+    sqlite(
+      id: "sqlite.inv.mockclouddatabasetests-restrictedaccount",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/CloudKitTests/MockCloudDatabaseTests.swift",
+      sourceTestName: "restrictedAccount",
+      swiftFile: "",
+      swiftTestName: "",
+      surface: "cloudkit-syncengine",
+      status: .notApplicable,
+      notes: "CloudKit SyncEngine test `restrictedAccount`. Instant sync is InstantDB optimistic outbox + websocket, not CloudKit. Domain analogues live in Instant sharing/outbox suites; this CloudKit plumbing does not map 1:1."
+    ),
+    sqlite(
+      id: "sqlite.inv.mockclouddatabasetests-savesharewithoutrootrecord",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/CloudKitTests/MockCloudDatabaseTests.swift",
+      sourceTestName: "saveShareWithoutRootRecord",
+      swiftFile: "",
+      swiftTestName: "",
+      surface: "cloudkit-syncengine",
+      status: .notApplicable,
+      notes: "CloudKit SyncEngine test `saveShareWithoutRootRecord`. Instant sync is InstantDB optimistic outbox + websocket, not CloudKit. Domain analogues live in Instant sharing/outbox suites; this CloudKit plumbing does not map 1:1."
+    ),
+    sqlite(
+      id: "sqlite.inv.mockclouddatabasetests-saveshareandrootthensavesharealone",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/CloudKitTests/MockCloudDatabaseTests.swift",
+      sourceTestName: "saveShareAndRootThenSaveShareAlone",
+      swiftFile: "",
+      swiftTestName: "",
+      surface: "cloudkit-syncengine",
+      status: .notApplicable,
+      notes: "CloudKit SyncEngine test `saveShareAndRootThenSaveShareAlone`. Instant sync is InstantDB optimistic outbox + websocket, not CloudKit. Domain analogues live in Instant sharing/outbox suites; this CloudKit plumbing does not map 1:1."
+    ),
+    sqlite(
+      id: "sqlite.inv.mockclouddatabasetests-saverecordthatwaspreviouslydeleted",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/CloudKitTests/MockCloudDatabaseTests.swift",
+      sourceTestName: "saveRecordThatWasPreviouslyDeleted",
+      swiftFile: "",
+      swiftTestName: "",
+      surface: "cloudkit-syncengine",
+      status: .notApplicable,
+      notes: "CloudKit SyncEngine test `saveRecordThatWasPreviouslyDeleted`. Instant sync is InstantDB optimistic outbox + websocket, not CloudKit. Domain analogues live in Instant sharing/outbox suites; this CloudKit plumbing does not map 1:1."
+    ),
+    sqlite(
+      id: "sqlite.inv.mockclouddatabasetests-savesharedrecordwithoutparent",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/CloudKitTests/MockCloudDatabaseTests.swift",
+      sourceTestName: "saveSharedRecordWithoutParent",
+      swiftFile: "",
+      swiftTestName: "",
+      surface: "cloudkit-syncengine",
+      status: .notApplicable,
+      notes: "CloudKit SyncEngine test `saveSharedRecordWithoutParent`. Instant sync is InstantDB optimistic outbox + websocket, not CloudKit. Domain analogues live in Instant sharing/outbox suites; this CloudKit plumbing does not map 1:1."
+    ),
+    sqlite(
+      id: "sqlite.inv.mockclouddatabasetests-deletingshareownedbycurrentuserdeletesshareanddoesnotdeleteassociateddata",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/CloudKitTests/MockCloudDatabaseTests.swift",
+      sourceTestName: "deletingShareOwnedByCurrentUserDeletesShareAndDoesNotDeleteAssociatedData",
+      swiftFile: "",
+      swiftTestName: "",
+      surface: "cloudkit-syncengine",
+      status: .notApplicable,
+      notes: "CloudKit SyncEngine test `deletingShareOwnedByCurrentUserDeletesShareAndDoesNotDeleteAssociatedData`. Instant sync is InstantDB optimistic outbox + websocket, not CloudKit. Domain analogues live in Instant sharing/outbox suites; this CloudKit plumbing does not map 1:1."
+    ),
+    sqlite(
+      id: "sqlite.inv.mockclouddatabasetests-deletingsharenotownedbycurrentuserdeletesonlyshareandnotassociatedrecords",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/CloudKitTests/MockCloudDatabaseTests.swift",
+      sourceTestName: "deletingShareNotOwnedByCurrentUserDeletesOnlyShareAndNotAssociatedRecords",
+      swiftFile: "",
+      swiftTestName: "",
+      surface: "cloudkit-syncengine",
+      status: .notApplicable,
+      notes: "CloudKit SyncEngine test `deletingShareNotOwnedByCurrentUserDeletesOnlyShareAndNotAssociatedRecords`. Instant sync is InstantDB optimistic outbox + websocket, not CloudKit. Domain analogues live in Instant sharing/outbox suites; this CloudKit plumbing does not map 1:1."
+    ),
+    sqlite(
+      id: "sqlite.inv.mockclouddatabasetests-batchrequestfailed",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/CloudKitTests/MockCloudDatabaseTests.swift",
+      sourceTestName: "batchRequestFailed",
+      swiftFile: "",
+      swiftTestName: "",
+      surface: "cloudkit-syncengine",
+      status: .notApplicable,
+      notes: "CloudKit SyncEngine test `batchRequestFailed`. Instant sync is InstantDB optimistic outbox + websocket, not CloudKit. Domain analogues live in Instant sharing/outbox suites; this CloudKit plumbing does not map 1:1."
+    ),
+    sqlite(
+      id: "sqlite.inv.mockclouddatabasetests-limitexceeded-modifyrecords",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/CloudKitTests/MockCloudDatabaseTests.swift",
+      sourceTestName: "limitExceeded_modifyRecords",
+      swiftFile: "",
+      swiftTestName: "",
+      surface: "cloudkit-syncengine",
+      status: .notApplicable,
+      notes: "CloudKit SyncEngine test `limitExceeded_modifyRecords`. Instant sync is InstantDB optimistic outbox + websocket, not CloudKit. Domain analogues live in Instant sharing/outbox suites; this CloudKit plumbing does not map 1:1."
+    ),
+    sqlite(
+      id: "sqlite.inv.mockclouddatabasetests-records-limitexceeded",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/CloudKitTests/MockCloudDatabaseTests.swift",
+      sourceTestName: "records_limitExceeded",
+      swiftFile: "",
+      swiftTestName: "",
+      surface: "cloudkit-syncengine",
+      status: .notApplicable,
+      notes: "CloudKit SyncEngine test `records_limitExceeded`. Instant sync is InstantDB optimistic outbox + websocket, not CloudKit. Domain analogues live in Instant sharing/outbox suites; this CloudKit plumbing does not map 1:1."
+    ),
+    sqlite(
+      id: "sqlite.inv.newtablesynctests-initialsync",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/CloudKitTests/NewTableSyncTests.swift",
+      sourceTestName: "initialSync",
+      swiftFile: "",
+      swiftTestName: "",
+      surface: "cloudkit-syncengine",
+      status: .notApplicable,
+      notes: "CloudKit SyncEngine test `initialSync`. Instant sync is InstantDB optimistic outbox + websocket, not CloudKit. Domain analogues live in Instant sharing/outbox suites; this CloudKit plumbing does not map 1:1."
+    ),
+    sqlite(
+      id: "sqlite.inv.nextrecordzonechangebatchtests-nometadataforrecord",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/CloudKitTests/NextRecordZoneChangeBatchTests.swift",
+      sourceTestName: "noMetadataForRecord",
+      swiftFile: "",
+      swiftTestName: "",
+      surface: "cloudkit-syncengine",
+      status: .notApplicable,
+      notes: "CloudKit SyncEngine test `noMetadataForRecord`. Instant sync is InstantDB optimistic outbox + websocket, not CloudKit. Domain analogues live in Instant sharing/outbox suites; this CloudKit plumbing does not map 1:1."
+    ),
+    sqlite(
+      id: "sqlite.inv.nextrecordzonechangebatchtests-nonexistenttable",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/CloudKitTests/NextRecordZoneChangeBatchTests.swift",
+      sourceTestName: "nonExistentTable",
+      swiftFile: "",
+      swiftTestName: "",
+      surface: "cloudkit-syncengine",
+      status: .notApplicable,
+      notes: "CloudKit SyncEngine test `nonExistentTable`. Instant sync is InstantDB optimistic outbox + websocket, not CloudKit. Domain analogues live in Instant sharing/outbox suites; this CloudKit plumbing does not map 1:1."
+    ),
+    sqlite(
+      id: "sqlite.inv.nextrecordzonechangebatchtests-cloudkitsendsnonexistenttable",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/CloudKitTests/NextRecordZoneChangeBatchTests.swift",
+      sourceTestName: "cloudKitSendsNonExistentTable",
+      swiftFile: "",
+      swiftTestName: "",
+      surface: "cloudkit-syncengine",
+      status: .notApplicable,
+      notes: "CloudKit SyncEngine test `cloudKitSendsNonExistentTable`. Instant sync is InstantDB optimistic outbox + websocket, not CloudKit. Domain analogues live in Instant sharing/outbox suites; this CloudKit plumbing does not map 1:1."
+    ),
+    sqlite(
+      id: "sqlite.inv.nextrecordzonechangebatchtests-metadatarowwithnocorrespondingrecordrow",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/CloudKitTests/NextRecordZoneChangeBatchTests.swift",
+      sourceTestName: "metadataRowWithNoCorrespondingRecordRow",
+      swiftFile: "",
+      swiftTestName: "",
+      surface: "cloudkit-syncengine",
+      status: .notApplicable,
+      notes: "CloudKit SyncEngine test `metadataRowWithNoCorrespondingRecordRow`. Instant sync is InstantDB optimistic outbox + websocket, not CloudKit. Domain analogues live in Instant sharing/outbox suites; this CloudKit plumbing does not map 1:1."
+    ),
+    sqlite(
+      id: "sqlite.inv.nextrecordzonechangebatchtests-saverecord",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/CloudKitTests/NextRecordZoneChangeBatchTests.swift",
+      sourceTestName: "saveRecord",
+      swiftFile: "",
+      swiftTestName: "",
+      surface: "cloudkit-syncengine",
+      status: .notApplicable,
+      notes: "CloudKit SyncEngine test `saveRecord`. Instant sync is InstantDB optimistic outbox + websocket, not CloudKit. Domain analogues live in Instant sharing/outbox suites; this CloudKit plumbing does not map 1:1."
+    ),
+    sqlite(
+      id: "sqlite.inv.nextrecordzonechangebatchtests-saverecordwithparent",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/CloudKitTests/NextRecordZoneChangeBatchTests.swift",
+      sourceTestName: "saveRecordWithParent",
+      swiftFile: "",
+      swiftTestName: "",
+      surface: "cloudkit-syncengine",
+      status: .notApplicable,
+      notes: "CloudKit SyncEngine test `saveRecordWithParent`. Instant sync is InstantDB optimistic outbox + websocket, not CloudKit. Domain analogues live in Instant sharing/outbox suites; this CloudKit plumbing does not map 1:1."
+    ),
+    sqlite(
+      id: "sqlite.inv.nextrecordzonechangebatchtests-saveprivaterecord",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/CloudKitTests/NextRecordZoneChangeBatchTests.swift",
+      sourceTestName: "savePrivateRecord",
+      swiftFile: "",
+      swiftTestName: "",
+      surface: "cloudkit-syncengine",
+      status: .notApplicable,
+      notes: "CloudKit SyncEngine test `savePrivateRecord`. Instant sync is InstantDB optimistic outbox + websocket, not CloudKit. Domain analogues live in Instant sharing/outbox suites; this CloudKit plumbing does not map 1:1."
+    ),
+    sqlite(
+      id: "sqlite.inv.nextrecordzonechangebatchtests-editbetweenbatchandsentrecordzonechanges",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/CloudKitTests/NextRecordZoneChangeBatchTests.swift",
+      sourceTestName: "editBetweenBatchAndSentRecordZoneChanges",
+      swiftFile: "",
+      swiftTestName: "",
+      surface: "cloudkit-syncengine",
+      status: .notApplicable,
+      notes: "CloudKit SyncEngine test `editBetweenBatchAndSentRecordZoneChanges`. Instant sync is InstantDB optimistic outbox + websocket, not CloudKit. Domain analogues live in Instant sharing/outbox suites; this CloudKit plumbing does not map 1:1."
+    ),
+    sqlite(
+      id: "sqlite.inv.previewtests-autosyncchangesinpreviews",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/CloudKitTests/PreviewTests.swift",
+      sourceTestName: "autoSyncChangesInPreviews",
+      swiftFile: "",
+      swiftTestName: "",
+      surface: "cloudkit-syncengine",
+      status: .notApplicable,
+      notes: "CloudKit SyncEngine test `autoSyncChangesInPreviews`. Instant sync is InstantDB optimistic outbox + websocket, not CloudKit. Domain analogues live in Instant sharing/outbox suites; this CloudKit plumbing does not map 1:1."
+    ),
+    sqlite(
+      id: "sqlite.inv.previewtests-delete",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/CloudKitTests/PreviewTests.swift",
+      sourceTestName: "delete",
+      swiftFile: "",
+      swiftTestName: "",
+      surface: "cloudkit-syncengine",
+      status: .notApplicable,
+      notes: "CloudKit SyncEngine test `delete`. Instant sync is InstantDB optimistic outbox + websocket, not CloudKit. Domain analogues live in Instant sharing/outbox suites; this CloudKit plumbing does not map 1:1."
+    ),
+    sqlite(
+      id: "sqlite.inv.recordtypetests-setup",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/CloudKitTests/RecordTypeTests.swift",
+      sourceTestName: "setUp",
+      swiftFile: "",
+      swiftTestName: "",
+      surface: "cloudkit-syncengine",
+      status: .notApplicable,
+      notes: "CloudKit SyncEngine test `setUp`. Instant sync is InstantDB optimistic outbox + websocket, not CloudKit. Domain analogues live in Instant sharing/outbox suites; this CloudKit plumbing does not map 1:1."
+    ),
+    sqlite(
+      id: "sqlite.inv.recordtypetests-teardownerasesmetadata",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/CloudKitTests/RecordTypeTests.swift",
+      sourceTestName: "tearDownErasesMetadata",
+      swiftFile: "",
+      swiftTestName: "",
+      surface: "cloudkit-syncengine",
+      status: .notApplicable,
+      notes: "CloudKit SyncEngine test `tearDownErasesMetadata`. Instant sync is InstantDB optimistic outbox + websocket, not CloudKit. Domain analogues live in Instant sharing/outbox suites; this CloudKit plumbing does not map 1:1."
+    ),
+    sqlite(
+      id: "sqlite.inv.recordtypetests-resetup",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/CloudKitTests/RecordTypeTests.swift",
+      sourceTestName: "reSetUp",
+      swiftFile: "",
+      swiftTestName: "",
+      surface: "cloudkit-syncengine",
+      status: .notApplicable,
+      notes: "CloudKit SyncEngine test `reSetUp`. Instant sync is InstantDB optimistic outbox + websocket, not CloudKit. Domain analogues live in Instant sharing/outbox suites; this CloudKit plumbing does not map 1:1."
+    ),
+    sqlite(
+      id: "sqlite.inv.recordtypetests-migration",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/CloudKitTests/RecordTypeTests.swift",
+      sourceTestName: "migration",
+      swiftFile: "",
+      swiftTestName: "",
+      surface: "cloudkit-syncengine",
+      status: .notApplicable,
+      notes: "CloudKit SyncEngine test `migration`. Instant sync is InstantDB optimistic outbox + websocket, not CloudKit. Domain analogues live in Instant sharing/outbox suites; this CloudKit plumbing does not map 1:1."
+    ),
+    sqlite(
+      id: "sqlite.inv.recordtypetests-migrationaddtableforgettoaddtosyncengine",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/CloudKitTests/RecordTypeTests.swift",
+      sourceTestName: "migrationAddTableForgetToAddToSyncEngine",
+      swiftFile: "",
+      swiftTestName: "",
+      surface: "cloudkit-syncengine",
+      status: .notApplicable,
+      notes: "CloudKit SyncEngine test `migrationAddTableForgetToAddToSyncEngine`. Instant sync is InstantDB optimistic outbox + websocket, not CloudKit. Domain analogues live in Instant sharing/outbox suites; this CloudKit plumbing does not map 1:1."
+    ),
+    sqlite(
+      id: "sqlite.inv.referenceviolationtests-moveremindertolist-remotedeleteslist",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/CloudKitTests/ReferenceViolationTests.swift",
+      sourceTestName: "moveReminderToList_RemoteDeletesList",
+      swiftFile: "",
+      swiftTestName: "",
+      surface: "cloudkit-syncengine",
+      status: .notApplicable,
+      notes: "CloudKit SyncEngine test `moveReminderToList_RemoteDeletesList`. Instant sync is InstantDB optimistic outbox + websocket, not CloudKit. Domain analogues live in Instant sharing/outbox suites; this CloudKit plumbing does not map 1:1."
+    ),
+    sqlite(
+      id: "sqlite.inv.referenceviolationtests-deletelist-remoteaddsremindertolist",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/CloudKitTests/ReferenceViolationTests.swift",
+      sourceTestName: "deleteList_RemoteAddsReminderToList",
+      swiftFile: "",
+      swiftTestName: "",
+      surface: "cloudkit-syncengine",
+      status: .notApplicable,
+      notes: "CloudKit SyncEngine test `deleteList_RemoteAddsReminderToList`. Instant sync is InstantDB optimistic outbox + websocket, not CloudKit. Domain analogues live in Instant sharing/outbox suites; this CloudKit plumbing does not map 1:1."
+    ),
+    sqlite(
+      id: "sqlite.inv.referenceviolationtests-deletelist-remoteaddsremindertolist-variation",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/CloudKitTests/ReferenceViolationTests.swift",
+      sourceTestName: "deleteList_RemoteAddsReminderToList_Variation",
+      swiftFile: "",
+      swiftTestName: "",
+      surface: "cloudkit-syncengine",
+      status: .notApplicable,
+      notes: "CloudKit SyncEngine test `deleteList_RemoteAddsReminderToList_Variation`. Instant sync is InstantDB optimistic outbox + websocket, not CloudKit. Domain analogues live in Instant sharing/outbox suites; this CloudKit plumbing does not map 1:1."
+    ),
+    sqlite(
+      id: "sqlite.inv.referenceviolationtests-movechildtoparent-remotedeletesparent-cascadesetnull",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/CloudKitTests/ReferenceViolationTests.swift",
+      sourceTestName: "moveChildToParent_RemoteDeletesParent_CascadeSetNull",
+      swiftFile: "",
+      swiftTestName: "",
+      surface: "cloudkit-syncengine",
+      status: .notApplicable,
+      notes: "CloudKit SyncEngine test `moveChildToParent_RemoteDeletesParent_CascadeSetNull`. Instant sync is InstantDB optimistic outbox + websocket, not CloudKit. Domain analogues live in Instant sharing/outbox suites; this CloudKit plumbing does not map 1:1."
+    ),
+    sqlite(
+      id: "sqlite.inv.referenceviolationtests-movechildtoparent-remotedeletesparent-cascadesetdefault",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/CloudKitTests/ReferenceViolationTests.swift",
+      sourceTestName: "moveChildToParent_RemoteDeletesParent_CascadeSetDefault",
+      swiftFile: "",
+      swiftTestName: "",
+      surface: "cloudkit-syncengine",
+      status: .notApplicable,
+      notes: "CloudKit SyncEngine test `moveChildToParent_RemoteDeletesParent_CascadeSetDefault`. Instant sync is InstantDB optimistic outbox + websocket, not CloudKit. Domain analogues live in Instant sharing/outbox suites; this CloudKit plumbing does not map 1:1."
+    ),
+    sqlite(
+      id: "sqlite.inv.schemachangetests-addcolumntoremindersandreminderslists",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/CloudKitTests/SchemaChangeTests.swift",
+      sourceTestName: "addColumnToRemindersAndRemindersLists",
+      swiftFile: "",
+      swiftTestName: "",
+      surface: "cloudkit-syncengine",
+      status: .notApplicable,
+      notes: "CloudKit SyncEngine test `addColumnToRemindersAndRemindersLists`. Instant sync is InstantDB optimistic outbox + websocket, not CloudKit. Domain analogues live in Instant sharing/outbox suites; this CloudKit plumbing does not map 1:1."
+    ),
+    sqlite(
+      id: "sqlite.inv.schemachangetests-oldschemaupdatesnewschemarecord",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/CloudKitTests/SchemaChangeTests.swift",
+      sourceTestName: "oldSchemaUpdatesNewSchemaRecord",
+      swiftFile: "",
+      swiftTestName: "",
+      surface: "cloudkit-syncengine",
+      status: .notApplicable,
+      notes: "CloudKit SyncEngine test `oldSchemaUpdatesNewSchemaRecord`. Instant sync is InstantDB optimistic outbox + websocket, not CloudKit. Domain analogues live in Instant sharing/outbox suites; this CloudKit plumbing does not map 1:1."
+    ),
+    sqlite(
+      id: "sqlite.inv.schemachangetests-addcolumn-oldrecordssynctonewschema",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/CloudKitTests/SchemaChangeTests.swift",
+      sourceTestName: "addColumn_OldRecordsSyncToNewSchema",
+      swiftFile: "",
+      swiftTestName: "",
+      surface: "cloudkit-syncengine",
+      status: .notApplicable,
+      notes: "CloudKit SyncEngine test `addColumn_OldRecordsSyncToNewSchema`. Instant sync is InstantDB optimistic outbox + websocket, not CloudKit. Domain analogues live in Instant sharing/outbox suites; this CloudKit plumbing does not map 1:1."
+    ),
+    sqlite(
+      id: "sqlite.inv.schemachangetests-addnullablecolumn-oldrecordssynctonewschema",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/CloudKitTests/SchemaChangeTests.swift",
+      sourceTestName: "addNullableColumn_OldRecordsSyncToNewSchema",
+      swiftFile: "",
+      swiftTestName: "",
+      surface: "cloudkit-syncengine",
+      status: .notApplicable,
+      notes: "CloudKit SyncEngine test `addNullableColumn_OldRecordsSyncToNewSchema`. Instant sync is InstantDB optimistic outbox + websocket, not CloudKit. Domain analogues live in Instant sharing/outbox suites; this CloudKit plumbing does not map 1:1."
+    ),
+    sqlite(
+      id: "sqlite.inv.schemachangetests-addnullablecolumn-olddevicesyncsmissingcolor",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/CloudKitTests/SchemaChangeTests.swift",
+      sourceTestName: "addNullableColumn_OldDeviceSyncsMissingColor",
+      swiftFile: "",
+      swiftTestName: "",
+      surface: "cloudkit-syncengine",
+      status: .notApplicable,
+      notes: "CloudKit SyncEngine test `addNullableColumn_OldDeviceSyncsMissingColor`. Instant sync is InstantDB optimistic outbox + websocket, not CloudKit. Domain analogues live in Instant sharing/outbox suites; this CloudKit plumbing does not map 1:1."
+    ),
+    sqlite(
+      id: "sqlite.inv.schemachangetests-addnullablecolumn-newdevicesyncsnullcolor",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/CloudKitTests/SchemaChangeTests.swift",
+      sourceTestName: "addNullableColumn_NewDeviceSyncsNullColor",
+      swiftFile: "",
+      swiftTestName: "",
+      surface: "cloudkit-syncengine",
+      status: .notApplicable,
+      notes: "CloudKit SyncEngine test `addNullableColumn_NewDeviceSyncsNullColor`. Instant sync is InstantDB optimistic outbox + websocket, not CloudKit. Domain analogues live in Instant sharing/outbox suites; this CloudKit plumbing does not map 1:1."
+    ),
+    sqlite(
+      id: "sqlite.inv.schemachangetests-newschemaupdatesoldschemarecord",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/CloudKitTests/SchemaChangeTests.swift",
+      sourceTestName: "newSchemaUpdatesOldSchemaRecord",
+      swiftFile: "",
+      swiftTestName: "",
+      surface: "cloudkit-syncengine",
+      status: .notApplicable,
+      notes: "CloudKit SyncEngine test `newSchemaUpdatesOldSchemaRecord`. Instant sync is InstantDB optimistic outbox + websocket, not CloudKit. Domain analogues live in Instant sharing/outbox suites; this CloudKit plumbing does not map 1:1."
+    ),
+    sqlite(
+      id: "sqlite.inv.schemachangetests-runwithnewschema-oldschemasavesrecord-newschemaupdatesrecord",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/CloudKitTests/SchemaChangeTests.swift",
+      sourceTestName: "runWithNewSchema_oldSchemaSavesRecord_NewSchemaUpdatesRecord",
+      swiftFile: "",
+      swiftTestName: "",
+      surface: "cloudkit-syncengine",
+      status: .notApplicable,
+      notes: "CloudKit SyncEngine test `runWithNewSchema_oldSchemaSavesRecord_NewSchemaUpdatesRecord`. Instant sync is InstantDB optimistic outbox + websocket, not CloudKit. Domain analogues live in Instant sharing/outbox suites; this CloudKit plumbing does not map 1:1."
+    ),
+    sqlite(
+      id: "sqlite.inv.schemachangetests-addassettoreminderslist",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/CloudKitTests/SchemaChangeTests.swift",
+      sourceTestName: "addAssetToRemindersList",
+      swiftFile: "",
+      swiftTestName: "",
+      surface: "cloudkit-syncengine",
+      status: .notApplicable,
+      notes: "CloudKit SyncEngine test `addAssetToRemindersList`. Instant sync is InstantDB optimistic outbox + websocket, not CloudKit. Domain analogues live in Instant sharing/outbox suites; this CloudKit plumbing does not map 1:1."
+    ),
+    sqlite(
+      id: "sqlite.inv.schemachangetests-addassettoreminderslist-redownload",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/CloudKitTests/SchemaChangeTests.swift",
+      sourceTestName: "addAssetToRemindersList_Redownload",
+      swiftFile: "",
+      swiftTestName: "",
+      surface: "cloudkit-syncengine",
+      status: .notApplicable,
+      notes: "CloudKit SyncEngine test `addAssetToRemindersList_Redownload`. Instant sync is InstantDB optimistic outbox + websocket, not CloudKit. Domain analogues live in Instant sharing/outbox suites; this CloudKit plumbing does not map 1:1."
+    ),
+    sqlite(
+      id: "sqlite.inv.schemachangetests-newtable",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/CloudKitTests/SchemaChangeTests.swift",
+      sourceTestName: "newTable",
+      swiftFile: "",
+      swiftTestName: "",
+      surface: "cloudkit-syncengine",
+      status: .notApplicable,
+      notes: "CloudKit SyncEngine test `newTable`. Instant sync is InstantDB optimistic outbox + websocket, not CloudKit. Domain analogues live in Instant sharing/outbox suites; this CloudKit plumbing does not map 1:1."
+    ),
+    sqlite(
+      id: "sqlite.inv.schemachangetests-outsiderecord",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/CloudKitTests/SchemaChangeTests.swift",
+      sourceTestName: "outsideRecord",
+      swiftFile: "",
+      swiftTestName: "",
+      surface: "cloudkit-syncengine",
+      status: .notApplicable,
+      notes: "CloudKit SyncEngine test `outsideRecord`. Instant sync is InstantDB optimistic outbox + websocket, not CloudKit. Domain analogues live in Instant sharing/outbox suites; this CloudKit plumbing does not map 1:1."
+    ),
+    sqlite(
+      id: "sqlite.inv.schemachangetests-outsiderecordwithcolon",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/CloudKitTests/SchemaChangeTests.swift",
+      sourceTestName: "outsideRecordWithColon",
+      swiftFile: "",
+      swiftTestName: "",
+      surface: "cloudkit-syncengine",
+      status: .notApplicable,
+      notes: "CloudKit SyncEngine test `outsideRecordWithColon`. Instant sync is InstantDB optimistic outbox + websocket, not CloudKit. Domain analogues live in Instant sharing/outbox suites; this CloudKit plumbing does not map 1:1."
+    ),
+    sqlite(
+      id: "sqlite.inv.scopedtablesynctests-outgoingsavelookupincludesscopedoutrow",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/CloudKitTests/ScopedTableSyncTests.swift",
+      sourceTestName: "outgoingSaveLookupIncludesScopedOutRow",
+      swiftFile: "",
+      swiftTestName: "",
+      surface: "cloudkit-syncengine",
+      status: .notApplicable,
+      notes: "CloudKit SyncEngine test `outgoingSaveLookupIncludesScopedOutRow`. Instant sync is InstantDB optimistic outbox + websocket, not CloudKit. Domain analogues live in Instant sharing/outbox suites; this CloudKit plumbing does not map 1:1."
+    ),
+    sqlite(
+      id: "sqlite.inv.scopedtablesynctests-zonedeletionremovesscopedoutrow",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/CloudKitTests/ScopedTableSyncTests.swift",
+      sourceTestName: "zoneDeletionRemovesScopedOutRow",
+      swiftFile: "",
+      swiftTestName: "",
+      surface: "cloudkit-syncengine",
+      status: .notApplicable,
+      notes: "CloudKit SyncEngine test `zoneDeletionRemovesScopedOutRow`. Instant sync is InstantDB optimistic outbox + websocket, not CloudKit. Domain analogues live in Instant sharing/outbox suites; this CloudKit plumbing does not map 1:1."
+    ),
+    sqlite(
+      id: "sqlite.inv.scopedtablesynctests-encrypteddataresetreuploadsscopedoutrow",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/CloudKitTests/ScopedTableSyncTests.swift",
+      sourceTestName: "encryptedDataResetReuploadsScopedOutRow",
+      swiftFile: "",
+      swiftTestName: "",
+      surface: "cloudkit-syncengine",
+      status: .notApplicable,
+      notes: "CloudKit SyncEngine test `encryptedDataResetReuploadsScopedOutRow`. Instant sync is InstantDB optimistic outbox + websocket, not CloudKit. Domain analogues live in Instant sharing/outbox suites; this CloudKit plumbing does not map 1:1."
+    ),
+    sqlite(
+      id: "sqlite.inv.scopedtablesynctests-serverdeleteremovesscopedoutrow",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/CloudKitTests/ScopedTableSyncTests.swift",
+      sourceTestName: "serverDeleteRemovesScopedOutRow",
+      swiftFile: "",
+      swiftTestName: "",
+      surface: "cloudkit-syncengine",
+      status: .notApplicable,
+      notes: "CloudKit SyncEngine test `serverDeleteRemovesScopedOutRow`. Instant sync is InstantDB optimistic outbox + websocket, not CloudKit. Domain analogues live in Instant sharing/outbox suites; this CloudKit plumbing does not map 1:1."
+    ),
+    sqlite(
+      id: "sqlite.inv.scopedtablesynctests-servermodificationmergesscopedoutrow",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/CloudKitTests/ScopedTableSyncTests.swift",
+      sourceTestName: "serverModificationMergesScopedOutRow",
+      swiftFile: "",
+      swiftTestName: "",
+      surface: "cloudkit-syncengine",
+      status: .notApplicable,
+      notes: "CloudKit SyncEngine test `serverModificationMergesScopedOutRow`. Instant sync is InstantDB optimistic outbox + websocket, not CloudKit. Domain analogues live in Instant sharing/outbox suites; this CloudKit plumbing does not map 1:1."
+    ),
+    sqlite(
+      id: "sqlite.inv.sharingpermissionstests-insertrecordinreadonlyreminderslist",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/CloudKitTests/SharingPermissionsTests.swift",
+      sourceTestName: "insertRecordInReadOnlyRemindersList",
+      swiftFile: "",
+      swiftTestName: "",
+      surface: "cloudkit-syncengine",
+      status: .notApplicable,
+      notes: "CloudKit SyncEngine test `insertRecordInReadOnlyRemindersList`. Instant sync is InstantDB optimistic outbox + websocket, not CloudKit. Domain analogues live in Instant sharing/outbox suites; this CloudKit plumbing does not map 1:1."
+    ),
+    sqlite(
+      id: "sqlite.inv.sharingpermissionstests-deletereminderinreadonlyreminderslist",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/CloudKitTests/SharingPermissionsTests.swift",
+      sourceTestName: "deleteReminderInReadOnlyRemindersList",
+      swiftFile: "",
+      swiftTestName: "",
+      surface: "cloudkit-syncengine",
+      status: .notApplicable,
+      notes: "CloudKit SyncEngine test `deleteReminderInReadOnlyRemindersList`. Instant sync is InstantDB optimistic outbox + websocket, not CloudKit. Domain analogues live in Instant sharing/outbox suites; this CloudKit plumbing does not map 1:1."
+    ),
+    sqlite(
+      id: "sqlite.inv.sharingpermissionstests-editreminderinreadonlyreminderslist",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/CloudKitTests/SharingPermissionsTests.swift",
+      sourceTestName: "editReminderInReadOnlyRemindersList",
+      swiftFile: "",
+      swiftTestName: "",
+      surface: "cloudkit-syncengine",
+      status: .notApplicable,
+      notes: "CloudKit SyncEngine test `editReminderInReadOnlyRemindersList`. Instant sync is InstantDB optimistic outbox + websocket, not CloudKit. Domain analogues live in Instant sharing/outbox suites; this CloudKit plumbing does not map 1:1."
+    ),
+    sqlite(
+      id: "sqlite.inv.sharingpermissionstests-createrecordwhenlocalhaspermissionsbutcloudkitdoesnot",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/CloudKitTests/SharingPermissionsTests.swift",
+      sourceTestName: "createRecordWhenLocalHasPermissionsButCloudKitDoesNot",
+      swiftFile: "",
+      swiftTestName: "",
+      surface: "cloudkit-syncengine",
+      status: .notApplicable,
+      notes: "CloudKit SyncEngine test `createRecordWhenLocalHasPermissionsButCloudKitDoesNot`. Instant sync is InstantDB optimistic outbox + websocket, not CloudKit. Domain analogues live in Instant sharing/outbox suites; this CloudKit plumbing does not map 1:1."
+    ),
+    sqlite(
+      id: "sqlite.inv.sharingpermissionstests-editrecordwhenlocalhaspermissionsbutcloudkitdoesnot",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/CloudKitTests/SharingPermissionsTests.swift",
+      sourceTestName: "editRecordWhenLocalHasPermissionsButCloudKitDoesNot",
+      swiftFile: "",
+      swiftTestName: "",
+      surface: "cloudkit-syncengine",
+      status: .notApplicable,
+      notes: "CloudKit SyncEngine test `editRecordWhenLocalHasPermissionsButCloudKitDoesNot`. Instant sync is InstantDB optimistic outbox + websocket, not CloudKit. Domain analogues live in Instant sharing/outbox suites; this CloudKit plumbing does not map 1:1."
+    ),
+    sqlite(
+      id: "sqlite.inv.sharingtests-sharenonrootrecord",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/CloudKitTests/SharingTests.swift",
+      sourceTestName: "shareNonRootRecord",
+      swiftFile: "",
+      swiftTestName: "",
+      surface: "cloudkit-syncengine",
+      status: .notApplicable,
+      notes: "CloudKit SyncEngine test `shareNonRootRecord`. Instant sync is InstantDB optimistic outbox + websocket, not CloudKit. Domain analogues live in Instant sharing/outbox suites; this CloudKit plumbing does not map 1:1."
+    ),
+    sqlite(
+      id: "sqlite.inv.sharingtests-syncenginestopped",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/CloudKitTests/SharingTests.swift",
+      sourceTestName: "syncEngineStopped",
+      swiftFile: "",
+      swiftTestName: "",
+      surface: "cloudkit-syncengine",
+      status: .notApplicable,
+      notes: "CloudKit SyncEngine test `syncEngineStopped`. Instant sync is InstantDB optimistic outbox + websocket, not CloudKit. Domain analogues live in Instant sharing/outbox suites; this CloudKit plumbing does not map 1:1."
+    ),
+    sqlite(
+      id: "sqlite.inv.sharingtests-shareunrecognizedtable",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/CloudKitTests/SharingTests.swift",
+      sourceTestName: "shareUnrecognizedTable",
+      swiftFile: "",
+      swiftTestName: "",
+      surface: "cloudkit-syncengine",
+      status: .notApplicable,
+      notes: "CloudKit SyncEngine test `shareUnrecognizedTable`. Instant sync is InstantDB optimistic outbox + websocket, not CloudKit. Domain analogues live in Instant sharing/outbox suites; this CloudKit plumbing does not map 1:1."
+    ),
+    sqlite(
+      id: "sqlite.inv.sharingtests-shareprivatetable",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/CloudKitTests/SharingTests.swift",
+      sourceTestName: "sharePrivateTable",
+      swiftFile: "",
+      swiftTestName: "",
+      surface: "cloudkit-syncengine",
+      status: .notApplicable,
+      notes: "CloudKit SyncEngine test `sharePrivateTable`. Instant sync is InstantDB optimistic outbox + websocket, not CloudKit. Domain analogues live in Instant sharing/outbox suites; this CloudKit plumbing does not map 1:1."
+    ),
+    sqlite(
+      id: "sqlite.inv.sharingtests-privatetablenotshared",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/CloudKitTests/SharingTests.swift",
+      sourceTestName: "privateTableNotShared",
+      swiftFile: "",
+      swiftTestName: "",
+      surface: "cloudkit-syncengine",
+      status: .notApplicable,
+      notes: "CloudKit SyncEngine test `privateTableNotShared`. Instant sync is InstantDB optimistic outbox + websocket, not CloudKit. Domain analogues live in Instant sharing/outbox suites; this CloudKit plumbing does not map 1:1."
+    ),
+    sqlite(
+      id: "sqlite.inv.sharingtests-privatetablesstayinprivatedatabase",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/CloudKitTests/SharingTests.swift",
+      sourceTestName: "privateTablesStayInPrivateDatabase",
+      swiftFile: "",
+      swiftTestName: "",
+      surface: "cloudkit-syncengine",
+      status: .notApplicable,
+      notes: "CloudKit SyncEngine test `privateTablesStayInPrivateDatabase`. Instant sync is InstantDB optimistic outbox + websocket, not CloudKit. Domain analogues live in Instant sharing/outbox suites; this CloudKit plumbing does not map 1:1."
+    ),
+    sqlite(
+      id: "sqlite.inv.sharingtests-sharerecordbeforesync",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/CloudKitTests/SharingTests.swift",
+      sourceTestName: "shareRecordBeforeSync",
+      swiftFile: "",
+      swiftTestName: "",
+      surface: "cloudkit-syncengine",
+      status: .notApplicable,
+      notes: "CloudKit SyncEngine test `shareRecordBeforeSync`. Instant sync is InstantDB optimistic outbox + websocket, not CloudKit. Domain analogues live in Instant sharing/outbox suites; this CloudKit plumbing does not map 1:1."
+    ),
+    sqlite(
+      id: "sqlite.inv.sharingtests-createrecordinexternallysharedrecord",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/CloudKitTests/SharingTests.swift",
+      sourceTestName: "createRecordInExternallySharedRecord",
+      swiftFile: "",
+      swiftTestName: "",
+      surface: "cloudkit-syncengine",
+      status: .notApplicable,
+      notes: "CloudKit SyncEngine test `createRecordInExternallySharedRecord`. Instant sync is InstantDB optimistic outbox + websocket, not CloudKit. Domain analogues live in Instant sharing/outbox suites; this CloudKit plumbing does not map 1:1."
+    ),
+    sqlite(
+      id: "sqlite.inv.sharingtests-sharedeliveredbeforerecord",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/CloudKitTests/SharingTests.swift",
+      sourceTestName: "shareDeliveredBeforeRecord",
+      swiftFile: "",
+      swiftTestName: "",
+      surface: "cloudkit-syncengine",
+      status: .notApplicable,
+      notes: "CloudKit SyncEngine test `shareDeliveredBeforeRecord`. Instant sync is InstantDB optimistic outbox + websocket, not CloudKit. Domain analogues live in Instant sharing/outbox suites; this CloudKit plumbing does not map 1:1."
+    ),
+    sqlite(
+      id: "sqlite.inv.sharingtests-shareecreatesmultiplechildmodels",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/CloudKitTests/SharingTests.swift",
+      sourceTestName: "shareeCreatesMultipleChildModels",
+      swiftFile: "",
+      swiftTestName: "",
+      surface: "cloudkit-syncengine",
+      status: .notApplicable,
+      notes: "CloudKit SyncEngine test `shareeCreatesMultipleChildModels`. Instant sync is InstantDB optimistic outbox + websocket, not CloudKit. Domain analogues live in Instant sharing/outbox suites; this CloudKit plumbing does not map 1:1."
+    ),
+    sqlite(
+      id: "sqlite.inv.sharingtests-deleterecordinexternallysharedrecord",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/CloudKitTests/SharingTests.swift",
+      sourceTestName: "deleteRecordInExternallySharedRecord",
+      swiftFile: "",
+      swiftTestName: "",
+      surface: "cloudkit-syncengine",
+      status: .notApplicable,
+      notes: "CloudKit SyncEngine test `deleteRecordInExternallySharedRecord`. Instant sync is InstantDB optimistic outbox + websocket, not CloudKit. Domain analogues live in Instant sharing/outbox suites; this CloudKit plumbing does not map 1:1."
+    ),
+    sqlite(
+      id: "sqlite.inv.sharingtests-share",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/CloudKitTests/SharingTests.swift",
+      sourceTestName: "share",
+      swiftFile: "",
+      swiftTestName: "",
+      surface: "cloudkit-syncengine",
+      status: .notApplicable,
+      notes: "CloudKit SyncEngine test `share`. Instant sync is InstantDB optimistic outbox + websocket, not CloudKit. Domain analogues live in Instant sharing/outbox suites; this CloudKit plumbing does not map 1:1."
+    ),
+    sqlite(
+      id: "sqlite.inv.sharingtests-createparentthenchildthenshare",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/CloudKitTests/SharingTests.swift",
+      sourceTestName: "createParentThenChildThenShare",
+      swiftFile: "",
+      swiftTestName: "",
+      surface: "cloudkit-syncengine",
+      status: .notApplicable,
+      notes: "CloudKit SyncEngine test `createParentThenChildThenShare`. Instant sync is InstantDB optimistic outbox + websocket, not CloudKit. Domain analogues live in Instant sharing/outbox suites; this CloudKit plumbing does not map 1:1."
+    ),
+    sqlite(
+      id: "sqlite.inv.sharingtests-sharetwice",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/CloudKitTests/SharingTests.swift",
+      sourceTestName: "shareTwice",
+      swiftFile: "",
+      swiftTestName: "",
+      surface: "cloudkit-syncengine",
+      status: .notApplicable,
+      notes: "CloudKit SyncEngine test `shareTwice`. Instant sync is InstantDB optimistic outbox + websocket, not CloudKit. Domain analogues live in Instant sharing/outbox suites; this CloudKit plumbing does not map 1:1."
+    ),
+    sqlite(
+      id: "sqlite.inv.sharingtests-unsharenonsharedrecord",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/CloudKitTests/SharingTests.swift",
+      sourceTestName: "unshareNonSharedRecord",
+      swiftFile: "",
+      swiftTestName: "",
+      surface: "cloudkit-syncengine",
+      status: .notApplicable,
+      notes: "CloudKit SyncEngine test `unshareNonSharedRecord`. Instant sync is InstantDB optimistic outbox + websocket, not CloudKit. Domain analogues live in Instant sharing/outbox suites; this CloudKit plumbing does not map 1:1."
+    ),
+    sqlite(
+      id: "sqlite.inv.sharingtests-shareunshareshareagain",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/CloudKitTests/SharingTests.swift",
+      sourceTestName: "shareUnshareShareAgain",
+      swiftFile: "",
+      swiftTestName: "",
+      surface: "cloudkit-syncengine",
+      status: .notApplicable,
+      notes: "CloudKit SyncEngine test `shareUnshareShareAgain`. Instant sync is InstantDB optimistic outbox + websocket, not CloudKit. Domain analogues live in Instant sharing/outbox suites; this CloudKit plumbing does not map 1:1."
+    ),
+    sqlite(
+      id: "sqlite.inv.sharingtests-acceptshare",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/CloudKitTests/SharingTests.swift",
+      sourceTestName: "acceptShare",
+      swiftFile: "",
+      swiftTestName: "",
+      surface: "cloudkit-syncengine",
+      status: .notApplicable,
+      notes: "CloudKit SyncEngine test `acceptShare`. Instant sync is InstantDB optimistic outbox + websocket, not CloudKit. Domain analogues live in Instant sharing/outbox suites; this CloudKit plumbing does not map 1:1."
+    ),
+    sqlite(
+      id: "sqlite.inv.sharingtests-acceptsharecreatereminder",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/CloudKitTests/SharingTests.swift",
+      sourceTestName: "acceptShareCreateReminder",
+      swiftFile: "",
+      swiftTestName: "",
+      surface: "cloudkit-syncengine",
+      status: .notApplicable,
+      notes: "CloudKit SyncEngine test `acceptShareCreateReminder`. Instant sync is InstantDB optimistic outbox + websocket, not CloudKit. Domain analogues live in Instant sharing/outbox suites; this CloudKit plumbing does not map 1:1."
+    ),
+    sqlite(
+      id: "sqlite.inv.sharingtests-deleterootsharedrecord-currentuserownsrecord",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/CloudKitTests/SharingTests.swift",
+      sourceTestName: "deleteRootSharedRecord_CurrentUserOwnsRecord",
+      swiftFile: "",
+      swiftTestName: "",
+      surface: "cloudkit-syncengine",
+      status: .notApplicable,
+      notes: "CloudKit SyncEngine test `deleteRootSharedRecord_CurrentUserOwnsRecord`. Instant sync is InstantDB optimistic outbox + websocket, not CloudKit. Domain analogues live in Instant sharing/outbox suites; this CloudKit plumbing does not map 1:1."
+    ),
+    sqlite(
+      id: "sqlite.inv.sharingtests-deleterootsharedrecord-currentusernotowner",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/CloudKitTests/SharingTests.swift",
+      sourceTestName: "deleteRootSharedRecord_CurrentUserNotOwner",
+      swiftFile: "",
+      swiftTestName: "",
+      surface: "cloudkit-syncengine",
+      status: .notApplicable,
+      notes: "CloudKit SyncEngine test `deleteRootSharedRecord_CurrentUserNotOwner`. Instant sync is InstantDB optimistic outbox + websocket, not CloudKit. Domain analogues live in Instant sharing/outbox suites; this CloudKit plumbing does not map 1:1."
+    ),
+    sqlite(
+      id: "sqlite.inv.sharingtests-deleterootsharedrecord-currentusernotowner-donotcascade",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/CloudKitTests/SharingTests.swift",
+      sourceTestName: "deleteRootSharedRecord_CurrentUserNotOwner_DoNotCascade",
+      swiftFile: "",
+      swiftTestName: "",
+      surface: "cloudkit-syncengine",
+      status: .notApplicable,
+      notes: "CloudKit SyncEngine test `deleteRootSharedRecord_CurrentUserNotOwner_DoNotCascade`. Instant sync is InstantDB optimistic outbox + websocket, not CloudKit. Domain analogues live in Instant sharing/outbox suites; this CloudKit plumbing does not map 1:1."
+    ),
+    sqlite(
+      id: "sqlite.inv.sharingtests-syncdeletedrootsharedrecord-currentusernotowner",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/CloudKitTests/SharingTests.swift",
+      sourceTestName: "syncDeletedRootSharedRecord_CurrentUserNotOwner",
+      swiftFile: "",
+      swiftTestName: "",
+      surface: "cloudkit-syncengine",
+      status: .notApplicable,
+      notes: "CloudKit SyncEngine test `syncDeletedRootSharedRecord_CurrentUserNotOwner`. Instant sync is InstantDB optimistic outbox + websocket, not CloudKit. Domain analogues live in Instant sharing/outbox suites; this CloudKit plumbing does not map 1:1."
+    ),
+    sqlite(
+      id: "sqlite.inv.sharingtests-moveschildrecordfromprivateparenttosharedparent",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/CloudKitTests/SharingTests.swift",
+      sourceTestName: "movesChildRecordFromPrivateParentToSharedParent",
+      swiftFile: "",
+      swiftTestName: "",
+      surface: "cloudkit-syncengine",
+      status: .notApplicable,
+      notes: "CloudKit SyncEngine test `movesChildRecordFromPrivateParentToSharedParent`. Instant sync is InstantDB optimistic outbox + websocket, not CloudKit. Domain analogues live in Instant sharing/outbox suites; this CloudKit plumbing does not map 1:1."
+    ),
+    sqlite(
+      id: "sqlite.inv.sharingtests-moveschildrecordfromprivateparenttosharedparent-receivedeletebeforesave",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/CloudKitTests/SharingTests.swift",
+      sourceTestName: "movesChildRecordFromPrivateParentToSharedParent_ReceiveDeleteBeforeSave",
+      swiftFile: "",
+      swiftTestName: "",
+      surface: "cloudkit-syncengine",
+      status: .notApplicable,
+      notes: "CloudKit SyncEngine test `movesChildRecordFromPrivateParentToSharedParent_ReceiveDeleteBeforeSave`. Instant sync is InstantDB optimistic outbox + websocket, not CloudKit. Domain analogues live in Instant sharing/outbox suites; this CloudKit plumbing does not map 1:1."
+    ),
+    sqlite(
+      id: "sqlite.inv.sharingtests-moveschildrecordfromprivateparenttosharedparent-receivesavebeforedelete",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/CloudKitTests/SharingTests.swift",
+      sourceTestName: "movesChildRecordFromPrivateParentToSharedParent_ReceiveSaveBeforeDelete",
+      swiftFile: "",
+      swiftTestName: "",
+      surface: "cloudkit-syncengine",
+      status: .notApplicable,
+      notes: "CloudKit SyncEngine test `movesChildRecordFromPrivateParentToSharedParent_ReceiveSaveBeforeDelete`. Instant sync is InstantDB optimistic outbox + websocket, not CloudKit. Domain analogues live in Instant sharing/outbox suites; this CloudKit plumbing does not map 1:1."
+    ),
+    sqlite(
+      id: "sqlite.inv.sharingtests-moveschildrecordfromsharedparenttoprivateparent",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/CloudKitTests/SharingTests.swift",
+      sourceTestName: "movesChildRecordFromSharedParentToPrivateParent",
+      swiftFile: "",
+      swiftTestName: "",
+      surface: "cloudkit-syncengine",
+      status: .notApplicable,
+      notes: "CloudKit SyncEngine test `movesChildRecordFromSharedParentToPrivateParent`. Instant sync is InstantDB optimistic outbox + websocket, not CloudKit. Domain analogues live in Instant sharing/outbox suites; this CloudKit plumbing does not map 1:1."
+    ),
+    sqlite(
+      id: "sqlite.inv.sharingtests-moveschildrecordfromprivateparenttosharedparentwhilesyncenginestopped",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/CloudKitTests/SharingTests.swift",
+      sourceTestName: "movesChildRecordFromPrivateParentToSharedParentWhileSyncEngineStopped",
+      swiftFile: "",
+      swiftTestName: "",
+      surface: "cloudkit-syncengine",
+      status: .notApplicable,
+      notes: "CloudKit SyncEngine test `movesChildRecordFromPrivateParentToSharedParentWhileSyncEngineStopped`. Instant sync is InstantDB optimistic outbox + websocket, not CloudKit. Domain analogues live in Instant sharing/outbox suites; this CloudKit plumbing does not map 1:1."
+    ),
+    sqlite(
+      id: "sqlite.inv.sharingtests-deleteshare",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/CloudKitTests/SharingTests.swift",
+      sourceTestName: "deleteShare",
+      swiftFile: "",
+      swiftTestName: "",
+      surface: "cloudkit-syncengine",
+      status: .notApplicable,
+      notes: "CloudKit SyncEngine test `deleteShare`. Instant sync is InstantDB optimistic outbox + websocket, not CloudKit. Domain analogues live in Instant sharing/outbox suites; this CloudKit plumbing does not map 1:1."
+    ),
+    sqlite(
+      id: "sqlite.inv.syncenginedelegatetests-accountchanged",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/CloudKitTests/SyncEngineDelegateTests.swift",
+      sourceTestName: "accountChanged",
+      swiftFile: "",
+      swiftTestName: "",
+      surface: "cloudkit-syncengine",
+      status: .notApplicable,
+      notes: "CloudKit SyncEngine test `accountChanged`. Instant sync is InstantDB optimistic outbox + websocket, not CloudKit. Domain analogues live in Instant sharing/outbox suites; this CloudKit plumbing does not map 1:1."
+    ),
+    sqlite(
+      id: "sqlite.inv.syncenginedelegatetests-accountchanged-defaultimplementation",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/CloudKitTests/SyncEngineDelegateTests.swift",
+      sourceTestName: "accountChanged_DefaultImplementation",
+      swiftFile: "",
+      swiftTestName: "",
+      surface: "cloudkit-syncengine",
+      status: .notApplicable,
+      notes: "CloudKit SyncEngine test `accountChanged_DefaultImplementation`. Instant sync is InstantDB optimistic outbox + websocket, not CloudKit. Domain analogues live in Instant sharing/outbox suites; this CloudKit plumbing does not map 1:1."
+    ),
+    sqlite(
+      id: "sqlite.inv.syncenginelifecycletests-stopandrestart",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/CloudKitTests/SyncEngineLifecycleTests.swift",
+      sourceTestName: "stopAndReStart",
+      swiftFile: "",
+      swiftTestName: "",
+      surface: "cloudkit-syncengine",
+      status: .notApplicable,
+      notes: "CloudKit SyncEngine test `stopAndReStart`. Instant sync is InstantDB optimistic outbox + websocket, not CloudKit. Domain analogues live in Instant sharing/outbox suites; this CloudKit plumbing does not map 1:1."
+    ),
+    sqlite(
+      id: "sqlite.inv.syncenginelifecycletests-writestopdeletestart",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/CloudKitTests/SyncEngineLifecycleTests.swift",
+      sourceTestName: "writeStopDeleteStart",
+      swiftFile: "",
+      swiftTestName: "",
+      surface: "cloudkit-syncengine",
+      status: .notApplicable,
+      notes: "CloudKit SyncEngine test `writeStopDeleteStart`. Instant sync is InstantDB optimistic outbox + websocket, not CloudKit. Domain analogues live in Instant sharing/outbox suites; this CloudKit plumbing does not map 1:1."
+    ),
+    sqlite(
+      id: "sqlite.inv.syncenginelifecycletests-addreminderslist-stopsyncengine-edittitle-startsyncengine",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/CloudKitTests/SyncEngineLifecycleTests.swift",
+      sourceTestName: "addRemindersList_StopSyncEngine_EditTitle_StartSyncEngine",
+      swiftFile: "",
+      swiftTestName: "",
+      surface: "cloudkit-syncengine",
+      status: .notApplicable,
+      notes: "CloudKit SyncEngine test `addRemindersList_StopSyncEngine_EditTitle_StartSyncEngine`. Instant sync is InstantDB optimistic outbox + websocket, not CloudKit. Domain analogues live in Instant sharing/outbox suites; this CloudKit plumbing does not map 1:1."
+    ),
+    sqlite(
+      id: "sqlite.inv.syncenginelifecycletests-getsharedrecord-stopsyncengine-writetosharedrecord-startsyncing",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/CloudKitTests/SyncEngineLifecycleTests.swift",
+      sourceTestName: "getSharedRecord_StopSyncEngine_WriteToSharedRecord_StartSyncing",
+      swiftFile: "",
+      swiftTestName: "",
+      surface: "cloudkit-syncengine",
+      status: .notApplicable,
+      notes: "CloudKit SyncEngine test `getSharedRecord_StopSyncEngine_WriteToSharedRecord_StartSyncing`. Instant sync is InstantDB optimistic outbox + websocket, not CloudKit. Domain analogues live in Instant sharing/outbox suites; this CloudKit plumbing does not map 1:1."
+    ),
+    sqlite(
+      id: "sqlite.inv.syncenginelifecycletests-externalsharedrecord-stopsyncengine-deletesharedrecord-startsyncengine",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/CloudKitTests/SyncEngineLifecycleTests.swift",
+      sourceTestName: "externalSharedRecord_StopSyncEngine_DeleteSharedRecord_StartSyncEngine",
+      swiftFile: "",
+      swiftTestName: "",
+      surface: "cloudkit-syncengine",
+      status: .notApplicable,
+      notes: "CloudKit SyncEngine test `externalSharedRecord_StopSyncEngine_DeleteSharedRecord_StartSyncEngine`. Instant sync is InstantDB optimistic outbox + websocket, not CloudKit. Domain analogues live in Instant sharing/outbox suites; this CloudKit plumbing does not map 1:1."
+    ),
+    sqlite(
+      id: "sqlite.inv.syncenginelifecycletests-sharedrecord-stopsyncengine-deletesharedrecord-startsyncengine",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/CloudKitTests/SyncEngineLifecycleTests.swift",
+      sourceTestName: "sharedRecord_StopSyncEngine_DeleteSharedRecord_StartSyncEngine",
+      swiftFile: "",
+      swiftTestName: "",
+      surface: "cloudkit-syncengine",
+      status: .notApplicable,
+      notes: "CloudKit SyncEngine test `sharedRecord_StopSyncEngine_DeleteSharedRecord_StartSyncEngine`. Instant sync is InstantDB optimistic outbox + websocket, not CloudKit. Domain analogues live in Instant sharing/outbox suites; this CloudKit plumbing does not map 1:1."
+    ),
+    sqlite(
+      id: "sqlite.inv.syncenginelifecycletests-writeandthenstart",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/CloudKitTests/SyncEngineLifecycleTests.swift",
+      sourceTestName: "writeAndThenStart",
+      swiftFile: "",
+      swiftTestName: "",
+      surface: "cloudkit-syncengine",
+      status: .notApplicable,
+      notes: "CloudKit SyncEngine test `writeAndThenStart`. Instant sync is InstantDB optimistic outbox + websocket, not CloudKit. Domain analogues live in Instant sharing/outbox suites; this CloudKit plumbing does not map 1:1."
+    ),
+    sqlite(
+      id: "sqlite.inv.syncenginetests-inmemory",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/CloudKitTests/SyncEngineTests.swift",
+      sourceTestName: "inMemory",
+      swiftFile: "",
+      swiftTestName: "",
+      surface: "cloudkit-syncengine",
+      status: .notApplicable,
+      notes: "CloudKit SyncEngine test `inMemory`. Instant sync is InstantDB optimistic outbox + websocket, not CloudKit. Domain analogues live in Instant sharing/outbox suites; this CloudKit plumbing does not map 1:1."
+    ),
+    sqlite(
+      id: "sqlite.inv.syncenginetests-inmemoryuserdatabase",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/CloudKitTests/SyncEngineTests.swift",
+      sourceTestName: "inMemoryUserDatabase",
+      swiftFile: "",
+      swiftTestName: "",
+      surface: "cloudkit-syncengine",
+      status: .notApplicable,
+      notes: "CloudKit SyncEngine test `inMemoryUserDatabase`. Instant sync is InstantDB optimistic outbox + websocket, not CloudKit. Domain analogues live in Instant sharing/outbox suites; this CloudKit plumbing does not map 1:1."
+    ),
+    sqlite(
+      id: "sqlite.inv.syncenginetests-inmemoryuserdatabase-livecontext",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/CloudKitTests/SyncEngineTests.swift",
+      sourceTestName: "inMemoryUserDatabase_LiveContext",
+      swiftFile: "",
+      swiftTestName: "",
+      surface: "cloudkit-syncengine",
+      status: .notApplicable,
+      notes: "CloudKit SyncEngine test `inMemoryUserDatabase_LiveContext`. Instant sync is InstantDB optimistic outbox + websocket, not CloudKit. Domain analogues live in Instant sharing/outbox suites; this CloudKit plumbing does not map 1:1."
+    ),
+    sqlite(
+      id: "sqlite.inv.syncenginetests-metadatabasemismatch",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/CloudKitTests/SyncEngineTests.swift",
+      sourceTestName: "metadatabaseMismatch",
+      swiftFile: "",
+      swiftTestName: "",
+      surface: "cloudkit-syncengine",
+      status: .notApplicable,
+      notes: "CloudKit SyncEngine test `metadatabaseMismatch`. Instant sync is InstantDB optimistic outbox + websocket, not CloudKit. Domain analogues live in Instant sharing/outbox suites; this CloudKit plumbing does not map 1:1."
+    ),
+    sqlite(
+      id: "sqlite.inv.syncenginetests-issynchronizingtriggerwarning",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/CloudKitTests/SyncEngineTests.swift",
+      sourceTestName: "isSynchronizingTriggerWarning",
+      swiftFile: "",
+      swiftTestName: "",
+      surface: "cloudkit-syncengine",
+      status: .notApplicable,
+      notes: "CloudKit SyncEngine test `isSynchronizingTriggerWarning`. Instant sync is InstantDB optimistic outbox + websocket, not CloudKit. Domain analogues live in Instant sharing/outbox suites; this CloudKit plumbing does not map 1:1."
+    ),
+    sqlite(
+      id: "sqlite.inv.syncenginetests-testsyncengine",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/CloudKitTests/SyncEngineTests.swift",
+      sourceTestName: "testSyncEngine",
+      swiftFile: "",
+      swiftTestName: "",
+      surface: "cloudkit-syncengine",
+      status: .notApplicable,
+      notes: "CloudKit SyncEngine test `testSyncEngine`. Instant sync is InstantDB optimistic outbox + websocket, not CloudKit. Domain analogues live in Instant sharing/outbox suites; this CloudKit plumbing does not map 1:1."
+    ),
+    sqlite(
+      id: "sqlite.inv.syncenginetests-previewsyncengine",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/CloudKitTests/SyncEngineTests.swift",
+      sourceTestName: "previewSyncEngine",
+      swiftFile: "",
+      swiftTestName: "",
+      surface: "cloudkit-syncengine",
+      status: .notApplicable,
+      notes: "CloudKit SyncEngine test `previewSyncEngine`. Instant sync is InstantDB optimistic outbox + websocket, not CloudKit. Domain analogues live in Instant sharing/outbox suites; this CloudKit plumbing does not map 1:1."
+    ),
+    sqlite(
+      id: "sqlite.inv.syncenginevalidationtests-tablenamevalidation",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/CloudKitTests/SyncEngineValidationTests.swift",
+      sourceTestName: "tableNameValidation",
+      swiftFile: "",
+      swiftTestName: "",
+      surface: "cloudkit-syncengine",
+      status: .notApplicable,
+      notes: "CloudKit SyncEngine test `tableNameValidation`. Instant sync is InstantDB optimistic outbox + websocket, not CloudKit. Domain analogues live in Instant sharing/outbox suites; this CloudKit plumbing does not map 1:1."
+    ),
+    sqlite(
+      id: "sqlite.inv.syncenginevalidationtests-foreignkeyactionvalidation-noaction",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/CloudKitTests/SyncEngineValidationTests.swift",
+      sourceTestName: "foreignKeyActionValidation_NoAction",
+      swiftFile: "",
+      swiftTestName: "",
+      surface: "cloudkit-syncengine",
+      status: .notApplicable,
+      notes: "CloudKit SyncEngine test `foreignKeyActionValidation_NoAction`. Instant sync is InstantDB optimistic outbox + websocket, not CloudKit. Domain analogues live in Instant sharing/outbox suites; this CloudKit plumbing does not map 1:1."
+    ),
+    sqlite(
+      id: "sqlite.inv.syncenginevalidationtests-foreignkeyactionvalidation-restrict",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/CloudKitTests/SyncEngineValidationTests.swift",
+      sourceTestName: "foreignKeyActionValidation_Restrict",
+      swiftFile: "",
+      swiftTestName: "",
+      surface: "cloudkit-syncengine",
+      status: .notApplicable,
+      notes: "CloudKit SyncEngine test `foreignKeyActionValidation_Restrict`. Instant sync is InstantDB optimistic outbox + websocket, not CloudKit. Domain analogues live in Instant sharing/outbox suites; this CloudKit plumbing does not map 1:1."
+    ),
+    sqlite(
+      id: "sqlite.inv.syncenginevalidationtests-foreignkeypointstoothersynchronizedtable",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/CloudKitTests/SyncEngineValidationTests.swift",
+      sourceTestName: "foreignKeyPointsToOtherSynchronizedTable",
+      swiftFile: "",
+      swiftTestName: "",
+      surface: "cloudkit-syncengine",
+      status: .notApplicable,
+      notes: "CloudKit SyncEngine test `foreignKeyPointsToOtherSynchronizedTable`. Instant sync is InstantDB optimistic outbox + websocket, not CloudKit. Domain analogues live in Instant sharing/outbox suites; this CloudKit plumbing does not map 1:1."
+    ),
+    sqlite(
+      id: "sqlite.inv.syncenginevalidationtests-donotvalidatetriggersonnonsyncedtables",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/CloudKitTests/SyncEngineValidationTests.swift",
+      sourceTestName: "doNotValidateTriggersOnNonSyncedTables",
+      swiftFile: "",
+      swiftTestName: "",
+      surface: "cloudkit-syncengine",
+      status: .notApplicable,
+      notes: "CloudKit SyncEngine test `doNotValidateTriggersOnNonSyncedTables`. Instant sync is InstantDB optimistic outbox + websocket, not CloudKit. Domain analogues live in Instant sharing/outbox suites; this CloudKit plumbing does not map 1:1."
+    ),
+    sqlite(
+      id: "sqlite.inv.syncenginevalidationtests-uniquenessconstraint",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/CloudKitTests/SyncEngineValidationTests.swift",
+      sourceTestName: "uniquenessConstraint",
+      swiftFile: "",
+      swiftTestName: "",
+      surface: "cloudkit-syncengine",
+      status: .notApplicable,
+      notes: "CloudKit SyncEngine test `uniquenessConstraint`. Instant sync is InstantDB optimistic outbox + websocket, not CloudKit. Domain analogues live in Instant sharing/outbox suites; this CloudKit plumbing does not map 1:1."
+    ),
+    sqlite(
+      id: "sqlite.inv.syncenginevalidationtests-cyclevalidation",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/CloudKitTests/SyncEngineValidationTests.swift",
+      sourceTestName: "cycleValidation",
+      swiftFile: "",
+      swiftTestName: "",
+      surface: "cloudkit-syncengine",
+      status: .notApplicable,
+      notes: "CloudKit SyncEngine test `cycleValidation`. Instant sync is InstantDB optimistic outbox + websocket, not CloudKit. Domain analogues live in Instant sharing/outbox suites; this CloudKit plumbing does not map 1:1."
+    ),
+    sqlite(
+      id: "sqlite.inv.topologicaltablesortingtests-tablesbyorder",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/CloudKitTests/TopologicalTableSortingTests.swift",
+      sourceTestName: "tablesByOrder",
+      swiftFile: "",
+      swiftTestName: "",
+      surface: "cloudkit-syncengine",
+      status: .notApplicable,
+      notes: "CloudKit SyncEngine test `tablesByOrder`. Instant sync is InstantDB optimistic outbox + websocket, not CloudKit. Domain analogues live in Instant sharing/outbox suites; this CloudKit plumbing does not map 1:1."
+    ),
+    sqlite(
+      id: "sqlite.inv.triggertests-triggers",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/CloudKitTests/TriggerTests.swift",
+      sourceTestName: "triggers",
+      swiftFile: "",
+      swiftTestName: "",
+      surface: "cloudkit-syncengine",
+      status: .notApplicable,
+      notes: "CloudKit SyncEngine test `triggers`. Instant sync is InstantDB optimistic outbox + websocket, not CloudKit. Domain analogues live in Instant sharing/outbox suites; this CloudKit plumbing does not map 1:1."
+    ),
+    sqlite(
+      id: "sqlite.inv.unattachedsyncenginetests-start",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/CloudKitTests/UnattachedSyncEngineTests.swift",
+      sourceTestName: "start",
+      swiftFile: "",
+      swiftTestName: "",
+      surface: "cloudkit-syncengine",
+      status: .notApplicable,
+      notes: "CloudKit SyncEngine test `start`. Instant sync is InstantDB optimistic outbox + websocket, not CloudKit. Domain analogues live in Instant sharing/outbox suites; this CloudKit plumbing does not map 1:1."
+    ),
+    sqlite(
+      id: "sqlite.inv.userlandtests-basics",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/CloudKitTests/UserlandTests.swift",
+      sourceTestName: "basics",
+      swiftFile: "",
+      swiftTestName: "",
+      surface: "cloudkit-syncengine",
+      status: .notApplicable,
+      notes: "CloudKit SyncEngine test `basics`. Instant sync is InstantDB optimistic outbox + websocket, not CloudKit. Domain analogues live in Instant sharing/outbox suites; this CloudKit plumbing does not map 1:1."
+    ),
+    sqlite(
+      id: "sqlite.inv.customfunctiontests-basics",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/CustomFunctionTests.swift",
+      sourceTestName: "basics",
+      swiftFile: "",
+      swiftTestName: "",
+      surface: "sqlite-sql-surface",
+      status: .notApplicable,
+      notes: "SQLite custom function add/remove. Instant does not host SQLite UDFs."
+    ),
+    sqlite(
+      id: "sqlite.inv.databasefunctiontests-scalarfunction",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/DatabaseFunctionTests.swift",
+      sourceTestName: "scalarFunction",
+      swiftFile: "",
+      swiftTestName: "",
+      surface: "sqlite-sql-surface",
+      status: .notApplicable,
+      notes: "SQLite @DatabaseFunction registration. Instant has no SQLite UDF extension point."
+    ),
+    sqlite(
+      id: "sqlite.inv.databasefunctiontests-aggregatefunction",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/DatabaseFunctionTests.swift",
+      sourceTestName: "aggregateFunction",
+      swiftFile: "",
+      swiftTestName: "",
+      surface: "sqlite-sql-surface",
+      status: .notApplicable,
+      notes: "SQLite @DatabaseFunction registration. Instant has no SQLite UDF extension point."
+    ),
+    sqlite(
+      id: "sqlite.inv.datetests-roundtrip",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/DateTests.swift",
+      sourceTestName: "roundtrip",
+      swiftFile: "Tests/InstantSwiftDataCoreTests/InstantSQLiteDataErgonomicsParityTests.swift + Tests/InstantSwiftDataCoreTests/InstantStoreParityTests.swift",
+      swiftTestName: "dateAttributeRoundtripInsertUpdateMaterializesEqualValue + dateConversionMaterializesDateTypedSchemaValues",
+      surface: "date-storage",
+      status: .adapted,
+      notes: "Date values survive Instant insert and update with equal materialization (SQLiteData DateTests.roundtrip)."
+    ),
+    sqlite(
+      id: "sqlite.inv.fetchalltests-fetchallselection-deprecated",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/FetchAllTests.swift",
+      sourceTestName: "fetchAllSelection_Deprecated",
+      swiftFile: "Tests/InstantSwiftDataTests/TypedAPITests.swift",
+      swiftTestName: "fetchWrappersAcceptSQLiteDataStyleAnimationInitializers",
+      surface: "adapter-fetch",
+      status: .adapted,
+      notes: "Deprecated FetchAll(animation:) initializer compiles without load errors."
+    ),
+    sqlite(
+      id: "sqlite.inv.fetchonetests-optionalstatementinit-selection",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/FetchOneTests.swift",
+      sourceTestName: "optionalStatementInit_Selection",
+      swiftFile: "Tests/InstantSwiftDataTests/TypedAPITests.swift",
+      swiftTestName: "fetchOneScalarSelectionsPreserveSQLiteDataStatementSemantics",
+      surface: "adapter-fetch",
+      status: .adapted,
+      notes: "Optional FetchOne over a selected field clears to nil when empty."
+    ),
+    sqlite(
+      id: "sqlite.inv.fetchonetests-fetchoneoptional",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/FetchOneTests.swift",
+      sourceTestName: "fetchOneOptional",
+      swiftFile: "Tests/InstantSwiftDataTests/TypedAPITests.swift",
+      swiftTestName: "bareOptionalFetchOneDefaultsToEntityQuery + fetchWrappersLoadBasicSQLiteDataMatrix",
+      surface: "adapter-fetch",
+      status: .adapted,
+      notes: "Optional FetchOne loads an entity and clears when deleted."
+    ),
+    sqlite(
+      id: "sqlite.inv.fetchonetests-fetchoneselection",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/FetchOneTests.swift",
+      sourceTestName: "fetchOneSelection",
+      swiftFile: "Tests/InstantSwiftDataTests/TypedAPITests.swift",
+      swiftTestName: "fetchOneScalarSelectionsPreserveSQLiteDataStatementSemantics + fetchWrappersAcceptSQLiteDataStyleAnimationInitializers",
+      surface: "adapter-fetch",
+      status: .adapted,
+      notes: "FetchOne selection-shaped wrappers initialize without load errors."
+    ),
+    sqlite(
+      id: "sqlite.inv.fetchonetests-fetchoneselection-deprecated",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/FetchOneTests.swift",
+      sourceTestName: "fetchOneSelection_Deprecated",
+      swiftFile: "Tests/InstantSwiftDataTests/TypedAPITests.swift",
+      swiftTestName: "fetchWrappersAcceptSQLiteDataStyleAnimationInitializers",
+      surface: "adapter-fetch",
+      status: .adapted,
+      notes: "Deprecated FetchOne(animation:) initializer compiles without load errors."
+    ),
+    sqlite(
+      id: "sqlite.inv.migrationtests-dates",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/MigrationTests.swift",
+      sourceTestName: "dates",
+      swiftFile: "Tests/InstantSwiftDataCoreTests/InstantStoreParityTests.swift + Tests/InstantSwiftDataCoreTests/InstantStoreTests.swift",
+      swiftTestName: "dateConversionMaterializesDateTypedSchemaValues + dateAttributesCoerceStringAndNumberValuesForMaterializationAndQueries",
+      surface: "date-storage",
+      status: .adapted,
+      notes: "Instant date attributes materialize Date values including string/number coercion (SQLite TEXT/INTEGER date adaptation)."
+    ),
+    sqlite(
+      id: "sqlite.inv.primarykeymigrationtests-basics",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/PrimaryKeyMigrationTests.swift",
+      sourceTestName: "basics",
+      swiftFile: "",
+      swiftTestName: "",
+      surface: "sqlite-sql-surface",
+      status: .notApplicable,
+      notes: "SQLite integer→UUID primary-key migration rewrites. Instant entity IDs are Instant string IDs; schema evolution is attribute/namespace based."
+    ),
+    sqlite(
+      id: "sqlite.inv.primarykeymigrationtests-rowid",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/PrimaryKeyMigrationTests.swift",
+      sourceTestName: "rowid",
+      swiftFile: "",
+      swiftTestName: "",
+      surface: "sqlite-sql-surface",
+      status: .notApplicable,
+      notes: "SQLite integer→UUID primary-key migration rewrites. Instant entity IDs are Instant string IDs; schema evolution is attribute/namespace based."
+    ),
+    sqlite(
+      id: "sqlite.inv.primarykeymigrationtests-primarykeyisalreadyuuid",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/PrimaryKeyMigrationTests.swift",
+      sourceTestName: "primaryKeyIsAlreadyUUID",
+      swiftFile: "",
+      swiftTestName: "",
+      surface: "sqlite-sql-surface",
+      status: .notApplicable,
+      notes: "SQLite integer→UUID primary-key migration rewrites. Instant entity IDs are Instant string IDs; schema evolution is attribute/namespace based."
+    ),
+    sqlite(
+      id: "sqlite.inv.primarykeymigrationtests-dropuniqueconstraints",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/PrimaryKeyMigrationTests.swift",
+      sourceTestName: "dropUniqueConstraints",
+      swiftFile: "",
+      swiftTestName: "",
+      surface: "sqlite-sql-surface",
+      status: .notApplicable,
+      notes: "SQLite integer→UUID primary-key migration rewrites. Instant entity IDs are Instant string IDs; schema evolution is attribute/namespace based."
+    ),
+    sqlite(
+      id: "sqlite.inv.primarykeymigrationtests-primarykeynamedunique",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/PrimaryKeyMigrationTests.swift",
+      sourceTestName: "primaryKeyNamedUnique",
+      swiftFile: "",
+      swiftTestName: "",
+      surface: "sqlite-sql-surface",
+      status: .notApplicable,
+      notes: "SQLite integer→UUID primary-key migration rewrites. Instant entity IDs are Instant string IDs; schema evolution is attribute/namespace based."
+    ),
+    sqlite(
+      id: "sqlite.inv.primarykeymigrationtests-columnconstraints",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/PrimaryKeyMigrationTests.swift",
+      sourceTestName: "columnConstraints",
+      swiftFile: "",
+      swiftTestName: "",
+      surface: "sqlite-sql-surface",
+      status: .notApplicable,
+      notes: "SQLite integer→UUID primary-key migration rewrites. Instant entity IDs are Instant string IDs; schema evolution is attribute/namespace based."
+    ),
+    sqlite(
+      id: "sqlite.inv.primarykeymigrationtests-toplevelconstraints",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/PrimaryKeyMigrationTests.swift",
+      sourceTestName: "topLevelConstraints",
+      swiftFile: "",
+      swiftTestName: "",
+      surface: "sqlite-sql-surface",
+      status: .notApplicable,
+      notes: "SQLite integer→UUID primary-key migration rewrites. Instant entity IDs are Instant string IDs; schema evolution is attribute/namespace based."
+    ),
+    sqlite(
+      id: "sqlite.inv.primarykeymigrationtests-commentsandnewlines",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/PrimaryKeyMigrationTests.swift",
+      sourceTestName: "commentsAndNewlines",
+      swiftFile: "",
+      swiftTestName: "",
+      surface: "sqlite-sql-surface",
+      status: .notApplicable,
+      notes: "SQLite integer→UUID primary-key migration rewrites. Instant entity IDs are Instant string IDs; schema evolution is attribute/namespace based."
+    ),
+    sqlite(
+      id: "sqlite.inv.primarykeymigrationtests-nonintprimarykey",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/PrimaryKeyMigrationTests.swift",
+      sourceTestName: "nonIntPrimaryKey",
+      swiftFile: "",
+      swiftTestName: "",
+      surface: "sqlite-sql-surface",
+      status: .notApplicable,
+      notes: "SQLite integer→UUID primary-key migration rewrites. Instant entity IDs are Instant string IDs; schema evolution is attribute/namespace based."
+    ),
+    sqlite(
+      id: "sqlite.inv.primarykeymigrationtests-compoundprimarykey",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/PrimaryKeyMigrationTests.swift",
+      sourceTestName: "compoundPrimaryKey",
+      swiftFile: "",
+      swiftTestName: "",
+      surface: "sqlite-sql-surface",
+      status: .notApplicable,
+      notes: "SQLite integer→UUID primary-key migration rewrites. Instant entity IDs are Instant string IDs; schema evolution is attribute/namespace based."
+    ),
+    sqlite(
+      id: "sqlite.inv.primarykeymigrationtests-addprimarykeywithcustomname",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/PrimaryKeyMigrationTests.swift",
+      sourceTestName: "addPrimaryKeyWithCustomName",
+      swiftFile: "",
+      swiftTestName: "",
+      surface: "sqlite-sql-surface",
+      status: .notApplicable,
+      notes: "SQLite integer→UUID primary-key migration rewrites. Instant entity IDs are Instant string IDs; schema evolution is attribute/namespace based."
+    ),
+    sqlite(
+      id: "sqlite.inv.primarykeymigrationtests-recreatesindicesandtriggers",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/PrimaryKeyMigrationTests.swift",
+      sourceTestName: "recreatesIndicesAndTriggers",
+      swiftFile: "",
+      swiftTestName: "",
+      surface: "sqlite-sql-surface",
+      status: .notApplicable,
+      notes: "SQLite integer→UUID primary-key migration rewrites. Instant entity IDs are Instant string IDs; schema evolution is attribute/namespace based."
+    ),
+    sqlite(
+      id: "sqlite.inv.primarykeymigrationtests-lowercasenoquotes",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/PrimaryKeyMigrationTests.swift",
+      sourceTestName: "lowercaseNoQuotes",
+      swiftFile: "",
+      swiftTestName: "",
+      surface: "sqlite-sql-surface",
+      status: .notApplicable,
+      notes: "SQLite integer→UUID primary-key migration rewrites. Instant entity IDs are Instant string IDs; schema evolution is attribute/namespace based."
+    ),
+    sqlite(
+      id: "sqlite.inv.querycursortests-emptyinsert",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/QueryCursorTests.swift",
+      sourceTestName: "emptyInsert",
+      swiftFile: "Tests/InstantSwiftDataCoreTests/InstantStoreTests.swift",
+      swiftTestName: "emptyRuntimeTransactionDoesNotPersistPendingMutation",
+      surface: "mutation",
+      status: .adapted,
+      notes: "Empty Instant transactions leave no pending mutation or triples (SQLiteData empty insert)."
+    ),
+    sqlite(
+      id: "sqlite.inv.querycursortests-emptyupdate",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/QueryCursorTests.swift",
+      sourceTestName: "emptyUpdate",
+      swiftFile: "Tests/InstantSwiftDataCoreTests/InstantStoreTests.swift",
+      swiftTestName: "emptyRuntimeTransactionDoesNotPersistPendingMutation",
+      surface: "mutation",
+      status: .adapted,
+      notes: "Empty Instant update batches are no-ops (SQLiteData empty update)."
+    ),
   ]
 
   private static func instant(
