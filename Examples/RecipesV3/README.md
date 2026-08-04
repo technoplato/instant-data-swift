@@ -36,11 +36,28 @@ Examples/RecipesV3/provision-live-app.sh
 
 It reuses the existing recipes app when possible. Pass `--fresh` to provision
 a new ephemeral app through getadb.com. The helper pushes the aggregate recipes
-schema and permissions, saves the app ID and admin token with mode `0600` under
-the adjacent `private/credentials/swift-instant-data` directory, and writes the
-app ID to the ignored `RecipesV3.local.xcconfig`. Override the private location
-with `INSTANT_RECIPES_CREDENTIAL_DIR`. Only the public app ID is embedded in
-application bundles; the admin token remains in the private credentials file.
+schema and permissions (including **Linked Infinite** namespaces), saves the app
+ID and admin token with mode `0600` under the adjacent
+`private/credentials/swift-instant-data` directory, writes the app ID to the
+ignored `RecipesV3.local.xcconfig`, and writes a gitignored
+`Examples/RecipesV3/.env` for `swift run`. Override the private location with
+`INSTANT_RECIPES_CREDENTIAL_DIR`. Only the public app ID is embedded in
+application bundles; the admin token remains in private credentials / `.env`.
+
+### Live Linked Infinite (Mac)
+
+```bash
+# Once: provision + push schema (linked_infinite_* namespaces)
+Examples/RecipesV3/provision-live-app.sh
+
+# Run against Instant (loads Examples/RecipesV3/.env automatically)
+cd /path/to/instant-data-swift
+INSTANT_RECIPE=linked-infinite swift run recipes-v3
+```
+
+The catalog shows **Connected to InstantDB** when `INSTANT_APP_ID` is set.
+Without it, the host stays **Local data only**. Admin tokens are never required
+for normal recipe UI — only for schema push.
 
 ## Run on macOS with SwiftPM
 

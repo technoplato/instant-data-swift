@@ -556,8 +556,46 @@ public enum InstantSchemaExamples {
     )
   )
 
+  public static let linkedInfiniteRecordings = InstantEntitySchema(
+    typeName: "LinkedInfiniteRecording",
+    namespace: LinkedInfiniteExample.recordingNamespace,
+    attributes: LinkedInfiniteExample.attributes.filter {
+      $0.namespace == LinkedInfiniteExample.recordingNamespace && $0.valueType != .ref
+    }
+  )
+
+  public static let linkedInfiniteTranscriptions = InstantEntitySchema(
+    typeName: "LinkedInfiniteTranscription",
+    namespace: LinkedInfiniteExample.transcriptionNamespace,
+    attributes: LinkedInfiniteExample.attributes.filter {
+      $0.namespace == LinkedInfiniteExample.transcriptionNamespace && $0.valueType != .ref
+    }
+  )
+
+  /// recordings has-many transcriptions; transcriptions has-one recording
+  public static let linkedInfiniteRecordingTranscriptions = InstantLinkSchema(
+    name: "linkedInfiniteRecordingTranscriptions",
+    forward: InstantLinkEndpoint(
+      namespace: LinkedInfiniteExample.recordingNamespace,
+      cardinality: .many,
+      label: "transcriptions"
+    ),
+    reverse: InstantLinkEndpoint(
+      namespace: LinkedInfiniteExample.transcriptionNamespace,
+      cardinality: .one,
+      label: "recording",
+      onDelete: .cascade
+    )
+  )
+
   public static let recipesDocument = InstantSchemaDocument(
-    entities: [todos, mergeTileGameBoard],
+    entities: [
+      todos,
+      mergeTileGameBoard,
+      linkedInfiniteRecordings,
+      linkedInfiniteTranscriptions,
+    ],
+    links: [linkedInfiniteRecordingTranscriptions],
     rooms: [
       todosRoom,
       recipesCursorsRoom,
@@ -572,6 +610,8 @@ public enum InstantSchemaExamples {
     namespaces: [
       .allowAll(namespace: TodoExample.namespace),
       .allowAll(namespace: "boards"),
+      .allowAll(namespace: LinkedInfiniteExample.recordingNamespace),
+      .allowAll(namespace: LinkedInfiniteExample.transcriptionNamespace),
     ]
   )
 
