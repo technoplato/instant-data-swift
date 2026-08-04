@@ -175,6 +175,9 @@ private actor InstantLiveInfiniteQueryCoordinator {
   private var hasKickstarted = false
   private var isActive = true
   private var nextPlanID = 0
+  /// Local-first expansion while waiting for server liveTuple cursors.
+  private var preBootstrapLoadedPages = 1
+  private var preBootstrapExpandInFlight = false
 
   init(
     runtime: InstantRuntime,
@@ -206,8 +209,16 @@ private actor InstantLiveInfiniteQueryCoordinator {
   }
 
   func loadNextPage() {
-    guard isActive,
-      let key = forwardKeys.last,
+    guard isActive else { return }
+
+    // Before live cursors exist, expand from the local full observation window
+    // (starter emissions are limit-sized and never grow on their own).
+    if !hasKickstarted {
+      Task { await self.expandPreBootstrapFromLocalStore() }
+      return
+    }
+
+    guard let key = forwardKeys.last,
       case .cursor = key,
       let chunk = forwardChunks[key],
       let endCursor = chunk.endCursor,
@@ -233,28 +244,137 @@ private actor InstantLiveInfiniteQueryCoordinator {
 
   private func receiveStarter(_ emission: InstantQueryEmission) {
     guard isActive, !hasKickstarted else { return }
-    guard emission.values.count >= pageSize,
+
+    // Server-backed page info with opaque live tuple → real live infinite chunks.
+    if emission.values.count >= pageSize,
       let startCursor = emission.pageInfo?.startCursor,
       startCursor.liveTuple != nil
-    else {
+    {
+      forwardKeys.removeAll { $0 == .preBootstrap }
+      forwardChunks[.preBootstrap] = nil
+      hasKickstarted = true
+      preBootstrapExpandInFlight = false
+      pushNewForward(startCursor: startCursor, afterInclusive: true)
+      pushNewReverse(startCursor: startCursor)
+      return
+    }
+
+    // Local-first / pre-cursor phase.
+    // Never clobber a non-empty optimistic page with an empty live emission
+    // (logs showed 3→0 flashes while the store still held 20 roots).
+    if emission.values.isEmpty,
+      let existing = forwardChunks[.preBootstrap],
+      !existing.data.isEmpty
+    {
+      return
+    }
+
+    let hasMore =
+      emission.pageInfo?.hasNextPage
+      ?? (emission.values.count >= pageSize)
+    // Keep expanded local window if we already loadNext'd past the starter.
+    let data: [InstantEntitySnapshot]
+    if let existing = forwardChunks[.preBootstrap],
+      existing.data.count > emission.values.count,
+      !emission.values.isEmpty
+    {
+      // Prefer the larger expanded local window unless starter grew.
+      data = existing.data
+    } else {
+      data = emission.values
+      // Reset expansion baseline when starter content changes identity/size down.
+      if emission.values.count <= pageSize {
+        preBootstrapLoadedPages = max(1, preBootstrapLoadedPages)
+      }
+    }
+
+    setForwardChunk(
+      key: .preBootstrap,
+      chunk: InstantLiveInfiniteChunk(
+        data: data,
+        sequence: emission.sequence,
+        pageInfo: emission.pageInfo
+          ?? InstantQueryPageInfo(
+            startCursor: data.first.map {
+              InstantQueryCursor(entityID: $0.id, sortValue: nil)
+            },
+            endCursor: data.last.map {
+              InstantQueryCursor(entityID: $0.id, sortValue: nil)
+            },
+            hasPreviousPage: false,
+            hasNextPage: hasMore
+          ),
+        hasMore: hasMore || data.count > pageSize,
+        endCursor: data.last.map {
+          InstantQueryCursor(entityID: $0.id, sortValue: nil)
+        }
+      )
+    )
+  }
+
+  /// Pull the unbounded local observation and publish a larger window while
+  /// waiting for live cursors. Fixes canLoadNextPage=false with only pageSize
+  /// rows when the store already has more.
+  private func expandPreBootstrapFromLocalStore() async {
+    guard isActive, !hasKickstarted, !preBootstrapExpandInFlight else { return }
+    preBootstrapExpandInFlight = true
+    defer { preBootstrapExpandInFlight = false }
+
+    preBootstrapLoadedPages += 1
+    let limit = pageSize * preBootstrapLoadedPages
+    let expandedPlan = InstantQueryPlan(
+      id: "\(plan.id)#prebootstrap-expand-\(preBootstrapLoadedPages)",
+      namespace: plan.namespace,
+      filters: plan.filters,
+      order: plan.order ?? .serverCreatedAt,
+      limit: limit,
+      selectedFields: plan.selectedFields,
+      includes: plan.includes ?? []
+    )
+
+    do {
+      // Always expand from the local triple store (not a fresh live queryOnce).
+      // Live cursors kickstart the real path when the server page info arrives.
+      let emission = try await runtime.queryLocally(expandedPlan)
+      guard isActive, !hasKickstarted else { return }
+      if emission.values.isEmpty,
+        let existing = forwardChunks[.preBootstrap],
+        !existing.data.isEmpty
+      {
+        return
+      }
+      let hasMore =
+        emission.pageInfo?.hasNextPage
+        ?? (emission.values.count >= limit)
       setForwardChunk(
         key: .preBootstrap,
         chunk: InstantLiveInfiniteChunk(
           data: emission.values,
-          sequence: emission.sequence,
-          pageInfo: emission.pageInfo,
-          hasMore: false,
-          endCursor: nil
+          sequence: max(
+            emission.sequence,
+            forwardChunks[.preBootstrap]?.sequence ?? 0
+          ),
+          pageInfo: emission.pageInfo
+            ?? InstantQueryPageInfo(
+              startCursor: emission.values.first.map {
+                InstantQueryCursor(entityID: $0.id, sortValue: nil)
+              },
+              endCursor: emission.values.last.map {
+                InstantQueryCursor(entityID: $0.id, sortValue: nil)
+              },
+              hasPreviousPage: false,
+              hasNextPage: hasMore
+            ),
+          hasMore: hasMore,
+          endCursor: emission.values.last.map {
+            InstantQueryCursor(entityID: $0.id, sortValue: nil)
+          }
         )
       )
-      return
+    } catch {
+      // Leave previous snapshot in place; UI keeps last good rows.
+      preBootstrapLoadedPages = max(1, preBootstrapLoadedPages - 1)
     }
-
-    forwardKeys.removeAll { $0 == .preBootstrap }
-    forwardChunks[.preBootstrap] = nil
-    hasKickstarted = true
-    pushNewForward(startCursor: startCursor, afterInclusive: true)
-    pushNewReverse(startCursor: startCursor)
   }
 
   private func receiveForward(

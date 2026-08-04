@@ -137,9 +137,12 @@ public struct LinkedInfiniteAppConfiguration: Hashable, Sendable {
     @State private var subscription: InstantInfiniteQuerySubscription?
     @State private var loadedPageCount = 0
     @State private var didBootstrapSeed = false
+    @State private var seedInFlight = false
     @State private var snapshotOrdinal = 0
     @State private var loadNextAttemptCount = 0
     @State private var seedAttemptCount = 0
+    /// Hold last good rows across empty infinite flashes (live preBootstrap).
+    @State private var lastGoodRows: [LinkedInfiniteListRow] = []
     private let wrapsInNavigationStack: Bool
     private let pageSize: Int
     private let defaultLoadedPages: Int
@@ -181,7 +184,8 @@ public struct LinkedInfiniteAppConfiguration: Hashable, Sendable {
       List {
         Section {
           Button("Seed sample recordings", action: seedButtonTapped)
-          Button("Load next page", action: loadNextPageButtonTapped)
+            .disabled(seedInFlight)
+          Button("Load next page", action: { loadNextPageButtonTapped(reason: "user-button") })
             .disabled(!canLoadNextPage)
           Text("Page size \(pageSize) · auto-load \(defaultLoadedPages) pages · loaded \(loadedPageCount)")
             .font(.caption2)
@@ -207,7 +211,6 @@ public struct LinkedInfiniteAppConfiguration: Hashable, Sendable {
                 [
                   "rowID": row.id.rawValue,
                   "title": row.title,
-                  "wordCount": row.wordCount,
                   "isLast": row.id == rows.last?.id,
                   "rowsCount": rows.count,
                   "canLoadNextPage": canLoadNextPage,
@@ -287,11 +290,7 @@ public struct LinkedInfiniteAppConfiguration: Hashable, Sendable {
           "planID": plan.id,
           "namespace": plan.namespace,
           "limit": plan.limit as Any,
-          "orderField": plan.order?.field as Any,
-          "orderDirection": String(describing: plan.order?.direction as Any),
           "includeNames": plan.includes?.map(\.name) ?? [],
-          "includeDirections": plan.includes?.map { String(describing: $0.direction) } ?? [],
-          "includeNamespaces": plan.includes?.compactMap { $0.query?.namespace } ?? [],
           "cacheKey": plan.cacheKey,
         ]
       )
@@ -333,19 +332,6 @@ public struct LinkedInfiniteAppConfiguration: Hashable, Sendable {
       snapshotOrdinal += 1
       let previousRowsCount = rows.count
       let previousPhase = phaseLabel
-      let previousLoadedPageCount = loadedPageCount
-      let previousCanLoad = canLoadNextPage
-
-      let rawIDs = snapshot.values.map(\.id)
-      let linkCounts = snapshot.values.map { ($0.links?["transcriptions"] ?? []).count }
-      let linkWordCounts = snapshot.values.map { entity -> [Int] in
-        (entity.links?["transcriptions"] ?? []).compactMap { linked in
-          if case let .number(value) = linked.values["wordCount"]?.first {
-            return Int(value)
-          }
-          return nil
-        }
-      }
 
       LinkedInfiniteDurableLog.log(
         "snapshot.apply.begin",
@@ -356,24 +342,15 @@ public struct LinkedInfiniteAppConfiguration: Hashable, Sendable {
           "rawValueCount": snapshot.values.count,
           "canLoadNextPage": snapshot.canLoadNextPage,
           "hasError": snapshot.error != nil,
-          "errorCode": snapshot.error?.code.rawValue as Any,
-          "errorMessage": snapshot.error?.message as Any,
           "pageInfoHasNext": snapshot.pageInfo?.hasNextPage as Any,
-          "pageInfoHasPrevious": snapshot.pageInfo?.hasPreviousPage as Any,
-          "endCursorEntityID": snapshot.pageInfo?.endCursor?.entityID as Any,
-          "startCursorEntityID": snapshot.pageInfo?.startCursor?.entityID as Any,
-          "rawIDs": rawIDs,
-          "transcriptionLinkCounts": linkCounts,
-          "transcriptionWordCountsByRoot": linkWordCounts,
           "previousRowsCount": previousRowsCount,
           "previousPhase": previousPhase,
-          "previousLoadedPageCount": previousLoadedPageCount,
-          "previousCanLoadNextPage": previousCanLoad,
+          "lastGoodRowsCount": lastGoodRows.count,
         ]
       )
 
       if let error = snapshot.error {
-        phase = .failed(error, hadRows: !rows.isEmpty)
+        phase = .failed(error, hadRows: !rows.isEmpty || !lastGoodRows.isEmpty)
         message = error.recoveryMessage
         LinkedInfiniteDurableLog.log(
           "snapshot.apply.error",
@@ -381,43 +358,65 @@ public struct LinkedInfiniteAppConfiguration: Hashable, Sendable {
             "snapshotOrdinal": snapshotOrdinal,
             "code": error.code.rawValue,
             "message": error.message,
-            "recovery": error.recoveryMessage,
-            "hadRows": !rows.isEmpty,
           ]
         )
         return
       }
+
       do {
-        rows = try snapshot.values.map(LinkedInfiniteListRow.init(snapshot:))
-        if rows.count > previousRowsCount || loadedPageCount == 0 {
-          if loadedPageCount == 0 || rows.count > previousRowsCount {
-            loadedPageCount = max(1, (rows.count + pageSize - 1) / max(pageSize, 1))
+        let decoded = try snapshot.values.map(LinkedInfiniteListRow.init(snapshot:))
+
+        // Hold last good paint across empty live flashes.
+        if decoded.isEmpty, !lastGoodRows.isEmpty {
+          LinkedInfiniteDurableLog.log(
+            "snapshot.apply.held-last-good",
+            [
+              "snapshotOrdinal": snapshotOrdinal,
+              "heldCount": lastGoodRows.count,
+              "rawValueCount": 0,
+              "canLoadNextPage": snapshot.canLoadNextPage,
+            ]
+          )
+          // Keep rows; only update paging flag if library says more are available.
+          if snapshot.canLoadNextPage {
+            phase = .loaded(canLoadNextPage: true)
           }
+          return
         }
-        phase = snapshot.values.isEmpty && !snapshot.canLoadNextPage
+
+        rows = decoded
+        if !decoded.isEmpty {
+          lastGoodRows = decoded
+        }
+
+        if rows.count > previousRowsCount || (loadedPageCount == 0 && !rows.isEmpty) {
+          loadedPageCount = max(1, (rows.count + pageSize - 1) / max(pageSize, 1))
+        }
+
+        phase =
+          rows.isEmpty && !snapshot.canLoadNextPage
           ? .idleEmpty
           : .loaded(canLoadNextPage: snapshot.canLoadNextPage)
+
         message =
-          "\(rows.count) roots · \(loadedPageCount)/\(defaultLoadedPages) pages · word counts from transcription include"
+          "\(rows.count) roots · \(loadedPageCount)/\(defaultLoadedPages) pages · word counts from include"
 
         LinkedInfiniteDurableLog.log(
           "snapshot.apply.decoded",
           [
             "snapshotOrdinal": snapshotOrdinal,
             "decodedRowsCount": rows.count,
-            "decodedTitles": rows.map(\.title),
-            "decodedWordCounts": rows.map(\.wordCount),
-            "decodedIDs": rows.map(\.id.rawValue),
+            "decodedTitles": rows.prefix(5).map(\.title),
+            "decodedWordCounts": rows.prefix(5).map(\.wordCount),
             "loadedPageCount": loadedPageCount,
             "phase": phaseLabel,
             "canLoadNextPage": canLoadNextPage,
-            "defaultLoadedPages": defaultLoadedPages,
-            "didBootstrapSeed": didBootstrapSeed,
             "rowsDelta": rows.count - previousRowsCount,
           ]
         )
 
-        if rows.isEmpty, !didBootstrapSeed {
+        // Bootstrap seed only once, when truly empty and not already seeding.
+        if rows.isEmpty, lastGoodRows.isEmpty, !didBootstrapSeed, !seedInFlight {
           didBootstrapSeed = true
           LinkedInfiniteDurableLog.log(
             "snapshot.apply.bootstrap-seed.trigger",
@@ -437,7 +436,6 @@ public struct LinkedInfiniteAppConfiguration: Hashable, Sendable {
               "snapshotOrdinal": snapshotOrdinal,
               "loadedPageCount": loadedPageCount,
               "defaultLoadedPages": defaultLoadedPages,
-              "canLoadNextPage": true,
             ]
           )
           loadNextPageButtonTapped(reason: "auto-load-default-pages")
@@ -456,7 +454,6 @@ public struct LinkedInfiniteAppConfiguration: Hashable, Sendable {
           )
         }
 
-        // Extra probe: full namespace count vs infinite window (diagnosis only).
         Task { @MainActor in
           await logFullNamespaceProbe(trigger: "after-snapshot-\(snapshotOrdinal)")
         }
@@ -475,8 +472,6 @@ public struct LinkedInfiniteAppConfiguration: Hashable, Sendable {
           [
             "snapshotOrdinal": snapshotOrdinal,
             "error": String(describing: error),
-            "rawValueCount": snapshot.values.count,
-            "rawIDs": rawIDs,
           ]
         )
       }
@@ -487,6 +482,14 @@ public struct LinkedInfiniteAppConfiguration: Hashable, Sendable {
     }
 
     private func seedButtonTapped(autoLoadPages: Bool, reason: String) {
+      guard !seedInFlight else {
+        LinkedInfiniteDurableLog.log(
+          "seed.skipped-in-flight",
+          ["reason": reason, "attempt": seedAttemptCount]
+        )
+        return
+      }
+      seedInFlight = true
       seedAttemptCount += 1
       let attempt = seedAttemptCount
       LinkedInfiniteDurableLog.log(
@@ -499,27 +502,33 @@ public struct LinkedInfiniteAppConfiguration: Hashable, Sendable {
           "beforeRowsCount": rows.count,
           "beforePhase": phaseLabel,
           "beforeCanLoadNextPage": canLoadNextPage,
-          "beforeLoadedPageCount": loadedPageCount,
         ]
       )
       Task {
+        defer { seedInFlight = false }
         do {
           let seeded = try await LinkedInfiniteSeed.seed(
             using: db,
             now: now,
             makeID: { uuid().uuidString.lowercased() }
           )
+          // Optimistically show seeded rows until infinite re-emits.
+          if rows.isEmpty, !seeded.isEmpty {
+            rows = seeded
+            lastGoodRows = seeded
+            loadedPageCount = max(1, (seeded.count + pageSize - 1) / max(pageSize, 1))
+            phase = .loaded(canLoadNextPage: seeded.count > pageSize)
+          }
           message =
-            "Seeded \(LinkedInfiniteSeed.titles.count) recordings · auto-loading \(defaultLoadedPages) pages"
+            "Seeded \(seeded.count) recordings"
+            + (autoLoadPages ? " · loading pages…" : "")
           LinkedInfiniteDurableLog.log(
             "seed.success",
             [
               "attempt": attempt,
               "reason": reason,
               "seededCount": seeded.count,
-              "seededTitles": seeded.map(\.title),
-              "seededWordCounts": seeded.map(\.wordCount),
-              "seededIDs": seeded.map(\.id.rawValue),
+              "seededTitles": seeded.prefix(5).map(\.title),
               "afterPhase": phaseLabel,
               "afterCanLoadNextPage": canLoadNextPage,
               "afterRowsCount": rows.count,
@@ -528,32 +537,21 @@ public struct LinkedInfiniteAppConfiguration: Hashable, Sendable {
           )
           await logFullNamespaceProbe(trigger: "after-seed-\(attempt)")
           if autoLoadPages {
-            let previousLoaded = loadedPageCount
-            loadedPageCount = 0
-            LinkedInfiniteDurableLog.log(
-              "seed.auto-load.gate",
-              [
-                "attempt": attempt,
-                "canLoadNextPage": canLoadNextPage,
-                "phase": phaseLabel,
-                "rowsCount": rows.count,
-                "resetLoadedPageCountFrom": previousLoaded,
-                "willCallLoadNextPage": canLoadNextPage,
-              ]
-            )
+            // Prefer library loadNext; do not reset loadedPageCount to 0.
             if canLoadNextPage {
               loadNextPageButtonTapped(reason: "seed-auto-load")
             } else {
+              // Force one expand attempt even if phase lags (library may still expand).
               LinkedInfiniteDurableLog.log(
-                "seed.auto-load.blocked",
+                "seed.auto-load.force-loadNext",
                 [
                   "attempt": attempt,
                   "phase": phaseLabel,
                   "rowsCount": rows.count,
-                  "hint":
-                    "canLoadNextPage false at seed completion; waiting for next snapshot re-emit",
                 ]
               )
+              subscription?.loadNextPage()
+              phase = .loadingNextPage(canLoadNextPage: true)
             }
           }
         } catch {
@@ -570,28 +568,27 @@ public struct LinkedInfiniteAppConfiguration: Hashable, Sendable {
       }
     }
 
-    private func loadNextPageButtonTapped() {
-      loadNextPageButtonTapped(reason: "user-button")
-    }
-
     private func loadNextPageButtonTapped(reason: String) {
       loadNextAttemptCount += 1
       let attempt = loadNextAttemptCount
-      let gate = canLoadNextPage
       LinkedInfiniteDurableLog.log(
         "loadNext.attempt",
         [
           "attempt": attempt,
           "reason": reason,
-          "canLoadNextPage": gate,
+          "canLoadNextPage": canLoadNextPage,
           "phase": phaseLabel,
           "rowsCount": rows.count,
           "loadedPageCount": loadedPageCount,
-          "defaultLoadedPages": defaultLoadedPages,
           "hasSubscription": subscription != nil,
         ]
       )
-      guard gate else {
+      // Allow force path after seed even if phase not yet .loaded(true).
+      let allow =
+        canLoadNextPage
+        || reason == "seed-auto-load"
+        || reason.hasPrefix("auto-load")
+      guard allow, subscription != nil else {
         LinkedInfiniteDurableLog.log(
           "loadNext.blocked",
           [
@@ -599,13 +596,14 @@ public struct LinkedInfiniteAppConfiguration: Hashable, Sendable {
             "reason": reason,
             "phase": phaseLabel,
             "rowsCount": rows.count,
-            "loadedPageCount": loadedPageCount,
           ]
         )
         return
       }
       if case .loaded(let canLoad) = phase {
         phase = .loadingNextPage(canLoadNextPage: canLoad)
+      } else {
+        phase = .loadingNextPage(canLoadNextPage: true)
       }
       LinkedInfiniteDurableLog.log(
         "loadNext.invoked",
@@ -618,7 +616,6 @@ public struct LinkedInfiniteAppConfiguration: Hashable, Sendable {
       subscription?.loadNextPage()
     }
 
-    /// Side-channel: query full namespaces without infinite windowing.
     private func logFullNamespaceProbe(trigger: String) async {
       do {
         let recordings = try await db.query(
@@ -633,26 +630,17 @@ public struct LinkedInfiniteAppConfiguration: Hashable, Sendable {
             .descending
           )
         )
-        let infinitePlan = LinkedInfiniteListRow.pageQuery(pageSize: pageSize).plan
-        let once = try await db.queryOnce(infinitePlan)
         LinkedInfiniteDurableLog.log(
           "probe.full-namespace",
           [
             "trigger": trigger,
             "recordingCount": recordings.count,
             "transcriptionCount": transcriptions.count,
-            "recordingTitles": recordings.map(\.title),
-            "recordingIDs": recordings.map(\.id.rawValue),
-            "transcriptionWordCounts": transcriptions.map { Int($0.wordCount) },
-            "transcriptionRecordingIDs": transcriptions.map(\.recordingID.rawValue),
-            "queryOnceLimitPlanValueCount": once.values.count,
-            "queryOnceLimitPlanIDs": once.values.map(\.id),
-            "queryOncePageInfoHasNext": once.pageInfo?.hasNextPage as Any,
+            "recordingTitles": recordings.prefix(5).map(\.title),
             "uiRowsCount": rows.count,
             "uiCanLoadNextPage": canLoadNextPage,
             "uiPhase": phaseLabel,
             "uiLoadedPageCount": loadedPageCount,
-            "mismatchRecordingsVsUI": recordings.count != rows.count,
             "mismatchSuggestsInfiniteWindowStuck":
               recordings.count > rows.count && !canLoadNextPage,
           ]
