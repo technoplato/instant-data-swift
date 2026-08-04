@@ -4,6 +4,26 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## August 3rd, 2026 at 11:39:09 p.m. EDT — `a52ab0911d4e` Persist the server attribute set on every connect
+
+- **Implementation commit:** `a52ab0911d4e78e1b7b33f610240fe55c74f069b`
+- **Change:** Persist the server attribute set on every connect
+- **Details:**
+  - Instant models attributes as data, so a device can only materialize namespaces whose attributes it holds, and InstantRuntime.observe refuses to register a live query for a namespace it cannot validate. The client decoded the attribute set the server sends in every init-ok into InstantRuntimeLiveSession.serverAttributes but never wrote it to the cache; attributes only became durable as a side effect of a query result for a namespace the device already knew.
+  - That deadlocks for any namespace it does not know: no attributes means no subscription, no subscription means no result, no result means the attributes never arrive. Nothing errors, so the device reports a healthy connection and open subscriptions while serving permanently stale data.
+  - Measured on the Mac's real cache for Scribe app e7c49961: 133 attributes over 16 namespaces, last written 2026-07-03, zero for screenStreamSessions despite the entity being deployed and the drift gate passing. The Mac was blind to 21 namespaces including debugLogs, recordingAttachments, imageAnalyses, and the agent* and instantTools* families. This is the blocker behind Scribe issue #003 (https://issues.knophy.com/issues/3): the Mac never sees a stream request, so it never claims one.
+  - Upstream applies the set on every init-ok (upstream/instant/client/packages/core/src/Reactor.js:640, this._setAttrs(msg.attrs)). applyServerAttributesWithGateHeld does the same on the connect path under the operation gate, through the same compare-and-swap loop the bootstrap attribute merge uses. It merges rather than replaces: upstream keeps locally minted attrs separately in optimisticAttrs(), while this client persists one durable set, so a namespace/name pair the device already holds keeps its local attribute id, which local triples and pending mutations reference. The reconciliation reuses InstantLiveRefreshAttributeContext, the one refresh-ok already performs. Rejected replaying init-ok through applyLiveRefresh with no computations: it writes a synthetic processed-tx-id into sync metadata and prunes the outbox against a transaction id the server never issued.
+  - Schema validation failure in observe now also calls reportIssue. A stream that stays empty forever reads exactly like a namespace with no rows, and that silence is why the defect survived weeks of use.
+  - Verified: three new tests, of which the two socket tests fail with the connect-path call removed. Verified against the real server on a copy of the Mac's cache with the library CLI: before, 0 screenStreamSessions attributes and 16 namespaces; after one connection connect, 16 attributes and 37 namespaces; with the call removed the same copy stayed at 0. Full package suite shows no new failures — uncheckedSendableConformancesDocumentProtectionMechanism, serverTransactionLoopbackValidationProducesEvidenceAndPreservesOutbox, and a SIGSEGV in the vendored SQLiteData CloudKit tests all reproduce on clean main.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — Apply the server attribute set after the live session opens; expose the session's raw payload; report a schema-validation failure loudly; package accessor for the durable attribute set
+  - `Sources/InstantSwiftDataCore/InstantLiveRefreshApplication.swift` — Expose the refresh path's attribute reconciliation as InstantLiveRefreshTranslator.attributesToMerge so connect and refresh cannot drift apart
+  - `Tests/InstantSwiftDataCoreTests/InstantInitialAttributeSyncTests.swift` — Store-level and scripted-socket statements of the defect
+  - `docs/adr/0011-persist-server-attributes-on-connect.md` — Record the decision, the upstream divergence, and the two rejected alternatives
+- **User context (verbatim):**
+  > fix the below issue
+- **SpecStory:** unavailable — Claude Code session; no SpecStory capture is configured for this harness.
+
 ## August 3rd, 2026 at 5:06:49 p.m. EDT — `4b596d4ec9b4` Honor cancellation in AsyncSerialGate and name the holder when it stalls
 
 - **Implementation commit:** `4b596d4ec9b42ba8c62dada1aa52cf22442c82ae`
