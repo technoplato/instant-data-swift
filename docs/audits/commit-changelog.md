@@ -6,6 +6,47 @@ commit SHA, and high-level reason. Changelog-only bookkeeping commits are
 visible in Git history but are not self-recorded because a commit cannot
 contain its own final SHA.
 
+## August 4, 2026 at 9:59:35 AM EDT
+
+- Repository: `instant-data-swift`
+- Commit: `3ebc6704973ce470a356457de8a4b5236d5641e8`
+- Tag: `v1.3.1` — **created locally, NOT pushed**
+- Reason: Stop re-sending mutations the server already accepted. This is the
+  root cause of the Mac holding ~200% CPU indefinitely while its store stayed
+  byte-for-byte unchanged: it was re-sending 7,125 already-accepted mutations
+  in a loop. `confirmationSource` was added to `PendingMutation` after
+  `serverTransactionID`, so every mutation accepted by an earlier build carries
+  a server-assigned ID and a nil source; six call sites asked "has the server
+  accepted this?" by consulting `confirmationSource` alone and answered "no"
+  for all 6,887 such rows, permanently. A single
+  `PendingMutation.provesServerAcceptance` predicate now also honours a non-nil
+  `serverTransactionID`, which `Outbox.accepting` alone writes and only from a
+  server `transact-ok` — so delivery finally agrees with `pruningConfirmed`,
+  which already treated it as the authority. Measured on a copy of the real
+  645 MB store: 7,125 → 256 mutations offered per server event, and 1.05 s →
+  0.047 s to build one batch. The count is the bug; the time is why it never
+  recovered, because a rebuild took longer than the gap between inbound events.
+  **Relevant to the Scribe repository:** this is why the Mac "went quiet" and
+  never claimed a screen-stream session — its Instant event loop never
+  returned. Tracked as issue 146.
+
+## August 4, 2026 at 9:59:35 AM EDT
+
+- Repository: `realtime-voice-sqlite-instant`
+- Commit: `bb2c26b437d5d1070af8cc2df6adffaf11b916aa`
+- Reason: Consume `instant-data-swift` 1.3.1 so the outbox stops re-sending
+  accepted work. **This commit does not build anywhere but the authoring
+  machine until `git push origin v1.3.1` is run in the library repository** —
+  the tag was created locally so the fix could be verified against a real
+  device before publishing, and publishing was deliberately left to the
+  repository owner. Push the tag or revert this commit before sharing the
+  branch. A local SwiftPM mirror (`.swiftpm/configuration/mirrors.json`) points
+  the dependency at the sibling checkout, because `swift package edit` silently
+  fails to take effect here: the committed `Packages/instant-data-swift`
+  symlink already occupies the directory SwiftPM manages for edited packages,
+  so `show-dependencies` kept reporting the remote 1.3.0 and two full app
+  builds were measured against the unfixed library before this was caught.
+
 ## August 4, 2026 at 7:07:52 AM EDT
 
 - Repository: `instant-data-swift`
