@@ -199,6 +199,50 @@ struct TripleIndexes: Hashable, Codable, Sendable {
   private var eav: [String: [String: [InstantValue: InstantTriple]]] = [:]
   private var aev: [String: [String: [InstantValue: InstantTriple]]] = [:]
   private var vae: [InstantValue: [String: [String: InstantTriple]]] = [:]
+  private var storedTripleCount = 0
+
+  /// Only the three indexes are encoded. `storedTripleCount` is derived and is recomputed on
+  /// decode, which keeps the on-disk shape identical to what earlier builds wrote — a persisted
+  /// cache must not stop decoding because a derived field was added.
+  private enum CodingKeys: String, CodingKey {
+    case aev
+    case eav
+    case vae
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    self.eav = try container.decode(
+      [String: [String: [InstantValue: InstantTriple]]].self,
+      forKey: .eav
+    )
+    self.aev = try container.decode(
+      [String: [String: [InstantValue: InstantTriple]]].self,
+      forKey: .aev
+    )
+    self.vae = try container.decode(
+      [InstantValue: [String: [String: InstantTriple]]].self,
+      forKey: .vae
+    )
+    self.storedTripleCount = Self.walkedTripleCount(eav)
+  }
+
+  func encode(to encoder: Encoder) throws {
+    var container = encoder.container(keyedBy: CodingKeys.self)
+    try container.encode(aev, forKey: .aev)
+    try container.encode(eav, forKey: .eav)
+    try container.encode(vae, forKey: .vae)
+  }
+
+  private static func walkedTripleCount(
+    _ eav: [String: [String: [InstantValue: InstantTriple]]]
+  ) -> Int {
+    eav.values.reduce(into: 0) { count, attributesByID in
+      for valuesByValue in attributesByID.values {
+        count += valuesByValue.count
+      }
+    }
+  }
 
   private struct QuerySnapshot: Hashable, Sendable {
     var snapshot: InstantEntitySnapshot
@@ -236,12 +280,15 @@ struct TripleIndexes: Hashable, Codable, Sendable {
     return triples
   }
 
+  /// Maintained by `insert` and `removeNormalized`, the only two writers that change how many
+  /// triples `eav` holds.
+  ///
+  /// `InstantStore.prepare` reads this on every applied transaction and every terminal-failure
+  /// removal, so walking every entity × attribute × value made each of those proportional to the
+  /// whole store. See
+  /// `InstantStoreWriteScalingTests.maintainedTripleCountMatchesAFreshWalkThroughEveryMutation`.
   var tripleCount: Int {
-    eav.values.reduce(into: 0) { count, attributesByID in
-      for valuesByValue in attributesByID.values {
-        count += valuesByValue.count
-      }
-    }
+    storedTripleCount
   }
 
   var newestTransactionTimeMilliseconds: Int64? {
@@ -1200,6 +1247,9 @@ struct TripleIndexes: Hashable, Codable, Sendable {
       }
     }
 
+    if eav[triple.entityID]?[triple.attributeID]?[triple.value] == nil {
+      storedTripleCount += 1
+    }
     eav[triple.entityID, default: [:]][triple.attributeID, default: [:]][triple.value] = triple
     aev[triple.attributeID, default: [:]][triple.entityID, default: [:]][triple.value] = triple
 
@@ -1258,6 +1308,9 @@ struct TripleIndexes: Hashable, Codable, Sendable {
   }
 
   private mutating func removeNormalized(_ triple: InstantTriple, attribute: InstantAttribute?) {
+    if eav[triple.entityID]?[triple.attributeID]?[triple.value] != nil {
+      storedTripleCount -= 1
+    }
     eav[triple.entityID]?[triple.attributeID]?[triple.value] = nil
     if eav[triple.entityID]?[triple.attributeID]?.isEmpty == true {
       eav[triple.entityID]?[triple.attributeID] = nil

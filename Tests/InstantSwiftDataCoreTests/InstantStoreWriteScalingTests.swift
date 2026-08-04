@@ -149,6 +149,163 @@ struct InstantStoreWriteScalingTests {
     )
   }
 
+  // MARK: - TripleIndexes.tripleCount
+
+  /// `tripleCount` is read by `InstantStore.prepare`, which runs on every applied transaction and
+  /// every terminal-failure removal. Deriving it walked every entity × attribute × value.
+  ///
+  /// Measured on a Mac Scribe process on 2026-08-04 with 883,388 triples: this single getter was
+  /// 2,400 of 5,301 samples, reached through
+  /// `failMutation → prepareTerminalFailureRemoval → InstantStore.prepare`.
+  @Test
+  func maintainedTripleCountMatchesAFreshWalkThroughEveryMutation() {
+    let attributes = AttributeStore(attributes: [
+      InstantAttribute(
+        id: "ns/many",
+        namespace: "ns",
+        name: "many",
+        valueType: .string,
+        cardinality: .many
+      ),
+      InstantAttribute(
+        id: "ns/one",
+        namespace: "ns",
+        name: "one",
+        valueType: .string,
+        cardinality: .one
+      ),
+    ])
+    func walked(_ indexes: TripleIndexes) -> Int { indexes.triples.count }
+
+    var indexes = TripleIndexes(attributes: attributes)
+    expectNoDifference(indexes.tripleCount, 0)
+
+    // Distinct values on a many-cardinality attribute accumulate.
+    for index in 0..<5 {
+      indexes.apply(
+        .insert(
+          InstantTriple(
+            entityID: "row",
+            attributeID: "ns/many",
+            value: .string("v\(index)"),
+            txID: "tx-\(index)",
+            txTime: InstantTimestamp(milliseconds: Int64(index + 1))
+          )
+        ),
+        attributes: attributes
+      )
+    }
+    expectNoDifference(indexes.tripleCount, walked(indexes))
+    expectNoDifference(indexes.tripleCount, 5)
+
+    // Re-inserting an identical triple replaces rather than accumulates.
+    indexes.apply(
+      .insert(
+        InstantTriple(
+          entityID: "row",
+          attributeID: "ns/many",
+          value: .string("v0"),
+          txID: "tx-again",
+          txTime: InstantTimestamp(milliseconds: 99)
+        )
+      ),
+      attributes: attributes
+    )
+    expectNoDifference(indexes.tripleCount, walked(indexes))
+    expectNoDifference(indexes.tripleCount, 5)
+
+    // A cardinality-one attribute evicts the previous value, so the count must not grow.
+    for index in 0..<3 {
+      indexes.apply(
+        .insert(
+          InstantTriple(
+            entityID: "row",
+            attributeID: "ns/one",
+            value: .string("single-\(index)"),
+            txID: "tx-one-\(index)",
+            txTime: InstantTimestamp(milliseconds: Int64(200 + index))
+          )
+        ),
+        attributes: attributes
+      )
+      expectNoDifference(indexes.tripleCount, walked(indexes))
+    }
+    expectNoDifference(indexes.tripleCount, 6)
+
+    // Retraction decrements, and retracting something absent must not.
+    indexes.apply(
+      .retract(
+        InstantTriple(
+          entityID: "row",
+          attributeID: "ns/many",
+          value: .string("v3"),
+          txID: "tx-retract",
+          txTime: InstantTimestamp(milliseconds: 300)
+        )
+      ),
+      attributes: attributes
+    )
+    expectNoDifference(indexes.tripleCount, walked(indexes))
+    expectNoDifference(indexes.tripleCount, 5)
+
+    indexes.apply(
+      .retract(
+        InstantTriple(
+          entityID: "row",
+          attributeID: "ns/many",
+          value: .string("never-present"),
+          txID: "tx-retract-missing",
+          txTime: InstantTimestamp(milliseconds: 301)
+        )
+      ),
+      attributes: attributes
+    )
+    expectNoDifference(indexes.tripleCount, walked(indexes))
+    expectNoDifference(indexes.tripleCount, 5)
+
+    // Deleting the entity drops everything it owned.
+    indexes.apply(.deleteEntity("row"), attributes: attributes)
+    expectNoDifference(indexes.tripleCount, walked(indexes))
+    expectNoDifference(indexes.tripleCount, 0)
+  }
+
+  /// The count is derived, so it must be rebuilt on decode rather than trusted from the wire — and
+  /// the encoded shape must not change, because persisted caches written by earlier builds have to
+  /// keep decoding.
+  @Test
+  func tripleCountSurvivesACodableRoundTripWithoutChangingTheEncodedShape() throws {
+    let attributes = AttributeStore(attributes: [
+      InstantAttribute(id: "ns/value", namespace: "ns", name: "value", valueType: .string)
+    ])
+    let indexes = TripleIndexes(
+      triples: (0..<20).map { index in
+        InstantTriple(
+          entityID: "row-\(index)",
+          attributeID: "ns/value",
+          value: .string("v\(index)"),
+          txID: "tx-\(index)",
+          txTime: InstantTimestamp(milliseconds: Int64(index + 1))
+        )
+      },
+      attributes: attributes
+    )
+    expectNoDifference(indexes.tripleCount, 20)
+
+    let encoded = try JSONEncoder().encode(indexes)
+    let decoded = try JSONDecoder().decode(TripleIndexes.self, from: encoded)
+    expectNoDifference(decoded.tripleCount, 20)
+    expectNoDifference(decoded.tripleCount, decoded.triples.count)
+
+    let keys = try #require(
+      try JSONSerialization.jsonObject(with: encoded) as? [String: Any]
+    ).keys.sorted()
+    expectNoDifference(
+      keys,
+      ["aev", "eav", "vae"],
+      "A cached triple store written by an earlier build must still decode."
+    )
+  }
+
   /// `visibleWriteFilter` asks for the newest write time once per outbox write key, and the outbox
   /// is rescanned on every inbound server event. Allocating an array per key to take a max made
   /// that scan proportional to outbox depth × versions per key.
