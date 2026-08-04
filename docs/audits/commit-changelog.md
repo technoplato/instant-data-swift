@@ -6,6 +6,14 @@ commit SHA, and high-level reason. Changelog-only bookkeeping commits are
 visible in Git history but are not self-recorded because a commit cannot
 contain its own final SHA.
 
+## August 4, 2026 at 12:53:10 PM EDT
+
+- Repository: `instant-data-swift`
+- Commit: `c8c8011f5846a66fa29da4f1ca809b62dc418c09`
+- Reason: Full suite green for 1.4.0 (1351 tests / 115 suites, known issues
+  only). Parity-count pins, outbox-revision and mutationCount expectations,
+  reactor message counts, SAFETY comment, and `docs/releases/v1.4.0.md`.
+
 ## August 4, 2026 at 12:13:51 PM EDT
 
 - Repository: `instant-data-swift`

@@ -4,6 +4,21 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## August 4th, 2026 at 12:53:07 p.m. EDT — `c8c8011f5846` Green the full suite for the 1.4.0 API-convergence release
+
+- **Implementation commit:** `c8c8011f5846a66fa29da4f1ca809b62dc418c09`
+- **Change:** Green full suite and document 1.4.0 API-convergence release
+- **Details:**
+  - 1351 tests / 115 suites pass with known issues only.
+  - Parity pins, outboxRevision rebase expectations, mutationCount semantics, reactor message counts.
+- **Files:**
+  - `docs/releases/v1.4.0.md` — Human-readable 1.4.0 release story
+  - `Tests/InstantSwiftDataCoreTests/CLITests.swift` — Updated coverage and loopback pins
+  - `Tests/InstantSwiftDataCoreTests/InstantStoreTests.swift` — Outbox revision and known-issue wraps
+- **User context (verbatim):**
+  > run full tests, then bump minor version for api convergence, push, update package.swift for targets to use new
+- **SpecStory:** unavailable — Grok session; no SpecStory share URI authorized.
+
 ## August 4th, 2026 at 12:13:51 p.m. EDT — `3e625416e2db` Inventory every SQLiteData test and close Instant ergonomics parity gaps
 
 - **Implementation commit:** `3e625416e2db9376606bcecaff97043de4073c94`
