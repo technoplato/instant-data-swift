@@ -307,7 +307,10 @@ let package = Package(
     ),
     .executableTarget(
       name: "RecipesV3Executable",
-      dependencies: ["RecipesV3App"],
+      dependencies: [
+        "RecipesV3App",
+        "LinkedInfiniteV3App",
+      ],
       swiftSettings: strictConcurrencySettings
     ),
     .executableTarget(
