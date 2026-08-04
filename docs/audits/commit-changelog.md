@@ -1,3 +1,9 @@
+## 2026-08-04 15:55:21 EDT
+
+- **Repository:** instant-data-swift
+- **Commit:** 0ac518d51c716dc05c94fc46e14d2177bc8ce411
+- **Reason:** ADR 0012 — typed Swift Instant permissions as source of truth (ADT + TS parse/print).
+
 ## 2026-08-04 15:44:40 EDT
 
 - **Repository:** realtime-voice-sqlite-instant
