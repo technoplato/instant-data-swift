@@ -6,6 +6,18 @@ commit SHA, and high-level reason. Changelog-only bookkeeping commits are
 visible in Git history but are not self-recorded because a commit cannot
 contain its own final SHA.
 
+## August 4, 2026 at 1:15:49 AM EDT
+
+- Repository: `realtime-voice-sqlite-instant`
+- Commit: `7cd5c6d2d2826c6cce1dfeea5d81569184cda05a`
+- Reason: Write diagnostics to the tailnet WebSocket collector and the InstantDB
+  `debugLogs` app at the same time, and instrument the record-button gate in the
+  reducer. An iPad on `dfbe377` produced no diagnostic events for a dead-looking
+  record button, and its InstantDB lane had been dark for two days while the app
+  kept running, so a lane built on the Instant client could not report its own
+  outage. Also preserves `InstantError` detail that the `NSError` cast had
+  collapsed to domain plus code 1.
+
 ## August 3, 2026 at 11:39:21 PM EDT
 
 - Repository: `instant-data-swift`
