@@ -1915,6 +1915,19 @@ public struct FetchSubscription<Element: Sendable>: AsyncSequence, Sendable {
   }
 }
 
+/// Algebraic load surface for infinite queries (TanStack-shaped).
+///
+/// Prefer this over parallel bool soup (`isLoading` + `canLoadNextPage` + empty
+/// rows). Impossible combos such as "loading next page with no first page and
+/// no failure" are unrepresentable.
+public enum InfiniteQueryPhase: Equatable, Sendable {
+  case idleEmpty
+  case loadingFirstPage
+  case loaded(canLoadNextPage: Bool)
+  case loadingNextPage(canLoadNextPage: Bool)
+  case failed(InstantError, hadRows: Bool)
+}
+
 public struct InfiniteQuerySnapshot<Element: Sendable>: Sendable {
   public var queryID: String
   public var sequence: Int64
@@ -1937,6 +1950,18 @@ public struct InfiniteQuerySnapshot<Element: Sendable>: Sendable {
     self.pageInfo = pageInfo
     self.canLoadNextPage = canLoadNextPage
     self.error = error
+  }
+
+  /// Snapshot phase without an in-flight loading bit (subscriptions emit settled
+  /// pages). Use `InfiniteQuery.phase` on the property wrapper for live loading.
+  public var phase: InfiniteQueryPhase {
+    if let error {
+      return .failed(error, hadRows: !values.isEmpty)
+    }
+    if values.isEmpty {
+      return canLoadNextPage ? .loaded(canLoadNextPage: true) : .idleEmpty
+    }
+    return .loaded(canLoadNextPage: canLoadNextPage)
   }
 }
 
@@ -3896,6 +3921,22 @@ public struct InfiniteQuery<Element: InstantEntityModel>: @unchecked Sendable {
     nonmutating set { storage.canLoadNextPage = newValue }
   }
 
+  /// TanStack-shaped phase ADT derived from loading, rows, page-end, and error.
+  public var phase: InfiniteQueryPhase {
+    if let loadError {
+      return .failed(loadError, hadRows: !wrappedValue.isEmpty)
+    }
+    if isLoading {
+      return wrappedValue.isEmpty
+        ? .loadingFirstPage
+        : .loadingNextPage(canLoadNextPage: canLoadNextPage)
+    }
+    if wrappedValue.isEmpty {
+      return .idleEmpty
+    }
+    return .loaded(canLoadNextPage: canLoadNextPage)
+  }
+
   public subscript<Member>(dynamicMember keyPath: KeyPath<[Element], Member>) -> Member {
     wrappedValue[keyPath: keyPath]
   }
@@ -3931,6 +3972,17 @@ public struct InfiniteQuery<Element: InstantEntityModel>: @unchecked Sendable {
     self.query = LockedValueStorage(query)
   }
 
+  /// Page size is infinite-query config: each `loadNextPage()` expands by this
+  /// many **root** rows. It is not "only ever N rows forever."
+  public init(
+    wrappedValue: [Element] = [],
+    _ query: InstantEntityQuery<Element>,
+    pageSize: Int
+  ) {
+    precondition(pageSize > 0, "InfiniteQuery pageSize must be greater than zero.")
+    self.init(wrappedValue: wrappedValue, query.limit(UInt(pageSize)))
+  }
+
   public init(
     wrappedValue: [Element] = [],
     _ query: InstantEntityQuery<Element>?
@@ -3957,6 +4009,15 @@ public struct InfiniteQuery<Element: InstantEntityModel>: @unchecked Sendable {
       animation: Animation?
     ) {
       self.init(wrappedValue: wrappedValue, query)
+    }
+
+    public init(
+      wrappedValue: [Element] = [],
+      _ query: InstantEntityQuery<Element>,
+      pageSize: Int,
+      animation: Animation?
+    ) {
+      self.init(wrappedValue: wrappedValue, query, pageSize: pageSize)
     }
 
     public init(

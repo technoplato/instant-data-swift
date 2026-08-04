@@ -34,6 +34,7 @@ let package = Package(
     .library(name: "SyncUpsV3App", targets: ["SyncUpsV3App"]),
     .library(name: "StreamsV3App", targets: ["StreamsV3App"]),
     .library(name: "TodosV3App", targets: ["TodosV3App"]),
+    .library(name: "LinkedInfiniteV3App", targets: ["LinkedInfiniteV3App"]),
     .library(name: "VoiceTrailV3App", targets: ["VoiceTrailV3App"]),
     .executable(name: "instant-swift-data", targets: ["instant-swift-data"]),
     .executable(name: "app-builder-v3", targets: ["AppBuilderV3Executable"]),
@@ -173,6 +174,7 @@ let package = Package(
       dependencies: [
         "AuthV3App",
         "InstantSwiftData",
+        "LinkedInfiniteV3App",
         "PresenceRecipesV3App",
         "TodosV3App",
         .product(name: "Dependencies", package: "swift-dependencies"),
@@ -208,6 +210,14 @@ let package = Package(
     ),
     .target(
       name: "TodosV3App",
+      dependencies: [
+        "InstantSwiftData",
+        .product(name: "Dependencies", package: "swift-dependencies"),
+      ],
+      swiftSettings: strictConcurrencySettings
+    ),
+    .target(
+      name: "LinkedInfiniteV3App",
       dependencies: [
         "InstantSwiftData",
         .product(name: "Dependencies", package: "swift-dependencies"),

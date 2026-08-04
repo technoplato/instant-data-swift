@@ -276,6 +276,8 @@ Instant Swift Data provides property wrappers for observing queries in SwiftUI:
 * **`@FetchAll`**: Fetches and reactively updates an array of entities matching a query.
 * **`@FetchOne`**: Fetches and reactively updates a single entity matching a query or ID.
 * **`@Fetch`**: Fetches arbitrary projected data or aggregate values.
+* **`@InfiniteQuery`**: Pages a root entity with `loadNextPage()`; optional
+  `pageSize` and `phase` (`InfiniteQueryPhase`) for TanStack-shaped UI.
 
 ```swift
 // Static query observation
@@ -290,7 +292,27 @@ $dynamicSearchResults.load(
   Todo.query.search(.text, queryText),
   using: db
 )
+
+// Infinite list: page roots only; linked children ride via .include
+// (never open a second infinite stream on the child namespace).
+@InfiniteQuery(
+  Recording.query
+    .order(Recording.updatedAt, .descending)
+    .include(Recording.transcriptions),
+  pageSize: 50
+)
+private var recordings: [Recording]
+
+// recordings                  // accumulated root pages
+// $recordings.phase           // InfiniteQueryPhase ADT
+// $recordings.loadNextPage()  // expand by pageSize roots
+// $recordings.canLoadNextPage
 ```
+
+**Join-shaped infinite lists:** put `limit`/`pageSize` on the **root** only.
+Nested pagination on includes is rejected. Select metrics such as word counts
+from `snapshot.links["transcriptions"]` (see the Linked Infinite recipe and
+`examples linked-infinite` CLI).
 
 ### Mutations & Optimistic Updates
 

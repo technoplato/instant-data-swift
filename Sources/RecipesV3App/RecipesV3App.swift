@@ -2,11 +2,13 @@ import AuthV3App
 import Dependencies
 import Foundation
 import InstantSwiftData
+import LinkedInfiniteV3App
 import PresenceRecipesV3App
 import TodosV3App
 
 public enum InstantRecipeV3: String, CaseIterable, Hashable, Identifiable, Sendable {
   case todos
+  case linkedInfinite = "linked-infinite"
   case cursors
   case customCursors = "custom-cursors"
   case reactions
@@ -20,6 +22,7 @@ public enum InstantRecipeV3: String, CaseIterable, Hashable, Identifiable, Senda
   public var title: String {
     switch self {
     case .todos: "Todos"
+    case .linkedInfinite: "Linked Infinite"
     case .cursors: "Cursors"
     case .customCursors: "Custom Cursors"
     case .reactions: "Reactions"
@@ -33,6 +36,8 @@ public enum InstantRecipeV3: String, CaseIterable, Hashable, Identifiable, Senda
   public var summary: String {
     switch self {
     case .todos: "Realtime CRUD with optimistic local state"
+    case .linkedInfinite:
+      "Infinite page parents with linked children (word counts via include)"
     case .cursors: "Share normalized pointer positions with presence"
     case .customCursors: "Add names, colors, and custom cursor rendering"
     case .reactions: "Publish ephemeral emoji events over a room topic"
@@ -46,6 +51,7 @@ public enum InstantRecipeV3: String, CaseIterable, Hashable, Identifiable, Senda
   public var systemImage: String {
     switch self {
     case .todos: "checklist"
+    case .linkedInfinite: "list.bullet.rectangle"
     case .cursors: "cursorarrow.motionlines"
     case .customCursors: "person.crop.circle.badge.checkmark"
     case .reactions: "hand.thumbsup"
@@ -128,6 +134,7 @@ public struct RecipesV3AppConfiguration: Hashable, Sendable {
 
   public static var initialAttributes: [InstantAttribute] {
     Todo.instantAttributes
+      + LinkedInfiniteSeed.instantAttributes
       + MergeTileGameV3Board.instantAttributes
       + AuthV3User.instantAttributes
   }
@@ -339,6 +346,8 @@ public struct RecipesV3AppConfiguration: Hashable, Sendable {
       switch recipe {
       case .todos:
         TodosScreen(wrapsInNavigationStack: false)
+      case .linkedInfinite:
+        LinkedInfiniteScreen(wrapsInNavigationStack: false)
       case .cursors:
         CursorsV3Screen(profileID: profileID)
       case .customCursors:

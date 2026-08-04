@@ -67,6 +67,7 @@ public enum CLIExamplesInvocation: Equatable, Sendable {
   case reminders(CLIExamplesRemindersLeafInvocation)
   case remindersV3(CLIExamplesRemindersV3LeafInvocation)
   case todoLinks(CLIExamplesTodoLinksLeafInvocation)
+  case linkedInfinite(CLIExamplesLinkedInfiniteLeafInvocation)
   case unknown(String, arguments: [String])
 }
 
@@ -311,6 +312,13 @@ public enum CLIExamplesTodoLinksLeafInvocation: Equatable, Sendable {
   case unknown(String)
 }
 
+public enum CLIExamplesLinkedInfiniteLeafInvocation: Equatable, Sendable {
+  case seed
+  case list
+  case page
+  case unknown(String)
+}
+
 public enum CLIExamplesTodoLinksUsage {
   public static let todoLinks = """
     Usage: instant-swift-data examples todo-links <seed|list|nested|unlink>
@@ -329,7 +337,28 @@ public enum CLIExamplesTodoLinksUsage {
     "Usage: instant-swift-data examples todo-links unlink [--json|--jsonl]"
 }
 
+public enum CLIExamplesLinkedInfiniteUsage {
+  public static let linkedInfinite = """
+    Usage: instant-swift-data examples linked-infinite <seed|list|page>
+      instant-swift-data examples linked-infinite seed [--json|--jsonl]
+      instant-swift-data examples linked-infinite list [--json|--jsonl]
+      instant-swift-data examples linked-infinite page [--json|--jsonl]
+    """
+  public static let seed =
+    "Usage: instant-swift-data examples linked-infinite seed [--json|--jsonl]"
+  public static let list =
+    "Usage: instant-swift-data examples linked-infinite list [--json|--jsonl]"
+  public static let page =
+    "Usage: instant-swift-data examples linked-infinite page [--json|--jsonl]"
+}
+
 public enum CLIExamplesTodoLinksArgumentError: Error, Equatable, Sendable {
+  case invalidArguments(usage: String)
+
+  public var exitCode: Int32 { 64 }
+}
+
+public enum CLIExamplesLinkedInfiniteArgumentError: Error, Equatable, Sendable {
   case invalidArguments(usage: String)
 
   public var exitCode: Int32 { 64 }
@@ -2918,6 +2947,9 @@ public struct CLIExamplesParser: Parser {
     case "todo-links":
       return .todoLinks(try CLIExamplesTodoLinksLeafParser().parse(&input))
 
+    case "linked-infinite", "linked-infinite-query":
+      return .linkedInfinite(try CLIExamplesLinkedInfiniteLeafParser().parse(&input))
+
     default:
       let arguments = Array(input)
       input.removeAll()
@@ -3686,6 +3718,48 @@ public struct CLIExamplesTodoLinksLeafParser: Parser {
         usage: CLIExamplesTodoLinksUsage.unlink
       )
       return .unlink
+
+    default:
+      input.removeAll()
+      return .unknown(command)
+    }
+  }
+}
+
+public struct CLIExamplesLinkedInfiniteLeafParser: Parser {
+  public init() {}
+
+  public func parse(
+    _ input: inout ArraySlice<String>
+  ) throws -> CLIExamplesLinkedInfiniteLeafInvocation {
+    guard let command = input.first else {
+      throw CLIExamplesLinkedInfiniteArgumentError.invalidArguments(
+        usage: CLIExamplesLinkedInfiniteUsage.linkedInfinite
+      )
+    }
+    input.removeFirst()
+
+    switch command {
+    case "seed":
+      try requireNoRemainingExamplesLinkedInfiniteArguments(
+        &input,
+        usage: CLIExamplesLinkedInfiniteUsage.seed
+      )
+      return .seed
+
+    case "list":
+      try requireNoRemainingExamplesLinkedInfiniteArguments(
+        &input,
+        usage: CLIExamplesLinkedInfiniteUsage.list
+      )
+      return .list
+
+    case "page", "load-next", "next":
+      try requireNoRemainingExamplesLinkedInfiniteArguments(
+        &input,
+        usage: CLIExamplesLinkedInfiniteUsage.page
+      )
+      return .page
 
     default:
       input.removeAll()
@@ -7689,6 +7763,15 @@ private func requireNoRemainingExamplesTodoLinksArguments(
   }
 }
 
+private func requireNoRemainingExamplesLinkedInfiniteArguments(
+  _ input: inout ArraySlice<String>,
+  usage: String
+) throws {
+  if !input.isEmpty {
+    throw CLIExamplesLinkedInfiniteArgumentError.invalidArguments(usage: usage)
+  }
+}
+
 private func requireNoRemainingExamplesCountersArguments(
   _ input: inout ArraySlice<String>,
   usage: String
@@ -9837,6 +9920,15 @@ extension CLIExamplesAppBuilderArgumentError: CustomStringConvertible {
 }
 
 extension CLIExamplesTodoLinksArgumentError: CustomStringConvertible {
+  public var description: String {
+    switch self {
+    case let .invalidArguments(usage):
+      return usage
+    }
+  }
+}
+
+extension CLIExamplesLinkedInfiniteArgumentError: CustomStringConvertible {
   public var description: String {
     switch self {
     case let .invalidArguments(usage):

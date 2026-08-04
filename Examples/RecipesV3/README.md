@@ -4,6 +4,9 @@ This universal SwiftUI host contains every recipe currently listed at
 <https://www.instantdb.com/recipes>:
 
 - Todos
+- **Linked Infinite** — infinite page of parent entities with linked children
+  (e.g. recordings + transcription word counts via `.include`, not a second
+  infinite stream)
 - Cursors
 - Custom Cursors
 - Reactions
@@ -53,6 +56,18 @@ helper. With no app ID, the executable uses the durable local runtime. Use `INST
 ```bash
 INSTANT_RECIPE=merge-tile-game swift run recipes-v3
 swift run recipes-v3 --recipe todos
+swift run recipes-v3 --recipe linked-infinite
+```
+
+### Linked Infinite (CLI seed + page)
+
+Demonstrate join-shaped infinite paging without the UI:
+
+```bash
+swift run instant-swift-data examples linked-infinite seed
+swift run instant-swift-data examples linked-infinite list   # first page (3 roots + linked word counts)
+swift run instant-swift-data examples linked-infinite page   # loadNextPage expands roots
+swift run instant-swift-data examples linked-infinite list --json
 ```
 
 ## Build every Apple platform

@@ -913,6 +913,100 @@ struct TypedAPITests {
   }
 
   @Test
+  func typedInfiniteQueryPagesRootEntitiesWithLinkedChildrenOnEachPage() async throws {
+    // Join-shaped infinite list: page only the root namespace; linked children ride with
+    // each root page via .include (no second infinite stream on the child namespace).
+    let cacheURL = try typedTestCacheURL("typed-infinite-linked")
+    let fixedDate = Date(timeIntervalSince1970: 1_700_000_511)
+    let userA = InstantID<TypedUser>(rawValue: "user-infinite-a")
+    let userB = InstantID<TypedUser>(rawValue: "user-infinite-b")
+    let userC = InstantID<TypedUser>(rawValue: "user-infinite-c")
+    let postA1 = InstantID<TypedPost>(rawValue: "post-a-1")
+    let postA2 = InstantID<TypedPost>(rawValue: "post-a-2")
+    let postB1 = InstantID<TypedPost>(rawValue: "post-b-1")
+    let postC1 = InstantID<TypedPost>(rawValue: "post-c-1")
+    let query =
+      TypedUser.query
+      .order(TypedUser.name)
+      .limit(2)
+      .include(
+        TypedUser.posts,
+        TypedPost.query.select(TypedPost.title).order(TypedPost.title)
+      )
+
+    try await withDependencies {
+      $0.date.now = fixedDate
+      try await $0.bootstrapInstantSwiftData(
+        appID: "typed-infinite-linked",
+        persistenceURL: cacheURL,
+        context: .test,
+        initialAttributes: TypedUser.instantAttributes + TypedPost.instantAttributes
+      )
+    } operation: {
+      @Dependency(\.defaultInstantSwiftData) var db
+
+      try await db.transact(
+        id: "tx-typed-infinite-linked-seed",
+        createdAt: InstantTimestamp(milliseconds: 1_700_000_511_010)
+      ) {
+        TypedUser.create(id: userA, TypedUser.name.set("Ada"))
+        TypedUser.create(id: userB, TypedUser.name.set("Blake"))
+        TypedUser.create(id: userC, TypedUser.name.set("Cara"))
+        TypedPost.create(id: postA1, TypedPost.title.set("Ada one"))
+        TypedPost.create(id: postA2, TypedPost.title.set("Ada two"))
+        TypedPost.create(id: postB1, TypedPost.title.set("Blake one"))
+        TypedPost.create(id: postC1, TypedPost.title.set("Cara one"))
+        TypedPost.author.link(from: postA1, to: userA)
+        TypedPost.author.link(from: postA2, to: userA)
+        TypedPost.author.link(from: postB1, to: userB)
+        TypedPost.author.link(from: postC1, to: userC)
+      }
+
+      // Raw plan keeps link payloads; typed Entity.decode drops them by design.
+      let subscription = await db.subscribeInfiniteQuery(query.plan)
+      defer { subscription.unsubscribe() }
+      var iterator = subscription.snapshots.makeAsyncIterator()
+
+      let firstPage = try #require(await iterator.next())
+      #expect(firstPage.error == nil)
+      expectNoDifference(firstPage.values.map(\.id), [userA.rawValue, userB.rawValue])
+      expectNoDifference(firstPage.canLoadNextPage, true)
+      expectNoDifference(
+        firstPage.values.first?.links?["posts"]?.map(\.id).sorted(),
+        [postA1.rawValue, postA2.rawValue]
+      )
+      expectNoDifference(
+        firstPage.values.dropFirst().first?.links?["posts"]?.map(\.id),
+        [postB1.rawValue]
+      )
+      // Child include is complete for roots on this page — no empty child race.
+      #expect(
+        firstPage.values.allSatisfy { user in
+          (user.links?["posts"] ?? []).isEmpty == false
+        }
+      )
+
+      subscription.loadNextPage()
+      let secondPage = try #require(await iterator.next())
+      #expect(secondPage.error == nil)
+      expectNoDifference(
+        secondPage.values.map(\.id),
+        [userA.rawValue, userB.rawValue, userC.rawValue]
+      )
+      expectNoDifference(secondPage.canLoadNextPage, false)
+      expectNoDifference(
+        secondPage.values.last?.links?["posts"]?.map(\.id),
+        [postC1.rawValue]
+      )
+      // Every accumulated root still carries its linked children after paging.
+      for user in secondPage.values {
+        let posts = user.links?["posts"] ?? []
+        #expect(!posts.isEmpty, "Expected linked posts for \(user.id)")
+      }
+    }
+  }
+
+  @Test
   func typedInfiniteQuerySubscriptionPreservesErrorSnapshotsAndRecovers() async throws {
     let error = InstantError(
       code: .validationFailed,

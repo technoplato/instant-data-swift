@@ -691,6 +691,8 @@ struct InstantSwiftDataCLI {
       throw CLIError(error.description, exitCode: error.exitCode)
     } catch let error as CLIExamplesTodoLinksArgumentError {
       throw CLIError(error.description, exitCode: error.exitCode)
+    } catch let error as CLIExamplesLinkedInfiniteArgumentError {
+      throw CLIError(error.description, exitCode: error.exitCode)
     } catch let error as CLIExamplesCountersArgumentError {
       throw CLIError(error.description, exitCode: error.exitCode)
     } catch let error as CLIExamplesChatArgumentError {
@@ -793,6 +795,10 @@ struct InstantSwiftDataCLI {
 
     case let .todoLinks(leaf):
       try await runTodoLinks(leaf: leaf, output: output)
+      return
+
+    case let .linkedInfinite(leaf):
+      try await runLinkedInfinite(leaf: leaf, output: output)
       return
 
     case let .todos(todosInvocation):
@@ -2231,6 +2237,80 @@ struct InstantSwiftDataCLI {
 
     case .unknown:
       preconditionFailure("Unknown todo-links commands are handled before bootstrapping.")
+    }
+  }
+
+  private static func runLinkedInfinite(
+    leaf: CLIExamplesLinkedInfiniteLeafInvocation,
+    output: OutputMode
+  ) async throws {
+    if case let .unknown(command) = leaf {
+      throw CLIError(
+        "Unknown linked-infinite command: \(command). \(linkedInfiniteUsage)",
+        exitCode: 64
+      )
+    }
+
+    let context = try await CLIContext.bootstrap(
+      initialAttributes: LinkedInfiniteExample.attributes
+    )
+
+    switch leaf {
+    case .seed:
+      var recordingIDs: [String] = []
+      var transcriptionIDs: [String] = []
+      for index in LinkedInfiniteExample.seedTitles.indices {
+        recordingIDs.append(
+          try await context.runtime.localID(
+            named: LinkedInfiniteExample.seedLocalIDName(index: index)
+          )
+        )
+        transcriptionIDs.append(
+          try await context.runtime.localID(
+            named: LinkedInfiniteExample.transcriptionLocalIDName(index: index)
+          )
+        )
+      }
+      let transactionID = context.runtime.configuration.makeID()
+      let now = context.runtime.configuration.now()
+      try await context.runtime.transact(
+        InstantStoreTransaction(
+          id: transactionID,
+          operations: LinkedInfiniteExample.seedOperations(
+            recordingIDs: recordingIDs,
+            transcriptionIDs: transcriptionIDs,
+            baseTime: now,
+            transactionID: transactionID
+          )
+        ),
+        createdAt: now,
+        source: "cli.examples.linked-infinite.seed"
+      )
+      try await printLinkedInfinite(
+        context: context,
+        output: output,
+        event: "seed",
+        loadNextPage: false
+      )
+
+    case .list:
+      try await printLinkedInfinite(
+        context: context,
+        output: output,
+        event: "list",
+        loadNextPage: false
+      )
+
+    case .page:
+      try await printLinkedInfinite(
+        context: context,
+        output: output,
+        event: "page",
+        loadNextPage: true
+      )
+
+    case .unknown:
+      preconditionFailure("Unknown linked-infinite commands are handled before bootstrapping.")
     }
   }
 
@@ -10929,12 +11009,13 @@ struct InstantSwiftDataCLI {
 
   private static var examplesUsage: String {
     """
-    Usage: instant-swift-data examples <interactive|todos|auth|app-builder|todo-links|counters|chat|mobile-chat|microblog|reactions|typing-indicator|avatar-stack|cursors|custom-cursors|merge-tile-game|stroopwafel|reminders|sync-ups>
+    Usage: instant-swift-data examples <interactive|todos|auth|app-builder|todo-links|linked-infinite|counters|chat|mobile-chat|microblog|reactions|typing-indicator|avatar-stack|cursors|custom-cursors|merge-tile-game|stroopwafel|reminders|sync-ups>
       instant-swift-data recipes interactive [--no-prompt] [--json|--jsonl]
       instant-swift-data examples todos <add|seed|list|watch|complete|update|delete|reset|refresh>
       instant-swift-data examples auth <send-code|verify-code|status|watch|sign-out> [--json|--jsonl]
       instant-swift-data examples app-builder <generate|list|show|append|finish|reset> [--json|--jsonl]
       instant-swift-data examples todo-links <seed|list|nested|unlink> [--json|--jsonl]
+      instant-swift-data examples linked-infinite <seed|list|page> [--json|--jsonl]
       instant-swift-data examples counters <seed|add|list|increment|decrement|delete> [--json|--jsonl]
       instant-swift-data examples chat <seed|channels|messages|post|reset> [--json|--jsonl]
       instant-swift-data examples mobile-chat <seed|channels|messages|profiles|profile|setup-profile|send|join|presence|leave|reset> [--json|--jsonl]
@@ -11199,6 +11280,91 @@ struct InstantSwiftDataCLI {
       instant-swift-data examples todo-links nested [--json|--jsonl]
       instant-swift-data examples todo-links unlink [--json|--jsonl]
     """
+  }
+
+  private static var linkedInfiniteUsage: String {
+    CLIExamplesLinkedInfiniteUsage.linkedInfinite
+  }
+
+  private static func printLinkedInfinite(
+    context: CLIContext,
+    output: OutputMode,
+    event: String,
+    loadNextPage: Bool
+  ) async throws {
+    let plan = LinkedInfiniteExample.recordingsQuery()
+    let subscription = await context.runtime.subscribeInfiniteQuery(plan)
+    defer { subscription.unsubscribe() }
+    var iterator = subscription.snapshots.makeAsyncIterator()
+    guard var snapshot = await iterator.next() else {
+      throw CLIError(
+        "Linked infinite subscription closed before emitting a page.",
+        exitCode: 1
+      )
+    }
+    if loadNextPage, snapshot.canLoadNextPage {
+      subscription.loadNextPage()
+      if let next = await iterator.next() {
+        snapshot = next
+      }
+    }
+    let rows = try LinkedInfiniteExample.decodeRecordings(snapshot.values)
+    let payload = LinkedInfiniteOutput(
+      appID: context.appID,
+      cachePath: context.cacheURL.path,
+      event: event,
+      transport: context.transportLabel,
+      queryID: plan.id,
+      pageSize: LinkedInfiniteExample.pageSize,
+      canLoadNextPage: snapshot.canLoadNextPage,
+      loadedCount: rows.count,
+      rows: rows
+    )
+
+    switch output {
+    case .human:
+      if rows.isEmpty {
+        print("No linked infinite recordings.")
+      } else {
+        for row in rows {
+          print(
+            "recording \(row.id) \(row.title) words=\(row.transcriptionWordCount)"
+          )
+        }
+      }
+      print("loaded: \(rows.count) pageSize: \(LinkedInfiniteExample.pageSize)")
+      print("canLoadNextPage: \(snapshot.canLoadNextPage)")
+      print("transport: \(payload.transport)")
+      print("cache: \(context.cacheURL.path)")
+
+    case .json:
+      try writeJSON(payload)
+
+    case .jsonl:
+      try writeJSONLine(
+        EvidenceRow(
+          caseID: "cli.examples.linked-infinite",
+          side: "swift",
+          event: event,
+          appID: context.appID,
+          ok: snapshot.error == nil,
+          details: payload
+        )
+      )
+      for row in rows {
+        try writeJSONLine(
+          EvidenceRow(
+            caseID: "cli.examples.linked-infinite",
+            side: "swift",
+            event: "recording",
+            appID: context.appID,
+            entityID: row.id,
+            ok: true,
+            details: row
+          )
+        )
+      }
+    }
   }
 
   private static func namespaceSummaries(
@@ -11667,6 +11833,18 @@ private struct TodosOutput: Codable, Sendable {
   var pageInfo: InstantQueryPageInfo?
   var pendingMutationCount: Int
   var todos: [TodoRecord]
+}
+
+private struct LinkedInfiniteOutput: Codable, Sendable {
+  var appID: String
+  var cachePath: String
+  var event: String
+  var transport: String
+  var queryID: String
+  var pageSize: Int
+  var canLoadNextPage: Bool
+  var loadedCount: Int
+  var rows: [LinkedInfiniteRecordingRecord]
 }
 
 private struct TodoLinksOutput: Codable, Sendable {

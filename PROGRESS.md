@@ -6,6 +6,25 @@ production-readiness plan
 Commit-level history stays in `docs/audits/commit-changelog.md`; this file is
 the narrative of what the library must prove and why.
 
+## 2026-08-04 — Linked infinite + includes recipe (join-shaped paging)
+
+- **Acceptance.** Typed test
+  `typedInfiniteQueryPagesRootEntitiesWithLinkedChildrenOnEachPage` proves
+  infinite pages root entities while reverse-included children ride on each
+  page (no second infinite root). Core example
+  `LinkedInfiniteExampleTests` seeds 7 recordings/transcriptions, pages size
+  3, and asserts linked word counts survive `loadNextPage`.
+- **API.** `InfiniteQueryPhase` ADT; `@InfiniteQuery(..., pageSize:)` maps to
+  root `.limit` (page size, not “only N forever”).
+- **Recipe.** `LinkedInfiniteV3App` + Recipes catalog entry `linked-infinite`.
+  CLI: `examples linked-infinite seed|list|page` with seed data and Mac
+  verification (local cache: first page 3 roots with words=280/240/200;
+  page expands to 6).
+- **Docs.** README infinite/include section; `Examples/RecipesV3/README.md`
+  lists Linked Infinite and CLI commands.
+- **Next.** Scribe dual-stream list deletion uses this pattern (single
+  recordings infinite + transcriptions include).
+
 ## 2026-08-02 18:38:48 EDT — #117 cardinality-one retract follow-up is cleared for landing
 
 - Implementation commit `8d02a7a8d6b7000dea42be0b534e96761e3b1daf`
