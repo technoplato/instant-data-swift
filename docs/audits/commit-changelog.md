@@ -6,6 +6,17 @@ commit SHA, and high-level reason. Changelog-only bookkeeping commits are
 visible in Git history but are not self-recorded because a commit cannot
 contain its own final SHA.
 
+## August 4, 2026 at 11:34:35 AM EDT
+
+- Repository: `instant-data-swift`
+- Commit: `c4badb4bf6b0deb1d44e0fc98fd1f9a827c0f86e`
+- Reason: Port upstream's only core benchmark (`instaql.bench.ts` `big query`)
+  to Swift: correctness pin, package-benchmark `LocalRead.deepJoin.zeneca`,
+  parity record, and reconciliation coverage for `*.bench.ts`. Measured
+  release arm64 p50 23 ms vs TypeScript 4.707 ms (~4.9× slower) — the port is
+  complete and the gap is now a performance task with numbers in
+  `INSTANT_DATA_PERFORMANCE_BENCHMARKS.md`.
+
 ## August 4, 2026 at 11:28:18 AM EDT
 
 - Repository: `instant-data-swift`

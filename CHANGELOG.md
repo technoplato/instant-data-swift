@@ -4,6 +4,27 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## August 4th, 2026 at 11:34:35 a.m. EDT — `c4badb4bf6b0` Port upstream's Zeneca deep-join benchmark and measure Swift against TypeScript
+
+- **Implementation commit:** `c4badb4bf6b0deb1d44e0fc98fd1f9a827c0f86e`
+- **Change:** Port the Zeneca deep-join benchmark and record that Swift is ~4.9× slower than TypeScript on it
+- **Details:**
+  - Correctness pin: upstreamInstaQLBigQueryDeepJoinMaterializes over the four-level cyclic users→bookshelves→{books, users→bookshelves} plan.
+  - package-benchmark LocalRead.deepJoin.zeneca times the same plan; TypeScript counterpart already exists as core.instaql.big-query.zeneca.
+  - Measured release arm64: Swift p50 23 ms wall clock (201 samples) vs TS p50 4.707 ms — gap is now a performance task.
+  - Reconciliation now walks *.bench.ts so a missing bench record fails the suite.
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantQueryExecutionParityTests.swift` — Correctness pin for the deep-join plan
+  - `benchmarks/Benchmarks/InstantSwiftDataBenchmarking/Benchmarks.swift` — LocalRead.deepJoin.zeneca workload
+  - `benchmarks/Benchmarks/InstantSwiftDataBenchmarking/Support.swift` — Zeneca fixture loader for the package-benchmark
+  - `Sources/InstantSwiftDataCore/InstantParityCoverage.swift` — instant.instaql.bench.big-query record
+  - `Tests/InstantSwiftDataCoreTests/InstantUpstreamParityReconciliationTests.swift` — Include *.bench.ts in the extractor
+  - `INSTANT_DATA_PERFORMANCE_BENCHMARKS.md` — Recorded Swift p50 and the 4.9× gap
+  - `docs/porting/swift-port-gap-analysis.md` — Mark steps 4 and 5 done
+- **User context (verbatim):**
+  > I do want the benchmark tests as well. We should have similar, equal, if not better, benchmarks.
+- **SpecStory:** unavailable — Continued from Claude Code session 8aa90e99-adb6-4b7e-b76e-e208b4706568 (fable:livestream); no SpecStory share URI authorized for this handoff.
+
 ## August 4th, 2026 at 11:28:13 a.m. EDT — `5d28f49070ef` Make upstream parity checkable and re-baseline the inventory on the vendored checkout
 
 - **Implementation commit:** `5d28f49070efbecc49fc32ab02a66b730af881f5`
