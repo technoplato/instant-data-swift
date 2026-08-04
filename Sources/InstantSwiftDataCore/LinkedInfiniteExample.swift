@@ -56,6 +56,19 @@ public enum LinkedInfiniteExample {
     "Kitchen brainstorm",
     "Evening recap",
     "Agent handoff",
+    "Sprint planning",
+    "Bug triage",
+    "Demo dry-run",
+    "Pair programming",
+    "Release checklist",
+    "User interview",
+    "Architecture notes",
+    "On-call handoff",
+    "Metrics review",
+    "Retro action items",
+    "Docs cleanup",
+    "Infra drift",
+    "Feature flags audit",
   ]
 
   public static let attributes: [InstantAttribute] = [

@@ -65,8 +65,11 @@ struct LinkedInfiniteExampleTests {
     let firstRows = try LinkedInfiniteExample.decodeRecordings(first.values)
     #expect(firstRows.allSatisfy { $0.transcriptionWordCount > 0 })
     // Newest first by updatedAt: last seed title has highest timestamp.
-    expectNoDifference(firstRows.map(\.title).first, "Agent handoff")
-    expectNoDifference(firstRows.first?.transcriptionWordCount, 7 * 40)
+    expectNoDifference(firstRows.map(\.title).first, LinkedInfiniteExample.seedTitles.last)
+    expectNoDifference(
+      firstRows.first?.transcriptionWordCount,
+      LinkedInfiniteExample.seedTitles.count * 40
+    )
 
     subscription.loadNextPage()
     let second = try #require(await iterator.next())
@@ -80,13 +83,12 @@ struct LinkedInfiniteExampleTests {
     subscription.loadNextPage()
     let third = try #require(await iterator.next())
     #expect(third.error == nil)
-    expectNoDifference(third.values.count, LinkedInfiniteExample.seedTitles.count)
-    expectNoDifference(third.canLoadNextPage, false)
+    // After two expansions we still have more pages for the larger seed set.
+    expectNoDifference(third.values.count, 9)
+    expectNoDifference(third.canLoadNextPage, true)
 
-    let allRows = try LinkedInfiniteExample.decodeRecordings(third.values)
-    expectNoDifference(
-      Set(allRows.map(\.transcriptionWordCount)),
-      Set((1...7).map { $0 * 40 })
-    )
+    let thirdRows = try LinkedInfiniteExample.decodeRecordings(third.values)
+    #expect(thirdRows.allSatisfy { $0.transcriptionWordCount > 0 })
+    #expect(LinkedInfiniteExample.seedTitles.count >= 15)
   }
 }

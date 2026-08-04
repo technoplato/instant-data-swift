@@ -188,6 +188,7 @@ public struct LinkedInfiniteListRow: Hashable, Identifiable, Sendable {
 }
 
 public enum LinkedInfiniteSeed {
+  /// Enough parents for several infinite pages (pageSize 3 → 5+ pages).
   public static let titles = [
     "Morning standup",
     "Design review",
@@ -196,6 +197,19 @@ public enum LinkedInfiniteSeed {
     "Kitchen brainstorm",
     "Evening recap",
     "Agent handoff",
+    "Sprint planning",
+    "Bug triage",
+    "Demo dry-run",
+    "Pair programming",
+    "Release checklist",
+    "User interview",
+    "Architecture notes",
+    "On-call handoff",
+    "Metrics review",
+    "Retro action items",
+    "Docs cleanup",
+    "Infra drift",
+    "Feature flags audit",
   ]
 
   public static var instantAttributes: [InstantAttribute] {
