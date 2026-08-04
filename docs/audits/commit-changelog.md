@@ -6,6 +6,13 @@ commit SHA, and high-level reason. Changelog-only bookkeeping commits are
 visible in Git history but are not self-recorded because a commit cannot
 contain its own final SHA.
 
+## August 4, 2026 at 12:55:02 PM EDT
+
+- Repository: `realtime-voice-sqlite-instant` (Scribe)
+- Commit: `f1f74bb6915c`
+- Reason: Pin published `instant-data-swift` **1.4.0** (API-convergence inventories)
+  in Package.swift, Package.resolved, and installer required dependencies.
+
 ## August 4, 2026 at 12:53:10 PM EDT
 
 - Repository: `instant-data-swift`
