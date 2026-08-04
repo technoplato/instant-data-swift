@@ -6,6 +6,19 @@ commit SHA, and high-level reason. Changelog-only bookkeeping commits are
 visible in Git history but are not self-recorded because a commit cannot
 contain its own final SHA.
 
+## August 4, 2026 at 1:56:30 AM EDT
+
+- Repository: `realtime-voice-sqlite-instant`
+- Commit: `325af15aedb4a4a53e0f9a2ba14b6e1b0f4a4b3c` (see `git log` for the full SHA)
+- Reason: HACK — tolerate an empty pre-sync emission for the recording-title
+  counter so the record button can start a recording. On a fresh iPad install the
+  live observation emitted an empty materialization for `recordingTitleSequences`
+  16 seconds before that namespace synced; the client read it as data, threw
+  "received 0", ended the observation, and discarded the authoritative high water
+  of 183. **Owed to this repository:** load state on `InstantQueryEmission`,
+  mirroring upstream InstantDB `isLoading`, so consumers can distinguish a cold
+  cache from a server-confirmed empty set. Landing that flag removes the hack.
+
 ## August 4, 2026 at 1:15:49 AM EDT
 
 - Repository: `realtime-voice-sqlite-instant`
