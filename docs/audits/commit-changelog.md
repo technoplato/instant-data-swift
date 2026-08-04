@@ -1,3 +1,15 @@
+## 2026-08-04 16:15:34 EDT
+
+- **repository:** realtime-voice-sqlite-instant
+- **commit:** 1f1c3637a7eca44cc918f2406bbac4a217beada6
+- **reason:** Join-shaped recording list: single infinite + transcription include; dual-write graph ref
+
+## 2026-08-04 16:15:34 EDT
+
+- **repository:** instant-data-swift
+- **commit:** d862dc083d8d0614bff0dd126557687fd8ac3a4b
+- **reason:** Linked infinite paging recipe with includes, InfiniteQueryPhase/pageSize, CLI seed/list/page, README
+
 ## 2026-08-04 15:59:36 EDT
 
 - **Repository:** instant-data-swift
