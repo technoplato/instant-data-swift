@@ -485,7 +485,7 @@ public enum InstantSwiftDataParityCoverage {
       sourceTestName: "useQuery starts in loading state",
       swiftFile: typedAPISwiftFile,
       swiftTestName:
-        "staticFetchAllStartsObservationWithoutTaskOrLoad + fetchAllDynamicQueryTaskReplacementCancelsStaleSubscription",
+        "staticFetchAllStartsObservationOnFirstReadWithoutTaskOrLoad + fetchAllDynamicQueryTaskReplacementCancelsStaleSubscription",
       surface: "adapter-query",
       status: .adapted,
       notes:
@@ -497,7 +497,7 @@ public enum InstantSwiftDataParityCoverage {
       sourceTestName: "useQuery subscribes to core on mount",
       swiftFile: typedAPISwiftFile,
       swiftTestName:
-        "staticFetchAllStartsObservationWithoutTaskOrLoad + fetchAllTaskBindsSubscriptionEmissionsIntoWrappedValue + fetchAllDynamicQueryTaskReplacementCancelsStaleSubscription",
+        "staticFetchAllStartsObservationOnFirstReadWithoutTaskOrLoad + fetchAllTaskBindsSubscriptionEmissionsIntoWrappedValue + fetchAllDynamicQueryTaskReplacementCancelsStaleSubscription",
       surface: "adapter-query",
       status: .adapted,
       notes:
@@ -591,7 +591,7 @@ public enum InstantSwiftDataParityCoverage {
       sourceTestName: "useQuery starts in loading state",
       swiftFile: typedAPISwiftFile,
       swiftTestName:
-        "staticFetchAllStartsObservationWithoutTaskOrLoad + fetchAllDynamicQueryTaskReplacementCancelsStaleSubscription",
+        "staticFetchAllStartsObservationOnFirstReadWithoutTaskOrLoad + fetchAllDynamicQueryTaskReplacementCancelsStaleSubscription",
       surface: "adapter-query",
       status: .adapted,
       notes:
@@ -603,7 +603,7 @@ public enum InstantSwiftDataParityCoverage {
       sourceTestName: "useQuery subscribes to core when mounted",
       swiftFile: typedAPISwiftFile,
       swiftTestName:
-        "staticFetchAllStartsObservationWithoutTaskOrLoad + fetchAllTaskBindsSubscriptionEmissionsIntoWrappedValue + fetchAllDynamicQueryTaskReplacementCancelsStaleSubscription",
+        "staticFetchAllStartsObservationOnFirstReadWithoutTaskOrLoad + fetchAllTaskBindsSubscriptionEmissionsIntoWrappedValue + fetchAllDynamicQueryTaskReplacementCancelsStaleSubscription",
       surface: "adapter-query",
       status: .adapted,
       notes:
@@ -1212,7 +1212,7 @@ public enum InstantSwiftDataParityCoverage {
         "test_reader_holds_partial_utf8_across_chunk_boundary + test_reader_aclose_cancels_active_file_fetch + test_reader_fetch_failure_triggers_reconnect_within_budget + test_reader_fetch_failure_surfaces_after_budget_exhausted + _process_append + Stream.ts createWriteStream/startWriteStream/appendStream",
       swiftFile: reactorParitySwiftFile,
       swiftTestName:
-        "InstantStreamFileTransportTests + streamFileFetchFailureSurfacesAfterRetryBudget + streamWriterMessagesAndAcknowledgementsUseCanonicalShapes + runtimeInlineStreamAppendPublishesAndAdvancesReconnectOffset + runtimeFileStreamAppendPublishesAndAdvancesByFetchedBytes + runtimeFileStreamFailureReconnectsWithoutAdvancingOffset + runtimeClientIDReaderBootstrapsRemoteStreamMetadata + runtimeLiveWriterStartsAppendsAndClosesCanonicalStream + runtimeLiveWriterReconnectsAndResendsOnlyUnflushedChunks",
+        "discardsByteOverlapAcrossFilesAndInlineContent + holdsSplitUTF8ScalarAcrossResponseChunks + pipelinesNextFileRequest + failedResponseThrowsBeforeAdvancing + cancellationTerminatesActiveResponseBody + streamFileFetchFailureSurfacesAfterRetryBudget + streamWriterMessagesAndAcknowledgementsUseCanonicalShapes + runtimeInlineStreamAppendPublishesAndAdvancesReconnectOffset + runtimeFileStreamAppendPublishesAndAdvancesByFetchedBytes + runtimeFileStreamFailureReconnectsWithoutAdvancingOffset + runtimeClientIDReaderBootstrapsRemoteStreamMetadata + runtimeLiveWriterStartsAppendsAndClosesCanonicalStream + runtimeLiveWriterReconnectsAndResendsOnlyUnflushedChunks",
       surface: "live-stream-materialization",
       status: .adapted,
       notes:
@@ -1406,7 +1406,8 @@ public enum InstantSwiftDataParityCoverage {
     instant(
       id: "instant.query.logical-or",
       sourceFile: instaQLSource,
-      sourceTestName: "Where OR test.each",
+      sourceTestName:
+        "Where OR multiple OR matches / Where OR mix of matching and non-matching / Where OR with and / Where OR with references / Where OR with references in both `or` & `and` clauses, no matches / Where OR with references in both `or` & `and` clauses, with matches / Where OR with nested ors / Where OR with ands in ors / Where OR with ands in ors in ands",
       swiftFile: queryExecutionSwiftFile,
       swiftTestName: "upstreamInstaQLCompoundOrFilters",
       surface: "query",
@@ -1978,7 +1979,8 @@ public enum InstantSwiftDataParityCoverage {
     instant(
       id: "instant.transaction-validation.lookup-rule-params",
       sourceFile: transactionValidationSource,
-      sourceTestName: "lookup refs and rule params",
+      sourceTestName:
+        "allows lookup values in square bracket / allows lookup values in link / lookup proxy",
       swiftFile: transactionValidationSwiftFile,
       swiftTestName: "upstreamAllowsLookupValuesForEntityWrites",
       surface: "transaction-validation",
@@ -2705,7 +2707,7 @@ public enum InstantSwiftDataParityCoverage {
       sourceTestName: "@Fetch(Facts()) composite transaction value",
       swiftFile: typedAPISwiftFile,
       swiftTestName:
-        "staticFetchRequestStartsCombinedObservationWithoutTaskOrLoad + fetchKeyRequestLoadsTransactionStyleCompositeValues + fetchKeyRequestTaskBindsCompositeSubscriptionValues",
+        "staticFetchRequestStartsCombinedObservationOnFirstReadWithoutTaskOrLoad + fetchKeyRequestLoadsTransactionStyleCompositeValues + fetchKeyRequestTaskBindsCompositeSubscriptionValues",
       surface: "adapter-fetch",
       status: .adapted,
       notes: "InstantFetchKeyRequest gives @Fetch a reusable request object for composite values; load performs the declared reads and observation combines their streams in the library, emitting only after every source has emitted without claiming an atomic cross-query snapshot."
@@ -3145,7 +3147,8 @@ public enum InstantSwiftDataParityCoverage {
     instant(
       id: "instant.auth-extra-fields.magic-code",
       sourceFile: "upstream/instant/client/packages/core/__tests__/src/auth-extra-fields.e2e.test.ts",
-      sourceTestName: "magic-code sign-in creates $users extra fields, returns created flag, and reports returning users",
+      sourceTestName:
+        "new user with extraFields gets fields written and created=true / returning user gets created=false / sign in without extraFields works (backwards compat) / admin verify_magic_code returns { user, created } for checkMagicCode",
       swiftFile: "Tests/InstantSwiftDataCoreTests/InstantStoreTests.swift + Tests/InstantSwiftDataTests/BootstrapTests.swift",
       swiftTestName: "magicCodeSignInResultPersistsExtraFieldsAndCreatedFlag + bootstrapMagicCodeSignInResultPersistsExtraFields",
       surface: "auth-extra-fields",

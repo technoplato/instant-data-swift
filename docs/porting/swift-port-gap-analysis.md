@@ -4,7 +4,8 @@ Companion to [`upstream-typescript-test-inventory.md`](upstream-typescript-test-
 That document says what upstream has. This one says what we have, what has to
 change, and what still has to be written.
 
-**Upstream at** `337c2d40` (2026-03-31) · **Swift tree at** the commit that adds
+**Upstream at** `e71017612aed4031710a35e2fcace30d38d557ac` (2026-06-11) ·
+vendored at `upstream/instant` · **Swift tree** is the working tree that carries
 this file.
 
 ---
@@ -18,11 +19,12 @@ benchmark).
 
 | Measure | Value |
 | --- | ---: |
-| Upstream core declarations | 175 |
-| Upstream core runtime cases | 211 |
+| Upstream core test files | 19 |
+| Upstream core declarations | 186 |
+| Upstream core runtime cases | 225 |
 | Swift `@Test` cases in the library | 1338 |
 | Parity records in `InstantParityCoverage.swift` | 250 (176 citing core) |
-| Upstream declarations with a parity record | **175 / 175** |
+| Upstream declarations with a parity record | **186 / 186** |
 | — recorded `exact` | 30 |
 | — recorded `adapted` | 140 |
 | — recorded `notApplicable` | 1 |
@@ -31,9 +33,10 @@ benchmark).
 The two counts that looked like large gaps on first pass were **false alarms**,
 and both were checked case-by-case rather than by record count:
 
-- **Date coercion.** The registry holds 5 records against 33 upstream runtime
-  cases, which looked like a 28-case hole. It is not: `InstantDateCoercionTests`
-  drives a table containing **all 28** upstream date strings, plus 3 Swift-only
+- **Date coercion.** The registry holds a few records against 33 upstream runtime
+  cases (31 valid + 2 invalid, loop-generated from one declaration each), which
+  looked like a hole by record count. It is not: `InstantDateCoercionTests`
+  drives a table containing **all** upstream date strings, plus 3 Swift-only
   cases upstream does not have (`2026-04-28T04:7:00.000Z`,
   `2026-04-28T4:07:00.000Z`, `2026-04-28T04:07:7.000Z`). Coverage here is a
   superset.
@@ -134,7 +137,7 @@ To write:
 
 ### 3.2 Nothing else
 
-Every one of the 175 upstream declarations resolves to a parity record, and the
+Every one of the 186 upstream declarations resolves to a parity record, and the
 two coarse-record areas that looked thin (dates, OR) were verified case-by-case
 above. There is no upstream behavioral test without a Swift counterpart.
 
@@ -142,9 +145,9 @@ That claim is only as good as the check behind it — hence §4.
 
 ---
 
-## 4. The thing that actually matters: make this checkable
+## 4. The thing that actually matters: make this checkable — **done**
 
-Everything above was found by hand this session. Nothing in the repository fails
+Everything in §2 was found by hand. Nothing in the repository failed
 when:
 
 - upstream adds a test (we would not know)
@@ -156,28 +159,61 @@ when:
 `runParityCoverageValidation` already exists in the test harness. What is missing
 is the *other* direction: reconciling the registry against real upstream source.
 
-**Write `Tests/InstantSwiftDataCoreTests/InstantUpstreamParityReconciliationTests.swift`**
-with three source-invariant tests, in the style already used in this repo:
+`Tests/InstantSwiftDataCoreTests/InstantUpstreamParityReconciliationTests.swift`
+now closes that loop with six source invariants:
 
-1. every `swiftTestName` component resolves to a `func` that exists in `Tests/`
-2. every core-citing `sourceTestName` component resolves to a test name that
-   exists in the pinned upstream checkout
-3. the set of upstream declarations with no record is empty
+| Test | Asserts |
+| --- | --- |
+| `swiftTestNamesResolve` | every `swiftTestName` component is a `func` in `Tests/` |
+| `coveredRecordsNameBothSides` | an `exact`/`adapted` record names both sides |
+| `citedUpstreamTestNamesExist` | every core-citing `sourceTestName` exists upstream |
+| `upstreamSurfaceMatchesTheRecordedInventory` | upstream is still 19 files / 186 declarations / 225 runtime cases |
+| `everyUpstreamTestHasARecord` | no upstream test lacks a record |
+| `upstreamCheckoutIsAtThePinnedCommit` | the checkout is at `e7101761`, the commit the documents describe |
 
-Pin the upstream commit the checkout is expected to be at, and skip (loudly, with
-the expected path) when the checkout is absent, so the suite still runs on a
-machine without it.
+The fourth is what keeps the other two honest: an extractor that quietly stops
+recognizing a declaration form finds fewer tests, so fewer names need records and
+everything goes green while coverage silently drops. It caught exactly that during
+development — the Swift extractor initially missed the loop-generated date cases
+and under-counted the runtime surface.
+
+The suite needs the pinned `instantdb/instant` checkout; when it is absent the
+upstream-facing tests record why (naming the expected path and the
+`INSTANT_UPSTREAM_CHECKOUT` override) and return, so the suite still runs without
+it.
 
 ---
 
 ## 5. Order of work
 
-| Step | Change | Done when |
+| Step | Change | Status |
 | --- | --- | --- |
-| 1 | Fix the four stale `staticFetchAll…` names (§2.1) | reconciliation reports 0 dangling |
-| 2 | Add the reconciliation tests (§4), expected to fail | they fail, naming §2.2 and §2.3 |
-| 3 | Replace paraphrased `sourceTestName`s with upstream literals (§2.2), resolve §2.3 | reconciliation passes |
-| 4 | Port `instaql.bench.ts` (§3.1) — Swift workload, TS counterpart, record, cross-SDK pin | `swift package benchmark` reports the new workload and the cross-SDK test pins it |
-| 5 | Record the measured Swift-vs-TypeScript numbers for the deep-join query | numbers in `INSTANT_DATA_PERFORMANCE_BENCHMARKS.md` |
+| 1 | Fix the stale `staticFetch…` names (§2.1) | **done** — 5 records, including a `staticFetchRequest…` variant found by the new suite |
+| 2 | Add the reconciliation tests (§4) | **done** — 6 invariants, all passing |
+| 3 | Replace paraphrased `sourceTestName`s with upstream literals (§2.2), resolve §2.3 | **done** — see below |
+| 4 | Port `instaql.bench.ts` (§3.1) — Swift workload, TS counterpart, record, cross-SDK pin | open |
+| 5 | Record measured Swift-vs-TypeScript numbers for the deep-join query | open |
 
-Steps 1–3 are hygiene and cost little. Step 4 is the only new behavior.
+### What step 3 turned up
+
+Running the new suite against the registry surfaced more than the hand audit had:
+
+| Record(s) | Was | Now |
+| --- | --- | --- |
+| `instant.query.logical-or` | `Where OR test.each` | the 9 literal row names |
+| `instant.auth-extra-fields.magic-code` | one paraphrase | the 4 literal upstream names |
+| `instant.query.leading-ignores-end-cursor` | `…ignore the end cursor for optimistic adds` | `Leading queries should ignore the start cursor` |
+| `instant.transaction-validation.lookup-rule-params` | `lookup refs and rule params` | `allows lookup values in square bracket / allows lookup values in link / lookup proxy` |
+| 8 × `instant.weak-hash*` | cited `__tests__/src/utils/weakHash{,Legacy}.test.ts` | **neither file exists upstream** — repointed at `src/utils/weakHash.ts`, the source they were really derived from |
+| 2 × `instant.cookie-sync.*` | cited `__tests__/src/cookieSync.e2e.test.ts` | **does not exist upstream** — repointed at the three source files that do |
+| `instant.persisted-object.indexeddb-connection-recovery` | cited a non-existent upstream test | source-derived from `src/utils/PersistedObject.ts` |
+| 3 files (historical) | at older upstream commits were `.js` and never collected by vitest | at `e7101761` they are `.ts` and fully collected — §1.1 of the inventory |
+| `instant.python.stream-append-materialization` | cited a suite name as a test | the 5 test funcs in it |
+
+Several registry rows cited **files that do not exist as tests** at this commit
+(weak-hash unit tests, a cookieSync e2e suite path, an IndexedDB connection-
+recovery test name). The Swift tests behind them are real and worth keeping; what
+was wrong was the claim that they port an upstream *test* rather than upstream
+*source*. The registry already models source-derived records elsewhere
+(`Reactor.js`, `infiniteQuery.ts`, `routeHandlerProtocol.ts`), so they now follow
+that convention and the reconciliation skips them by design.
