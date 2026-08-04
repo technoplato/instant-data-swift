@@ -6,6 +6,7 @@ struct AttributeStore: Hashable, Codable, Sendable {
   private var attributesByNamespace: [String: [InstantAttribute]] = [:]
   private var reverseAttributesByNamespaceAndName: [String: [String: InstantAttribute]] = [:]
   private var reverseAttributesByID: [String: InstantAttribute] = [:]
+  private var namespaceSet: Set<String> = []
 
   private enum CodingKeys: String, CodingKey {
     case attributesByID
@@ -33,8 +34,13 @@ struct AttributeStore: Hashable, Codable, Sendable {
     attributesByID.values.sorted { $0.id < $1.id }
   }
 
+  /// Maintained alongside the other derived lookup indexes rather than rebuilt per read.
+  ///
+  /// The write path consults this twice for every triple it validates, so deriving it on read made
+  /// each write proportional to the size of the schema. See
+  /// `InstantStoreWriteScalingTests.applyingAWideTransactionDoesNotScaleWithTheAttributeCount`.
   var namespaces: Set<String> {
-    Set(attributesByID.values.map(\.namespace))
+    namespaceSet
   }
 
   var count: Int {
@@ -106,8 +112,10 @@ struct AttributeStore: Hashable, Codable, Sendable {
     attributesByNamespace = [:]
     reverseAttributesByNamespaceAndName = [:]
     reverseAttributesByID = [:]
+    namespaceSet = []
 
     for attribute in attributesByID.values {
+      namespaceSet.insert(attribute.namespace)
       attributesByNamespaceAndName[attribute.namespace, default: [:]][attribute.name] = attribute
       attributesByNamespace[attribute.namespace, default: []].append(attribute)
       guard
@@ -273,8 +281,11 @@ struct TripleIndexes: Hashable, Codable, Sendable {
     return namespaces
   }
 
+  /// `lazy` matters here: the outbox is rescanned on every inbound server event, and this is asked
+  /// once per write key in that scan. Materialising an array per key just to take a maximum made
+  /// the scan allocate in proportion to outbox depth × versions per key.
   func newestWriteTime(entityID: String, attributeID: String) -> InstantTimestamp? {
-    eav[entityID]?[attributeID]?.values.map(\.txTime).max()
+    eav[entityID]?[attributeID]?.values.lazy.map(\.txTime).max()
   }
 
   mutating func reserveCapacity(entityCapacity: Int, attributeCapacity: Int) {
