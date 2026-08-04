@@ -6,6 +6,12 @@ commit SHA, and high-level reason. Changelog-only bookkeeping commits are
 visible in Git history but are not self-recorded because a commit cannot
 contain its own final SHA.
 
+## 2026-08-04 14:50:12 EDT
+
+- **Repository:** realtime-voice-sqlite-instant
+- **Commit:** `8d192863b280887cd6bbe69ed7cfe364d91626e1`
+- **Reason:** Wire installed Mac `ScribeSharedApp` Settings to `ScribeMacSettingsView` so Manage account / Instant sign-in is available on Mac (Option A; uses `apple-mac` provider config).
+
 ## August 4, 2026 at 12:55:02 PM EDT
 
 - Repository: `realtime-voice-sqlite-instant` (Scribe)
