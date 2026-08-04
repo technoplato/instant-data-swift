@@ -2457,8 +2457,7 @@ public final class InstantRuntime: Sendable {
       recordActorHop(.persistence)
       let state = try await persistence.loadState()
       if let unknownMutation = state.snapshot.outbox.first(where: {
-        ($0.status != .confirmed
-          || $0.confirmationSource?.provesServerAcceptance != true)
+        ($0.status != .confirmed || !$0.provesServerAcceptance)
           && $0.optimisticOverlayState == nil
           && $0.rollbackTransaction == nil
       }) {
@@ -4171,7 +4170,7 @@ public final class InstantRuntime: Sendable {
     let event: InstantMutationLifecycleEvent
     switch mutation.status {
     case .confirmed:
-      guard mutation.confirmationSource?.provesServerAcceptance == true else { return }
+      guard mutation.provesServerAcceptance else { return }
       event = .serverAccepted(mutation)
     case .failed:
       event = .failed(mutation)
@@ -4407,8 +4406,7 @@ public final class InstantRuntime: Sendable {
         await mutationDeliveryBarrierMutations().contains(where: { mutation in
           mutation.id == clientEventID
             && (mutation.status == .pending
-              || (mutation.status == .confirmed
-                && mutation.confirmationSource?.provesServerAcceptance != true))
+              || (mutation.status == .confirmed && !mutation.provesServerAcceptance))
         })
       {
         if Self.isRetryableMutationError(error) {
@@ -7760,9 +7758,7 @@ public final class InstantRuntime: Sendable {
     if let mutation = state.snapshot.outbox.first(where: { $0.id == id }) {
       if mutation.status == .failed {
         current = .failed(mutation)
-      } else if mutation.status == .confirmed,
-        mutation.confirmationSource?.provesServerAcceptance == true
-      {
+      } else if mutation.status == .confirmed, mutation.provesServerAcceptance {
         current = .serverAccepted(mutation)
       } else {
         current = .waiting
@@ -7798,7 +7794,7 @@ public final class InstantRuntime: Sendable {
         case .pending:
           return true
         case .confirmed:
-          return mutation.confirmationSource?.provesServerAcceptance != true
+          return !mutation.provesServerAcceptance
         case .failed:
           return includeFailed
         }
@@ -7825,9 +7821,7 @@ public final class InstantRuntime: Sendable {
       var transportMutation = InstantTransportMutation(mutation)
       // A local receipt preserves the existing public `.confirmed` result, but it is still
       // unacknowledged from Instant's perspective and must use the wire-level pending shape.
-      if mutation.status == .confirmed,
-        mutation.confirmationSource?.provesServerAcceptance != true
-      {
+      if mutation.status == .confirmed, !mutation.provesServerAcceptance {
         transportMutation.status = .pending
       }
       return transportMutation

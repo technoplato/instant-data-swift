@@ -822,6 +822,20 @@ public struct PendingMutation: Hashable, Codable, Sendable, Identifiable {
   package var failure: InstantMutationFailure?
   package var optimisticOverlayState: InstantOptimisticOverlayState?
 
+  /// Whether the server has demonstrably accepted this mutation.
+  ///
+  /// A server-assigned `serverTransactionID` counts on its own. `Outbox.accepting` is its only
+  /// writer, reached only from a `transact-ok` carrying the server's `tx-id`, and the rollback
+  /// paths clear it — so a non-nil value cannot be produced locally.
+  ///
+  /// Consulting `confirmationSource` alone is not sufficient, because it was introduced after
+  /// `serverTransactionID`: every mutation accepted by an earlier build has the ID and no source.
+  /// Reading those as unproven re-offers them for delivery forever. `Outbox.pruningConfirmed`
+  /// already treats the transaction ID as the authority; this makes delivery agree with pruning.
+  package var provesServerAcceptance: Bool {
+    confirmationSource?.provesServerAcceptance == true || serverTransactionID != nil
+  }
+
   public init(
     id: String,
     createdAt: InstantTimestamp,

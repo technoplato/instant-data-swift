@@ -1307,8 +1307,7 @@ public struct InstantSwiftDataClient: Sendable {
       }
       let outstanding = mutations.filter { mutation in
         mutation.status == .pending
-          || (mutation.status == .confirmed
-            && mutation.confirmationSource?.provesServerAcceptance != true)
+          || (mutation.status == .confirmed && !mutation.provesServerAcceptance)
       }
       guard !outstanding.isEmpty else { return }
 
@@ -1333,8 +1332,7 @@ public struct InstantSwiftDataClient: Sendable {
 
       guard clock.now < deadline else {
         let localOnlyConfirmation = outstanding.first { mutation in
-          mutation.status == .confirmed
-            && mutation.confirmationSource?.provesServerAcceptance != true
+          mutation.status == .confirmed && !mutation.provesServerAcceptance
         }
         let message: String
         if let localOnlyConfirmation {
