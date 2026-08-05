@@ -1,3 +1,13 @@
+
+## 2026-08-04 22:42:05 EDT
+
+- **repository:** instant-data-swift
+- **commit/tag:** v1.5.0 (0a91a121) / a3b63e73
+- **reason:** Empty live-query replacements preserve pending optimistic children; Linked Infinite blank-detail recipe + tests; ADR 0013.
+
+- **repository:** realtime-voice-sqlite-instant
+- **commit:** c3423e09e31460c85072962dbc196c04a644b310
+- **reason:** Pin instant-data-swift exact 1.5.0 for blank-detail library fix.
 ## 2026-08-04 22:38:35 EDT
 
 - **repo:** realtime-voice-sqlite-instant
