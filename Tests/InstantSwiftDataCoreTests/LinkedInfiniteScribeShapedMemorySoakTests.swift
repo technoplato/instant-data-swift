@@ -155,6 +155,40 @@ struct LinkedInfiniteScribeShapedMemorySoakTests {
         #150
         """
       )
+
+      // Idle settle: dual-write thrash climbs multi‑GB while "doing nothing".
+      try await Task.sleep(for: .milliseconds(150))
+      for _ in 0..<4 {
+        _ = try await runtime.query(
+          InstantQueryPlan(
+            id: "soak.idle.\(UUID().uuidString.prefix(6))",
+            namespace: LinkedInfiniteExample.recordingNamespace,
+            limit: 5
+          )
+        )
+      }
+      let afterIdle = InstantProcessMemory.sample()
+      if let afterIdle {
+        let idleGrowth =
+          afterIdle.physicalFootprintBytes > afterPages.physicalFootprintBytes
+          ? afterIdle.physicalFootprintBytes - afterPages.physicalFootprintBytes
+          : 0
+        #expect(
+          idleGrowth <= profile.idleSettleGrowthBudgetBytes,
+          """
+          Idle settle grew \(idleGrowth) (budget \(profile.idleSettleGrowthBudgetBytes)). \
+          Dual-write thrash class. afterPages=\(afterPages.physicalFootprintBytes) \
+          afterIdle=\(afterIdle.physicalFootprintBytes) virtual=\(afterIdle.virtualBytes)
+          """
+        )
+        #expect(
+          afterIdle.physicalFootprintBytes <= profile.idleSettleAbsoluteCeilingBytes,
+          """
+          Idle absolute footprint \(afterIdle.physicalFootprintBytes) exceeded \
+          \(profile.idleSettleAbsoluteCeilingBytes). Multi‑GB idle fails this gate.
+          """
+        )
+      }
     } else {
       Issue.record("Could not sample InstantProcessMemory on this platform.")
     }

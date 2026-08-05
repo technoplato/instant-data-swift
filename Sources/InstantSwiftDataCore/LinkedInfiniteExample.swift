@@ -59,6 +59,12 @@ public struct LinkedInfiniteScribeShapedSoakProfile: Hashable, Sendable {
   public var footprintGrowthBudgetBytes: UInt64
   /// Absolute physical footprint ceiling after soak (Debug suite overhead).
   public var footprintCeilingBytes: UInt64
+  /// After seed, idle settle growth (dual-write thrash class). Multi‑GB climb fails here.
+  public var idleSettleGrowthBudgetBytes: UInt64
+  /// Absolute footprint after idle settle. Product fail is 400 MB; Debug seed
+  /// cost of the large thrash profile may exceed that, so the idle/auth gate
+  /// uses ``publishGateAbsoluteIdle`` with a product-aligned ceiling.
+  public var idleSettleAbsoluteCeilingBytes: UInt64
 
   public init(
     recordingCount: Int,
@@ -66,7 +72,9 @@ public struct LinkedInfiniteScribeShapedSoakProfile: Hashable, Sendable {
     transcriptTextCharacters: Int,
     listPageSize: Int,
     footprintGrowthBudgetBytes: UInt64,
-    footprintCeilingBytes: UInt64
+    footprintCeilingBytes: UInt64,
+    idleSettleGrowthBudgetBytes: UInt64 = 128 * 1_024 * 1_024,
+    idleSettleAbsoluteCeilingBytes: UInt64 = 1_536 * 1_024 * 1_024
   ) {
     self.recordingCount = recordingCount
     self.wordsPerRecording = wordsPerRecording
@@ -74,6 +82,8 @@ public struct LinkedInfiniteScribeShapedSoakProfile: Hashable, Sendable {
     self.listPageSize = listPageSize
     self.footprintGrowthBudgetBytes = footprintGrowthBudgetBytes
     self.footprintCeilingBytes = footprintCeilingBytes
+    self.idleSettleGrowthBudgetBytes = idleSettleGrowthBudgetBytes
+    self.idleSettleAbsoluteCeilingBytes = idleSettleAbsoluteCeilingBytes
   }
 
   /// Default CI soak: ~80 parents × 120 words ≈ 9.6k word entities + transcript text.
@@ -83,13 +93,31 @@ public struct LinkedInfiniteScribeShapedSoakProfile: Hashable, Sendable {
   /// footprint from a cold baseline; infinite page expands added &lt;1 MiB.
   /// Budgets catch multi‑GB thrash (the historical Jetsam class) without
   /// failing the expected seed cost. Gate on **footprint**, never VSZ.
+  /// Idle settle growth must stay flat (dual-write thrash would multi‑GB climb).
   public static let publishGate = LinkedInfiniteScribeShapedSoakProfile(
     recordingCount: 80,
     wordsPerRecording: 120,
     transcriptTextCharacters: 2_048,
     listPageSize: 50,
     footprintGrowthBudgetBytes: 768 * 1_024 * 1_024,
-    footprintCeilingBytes: 1_024 * 1_024 * 1_024
+    footprintCeilingBytes: 1_024 * 1_024 * 1_024,
+    idleSettleGrowthBudgetBytes: 128 * 1_024 * 1_024,
+    idleSettleAbsoluteCeilingBytes: 1_536 * 1_024 * 1_024
+  )
+
+  /// Product-aligned absolute idle gate (Scribe performance-budget: fail &gt;400 MB).
+  /// Smaller graph so Debug suite seed can finish under the absolute ceiling while
+  /// still exercising guest auth + dual-write thrash resistance + Scribe-shaped
+  /// recordings→transcriptions→words.
+  public static let publishGateAbsoluteIdle = LinkedInfiniteScribeShapedSoakProfile(
+    recordingCount: 36,
+    wordsPerRecording: 48,
+    transcriptTextCharacters: 1_024,
+    listPageSize: 50,
+    footprintGrowthBudgetBytes: 400 * 1_024 * 1_024,
+    footprintCeilingBytes: 400 * 1_024 * 1_024,
+    idleSettleGrowthBudgetBytes: 64 * 1_024 * 1_024,
+    idleSettleAbsoluteCeilingBytes: 400 * 1_024 * 1_024
   )
 
   public var estimatedWordEntities: Int { recordingCount * wordsPerRecording }

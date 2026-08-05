@@ -4,7 +4,7 @@
 
 ## Why
 
-Scribe production Instant data (admin sample **2026-08-05**) is not “20 tiny todos”:
+Scribe production Instant data is not “20 tiny todos”:
 
 | Namespace | Approx count |
 |-----------|--------------|
@@ -13,12 +13,9 @@ Scribe production Instant data (admin sample **2026-08-05**) is not “20 tiny t
 | transcriptionWords | ≥2000 |
 | transcriptionSegments | ≥2000 |
 | recordingAttachments | 246 |
-| screenStreamSessions | 23 |
-| debugLogs | ≥2000 |
+| debugLogs | ≥2000 (dual-write thrash amplifier) |
 
-Local Scribe store also held **184 failed outbox** rows (mostly `Permission denied: not perms-pass?`).
-
-The linked-infinite recipe previously seeded ~20 parents with only a `wordCount` number — no word entities, no transcript text, page size 3. Multi‑GB Jetsam and thrash were rediscovered on real shapes because the recipe never exercised them.
+Field 2026-08-05: **idle multi‑GB** on iPad from InstantDiagnostics dual-written into Instant `debugLogs` as oversized batches — not only infinite-page thrash.
 
 ## Gate
 
@@ -26,35 +23,26 @@ The linked-infinite recipe previously seeded ~20 parents with only a `wordCount`
 validation/verify-scribe-shaped-memory-soak.sh
 ```
 
-Runs `LinkedInfiniteScribeShapedMemorySoakTests` with
-`LinkedInfiniteScribeShapedSoakProfile.publishGate`:
+Runs:
 
-- 80 recordings × 120 word entities + transcript text
-- Infinite list page size **50** (Scribe library)
-- **Physical footprint** growth budget **768 MiB**, ceiling **1 GiB**
-- **Page-expand** growth budget **64 MiB** (after seed → after infinite pages)
+1. `LinkedInfiniteScribeShapedMemorySoakTests` — `publishGate` (80×120 words, page 50, thrash expand + idle settle growth)
+2. `ScribeShapedAuthenticatedIdleMemorySoakTests` — **guest auth** + `publishGateAbsoluteIdle` (**absolute settle ≤400 MiB**, idle growth ≤64 MiB)
+3. `InstantDiagnosticFeedbackLoopTests` — dual-write demotion regression
 
-Measured Debug suite cost (2026-08-05, this machine): seed ≈ **450 MiB**
-footprint from a cold baseline; infinite page expands added **&lt;1 MiB**. The gate
-is tuned to fail multi‑GB thrash, not the expected seed cost.
+### Budgets (physical footprint only; never VSZ)
+
+| Profile | Absolute settle | Idle growth | Expand thrash |
+|---------|-----------------|-------------|---------------|
+| `publishGate` | ≤1.5 GiB hard multi‑GB | ≤128 MiB | page-expand ≤64 MiB; seed growth ≤768 MiB |
+| `publishGateAbsoluteIdle` | **≤400 MiB** (product fail) | ≤64 MiB | seed growth ≤400 MiB |
+
+### Auth
+
+- **Always:** `signInAsGuest()` with `InstantGuestAuthenticator.local` (Scribe guest path shape).
+- **Live (optional):** `INSTANT_SWIFT_DATA_LIVE_AUTH_SOAK=1` + `SCRIBE_MAIN_INSTANT_APP_ID` uses `.live` guest auth against the real Instant app. Misconfigured live requirement fails the gate.
 
 Also invoked from `validation/verify-v1-release.sh`.
 
 ## VSZ vs footprint
 
-| Metric | Meaning |
-|--------|---------|
-| **VSZ / Virtual** | Address space reserved/mapped (dyld shared cache, stack guards, …). Often **hundreds of GB** on Apple Silicon Debug apps. **Not RAM.** |
-| **Resident** | Pages currently in RAM. |
-| **Physical footprint** | What Jetsam / Activity Monitor treat as process memory cost. |
-
-If the panel shows **~415 GB virtual** with **~60–120 MB footprint/resident**, that is normal address-space accounting, not a 415 GB leak.
-
-## Production sample command
-
-```bash
-set -a; source ~/.config/instant-tools/scribe-main.env; set +a
-export INSTANT_ADMIN_TOKEN="$SCRIBE_MAIN_INSTANT_ADMIN_TOKEN"
-npx instant-cli query -a "$SCRIBE_MAIN_INSTANT_APP_ID" --admin \
-  '{"recordings":{"$":{"limit":500}}}'
-```
+Gate on **physical footprint** / resident size. VSZ is not RAM.
