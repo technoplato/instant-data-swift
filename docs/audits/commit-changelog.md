@@ -1,5 +1,12 @@
 ## 2026-08-05 13:12:29 EDT
 
+## 2026-08-05 17:37:25 EDT — realtime-voice-sqlite-instant dual-write feedback fix
+
+- **Repository:** realtime-voice-sqlite-instant
+- **Commit:** `a3d415fdd4500c3b6edb1232d74eaa1473bc36ef`
+- **Reason:** App-side bridge filter + smaller debug log batches to stop Instant dual-write memory thrash on idle iPad.
+
+
 ## 2026-08-05 17:37:14 EDT — instant-data-swift diagnostic dual-write thrash fix
 
 - **Repository:** instant-data-swift
