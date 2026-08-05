@@ -6,6 +6,16 @@ production-readiness plan
 Commit-level history stays in `docs/audits/commit-changelog.md`; this file is
 the narrative of what the library must prove and why.
 
+## 2026-08-05 17:57:36 EDT — Dual-write diagnostic thrash (idle multi-GB) fixed in 1.5.4
+
+- **Field:** iPad idle home screen **2.7–4.3 GB** footprint; cold open 122 MB → multi‑GB; continuous `debug-log-batch` mutations 400–700 ops + HOL thrash.
+- **Root:** InstantDiagnostics at info dual-written into Instant debugLogs → outbox feedback loop (not recording-path exclusive).
+- **Fix:** demote high-frequency diagnostics to debug (`759c899a` / tag **v1.5.4**); `InstantDiagnosticFeedbackLoopTests` green.
+- **Host:** InstantDBLogger bridge filters chatter; batch size 8 (`a3d415f`).
+- **Device:** clean wipe + 1.5.4 install: **~205→432 MB** in 1 min (not multi-GB); `hol_oversize=0`. Poison outbox survives reinstall without uninstall.
+- **Next:** rate-limit HOL diagnostics; companion status spam; absolute idle budget soak; remaining failMutation gate work.
+
+
 ## 2026-08-05 13:31:04 EDT — Production performance readiness plan (research quorum)
 
 - **Evidence (iPad Tailnet):** physical footprint climbed ~88 MB → 880–945 MB (later ~1.3 GB) under 1.5.3; `failMutation` held operation gate 160+ s; permission-denied + missing required-attr storms; ack-timeout reclaim + receive-loop-failed.
