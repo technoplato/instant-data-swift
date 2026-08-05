@@ -1,3 +1,9 @@
+## 2026-08-04 22:38:35 EDT
+
+- **repo:** realtime-voice-sqlite-instant
+- **commit:** 9e21a429821bf10b5d3bfd7dfd2d94d0b3317861
+- **reason:** Stream Companion Instant owner perms + TS auth daemon skeleton
+
 
 ## 2026-08-04 22:30:42 EDT
 
