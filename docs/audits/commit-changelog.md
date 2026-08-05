@@ -1,3 +1,13 @@
+## 2026-08-05 09:36:23 EDT
+
+- **repo:** instant-data-swift
+- **commit:** `adeea919009c` (tag v1.5.2 / `7dc2fe28`)
+- **reason:** Instrument live infinite-query page-info and auth for host dual-write diagnostics.
+
+- **repo:** realtime-voice-sqlite-instant
+- **commit:** `5f0c98429013e198ecc31df62eac22ec649fe59b`
+- **reason:** Bridge InstantDiagnostics to Tailnet dual-write logger; pin 1.5.2; list owner fingerprints.
+
 ## 2026-08-05 09:09:23 EDT
 
 - **Repository:** realtime-voice-sqlite-instant
