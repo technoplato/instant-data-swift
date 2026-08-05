@@ -1,3 +1,9 @@
+## 2026-08-04 23:27:17 EDT
+
+- **repository:** realtime-voice-sqlite-instant
+- **commit:** `b63973acac674e1fd9a51c2f3629c57af3d8f073`
+- **reason:** Stamp and show auto-detected device icons on recordings (list UI, settings auto-detect, device-local preference).
+
 
 ## 2026-08-04 22:42:05 EDT
 
