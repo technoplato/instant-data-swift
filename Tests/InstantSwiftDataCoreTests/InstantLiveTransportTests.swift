@@ -3243,6 +3243,93 @@ struct InstantLiveTransportTests {
     expectNoDifference(todos.map(\.text), ["Optimistic row survives"])
   }
 
+  /// Scribe blank-detail 2026-08-04: a live query first materializes a server
+  /// (or previously owned) child row, a local optimistic update remains pending
+  /// in the outbox, then an empty live-query replacement arrives. Without
+  /// pending-optimistic protection, replacement retractions wipe the child while
+  /// the outbox still claims the mutation is durable — list word counts survive
+  /// in memory, detail joins return zero transcriptions, audio still plays.
+  @Test
+  func emptyLiveQueryReplacementPreservesPendingOptimisticChildRows() async throws {
+    let cacheURL = try temporaryLiveCacheURL()
+    let createdAt = InstantTimestamp(milliseconds: 1_700_000_800_000)
+    let query: InstantLiveJSONValue = .object([
+      TodoExample.namespace: .object([:])
+    ])
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "live-refresh-empty-pending-child",
+        persistenceURL: cacheURL,
+        initialAttributes: TodoExample.attributes,
+        now: { InstantTimestamp(milliseconds: createdAt.milliseconds + 5) }
+      )
+    )
+
+    // 1) Authoritative live result owns the child entity (as if server had it).
+    _ = try await runtime.applyLiveRefresh(
+      InstantLiveRefreshOK(
+        clientEventID: "event-child-initial",
+        processedTransactionID: "server-child-initial",
+        attrs: .todoServerAttrs,
+        computations: [
+          .todoJoinRowsComputation(
+            query: query,
+            entityID: "child-todo",
+            text: "Server baseline text",
+            isCompleted: false,
+            createdAt: createdAt,
+            processedTransactionID: "server-child-initial"
+          )
+        ]
+      ),
+      receivedAt: InstantTimestamp(milliseconds: createdAt.milliseconds + 1)
+    )
+
+    let baseline = try TodoExample.decode(try await runtime.query(TodoExample.query))
+    expectNoDifference(baseline.map(\.text), ["Server baseline text"])
+
+    // 2) Local optimistic update still pending delivery.
+    let updateAt = InstantTimestamp(milliseconds: createdAt.milliseconds + 2)
+    try await runtime.transact(
+      InstantStoreTransaction(
+        id: "tx-child-optimistic",
+        operations: TodoExample.updateTextOperations(
+          id: "child-todo",
+          text: "Optimistic transcript text",
+          updatedAt: updateAt,
+          transactionID: "tx-child-optimistic"
+        )
+      ),
+      createdAt: updateAt
+    )
+    let pendingBefore = await runtime.pendingMutations()
+    expectNoDifference(pendingBefore.map(\.id), ["tx-child-optimistic"])
+    let optimistic = try TodoExample.decode(try await runtime.query(TodoExample.query))
+    expectNoDifference(optimistic.map(\.text), ["Optimistic transcript text"])
+
+    // 3) Empty live-query replacement (server has no rows for this query).
+    let emptyResult = try await runtime.applyLiveRefresh(
+      InstantLiveRefreshOK(
+        clientEventID: "event-child-empty",
+        processedTransactionID: "server-child-empty",
+        attrs: [],
+        computations: [.todoEmptyJoinRowsComputation(query: query)]
+      ),
+      receivedAt: InstantTimestamp(milliseconds: createdAt.milliseconds + 3)
+    )
+
+    // Replacement must not permanently retract the pending optimistic entity.
+    #expect(
+      emptyResult.transaction.operations
+        .compactMap(\.retractedEntityID)
+        .allSatisfy { $0 != "child-todo" }
+    )
+    let pendingAfter = await runtime.pendingMutations()
+    expectNoDifference(pendingAfter.map(\.id), ["tx-child-optimistic"])
+    let afterEmpty = try TodoExample.decode(try await runtime.query(TodoExample.query))
+    expectNoDifference(afterEmpty.map(\.text), ["Optimistic transcript text"])
+  }
+
   @Test
   func decodedRefreshOKJSONAppliesCanonicalJoinRows() async throws {
     let cacheURL = try temporaryLiveCacheURL()

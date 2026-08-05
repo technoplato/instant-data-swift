@@ -37,7 +37,7 @@ public enum InstantRecipeV3: String, CaseIterable, Hashable, Identifiable, Senda
     switch self {
     case .todos: "Realtime CRUD with optimistic local state"
     case .linkedInfinite:
-      "Infinite page parents with linked children (word counts via include)"
+      "Infinite page parents with linked children; blank-detail regression (Scribe)"
     case .cursors: "Share normalized pointer positions with presence"
     case .customCursors: "Add names, colors, and custom cursor rendering"
     case .reactions: "Publish ephemeral emoji events over a room topic"

@@ -292,6 +292,155 @@ public enum LinkedInfiniteExample {
     }
   }
 
+  /// Server attribute blobs used by live-refresh fixtures (IDs match join-row columns).
+  public static var serverAttrs: [InstantLiveJSONValue] {
+    [
+      serverAttr(id: "\(recordingNamespace)/id", namespace: recordingNamespace, name: "id"),
+      serverAttr(id: "\(recordingNamespace)/title", namespace: recordingNamespace, name: "title"),
+      serverAttr(
+        id: "\(recordingNamespace)/updatedAt",
+        namespace: recordingNamespace,
+        name: "updatedAt"
+      ),
+      serverAttr(
+        id: "\(transcriptionNamespace)/id",
+        namespace: transcriptionNamespace,
+        name: "id"
+      ),
+      serverAttr(
+        id: "\(transcriptionNamespace)/wordCount",
+        namespace: transcriptionNamespace,
+        name: "wordCount"
+      ),
+      serverAttr(
+        id: "\(transcriptionNamespace)/updatedAt",
+        namespace: transcriptionNamespace,
+        name: "updatedAt"
+      ),
+      serverAttr(
+        id: "\(transcriptionNamespace)/recording",
+        namespace: transcriptionNamespace,
+        name: "recording"
+      ),
+    ]
+  }
+
+  /// Join-shaped live computation: parent recording + reverse-linked transcription.
+  public static func liveJoinComputation(
+    query: InstantLiveJSONValue,
+    recordingID: String,
+    title: String,
+    transcriptionID: String,
+    wordCount: Int,
+    updatedAt: InstantTimestamp,
+    processedTransactionID: String
+  ) -> InstantLiveJSONValue {
+    let ms = Double(updatedAt.milliseconds)
+    return .object([
+      "instaql-query": query,
+      "instaql-result": .array([
+        .object([
+          "data": .object([
+            "datalog-result": .object([
+              "join-rows": .array([
+                .array([
+                  .array([
+                    .string(recordingID),
+                    .string("\(recordingNamespace)/id"),
+                    .string(recordingID),
+                    .number(ms),
+                  ]),
+                  .array([
+                    .string(recordingID),
+                    .string("\(recordingNamespace)/title"),
+                    .string(title),
+                    .number(ms),
+                  ]),
+                  .array([
+                    .string(recordingID),
+                    .string("\(recordingNamespace)/updatedAt"),
+                    .number(ms),
+                    .number(ms),
+                  ]),
+                ])
+              ])
+            ])
+          ]),
+          "child-nodes": .array([
+            .object([
+              "data": .object([
+                "datalog-result": .object([
+                  "join-rows": .array([
+                    .array([
+                      .array([
+                        .string(transcriptionID),
+                        .string("\(transcriptionNamespace)/id"),
+                        .string(transcriptionID),
+                        .number(ms),
+                      ]),
+                      .array([
+                        .string(transcriptionID),
+                        .string("\(transcriptionNamespace)/wordCount"),
+                        .number(Double(wordCount)),
+                        .number(ms),
+                      ]),
+                      .array([
+                        .string(transcriptionID),
+                        .string("\(transcriptionNamespace)/updatedAt"),
+                        .number(ms),
+                        .number(ms),
+                      ]),
+                      .array([
+                        .string(transcriptionID),
+                        .string("\(transcriptionNamespace)/recording"),
+                        .string(recordingID),
+                        .number(ms),
+                      ]),
+                    ])
+                  ])
+                ])
+              ]),
+              "child-nodes": .array([]),
+            ])
+          ]),
+        ])
+      ]),
+      "processed-tx-id": .string(processedTransactionID),
+    ])
+  }
+
+  public static func emptyLiveJoinComputation(query: InstantLiveJSONValue) -> InstantLiveJSONValue {
+    .object([
+      "instaql-query": query,
+      "instaql-result": .array([
+        .object([
+          "data": .object([
+            "datalog-result": .object([
+              "join-rows": .array([])
+            ])
+          ]),
+          "child-nodes": .array([]),
+        ])
+      ]),
+    ])
+  }
+
+  private static func serverAttr(id: String, namespace: String, name: String) -> InstantLiveJSONValue {
+    .object([
+      "id": .string(id),
+      "forward-identity": .array([
+        .string("identity-\(id)"),
+        .string(namespace),
+        .string(name),
+      ]),
+      "value-type": .string(name == "recording" ? "ref" : "blob"),
+      "checked-data-type": .string(
+        name == "updatedAt" ? "date" : name == "wordCount" ? "number" : "string"
+      ),
+      "cardinality": .string("one"),
+    ])
+  }
+
   private static func identityOperation(
     id: String,
     namespace: String,

@@ -100,6 +100,79 @@ public struct LinkedInfiniteAppConfiguration: Hashable, Sendable {
     }
   }
 
+  /// Detail surface for a joined recording row. Mirrors Scribe playback: if the
+  /// transcription join is empty, this screen is the "blank detail" failure mode.
+  @MainActor
+  @available(iOS 16.0, macOS 13.0, tvOS 16.0, watchOS 9.0, *)
+  public struct LinkedInfiniteDetailScreen: View {
+    public var row: LinkedInfiniteListRow
+
+    public init(row: LinkedInfiniteListRow) {
+      self.row = row
+    }
+
+    public var body: some View {
+      List {
+        Section("Recording") {
+          Text(row.title)
+            .font(.headline)
+          Text(row.updatedAt.formatted(date: .abbreviated, time: .shortened))
+            .font(.caption)
+            .foregroundStyle(.secondary)
+        }
+        Section("Transcription join") {
+          if row.wordCount > 0 {
+            Text("\(row.wordCount) words")
+              .font(.title2.monospacedDigit())
+            Text("Linked transcriptions are present on the recording root include.")
+              .font(.caption)
+              .foregroundStyle(.secondary)
+          } else {
+            ContentUnavailableView(
+              "Blank detail",
+              systemImage: "text.page.slash",
+              description: Text(
+                """
+                No transcription rows joined this recording. This is the Scribe \
+                failure mode when empty live-query replacements wipe pending \
+                optimistic children while audio (or the recording root) still exists.
+                """
+              )
+            )
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 24)
+          }
+        }
+        Section("Contract") {
+          Text(
+            """
+            After seed, every list row should open a non-blank detail. Library \
+            coverage: LinkedInfiniteExampleTests \
+            · emptyLiveQueryReplacementPreservesOptimisticTranscriptionJoin
+            """
+          )
+          .font(.caption2)
+          .foregroundStyle(.secondary)
+        }
+      }
+      .navigationTitle("Detail")
+      #if os(iOS)
+        .navigationBarTitleDisplayMode(.inline)
+      #endif
+      .onAppear {
+        LinkedInfiniteDurableLog.log(
+          "detail.appeared",
+          [
+            "rowID": row.id.rawValue,
+            "title": row.title,
+            "wordCount": row.wordCount,
+            "isBlank": row.wordCount == 0,
+          ]
+        )
+      }
+    }
+  }
+
   @MainActor
   @available(iOS 16.0, macOS 13.0, tvOS 16.0, watchOS 9.0, *)
   public struct LinkedInfiniteBootstrapScreen: View {
@@ -198,12 +271,21 @@ public struct LinkedInfiniteAppConfiguration: Hashable, Sendable {
 
         Section("Recordings (\(rows.count)) · \(phaseLabel)") {
           ForEach(rows) { row in
-            VStack(alignment: .leading, spacing: 4) {
-              Text(row.title)
-                .font(.headline)
-              Text("\(row.wordCount) words")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+            NavigationLink {
+              LinkedInfiniteDetailScreen(row: row)
+            } label: {
+              VStack(alignment: .leading, spacing: 4) {
+                Text(row.title)
+                  .font(.headline)
+                Text("\(row.wordCount) words")
+                  .font(.caption)
+                  .foregroundStyle(.secondary)
+                if row.wordCount == 0 {
+                  Text("Blank detail risk: transcription join is empty")
+                    .font(.caption2)
+                    .foregroundStyle(.orange)
+                }
+              }
             }
             .onAppear {
               LinkedInfiniteDurableLog.log(
@@ -211,13 +293,16 @@ public struct LinkedInfiniteAppConfiguration: Hashable, Sendable {
                 [
                   "rowID": row.id.rawValue,
                   "title": row.title,
+                  "wordCount": row.wordCount,
                   "isLast": row.id == rows.last?.id,
                   "rowsCount": rows.count,
                   "canLoadNextPage": canLoadNextPage,
                   "phase": phaseLabel,
                 ]
               )
-              if row.id == rows.last?.id {
+              // Only auto-fetch while settled and more pages remain — never while
+              // already "loading next" (that left the spinner stuck forever).
+              if row.id == rows.last?.id, canLoadNextPage {
                 loadNextPageButtonTapped(reason: "last-row-onAppear")
               }
             }
@@ -234,6 +319,25 @@ public struct LinkedInfiniteAppConfiguration: Hashable, Sendable {
           case .idleEmpty, .loaded:
             EmptyView()
           }
+        }
+
+        Section("Blank-detail regression") {
+          Text(
+            """
+            Scribe 2026-08-04: audio played but the detail surface was blank \
+            because an empty live-query replacement retracted pending optimistic \
+            transcription triples. Library test \
+            emptyLiveQueryReplacementPreservesOptimisticTranscriptionJoin locks \
+            the fix; open a row above — word count must stay non-zero after seed.
+            """
+          )
+          .font(.caption)
+          .foregroundStyle(.secondary)
+          Text(
+            "Proof: swift test --filter emptyLiveQueryReplacementPreservesOptimisticTranscriptionJoin"
+          )
+          .font(.caption2)
+          .textSelection(.enabled)
         }
 
         if !message.isEmpty {
@@ -377,10 +481,8 @@ public struct LinkedInfiniteAppConfiguration: Hashable, Sendable {
               "canLoadNextPage": snapshot.canLoadNextPage,
             ]
           )
-          // Keep rows; only update paging flag if library says more are available.
-          if snapshot.canLoadNextPage {
-            phase = .loaded(canLoadNextPage: true)
-          }
+          // Always leave loadingNextPage — empty flash must not stick the spinner.
+          phase = .loaded(canLoadNextPage: snapshot.canLoadNextPage)
           return
         }
 
@@ -583,6 +685,19 @@ public struct LinkedInfiniteAppConfiguration: Hashable, Sendable {
           "hasSubscription": subscription != nil,
         ]
       )
+      // Never stack loadNext while already loading — that left phase stuck.
+      if case .loadingNextPage = phase {
+        LinkedInfiniteDurableLog.log(
+          "loadNext.blocked",
+          [
+            "attempt": attempt,
+            "reason": reason,
+            "phase": phaseLabel,
+            "detail": "already-loading-next",
+          ]
+        )
+        return
+      }
       // Allow force path after seed even if phase not yet .loaded(true).
       let allow =
         canLoadNextPage
