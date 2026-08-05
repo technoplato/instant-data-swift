@@ -4,6 +4,27 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## August 5th, 2026 at 12:58:19 p.m. EDT — `551bb333839d` Add Scribe-shaped linked-infinite memory soak as publish gate
+
+- **Implementation commit:** `551bb333839dcd050fb7ad4acf312124ee87d046`
+- **Change:** Add Scribe-shaped linked-infinite memory soak as library publish gate (#150)
+- **Details:**
+  - Production sample 2026-08-05: ~239 recordings, ≥2000 words/segments, 246 attachments; recipe previously seeded 20 tiny rows.
+  - LinkedInfiniteScribeShapedMemorySoakTests + validation/verify-scribe-shaped-memory-soak.sh; hooked into verify-v1-release.sh.
+  - VSZ ~400GB is virtual address space on Apple Silicon; panel labels VSZ (not RAM); gates use physical footprint. Measured seed ~450MiB Debug, page expand <1MiB.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/LinkedInfiniteExample.swift` — Scribe-shaped soak profile, words namespace, seed ops
+  - `Sources/InstantSwiftDataCore/InstantProcessMemory.swift` — Footprint/resident/virtual samples
+  - `Tests/InstantSwiftDataCoreTests/LinkedInfiniteScribeShapedMemorySoakTests.swift` — Publish-gate soak
+  - `validation/verify-scribe-shaped-memory-soak.sh` — Release script
+  - `Sources/LinkedInfiniteV3App/LinkedInfiniteModels.swift` — Recipe model + seed aligned to Scribe shape
+  - `docs/scribe-shaped-memory-soak.md` — Gate documentation and production sample table
+- **User context (verbatim):**
+  > fifth time or so or more that I've had to figure out why my usage of memory is spiking for no reason
+  > cannot publish a version of this library unless that performance test against a real live soaking application
+  > Why is the virtual memory 415 gigabytes? Um footprint 58 megabytes, resident 117 megabytes.
+- **SpecStory:** unavailable — Grok Build CLI session; no SpecStory URI for this client
+
 ## August 5th, 2026 at 12:48:13 p.m. EDT — `ca483b549791` Isolate failed legacy mutations so live server apply continues
 
 - **Implementation commit:** `ca483b549791175854c0f21faf25eae72a016cc2`
