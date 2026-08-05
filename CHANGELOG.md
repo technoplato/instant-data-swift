@@ -4,6 +4,21 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## August 5th, 2026 at 8:49:46 a.m. EDT — `cdd1ba421f27` Fix live infinite short-page canLoadNextPage thrash (Jetsam)
+
+- **Implementation commit:** `cdd1ba421f27269b4307ff6056e2bd908096e926`
+- **Change:** Fix live infinite short-page canLoadNextPage thrash that Jetsam-killed Scribe on iPad
+- **Details:**
+  - 1.5.0 pre-kickstart trusted remote hasNextPage on short starter pages, leaving canLoadNextPage true forever.
+  - Scribe list UI onAppear + ProgressView swap then thrashed loadNextPage until memory ~4 GB and process death.
+  - Pre-kickstart now uses local fullness only; closed windows no-op expand; live parity regression test added.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantInfiniteQuery.swift` — Close short pre-kickstart pages and stop expand thrash
+  - `Tests/InstantSwiftDataCoreTests/InstantInfiniteQueryParityTests.swift` — Regression for remote hasNextPage on short starter
+- **User context (verbatim):**
+  > The iPad app is continuously crashing um during a recording. Can you please uh read the logs that are coming in from the WebSocket over TailNet and diagnose and fix these. It could be a library issue. I believe the most recent library that should be pinned for instant Swift data is 1.5.0.
+- **SpecStory:** unavailable — Grok Build session; no SpecStory URI authorized for this desktop agent path
+
 ## August 4th, 2026 at 10:39:35 p.m. EDT — `9b9c8c3b340f` Reproduce Scribe blank-detail in Linked Infinite and lock the library fix
 
 - **Implementation commit:** `9b9c8c3b340fafc900ce8464e2b7735835e52b31`
