@@ -1,3 +1,9 @@
+## 2026-08-05 12:48:03 EDT
+
+- **Repository:** instant-data-swift
+- **Commit:** `ca483b549791175854c0f21faf25eae72a016cc2`
+- **Reason:** Isolate failed legacy unknown-overlay mutations so live server apply continues (fixes receive-loop thrash on poison outbox rows; #134)
+
 ## 2026-08-05 12:41:23 EDT
 
 - **Repository:** realtime-voice-sqlite-instant
