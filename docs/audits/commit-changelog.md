@@ -1,3 +1,19 @@
+## 2026-08-05 12:27:16 EDT
+
+- **Repository:** realtime-voice-sqlite-instant
+- **Commit:** d77d69ed48930836bac97ef1786cbda90db67cc8
+- **Reason:** Expand Instant issue-triage policy to feature requests, ideas, and capability gaps.
+
+- **Repository:** skills
+- **Commit:** 77b39de584456e7e47bd09d7ef44b2d87e218c83
+- **Reason:** issue-triage skill covers features/ideas; claim only when executing.
+
+
+## 2026-08-05 12:27:03 EDT
+
+- **Repository:** realtime-voice-sqlite-instant
+- **Commit:** `35afbcc9f144180f16bb889e584c56f950b47eba`
+- **Reason:** Remove 640pt readable-column cap so recording transcript uses full width on iPad/Mac.
 ## 2026-08-05 12:24:10 EDT
 
 - **Repository:** realtime-voice-sqlite-instant
