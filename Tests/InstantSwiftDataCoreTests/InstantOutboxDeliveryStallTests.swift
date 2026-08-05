@@ -566,6 +566,178 @@ struct InstantOutboxDeliveryStallTests {
     expectNoDifference(legacy.status, .failed, outboxStallSource)
     expectNoDifference(legacy.optimisticOverlayState == nil, true, outboxStallSource)
   }
+
+  /// 2026-08-05 recipes-v3 Linked Infinite (mutation `773e50f4-…`): the connect
+  /// path already isolated legacy `failed` + unknown-overlay rows, but every
+  /// live `add-query-ok` / `refresh-ok` still called `applyServerTransaction`,
+  /// which hard-threw on the same row → `connection.receive-loop-failed` →
+  /// reconnect thrash forever. Server apply must proceed; the poison stays
+  /// retained for authoritative recovery without killing the socket.
+  @Test
+  func legacyUnknownFailedMutationDoesNotAbortLiveServerApply() async throws {
+    let cacheURL = try temporaryOutboxStallCacheURL()
+    let createdAt = InstantTimestamp(milliseconds: 1_700_000_061_000)
+    let seedRuntime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "outbox-stall-legacy-apply",
+        persistenceURL: cacheURL,
+        initialAttributes: TodoExample.attributes
+      )
+    )
+    try await seedRuntime.transact(
+      InstantStoreTransaction(
+        id: "tx-outbox-legacy-apply-poison",
+        operations: TodoExample.createOperations(
+          id: "todo-outbox-legacy-apply-poison",
+          text: "failed legacy row that must not freeze apply",
+          createdAt: createdAt,
+          transactionID: "tx-outbox-legacy-apply-poison"
+        )
+      ),
+      createdAt: createdAt
+    )
+    _ = try await seedRuntime.migrateLocalPersistenceSnapshot(
+      name: "outbox-stall-legacy-apply"
+    ) { snapshot in
+      var snapshot = snapshot
+      guard
+        let index = snapshot.outbox.firstIndex(where: {
+          $0.id == "tx-outbox-legacy-apply-poison"
+        })
+      else { return snapshot }
+      snapshot.outbox[index].status = .failed
+      snapshot.outbox[index].failureMessage =
+        "Validation failed for tx-step: Creating entities that exist: todo-outbox-legacy-apply-poison"
+      snapshot.outbox[index].rollbackTransaction = nil
+      snapshot.outbox[index].optimisticOverlayState = nil
+      return snapshot
+    }
+
+    let liveSession = LiveReactorParitySession(messages: [
+      liveReactorInitOK(
+        attrs: liveReactorTodoServerAttrs,
+        sessionID: "legacy-apply-isolation"
+      )
+    ])
+    var configuration = InstantRuntimeConfiguration(
+      appID: "outbox-stall-legacy-apply",
+      persistenceURL: cacheURL,
+      initialAttributes: TodoExample.attributes,
+      liveTransport: liveSession.transport
+    )
+    configuration.liveReconnectSleep = { _ in }
+    let runtime = try await InstantRuntime.bootstrap(configuration: configuration)
+    let plan = TodoExample.query
+    let query = try InstantLiveQueryEncoder.encode(plan)
+    let stream = await runtime.observe(plan)
+    var iterator = stream.makeAsyncIterator()
+    _ = try #require(await iterator.next())
+
+    _ = try await runtime.connect()
+    await liveSession.waitForSentMessageCount(2)
+
+    let refreshCreatedAt = InstantTimestamp(milliseconds: createdAt.milliseconds + 5_000)
+    await liveSession.enqueue(
+      liveReactorAddQueryOK(
+        query: query,
+        processedTransactionID: "server-tx-over-legacy-unknown",
+        result: liveReactorTodoQueryResult(
+          id: "todo-server-after-legacy",
+          text: "server apply survived legacy failed row",
+          createdAt: refreshCreatedAt
+        )
+      )
+    )
+
+    var sawServerApply = false
+    for _ in 0..<50 {
+      if let emission = await iterator.next() {
+        let texts = try TodoExample.decode(emission.values).map(\.text)
+        if texts.contains("server apply survived legacy failed row") {
+          sawServerApply = true
+          break
+        }
+      }
+      try await Task.sleep(nanoseconds: 20_000_000)
+    }
+    #expect(sawServerApply, "\(outboxStallSource): live add-query-ok must apply over legacy failed unknown")
+
+    // Live session stays useful — no receive-loop thrash into `errored`.
+    let status = try await runtime.connectionStatus()
+    #expect(status.state != .errored, "\(outboxStallSource): \(status.state) \(status.lastErrorMessage ?? "")")
+    #expect(
+      status.lastErrorMessage?.contains("predates durable optimistic-overlay") != true,
+      "\(outboxStallSource)"
+    )
+
+    let outbox = try await runtime.persistence.loadState().snapshot.outbox
+    let legacy = try #require(outbox.first { $0.id == "tx-outbox-legacy-apply-poison" })
+    expectNoDifference(legacy.status, .failed, outboxStallSource)
+    expectNoDifference(legacy.optimisticOverlayState == nil, true, outboxStallSource)
+
+    _ = try await runtime.closeConnection()
+  }
+
+  /// Explicit apply API matches the live path: a failed pre-overlay row must
+  /// not freeze server truth for unrelated (or overlapping) entities.
+  @Test
+  func legacyUnknownFailedMutationDoesNotBlockExplicitServerApply() async throws {
+    let cacheURL = try temporaryOutboxStallCacheURL()
+    let baseTime = InstantTimestamp(milliseconds: 1_700_000_062_000)
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "outbox-stall-legacy-explicit-apply",
+        persistenceURL: cacheURL,
+        initialAttributes: TodoExample.attributes
+      )
+    )
+    try await runtime.transact(
+      InstantStoreTransaction(
+        id: "tx-legacy-explicit-poison",
+        operations: TodoExample.createOperations(
+          id: "todo-legacy-explicit-poison",
+          text: "poison",
+          createdAt: baseTime,
+          transactionID: "tx-legacy-explicit-poison"
+        )
+      ),
+      createdAt: baseTime
+    )
+    _ = try await runtime.migrateLocalPersistenceSnapshot(
+      name: "outbox-stall-legacy-explicit-apply"
+    ) { snapshot in
+      var snapshot = snapshot
+      guard
+        let index = snapshot.outbox.firstIndex(where: { $0.id == "tx-legacy-explicit-poison" })
+      else { return snapshot }
+      snapshot.outbox[index].status = .failed
+      snapshot.outbox[index].failureMessage = "legacy unknown failure"
+      snapshot.outbox[index].rollbackTransaction = nil
+      snapshot.outbox[index].optimisticOverlayState = nil
+      return snapshot
+    }
+
+    _ = try await runtime.applyServerTransaction(
+      InstantStoreTransaction(
+        id: "server-tx-explicit-over-legacy",
+        operations: TodoExample.upsertOperations(
+          id: "todo-server-explicit",
+          text: "server truth after isolation",
+          createdAt: InstantTimestamp(milliseconds: baseTime.milliseconds + 1_000),
+          transactionID: "server-tx-explicit-over-legacy"
+        )
+      )
+    )
+
+    let rows = try await TodoExample.decode(runtime.query(TodoExample.query))
+    #expect(
+      rows.contains(where: { $0.text == "server truth after isolation" }),
+      "\(outboxStallSource)"
+    )
+    let outbox = try await runtime.persistence.loadState().snapshot.outbox
+    let legacy = try #require(outbox.first { $0.id == "tx-legacy-explicit-poison" })
+    expectNoDifference(legacy.status, .failed, outboxStallSource)
+  }
 }
 
 /// Mirrors the private tuning constants so the test fails loudly if they move.

@@ -2617,8 +2617,41 @@ public final class InstantRuntime: Sendable {
     for _ in 0..<5 {
       recordActorHop(.persistence)
       let state = try await persistence.loadState()
+      // Legacy pre-overlay rows (1.1.x / early 1.2) can sit in the outbox as
+      // `failed` with neither optimisticOverlayState nor rollbackTransaction.
+      // Refusing *retry/discard* without guessing their local effect is correct
+      // (#134). Refusing every *server apply* is not: live add-query-ok and
+      // refresh-ok go through this path, and one poison row then kills the
+      // receive loop forever (recipes-v3 `773e50f4-…`, Scribe indefinite
+      // loading). Failed rows already skip optimistic protection and rebase;
+      // isolate them and keep applying server truth. Still fail closed for
+      // non-failed unknown rows (pending / unproven) whose overlay may still
+      // be live in the cache.
+      let isolatedFailedUnknownIDs = state.snapshot.outbox.compactMap { mutation -> String? in
+        guard mutation.status == .failed,
+          mutation.optimisticOverlayState == nil,
+          mutation.rollbackTransaction == nil
+        else { return nil }
+        return mutation.id
+      }
+      if !isolatedFailedUnknownIDs.isEmpty {
+        InstantDiagnostics.shared.record(
+          .error,
+          subsystem: "instant-swift-data-core",
+          category: "outbox",
+          event: "outbox.mutation.legacy-unknown-isolated",
+          message:
+            "Isolated failed mutation(s) that predate durable optimistic-overlay metadata; server apply continues.",
+          metadata: [
+            "mutationCount": String(isolatedFailedUnknownIDs.count),
+            "mutationIDs": isolatedFailedUnknownIDs.joined(separator: ","),
+            "operation": "apply server transaction",
+          ]
+        )
+      }
       if let unknownMutation = state.snapshot.outbox.first(where: {
-        ($0.status != .confirmed || !$0.provesServerAcceptance)
+        $0.status != .failed
+          && ($0.status != .confirmed || !$0.provesServerAcceptance)
           && $0.optimisticOverlayState == nil
           && $0.rollbackTransaction == nil
       }) {

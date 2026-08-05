@@ -2320,21 +2320,20 @@ struct InstantFailedMutationDiscardTests {
       runtime: updateRuntime
     )
 
-    await withExpectedIssue {
-      await expectUnknownStateFailure(id: "tx-legacy-unknown-update", operation: "refresh") {
-        _ = try await updateRuntime.applyServerTransaction(
-          InstantStoreTransaction(
-            id: "server-refresh-over-legacy-update",
-            operations: TodoExample.updateTextOperations(
-              id: "todo-legacy-update",
-              text: "server refresh must not guess",
-              updatedAt: InstantTimestamp(milliseconds: baseTime.milliseconds + 2_000_000),
-              transactionID: "server-refresh-over-legacy-update"
-            )
-          )
+    // Server apply must proceed over a failed+unknown-overlay row so live
+    // refresh cannot thrash the receive loop (#134 / recipes 773e50f4). Retry
+    // and discard still refuse — those paths would guess at the local effect.
+    _ = try await updateRuntime.applyServerTransaction(
+      InstantStoreTransaction(
+        id: "server-refresh-over-legacy-update",
+        operations: TodoExample.updateTextOperations(
+          id: "todo-legacy-update",
+          text: "server refresh applies without guessing rollback",
+          updatedAt: InstantTimestamp(milliseconds: baseTime.milliseconds + 2_000_000),
+          transactionID: "server-refresh-over-legacy-update"
         )
-      }
-    }
+      )
+    )
     await expectUnknownStateFailure(id: "tx-legacy-unknown-update", operation: "discard") {
       _ = try await updateRuntime.discardFailedMutation(id: "tx-legacy-unknown-update")
     }
@@ -2342,7 +2341,10 @@ struct InstantFailedMutationDiscardTests {
       _ = try await updateRuntime.retryMutation(id: "tx-legacy-unknown-update")
     }
     let retainedUpdate = try await TodoExample.decode(updateRuntime.query(TodoExample.query))
-    expectNoDifference(retainedUpdate.map(\.text), ["future unknown value"])
+    expectNoDifference(
+      retainedUpdate.map(\.text),
+      ["server refresh applies without guessing rollback"]
+    )
 
     let deleteRuntime = try await discardRuntime(
       cacheURL: temporaryDiscardCacheURL("legacy-unknown-delete")
@@ -2369,21 +2371,19 @@ struct InstantFailedMutationDiscardTests {
       runtime: deleteRuntime
     )
 
-    await withExpectedIssue {
-      await expectUnknownStateFailure(id: "tx-legacy-unknown-delete", operation: "refresh") {
-        _ = try await deleteRuntime.applyServerTransaction(
-          InstantStoreTransaction(
-            id: "server-refresh-over-legacy-delete",
-            operations: TodoExample.upsertOperations(
-              id: "todo-legacy-delete",
-              text: "server refresh must not resurrect",
-              createdAt: InstantTimestamp(milliseconds: baseTime.milliseconds + 2_000_000),
-              transactionID: "server-refresh-over-legacy-delete"
-            )
-          )
+    // Authoritative server upsert is allowed; the failed+unknown row stays
+    // retained and still blocks retry/discard (cannot invent a before-image).
+    _ = try await deleteRuntime.applyServerTransaction(
+      InstantStoreTransaction(
+        id: "server-refresh-over-legacy-delete",
+        operations: TodoExample.upsertOperations(
+          id: "todo-legacy-delete",
+          text: "server refresh re-asserts entity",
+          createdAt: InstantTimestamp(milliseconds: baseTime.milliseconds + 2_000_000),
+          transactionID: "server-refresh-over-legacy-delete"
         )
-      }
-    }
+      )
+    )
     await expectUnknownStateFailure(id: "tx-legacy-unknown-delete", operation: "discard") {
       _ = try await deleteRuntime.discardFailedMutation(id: "tx-legacy-unknown-delete")
     }
@@ -2391,7 +2391,7 @@ struct InstantFailedMutationDiscardTests {
       _ = try await deleteRuntime.retryMutation(id: "tx-legacy-unknown-delete")
     }
     let retainedDelete = try await TodoExample.decode(deleteRuntime.query(TodoExample.query))
-    expectNoDifference(retainedDelete, [])
+    expectNoDifference(retainedDelete.map(\.text), ["server refresh re-asserts entity"])
   }
 
   @Test
