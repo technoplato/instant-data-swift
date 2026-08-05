@@ -1,3 +1,9 @@
+## 2026-08-05 12:29:20 EDT
+
+- **repo:** instant-data-swift
+- **commit:** `1a7303ac92ff0d689b34a4c12e541b86337edd29`
+- **reason:** Recipes-v3 floating debug panel (memory/logs) after idle 5GB linked-infinite process; relaunch front and center.
+
 ## 2026-08-05 12:27:16 EDT
 
 - **Repository:** realtime-voice-sqlite-instant
