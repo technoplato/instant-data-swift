@@ -178,6 +178,7 @@ private actor InstantLiveInfiniteQueryCoordinator {
   /// Local-first expansion while waiting for server liveTuple cursors.
   private var preBootstrapLoadedPages = 1
   private var preBootstrapExpandInFlight = false
+  private var preBootstrapExpandPending = false
 
   init(
     runtime: InstantRuntime,
@@ -214,6 +215,12 @@ private actor InstantLiveInfiniteQueryCoordinator {
     // Before live cursors exist, expand from the local full observation window
     // (starter emissions are limit-sized and never grow on their own).
     if !hasKickstarted {
+      // Already closed (short page or expand found no growth): republish so
+      // consumers leave isLoadingNextPage without more queryLocally work.
+      if let chunk = forwardChunks[.preBootstrap], !chunk.hasMore {
+        pushSnapshot()
+        return
+      }
       Task { await self.expandPreBootstrapFromLocalStore() }
       return
     }
@@ -224,6 +231,9 @@ private actor InstantLiveInfiniteQueryCoordinator {
       let endCursor = chunk.endCursor,
       advancedForwardChunks.insert(key).inserted
     else {
+      // Never leave consumers stuck on "loading next" when we cannot advance
+      // (already advanced, missing cursor, or empty forward window).
+      pushSnapshot()
       return
     }
     freezeForward(key: key, chunk: chunk)
@@ -269,9 +279,6 @@ private actor InstantLiveInfiniteQueryCoordinator {
       return
     }
 
-    let hasMore =
-      emission.pageInfo?.hasNextPage
-      ?? (emission.values.count >= pageSize)
     // Keep expanded local window if we already loadNext'd past the starter.
     let data: [InstantEntitySnapshot]
     if let existing = forwardChunks[.preBootstrap],
@@ -288,23 +295,33 @@ private actor InstantLiveInfiniteQueryCoordinator {
       }
     }
 
+    // Pre-kickstart can only expand the local store. Remote `hasNextPage` without
+    // a liveTuple kickstart is not actionable — trusting it (1.5.0) left
+    // canLoadNextPage=true on short pages forever, and Scribe's list UI
+    // onAppear auto-load thrashed until Jetsam (~4 GB, iPad 2026-08-04/05).
+    // 1.4.0 always set hasMore=false here; keep local fullness as the only signal.
+    let existingClosedWithoutGrowth =
+      forwardChunks[.preBootstrap].map { existing in
+        !existing.hasMore && existing.data.count >= data.count
+      } ?? false
+    let hasMore = !existingClosedWithoutGrowth && data.count >= pageSize
+
     setForwardChunk(
       key: .preBootstrap,
       chunk: InstantLiveInfiniteChunk(
         data: data,
         sequence: emission.sequence,
-        pageInfo: emission.pageInfo
-          ?? InstantQueryPageInfo(
-            startCursor: data.first.map {
-              InstantQueryCursor(entityID: $0.id, sortValue: nil)
-            },
-            endCursor: data.last.map {
-              InstantQueryCursor(entityID: $0.id, sortValue: nil)
-            },
-            hasPreviousPage: false,
-            hasNextPage: hasMore
-          ),
-        hasMore: hasMore || data.count > pageSize,
+        pageInfo: InstantQueryPageInfo(
+          startCursor: data.first.map {
+            InstantQueryCursor(entityID: $0.id, sortValue: nil)
+          },
+          endCursor: data.last.map {
+            InstantQueryCursor(entityID: $0.id, sortValue: nil)
+          },
+          hasPreviousPage: false,
+          hasNextPage: hasMore
+        ),
+        hasMore: hasMore,
         endCursor: data.last.map {
           InstantQueryCursor(entityID: $0.id, sortValue: nil)
         }
@@ -312,13 +329,22 @@ private actor InstantLiveInfiniteQueryCoordinator {
     )
   }
 
-  /// Pull the unbounded local observation and publish a larger window while
-  /// waiting for live cursors. Fixes canLoadNextPage=false with only pageSize
-  /// rows when the store already has more.
+  /// Pull a larger local window while waiting for live cursors.
+  /// Always re-publishes a snapshot so UI cannot stick on "loading next".
   private func expandPreBootstrapFromLocalStore() async {
-    guard isActive, !hasKickstarted, !preBootstrapExpandInFlight else { return }
+    guard isActive, !hasKickstarted else { return }
+    if preBootstrapExpandInFlight {
+      preBootstrapExpandPending = true
+      return
+    }
     preBootstrapExpandInFlight = true
-    defer { preBootstrapExpandInFlight = false }
+    defer {
+      preBootstrapExpandInFlight = false
+      if preBootstrapExpandPending, isActive, !hasKickstarted {
+        preBootstrapExpandPending = false
+        Task { await self.expandPreBootstrapFromLocalStore() }
+      }
+    }
 
     preBootstrapLoadedPages += 1
     let limit = pageSize * preBootstrapLoadedPages
@@ -337,43 +363,72 @@ private actor InstantLiveInfiniteQueryCoordinator {
       // Live cursors kickstart the real path when the server page info arrives.
       let emission = try await runtime.queryLocally(expandedPlan)
       guard isActive, !hasKickstarted else { return }
-      if emission.values.isEmpty,
-        let existing = forwardChunks[.preBootstrap],
-        !existing.data.isEmpty
-      {
-        return
+
+      let existing = forwardChunks[.preBootstrap]
+      let values: [InstantEntitySnapshot]
+      if emission.values.isEmpty, let existing, !existing.data.isEmpty {
+        // No growth; republish existing so consumers leave loading state.
+        values = existing.data
+        preBootstrapLoadedPages = max(1, preBootstrapLoadedPages - 1)
+      } else if emission.values.count < (existing?.data.count ?? 0) {
+        // Don't shrink the window on a partial local read.
+        values = existing?.data ?? emission.values
+        preBootstrapLoadedPages = max(1, preBootstrapLoadedPages - 1)
+      } else {
+        values = emission.values
       }
-      let hasMore =
-        emission.pageInfo?.hasNextPage
-        ?? (emission.values.count >= limit)
+
+      // Pre-kickstart expand is local-only. End when the expanded window is not
+      // full — never re-open from remote hasNextPage (not actionable without
+      // liveTuple, and it caused infinite loadNextPage thrash on Scribe iPad).
+      let closedHasMore = values.count >= limit
+
       setForwardChunk(
         key: .preBootstrap,
         chunk: InstantLiveInfiniteChunk(
-          data: emission.values,
+          data: values,
           sequence: max(
             emission.sequence,
-            forwardChunks[.preBootstrap]?.sequence ?? 0
+            existing?.sequence ?? 0
+          ) + 1,
+          pageInfo: InstantQueryPageInfo(
+            startCursor: values.first.map {
+              InstantQueryCursor(entityID: $0.id, sortValue: nil)
+            },
+            endCursor: values.last.map {
+              InstantQueryCursor(entityID: $0.id, sortValue: nil)
+            },
+            hasPreviousPage: false,
+            hasNextPage: closedHasMore
           ),
-          pageInfo: emission.pageInfo
-            ?? InstantQueryPageInfo(
-              startCursor: emission.values.first.map {
-                InstantQueryCursor(entityID: $0.id, sortValue: nil)
-              },
-              endCursor: emission.values.last.map {
-                InstantQueryCursor(entityID: $0.id, sortValue: nil)
-              },
-              hasPreviousPage: false,
-              hasNextPage: hasMore
-            ),
-          hasMore: hasMore,
-          endCursor: emission.values.last.map {
+          hasMore: closedHasMore,
+          endCursor: values.last.map {
             InstantQueryCursor(entityID: $0.id, sortValue: nil)
           }
         )
       )
     } catch {
-      // Leave previous snapshot in place; UI keeps last good rows.
+      // Always republish last good chunk so UI unsticks from loadingNextPage.
       preBootstrapLoadedPages = max(1, preBootstrapLoadedPages - 1)
+      if let existing = forwardChunks[.preBootstrap] {
+        setForwardChunk(
+          key: .preBootstrap,
+          chunk: InstantLiveInfiniteChunk(
+            data: existing.data,
+            sequence: existing.sequence + 1,
+            pageInfo: InstantQueryPageInfo(
+              startCursor: existing.pageInfo?.startCursor,
+              endCursor: existing.pageInfo?.endCursor,
+              hasPreviousPage: false,
+              hasNextPage: false
+            ),
+            hasMore: false,
+            endCursor: existing.endCursor
+          )
+        )
+      } else {
+        pushSnapshot()
+      }
     }
   }
 

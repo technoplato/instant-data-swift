@@ -360,6 +360,85 @@ struct InstantInfiniteQueryParityTests {
     _ = try await runtime.closeConnection()
   }
 
+  /// Regression: 1.5.0 trusted remote `hasNextPage` on a short pre-kickstart
+  /// starter page. Scribe list UI auto-loadNextPage then thrashed until Jetsam
+  /// (iPad ~4 GB, 2026-08-04/05). Pre-kickstart must only offer next page when
+  /// the local window is full.
+  @Test
+  func liveInfiniteQueryShortStarterIgnoresRemoteHasNextPageWithoutKickstart() async throws {
+    let session = LiveReactorParitySession(messages: [
+      liveReactorInitOK(attrs: infiniteLiveServerAttributes)
+    ])
+    var configuration = InstantRuntimeConfiguration(
+      appID: "infinite-live-short-starter-has-next",
+      persistenceURL: try temporaryInfiniteQueryCacheURL(),
+      initialAttributes: infiniteQueryAttributes,
+      makeID: { UUID().uuidString.lowercased() },
+      liveTransport: session.transport
+    )
+    configuration.autoConnectLiveTransport = true
+    let runtime = try await InstantRuntime.bootstrap(configuration: configuration)
+    try await upsertNumberEntries(
+      [("item-1", 1), ("item-2", 2), ("item-3", 3)],
+      transactionID: "infinite-live-short-starter-seed",
+      in: runtime
+    )
+
+    let subscription = await runtime.subscribeInfiniteQuery(
+      infiniteItemsQuery(limit: 10, order: InstantQueryOrder("value"))
+    )
+    var iterator = subscription.snapshots.makeAsyncIterator()
+    let localSnapshot = try #require(await iterator.next())
+    expectNoDifference(loadedValues(localSnapshot), [1, 2, 3], infiniteShortStarterThrashSource)
+    #expect(!localSnapshot.canLoadNextPage, Comment(rawValue: infiniteShortStarterThrashSource))
+
+    #expect(try await waitForInfiniteMessageCount(2, in: session))
+    let sent = await session.sentMessages()
+    let starterQuery = try #require(sent.last?.fields["q"])
+    let startCursor = infiniteLiveCursor(id: "item-1", value: 1)
+    let endCursor = infiniteLiveCursor(id: "item-3", value: 3)
+    await session.enqueue(
+      liveReactorAddQueryOK(
+        query: starterQuery,
+        processedTransactionID: "infinite-live-short-starter-remote",
+        result: infiniteLiveQueryResult(
+          [("item-1", 1), ("item-2", 2), ("item-3", 3)],
+          startCursor: startCursor,
+          endCursor: endCursor,
+          // Remote lies / claims more pages — must not open canLoadNextPage
+          // without a full page + liveTuple kickstart path.
+          hasNextPage: true
+        )
+      )
+    )
+
+    // Remote page-info re-emits the starter. Short page must stay closed even
+    // when the server claims has-next-page.
+    let afterRemote = try #require(await iterator.next())
+    expectNoDifference(loadedValues(afterRemote), [1, 2, 3], infiniteShortStarterThrashSource)
+    #expect(!afterRemote.canLoadNextPage, Comment(rawValue: infiniteShortStarterThrashSource))
+
+    // loadNextPage expands local-only; with a short local window it must close
+    // (or no-op) rather than reopen canLoadNextPage.
+    subscription.loadNextPage()
+    let afterLoad = try #require(await iterator.next())
+    expectNoDifference(loadedValues(afterLoad), [1, 2, 3], infiniteShortStarterThrashSource)
+    #expect(!afterLoad.canLoadNextPage, Comment(rawValue: infiniteShortStarterThrashSource))
+
+    for _ in 0..<5 {
+      subscription.loadNextPage()
+    }
+    // Allow any coalesced expand republishes to settle.
+    try await Task.sleep(for: .milliseconds(50))
+    subscription.loadNextPage()
+    let afterThrash = try #require(await iterator.next())
+    expectNoDifference(loadedValues(afterThrash), [1, 2, 3], infiniteShortStarterThrashSource)
+    #expect(!afterThrash.canLoadNextPage, Comment(rawValue: infiniteShortStarterThrashSource))
+
+    subscription.unsubscribe()
+    _ = try await runtime.closeConnection()
+  }
+
   @Test
   func liveInfiniteQueryRegistersOnlyBoundedCursorChunks() async throws {
     let session = LiveReactorParitySession(messages: [
@@ -925,3 +1004,5 @@ private let infiniteBoundedTransportSource =
   "upstream/instant/client/packages/core/src/infiniteQuery.ts starter, pushNewForward, and pushNewReverse [ported: Swift live infinite queries register only limited or cursor-bounded Reactor subscriptions.]"
 private let infiniteLocalStarterSource =
   "upstream/instant/client/packages/core/src/infiniteQuery.ts starter subscription [adapted: Swift emits the locally materialized starter page immediately while awaiting authoritative remote page-info.]"
+private let infiniteShortStarterThrashSource =
+  "scribe-ipad-jetsam-2026-08-05: short pre-kickstart starter must ignore remote hasNextPage so loadNextPage cannot thrash canLoadNextPage open."
