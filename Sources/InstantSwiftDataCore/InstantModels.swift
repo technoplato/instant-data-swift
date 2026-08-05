@@ -822,6 +822,14 @@ public struct PendingMutation: Hashable, Codable, Sendable, Identifiable {
   package var failure: InstantMutationFailure?
   package var optimisticOverlayState: InstantOptimisticOverlayState?
 
+  /// `true` when this row predates durable optimistic-overlay / rollback metadata.
+  ///
+  /// Such rows are isolated: retry/discard refuse without guessing the local cache
+  /// effect, and live server apply continues past them (#134 / recipes panel).
+  public var isLegacyUnknownOverlayCandidate: Bool {
+    optimisticOverlayState == nil && rollbackTransaction == nil
+  }
+
   /// Whether the server has demonstrably accepted this mutation.
   ///
   /// A server-assigned `serverTransactionID` counts on its own. `Outbox.accepting` is its only

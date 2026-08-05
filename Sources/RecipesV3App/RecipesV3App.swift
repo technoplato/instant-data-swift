@@ -8,6 +8,7 @@ import TodosV3App
 
 public enum InstantRecipeV3: String, CaseIterable, Hashable, Identifiable, Sendable {
   case todos
+  case sharing
   case linkedInfinite = "linked-infinite"
   case cursors
   case customCursors = "custom-cursors"
@@ -22,6 +23,7 @@ public enum InstantRecipeV3: String, CaseIterable, Hashable, Identifiable, Senda
   public var title: String {
     switch self {
     case .todos: "Todos"
+    case .sharing: "Sharing"
     case .linkedInfinite: "Linked Infinite"
     case .cursors: "Cursors"
     case .customCursors: "Custom Cursors"
@@ -36,6 +38,8 @@ public enum InstantRecipeV3: String, CaseIterable, Hashable, Identifiable, Senda
   public var summary: String {
     switch self {
     case .todos: "Realtime CRUD with optimistic local state"
+    case .sharing:
+      "Public counter, my-account counter, unauthorized read probe"
     case .linkedInfinite:
       "Infinite page parents with linked children; blank-detail regression (Scribe)"
     case .cursors: "Share normalized pointer positions with presence"
@@ -51,6 +55,7 @@ public enum InstantRecipeV3: String, CaseIterable, Hashable, Identifiable, Senda
   public var systemImage: String {
     switch self {
     case .todos: "checklist"
+    case .sharing: "person.2.badge.key"
     case .linkedInfinite: "list.bullet.rectangle"
     case .cursors: "cursorarrow.motionlines"
     case .customCursors: "person.crop.circle.badge.checkmark"
@@ -137,6 +142,7 @@ public struct RecipesV3AppConfiguration: Hashable, Sendable {
       + LinkedInfiniteSeed.instantAttributes
       + MergeTileGameV3Board.instantAttributes
       + AuthV3User.instantAttributes
+      + RecipesSharingAttributes.all
   }
 
   private static func normalizedConfigurationValue(_ value: String?) -> String? {
@@ -264,6 +270,7 @@ public struct RecipesV3AppConfiguration: Hashable, Sendable {
       .recipesDebugPanel(
         recipeLabel: model.configuration.launchRecipe?.title ?? "catalog",
         isLive: model.configuration.enablesLiveSync,
+        appID: model.configuration.appID,
         initialPresentation: .expanded
       )
     }
@@ -383,6 +390,8 @@ public struct RecipesV3AppConfiguration: Hashable, Sendable {
       switch recipe {
       case .todos:
         TodosScreen(wrapsInNavigationStack: false)
+      case .sharing:
+        RecipesSharingScreen(wrapsInNavigationStack: false)
       case .linkedInfinite:
         LinkedInfiniteScreen(wrapsInNavigationStack: false)
       case .cursors:

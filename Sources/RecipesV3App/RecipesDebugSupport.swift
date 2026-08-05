@@ -170,6 +170,83 @@ public final class RecipesDebugLogRing: ObservableObject {
     }
   }
 
+  public func clearLogs() {
+    entries.removeAll(keepingCapacity: true)
+    append(
+      level: "info",
+      category: "recipes-debug",
+      name: "logs.cleared",
+      message: "In-memory panel logs cleared.",
+      metadata: [:]
+    )
+  }
+
+  /// Failed outbox rows for the debug panel (newest-first).
+  @Published public private(set) var failedOutboxRows: [RecipesOutboxFailureRow] = []
+  @Published public private(set) var outboxRefreshError: String?
+
+  public func refreshFailedOutbox(using client: InstantSwiftDataClient) async {
+    do {
+      let failed = try await client.failedMutations()
+      failedOutboxRows = failed
+        .sorted { $0.createdAt.milliseconds > $1.createdAt.milliseconds }
+        .map(RecipesOutboxFailureRow.init(mutation:))
+      outboxRefreshError = nil
+    } catch {
+      outboxRefreshError = String(describing: error)
+    }
+  }
+}
+
+/// One failed outbox mutation, ready for the panel (id + human reason).
+public struct RecipesOutboxFailureRow: Identifiable, Hashable, Sendable {
+  public var id: String
+  public var status: String
+  public var failureMessage: String
+  public var plainEnglish: String
+  public var isLegacyUnknownOverlay: Bool
+
+  public init(mutation: PendingMutation) {
+    id = mutation.id
+    status = mutation.status.rawValue
+    let message = mutation.failureMessage ?? "(no failure message)"
+    failureMessage = message
+    // Pre-overlay rows were written before optimisticOverlayState existed. The
+    // library refuses to invent their local cache effect for retry/discard, but
+    // still isolates them so live apply continues (#134).
+    isLegacyUnknownOverlay = mutation.isLegacyUnknownOverlayCandidate
+    plainEnglish =
+      if isLegacyUnknownOverlay {
+        """
+        Old failed write from before the library stored optimistic-overlay metadata. \
+        It is isolated (not retried, not discarded automatically) so it cannot kill live sync. \
+        Wipe the local recipes database if you do not need this write.
+        """
+      } else {
+        "Server rejected this write. Inspect the message; discard or fix schema/data, then retry."
+      }
+  }
+}
+
+extension RecipesDebugLogRing {
+  /// Best-effort local SQLite wipe for the recipes app id. Caller must quit/relaunch.
+  public static func wipeLocalRecipesCache(appID: String) throws -> URL {
+    let directory = FileManager.default.homeDirectoryForCurrentUser
+      .appendingPathComponent(".instant-swift-data/apps", isDirectory: true)
+    let base = directory.appendingPathComponent("\(appID).sqlite")
+    let candidates = [
+      base,
+      URL(fileURLWithPath: base.path + "-wal"),
+      URL(fileURLWithPath: base.path + "-shm"),
+    ]
+    for url in candidates {
+      if FileManager.default.fileExists(atPath: url.path) {
+        try FileManager.default.removeItem(at: url)
+      }
+    }
+    return base
+  }
+
   public func copyableSummary(recipeLabel: String) -> String {
     var lines: [String] = []
     lines.append("recipes-v3 debug panel")

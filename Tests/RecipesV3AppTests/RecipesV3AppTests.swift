@@ -11,6 +11,8 @@ struct RecipesV3AppTests {
       InstantRecipeV3.allCases.map(\.rawValue),
       [
         "todos",
+        "sharing",
+        "linked-infinite",
         "cursors",
         "custom-cursors",
         "reactions",
@@ -107,9 +109,17 @@ struct RecipesV3AppTests {
 
   @Test
   func combinedSchemaContainsEveryDurableRecipeNamespace() {
-    expectNoDifference(
-      Set(RecipesV3AppConfiguration.initialAttributes.map(\.namespace)),
-      Set(["todos", "boards", "$users"])
-    )
+    let namespaces = Set(RecipesV3AppConfiguration.initialAttributes.map(\.namespace))
+    #expect(namespaces.isSuperset(of: [
+      "todos",
+      "boards",
+      "$users",
+      "linked_infinite_recordings",
+      "linked_infinite_transcriptions",
+      "linked_infinite_words",
+      "recipe_public_counters",
+      "recipe_account_counters",
+      "recipe_private_notes",
+    ]))
   }
 }

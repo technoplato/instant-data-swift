@@ -656,6 +656,26 @@ public enum InstantSchemaExamples {
       .allowAll(namespace: LinkedInfiniteExample.recordingNamespace),
       .allowAll(namespace: LinkedInfiniteExample.transcriptionNamespace),
       .allowAll(namespace: LinkedInfiniteExample.wordNamespace),
+      // Sharing recipe: public open; account + private notes owner-scoped once pushed.
+      .allowAll(namespace: "recipe_public_counters"),
+      InstantNamespacePermissions(
+        namespace: "recipe_account_counters",
+        allow: [
+          .view: "auth.id == data.ownerUserID",
+          .create: "auth.id == data.ownerUserID",
+          .update: "auth.id == data.ownerUserID",
+          .delete: "auth.id == data.ownerUserID",
+        ]
+      ),
+      InstantNamespacePermissions(
+        namespace: "recipe_private_notes",
+        allow: [
+          .view: "auth.id == data.ownerUserID",
+          .create: "auth.id == data.ownerUserID",
+          .update: "auth.id == data.ownerUserID",
+          .delete: "auth.id == data.ownerUserID",
+        ]
+      ),
     ]
   )
 

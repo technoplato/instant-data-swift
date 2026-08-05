@@ -106,6 +106,31 @@ public struct SetTodoCompletion: InstantMessage {
   }
 }
 
+public struct TodoDeleted: Hashable, Sendable {
+  public var id: InstantID<Todo>
+
+  public init(id: InstantID<Todo>) {
+    self.id = id
+  }
+}
+
+public struct DeleteTodo: InstantMessage {
+  public var id: InstantID<Todo>
+
+  public init(id: InstantID<Todo>) {
+    self.id = id
+  }
+
+  public func prepare(using client: InstantSwiftDataClient) async throws
+    -> InstantPreparedMessage<TodoDeleted>
+  {
+    _ = client
+    return InstantPreparedMessage(change: TodoDeleted(id: id)) {
+      Todo.delete(id: id)
+    }
+  }
+}
+
 public struct TodoViewerPresence: Codable, Equatable, Sendable {
   public init() {}
 }

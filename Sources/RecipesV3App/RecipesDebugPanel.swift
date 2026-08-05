@@ -1,3 +1,4 @@
+import Dependencies
 import InstantSwiftData
 import LinkedInfiniteV3App
 import SwiftUI
@@ -26,22 +27,27 @@ public struct RecipesDebugPanel: View {
   }
 
   @ObservedObject private var ring = RecipesDebugLogRing.shared
+  @Dependency(\.defaultInstantSwiftData) private var db
   @State private var presentation: Presentation
   @State private var didCopy = false
+  @State private var wipeMessage = ""
   @State private var dragTranslation: CGSize = .zero
   @State private var origin = CGPoint(x: 16, y: 16)
 
   private let recipeLabel: String
   private let isLive: Bool
+  private let appID: String
   private let sampleIntervalSeconds: Double = 2
 
   public init(
     recipeLabel: String,
     isLive: Bool,
+    appID: String = "",
     initialPresentation: Presentation = .expanded
   ) {
     self.recipeLabel = recipeLabel
     self.isLive = isLive
+    self.appID = appID
     _presentation = State(initialValue: initialPresentation)
   }
 
@@ -65,6 +71,7 @@ public struct RecipesDebugPanel: View {
         RecipesDebugLogRing.shared.installDiagnosticsBridgeIfNeeded()
         while !Task.isCancelled {
           ring.recordMetricsSample()
+          await ring.refreshFailedOutbox(using: db)
           try? await Task.sleep(for: .seconds(sampleIntervalSeconds))
         }
       }
@@ -133,32 +140,70 @@ public struct RecipesDebugPanel: View {
 
       metricsBlock
       sparkline
+      outboxBlock
       logBlock
 
-      HStack {
-        Button {
-          copySummary()
-        } label: {
-          Label(didCopy ? "Copied" : "Copy all", systemImage: didCopy ? "checkmark" : "doc.on.doc")
-            .font(.system(.caption2, design: .monospaced, weight: .semibold))
-        }
-        .buttonStyle(.bordered)
-        .controlSize(.small)
+      VStack(alignment: .leading, spacing: 6) {
+        HStack {
+          Button {
+            copySummary()
+          } label: {
+            Label(didCopy ? "Copied" : "Copy all", systemImage: didCopy ? "checkmark" : "doc.on.doc")
+              .font(.system(.caption2, design: .monospaced, weight: .semibold))
+          }
+          .buttonStyle(.bordered)
+          .controlSize(.small)
 
-        Button {
-          openLogPaths()
-        } label: {
-          Label("Reveal logs", systemImage: "folder")
-            .font(.system(.caption2, design: .monospaced, weight: .semibold))
-        }
-        .buttonStyle(.bordered)
-        .controlSize(.small)
+          Button {
+            ring.clearLogs()
+          } label: {
+            Label("Clear logs", systemImage: "trash")
+              .font(.system(.caption2, design: .monospaced, weight: .semibold))
+          }
+          .buttonStyle(.bordered)
+          .controlSize(.small)
 
-        Spacer(minLength: 0)
+          Button {
+            openLogPaths()
+          } label: {
+            Label("Reveal logs", systemImage: "folder")
+              .font(.system(.caption2, design: .monospaced, weight: .semibold))
+          }
+          .buttonStyle(.bordered)
+          .controlSize(.small)
+        }
+
+        HStack {
+          Button(role: .destructive) {
+            wipeLocalDatabase()
+          } label: {
+            Label("Wipe local DB + quit", systemImage: "externaldrive.badge.xmark")
+              .font(.system(.caption2, design: .monospaced, weight: .semibold))
+          }
+          .buttonStyle(.bordered)
+          .controlSize(.small)
+          .disabled(appID.isEmpty)
+
+          Button {
+            Task { await ring.refreshFailedOutbox(using: db) }
+          } label: {
+            Label("Refresh outbox", systemImage: "arrow.clockwise")
+              .font(.system(.caption2, design: .monospaced, weight: .semibold))
+          }
+          .buttonStyle(.bordered)
+          .controlSize(.small)
+        }
+
+        if !wipeMessage.isEmpty {
+          Text(wipeMessage)
+            .font(.system(.caption2, design: .monospaced))
+            .foregroundStyle(.orange)
+            .fixedSize(horizontal: false, vertical: true)
+        }
       }
     }
     .padding(12)
-    .frame(width: 380, alignment: .leading)
+    .frame(width: 400, alignment: .leading)
     .background(panelBackground)
     .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
     .overlay(
@@ -231,6 +276,63 @@ public struct RecipesDebugPanel: View {
           .font(.system(.caption2, design: .monospaced))
           .foregroundStyle(.secondary)
           .frame(maxWidth: .infinity, minHeight: 40, alignment: .leading)
+      }
+    }
+  }
+
+  private var outboxBlock: some View {
+    VStack(alignment: .leading, spacing: 4) {
+      Text("Failed outbox (\(ring.failedOutboxRows.count))")
+        .font(.system(.caption2, design: .monospaced, weight: .semibold))
+        .foregroundStyle(.secondary)
+      Text(
+        """
+        legacy-unknown-isolated = old failed write without overlay metadata. \
+        Isolated so live sync continues; wipe DB for a clean start.
+        """
+      )
+      .font(.system(size: 9, design: .monospaced))
+      .foregroundStyle(.secondary)
+      .fixedSize(horizontal: false, vertical: true)
+
+      if let error = ring.outboxRefreshError {
+        Text(error)
+          .font(.system(.caption2, design: .monospaced))
+          .foregroundStyle(.red)
+      } else if ring.failedOutboxRows.isEmpty {
+        Text("No failed mutations")
+          .font(.system(.caption2, design: .monospaced))
+          .foregroundStyle(.secondary)
+      } else {
+        ScrollView {
+          LazyVStack(alignment: .leading, spacing: 8) {
+            ForEach(ring.failedOutboxRows.prefix(20)) { row in
+              VStack(alignment: .leading, spacing: 2) {
+                Text(row.id)
+                  .font(.system(.caption2, design: .monospaced, weight: .bold))
+                  .textSelection(.enabled)
+                  .foregroundStyle(row.isLegacyUnknownOverlay ? .orange : .red)
+                Text(row.status + (row.isLegacyUnknownOverlay ? " · legacy-unknown" : ""))
+                  .font(.system(size: 9, design: .monospaced))
+                  .foregroundStyle(.secondary)
+                Text(row.plainEnglish)
+                  .font(.system(size: 9, design: .monospaced))
+                  .foregroundStyle(.primary)
+                  .fixedSize(horizontal: false, vertical: true)
+                Text(row.failureMessage)
+                  .font(.system(size: 9, design: .monospaced))
+                  .foregroundStyle(.secondary)
+                  .textSelection(.enabled)
+                  .lineLimit(4)
+              }
+              .frame(maxWidth: .infinity, alignment: .leading)
+            }
+          }
+        }
+        .frame(height: min(CGFloat(ring.failedOutboxRows.count) * 72, 160))
+        .padding(6)
+        .background(Color.black.opacity(0.22))
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
       }
     }
   }
@@ -372,6 +474,34 @@ public struct RecipesDebugPanel: View {
       ])
     #endif
   }
+
+  private func wipeLocalDatabase() {
+    guard !appID.isEmpty else {
+      wipeMessage = "No app id — cannot wipe."
+      return
+    }
+    do {
+      let path = try RecipesDebugLogRing.wipeLocalRecipesCache(appID: appID)
+      wipeMessage =
+        "Wiped \(path.lastPathComponent). Quit and relaunch recipes-v3 for an empty start."
+      ring.append(
+        level: "warning",
+        category: "recipes-debug",
+        name: "local-cache.wiped",
+        message: "Local Instant SQLite removed; quit and relaunch.",
+        metadata: ["appID": appID, "path": path.path]
+      )
+      #if os(macOS)
+        // Give the user a moment to read the message, then exit.
+        Task { @MainActor in
+          try? await Task.sleep(for: .seconds(1.2))
+          NSApplication.shared.terminate(nil)
+        }
+      #endif
+    } catch {
+      wipeMessage = "Wipe failed: \(error)"
+    }
+  }
 }
 
 @available(iOS 17.0, macOS 14.0, tvOS 17.0, watchOS 10.0, *)
@@ -380,6 +510,7 @@ extension View {
   public func recipesDebugPanel(
     recipeLabel: String,
     isLive: Bool,
+    appID: String = "",
     initialPresentation: RecipesDebugPanel.Presentation = .expanded
   ) -> some View {
     #if os(watchOS) || os(tvOS)
@@ -390,6 +521,7 @@ extension View {
         RecipesDebugPanel(
           recipeLabel: recipeLabel,
           isLive: isLive,
+          appID: appID,
           initialPresentation: initialPresentation
         )
       }

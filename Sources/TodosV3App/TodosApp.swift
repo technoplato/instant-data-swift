@@ -129,6 +129,9 @@ public struct TodosAppConfiguration: Hashable, Sendable {
           TextField("What needs doing?", text: $text)
           Button("Add todo", action: addTodoButtonTapped)
             .disabled(text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+          if !todos.isEmpty {
+            Button("Delete all todos", role: .destructive, action: deleteAllTodosButtonTapped)
+          }
         }
         ForEach(todos) { todo in
           Button(action: { todoButtonTapped(todo) }) {
@@ -136,6 +139,18 @@ public struct TodosAppConfiguration: Hashable, Sendable {
               todo.text,
               systemImage: todo.isCompleted ? "checkmark.circle.fill" : "circle"
             )
+          }
+          .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+            Button(role: .destructive) {
+              deleteTodoButtonTapped(todo)
+            } label: {
+              Label("Delete", systemImage: "trash")
+            }
+          }
+          .contextMenu {
+            Button("Delete", role: .destructive) {
+              deleteTodoButtonTapped(todo)
+            }
           }
         }
         if !message.isEmpty {
@@ -166,6 +181,27 @@ public struct TodosAppConfiguration: Hashable, Sendable {
         onServerAccepted: { _ in message = "Todo updated" },
         onFailure: { error in message = error.recoveryMessage }
       )
+    }
+
+    private func deleteTodoButtonTapped(_ todo: Todo) {
+      db.send(
+        DeleteTodo(id: todo.id),
+        onOptimisticCommit: { _ in message = "Deleted todo" },
+        onServerAccepted: { _ in message = "Delete synced" },
+        onFailure: { error in message = error.recoveryMessage }
+      )
+    }
+
+    private func deleteAllTodosButtonTapped() {
+      let ids = todos.map(\.id)
+      guard !ids.isEmpty else { return }
+      for id in ids {
+        db.send(
+          DeleteTodo(id: id),
+          onFailure: { error in message = error.recoveryMessage }
+        )
+      }
+      message = "Deleted \(ids.count) todos"
     }
   }
 #endif
