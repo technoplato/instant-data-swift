@@ -1,3 +1,9 @@
+## 2026-08-05 13:12:29 EDT
+
+- **Repository:** instant-data-swift
+- **Commit:** `8fbfa0c8ef1d95457929a9b4462c65f85923c9f2`
+- **Reason:** Recipes outbox panel, wipe/clear, delete todos, sharing counters (#152)
+
 ## 2026-08-05 12:58:28 EDT
 
 - **Repository:** instant-data-swift
