@@ -4,6 +4,26 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## August 5th, 2026 at 1:12:20 p.m. EDT — `8fbfa0c8ef1d` Recipes: outbox isolation panel, wipe, clear logs, delete todos, sharing
+
+- **Implementation commit:** `8fbfa0c8ef1d95457929a9b4462c65f85923c9f2`
+- **Change:** Recipes debug outbox isolation, wipe/clear, delete todos, sharing counters (#152)
+- **Details:**
+  - legacy-unknown-isolated means a failed outbox row predates optimistic-overlay metadata; isolated so live apply continues. Wiped poisoned recipes SQLite for empty start.
+  - Panel lists failed mutation IDs + plain English; clear logs; wipe local DB+quit. Todos swipe/context delete and delete-all.
+  - Sharing recipe: public counter, my-account counter, unauthorized private note probe; perms sketch for owner-scoped namespaces.
+- **Files:**
+  - `Sources/RecipesV3App/RecipesDebugPanel.swift` — Outbox list, clear logs, wipe DB
+  - `Sources/RecipesV3App/RecipesSharingScreen.swift` — Public/account counters + unauthorized read
+  - `Sources/TodosV3App/TodosApp.swift` — Delete todo UX
+  - `Sources/InstantSwiftDataCore/InstantModels.swift` — isLegacyUnknownOverlayCandidate
+- **User context (verbatim):**
+  > outbox, mutation legacy, unknown, isolated
+  > wipe the database for this recipes thing and then restart? Empty starter
+  > shared counter, a public counter and a shared counter just to my account
+  > view of trying to read something that I haven't that isn't owned by me
+- **SpecStory:** unavailable — Grok Build CLI session; no SpecStory URI for this client
+
 ## August 5th, 2026 at 12:58:19 p.m. EDT — `551bb333839d` Add Scribe-shaped linked-infinite memory soak as publish gate
 
 - **Implementation commit:** `551bb333839dcd050fb7ad4acf312124ee87d046`
