@@ -4,6 +4,22 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## August 5th, 2026 at 12:29:18 p.m. EDT — `1a7303ac92ff` Add recipes-v3 floating debug panel with memory and logs
+
+- **Implementation commit:** `1a7303ac92ff0d689b34a4c12e541b86337edd29`
+- **Change:** Add recipes-v3 floating debug panel with memory and logs
+- **Details:**
+  - Expanded-by-default panel shows footprint/RSS/threads/peak, 2s sparkline, copyable InstantDiagnostics + Linked Infinite logs.
+  - Killed idle 5GB recipes-v3; relaunched linked-infinite at ~120MB RSS with panel.
+- **Files:**
+  - `Sources/RecipesV3App/RecipesDebugPanel.swift` — Floating UI
+  - `Sources/RecipesV3App/RecipesDebugSupport.swift` — Metrics probe + log ring + diagnostics bridge
+  - `Sources/RecipesV3App/RecipesV3App.swift` — Mount panel on bootstrap
+  - `Sources/LinkedInfiniteV3App/LinkedInfiniteDurableLog.swift` — Optional debug sink for in-app panel
+- **User context (verbatim):**
+  > switched!
+- **SpecStory:** unavailable — Grok Build session; no SpecStory URI authorized
+
 ## August 5th, 2026 at 9:34:55 a.m. EDT — `adeea919009c` Instrument live infinite-query page-info and auth for host dual-write
 
 - **Implementation commit:** `adeea919009cc3de98a60659ca89e37ac3f3e8e4`
