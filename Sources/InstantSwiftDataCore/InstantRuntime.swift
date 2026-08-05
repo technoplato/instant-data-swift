@@ -1114,8 +1114,11 @@ private actor InstantRuntimeLiveSession {
     var skippedAlreadyInFlight = 0
     var stoppedForMutationBudget = false
     var stoppedForStepBudget = false
+    // High-frequency path: keep at debug so host dual-write bridges that default
+    // to minimumLevel `.info` (Scribe InstantDBLogger) do not re-ingest every flush
+    // into Instant as multi-hundred-op debug-log batches (feedback → multi-GB idle).
     InstantDiagnostics.shared.record(
-      .info,
+      .debug,
       subsystem: "instant-swift-data-core",
       category: "outbox",
       event: "outbox.flush.started",
@@ -1216,7 +1219,7 @@ private actor InstantRuntimeLiveSession {
         Date().addingTimeInterval(Self.inFlightMutationTimeout)
       do {
         InstantDiagnostics.shared.record(
-          .info,
+          .debug,
           subsystem: "instant-swift-data-core",
           category: "outbox",
           event: "outbox.mutation.send",
@@ -1258,7 +1261,7 @@ private actor InstantRuntimeLiveSession {
       }
     }
     InstantDiagnostics.shared.record(
-      .info,
+      .debug,
       subsystem: "instant-swift-data-core",
       category: "outbox",
       event: "outbox.flush.finished",
@@ -1567,8 +1570,9 @@ private actor InstantRuntimeLiveSession {
       ) {
         try await session.send(message)
       }
+      // Routine send chatter is debug; failures remain error-level.
       InstantDiagnostics.shared.record(
-        message.op == "transact" || message.op == "add-query" ? .info : .trace,
+        .debug,
         subsystem: "instant-swift-data-core",
         category: "transport",
         event: "websocket.message-sent",
@@ -2332,7 +2336,7 @@ public final class InstantRuntime: Sendable {
   ) async throws -> InstantStoreMutationResult {
     let startedAt = Date()
     InstantDiagnostics.shared.record(
-      .info,
+      .debug,
       subsystem: "instant-swift-data-core",
       category: "mutation",
       event: "transaction.started",
@@ -2360,7 +2364,7 @@ public final class InstantRuntime: Sendable {
         startLiveMutationDeliveryIfNeeded()
       }
       InstantDiagnostics.shared.record(
-        .notice,
+        .debug,
         subsystem: "instant-swift-data-core",
         category: "mutation",
         event: "transaction.optimistic-commit",
@@ -3633,7 +3637,7 @@ public final class InstantRuntime: Sendable {
         usesLiveTransport = false
       }
       InstantDiagnostics.shared.record(
-        .info,
+        .debug,
         subsystem: "instant-swift-data-core",
         category: "query",
         event: "query-once.started",
@@ -3649,7 +3653,7 @@ public final class InstantRuntime: Sendable {
         ? queryOnceThroughLive(plan)
         : materializeLocalQueryOnce(plan, enforcesConnectionFreshness: true)
       InstantDiagnostics.shared.record(
-        .notice,
+        .debug,
         subsystem: "instant-swift-data-core",
         category: "query",
         event: "query-once.completed",
@@ -4646,7 +4650,7 @@ public final class InstantRuntime: Sendable {
         )
       }
       InstantDiagnostics.shared.record(
-        .notice,
+        .debug,
         subsystem: "instant-swift-data-core",
         category: "outbox",
         event: "outbox.mutation.transact-ok",
