@@ -1,3 +1,9 @@
+## 2026-08-05 08:32:30 EDT
+
+- **repo:** realtime-voice-sqlite-instant
+- **commit:** 
+- **reason:** Land TestFlight App Store validation fixes, versioning docs, and app/vakyume/0.1+3 tag metadata for the first VALID Vakyume upload (build 3).
+
 ## 2026-08-05 00:19:30 EDT
 
 - **Repository:** realtime-voice-sqlite-instant
