@@ -4,6 +4,24 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## August 5th, 2026 at 9:34:55 a.m. EDT — `adeea919009c` Instrument live infinite-query page-info and auth for host dual-write
+
+- **Implementation commit:** `adeea919009cc3de98a60659ca89e37ac3f3e8e4`
+- **Change:** Instrument live infinite-query page-info and auth for host dual-write
+- **Details:**
+  - Adds infinite-query diagnostic events and remote page-info decode logs so Scribe can see hasNextPage provenance and owner/auth fingerprints over Tailnet.
+  - Handler-only InstantDiagnostics delivery covered; short starter emits closed paging diagnostics.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantInfiniteQueryDiagnostics.swift` — Shared metadata and record helpers for infinite-query events
+  - `Sources/InstantSwiftDataCore/InstantInfiniteQuery.swift` — Starter/expand/kickstart/loadNextPage instrumentation
+  - `Sources/InstantSwiftDataCore/InstantLiveRefreshApplication.swift` — Log decoded remote page-info
+  - `Tests/InstantSwiftDataCoreTests/InstantDiagnosticsTests.swift` — Handler without file path
+  - `Tests/InstantSwiftDataCoreTests/InstantInfiniteQueryParityTests.swift` — Short-page diagnostic emission
+  - `docs/diagnostics.md` — Host dual-write and infinite-query event catalog
+- **User context (verbatim):**
+  > yes go ahead
+- **SpecStory:** unavailable — Grok Build session; no SpecStory URI authorized for this desktop agent path
+
 ## August 5th, 2026 at 8:49:46 a.m. EDT — `cdd1ba421f27` Fix live infinite short-page canLoadNextPage thrash (Jetsam)
 
 - **Implementation commit:** `cdd1ba421f27269b4307ff6056e2bd908096e926`
