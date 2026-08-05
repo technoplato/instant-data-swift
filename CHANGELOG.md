@@ -4,6 +4,22 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## August 5th, 2026 at 1:31:35 p.m. EDT — `c5f9a0cef241` Document production performance readiness plan from research quorum
+
+- **Implementation commit:** `c5f9a0cef24161e92b0f51bc252faf50cb87fccc`
+- **Change:** Production performance readiness plan after research quorum and live iPad diagnostics
+- **Details:**
+  - Five research agents + two evaluators; live evidence of 880MB+ idle climb, 160s failMutation gate holds, permission-denied and missing-attr receive-loop failures
+  - Phase 0 thrash stop; Phase 1 absolute budgets; Phase 2 structural efficiency under ADR; keep SQLite offline-first
+  - Related Instant issues: #134 (apply/receive isolation remainder), #150 (memory soak gate)
+- **Files:**
+  - `docs/plans/2026-08-05-production-performance-readiness-plan.md` — Canonical production performance plan
+  - `PROGRESS.md` — Newest-first checkpoint for next agents
+- **User context (verbatim):**
+  > I've got 880 megabytes as of 1:20 p.m. Eastern Time. Just with the application sitting here, not doing anything.
+  > put together a comprehensive plan for bringing this library ready to production usage
+- **SpecStory:** unavailable — Grok Build session; no SpecStory URI for this host
+
 ## August 5th, 2026 at 1:12:20 p.m. EDT — `8fbfa0c8ef1d` Recipes: outbox isolation panel, wipe, clear logs, delete todos, sharing
 
 - **Implementation commit:** `8fbfa0c8ef1d95457929a9b4462c65f85923c9f2`
