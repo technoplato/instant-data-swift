@@ -360,6 +360,54 @@ struct InstantInfiniteQueryParityTests {
     _ = try await runtime.closeConnection()
   }
 
+  @Test
+  func liveInfiniteQueryShortStarterEmitsClosedPagingDiagnostics() async throws {
+    let fileURL = FileManager.default.temporaryDirectory
+      .appendingPathComponent("infinite-query-diagnostics-\(UUID().uuidString).jsonl")
+    InstantDiagnostics.shared.configure(
+      InstantDiagnosticsConfiguration(fileURL: fileURL, minimumLevel: .info)
+    )
+    defer {
+      InstantDiagnostics.shared.configure(
+        InstantDiagnosticsConfiguration(fileURL: nil)
+      )
+      try? FileManager.default.removeItem(at: fileURL)
+    }
+
+    let session = LiveReactorParitySession(messages: [
+      liveReactorInitOK(attrs: infiniteLiveServerAttributes)
+    ])
+    var configuration = InstantRuntimeConfiguration(
+      appID: "infinite-live-diag-short",
+      persistenceURL: try temporaryInfiniteQueryCacheURL(),
+      initialAttributes: infiniteQueryAttributes,
+      makeID: { UUID().uuidString.lowercased() },
+      liveTransport: session.transport
+    )
+    configuration.autoConnectLiveTransport = false
+    let runtime = try await InstantRuntime.bootstrap(configuration: configuration)
+    try await upsertNumberEntries(
+      [("diag-1", 1), ("diag-2", 2)],
+      transactionID: "infinite-diag-short-seed",
+      in: runtime
+    )
+    let subscription = await runtime.subscribeInfiniteQuery(
+      infiniteItemsQuery(limit: 10, order: InstantQueryOrder("value"))
+    )
+    var iterator = subscription.snapshots.makeAsyncIterator()
+    let snapshot = try #require(await iterator.next())
+    #expect(!snapshot.canLoadNextPage)
+    // Allow async subscribe.started / starter.snapshot to flush to the shared logger.
+    try await Task.sleep(for: .milliseconds(80))
+    subscription.unsubscribe()
+    _ = try await runtime.closeConnection()
+
+    let text = try String(contentsOf: fileURL, encoding: .utf8)
+    #expect(text.contains("infinite.starter.snapshot"))
+    #expect(text.contains("shortPageClosed") || text.contains("\"canLoadNextPage\":\"false\""))
+    #expect(text.contains("infinite.subscribe.started"))
+  }
+
   /// Regression: 1.5.0 trusted remote `hasNextPage` on a short pre-kickstart
   /// starter page. Scribe list UI auto-loadNextPage then thrashed until Jetsam
   /// (iPad ~4 GB, 2026-08-04/05). Pre-kickstart must only offer next page when
@@ -392,9 +440,11 @@ struct InstantInfiniteQueryParityTests {
     expectNoDifference(loadedValues(localSnapshot), [1, 2, 3], infiniteShortStarterThrashSource)
     #expect(!localSnapshot.canLoadNextPage, Comment(rawValue: infiniteShortStarterThrashSource))
 
-    #expect(try await waitForInfiniteMessageCount(2, in: session))
-    let sent = await session.sentMessages()
-    let starterQuery = try #require(sent.last?.fields["q"])
+    // Auth-session probe before starter registration can reorder early traffic;
+    // wait for any add-query that carries `q`, not merely message count == 2.
+    let starterQuery = try #require(
+      await waitForInfiniteQueryField("q", in: session)
+    )
     let startCursor = infiniteLiveCursor(id: "item-1", value: 1)
     let endCursor = infiniteLiveCursor(id: "item-3", value: 3)
     await session.enqueue(
@@ -852,6 +902,21 @@ private func waitForInfiniteMessageCount(
     try await Task.sleep(for: .milliseconds(5))
   }
   return await session.sentMessages().count >= count
+}
+
+private func waitForInfiniteQueryField(
+  _ field: String,
+  in session: LiveReactorParitySession
+) async -> InstantLiveJSONValue? {
+  let deadline = ContinuousClock.now + .milliseconds(1_000)
+  while ContinuousClock.now < deadline {
+    let sent = await session.sentMessages()
+    if let value = sent.reversed().compactMap({ $0.fields[field] }).first {
+      return value
+    }
+    try? await Task.sleep(for: .milliseconds(5))
+  }
+  return await session.sentMessages().reversed().compactMap { $0.fields[field] }.first
 }
 
 private func waitForInfiniteOpCount(

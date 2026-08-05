@@ -187,6 +187,28 @@ struct InstantDiagnosticsTests {
     #expect(diagnostics.status.lastWriteError == nil)
   }
 
+  @Test("delivers entries to host handlers when no file path is configured")
+  func deliversToHostHandlersWithoutFile() async throws {
+    let diagnostics = InstantDiagnostics(
+      configuration: InstantDiagnosticsConfiguration(fileURL: nil, minimumLevel: .info)
+    )
+    let box = HandlerBox()
+    let token = diagnostics.addHandler { entry in
+      box.append(entry)
+    }
+    defer { diagnostics.removeHandler(token) }
+
+    diagnostics.record(
+      subsystem: "test",
+      category: "handler",
+      event: "handler.fired",
+      message: "Host sink received the entry."
+    )
+    #expect(box.entries.count == 1)
+    #expect(box.entries[0].event == "handler.fired")
+    #expect(box.entries[0].category == "handler")
+  }
+
   @Test("bounds oversized fields while keeping each record decodable")
   func boundsOversizedFields() throws {
     let fileURL = temporaryLogURL()
@@ -218,5 +240,18 @@ struct InstantDiagnosticsTests {
     try String(contentsOf: fileURL, encoding: .utf8)
       .split(separator: "\n")
       .map { try JSONDecoder().decode(InstantDiagnosticEntry.self, from: Data($0.utf8)) }
+  }
+}
+
+private final class HandlerBox: @unchecked Sendable {
+  private let lock = NSLock()
+  private var storage: [InstantDiagnosticEntry] = []
+
+  var entries: [InstantDiagnosticEntry] {
+    lock.withLock { storage }
+  }
+
+  func append(_ entry: InstantDiagnosticEntry) {
+    lock.withLock { storage.append(entry) }
   }
 }

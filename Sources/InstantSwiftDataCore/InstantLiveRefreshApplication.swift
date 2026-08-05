@@ -216,7 +216,7 @@ enum InstantLiveRefreshTranslator {
         message: "Expected live query page-info for namespace '\(namespace)' to be an object."
       )
     }
-    return InstantQueryPageInfo(
+    let pageInfo = InstantQueryPageInfo(
       startCursor: try cursor(
         from: namespacePageInfo["start-cursor"],
         namespace: namespace,
@@ -230,6 +230,30 @@ enum InstantLiveRefreshTranslator {
       hasPreviousPage: namespacePageInfo["has-previous-page?"]?.boolValue ?? false,
       hasNextPage: namespacePageInfo["has-next-page?"]?.boolValue ?? false
     )
+    // Surface raw remote page-info so hosts can compare it with local materialization
+    // (Scribe iPad Jetsam: remote has-next-page on short local windows).
+    InstantInfiniteQueryDiagnostics.record(
+      event: "infinite.remote-page-info.decoded",
+      message: "Decoded Instant live query page-info from the server result.",
+      metadata: [
+        "namespace": namespace,
+        "hasNextPage": pageInfo.hasNextPage.description,
+        "hasPreviousPage": pageInfo.hasPreviousPage.description,
+        "hasStartCursor": (pageInfo.startCursor != nil).description,
+        "hasEndCursor": (pageInfo.endCursor != nil).description,
+        "hasLiveTupleStart":
+          ((pageInfo.startCursor?.liveTuple?.isEmpty) == false).description,
+        "hasLiveTupleEnd":
+          ((pageInfo.endCursor?.liveTuple?.isEmpty) == false).description,
+        "startEntityFingerprint": InstantInfiniteQueryDiagnostics.fingerprint(
+          pageInfo.startCursor?.entityID
+        ),
+        "endEntityFingerprint": InstantInfiniteQueryDiagnostics.fingerprint(
+          pageInfo.endCursor?.entityID
+        ),
+      ]
+    )
+    return pageInfo
   }
 
   private static func cursor(

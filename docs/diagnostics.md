@@ -109,6 +109,31 @@ InstantDiagnostics.shared.configure(
 
 Set `REMINDERS_V3_LOG_PATH` to override only the Reminders executable's path.
 
+## Host dual-write (Scribe Tailnet)
+
+`InstantDiagnostics.addHandler` lets a host app forward every emitted entry into its
+own collector. Scribe uses this at Instant bootstrap to dual-write library events
+onto the same Tailscale WebSocket lane that ends in
+`~/Library/Logs/Scribe/diagnostics.jsonl` (and the Instant `debugLogs` backup).
+If the collector is unreachable, enqueue fails soft — product code never blocks.
+
+Filter library rows in the collector file:
+
+```bash
+jq -c 'select(.entry.category|startswith("instant-library."))' \
+  ~/Library/Logs/Scribe/diagnostics.jsonl
+```
+
+Infinite-query paging decisions (the Scribe iPad Jetsam class) use category
+`infinite-query` / host category `instant-library.infinite-query` and events such as:
+
+- `infinite.subscribe.started` — auth fingerprint + page size
+- `infinite.starter.snapshot` — local window count, `hasMoreSource`, raw remote `hasNextPage`
+- `infinite.expand.snapshot` — pre-kickstart local expand growth / close
+- `infinite.kickstart` — full page + liveTuple switch to cursor paging
+- `infinite.load-next.noop-closed` / `noop-cannot-advance` — thrash no-ops
+- `infinite.remote-page-info.decoded` — server page-info as received
+
 ## Coverage
 
 The log records these boundaries:
@@ -117,6 +142,7 @@ The log records these boundaries:
 - guest sign-in request, remote verification, auth-session persistence, and failure;
 - `@FetchAll` and `@FetchOne` subscription start, emissions, cancellation, and failure;
 - query encoding, local materialization, live registration, unregistration, and result count;
+- live infinite-query starter/expand/kickstart/loadNextPage decisions and remote page-info;
 - typed-message preparation, optimistic commit, outbox lifecycle, server acceptance, and rejection;
 - SQLite open, schema bootstrap, state revision/count loads, and snapshot saves;
 - connection, reconnect, decoded server events, WebSocket operations, frame sizes, and failures.

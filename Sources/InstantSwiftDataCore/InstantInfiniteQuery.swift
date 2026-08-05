@@ -201,6 +201,18 @@ private actor InstantLiveInfiniteQueryCoordinator {
       before: nil
     )
     starterTask = Task { [runtime] in
+      let auth = try? await runtime.authSession()
+      InstantInfiniteQueryDiagnostics.record(
+        event: "infinite.subscribe.started",
+        message: "Live infinite query coordinator started its starter subscription.",
+        metadata: [
+          "namespace": plan.namespace,
+          "pageSize": pageSize.description,
+          "planID": plan.id,
+          "hasIncludes": ((plan.includes?.isEmpty) == false).description,
+        ].merging(InstantInfiniteQueryDiagnostics.authMetadata(auth)) { _, new in new },
+        correlationID: plan.id
+      )
       let observation = await runtime.observeLiveInfiniteQueryChunk(starterPlan)
       for await emission in observation {
         guard !Task.isCancelled else { break }
@@ -218,6 +230,19 @@ private actor InstantLiveInfiniteQueryCoordinator {
       // Already closed (short page or expand found no growth): republish so
       // consumers leave isLoadingNextPage without more queryLocally work.
       if let chunk = forwardChunks[.preBootstrap], !chunk.hasMore {
+        InstantInfiniteQueryDiagnostics.record(
+          event: "infinite.load-next.noop-closed",
+          message:
+            "loadNextPage no-op: pre-kickstart window already closed (local fullness).",
+          metadata: [
+            "namespace": plan.namespace,
+            "pageSize": pageSize.description,
+            "resultCount": chunk.data.count.description,
+            "hasKickstarted": "false",
+            "phase": "preBootstrap",
+          ],
+          correlationID: plan.id
+        )
         pushSnapshot()
         return
       }
@@ -233,9 +258,36 @@ private actor InstantLiveInfiniteQueryCoordinator {
     else {
       // Never leave consumers stuck on "loading next" when we cannot advance
       // (already advanced, missing cursor, or empty forward window).
+      InstantInfiniteQueryDiagnostics.record(
+        event: "infinite.load-next.noop-cannot-advance",
+        message:
+          "loadNextPage no-op: cannot advance forward cursor after kickstart.",
+        metadata: [
+          "namespace": plan.namespace,
+          "pageSize": pageSize.description,
+          "hasKickstarted": "true",
+          "phase": "liveCursor",
+          "forwardChunkCount": forwardKeys.count.description,
+        ],
+        correlationID: plan.id
+      )
       pushSnapshot()
       return
     }
+    InstantInfiniteQueryDiagnostics.record(
+      event: "infinite.load-next.advance-cursor",
+      message: "loadNextPage advancing past the current live forward cursor.",
+      metadata: [
+        "namespace": plan.namespace,
+        "pageSize": pageSize.description,
+        "chunkResultCount": chunk.data.count.description,
+        "endEntityFingerprint": InstantInfiniteQueryDiagnostics.fingerprint(
+          endCursor.entityID
+        ),
+        "phase": "liveCursor",
+      ],
+      correlationID: plan.id
+    )
     freezeForward(key: key, chunk: chunk)
     pushNewForward(startCursor: endCursor)
   }
@@ -264,6 +316,26 @@ private actor InstantLiveInfiniteQueryCoordinator {
       forwardChunks[.preBootstrap] = nil
       hasKickstarted = true
       preBootstrapExpandInFlight = false
+      var kickMeta: [String: String] = [
+        "namespace": plan.namespace,
+        "pageSize": pageSize.description,
+        "resultCount": emission.values.count.description,
+        "phase": "kickstart",
+        "hasMoreSource": "liveTupleKickstart",
+      ]
+      kickMeta.merge(InstantInfiniteQueryDiagnostics.cursorMetadata(emission.pageInfo)) {
+        _, new in new
+      }
+      kickMeta.merge(
+        InstantInfiniteQueryDiagnostics.ownerSampleMetadata(from: emission.values)
+      ) { _, new in new }
+      InstantInfiniteQueryDiagnostics.record(
+        event: "infinite.kickstart",
+        message:
+          "Full starter page with liveTuple cursor; switching to live infinite chunks.",
+        metadata: kickMeta,
+        correlationID: plan.id
+      )
       pushNewForward(startCursor: startCursor, afterInclusive: true)
       pushNewReverse(startCursor: startCursor)
       return
@@ -276,6 +348,18 @@ private actor InstantLiveInfiniteQueryCoordinator {
       let existing = forwardChunks[.preBootstrap],
       !existing.data.isEmpty
     {
+      InstantInfiniteQueryDiagnostics.record(
+        event: "infinite.starter.empty-ignored",
+        message:
+          "Ignored empty starter emission over a non-empty pre-bootstrap window.",
+        metadata: [
+          "namespace": plan.namespace,
+          "pageSize": pageSize.description,
+          "existingCount": existing.data.count.description,
+          "phase": "preBootstrap",
+        ],
+        correlationID: plan.id
+      )
       return
     }
 
@@ -304,7 +388,47 @@ private actor InstantLiveInfiniteQueryCoordinator {
       forwardChunks[.preBootstrap].map { existing in
         !existing.hasMore && existing.data.count >= data.count
       } ?? false
-    let hasMore = !existingClosedWithoutGrowth && data.count >= pageSize
+    let remoteHasNext = emission.pageInfo?.hasNextPage
+    let localFull = data.count >= pageSize
+    let hasMore = !existingClosedWithoutGrowth && localFull
+    let hasMoreSource: String
+    if existingClosedWithoutGrowth {
+      hasMoreSource = "keptClosed"
+    } else if localFull {
+      hasMoreSource = "localFullness"
+    } else {
+      hasMoreSource = "shortPageClosed"
+    }
+
+    var starterMeta: [String: String] = [
+      "namespace": plan.namespace,
+      "pageSize": pageSize.description,
+      "emissionCount": emission.values.count.description,
+      "windowCount": data.count.description,
+      "canLoadNextPage": hasMore.description,
+      "hasMoreSource": hasMoreSource,
+      "remoteHasNextPageIgnored": remoteHasNext.map {
+        ($0 && !hasMore).description
+      } ?? "nil",
+      "remoteHasNextPageRaw": remoteHasNext.map(\.description) ?? "nil",
+      "localFullness": localFull.description,
+      "phase": "preBootstrap",
+      "preBootstrapLoadedPages": preBootstrapLoadedPages.description,
+    ]
+    starterMeta.merge(InstantInfiniteQueryDiagnostics.cursorMetadata(emission.pageInfo)) {
+      _, new in new
+    }
+    starterMeta.merge(InstantInfiniteQueryDiagnostics.ownerSampleMetadata(from: data)) {
+      _, new in new
+    }
+    InstantInfiniteQueryDiagnostics.record(
+      event: "infinite.starter.snapshot",
+      message: hasMore
+        ? "Pre-kickstart starter page can expand from local fullness."
+        : "Pre-kickstart starter page closed (short of page size or already closed).",
+      metadata: starterMeta,
+      correlationID: plan.id
+    )
 
     setForwardChunk(
       key: .preBootstrap,
@@ -382,6 +506,36 @@ private actor InstantLiveInfiniteQueryCoordinator {
       // full — never re-open from remote hasNextPage (not actionable without
       // liveTuple, and it caused infinite loadNextPage thrash on Scribe iPad).
       let closedHasMore = values.count >= limit
+      let priorCount = existing?.data.count ?? 0
+      let auth = try? await runtime.authSession()
+      var expandMeta: [String: String] = [
+        "namespace": plan.namespace,
+        "pageSize": pageSize.description,
+        "expandLimit": limit.description,
+        "emissionCount": emission.values.count.description,
+        "windowCount": values.count.description,
+        "priorWindowCount": priorCount.description,
+        "grew": (values.count > priorCount).description,
+        "canLoadNextPage": closedHasMore.description,
+        "hasMoreSource": closedHasMore ? "localFullness" : "expandShortClosed",
+        "remoteHasNextPageRaw": emission.pageInfo.map {
+          $0.hasNextPage.description
+        } ?? "nil",
+        "phase": "preBootstrapExpand",
+        "preBootstrapLoadedPages": preBootstrapLoadedPages.description,
+      ]
+      expandMeta.merge(InstantInfiniteQueryDiagnostics.authMetadata(auth)) { _, new in new }
+      expandMeta.merge(InstantInfiniteQueryDiagnostics.ownerSampleMetadata(from: values)) {
+        _, new in new
+      }
+      InstantInfiniteQueryDiagnostics.record(
+        event: "infinite.expand.snapshot",
+        message: closedHasMore
+          ? "Pre-kickstart local expand filled the window; more may exist locally."
+          : "Pre-kickstart local expand did not fill the window; paging closed.",
+        metadata: expandMeta,
+        correlationID: plan.id
+      )
 
       setForwardChunk(
         key: .preBootstrap,
@@ -410,6 +564,18 @@ private actor InstantLiveInfiniteQueryCoordinator {
     } catch {
       // Always republish last good chunk so UI unsticks from loadingNextPage.
       preBootstrapLoadedPages = max(1, preBootstrapLoadedPages - 1)
+      InstantInfiniteQueryDiagnostics.record(
+        .warning,
+        event: "infinite.expand.failed",
+        message: "Pre-kickstart local expand failed; closing paging on last good window.",
+        metadata: [
+          "namespace": plan.namespace,
+          "pageSize": pageSize.description,
+          "phase": "preBootstrapExpand",
+          "errorType": String(reflecting: type(of: error)),
+        ],
+        correlationID: plan.id
+      )
       if let existing = forwardChunks[.preBootstrap] {
         setForwardChunk(
           key: .preBootstrap,
