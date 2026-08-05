@@ -4,6 +4,20 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## August 5th, 2026 at 5:37:14 p.m. EDT — `759c899a8a4f` Demote high-frequency InstantDiagnostics that dual-write thrash
+
+- **Implementation commit:** `759c899a8a4f76ccaa2d473e5f15c33fe86946fc`
+- **Change:** Demote high-frequency InstantDiagnostics to break dual-write memory thrash
+- **Details:**
+  - outbox flush/send, query-once, transaction, websocket send at debug; feedback-loop tests; field idle 2.7-3.8GB with debug-log-batch 700 ops
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — Demote routine high-volume diagnostic levels
+  - `Tests/InstantSwiftDataCoreTests/InstantDiagnosticFeedbackLoopTests.swift` — Regression for info dual-write feedback
+- **User context (verbatim):**
+  > It's at 2.74 gigabytes of usage just sitting there, not doing anything.
+  > just opening the app peaks spikes from 111 megabytes to half a gig in 20 seconds
+- **SpecStory:** unavailable — Grok Build session; no SpecStory URI
+
 ## August 5th, 2026 at 1:31:35 p.m. EDT — `c5f9a0cef241` Document production performance readiness plan from research quorum
 
 - **Implementation commit:** `c5f9a0cef24161e92b0f51bc252faf50cb87fccc`
