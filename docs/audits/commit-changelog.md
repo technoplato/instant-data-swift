@@ -1,3 +1,13 @@
+
+## 2026-08-04 22:30:42 EDT
+
+- **repository:** realtime-voice-sqlite-instant
+- **commit:** 5f1cdfa7380fa9efd67745cfb5dfc9dd89ede1ed
+- **reason:** Preserve playback timeline when Instant detail join is empty; full transcription upserts and empty-detail diagnostics.
+
+- **repository:** instant-data-swift
+- **commit:** a3b63e73af0f32921506132a5c40e71621064962
+- **reason:** Do not retract pending-optimistic entity triples on empty live-query replacements (Scribe blank-detail).
 ## 2026-08-04 22:11:33 EDT
 
 - **repo:** realtime-voice-sqlite-instant
