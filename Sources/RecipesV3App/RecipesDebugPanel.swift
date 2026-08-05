@@ -177,12 +177,21 @@ public struct RecipesDebugPanel: View {
       if let m = ring.latestMetrics {
         row("Footprint", RecipesProcessMetricsProbe.formatBytes(m.physicalFootprintBytes))
         row("Resident", RecipesProcessMetricsProbe.formatBytes(m.residentBytes))
-        row("Virtual", RecipesProcessMetricsProbe.formatBytes(m.virtualBytes))
+        // VSZ is virtual address space (dyld/shared cache/guards), not RAM.
+        // Gate memory work on Footprint/Resident — Jetsam uses physical footprint.
+        row(
+          "VSZ (not RAM)",
+          RecipesProcessMetricsProbe.formatBytes(m.virtualBytes)
+        )
         row("Threads", "\(m.threadCount)")
       } else {
         row("Footprint", "sampling…")
       }
-      row("Peak", RecipesProcessMetricsProbe.formatBytes(ring.peakFootprintBytes))
+      row("Peak footprint", RecipesProcessMetricsProbe.formatBytes(ring.peakFootprintBytes))
+      Text("VSZ hundreds of GB is normal on Apple Silicon; Jetsam uses Footprint.")
+        .font(.system(.caption2, design: .monospaced))
+        .foregroundStyle(.secondary)
+        .fixedSize(horizontal: false, vertical: true)
       if isMemoryWarning {
         Text("⚠ Footprint over 1 GB — library materialization / paging suspect")
           .font(.system(.caption2, design: .monospaced, weight: .bold))

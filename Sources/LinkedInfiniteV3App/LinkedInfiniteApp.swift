@@ -223,7 +223,7 @@ public struct LinkedInfiniteAppConfiguration: Hashable, Sendable {
 
     public init(
       wrapsInNavigationStack: Bool = true,
-      pageSize: Int = 3,
+      pageSize: Int = 50,
       defaultLoadedPages: Int = 5
     ) {
       self.wrapsInNavigationStack = wrapsInNavigationStack

@@ -572,6 +572,14 @@ public enum InstantSchemaExamples {
     }
   )
 
+  public static let linkedInfiniteWords = InstantEntitySchema(
+    typeName: "LinkedInfiniteWord",
+    namespace: LinkedInfiniteExample.wordNamespace,
+    attributes: LinkedInfiniteExample.attributes.filter {
+      $0.namespace == LinkedInfiniteExample.wordNamespace && $0.valueType != .ref
+    }
+  )
+
   /// recordings has-many transcriptions; transcriptions has-one recording
   public static let linkedInfiniteRecordingTranscriptions = InstantLinkSchema(
     name: "linkedInfiniteRecordingTranscriptions",
@@ -588,14 +596,49 @@ public enum InstantSchemaExamples {
     )
   )
 
+  public static let linkedInfiniteTranscriptionWords = InstantLinkSchema(
+    name: "linkedInfiniteTranscriptionWords",
+    forward: InstantLinkEndpoint(
+      namespace: LinkedInfiniteExample.transcriptionNamespace,
+      cardinality: .many,
+      label: "words"
+    ),
+    reverse: InstantLinkEndpoint(
+      namespace: LinkedInfiniteExample.wordNamespace,
+      cardinality: .one,
+      label: "transcription",
+      onDelete: .cascade
+    )
+  )
+
+  public static let linkedInfiniteRecordingWords = InstantLinkSchema(
+    name: "linkedInfiniteRecordingWords",
+    forward: InstantLinkEndpoint(
+      namespace: LinkedInfiniteExample.recordingNamespace,
+      cardinality: .many,
+      label: "words"
+    ),
+    reverse: InstantLinkEndpoint(
+      namespace: LinkedInfiniteExample.wordNamespace,
+      cardinality: .one,
+      label: "recording",
+      onDelete: .cascade
+    )
+  )
+
   public static let recipesDocument = InstantSchemaDocument(
     entities: [
       todos,
       mergeTileGameBoard,
       linkedInfiniteRecordings,
       linkedInfiniteTranscriptions,
+      linkedInfiniteWords,
     ],
-    links: [linkedInfiniteRecordingTranscriptions],
+    links: [
+      linkedInfiniteRecordingTranscriptions,
+      linkedInfiniteTranscriptionWords,
+      linkedInfiniteRecordingWords,
+    ],
     rooms: [
       todosRoom,
       recipesCursorsRoom,
@@ -612,6 +655,7 @@ public enum InstantSchemaExamples {
       .allowAll(namespace: "boards"),
       .allowAll(namespace: LinkedInfiniteExample.recordingNamespace),
       .allowAll(namespace: LinkedInfiniteExample.transcriptionNamespace),
+      .allowAll(namespace: LinkedInfiniteExample.wordNamespace),
     ]
   )
 

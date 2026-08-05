@@ -43,10 +43,65 @@ public struct LinkedInfiniteTranscriptionRecord: Hashable, Codable, Sendable, Id
   }
 }
 
+/// Production-shaped volume for the linked-infinite memory soak.
+///
+/// Sampled from Scribe main Instant via admin query on 2026-08-05
+/// (`SCRIBE_MAIN_INSTANT_APP_ID`): ≥239 recordings, ≥214 transcriptions,
+/// ≥2000 words, ≥2000 segments, ≥246 attachments. The soak is intentionally
+/// a lower bound that still forces word-entity materialization (the recipe's
+/// old seed only stored a `wordCount` number).
+public struct LinkedInfiniteScribeShapedSoakProfile: Hashable, Sendable {
+  public var recordingCount: Int
+  public var wordsPerRecording: Int
+  public var transcriptTextCharacters: Int
+  public var listPageSize: Int
+  /// Physical footprint growth budget for seed + infinite page through soak.
+  public var footprintGrowthBudgetBytes: UInt64
+  /// Absolute physical footprint ceiling after soak (Debug suite overhead).
+  public var footprintCeilingBytes: UInt64
+
+  public init(
+    recordingCount: Int,
+    wordsPerRecording: Int,
+    transcriptTextCharacters: Int,
+    listPageSize: Int,
+    footprintGrowthBudgetBytes: UInt64,
+    footprintCeilingBytes: UInt64
+  ) {
+    self.recordingCount = recordingCount
+    self.wordsPerRecording = wordsPerRecording
+    self.transcriptTextCharacters = transcriptTextCharacters
+    self.listPageSize = listPageSize
+    self.footprintGrowthBudgetBytes = footprintGrowthBudgetBytes
+    self.footprintCeilingBytes = footprintCeilingBytes
+  }
+
+  /// Default CI soak: ~80 parents × 120 words ≈ 9.6k word entities + transcript text.
+  /// Page size 50 matches Scribe's library infinite list (not the recipe's demo page size 3).
+  ///
+  /// Measured Debug suite cost on 2026-08-05 (this machine): seed ~450 MiB
+  /// footprint from a cold baseline; infinite page expands added &lt;1 MiB.
+  /// Budgets catch multi‑GB thrash (the historical Jetsam class) without
+  /// failing the expected seed cost. Gate on **footprint**, never VSZ.
+  public static let publishGate = LinkedInfiniteScribeShapedSoakProfile(
+    recordingCount: 80,
+    wordsPerRecording: 120,
+    transcriptTextCharacters: 2_048,
+    listPageSize: 50,
+    footprintGrowthBudgetBytes: 768 * 1_024 * 1_024,
+    footprintCeilingBytes: 1_024 * 1_024 * 1_024
+  )
+
+  public var estimatedWordEntities: Int { recordingCount * wordsPerRecording }
+}
+
 public enum LinkedInfiniteExample {
   public static let recordingNamespace = "linked_infinite_recordings"
   public static let transcriptionNamespace = "linked_infinite_transcriptions"
+  public static let wordNamespace = "linked_infinite_words"
   public static let pageSize = 3
+  /// Scribe library list default page size (production infinite root).
+  public static let scribeListPageSize = 50
 
   public static let seedTitles = [
     "Morning standup",
@@ -87,6 +142,19 @@ public enum LinkedInfiniteExample {
       valueType: .date,
       isIndexed: true
     ),
+    InstantAttribute(
+      id: "\(recordingNamespace)/startedAtMs",
+      namespace: recordingNamespace,
+      name: "startedAtMs",
+      valueType: .number,
+      isIndexed: true
+    ),
+    InstantAttribute(
+      id: "\(recordingNamespace)/durationSeconds",
+      namespace: recordingNamespace,
+      name: "durationSeconds",
+      valueType: .number
+    ),
     .primaryKey(namespace: transcriptionNamespace),
     InstantAttribute(
       id: "\(transcriptionNamespace)/wordCount",
@@ -103,6 +171,26 @@ public enum LinkedInfiniteExample {
       isIndexed: true
     ),
     InstantAttribute(
+      id: "\(transcriptionNamespace)/transcriptText",
+      namespace: transcriptionNamespace,
+      name: "transcriptText",
+      valueType: .string,
+      isRequired: false
+    ),
+    InstantAttribute(
+      id: "\(transcriptionNamespace)/provider",
+      namespace: transcriptionNamespace,
+      name: "provider",
+      valueType: .string,
+      isIndexed: true
+    ),
+    InstantAttribute(
+      id: "\(transcriptionNamespace)/segmentCount",
+      namespace: transcriptionNamespace,
+      name: "segmentCount",
+      valueType: .number
+    ),
+    InstantAttribute(
       id: "\(transcriptionNamespace)/recording",
       namespace: transcriptionNamespace,
       name: "recording",
@@ -111,6 +199,64 @@ public enum LinkedInfiniteExample {
       isIndexed: true,
       forwardIdentity: "\(transcriptionNamespace)/recording",
       reverseIdentity: "\(recordingNamespace)/transcriptions",
+      linkNamespace: recordingNamespace,
+      onDelete: .cascade
+    ),
+    .primaryKey(namespace: wordNamespace),
+    InstantAttribute(
+      id: "\(wordNamespace)/text",
+      namespace: wordNamespace,
+      name: "text",
+      valueType: .string,
+      isIndexed: true
+    ),
+    InstantAttribute(
+      id: "\(wordNamespace)/wordIndex",
+      namespace: wordNamespace,
+      name: "wordIndex",
+      valueType: .number,
+      isIndexed: true
+    ),
+    InstantAttribute(
+      id: "\(wordNamespace)/startTimeSeconds",
+      namespace: wordNamespace,
+      name: "startTimeSeconds",
+      valueType: .number
+    ),
+    InstantAttribute(
+      id: "\(wordNamespace)/endTimeSeconds",
+      namespace: wordNamespace,
+      name: "endTimeSeconds",
+      valueType: .number
+    ),
+    InstantAttribute(
+      id: "\(wordNamespace)/updatedAt",
+      namespace: wordNamespace,
+      name: "updatedAt",
+      valueType: .date,
+      isIndexed: true
+    ),
+    InstantAttribute(
+      id: "\(wordNamespace)/transcription",
+      namespace: wordNamespace,
+      name: "transcription",
+      valueType: .ref,
+      isRequired: true,
+      isIndexed: true,
+      forwardIdentity: "\(wordNamespace)/transcription",
+      reverseIdentity: "\(transcriptionNamespace)/words",
+      linkNamespace: transcriptionNamespace,
+      onDelete: .cascade
+    ),
+    InstantAttribute(
+      id: "\(wordNamespace)/recording",
+      namespace: wordNamespace,
+      name: "recording",
+      valueType: .ref,
+      isRequired: true,
+      isIndexed: true,
+      forwardIdentity: "\(wordNamespace)/recording",
+      reverseIdentity: "\(recordingNamespace)/words",
       linkNamespace: recordingNamespace,
       onDelete: .cascade
     ),
@@ -130,11 +276,25 @@ public enum LinkedInfiniteExample {
             id: "examples.linked-infinite.included-transcriptions",
             namespace: transcriptionNamespace,
             order: InstantQueryOrder("updatedAt", .descending),
-            selectedFields: ["wordCount", "updatedAt", "recording"]
+            selectedFields: [
+              "wordCount",
+              "updatedAt",
+              "recording",
+              "transcriptText",
+              "provider",
+              "segmentCount",
+            ]
           )
         ),
       ]
     )
+  }
+
+  /// Scribe library list shape: page 50 parents + transcription metrics include.
+  public static func scribeShapedListQuery(
+    pageSize: Int = scribeListPageSize
+  ) -> InstantQueryPlan {
+    recordingsQuery(pageSize: pageSize)
   }
 
   public static func seedLocalIDName(index: Int) -> String {
@@ -145,13 +305,19 @@ public enum LinkedInfiniteExample {
     "examples.linked-infinite.transcription.\(index)"
   }
 
+  public static func wordLocalIDName(recordingIndex: Int, wordIndex: Int) -> String {
+    "examples.linked-infinite.word.\(recordingIndex).\(wordIndex)"
+  }
+
   public static func createRecordingOperations(
     id: String,
     title: String,
     updatedAt: InstantTimestamp,
-    transactionID: String
+    transactionID: String,
+    startedAtMs: Double? = nil,
+    durationSeconds: Double? = nil
   ) -> [InstantTripleOperation] {
-    [
+    var operations: [InstantTripleOperation] = [
       .requireEntityMissing(entityID: id, namespace: recordingNamespace),
       identityOperation(
         id: id,
@@ -178,6 +344,33 @@ public enum LinkedInfiniteExample {
         )
       ),
     ]
+    if let startedAtMs {
+      operations.append(
+        .insert(
+          InstantTriple(
+            entityID: id,
+            attributeID: "\(recordingNamespace)/startedAtMs",
+            value: .number(startedAtMs),
+            txID: transactionID,
+            txTime: updatedAt
+          )
+        )
+      )
+    }
+    if let durationSeconds {
+      operations.append(
+        .insert(
+          InstantTriple(
+            entityID: id,
+            attributeID: "\(recordingNamespace)/durationSeconds",
+            value: .number(durationSeconds),
+            txID: transactionID,
+            txTime: updatedAt
+          )
+        )
+      )
+    }
+    return operations
   }
 
   public static func createTranscriptionOperations(
@@ -185,9 +378,12 @@ public enum LinkedInfiniteExample {
     recordingID: String,
     wordCount: Int,
     updatedAt: InstantTimestamp,
-    transactionID: String
+    transactionID: String,
+    transcriptText: String? = nil,
+    provider: String = "Deepgram",
+    segmentCount: Int = 1
   ) -> [InstantTripleOperation] {
-    [
+    var operations: [InstantTripleOperation] = [
       .requireEntityMissing(entityID: id, namespace: transcriptionNamespace),
       identityOperation(
         id: id,
@@ -222,6 +418,123 @@ public enum LinkedInfiniteExample {
           txTime: updatedAt
         )
       ),
+      .insert(
+        InstantTriple(
+          entityID: id,
+          attributeID: "\(transcriptionNamespace)/provider",
+          value: .string(provider),
+          txID: transactionID,
+          txTime: updatedAt
+        )
+      ),
+      .insert(
+        InstantTriple(
+          entityID: id,
+          attributeID: "\(transcriptionNamespace)/segmentCount",
+          value: .number(Double(segmentCount)),
+          txID: transactionID,
+          txTime: updatedAt
+        )
+      ),
+    ]
+    if let transcriptText {
+      operations.append(
+        .insert(
+          InstantTriple(
+            entityID: id,
+            attributeID: "\(transcriptionNamespace)/transcriptText",
+            value: .string(transcriptText),
+            txID: transactionID,
+            txTime: updatedAt
+          )
+        )
+      )
+    }
+    return operations
+  }
+
+  public static func createWordOperations(
+    id: String,
+    recordingID: String,
+    transcriptionID: String,
+    text: String,
+    wordIndex: Int,
+    startTimeSeconds: Double,
+    endTimeSeconds: Double,
+    updatedAt: InstantTimestamp,
+    transactionID: String
+  ) -> [InstantTripleOperation] {
+    [
+      .requireEntityMissing(entityID: id, namespace: wordNamespace),
+      identityOperation(
+        id: id,
+        namespace: wordNamespace,
+        updatedAt: updatedAt,
+        transactionID: transactionID
+      ),
+      .insert(
+        InstantTriple(
+          entityID: id,
+          attributeID: "\(wordNamespace)/text",
+          value: .string(text),
+          txID: transactionID,
+          txTime: updatedAt
+        )
+      ),
+      .insert(
+        InstantTriple(
+          entityID: id,
+          attributeID: "\(wordNamespace)/wordIndex",
+          value: .number(Double(wordIndex)),
+          txID: transactionID,
+          txTime: updatedAt
+        )
+      ),
+      .insert(
+        InstantTriple(
+          entityID: id,
+          attributeID: "\(wordNamespace)/startTimeSeconds",
+          value: .number(startTimeSeconds),
+          txID: transactionID,
+          txTime: updatedAt
+        )
+      ),
+      .insert(
+        InstantTriple(
+          entityID: id,
+          attributeID: "\(wordNamespace)/endTimeSeconds",
+          value: .number(endTimeSeconds),
+          txID: transactionID,
+          txTime: updatedAt
+        )
+      ),
+      .insert(
+        InstantTriple(
+          entityID: id,
+          attributeID: "\(wordNamespace)/updatedAt",
+          value: .date(Date(timeIntervalSince1970: Double(updatedAt.milliseconds) / 1_000)),
+          txID: transactionID,
+          txTime: updatedAt
+        )
+      ),
+      .insert(
+        InstantTriple(
+          entityID: id,
+          attributeID: "\(wordNamespace)/transcription",
+          value: .ref(transcriptionID),
+          txID: transactionID,
+          txTime: updatedAt
+        )
+      ),
+      .insert(
+        InstantTriple(
+          entityID: id,
+          attributeID: "\(wordNamespace)/recording",
+          value: .ref(recordingID),
+          txID: transactionID,
+          txTime: updatedAt
+        )
+      ),
     ]
   }
 
@@ -250,6 +563,65 @@ public enum LinkedInfiniteExample {
         updatedAt: offset,
         transactionID: transactionID
       )
+    }
+    return operations
+  }
+
+  /// Scribe-shaped soak seed: many parents, transcript text, and per-word entities.
+  public static func scribeShapedSoakOperations(
+    profile: LinkedInfiniteScribeShapedSoakProfile = .publishGate,
+    recordingIDs: [String],
+    transcriptionIDs: [String],
+    wordIDsByRecording: [[String]],
+    baseTime: InstantTimestamp,
+    transactionID: String
+  ) -> [InstantTripleOperation] {
+    precondition(recordingIDs.count == profile.recordingCount)
+    precondition(transcriptionIDs.count == profile.recordingCount)
+    precondition(wordIDsByRecording.count == profile.recordingCount)
+    let fillerWord = "testing "
+    let transcriptText = String(
+      repeating: fillerWord,
+      count: max(1, profile.transcriptTextCharacters / fillerWord.count)
+    )
+    var operations: [InstantTripleOperation] = []
+    for index in recordingIDs.indices {
+      let offset = InstantTimestamp(milliseconds: baseTime.milliseconds + Int64(index) * 1_000)
+      let title = "Recording \(String(format: "%03d", index + 1)) — soak"
+      let wordIDs = wordIDsByRecording[index]
+      precondition(wordIDs.count == profile.wordsPerRecording)
+      operations += createRecordingOperations(
+        id: recordingIDs[index],
+        title: title,
+        updatedAt: offset,
+        transactionID: transactionID,
+        startedAtMs: Double(offset.milliseconds),
+        durationSeconds: Double(30 + index)
+      )
+      operations += createTranscriptionOperations(
+        id: transcriptionIDs[index],
+        recordingID: recordingIDs[index],
+        wordCount: profile.wordsPerRecording,
+        updatedAt: offset,
+        transactionID: transactionID,
+        transcriptText: transcriptText,
+        provider: "Deepgram",
+        segmentCount: max(1, profile.wordsPerRecording / 40)
+      )
+      for (wordIndex, wordID) in wordIDs.enumerated() {
+        let start = Double(wordIndex) * 0.25
+        operations += createWordOperations(
+          id: wordID,
+          recordingID: recordingIDs[index],
+          transcriptionID: transcriptionIDs[index],
+          text: "w\(wordIndex)",
+          wordIndex: wordIndex,
+          startTimeSeconds: start,
+          endTimeSeconds: start + 0.2,
+          updatedAt: offset,
+          transactionID: transactionID
+        )
+      }
     }
     return operations
   }
@@ -303,6 +675,16 @@ public enum LinkedInfiniteExample {
         name: "updatedAt"
       ),
       serverAttr(
+        id: "\(recordingNamespace)/startedAtMs",
+        namespace: recordingNamespace,
+        name: "startedAtMs"
+      ),
+      serverAttr(
+        id: "\(recordingNamespace)/durationSeconds",
+        namespace: recordingNamespace,
+        name: "durationSeconds"
+      ),
+      serverAttr(
         id: "\(transcriptionNamespace)/id",
         namespace: transcriptionNamespace,
         name: "id"
@@ -318,10 +700,45 @@ public enum LinkedInfiniteExample {
         name: "updatedAt"
       ),
       serverAttr(
+        id: "\(transcriptionNamespace)/transcriptText",
+        namespace: transcriptionNamespace,
+        name: "transcriptText"
+      ),
+      serverAttr(
+        id: "\(transcriptionNamespace)/provider",
+        namespace: transcriptionNamespace,
+        name: "provider"
+      ),
+      serverAttr(
+        id: "\(transcriptionNamespace)/segmentCount",
+        namespace: transcriptionNamespace,
+        name: "segmentCount"
+      ),
+      serverAttr(
         id: "\(transcriptionNamespace)/recording",
         namespace: transcriptionNamespace,
         name: "recording"
       ),
+      serverAttr(id: "\(wordNamespace)/id", namespace: wordNamespace, name: "id"),
+      serverAttr(id: "\(wordNamespace)/text", namespace: wordNamespace, name: "text"),
+      serverAttr(id: "\(wordNamespace)/wordIndex", namespace: wordNamespace, name: "wordIndex"),
+      serverAttr(
+        id: "\(wordNamespace)/startTimeSeconds",
+        namespace: wordNamespace,
+        name: "startTimeSeconds"
+      ),
+      serverAttr(
+        id: "\(wordNamespace)/endTimeSeconds",
+        namespace: wordNamespace,
+        name: "endTimeSeconds"
+      ),
+      serverAttr(id: "\(wordNamespace)/updatedAt", namespace: wordNamespace, name: "updatedAt"),
+      serverAttr(
+        id: "\(wordNamespace)/transcription",
+        namespace: wordNamespace,
+        name: "transcription"
+      ),
+      serverAttr(id: "\(wordNamespace)/recording", namespace: wordNamespace, name: "recording"),
     ]
   }
 
@@ -426,17 +843,26 @@ public enum LinkedInfiniteExample {
   }
 
   private static func serverAttr(id: String, namespace: String, name: String) -> InstantLiveJSONValue {
-    .object([
+    let isRef = name == "recording" || name == "transcription"
+    let checked: String =
+      if name == "updatedAt" {
+        "date"
+      } else if name.contains("Count") || name.contains("Seconds") || name.contains("Index")
+        || name.hasSuffix("Ms")
+      {
+        "number"
+      } else {
+        "string"
+      }
+    return .object([
       "id": .string(id),
       "forward-identity": .array([
         .string("identity-\(id)"),
         .string(namespace),
         .string(name),
       ]),
-      "value-type": .string(name == "recording" ? "ref" : "blob"),
-      "checked-data-type": .string(
-        name == "updatedAt" ? "date" : name == "wordCount" ? "number" : "string"
-      ),
+      "value-type": .string(isRef ? "ref" : "blob"),
+      "checked-data-type": .string(checked),
       "cardinality": .string("one"),
     ])
   }

@@ -66,6 +66,11 @@ INSTANT_SWIFT_DATA_TODOS_V3_RESULTS_DIR="${TODOS_RESULTS}" \
   "${ROOT}/validation/verify-todos-v3-app-live.sh" \
   >"${RESULTS_DIR}/todos.log" 2>&1
 
+# #150 — Scribe-shaped linked-infinite memory soak (physical footprint, not VSZ).
+INSTANT_SWIFT_DATA_SCRIBE_SOAK_RESULTS_DIR="${RESULTS_DIR}/scribe-shaped-memory-soak" \
+  "${ROOT}/validation/verify-scribe-shaped-memory-soak.sh" \
+  >"${RESULTS_DIR}/scribe-shaped-memory-soak.log" 2>&1
+
 if rg -n '(^|[[:space:]])warning:' \
   "${RESULTS_DIR}/swift-test.log" \
   "${RESULTS_DIR}/macro-tests.log" \
