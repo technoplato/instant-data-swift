@@ -4,6 +4,21 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## August 5th, 2026 at 7:00:21 p.m. EDT — `129ce6270a6b` Gate Scribe-shaped idle memory with guest auth and absolute ceilings
+
+- **Implementation commit:** `129ce6270a6bcc4723d1141962a8cfbb17681744`
+- **Change:** Scribe-shaped absolute idle memory gate with guest auth
+- **Details:**
+  - publishGateAbsoluteIdle ≤400MiB; guest auth always; live guest when INSTANT_SWIFT_DATA_LIVE_AUTH_SOAK=1; dual-write demotion regression in release soak
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/ScribeShapedAuthenticatedIdleMemorySoakTests.swift` — Auth + absolute idle soak
+  - `Sources/InstantSwiftDataCore/LinkedInfiniteExample.swift` — publishGateAbsoluteIdle profile
+  - `validation/verify-scribe-shaped-memory-soak.sh` — Wire auth soak into publish gate
+  - `docs/scribe-shaped-memory-soak.md` — Document absolute idle + auth
+- **User context (verbatim):**
+  > reproduce the memory consumption issue at the library level so we can gate releases
+- **SpecStory:** unavailable — Grok Build goal session; no SpecStory URI
+
 ## August 5th, 2026 at 5:37:14 p.m. EDT — `759c899a8a4f` Demote high-frequency InstantDiagnostics that dual-write thrash
 
 - **Implementation commit:** `759c899a8a4f76ccaa2d473e5f15c33fe86946fc`
