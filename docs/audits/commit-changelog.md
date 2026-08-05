@@ -1,3 +1,13 @@
+## 2026-08-05 08:51:00 EDT
+
+- **repo:** instant-data-swift
+- **commit:** `cdd1ba421f27269b4307ff6056e2bd908096e926` (tag v1.5.1 / `43e3385c2e0aa2318aafcd63c0171192ce8e55ef`)
+- **reason:** Fix live infinite short-page canLoadNextPage thrash that Jetsam-killed Scribe on iPad during recording.
+
+- **repo:** realtime-voice-sqlite-instant
+- **commit:** `39722d4e9a2bd75e79d5da9477b692b61659b2a0`
+- **reason:** Pin instant-data-swift 1.5.1 and stop list/constellation loadNextPage thrash that OOM-killed iPad recordings.
+
 ## 2026-08-05 08:32:30 EDT
 
 - **repo:** realtime-voice-sqlite-instant
