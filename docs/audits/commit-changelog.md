@@ -1,3 +1,15 @@
+## 2026-08-05 09:09:23 EDT
+
+- **Repository:** realtime-voice-sqlite-instant
+- **Commit:** d8ae5cd489883d22200b8eaa58e9297253b6e972
+- **Reason:** Floating build debug overlay with Shared file-backed presentation modes (hidden/collapsed/expanded), opacity, and build provenance copy panel.
+
+## 2026-08-05 09:22:15 EDT
+
+- **Repository:** realtime-voice-sqlite-instant
+- **Commit:** `bb22fd3507dc4dc48c68536febd2989aba3e5060`
+- **Reason:** Typed ScribeBuildCatalog multi-lane identity + \$scribe-install skill (localDev default; TestFlight upload-only for production host).
+
 ## 2026-08-05 08:51:00 EDT
 
 - **repo:** instant-data-swift
