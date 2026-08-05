@@ -1,5 +1,11 @@
 ## 2026-08-05 13:12:29 EDT
 
+## 2026-08-05 13:31:18 EDT — realtime-voice-sqlite-instant plan handoff (instant-data-swift)
+
+- **Repository:** instant-data-swift
+- **Commit:** `c5f9a0cef24161e92b0f51bc252faf50cb87fccc`
+- **Reason:** Document production performance readiness plan from research quorum and live iPad thrash evidence (880MB+ idle, gate holds, receive-loop isolation gaps).
+
 - **Repository:** instant-data-swift
 - **Commit:** `8fbfa0c8ef1d95457929a9b4462c65f85923c9f2`
 - **Reason:** Recipes outbox panel, wipe/clear, delete todos, sharing counters (#152)
