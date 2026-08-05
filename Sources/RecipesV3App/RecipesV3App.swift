@@ -172,6 +172,18 @@ public struct RecipesV3AppConfiguration: Hashable, Sendable {
 
     public func startIfNeeded() {
       guard client == nil, task == nil else { return }
+      RecipesDebugLogRing.shared.installDiagnosticsBridgeIfNeeded()
+      RecipesDebugLogRing.shared.append(
+        level: "info",
+        category: "recipes-bootstrap",
+        name: "bootstrap.started",
+        message: "Starting Instant recipes bootstrap.",
+        metadata: [
+          "appID": configuration.appID,
+          "live": configuration.enablesLiveSync.description,
+          "recipe": configuration.launchRecipe?.rawValue ?? "catalog",
+        ]
+      )
       task = Task { @MainActor [weak self, configuration] in
         do {
           var dependencies = DependencyValues()
@@ -185,9 +197,26 @@ public struct RecipesV3AppConfiguration: Hashable, Sendable {
           )
           let client = dependencies.defaultInstantSwiftData
           prepareDependencies { $0.defaultInstantSwiftData = client }
+          RecipesDebugLogRing.shared.append(
+            level: "info",
+            category: "recipes-bootstrap",
+            name: "bootstrap.ready",
+            message: "Instant recipes client is ready.",
+            metadata: [
+              "appID": configuration.appID,
+              "live": configuration.enablesLiveSync.description,
+            ]
+          )
           self?.client = client
           self?.task = nil
         } catch {
+          RecipesDebugLogRing.shared.append(
+            level: "error",
+            category: "recipes-bootstrap",
+            name: "bootstrap.failed",
+            message: String(describing: error),
+            metadata: ["appID": configuration.appID]
+          )
           self?.errorMessage = String(describing: error)
           self?.task = nil
         }
@@ -228,7 +257,15 @@ public struct RecipesV3AppConfiguration: Hashable, Sendable {
           ProgressView("Opening Instant Recipes")
         }
       }
-      .task { model.startIfNeeded() }
+      .task {
+        RecipesDebugLogRing.shared.installDiagnosticsBridgeIfNeeded()
+        model.startIfNeeded()
+      }
+      .recipesDebugPanel(
+        recipeLabel: model.configuration.launchRecipe?.title ?? "catalog",
+        isLive: model.configuration.enablesLiveSync,
+        initialPresentation: .expanded
+      )
     }
   }
 

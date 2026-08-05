@@ -20,9 +20,18 @@ public enum LinkedInfiniteDurableLog: Sendable {
     let lock = NSLock()
     var sessionID = UUID().uuidString.lowercased()
     var sequence: Int64 = 0
+    /// Optional fan-out for in-app debug panels (set by recipes-v3).
+    var sink: (@Sendable (String, [String: String]) -> Void)?
   }
 
   private static let state = State()
+
+  /// Install a process-wide sink that receives every durable log line as strings.
+  public static func setDebugSink(_ sink: (@Sendable (String, [String: String]) -> Void)?) {
+    state.lock.lock()
+    state.sink = sink
+    state.lock.unlock()
+  }
 
   public static func resetSession(reason: String) {
     state.lock.lock()
@@ -45,6 +54,7 @@ public enum LinkedInfiniteDurableLog: Sendable {
     state.sequence += 1
     let seq = state.sequence
     let sid = state.sessionID
+    let sink = state.sink
     state.lock.unlock()
 
     var payload: [String: Any] = [
@@ -57,6 +67,17 @@ public enum LinkedInfiniteDurableLog: Sendable {
     ]
     for (key, value) in fields {
       payload[key] = sanitize(value)
+    }
+
+    if let sink {
+      var stringFields: [String: String] = [
+        "seq": String(seq),
+        "session": sid,
+      ]
+      for (key, value) in fields {
+        stringFields[key] = String(describing: sanitize(value))
+      }
+      sink(event, stringFields)
     }
 
     guard JSONSerialization.isValidJSONObject(payload),
