@@ -1,5 +1,12 @@
 ## 2026-08-05 13:12:29 EDT
 
+## 2026-08-05 17:37:14 EDT — instant-data-swift diagnostic dual-write thrash fix
+
+- **Repository:** instant-data-swift
+- **Commit:** `759c899a8a4f76ccaa2d473e5f15c33fe86946fc`
+- **Reason:** Break InstantDiagnostics dual-write feedback that drove multi-GB idle memory via continuous debug-log-batch mutations.
+
+
 ## 2026-08-05 13:31:35 EDT — realtime-voice-sqlite-instant performance plan pointer
 
 - **Repository:** realtime-voice-sqlite-instant
