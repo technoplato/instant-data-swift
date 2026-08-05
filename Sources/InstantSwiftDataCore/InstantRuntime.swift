@@ -2635,7 +2635,19 @@ public final class InstantRuntime: Sendable {
         let retractions = try await persistence.liveQueryReplacementRetractions(
           for: liveQueryResultReplacements
         )
-        transaction.operations.insert(contentsOf: retractions, at: 0)
+        // Empty/narrow server results must not retract triples still owned by a
+        // pending optimistic mutation. Upstream keeps a separate server store and
+        // reapplies the overlay; Swift materializes one store, so without this
+        // guard a blank live refresh can wipe local transcriptions while the
+        // outbox still believes they are durable (Scribe blank-detail 2026-08-04).
+        let protectedEntityIDs = Self.pendingOptimisticEntityIDs(
+          in: state.snapshot.outbox
+        )
+        let protectedRetractions = retractions.filter { operation in
+          guard case let .retract(triple) = operation else { return true }
+          return !protectedEntityIDs.contains(triple.entityID)
+        }
+        transaction.operations.insert(contentsOf: protectedRetractions, at: 0)
       }
       let prunedOutbox = InstantOutbox.pruningConfirmed(
         through: processedTransactionID,
@@ -3037,6 +3049,46 @@ public final class InstantRuntime: Sendable {
       base = try await store.prepare(rollbackTransaction, applyingTo: base).snapshot
     }
     return base
+  }
+
+  /// Entity IDs still covered by a non-failed optimistic mutation that has not
+  /// been explicitly removed. Live-query replacement retractions must not erase
+  /// these while delivery is still pending.
+  private static func pendingOptimisticEntityIDs(
+    in mutations: [PendingMutation]
+  ) -> Set<String> {
+    var entityIDs: Set<String> = []
+    for mutation in mutations {
+      guard mutation.status != .failed else { continue }
+      guard mutation.optimisticOverlayState != .removed else { continue }
+      for operation in mutation.transaction.operations {
+        switch operation {
+        case let .requireEntityMissing(entityID, _),
+          let .requireEntityExists(entityID, _),
+          let .deleteEntity(entityID),
+          let .deleteEntityInNamespace(entityID, _),
+          let .ruleParams(entityID, _, _),
+          let .requireTripleExists(entityID, _, _):
+          entityIDs.insert(entityID)
+        case let .merge(triple), let .insert(triple), let .retract(triple):
+          entityIDs.insert(triple.entityID)
+          if case let .ref(targetEntityID) = triple.value {
+            entityIDs.insert(targetEntityID)
+          }
+        case .requireEntityMissingByLookup,
+          .requireEntityExistsByLookup,
+          .mergeByLookup,
+          .insertByLookup,
+          .retractByLookup,
+          .deleteEntityByLookup,
+          .ruleParamsByLookup:
+          // Lookup-targeted writes cannot identify a concrete entity without
+          // applying the lookup; skip broad protection here (rebase still runs).
+          break
+        }
+      }
+    }
+    return entityIDs
   }
 
   private func rebaseLocalMutations(
