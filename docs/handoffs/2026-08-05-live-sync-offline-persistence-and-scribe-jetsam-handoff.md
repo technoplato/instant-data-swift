@@ -221,6 +221,11 @@ Scribe `Package.swift` should be `exact: "1.5.2"`. Local editable symlink `Packa
 
 ### P0 — Make live sync resilient and correct (library)
 
+**Landed 2026-08-05 (`ca483b54` / #134):** Failed pre-overlay outbox rows no longer hard-throw inside `performApplyServerTransaction`. That was the recipes-v3 `773e50f4-…` receive-loop thrash (and the remaining half of #134 after connect-path isolation). Live verify on the poisoned recipes SQLite: ~121 MB RSS, probes succeed, no `connection.receive-loop-failed` from apply. Retry/discard still refuse without guessing. Open remainder of #134: public recovery API, upgrade docs, physical iPhone in-place recovery.
+
+Original checklist (items 1–2 done for failed+unknown; item 3 partial):
+
+
 1. **Reproduce** recipes-v3 or Scribe with live app id; capture full InstantError for mutation `773e50f4…` (not truncated).  
 2. **Classify apply failure:** schema drift, junk remote data, `unknownOptimisticOverlayState`, attribute rewrite, empty processed-tx-id, etc. (`InstantRuntime.performApplyServerTransaction`).  
 3. **Parity-aligned resilience (recommended direction):**  
