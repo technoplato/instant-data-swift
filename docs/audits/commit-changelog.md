@@ -8,6 +8,12 @@
 - **commit:** `5f0c98429013e198ecc31df62eac22ec649fe59b`
 - **reason:** Bridge InstantDiagnostics to Tailnet dual-write logger; pin 1.5.2; list owner fingerprints.
 
+## 2026-08-05 09:44:30 EDT
+
+- **Repository:** realtime-voice-sqlite-instant
+- **Commit:** `68f1a8faa44f14cfee7452f028b61327c808c43a`
+- **Reason:** Multi-lane deep links/OAuth/companion pairing + localDev agent evidence defaults from bundle-id audit.
+
 ## 2026-08-05 09:09:23 EDT
 
 - **Repository:** realtime-voice-sqlite-instant
