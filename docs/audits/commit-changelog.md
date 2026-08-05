@@ -1,3 +1,9 @@
+## 2026-08-05 12:58:28 EDT
+
+- **Repository:** instant-data-swift
+- **Commit:** `551bb333839dcd050fb7ad4acf312124ee87d046`
+- **Reason:** Scribe-shaped linked-infinite memory soak publish gate (#150)
+
 ## 2026-08-05 12:48:03 EDT
 
 - **Repository:** instant-data-swift
