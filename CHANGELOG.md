@@ -4,6 +4,25 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## August 4th, 2026 at 10:39:35 p.m. EDT — `9b9c8c3b340f` Reproduce Scribe blank-detail in Linked Infinite and lock the library fix
+
+- **Implementation commit:** `9b9c8c3b340fafc900ce8464e2b7735835e52b31`
+- **Change:** 1.5.0 path: empty live-query replacements preserve pending optimistic children
+- **Details:**
+  - Scribe blank detail: empty live refresh retracted pending transcription triples while audio attachments survived.
+  - Tests emptyLiveQueryReplacementPreservesPendingOptimisticChildRows and emptyLiveQueryReplacementPreservesOptimisticTranscriptionJoin.
+  - Linked Infinite recipe opens detail rows and documents the blank-detail contract; ADR 0013 and docs/releases/v1.5.0.md. Core fix landed earlier as a3b63e73.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/LinkedInfiniteExample.swift` — Live join fixtures for blank-detail reproduction
+  - `Sources/LinkedInfiniteV3App/LinkedInfiniteApp.swift` — Detail screen and blank-detail regression section
+  - `Tests/InstantSwiftDataCoreTests/InstantLiveTransportTests.swift` — Core empty-replacement + pending optimistic test
+  - `Tests/InstantSwiftDataCoreTests/LinkedInfiniteExampleTests.swift` — Join-shaped blank-detail recipe test
+  - `docs/adr/0013-protect-pending-optimistic-from-empty-live-query-retractions.md` — Architecture decision
+  - `docs/releases/v1.5.0.md` — Human release story
+- **User context (verbatim):**
+  > bring this back to the InstantDB library or the Instant Swift data library and create a reproduction there and then display that in the recipes and then resolve it at the library level
+- **SpecStory:** unavailable — Grok Build session; no SpecStory URI for this desktop agent path
+
 ## August 4th, 2026 at 12:53:07 p.m. EDT — `c8c8011f5846` Green the full suite for the 1.4.0 API-convergence release
 
 - **Implementation commit:** `c8c8011f5846a66fa29da4f1ca809b62dc418c09`
