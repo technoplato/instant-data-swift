@@ -1,5 +1,11 @@
 ## 2026-08-05 13:12:29 EDT
 
+## 2026-08-05 13:31:35 EDT — realtime-voice-sqlite-instant performance plan pointer
+
+- **Repository:** realtime-voice-sqlite-instant
+- **Commit:** `af82b476348d2ece9d976b9740dd99f9986eb4ba`
+- **Reason:** Point Scribe agents at Instant production performance readiness plan after iPad 880MB+ thrash evidence.
+
 ## 2026-08-05 13:31:18 EDT — realtime-voice-sqlite-instant plan handoff (instant-data-swift)
 
 - **Repository:** instant-data-swift
