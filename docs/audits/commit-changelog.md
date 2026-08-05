@@ -1,3 +1,9 @@
+## 2026-08-05 09:51:26 EDT
+
+- **repository:** realtime-voice-sqlite-instant
+- **commit:** `16b7e9e82146305d03f68065334c9b30aeda67e1`
+- **reason:** Add Scribe Diagnostics suite with audio route probe and Device Hub silent-mic warning
+
 ## 2026-08-05 09:36:23 EDT
 
 - **repo:** instant-data-swift
