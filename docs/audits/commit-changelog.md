@@ -1,3 +1,19 @@
+## 2026-08-05 12:24:10 EDT
+
+- **Repository:** realtime-voice-sqlite-instant
+- **Commit:** c9fe3386fbcf961f93cb73a6f258234883704f89
+- **Reason:** Require Instant issue triage on user-reported defects; Instant-only tracker, never GitHub Issues.
+
+- **Repository:** skills
+- **Commit:** da08e4ed703c4e1e4a69ad5c9a93cecd9d1cab7c
+- **Reason:** Add issue-triage skill (search Instant catalog, claim or create, hand mutations to issue-tracker).
+
+## 2026-08-05 12:10:52 EDT
+
+- **Repository:** realtime-voice-sqlite-instant
+- **Commit:** ee7da38254ec72db838c954794c93a1993273b78
+- **Reason:** Build debug overlay process-memory series (5s samples) + sparkline graph.
+
 ## 2026-08-05 09:51:26 EDT
 
 - **repository:** realtime-voice-sqlite-instant
