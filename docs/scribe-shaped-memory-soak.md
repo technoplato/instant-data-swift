@@ -31,7 +31,12 @@ Runs `LinkedInfiniteScribeShapedMemorySoakTests` with
 
 - 80 recordings × 120 word entities + transcript text
 - Infinite list page size **50** (Scribe library)
-- **Physical footprint** growth budget 256 MiB, ceiling 512 MiB
+- **Physical footprint** growth budget **768 MiB**, ceiling **1 GiB**
+- **Page-expand** growth budget **64 MiB** (after seed → after infinite pages)
+
+Measured Debug suite cost (2026-08-05, this machine): seed ≈ **450 MiB**
+footprint from a cold baseline; infinite page expands added **&lt;1 MiB**. The gate
+is tuned to fail multi‑GB thrash, not the expected seed cost.
 
 Also invoked from `validation/verify-v1-release.sh`.
 
