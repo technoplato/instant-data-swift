@@ -4,6 +4,23 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## August 5th, 2026 at 12:48:13 p.m. EDT — `ca483b549791` Isolate failed legacy mutations so live server apply continues
+
+- **Implementation commit:** `ca483b549791175854c0f21faf25eae72a016cc2`
+- **Change:** Isolate failed legacy unknown-overlay mutations so live SQLite apply and the receive loop keep working (#134)
+- **Details:**
+  - Root cause of recipes-v3 connection.receive-loop-failed on mutation 773e50f4: performApplyServerTransaction hard-threw for any outbox row lacking optimisticOverlayState/rollback, including already-failed legacy rows. Connect path was already isolated; live add-query-ok/refresh-ok was not.
+  - Failed+unknown rows are now diagnostic-isolated (outbox.mutation.legacy-unknown-isolated) and server apply continues. Non-failed unknown rows still fail closed. Retry/discard remain refuse-without-guessing.
+  - Focused tests pass; live verify on poisoned recipes SQLite: ~121MB RSS, probes succeed, no receive-loop thrash. https://issues.knophy.com/issues/134
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — Skip hard-throw for failed+unknown overlay during apply; log isolation event
+  - `Tests/InstantSwiftDataCoreTests/InstantOutboxDeliveryStallTests.swift` — Regression tests for live and explicit apply over legacy failed unknown
+  - `Tests/InstantSwiftDataCoreTests/InstantFailedMutationDiscardTests.swift` — Server apply may proceed; retry/discard still refuse
+- **User context (verbatim):**
+  > help fixHandoff written for the next agent
+  > Next agent’s main job: fix Swift apply / receive-loop resilience (and root cause of mutation apply failure)
+- **SpecStory:** unavailable — Grok Build CLI session; no SpecStory URI for this client
+
 ## August 5th, 2026 at 12:29:18 p.m. EDT — `1a7303ac92ff` Add recipes-v3 floating debug panel with memory and logs
 
 - **Implementation commit:** `1a7303ac92ff0d689b34a4c12e541b86337edd29`
