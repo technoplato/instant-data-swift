@@ -1,3 +1,13 @@
+## 2026-08-05 12:41:23 EDT
+
+- **Repository:** realtime-voice-sqlite-instant
+- **Commit:** 4320fc235fa953d5c7116f91541ce6d8fc92e22a
+- **Reason:** Require mid-work Instant workLog progress so future agents can resume from query-issue.
+
+- **Repository:** skills
+- **Commit:** 39496e6099b66461242534302e926690c94f208a
+- **Reason:** issue-tracker mandatory progress workLog section for future-agent handoff.
+
 ## 2026-08-05 12:29:20 EDT
 
 - **repo:** instant-data-swift
