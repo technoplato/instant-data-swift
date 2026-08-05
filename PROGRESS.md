@@ -6,6 +6,14 @@ production-readiness plan
 Commit-level history stays in `docs/audits/commit-changelog.md`; this file is
 the narrative of what the library must prove and why.
 
+## 2026-08-05 13:31:04 EDT — Production performance readiness plan (research quorum)
+
+- **Evidence (iPad Tailnet):** physical footprint climbed ~88 MB → 880–945 MB (later ~1.3 GB) under 1.5.3; `failMutation` held operation gate 160+ s; permission-denied + missing required-attr storms; ack-timeout reclaim + receive-loop-failed.
+- **Plan:** `docs/plans/2026-08-05-production-performance-readiness-plan.md` — Phase 0 thrash stop (error isolation, short gates, poison outbox); Phase 1 absolute budgets; Phase 2 structural efficiency under ADR.
+- **Verdict:** not production-ready (~2.5/10 independent eval). Keep SQLite offline; do not re-open 1.5.1 Jetsam thrash.
+- **Next:** implement Phase 0.1–0.4 tests-first; pin after 1.5.4/1.6; Scribe stop poison writers + photo coalesce.
+
+
 ## 2026-08-04 — Linked infinite + includes recipe (join-shaped paging)
 
 - **Acceptance.** Typed test
