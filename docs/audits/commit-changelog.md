@@ -1,3 +1,9 @@
+## 2026-08-05 00:19:30 EDT
+
+- **Repository:** realtime-voice-sqlite-instant
+- **Commit:** `51eb3a58ecf08047c55baeb31b7ef3702da55322`
+- **Reason:** Make Stream Companion Settings agent-controllable without QR
+
 ## 2026-08-04 23:27:17 EDT
 
 - **repository:** realtime-voice-sqlite-instant
