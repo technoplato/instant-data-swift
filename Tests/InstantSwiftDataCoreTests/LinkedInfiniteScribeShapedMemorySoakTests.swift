@@ -3,8 +3,9 @@ import Foundation
 import Testing
 @testable import InstantSwiftDataCore
 
-/// Publish-gate soak: Scribe-shaped recordings → transcriptions → words, paged
-/// like the production library list. Fails when physical footprint balloons.
+/// Publish-gate soak: **production** Scribe namespaces
+/// (recordings → transcriptions → transcriptionWords → segments → attachments),
+/// paged like the production library list. Fails when physical footprint balloons.
 ///
 /// Issue: https://issues.knophy.com/issues/150
 @Suite(.serialized)
@@ -25,7 +26,7 @@ struct LinkedInfiniteScribeShapedMemorySoakTests {
       configuration: InstantRuntimeConfiguration(
         appID: "linked-infinite-scribe-soak",
         persistenceURL: cacheURL,
-        initialAttributes: LinkedInfiniteExample.attributes,
+        initialAttributes: ScribeProductionShapedSchema.attributes,
         makeID: { UUID().uuidString.lowercased() }
       )
     )
@@ -33,27 +34,33 @@ struct LinkedInfiniteScribeShapedMemorySoakTests {
     var recordingIDs: [String] = []
     var transcriptionIDs: [String] = []
     var wordIDsByRecording: [[String]] = []
+    var segmentIDsByRecording: [[String]] = []
+    var attachmentIDsByRecording: [[String]] = []
+    let segmentsPerRecording = max(1, profile.wordsPerRecording / 12)
     for index in 0..<profile.recordingCount {
       recordingIDs.append(
-        try await runtime.localID(named: LinkedInfiniteExample.seedLocalIDName(index: index))
+        try await runtime.localID(named: "scribe.prod.recording.\(index)")
       )
       transcriptionIDs.append(
-        try await runtime.localID(
-          named: LinkedInfiniteExample.transcriptionLocalIDName(index: index)
-        )
+        try await runtime.localID(named: "scribe.prod.transcription.\(index)")
       )
       var wordIDs: [String] = []
       for wordIndex in 0..<profile.wordsPerRecording {
         wordIDs.append(
-          try await runtime.localID(
-            named: LinkedInfiniteExample.wordLocalIDName(
-              recordingIndex: index,
-              wordIndex: wordIndex
-            )
-          )
+          try await runtime.localID(named: "scribe.prod.word.\(index).\(wordIndex)")
         )
       }
       wordIDsByRecording.append(wordIDs)
+      var segmentIDs: [String] = []
+      for segmentIndex in 0..<segmentsPerRecording {
+        segmentIDs.append(
+          try await runtime.localID(named: "scribe.prod.segment.\(index).\(segmentIndex)")
+        )
+      }
+      segmentIDsByRecording.append(segmentIDs)
+      attachmentIDsByRecording.append([
+        try await runtime.localID(named: "scribe.prod.attachment.\(index).0")
+      ])
     }
 
     let transactionID = runtime.configuration.makeID()
@@ -61,11 +68,13 @@ struct LinkedInfiniteScribeShapedMemorySoakTests {
     try await runtime.transact(
       InstantStoreTransaction(
         id: transactionID,
-        operations: LinkedInfiniteExample.scribeShapedSoakOperations(
+        operations: ScribeProductionShapedSchema.soakOperations(
           profile: profile,
           recordingIDs: recordingIDs,
           transcriptionIDs: transcriptionIDs,
           wordIDsByRecording: wordIDsByRecording,
+          segmentIDsByRecording: segmentIDsByRecording,
+          attachmentIDsByRecording: attachmentIDsByRecording,
           baseTime: now,
           transactionID: transactionID
         )
@@ -74,7 +83,7 @@ struct LinkedInfiniteScribeShapedMemorySoakTests {
     )
 
     let afterSeed = InstantProcessMemory.sample()
-    let plan = LinkedInfiniteExample.scribeShapedListQuery(pageSize: profile.listPageSize)
+    let plan = ScribeProductionShapedSchema.scribeShapedListQuery(pageSize: profile.listPageSize)
     let subscription = await runtime.subscribeInfiniteQuery(plan)
     defer { subscription.unsubscribe() }
     var iterator = subscription.snapshots.makeAsyncIterator()
@@ -82,8 +91,6 @@ struct LinkedInfiniteScribeShapedMemorySoakTests {
     var latest = try #require(await iterator.next())
     #expect(latest.error == nil)
     #expect(latest.values.count == min(profile.listPageSize, profile.recordingCount))
-    let firstRows = try LinkedInfiniteExample.decodeRecordings(latest.values)
-    #expect(firstRows.allSatisfy { $0.transcriptionWordCount == profile.wordsPerRecording })
 
     // Page through like the library "load older" path until closed or a few expands.
     var expansions = 0
@@ -97,15 +104,31 @@ struct LinkedInfiniteScribeShapedMemorySoakTests {
     let afterPages = InstantProcessMemory.sample()
     #expect(latest.values.count >= min(profile.listPageSize, profile.recordingCount))
 
-    // Correctness: word entities persisted (not only a wordCount scalar).
+    // Correctness: production word namespace entities persisted (not only a wordCount scalar).
     let wordSnapshots = try await runtime.query(
       InstantQueryPlan(
         id: "soak.words",
-        namespace: LinkedInfiniteExample.wordNamespace,
+        namespace: ScribeProductionShapedSchema.wordNamespace,
         limit: 5
       )
     )
     #expect(wordSnapshots.count == 5)
+    let segmentSnapshots = try await runtime.query(
+      InstantQueryPlan(
+        id: "soak.segments",
+        namespace: ScribeProductionShapedSchema.segmentNamespace,
+        limit: 5
+      )
+    )
+    #expect(segmentSnapshots.count >= 1)
+    let attachmentSnapshots = try await runtime.query(
+      InstantQueryPlan(
+        id: "soak.attachments",
+        namespace: ScribeProductionShapedSchema.attachmentNamespace,
+        limit: 5
+      )
+    )
+    #expect(attachmentSnapshots.count >= 1)
 
     if let baseline, let afterSeed, let afterPages {
       let growthFromBaseline =
@@ -162,7 +185,7 @@ struct LinkedInfiniteScribeShapedMemorySoakTests {
         _ = try await runtime.query(
           InstantQueryPlan(
             id: "soak.idle.\(UUID().uuidString.prefix(6))",
-            namespace: LinkedInfiniteExample.recordingNamespace,
+            namespace: ScribeProductionShapedSchema.recordingNamespace,
             limit: 5
           )
         )

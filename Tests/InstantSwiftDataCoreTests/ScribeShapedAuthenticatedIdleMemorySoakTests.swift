@@ -3,17 +3,23 @@ import Foundation
 import Testing
 @testable import InstantSwiftDataCore
 
-/// Publish gate: Scribe-shaped graph + **guest auth** + dual-write thrash resistance
-/// with **absolute idle footprint** budgets (product fail &gt;400 MB).
+/// Publish gate: **production Scribe namespaces** + guest auth + real second Instant
+/// `debugLogs` store thrash resistance with **absolute idle footprint** budgets.
 ///
-/// Field 2026-08-05: iPad idle multi‑GB was InstantDiagnostics dual-written into
-/// Instant `debugLogs` as 400–700-op batches. This suite:
-/// 1. Signs in as guest (Scribe's auth path shape; `.local` always; live when env set).
-/// 2. Seeds recordings→transcriptions→words.
-/// 3. Installs an info-level dual-write thrash driver (Scribe bridge minimumLevel).
-/// 4. Settles idle and fails multi‑GB / unbounded climb on **physical footprint**.
+/// Field 2026-08-05: iPad idle multi‑GB was InstantDiagnostics dual-written into a
+/// second Instant `debugLogs` client as multi-attr batches (`debug-log-batch-*`,
+/// HOL at 256 step budget, pendingMutationCount ~80+). Not the recording path —
+/// home screen idle with dual Instant stores.
 ///
-/// Issues: #150 (soak), dual-write thrash plan 2026-08-05.
+/// This suite:
+/// 1. Uses production namespaces: recordings, transcriptions, transcriptionWords,
+///    transcriptionSegments, recordingAttachments (issue #150 admin sample shape).
+/// 2. Signs in as guest (`.local` always; live when credentials/env present).
+/// 3. Boots a **second InstantRuntime** with `debugLogs` attrs and dual-writes
+///    multi-attr rows the way InstantDBLogger does.
+/// 4. Fails multi‑GB / unbounded climb on **physical footprint** only.
+///
+/// Issues: #150 (soak), dual-write thrash 2026-08-05.
 @Suite(.serialized)
 struct ScribeShapedAuthenticatedIdleMemorySoakTests {
   /// High-frequency events that dual-write hosts must not re-ingest at info+.
@@ -31,42 +37,80 @@ struct ScribeShapedAuthenticatedIdleMemorySoakTests {
   @Test("guest-auth Scribe-shaped idle stays under absolute footprint budget")
   func guestAuthScribeShapedIdleUnderAbsoluteBudget() async throws {
     let profile = LinkedInfiniteScribeShapedSoakProfile.publishGateAbsoluteIdle
-    let cacheURL = try temporaryScribeAuthIdleCacheURL()
-    defer { try? FileManager.default.removeItem(at: cacheURL.deletingLastPathComponent()) }
+    let cacheURL = try temporaryScribeAuthIdleCacheURL(prefix: "main")
+    let debugLogsCacheURL = try temporaryScribeAuthIdleCacheURL(prefix: "debugLogs")
+    defer {
+      try? FileManager.default.removeItem(at: cacheURL.deletingLastPathComponent())
+      try? FileManager.default.removeItem(at: debugLogsCacheURL.deletingLastPathComponent())
+    }
 
     let runtime = try await InstantRuntime.bootstrap(
       configuration: InstantRuntimeConfiguration(
-        appID: "scribe-auth-idle-soak",
+        appID: "scribe-auth-idle-soak-main",
         persistenceURL: cacheURL,
-        initialAttributes: LinkedInfiniteExample.attributes,
+        initialAttributes: ScribeProductionShapedSchema.attributes,
         makeID: { UUID().uuidString.lowercased() },
         guestAuthenticator: .local
       )
     )
+    // Second Instant store — the Scribe Instant debugLogs dual-write client.
+    let debugLogsRuntime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "scribe-auth-idle-soak-debugLogs",
+        persistenceURL: debugLogsCacheURL,
+        initialAttributes: ScribeProductionShapedSchema.debugLogsAttributes,
+        makeID: { UUID().uuidString.lowercased() },
+        guestAuthenticator: .local
+      )
+    )
+    _ = try await debugLogsRuntime.signInAsGuest()
 
     let session = try await runtime.signInAsGuest()
     #expect(session.userID.isEmpty == false, "Guest auth must produce a user id")
     #expect(session.isGuest == true, "Local guest path must report isGuest")
 
     let dualWriteInfoFires = DualWriteCounter()
-    let thrashDriverOps = DualWriteCounter()
+    let dualWriteBatches = DualWriteCounter()
+    // Demoted path: only dual-write when info+ high-frequency events leak.
+    // With correct demotion this should never enqueue into debugLogsRuntime.
     let token = InstantDiagnostics.shared.addHandler { entry in
-      // Scribe InstantDBLogger bridge uses minimumLevel `.info`.
       guard entry.level.priorityValue >= InstantDiagnosticLevel.info.priorityValue else { return }
-      if Self.dualWriteSensitiveEvents.contains(entry.event) {
-        dualWriteInfoFires.increment()
+      guard Self.dualWriteSensitiveEvents.contains(entry.event) else { return }
+      dualWriteInfoFires.increment()
+      // If demotion regressed, actually write multi-attr debugLogs batches into
+      // the second Instant store — the field thrash driver, not a counter toy.
+      Task {
+        dualWriteBatches.increment()
+        let batch = dualWriteBatches.value
+        let now = InstantTimestamp(milliseconds: 1_700_300_000_000 + Int64(batch))
+        var operations: [InstantTripleOperation] = []
+        for entity in 0..<8 {
+          let id = "leak-debug-log-\(batch)-\(entity)"
+          operations.append(
+            contentsOf: ScribeProductionShapedSchema.createDebugLogOperations(
+              id: id,
+              batchIndex: batch,
+              entityIndex: entity,
+              updatedAt: now,
+              transactionID: "debug-log-batch-leak-\(batch)"
+            )
+          )
+        }
+        try? await debugLogsRuntime.transact(
+          InstantStoreTransaction(
+            id: "debug-log-batch-leak-\(batch)",
+            operations: operations
+          ),
+          createdAt: now
+        )
       }
-      // Simulate dual-write cost only if demotion regressed: each info fire would
-      // enqueue a multi-attr batch. Count ops instead of writing to keep CI fast;
-      // absolute footprint still gates unbounded store growth from real work.
-      thrashDriverOps.add(22 * 8)
     }
     defer { InstantDiagnostics.shared.removeHandler(token) }
 
     let afterAuth = InstantProcessMemory.sample()
-    try await seedScribeShapedGraph(runtime: runtime, profile: profile)
+    try await seedProductionScribeShapedGraph(runtime: runtime, profile: profile)
 
-    let plan = LinkedInfiniteExample.scribeShapedListQuery(pageSize: profile.listPageSize)
+    let plan = ScribeProductionShapedSchema.scribeShapedListQuery(pageSize: profile.listPageSize)
     let subscription = await runtime.subscribeInfiniteQuery(plan)
     defer { subscription.unsubscribe() }
     var iterator = subscription.snapshots.makeAsyncIterator()
@@ -74,12 +118,11 @@ struct ScribeShapedAuthenticatedIdleMemorySoakTests {
     #expect(latest.error == nil)
     #expect(latest.values.isEmpty == false)
 
-    // Local query-once volume (was a dual-write thrash amplifier at info).
     for index in 0..<12 {
       _ = try await runtime.queryOnce(
         InstantQueryPlan(
           id: "auth-idle.query-once.\(index)",
-          namespace: LinkedInfiniteExample.recordingNamespace,
+          namespace: ScribeProductionShapedSchema.recordingNamespace,
           limit: 5
         )
       )
@@ -87,25 +130,27 @@ struct ScribeShapedAuthenticatedIdleMemorySoakTests {
 
     let afterWork = InstantProcessMemory.sample()
 
-    // Idle settle: no user actions; dual-write must not climb multi‑GB.
     try await Task.sleep(for: .milliseconds(200))
     for _ in 0..<6 {
       _ = try await runtime.query(
         InstantQueryPlan(
           id: "idle.recordings.\(UUID().uuidString.prefix(8))",
-          namespace: LinkedInfiniteExample.recordingNamespace,
+          namespace: ScribeProductionShapedSchema.recordingNamespace,
           limit: 10
         )
       )
       try await Task.sleep(for: .milliseconds(50))
     }
+    // Allow any leak Tasks to land before sampling.
+    try await Task.sleep(for: .milliseconds(100))
     let afterIdle = InstantProcessMemory.sample()
 
     #expect(
       dualWriteInfoFires.value == 0,
       """
       Dual-write thrash driver saw \(dualWriteInfoFires.value) info+ high-frequency \
-      events. Demotion/regate failed — field multi‑GB idle returns.
+      events and wrote \(dualWriteBatches.value) real debugLogs batches into the \
+      second Instant store. Demotion/regate failed — field multi‑GB idle returns.
       """
     )
 
@@ -123,7 +168,8 @@ struct ScribeShapedAuthenticatedIdleMemorySoakTests {
         afterWork=\(afterWork.physicalFootprintBytes) \
         afterIdle=\(afterIdle.physicalFootprintBytes) \
         virtual=\(afterIdle.virtualBytes) (not RAM). \
-        guestUser=\(String(describing: session.userID)) words=\(profile.estimatedWordEntities)
+        guestUser=\(String(describing: session.userID)) words=\(profile.estimatedWordEntities) \
+        namespaces=recordings/transcriptions/transcriptionWords/transcriptionSegments/recordingAttachments+debugLogs
         """
       )
       #expect(
@@ -135,7 +181,6 @@ struct ScribeShapedAuthenticatedIdleMemorySoakTests {
         afterIdle=\(afterIdle.physicalFootprintBytes)
         """
       )
-      // Multi‑GB hard fail regardless of profile ceiling typos.
       let multiGB: UInt64 = 1_500 * 1_024 * 1_024
       #expect(
         afterIdle.physicalFootprintBytes < multiGB,
@@ -151,10 +196,15 @@ struct ScribeShapedAuthenticatedIdleMemorySoakTests {
     let appID = ProcessInfo.processInfo.environment["SCRIBE_MAIN_INSTANT_APP_ID"]
       ?? ProcessInfo.processInfo.environment["INSTANT_APP_ID"]
     let useLive = ProcessInfo.processInfo.environment["INSTANT_SWIFT_DATA_LIVE_AUTH_SOAK"] == "1"
-    guard useLive, let appID, appID.isEmpty == false else {
-      // Auth path is still proven by guestAuthScribeShapedIdleUnderAbsoluteBudget
-      // with InstantGuestAuthenticator.local. Live path is optional when CI has
-      // network + app id; fail loud when explicitly requested but misconfigured.
+      || ProcessInfo.processInfo.environment["INSTANT_SWIFT_DATA_LIVE_AUTH_SOAK"] == "auto"
+    let credentialsPresent = appID.map { !$0.isEmpty } ?? false
+    // When credentials are present and soak is not explicitly disabled, require live.
+    let requireLive =
+      useLive
+      || (credentialsPresent
+        && ProcessInfo.processInfo.environment["INSTANT_SWIFT_DATA_LIVE_AUTH_SOAK"] != "0")
+
+    guard requireLive, let appID, appID.isEmpty == false else {
       if useLive {
         Issue.record(
           """
@@ -167,14 +217,14 @@ struct ScribeShapedAuthenticatedIdleMemorySoakTests {
     }
 
     let profile = LinkedInfiniteScribeShapedSoakProfile.publishGateAbsoluteIdle
-    let cacheURL = try temporaryScribeAuthIdleCacheURL()
+    let cacheURL = try temporaryScribeAuthIdleCacheURL(prefix: "live-main")
     defer { try? FileManager.default.removeItem(at: cacheURL.deletingLastPathComponent()) }
 
     let runtime = try await InstantRuntime.bootstrap(
       configuration: InstantRuntimeConfiguration(
         appID: appID,
         persistenceURL: cacheURL,
-        initialAttributes: LinkedInfiniteExample.attributes,
+        initialAttributes: ScribeProductionShapedSchema.attributes,
         makeID: { UUID().uuidString.lowercased() },
         guestAuthenticator: .live
       )
@@ -195,84 +245,110 @@ struct ScribeShapedAuthenticatedIdleMemorySoakTests {
     #expect(session.userID.isEmpty == false)
     #expect((session.refreshToken?.isEmpty == false) || session.isGuest)
 
-    try await seedScribeShapedGraph(runtime: runtime, profile: profile)
-    let afterSeed = InstantProcessMemory.sample()
-    try await Task.sleep(for: .milliseconds(300))
+    // Live path: do not seed production-scale into the real app — prove guest
+    // auth works and absolute idle ceiling holds. First live connect/hydrate
+    // can cost ~100 MiB structurally (attrs + websocket); that is not thrash.
+    // Baseline *after* a short settle, then assert idle growth stays flat.
+    try await Task.sleep(for: .milliseconds(250))
+    let afterConnectSettle = InstantProcessMemory.sample()
+    try await Task.sleep(for: .milliseconds(250))
     let afterIdle = InstantProcessMemory.sample()
-    if let afterSeed, let afterIdle {
+    if let afterConnectSettle, let afterIdle {
       let growth =
-        afterIdle.physicalFootprintBytes > afterSeed.physicalFootprintBytes
-        ? afterIdle.physicalFootprintBytes - afterSeed.physicalFootprintBytes
+        afterIdle.physicalFootprintBytes > afterConnectSettle.physicalFootprintBytes
+        ? afterIdle.physicalFootprintBytes - afterConnectSettle.physicalFootprintBytes
         : 0
-      #expect(afterIdle.physicalFootprintBytes <= profile.idleSettleAbsoluteCeilingBytes)
-      #expect(growth <= profile.idleSettleGrowthBudgetBytes)
+      #expect(
+        afterIdle.physicalFootprintBytes <= profile.idleSettleAbsoluteCeilingBytes,
+        """
+        Live guest idle footprint \(afterIdle.physicalFootprintBytes) exceeded \
+        absolute ceiling \(profile.idleSettleAbsoluteCeilingBytes). \
+        afterConnectSettle=\(afterConnectSettle.physicalFootprintBytes)
+        """
+      )
+      #expect(
+        growth <= profile.idleSettleGrowthBudgetBytes,
+        """
+        Live guest idle grew \(growth) after connect settle (budget \
+        \(profile.idleSettleGrowthBudgetBytes)). Climbing after hydrate is thrash. \
+        afterConnectSettle=\(afterConnectSettle.physicalFootprintBytes) \
+        afterIdle=\(afterIdle.physicalFootprintBytes)
+        """
+      )
+      let multiGB: UInt64 = 1_500 * 1_024 * 1_024
+      #expect(afterIdle.physicalFootprintBytes < multiGB)
     }
   }
 
-  @Test("forced info dual-write of oversized debug-log batches is finite and budgeted")
-  func forcedInfoDualWriteBatchesStayFiniteAndBudgeted() async throws {
-    // Reproduces the thrash *driver* (oversized debug-log-style mutations) without
-    // requiring the infinite feedback loop. A regression that re-enables infinite
-    // feedback is caught by dualWriteSensitiveEvents demotion + absolute ceilings.
-    let cacheURL = try temporaryScribeAuthIdleCacheURL()
-    defer { try? FileManager.default.removeItem(at: cacheURL.deletingLastPathComponent()) }
+  @Test("forced dual Instant debugLogs thrash stays finite and budgeted")
+  func forcedDualInstantDebugLogsThrashStaysFiniteAndBudgeted() async throws {
+    // Reproduces the thrash *driver*: second Instant store + multi-attr
+    // debugLogs batches (InstantDBLogger batch size 8 × ~22 attrs). Without
+    // demotion this was unbounded feedback; with demotion a finite forced
+    // series must stay under multi‑GB and a hard growth budget.
+    let mainCache = try temporaryScribeAuthIdleCacheURL(prefix: "forced-main")
+    let debugCache = try temporaryScribeAuthIdleCacheURL(prefix: "forced-debug")
+    defer {
+      try? FileManager.default.removeItem(at: mainCache.deletingLastPathComponent())
+      try? FileManager.default.removeItem(at: debugCache.deletingLastPathComponent())
+    }
 
-    let runtime = try await InstantRuntime.bootstrap(
+    let mainRuntime = try await InstantRuntime.bootstrap(
       configuration: InstantRuntimeConfiguration(
-        appID: "scribe-forced-dual-write-batch",
-        persistenceURL: cacheURL,
-        initialAttributes: LinkedInfiniteExample.attributes,
+        appID: "scribe-forced-dual-write-main",
+        persistenceURL: mainCache,
+        initialAttributes: ScribeProductionShapedSchema.attributes,
         makeID: { UUID().uuidString.lowercased() },
         guestAuthenticator: .local
       )
     )
-    _ = try await runtime.signInAsGuest()
+    let debugRuntime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "scribe-forced-dual-write-debugLogs",
+        persistenceURL: debugCache,
+        initialAttributes: ScribeProductionShapedSchema.debugLogsAttributes,
+        makeID: { UUID().uuidString.lowercased() },
+        guestAuthenticator: .local
+      )
+    )
+    _ = try await mainRuntime.signInAsGuest()
+    _ = try await debugRuntime.signInAsGuest()
+
+    // Seed a small production-shaped main graph so dual residency is real.
+    try await seedProductionScribeShapedGraph(
+      runtime: mainRuntime,
+      profile: LinkedInfiniteScribeShapedSoakProfile(
+        recordingCount: 8,
+        wordsPerRecording: 12,
+        transcriptTextCharacters: 256,
+        listPageSize: 50,
+        footprintGrowthBudgetBytes: 256 * 1_024 * 1_024,
+        footprintCeilingBytes: 400 * 1_024 * 1_024,
+        idleSettleGrowthBudgetBytes: 64 * 1_024 * 1_024,
+        idleSettleAbsoluteCeilingBytes: 400 * 1_024 * 1_024
+      )
+    )
 
     let baseline = InstantProcessMemory.sample()
-    // 12 batches × 8 word-like entities ≈ finite cost; multi‑GB feedback was
-    // hundreds of unbounded batches. Gate absolute growth hard.
-    for batch in 0..<12 {
-      let transactionID = "forced-debug-log-batch-\(batch)"
+    // 16 batches × 8 multi-attr debugLogs entities ≈ field thrash unit.
+    // Multi‑GB feedback was hundreds of unbounded batches.
+    for batch in 0..<16 {
+      let transactionID = "debug-log-batch-\(batch)"
       let now = InstantTimestamp(milliseconds: 1_700_200_000_000 + Int64(batch))
       var operations: [InstantTripleOperation] = []
-      let recordingID = try await runtime.localID(named: "forced.recording.\(batch)")
-      let transcriptionID = try await runtime.localID(named: "forced.transcription.\(batch)")
-      operations.append(
-        contentsOf: LinkedInfiniteExample.createRecordingOperations(
-          id: recordingID,
-          title: "forced \(batch)",
-          updatedAt: now,
-          transactionID: transactionID
-        )
-      )
-      operations.append(
-        contentsOf: LinkedInfiniteExample.createTranscriptionOperations(
-          id: transcriptionID,
-          recordingID: recordingID,
-          wordCount: 8,
-          updatedAt: now,
-          transactionID: transactionID,
-          transcriptText: String(repeating: "w", count: 64),
-          segmentCount: 1
-        )
-      )
       for entity in 0..<8 {
-        let wordID = try await runtime.localID(named: "forced.word.\(batch).\(entity)")
+        let id = try await debugRuntime.localID(named: "forced.debugLog.\(batch).\(entity)")
         operations.append(
-          contentsOf: LinkedInfiniteExample.createWordOperations(
-            id: wordID,
-            recordingID: recordingID,
-            transcriptionID: transcriptionID,
-            text: "w\(entity)",
-            wordIndex: entity,
-            startTimeSeconds: Double(entity) * 0.1,
-            endTimeSeconds: Double(entity) * 0.1 + 0.05,
+          contentsOf: ScribeProductionShapedSchema.createDebugLogOperations(
+            id: id,
+            batchIndex: batch,
+            entityIndex: entity,
             updatedAt: now,
             transactionID: transactionID
           )
         )
       }
-      try await runtime.transact(
+      try await debugRuntime.transact(
         InstantStoreTransaction(id: transactionID, operations: operations),
         createdAt: now
       )
@@ -286,11 +362,20 @@ struct ScribeShapedAuthenticatedIdleMemorySoakTests {
       let multiGB: UInt64 = 1_500 * 1_024 * 1_024
       #expect(
         after.physicalFootprintBytes < multiGB,
-        "Forced dual-write batches reached multi‑GB \(after.physicalFootprintBytes)"
+        "Forced dual Instant debugLogs thrash reached multi‑GB \(after.physicalFootprintBytes)"
       )
       #expect(
         growth < 768 * 1_024 * 1_024,
-        "Forced dual-write batch growth \(growth) too large for finite 12×8 batches"
+        "Forced dual Instant debugLogs growth \(growth) too large for finite 16×8 batches"
+      )
+      #expect(
+        after.physicalFootprintBytes <= 400 * 1_024 * 1_024
+          || growth < 256 * 1_024 * 1_024,
+        """
+        Finite dual-store thrash still too heavy for product budget: \
+        footprint=\(after.physicalFootprintBytes) growth=\(growth). \
+        Production fail is absolute idle >400 MiB.
+        """
       )
     }
   }
@@ -332,52 +417,67 @@ extension InstantDiagnosticLevel {
   }
 }
 
-private func temporaryScribeAuthIdleCacheURL() throws -> URL {
+private func temporaryScribeAuthIdleCacheURL(prefix: String) throws -> URL {
   let directory = FileManager.default.temporaryDirectory
-    .appendingPathComponent("ScribeAuthIdleSoak-\(UUID().uuidString)")
+    .appendingPathComponent("ScribeAuthIdleSoak-\(prefix)-\(UUID().uuidString)")
   try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
   return directory.appendingPathComponent("state.sqlite")
 }
 
-private func seedScribeShapedGraph(
+private func seedProductionScribeShapedGraph(
   runtime: InstantRuntime,
   profile: LinkedInfiniteScribeShapedSoakProfile
 ) async throws {
   var recordingIDs: [String] = []
   var transcriptionIDs: [String] = []
   var wordIDsByRecording: [[String]] = []
+  var segmentIDsByRecording: [[String]] = []
+  var attachmentIDsByRecording: [[String]] = []
+  // Segments/attachments at production-order density relative to recordings:
+  // ~1 segment per recording + a few words-group segments; ~1 attachment / 4 recordings.
+  let segmentsPerRecording = max(1, profile.wordsPerRecording / 12)
+  let attachmentsPerRecording = 1
   for index in 0..<profile.recordingCount {
     recordingIDs.append(
-      try await runtime.localID(named: LinkedInfiniteExample.seedLocalIDName(index: index))
+      try await runtime.localID(named: "scribe.prod.recording.\(index)")
     )
     transcriptionIDs.append(
-      try await runtime.localID(
-        named: LinkedInfiniteExample.transcriptionLocalIDName(index: index)
-      )
+      try await runtime.localID(named: "scribe.prod.transcription.\(index)")
     )
     var wordIDs: [String] = []
     for wordIndex in 0..<profile.wordsPerRecording {
       wordIDs.append(
-        try await runtime.localID(
-          named: LinkedInfiniteExample.wordLocalIDName(
-            recordingIndex: index,
-            wordIndex: wordIndex
-          )
-        )
+        try await runtime.localID(named: "scribe.prod.word.\(index).\(wordIndex)")
       )
     }
     wordIDsByRecording.append(wordIDs)
+    var segmentIDs: [String] = []
+    for segmentIndex in 0..<segmentsPerRecording {
+      segmentIDs.append(
+        try await runtime.localID(named: "scribe.prod.segment.\(index).\(segmentIndex)")
+      )
+    }
+    segmentIDsByRecording.append(segmentIDs)
+    var attachmentIDs: [String] = []
+    for attachmentIndex in 0..<attachmentsPerRecording {
+      attachmentIDs.append(
+        try await runtime.localID(named: "scribe.prod.attachment.\(index).\(attachmentIndex)")
+      )
+    }
+    attachmentIDsByRecording.append(attachmentIDs)
   }
   let transactionID = runtime.configuration.makeID()
   let now = InstantTimestamp(milliseconds: 1_700_100_500_000)
   try await runtime.transact(
     InstantStoreTransaction(
       id: transactionID,
-      operations: LinkedInfiniteExample.scribeShapedSoakOperations(
+      operations: ScribeProductionShapedSchema.soakOperations(
         profile: profile,
         recordingIDs: recordingIDs,
         transcriptionIDs: transcriptionIDs,
         wordIDsByRecording: wordIDsByRecording,
+        segmentIDsByRecording: segmentIDsByRecording,
+        attachmentIDsByRecording: attachmentIDsByRecording,
         baseTime: now,
         transactionID: transactionID
       )
