@@ -35,7 +35,10 @@ public struct AuthPublicCounter: Hashable, Codable, InstantEntityModel {
     self.updatedAt = updatedAt
   }
 
-  public static let publicEntityID = InstantID<AuthPublicCounter>(rawValue: "public-counter")
+  /// Instant requires entity IDs to be UUIDs. Stable UUID so every client shares one row.
+  public static let publicEntityID = InstantID<AuthPublicCounter>(
+    rawValue: "fdd4f350-833f-5355-bbb9-8bbea92df0ae"
+  )
 }
 
 /// Account counter — one row per signed-in user id; owner field gates after perms push.

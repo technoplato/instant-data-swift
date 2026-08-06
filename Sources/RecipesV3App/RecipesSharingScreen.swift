@@ -41,10 +41,12 @@ public struct RecipePrivateNote: Hashable, Codable, InstantEntityModel {
     self.updatedAt = updatedAt
   }
 
+  /// Instant requires entity IDs to be UUIDs.
   public static let otherUserSecretID = InstantID<RecipePrivateNote>(
-    rawValue: "other-user-secret-note"
+    rawValue: "f1df43b8-b4a1-58ae-bcc1-6091e7411b79"
   )
-  public static let otherUserID = "demo-other-user-not-you"
+  /// Not a real auth user — only used as ownerUserID string for the deny probe.
+  public static let otherUserID = "00000000-0000-4000-8000-00000000dead"
 }
 
 public enum RecipesSharingAttributes {
