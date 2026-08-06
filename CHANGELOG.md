@@ -4,6 +4,22 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## August 6th, 2026 at 2:58:53 p.m. EDT — `0620f5ba132a` Fix live Instant client poisoning and wire Recipes .env
+
+- **Implementation commit:** `0620f5ba132ae2d91c5af50aebf9ac33b85ffb82`
+- **Change:** Fix live Instant client poisoning; Recipes .env as live source of truth
+- **Details:**
+  - Debug panel no longer touches defaultInstantSwiftData before bootstrap. .env → sync-env.sh → Info.plist InstantAppID + bundled RecipesV3.env.
+- **Files:**
+  - `Sources/RecipesV3App/RecipesDebugPanel.swift` — Pass bootstrapped client; never early @Dependency
+  - `Sources/RecipesV3App/RecipesV3App.swift` — Mount debug panel only after client ready; re-inject on destinations
+  - `Sources/RecipesV3Executable/main.swift` — Load bundled RecipesV3.env (APP_ID only)
+  - `Examples/RecipesV3/sync-env.sh` — .env → xcconfig + bundle env
+  - `Examples/RecipesV3/project.yml` — Pre-build sync + RecipesV3.env resource
+- **User context (verbatim):**
+  > Can we please cut out this bullshit and just have the credentials in a.emv file, please?
+- **SpecStory:** unavailable — Grok Build session; no SpecStory URI authorized
+
 ## August 6th, 2026 at 1:59:36 p.m. EDT — `a3cd39e6f193` Share one Instant client across all recipes screens
 
 - **Implementation commit:** `a3cd39e6f1931dda724a39e378a6713b1cd54b9d`
