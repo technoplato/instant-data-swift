@@ -185,7 +185,7 @@ let package = Package(
         "PresenceRecipesV3App",
         "TodosV3App",
         .product(name: "Dependencies", package: "swift-dependencies"),
-        .product(name: "InstantDBLogger", package: "TailnetDiagnostics"),
+        .product(name: "TailnetInstantDBLogger", package: "TailnetDiagnostics"),
       ],
       swiftSettings: strictConcurrencySettings
     ),

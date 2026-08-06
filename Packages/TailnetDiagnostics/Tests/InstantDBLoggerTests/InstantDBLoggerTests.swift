@@ -1,5 +1,5 @@
 import Testing
-@testable import InstantDBLogger
+@testable import TailnetInstantDBLogger
 
 @Test func packageLoads() {
   #expect(true)

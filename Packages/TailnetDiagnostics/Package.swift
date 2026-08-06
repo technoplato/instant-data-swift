@@ -2,6 +2,10 @@
 
 import PackageDescription
 
+/// Extracted from Scribe for Instant recipe apps. Target names stay **unique**
+/// across the dual-dev graph with Scribe (which also owns InstantDBLogger /
+/// InstantToolsLogging targets). Product names match the historical Scribe
+/// module names where practical for Recipes imports after rename.
 let package = Package(
   name: "TailnetDiagnostics",
   platforms: [
@@ -11,8 +15,8 @@ let package = Package(
     .watchOS(.v9),
   ],
   products: [
-    .library(name: "InstantDBLogger", targets: ["InstantDBLogger"]),
-    .library(name: "InstantToolsLogging", targets: ["InstantToolsLogging"]),
+    .library(name: "TailnetInstantDBLogger", targets: ["TailnetInstantDBLogger"]),
+    .library(name: "TailnetInstantToolsLogging", targets: ["TailnetInstantToolsLogging"]),
   ],
   dependencies: [
     .package(name: "instant-data-swift", path: "../.."),
@@ -20,24 +24,27 @@ let package = Package(
   ],
   targets: [
     .target(
-      name: "InstantToolsLogging",
+      name: "TailnetInstantToolsLogging",
       dependencies: [
         .product(name: "Dependencies", package: "swift-dependencies"),
         .product(name: "DependenciesMacros", package: "swift-dependencies"),
-      ]
+      ],
+      path: "Sources/InstantToolsLogging"
     ),
     .target(
-      name: "InstantDBLogger",
+      name: "TailnetInstantDBLogger",
       dependencies: [
-        "InstantToolsLogging",
+        "TailnetInstantToolsLogging",
         .product(name: "InstantSwiftData", package: "instant-data-swift"),
         .product(name: "Dependencies", package: "swift-dependencies"),
         .product(name: "DependenciesMacros", package: "swift-dependencies"),
-      ]
+      ],
+      path: "Sources/InstantDBLogger"
     ),
     .testTarget(
-      name: "InstantDBLoggerTests",
-      dependencies: ["InstantDBLogger"]
+      name: "TailnetInstantDBLoggerTests",
+      dependencies: ["TailnetInstantDBLogger"],
+      path: "Tests/InstantDBLoggerTests"
     ),
   ]
 )

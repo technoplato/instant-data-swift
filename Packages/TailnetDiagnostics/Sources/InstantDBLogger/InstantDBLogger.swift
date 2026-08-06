@@ -3,7 +3,7 @@ import Dependencies
 import DependenciesMacros
 import Foundation
 import InstantSwiftData
-import InstantToolsLogging
+import TailnetInstantToolsLogging
 import os
 
 public typealias IssueLogReference = InstantToolsLogging.IssueLogReference

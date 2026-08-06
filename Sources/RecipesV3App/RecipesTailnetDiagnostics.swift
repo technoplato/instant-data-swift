@@ -1,5 +1,5 @@
 import Foundation
-import InstantDBLogger
+import TailnetInstantDBLogger
 import InstantSwiftData
 
 /// Host wiring for the extracted Tailnet WebSocket diagnostics package.
