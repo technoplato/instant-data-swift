@@ -1,3 +1,10 @@
+# Commit changelog
+
+## 2026-08-05 20:03:36 EDT
+
+- **instant-data-swift** `60df101efae42243b139eb4d5b2260934e1b1a99` — Production Scribe namespaces + dual Instant debugLogs thrash soak (#150).
+- **realtime-voice-sqlite-instant** `204e6582af9efb66410c6e39703de6b25c37e5f2` — Instant-lane filter for library chatter re-entering debugLogs thrash (#150).
+
 ## 2026-08-05 13:12:29 EDT
 
 ## 2026-08-05 17:37:25 EDT — realtime-voice-sqlite-instant dual-write feedback fix

@@ -4,6 +4,24 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## August 5th, 2026 at 8:03:48 p.m. EDT — `60df101efae4` Use production Scribe namespaces and dual Instant thrash in soak gates
+
+- **Implementation commit:** `60df101efae42243b139eb4d5b2260934e1b1a99`
+- **Change:** Production Scribe namespaces + real dual Instant debugLogs thrash soak (#150)
+- **Details:**
+  - ScribeProductionShapedSchema mirrors production entity names; soak boots second Instant debugLogs runtime and forces multi-attr batches; live guest auto-enables with credentials; suites run sequentially for clean footprint samples. https://issues.knophy.com/issues/150
+  - verify-scribe-shaped-memory-soak passed with live auth; iPad last3 phys ~41MB (Instant lane off).
+- **Files:**
+  - `Sources/InstantSwiftDataCore/ScribeProductionShapedSchema.swift` — Production namespace + debugLogs thrash fixture
+  - `Tests/InstantSwiftDataCoreTests/ScribeShapedAuthenticatedIdleMemorySoakTests.swift` — Guest auth + dual Instant thrash gates
+  - `Tests/InstantSwiftDataCoreTests/LinkedInfiniteScribeShapedMemorySoakTests.swift` — Publish gate on production namespaces
+  - `validation/verify-scribe-shaped-memory-soak.sh` — Sequential suites + live auth auto
+  - `docs/scribe-shaped-memory-soak.md` — Document production namespaces and thrash driver
+- **User context (verbatim):**
+  > just sitting here on the home screen, now it's two gigabytes of memory
+  > Iterate on the library, bring the problematic code paths into the library recipes, exercise the recipes, and reproduce in the recipes, and then resolve there
+- **SpecStory:** unavailable — Grok Build TUI session; no SpecStory cloud URI for this host
+
 ## August 5th, 2026 at 7:00:21 p.m. EDT — `129ce6270a6b` Gate Scribe-shaped idle memory with guest auth and absolute ceilings
 
 - **Implementation commit:** `129ce6270a6bcc4723d1141962a8cfbb17681744`
