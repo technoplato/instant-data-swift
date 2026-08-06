@@ -4,6 +4,18 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## August 6th, 2026 at 4:12:59 p.m. EDT — `b97ad44752e3` Allow swipe-down keyboard dismiss on todos composer
+
+- **Implementation commit:** `b97ad44752e37615c5d1b8efdc71626fe06523ee`
+- **Change:** Todos keyboard: swipe-down dismiss without fighting post-send focus
+- **Details:**
+  - List uses scrollDismissesKeyboard(.interactively). Re-focus only on appear and once after optimistic send clear; removed deferred Task and server-accept/failure re-focus that stole focus back after swipe-down dismiss.
+- **Files:**
+  - `Sources/TodosV3App/TodosApp.swift` — Interactive keyboard dismiss + softer composer focus retention
+- **User context (verbatim):**
+  > let me swipe down to dismiss keyboard though
+- **SpecStory:** unavailable — Grok Build session; no SpecStory public share URI for this agent host
+
 ## August 6th, 2026 at 4:02:27 p.m. EDT — `b4e018e03f9b` Keep todos composer keyboard focused after send
 
 - **Implementation commit:** `b4e018e03f9b614c0204470206f3f641a6f81d33`
