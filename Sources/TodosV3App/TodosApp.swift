@@ -168,6 +168,9 @@ public struct TodosAppConfiguration: Hashable, Sendable {
           Text(message)
         }
       }
+      // Swipe/scroll down dismisses the keyboard; do not fight that with
+      // async re-focus after server callbacks (only re-focus after send).
+      .scrollDismissesKeyboard(.interactively)
       .navigationTitle("Todos")
     }
 
@@ -178,7 +181,11 @@ public struct TodosAppConfiguration: Hashable, Sendable {
     private func addTodoButtonTapped() {
       let value = text.trimmingCharacters(in: .whitespacesAndNewlines)
       guard !value.isEmpty else {
-        keepComposerFocused()
+        // Empty enter-to-send: stay ready to type if already focused.
+        // Do not re-steal focus if the user dismissed the keyboard.
+        if isComposerFocused {
+          keepComposerFocused()
+        }
         return
       }
       db.send(
@@ -189,22 +196,17 @@ public struct TodosAppConfiguration: Hashable, Sendable {
         ),
         onOptimisticCommit: { _ in
           text = ""
-          // onSubmit can resign first responder; reclaim focus for the next line.
+          // onSubmit can resign first responder; reclaim once for the next line.
+          // No deferred Task / server-callback re-focus — those fight swipe-down dismiss.
           keepComposerFocused()
-          Task { @MainActor in
-            keepComposerFocused()
-          }
         },
         onServerAccepted: { _ in
           message = "Todo synced"
-          keepComposerFocused()
         },
         onFailure: { error in
           message = error.recoveryMessage
-          keepComposerFocused()
         }
       )
-      keepComposerFocused()
     }
 
     private func todoButtonTapped(_ todo: Todo) {
