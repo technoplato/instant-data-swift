@@ -1,3 +1,9 @@
+## 2026-08-06 19:39:03 EDT
+
+- **repo:** instant-data-swift
+- **commit:** 549f740c9a8001ff1ccfd0e9ee15a9a850f304db
+- **reason:** Expose Instant clientID() for activity ADT this vs other device (ADR 0015 Q23 / #155 P1)
+
 ## 2026-08-06 18:14:49 EDT
 
 - **repo:** instant-data-swift

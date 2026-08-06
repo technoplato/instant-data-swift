@@ -4,6 +4,23 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## August 6th, 2026 at 7:39:03 p.m. EDT — `549f740c9a80` Expose Instant clientID() for activity ADT this vs other device
+
+- **Implementation commit:** `549f740c9a8001ff1ccfd0e9ee15a9a850f304db`
+- **Change:** Expose Instant clientID() for activity ADT this vs other device
+- **Details:**
+  - Public InstantRuntime.clientID() and InstantSwiftDataClient.clientID() resolve reserved local-id InstantClientID.name (TS getLocalId). Offline-safe. InstantClientID.isThisClient for Scribe activity comparison. Focused tests. ADR 0015 Q23 / #155 P1.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantModels.swift` — InstantClientID reserved name + isThisClient helper
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — clientID() over localID
+  - `Sources/InstantSwiftData/InstantSwiftData.swift` — InstantSwiftDataClient.clientID() public API
+  - `Tests/InstantSwiftDataCoreTests/InstantClientIDTests.swift` — Core persistence and this-vs-other comparison tests
+  - `Tests/InstantSwiftDataTests/InstantClientIDTests.swift` — Client API and activity ADT comparison tests
+  - `skills/instant-data/SKILL.md` — Document clientID for recordings list activity
+- **User context (verbatim):**
+  > expose Instant client id for Scribe activity ADT (this device vs other device)
+- **SpecStory:** unavailable — Codex/desktop agent task; no SpecStory URI for this session.
+
 ## August 6th, 2026 at 4:52:26 p.m. EDT — `421f735343f5` Return from transact after local commit, not wire send
 
 - **Implementation commit:** `421f735343f59cc9903affe38d3c3a7d2dff907c`
