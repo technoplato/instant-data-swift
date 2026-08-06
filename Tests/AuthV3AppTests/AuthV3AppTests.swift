@@ -30,6 +30,16 @@ import Testing
         ["apple", "google"]
       )
       expectNoDifference(AuthV3User.instantNamespace, "$users")
+      expectNoDifference(AuthPublicCounter.instantNamespace, "recipe_public_counters")
+      expectNoDifference(AuthAccountCounter.instantNamespace, "recipe_account_counters")
+      #expect(
+        Set(AuthV3CounterAttributes.all.map(\.namespace)).isSuperset(
+          of: ["recipe_public_counters", "recipe_account_counters"]
+        )
+      )
+      let countersCard = AuthV3CountersCard(session: nil)
+      let countersView: any View = countersCard
+      _ = countersView
 
       let user = try AuthV3User(
         snapshot: InstantEntitySnapshot(

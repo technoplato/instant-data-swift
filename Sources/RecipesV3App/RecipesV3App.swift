@@ -48,7 +48,8 @@ public enum InstantRecipeV3: String, CaseIterable, Hashable, Identifiable, Senda
     case .typingIndicator: "Publish and expire per-input typing presence"
     case .avatarStack: "Render the current online presence roster"
     case .mergeTileGame: "Merge durable board state with live player presence"
-    case .auth: "Magic code, guest, native, and browser provider flows"
+    case .auth:
+      "Magic code, guest, providers; public + per-account counters that react to login"
     }
   }
 

@@ -63,7 +63,7 @@ public typealias AuthAppConfiguration = AuthV3AppConfiguration
           try await dependencies.bootstrapInstantSwiftData(
             appID: configuration.appID,
             persistenceURL: configuration.persistenceURL,
-            initialAttributes: AuthV3User.instantAttributes
+            initialAttributes: AuthV3User.instantAttributes + AuthV3CounterAttributes.all
           )
           let client = dependencies.defaultInstantSwiftData
           prepareDependencies { $0.defaultInstantSwiftData = client }
@@ -130,6 +130,8 @@ public typealias AuthAppConfiguration = AuthV3AppConfiguration
         ScrollView {
           VStack(spacing: 20) {
             header
+            // Public counter (no perms) + mine counter that switches with login/logout.
+            AuthV3CountersCard(session: auth.session)
             if let message {
               statusCard(message)
             }
