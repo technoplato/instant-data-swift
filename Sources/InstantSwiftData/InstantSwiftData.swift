@@ -6353,6 +6353,40 @@ public struct InstantFetchRequest<Value: Sendable>: Sendable {
     )
   }
 
+  /// ADR 0015 L2 — request-time **map** of root + included reverse children.
+  ///
+  /// Loads `query` as snapshots (so include links are preserved), decodes each
+  /// root and its named included children, then builds rows. The view only sees
+  /// `[Row]` — it does not dig nested graphs.
+  ///
+  /// Prefer pairing with nested `.limit` on the include (L1):
+  ///
+  /// ```swift
+  /// InstantFetchRequest(
+  ///   Recording.query.include(Recording.segments, Segment.query.order(...).limit(2)),
+  ///   children: Recording.segments,
+  ///   map: { recording, segments in
+  ///     ListRow(id: recording.id, preview: makeTwoLines(segments.map(\.text)))
+  ///   }
+  /// )
+  /// ```
+  public init<Root: InstantEntityModel, Child: InstantEntityModel, Row: Sendable>(
+    _ query: InstantEntityQuery<Root>,
+    children relation: InstantReverseRelation<Root, Child>,
+    map: @escaping @Sendable (_ root: Root, _ children: [Child]) throws -> Row
+  ) where Value == [Row] {
+    let linkName = relation.name
+    self.init(
+      source: InstantFetchSource.entitySnapshots(query).map { snapshots in
+        try snapshots.map { snapshot in
+          let root = try Root(snapshot: snapshot)
+          let children = try snapshot.decodeIncludedChildren(linkName, as: Child.self)
+          return try map(root, children)
+        }
+      }
+    )
+  }
+
   private init(source: InstantFetchSource<Value>) {
     self.loadOperation = source.load
     self.subscribeOperation = source.subscribe
@@ -6367,6 +6401,41 @@ private struct InstantFetchSource<Value: Sendable>: Sendable {
   where Value == [Entity] {
     self.load = { try await $0.query(query) }
     self.subscribe = { await $0.subscribe(query) }
+  }
+
+  /// Snapshot stream — keeps include `links` for request-time map (ADR 0015 L2).
+  static func entitySnapshots<Entity: InstantEntityModel>(
+    _ query: InstantEntityQuery<Entity>
+  ) -> InstantFetchSource<[InstantEntitySnapshot]> where Value == [InstantEntitySnapshot] {
+    let plan = query.plan
+    return InstantFetchSource<[InstantEntitySnapshot]>(
+      load: { try await $0.query(plan) },
+      subscribe: { client in
+        let emissions = await client.observe(plan)
+        let stream = AsyncThrowingStream<[InstantEntitySnapshot], Error>.makeStream(
+          bufferingPolicy: .bufferingNewest(1)
+        )
+        let task = Task {
+          for await emission in emissions {
+            do {
+              try Task.checkCancellation()
+              stream.continuation.yield(emission.values)
+            } catch {
+              stream.continuation.finish(throwing: error)
+              return
+            }
+          }
+          stream.continuation.finish()
+        }
+        stream.continuation.onTermination = { @Sendable _ in
+          task.cancel()
+        }
+        return FetchSubscription(stream: stream.stream) {
+          task.cancel()
+          stream.continuation.finish()
+        }
+      }
+    )
   }
 
   private init(

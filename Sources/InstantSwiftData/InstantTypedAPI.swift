@@ -35,6 +35,15 @@ extension InstantEntitySnapshot {
       operation: operation
     )
   }
+
+  /// Decode typed included children for a relation name (empty if none). ADR 0015 L2.
+  public func decodeIncludedChildren<Child: InstantEntityModel>(
+    _ relationName: String,
+    as type: Child.Type = Child.self
+  ) throws -> [Child] {
+    _ = type
+    return try Child.decodeIncluded(from: self, relationName: relationName)
+  }
 }
 
 public protocol InstantValueRepresentable: Sendable {
@@ -564,6 +573,14 @@ extension InstantEntityModel {
 
   public static func decode(_ snapshots: [InstantEntitySnapshot]) throws -> [Self] {
     try snapshots.map(Self.init(snapshot:))
+  }
+
+  /// Decode included children for a reverse/forward link name (empty if missing).
+  public static func decodeIncluded(
+    from snapshot: InstantEntitySnapshot,
+    relationName: String
+  ) throws -> [Self] {
+    try snapshot.includedEntitySnapshots(named: relationName).map(Self.init(snapshot:))
   }
 
   public static func create(

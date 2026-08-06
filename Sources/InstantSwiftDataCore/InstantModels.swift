@@ -1632,6 +1632,18 @@ public struct InstantEntitySnapshot: Hashable, Codable, Sendable, Identifiable {
     self.values = values
     self.links = links
   }
+
+  /// Included children for a relation name as entity snapshots (empty if none).
+  public func includedEntitySnapshots(named relationName: String) -> [InstantEntitySnapshot] {
+    (links?[relationName] ?? []).map { linked in
+      InstantEntitySnapshot(
+        id: linked.id,
+        namespace: linked.namespace,
+        values: linked.values,
+        links: linked.links
+      )
+    }
+  }
 }
 
 public struct InstantQueryPage: Hashable, Codable, Sendable {
