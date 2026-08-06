@@ -59,6 +59,10 @@ let package = Package(
       name: "instant-swift-data-benchmarks",
       targets: ["InstantSwiftDataBenchmarks"]
     ),
+    .executable(
+      name: "scribe-shaped-20s-write-bench",
+      targets: ["ScribeShaped20sWriteBench"]
+    ),
   ],
   dependencies: [
     // Accept the CasePaths 1.x line so TCA hosts can unify on their newer compatible release.
@@ -280,6 +284,13 @@ let package = Package(
       name: "InstantSwiftDataBenchmarks",
       dependencies: [
         "InstantSwiftDataCLIParsing",
+        "InstantSwiftDataCore",
+      ],
+      swiftSettings: strictConcurrencySettings
+    ),
+    .executableTarget(
+      name: "ScribeShaped20sWriteBench",
+      dependencies: [
         "InstantSwiftDataCore",
       ],
       swiftSettings: strictConcurrencySettings

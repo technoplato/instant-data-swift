@@ -184,6 +184,23 @@ These should become separate suites after local parity is stable:
 - `outbox.reconnect-drain`
 - `sync-table.initial-load`
 
+## Scribe open-segment 20s network matrix (#156)
+
+Live **network-vs-network** write/observe baseline (not a local microbench):
+
+```sh
+validation/run-scribe-shaped-20s-write-bench.sh
+```
+
+- **Net-A:** TypeScript `@instantdb/admin` writer → Swift InstantRuntime observer  
+- **Net-B:** Swift InstantRuntime writer (server-accepted) → TypeScript admin observer  
+- Write shape: one recording, open segment always, **wordsJSON** on the segment  
+- Score: observer-visible monotonic `seq` advances in ~20s + process memory/CPU  
+- Design: `docs/benchmarks/scribe-shaped-20s-write-parity/`  
+- Issue: https://issues.knophy.com/issues/156  
+
+Never ratio these numbers against local-only Zeneca / package-benchmark rows.
+
 ## Goal Tree
 
 Final state:
