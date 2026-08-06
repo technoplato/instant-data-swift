@@ -32,10 +32,10 @@ See issue successCriteria; plan steps below map 1:1 to criteria ids to add/updat
 | L2 | Request-time **map** (+ Selection/Columns-shaped list row direction) | instant-data-swift | L1 | `issue-155-L2-map-selection` **done** | InstantFetchRequest map + InstantIncludedMapFetchTests; Columns macros later |
 | L3 | Aggregations / group / sectioned result maps | instant-data-swift | L2 | `issue-155-L3-aggregate-group` | Count-on-row or sectioned fixture like Reminders/SyncUps |
 | L4 | Entity sync status on fetch (coordinate ADR 0014) | instant-data-swift | — | `issue-155-L4-sync-status` | Status ADT on observed row in test |
-| P1 | Instant **client id** for activity ADT (parallel) | instant-data-swift + Scribe | — | `issue-155-P1-client-id` | this vs other device comparison |
+| P1 | Instant **client id** for activity ADT (parallel) | instant-data-swift + Scribe | — | `issue-155-P1-client-id` **library API done** | `clientID()` + InstantClientID; Scribe activity field wiring still product |
 | S0 | Prefer short Instant entity names (aliases → rename) | Scribe | — | `issue-155-S0-entity-names` | InstantRecording/Segment/Attachment |
 | S1 | Scribe list → new query; **delete** multi-subscribe list merge | Scribe | L1–L2 | `issue-155-S1-list-switch` **done** nested multi-bag seed+observe | List tests; no dual stream merge |
-| S2 | Write path: `recordingSegmentID` upsert only; **delete** liveChanges/diff planners | Scribe | L4 optional | `issue-155-S2-write-path` | Planner deleted or unused; segment-only writes |
+| S2 | Write path: `recordingSegmentID` upsert only; **delete** liveChanges/diff planners | Scribe | L4 optional | `issue-155-S2-write-path` **done** openSegmentUpsert | Planner deleted or unused; segment-only writes |
 | S3 | **Delete** mutation coordinator full `lastSaved` cache | Scribe | S2 | `issue-155-S3-coordinator` | No full Recording retained for Instant diff |
 | S4 | **Delete** `ScribeInstantStore`; bootstrap only at composition root | Scribe | S1–S3 | `issue-155-S4-delete-store` | No store type; features use `@Fetch*` / client |
 | S5 | Words JSON on segment; drop process-local sync tracker | Scribe | S2 | `issue-155-S5-words-json` | Schema + strict Codable; no word entity live path |
