@@ -907,6 +907,18 @@ struct TripleIndexes: Hashable, Codable, Sendable {
       Self.compare($0, $1, order: effectiveOrder) == .orderedAscending
     }
 
+    // Per-parent bounds for nested includes (and any include-scoped materialize).
+    // Match top-level page application order: first, then last, then limit.
+    if let first = query.first {
+      snapshots = Array(snapshots.prefix(first))
+    }
+    if let last = query.last {
+      snapshots = Array(snapshots.suffix(last))
+    }
+    if let limit = query.limit {
+      snapshots = Array(snapshots.prefix(limit))
+    }
+
     let linked = includeLinks(snapshots.map(\.snapshot), plan: query, attributes: attributes)
     return project(linked, selectedFields: query.selectedFields)
   }

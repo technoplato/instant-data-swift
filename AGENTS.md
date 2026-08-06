@@ -1,5 +1,60 @@
 # Repository Instructions
 
+## Fundamentals first (active program)
+
+**This library works, but memory, performance, and ergonomics are still a work
+in progress.** Prefer finishing those over new product surface area until
+ADR 0015 / issue #155 say otherwise.
+
+- Interview pack: `docs/adr/0015-sqlite-data-parity-ergonomics/`
+- Large decisions: personal skill `$adr-decision-qanda` (one question at a time,
+  ASCII, hard chat separator before the next question).
+- Dual app+library guidance: `skills/instant-data/SKILL.md` (**in active
+  iteration** with the user while Scribe co-develops Instant).
+
+### Write contract (library boundary — all apps)
+
+- **`transact` / `save` never wait for the server.** Success means local
+  materialize + durable outbox only. Offline must succeed.
+- `async` means local runtime/SQLite work finished — same idea as SQLiteData
+  `database.write` waiting on the DB queue, **not** a cloud round-trip.
+- `InstantStoreMutationResult.transactionID` is the delivery handle (already
+  returned). Document it as primary; publicize `observeTransaction(id:)` (wrap
+  existing mutation lifecycle). Entity **sync status on fetch** is the normal UI
+  path.
+- Server waits use **explicitly named** APIs only (`waitForAllPendingMutations`,
+  observe transaction). Do not overload ordinary writes so `await` sometimes
+  means network.
+- Prefer clearer docs over inventing a second transaction id type.
+
+### Point-Free quality bar
+
+Code and documentation quality must be **on par with Point-Free**. Before
+shaping public APIs or doc comments, read how the real libraries teach:
+
+- Vendored: `upstream/sqlite-data`
+- Also on machine: `/Users/laptop/Sync/tca/sqlite-data`, Point-Free trees under
+  `/Users/laptop/Sync/tca/pfw` (and related TCA / sharing checkouts)
+- Prefer short, precise API commentary that states **what success waits for**
+  (local DB vs server), with a one-line example — not vague “async write.”
+
+### Correctness over convenience
+
+Prefer the **most correct** relational / library-owned design over the easiest
+app shortcut (no denormalized full transcript previews to dodge query work).
+Example: list screens use a **bounded nested include** (e.g. two latest segments
+per recording) plus a **map/truncate** helper for UI lines — see ADR 0015
+`overviews/03-list-query-syntax-sketch.md`. Always attach explicit child limits
+on list includes; architecture-test against unbounded segment loads on lists.
+
+Also target SQLiteData-parity **aggregations, group-by counts, and sectioned
+list shapes** (not only flat arrays). Prior art: Point-Free research under
+`/Users/laptop/Sync/tca/pointfree-research` (ep328 aggregations, ep374
+sectioning) and `upstream/sqlite-data` Reminders/SyncUps group+count+@Selection.
+
+
+---
+
 - Use the Point-Free-style Instant Data (`pfw-instant-data`) guidance on every
   task in this repository.
 - Always start with the installed `pfw` skill. Then read

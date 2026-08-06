@@ -1963,14 +1963,13 @@ public struct InstantEntityQuery<Entity: InstantEntityModel>: Hashable, Sendable
     query: InstantEntityQuery<Target>
   ) -> Self {
     let includePlan = query.plan
+    // Nested limit/first/last are supported (per-parent bounds, ADR 0015 L1).
+    // Nested offset/cursors remain unsupported.
     precondition(
       includePlan.offset == nil
-        && includePlan.limit == nil
-        && includePlan.first == nil
         && includePlan.after == nil
-        && includePlan.last == nil
         && includePlan.before == nil,
-      "InstantEntityQuery.include does not support nested pagination."
+      "InstantEntityQuery.include does not support nested offset/cursor pagination."
     )
 
     var includes = (plan.includes ?? []).filter { $0.name != name }
@@ -1983,6 +1982,9 @@ public struct InstantEntityQuery<Entity: InstantEntityModel>: Hashable, Sendable
           namespace: includePlan.namespace,
           filters: includePlan.filters,
           order: includePlan.order,
+          limit: includePlan.limit,
+          first: includePlan.first,
+          last: includePlan.last,
           selectedFields: includePlan.selectedFields,
           includes: includePlan.includes ?? []
         )

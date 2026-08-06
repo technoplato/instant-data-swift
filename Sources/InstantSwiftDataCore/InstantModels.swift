@@ -1152,6 +1152,10 @@ public struct InstantQueryIncludePlan: Hashable, Codable, Sendable, Identifiable
   public var namespace: String
   public var filters: [InstantQueryFilter]
   public var order: InstantQueryOrder?
+  /// Per-parent bound for included children (ADR 0015 L1). Applied after order.
+  public var limit: Int?
+  public var first: Int?
+  public var last: Int?
   public var selectedFields: [String]?
   public var includes: [InstantQueryInclude]?
 
@@ -1167,6 +1171,9 @@ public struct InstantQueryIncludePlan: Hashable, Codable, Sendable, Identifiable
       namespace: namespace,
       filters: filters,
       order: order,
+      limit: nil,
+      first: nil,
+      last: nil,
       selectedFields: selectedFields,
       includes: []
     )
@@ -1177,18 +1184,27 @@ public struct InstantQueryIncludePlan: Hashable, Codable, Sendable, Identifiable
     namespace: String,
     filters: [InstantQueryFilter] = [],
     order: InstantQueryOrder? = nil,
+    limit: Int? = nil,
+    first: Int? = nil,
+    last: Int? = nil,
     selectedFields: [String]? = nil,
-    includes: [InstantQueryInclude]
+    includes: [InstantQueryInclude] = []
   ) {
     precondition(
       selectedFields?.allSatisfy { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
         ?? true,
       "InstantQueryIncludePlan selected fields must not be empty strings."
     )
+    precondition(limit == nil || limit! >= 0, "InstantQueryIncludePlan limit must be >= 0.")
+    precondition(first == nil || first! >= 0, "InstantQueryIncludePlan first must be >= 0.")
+    precondition(last == nil || last! >= 0, "InstantQueryIncludePlan last must be >= 0.")
     self.id = id
     self.namespace = namespace
     self.filters = filters
     self.order = order
+    self.limit = limit
+    self.first = first
+    self.last = last
     self.selectedFields = selectedFields.map { Array(Set($0)).sorted() }
     self.includes = includes.isEmpty ? nil : includes
   }
@@ -1321,6 +1337,9 @@ extension InstantQueryIncludePlan {
       namespace: plan.namespace,
       filters: plan.filters,
       order: plan.order,
+      limit: plan.limit,
+      first: plan.first,
+      last: plan.last,
       selectedFields: plan.selectedFields,
       includes: plan.includes ?? []
     )
@@ -1332,6 +1351,9 @@ extension InstantQueryIncludePlan {
       namespace: namespace,
       filters: filters,
       order: order,
+      limit: limit,
+      first: first,
+      last: last,
       selectedFields: selectedFields,
       includes: includes ?? []
     )
@@ -1339,12 +1361,11 @@ extension InstantQueryIncludePlan {
 }
 
 private extension InstantQueryPlan {
+  /// Nested includes may use limit/first/last (per-parent bounds, ADR 0015).
+  /// Cursor/offset pagination on nested includes remains unsupported.
   var isSupportedIncludeQuery: Bool {
     offset == nil
-      && limit == nil
-      && first == nil
       && after == nil
-      && last == nil
       && before == nil
   }
 }
@@ -1382,6 +1403,9 @@ private extension InstantQueryIncludePlan {
       "namespace:\(namespace.cacheKeyEncodedString)",
       "filters:[\(filters.map(\.canonicalCacheKeyPayload).joined(separator: ","))]",
       "order:\(order?.canonicalCacheKeyPayload ?? "nil")",
+      "limit:\(limit.map(String.init) ?? "nil")",
+      "first:\(first.map(String.init) ?? "nil")",
+      "last:\(last.map(String.init) ?? "nil")",
       "selectedFields:\(selectedFields.map { $0.joined(separator: ",").cacheKeyEncodedString } ?? "nil")",
     ]
     if let includes, !includes.isEmpty {

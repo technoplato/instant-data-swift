@@ -726,7 +726,7 @@ struct InstantQueryValidationParityTests {
       "pagination parameters can only be used at top-level namespaces",
       assertion: "lines 795-981 nested pagination validation",
       status:
-        "adapted: Swift allows pagination only on top-level InstantQueryPlan values; converting a paginated direct or deep plan into an include rejects it before dropping pagination fields."
+        "adapted (ADR 0015 L1): nested limit/first/last allowed on includes (per-parent bounds); nested offset/after/before still rejected. Top-level pagination unchanged."
     )
 
     let validTopLevelPagination = try await runtime.queryOnce(
@@ -807,26 +807,17 @@ struct InstantQueryValidationParityTests {
     #expect(validFilteredInclude != nil, "Expected filtered include to be supported. \(source)")
 
     let cursor = InstantQueryCursor(entityID: "post-1", sortValue: .string("cursor"))
-    let paginatedIncludePlans: [InstantQueryPlan] = [
+    // Nested offset/cursors still unsupported on includes (ADR 0015).
+    let unsupportedNestedCursorPlans: [InstantQueryPlan] = [
       InstantQueryPlan(
         id: "query-validation-parity.users.posts.offset",
         namespace: "posts",
         offset: 10
       ),
       InstantQueryPlan(
-        id: "query-validation-parity.users.posts.first",
-        namespace: "posts",
-        first: 5
-      ),
-      InstantQueryPlan(
         id: "query-validation-parity.users.posts.after",
         namespace: "posts",
         after: cursor
-      ),
-      InstantQueryPlan(
-        id: "query-validation-parity.users.posts.last",
-        namespace: "posts",
-        last: 5
       ),
       InstantQueryPlan(
         id: "query-validation-parity.users.posts.before",
@@ -835,23 +826,42 @@ struct InstantQueryValidationParityTests {
       ),
     ]
 
-    for plan in paginatedIncludePlans {
+    for plan in unsupportedNestedCursorPlans {
       #expect(
         InstantQueryInclude("posts", direction: .reverse, query: plan) == nil,
         "\(source) rejected include plan \(plan.id)"
       )
     }
 
-    let swiftOnlySource =
-      "Swift include conversion guard: InstantQueryIncludePlan omits pagination storage, so conversion rejects pagination plans before dropping fields."
+    // Nested limit/first/last are supported (per-parent bounds, ADR 0015 L1).
+    let nestedBoundSource =
+      "ADR 0015 L1: InstantQueryIncludePlan stores limit/first/last; local materialize applies them per parent."
     let limitPlan = InstantQueryPlan(
       id: "query-validation-parity.users.posts.limit",
       namespace: "posts",
       limit: 5
     )
     #expect(
-      InstantQueryInclude("posts", direction: .reverse, query: limitPlan) == nil,
-      "\(swiftOnlySource) rejected include plan \(limitPlan.id)"
+      InstantQueryInclude("posts", direction: .reverse, query: limitPlan) != nil,
+      "\(nestedBoundSource) accepted include plan \(limitPlan.id)"
+    )
+    let firstPlan = InstantQueryPlan(
+      id: "query-validation-parity.users.posts.first",
+      namespace: "posts",
+      first: 5
+    )
+    #expect(
+      InstantQueryInclude("posts", direction: .reverse, query: firstPlan) != nil,
+      "\(nestedBoundSource) accepted include plan \(firstPlan.id)"
+    )
+    let lastPlan = InstantQueryPlan(
+      id: "query-validation-parity.users.posts.last",
+      namespace: "posts",
+      last: 5
+    )
+    #expect(
+      InstantQueryInclude("posts", direction: .reverse, query: lastPlan) != nil,
+      "\(nestedBoundSource) accepted include plan \(lastPlan.id)"
     )
 
     let beforeInclusivePlan = InstantQueryPlan(
@@ -888,8 +898,8 @@ struct InstantQueryValidationParityTests {
       limit: 5
     )
     #expect(
-      InstantQueryInclude("comments", query: deepNestedPaginatedPlan) == nil,
-      "\(source) rejected deep include plan \(deepNestedPaginatedPlan.id)"
+      InstantQueryInclude("comments", query: deepNestedPaginatedPlan) != nil,
+      "\(nestedBoundSource) accepted deep include plan \(deepNestedPaginatedPlan.id)"
     )
 
     let nestedIncludePlan = InstantQueryPlan(

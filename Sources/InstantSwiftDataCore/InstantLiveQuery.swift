@@ -64,15 +64,17 @@ enum InstantLiveQueryEncoder {
         )
       }
       if let query = include.query {
+        // Nested limit/first/last go on the wire when present (InstaQL $ options).
+        // Nested offset/cursors stay omitted — not supported on includes (ADR 0015).
         value[include.name] = try namespaceValue(
           namespace: query.namespace,
           filters: query.filters,
           order: query.order,
           offset: nil,
-          limit: nil,
-          first: nil,
+          limit: query.limit,
+          first: query.first,
           after: nil,
-          last: nil,
+          last: query.last,
           before: nil,
           selectedFields: query.selectedFields,
           includes: query.includes ?? []
