@@ -28,7 +28,7 @@ See issue successCriteria; plan steps below map 1:1 to criteria ids to add/updat
 | ID | Step | Repo | Depends | Criterion id | Tests / evidence |
 | --- | --- | --- | --- | --- | --- |
 | L1 | Nested limit-per-parent on reverse `include` (e.g. 2 segments/recording) | instant-data-swift | — | `issue-155-L1-nested-limit` **done** `3948460c` | Unit: InstantNestedIncludeLimit; validation parity |
-| L2 | Request-time **map** (+ Selection/Columns-shaped list row direction) | instant-data-swift | L1 | `issue-155-L2-map-selection` | Fetch returns flat list DTO; no dig into full Segment graph in sample |
+| L2 | Request-time **map** (+ Selection/Columns-shaped list row direction) | instant-data-swift | L1 | `issue-155-L2-map-selection` **done** | InstantFetchRequest map + InstantIncludedMapFetchTests; Columns macros later |
 | L3 | Aggregations / group / sectioned result maps | instant-data-swift | L2 | `issue-155-L3-aggregate-group` | Count-on-row or sectioned fixture like Reminders/SyncUps |
 | L4 | Entity sync status on fetch (coordinate ADR 0014) | instant-data-swift | — | `issue-155-L4-sync-status` | Status ADT on observed row in test |
 | P1 | Instant **client id** for activity ADT (parallel) | instant-data-swift + Scribe | — | `issue-155-P1-client-id` | this vs other device comparison |
