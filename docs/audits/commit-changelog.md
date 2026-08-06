@@ -1,3 +1,9 @@
+## 2026-08-06 18:14:49 EDT
+
+- **repo:** instant-data-swift
+- **commit:** de1fa08e242f632dac05c4f3414698e4ba58c4e2
+- **reason:** InstantFetchRequest(snapshotsOf:) for multi-bag aggregate list values (ADR 0015 / #155)
+
 ## August 6, 2026 at 4:52:26 PM EDT — instant-data-swift `421f735343f59cc9903affe38d3c3a7d2dff907c`
 
 **Return from transact after local commit, not wire send**
