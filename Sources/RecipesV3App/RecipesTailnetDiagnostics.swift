@@ -14,9 +14,6 @@ public enum RecipesTailnetDiagnostics {
     string: "wss://laptop.tail91224c.ts.net/scribe-diagnostics"
   )!
 
-  /// Process-wide no-op until a host package reintroduces TailnetInstantDBLogger.
-  public static var isStarted: Bool = false
-
   /// Starts diagnostics when a host supplies a Tailnet logger. Default no-op.
   @discardableResult
   public static func start(
@@ -25,7 +22,6 @@ public enum RecipesTailnetDiagnostics {
     recipe: String?
   ) -> Bool {
     _ = (appID, isLive, recipe)
-    isStarted = true
     return true
   }
 
