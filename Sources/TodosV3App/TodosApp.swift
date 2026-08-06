@@ -198,13 +198,21 @@ public struct TodosAppConfiguration: Hashable, Sendable {
     private func deleteAllTodosButtonTapped() {
       let ids = todos.map(\.id)
       guard !ids.isEmpty else { return }
-      for id in ids {
-        db.send(
-          DeleteTodo(id: id),
-          onFailure: { error in message = error.recoveryMessage }
-        )
-      }
-      message = "Deleted \(ids.count) todos"
+      // Single outbox mutation (not N× send). Prevents a live refresh from
+      // re-showing server todos between individual pending deletes — the
+      // "delete all → add one → everything comes back" flash.
+      db.send(
+        DeleteTodos(ids: ids),
+        onOptimisticCommit: { _ in
+          message = "Deleted \(ids.count) todos (local)"
+        },
+        onServerAccepted: { _ in
+          message = "Deleted \(ids.count) todos (synced)"
+        },
+        onFailure: { error in
+          message = "Delete all failed: \(error.recoveryMessage)"
+        }
+      )
     }
   }
 #endif
