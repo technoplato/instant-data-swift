@@ -607,17 +607,31 @@ extension Collection {
       self.state = state
       self.presentationWindow = presentationWindow
 
+      // ASWebAuthenticationSession invokes its completion off the main queue on
+      // macOS. A @MainActor-isolated closure would trap with EXC_BREAKPOINT /
+      // swift_task_isCurrentExecutor when the system calls it (seen on Instant
+      // Recipes Google sign-in). The callback must be @Sendable and only hop to
+      // MainActor via Task — never assume it already runs on MainActor.
       return try await withTaskCancellationHandler {
-        try await withCheckedThrowingContinuation { continuation in
+        try await withCheckedThrowingContinuation {
+          (continuation: CheckedContinuation<InstantAuthProviderCredential, Error>) in
           self.continuation = continuation
-          let session = ASWebAuthenticationSession(
-            url: authorizationURL,
-            callbackURLScheme: callbackScheme
-          ) { [weak self] callbackURL, error in
+          let completionHandler: @Sendable (URL?, (any Error)?) -> Void = {
+            callbackURL,
+            error in
             Task { @MainActor in
-              self?.complete(attemptID: attemptID, callbackURL: callbackURL, error: error)
+              BrowserOAuthAuthorizer.shared.complete(
+                attemptID: attemptID,
+                callbackURL: callbackURL,
+                error: error
+              )
             }
           }
+          let session = ASWebAuthenticationSession(
+            url: authorizationURL,
+            callbackURLScheme: callbackScheme,
+            completionHandler: completionHandler
+          )
           session.presentationContextProvider = self
           session.prefersEphemeralWebBrowserSession = false
           self.session = session
@@ -635,8 +649,8 @@ extension Collection {
           }
         }
       } onCancel: {
-        Task { @MainActor [weak self] in
-          self?.cancel(attemptID: attemptID)
+        Task { @MainActor in
+          BrowserOAuthAuthorizer.shared.cancel(attemptID: attemptID)
         }
       }
     }
@@ -677,7 +691,8 @@ extension Collection {
       return presentationWindow
     }
 
-    private func complete(attemptID: UUID, callbackURL: URL?, error: Error?) {
+    /// System OAuth callbacks hop here via `Task { @MainActor }` — must stay on MainActor.
+    fileprivate func complete(attemptID: UUID, callbackURL: URL?, error: Error?) {
       guard attempts.matches(attemptID) else { return }
       if let error {
         let nsError = error as NSError
@@ -752,7 +767,7 @@ extension Collection {
       }
     }
 
-    private func cancel(attemptID: UUID) {
+    fileprivate func cancel(attemptID: UUID) {
       guard attempts.matches(attemptID) else { return }
       session?.cancel()
       finish(attemptID: attemptID, throwing: CancellationError())
