@@ -105,6 +105,7 @@ public struct TodosAppConfiguration: Hashable, Sendable {
 
     @State private var text = ""
     @State private var message = ""
+    @FocusState private var isComposerFocused: Bool
     private let wrapsInNavigationStack: Bool
 
     public init(wrapsInNavigationStack: Bool = true) {
@@ -124,12 +125,14 @@ public struct TodosAppConfiguration: Hashable, Sendable {
         InstantRoom<TodosRoom>(type: TodosRoom.roomType, id: "main")
       )
       .presence($peers, in: room, publishing: TodoViewerPresence())
+      .onAppear { keepComposerFocused() }
     }
 
     private var content: some View {
       List {
         Section("\(peers.count + 1) viewing") {
           TextField("What needs doing?", text: $text)
+            .focused($isComposerFocused)
             .onSubmit(addTodoButtonTapped)
             #if os(iOS) || os(tvOS) || os(visionOS)
               .submitLabel(.send)
@@ -168,19 +171,40 @@ public struct TodosAppConfiguration: Hashable, Sendable {
       .navigationTitle("Todos")
     }
 
+    private func keepComposerFocused() {
+      isComposerFocused = true
+    }
+
     private func addTodoButtonTapped() {
       let value = text.trimmingCharacters(in: .whitespacesAndNewlines)
-      guard !value.isEmpty else { return }
+      guard !value.isEmpty else {
+        keepComposerFocused()
+        return
+      }
       db.send(
         CreateTodo(
           id: InstantID(rawValue: uuid().uuidString.lowercased()),
           text: value,
           createdAt: now
         ),
-        onOptimisticCommit: { _ in text = "" },
-        onServerAccepted: { _ in message = "Todo synced" },
-        onFailure: { error in message = error.recoveryMessage }
+        onOptimisticCommit: { _ in
+          text = ""
+          // onSubmit can resign first responder; reclaim focus for the next line.
+          keepComposerFocused()
+          Task { @MainActor in
+            keepComposerFocused()
+          }
+        },
+        onServerAccepted: { _ in
+          message = "Todo synced"
+          keepComposerFocused()
+        },
+        onFailure: { error in
+          message = error.recoveryMessage
+          keepComposerFocused()
+        }
       )
+      keepComposerFocused()
     }
 
     private func todoButtonTapped(_ todo: Todo) {
