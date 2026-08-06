@@ -4,6 +4,18 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## August 6th, 2026 at 3:00:44 p.m. EDT — `1891508192d6` Add Auth/Sharing counter namespaces to recipes Instant schema
+
+- **Implementation commit:** `1891508192d60bdf173d9aef761818938c323de9`
+- **Change:** Add Auth/Sharing counter namespaces to recipes Instant schema
+- **Details:**
+  - Pushed schema+perms to live recipes app so public/account counters encode against server attrs.
+- **Files:**
+  - `Sources/InstantSwiftDataSchema/InstantSwiftDataSchema.swift` — recipe_* entities on recipesDocument
+- **User context (verbatim):**
+  > Could not resolve 'recipe_public_counters/id' from the attrs returned by init-ok
+- **SpecStory:** unavailable — Grok Build session; no SpecStory URI authorized
+
 ## August 6th, 2026 at 2:58:53 p.m. EDT — `0620f5ba132a` Fix live Instant client poisoning and wire Recipes .env
 
 - **Implementation commit:** `0620f5ba132ae2d91c5af50aebf9ac33b85ffb82`
