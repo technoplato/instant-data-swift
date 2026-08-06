@@ -1,8 +1,8 @@
-## August 6, 2026 at 4:31:00 PM EDT — instant-data-swift `00290a55b0d925952baacccf6f59f93bd11931a9`
+## August 6, 2026 at 4:31:26 PM EDT — instant-data-swift `289c148fbddccff3b85fbfe6e7424e4caf3b5d03`
 
-**Audit: todos swipe-down keyboard dismiss**
+**Harden todos delete-all to await server acceptance**
 
-Todos delete-all now awaits Instant server acceptance within 5s and fails loud. Live tests cover single-client accept and two-client peer propagation for #151.
+Todos delete-all awaits Instant server acceptance within 5s and fails loud. Live tests cover single-client accept and two-client peer propagation for #151.
 
 ## August 6, 2026 at 4:12:59 PM EDT — instant-data-swift `b97ad44752e37615c5d1b8efdc71626fe06523ee`
 
