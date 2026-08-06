@@ -1,3 +1,9 @@
+## 2026-08-05 22:20:42 EDT
+
+- **Repository:** realtime-voice-sqlite-instant
+- **Commit:** `6390d50ba2899ad65008c9652f854bbbdc15f5ea`
+- **Reason:** Denser greppable process metrics (5s, CPU peak, thermal) and discrete TCA dual-write over diagnostics WebSocket for #044 long-recording thrash diagnosis.
+
 # Commit changelog
 
 ## 2026-08-05 20:19:02 EDT
