@@ -626,6 +626,91 @@ public enum InstantSchemaExamples {
     )
   )
 
+  /// Auth / Sharing recipe — public counter (allow-all).
+  public static let recipePublicCounters = InstantEntitySchema(
+    typeName: "RecipePublicCounter",
+    namespace: "recipe_public_counters",
+    attributes: [
+      .primaryKey(namespace: "recipe_public_counters"),
+      InstantAttribute(
+        id: "recipe_public_counters/value",
+        namespace: "recipe_public_counters",
+        name: "value",
+        valueType: .number,
+        isRequired: true
+      ),
+      InstantAttribute(
+        id: "recipe_public_counters/updatedAt",
+        namespace: "recipe_public_counters",
+        name: "updatedAt",
+        valueType: .date,
+        isRequired: true
+      ),
+    ]
+  )
+
+  /// Auth / Sharing recipe — per-account counter (owner-scoped).
+  public static let recipeAccountCounters = InstantEntitySchema(
+    typeName: "RecipeAccountCounter",
+    namespace: "recipe_account_counters",
+    attributes: [
+      .primaryKey(namespace: "recipe_account_counters"),
+      InstantAttribute(
+        id: "recipe_account_counters/ownerUserID",
+        namespace: "recipe_account_counters",
+        name: "ownerUserID",
+        valueType: .string,
+        isRequired: true,
+        isIndexed: true
+      ),
+      InstantAttribute(
+        id: "recipe_account_counters/value",
+        namespace: "recipe_account_counters",
+        name: "value",
+        valueType: .number,
+        isRequired: true
+      ),
+      InstantAttribute(
+        id: "recipe_account_counters/updatedAt",
+        namespace: "recipe_account_counters",
+        name: "updatedAt",
+        valueType: .date,
+        isRequired: true
+      ),
+    ]
+  )
+
+  /// Sharing recipe — unauthorized-read probe notes (owner-scoped).
+  public static let recipePrivateNotes = InstantEntitySchema(
+    typeName: "RecipePrivateNote",
+    namespace: "recipe_private_notes",
+    attributes: [
+      .primaryKey(namespace: "recipe_private_notes"),
+      InstantAttribute(
+        id: "recipe_private_notes/ownerUserID",
+        namespace: "recipe_private_notes",
+        name: "ownerUserID",
+        valueType: .string,
+        isRequired: true,
+        isIndexed: true
+      ),
+      InstantAttribute(
+        id: "recipe_private_notes/body",
+        namespace: "recipe_private_notes",
+        name: "body",
+        valueType: .string,
+        isRequired: true
+      ),
+      InstantAttribute(
+        id: "recipe_private_notes/updatedAt",
+        namespace: "recipe_private_notes",
+        name: "updatedAt",
+        valueType: .date,
+        isRequired: true
+      ),
+    ]
+  )
+
   public static let recipesDocument = InstantSchemaDocument(
     entities: [
       todos,
@@ -633,6 +718,9 @@ public enum InstantSchemaExamples {
       linkedInfiniteRecordings,
       linkedInfiniteTranscriptions,
       linkedInfiniteWords,
+      recipePublicCounters,
+      recipeAccountCounters,
+      recipePrivateNotes,
     ],
     links: [
       linkedInfiniteRecordingTranscriptions,
