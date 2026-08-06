@@ -4,6 +4,32 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## August 6th, 2026 at 3:49:09 p.m. EDT — `22a973c20492` Add Scribe open-segment 20s network write/observe benchmark (#156)
+
+- **Implementation commit:** `22a973c204926c7133f91b02aff6d23456f79c7b`
+- **Change:** Add Scribe open-segment 20s network write/observe benchmark CLI (#156)
+- **Details:**
+  - Net-A admin→Swift and Net-B Swift→admin over a real Instant app; open-segment wordsJSON write shape; observer-validated seq score; process memory/CPU; READY handshake so spawn time is not scored. Issue https://issues.knophy.com/issues/156.
+  - 20s baseline on laptop: Net-A ~8.7 valid writes/s (175 obs), Net-B ~8.2 valid writes/s (165 obs); ratio B/A ~0.94.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/ScribeOpenSegmentNetworkBench.swift` — Swift open-segment writer/observer + metrics
+  - `Sources/ScribeShaped20sWriteBench/main.swift` — CLI entry for Swift lanes
+  - `Package.swift` — Executable product scribe-shaped-20s-write-bench
+  - `validation/ts-runner/src/scribe-shaped-20s-write-bench.ts` — TS admin lanes + coordinate matrix
+  - `validation/run-scribe-shaped-20s-write-bench.sh` — Ephemeral app provision + runbook
+  - `validation/fixtures/scribe-open-segment-bench.schema.ts` — Ephemeral Instant schema for open-segment bench
+  - `validation/fixtures/scribe-open-segment-bench.perms.ts` — Open perms for ephemeral bench app
+  - `docs/benchmarks/scribe-shaped-20s-write-parity/README.md` — Runbook and design pointer
+  - `docs/benchmarks/scribe-shaped-20s-write-parity/qanda.md` — Interview decisions including network-vs-network
+  - `docs/benchmarks/scribe-shaped-20s-write-parity/findings.md` — Existing harness inventory
+  - `docs/benchmarks/scribe-shaped-20s-write-parity/overviews/01-cli-run-simulation.md` — Simulated terminal contract
+  - `INSTANT_DATA_PERFORMANCE_BENCHMARKS.md` — Link #156 network matrix into bench doc
+- **User context (verbatim):**
+  > I need you to create a memory benchmark of a pure command line utility that exercises TypeScript admin node as well as our Swift application
+  > Never compare local versus network
+  > Uh just do both. Go ahead and get started.
+- **SpecStory:** unavailable — Grok Build session; no SpecStory cloud URI for this agent host
+
 ## August 6th, 2026 at 3:41:53 p.m. EDT — `40316b0845ba` Batch todos delete-all into one outbox mutation
 
 - **Implementation commit:** `40316b0845ba4e27ae3eeb4ed0fc6544ad8b903d`
