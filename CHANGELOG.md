@@ -4,6 +4,23 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## August 6th, 2026 at 1:49:55 p.m. EDT — `24520678695b` Put public and account counters on the Auth recipe page
+
+- **Implementation commit:** `24520678695b530f1dc2ca5462094e93228830be`
+- **Change:** Put public and account counters on the Auth recipe page (#152)
+- **Details:**
+  - AuthV3CountersCard on AuthV3LoginScreen: open public counter + mine counter keyed to InstantAuthState session so login/logout switches the account-scoped value. https://issues.knophy.com/issues/152
+  - Models live in AuthV3App; Sharing recipe reuses AuthV3CountersCard and keeps the unauthorized private-note probe.
+- **Files:**
+  - `Sources/AuthV3App/AuthV3Counters.swift` — Public/account counter models and live UI card
+  - `Sources/AuthV3App/AuthApp.swift` — Embed counters on login screen and bootstrap attributes
+  - `Sources/RecipesV3App/RecipesSharingScreen.swift` — Reuse shared counters; keep unauthorized probe
+  - `Sources/RecipesV3App/RecipesV3App.swift` — Auth recipe summary mentions counters
+  - `Tests/AuthV3AppTests/AuthV3AppTests.swift` — Counter namespaces and card compile coverage
+- **User context (verbatim):**
+  > Yeah, I want the counters on the auth recipe page so I can see the generically shared with everybody counter with no permissions on that page. And then when I log in or log out, that will change and react to where I log out to or log in from
+- **SpecStory:** unavailable — Grok Build session; no SpecStory URI authorized
+
 ## August 5th, 2026 at 8:15:43 p.m. EDT — `956caec9eaac` Make demotion suite use Scribe namespaces, guest auth, dual Instant
 
 - **Implementation commit:** `956caec9eaac6fabdd3ed051160e55ebb1d17a88`
