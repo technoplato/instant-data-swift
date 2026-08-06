@@ -6353,6 +6353,25 @@ public struct InstantFetchRequest<Value: Sendable>: Sendable {
     )
   }
 
+  /// ADR 0015 — map root **snapshots** (include `links` preserved) into one value.
+  ///
+  /// Use when the request needs multi-bag children plus a single aggregate value
+  /// (for example a list query value with attachments beside projected rows), not
+  /// only a flat `[Row]` array.
+  ///
+  /// ```swift
+  /// InstantFetchRequest(listQuery) { snapshots in
+  ///   let decoded = try decodeMultiBag(snapshots)
+  ///   return QueryValue(recordings: decoded.recordings, attachments: decoded.attachments)
+  /// }
+  /// ```
+  public init<Root: InstantEntityModel>(
+    snapshotsOf query: InstantEntityQuery<Root>,
+    map: @escaping @Sendable (_ roots: [InstantEntitySnapshot]) throws -> Value
+  ) {
+    self.init(source: InstantFetchSource.entitySnapshots(query).map(map))
+  }
+
   /// ADR 0015 L2 — request-time **map** of root + included reverse children.
   ///
   /// Loads `query` as snapshots (so include links are preserved), decodes each
