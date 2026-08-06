@@ -4,6 +4,18 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## August 6th, 2026 at 3:37:12 p.m. EDT — `a01d6f3cb0e2` Fix Mac Google OAuth crash: ASWebAuthenticationSession MainActor trap
+
+- **Implementation commit:** `a01d6f3cb0e27f57f23edbb2b116b9f9a0249de4`
+- **Change:** Fix Mac Google OAuth crash from ASWebAuthenticationSession MainActor trap
+- **Details:**
+  - Crash: EXC_BREAKPOINT in BrowserOAuthAuthorizer.authorize completion. iPhone OK (different presentation). Fix @Sendable callback + MainActor hop.
+- **Files:**
+  - `Sources/InstantSwiftData/InstantAuthProvider.swift` — @Sendable ASWebAuthenticationSession completion hops to MainActor
+- **User context (verbatim):**
+  > Recipes crashed when I attempted to sign in with Google. Can you look at the logs? mac - iphone worked fine
+- **SpecStory:** unavailable — Grok Build session; no SpecStory URI authorized
+
 ## August 6th, 2026 at 3:22:19 p.m. EDT — `ea9f8b978c30` Use UUID entity IDs for recipe public counter and private note
 
 - **Implementation commit:** `ea9f8b978c3067f72946426e271dcf8804315838`
