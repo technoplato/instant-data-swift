@@ -130,6 +130,11 @@ public struct TodosAppConfiguration: Hashable, Sendable {
       List {
         Section("\(peers.count + 1) viewing") {
           TextField("What needs doing?", text: $text)
+            .onSubmit(addTodoButtonTapped)
+            #if os(iOS) || os(tvOS) || os(visionOS)
+              .submitLabel(.send)
+              .textInputAutocapitalization(.sentences)
+            #endif
           Button("Add todo", action: addTodoButtonTapped)
             .disabled(text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
           if !todos.isEmpty {
