@@ -358,14 +358,43 @@ public typealias AuthAppConfiguration = AuthV3AppConfiguration
       }
     }
 
-    private func providerButtonTapped(_ provider: AuthProviderSelection) {
+    private func providerButtonTapped(_ provider: AuthProvider) {
+      // Hosts (Recipes Tailnet logger) observe these for automatic diagnosis.
+      NotificationCenter.default.post(
+        name: Notification.Name("recipes.auth.provider.tapped"),
+        object: nil,
+        userInfo: [
+          "providerID": provider.id.rawValue,
+          "clientName": provider.clientName ?? "",
+        ]
+      )
       auth.signIn(
         provider,
         onSignedIn: { event in
           message = signedInMessage(event)
+          NotificationCenter.default.post(
+            name: Notification.Name("recipes.auth.provider.signedIn"),
+            object: nil,
+            userInfo: [
+              "providerID": provider.id.rawValue,
+              "userID": event.session.userID,
+              "transition": String(describing: event.identityTransition),
+            ]
+          )
         },
         onFailure: { error in
           message = error.description
+          NotificationCenter.default.post(
+            name: Notification.Name("recipes.auth.provider.failed"),
+            object: nil,
+            userInfo: [
+              "providerID": provider.id.rawValue,
+              "clientName": provider.clientName ?? "",
+              "error": error.description,
+              "code": error.code.rawValue,
+              "operation": error.operation,
+            ]
+          )
         }
       )
     }

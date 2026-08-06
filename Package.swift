@@ -12,11 +12,12 @@ let strictConcurrencySettings: [SwiftSetting] = [
 let package = Package(
   name: "instant-swift-data",
   platforms: [
-    .iOS(.v15),
+    // iOS 16+ so Recipes can depend on TailnetDiagnostics (Duration/clock APIs).
+    .iOS(.v16),
     .macOS(.v14),
-    .macCatalyst(.v15),
-    .tvOS(.v15),
-    .watchOS(.v8),
+    .macCatalyst(.v16),
+    .tvOS(.v16),
+    .watchOS(.v9),
   ],
   products: [
     .library(name: "InstantSwiftData", targets: ["InstantSwiftData"]),
@@ -70,6 +71,8 @@ let package = Package(
     .package(url: "https://github.com/pointfreeco/swift-parsing", from: "0.14.1"),
     .package(url: "https://github.com/pointfreeco/xctest-dynamic-overlay", from: "1.0.0"),
     .package(url: "https://github.com/swiftlang/swift-syntax.git", exact: "602.0.0"),
+    // Tailnet WebSocket diagnostics (extracted from Scribe InstantDBLogger).
+    .package(path: "Packages/TailnetDiagnostics"),
   ],
   targets: [
     .target(
@@ -178,6 +181,7 @@ let package = Package(
         "PresenceRecipesV3App",
         "TodosV3App",
         .product(name: "Dependencies", package: "swift-dependencies"),
+        .product(name: "InstantDBLogger", package: "TailnetDiagnostics"),
       ],
       swiftSettings: strictConcurrencySettings
     ),

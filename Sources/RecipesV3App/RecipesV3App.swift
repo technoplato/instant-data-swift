@@ -192,9 +192,24 @@ public struct RecipesV3AppConfiguration: Hashable, Sendable {
     public func startIfNeeded() {
       guard client == nil, task == nil else { return }
       RecipesDebugLogRing.shared.installDiagnosticsBridgeIfNeeded()
+      // Tailnet WebSocket diagnostics (extracted InstantDBLogger package).
+      _ = RecipesTailnetDiagnostics.start(
+        appID: configuration.appID,
+        isLive: configuration.enablesLiveSync,
+        recipe: configuration.launchRecipe?.rawValue
+      )
       RecipesDebugLogRing.shared.append(
         level: "info",
         category: "recipes-bootstrap",
+        name: "bootstrap.started",
+        message: "Starting Instant recipes bootstrap.",
+        metadata: [
+          "appID": configuration.appID,
+          "live": configuration.enablesLiveSync.description,
+          "recipe": configuration.launchRecipe?.rawValue ?? "catalog",
+        ]
+      )
+      RecipesTailnetDiagnostics.logAuth(
         name: "bootstrap.started",
         message: "Starting Instant recipes bootstrap.",
         metadata: [
@@ -226,6 +241,14 @@ public struct RecipesV3AppConfiguration: Hashable, Sendable {
               "live": configuration.enablesLiveSync.description,
             ]
           )
+          RecipesTailnetDiagnostics.logAuth(
+            name: "bootstrap.ready",
+            message: "Instant recipes client is ready.",
+            metadata: [
+              "appID": configuration.appID,
+              "live": configuration.enablesLiveSync.description,
+            ]
+          )
           self?.client = client
           self?.task = nil
         } catch {
@@ -235,6 +258,12 @@ public struct RecipesV3AppConfiguration: Hashable, Sendable {
             name: "bootstrap.failed",
             message: String(describing: error),
             metadata: ["appID": configuration.appID]
+          )
+          RecipesTailnetDiagnostics.logAuth(
+            name: "bootstrap.failed",
+            message: String(describing: error),
+            metadata: ["appID": configuration.appID],
+            level: .error
           )
           self?.errorMessage = String(describing: error)
           self?.task = nil
@@ -309,6 +338,37 @@ public struct RecipesV3AppConfiguration: Hashable, Sendable {
         RecipesDebugLogRing.shared.installDiagnosticsBridgeIfNeeded()
         model.startIfNeeded()
       }
+      .onReceive(NotificationCenter.default.publisher(for: Notification.Name("recipes.auth.provider.tapped"))) { note in
+        RecipesTailnetDiagnostics.logAuth(
+          name: "provider.tapped",
+          message: "Auth provider tapped.",
+          metadata: Self.stringMetadata(from: note.userInfo)
+        )
+      }
+      .onReceive(NotificationCenter.default.publisher(for: Notification.Name("recipes.auth.provider.signedIn"))) { note in
+        RecipesTailnetDiagnostics.logAuth(
+          name: "provider.signedIn",
+          message: "Auth provider signed in.",
+          metadata: Self.stringMetadata(from: note.userInfo)
+        )
+      }
+      .onReceive(NotificationCenter.default.publisher(for: Notification.Name("recipes.auth.provider.failed"))) { note in
+        RecipesTailnetDiagnostics.logAuth(
+          name: "provider.failed",
+          message: "Auth provider failed.",
+          metadata: Self.stringMetadata(from: note.userInfo),
+          level: .error
+        )
+      }
+    }
+
+    private static func stringMetadata(from userInfo: [AnyHashable: Any]?) -> [String: String] {
+      guard let userInfo else { return [:] }
+      var out: [String: String] = [:]
+      for (key, value) in userInfo {
+        out[String(describing: key)] = String(describing: value)
+      }
+      return out
     }
   }
 
