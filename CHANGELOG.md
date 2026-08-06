@@ -4,6 +4,22 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## August 6th, 2026 at 3:52:55 p.m. EDT — `64426d24732f` Add library batch transact API and InstantMutationBatch send
+
+- **Implementation commit:** `64426d24732f881e3a8c5012cbe723fce3aa1533`
+- **Change:** Library batch transact API and InstantMutationBatch send (#151)
+- **Details:**
+  - Array transact with optional batchSize; Todo.delete(ids:); InstantMutationBatch for send lifecycle callbacks. Todos delete-all rewired.
+- **Files:**
+  - `Sources/InstantSwiftData/InstantTypedAPI.swift` — transact([mutations], batchSize?) + delete(ids:) sugar
+  - `Sources/InstantSwiftData/InstantMessage.swift` — InstantMutationBatch + send(mutations:)
+  - `Sources/TodosV3App/TodosApp.swift` — Delete all uses send(mutations: Todo.delete(ids:))
+  - `Sources/TodosV3App/TodoModels.swift` — Remove app-local DeleteTodos
+  - `Tests/InstantSwiftDataTests/InstantMutationBatchAPITests.swift` — TDD coverage for batch API
+- **User context (verbatim):**
+  > Ship it. use test-driven development to do this.
+- **SpecStory:** unavailable — Grok Build session; no SpecStory URI authorized
+
 ## August 6th, 2026 at 3:49:09 p.m. EDT — `22a973c20492` Add Scribe open-segment 20s network write/observe benchmark (#156)
 
 - **Implementation commit:** `22a973c204926c7133f91b02aff6d23456f79c7b`
