@@ -1,5 +1,18 @@
 ## 2026-08-05 23:35:07 EDT
 
+## 2026-08-06 13:55:22 EDT
+
+- **Repository:** instant-data-swift
+- **Commit:** `c3fadbac66a743d4d1fec598e3c5ef8b91cfbfd5`
+- **High-level reason:** Fix iOS Instant Recipes install (wipe path + iOS 17 availability)
+
+## 2026-08-06 13:55:22 EDT
+
+- **Repository:** instant-data-swift
+- **Commit:** `24520678695b530f1dc2ca5462094e93228830be`
+- **High-level reason:** Auth recipe page public + account counters reacting to login/logout (#152)
+
+
 ## 2026-08-06 13:49:55 EDT
 
 - **Repository:** instant-data-swift
