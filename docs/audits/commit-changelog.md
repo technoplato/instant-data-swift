@@ -1,5 +1,12 @@
 # Commit changelog
 
+## 2026-08-05 20:19:02 EDT
+
+- **instant-data-swift** tag `v1.5.6` @ `29495b966108b5a90de0ab09a61a8a93f8ed87ed` — Production Scribe namespace soak + dual Instant thrash + demotion guest auth (#150).
+- **realtime-voice-sqlite-instant** `39ebb186136d` — Pin Package.swift exact 1.5.6.
+- **realtime-voice-sqlite-instant** `204e6582af9efb66410c6e39703de6b25c37e5f2` — Instant-lane library chatter filter.
+
+
 ## 2026-08-05 20:03:36 EDT
 
 - **instant-data-swift** `60df101efae42243b139eb4d5b2260934e1b1a99` — Production Scribe namespaces + dual Instant debugLogs thrash soak (#150).
