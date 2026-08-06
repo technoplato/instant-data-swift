@@ -4,6 +4,20 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## August 6th, 2026 at 1:59:36 p.m. EDT — `a3cd39e6f193` Share one Instant client across all recipes screens
+
+- **Implementation commit:** `a3cd39e6f1931dda724a39e378a6713b1cd54b9d`
+- **Change:** One Instant client for all recipes; inject into SwiftUI dependencies.
+- **Details:**
+  - RecipesV3BootstrapScreen applies .dependency(\.defaultInstantSwiftData, client) so Todos CreateTodo uses the shared recipes app.
+- **Files:**
+  - `Sources/RecipesV3App/RecipesV3App.swift` — Shared client injection + catalog app ID label.
+  - `Sources/TodosV3App/TodosApp.swift` — Standalone Todos injects bootstrapped client the same way.
+  - `Examples/RecipesV3/README.md` — Document one Instant app for all recipes.
+- **User context (verbatim):**
+  > Uh one instant app for all of the recipes, please.
+- **SpecStory:** unavailable — Grok Build session; no SpecStory URI for this client.
+
 ## August 6th, 2026 at 1:54:31 p.m. EDT — `c3fadbac66a7` Fix iOS recipes install: home wipe path and iOS 17 availability
 
 - **Implementation commit:** `c3fadbac66a743d4d1fec598e3c5ef8b91cfbfd5`
