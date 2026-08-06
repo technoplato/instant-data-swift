@@ -1,3 +1,9 @@
+## August 6, 2026 at 4:52:26 PM EDT — instant-data-swift `421f735343f59cc9903affe38d3c3a7d2dff907c`
+
+**Return from transact after local commit, not wire send**
+
+Optimistic `transact` no longer awaits websocket outbox delivery (counter lag root cause). Delete-all restored to offline-capable fire-and-forget `send`. #151.
+
 ## August 6, 2026 at 4:31:26 PM EDT — instant-data-swift `289c148fbddccff3b85fbfe6e7424e4caf3b5d03`
 
 **Harden todos delete-all to await server acceptance**
