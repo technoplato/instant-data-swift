@@ -34,7 +34,7 @@ See issue successCriteria; plan steps below map 1:1 to criteria ids to add/updat
 | L4 | Entity sync status on fetch (coordinate ADR 0014) | instant-data-swift | — | `issue-155-L4-sync-status` | Status ADT on observed row in test |
 | P1 | Instant **client id** for activity ADT (parallel) | instant-data-swift + Scribe | — | `issue-155-P1-client-id` | this vs other device comparison |
 | S0 | Prefer short Instant entity names (aliases → rename) | Scribe | — | `issue-155-S0-entity-names` | InstantRecording/Segment/Attachment |
-| S1 | Scribe list → new query; **delete** multi-subscribe list merge | Scribe | L1–L2 | `issue-155-S1-list-switch` | List tests; no dual stream merge |
+| S1 | Scribe list → new query; **delete** multi-subscribe list merge | Scribe | L1–L2 | `issue-155-S1-list-switch` **partial** `c269476d` multi-include+decode; nested limit pin pending | List tests; no dual stream merge |
 | S2 | Write path: `recordingSegmentID` upsert only; **delete** liveChanges/diff planners | Scribe | L4 optional | `issue-155-S2-write-path` | Planner deleted or unused; segment-only writes |
 | S3 | **Delete** mutation coordinator full `lastSaved` cache | Scribe | S2 | `issue-155-S3-coordinator` | No full Recording retained for Instant diff |
 | S4 | **Delete** `ScribeInstantStore`; bootstrap only at composition root | Scribe | S1–S3 | `issue-155-S4-delete-store` | No store type; features use `@Fetch*` / client |

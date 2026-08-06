@@ -360,3 +360,20 @@ User: library memory, performance, ergonomics first — **no new product feature
 You are not starting from zero. **L1/L2/L2b are done.** The gap is **Scribe not consuming the new APIs** and the **old store/planners still owning the world**. Prefer S1 list multi-bag integration next unless the user redirects to P1/L4. Always append #155 workLog with real SHAs. Read `overviews/01-recordings-list.md` before coding the list.
 
 If something in this handoff conflicts with a newer `workLog` on #155, **trust the issue**.
+
+
+---
+
+## Resume note (2026-08-06 18:15 EDT)
+
+Next agent after cold resume found L1/L2/L2b done and executed **S1 partial**:
+
+| Landed | SHA / note |
+| --- | --- |
+| Library `InstantFetchRequest(snapshotsOf:)` | `de1fa08e242f632dac05c4f3414698e4ba58c4e2` |
+| Scribe multi-bag list observation + schema links + dual-write | `c269476db7798b0d0599d22deaaefe39b15ee1fe` |
+| Instant schema push | `recordingSegments`, `recordingHasAttachments` |
+
+**Still open for S1 full:** nested include limit on the Scribe pin (L1 not in published 1.5.6; `swift package edit` hits Tailnet InstantDBLogger name clash), ListRequest Fetch seed still dual top-level, store teardown (S4) not started.
+
+**Next:** pin library after L1 or fix dual-dev package edit; then InstantFetchRequest multi-bag seed; or parallel P1/L4.
