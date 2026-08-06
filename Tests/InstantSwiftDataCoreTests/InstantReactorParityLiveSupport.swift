@@ -345,18 +345,48 @@ private func liveReactorJoinRow(
   ])
 }
 
-private func liveReactorServerAttr(id: String, name: String) -> InstantLiveJSONValue {
-  .object([
+func liveReactorServerAttr(
+  id: String,
+  name: String,
+  namespace: String = TodoExample.namespace,
+  valueType: String? = nil
+) -> InstantLiveJSONValue {
+  let resolvedValueType =
+    valueType
+    ?? (name == "createdAt" || name == "updatedAt"
+      ? "date"
+      : (name == "isCompleted" || name == "buildIsDirty" ? "boolean" : "string"))
+  return .object([
     "cardinality": .string("one"),
     "forward-identity": .array([
       .string("identity-\(id)"),
-      .string(TodoExample.namespace),
+      .string(namespace),
       .string(name),
     ]),
     "id": .string(id),
     "unique?": .bool(name == "id"),
-    "value-type": .string(
-      name == "createdAt" ? "date" : (name == "isCompleted" ? "boolean" : "string")
-    ),
+    "value-type": .string(resolvedValueType),
   ])
+}
+
+/// Map local InstantAttribute rows into init-ok server attrs for reactor tests.
+func liveReactorServerAttrs(from attributes: [InstantAttribute]) -> [InstantLiveJSONValue] {
+  attributes.map { attribute in
+    let valueType: String
+    switch attribute.valueType {
+    case .string: valueType = "string"
+    case .number: valueType = "number"
+    case .boolean: valueType = "boolean"
+    case .date: valueType = "date"
+    case .json: valueType = "json"
+    case .any: valueType = "any"
+    case .ref: valueType = "ref"
+    }
+    return liveReactorServerAttr(
+      id: attribute.id,
+      name: attribute.name,
+      namespace: attribute.namespace,
+      valueType: valueType
+    )
+  }
 }
