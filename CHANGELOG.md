@@ -4,6 +4,19 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## August 6th, 2026 at 4:31:26 p.m. EDT — `289c148fbddc` Harden todos delete-all to await server acceptance
+
+- **Implementation commit:** `289c148fbddccff3b85fbfe6e7424e4caf3b5d03`
+- **Change:** Todos delete-all awaits Instant acceptance (no silent local-only)
+- **Details:**
+  - Delete all uses sendAwaitingServerAcceptance(InstantMutationBatch, 5s) with loud failure text. Live InstantMutationBatchLiveDeleteAllTests prove server accept and second-client convergence on recipes app. Tracker: https://issues.knophy.com/issues/151
+- **Files:**
+  - `Sources/TodosV3App/TodosApp.swift` — Await server acceptance for delete-all
+  - `Tests/InstantSwiftDataTests/InstantMutationBatchLiveDeleteAllTests.swift` — Live single- and multi-client delete-all regressions
+- **User context (verbatim):**
+  > also deleting all is only deleting locally, not getting sent to other devices.
+- **SpecStory:** unavailable — Grok Build session; no SpecStory public share URI for this agent host
+
 ## August 6th, 2026 at 4:12:59 p.m. EDT — `b97ad44752e3` Allow swipe-down keyboard dismiss on todos composer
 
 - **Implementation commit:** `b97ad44752e37615c5d1b8efdc71626fe06523ee`
