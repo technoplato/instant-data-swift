@@ -4,6 +4,22 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## August 6th, 2026 at 4:52:26 p.m. EDT — `421f735343f5` Return from transact after local commit, not wire send
+
+- **Implementation commit:** `421f735343f59cc9903affe38d3c3a7d2dff907c`
+- **Change:** Local-first transact: do not await websocket delivery before return
+- **Details:**
+  - Root cause of ~1s yellow counter buttons: runtime.transact awaited sendOutstandingMutationsToLiveSession when the live session was open. Instant JS pushOps notifies immediately and sends async. Now always startLiveMutationDeliveryIfNeeded without awaiting. Delete-all restored to fire-and-forget send(mutations:). Counter isBusy gate removed. Test: runtimeLiveTransactReturnsBeforeOpenSessionDeliveryFinishes. Tracker: https://issues.knophy.com/issues/151
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — Non-blocking delivery after optimistic commit
+  - `Sources/TodosV3App/TodosApp.swift` — Restore fire-and-forget delete-all send
+  - `Sources/AuthV3App/AuthV3Counters.swift` — Remove isBusy network gate; create-exists fallback
+  - `Tests/InstantSwiftDataCoreTests/InstantLiveTransportTests.swift` — Prove open-session delivery does not block transact
+- **User context (verbatim):**
+  > I want the original syntax that you had, and we should make that work
+  > the increment button turns yellow and is disabled... takes like a second
+- **SpecStory:** unavailable — Grok Build session; no SpecStory public share URI for this agent host
+
 ## August 6th, 2026 at 4:31:26 p.m. EDT — `289c148fbddc` Harden todos delete-all to await server acceptance
 
 - **Implementation commit:** `289c148fbddccff3b85fbfe6e7424e4caf3b5d03`
