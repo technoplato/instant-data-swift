@@ -4,6 +4,20 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## August 5th, 2026 at 8:15:43 p.m. EDT — `956caec9eaac` Make demotion suite use Scribe namespaces, guest auth, dual Instant
+
+- **Implementation commit:** `956caec9eaac6fabdd3ed051160e55ebb1d17a88`
+- **Change:** Demotion suite on production Scribe namespaces + guest auth + dual Instant thrash (#150)
+- **Details:**
+  - InstantDiagnosticFeedbackLoopTests uses ScribeProductionShapedSchema and guest auth; dual Instant debugLogs thrash demotion case; v1.5.6 release notes.
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantDiagnosticFeedbackLoopTests.swift` — Scribe-shaped demotion + dual Instant thrash proof
+  - `Tests/InstantSwiftDataCoreTests/InstantReactorParityLiveSupport.swift` — Generic liveReactorServerAttrs from InstantAttribute
+  - `docs/releases/v1.5.6.md` — Release notes for production soak gate
+- **User context (verbatim):**
+  > reproduce the memory consumption issue at the library level so we can gate releases against it with an exact replica of auth/data/schema that scribe uses
+- **SpecStory:** unavailable — Grok Build TUI session; no SpecStory cloud URI for this host
+
 ## August 5th, 2026 at 8:03:48 p.m. EDT — `60df101efae4` Use production Scribe namespaces and dual Instant thrash in soak gates
 
 - **Implementation commit:** `60df101efae42243b139eb4d5b2260934e1b1a99`
