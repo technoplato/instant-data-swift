@@ -1,3 +1,9 @@
+## August 6, 2026 at 4:12:59 PM EDT — instant-data-swift `b97ad44752e37615c5d1b8efdc71626fe06523ee`
+
+**Allow swipe-down keyboard dismiss on todos composer**
+
+Todos composer keeps focus after send, but swipe/scroll down can dismiss the keyboard without server callbacks reclaiming focus. Interactive scrollDismissesKeyboard on the list.
+
 ## 2026-08-06 15:49:19 EDT
 
 - **Repository:** instant-data-swift
