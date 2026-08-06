@@ -29,11 +29,15 @@ public enum RecipesTailnetDiagnostics {
     return true
   }
 
+  public enum LogLevel: String, Sendable {
+    case debug, info, notice, warning, error, critical
+  }
+
   public static func logAuth(
     name: String,
     message: String,
     metadata: [String: String] = [:],
-    level: String = "info"
+    level: LogLevel = .info
   ) {
     _ = (name, message, metadata, level)
   }
