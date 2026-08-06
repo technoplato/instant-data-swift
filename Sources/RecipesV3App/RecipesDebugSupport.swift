@@ -229,7 +229,8 @@ public struct RecipesOutboxFailureRow: Identifiable, Hashable, Sendable {
 }
 
 extension RecipesDebugLogRing {
-  /// Best-effort local SQLite wipe for the recipes app id. Caller must quit/relaunch.
+  /// Best-effort local SQLite wipe for the recipes app id.
+  /// Caller should close the Instant connection first, then restart the host.
   public static func wipeLocalRecipesCache(appID: String) throws -> URL {
     #if os(macOS)
       let home = FileManager.default.homeDirectoryForCurrentUser

@@ -30,6 +30,7 @@ public struct RecipesDebugPanel: View {
   @State private var presentation: Presentation
   @State private var didCopy = false
   @State private var wipeMessage = ""
+  @State private var isRestarting = false
   @State private var dragTranslation: CGSize = .zero
   @State private var origin = CGPoint(x: 16, y: 16)
 
@@ -181,14 +182,14 @@ public struct RecipesDebugPanel: View {
 
         HStack {
           Button(role: .destructive) {
-            wipeLocalDatabase()
+            wipeLocalDatabaseAndRestart()
           } label: {
-            Label("Wipe local DB + quit", systemImage: "externaldrive.badge.xmark")
+            Label("Wipe local DB + restart", systemImage: "arrow.clockwise.circle")
               .font(.system(.caption2, design: .monospaced, weight: .semibold))
           }
           .buttonStyle(.bordered)
           .controlSize(.small)
-          .disabled(appID.isEmpty)
+          .disabled(appID.isEmpty || isRestarting)
 
           Button {
             Task {
@@ -485,32 +486,118 @@ public struct RecipesDebugPanel: View {
     #endif
   }
 
-  private func wipeLocalDatabase() {
+  private func wipeLocalDatabaseAndRestart() {
     guard !appID.isEmpty else {
       wipeMessage = "No app id — cannot wipe."
       return
     }
-    do {
-      let path = try RecipesDebugLogRing.wipeLocalRecipesCache(appID: appID)
-      wipeMessage =
-        "Wiped \(path.lastPathComponent). Quit and relaunch recipes-v3 for an empty start."
-      ring.append(
-        level: "warning",
-        category: "recipes-debug",
-        name: "local-cache.wiped",
-        message: "Local Instant SQLite removed; quit and relaunch.",
-        metadata: ["appID": appID, "path": path.path]
-      )
-      #if os(macOS)
-        // Give the user a moment to read the message, then exit.
-        Task { @MainActor in
-          try? await Task.sleep(for: .seconds(1.2))
-          NSApplication.shared.terminate(nil)
+    guard !isRestarting else { return }
+    isRestarting = true
+    wipeMessage = "Closing Instant, wiping local store, restarting…"
+
+    Task { @MainActor in
+      // Release the live connection so SQLite files unlock before delete.
+      if let client {
+        do {
+          _ = try await client.closeConnection()
+        } catch {
+          ring.append(
+            level: "warning",
+            category: "recipes-debug",
+            name: "local-cache.close-before-wipe-failed",
+            message: String(describing: error),
+            metadata: ["appID": appID]
+          )
         }
-      #endif
-    } catch {
-      wipeMessage = "Wipe failed: \(error)"
+      }
+
+      do {
+        let path = try RecipesDebugLogRing.wipeLocalRecipesCache(appID: appID)
+        wipeMessage = "Wiped \(path.lastPathComponent). Restarting example…"
+        ring.append(
+          level: "warning",
+          category: "recipes-debug",
+          name: "local-cache.wiped",
+          message: "Local Instant SQLite removed; restarting the example.",
+          metadata: ["appID": appID, "path": path.path]
+        )
+        // Brief beat so the panel log flushes / user can see the message.
+        try? await Task.sleep(for: .milliseconds(400))
+        restartExampleProcess()
+      } catch {
+        isRestarting = false
+        wipeMessage = "Wipe failed: \(error)"
+      }
     }
+  }
+
+  /// Relaunches this recipes host with the same CLI args (e.g. `--recipe auth`), then exits.
+  private func restartExampleProcess() {
+    #if os(macOS)
+      let preservedArgs = Array(ProcessInfo.processInfo.arguments.dropFirst())
+      let bundleURL = Bundle.main.bundleURL
+
+      if bundleURL.pathExtension == "app" {
+        let configuration = NSWorkspace.OpenConfiguration()
+        configuration.createsNewApplicationInstance = true
+        configuration.arguments = preservedArgs
+        NSWorkspace.shared.openApplication(at: bundleURL, configuration: configuration) {
+          _,
+          error in
+          DispatchQueue.main.async {
+            if let error {
+              self.wipeMessage = "Restart launch failed: \(error.localizedDescription). Quitting."
+              self.ring.append(
+                level: "error",
+                category: "recipes-debug",
+                name: "local-cache.restart-failed",
+                message: String(describing: error),
+                metadata: ["appID": self.appID]
+              )
+            }
+            NSApplication.shared.terminate(nil)
+          }
+        }
+        return
+      }
+
+      // SwiftPM `recipes-v3` executable (no .app wrapper).
+      do {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: CommandLine.arguments[0])
+        process.arguments = preservedArgs
+        process.environment = ProcessInfo.processInfo.environment
+        try process.run()
+        exit(0)
+      } catch {
+        wipeMessage = "Restart failed: \(error). Quitting."
+        ring.append(
+          level: "error",
+          category: "recipes-debug",
+          name: "local-cache.restart-failed",
+          message: String(describing: error),
+          metadata: ["appID": appID]
+        )
+        NSApplication.shared.terminate(nil)
+      }
+    #elseif os(iOS) || os(visionOS)
+      // iOS has no public “relaunch self”. Open our URL scheme so SpringBoard can
+      // re-activate the app, then exit so the next cold start sees the empty store.
+      let restartURL =
+        URL(string: "instant-recipes-v3://restart")
+        ?? URL(string: "instant-recipes-v3://")
+      if let restartURL {
+        UIApplication.shared.open(restartURL, options: [:]) { _ in
+          DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+            exit(0)
+          }
+        }
+      } else {
+        exit(0)
+      }
+    #else
+      exit(0)
+    #endif
   }
 }
 
