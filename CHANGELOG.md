@@ -4,6 +4,19 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## August 6th, 2026 at 3:06:03 p.m. EDT — `e3737d779bd3` Restart recipes example after wipe local DB
+
+- **Implementation commit:** `e3737d779bd3cef4356704f395c3ac1718d14182`
+- **Change:** Restart recipes example after wipe local DB
+- **Details:**
+  - Wipe button now restarts the host instead of only quitting.
+- **Files:**
+  - `Sources/RecipesV3App/RecipesDebugPanel.swift` — Wipe closes connection, deletes store, relaunches
+  - `Sources/RecipesV3App/RecipesDebugSupport.swift` — Doc note for restart-after-wipe
+- **User context (verbatim):**
+  > make the wipe and quit button restart the example
+- **SpecStory:** unavailable — Grok Build session; no SpecStory URI authorized
+
 ## August 6th, 2026 at 3:00:44 p.m. EDT — `1891508192d6` Add Auth/Sharing counter namespaces to recipes Instant schema
 
 - **Implementation commit:** `1891508192d60bdf173d9aef761818938c323de9`
