@@ -4,6 +4,19 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## August 6th, 2026 at 3:41:53 p.m. EDT — `40316b0845ba` Batch todos delete-all into one outbox mutation
+
+- **Implementation commit:** `40316b0845ba4e27ae3eeb4ed0fc6544ad8b903d`
+- **Change:** Batch todos delete-all into one outbox mutation (#151)
+- **Details:**
+  - Diagnosed iPhone: delete all then add head briefly resurrected deleted todos; server now only head. N concurrent deletes raced live refresh.
+- **Files:**
+  - `Sources/TodosV3App/TodoModels.swift` — DeleteTodos multi-delete InstantMessage
+  - `Sources/TodosV3App/TodosApp.swift` — Delete all uses single batched send
+- **User context (verbatim):**
+  > I deleted all to-dos on my iPhone and then added a new one called head, and then everything else popped back in
+- **SpecStory:** unavailable — Grok Build session; no SpecStory URI authorized
+
 ## August 6th, 2026 at 3:37:12 p.m. EDT — `a01d6f3cb0e2` Fix Mac Google OAuth crash: ASWebAuthenticationSession MainActor trap
 
 - **Implementation commit:** `a01d6f3cb0e27f57f23edbb2b116b9f9a0249de4`
