@@ -26,6 +26,77 @@ public enum InstantMessageFailureDisposition: Hashable, Sendable {
   case discard
 }
 
+/// Change payload for ``InstantMutationBatch`` (bulk `transact` via `send`).
+public struct InstantMutationBatchChange: Hashable, Sendable {
+  public var mutationCount: Int
+
+  public init(mutationCount: Int) {
+    self.mutationCount = mutationCount
+  }
+}
+
+/// Library-level bulk mutation message — Instant’s `db.transact([...])` with
+/// `send` lifecycle callbacks (`onOptimisticCommit` / `onServerAccepted` /
+/// `onFailure`) without inventing an app-specific `InstantMessage` type.
+///
+/// ```swift
+/// db.send(
+///   InstantMutationBatch(Todo.delete(ids: todos.map(\.id))),
+///   onOptimisticCommit: { ... },
+///   onServerAccepted: { ... },
+///   onFailure: { ... }
+/// )
+/// ```
+public struct InstantMutationBatch: InstantMessage {
+  public var mutations: [InstantMutation]
+
+  public init(_ mutations: [InstantMutation]) {
+    self.mutations = mutations
+  }
+
+  public func prepare(using client: InstantSwiftDataClient) async throws
+    -> InstantPreparedMessage<InstantMutationBatchChange>
+  {
+    _ = client
+    let mutations = self.mutations
+    guard !mutations.isEmpty else {
+      throw InstantError(
+        code: .validationFailed,
+        operation: "prepare InstantMutationBatch",
+        message: "Cannot send an empty mutation batch.",
+        recovery: "Pass at least one InstantMutation."
+      )
+    }
+    return InstantPreparedMessage(
+      change: InstantMutationBatchChange(mutationCount: mutations.count)
+    ) {
+      for mutation in mutations {
+        mutation
+      }
+    }
+  }
+}
+
+extension InstantSwiftDataClient {
+  /// Convenience for ``InstantMutationBatch`` + standard `send` callbacks.
+  @discardableResult
+  public func send(
+    mutations: [InstantMutation],
+    onOptimisticCommit:
+      @escaping @MainActor @Sendable (borrowing InstantMutationBatchChange) -> Void = { _ in },
+    onServerAccepted:
+      @escaping @MainActor @Sendable (borrowing InstantMutationBatchChange) -> Void = { _ in },
+    onFailure: @escaping @MainActor @Sendable (InstantError) -> Void = { _ in }
+  ) -> Task<Void, Never> {
+    send(
+      InstantMutationBatch(mutations),
+      onOptimisticCommit: onOptimisticCommit,
+      onServerAccepted: onServerAccepted,
+      onFailure: onFailure
+    )
+  }
+}
+
 extension InstantSwiftDataClient {
   /// Sends one typed message and returns its change only after Instant accepts the mutation.
   ///

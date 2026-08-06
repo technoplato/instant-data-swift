@@ -131,39 +131,6 @@ public struct DeleteTodo: InstantMessage {
   }
 }
 
-public struct TodosBulkDeleted: Hashable, Sendable {
-  public var ids: [InstantID<Todo>]
-
-  public init(ids: [InstantID<Todo>]) {
-    self.ids = ids
-  }
-}
-
-/// One outbox mutation that deletes many todos together.
-///
-/// Prefer this over N× `DeleteTodo` sends: a live query refresh mid-flight can
-/// briefly re-materialize server truth while individual deletes are still
-/// pending, so the list looks “full” again until every delete is accepted.
-public struct DeleteTodos: InstantMessage {
-  public var ids: [InstantID<Todo>]
-
-  public init(ids: [InstantID<Todo>]) {
-    self.ids = ids
-  }
-
-  public func prepare(using client: InstantSwiftDataClient) async throws
-    -> InstantPreparedMessage<TodosBulkDeleted>
-  {
-    _ = client
-    let ids = self.ids
-    return InstantPreparedMessage(change: TodosBulkDeleted(ids: ids)) {
-      for id in ids {
-        Todo.delete(id: id)
-      }
-    }
-  }
-}
-
 public struct TodoViewerPresence: Codable, Equatable, Sendable {
   public init() {}
 }

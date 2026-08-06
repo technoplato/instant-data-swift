@@ -809,6 +809,18 @@ extension InstantEntityModel {
     }
   }
 
+  /// Instant-shaped multi-delete sugar: `goals.map((g) => db.tx.goals[g.id].delete())`.
+  ///
+  /// Pass the result to `transact(_:batchSize:)` or `InstantMutationBatch` / `send(mutations:)`.
+  public static func delete(ids: some Sequence<ID>) -> [InstantMutation] {
+    ids.map { delete(id: $0) }
+  }
+
+  /// Deletes each entity by its `id`.
+  public static func delete(_ entities: some Sequence<Self>) -> [InstantMutation] {
+    entities.map { delete(id: $0.id) }
+  }
+
   public static func delete(lookup: InstantEntityLookup<Self>) -> InstantMutation {
     InstantMutation(throwing: { _, _ in
       try validateLookup(lookup)
@@ -2346,14 +2358,52 @@ extension InstantSwiftDataClient {
     createdAt explicitCreatedAt: InstantTimestamp? = nil,
     @InstantMutationBuilder _ build: @Sendable () throws -> [InstantMutation]
   ) async throws -> InstantStoreMutationResult {
-    let transactionID: String
-    if let explicitID {
-      transactionID = explicitID
-    } else if let runtime {
-      transactionID = runtime.configuration.makeID()
-    } else {
-      @Dependency(\.uuid) var uuid
-      transactionID = uuid().uuidString.lowercased()
+    let results = try await transact(
+      try build(),
+      batchSize: nil,
+      id: explicitID,
+      idPrefix: nil,
+      createdAt: explicitCreatedAt
+    )
+    guard let result = results.first else {
+      throw InstantError(
+        code: .implementationFailed,
+        operation: "transact Instant mutations",
+        message: "Atomic transact returned no results.",
+        recovery: "Report this as an InstantSwiftData bug."
+      )
+    }
+    return result
+  }
+
+  /// Instant-shaped multi-mutation commit: `db.transact(goals.map { ...delete() })`.
+  ///
+  /// - Parameters:
+  ///   - mutations: Typed mutation steps (e.g. `Todo.delete(ids:)`).
+  ///   - batchSize: When `nil` (default), all steps form **one** atomic outbox
+  ///     mutation. When set (e.g. `100`), mutations are chunked into sequential
+  ///     transactions of at most that size (prior chunks stay committed if a
+  ///     later chunk throws).
+  ///   - id: Explicit transaction id when `batchSize` is nil or mutations fit
+  ///     in one chunk.
+  ///   - idPrefix: When chunking, transaction ids are `"\(idPrefix)-\(index)"`.
+  ///   - createdAt: Optional shared timestamp for every step.
+  /// - Returns: One result per committed chunk (length 1 when not chunking).
+  @discardableResult
+  public func transact(
+    _ mutations: [InstantMutation],
+    batchSize: Int? = nil,
+    id explicitID: String? = nil,
+    idPrefix: String? = nil,
+    createdAt explicitCreatedAt: InstantTimestamp? = nil
+  ) async throws -> [InstantStoreMutationResult] {
+    guard !mutations.isEmpty else {
+      throw InstantError(
+        code: .validationFailed,
+        operation: "transact Instant mutations",
+        message: "Cannot commit an empty mutation batch.",
+        recovery: "Pass at least one InstantMutation (e.g. Todo.delete(ids:))."
+      )
     }
 
     let createdAt: InstantTimestamp
@@ -2367,15 +2417,53 @@ extension InstantSwiftDataClient {
         milliseconds: Int64((date().timeIntervalSince1970 * 1000).rounded())
       )
     }
-    let operations = try build().flatMap {
-      try $0.operations(transactionID: transactionID, txTime: createdAt)
-    }
-    let transaction = InstantStoreTransaction(id: transactionID, operations: operations)
 
-    if let runtime {
-      return try await runtime.transact(transaction, createdAt: createdAt)
+    let chunks: [[InstantMutation]]
+    if let batchSize {
+      guard batchSize > 0 else {
+        throw InstantError(
+          code: .validationFailed,
+          operation: "transact Instant mutations",
+          message: "batchSize must be greater than zero.",
+          recovery: "Pass batchSize: nil for one atomic commit, or a positive chunk size."
+        )
+      }
+      chunks = stride(from: 0, to: mutations.count, by: batchSize).map { start in
+        Array(mutations[start..<min(start + batchSize, mutations.count)])
+      }
     } else {
-      return try await transact(transaction)
+      chunks = [mutations]
     }
+
+    var results: [InstantStoreMutationResult] = []
+    results.reserveCapacity(chunks.count)
+    for (index, chunk) in chunks.enumerated() {
+      let transactionID: String
+      if chunks.count == 1, let explicitID {
+        transactionID = explicitID
+      } else if let idPrefix {
+        transactionID = "\(idPrefix)-\(index)"
+      } else if let explicitID, chunks.count == 1 {
+        transactionID = explicitID
+      } else if let runtime {
+        transactionID = runtime.configuration.makeID()
+      } else {
+        @Dependency(\.uuid) var uuid
+        transactionID = uuid().uuidString.lowercased()
+      }
+
+      let operations = try chunk.flatMap {
+        try $0.operations(transactionID: transactionID, txTime: createdAt)
+      }
+      let transaction = InstantStoreTransaction(id: transactionID, operations: operations)
+      let result: InstantStoreMutationResult
+      if let runtime {
+        result = try await runtime.transact(transaction, createdAt: createdAt)
+      } else {
+        result = try await transact(transaction)
+      }
+      results.append(result)
+    }
+    return results
   }
 }

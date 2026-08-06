@@ -198,16 +198,15 @@ public struct TodosAppConfiguration: Hashable, Sendable {
     private func deleteAllTodosButtonTapped() {
       let ids = todos.map(\.id)
       guard !ids.isEmpty else { return }
-      // Single outbox mutation (not N× send). Prevents a live refresh from
-      // re-showing server todos between individual pending deletes — the
-      // "delete all → add one → everything comes back" flash.
+      // Library batch API: one atomic outbox mutation (Instant map-delete shape).
+      // Avoids N× send races with live refresh resurfacing server rows mid-flight.
       db.send(
-        DeleteTodos(ids: ids),
-        onOptimisticCommit: { _ in
-          message = "Deleted \(ids.count) todos (local)"
+        mutations: Todo.delete(ids: ids),
+        onOptimisticCommit: { change in
+          message = "Deleted \(change.mutationCount) todos (local)"
         },
-        onServerAccepted: { _ in
-          message = "Deleted \(ids.count) todos (synced)"
+        onServerAccepted: { change in
+          message = "Deleted \(change.mutationCount) todos (synced)"
         },
         onFailure: { error in
           message = "Delete all failed: \(error.recoveryMessage)"
