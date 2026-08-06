@@ -75,8 +75,11 @@ let package = Package(
     .package(url: "https://github.com/pointfreeco/swift-parsing", from: "0.14.1"),
     .package(url: "https://github.com/pointfreeco/xctest-dynamic-overlay", from: "1.0.0"),
     .package(url: "https://github.com/swiftlang/swift-syntax.git", exact: "602.0.0"),
-    // Tailnet WebSocket diagnostics (extracted from Scribe InstantDBLogger).
-    .package(path: "Packages/TailnetDiagnostics"),
+    // TailnetDiagnostics lives at Packages/TailnetDiagnostics and depends on
+    // InstantSwiftData. Do **not** declare it as a package dependency here —
+    // that forms a path-package cycle and breaks dual-dev `swift package edit`
+    // into Scribe (target-graph crash). Recipes keep a no-op host stub; a
+    // separate Recipes host Package can depend on both packages when needed.
   ],
   targets: [
     .target(
@@ -185,7 +188,6 @@ let package = Package(
         "PresenceRecipesV3App",
         "TodosV3App",
         .product(name: "Dependencies", package: "swift-dependencies"),
-        .product(name: "TailnetInstantDBLogger", package: "TailnetDiagnostics"),
       ],
       swiftSettings: strictConcurrencySettings
     ),
