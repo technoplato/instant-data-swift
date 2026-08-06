@@ -1329,6 +1329,61 @@ struct InstantLiveTransportTests {
     _ = try await runtime.closeConnection()
   }
 
+  /// Open-session path used to `await sendOutstandingMutationsToLiveSession()` inside
+  /// every `transact`, so a slow wire send made increment buttons feel like they waited
+  /// on the network. Local-first: `transact` must return after durable optimistic commit.
+  @Test
+  func runtimeLiveTransactReturnsBeforeOpenSessionDeliveryFinishes() async throws {
+    let ids = InstantLiveTransportTestIDSequence(["event-init", "event-tx"])
+    let session = InstantRuntimeScriptedLiveSession(messages: [
+      .initOK(clientEventID: "event-init", attrs: .todoServerAttrs)
+    ])
+    let slowSend = InstantRuntimeSlowSendLiveTransport(
+      base: session.transport,
+      delayNanoseconds: 2_000_000_000
+    )
+    var configuration = InstantRuntimeConfiguration(
+      appID: "runtime-live-transact-nonblocking-delivery",
+      websocketURI: try #require(URL(string: "wss://ws.example.test/runtime/session")),
+      persistenceURL: try temporaryLiveCacheURL(),
+      initialAttributes: TodoExample.attributes,
+      makeID: { ids.next() },
+      liveTransport: slowSend.transport
+    )
+    configuration.autoConnectLiveTransport = true
+    let runtime = try await InstantRuntime.bootstrap(configuration: configuration)
+    _ = try await runtime.connect()
+
+    let started = ContinuousClock.now
+    _ = try await runtime.transact(
+      InstantStoreTransaction(
+        id: "event-tx",
+        operations: TodoExample.createOperations(
+          id: "runtime-live-transact-nonblocking-todo",
+          text: "Optimistic before slow wire send",
+          createdAt: InstantTimestamp(milliseconds: 1_700_000_001_002),
+          transactionID: "event-tx"
+        )
+      )
+    )
+    let elapsed = ContinuousClock.now - started
+    // 2s artificial send delay must not hold the optimistic return path.
+    #expect(elapsed < .milliseconds(500))
+
+    let pending = await runtime.pendingMutations()
+    #expect(pending.contains(where: { $0.id == "event-tx" }))
+    let values = await runtime.store.materialize(TodoExample.query)
+    expectNoDifference(
+      try TodoExample.decode(values).map(\.text),
+      ["Optimistic before slow wire send"]
+    )
+
+    await session.waitForSentMessageCount(2)
+    let sentMessages = await session.sentMessages()
+    expectNoDifference(sentMessages.map(\.op), ["init", "transact"])
+    _ = try await runtime.closeConnection()
+  }
+
   @Test
   func runtimeLiveRefreshReusesInitAttributesWhenPayloadOmitsThem() async throws {
     let serverCreatedAt = InstantTimestamp(milliseconds: 1_700_000_000_456)
@@ -4011,6 +4066,36 @@ private actor InstantRuntimeScriptedLiveSession {
     isClosed = true
     receiveContinuation?.resume(throwing: CancellationError())
     receiveContinuation = nil
+  }
+}
+
+/// Delays every websocket `send` so tests can prove optimistic `transact` does not await delivery.
+private actor InstantRuntimeSlowSendLiveTransport {
+  private let base: InstantLiveTransportClient
+  private let delayNanoseconds: UInt64
+
+  init(base: InstantLiveTransportClient, delayNanoseconds: UInt64) {
+    self.base = base
+    self.delayNanoseconds = delayNanoseconds
+  }
+
+  nonisolated var transport: InstantLiveTransportClient {
+    InstantLiveTransportClient { request in
+      let session = try await self.base.connect(request)
+      let delay = await self.delayNanoseconds
+      return InstantLiveWebSocketSession(
+        send: { message in
+          try await Task.sleep(nanoseconds: delay)
+          try await session.send(message)
+        },
+        receive: {
+          try await session.receive()
+        },
+        close: {
+          await session.close()
+        }
+      )
+    }
   }
 }
 

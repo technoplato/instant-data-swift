@@ -2358,11 +2358,11 @@ public final class InstantRuntime: Sendable {
       let result = try await performTransact(transaction, createdAt: createdAt, source: source)
       await leaveOperationGate()
       enteredOperationGate = false
-      if await liveSession.isOpen {
-        await sendOutstandingMutationsToLiveSession()
-      } else {
-        startLiveMutationDeliveryIfNeeded()
-      }
+      // Local-first (Instant JS pushOps): return after durable optimistic commit.
+      // Do not await websocket delivery here — that couples every increment/send to
+      // RTT and makes onOptimisticCommit fire only after the wire send. Kick
+      // delivery on a free-standing task (same helper used when offline/connecting).
+      startLiveMutationDeliveryIfNeeded()
       InstantDiagnostics.shared.record(
         .debug,
         subsystem: "instant-swift-data-core",

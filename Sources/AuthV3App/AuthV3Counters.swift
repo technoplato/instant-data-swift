@@ -106,7 +106,6 @@ public enum AuthV3CounterAttributes {
     private var accountCounters: [AuthAccountCounter]
 
     @State private var status = ""
-    @State private var isBusy = false
 
     public init(session: InstantAuthSession?) {
       self.session = session
@@ -173,7 +172,6 @@ public enum AuthV3CounterAttributes {
         }
         .buttonStyle(.borderedProminent)
         .controlSize(.regular)
-        .disabled(isBusy)
       }
       .frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -215,7 +213,7 @@ public enum AuthV3CounterAttributes {
         }
         .buttonStyle(.bordered)
         .controlSize(.regular)
-        .disabled(isBusy || session == nil)
+        .disabled(session == nil)
       }
       .frame(maxWidth: .infinity, alignment: .leading)
       .opacity(session == nil ? 0.85 : 1)
@@ -247,13 +245,16 @@ public enum AuthV3CounterAttributes {
           )
         }
       } catch {
-        status = "Public counter bootstrap: \(error)"
+        // Row may already exist on the server while this device's query is still
+        // empty — "Creating entities that exist" must not poison the outbox or
+        // surface as a hard error; live refresh will materialize the row.
+        status = "Public counter will appear when sync catches up."
       }
     }
 
     private func incrementPublic() async {
-      isBusy = true
-      defer { isBusy = false }
+      // Local-first: do not hold isBusy across network delivery. `transact`
+      // returns after durable local commit; the button must stay tappable.
       let next = publicCounterValue + 1
       let stamp = now
       let needsCreate = publicCounter == nil
@@ -275,6 +276,24 @@ public enum AuthV3CounterAttributes {
         }
         status = "Public → \(Int(next))"
       } catch {
+        // Create can fail if the stable public row already exists remotely.
+        // Fall back to update so a first-press race still increments.
+        if needsCreate {
+          do {
+            try await db.transact {
+              AuthPublicCounter.update(
+                id: AuthPublicCounter.publicEntityID,
+                AuthPublicCounter.value.set(next),
+                AuthPublicCounter.updatedAt.set(stamp)
+              )
+            }
+            status = "Public → \(Int(next))"
+            return
+          } catch {
+            status = String(describing: error)
+            return
+          }
+        }
         status = String(describing: error)
       }
     }
@@ -284,8 +303,7 @@ public enum AuthV3CounterAttributes {
         status = "Sign in first (guest is fine)."
         return
       }
-      isBusy = true
-      defer { isBusy = false }
+      // Local-first: no isBusy gate — rapid taps must not wait on the wire.
       let id = InstantID<AuthAccountCounter>(rawValue: userID)
       let next = (myAccountCounter?.value ?? 0) + 1
       let stamp = now
@@ -310,6 +328,23 @@ public enum AuthV3CounterAttributes {
         }
         status = "Mine → \(Int(next)) for \(userID.prefix(8))…"
       } catch {
+        if needsCreate {
+          do {
+            try await db.transact {
+              AuthAccountCounter.update(
+                id: id,
+                AuthAccountCounter.ownerUserID.set(userID),
+                AuthAccountCounter.value.set(next),
+                AuthAccountCounter.updatedAt.set(stamp)
+              )
+            }
+            status = "Mine → \(Int(next)) for \(userID.prefix(8))…"
+            return
+          } catch {
+            status = String(describing: error)
+            return
+          }
+        }
         status = String(describing: error)
       }
     }

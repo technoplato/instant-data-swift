@@ -229,24 +229,21 @@ public struct TodosAppConfiguration: Hashable, Sendable {
     private func deleteAllTodosButtonTapped() {
       let ids = todos.map(\.id)
       guard !ids.isEmpty else { return }
-      // One atomic outbox mutation (Instant map-delete). Await server acceptance
-      // within the 5s budget so a silent local-only delete cannot look like success.
-      let count = ids.count
-      message = "Deleting \(count) todos…"
-      Task { @MainActor in
-        do {
-          let change = try await db.sendAwaitingServerAcceptance(
-            InstantMutationBatch(Todo.delete(ids: ids)),
-            timeout: .seconds(5)
-          )
+      // Library batch API: one atomic outbox mutation (Instant map-delete shape).
+      // Local-first: fire-and-forget send with optimistic callbacks — do not
+      // await server acceptance (offline must keep working).
+      db.send(
+        mutations: Todo.delete(ids: ids),
+        onOptimisticCommit: { change in
+          message = "Deleted \(change.mutationCount) todos (local)"
+        },
+        onServerAccepted: { change in
           message = "Deleted \(change.mutationCount) todos (synced)"
-        } catch let error as InstantError {
-          message =
-            "Delete all failed (\(count) todos): \(error.message) — \(error.recoveryMessage)"
-        } catch {
-          message = "Delete all failed (\(count) todos): \(error)"
+        },
+        onFailure: { error in
+          message = "Delete all failed: \(error.recoveryMessage)"
         }
-      }
+      )
     }
   }
 #endif
