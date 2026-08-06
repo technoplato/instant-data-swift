@@ -4,6 +4,20 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## August 6th, 2026 at 1:54:31 p.m. EDT — `c3fadbac66a7` Fix iOS recipes install: home wipe path and iOS 17 availability
+
+- **Implementation commit:** `c3fadbac66a743d4d1fec598e3c5ef8b91cfbfd5`
+- **Change:** Fix iOS Instant Recipes install availability and wipe path
+- **Details:**
+  - Unblocks physical iPhone install of Instant Recipes with Auth counters.
+- **Files:**
+  - `Sources/RecipesV3App/RecipesDebugSupport.swift` — Portable wipe path without homeDirectoryForCurrentUser
+  - `Sources/LinkedInfiniteV3App/LinkedInfiniteApp.swift` — iOS 17 for ContentUnavailableView screens
+  - `Sources/AuthV3App/AuthApp.swift` — Availability gate for AuthV3CountersCard
+- **User context (verbatim):**
+  > install the recipes app on my Mac and bring it to forward with AppleScript and then install it on my iPhone as well
+- **SpecStory:** unavailable — Grok Build session; no SpecStory URI authorized
+
 ## August 6th, 2026 at 1:49:55 p.m. EDT — `24520678695b` Put public and account counters on the Auth recipe page
 
 - **Implementation commit:** `24520678695b530f1dc2ca5462094e93228830be`
