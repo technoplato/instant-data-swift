@@ -4,8 +4,8 @@
 - **Date opened:** 2026-08-06
 - **Instant issue:** [#155](https://issues.knophy.com/issues/155)
 - **Related:** ADR 0001 (app/sync boundary), ADR 0014 (entity lifecycle + open-segment), Scribe ADR 0006, issues #044 (memory), #092 (streams)
-- **Artifacts:** `qanda.md` · `findings.md` · `overviews/` · **`plan.md`**
-- **Cold resume:** `query-issue 155` → read `plan.md` → first unsatisfied criterion
+- **Artifacts:** `qanda.md` · `findings.md` · `overviews/` · **`plan.md`** · **`HANDOFF.md`**
+- **Cold resume:** `query-issue 155` → read **`HANDOFF.md`** → `plan.md` → first unsatisfied criterion
 - **Consumer app:** `/Users/laptop/Sync/tools/realtime-voice-sqlite-instant` (Scribe)
 
 ## One-line goal
