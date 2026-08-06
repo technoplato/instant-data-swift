@@ -9,9 +9,13 @@
 /* Begin PBXBuildFile section */
 		1839316989DD225C714535A4 /* RecipesV3App in Frameworks */ = {isa = PBXBuildFile; productRef = 7C3350CCC1BCDB582F8A5731 /* RecipesV3App */; };
 		1FD9E35F7558F09BCB16A46D /* main.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6A43B34B403A7137530BB5BA /* main.swift */; };
+		4DF083D5E3E2D0FC1481F0B5 /* RecipesV3.env in Resources */ = {isa = PBXBuildFile; fileRef = 36D28F906940E84BEECB7D45 /* RecipesV3.env */; };
 		4F2E4B21DB86DF8198CAD83B /* RecipesV3App in Frameworks */ = {isa = PBXBuildFile; productRef = 0CEC7E07DFBBAA44C8463D5B /* RecipesV3App */; };
 		5171E5DF77207544A88850D4 /* main.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6A43B34B403A7137530BB5BA /* main.swift */; };
 		52BC57A96F5E2EC33A92272C /* main.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6A43B34B403A7137530BB5BA /* main.swift */; };
+		5A0B215D911863C31F5F78A8 /* RecipesV3.env in Resources */ = {isa = PBXBuildFile; fileRef = 36D28F906940E84BEECB7D45 /* RecipesV3.env */; };
+		81836A63766ED06771DB610E /* RecipesV3.env in Resources */ = {isa = PBXBuildFile; fileRef = 36D28F906940E84BEECB7D45 /* RecipesV3.env */; };
+		8A942524F5AAAEFA588455D1 /* RecipesV3.env in Resources */ = {isa = PBXBuildFile; fileRef = 36D28F906940E84BEECB7D45 /* RecipesV3.env */; };
 		E3E4949BB40911CC8623922B /* RecipesV3App in Frameworks */ = {isa = PBXBuildFile; productRef = EBC999694E6FEF19CC3375DB /* RecipesV3App */; };
 		EEF7156F7E7B3EEB1BFB9D25 /* RecipesV3App in Frameworks */ = {isa = PBXBuildFile; productRef = 2F3C478E84932698A2B46A96 /* RecipesV3App */; };
 		F98775CA4C3A1E4148ACBB7A /* main.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6A43B34B403A7137530BB5BA /* main.swift */; };
@@ -19,6 +23,7 @@
 
 /* Begin PBXFileReference section */
 		000DA2AE3FE950D8554398A2 /* InstantRecipesV3watchOS.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = InstantRecipesV3watchOS.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		36D28F906940E84BEECB7D45 /* RecipesV3.env */ = {isa = PBXFileReference; path = RecipesV3.env; sourceTree = "<group>"; };
 		49C1264C9326C4F064CC0BF8 /* RecipesV3.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = RecipesV3.xcconfig; sourceTree = "<group>"; };
 		4CD15A6E92F66E8C2B4F4EED /* InstantRecipesV3iOS.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = InstantRecipesV3iOS.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		6A43B34B403A7137530BB5BA /* main.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = main.swift; sourceTree = "<group>"; };
@@ -94,6 +99,7 @@
 		9003B3D3763B70D7E9EE3869 = {
 			isa = PBXGroup;
 			children = (
+				36D28F906940E84BEECB7D45 /* RecipesV3.env */,
 				0BA1FFF66296500EA9CA3EDD /* Packages */,
 				61E264CEFF1A03DE1870E474 /* RecipesV3 */,
 				D80A5AE630AE3188A95DF047 /* RecipesV3Executable */,
@@ -117,7 +123,9 @@
 			isa = PBXNativeTarget;
 			buildConfigurationList = 4AEAFE69BA0170B14A5CE7FE /* Build configuration list for PBXNativeTarget "InstantRecipesV3iOS" */;
 			buildPhases = (
+				33EFC7A285DA71EF599667D3 /* Sync Instant .env */,
 				D8C1149A269CC9667F98E852 /* Sources */,
+				4C332878B1FCAFB867EE5FB4 /* Resources */,
 				3A0FDFCDF474FF0B30E70A92 /* Frameworks */,
 			);
 			buildRules = (
@@ -136,7 +144,9 @@
 			isa = PBXNativeTarget;
 			buildConfigurationList = E1324D5631EF1E228307944E /* Build configuration list for PBXNativeTarget "InstantRecipesV3macOS" */;
 			buildPhases = (
+				2BA086258E64DBDA16CF2ED8 /* Sync Instant .env */,
 				8D18097FDEB14772A584A725 /* Sources */,
+				41639EEFF232269A1F61B0C9 /* Resources */,
 				5B7A10E72773B1D4F3CA2444 /* Frameworks */,
 			);
 			buildRules = (
@@ -155,7 +165,9 @@
 			isa = PBXNativeTarget;
 			buildConfigurationList = 1A3E7FBC00045C1AC28E6E98 /* Build configuration list for PBXNativeTarget "InstantRecipesV3watchOS" */;
 			buildPhases = (
+				E9AEE2A3C785830079E1B6E1 /* Sync Instant .env */,
 				5539EC9C789A48D3D7E1777B /* Sources */,
+				41F6DAB08B0111F4116A719A /* Resources */,
 				F1B807EFE8486239377A84A1 /* Frameworks */,
 			);
 			buildRules = (
@@ -174,7 +186,9 @@
 			isa = PBXNativeTarget;
 			buildConfigurationList = 0CB9EE4A8B8C7AED17889C52 /* Build configuration list for PBXNativeTarget "InstantRecipesV3tvOS" */;
 			buildPhases = (
+				A95168412793DECDE2E08B03 /* Sync Instant .env */,
 				B3A60F30C1220CE5A6A1D997 /* Sources */,
+				8240BB9CCC3CACAFB087353C /* Resources */,
 				3C99161160F2157110FDEA2F /* Frameworks */,
 			);
 			buildRules = (
@@ -224,6 +238,120 @@
 			);
 		};
 /* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		41639EEFF232269A1F61B0C9 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				81836A63766ED06771DB610E /* RecipesV3.env in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		41F6DAB08B0111F4116A719A /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				8A942524F5AAAEFA588455D1 /* RecipesV3.env in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		4C332878B1FCAFB867EE5FB4 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				4DF083D5E3E2D0FC1481F0B5 /* RecipesV3.env in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		8240BB9CCC3CACAFB087353C /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				5A0B215D911863C31F5F78A8 /* RecipesV3.env in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXShellScriptBuildPhase section */
+		2BA086258E64DBDA16CF2ED8 /* Sync Instant .env */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			name = "Sync Instant .env";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "set -euo pipefail\n\"${SRCROOT}/sync-env.sh\"\n";
+		};
+		33EFC7A285DA71EF599667D3 /* Sync Instant .env */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			name = "Sync Instant .env";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "set -euo pipefail\n\"${SRCROOT}/sync-env.sh\"\n";
+		};
+		A95168412793DECDE2E08B03 /* Sync Instant .env */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			name = "Sync Instant .env";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "set -euo pipefail\n\"${SRCROOT}/sync-env.sh\"\n";
+		};
+		E9AEE2A3C785830079E1B6E1 /* Sync Instant .env */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			name = "Sync Instant .env";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "set -euo pipefail\n\"${SRCROOT}/sync-env.sh\"\n";
+		};
+/* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
 		5539EC9C789A48D3D7E1777B /* Sources */ = {

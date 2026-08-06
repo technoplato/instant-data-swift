@@ -258,14 +258,26 @@ public struct RecipesV3AppConfiguration: Hashable, Sendable {
           // Thread the single recipes Instant client into every recipe screen.
           // `prepareDependencies` alone does not reliably reach SwiftUI
           // `@Dependency` property wrappers for CreateTodo / FetchAll / rooms.
+          //
+          // Critical: do NOT mount anything that reads
+          // `@Dependency(\.defaultInstantSwiftData)` before bootstrap finishes.
+          // That caches the unimplemented live value and poisons the process.
           RecipesV3CatalogScreen(
             profileID: model.configuration.profileID,
             launchRecipe: model.configuration.launchRecipe,
             isLive: model.configuration.enablesLiveSync,
             authProviderConfiguration: model.configuration.authProviderConfiguration,
-            appID: model.configuration.appID
+            appID: model.configuration.appID,
+            client: client
           )
           .dependency(\.defaultInstantSwiftData, client)
+          .recipesDebugPanel(
+            recipeLabel: model.configuration.launchRecipe?.title ?? "catalog",
+            isLive: model.configuration.enablesLiveSync,
+            appID: model.configuration.appID,
+            client: client,
+            initialPresentation: .expanded
+          )
         } else if let errorMessage = model.errorMessage {
           VStack(spacing: 12) {
             Image(systemName: "exclamationmark.triangle")
@@ -275,22 +287,28 @@ public struct RecipesV3AppConfiguration: Hashable, Sendable {
             Text(errorMessage)
               .font(.caption)
               .foregroundStyle(.secondary)
+            if !model.configuration.enablesLiveSync {
+              Text(
+                "No live Instant app id. Put INSTANT_APP_ID in Examples/RecipesV3/.env and rebuild (or run provision-live-app.sh)."
+              )
+              .font(.caption)
+              .foregroundStyle(.orange)
+              .multilineTextAlignment(.center)
+            }
           }
           .padding()
         } else {
-          ProgressView("Opening Instant Recipes")
+          ProgressView(
+            model.configuration.enablesLiveSync
+              ? "Opening live Instant (\(model.configuration.appID.prefix(8))…)"
+              : "Opening local Instant Recipes (no INSTANT_APP_ID)"
+          )
         }
       }
       .task {
         RecipesDebugLogRing.shared.installDiagnosticsBridgeIfNeeded()
         model.startIfNeeded()
       }
-      .recipesDebugPanel(
-        recipeLabel: model.configuration.launchRecipe?.title ?? "catalog",
-        isLive: model.configuration.enablesLiveSync,
-        appID: model.configuration.appID,
-        initialPresentation: .expanded
-      )
     }
   }
 
@@ -302,6 +320,7 @@ public struct RecipesV3AppConfiguration: Hashable, Sendable {
     private let isLive: Bool
     private let authProviderConfiguration: AuthV3ProviderConfiguration
     private let appID: String
+    private let client: InstantSwiftDataClient
 
     public init(
       profileID: String,
@@ -310,12 +329,14 @@ public struct RecipesV3AppConfiguration: Hashable, Sendable {
       authProviderConfiguration: AuthV3ProviderConfiguration = AuthV3ProviderConfiguration(
         browserRedirectURL: URL(string: "instant-recipes-v3://oauth-callback")
       ),
-      appID: String = RecipesV3AppConfiguration.localAppID
+      appID: String = RecipesV3AppConfiguration.localAppID,
+      client: InstantSwiftDataClient
     ) {
       self.profileID = profileID
       self.isLive = isLive
       self.authProviderConfiguration = authProviderConfiguration
       self.appID = appID
+      self.client = client
       _path = State(initialValue: launchRecipe.map { [$0] } ?? [])
     }
 
@@ -349,6 +370,8 @@ public struct RecipesV3AppConfiguration: Hashable, Sendable {
               allowsProviderSignIn: isLive,
               authProviderConfiguration: authProviderConfiguration
             )
+            // Re-inject on each destination — NavigationStack can drop TaskLocal deps.
+            .dependency(\.defaultInstantSwiftData, client)
           }
         #else
           List {
@@ -364,6 +387,11 @@ public struct RecipesV3AppConfiguration: Hashable, Sendable {
                 .font(.caption.monospaced())
                 .foregroundStyle(.secondary)
                 .textSelection(.enabled)
+              if !isLive {
+                Text("Missing INSTANT_APP_ID — set Examples/RecipesV3/.env and rebuild.")
+                  .font(.caption2)
+                  .foregroundStyle(.orange)
+              }
             }
 
             Section {
@@ -388,6 +416,8 @@ public struct RecipesV3AppConfiguration: Hashable, Sendable {
               allowsProviderSignIn: isLive,
               authProviderConfiguration: authProviderConfiguration
             )
+            // Re-inject on each destination — NavigationStack can drop TaskLocal deps.
+            .dependency(\.defaultInstantSwiftData, client)
           }
         #endif
       }

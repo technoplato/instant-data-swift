@@ -90,6 +90,9 @@ printf 'INSTANT_APP_ID=%s\n' "$app_id" >>"$dotenv_file"
 printf 'INSTANT_ADMIN_TOKEN=%s\n' "$admin_token" >>"$dotenv_file"
 chmod 600 "$dotenv_file"
 
+# Bundle-safe APP_ID resource + xcconfig (admin token stays only in .env / private).
+"$script_dir/sync-env.sh"
+
 print "Provisioned the aggregate recipes schema and wrote persistent local credentials."
 print "Credentials: $credential_file"
 print "Xcode config: $local_config"

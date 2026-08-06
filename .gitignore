@@ -18,3 +18,6 @@ upstream/sharing-instant/
 upstream/sqlite-data/
 benchmarks/.build/
 benchmarks/.index-build/
+
+# Generated from .env for device bundles (APP_ID only)
+Examples/RecipesV3/RecipesV3.env

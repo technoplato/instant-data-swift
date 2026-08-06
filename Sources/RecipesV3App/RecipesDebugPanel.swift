@@ -27,7 +27,6 @@ public struct RecipesDebugPanel: View {
   }
 
   @ObservedObject private var ring = RecipesDebugLogRing.shared
-  @Dependency(\.defaultInstantSwiftData) private var db
   @State private var presentation: Presentation
   @State private var didCopy = false
   @State private var wipeMessage = ""
@@ -37,17 +36,22 @@ public struct RecipesDebugPanel: View {
   private let recipeLabel: String
   private let isLive: Bool
   private let appID: String
+  /// Bootstrapped client — never read `@Dependency(\.defaultInstantSwiftData)` here.
+  /// Accessing that key before bootstrap caches the unimplemented live value forever.
+  private let client: InstantSwiftDataClient?
   private let sampleIntervalSeconds: Double = 2
 
   public init(
     recipeLabel: String,
     isLive: Bool,
     appID: String = "",
+    client: InstantSwiftDataClient? = nil,
     initialPresentation: Presentation = .expanded
   ) {
     self.recipeLabel = recipeLabel
     self.isLive = isLive
     self.appID = appID
+    self.client = client
     _presentation = State(initialValue: initialPresentation)
   }
 
@@ -71,7 +75,9 @@ public struct RecipesDebugPanel: View {
         RecipesDebugLogRing.shared.installDiagnosticsBridgeIfNeeded()
         while !Task.isCancelled {
           ring.recordMetricsSample()
-          await ring.refreshFailedOutbox(using: db)
+          if let client {
+            await ring.refreshFailedOutbox(using: client)
+          }
           try? await Task.sleep(for: .seconds(sampleIntervalSeconds))
         }
       }
@@ -185,13 +191,17 @@ public struct RecipesDebugPanel: View {
           .disabled(appID.isEmpty)
 
           Button {
-            Task { await ring.refreshFailedOutbox(using: db) }
+            Task {
+              guard let client else { return }
+              await ring.refreshFailedOutbox(using: client)
+            }
           } label: {
             Label("Refresh outbox", systemImage: "arrow.clockwise")
               .font(.system(.caption2, design: .monospaced, weight: .semibold))
           }
           .buttonStyle(.bordered)
           .controlSize(.small)
+          .disabled(client == nil)
         }
 
         if !wipeMessage.isEmpty {
@@ -511,6 +521,7 @@ extension View {
     recipeLabel: String,
     isLive: Bool,
     appID: String = "",
+    client: InstantSwiftDataClient? = nil,
     initialPresentation: RecipesDebugPanel.Presentation = .expanded
   ) -> some View {
     #if os(watchOS) || os(tvOS)
@@ -522,6 +533,7 @@ extension View {
           recipeLabel: recipeLabel,
           isLive: isLive,
           appID: appID,
+          client: client,
           initialPresentation: initialPresentation
         )
       }

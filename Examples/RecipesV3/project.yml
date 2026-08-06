@@ -12,18 +12,31 @@ packages:
   InstantSwiftData:
     path: ../..
 
+# Live Instant: put INSTANT_APP_ID in gitignored `.env`, then `./sync-env.sh`
+# (also run as a pre-build script). That writes RecipesV3.local.xcconfig and a
+# bundle-safe RecipesV3.env (APP_ID only — never the admin token).
+
 targets:
   InstantRecipesV3iOS:
     type: application
     platform: iOS
     sources:
       - path: ../../Sources/RecipesV3Executable/main.swift
+      - path: RecipesV3.env
+        buildPhase: resources
+        optional: true
     dependencies:
       - package: InstantSwiftData
         product: RecipesV3App
     configFiles:
       Debug: RecipesV3.xcconfig
       Release: RecipesV3.xcconfig
+    preBuildScripts:
+      - name: Sync Instant .env
+        basedOnDependencyAnalysis: false
+        script: |
+          set -euo pipefail
+          "${SRCROOT}/sync-env.sh"
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.technoplato.InstantSwiftData.RecipesV3iOS
@@ -41,12 +54,21 @@ targets:
     platform: macOS
     sources:
       - path: ../../Sources/RecipesV3Executable/main.swift
+      - path: RecipesV3.env
+        buildPhase: resources
+        optional: true
     dependencies:
       - package: InstantSwiftData
         product: RecipesV3App
     configFiles:
       Debug: RecipesV3.xcconfig
       Release: RecipesV3.xcconfig
+    preBuildScripts:
+      - name: Sync Instant .env
+        basedOnDependencyAnalysis: false
+        script: |
+          set -euo pipefail
+          "${SRCROOT}/sync-env.sh"
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.technoplato.InstantSwiftData.RecipesV3macOS
@@ -63,12 +85,21 @@ targets:
     platform: tvOS
     sources:
       - path: ../../Sources/RecipesV3Executable/main.swift
+      - path: RecipesV3.env
+        buildPhase: resources
+        optional: true
     dependencies:
       - package: InstantSwiftData
         product: RecipesV3App
     configFiles:
       Debug: RecipesV3.xcconfig
       Release: RecipesV3.xcconfig
+    preBuildScripts:
+      - name: Sync Instant .env
+        basedOnDependencyAnalysis: false
+        script: |
+          set -euo pipefail
+          "${SRCROOT}/sync-env.sh"
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.technoplato.InstantSwiftData.RecipesV3tvOS
@@ -84,12 +115,21 @@ targets:
     platform: watchOS
     sources:
       - path: ../../Sources/RecipesV3Executable/main.swift
+      - path: RecipesV3.env
+        buildPhase: resources
+        optional: true
     dependencies:
       - package: InstantSwiftData
         product: RecipesV3App
     configFiles:
       Debug: RecipesV3.xcconfig
       Release: RecipesV3.xcconfig
+    preBuildScripts:
+      - name: Sync Instant .env
+        basedOnDependencyAnalysis: false
+        script: |
+          set -euo pipefail
+          "${SRCROOT}/sync-env.sh"
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.technoplato.InstantSwiftData.RecipesV3watchOS

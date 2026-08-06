@@ -5,7 +5,20 @@ import SwiftUI
 
 /// Loads KEY=VALUE pairs from dotenv-style files into the process environment
 /// without overwriting keys already set by the shell or Xcode.
+///
+/// Source of truth for live Instant: `Examples/RecipesV3/.env` (gitignored).
+/// On device/Xcode hosts, the same app id is also embedded as `InstantAppID`
+/// in Info.plist (from `RecipesV3.local.xcconfig`, written by provision/sync).
 enum RecipesV3DotEnv {
+  /// Keys that may ship inside the app bundle resource. Admin tokens never do.
+  private static let bundleSafeKeys: Set<String> = [
+    "INSTANT_APP_ID",
+    "INSTANT_RECIPE",
+    "INSTANT_APPLE_AUTH_CLIENT_NAME",
+    "INSTANT_GOOGLE_AUTH_CLIENT_NAME",
+    "INSTANT_OAUTH_REDIRECT_URL",
+  ]
+
   static func load() {
     let fm = FileManager.default
     var candidates: [URL] = []
@@ -14,6 +27,15 @@ enum RecipesV3DotEnv {
       !custom.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     {
       candidates.append(URL(fileURLWithPath: custom))
+    }
+
+    // Bundled copy (APP_ID only) so physical devices get live Instant without
+    // a filesystem path to the repo .env.
+    if let bundled = Bundle.main.url(forResource: "RecipesV3", withExtension: "env") {
+      candidates.append(bundled)
+    }
+    if let bundled = Bundle.main.url(forResource: "RecipesV3", withExtension: "env", subdirectory: nil) {
+      candidates.append(bundled)
     }
 
     // Package-relative locations when launched via `swift run` from repo root.
@@ -43,7 +65,8 @@ enum RecipesV3DotEnv {
     for url in candidates {
       guard fm.isReadableFile(atPath: url.path) else { continue }
       guard let text = try? String(contentsOf: url, encoding: .utf8) else { continue }
-      apply(text)
+      let fromBundle = url.path.contains(".app/") || url.path.contains("Bundle")
+      apply(text, allowOnly: fromBundle ? Self.bundleSafeKeys : nil)
       loadedFrom = url.path
       break
     }
@@ -60,7 +83,7 @@ enum RecipesV3DotEnv {
     )
   }
 
-  private static func apply(_ text: String) {
+  private static func apply(_ text: String, allowOnly: Set<String>? = nil) {
     for rawLine in text.split(whereSeparator: \.isNewline) {
       var line = String(rawLine).trimmingCharacters(in: .whitespaces)
       if line.isEmpty || line.hasPrefix("#") { continue }
@@ -77,6 +100,7 @@ enum RecipesV3DotEnv {
         value = String(value.dropFirst().dropLast())
       }
       guard !key.isEmpty else { continue }
+      if let allowOnly, !allowOnly.contains(key) { continue }
       // Shell / Xcode wins over file.
       if ProcessInfo.processInfo.environment[key] == nil {
         setenv(key, value, 0)
