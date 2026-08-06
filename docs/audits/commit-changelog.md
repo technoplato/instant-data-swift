@@ -1,5 +1,12 @@
 ## 2026-08-05 23:35:07 EDT
 
+## 2026-08-06 13:49:55 EDT
+
+- **Repository:** instant-data-swift
+- **Commit:** `24520678695b530f1dc2ca5462094e93228830be`
+- **High-level reason:** Put public + account counters on Auth recipe page so they react to login/logout (#152)
+
+
 - **Repository:** realtime-voice-sqlite-instant
 - **Commit:** `44cd5f9ff0005907f53eb748d94b26dd46c71bd2`
 - **Reason:** Memory soak dependency fixtures + debounced timeline saves for long-recording footprint (#044).
