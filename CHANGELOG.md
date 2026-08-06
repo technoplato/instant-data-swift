@@ -4,6 +4,19 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## August 6th, 2026 at 3:22:19 p.m. EDT — `ea9f8b978c30` Use UUID entity IDs for recipe public counter and private note
+
+- **Implementation commit:** `ea9f8b978c3067f72946426e271dcf8804315838`
+- **Change:** Use UUID entity IDs for recipe public counter
+- **Details:**
+  - Server: Invalid entity ID public-counter must be UUIDs. Fixed stable UUID for public counter and private-note probe.
+- **Files:**
+  - `Sources/AuthV3App/AuthV3Counters.swift` — Stable UUID for shared public counter entity
+  - `Sources/RecipesV3App/RecipesSharingScreen.swift` — UUID for private-note probe entity
+- **User context (verbatim):**
+  > Invalid entity ID 'public-counter'. Entity IDs must be UUIDs
+- **SpecStory:** unavailable — Grok Build session; no SpecStory URI authorized
+
 ## August 6th, 2026 at 3:16:23 p.m. EDT — `6e79b7cf84fd` Extract Tailnet InstantDBLogger package and wire Recipes auth diagnostics
 
 - **Implementation commit:** `6e79b7cf84fd7f30f465ae1253659275c9ebe147`
