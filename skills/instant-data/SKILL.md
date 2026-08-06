@@ -140,7 +140,10 @@ wrapper with an explicit `nil` key so it does not start a broad observation.
   limit two most recent) then **map/truncate** to two UI lines — not full
   timelines, not denormalized full preview text as the primary design.
 - **This vs other device** = compare activity `clientId` to Instant **local
-  client id** (port/expose from TS if Swift incomplete).
+  client id** via `try await client.clientID()` (TS `getLocalId` /
+  `Reactor.getLocalId`; reserved name `InstantClientID.name`). Offline-safe.
+  Helper: `InstantClientID.isThisClient(activityClientID:localClientID:)`.
+  Not websocket `session-id` (reconnect-scoped presence peer).
 - Prefer library-owned include + limit + map helpers (ADR 0015 overview 03);
   never multi-subscribe merge of the whole transcript graph for list paint.
 - **Correctness over convenience** — fix query ergonomics rather than denorm

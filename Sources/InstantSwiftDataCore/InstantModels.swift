@@ -75,6 +75,54 @@ public struct InstantLocalID: Hashable, Codable, Sendable, Identifiable {
   }
 }
 
+/// Stable Instant **client id** for this device + app install (ADR 0015 Q23).
+///
+/// Instant TypeScript exposes the same idea as
+/// `db.getLocalId(name)` / `Reactor.getLocalId` — a local UUID unique to this
+/// device and app, persisted in local storage and **not** the websocket
+/// `session-id` from `init-ok` (that peer id changes on reconnect).
+///
+/// Scribe product activity ADTs (`active(clientId:)` / `playback(clientId:)`)
+/// store this string on the recording and compare it to the local value:
+///
+/// ```swift
+/// let local = try await client.clientID()
+/// // write when this device starts recording:
+/// //   activity = .active(clientId: local)
+/// // list UI:
+/// switch activity {
+/// case .active(let id) where InstantClientID.isThisClient(activityClientID: id, localClientID: local):
+///   // this device
+/// case .active:
+///   // other device
+/// case .playback(let id) where InstantClientID.isThisClient(activityClientID: id, localClientID: local):
+///   // playback here
+/// case .playback:
+///   // playback elsewhere
+/// case nil:
+///   // idle
+/// }
+/// ```
+///
+/// Offline: always available — pure local SQLite / KV, no network.
+/// Cleared only if the local Instant store is wiped (same as TS IndexedDB).
+public enum InstantClientID: Sendable {
+  /// Reserved local-id name used by ``InstantRuntime/clientID()``.
+  ///
+  /// Prefer ``InstantRuntime/clientID()`` / `InstantSwiftDataClient.clientID()`
+  /// over calling `localID(named:)` with this string by hand.
+  public static let name = "instant.client"
+
+  /// `true` when the activity's client id is this Instant client (same
+  /// device + app local store).
+  public static func isThisClient(
+    activityClientID: String,
+    localClientID: String
+  ) -> Bool {
+    activityClientID == localClientID
+  }
+}
+
 public struct InstantTimestamp: Hashable, Codable, Comparable, Sendable {
   public var milliseconds: Int64
 

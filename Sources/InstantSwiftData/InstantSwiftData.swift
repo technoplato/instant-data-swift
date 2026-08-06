@@ -1444,6 +1444,24 @@ public struct InstantSwiftDataClient: Sendable {
     try await localIDOperation(name)
   }
 
+  /// Stable Instant client id for this device + app install (ADR 0015 Q23).
+  ///
+  /// Resolves Instant TS `getLocalId` for the reserved name
+  /// ``InstantClientID/name``. Offline-safe (local store only). Prefer this
+  /// over inventing a second device-id type.
+  ///
+  /// Scribe activity comparison:
+  /// ```swift
+  /// let local = try await client.clientID()
+  /// InstantClientID.isThisClient(
+  ///   activityClientID: activity.clientId,
+  ///   localClientID: local
+  /// )
+  /// ```
+  public func clientID() async throws -> String {
+    try await localID(named: InstantClientID.name)
+  }
+
   public func authSession() async throws -> InstantAuthSession? {
     try await authSessionOperation()
   }
