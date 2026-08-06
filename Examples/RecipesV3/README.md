@@ -19,6 +19,12 @@ All durable state, presence, topic, mutation, and authentication behavior lives
 in the Swift package targets. This folder only supplies native macOS, iOS,
 tvOS, and watchOS application hosts.
 
+**One Instant app for every recipe.** The host bootstraps a single Instant
+client (`INSTANT_APP_ID` / `InstantAppID`) with the combined recipes schema, then
+threads that client into Todos, Linked Infinite, presence demos, sharing, and
+auth. Recipe screens never open their own Instant apps. Without an app ID the
+host uses the local-only id `recipes-v3-local`.
+
 The tvOS host uses Siri Remote focus for navigation, directional cursor
 controls, reactions, authentication, and the Merge Tile board. The watchOS
 host uses a compact recipe catalog, touch-driven cursor surfaces, and a

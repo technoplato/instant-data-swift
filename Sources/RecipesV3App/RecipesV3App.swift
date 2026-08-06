@@ -73,13 +73,24 @@ public enum InstantRecipeV3: String, CaseIterable, Hashable, Identifiable, Senda
   }
 }
 
+/// Host configuration for the Instant Recipes catalog.
+///
+/// **One Instant app ID for every recipe.** Todos, Linked Infinite, presence
+/// demos, merge-tile, sharing, and auth all share a single
+/// `bootstrapInstantSwiftData` client (`appID` below). Recipe screens must not
+/// open their own Instant apps — they consume `@Dependency(\.defaultInstantSwiftData)`
+/// injected after this host finishes bootstrapping.
 public struct RecipesV3AppConfiguration: Hashable, Sendable {
+  /// Shared Instant application ID used by the entire recipes catalog.
   public var appID: String
   public var persistenceURL: URL?
   public var enablesLiveSync: Bool
   public var profileID: String
   public var launchRecipe: InstantRecipeV3?
   public var authProviderConfiguration: AuthV3ProviderConfiguration
+
+  /// Durable local-only app id when no live Instant app is configured.
+  public static let localAppID = "recipes-v3-local"
 
   public init(
     appID: String,
@@ -128,7 +139,7 @@ public struct RecipesV3AppConfiguration: Hashable, Sendable {
           ?? infoDictionary["InstantOAuthRedirectURL"] as? String
       ) ?? "instant-recipes-v3://oauth-callback"
     return Self(
-      appID: configuredAppID ?? "recipes-v3-local",
+      appID: configuredAppID ?? Self.localAppID,
       persistenceURL: environment["INSTANT_PERSISTENCE_PATH"].map(URL.init(fileURLWithPath:)),
       enablesLiveSync: configuredAppID != nil,
       profileID: normalizedConfigurationValue(environment["INSTANT_RECIPE_PROFILE_ID"])
@@ -138,6 +149,7 @@ public struct RecipesV3AppConfiguration: Hashable, Sendable {
     )
   }
 
+  /// Combined schema for **all** recipes — one Instant app, one attribute set.
   public static var initialAttributes: [InstantAttribute] {
     Todo.instantAttributes
       + LinkedInfiniteSeed.instantAttributes
@@ -242,13 +254,18 @@ public struct RecipesV3AppConfiguration: Hashable, Sendable {
 
     public var body: some View {
       Group {
-        if model.client != nil {
+        if let client = model.client {
+          // Thread the single recipes Instant client into every recipe screen.
+          // `prepareDependencies` alone does not reliably reach SwiftUI
+          // `@Dependency` property wrappers for CreateTodo / FetchAll / rooms.
           RecipesV3CatalogScreen(
             profileID: model.configuration.profileID,
             launchRecipe: model.configuration.launchRecipe,
             isLive: model.configuration.enablesLiveSync,
-            authProviderConfiguration: model.configuration.authProviderConfiguration
+            authProviderConfiguration: model.configuration.authProviderConfiguration,
+            appID: model.configuration.appID
           )
+          .dependency(\.defaultInstantSwiftData, client)
         } else if let errorMessage = model.errorMessage {
           VStack(spacing: 12) {
             Image(systemName: "exclamationmark.triangle")
@@ -284,6 +301,7 @@ public struct RecipesV3AppConfiguration: Hashable, Sendable {
     private let profileID: String
     private let isLive: Bool
     private let authProviderConfiguration: AuthV3ProviderConfiguration
+    private let appID: String
 
     public init(
       profileID: String,
@@ -291,11 +309,13 @@ public struct RecipesV3AppConfiguration: Hashable, Sendable {
       isLive: Bool = false,
       authProviderConfiguration: AuthV3ProviderConfiguration = AuthV3ProviderConfiguration(
         browserRedirectURL: URL(string: "instant-recipes-v3://oauth-callback")
-      )
+      ),
+      appID: String = RecipesV3AppConfiguration.localAppID
     ) {
       self.profileID = profileID
       self.isLive = isLive
       self.authProviderConfiguration = authProviderConfiguration
+      self.appID = appID
       _path = State(initialValue: launchRecipe.map { [$0] } ?? [])
     }
 
@@ -305,10 +325,14 @@ public struct RecipesV3AppConfiguration: Hashable, Sendable {
           List {
             Section {
               Label(
-                isLive ? "Connected" : "Local only",
+                isLive ? "One Instant app · live" : "One Instant app · local",
                 systemImage: isLive ? "bolt.horizontal.circle.fill" : "externaldrive"
               )
               .foregroundStyle(isLive ? .green : .secondary)
+              Text(appID)
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
+                .lineLimit(1)
             }
 
             ForEach(InstantRecipeV3.allCases) { recipe in
@@ -330,10 +354,16 @@ public struct RecipesV3AppConfiguration: Hashable, Sendable {
           List {
             Section {
               Label(
-                isLive ? "Connected to InstantDB" : "Local data only",
+                isLive
+                  ? "One Instant app for all recipes · live"
+                  : "One Instant app for all recipes · local only",
                 systemImage: isLive ? "bolt.horizontal.circle.fill" : "externaldrive"
               )
               .foregroundStyle(isLive ? .green : .secondary)
+              Text(appID)
+                .font(.caption.monospaced())
+                .foregroundStyle(.secondary)
+                .textSelection(.enabled)
             }
 
             Section {

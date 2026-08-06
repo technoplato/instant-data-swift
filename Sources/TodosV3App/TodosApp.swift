@@ -78,8 +78,11 @@ public struct TodosAppConfiguration: Hashable, Sendable {
 
     public var body: some View {
       Group {
-        if model.client != nil {
+        if let client = model.client {
+          // Standalone Todos host: inject the bootstrapped client into the
+          // SwiftUI dependency tree (same pattern as RecipesV3).
           TodosScreen()
+            .dependency(\.defaultInstantSwiftData, client)
         } else if let errorMessage = model.errorMessage {
           Text(errorMessage)
         } else {
