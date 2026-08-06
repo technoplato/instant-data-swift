@@ -28,10 +28,12 @@ See issue successCriteria; plan steps below map 1:1 to criteria ids to add/updat
 | ID | Step | Repo | Depends | Criterion id | Tests / evidence |
 | --- | --- | --- | --- | --- | --- |
 | L1 | Nested limit-per-parent on reverse `include` (e.g. 2 segments/recording) | instant-data-swift | — | `issue-155-L1-nested-limit` **done** `3948460c` | Unit: InstantNestedIncludeLimit; validation parity |
+| L2b | Multi-bag map (segments + attachments) | instant-data-swift | L2 | `issue-155-L2b-multibag` | Two reverse includes → map(root, a, b) |
 | L2 | Request-time **map** (+ Selection/Columns-shaped list row direction) | instant-data-swift | L1 | `issue-155-L2-map-selection` **done** | InstantFetchRequest map + InstantIncludedMapFetchTests; Columns macros later |
 | L3 | Aggregations / group / sectioned result maps | instant-data-swift | L2 | `issue-155-L3-aggregate-group` | Count-on-row or sectioned fixture like Reminders/SyncUps |
 | L4 | Entity sync status on fetch (coordinate ADR 0014) | instant-data-swift | — | `issue-155-L4-sync-status` | Status ADT on observed row in test |
 | P1 | Instant **client id** for activity ADT (parallel) | instant-data-swift + Scribe | — | `issue-155-P1-client-id` | this vs other device comparison |
+| S0 | Prefer short Instant entity names (aliases → rename) | Scribe | — | `issue-155-S0-entity-names` | InstantRecording/Segment/Attachment |
 | S1 | Scribe list → new query; **delete** multi-subscribe list merge | Scribe | L1–L2 | `issue-155-S1-list-switch` | List tests; no dual stream merge |
 | S2 | Write path: `recordingSegmentID` upsert only; **delete** liveChanges/diff planners | Scribe | L4 optional | `issue-155-S2-write-path` | Planner deleted or unused; segment-only writes |
 | S3 | **Delete** mutation coordinator full `lastSaved` cache | Scribe | S2 | `issue-155-S3-coordinator` | No full Recording retained for Instant diff |

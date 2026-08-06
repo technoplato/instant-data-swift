@@ -679,3 +679,28 @@ forever-later nice-to-have.
 - SQLiteData RemindersLists: `.group(by:)` + `$1.id.count()` + `@Selection`
 - Instant vendored: `upstream/sqlite-data`
 
+## Q31 — Recording list: segments + attachment thumbnails + multi-bag map
+
+- **Status:** decided
+- **Asked:** 2026-08-06
+- **Decided:** 2026-08-06
+- **Recommendation:** Multi-bag map (segments limit 2 + real attachments for thumbs).
+- **Question:** List row shape and multi-bag API?
+
+### Answer
+
+List row = summary + 2 segment preview lines + **real attachment entities as
+thumbnails** (not count). Multi-bag map is the target API (Shape 1). Single
+`children:` insufficient for this screen.
+
+- "Bags" = informal name for each top-level include relation’s entity array.
+- Attachment **kind** and similar fields: **enums / ADTs**, not plain strings
+  (Agents.md). Library provides `InstantMediaKind` / `InstantContentType` helpers.
+- Entity Instant type names: simplify away `ScribeInstantRealtime*` → short
+  names (`InstantRecording` / `InstantSegment` / `InstantAttachment` aliases first;
+  gradual rename). Domain TCA `Recording` stays separate from Instant entity.
+- Attachments include may use a page/limit (e.g. 24) if a recording has many images.
+- Ordering ergonomics: prefer key-path / less noisy order API as follow-on.
+
+Overview: `overviews/01-recordings-list.md`.
+

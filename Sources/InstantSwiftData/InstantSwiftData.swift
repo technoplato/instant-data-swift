@@ -6387,6 +6387,50 @@ public struct InstantFetchRequest<Value: Sendable>: Sendable {
     )
   }
 
+  /// ADR 0015 — multi-bag map: two reverse includes (e.g. segments + attachments).
+  ///
+  /// Both relations must be present on `query` via `.include`. Each bag is the
+  /// typed array for that link name (empty if missing). Order of parameters
+  /// matches the `children` arguments, not include declaration order.
+  ///
+  /// ```swift
+  /// InstantFetchRequest(
+  ///   Recording.query
+  ///     .include(Recording.segments, Segment.query.limit(2))
+  ///     .include(Recording.attachments, Attachment.query.limit(24)),
+  ///   children: Recording.segments, Recording.attachments,
+  ///   map: { recording, segments, attachments in ListRow(...) }
+  /// )
+  /// ```
+  public init<
+    Root: InstantEntityModel,
+    ChildA: InstantEntityModel,
+    ChildB: InstantEntityModel,
+    Row: Sendable
+  >(
+    _ query: InstantEntityQuery<Root>,
+    children relationA: InstantReverseRelation<Root, ChildA>,
+    _ relationB: InstantReverseRelation<Root, ChildB>,
+    map: @escaping @Sendable (
+      _ root: Root,
+      _ childrenA: [ChildA],
+      _ childrenB: [ChildB]
+    ) throws -> Row
+  ) where Value == [Row] {
+    let nameA = relationA.name
+    let nameB = relationB.name
+    self.init(
+      source: InstantFetchSource.entitySnapshots(query).map { snapshots in
+        try snapshots.map { snapshot in
+          let root = try Root(snapshot: snapshot)
+          let a = try snapshot.decodeIncludedChildren(nameA, as: ChildA.self)
+          let b = try snapshot.decodeIncludedChildren(nameB, as: ChildB.self)
+          return try map(root, a, b)
+        }
+      }
+    )
+  }
+
   private init(source: InstantFetchSource<Value>) {
     self.loadOperation = source.load
     self.subscribeOperation = source.subscribe

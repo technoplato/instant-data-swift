@@ -52,6 +52,13 @@ list shapes** (not only flat arrays). Prior art: Point-Free research under
 `/Users/laptop/Sync/tca/pointfree-research` (ep328 aggregations, ep374
 sectioning) and `upstream/sqlite-data` Reminders/SyncUps group+count+@Selection.
 
+### Prefer algebraic data types (enums) over plain strings
+
+Use enums / ADTs for closed sets (media kind, content type, activity, status).
+Rarely store free-form strings for those fields. Wire with stable `rawValue`
+when Instant attributes are string-typed. Library helpers: `InstantMediaKind`,
+`InstantContentType`.
+
 
 ---
 
