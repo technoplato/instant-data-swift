@@ -377,3 +377,11 @@ Next agent after cold resume found L1/L2/L2b done and executed **S1 partial**:
 **Still open for S1 full:** nested include limit on the Scribe pin (L1 not in published 1.5.6; `swift package edit` hits Tailnet InstantDBLogger name clash), ListRequest Fetch seed still dual top-level, store teardown (S4) not started.
 
 **Next:** pin library after L1 or fix dual-dev package edit; then InstantFetchRequest multi-bag seed; or parallel P1/L4.
+
+
+### S1 completed (2026-08-06 18:43 EDT)
+
+- Multi-bag nested-limit list query shared by Fetch seed + infinite observation
+- Dual top-level list seed removed
+- Dual-dev: Tailnet path-package cycle broken so `swift package edit` works
+- Scribe commits: see #155 workLog (latest S1 full land SHA)
