@@ -4,6 +4,22 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## August 6th, 2026 at 3:16:23 p.m. EDT — `6e79b7cf84fd` Extract Tailnet InstantDBLogger package and wire Recipes auth diagnostics
+
+- **Implementation commit:** `6e79b7cf84fd7f30f465ae1253659275c9ebe147`
+- **Change:** Extract Tailnet diagnostics package; Recipes auth logs + Instant OAuth clients
+- **Details:**
+  - Google record-not-found fixed by creating Instant OAuth client google; Apple clients registered; SIWA entitlement restored in device build.
+- **Files:**
+  - `Packages/TailnetDiagnostics/Package.swift` — SPM package for extracted InstantDBLogger
+  - `Sources/RecipesV3App/RecipesTailnetDiagnostics.swift` — Recipes host wiring for Tailnet WS
+  - `Sources/RecipesV3App/RecipesV3App.swift` — Start logger; forward auth notifications
+  - `Sources/AuthV3App/AuthApp.swift` — Post auth provider notifications for hosts
+  - `Examples/RecipesV3/tail-diagnostics.sh` — Agent log tail filter
+- **User context (verbatim):**
+  > extract the WebSocket logger that logs to my computer via Tailnet
+- **SpecStory:** unavailable — Grok Build session; no SpecStory URI authorized
+
 ## August 6th, 2026 at 3:06:03 p.m. EDT — `e3737d779bd3` Restart recipes example after wipe local DB
 
 - **Implementation commit:** `e3737d779bd3cef4356704f395c3ac1718d14182`
