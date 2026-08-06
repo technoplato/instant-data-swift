@@ -4,6 +4,18 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## August 6th, 2026 at 4:02:27 p.m. EDT — `b4e018e03f9b` Keep todos composer keyboard focused after send
+
+- **Implementation commit:** `b4e018e03f9b614c0204470206f3f641a6f81d33`
+- **Change:** Keep todos composer keyboard focused after send
+- **Details:**
+  - FocusState reclaims focus after onSubmit clears the field.
+- **Files:**
+  - `Sources/TodosV3App/TodosApp.swift` — FocusState on composer; refocus after add
+- **User context (verbatim):**
+  > keep keyboard focused
+- **SpecStory:** unavailable — Grok Build session; no SpecStory URI authorized
+
 ## August 6th, 2026 at 4:00:09 p.m. EDT — `3e0c61b907f1` Submit todos on Enter / keyboard Send
 
 - **Implementation commit:** `3e0c61b907f11e30038da22a679e281a55d31b90`
