@@ -103,7 +103,7 @@ public struct LinkedInfiniteAppConfiguration: Hashable, Sendable {
   /// Detail surface for a joined recording row. Mirrors Scribe playback: if the
   /// transcription join is empty, this screen is the "blank detail" failure mode.
   @MainActor
-  @available(iOS 16.0, macOS 13.0, tvOS 16.0, watchOS 9.0, *)
+  @available(iOS 17.0, macOS 14.0, tvOS 17.0, watchOS 10.0, *)
   public struct LinkedInfiniteDetailScreen: View {
     public var row: LinkedInfiniteListRow
 
@@ -174,7 +174,7 @@ public struct LinkedInfiniteAppConfiguration: Hashable, Sendable {
   }
 
   @MainActor
-  @available(iOS 16.0, macOS 13.0, tvOS 16.0, watchOS 9.0, *)
+  @available(iOS 17.0, macOS 14.0, tvOS 17.0, watchOS 10.0, *)
   public struct LinkedInfiniteBootstrapScreen: View {
     @StateObject private var model: LinkedInfiniteBootstrapModel
 
@@ -198,7 +198,7 @@ public struct LinkedInfiniteAppConfiguration: Hashable, Sendable {
 
   /// Demonstrates one infinite root with linked children for list metrics.
   @MainActor
-  @available(iOS 16.0, macOS 13.0, tvOS 16.0, watchOS 9.0, *)
+  @available(iOS 17.0, macOS 14.0, tvOS 17.0, watchOS 10.0, *)
   public struct LinkedInfiniteScreen: View {
     @Dependency(\.defaultInstantSwiftData) private var db
     @Dependency(\.date.now) private var now

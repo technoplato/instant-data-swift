@@ -131,7 +131,9 @@ public typealias AuthAppConfiguration = AuthV3AppConfiguration
           VStack(spacing: 20) {
             header
             // Public counter (no perms) + mine counter that switches with login/logout.
-            AuthV3CountersCard(session: auth.session)
+            if #available(iOS 17.0, macOS 14.0, tvOS 17.0, watchOS 10.0, *) {
+              AuthV3CountersCard(session: auth.session)
+            }
             if let message {
               statusCard(message)
             }

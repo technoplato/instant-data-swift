@@ -231,8 +231,15 @@ public struct RecipesOutboxFailureRow: Identifiable, Hashable, Sendable {
 extension RecipesDebugLogRing {
   /// Best-effort local SQLite wipe for the recipes app id. Caller must quit/relaunch.
   public static func wipeLocalRecipesCache(appID: String) throws -> URL {
-    let directory = FileManager.default.homeDirectoryForCurrentUser
-      .appendingPathComponent(".instant-swift-data/apps", isDirectory: true)
+    #if os(macOS)
+      let home = FileManager.default.homeDirectoryForCurrentUser
+    #else
+      // iOS/tvOS/watchOS: prefer Application Support under the app container.
+      let home =
+        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+        ?? FileManager.default.temporaryDirectory
+    #endif
+    let directory = home.appendingPathComponent(".instant-swift-data/apps", isDirectory: true)
     let base = directory.appendingPathComponent("\(appID).sqlite")
     let candidates = [
       base,
