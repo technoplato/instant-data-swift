@@ -1446,20 +1446,24 @@ public struct InstantSwiftDataClient: Sendable {
 
   /// Stable Instant client id for this device + app install (ADR 0015 Q23).
   ///
-  /// Resolves Instant TS `getLocalId` for the reserved name
-  /// ``InstantClientID/name``. Offline-safe (local store only). Prefer this
-  /// over inventing a second device-id type.
-  ///
-  /// Scribe activity comparison:
+  /// Resolves Instant TS `getLocalId` for ``InstantClientID/name`` (local SQLite
+  /// actor hop — not network). Caches into ``InstantClientID/current`` so
+  /// product code can read **synchronously** afterward:
   /// ```swift
-  /// let local = try await client.clientID()
-  /// InstantClientID.isThisClient(
-  ///   activityClientID: activity.clientId,
-  ///   localClientID: local
-  /// )
+  /// // Once at bootstrap / after auth:
+  /// _ = try await client.clientID()
+  ///
+  /// // Anywhere later (views, reducers) — no await:
+  /// let local = InstantClientID.requireCurrent()
+  /// InstantClientID.isThisClient(activityClientID: activity.clientId)
   /// ```
   public func clientID() async throws -> String {
-    try await localID(named: InstantClientID.name)
+    if let runtime {
+      return try await runtime.clientID()
+    }
+    let id = try await localID(named: InstantClientID.name)
+    InstantClientID.prepareCurrent(id)
+    return id
   }
 
   public func authSession() async throws -> InstantAuthSession? {
@@ -3844,6 +3848,8 @@ extension DependencyValues {
         configuration: runtimeConfiguration,
         storageTransport: storageTransport
       )
+      // Synchronous product reads (SwiftUI / TCA) use InstantClientID.current.
+      _ = try await client.clientID()
       self.defaultInstantSwiftData = client
       startupTrace.completed(
         "dependencies.bootstrap",

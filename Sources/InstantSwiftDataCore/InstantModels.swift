@@ -113,6 +113,55 @@ public enum InstantClientID: Sendable {
   /// over calling `localID(named:)` with this string by hand.
   public static let name = "instant.client"
 
+  /// Process-local cache filled at Instant bootstrap / first `clientID()`.
+  /// Synchronous product reads (SwiftUI, TCA) use ``current`` after prepare.
+  private final class Cache: @unchecked Sendable {
+    let lock = NSLock()
+    var value: String?
+  }
+  private static let cache = Cache()
+
+  /// Last prepared client id for this process, if Instant has bootstrapped.
+  /// **Synchronous** — no await. Nil until `prepareCurrent` or first
+  /// `clientID()` resolve.
+  public static var current: String? {
+    cache.lock.lock()
+    defer { cache.lock.unlock() }
+    return cache.value
+  }
+
+  /// Synchronous require after bootstrap. Fails loud if Instant was not prepared.
+  public static func requireCurrent() -> String {
+    if let current { return current }
+    preconditionFailure(
+      """
+      InstantClientID.current is nil — call `try await client.clientID()` (or \
+      InstantClientID.prepareCurrent) during Instant bootstrap / auth setup \
+      before reading synchronously.
+      """
+    )
+  }
+
+  /// Persist the resolved client id for synchronous product access.
+  public static func prepareCurrent(_ clientID: String) {
+    cache.lock.lock()
+    cache.value = clientID
+    cache.lock.unlock()
+  }
+
+  /// Resolve from a live runtime and cache for ``current``.
+  public static func prepareCurrent(from runtime: InstantRuntime) async throws -> String {
+    let id = try await runtime.clientID()
+    return id  // clientID already prepares cache
+  }
+
+  /// Test helper: clear the process cache.
+  public static func resetCurrentForTesting() {
+    cache.lock.lock()
+    cache.value = nil
+    cache.lock.unlock()
+  }
+
   /// `true` when the activity's client id is this Instant client (same
   /// device + app local store).
   public static func isThisClient(
@@ -120,6 +169,12 @@ public enum InstantClientID: Sendable {
     localClientID: String
   ) -> Bool {
     activityClientID == localClientID
+  }
+
+  /// Compare activity id to the prepared process client id.
+  public static func isThisClient(activityClientID: String) -> Bool {
+    guard let local = current else { return false }
+    return isThisClient(activityClientID: activityClientID, localClientID: local)
   }
 }
 

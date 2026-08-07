@@ -8908,14 +8908,16 @@ public final class InstantRuntime: Sendable {
   /// Stable Instant client id for this device + app install.
   ///
   /// Upstream: Instant TS `Reactor.getLocalId` / `db.getLocalId(name)` with a
-  /// reserved name (``InstantClientID/name``). Offline-safe; does not wait on
-  /// the network. Not the live websocket `session-id`.
+  /// reserved name (``InstantClientID/name``). Local store only (not network
+  /// latency — the `async` is actor isolation on SQLite persistence). Not the
+  /// live websocket `session-id`.
   ///
-  /// Use for product activity ADTs: write this id when this client is active;
-  /// compare with ``InstantClientID/isThisClient(activityClientID:localClientID:)``
-  /// for this-device vs other-device UI.
+  /// Caches into ``InstantClientID/current`` for **synchronous** product reads
+  /// after the first resolve (bootstrap / auth setup).
   public func clientID() async throws -> String {
-    try await localID(named: InstantClientID.name)
+    let id = try await localID(named: InstantClientID.name)
+    InstantClientID.prepareCurrent(id)
+    return id
   }
 
   private func saveAuthSession(_ session: InstantAuthSession) async throws {
