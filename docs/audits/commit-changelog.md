@@ -1,3 +1,9 @@
+## 2026-08-07 00:44:17 EDT
+
+- **repo:** realtime-voice-sqlite-instant
+- **sha:** c5e2b5f (Core), 38c754b (Client), b21a6b8 (wire), 2a37393 (plan merge)
+- **reason:** #167 pure SPM press-pad core + Dependency client + sanity CLI (no Xcode host)
+
 ## 2026-08-07 00:08:32 EDT
 
 - **repo:** realtime-voice-sqlite-instant
