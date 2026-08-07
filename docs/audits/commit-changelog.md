@@ -1,3 +1,15 @@
+## August 07, 2026 at 00:45:33 EDT
+
+- **repository:** instant-data-swift
+- **commit:** fdbef6d76506b286717ca0db42359b5be2b8e896
+- **reason:** Link multi-agent coordination protocol in AGENTS; land proposed ADR 0014 (entity lifecycle/status on fetch, open-segment writes still outbox).
+
+## August 07, 2026 at 00:45:33 EDT
+
+- **repository:** realtime-voice-sqlite-instant
+- **commit:** faccdf133506bbcf50ab22d77be44007a3d5e819
+- **reason:** Document agent-control BigInt command-ID hazard; mailbox SSH self-loop and iPad remote-control probes.
+
 ## 2026-08-07 00:44:17 EDT
 
 - **repo:** realtime-voice-sqlite-instant
