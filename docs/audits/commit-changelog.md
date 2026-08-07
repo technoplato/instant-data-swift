@@ -1,3 +1,9 @@
+## 2026-08-07 00:08:32 EDT
+
+- **repo:** realtime-voice-sqlite-instant
+- **sha:** `383c73b8e539e082fefb82c9a481118afb91c4c7`
+- **reason:** Complete core agent axioms 1–8 (plan/touch/mower-grower + Instant issues + Genesis + no browser spam) at AGENTS.md top; presence operational-only.
+
 ## 2026-08-06 23:32:15 EDT — realtime-voice-sqlite-instant be56ed1de0535a37ca13710c4a705425897f542d
 
 - **Repo:** realtime-voice-sqlite-instant
