@@ -1,3 +1,10 @@
+
+## 2026-08-06 21:33:10 EDT
+
+- **repo:** realtime-voice-sqlite-instant
+- **sha:** 29f39f7025af24c8d44226d70d428c00d995c245
+- **reason:** Ship recording activity badges + OpenSegment CLI sanity harness (#155)
+
 ## 2026-08-06 19:39:03 EDT
 
 - **repo:** instant-data-swift
