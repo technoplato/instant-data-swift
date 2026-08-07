@@ -311,12 +311,64 @@ public actor InstantStore {
     )
   }
 
+  /// Peel durable optimistic overlays, then apply a server transaction, without
+  /// re-materializing `InstantStoreSnapshot.triples` or re-entering the actor
+  /// between steps.
+  ///
+  /// Live apply used to call `prepare(_:applyingTo: InstantStoreSnapshot)` once
+  /// per pending mutation. Each call rebuilt `TripleIndexes` from every triple,
+  /// and even the prepared-chain form paid an O(store) Dictionary CoW copy on
+  /// every actor hop. Upstream Instant mutates eav/aev/vae in place via
+  /// `transact` / `addTriple`
+  /// (`upstream/instant/client/packages/core/src/store.ts`). Keeping indexes in
+  /// a single uniquely-owned local value for the whole peel+apply matches that
+  /// shape and is what stops multi-core thrash on Mac Scribe (#044).
+  func prepare(
+    peelingOverlays rollbacks: [InstantStoreTransaction],
+    thenApplying serverTransaction: InstantStoreTransaction,
+    to snapshot: InstantStoreSnapshot
+  ) throws -> PreparedStoreMutation {
+    var attributes = AttributeStore(attributes: snapshot.attributes)
+    var indexes = TripleIndexes(triples: snapshot.triples, attributes: attributes)
+    for rollback in rollbacks {
+      _ = try prepareMutating(
+        rollback,
+        attributes: &attributes,
+        indexes: &indexes,
+        capturePreviousChangedEntityTriples: false
+      )
+    }
+    return try prepareMutating(
+      serverTransaction,
+      attributes: &attributes,
+      indexes: &indexes,
+      capturePreviousChangedEntityTriples: true
+    )
+  }
+
   private func prepare(
     _ transaction: InstantStoreTransaction,
     attributes: AttributeStore,
     indexes initialIndexes: TripleIndexes
   ) throws -> PreparedStoreMutation {
+    var attributes = attributes
     var indexes = initialIndexes
+    return try prepareMutating(
+      transaction,
+      attributes: &attributes,
+      indexes: &indexes,
+      capturePreviousChangedEntityTriples: true
+    )
+  }
+
+  private func prepareMutating(
+    _ transaction: InstantStoreTransaction,
+    attributes: inout AttributeStore,
+    indexes: inout TripleIndexes,
+    capturePreviousChangedEntityTriples: Bool
+  ) throws -> PreparedStoreMutation {
+    let previousChangedEntityTriplesBase: TripleIndexes? =
+      capturePreviousChangedEntityTriples ? indexes : nil
     indexes.reserveCapacity(
       entityCapacity: transaction.operations.count,
       attributeCapacity: attributes.count
@@ -442,11 +494,16 @@ public actor InstantStore {
       tripleCount: indexes.tripleCount,
       emissions: []
     )
-    let previousChangedEntityTriples = Dictionary(
-      uniqueKeysWithValues: changedEntityIDs.map { entityID in
-        (entityID, initialIndexes.triples(entityID: entityID))
-      }
-    )
+    let previousChangedEntityTriples: [String: [InstantTriple]]
+    if capturePreviousChangedEntityTriples, let base = previousChangedEntityTriplesBase {
+      previousChangedEntityTriples = Dictionary(
+        uniqueKeysWithValues: changedEntityIDs.map { entityID in
+          (entityID, base.triples(entityID: entityID))
+        }
+      )
+    } else {
+      previousChangedEntityTriples = [:]
+    }
     return PreparedStoreMutation(
       result: result,
       sequence: nextSequence,

@@ -2789,12 +2789,19 @@ public final class InstantRuntime: Sendable {
       // materialized store, so first remove the durable optimistic layers in reverse order.
       // This makes the new rollback image reflect the latest server value instead of the value
       // that happened to exist when the local mutation was originally created.
+      //
+      // One InstantStore call peels every durable overlay then applies the
+      // server transaction on uniquely-owned TripleIndexes. The old shape
+      // rebuilt indexes from InstantStoreSnapshot.triples once per pending
+      // mutation (and paid Dictionary CoW on every actor hop) — the dominant
+      // Mac Scribe live-apply CPU stack (#044). Upstream mutates eav in place
+      // via store.transact / addTriple.
       recordActorHop(.store)
-      storeSnapshot = try await removingLocalMutationOverlays(
-        state.snapshot.outbox,
-        from: storeSnapshot
+      let preparedServer = try await store.prepare(
+        peelingOverlays: Self.overlayRollbackTransactions(in: state.snapshot.outbox),
+        thenApplying: transaction,
+        to: storeSnapshot
       )
-      let preparedServer = try await store.prepare(transaction, applyingTo: storeSnapshot)
       let rebase = try await rebaseLocalMutations(
         outboxSnapshot,
         over: preparedServer,
@@ -3075,17 +3082,19 @@ public final class InstantRuntime: Sendable {
     throw outboxChangedDuringStatusUpdate(id: id)
   }
 
-  private func removingLocalMutationOverlays(
-    _ mutations: [PendingMutation],
-    from snapshot: InstantStoreSnapshot
-  ) async throws -> InstantStoreSnapshot {
-    var base = snapshot
-    for mutation in mutations.sorted(by: PendingMutation.creationOrder).reversed() {
-      guard mutation.optimisticOverlayState != .removed else { continue }
-      guard let rollbackTransaction = mutation.rollbackTransaction else { continue }
-      base = try await store.prepare(rollbackTransaction, applyingTo: base).snapshot
-    }
-    return base
+  /// Rollback transactions for durable optimistic layers, oldest→newest peeled
+  /// in reverse (newest first), matching the prior
+  /// `removingLocalMutationOverlays` order.
+  private static func overlayRollbackTransactions(
+    in mutations: [PendingMutation]
+  ) -> [InstantStoreTransaction] {
+    mutations
+      .sorted(by: PendingMutation.creationOrder)
+      .reversed()
+      .compactMap { mutation -> InstantStoreTransaction? in
+        guard mutation.optimisticOverlayState != .removed else { return nil }
+        return mutation.rollbackTransaction
+      }
   }
 
   /// Entity IDs still covered by a non-failed optimistic mutation that has not

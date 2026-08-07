@@ -329,4 +329,174 @@ struct InstantStoreWriteScalingTests {
     #expect(indexes.newestWriteTime(entityID: "missing", attributeID: "ns/value") == nil)
     #expect(indexes.newestWriteTime(entityID: "row", attributeID: "ns/missing") == nil)
   }
+
+  // MARK: - Overlay peel scaling (live server apply)
+
+  /// Live server apply peels every durable optimistic overlay before rebasing. The wrong shape
+  /// materializes `InstantStoreSnapshot.triples` and rebuilds `TripleIndexes` from the whole store
+  /// once per pending mutation. The right shape is one `prepare(peelingOverlays:thenApplying:to:)`
+  /// that keeps uniquely-owned indexes for the whole peel+apply.
+  ///
+  /// Upstream Instant (`store.transact` / `addTriple`) never rebuilds eav/aev/vae from a flat list
+  /// on each live event — Swift was doing that on Mac Scribe and burning multi-core CPU inside
+  /// `TripleIndexes.init` (sample 2026-08-06, issue #044).
+  @Test
+  func peelingOverlaysInOneStoreCallBeatsSnapshotRebuildPerMutation() async throws {
+    let attribute = InstantAttribute(
+      id: "ns/value",
+      namespace: "ns",
+      name: "value",
+      valueType: .string
+    )
+    let tripleCount = 20_000
+    let seed = (0..<tripleCount).map { index in
+      InstantTriple(
+        entityID: "row-\(index)",
+        attributeID: attribute.id,
+        value: .string("seed-\(index)"),
+        txID: "seed",
+        txTime: InstantTimestamp(milliseconds: 1)
+      )
+    }
+    let store = InstantStore(
+      snapshot: InstantStoreSnapshot(attributes: [attribute], triples: seed)
+    )
+    let rollbacks = (0..<20).map { index in
+      InstantStoreTransaction(
+        id: "rollback-\(index)",
+        operations: [
+          .retract(
+            InstantTriple(
+              entityID: "row-\(index)",
+              attributeID: attribute.id,
+              value: .string("seed-\(index)"),
+              txID: "rollback-\(index)",
+              txTime: InstantTimestamp(milliseconds: 2)
+            )
+          )
+        ]
+      )
+    }
+    let serverTransaction = InstantStoreTransaction(
+      id: "server-tx",
+      operations: [
+        .merge(
+          InstantTriple(
+            entityID: "row-100",
+            attributeID: attribute.id,
+            value: .string("from-server"),
+            txID: "server-tx",
+            txTime: InstantTimestamp(milliseconds: 3)
+          )
+        )
+      ]
+    )
+    let snapshot = InstantStoreSnapshot(attributes: [attribute], triples: seed)
+
+    let rebuiltStarted = ContinuousClock.now
+    var rebuilt = snapshot
+    for rollback in rollbacks {
+      rebuilt = try await store.prepare(rollback, applyingTo: rebuilt).snapshot
+    }
+    let rebuiltPrepared = try await store.prepare(serverTransaction, applyingTo: rebuilt)
+    let rebuiltElapsed = ContinuousClock.now - rebuiltStarted
+
+    let singleCallStarted = ContinuousClock.now
+    let singleCallPrepared = try await store.prepare(
+      peelingOverlays: rollbacks,
+      thenApplying: serverTransaction,
+      to: snapshot
+    )
+    let singleCallElapsed = ContinuousClock.now - singleCallStarted
+
+    expectNoDifference(
+      rebuiltPrepared.indexes.tripleCount,
+      singleCallPrepared.indexes.tripleCount
+    )
+    expectNoDifference(singleCallPrepared.indexes.tripleCount, tripleCount - 20)
+    #expect(
+      singleCallElapsed * 3 < rebuiltElapsed,
+      """
+      One-shot peel+apply (\(singleCallElapsed)) was not substantially faster than \
+      snapshot-per-mutation (\(rebuiltElapsed)) on \(tripleCount) triples — live apply \
+      still pays the rebuild cost that #044 hit.
+      """
+    )
+  }
+
+  /// Same final triples whether overlays are peeled via the expensive snapshot path or the
+  /// single-call peel+apply path.
+  @Test
+  func peelingOverlaysInOneStoreCallMatchesSnapshotRebuild() async throws {
+    let attribute = InstantAttribute(
+      id: "ns/value",
+      namespace: "ns",
+      name: "value",
+      valueType: .string
+    )
+    let seed = (0..<100).map { index in
+      InstantTriple(
+        entityID: "row-\(index)",
+        attributeID: attribute.id,
+        value: .string("seed-\(index)"),
+        txID: "seed",
+        txTime: InstantTimestamp(milliseconds: 1)
+      )
+    }
+    let store = InstantStore(
+      snapshot: InstantStoreSnapshot(attributes: [attribute], triples: seed)
+    )
+    let rollbacks = (0..<5).map { index in
+      InstantStoreTransaction(
+        id: "rollback-\(index)",
+        operations: [
+          .retract(
+            InstantTriple(
+              entityID: "row-\(index)",
+              attributeID: attribute.id,
+              value: .string("seed-\(index)"),
+              txID: "rollback-\(index)",
+              txTime: InstantTimestamp(milliseconds: 2)
+            )
+          )
+        ]
+      )
+    }
+    let serverTransaction = InstantStoreTransaction(
+      id: "server-tx",
+      operations: [
+        .merge(
+          InstantTriple(
+            entityID: "row-50",
+            attributeID: attribute.id,
+            value: .string("from-server"),
+            txID: "server-tx",
+            txTime: InstantTimestamp(milliseconds: 3)
+          )
+        )
+      ]
+    )
+    let snapshot = InstantStoreSnapshot(attributes: [attribute], triples: seed)
+
+    var rebuilt = snapshot
+    for rollback in rollbacks {
+      rebuilt = try await store.prepare(rollback, applyingTo: rebuilt).snapshot
+    }
+    let rebuiltPrepared = try await store.prepare(serverTransaction, applyingTo: rebuilt)
+    let singleCallPrepared = try await store.prepare(
+      peelingOverlays: rollbacks,
+      thenApplying: serverTransaction,
+      to: snapshot
+    )
+
+    expectNoDifference(
+      rebuiltPrepared.indexes.tripleCount,
+      singleCallPrepared.indexes.tripleCount
+    )
+    expectNoDifference(singleCallPrepared.indexes.tripleCount, 95)
+    expectNoDifference(
+      rebuiltPrepared.indexes.triples(entityID: "row-50").map(\.value),
+      singleCallPrepared.indexes.triples(entityID: "row-50").map(\.value)
+    )
+  }
 }
