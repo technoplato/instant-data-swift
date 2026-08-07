@@ -4,6 +4,20 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## August 7th, 2026 at 12:45:33 a.m. EDT — `fdbef6d76506` Point AGENTS at Scribe coordination protocol; add ADR 0014 lifecycle draft.
+
+- **Implementation commit:** `fdbef6d76506b286717ca0db42359b5be2b8e896`
+- **Change:** Point AGENTS at Scribe coordination protocol; add ADR 0014 lifecycle draft.
+- **Details:**
+  - AGENTS.md: require multi-agent coordination protocol with corrected path to agent-coordination-protocol.md.
+  - ADR 0014 proposed: lifecycle/sync status on fetch; interim segments still outbox; write-shape not dual timelines.
+- **Files:**
+  - `AGENTS.md` — Link machine coordination protocol for library agents
+  - `docs/adr/0014-entity-lifecycle-status-and-draft-visibility-in-fetch.md` — Proposed entity lifecycle and open-segment write ADR
+- **User context (verbatim):**
+  > commit all of our work
+- **SpecStory:** unavailable — Grok Build TUI session; no SpecStory cloud share URI for this chat
+
 ## August 6th, 2026 at 7:39:03 p.m. EDT — `549f740c9a80` Expose Instant clientID() for activity ADT this vs other device
 
 - **Implementation commit:** `549f740c9a8001ff1ccfd0e9ee15a9a850f304db`
