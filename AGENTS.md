@@ -1,5 +1,8 @@
 # Repository Instructions
 
+**Read the multi-agent coordination protocol and follow the protocol:** `/Users/laptop/Sync/tools/realtime-voice-sqlite-instant/docs/agent-coordination-protocol.md` (ET presence, plan-to-touch, mower/grower, Genesis allowlist). Library work still uses this machine protocol.
+
+
 ## Fundamentals first (active program)
 
 **This library works, but memory, performance, and ergonomics are still a work
