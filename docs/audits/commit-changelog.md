@@ -1,3 +1,9 @@
+## 2026-08-06 23:32:15 EDT — realtime-voice-sqlite-instant be56ed1de0535a37ca13710c4a705425897f542d
+
+- **Repo:** realtime-voice-sqlite-instant
+- **SHA:** be56ed1de0535a37ca13710c4a705425897f542d
+- **Reason:** #163 minuscule attachment image titles (watched-folder Screen Shot names); docs for #164 feature mini-apps and #165 Mow/Grow.
+
 
 ## 2026-08-06 21:33:10 EDT
 
