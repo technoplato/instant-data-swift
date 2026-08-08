@@ -201,6 +201,7 @@ public actor SQLitePersistenceStore {
   /// Default false (P2.1 thin cache). Autoresearch A/B uses this toggle.
   nonisolated(unsafe) package static var retainFullTriplesInMemoryForTesting = false
 
+
   private func adoptCachedState(_ state: InstantPersistenceState) {
     var thin = state
     if !Self.retainFullTriplesInMemoryForTesting, !thin.snapshot.store.triples.isEmpty {
@@ -212,6 +213,7 @@ public actor SQLitePersistenceStore {
     cachedState = thin
     try? execute("PRAGMA shrink_memory")
   }
+
 
 
   public init(
@@ -842,6 +844,8 @@ public actor SQLitePersistenceStore {
           cachedState.storeRevision == storeRevision,
           cachedState.outboxRevision == outboxRevision
         {
+          // Intentionally keep thinned outbox shells in the RAM cache. Callers that
+          // need full ops (flush) must load from SQLite explicitly.
           return InstantPersistenceStateLoad(state: cachedState, source: .memory)
         }
         return InstantPersistenceStateLoad(
