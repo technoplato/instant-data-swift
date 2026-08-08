@@ -2525,7 +2525,7 @@ public final class InstantRuntime: Sendable {
         recordActorHop(.store)
         let committed = await store.commitAndPublish(prepared)
         recordActorHop(.outbox)
-        await outbox.replace(with: outboxSnapshot)
+        await outbox.replace(with: Self.memoryThinnedOutbox(outboxSnapshot))
         _ = try? await publishConnectionStatusWithGateHeld()
         return committed.result
       }
@@ -2549,6 +2549,23 @@ public final class InstantRuntime: Sendable {
   /// Upstream Instant keeps server query stores separate and reapplies pending mutations as an
   /// optimistic overlay (`Reactor.dataForQuery` / `_applyOptimisticUpdates`). Swift persists one
   /// materialized store, so it records the exact inverse of this optimistic layer instead.
+
+
+  /// Durable SQLite keeps full outbox JSON. In-memory InstantOutbox can hold shells
+  /// (empty ops) for pending rows to cut the seed dual-copy floor. Flush reloads
+  /// from SQLite after invalidateMemoryCache.
+  static func memoryThinnedOutbox(_ mutations: [PendingMutation]) -> [PendingMutation] {
+    mutations.map { mutation in
+      guard mutation.status == .pending else { return mutation }
+      var thin = mutation
+      thin.transaction = InstantStoreTransaction(id: mutation.transaction.id, operations: [])
+      // Keep compact pure-create rollbacks (deleteEntity list is small).
+      if let rb = mutation.rollbackTransaction, rb.operations.count > 256 {
+        thin.rollbackTransaction = InstantStoreTransaction(id: rb.id, operations: [])
+      }
+      return thin
+    }
+  }
 
   static func rollbackTransaction(
     mutationID: String,
