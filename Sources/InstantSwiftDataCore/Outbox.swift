@@ -50,6 +50,14 @@ actor InstantOutbox {
     mutation.failureMessage = nil
     mutation.failure = nil
     mutation.confirmationSource = source
+    // Drop inverse + forward op graphs once confirmed — they can be multi-100MB
+    // for Scribe-shaped seeds and are only needed while pending (#044).
+    mutation.rollbackTransaction = nil
+    mutation.transaction = InstantStoreTransaction(
+      id: mutation.transaction.id,
+      operations: []
+    )
+    mutation.optimisticOverlayState = nil
     if source.provesServerAcceptance {
       nextMutations.remove(at: index)
     } else {

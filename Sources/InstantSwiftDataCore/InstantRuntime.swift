@@ -2549,6 +2549,29 @@ public final class InstantRuntime: Sendable {
   /// Upstream Instant keeps server query stores separate and reapplies pending mutations as an
   /// optimistic overlay (`Reactor.dataForQuery` / `_applyOptimisticUpdates`). Swift persists one
   /// materialized store, so it records the exact inverse of this optimistic layer instead.
+
+  /// Keep durable outbox JSON full in SQLite, but drop heavy op graphs from the
+  /// in-memory InstantOutbox copy after a successful save. Server flush reloads
+  /// from SQLite. Autoresearch #044 seed floor.
+  static func memoryThinnedOutbox(_ mutations: [PendingMutation]) -> [PendingMutation] {
+    mutations.map { mutation in
+      guard mutation.status == .pending || mutation.status == .failed else {
+        return mutation
+      }
+      var thin = mutation
+      // Keep ids/status; drop multi-MB op arrays from RAM.
+      thin.transaction = InstantStoreTransaction(id: mutation.transaction.id, operations: [])
+      thin.rollbackTransaction = mutation.rollbackTransaction.map { rb in
+        // Keep compact rollbacks (deleteEntity) — only strip if still huge
+        if rb.operations.count > 64 {
+          return InstantStoreTransaction(id: rb.id, operations: [])
+        }
+        return rb
+      }
+      return thin
+    }
+  }
+
   static func rollbackTransaction(
     mutationID: String,
     prepared: PreparedStoreMutation
@@ -2558,6 +2581,12 @@ public final class InstantRuntime: Sendable {
     for entityID in prepared.result.changedEntityIDs.sorted() {
       let before = prepared.previousChangedEntityTriples[entityID, default: []]
       let after = changedEntityTriples[entityID, default: []]
+      // Pure create: one deleteEntity replaces N retract triples (publishGate seed
+      // outbox floor — autoresearch #044). Semantics: remove all attrs on entity.
+      if before.isEmpty, !after.isEmpty {
+        operations.append(.deleteEntity(entityID))
+        continue
+      }
       let beforeSet = Set(before)
       let afterSet = Set(after)
       operations.append(

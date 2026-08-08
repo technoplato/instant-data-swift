@@ -210,10 +210,9 @@ public actor SQLitePersistenceStore {
       )
     }
     cachedState = thin
-    // Release SQLite page cache after materializing into InstantStore / thin cache.
-    // Structural floor is InstantStore indexes; sqlite should not keep a third copy hot.
     try? execute("PRAGMA shrink_memory")
   }
+
 
   public init(
     fileURL: URL,
