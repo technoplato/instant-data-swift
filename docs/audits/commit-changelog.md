@@ -1,3 +1,10 @@
+## 2026-08-08 11:32:03 EDT
+
+- **repo:** instant-data-swift
+- **sha:** 293f9a064b02aa4ff7b15bcc3669204863f55578
+- **branch:** exercise-gem/instant-throughput-correctness
+- **reason:** Exercise gym: Docker Instant self-host + Swift complex lane + rename gem→gym (#156).
+
 ## 2026-08-08 10:28:18 EDT
 
 - **repo:** instant-data-swift
