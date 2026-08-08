@@ -346,6 +346,37 @@ public actor InstantStore {
     )
   }
 
+  /// Peel overlays + apply server tx starting from the **already-hot** indexes.
+  ///
+  /// Prefer this over `to: InstantStoreSnapshot` so live apply does not rebuild
+  /// `TripleIndexes` from a second full triples array. That second array is the
+  /// dual-residency floor (`SQLitePersistenceStore.cachedState` + InstantStore)
+  /// called out in production readiness P2.1 / #044.
+  ///
+  /// Upstream: `Reactor` mutates one in-memory store (`store.ts` addTriple /
+  /// transact) — not snapshot rebuilds.
+  func prepare(
+    peelingOverlays rollbacks: [InstantStoreTransaction],
+    thenApplying serverTransaction: InstantStoreTransaction
+  ) throws -> PreparedStoreMutation {
+    var attributes = self.attributes
+    var indexes = self.indexes
+    for rollback in rollbacks {
+      _ = try prepareMutating(
+        rollback,
+        attributes: &attributes,
+        indexes: &indexes,
+        capturePreviousChangedEntityTriples: false
+      )
+    }
+    return try prepareMutating(
+      serverTransaction,
+      attributes: &attributes,
+      indexes: &indexes,
+      capturePreviousChangedEntityTriples: true
+    )
+  }
+
   private func prepare(
     _ transaction: InstantStoreTransaction,
     attributes: AttributeStore,

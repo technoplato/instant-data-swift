@@ -189,6 +189,32 @@ public actor SQLitePersistenceStore {
   private var cachedState: InstantPersistenceState?
   private var didTraceInitialStateLoad = false
 
+  /// Drop the full triples array from the in-memory persistence cache.
+  ///
+  /// InstantStore already holds the hot corpus as TripleIndexes (EAV/AEV/VAE).
+  /// Keeping a second full `InstantStoreSnapshot.triples` in `cachedState` is the
+  /// dual-residency floor (production readiness P2.1). Attributes + outbox +
+  /// revisions stay resident; triples reload from SQLite on cache miss.
+  ///
+  /// Autoresearch: 2026-08-07-scribe-list-memory / #044.
+  /// When true, keep the second full triples array in memory (legacy dual residency).
+  /// Default false (P2.1 thin cache). Autoresearch A/B uses this toggle.
+  nonisolated(unsafe) package static var retainFullTriplesInMemoryForTesting = false
+
+  private func adoptCachedState(_ state: InstantPersistenceState) {
+    var thin = state
+    if !Self.retainFullTriplesInMemoryForTesting, !thin.snapshot.store.triples.isEmpty {
+      thin.snapshot.store = InstantStoreSnapshot(
+        attributes: thin.snapshot.store.attributes,
+        triples: []
+      )
+    }
+    cachedState = thin
+    // Release SQLite page cache after materializing into InstantStore / thin cache.
+    // Structural floor is InstantStore indexes; sqlite should not keep a third copy hot.
+    try? execute("PRAGMA shrink_memory")
+  }
+
   public init(
     fileURL: URL,
     startupTrace: InstantStartupTrace = .disabled
@@ -357,6 +383,9 @@ public actor SQLitePersistenceStore {
     }
     try withSQLiteBusyRetry {
       try execute("PRAGMA journal_mode = WAL")
+    // Keep SQLite page cache tiny once InstantStore holds the hot corpus.
+    try execute("PRAGMA cache_size = 0")  // ~2MiB
+
     }
     try execute("PRAGMA foreign_keys = ON")
     try withSQLiteBusyRetry {
@@ -826,7 +855,7 @@ public actor SQLitePersistenceStore {
         )
       }
       let state = loaded.state
-      cachedState = state
+      adoptCachedState(state)
       InstantDiagnostics.shared.record(
         .trace,
         subsystem: "instant-swift-data-core",
@@ -1127,7 +1156,7 @@ public actor SQLitePersistenceStore {
     {
       previousState.snapshot.outbox = mutations
       previousState.outboxRevision += 1
-      cachedState = previousState
+      adoptCachedState(previousState)
     } else if didSave {
       cachedState = nil
     }
@@ -1179,7 +1208,7 @@ public actor SQLitePersistenceStore {
     {
       previousState.snapshot.outbox = mutations
       previousState.outboxRevision += 1
-      cachedState = previousState
+      adoptCachedState(previousState)
     } else if didSave {
       cachedState = nil
     }
@@ -1997,7 +2026,7 @@ public actor SQLitePersistenceStore {
         )
       )
     }
-    cachedState = application.state
+    adoptCachedState(application.state)
     return application
   }
 
@@ -2171,11 +2200,11 @@ public actor SQLitePersistenceStore {
         outbox: try bumpMetadataRevisionWithoutTransaction(Self.outboxRevisionKey)
       )
     }
-    cachedState = InstantPersistenceState(
+    adoptCachedState(InstantPersistenceState(
       snapshot: snapshot,
       storeRevision: revisions.store,
       outboxRevision: revisions.outbox
-    )
+    ))
     InstantDiagnostics.shared.record(
       .trace,
       subsystem: "instant-swift-data-core",
@@ -2209,11 +2238,11 @@ public actor SQLitePersistenceStore {
       return true
     }
     if didSave {
-      cachedState = InstantPersistenceState(
+      adoptCachedState(InstantPersistenceState(
         snapshot: snapshot,
         storeRevision: expectedStoreRevision + 1,
         outboxRevision: expectedOutboxRevision + 1
-      )
+      ))
     }
     return didSave
   }
@@ -2244,11 +2273,11 @@ public actor SQLitePersistenceStore {
       return true
     }
     if didSave {
-      cachedState = InstantPersistenceState(
+      adoptCachedState(InstantPersistenceState(
         snapshot: snapshot,
         storeRevision: expectedStoreRevision + 1,
         outboxRevision: expectedOutboxRevision + 1
-      )
+      ))
     }
     return didSave
   }
@@ -2291,11 +2320,11 @@ public actor SQLitePersistenceStore {
       return true
     }
     if didSave {
-      cachedState = InstantPersistenceState(
+      adoptCachedState(InstantPersistenceState(
         snapshot: snapshot,
         storeRevision: expectedStoreRevision + 1,
         outboxRevision: expectedOutboxRevision + 1
-      )
+      ))
     }
     return didSave
   }
@@ -2309,10 +2338,13 @@ public actor SQLitePersistenceStore {
     expectedStoreRevision: Int64,
     expectedOutboxRevision: Int64
   ) throws -> Bool {
+    // Dual-residency thin cache keeps attributes/outbox/revisions only. Empty
+    // triples must not be treated as "entity has no triples" — fall back to SQLite.
     let cachedChangedEntityTriples: [String: [InstantTriple]]?
     if let cachedState,
       cachedState.storeRevision == expectedStoreRevision,
-      cachedState.outboxRevision == expectedOutboxRevision
+      cachedState.outboxRevision == expectedOutboxRevision,
+      !cachedState.snapshot.store.triples.isEmpty
     {
       cachedChangedEntityTriples = Dictionary(
         uniqueKeysWithValues: changedEntityTriples.keys.map { entityID in
@@ -2373,14 +2405,16 @@ public actor SQLitePersistenceStore {
       cachedState.storeRevision == expectedStoreRevision,
       cachedState.outboxRevision == expectedOutboxRevision
     {
-      replaceCachedTriples(
-        in: &cachedState.snapshot.store.triples,
-        with: changedEntityTriples
-      )
+      if !cachedState.snapshot.store.triples.isEmpty {
+        replaceCachedTriples(
+          in: &cachedState.snapshot.store.triples,
+          with: changedEntityTriples
+        )
+      }
       cachedState.snapshot.outbox = outbox
       cachedState.storeRevision += 1
       cachedState.outboxRevision += 1
-      self.cachedState = cachedState
+      adoptCachedState(cachedState)
     } else if didSave {
       cachedState = nil
     }
@@ -2410,7 +2444,7 @@ public actor SQLitePersistenceStore {
     {
       cachedState.snapshot.store = snapshot
       cachedState.storeRevision += 1
-      self.cachedState = cachedState
+      adoptCachedState(cachedState)
     } else if didSave {
       cachedState = nil
     }
@@ -2459,11 +2493,11 @@ public actor SQLitePersistenceStore {
       return true
     }
     if didSave {
-      cachedState = InstantPersistenceState(
+      adoptCachedState(InstantPersistenceState(
         snapshot: snapshot,
         storeRevision: expectedStoreRevision + 1,
         outboxRevision: expectedOutboxRevision + 1
-      )
+      ))
     }
     return didSave
   }
@@ -2509,7 +2543,7 @@ public actor SQLitePersistenceStore {
     {
       previousState.snapshot.outbox = mutations
       previousState.outboxRevision += 1
-      cachedState = previousState
+      adoptCachedState(previousState)
     } else if didSave {
       cachedState = nil
     }
@@ -2557,7 +2591,7 @@ public actor SQLitePersistenceStore {
     {
       previousState.snapshot.store = snapshot
       previousState.storeRevision += 1
-      cachedState = previousState
+      adoptCachedState(previousState)
     } else if didSave {
       cachedState = nil
     }
@@ -2627,11 +2661,11 @@ public actor SQLitePersistenceStore {
       return true
     }
     if didSave {
-      cachedState = InstantPersistenceState(
+      adoptCachedState(InstantPersistenceState(
         snapshot: snapshot,
         storeRevision: expectedStoreRevision + (bumpsStoreRevision ? 1 : 0),
         outboxRevision: expectedOutboxRevision + (outboxChanged ? 1 : 0)
-      )
+      ))
     }
     return didSave
   }

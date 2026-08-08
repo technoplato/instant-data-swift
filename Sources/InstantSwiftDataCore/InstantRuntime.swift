@@ -2083,9 +2083,13 @@ public final class InstantRuntime: Sendable {
             break
           }
           configuration.actorHopRecorder?.record(.persistence)
+          let previousForDiff =
+            state.snapshot.store.triples.isEmpty
+            ? await store.snapshot()
+            : state.snapshot.store
           let didSave = try await persistence.saveStoreSnapshot(
             storeSnapshot,
-            replacing: state.snapshot.store,
+            replacing: previousForDiff,
             expectedStoreRevision: state.storeRevision,
             expectedOutboxRevision: state.outboxRevision
           )
@@ -2105,7 +2109,9 @@ public final class InstantRuntime: Sendable {
           configuration.actorHopRecorder?.record(.persistence)
           state = try await persistence.loadState()
           configuration.actorHopRecorder?.record(.store)
-          await store.replaceSnapshot(state.snapshot.store)
+          if !state.snapshot.store.triples.isEmpty {
+            await store.replaceSnapshot(state.snapshot.store)
+          }
           configuration.actorHopRecorder?.record(.outbox)
           await outbox.replace(with: state.snapshot.outbox)
         }
@@ -2152,7 +2158,9 @@ public final class InstantRuntime: Sendable {
         if !pruning.result.removedQueryKeys.isEmpty {
           state = pruning.state
           configuration.actorHopRecorder?.record(.store)
-          await store.replaceSnapshot(state.snapshot.store)
+          if !state.snapshot.store.triples.isEmpty {
+            await store.replaceSnapshot(state.snapshot.store)
+          }
           configuration.actorHopRecorder?.record(.outbox)
           await outbox.replace(with: state.snapshot.outbox)
           InstantDiagnostics.shared.record(
@@ -2418,7 +2426,9 @@ public final class InstantRuntime: Sendable {
       let state = loadedState.state
       if transaction.operations.isEmpty {
         recordActorHop(.store)
-        await store.replaceSnapshot(state.snapshot.store)
+        if !state.snapshot.store.triples.isEmpty {
+          await store.replaceSnapshot(state.snapshot.store)
+        }
         recordActorHop(.outbox)
         await outbox.replace(with: state.snapshot.outbox)
         return InstantStoreMutationResult(
@@ -2428,10 +2438,13 @@ public final class InstantRuntime: Sendable {
           emissions: []
         )
       }
-      try await authorizeSharedRootWrites(transaction: transaction, snapshot: state.snapshot.store)
+      let storeSnapshotForAuth = await authoritativeStoreSnapshot(from: state)
+      try await authorizeSharedRootWrites(transaction: transaction, snapshot: storeSnapshotForAuth)
       if let existingMutation = state.snapshot.outbox.first(where: { $0.id == transaction.id }) {
         recordActorHop(.store)
-        await store.replaceSnapshot(state.snapshot.store)
+        if !state.snapshot.store.triples.isEmpty {
+          await store.replaceSnapshot(state.snapshot.store)
+        }
         recordActorHop(.outbox)
         await outbox.replace(with: state.snapshot.outbox)
         guard existingMutation.status == .pending else {
@@ -2486,7 +2499,9 @@ public final class InstantRuntime: Sendable {
       }
       recordActorHop(.store)
       let prepared: PreparedStoreMutation
-      if loadedState.source == .memory {
+      // Dual-residency: memory cache may omit triples; InstantStore indexes are hot truth.
+      // Prefer prepareCurrent whenever the store is already bootstrapped (always after open).
+      if loadedState.source == .memory || state.snapshot.store.triples.isEmpty {
         prepared = try await store.prepareCurrent(transaction)
       } else {
         prepared = try await store.prepare(transaction, applyingTo: state.snapshot.store)
@@ -2695,7 +2710,7 @@ public final class InstantRuntime: Sendable {
       }
       let outboxSnapshot = confirmation?.mutations ?? prunedOutbox
       let outboxChanged = outboxSnapshot != state.snapshot.outbox
-      var storeSnapshot = state.snapshot.store
+      var storeSnapshot = await authoritativeStoreSnapshot(from: state)
       let mergedAttributeCount = mergeLiveRefreshAttributes(
         attributesToMerge,
         into: &storeSnapshot
@@ -2797,10 +2812,11 @@ public final class InstantRuntime: Sendable {
       // Mac Scribe live-apply CPU stack (#044). Upstream mutates eav in place
       // via store.transact / addTriple.
       recordActorHop(.store)
+      // Dual-residency / P2.1: peel+apply on the hot TripleIndexes (matches upstream
+      // Reactor store.transact). Do not rebuild indexes from persistence snapshot triples.
       let preparedServer = try await store.prepare(
         peelingOverlays: Self.overlayRollbackTransactions(in: state.snapshot.outbox),
-        thenApplying: transaction,
-        to: storeSnapshot
+        thenApplying: transaction
       )
       let rebase = try await rebaseLocalMutations(
         outboxSnapshot,
@@ -3271,13 +3287,14 @@ public final class InstantRuntime: Sendable {
         existingAttributes: state.snapshot.store.attributes
       )
       guard !attributesToMerge.isEmpty else { return 0 }
-      var storeSnapshot = state.snapshot.store
+      var storeSnapshot = await authoritativeStoreSnapshot(from: state)
+      let previousStoreSnapshot = storeSnapshot
       let mergedCount = mergeLiveRefreshAttributes(attributesToMerge, into: &storeSnapshot)
       guard mergedCount > 0 else { return 0 }
       recordActorHop(.persistence)
       let didSave = try await persistence.saveStoreSnapshot(
         storeSnapshot,
-        replacing: state.snapshot.store,
+        replacing: previousStoreSnapshot,
         expectedStoreRevision: state.storeRevision,
         expectedOutboxRevision: state.outboxRevision
       )
@@ -3306,7 +3323,9 @@ public final class InstantRuntime: Sendable {
       recordActorHop(.persistence)
       let reloaded = try await persistence.loadState()
       recordActorHop(.store)
-      await store.replaceSnapshot(reloaded.snapshot.store)
+      if !reloaded.snapshot.store.triples.isEmpty {
+        await store.replaceSnapshot(reloaded.snapshot.store)
+      }
       recordActorHop(.outbox)
       await outbox.replace(with: reloaded.snapshot.outbox)
     }
@@ -3328,10 +3347,19 @@ public final class InstantRuntime: Sendable {
       for _ in 0..<5 {
         recordActorHop(.persistence)
         let state = try await persistence.loadState()
-        let nextSnapshot = try transform(state.snapshot)
+        let hydrated =
+          state.snapshot.store.triples.isEmpty
+          ? InstantPersistenceSnapshot(
+            store: await store.snapshot(),
+            outbox: state.snapshot.outbox
+          )
+          : state.snapshot
+        let nextSnapshot = try transform(hydrated)
         if nextSnapshot == state.snapshot {
           recordActorHop(.store)
-          await store.replaceSnapshot(state.snapshot.store)
+          if !state.snapshot.store.triples.isEmpty {
+            await store.replaceSnapshot(state.snapshot.store)
+          }
           recordActorHop(.outbox)
           await outbox.replace(with: state.snapshot.outbox)
           await leaveOperationGate()
@@ -3871,7 +3899,9 @@ public final class InstantRuntime: Sendable {
           )
         }
         recordActorHop(.store)
-        await store.replaceSnapshot(state.snapshot.store)
+        if !state.snapshot.store.triples.isEmpty {
+          await store.replaceSnapshot(state.snapshot.store)
+        }
         recordActorHop(.store)
         let emission = await store.materializeEmission(plan, remotePageInfo: remotePageInfo)
         recordActorHop(.persistence)
@@ -3977,7 +4007,9 @@ public final class InstantRuntime: Sendable {
     }
     if application.result.removedOrphanedTripleCount > 0 {
       recordActorHop(.store)
-      await store.replaceSnapshot(application.state.snapshot.store)
+      if !application.state.snapshot.store.triples.isEmpty {
+        await store.replaceSnapshot(application.state.snapshot.store)
+      }
     }
     for key in application.result.removedQueryKeys {
       await liveQueryResultState.unload(key: key)
@@ -4010,7 +4042,9 @@ public final class InstantRuntime: Sendable {
     guard cachedQuery.storeRevision != state.storeRevision else { return cachedQuery }
 
     recordActorHop(.store)
-    await store.replaceSnapshot(state.snapshot.store)
+    if !state.snapshot.store.triples.isEmpty {
+      await store.replaceSnapshot(state.snapshot.store)
+    }
     recordActorHop(.store)
     let localEmission = await store.materializeEmission(plan)
     guard cachedQuery.emission.queryID == localEmission.queryID,
@@ -5488,7 +5522,8 @@ public final class InstantRuntime: Sendable {
       return false
     }
 
-    let userExists = state.snapshot.store.triples.contains { triple in
+    let authStoreSnapshot = await authoritativeStoreSnapshot(from: state)
+    let userExists = authStoreSnapshot.triples.contains { triple in
       triple.entityID == userID && triple.attributeID.hasPrefix(Self.authUsersNamespace + "/")
     }
     guard !userExists else { return false }
@@ -5548,7 +5583,8 @@ public final class InstantRuntime: Sendable {
       attributes.namespaces.isEmpty || attributes.namespaces.contains(Self.authUsersNamespace)
     guard canWriteUsers else { return false }
 
-    let userExists = state.snapshot.store.triples.contains { triple in
+    let authStoreSnapshot = await authoritativeStoreSnapshot(from: state)
+    let userExists = authStoreSnapshot.triples.contains { triple in
       triple.entityID == userID && triple.attributeID.hasPrefix(Self.authUsersNamespace + "/")
     }
     guard !userExists else { return false }
@@ -8388,6 +8424,18 @@ public final class InstantRuntime: Sendable {
     }
   }
 
+
+  /// Persistence memory cache may thin `store.triples` (dual-residency P2.1). When
+  /// empty, InstantStore is the authoritative in-memory corpus.
+  private func authoritativeStoreSnapshot(
+    from state: InstantPersistenceState
+  ) async -> InstantStoreSnapshot {
+    if state.snapshot.store.triples.isEmpty {
+      return await store.snapshot()
+    }
+    return state.snapshot.store
+  }
+
   private func performFailMutationWithGateHeld(
     id: String,
     failure: InstantMutationFailure,
@@ -8405,10 +8453,11 @@ public final class InstantRuntime: Sendable {
         await outbox.replace(with: state.snapshot.outbox)
         throw outboxMutationNotFound(id: id)
       }
+      let storeSnapshot = await authoritativeStoreSnapshot(from: state)
       let removal = try await prepareTerminalFailureRemoval(
         original: original,
         failedMutations: update.mutations,
-        snapshot: state.snapshot.store
+        snapshot: storeSnapshot
       )
       let now = configuration.now()
       let metadataEntries =
@@ -8427,12 +8476,12 @@ public final class InstantRuntime: Sendable {
         ]
         : []
       let nextSnapshot = InstantPersistenceSnapshot(
-        store: removal.prepared?.snapshot ?? state.snapshot.store,
+        store: removal.prepared?.snapshot ?? storeSnapshot,
         outbox: removal.mutations
       )
       let didSave = try await persistence.saveSnapshot(
         nextSnapshot,
-        replacing: state.snapshot,
+        replacing: InstantPersistenceSnapshot(store: storeSnapshot, outbox: state.snapshot.outbox),
         metadataEntries: metadataEntries,
         expectedStoreRevision: state.storeRevision,
         expectedOutboxRevision: state.outboxRevision
@@ -8616,19 +8665,20 @@ public final class InstantRuntime: Sendable {
             operation: "discard failed outbox mutation"
           )
         }
+        let storeSnapshot = await authoritativeStoreSnapshot(from: state)
         let removal = try await prepareTerminalFailureRemoval(
           original: mutation,
           failedMutations: state.snapshot.outbox,
-          snapshot: state.snapshot.store
+          snapshot: storeSnapshot
         )
         let remainingMutations = removal.mutations.filter { $0.id != id }
         let nextSnapshot = InstantPersistenceSnapshot(
-          store: removal.prepared?.snapshot ?? state.snapshot.store,
+          store: removal.prepared?.snapshot ?? storeSnapshot,
           outbox: remainingMutations
         )
         let didSave = try await persistence.saveSnapshot(
           nextSnapshot,
-          replacing: state.snapshot,
+          replacing: InstantPersistenceSnapshot(store: storeSnapshot, outbox: state.snapshot.outbox),
           expectedStoreRevision: state.storeRevision,
           expectedOutboxRevision: state.outboxRevision
         )
@@ -8709,7 +8759,8 @@ public final class InstantRuntime: Sendable {
         original.optimisticOverlayState == .removed
       let preparedRetry: PreparedStoreMutation?
       if shouldReapplyOptimisticOverlay {
-        let newestTimestamp = state.snapshot.store.triples.reduce(Int64.min) { newest, triple in
+        let retryStoreSnapshot = await authoritativeStoreSnapshot(from: state)
+        let newestTimestamp = retryStoreSnapshot.triples.reduce(Int64.min) { newest, triple in
           max(newest, triple.txTime.milliseconds)
         }
         let optimisticTimestamp = InstantTimestamp(
@@ -8725,9 +8776,8 @@ public final class InstantRuntime: Sendable {
           retriedMutation.rollbackTransaction = nil
         } else {
           recordActorHop(.store)
-          let prepared = try await store.prepare(
-            InstantStoreTransaction(id: retriedMutation.transaction.id, operations: operations),
-            applyingTo: state.snapshot.store
+          let prepared = try await store.prepareCurrent(
+            InstantStoreTransaction(id: retriedMutation.transaction.id, operations: operations)
           )
           preparedRetry = prepared
           retriedMutation.rollbackTransaction = Self.rollbackTransaction(
