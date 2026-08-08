@@ -206,7 +206,6 @@ struct InstantTripleStamp: Hashable, Codable, Sendable {
 
 struct TripleIndexes: Hashable, Codable, Sendable {
   private var eav: [String: [String: [InstantValue: InstantTripleStamp]]] = [:]
-  private var aev: [String: [String: [InstantValue: InstantTripleStamp]]] = [:]
   private var vae: [InstantValue: [String: [String: InstantTripleStamp]]] = [:]
   private var storedTripleCount = 0
   private var internedTxIDs: [String] = [""]
@@ -245,7 +244,6 @@ struct TripleIndexes: Hashable, Codable, Sendable {
   /// decode, which keeps the on-disk shape identical to what earlier builds wrote — a persisted
   /// cache must not stop decoding because a derived field was added.
   private enum CodingKeys: String, CodingKey {
-    case aev
     case eav
     case vae
     case internedTxIDs
@@ -256,10 +254,6 @@ struct TripleIndexes: Hashable, Codable, Sendable {
     self.eav = try container.decode(
       [String: [String: [InstantValue: InstantTripleStamp]]].self,
       forKey: .eav
-    )
-    self.aev = try container.decode(
-      [String: [String: [InstantValue: InstantTripleStamp]]].self,
-      forKey: .aev
     )
     self.vae = try container.decode(
       [InstantValue: [String: [String: InstantTripleStamp]]].self,
@@ -277,7 +271,6 @@ struct TripleIndexes: Hashable, Codable, Sendable {
 
   func encode(to encoder: Encoder) throws {
     var container = encoder.container(keyedBy: CodingKeys.self)
-    try container.encode(aev, forKey: .aev)
     try container.encode(eav, forKey: .eav)
     try container.encode(vae, forKey: .vae)
     try container.encode(internedTxIDs, forKey: .internedTxIDs)
@@ -395,7 +388,6 @@ struct TripleIndexes: Hashable, Codable, Sendable {
   mutating func reserveCapacity(entityCapacity: Int, attributeCapacity: Int) {
     guard entityCapacity > 0 || attributeCapacity > 0 else { return }
     eav.reserveCapacity(eav.count + max(entityCapacity, 0))
-    aev.reserveCapacity(aev.count + max(attributeCapacity, 0))
     vae.reserveCapacity(vae.count + max(entityCapacity, 0))
   }
 
@@ -436,13 +428,6 @@ struct TripleIndexes: Hashable, Codable, Sendable {
         lookup.value.instantValue,
         attribute: lookupAttribute.attribute
       )
-      if let byEntity = aev[lookupAttribute.attribute.id] {
-        return byEntity
-          .compactMap { entityID, valuesByValue in
-            valuesByValue[value] == nil ? nil : entityID
-          }
-          .sorted()
-      }
       var entityIDs: [String] = []
       for (entityID, attributesByID) in eav {
         if attributesByID[lookupAttribute.attribute.id]?[value] != nil {
@@ -632,9 +617,10 @@ struct TripleIndexes: Hashable, Codable, Sendable {
       !order.isServerCreatedAt,
       let attribute = attributes.attribute(namespace: plan.namespace, name: order.field),
       attribute.cardinality == .one,
-      let valuesByEntityID = aev[attribute.id]
+      false
     else { return nil }
 
+    let valuesByEntityID: [String: [InstantValue: InstantTripleStamp]] = [:]
     let orderedEntityCount = valuesByEntityID.count
     guard orderedEntityCount == namespaceEntityCount(plan.namespace, attributes: attributes) else {
       return nil
@@ -750,9 +736,10 @@ struct TripleIndexes: Hashable, Codable, Sendable {
       !order.isServerCreatedAt,
       let attribute = attributes.attribute(namespace: plan.namespace, name: order.field),
       attribute.cardinality == .one,
-      let valuesByEntityID = aev[attribute.id]
+      false
     else { return nil }
 
+    let valuesByEntityID: [String: [InstantValue: InstantTripleStamp]] = [:]
     let orderedEntityCount = valuesByEntityID.count
     guard orderedEntityCount == namespaceEntityCount(plan.namespace, attributes: attributes) else {
       return nil
@@ -1348,10 +1335,6 @@ struct TripleIndexes: Hashable, Codable, Sendable {
       txTimeMilliseconds: triple.txTime.milliseconds
     )
     eav[triple.entityID, default: [:]][triple.attributeID, default: [:]][triple.value] = stamp
-    // Secondary AEV disabled for memory floor (autoresearch #044). Lookups fall back to eav.
-    if false {
-      aev[triple.attributeID, default: [:]][triple.entityID, default: [:]][triple.value] = stamp
-    }
 
     if attribute?.valueType == .ref {
       vae[triple.value, default: [:]][triple.attributeID, default: [:]][triple.entityID] = stamp
@@ -1421,13 +1404,6 @@ struct TripleIndexes: Hashable, Codable, Sendable {
       eav[triple.entityID] = nil
     }
 
-    aev[triple.attributeID]?[triple.entityID]?[triple.value] = nil
-    if aev[triple.attributeID]?[triple.entityID]?.isEmpty == true {
-      aev[triple.attributeID]?[triple.entityID] = nil
-    }
-    if aev[triple.attributeID]?.isEmpty == true {
-      aev[triple.attributeID] = nil
-    }
 
     if attribute?.valueType == .ref {
       vae[triple.value]?[triple.attributeID]?[triple.entityID] = nil
