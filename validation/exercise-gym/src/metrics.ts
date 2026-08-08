@@ -1,5 +1,5 @@
 /**
- * Process metrics for the exercise gem.
+ * Process metrics for the exercise gym.
  *
  * Memory contract:
  * - Primary gate: process RSS (physical-ish resident set)

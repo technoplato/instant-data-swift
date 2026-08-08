@@ -1,4 +1,4 @@
-// Open rules for ephemeral exercise-gem apps (authenticated users can read/write all exercise entities).
+// Open rules for ephemeral exercise-gym apps (authenticated users can read/write all exercise entities).
 import type { InstantRules } from "@instantdb/core";
 
 const rules = {

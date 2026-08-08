@@ -1,5 +1,5 @@
 /**
- * Instant core + admin client factory for the exercise gem.
+ * Instant core + admin client factory for the exercise gym.
  * Polyfills WebSocket for Node, installs message logging, resolves clientId.
  */
 import { randomUUID } from "node:crypto";
@@ -117,7 +117,7 @@ export async function openGemClients(options: {
 
   const email =
     options.email
-    ?? `exercise-gem-${options.runId.slice(0, 8)}@knophy.test`;
+    ?? `exercise-gym-${options.runId.slice(0, 8)}@knophy.test`;
   const refreshToken = await admin.auth.createToken({ email });
   const user = await admin.auth.verifyToken(refreshToken);
   if (!user?.id) throw new Error("Expected admin-created user id.");

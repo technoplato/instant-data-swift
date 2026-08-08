@@ -1,9 +1,9 @@
 /**
- * Electron shell for Instant Exercise Gem live list.
+ * Electron shell for Instant Exercise Gym live list.
  * Starts a high-frequency simple-write loop and pushes rows to the renderer.
  *
  * Env: INSTANT_APP_ID, INSTANT_ADMIN_TOKEN
- * Run: npm run electron (from exercise-gem root after npm install)
+ * Run: npm run electron (from exercise-gym root after npm install)
  */
 import { app, BrowserWindow, ipcMain } from "electron";
 import { join, dirname } from "node:path";
@@ -20,7 +20,7 @@ function createWindow() {
   mainWindow = new BrowserWindow({
     width: 980,
     height: 720,
-    title: "Instant Exercise Gem (Electron)",
+    title: "Instant Exercise Gym (Electron)",
     webPreferences: {
       preload: join(__dirname, "preload.cjs"),
       contextIsolation: true,

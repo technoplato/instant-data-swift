@@ -3,3 +3,5 @@ artifacts/
 .build/
 dist/
 *.env
+docker/.env
+docker/.env

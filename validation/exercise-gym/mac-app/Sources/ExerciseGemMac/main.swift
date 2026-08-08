@@ -6,11 +6,11 @@ import SwiftUI
 /// Mac SwiftUI shell: highly refreshing Instant write/observe list.
 /// Env: INSTANT_APP_ID, INSTANT_SWIFT_DATA_BENCH_REFRESH_TOKEN, INSTANT_SWIFT_DATA_BENCH_USER_ID
 @main
-struct ExerciseGemMacApp: App {
+struct ExerciseGymMacApp: App {
   @StateObject private var model = LiveGemModel()
 
   var body: some Scene {
-    WindowGroup("Instant Exercise Gem (Mac)") {
+    WindowGroup("Instant Exercise Gym (Mac)") {
       ContentView(model: model)
         .frame(minWidth: 720, minHeight: 480)
     }
@@ -70,7 +70,7 @@ final class LiveGemModel: ObservableObject {
       let apiURI = InstantRuntimeConfiguration.defaultAPIURI
       let websocketURI = InstantRuntimeConfiguration.defaultWebSocketURI
       let persistenceURL = FileManager.default.temporaryDirectory
-        .appendingPathComponent("exercise-gem-mac-\(UUID().uuidString).sqlite")
+        .appendingPathComponent("exercise-gym-mac-\(UUID().uuidString).sqlite")
 
       var configuration = InstantRuntimeConfiguration(
         appID: appID,
@@ -117,7 +117,7 @@ final class LiveGemModel: ObservableObject {
           descriptor: descriptor,
           updatedAtMs: sentAt
         )
-        let mutation = try await runtime.transact(operations: ops, source: "exercise-gem.mac")
+        let mutation = try await runtime.transact(operations: ops, source: "exercise-gym.mac")
         try await waitForServerAcceptance(
           runtime: runtime,
           transactionID: mutation.transactionID,
@@ -166,7 +166,7 @@ struct ContentView: View {
   var body: some View {
     VStack(alignment: .leading, spacing: 12) {
       HStack {
-        Text("Instant Exercise Gem — Mac").font(.headline)
+        Text("Instant Exercise Gym — Mac").font(.headline)
         Spacer()
         Text(model.status).foregroundStyle(.secondary)
       }

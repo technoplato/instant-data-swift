@@ -1,17 +1,8 @@
-/**
- * Exercise-gem schema: simple counter path + complex linked graph.
- *
- * Every mutable entity carries:
- *   - clientId: Instant local client id (getLocalId) that authored the row
- *   - descriptor: stable human/machine label for the writer process
- *   - runId: one exercise run
- *   - seq: monotonic per-entity sequence for observer validity
- */
+// Instant schema for exercise-gym (mirrors schema.ts for instant-cli push)
 import { i } from "@instantdb/core";
 
-export const exerciseGemSchema = i.schema({
+const _schema = i.schema({
   entities: {
-    // Simple path: flat upsert throughput / RTT
     counters: i.entity({
       runId: i.string().indexed(),
       name: i.string().indexed(),
@@ -22,8 +13,6 @@ export const exerciseGemSchema = i.schema({
       payloadBytes: i.number(),
       updatedAtMs: i.number().indexed(),
     }),
-
-    // Complex path: document → chapters → blocks → annotations
     documents: i.entity({
       runId: i.string().indexed(),
       title: i.string().indexed(),
@@ -66,8 +55,6 @@ export const exerciseGemSchema = i.schema({
       descriptor: i.string().indexed(),
       updatedAtMs: i.number().indexed(),
     }),
-
-    // Durable per-write event log (app-level, for correctness reconstruction)
     writeEvents: i.entity({
       runId: i.string().indexed(),
       eventId: i.string().indexed(),
@@ -130,4 +117,10 @@ export const exerciseGemSchema = i.schema({
   },
 });
 
-export type ExerciseGemSchema = typeof exerciseGemSchema;
+// This helps TypeScript display better intellisense
+type _AppSchema = typeof _schema;
+interface AppSchema extends _AppSchema {}
+const schema: AppSchema = _schema;
+
+export type { AppSchema };
+export default schema;

@@ -5,7 +5,7 @@ import { openGemClients, makeRunId, resolveAppCredentials } from "./client.ts";
 import { MetricsCollector, sleep } from "./metrics.ts";
 import { newEntityId } from "./client.ts";
 
-const durationSeconds = Number(process.env.EXERCISE_GEM_LIVE_SECONDS ?? "120");
+const durationSeconds = Number(process.env.EXERCISE_GYM_LIVE_SECONDS ?? "120");
 const { appId, adminToken } = resolveAppCredentials();
 const runId = makeRunId();
 const clients = await openGemClients({

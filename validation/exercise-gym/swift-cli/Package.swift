@@ -2,23 +2,23 @@
 import PackageDescription
 
 let package = Package(
-  name: "ExerciseGem",
+  name: "ExerciseGym",
   platforms: [
     .macOS(.v14),
   ],
   products: [
-    .executable(name: "ExerciseGem", targets: ["ExerciseGem"]),
+    .executable(name: "ExerciseGym", targets: ["ExerciseGym"]),
   ],
   dependencies: [
     .package(name: "instant-data-swift", path: "../../.."),
   ],
   targets: [
     .executableTarget(
-      name: "ExerciseGem",
+      name: "ExerciseGym",
       dependencies: [
         .product(name: "InstantSwiftDataCore", package: "instant-data-swift"),
       ],
-      path: "Sources/ExerciseGem"
+      path: "Sources/ExerciseGym"
     ),
   ]
 )
