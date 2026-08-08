@@ -1,3 +1,10 @@
+## 2026-08-08 10:28:18 EDT
+
+- **repo:** instant-data-swift
+- **sha:** ac99ea88ea56a1cbbf9ff8bfd2e1f72081f15a9d
+- **branch:** exercise-gem/instant-throughput-correctness
+- **reason:** Instant Exercise Gem — TS/Swift correctness + throughput matrix (#156); clientId/descriptor message analysis; Electron + Mac UI shells.
+
 
 ## 2026-08-07 00:46:54 EDT
 - **repo:** realtime-voice-sqlite-instant
