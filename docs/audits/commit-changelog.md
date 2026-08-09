@@ -1,4 +1,9 @@
 
+## 2026-08-09 09:53:10 EDT
+- **repository:** instant-data-swift
+- **commit:** 5d903c86f595baac8a6581223b07c8426e7639e8
+- **reason:** ADR 0015 / #155 same-entity outbox supersession recipe — pure policy + 17 unit tests; TODO at InstantRuntime enqueue; not wired into delivery yet.
+
 ## 2026-08-09 09:12:38 EDT
 - **repository:** instant-data-swift
 - **commit:** 2f32fd84137f4197338aba3c55e7127370ac1952

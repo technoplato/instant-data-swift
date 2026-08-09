@@ -4,6 +4,23 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## August 9th, 2026 at 9:53:07 a.m. EDT — `5d903c86f595` Add same-entity outbox supersession recipe + pure policy (#155).
+
+- **Implementation commit:** `5d903c86f595baac8a6581223b07c8426e7639e8`
+- **Change:** Add same-entity outbox supersession recipe + pure policy (#155).
+- **Details:**
+  - Expand ADR 0015 follow-on into concrete speech-load recipe (problem, policy, algorithm, non-goals, observability, TS vs Swift divergence). Pure OutboxSameEntitySupersession + 17 unit tests (10–100 same-entity upserts → 1 survivor). TODO recipe entry at InstantRuntime enqueue; full outbox delivery integration remains follow-on.
+- **Files:**
+  - `docs/adr/0015-sqlite-data-parity-ergonomics/follow-on-outbox-same-entity-supersession.md` — Active supersession recipe
+  - `Sources/InstantSwiftDataCore/OutboxSameEntitySupersession.swift` — Pure policy (no I/O)
+  - `Tests/InstantSwiftDataCoreTests/OutboxSameEntitySupersessionTests.swift` — Offline high-churn policy tests
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — TODO recipe entry at durable enqueue
+  - `docs/adr/0015-sqlite-data-parity-ergonomics/open-segment-write-recipe.md` — Link to supersession recipe
+  - `skills/instant-data/SKILL.md` — Live speech supersession bullet
+- **User context (verbatim):**
+  > User said this is important for speech performance/correctness under load — not strictly required for façade delete, but without it speech thrash stays ugly. Implementation of full supersession may be partial/skeleton, but the recipe document + compile-checked sketch + tests of intended policy must land.
+- **SpecStory:** unavailable — unavailable — Grok Build agent session; no SpecStory URI for this desktop task.
+
 ## August 9th, 2026 at 9:13:03 a.m. EDT — `2f32fd84137f` Add Instant open-segment write recipe for ADR 0015 (#155).
 
 - **Implementation commit:** `2f32fd84137f4197338aba3c55e7127370ac1952`
