@@ -1,3 +1,9 @@
+## 2026-08-09 15:12:24 EDT
+
+- **repo:** realtime-voice-sqlite-instant (Scribe)
+- **commit:** `d989eeb7bc99bdda91df5c66e5d59416074ebc48`
+- **reason:** Assign unique Scribe 0.1 (7) build identity to the physical-iPhone ReplayKit autoresearch binary before install.
+
 ## 2026-08-09 15:06:39 EDT
 
 - **repo:** realtime-voice-sqlite-instant (Scribe)
