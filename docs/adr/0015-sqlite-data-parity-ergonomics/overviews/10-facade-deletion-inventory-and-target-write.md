@@ -20,7 +20,7 @@ Borrow from `upstream/sqlite-data`. Gaps that force app hacks:
 | `.group` + aggregates / sectioned lists | Not shipped | **L3** open |
 | Row observation carries sync/delivery status | Not on fetch | **L4** / ADR 0014 open |
 | `database.write { }` local-only, no app SyncStore | `transact` local+outbox (correct contract) | App still wraps in façades |
-| One table model = one write surface | App still plans mutations from domain `Recording` graphs | Sparse open-segment **recipe + examples** weak |
+| One table model = one write surface | App still plans mutations from domain `Recording` graphs | Open-segment **recipe shipped** — see [`../open-segment-write-recipe.md`](../open-segment-write-recipe.md); peel app planners next |
 | High-churn same-row updates | Outbox can pile supersedable ops | Same-entity supersession missing |
 | Typed columns | JSON blobs need app Codable + loud fail | Typed JSON binding incomplete |
 
@@ -53,6 +53,11 @@ No: ScribeInstantStore, SharedRecordingSnapshotClient as Instant façade,
 
 Domain still has TCA `Recording` for UI/timeline. Instant write is **not** “save the
 Recording document.”
+
+**Canonical recipe (library):**
+[`../open-segment-write-recipe.md`](../open-segment-write-recipe.md)  
+Core: `Sources/InstantSwiftDataCore/OpenSegmentWriteRecipe.swift`  
+Typed sketch: `Sources/InstantSwiftData/OpenSegmentWriteRecipeEntities.swift`
 
 On each speech update (open segment only):
 
@@ -148,8 +153,9 @@ Phase 5  Move @InstantEntity models out of ScribeInstantStore.swift into Instant
 Phase 6  Bootstrap-only file; delete ScribeInstantStore type; architecture test red→green
 ```
 
-Parallel **library:** L3 aggregates, L4 sync status on fetch, open-segment example in
-instant-data-swift Examples, outbox supersession for high-frequency segment upserts.
+Parallel **library:** L3 aggregates, L4 sync status on fetch, **open-segment write
+recipe** (doc + example — see `open-segment-write-recipe.md`), outbox supersession
+for high-frequency segment upserts (follow-on; not required for recipe land).
 
 **Performance soaks** re-enter after Phase 3 (speech path is Instant-only) so we
 measure the real stack.

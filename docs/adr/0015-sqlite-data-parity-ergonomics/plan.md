@@ -36,6 +36,7 @@ See issue successCriteria; plan steps below map 1:1 to criteria ids to add/updat
 | S0 | Prefer short Instant entity names (aliases → rename) | Scribe | — | `issue-155-S0-entity-names` | InstantRecording/Segment/Attachment |
 | S1 | Scribe list → new query; **delete** multi-subscribe list merge | Scribe | L1–L2 | `issue-155-S1-list-switch` **done** nested multi-bag seed+observe | List tests; no dual stream merge |
 | S2 | Write path: `recordingSegmentID` upsert only; **delete** liveChanges/diff planners | Scribe | L4 optional | `issue-155-S2-write-path` **done** openSegmentUpsert | Planner deleted or unused; segment-only writes |
+| S2b | **Library open-segment write recipe** (doc + compile-checked example + tests) | instant-data-swift | S2 | `issue-155-S2b-open-segment-recipe` | `open-segment-write-recipe.md` + `OpenSegmentWriteRecipe` + unit tests |
 | S3 | **Delete** mutation coordinator full `lastSaved` cache | Scribe | S2 | `issue-155-S3-coordinator` | No full Recording retained for Instant diff |
 | S4 | **Delete** `ScribeInstantStore`; bootstrap only at composition root | Scribe | S1–S3 | `issue-155-S4-delete-store` | No store type; features use `@Fetch*` / client |
 | S5 | Words JSON on segment; drop process-local sync tracker | Scribe | S2 | `issue-155-S5-words-json` | Schema + strict Codable; no word entity live path |
@@ -98,4 +99,8 @@ commitSha: <full sha when landed>
 - Interview: `qanda.md`
 - Smells/deletes: `findings.md`
 - List query sketch: `overviews/03-list-query-syntax-sketch.md`
+- **Open-segment write recipe:** [`open-segment-write-recipe.md`](./open-segment-write-recipe.md)
+  (Core: `Sources/InstantSwiftDataCore/OpenSegmentWriteRecipe.swift`;
+  typed: `Sources/InstantSwiftData/OpenSegmentWriteRecipeEntities.swift`)
+- Façade inventory / target write: `overviews/10-facade-deletion-inventory-and-target-write.md`
 - Skill: `$adr-decision-qanda` Phase B
