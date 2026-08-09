@@ -79,4 +79,22 @@ private struct Word: Codable, Equatable, Sendable {
     let encoded = try InstantCodableJSON.encode(words)
     #expect(rep.instantValue == InstantValue.json(encoded))
   }
+
+  @Test func jsonStringUsesSortedKeysLikeStructuredQueries() throws {
+    // Object key order must be stable (structured-queries encoder uses sortedKeys).
+    struct Payload: Codable, Equatable, Sendable {
+      var zebra: String
+      var alpha: Int
+    }
+    let rep = try Payload.JSONStringRepresentation(
+      queryOutput: Payload(zebra: "z", alpha: 1)
+    )
+    guard case let .string(text) = rep.instantValue else {
+      Issue.record("expected string wire")
+      return
+    }
+    let alphaIdx = try #require(text.range(of: "\"alpha\"")?.lowerBound)
+    let zebraIdx = try #require(text.range(of: "\"zebra\"")?.lowerBound)
+    #expect(alphaIdx < zebraIdx)
+  }
 }

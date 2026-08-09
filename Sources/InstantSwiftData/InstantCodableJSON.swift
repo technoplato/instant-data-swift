@@ -3,24 +3,64 @@ import InstantSwiftDataCore
 
 // MARK: - SQLiteData-shaped Codable JSON for Instant attributes
 //
-// Prior art (pointfree/swift-structured-queries):
+// Prior art (pointfree/swift-structured-queries
+// `Sources/StructuredQueriesCore/QueryRepresentable/Codable+JSON.swift`):
 //
 //   @Column(as: [String].JSONRepresentation.self)
 //   var notes: [String]
 //
-// Instant maps the same idea onto InstantValue (.json or JSON text in .string)
-// with **loud** encode/decode failures (throws InstantError), never silent try?.
+// SQLiteData / structured-queries:
+//   - `Type.JSONRepresentation` = `_CodableJSONRepresentation<Type>`
+//   - non-throwing `init(queryOutput:)` + encode failure as `QueryBinding.invalid`
+//   - decode throws from `QueryDecodable`
+//   - shared JSONEncoder with sortedKeys (DEBUG prettyPrinted) + ISO8601 dates
+//
+// Instant maps the same names onto InstantValue (`.json` or JSON text in `.string`)
+// with **loud** encode/decode: `init` and codecs throw `InstantError` (never
+// silent `try?`, never drop words). That is stricter than SQLite bind-time
+// `.invalid` and matches Scribe’s “fail loud” contract for wordsJSON.
 
 /// Shared Codable ↔ `JSONValue` bridge used by Instant attribute representations
 /// and room presence/topic payloads.
 public enum InstantCodableJSON {
+  /// Shared encoder — mirrors structured-queries sorted keys.
+  ///
+  /// Always compact (no pretty-print): open-segment `wordsJSON` is high-churn
+  /// speech traffic; pretty whitespace would only inflate outbox payloads.
+  public static let encoder: JSONEncoder = {
+    let encoder = JSONEncoder()
+    encoder.dateEncodingStrategy = .custom { date, encoder in
+      var container = encoder.singleValueContainer()
+      try container.encode(iso8601String(from: date))
+    }
+    encoder.outputFormatting = [.sortedKeys]
+    return encoder
+  }()
+
+  /// Shared decoder — mirrors structured-queries ISO8601 date strings.
+  public static let decoder: JSONDecoder = {
+    let decoder = JSONDecoder()
+    decoder.dateDecodingStrategy = .custom { decoder in
+      let container = try decoder.singleValueContainer()
+      let string = try container.decode(String.self)
+      guard let date = date(fromISO8601String: string) else {
+        throw DecodingError.dataCorruptedError(
+          in: container,
+          debugDescription: "Expected ISO-8601 date string, got \(string)"
+        )
+      }
+      return date
+    }
+    return decoder
+  }()
+
   public static func encode<Value: Encodable>(
     _ value: Value,
     operation: String = "encode Instant Codable JSON"
   ) throws -> JSONValue {
     let data: Data
     do {
-      data = try JSONEncoder().encode(value)
+      data = try encoder.encode(value)
     } catch {
       throw InstantError(
         code: .validationFailed,
@@ -74,7 +114,7 @@ public enum InstantCodableJSON {
       )
     }
     do {
-      return try JSONDecoder().decode(type, from: data)
+      return try decoder.decode(type, from: data)
     } catch {
       throw InstantError(
         code: .decodeFailed,
@@ -131,7 +171,7 @@ public enum InstantCodableJSON {
         )
       }
       do {
-        return try JSONDecoder().decode(type, from: data)
+        return try decoder.decode(type, from: data)
       } catch {
         throw InstantError(
           code: .decodeFailed,
@@ -203,6 +243,24 @@ public enum InstantCodableJSON {
       let mapped = values.mapValues { foundationValue(from: $0) }
       return mapped as NSDictionary
     }
+  }
+
+  // ISO-8601 with fractional seconds — same wire shape structured-queries uses
+  // for `Date` in JSON columns (string, not epoch). Formatters are created
+  // per call so we stay Sendable-safe (ISO8601DateFormatter is not Sendable).
+  private static func iso8601String(from date: Date) -> String {
+    let formatter = ISO8601DateFormatter()
+    formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+    return formatter.string(from: date)
+  }
+
+  private static func date(fromISO8601String string: String) -> Date? {
+    let fractional = ISO8601DateFormatter()
+    fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+    if let date = fractional.date(from: string) { return date }
+    let basic = ISO8601DateFormatter()
+    basic.formatOptions = [.withInternetDateTime]
+    return basic.date(from: string)
   }
 }
 
@@ -285,7 +343,7 @@ public struct InstantCodableJSONStringRepresentation<
     self.queryOutput = queryOutput
     let data: Data
     do {
-      data = try JSONEncoder().encode(queryOutput)
+      data = try InstantCodableJSON.encoder.encode(queryOutput)
     } catch {
       throw InstantError(
         code: .validationFailed,
@@ -338,7 +396,7 @@ extension InstantCodableJSONStringRepresentation: Hashable where QueryOutput: Ha
   }
 }
 
-// MARK: - Typealiases (SQLiteData spelling)
+// MARK: - Typealiases (SQLiteData / structured-queries spelling)
 
 extension Decodable where Self: Encodable {
   /// Instant `.json` wire — same name as structured-queries / SQLiteData.
@@ -346,6 +404,15 @@ extension Decodable where Self: Encodable {
 
   /// Instant `.string` holding JSON text (legacy Instant string columns).
   public typealias JSONStringRepresentation = InstantCodableJSONStringRepresentation<Self>
+}
+
+extension Optional where Wrapped: Codable {
+  /// Optional Instant `.json` wire — mirrors
+  /// `Optional.JSONRepresentation` in structured-queries.
+  public typealias JSONRepresentation = InstantCodableJSONRepresentation<Wrapped>?
+
+  /// Optional Instant JSON-string wire.
+  public typealias JSONStringRepresentation = InstantCodableJSONStringRepresentation<Wrapped>?
 }
 
 // MARK: - Attribute path convenience
