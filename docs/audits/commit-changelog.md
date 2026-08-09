@@ -1,3 +1,9 @@
+## 2026-08-09 15:06:39 EDT
+
+- **repo:** realtime-voice-sqlite-instant (Scribe)
+- **commit:** `1c3e58cdec6dcc6221d7dc1b20e8573d98088824`
+- **reason:** Add an audio-and-transcription-only stress override that leaves real ReplayKit and Instant live; correlate recording saves to exact Instant transaction IDs and preserve privacy-safe failure provenance.
+
 ## 2026-08-09 15:00:13 EDT
 
 - **repo:** instant-data-swift
