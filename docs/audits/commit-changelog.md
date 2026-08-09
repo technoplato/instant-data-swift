@@ -1,3 +1,9 @@
+## 2026-08-08 23:59:23 EDT
+
+- **repo:** instant-data-swift
+- **sha:** e743a667cc6b2d8ad7baac9c5c0c3e06af6d2b5f
+- **reason:** Full fixed-N Instant exercise gym comparison (wire + local store + shape).
+
 ## 2026-08-08 11:32:03 EDT
 
 - **repo:** instant-data-swift
