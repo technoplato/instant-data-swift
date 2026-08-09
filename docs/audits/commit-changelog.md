@@ -1,3 +1,9 @@
+## 2026-08-09 15:00:13 EDT
+
+- **repo:** instant-data-swift
+- **commit:** `8213ed3557d6f23455840699a8948f676858cbf6`
+- **reason:** Hydrate exact durable outbox transaction bodies only at delivery and lifecycle boundaries while keeping resident/cache mutation graphs compact; restore exact live delivery, rejection isolation, cross-runtime revision safety, and explicit-close reconnect ordering.
+
 ## 2026-08-09 10:00:28 EDT
 
 - **repo:** realtime-voice-sqlite-instant (Scribe)

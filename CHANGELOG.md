@@ -10,6 +10,33 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## August 9th, 2026 at 3:00:08 p.m. EDT — `8213ed3557d6` Fix durable outbox delivery with compact memory state
+
+- **Implementation commit:** `8213ed3557d6f23455840699a8948f676858cbf6`
+- **Change:** Hydrate durable outbox writes without retaining transaction graphs in memory
+- **Details:**
+  - Reload exact durable transaction bodies only at delivery and lifecycle boundaries; keep the resident actor and SQLite cache compact.
+  - Restore automatic and explicit-session delivery, preserve healthy sockets on terminal mutation rejection, and retry local hydration failures through one coalesced pump.
+  - Match upstream Reactor semantics for retryable permission-service failures, explicit live queries, and close-versus-reconnect ordering; add cross-runtime and authoritative-empty-store regressions.
+- **Files:**
+  - `Sources/InstantSwiftData/InstantSwiftData.swift` — Expose durable pending count and route waits through the delivery pump
+  - `Sources/InstantSwiftData/InstantSyncStatus.swift` — Count pending rows without decoding bodies
+  - `Sources/InstantSwiftDataCore/InstantInfiniteQuery.swift` — Synchronize the store before query validation
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — Selective hydration, delivery, rejection, reconnect, and revision synchronization
+  - `Sources/InstantSwiftDataCore/InstantStore.swift` — Merge server attributes into hot indexes
+  - `Sources/InstantSwiftDataCore/Outbox.swift` — Compact resident mutation graphs while preserving durable confirmation bodies
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — Compact cache plus revision-checked hydration and correct full-state diff baselines
+  - `Tests/InstantSwiftDataCoreTests/BenchmarkTests.swift` — Record measured compact-state actor hops
+  - `Tests/InstantSwiftDataCoreTests/CLITests.swift` — Preserve unchanged outbox revisions in validation evidence
+  - `Tests/InstantSwiftDataCoreTests/InstantFailedMutationDiscardTests.swift` — Assert explicit-session query traffic
+  - `Tests/InstantSwiftDataCoreTests/InstantLiveTransportTests.swift` — Cover healthy rejection state and server attribute materialization
+  - `Tests/InstantSwiftDataCoreTests/InstantOutboxHydrationTests.swift` — Add exact-wire, cross-runtime, lifecycle, empty-store, permission, and reconnect regressions
+  - `Tests/InstantSwiftDataCoreTests/InstantReactorParityTests.swift` — Bound and acknowledge live one-shot queries
+  - `Tests/InstantSwiftDataCoreTests/InstantStoreTests.swift` — Assert compact cache and stable full-state revisions
+- **User context (verbatim):**
+  > Track them all the way upstream to the actual invocation and source.
+- **SpecStory:** unavailable — Unavailable: Codex desktop task; no SpecStory CLI capture or public share was created.
+
 ## August 9th, 2026 at 9:53:07 a.m. EDT — `5d903c86f595` Add same-entity outbox supersession recipe + pure policy (#155).
 
 - **Implementation commit:** `5d903c86f595baac8a6581223b07c8426e7639e8`
