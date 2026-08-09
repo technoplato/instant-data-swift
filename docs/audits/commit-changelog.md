@@ -1,3 +1,9 @@
+## 2026-08-09 16:39:00 EDT
+
+- **repo:** realtime-voice-sqlite-instant (Scribe)
+- **commit:** `4773fa0c298517a215fc1d6c12cc4713d7e5cb22`
+- **reason:** Replace root whole-state debug dumping with a publishable signal-aware higher-order reducer that classifies analog and periodic actions before state capture, preserves the complete Agent Control action catalog, and retains bounded discrete history only on the Mac collector.
+
 ## 2026-08-09 15:12:24 EDT
 
 - **repo:** realtime-voice-sqlite-instant (Scribe)
