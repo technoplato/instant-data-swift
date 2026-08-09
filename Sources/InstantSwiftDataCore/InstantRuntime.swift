@@ -2498,7 +2498,7 @@ public final class InstantRuntime: Sendable {
               "Use a new transaction id, or retry the existing outbox mutation before sending it again."
           )
         }
-        guard existingMutation.transaction == transaction else {
+        guard Self.hasSameWireIntent(existingMutation, transaction) else {
           throw validationFailed(
             operation: "transact",
             localID: transaction.id,
@@ -2591,11 +2591,42 @@ public final class InstantRuntime: Sendable {
     return InstantTimestamp(milliseconds: latest.milliseconds + 1)
   }
 
+  /// A replayed pending mutation may have newer internal write timestamps than the caller's
+  /// original transaction. Those timestamps keep the durable body aligned with its optimistic
+  /// overlay, but they are not part of the transaction's server-visible intent.
+  private static func hasSameWireIntent(
+    _ existingMutation: PendingMutation,
+    _ transaction: InstantStoreTransaction
+  ) -> Bool {
+    guard existingMutation.transaction.id == transaction.id else { return false }
+    let existing = InstantTransportMutation(existingMutation)
+    let replay = InstantTransportMutation(
+      PendingMutation(
+        id: transaction.id,
+        createdAt: existingMutation.createdAt,
+        transaction: transaction
+      )
+    )
+    return existing.preconditions == replay.preconditions
+      && existing.txSteps == replay.txSteps
+  }
+
+  /// Keep the durable transaction and its replayed overlay on the same logical timestamp.
+  /// Delivery compares these timestamps to suppress genuinely stale writes; rebasing only the
+  /// overlay makes the mutation suppress its own wire operations after a refresh or rejection.
+  private static func rebaseDurableTransaction(
+    in mutation: inout PendingMutation,
+    at timestamp: InstantTimestamp
+  ) -> [InstantTripleOperation] {
+    mutation.transaction.operations = mutation.transaction.operations.map {
+      $0.rebased(at: timestamp)
+    }
+    return mutation.transaction.operations.filter(\.isRebasedLocalWrite)
+  }
+
   /// Upstream Instant keeps server query stores separate and reapplies pending mutations as an
   /// optimistic overlay (`Reactor.dataForQuery` / `_applyOptimisticUpdates`). Swift persists one
   /// materialized store, so it records the exact inverse of this optimistic layer instead.
-
-
   static func rollbackTransaction(
     mutationID: String,
     prepared: PreparedStoreMutation
@@ -3266,20 +3297,24 @@ public final class InstantRuntime: Sendable {
           ? newestServerTimestamp
           : newestServerTimestamp + 1
       )
-      let operations = mutation.transaction.operations
-        .filter(\.isRebasedLocalWrite)
-        .map { $0.rebased(at: optimisticTimestamp) }
-      rebasedMutationsByID[mutation.id]?.rollbackTransaction = nil
-      rebasedMutationsByID[mutation.id]?.optimisticOverlayState = .applied
+      guard var rebasedMutation = rebasedMutationsByID[mutation.id] else { continue }
+      let operations = Self.rebaseDurableTransaction(
+        in: &rebasedMutation,
+        at: optimisticTimestamp
+      )
+      rebasedMutation.rollbackTransaction = nil
+      rebasedMutation.optimisticOverlayState = .applied
+      rebasedMutationsByID[mutation.id] = rebasedMutation
       guard !operations.isEmpty else { continue }
       preparedRebase = try await store.prepare(
         InstantStoreTransaction(id: mutation.transaction.id, operations: operations),
         applyingTo: preparedRebase
       )
-      rebasedMutationsByID[mutation.id]?.rollbackTransaction = Self.rollbackTransaction(
+      rebasedMutation.rollbackTransaction = Self.rollbackTransaction(
         mutationID: mutation.id,
         prepared: preparedRebase
       )
+      rebasedMutationsByID[mutation.id] = rebasedMutation
     }
     var result = preparedServer.result
     result.tripleCount = preparedRebase.indexes.tripleCount
@@ -8920,9 +8955,10 @@ public final class InstantRuntime: Sendable {
       let optimisticTimestamp = InstantTimestamp(
         milliseconds: newestTimestamp == Int64.max ? newestTimestamp : newestTimestamp + 1
       )
-      let operations = rebasedSuccessor.transaction.operations
-        .filter(\.isRebasedLocalWrite)
-        .map { $0.rebased(at: optimisticTimestamp) }
+      let operations = Self.rebaseDurableTransaction(
+        in: &rebasedSuccessor,
+        at: optimisticTimestamp
+      )
       rebasedSuccessor.rollbackTransaction = nil
       rebasedSuccessor.optimisticOverlayState = .applied
       if !operations.isEmpty {
@@ -9113,9 +9149,10 @@ public final class InstantRuntime: Sendable {
             ? newestTimestamp
             : max(newestTimestamp, 0) + 1
         )
-        let operations = retriedMutation.transaction.operations
-          .filter(\.isRebasedLocalWrite)
-          .map { $0.rebased(at: optimisticTimestamp) }
+        let operations = Self.rebaseDurableTransaction(
+          in: &retriedMutation,
+          at: optimisticTimestamp
+        )
         if operations.isEmpty {
           preparedRetry = nil
           retriedMutation.rollbackTransaction = nil

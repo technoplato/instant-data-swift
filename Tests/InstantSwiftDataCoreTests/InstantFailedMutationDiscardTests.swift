@@ -713,6 +713,18 @@ struct InstantFailedMutationDiscardTests {
       sentOperations,
       ["init", "add-query", "transact"]
     )
+    let sentTransact = try #require(
+      await session.sentMessages().first { $0.op == "transact" }
+    )
+    let sentSteps = try #require(sentTransact.fields["tx-steps"]?.arrayValue)
+    #expect(
+      sentSteps.contains { step in
+        guard let parts = step.arrayValue, parts.count > 3 else { return false }
+        return parts[2].stringValue == "todos/text"
+          && parts[3].stringValue == "retried optimistic value"
+      },
+      "Reapplying a failed mutation must preserve the rebased scalar on the wire."
+    )
     let rollback = try #require(retried.rollbackTransaction)
     let retriedTextTimestamp = try #require(
       rollback.operations.compactMap { operation -> InstantTimestamp? in
@@ -939,6 +951,18 @@ struct InstantFailedMutationDiscardTests {
         )
       )
     )
+    let unrelatedHighWaterTime = InstantTimestamp(milliseconds: baseTime.milliseconds + 100)
+    _ = try await runtime.applyServerTransaction(
+      InstantStoreTransaction(
+        id: "server-successor-rebase-high-water",
+        operations: TodoExample.upsertOperations(
+          id: "unrelated-high-water-todo",
+          text: "unrelated server value",
+          createdAt: unrelatedHighWaterTime,
+          transactionID: "server-successor-rebase-high-water"
+        )
+      )
+    )
     try await runtime.transact(
       InstantStoreTransaction(
         id: "tx-rejected-predecessor",
@@ -967,18 +991,40 @@ struct InstantFailedMutationDiscardTests {
       message: "permission denied predecessor"
     )
     let afterFirstFailure = try await TodoExample.decode(runtime.query(TodoExample.query))
-    expectNoDifference(afterFirstFailure.map(\.text), ["surviving successor"])
+    expectNoDifference(
+      afterFirstFailure.first { $0.id == "todo-successor-rebase" }?.text,
+      "surviving successor"
+    )
     let successor = try #require(
       await runtime.outboxMutations().first { $0.id == "tx-surviving-successor" }
     )
     #expect(successor.rollbackTransaction != nil)
+    let successorTransport = try #require(
+      await runtime.outboxTransportMutations().first {
+        $0.mutationID == "tx-surviving-successor"
+      }
+    )
+    #expect(
+      successorTransport.txSteps.contains { step in
+        guard
+          case let .addTriple(_, attributeID, value, _) = step,
+          attributeID == "todos/text",
+          value == .string("surviving successor")
+        else { return false }
+        return true
+      },
+      "Replaying a successor after terminal rejection must preserve its wire write."
+    )
 
     _ = try await runtime.failMutation(
       id: "tx-surviving-successor",
       message: "permission denied successor"
     )
     let afterSuccessorFailure = try await TodoExample.decode(runtime.query(TodoExample.query))
-    expectNoDifference(afterSuccessorFailure.map(\.text), ["server value"])
+    expectNoDifference(
+      afterSuccessorFailure.first { $0.id == "todo-successor-rebase" }?.text,
+      "server value"
+    )
   }
 
   @Test

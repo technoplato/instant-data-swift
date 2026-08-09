@@ -427,16 +427,57 @@ struct InstantOutboxHydrationTests {
     try await runtime.transact(rejected, createdAt: firstTime)
     try await runtime.transact(successor, createdAt: secondTime)
     _ = try await runtime.failMutation(id: rejected.id, message: "permission rejected")
+    let idempotentReplay = try await runtime.transact(successor, createdAt: secondTime)
+    expectNoDifference(idempotentReplay.transactionID, successor.id, upstreamDeliverySource)
+    expectNoDifference(idempotentReplay.changedEntityIDs, [], upstreamDeliverySource)
+    let conflictingReplay = InstantStoreTransaction(
+      id: successor.id,
+      operations: TodoExample.createOperations(
+        id: "todo-\(successor.id)",
+        text: "different durable intent",
+        createdAt: secondTime,
+        transactionID: successor.id
+      )
+    )
+    do {
+      _ = try await runtime.transact(conflictingReplay, createdAt: secondTime)
+      Issue.record("Expected a same-id replay with different wire intent to be rejected.")
+    } catch let error as InstantError {
+      expectNoDifference(error.code, .validationFailed, upstreamDeliverySource)
+      expectNoDifference(error.operation, "transact", upstreamDeliverySource)
+      expectNoDifference(error.localID, successor.id, upstreamDeliverySource)
+    }
 
     let todos = try TodoExample.decode(try await runtime.query(TodoExample.query))
     expectNoDifference(todos.map(\.id), ["todo-\(successor.id)"], upstreamDeliverySource)
-    let durable = try await runtime.persistence.loadState().snapshot.outbox
+    let persisted = try await runtime.persistence.loadState().snapshot
+    let durable = persisted.outbox
     let durableRejected = try #require(durable.first { $0.id == rejected.id })
     let durableSuccessor = try #require(durable.first { $0.id == successor.id })
     expectNoDifference(durableRejected.status, .failed, upstreamDeliverySource)
     expectNoDifference(durableRejected.transaction, rejected, upstreamDeliverySource)
     expectNoDifference(durableSuccessor.status, .pending, upstreamDeliverySource)
-    expectNoDifference(durableSuccessor.transaction, successor, upstreamDeliverySource)
+    expectNoDifference(
+      InstantTransportMutation(durableSuccessor).txSteps,
+      InstantTransportMutation(
+        PendingMutation(id: successor.id, createdAt: secondTime, transaction: successor)
+      ).txSteps,
+      upstreamDeliverySource
+    )
+    let rebasedWriteTimes = durableSuccessor.transaction.operations.compactMap {
+      operation -> InstantTimestamp? in
+      guard case let .insert(triple) = operation else { return nil }
+      return triple.txTime
+    }
+    let visibleWriteTimes = persisted.store.triples
+      .filter { $0.entityID == "todo-\(successor.id)" }
+      .map(\.txTime)
+    #expect(!rebasedWriteTimes.isEmpty)
+    expectNoDifference(
+      Set(rebasedWriteTimes),
+      Set(visibleWriteTimes),
+      upstreamDeliverySource
+    )
     #expect(
       durableSuccessor.rollbackTransaction?.operations.isEmpty == false,
       "The successor must retain a rebuilt rollback after the rejected predecessor is removed."

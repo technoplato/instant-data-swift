@@ -10,10 +10,21 @@ enum InstantLiveMutationEncoder {
     return try steps.map { step in
       switch step {
       case let .addTriple(entity, attributeID, value, options):
+        let attribute = try resolver.resolveAttribute(attributeID)
+        let resolvedEntity = try resolver.resolve(entity)
+        let resolvedValue = try resolver.resolve(value)
+        if attribute.reversesEndpoints {
+          return .addTriple(
+            entity: try resolver.entityRef(from: resolvedValue, attributeID: attributeID),
+            attributeID: attribute.id,
+            value: resolver.value(from: resolvedEntity),
+            options: nil
+          )
+        }
         return .addTriple(
-          entity: try resolver.resolve(entity),
-          attributeID: try resolver.resolve(attributeID),
-          value: try resolver.resolve(value),
+          entity: resolvedEntity,
+          attributeID: attribute.id,
+          value: resolvedValue,
           options: options
         )
       case let .deepMergeTriple(entity, attributeID, value, options):
@@ -24,10 +35,20 @@ enum InstantLiveMutationEncoder {
           options: options
         )
       case let .retractTriple(entity, attributeID, value):
+        let attribute = try resolver.resolveAttribute(attributeID)
+        let resolvedEntity = try resolver.resolve(entity)
+        let resolvedValue = try resolver.resolve(value)
+        if attribute.reversesEndpoints {
+          return .retractTriple(
+            entity: try resolver.entityRef(from: resolvedValue, attributeID: attributeID),
+            attributeID: attribute.id,
+            value: resolver.value(from: resolvedEntity)
+          )
+        }
         return .retractTriple(
-          entity: try resolver.resolve(entity),
-          attributeID: try resolver.resolve(attributeID),
-          value: try resolver.resolve(value)
+          entity: resolvedEntity,
+          attributeID: attribute.id,
+          value: resolvedValue
         )
       case let .deleteEntity(entity, namespace):
         return .deleteEntity(entity: try resolver.resolve(entity), namespace: namespace)
@@ -42,8 +63,14 @@ enum InstantLiveMutationEncoder {
   }
 
   private struct AttributeIDResolver {
+    struct ResolvedAttributeID {
+      var id: String
+      var reversesEndpoints: Bool
+    }
+
     private var ids: Set<String> = []
-    private var idsByIdentity: [String: String] = [:]
+    private var idsByForwardIdentity: [String: String] = [:]
+    private var idsByReverseIdentity: [String: String] = [:]
 
     init(attrs: [InstantLiveJSONValue]) {
       for attr in attrs {
@@ -53,25 +80,36 @@ enum InstantLiveMutationEncoder {
           continue
         }
         ids.insert(id)
-        for key in ["forward-identity", "reverse-identity"] {
-          guard let identity = object[key]?.arrayValue,
-            identity.count >= 3,
-            let namespace = identity[1].stringValue,
-            let name = identity[2].stringValue
-          else {
-            continue
-          }
-          idsByIdentity["\(namespace)/\(name)"] = id
+        if let identity = object["forward-identity"]?.arrayValue,
+          identity.count >= 3,
+          let namespace = identity[1].stringValue,
+          let name = identity[2].stringValue
+        {
+          idsByForwardIdentity["\(namespace)/\(name)"] = id
+        }
+        if let identity = object["reverse-identity"]?.arrayValue,
+          identity.count >= 3,
+          let namespace = identity[1].stringValue,
+          let name = identity[2].stringValue
+        {
+          idsByReverseIdentity["\(namespace)/\(name)"] = id
         }
       }
     }
 
     func resolve(_ attributeID: String) throws -> String {
+      try resolveAttribute(attributeID).id
+    }
+
+    func resolveAttribute(_ attributeID: String) throws -> ResolvedAttributeID {
       if ids.contains(attributeID) {
-        return attributeID
+        return ResolvedAttributeID(id: attributeID, reversesEndpoints: false)
       }
-      if let id = idsByIdentity[attributeID] {
-        return id
+      if let id = idsByForwardIdentity[attributeID] {
+        return ResolvedAttributeID(id: id, reversesEndpoints: false)
+      }
+      if let id = idsByReverseIdentity[attributeID] {
+        return ResolvedAttributeID(id: id, reversesEndpoints: true)
       }
       throw InstantError(
         code: .validationFailed,
@@ -108,6 +146,99 @@ enum InstantLiveMutationEncoder {
         return .lookupRef(
           attributeID: try resolve(attributeID),
           value: try resolve(value)
+        )
+      }
+    }
+
+    func entityRef(
+      from value: InstantTransportValue,
+      attributeID: String
+    ) throws -> InstantTransportEntityRef {
+      switch value {
+      case let .string(id):
+        return .id(id)
+      case let .lookupRef(lookupAttributeID, transportLookupValue):
+        return .lookup(
+          InstantLookupRef(
+            attributeID: lookupAttributeID,
+            value: try lookupValue(from: transportLookupValue, attributeID: attributeID)
+          )
+        )
+      case .null, .bool, .number, .array, .object:
+        throw InstantError(
+          code: .validationFailed,
+          operation: "orient Instant live reverse relation",
+          path: attributeID,
+          message: "Reverse relation '\(attributeID)' does not point to an entity id or lookup ref.",
+          recovery: "Link the reverse relation to an Instant entity id or unique lookup ref."
+        )
+      }
+    }
+
+    func value(from entity: InstantTransportEntityRef) -> InstantTransportValue {
+      switch entity {
+      case let .id(id):
+        return .string(id)
+      case let .lookup(lookup):
+        return .lookupRef(
+          attributeID: lookup.attributeID,
+          value: InstantTransportValue(lookup.value)
+        )
+      }
+    }
+
+    private func lookupValue(
+      from value: InstantTransportValue,
+      attributeID: String
+    ) throws -> InstantLookupValue {
+      switch value {
+      case .null:
+        return .null
+      case let .bool(value):
+        return .bool(value)
+      case let .number(value):
+        return .number(value)
+      case let .string(value):
+        return .string(value)
+      case let .array(values):
+        return .json(.array(try values.map { try jsonValue(from: $0, attributeID: attributeID) }))
+      case let .object(values):
+        return .json(.object(try values.mapValues { try jsonValue(from: $0, attributeID: attributeID) }))
+      case .lookupRef:
+        throw InstantError(
+          code: .validationFailed,
+          operation: "orient Instant live reverse relation",
+          path: attributeID,
+          message: "Reverse relation '\(attributeID)' contains a nested lookup ref.",
+          recovery: "Use a scalar or JSON value for the relation's unique lookup attribute."
+        )
+      }
+    }
+
+    private func jsonValue(
+      from value: InstantTransportValue,
+      attributeID: String
+    ) throws -> JSONValue {
+      switch value {
+      case .null:
+        return .null
+      case let .bool(value):
+        return .bool(value)
+      case let .number(value):
+        return .number(value)
+      case let .string(value):
+        return .string(value)
+      case let .array(values):
+        return .array(try values.map { try jsonValue(from: $0, attributeID: attributeID) })
+      case let .object(values):
+        return .object(try values.mapValues { try jsonValue(from: $0, attributeID: attributeID) })
+      case .lookupRef:
+        throw InstantError(
+          code: .validationFailed,
+          operation: "orient Instant live reverse relation",
+          path: attributeID,
+          message: "Reverse relation '\(attributeID)' contains a nested lookup ref.",
+          recovery: "Use a scalar or JSON value for the relation's unique lookup attribute."
         )
       }
     }
