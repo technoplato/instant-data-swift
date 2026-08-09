@@ -10,8 +10,9 @@ import Foundation
 // Docs: docs/adr/0015-sqlite-data-parity-ergonomics/open-segment-write-recipe.md
 // Typed InstantEntityModel sketch: InstantSwiftData/OpenSegmentWriteRecipeEntities.swift
 //
-// Outbox same-entity supersession is an intentional follow-on for high-churn
-// performance — not implemented here.
+// Outbox same-entity supersession: pure policy in OutboxSameEntitySupersession
+// (recipe follow-on-outbox-same-entity-supersession.md). Full enqueue wiring is
+// still follow-on — always outbox every interim write.
 
 // MARK: - Words (strict Codable JSON)
 
@@ -237,6 +238,9 @@ public enum OpenSegmentWriteRecipe: Sendable {
   private static let wordsDecoder = JSONDecoder()
 
   /// Encode words as a UTF-8 JSON array string. Throws on encode failure.
+  /// Encode words as JSON text for a string `wordsJSON` column.
+  /// Prefer `[OpenSegmentWord].JSONStringRepresentation` at the typed attribute
+  /// layer when available; this Core helper stays dependency-free.
   public static func encodeWordsJSON(_ words: [OpenSegmentWord]) throws -> String {
     do {
       let data = try wordsEncoder.encode(words)

@@ -187,6 +187,16 @@ write path that skips outbox.
   you intentionally version).
 - **Encode and decode throw** (or surface `InstantError.decodeFailed`) — never
   silent `try?` that drops words.
+- Prefer Instant’s SQLiteData-shaped API (mirrors structured-queries
+  `Type.JSONRepresentation`):
+  - `[OpenSegmentWord].JSONRepresentation` → Instant `.json`
+  - `[OpenSegmentWord].JSONStringRepresentation` → JSON text in `.string`
+    (Scribe schema today)
+  - `attribute.setJSON(words)` / `setJSONString(words)`
+  - `snapshot.codableJSON` / `codableJSONString` on read
+- Shared `InstantCodableJSON.encoder` uses **sorted keys** (stable wire); date
+  strategy matches structured-queries ISO-8601 strings. Encode/decode failures
+  throw `InstantError` (stricter than SQLiteData’s bind-time `.invalid`).
 - Words are **not** Instant word entities on the live path (no per-word outbox
   thrash). Export / “full transcript” is generated on demand from segments +
   wordsJSON (SRT, Markdown, JSON, …) — **do not store joined full transcript
@@ -202,6 +212,11 @@ public struct OpenSegmentWord: Codable, Equatable, Sendable {
 // Library helper — throws on encode/decode failure
 let json = try OpenSegmentWriteRecipe.encodeWordsJSON(words)
 let again = try OpenSegmentWriteRecipe.decodeWordsJSON(json)
+
+// Or attribute-path spelling (Scribe string column):
+// static let wordsJSON =
+//   InstantAttributePath<Self, [OpenSegmentWord].JSONStringRepresentation>("wordsJSON")
+// try Segment.update(id: id, Segment.wordsJSON.setJSONString(words))
 ```
 
 ---
@@ -244,14 +259,19 @@ and is orthogonal to sync status.
 ## Follow-on: outbox same-entity supersession
 
 High-churn open-segment upserts enqueue many pending ops for the **same entity
-id**. A correct later optimization is **library outbox supersession**: keep the
-latest pending mutation for that entity (or coalesce attributes) so offline /
-slow networks do not pile unbounded supersedable ops.
+id**. Library **same-entity outbox supersession** keeps only the latest pending
+upsert intent for that `(namespace, entityID)` so offline / slow networks do not
+pile unbounded supersedable ops.
 
-**Do not block this recipe on supersession.** Always outbox every interim write
-today; measure; implement supersession as a separate library performance step
-(overview 10 / plan L* performance track). Apps must not invent a “skip outbox
-for interim” mode.
+**Full recipe (policy, algorithm, non-goals, tests):**  
+[`follow-on-outbox-same-entity-supersession.md`](./follow-on-outbox-same-entity-supersession.md)  
+**Pure policy:** `Sources/InstantSwiftDataCore/OutboxSameEntitySupersession.swift`
+
+**Do not block this open-segment recipe on full outbox integration.** Always
+outbox every interim write today; pure policy + tests are landed; wire
+`OutboxSameEntitySupersession.decide` at durable enqueue as a separate library
+step (overview 10 / plan L* performance track). Apps must not invent a “skip
+outbox for interim” mode.
 
 ---
 

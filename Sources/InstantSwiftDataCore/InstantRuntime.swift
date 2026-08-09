@@ -2511,6 +2511,14 @@ public final class InstantRuntime: Sendable {
         prepared: prepared
       )
       mutation = pendingMutation
+      // Append new pending mutation. Same-entity supersession (high-churn open-
+      // segment speech) is pure policy today — wire here without breaking delivery:
+      // map outbox+pending → OutboxSupersessionCandidate, run
+      // OutboxSameEntitySupersession.decide, drop superseded pending upserts for the
+      // same singleton (namespace, entityID). Do not drop failed/poison/media/delete
+      // or multi-entity batches (v1).
+      // TODO recipe entry: docs/adr/0015-sqlite-data-parity-ergonomics/follow-on-outbox-same-entity-supersession.md
+      // TODO recipe entry: Sources/InstantSwiftDataCore/OutboxSameEntitySupersession.swift
       let outboxSnapshot = (state.snapshot.outbox + [pendingMutation])
         .sorted(by: PendingMutation.creationOrder)
       recordActorHop(.persistence)

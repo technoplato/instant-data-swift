@@ -129,6 +129,11 @@ wrapper with an explicit `nil` key so it does not start a broad observation.
 - Words are **not** Instant entities: strict Codable JSON array on the segment
   (`start`, `end`, `text`). Fail loud on encode/decode drift
   (`OpenSegmentWriteRecipe.encodeWordsJSON` / `decodeWordsJSON`).
+- **Same-entity outbox supersession** (high-churn speech): pure policy
+  `OutboxSameEntitySupersession` — recipe
+  `docs/adr/0015-sqlite-data-parity-ergonomics/follow-on-outbox-same-entity-supersession.md`.
+  Latest pending upsert for `(namespace, entityID)` wins; failed/poison/media/delete
+  not superseded. Full enqueue integration is follow-on; always outbox today.
 - **No stored full joined transcript text.** Generate/export by format on demand
   from segments + words JSON.
 - Prefer schema-level typed JSON + TypeScript schema generation generics where

@@ -23,6 +23,11 @@ actor InstantOutbox {
     self.mutations = mutations.sorted(by: PendingMutation.creationOrder)
   }
 
+  // TODO recipe entry: same-entity supersession at durable enqueue (not here alone).
+  // Pure policy: OutboxSameEntitySupersession.decide — ADR 0015
+  // docs/adr/0015-sqlite-data-parity-ergonomics/follow-on-outbox-same-entity-supersession.md
+  // Call site: InstantRuntime local mutation path after outboxSnapshot append.
+
   func pending() -> [PendingMutation] {
     mutations.filter { $0.status == .pending }
   }
