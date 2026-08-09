@@ -43,12 +43,28 @@ See issue successCriteria; plan steps below map 1:1 to criteria ids to add/updat
 ## Execution order
 
 ```text
-L1 → L2 → S1          (list unblocked)
-L3, L4, P1            (parallel after or beside L2 as capacity allows)
+L1 → L2 → S1          (list unblocked) — largely done
+L3, L4, P1            (library SQLiteData parity — prioritize with Scribe peel)
 S2 → S3 → S5 → S4     (write path then delete store last among Scribe steps)
 ```
 
+**Owner 2026-08-09:** Do **not** thrash dual performance while façades remain.
+Peel `ScribeInstantStore` call sites (overview 10) **in parallel with** L3/L4
+library ergonomics. Speech hot path must be Instant-only before big soaks.
+
 Do **not** S4 before S1/S2 work. After S1–S5 verified, rip store completely.
+
+### Scribe peel progress (overview 10)
+
+| Phase | Status |
+| --- | --- |
+| 0 Document + AGENTS Instant I/O law | done 2026-08-09 |
+| 1 Stream companion + constants off store | in progress |
+| 2 Screen stream + image analysis | todo |
+| 3 Speech: delete SharedRecordingSnapshotClient | todo |
+| 4 Agent room/CLI | todo |
+| 5 Entity files out of store mega-file | todo |
+| 6 Delete `ScribeInstantStore` type (S4) | todo |
 
 ## Out of scope (this plan)
 
