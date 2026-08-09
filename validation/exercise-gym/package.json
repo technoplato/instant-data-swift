@@ -14,6 +14,7 @@
     "gym:cpu": "tsx src/run.ts --suite cpu-cap",
     "gym:all": "tsx src/run.ts --suite all",
     "gym:analyze": "tsx src/run.ts --suite analyze-only",
+    "gym:full-compare": "tsx src/full-compare.ts",
     "electron": "electron electron/main.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },

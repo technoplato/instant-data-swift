@@ -18,7 +18,11 @@ let package = Package(
       dependencies: [
         .product(name: "InstantSwiftDataCore", package: "instant-data-swift"),
       ],
-      path: "Sources/ExerciseGym"
+      path: "Sources/ExerciseGym",
+      swiftSettings: [
+        // Multi-file @main executable: free helpers + WireLog need library parse mode.
+        .unsafeFlags(["-parse-as-library"]),
+      ]
     ),
   ]
 )

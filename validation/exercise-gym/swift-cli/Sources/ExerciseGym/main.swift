@@ -65,8 +65,24 @@ struct ExerciseGym {
       )
     }
 
-    let persistenceURL = FileManager.default.temporaryDirectory
-      .appendingPathComponent("exercise-gym-\(UUID().uuidString).sqlite")
+    let persistenceURL: URL = {
+      if let path = options.persistencePath, !path.isEmpty {
+        return URL(fileURLWithPath: path)
+      }
+      return FileManager.default.temporaryDirectory
+        .appendingPathComponent("exercise-gym-\(UUID().uuidString).sqlite")
+    }()
+
+    let descriptor =
+      options.descriptor
+      ?? "swift-cli-\(suite.rawValue)-\(ProcessInfo.processInfo.processIdentifier)"
+    let wireLog = WireLog(
+      clientId: "(pending)",
+      descriptor: descriptor,
+      runId: runID,
+      suite: suite.rawValue
+    )
+    let loggingTransport = LoggingLiveTransport.make(wireLog: wireLog)
 
     var configuration = InstantRuntimeConfiguration(
       appID: appID,
@@ -76,7 +92,7 @@ struct ExerciseGym {
       initialAttributes: ExerciseGymSchema.attributes,
       refreshTokenVerifier: .live,
       authTokenInvalidator: .live,
-      liveTransport: .live
+      liveTransport: loggingTransport
     )
     configuration.autoConnectLiveTransport = true
     let runtime = try await InstantRuntime.bootstrap(configuration: configuration)
@@ -92,9 +108,7 @@ struct ExerciseGym {
     try await waitAuthenticated(runtime)
 
     let clientID = try await runtime.clientID()
-    let descriptor =
-      options.descriptor
-      ?? "swift-cli-\(suite.rawValue)-\(ProcessInfo.processInfo.processIdentifier)"
+    await wireLog.setIdentity(clientId: clientID, descriptor: descriptor)
 
     let memBaseline = InstantProcessMemory.sample()
     let baselineResident = memBaseline?.residentBytes ?? 0
@@ -104,7 +118,7 @@ struct ExerciseGym {
       Data("EXERCISE_GYM_READY suite=\(suite.rawValue) clientId=\(clientID)\n".utf8)
     )
 
-    let result: [String: Any]
+    var result: [String: Any]
     switch suite {
     case .simple:
       result = try await runSimple(
@@ -116,7 +130,8 @@ struct ExerciseGym {
         duration: duration,
         maxAppRssMiB: options.maxAppRssMiB,
         baselineResident: baselineResident,
-        baselineFootprint: baselineFootprint
+        baselineFootprint: baselineFootprint,
+        writeCount: options.writeCount
       )
     case .complex:
       result = try await runComplex(
@@ -131,8 +146,36 @@ struct ExerciseGym {
         baselineFootprint: baselineFootprint,
         chaptersPerDoc: options.chaptersPerDoc,
         blocksPerChapter: options.blocksPerChapter,
-        annotationsPerBlock: options.annotationsPerBlock
+        annotationsPerBlock: options.annotationsPerBlock,
+        writeCount: options.writeCount
       )
+    }
+
+    // Local SQLite asset sizes (optimistic cache / offline persistence)
+    // Brief settle so WAL can flush before sizing.
+    try await Task.sleep(for: .milliseconds(100))
+    let sqliteSizes = measureSQLiteAssets(at: persistenceURL)
+    result["localStore"] = [
+      "kind": "SQLite InstantRuntime persistence",
+      "path": persistenceURL.path,
+      "files": sqliteSizes,
+      "totalBytes": sqliteSizes.values.reduce(0, +),
+      "totalMiB": Double(sqliteSizes.values.reduce(0, +)) / (1024 * 1024),
+    ]
+
+    // Wire log (full Instant live frames, including transact tx-steps)
+    let wireSummary = await wireLog.summary()
+    result["wire"] = wireSummary.asDictionary()
+    if let wirePath = options.wireLogPath, !wirePath.isEmpty {
+      try await wireLog.writeJSONL(to: wirePath)
+      result["wireLogPath"] = wirePath
+    } else if let out = options.outPath {
+      let wirePath = URL(fileURLWithPath: out)
+        .deletingPathExtension()
+        .appendingPathExtension("messages.jsonl")
+        .path
+      try await wireLog.writeJSONL(to: wirePath)
+      result["wireLogPath"] = wirePath
     }
 
     if let out = options.outPath {
@@ -147,6 +190,24 @@ struct ExerciseGym {
   }
 }
 
+func measureSQLiteAssets(at mainURL: URL) -> [String: UInt64] {
+  var sizes: [String: UInt64] = [:]
+  let fm = FileManager.default
+  let candidates = [
+    mainURL,
+    URL(fileURLWithPath: mainURL.path + "-wal"),
+    URL(fileURLWithPath: mainURL.path + "-shm"),
+  ]
+  for url in candidates {
+    if let attrs = try? fm.attributesOfItem(atPath: url.path),
+      let size = attrs[.size] as? UInt64
+    {
+      sizes[url.lastPathComponent] = size
+    }
+  }
+  return sizes
+}
+
 // MARK: - Suites
 
 func runSimple(
@@ -158,7 +219,8 @@ func runSimple(
   duration: Double,
   maxAppRssMiB: Double,
   baselineResident: UInt64,
-  baselineFootprint: UInt64
+  baselineFootprint: UInt64,
+  writeCount: Int?
 ) async throws -> [String: Any] {
   let counterID = UUID().uuidString
   var seq = 0
@@ -169,8 +231,11 @@ func runSimple(
   var peakFootprint = baselineFootprint
   let started = ContinuousClock.now
   let deadline = started + .seconds(duration)
+  let target = writeCount
 
-  while ContinuousClock.now < deadline {
+  while true {
+    if let target, seq >= target { break }
+    if target == nil, ContinuousClock.now >= deadline { break }
     seq += 1
     let sentAt = Date().timeIntervalSince1970 * 1_000
     let ops = counterUpsertOps(
@@ -224,6 +289,9 @@ func runSimple(
       "lastSeq": seq,
       "maxAppRssMiB": maxAppRssMiB,
       "durationSeconds": duration,
+      "writeCount": target as Any,
+      "opsPerWrite": 9,
+      "opShape": "add-triple x9 fields on one counter entity",
     ]
   )
 }
@@ -240,20 +308,25 @@ func runComplex(
   baselineFootprint: UInt64,
   chaptersPerDoc: Int,
   blocksPerChapter: Int,
-  annotationsPerBlock: Int
+  annotationsPerBlock: Int,
+  writeCount: Int?
 ) async throws -> [String: Any] {
   var docSeq = 0
   var writesAttempted = 0
   var writesAccepted = 0
   var entityCount = 0
+  var opCount = 0
   var rtts: [Double] = []
   var peakResident = baselineResident
   var peakFootprint = baselineFootprint
   let started = ContinuousClock.now
   let deadline = started + .seconds(duration)
   var lastDocumentID = ""
+  let target = writeCount
 
-  while ContinuousClock.now < deadline {
+  while true {
+    if let target, docSeq >= target { break }
+    if target == nil, ContinuousClock.now >= deadline { break }
     docSeq += 1
     let documentID = UUID().uuidString
     lastDocumentID = documentID
@@ -270,6 +343,7 @@ func runComplex(
       annotationsPerBlock: annotationsPerBlock
     )
     entityCount += built.entityCount
+    opCount += built.ops.count
     writesAttempted += 1
     let mutation = try await runtime.transact(
       operations: built.ops,
@@ -296,6 +370,10 @@ func runComplex(
     if Double(appResident) / (1024 * 1024) >= maxAppRssMiB { break }
   }
 
+  let entitiesPerDoc =
+    1 + chaptersPerDoc + chaptersPerDoc * blocksPerChapter
+    + chaptersPerDoc * blocksPerChapter * annotationsPerBlock
+
   return makeResult(
     suite: "complex",
     appID: appID,
@@ -314,11 +392,16 @@ func runComplex(
       "lastDocSeq": docSeq,
       "lastDocumentId": lastDocumentID,
       "entityCount": entityCount,
+      "opsTotal": opCount,
+      "opsPerWrite": writesAttempted > 0 ? opCount / writesAttempted : 0,
+      "entitiesPerDoc": entitiesPerDoc,
       "chaptersPerDoc": chaptersPerDoc,
       "blocksPerChapter": blocksPerChapter,
       "annotationsPerBlock": annotationsPerBlock,
       "maxAppRssMiB": maxAppRssMiB,
       "durationSeconds": duration,
+      "writeCount": target as Any,
+      "opShape": "InstantTripleOperation.insert triples for entity fields + ref links",
     ]
   )
 }
@@ -813,6 +896,9 @@ struct Options {
   var chaptersPerDoc: Int = 2
   var blocksPerChapter: Int = 3
   var annotationsPerBlock: Int = 2
+  var writeCount: Int? = nil
+  var persistencePath: String? = nil
+  var wireLogPath: String? = nil
 
   static func parse(_ args: [String]) throws -> Options {
     var o = Options()
@@ -845,11 +931,18 @@ struct Options {
       case "--chapters-per-doc": o.chaptersPerDoc = Int(try next()) ?? 2
       case "--blocks-per-chapter": o.blocksPerChapter = Int(try next()) ?? 3
       case "--annotations-per-block": o.annotationsPerBlock = Int(try next()) ?? 2
+      case "--writes", "--write-count", "-n":
+        o.writeCount = Int(try next())
+      case "--persistence-path":
+        o.persistencePath = try next()
+      case "--wire-log", "--messages":
+        o.wireLogPath = try next()
       case "--help", "-h":
         print(
           """
           ExerciseGym --suite simple|complex --app-id ID --refresh-token T --user-id U \\
-            --run-id ID --duration 15 --out path
+            --run-id ID --duration 15 --writes N --persistence-path PATH \\
+            --wire-log messages.jsonl --out path
           """
         )
         exit(0)

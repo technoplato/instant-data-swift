@@ -48,7 +48,7 @@ export class MessageLog {
       suite: string;
       side: string;
     },
-    private readonly maxBodyPreview = 4_000,
+    private readonly maxBodyPreview = 100_000,
     private readonly maxRecords = 50_000,
   ) {}
 

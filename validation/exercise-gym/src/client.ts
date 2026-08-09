@@ -3,6 +3,8 @@
  * Polyfills WebSocket for Node, installs message logging, resolves clientId.
  */
 import { randomUUID } from "node:crypto";
+import { mkdirSync, readFileSync, writeFileSync, existsSync, readdirSync, statSync, rmSync } from "node:fs";
+import { join } from "node:path";
 import { init as initAdmin } from "@instantdb/admin";
 import {
   init as initCore,
@@ -24,6 +26,13 @@ export interface GemIdentity {
   clientId: string;
 }
 
+export interface LocalStoreInfo {
+  kind: "memory" | "file";
+  path: string | null;
+  totalBytes: number;
+  files: Record<string, number>;
+}
+
 export interface GemClients {
   admin: ReturnType<typeof initAdmin>;
   db: ReturnType<typeof initCore>;
@@ -32,6 +41,8 @@ export interface GemClients {
   refreshToken: string;
   userId: string;
   appId: string;
+  localStore: LocalStoreInfo;
+  measureLocalStore: () => LocalStoreInfo;
   shutdown: () => void;
 }
 
@@ -57,6 +68,72 @@ class MemoryStore extends StoreInterface {
   async getAllKeys(): Promise<string[]> {
     return [...this.values.keys()];
   }
+}
+
+/** Disk-backed StoreInterface so local optimistic/offline size is measurable. */
+class FileStore extends StoreInterface {
+  private readonly dir: string;
+
+  constructor(appID: string, storeName: StoreInterfaceStoreName, rootDir: string) {
+    super(appID, storeName);
+    this.dir = join(rootDir, appID, storeName);
+    mkdirSync(this.dir, { recursive: true });
+  }
+
+  private keyPath(key: string): string {
+    const safe = Buffer.from(key).toString("base64url");
+    return join(this.dir, `${safe}.json`);
+  }
+
+  async getItem(key: string): Promise<unknown> {
+    const path = this.keyPath(key);
+    if (!existsSync(path)) return null;
+    try {
+      return JSON.parse(readFileSync(path, "utf8"));
+    } catch {
+      return null;
+    }
+  }
+
+  async removeItem(key: string): Promise<void> {
+    const path = this.keyPath(key);
+    if (existsSync(path)) rmSync(path);
+  }
+
+  async multiSet(entries: Array<[string, unknown]>): Promise<void> {
+    for (const [key, value] of entries) {
+      writeFileSync(this.keyPath(key), `${JSON.stringify(value)}\n`);
+    }
+  }
+
+  async getAllKeys(): Promise<string[]> {
+    if (!existsSync(this.dir)) return [];
+    return readdirSync(this.dir)
+      .filter((f) => f.endsWith(".json"))
+      .map((f) => Buffer.from(f.replace(/\.json$/, ""), "base64url").toString("utf8"));
+  }
+}
+
+export function measureDirBytes(root: string | null): LocalStoreInfo {
+  if (!root || !existsSync(root)) {
+    return { kind: "memory", path: root, totalBytes: 0, files: {} };
+  }
+  const files: Record<string, number> = {};
+  let total = 0;
+  const walk = (dir: string, prefix = "") => {
+    for (const name of readdirSync(dir)) {
+      const full = join(dir, name);
+      const st = statSync(full);
+      const rel = prefix ? `${prefix}/${name}` : name;
+      if (st.isDirectory()) walk(full, rel);
+      else {
+        files[rel] = st.size;
+        total += st.size;
+      }
+    }
+  };
+  walk(root);
+  return { kind: "file", path: root, totalBytes: total, files };
 }
 
 class AlwaysOnline {
@@ -86,6 +163,8 @@ export async function openGemClients(options: {
   side?: GemIdentity["side"];
   descriptor?: string;
   email?: string;
+  /** When set, Instant core local store is file-backed under this directory. */
+  localStoreDir?: string;
 }): Promise<GemClients> {
   installNodeGlobals();
   const apiURI = options.apiURI ?? process.env.INSTANT_API_URI ?? "https://api.instantdb.com";
@@ -122,6 +201,17 @@ export async function openGemClients(options: {
   const user = await admin.auth.verifyToken(refreshToken);
   if (!user?.id) throw new Error("Expected admin-created user id.");
 
+  const localStoreDir = options.localStoreDir ?? null;
+  if (localStoreDir) mkdirSync(localStoreDir, { recursive: true });
+
+  const StoreImpl = localStoreDir
+    ? class extends FileStore {
+      constructor(appID: string, storeName: StoreInterfaceStoreName) {
+        super(appID, storeName, localStoreDir!);
+      }
+    }
+    : MemoryStore;
+
   const db = initCore(
     {
       appId: options.appId,
@@ -131,7 +221,7 @@ export async function openGemClients(options: {
       devtool: false,
       useDateObjects: true,
     },
-    MemoryStore,
+    StoreImpl,
     AlwaysOnline,
   );
   await db.auth.signInWithToken(refreshToken);
@@ -151,6 +241,11 @@ export async function openGemClients(options: {
     clientId,
   };
 
+  const measureLocalStore = (): LocalStoreInfo =>
+    localStoreDir
+      ? { ...measureDirBytes(localStoreDir), kind: "file" }
+      : { kind: "memory", path: null, totalBytes: 0, files: {} };
+
   return {
     admin,
     db,
@@ -159,6 +254,8 @@ export async function openGemClients(options: {
     refreshToken,
     userId: user.id,
     appId: options.appId,
+    localStore: measureLocalStore(),
+    measureLocalStore,
     shutdown: () => {
       try {
         db.shutdown();
