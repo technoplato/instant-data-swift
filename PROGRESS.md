@@ -6,6 +6,14 @@ production-readiness plan
 Commit-level history stays in `docs/audits/commit-changelog.md`; this file is
 the narrative of what the library must prove and why.
 
+## 2026-08-09 18:00:47 EDT — #187 reverse relations and rebased writes fixed
+
+- **Physical root cause:** the iPad's first durable recording transaction contained every required field, but Swift resolved child-side reverse relations to the server's forward UUID without swapping endpoints. The server therefore treated transcription and segment IDs as recordings. The corrected swap also removes child-side create/update modes so they cannot be applied to an existing parent.
+- **Reproduction:** canonical TypeScript full-create plus immediate update materialized recording/transcription/segment `1/1/1`; the old Swift-shaped reversed step reproduced the exact HTTP 400. Current Swift sent canonical parent-to-child links, acknowledged 30- and 12-step transactions as server transactions `1900` and `1901`, and independently materialized `1/1/1` rows.
+- **Second fault:** refresh, terminal rejection, and retry rebased only optimistic triples. Durable operations retained older timestamps, so visible-write filtering stripped required non-primary scalar fields. Commit `71ddd401de9a329233e4175549ee5281e31353de` keeps both layers aligned while preserving true-stale suppression and same-ID idempotency.
+- **Verification:** 9 focused transport/rejection/idempotency tests passed across 4 suites; all 20 hydration tests passed; independent review found no remaining priority-zero or priority-one defect. Exact artifacts are under `/tmp/scribe-187-swift-roundtrip.dyuZhU/`.
+- **Next:** build/install Scribe against this clean Instant commit, create one fresh iPad recording, require production server acceptance plus exact admin rows within five seconds, then repeat the host/extension memory measurement. The prior 290–450 MB run remains invalid because it contained 322 failed mutations and a rejection/replay storm.
+
 ## 2026-08-05 17:57:36 EDT — Dual-write diagnostic thrash (idle multi-GB) fixed in 1.5.4
 
 - **Field:** iPad idle home screen **2.7–4.3 GB** footprint; cold open 122 MB → multi‑GB; continuous `debug-log-batch` mutations 400–700 ops + HOL thrash.

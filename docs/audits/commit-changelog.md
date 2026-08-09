@@ -1,3 +1,9 @@
+## 2026-08-09 18:00:47 EDT
+
+- **repo:** instant-data-swift
+- **commit:** `71ddd401de9a329233e4175549ee5281e31353de`
+- **reason:** Match canonical TypeScript reverse-relation endpoint orientation, remove invalid modes from swapped links, keep durable and optimistic rebase timestamps aligned so required scalar writes survive refresh/rejection/retry, and preserve exact same-ID idempotency while rejecting changed intent (#187).
+
 ## 2026-08-09 16:39:00 EDT
 
 - **repo:** realtime-voice-sqlite-instant (Scribe)

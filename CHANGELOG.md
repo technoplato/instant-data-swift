@@ -10,6 +10,25 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## August 9th, 2026 at 6:00:44 p.m. EDT — `71ddd401de9a` Fix reverse relation delivery and rebased writes (#187)
+
+- **Implementation commit:** `71ddd401de9a329233e4175549ee5281e31353de`
+- **Change:** Fix reverse relation delivery and rebased wire writes (#187)
+- **Details:**
+  - Preserve whether a server attribute matched the forward or reverse identity, then swap add/retract endpoints for reverse relations exactly like canonical TypeScript instaml.
+  - Remove create/update modes from swapped reverse-link steps so creating a child never asks the server to recreate its existing parent; preserve modes on forward links.
+  - Rebase durable pending write timestamps with their optimistic overlays so visible-write filtering does not strip required scalar fields after refresh, rejection, or retry.
+  - Keep same-ID retries idempotent by comparing ordered server-visible intent while still rejecting changed values, attributes, preconditions, and operation kinds.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantLiveMutation.swift` — Orient reverse relation endpoints during live attribute resolution.
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — Keep durable and optimistic rebase timestamps aligned and preserve idempotent replay.
+  - `Tests/InstantSwiftDataCoreTests/InstantLiveTransportTests.swift` — Prove exact reverse wire bodies, refresh replay, and stale-write protection.
+  - `Tests/InstantSwiftDataCoreTests/InstantFailedMutationDiscardTests.swift` — Prove rejection and retry retain scalar wire writes.
+  - `Tests/InstantSwiftDataCoreTests/InstantOutboxHydrationTests.swift` — Prove hydrated rebases align timestamps and keep same-ID intent safe.
+- **User context (verbatim):**
+  > what's causing these rejected recording mutations? Try and duplicate the issue on TypeScript
+- **SpecStory:** unavailable — Unavailable: Codex desktop task; no SpecStory CLI capture or public share was created.
+
 ## August 9th, 2026 at 3:00:08 p.m. EDT — `8213ed3557d6` Fix durable outbox delivery with compact memory state
 
 - **Implementation commit:** `8213ed3557d6f23455840699a8948f676858cbf6`
