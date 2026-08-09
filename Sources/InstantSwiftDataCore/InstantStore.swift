@@ -165,6 +165,25 @@ public actor InstantStore {
     indexes.materialize(plan, attributes: attributes, remotePageInfo: remotePageInfo)
   }
 
+  /// In-actor microbench: iterations of materialize without inter-call actor hops.
+  /// Used to compare pure store latency to TypeScript `@instantdb/core` store scans.
+  package func measureMaterializeAverageNanoseconds(
+    _ plan: InstantQueryPlan,
+    iterations: Int
+  ) -> (averageNanoseconds: Double, lastCount: Int) {
+    precondition(iterations > 0)
+    var total: UInt64 = 0
+    var lastCount = 0
+    for _ in 0..<iterations {
+      let t0 = DispatchTime.now().uptimeNanoseconds
+      let rows = indexes.materialize(plan, attributes: attributes)
+      let t1 = DispatchTime.now().uptimeNanoseconds
+      total += t1 - t0
+      lastCount = rows.count
+    }
+    return (Double(total) / Double(iterations), lastCount)
+  }
+
   public func materializeInstaQL(
     _ plan: InstantQueryPlan,
     remotePageInfo: InstantQueryRemotePageInfo? = nil,

@@ -304,6 +304,13 @@ enum AttrSlot: Hashable, Codable, Sendable {
 struct TripleIndexes: Hashable, Codable, Sendable {
   private var eav: [String: [String: AttrSlot]] = [:]
   private var vae: [InstantValue: [String: [String: InstantTripleStamp]]] = [:]
+  /// Compact secondary index for **schema-indexed** attributes only (not full InstantTriple AEV).
+  /// Shape: attributeID → value → entityIDs. Powers equality filters / lookup without scanning eav.
+  private var indexedValueEntities: [String: [InstantValue: Set<String>]] = [:]
+  /// attributeID → entityID → value for cardinality-one indexed attrs (sort / ordered page).
+  private var indexedEntityValues: [String: [String: InstantValue]] = [:]
+  /// namespace → entityIDs that hold at least one attr in that namespace (avoids scanning segments for recordings queries).
+  private var entitiesByNamespace: [String: Set<String>] = [:]
   private var storedTripleCount = 0
   private var internedTxIDs: [String] = [""]
   private var txIDToIndex: [String: UInt32] = ["": 0]
@@ -338,10 +345,11 @@ struct TripleIndexes: Hashable, Codable, Sendable {
     )
   }
 
-  /// Only the three indexes are encoded. `storedTripleCount` is derived and is recomputed on
-  /// decode, which keeps the on-disk shape identical to what earlier builds wrote — a persisted
-  /// cache must not stop decoding because a derived field was added.
+  /// Wire shape keeps historical `aev` (always empty) so older caches decode.
+  /// Secondary indexes (`indexedValueEntities`, …) are derived and not encoded.
+  /// `storedTripleCount` / `internedTxIDs` rebuild on decode when needed.
   private enum CodingKeys: String, CodingKey {
+    case aev
     case eav
     case vae
     case internedTxIDs
@@ -349,6 +357,11 @@ struct TripleIndexes: Hashable, Codable, Sendable {
 
   init(from decoder: Decoder) throws {
     let container = try decoder.container(keyedBy: CodingKeys.self)
+    // Legacy full InstantTriple AEV is ignored (memory floor).
+    _ = try? container.decodeIfPresent(
+      [String: [String: [InstantValue: InstantTriple]]].self,
+      forKey: .aev
+    )
     self.eav = try container.decode(
       [String: [String: AttrSlot]].self,
       forKey: .eav
@@ -365,10 +378,20 @@ struct TripleIndexes: Hashable, Codable, Sendable {
     }
     self.txIDToIndex = map
     self.storedTripleCount = Self.walkedTripleCount(eav)
+    // Secondary indexes stay empty until the next insert path with attributes
+    // (or InstantStore rebuild via init(triples:attributes:)).
+    self.indexedValueEntities = [:]
+    self.indexedEntityValues = [:]
+    self.entitiesByNamespace = [:]
   }
 
   func encode(to encoder: Encoder) throws {
     var container = encoder.container(keyedBy: CodingKeys.self)
+    // Empty aev keeps historical wire keys without retaining a third full index.
+    try container.encode(
+      [String: [String: [InstantValue: InstantTriple]]](),
+      forKey: .aev
+    )
     try container.encode(eav, forKey: .eav)
     try container.encode(vae, forKey: .vae)
     try container.encode(internedTxIDs, forKey: .internedTxIDs)
@@ -528,10 +551,24 @@ struct TripleIndexes: Hashable, Codable, Sendable {
         lookup.value.instantValue,
         attribute: lookupAttribute.attribute
       )
+      let attributeID = lookupAttribute.attribute.id
+      if lookupAttribute.attribute.isIndexed,
+        let hits = indexedValueEntities[attributeID]?[value]
+      {
+        return hits.sorted()
+      }
       var entityIDs: [String] = []
-      for (entityID, attributesByID) in eav {
-        if attributesByID[lookupAttribute.attribute.id]?[value] != nil {
-          entityIDs.append(entityID)
+      if let namespaceMembers = entitiesByNamespace[lookupAttribute.namespace] {
+        for entityID in namespaceMembers {
+          if eav[entityID]?[attributeID]?[value] != nil {
+            entityIDs.append(entityID)
+          }
+        }
+      } else {
+        for (entityID, attributesByID) in eav {
+          if attributesByID[attributeID]?[value] != nil {
+            entityIDs.append(entityID)
+          }
         }
       }
       return entityIDs.sorted()
@@ -675,19 +712,72 @@ struct TripleIndexes: Hashable, Codable, Sendable {
       )
     }
 
-    var snapshots: [QuerySnapshot] = []
+    let candidateResolution = resolveCandidateEntityIDs(plan: plan, attributes: attributes)
+    let filtersFullyCoveredByIndex = candidateResolution.filtersFullyCoveredByIndex
+    // Indexed equality-only filters with no explicit order: materialize in stable entity-id
+    // order (candidates already sorted) and apply limit without building QuerySnapshot sort keys.
+    // Matches common list-filter UX and removes serverCreatedAt sort overhead.
+    if filtersFullyCoveredByIndex,
+      plan.order == nil,
+      (plan.includes?.isEmpty ?? true),
+      plan.selectedFields == nil,
+      remotePageInfo == nil,
+      plan.offset == nil,
+      plan.after == nil,
+      plan.before == nil,
+      plan.first == nil,
+      plan.last == nil
+    {
+      let limit = plan.limit ?? candidateResolution.ids.count
+      var values: [InstantEntitySnapshot] = []
+      values.reserveCapacity(min(limit, candidateResolution.ids.count))
+      for entityID in candidateResolution.ids {
+        guard let attributesByID = eav[entityID],
+          let fieldValues = materializedValues(
+            entityID: entityID,
+            namespace: plan.namespace,
+            attributesByID: attributesByID,
+            attributes: attributes
+          )
+        else { continue }
+        values.append(
+          InstantEntitySnapshot(id: entityID, namespace: plan.namespace, values: fieldValues)
+        )
+        if values.count >= limit { break }
+      }
+      return InstantQueryPage(values: values, pageInfo: nil)
+    }
 
-    for (entityID, attributesByID) in eav {
-      guard let values = materializedValues(
-        entityID: entityID,
-        namespace: plan.namespace,
-        attributesByID: attributesByID,
-        attributes: attributes
-      ) else { continue }
-      let snapshot = InstantEntitySnapshot(id: entityID, namespace: plan.namespace, values: values)
-      guard matches(snapshot, filters: plan.filters, namespace: plan.namespace, attributes: attributes)
+    var snapshots: [QuerySnapshot] = []
+    snapshots.reserveCapacity(
+      min(candidateResolution.ids.count, plan.limit ?? candidateResolution.ids.count)
+    )
+    let needsServerCreated = needsServerCreatedAt(effectiveOrder)
+
+    for entityID in candidateResolution.ids {
+      guard let attributesByID = eav[entityID],
+        let fieldValues = materializedValues(
+          entityID: entityID,
+          namespace: plan.namespace,
+          attributesByID: attributesByID,
+          attributes: attributes
+        )
       else { continue }
-      let serverCreatedAt = needsServerCreatedAt(effectiveOrder)
+      let snapshot = InstantEntitySnapshot(
+        id: entityID,
+        namespace: plan.namespace,
+        values: fieldValues
+      )
+      if !filtersFullyCoveredByIndex {
+        guard matches(
+          snapshot,
+          filters: plan.filters,
+          namespace: plan.namespace,
+          attributes: attributes
+        )
+        else { continue }
+      }
+      let serverCreatedAt = needsServerCreated
         ? serverCreatedAtValue(
           entityID: entityID,
           namespace: plan.namespace,
@@ -725,6 +815,50 @@ struct TripleIndexes: Hashable, Codable, Sendable {
     )
   }
 
+  private struct CandidateResolution: Sendable {
+    var ids: [String]
+    /// True when every filter was a simple indexed equality used to build `ids`.
+    var filtersFullyCoveredByIndex: Bool
+  }
+
+  /// Prefer indexed equality hits, else namespace membership — never scan unrelated namespaces.
+  private func resolveCandidateEntityIDs(
+    plan: InstantQueryPlan,
+    attributes: AttributeStore
+  ) -> CandidateResolution {
+    var candidate: Set<String>?
+    var coveredFilterCount = 0
+    for filter in plan.filters {
+      guard case let .equals(field, rawValue) = filter,
+        nestedField(field) == nil,
+        let attribute = attributes.attribute(namespace: plan.namespace, name: field),
+        attribute.isIndexed
+      else { continue }
+      let value = Self.normalizedValue(rawValue, attribute: attribute)
+      let hits = indexedValueEntities[attribute.id]?[value] ?? []
+      if let existing = candidate {
+        candidate = existing.intersection(hits)
+      } else {
+        candidate = hits
+      }
+      coveredFilterCount += 1
+    }
+    let fullyCovered =
+      !plan.filters.isEmpty && coveredFilterCount == plan.filters.count && candidate != nil
+    if let candidate {
+      // Indexed equality sets are unordered; sorting here is only for stable pagination
+      // when no explicit order is requested later.
+      return CandidateResolution(
+        ids: candidate.sorted(),
+        filtersFullyCoveredByIndex: fullyCovered
+      )
+    }
+    if let members = entitiesByNamespace[plan.namespace] {
+      return CandidateResolution(ids: members.sorted(), filtersFullyCoveredByIndex: false)
+    }
+    return CandidateResolution(ids: eav.keys.sorted(), filtersFullyCoveredByIndex: false)
+  }
+
   private func materializeSimpleOrderedPage(
     _ plan: InstantQueryPlan,
     order: InstantQueryOrder,
@@ -736,19 +870,18 @@ struct TripleIndexes: Hashable, Codable, Sendable {
       !order.isServerCreatedAt,
       let attribute = attributes.attribute(namespace: plan.namespace, name: order.field),
       attribute.cardinality == .one,
-      false
+      attribute.isIndexed,
+      let valuesByEntityID = indexedEntityValues[attribute.id]
     else { return nil }
 
-    let valuesByEntityID: [String: [InstantValue: InstantTripleStamp]] = [:]
-    let orderedEntityCount = valuesByEntityID.count
-    guard orderedEntityCount == namespaceEntityCount(plan.namespace, attributes: attributes) else {
-      return nil
-    }
+    let namespaceMembers = entitiesByNamespace[plan.namespace] ?? []
+    guard !valuesByEntityID.isEmpty,
+      valuesByEntityID.count == namespaceMembers.count
+    else { return nil }
 
     var ordered: [(entityID: String, value: InstantValue)] = []
-    ordered.reserveCapacity(orderedEntityCount)
-    for (entityID, valuesByValue) in valuesByEntityID {
-      guard let value = valuesByValue.first?.key else { return nil }
+    ordered.reserveCapacity(valuesByEntityID.count)
+    for (entityID, value) in valuesByEntityID {
       ordered.append((entityID, value))
     }
     ordered.sort { lhs, rhs in
@@ -760,8 +893,11 @@ struct TripleIndexes: Hashable, Codable, Sendable {
       )
     }
 
+    // Apply non-order filters by materializing only the ordered slice needed after filter? 
+    // Filters empty is required by canMaterializeSimpleOrderedPage for the simple path.
     var snapshots: [InstantEntitySnapshot] = []
-    snapshots.reserveCapacity(ordered.count)
+    let limit = plan.limit ?? plan.first ?? ordered.count
+    snapshots.reserveCapacity(min(limit, ordered.count))
     for (entityID, _) in ordered {
       guard let attributesByID = eav[entityID],
             let values = materializedValues(
@@ -774,6 +910,7 @@ struct TripleIndexes: Hashable, Codable, Sendable {
       snapshots.append(
         InstantEntitySnapshot(id: entityID, namespace: plan.namespace, values: values)
       )
+      if snapshots.count >= limit { break }
     }
 
     return InstantQueryPage(values: snapshots, pageInfo: nil)
@@ -855,19 +992,19 @@ struct TripleIndexes: Hashable, Codable, Sendable {
       !order.isServerCreatedAt,
       let attribute = attributes.attribute(namespace: plan.namespace, name: order.field),
       attribute.cardinality == .one,
-      false
+      attribute.isIndexed,
+      let valuesByEntityID = indexedEntityValues[attribute.id]
     else { return nil }
 
-    let valuesByEntityID: [String: [InstantValue: InstantTripleStamp]] = [:]
-    let orderedEntityCount = valuesByEntityID.count
-    guard orderedEntityCount == namespaceEntityCount(plan.namespace, attributes: attributes) else {
-      return nil
-    }
+    let namespaceMembers = entitiesByNamespace[plan.namespace] ?? []
+    // Every namespace member should have the ordered field for this fast path.
+    guard !valuesByEntityID.isEmpty,
+      valuesByEntityID.count == namespaceMembers.count
+    else { return nil }
 
     var ordered: [(entityID: String, value: InstantValue)] = []
-    ordered.reserveCapacity(orderedEntityCount)
-    for (entityID, valuesByValue) in valuesByEntityID {
-      guard let value = valuesByValue.first?.key else { return nil }
+    ordered.reserveCapacity(valuesByEntityID.count)
+    for (entityID, value) in valuesByEntityID {
       ordered.append((entityID, value))
     }
     ordered.sort { lhs, rhs in
@@ -905,6 +1042,9 @@ struct TripleIndexes: Hashable, Codable, Sendable {
     _ namespace: String,
     attributes: AttributeStore
   ) -> Int {
+    if let members = entitiesByNamespace[namespace] {
+      return members.count
+    }
     return eav.values.reduce(into: 0) { count, attributesByID in
       if attributesByID.keys.contains(where: { attributeID in
         guard let attribute = attributes[attributeID], attribute.namespace == namespace else {
@@ -1474,6 +1614,59 @@ struct TripleIndexes: Hashable, Codable, Sendable {
     if attribute?.valueType == .ref {
       vae[triple.value, default: [:]][triple.attributeID, default: [:]][triple.entityID] = stamp
     }
+
+    if let attribute {
+      entitiesByNamespace[attribute.namespace, default: []].insert(triple.entityID)
+      if attribute.isIndexed {
+        indexIndexedAttributeInsert(
+          entityID: triple.entityID,
+          attributeID: triple.attributeID,
+          value: triple.value,
+          cardinalityOne: isCardinalityOne
+        )
+      }
+    }
+  }
+
+  private mutating func indexIndexedAttributeInsert(
+    entityID: String,
+    attributeID: String,
+    value: InstantValue,
+    cardinalityOne: Bool
+  ) {
+    if cardinalityOne {
+      if let previous = indexedEntityValues[attributeID]?[entityID], previous != value {
+        indexedValueEntities[attributeID]?[previous]?.remove(entityID)
+        if indexedValueEntities[attributeID]?[previous]?.isEmpty == true {
+          indexedValueEntities[attributeID]?[previous] = nil
+        }
+      }
+      indexedEntityValues[attributeID, default: [:]][entityID] = value
+    }
+    indexedValueEntities[attributeID, default: [:]][value, default: []].insert(entityID)
+  }
+
+  private mutating func indexIndexedAttributeRemove(
+    entityID: String,
+    attributeID: String,
+    value: InstantValue,
+    cardinalityOne: Bool
+  ) {
+    indexedValueEntities[attributeID]?[value]?.remove(entityID)
+    if indexedValueEntities[attributeID]?[value]?.isEmpty == true {
+      indexedValueEntities[attributeID]?[value] = nil
+    }
+    if indexedValueEntities[attributeID]?.isEmpty == true {
+      indexedValueEntities[attributeID] = nil
+    }
+    if cardinalityOne {
+      if indexedEntityValues[attributeID]?[entityID] == value {
+        indexedEntityValues[attributeID]?[entityID] = nil
+      }
+      if indexedEntityValues[attributeID]?.isEmpty == true {
+        indexedEntityValues[attributeID] = nil
+      }
+    }
   }
 
   private mutating func merge(_ triple: InstantTriple, attribute: InstantAttribute?) -> Bool {
@@ -1552,6 +1745,35 @@ struct TripleIndexes: Hashable, Codable, Sendable {
       }
       if vae[triple.value]?.isEmpty == true {
         vae[triple.value] = nil
+      }
+    }
+
+    if let attribute, attribute.isIndexed {
+      indexIndexedAttributeRemove(
+        entityID: triple.entityID,
+        attributeID: triple.attributeID,
+        value: triple.value,
+        cardinalityOne: attribute.cardinality == .one
+      )
+    }
+    if let attribute {
+      if eav[triple.entityID] == nil {
+        for namespace in entitiesByNamespace.keys {
+          entitiesByNamespace[namespace]?.remove(triple.entityID)
+          if entitiesByNamespace[namespace]?.isEmpty == true {
+            entitiesByNamespace[namespace] = nil
+          }
+        }
+      } else {
+        let remainsInThisNamespace = (eav[triple.entityID] ?? [:]).keys.contains { key in
+          key.hasPrefix(attribute.namespace + "/")
+        }
+        if !remainsInThisNamespace {
+          entitiesByNamespace[attribute.namespace]?.remove(triple.entityID)
+          if entitiesByNamespace[attribute.namespace]?.isEmpty == true {
+            entitiesByNamespace[attribute.namespace] = nil
+          }
+        }
       }
     }
   }
