@@ -2118,7 +2118,11 @@ struct InstantFailedMutationDiscardTests {
     expectNoDifference(immediate.map(\.text), ["server X"])
     try await Task.sleep(for: .milliseconds(20))
     let sent = await session.sentMessages()
-    expectNoDifference(sent.map(\.op), ["init", "transact"])
+    expectNoDifference(
+      sent.map(\.op),
+      ["init", "transact", "add-query", "remove-query"],
+      "An explicitly opened session runs later one-shot queries through the live server."
+    )
     _ = try await live.closeConnection()
 
     let relaunched = try await discardRuntime(cacheURL: cacheURL)

@@ -1206,6 +1206,15 @@ public struct InstantSwiftDataClient: Sendable {
     await pendingMutationsOperation()
   }
 
+  /// Returns the number of durable pending mutations without decoding their
+  /// transaction and rollback operation graphs on runtime-backed clients.
+  public func pendingMutationCount() async -> Int {
+    if let runtime {
+      return await runtime.pendingMutationCount()
+    }
+    return await pendingMutationsOperation().count
+  }
+
   public func failedMutations() async throws -> [PendingMutation] {
     guard let runtime else {
       throw InstantError(
@@ -1366,7 +1375,7 @@ public struct InstantSwiftDataClient: Sendable {
       case .connecting:
         break
       case .opened, .authenticated:
-        await runtime?.sendOutstandingMutationsToLiveSession()
+        runtime?.requestLiveMutationDelivery()
       }
 
       guard clock.now < deadline else {

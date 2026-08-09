@@ -455,11 +455,11 @@ struct InstantStoreTests {
       persistenceStateAfterServerApply.storeRevision,
       persistenceStateBeforeServerApply.storeRevision + 1
     )
-    // Rebase of still-pending local mutations rewrites the outbox row(s), so the
-    // outbox revision advances even when no new mutation is appended.
+    // Rebase preserves the already-correct local mutation body, so the durable
+    // outbox does not change and its revision must not advance.
     expectNoDifference(
       persistenceStateAfterServerApply.outboxRevision,
-      persistenceStateBeforeServerApply.outboxRevision + 1
+      persistenceStateBeforeServerApply.outboxRevision
     )
 
     let update = try #require(await iterator.next())
@@ -577,7 +577,7 @@ struct InstantStoreTests {
     let persistedAfterWriter = try await writerRuntime.persistence.loadState()
     expectNoDifference(persistedAfterWriter.snapshot.outbox.map(\.id), ["tx-newer-local"])
     let initialStalePending = await staleRuntime.pendingMutations()
-    expectNoDifference(initialStalePending, [])
+    expectNoDifference(initialStalePending.map(\.id), ["tx-newer-local"])
 
     let result = try await staleRuntime.applyServerTransaction(
       InstantStoreTransaction(
@@ -599,7 +599,7 @@ struct InstantStoreTests {
     expectNoDifference(persistedAfterServerApply.snapshot.outbox.map(\.id), ["tx-newer-local"])
     expectNoDifference(
       persistedAfterServerApply.outboxRevision,
-      persistedAfterWriter.outboxRevision + 1
+      persistedAfterWriter.outboxRevision
     )
     expectNoDifference(
       persistedAfterServerApply.storeRevision,
@@ -1492,7 +1492,12 @@ struct InstantStoreTests {
     expectNoDifference(staleReload.state, committedState)
     let cachedReload = try await staleStore.loadStateWithSource()
     expectNoDifference(cachedReload.source, .memory)
-    expectNoDifference(cachedReload.state, committedState)
+    var expectedCompactState = committedState
+    expectedCompactState.snapshot.store.triples = []
+    expectedCompactState.snapshot.outbox = expectedCompactState.snapshot.outbox.map(
+      \.compactedForMemory
+    )
+    expectNoDifference(cachedReload.state, expectedCompactState)
 
     let finalReopen = try SQLitePersistenceStore(fileURL: cacheURL)
     try await finalReopen.bootstrap()
@@ -8550,11 +8555,12 @@ struct InstantStoreTests {
       #expect(Bool(false), "Unexpected error: \(error)")
     }
 
-    let mutations = await runtime.outboxMutations()
-    let pending = await runtime.pendingMutations()
+    // The table is intentionally unavailable, so inspect the resident barrier
+    // rather than invoking the public durable-hydration API and expecting it to
+    // suppress the very persistence error this test created.
+    let mutations = await runtime.mutationDeliveryBarrierMutations()
     expectNoDifference(mutations.map(\.id), ["tx-confirm-failure"])
     expectNoDifference(mutations.map(\.status), [.pending])
-    expectNoDifference(pending.map(\.id), ["tx-confirm-failure"])
   }
 
   @Test
@@ -8591,12 +8597,10 @@ struct InstantStoreTests {
       #expect(Bool(false), "Unexpected error: \(error)")
     }
 
-    let mutations = await runtime.outboxMutations()
-    let pending = await runtime.pendingMutations()
+    let mutations = await runtime.mutationDeliveryBarrierMutations()
     expectNoDifference(mutations.map(\.id), ["tx-fail-failure"])
     expectNoDifference(mutations.map(\.status), [.pending])
     expectNoDifference(mutations.map(\.failureMessage), [nil])
-    expectNoDifference(pending.map(\.id), ["tx-fail-failure"])
   }
 
   @Test

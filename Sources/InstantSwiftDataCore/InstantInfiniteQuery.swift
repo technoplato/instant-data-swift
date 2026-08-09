@@ -970,8 +970,8 @@ private actor InstantInfiniteQueryCoordinator {
 private extension InstantRuntime {
   func infiniteQueryValidationError(for plan: InstantQueryPlan) async -> InstantError? {
     let attributes: [InstantAttribute]
-    if let state = try? await persistence.loadState() {
-      attributes = state.snapshot.store.attributes
+    if let synchronizedAttributes = try? await attributesForInfiniteQueryValidation() {
+      attributes = synchronizedAttributes
     } else {
       attributes = await store.snapshot().attributes
     }

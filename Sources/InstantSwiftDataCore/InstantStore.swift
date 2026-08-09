@@ -376,9 +376,11 @@ public actor InstantStore {
   /// transact) — not snapshot rebuilds.
   func prepare(
     peelingOverlays rollbacks: [InstantStoreTransaction],
-    thenApplying serverTransaction: InstantStoreTransaction
+    thenApplying serverTransaction: InstantStoreTransaction,
+    mergingAttributes attributesToMerge: [InstantAttribute] = []
   ) throws -> PreparedStoreMutation {
     var attributes = self.attributes
+    attributes.merge(attributesToMerge)
     var indexes = self.indexes
     for rollback in rollbacks {
       _ = try prepareMutating(
@@ -1390,6 +1392,10 @@ public actor InstantStore {
 
   func activeObservationCount() -> Int {
     observers.count
+  }
+
+  func currentTripleCount() -> Int {
+    indexes.tripleCount
   }
 
   func activeQueryCacheKeys() -> Set<String> {

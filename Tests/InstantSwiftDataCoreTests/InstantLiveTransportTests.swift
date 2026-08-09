@@ -2138,7 +2138,12 @@ struct InstantLiveTransportTests {
         ),
         createdAt: updateAt
       )
-      await session.waitForSentMessageCount(2)
+      try await instantLiveWithTimeout(
+        operation: "wait for valid mutation after encoding quarantine",
+        timeoutMilliseconds: 5_000
+      ) {
+        await session.waitForSentMessageCount(2)
+      }
     } matching: { issue in
       issue.description.contains("quarantined")
         || issue.description.contains("todos/createdAt")
@@ -2148,7 +2153,9 @@ struct InstantLiveTransportTests {
     expectNoDifference(status.state, .opened)
     let sentOps = await session.sentMessages().map(\.op)
     expectNoDifference(sentOps, ["init", "transact"])
-    let outbox = await runtime.outboxMutations()
+    let outbox = try await waitForLiveOutbox(runtime) { mutations in
+      mutations.first?.status == .failed && mutations.count == 2
+    }
     expectNoDifference(outbox.map(\.id), [
       "a-runtime-live-schema-error",
       "b-runtime-live-healthy",
@@ -2157,10 +2164,36 @@ struct InstantLiveTransportTests {
     #expect(outbox[0].failureMessage?.contains("todos/createdAt") == true)
     expectNoDifference(outbox[0].optimisticOverlayState, .removed)
     expectNoDifference(outbox[0].rollbackTransaction, nil)
-    let immediate = try await TodoExample.decode(runtime.query(TodoExample.query))
+    let queryTask = Task { try await runtime.query(TodoExample.query) }
+    defer { queryTask.cancel() }
+    try await instantLiveWithTimeout(
+      operation: "wait for post-quarantine live query registration",
+      timeoutMilliseconds: 5_000
+    ) {
+      await session.waitForSentMessageCount(3)
+    }
+    let postQuarantineQuery = try #require(
+      await session.sentMessages().last?.fields["q"]
+    )
+    await session.enqueue(
+      InstantLiveMessage(
+        op: "add-query-exists",
+        clientEventID: "event-post-quarantine-query",
+        fields: ["q": postQuarantineQuery]
+      )
+    )
+    let immediateSnapshots = try await instantLiveWithTimeout(
+      operation: "wait for post-quarantine live query acknowledgement",
+      timeoutMilliseconds: 5_000
+    ) {
+      try await queryTask.value
+    }
+    let immediate = try TodoExample.decode(immediateSnapshots)
     expectNoDifference(immediate.map(\.text), ["Deliver the valid update"])
-    let lastClientEventID = await session.sentMessages().last?.clientEventID
-    expectNoDifference(lastClientEventID, "b-runtime-live-healthy")
+    let deliveredClientEventID = await session.sentMessages()
+      .last { $0.op == "transact" }?
+      .clientEventID
+    expectNoDifference(deliveredClientEventID, "b-runtime-live-healthy")
     _ = try await runtime.closeConnection()
     let relaunched = try await InstantRuntime.bootstrap(
       configuration: InstantRuntimeConfiguration(
@@ -2280,8 +2313,10 @@ struct InstantLiveTransportTests {
       $0.contains { $0.id == "tx-runtime-live-retry" && $0.status == .failed }
     }
     let failed = try await runtime.connectionStatus()
-    expectNoDifference(failed.lastErrorMessage, "permission denied")
-    expectNoDifference(failed.state, .errored)
+    // A terminal mutation rejection is durable mutation state, not a socket failure. Keep the
+    // authenticated session healthy so retry can resend without forcing a reconnect.
+    expectNoDifference(failed.lastErrorMessage, nil)
+    expectNoDifference(failed.state, .opened)
     let failedMutation = try #require(failedOutbox.first)
     expectNoDifference(failedMutation.status, .failed)
     expectNoDifference(failedMutation.failureMessage, "permission denied")
@@ -3477,6 +3512,15 @@ struct InstantLiveTransportTests {
 
     expectNoDifference(result.insertedTripleCount, 5)
     expectNoDifference(result.application.syncState.processedTransactionID, "server-json-tx")
+    let storeSnapshot = await runtime.store.snapshot()
+    let completedAtAttribute = try #require(
+      storeSnapshot.attributes.first { $0.name == "completedAt" }
+    )
+    #expect(
+      storeSnapshot.triples.contains {
+        $0.attributeID == completedAtAttribute.id && $0.value == .null
+      }
+    )
     let todoSnapshots = try await runtime.query(TodoExample.query)
     expectNoDifference(todoSnapshots.first?.values["completedAt"], .one(.null))
     let todos = try TodoExample.decode(todoSnapshots)
