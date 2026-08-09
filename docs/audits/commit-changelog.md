@@ -1,3 +1,9 @@
+## 2026-08-09 09:54:25 EDT
+
+- **repo:** instant-data-swift
+- **commit:** `ca27941efc55c9ddb52e6b9eb99ea926f111f631`
+- **reason:** Align InstantCodableJSON with structured-queries shared encoder (sortedKeys, ISO-8601), Optional typealiases; loud InstantError encode/decode for wordsJSON parity.
+
 
 ## 2026-08-09 09:53:10 EDT
 - **repository:** instant-data-swift

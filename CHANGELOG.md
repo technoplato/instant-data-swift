@@ -1,3 +1,9 @@
+## 2026-08-09 09:54:25 EDT — InstantCodableJSON structured-queries parity
+
+- Commit: `ca27941efc55c9ddb52e6b9eb99ea926f111f631`
+- Shared encoder/decoder (sortedKeys, ISO-8601 dates), Optional JSONRepresentation typealiases.
+- Encode/decode still throw InstantError (stricter than SQLiteData QueryBinding.invalid).
+
 # Change Log
 
 Newest entries appear first. Implementation commits and intent are recorded separately from ledger-only commits.
