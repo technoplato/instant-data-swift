@@ -1,4 +1,9 @@
 
+## 2026-08-09 09:12:38 EDT
+- **repository:** instant-data-swift
+- **commit:** 2f32fd84137f4197338aba3c55e7127370ac1952
+- **reason:** ADR 0015 / #155 open-segment write recipe — library doc, Core builders + typed InstantEntityModel sketch, unit tests, overview/plan cross-links.
+
 ## 2026-08-07 00:46:54 EDT
 - **repo:** realtime-voice-sqlite-instant
 - **sha:** 45c0022409b580f0b78378a6687a597d2eddd193

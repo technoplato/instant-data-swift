@@ -4,6 +4,22 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## August 9th, 2026 at 9:13:03 a.m. EDT — `2f32fd84137f` Add Instant open-segment write recipe for ADR 0015 (#155).
+
+- **Implementation commit:** `2f32fd84137f4197338aba3c55e7127370ac1952`
+- **Change:** Add Instant open-segment write recipe for ADR 0015 (#155)
+- **Details:**
+  - Library-owned open-segment write recipe: ensure recording once, upsert open segment with strict wordsJSON, transact = local+outbox only. Core OpenSegmentWriteRecipe + typed OpenSegmentWriteRecipeEntities + 12 offline tests. Cross-linked from plan.md, overview 10, overview 02, findings, skill.
+- **Files:**
+  - `docs/adr/0015-sqlite-data-parity-ergonomics/open-segment-write-recipe.md` — Canonical open-segment write recipe
+  - `Sources/InstantSwiftDataCore/OpenSegmentWriteRecipe.swift` — Core wordsJSON codec + mutation builders
+  - `Sources/InstantSwiftData/OpenSegmentWriteRecipeEntities.swift` — Typed InstantEntityModel sketch
+  - `Tests/InstantSwiftDataCoreTests/OpenSegmentWriteRecipeTests.swift` — Offline Core unit tests
+  - `Tests/InstantSwiftDataTests/OpenSegmentWriteRecipeTypedTests.swift` — Typed entity + local runtime tests
+- **User context (verbatim):**
+  > Create a first-class Instant Swift Data open-segment write recipe (ADR 0015 S2 / #155 / overview 10 item open-segment write recipe).
+- **SpecStory:** unavailable — No SpecStory URI; Grok Build agent session for library recipe land.
+
 ## August 7th, 2026 at 12:45:33 a.m. EDT — `fdbef6d76506` Point AGENTS at Scribe coordination protocol; add ADR 0014 lifecycle draft.
 
 - **Implementation commit:** `fdbef6d76506b286717ca0db42359b5be2b8e896`
