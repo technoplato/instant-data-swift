@@ -220,20 +220,16 @@ public actor SQLitePersistenceStore {
 
   private func adoptCachedState(_ state: InstantPersistenceState) {
     var thin = state
-    if !Self.retainFullTriplesInMemoryForTesting {
-      if !thin.snapshot.store.triples.isEmpty {
-        thin.snapshot.store = InstantStoreSnapshot(
-          attributes: thin.snapshot.store.attributes,
-          triples: []
-        )
-      }
-      if thin.snapshot.outbox.contains(where: { $0.status == .pending && !$0.transaction.operations.isEmpty }) {
-        thin.snapshot.outbox = Self.memoryThinnedOutbox(thin.snapshot.outbox)
-      }
+    if !Self.retainFullTriplesInMemoryForTesting, !thin.snapshot.store.triples.isEmpty {
+      thin.snapshot.store = InstantStoreSnapshot(
+        attributes: thin.snapshot.store.attributes,
+        triples: []
+      )
     }
     cachedState = thin
     try? execute("PRAGMA shrink_memory")
   }
+
 
 
 

@@ -342,36 +342,91 @@ struct TripleIndexes: Hashable, Codable, Sendable {
   /// decode, which keeps the on-disk shape identical to what earlier builds wrote — a persisted
   /// cache must not stop decoding because a derived field was added.
   private enum CodingKeys: String, CodingKey {
+    case aev
     case eav
     case vae
-    case internedTxIDs
   }
 
   init(from decoder: Decoder) throws {
     let container = try decoder.container(keyedBy: CodingKeys.self)
-    self.eav = try container.decode(
-      [String: [String: AttrSlot]].self,
+    self.internedTxIDs = [""]
+    self.txIDToIndex = ["": 0]
+    self.eav = [:]
+    self.vae = [:]
+    self.storedTripleCount = 0
+    if let wireEAV = try? container.decode(
+      [String: [String: [InstantValue: InstantTriple]]].self,
       forKey: .eav
-    )
-    self.vae = try container.decodeIfPresent(
-      [InstantValue: [String: [String: InstantTripleStamp]]].self,
-      forKey: .vae
-    ) ?? [:]
-    let interned = try container.decodeIfPresent([String].self, forKey: .internedTxIDs) ?? [""]
-    self.internedTxIDs = interned.isEmpty ? [""] : interned
-    var map: [String: UInt32] = [:]
-    for (offset, value) in self.internedTxIDs.enumerated() {
-      map[value] = UInt32(offset)
+    ) {
+      for (_, attrs) in wireEAV {
+        for (_, leaf) in attrs {
+          for (_, triple) in leaf {
+            insert(triple, attribute: nil)
+          }
+        }
+      }
     }
-    self.txIDToIndex = map
-    self.storedTripleCount = Self.walkedTripleCount(eav)
+    if let wireVAE = try? container.decode(
+      [InstantValue: [String: [String: InstantTriple]]].self,
+      forKey: .vae
+    ) {
+      for (value, byAttr) in wireVAE {
+        for (attributeID, byEntity) in byAttr {
+          for (entityID, triple) in byEntity {
+            let stamp = InstantTripleStamp(
+              txIDIndex: internTxID(triple.txID),
+              txTimeMilliseconds: triple.txTime.milliseconds
+            )
+            vae[value, default: [:]][attributeID, default: [:]][entityID] = stamp
+          }
+        }
+      }
+    }
+    _ = try? container.decodeIfPresent(
+      [String: [String: [InstantValue: InstantTriple]]].self,
+      forKey: .aev
+    )
   }
 
   func encode(to encoder: Encoder) throws {
     var container = encoder.container(keyedBy: CodingKeys.self)
-    try container.encode(eav, forKey: .eav)
-    try container.encode(vae, forKey: .vae)
-    try container.encode(internedTxIDs, forKey: .internedTxIDs)
+    var wireEAV: [String: [String: [InstantValue: InstantTriple]]] = [:]
+    for (entityID, attrs) in eav {
+      var mid: [String: [InstantValue: InstantTriple]] = [:]
+      for (attributeID, slot) in attrs {
+        var leaf: [InstantValue: InstantTriple] = [:]
+        slot.forEachPair { value, stamp in
+          leaf[value] = materializeTriple(
+            entityID: entityID,
+            attributeID: attributeID,
+            value: value,
+            stamp: stamp
+          )
+        }
+        mid[attributeID] = leaf
+      }
+      wireEAV[entityID] = mid
+    }
+    var wireVAE: [InstantValue: [String: [String: InstantTriple]]] = [:]
+    for (value, byAttr) in vae {
+      var mid: [String: [String: InstantTriple]] = [:]
+      for (attributeID, byEntity) in byAttr {
+        var leaf: [String: InstantTriple] = [:]
+        for (entityID, stamp) in byEntity {
+          leaf[entityID] = materializeTriple(
+            entityID: entityID,
+            attributeID: attributeID,
+            value: value,
+            stamp: stamp
+          )
+        }
+        mid[attributeID] = leaf
+      }
+      wireVAE[value] = mid
+    }
+    try container.encode([String: [String: [InstantValue: InstantTriple]]](), forKey: .aev)
+    try container.encode(wireEAV, forKey: .eav)
+    try container.encode(wireVAE, forKey: .vae)
   }
 
   private static func walkedTripleCount(

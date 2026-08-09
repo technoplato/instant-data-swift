@@ -2525,7 +2525,7 @@ public final class InstantRuntime: Sendable {
         recordActorHop(.store)
         let committed = await store.commitAndPublish(prepared)
         recordActorHop(.outbox)
-        await outbox.replace(with: Self.memoryThinnedOutbox(outboxSnapshot))
+        await outbox.replace(with: outboxSnapshot)
         _ = try? await publishConnectionStatusWithGateHeld()
         return committed.result
       }

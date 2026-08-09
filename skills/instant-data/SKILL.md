@@ -73,6 +73,31 @@ When implementing Instant behavior, cite from **this repo’s** vendored trees:
 Do not require a second SQLiteData checkout for guidance. If another path
 exists on the machine, the vendored tree still wins for library work.
 
+### Performance / thrash / memory improvement cycles
+
+**Heavy reliance on the vendored Instant TypeScript client is mandatory** for
+memory, thrash, outbox, receive-loop, query-storm, and residency work — not
+optional background reading. Absolute path when the library is checked out as
+usual:
+
+`/Users/laptop/Sync/instant-data-swift/upstream/instant/client/packages/core/src`
+
+Before proposing a novel Swift mechanism:
+
+1. Open the TS module that owns the behavior (`Reactor.js` first for client
+   lifecycle; then `store.ts`, `instaql.ts` / `instaml.ts`, `infiniteQuery.ts`,
+   `Connection.ts`, storage adapters).
+2. Prefer matching TS state transitions and storage shapes.
+3. If Swift must diverge (SQLite durability, persistent outbox, actor serial
+   gates), document **exactly why** next to the change.
+4. In `$autoresearch` trials, the progress entry *Documentation and prior art
+   referenced* section must name the TS file + symbol and the Swift counterpart
+   (`references/upstream-instant-prior-art.md` under `$autoresearch`).
+
+`$instant-sync-performance-audit` maps counters → Swift **and** TS paths the
+same way. Do not run Instant performance keep/discard cycles from Swift-only
+intuition.
+
 ## Preserve the boundary
 
 Keep these responsibilities in applications:
