@@ -1,3 +1,9 @@
+## 2026-08-09 10:00:28 EDT
+
+- **repo:** realtime-voice-sqlite-instant (Scribe)
+- **commit:** `f7f581025e13f7b74d60813c0ccde6e4eac0e1fa`
+- **reason:** Peel product Instant I/O off ScribeInstantStore; InstantRecordingClient; InstantFacadeBanTests; loud wordsJSON segment decode.
+
 ## 2026-08-09 09:54:25 EDT
 
 - **repo:** instant-data-swift
