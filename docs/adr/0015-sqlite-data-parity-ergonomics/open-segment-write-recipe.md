@@ -4,7 +4,9 @@
 **Plan step:** S2 write path + overview 10 “open-segment write recipe”  
 **Related:** overview `02-active-transcription.md`, ADR 0014 (always outbox; sync status on fetch), Q01/Q07/Q26 in `qanda.md`  
 **Compile-checked example:** `Sources/InstantSwiftDataCore/OpenSegmentWriteRecipe.swift`  
-**Typed entity sketch:** `Sources/InstantSwiftData/OpenSegmentWriteRecipeEntities.swift`
+**Typed entity sketch:** `Sources/InstantSwiftData/OpenSegmentWriteRecipeEntities.swift`  
+**Codable JSON (SQLiteData-shaped):** `Sources/InstantSwiftData/InstantCodableJSON.swift`  
+(`Type.JSONRepresentation` / `Type.JSONStringRepresentation`, loud encode/decode)
 
 ---
 
