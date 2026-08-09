@@ -1,3 +1,9 @@
+## 2026-08-09 19:56:10 EDT
+
+- **repo:** realtime-voice-sqlite-instant (Scribe)
+- **commit:** `304fc5a17777e0d73e67d70d05242c878da6706f`
+- **reason:** Assign Scribe 0.1 (10) a unique clean build identity for physical-iPad acceptance of the corrected Instant reverse-relation and durable-rebase implementation (#044, #187).
+
 ## 2026-08-09 18:00:47 EDT
 
 - **repo:** instant-data-swift
