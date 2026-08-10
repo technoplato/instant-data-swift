@@ -1,3 +1,9 @@
+## 2026-08-09 20:23:20 EDT
+
+- **repo:** realtime-voice-sqlite-instant (Scribe)
+- **commit:** `0ed93aeb22d435560091b7d42ae51df06dfb2d07`
+- **reason:** Correct the build 10 production snapshot after a post-stop admin query showed eventual but still severely delayed materialization, preserving the failed five-second live-sync verdict without claiming a permanent freeze (#187).
+
 ## 2026-08-09 20:20:36 EDT
 
 - **repo:** realtime-voice-sqlite-instant (Scribe)
