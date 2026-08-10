@@ -1256,6 +1256,53 @@ public actor SQLitePersistenceStore {
     Int(try selectInt64("SELECT COUNT(*) FROM instant_outbox"))
   }
 
+  /// Resolves one live mutation-error frame without decoding a mutation body.
+  ///
+  /// The delivery claim, not a process-resident shell or lifecycle alias, is
+  /// the server-event ownership proof. This makes duplicate terminal frames
+  /// cheap and prevents a late frame from failing work reclaimed by another
+  /// runtime after the five-second claim deadline.
+  func liveMutationErrorDisposition(
+    id: String,
+    claimantID: String
+  ) throws -> InstantLiveMutationErrorDisposition {
+    guard !id.isEmpty else { return .missing }
+    let value = try selectScalar(
+      """
+      SELECT CASE
+        WHEN status = ? OR (status = ? AND confirmation_proven = 1)
+          THEN 'terminal'
+        WHEN status IN (?, ?) AND confirmation_proven = 0
+          AND delivery_state = ? AND delivery_claim_state = ?
+          AND COALESCE(delivery_claimant_id, '') = ?
+          AND COALESCE(delivery_claim_token, '') != ''
+          THEN 'owned:' || delivery_claim_token
+        ELSE 'stale'
+      END
+      FROM instant_outbox
+      WHERE mutation_id = ?
+      LIMIT 1
+      """,
+      [
+        .text(InstantMutationStatus.failed.rawValue),
+        .text(InstantMutationStatus.confirmed.rawValue),
+        .text(InstantMutationStatus.pending.rawValue),
+        .text(InstantMutationStatus.confirmed.rawValue),
+        .text(InstantOutboxDeliveryState.needsDelivery.rawValue),
+        .text(InstantOutboxDeliveryClaimState.claimed.rawValue),
+        .text(claimantID),
+        .text(id),
+      ]
+    )
+    guard let value else { return .missing }
+    if value == "terminal" { return .alreadyTerminal }
+    if value == "stale" { return .stale }
+    let prefix = "owned:"
+    guard value.hasPrefix(prefix) else { return .stale }
+    let token = String(value.dropFirst(prefix.count))
+    return token.isEmpty ? .stale : .owned(claimToken: token)
+  }
+
   func mutationDeliveryBarrierSummary() throws
     -> InstantMutationDeliveryBarrierSummary
   {
@@ -4180,12 +4227,16 @@ public actor SQLitePersistenceStore {
         guard try selectScalar(
           """
           SELECT delivery_claim_token FROM instant_outbox
-          WHERE mutation_id = ? AND status = ? AND delivery_claim_state = ?
+          WHERE mutation_id = ? AND status IN (?, ?)
+            AND confirmation_proven = 0 AND delivery_state = ?
+            AND delivery_claim_state = ?
           LIMIT 1
           """,
           [
             .text(requiredOutboxClaimMutationID),
             .text(InstantMutationStatus.pending.rawValue),
+            .text(InstantMutationStatus.confirmed.rawValue),
+            .text(InstantOutboxDeliveryState.needsDelivery.rawValue),
             .text(InstantOutboxDeliveryClaimState.claimed.rawValue),
           ]
         ) == requiredOutboxClaimToken else { return false }
@@ -4198,6 +4249,33 @@ public actor SQLitePersistenceStore {
         from: previousSnapshot.outbox,
         to: snapshot.outbox
       )
+      if let requiredOutboxClaimMutationID, let requiredOutboxClaimToken {
+        // The terminal disposition consumes this exact delivery claim. Leaving
+        // it attached to the retained failed row strands an immediate retry
+        // until the five-second lease expires and emits a false ACK timeout.
+        try execute(
+          """
+          UPDATE instant_outbox
+          SET delivery_claim_state = ?, delivery_claim_token = NULL,
+              delivery_claimant_id = NULL, delivery_claim_deadline_ms = NULL
+          WHERE mutation_id = ? AND delivery_claim_state = ?
+            AND delivery_claim_token = ?
+          """,
+          [
+            .text(InstantOutboxDeliveryClaimState.ready.rawValue),
+            .text(requiredOutboxClaimMutationID),
+            .text(InstantOutboxDeliveryClaimState.claimed.rawValue),
+            .text(requiredOutboxClaimToken),
+          ]
+        )
+        guard sqlite3_changes(connection.raw) == 1 else {
+          throw persistenceError(
+            operation: "consume rejected outbox claim",
+            message:
+              "SQLite did not release the token-owned terminal mutation '\(requiredOutboxClaimMutationID)' exactly once."
+          )
+        }
+      }
       for entry in metadataEntries {
         try saveMetadataValueWithoutTransaction(
           entry.value,

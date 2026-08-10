@@ -2192,7 +2192,10 @@ struct InstantLiveTransportTests {
       try await queryTask.value
     }
     let immediate = try TodoExample.decode(immediateSnapshots)
-    expectNoDifference(immediate.map(\.text), ["Deliver the valid update"])
+    expectNoDifference(
+      immediate.map(\.text),
+      ["Deliver the valid update", "Keep pending until schema matches"]
+    )
     let deliveredClientEventID = await session.sentMessages()
       .last { $0.op == "transact" }?
       .clientEventID
@@ -2206,11 +2209,14 @@ struct InstantLiveTransportTests {
       )
     )
     let durable = try await TodoExample.decode(relaunched.store.materialize(TodoExample.query))
-    expectNoDifference(durable.map(\.text), ["Deliver the valid update"])
+    expectNoDifference(
+      durable.map(\.text),
+      ["Deliver the valid update", "Keep pending until schema matches"]
+    )
     let durableFailure = try #require(await relaunched.outboxMutations().first)
     expectNoDifference(durableFailure.id, "a-runtime-live-schema-error")
-    expectNoDifference(durableFailure.optimisticOverlayState, .removed)
-    expectNoDifference(durableFailure.rollbackTransaction, nil)
+    expectNoDifference(durableFailure.optimisticOverlayState, .applied)
+    #expect(durableFailure.rollbackTransaction != nil)
   }
 
   @Test
@@ -2347,7 +2353,7 @@ struct InstantLiveTransportTests {
   }
 
   @Test
-  func runtimeLiveMutationErrorRefetchesActiveQueriesAndDropsRejectedOptimism() async throws {
+  func runtimeLiveMutationErrorRollsBackLocallyWithoutResubscribingQueries() async throws {
     let createdAt = InstantTimestamp(milliseconds: 1_700_000_000_891)
     let query: InstantLiveJSONValue = .object([
       TodoExample.namespace: .object([
@@ -2411,6 +2417,10 @@ struct InstantLiveTransportTests {
       try TodoExample.decode(optimisticEmission.values).map(\.text),
       ["Rejected value"]
     )
+    // A server can reject only a mutation that this socket has actually
+    // offered. Waiting for the transact frame makes the durable claim/token
+    // ownership deterministic before the scripted response arrives.
+    await session.waitForSentMessageCount(3)
 
     await session.enqueue(
       InstantLiveMessage(
@@ -2423,35 +2433,108 @@ struct InstantLiveTransportTests {
         ]
       )
     )
-    _ = try #require(
-      await runtime.observeConnectionStatus().first { $0.state == .errored }
-    )
+    _ = try await waitForLiveOutbox(runtime) { mutations in
+      mutations.contains {
+        $0.id == "tx-runtime-live-rejected-refresh" && $0.status == .failed
+      }
+    }
 
-    await session.waitForSentMessageCount(5)
-    let sentOps = await session.sentMessages().map(\.op)
-    expectNoDifference(
-      sentOps,
-      ["init", "add-query", "transact", "remove-query", "add-query"]
-    )
-
-    await session.enqueue(
-      .addQueryOK(
-        clientEventID: "event-query-after-rejection",
-        query: query,
-        result: serverResult,
-        processedTransactionID: "server-tx-after-rejection"
-      )
-    )
     let reconciledEmission = try #require(await iterator.next())
     expectNoDifference(
       try TodoExample.decode(reconciledEmission.values).map(\.text),
       ["Server value"]
     )
+    let sentAfterRejection = await session.sentMessages().map(\.op)
+    expectNoDifference(sentAfterRejection, ["init", "add-query", "transact"])
     let pending = await runtime.pendingMutations()
     expectNoDifference(pending, [])
     let failedMutation = try #require(await runtime.outboxMutations().first)
     expectNoDifference(failedMutation.status, .failed)
     expectNoDifference(failedMutation.failureMessage, "permission denied")
+
+    let revisionBeforeDuplicate = try await runtime.persistence.currentOutboxRevision()
+    await runtime.persistence.resetDecodedOutboxBodyCount()
+    let receiveCountBeforeDuplicate = await session.receiveRequestCount()
+    await session.enqueue(
+      InstantLiveMessage(
+        op: "error",
+        clientEventID: "tx-runtime-live-rejected-refresh",
+        fields: [
+          "message": .string("permission denied again"),
+          "status": .number(403),
+          "type": .string("permission-denied"),
+        ]
+      )
+    )
+    await session.waitForReceiveRequestCount(receiveCountBeforeDuplicate + 1)
+    let duplicateDecodeCount = await runtime.persistence.currentDecodedOutboxBodyCount()
+    let revisionAfterDuplicate = try await runtime.persistence.currentOutboxRevision()
+    let sentAfterDuplicate = await session.sentMessages().map(\.op)
+    expectNoDifference(duplicateDecodeCount, 0)
+    expectNoDifference(revisionAfterDuplicate, revisionBeforeDuplicate)
+    expectNoDifference(sentAfterDuplicate, ["init", "add-query", "transact"])
+    _ = try await runtime.closeConnection()
+  }
+
+  @Test
+  func staleLiveMutationErrorCannotFailAClaimReclaimedByAnotherRuntime() async throws {
+    let session = InstantRuntimeScriptedLiveSession(messages: [
+      .initOK(clientEventID: "event-init", attrs: .todoServerAttrs)
+    ])
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "runtime-live-stale-mutation-error",
+        persistenceURL: temporaryLiveCacheURL(),
+        initialAttributes: TodoExample.attributes,
+        liveTransport: session.transport
+      )
+    )
+    _ = try await runtime.connect()
+    let createdAt = InstantTimestamp(milliseconds: 1_700_000_000_999)
+    try await runtime.transact(
+      InstantStoreTransaction(
+        id: "tx-runtime-live-stale-error",
+        operations: TodoExample.createOperations(
+          id: "runtime-live-stale-error-todo",
+          text: "Must remain pending",
+          createdAt: createdAt,
+          transactionID: "tx-runtime-live-stale-error"
+        )
+      ),
+      createdAt: createdAt
+    )
+    await session.waitForSentMessageCount(2)
+
+    let competingClaim = try await runtime.persistence.claimAutomaticOutboxDeliveryWindow(
+      InstantAutomaticOutboxClaimRequest(
+        claimantID: "competing-runtime",
+        claimToken: "competing-claim-token",
+        now: InstantTimestamp(milliseconds: Int64.max / 4)
+      )
+    )
+    expectNoDifference(competingClaim.mutations.map(\.id), ["tx-runtime-live-stale-error"])
+    await runtime.persistence.resetDecodedOutboxBodyCount()
+    let receiveCountBeforeError = await session.receiveRequestCount()
+    await session.enqueue(
+      InstantLiveMessage(
+        op: "error",
+        clientEventID: "tx-runtime-live-stale-error",
+        fields: [
+          "message": .string("late permission denied"),
+          "status": .number(403),
+          "type": .string("permission-denied"),
+        ]
+      )
+    )
+    await session.waitForReceiveRequestCount(receiveCountBeforeError + 1)
+
+    let staleErrorDecodeCount = await runtime.persistence.currentDecodedOutboxBodyCount()
+    let durable = try await runtime.persistence.loadState().snapshot.outbox
+    let sentOps = await session.sentMessages().map(\.op)
+    expectNoDifference(durable.map(\.status), [.pending])
+    expectNoDifference(durable.first?.failureMessage, nil)
+    expectNoDifference(staleErrorDecodeCount, 0)
+    expectNoDifference(sentOps, ["init", "transact"])
     _ = try await runtime.closeConnection()
   }
 
@@ -4233,6 +4316,8 @@ private actor InstantRuntimeScriptedLiveSession {
   private var messages: [InstantLiveMessage]
   private var sent: [InstantLiveMessage] = []
   private var sentWaiters: [SentWaiter] = []
+  private var receiveRequestCountValue = 0
+  private var receiveWaiters: [SentWaiter] = []
   private var receiveContinuation: CheckedContinuation<InstantLiveMessage, Error>?
   private var isClosed = false
 
@@ -4267,6 +4352,17 @@ private actor InstantRuntimeScriptedLiveSession {
     }
   }
 
+  func receiveRequestCount() -> Int {
+    receiveRequestCountValue
+  }
+
+  func waitForReceiveRequestCount(_ count: Int) async {
+    guard receiveRequestCountValue < count else { return }
+    await withCheckedContinuation { continuation in
+      receiveWaiters.append(SentWaiter(count: count, continuation: continuation))
+    }
+  }
+
   func enqueue(_ message: InstantLiveMessage) {
     if let receiveContinuation {
       self.receiveContinuation = nil
@@ -4290,6 +4386,16 @@ private actor InstantRuntimeScriptedLiveSession {
   }
 
   private func receive() async throws -> InstantLiveMessage {
+    receiveRequestCountValue += 1
+    var pendingReceiveWaiters: [SentWaiter] = []
+    for waiter in receiveWaiters {
+      if receiveRequestCountValue >= waiter.count {
+        waiter.continuation.resume()
+      } else {
+        pendingReceiveWaiters.append(waiter)
+      }
+    }
+    receiveWaiters = pendingReceiveWaiters
     if !messages.isEmpty {
       return messages.removeFirst()
     }

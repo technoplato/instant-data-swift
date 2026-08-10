@@ -12,6 +12,19 @@ enum InstantOutboxDeliveryClaimState: String, Sendable {
   case claimed
 }
 
+/// Durable ownership of a WebSocket mutation-error frame.
+///
+/// A server error is allowed to mutate local state only while the receiving
+/// runtime still owns the exact SQLite delivery claim. A terminal row makes a
+/// duplicate frame an idempotent no-op, while every other state is stale for
+/// this socket and must not be resolved through lifecycle aliases.
+enum InstantLiveMutationErrorDisposition: Equatable, Sendable {
+  case owned(claimToken: String)
+  case alreadyTerminal
+  case stale
+  case missing
+}
+
 enum InstantAutomaticOutboxClaimLimits {
   static let maximumMutationCount = 50
   static let maximumStepCount = 256

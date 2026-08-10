@@ -991,21 +991,6 @@ private actor InstantRuntimeLiveSession {
     )
   }
 
-  func refreshRegisteredQueries() async throws {
-    guard let session, isOpened, let makeID else { return }
-    for key in registeredQueries.keys.sorted() {
-      guard let registration = registeredQueries[key] else { continue }
-      try await send(
-        .removeQuery(registration.query, clientEventID: makeID()),
-        through: session
-      )
-      try await send(
-        .addQuery(registration.query, clientEventID: makeID()),
-        through: session
-      )
-    }
-  }
-
   func registerStreamReader(
     key: String,
     clientID: String? = nil,
@@ -5057,35 +5042,58 @@ public final class InstantRuntime: Sendable {
 
     case let .error(error):
       let clientEventID = error.clientEventID?.nilIfEmpty
-      let releasedRetryableMutationClaim: Bool
-      if let clientEventID, Self.isRetryableMutationError(error) {
+      let mutationDisposition: InstantLiveMutationErrorDisposition
+      if let clientEventID {
         recordActorHop(.persistence)
-        releasedRetryableMutationClaim = try await persistence.releaseAutomaticOutboxClaim(
+        mutationDisposition = try await persistence.liveMutationErrorDisposition(
           id: clientEventID,
           claimantID: automaticDeliveryClaimantID
         )
-        if releasedRetryableMutationClaim {
-          recordActorHop(.outbox)
-          await outbox.remove(id: clientEventID)
-        }
       } else {
-        releasedRetryableMutationClaim = false
+        mutationDisposition = .missing
       }
-      let residentMutationMatches: Bool
-      if let clientEventID {
-        residentMutationMatches = await mutationDeliveryBarrierMutations().contains {
-          mutation in
-          mutation.id == clientEventID
-            && (mutation.status == .pending
-              || (mutation.status == .confirmed && !mutation.provesServerAcceptance))
-        }
-      } else {
-        residentMutationMatches = false
+      if case .alreadyTerminal = mutationDisposition {
+        InstantDiagnostics.shared.record(
+          .debug,
+          subsystem: "instant-swift-data-core",
+          category: "outbox",
+          event: "outbox.mutation.server-error-already-recorded",
+          message: "Ignored a duplicate terminal mutation error already recorded in SQLite.",
+          metadata: [
+            "mutationID": clientEventID ?? "",
+            "errorMessage": error.message,
+          ],
+          correlationID: clientEventID
+        )
+        return
+      }
+      if case .stale = mutationDisposition {
+        InstantDiagnostics.shared.record(
+          .debug,
+          subsystem: "instant-swift-data-core",
+          category: "outbox",
+          event: "outbox.mutation.server-error-stale-claim",
+          message: "Ignored a mutation error after this socket lost its durable delivery claim.",
+          metadata: [
+            "mutationID": clientEventID ?? "",
+            "errorMessage": error.message,
+          ],
+          correlationID: clientEventID
+        )
+        return
       }
       if let clientEventID,
-        releasedRetryableMutationClaim || residentMutationMatches
+        case let .owned(claimToken) = mutationDisposition
       {
         if Self.isRetryableMutationError(error) {
+          recordActorHop(.persistence)
+          let releasedMutationIDs = try await persistence.releaseAutomaticOutboxClaim(
+            token: claimToken
+          )
+          recordActorHop(.outbox)
+          for mutationID in releasedMutationIDs {
+            await outbox.remove(id: mutationID)
+          }
           InstantDiagnostics.shared.record(
             .warning,
             subsystem: "instant-swift-data-core",
@@ -5130,12 +5138,11 @@ public final class InstantRuntime: Sendable {
           ],
           correlationID: clientEventID
         )
-        _ = try await failMutation(
+        _ = try await failClaimedLiveMutation(
           id: clientEventID,
           failure: Self.mutationFailure(from: error),
-          recordsConnectionFailure: false
+          requiredClaimToken: claimToken
         )
-        try await liveSession.refreshRegisteredQueries()
         startLiveMutationDeliveryIfNeeded()
         return
       }
@@ -9136,6 +9143,30 @@ public final class InstantRuntime: Sendable {
     }
   }
 
+  /// Applies a live terminal rejection only while this runtime still owns the
+  /// exact durable delivery claim. The socket stays open and registered live
+  /// queries stay registered; the local rollback publication is sufficient,
+  /// matching upstream Reactor `_handleMutationError`.
+  private func failClaimedLiveMutation(
+    id: String,
+    failure: InstantMutationFailure,
+    requiredClaimToken: String
+  ) async throws -> PendingMutation? {
+    await operationGate.enter()
+    do {
+      let mutation = try await performFailMutationWithGateHeld(
+        id: id,
+        failure: failure,
+        recordsConnectionFailure: false,
+        requiredClaimToken: requiredClaimToken
+      )
+      await operationGate.leave()
+      return mutation
+    } catch {
+      await operationGate.leave()
+      throw error
+    }
+  }
 
   /// Loads persistence metadata without allowing a newer SQLite revision to
   /// advance the compact cache past the hot `InstantStore` actor.
