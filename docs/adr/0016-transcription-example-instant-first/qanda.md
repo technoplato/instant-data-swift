@@ -1,0 +1,402 @@
+# ADR 0016 — Q&A log
+
+Single file for the whole interview. Newest questions go at the bottom as
+`open`. Chat presents **one** `asking` / overview item at a time.
+
+Process skill: `$adr-decision-qanda`.
+
+---
+
+## Q01 — Where the Transcription example lives
+
+- **Status:** decided
+- **Asked:** 2026-08-10
+- **Decided:** 2026-08-10
+- **Recommendation (amended):** Monorepo placement yes; **no `V3` suffix**. Name
+  is **Transcription**. Shared **core** + multiple hosts.
+- **Question:** Should Transcription be a new Instant monorepo example (new
+  product/targets), or should we repurpose VoiceTrail / SyncUps instead?
+
+### Context
+
+User asked for a standalone example ("we'll just call it an example …
+transcription") and to not delete existing work. Monorepo already has the SPM
+and dual-app patterns. Separate repo would split Instant consumption from the
+library under active iteration.
+
+VoiceTrail = existing Instant monorepo demo of capture/list/playback + auth
+(`Sources/VoiceTrailV3App/`). Closest prior screen set; **not** the product name
+and **not** rewritten in place.
+
+### Answer
+
+**New monorepo targets. Name: Transcription (not TranscriptionV3).**
+
+Shared domain core consumed by multiple hosts:
+
+| Target (intent) | Role |
+| --- | --- |
+| `Transcription` (core) | Schema, entities, queries, mutations, simulated speech, domain logic |
+| CLI host | Terminal control / inspection |
+| TUI host | Terminal UI (user said "2e" — interpreted as **TUI**; correct if e2e) |
+| Mac app | Multi-window dual-client proof surface |
+| iOS / iPad app | Phone/tablet host |
+
+Do **not** replace VoiceTrail or SyncUps. Do **not** use a separate repository
+for the first cut. Interview also uses **DomainAsTree / PIS** (mode trees,
+URIs, messages) inside this ADR so the domain graph is honest before hosts.
+
+Meta: feedback on domain history during this Q&A also informs adapting
+`$domain-as-tree` into ADR-bound design (skill + process), not only product code.
+
+### Follow-ups spawned
+
+- Q02 — archetype one-liner (DomainAsTree step 1)
+- Packaging spellings inside Package.swift (core product name, executable names)
+- Host matrix order (Instant-first Mac dual-window before TCA)
+
+---
+
+## Q02 — Archetype one-liner (DomainAsTree)
+
+- **Status:** decided
+- **Asked:** 2026-08-10
+- **Decided:** 2026-08-10
+- **Recommendation:** Local-first voice memos + simulated speech + multi-client
+  observe (amended with rate control + segment/words shape).
+- **Question:** What is Transcription in one archetype sentence (no marketing)?
+
+### Context
+
+DomainAsTree requires an archetype one-liner before root screens and mode
+trees. Toolshed proxy mapping: favorite stopwatch ↔ active recording; FAB ↔
+create; non-favorite running ↔ playback.
+
+Diagnostic frame (user): this example exists partly to stress-test whether the
+current Instant + Scribe modeling is **doomed** or merely under-documented —
+honest domain graph first, then hosts.
+
+Simulated speech for now — real transcription engine is being extracted in
+another chat. Rate of token updates is a **user-controlled slider**.
+
+### Answer
+
+**Archetype:**
+
+> Local-first voice memos: simulated speech becomes attributed words on the
+> active recording’s **transcription segments**; list / detail / playback stay
+> in sync across Instant clients; no real microphone.
+
+**Speech source (v1):** Simulated only. Slider increases/decreases update rate.
+Real engine plugs in later without changing segment/words storage shape.
+
+**Dev diagnostics (v1):** Reuse Recipes debug panel (memory, logs, commits,
+build time, outbox). **Always on and expanded in all DEV builds** — no feature
+flags to enable it. Release may omit or collapse (not decided yet).
+
+### Follow-ups spawned
+
+- Q03 — transcription segment + words storage
+- Extract shared debug panel from Recipes into something hosts can depend on
+  (implementation later)
+
+---
+
+## Q03 — Transcription segment + words storage
+
+- **Status:** decided
+- **Asked:** 2026-08-10
+- **Decided:** 2026-08-10
+- **Recommendation:** Align with ADR 0015 / Scribe: words as **strict Codable
+  JSON array on the segment**, not Instant word entities; segment text/times
+  derived from words.
+- **Question:** How are live transcript pieces stored?
+
+### Context
+
+Scribe + open-segment recipe already use `wordsJSON` + segment `text` /
+`isFinal`. User wants the same teachable shape, strongly typed in Swift.
+
+### Answer
+
+**Entity: transcription segment** (name spelling TBD: `TranscriptionSegment`
+vs Scribe `recordingSegment`).
+
+| Field | Rule |
+| --- | --- |
+| `words` | Strongly typed Swift `[Word]`; wire as JSON blob on the Instant attribute |
+| `Word` | `start`, `end`, `text` (engines generally give word timing — use it) |
+| `text` | **Derived** from words (joined / app rule), not a free-form second truth |
+| `start` / `end` | **Derived** from first word start / last word end (or empty if no words) |
+
+No per-word Instant rows. No denormalized full-transcript attribute as primary
+storage. Live write path follows open-segment recipe (upsert current segment
+only; always local + outbox).
+
+### Follow-ups spawned
+
+- Q04 — Recording parent + lifecycle (active / paused / stopped)
+- Exact Instant attribute names + namespaces
+- Whether derived fields are **persisted** on every write or computed only on read
+
+---
+
+## Q04 — Recording parent entity + lifecycle
+
+- **Status:** decided (with pushback refinements; one concurrency follow-up)
+- **Asked:** 2026-08-10
+- **Decided:** 2026-08-10
+- **Recommendation:** Recording parent + nested ADT; **stop is a message**, not
+  a state; name stays **Recording** for now (not Media).
+- **Question:** Is the list row a **Recording** that owns many segments, and
+  what exclusive states does a recording have?
+
+### Context
+
+Earlier product ask: recordings list, row, recording screen, playback. Segment
+words alone cannot be the list identity. Toolshed: favorite = active lane;
+creating while idle starts a new favorite.
+
+User: double-nested enum; stop finishes the recording; playback has play/pause;
+list “recording an edit” as future; agent must push back on incomplete answers.
+
+### Answer
+
+**Parent:** List rows are **Recording**s. Each owns many **TranscriptionSegment**s.
+Stick with name **Recording** (not Media) for now.
+
+**Stop is not a state.** `stop` is a **message/command** that finishes the
+recording (transitions out of the recording branch).
+
+**Nested ADT (refined — agent pushback applied):**
+
+```text
+Recording.activity                    // exclusive per recording row
+├── recording(RecordingPhase)
+│   ├── active              // receiving simulated / STT tokens
+│   ├── paused              // same open recording; not receiving tokens
+│   └── editingExisting     // LISTED ONLY — not v1 (append/edit lane later)
+├── finished                // post-stop; not recording; not playing
+└── playback(PlaybackPhase)
+    ├── playing
+    └── paused
+```
+
+**Messages (not states):**
+
+| Message | From → to (sketch) |
+| --- | --- |
+| `createAndStart` (FAB) | — → new Recording `recording(.active)` |
+| `pauseRecording` | `recording(.active)` → `recording(.paused)` |
+| `resumeRecording` | `recording(.paused)` → `recording(.active)` |
+| `stop` | `recording(_)` → `finished` |
+| `startPlayback` | `finished` → `playback(.playing)` |
+| `pausePlayback` | `playback(.playing)` → `playback(.paused)` |
+| `resumePlayback` | `playback(.paused)` → `playback(.playing)` |
+| `stopPlayback` | `playback(_)` → `finished` |
+
+### Agent pushback (why the flat `active|paused|stopped` was wrong)
+
+1. **`stopped` as a state mixed event with mode.** Stop finishes; the resting
+   mode is **`finished`**, not “stopped.”
+2. **`recording new` is not a phase of an existing row.** Creating is
+   `createAndStart` → new entity already in `recording(.active)`. Keeping
+   “recording new” as a status on the row is incomplete/nonsensical.
+3. **Playback needs its own branch** with `playing | paused` (you corrected this).
+4. **Missing leaf:** a completed recording that is **not** playing must be
+   representable — that is **`finished`**. Without it, every idle past recording
+   has nowhere to live in the ADT.
+5. **`editingExisting`:** listed for honesty; **out of scope for v1** (no
+   support required).
+
+### Still incomplete until Q05 (do not paper over)
+
+Can **this client** be `recording(.active)` on recording A while
+`playback(.playing)` on recording B (toolshed favorite + non-favorite)? That is
+**process-level** dual-lane, not a single-row ADT. Needs an explicit answer.
+
+### Follow-ups spawned
+
+- Q05 — dual-lane concurrency (record A + play B)
+- Persist `activity` on Instant vs derive from local session + activity ADT
+  (Scribe-style `activityKind` + `activityClientID`)
+- Debug panel extraction to SPM module (packaging)
+
+---
+
+## Q04b — Debug panel packaging (decided alongside)
+
+- **Status:** decided
+- **Asked:** 2026-08-10
+- **Decided:** 2026-08-10
+
+### Answer
+
+Extract **Recipes floating debug panel** into its own **SPM module** (name TBD,
+e.g. `InstantDevDebug` / `ProcessDebugPanel`) so Transcription and other hosts
+depend on it cleanly — not on `RecipesV3App`. DEV hosts: always on + expanded.
+
+---
+
+## Q05 — Dual-lane concurrency (record + play) + schema/session split
+
+- **Status:** decided
+- **Asked:** 2026-08-10
+- **Decided:** 2026-08-10
+- **Question:** Can this client record one recording and play another at the
+  same time? How is that modeled?
+
+### Answer
+
+**Yes — dual-lane**, toolshed SyncUps FAB model (session mode, not schema):
+
+| Session.mode | Meaning |
+| --- | --- |
+| Idle | neither lane |
+| Recording | recording lane only (phase Active \| Paused) |
+| Playback | playback lane only (phase Playing \| Paused) |
+| Both | both lanes (ids may be **same or different**) |
+
+Playing B does not stop recording A. Starting playback of C pauses B.
+
+**Same id on both lanes is legal** (captain correction): pause the current
+transcription and play that recording’s audio. Not an illegal state. Behavior
+differs from two-id Both (no forced jump), but ADT allows it.
+
+**Critical disambiguation:**
+
+1. **Schema** = durable domain types (storage-agnostic) under `transcription.*`.
+2. **Session mode** = this client’s FAB / dual-lane feature state.
+3. Rejected: smuggling dual-lane as `Recording.activity` field notation.
+
+**Floating toolbar:** Reuse SyncUps floating controls mode table — see
+`overviews/03-session-mode-floating-toolbar.md`.
+
+### Follow-ups spawned
+
+- Q06 — accept nested schema draft (no compound names)
+
+---
+
+## Q06 — Accept schema catalog (recording → transcription → segment + event)
+
+- **Status:** decided
+- **Asked:** 2026-08-10
+- **Decided:** 2026-08-10
+- **Recommendation:** Accept skill transcription schema as drafted.
+- **Question:** Accept cardinality and timeline model?
+
+### Answer
+
+**Accepted.**
+
+```text
+recording 1 ──* transcription
+transcription 1 ──* segment
+transcription 1 ──* event
+```
+
+- Segment uses `transcriptionId` (not `recordingId`).
+- Events opt-in on transcription (clipboard, screenshot, photo, location, systemAudio).
+- `times.wall` = `Time`; `times.relative` = `Duration`.
+- Canonical: skill `references/schemas/transcription.md` (+ GitHub link in ADR README).
+
+### Follow-ups spawned
+
+- Q07 — segment responses / agent comments
+
+---
+
+## Q07 — Segment responses (threaded comments / agents)
+
+- **Status:** decided
+- **Asked:** 2026-08-10
+- **Decided:** 2026-08-10
+- **Recommendation:** `transcription.response` on a segment; recursive via
+  `parentId`; text + author + createdAt. Author kind human | agent.
+- **Question:** How do remote agents / humans comment on a segment?
+
+### Answer
+
+**Accepted.** Use case: remote agents listen to the conversation and respond
+inline (Scribe already has related code); humans may comment too.
+
+```text
+transcription.segment 1 ──* transcription.response
+transcription.response 1 ──* transcription.response   # parentId nest
+```
+
+Superseded field shape: see Q08 (`parent.root` | `parent.reply`).
+
+Schema updated in skill `transcription.md`.
+
+---
+
+## Q08 — Homogeneous segments + response parent ADT + floating toolbar name
+
+- **Status:** decided
+- **Asked:** 2026-08-10
+- **Decided:** 2026-08-10
+
+### Answer
+
+1. **`*` means zero-or-many** in cardinality trees (not “required”).
+
+2. **Homogeneous segments.** Timeline is only `transcription.segment` in order.
+   No peer `event` list. Body ADT:
+
+   ```text
+   segment.body
+     speech   (words[])
+     event    (clipboard | screenshot | photo | location | systemAudio)
+   ```
+
+   Render by mapping segments. Any segment may have responses.
+
+3. **`parent` is not Optional parentId.** ADT:
+
+   ```text
+   response.parent
+     root
+     reply
+       responseId    UUID
+   ```
+
+   Optional nulls hide root vs reply. Explicit cases forbid a meaningless missing id.
+
+4. **UI name:** **floating toolbar** — do not say FAB / acronym.
+
+Schema: skill `references/schemas/transcription.md` updated.
+
+---
+
+## Q09 — One app tree (exhaustive mode + observe/send on leaves)
+
+- **Status:** decided (shape); observe/send draft on leaves for review
+- **Asked:** 2026-08-10
+- **Decided:** 2026-08-10
+- **Recommendation:** Nested exhaustive mode; leaves hold observe + send.
+- **Question:** Accept tree shape?
+
+### Answer
+
+**Accepted shape.**
+
+```text
+screen.library.empty | populated | detail.timeline | settings
+mode.recording{Idle,Active,Paused}.playback{Idle,Playing,Paused}
+process.speechRate | debugPanel
+```
+
+Drawn nested only (no bars). Mode is nine leaves by nesting playback under
+recording phase. Observe + send hang under each leaf in
+`overviews/04-uri-tree.md` (same tree, not a second document structure).
+
+Still fine-tune individual messages/observe slices if needed; shape is locked.
+
+
+### Handoff (2026-08-10)
+
+Tree file rewritten as WIP with observe/send/goesTo/mutate nested on leaves.
+Captain feedback applied through `mode.recordingIdle.*`. Pick up at
+`mode.recordingActive.*`. Navigation stack for `goBack` still open.

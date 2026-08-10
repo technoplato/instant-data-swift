@@ -6,6 +6,45 @@ production-readiness plan
 Commit-level history stays in `docs/audits/commit-changelog.md`; this file is
 the narrative of what the library must prove and why.
 
+## 2026-08-10 17:15:17 EDT — ADR 0016 URI tree WIP (handoff)
+
+- Wrote full nested app tree with observe/send/goesTo/mutate on leaves.
+- File: `docs/adr/0016-transcription-example-instant-first/overviews/04-uri-tree.md` (**WIP**, needs more feedback).
+- Captain reviewed through `mode.recordingIdle.*`; resume at `mode.recordingActive.*`.
+- Linked create/finish mutations; goBack = navigation.previous (stack TBD); startRecording owned by mode not library.
+
+## 2026-08-10 16:17:48 EDT — ADR 0016 app tree leaves (observe + send)
+
+- Q09 shape accepted: screen ∥ exhaustive mode nesting; observe/send on leaves only.
+- File: `docs/adr/0016-transcription-example-instant-first/overviews/04-uri-tree.md`
+- Next: refine any leaf messages, then plan.md / implementation.
+
+## 2026-08-10 15:38:17 EDT — #044 bounded terminal rejection and deferred residency green
+
+- **Terminal rejection:** SQLite now proves and decodes only the rejected mutation's transitive optimistic component, with hard ceilings of 50 bodies and 8 MiB. The footprint conservatively includes forward and rollback writes, concrete entity preconditions, triple reference targets, lookup preconditions, and rule operations.
+- **Deferred values:** configured large cardinality-one payloads stay out of the hot indexes at bootstrap, hydrate only for selected entity IDs, and preserve exact optimistic update, restart, rejection, and first-value deletion semantics.
+- **Focused evidence:** `InstantTerminalFailureComponentTests` passed 11/11, including a 10,000-row disjoint queue; `DeferredValueResidencyTests` passed 4/4. These are structural tests, not physical memory acceptance.
+- **Still open:** explicit-flush rejection still uses the legacy queue-wide path; local infinite queries must slice before deferred hydration and surface hydration failures; the clean physical iPad ReplayKit memory and five-second live-sync trial remains required.
+
+## 2026-08-10 15:23:59 EDT — ADR 0016 URI tree draft (Q09)
+
+- Schema: exclusive segment.body speech|event.
+- Draft URI + floating toolbar session map: `docs/adr/0016-…/overviews/04-uri-tree.md`.
+- Next: accept Q09, then plan.md / implementation slices.
+
+## 2026-08-10 15:14:36 EDT — ADR 0016 Q08 homogeneous segments
+
+- Schema: segment.body speech|event; responses on any segment; floating toolbar naming.
+- Next still: session/URI tree for Transcription hosts.
+
+## 2026-08-10 15:08:46 EDT — ADR 0016 Transcription example interview (schema lock)
+
+- **What:** Opened ADR for a teachable multi-host **Transcription** Instant example (simulated speech, dual-client observe). Domain schema lives in the skills catalog (not forked fully in-repo).
+- **Schema:** recording 1→* transcription → segment + event; segment responses (threaded, human|agent). Skill: https://github.com/technoplato/skills/blob/master/domain-as-tree/references/schemas/transcription.md
+- **Local ADR:** `docs/adr/0016-transcription-example-instant-first/` · GitHub (main when pushed): https://github.com/technoplato/instant-data-swift/tree/main/docs/adr/0016-transcription-example-instant-first
+- **Status:** Q01–Q07 decided (package, archetype, words, lifecycle, debug module, dual-lane session, schema, responses). Implementation not started.
+- **Next:** session/URI tree overviews; plan.md + Instant issue when interview locks; then SPM core + hosts.
+
 ## 2026-08-09 18:00:47 EDT — #187 reverse relations and rebased writes fixed
 
 - **Physical root cause:** the iPad's first durable recording transaction contained every required field, but Swift resolved child-side reverse relations to the server's forward UUID without swapping endpoints. The server therefore treated transcription and segment IDs as recordings. The corrected swap also removes child-side create/update modes so they cannot be applied to an existing parent.
