@@ -8,6 +8,13 @@ https://github.com/technoplato/skills/blob/master/domain-as-tree/references/sche
 **This file (GitHub, when pushed):**  
 https://github.com/technoplato/instant-data-swift/blob/main/docs/adr/0016-transcription-example-instant-first/overviews/04-uri-tree.md
 
+
+## Related experiment
+
+Message/command/schema-write graph experiment (may not keep):  
+[`04b-message-graph-experiment.md`](./04b-message-graph-experiment.md)  
+Started Monday 2026-08-10 ~5:46 PM America/New_York.
+
 ## WIP / handoff
 
 - Shape of **screen** + exhaustive **mode** nesting is accepted in spirit.

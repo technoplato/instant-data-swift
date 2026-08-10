@@ -6,6 +6,12 @@ production-readiness plan
 Commit-level history stays in `docs/audits/commit-changelog.md`; this file is
 the narrative of what the library must prove and why.
 
+## 2026-08-10 17:52:00 EDT — Message graph experiment (04b)
+
+- Exploratory static graph: message catalog, schema-path→writers index, thin tree send lists, command side-effects.
+- File: `docs/adr/0016-transcription-example-instant-first/overviews/04b-message-graph-experiment.md` (may discard).
+- Goal later: static/runtime check that mutates only go through declared messages.
+
 ## 2026-08-10 17:15:17 EDT — ADR 0016 URI tree WIP (handoff)
 
 - Wrote full nested app tree with observe/send/goesTo/mutate on leaves.
