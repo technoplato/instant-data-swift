@@ -10,6 +10,24 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## August 10th, 2026 at 11:39:36 a.m. EDT — `43c1dcdb6881` Fence WebSocket rejection to durable claim
+
+- **Implementation commit:** `43c1dcdb6881f7e5726d6434a43bd7f499575afe`
+- **Change:** Fence WebSocket mutation rejection to the durable claim
+- **Details:**
+  - Classify duplicate, stale, and owned server-error frames from normalized SQLite lifecycle and claim state without hydrating an outbox body.
+  - Apply terminal rollback only under the exact token and consume that claim atomically; release the full token-owned delivery window before retryable reconnect.
+  - Keep the authenticated socket and registered queries intact after terminal rejection, matching Reactor local observer notification without remove-query/add-query churn.
+  - Verify 69 live-transport, 36 bounded-delivery, and 21 outbox-hydration tests, including duplicate zero-decode and cross-runtime stale-response regressions.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/BoundedOutboxDelivery.swift` — Define durable mutation-error disposition.
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — Route retryable and terminal server errors through exact durable claim ownership without query resubscription.
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — Classify frames body-free and atomically consume terminal claim state.
+  - `Tests/InstantSwiftDataCoreTests/InstantLiveTransportTests.swift` — Prove rollback publication, duplicate idempotence, stale-claim fencing, retry, and encoding quarantine behavior.
+- **User context (verbatim):**
+  > fix the fundamental sissues, don't paperclip over.
+- **SpecStory:** unavailable — Unavailable: Codex desktop task was not proven captured by SpecStory.
+
 ## August 10th, 2026 at 10:40:45 a.m. EDT — `9a802149c790` Bound same-entity outbox growth safely
 
 - **Implementation commit:** `9a802149c790f6d0b24668624d8c01c39d1e84c5`
