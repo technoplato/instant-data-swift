@@ -1,3 +1,9 @@
+## 2026-08-09 22:19:47 EDT
+
+- **repo:** realtime-voice-sqlite-instant (Scribe)
+- **commit:** `406131713869fcc986bb01950f01f258e480d55d`
+- **reason:** Correct the failed-row terminology and record the verified physical-iPad cleanup of 1,039 retained terminal-rejection receipts while preserving pending mutations, triples, media, revision invariants, and a recoverable pre-cleanup backup (#044).
+
 ## 2026-08-09 20:23:20 EDT
 
 - **repo:** realtime-voice-sqlite-instant (Scribe)
