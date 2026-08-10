@@ -180,6 +180,12 @@ private final class JSONBatchDecodeResults<Value: Sendable>: @unchecked Sendable
   }
 }
 
+struct InstantOutboxRowAcceptance: Sendable {
+  var mutation: PendingMutation?
+  var pendingMutationCount: Int
+  var didChange: Bool
+}
+
 public actor SQLitePersistenceStore {
   private let fileURL: URL
   private let startupTrace: InstantStartupTrace
@@ -188,6 +194,17 @@ public actor SQLitePersistenceStore {
   private let decoder: JSONDecoder
   private var cachedState: InstantPersistenceState?
   private var didTraceInitialStateLoad = false
+  /// Test-visible count of durable outbox JSON bodies decoded by this actor.
+  /// This pins acknowledgement and delivery complexity to their selected rows.
+  private var decodedOutboxBodyCount = 0
+
+  package func resetDecodedOutboxBodyCount() {
+    decodedOutboxBodyCount = 0
+  }
+
+  package func currentDecodedOutboxBodyCount() -> Int {
+    decodedOutboxBodyCount
+  }
 
   /// Drop the full triples array from the in-memory persistence cache.
   ///
@@ -899,6 +916,98 @@ public actor SQLitePersistenceStore {
     ))
   }
 
+  func currentOutboxRevision() throws -> Int64 {
+    try readTransaction {
+      try loadMetadataRevisionWithoutTransaction(Self.outboxRevisionKey)
+    }
+  }
+
+  /// Applies one WebSocket `transact-ok` receipt with a revision-checked row
+  /// update. Only the addressed mutation body is decoded; the remaining outbox
+  /// stays as compact identity/status metadata in memory and untouched JSON in
+  /// SQLite.
+  func acceptOutboxMutation(
+    id: String,
+    serverTransactionID: String,
+    expectedOutboxRevision: Int64
+  ) throws -> InstantOutboxRowAcceptance? {
+    let previousState = cachedState
+    let acceptance: InstantOutboxRowAcceptance? = try transaction {
+      guard
+        try loadMetadataRevisionWithoutTransaction(Self.outboxRevisionKey)
+          == expectedOutboxRevision
+      else { return nil }
+
+      let rows: [PendingMutation] = try selectJSON(
+        "SELECT json FROM instant_outbox WHERE mutation_id = ? LIMIT 1",
+        [.text(id)]
+      )
+      decodedOutboxBodyCount += rows.count
+      guard var mutation = rows.first else {
+        return InstantOutboxRowAcceptance(
+          mutation: nil,
+          pendingMutationCount: Int(try selectInt64(
+            "SELECT COUNT(*) FROM instant_outbox WHERE status = ?",
+            [.text(InstantMutationStatus.pending.rawValue)]
+          )),
+          didChange: false
+        )
+      }
+
+      let alreadyAccepted = mutation.status == .confirmed
+        && mutation.provesServerAcceptance
+      if !alreadyAccepted {
+        mutation.status = .confirmed
+        mutation.failureMessage = nil
+        mutation.failure = nil
+        mutation.serverTransactionID = serverTransactionID
+        mutation.confirmationSource = .webSocketTransactOK
+        try execute(
+          """
+          UPDATE instant_outbox
+          SET status = ?, json = ?
+          WHERE mutation_id = ?
+          """,
+          [
+            .text(mutation.status.rawValue),
+            .text(try encode(mutation)),
+            .text(mutation.id),
+          ]
+        )
+        _ = try bumpMetadataRevisionWithoutTransaction(Self.outboxRevisionKey)
+      }
+      return InstantOutboxRowAcceptance(
+        mutation: mutation,
+        pendingMutationCount: Int(try selectInt64(
+          "SELECT COUNT(*) FROM instant_outbox WHERE status = ?",
+          [.text(InstantMutationStatus.pending.rawValue)]
+        )),
+        didChange: !alreadyAccepted
+      )
+    }
+
+    guard let acceptance else { return nil }
+    if acceptance.didChange, var previousState,
+      previousState.outboxRevision == expectedOutboxRevision,
+      let mutation = acceptance.mutation
+    {
+      if let index = previousState.snapshot.outbox.firstIndex(where: { $0.id == mutation.id }) {
+        previousState.snapshot.outbox[index] = mutation.compactedForMemory
+      } else {
+        previousState.snapshot.outbox.append(mutation.compactedForMemory)
+        previousState.snapshot.outbox.sort(by: PendingMutation.creationOrder)
+      }
+      previousState.outboxRevision += 1
+      // `previousState` is already the actor's memory-thinned cache, and the
+      // addressed mutation was compacted above. Avoid forcing SQLite to shrink
+      // its page cache once per acknowledgement while a receipt burst drains.
+      cachedState = previousState
+    } else if acceptance.didChange {
+      cachedState = nil
+    }
+    return acceptance
+  }
+
   func loadOutboxMutations(
     statuses: [InstantMutationStatus],
     ids: [String]? = nil,
@@ -908,7 +1017,7 @@ public actor SQLitePersistenceStore {
   ) throws -> [PendingMutation]? {
     let statuses = Array(Set(statuses.map(\.rawValue))).sorted()
     let ids = ids.map { Array(Set($0)).sorted() }
-    return try readTransaction {
+    let mutations: [PendingMutation]? = try readTransaction {
       if let expectedStoreRevision,
         try loadMetadataRevisionWithoutTransaction(Self.storeRevisionKey)
           != expectedStoreRevision
@@ -938,6 +1047,8 @@ public actor SQLitePersistenceStore {
       }
       return try selectJSON(sql, bindings)
     }
+    decodedOutboxBodyCount += mutations?.count ?? 0
+    return mutations
   }
 
   func loadStateWithSource() throws -> InstantPersistenceStateLoad {
@@ -1056,11 +1167,13 @@ public actor SQLitePersistenceStore {
   private func loadOutboxWithoutTransaction(
     tracesStartupCollections: Bool = true
   ) throws -> [PendingMutation] {
-    try loadStateCollection(
+    let mutations: [PendingMutation] = try loadStateCollection(
       phase: "sqlite.state-load.outbox",
       sql: "SELECT json FROM instant_outbox ORDER BY created_at_ms, mutation_id",
       tracesStartupCollection: tracesStartupCollections
     )
+    decodedOutboxBodyCount += mutations.count
+    return mutations
   }
 
   private func loadStateCollection<Value: Decodable & Sendable>(

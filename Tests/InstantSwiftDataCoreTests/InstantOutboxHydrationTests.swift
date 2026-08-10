@@ -1,5 +1,6 @@
 import CustomDump
 import Foundation
+import SQLite3
 import Testing
 @testable import InstantSwiftDataCore
 
@@ -549,6 +550,136 @@ struct InstantOutboxHydrationTests {
     )
     expectNoDifference(delivered.txSteps, expected.txSteps, upstreamDeliverySource)
     #expect(!delivered.txSteps.isEmpty)
+  }
+
+  @Test
+  func serverAcceptanceDecodesOnlyAddressedRowInTenThousandRowOutbox() async throws {
+    let cacheURL = try temporaryOutboxHydrationCacheURL()
+    let persistence = try SQLitePersistenceStore(fileURL: cacheURL)
+    try await persistence.bootstrap()
+    let mutations = (0..<10_000).map { index in
+      let id = String(format: "tx-accept-row-%05d", index)
+      var mutation = PendingMutation(
+        id: id,
+        createdAt: InstantTimestamp(milliseconds: Int64(index + 1)),
+        transaction: InstantStoreTransaction(id: id, operations: [])
+      )
+      if index == 1 {
+        mutation.status = .confirmed
+        mutation.confirmationSource = .manual
+      }
+      return mutation
+    }
+    try await persistence.saveOutbox(mutations)
+    let runtime = try await makeRuntime(
+      appID: "outbox-row-addressed-acceptance",
+      cacheURL: cacheURL
+    )
+    let targetID = "tx-accept-row-09999"
+    try corruptOutboxJSON(
+      id: "tx-accept-row-00000",
+      in: cacheURL
+    )
+    await runtime.persistence.invalidateMemoryCache()
+
+    await runtime.persistence.resetDecodedOutboxBodyCount()
+    let accepted = try #require(
+      try await runtime.acceptMutationIfPresent(
+        id: targetID,
+        serverTransactionID: "server-row-addressed-acceptance"
+      )
+    )
+
+    expectNoDifference(accepted.id, targetID, upstreamDeliverySource)
+    expectNoDifference(accepted.status, .confirmed, upstreamDeliverySource)
+    let firstAcceptanceDecodeCount = await runtime.persistence.currentDecodedOutboxBodyCount()
+    expectNoDifference(
+      firstAcceptanceDecodeCount,
+      1,
+      upstreamDeliverySource
+    )
+    let pendingMutationCount = await runtime.pendingMutationCount()
+    expectNoDifference(pendingMutationCount, 9_998, upstreamDeliverySource)
+    let status = try await runtime.connectionStatus()
+    expectNoDifference(status.pendingMutationCount, 9_998, upstreamDeliverySource)
+    let decodeCountAfterStatusReads = await runtime.persistence.currentDecodedOutboxBodyCount()
+    expectNoDifference(decodeCountAfterStatusReads, 1, upstreamDeliverySource)
+    let resident = try #require(
+      await runtime.mutationDeliveryBarrierMutations().first { $0.id == targetID }
+    )
+    expectNoDifference(resident.status, .confirmed, upstreamDeliverySource)
+    expectNoDifference(resident.transaction.operations, [], upstreamDeliverySource)
+    let revisionAfterFirstAcceptance = try await runtime.persistence.currentOutboxRevision()
+
+    await runtime.persistence.resetDecodedOutboxBodyCount()
+    let duplicate = try #require(
+      try await runtime.acceptMutationIfPresent(
+        id: targetID,
+        serverTransactionID: "server-conflicting-duplicate"
+      )
+    )
+    expectNoDifference(duplicate.status, .confirmed, upstreamDeliverySource)
+    expectNoDifference(
+      duplicate.serverTransactionID,
+      "server-row-addressed-acceptance",
+      upstreamDeliverySource
+    )
+    let duplicateDecodeCount = await runtime.persistence.currentDecodedOutboxBodyCount()
+    expectNoDifference(
+      duplicateDecodeCount,
+      1,
+      upstreamDeliverySource
+    )
+    let revisionAfterDuplicate = try await runtime.persistence.currentOutboxRevision()
+    expectNoDifference(
+      revisionAfterDuplicate,
+      revisionAfterFirstAcceptance,
+      upstreamDeliverySource
+    )
+
+    await runtime.persistence.resetDecodedOutboxBodyCount()
+    let acceptedLocalReceipt = try #require(
+      try await runtime.acceptMutationIfPresent(
+        id: "tx-accept-row-00001",
+        serverTransactionID: "server-local-receipt-acceptance"
+      )
+    )
+    expectNoDifference(acceptedLocalReceipt.status, .confirmed, upstreamDeliverySource)
+    expectNoDifference(
+      acceptedLocalReceipt.confirmationSource,
+      .webSocketTransactOK,
+      upstreamDeliverySource
+    )
+    expectNoDifference(
+      acceptedLocalReceipt.serverTransactionID,
+      "server-local-receipt-acceptance",
+      upstreamDeliverySource
+    )
+    let pendingCountAfterLocalReceipt = await runtime.pendingMutationCount()
+    expectNoDifference(pendingCountAfterLocalReceipt, 9_998, upstreamDeliverySource)
+    let decodeCountAfterLocalReceipt =
+      await runtime.persistence.currentDecodedOutboxBodyCount()
+    expectNoDifference(
+      decodeCountAfterLocalReceipt,
+      1,
+      upstreamDeliverySource
+    )
+
+    let revisionBeforeMissingAcceptance = try await runtime.persistence.currentOutboxRevision()
+    await runtime.persistence.resetDecodedOutboxBodyCount()
+    let missing = try await runtime.acceptMutationIfPresent(
+      id: "tx-accept-row-missing",
+      serverTransactionID: "server-missing"
+    )
+    expectNoDifference(missing, nil, upstreamDeliverySource)
+    let missingDecodeCount = await runtime.persistence.currentDecodedOutboxBodyCount()
+    expectNoDifference(missingDecodeCount, 0, upstreamDeliverySource)
+    let revisionAfterMissingAcceptance = try await runtime.persistence.currentOutboxRevision()
+    expectNoDifference(
+      revisionAfterMissingAcceptance,
+      revisionBeforeMissingAcceptance,
+      upstreamDeliverySource
+    )
   }
 
   @Test
@@ -1271,6 +1402,56 @@ private func temporaryOutboxHydrationCacheURL() throws -> URL {
   try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
   return directory.appendingPathComponent("state.sqlite")
 }
+
+private func corruptOutboxJSON(id: String, in cacheURL: URL) throws {
+  var database: OpaquePointer?
+  guard sqlite3_open_v2(cacheURL.path, &database, SQLITE_OPEN_READWRITE, nil) == SQLITE_OK else {
+    defer { sqlite3_close(database) }
+    throw NSError(
+      domain: "InstantOutboxHydrationTests",
+      code: 1,
+      userInfo: [NSLocalizedDescriptionKey: "Could not open the outbox fault-injection database."]
+    )
+  }
+  defer { sqlite3_close(database) }
+  var statement: OpaquePointer?
+  guard sqlite3_prepare_v2(
+    database,
+    "UPDATE instant_outbox SET json = '{malformed-json' WHERE mutation_id = ?",
+    -1,
+    &statement,
+    nil
+  ) == SQLITE_OK else {
+    throw NSError(
+      domain: "InstantOutboxHydrationTests",
+      code: 2,
+      userInfo: [NSLocalizedDescriptionKey: "Could not prepare the outbox fault injection."]
+    )
+  }
+  defer { sqlite3_finalize(statement) }
+  let bindResult = id.withCString {
+    sqlite3_bind_text(statement, 1, $0, -1, outboxHydrationSQLiteTransient)
+  }
+  guard bindResult == SQLITE_OK else {
+    throw NSError(
+      domain: "InstantOutboxHydrationTests",
+      code: 3,
+      userInfo: [NSLocalizedDescriptionKey: "Could not bind the outbox fault-injection id."]
+    )
+  }
+  guard sqlite3_step(statement) == SQLITE_DONE else {
+    throw NSError(
+      domain: "InstantOutboxHydrationTests",
+      code: 4,
+      userInfo: [NSLocalizedDescriptionKey: "Could not install the outbox JSON sentinel."]
+    )
+  }
+}
+
+private let outboxHydrationSQLiteTransient = unsafeBitCast(
+  -1,
+  to: sqlite3_destructor_type.self
+)
 
 private let upstreamDeliverySource =
   "upstream/instant/client/packages/core/src/Reactor.js _flushPendingMessages/_sendMutation [adapted: Swift persists typed transactions in SQLite and must selectively rehydrate the exact durable operations before lowering tx-steps.]"

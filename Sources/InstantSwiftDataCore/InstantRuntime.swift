@@ -3078,7 +3078,7 @@ public final class InstantRuntime: Sendable {
     }
   }
 
-  private func acceptMutationIfPresent(
+  package func acceptMutationIfPresent(
     id: String,
     serverTransactionID: String
   ) async throws -> PendingMutation? {
@@ -3089,19 +3089,32 @@ public final class InstantRuntime: Sendable {
         serverTransactionID: serverTransactionID
       )
       await leaveOperationGate()
+      let diagnosticLevel: InstantDiagnosticLevel
+      let diagnosticEvent: String
+      let diagnosticMessage: String
+      if result.mutation == nil {
+        diagnosticLevel = .debug
+        diagnosticEvent = "transaction.acceptance-not-found"
+        diagnosticMessage = "Server acceptance did not match a local outbox mutation."
+      } else if result.didChange {
+        diagnosticLevel = .notice
+        diagnosticEvent = "transaction.server-accepted"
+        diagnosticMessage = "Instant accepted an outbox mutation and retained its optimistic overlay until the server watermark catches up."
+      } else {
+        diagnosticLevel = .debug
+        diagnosticEvent = "transaction.acceptance-already-recorded"
+        diagnosticMessage = "Instant ignored a duplicate server acceptance after the first server transaction proof was recorded."
+      }
       InstantDiagnostics.shared.record(
-        result.mutation == nil ? .debug : .notice,
+        diagnosticLevel,
         subsystem: "instant-swift-data-core",
         category: "mutation",
-        event: result.mutation == nil
-          ? "transaction.acceptance-not-found"
-          : "transaction.server-accepted",
-        message: result.mutation == nil
-          ? "Server acceptance did not match a local outbox mutation."
-          : "Instant accepted an outbox mutation and retained its optimistic overlay until the server watermark catches up.",
+        event: diagnosticEvent,
+        message: diagnosticMessage,
         metadata: [
+          "recordedServerTransactionID": result.mutation?.serverTransactionID ?? "none",
           "pendingMutationCount": String(result.pendingMutationCount),
-          "serverTransactionID": serverTransactionID,
+          "receivedServerTransactionID": serverTransactionID,
         ],
         correlationID: id
       )
@@ -3123,40 +3136,37 @@ public final class InstantRuntime: Sendable {
   private func performAcceptMutationIfPresent(
     id: String,
     serverTransactionID: String
-  ) async throws -> (mutation: PendingMutation?, pendingMutationCount: Int) {
+  ) async throws -> (mutation: PendingMutation?, pendingMutationCount: Int, didChange: Bool) {
     for _ in 0..<5 {
       recordActorHop(.persistence)
-      let state = try await loadStateWithDurableOutboxSynchronizingStore()
-      guard
-        let update = InstantOutbox.accepting(
-          id: id,
-          serverTransactionID: serverTransactionID,
-          in: state.snapshot.outbox
-        )
-      else {
+      let outboxRevision = try await persistence.currentOutboxRevision()
+      guard let acceptance = try await persistence.acceptOutboxMutation(
+        id: id,
+        serverTransactionID: serverTransactionID,
+        expectedOutboxRevision: outboxRevision
+      ) else { continue }
+      guard let mutation = acceptance.mutation else {
         recordActorHop(.outbox)
-        await outbox.replace(with: state.snapshot.outbox)
+        await outbox.remove(id: id)
         return (
           mutation: nil,
-          pendingMutationCount: state.snapshot.outbox.filter { $0.status == .pending }.count
+          pendingMutationCount: acceptance.pendingMutationCount,
+          didChange: false
         )
       }
-      recordActorHop(.persistence)
-      let didSave = try await persistence.saveOutbox(
-        update.mutations,
-        replacing: state.snapshot.outbox,
-        expectedOutboxRevision: state.outboxRevision
+      recordActorHop(.outbox)
+      await outbox.replace(mutation)
+      if acceptance.didChange {
+        _ = try? await publishConnectionStatusWithGateHeld(
+          pendingMutationCount: acceptance.pendingMutationCount
+        )
+        await publishMutationLifecycle(mutation)
+      }
+      return (
+        mutation: mutation,
+        pendingMutationCount: acceptance.pendingMutationCount,
+        didChange: acceptance.didChange
       )
-      if didSave {
-        recordActorHop(.outbox)
-        await outbox.replace(with: update.mutations)
-        _ = try? await publishConnectionStatusWithGateHeld()
-        await publishMutationLifecycle(update.mutation)
-        return (
-          mutation: update.mutation,
-          pendingMutationCount: update.mutations.filter { $0.status == .pending }.count
-        )
-      }
     }
 
     throw outboxChangedDuringStatusUpdate(id: id)
@@ -4589,8 +4599,16 @@ public final class InstantRuntime: Sendable {
     }
   }
 
-  private func connectionStatusWithGateHeld() async throws -> InstantConnectionStatus {
-    let state = try await loadCompactStateSynchronizingStore()
+  private func connectionStatusWithGateHeld(
+    pendingMutationCount knownPendingMutationCount: Int? = nil
+  ) async throws -> InstantConnectionStatus {
+    let pendingMutationCount: Int
+    if let knownPendingMutationCount {
+      pendingMutationCount = knownPendingMutationCount
+    } else {
+      recordActorHop(.persistence)
+      pendingMutationCount = try await persistence.countOutboxMutations(status: .pending)
+    }
     let session = try await persistence.loadAuthSession(key: authSessionKey)
     let processedTransactionID = try await persistence.loadMetadataValue(
       key: processedTransactionIDMetadataKey
@@ -4612,15 +4630,19 @@ public final class InstantRuntime: Sendable {
       ),
       isAuthenticated: session != nil,
       userID: session?.userID,
-      pendingMutationCount: state.snapshot.outbox.filter { $0.status == .pending }.count,
+      pendingMutationCount: pendingMutationCount,
       processedTransactionID: processedTransactionID,
       lastErrorMessage: lastErrorMessage
     )
   }
 
   @discardableResult
-  private func publishConnectionStatusWithGateHeld() async throws -> InstantConnectionStatus {
-    let status = try await connectionStatusWithGateHeld()
+  private func publishConnectionStatusWithGateHeld(
+    pendingMutationCount: Int? = nil
+  ) async throws -> InstantConnectionStatus {
+    let status = try await connectionStatusWithGateHeld(
+      pendingMutationCount: pendingMutationCount
+    )
     await connectionStatusObservers.publish(status, for: configuration.appID)
     return status
   }

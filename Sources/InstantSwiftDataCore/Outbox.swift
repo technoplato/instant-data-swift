@@ -36,6 +36,22 @@ actor InstantOutbox {
     mutations
   }
 
+  /// Replaces one compact resident lifecycle row without reconstructing every
+  /// durable transaction body. Durable SQLite remains the body authority.
+  func replace(_ mutation: PendingMutation) {
+    let compacted = mutation.compactedForMemory
+    if let index = mutations.firstIndex(where: { $0.id == mutation.id }) {
+      mutations[index] = compacted
+    } else {
+      mutations.append(compacted)
+      mutations.sort(by: PendingMutation.creationOrder)
+    }
+  }
+
+  func remove(id: String) {
+    mutations.removeAll { $0.id == id }
+  }
+
   static func confirming(
     id: String,
     source: InstantMutationConfirmationSource = .manual,
