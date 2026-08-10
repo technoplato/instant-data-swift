@@ -2162,8 +2162,11 @@ struct InstantLiveTransportTests {
     ])
     expectNoDifference(outbox.map(\.status), [.failed, .pending])
     #expect(outbox[0].failureMessage?.contains("todos/createdAt") == true)
-    expectNoDifference(outbox[0].optimisticOverlayState, .removed)
-    expectNoDifference(outbox[0].rollbackTransaction, nil)
+    // Encoding failed before wire I/O. The bounded quarantine retains the
+    // already-materialized optimistic layer so a later schema retry cannot
+    // duplicate it or require a queue-wide rollback/rebase.
+    expectNoDifference(outbox[0].optimisticOverlayState, .applied)
+    #expect(outbox[0].rollbackTransaction != nil)
     let queryTask = Task { try await runtime.query(TodoExample.query) }
     defer { queryTask.cancel() }
     try await instantLiveWithTimeout(

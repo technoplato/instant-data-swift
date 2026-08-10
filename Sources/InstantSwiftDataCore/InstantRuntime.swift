@@ -503,14 +503,19 @@ private actor InstantRuntimeLiveSession {
   private var inFlightMutationDeadlines: [String: Date] = [:]
   private var hasReportedDeepOutbox = false
   /// Bounds the number of transactions sharing the socket at once.
-  static let maximumMutationsPerFlush = 50
+  static let maximumMutationsPerFlush = InstantAutomaticOutboxClaimLimits.maximumMutationCount
   /// Bounds the low-level transaction work sharing the socket at once. One
   /// oversize mutation is still allowed through when the window is empty so
   /// an old large write cannot permanently block ordered delivery.
-  static let maximumTransactionStepsInFlight = 256
+  static let maximumTransactionStepsInFlight = InstantAutomaticOutboxClaimLimits.maximumStepCount
+  /// Hard bound for encoded durable JSON retained by one automatic claim.
+  /// Oversized bodies are moved to durable quarantine by SQLite without first
+  /// loading their raw string into Swift memory.
+  static let maximumEncodedMutationBytesPerDeliveryWindow =
+    InstantAutomaticOutboxClaimLimits.maximumEncodedBodyBytes
   /// An online write that is not acknowledged this quickly is a real problem,
   /// not a slow network: surface it and retry rather than waiting minutes.
-  static let inFlightMutationTimeout: TimeInterval = 10
+  static let inFlightMutationTimeout: TimeInterval = 5
   static let deepOutboxReportingThreshold = 100
   private var registeredRooms: [InstantRoomHandle: RegisteredRoom] = [:]
   private var registeredStreamReaders: [String: RegisteredStreamReader] = [:]
@@ -952,6 +957,38 @@ private actor InstantRuntimeLiveSession {
     )
   }
 
+  func releaseMutationReservations(
+    _ mutationIDs: Set<String>,
+    timedOut: Bool
+  ) {
+    guard !mutationIDs.isEmpty else { return }
+    for mutationID in mutationIDs {
+      inFlightMutationIDs.remove(mutationID)
+      inFlightMutationStepCounts[mutationID] = nil
+      inFlightMutationDeadlines[mutationID] = nil
+    }
+    guard timedOut else { return }
+    InstantDiagnostics.shared.record(
+      .warning,
+      subsystem: "instant-swift-data-core",
+      category: "outbox",
+      event: "outbox.mutation.ack-timeout-batch",
+      message: "Instant reclaimed durable delivery claims after no server acknowledgement.",
+      metadata: [
+        "expiredCount": String(mutationIDs.count),
+        "ackTimeoutSeconds": "5",
+        "expiredMutationIDs": mutationIDs.sorted().prefix(12).joined(separator: ","),
+      ]
+    )
+    reportIssue(
+      """
+      Instant did not acknowledge \(mutationIDs.count) mutation(s) within 5s and is retrying them.
+
+      If this repeats, inspect the Instant WebSocket endpoint and server response.
+      """
+    )
+  }
+
   func refreshRegisteredQueries() async throws {
     guard let session, isOpened, let makeID else { return }
     for key in registeredQueries.keys.sorted() {
@@ -1104,7 +1141,6 @@ private actor InstantRuntimeLiveSession {
       )
       return []
     }
-    reclaimExpiredInFlightMutations()
     var encodingFailures: [InstantLiveMutationEncodingFailure] = []
     let pending = mutations
       .sorted(by: Self.mutationOrder)
@@ -1141,10 +1177,10 @@ private actor InstantRuntimeLiveSession {
       let mutationStepCount = mutation.txSteps.count
       let fitsStepBudget =
         inFlightStepCount + mutationStepCount <= Self.maximumTransactionStepsInFlight
-      // Preserve outbox order. Wait for an acknowledgement when the next
-      // mutation does not fit, except that an empty window admits one oversize
-      // mutation so it cannot become a permanent head-of-line blocker.
-      if !(fitsStepBudget || inFlightMutationCount == 0) {
+      // Preserve outbox order. Admission has already rejected or quarantined
+      // any mutation above the hard limit, so this branch only waits for room
+      // behind an existing in-flight window.
+      if !fitsStepBudget {
         stoppedForStepBudget = true
         InstantDiagnostics.shared.record(
           .notice,
@@ -1159,7 +1195,6 @@ private actor InstantRuntimeLiveSession {
             "inFlightMutationCount": String(inFlightMutationCount),
             "inFlightStepCount": String(inFlightStepCount),
             "maxStepsInFlight": String(Self.maximumTransactionStepsInFlight),
-            "oversizeHead": String(mutationStepCount > Self.maximumTransactionStepsInFlight),
           ],
           correlationID: mutation.mutationID
         )
@@ -1278,55 +1313,6 @@ private actor InstantRuntimeLiveSession {
       ]
     )
     return encodingFailures
-  }
-
-  /// Releases mutations the server never acknowledged so the next flush retries
-  /// them, instead of leaving them blocked for the lifetime of the session.
-  private func reclaimExpiredInFlightMutations() {
-    let now = Date()
-    let expired = inFlightMutationDeadlines.filter { $0.value <= now }.map(\.key)
-    guard !expired.isEmpty else { return }
-    for mutationID in expired {
-      inFlightMutationIDs.remove(mutationID)
-      inFlightMutationStepCounts[mutationID] = nil
-      inFlightMutationDeadlines[mutationID] = nil
-      InstantDiagnostics.shared.record(
-        .warning,
-        subsystem: "instant-swift-data-core",
-        category: "outbox",
-        event: "outbox.mutation.ack-timeout-reclaim",
-        message:
-          "Reclaimed an in-flight mutation that received no server acknowledgement within the timeout.",
-        metadata: [
-          "mutationID": mutationID,
-          "ackTimeoutSeconds": String(Int(Self.inFlightMutationTimeout)),
-          "remainingInFlightCount": String(inFlightMutationIDs.count),
-        ],
-        correlationID: mutationID
-      )
-    }
-    InstantDiagnostics.shared.record(
-      .warning,
-      subsystem: "instant-swift-data-core",
-      category: "outbox",
-      event: "outbox.mutation.ack-timeout-batch",
-      message:
-        "Instant did not acknowledge in-flight mutation(s) within the timeout and is retrying them.",
-      metadata: [
-        "expiredCount": String(expired.count),
-        "ackTimeoutSeconds": String(Int(Self.inFlightMutationTimeout)),
-        "expiredMutationIDs": expired.prefix(12).joined(separator: ","),
-      ]
-    )
-    reportIssue(
-      """
-      Instant did not acknowledge \(expired.count) mutation(s) within \
-      \(Int(Self.inFlightMutationTimeout))s and is retrying them.
-
-      If this repeats, the device is writing faster than the transport can \
-      confirm. Inspect the Instant WebSocket endpoint and server response.
-      """
-    )
   }
 
   private func reportDeepOutboxIfNeeded(pendingCount: Int) {
@@ -1814,6 +1800,86 @@ private actor InstantRuntimeMutationDeliveryPump {
   }
 }
 
+private enum InstantExplicitMutationTransportOutcome: Sendable {
+  case response(InstantMutationTransportResponse)
+  case failure(InstantError)
+}
+
+private enum InstantExplicitMutationTransportRaceEvent: Sendable {
+  case completed
+  case timedOut
+}
+
+private actor InstantExplicitMutationTransportRace {
+  private var event: InstantExplicitMutationTransportRaceEvent?
+  private var continuation:
+    CheckedContinuation<InstantExplicitMutationTransportRaceEvent, Never>?
+
+  func resolve(_ event: InstantExplicitMutationTransportRaceEvent) {
+    guard self.event == nil else { return }
+    self.event = event
+    continuation?.resume(returning: event)
+    continuation = nil
+  }
+
+  func firstEvent() async -> InstantExplicitMutationTransportRaceEvent {
+    if let event { return event }
+    return await withCheckedContinuation { continuation in
+      self.continuation = continuation
+    }
+  }
+}
+
+private actor InstantRuntimeMutationDeadlineWake {
+  private var task: Task<Void, Never>?
+  private var deadlineMilliseconds: Int64?
+  private var generation = 0
+
+  func request(
+    deadlineMilliseconds: Int64?,
+    now: @escaping @Sendable () -> InstantTimestamp,
+    sleep: @escaping @Sendable (UInt64) async throws -> Void,
+    wake: @escaping @Sendable () -> Void
+  ) {
+    guard let deadlineMilliseconds else {
+      generation += 1
+      self.deadlineMilliseconds = nil
+      task?.cancel()
+      task = nil
+      return
+    }
+    if let scheduled = self.deadlineMilliseconds,
+      scheduled <= deadlineMilliseconds,
+      task != nil
+    {
+      return
+    }
+    generation += 1
+    let generation = generation
+    self.deadlineMilliseconds = deadlineMilliseconds
+    task?.cancel()
+    task = Task { [weak self] in
+      do {
+        let remaining = max(0, deadlineMilliseconds - now().milliseconds)
+        try await sleep(UInt64(remaining))
+        try Task.checkCancellation()
+      } catch {
+        _ = await self?.finish(generation: generation)
+        return
+      }
+      guard await self?.finish(generation: generation) == true else { return }
+      wake()
+    }
+  }
+
+  private func finish(generation: Int) -> Bool {
+    guard generation == self.generation else { return false }
+    task = nil
+    deadlineMilliseconds = nil
+    return true
+  }
+}
+
 private struct InstantSharedRootWriteTarget: Hashable, Sendable {
   var namespace: String?
   var id: String
@@ -1992,6 +2058,8 @@ public final class InstantRuntime: Sendable {
   private let activeRoomPresenceState = InstantRuntimeActiveRoomPresenceState()
   private let reconnectController = InstantRuntimeReconnectController()
   private let mutationDeliveryPump = InstantRuntimeMutationDeliveryPump()
+  private let mutationDeadlineWake = InstantRuntimeMutationDeadlineWake()
+  private let automaticDeliveryClaimantID = UUID().uuidString.lowercased()
   private let automaticMutationRetryReservations = InstantAutomaticMutationRetryReservations()
 
   private init(
@@ -2466,8 +2534,6 @@ public final class InstantRuntime: Sendable {
       recordActorHop(.persistence)
       let state = try await loadCompactStateSynchronizingStore()
       if transaction.operations.isEmpty {
-        recordActorHop(.outbox)
-        await outbox.replace(with: state.snapshot.outbox)
         return InstantStoreMutationResult(
           transactionID: transaction.id,
           changedEntityIDs: [],
@@ -2477,17 +2543,16 @@ public final class InstantRuntime: Sendable {
       }
       let storeSnapshotForAuth = await authoritativeStoreSnapshot(from: state)
       try await authorizeSharedRootWrites(transaction: transaction, snapshot: storeSnapshotForAuth)
-      if state.snapshot.outbox.contains(where: { $0.id == transaction.id }) {
-        guard let hydrated = try await persistence.loadOutboxMutations(
-          statuses: [.pending, .confirmed, .failed],
-          ids: [transaction.id],
-          limit: 1,
-          expectedStoreRevision: state.storeRevision,
-          expectedOutboxRevision: state.outboxRevision
-        ) else { continue }
-        guard let existingMutation = hydrated.first else { continue }
+      guard let hydrated = try await persistence.loadOutboxMutations(
+        statuses: [.pending, .confirmed, .failed],
+        ids: [transaction.id],
+        limit: 1,
+        expectedStoreRevision: state.storeRevision,
+        expectedOutboxRevision: state.outboxRevision
+      ) else { continue }
+      if let existingMutation = hydrated.first {
         recordActorHop(.outbox)
-        await outbox.replace(with: state.snapshot.outbox)
+        await outbox.replace(existingMutation)
         guard existingMutation.status == .pending else {
           throw validationFailed(
             operation: "transact",
@@ -2515,12 +2580,16 @@ public final class InstantRuntime: Sendable {
           emissions: []
         )
       }
+      let creationCursor = try await persistence.latestOutboxCreationTimestamp(
+        expectedOutboxRevision: state.outboxRevision
+      )
+      guard creationCursor.matchesRevision else { continue }
       var pendingMutation: PendingMutation
       if var existingDraft = mutation {
         if createdAt == nil {
           existingDraft.createdAt = Self.monotonicOutboxTimestamp(
             existingDraft.createdAt,
-            after: state.snapshot.outbox
+            after: creationCursor.timestamp
           )
           mutation = existingDraft
         }
@@ -2531,7 +2600,7 @@ public final class InstantRuntime: Sendable {
           createdAt: createdAt
             ?? Self.monotonicOutboxTimestamp(
               configuration.now(),
-              after: state.snapshot.outbox
+              after: creationCursor.timestamp
             ),
           transaction: transaction
         )
@@ -2548,20 +2617,10 @@ public final class InstantRuntime: Sendable {
         prepared: prepared
       )
       mutation = pendingMutation
-      // Append new pending mutation. Same-entity supersession (high-churn open-
-      // segment speech) is pure policy today — wire here without breaking delivery:
-      // map outbox+pending → OutboxSupersessionCandidate, run
-      // OutboxSameEntitySupersession.decide, drop superseded pending upserts for the
-      // same singleton (namespace, entityID). Do not drop failed/poison/media/delete
-      // or multi-entity batches (v1).
-      // TODO recipe entry: docs/adr/0015-sqlite-data-parity-ergonomics/follow-on-outbox-same-entity-supersession.md
-      // TODO recipe entry: Sources/InstantSwiftDataCore/OutboxSameEntitySupersession.swift
-      let outboxSnapshot = (state.snapshot.outbox + [pendingMutation])
-        .sorted(by: PendingMutation.creationOrder)
+      try InstantAutomaticOutboxAdmission.validateNewMutation(pendingMutation)
       recordActorHop(.persistence)
       let didSave = try await persistence.saveLocalMutation(
         changedEntityTriples: prepared.changedEntityTriples,
-        outbox: outboxSnapshot,
         pendingMutation: pendingMutation,
         expectedStoreRevision: state.storeRevision,
         expectedOutboxRevision: state.outboxRevision
@@ -2569,8 +2628,6 @@ public final class InstantRuntime: Sendable {
       if didSave {
         recordActorHop(.store)
         let committed = await store.commitAndPublish(prepared)
-        recordActorHop(.outbox)
-        await outbox.replace(with: outboxSnapshot)
         _ = try? await publishConnectionStatusWithGateHeld()
         return committed.result
       }
@@ -2588,6 +2645,16 @@ public final class InstantRuntime: Sendable {
       requested <= latest,
       latest.milliseconds < Int64.max
     else { return requested }
+    return InstantTimestamp(milliseconds: latest.milliseconds + 1)
+  }
+
+  private static func monotonicOutboxTimestamp(
+    _ requested: InstantTimestamp,
+    after latest: InstantTimestamp?
+  ) -> InstantTimestamp {
+    guard let latest, requested <= latest, latest.milliseconds < Int64.max else {
+      return requested
+    }
     return InstantTimestamp(milliseconds: latest.milliseconds + 1)
   }
 
@@ -3154,14 +3221,14 @@ public final class InstantRuntime: Sendable {
           didChange: false
         )
       }
-      recordActorHop(.outbox)
-      await outbox.replace(mutation)
       if acceptance.didChange {
         _ = try? await publishConnectionStatusWithGateHeld(
           pendingMutationCount: acceptance.pendingMutationCount
         )
         await publishMutationLifecycle(mutation)
       }
+      recordActorHop(.outbox)
+      await outbox.remove(id: mutation.id)
       return (
         mutation: mutation,
         pendingMutationCount: acceptance.pendingMutationCount,
@@ -3179,8 +3246,6 @@ public final class InstantRuntime: Sendable {
       recordActorHop(.persistence)
       let state = try await loadStateWithDurableOutboxSynchronizingStore()
       guard let update = InstantOutbox.confirming(id: id, in: state.snapshot.outbox) else {
-        recordActorHop(.outbox)
-        await outbox.replace(with: state.snapshot.outbox)
         return (
           mutation: nil,
           pendingMutationCount: state.snapshot.outbox.filter { $0.status == .pending }.count
@@ -3194,7 +3259,7 @@ public final class InstantRuntime: Sendable {
       )
       if didSave {
         recordActorHop(.outbox)
-        await outbox.replace(with: update.mutations)
+        await outbox.remove(id: update.mutation.id)
         _ = try? await publishConnectionStatusWithGateHeld()
         await publishMutationLifecycle(update.mutation)
         return (
@@ -3439,8 +3504,6 @@ public final class InstantRuntime: Sendable {
       if !reloaded.snapshot.store.triples.isEmpty {
         await store.replaceSnapshot(reloaded.snapshot.store)
       }
-      recordActorHop(.outbox)
-      await outbox.replace(with: reloaded.snapshot.outbox)
     }
     throw InstantError(
       code: .persistenceFailed,
@@ -4260,6 +4323,21 @@ public final class InstantRuntime: Sendable {
     }
   }
 
+  private func scheduleLiveMutationDeadlineWake(
+    at deadlineMilliseconds: Int64?
+  ) {
+    Task { [weak self] in
+      guard let self else { return }
+      await self.mutationDeadlineWake.request(
+        deadlineMilliseconds: deadlineMilliseconds,
+        now: self.configuration.now,
+        sleep: self.configuration.liveReconnectSleep
+      ) { [weak self] in
+        self?.startLiveMutationDeliveryIfNeeded()
+      }
+    }
+  }
+
   /// Schedules one coalesced live outbox delivery pass without making the caller wait for
   /// SQLite hydration or WebSocket I/O. Public server-acceptance waiters poll durable state as
   /// their completion condition; they should not create an overlapping hydration pass on every
@@ -4449,9 +4527,9 @@ public final class InstantRuntime: Sendable {
           recordActorHop(.operationGate)
           await operationGate.leave()
           enteredOperationGate = false
-          let outstanding: [InstantTransportMutation]?
+          let outstanding: InstantAutomaticOutboxTransportSelection?
           do {
-            outstanding = try await outboxTransportMutationsForDelivery()
+            outstanding = try await automaticOutboxTransportMutationsForDelivery()
           } catch {
             // This is a local SQLite preparation failure, not a WebSocket
             // failure. Keep the authenticated session alive and let the
@@ -4461,23 +4539,7 @@ public final class InstantRuntime: Sendable {
             startLiveMutationDeliveryIfNeeded()
           }
           if let outstanding {
-            recordActorHop(.liveSession)
-            let encodingFailures = try await liveSession.sendMutations(outstanding)
-            // Recording a quarantined mutation must never tear down a healthy
-            // connection: the write is already durable locally, and closing here
-            // left every later mutation undeliverable.
-            do {
-              try await persistLiveMutationEncodingFailures(encodingFailures)
-            } catch {
-              reportIssue(
-                """
-                Instant could not record \(encodingFailures.count) quarantined \
-                mutation(s), but the connection stays open.
-
-                \(String(describing: error))
-                """
-              )
-            }
+            try await deliverAutomaticOutboxSelection(outstanding)
           }
         } catch {
           if enteredOperationGate {
@@ -4915,12 +4977,34 @@ public final class InstantRuntime: Sendable {
       await liveSession.recordDeliveredStreamAppend(delivery, seenOffset: seenOffset)
 
     case let .error(error):
-      if let clientEventID = error.clientEventID?.nilIfEmpty,
-        await mutationDeliveryBarrierMutations().contains(where: { mutation in
+      let clientEventID = error.clientEventID?.nilIfEmpty
+      let releasedRetryableMutationClaim: Bool
+      if let clientEventID, Self.isRetryableMutationError(error) {
+        recordActorHop(.persistence)
+        releasedRetryableMutationClaim = try await persistence.releaseAutomaticOutboxClaim(
+          id: clientEventID,
+          claimantID: automaticDeliveryClaimantID
+        )
+        if releasedRetryableMutationClaim {
+          recordActorHop(.outbox)
+          await outbox.remove(id: clientEventID)
+        }
+      } else {
+        releasedRetryableMutationClaim = false
+      }
+      let residentMutationMatches: Bool
+      if let clientEventID {
+        residentMutationMatches = await mutationDeliveryBarrierMutations().contains {
+          mutation in
           mutation.id == clientEventID
             && (mutation.status == .pending
               || (mutation.status == .confirmed && !mutation.provesServerAcceptance))
-        })
+        }
+      } else {
+        residentMutationMatches = false
+      }
+      if let clientEventID,
+        releasedRetryableMutationClaim || residentMutationMatches
       {
         if Self.isRetryableMutationError(error) {
           InstantDiagnostics.shared.record(
@@ -5116,8 +5200,10 @@ public final class InstantRuntime: Sendable {
   private func retryPersistedTransientMutationFailuresWithGateHeld() async throws {
     let reservedMutationIDs = await automaticMutationRetryReservations.snapshot()
     recordActorHop(.persistence)
-    let state = try await loadCompactStateSynchronizingStore()
-    let retryIDs: [String] = state.snapshot.outbox.compactMap { mutation -> String? in
+    let failedLifecycles = try await persistence.loadFailedMutationLifecycles(
+      limit: InstantRuntimeLiveSession.maximumMutationsPerFlush
+    )
+    let retryIDs: [String] = failedLifecycles.compactMap { mutation -> String? in
       guard mutation.status == .failed,
         mutation.failureMessage.map(Self.isRetryableMutationFailureMessage) == true,
         !reservedMutationIDs.contains(mutation.id)
@@ -5358,28 +5444,15 @@ public final class InstantRuntime: Sendable {
   @discardableResult
   package func sendOutstandingMutationsToLiveSession() async -> Bool {
     guard configuration.liveTransport != nil else { return true }
-    let outstanding: [InstantTransportMutation]
+    let outstanding: InstantAutomaticOutboxTransportSelection
     do {
-      outstanding = try await outboxTransportMutationsForDelivery()
+      outstanding = try await automaticOutboxTransportMutationsForDelivery()
     } catch {
       recordOutboxTransportHydrationFailure(error)
       return false
     }
     do {
-      recordActorHop(.liveSession)
-      let encodingFailures = try await liveSession.sendMutations(outstanding)
-      do {
-        try await persistLiveMutationEncodingFailures(encodingFailures)
-      } catch {
-        reportIssue(
-          """
-          Instant could not record \(encodingFailures.count) quarantined \
-          mutation(s), but delivery continues.
-
-          \(String(describing: error))
-          """
-        )
-      }
+      try await deliverAutomaticOutboxSelection(outstanding)
       return true
     } catch {
       await scheduleReconnect(
@@ -5391,18 +5464,97 @@ public final class InstantRuntime: Sendable {
     }
   }
 
-  private func persistLiveMutationEncodingFailures(
-    _ failures: [InstantLiveMutationEncodingFailure]
+  private func deliverAutomaticOutboxSelection(
+    _ selection: InstantAutomaticOutboxTransportSelection
   ) async throws {
-    for failure in failures {
-      _ = try await failMutation(
-        id: failure.mutationID,
-        failure: InstantMutationFailure(
-          code: .validationFailed,
-          message: failure.message
-        ),
-        recordsConnectionFailure: false
+    recordActorHop(.liveSession)
+    await liveSession.releaseMutationReservations(
+      selection.reclaimedMutationIDs,
+      timedOut: !selection.reclaimedMutationIDs.isEmpty
+    )
+    let encodingFailures: [InstantLiveMutationEncodingFailure]
+    do {
+      encodingFailures = try await liveSession.sendMutations(selection.mutations)
+    } catch {
+      if let claimToken = selection.claimToken {
+        recordActorHop(.persistence)
+        let released = (try? await persistence.releaseAutomaticOutboxClaim(token: claimToken))
+          ?? selection.claimedMutationIDs
+        recordActorHop(.liveSession)
+        await liveSession.releaseMutationReservations(released, timedOut: false)
+        recordActorHop(.outbox)
+        for mutationID in released {
+          await outbox.remove(id: mutationID)
+        }
+      }
+      throw error
+    }
+
+    do {
+      try await persistLiveMutationEncodingFailures(
+        encodingFailures,
+        claimToken: selection.claimToken
       )
+    } catch {
+      reportIssue(
+        """
+        Instant could not record \(encodingFailures.count) quarantined mutation(s), but the connection stays open.
+
+        \(String(describing: error))
+        """
+      )
+    }
+    scheduleLiveMutationDeadlineWake(at: selection.nextClaimDeadlineMilliseconds)
+    if selection.shouldContinueImmediately || !encodingFailures.isEmpty {
+      startLiveMutationDeliveryIfNeeded()
+    }
+  }
+
+  private func persistLiveMutationEncodingFailures(
+    _ failures: [InstantLiveMutationEncodingFailure],
+    claimToken: String?
+  ) async throws {
+    guard !failures.isEmpty else { return }
+    guard let claimToken else {
+      throw InstantError(
+        code: .persistenceFailed,
+        operation: "record live mutation encoding failures",
+        message: "Encoding failures did not carry their durable delivery claim token.",
+        recovery: "Retry automatic delivery so SQLite can claim the rows again."
+      )
+    }
+    let failuresByMutationID = Dictionary(
+      failures.map {
+        (
+          $0.mutationID,
+          InstantMutationFailure(code: .validationFailed, message: $0.message)
+        )
+      },
+      uniquingKeysWith: { _, newest in newest }
+    )
+    await enterOperationGate()
+    do {
+      for _ in 0..<5 {
+        recordActorHop(.persistence)
+        let outboxRevision = try await persistence.currentOutboxRevision()
+        guard let application = try await persistence.failOutboxMutationsForDelivery(
+          failuresByMutationID,
+          claimToken: claimToken,
+          expectedOutboxRevision: outboxRevision
+        ) else { continue }
+        recordActorHop(.outbox)
+        for mutation in application.mutations {
+          await publishMutationLifecycle(mutation)
+          await outbox.remove(id: mutation.id)
+        }
+        _ = try? await publishConnectionStatusWithGateHeld()
+        await leaveOperationGate()
+        return
+      }
+      throw outboxChangedDuringTransportHydration()
+    } catch {
+      await leaveOperationGate()
+      throw error
     }
   }
 
@@ -8346,10 +8498,6 @@ public final class InstantRuntime: Sendable {
       var resolved: InstantMutationLifecycleEvent?
       for _ in 0..<5 {
         let state = try await loadCompactStateSynchronizingStore()
-        guard state.snapshot.outbox.contains(where: { $0.id == id }) else {
-          resolved = .waiting
-          break
-        }
         guard let hydrated = try await persistence.loadOutboxMutations(
           statuses: [.pending, .confirmed, .failed],
           ids: [id],
@@ -8388,6 +8536,13 @@ public final class InstantRuntime: Sendable {
 
   package func mutationDeliveryBarrierMutations() async -> [PendingMutation] {
     await outbox.all()
+  }
+
+  package func mutationDeliveryBarrierSummary() async throws
+    -> InstantMutationDeliveryBarrierSummary
+  {
+    recordActorHop(.persistence)
+    return try await persistence.mutationDeliveryBarrierSummary()
   }
 
   private func durableOutboxMutations(
@@ -8477,13 +8632,9 @@ public final class InstantRuntime: Sendable {
           expectedStoreRevision: state.storeRevision,
           expectedOutboxRevision: state.outboxRevision
         ) else { continue }
-        // Delivery may discover rows written by another runtime sharing this SQLite file. Keep
-        // the resident barrier in sync with the same revision-qualified identity/status set so
-        // a subsequent transact error is classified as a mutation rejection instead of a socket
-        // failure. `InstantOutbox.replace` compacts operation graphs, so this does not reintroduce
-        // durable transaction bodies into long-lived memory.
-        recordActorHop(.outbox)
-        await outbox.replace(with: state.snapshot.outbox)
+        // Public inspection is read-only. SQLite remains the queue authority;
+        // only the atomic automatic-delivery claim populates the resident
+        // rejection/barrier actor.
         let mutations = hydrated
           .filter { mutation in
             switch mutation.status {
@@ -8496,25 +8647,12 @@ public final class InstantRuntime: Sendable {
             }
           }
           .sorted(by: PendingMutation.creationOrder)
-        let visibleWriteFilter = await store.visibleWriteFilter(
-          for: InstantVisibleWriteFilter.writeKeys(in: mutations)
-        )
-        var laterQueuedWriteKeys: Set<InstantVisibleWriteKey> = []
-        var filteredReversed: [PendingMutation] = []
-        filteredReversed.reserveCapacity(mutations.count)
-        for var mutation in mutations.reversed() {
-          let mutationWriteKeys = InstantVisibleWriteFilter.writeKeys(
-            in: mutation.transaction.operations
-          )
-          mutation.transaction.operations =
-            visibleWriteFilter.discardingWritesOlderThanVisibleState(
-              mutation.transaction.operations,
-              preserving: laterQueuedWriteKeys
-            )
-          filteredReversed.append(mutation)
-          laterQueuedWriteKeys.formUnion(mutationWriteKeys)
-        }
-        let transport = filteredReversed.reversed().map { mutation in
+        // Inspection may omit a row that was quarantined while its optimistic
+        // overlay remains locally visible. Without the automatic claim's
+        // revision-qualified durable successor proof, visible-state filtering
+        // could therefore erase an older write and return neither intent. Raw
+        // ordered operations are the conservative truthful projection.
+        let transport = mutations.map { mutation in
           var transportMutation = InstantTransportMutation(mutation)
           // A local receipt preserves the existing public `.confirmed` result, but it is still
           // unacknowledged from Instant's perspective and must use the wire-level pending shape.
@@ -8527,6 +8665,46 @@ public final class InstantRuntime: Sendable {
         return transport
       }
       throw outboxChangedDuringTransportHydration()
+    } catch {
+      await leaveOperationGate()
+      throw error
+    }
+  }
+
+  private func automaticOutboxTransportMutationsForDelivery() async throws
+    -> InstantAutomaticOutboxTransportSelection
+  {
+    await enterOperationGate()
+    do {
+      recordActorHop(.persistence)
+      let window = try await persistence.claimAutomaticOutboxDeliveryWindow(
+        InstantAutomaticOutboxClaimRequest(
+          claimantID: automaticDeliveryClaimantID,
+          claimToken: UUID().uuidString.lowercased(),
+          now: configuration.now()
+        )
+      )
+      recordActorHop(.outbox)
+      for mutation in window.failedMutations {
+        await publishMutationLifecycle(mutation)
+        await outbox.remove(id: mutation.id)
+      }
+      for mutation in window.mutations {
+        await outbox.replace(mutation)
+      }
+      if !window.failedMutations.isEmpty {
+        _ = try? await publishConnectionStatusWithGateHeld()
+      }
+      let mutations = InstantBoundedOutboxDelivery.transportMutations(in: window)
+      await leaveOperationGate()
+      return InstantAutomaticOutboxTransportSelection(
+        mutations: mutations,
+        claimToken: window.claimToken,
+        claimedMutationIDs: Set(window.mutations.map(\.id)),
+        reclaimedMutationIDs: window.reclaimedMutationIDs,
+        nextClaimDeadlineMilliseconds: window.nextClaimDeadlineMilliseconds,
+        shouldContinueImmediately: window.shouldContinueImmediately
+      )
     } catch {
       await leaveOperationGate()
       throw error
@@ -8547,38 +8725,46 @@ public final class InstantRuntime: Sendable {
     await enterMutationFlushGate()
     do {
       let request: InstantMutationTransportRequest
+      let selectedMutations: [PendingMutation]
       let selectedMutationIDs: Set<String>
+      let flushClaimToken = UUID().uuidString.lowercased()
+      let flushClaimantID =
+        "\(automaticDeliveryClaimantID)-explicit-\(flushClaimToken)"
 
       await enterOperationGate()
       do {
-        var selection: (state: InstantPersistenceState, mutations: [PendingMutation])?
-        for _ in 0..<5 {
-          recordActorHop(.persistence)
-          let state = try await loadCompactStateSynchronizingStore()
-          guard let mutations = try await persistence.loadOutboxMutations(
-            statuses: [.pending],
-            limit: limit,
-            expectedStoreRevision: state.storeRevision,
-            expectedOutboxRevision: state.outboxRevision
-          ) else { continue }
-          selection = (state, mutations)
-          break
+        recordActorHop(.persistence)
+        let selected = try await persistence.claimPendingOutboxMutationsForExplicitFlush(
+          limit: limit,
+          claimantID: flushClaimantID,
+          claimToken: flushClaimToken,
+          now: configuration.now()
+        )
+        if !selected.isEmpty,
+          try await persistedConnectionState() == .closed
+        {
+          _ = try await persistence.releaseAutomaticOutboxClaim(token: flushClaimToken)
+          throw InstantError(
+            code: .networkFailed,
+            operation: "flush outbox",
+            message:
+              "Cannot flush \(selected.count) pending mutation(s) while the Instant connection is closed.",
+            recovery: "Call connect() before flushing pending mutations."
+          )
         }
-        guard let selection else { throw outboxChangedDuringFlush() }
-        let state = selection.state
-        let pendingCount = state.snapshot.outbox.count { $0.status == .pending }
-        let selected = selection.mutations
+        recordActorHop(.persistence)
+        let pendingCount = try await persistence.countOutboxMutations(status: .pending)
+        let mutationCount = try await persistence.countOutboxMutations()
         request = InstantMutationTransportRequest(
           appID: configuration.appID,
           apiURI: configuration.apiURI,
           websocketURI: configuration.websocketURI,
           mutations: selected.map(InstantTransportMutation.init)
         )
+        selectedMutations = selected
         selectedMutationIDs = Set(selected.map(\.id))
 
         guard !selected.isEmpty else {
-          recordActorHop(.outbox)
-          await outbox.replace(with: state.snapshot.outbox)
           await leaveOperationGate()
           await leaveMutationFlushGate()
           return InstantMutationTransportFlushResult(
@@ -8587,122 +8773,244 @@ public final class InstantRuntime: Sendable {
             confirmed: [],
             failed: [],
             pendingMutationCount: pendingCount,
-            mutationCount: state.snapshot.outbox.count
+            mutationCount: mutationCount
           )
         }
+        await leaveOperationGate()
+      } catch {
+        await leaveOperationGate()
+        throw error
+      }
 
-        guard try await persistedConnectionState() != .closed else {
-          throw InstantError(
+      let race = InstantExplicitMutationTransportRace()
+      let mutationTransport = configuration.mutationTransport
+      let transportTask = Task { () -> InstantExplicitMutationTransportOutcome in
+        let outcome: InstantExplicitMutationTransportOutcome
+        do {
+          outcome = .response(try await mutationTransport.send(request))
+        } catch let error as InstantError {
+          outcome = .failure(error)
+        } catch {
+          outcome = .failure(InstantError(
             code: .networkFailed,
-            operation: "flush outbox",
-            message: "Cannot flush \(selected.count) pending mutation(s) while the Instant connection is closed.",
-            recovery: "Call connect() before flushing pending mutations."
-          )
+            operation: "flush Instant mutation transport",
+            message: String(describing: error),
+            recovery: "Inspect the configured mutation transport and retry the durable outbox."
+          ))
         }
-
-        await leaveOperationGate()
-      } catch {
-        await leaveOperationGate()
-        throw error
+        await race.resolve(.completed)
+        return outcome
       }
-
-      let response: InstantMutationTransportResponse
-      do {
-        recordActorHop(.mutationTransport)
-        response = try await configuration.mutationTransport.send(request)
-      } catch {
-        await recordConnectionError(error)
-        throw error
-      }
-      let results = response.results.filter { selectedMutationIDs.contains($0.mutationID) }
-
-      await enterOperationGate()
-      do {
-        // Preserve every later optimistic layer while removing a rejected predecessor. Applying
-        // confirmations first could remove an accepted successor from the outbox before the
-        // predecessor's exact inverse is stripped and replayed over it.
-        var terminalFailures: [PendingMutation] = []
-        for result in results where result.outcome == .failed {
-          recordActorHop(.persistence)
-          let latestState = try await loadCompactStateSynchronizingStore()
-          guard latestState.snapshot.outbox.contains(where: {
-            $0.id == result.mutationID && $0.status == .pending
-          }) else { continue }
-          let message =
-            result.message ?? "The Instant mutation transport rejected the mutation."
-          terminalFailures.append(
-            try await performFailMutationWithGateHeld(
-              id: result.mutationID,
-              failure: InstantMutationFailure(
-                code: PendingMutation.failureCode(message: message),
-                message: message
-              )
-            )
+      let timeoutTask = Task {
+        do {
+          try await Task.sleep(
+            nanoseconds: UInt64(
+              InstantAutomaticOutboxClaimLimits.claimTimeoutMilliseconds
+            ) * 1_000_000
           )
-        }
-
-        let confirmationResults = results.filter { $0.outcome == .confirmed }
-        var confirmedMutations: [PendingMutation] = []
-        var didApplyConfirmations = confirmationResults.isEmpty
-        if !confirmationResults.isEmpty {
-          for _ in 0..<5 {
-            recordActorHop(.persistence)
-            let latestState = try await loadStateWithDurableOutboxSynchronizingStore()
-            let update = InstantOutbox.applyingTransportResults(
-              confirmationResults,
-              in: latestState.snapshot.outbox,
-              allowedMutationIDs: selectedMutationIDs
-            )
-            guard !update.confirmed.isEmpty else {
-              recordActorHop(.outbox)
-              await outbox.replace(with: latestState.snapshot.outbox)
-              didApplyConfirmations = true
-              break
-            }
-            recordActorHop(.persistence)
-            let didSave = try await persistence.saveOutbox(
-              update.mutations,
-              replacing: latestState.snapshot.outbox,
-              expectedOutboxRevision: latestState.outboxRevision
-            )
-            guard didSave else { continue }
-            recordActorHop(.outbox)
-            await outbox.replace(with: update.mutations)
-            for mutation in update.confirmed {
-              await publishMutationLifecycle(mutation)
-            }
-            confirmedMutations = update.confirmed
-            didApplyConfirmations = true
-            break
-          }
-        }
-        guard didApplyConfirmations else { throw outboxChangedDuringFlush() }
-
-        let remainingMutations = await outbox.all()
-        if terminalFailures.isEmpty,
-          !remainingMutations.contains(where: { $0.status == .failed }),
-          try await persistedConnectionState() != .closed
-        {
-          try await saveOpenedConnectionMetadataWithGateHeld()
-        }
-        _ = try? await publishConnectionStatusWithGateHeld()
-        let remainingPendingCount = remainingMutations.filter { $0.status == .pending }.count
-        await leaveOperationGate()
-        await leaveMutationFlushGate()
-        return InstantMutationTransportFlushResult(
-          request: request,
-          results: results,
-          confirmed: confirmedMutations,
-          failed: terminalFailures,
-          pendingMutationCount: remainingPendingCount,
-          mutationCount: remainingMutations.count
+          try Task.checkCancellation()
+          await race.resolve(.timedOut)
+        } catch {}
+      }
+      let renewalTask = Task { [weak self] in
+        await self?.renewExplicitOutboxClaimUntilCancelled(
+          token: flushClaimToken,
+          claimantID: flushClaimantID
         )
-      } catch {
-        await leaveOperationGate()
-        throw error
+      }
+
+      switch await race.firstEvent() {
+      case .completed:
+        timeoutTask.cancel()
+        let outcome = await transportTask.value
+        do {
+          switch outcome {
+          case let .response(response):
+            let result = try await applyExplicitMutationTransportResponse(
+              request: request,
+              response: response,
+              selectedMutations: selectedMutations,
+              selectedMutationIDs: selectedMutationIDs,
+              claimToken: flushClaimToken
+            )
+            renewalTask.cancel()
+            await leaveMutationFlushGate()
+            return result
+          case let .failure(error):
+            renewalTask.cancel()
+            recordActorHop(.persistence)
+            _ = try? await persistence.releaseAutomaticOutboxClaim(token: flushClaimToken)
+            await recordConnectionError(error)
+            throw error
+          }
+        } catch {
+          renewalTask.cancel()
+          throw error
+        }
+
+      case .timedOut:
+        transportTask.cancel()
+        Task { [weak self] in
+          let outcome = await transportTask.value
+          guard let self else {
+            renewalTask.cancel()
+            return
+          }
+          await self.finishTimedOutExplicitMutationTransport(
+            outcome,
+            request: request,
+            selectedMutations: selectedMutations,
+            selectedMutationIDs: selectedMutationIDs,
+            claimToken: flushClaimToken
+          )
+          renewalTask.cancel()
+        }
+        let timeout = InstantError(
+          code: .networkFailed,
+          operation: "flush Instant mutation transport",
+          message: "Timed out after 5000ms waiting for the configured Instant mutation transport.",
+          recovery:
+            "The durable ordered claim remains fenced until the transport exits; inspect the transport before flushing again."
+        )
+        await recordConnectionError(timeout)
+        throw timeout
       }
     } catch {
       await leaveMutationFlushGate()
+      throw error
+    }
+  }
+
+  private func renewExplicitOutboxClaimUntilCancelled(
+    token: String,
+    claimantID: String
+  ) async {
+    while !Task.isCancelled {
+      do {
+        try await Task.sleep(nanoseconds: 1_000_000_000)
+        try Task.checkCancellation()
+        recordActorHop(.persistence)
+        let renewed = try await persistence.renewOutboxClaim(
+          token: token,
+          claimantID: claimantID,
+          deadlineMilliseconds: configuration.now().milliseconds
+            + InstantAutomaticOutboxClaimLimits.claimTimeoutMilliseconds
+        )
+        guard renewed else { return }
+      } catch is CancellationError {
+        return
+      } catch {
+        reportIssue(
+          "Instant could not renew the exclusive explicit-flush claim: \(error)"
+        )
+      }
+    }
+  }
+
+  private func finishTimedOutExplicitMutationTransport(
+    _ outcome: InstantExplicitMutationTransportOutcome,
+    request: InstantMutationTransportRequest,
+    selectedMutations: [PendingMutation],
+    selectedMutationIDs: Set<String>,
+    claimToken: String
+  ) async {
+    switch outcome {
+    case let .response(response):
+      do {
+        _ = try await applyExplicitMutationTransportResponse(
+          request: request,
+          response: response,
+          selectedMutations: selectedMutations,
+          selectedMutationIDs: selectedMutationIDs,
+          claimToken: claimToken
+        )
+      } catch {
+        reportIssue(
+          "Instant could not apply the fenced late explicit-flush response: \(error)"
+        )
+      }
+    case let .failure(error):
+      recordActorHop(.persistence)
+      _ = try? await persistence.releaseAutomaticOutboxClaim(token: claimToken)
+      await recordConnectionError(error)
+    }
+  }
+
+  private func applyExplicitMutationTransportResponse(
+    request: InstantMutationTransportRequest,
+    response: InstantMutationTransportResponse,
+    selectedMutations: [PendingMutation],
+    selectedMutationIDs: Set<String>,
+    claimToken: String
+  ) async throws -> InstantMutationTransportFlushResult {
+    let results = response.results.filter { selectedMutationIDs.contains($0.mutationID) }
+    await enterOperationGate()
+    do {
+      // Preserve every later optimistic layer while removing a rejected predecessor. Applying
+      // confirmations first could remove an accepted successor from the outbox before the
+      // predecessor's exact inverse is stripped and replayed over it.
+      var terminalFailures: [PendingMutation] = []
+      for result in results where result.outcome == .failed {
+        let message =
+          result.message ?? "The Instant mutation transport rejected the mutation."
+        if let failed = try await performClaimedFailMutationWithGateHeld(
+            id: result.mutationID,
+            failure: InstantMutationFailure(
+              code: PendingMutation.failureCode(message: message),
+              message: message
+            ),
+            requiredClaimToken: claimToken
+          )
+        {
+          terminalFailures.append(failed)
+        }
+      }
+      if !terminalFailures.isEmpty {
+        recordActorHop(.outbox)
+        await outbox.replace(with: [])
+      }
+
+      let confirmationResults = results.filter { $0.outcome == .confirmed }
+      recordActorHop(.persistence)
+      let confirmedMutations = try await persistence.confirmExplicitlyFlushedOutboxMutations(
+        confirmationResults,
+        selectedMutations: selectedMutations,
+        claimToken: claimToken
+      )
+      for mutation in confirmedMutations {
+        recordActorHop(.outbox)
+        await outbox.remove(id: mutation.id)
+        await publishMutationLifecycle(mutation)
+      }
+
+      recordActorHop(.persistence)
+      let remainingFailedMutationCount = try await persistence.countOutboxMutations(
+        status: .failed
+      )
+      if terminalFailures.isEmpty,
+        remainingFailedMutationCount == 0,
+        try await persistedConnectionState() != .closed
+      {
+        try await saveOpenedConnectionMetadataWithGateHeld()
+      }
+      _ = try? await publishConnectionStatusWithGateHeld()
+      recordActorHop(.persistence)
+      _ = try await persistence.releaseAutomaticOutboxClaim(token: claimToken)
+      let remainingPendingCount = try await persistence.countOutboxMutations(status: .pending)
+      let remainingMutationCount = try await persistence.countOutboxMutations()
+      await leaveOperationGate()
+      return InstantMutationTransportFlushResult(
+        request: request,
+        results: results,
+        confirmed: confirmedMutations,
+        failed: terminalFailures,
+        pendingMutationCount: remainingPendingCount,
+        mutationCount: remainingMutationCount
+      )
+    } catch {
+      recordActorHop(.persistence)
+      _ = try? await persistence.releaseAutomaticOutboxClaim(token: claimToken)
+      await leaveOperationGate()
       throw error
     }
   }
@@ -8714,7 +9022,6 @@ public final class InstantRuntime: Sendable {
       for _ in 0..<5 {
         let state = try await loadStateWithDurableOutboxSynchronizingStore()
         guard let update = InstantOutbox.confirming(id: id, in: state.snapshot.outbox) else {
-          await outbox.replace(with: state.snapshot.outbox)
           throw outboxMutationNotFound(id: id)
         }
         let didSave = try await persistence.saveOutbox(
@@ -8723,7 +9030,7 @@ public final class InstantRuntime: Sendable {
           expectedOutboxRevision: state.outboxRevision
         )
         if didSave {
-          await outbox.replace(with: update.mutations)
+          await outbox.remove(id: update.mutation.id)
           _ = try? await publishConnectionStatusWithGateHeld()
           await publishMutationLifecycle(update.mutation)
           await operationGate.leave()
@@ -8813,7 +9120,6 @@ public final class InstantRuntime: Sendable {
       if loaded.source == .sqlite {
         recordActorHop(.store)
         await store.replaceSnapshot(loaded.state.snapshot.store)
-        return loaded.state
       }
       guard let outbox = try await persistence.loadOutboxMutations(
         statuses: [.pending, .confirmed, .failed],
@@ -8843,7 +9149,48 @@ public final class InstantRuntime: Sendable {
     failure: InstantMutationFailure,
     recordsConnectionFailure: Bool = true
   ) async throws -> PendingMutation {
+    guard let mutation = try await performFailMutationWithGateHeld(
+      id: id,
+      failure: failure,
+      recordsConnectionFailure: recordsConnectionFailure,
+      requiredClaimToken: nil
+    ) else {
+      throw outboxMutationNotFound(id: id)
+    }
+    return mutation
+  }
+
+  /// Applies a transport rejection only while the exact durable claim remains
+  /// owned by this response. The token predicate participates in the same
+  /// SQLite transaction as the revision CAS and store/outbox rewrite, so a
+  /// late result cannot fail a row that another runtime reclaimed.
+  private func performClaimedFailMutationWithGateHeld(
+    id: String,
+    failure: InstantMutationFailure,
+    requiredClaimToken: String
+  ) async throws -> PendingMutation? {
+    try await performFailMutationWithGateHeld(
+      id: id,
+      failure: failure,
+      recordsConnectionFailure: true,
+      requiredClaimToken: requiredClaimToken
+    )
+  }
+
+  private func performFailMutationWithGateHeld(
+    id: String,
+    failure: InstantMutationFailure,
+    recordsConnectionFailure: Bool,
+    requiredClaimToken: String?
+  ) async throws -> PendingMutation? {
     for _ in 0..<5 {
+      if let requiredClaimToken {
+        recordActorHop(.persistence)
+        guard try await persistence.outboxClaimMatches(
+          id: id,
+          token: requiredClaimToken
+        ) else { return nil }
+      }
       let state = try await loadStateWithDurableOutboxSynchronizingStore()
       guard let original = state.snapshot.outbox.first(where: { $0.id == id }),
         let update = InstantOutbox.failing(
@@ -8852,6 +9199,7 @@ public final class InstantRuntime: Sendable {
           in: state.snapshot.outbox
         )
       else {
+        if requiredClaimToken != nil { return nil }
         await outbox.replace(with: state.snapshot.outbox)
         throw outboxMutationNotFound(id: id)
       }
@@ -8885,6 +9233,8 @@ public final class InstantRuntime: Sendable {
         nextSnapshot,
         replacing: InstantPersistenceSnapshot(store: storeSnapshot, outbox: state.snapshot.outbox),
         metadataEntries: metadataEntries,
+        requiredOutboxClaimMutationID: requiredClaimToken == nil ? nil : id,
+        requiredOutboxClaimToken: requiredClaimToken,
         expectedStoreRevision: state.storeRevision,
         expectedOutboxRevision: state.outboxRevision
       )
@@ -8896,6 +9246,13 @@ public final class InstantRuntime: Sendable {
         _ = try? await publishConnectionStatusWithGateHeld()
         await publishMutationLifecycle(removal.failedMutation)
         return removal.failedMutation
+      }
+      if let requiredClaimToken {
+        recordActorHop(.persistence)
+        guard try await persistence.outboxClaimMatches(
+          id: id,
+          token: requiredClaimToken
+        ) else { return nil }
       }
     }
 
@@ -9491,15 +9848,6 @@ public final class InstantRuntime: Sendable {
       operation: "drain outbox",
       message: "The local outbox changed repeatedly while draining pending mutations.",
       recovery: "Retry the drain after inspecting the current outbox."
-    )
-  }
-
-  private func outboxChangedDuringFlush() -> InstantError {
-    InstantError(
-      code: .persistenceFailed,
-      operation: "flush outbox",
-      message: "The local outbox changed repeatedly while applying transport results.",
-      recovery: "Retry the flush after inspecting the current outbox."
     )
   }
 

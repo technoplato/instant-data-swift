@@ -1313,13 +1313,24 @@ public struct InstantSwiftDataClient: Sendable {
     )
     while true {
       try Task.checkCancellation()
-      let mutations =
-        if let runtime {
-          await runtime.mutationDeliveryBarrierMutations()
-        } else {
-          await pendingMutations()
+      let barrier: InstantMutationDeliveryBarrierSummary
+      if let runtime {
+        barrier = try await runtime.mutationDeliveryBarrierSummary()
+      } else {
+        let mutations = await pendingMutations()
+        let outstanding = mutations.filter { mutation in
+          mutation.status == .pending
+            || (mutation.status == .confirmed && !mutation.provesServerAcceptance)
         }
-      if let failed = mutations.first(where: { $0.status == .failed }) {
+        barrier = InstantMutationDeliveryBarrierSummary(
+          outstandingMutationCount: outstanding.count,
+          firstOutstandingMutationID: outstanding.first?.id,
+          firstOutstandingIsLocalOnlyConfirmation: outstanding.first?.status == .confirmed,
+          sampleOutstandingMutationIDs: outstanding.prefix(8).map(\.id),
+          firstFailedMutation: mutations.first(where: { $0.status == .failed })
+        )
+      }
+      if let failed = barrier.firstFailedMutation {
         InstantDiagnostics.shared.record(
           .error,
           subsystem: "instant-swift-data",
@@ -1329,12 +1340,7 @@ public struct InstantSwiftDataClient: Sendable {
           metadata: [
             "mutationID": failed.id,
             "failureMessage": failed.failureMessage ?? "",
-            "pendingCount": String(
-              mutations.filter {
-                $0.status == .pending
-                  || ($0.status == .confirmed && !$0.provesServerAcceptance)
-              }.count
-            ),
+            "pendingCount": String(barrier.outstandingMutationCount),
           ],
           correlationID: failed.id
         )
@@ -1343,11 +1349,7 @@ public struct InstantSwiftDataClient: Sendable {
           recovery: "Inspect the failed outbox mutation before retrying or discarding it."
         )
       }
-      let outstanding = mutations.filter { mutation in
-        mutation.status == .pending
-          || (mutation.status == .confirmed && !mutation.provesServerAcceptance)
-      }
-      guard !outstanding.isEmpty else {
+      guard barrier.outstandingMutationCount > 0 else {
         InstantDiagnostics.shared.record(
           .info,
           subsystem: "instant-swift-data",
@@ -1369,7 +1371,7 @@ public struct InstantSwiftDataClient: Sendable {
           operation: "wait for pending mutations",
           message:
             status.lastErrorMessage
-            ?? "The live Instant connection failed with \(outstanding.count) unacknowledged mutation(s).",
+            ?? "The live Instant connection failed with \(barrier.outstandingMutationCount) unacknowledged mutation(s).",
           recovery: "Reconnect and retry after inspecting the live transport error."
         )
       case .connecting:
@@ -1379,18 +1381,16 @@ public struct InstantSwiftDataClient: Sendable {
       }
 
       guard clock.now < deadline else {
-        let localOnlyConfirmation = outstanding.first { mutation in
-          mutation.status == .confirmed && !mutation.provesServerAcceptance
-        }
         let message: String
-        if let localOnlyConfirmation {
+        if barrier.firstOutstandingIsLocalOnlyConfirmation,
+          let mutationID = barrier.firstOutstandingMutationID
+        {
           message =
-            "Mutation '\(localOnlyConfirmation.id)' was confirmed only by "
-            + "\(localOnlyConfirmation.confirmationSource?.rawValue ?? "an unknown local source"), "
+            "Mutation '\(mutationID)' was confirmed only by a local source, "
             + "not by the Instant server before the delivery timeout."
         } else {
           message =
-            "Timed out waiting for \(outstanding.count) mutation(s) to be acknowledged by Instant."
+            "Timed out waiting for \(barrier.outstandingMutationCount) mutation(s) to be acknowledged by Instant."
         }
         InstantDiagnostics.shared.record(
           .error,
@@ -1399,17 +1399,19 @@ public struct InstantSwiftDataClient: Sendable {
           event: "outbox.wait-all.timeout",
           message: message,
           metadata: [
-            "outstandingCount": String(outstanding.count),
+            "outstandingCount": String(barrier.outstandingMutationCount),
             "connectionState": status.state.rawValue,
             "pendingMutationCount": String(status.pendingMutationCount),
-            "sampleMutationIDs": outstanding.prefix(8).map(\.id).joined(separator: ","),
+            "sampleMutationIDs": barrier.sampleOutstandingMutationIDs.joined(separator: ","),
             "timeout": String(describing: timeout),
           ]
         )
         throw InstantError(
           code: .networkFailed,
           operation: "wait for pending mutations",
-          localID: localOnlyConfirmation?.id,
+          localID: barrier.firstOutstandingIsLocalOnlyConfirmation
+            ? barrier.firstOutstandingMutationID
+            : nil,
           message: message,
           recovery: "Keep the process alive longer or inspect the live Instant connection."
         )

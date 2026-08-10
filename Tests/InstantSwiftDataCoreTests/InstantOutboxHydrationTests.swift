@@ -290,13 +290,12 @@ struct InstantOutboxHydrationTests {
       liveReactorInitOK(attrs: liveReactorTodoServerAttrs, sessionID: "permission-timeout-second")
     ])
     let transport = LiveReactorParityTransport(sessions: [firstSession, secondSession])
-    var configuration = InstantRuntimeConfiguration(
+    let configuration = InstantRuntimeConfiguration(
       appID: "mutation-permission-service-unavailable",
       persistenceURL: try temporaryOutboxHydrationCacheURL(),
       initialAttributes: TodoExample.attributes,
       liveTransport: transport.transport
     )
-    configuration.liveReconnectSleep = { _ in }
     let runtime = try await InstantRuntime.bootstrap(configuration: configuration)
     _ = try await runtime.connect()
 
@@ -507,23 +506,23 @@ struct InstantOutboxHydrationTests {
 
     try await runtime.transact(transaction, createdAt: now)
 
-    let residentPending = try #require(
-      await runtime.mutationDeliveryBarrierMutations().first { $0.id == transaction.id }
+    let residentPending = await runtime.mutationDeliveryBarrierMutations()
+    expectNoDifference(
+      residentPending,
+      [],
+      "Ordinary enqueue leaves SQLite authoritative until a bounded delivery claim is admitted."
     )
-    expectNoDifference(residentPending.transaction.operations, [], upstreamDeliverySource)
-    #expect(residentPending.rollbackTransaction?.operations.isEmpty == true)
     let hydratedPending = try #require(
       await runtime.pendingMutations().first { $0.id == transaction.id }
     )
     expectNoDifference(hydratedPending.transaction, transaction, upstreamDeliverySource)
     #expect(hydratedPending.rollbackTransaction?.operations.isEmpty == false)
-    let compactPersistence = try #require(
-      try await runtime.persistence.loadCompactState().snapshot.outbox.first {
-        $0.id == transaction.id
-      }
+    let compactPersistence = try await runtime.persistence.loadCompactState().snapshot.outbox
+    expectNoDifference(
+      compactPersistence,
+      [],
+      "Cold/compact state keeps no queue-depth-proportional lifecycle shell array."
     )
-    expectNoDifference(compactPersistence.transaction.operations, [], upstreamDeliverySource)
-    #expect(compactPersistence.rollbackTransaction?.operations.isEmpty == true)
     let inspectedPending = try #require(
       await runtime.outboxMutations().first { $0.id == transaction.id }
     )
@@ -531,12 +530,12 @@ struct InstantOutboxHydrationTests {
 
     _ = try await runtime.confirmMutation(id: transaction.id)
 
-    let residentConfirmed = try #require(
-      await runtime.mutationDeliveryBarrierMutations().first { $0.id == transaction.id }
+    let residentConfirmed = await runtime.mutationDeliveryBarrierMutations()
+    expectNoDifference(
+      residentConfirmed,
+      [],
+      "Manual confirmation stays durable and deliverable without repopulating resident queue shells."
     )
-    expectNoDifference(residentConfirmed.status, .confirmed, upstreamDeliverySource)
-    expectNoDifference(residentConfirmed.transaction.operations, [], upstreamDeliverySource)
-    #expect(residentConfirmed.rollbackTransaction?.operations.isEmpty == true)
     let durableConfirmed = try #require(
       try await runtime.persistence.loadState().snapshot.outbox.first { $0.id == transaction.id }
     )
@@ -604,11 +603,12 @@ struct InstantOutboxHydrationTests {
     expectNoDifference(status.pendingMutationCount, 9_998, upstreamDeliverySource)
     let decodeCountAfterStatusReads = await runtime.persistence.currentDecodedOutboxBodyCount()
     expectNoDifference(decodeCountAfterStatusReads, 1, upstreamDeliverySource)
-    let resident = try #require(
-      await runtime.mutationDeliveryBarrierMutations().first { $0.id == targetID }
+    let resident = await runtime.mutationDeliveryBarrierMutations()
+    expectNoDifference(
+      resident,
+      [],
+      "Server-accepted rows remain durable but leave the bounded delivery barrier actor."
     )
-    expectNoDifference(resident.status, .confirmed, upstreamDeliverySource)
-    expectNoDifference(resident.transaction.operations, [], upstreamDeliverySource)
     let revisionAfterFirstAcceptance = try await runtime.persistence.currentOutboxRevision()
 
     await runtime.persistence.resetDecodedOutboxBodyCount()
@@ -1177,7 +1177,7 @@ struct InstantOutboxHydrationTests {
     expectNoDifference(didSave, true)
     let compact = try await persistence.loadCompactState().snapshot
     expectNoDifference(compact.store.attributes, TodoExample.attributes)
-    expectNoDifference(compact.outbox.map(\.id), [transaction.id])
+    expectNoDifference(compact.outbox, [])
     let full = try await persistence.loadState().snapshot
     expectNoDifference(Set(full.store.triples), Set(triples))
     expectNoDifference(full.outbox.first?.transaction, transaction)

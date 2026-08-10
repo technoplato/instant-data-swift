@@ -84,6 +84,50 @@ struct MutationDeliveryTests {
     }
   }
 
+  @Test
+  func runtimeWaitReadsDurableOutboxWhenResidentClaimCacheIsEmpty() async throws {
+    let cacheURL = FileManager.default.temporaryDirectory.appendingPathComponent(
+      "instant-wait-durable-outbox-\(UUID().uuidString).sqlite"
+    )
+    var configuration = InstantRuntimeConfiguration(
+      appID: "instant-wait-durable-outbox",
+      persistenceURL: cacheURL,
+      initialAttributes: TodoExample.attributes
+    )
+    configuration.autoConnectLiveTransport = false
+    let runtime = try await InstantRuntime.bootstrap(configuration: configuration)
+    let client = InstantSwiftDataClient(runtime: runtime)
+    let transaction = InstantStoreTransaction(
+      id: "tx-wait-durable-outbox",
+      operations: [
+        .insert(
+          InstantTriple(
+            entityID: "todo-wait-durable-outbox",
+            attributeID: "todos/text",
+            value: .string("wait for durable delivery"),
+            txID: "tx-wait-durable-outbox",
+            txTime: InstantTimestamp(milliseconds: 1)
+          )
+        )
+      ]
+    )
+    _ = try await runtime.transact(
+      transaction,
+      createdAt: InstantTimestamp(milliseconds: 1)
+    )
+
+    await #expect(throws: InstantError.self) {
+      try await client.waitForAllPendingMutations(
+        timeout: .zero,
+        pollInterval: .zero
+      )
+    }
+    let residentBarrier = await runtime.mutationDeliveryBarrierMutations()
+    let durablePendingCount = await runtime.pendingMutationCount()
+    expectNoDifference(residentBarrier, [])
+    expectNoDifference(durablePendingCount, 1)
+  }
+
   private static let pendingMutation = PendingMutation(
     id: "tx-pending-delivery",
     createdAt: InstantTimestamp(milliseconds: 1_700_000_000_000),
