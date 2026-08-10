@@ -1,3 +1,9 @@
+## 2026-08-10 10:40:27 EDT
+
+- **repo:** instant-data-swift
+- **commit:** `9a802149c790f6d0b24668624d8c01c39d1e84c5`
+- **reason:** Bound high-churn same-entity outbox mutation bodies by atomically replacing only the exact never-offered scalar-assignment tail, while preserving causal barriers, direct rollback, immutable transaction-ID lifecycle observation, and loud bounded corruption handling (#044, #155, #190).
+
 ## 2026-08-10 03:35:45 EDT
 
 - **repo:** instant-data-swift

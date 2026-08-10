@@ -10,6 +10,26 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## August 10th, 2026 at 10:40:45 a.m. EDT — `9a802149c790` Bound same-entity outbox growth safely
+
+- **Implementation commit:** `9a802149c790f6d0b24668624d8c01c39d1e84c5`
+- **Change:** Bound high-churn same-entity outbox bodies with safe immediate-tail supersession
+- **Details:**
+  - Replace only the exact never-claimed, never-offered durable tail when predecessor and newcomer are complete identical scalar assignment shapes.
+  - Preserve direct rollback to the authoritative baseline, immutable transaction-id lifecycle aliases, strict causal barriers, and atomic claim-race checks.
+  - Reject ineligible shapes before tail hydration and quarantine corrupt or stale-size tails within fixed body limits.
+  - Verify 98 related tests, including 10,000-write restart, delivery, rollback, alias, corruption, claim-race, bounded-delivery, hydration, and acknowledgement regressions.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — Admit supersession only after revision-qualified local preparation and publish the stable lifecycle.
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — Atomically replace the exact eligible tail and retain row-addressed lifecycle and quarantine evidence.
+  - `Sources/InstantSwiftDataCore/OutboxSameEntitySupersession.swift` — Define the conservative exact scalar assignment classifier.
+  - `Tests/InstantSwiftDataCoreTests/InstantOutboxSupersessionIntegrationTests.swift` — Prove 10,000-write, restart, rollback, alias, corruption, and race behavior.
+  - `docs/adr/0015-sqlite-data-parity-ergonomics/follow-on-outbox-same-entity-supersession.md` — Record the shipped invariant, barriers, lifecycle cost, and upstream divergence.
+  - `skills/instant-data/SKILL.md` — Teach the exact safe library boundary and its durable-metadata limitation.
+- **User context (verbatim):**
+  > fix the fundamental sissues, don't paperclip over.
+- **SpecStory:** unavailable — Unavailable: Codex desktop task was not proven captured by SpecStory.
+
 ## August 10th, 2026 at 3:36:02 a.m. EDT — `96db9b3e52de` Bound automatic outbox delivery memory
 
 - **Implementation commit:** `96db9b3e52de20ef70e170f6d75b267b9bf558d1`
