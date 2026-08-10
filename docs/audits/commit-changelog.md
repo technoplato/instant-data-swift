@@ -1,3 +1,9 @@
+## 2026-08-09 20:20:36 EDT
+
+- **repo:** realtime-voice-sqlite-instant (Scribe)
+- **commit:** `3c475f93e5cde8dd6acfed882940751d06e3c66f`
+- **reason:** Record the corrected-Instant build 10 physical-iPad memory and live-sync failure with exact host footprint, outbox/acknowledgement churn, partial relation-fix success, limitations, and next repair (#044, #187).
+
 ## 2026-08-09 19:56:10 EDT
 
 - **repo:** realtime-voice-sqlite-instant (Scribe)
