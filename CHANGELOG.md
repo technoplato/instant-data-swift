@@ -10,6 +10,27 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## August 10th, 2026 at 3:36:02 a.m. EDT — `96db9b3e52de` Bound automatic outbox delivery memory
+
+- **Implementation commit:** `96db9b3e52de20ef70e170f6d75b267b9bf558d1`
+- **Change:** Bound automatic outbox delivery memory
+- **Details:**
+  - Made SQLite the single automatic-delivery admission authority with durable 50-mutation, 256-step, 8 MiB claims, five-second self-waking leases, row-addressed acknowledgement and explicit disposition, bounded startup and resident state, and raw-preserving loud quarantine.
+  - Rejected new over-limit writes before local materialization, retained strict queue order across runtimes, preserved public inspection and wait semantics, and removed queue-depth-dependent body hydration from the normal delivery path.
+  - Verified 36 bounded-outbox tests plus 38 outbox hydration, stall, acceptance, and delivery tests; known quarantine/timeout issue reports remained intentional.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/BoundedOutboxDelivery.swift` — Defines hard automatic claim limits and safe wire projection.
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — Owns atomic claims, normalized metadata, row-addressed lifecycle transitions, quarantine, and body-free summaries.
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — Drives durable claims, five-second wakeups, retry release, and bounded resident barriers.
+  - `Sources/InstantSwiftData/InstantSwiftData.swift` — Uses durable body-free mutation summaries for public waits.
+  - `Tests/InstantSwiftDataCoreTests/InstantBoundedOutboxDeliveryTests.swift` — Covers cold and same-process 10k queues, cross-runtime order, hard budgets, corrupt rows, timeouts, and explicit disposition.
+  - `Tests/InstantSwiftDataCoreTests/InstantOutboxHydrationTests.swift` — Locks full public state loading and row-addressed acceptance behavior.
+  - `Tests/InstantSwiftDataCoreTests/InstantLiveTransportTests.swift` — Preserves live transport semantics under bounded admission.
+  - `Tests/InstantSwiftDataTests/MutationDeliveryTests.swift` — Verifies public delivery waits read durable SQLite state.
+- **User context (verbatim):**
+  > actually solve the memory problem, don't keep squaking about what you're doing to solve it.
+- **SpecStory:** unavailable — Unavailable: this work ran in Codex desktop and no verified SpecStory desktop capture URI exists.
+
 ## August 9th, 2026 at 11:27:29 p.m. EDT — `beffc9b4c98c` Bound WebSocket acceptance to one outbox row
 
 - **Implementation commit:** `beffc9b4c98c24eda1f0bea24b8a60b35c29d3d7`

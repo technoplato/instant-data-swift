@@ -1,3 +1,9 @@
+## 2026-08-10 03:35:45 EDT
+
+- **repo:** instant-data-swift
+- **commit:** `96db9b3e52de20ef70e170f6d75b267b9bf558d1`
+- **reason:** Make SQLite the bounded automatic-outbox authority with durable 50-mutation, 256-step, and 8 MiB claims; row-address acknowledgements and explicit disposition; five-second self-waking retry; body-free startup and public waits; cross-runtime ordering; and raw-preserving loud quarantine, verified against 10,000-row queues (#044, #155, #168).
+
 ## 2026-08-09 23:27:35 EDT
 
 - **repo:** instant-data-swift
