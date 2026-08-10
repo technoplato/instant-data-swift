@@ -92,7 +92,7 @@ Keep these responsibilities in the library:
 - acknowledgement, rollback, retry, and rejection isolation;
 - observation replacement and cancellation;
 - entity sync status on fetch (ADR 0014/0015);
-- same-entity outbox supersession for high-frequency updates (program goal).
+- exact immediate-tail assignment supersession for high-frequency updates;
 
 **Anti-pattern:** app-level Instant “store” types that multi-subscribe, merge
 streams, rehydrate full domain graphs, wait on delivery, or cache last-saved
@@ -129,11 +129,14 @@ wrapper with an explicit `nil` key so it does not start a broad observation.
 - Words are **not** Instant entities: strict Codable JSON array on the segment
   (`start`, `end`, `text`). Fail loud on encode/decode drift
   (`OpenSegmentWriteRecipe.encodeWordsJSON` / `decodeWordsJSON`).
-- **Same-entity outbox supersession** (high-churn speech): pure policy
-  `OutboxSameEntitySupersession` — recipe
+- **Same-entity outbox supersession** (high-churn speech): durable enqueue may
+  replace only the one exact never-claimed, never-offered tail when predecessor
+  and newcomer are complete assignments of the same schema-known
+  cardinality-one scalar attribute set. Never scan/group the queue, cross a
+  barrier, merge partial patches, or choose by a payload revision. See
   `docs/adr/0015-sqlite-data-parity-ergonomics/follow-on-outbox-same-entity-supersession.md`.
-  Latest pending upsert for `(namespace, entityID)` wins; failed/poison/media/delete
-  not superseded. Full enqueue integration is follow-on; always outbox today.
+  Always outbox today. Full mutation bodies are bounded for an eligible chain;
+  old transaction-ID aliases are append-only, so total durable metadata is not.
 - **No stored full joined transcript text.** Generate/export by format on demand
   from segments + words JSON.
 - Prefer schema-level typed JSON + TypeScript schema generation generics where

@@ -56,7 +56,9 @@ timeline thinning, DEBUG pills):
    `open-segment-write-recipe.md` + `OpenSegmentWriteRecipe` (Core) +
    `OpenSegmentWriteRecipeEntities` (typed sketch); peel Scribe planners next
 2. No per-entity sync status on fetch (ADR 0014 proposed)
-3. No same-entity outbox supersession for high-frequency updates
+3. ~~No same-entity outbox supersession for high-frequency updates~~ → exact
+   never-offered immediate-tail assignment replacement shipped; old transaction
+   ID aliases remain append-only by contract
 4. Composite observation still easy to “do wrong” with manual multi-subscribe
 5. JSON attributes lack app-declared Codable type binding → decode/encode drift
 

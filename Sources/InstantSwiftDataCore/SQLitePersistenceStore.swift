@@ -187,10 +187,47 @@ struct InstantOutboxRowAcceptance: Sendable {
   var didChange: Bool
 }
 
+struct InstantOutboxImmediateTailLoad: Sendable {
+  var matchesRevisions: Bool
+  var mutation: PendingMutation?
+}
+
+struct InstantOutboxAliasReplayLoad: Sendable {
+  struct Alias: Sendable {
+    var currentMutationID: String
+    var isPending: Bool
+  }
+
+  var matchesRevisions: Bool
+  var alias: Alias?
+}
+
+struct InstantMutationLifecycleResolution: Sendable {
+  var observationID: String
+  var event: InstantMutationLifecycleEvent
+}
+
 private struct InstantOutboxBodyRow: Sendable {
   var mutationID: String
   var createdAtMilliseconds: Int64
   var json: String
+}
+
+private enum InstantOutboxInvalidImmediateTail: Sendable {
+  case bounded(row: InstantOutboxBodyRow, reason: String)
+  case oversized(
+    mutationID: String,
+    createdAtMilliseconds: Int64,
+    metadataByteCount: Int64,
+    actualByteCount: Int64
+  )
+
+  var mutationID: String {
+    switch self {
+    case let .bounded(row, _): row.mutationID
+    case let .oversized(mutationID, _, _, _): mutationID
+    }
+  }
 }
 
 private struct InstantOutboxDeliveryCandidateRow: Sendable {
@@ -220,10 +257,14 @@ public actor SQLitePersistenceStore {
   /// This pins acknowledgement and delivery complexity to their selected rows.
   private var decodedOutboxBodyCount = 0
   private var decodedOutboxBodyByteCount = 0
+  private var materializedOutboxBodyCount = 0
+  private var materializedOutboxBodyByteCount = 0
   private var decodedOutboxLifecycleCount = 0
   private var decodedOutboxLifecycleByteCount = 0
   private var maximumAutomaticOutboxWindowBodyCount = 0
   private var maximumAutomaticOutboxWindowBodyByteCount = 0
+  private var onInvalidImmediateSupersessionTailReadForTesting:
+    (@Sendable (_ mutationID: String) async -> Void)?
   /// A regression sentinel: row-addressed local enqueue must never reconstruct
   /// the durable queue. Public/full-state APIs increment this when they do.
   private var localMutationQueueWideReadCount = 0
@@ -231,6 +272,8 @@ public actor SQLitePersistenceStore {
   package func resetDecodedOutboxBodyCount() {
     decodedOutboxBodyCount = 0
     decodedOutboxBodyByteCount = 0
+    materializedOutboxBodyCount = 0
+    materializedOutboxBodyByteCount = 0
     decodedOutboxLifecycleCount = 0
     decodedOutboxLifecycleByteCount = 0
     maximumAutomaticOutboxWindowBodyCount = 0
@@ -243,6 +286,14 @@ public actor SQLitePersistenceStore {
 
   package func currentDecodedOutboxBodyByteCount() -> Int {
     decodedOutboxBodyByteCount
+  }
+
+  package func currentMaterializedOutboxBodyCount() -> Int {
+    materializedOutboxBodyCount
+  }
+
+  package func currentMaterializedOutboxBodyByteCount() -> Int {
+    materializedOutboxBodyByteCount
   }
 
   package func currentDecodedOutboxLifecycleCount() -> Int {
@@ -259,6 +310,12 @@ public actor SQLitePersistenceStore {
 
   package func maximumAutomaticOutboxWindowBodyByteCountForTesting() -> Int {
     maximumAutomaticOutboxWindowBodyByteCount
+  }
+
+  package func setInvalidImmediateSupersessionTailReadHookForTesting(
+    _ hook: (@Sendable (_ mutationID: String) async -> Void)?
+  ) {
+    onInvalidImmediateSupersessionTailReadForTesting = hook
   }
 
   package func outboxDeliveryStartedForTesting(id: String) throws -> Bool {
@@ -291,6 +348,40 @@ public actor SQLitePersistenceStore {
     localMutationQueueWideReadCount
   }
 
+  package func outboxLifecycleCountsForTesting() throws
+    -> (lifecycles: Int, aliases: Int)
+  {
+    (
+      lifecycles: Int(try selectInt64("SELECT COUNT(*) FROM instant_outbox_lifecycles")),
+      aliases: Int(try selectInt64("SELECT COUNT(*) FROM instant_outbox_lifecycle_aliases"))
+    )
+  }
+
+  package func maximumOutboxLifecycleAliasMetadataByteCountForTesting() throws -> Int {
+    Int(try selectInt64(
+      """
+      SELECT COALESCE(MAX(
+        length(CAST(mutation_id AS BLOB)) + length(CAST(lifecycle_id AS BLOB))
+      ), 0)
+      FROM instant_outbox_lifecycle_aliases
+      """
+    ))
+  }
+
+  package func removeMutationLifecycleMetadataForTesting(id: String) throws {
+    try transaction {
+      let lifecycleID = try lifecycleIDWithoutTransaction(for: id) ?? id
+      try execute(
+        "DELETE FROM instant_outbox_lifecycle_aliases WHERE lifecycle_id = ?",
+        [.text(lifecycleID)]
+      )
+      try execute(
+        "DELETE FROM instant_outbox_lifecycles WHERE lifecycle_id = ?",
+        [.text(lifecycleID)]
+      )
+    }
+  }
+
   func outboxDeliveryClaimForTesting(id: String) throws
     -> InstantOutboxDeliveryClaim?
   {
@@ -320,6 +411,23 @@ public actor SQLitePersistenceStore {
         : sqlite3_column_int64(statement, 3),
       deliveryStarted: sqlite3_column_int64(statement, 4) != 0
     )
+  }
+
+  package func claimOutboxMutationWithoutHydrationForTesting(
+    id: String,
+    claimantID: String,
+    claimToken: String,
+    deadlineMilliseconds: Int64
+  ) throws -> Bool {
+    try transaction {
+      try claimOutboxMutationWithoutTransaction(
+        id: id,
+        claimantID: claimantID,
+        claimToken: claimToken,
+        deadlineMilliseconds: deadlineMilliseconds
+      )
+      return sqlite3_changes(connection.raw) == 1
+    }
   }
 
   /// Drop the full triples array from the in-memory persistence cache.
@@ -995,6 +1103,38 @@ public actor SQLitePersistenceStore {
         )
       }
     }
+    try withSQLiteBusyRetry {
+      try migrate(name: "0013_outbox_supersession_lifecycle") {
+        // A lifecycle id is stable while the physical durable tail row is
+        // replaced repeatedly. Aliases are append-only and let every returned
+        // transaction id observe the one survivor after restart and pruning.
+        try execute(
+          """
+          CREATE TABLE IF NOT EXISTS instant_outbox_lifecycles (
+            lifecycle_id TEXT PRIMARY KEY NOT NULL,
+            current_mutation_id TEXT NOT NULL,
+            terminal_json TEXT
+          )
+          """
+        )
+        try execute(
+          """
+          CREATE TABLE IF NOT EXISTS instant_outbox_lifecycle_aliases (
+            mutation_id TEXT PRIMARY KEY NOT NULL,
+            lifecycle_id TEXT NOT NULL,
+            FOREIGN KEY (lifecycle_id) REFERENCES instant_outbox_lifecycles (lifecycle_id)
+              ON DELETE CASCADE
+          )
+          """
+        )
+        try execute(
+          """
+          CREATE INDEX IF NOT EXISTS instant_outbox_lifecycle_current_idx
+          ON instant_outbox_lifecycles (current_mutation_id)
+          """
+        )
+      }
+    }
     try Self.securePersistenceFiles(at: fileURL)
     InstantDiagnostics.shared.record(
       .notice,
@@ -1277,6 +1417,369 @@ public actor SQLitePersistenceStore {
         "SELECT CAST(MAX(created_at_ms) AS TEXT) FROM instant_outbox"
       ).flatMap(Int64.init).map(InstantTimestamp.init(milliseconds:))
       return (true, timestamp)
+    }
+  }
+
+  private func immediateOutboxTailIDWithoutTransaction() throws -> String? {
+    try selectScalar(
+      """
+      SELECT mutation_id
+      FROM instant_outbox
+      ORDER BY created_at_ms DESC, mutation_id DESC
+      LIMIT 1
+      """
+    )
+  }
+
+  private func isImmediateSupersessionTailEligibleWithoutTransaction(
+    id mutationID: String
+  ) throws -> Bool {
+    try selectInt64(
+      """
+      SELECT EXISTS(
+        SELECT 1 FROM instant_outbox
+        WHERE mutation_id = ? AND status = ?
+          AND optimistic_overlay_active = 1
+          AND delivery_state = ?
+          AND delivery_metadata_version = ?
+          AND encoded_body_bytes IS NOT NULL
+          AND delivery_claim_state = ?
+          AND delivery_started = 0
+      )
+      """,
+      [
+        .text(mutationID),
+        .text(InstantMutationStatus.pending.rawValue),
+        .text(InstantOutboxDeliveryState.needsDelivery.rawValue),
+        .int(Int64(InstantOutboxDeliveryMetadata.currentVersion)),
+        .text(InstantOutboxDeliveryClaimState.ready.rawValue),
+      ]
+    ) == 1
+  }
+
+  /// Loads at most the one exact durable queue tail when it remains eligible
+  /// for immediate supersession. Any other tail is an ordering barrier and is
+  /// returned as `nil` without decoding its body.
+  func loadImmediateSupersessionTail(
+    expectedStoreRevision: Int64,
+    expectedOutboxRevision: Int64
+  ) async throws -> InstantOutboxImmediateTailLoad {
+    var invalidTail: InstantOutboxInvalidImmediateTail?
+    let load = try readTransaction {
+      guard
+        try loadMetadataRevisionWithoutTransaction(Self.storeRevisionKey)
+          == expectedStoreRevision,
+        try loadMetadataRevisionWithoutTransaction(Self.outboxRevisionKey)
+          == expectedOutboxRevision
+      else {
+        return InstantOutboxImmediateTailLoad(matchesRevisions: false, mutation: nil)
+      }
+
+      var statement: OpaquePointer?
+      try prepare(
+        """
+        SELECT mutation_id, status, optimistic_overlay_active,
+               delivery_claim_state, delivery_started, delivery_state,
+               delivery_metadata_version, encoded_body_bytes,
+               created_at_ms, length(CAST(json AS BLOB))
+        FROM instant_outbox
+        ORDER BY created_at_ms DESC, mutation_id DESC
+        LIMIT 1
+        """,
+        statement: &statement
+      )
+      defer { sqlite3_finalize(statement) }
+      let code = sqlite3_step(statement)
+      if code == SQLITE_DONE {
+        return InstantOutboxImmediateTailLoad(matchesRevisions: true, mutation: nil)
+      }
+      guard code == SQLITE_ROW,
+        let mutationIDBytes = sqlite3_column_text(statement, 0),
+        let statusBytes = sqlite3_column_text(statement, 1),
+        let claimStateBytes = sqlite3_column_text(statement, 3)
+      else {
+        throw persistenceError(
+          operation: "read immediate supersession tail",
+          message: lastErrorMessage()
+        )
+      }
+      let mutationID = String(cString: mutationIDBytes)
+      let status = String(cString: statusBytes)
+      let claimState = String(cString: claimStateBytes)
+      let deliveryState = sqlite3_column_text(statement, 5).map(String.init(cString:))
+      guard status == InstantMutationStatus.pending.rawValue,
+        sqlite3_column_int64(statement, 2) != 0,
+        claimState == InstantOutboxDeliveryClaimState.ready.rawValue,
+        sqlite3_column_int64(statement, 4) == 0,
+        deliveryState == InstantOutboxDeliveryState.needsDelivery.rawValue,
+        sqlite3_column_int64(statement, 6)
+          == Int64(InstantOutboxDeliveryMetadata.currentVersion),
+        sqlite3_column_type(statement, 7) != SQLITE_NULL,
+        sqlite3_column_type(statement, 9) != SQLITE_NULL
+      else {
+        return InstantOutboxImmediateTailLoad(matchesRevisions: true, mutation: nil)
+      }
+
+      let metadataByteCount = sqlite3_column_int64(statement, 7)
+      let createdAtMilliseconds = sqlite3_column_int64(statement, 8)
+      let actualByteCount = sqlite3_column_int64(statement, 9)
+      let maximumByteCount = Int64(
+        InstantAutomaticOutboxClaimLimits.maximumEncodedBodyBytes
+      )
+      if actualByteCount > maximumByteCount,
+        metadataByteCount >= 0,
+        metadataByteCount == actualByteCount
+      {
+        // A consistently normalized oversized row is a durable ordering
+        // barrier. Delivery owns its existing SQLite-only quarantine policy;
+        // enqueue neither materializes nor mutates it.
+        return InstantOutboxImmediateTailLoad(matchesRevisions: true, mutation: nil)
+      }
+      if actualByteCount < 0 || actualByteCount > maximumByteCount {
+        invalidTail = .oversized(
+          mutationID: mutationID,
+          createdAtMilliseconds: createdAtMilliseconds,
+          metadataByteCount: metadataByteCount,
+          actualByteCount: actualByteCount
+        )
+        return InstantOutboxImmediateTailLoad(matchesRevisions: false, mutation: nil)
+      }
+
+      guard let row = try loadOutboxBodyRowWithoutTransaction(id: mutationID) else {
+        return InstantOutboxImmediateTailLoad(matchesRevisions: false, mutation: nil)
+      }
+      guard metadataByteCount >= 0,
+        metadataByteCount == actualByteCount,
+        row.json.utf8.count == Int(actualByteCount)
+      else {
+        invalidTail = .bounded(
+          row: row,
+          reason:
+            "The normalized encoded_body_bytes value (\(metadataByteCount)) did not match the bounded SQLite body length (\(actualByteCount))."
+        )
+        return InstantOutboxImmediateTailLoad(matchesRevisions: false, mutation: nil)
+      }
+
+      decodedOutboxBodyCount += 1
+      decodedOutboxBodyByteCount += row.json.utf8.count
+      do {
+        let mutation: PendingMutation = try decodeOutboxBody(row.json)
+        guard mutation.id == mutationID,
+          mutation.status == .pending,
+          mutation.optimisticOverlayState == .applied,
+          mutation.rollbackTransaction != nil
+        else {
+          throw persistenceError(
+            operation: "validate immediate supersession tail",
+            message:
+              "The normalized durable body disagreed with its pending, active-overlay SQLite row."
+          )
+        }
+        return InstantOutboxImmediateTailLoad(matchesRevisions: true, mutation: mutation)
+      } catch {
+        invalidTail = .bounded(
+          row: row,
+          reason: "The immediate supersession tail could not be decoded and validated: \(error)"
+        )
+        return InstantOutboxImmediateTailLoad(matchesRevisions: false, mutation: nil)
+      }
+    }
+    guard let invalidTail else { return load }
+
+    await onInvalidImmediateSupersessionTailReadForTesting?(invalidTail.mutationID)
+
+    let didQuarantine = try transaction {
+      guard
+        try loadMetadataRevisionWithoutTransaction(Self.storeRevisionKey)
+          == expectedStoreRevision,
+        try loadMetadataRevisionWithoutTransaction(Self.outboxRevisionKey)
+          == expectedOutboxRevision,
+        try immediateOutboxTailIDWithoutTransaction() == invalidTail.mutationID,
+        try isImmediateSupersessionTailEligibleWithoutTransaction(
+          id: invalidTail.mutationID
+        )
+      else { return false }
+
+      switch invalidTail {
+      case let .bounded(row, reason):
+        guard
+          try selectScalar(
+            "SELECT json FROM instant_outbox WHERE mutation_id = ? LIMIT 1",
+            [.text(row.mutationID)]
+          ) == row.json
+        else { return false }
+        _ = try quarantineInvalidOutboxMutationWithoutTransaction(row, reason: reason)
+
+      case let .oversized(
+        mutationID,
+        createdAtMilliseconds,
+        metadataByteCount,
+        actualByteCount
+      ):
+        guard actualByteCount >= 0,
+          try selectInt64(
+            """
+            SELECT EXISTS(
+              SELECT 1 FROM instant_outbox
+              WHERE mutation_id = ? AND created_at_ms = ?
+                AND encoded_body_bytes = ?
+                AND length(CAST(json AS BLOB)) = ?
+            )
+            """,
+            [
+              .text(mutationID),
+              .int(createdAtMilliseconds),
+              .int(metadataByteCount),
+              .int(actualByteCount),
+            ]
+          ) == 1
+        else { return false }
+        _ = try quarantineOversizedOutboxMutationWithoutTransaction(
+          id: mutationID,
+          createdAtMilliseconds: createdAtMilliseconds,
+          encodedBodyByteCount: Int(actualByteCount),
+          maximumEncodedBodyByteCount:
+            InstantAutomaticOutboxClaimLimits.maximumEncodedBodyBytes
+        )
+      }
+      _ = try bumpMetadataRevisionWithoutTransaction(Self.outboxRevisionKey)
+      return true
+    }
+    if didQuarantine {
+      cachedState = nil
+    }
+    // A quarantine changes the outbox revision; a lost race also invalidates
+    // this caller's revision pair. In both cases the runtime must reload before
+    // preparing the new local mutation.
+    return InstantOutboxImmediateTailLoad(matchesRevisions: false, mutation: nil)
+  }
+
+  /// Resolves a transaction id that no longer has a physical outbox row.
+  /// Supersession aliases remain idempotence keys, so callers must consult
+  /// this row-addressed lookup before admitting a same-id mutation as new.
+  func loadOutboxAliasReplay(
+    id mutationID: String,
+    expectedStoreRevision: Int64,
+    expectedOutboxRevision: Int64
+  ) throws -> InstantOutboxAliasReplayLoad {
+    try readTransaction {
+      guard
+        try loadMetadataRevisionWithoutTransaction(Self.storeRevisionKey)
+          == expectedStoreRevision,
+        try loadMetadataRevisionWithoutTransaction(Self.outboxRevisionKey)
+          == expectedOutboxRevision
+      else {
+        return InstantOutboxAliasReplayLoad(matchesRevisions: false, alias: nil)
+      }
+
+      var statement: OpaquePointer?
+      try prepare(
+        """
+        SELECT lifecycles.current_mutation_id,
+               lifecycles.terminal_json IS NOT NULL,
+               current.status
+        FROM instant_outbox_lifecycle_aliases AS aliases
+        JOIN instant_outbox_lifecycles AS lifecycles
+          ON lifecycles.lifecycle_id = aliases.lifecycle_id
+        LEFT JOIN instant_outbox AS current
+          ON current.mutation_id = lifecycles.current_mutation_id
+        WHERE aliases.mutation_id = ?
+        LIMIT 1
+        """,
+        statement: &statement
+      )
+      defer { sqlite3_finalize(statement) }
+      try bind([.text(mutationID)], to: statement)
+      let code = sqlite3_step(statement)
+      if code == SQLITE_DONE {
+        return InstantOutboxAliasReplayLoad(matchesRevisions: true, alias: nil)
+      }
+      guard code == SQLITE_ROW,
+        let currentMutationIDBytes = sqlite3_column_text(statement, 0)
+      else {
+        throw persistenceError(
+          operation: "resolve superseded transaction id",
+          message: lastErrorMessage()
+        )
+      }
+      let isTerminal = sqlite3_column_int64(statement, 1) != 0
+      let currentStatus = sqlite3_column_text(statement, 2).map(String.init(cString:))
+      return InstantOutboxAliasReplayLoad(
+        matchesRevisions: true,
+        alias: InstantOutboxAliasReplayLoad.Alias(
+          currentMutationID: String(cString: currentMutationIDBytes),
+          isPending: !isTerminal && currentStatus == InstantMutationStatus.pending.rawValue
+        )
+      )
+    }
+  }
+
+  /// Returns the observer key for a terminal event only while that event
+  /// belongs to the current physical survivor. A delayed event for any
+  /// superseded alias returns `nil` and must not wake the survivor's observers.
+  func mutationLifecyclePublicationIdentity(for mutationID: String) throws -> String? {
+    try readTransaction {
+      guard let lifecycleID = try lifecycleIDWithoutTransaction(for: mutationID) else {
+        return mutationID
+      }
+      let currentMutationID = try currentMutationIDWithoutTransaction(
+        lifecycleID: lifecycleID
+      )
+      return currentMutationID == mutationID ? lifecycleID : nil
+    }
+  }
+
+  func resolveMutationLifecycle(
+    id mutationID: String
+  ) throws -> InstantMutationLifecycleResolution {
+    try readTransaction {
+      let lifecycleID = try lifecycleIDWithoutTransaction(for: mutationID) ?? mutationID
+      var currentMutationID = mutationID
+      var terminalJSON: String?
+      var statement: OpaquePointer?
+      try prepare(
+        """
+        SELECT current_mutation_id, terminal_json
+        FROM instant_outbox_lifecycles
+        WHERE lifecycle_id = ?
+        LIMIT 1
+        """,
+        statement: &statement
+      )
+      defer { sqlite3_finalize(statement) }
+      try bind([.text(lifecycleID)], to: statement)
+      if sqlite3_step(statement) == SQLITE_ROW {
+        if let currentBytes = sqlite3_column_text(statement, 0) {
+          currentMutationID = String(cString: currentBytes)
+        }
+        terminalJSON = sqlite3_column_text(statement, 1).map(String.init(cString:))
+      }
+
+      if let terminalJSON {
+        decodedOutboxLifecycleCount += 1
+        decodedOutboxLifecycleByteCount += terminalJSON.utf8.count
+        let mutation: PendingMutation = try decodeOutboxBody(terminalJSON)
+        if let event = lifecycleEvent(for: mutation) {
+          return InstantMutationLifecycleResolution(
+            observationID: lifecycleID,
+            event: event
+          )
+        }
+      }
+
+      guard let row = try loadOutboxBodyRowWithoutTransaction(id: currentMutationID) else {
+        return InstantMutationLifecycleResolution(
+          observationID: lifecycleID,
+          event: .waiting
+        )
+      }
+      decodedOutboxBodyCount += 1
+      decodedOutboxBodyByteCount += row.json.utf8.count
+      let mutation: PendingMutation = try decodeOutboxBody(row.json)
+      return InstantMutationLifecycleResolution(
+        observationID: lifecycleID,
+        event: lifecycleEvent(for: mutation) ?? .waiting
+      )
     }
   }
 
@@ -1579,6 +2082,7 @@ public actor SQLitePersistenceStore {
         decodedOutboxBodyCount += 1
         decodedOutboxBodyByteCount += bodyJSON.utf8.count
         let mutation: PendingMutation = try decodeOutboxBody(bodyJSON)
+        try saveMutationLifecycleWithoutTransaction(mutation)
         confirmed.append(mutation)
       }
       if !confirmed.isEmpty {
@@ -2052,6 +2556,7 @@ public actor SQLitePersistenceStore {
           ]
         )
         try replaceOutboxWriteKeysWithoutTransaction(for: mutation)
+        try saveMutationLifecycleWithoutTransaction(mutation)
         _ = try bumpMetadataRevisionWithoutTransaction(Self.outboxRevisionKey)
       }
       return InstantOutboxRowAcceptance(
@@ -3721,6 +4226,7 @@ public actor SQLitePersistenceStore {
     changedEntityTriples: [String: [InstantTriple]],
     outbox: [PendingMutation]? = nil,
     pendingMutation: PendingMutation,
+    supersedingImmediateTail: PendingMutation? = nil,
     metadataEntries: [InstantPersistenceMetadataEntry] = [],
     deletingMetadataKeys: [String] = [],
     expectedStoreRevision: Int64,
@@ -3751,6 +4257,28 @@ public actor SQLitePersistenceStore {
         return false
       }
 
+      var supersessionLifecycleID: String?
+      if let supersedingImmediateTail {
+        let supersedingImmediateTailID = supersedingImmediateTail.id
+        // Claim/offered transitions intentionally do not bump the outbox
+        // revision. Re-prove the exact physical tail and every eligibility
+        // scalar under this write transaction before replacing evidence.
+        guard
+          try immediateOutboxTailIDWithoutTransaction() == supersedingImmediateTailID,
+          try isImmediateSupersessionTailEligibleWithoutTransaction(
+            id: supersedingImmediateTailID
+          )
+        else { return false }
+        let lifecycleID =
+          try lifecycleIDWithoutTransaction(for: supersedingImmediateTailID)
+          ?? supersedingImmediateTailID
+        supersessionLifecycleID = lifecycleID
+        try execute(
+          "DELETE FROM instant_outbox WHERE mutation_id = ?",
+          [.text(supersedingImmediateTailID)]
+        )
+      }
+
       for entityID in changedEntityTriples.keys.sorted() {
         let previousTriples = try cachedChangedEntityTriples?[entityID]
           ?? selectJSON(
@@ -3762,7 +4290,17 @@ public actor SQLitePersistenceStore {
           to: changedEntityTriples[entityID, default: []]
         )
       }
-      try saveOutboxMutationWithoutTransaction(pendingMutation)
+      try saveOutboxMutationWithoutTransaction(
+        pendingMutation,
+        lifecycleID: supersessionLifecycleID,
+        advancingFromMutationID: supersedingImmediateTail?.id
+      )
+      if let supersedingImmediateTail, let supersessionLifecycleID {
+        try saveMutationLifecycleAliasWithoutTransaction(
+          mutationID: supersedingImmediateTail.id,
+          lifecycleID: supersessionLifecycleID
+        )
+      }
       for entry in metadataEntries {
         try saveMetadataValueWithoutTransaction(
           entry.value,
@@ -4582,6 +5120,7 @@ public actor SQLitePersistenceStore {
       "DELETE FROM instant_outbox_write_keys WHERE mutation_id = ?",
       [.text(row.mutationID)]
     )
+    try saveMutationLifecycleWithoutTransaction(mutation)
     InstantDiagnostics.shared.record(
       .error,
       subsystem: "instant-swift-data-core",
@@ -4652,6 +5191,7 @@ public actor SQLitePersistenceStore {
       "DELETE FROM instant_outbox_write_keys WHERE mutation_id = ?",
       [.text(id)]
     )
+    try saveMutationLifecycleWithoutTransaction(mutation)
     InstantDiagnostics.shared.record(
       .error,
       subsystem: "instant-swift-data-core",
@@ -4725,6 +5265,7 @@ public actor SQLitePersistenceStore {
       "DELETE FROM instant_outbox_write_keys WHERE mutation_id = ?",
       [.text(id)]
     )
+    try saveMutationLifecycleWithoutTransaction(mutation)
     InstantDiagnostics.shared.record(
       .error,
       subsystem: "instant-swift-data-core",
@@ -4943,11 +5484,14 @@ public actor SQLitePersistenceStore {
           message: "SQLite returned a NULL bounded-delivery column."
         )
       }
+      let body = String(cString: json)
+      materializedOutboxBodyCount += 1
+      materializedOutboxBodyByteCount += body.utf8.count
       rows.append(
         InstantOutboxBodyRow(
           mutationID: String(cString: mutationID),
           createdAtMilliseconds: sqlite3_column_int64(statement, 1),
-          json: String(cString: json)
+          json: body
         )
       )
     }
@@ -5459,7 +6003,9 @@ public actor SQLitePersistenceStore {
   }
 
   private func saveOutboxMutationWithoutTransaction(
-    _ mutation: PendingMutation
+    _ mutation: PendingMutation,
+    lifecycleID requestedLifecycleID: String? = nil,
+    advancingFromMutationID: String? = nil
   ) throws {
     let deliveryState = InstantOutboxDeliveryMetadata.state(for: mutation)
     let encodedBody = try encode(mutation)
@@ -5512,6 +6058,191 @@ public actor SQLitePersistenceStore {
       ]
     )
     try replaceOutboxWriteKeysWithoutTransaction(for: mutation)
+    try saveMutationLifecycleWithoutTransaction(
+      mutation,
+      lifecycleID: requestedLifecycleID,
+      advancingFromMutationID: advancingFromMutationID
+    )
+  }
+
+  private func lifecycleIDWithoutTransaction(
+    for mutationID: String
+  ) throws -> String? {
+    try selectScalar(
+      """
+      SELECT lifecycle_id
+      FROM instant_outbox_lifecycle_aliases
+      WHERE mutation_id = ?
+      LIMIT 1
+      """,
+      [.text(mutationID)]
+    )
+  }
+
+  private func currentMutationIDWithoutTransaction(
+    lifecycleID: String
+  ) throws -> String? {
+    try selectScalar(
+      """
+      SELECT current_mutation_id
+      FROM instant_outbox_lifecycles
+      WHERE lifecycle_id = ?
+      LIMIT 1
+      """,
+      [.text(lifecycleID)]
+    )
+  }
+
+  private func saveMutationLifecycleWithoutTransaction(
+    _ mutation: PendingMutation,
+    lifecycleID requestedLifecycleID: String? = nil,
+    advancingFromMutationID: String? = nil
+  ) throws {
+    let existingLifecycleID = try lifecycleIDWithoutTransaction(for: mutation.id)
+    // Ordinary mutations keep their existing row-addressed lifecycle behavior
+    // and do not create permanent history tables. Durable lineage exists only
+    // after an actual supersession chain starts.
+    if let advancingFromMutationID {
+      guard let lifecycleID = requestedLifecycleID,
+        mutation.id != advancingFromMutationID,
+        existingLifecycleID == nil
+      else {
+        throw persistenceError(
+          operation: "advance outbox mutation lifecycle",
+          message:
+            "A supersession newcomer must have a distinct transaction id that has never belonged to a lifecycle."
+        )
+      }
+      let terminalJSON = try terminalLifecycleJSON(for: mutation)
+
+      let currentMutationID = try currentMutationIDWithoutTransaction(
+        lifecycleID: lifecycleID
+      )
+      if let currentMutationID {
+        guard currentMutationID == advancingFromMutationID else {
+          throw persistenceError(
+            operation: "advance outbox mutation lifecycle",
+            message:
+              "Lifecycle '\(lifecycleID)' no longer names predecessor '\(advancingFromMutationID)' as its current mutation."
+          )
+        }
+        try execute(
+          """
+          UPDATE instant_outbox_lifecycles
+          SET current_mutation_id = ?, terminal_json = ?
+          WHERE lifecycle_id = ? AND current_mutation_id = ?
+          """,
+          [
+            .text(mutation.id),
+            terminalJSON.map(SQLiteBinding.text) ?? .null,
+            .text(lifecycleID),
+            .text(advancingFromMutationID),
+          ]
+        )
+        guard try selectInt64("SELECT changes()") == 1 else {
+          throw persistenceError(
+            operation: "advance outbox mutation lifecycle",
+            message: "SQLite did not advance the lifecycle from its proven predecessor."
+          )
+        }
+      } else {
+        guard lifecycleID == advancingFromMutationID else {
+          throw persistenceError(
+            operation: "create outbox mutation lifecycle",
+            message: "A new lifecycle must be rooted at the replaced predecessor id."
+          )
+        }
+        try execute(
+          """
+          INSERT INTO instant_outbox_lifecycles (
+            lifecycle_id, current_mutation_id, terminal_json
+          ) VALUES (?, ?, ?)
+          """,
+          [
+            .text(lifecycleID),
+            .text(mutation.id),
+            terminalJSON.map(SQLiteBinding.text) ?? .null,
+          ]
+        )
+      }
+      try saveMutationLifecycleAliasWithoutTransaction(
+        mutationID: mutation.id,
+        lifecycleID: lifecycleID
+      )
+      return
+    }
+
+    guard requestedLifecycleID == nil, let lifecycleID = existingLifecycleID else {
+      // Ordinary mutations do not create history. Passing a lifecycle without
+      // a proven predecessor transition is never allowed to move its survivor.
+      if requestedLifecycleID != nil {
+        throw persistenceError(
+          operation: "save outbox mutation lifecycle",
+          message: "Lifecycle advancement requires an exact predecessor id."
+        )
+      }
+      return
+    }
+    guard try currentMutationIDWithoutTransaction(lifecycleID: lifecycleID) == mutation.id
+    else {
+      throw persistenceError(
+        operation: "save outbox mutation lifecycle",
+        message:
+          "Refused to move lifecycle '\(lifecycleID)' backward through stale alias '\(mutation.id)'."
+      )
+    }
+    let terminalJSON = try terminalLifecycleJSON(for: mutation)
+    try execute(
+      """
+      UPDATE instant_outbox_lifecycles
+      SET terminal_json = ?
+      WHERE lifecycle_id = ? AND current_mutation_id = ?
+      """,
+      [
+        terminalJSON.map(SQLiteBinding.text) ?? .null,
+        .text(lifecycleID),
+        .text(mutation.id),
+      ]
+    )
+  }
+
+  private func saveMutationLifecycleAliasWithoutTransaction(
+    mutationID: String,
+    lifecycleID: String
+  ) throws {
+    try execute(
+      """
+      INSERT INTO instant_outbox_lifecycle_aliases (mutation_id, lifecycle_id)
+      VALUES (?, ?)
+      ON CONFLICT(mutation_id) DO NOTHING
+      """,
+      [.text(mutationID), .text(lifecycleID)]
+    )
+    guard try lifecycleIDWithoutTransaction(for: mutationID) == lifecycleID else {
+      throw persistenceError(
+        operation: "save outbox mutation lifecycle alias",
+        message:
+          "Transaction id '\(mutationID)' already belongs to another lifecycle and cannot be reassigned."
+      )
+    }
+  }
+
+  private func lifecycleEvent(
+    for mutation: PendingMutation
+  ) -> InstantMutationLifecycleEvent? {
+    switch mutation.status {
+    case .confirmed where mutation.provesServerAcceptance:
+      .serverAccepted(mutation)
+    case .failed:
+      .failed(mutation)
+    case .pending, .confirmed:
+      nil
+    }
+  }
+
+  private func terminalLifecycleJSON(for mutation: PendingMutation) throws -> String? {
+    guard lifecycleEvent(for: mutation) != nil else { return nil }
+    return try encode(mutation.compactedForMemory)
   }
 
   private func saveQueryCacheEntryWithoutTransaction(

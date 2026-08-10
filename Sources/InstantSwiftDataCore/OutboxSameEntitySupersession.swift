@@ -2,22 +2,18 @@ import Foundation
 
 // MARK: - ADR 0015 same-entity outbox supersession (#155)
 //
-// Pure policy for high-churn open-segment (and similar) upserts: when many
-// pending outbox mutations target the same singleton entity key with op kind
-// upsert, keep only the latest local intent.
+// Durable immediate-tail policy for high-churn open-segment assignments. The
+// enqueue path compares only the one exact physical tail with the newcomer and
+// replaces it only when both are identical schema-known scalar assignments.
 //
 // Docs:
 //   docs/adr/0015-sqlite-data-parity-ergonomics/follow-on-outbox-same-entity-supersession.md
 // Parent write shape:
 //   docs/adr/0015-sqlite-data-parity-ergonomics/open-segment-write-recipe.md
 //
-// Full InstantOutbox enqueue integration is intentional follow-on — call
-// `OutboxSameEntitySupersession.decide` from the durable enqueue path when
-// wiring (see TODO recipe entry on InstantRuntime outbox append).
-//
 // Upstream TypeScript (`Reactor.js` pushOps) appends every pending mutation and
 // rewrites attr ids; it does not coalesce same-entity upserts. Swift’s durable
-// SQLite outbox deliberately diverges for speech load (see recipe).
+// SQLite outbox deliberately diverges only for a never-offered immediate tail.
 
 // MARK: - Model
 
@@ -55,11 +51,11 @@ public enum OutboxSupersessionOpKind: String, Hashable, Codable, Sendable {
   case other
 }
 
-/// One outbox row projected for pure supersession decisions.
+/// Legacy queue-wide projection retained for source compatibility.
 ///
-/// Deliberately decoupled from `PendingMutation` so policy unit tests do not
-/// require a full store/transaction graph. Integration maps real mutations into
-/// this shape at enqueue time.
+/// Durable enqueue does not use this projection. It cannot prove exact queue
+/// adjacency, normalized operation shape, rollback composition, or whether a
+/// row was ever claimed/offered.
 public struct OutboxSupersessionCandidate: Hashable, Codable, Sendable, Identifiable {
   /// Outbox / transaction id.
   public var id: String
@@ -69,7 +65,8 @@ public struct OutboxSupersessionCandidate: Hashable, Codable, Sendable, Identifi
   public var status: InstantMutationStatus
   /// Outbox creation time (ms).
   public var createdAtMs: Int64
-  /// Payload revision (e.g. segment `updatedAtMs`). When nil, `createdAtMs` is used.
+  /// Legacy payload revision retained for decoding/source compatibility. The
+  /// durable immediate-tail policy does not use domain payload revisions.
   public var payloadRevisionMs: Int64?
   /// Already sent to server; awaiting ack — v1 does not supersede these.
   public var isInFlightToServer: Bool
@@ -96,7 +93,12 @@ public struct OutboxSupersessionCandidate: Hashable, Codable, Sendable, Identifi
     self.isPermissionPoison = isPermissionPoison
   }
 
-  /// Convenience: singleton entity upsert candidate (speech open-segment shape).
+  /// Legacy convenience projection. It does not establish supersession safety.
+  @available(
+    *,
+    deprecated,
+    message: "Queue-wide candidate projection cannot prove durable immediate-tail safety."
+  )
   public static func singletonUpsert(
     id: String,
     namespace: String,
@@ -138,114 +140,136 @@ public struct OutboxSupersessionDecision: Hashable, Codable, Sendable {
 
 // MARK: - Policy
 
-/// Pure same-entity outbox supersession (no I/O, no actor).
-///
-/// **v1 eligibility (all required):**
-/// - `status == .pending`
-/// - `opKind == .upsert`
-/// - exactly one entity key
-/// - not permission poison
-/// - not in-flight to server
-///
-/// Within each `(namespace, entityID, upsert)` group, only the latest intent
-/// (by payload revision, then createdAt, then id) is kept.
+/// Exact immediate-tail supersession plus source-compatible legacy no-ops.
 public enum OutboxSameEntitySupersession: Sendable {
-  /// Decide which candidates are superseded vs kept.
+  /// Returns whether a newcomer has the complete schema-known scalar
+  /// assignment shape required for supersession. Runtime calls this before
+  /// reading the durable tail so partial/reference writes pay no tail decode.
+  static func isEligibleImmediateTailNewcomer(
+    _ newcomer: PendingMutation,
+    attributes: [InstantAttribute]
+  ) -> Bool {
+    guard newcomer.status == .pending else { return false }
+    let attributesByID = Dictionary(
+      uniqueKeysWithValues: attributes.map { ($0.id, $0) }
+    )
+    return immediateTailShape(
+      newcomer.transaction,
+      attributesByID: attributesByID
+    ) != nil
+  }
+
+  /// Returns whether a newly prepared mutation may replace the one exact
+  /// durable outbox tail immediately before it.
   ///
-  /// Every input `id` appears in exactly one of `keptIDs` or `supersededIDs`.
-  /// Order of `keptIDs` follows intent order among survivors; `supersededIDs`
-  /// follow intent order among dropped rows.
+  /// This is deliberately pairwise. Durable enqueue owns ordering and must
+  /// never search past an intervening row: a failed, claimed, offered, delete,
+  /// precondition, lookup, reference, or unrelated tail is an ordering barrier.
+  /// Persistence separately proves that the predecessor remains the exact
+  /// pending/active/ready/never-offered tail in the save transaction.
+  static func canReplaceImmediateTail(
+    _ predecessor: PendingMutation,
+    with newcomer: PendingMutation,
+    attributes: [InstantAttribute]
+  ) -> Bool {
+    guard predecessor.status == .pending, newcomer.status == .pending else {
+      return false
+    }
+    // The physical queue is ordered by `(createdAt, id)`. Requiring strict
+    // creation order prevents an equal-time, lower-id replacement from moving
+    // ahead of an unrelated row that was previously before the tail. Reusing
+    // the predecessor id is also unsafe because a late server frame would be
+    // indistinguishable from the survivor.
+    guard predecessor.id != newcomer.id,
+      PendingMutation.creationOrder(predecessor, newcomer)
+    else { return false }
+
+    let attributesByID = Dictionary(
+      uniqueKeysWithValues: attributes.map { ($0.id, $0) }
+    )
+    guard
+      let predecessorShape = immediateTailShape(
+        predecessor.transaction,
+        attributesByID: attributesByID
+      ),
+      let newcomerShape = immediateTailShape(
+        newcomer.transaction,
+        attributesByID: attributesByID
+      ),
+      predecessorShape.entityID == newcomerShape.entityID,
+      predecessorShape.namespace == newcomerShape.namespace,
+      predecessorShape.writeTimes.keys == newcomerShape.writeTimes.keys
+    else { return false }
+
+    return predecessorShape.writeTimes.allSatisfy { attributeID, predecessorTime in
+      guard let newcomerTime = newcomerShape.writeTimes[attributeID] else { return false }
+      return newcomerTime >= predecessorTime
+    }
+  }
+
+  /// Legacy queue-wide decision retained as a conservative no-op.
+  @available(
+    *,
+    deprecated,
+    message: "Queue-wide grouping crosses durable barriers; enqueue uses exact immediate-tail assignment checks."
+  )
   public static func decide(
     entries: [OutboxSupersessionCandidate]
   ) -> OutboxSupersessionDecision {
-    guard !entries.isEmpty else {
-      return OutboxSupersessionDecision(keptIDs: [], supersededIDs: [])
-    }
-
-    let sorted = entries.sorted(by: intentOrder)
-
-    var superseded: [String] = []
-    var keptEligibleLastByGroup: [SupersessionGroupKey: String] = [:]
-    var nonEligibleKept: [String] = []
-    // Track first-pass kept order for eligible survivors (updated as group grows).
-    var eligibleSurvivorOrder: [String] = []
-    var eligibleSurvivorIndex: [String: Int] = [:]
-
-    for entry in sorted {
-      guard isEligible(entry), let groupKey = supersessionGroupKey(for: entry) else {
-        nonEligibleKept.append(entry.id)
-        continue
-      }
-
-      if let previousID = keptEligibleLastByGroup[groupKey] {
-        superseded.append(previousID)
-        if let index = eligibleSurvivorIndex[previousID] {
-          eligibleSurvivorOrder[index] = entry.id
-          eligibleSurvivorIndex[entry.id] = index
-          eligibleSurvivorIndex.removeValue(forKey: previousID)
-        } else {
-          eligibleSurvivorIndex[entry.id] = eligibleSurvivorOrder.count
-          eligibleSurvivorOrder.append(entry.id)
-        }
-        keptEligibleLastByGroup[groupKey] = entry.id
-      } else {
-        keptEligibleLastByGroup[groupKey] = entry.id
-        eligibleSurvivorIndex[entry.id] = eligibleSurvivorOrder.count
-        eligibleSurvivorOrder.append(entry.id)
-      }
-    }
-
-    // Survivors: eligible last-per-group in first-seen group order, then
-    // non-eligible in intent order. Stable, deterministic, easy to assert.
-    var kept = eligibleSurvivorOrder
-    kept.append(contentsOf: nonEligibleKept)
-
     return OutboxSupersessionDecision(
-      keptIDs: kept,
-      supersededIDs: superseded
+      keptIDs: entries.map(\.id),
+      supersededIDs: []
     )
   }
 
-  /// Apply a decision to a candidate list (filter to kept, intent-sorted).
+  /// Legacy queue-wide application retained as a conservative no-op.
+  @available(
+    *,
+    deprecated,
+    message: "Queue-wide projection is disabled; enqueue uses exact immediate-tail assignment checks."
+  )
   public static func applying(
     _ decision: OutboxSupersessionDecision,
     to entries: [OutboxSupersessionCandidate]
   ) -> [OutboxSupersessionCandidate] {
-    let kept = decision.keptIDSet
-    return entries.filter { kept.contains($0.id) }.sorted(by: intentOrder)
+    _ = decision
+    return entries
   }
 
-  /// Convenience: decide and return surviving candidates only.
+  /// Legacy queue-wide coalescing retained as a conservative no-op.
+  @available(
+    *,
+    deprecated,
+    message: "Queue-wide coalescing crosses durable barriers; enqueue uses exact immediate-tail assignment checks."
+  )
   public static func coalescing(
     entries: [OutboxSupersessionCandidate]
   ) -> [OutboxSupersessionCandidate] {
-    applying(decide(entries: entries), to: entries)
+    entries
   }
 
-  // MARK: Eligibility
-
-  /// Whether this candidate may participate in same-entity upsert supersession.
+  /// Legacy projected eligibility is disabled because it lacks durable facts.
+  @available(
+    *,
+    deprecated,
+    message: "Projected eligibility cannot prove immediate-tail assignment safety."
+  )
   public static func isEligible(_ entry: OutboxSupersessionCandidate) -> Bool {
-    guard entry.status == .pending else { return false }
-    guard entry.opKind == .upsert else { return false }
-    guard entry.entityKeys.count == 1 else { return false }
-    guard !entry.isPermissionPoison else { return false }
-    guard !entry.isInFlightToServer else { return false }
-    return true
+    _ = entry
+    return false
   }
 
-  // MARK: Ordering
-
-  /// Later local intent wins: payload revision, then createdAt, then id.
+  /// Legacy ordering now mirrors durable creation order and ignores payload
+  /// revision. It does not itself authorize replacement.
+  @available(
+    *,
+    deprecated,
+    message: "Ordering does not authorize supersession; use the durable enqueue path."
+  )
   public static func intentOrder(
     _ lhs: OutboxSupersessionCandidate,
     _ rhs: OutboxSupersessionCandidate
   ) -> Bool {
-    let leftRevision = lhs.payloadRevisionMs ?? lhs.createdAtMs
-    let rightRevision = rhs.payloadRevisionMs ?? rhs.createdAtMs
-    if leftRevision != rightRevision {
-      return leftRevision < rightRevision
-    }
     if lhs.createdAtMs != rhs.createdAtMs {
       return lhs.createdAtMs < rhs.createdAtMs
     }
@@ -254,22 +278,69 @@ public enum OutboxSameEntitySupersession: Sendable {
 
   // MARK: Private
 
-  private struct SupersessionGroupKey: Hashable, Sendable {
-    var namespace: String
+  private struct ImmediateTailShape: Sendable {
     var entityID: String
-    var opKind: OutboxSupersessionOpKind
+    var namespace: String
+    var writeTimes: [String: InstantTimestamp]
   }
 
-  private static func supersessionGroupKey(
-    for entry: OutboxSupersessionCandidate
-  ) -> SupersessionGroupKey? {
-    guard let key = entry.entityKeys.first, entry.entityKeys.count == 1 else {
-      return nil
+  private static func immediateTailShape(
+    _ transaction: InstantStoreTransaction,
+    attributesByID: [String: InstantAttribute]
+  ) -> ImmediateTailShape? {
+    guard !transaction.operations.isEmpty else { return nil }
+
+    var entityID: String?
+    var namespace: String?
+    var writeTimes: [String: InstantTimestamp] = [:]
+    var hasMatchingPrimaryKey = false
+    writeTimes.reserveCapacity(transaction.operations.count)
+
+    for operation in transaction.operations {
+      guard case let .insert(triple) = operation,
+        let attribute = attributesByID[triple.attributeID],
+        attribute.cardinality == .one,
+        attribute.valueType != .ref,
+        isConcreteScalar(triple.value),
+        writeTimes.updateValue(triple.txTime, forKey: triple.attributeID) == nil
+      else { return nil }
+
+      if let entityID {
+        guard entityID == triple.entityID else { return nil }
+      } else {
+        entityID = triple.entityID
+      }
+      if let namespace {
+        guard namespace == attribute.namespace else { return nil }
+      } else {
+        namespace = attribute.namespace
+      }
+      if attribute.primaryKey {
+        guard !hasMatchingPrimaryKey,
+          case let .string(primaryKeyValue) = triple.value,
+          primaryKeyValue == triple.entityID
+        else { return nil }
+        hasMatchingPrimaryKey = true
+      }
     }
-    return SupersessionGroupKey(
-      namespace: key.namespace,
-      entityID: key.entityID,
-      opKind: entry.opKind
+
+    guard let entityID, let namespace, hasMatchingPrimaryKey else { return nil }
+    return ImmediateTailShape(
+      entityID: entityID,
+      namespace: namespace,
+      writeTimes: writeTimes
     )
+  }
+
+  /// Instant scalar attributes include JSON values; only relationships and
+  /// lookup targets are excluded. Cardinality and schema type are checked by
+  /// `immediateTailShape` before this value-level check.
+  private static func isConcreteScalar(_ value: InstantValue) -> Bool {
+    switch value {
+    case .ref, .lookupRef:
+      false
+    case .null, .string, .number, .bool, .date, .json:
+      true
+    }
   }
 }

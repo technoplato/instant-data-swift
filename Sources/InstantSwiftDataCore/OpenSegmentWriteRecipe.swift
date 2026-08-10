@@ -10,9 +10,11 @@ import Foundation
 // Docs: docs/adr/0015-sqlite-data-parity-ergonomics/open-segment-write-recipe.md
 // Typed InstantEntityModel sketch: InstantSwiftData/OpenSegmentWriteRecipeEntities.swift
 //
-// Outbox same-entity supersession: pure policy in OutboxSameEntitySupersession
-// (recipe follow-on-outbox-same-entity-supersession.md). Full enqueue wiring is
-// still follow-on — always outbox every interim write.
+// Outbox same-entity supersession is wired at durable enqueue for only the one
+// exact never-offered tail with the same complete scalar assignment shape.
+// Establish recording/owner refs once as a relation-bearing ordering barrier;
+// only later scalar-only, identical-shape segment assignments can supersede.
+// Always outbox every interim write; barriers remain durable and ordered.
 
 // MARK: - Words (strict Codable JSON)
 
@@ -83,7 +85,10 @@ public struct OpenSegmentWriteFields: Equatable, Sendable {
 ///
 /// Product apps may use their own namespaces/attribute names; the **shape** is
 /// the contract: recording ensure once, one segment upsert, wordsJSON, owner,
-/// updatedAtMs, always outbox via `transact`.
+/// updatedAtMs, always outbox via `transact`. The compatibility builders below
+/// include relationship refs and therefore establish barriers; high-frequency
+/// supersession starts with later scalar-only assignments built by the app's
+/// typed entity mutations.
 public enum OpenSegmentWriteRecipe: Sendable {
   public static let recordingNamespace = "recipe_recordings"
   public static let segmentNamespace = "recipe_transcription_segments"
@@ -362,7 +367,13 @@ public enum OpenSegmentWriteRecipe: Sendable {
     return operations
   }
 
-  /// Upsert **only** the open segment row (identity + fields + recording/owner links).
+  /// Upsert **only** the open segment row, including its recording relation.
+  ///
+  /// This relation-bearing compatibility builder is for initial creation or
+  /// repair and is intentionally an outbox ordering barrier. Even when
+  /// `linkOwnerRef` is false, the recording ref remains. For a high-frequency
+  /// interim loop, call this once, then submit complete scalar-only assignments
+  /// with the same attribute set on every later write.
   public static func openSegmentUpsertOperations(
     segmentID: String,
     recordingID: String,
@@ -505,7 +516,9 @@ public enum OpenSegmentWriteRecipe: Sendable {
   /// Build the full open-segment write batch from a field snapshot.
   ///
   /// Encodes words strictly. Includes ensure-recording ops when
-  /// `ensureRecordingTitle` is set.
+  /// `ensureRecordingTitle` is set. This compatibility batch includes the
+  /// segment recording ref, so it is a durable barrier rather than a
+  /// supersession-eligible interim shape.
   public static func operations(
     for fields: OpenSegmentWriteFields,
     transactionID: String,

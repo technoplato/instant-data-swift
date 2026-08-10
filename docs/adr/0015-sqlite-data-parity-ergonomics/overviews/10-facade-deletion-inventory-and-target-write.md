@@ -21,7 +21,7 @@ Borrow from `upstream/sqlite-data`. Gaps that force app hacks:
 | Row observation carries sync/delivery status | Not on fetch | **L4** / ADR 0014 open |
 | `database.write { }` local-only, no app SyncStore | `transact` local+outbox (correct contract) | App still wraps in façades |
 | One table model = one write surface | App still plans mutations from domain `Recording` graphs | Open-segment **recipe shipped** — see [`../open-segment-write-recipe.md`](../open-segment-write-recipe.md); peel app planners next |
-| High-churn same-row updates | Outbox can pile supersedable ops | Same-entity supersession missing |
+| High-churn same-row assignments | Exact never-offered durable tail is replaced atomically | Immediate-tail supersession shipped; append-only ID aliases remain |
 | Typed columns | JSON blobs need app Codable + loud fail | Typed JSON binding incomplete |
 
 **Rule:** finish or land the missing library shapes (L3/L4 + write recipes), then
@@ -154,8 +154,8 @@ Phase 6  Bootstrap-only file; delete ScribeInstantStore type; architecture test 
 ```
 
 Parallel **library:** L3 aggregates, L4 sync status on fetch, **open-segment write
-recipe** (doc + example — see `open-segment-write-recipe.md`), outbox supersession
-for high-frequency segment upserts (follow-on; not required for recipe land).
+recipe** (doc + example — see `open-segment-write-recipe.md`), and shipped exact
+immediate-tail assignment supersession for high-frequency segment writes.
 
 **Performance soaks** re-enter after Phase 3 (speech path is Instant-only) so we
 measure the real stack.

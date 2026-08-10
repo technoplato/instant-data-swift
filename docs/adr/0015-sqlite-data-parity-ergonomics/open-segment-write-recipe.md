@@ -50,15 +50,21 @@ speech token arrives
    · optional summary fields (duration, activity) only when they change
        │
        ▼
-3. Upsert THAT segment entity only
+3. Create/link THAT segment once (durable relation barrier)
+   · recordingID + recording ref
+   · ownerUserID + owner ref when permissions require it
+       │
+       ▼
+4. For every later interim, assign the same complete scalar field set only
    · text
    · wordsJSON = strict Codable [Word] as UTF-8 JSON string
    · times / segmentIndex / isFinal
-   · ownerUserID (+ owner link when schema requires it)
+   · recordingID / ownerUserID scalar identities
    · updatedAtMs (monotonic wall clock for this write)
+   · primary key is included by the typed update; no refs or partial patches
        │
        ▼
-4. await client.transact { mutations }   // local + outbox only
+5. await client.transact { mutations }   // local + outbox only
        │
        ▼
 section final from speech?
@@ -94,6 +100,8 @@ struct OpenSegmentFields {
 
 ```swift
 let wordsJSON = try OpenSegmentWriteRecipe.encodeWordsJSON(words)
+// Initial create/link only. This relation-bearing transaction is an ordered
+// outbox barrier and is not supersession eligible.
 let ops =
   OpenSegmentWriteRecipe.ensureRecordingOperations(
     recordingID: recordingID,
@@ -120,6 +128,12 @@ _ = try await runtime.transact(operations: ops, source: "speech.open-segment")
 // returns when local + outbox are durable — not when the server acks
 ```
 
+`openSegmentUpsertOperations` and `operations(for:)` remain compatibility
+builders for that initial relation-bearing write. They always include the
+segment’s recording ref (even with `linkOwnerRef: false`), so do **not** call
+them on every token while expecting supersession. Subsequent interims use the
+app’s typed scalar-only mutation shown below.
+
 ### App-facing typed shape (InstantEntityModel)
 
 Product apps declare schema entities (short names preferred: `InstantRecording`,
@@ -128,8 +142,8 @@ Product apps declare schema entities (short names preferred: `InstantRecording`,
 ```swift
 let wordsJSON = try OpenSegmentWriteRecipe.encodeWordsJSON(words)
 
-// Once per recording (idempotent ensure — use create on first open, or update
-// summary fields when they change; do not re-diff the whole timeline).
+// Once per recording/segment: establish relations. This transaction is a
+// durable ordering barrier, not a supersession candidate.
 try await client.transact(
   InstantMutationBatch([
     InstantRecording.update(
@@ -153,6 +167,24 @@ try await client.transact(
     ),
   ])
 )
+
+// Every later interim: one segment, complete scalar assignment, exact same
+// attribute set, no refs. Typed update includes the segment primary key.
+try await client.transact(
+  InstantSegment.update(
+    id: segmentID,
+    InstantSegment.recordingID.set(recordingID),
+    InstantSegment.ownerUserID.set(ownerUserID),
+    InstantSegment.text.set(text),
+    InstantSegment.wordsJSON.set(wordsJSON),
+    InstantSegment.wordCount.set(Double(words.count)),
+    InstantSegment.segmentIndex.set(Double(segmentIndex)),
+    InstantSegment.isFinal.set(false),
+    InstantSegment.startTimeSeconds.set(start),
+    InstantSegment.endTimeSeconds.set(end),
+    InstantSegment.updatedAtMs.set(nowMs)
+  )
+)
 ```
 
 Library recipe entities in
@@ -170,9 +202,12 @@ Instant permissions for user-owned rows typically require **both**:
 2. An **`owner` ref link** to `$users` (or your user namespace) so rule graphs
    can walk ownership.
 
-Write both on create and keep them aligned on upsert. Missing owner fields
-often surface as **silent server denial** on outbox delivery — fail loud in
-dev; never swallow encode/permission errors with `try?`.
+Write both on the relation-bearing create and keep the scalar owner identity in
+every later interim assignment. The established refs remain on the entity; do
+not resend them in the scalar hot loop merely to restate unchanged ownership.
+Missing owner fields often surface as **silent server denial** on outbox
+delivery — fail loud in dev; never swallow encode/permission errors with
+`try?`.
 
 Guest / unauthenticated speech still needs a stable owner identity your perms
 accept (guest user id from auth session). Do not invent a second “local-only”
@@ -259,19 +294,27 @@ and is orthogonal to sync status.
 ## Follow-on: outbox same-entity supersession
 
 High-churn open-segment upserts enqueue many pending ops for the **same entity
-id**. Library **same-entity outbox supersession** keeps only the latest pending
-upsert intent for that `(namespace, entityID)` so offline / slow networks do not
-pile unbounded supersedable ops.
+id**. Library **immediate-tail supersession** replaces only the one exact
+never-claimed, never-offered durable tail when both mutations are complete
+assignments of the same schema-known cardinality-one scalar attributes. It does
+not scan or group the queue, cross an intervening barrier, merge partial patches,
+or choose by `updatedAtMs` / another domain payload revision.
 
-**Full recipe (policy, algorithm, non-goals, tests):**  
+The one-time segment create that carries `recording` / `owner` refs is such a
+barrier. Supersession begins only after the first later scalar-only assignment;
+every subsequent interim must use that identical scalar attribute set. Ordinary
+ref-bearing upserts never qualify.
+
+**Full recipe (eligibility, rollback, aliases, retention, tests):**
 [`follow-on-outbox-same-entity-supersession.md`](./follow-on-outbox-same-entity-supersession.md)  
-**Pure policy:** `Sources/InstantSwiftDataCore/OutboxSameEntitySupersession.swift`
+**Implementation:** `InstantRuntime.performTransact`, `SQLitePersistenceStore`,
+and `OutboxSameEntitySupersession.canReplaceImmediateTail`
 
-**Do not block this open-segment recipe on full outbox integration.** Always
-outbox every interim write today; pure policy + tests are landed; wire
-`OutboxSameEntitySupersession.decide` at durable enqueue as a separate library
-step (overview 10 / plan L* performance track). Apps must not invent a “skip
-outbox for interim” mode.
+Always outbox every interim write. The library may replace an eligible physical
+tail after local materialization; apps must not invent a “skip outbox for
+interim” mode. Returned transaction IDs remain observable through durable
+aliases. Those aliases are append-only today, so supersession bounds full
+mutation bodies and rollback graphs, **not total durable metadata bytes**.
 
 ---
 

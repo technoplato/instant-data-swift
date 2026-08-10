@@ -48,6 +48,8 @@ public struct InstantRuntimeConfiguration: Sendable {
   }
   var onLiveQueryResultPruneActiveKeysCapturedForTesting:
     (@Sendable (Set<String>) async -> Void)? = nil
+  var onLocalMutationSupersessionPreparedForTesting:
+    (@Sendable (_ predecessorID: String, _ newcomerID: String) async -> Void)? = nil
 
   public init(
     appID: String,
@@ -2580,6 +2582,22 @@ public final class InstantRuntime: Sendable {
           emissions: []
         )
       }
+      let aliasReplay = try await persistence.loadOutboxAliasReplay(
+        id: transaction.id,
+        expectedStoreRevision: state.storeRevision,
+        expectedOutboxRevision: state.outboxRevision
+      )
+      guard aliasReplay.matchesRevisions else { continue }
+      if let alias = aliasReplay.alias {
+        throw validationFailed(
+          operation: "transact",
+          localID: transaction.id,
+          message:
+            "Mutation '\(transaction.id)' is permanently reserved by an outbox supersession lifecycle whose \(alias.isPending ? "pending" : "completed") survivor is '\(alias.currentMutationID)'.",
+          recovery:
+            "Observe the existing transaction lifecycle, or use a new transaction id for a new write."
+        )
+      }
       let creationCursor = try await persistence.latestOutboxCreationTimestamp(
         expectedOutboxRevision: state.outboxRevision
       )
@@ -2607,21 +2625,69 @@ public final class InstantRuntime: Sendable {
         mutation = newMutation
         pendingMutation = newMutation
       }
+      let immediateTail: InstantOutboxImmediateTailLoad
+      if OutboxSameEntitySupersession.isEligibleImmediateTailNewcomer(
+        pendingMutation,
+        attributes: state.snapshot.store.attributes
+      ) {
+        immediateTail = try await persistence.loadImmediateSupersessionTail(
+          expectedStoreRevision: state.storeRevision,
+          expectedOutboxRevision: state.outboxRevision
+        )
+        guard immediateTail.matchesRevisions else { continue }
+      } else {
+        // The final save still compares both revisions atomically. Skipping
+        // this read is safe and keeps partial/reference writes off the tail
+        // body path entirely.
+        immediateTail = InstantOutboxImmediateTailLoad(
+          matchesRevisions: true,
+          mutation: nil
+        )
+      }
       recordActorHop(.store)
       // `loadCompactStateSynchronizingStore` installs every SQLite-source snapshot, including an
       // authoritative empty one. The hot indexes are therefore the single preparation source for
       // both cache hits and cross-runtime revision changes.
-      let prepared = try await store.prepareCurrent(transaction)
+      let supersededTail: PendingMutation? = immediateTail.mutation.flatMap { predecessor in
+        guard predecessor.rollbackTransaction != nil,
+          OutboxSameEntitySupersession.canReplaceImmediateTail(
+            predecessor,
+            with: pendingMutation,
+            attributes: state.snapshot.store.attributes
+          )
+        else { return nil }
+        return predecessor
+      }
+      let prepared: PreparedStoreMutation
+      if let supersededTail, let rollback = supersededTail.rollbackTransaction {
+        // The current store includes the predecessor overlay. Peel exactly that
+        // layer and apply the newcomer on the pre-predecessor baseline. The
+        // generated newcomer rollback therefore restores authoritative state
+        // directly, regardless of how many earlier ids alias this survivor.
+        prepared = try await store.prepare(
+          peelingOverlays: [rollback],
+          thenApplying: transaction
+        )
+      } else {
+        prepared = try await store.prepareCurrent(transaction)
+      }
       pendingMutation.rollbackTransaction = Self.rollbackTransaction(
         mutationID: pendingMutation.id,
         prepared: prepared
       )
       mutation = pendingMutation
       try InstantAutomaticOutboxAdmission.validateNewMutation(pendingMutation)
+      if let supersededTail {
+        await configuration.onLocalMutationSupersessionPreparedForTesting?(
+          supersededTail.id,
+          pendingMutation.id
+        )
+      }
       recordActorHop(.persistence)
       let didSave = try await persistence.saveLocalMutation(
         changedEntityTriples: prepared.changedEntityTriples,
         pendingMutation: pendingMutation,
+        supersedingImmediateTail: supersededTail,
         expectedStoreRevision: state.storeRevision,
         expectedOutboxRevision: state.outboxRevision
       )
@@ -4720,7 +4786,20 @@ public final class InstantRuntime: Sendable {
     case .pending:
       return
     }
-    await mutationLifecycleObservers.publish(event, for: mutation.id)
+    recordActorHop(.persistence)
+    let observationID: String?
+    do {
+      observationID = try await persistence.mutationLifecyclePublicationIdentity(
+        for: mutation.id
+      )
+    } catch {
+      reportIssue(
+        "Instant could not prove durable mutation lifecycle ownership for '\(mutation.id)': \(error)"
+      )
+      return
+    }
+    guard let observationID else { return }
+    await mutationLifecycleObservers.publish(event, for: observationID)
   }
 
   private func persistedConnectionState() async throws -> InstantConnectionState {
@@ -8493,39 +8572,19 @@ public final class InstantRuntime: Sendable {
       recovery: "Pass the transaction id used to submit the mutation."
     )
     await enterOperationGate()
-    let current: InstantMutationLifecycleEvent
+    let resolution: InstantMutationLifecycleResolution
     do {
-      var resolved: InstantMutationLifecycleEvent?
-      for _ in 0..<5 {
-        let state = try await loadCompactStateSynchronizingStore()
-        guard let hydrated = try await persistence.loadOutboxMutations(
-          statuses: [.pending, .confirmed, .failed],
-          ids: [id],
-          limit: 1,
-          expectedStoreRevision: state.storeRevision,
-          expectedOutboxRevision: state.outboxRevision
-        ) else { continue }
-        if let mutation = hydrated.first {
-          if mutation.status == .failed {
-            resolved = .failed(mutation)
-          } else if mutation.status == .confirmed, mutation.provesServerAcceptance {
-            resolved = .serverAccepted(mutation)
-          } else {
-            resolved = .waiting
-          }
-        } else {
-          resolved = .waiting
-        }
-        break
-      }
-      guard let resolved else { throw outboxChangedDuringLifecycleObservation(id: id) }
-      current = resolved
+      recordActorHop(.persistence)
+      resolution = try await persistence.resolveMutationLifecycle(id: id)
       await leaveOperationGate()
     } catch {
       await leaveOperationGate()
       throw error
     }
-    return await mutationLifecycleObservers.observe(key: id, current: current)
+    return await mutationLifecycleObservers.observe(
+      key: resolution.observationID,
+      current: resolution.event
+    )
   }
 
   public func outboxMutations() async -> [PendingMutation] {

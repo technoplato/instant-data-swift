@@ -1,289 +1,188 @@
-# Recipe: same-entity outbox supersession (high-churn segments)
+# Immediate-tail outbox supersession
 
-**Status:** Active recipe — pure policy + tests landed; full outbox enqueue
-integration is intentional follow-on (see Remaining work).  
-**Plan / issue:** ADR 0015 / Instant issue
+**Status:** Implemented for exact scalar assignments at durable enqueue
+**Program:** ADR 0015 / Instant issue
 [#155](https://issues.knophy.com/issues/155)  
-**Parent write shape:** [`open-segment-write-recipe.md`](./open-segment-write-recipe.md)  
-**Compile-checked policy:**
-`Sources/InstantSwiftDataCore/OutboxSameEntitySupersession.swift`  
-**Tests:**
-`Tests/InstantSwiftDataCoreTests/OutboxSameEntitySupersessionTests.swift`
+**Parent write shape:**
+[`open-segment-write-recipe.md`](./open-segment-write-recipe.md)
+**Implementation:**
+`InstantRuntime.performTransact`, `SQLitePersistenceStore`, and
+`OutboxSameEntitySupersession.canReplaceImmediateTail`
+**Integration tests:**
+`InstantOutboxSupersessionIntegrationTests`
 
----
+## Outcome
 
-## Problem
+High-frequency writes to one open segment may replace only the **one exact
+durable queue tail immediately before the newcomer**. Instant never searches
+backward, groups a queue by entity, or chooses a winner using a domain payload
+revision. An intervening row is a causal barrier even when an older row behind
+it targets the same entity.
 
-Live open-segment speech issues many updates to the **same** segment entity ID
-(10→× human write rates on `wordsJSON` / `text` / `updatedAtMs`).
-
-Each `await client.transact` / `runtime.transact` means:
-
-1. Local materialize the latest row fields.
-2. Append a **new durable pending outbox mutation** (write contract: never
-   server ack inside save).
-
-Without supersession, the durable SQLite outbox can queue **dozens to hundreds
-of pending upserts for one entity**. That raises:
-
-- Head-of-line (HOL) delivery cost — every superseded intent still encodes and
-  sends.
-- Memory / disk thrash (full op graphs + rollback metadata per pending row).
-- Misleading “pending count” diagnostics during intentional high-churn speech.
-- Longer reconnect drain after offline speech sessions.
-
-Local row correctness is already fine (each materialize overwrites the prior
-local triples). The waste is **duplicate pending delivery of superseded intent**.
+The ordinary write contract is unchanged:
 
 ```text
-token 1  → local seg-1 v1  + outbox [tx1]
-token 2  → local seg-1 v2  + outbox [tx1, tx2]
-token 3  → local seg-1 v3  + outbox [tx1, tx2, tx3]
-  …
-token N  → local seg-1 vN  + outbox [tx1…txN]   // local correct; outbox fat
+await transact = local materialization + durable outbox
 ```
 
-Desired:
+It never means server acknowledgement. Offline writes continue to succeed.
+
+## Why the older queue-wide policy was retired
+
+The former `OutboxSupersessionCandidate` projection omitted facts required for
+safe replacement:
+
+- exact physical queue adjacency;
+- complete normalized operations and schema cardinality;
+- the predecessor rollback;
+- whether a row was claimed or offered;
+- lookup, precondition, link, delete, and multi-entity barriers;
+- the baseline needed if the survivor later fails.
+
+Grouping all projected rows by `(namespace, entityID)` could therefore cross a
+barrier and delete causal evidence. `payloadRevisionMs` was a product field,
+not durable queue order. The public projection remains for source compatibility,
+but `decide`, `applying`, and `coalescing` are deprecated conservative no-ops.
+They never authorize persistence changes.
+
+## Exact eligibility
+
+Both the predecessor and newcomer must satisfy every condition below.
+
+### Durable tail state
+
+The predecessor is:
+
+- the exact last row by `(created_at_ms, mutation_id)`;
+- pending;
+- still carrying its optimistic overlay and rollback;
+- normalized with current delivery metadata;
+- `needsDelivery`;
+- `ready`, never claimed, and never offered (`delivery_started = 0`);
+- no larger than the fixed 8 MiB automatic-body limit.
+
+Claim and offered state are rechecked inside the same SQLite write transaction
+that replaces the row. Claim transitions do not need to bump the outbox
+revision for this race to remain safe.
+
+### Complete assignment shape
+
+Each transaction must be a nonempty, complete assignment with:
+
+- only concrete `.insert` operations;
+- one entity ID and one namespace;
+- schema-known cardinality-one, non-reference attributes;
+- no duplicate attribute ID;
+- the exact same attribute-ID set on predecessor and newcomer;
+- the namespace primary-key attribute present exactly once, with its string
+  value equal to the entity ID;
+- newcomer write timestamps greater than or equal to predecessor timestamps for
+  every assigned attribute;
+- distinct mutation IDs in strict durable `(createdAt, id)` creation order.
+
+This is assignment supersession, not partial-patch merging. If the predecessor
+assigns fields `{id, text, wordsJSON, updatedAt}` and the newcomer omits
+`wordsJSON`, they do not supersede.
+
+## Barriers
+
+Any failed, confirmed, claimed, offered, oversized, lookup, precondition,
+retract, merge, delete, link/reference, cardinality-many, multi-entity,
+different-attribute-shape, different-entity, or unrelated immediate tail is a
+barrier. Instant appends the newcomer without scanning behind that row.
+
+Malformed normalized tails are different from ordinary barriers while they
+remain ready and never offered. A body within the fixed byte limit is decoded
+once, durably converted to a visible failed quarantine row with the exact raw
+JSON in `quarantine_json`, and the outbox revision is bumped. The enqueue then
+reloads and retries. If a claimant wins after that read, quarantine aborts and
+the claimed row remains an ordering barrier. Later writes do not decode or
+report a quarantined body again.
+
+## Atomic replacement and rollback
 
 ```text
-token N  → local seg-1 vN  + outbox [txN]       // one pending upsert for that entity
+read exact tail under store/outbox revisions
+        |
+        v
+validate full assignment pair
+        |
+        v
+peel predecessor rollback from the hot local store
+        |
+        v
+apply newcomer and build rollback directly to pre-predecessor baseline
+        |
+        v
+BEGIN IMMEDIATE
+  recheck revisions + exact tail + pending/active/ready/never-offered
+  delete predecessor body
+  save newcomer body and direct rollback
+  update lifecycle lineage
+  bump store + outbox revisions
+COMMIT
 ```
 
----
+If any recheck loses a race, the transaction changes nothing. The runtime
+reloads; a claimed tail becomes a barrier and both rows remain ordered.
 
-## Desired policy
+The survivor rollback is direct, not a concatenated chain. Failure restores
+the authoritative value or entity absence in work proportional to the current
+assignment shape.
 
-When a **new** pending outbox mutation **fully replaces** a prior **pending**
-mutation for the same entity primary key and operation kind, **drop (or mark
-superseded)** the older entry so only the **latest local intent** remains to
-deliver.
+## Transaction lifecycle aliases
 
-| Term | Meaning |
-| --- | --- |
-| Entity primary key | `(namespace, entityID)` — e.g. `(recipe_transcription_segments, seg-1)` |
-| Operation kind | Closed set: `upsert` / `delete` / `link` / `media` / `other` |
-| Fully replaces | Newer entry’s entity key **set** equals the older’s (v1: singleton key, pure upsert) and both are supersedable upserts |
-| Latest intent | Highest `payloadRevisionMs` (e.g. segment `updatedAtMs`), then `createdAtMs`, then stable `transactionID` |
+Every `transact` returns a transaction ID, including IDs whose physical body is
+later replaced. A supersession chain therefore keeps:
 
-**Write contract unchanged:** `transact` / `save` still means local materialize
-+ durable outbox only. Supersession only trims **redundant pending delivery
-work** after the new mutation is accepted into the outbox snapshot. Offline
-must still succeed. Server ack is still observe/wait, not part of save.
+- one lifecycle row naming the current survivor;
+- one alias row for **every returned transaction ID** in that chain;
+- one compact terminal lifecycle after acceptance or failure.
 
-### Exact algorithm (pure)
+Aliases intentionally survive restart, survivor pruning, and terminal apply so
+every old ID can observe the survivor's terminal result. Publication is stricter
+than observation: a terminal event wakes the shared lifecycle only when its
+mutation ID equals `current_mutation_id`; a delayed predecessor event is ignored.
 
-Input: ordered or unordered sequence of outbox candidates (policy re-sorts).  
-Output: `kept` vs `superseded` transaction IDs.
+Ordinary non-superseded mutations create no lifecycle or alias history rows.
 
-```text
-entries E  (each: id, status, entityKeys, opKind, createdAtMs,
-            payloadRevisionMs?, flags…)
+Alias retention is append-only under the current contract. The 10,000-write
+test therefore expects one durable mutation body, one lifecycle row, and 10,000
+small alias rows. This bounds retained **mutation bodies and rollback graphs**,
+not total durable metadata bytes. Do not claim total durable storage is bounded.
+Deleting or expiring aliases would weaken old-ID observation and requires a
+separate explicit retention/API decision.
 
-1. Sort E by (payloadRevisionMs ?? createdAtMs) asc,
-             then createdAtMs asc,
-             then id asc
-   // later intent wins
+## Upstream relationship
 
-2. kept = []; superseded = []
+Instant TypeScript `Reactor.js` `pushTx` / `pushOps` appends each event to
+`pendingMutations`; `_rewriteMutations` rewrites schema attribute IDs, not
+same-entity intent. Swift deliberately diverges because its offline outbox is
+durable and open-segment workloads otherwise retain many full mutation and
+rollback bodies. The divergence is limited to the exact never-offered tail;
+all ambiguous cases preserve upstream-style append order.
 
-3. Group candidates that are *eligible*:
-     status == pending
-     && !isPermissionPoison
-     && !isFailedTerminal   // status already pending; fail/confirm excluded
-     && opKind == upsert
-     && entityKeys.count == 1   // v1 singleton full-replace only
-     && !flags.media
-     && !flags.inFlightToServer // optional: skip already-sent (see below)
-
-4. For each eligible group key K = (namespace, entityID, opKind):
-     let group = eligible filtered to K, in sort order
-     if group.count >= 2:
-       superseded += all but last
-       kept      += last
-     else:
-       kept += group
-
-5. kept += every non-eligible entry (failed, confirmed, delete, link,
-   media, multi-entity batch, poison, in-flight, unrelated)
-
-6. Return { keptIDs, supersededIDs }  // partition of input ids
-```
-
-ASCII flow (enqueue-time view):
-
-```text
-new pending upsert U for (ns, id)
-        │
-        ▼
-persist local materialize + U in outbox snapshot
-        │
-        ▼
-scan other pending entries P where
-  P.eligible && same (ns, id) && same opKind(upsert)
-  && entityKeys(P) == entityKeys(U) == { (ns,id) }
-        │
-        ├── none → deliver queue unchanged (plus U)
-        │
-        └── some older P → mark/drop P as superseded
-                          keep U (and any non-eligible peers)
-        │
-        ▼
-durable outbox: pending upsert count for (ns,id) ≤ 1
-delivery still completes for survivor U
-```
-
-### In-flight nuance
-
-If a mutation has already been **sent** to the server and is awaiting
-`transact-ok` / transport ack (`inFlightToServer`), v1 **does not supersede it**
-by default. Dropping a sent mutation can race with server apply and confuse
-client deferred waiters. Prefer:
-
-- Supersede only **not-yet-sent** pending rows, **or**
-- Supersede in-flight only with an explicit library flag and tests that prove
-  cancel/replace semantics match product needs.
-
-Document any future change next to this recipe and the policy tests.
-
----
-
-## What is NOT superseded
-
-| Case | Why |
-| --- | --- |
-| `status == failed` (terminal) | Must stay visible; discard is a user/agent action (`discardFailed`) |
-| Permission poison (`permissionRejected` / perms-pass fail) | Fail loud; never silently drop the evidence row |
-| `status == confirmed` | Already accepted / pruned path — not pending work |
-| Different `opKind` (e.g. upsert vs delete) | Delete after upsert is not a replace; causal ops must both deliver or compose |
-| Link / unlink batches | Cardinality and peer refs; not a full row replace |
-| Media transfer mutations | Independent isolation; never coalesce with entity upserts |
-| Unrelated entities | Different `(namespace, entityID)` |
-| Multi-entity batches (v1) | e.g. ensure-recording + segment in one tx — not a singleton full-replace; keep both until a later policy extends to exact multi-key set match |
-| Different op kinds in same entity stream | Only upsert supersedes upsert |
-| App-side rate limiting as a substitute | Apps still write every interim; library owns coalesce |
-
----
-
-## Entry criteria / non-goals
-
-### Entry criteria (this recipe is active when)
-
-1. Open-segment write recipe documented and used on the speech path  
-   ([`open-segment-write-recipe.md`](./open-segment-write-recipe.md)).
-2. Words as strict Codable JSON on the segment (no silent `try?`).
-3. Pure policy + unit tests green (offline, no network).
-4. Completeness lanes remain green under moderate soak after full enqueue
-   integration (not required for pure policy land).
-
-### Non-goals
-
-- Deleting failed terminal mutations without visibility.
-- Silencing permission-denied poison.
-- App-side rate limiting or “skip outbox for interim” (forbidden by Q01 / ADR
-  0014).
-- Full attribute-level merge of partial patches (v1 is **whole upsert replace**
-  for the same singleton entity key).
-- Changing the write contract so `transact` waits for server ack.
-- Required for façade delete (`ScribeInstantStore`) — helpful for speech
-  performance under load, **not** a gate on façade peel.
-
----
-
-## How apps observe correctness
-
-| Check | Expected |
-| --- | --- |
-| Local row for open segment | Always latest fields after each `transact` (materialize independent of supersession) |
-| Outbox pending count for that entity | ≤ **1** pending **upsert** of that op kind for `(namespace, entityID)` after policy runs |
-| Other entities / deletes / media | Unchanged counts |
-| Delivery | Survivor mutation still delivers; peers observe final segment state via normal query/observe |
-| Offline speech | Many local upserts succeed; after reconnect, drain does not send every intermediate wordsJSON |
-| Diagnostics | Supersede events may log `outbox.mutation.superseded` with old/new transaction IDs (integration) |
-
-CLI / agent checks (integration, not pure policy):
-
-```text
-outbox inspect → pending upserts grouped by entity ≤ 1 for open segment
-observe segment → text/wordsJSON match last speech token
-```
-
----
-
-## Upstream TypeScript vs Swift durable outbox
-
-**Cite before inventing policy:**
-
-- `upstream/instant/client/packages/core/src/Reactor.js`
-  - `pushTx` / `pushOps` — each transact gets a new `eventId` and is **appended**
-    to `pendingMutations` (Map). No same-entity drop of older pending ops.
-  - `_rewriteMutations` / `rewriteTxSteps` — rewrites **attr ids** and drops
-    attr-schema steps already covered by `processedTxId`; **not** same-entity
-    upsert coalescing.
-  - Pending cleanup after confirm / processed-tx watermark (`pendingTxCleanupTimeout`).
-- Related Swift notes: ADR 0010 (reconnect preserves older scalar while a
-  queued successor exists; delivery order preserves causal transition).
-  Supersession **removes** the need to send the older successor once a full
-  replace is pending — deliberate for high-churn upserts.
-
-### Deliberate divergences (document and keep)
-
-| Topic | TypeScript Reactor | Swift Instant (this recipe) |
-| --- | --- | --- |
-| Pending store | In-memory Map (+ kv) | **Durable SQLite outbox** — cost of N pending rows is disk + HOL |
-| Attr rewrite | `_rewriteMutations` for schema/attr-id churn | Keep; orthogonal to entity supersession |
-| Same-entity upsert pile | Allowed; all pending send | **Coalesce eligible pending upserts** to latest intent |
-| Write API | `pushTx` resolves on server path / timeout | `transact` = local + outbox only (never server ack) |
-| Failed / poison | Error path on mutation | Terminal failed stays until discard; poison not supersedable |
-
-Do **not** port a novel partial-attribute “diff planner” from the app. Policy is
-**library outbox**, full upsert replace for same key, pure and testable.
-
----
-
-## Implementation map
-
-| Layer | Path | State |
-| --- | --- | --- |
-| Recipe (this doc) | `docs/adr/0015-…/follow-on-outbox-same-entity-supersession.md` | Active |
-| Pure policy | `Sources/InstantSwiftDataCore/OutboxSameEntitySupersession.swift` | Landed |
-| Unit tests | `Tests/InstantSwiftDataCoreTests/OutboxSameEntitySupersessionTests.swift` | Landed |
-| Enqueue hook | `InstantRuntime` after building `outboxSnapshot` with new pending | `// TODO recipe entry` — do not break delivery tests |
-| Open-segment parent | `open-segment-write-recipe.md` + `OpenSegmentWriteRecipe.swift` | Links here |
-| Skill | `skills/instant-data/SKILL.md` live speech section | Cross-link |
-
-### Remaining work (full outbox integration)
-
-1. At durable enqueue (after local prepare succeeds), map `PendingMutation` →
-   `OutboxSupersessionCandidate` (entity keys from ops, op kind, flags).
-2. Run `OutboxSameEntitySupersession.decide(entries:)`.
-3. Persist outbox **without** superseded rows (or with status/tombstone that
-   flush skips); keep creation order of survivors.
-4. Log supersessions; ensure `observeTransaction` for superseded IDs resolves
-   clearly (superseded-by / dropped-as-redundant — product decision, default:
-   treat as locally satisfied by successor materialize).
-5. Expand integration tests: 50 open-segment upserts offline → pending count 1;
-   delivery of survivor; failed/poison neighbors untouched.
-6. Soak: speech-shaped 20s write bench pending depth and HOL time.
-
----
-
-## Verification (pure policy)
+## Verification
 
 ```bash
 cd /Users/laptop/Sync/instant-data-swift
-swift test --filter OutboxSameEntitySupersession
+swift test --filter InstantOutboxSupersessionIntegrationTests
+swift test --filter OutboxSameEntitySupersessionTests
 ```
 
-Expected: high-churn sequences of 10–100 same-entity upserts keep **one**
-survivor; failed, poison, delete, media, multi-entity, and unrelated keys are
-never dropped.
+The integration suite covers:
 
----
+- 10,000 exact offline assignments retaining one mutation body across restart;
+- latest local value and survivor-only delivery;
+- authoritative-baseline and entity-absence rollback;
+- old-ID acceptance/failure across restart and pruning;
+- append-only alias counts;
+- stale predecessor publication rejection;
+- failed/offered/unrelated/shape/operation/reference barriers;
+- deterministic claim races at replacement and invalid-tail quarantine;
+- oversized tails with zero body decode;
+- corrupt normalized tails with one decode and one durable quarantine;
+- ordinary mutations creating no alias history.
 
-## Related
-
-- ADR 0015 overview 02 (active transcription), overview 10 (façade inventory)
-- ADR 0014 (always outbox for open-segment interim)
-- ADR 0010 (wait / reconnect / successor filtering)
-- Instant issue #155, performance soaks
-- `OpenSegmentWriteRecipe` (speech write shape; supersession is library follow-on)
+The legacy policy suite proves the deprecated queue-wide API is a no-op. It is
+not eligibility evidence.

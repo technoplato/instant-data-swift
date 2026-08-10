@@ -23,10 +23,11 @@ actor InstantOutbox {
     self.mutations = Self.compacted(mutations)
   }
 
-  // TODO recipe entry: same-entity supersession at durable enqueue (not here alone).
-  // Pure policy: OutboxSameEntitySupersession.decide — ADR 0015
-  // docs/adr/0015-sqlite-data-parity-ergonomics/follow-on-outbox-same-entity-supersession.md
-  // Call site: InstantRuntime local mutation path after outboxSnapshot append.
+  // Same-entity supersession is SQLite-authoritative and intentionally does
+  // not inspect this compact resident shell. `InstantRuntime.performTransact`
+  // asks persistence for only the exact durable tail, validates the pair as
+  // identical scalar assignment shapes, and replaces it in the same revision-
+  // checked save. See ADR 0015 follow-on-outbox-same-entity-supersession.md.
 
   func pending() -> [PendingMutation] {
     mutations.filter { $0.status == .pending }
