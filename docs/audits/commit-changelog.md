@@ -1,3 +1,9 @@
+## 2026-08-09 23:27:35 EDT
+
+- **repo:** instant-data-swift
+- **commit:** `beffc9b4c98c24eda1f0bea24b8a60b35c29d3d7`
+- **reason:** Replace whole-outbox reconstruction on every WebSocket acknowledgement with one revision-checked SQLite row transition and prove cold-cache one-row decoding against 10,000 durable mutations plus an unrelated malformed row (#044, #155, #168).
+
 ## 2026-08-09 22:19:47 EDT
 
 - **repo:** realtime-voice-sqlite-instant (Scribe)

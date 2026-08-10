@@ -10,6 +10,21 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## August 9th, 2026 at 11:27:29 p.m. EDT — `beffc9b4c98c` Bound WebSocket acceptance to one outbox row
+
+- **Implementation commit:** `beffc9b4c98c24eda1f0bea24b8a60b35c29d3d7`
+- **Change:** Bound WebSocket acceptance to one durable outbox row
+- **Details:**
+  - Replaced whole-outbox hydration, copying, and rewriting on transact-ok with a revision-checked SQLite row transition; connection status now counts pending rows without hydrating bodies, duplicate acknowledgements are idempotent, and a 10,000-row malformed-sentinel regression proves one-row decoding.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — Route transact-ok through the bounded row transition and publish exact counts without hydrating the queue.
+  - `Sources/InstantSwiftDataCore/Outbox.swift` — Update only the addressed compact resident lifecycle shell.
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — Atomically accept and count one durable row without reconstructing unrelated bodies.
+  - `Tests/InstantSwiftDataCoreTests/InstantOutboxHydrationTests.swift` — Prove cold-cache one-row decoding, malformed-row isolation, idempotence, and count correctness at 10,000-row depth.
+- **User context (verbatim):**
+  > fix the fundamental sissues, don't paperclip over.
+- **SpecStory:** unavailable — Unavailable: this work ran in Codex desktop, which has no verified SpecStory CLI capture for this task.
+
 ## August 9th, 2026 at 6:00:44 p.m. EDT — `71ddd401de9a` Fix reverse relation delivery and rebased writes (#187)
 
 - **Implementation commit:** `71ddd401de9a329233e4175549ee5281e31353de`
