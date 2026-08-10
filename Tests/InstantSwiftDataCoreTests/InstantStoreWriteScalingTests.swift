@@ -299,9 +299,11 @@ struct InstantStoreWriteScalingTests {
     let keys = try #require(
       try JSONSerialization.jsonObject(with: encoded) as? [String: Any]
     ).keys.sorted()
+    // Historical keys aev/eav/vae plus optional internedTxIDs for stamp wire.
+    // aev is always empty on encode (memory floor); must remain present for decode.
     expectNoDifference(
       keys,
-      ["aev", "eav", "vae"],
+      ["aev", "eav", "internedTxIDs", "vae"],
       "A cached triple store written by an earlier build must still decode."
     )
   }

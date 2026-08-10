@@ -1,8 +1,93 @@
+## 2026-08-09 09:54:25 EDT — InstantCodableJSON structured-queries parity
+
+- Commit: `ca27941efc55c9ddb52e6b9eb99ea926f111f631`
+- Shared encoder/decoder (sortedKeys, ISO-8601 dates), Optional JSONRepresentation typealiases.
+- Encode/decode still throw InstantError (stricter than SQLiteData QueryBinding.invalid).
+
 # Change Log
 
 Newest entries appear first. Implementation commits and intent are recorded separately from ledger-only commits.
 
 <!-- change-log:entries -->
+
+## August 9th, 2026 at 6:00:44 p.m. EDT — `71ddd401de9a` Fix reverse relation delivery and rebased writes (#187)
+
+- **Implementation commit:** `71ddd401de9a329233e4175549ee5281e31353de`
+- **Change:** Fix reverse relation delivery and rebased wire writes (#187)
+- **Details:**
+  - Preserve whether a server attribute matched the forward or reverse identity, then swap add/retract endpoints for reverse relations exactly like canonical TypeScript instaml.
+  - Remove create/update modes from swapped reverse-link steps so creating a child never asks the server to recreate its existing parent; preserve modes on forward links.
+  - Rebase durable pending write timestamps with their optimistic overlays so visible-write filtering does not strip required scalar fields after refresh, rejection, or retry.
+  - Keep same-ID retries idempotent by comparing ordered server-visible intent while still rejecting changed values, attributes, preconditions, and operation kinds.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantLiveMutation.swift` — Orient reverse relation endpoints during live attribute resolution.
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — Keep durable and optimistic rebase timestamps aligned and preserve idempotent replay.
+  - `Tests/InstantSwiftDataCoreTests/InstantLiveTransportTests.swift` — Prove exact reverse wire bodies, refresh replay, and stale-write protection.
+  - `Tests/InstantSwiftDataCoreTests/InstantFailedMutationDiscardTests.swift` — Prove rejection and retry retain scalar wire writes.
+  - `Tests/InstantSwiftDataCoreTests/InstantOutboxHydrationTests.swift` — Prove hydrated rebases align timestamps and keep same-ID intent safe.
+- **User context (verbatim):**
+  > what's causing these rejected recording mutations? Try and duplicate the issue on TypeScript
+- **SpecStory:** unavailable — Unavailable: Codex desktop task; no SpecStory CLI capture or public share was created.
+
+## August 9th, 2026 at 3:00:08 p.m. EDT — `8213ed3557d6` Fix durable outbox delivery with compact memory state
+
+- **Implementation commit:** `8213ed3557d6f23455840699a8948f676858cbf6`
+- **Change:** Hydrate durable outbox writes without retaining transaction graphs in memory
+- **Details:**
+  - Reload exact durable transaction bodies only at delivery and lifecycle boundaries; keep the resident actor and SQLite cache compact.
+  - Restore automatic and explicit-session delivery, preserve healthy sockets on terminal mutation rejection, and retry local hydration failures through one coalesced pump.
+  - Match upstream Reactor semantics for retryable permission-service failures, explicit live queries, and close-versus-reconnect ordering; add cross-runtime and authoritative-empty-store regressions.
+- **Files:**
+  - `Sources/InstantSwiftData/InstantSwiftData.swift` — Expose durable pending count and route waits through the delivery pump
+  - `Sources/InstantSwiftData/InstantSyncStatus.swift` — Count pending rows without decoding bodies
+  - `Sources/InstantSwiftDataCore/InstantInfiniteQuery.swift` — Synchronize the store before query validation
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — Selective hydration, delivery, rejection, reconnect, and revision synchronization
+  - `Sources/InstantSwiftDataCore/InstantStore.swift` — Merge server attributes into hot indexes
+  - `Sources/InstantSwiftDataCore/Outbox.swift` — Compact resident mutation graphs while preserving durable confirmation bodies
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — Compact cache plus revision-checked hydration and correct full-state diff baselines
+  - `Tests/InstantSwiftDataCoreTests/BenchmarkTests.swift` — Record measured compact-state actor hops
+  - `Tests/InstantSwiftDataCoreTests/CLITests.swift` — Preserve unchanged outbox revisions in validation evidence
+  - `Tests/InstantSwiftDataCoreTests/InstantFailedMutationDiscardTests.swift` — Assert explicit-session query traffic
+  - `Tests/InstantSwiftDataCoreTests/InstantLiveTransportTests.swift` — Cover healthy rejection state and server attribute materialization
+  - `Tests/InstantSwiftDataCoreTests/InstantOutboxHydrationTests.swift` — Add exact-wire, cross-runtime, lifecycle, empty-store, permission, and reconnect regressions
+  - `Tests/InstantSwiftDataCoreTests/InstantReactorParityTests.swift` — Bound and acknowledge live one-shot queries
+  - `Tests/InstantSwiftDataCoreTests/InstantStoreTests.swift` — Assert compact cache and stable full-state revisions
+- **User context (verbatim):**
+  > Track them all the way upstream to the actual invocation and source.
+- **SpecStory:** unavailable — Unavailable: Codex desktop task; no SpecStory CLI capture or public share was created.
+
+## August 9th, 2026 at 9:53:07 a.m. EDT — `5d903c86f595` Add same-entity outbox supersession recipe + pure policy (#155).
+
+- **Implementation commit:** `5d903c86f595baac8a6581223b07c8426e7639e8`
+- **Change:** Add same-entity outbox supersession recipe + pure policy (#155).
+- **Details:**
+  - Expand ADR 0015 follow-on into concrete speech-load recipe (problem, policy, algorithm, non-goals, observability, TS vs Swift divergence). Pure OutboxSameEntitySupersession + 17 unit tests (10–100 same-entity upserts → 1 survivor). TODO recipe entry at InstantRuntime enqueue; full outbox delivery integration remains follow-on.
+- **Files:**
+  - `docs/adr/0015-sqlite-data-parity-ergonomics/follow-on-outbox-same-entity-supersession.md` — Active supersession recipe
+  - `Sources/InstantSwiftDataCore/OutboxSameEntitySupersession.swift` — Pure policy (no I/O)
+  - `Tests/InstantSwiftDataCoreTests/OutboxSameEntitySupersessionTests.swift` — Offline high-churn policy tests
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — TODO recipe entry at durable enqueue
+  - `docs/adr/0015-sqlite-data-parity-ergonomics/open-segment-write-recipe.md` — Link to supersession recipe
+  - `skills/instant-data/SKILL.md` — Live speech supersession bullet
+- **User context (verbatim):**
+  > User said this is important for speech performance/correctness under load — not strictly required for façade delete, but without it speech thrash stays ugly. Implementation of full supersession may be partial/skeleton, but the recipe document + compile-checked sketch + tests of intended policy must land.
+- **SpecStory:** unavailable — unavailable — Grok Build agent session; no SpecStory URI for this desktop task.
+
+## August 9th, 2026 at 9:13:03 a.m. EDT — `2f32fd84137f` Add Instant open-segment write recipe for ADR 0015 (#155).
+
+- **Implementation commit:** `2f32fd84137f4197338aba3c55e7127370ac1952`
+- **Change:** Add Instant open-segment write recipe for ADR 0015 (#155)
+- **Details:**
+  - Library-owned open-segment write recipe: ensure recording once, upsert open segment with strict wordsJSON, transact = local+outbox only. Core OpenSegmentWriteRecipe + typed OpenSegmentWriteRecipeEntities + 12 offline tests. Cross-linked from plan.md, overview 10, overview 02, findings, skill.
+- **Files:**
+  - `docs/adr/0015-sqlite-data-parity-ergonomics/open-segment-write-recipe.md` — Canonical open-segment write recipe
+  - `Sources/InstantSwiftDataCore/OpenSegmentWriteRecipe.swift` — Core wordsJSON codec + mutation builders
+  - `Sources/InstantSwiftData/OpenSegmentWriteRecipeEntities.swift` — Typed InstantEntityModel sketch
+  - `Tests/InstantSwiftDataCoreTests/OpenSegmentWriteRecipeTests.swift` — Offline Core unit tests
+  - `Tests/InstantSwiftDataTests/OpenSegmentWriteRecipeTypedTests.swift` — Typed entity + local runtime tests
+- **User context (verbatim):**
+  > Create a first-class Instant Swift Data open-segment write recipe (ADR 0015 S2 / #155 / overview 10 item open-segment write recipe).
+- **SpecStory:** unavailable — No SpecStory URI; Grok Build agent session for library recipe land.
 
 ## August 7th, 2026 at 12:45:33 a.m. EDT — `fdbef6d76506` Point AGENTS at Scribe coordination protocol; add ADR 0014 lifecycle draft.
 

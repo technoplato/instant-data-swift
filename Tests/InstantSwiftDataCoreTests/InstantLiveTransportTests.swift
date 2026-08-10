@@ -2138,7 +2138,12 @@ struct InstantLiveTransportTests {
         ),
         createdAt: updateAt
       )
-      await session.waitForSentMessageCount(2)
+      try await instantLiveWithTimeout(
+        operation: "wait for valid mutation after encoding quarantine",
+        timeoutMilliseconds: 5_000
+      ) {
+        await session.waitForSentMessageCount(2)
+      }
     } matching: { issue in
       issue.description.contains("quarantined")
         || issue.description.contains("todos/createdAt")
@@ -2148,7 +2153,9 @@ struct InstantLiveTransportTests {
     expectNoDifference(status.state, .opened)
     let sentOps = await session.sentMessages().map(\.op)
     expectNoDifference(sentOps, ["init", "transact"])
-    let outbox = await runtime.outboxMutations()
+    let outbox = try await waitForLiveOutbox(runtime) { mutations in
+      mutations.first?.status == .failed && mutations.count == 2
+    }
     expectNoDifference(outbox.map(\.id), [
       "a-runtime-live-schema-error",
       "b-runtime-live-healthy",
@@ -2157,10 +2164,36 @@ struct InstantLiveTransportTests {
     #expect(outbox[0].failureMessage?.contains("todos/createdAt") == true)
     expectNoDifference(outbox[0].optimisticOverlayState, .removed)
     expectNoDifference(outbox[0].rollbackTransaction, nil)
-    let immediate = try await TodoExample.decode(runtime.query(TodoExample.query))
+    let queryTask = Task { try await runtime.query(TodoExample.query) }
+    defer { queryTask.cancel() }
+    try await instantLiveWithTimeout(
+      operation: "wait for post-quarantine live query registration",
+      timeoutMilliseconds: 5_000
+    ) {
+      await session.waitForSentMessageCount(3)
+    }
+    let postQuarantineQuery = try #require(
+      await session.sentMessages().last?.fields["q"]
+    )
+    await session.enqueue(
+      InstantLiveMessage(
+        op: "add-query-exists",
+        clientEventID: "event-post-quarantine-query",
+        fields: ["q": postQuarantineQuery]
+      )
+    )
+    let immediateSnapshots = try await instantLiveWithTimeout(
+      operation: "wait for post-quarantine live query acknowledgement",
+      timeoutMilliseconds: 5_000
+    ) {
+      try await queryTask.value
+    }
+    let immediate = try TodoExample.decode(immediateSnapshots)
     expectNoDifference(immediate.map(\.text), ["Deliver the valid update"])
-    let lastClientEventID = await session.sentMessages().last?.clientEventID
-    expectNoDifference(lastClientEventID, "b-runtime-live-healthy")
+    let deliveredClientEventID = await session.sentMessages()
+      .last { $0.op == "transact" }?
+      .clientEventID
+    expectNoDifference(deliveredClientEventID, "b-runtime-live-healthy")
     _ = try await runtime.closeConnection()
     let relaunched = try await InstantRuntime.bootstrap(
       configuration: InstantRuntimeConfiguration(
@@ -2280,8 +2313,10 @@ struct InstantLiveTransportTests {
       $0.contains { $0.id == "tx-runtime-live-retry" && $0.status == .failed }
     }
     let failed = try await runtime.connectionStatus()
-    expectNoDifference(failed.lastErrorMessage, "permission denied")
-    expectNoDifference(failed.state, .errored)
+    // A terminal mutation rejection is durable mutation state, not a socket failure. Keep the
+    // authenticated session healthy so retry can resend without forcing a reconnect.
+    expectNoDifference(failed.lastErrorMessage, nil)
+    expectNoDifference(failed.state, .opened)
     let failedMutation = try #require(failedOutbox.first)
     expectNoDifference(failedMutation.status, .failed)
     expectNoDifference(failedMutation.failureMessage, "permission denied")
@@ -3200,18 +3235,16 @@ struct InstantLiveTransportTests {
       ),
       createdAt: createdAt
     )
-    try await runtime.transact(
-      InstantStoreTransaction(
-        id: "tx-update",
-        operations: TodoExample.updateTextOperations(
-          id: "rebase-todo",
-          text: "Second optimistic text",
-          updatedAt: updatedAt,
-          transactionID: "tx-update"
-        )
-      ),
-      createdAt: updatedAt
+    let updateTransaction = InstantStoreTransaction(
+      id: "tx-update",
+      operations: TodoExample.updateTextOperations(
+        id: "rebase-todo",
+        text: "Second optimistic text",
+        updatedAt: updatedAt,
+        transactionID: "tx-update"
+      )
     )
+    try await runtime.transact(updateTransaction, createdAt: updatedAt)
 
     let refresh = InstantLiveRefreshOK(
       clientEventID: "event-refresh-rebase",
@@ -3234,6 +3267,23 @@ struct InstantLiveTransportTests {
     expectNoDifference(result.application.pendingMutationCount, 2)
     let pendingMutationIDs = await runtime.pendingMutations().map(\.id)
     expectNoDifference(pendingMutationIDs, ["tx-create", "tx-update"])
+    let idempotentReplay = try await runtime.transact(updateTransaction, createdAt: updatedAt)
+    expectNoDifference(idempotentReplay.transactionID, updateTransaction.id)
+    expectNoDifference(idempotentReplay.changedEntityIDs, [])
+    let updateTransport = try #require(
+      await runtime.outboxTransportMutations().first { $0.mutationID == "tx-update" }
+    )
+    #expect(
+      updateTransport.txSteps.contains { step in
+        guard
+          case let .addTriple(_, attributeID, value, _) = step,
+          attributeID == "todos/text",
+          value == .string("Second optimistic text")
+        else { return false }
+        return true
+      },
+      "Rebasing the optimistic overlay must not make its durable wire write look stale."
+    )
     let todoSnapshots = try await runtime.query(TodoExample.query)
     let todos = try TodoExample.decode(todoSnapshots)
     expectNoDifference(todos.map(\.text), ["Second optimistic text"])
@@ -3477,6 +3527,15 @@ struct InstantLiveTransportTests {
 
     expectNoDifference(result.insertedTripleCount, 5)
     expectNoDifference(result.application.syncState.processedTransactionID, "server-json-tx")
+    let storeSnapshot = await runtime.store.snapshot()
+    let completedAtAttribute = try #require(
+      storeSnapshot.attributes.first { $0.name == "completedAt" }
+    )
+    #expect(
+      storeSnapshot.triples.contains {
+        $0.attributeID == completedAtAttribute.id && $0.value == .null
+      }
+    )
     let todoSnapshots = try await runtime.query(TodoExample.query)
     expectNoDifference(todoSnapshots.first?.values["completedAt"], .one(.null))
     let todos = try TodoExample.decode(todoSnapshots)
@@ -3814,6 +3873,183 @@ struct InstantLiveTransportTests {
           value: playerIDs
         )
       ]
+    )
+  }
+
+  @Test
+  func liveTransactionReorientsReverseRelationToServerForwardIdentity() throws {
+    let recordingID = "bcfbc4fb-11b2-4b05-8f21-7cf30f33a92f"
+    let transcriptionID = "1958d462-8c47-5a4b-b2bc-ed795f6fcc10"
+    let relationID = "server-recording-transcriptions"
+    let attributes: [InstantLiveJSONValue] = [
+      .serverRefAttr(
+        id: relationID,
+        namespace: "recordings",
+        name: "transcriptions",
+        reverseNamespace: "transcriptions",
+        reverseName: "recording"
+      )
+    ]
+
+    expectNoDifference(
+      try InstantLiveMutationEncoder.resolveAttributeIDs(
+        in: [
+          .addTriple(
+            entity: .id(transcriptionID),
+            attributeID: "transcriptions/recording",
+            value: .string(recordingID),
+            options: InstantTransportOptions(mode: .create)
+          ),
+          .addTriple(
+            entity: .id(transcriptionID),
+            attributeID: "transcriptions/recording",
+            value: .string(recordingID),
+            options: InstantTransportOptions(mode: .update)
+          ),
+          .addTriple(
+            entity: .id(recordingID),
+            attributeID: "recordings/transcriptions",
+            value: .string(transcriptionID),
+            options: InstantTransportOptions(mode: .update)
+          ),
+          .retractTriple(
+            entity: .id(transcriptionID),
+            attributeID: "transcriptions/recording",
+            value: .string(recordingID)
+          ),
+        ],
+        attrs: attributes
+      ),
+      [
+        .addTriple(
+          entity: .id(recordingID),
+          attributeID: relationID,
+          value: .string(transcriptionID)
+        ),
+        .addTriple(
+          entity: .id(recordingID),
+          attributeID: relationID,
+          value: .string(transcriptionID)
+        ),
+        .addTriple(
+          entity: .id(recordingID),
+          attributeID: relationID,
+          value: .string(transcriptionID),
+          options: InstantTransportOptions(mode: .update)
+        ),
+        .retractTriple(
+          entity: .id(recordingID),
+          attributeID: relationID,
+          value: .string(transcriptionID)
+        ),
+      ],
+      "Canonical TypeScript instaml swaps entity and value when a child-side reverse identity resolves to the server's parent-side relation attribute."
+    )
+  }
+
+  @Test
+  func liveTransactionReorientsReverseRelationLookupEndpoints() throws {
+    let relationID = "server-recording-transcriptions"
+    let attributes: [InstantLiveJSONValue] = [
+      .serverAttr(id: "server-recordings-id", namespace: "recordings", name: "id"),
+      .serverAttr(id: "server-transcriptions-id", namespace: "transcriptions", name: "id"),
+      .serverRefAttr(
+        id: relationID,
+        namespace: "recordings",
+        name: "transcriptions",
+        reverseNamespace: "transcriptions",
+        reverseName: "recording"
+      ),
+    ]
+
+    expectNoDifference(
+      try InstantLiveMutationEncoder.resolveAttributeIDs(
+        in: [
+          .addTriple(
+            entity: .lookup(
+              InstantLookupRef(
+                attributeID: "transcriptions/id",
+                value: .string("transcription-lookup")
+              )
+            ),
+            attributeID: "transcriptions/recording",
+            value: .lookupRef(
+              attributeID: "recordings/id",
+              value: .string("recording-lookup")
+            )
+          )
+        ],
+        attrs: attributes
+      ),
+      [
+        .addTriple(
+          entity: .lookup(
+            InstantLookupRef(
+              attributeID: "server-recordings-id",
+              value: .string("recording-lookup")
+            )
+          ),
+          attributeID: relationID,
+          value: .lookupRef(
+            attributeID: "server-transcriptions-id",
+            value: .string("transcription-lookup")
+          )
+        )
+      ]
+    )
+  }
+
+  @Test
+  func runtimeLiveTransactionSendsReverseRelationInServerForwardDirection() async throws {
+    let ids = InstantLiveTransportTestIDSequence(["event-init", "event-query", "event-tx"])
+    let recordingID = "bcfbc4fb-11b2-4b05-8f21-7cf30f33a92f"
+    let transcriptionID = "1958d462-8c47-5a4b-b2bc-ed795f6fcc10"
+    let relationID = "server-recording-transcriptions"
+    let session = InstantScriptedLiveSession(messages: [
+      .initOK(clientEventID: "event-init", attrs: [
+        .serverRefAttr(
+          id: relationID,
+          namespace: "recordings",
+          name: "transcriptions",
+          reverseNamespace: "transcriptions",
+          reverseName: "recording"
+        )
+      ]),
+      .addQueryOK(clientEventID: "event-query"),
+      .transactOK(clientEventID: "event-tx", transactionID: "server-tx-1"),
+      .refreshOK(clientEventID: "event-tx", processedTransactionID: "server-tx-1"),
+    ])
+
+    _ = try await InstantSwiftDataLiveSessionValidation.run(
+      appID: "live-reverse-relation-test",
+      caseID: "validation.live.reverse-relation",
+      websocketURI: try #require(URL(string: "wss://ws.example.test/runtime/session")),
+      includeTransaction: true,
+      transactionSteps: [
+        .addTriple(
+          entity: .id(transcriptionID),
+          attributeID: "transcriptions/recording",
+          value: .string(recordingID),
+          options: InstantTransportOptions(mode: .create)
+        )
+      ],
+      resolveTransactionAttributeIDs: true,
+      liveTransport: session.transport,
+      timestamp: { InstantTimestamp(milliseconds: 1_700_000_000_000) },
+      makeID: { ids.next() }
+    )
+
+    let transact = try #require(await session.sentMessages().first { $0.op == "transact" })
+    expectNoDifference(
+      transact.fields["tx-steps"],
+      .array([
+        .array([
+          .string("add-triple"),
+          .string(recordingID),
+          .string(relationID),
+          .string(transcriptionID),
+        ])
+      ])
     )
   }
 

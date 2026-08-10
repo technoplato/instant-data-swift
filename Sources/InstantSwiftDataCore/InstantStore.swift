@@ -165,6 +165,25 @@ public actor InstantStore {
     indexes.materialize(plan, attributes: attributes, remotePageInfo: remotePageInfo)
   }
 
+  /// In-actor microbench: iterations of materialize without inter-call actor hops.
+  /// Used to compare pure store latency to TypeScript `@instantdb/core` store scans.
+  package func measureMaterializeAverageNanoseconds(
+    _ plan: InstantQueryPlan,
+    iterations: Int
+  ) -> (averageNanoseconds: Double, lastCount: Int) {
+    precondition(iterations > 0)
+    var total: UInt64 = 0
+    var lastCount = 0
+    for _ in 0..<iterations {
+      let t0 = DispatchTime.now().uptimeNanoseconds
+      let rows = indexes.materialize(plan, attributes: attributes)
+      let t1 = DispatchTime.now().uptimeNanoseconds
+      total += t1 - t0
+      lastCount = rows.count
+    }
+    return (Double(total) / Double(iterations), lastCount)
+  }
+
   public func materializeInstaQL(
     _ plan: InstantQueryPlan,
     remotePageInfo: InstantQueryRemotePageInfo? = nil,
@@ -330,6 +349,39 @@ public actor InstantStore {
   ) throws -> PreparedStoreMutation {
     var attributes = AttributeStore(attributes: snapshot.attributes)
     var indexes = TripleIndexes(triples: snapshot.triples, attributes: attributes)
+    for rollback in rollbacks {
+      _ = try prepareMutating(
+        rollback,
+        attributes: &attributes,
+        indexes: &indexes,
+        capturePreviousChangedEntityTriples: false
+      )
+    }
+    return try prepareMutating(
+      serverTransaction,
+      attributes: &attributes,
+      indexes: &indexes,
+      capturePreviousChangedEntityTriples: true
+    )
+  }
+
+  /// Peel overlays + apply server tx starting from the **already-hot** indexes.
+  ///
+  /// Prefer this over `to: InstantStoreSnapshot` so live apply does not rebuild
+  /// `TripleIndexes` from a second full triples array. That second array is the
+  /// dual-residency floor (`SQLitePersistenceStore.cachedState` + InstantStore)
+  /// called out in production readiness P2.1 / #044.
+  ///
+  /// Upstream: `Reactor` mutates one in-memory store (`store.ts` addTriple /
+  /// transact) — not snapshot rebuilds.
+  func prepare(
+    peelingOverlays rollbacks: [InstantStoreTransaction],
+    thenApplying serverTransaction: InstantStoreTransaction,
+    mergingAttributes attributesToMerge: [InstantAttribute] = []
+  ) throws -> PreparedStoreMutation {
+    var attributes = self.attributes
+    attributes.merge(attributesToMerge)
+    var indexes = self.indexes
     for rollback in rollbacks {
       _ = try prepareMutating(
         rollback,
@@ -1340,6 +1392,10 @@ public actor InstantStore {
 
   func activeObservationCount() -> Int {
     observers.count
+  }
+
+  func currentTripleCount() -> Int {
+    indexes.tripleCount
   }
 
   func activeQueryCacheKeys() -> Set<String> {

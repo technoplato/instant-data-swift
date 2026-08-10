@@ -3,8 +3,8 @@
 - planId: `2026-08-09-outbox-wire-hydration`
 - agentId: `codex-desktop/019fe75c-e769-71b1-a62f-14478e917459/root`
 - role: `mower`
-- issues: Instant #117; Scribe #044
-- outcome: Preserve the memory-thinned in-process outbox while reconstructing the exact durable transaction operations at the delivery boundary, so automatic delivery and explicit flush cannot emit empty `tx-steps`. Prove parity against vendored upstream Instant and the self-hosted server before using the library in the physical-iPhone memory experiment.
+- issues: Instant #117; Scribe #044; Scribe #187
+- outcome: Preserve the memory-thinned in-process outbox while reconstructing the exact durable transaction operations at the delivery boundary, so automatic delivery and explicit flush cannot emit empty `tx-steps`. Separate automatic connection policy from use of an explicitly opened live session, and surface rejected long-lived queries instead of leaving consumers stale. Prove parity against vendored upstream Instant and the self-hosted server before using the library in the physical-iPhone memory experiment.
 
 ## Steps
 
@@ -13,11 +13,19 @@
 3. Hydrate selected outbox rows before visible-write filtering and transport lowering, preserving ordering, lifecycle status, rollback metadata, failure isolation, and the thin resident cache.
 4. Run focused and coupled outbox/reconnect suites, then run reproducible self-hosted Swift/TypeScript wire and server-materialization comparison.
 5. Record kept/discarded evidence in the canonical autoresearch run, `PROGRESS.md`, both change ledgers, and Instant issues #117 and #044.
+6. Reproduce the explicit-connect transaction and one-shot query gaps, then make the automatic-connect flag govern opening only; an already-authenticated session must deliver both paths.
+7. Reproduce a server rejection against a long-lived observation and infinite query. Match Reactor's callback-visible error while keeping the shared socket and unrelated queries alive.
+8. Reproduce physical Scribe #187's reverse-relation rejection against self-hosted Instant. Match upstream `instaml.expandLink`/`rewriteStep`: when a local child-to-parent ref resolves through a server attribute whose forward identity is parent-to-child, reverse both endpoints before sending. Prove the exact raw step, server acknowledgement, and materialized rows.
 
 ## Touching
 
 - `Sources/InstantSwiftDataCore/InstantRuntime.swift`
 - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift`
+- `Sources/InstantSwiftDataCore/InstantModels.swift`
+- `Sources/InstantSwiftDataCore/InstantStore.swift`
+- `Sources/InstantSwiftDataCore/InstantInfiniteQuery.swift`
+- `Sources/InstantSwiftDataCore/InstantLiveMutation.swift`
+- `Sources/InstantSwiftData/InstantSwiftData.swift`
 - `Tests/InstantSwiftDataCoreTests/InstantOutboxHydrationTests.swift`
 - `autoresearch/2026-08-09-iphone-replaykit-memory`
 - `PROGRESS.md`

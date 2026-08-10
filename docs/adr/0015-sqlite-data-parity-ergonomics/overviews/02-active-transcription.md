@@ -37,6 +37,11 @@ prod UI). Orthogonal to speech `isFinal` and list **activity ADT**.
   lane (was “open segment id” in drafts). App tracks this id only for write
   targeting.
 
+## Library recipe
+
+Canonical Instant write steps, write contract, wordsJSON, and non-goals:
+[`../open-segment-write-recipe.md`](../open-segment-write-recipe.md).
+
 ## Write loop (ASCII)
 
 ```text

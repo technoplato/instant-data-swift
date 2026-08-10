@@ -9074,8 +9074,8 @@ extension InstantStoreTests {
     expectNoDifference(jsonOutput.pendingMutationIDs, ["validation.loopback.local"])
     expectNoDifference(jsonOutput.processedTransactionID, "validation.loopback.server")
     expectNoDifference(jsonOutput.pendingMutationCount, 1)
-    // Local write + rebase of that pending row during server-apply.
-    expectNoDifference(jsonOutput.outboxRevision, 2)
+    // Server apply preserves the already-correct pending row byte-for-byte.
+    expectNoDifference(jsonOutput.outboxRevision, 1)
 
     let jsonlOutput = try runCLI(
       ["validation", "server-transaction-loopback", "--jsonl"],
@@ -9101,7 +9101,7 @@ extension InstantStoreTests {
     expectNoDifference(serverApplyEvidence.details.emissionQueryIDs, [TodoExample.query.id])
     expectNoDifference(
       serverApplyEvidence.details.outboxRevision,
-      localOutboxEvidence.details.outboxRevision + 1
+      localOutboxEvidence.details.outboxRevision
     )
     expectNoDifference(
       serverApplyEvidence.details.storeRevision,
@@ -9123,7 +9123,7 @@ extension InstantStoreTests {
     )
     expectNoDifference(
       relaunchEvidence.details.outboxRevision,
-      localOutboxEvidence.details.outboxRevision + 1
+      localOutboxEvidence.details.outboxRevision
     )
     expectNoDifference(relaunchEvidence.details.pendingMutationIDs, ["validation.loopback.local"])
     expectNoDifference(relaunchEvidence.details.processedTransactionID, "validation.loopback.server")

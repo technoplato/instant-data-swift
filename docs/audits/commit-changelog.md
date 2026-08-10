@@ -1,3 +1,79 @@
+## 2026-08-09 22:19:47 EDT
+
+- **repo:** realtime-voice-sqlite-instant (Scribe)
+- **commit:** `406131713869fcc986bb01950f01f258e480d55d`
+- **reason:** Correct the failed-row terminology and record the verified physical-iPad cleanup of 1,039 retained terminal-rejection receipts while preserving pending mutations, triples, media, revision invariants, and a recoverable pre-cleanup backup (#044).
+
+## 2026-08-09 20:23:20 EDT
+
+- **repo:** realtime-voice-sqlite-instant (Scribe)
+- **commit:** `0ed93aeb22d435560091b7d42ae51df06dfb2d07`
+- **reason:** Correct the build 10 production snapshot after a post-stop admin query showed eventual but still severely delayed materialization, preserving the failed five-second live-sync verdict without claiming a permanent freeze (#187).
+
+## 2026-08-09 20:20:36 EDT
+
+- **repo:** realtime-voice-sqlite-instant (Scribe)
+- **commit:** `3c475f93e5cde8dd6acfed882940751d06e3c66f`
+- **reason:** Record the corrected-Instant build 10 physical-iPad memory and live-sync failure with exact host footprint, outbox/acknowledgement churn, partial relation-fix success, limitations, and next repair (#044, #187).
+
+## 2026-08-09 19:56:10 EDT
+
+- **repo:** realtime-voice-sqlite-instant (Scribe)
+- **commit:** `304fc5a17777e0d73e67d70d05242c878da6706f`
+- **reason:** Assign Scribe 0.1 (10) a unique clean build identity for physical-iPad acceptance of the corrected Instant reverse-relation and durable-rebase implementation (#044, #187).
+
+## 2026-08-09 18:00:47 EDT
+
+- **repo:** instant-data-swift
+- **commit:** `71ddd401de9a329233e4175549ee5281e31353de`
+- **reason:** Match canonical TypeScript reverse-relation endpoint orientation, remove invalid modes from swapped links, keep durable and optimistic rebase timestamps aligned so required scalar writes survive refresh/rejection/retry, and preserve exact same-ID idempotency while rejecting changed intent (#187).
+
+## 2026-08-09 16:39:00 EDT
+
+- **repo:** realtime-voice-sqlite-instant (Scribe)
+- **commit:** `4773fa0c298517a215fc1d6c12cc4713d7e5cb22`
+- **reason:** Replace root whole-state debug dumping with a publishable signal-aware higher-order reducer that classifies analog and periodic actions before state capture, preserves the complete Agent Control action catalog, and retains bounded discrete history only on the Mac collector.
+
+## 2026-08-09 15:12:24 EDT
+
+- **repo:** realtime-voice-sqlite-instant (Scribe)
+- **commit:** `d989eeb7bc99bdda91df5c66e5d59416074ebc48`
+- **reason:** Assign unique Scribe 0.1 (7) build identity to the physical-iPhone ReplayKit autoresearch binary before install.
+
+## 2026-08-09 15:06:39 EDT
+
+- **repo:** realtime-voice-sqlite-instant (Scribe)
+- **commit:** `1c3e58cdec6dcc6221d7dc1b20e8573d98088824`
+- **reason:** Add an audio-and-transcription-only stress override that leaves real ReplayKit and Instant live; correlate recording saves to exact Instant transaction IDs and preserve privacy-safe failure provenance.
+
+## 2026-08-09 15:00:13 EDT
+
+- **repo:** instant-data-swift
+- **commit:** `8213ed3557d6f23455840699a8948f676858cbf6`
+- **reason:** Hydrate exact durable outbox transaction bodies only at delivery and lifecycle boundaries while keeping resident/cache mutation graphs compact; restore exact live delivery, rejection isolation, cross-runtime revision safety, and explicit-close reconnect ordering.
+
+## 2026-08-09 10:00:28 EDT
+
+- **repo:** realtime-voice-sqlite-instant (Scribe)
+- **commit:** `f7f581025e13f7b74d60813c0ccde6e4eac0e1fa`
+- **reason:** Peel product Instant I/O off ScribeInstantStore; InstantRecordingClient; InstantFacadeBanTests; loud wordsJSON segment decode.
+
+## 2026-08-09 09:54:25 EDT
+
+- **repo:** instant-data-swift
+- **commit:** `ca27941efc55c9ddb52e6b9eb99ea926f111f631`
+- **reason:** Align InstantCodableJSON with structured-queries shared encoder (sortedKeys, ISO-8601), Optional typealiases; loud InstantError encode/decode for wordsJSON parity.
+
+
+## 2026-08-09 09:53:10 EDT
+- **repository:** instant-data-swift
+- **commit:** 5d903c86f595baac8a6581223b07c8426e7639e8
+- **reason:** ADR 0015 / #155 same-entity outbox supersession recipe — pure policy + 17 unit tests; TODO at InstantRuntime enqueue; not wired into delivery yet.
+
+## 2026-08-09 09:12:38 EDT
+- **repository:** instant-data-swift
+- **commit:** 2f32fd84137f4197338aba3c55e7127370ac1952
+- **reason:** ADR 0015 / #155 open-segment write recipe — library doc, Core builders + typed InstantEntityModel sketch, unit tests, overview/plan cross-links.
 
 ## 2026-08-07 00:46:54 EDT
 - **repo:** realtime-voice-sqlite-instant

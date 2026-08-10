@@ -189,6 +189,49 @@ public actor SQLitePersistenceStore {
   private var cachedState: InstantPersistenceState?
   private var didTraceInitialStateLoad = false
 
+  /// Drop the full triples array from the in-memory persistence cache.
+  ///
+  /// InstantStore already holds the hot corpus as TripleIndexes (EAV/AEV/VAE).
+  /// Keeping a second full `InstantStoreSnapshot.triples` in `cachedState` is the
+  /// dual-residency floor (production readiness P2.1). Attributes + outbox +
+  /// revisions stay resident; triples reload from SQLite on cache miss.
+  ///
+  /// Autoresearch: 2026-08-07-scribe-list-memory / #044.
+  /// When true, keep the second full triples array in memory (legacy dual residency).
+  /// Default false (P2.1 thin cache). Autoresearch A/B uses this toggle.
+  nonisolated(unsafe) package static var retainFullTriplesInMemoryForTesting = false
+
+
+  public func invalidateMemoryCache() {
+    cachedState = nil
+  }
+
+  private static func memoryThinnedOutbox(_ mutations: [PendingMutation]) -> [PendingMutation] {
+    mutations.map(\.compactedForMemory)
+  }
+
+  private func adoptCachedState(_ state: InstantPersistenceState) {
+    var thin = state
+    if !Self.retainFullTriplesInMemoryForTesting {
+      if !thin.snapshot.store.triples.isEmpty {
+        thin.snapshot.store = InstantStoreSnapshot(
+          attributes: thin.snapshot.store.attributes,
+          triples: []
+        )
+      }
+      if thin.snapshot.outbox.contains(where: {
+        !$0.transaction.operations.isEmpty
+          || $0.rollbackTransaction?.operations.isEmpty == false
+      }) {
+        thin.snapshot.outbox = Self.memoryThinnedOutbox(thin.snapshot.outbox)
+      }
+    }
+    cachedState = thin
+    try? execute("PRAGMA shrink_memory")
+  }
+
+
+
   public init(
     fileURL: URL,
     startupTrace: InstantStartupTrace = .disabled
@@ -357,6 +400,9 @@ public actor SQLitePersistenceStore {
     }
     try withSQLiteBusyRetry {
       try execute("PRAGMA journal_mode = WAL")
+    // Keep SQLite page cache tiny once InstantStore holds the hot corpus.
+    try execute("PRAGMA cache_size = 0")  // ~2MiB
+
     }
     try execute("PRAGMA foreign_keys = ON")
     try withSQLiteBusyRetry {
@@ -795,7 +841,103 @@ public actor SQLitePersistenceStore {
   }
 
   public func loadState() throws -> InstantPersistenceState {
+    for _ in 0..<5 {
+      let loaded = try loadStateWithSource()
+      guard loaded.source == .memory else { return loaded.state }
+      guard let state = try readTransaction({ () -> InstantPersistenceState? in
+        guard try loadMetadataRevisionWithoutTransaction(Self.storeRevisionKey)
+          == loaded.state.storeRevision,
+          try loadMetadataRevisionWithoutTransaction(Self.outboxRevisionKey)
+            == loaded.state.outboxRevision
+        else {
+          return nil
+        }
+        return try InstantPersistenceState(
+          snapshot: loadSnapshotWithoutTransaction(tracesStartupCollections: false),
+          storeRevision: loaded.state.storeRevision,
+          outboxRevision: loaded.state.outboxRevision
+        )
+      }) else { continue }
+      return state
+    }
+    throw persistenceError(
+      operation: "load persisted state",
+      message: "The Instant store or outbox changed repeatedly while reconstructing durable state."
+    )
+  }
+
+  /// Loads the memory-thinned cache view used by runtime paths that need only
+  /// store data, revisions, or outbox identity/status metadata. Call `loadState()`
+  /// when transaction and rollback operation bodies are part of the contract.
+  func loadCompactState() throws -> InstantPersistenceState {
     try loadStateWithSource().state
+  }
+
+  func loadStateWithDurableOutbox() throws -> InstantPersistenceState {
+    for _ in 0..<5 {
+      let loaded = try loadStateWithSource()
+      guard loaded.source == .memory else { return loaded.state }
+      guard let outbox = try loadOutboxMutations(
+        statuses: [.pending, .confirmed, .failed],
+        expectedStoreRevision: loaded.state.storeRevision,
+        expectedOutboxRevision: loaded.state.outboxRevision
+      ) else { continue }
+      var state = loaded.state
+      state.snapshot.outbox = outbox
+      return state
+    }
+    throw persistenceError(
+      operation: "load durable outbox state",
+      message: "The Instant outbox changed repeatedly while reconstructing durable mutations."
+    )
+  }
+
+  func countOutboxMutations(status: InstantMutationStatus) throws -> Int {
+    Int(try selectInt64(
+      "SELECT COUNT(*) FROM instant_outbox WHERE status = ?",
+      [.text(status.rawValue)]
+    ))
+  }
+
+  func loadOutboxMutations(
+    statuses: [InstantMutationStatus],
+    ids: [String]? = nil,
+    limit: Int? = nil,
+    expectedStoreRevision: Int64? = nil,
+    expectedOutboxRevision: Int64
+  ) throws -> [PendingMutation]? {
+    let statuses = Array(Set(statuses.map(\.rawValue))).sorted()
+    let ids = ids.map { Array(Set($0)).sorted() }
+    return try readTransaction {
+      if let expectedStoreRevision,
+        try loadMetadataRevisionWithoutTransaction(Self.storeRevisionKey)
+          != expectedStoreRevision
+      {
+        return nil
+      }
+      guard try loadMetadataRevisionWithoutTransaction(Self.outboxRevisionKey)
+        == expectedOutboxRevision
+      else {
+        return nil
+      }
+      guard !statuses.isEmpty, ids?.isEmpty != true, limit != 0 else { return [] }
+      let statusPlaceholders = Array(repeating: "?", count: statuses.count)
+        .joined(separator: ", ")
+      var sql =
+        "SELECT json FROM instant_outbox WHERE status IN (\(statusPlaceholders))"
+      var bindings = statuses.map(SQLiteBinding.text)
+      if let ids {
+        let idPlaceholders = Array(repeating: "?", count: ids.count).joined(separator: ", ")
+        sql += " AND mutation_id IN (\(idPlaceholders))"
+        bindings.append(contentsOf: ids.map(SQLiteBinding.text))
+      }
+      sql += " ORDER BY created_at_ms, mutation_id"
+      if let limit {
+        sql += " LIMIT ?"
+        bindings.append(.int(Int64(limit)))
+      }
+      return try selectJSON(sql, bindings)
+    }
   }
 
   func loadStateWithSource() throws -> InstantPersistenceStateLoad {
@@ -814,6 +956,8 @@ public actor SQLitePersistenceStore {
           cachedState.storeRevision == storeRevision,
           cachedState.outboxRevision == outboxRevision
         {
+          // Intentionally keep thinned outbox shells in the RAM cache. Callers that
+          // need full ops (flush) must load from SQLite explicitly.
           return InstantPersistenceStateLoad(state: cachedState, source: .memory)
         }
         return InstantPersistenceStateLoad(
@@ -826,7 +970,7 @@ public actor SQLitePersistenceStore {
         )
       }
       let state = loaded.state
-      cachedState = state
+      adoptCachedState(state)
       InstantDiagnostics.shared.record(
         .trace,
         subsystem: "instant-swift-data-core",
@@ -880,47 +1024,72 @@ public actor SQLitePersistenceStore {
     }
   }
 
-  private func loadSnapshotWithoutTransaction() throws -> InstantPersistenceSnapshot {
+  private func loadSnapshotWithoutTransaction(
+    tracesStartupCollections: Bool = true
+  ) throws -> InstantPersistenceSnapshot {
+    InstantPersistenceSnapshot(
+      store: try loadStoreSnapshotWithoutTransaction(
+        tracesStartupCollections: tracesStartupCollections
+      ),
+      outbox: try loadOutboxWithoutTransaction(
+        tracesStartupCollections: tracesStartupCollections
+      )
+    )
+  }
+
+  private func loadStoreSnapshotWithoutTransaction(
+    tracesStartupCollections: Bool = true
+  ) throws -> InstantStoreSnapshot {
     let attributes: [InstantAttribute] = try loadStateCollection(
       phase: "sqlite.state-load.attributes",
-      sql: "SELECT json FROM instant_attributes ORDER BY id"
+      sql: "SELECT json FROM instant_attributes ORDER BY id",
+      tracesStartupCollection: tracesStartupCollections
     )
     let triples: [InstantTriple] = try loadStateCollection(
       phase: "sqlite.state-load.triples",
-      sql: "SELECT json FROM instant_triples ORDER BY entity_id, attribute_id, value_json"
+      sql: "SELECT json FROM instant_triples ORDER BY entity_id, attribute_id, value_json",
+      tracesStartupCollection: tracesStartupCollections
     )
-    let outbox: [PendingMutation] = try loadStateCollection(
+    return InstantStoreSnapshot(attributes: attributes, triples: triples)
+  }
+
+  private func loadOutboxWithoutTransaction(
+    tracesStartupCollections: Bool = true
+  ) throws -> [PendingMutation] {
+    try loadStateCollection(
       phase: "sqlite.state-load.outbox",
-      sql: "SELECT json FROM instant_outbox ORDER BY created_at_ms, mutation_id"
-    )
-    return InstantPersistenceSnapshot(
-      store: InstantStoreSnapshot(attributes: attributes, triples: triples),
-      outbox: outbox
+      sql: "SELECT json FROM instant_outbox ORDER BY created_at_ms, mutation_id",
+      tracesStartupCollection: tracesStartupCollections
     )
   }
 
   private func loadStateCollection<Value: Decodable & Sendable>(
     phase: String,
-    sql: String
+    sql: String,
+    tracesStartupCollection: Bool = true
   ) throws -> [Value] {
     let stopwatch = startupTrace.stopwatch()
     do {
       let selection: (values: [Value], batchCount: Int, encodedByteCount: Int) =
         try selectBatchedJSON(sql)
-      startupTrace.completed(
-        phase,
-        since: stopwatch,
-        metadata: [
-          "count": String(selection.values.count),
-          "decodeBatchCount": String(selection.batchCount),
-          "decodeConcurrency": "2",
-          "decodeStrategy": "batched-json-array",
-          "encodedByteCount": String(selection.encodedByteCount),
-        ]
-      )
+      if tracesStartupCollection {
+        startupTrace.completed(
+          phase,
+          since: stopwatch,
+          metadata: [
+            "count": String(selection.values.count),
+            "decodeBatchCount": String(selection.batchCount),
+            "decodeConcurrency": "2",
+            "decodeStrategy": "batched-json-array",
+            "encodedByteCount": String(selection.encodedByteCount),
+          ]
+        )
+      }
       return selection.values
     } catch {
-      startupTrace.failed(phase, error: error, since: stopwatch)
+      if tracesStartupCollection {
+        startupTrace.failed(phase, error: error, since: stopwatch)
+      }
       throw error
     }
   }
@@ -939,12 +1108,15 @@ public actor SQLitePersistenceStore {
     return rows.first
   }
 
-  func loadStateAndCachedQuery(
+  func loadStoreStateAndCachedQuery(
     cacheKey: String
   ) throws -> (state: InstantPersistenceState, cachedQuery: InstantCachedQuery?) {
     try readTransaction {
       let state = try InstantPersistenceState(
-        snapshot: loadSnapshotWithoutTransaction(),
+        snapshot: InstantPersistenceSnapshot(
+          store: loadStoreSnapshotWithoutTransaction(),
+          outbox: []
+        ),
         storeRevision: loadMetadataRevisionWithoutTransaction(Self.storeRevisionKey),
         outboxRevision: loadMetadataRevisionWithoutTransaction(Self.outboxRevisionKey)
       )
@@ -1099,6 +1271,7 @@ public actor SQLitePersistenceStore {
 
   public func saveOutbox(
     _ mutations: [PendingMutation],
+    replacing previousMutations: [PendingMutation]? = nil,
     expectedOutboxRevision: Int64
   ) throws -> Bool {
     let previousState = cachedState
@@ -1109,16 +1282,9 @@ public actor SQLitePersistenceStore {
       else {
         return false
       }
-      if let previousState,
-        previousState.outboxRevision == expectedOutboxRevision
-      {
-        try saveOutboxDiffWithoutTransaction(
-          from: previousState.snapshot.outbox,
-          to: mutations
-        )
-      } else {
-        try saveOutboxWithoutTransaction(mutations)
-      }
+      let previousMutations = try previousMutations
+        ?? loadOutboxWithoutTransaction(tracesStartupCollections: false)
+      try saveOutboxDiffWithoutTransaction(from: previousMutations, to: mutations)
       _ = try bumpMetadataRevisionWithoutTransaction(Self.outboxRevisionKey)
       return true
     }
@@ -1127,7 +1293,7 @@ public actor SQLitePersistenceStore {
     {
       previousState.snapshot.outbox = mutations
       previousState.outboxRevision += 1
-      cachedState = previousState
+      adoptCachedState(previousState)
     } else if didSave {
       cachedState = nil
     }
@@ -1136,6 +1302,7 @@ public actor SQLitePersistenceStore {
 
   func saveOutbox(
     _ mutations: [PendingMutation],
+    replacing previousMutations: [PendingMutation]? = nil,
     metadataEntries: [InstantPersistenceMetadataEntry],
     deletingMetadataKeys: [String] = [],
     expectedStoreRevision: Int64,
@@ -1149,17 +1316,9 @@ public actor SQLitePersistenceStore {
       else {
         return false
       }
-      if let previousState,
-        previousState.storeRevision == expectedStoreRevision,
-        previousState.outboxRevision == expectedOutboxRevision
-      {
-        try saveOutboxDiffWithoutTransaction(
-          from: previousState.snapshot.outbox,
-          to: mutations
-        )
-      } else {
-        try saveOutboxWithoutTransaction(mutations)
-      }
+      let previousMutations = try previousMutations
+        ?? loadOutboxWithoutTransaction(tracesStartupCollections: false)
+      try saveOutboxDiffWithoutTransaction(from: previousMutations, to: mutations)
       for entry in metadataEntries {
         try saveMetadataValueWithoutTransaction(
           entry.value,
@@ -1179,7 +1338,7 @@ public actor SQLitePersistenceStore {
     {
       previousState.snapshot.outbox = mutations
       previousState.outboxRevision += 1
-      cachedState = previousState
+      adoptCachedState(previousState)
     } else if didSave {
       cachedState = nil
     }
@@ -1862,24 +2021,42 @@ public actor SQLitePersistenceStore {
   func pruneLiveQueryResults(
     policy: InstantLiveQueryResultPruningPolicy,
     now: InstantTimestamp,
-    preservingQueryKeys: Set<String> = []
+    preservingQueryKeys: Set<String> = [],
+    currentStoreSnapshot: InstantStoreSnapshot? = nil
   ) throws -> InstantLiveQueryResultPruningApplication {
     let application = try transaction {
       let storeRevision = try loadMetadataRevisionWithoutTransaction(Self.storeRevisionKey)
       let outboxRevision = try loadMetadataRevisionWithoutTransaction(Self.outboxRevisionKey)
-      let currentState =
-        if let cachedState,
-          cachedState.storeRevision == storeRevision,
-          cachedState.outboxRevision == outboxRevision
-        {
-          cachedState
-        } else {
-          try InstantPersistenceState(
-            snapshot: loadSnapshotWithoutTransaction(),
-            storeRevision: storeRevision,
-            outboxRevision: outboxRevision
+      let currentState: InstantPersistenceState
+      if var cachedState,
+        cachedState.storeRevision == storeRevision,
+        cachedState.outboxRevision == outboxRevision
+      {
+        // Pruning protects rows touched by every active optimistic mutation. The
+        // RAM cache intentionally stores pending transactions as empty shells,
+        // so reconstruct their durable bodies only for this pruning transaction.
+        if !cachedState.snapshot.outbox.isEmpty {
+          cachedState.snapshot.outbox = try loadOutboxWithoutTransaction(
+            tracesStartupCollections: false
           )
         }
+        if cachedState.snapshot.store.triples.isEmpty {
+          if let currentStoreSnapshot {
+            cachedState.snapshot.store = currentStoreSnapshot
+          } else {
+            cachedState.snapshot.store = try loadStoreSnapshotWithoutTransaction(
+              tracesStartupCollections: false
+            )
+          }
+        }
+        currentState = cachedState
+      } else {
+        currentState = try InstantPersistenceState(
+          snapshot: loadSnapshotWithoutTransaction(),
+          storeRevision: storeRevision,
+          outboxRevision: outboxRevision
+        )
+      }
       var rows = try loadLiveQueryResultRowsWithoutTransaction()
       var protectedQueryKeys = preservingQueryKeys
       let optimisticProtection = Self.liveQueryPruningProtection(
@@ -1997,7 +2174,7 @@ public actor SQLitePersistenceStore {
         )
       )
     }
-    cachedState = application.state
+    adoptCachedState(application.state)
     return application
   }
 
@@ -2171,11 +2348,11 @@ public actor SQLitePersistenceStore {
         outbox: try bumpMetadataRevisionWithoutTransaction(Self.outboxRevisionKey)
       )
     }
-    cachedState = InstantPersistenceState(
+    adoptCachedState(InstantPersistenceState(
       snapshot: snapshot,
       storeRevision: revisions.store,
       outboxRevision: revisions.outbox
-    )
+    ))
     InstantDiagnostics.shared.record(
       .trace,
       subsystem: "instant-swift-data-core",
@@ -2209,11 +2386,11 @@ public actor SQLitePersistenceStore {
       return true
     }
     if didSave {
-      cachedState = InstantPersistenceState(
+      adoptCachedState(InstantPersistenceState(
         snapshot: snapshot,
         storeRevision: expectedStoreRevision + 1,
         outboxRevision: expectedOutboxRevision + 1
-      )
+      ))
     }
     return didSave
   }
@@ -2244,11 +2421,11 @@ public actor SQLitePersistenceStore {
       return true
     }
     if didSave {
-      cachedState = InstantPersistenceState(
+      adoptCachedState(InstantPersistenceState(
         snapshot: snapshot,
         storeRevision: expectedStoreRevision + 1,
         outboxRevision: expectedOutboxRevision + 1
-      )
+      ))
     }
     return didSave
   }
@@ -2291,11 +2468,11 @@ public actor SQLitePersistenceStore {
       return true
     }
     if didSave {
-      cachedState = InstantPersistenceState(
+      adoptCachedState(InstantPersistenceState(
         snapshot: snapshot,
         storeRevision: expectedStoreRevision + 1,
         outboxRevision: expectedOutboxRevision + 1
-      )
+      ))
     }
     return didSave
   }
@@ -2309,10 +2486,13 @@ public actor SQLitePersistenceStore {
     expectedStoreRevision: Int64,
     expectedOutboxRevision: Int64
   ) throws -> Bool {
+    // Dual-residency thin cache keeps attributes/outbox/revisions only. Empty
+    // triples must not be treated as "entity has no triples" — fall back to SQLite.
     let cachedChangedEntityTriples: [String: [InstantTriple]]?
     if let cachedState,
       cachedState.storeRevision == expectedStoreRevision,
-      cachedState.outboxRevision == expectedOutboxRevision
+      cachedState.outboxRevision == expectedOutboxRevision,
+      !cachedState.snapshot.store.triples.isEmpty
     {
       cachedChangedEntityTriples = Dictionary(
         uniqueKeysWithValues: changedEntityTriples.keys.map { entityID in
@@ -2373,14 +2553,16 @@ public actor SQLitePersistenceStore {
       cachedState.storeRevision == expectedStoreRevision,
       cachedState.outboxRevision == expectedOutboxRevision
     {
-      replaceCachedTriples(
-        in: &cachedState.snapshot.store.triples,
-        with: changedEntityTriples
-      )
+      if !cachedState.snapshot.store.triples.isEmpty {
+        replaceCachedTriples(
+          in: &cachedState.snapshot.store.triples,
+          with: changedEntityTriples
+        )
+      }
       cachedState.snapshot.outbox = outbox
       cachedState.storeRevision += 1
       cachedState.outboxRevision += 1
-      self.cachedState = cachedState
+      adoptCachedState(cachedState)
     } else if didSave {
       cachedState = nil
     }
@@ -2410,7 +2592,7 @@ public actor SQLitePersistenceStore {
     {
       cachedState.snapshot.store = snapshot
       cachedState.storeRevision += 1
-      self.cachedState = cachedState
+      adoptCachedState(cachedState)
     } else if didSave {
       cachedState = nil
     }
@@ -2419,13 +2601,13 @@ public actor SQLitePersistenceStore {
 
   public func saveSnapshot(
     _ snapshot: InstantPersistenceSnapshot,
+    replacing previousSnapshot: InstantPersistenceSnapshot? = nil,
     metadataKey: String,
     metadataValue: String,
     metadataUpdatedAt: InstantTimestamp,
     expectedStoreRevision: Int64,
     expectedOutboxRevision: Int64
   ) throws -> Bool {
-    let previousState = cachedState
     let didSave = try transaction {
       guard
         try loadMetadataRevisionWithoutTransaction(Self.storeRevisionKey) == expectedStoreRevision,
@@ -2433,22 +2615,20 @@ public actor SQLitePersistenceStore {
       else {
         return false
       }
-      if let previousState,
-        previousState.storeRevision == expectedStoreRevision,
-        previousState.outboxRevision == expectedOutboxRevision
-      {
-        try saveStoreSnapshotDiffWithoutTransaction(
-          from: previousState.snapshot.store,
-          to: snapshot.store
-        )
-        try saveOutboxDiffWithoutTransaction(
-          from: previousState.snapshot.outbox,
-          to: snapshot.outbox
-        )
-      } else {
-        try saveStoreSnapshotWithoutTransaction(snapshot.store)
-        try saveOutboxWithoutTransaction(snapshot.outbox)
-      }
+      // `cachedState` is intentionally memory compacted: it may omit every
+      // triple and every transaction body. It therefore cannot be the previous
+      // side of a durable diff. Runtime callers pass the already-hydrated state;
+      // direct callers fall back to one atomic SQLite read.
+      let previousSnapshot = try previousSnapshot
+        ?? loadSnapshotWithoutTransaction(tracesStartupCollections: false)
+      try saveStoreSnapshotDiffWithoutTransaction(
+        from: previousSnapshot.store,
+        to: snapshot.store
+      )
+      try saveOutboxDiffWithoutTransaction(
+        from: previousSnapshot.outbox,
+        to: snapshot.outbox
+      )
       try saveMetadataValueWithoutTransaction(
         metadataValue,
         key: metadataKey,
@@ -2459,17 +2639,18 @@ public actor SQLitePersistenceStore {
       return true
     }
     if didSave {
-      cachedState = InstantPersistenceState(
+      adoptCachedState(InstantPersistenceState(
         snapshot: snapshot,
         storeRevision: expectedStoreRevision + 1,
         outboxRevision: expectedOutboxRevision + 1
-      )
+      ))
     }
     return didSave
   }
 
   public func saveOutbox(
     _ mutations: [PendingMutation],
+    replacing previousMutations: [PendingMutation]? = nil,
     metadataKey: String,
     metadataValue: String,
     metadataUpdatedAt: InstantTimestamp,
@@ -2484,17 +2665,9 @@ public actor SQLitePersistenceStore {
       else {
         return false
       }
-      if let previousState,
-        previousState.storeRevision == expectedStoreRevision,
-        previousState.outboxRevision == expectedOutboxRevision
-      {
-        try saveOutboxDiffWithoutTransaction(
-          from: previousState.snapshot.outbox,
-          to: mutations
-        )
-      } else {
-        try saveOutboxWithoutTransaction(mutations)
-      }
+      let previousMutations = try previousMutations
+        ?? loadOutboxWithoutTransaction(tracesStartupCollections: false)
+      try saveOutboxDiffWithoutTransaction(from: previousMutations, to: mutations)
       try saveMetadataValueWithoutTransaction(
         metadataValue,
         key: metadataKey,
@@ -2509,7 +2682,7 @@ public actor SQLitePersistenceStore {
     {
       previousState.snapshot.outbox = mutations
       previousState.outboxRevision += 1
-      cachedState = previousState
+      adoptCachedState(previousState)
     } else if didSave {
       cachedState = nil
     }
@@ -2518,6 +2691,7 @@ public actor SQLitePersistenceStore {
 
   public func saveStoreSnapshot(
     _ snapshot: InstantStoreSnapshot,
+    replacing previousSnapshot: InstantStoreSnapshot? = nil,
     metadataKey: String,
     metadataValue: String,
     metadataUpdatedAt: InstantTimestamp,
@@ -2532,17 +2706,12 @@ public actor SQLitePersistenceStore {
       else {
         return false
       }
-      if let previousState,
-        previousState.storeRevision == expectedStoreRevision,
-        previousState.outboxRevision == expectedOutboxRevision
-      {
-        try saveStoreSnapshotDiffWithoutTransaction(
-          from: previousState.snapshot.store,
-          to: snapshot
-        )
-      } else {
-        try saveStoreSnapshotWithoutTransaction(snapshot)
-      }
+      let previousSnapshot = try previousSnapshot
+        ?? loadStoreSnapshotWithoutTransaction(tracesStartupCollections: false)
+      try saveStoreSnapshotDiffWithoutTransaction(
+        from: previousSnapshot,
+        to: snapshot
+      )
       try saveMetadataValueWithoutTransaction(
         metadataValue,
         key: metadataKey,
@@ -2557,7 +2726,7 @@ public actor SQLitePersistenceStore {
     {
       previousState.snapshot.store = snapshot
       previousState.storeRevision += 1
-      cachedState = previousState
+      adoptCachedState(previousState)
     } else if didSave {
       cachedState = nil
     }
@@ -2566,6 +2735,7 @@ public actor SQLitePersistenceStore {
 
   func saveLiveRefresh(
     _ snapshot: InstantPersistenceSnapshot,
+    replacing previousSnapshot: InstantPersistenceSnapshot? = nil,
     queryResults: [InstantPersistedLiveQueryResult],
     storeChanged: Bool,
     outboxChanged: Bool,
@@ -2575,7 +2745,6 @@ public actor SQLitePersistenceStore {
     expectedStoreRevision: Int64,
     expectedOutboxRevision: Int64
   ) throws -> Bool {
-    let previousState = cachedState
     let bumpsStoreRevision = storeChanged || !queryResults.isEmpty
     let didSave = try transaction {
       guard
@@ -2585,30 +2754,20 @@ public actor SQLitePersistenceStore {
         return false
       }
       if storeChanged {
-        if let previousState,
-          previousState.storeRevision == expectedStoreRevision,
-          previousState.outboxRevision == expectedOutboxRevision
-        {
-          try saveStoreSnapshotDiffWithoutTransaction(
-            from: previousState.snapshot.store,
-            to: snapshot.store
-          )
-        } else {
-          try saveStoreSnapshotWithoutTransaction(snapshot.store)
-        }
+        let previousStoreSnapshot = try previousSnapshot?.store
+          ?? loadStoreSnapshotWithoutTransaction(tracesStartupCollections: false)
+        try saveStoreSnapshotDiffWithoutTransaction(
+          from: previousStoreSnapshot,
+          to: snapshot.store
+        )
       }
       if outboxChanged {
-        if let previousState,
-          previousState.storeRevision == expectedStoreRevision,
-          previousState.outboxRevision == expectedOutboxRevision
-        {
-          try saveOutboxDiffWithoutTransaction(
-            from: previousState.snapshot.outbox,
-            to: snapshot.outbox
-          )
-        } else {
-          try saveOutboxWithoutTransaction(snapshot.outbox)
-        }
+        let previousOutbox = try previousSnapshot?.outbox
+          ?? loadOutboxWithoutTransaction(tracesStartupCollections: false)
+        try saveOutboxDiffWithoutTransaction(
+          from: previousOutbox,
+          to: snapshot.outbox
+        )
       }
       for result in queryResults {
         try saveLiveQueryResultWithoutTransaction(result)
@@ -2626,12 +2785,21 @@ public actor SQLitePersistenceStore {
       }
       return true
     }
-    if didSave {
-      cachedState = InstantPersistenceState(
-        snapshot: snapshot,
-        storeRevision: expectedStoreRevision + (bumpsStoreRevision ? 1 : 0),
-        outboxRevision: expectedOutboxRevision + (outboxChanged ? 1 : 0)
-      )
+    if didSave, var cachedState,
+      cachedState.storeRevision == expectedStoreRevision,
+      cachedState.outboxRevision == expectedOutboxRevision
+    {
+      if storeChanged {
+        cachedState.snapshot.store = snapshot.store
+      }
+      if outboxChanged {
+        cachedState.snapshot.outbox = snapshot.outbox
+      }
+      cachedState.storeRevision += bumpsStoreRevision ? 1 : 0
+      cachedState.outboxRevision += outboxChanged ? 1 : 0
+      adoptCachedState(cachedState)
+    } else if didSave {
+      cachedState = nil
     }
     return didSave
   }

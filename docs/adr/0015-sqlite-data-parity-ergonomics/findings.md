@@ -52,7 +52,9 @@ timeline thinning, DEBUG pills):
 
 ## Library gaps that forced the app hacks
 
-1. No enforced sparse open-segment write recipe + examples
+1. ~~No enforced sparse open-segment write recipe + examples~~ → **shipped**
+   `open-segment-write-recipe.md` + `OpenSegmentWriteRecipe` (Core) +
+   `OpenSegmentWriteRecipeEntities` (typed sketch); peel Scribe planners next
 2. No per-entity sync status on fetch (ADR 0014 proposed)
 3. No same-entity outbox supersession for high-frequency updates
 4. Composite observation still easy to “do wrong” with manual multi-subscribe

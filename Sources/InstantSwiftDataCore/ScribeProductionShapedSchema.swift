@@ -196,8 +196,9 @@ public enum ScribeProductionShapedSchema: Sendable {
         id: "\(wordNamespace)/text",
         namespace: wordNamespace,
         name: "text",
-        valueType: .string,
-        isIndexed: true
+        valueType: .string
+        // Not indexed in production instant.schema.ts (aev on unique word strings
+        // was a false-confidence memory amplifier in the soak / #044).
       ),
       InstantAttribute(
         id: "\(wordNamespace)/wordIndex",

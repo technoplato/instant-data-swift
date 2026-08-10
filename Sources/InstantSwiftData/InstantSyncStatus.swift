@@ -161,11 +161,11 @@ public struct InstantSyncFlushAcceptedEvent: Hashable, Sendable {
       let generation = flushGeneration
       let task = Task { @MainActor [weak self] in
         do {
-          let pending = await client.pendingMutations()
+          let pendingCount = await client.pendingMutationCount()
           try Task.checkCancellation()
           guard let self, self.flushGeneration == generation else { return }
-          self.pendingOutboxCount = pending.count
-          onStarted(InstantSyncFlushStartedEvent(pendingCount: pending.count))
+          self.pendingOutboxCount = pendingCount
+          onStarted(InstantSyncFlushStartedEvent(pendingCount: pendingCount))
 
           let result = try await client.flushPendingMutations()
           try Task.checkCancellation()

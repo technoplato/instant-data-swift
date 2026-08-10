@@ -60,7 +60,27 @@ struct InstantReactorParityTests {
     expectNoDifference(sentMessages.map(\.op), ["init", "add-query"], reactorQuerySubsSource)
     expectNoDifference(sentMessages.last?.fields["q"], query, reactorQuerySubsSource)
 
-    _ = try await runtime.queryOnce(plan)
+    let queryOnceTask = Task { try await runtime.queryOnce(plan) }
+    defer { queryOnceTask.cancel() }
+    try await instantLiveWithTimeout(
+      operation: "wait for querySubs parity queryOnce registration",
+      timeoutMilliseconds: 5_000
+    ) {
+      await liveSession.waitForSentMessageCount(3)
+    }
+    await liveSession.enqueue(
+      InstantLiveMessage(
+        op: "add-query-exists",
+        clientEventID: "event-query-subs-query-once",
+        fields: ["q": query]
+      )
+    )
+    _ = try await instantLiveWithTimeout(
+      operation: "wait for querySubs parity queryOnce acknowledgement",
+      timeoutMilliseconds: 5_000
+    ) {
+      try await queryOnceTask.value
+    }
     let loadedCachedQuery = try await runtime.cachedQuery(plan)
     let cachedQuery = try #require(loadedCachedQuery)
     expectNoDifference(emission.queryID, "reactor.query-subs.todos", reactorQuerySubsSource)
@@ -590,7 +610,30 @@ struct InstantReactorParityTests {
     )
 
     let pendingAfterCleanup = await runtime.pendingMutations().map(\.id)
-    let visibleTexts = try await reactorOptimisticTextsFromQueryOnce(runtime)
+    let queryOnceTask = Task { try await reactorOptimisticTextsFromQueryOnce(runtime) }
+    defer { queryOnceTask.cancel() }
+    try await instantLiveWithTimeout(
+      operation: "wait for pending cleanup parity queryOnce registration",
+      timeoutMilliseconds: 5_000
+    ) {
+      await liveSession.waitForSentMessageCount(5)
+    }
+    let pendingCleanupQuery = try #require(
+      await liveSession.sentMessages().last?.fields["q"]
+    )
+    await liveSession.enqueue(
+      InstantLiveMessage(
+        op: "add-query-exists",
+        clientEventID: "event-pending-cleanup-query-once",
+        fields: ["q": pendingCleanupQuery]
+      )
+    )
+    let visibleTexts = try await instantLiveWithTimeout(
+      operation: "wait for pending cleanup parity queryOnce acknowledgement",
+      timeoutMilliseconds: 5_000
+    ) {
+      try await queryOnceTask.value
+    }
     expectNoDifference(
       pendingAfterCleanup,
       ["tx-reactor-cleanup-joe3"],

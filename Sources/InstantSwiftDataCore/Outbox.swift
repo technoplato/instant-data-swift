@@ -20,8 +20,13 @@ actor InstantOutbox {
   private var mutations: [PendingMutation]
 
   init(mutations: [PendingMutation] = []) {
-    self.mutations = mutations.sorted(by: PendingMutation.creationOrder)
+    self.mutations = Self.compacted(mutations)
   }
+
+  // TODO recipe entry: same-entity supersession at durable enqueue (not here alone).
+  // Pure policy: OutboxSameEntitySupersession.decide — ADR 0015
+  // docs/adr/0015-sqlite-data-parity-ergonomics/follow-on-outbox-same-entity-supersession.md
+  // Call site: InstantRuntime local mutation path after outboxSnapshot append.
 
   func pending() -> [PendingMutation] {
     mutations.filter { $0.status == .pending }
@@ -29,13 +34,6 @@ actor InstantOutbox {
 
   func all() -> [PendingMutation] {
     mutations
-  }
-
-  func confirming(
-    id: String,
-    source: InstantMutationConfirmationSource = .manual
-  ) -> InstantOutboxUpdate? {
-    Self.confirming(id: id, source: source, in: mutations)
   }
 
   static func confirming(
@@ -104,10 +102,6 @@ actor InstantOutbox {
     return transactionNumber <= processedTransactionNumber
   }
 
-  func failing(id: String, message: String) -> InstantOutboxUpdate? {
-    Self.failing(id: id, message: message, in: mutations)
-  }
-
   static func failing(
     id: String,
     message: String,
@@ -151,10 +145,6 @@ actor InstantOutbox {
       mutation: mutation,
       mutations: nextMutations.sorted(by: PendingMutation.creationOrder)
     )
-  }
-
-  func retrying(id: String) -> InstantOutboxUpdate? {
-    Self.retrying(id: id, in: mutations)
   }
 
   static func retrying(id: String, in mutations: [PendingMutation]) -> InstantOutboxUpdate? {
@@ -245,6 +235,23 @@ actor InstantOutbox {
   }
 
   func replace(with mutations: [PendingMutation]) {
-    self.mutations = mutations.sorted(by: PendingMutation.creationOrder)
+    self.mutations = Self.compacted(mutations)
+  }
+
+  private static func compacted(_ mutations: [PendingMutation]) -> [PendingMutation] {
+    mutations
+      .map(\.compactedForMemory)
+      .sorted(by: PendingMutation.creationOrder)
+  }
+}
+
+extension PendingMutation {
+  var compactedForMemory: Self {
+    var compacted = self
+    compacted.transaction = InstantStoreTransaction(id: transaction.id, operations: [])
+    compacted.rollbackTransaction = rollbackTransaction.map {
+      InstantStoreTransaction(id: $0.id, operations: [])
+    }
+    return compacted
   }
 }
