@@ -1,3 +1,9 @@
+## 2026-08-11 16:47:56 EDT — instant-data-swift f647abee9dc89a9dc3ae706ae7b9747719957b6a
+
+- **Repo:** instant-data-swift
+- **SHA:** f647abee9dc89a9dc3ae706ae7b9747719957b6a
+- **Reason:** ADR 0016 flat mode leaves through Q22 (`recording.create`); restore after external overwrite; HANDOFF for cold resume.
+
 ## 2026-08-11 16:41:49 EDT — realtime-voice-sqlite-instant 10d82164c9f8d95d8785addd3960f4916ec0a927
 
 - **Repo:** realtime-voice-sqlite-instant
