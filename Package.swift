@@ -35,6 +35,7 @@ let package = Package(
     .library(name: "SyncUpsV3App", targets: ["SyncUpsV3App"]),
     .library(name: "StreamsV3App", targets: ["StreamsV3App"]),
     .library(name: "TodosV3App", targets: ["TodosV3App"]),
+    .library(name: "TranscriptionApp", targets: ["TranscriptionApp"]),
     .library(name: "LinkedInfiniteV3App", targets: ["LinkedInfiniteV3App"]),
     .library(name: "VoiceTrailV3App", targets: ["VoiceTrailV3App"]),
     .executable(name: "instant-swift-data", targets: ["instant-swift-data"]),
@@ -51,6 +52,7 @@ let package = Package(
     .executable(name: "streams-v3", targets: ["StreamsV3Executable"]),
     .executable(name: "voicetrail-v3", targets: ["VoiceTrailV3Executable"]),
     .executable(name: "todos-v3", targets: ["TodosV3Executable"]),
+    .executable(name: "transcription", targets: ["TranscriptionExecutable"]),
     .executable(
       name: "instant-swift-data-validation-runner",
       targets: ["InstantSwiftDataValidationRunner"]
@@ -230,6 +232,14 @@ let package = Package(
       swiftSettings: strictConcurrencySettings
     ),
     .target(
+      name: "TranscriptionApp",
+      dependencies: [
+        "InstantSwiftData",
+        .product(name: "Dependencies", package: "swift-dependencies"),
+      ],
+      swiftSettings: strictConcurrencySettings
+    ),
+    .target(
       name: "LinkedInfiniteV3App",
       dependencies: [
         "InstantSwiftData",
@@ -364,6 +374,11 @@ let package = Package(
     .executableTarget(
       name: "TodosV3Executable",
       dependencies: ["TodosV3App"],
+      swiftSettings: strictConcurrencySettings
+    ),
+    .executableTarget(
+      name: "TranscriptionExecutable",
+      dependencies: ["TranscriptionApp"],
       swiftSettings: strictConcurrencySettings
     ),
     .executableTarget(
