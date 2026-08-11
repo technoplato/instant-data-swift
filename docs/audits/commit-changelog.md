@@ -1,3 +1,10 @@
+## 2026-08-11 16:28:39 EDT
+
+- **repo:** realtime-voice-sqlite-instant
+- **sha:** `061d737863b8dd62afc10ac10b720b0b964f242a`
+- **subject:** Default debug overlay to expanded with v2 settings file.
+- **reason:** Captain-requested default expanded debug overlay; v2 file so prior hidden defaults do not trap reinstalls. Companion to KEEP handoff pickup (schema push + stop force-finish WT).
+
 ## 2026-08-11 16:27:31 EDT
 
 - **repo:** realtime-voice-sqlite-instant

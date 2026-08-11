@@ -6,6 +6,34 @@ production-readiness plan
 Commit-level history stays in `docs/audits/commit-changelog.md`; this file is
 the narrative of what the library must prove and why.
 
+## 2026-08-11 16:28:28 EDT — Handoff pickup: P0 stop force-finish (WT), P1 schema green, P3 overlay committed
+
+- **Agent:** grok-build-p0-stop-hang (continuation of `docs/handoffs/2026-08-11-performance-keep-recording-hang-schema-push.md`).
+- **P0 Recording stop hang (Scribe working tree, not yet committable alone):**
+  - `speechFinalizationTimedOut` force-finishes both transcript streams, cancels wait/stop drain IDs, keeps loud error log (`forceFinished=true`).
+  - `speechFlushFailed` marks speech finished and retries `finishStopIfTranscriptSourcesEnded` (stale finishAudio no longer leaves UI spinning).
+  - Focused tests **5/5** green: timeout force-finish, flush-failed finish when system-audio done, flush-failed wait while system-audio open, stopCaptureDrained without sessions, failed streams still do not auto-dismiss.
+  - **Why uncommitted:** `Recording.swift` / `RecordingTests.swift` sit inside multi-agent dirty WIP (100+ hunks: ReplayKit spool, durability sequencer, timeline window). Commit only when that WIP lands or is split; do not squash foreign work.
+- **P1 Instant cloud schema/perms PUSHED:**
+  - App `e7c49961-d702-46a1-82c1-fca9a61f6a4d` as `halfjew22@gmail.com`.
+  - Schema: created `recordingRouteChunks` + link + `recordingAttachments.lifecycleID`; removed server-only canaries `todos` / `validationBoundary`.
+  - Perms: route-chunk + attachment lifecycle rules applied.
+  - `python3 scripts/instant-drift/check.py` → **match** (0 mismatches).
+- **P3 Overlay default expanded (Scribe commits):**
+  - `061d737` default presentation expanded + v2 settings file; ledger `da05331`.
+- **Still open:** P2 route-chunk finalize merge-if-missing (schema push may unblock create); P4 reinstall + stop verify on iPad; P5 device↔admin RTT.
+- **Preserve:** Instant ADR 0016 dirt; Scribe multi-agent porcelain outside owned overlay slice.
+
+## 2026-08-11 16:14:54 EDT — Handoff: KEEP partial, InstantError fixed, stop hang + schema push open
+
+- **Handoff (canonical):** `docs/handoffs/2026-08-11-performance-keep-recording-hang-schema-push.md`
+- **Mirror:** `../tools/realtime-voice-sqlite-instant/handoffs/2026-08-11-performance-keep-recording-hang-schema-push.md`
+- **Landed library:** `7c4e5ab6` InstantError LocalizedError/CustomNSError + deferred validation + JSON non-indexed macro; Runtime split `afe09bdb`; freezes `8b7c384e`.
+- **Device:** Scribe Dev on Michael's iPad; agent-control record start/stop; phys_footprint peak ~196 MiB (under 400 idle budget). Evidence `/tmp/scribe-physical-keep-20260811T1606.json`.
+- **Open P0:** Recording stop hangs finishing UI — `speechFinalizationTimedOut` does not force finish; route-chunk strict update fails missing entity; schema not pushed (drift skipped at install).
+- **Open P1–P5:** push schema/perms; debug overlay default expanded; device↔admin RTT; reinstall after stop fix.
+- **Scribe:** dirty ~247; Package.swift path Instant dual-dev. Do not thrash foreign dirt.
+
 ## 2026-08-11 14:44:11 EDT — InstantRuntime split: SIL flag removed
 
 - **Mower:** Extracted free-standing infrastructure from 13,338-line `InstantRuntime.swift` into:
