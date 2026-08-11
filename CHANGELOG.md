@@ -10,6 +10,21 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## August 11th, 2026 at 4:53:44 p.m. EDT — `c44911e27a03` ADR 0016: accept remaining idle modes; normalize goesTo handles.
+
+- **Implementation commit:** `c44911e27a0358940b7ae4068b43ef3a21dd713f`
+- **Change:** ADR 0016: accept remaining idle modes; normalize goesTo handles
+- **Details:**
+  - Captain blanket-applied sibling idle Playing/Paused leaves
+  - Tree-wide goesTo handle args; all nine mode leaves reviewed
+- **Files:**
+  - `docs/adr/0016-transcription-example-instant-first/qanda.md` — Q23–Q24 decided
+  - `docs/adr/0016-transcription-example-instant-first/overviews/04-uri-tree.md` — Handle args on mode goesTo; REVIEWED Q23 Q24
+  - `docs/adr/0016-transcription-example-instant-first/HANDOFF.md` — Mode leaf table complete; next goBack
+- **User context (verbatim):**
+  > blanket apply to all of these different modes that are just have a couple of different changes
+- **SpecStory:** unavailable — Grok Build session; no SpecStory cloud URI for this agent host
+
 ## August 11th, 2026 at 4:47:53 p.m. EDT — `f647abee9dc8` ADR 0016: lock flat mode leaves through Q22 recording.create.
 
 - **Implementation commit:** `f647abee9dc89a9dc3ae706ae7b9747719957b6a`
