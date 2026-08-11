@@ -10,6 +10,22 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## August 11th, 2026 at 3:57:27 p.m. EDT — `7c4e5ab6ee3a` Make InstantError actionable and unblock deferred bootstrap.
+
+- **Implementation commit:** `7c4e5ab6ee3af10f5861af188ea4d87a4636541d`
+- **Change:** Make InstantError show code/operation/message/recovery instead of opaque error 1, and unblock deferred residency bootstrap.
+- **Details:**
+  - LocalizedError + CustomNSError with stable codes 1-7 and userFacingSummary for alerts.
+  - Entity macro leaves JSON attributes non-indexed so large payloads can be deferred; deferred validation names missing IDs and declared neighbors.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantError.swift` — Actionable LocalizedError and CustomNSError presentation.
+  - `Sources/InstantSwiftDataCore/DeferredValueResidency.swift` — Clearer missing-attribute bootstrap validation.
+  - `Sources/InstantSwiftDataMacros/InstantSwiftDataMacros.swift` — JSON fields not indexed by default.
+  - `Tests/InstantSwiftDataCoreTests/InstantErrorPresentationTests.swift` — Guard against opaque error 1 regression.
+- **User context (verbatim):**
+  > could not open scribe, instantswiftdatacore.instanterror error 1, first improve this message and make it much more clear from the library exactly what happened and fix this please
+- **SpecStory:** unavailable — Grok Build session; no public SpecStory share URI.
+
 ## August 11th, 2026 at 2:44:46 p.m. EDT — `afe09bdba1fe` Split InstantRuntime translation unit and drop SIL hang flag.
 
 - **Implementation commit:** `afe09bdba1fe0e0f6ce6f91cdc22ba6fc61c69b9`

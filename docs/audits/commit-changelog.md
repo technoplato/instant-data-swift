@@ -4,6 +4,12 @@
 - **commit:** dbe162caec5a0bfda431d7f5c89568755eb5a61c
 - **reason:** Scaffold @Doc(what:why:) + @DocumentedActions macros for TCA Action documentation lookup (ADR 0007); docs-only derivation next to @RemoteControl.
 
+## 2026-08-11 15:57:27 EDT
+
+- **repo:** instant-data-swift
+- **commit:** `7c4e5ab6ee3af10f5861af188ea4d87a4636541d`
+- **reason:** Make InstantError actionable (no opaque error 1) and fix deferred-residency bootstrap rejection of indexed JSON payloads.
+
 ## 2026-08-10 11:39:19 EDT
 
 ## 2026-08-11 14:44:46 EDT
