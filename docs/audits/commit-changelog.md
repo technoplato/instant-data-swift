@@ -1,3 +1,9 @@
+## 2026-08-11 16:14:48 EDT
+
+- **repo:** realtime-voice-sqlite-instant
+- **commit:** `98fe3302b7afa51db76f6468f4aa9baa470b5d29`
+- **reason:** Adopt `@DocumentedActions` + STE `@Doc` on `Onboarding.Action` (first real product Action enum docs surface).
+
 ## 2026-08-11 16:12:00 EDT
 
 - **repo:** realtime-voice-sqlite-instant
