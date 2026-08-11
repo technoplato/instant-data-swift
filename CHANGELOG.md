@@ -10,6 +10,24 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## August 11th, 2026 at 5:33:15 p.m. EDT — `c58253d5162f` Add Transcription multi-host Instant example with floating toolbar.
+
+- **Implementation commit:** `c58253d5162fdd998bcb136ee1effcd7e302a8c5`
+- **Change:** Add Transcription multi-host Instant example with floating toolbar
+- **Details:**
+  - Clean @InstantEntity models; floating toolbar from toolshed SyncUps stopwatch chrome
+  - Launched unsigned Mac app and iPhone 17 simulator
+- **Files:**
+  - `Sources/TranscriptionApp/TranscriptionModels.swift` — @InstantEntity Recording Transcription Segment Preference
+  - `Sources/TranscriptionApp/TranscriptionFloatingToolbar.swift` — SyncUps-style floating chrome
+  - `Sources/TranscriptionApp/TranscriptionScreens.swift` — Library timeline settings
+  - `Sources/TranscriptionApp/TranscriptionProgram.swift` — Screen stack and mode
+  - `Package.swift` — TranscriptionApp product
+  - `Examples/Transcription/project.yml` — Mac and iOS XcodeGen hosts
+- **User context (verbatim):**
+  > We should be defining this in terms of instant entities
+- **SpecStory:** unavailable — Grok Build session; no SpecStory cloud URI
+
 ## August 11th, 2026 at 5:04:29 p.m. EDT — `cbb679ec6480` ADR 0016: lock decisions; cut plan.md and Instant issue #193.
 
 - **Implementation commit:** `cbb679ec6480f13005537d489cbdd287a28eb4ba`
