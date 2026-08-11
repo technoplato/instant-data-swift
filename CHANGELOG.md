@@ -10,6 +10,23 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## August 11th, 2026 at 5:04:29 p.m. EDT — `cbb679ec6480` ADR 0016: lock decisions; cut plan.md and Instant issue #193.
+
+- **Implementation commit:** `cbb679ec6480f13005537d489cbdd287a28eb4ba`
+- **Change:** ADR 0016: lock decisions; cut plan.md and Instant issue #193
+- **Details:**
+  - Captain lock; plan steps T0–T9
+  - Parent issue https://issues.knophy.com/issues/193
+- **Files:**
+  - `docs/adr/0016-transcription-example-instant-first/plan.md` — Executable T0–T9 work items
+  - `docs/adr/0016-transcription-example-instant-first/README.md` — Status Decisions locked; link #193
+  - `docs/adr/0016-transcription-example-instant-first/qanda.md` — Q26 lock
+  - `docs/adr/0016-transcription-example-instant-first/HANDOFF.md` — Execute plan resume
+  - `docs/adr/0016-transcription-example-instant-first/overviews/04-uri-tree.md` — Status decisions locked
+- **User context (verbatim):**
+  > lock
+- **SpecStory:** unavailable — Grok Build session; no SpecStory cloud URI for this agent host
+
 ## August 11th, 2026 at 4:57:42 p.m. EDT — `77307d483873` ADR 0016: lock goBack as program navigation stack (Q25).
 
 - **Implementation commit:** `77307d48387372508a9be0776bffaca749ae0844`
