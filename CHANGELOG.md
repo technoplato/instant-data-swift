@@ -10,6 +10,21 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## August 11th, 2026 at 4:57:42 p.m. EDT — `77307d483873` ADR 0016: lock goBack as program navigation stack (Q25).
+
+- **Implementation commit:** `77307d48387372508a9be0776bffaca749ae0844`
+- **Change:** ADR 0016: lock goBack as program navigation stack (Q25)
+- **Details:**
+  - Program owns screen stack; hosts present it
+  - goBack → navigation.previous pop; not tree parent; not fixed library
+- **Files:**
+  - `docs/adr/0016-transcription-example-instant-first/qanda.md` — Q25 decided
+  - `docs/adr/0016-transcription-example-instant-first/overviews/04-uri-tree.md` — Navigation section locked
+  - `docs/adr/0016-transcription-example-instant-first/HANDOFF.md` — goBack done; next optional screens or plan lock
+- **User context (verbatim):**
+  > I think it should be done from the program itself. Kind of swift navigation style, yeah.
+- **SpecStory:** unavailable — Grok Build session; no SpecStory cloud URI for this agent host
+
 ## August 11th, 2026 at 4:53:44 p.m. EDT — `c44911e27a03` ADR 0016: accept remaining idle modes; normalize goesTo handles.
 
 - **Implementation commit:** `c44911e27a0358940b7ae4068b43ef3a21dd713f`
