@@ -1,3 +1,8 @@
+## 2026-08-11 16:41:49 EDT — realtime-voice-sqlite-instant 10d82164c9f8d95d8785addd3960f4916ec0a927
+
+- **Repo:** realtime-voice-sqlite-instant
+- **SHA:** 10d82164c9f8d95d8785addd3960f4916ec0a927
+- **Reason:** Message–issue consolidator opt-in Instant product edge write (#041): append-log issue.message-path + issue.derivedMessageEdges; Onboarding 6 edges live.
 ## 2026-08-11 16:28:39 EDT
 
 - **repo:** realtime-voice-sqlite-instant
