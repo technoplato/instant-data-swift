@@ -10,6 +10,24 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## August 11th, 2026 at 4:47:53 p.m. EDT — `f647abee9dc8` ADR 0016: lock flat mode leaves through Q22 recording.create.
+
+- **Implementation commit:** `f647abee9dc89a9dc3ae706ae7b9747719957b6a`
+- **Change:** ADR 0016: lock flat mode leaves through Q22 recording.create
+- **Details:**
+  - Restored qanda and 04-uri-tree after external editor overwrite that dropped Q20–Q22
+  - Q22 accepted: startRecording public mutate is recording.create only
+  - HANDOFF.md for cold resume; next leaf reviews are idle Playing and Paused
+- **Files:**
+  - `docs/adr/0016-transcription-example-instant-first/HANDOFF.md` — Cold-start handoff for interview resume
+  - `docs/adr/0016-transcription-example-instant-first/qanda.md` — Q20–Q22 decisions including recording.create
+  - `docs/adr/0016-transcription-example-instant-first/overviews/04-uri-tree.md` — Flat nine mode leaves; Q22 REVIEWED tag
+  - `docs/adr/0016-transcription-example-instant-first/README.md` — Link to HANDOFF
+- **User context (verbatim):**
+  > good
+  > I did not commit — say if you want that
+- **SpecStory:** unavailable — Grok Build session; no SpecStory cloud URI for this agent host
+
 ## August 11th, 2026 at 3:57:27 p.m. EDT — `7c4e5ab6ee3a` Make InstantError actionable and unblock deferred bootstrap.
 
 - **Implementation commit:** `7c4e5ab6ee3af10f5861af188ea4d87a4636541d`
