@@ -6,6 +6,16 @@ production-readiness plan
 Commit-level history stays in `docs/audits/commit-changelog.md`; this file is
 the narrative of what the library must prove and why.
 
+## 2026-08-11 14:32:13 EDT — Performance wrap-up: freezes landed, latency + soak PASS
+
+- **Commits:** `8b7c384e` (bounded outbox/memory freezes + suite compile unblocks); `c4f20714` (changelog).
+- **Focused contracts:** InstantBoundedOutboxDelivery / TerminalFailure / FailedRetry / ServerApplyRebase / DeferredResidency / PersistenceCache — **99/99** green.
+- **Live latency (Swift ↔ TS admin):** p50 **80 ms**, p95 **154 ms**, max **154 ms** (budget p50≤2s / p95≤5s). Artifacts under `/tmp/instant-swift-admin-latency/`.
+- **Process soak #150:** `validation/results/scribe-soak-20260811T175656Z/evidence.json` **status=passed**, absoluteIdleCeilingMiB=400.
+- **Deferred tests (excluded until production):** InstantLiveQueueBoundsTests, InstantStorageRuntimeTests, InstantStorageHTTPParityTests, InstantCookieSyncParityTests. Dual-runtime room topic migration test disabled (hang).
+- **InstantRuntime:** debug-only `-sil-disable-pass=closure-lifetime-fixup` on InstantSwiftDataCore target — remove after Runtime split.
+- **Physical KEEP:** blocked on dirty Scribe tree (235 porcelain lines). Instant checkout cleaned for install (ADR 0016 stashed; untracked parked under `/tmp/instant-park-*`). Needs clean Scribe + wipe + install Instant pin, then agent-control recording.
+
 ## 2026-08-11 13:38:57 EDT — ADR 0016 Q11 accepted (recordingActive.playbackPlaying)
 
 - Clarified session vs schema (capture = process pointers for live capture).
