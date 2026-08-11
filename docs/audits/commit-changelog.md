@@ -1,3 +1,9 @@
+## 2026-08-11 16:57:42 EDT — instant-data-swift 77307d48387372508a9be0776bffaca749ae0844
+
+- **Repo:** instant-data-swift
+- **SHA:** 77307d48387372508a9be0776bffaca749ae0844
+- **Reason:** ADR 0016 Q25: goBack is program navigation stack (Swift Navigation style).
+
 ## 2026-08-11 16:53:44 EDT — instant-data-swift c44911e27a0358940b7ae4068b43ef3a21dd713f
 
 - **Repo:** instant-data-swift
