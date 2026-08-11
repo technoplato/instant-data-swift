@@ -1,3 +1,9 @@
+## 2026-08-11 16:27:31 EDT
+
+- **repo:** realtime-voice-sqlite-instant
+- **commit:** `0c1791b8317f5212f6b70c6ed91fc6dba5110a93`
+- **reason:** Message–issue consolidator ideal mode: product vs noise, multi-line @Doc, ideal Instant touches edges; Onboarding sample in docs (#041).
+
 ## 2026-08-11 16:14:48 EDT
 
 - **repo:** realtime-voice-sqlite-instant
