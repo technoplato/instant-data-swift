@@ -573,3 +573,115 @@ Public mutate name is **`recording.create` only**. Same wording applies to
 `startRecording` on the other idle-recording leaves when reviewed.
 
 Next: `mode.recordingIdlePlaybackPlaying(playback)`.
+
+---
+
+## Q23 — mode.recordingIdlePlaybackPlaying
+
+- **Status:** decided
+- **Asked:** 2026-08-11
+- **Decided:** 2026-08-11
+- **Recommendation:** Accept leaf. Keep `recording.create` on startRecording.
+  Prefer handle args on goesTo destinations that need them (match Q22).
+
+### Context
+
+Recording phase is idle; playback is playing. Toolbar can pause/stop/scrub
+playback or start a **new** capture while playback continues (dual track:
+active + playing).
+
+### Leaf (accepted)
+
+```text
+mode.recordingIdlePlaybackPlaying(playback)
+├── observe
+│   └── playback
+│         recordingId
+│         mediaPosition
+└── send
+    ├── pausePlayback
+    │   └── goesTo
+    │         └── mode.recordingIdlePlaybackPaused(playback)
+    ├── stopPlayback
+    │   └── goesTo
+    │         └── mode.recordingIdlePlaybackIdle
+    ├── scrubPlayback
+    │   └── mutate
+    │         └── (mode) playback.mediaPosition   set
+    └── startRecording
+          ├── goesTo
+          │     └── mode.recordingActivePlaybackPlaying(capture, playback)
+          └── mutate
+                └── recording.create
+```
+
+### Answer
+
+**Accepted** as part of captain blanket apply for remaining idle mode
+variants (Q23 + Q24 together).
+
+---
+
+## Q24 — mode.recordingIdlePlaybackPaused + blanket mode polish
+
+- **Status:** decided
+- **Asked:** 2026-08-11
+- **Decided:** 2026-08-11
+- **Recommendation:** Accept leaf. Same `recording.create`. Apply handle args
+  on **all** mode goesTo destinations that need them (not only idle leaves).
+
+### Captain
+
+Blanket apply the same few differences across remaining mode leaves (idle
+Playing / Paused). Do not re-interview each sibling one by one.
+
+### Leaf (accepted)
+
+```text
+mode.recordingIdlePlaybackPaused(playback)
+├── observe
+│   └── playback
+│         recordingId
+│         mediaPosition
+└── send
+    ├── resumePlayback
+    │   └── goesTo
+    │         └── mode.recordingIdlePlaybackPlaying(playback)
+    ├── stopPlayback
+    │   └── goesTo
+    │         └── mode.recordingIdlePlaybackIdle
+    ├── scrubPlayback
+    │   └── mutate
+    │         └── (mode) playback.mediaPosition   set
+    └── startRecording
+          ├── goesTo
+          │     └── mode.recordingActivePlaybackPaused(capture, playback)
+          └── mutate
+                └── recording.create
+```
+
+### Blanket polish (tree-wide, same turn)
+
+On every mode goesTo that lands on a leaf which carries handles, write the
+handles in parentheses (match Q22 style):
+
+| Destination leaf kind | goesTo args |
+| --- | --- |
+| `recordingIdlePlaybackIdle` | none |
+| `*PlaybackPlaying` / `*PlaybackPaused` (idle recording) | `(playback)` |
+| `recordingActivePlaybackIdle` / `recordingPausedPlaybackIdle` | `(capture)` |
+| dual-track leaves | `(capture, playback)` |
+
+`startRecording` public mutate stays **`recording.create`** on all three idle
+recording leaves.
+
+### Answer
+
+**Accepted.** All nine flat mode leaves are now reviewed (Q13–Q15, Q18–Q24).
+
+Still open product questions (not mode leaf content):
+
+- `goBack` / `navigation.previous` (stack vs tree vs deep link)
+- Optional screen-leaf re-pass post-Q14 renames
+- Instant parent issue # for ADR (README TBD)
+- plan.md only after captain says decisions locked for implementation

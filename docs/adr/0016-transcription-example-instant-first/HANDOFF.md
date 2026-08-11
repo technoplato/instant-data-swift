@@ -1,17 +1,18 @@
 # Handoff — ADR 0016 Transcription app tree (interview)
 
 **Written:** 2026-08-11 (America/New_York session)  
-**Status:** Interview in progress — URI tree leaf review mid-mode  
+**Updated:** 2026-08-11 — all nine mode leaves accepted (Q13–Q15, Q18–Q24)  
+**Status:** Interview in progress — mode leaves done; open: goBack, screens  
 **Repo:** `instant-data-swift`  
-**Do not implement product code yet.** Finish ADR leaf review → then plan.md
-+ Instant issues (`$adr-decision-qanda` Phase B).
+**Do not implement product code yet.** Finish remaining product questions →
+then plan.md + Instant issues (`$adr-decision-qanda` Phase B).
 
 ---
 
 ## Start here (cold agent)
 
 1. Read **this file**.
-2. Read `qanda.md` — statuses `decided` only (Q01–Q22 locked).
+2. Read `qanda.md` — statuses `decided` only (Q01–Q24 locked for mode).
 3. Read `overviews/04-uri-tree.md` — system of record for the app tree.
 4. Schema skill file (durable types):
    `/Users/laptop/Sync/skills/domain-as-tree/references/schemas/transcription.md`
@@ -33,20 +34,16 @@ docs/adr/0016-transcription-example-instant-first/
     04b-message-graph-experiment.md  ← parked experiment, may discard
 ```
 
-**Git (at handoff write):** uncommitted modifications on:
-
-- `docs/adr/0016-transcription-example-instant-first/overviews/04-uri-tree.md`
-- `docs/adr/0016-transcription-example-instant-first/qanda.md`
-
 Plus schema edits may live under the **skills** checkout (not this repo):
 
 - `/Users/laptop/Sync/skills/domain-as-tree/references/schemas/transcription.md`
   (`process` bag removed; `preference` added)
 
-**Warning:** During this session the ADR tree/qanda were **silently reverted**
-once to a pre-Q14 draft (clean working tree, older content). After meaningful
-edits, **commit promptly** so work is not lost. Branch was `main`, ahead of
-`origin/main` by ~134 commits at handoff.
+**Warning:** External editor overwrite
+(`sourceType: externalEditOnAgentFile`) once dropped Q20–Q22 back to
+`createLinked`. Recovered from Grok session `rewind_points.jsonl`. **Commit
+promptly** after each accepted leaf. Mode work is committed on `main` from
+`f647abee` onward.
 
 ---
 
@@ -199,8 +196,8 @@ Then goesTo appropriate idle recording phase (playback phase preserved).
 | Mode leaf | Status | Q |
 | --- | --- | --- |
 | recordingIdlePlaybackIdle | **Accepted** (`recording.create`) | Q22 |
-| recordingIdlePlaybackPlaying | Draft in tree; next review | — |
-| recordingIdlePlaybackPaused | Draft in tree; not captain-reviewed this pass | — |
+| recordingIdlePlaybackPlaying | **Accepted** | Q23 |
+| recordingIdlePlaybackPaused | **Accepted** | Q24 |
 | recordingActivePlaybackIdle | **Accepted** | Q19 |
 | recordingActivePlaybackPlaying | **Accepted** | Q20 |
 | recordingActivePlaybackPaused | **Accepted** | Q21 |
@@ -217,22 +214,18 @@ re-passed after Q14 renames. Timeline `modeRelation` locked in spirit (Q18).
 
 ### Immediate (continue interview)
 
-1. ~~Confirm Q22~~ **done** (2026-08-11, captain “good”).
+1. ~~Mode leaves~~ **done** — all nine accepted (Q13–Q15, Q18–Q24).
+   Blanket: `recording.create` + goesTo handle args.
 
-2. Review **`recordingIdlePlaybackPlaying`** then
-   **`recordingIdlePlaybackPaused`** (full trees in file — show full send
-   blocks in chat). Same `recording.create` on startRecording.
+2. Open product question: **`goBack` / `navigation.previous`** (stack vs tree
+   vs deep link). Do not hard-code back to `library.populated`.
 
 3. Optional re-pass of **screen** leaves post-Q14 (library openRecording →
    `screen.timeline(id)` only; settings mutates `preference.*`).
 
-4. Open product question: **`goBack` / `navigation.previous`** (stack vs tree
-   vs deep link). Do not hard-code back to `library.populated`.
-
-5. When mode + screen leaves are stable: fold summary into overviews if
-   needed; **do not start large Swift implementation** until captain says
-   decisions locked → then write `plan.md` + Instant issue criteria
-   (`$adr-decision-qanda` Phase B).
+4. When captain says decisions locked: write `plan.md` + Instant issue
+   criteria (`$adr-decision-qanda` Phase B). **Do not** start large Swift
+   implementation before that.
 
 ### Commit hygiene
 
@@ -261,6 +254,7 @@ Verbatim themes from this session:
 - Not `createLinked` — **`recording.create`**. Implementation may also write
   transcription; don’t expose that as the public name.
 - Don’t invent jargon about “host defaults” / “handle on arrival.”
+- Blanket apply sibling mode variants when only a few fields differ.
 
 ---
 
@@ -268,10 +262,10 @@ Verbatim themes from this session:
 
 | Topic | Notes |
 | --- | --- |
-| recordingIdlePlayback Playing/Paused | Leaf pass |
 | goBack stack model | WIP in 04-uri-tree Navigation |
+| Screen leaf re-pass | Optional post-Q14 |
 | Instant issue # for ADR | README still TBD |
-| plan.md / implementation | After interview complete |
+| plan.md / implementation | After captain locks interview |
 | 04b message graph | Parked; may discard |
 
 ---
@@ -294,10 +288,10 @@ Verbatim themes from this session:
 cd /Users/laptop/Sync/instant-data-swift
 git status
 read docs/adr/0016-transcription-example-instant-first/HANDOFF.md
-read docs/adr/0016-transcription-example-instant-first/qanda.md   # Q01–Q22 decided
+read docs/adr/0016-transcription-example-instant-first/qanda.md   # Q01–Q24 decided (mode)
 read docs/adr/0016-transcription-example-instant-first/overviews/04-uri-tree.md
-# Next: recordingIdlePlaybackPlaying / Paused leaf review
-# File first, chat second. Full leaves only. Commit after each accepted leaf.
+# Next: goBack model, optional screen re-pass, then plan when captain locks
+# File first, chat second. Commit after each accepted decision.
 ```
 
 When interview is done:

@@ -1,9 +1,9 @@
 # Overview 04 — App tree (observe, send, goesTo, mutate)
 
 **Status:** **work in progress** — needs more captain feedback  
-**Last review:** Q22 accepted (2026-08-11):
-  `mode.recordingIdlePlaybackIdle` — public mutate `recording.create` only.  
-  Remaining mode leaves: `recordingIdlePlaybackPlaying|Paused`.  
+**Last review:** Q23–Q24 accepted (2026-08-11):
+  All nine flat mode leaves reviewed. Blanket: `recording.create` + handle
+  args on goesTo destinations that need them.  
 **Schema:** `/Users/laptop/Sync/skills/domain-as-tree/references/schemas/transcription.md`  
 https://github.com/technoplato/skills/blob/master/domain-as-tree/references/schemas/transcription.md  
 **This file (GitHub, when pushed):**  
@@ -27,8 +27,8 @@ Started Monday 2026-08-10 ~5:46 PM America/New_York.
   responses). Observes derived `modeRelation` vs route id.
 - Leaves: nested `observe` / `send` / `goesTo` / `mutate`. Full expansion —
   no truncated send arrows in review leaves.
-- **Reviewed:** Q13–Q15, Q18–Q22 mode leaves. Remaining idle:
-  `recordingIdlePlaybackPlaying|Paused` (same `recording.create` on start).
+- **Reviewed:** all nine mode leaves (Q13–Q15, Q18–Q24).
+  Rule: `startRecording` → `recording.create`; goesTo carries needed handles.
 - **Open:** `goBack` resolution (stack / tree / deep link).
 - Capture and playback may target the **same** recording id (A + A).
 
@@ -265,7 +265,7 @@ transcription.app
 │   │             └── mutate
 │   │                   └── recording.create
 │   │
-│   ├── recordingIdlePlaybackPlaying(playback)
+│   ├── recordingIdlePlaybackPlaying(playback)            # REVIEWED Q23
 │   │   ├── observe
 │   │   │   └── playback
 │   │   │         recordingId
@@ -273,7 +273,7 @@ transcription.app
 │   │   └── send
 │   │       ├── pausePlayback
 │   │       │   └── goesTo
-│   │       │         └── mode.recordingIdlePlaybackPaused
+│   │       │         └── mode.recordingIdlePlaybackPaused(playback)
 │   │       ├── stopPlayback
 │   │       │   └── goesTo
 │   │       │         └── mode.recordingIdlePlaybackIdle
@@ -286,7 +286,7 @@ transcription.app
 │   │             └── mutate
 │   │                   └── recording.create
 │   │
-│   ├── recordingIdlePlaybackPaused(playback)
+│   ├── recordingIdlePlaybackPaused(playback)             # REVIEWED Q24
 │   │   ├── observe
 │   │   │   └── playback
 │   │   │         recordingId
@@ -294,7 +294,7 @@ transcription.app
 │   │   └── send
 │   │       ├── resumePlayback
 │   │       │   └── goesTo
-│   │       │         └── mode.recordingIdlePlaybackPlaying
+│   │       │         └── mode.recordingIdlePlaybackPlaying(playback)
 │   │       ├── stopPlayback
 │   │       │   └── goesTo
 │   │       │         └── mode.recordingIdlePlaybackIdle
@@ -347,7 +347,7 @@ transcription.app
 │   │   └── send
 │   │       ├── pauseRecording
 │   │       │   └── goesTo
-│   │       │         └── mode.recordingPausedPlaybackIdle
+│   │       │         └── mode.recordingPausedPlaybackIdle(capture)
 │   │       ├── stopRecording
 │   │       │   ├── goesTo
 │   │       │   │     └── mode.recordingIdlePlaybackIdle
@@ -359,7 +359,7 @@ transcription.app
 │   │       │         └── transcription.updatedAt      set
 │   │       ├── playRecording
 │   │       │   └── goesTo
-│   │       │         └── mode.recordingActivePlaybackPlaying
+│   │       │         └── mode.recordingActivePlaybackPlaying(capture, playback)
 │   │       ├── openCaptureRecordingTimeline
 │   │       │   └── goesTo
 │   │       │         └── screen.timeline(capture.recordingId)
@@ -423,10 +423,10 @@ transcription.app
 │   │   └── send
 │   │       ├── pauseRecording
 │   │       │   └── goesTo
-│   │       │         └── mode.recordingPausedPlaybackPlaying
+│   │       │         └── mode.recordingPausedPlaybackPlaying(capture, playback)
 │   │       ├── stopRecording
 │   │       │   ├── goesTo
-│   │       │   │     └── mode.recordingIdlePlaybackPlaying
+│   │       │   │     └── mode.recordingIdlePlaybackPlaying(playback)
 │   │       │   └── mutate
 │   │       │         ├── recording.finishedAt         set
 │   │       │         ├── recording.duration           set
@@ -435,10 +435,10 @@ transcription.app
 │   │       │         └── transcription.updatedAt      set
 │   │       ├── pausePlayback
 │   │       │   └── goesTo
-│   │       │         └── mode.recordingActivePlaybackPaused
+│   │       │         └── mode.recordingActivePlaybackPaused(capture, playback)
 │   │       ├── stopPlayback
 │   │       │   └── goesTo
-│   │       │         └── mode.recordingActivePlaybackIdle
+│   │       │         └── mode.recordingActivePlaybackIdle(capture)
 │   │       ├── scrubPlayback
 │   │       │   └── mutate
 │   │       │         └── (mode) playback.mediaPosition   set
@@ -508,10 +508,10 @@ transcription.app
 │   │   └── send
 │   │       ├── pauseRecording
 │   │       │   └── goesTo
-│   │       │         └── mode.recordingPausedPlaybackPaused
+│   │       │         └── mode.recordingPausedPlaybackPaused(capture, playback)
 │   │       ├── stopRecording
 │   │       │   ├── goesTo
-│   │       │   │     └── mode.recordingIdlePlaybackPaused
+│   │       │   │     └── mode.recordingIdlePlaybackPaused(playback)
 │   │       │   └── mutate
 │   │       │         ├── recording.finishedAt         set
 │   │       │         ├── recording.duration           set
@@ -520,10 +520,10 @@ transcription.app
 │   │       │         └── transcription.updatedAt      set
 │   │       ├── resumePlayback
 │   │       │   └── goesTo
-│   │       │         └── mode.recordingActivePlaybackPlaying
+│   │       │         └── mode.recordingActivePlaybackPlaying(capture, playback)
 │   │       ├── stopPlayback
 │   │       │   └── goesTo
-│   │       │         └── mode.recordingActivePlaybackIdle
+│   │       │         └── mode.recordingActivePlaybackIdle(capture)
 │   │       ├── scrubPlayback
 │   │       │   └── mutate
 │   │       │         └── (mode) playback.mediaPosition   set
@@ -590,7 +590,7 @@ transcription.app
 │   │   └── send
 │   │       ├── resumeRecording
 │   │       │   └── goesTo
-│   │       │         └── mode.recordingActivePlaybackIdle
+│   │       │         └── mode.recordingActivePlaybackIdle(capture)
 │   │       ├── stopRecording
 │   │       │   ├── goesTo
 │   │       │   │     └── mode.recordingIdlePlaybackIdle
@@ -602,7 +602,7 @@ transcription.app
 │   │       │         └── transcription.updatedAt      set
 │   │       ├── playRecording
 │   │       │   └── goesTo
-│   │       │         └── mode.recordingPausedPlaybackPlaying
+│   │       │         └── mode.recordingPausedPlaybackPlaying(capture, playback)
 │   │       └── openCaptureRecordingTimeline
 │   │             └── goesTo
 │   │                   └── screen.timeline(capture.recordingId)
@@ -650,10 +650,10 @@ transcription.app
 │   │   └── send
 │   │       ├── resumeRecording
 │   │       │   └── goesTo
-│   │       │         └── mode.recordingActivePlaybackPlaying
+│   │       │         └── mode.recordingActivePlaybackPlaying(capture, playback)
 │   │       ├── stopRecording
 │   │       │   ├── goesTo
-│   │       │   │     └── mode.recordingIdlePlaybackPlaying
+│   │       │   │     └── mode.recordingIdlePlaybackPlaying(playback)
 │   │       │   └── mutate
 │   │       │         ├── recording.finishedAt         set
 │   │       │         ├── recording.duration           set
@@ -662,10 +662,10 @@ transcription.app
 │   │       │         └── transcription.updatedAt      set
 │   │       ├── pausePlayback
 │   │       │   └── goesTo
-│   │       │         └── mode.recordingPausedPlaybackPaused
+│   │       │         └── mode.recordingPausedPlaybackPaused(capture, playback)
 │   │       ├── stopPlayback
 │   │       │   └── goesTo
-│   │       │         └── mode.recordingPausedPlaybackIdle
+│   │       │         └── mode.recordingPausedPlaybackIdle(capture)
 │   │       ├── scrubPlayback
 │   │       │   └── mutate
 │   │       │         └── (mode) playback.mediaPosition   set
@@ -720,10 +720,10 @@ transcription.app
 │       └── send
 │           ├── resumeRecording
 │           │   └── goesTo
-│           │         └── mode.recordingActivePlaybackPaused
+│           │         └── mode.recordingActivePlaybackPaused(capture, playback)
 │           ├── stopRecording
 │           │   ├── goesTo
-│           │   │     └── mode.recordingIdlePlaybackPaused
+│           │   │     └── mode.recordingIdlePlaybackPaused(playback)
 │           │   └── mutate
 │           │         ├── recording.finishedAt         set
 │           │         ├── recording.duration           set
@@ -732,10 +732,10 @@ transcription.app
 │           │         └── transcription.updatedAt      set
 │           ├── resumePlayback
 │           │   └── goesTo
-│           │         └── mode.recordingPausedPlaybackPlaying
+│           │         └── mode.recordingPausedPlaybackPlaying(capture, playback)
 │           ├── stopPlayback
 │           │   └── goesTo
-│           │         └── mode.recordingPausedPlaybackIdle
+│           │         └── mode.recordingPausedPlaybackIdle(capture)
 │           ├── scrubPlayback
 │           │   └── mutate
 │           │         └── (mode) playback.mediaPosition   set
