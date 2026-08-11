@@ -1,3 +1,9 @@
+## 2026-08-11 17:33:15 EDT — instant-data-swift c58253d5162fdd998bcb136ee1effcd7e302a8c5
+
+- **Repo:** instant-data-swift
+- **SHA:** c58253d5162fdd998bcb136ee1effcd7e302a8c5
+- **Reason:** Transcription example scaffold (#193): Instant entities + floating toolbar; Mac + iPhone sim.
+
 ## 2026-08-11 17:04:29 EDT — instant-data-swift cbb679ec6480f13005537d489cbdd287a28eb4ba
 
 - **Repo:** instant-data-swift
