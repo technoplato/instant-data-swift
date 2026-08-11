@@ -50,9 +50,9 @@ struct InstantStoreParityTests {
       )
 
     let report = InstantSwiftDataParityCoverage.current(artifactsDirectory: artifactsURL)
-    expectNoDifference(report.coverageComplete, true)
+    expectNoDifference(report.coverageComplete, false)
     expectNoDifference(report.adaptedCount, 284)
-    expectNoDifference(report.blockedCount, 0)
+    expectNoDifference(report.blockedCount, 49)
     expectNoDifference(
       report.records.filter { $0.surface == "live-transport" }.map(\.status),
       [.adapted, .adapted]
@@ -65,13 +65,13 @@ struct InstantStoreParityTests {
 
     expectNoDifference(report.event, "parity-report")
     expectNoDifference(report.coverageComplete, false)
-    // Counts include the SQLiteData inventory completion (261 upstream tests
+    // Counts include the SQLiteData inventory completion (314 upstream tests
     // claimed) and Instant TypeScript + Python + SQLiteData rows together.
-    expectNoDifference(report.recordCount, 518)
+    expectNoDifference(report.recordCount, 571)
     expectNoDifference(report.exactCount, 28)
     expectNoDifference(report.adaptedCount, 282)
-    expectNoDifference(report.blockedCount, 2)
-    expectNoDifference(report.notApplicableCount, 206)
+    expectNoDifference(report.blockedCount, 51)
+    expectNoDifference(report.notApplicableCount, 210)
     #expect(report.sourceFiles.contains("upstream/instant/client/packages/core/__tests__/src/schema.test.ts"))
     #expect(report.sourceFiles.contains("upstream/instant/client/packages/core/__tests__/src/serializeSchema.test.ts"))
     #expect(report.sourceFiles.contains("upstream/instant/client/packages/core/__tests__/src/utils/object.test.ts"))
@@ -93,6 +93,7 @@ struct InstantStoreParityTests {
     #expect(report.sourceFiles.contains("upstream/instant/client/www/lib/recipes/auth.tsx"))
     #expect(report.sourceFiles.contains("upstream/sqlite-data/Sources/SQLiteData/Documentation.docc/Articles/CloudKitSync.md"))
     #expect(report.sourceFiles.contains("upstream/sqlite-data/Tests/SQLiteDataTests/FetchTests.swift"))
+    #expect(report.sourceFiles.contains("upstream/sqlite-data/Tests/SQLiteDataTests/FetchAllSectionsTests.swift"))
     #expect(report.sourceFiles.contains("upstream/sqlite-data/Tests/SQLiteDataTests/FetchSubscriptionTests.swift"))
     #expect(report.swiftFiles.contains("Tests/InstantSwiftDataCoreTests/InstantDateCoercionTests.swift"))
     #expect(report.swiftFiles.contains("Tests/InstantSwiftDataCoreTests/InstantSimpleE2EParityTests.swift"))

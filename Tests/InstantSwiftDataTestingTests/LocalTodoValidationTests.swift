@@ -154,9 +154,9 @@ struct LocalTodoValidationTests {
     expectNoDifference(serverApply.pendingMutationIDs, ["validation.loopback.local"])
     expectNoDifference(serverApply.processedTransactionID, "validation.loopback.server")
     expectNoDifference(serverApply.storeRevision, localOutbox.storeRevision + 1)
-    // Pending local mutations are rebased onto the server snapshot, which rewrites
-    // the outbox row and advances outboxRevision without appending a new mutation.
-    expectNoDifference(serverApply.outboxRevision, localOutbox.outboxRevision + 1)
+    // The server write targets a disjoint entity, so bounded server apply preserves the pending
+    // body without rewriting the outbox.
+    expectNoDifference(serverApply.outboxRevision, localOutbox.outboxRevision)
 
     let observerPublish = try #require(
       result.evidence.first { $0.event == "observer-publish" }?.details
@@ -171,7 +171,7 @@ struct LocalTodoValidationTests {
     expectNoDifference(finalDetails.pendingMutationIDs, ["validation.loopback.local"])
     expectNoDifference(finalDetails.pendingMutationCount, 1)
     expectNoDifference(finalDetails.processedTransactionID, "validation.loopback.server")
-    expectNoDifference(finalDetails.outboxRevision, localOutbox.outboxRevision + 1)
+    expectNoDifference(finalDetails.outboxRevision, localOutbox.outboxRevision)
   }
 
   @Test
@@ -1410,11 +1410,11 @@ struct LocalTodoValidationTests {
 
     expectNoDifference(run.result.event, "parity-report")
     expectNoDifference(run.result.coverageComplete, false)
-    expectNoDifference(run.result.recordCount, 518)
+    expectNoDifference(run.result.recordCount, 571)
     expectNoDifference(run.result.exactCount, 28)
     expectNoDifference(run.result.adaptedCount, 282)
-    expectNoDifference(run.result.blockedCount, 2)
-    expectNoDifference(run.result.notApplicableCount, 206)
+    expectNoDifference(run.result.blockedCount, 51)
+    expectNoDifference(run.result.notApplicableCount, 210)
     expectNoDifference(run.summary.caseID, "validation.parity.report")
     expectNoDifference(run.summary.appID, "validation-parity-test")
     expectNoDifference(run.summary.rowCount, run.result.recordCount)
@@ -1423,7 +1423,7 @@ struct LocalTodoValidationTests {
       run.summary.events,
       Array(repeating: "parity-record", count: run.result.recordCount)
     )
-    expectNoDifference(run.summary.failedEvents, Array(repeating: "parity-record", count: 2))
+    expectNoDifference(run.summary.failedEvents, Array(repeating: "parity-record", count: 51))
     #expect(
       run.result.sourceFiles.contains(
         "upstream/instant/client/packages/core/__tests__/src/store.test.ts"
@@ -1947,10 +1947,10 @@ struct LocalTodoValidationTests {
       timestamp: { InstantTimestamp(milliseconds: 1_700_003_000_000) }
     )
 
-    expectNoDifference(run.result.coverageComplete, true)
+    expectNoDifference(run.result.coverageComplete, false)
     expectNoDifference(run.result.adaptedCount, 284)
-    expectNoDifference(run.result.blockedCount, 0)
-    expectNoDifference(run.summary.ok, true)
+    expectNoDifference(run.result.blockedCount, 49)
+    expectNoDifference(run.summary.ok, false)
     let swiftToTypeScript = try #require(
       run.result.records.first { $0.id == "instant.live-transport.swift-to-typescript" }
     )
@@ -1987,13 +1987,13 @@ struct LocalTodoValidationTests {
     )
 
     let rows = try parseJSONLines(result.stdout)
-    expectNoDifference(rows.count, 518)
+    expectNoDifference(rows.count, 571)
     expectNoDifference(Set(rows.map { $0["case"] as? String ?? "" }), Set([
       "validation.parity.report"
     ]))
     expectNoDifference(Set(rows.map { $0["appID"] as? String ?? "" }), Set(["local-validation"]))
     expectNoDifference(Set(rows.map { $0["event"] as? String ?? "" }), Set(["parity-record"]))
-    expectNoDifference(rows.filter { ($0["ok"] as? Bool) == false }.count, 2)
+    expectNoDifference(rows.filter { ($0["ok"] as? Bool) == false }.count, 51)
     let platformAdapterBinding = try #require(rows.first { row in
       row["entityID"] as? String == "instant.react-common.platform-adapter-bindings"
     })
@@ -2060,19 +2060,16 @@ struct LocalTodoValidationTests {
     expectNoDifference(details["event"] as? String, "coverage")
     expectNoDifference(details["ok"] as? Bool, false)
     expectNoDifference(details["coverageComplete"] as? Bool, false)
-    expectNoDifference((details["recordCount"] as? NSNumber)?.intValue, 518)
+    expectNoDifference((details["recordCount"] as? NSNumber)?.intValue, 571)
     expectNoDifference((details["exactCount"] as? NSNumber)?.intValue, 28)
     expectNoDifference((details["adaptedCount"] as? NSNumber)?.intValue, 282)
-    expectNoDifference((details["blockedCount"] as? NSNumber)?.intValue, 2)
-    expectNoDifference((details["notApplicableCount"] as? NSNumber)?.intValue, 206)
+    expectNoDifference((details["blockedCount"] as? NSNumber)?.intValue, 51)
+    expectNoDifference((details["notApplicableCount"] as? NSNumber)?.intValue, 210)
     expectNoDifference((details["swiftFileCount"] as? NSNumber)?.intValue, 30)
-    expectNoDifference(
-      details["blockedIDs"] as? [String],
-      [
-        "instant.live-transport.swift-to-typescript",
-        "instant.live-transport.typescript-to-swift",
-      ]
-    )
+    let blockedIDs = try #require(details["blockedIDs"] as? [String])
+    expectNoDifference(blockedIDs.count, 51)
+    #expect(blockedIDs.contains("instant.live-transport.swift-to-typescript"))
+    #expect(blockedIDs.contains("instant.live-transport.typescript-to-swift"))
   }
 
   @Test

@@ -115,6 +115,7 @@ public enum InstantClientID: Sendable {
 
   /// Process-local cache filled at Instant bootstrap / first `clientID()`.
   /// Synchronous product reads (SwiftUI, TCA) use ``current`` after prepare.
+  // SAFETY: `lock` protects every read and write of the process-local cached value.
   private final class Cache: @unchecked Sendable {
     let lock = NSLock()
     var value: String?
@@ -1779,6 +1780,12 @@ public struct InstantQueryEmission: Hashable, Codable, Sendable {
 }
 
 public struct InstantCachedQuery: Hashable, Codable, Sendable, Identifiable {
+  /// A legacy cache row without an attribute revision can never prove that it
+  /// was materialized against the current schema. Reusing another independent
+  /// revision domain can accidentally validate stale rows when the counters
+  /// later coincide.
+  public static let unknownAttributeRevision = Int64.min
+
   public var id: String { cacheKey }
   public var cacheKey: String
   public var queryID: String
@@ -1786,6 +1793,7 @@ public struct InstantCachedQuery: Hashable, Codable, Sendable, Identifiable {
   public var emission: InstantQueryEmission
   public var updatedAt: InstantTimestamp
   public var storeRevision: Int64
+  public var attributeRevision: Int64
 
   public init(
     cacheKey: String? = nil,
@@ -1793,7 +1801,8 @@ public struct InstantCachedQuery: Hashable, Codable, Sendable, Identifiable {
     plan: InstantQueryPlan,
     emission: InstantQueryEmission,
     updatedAt: InstantTimestamp,
-    storeRevision: Int64
+    storeRevision: Int64,
+    attributeRevision: Int64? = nil
   ) {
     self.cacheKey = cacheKey ?? plan.cacheKey
     self.queryID = queryID
@@ -1801,6 +1810,7 @@ public struct InstantCachedQuery: Hashable, Codable, Sendable, Identifiable {
     self.emission = emission
     self.updatedAt = updatedAt
     self.storeRevision = storeRevision
+    self.attributeRevision = attributeRevision ?? Self.unknownAttributeRevision
   }
 
   private enum CodingKeys: String, CodingKey {
@@ -1810,6 +1820,7 @@ public struct InstantCachedQuery: Hashable, Codable, Sendable, Identifiable {
     case emission
     case updatedAt
     case storeRevision
+    case attributeRevision
   }
 
   public init(from decoder: Decoder) throws {
@@ -1821,7 +1832,8 @@ public struct InstantCachedQuery: Hashable, Codable, Sendable, Identifiable {
       plan: plan,
       emission: try container.decode(InstantQueryEmission.self, forKey: .emission),
       updatedAt: try container.decode(InstantTimestamp.self, forKey: .updatedAt),
-      storeRevision: try container.decodeIfPresent(Int64.self, forKey: .storeRevision) ?? 0
+      storeRevision: try container.decodeIfPresent(Int64.self, forKey: .storeRevision) ?? 0,
+      attributeRevision: try container.decodeIfPresent(Int64.self, forKey: .attributeRevision)
     )
   }
 
@@ -1833,6 +1845,7 @@ public struct InstantCachedQuery: Hashable, Codable, Sendable, Identifiable {
     try container.encode(emission, forKey: .emission)
     try container.encode(updatedAt, forKey: .updatedAt)
     try container.encode(storeRevision, forKey: .storeRevision)
+    try container.encode(attributeRevision, forKey: .attributeRevision)
   }
 }
 

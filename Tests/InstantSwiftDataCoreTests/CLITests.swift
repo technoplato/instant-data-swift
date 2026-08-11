@@ -4966,7 +4966,7 @@ extension InstantStoreTests {
     expectNoDifference(result.status, 64)
     #expect(
       result.error.contains(
-        "Usage: instant-swift-data examples <interactive|todos|auth|app-builder|todo-links|counters|chat|mobile-chat|microblog|reactions|typing-indicator|avatar-stack|cursors|custom-cursors|merge-tile-game|stroopwafel|reminders|sync-ups>"
+        "Usage: instant-swift-data examples <interactive|todos|auth|app-builder|todo-links|linked-infinite|counters|chat|mobile-chat|microblog|reactions|typing-indicator|avatar-stack|cursors|custom-cursors|merge-tile-game|stroopwafel|reminders|sync-ups>"
       )
     )
   }
@@ -5569,6 +5569,11 @@ extension InstantStoreTests {
 
     _ = try runCLI(["examples", "todos", "add", "flush one", "--json"], homeURL: homeURL)
     _ = try runCLI(["examples", "todos", "add", "flush two", "--json"], homeURL: homeURL)
+    let outboxBeforeFlush = try JSONDecoder().decode(
+      CLIOutboxInspectOutput.self,
+      from: Data(try runCLI(["outbox", "inspect", "--json"], homeURL: homeURL).utf8)
+    )
+    let successorMutation = try #require(outboxBeforeFlush.mutations.last)
 
     let firstFlush = try #require(
       JSONSerialization.jsonObject(
@@ -5593,7 +5598,7 @@ extension InstantStoreTests {
 
     let jsonlOutput = try runCLI(["outbox", "flush", "--jsonl"], homeURL: homeURL)
     let jsonlLines = jsonlOutput.split(separator: "\n")
-    expectNoDifference(jsonlLines.count, 2)
+    expectNoDifference(jsonlLines.count, 1)
     let summary = try #require(
       JSONSerialization.jsonObject(with: Data(jsonlLines[0].utf8)) as? [String: Any]
     )
@@ -5601,14 +5606,16 @@ extension InstantStoreTests {
     expectNoDifference(summary["event"] as? String, "summary")
     expectNoDifference(summary["ok"] as? Bool, true)
     let summaryDetails = try #require(summary["details"] as? [String: Any])
-    expectNoDifference(summaryDetails["pendingMutationCount"] as? Int, 0)
+    expectNoDifference(summaryDetails["attemptedMutationCount"] as? Int, 0)
+    expectNoDifference(summaryDetails["pendingMutationCount"] as? Int, 1)
 
-    let emptyOutbox = try JSONDecoder().decode(
+    let retainedOutbox = try JSONDecoder().decode(
       CLIOutboxInspectOutput.self,
       from: Data(try runCLI(["outbox", "inspect", "--json"], homeURL: homeURL).utf8)
     )
-    expectNoDifference(emptyOutbox.pendingMutationCount, 0)
-    expectNoDifference(emptyOutbox.mutations, [])
+    expectNoDifference(retainedOutbox.pendingMutationCount, 1)
+    expectNoDifference(retainedOutbox.mutationCount, 1)
+    expectNoDifference(retainedOutbox.mutations, [successorMutation])
 
     let malformed = try runCLIResult(
       ["outbox", "flush", "--limit", "-1", "--json"],
@@ -10382,11 +10389,11 @@ extension InstantStoreTests {
     )
     expectNoDifference(jsonOutput.event, "parity-report")
     expectNoDifference(jsonOutput.coverageComplete, false)
-    expectNoDifference(jsonOutput.recordCount, 518)
+    expectNoDifference(jsonOutput.recordCount, 571)
     expectNoDifference(jsonOutput.exactCount, 28)
     expectNoDifference(jsonOutput.adaptedCount, 282)
-    expectNoDifference(jsonOutput.blockedCount, 2)
-    expectNoDifference(jsonOutput.notApplicableCount, 206)
+    expectNoDifference(jsonOutput.blockedCount, 51)
+    expectNoDifference(jsonOutput.notApplicableCount, 210)
     #expect(
       jsonOutput.sourceFiles.contains(
         "upstream/instant/client/packages/core/__tests__/src/schema.test.ts"
@@ -11351,11 +11358,11 @@ extension InstantStoreTests {
 
     let humanOutput = try runCLI(["validation", "parity"], homeURL: homeURL)
     #expect(humanOutput.contains("parity coverage: incomplete"))
-    #expect(humanOutput.contains("records: 518"))
+    #expect(humanOutput.contains("records: 571"))
     #expect(humanOutput.contains("exact: 28"))
     #expect(humanOutput.contains("adapted: 282"))
-    #expect(humanOutput.contains("blocked: 2"))
-    #expect(humanOutput.contains("not applicable: 206"))
+    #expect(humanOutput.contains("blocked: 51"))
+    #expect(humanOutput.contains("not applicable: 210"))
   }
 
   @Test
@@ -11374,21 +11381,17 @@ extension InstantStoreTests {
     expectNoDifference(jsonOutput.event, "coverage")
     expectNoDifference(jsonOutput.ok, false)
     expectNoDifference(jsonOutput.coverageComplete, false)
-    expectNoDifference(jsonOutput.recordCount, 518)
+    expectNoDifference(jsonOutput.recordCount, 571)
     expectNoDifference(jsonOutput.exactCount, 28)
     expectNoDifference(jsonOutput.adaptedCount, 282)
-    expectNoDifference(jsonOutput.blockedCount, 2)
-    expectNoDifference(jsonOutput.notApplicableCount, 206)
+    expectNoDifference(jsonOutput.blockedCount, 51)
+    expectNoDifference(jsonOutput.notApplicableCount, 210)
     #expect(jsonOutput.sourceFileCount > 0)
     // Swift test files cited by exact/adapted records grow as inventories expand.
     expectNoDifference(jsonOutput.swiftFileCount, 30)
-    expectNoDifference(
-      jsonOutput.blockedIDs,
-      [
-        "instant.live-transport.swift-to-typescript",
-        "instant.live-transport.typescript-to-swift",
-      ]
-    )
+    expectNoDifference(jsonOutput.blockedIDs.count, 51)
+    #expect(jsonOutput.blockedIDs.contains("instant.live-transport.swift-to-typescript"))
+    #expect(jsonOutput.blockedIDs.contains("instant.live-transport.typescript-to-swift"))
 
     let jsonlOutput = try runCLI(["validation", "coverage", "--jsonl"], homeURL: homeURL)
     let lines = jsonlOutput.split(separator: "\n")
@@ -11405,8 +11408,8 @@ extension InstantStoreTests {
 
     let humanOutput = try runCLI(["validation", "coverage"], homeURL: homeURL)
     #expect(humanOutput.contains("validation coverage: incomplete"))
-    #expect(humanOutput.contains("records: 518"))
-    #expect(humanOutput.contains("blocked: 2"))
+    #expect(humanOutput.contains("records: 571"))
+    #expect(humanOutput.contains("blocked: 51"))
   }
 
   @Test
@@ -11443,8 +11446,10 @@ extension InstantStoreTests {
     expectNoDifference(partialOutput.coverageComplete, false)
     // One live-boundary blocked record is promoted to adapted by the artifact.
     expectNoDifference(partialOutput.adaptedCount, 283)
-    expectNoDifference(partialOutput.blockedCount, 1)
-    expectNoDifference(partialOutput.blockedIDs, ["instant.live-transport.typescript-to-swift"])
+    expectNoDifference(partialOutput.blockedCount, 50)
+    expectNoDifference(partialOutput.blockedIDs.count, 50)
+    #expect(!partialOutput.blockedIDs.contains("instant.live-transport.swift-to-typescript"))
+    #expect(partialOutput.blockedIDs.contains("instant.live-transport.typescript-to-swift"))
 
     try """
       {"case":"validation.typescript.boundary","side":"typescript","event":"typescript-to-swift-boundary","appID":"remote-app","timestampMs":3,"ok":true,"details":{"proofLevel":"real-typescript-admin-http-to-swift-websocket","remoteBoundary":"typescript-admin-http-to-swift-websocket"}}
@@ -11467,8 +11472,10 @@ extension InstantStoreTests {
     )
     expectNoDifference(summaryOnlyOutput.coverageComplete, false)
     expectNoDifference(summaryOnlyOutput.adaptedCount, 283)
-    expectNoDifference(summaryOnlyOutput.blockedCount, 1)
-    expectNoDifference(summaryOnlyOutput.blockedIDs, ["instant.live-transport.typescript-to-swift"])
+    expectNoDifference(summaryOnlyOutput.blockedCount, 50)
+    expectNoDifference(summaryOnlyOutput.blockedIDs.count, 50)
+    #expect(!summaryOnlyOutput.blockedIDs.contains("instant.live-transport.swift-to-typescript"))
+    #expect(summaryOnlyOutput.blockedIDs.contains("instant.live-transport.typescript-to-swift"))
 
     try """
       {"case":"validation.typescript.boundary","side":"typescript","event":"swift-observe-refresh","appID":"other-remote-app","timestampMs":3,"ok":true,"details":{"entityID":"typescript-live-boundary-test","swiftAppliedRefreshCount":1,"swiftCachedEntityIDs":["typescript-live-boundary-test"],"swiftCachedTodoTexts":["TypeScript live boundary test"]}}
@@ -11492,10 +11499,13 @@ extension InstantStoreTests {
     )
     expectNoDifference(mismatchedEvidenceOutput.coverageComplete, false)
     expectNoDifference(mismatchedEvidenceOutput.adaptedCount, 283)
-    expectNoDifference(mismatchedEvidenceOutput.blockedCount, 1)
-    expectNoDifference(
-      mismatchedEvidenceOutput.blockedIDs,
-      ["instant.live-transport.typescript-to-swift"]
+    expectNoDifference(mismatchedEvidenceOutput.blockedCount, 50)
+    expectNoDifference(mismatchedEvidenceOutput.blockedIDs.count, 50)
+    #expect(
+      !mismatchedEvidenceOutput.blockedIDs.contains("instant.live-transport.swift-to-typescript")
+    )
+    #expect(
+      mismatchedEvidenceOutput.blockedIDs.contains("instant.live-transport.typescript-to-swift")
     )
 
     try """
@@ -11520,8 +11530,10 @@ extension InstantStoreTests {
     )
     expectNoDifference(malformedCountOutput.coverageComplete, false)
     expectNoDifference(malformedCountOutput.adaptedCount, 283)
-    expectNoDifference(malformedCountOutput.blockedCount, 1)
-    expectNoDifference(malformedCountOutput.blockedIDs, ["instant.live-transport.typescript-to-swift"])
+    expectNoDifference(malformedCountOutput.blockedCount, 50)
+    expectNoDifference(malformedCountOutput.blockedIDs.count, 50)
+    #expect(!malformedCountOutput.blockedIDs.contains("instant.live-transport.swift-to-typescript"))
+    #expect(malformedCountOutput.blockedIDs.contains("instant.live-transport.typescript-to-swift"))
 
     try """
       {"case":"validation.typescript.boundary","side":"typescript","event":"swift-observe-refresh","appID":"remote-app","timestampMs":3,"ok":true,"details":{"entityID":"typescript-live-boundary-test","swiftAppliedRefreshCount":1.5,"swiftCachedEntityIDs":["typescript-live-boundary-test"],"swiftCachedTodoTexts":["TypeScript live boundary test"]}}
@@ -11545,8 +11557,10 @@ extension InstantStoreTests {
     )
     expectNoDifference(fractionalCountOutput.coverageComplete, false)
     expectNoDifference(fractionalCountOutput.adaptedCount, 283)
-    expectNoDifference(fractionalCountOutput.blockedCount, 1)
-    expectNoDifference(fractionalCountOutput.blockedIDs, ["instant.live-transport.typescript-to-swift"])
+    expectNoDifference(fractionalCountOutput.blockedCount, 50)
+    expectNoDifference(fractionalCountOutput.blockedIDs.count, 50)
+    #expect(!fractionalCountOutput.blockedIDs.contains("instant.live-transport.swift-to-typescript"))
+    #expect(fractionalCountOutput.blockedIDs.contains("instant.live-transport.typescript-to-swift"))
 
     try """
       {"case":"validation.typescript.boundary","side":"typescript","event":"swift-observe-refresh","appID":"remote-app","timestampMs":3,"ok":true,"details":{"entityID":"typescript-live-boundary-test","swiftAppliedRefreshCount":1,"swiftCachedEntityIDs":["typescript-live-boundary-test"],"swiftCachedTodoTexts":["TypeScript live boundary test"]}}
@@ -11568,12 +11582,14 @@ extension InstantStoreTests {
         ).utf8
       )
     )
-    expectNoDifference(completeOutput.ok, true)
-    expectNoDifference(completeOutput.coverageComplete, true)
-    // Both blocked live-boundary records are promoted → all 282 adapted + 2 promoted.
+    expectNoDifference(completeOutput.ok, false)
+    expectNoDifference(completeOutput.coverageComplete, false)
+    // Both live-boundary records are promoted, while unrelated parity blockers remain.
     expectNoDifference(completeOutput.adaptedCount, 284)
-    expectNoDifference(completeOutput.blockedCount, 0)
-    expectNoDifference(completeOutput.blockedIDs, [])
+    expectNoDifference(completeOutput.blockedCount, 49)
+    expectNoDifference(completeOutput.blockedIDs.count, 49)
+    #expect(!completeOutput.blockedIDs.contains("instant.live-transport.swift-to-typescript"))
+    #expect(!completeOutput.blockedIDs.contains("instant.live-transport.typescript-to-swift"))
   }
 
   @Test
@@ -11601,7 +11617,7 @@ extension InstantStoreTests {
     expectNoDifference(jsonOutput.ok, true)
     expectNoDifference(jsonOutput.transport, "local-cache-only")
     expectNoDifference(jsonOutput.finalTodoCount, 0)
-    expectNoDifference(jsonOutput.pendingMutationCount, 0)
+    expectNoDifference(jsonOutput.pendingMutationCount, 4)
     expectNoDifference(
       jsonOutput.metrics.map(\.name),
       [
@@ -11661,21 +11677,21 @@ extension InstantStoreTests {
     )
     expectNoDifference(oneThousandTripleMemorySamples.map(\.operationCount), [1_000])
     expectNoDifference(oneThousandTripleMemorySamples.map(\.resultCount), [250])
-    expectNoDifference(oneThousandTripleMemorySamples.map(\.pendingMutationCount), [1])
+    expectNoDifference(oneThousandTripleMemorySamples.map(\.pendingMutationCount), [4])
     expectNoDifference(oneThousandTripleMemorySamples.map(\.memoryBudgetBytes), [67_108_864])
     let tenThousandTripleMemorySamples = try #require(
       jsonOutput.metrics.first { $0.name == "memory-growth.triples.10k" }?.samples
     )
     expectNoDifference(tenThousandTripleMemorySamples.map(\.operationCount), [10_000])
     expectNoDifference(tenThousandTripleMemorySamples.map(\.resultCount), [2_500])
-    expectNoDifference(tenThousandTripleMemorySamples.map(\.pendingMutationCount), [1])
+    expectNoDifference(tenThousandTripleMemorySamples.map(\.pendingMutationCount), [40])
     expectNoDifference(tenThousandTripleMemorySamples.map(\.memoryBudgetBytes), [268_435_456])
     let fiftyThousandTripleMemorySamples = try #require(
       jsonOutput.metrics.first { $0.name == "memory-growth.triples.50k" }?.samples
     )
     expectNoDifference(fiftyThousandTripleMemorySamples.map(\.operationCount), [50_000])
     expectNoDifference(fiftyThousandTripleMemorySamples.map(\.resultCount), [12_500])
-    expectNoDifference(fiftyThousandTripleMemorySamples.map(\.pendingMutationCount), [1])
+    expectNoDifference(fiftyThousandTripleMemorySamples.map(\.pendingMutationCount), [196])
     expectNoDifference(fiftyThousandTripleMemorySamples.map(\.memoryBudgetBytes), [1_073_741_824])
     #if canImport(Darwin)
       #expect(
@@ -11741,25 +11757,25 @@ extension InstantStoreTests {
     )
     expectNoDifference(
       jsonOutput.metrics.first { $0.name == "outbox-flush.local-transport" }?.samples.map(\.operationCount),
-      [54]
+      [50]
     )
     expectNoDifference(
       jsonOutput.metrics.first { $0.name == "outbox-flush.local-transport" }?.samples.map(\.resultCount),
-      [54]
+      [50]
     )
     expectNoDifference(
       jsonOutput.metrics.first { $0.name == "outbox-flush.local-transport" }?.samples.map(\.pendingMutationCount),
-      [0]
+      [4]
     )
     expectNoDifference(
       jsonOutput.metrics.first { $0.name == "outbox-flush.local-transport" }?.samples.map(\.actorHopBreakdown),
       [
         [
-          "mutation-flush-gate": 2,
+          "mutation-flush-gate": 4,
           "mutation-transport": 1,
-          "operation-gate": 4,
-          "outbox": 1,
-          "persistence": 8,
+          "operation-gate": 8,
+          "outbox": 3,
+          "persistence": 13,
         ]
       ]
     )

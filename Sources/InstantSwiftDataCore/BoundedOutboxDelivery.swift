@@ -25,13 +25,18 @@ enum InstantLiveMutationErrorDisposition: Equatable, Sendable {
   case missing
 }
 
-enum InstantAutomaticOutboxClaimLimits {
+/// One fixed memory/transport envelope shared by automatic delivery and every
+/// public explicit-flush call. An explicit call is one window, not a request to
+/// materialize or aggregate the durable queue.
+enum InstantOutboxClaimLimits {
   static let maximumMutationCount = 50
   static let maximumStepCount = 256
   static let maximumBodyDecodeCount = 50
   static let maximumEncodedBodyBytes = 8 * 1_024 * 1_024
   static let claimTimeoutMilliseconds: Int64 = 5_000
 }
+
+typealias InstantAutomaticOutboxClaimLimits = InstantOutboxClaimLimits
 
 enum InstantAutomaticOutboxAdmission {
   /// Validates the exact durable mutation after rollback metadata is attached
@@ -83,6 +88,7 @@ struct InstantAutomaticOutboxClaimRequest: Sendable {
   var maximumStepCount: Int
   var maximumBodyDecodeCount: Int
   var maximumEncodedBodyByteCount: Int
+  var requiresExclusiveLane: Bool
 
   init(
     claimantID: String,
@@ -91,7 +97,8 @@ struct InstantAutomaticOutboxClaimRequest: Sendable {
     maximumMutationCount: Int = InstantAutomaticOutboxClaimLimits.maximumMutationCount,
     maximumStepCount: Int = InstantAutomaticOutboxClaimLimits.maximumStepCount,
     maximumBodyDecodeCount: Int = InstantAutomaticOutboxClaimLimits.maximumBodyDecodeCount,
-    maximumEncodedBodyByteCount: Int = InstantAutomaticOutboxClaimLimits.maximumEncodedBodyBytes
+    maximumEncodedBodyByteCount: Int = InstantAutomaticOutboxClaimLimits.maximumEncodedBodyBytes,
+    requiresExclusiveLane: Bool = false
   ) {
     self.claimantID = claimantID
     self.claimToken = claimToken
@@ -100,6 +107,7 @@ struct InstantAutomaticOutboxClaimRequest: Sendable {
     self.maximumStepCount = maximumStepCount
     self.maximumBodyDecodeCount = maximumBodyDecodeCount
     self.maximumEncodedBodyByteCount = maximumEncodedBodyByteCount
+    self.requiresExclusiveLane = requiresExclusiveLane
   }
 }
 
@@ -156,6 +164,7 @@ package struct InstantMutationDeliveryBarrierSummary: Sendable {
   package var outstandingMutationCount: Int
   package var firstOutstandingMutationID: String?
   package var firstOutstandingIsLocalOnlyConfirmation: Bool
+  package var firstOutstandingConfirmationSource: InstantMutationConfirmationSource?
   package var sampleOutstandingMutationIDs: [String]
   package var firstFailedMutation: PendingMutation?
 
@@ -163,12 +172,14 @@ package struct InstantMutationDeliveryBarrierSummary: Sendable {
     outstandingMutationCount: Int,
     firstOutstandingMutationID: String?,
     firstOutstandingIsLocalOnlyConfirmation: Bool,
+    firstOutstandingConfirmationSource: InstantMutationConfirmationSource?,
     sampleOutstandingMutationIDs: [String],
     firstFailedMutation: PendingMutation?
   ) {
     self.outstandingMutationCount = outstandingMutationCount
     self.firstOutstandingMutationID = firstOutstandingMutationID
     self.firstOutstandingIsLocalOnlyConfirmation = firstOutstandingIsLocalOnlyConfirmation
+    self.firstOutstandingConfirmationSource = firstOutstandingConfirmationSource
     self.sampleOutstandingMutationIDs = sampleOutstandingMutationIDs
     self.firstFailedMutation = firstFailedMutation
   }

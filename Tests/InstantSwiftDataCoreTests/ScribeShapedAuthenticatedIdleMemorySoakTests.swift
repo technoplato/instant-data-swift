@@ -34,7 +34,13 @@ struct ScribeShapedAuthenticatedIdleMemorySoakTests {
     "websocket.message-sent",
   ]
 
-  @Test("guest-auth Scribe-shaped idle stays under absolute footprint budget")
+  @Test(
+    "guest-auth Scribe-shaped idle stays under absolute footprint budget",
+    .enabled(
+      if: ProcessInfo.processInfo.environment["INSTANT_SWIFT_DATA_ISOLATED_MEMORY_GATE"] == "1",
+      "Absolute process memory is valid only in the isolated validation process."
+    )
+  )
   func guestAuthScribeShapedIdleUnderAbsoluteBudget() async throws {
     let profile = LinkedInfiniteScribeShapedSoakProfile.publishGateAbsoluteIdle
     let cacheURL = try temporaryScribeAuthIdleCacheURL(prefix: "main")
@@ -96,13 +102,13 @@ struct ScribeShapedAuthenticatedIdleMemorySoakTests {
             )
           )
         }
-        try? await debugLogsRuntime.transact(
-          InstantStoreTransaction(
-            id: "debug-log-batch-leak-\(batch)",
-            operations: operations
-          ),
-          createdAt: now
-        )
+        let entityGroups = BoundedBenchmarkSeed.entityCreationGroups(from: operations)
+        for transaction in BoundedBenchmarkSeed.transactions(
+          baseID: "debug-log-batch-leak-\(batch)",
+          atomicOperationGroups: entityGroups
+        ) {
+          try? await debugLogsRuntime.transact(transaction, createdAt: now)
+        }
       }
     }
     defer { InstantDiagnostics.shared.removeHandler(token) }
@@ -159,6 +165,13 @@ struct ScribeShapedAuthenticatedIdleMemorySoakTests {
         afterIdle.physicalFootprintBytes > afterWork.physicalFootprintBytes
         ? afterIdle.physicalFootprintBytes - afterWork.physicalFootprintBytes
         : 0
+      print(
+        "INSTANT_MEMORY_METRIC scenario=scribe-authenticated-idle "
+          + "afterAuthBytes=\(afterAuth?.physicalFootprintBytes ?? 0) "
+          + "afterWorkBytes=\(afterWork.physicalFootprintBytes) "
+          + "afterIdleBytes=\(afterIdle.physicalFootprintBytes) "
+          + "idleGrowthBytes=\(idleGrowth)"
+      )
       #expect(
         afterIdle.physicalFootprintBytes <= profile.idleSettleAbsoluteCeilingBytes,
         """
@@ -331,7 +344,9 @@ struct ScribeShapedAuthenticatedIdleMemorySoakTests {
 
     let baseline = InstantProcessMemory.sample()
     // 16 batches × 8 multi-attr debugLogs entities ≈ field thrash unit.
-    // Multi‑GB feedback was hundreds of unbounded batches.
+    // Multi‑GB feedback was hundreds of unbounded batches. Pack each batch into
+    // ≤256-step durable transactions so the thrash fixture survives the
+    // automatic-delivery step ceiling without raising production limits.
     for batch in 0..<16 {
       let transactionID = "debug-log-batch-\(batch)"
       let now = InstantTimestamp(milliseconds: 1_700_200_000_000 + Int64(batch))
@@ -348,10 +363,13 @@ struct ScribeShapedAuthenticatedIdleMemorySoakTests {
           )
         )
       }
-      try await debugRuntime.transact(
-        InstantStoreTransaction(id: transactionID, operations: operations),
-        createdAt: now
-      )
+      let entityGroups = BoundedBenchmarkSeed.entityCreationGroups(from: operations)
+      for transaction in BoundedBenchmarkSeed.transactions(
+        baseID: transactionID,
+        atomicOperationGroups: entityGroups
+      ) {
+        try await debugRuntime.transact(transaction, createdAt: now)
+      }
     }
     let after = InstantProcessMemory.sample()
     if let baseline, let after {
@@ -466,22 +484,24 @@ private func seedProductionScribeShapedGraph(
     }
     attachmentIDsByRecording.append(attachmentIDs)
   }
-  let transactionID = runtime.configuration.makeID()
+  let transactionID =
+    "scribe-production-shape-\(profile.recordingCount)-\(profile.wordsPerRecording)-seed"
   let now = InstantTimestamp(milliseconds: 1_700_100_500_000)
-  try await runtime.transact(
-    InstantStoreTransaction(
-      id: transactionID,
-      operations: ScribeProductionShapedSchema.soakOperations(
-        profile: profile,
-        recordingIDs: recordingIDs,
-        transcriptionIDs: transcriptionIDs,
-        wordIDsByRecording: wordIDsByRecording,
-        segmentIDsByRecording: segmentIDsByRecording,
-        attachmentIDsByRecording: attachmentIDsByRecording,
-        baseTime: now,
-        transactionID: transactionID
-      )
-    ),
-    createdAt: now
+  let operations = ScribeProductionShapedSchema.soakOperations(
+    profile: profile,
+    recordingIDs: recordingIDs,
+    transcriptionIDs: transcriptionIDs,
+    wordIDsByRecording: wordIDsByRecording,
+    segmentIDsByRecording: segmentIDsByRecording,
+    attachmentIDsByRecording: attachmentIDsByRecording,
+    baseTime: now,
+    transactionID: transactionID
   )
+  let entityGroups = BoundedBenchmarkSeed.entityCreationGroups(from: operations)
+  for transaction in BoundedBenchmarkSeed.transactions(
+    baseID: transactionID,
+    atomicOperationGroups: entityGroups
+  ) {
+    try await runtime.transact(transaction, createdAt: now)
+  }
 }

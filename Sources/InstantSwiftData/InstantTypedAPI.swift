@@ -1483,6 +1483,28 @@ public struct InstantAttributePath<
   }
 }
 
+/// A type-erased, schema-safe attribute chosen for an entity query projection.
+///
+/// Use this wrapper when one projection contains attributes with different value types:
+///
+/// ```swift
+/// Recording.query.select([
+///   InstantAttributeSelection(Recording.title),
+///   InstantAttributeSelection(Recording.startedAt),
+///   InstantAttributeSelection(Recording.duration),
+/// ])
+/// ```
+///
+/// The initializer accepts only an attribute path for `Entity`; it does not expose a raw-field
+/// initializer.
+public struct InstantAttributeSelection<Entity: InstantEntityModel>: Hashable, Sendable {
+  let name: String
+
+  public init<Value>(_ attribute: InstantAttributePath<Entity, Value>) {
+    self.name = attribute.name
+  }
+}
+
 public struct InstantReverseRelation<
   Entity: InstantEntityModel,
   Target: InstantEntityModel
@@ -1925,6 +1947,16 @@ public struct InstantEntityQuery<Entity: InstantEntityModel>: Hashable, Sendable
     selecting(fields.map(\.name))
   }
 
+  /// Selects heterogeneous typed attributes in one query projection.
+  ///
+  /// The supplied fields replace any existing projection, matching the homogeneous overloads.
+  /// Duplicate attributes are canonicalized, and an empty array is a programmer error.
+  public func select(
+    _ fields: [InstantAttributeSelection<Entity>]
+  ) -> Self {
+    selecting(fields.map(\.name))
+  }
+
   public func select<Value0, Value1>(
     _ field0: InstantAttributePath<Entity, Value0>,
     _ field1: InstantAttributePath<Entity, Value1>
@@ -2230,14 +2262,19 @@ extension InstantSwiftDataClient {
       values: snapshot.error == nil ? try Entity.decode(snapshot.values) : [],
       pageInfo: snapshot.pageInfo,
       canLoadNextPage: snapshot.canLoadNextPage,
+      canLoadPreviousPage: snapshot.canLoadPreviousPage,
       error: snapshot.error
     )
   }
 
   public func subscribeInfiniteQuery<Entity: InstantEntityModel>(
-    _ query: InstantEntityQuery<Entity>
+    _ query: InstantEntityQuery<Entity>,
+    retentionPolicy: InstantInfiniteQueryRetentionPolicy = .accumulated
   ) async -> InfiniteQuerySubscription<Entity> {
-    let subscription = await subscribeInfiniteQuery(query.plan)
+    let subscription = await subscribeInfiniteQuery(
+      query.plan,
+      retentionPolicy: retentionPolicy
+    )
     let stream = AsyncThrowingStream<InfiniteQuerySnapshot<Entity>, Error>.makeStream(
       bufferingPolicy: .bufferingNewest(1)
     )
@@ -2253,6 +2290,7 @@ extension InstantSwiftDataClient {
                 values: [],
                 pageInfo: snapshot.pageInfo,
                 canLoadNextPage: snapshot.canLoadNextPage,
+                canLoadPreviousPage: snapshot.canLoadPreviousPage,
                 error: error
               )
             )
@@ -2265,6 +2303,7 @@ extension InstantSwiftDataClient {
               values: try Entity.decode(snapshot.values),
               pageInfo: snapshot.pageInfo,
               canLoadNextPage: snapshot.canLoadNextPage,
+              canLoadPreviousPage: snapshot.canLoadPreviousPage,
               error: nil
             )
           )
@@ -2275,24 +2314,27 @@ extension InstantSwiftDataClient {
       }
       stream.continuation.finish()
     }
-    let upstreamCancellation = FetchSubscriptionCancellation {
-      task.cancel()
-      subscription.unsubscribe()
-    }
-    stream.continuation.onTermination = { @Sendable _ in
-      upstreamCancellation.cancel()
+    let commandOwner = InstantInfiniteQueryCommandOwner(
+      loadNextPage: {
+        subscription.loadNextPage()
+      },
+      loadPreviousPage: {
+        subscription.loadPreviousPage()
+      },
+      cancel: {
+        task.cancel()
+        subscription.unsubscribe()
+        await subscription.unsubscribeAndWait()
+        await task.value
+        stream.continuation.finish()
+      }
+    )
+    stream.continuation.onTermination = { @Sendable [weak commandOwner] _ in
+      commandOwner?.cancel()
     }
     return InfiniteQuerySubscription(
       stream: stream.stream,
-      loadNextPage: {
-        upstreamCancellation.unlessCancelled {
-          subscription.loadNextPage()
-        }
-      },
-      cancel: {
-        upstreamCancellation.cancel()
-        stream.continuation.finish()
-      }
+      commandOwner: commandOwner
     )
   }
 
@@ -2375,8 +2417,27 @@ extension InstantSwiftDataClient {
     createdAt explicitCreatedAt: InstantTimestamp? = nil,
     @InstantMutationBuilder _ build: @Sendable () throws -> [InstantMutation]
   ) async throws -> InstantStoreMutationResult {
+    let mutations = try build()
+    guard !mutations.isEmpty else {
+      let transactionID: String
+      if let explicitID {
+        transactionID = explicitID
+      } else if let runtime {
+        transactionID = runtime.configuration.makeID()
+      } else {
+        @Dependency(\.uuid) var uuid
+        transactionID = uuid().uuidString.lowercased()
+      }
+      return InstantStoreMutationResult(
+        transactionID: transactionID,
+        changedEntityIDs: [],
+        tripleCount: 0,
+        emissions: []
+      )
+    }
+
     let results = try await transact(
-      try build(),
+      mutations,
       batchSize: nil,
       id: explicitID,
       idPrefix: nil,

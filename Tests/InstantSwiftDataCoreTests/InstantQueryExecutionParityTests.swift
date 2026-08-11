@@ -1180,7 +1180,7 @@ struct InstantQueryExecutionParityTests {
     expectParityEqual(books.count, 10, source)
 
     source = instaQLSource("nested limit works but warns")
-    #expect(
+    let nestedLimit = try #require(
       InstantQueryInclude(
         "books",
         query: InstantQueryPlan(
@@ -1188,9 +1188,9 @@ struct InstantQueryExecutionParityTests {
           namespace: "books",
           limit: 4
         )
-      ) == nil,
-      "\(source) adapted: Swift rejects paginated nested includes at construction time instead of allowing them with a runtime warning."
+      )
     )
+    expectParityEqual(nestedLimit.query?.limit, 4, source)
 
     source = instaQLSource("pagination offset waits for pageInfo")
     let waitingOffsetPage = await fixture.queryPage(

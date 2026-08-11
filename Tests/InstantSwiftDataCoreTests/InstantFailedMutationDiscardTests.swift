@@ -547,7 +547,7 @@ struct InstantFailedMutationDiscardTests {
 
   @Test
   func discardDoesNotEraseLaterIndependentConnectionFailure() async throws {
-    let transport = InstantLiveTransportClient { _ in
+    let transport = InstantLiveTransportClient.connectionAttempts { _ in
       throw InstantError(
         code: .networkFailed,
         operation: "open independent test connection",
@@ -2059,6 +2059,14 @@ struct InstantFailedMutationDiscardTests {
     let session = DiscardReconnectLiveSession()
     let live = try await discardRuntime(cacheURL: cacheURL, liveTransport: session.transport)
     _ = try await live.connect()
+    try await instantLiveWithTimeout(
+      operation: "wait for locally confirmed mutation delivery",
+      timeoutMilliseconds: 5_000
+    ) {
+      while await session.sentMessages().count < 2 {
+        try await Task.sleep(for: .milliseconds(1))
+      }
+    }
     let sent = await session.sentMessages()
     expectNoDifference(sent.map(\.op), ["init", "transact"])
     expectNoDifference(sent.last?.clientEventID, mutationID)
@@ -2146,6 +2154,14 @@ struct InstantFailedMutationDiscardTests {
     defer { observation.cancel() }
     try await recorder.waitForCount(1)
     _ = try await live.connect()
+    try await instantLiveWithTimeout(
+      operation: "wait for locally confirmed mutation before rejection",
+      timeoutMilliseconds: 5_000
+    ) {
+      while await session.sentMessages().count < 2 {
+        try await Task.sleep(for: .milliseconds(1))
+      }
+    }
     await session.rejectMutation(
       id: mutationID,
       message: "permission denied local confirmation"
@@ -2943,18 +2959,23 @@ private actor DiscardReconnectLiveSession {
     var continuation: CheckedContinuation<Void, Never>
   }
 
+  nonisolated private let abortState = InstantLiveTestWireAbortState()
   private var messages: [InstantLiveMessage] = []
-  private var receiveContinuation: CheckedContinuation<InstantLiveMessage, Error>?
+  private var receiveContinuation: InstantLiveTestPendingOperation<InstantLiveMessage>?
   private var sent: [InstantLiveMessage] = []
   private var sentWaiters: [SentWaiter] = []
   private var isClosed = false
 
   nonisolated var transport: InstantLiveTransportClient {
-    InstantLiveTransportClient { _ in
+    .immediate { _ in
       InstantLiveWebSocketSession(
-        send: { message in await self.send(message) },
-        receive: { try await self.receive() },
-        close: { await self.close() }
+        send: { message in try await self.send(message) },
+        receive: {
+          try self.abortState.check()
+          return try await self.receive()
+        },
+        close: { await self.close() },
+        abort: { self.abortState.abort() }
       )
     }
   }
@@ -2998,7 +3019,8 @@ private actor DiscardReconnectLiveSession {
     )
   }
 
-  private func send(_ message: InstantLiveMessage) {
+  private func send(_ message: InstantLiveMessage) throws {
+    try abortState.check()
     sent.append(message)
     if message.op == "init" {
       enqueue(
@@ -3036,30 +3058,54 @@ private actor DiscardReconnectLiveSession {
   }
 
   private func enqueue(_ message: InstantLiveMessage) {
+    guard !abortState.isAborted else { return }
     if let receiveContinuation {
       self.receiveContinuation = nil
-      receiveContinuation.resume(returning: message)
+      abortState.unregister(receiveContinuation.abortToken)
+      receiveContinuation.continuation.resume(returning: message)
     } else if !isClosed {
       messages.append(message)
     }
   }
 
   private func receive() async throws -> InstantLiveMessage {
+    try abortState.check()
     if !messages.isEmpty {
       return messages.removeFirst()
     }
     if isClosed {
       throw CancellationError()
     }
+    let id = UUID()
+    defer { clearReceiveContinuation(id: id) }
     return try await withCheckedThrowingContinuation { continuation in
-      receiveContinuation = continuation
+      let continuation = InstantLiveTestThrowingContinuationBox(continuation)
+      guard
+        let abortToken = abortState.register({
+          continuation.resume(throwing: CancellationError())
+        })
+      else {
+        continuation.resume(throwing: CancellationError())
+        return
+      }
+      receiveContinuation = InstantLiveTestPendingOperation(
+        id: id,
+        abortToken: abortToken,
+        continuation: continuation
+      )
     }
   }
 
   private func close() {
     isClosed = true
-    receiveContinuation?.resume(throwing: CancellationError())
+    abortState.abort()
     receiveContinuation = nil
+  }
+
+  private func clearReceiveContinuation(id: UUID) {
+    guard let receiveContinuation, receiveContinuation.id == id else { return }
+    abortState.unregister(receiveContinuation.abortToken)
+    self.receiveContinuation = nil
   }
 }
 

@@ -383,7 +383,9 @@ public enum InstantPlaybackRoomLiveValidation {
         if connectionCount >= 2, status.state == .authenticated {
           return
         }
-        try await Task.sleep(for: .milliseconds(25))
+        try await Task.sleep(
+          for: .milliseconds(InstantLiveValidationTiming.pollIntervalMilliseconds)
+        )
       }
     }
   }
@@ -429,23 +431,11 @@ public enum InstantPlaybackRoomLiveValidation {
     operation: String,
     body: @escaping @Sendable () async throws -> Value
   ) async throws -> Value {
-    try await withThrowingTaskGroup(of: Value.self) { group in
-      group.addTask { try await body() }
-      group.addTask {
-        try await Task.sleep(for: .seconds(20))
-        throw InstantError(
-          code: .networkFailed,
-          operation: operation,
-          message: "Timed out after 20 seconds.",
-          recovery: "Inspect both SDK room subscriptions and the exact playback payloads."
-        )
-      }
-      guard let value = try await group.next() else {
-        throw validationFailure(operation: operation, message: "No timeout task completed.")
-      }
-      group.cancelAll()
-      return value
-    }
+    try await instantLiveWithTimeout(
+      operation: operation,
+      timeoutMilliseconds: InstantLiveValidationTiming.timeoutMilliseconds,
+      body
+    )
   }
 
   private static func encodeTopics(_ topics: PlaybackTopics) throws -> [String: JSONValue] {
@@ -539,53 +529,63 @@ public enum InstantPlaybackRoomLiveValidation {
 }
 
 private actor PlaybackReconnectTransport {
-  private struct ConnectedSession: Sendable {
-    var id: Int
-    var session: InstantLiveWebSocketSession
-  }
-
   private let base: InstantLiveTransportClient
-  private var currentSession: ConnectedSession?
-  private var forcedDisconnectSessionIDs: Set<Int> = []
-  private(set) var connectionCount = 0
+  nonisolated private let state = PlaybackReconnectTransportState()
 
   init(base: InstantLiveTransportClient) {
     self.base = base
   }
 
   nonisolated var transport: InstantLiveTransportClient {
-    InstantLiveTransportClient { request in
-      let session = try await self.base.connect(request)
-      return await self.install(session)
+    let state = state
+    return base.mapSessions { session in
+      state.install(session)
     }
+  }
+
+  var connectionCount: Int {
+    state.connectionCount
   }
 
   func disconnectCurrentSession() async throws {
-    guard let currentSession else {
-      throw InstantError(
-        code: .networkFailed,
-        operation: "disconnect playback room validation transport",
-        message: "No live playback session was connected.",
-        recovery: "Connect the Swift playback peer before forcing a reconnect."
-      )
-    }
-    forcedDisconnectSessionIDs.insert(currentSession.id)
-    await currentSession.session.close()
+    let session = try state.beginForcedDisconnect()
+    await session.close()
+  }
+}
+
+// SAFETY: `lock` protects the current session, forced-disconnect IDs, and
+// connection counter.
+private final class PlaybackReconnectTransportState: @unchecked Sendable {
+  private struct ConnectedSession: Sendable {
+    var id: Int
+    var session: InstantLiveWebSocketSession
   }
 
-  private func install(
+  private let lock = NSLock()
+  private var currentSession: ConnectedSession?
+  private var forcedDisconnectSessionIDs: Set<Int> = []
+  private var recordedConnectionCount = 0
+
+  var connectionCount: Int {
+    lock.withLock { recordedConnectionCount }
+  }
+
+  func install(
     _ session: InstantLiveWebSocketSession
   ) -> InstantLiveWebSocketSession {
-    connectionCount += 1
-    let id = connectionCount
-    currentSession = ConnectedSession(id: id, session: session)
-    return InstantLiveWebSocketSession(
+    let id = lock.withLock {
+      recordedConnectionCount += 1
+      let id = recordedConnectionCount
+      currentSession = ConnectedSession(id: id, session: session)
+      return id
+    }
+    return session.forwarding(
       send: session.send,
       receive: {
         do {
           return try await session.receive()
         } catch {
-          if await self.consumeForcedDisconnect(id: id) {
+          if self.consumeForcedDisconnect(id: id) {
             throw InstantError(
               code: .networkFailed,
               operation: "force playback room reconnect",
@@ -598,19 +598,38 @@ private actor PlaybackReconnectTransport {
       },
       close: {
         await session.close()
-        await self.clearSession(id: id)
+        self.clearSession(id: id)
       }
     )
   }
 
+  func beginForcedDisconnect() throws -> InstantLiveWebSocketSession {
+    try lock.withLock {
+      guard let currentSession else {
+        throw InstantError(
+          code: .networkFailed,
+          operation: "disconnect playback room validation transport",
+          message: "No live playback session was connected.",
+          recovery: "Connect the Swift playback peer before forcing a reconnect."
+        )
+      }
+      forcedDisconnectSessionIDs.insert(currentSession.id)
+      return currentSession.session
+    }
+  }
+
   private func clearSession(id: Int) {
-    forcedDisconnectSessionIDs.remove(id)
-    guard currentSession?.id == id else { return }
-    currentSession = nil
+    lock.withLock {
+      forcedDisconnectSessionIDs.remove(id)
+      guard currentSession?.id == id else { return }
+      currentSession = nil
+    }
   }
 
   private func consumeForcedDisconnect(id: Int) -> Bool {
-    forcedDisconnectSessionIDs.remove(id) != nil
+    lock.withLock {
+      forcedDisconnectSessionIDs.remove(id) != nil
+    }
   }
 }
 

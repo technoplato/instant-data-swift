@@ -1,7 +1,7 @@
 # Upstream Point-Free SQLiteData — complete test inventory
 
 **Source:** `<package root>/upstream/sqlite-data` (github.com/pointfreeco/sqlite-data)  
-**Commit:** `0c79d7a5748fc6d9ce7a1ba2b50f31b175305049`  
+**Commit:** `97987458b49f0311717ecfbf7e8ac4c406afbf55` (`1.9.0`)
 **Scope:** `Tests/SQLiteDataTests/**` and `Examples/*Tests/**`
 
 Counts converged across two independent methods (hand parser + ripgrep `@Test`
@@ -10,10 +10,10 @@ in `SharingTests.swift` is excluded; multi-line `@Test` attributes are included.
 
 | Number | Value | Meaning |
 | --- | ---: | --- |
-| Test files with runtime tests | 45 | files that declare ≥1 `@Test` |
-| **Runtime tests** | **261** | every runnable `@Test` function |
-| Core library | 57 | `Tests/SQLiteDataTests` excluding CloudKit |
-| CloudKit / SyncEngine | 186 | `Tests/SQLiteDataTests/CloudKitTests` |
+| Test files with runtime tests | 48 | files that declare ≥1 `@Test` |
+| **Runtime tests** | **314** | every runnable `@Test` function |
+| Core library | 106 | `Tests/SQLiteDataTests` excluding CloudKit |
+| CloudKit / SyncEngine | 190 | `Tests/SQLiteDataTests/CloudKitTests` |
 | Example app tests | 18 | Reminders, SyncUps test targets |
 | XCTest-style (no `@Test`) | 0 | all runtime tests are Swift Testing |
 
@@ -52,7 +52,7 @@ local-first with optimistic multi-device sync for every query. Ports are
 
 ## 1. Core library tests (`Tests/SQLiteDataTests`, excluding CloudKit)
 
-12 files · **57 runtime tests**.
+13 files · **106 runtime tests**.
 
 ### `Tests/SQLiteDataTests/AssertQueryTests.swift`
 
@@ -103,6 +103,62 @@ local-first with optimistic multi-device sync for every query. Ports are
 | 15 | `concurrency` | `concurrency` | swift-testing |
 | 51 | `fetchFailure` | `fetchFailure` | swift-testing |
 | 72 | `fetchAllSelection_Deprecated` | `fetchAllSelection_Deprecated` | swift-testing |
+
+### `Tests/SQLiteDataTests/FetchAllSectionsTests.swift`
+
+49 runtime tests
+
+| Line | Test name | Greppable | Kind |
+| ---: | --- | --- | --- |
+| 10 | `basics` | `basics` | swift-testing |
+| 23 | `queryOrderAppliesWithinSections` | `queryOrderAppliesWithinSections` | swift-testing |
+| 33 | `optionalSectionName` | `optionalSectionName` | swift-testing |
+| 41 | `expressionSectionName` | `expressionSectionName` | swift-testing |
+| 54 | `descendingSections` | `descendingSections` | swift-testing |
+| 70 | `emptySectionNameSortsWithNullSectionName` | `emptySectionNameSortsWithNullSectionName` | swift-testing |
+| 90 | `dynamicSectionBy` | `dynamicSectionBy` | swift-testing |
+| 108 | `ifElseSectionBy` | `ifElseSectionBy` | swift-testing |
+| 128 | `ifElseNilSectionBy` | `ifElseNilSectionBy` | swift-testing |
+| 147 | `nestedOptionalSectionBy` | `nestedOptionalSectionBy` | swift-testing |
+| 168 | `switchNestedOptionalSectionBy` | `switchNestedOptionalSectionBy` | swift-testing |
+| 199 | `keyPathSectionBy` | `keyPathSectionBy` | swift-testing |
+| 209 | `keyPathSectionByWholeTable` | `keyPathSectionByWholeTable` | swift-testing |
+| 217 | `sectionLookup` | `sectionLookup` | swift-testing |
+| 237 | `observesChanges` | `observesChanges` | swift-testing |
+| 255 | `loadStatementRemovesSectioning` | `loadStatementRemovesSectioning` | swift-testing |
+| 267 | `emptyResults` | `emptyResults` | swift-testing |
+| 276 | `defaultWrappedValue` | `defaultWrappedValue` | swift-testing |
+| 296 | `wholeTable` | `wholeTable` | swift-testing |
+| 304 | `reassignment` | `reassignment` | swift-testing |
+| 325 | `nilSectionBy` | `nilSectionBy` | swift-testing |
+| 334 | `nilSectionBy2` | `nilSectionBy2` | swift-testing |
+| 351 | `nilSectionByWholeTable` | `nilSectionByWholeTable` | swift-testing |
+| 359 | `loadNilSectionBy` | `loadNilSectionBy` | swift-testing |
+| 373 | `loadSectionBy` | `loadSectionBy` | swift-testing |
+| 390 | `equatable` | `equatable` | swift-testing |
+| 406 | `selectionSectionBy` | `selectionSectionBy` | swift-testing |
+| 421 | `joinedSectionBy` | `joinedSectionBy` | swift-testing |
+| 438 | `joinedDescendingSectionBy` | `joinedDescendingSectionBy` | swift-testing |
+| 452 | `loadJoinedSectionBy` | `loadJoinedSectionBy` | swift-testing |
+| 474 | `dynamicJoinedSectionBy` | `dynamicJoinedSectionBy` | swift-testing |
+| 496 | `twoJoinsSectionBy` | `twoJoinsSectionBy` | swift-testing |
+| 515 | `threeJoinsSectionBy` | `threeJoinsSectionBy` | swift-testing |
+| 537 | `sectionsAccessWithoutSectionBy` | `sectionsAccessWithoutSectionBy` | swift-testing |
+| 547 | `sectionsAccessWithoutSectionByEmptyResults` | `sectionsAccessWithoutSectionByEmptyResults` | swift-testing |
+| 559 | `wholeTable` | `wholeTable` | swift-testing |
+| 570 | `sectionOrderingWinsOverQueryOrdering` | `sectionOrderingWinsOverQueryOrdering` | swift-testing |
+| 579 | `descendingSections` | `descendingSections` | swift-testing |
+| 587 | `nullSections` | `nullSections` | swift-testing |
+| 597 | `nonNullSectionsAreNotOptional` | `nonNullSectionsAreNotOptional` | swift-testing |
+| 607 | `nonNullSectionsAreNotOptionalWithOrdering` | `nonNullSectionsAreNotOptionalWithOrdering` | swift-testing |
+| 616 | `nullableSectionsStayOptional` | `nullableSectionsStayOptional` | swift-testing |
+| 625 | `integerSections` | `integerSections` | swift-testing |
+| 640 | `selectionKeyPath` | `selectionKeyPath` | swift-testing |
+| 652 | `nullableKeyPath` | `nullableKeyPath` | swift-testing |
+| 661 | `joinedSections` | `joinedSections` | swift-testing |
+| 674 | `multipleJoins` | `multipleJoins` | swift-testing |
+| 693 | `selectionWithoutJoins` | `selectionWithoutJoins` | swift-testing |
+| 705 | `fetchKeyRequest` | `fetchKeyRequest` | swift-testing |
 
 ### `Tests/SQLiteDataTests/FetchOneTests.swift`
 
@@ -197,7 +253,7 @@ local-first with optimistic multi-device sync for every query. Ports are
 
 ## 2. CloudKit / SyncEngine tests
 
-29 files · **186 runtime tests**.
+31 files · **190 runtime tests**.
 
 ### `Tests/SQLiteDataTests/CloudKitTests/AccountLifecycleTests.swift`
 
@@ -217,9 +273,9 @@ local-first with optimistic multi-device sync for every query. Ports are
 
 | Line | Test name | Greppable | Kind |
 | ---: | --- | --- | --- |
-| 20 | `sendChangesOnBackground` | `sendChangesOnBackground` | swift-testing |
-| 56 | `background_whileNotRunning` | `background_whileNotRunning` | swift-testing |
-| 64 | `sendSharedChanges` | `sendSharedChanges` | swift-testing |
+| 21 | `sendChangesOnBackground` | `sendChangesOnBackground` | swift-testing |
+| 59 | `background_whileNotRunning` | `background_whileNotRunning` | swift-testing |
+| 69 | `sendSharedChanges` | `sendSharedChanges` | swift-testing |
 
 ### `Tests/SQLiteDataTests/CloudKitTests/AssetsTests.swift`
 
@@ -326,6 +382,14 @@ local-first with optimistic multi-device sync for every query. Ports are
 | 569 | `serverRecordEditedBeforeClientButProcessedAfterClient` | `serverRecordEditedBeforeClientButProcessedAfterClient` | swift-testing |
 | 641 | `mergeWithNullableFields` | `mergeWithNullableFields` | swift-testing |
 
+### `Tests/SQLiteDataTests/CloudKitTests/MetadatabaseTests.swift`
+
+1 runtime test
+
+| Line | Test name | Greppable | Kind |
+| ---: | --- | --- | --- |
+| 10 | `inMemoryMetadatabase` | `inMemoryMetadatabase` | swift-testing |
+
 ### `Tests/SQLiteDataTests/CloudKitTests/MetadataTests.swift`
 
 6 runtime tests
@@ -369,6 +433,15 @@ local-first with optimistic multi-device sync for every query. Ports are
 | 637 | `batchRequestFailed` | `batchRequestFailed` | swift-testing |
 | 677 | `limitExceeded_modifyRecords` | `limitExceeded_modifyRecords` | swift-testing |
 | 708 | `records_limitExceeded` | `records_limitExceeded` | swift-testing |
+
+### `Tests/SQLiteDataTests/CloudKitTests/ModifyRecordsCallbackTests.swift`
+
+2 runtime tests
+
+| Line | Test name | Greppable | Kind |
+| ---: | --- | --- | --- |
+| 10 | `deferredCallbackDeliversLatestRecords` | `deferredCallbackDeliversLatestRecords` | swift-testing |
+| 37 | `deferredCallbackSkipsDeletionOfReSavedRecord` | `deferredCallbackSkipsDeletionOfReSavedRecord` | swift-testing |
 
 ### `Tests/SQLiteDataTests/CloudKitTests/NewTableSyncTests.swift`
 
@@ -530,17 +603,18 @@ local-first with optimistic multi-device sync for every query. Ports are
 
 ### `Tests/SQLiteDataTests/CloudKitTests/SyncEngineTests.swift`
 
-7 runtime tests
+8 runtime tests
 
 | Line | Test name | Greppable | Kind |
 | ---: | --- | --- | --- |
 | 15 | `inMemory` | `inMemory` | swift-testing |
 | 24 | `inMemoryUserDatabase` | `inMemoryUserDatabase` | swift-testing |
-| 47 | `inMemoryUserDatabase_LiveContext` | `inMemoryUserDatabase_LiveContext` | swift-testing |
-| 67 | `metadatabaseMismatch` | `metadatabaseMismatch` | swift-testing |
-| 97 | `isSynchronizingTriggerWarning` | `isSynchronizingTriggerWarning` | swift-testing |
-| 126 | `testSyncEngine` | `testSyncEngine` | swift-testing |
-| 132 | `previewSyncEngine` | `previewSyncEngine` | swift-testing |
+| 47 | `metadatabaseInheritsSuspensionNotificationConfiguration` | `metadatabaseInheritsSuspensionNotificationConfiguration` | swift-testing |
+| 73 | `inMemoryUserDatabase_LiveContext` | `inMemoryUserDatabase_LiveContext` | swift-testing |
+| 93 | `metadatabaseMismatch` | `metadatabaseMismatch` | swift-testing |
+| 123 | `isSynchronizingTriggerWarning` | `isSynchronizingTriggerWarning` | swift-testing |
+| 152 | `testSyncEngine` | `testSyncEngine` | swift-testing |
+| 158 | `previewSyncEngine` | `previewSyncEngine` | swift-testing |
 
 ### `Tests/SQLiteDataTests/CloudKitTests/SyncEngineValidationTests.swift`
 
@@ -652,6 +726,7 @@ Scanned but containing zero runtime tests:
 - `Tests/SQLiteDataTests/Internal/ResultExtensions.swift`
 - `Tests/SQLiteDataTests/Internal/Schema.swift`
 - `Tests/SQLiteDataTests/Internal/UserDatabaseHelpers.swift`
+- `Tests/SQLiteDataTests/CloudKitTests/MockSyncEngineTests.swift`
 
 ---
 
@@ -664,4 +739,3 @@ rg -n '^\\s*@Test\\b' upstream/sqlite-data/Tests upstream/sqlite-data/Examples -
 
 Reconciliation against `InstantParityCoverage.swift` lives in
 `docs/porting/swift-sqlitedata-port-gap-analysis.md`.
-

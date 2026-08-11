@@ -1,0 +1,9 @@
+codex-desktop/019fe994-1250-7b42-825e-9b75836d9173/root/instant_deferred_values 2026-08-10T19:33:43Z mower plan=2026-08-09-bounded-intent-outbox-memory
+codex-desktop/019fe994-1250-7b42-825e-9b75836d9173/root/instant_deferred_values 2026-08-10T16:06:59-0400 mower plan=2026-08-09-bounded-intent-outbox-memory
+codex-desktop/019fe994-1250-7b42-825e-9b75836d9173/root/route_chunk_integration 2026-08-10T16:48:22-0400 mower plan=2026-08-09-bounded-intent-outbox-memory
+codex-desktop/019fe994-1250-7b42-825e-9b75836d9173/root/instant_window_leak_fix 2026-08-11T03:57:16Z mower plan=2026-08-09-bounded-intent-outbox-memory
+codex-desktop/019fe994-1250-7b42-825e-9b75836d9173/root/infinite_query_terminal_cleanup 2026-08-11T05:00:55-0400 mower plan=2026-08-09-bounded-intent-outbox-memory
+codex-desktop/019fe994-1250-7b42-825e-9b75836d9173/root/infinite_query_setup_cancellation 2026-08-11T05:08:00-0400 mower setup-cancellation-tests-only plan=2026-08-09-bounded-intent-outbox-memory
+codex-desktop/019fe994-1250-7b42-825e-9b75836d9173/root/deferred_hydration_exact_lease 2026-08-11T07:00:00-0400 mower deferred-hydration-lease-test-only plan=2026-08-09-bounded-intent-outbox-memory
+codex-desktop/019fe994-1250-7b42-825e-9b75836d9173/root/infinite_subscription_lifecycle 2026-08-11T07:08:40-0400 mower lifecycle-regressions plan=2026-08-09-bounded-intent-outbox-memory
+codex-desktop/019fe994-1250-7b42-825e-9b75836d9173/root/infinite_subscription_lifecycle 2026-08-11T08:05:25-0400 mower exact-live-cleanup-watchdog-regression plan=2026-08-09-bounded-intent-outbox-memory overlap=clean_unsubscribe_watchdog_failure

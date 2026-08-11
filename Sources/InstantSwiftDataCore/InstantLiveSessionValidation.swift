@@ -174,9 +174,21 @@ public enum InstantSwiftDataLiveSessionValidation {
     onEvidence: (@Sendable (ValidationEvidenceRow<LiveSessionValidationDetails>) throws -> Void)? = nil,
     runtimeProjection:
       (@Sendable (InstantRuntime) async throws -> LiveSessionRuntimeProjection)? = nil,
-    eventTimeoutMilliseconds: UInt64 = 10_000,
+    eventTimeoutMillisecondsForTesting: UInt64 = 5_000,
+    eventTimeoutSleepForTesting: @escaping @Sendable (UInt64) async throws -> Void =
+      instantLiveDefaultTimeoutSleep,
     maxServerEvents: Int = 4
   ) async throws -> LiveSessionValidationResult {
+    guard (1...5_000).contains(eventTimeoutMillisecondsForTesting) else {
+      throw InstantError(
+        code: .validationFailed,
+        operation: "configure Instant live validation timeout",
+        path: "eventTimeoutMillisecondsForTesting",
+        message: "The validation event timeout must be between 1ms and 5,000ms.",
+        recovery:
+          "Use the 5,000ms production default or a shorter deterministic timeout in tests."
+      )
+    }
     guard maxServerEvents > 0 else {
       throw InstantError(
         code: .validationFailed,
@@ -327,24 +339,33 @@ public enum InstantSwiftDataLiveSessionValidation {
         )
       }
 
-      let openedSession = try await liveTransport.connect(request)
+      let openedSession = try await liveTransport.connectSession(
+        request,
+        operation: "connect Instant live validation transport",
+        timeoutMilliseconds: eventTimeoutMillisecondsForTesting,
+        sleep: eventTimeoutSleepForTesting
+      )
       session = openedSession
 
       let initClientEventID = makeID()
       clientEventIDs.append(initClientEventID)
       let initMessage = request.initMessage(clientEventID: initClientEventID)
-      try await instantLiveWithTimeout(
+      try await withBoundedSessionOperation(
+        openedSession,
         operation: "validate Instant live init",
-        timeoutMilliseconds: eventTimeoutMilliseconds
+        timeoutMilliseconds: eventTimeoutMillisecondsForTesting,
+        sleep: eventTimeoutSleepForTesting
       ) {
         try await openedSession.send(initMessage)
       }
       sentOps.append(initMessage.op)
       try record(event: "send-init")
 
-      let initEnvelope = try await instantLiveWithTimeout(
+      let initEnvelope = try await withBoundedSessionOperation(
+        openedSession,
         operation: "validate Instant live init",
-        timeoutMilliseconds: eventTimeoutMilliseconds
+        timeoutMilliseconds: eventTimeoutMillisecondsForTesting,
+        sleep: eventTimeoutSleepForTesting
       ) {
         try await openedSession.receive()
       }
@@ -380,9 +401,11 @@ public enum InstantSwiftDataLiveSessionValidation {
       let queryClientEventID = makeID()
       clientEventIDs.append(queryClientEventID)
       let addQuery = InstantLiveMessage.addQuery(query, clientEventID: queryClientEventID)
-      try await instantLiveWithTimeout(
+      try await withBoundedSessionOperation(
+        openedSession,
         operation: "validate Instant live query",
-        timeoutMilliseconds: eventTimeoutMilliseconds
+        timeoutMilliseconds: eventTimeoutMillisecondsForTesting,
+        sleep: eventTimeoutSleepForTesting
       ) {
         try await openedSession.send(addQuery)
       }
@@ -391,9 +414,11 @@ public enum InstantSwiftDataLiveSessionValidation {
 
       var receivedQueryEvent = false
       for _ in 0..<maxServerEvents {
-        let envelope = try await instantLiveWithTimeout(
+        let envelope = try await withBoundedSessionOperation(
+          openedSession,
           operation: "validate Instant live query",
-          timeoutMilliseconds: eventTimeoutMilliseconds
+          timeoutMilliseconds: eventTimeoutMillisecondsForTesting,
+          sleep: eventTimeoutSleepForTesting
         ) {
           try await openedSession.receive()
         }
@@ -439,9 +464,11 @@ public enum InstantSwiftDataLiveSessionValidation {
       if let expectedExternalRefreshEntityID {
         var receivedExternalRefresh = false
         for _ in 0..<(maxServerEvents * 4) {
-          let envelope = try await instantLiveWithTimeout(
+          let envelope = try await withBoundedSessionOperation(
+            openedSession,
             operation: "validate Instant live external refresh",
-            timeoutMilliseconds: eventTimeoutMilliseconds
+            timeoutMilliseconds: eventTimeoutMillisecondsForTesting,
+            sleep: eventTimeoutSleepForTesting
           ) {
             try await openedSession.receive()
           }
@@ -506,9 +533,11 @@ public enum InstantSwiftDataLiveSessionValidation {
           resolvedTransactionSteps,
           clientEventID: transactClientEventID
         )
-        try await instantLiveWithTimeout(
+        try await withBoundedSessionOperation(
+          openedSession,
           operation: "validate Instant live transaction",
-          timeoutMilliseconds: eventTimeoutMilliseconds
+          timeoutMilliseconds: eventTimeoutMillisecondsForTesting,
+          sleep: eventTimeoutSleepForTesting
         ) {
           try await openedSession.send(transact)
         }
@@ -533,9 +562,11 @@ public enum InstantSwiftDataLiveSessionValidation {
         }
 
         for _ in 0..<(maxServerEvents * 2) {
-          let envelope = try await instantLiveWithTimeout(
+          let envelope = try await withBoundedSessionOperation(
+            openedSession,
             operation: "validate Instant live transaction",
-            timeoutMilliseconds: eventTimeoutMilliseconds
+            timeoutMilliseconds: eventTimeoutMillisecondsForTesting,
+            sleep: eventTimeoutSleepForTesting
           ) {
             try await openedSession.receive()
           }
@@ -588,7 +619,11 @@ public enum InstantSwiftDataLiveSessionValidation {
         }
       }
 
-      await openedSession.close()
+      try await openedSession.closeGracefully(
+        operation: "close Instant live validation session",
+        timeoutMilliseconds: eventTimeoutMillisecondsForTesting,
+        sleep: eventTimeoutSleepForTesting
+      )
       session = nil
       return LiveSessionValidationResult(
         appID: appID,
@@ -596,9 +631,7 @@ public enum InstantSwiftDataLiveSessionValidation {
         evidence: evidence
       )
     } catch {
-      if let session {
-        await session.close()
-      }
+      session?.abort()
       if !evidence.contains(where: { !$0.ok }) {
         try? record(event: "failed", ok: false, errorMessage: String(describing: error))
       }
@@ -612,6 +645,22 @@ public enum InstantSwiftDataLiveSessionValidation {
       operation: operation,
       message: message,
       recovery: "Inspect the Instant live WebSocket protocol smoke evidence."
+    )
+  }
+
+  private static func withBoundedSessionOperation<Value: Sendable>(
+    _ session: InstantLiveWebSocketSession,
+    operation: String,
+    timeoutMilliseconds: UInt64,
+    sleep: @escaping @Sendable (UInt64) async throws -> Void,
+    _ work: @escaping @Sendable () async throws -> Value
+  ) async throws -> Value {
+    try await instantLiveWithTimeout(
+      operation: operation,
+      timeoutMilliseconds: timeoutMilliseconds,
+      onAbandon: { session.abort() },
+      sleep: sleep,
+      work
     )
   }
 

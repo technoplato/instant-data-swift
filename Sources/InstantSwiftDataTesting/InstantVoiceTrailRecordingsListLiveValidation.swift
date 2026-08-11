@@ -2,6 +2,12 @@ import Foundation
 import InstantSwiftData
 import VoiceTrailV3App
 
+package enum InstantLiveValidationTiming {
+  package static let timeoutMilliseconds: UInt64 = 5_000
+  package static let pollIntervalMilliseconds: Int64 = 25
+  package static let pollAttemptCount = 200
+}
+
 public enum InstantVoiceTrailRecordingsListValidationMode: String, Sendable {
   case owner
   case member
@@ -213,13 +219,15 @@ public enum InstantVoiceTrailRecordingsListLiveValidation {
     operation: String,
     trace: VoiceTrailRecordingsLiveTrace
   ) async throws -> [VoiceTrailRecording] {
-    for _ in 0..<800 {
+    for _ in 0..<InstantLiveValidationTiming.pollAttemptCount {
       let values = rows.wrappedValue
       if values.contains(where: { $0.id.rawValue == recordingID && $0.viewerRole == role }) {
         return values
       }
       if let error = rows.loadError { throw error }
-      try await Task.sleep(for: .milliseconds(25))
+      try await Task.sleep(
+        for: .milliseconds(InstantLiveValidationTiming.pollIntervalMilliseconds)
+      )
     }
     throw await timeout(operation, rows: rows.wrappedValue, trace: trace)
   }
@@ -229,13 +237,15 @@ public enum InstantVoiceTrailRecordingsListLiveValidation {
     rows: FetchAll<VoiceTrailRecording>,
     trace: VoiceTrailRecordingsLiveTrace
   ) async throws -> [VoiceTrailRecording] {
-    for _ in 0..<800 {
+    for _ in 0..<InstantLiveValidationTiming.pollAttemptCount {
       let values = rows.wrappedValue
       if !values.contains(where: { $0.id.rawValue == recordingID }) {
         return values
       }
       if let error = rows.loadError { throw error }
-      try await Task.sleep(for: .milliseconds(25))
+      try await Task.sleep(
+        for: .milliseconds(InstantLiveValidationTiming.pollIntervalMilliseconds)
+      )
     }
     throw await timeout(
       "wait for recordings-list revocation",
@@ -310,9 +320,8 @@ private actor VoiceTrailRecordingsLiveTrace {
 
   nonisolated var transport: InstantLiveTransportClient {
     let live = InstantLiveTransportClient.live
-    return InstantLiveTransportClient { request in
-      let session = try await live.connect(request)
-      return InstantLiveWebSocketSession(
+    return live.mapSessions { session in
+      return session.forwarding(
         send: { message in
           await self.recordSent(message)
           try await session.send(message)

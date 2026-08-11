@@ -512,6 +512,9 @@ struct InstantReactorParityTests {
 
   @Test
   func upstreamReactorDoesNotCleanupMutationsStillWaitingOn() async throws {
+    // Two distinct entities: same-entity immediate-tail supersession would
+    // otherwise collapse successive updates into one pending mutation and hide
+    // the upstream "still waiting on" contract under one residual row.
     let cacheURL = try temporaryReactorParityCacheURL()
     let createdAt = InstantTimestamp(milliseconds: 1_700_000_050_000)
     let liveSession = LiveReactorParitySession(messages: [
@@ -525,27 +528,54 @@ struct InstantReactorParityTests {
         liveTransport: liveSession.transport
       )
     )
+    _ = try await runtime.connect()
+    // Seed must be *server*-accepted. Local confirmMutation is a durable barrier
+    // that blocks later automatic delivery of joe2/joe3 under bounded outbox claims.
     try await runtime.transact(
       InstantStoreTransaction(
         id: "tx-reactor-cleanup-seed",
         operations: TodoExample.createOperations(
-          id: "todo-reactor-cleanup",
-          text: "joe",
+          id: "todo-reactor-cleanup-a",
+          text: "joe-a",
           createdAt: createdAt,
+          transactionID: "tx-reactor-cleanup-seed"
+        ) + TodoExample.createOperations(
+          id: "todo-reactor-cleanup-b",
+          text: "joe-b",
+          createdAt: InstantTimestamp(milliseconds: createdAt.milliseconds + 1),
           transactionID: "tx-reactor-cleanup-seed"
         )
       ),
       createdAt: createdAt
     )
-    try await runtime.confirmMutation(id: "tx-reactor-cleanup-seed")
-    _ = try await runtime.connect()
+    try await instantLiveWithTimeout(
+      operation: "wait for seed create to send",
+      timeoutMilliseconds: 5_000
+    ) {
+      await liveSession.waitForSentMessageCount(2)
+    }
+    await liveSession.enqueue(
+      InstantLiveMessage(
+        op: "transact-ok",
+        clientEventID: "tx-reactor-cleanup-seed",
+        fields: ["tx-id": .string("server-tx-reactor-cleanup-seed")]
+      )
+    )
+    try await instantLiveWithTimeout(
+      operation: "wait for seed server acceptance",
+      timeoutMilliseconds: 5_000
+    ) {
+      try await runtime.observeConnectionStatus().first {
+        $0.pendingMutationCount == 0
+      }
+    }
 
-    let joe2At = InstantTimestamp(milliseconds: createdAt.milliseconds + 1)
+    let joe2At = InstantTimestamp(milliseconds: createdAt.milliseconds + 2)
     try await runtime.transact(
       InstantStoreTransaction(
         id: "tx-reactor-cleanup-joe2",
         operations: TodoExample.updateTextOperations(
-          id: "todo-reactor-cleanup",
+          id: "todo-reactor-cleanup-a",
           text: "joe2",
           updatedAt: joe2At,
           transactionID: "tx-reactor-cleanup-joe2"
@@ -553,12 +583,12 @@ struct InstantReactorParityTests {
       ),
       createdAt: joe2At
     )
-    let joe3At = InstantTimestamp(milliseconds: createdAt.milliseconds + 2)
+    let joe3At = InstantTimestamp(milliseconds: createdAt.milliseconds + 3)
     try await runtime.transact(
       InstantStoreTransaction(
         id: "tx-reactor-cleanup-joe3",
         operations: TodoExample.updateTextOperations(
-          id: "todo-reactor-cleanup",
+          id: "todo-reactor-cleanup-b",
           text: "joe3",
           updatedAt: joe3At,
           transactionID: "tx-reactor-cleanup-joe3"
@@ -573,8 +603,13 @@ struct InstantReactorParityTests {
       ["tx-reactor-cleanup-joe2", "tx-reactor-cleanup-joe3"],
       reactorPendingCleanupSource
     )
-    // seed create + joe2 + joe3 each send a transact after init-ok.
-    await liveSession.waitForSentMessageCount(4)
+    // init + seed + joe2 + joe3
+    try await instantLiveWithTimeout(
+      operation: "wait for both pending cleanup parity mutations to send",
+      timeoutMilliseconds: 5_000
+    ) {
+      await liveSession.waitForSentMessageCount(4)
+    }
     let sentMessages = await liveSession.sentMessages()
     expectNoDifference(
       sentMessages.map(\.op),
@@ -602,7 +637,16 @@ struct InstantReactorParityTests {
         fields: ["tx-id": .string("server-tx-reactor-cleanup-joe2")]
       )
     )
-    let afterConfirmation = try #require(await statusIterator.next())
+    let afterConfirmation = try #require(
+      try await instantLiveWithTimeout(
+        operation: "wait for pending cleanup parity status",
+        timeoutMilliseconds: 5_000
+      ) {
+        try await runtime.observeConnectionStatus().first {
+          $0.pendingMutationCount == 1
+        }
+      }
+    )
     expectNoDifference(
       afterConfirmation.pendingMutationCount,
       1,
@@ -612,6 +656,7 @@ struct InstantReactorParityTests {
     let pendingAfterCleanup = await runtime.pendingMutations().map(\.id)
     let queryOnceTask = Task { try await reactorOptimisticTextsFromQueryOnce(runtime) }
     defer { queryOnceTask.cancel() }
+    // init + seed + joe2 + joe3 + queryOnce
     try await instantLiveWithTimeout(
       operation: "wait for pending cleanup parity queryOnce registration",
       timeoutMilliseconds: 5_000
@@ -639,7 +684,11 @@ struct InstantReactorParityTests {
       ["tx-reactor-cleanup-joe3"],
       reactorPendingCleanupSource
     )
-    expectNoDifference(visibleTexts, ["joe3"], reactorPendingCleanupSource)
+    expectNoDifference(
+      Set(visibleTexts),
+      Set(["joe2", "joe3"]),
+      reactorPendingCleanupSource
+    )
 
     let relaunchedRuntime = try await InstantRuntime.bootstrap(
       configuration: InstantRuntimeConfiguration(
@@ -655,7 +704,11 @@ struct InstantReactorParityTests {
       ["tx-reactor-cleanup-joe3"],
       reactorPendingCleanupSource
     )
-    expectNoDifference(relaunchedTexts, ["joe3"], reactorPendingCleanupSource)
+    expectNoDifference(
+      Set(relaunchedTexts),
+      Set(["joe2", "joe3"]),
+      reactorPendingCleanupSource
+    )
     _ = try await runtime.closeConnection()
   }
 
@@ -1184,10 +1237,24 @@ struct InstantReactorParityTests {
       ),
       createdAt: createdAt
     )
-    _ = try await writer.failMutation(
-      id: "tx-persisted-handle-receive-timeout",
-      message: "Operation timed out: handle-receive"
+    let durablePending = try #require(
+      await writer.outboxMutations().first {
+        $0.id == "tx-persisted-handle-receive-timeout"
+      }
     )
+    let persistedTransientFailure = try #require(
+      InstantOutbox.failing(
+        id: durablePending.id,
+        message: "Operation timed out: handle-receive",
+        in: [durablePending]
+      )
+    )
+    expectNoDifference(
+      persistedTransientFailure.mutation.optimisticOverlayState,
+      .applied
+    )
+    #expect(persistedTransientFailure.mutation.rollbackTransaction != nil)
+    try await writer.persistence.saveOutbox(persistedTransientFailure.mutations)
 
     let session = LiveReactorParitySession(messages: [
       liveReactorInitOK(attrs: liveReactorTodoServerAttrs, sessionID: "after-relaunch")
@@ -1201,6 +1268,13 @@ struct InstantReactorParityTests {
       )
     )
     _ = try await runtime.connect()
+
+    try await instantLiveWithTimeout(
+      operation: "wait for persisted transient mutation retry",
+      timeoutMilliseconds: 5_000
+    ) {
+      await session.waitForSentMessageCount(2)
+    }
 
     let sentMessages = await session.sentMessages()
     expectNoDifference(sentMessages.map(\.op), ["init", "transact"])
@@ -1222,10 +1296,17 @@ struct InstantReactorParityTests {
       liveReactorInitOK(attrs: liveReactorTodoServerAttrs, sessionID: "unexpected-reconnect")
     ])
     let transport = LiveReactorParityTransport(sessions: [firstSession, secondSession])
-    let reconnectSleeper = LiveReactorParityReconnectSleep(suspendsUntilCancelled: true)
+    let reconnectCleanupCheckpoint = LiveReactorParityExactCloseCheckpoint()
+    defer { reconnectCleanupCheckpoint.finish() }
+    let reconnectSleeper = LiveReactorParityReconnectSleep(
+      suspendsUntilCancelled: true,
+      postCancellationCheckpoint: reconnectCleanupCheckpoint
+    )
+    let completion = LiveReactorParityCompletionProbe()
+    let cacheURL = try temporaryReactorParityCacheURL()
     var configuration = InstantRuntimeConfiguration(
       appID: "python-connection-close-reconnect-parity",
-      persistenceURL: try temporaryReactorParityCacheURL(),
+      persistenceURL: cacheURL,
       initialAttributes: TodoExample.attributes,
       liveTransport: transport.transport
     )
@@ -1243,13 +1324,67 @@ struct InstantReactorParityTests {
         recovery: "Cancel the pending reconnect when the runtime closes."
       )
     )
-    await reconnectSleeper.waitForDelayCount(1)
-    _ = try await runtime.closeConnection()
     try await instantLiveWithTimeout(
-      operation: "wait for explicit close to cancel reconnect sleep",
-      timeoutMilliseconds: 500
+      operation: "wait for the reconnect delay before explicit close",
+      timeoutMilliseconds: 5_000
     ) {
-      await reconnectSleeper.waitForCancellationCount(1)
+      while await reconnectSleeper.delays().count < 1 {
+        try Task.checkCancellation()
+        await Task.yield()
+      }
+    }
+
+    let closeTask = Task {
+      let status = try await runtime.closeConnection()
+      await completion.record()
+      return status
+    }
+    defer { closeTask.cancel() }
+
+    try await instantLiveWithTimeout(
+      operation: "wait for explicit close to persist closed reconnect state",
+      timeoutMilliseconds: 5_000
+    ) {
+      while try await runtime.connectionStatus().state != .closed {
+        try Task.checkCancellation()
+        await Task.yield()
+      }
+    }
+    try await instantLiveWithTimeout(
+      operation: "wait for reconnect cancellation cleanup to block",
+      timeoutMilliseconds: 5_000
+    ) {
+      while await reconnectSleeper.cancellationCount() < 1
+        || !reconnectCleanupCheckpoint.didEnter
+      {
+        try Task.checkCancellation()
+        await Task.yield()
+      }
+    }
+    let completionCountWhileReconnectCleanupIsBlocked = await completion.count
+    expectNoDifference(completionCountWhileReconnectCleanupIsBlocked, 0)
+    #expect(!(await runtime.exactCloseBackgroundTasksAreIdleForTesting()))
+
+    reconnectCleanupCheckpoint.releaseToCancellationObservation()
+    try await instantLiveWithTimeout(
+      operation: "wait for reconnect cleanup to observe cancellation",
+      timeoutMilliseconds: 5_000
+    ) {
+      while reconnectCleanupCheckpoint.didObserveCancellation == nil {
+        try Task.checkCancellation()
+        await Task.yield()
+      }
+    }
+    expectNoDifference(reconnectCleanupCheckpoint.didObserveCancellation, true)
+    let completionCountAfterCancellation = await completion.count
+    expectNoDifference(completionCountAfterCancellation, 0)
+
+    reconnectCleanupCheckpoint.finish()
+    let closedStatus = try await instantLiveWithTimeout(
+      operation: "wait for explicit close to join reconnect cleanup",
+      timeoutMilliseconds: 5_000
+    ) {
+      try await closeTask.value
     }
 
     let delays = await reconnectSleeper.delays()
@@ -1258,8 +1393,160 @@ struct InstantReactorParityTests {
     expectNoDifference(requests.map(\.appID), [
       "python-connection-close-reconnect-parity"
     ], pythonConnectionCloseReconnectSource)
-    let status = try await runtime.connectionStatus()
-    expectNoDifference(status.state, .closed, pythonConnectionCloseReconnectSource)
+    expectNoDifference(closedStatus.state, .closed, pythonConnectionCloseReconnectSource)
+    let completionCount = await completion.count
+    expectNoDifference(completionCount, 1, pythonConnectionCloseReconnectSource)
+    let exactCloseBackgroundTasksAreIdle =
+      await runtime.exactCloseBackgroundTasksAreIdleForTesting()
+    #expect(exactCloseBackgroundTasksAreIdle)
+    let operationGateWaiterCount = await runtime.operationGateWaiterCountForTesting()
+    expectNoDifference(operationGateWaiterCount, 0, pythonConnectionCloseReconnectSource)
+    if exactCloseBackgroundTasksAreIdle, operationGateWaiterCount == 0 {
+      try? FileManager.default.removeItem(at: cacheURL.deletingLastPathComponent())
+    }
+  }
+
+  @Test
+  func closeConnectionCancelsAndJoinsBlockedLiveReceiverEvent() async throws {
+    let firstSession = LiveReactorParitySession(messages: [
+      liveReactorInitOK(
+        attrs: liveReactorTodoServerAttrs,
+        sessionID: "receiver-event-before-exact-close"
+      )
+    ])
+    let reconnectSession = LiveReactorParitySession(messages: [
+      liveReactorInitOK(
+        attrs: liveReactorTodoServerAttrs,
+        sessionID: "unexpected-receiver-event-reconnect"
+      )
+    ])
+    let transport = LiveReactorParityTransport(sessions: [firstSession, reconnectSession])
+    let receiverCheckpoint = LiveReactorParityExactCloseCheckpoint()
+    defer { receiverCheckpoint.finish() }
+    let completion = LiveReactorParityCompletionProbe()
+    let cacheURL = try temporaryReactorParityCacheURL()
+    var configuration = InstantRuntimeConfiguration(
+      appID: "exact-live-receiver-event-close",
+      persistenceURL: cacheURL,
+      initialAttributes: TodoExample.attributes,
+      liveTransport: transport.transport
+    )
+    configuration.autoConnectLiveTransport = false
+    configuration.liveReconnectSleep = { _ in }
+    configuration.onLiveReceiverEventAcquiredForTesting = {
+      await receiverCheckpoint.pause()
+    }
+    let runtime = try await InstantRuntime.bootstrap(configuration: configuration)
+    _ = try await runtime.connect()
+
+    let transactionID = "tx-receiver-event-before-exact-close"
+    let createdAt = InstantTimestamp(milliseconds: 1_700_000_070_700)
+    try await runtime.transact(
+      InstantStoreTransaction(
+        id: transactionID,
+        operations: TodoExample.createOperations(
+          id: "todo-receiver-event-before-exact-close",
+          text: "Remain pending after exact close",
+          createdAt: createdAt,
+          transactionID: transactionID
+        )
+      ),
+      createdAt: createdAt
+    )
+    try await instantLiveWithTimeout(
+      operation: "wait for the receiver-event mutation send",
+      timeoutMilliseconds: 5_000
+    ) {
+      await firstSession.waitForSentMessageCount(2)
+    }
+
+    await firstSession.enqueue(
+      InstantLiveMessage(
+        op: "transact-ok",
+        clientEventID: transactionID,
+        fields: ["tx-id": .string("server-receiver-event-before-exact-close")]
+      )
+    )
+    try await instantLiveWithTimeout(
+      operation: "wait for the live receiver to acquire its event",
+      timeoutMilliseconds: 5_000
+    ) {
+      while !receiverCheckpoint.didEnter {
+        try Task.checkCancellation()
+        await Task.yield()
+      }
+    }
+
+    let closeTask = Task {
+      let status = try await runtime.closeConnection()
+      await completion.record()
+      return status
+    }
+    defer { closeTask.cancel() }
+
+    try await instantLiveWithTimeout(
+      operation: "wait for close to persist state before joining the live receiver",
+      timeoutMilliseconds: 5_000
+    ) {
+      while try await runtime.connectionStatus().state != .closed {
+        try Task.checkCancellation()
+        await Task.yield()
+      }
+    }
+    let completionCountWhileReceiverIsBlocked = await completion.count
+    expectNoDifference(completionCountWhileReceiverIsBlocked, 0)
+    let requestsBeforeCancellationRelease = await transport.connectionRequests()
+    expectNoDifference(requestsBeforeCancellationRelease.map(\.appID), [
+      "exact-live-receiver-event-close"
+    ])
+    let pendingBeforeCancellationRelease = await runtime.pendingMutations()
+    expectNoDifference(pendingBeforeCancellationRelease.map(\.id), [transactionID])
+    #expect(!(await runtime.exactCloseBackgroundTasksAreIdleForTesting()))
+
+    receiverCheckpoint.releaseToCancellationObservation()
+    try await instantLiveWithTimeout(
+      operation: "wait for the live receiver to observe close cancellation",
+      timeoutMilliseconds: 5_000
+    ) {
+      while receiverCheckpoint.didObserveCancellation == nil {
+        try Task.checkCancellation()
+        await Task.yield()
+      }
+    }
+    expectNoDifference(receiverCheckpoint.didObserveCancellation, true)
+    let completionCountAfterCancellation = await completion.count
+    expectNoDifference(completionCountAfterCancellation, 0)
+    let requestsAfterCancellation = await transport.connectionRequests()
+    expectNoDifference(requestsAfterCancellation.map(\.appID), [
+      "exact-live-receiver-event-close"
+    ])
+    let pendingAfterCancellation = await runtime.pendingMutations()
+    expectNoDifference(pendingAfterCancellation.map(\.id), [transactionID])
+
+    receiverCheckpoint.finish()
+    let closedStatus = try await instantLiveWithTimeout(
+      operation: "wait for close to join the live receiver event",
+      timeoutMilliseconds: 5_000
+    ) {
+      try await closeTask.value
+    }
+    expectNoDifference(closedStatus.state, .closed)
+    let completionCount = await completion.count
+    expectNoDifference(completionCount, 1)
+    let finalRequests = await transport.connectionRequests()
+    expectNoDifference(finalRequests.map(\.appID), [
+      "exact-live-receiver-event-close"
+    ])
+    let finalPending = await runtime.pendingMutations()
+    expectNoDifference(finalPending.map(\.id), [transactionID])
+    let exactCloseBackgroundTasksAreIdle =
+      await runtime.exactCloseBackgroundTasksAreIdleForTesting()
+    #expect(exactCloseBackgroundTasksAreIdle)
+    let operationGateWaiterCount = await runtime.operationGateWaiterCountForTesting()
+    expectNoDifference(operationGateWaiterCount, 0)
+    if exactCloseBackgroundTasksAreIdle, operationGateWaiterCount == 0 {
+      try? FileManager.default.removeItem(at: cacheURL.deletingLastPathComponent())
+    }
   }
 
   @Test
@@ -1479,6 +1766,55 @@ struct InstantReactorParityTests {
       reactorRoomReconnectSource
     )
     _ = try await runtime.closeConnection()
+  }
+
+  @Test
+  func streamContentObserverRetainsOnlyNewestCompleteSnapshot() async throws {
+    let observers = InstantStreamContentObservers()
+    let key = InstantStreamContentObservationKey(
+      appID: "stream-snapshot-buffer-app",
+      selector: .streamID("stream-snapshot-buffer-stream")
+    )
+    let byteOffset: Int64 = 5
+    let observation = await observers.observe(key: key, byteOffset: byteOffset)
+    let createdAt = InstantTimestamp(milliseconds: 1_700_000_060_000)
+    let snapshots = [
+      cumulativeStreamRead(
+        content: "hello",
+        byteOffset: byteOffset,
+        sequence: 1,
+        createdAt: createdAt,
+        done: false
+      ),
+      cumulativeStreamRead(
+        content: "hello world",
+        byteOffset: byteOffset,
+        sequence: 2,
+        createdAt: createdAt,
+        done: false
+      ),
+      cumulativeStreamRead(
+        content: "hello world!",
+        byteOffset: byteOffset,
+        sequence: 3,
+        createdAt: createdAt,
+        done: true
+      ),
+    ]
+
+    for snapshot in snapshots {
+      await observers.publish(snapshot, for: key, byteOffset: byteOffset)
+    }
+
+    let retainedSnapshot = try #require(
+      try await instantLiveWithTimeout(
+        operation: "wait for the newest cumulative stream snapshot",
+        timeoutMilliseconds: 5_000
+      ) {
+        await observation.first(where: { _ in true })
+      }
+    )
+    expectNoDifference(retainedSnapshot, snapshots[2])
   }
 
   @Test
@@ -2653,7 +2989,7 @@ private let reactorAuthoritativeRefreshSource =
   "upstream/instant/client/packages/core/src/Reactor.js refresh-ok branch [adapted: Swift must replace each computation's server triples so rows absent from the authoritative result are removed.]"
 
 private let reactorPendingCleanupSource =
-  "upstream/instant/client/packages/core/__tests__/src/Reactor.test.ts we don't cleanup mutations we're still waiting on [adapted: Swift sends both durable pending mutations through the owned live session, applies transact-ok for only the first, and proves the still-unacknowledged optimistic mutation remains pending and visible across relaunch.]"
+  "upstream/instant/client/packages/core/__tests__/src/Reactor.test.ts we don't cleanup mutations we're still waiting on [adapted: Swift seeds two distinct entities so same-entity immediate-tail supersession cannot collapse the pending pair, sends both durable pending mutations through the owned live session, applies transact-ok for only the first, and proves the still-unacknowledged optimistic mutation remains pending and visible across relaunch.]"
 
 private let pythonSubscriptionReconnectSource =
   "upstream/instant/client/packages/python/tests/test_subscription_state.py test_post_init_failure_silently_retries [adapted: Swift's owned WebSocket session establishes init and a query result, receives a transient post-init failure, reconnects without publishing a terminal error, reinstalls the active query, and emits the post-reconnect result. This also pins upstream/instant/client/packages/core/src/Reactor.js _transportOnClose and _scheduleReconnect behavior.]"
@@ -2690,6 +3026,32 @@ private let reactorRewriteSource =
 
 private let reactorRewriteMultipleSource =
   "upstream/instant/client/packages/core/__tests__/src/Reactor.test.ts rewrite mutations works with multiple transactions [adapted: Swift re-lowers every pending typed transaction to the same transport steps after persistence instead of rewriting a JavaScript pendingMutations map.]"
+
+private func cumulativeStreamRead(
+  content: String,
+  byteOffset: Int64,
+  sequence: Int64,
+  createdAt: InstantTimestamp,
+  done: Bool
+) -> InstantStreamContentRead {
+  let byteCount = Int64(content.utf8.count)
+  return InstantStreamContentRead(
+    metadata: InstantStreamMetadata(
+      id: "stream-snapshot-buffer-stream",
+      appID: "stream-snapshot-buffer-app",
+      clientID: "stream-snapshot-buffer-client",
+      done: done,
+      size: byteOffset + byteCount,
+      userID: "stream-snapshot-buffer-user",
+      createdAt: createdAt,
+      updatedAt: InstantTimestamp(milliseconds: createdAt.milliseconds + sequence)
+    ),
+    byteOffset: byteOffset,
+    byteCount: byteCount,
+    content: content,
+    done: done
+  )
+}
 
 private func livePresenceSession(
   peerID: String,

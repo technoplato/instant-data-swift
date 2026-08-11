@@ -81,9 +81,92 @@ public struct InstantMutationTransportFlushResult: Hashable, Encodable, Sendable
   }
 }
 
+// SAFETY: `lock` linearizes one run against the one permitted synchronous
+// abort, and protects taking/nilling both `@Sendable` closures. Neither closure
+// is invoked while the lock is held.
+private final class InstantAbortableOperationState<Value: Sendable>: @unchecked Sendable {
+  private let lock = NSLock()
+  private var didStart = false
+  private var isAborted = false
+  private var operation: (@Sendable () async throws -> Value)?
+  private var abortOperation: (@Sendable () -> Void)?
+
+  init(
+    operation: @escaping @Sendable () async throws -> Value,
+    abort: @escaping @Sendable () -> Void
+  ) {
+    self.operation = operation
+    self.abortOperation = abort
+  }
+
+  func takeOperationToRun() -> (@Sendable () async throws -> Value)? {
+    lock.withLock {
+      guard !isAborted, !didStart, let operation else { return nil }
+      didStart = true
+      self.operation = nil
+      return operation
+    }
+  }
+
+  func finishRun() {
+    lock.withLock { abortOperation = nil }
+  }
+
+  func abort() {
+    let operation = lock.withLock { () -> (@Sendable () -> Void)? in
+      guard !isAborted else { return nil }
+      isAborted = true
+      self.operation = nil
+      defer { abortOperation = nil }
+      return abortOperation
+    }
+    operation?()
+  }
+}
+
+/// One asynchronous operation paired with its prompt cancellation boundary.
+///
+/// `abort()` is synchronous and idempotent across every copy of the value. It
+/// requests that the exact external operation stop; callers must still await
+/// `run()` to learn when all resources owned by that operation are released.
+public struct InstantAbortableOperation<Value: Sendable>: Sendable {
+  private let state: InstantAbortableOperationState<Value>
+
+  public init(
+    run operation: @escaping @Sendable () async throws -> Value,
+    abort: @escaping @Sendable () -> Void
+  ) {
+    self.state = InstantAbortableOperationState(
+      operation: operation,
+      abort: abort
+    )
+  }
+
+  public func run() async throws -> Value {
+    guard let operation = state.takeOperationToRun() else { throw CancellationError() }
+    defer { state.finishRun() }
+    return try await operation()
+  }
+
+  public func abort() {
+    state.abort()
+  }
+}
+
+public typealias InstantMutationTransportOperation =
+  InstantAbortableOperation<InstantMutationTransportResponse>
+
 public struct InstantMutationTransportClient: Sendable {
   public var send:
     @Sendable (InstantMutationTransportRequest) async throws -> InstantMutationTransportResponse
+  {
+    didSet {
+      let send = self.send
+      prepareOperation = Self.cooperativeOperation(send: send)
+    }
+  }
+  var prepareOperation:
+    @Sendable (InstantMutationTransportRequest) -> InstantMutationTransportOperation
 
   public init(
     send:
@@ -91,15 +174,60 @@ public struct InstantMutationTransportClient: Sendable {
       -> InstantMutationTransportResponse
   ) {
     self.send = send
+    self.prepareOperation = Self.cooperativeOperation(send: send)
+  }
+
+  private init(
+    prepareOperation:
+      @escaping @Sendable (InstantMutationTransportRequest)
+      -> InstantMutationTransportOperation
+  ) {
+    self.prepareOperation = prepareOperation
+    self.send = { request in
+      try await prepareOperation(request).run()
+    }
+  }
+
+  private static func cooperativeOperation(
+    send:
+      @escaping @Sendable (InstantMutationTransportRequest) async throws
+      -> InstantMutationTransportResponse
+  ) -> @Sendable (InstantMutationTransportRequest) -> InstantMutationTransportOperation {
+    { request in
+      InstantMutationTransportOperation(
+        run: { try await send(request) },
+        // Compatibility clients predate a synchronous external abort handle.
+        // Their operation remains cancellation-cooperative through its Task.
+        abort: {}
+      )
+    }
   }
 }
 
 extension InstantMutationTransportClient {
-  public static let local = Self { request in
-    InstantMutationTransportResponse(
-      results: request.mutations.map { mutation in
-        InstantMutationTransportResult(mutationID: mutation.mutationID, outcome: .confirmed)
-      }
+  /// Builds a transport that exposes a fresh abortable operation per request.
+  public static func preparedOperations(
+    _ prepareOperation:
+      @escaping @Sendable (InstantMutationTransportRequest)
+      -> InstantMutationTransportOperation
+  ) -> Self {
+    Self(prepareOperation: prepareOperation)
+  }
+
+  public static let local = Self.preparedOperations { request in
+    InstantMutationTransportOperation(
+      run: {
+        InstantMutationTransportResponse(
+          results: request.mutations.map { mutation in
+            InstantMutationTransportResult(
+              mutationID: mutation.mutationID,
+              outcome: .confirmed
+            )
+          }
+        )
+      },
+      // The local operation has no external resource and completes promptly.
+      abort: {}
     )
   }
 }

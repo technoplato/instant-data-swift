@@ -1,0 +1,2 @@
+codex-desktop/019fe994-1250-7b42-825e-9b75836d9173/root/stream_snapshot_buffer 2026-08-11T14:47:05Z mower plan=2026-08-09-bounded-intent-outbox-memory
+codex-desktop/019fe994-1250-7b42-825e-9b75836d9173/root/storage_lifecycle_production 2026-08-11T15:23:28Z mower exact-storage-lifecycle-only plan=2026-08-09-bounded-intent-outbox-memory

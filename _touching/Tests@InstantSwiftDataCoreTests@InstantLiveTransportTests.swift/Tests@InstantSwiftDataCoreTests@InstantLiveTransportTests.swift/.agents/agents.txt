@@ -1,3 +1,9 @@
 codex-019fe75c 2026-08-09T18:36:00Z mower plan=2026-08-09-outbox-wire-hydration
 codex-desktop/019fe994-1250-7b42-825e-9b75836d9173/root/instant_bounded_outbox 2026-08-10T05:58:00Z mower plan=2026-08-09-bounded-intent-outbox-memory
 codex-desktop/019fe994-1250-7b42-825e-9b75836d9173/root 2026-08-10T10:24:00-0400 mower plan=2026-08-09-bounded-intent-outbox-memory
+codex-desktop/019fe994-1250-7b42-825e-9b75836d9173/root/pump_reconnect_audit 2026-08-11T01:11:46-0400 mower plan=2026-08-09-bounded-intent-outbox-memory
+codex-desktop/019fe994-1250-7b42-825e-9b75836d9173/root/instant_diff_compile_audit 2026-08-11T01:52:59-0400 mower live-refresh-attribute-caller plan=2026-08-09-bounded-intent-outbox-memory
+codex-desktop/019fe994-1250-7b42-825e-9b75836d9173/root/connection_attempt_postfix_fix 2026-08-11T05:00:47-0400 mower connection-attempt-postfix plan=2026-08-09-bounded-intent-outbox-memory
+codex-desktop/019fe994-1250-7b42-825e-9b75836d9173/root/standard_query_exact_lease 2026-08-11T06:55:53-0400 mower standard-observation-lifecycle-tests-only plan=2026-08-09-bounded-intent-outbox-memory
+codex-desktop/019fe994-1250-7b42-825e-9b75836d9173/root/standard_observation_lifecycle 2026-08-11T07:08:22-0400 mower standard-observation-residual-lifecycle-tests-only plan=2026-08-09-bounded-intent-outbox-memory
+codex-desktop/019fe994-1250-7b42-825e-9b75836d9173/root/query_once_exact_cleanup 2026-08-11T10:46:56-0400 mower query-once-live-exact-cleanup-test-only plan=2026-08-09-bounded-intent-outbox-memory

@@ -3,6 +3,80 @@ import Foundation
 import InstantSwiftData
 import Testing
 
+final class InstantLiveTestThrowingContinuationBox<Value: Sendable>: @unchecked Sendable {
+  private let lock = NSLock()
+  private var continuation: CheckedContinuation<Value, Error>?
+
+  init(_ continuation: CheckedContinuation<Value, Error>) {
+    self.continuation = continuation
+  }
+
+  func resume(returning value: Value) {
+    resume(with: .success(value))
+  }
+
+  func resume(throwing error: any Error) {
+    resume(with: .failure(error))
+  }
+
+  private func resume(with result: Result<Value, any Error>) {
+    let continuation = lock.withLock {
+      let continuation = self.continuation
+      self.continuation = nil
+      return continuation
+    }
+    continuation?.resume(with: result)
+  }
+}
+
+struct InstantLiveTestPendingOperation<Value: Sendable>: Sendable {
+  var id: UUID
+  var abortToken: UUID
+  var continuation: InstantLiveTestThrowingContinuationBox<Value>
+}
+
+final class InstantLiveTestWireAbortState: @unchecked Sendable {
+  private let lock = NSLock()
+  private var actions: [UUID: @Sendable () -> Void] = [:]
+  private var aborted = false
+
+  var isAborted: Bool {
+    lock.withLock { aborted }
+  }
+
+  func check() throws {
+    if isAborted {
+      throw CancellationError()
+    }
+  }
+
+  func register(_ action: @escaping @Sendable () -> Void) -> UUID? {
+    lock.withLock {
+      guard !aborted else { return nil }
+      let id = UUID()
+      actions[id] = action
+      return id
+    }
+  }
+
+  func unregister(_ id: UUID) {
+    lock.withLock { actions[id] = nil }
+  }
+
+  func abort() {
+    let actions = lock.withLock {
+      guard !aborted else { return [@Sendable () -> Void]() }
+      aborted = true
+      let actions = Array(self.actions.values)
+      self.actions.removeAll()
+      return actions
+    }
+    for action in actions {
+      action()
+    }
+  }
+}
+
 @Suite(.serialized)
 struct InstantMessageServerAcceptanceTests {
   private let upstreamProvenance =
@@ -245,6 +319,10 @@ struct InstantMessageServerAcceptanceTests {
       )
     }
     try await waitForAcceptanceMutation(runtime)
+    try await waitForAcceptanceMutationSend(
+      id: "tx-structured-rejection",
+      in: session
+    )
 
     await session.rejectMutation(
       id: "tx-structured-rejection",
@@ -388,7 +466,7 @@ struct InstantMessageServerAcceptanceTests {
       message: "permission denied before public resolution"
     )
     await gate.waitUntilStarted()
-    let beforeResolution = try await runtime.persistence.loadState().snapshot
+    let beforeResolution = try await acceptancePersistenceRevisions(runtime)
 
     do {
       _ = try await client.retryFailedMutation(id: id)
@@ -411,7 +489,7 @@ struct InstantMessageServerAcceptanceTests {
       #expect(error.message.contains("awaiting a server-rejection disposition"))
     }
 
-    let afterRefusedResolution = try await runtime.persistence.loadState().snapshot
+    let afterRefusedResolution = try await acceptancePersistenceRevisions(runtime)
     expectNoDifference(afterRefusedResolution, beforeResolution)
     let stillFailed = try await client.failedMutations()
     expectNoDifference(stillFailed.map(\.id), [id])
@@ -720,6 +798,25 @@ private func acceptanceCacheURL(_ suffix: String) -> URL {
   )
 }
 
+private struct AcceptancePersistenceRevisions: Equatable {
+  var storeRevision: Int64
+  var attributeRevision: Int64
+  var outboxRevision: Int64
+  var queryResultRevision: Int64
+}
+
+private func acceptancePersistenceRevisions(
+  _ runtime: InstantRuntime
+) async throws -> AcceptancePersistenceRevisions {
+  let state = try await runtime.persistence.loadState()
+  return AcceptancePersistenceRevisions(
+    storeRevision: state.storeRevision,
+    attributeRevision: state.attributeRevision,
+    outboxRevision: state.outboxRevision,
+    queryResultRevision: state.queryResultRevision
+  )
+}
+
 private func enqueueAcceptanceMutation(
   id: String,
   runtime: InstantRuntime
@@ -818,6 +915,26 @@ private func waitForAcceptanceMutation(_ runtime: InstantRuntime) async throws {
   )
 }
 
+private func waitForAcceptanceMutationSend(
+  id: String,
+  in session: AcceptanceReconnectLiveSession
+) async throws {
+  for _ in 0..<5_000 {
+    if await session.sentMessages().contains(where: {
+      $0.op == "transact" && $0.clientEventID == id
+    }) {
+      return
+    }
+    try await Task.sleep(for: .milliseconds(1))
+  }
+  throw InstantError(
+    code: .implementationFailed,
+    operation: "wait for acknowledgement test mutation send",
+    message: "The message mutation was not sent within five seconds.",
+    recovery: "Inspect automatic live mutation delivery and its durable claim."
+  )
+}
+
 private actor RuntimeLessMessageProbe {
   private(set) var transactCount = 0
 
@@ -907,18 +1024,23 @@ private actor AcceptanceReconnectLiveSession {
     var continuation: CheckedContinuation<Void, Never>
   }
 
+  nonisolated private let abortState = InstantLiveTestWireAbortState()
   private var messages: [InstantLiveMessage] = []
-  private var receiveContinuation: CheckedContinuation<InstantLiveMessage, Error>?
+  private var receiveContinuation: InstantLiveTestPendingOperation<InstantLiveMessage>?
   private var sent: [InstantLiveMessage] = []
   private var sentWaiters: [SentWaiter] = []
   private var isClosed = false
 
   nonisolated var transport: InstantLiveTransportClient {
-    InstantLiveTransportClient { _ in
+    .immediate { _ in
       InstantLiveWebSocketSession(
-        send: { message in await self.send(message) },
-        receive: { try await self.receive() },
-        close: { await self.close() }
+        send: { message in try await self.send(message) },
+        receive: {
+          try self.abortState.check()
+          return try await self.receive()
+        },
+        close: { await self.close() },
+        abort: { self.abortState.abort() }
       )
     }
   }
@@ -966,7 +1088,8 @@ private actor AcceptanceReconnectLiveSession {
     )
   }
 
-  private func send(_ message: InstantLiveMessage) {
+  private func send(_ message: InstantLiveMessage) throws {
+    try abortState.check()
     sent.append(message)
     if message.op == "init" {
       enqueue(
@@ -993,29 +1116,53 @@ private actor AcceptanceReconnectLiveSession {
   }
 
   private func enqueue(_ message: InstantLiveMessage) {
+    guard !abortState.isAborted else { return }
     if let receiveContinuation {
       self.receiveContinuation = nil
-      receiveContinuation.resume(returning: message)
+      abortState.unregister(receiveContinuation.abortToken)
+      receiveContinuation.continuation.resume(returning: message)
     } else if !isClosed {
       messages.append(message)
     }
   }
 
   private func receive() async throws -> InstantLiveMessage {
+    try abortState.check()
     if !messages.isEmpty {
       return messages.removeFirst()
     }
     if isClosed {
       throw CancellationError()
     }
+    let id = UUID()
+    defer { clearReceiveContinuation(id: id) }
     return try await withCheckedThrowingContinuation { continuation in
-      receiveContinuation = continuation
+      let continuation = InstantLiveTestThrowingContinuationBox(continuation)
+      guard
+        let abortToken = abortState.register({
+          continuation.resume(throwing: CancellationError())
+        })
+      else {
+        continuation.resume(throwing: CancellationError())
+        return
+      }
+      receiveContinuation = InstantLiveTestPendingOperation(
+        id: id,
+        abortToken: abortToken,
+        continuation: continuation
+      )
     }
   }
 
   private func close() {
     isClosed = true
-    receiveContinuation?.resume(throwing: CancellationError())
+    abortState.abort()
     receiveContinuation = nil
+  }
+
+  private func clearReceiveContinuation(id: UUID) {
+    guard let receiveContinuation, receiveContinuation.id == id else { return }
+    abortState.unregister(receiveContinuation.abortToken)
+    self.receiveContinuation = nil
   }
 }

@@ -49,9 +49,16 @@ STATUS=0
 for FILTER in "${FILTERS[@]}"; do
   echo "=== ${FILTER} ===" | tee -a "${RESULTS_DIR}/swift-test.log"
   set +e
-  swift test --package-path "${ROOT}" \
-    --filter "${FILTER}" \
-    >>"${RESULTS_DIR}/swift-test.log" 2>&1
+  if [[ "${FILTER}" == "ScribeShapedAuthenticatedIdleMemorySoakTests" ]]; then
+    INSTANT_SWIFT_DATA_ISOLATED_MEMORY_GATE=1 \
+      swift test --package-path "${ROOT}" \
+        --filter "${FILTER}" \
+        >>"${RESULTS_DIR}/swift-test.log" 2>&1
+  else
+    swift test --package-path "${ROOT}" \
+      --filter "${FILTER}" \
+      >>"${RESULTS_DIR}/swift-test.log" 2>&1
+  fi
   STEP_STATUS=$?
   set -e
   if [[ "${STEP_STATUS}" -ne 0 ]]; then

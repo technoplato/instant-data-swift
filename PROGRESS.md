@@ -6,6 +6,25 @@ production-readiness plan
 Commit-level history stays in `docs/audits/commit-changelog.md`; this file is
 the narrative of what the library must prove and why.
 
+## 2026-08-11 13:38:57 EDT — ADR 0016 Q11 accepted (recordingActive.playbackPlaying)
+
+- Clarified session vs schema (capture = process pointers for live capture).
+- Dual timeline openers: openCaptureRecordingTimeline + openPlaybackRecordingTimeline.
+- Expanded observe field lists; live speech tail explained.
+- Next: Q12 recordingActive.playbackPaused.
+
+## 2026-08-11 13:29:08 EDT — ADR 0016 Q10 accepted (recordingActive.playbackIdle)
+
+- Pre-graph `04-uri-tree.md`: leaf reviewed; playRecording while capture kept; speechRecognized not injectSim.
+- session.capture.* documented; schema refresh in overview.
+- Next: Q11 `mode.recordingActive.playbackPlaying`.
+
+## 2026-08-11 13:21:20 EDT — ADR 0016 resume: recordingActive leaf review
+
+- Back on pre-graph `04-uri-tree.md` (not 04b message graph).
+- Pick up: `mode.recordingActive.*` after captain-reviewed `recordingIdle.*`.
+- Q10 open: accept/amend `recordingActive.playbackIdle` first.
+
 ## 2026-08-10 17:52:00 EDT — Message graph experiment (04b)
 
 - Exploratory static graph: message catalog, schema-path→writers index, thin tree send lists, command side-effects.

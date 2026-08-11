@@ -43,7 +43,9 @@ struct StreamsV3ModelTests {
     await model.write(["hello ", "🚀"]) { completed = $0 }
 
     expectNoDifference(model.status, "Complete")
-    expectNoDifference(model.streamID, "00000000-0000-0000-0000-000000000302")
+    let streamID = try #require(model.streamID)
+    #expect(UUID(uuidString: streamID) != nil)
+    expectNoDifference(completed?.id, streamID)
     expectNoDifference(completed?.size, 10)
     model.resume()
     for _ in 0..<100 where !model.isDone {

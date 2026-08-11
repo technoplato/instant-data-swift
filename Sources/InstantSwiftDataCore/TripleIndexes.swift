@@ -314,6 +314,9 @@ struct TripleIndexes: Hashable, Codable, Sendable {
   private var storedTripleCount = 0
   private var internedTxIDs: [String] = [""]
   private var txIDToIndex: [String: UInt32] = ["": 0]
+  /// Exact transient keys hydrated or written only for preparing a mutation.
+  /// Consumed before prepared indexes become the next hot store.
+  private var deferredValueKeysToRemove: Set<EntityAttributeKey> = []
 
   private mutating func internTxID(_ txID: String) -> UInt32 {
     if let existing = txIDToIndex[txID] { return existing }
@@ -411,6 +414,26 @@ struct TripleIndexes: Hashable, Codable, Sendable {
     var snapshot: InstantEntitySnapshot
     var serverCreatedAt: InstantValue?
     var sortValue: InstantValue?
+    var isFullyMaterialized = true
+  }
+
+  struct QueryMaterializationMetrics: Equatable, Sendable {
+    var examinedCandidateCount = 0
+    var matchingCandidateCount = 0
+    var materializedSnapshotCount = 0
+    var maximumRetainedCandidateCount = 0
+    var boundedSelectionCount = 0
+  }
+
+  struct EntityAttributeKey: Hashable, Sendable {
+    var entityID: String
+    var attributeID: String
+  }
+
+  struct DeferredValueRemovalMetrics: Equatable, Sendable {
+    var examinedKeyCount = 0
+    var residentKeyCount = 0
+    var removedValueCount = 0
   }
 
   private struct DeleteVisit: Hashable, Sendable {
@@ -418,10 +441,75 @@ struct TripleIndexes: Hashable, Codable, Sendable {
     var namespace: String?
   }
 
-  init(triples: [InstantTriple] = [], attributes: AttributeStore = AttributeStore()) {
-    for triple in triples {
+  init(
+    triples: [InstantTriple] = [],
+    attributes: AttributeStore = AttributeStore(),
+    excludingAttributeIDs excludedAttributeIDs: Set<String> = [],
+    markingDeferredAttributeIDs deferredAttributeIDs: Set<String> = []
+  ) {
+    for triple in triples where !excludedAttributeIDs.contains(triple.attributeID) {
       self.insert(triple, attribute: attributes[triple.attributeID])
+      if deferredAttributeIDs.contains(triple.attributeID) {
+        deferredValueKeysToRemove.insert(
+          EntityAttributeKey(entityID: triple.entityID, attributeID: triple.attributeID)
+        )
+      }
     }
+  }
+
+  mutating func hydrateDeferredValues(
+    _ triples: [InstantTriple],
+    attributes: AttributeStore
+  ) {
+    deferredValueKeysToRemove.reserveCapacity(
+      deferredValueKeysToRemove.count + triples.count
+    )
+    for triple in triples {
+      insert(triple, attribute: attributes[triple.attributeID])
+      deferredValueKeysToRemove.insert(
+        EntityAttributeKey(entityID: triple.entityID, attributeID: triple.attributeID)
+      )
+    }
+  }
+
+  mutating func markDeferredValue(entityID: String, attributeID: String) {
+    deferredValueKeysToRemove.insert(
+      EntityAttributeKey(entityID: entityID, attributeID: attributeID)
+    )
+  }
+
+  var pendingDeferredValueRemovalCount: Int {
+    deferredValueKeysToRemove.count
+  }
+
+  @discardableResult
+  mutating func removeMarkedDeferredValues(
+    attributes: AttributeStore
+  ) -> DeferredValueRemovalMetrics {
+    var metrics = DeferredValueRemovalMetrics()
+    while let key = deferredValueKeysToRemove.popFirst() {
+      metrics.examinedKeyCount += 1
+      guard let slot = eav[key.entityID]?[key.attributeID] else { continue }
+      metrics.residentKeyCount += 1
+      metrics.removedValueCount += slot.count
+      var values: [(InstantValue, InstantTripleStamp)] = []
+      values.reserveCapacity(slot.count)
+      slot.forEachPair { value, stamp in
+        values.append((value, stamp))
+      }
+      for (value, stamp) in values {
+        removeNormalized(
+          materializeTriple(
+            entityID: key.entityID,
+            attributeID: key.attributeID,
+            value: value,
+            stamp: stamp
+          ),
+          attribute: attributes[key.attributeID]
+        )
+      }
+    }
+    return metrics
   }
 
   var triples: [InstantTriple] {
@@ -683,7 +771,47 @@ struct TripleIndexes: Hashable, Codable, Sendable {
     attributes: AttributeStore,
     remotePageInfo: InstantQueryRemotePageInfo? = nil
   ) -> InstantQueryPage {
+    materializePageWithMetrics(
+      plan,
+      attributes: attributes,
+      remotePageInfo: remotePageInfo
+    ).page
+  }
+
+  func materializePageWithMetrics(
+    _ plan: InstantQueryPlan,
+    attributes: AttributeStore,
+    remotePageInfo: InstantQueryRemotePageInfo? = nil
+  ) -> (page: InstantQueryPage, metrics: QueryMaterializationMetrics) {
+    var metrics = QueryMaterializationMetrics()
+    let page = materializePage(
+      plan,
+      attributes: attributes,
+      remotePageInfo: remotePageInfo,
+      metrics: &metrics
+    )
+    return (page, metrics)
+  }
+
+  private func materializePage(
+    _ plan: InstantQueryPlan,
+    attributes: AttributeStore,
+    remotePageInfo: InstantQueryRemotePageInfo?,
+    metrics: inout QueryMaterializationMetrics
+  ) -> InstantQueryPage {
     let effectiveOrder = Self.effectiveOrder(plan.order)
+    if Self.hasFiniteResultBound(plan), Self.supportsBoundedSelection(plan) {
+      let candidateSource = resolveBoundedCandidateSource(plan: plan, attributes: attributes)
+      return materializeBoundedPage(
+        plan,
+        order: effectiveOrder,
+        candidateSource: candidateSource,
+        attributes: attributes,
+        remotePageInfo: remotePageInfo,
+        metrics: &metrics
+      )
+    }
+
     if let page = materializeSimpleOrderedPage(
       plan,
       order: effectiveOrder,
@@ -705,7 +833,12 @@ struct TripleIndexes: Hashable, Codable, Sendable {
         attributes: attributes,
         remotePageInfo: remotePageInfo
       )
-      let linked = includeLinks(paged.values.map(\.snapshot), plan: plan, attributes: attributes)
+      let linked = includeLinks(
+        paged.values.map(\.snapshot),
+        plan: plan,
+        attributes: attributes,
+        metrics: &metrics
+      )
       return InstantQueryPage(
         values: project(linked, selectedFields: plan.selectedFields),
         pageInfo: paged.pageInfo
@@ -714,40 +847,6 @@ struct TripleIndexes: Hashable, Codable, Sendable {
 
     let candidateResolution = resolveCandidateEntityIDs(plan: plan, attributes: attributes)
     let filtersFullyCoveredByIndex = candidateResolution.filtersFullyCoveredByIndex
-    // Indexed equality-only filters with no explicit order: materialize in stable entity-id
-    // order (candidates already sorted) and apply limit without building QuerySnapshot sort keys.
-    // Matches common list-filter UX and removes serverCreatedAt sort overhead.
-    if filtersFullyCoveredByIndex,
-      plan.order == nil,
-      (plan.includes?.isEmpty ?? true),
-      plan.selectedFields == nil,
-      remotePageInfo == nil,
-      plan.offset == nil,
-      plan.after == nil,
-      plan.before == nil,
-      plan.first == nil,
-      plan.last == nil
-    {
-      let limit = plan.limit ?? candidateResolution.ids.count
-      var values: [InstantEntitySnapshot] = []
-      values.reserveCapacity(min(limit, candidateResolution.ids.count))
-      for entityID in candidateResolution.ids {
-        guard let attributesByID = eav[entityID],
-          let fieldValues = materializedValues(
-            entityID: entityID,
-            namespace: plan.namespace,
-            attributesByID: attributesByID,
-            attributes: attributes
-          )
-        else { continue }
-        values.append(
-          InstantEntitySnapshot(id: entityID, namespace: plan.namespace, values: fieldValues)
-        )
-        if values.count >= limit { break }
-      }
-      return InstantQueryPage(values: values, pageInfo: nil)
-    }
-
     var snapshots: [QuerySnapshot] = []
     snapshots.reserveCapacity(
       min(candidateResolution.ids.count, plan.limit ?? candidateResolution.ids.count)
@@ -808,7 +907,12 @@ struct TripleIndexes: Hashable, Codable, Sendable {
       attributes: attributes,
       remotePageInfo: remotePageInfo
     )
-    let linked = includeLinks(paged.values.map(\.snapshot), plan: plan, attributes: attributes)
+    let linked = includeLinks(
+      paged.values.map(\.snapshot),
+      plan: plan,
+      attributes: attributes,
+      metrics: &metrics
+    )
     return InstantQueryPage(
       values: project(linked, selectedFields: plan.selectedFields),
       pageInfo: paged.pageInfo
@@ -819,6 +923,528 @@ struct TripleIndexes: Hashable, Codable, Sendable {
     var ids: [String]
     /// True when every filter was a simple indexed equality used to build `ids`.
     var filtersFullyCoveredByIndex: Bool
+  }
+
+  private struct BoundedCandidateSource: Sendable {
+    var baseEntityIDs: Set<String>?
+    var additionalMemberships: [Set<String>]
+    var filtersFullyCoveredByIndex: Bool
+    var candidateNamespaceIsKnown: Bool
+  }
+
+  private enum RetainedCandidateEnd: Sendable {
+    case first
+    case last
+  }
+
+  private struct BoundedSelectionConfiguration: Sendable {
+    var capacity: Int
+    var retainedEnd: RetainedCandidateEnd
+  }
+
+  private struct BoundedCandidateBuffer: Sendable {
+    var capacity: Int
+    var retainedEnd: RetainedCandidateEnd
+    var heap: [QuerySnapshot] = []
+
+    mutating func insert(_ candidate: QuerySnapshot, order: InstantQueryOrder?) {
+      guard capacity > 0 else { return }
+      if heap.count < capacity {
+        heap.append(candidate)
+        siftUp(from: heap.count - 1, order: order)
+        return
+      }
+      guard let root = heap.first, shouldReplaceRoot(root, with: candidate, order: order)
+      else { return }
+      heap[0] = candidate
+      siftDown(from: 0, order: order)
+    }
+
+    func sorted(order: InstantQueryOrder?) -> [QuerySnapshot] {
+      heap.sorted {
+        TripleIndexes.compare($0, $1, order: order) == .orderedAscending
+      }
+    }
+
+    private func shouldReplaceRoot(
+      _ root: QuerySnapshot,
+      with candidate: QuerySnapshot,
+      order: InstantQueryOrder?
+    ) -> Bool {
+      switch retainedEnd {
+      case .first:
+        return TripleIndexes.compare(candidate, root, order: order) == .orderedAscending
+      case .last:
+        return TripleIndexes.compare(root, candidate, order: order) == .orderedAscending
+      }
+    }
+
+    private mutating func siftUp(from index: Int, order: InstantQueryOrder?) {
+      var childIndex = index
+      while childIndex > 0 {
+        let parentIndex = (childIndex - 1) / 2
+        guard hasRootPriority(heap[childIndex], over: heap[parentIndex], order: order)
+        else { return }
+        heap.swapAt(childIndex, parentIndex)
+        childIndex = parentIndex
+      }
+    }
+
+    private mutating func siftDown(from index: Int, order: InstantQueryOrder?) {
+      var parentIndex = index
+      while true {
+        let leftIndex = parentIndex * 2 + 1
+        guard leftIndex < heap.count else { return }
+        let rightIndex = leftIndex + 1
+        var childIndex = leftIndex
+        if rightIndex < heap.count,
+          hasRootPriority(heap[rightIndex], over: heap[leftIndex], order: order)
+        {
+          childIndex = rightIndex
+        }
+        guard hasRootPriority(heap[childIndex], over: heap[parentIndex], order: order)
+        else { return }
+        heap.swapAt(parentIndex, childIndex)
+        parentIndex = childIndex
+      }
+    }
+
+    private func hasRootPriority(
+      _ lhs: QuerySnapshot,
+      over rhs: QuerySnapshot,
+      order: InstantQueryOrder?
+    ) -> Bool {
+      let comparison = TripleIndexes.compare(lhs, rhs, order: order)
+      switch retainedEnd {
+      case .first:
+        return comparison == .orderedDescending
+      case .last:
+        return comparison == .orderedAscending
+      }
+    }
+  }
+
+  private enum BoundedRangePosition {
+    case inside
+    case before
+    case after
+  }
+
+  private static func hasFiniteResultBound(_ plan: InstantQueryPlan) -> Bool {
+    plan.limit != nil || plan.first != nil || plan.last != nil
+  }
+
+  private static func supportsBoundedSelection(_ plan: InstantQueryPlan) -> Bool {
+    (plan.after == nil || plan.after?.sortValue != nil)
+      && (plan.before == nil || plan.before?.sortValue != nil)
+  }
+
+  private func resolveBoundedCandidateSource(
+    plan: InstantQueryPlan,
+    attributes: AttributeStore
+  ) -> BoundedCandidateSource {
+    var indexedHitSets: [Set<String>] = []
+    var coveredFilterCount = 0
+    for filter in plan.filters {
+      guard case let .equals(field, rawValue) = filter,
+        nestedField(field) == nil,
+        let attribute = attributes.attribute(namespace: plan.namespace, name: field),
+        attribute.isIndexed
+      else { continue }
+      let hits: Set<String>
+      if attribute.primaryKey {
+        guard let entityID = Self.entityID(fromPrimaryKeyValue: rawValue) else {
+          indexedHitSets.append([])
+          coveredFilterCount += 1
+          continue
+        }
+        hits = entitiesByNamespace[plan.namespace]?.contains(entityID) == true
+          ? [entityID]
+          : []
+      } else {
+        let value = Self.normalizedValue(rawValue, attribute: attribute)
+        hits = indexedValueEntities[attribute.id]?[value] ?? []
+      }
+      indexedHitSets.append(hits)
+      coveredFilterCount += 1
+    }
+
+    let filtersFullyCoveredByIndex =
+      !plan.filters.isEmpty
+      && coveredFilterCount == plan.filters.count
+      && !indexedHitSets.isEmpty
+    if let baseIndex = indexedHitSets.indices.min(by: {
+      indexedHitSets[$0].count < indexedHitSets[$1].count
+    }) {
+      let baseEntityIDs = indexedHitSets.remove(at: baseIndex)
+      return BoundedCandidateSource(
+        baseEntityIDs: baseEntityIDs,
+        additionalMemberships: indexedHitSets,
+        filtersFullyCoveredByIndex: filtersFullyCoveredByIndex,
+        candidateNamespaceIsKnown: true
+      )
+    }
+    if let namespaceEntityIDs = entitiesByNamespace[plan.namespace] {
+      return BoundedCandidateSource(
+        baseEntityIDs: namespaceEntityIDs,
+        additionalMemberships: [],
+        filtersFullyCoveredByIndex: false,
+        candidateNamespaceIsKnown: true
+      )
+    }
+    return BoundedCandidateSource(
+      baseEntityIDs: nil,
+      additionalMemberships: [],
+      filtersFullyCoveredByIndex: false,
+      candidateNamespaceIsKnown: false
+    )
+  }
+
+  private func forEachEntityID(
+    in candidateSource: BoundedCandidateSource,
+    _ body: (String) -> Void
+  ) {
+    if let baseEntityIDs = candidateSource.baseEntityIDs {
+      for entityID in baseEntityIDs
+      where candidateSource.additionalMemberships.allSatisfy({ $0.contains(entityID) }) {
+        body(entityID)
+      }
+      return
+    }
+    for entityID in eav.keys {
+      body(entityID)
+    }
+  }
+
+  private func materializeBoundedPage(
+    _ plan: InstantQueryPlan,
+    order: InstantQueryOrder,
+    candidateSource: BoundedCandidateSource,
+    attributes: AttributeStore,
+    remotePageInfo: InstantQueryRemotePageInfo?,
+    metrics: inout QueryMaterializationMetrics
+  ) -> InstantQueryPage {
+    metrics.boundedSelectionCount += 1
+    guard isValidPagination(plan) else {
+      return InstantQueryPage(
+        values: [],
+        pageInfo: pageInfo(for: [], plan: plan, effectiveOrder: order)
+      )
+    }
+    if case .waiting? = remotePageInfo, requiresRemotePageInfo(plan) {
+      return InstantQueryPage(values: [], pageInfo: nil)
+    }
+    if case let .ready(pageInfo)? = remotePageInfo,
+      requiresRemotePageInfo(plan),
+      pageInfo.startCursor == nil
+    {
+      return InstantQueryPage(values: [], pageInfo: pageInfo)
+    }
+    guard
+      let configuration = boundedSelectionConfiguration(
+        plan,
+        remotePageInfo: remotePageInfo,
+        needsLookahead: !Self.hasReadyRemotePageInfo(remotePageInfo)
+      )
+    else {
+      return InstantQueryPage(values: [], pageInfo: nil)
+    }
+
+    var buffer = BoundedCandidateBuffer(
+      capacity: configuration.capacity,
+      retainedEnd: configuration.retainedEnd
+    )
+    var removedByStartBound = false
+    var removedByEndBound = false
+    forEachEntityID(in: candidateSource) { entityID in
+      metrics.examinedCandidateCount += 1
+      guard
+        let candidate = boundedQuerySnapshot(
+          entityID: entityID,
+          plan: plan,
+          order: order,
+          filtersFullyCoveredByIndex: candidateSource.filtersFullyCoveredByIndex,
+          candidateNamespaceIsKnown: candidateSource.candidateNamespaceIsKnown,
+          attributes: attributes,
+          metrics: &metrics
+        )
+      else { return }
+      metrics.matchingCandidateCount += 1
+      switch boundedRangePosition(
+        candidate,
+        plan: plan,
+        order: order,
+        attributes: attributes,
+        remotePageInfo: remotePageInfo
+      ) {
+      case .inside:
+        buffer.insert(candidate, order: order)
+        metrics.maximumRetainedCandidateCount = max(
+          metrics.maximumRetainedCandidateCount,
+          buffer.heap.count
+        )
+      case .before:
+        removedByStartBound = true
+      case .after:
+        removedByEndBound = true
+      }
+    }
+
+    return finishBoundedPage(
+      buffer,
+      plan: plan,
+      order: order,
+      attributes: attributes,
+      remotePageInfo: remotePageInfo,
+      removedByStartBound: removedByStartBound,
+      removedByEndBound: removedByEndBound,
+      metrics: &metrics
+    )
+  }
+
+  private func boundedSelectionConfiguration(
+    _ plan: InstantQueryPlan,
+    remotePageInfo: InstantQueryRemotePageInfo?,
+    needsLookahead: Bool
+  ) -> BoundedSelectionConfiguration? {
+    let usesRemoteBounds: Bool
+    if case .ready? = remotePageInfo, requiresRemotePageInfo(plan) {
+      usesRemoteBounds = true
+    } else {
+      usesRemoteBounds = false
+    }
+    let offset = usesRemoteBounds ? 0 : (plan.offset ?? 0)
+    let lookahead = needsLookahead ? 1 : 0
+    if let first = plan.first, plan.last != nil {
+      return BoundedSelectionConfiguration(
+        capacity: Self.saturatingSum(offset, first, lookahead),
+        retainedEnd: .first
+      )
+    }
+    if let first = plan.first {
+      return BoundedSelectionConfiguration(
+        capacity: Self.saturatingSum(offset, min(first, plan.limit ?? first), lookahead),
+        retainedEnd: .first
+      )
+    }
+    if let last = plan.last {
+      return BoundedSelectionConfiguration(
+        capacity: Self.saturatingSum(offset, last, lookahead),
+        retainedEnd: .last
+      )
+    }
+    guard let leadingCount = plan.limit else { return nil }
+    return BoundedSelectionConfiguration(
+      capacity: Self.saturatingSum(offset, leadingCount, lookahead),
+      retainedEnd: .first
+    )
+  }
+
+  private static func hasReadyRemotePageInfo(
+    _ remotePageInfo: InstantQueryRemotePageInfo?
+  ) -> Bool {
+    if case .ready? = remotePageInfo { return true }
+    return false
+  }
+
+  private static func saturatingSum(_ values: Int...) -> Int {
+    values.reduce(0) { result, value in
+      let (sum, overflow) = result.addingReportingOverflow(value)
+      return overflow ? Int.max : sum
+    }
+  }
+
+  private func boundedQuerySnapshot(
+    entityID: String,
+    plan: InstantQueryPlan,
+    order: InstantQueryOrder,
+    filtersFullyCoveredByIndex: Bool,
+    candidateNamespaceIsKnown: Bool,
+    attributes: AttributeStore,
+    metrics: inout QueryMaterializationMetrics
+  ) -> QuerySnapshot? {
+    let orderAttribute = order.isServerCreatedAt
+      ? nil
+      : attributes.attribute(namespace: plan.namespace, name: order.field)
+    let readsOrderFromIndex =
+      orderAttribute?.cardinality == .one && orderAttribute?.isIndexed == true
+    let requiresSnapshot =
+      !candidateNamespaceIsKnown
+      || (!plan.filters.isEmpty && !filtersFullyCoveredByIndex)
+      || (!order.isServerCreatedAt && !readsOrderFromIndex)
+
+    let materializedSnapshot: InstantEntitySnapshot?
+    if requiresSnapshot {
+      guard
+        let snapshot = snapshot(
+          entityID: entityID,
+          namespace: plan.namespace,
+          attributes: attributes
+        )
+      else { return nil }
+      metrics.materializedSnapshotCount += 1
+      guard filtersFullyCoveredByIndex
+        || matches(
+          snapshot,
+          filters: plan.filters,
+          namespace: plan.namespace,
+          attributes: attributes
+        )
+      else { return nil }
+      materializedSnapshot = snapshot
+    } else {
+      materializedSnapshot = nil
+    }
+
+    let serverCreatedAt = order.isServerCreatedAt
+      ? serverCreatedAtValue(
+        entityID: entityID,
+        namespace: plan.namespace,
+        attributes: attributes
+      )
+      : nil
+    let sortValue: InstantValue?
+    if order.isServerCreatedAt {
+      sortValue = serverCreatedAt
+    } else if let orderAttribute, readsOrderFromIndex {
+      sortValue = indexedEntityValues[orderAttribute.id]?[entityID]
+    } else if let materializedSnapshot {
+      sortValue = Self.orderValue(
+        materializedSnapshot,
+        serverCreatedAt: nil,
+        field: order.field
+      )
+    } else {
+      sortValue = nil
+    }
+
+    return QuerySnapshot(
+      snapshot: materializedSnapshot
+        ?? InstantEntitySnapshot(id: entityID, namespace: plan.namespace, values: [:]),
+      serverCreatedAt: serverCreatedAt,
+      sortValue: sortValue,
+      isFullyMaterialized: materializedSnapshot != nil
+    )
+  }
+
+  private func boundedRangePosition(
+    _ candidate: QuerySnapshot,
+    plan: InstantQueryPlan,
+    order: InstantQueryOrder,
+    attributes: AttributeStore,
+    remotePageInfo: InstantQueryRemotePageInfo?
+  ) -> BoundedRangePosition {
+    if case let .ready(pageInfo)? = remotePageInfo, requiresRemotePageInfo(plan) {
+      if let startCursor = pageInfo.startCursor,
+        Self.compare(
+          candidate,
+          to: startCursor,
+          order: order,
+          namespace: plan.namespace,
+          attributes: attributes
+        ) == .orderedAscending
+      {
+        return .before
+      }
+      if let endCursor = pageInfo.endCursor,
+        Self.compare(
+          candidate,
+          to: endCursor,
+          order: order,
+          namespace: plan.namespace,
+          attributes: attributes
+        ) == .orderedDescending
+      {
+        return .after
+      }
+      return .inside
+    }
+
+    if let after = plan.after {
+      let comparison = Self.compare(
+        candidate,
+        to: after,
+        order: order,
+        namespace: plan.namespace,
+        attributes: attributes
+      )
+      if after.inclusive
+        ? comparison == .orderedAscending
+        : comparison != .orderedDescending
+      {
+        return .before
+      }
+    }
+    if let before = plan.before {
+      let comparison = Self.compare(
+        candidate,
+        to: before,
+        order: order,
+        namespace: plan.namespace,
+        attributes: attributes
+      )
+      if before.inclusive
+        ? comparison == .orderedDescending
+        : comparison != .orderedAscending
+      {
+        return .after
+      }
+    }
+    return .inside
+  }
+
+  private func finishBoundedPage(
+    _ buffer: BoundedCandidateBuffer,
+    plan: InstantQueryPlan,
+    order: InstantQueryOrder,
+    attributes: AttributeStore,
+    remotePageInfo: InstantQueryRemotePageInfo?,
+    removedByStartBound: Bool,
+    removedByEndBound: Bool,
+    metrics: inout QueryMaterializationMetrics
+  ) -> InstantQueryPage {
+    var paginationPlan = plan
+    if remotePageInfo == nil {
+      paginationPlan.after = nil
+      paginationPlan.before = nil
+    }
+    var paged = paginate(
+      buffer.sorted(order: order),
+      plan: paginationPlan,
+      effectiveOrder: order,
+      attributes: attributes,
+      remotePageInfo: remotePageInfo
+    )
+    if remotePageInfo == nil, var pageInfo = paged.pageInfo {
+      pageInfo.hasPreviousPage = pageInfo.hasPreviousPage || removedByStartBound
+      pageInfo.hasNextPage = pageInfo.hasNextPage || removedByEndBound
+      paged.pageInfo = pageInfo
+    }
+
+    var snapshots: [InstantEntitySnapshot] = []
+    snapshots.reserveCapacity(paged.values.count)
+    for candidate in paged.values {
+      if candidate.isFullyMaterialized {
+        snapshots.append(candidate.snapshot)
+      } else if let snapshot = snapshot(
+        entityID: candidate.snapshot.id,
+        namespace: plan.namespace,
+        attributes: attributes
+      ) {
+        metrics.materializedSnapshotCount += 1
+        snapshots.append(snapshot)
+      }
+    }
+    let linked = includeLinks(
+      snapshots,
+      plan: plan,
+      attributes: attributes,
+      metrics: &metrics
+    )
+    return InstantQueryPage(
+      values: project(linked, selectedFields: plan.selectedFields),
+      pageInfo: paged.pageInfo
+    )
   }
 
   /// Prefer indexed equality hits, else namespace membership — never scan unrelated namespaces.
@@ -834,8 +1460,20 @@ struct TripleIndexes: Hashable, Codable, Sendable {
         let attribute = attributes.attribute(namespace: plan.namespace, name: field),
         attribute.isIndexed
       else { continue }
-      let value = Self.normalizedValue(rawValue, attribute: attribute)
-      let hits = indexedValueEntities[attribute.id]?[value] ?? []
+      let hits: Set<String>
+      if attribute.primaryKey {
+        guard let entityID = Self.entityID(fromPrimaryKeyValue: rawValue) else {
+          candidate = []
+          coveredFilterCount += 1
+          continue
+        }
+        hits = entitiesByNamespace[plan.namespace]?.contains(entityID) == true
+          ? [entityID]
+          : []
+      } else {
+        let value = Self.normalizedValue(rawValue, attribute: attribute)
+        hits = indexedValueEntities[attribute.id]?[value] ?? []
+      }
       if let existing = candidate {
         candidate = existing.intersection(hits)
       } else {
@@ -857,6 +1495,15 @@ struct TripleIndexes: Hashable, Codable, Sendable {
       return CandidateResolution(ids: members.sorted(), filtersFullyCoveredByIndex: false)
     }
     return CandidateResolution(ids: eav.keys.sorted(), filtersFullyCoveredByIndex: false)
+  }
+
+  private static func entityID(fromPrimaryKeyValue value: InstantValue) -> String? {
+    switch value {
+    case let .string(entityID), let .ref(entityID):
+      return entityID
+    default:
+      return nil
+    }
   }
 
   private func materializeSimpleOrderedPage(
@@ -1071,13 +1718,14 @@ struct TripleIndexes: Hashable, Codable, Sendable {
       )
     }
 
-    if plan.first != nil, plan.last != nil {
-      return InstantQueryValidationIssue(
-        namespace: plan.namespace,
-        path: "pagination",
-        message: "A query cannot request both 'first' and 'last' pagination.",
-        recovery: "Use either 'first' for a forward page or 'last' for a reverse page."
-      )
+    if let issue = validatePagination(
+      offset: plan.offset,
+      limit: plan.limit,
+      first: plan.first,
+      last: plan.last,
+      namespace: plan.namespace
+    ) {
+      return issue
     }
 
     guard !namespaces.isEmpty else { return nil }
@@ -1104,7 +1752,8 @@ struct TripleIndexes: Hashable, Codable, Sendable {
   private func includeLinks(
     _ snapshots: [InstantEntitySnapshot],
     plan: InstantQueryPlan,
-    attributes: AttributeStore
+    attributes: AttributeStore,
+    metrics: inout QueryMaterializationMetrics
   ) -> [InstantEntitySnapshot] {
     guard let includes = plan.includes, !includes.isEmpty else { return snapshots }
 
@@ -1123,10 +1772,11 @@ struct TripleIndexes: Hashable, Codable, Sendable {
             continue
           }
           links[include.name] = materializeIncludedSnapshots(
-            ids: Set(entityIDs),
+            ids: entityIDs,
             namespace: linkNamespace,
             include: include,
-            attributes: attributes
+            attributes: attributes,
+            metrics: &metrics
           )
 
         case .reverse:
@@ -1137,16 +1787,18 @@ struct TripleIndexes: Hashable, Codable, Sendable {
               attributes: attributes
             )
           else { continue }
-          let entityIDs = entityIDsReferencing(snapshot.id, attributeID: attribute.id)
-          guard !entityIDs.isEmpty else {
+          guard let referringEntities = vae[.ref(snapshot.id)]?[attribute.id],
+            !referringEntities.isEmpty
+          else {
             links[include.name] = []
             continue
           }
           links[include.name] = materializeIncludedSnapshots(
-            ids: Set(entityIDs),
+            ids: referringEntities.keys,
             namespace: attribute.namespace,
             include: include,
-            attributes: attributes
+            attributes: attributes,
+            metrics: &metrics
           )
         }
       }
@@ -1160,12 +1812,13 @@ struct TripleIndexes: Hashable, Codable, Sendable {
     }
   }
 
-  private func materializeIncludedSnapshots(
-    ids: Set<String>,
+  private func materializeIncludedSnapshots<IDs: Collection>(
+    ids: IDs,
     namespace: String,
     include: InstantQueryInclude,
-    attributes: AttributeStore
-  ) -> [InstantLinkedEntitySnapshot] {
+    attributes: AttributeStore,
+    metrics: inout QueryMaterializationMetrics
+  ) -> [InstantLinkedEntitySnapshot] where IDs.Element == String {
     let query =
       include.query?.queryPlan
       ?? InstantQueryPlan(
@@ -1175,23 +1828,74 @@ struct TripleIndexes: Hashable, Codable, Sendable {
     return materializeSnapshots(
       ids: ids,
       query: query,
-      attributes: attributes
+      attributes: attributes,
+      metrics: &metrics
     )
       .map(InstantLinkedEntitySnapshot.init)
   }
 
-  private func materializeSnapshots(
-    ids: Set<String>,
+  private func materializeSnapshots<IDs: Collection>(
+    ids: IDs,
     query: InstantQueryPlan,
-    attributes: AttributeStore
-  ) -> [InstantEntitySnapshot] {
+    attributes: AttributeStore,
+    metrics: inout QueryMaterializationMetrics
+  ) -> [InstantEntitySnapshot] where IDs.Element == String {
     guard !ids.isEmpty else { return [] }
+    guard isValidPagination(query) else { return [] }
+
+    let effectiveOrder = Self.effectiveOrder(query.order)
+    if Self.hasFiniteResultBound(query),
+      Self.supportsBoundedSelection(query)
+    {
+      metrics.boundedSelectionCount += 1
+      guard
+        let configuration = boundedSelectionConfiguration(
+          query,
+          remotePageInfo: nil,
+          needsLookahead: false
+        )
+      else { return [] }
+      var buffer = BoundedCandidateBuffer(
+        capacity: configuration.capacity,
+        retainedEnd: configuration.retainedEnd
+      )
+      for entityID in ids {
+        metrics.examinedCandidateCount += 1
+        guard
+          let candidate = boundedQuerySnapshot(
+            entityID: entityID,
+            plan: query,
+            order: effectiveOrder,
+            filtersFullyCoveredByIndex: false,
+            candidateNamespaceIsKnown: true,
+            attributes: attributes,
+            metrics: &metrics
+          )
+        else { continue }
+        metrics.matchingCandidateCount += 1
+        buffer.insert(candidate, order: effectiveOrder)
+        metrics.maximumRetainedCandidateCount = max(
+          metrics.maximumRetainedCandidateCount,
+          buffer.heap.count
+        )
+      }
+      return finishBoundedPage(
+        buffer,
+        plan: query,
+        order: effectiveOrder,
+        attributes: attributes,
+        remotePageInfo: nil,
+        removedByStartBound: false,
+        removedByEndBound: false,
+        metrics: &metrics
+      ).values
+    }
 
     var snapshots: [QuerySnapshot] = []
     snapshots.reserveCapacity(ids.count)
-    let effectiveOrder = Self.effectiveOrder(query.order)
 
     for entityID in ids {
+      metrics.examinedCandidateCount += 1
       guard
         let snapshot = snapshot(
           entityID: entityID,
@@ -1205,6 +1909,8 @@ struct TripleIndexes: Hashable, Codable, Sendable {
           attributes: attributes
         )
       else { continue }
+      metrics.matchingCandidateCount += 1
+      metrics.materializedSnapshotCount += 1
 
       let serverCreatedAt = needsServerCreatedAt(effectiveOrder)
         ? serverCreatedAtValue(
@@ -1224,14 +1930,16 @@ struct TripleIndexes: Hashable, Codable, Sendable {
           )
         )
       )
+      metrics.maximumRetainedCandidateCount = max(
+        metrics.maximumRetainedCandidateCount,
+        snapshots.count
+      )
     }
 
     snapshots.sort {
       Self.compare($0, $1, order: effectiveOrder) == .orderedAscending
     }
 
-    // Per-parent bounds for nested includes (and any include-scoped materialize).
-    // Match top-level page application order: first, then last, then limit.
     if let first = query.first {
       snapshots = Array(snapshots.prefix(first))
     }
@@ -1242,7 +1950,12 @@ struct TripleIndexes: Hashable, Codable, Sendable {
       snapshots = Array(snapshots.prefix(limit))
     }
 
-    let linked = includeLinks(snapshots.map(\.snapshot), plan: query, attributes: attributes)
+    let linked = includeLinks(
+      snapshots.map(\.snapshot),
+      plan: query,
+      attributes: attributes,
+      metrics: &metrics
+    )
     return project(linked, selectedFields: query.selectedFields)
   }
 
@@ -1518,10 +2231,9 @@ struct TripleIndexes: Hashable, Codable, Sendable {
 
   private func isValidPagination(_ plan: InstantQueryPlan) -> Bool {
     guard plan.offset.map({ $0 >= 0 }) ?? true else { return false }
-    guard plan.limit.map({ $0 >= 0 }) ?? true else { return false }
-    guard plan.first.map({ $0 >= 0 }) ?? true else { return false }
-    guard plan.last.map({ $0 >= 0 }) ?? true else { return false }
-    guard plan.first == nil || plan.last == nil else { return false }
+    guard plan.limit.map({ $0 > 0 }) ?? true else { return false }
+    guard plan.first.map({ $0 > 0 }) ?? true else { return false }
+    guard plan.last.map({ $0 > 0 }) ?? true else { return false }
     return true
   }
 
@@ -2298,6 +3010,40 @@ struct TripleIndexes: Hashable, Codable, Sendable {
     )
   }
 
+  private static func validatePagination(
+    offset: Int?,
+    limit: Int?,
+    first: Int?,
+    last: Int?,
+    namespace: String,
+    path: String = "pagination"
+  ) -> InstantQueryValidationIssue? {
+    if let offset, offset < 0 {
+      return InstantQueryValidationIssue(
+        namespace: namespace,
+        path: path,
+        message: "Pagination 'offset' must not be negative.",
+        recovery: "Use a nonnegative pagination offset."
+      )
+    }
+    let bounds: [(name: String, value: Int?)] = [
+      ("limit", limit),
+      ("first", first),
+      ("last", last),
+    ]
+    for bound in bounds {
+      if let value = bound.value, value <= 0 {
+        return InstantQueryValidationIssue(
+          namespace: namespace,
+          path: path,
+          message: "Pagination '\(bound.name)' must be greater than 0.",
+          recovery: "Use a positive pagination bound."
+        )
+      }
+    }
+    return nil
+  }
+
   private static func validateIncludes(
     _ includes: [InstantQueryInclude]?,
     namespace: String,
@@ -2339,6 +3085,16 @@ struct TripleIndexes: Hashable, Codable, Sendable {
           message: "Include '\(include.name)' targets '\(childNamespace)' but its query targets '\(query.namespace)'.",
           recovery: "Use an include query for the relation's target namespace."
         )
+      }
+      if let issue = validatePagination(
+        offset: nil,
+        limit: query.limit,
+        first: query.first,
+        last: query.last,
+        namespace: query.namespace,
+        path: "\(include.name).pagination"
+      ) {
+        return issue
       }
       if let issue = validate(filters: query.filters, namespace: query.namespace, attributes: attributes) {
         return issue

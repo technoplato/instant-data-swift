@@ -1,0 +1,4 @@
+codex-desktop/019fe994-1250-7b42-825e-9b75836d9173/root/instant_deferred_values 2026-08-10T13:45:41-0400 mower plan=2026-08-09-bounded-intent-outbox-memory
+codex-desktop/019fe994-1250-7b42-825e-9b75836d9173/root/instant_revision_domains/bounded_query_materialization 2026-08-10T21:24:52-0400 mower query-enumeration-only plan=2026-08-09-bounded-intent-outbox-memory
+codex-desktop/019fe994-1250-7b42-825e-9b75836d9173/root/public_confirm_row_addressed 2026-08-11T01:10:42-0400 mower equality-filter-implicit-order-parity plan=2026-08-09-bounded-intent-outbox-memory
+codex-desktop/019fe994-1250-7b42-825e-9b75836d9173/root/deferred_strip_bounded 2026-08-11T01:38:09-0400 mower deferred-strip-only plan=2026-08-09-bounded-intent-outbox-memory

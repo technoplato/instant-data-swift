@@ -506,13 +506,19 @@ public enum InstantSwiftDataLocalBenchmarks {
           transactionID: memoryTransactionID,
           createdAt: memoryCreatedAt
         )
+        let memoryTransactions = tripleMemoryTransactions(
+          baseTransactionID: memoryTransactionID,
+          operations: memoryOperations
+        )
         let memoryActorHopBaseline = actorHopRecorder.baseline()
         let (_, memoryDuration) = try await measured(clockNanoseconds) {
-          try await memoryRuntime.transact(
-            InstantStoreTransaction(id: memoryTransactionID, operations: memoryOperations),
-            createdAt: memoryCreatedAt,
-            source: "benchmark.local.todos.\(tier.metricName)"
-          )
+          for transaction in memoryTransactions {
+            try await memoryRuntime.transact(
+              transaction,
+              createdAt: memoryCreatedAt,
+              source: "benchmark.local.todos.\(tier.metricName)"
+            )
+          }
         }
         let memoryActorHops = actorHopRecorder.summary(since: memoryActorHopBaseline)
         let memoryAfter = measureMemoryBytes()
@@ -865,19 +871,33 @@ public enum InstantSwiftDataLocalBenchmarks {
         )
       )
 
+      // Drain every automatic claim window (50 mutations). A single flush only
+      // admits one window; packing can leave >50 pending after offline restore.
       let flushActorHopBaseline = actorHopRecorder.baseline()
-      let (flushResult, flushDuration) = try await measured(clockNanoseconds) {
-        try await relaunchedState.runtime.flushPendingMutations()
+      let (flushTotals, flushDuration) = try await measured(clockNanoseconds) {
+        var offered = 0
+        var confirmed = 0
+        var remaining = await relaunchedState.runtime.pendingMutations().count
+        while remaining > 0 {
+          let flushResult = try await relaunchedState.runtime.flushPendingMutations()
+          offered += flushResult.request.mutations.count
+          confirmed += flushResult.confirmed.count
+          remaining = flushResult.pendingMutationCount
+          if flushResult.request.mutations.isEmpty {
+            break
+          }
+        }
+        return (offered: offered, confirmed: confirmed, remaining: remaining)
       }
       let flushActorHops = actorHopRecorder.summary(since: flushActorHopBaseline)
-      pendingMutationCount = flushResult.pendingMutationCount
+      pendingMutationCount = flushTotals.remaining
       record(
         "outbox-flush.local-transport",
         InstantBenchmarkSample(
           iteration: iteration,
           durationNanoseconds: flushDuration,
-          operationCount: flushResult.request.mutations.count,
-          resultCount: flushResult.confirmed.count,
+          operationCount: flushTotals.offered,
+          resultCount: flushTotals.confirmed,
           pendingMutationCount: pendingMutationCount,
           actorHopCount: flushActorHops.count,
           actorHopBreakdown: flushActorHops.breakdown
@@ -949,6 +969,31 @@ public enum InstantSwiftDataLocalBenchmarks {
     }
 
     return operations
+  }
+
+  /// Keeps each synthetic todo's four triples atomic while packing the exact
+  /// requested dataset into deterministic transactions accepted by the durable
+  /// outbox. The benchmark still measures 1k, 10k, and 50k triples; it now also
+  /// measures the real row-addressed outbox shape required to deliver them.
+  private static func tripleMemoryTransactions(
+    baseTransactionID: String,
+    operations: [InstantTripleOperation]
+  ) -> [InstantStoreTransaction] {
+    precondition(operations.count.isMultiple(of: tripleMemoryTodoOperationCount))
+    let recordsPerTransaction =
+      InstantAutomaticOutboxClaimLimits.maximumStepCount / tripleMemoryTodoOperationCount
+    precondition(recordsPerTransaction > 0)
+    let operationsPerTransaction = recordsPerTransaction * tripleMemoryTodoOperationCount
+
+    return stride(from: 0, to: operations.count, by: operationsPerTransaction)
+      .enumerated()
+      .map { batchIndex, startIndex in
+        let endIndex = min(startIndex + operationsPerTransaction, operations.count)
+        return InstantStoreTransaction(
+          id: "\(baseTransactionID)-\(String(format: "%04d", batchIndex))",
+          operations: Array(operations[startIndex..<endIndex])
+        )
+      }
   }
 
   private static func measured<Value>(

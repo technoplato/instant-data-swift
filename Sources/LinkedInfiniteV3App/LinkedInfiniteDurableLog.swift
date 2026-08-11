@@ -16,6 +16,7 @@ public enum LinkedInfiniteDurableLog: Sendable {
 
   public static var fileURL: URL { URL(fileURLWithPath: path) }
 
+  // SAFETY: `lock` protects all mutable session, sequence, and sink state.
   private final class State: @unchecked Sendable {
     let lock = NSLock()
     var sessionID = UUID().uuidString.lowercased()

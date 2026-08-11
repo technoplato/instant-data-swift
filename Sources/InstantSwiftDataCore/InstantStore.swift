@@ -25,6 +25,7 @@ struct PreparedStoreMutation: Sendable {
   var attributes: AttributeStore
   var indexes: TripleIndexes
   var previousChangedEntityTriples: [String: [InstantTriple]]
+  var deferredValueRemovalMetrics: TripleIndexes.DeferredValueRemovalMetrics
   private var preparedSnapshot: InstantStoreSnapshot?
 
   var snapshot: InstantStoreSnapshot {
@@ -62,6 +63,7 @@ struct PreparedStoreMutation: Sendable {
     attributes: AttributeStore,
     indexes: TripleIndexes,
     previousChangedEntityTriples: [String: [InstantTriple]] = [:],
+    deferredValueRemovalMetrics: TripleIndexes.DeferredValueRemovalMetrics = .init(),
     snapshot: InstantStoreSnapshot? = nil
   ) {
     self.result = result
@@ -69,6 +71,7 @@ struct PreparedStoreMutation: Sendable {
     self.attributes = attributes
     self.indexes = indexes
     self.previousChangedEntityTriples = previousChangedEntityTriples
+    self.deferredValueRemovalMetrics = deferredValueRemovalMetrics
     self.preparedSnapshot = snapshot
   }
 }
@@ -85,15 +88,42 @@ private struct StoreObservationKey: Hashable {
   var remotePageInfo: InstantQueryRemotePageInfo?
 }
 
+struct InstantStoreQueryObservationLease: Sendable {
+  var stream: AsyncStream<InstantQueryEmission>
+  var cancel: @Sendable () async -> Void
+}
+
+private final class InstantStoreObservationTermination: Sendable {
+  private let owner: InstantAsyncCancellationOwner
+
+  init(_ action: @escaping @Sendable () async -> Void) {
+    self.owner = InstantAsyncCancellationOwner(cancelAndWait: action)
+  }
+
+  func run() async {
+    owner.cancel()
+    await owner.wait()
+  }
+}
+
 public actor InstantStore {
   private var attributes: AttributeStore
   private var indexes: TripleIndexes
+  private let deferredValueResidency: InstantDeferredValueResidencyPolicy
   private var observers: [UUID: StoreObserver] = [:]
   private var sequence: Int64 = 0
 
-  public init(snapshot: InstantStoreSnapshot = InstantStoreSnapshot()) {
+  public init(
+    snapshot: InstantStoreSnapshot = InstantStoreSnapshot(),
+    deferredValueResidency: InstantDeferredValueResidencyPolicy = .none
+  ) {
+    self.deferredValueResidency = deferredValueResidency
     self.attributes = AttributeStore(attributes: snapshot.attributes)
-    self.indexes = TripleIndexes(triples: snapshot.triples, attributes: self.attributes)
+    self.indexes = TripleIndexes(
+      triples: snapshot.triples,
+      attributes: self.attributes,
+      excludingAttributeIDs: deferredValueResidency.attributeIDs
+    )
   }
 
   public func replaceAttributes(_ attributes: [InstantAttribute]) -> InstantStoreSnapshot {
@@ -105,7 +135,11 @@ public actor InstantStore {
   public func replaceSnapshot(_ snapshot: InstantStoreSnapshot) {
     let changed = snapshot != self.snapshot()
     self.attributes = AttributeStore(attributes: snapshot.attributes)
-    self.indexes = TripleIndexes(triples: snapshot.triples, attributes: self.attributes)
+    self.indexes = TripleIndexes(
+      triples: snapshot.triples,
+      attributes: self.attributes,
+      excludingAttributeIDs: deferredValueResidency.attributeIDs
+    )
     if changed {
       sequence += 1
     }
@@ -128,6 +162,10 @@ public actor InstantStore {
 
   func attributeSnapshot() -> [InstantAttribute] {
     attributes.attributes
+  }
+
+  func currentSequence() -> Int64 {
+    sequence
   }
 
   public func snapshot() -> InstantStoreSnapshot {
@@ -204,6 +242,17 @@ public actor InstantStore {
     indexes.materializePage(plan, attributes: attributes, remotePageInfo: remotePageInfo)
   }
 
+  func materializePageWithMetrics(
+    _ plan: InstantQueryPlan,
+    remotePageInfo: InstantQueryRemotePageInfo? = nil
+  ) -> (page: InstantQueryPage, metrics: TripleIndexes.QueryMaterializationMetrics) {
+    indexes.materializePageWithMetrics(
+      plan,
+      attributes: attributes,
+      remotePageInfo: remotePageInfo
+    )
+  }
+
   public func materializeEmission(
     _ plan: InstantQueryPlan,
     remotePageInfo: InstantQueryRemotePageInfo? = nil
@@ -221,30 +270,57 @@ public actor InstantStore {
     _ plan: InstantQueryPlan,
     remotePageInfo: InstantQueryRemotePageInfo? = nil
   ) -> AsyncStream<InstantQueryEmission> {
-    observe(
+    observeQueryLease(
+      plan,
+      remotePageInfo: remotePageInfo
+    ).stream
+  }
+
+  func observeQueryLease(
+    _ plan: InstantQueryPlan,
+    remotePageInfo: InstantQueryRemotePageInfo? = nil,
+    onCancellationStarted: (@Sendable () async -> Void)? = nil
+  ) -> InstantStoreQueryObservationLease {
+    observeLease(
       plan,
       remotePageInfo: remotePageInfo,
-      liveQueryKey: nil
+      liveQueryKey: nil,
+      onCancellationStarted: onCancellationStarted
     )
   }
 
-  func observeLiveQuery(
+  func observeInfiniteQueryLease(
+    _ plan: InstantQueryPlan,
+    onCancellationStarted: (@Sendable () async -> Void)? = nil
+  ) -> InstantStoreQueryObservationLease {
+    observeLease(
+      plan,
+      remotePageInfo: nil,
+      liveQueryKey: nil,
+      onCancellationStarted: onCancellationStarted
+    )
+  }
+
+  func observeLiveQueryLease(
     _ plan: InstantQueryPlan,
     registrationKey: String,
-    remotePageInfo: InstantQueryRemotePageInfo?
-  ) -> AsyncStream<InstantQueryEmission> {
-    observe(
+    remotePageInfo: InstantQueryRemotePageInfo?,
+    onCancellationStarted: (@Sendable () async -> Void)? = nil
+  ) -> InstantStoreQueryObservationLease {
+    observeLease(
       plan,
       remotePageInfo: remotePageInfo,
-      liveQueryKey: registrationKey
+      liveQueryKey: registrationKey,
+      onCancellationStarted: onCancellationStarted
     )
   }
 
-  private func observe(
+  private func observeLease(
     _ plan: InstantQueryPlan,
     remotePageInfo: InstantQueryRemotePageInfo?,
-    liveQueryKey: String?
-  ) -> AsyncStream<InstantQueryEmission> {
+    liveQueryKey: String?,
+    onCancellationStarted: (@Sendable () async -> Void)? = nil
+  ) -> InstantStoreQueryObservationLease {
     let observerID = UUID()
     let stream = AsyncStream<InstantQueryEmission>.makeStream(
       bufferingPolicy: .bufferingNewest(1)
@@ -256,12 +332,23 @@ public actor InstantStore {
       liveQueryKey: liveQueryKey,
       continuation: stream.continuation
     )
+    let termination = InstantStoreObservationTermination { [weak self] in
+      await onCancellationStarted?()
+      guard let self else { return }
+      await self.cancelObservation(id: observerID)
+    }
     stream.continuation.onTermination = { @Sendable _ in
       Task {
-        await self.cancelObservation(id: observerID)
+        await termination.run()
       }
     }
-    return stream.stream
+    return InstantStoreQueryObservationLease(
+      stream: stream.stream,
+      cancel: {
+        stream.continuation.finish()
+        await termination.run()
+      }
+    )
   }
 
   func installLiveQueryPageInfo(
@@ -310,13 +397,62 @@ public actor InstantStore {
     )
   }
 
+  func prepareCurrent(
+    _ transaction: InstantStoreTransaction,
+    hydratingDeferredValues deferredTriples: [InstantTriple]
+  ) throws -> PreparedStoreMutation {
+    var indexes = indexes
+    indexes.hydrateDeferredValues(deferredTriples, attributes: attributes)
+    return try prepare(
+      transaction,
+      attributes: attributes,
+      indexes: indexes
+    )
+  }
+
+  func resolvedMutationEntityIDs(
+    in transaction: InstantStoreTransaction
+  ) throws -> Set<String> {
+    var entityIDs: Set<String> = []
+    var resolvedLookups: [InstantLookupRef: String] = [:]
+    for operation in transaction.operations {
+      for concreteOperation in try Self.concreteOperations(
+        for: operation,
+        indexes: indexes,
+        attributes: attributes,
+        resolvedLookups: &resolvedLookups
+      ) {
+        switch concreteOperation {
+        case let .merge(triple), let .insert(triple), let .retract(triple):
+          entityIDs.insert(triple.entityID)
+        case let .deleteEntity(entityID), let .deleteEntityInNamespace(entityID, _):
+          entityIDs.insert(entityID)
+        case .requireEntityMissing, .requireEntityMissingByLookup,
+          .requireEntityExists, .requireEntityExistsByLookup,
+          .requireTripleExists, .mergeByLookup, .insertByLookup, .retractByLookup,
+          .deleteEntityByLookup, .ruleParams, .ruleParamsByLookup:
+          break
+        }
+      }
+    }
+    return entityIDs
+  }
+
   func prepare(
     _ transaction: InstantStoreTransaction,
     applyingTo snapshot: InstantStoreSnapshot
   ) throws -> PreparedStoreMutation {
     let attributes = AttributeStore(attributes: snapshot.attributes)
-    let indexes = TripleIndexes(triples: snapshot.triples, attributes: attributes)
-    return try prepare(transaction, attributes: attributes, indexes: indexes)
+    let indexes = TripleIndexes(
+      triples: snapshot.triples,
+      attributes: attributes,
+      markingDeferredAttributeIDs: deferredValueResidency.attributeIDs
+    )
+    return try prepare(
+      transaction,
+      attributes: attributes,
+      indexes: indexes
+    )
   }
 
   func prepare(
@@ -348,7 +484,11 @@ public actor InstantStore {
     to snapshot: InstantStoreSnapshot
   ) throws -> PreparedStoreMutation {
     var attributes = AttributeStore(attributes: snapshot.attributes)
-    var indexes = TripleIndexes(triples: snapshot.triples, attributes: attributes)
+    var indexes = TripleIndexes(
+      triples: snapshot.triples,
+      attributes: attributes,
+      markingDeferredAttributeIDs: deferredValueResidency.attributeIDs
+    )
     for rollback in rollbacks {
       _ = try prepareMutating(
         rollback,
@@ -379,9 +519,24 @@ public actor InstantStore {
     thenApplying serverTransaction: InstantStoreTransaction,
     mergingAttributes attributesToMerge: [InstantAttribute] = []
   ) throws -> PreparedStoreMutation {
+    try prepare(
+      peelingOverlays: rollbacks,
+      thenApplying: serverTransaction,
+      mergingAttributes: attributesToMerge,
+      hydratingDeferredValues: []
+    )
+  }
+
+  func prepare(
+    peelingOverlays rollbacks: [InstantStoreTransaction],
+    thenApplying serverTransaction: InstantStoreTransaction,
+    mergingAttributes attributesToMerge: [InstantAttribute] = [],
+    hydratingDeferredValues deferredTriples: [InstantTriple]
+  ) throws -> PreparedStoreMutation {
     var attributes = self.attributes
     attributes.merge(attributesToMerge)
     var indexes = self.indexes
+    indexes.hydrateDeferredValues(deferredTriples, attributes: attributes)
     for rollback in rollbacks {
       _ = try prepareMutating(
         rollback,
@@ -512,6 +667,12 @@ public actor InstantStore {
         for concreteOperation in concreteOperations {
           switch concreteOperation {
           case let .merge(triple):
+            if deferredValueResidency.attributeIDs.contains(triple.attributeID) {
+              indexes.markDeferredValue(
+                entityID: triple.entityID,
+                attributeID: triple.attributeID
+              )
+            }
             try Self.validateWriteValue(triple.value, triple: triple, attributes: attributes)
             if attributes[triple.attributeID]?.valueType == .ref {
               throw Self.unsupportedMergeError(triple: triple, attributes: attributes)
@@ -519,6 +680,12 @@ public actor InstantStore {
             changedEntityIDs.formUnion(indexes.apply(concreteOperation, attributes: attributes))
 
           case let .insert(triple), let .retract(triple):
+            if deferredValueResidency.attributeIDs.contains(triple.attributeID) {
+              indexes.markDeferredValue(
+                entityID: triple.entityID,
+                attributeID: triple.attributeID
+              )
+            }
             try Self.validateWriteValue(triple.value, triple: triple, attributes: attributes)
             changedEntityIDs.formUnion(indexes.apply(concreteOperation, attributes: attributes))
 
@@ -565,18 +732,19 @@ public actor InstantStore {
     )
   }
 
-  func commit(_ prepared: PreparedStoreMutation) -> PreparedStoreMutation {
+  func commit(_ prepared: consuming PreparedStoreMutation) -> PreparedStoreMutation {
     commit(prepared, shouldPublish: false)
   }
 
-  func commitAndPublish(_ prepared: PreparedStoreMutation) -> PreparedStoreMutation {
+  func commitAndPublish(_ prepared: consuming PreparedStoreMutation) -> PreparedStoreMutation {
     commit(prepared, shouldPublish: true)
   }
 
   private func commit(
-    _ prepared: PreparedStoreMutation,
+    _ prepared: consuming PreparedStoreMutation,
     shouldPublish: Bool
   ) -> PreparedStoreMutation {
+    var prepared = prepared
     let changedNamespaces: Set<String>?
     if attributes != prepared.attributes {
       changedNamespaces = nil
@@ -598,6 +766,9 @@ public actor InstantStore {
       }
       changedNamespaces = resolvedEveryEntity ? resolvedNamespaces : nil
     }
+    prepared.deferredValueRemovalMetrics = prepared.indexes.removeMarkedDeferredValues(
+      attributes: prepared.attributes
+    )
     self.attributes = prepared.attributes
     self.indexes = prepared.indexes
     self.sequence = prepared.sequence
@@ -653,13 +824,8 @@ public actor InstantStore {
       ],
       correlationID: result.transactionID
     )
-    return PreparedStoreMutation(
-      result: result,
-      sequence: sequence,
-      attributes: prepared.attributes,
-      indexes: prepared.indexes,
-      previousChangedEntityTriples: prepared.previousChangedEntityTriples
-    )
+    prepared.result = result
+    return prepared
   }
 
   private static func shouldRematerialize(
@@ -1390,7 +1556,7 @@ public actor InstantStore {
     )
   }
 
-  func activeObservationCount() -> Int {
+  package func activeObservationCount() -> Int {
     observers.count
   }
 

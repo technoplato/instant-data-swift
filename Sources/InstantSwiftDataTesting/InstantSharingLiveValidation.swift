@@ -409,9 +409,11 @@ public enum InstantSharingLiveValidation {
     recorder: SharingValueRecorder,
     operation: String
   ) async throws {
-    for _ in 0..<400 {
+    for _ in 0..<InstantLiveValidationTiming.pollAttemptCount {
       if await recorder.contains(value) { return }
-      try await Task.sleep(for: .milliseconds(25))
+      try await Task.sleep(
+        for: .milliseconds(InstantLiveValidationTiming.pollIntervalMilliseconds)
+      )
     }
     throw timeout(operation)
   }
@@ -422,14 +424,16 @@ public enum InstantSharingLiveValidation {
     recorder: SharingValueRecorder,
     operation: String
   ) async throws {
-    for _ in 0..<400 {
+    for _ in 0..<InstantLiveValidationTiming.pollAttemptCount {
       let values = await recorder.values()
       if let precedingIndex = values.lastIndex(of: precedingValue),
         values[values.index(after: precedingIndex)...].contains(value)
       {
         return
       }
-      try await Task.sleep(for: .milliseconds(25))
+      try await Task.sleep(
+        for: .milliseconds(InstantLiveValidationTiming.pollIntervalMilliseconds)
+      )
     }
     throw timeout(operation)
   }
@@ -438,11 +442,13 @@ public enum InstantSharingLiveValidation {
     _ runtime: InstantRuntime,
     id: String
   ) async throws {
-    for _ in 0..<400 {
+    for _ in 0..<InstantLiveValidationTiming.pollAttemptCount {
       if await runtime.outboxMutations().contains(where: { $0.id == id && $0.status == .failed }) {
         return
       }
-      try await Task.sleep(for: .milliseconds(25))
+      try await Task.sleep(
+        for: .milliseconds(InstantLiveValidationTiming.pollIntervalMilliseconds)
+      )
     }
     throw timeout("wait for reader sharing permission failure")
   }
@@ -451,12 +457,14 @@ public enum InstantSharingLiveValidation {
     listID: String,
     shares: Shares
   ) async throws -> InstantShareSnapshot {
-    for _ in 0..<400 {
+    for _ in 0..<InstantLiveValidationTiming.pollAttemptCount {
       if let snapshot = shares.wrappedValue.first(where: { $0.share.rootID == listID }) {
         return snapshot
       }
       if let error = shares.loadError { throw error }
-      try await Task.sleep(for: .milliseconds(25))
+      try await Task.sleep(
+        for: .milliseconds(InstantLiveValidationTiming.pollIntervalMilliseconds)
+      )
     }
     throw timeout("wait for public @Shares live graph")
   }
@@ -465,11 +473,13 @@ public enum InstantSharingLiveValidation {
     _ runtime: InstantRuntime,
     id: String
   ) async throws {
-    for _ in 0..<400 {
+    for _ in 0..<InstantLiveValidationTiming.pollAttemptCount {
       if !(await runtime.outboxMutations()).contains(where: { $0.id == id }) {
         return
       }
-      try await Task.sleep(for: .milliseconds(25))
+      try await Task.sleep(
+        for: .milliseconds(InstantLiveValidationTiming.pollIntervalMilliseconds)
+      )
     }
     throw timeout("wait for writer sharing transaction confirmation")
   }
@@ -478,7 +488,7 @@ public enum InstantSharingLiveValidation {
     InstantError(
       code: .networkFailed,
       operation: operation,
-      message: "Timed out after 10 seconds.",
+      message: "Timed out after 5 seconds.",
       recovery: "Inspect the live sharing query, permission error, and refetch sequence."
     )
   }
@@ -509,9 +519,8 @@ private actor SharingLiveTrace {
 
   nonisolated var transport: InstantLiveTransportClient {
     let live = InstantLiveTransportClient.live
-    return InstantLiveTransportClient { request in
-      let session = try await live.connect(request)
-      return InstantLiveWebSocketSession(
+    return live.mapSessions { session in
+      return session.forwarding(
         send: { message in
           await self.recordSent(message)
           try await session.send(message)

@@ -78,6 +78,17 @@ struct InstantOutboxDeliveryStallTests {
     }
     await reconnectGate.release()
     _ = try await queryTask.value
+    try await instantLiveWithTimeout(
+      operation: "wait for persisted mutation after query-priority reconnect",
+      timeoutMilliseconds: 5_000
+    ) {
+      while !Task.isCancelled {
+        let sent = await liveSession.sentMessages()
+        if sent.contains(where: { $0.op == "transact" }) { return }
+        await Task.yield()
+      }
+      throw CancellationError()
+    }
 
     let sent = await liveSession.sentMessages()
     let addQueryIndex = try #require(sent.firstIndex { $0.op == "add-query" })
@@ -212,6 +223,14 @@ struct InstantOutboxDeliveryStallTests {
     expectNoDifference(sentBeforeConnect, 0, outboxStallSource)
 
     _ = try await runtime.connect()
+    try await instantLiveWithTimeout(
+      operation: "wait for the first bounded backlog delivery window",
+      timeoutMilliseconds: 5_000
+    ) {
+      await liveSession.waitForSentMessageCount(
+        InstantRuntimeLiveSessionLimits.maximumMutationsPerFlush + 1
+      )
+    }
     // One flush pass, before any acknowledgement can arrive.
     let firstPass = await liveSession.sentMessages()
       .filter { $0.op == "transact" }
@@ -272,6 +291,12 @@ struct InstantOutboxDeliveryStallTests {
     )
 
     _ = try await runtime.connect()
+    try await instantLiveWithTimeout(
+      operation: "wait for the first weighted backlog mutation",
+      timeoutMilliseconds: 5_000
+    ) {
+      await liveSession.waitForSentMessageCount(2)
+    }
     var sentTransactionIDs = await liveSession.sentMessages()
       .filter { $0.op == "transact" }
       .compactMap(\.clientEventID)
@@ -284,7 +309,12 @@ struct InstantOutboxDeliveryStallTests {
         fields: ["tx-id": .string("server-tx-outbox-weighted-0")]
       )
     )
-    await liveSession.waitForSentMessageCount(3)
+    try await instantLiveWithTimeout(
+      operation: "wait for the second weighted backlog mutation",
+      timeoutMilliseconds: 5_000
+    ) {
+      await liveSession.waitForSentMessageCount(3)
+    }
     sentTransactionIDs = await liveSession.sentMessages()
       .filter { $0.op == "transact" }
       .compactMap(\.clientEventID)
@@ -301,7 +331,12 @@ struct InstantOutboxDeliveryStallTests {
         fields: ["tx-id": .string("server-tx-outbox-weighted-1")]
       )
     )
-    await liveSession.waitForSentMessageCount(4)
+    try await instantLiveWithTimeout(
+      operation: "wait for the third weighted backlog mutation",
+      timeoutMilliseconds: 5_000
+    ) {
+      await liveSession.waitForSentMessageCount(4)
+    }
     sentTransactionIDs = await liveSession.sentMessages()
       .filter { $0.op == "transact" }
       .compactMap(\.clientEventID)
@@ -761,15 +796,22 @@ private actor OutboxReconnectTransportGate {
   private var connectionAttempted = false
   private var connectionWaiters: [CheckedContinuation<Void, Never>] = []
   private var isReleased = false
-  private var releaseWaiters: [CheckedContinuation<Void, Never>] = []
+  private var pendingConnections: [InstantLiveTestConnectionContinuation] = []
 
   init(session: LiveReactorParitySession) {
     self.session = session
   }
 
   nonisolated var transport: InstantLiveTransportClient {
-    InstantLiveTransportClient { _ in
-      await self.connect()
+    .connectionAttempts { _ in
+      let connection = InstantLiveTestConnectionContinuation()
+      return InstantLiveConnectionAttempt(
+        connect: {
+          Task { await self.beginConnection(connection) }
+          return try await connection.connect()
+        },
+        abort: { connection.abort() }
+      )
     }
   }
 
@@ -782,52 +824,56 @@ private actor OutboxReconnectTransportGate {
 
   func release() {
     isReleased = true
-    let waiters = releaseWaiters
-    releaseWaiters.removeAll()
-    for waiter in waiters {
-      waiter.resume()
+    let connections = pendingConnections
+    pendingConnections.removeAll()
+    for connection in connections {
+      connection.succeed(session.webSocketSession)
     }
   }
 
-  private func connect() async -> InstantLiveWebSocketSession {
+  private func beginConnection(_ connection: InstantLiveTestConnectionContinuation) {
     connectionAttempted = true
     let waiters = connectionWaiters
     connectionWaiters.removeAll()
     for waiter in waiters {
       waiter.resume()
     }
-    if !isReleased {
-      await withCheckedContinuation { continuation in
-        releaseWaiters.append(continuation)
-      }
+    if isReleased {
+      connection.succeed(session.webSocketSession)
+    } else {
+      pendingConnections.append(connection)
     }
-    return session.webSocketSession
   }
 }
 
 private actor ImmediateAckBeforeSendReturnSession {
+  nonisolated private let abortState = InstantLiveTestWireAbortState()
   private var messages = [
     liveReactorInitOK(
       attrs: liveReactorTodoServerAttrs,
       sessionID: "outbox-reentrant-ack"
     )
   ]
-  private var receiveContinuation: CheckedContinuation<InstantLiveMessage, Error>?
+  private var receiveContinuation: InstantLiveTestPendingOperation<InstantLiveMessage>?
   private var blockedTransactSend = false
   private var blockedSendWaiters: [CheckedContinuation<Void, Never>] = []
-  private var releaseTransactSendContinuation: CheckedContinuation<Void, Never>?
+  private var releaseTransactSendContinuation: InstantLiveTestPendingOperation<Void>?
   private var isTransactSendReleased = false
   private var isClosed = false
 
   nonisolated var transport: InstantLiveTransportClient {
-    InstantLiveTransportClient { _ in self.webSocketSession }
+    .immediate { _ in self.webSocketSession }
   }
 
   nonisolated var webSocketSession: InstantLiveWebSocketSession {
     InstantLiveWebSocketSession(
       send: { message in try await self.send(message) },
-      receive: { try await self.receive() },
-      close: { await self.close() }
+      receive: {
+        try self.abortState.check()
+        return try await self.receive()
+      },
+      close: { await self.close() },
+      abort: { self.abortState.abort() }
     )
   }
 
@@ -840,11 +886,15 @@ private actor ImmediateAckBeforeSendReturnSession {
 
   func releaseTransactSend() {
     isTransactSendReleased = true
-    releaseTransactSendContinuation?.resume()
+    if let releaseTransactSendContinuation {
+      abortState.unregister(releaseTransactSendContinuation.abortToken)
+      releaseTransactSendContinuation.continuation.resume(returning: ())
+    }
     releaseTransactSendContinuation = nil
   }
 
   private func send(_ message: InstantLiveMessage) async throws {
+    try abortState.check()
     guard message.op == "transact" else { return }
     let clientEventID = try #require(message.clientEventID)
     enqueue(
@@ -861,29 +911,64 @@ private actor ImmediateAckBeforeSendReturnSession {
       waiter.resume()
     }
     if !isTransactSendReleased {
-      await withCheckedContinuation { continuation in
-        releaseTransactSendContinuation = continuation
+      let id = UUID()
+      defer { clearTransactSendContinuation(id: id) }
+      try await withCheckedThrowingContinuation {
+        (continuation: CheckedContinuation<Void, Error>) in
+        let continuation = InstantLiveTestThrowingContinuationBox(continuation)
+        guard
+          let abortToken = abortState.register({
+            continuation.resume(throwing: CancellationError())
+          })
+        else {
+          continuation.resume(throwing: CancellationError())
+          return
+        }
+        releaseTransactSendContinuation = InstantLiveTestPendingOperation(
+          id: id,
+          abortToken: abortToken,
+          continuation: continuation
+        )
       }
     }
+    try abortState.check()
     try Task.checkCancellation()
   }
 
   private func receive() async throws -> InstantLiveMessage {
+    try abortState.check()
     if !messages.isEmpty {
       return messages.removeFirst()
     }
     if isClosed {
       throw CancellationError()
     }
+    let id = UUID()
+    defer { clearReceiveContinuation(id: id) }
     return try await withCheckedThrowingContinuation { continuation in
-      receiveContinuation = continuation
+      let continuation = InstantLiveTestThrowingContinuationBox(continuation)
+      guard
+        let abortToken = abortState.register({
+          continuation.resume(throwing: CancellationError())
+        })
+      else {
+        continuation.resume(throwing: CancellationError())
+        return
+      }
+      receiveContinuation = InstantLiveTestPendingOperation(
+        id: id,
+        abortToken: abortToken,
+        continuation: continuation
+      )
     }
   }
 
   private func enqueue(_ message: InstantLiveMessage) {
+    guard !abortState.isAborted else { return }
     if let receiveContinuation {
       self.receiveContinuation = nil
-      receiveContinuation.resume(returning: message)
+      abortState.unregister(receiveContinuation.abortToken)
+      receiveContinuation.continuation.resume(returning: message)
     } else {
       messages.append(message)
     }
@@ -891,8 +976,22 @@ private actor ImmediateAckBeforeSendReturnSession {
 
   private func close() {
     isClosed = true
-    receiveContinuation?.resume(throwing: CancellationError())
+    abortState.abort()
     receiveContinuation = nil
-    releaseTransactSend()
+    releaseTransactSendContinuation = nil
+  }
+
+  private func clearReceiveContinuation(id: UUID) {
+    guard let receiveContinuation, receiveContinuation.id == id else { return }
+    abortState.unregister(receiveContinuation.abortToken)
+    self.receiveContinuation = nil
+  }
+
+  private func clearTransactSendContinuation(id: UUID) {
+    guard let releaseTransactSendContinuation, releaseTransactSendContinuation.id == id else {
+      return
+    }
+    abortState.unregister(releaseTransactSendContinuation.abortToken)
+    self.releaseTransactSendContinuation = nil
   }
 }

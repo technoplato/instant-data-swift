@@ -3306,7 +3306,7 @@ public enum InstantSwiftDataParityCoverage {
       status: .adapted,
       notes: "The CloudKitDemo remote-share analogue is adapted as local Instant validation evidence: an owner creates and shares a counter root, an invitee accepts and sees shared metadata, reader writes are rejected before cache/outbox mutation, writer promotion allows mutation, and a fresh relaunch preserves the shared counter, role, members, and share ids. This remains local/mock-remote evidence; live Instant transport is still tracked by the dedicated live transport blockers."
     ),
-    // MARK: - SQLiteData inventory completion (upstream 0c79d7a)
+    // MARK: - SQLiteData inventory completion (upstream 9798745)
     // One record per previously unclaimed upstream runtime test.
     sqlite(
       id: "sqlite.inv.remindersliststests-move",
@@ -5528,6 +5528,113 @@ public enum InstantSwiftDataParityCoverage {
       status: .adapted,
       notes: "Empty Instant update batches are no-ops (SQLiteData empty update)."
     ),
+  ] + sqliteDataVersionOneNineZeroInventoryRecords
+
+  private static let sqliteDataVersionOneNineZeroInventoryRecords: [InstantParityCoverageRecord] =
+    sqliteDataSectionedFetchTests.map { test in
+      sqlite(
+        id: "sqlite.inv.fetchallsectionstests-\(test.id)",
+        sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/FetchAllSectionsTests.swift",
+        sourceTestName: test.name,
+        swiftFile: "",
+        swiftTestName: "",
+        surface: "sectioned-fetch",
+        status: .blocked,
+        notes: "SQLiteData sectioned-fetch test `\(test.name)`. Instant does not yet expose the sectioned fetch result and observation API required to claim this behavior."
+      )
+    } + [
+      sqlite(
+        id: "sqlite.inv.metadatabasetests-inmemorymetadatabase",
+        sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/CloudKitTests/MetadatabaseTests.swift",
+        sourceTestName: "inMemoryMetadatabase",
+        swiftFile: "",
+        swiftTestName: "",
+        surface: "cloudkit-syncengine",
+        status: .notApplicable,
+        notes: "CloudKit in-memory metadatabase construction has no Instant equivalent; Instant persistence is its SQLite cache plus durable outbox, not a CloudKit SyncEngine metadatabase."
+      ),
+      sqlite(
+        id: "sqlite.inv.modifyrecordscallbacktests-deferredcallbackdeliverslatestrecords",
+        sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/CloudKitTests/ModifyRecordsCallbackTests.swift",
+        sourceTestName: "deferredCallbackDeliversLatestRecords",
+        swiftFile: "",
+        swiftTestName: "",
+        surface: "cloudkit-syncengine",
+        status: .notApplicable,
+        notes: "The deferred CKModifyRecords callback test is CloudKit test-helper plumbing. Instant server acknowledgements and optimistic reconciliation use the live transport and durable outbox instead."
+      ),
+      sqlite(
+        id: "sqlite.inv.modifyrecordscallbacktests-deferredcallbackskipsdeletionofresavedrecord",
+        sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/CloudKitTests/ModifyRecordsCallbackTests.swift",
+        sourceTestName: "deferredCallbackSkipsDeletionOfReSavedRecord",
+        swiftFile: "",
+        swiftTestName: "",
+        surface: "cloudkit-syncengine",
+        status: .notApplicable,
+        notes: "The deferred CKModifyRecords deletion callback test is CloudKit test-helper plumbing. Instant server acknowledgements and optimistic reconciliation use the live transport and durable outbox instead."
+      ),
+      sqlite(
+        id: "sqlite.inv.syncenginetests-metadatabaseinheritssuspensionnotificationconfiguration",
+        sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/CloudKitTests/SyncEngineTests.swift",
+        sourceTestName: "metadatabaseInheritsSuspensionNotificationConfiguration",
+        swiftFile: "",
+        swiftTestName: "",
+        surface: "cloudkit-syncengine",
+        status: .notApplicable,
+        notes: "CloudKit metadatabase suspension-notification configuration has no Instant equivalent; Instant connection and persistence lifecycles are runtime-owned rather than GRDB SyncEngine configuration."
+      ),
+    ]
+
+  private static let sqliteDataSectionedFetchTests: [(id: String, name: String)] = [
+    ("basics", "basics"),
+    ("query-order-applies-within-sections", "queryOrderAppliesWithinSections"),
+    ("optional-section-name", "optionalSectionName"),
+    ("expression-section-name", "expressionSectionName"),
+    ("descending-sections-fetch", "descendingSections"),
+    ("empty-section-name-sorts-with-null-section-name", "emptySectionNameSortsWithNullSectionName"),
+    ("dynamic-section-by", "dynamicSectionBy"),
+    ("if-else-section-by", "ifElseSectionBy"),
+    ("if-else-nil-section-by", "ifElseNilSectionBy"),
+    ("nested-optional-section-by", "nestedOptionalSectionBy"),
+    ("switch-nested-optional-section-by", "switchNestedOptionalSectionBy"),
+    ("key-path-section-by", "keyPathSectionBy"),
+    ("key-path-section-by-whole-table", "keyPathSectionByWholeTable"),
+    ("section-lookup", "sectionLookup"),
+    ("observes-changes", "observesChanges"),
+    ("load-statement-removes-sectioning", "loadStatementRemovesSectioning"),
+    ("empty-results", "emptyResults"),
+    ("default-wrapped-value", "defaultWrappedValue"),
+    ("whole-table-fetch", "wholeTable"),
+    ("reassignment", "reassignment"),
+    ("nil-section-by", "nilSectionBy"),
+    ("nil-section-by-2", "nilSectionBy2"),
+    ("nil-section-by-whole-table", "nilSectionByWholeTable"),
+    ("load-nil-section-by", "loadNilSectionBy"),
+    ("load-section-by", "loadSectionBy"),
+    ("equatable", "equatable"),
+    ("selection-section-by", "selectionSectionBy"),
+    ("joined-section-by", "joinedSectionBy"),
+    ("joined-descending-section-by", "joinedDescendingSectionBy"),
+    ("load-joined-section-by", "loadJoinedSectionBy"),
+    ("dynamic-joined-section-by", "dynamicJoinedSectionBy"),
+    ("two-joins-section-by", "twoJoinsSectionBy"),
+    ("three-joins-section-by", "threeJoinsSectionBy"),
+    ("sections-access-without-section-by", "sectionsAccessWithoutSectionBy"),
+    ("sections-access-without-section-by-empty-results", "sectionsAccessWithoutSectionByEmptyResults"),
+    ("whole-table-statement", "wholeTable"),
+    ("section-ordering-wins-over-query-ordering", "sectionOrderingWinsOverQueryOrdering"),
+    ("descending-sections-statement", "descendingSections"),
+    ("null-sections", "nullSections"),
+    ("non-null-sections-are-not-optional", "nonNullSectionsAreNotOptional"),
+    ("non-null-sections-are-not-optional-with-ordering", "nonNullSectionsAreNotOptionalWithOrdering"),
+    ("nullable-sections-stay-optional", "nullableSectionsStayOptional"),
+    ("integer-sections", "integerSections"),
+    ("selection-key-path", "selectionKeyPath"),
+    ("nullable-key-path", "nullableKeyPath"),
+    ("joined-sections", "joinedSections"),
+    ("multiple-joins", "multipleJoins"),
+    ("selection-without-joins", "selectionWithoutJoins"),
+    ("fetch-key-request", "fetchKeyRequest"),
   ]
 
   private static func instant(

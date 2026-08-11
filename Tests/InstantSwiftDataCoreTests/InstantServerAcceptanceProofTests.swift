@@ -129,7 +129,8 @@ struct InstantServerAcceptanceProofTests {
       metadataValue: "seeded",
       metadataUpdatedAt: InstantTimestamp(milliseconds: 2),
       expectedStoreRevision: 0,
-      expectedOutboxRevision: 0
+      expectedOutboxRevision: 0,
+      expectedAttributeRevision: 0
     )
     expectNoDifference(didSave, true)
 

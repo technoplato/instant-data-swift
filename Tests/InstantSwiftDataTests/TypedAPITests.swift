@@ -15,6 +15,51 @@ import Testing
 @Suite(.serialized)
 struct TypedAPITests {
   @Test
+  func typeErasedAttributeSelectionBuildsOneApplicationShapedProjection() {
+    let query = TypedRecordingProjection.query
+      .select([
+        InstantAttributeSelection(TypedRecordingProjection.title),
+        InstantAttributeSelection(TypedRecordingProjection.ownerID),
+        InstantAttributeSelection(TypedRecordingProjection.activityKind),
+        InstantAttributeSelection(TypedRecordingProjection.startedAt),
+        InstantAttributeSelection(TypedRecordingProjection.duration),
+        InstantAttributeSelection(TypedRecordingProjection.latitude),
+        InstantAttributeSelection(TypedRecordingProjection.longitude),
+        InstantAttributeSelection(TypedRecordingProjection.updatedAt),
+        InstantAttributeSelection(TypedRecordingProjection.buildInfo),
+      ])
+
+    expectNoDifference(
+      query.plan.selectedFields,
+      [
+        "activityKind",
+        "buildInfo",
+        "duration",
+        "latitude",
+        "longitude",
+        "ownerID",
+        "startedAt",
+        "title",
+        "updatedAt",
+      ]
+    )
+    #expect(query.plan.selectedFields?.count == 9)
+    #expect(query.plan.selectedFields?.contains("locationRoute") == false)
+    #expect(
+      TypedRecordingProjection.query
+        .select(TypedRecordingProjection.locationRoute)
+        .select([InstantAttributeSelection(TypedRecordingProjection.title)])
+        .plan.selectedFields == ["title"]
+    )
+    #expect(
+      query.plan.id
+        != TypedRecordingProjection.query
+          .select(TypedRecordingProjection.locationRoute)
+          .plan.id
+    )
+  }
+
+  @Test
   func queryBuilderProducesInstantPlan() {
     let cursorDate = Date(timeIntervalSince1970: 1_700_000_000)
     let cursor = InstantQueryCursor(
@@ -275,9 +320,9 @@ struct TypedAPITests {
   func localOnlyDependencyQueriesAndTransactsWithoutLiveTransport() async throws {
     let liveTransport = LiveTransportConnectRecorder()
     try await withDependencies {
-      $0.instantLiveTransport = InstantLiveTransportClient { request in
-        await liveTransport.recordConnect()
-        return try await InstantLiveTransportClient.local.connect(request)
+      $0.instantLiveTransport = InstantLiveTransportClient.local.mapSessions { session in
+        liveTransport.recordConnect()
+        return session
       }
       try await $0.bootstrapLocalInstantSwiftData(
         appID: "local-client-\(UUID().uuidString)",
@@ -304,7 +349,7 @@ struct TypedAPITests {
       let observed = try #require(try await iterator.next())
       let queried = try await localDB.query(query)
       let pendingIDs = await localDB.pendingMutations().map(\.id)
-      let connectCount = await liveTransport.connectCount
+      let connectCount = liveTransport.connectCount
       expectNoDifference(observed.map(\.text), ["Local materialization"])
       expectNoDifference(queried.map(\.text), ["Local materialization"])
       expectNoDifference(pendingIDs, ["tx-local-client"])
@@ -913,6 +958,136 @@ struct TypedAPITests {
   }
 
   @Test
+  func typedInfiniteQueryForwardsWindowRetentionAndPreviousPageAction() async throws {
+    let recorder = InfiniteQueryRetentionRecorder()
+    let directStream = AsyncStream<InstantInfiniteQuerySnapshot>.makeStream(
+      bufferingPolicy: .bufferingNewest(1)
+    )
+    let wrapperStream = AsyncStream<InstantInfiniteQuerySnapshot>.makeStream(
+      bufferingPolicy: .bufferingNewest(1)
+    )
+    let client = InstantSwiftDataClient(
+      transact: { _ in
+        InstantStoreMutationResult(
+          transactionID: "tx",
+          changedEntityIDs: [],
+          tripleCount: 0,
+          emissions: []
+        )
+      },
+      query: { _ in [] },
+      observe: { _ in AsyncStream { $0.finish() } },
+      subscribeInfiniteQueryWithRetention: { plan, retentionPolicy in
+        let subscriptionIndex = await recorder.record(
+          plan: plan,
+          retentionPolicy: retentionPolicy
+        )
+        let snapshots = subscriptionIndex == 1 ? directStream.stream : wrapperStream.stream
+        return InstantInfiniteQuerySubscription(
+          snapshots: snapshots,
+          loadNextPage: {
+            Task { await recorder.recordLoadNextPage() }
+          },
+          loadPreviousPage: {
+            Task { await recorder.recordLoadPreviousPage() }
+          },
+          unsubscribe: {
+            Task { await recorder.recordUnsubscribe() }
+          }
+        )
+      },
+      pendingMutations: { [] },
+      localID: { "mock-\($0)" }
+    )
+    let query = TypedTodo.query.order(TypedTodo.createdAt).limit(2)
+    let subscription = await client.subscribeInfiniteQuery(
+      query,
+      retentionPolicy: .window(maximumPageCount: 2)
+    )
+    defer {
+      subscription.cancel()
+      directStream.continuation.finish()
+      wrapperStream.continuation.finish()
+    }
+    var iterator = subscription.makeAsyncIterator()
+
+    directStream.continuation.yield(
+      InstantInfiniteQuerySnapshot(
+        queryID: query.plan.id,
+        sequence: 1,
+        values: [
+          typedTodoSnapshot(
+            id: "typed-window-a",
+            text: "Window A",
+            isCompleted: false,
+            createdAt: Date(timeIntervalSince1970: 1_700_000_412)
+          )
+        ],
+        canLoadNextPage: true,
+        canLoadPreviousPage: true
+      )
+    )
+    let snapshot = try #require(await iterator.next())
+    expectNoDifference(snapshot.values.map(\.text), ["Window A"])
+    expectNoDifference(snapshot.canLoadNextPage, true)
+    expectNoDifference(snapshot.canLoadPreviousPage, true)
+
+    subscription.loadNextPage()
+    try await waitForTypedCondition(operation: "record typed infinite next-page action") {
+      await recorder.state().loadNextPageCount == 1
+    }
+    subscription.loadPreviousPage()
+    try await waitForTypedCondition(operation: "record typed infinite previous-page action") {
+      await recorder.state().loadPreviousPageCount == 1
+    }
+
+    let state = await recorder.state()
+    expectNoDifference(state.plan, query.plan)
+    expectNoDifference(state.retentionPolicy, .window(maximumPageCount: 2))
+    expectNoDifference(state.loadNextPageCount, 1)
+    expectNoDifference(state.loadPreviousPageCount, 1)
+
+    subscription.cancel()
+    let infinite = InfiniteQuery<TypedTodo>(
+      query,
+      retentionPolicy: .window(maximumPageCount: 2)
+    )
+    let wrapperTask = Task {
+      try await infinite.task(using: client)
+    }
+    defer { wrapperTask.cancel() }
+    try await waitForTypedCondition(operation: "subscribe retained infinite wrapper") {
+      await recorder.state().subscriptionCount == 2
+    }
+    wrapperStream.continuation.yield(
+      InstantInfiniteQuerySnapshot(
+        queryID: query.plan.id,
+        sequence: 2,
+        values: [
+          typedTodoSnapshot(
+            id: "typed-window-b",
+            text: "Window B",
+            isCompleted: false,
+            createdAt: Date(timeIntervalSince1970: 1_700_000_413)
+          )
+        ],
+        canLoadNextPage: true,
+        canLoadPreviousPage: true
+      )
+    )
+    try await waitForTypedCondition(operation: "apply retained infinite wrapper snapshot") {
+      infinite.wrappedValue.map(\.text) == ["Window B"]
+        && infinite.canLoadPreviousPage
+    }
+    infinite.loadPreviousPage()
+    try await waitForTypedCondition(operation: "forward retained wrapper previous page") {
+      await recorder.state().loadPreviousPageCount == 2
+    }
+    expectNoDifference(infinite.canLoadPreviousPage, true)
+    expectNoDifference(infinite.canLoadNextPage, true)
+  }
+
+  @Test
   func typedInfiniteQueryPagesRootEntitiesWithLinkedChildrenOnEachPage() async throws {
     // Join-shaped infinite list: page only the root namespace; linked children ride with
     // each root page via .include (no second infinite stream on the child namespace).
@@ -1140,6 +1315,25 @@ struct TypedAPITests {
     let counts = await recorder.counts()
     expectNoDifference(counts.loadNextPageCount, 1)
     expectNoDifference(counts.unsubscribeCount, 1)
+  }
+
+  @Test
+  func retainedCanceledTypedInfiniteHandleReleasesRawUpstreamAfterExactTaskCompletion() async throws {
+    let fixture = await makeRetainedTypedInfiniteQueryLifetimeFixture()
+    #expect(!fixture.resource.isReleased)
+
+    fixture.subscription.cancel()
+    fixture.subscription.cancel()
+    try await instantLiveWithTimeout(
+      operation: "finish exact typed infinite-query handle cleanup",
+      timeoutMilliseconds: 5_000
+    ) {
+      try await fixture.subscription.task
+      try await fixture.subscription.task
+    }
+
+    #expect(fixture.resource.isReleased)
+    withExtendedLifetime(fixture.subscription) {}
   }
 
   @Test
@@ -5393,6 +5587,13 @@ struct TypedAPITests {
     ).fetchRequest
 
     let subscription = try await request.subscribe(using: client)
+    try await instantLiveWithTimeout(
+      operation: "finish the direct finite composite Fetch subscription",
+      timeoutMilliseconds: 5_000,
+      onAbandon: { subscription.cancel() }
+    ) {
+      try await subscription.task
+    }
     var values: [TypedTodoFacts] = []
     for try await value in subscription {
       values.append(value)
@@ -7903,6 +8104,125 @@ private actor InfiniteQuerySubscriptionRecorder {
   }
 }
 
+private final class TypedInfiniteQueryLifetimeResource: @unchecked Sendable {
+  private let lock = NSLock()
+  private let snapshotPipe = AsyncStream<InstantInfiniteQuerySnapshot>.makeStream(
+    bufferingPolicy: .bufferingNewest(1)
+  )
+  private var useCount = 0
+
+  var snapshots: AsyncStream<InstantInfiniteQuerySnapshot> {
+    snapshotPipe.stream
+  }
+
+  func use() {
+    lock.withLock {
+      useCount += 1
+    }
+  }
+
+  func finish() {
+    use()
+    snapshotPipe.continuation.finish()
+  }
+}
+
+private final class WeakTypedInfiniteQueryLifetimeResource: @unchecked Sendable {
+  private let lock = NSLock()
+  private weak var resource: TypedInfiniteQueryLifetimeResource?
+
+  init(_ resource: TypedInfiniteQueryLifetimeResource) {
+    self.resource = resource
+  }
+
+  var isReleased: Bool {
+    lock.withLock { resource == nil }
+  }
+}
+
+private func makeRetainedTypedInfiniteQueryLifetimeFixture() async -> (
+  subscription: InfiniteQuerySubscription<TypedTodo>,
+  resource: WeakTypedInfiniteQueryLifetimeResource
+) {
+  let resource = TypedInfiniteQueryLifetimeResource()
+  let weakResource = WeakTypedInfiniteQueryLifetimeResource(resource)
+  let client = InstantSwiftDataClient(
+    transact: { transaction in
+      InstantStoreMutationResult(
+        transactionID: transaction.id,
+        changedEntityIDs: [],
+        tripleCount: transaction.operations.count,
+        emissions: []
+      )
+    },
+    query: { _ in [] },
+    observe: { _ in finiteStream([] as [InstantQueryEmission]) },
+    subscribeInfiniteQuery: { _ in
+      InstantInfiniteQuerySubscription(
+        snapshots: resource.snapshots,
+        loadNextPage: { resource.use() },
+        loadPreviousPage: { resource.use() },
+        unsubscribe: { resource.finish() }
+      )
+    },
+    pendingMutations: { [] },
+    localID: { name in "typed-infinite-lifetime-\(name)" }
+  )
+  let subscription = await client.subscribeInfiniteQuery(
+    TypedTodo.query.order(TypedTodo.createdAt).limit(1)
+  )
+  return (subscription, weakResource)
+}
+
+private actor InfiniteQueryRetentionRecorder {
+  private var plan: InstantQueryPlan?
+  private var retentionPolicy: InstantInfiniteQueryRetentionPolicy?
+  private var subscriptionCount = 0
+  private var loadNextPageCount = 0
+  private var loadPreviousPageCount = 0
+  private var unsubscribeCount = 0
+
+  func record(
+    plan: InstantQueryPlan,
+    retentionPolicy: InstantInfiniteQueryRetentionPolicy
+  ) -> Int {
+    subscriptionCount += 1
+    self.plan = plan
+    self.retentionPolicy = retentionPolicy
+    return subscriptionCount
+  }
+
+  func recordLoadNextPage() {
+    loadNextPageCount += 1
+  }
+
+  func recordLoadPreviousPage() {
+    loadPreviousPageCount += 1
+  }
+
+  func recordUnsubscribe() {
+    unsubscribeCount += 1
+  }
+
+  func state() -> (
+    plan: InstantQueryPlan?,
+    retentionPolicy: InstantInfiniteQueryRetentionPolicy?,
+    subscriptionCount: Int,
+    loadNextPageCount: Int,
+    loadPreviousPageCount: Int,
+    unsubscribeCount: Int
+  ) {
+    (
+      plan,
+      retentionPolicy,
+      subscriptionCount,
+      loadNextPageCount,
+      loadPreviousPageCount,
+      unsubscribeCount
+    )
+  }
+}
+
 private actor InfiniteQueryLifecycleRecorder {
   private var subscribeCount = 0
   private var firstLoadNextPageCount = 0
@@ -8309,11 +8629,18 @@ private final class ObservationChangeFlag: @unchecked Sendable {
   }
 }
 
-private actor LiveTransportConnectRecorder {
-  private(set) var connectCount = 0
+private final class LiveTransportConnectRecorder: @unchecked Sendable {
+  private let lock = NSLock()
+  private var recordedConnectCount = 0
+
+  var connectCount: Int {
+    lock.withLock { recordedConnectCount }
+  }
 
   func recordConnect() {
-    connectCount += 1
+    lock.withLock {
+      recordedConnectCount += 1
+    }
   }
 }
 
@@ -9448,6 +9775,52 @@ private struct TypedTodo: Hashable, Codable, InstantEntityModel {
       localID: snapshot.id,
       message: "Expected \(expected) for todo field '\(field)'.",
       recovery: "Check the Instant entity schema and server values for the todos namespace."
+    )
+  }
+}
+
+private struct TypedRecordingProjection: Hashable, Codable, InstantEntityModel {
+  var id: InstantID<TypedRecordingProjection>
+
+  static let instantNamespace = "recordingProjections"
+  static let title = InstantAttributePath<Self, String>("title")
+  static let ownerID = InstantAttributePath<Self, String>("ownerID")
+  static let activityKind = InstantAttributePath<Self, String?>("activityKind")
+  static let startedAt = InstantAttributePath<Self, Date>("startedAt")
+  static let duration = InstantAttributePath<Self, Double>("duration")
+  static let latitude = InstantAttributePath<Self, Double?>("latitude")
+  static let longitude = InstantAttributePath<Self, Double?>("longitude")
+  static let updatedAt = InstantAttributePath<Self, Date>("updatedAt")
+  static let buildInfo = InstantAttributePath<Self, String?>("buildInfo")
+  static let locationRoute = InstantAttributePath<Self, JSONValue?>("locationRoute")
+
+  static let instantAttributes = [
+    attribute("title", .string),
+    attribute("ownerID", .string),
+    attribute("activityKind", .string),
+    attribute("startedAt", .date),
+    attribute("duration", .number),
+    attribute("latitude", .number),
+    attribute("longitude", .number),
+    attribute("updatedAt", .date),
+    attribute("buildInfo", .string),
+    attribute("locationRoute", .json),
+  ]
+
+  init(snapshot: InstantEntitySnapshot) throws {
+    self.id = InstantID(rawValue: snapshot.id)
+  }
+
+  private static func attribute(
+    _ name: String,
+    _ valueType: InstantValueType
+  ) -> InstantAttribute {
+    InstantAttribute(
+      id: "\(instantNamespace)/\(name)",
+      namespace: instantNamespace,
+      name: name,
+      valueType: valueType,
+      isIndexed: true
     )
   }
 }

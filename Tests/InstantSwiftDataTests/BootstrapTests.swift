@@ -18,11 +18,25 @@ private actor BootstrapLiveConnectionProbe {
 }
 
 private actor BootstrapLiveTestSession {
+  nonisolated private let abortState = InstantLiveTestWireAbortState()
   private var queued: [InstantLiveMessage] = []
-  private var waiters: [CheckedContinuation<InstantLiveMessage, Error>] = []
+  private var waiters: [InstantLiveTestPendingOperation<InstantLiveMessage>] = []
   private var isClosed = false
 
-  func send(_ message: InstantLiveMessage) {
+  nonisolated var webSocketSession: InstantLiveWebSocketSession {
+    InstantLiveWebSocketSession(
+      send: { message in try await self.send(message) },
+      receive: {
+        try self.abortState.check()
+        return try await self.receive()
+      },
+      close: { await self.close() },
+      abort: { self.abortState.abort() }
+    )
+  }
+
+  private func send(_ message: InstantLiveMessage) throws {
+    try abortState.check()
     guard message.op == "init" else { return }
     yield(
       InstantLiveMessage(
@@ -36,29 +50,150 @@ private actor BootstrapLiveTestSession {
     )
   }
 
-  func receive() async throws -> InstantLiveMessage {
+  private func receive() async throws -> InstantLiveMessage {
+    try abortState.check()
     if !queued.isEmpty { return queued.removeFirst() }
     if isClosed { throw CancellationError() }
+    let id = UUID()
+    defer { clearReceiveContinuation(id: id) }
     return try await withCheckedThrowingContinuation { continuation in
-      waiters.append(continuation)
+      let continuation = InstantLiveTestThrowingContinuationBox(continuation)
+      guard
+        let abortToken = abortState.register({
+          continuation.resume(throwing: CancellationError())
+        })
+      else {
+        continuation.resume(throwing: CancellationError())
+        return
+      }
+      waiters.append(
+        InstantLiveTestPendingOperation(
+          id: id,
+          abortToken: abortToken,
+          continuation: continuation
+        )
+      )
     }
   }
 
-  func close() {
+  private func close() {
     isClosed = true
-    let waiters = self.waiters
+    abortState.abort()
     self.waiters.removeAll()
-    for waiter in waiters {
-      waiter.resume(throwing: CancellationError())
-    }
   }
 
   private func yield(_ message: InstantLiveMessage) {
+    guard !abortState.isAborted else { return }
     if !waiters.isEmpty {
-      waiters.removeFirst().resume(returning: message)
+      let waiter = waiters.removeFirst()
+      abortState.unregister(waiter.abortToken)
+      waiter.continuation.resume(returning: message)
     } else {
       queued.append(message)
     }
+  }
+
+  private func clearReceiveContinuation(id: UUID) {
+    guard let index = waiters.firstIndex(where: { $0.id == id }) else { return }
+    let waiter = waiters.remove(at: index)
+    abortState.unregister(waiter.abortToken)
+  }
+}
+
+// SAFETY: `lock` protects every mutable field, and continuations are always
+// extracted while locked and resumed only after the lock is released.
+private final class BootstrapExactCloseCheckpoint: @unchecked Sendable {
+  private let lock = NSLock()
+  private var didEnterStorage = false
+  private var didObserveCancellationStorage: Bool?
+  private var releaseToCancellationContinuation: CheckedContinuation<Void, Never>?
+  private var finishContinuation: CheckedContinuation<Void, Never>?
+  private var shouldReleaseToCancellation = false
+  private var shouldFinish = false
+
+  var didEnter: Bool {
+    lock.lock()
+    defer { lock.unlock() }
+    return didEnterStorage
+  }
+
+  var didObserveCancellation: Bool? {
+    lock.lock()
+    defer { lock.unlock() }
+    return didObserveCancellationStorage
+  }
+
+  func pause() async {
+    await withCheckedContinuation { continuation in
+      lock.lock()
+      didEnterStorage = true
+      if shouldReleaseToCancellation {
+        lock.unlock()
+        continuation.resume()
+      } else {
+        releaseToCancellationContinuation = continuation
+        lock.unlock()
+      }
+    }
+
+    lock.withLock {
+      didObserveCancellationStorage = Task.isCancelled
+    }
+
+    await withCheckedContinuation { continuation in
+      lock.lock()
+      if shouldFinish {
+        lock.unlock()
+        continuation.resume()
+      } else {
+        finishContinuation = continuation
+        lock.unlock()
+      }
+    }
+  }
+
+  func releaseToCancellationObservation() {
+    lock.lock()
+    shouldReleaseToCancellation = true
+    let continuation = releaseToCancellationContinuation
+    releaseToCancellationContinuation = nil
+    lock.unlock()
+    continuation?.resume()
+  }
+
+  func finish() {
+    lock.lock()
+    shouldReleaseToCancellation = true
+    shouldFinish = true
+    let releaseToCancellationContinuation = releaseToCancellationContinuation
+    self.releaseToCancellationContinuation = nil
+    let finishContinuation = finishContinuation
+    self.finishContinuation = nil
+    lock.unlock()
+    releaseToCancellationContinuation?.resume()
+    finishContinuation?.resume()
+  }
+}
+
+private actor BootstrapCloseCompletionProbe {
+  private var countStorage = 0
+
+  var count: Int { countStorage }
+
+  func record() {
+    countStorage += 1
+  }
+}
+
+private actor BootstrapUserCookieSyncProbe {
+  private var requests: [InstantUserCookieSyncRequest] = []
+
+  func record(_ request: InstantUserCookieSyncRequest) {
+    requests.append(request)
+  }
+
+  func snapshot() -> [InstantUserCookieSyncRequest] {
+    requests
   }
 }
 
@@ -263,13 +398,15 @@ struct BootstrapTests {
     defer { try? FileManager.default.removeItem(at: persistenceURL) }
 
     try await withDependencies {
-      $0.instantLiveTransport = InstantLiveTransportClient { request in
-        await probe.record(request)
+      $0.instantLiveTransport = .connectionAttempts { request in
         let session = BootstrapLiveTestSession()
-        return InstantLiveWebSocketSession(
-          send: { message in await session.send(message) },
-          receive: { try await session.receive() },
-          close: { await session.close() }
+        let webSocketSession = session.webSocketSession
+        return InstantLiveConnectionAttempt(
+          connect: {
+            await probe.record(request)
+            return webSocketSession
+          },
+          abort: { webSocketSession.abort() }
         )
       }
       try await $0.bootstrapInstantSwiftData(
@@ -296,6 +433,302 @@ struct BootstrapTests {
       let status = try await waitForConnectionState(.authenticated, client: client)
       expectNoDifference(status.state, .authenticated)
       _ = try await client.closeConnection()
+    }
+  }
+
+  @Test
+  func closeConnectionCancelsAndJoinsTheAdmittedAutomaticMutationPump() async throws {
+    let directory = FileManager.default.temporaryDirectory
+      .appendingPathComponent(
+        "exact-mutation-pump-close-\(UUID().uuidString)",
+        isDirectory: true
+      )
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+
+    let checkpoint = BootstrapExactCloseCheckpoint()
+    defer { checkpoint.finish() }
+    let completion = BootstrapCloseCompletionProbe()
+    let liveSession = BootstrapLiveTestSession()
+    var configuration = InstantRuntimeConfiguration(
+      appID: "exact-mutation-pump-close",
+      persistenceURL: directory.appendingPathComponent("state.sqlite"),
+      initialAttributes: TodoExample.attributes,
+      liveTransport: .immediate { _ in liveSession.webSocketSession }
+    )
+    configuration.autoConnectLiveTransport = false
+    configuration.onAutomaticMutationPumpRetryWindowCompletedForTesting = {
+      await checkpoint.pause()
+    }
+    let runtime = try await InstantRuntime.bootstrap(configuration: configuration)
+
+    _ = try await runtime.connect()
+    try await instantLiveWithTimeout(
+      operation: "wait for the automatic mutation pump checkpoint",
+      timeoutMilliseconds: 5_000
+    ) {
+      while !checkpoint.didEnter {
+        try Task.checkCancellation()
+        await Task.yield()
+      }
+    }
+
+    let closeTask = Task {
+      let status = try await runtime.closeConnection()
+      await completion.record()
+      return status
+    }
+    defer { closeTask.cancel() }
+
+    try await instantLiveWithTimeout(
+      operation: "wait for close to suspend the automatic mutation pump",
+      timeoutMilliseconds: 5_000
+    ) {
+      while !(await runtime.automaticMutationPumpIsSuspendedForTesting()) {
+        try Task.checkCancellation()
+        await Task.yield()
+      }
+    }
+    checkpoint.releaseToCancellationObservation()
+    try await instantLiveWithTimeout(
+      operation: "wait for the automatic mutation pump to observe close cancellation",
+      timeoutMilliseconds: 5_000
+    ) {
+      while checkpoint.didObserveCancellation == nil {
+        try Task.checkCancellation()
+        await Task.yield()
+      }
+    }
+
+    expectNoDifference(checkpoint.didObserveCancellation, true)
+    try await instantLiveWithTimeout(
+      operation: "wait for close to persist the closed connection state",
+      timeoutMilliseconds: 5_000
+    ) {
+      while try await runtime.connectionStatus().state != .closed {
+        try Task.checkCancellation()
+        await Task.yield()
+      }
+    }
+    let completionCountWhilePumpIsBlocked = await completion.count
+    expectNoDifference(completionCountWhilePumpIsBlocked, 0)
+    #expect(!(await runtime.automaticMutationPumpIsIdleForTesting()))
+
+    checkpoint.finish()
+    let closedStatus = try await instantLiveWithTimeout(
+      operation: "wait for close to join the automatic mutation pump",
+      timeoutMilliseconds: 5_000
+    ) {
+      try await closeTask.value
+    }
+    expectNoDifference(closedStatus.state, .closed)
+    let completionCount = await completion.count
+    expectNoDifference(completionCount, 1)
+    #expect(await runtime.automaticMutationPumpIsIdleForTesting())
+    #expect(await runtime.automaticMutationPumpIsSuspendedForTesting())
+    let operationGateWaiterCount = await runtime.operationGateWaiterCountForTesting()
+    expectNoDifference(operationGateWaiterCount, 0)
+  }
+
+  @Test
+  func closeConnectionCancelsAndJoinsBlockedAutomaticLiveConnectionTask() async throws {
+    let directory = FileManager.default.temporaryDirectory
+      .appendingPathComponent(
+        "exact-automatic-live-connection-close-\(UUID().uuidString)",
+        isDirectory: true
+    )
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+
+    let checkpoint = BootstrapExactCloseCheckpoint()
+    defer { checkpoint.finish() }
+    let completion = BootstrapCloseCompletionProbe()
+    let connectionProbe = BootstrapLiveConnectionProbe()
+    let liveSession = BootstrapLiveTestSession()
+    let webSocketSession = liveSession.webSocketSession
+    var configuration = InstantRuntimeConfiguration(
+      appID: "exact-automatic-live-connection-close",
+      persistenceURL: directory.appendingPathComponent("state.sqlite"),
+      initialAttributes: TodoExample.attributes,
+      liveTransport: .connectionAttempts { request in
+        InstantLiveConnectionAttempt(
+          connect: {
+            await connectionProbe.record(request)
+            return webSocketSession
+          },
+          abort: { webSocketSession.abort() }
+        )
+      }
+    )
+    configuration.autoConnectLiveTransport = true
+    configuration.onAutomaticLiveConnectionTaskStartedForTesting = {
+      await checkpoint.pause()
+    }
+    let runtime = try await InstantRuntime.bootstrap(configuration: configuration)
+
+    try await instantLiveWithTimeout(
+      operation: "wait for the automatic live connection task checkpoint",
+      timeoutMilliseconds: 5_000
+    ) {
+      while !checkpoint.didEnter {
+        try Task.checkCancellation()
+        await Task.yield()
+      }
+    }
+
+    let closeTask = Task {
+      let status = try await runtime.closeConnection()
+      await completion.record()
+      return status
+    }
+    defer { closeTask.cancel() }
+
+    try await instantLiveWithTimeout(
+      operation: "wait for close to persist state before joining automatic connection",
+      timeoutMilliseconds: 5_000
+    ) {
+      while try await runtime.connectionStatus().state != .closed {
+        try Task.checkCancellation()
+        await Task.yield()
+      }
+    }
+    let completionCountWhileConnectionIsBlocked = await completion.count
+    expectNoDifference(completionCountWhileConnectionIsBlocked, 0)
+    let requestsBeforeCancellationRelease = await connectionProbe.snapshot()
+    expectNoDifference(requestsBeforeCancellationRelease, [])
+    #expect(!(await runtime.exactCloseBackgroundTasksAreIdleForTesting()))
+
+    checkpoint.releaseToCancellationObservation()
+    try await instantLiveWithTimeout(
+      operation: "wait for the automatic connection task to observe close cancellation",
+      timeoutMilliseconds: 5_000
+    ) {
+      while checkpoint.didObserveCancellation == nil {
+        try Task.checkCancellation()
+        await Task.yield()
+      }
+    }
+    expectNoDifference(checkpoint.didObserveCancellation, true)
+    let completionCountAfterCancellation = await completion.count
+    expectNoDifference(completionCountAfterCancellation, 0)
+    let requestsAfterCancellation = await connectionProbe.snapshot()
+    expectNoDifference(requestsAfterCancellation, [])
+
+    checkpoint.finish()
+    let closedStatus = try await instantLiveWithTimeout(
+      operation: "wait for close to join the automatic live connection task",
+      timeoutMilliseconds: 5_000
+    ) {
+      try await closeTask.value
+    }
+    expectNoDifference(closedStatus.state, .closed)
+    let completionCount = await completion.count
+    expectNoDifference(completionCount, 1)
+    let finalRequests = await connectionProbe.snapshot()
+    expectNoDifference(finalRequests, [])
+    let exactCloseBackgroundTasksAreIdle =
+      await runtime.exactCloseBackgroundTasksAreIdleForTesting()
+    #expect(exactCloseBackgroundTasksAreIdle)
+    let operationGateWaiterCount = await runtime.operationGateWaiterCountForTesting()
+    expectNoDifference(operationGateWaiterCount, 0)
+    if exactCloseBackgroundTasksAreIdle, operationGateWaiterCount == 0 {
+      try? FileManager.default.removeItem(at: directory)
+    }
+  }
+
+  @Test
+  func closeConnectionCancelsAndJoinsBlockedStartupCookieSyncTask() async throws {
+    let directory = FileManager.default.temporaryDirectory
+      .appendingPathComponent(
+        "exact-startup-cookie-sync-close-\(UUID().uuidString)",
+        isDirectory: true
+      )
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+
+    let checkpoint = BootstrapExactCloseCheckpoint()
+    defer { checkpoint.finish() }
+    let completion = BootstrapCloseCompletionProbe()
+    let cookieSyncProbe = BootstrapUserCookieSyncProbe()
+    var configuration = InstantRuntimeConfiguration(
+      appID: "exact-startup-cookie-sync-close",
+      firstPartyURL: URL(string: "https://example.com")!,
+      persistenceURL: directory.appendingPathComponent("state.sqlite"),
+      initialAttributes: TodoExample.attributes,
+      userCookieSyncClient: InstantUserCookieSyncClient { request in
+        await cookieSyncProbe.record(request)
+      }
+    )
+    configuration.onStartupCookieSyncTaskStartedForTesting = {
+      await checkpoint.pause()
+    }
+    let runtime = try await InstantRuntime.bootstrap(configuration: configuration)
+
+    try await instantLiveWithTimeout(
+      operation: "wait for the startup cookie sync task checkpoint",
+      timeoutMilliseconds: 5_000
+    ) {
+      while !checkpoint.didEnter {
+        try Task.checkCancellation()
+        await Task.yield()
+      }
+    }
+
+    let closeTask = Task {
+      let status = try await runtime.closeConnection()
+      await completion.record()
+      return status
+    }
+    defer { closeTask.cancel() }
+
+    try await instantLiveWithTimeout(
+      operation: "wait for close to persist state before joining startup cookie sync",
+      timeoutMilliseconds: 5_000
+    ) {
+      while try await runtime.connectionStatus().state != .closed {
+        try Task.checkCancellation()
+        await Task.yield()
+      }
+    }
+    let completionCountWhileCookieSyncIsBlocked = await completion.count
+    expectNoDifference(completionCountWhileCookieSyncIsBlocked, 0)
+    let requestsBeforeCancellationRelease = await cookieSyncProbe.snapshot()
+    expectNoDifference(requestsBeforeCancellationRelease, [])
+    #expect(!(await runtime.exactCloseBackgroundTasksAreIdleForTesting()))
+
+    checkpoint.releaseToCancellationObservation()
+    try await instantLiveWithTimeout(
+      operation: "wait for startup cookie sync to observe close cancellation",
+      timeoutMilliseconds: 5_000
+    ) {
+      while checkpoint.didObserveCancellation == nil {
+        try Task.checkCancellation()
+        await Task.yield()
+      }
+    }
+    expectNoDifference(checkpoint.didObserveCancellation, true)
+    let completionCountAfterCancellation = await completion.count
+    expectNoDifference(completionCountAfterCancellation, 0)
+    let requestsAfterCancellation = await cookieSyncProbe.snapshot()
+    expectNoDifference(requestsAfterCancellation, [])
+
+    checkpoint.finish()
+    let closedStatus = try await instantLiveWithTimeout(
+      operation: "wait for close to join startup cookie sync",
+      timeoutMilliseconds: 5_000
+    ) {
+      try await closeTask.value
+    }
+    expectNoDifference(closedStatus.state, .closed)
+    let completionCount = await completion.count
+    expectNoDifference(completionCount, 1)
+    let finalRequests = await cookieSyncProbe.snapshot()
+    expectNoDifference(finalRequests, [])
+    let exactCloseBackgroundTasksAreIdle =
+      await runtime.exactCloseBackgroundTasksAreIdleForTesting()
+    #expect(exactCloseBackgroundTasksAreIdle)
+    let operationGateWaiterCount = await runtime.operationGateWaiterCountForTesting()
+    expectNoDifference(operationGateWaiterCount, 0)
+    if exactCloseBackgroundTasksAreIdle, operationGateWaiterCount == 0 {
+      try? FileManager.default.removeItem(at: directory)
     }
   }
 

@@ -49,8 +49,24 @@ actor InstantOutbox {
     }
   }
 
+  /// Refreshes a compact shell only when this actor already owns it. Durable
+  /// status changes must not repopulate a body-free delivery barrier after its
+  /// claim has left memory.
+  func replaceIfPresent(_ mutation: PendingMutation) {
+    guard let index = mutations.firstIndex(where: { $0.id == mutation.id }) else { return }
+    mutations[index] = mutation.compactedForMemory
+  }
+
   func remove(id: String) {
     mutations.removeAll { $0.id == id }
+  }
+
+  /// Removes one confirmed transport window with one actor hop. SQLite remains
+  /// the durable authority; this compact actor must not turn a bounded bulk
+  /// acknowledgement into one cross-actor call per mutation.
+  func remove(ids: Set<String>) {
+    guard !ids.isEmpty else { return }
+    mutations.removeAll { ids.contains($0.id) }
   }
 
   static func confirming(

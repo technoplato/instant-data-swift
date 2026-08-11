@@ -1,0 +1,2 @@
+codex-desktop/019fe994-1250-7b42-825e-9b75836d9173/root 2026-08-11T04:28:38-0400 mower connection-attempt-lifecycle plan=2026-08-09-bounded-intent-outbox-memory
+codex-desktop/019fe994-1250-7b42-825e-9b75836d9173/root/connection_attempt_postfix_fix 2026-08-11T05:00:47-0400 mower connection-attempt-postfix plan=2026-08-09-bounded-intent-outbox-memory

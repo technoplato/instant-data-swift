@@ -75,14 +75,31 @@ struct InstantLiveTripleIdentity: Hashable, Sendable {
 
 actor InstantLiveQueryResultState {
   private var pageInfoByQuery: [String: InstantQueryPageInfo] = [:]
+  private var observerCountByQuery: [String: Int] = [:]
+
+  func retain(key: String) {
+    observerCountByQuery[key, default: 0] += 1
+  }
+
+  func release(key: String) {
+    guard let observerCount = observerCountByQuery[key] else { return }
+    if observerCount > 1 {
+      observerCountByQuery[key] = observerCount - 1
+    } else {
+      observerCountByQuery[key] = nil
+      pageInfoByQuery[key] = nil
+    }
+  }
 
   func record(_ replacements: [InstantLiveQueryResultReplacement]) {
     for replacement in replacements {
+      guard observerCountByQuery[replacement.key] != nil else { continue }
       pageInfoByQuery[replacement.key] = replacement.pageInfo
     }
   }
 
   func record(_ result: InstantPersistedLiveQueryResult) {
+    guard observerCountByQuery[result.key] != nil else { return }
     pageInfoByQuery[result.key] = result.pageInfo
   }
 
@@ -92,6 +109,10 @@ actor InstantLiveQueryResultState {
 
   func unload(key: String) {
     pageInfoByQuery[key] = nil
+  }
+
+  func activeKeysForTesting() -> Set<String> {
+    Set(observerCountByQuery.keys)
   }
 }
 

@@ -9,14 +9,31 @@ actor InstantSnapshotObservers<Key: Hashable & Sendable, Value: Sendable> {
   private var observers: [UUID: Observer] = [:]
 
   func observe(key: Key, current value: Value) -> AsyncStream<Value> {
+    observeLease(key: key, current: value).stream
+  }
+
+  func observeLease(
+    key: Key,
+    current value: Value
+  ) -> InstantManagedStreamLease<AsyncStream<Value>> {
     let id = UUID()
     let stream = AsyncStream<Value>.makeStream(bufferingPolicy: .bufferingNewest(1))
     observers[id] = Observer(key: key, continuation: stream.continuation)
     stream.continuation.yield(value)
+    let lease = InstantManagedStreamLease(
+      stream: stream.stream,
+      onCancellationRequested: {
+        stream.continuation.finish()
+      },
+      cancelAndWait: {
+        await self.cancel(id: id)
+      }
+    )
+    let cancellationRequest = lease.cancellationRequest
     stream.continuation.onTermination = { @Sendable _ in
-      Task { await self.cancel(id: id) }
+      cancellationRequest()
     }
-    return stream.stream
+    return lease
   }
 
   func publish(_ value: Value, for key: Key) {
@@ -30,7 +47,7 @@ actor InstantSnapshotObservers<Key: Hashable & Sendable, Value: Sendable> {
   }
 
   private func cancel(id: UUID) {
-    observers[id] = nil
+    observers.removeValue(forKey: id)?.continuation.finish()
   }
 }
 
@@ -69,7 +86,10 @@ actor InstantStreamContentObservers {
     current value: InstantStreamContentRead? = nil
   ) -> AsyncStream<InstantStreamContentRead> {
     let id = UUID()
-    let stream = AsyncStream<InstantStreamContentRead>.makeStream(bufferingPolicy: .unbounded)
+    // Each read is a complete cumulative snapshot, so an older queued read is superseded.
+    let stream = AsyncStream<InstantStreamContentRead>.makeStream(
+      bufferingPolicy: .bufferingNewest(1)
+    )
     observers[id] = Observer(
       key: key,
       byteOffset: byteOffset,

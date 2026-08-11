@@ -1,6 +1,346 @@
 import Foundation
 import IssueReporting
 
+package struct InstantLiveInfiniteQueryChunkObservation: Sendable {
+  package var stream: AsyncStream<InstantQueryEmission>
+  package var cancel: @Sendable () async -> Void
+}
+
+package struct InstantQueryObservationLease: Sendable {
+  package var stream: AsyncStream<InstantQueryEmission>
+  package var cancel: @Sendable () async -> Void
+
+  package init(
+    stream: AsyncStream<InstantQueryEmission>,
+    cancel: @escaping @Sendable () async -> Void
+  ) {
+    self.stream = stream
+    self.cancel = cancel
+  }
+
+  package static func finished() -> Self {
+    let finished = AsyncStream<InstantQueryEmission>.makeStream(
+      bufferingPolicy: .bufferingNewest(1)
+    )
+    finished.continuation.finish()
+    return Self(stream: finished.stream, cancel: {})
+  }
+}
+
+/// One late-installable, exact asynchronous termination boundary.
+///
+/// Setup code creates this owner before its first suspension. Cancellation can
+/// therefore win before a resource exists; installing that resource later
+/// starts its cleanup immediately. Natural completion also starts cleanup, but
+/// does not masquerade as caller cancellation at the `completeSetup` handoff.
+/// Cleanup never runs while the state lock is held.
+// SAFETY: `lock` protects every mutable setup, operation, cancellation, and
+// waiter field.
+package final class InstantAsyncCancellationOwner: @unchecked Sendable {
+  // SAFETY: each box is captured and mutated by exactly one cleanup Task; that
+  // task serializes access across executor hops.
+  private final class OperationBox: @unchecked Sendable {
+    private var operation: (@Sendable () async -> Void)?
+
+    init(_ operation: @escaping @Sendable () async -> Void) {
+      self.operation = operation
+    }
+
+    func run() async {
+      var operation = self.operation
+      self.operation = nil
+      await operation?()
+      operation = nil
+    }
+  }
+
+  private let lock = NSLock()
+  private var operation: (@Sendable () async -> Void)?
+  private var didInstallOperation = false
+  private var isCleanupRequested = false
+  private var isExplicitCancellationRequested = false
+  private var activeOperationCount = 0
+  private var didStartCleanup = false
+  private var didFinishCleanup = false
+  private var didCompleteSetup = false
+  private var continuations: [CheckedContinuation<Void, Never>] = []
+
+  package init() {}
+
+  package init(cancelAndWait operation: @escaping @Sendable () async -> Void) {
+    self.operation = operation
+    self.didInstallOperation = true
+  }
+
+  package func install(cancelAndWait operation: @escaping @Sendable () async -> Void) {
+    let operationToStart = lock.withLock { () -> (@Sendable () async -> Void)? in
+      precondition(!didInstallOperation, "Cancellation cleanup can only be installed once.")
+      didInstallOperation = true
+      self.operation = operation
+      return takeCleanupOperationIfReady()
+    }
+    if let operationToStart { start(operationToStart) }
+  }
+
+  package func completeSetup() -> Bool {
+    lock.withLock {
+      precondition(!didCompleteSetup, "Cancellation setup can only complete once.")
+      didCompleteSetup = true
+      return isExplicitCancellationRequested
+    }
+  }
+
+  package func cancel() {
+    requestCancellation(unlessSetupCompleted: false)
+  }
+
+  /// Cancels setup only while this owner still owns the resource handoff.
+  /// `completeSetup` and this operation linearize under the same lock: once
+  /// setup completes, ordinary resource cancellation belongs to the returned
+  /// lease rather than the setup task's cancellation handler.
+  package func cancelBeforeSetupCompletes() {
+    requestCancellation(unlessSetupCompleted: true)
+  }
+
+  private func requestCancellation(unlessSetupCompleted: Bool) {
+    let operation = lock.withLock { () -> (@Sendable () async -> Void)? in
+      if unlessSetupCompleted, didCompleteSetup { return nil }
+      isExplicitCancellationRequested = true
+      isCleanupRequested = true
+      return takeCleanupOperationIfReady()
+    }
+    if let operation { start(operation) }
+  }
+
+  /// Finishes exact cleanup without converting a successfully built finite
+  /// observation into a caller-cancelled setup result.
+  package func finish() {
+    let operation = lock.withLock { () -> (@Sendable () async -> Void)? in
+      isCleanupRequested = true
+      return takeCleanupOperationIfReady()
+    }
+    if let operation { start(operation) }
+  }
+
+  package func unlessCancelled(_ action: @Sendable () -> Void) {
+    let shouldRun = lock.withLock {
+      guard !isCleanupRequested else { return false }
+      activeOperationCount += 1
+      return true
+    }
+    guard shouldRun else { return }
+    action()
+    finishOperation()
+  }
+
+  package func wait() async {
+    await withCheckedContinuation { continuation in
+      let shouldResume = lock.withLock {
+        if didFinishCleanup { return true }
+        continuations.append(continuation)
+        return false
+      }
+      if shouldResume { continuation.resume() }
+    }
+  }
+
+  private func finishOperation() {
+    let operation = lock.withLock { () -> (@Sendable () async -> Void)? in
+      activeOperationCount -= 1
+      return takeCleanupOperationIfReady()
+    }
+    if let operation { start(operation) }
+  }
+
+  private func takeCleanupOperationIfReady() -> (@Sendable () async -> Void)? {
+    guard
+      isCleanupRequested,
+      didInstallOperation,
+      activeOperationCount == 0,
+      !didStartCleanup,
+      let operation
+    else { return nil }
+    didStartCleanup = true
+    self.operation = nil
+    return operation
+  }
+
+  private func start(_ operation: @escaping @Sendable () async -> Void) {
+    let operationBox = OperationBox(operation)
+    Task { [self, operationBox] in
+      await operationBox.run()
+      finishCleanup()
+    }
+  }
+
+  private func finishCleanup() {
+    let continuations: [CheckedContinuation<Void, Never>] = lock.withLock {
+      guard !didFinishCleanup else { return [] }
+      didFinishCleanup = true
+      let continuations = self.continuations
+      self.continuations.removeAll()
+      return continuations
+    }
+    for continuation in continuations {
+      continuation.resume()
+    }
+  }
+}
+
+/// Owns one restartable asynchronous service through its exact completion.
+///
+/// A stop request latches the owner before it cancels the current task and
+/// returns a stable handle to that exact task. Natural completion clears only
+/// the matching token, so an older task can never erase a replacement. The
+/// owner retains no completed task or operation closure.
+// SAFETY: `lock` protects the token, suspension, and task fields. A Task handle
+// is safe to copy across concurrency domains and its value is awaited without
+// holding the lock.
+private final class InstantRuntimeExactTaskOwner: @unchecked Sendable {
+  struct Handle: Sendable {
+    fileprivate var token: UInt64?
+    fileprivate var task: Task<Void, Never>?
+
+    func wait() async {
+      await task?.value
+    }
+  }
+
+  private let lock = NSLock()
+  private var nextToken: UInt64 = 0
+  private var isSuspended = false
+  private var running: Handle?
+  private var pendingRestartOperation: (@Sendable () async -> Void)?
+
+  @discardableResult
+  func start(
+    priority: TaskPriority? = nil,
+    restartIfRunning: Bool = false,
+    operation: @escaping @Sendable () async -> Void
+  ) -> Bool {
+    lock.withLock {
+      guard !isSuspended else { return false }
+      guard running == nil else {
+        if restartIfRunning {
+          pendingRestartOperation = operation
+        }
+        return false
+      }
+      nextToken &+= 1
+      let token = nextToken
+      // The task may begin immediately, but its terminal transition needs this
+      // same lock. Install the handle before releasing the lock so completion
+      // and stop can never observe an unowned task.
+      let task = Task(priority: priority) { [weak self] in
+        var nextOperation: (@Sendable () async -> Void)? = operation
+        while let currentOperation = nextOperation {
+          await currentOperation()
+          nextOperation = self?.takeRestartOperationOrFinish(token: token)
+        }
+      }
+      running = Handle(token: token, task: task)
+      return true
+    }
+  }
+
+  func requestStop() -> Handle {
+    let handle = lock.withLock {
+      isSuspended = true
+      pendingRestartOperation = nil
+      return running ?? Handle(token: nil, task: nil)
+    }
+    handle.task?.cancel()
+    return handle
+  }
+
+  func resume() {
+    lock.withLock {
+      isSuspended = false
+    }
+  }
+
+  var isIdle: Bool {
+    lock.withLock { running == nil }
+  }
+
+  private func takeRestartOperationOrFinish(
+    token: UInt64
+  ) -> (@Sendable () async -> Void)? {
+    lock.withLock {
+      guard running?.token == token else { return nil }
+      guard !isSuspended else {
+        running = nil
+        pendingRestartOperation = nil
+        return nil
+      }
+      if let pendingRestartOperation {
+        self.pendingRestartOperation = nil
+        return pendingRestartOperation
+      }
+      running = nil
+      return nil
+    }
+  }
+}
+
+private struct InstantRuntimeExactCloseIdleState: Sendable {
+  var automaticLiveConnection: Bool
+  var startupCookieSync: Bool
+  var reconnect: Bool
+  var receiver: Bool
+  var mutationDeliveryPump: Bool
+  var explicitMutationFlush: Bool
+
+  var allIdle: Bool {
+    automaticLiveConnection
+      && startupCookieSync
+      && reconnect
+      && receiver
+      && mutationDeliveryPump
+      && explicitMutationFlush
+  }
+
+  var nonIdleOwnerNames: [String] {
+    var names: [String] = []
+    if !automaticLiveConnection { names.append("automatic live connection") }
+    if !startupCookieSync { names.append("startup cookie sync") }
+    if !reconnect { names.append("live reconnect") }
+    if !receiver { names.append("live receiver") }
+    if !mutationDeliveryPump { names.append("mutation delivery pump") }
+    if !explicitMutationFlush { names.append("explicit mutation flush") }
+    return names
+  }
+}
+
+package enum InstantStandardQuerySetupCheckpoint: Equatable, Sendable {
+  case localObservationInstalled
+}
+
+package enum InstantLiveInfiniteQuerySetupCheckpoint: Equatable, Sendable {
+  case beforePersistedPageInfoLoad
+  case localObservationInstalled
+}
+
+private struct InstantLiveInfiniteQueryChunkObservationLease<Element: Sendable>: Sendable {
+  var stream: AsyncStream<Element>
+  var cancel: @Sendable () async -> Void
+}
+
+private struct InstantSupersededLiveSessionSend: Error, Sendable {}
+
+private final class InstantLiveObservationTermination: Sendable {
+  private let owner: InstantAsyncCancellationOwner
+
+  init(_ action: @escaping @Sendable () async -> Void) {
+    self.owner = InstantAsyncCancellationOwner(cancelAndWait: action)
+  }
+
+  func run() async {
+    owner.cancel()
+    await owner.wait()
+  }
+}
+
 public struct InstantRuntimeConfiguration: Sendable {
   public static let defaultAPIURI = URL(string: "https://api.instantdb.com")!
   public static let defaultWebSocketURI = URL(
@@ -13,6 +353,7 @@ public struct InstantRuntimeConfiguration: Sendable {
   public var firstPartyURL: URL?
   public var persistenceURL: URL
   public var initialAttributes: [InstantAttribute]
+  public var deferredValueResidency: InstantDeferredValueResidencyPolicy
   public var now: @Sendable () -> InstantTimestamp
   public var makeID: @Sendable () -> String
   public var refreshTokenVerifier: InstantRefreshTokenVerifier
@@ -43,18 +384,68 @@ public struct InstantRuntimeConfiguration: Sendable {
     maxTripleCount: 1_000_000
   )
   var liveQueryResultPruningWriteInterval = 64
-  var liveReconnectSleep: @Sendable (UInt64) async throws -> Void = { milliseconds in
-    try await Task.sleep(nanoseconds: milliseconds * 1_000_000)
-  }
+  var liveReconnectSleep: @Sendable (UInt64) async throws -> Void =
+    instantLiveDefaultTimeoutSleep
+  var liveMutationDeadlineSleep: @Sendable (UInt64) async throws -> Void =
+    instantLiveDefaultTimeoutSleep
+  package var explicitMutationTransportDeadlineSleep:
+    @Sendable (UInt64) async throws -> Void = instantLiveDefaultTimeoutSleep
+  package var explicitMutationClaimRenewalSleep:
+    @Sendable (UInt64) async throws -> Void = instantLiveDefaultTimeoutSleep
+  package var explicitMutationCleanupWatchdogSleep:
+    @Sendable (UInt64) async throws -> Void = instantLiveDefaultTimeoutSleep
+  package var exactCloseWatchdogSleep: @Sendable (UInt64) async throws -> Void =
+    instantLiveDefaultTimeoutSleep
   var onLiveQueryResultPruneActiveKeysCapturedForTesting:
     (@Sendable (Set<String>) async -> Void)? = nil
+  package var onLiveInfiniteQuerySetupCheckpointForTesting:
+    (@Sendable (InstantLiveInfiniteQuerySetupCheckpoint) async -> Void)? = nil
+  package var onStandardQuerySetupCheckpointForTesting:
+    (@Sendable (InstantStandardQuerySetupCheckpoint) async throws -> Void)? = nil
+  package var onStandardQueryObservationCleanupStartedForTesting:
+    (@Sendable () async -> Void)? = nil
+  package var onStoredFilesRemoteSnapshotMergedForTesting:
+    (@Sendable (_ fileCount: Int) async -> Void)? = nil
+  package var onStoredFilesRemoteSnapshotPublishedForTesting:
+    (@Sendable (_ fileCount: Int) -> Void)? = nil
+  package var onLocalInfiniteQueryObservationInstalledForTesting:
+    (@Sendable () async -> Void)? = nil
+  package var onLiveInfiniteQueryPreBootstrapPayloadAcquiredForTesting:
+    (@Sendable (_ valueCount: Int) async throws -> Void)? = nil
+  package var onLiveInfiniteQueryDeferredHydrationAcquiredForTesting:
+    (@Sendable (_ valueCount: Int) async -> Void)? = nil
+  package var liveInfiniteQueryRetirementWatchdogSleep:
+    @Sendable (UInt64) async throws -> Void = instantLiveDefaultTimeoutSleep
+  package var onLiveInfiniteQueryRetirementCleanupStartedForTesting:
+    (@Sendable (_ subscriptionID: Int) async -> Void)? = nil
+  package var onLocalInfiniteQueryNavigationRequestAcquiredForTesting:
+    (@Sendable (_ valueCount: Int) async throws -> Void)? = nil
+  package var onLocalInfiniteQueryHydrationRequestAcquiredForTesting:
+    (@Sendable (_ sequence: Int64, _ valueCount: Int) async throws -> Void)? = nil
+  package var onLocalInfiniteQueryTerminalPublishedBeforeObservationCleanupForTesting:
+    (@Sendable () async -> Void)? = nil
+  package var onAutomaticMutationPumpRetryWindowCompletedForTesting:
+    (@Sendable () async -> Void)? = nil
+  package var onAutomaticLiveConnectionTaskStartedForTesting:
+    (@Sendable () async -> Void)? = nil
+  package var onStartupCookieSyncTaskStartedForTesting:
+    (@Sendable () async -> Void)? = nil
+  package var onLiveReceiverEventAcquiredForTesting:
+    (@Sendable () async -> Void)? = nil
+  package var onLiveQueryOnceAcknowledgedForTesting:
+    (@Sendable () async throws -> Void)? = nil
   var onLocalMutationSupersessionPreparedForTesting:
     (@Sendable (_ predecessorID: String, _ newcomerID: String) async -> Void)? = nil
+  var onLocalMutationPersistedBeforeStorePublicationForTesting:
+    (@Sendable (_ transactionID: String) async -> Void)? = nil
+  var onServerApplyPreparedBeforeCommitForTesting:
+    (@Sendable (_ planID: String) async -> Void)? = nil
 
   public init(
     appID: String,
     persistenceURL: URL,
     initialAttributes: [InstantAttribute] = [],
+    deferredValueResidency: InstantDeferredValueResidencyPolicy = .none,
     now: @escaping @Sendable () -> InstantTimestamp = {
       InstantTimestamp(milliseconds: Int64((Date().timeIntervalSince1970 * 1000).rounded()))
     },
@@ -74,6 +465,7 @@ public struct InstantRuntimeConfiguration: Sendable {
       websocketURI: Self.defaultWebSocketURI,
       persistenceURL: persistenceURL,
       initialAttributes: initialAttributes,
+      deferredValueResidency: deferredValueResidency,
       now: now,
       makeID: makeID,
       refreshTokenVerifier: refreshTokenVerifier,
@@ -97,6 +489,7 @@ public struct InstantRuntimeConfiguration: Sendable {
     now: @escaping @Sendable () -> InstantTimestamp,
     makeID: @escaping @Sendable () -> String,
     refreshTokenVerifier: InstantRefreshTokenVerifier,
+    guestAuthenticator: InstantGuestAuthenticator,
     magicCodeExchange: InstantMagicCodeExchange,
     idTokenExchange: InstantIDTokenExchange,
     oauthExchange: InstantOAuthExchange,
@@ -108,6 +501,40 @@ public struct InstantRuntimeConfiguration: Sendable {
       appID: appID,
       persistenceURL: persistenceURL,
       initialAttributes: initialAttributes,
+      deferredValueResidency: .none,
+      now: now,
+      makeID: makeID,
+      refreshTokenVerifier: refreshTokenVerifier,
+      guestAuthenticator: guestAuthenticator,
+      magicCodeExchange: magicCodeExchange,
+      idTokenExchange: idTokenExchange,
+      oauthExchange: oauthExchange,
+      authTokenInvalidator: authTokenInvalidator,
+      platformAppClient: platformAppClient,
+      appBuilderCodeGenerator: appBuilderCodeGenerator
+    )
+  }
+
+  public init(
+    appID: String,
+    persistenceURL: URL,
+    initialAttributes: [InstantAttribute],
+    deferredValueResidency: InstantDeferredValueResidencyPolicy = .none,
+    now: @escaping @Sendable () -> InstantTimestamp,
+    makeID: @escaping @Sendable () -> String,
+    refreshTokenVerifier: InstantRefreshTokenVerifier,
+    magicCodeExchange: InstantMagicCodeExchange,
+    idTokenExchange: InstantIDTokenExchange,
+    oauthExchange: InstantOAuthExchange,
+    authTokenInvalidator: InstantAuthTokenInvalidator,
+    platformAppClient: InstantPlatformAppClient,
+    appBuilderCodeGenerator: AppBuilderCodeGeneratorClient
+  ) {
+    self.init(
+      appID: appID,
+      persistenceURL: persistenceURL,
+      initialAttributes: initialAttributes,
+      deferredValueResidency: deferredValueResidency,
       now: now,
       makeID: makeID,
       refreshTokenVerifier: refreshTokenVerifier,
@@ -125,6 +552,7 @@ public struct InstantRuntimeConfiguration: Sendable {
     appID: String,
     persistenceURL: URL,
     initialAttributes: [InstantAttribute] = [],
+    deferredValueResidency: InstantDeferredValueResidencyPolicy = .none,
     now: @escaping @Sendable () -> InstantTimestamp = {
       InstantTimestamp(milliseconds: Int64((Date().timeIntervalSince1970 * 1_000).rounded()))
     },
@@ -145,6 +573,7 @@ public struct InstantRuntimeConfiguration: Sendable {
       websocketURI: Self.defaultWebSocketURI,
       persistenceURL: persistenceURL,
       initialAttributes: initialAttributes,
+      deferredValueResidency: deferredValueResidency,
       now: now,
       makeID: makeID,
       refreshTokenVerifier: refreshTokenVerifier,
@@ -168,6 +597,7 @@ public struct InstantRuntimeConfiguration: Sendable {
     firstPartyURL: URL? = nil,
     persistenceURL: URL,
     initialAttributes: [InstantAttribute] = [],
+    deferredValueResidency: InstantDeferredValueResidencyPolicy = .none,
     now: @escaping @Sendable () -> InstantTimestamp = {
       InstantTimestamp(milliseconds: Int64((Date().timeIntervalSince1970 * 1000).rounded()))
     },
@@ -191,6 +621,7 @@ public struct InstantRuntimeConfiguration: Sendable {
     self.firstPartyURL = firstPartyURL
     self.persistenceURL = persistenceURL
     self.initialAttributes = initialAttributes
+    self.deferredValueResidency = deferredValueResidency
     self.now = now
     self.makeID = makeID
     self.refreshTokenVerifier = refreshTokenVerifier
@@ -261,18 +692,27 @@ private actor InstantAuthSessionObservers {
 private final class InstantFileUploadProgressCancellation: @unchecked Sendable {
   private let lock = NSLock()
   private var isCancelled = false
+  private var isFinished = false
 
   func cancel() {
-    lock.lock()
-    defer { lock.unlock() }
-    isCancelled = true
+    lock.withLock {
+      guard !isFinished else { return }
+      isCancelled = true
+    }
   }
 
   func check() throws {
-    lock.lock()
-    defer { lock.unlock() }
-    if isCancelled {
+    if lock.withLock({ isCancelled }) {
       throw CancellationError()
+    }
+  }
+
+  /// Linearizes one terminal publication against cancellation.
+  func claimTerminalPublication() -> Bool {
+    lock.withLock {
+      guard !isCancelled, !isFinished else { return false }
+      isFinished = true
+      return true
     }
   }
 }
@@ -495,7 +935,7 @@ private actor InstantRuntimeLiveSession {
   }
 
   private var session: InstantLiveWebSocketSession?
-  private var receiverTask: Task<Void, Never>?
+  private let receiverTaskOwner = InstantRuntimeExactTaskOwner()
   private var registeredQueries: [String: RegisteredQuery] = [:]
   private var serverAttributes: [InstantLiveJSONValue] = []
   private var inFlightMutationIDs: Set<String> = []
@@ -571,7 +1011,7 @@ private actor InstantRuntimeLiveSession {
       let responseStream = response.stream
       let acknowledged = try await instantLiveWithTimeout(
         operation: "start Instant live stream",
-        timeoutMilliseconds: 10_000
+        timeoutMilliseconds: instantLiveOperationTimeoutMilliseconds
       ) {
         var iterator = responseStream.makeAsyncIterator()
         return try await iterator.next()
@@ -644,7 +1084,7 @@ private actor InstantRuntimeLiveSession {
       let responseStream = response.stream
       let acknowledged = try await instantLiveWithTimeout(
         operation: "finish Instant live stream",
-        timeoutMilliseconds: 10_000
+        timeoutMilliseconds: instantLiveOperationTimeoutMilliseconds
       ) {
         var iterator = responseStream.makeAsyncIterator()
         return try await iterator.next()
@@ -739,11 +1179,8 @@ private actor InstantRuntimeLiveSession {
       ]
     )
     generation += 1
-    receiverTask?.cancel()
-    receiverTask = nil
-    if let session {
-      await session.close()
-    }
+    let replacedReceiver = receiverTaskOwner.requestStop()
+    let replacedSession = session
     session = nil
     sessionID = nil
     serverAttributes = []
@@ -754,17 +1191,34 @@ private actor InstantRuntimeLiveSession {
       registeredRooms[room]?.isConnected = false
     }
     isOpened = false
-    let opened = try await transport.connect(request)
+    if let replacedSession {
+      await closeGracefully(
+        replacedSession,
+        operation: "replace Instant live session"
+      )
+    }
+    // Replacement owns the complete old receive-loop tail, including event
+    // handling, receiverEnded, and its failure callback. Waiting here cannot
+    // deadlock the actor: actor isolation is reentrant while the task value is
+    // suspended, and the generation mismatch makes the old tail inert.
+    await replacedReceiver.wait()
+    receiverTaskOwner.resume()
+    let opened = try await transport.connectSession(
+      request,
+      operation: "connect Instant live transport"
+    )
     do {
       try await instantLiveWithTimeout(
         operation: "open Instant live session",
-        timeoutMilliseconds: 10_000
+        timeoutMilliseconds: instantLiveOperationTimeoutMilliseconds,
+        onAbandon: { opened.abort() }
       ) {
         try await opened.send(request.initMessage(clientEventID: makeID()))
       }
       let event = try await instantLiveWithTimeout(
         operation: "open Instant live session",
-        timeoutMilliseconds: 10_000
+        timeoutMilliseconds: instantLiveOperationTimeoutMilliseconds,
+        onAbandon: { opened.abort() }
       ) {
         InstantLiveServerEvent(message: try await opened.receive())
       }
@@ -826,9 +1280,10 @@ private actor InstantRuntimeLiveSession {
       }
       for key in registeredQueries.keys.sorted() {
         guard let registration = registeredQueries[key] else { continue }
-        try await send(
-          .addQuery(registration.query, clientEventID: makeID()),
-          through: opened
+        try await reconcileQueryMembership(
+          key: key,
+          fallbackQuery: registration.query,
+          initialClientEventID: makeID()
         )
       }
       for key in registeredStreamReaders.keys.sorted() {
@@ -838,11 +1293,13 @@ private actor InstantRuntimeLiveSession {
         }
       }
     } catch {
-      await opened.close()
-      session = nil
-      sessionID = nil
-      serverAttributes = []
-      isOpened = false
+      opened.abort()
+      if session?.identity == opened.identity {
+        session = nil
+        sessionID = nil
+        serverAttributes = []
+        isOpened = false
+      }
       InstantDiagnostics.shared.record(
         error: error,
         subsystem: "instant-swift-data-core",
@@ -860,17 +1317,33 @@ private actor InstantRuntimeLiveSession {
       InstantLiveServerEvent,
       [InstantLiveJSONValue]
     ) async throws -> Void,
+    onEventAcquired: (@Sendable () async -> Void)? = nil,
     onFailure: @escaping @Sendable (Error) async -> Void
   ) {
-    guard receiverTask == nil, let session, isOpened else { return }
+    guard receiverTaskOwner.isIdle, let session, isOpened else { return }
     let generation = generation
-    receiverTask = Task { [weak self] in
+    _ = receiverTaskOwner.start { [weak self] in
       do {
         while !Task.isCancelled {
           let message = try await session.receive()
           try Task.checkCancellation()
           let event = InstantLiveServerEvent(message: message)
+          await onEventAcquired?()
+          try Task.checkCancellation()
+          guard await self?.canDeliverReceiverEvent(
+            generation: generation,
+            session: session
+          ) == true else {
+            return
+          }
           guard let attributes = try await self?.record(event, generation: generation) else {
+            return
+          }
+          try Task.checkCancellation()
+          guard await self?.canDeliverReceiverEvent(
+            generation: generation,
+            session: session
+          ) == true else {
             return
           }
           try await onEvent(event, attributes)
@@ -902,17 +1375,24 @@ private actor InstantRuntimeLiveSession {
     if var registration = registeredQueries[key] {
       registration.observerCount += 1
       registeredQueries[key] = registration
-      guard requiresServerAcknowledgement, let session, isOpened else { return }
+      guard requiresServerAcknowledgement else { return }
       // Upstream queryOnce always sends add-query, even when this exact query is
       // already subscribed. Instant answers with add-query-exists, which gives
       // the one-shot operation a fresh server acknowledgement while retaining
       // the materialized query store.
-      try await send(.addQuery(query, clientEventID: clientEventID), through: session)
+      try await reconcileQueryMembership(
+        key: key,
+        fallbackQuery: query,
+        initialClientEventID: clientEventID
+      )
       return
     }
     registeredQueries[key] = RegisteredQuery(query: query, observerCount: 1)
-    guard let session, isOpened else { return }
-    try await send(.addQuery(query, clientEventID: clientEventID), through: session)
+    try await reconcileQueryMembership(
+      key: key,
+      fallbackQuery: query,
+      initialClientEventID: clientEventID
+    )
   }
 
   @discardableResult
@@ -924,12 +1404,57 @@ private actor InstantRuntimeLiveSession {
       return false
     }
     registeredQueries[key] = nil
-    guard let session, isOpened else { return true }
-    try await send(
-      .removeQuery(registration.query, clientEventID: clientEventID),
-      through: session
+    try await reconcileQueryMembership(
+      key: key,
+      fallbackQuery: registration.query,
+      initialClientEventID: clientEventID
     )
-    return true
+    return registeredQueries[key] == nil
+  }
+
+  /// Reconciles the server's query membership after an actor-reentrant send.
+  ///
+  /// A query can be removed and equivalently re-added while the old
+  /// `remove-query` is suspended in the transport. The command that finishes
+  /// last must compensate itself so the final wire state matches the current
+  /// local observer membership.
+  private func reconcileQueryMembership(
+    key: String,
+    fallbackQuery: InstantLiveJSONValue,
+    initialClientEventID: String
+  ) async throws {
+    var query = fallbackQuery
+    var clientEventID = initialClientEventID
+
+    while let currentSession = session, isOpened {
+      let shouldBeRegistered: Bool
+      let message: InstantLiveMessage
+      if let registration = registeredQueries[key] {
+        shouldBeRegistered = true
+        query = registration.query
+        message = .addQuery(query, clientEventID: clientEventID)
+      } else {
+        shouldBeRegistered = false
+        message = .removeQuery(query, clientEventID: clientEventID)
+      }
+
+      do {
+        try await send(message, through: currentSession)
+      } catch is InstantSupersededLiveSessionSend {
+        guard registeredQueries[key] != nil else { return }
+        clientEventID = makeID?() ?? UUID().uuidString.lowercased()
+        continue
+      }
+
+      let sessionIsCurrent = session?.identity == currentSession.identity && isOpened
+      let isRegistered = registeredQueries[key] != nil
+      if sessionIsCurrent {
+        guard isRegistered != shouldBeRegistered else { return }
+      } else {
+        guard session != nil, isOpened, isRegistered else { return }
+      }
+      clientEventID = makeID?() ?? UUID().uuidString.lowercased()
+    }
   }
 
   @discardableResult
@@ -1126,6 +1651,14 @@ private actor InstantRuntimeLiveSession {
           "isOpened": String(isOpened),
         ]
       )
+      guard mutations.isEmpty else {
+        throw InstantError(
+          code: .networkFailed,
+          operation: "send claimed Instant live mutations",
+          message: "The live session closed after SQLite claimed mutations but before they could be sent.",
+          recovery: "Release the failed session's durable claims, reconnect, and resend them immediately."
+        )
+      }
       return []
     }
     var encodingFailures: [InstantLiveMutationEncodingFailure] = []
@@ -1213,17 +1746,6 @@ private actor InstantRuntimeLiveSession {
           ],
           correlationID: mutation.mutationID
         )
-        reportIssue(
-          """
-          Instant quarantined a mutation it can never deliver.
-
-          \(String(describing: error))
-
-          Mutation: \(mutation.mutationID)
-          Deploy the schema (npx instant-cli push schema) so this attribute \
-          exists on the server, then the quarantined mutation can be retried.
-          """
-        )
         encodingFailures.append(
           InstantLiveMutationEncodingFailure(
             message: String(describing: error),
@@ -1281,6 +1803,21 @@ private actor InstantRuntimeLiveSession {
         )
         throw error
       }
+    }
+    if let firstEncodingFailure = encodingFailures.first {
+      let exampleMutationIDs = encodingFailures.prefix(8).map(\.mutationID).joined(
+        separator: ", "
+      )
+      reportIssue(
+        """
+        Instant quarantined \(encodingFailures.count) mutation\(encodingFailures.count == 1 ? "" : "s") that cannot be delivered against the current server schema.
+
+        First failure: \(firstEncodingFailure.message)
+        Example mutation IDs: \(exampleMutationIDs)
+        Deploy the schema (npx instant-cli push schema) so the missing attributes \
+        exist on the server, then retry the quarantined mutations.
+        """
+      )
     }
     InstantDiagnostics.shared.record(
       .debug,
@@ -1539,7 +2076,8 @@ private actor InstantRuntimeLiveSession {
     do {
       try await instantLiveWithTimeout(
         operation: "send Instant live session message",
-        timeoutMilliseconds: 10_000
+        timeoutMilliseconds: instantLiveOperationTimeoutMilliseconds,
+        onAbandon: { session.abort() }
       ) {
         try await session.send(message)
       }
@@ -1557,6 +2095,19 @@ private actor InstantRuntimeLiveSession {
         correlationID: message.clientEventID
       )
     } catch {
+      session.abort()
+      guard invalidateSessionIfCurrent(session, failure: error) else {
+        InstantDiagnostics.shared.record(
+          .debug,
+          subsystem: "instant-swift-data-core",
+          category: "transport",
+          event: "websocket.message-send-superseded",
+          message: "Ignored a send failure from an Instant WebSocket session that was already replaced.",
+          metadata: ["op": message.op],
+          correlationID: message.clientEventID
+        )
+        throw InstantSupersededLiveSessionSend()
+      }
       InstantDiagnostics.shared.record(
         error: error,
         subsystem: "instant-swift-data-core",
@@ -1570,6 +2121,59 @@ private actor InstantRuntimeLiveSession {
     }
   }
 
+  private func closeGracefully(
+    _ session: InstantLiveWebSocketSession,
+    operation: String
+  ) async {
+    do {
+      try await session.closeGracefully(operation: operation)
+    } catch {
+      session.abort()
+      InstantDiagnostics.shared.record(
+        error: error,
+        subsystem: "instant-swift-data-core",
+        category: "transport",
+        event: "websocket.session-close-failed",
+        message: "Instant could not gracefully close the live session within 5 seconds.",
+        metadata: ["operation": operation]
+      )
+    }
+  }
+
+  private func invalidateSessionIfCurrent(
+    _ failedSession: InstantLiveWebSocketSession,
+    failure: Error
+  ) -> Bool {
+    guard session?.identity == failedSession.identity else { return false }
+    generation += 1
+    _ = receiverTaskOwner.requestStop()
+    session = nil
+    sessionID = nil
+    serverAttributes = []
+    isOpened = false
+    for room in Array(registeredRooms.keys) {
+      registeredRooms[room]?.isConnected = false
+    }
+    for continuation in pendingStreamStarts.values {
+      continuation.finish(throwing: failure)
+    }
+    pendingStreamStarts.removeAll()
+    for continuation in pendingStreamFlushes.values {
+      continuation.finish(throwing: failure)
+    }
+    pendingStreamFlushes.removeAll()
+    return true
+  }
+
+  private func canDeliverReceiverEvent(
+    generation: Int,
+    session: InstantLiveWebSocketSession
+  ) -> Bool {
+    generation == self.generation
+      && self.session?.identity == session.identity
+      && isOpened
+  }
+
   private func receiverEnded(
     generation: Int,
     session: InstantLiveWebSocketSession,
@@ -1579,12 +2183,15 @@ private actor InstantRuntimeLiveSession {
     guard generation == self.generation else { return }
     self.session = nil
     sessionID = nil
-    receiverTask = nil
     isOpened = false
     for room in Array(registeredRooms.keys) {
       registeredRooms[room]?.isConnected = false
     }
-    await session.close()
+    await closeGracefully(session, operation: "close ended Instant live session")
+    // Explicit close or replacement can interleave while graceful close is
+    // suspended. In that case the newer generation owns continuations and the
+    // reconnect decision; this old task must only finish its exact handle.
+    guard generation == self.generation, !Task.isCancelled else { return }
     for continuation in pendingStreamStarts.values {
       continuation.finish(throwing: failure ?? CancellationError())
     }
@@ -1598,13 +2205,12 @@ private actor InstantRuntimeLiveSession {
     }
   }
 
-  func close() async {
+  func beginClose() async -> InstantRuntimeExactTaskOwner.Handle {
     generation += 1
     let session = session
-    let receiverTask = receiverTask
+    let receiverTask = receiverTaskOwner.requestStop()
     self.session = nil
     sessionID = nil
-    self.receiverTask = nil
     serverAttributes = []
     inFlightMutationIDs.removeAll()
     inFlightMutationStepCounts.removeAll()
@@ -1621,10 +2227,19 @@ private actor InstantRuntimeLiveSession {
       continuation.finish(throwing: CancellationError())
     }
     pendingStreamFlushes.removeAll()
-    receiverTask?.cancel()
     if let session {
-      await session.close()
+      await closeGracefully(session, operation: "close Instant live session")
     }
+    return receiverTask
+  }
+
+  func close() async {
+    let receiverTask = await beginClose()
+    await receiverTask.wait()
+  }
+
+  func receiverTaskIsIdleForTesting() -> Bool {
+    receiverTaskOwner.isIdle
   }
 
   private func recordRoomEvent(op: String, roomID: String) async throws {
@@ -1680,109 +2295,154 @@ private actor InstantRuntimeLiveSession {
 }
 
 private actor InstantRuntimeReconnectController {
-  private var task: Task<Void, Never>?
-  private var generation = 0
-  private var restartRequested = false
+  private let taskOwner = InstantRuntimeExactTaskOwner()
+  private var lifecycleGeneration = 0
+  private var acceptsStarts = true
 
   func start(
     sleep: @escaping @Sendable (UInt64) async throws -> Void,
     reconnect: @escaping @Sendable () async throws -> Void
   ) {
-    guard task == nil else {
-      restartRequested = true
-      return
-    }
-
-    generation += 1
-    let generation = generation
-    task = Task { [weak self] in
-      var attempt: UInt64 = 0
-      while !Task.isCancelled {
-        let delay = min(attempt * 1_000, 10_000)
-        do {
-          try await sleep(delay)
-          try Task.checkCancellation()
-          try await reconnect()
-          await self?.finish(
-            generation: generation,
-            sleep: sleep,
-            reconnect: reconnect
-          )
-          return
-        } catch is CancellationError {
-          await self?.cancelled(generation: generation)
-          return
-        } catch {
-          attempt += 1
-        }
-      }
-      await self?.cancelled(generation: generation)
+    guard acceptsStarts else { return }
+    _ = taskOwner.start(restartIfRunning: true) { [weak self] in
+      await self?.run(sleep: sleep, reconnect: reconnect)
     }
   }
 
-  func cancel() {
-    generation += 1
-    restartRequested = false
-    task?.cancel()
-    task = nil
+  func cancelAndWait() async {
+    lifecycleGeneration += 1
+    let lifecycleGeneration = lifecycleGeneration
+    acceptsStarts = false
+    let handle = taskOwner.requestStop()
+    await handle.wait()
+    guard lifecycleGeneration == self.lifecycleGeneration else { return }
+    taskOwner.resume()
+    acceptsStarts = true
   }
 
-  private func finish(
-    generation: Int,
+  func requestStop() -> InstantRuntimeExactTaskOwner.Handle {
+    lifecycleGeneration += 1
+    acceptsStarts = false
+    return taskOwner.requestStop()
+  }
+
+  func isIdleForTesting() -> Bool {
+    taskOwner.isIdle
+  }
+
+  private func run(
     sleep: @escaping @Sendable (UInt64) async throws -> Void,
     reconnect: @escaping @Sendable () async throws -> Void
-  ) {
-    guard generation == self.generation else { return }
-    task = nil
-    guard restartRequested else { return }
-    restartRequested = false
-    start(sleep: sleep, reconnect: reconnect)
-  }
-
-  private func cancelled(generation: Int) {
-    guard generation == self.generation else { return }
-    task = nil
-    restartRequested = false
+  ) async {
+    var attempt: UInt64 = 0
+    while !Task.isCancelled {
+      let delay = min(attempt * 1_000, 10_000)
+      do {
+        try await sleep(delay)
+        try Task.checkCancellation()
+        try await reconnect()
+        return
+      } catch is CancellationError {
+        return
+      } catch {
+        attempt += 1
+      }
+    }
   }
 }
 
-/// Coalesces local-write delivery requests into one live-session pump.
+/// Coalesces failed-mutation retry and local-write delivery requests into one
+/// fair live-session pump.
 ///
 /// Speech can commit several open-segment updates while one SQLite hydration
 /// and WebSocket send is in flight. A task per write used to queue redundant
 /// full-outbox hydrations behind the operation gate, delaying the next local
-/// commit and temporarily retaining duplicate encoded transaction graphs.
+/// commit and temporarily retaining duplicate encoded transaction graphs. A
+/// pump turn now admits at most one retry window and one delivery window before
+/// yielding, so reconnect latency does not scale with durable queue depth.
+private enum InstantRuntimeMutationDeliveryPumpPassResult: Sendable {
+  case finished
+  case continueImmediately
+  case retryAfterFailure
+}
+
 private actor InstantRuntimeMutationDeliveryPump {
-  private var isRunning = false
+  private var isSuspended = false
+  private var task: Task<Void, Never>?
   private var needsAnotherPass = false
+
+  func isIdleForTesting() -> Bool {
+    task == nil && !needsAnotherPass
+  }
+
+  func isSuspendedForTesting() -> Bool {
+    isSuspended
+  }
+
+  func resume() {
+    isSuspended = false
+  }
 
   func request(
     sleep: @escaping @Sendable (UInt64) async throws -> Void,
-    _ deliver: @escaping @Sendable () async -> Bool
-  ) async {
+    _ deliver: @escaping @Sendable () async -> InstantRuntimeMutationDeliveryPumpPassResult
+  ) {
+    guard !isSuspended else { return }
     needsAnotherPass = true
-    guard !isRunning else { return }
-    isRunning = true
-    defer { isRunning = false }
+    guard task == nil else { return }
 
-    var hydrationFailureAttempt: UInt64 = 0
-    while needsAnotherPass {
+    task = Task { [weak self] in
+      await self?.run(sleep: sleep, deliver)
+    }
+  }
+
+  func suspend() {
+    isSuspended = true
+    needsAnotherPass = false
+    task?.cancel()
+  }
+
+  func waitUntilStopped() async {
+    let task = task
+    await task?.value
+    self.task = nil
+    needsAnotherPass = false
+  }
+
+  private func run(
+    sleep: @escaping @Sendable (UInt64) async throws -> Void,
+    _ deliver: @escaping @Sendable () async -> InstantRuntimeMutationDeliveryPumpPassResult
+  ) async {
+    var localFailureAttempt: UInt64 = 0
+    pump: while !Task.isCancelled, !isSuspended, needsAnotherPass {
       needsAnotherPass = false
-      if await deliver() {
-        hydrationFailureAttempt = 0
-      } else {
-        // A local SQLite hydration failure is neither an empty outbox nor a
-        // socket failure. Keep the healthy session open and retry this pump,
-        // with a five-second maximum delay so failures stay loud and bounded.
-        let delay: UInt64 = min(250 << min(hydrationFailureAttempt, 4), 5_000)
-        hydrationFailureAttempt += 1
+      switch await deliver() {
+      case .finished:
+        localFailureAttempt = 0
+
+      case .continueImmediately:
+        localFailureAttempt = 0
+        needsAnotherPass = true
+        await Task.yield()
+
+      case .retryAfterFailure:
+        // A local SQLite window failure is neither an empty outbox nor a socket
+        // failure. Keep the healthy session open and retry this pump, with a
+        // five-second maximum delay so failures stay loud and bounded.
+        let delay: UInt64 = min(250 << min(localFailureAttempt, 4), 5_000)
+        localFailureAttempt += 1
         do {
+          try Task.checkCancellation()
           try await sleep(delay)
           needsAnotherPass = true
         } catch {
-          return
+          break pump
         }
       }
+    }
+    task = nil
+    if isSuspended {
+      needsAnotherPass = false
     }
   }
 }
@@ -1790,29 +2450,240 @@ private actor InstantRuntimeMutationDeliveryPump {
 private enum InstantExplicitMutationTransportOutcome: Sendable {
   case response(InstantMutationTransportResponse)
   case failure(InstantError)
+  case cancelled
 }
 
 private enum InstantExplicitMutationTransportRaceEvent: Sendable {
   case completed
   case timedOut
+  case cancelled
+  case renewalFailed(InstantError)
 }
 
-private actor InstantExplicitMutationTransportRace {
+// SAFETY: `lock` protects the one-shot event and continuation. Resolution is
+// synchronous so a close or caller cancellation can wake the exact operation
+// in the same boundary that invokes the transport's synchronous abort handle.
+private final class InstantExplicitMutationTransportRace: @unchecked Sendable {
+  private let lock = NSLock()
   private var event: InstantExplicitMutationTransportRaceEvent?
   private var continuation:
     CheckedContinuation<InstantExplicitMutationTransportRaceEvent, Never>?
 
   func resolve(_ event: InstantExplicitMutationTransportRaceEvent) {
-    guard self.event == nil else { return }
-    self.event = event
+    let continuation = lock.withLock {
+      () -> CheckedContinuation<InstantExplicitMutationTransportRaceEvent, Never>? in
+      guard self.event == nil else { return nil }
+      self.event = event
+      defer { self.continuation = nil }
+      return self.continuation
+    }
     continuation?.resume(returning: event)
-    continuation = nil
   }
 
   func firstEvent() async -> InstantExplicitMutationTransportRaceEvent {
-    if let event { return event }
     return await withCheckedContinuation { continuation in
-      self.continuation = continuation
+      let pending = lock.withLock { () -> InstantExplicitMutationTransportRaceEvent? in
+        if let existing = self.event {
+          return existing
+        }
+        self.continuation = continuation
+        return nil
+      }
+      if let pending {
+        continuation.resume(returning: pending)
+      }
+    }
+  }
+}
+
+// SAFETY: `lock` orders close/caller cancellation against late child-task
+// installation. The transport abort is already idempotent, and no task handle
+// is canceled while the lock is held.
+private final class InstantExplicitMutationOperationCancellation: @unchecked Sendable {
+  private let lock = NSLock()
+  private let operation: InstantMutationTransportOperation
+  private let race: InstantExplicitMutationTransportRace
+  private var didCancel = false
+  private var transportTask: Task<InstantExplicitMutationTransportOutcome, Never>?
+  private var deadlineTask: Task<Void, Never>?
+
+  init(
+    operation: InstantMutationTransportOperation,
+    race: InstantExplicitMutationTransportRace
+  ) {
+    self.operation = operation
+    self.race = race
+  }
+
+  func installTransportTask(
+    _ task: Task<InstantExplicitMutationTransportOutcome, Never>
+  ) {
+    let cancel = lock.withLock {
+      transportTask = task
+      return didCancel
+    }
+    if cancel { task.cancel() }
+  }
+
+  func installDeadlineTask(_ task: Task<Void, Never>) {
+    let cancel = lock.withLock {
+      deadlineTask = task
+      return didCancel
+    }
+    if cancel { task.cancel() }
+  }
+
+  func cancel() {
+    let tasks = lock.withLock { () -> (
+      transport: Task<InstantExplicitMutationTransportOutcome, Never>?,
+      deadline: Task<Void, Never>?
+    )? in
+      guard !didCancel else { return nil }
+      didCancel = true
+      return (transportTask, deadlineTask)
+    }
+    guard let tasks else { return }
+    operation.abort()
+    tasks.transport?.cancel()
+    tasks.deadline?.cancel()
+    race.resolve(.cancelled)
+  }
+}
+
+private enum InstantExplicitMutationFlushCompletion: Sendable {
+  case success(InstantMutationTransportFlushResult)
+  case failure(InstantError)
+  case cancelled
+}
+
+private enum InstantExplicitMutationDisposition: Sendable {
+  case success(InstantMutationTransportFlushResult)
+  case responseFailure(InstantError)
+  case transportFailure(InstantError)
+  case transportCancelled
+}
+
+/// Owns one public explicit flush independently from its waiting caller.
+///
+/// Cancellation latches before invoking the installed synchronous abort, and
+/// a late installation immediately observes that latch. The owner retains the
+/// task until transport, renewal, deadline, and exact-token disposition have
+/// all completed.
+// SAFETY: `lock` protects every mutable field and no closure or Task handle is
+// invoked or awaited while the lock is held.
+private final class InstantExplicitMutationFlushOwner: @unchecked Sendable {
+  struct Handle: Sendable {
+    fileprivate var token: UInt64?
+    fileprivate var task: Task<InstantExplicitMutationFlushCompletion, Never>?
+
+    func wait() async {
+      _ = await task?.value
+    }
+
+    func completion() async -> InstantExplicitMutationFlushCompletion? {
+      await task?.value
+    }
+  }
+
+  private let lock = NSLock()
+  private var nextToken: UInt64 = 0
+  private var isSuspended = false
+  private var running: Handle?
+  private var didRequestCancellation = false
+  private var cancellationOperation: (@Sendable () -> Void)?
+
+  func start(
+    _ operation: @escaping @Sendable (_ token: UInt64) async throws
+      -> InstantMutationTransportFlushResult
+  ) -> Handle? {
+    lock.withLock {
+      guard !isSuspended, running == nil else { return nil }
+      nextToken &+= 1
+      let token = nextToken
+      let task = Task { [weak self] in
+        let completion: InstantExplicitMutationFlushCompletion
+        do {
+          completion = .success(try await operation(token))
+        } catch is CancellationError {
+          completion = .cancelled
+        } catch let error as InstantError {
+          completion = .failure(error)
+        } catch {
+          completion = .failure(
+            InstantError(
+              code: .networkFailed,
+              operation: "flush Instant mutation transport",
+              message: String(describing: error),
+              recovery: "Inspect the configured mutation transport and retry the bounded durable outbox window."
+            )
+          )
+        }
+        self?.finish(token: token)
+        return completion
+      }
+      let handle = Handle(token: token, task: task)
+      running = handle
+      didRequestCancellation = false
+      cancellationOperation = nil
+      return handle
+    }
+  }
+
+  func installCancellation(
+    token: UInt64,
+    _ operation: @escaping @Sendable () -> Void
+  ) {
+    let operationToRun = lock.withLock { () -> (@Sendable () -> Void)? in
+      guard running?.token == token else { return operation }
+      if didRequestCancellation { return operation }
+      cancellationOperation = operation
+      return nil
+    }
+    operationToRun?()
+  }
+
+  func cancel(_ handle: Handle) {
+    cancel(token: handle.token, suspending: false)
+  }
+
+  func requestStop() -> Handle {
+    let handle = lock.withLock {
+      isSuspended = true
+      return running ?? Handle(token: nil, task: nil)
+    }
+    cancel(token: handle.token, suspending: true)
+    return handle
+  }
+
+  func resume() {
+    lock.withLock { isSuspended = false }
+  }
+
+  var isIdle: Bool {
+    lock.withLock { running == nil }
+  }
+
+  private func cancel(token: UInt64?, suspending: Bool) {
+    let cancellation = lock.withLock { () -> (
+      operation: (@Sendable () -> Void)?, task: Task<InstantExplicitMutationFlushCompletion, Never>?
+    ) in
+      if suspending { isSuspended = true }
+      guard let token, running?.token == token else { return (nil, nil) }
+      didRequestCancellation = true
+      let operation = cancellationOperation
+      cancellationOperation = nil
+      return (operation, running?.task)
+    }
+    cancellation.operation?()
+    cancellation.task?.cancel()
+  }
+
+  private func finish(token: UInt64) {
+    lock.withLock {
+      guard running?.token == token else { return }
+      running = nil
+      didRequestCancellation = false
+      cancellationOperation = nil
     }
   }
 }
@@ -1826,7 +2697,7 @@ private actor InstantRuntimeMutationDeadlineWake {
     deadlineMilliseconds: Int64?,
     now: @escaping @Sendable () -> InstantTimestamp,
     sleep: @escaping @Sendable (UInt64) async throws -> Void,
-    wake: @escaping @Sendable () -> Void
+    wake: @escaping @Sendable () async -> Void
   ) {
     guard let deadlineMilliseconds else {
       generation += 1
@@ -1855,7 +2726,7 @@ private actor InstantRuntimeMutationDeadlineWake {
         return
       }
       guard await self?.finish(generation: generation) == true else { return }
-      wake()
+      await wake()
     }
   }
 
@@ -1980,6 +2851,57 @@ private final class InstantQueryCachePruningCadence: @unchecked Sendable {
   }
 }
 
+// SAFETY: `lock` protects every access to the mutable replacement counter.
+private final class InstantRuntimeStoreAdoptionMetrics: @unchecked Sendable {
+  private let lock = NSLock()
+  private var storeSnapshotReplacementCount = 0
+
+  func reset() {
+    lock.lock()
+    storeSnapshotReplacementCount = 0
+    lock.unlock()
+  }
+
+  func recordStoreSnapshotReplacement() {
+    lock.lock()
+    storeSnapshotReplacementCount += 1
+    lock.unlock()
+  }
+
+  func currentStoreSnapshotReplacementCount() -> Int {
+    lock.lock()
+    defer { lock.unlock() }
+    return storeSnapshotReplacementCount
+  }
+}
+
+// SAFETY: `lock` protects every access to the revisions installed in the hot
+// `InstantStore` actor. The scalar pair lets persistence distinguish its own
+// memory-cache revision from the revision this runtime has actually adopted.
+private final class InstantRuntimeInstalledStoreRevisions: @unchecked Sendable {
+  private let lock = NSLock()
+  private var storeRevision: Int64
+  private var attributeRevision: Int64
+
+  init(storeRevision: Int64, attributeRevision: Int64) {
+    self.storeRevision = storeRevision
+    self.attributeRevision = attributeRevision
+  }
+
+  func snapshot() -> (store: Int64, attributes: Int64) {
+    lock.lock()
+    defer { lock.unlock() }
+    return (storeRevision, attributeRevision)
+  }
+
+  func install(storeRevision: Int64, attributeRevision: Int64) {
+    lock.lock()
+    self.storeRevision = storeRevision
+    self.attributeRevision = attributeRevision
+    lock.unlock()
+  }
+}
+
 private actor InstantAutomaticMutationRetryReservations {
   private var ownerCountsByMutationID: [String: Int] = [:]
 
@@ -2043,11 +2965,16 @@ public final class InstantRuntime: Sendable {
   private let liveQueryAcknowledgements = InstantLiveQueryAcknowledgementState()
   private let liveRoomPresenceState = InstantRuntimeLiveRoomPresenceState()
   private let activeRoomPresenceState = InstantRuntimeActiveRoomPresenceState()
+  private let automaticLiveConnectionTaskOwner = InstantRuntimeExactTaskOwner()
+  private let startupCookieSyncTaskOwner = InstantRuntimeExactTaskOwner()
   private let reconnectController = InstantRuntimeReconnectController()
   private let mutationDeliveryPump = InstantRuntimeMutationDeliveryPump()
+  private let explicitMutationFlushOwner = InstantExplicitMutationFlushOwner()
   private let mutationDeadlineWake = InstantRuntimeMutationDeadlineWake()
   private let automaticDeliveryClaimantID = UUID().uuidString.lowercased()
   private let automaticMutationRetryReservations = InstantAutomaticMutationRetryReservations()
+  private let storeAdoptionMetrics = InstantRuntimeStoreAdoptionMetrics()
+  private let installedStoreRevisions: InstantRuntimeInstalledStoreRevisions
 
   private init(
     configuration: InstantRuntimeConfiguration,
@@ -2055,7 +2982,9 @@ public final class InstantRuntime: Sendable {
     outbox: InstantOutbox,
     persistence: SQLitePersistenceStore,
     storageTransport: InstantStorageTransportClient?,
-    streamFileTransport: InstantStreamFileTransportClient
+    streamFileTransport: InstantStreamFileTransportClient,
+    storeRevision: Int64,
+    attributeRevision: Int64
   ) {
     self.configuration = configuration
     self.store = store
@@ -2063,6 +2992,24 @@ public final class InstantRuntime: Sendable {
     self.persistence = persistence
     self.storageTransport = storageTransport
     self.streamFileTransport = streamFileTransport
+    self.installedStoreRevisions = InstantRuntimeInstalledStoreRevisions(
+      storeRevision: storeRevision,
+      attributeRevision: attributeRevision
+    )
+  }
+
+  package func resetPersistenceCacheResidencyMetricsForTesting() async {
+    storeAdoptionMetrics.reset()
+    await persistence.resetCacheResidencyMetricsForTesting()
+  }
+
+  package func persistenceCacheResidencyMetricsForTesting() async
+    -> InstantPersistenceCacheResidencyMetrics
+  {
+    var metrics = await persistence.cacheResidencyMetricsForTesting()
+    metrics.storeSnapshotReplacementCount =
+      storeAdoptionMetrics.currentStoreSnapshotReplacementCount()
+    return metrics
   }
 
   public static func bootstrap(configuration: InstantRuntimeConfiguration) async throws -> Self {
@@ -2118,11 +3065,18 @@ public final class InstantRuntime: Sendable {
       let validationStopwatch = startupTrace.stopwatch()
       try validateEndpoints(configuration)
       try validateInitialAttributes(configuration.initialAttributes)
+      if !configuration.initialAttributes.isEmpty {
+        try configuration.deferredValueResidency.validate(
+          attributes: configuration.initialAttributes
+        )
+      }
       startupTrace.completed("runtime.validation", since: validationStopwatch)
 
       let persistence = try SQLitePersistenceStore(
         fileURL: configuration.persistenceURL,
-        startupTrace: startupTrace
+        startupTrace: startupTrace,
+        deferredValueResidency: configuration.deferredValueResidency,
+        declaredAttributes: configuration.initialAttributes
       )
       configuration.actorHopRecorder?.record(.persistence)
       let bootstrapPruningResult = try await persistence.bootstrap(
@@ -2147,7 +3101,10 @@ public final class InstantRuntime: Sendable {
       configuration.actorHopRecorder?.record(.persistence)
       var state = try await persistence.loadCompactState()
       let storeMaterializationStopwatch = startupTrace.stopwatch()
-      let store = InstantStore(snapshot: state.snapshot.store)
+      let store = InstantStore(
+        snapshot: state.snapshot.store,
+        deferredValueResidency: configuration.deferredValueResidency
+      )
       let outbox = InstantOutbox(mutations: state.snapshot.outbox)
       startupTrace.completed(
         "runtime.store-materialization",
@@ -2189,27 +3146,39 @@ public final class InstantRuntime: Sendable {
             storeSnapshot,
             replacing: previousForDiff,
             expectedStoreRevision: state.storeRevision,
-            expectedOutboxRevision: state.outboxRevision
+            expectedOutboxRevision: state.outboxRevision,
+            expectedAttributeRevision: state.attributeRevision
           )
           if didSave {
             didChangeAttributes = true
+            let triplesChanged = storeSnapshot.triples != previousForDiff.triples
+            let attributesChanged = storeSnapshot.attributes != previousForDiff.attributes
             state = InstantPersistenceState(
               snapshot: InstantPersistenceSnapshot(
                 store: storeSnapshot,
                 outbox: state.snapshot.outbox
               ),
-              storeRevision: state.storeRevision + 1,
-              outboxRevision: state.outboxRevision
+              storeRevision: state.storeRevision + (triplesChanged ? 1 : 0),
+              outboxRevision: state.outboxRevision,
+              attributeRevision: state.attributeRevision + (attributesChanged ? 1 : 0),
+              queryResultRevision: state.queryResultRevision
             )
             didBootstrapAttributes = true
             break
           }
           configuration.actorHopRecorder?.record(.persistence)
-          state = try await persistence.loadCompactState()
-          configuration.actorHopRecorder?.record(.store)
-          // A CAS miss reloads a full SQLite snapshot. Empty is authoritative when another
-          // runtime deleted the final row; never use emptiness as a proxy for compactness.
-          await store.replaceSnapshot(state.snapshot.store)
+          let reloaded = try await persistence.loadStateWithSource()
+          state = reloaded.state
+          switch reloaded.storeAdoption {
+          case .none:
+            break
+          case let .attributes(attributes):
+            configuration.actorHopRecorder?.record(.store)
+            _ = await store.replaceAttributes(attributes)
+          case let .snapshot(snapshot):
+            configuration.actorHopRecorder?.record(.store)
+            await store.replaceSnapshot(snapshot)
+          }
           configuration.actorHopRecorder?.record(.outbox)
           await outbox.replace(with: state.snapshot.outbox)
         }
@@ -2244,7 +3213,9 @@ public final class InstantRuntime: Sendable {
         outbox: outbox,
         persistence: persistence,
         storageTransport: storageTransport,
-        streamFileTransport: streamFileTransport
+        streamFileTransport: streamFileTransport,
+        storeRevision: state.storeRevision,
+        attributeRevision: state.attributeRevision
       )
 
       do {
@@ -2256,8 +3227,14 @@ public final class InstantRuntime: Sendable {
         )
         if !pruning.result.removedQueryKeys.isEmpty {
           state = pruning.state
-          configuration.actorHopRecorder?.record(.store)
-          await store.replaceSnapshot(state.snapshot.store)
+          if pruning.result.removedOrphanedTripleCount > 0 {
+            configuration.actorHopRecorder?.record(.store)
+            await store.replaceSnapshot(state.snapshot.store)
+            runtime.installedStoreRevisions.install(
+              storeRevision: state.storeRevision,
+              attributeRevision: state.attributeRevision
+            )
+          }
           configuration.actorHopRecorder?.record(.outbox)
           await outbox.replace(with: state.snapshot.outbox)
           InstantDiagnostics.shared.record(
@@ -2286,9 +3263,7 @@ public final class InstantRuntime: Sendable {
         )
       }
 
-      Task(priority: .utility) {
-        await runtime.syncUserCookieOnStartup()
-      }
+      runtime.startUserCookieSyncOnStartup()
       runtime.startAutomaticLiveConnectionIfNeeded()
       startupTrace.completed(
         "runtime.services-scheduled",
@@ -2465,9 +3440,9 @@ public final class InstantRuntime: Sendable {
       enteredOperationGate = false
       // Local-first (Instant JS pushOps): return after durable optimistic commit.
       // Do not await websocket delivery here — that couples every increment/send to
-      // RTT and makes onOptimisticCommit fire only after the wire send. Kick
-      // delivery on a free-standing task (same helper used when offline/connecting).
-      startLiveMutationDeliveryIfNeeded()
+      // RTT and makes onOptimisticCommit fire only after the wire send. Admit the
+      // work to the one owned delivery pump (the same helper used while connecting).
+      await startLiveMutationDeliveryIfNeeded()
       InstantDiagnostics.shared.record(
         .debug,
         subsystem: "instant-swift-data-core",
@@ -2643,6 +3618,7 @@ public final class InstantRuntime: Sendable {
         else { return nil }
         return predecessor
       }
+      let deferredTriples = try await deferredValuesForPreparing(transaction)
       let prepared: PreparedStoreMutation
       if let supersededTail, let rollback = supersededTail.rollbackTransaction {
         // The current store includes the predecessor overlay. Peel exactly that
@@ -2651,10 +3627,14 @@ public final class InstantRuntime: Sendable {
         // directly, regardless of how many earlier ids alias this survivor.
         prepared = try await store.prepare(
           peelingOverlays: [rollback],
-          thenApplying: transaction
+          thenApplying: transaction,
+          hydratingDeferredValues: deferredTriples
         )
       } else {
-        prepared = try await store.prepareCurrent(transaction)
+        prepared = try await store.prepareCurrent(
+          transaction,
+          hydratingDeferredValues: deferredTriples
+        )
       }
       pendingMutation.rollbackTransaction = Self.rollbackTransaction(
         mutationID: pendingMutation.id,
@@ -2674,17 +3654,58 @@ public final class InstantRuntime: Sendable {
         pendingMutation: pendingMutation,
         supersedingImmediateTail: supersededTail,
         expectedStoreRevision: state.storeRevision,
+        expectedAttributeRevision: state.attributeRevision,
         expectedOutboxRevision: state.outboxRevision
       )
       if didSave {
+        await configuration.onLocalMutationPersistedBeforeStorePublicationForTesting?(
+          transaction.id
+        )
         recordActorHop(.store)
         let committed = await store.commitAndPublish(prepared)
+        installedStoreRevisions.install(
+          storeRevision: state.storeRevision + 1,
+          attributeRevision: state.attributeRevision
+        )
         _ = try? await publishConnectionStatusWithGateHeld()
         return committed.result
       }
     }
 
     throw transactionChangedDuringPersistence(id: transaction.id)
+  }
+
+  private func deferredValuesForPreparing(
+    _ transaction: InstantStoreTransaction
+  ) async throws -> [InstantTriple] {
+    try await deferredValuesForPreparing([transaction])
+  }
+
+  private func deferredValuesForPreparing(
+    _ transactions: [InstantStoreTransaction]
+  ) async throws -> [InstantTriple] {
+    // Upstream applies deep merges and optimistic rebases against one complete store. Load only
+    // the entities these transactions can touch into the throwaway prepared indexes; commit strips
+    // the configured payload attributes before installing the next hot store.
+    let policy = configuration.deferredValueResidency
+    guard policy.isEnabled, !transactions.isEmpty else { return [] }
+    recordActorHop(.store)
+    var entityIDs: Set<String> = []
+    for transaction in transactions {
+      entityIDs.formUnion(policy.directEntityIDs(in: transaction))
+      entityIDs.formUnion(try await store.resolvedMutationEntityIDs(in: transaction))
+      if policy.requiresEntityDiscovery(in: transaction),
+        let preview = try? await store.prepareCurrent(transaction)
+      {
+        entityIDs.formUnion(preview.result.changedEntityIDs)
+      }
+    }
+    guard !entityIDs.isEmpty else { return [] }
+    recordActorHop(.persistence)
+    return try await persistence.loadDeferredValues(
+      attributeIDs: policy.attributeIDs,
+      entityIDs: entityIDs
+    )
   }
 
   private static func monotonicOutboxTimestamp(
@@ -2821,286 +3842,480 @@ public final class InstantRuntime: Sendable {
       )
     }
     let transactionID = transaction.id.trimmingCharacters(in: .whitespacesAndNewlines)
-
-    var baseTransaction = transaction
-    baseTransaction.id = transactionID.isEmpty ? processedTransactionID : transactionID
+    var baseAuthoritativeTransaction = transaction
+    baseAuthoritativeTransaction.id = transactionID.isEmpty
+      ? processedTransactionID
+      : transactionID
     let metadataUpdatedAt = receivedAt ?? configuration.now()
     let confirmingMutationID = confirmingMutationID?
       .trimmingCharacters(in: .whitespacesAndNewlines)
       .nilIfEmpty
     let persistedLiveQueryResults = liveQueryResultReplacements.map {
-      InstantPersistedLiveQueryResult(
-        replacement: $0,
-        updatedAt: metadataUpdatedAt
-      )
+      InstantPersistedLiveQueryResult(replacement: $0, updatedAt: metadataUpdatedAt)
     }
 
-    for _ in 0..<5 {
+    applyAttempts: for _ in 0..<5 {
       recordActorHop(.persistence)
-      let state = try await loadStateWithDurableOutboxSynchronizingStore()
-      // Legacy pre-overlay rows (1.1.x / early 1.2) can sit in the outbox as
-      // `failed` with neither optimisticOverlayState nor rollbackTransaction.
-      // Refusing *retry/discard* without guessing their local effect is correct
-      // (#134). Refusing every *server apply* is not: live add-query-ok and
-      // refresh-ok go through this path, and one poison row then kills the
-      // receive loop forever (recipes-v3 `773e50f4-…`, Scribe indefinite
-      // loading). Failed rows already skip optimistic protection and rebase;
-      // isolate them and keep applying server truth. Still fail closed for
-      // non-failed unknown rows (pending / unproven) whose overlay may still
-      // be live in the cache.
-      let isolatedFailedUnknownIDs = state.snapshot.outbox.compactMap { mutation -> String? in
-        guard mutation.status == .failed,
-          mutation.optimisticOverlayState == nil,
-          mutation.rollbackTransaction == nil
-        else { return nil }
-        return mutation.id
-      }
-      if !isolatedFailedUnknownIDs.isEmpty {
-        InstantDiagnostics.shared.record(
-          .error,
-          subsystem: "instant-swift-data-core",
-          category: "outbox",
-          event: "outbox.mutation.legacy-unknown-isolated",
-          message:
-            "Isolated failed mutation(s) that predate durable optimistic-overlay metadata; server apply continues.",
-          metadata: [
-            "mutationCount": String(isolatedFailedUnknownIDs.count),
-            "mutationIDs": isolatedFailedUnknownIDs.joined(separator: ","),
-            "operation": "apply server transaction",
-          ]
-        )
-      }
-      if let unknownMutation = state.snapshot.outbox.first(where: {
-        $0.status != .failed
-          && ($0.status != .confirmed || !$0.provesServerAcceptance)
-          && $0.optimisticOverlayState == nil
-          && $0.rollbackTransaction == nil
-      }) {
-        let error = unknownOptimisticOverlayState(
-          id: unknownMutation.id,
-          operation: "apply server transaction"
-        )
-        reportIssue("\(error)")
-        throw error
-      }
-      var transaction = baseTransaction
+      let compactState = try await loadCompactStateSynchronizingStore()
+      var authoritativeTransaction = baseAuthoritativeTransaction
       if !liveQueryResultReplacements.isEmpty {
         recordActorHop(.persistence)
-        let retractions = try await persistence.liveQueryReplacementRetractions(
-          for: liveQueryResultReplacements
+        guard let retractions = try await persistence.liveQueryReplacementRetractions(
+          for: liveQueryResultReplacements,
+          expectedQueryResultRevision: compactState.queryResultRevision
+        ) else { continue applyAttempts }
+        guard let protectedRetractions = try await persistence.protectingServerRetractions(
+          retractions,
+          expectedOutboxRevision: compactState.outboxRevision
+        ) else { continue applyAttempts }
+        authoritativeTransaction.operations.insert(contentsOf: protectedRetractions, at: 0)
+      }
+      let footprint = Self.serverApplyFootprint(
+        operations: authoritativeTransaction.operations
+      )
+      let changedMergedAttributes: [InstantAttribute]
+      if attributesToMerge.isEmpty {
+        changedMergedAttributes = []
+      } else {
+        let currentAttributes = compactState.snapshot.store.attributes
+        let previousAttributes = Dictionary(
+          uniqueKeysWithValues: currentAttributes.map { ($0.id, $0) }
         )
-        // Empty/narrow server results must not retract triples still owned by a
-        // pending optimistic mutation. Upstream keeps a separate server store and
-        // reapplies the overlay; Swift materializes one store, so without this
-        // guard a blank live refresh can wipe local transcriptions while the
-        // outbox still believes they are durable (Scribe blank-detail 2026-08-04).
-        let protectedEntityIDs = Self.pendingOptimisticEntityIDs(
-          in: state.snapshot.outbox
-        )
-        let protectedRetractions = retractions.filter { operation in
-          guard case let .retract(triple) = operation else { return true }
-          return !protectedEntityIDs.contains(triple.entityID)
+        var mergedAttributeStore = AttributeStore(attributes: currentAttributes)
+        mergedAttributeStore.merge(attributesToMerge)
+        changedMergedAttributes = mergedAttributeStore.attributes.filter {
+          previousAttributes[$0.id] != $0
         }
-        transaction.operations.insert(contentsOf: protectedRetractions, at: 0)
       }
-      let prunedOutbox = InstantOutbox.pruningConfirmed(
-        through: processedTransactionID,
-        in: state.snapshot.outbox
-      )
-      let confirmation = confirmingMutationID.flatMap {
-        InstantOutbox.confirming(id: $0, in: prunedOutbox)
-      }
-      let outboxSnapshot = confirmation?.mutations ?? prunedOutbox
-      let outboxChanged = outboxSnapshot != state.snapshot.outbox
-      var storeSnapshot = await authoritativeStoreSnapshot(from: state)
-      let previousStoreSnapshot = storeSnapshot
-      let previousPersistenceSnapshot = InstantPersistenceSnapshot(
-        store: previousStoreSnapshot,
-        outbox: state.snapshot.outbox
-      )
-      let mergedAttributeCount = mergeLiveRefreshAttributes(
-        attributesToMerge,
-        into: &storeSnapshot
-      )
-      let storeAttributesChanged = mergedAttributeCount > 0
-      if transaction.operations.isEmpty {
-        recordActorHop(.persistence)
-        let didSave =
-          if !persistedLiveQueryResults.isEmpty {
-            try await persistence.saveLiveRefresh(
-              InstantPersistenceSnapshot(store: storeSnapshot, outbox: outboxSnapshot),
-              replacing: previousPersistenceSnapshot,
-              queryResults: persistedLiveQueryResults,
-              storeChanged: storeAttributesChanged,
-              outboxChanged: outboxChanged,
-              metadataKey: processedTransactionIDMetadataKey,
-              metadataValue: processedTransactionID,
-              metadataUpdatedAt: metadataUpdatedAt,
-              expectedStoreRevision: state.storeRevision,
-              expectedOutboxRevision: state.outboxRevision
+      let mergedAttributeCount = changedMergedAttributes.count
+      let planID = "server-apply-\(configuration.makeID())"
+      let plan: InstantServerApplyPlan
+      normalization: while true {
+        let load = try await persistence.beginServerApplyPlan(
+          id: planID,
+          footprint: footprint,
+          hasServerOperations: !authoritativeTransaction.operations.isEmpty,
+          processedTransactionID: processedTransactionID,
+          confirmingMutationID: confirmingMutationID
+        )
+        switch load {
+        case let .ready(readyPlan):
+          plan = readyPlan
+          break normalization
+
+        case let .normalizationRequired(firstMutationID):
+          let normalized = try await persistence.normalizeOptimisticEffectMetadata(
+            startingAtMutationID: firstMutationID
+          )
+          if !normalized.normalizedMutationIDs.isEmpty { continue normalization }
+          if normalized.blockedMutationID == firstMutationID,
+            try await persistence.isolateLegacyFailedUnknownServerApplyMutation(
+              id: firstMutationID
             )
-          } else if storeAttributesChanged, outboxChanged {
-            try await persistence.saveSnapshot(
-              InstantPersistenceSnapshot(store: storeSnapshot, outbox: outboxSnapshot),
-              replacing: previousPersistenceSnapshot,
-              metadataKey: processedTransactionIDMetadataKey,
-              metadataValue: processedTransactionID,
-              metadataUpdatedAt: metadataUpdatedAt,
-              expectedStoreRevision: state.storeRevision,
-              expectedOutboxRevision: state.outboxRevision
-            )
-          } else if storeAttributesChanged {
-            try await persistence.saveStoreSnapshot(
-              storeSnapshot,
-              replacing: previousStoreSnapshot,
-              metadataKey: processedTransactionIDMetadataKey,
-              metadataValue: processedTransactionID,
-              metadataUpdatedAt: metadataUpdatedAt,
-              expectedStoreRevision: state.storeRevision,
-              expectedOutboxRevision: state.outboxRevision
-            )
-          } else if outboxChanged {
-            try await persistence.saveOutbox(
-              outboxSnapshot,
-              replacing: state.snapshot.outbox,
-              metadataKey: processedTransactionIDMetadataKey,
-              metadataValue: processedTransactionID,
-              metadataUpdatedAt: metadataUpdatedAt,
-              expectedStoreRevision: state.storeRevision,
-              expectedOutboxRevision: state.outboxRevision
-            )
-          } else {
-            try await persistence.saveMetadataValue(
-              processedTransactionID,
-              key: processedTransactionIDMetadataKey,
-              updatedAt: metadataUpdatedAt,
-              expectedStoreRevision: state.storeRevision,
-              expectedOutboxRevision: state.outboxRevision
-            )
+          {
+            continue normalization
           }
-        if didSave {
-          recordActorHop(.store)
-          await store.replaceSnapshot(storeSnapshot)
+          let error = unknownOptimisticOverlayState(
+            id: normalized.blockedMutationID ?? firstMutationID,
+            operation: "apply server transaction"
+          )
+          reportIssue("\(error)")
+          throw error
+        }
+      }
+      guard
+        plan.expectedStoreRevision == compactState.storeRevision,
+        plan.expectedAttributeRevision == compactState.attributeRevision,
+        plan.expectedOutboxRevision == compactState.outboxRevision,
+        plan.expectedQueryResultRevision == compactState.queryResultRevision
+      else {
+        try? await persistence.finishServerApplyPlan(id: plan.id)
+        continue applyAttempts
+      }
+
+      do {
+        // Upstream Reactor rebuilds a server store and then applies optimistic
+        // mutations in creation order. Swift's one-store representation first
+        // peels only the indexed connected components in reverse order. The
+        // durable bodies are copied to SQLite temp staging one bounded page at
+        // a time; no component-sized Swift array exists.
+        recordActorHop(.store)
+        var prepared = try await store.prepare(
+          peelingOverlays: [],
+          thenApplying: InstantStoreTransaction(
+            id: "\(authoritativeTransaction.id)-bounded-base",
+            operations: []
+          ),
+          mergingAttributes: attributesToMerge
+        )
+        var changedEntityIDs: Set<String> = []
+        var reversePosition: InstantOutboxDeliveryPosition?
+        var stalePlan = false
+        while true {
+          recordActorHop(.persistence)
+          let page = try await persistence.loadServerApplyBodyPage(
+            planID: plan.id,
+            direction: .reverse,
+            after: reversePosition
+          )
+          if page.isStale {
+            stalePlan = true
+            break
+          }
+          guard !page.entries.isEmpty else { break }
+          for entry in page.entries where entry.isComponentBody {
+            let mutation = entry.mutation
+            guard mutation.optimisticOverlayState != .removed else { continue }
+            guard let rollback = mutation.rollbackTransaction else {
+              let effect = InstantOptimisticEffectFootprint.normalized(for: mutation)
+              guard effect?.entityIDs.isEmpty == true, effect?.isGlobal == false else {
+                throw InstantError(
+                  code: .persistenceFailed,
+                  operation: "apply server transaction",
+                  localID: mutation.id,
+                  message:
+                    "Active optimistic mutation '\(mutation.id)' has no durable rollback.",
+                  recovery:
+                    "Preserve the row and run an authoritative recovery instead of guessing its inverse."
+                )
+              }
+              continue
+            }
+            prepared = try await hydrateDeferredValuesForServerApply(
+              [rollback],
+              over: prepared,
+              planID: plan.id
+            )
+            let peeled = try await store.prepare(rollback, applyingTo: prepared)
+            changedEntityIDs.formUnion(peeled.result.changedEntityIDs)
+            prepared = peeled
+          }
+          reversePosition = page.nextPosition
+        }
+        if stalePlan {
+          try? await persistence.finishServerApplyPlan(id: plan.id)
+          continue applyAttempts
+        }
+
+        var authoritativeCoverage: InstantAuthoritativeWriteCoverage?
+        if !authoritativeTransaction.operations.isEmpty {
+          prepared = try await hydrateDeferredValuesForServerApply(
+            [authoritativeTransaction],
+            over: prepared,
+            planID: plan.id
+          )
+          let appliedServer = try await store.prepare(
+            authoritativeTransaction,
+            applyingTo: prepared
+          )
+          changedEntityIDs.formUnion(appliedServer.result.changedEntityIDs)
+          authoritativeCoverage = InstantAuthoritativeWriteCoverage(
+            operations: authoritativeTransaction.operations,
+            attributes: appliedServer.attributes,
+            previousChangedEntityTriples: appliedServer.previousChangedEntityTriples,
+            changedEntityTriples: appliedServer.changedEntityTriples
+          )
+          prepared = appliedServer
+        }
+
+        var confirmedMutation: PendingMutation?
+        var forwardPosition: InstantOutboxDeliveryPosition?
+        while true {
+          recordActorHop(.persistence)
+          let page = try await persistence.loadServerApplyBodyPage(
+            planID: plan.id,
+            direction: .forward,
+            after: forwardPosition
+          )
+          if page.isStale {
+            stalePlan = true
+            break
+          }
+          guard !page.entries.isEmpty else { break }
+          var dispositions: [InstantServerApplyStagedDisposition] = []
+          dispositions.reserveCapacity(page.entries.count)
+          for entry in page.entries {
+            var mutation = entry.mutation
+            if entry.shouldPruneAtWatermark {
+              dispositions.append(.remove(mutationID: mutation.id))
+              continue
+            }
+            if entry.shouldConfirm {
+              mutation.status = .confirmed
+              mutation.failureMessage = nil
+              mutation.failure = nil
+              mutation.confirmationSource = .manual
+              confirmedMutation = mutation
+            }
+            guard entry.isComponentBody else {
+              dispositions.append(.update(mutation))
+              continue
+            }
+            if mutation.status == .failed {
+              mutation.rollbackTransaction = nil
+              mutation.optimisticOverlayState = .removed
+              dispositions.append(.update(mutation))
+              continue
+            }
+            if mutation.status == .confirmed,
+              mutation.confirmationSource == .serverTransport,
+              mutation.serverTransactionID == nil,
+              authoritativeCoverage?.covers(mutation.transaction.operations) == true
+            {
+              dispositions.append(.remove(mutationID: mutation.id))
+              continue
+            }
+
+            let newestServerTimestamp =
+              prepared.indexes.newestTransactionTimeMilliseconds ?? 0
+            let optimisticTimestamp = InstantTimestamp(
+              milliseconds: newestServerTimestamp == Int64.max
+                ? newestServerTimestamp
+                : newestServerTimestamp + 1
+            )
+            let operations = Self.rebaseDurableTransaction(
+              in: &mutation,
+              at: optimisticTimestamp
+            )
+            mutation.rollbackTransaction = nil
+            mutation.optimisticOverlayState = .applied
+            if !operations.isEmpty {
+              let replayTransaction = InstantStoreTransaction(
+                id: mutation.transaction.id,
+                operations: operations
+              )
+              prepared = try await hydrateDeferredValuesForServerApply(
+                [replayTransaction],
+                over: prepared,
+                planID: plan.id
+              )
+              let replay = try await store.prepare(
+                replayTransaction,
+                applyingTo: prepared
+              )
+              changedEntityIDs.formUnion(replay.result.changedEntityIDs)
+              mutation.rollbackTransaction = Self.rollbackTransaction(
+                mutationID: mutation.id,
+                prepared: replay
+              )
+              prepared = replay
+            }
+            dispositions.append(.update(mutation))
+          }
+          try await persistence.stageServerApplyBodyPage(
+            planID: plan.id,
+            dispositions: dispositions
+          )
+          forwardPosition = page.nextPosition
+        }
+        if stalePlan {
+          try? await persistence.finishServerApplyPlan(id: plan.id)
+          continue applyAttempts
+        }
+
+        let preparedForCommit = PreparedStoreMutation(
+          result: InstantStoreMutationResult(
+            transactionID: authoritativeTransaction.id,
+            changedEntityIDs: changedEntityIDs,
+            tripleCount: prepared.indexes.tripleCount,
+            emissions: []
+          ),
+          sequence: prepared.sequence,
+          attributes: prepared.attributes,
+          indexes: prepared.indexes
+        )
+        await configuration.onServerApplyPreparedBeforeCommitForTesting?(plan.id)
+        recordActorHop(.persistence)
+        guard let commit = try await persistence.commitServerApplyPlan(
+          planID: plan.id,
+          changedEntityTriples: preparedForCommit.changedEntityTriples,
+          mergingAttributes: changedMergedAttributes,
+          queryResults: persistedLiveQueryResults,
+          storeChanged: !authoritativeTransaction.operations.isEmpty || mergedAttributeCount > 0,
+          metadataKey: processedTransactionIDMetadataKey,
+          metadataValue: processedTransactionID,
+          metadataUpdatedAt: metadataUpdatedAt
+        ) else {
+          try? await persistence.finishServerApplyPlan(id: plan.id)
+          continue applyAttempts
+        }
+
+        recordActorHop(.store)
+        let changesMaterializedStore =
+          !authoritativeTransaction.operations.isEmpty || mergedAttributeCount > 0
+        let committedResult: InstantStoreMutationResult
+        if changesMaterializedStore {
+          await store.installLiveQueryPageInfo(
+            liveQueryResultReplacements,
+            publishing: false
+          )
+          committedResult = await store.commitAndPublish(preparedForCommit).result
+          installedStoreRevisions.install(
+            storeRevision: commit.expectedStoreRevision + (commit.didChangeStore ? 1 : 0),
+            attributeRevision: commit.expectedAttributeRevision
+              + (commit.didChangeAttributes ? 1 : 0)
+          )
+        } else {
           await store.installLiveQueryPageInfo(
             liveQueryResultReplacements,
             publishing: true
           )
-          recordActorHop(.outbox)
-          await outbox.replace(with: outboxSnapshot)
-          _ = try? await publishConnectionStatusWithGateHeld()
-          let application = InstantStoreMutationResult(
-            transactionID: transaction.id,
-            changedEntityIDs: [],
-            tripleCount: storeSnapshot.triples.count,
-            emissions: []
-          ).serverApplicationResult(
-            processedTransactionID: processedTransactionID,
-            pendingMutations: outboxSnapshot
-          )
-          if let mutation = confirmation?.mutation {
-            await publishMutationLifecycle(mutation)
-          }
-          return InstantAppliedServerTransaction(
-            transaction: transaction,
-            application: application,
-            confirmedMutation: confirmation?.mutation,
-            mergedAttributeCount: mergedAttributeCount
-          )
+          committedResult = preparedForCommit.result
         }
-        continue
-      }
 
-      // Upstream keeps the authoritative query store separate from optimistic mutations, then
-      // reapplies every still-pending mutation after a server refresh. Swift persists one
-      // materialized store, so first remove the durable optimistic layers in reverse order.
-      // This makes the new rollback image reflect the latest server value instead of the value
-      // that happened to exist when the local mutation was originally created.
-      //
-      // One InstantStore call peels every durable overlay then applies the
-      // server transaction on uniquely-owned TripleIndexes. The old shape
-      // rebuilt indexes from InstantStoreSnapshot.triples once per pending
-      // mutation (and paid Dictionary CoW on every actor hop) — the dominant
-      // Mac Scribe live-apply CPU stack (#044). Upstream mutates eav in place
-      // via store.transact / addTriple.
-      recordActorHop(.store)
-      // Dual-residency / P2.1: peel+apply on the hot TripleIndexes (matches upstream
-      // Reactor store.transact). Do not rebuild indexes from persistence snapshot triples.
-      let preparedServer = try await store.prepare(
-        peelingOverlays: Self.overlayRollbackTransactions(in: state.snapshot.outbox),
-        thenApplying: transaction,
-        mergingAttributes: attributesToMerge
-      )
-      let rebase = try await rebaseLocalMutations(
-        outboxSnapshot,
-        over: preparedServer,
-        authoritativeOperations: transaction.operations
-      )
-      let prepared = rebase.prepared
-      let rebasedOutboxSnapshot = rebase.mutations
-      let rebasedOutboxChanged = rebasedOutboxSnapshot != state.snapshot.outbox
-      recordActorHop(.persistence)
-      let didSave =
-        if !persistedLiveQueryResults.isEmpty {
-          try await persistence.saveLiveRefresh(
-            InstantPersistenceSnapshot(store: prepared.snapshot, outbox: rebasedOutboxSnapshot),
-            replacing: previousPersistenceSnapshot,
-            queryResults: persistedLiveQueryResults,
-            storeChanged: true,
-            outboxChanged: rebasedOutboxChanged,
-            metadataKey: processedTransactionIDMetadataKey,
-            metadataValue: processedTransactionID,
-            metadataUpdatedAt: metadataUpdatedAt,
-            expectedStoreRevision: state.storeRevision,
-            expectedOutboxRevision: state.outboxRevision
+        var patchPosition: InstantOutboxDeliveryPosition?
+        while true {
+          recordActorHop(.persistence)
+          let patch = try await persistence.loadServerApplyResidentPatchPage(
+            planID: plan.id,
+            after: patchPosition
           )
-        } else if rebasedOutboxChanged {
-          try await persistence.saveSnapshot(
-            InstantPersistenceSnapshot(store: prepared.snapshot, outbox: rebasedOutboxSnapshot),
-            replacing: previousPersistenceSnapshot,
-            metadataKey: processedTransactionIDMetadataKey,
-            metadataValue: processedTransactionID,
-            metadataUpdatedAt: metadataUpdatedAt,
-            expectedStoreRevision: state.storeRevision,
-            expectedOutboxRevision: state.outboxRevision
-          )
-        } else {
-          try await persistence.saveStoreSnapshot(
-            prepared.snapshot,
-            replacing: previousStoreSnapshot,
-            metadataKey: processedTransactionIDMetadataKey,
-            metadataValue: processedTransactionID,
-            metadataUpdatedAt: metadataUpdatedAt,
-            expectedStoreRevision: state.storeRevision,
-            expectedOutboxRevision: state.outboxRevision
-          )
+          guard !patch.removedMutationIDs.isEmpty || !patch.replacementMutations.isEmpty
+          else { break }
+          recordActorHop(.outbox)
+          for mutationID in patch.removedMutationIDs {
+            await outbox.remove(id: mutationID)
+          }
+          for mutation in patch.replacementMutations {
+            await outbox.replaceIfPresent(mutation)
+          }
+          patchPosition = patch.nextPosition
         }
-      if didSave {
-        recordActorHop(.store)
-        await store.installLiveQueryPageInfo(
-          liveQueryResultReplacements,
-          publishing: false
+        try await persistence.finishServerApplyPlan(id: plan.id)
+        _ = try? await publishConnectionStatusWithGateHeld(
+          pendingMutationCount: commit.pendingMutationCount
         )
-        let committed = await store.commitAndPublish(prepared)
-        recordActorHop(.outbox)
-        await outbox.replace(with: rebasedOutboxSnapshot)
-        _ = try? await publishConnectionStatusWithGateHeld()
-        let application = committed.result.serverApplicationResult(
-          processedTransactionID: processedTransactionID,
-          pendingMutations: rebasedOutboxSnapshot
-        )
-        if let mutation = confirmation?.mutation {
-          await publishMutationLifecycle(mutation)
+        if let confirmedMutation {
+          await publishMutationLifecycle(confirmedMutation)
         }
+        let application = InstantServerTransactionApplicationResult(
+          mutation: committedResult,
+          syncState: InstantSyncState(processedTransactionID: processedTransactionID),
+          pendingMutationCount: commit.pendingMutationCount
+        )
         return InstantAppliedServerTransaction(
-          transaction: transaction,
+          transaction: authoritativeTransaction,
           application: application,
-          confirmedMutation: confirmation?.mutation,
+          confirmedMutation: confirmedMutation,
           mergedAttributeCount: mergedAttributeCount
         )
+      } catch {
+        try? await persistence.finishServerApplyPlan(id: plan.id)
+        throw error
       }
     }
 
     throw serverTransactionChangedDuringPersistence(id: processedTransactionID)
+  }
+
+  private static func serverApplyFootprint(
+    operations: [InstantTripleOperation]
+  ) -> InstantServerApplyFootprint {
+    var entityIDs: Set<String> = []
+    var isGlobal = false
+    for operation in operations {
+      switch operation {
+      case let .merge(triple), let .insert(triple), let .retract(triple):
+        entityIDs.insert(triple.entityID)
+        switch triple.value {
+        case let .ref(targetEntityID):
+          entityIDs.insert(targetEntityID)
+        case .lookupRef:
+          isGlobal = true
+        case .null, .string, .number, .bool, .date, .json:
+          break
+        }
+
+      case let .deleteEntity(entityID), let .deleteEntityInNamespace(entityID, _),
+        let .requireEntityMissing(entityID, _), let .requireEntityExists(entityID, _):
+        entityIDs.insert(entityID)
+
+      case let .requireTripleExists(entityID, _, value):
+        entityIDs.insert(entityID)
+        if case let .ref(targetEntityID) = value {
+          entityIDs.insert(targetEntityID)
+        } else if case .lookupRef = value {
+          isGlobal = true
+        }
+
+      case .mergeByLookup, .insertByLookup, .retractByLookup,
+        .deleteEntityByLookup, .requireEntityMissingByLookup,
+        .requireEntityExistsByLookup, .ruleParams, .ruleParamsByLookup:
+        isGlobal = true
+      }
+    }
+    return InstantServerApplyFootprint(entityIDs: entityIDs, isGlobal: isGlobal)
+  }
+
+  private func hydrateDeferredValuesForServerApply(
+    _ transactions: [InstantStoreTransaction],
+    over prepared: PreparedStoreMutation,
+    planID: String
+  ) async throws -> PreparedStoreMutation {
+    let policy = configuration.deferredValueResidency
+    guard policy.isEnabled, !transactions.isEmpty else { return prepared }
+    var entityIDs: Set<String> = []
+    for transaction in transactions {
+      entityIDs.formUnion(policy.directEntityIDs(in: transaction))
+      for operation in transaction.operations {
+        for lookup in Self.serverApplyLookupRefs(in: operation) {
+          guard let lookupAttribute = prepared.attributes.lookupAttribute(id: lookup.attributeID)
+          else { continue }
+          entityIDs.formUnion(
+            prepared.indexes.entityIDs(
+              matching: lookup,
+              lookupAttribute: lookupAttribute
+            )
+          )
+        }
+      }
+      if policy.requiresEntityDiscovery(in: transaction) {
+        let preview = try await store.prepare(transaction, applyingTo: prepared)
+        entityIDs.formUnion(preview.result.changedEntityIDs)
+      }
+    }
+    guard !entityIDs.isEmpty else { return prepared }
+    recordActorHop(.persistence)
+    let deferredTriples = try await persistence.loadDeferredValues(
+      attributeIDs: policy.attributeIDs,
+      entityIDs: entityIDs
+    )
+    guard !deferredTriples.isEmpty else { return prepared }
+    recordActorHop(.store)
+    return try await store.prepare(
+      InstantStoreTransaction(
+        id: "\(planID)-deferred-hydration",
+        operations: deferredTriples.map(InstantTripleOperation.insert)
+      ),
+      applyingTo: prepared
+    )
+  }
+
+  private static func serverApplyLookupRefs(
+    in operation: InstantTripleOperation
+  ) -> [InstantLookupRef] {
+    switch operation {
+    case let .mergeByLookup(entity, _, value, _, _),
+      let .insertByLookup(entity, _, value, _, _),
+      let .retractByLookup(entity, _, value, _, _):
+      var lookups = [entity]
+      if case let .lookupRef(valueLookup) = value { lookups.append(valueLookup) }
+      return lookups
+    case let .deleteEntityByLookup(entity),
+      let .requireEntityMissingByLookup(entity, _),
+      let .requireEntityExistsByLookup(entity, _),
+      let .ruleParamsByLookup(entity, _, _):
+      return [entity]
+    case let .merge(triple), let .insert(triple), let .retract(triple):
+      if case let .lookupRef(lookup) = triple.value { return [lookup] }
+      return []
+    case let .requireTripleExists(_, _, value):
+      if case let .lookupRef(lookup) = value { return [lookup] }
+      return []
+    case .requireEntityMissing, .requireEntityExists,
+      .deleteEntity, .deleteEntityInNamespace, .ruleParams:
+      return []
+    }
   }
 
   @discardableResult
@@ -3206,6 +4421,9 @@ public final class InstantRuntime: Sendable {
         id: id,
         serverTransactionID: serverTransactionID
       )
+      await scheduleLiveMutationDeadlineWake(
+        at: result.nextClaimDeadlineMilliseconds
+      )
       await leaveOperationGate()
       let diagnosticLevel: InstantDiagnosticLevel
       let diagnosticEvent: String
@@ -3254,7 +4472,12 @@ public final class InstantRuntime: Sendable {
   private func performAcceptMutationIfPresent(
     id: String,
     serverTransactionID: String
-  ) async throws -> (mutation: PendingMutation?, pendingMutationCount: Int, didChange: Bool) {
+  ) async throws -> (
+    mutation: PendingMutation?,
+    pendingMutationCount: Int,
+    didChange: Bool,
+    nextClaimDeadlineMilliseconds: Int64?
+  ) {
     for _ in 0..<5 {
       recordActorHop(.persistence)
       let outboxRevision = try await persistence.currentOutboxRevision()
@@ -3269,7 +4492,8 @@ public final class InstantRuntime: Sendable {
         return (
           mutation: nil,
           pendingMutationCount: acceptance.pendingMutationCount,
-          didChange: false
+          didChange: false,
+          nextClaimDeadlineMilliseconds: acceptance.nextClaimDeadlineMilliseconds
         )
       }
       if acceptance.didChange {
@@ -3283,7 +4507,8 @@ public final class InstantRuntime: Sendable {
       return (
         mutation: mutation,
         pendingMutationCount: acceptance.pendingMutationCount,
-        didChange: acceptance.didChange
+        didChange: acceptance.didChange,
+        nextClaimDeadlineMilliseconds: acceptance.nextClaimDeadlineMilliseconds
       )
     }
 
@@ -3295,167 +4520,25 @@ public final class InstantRuntime: Sendable {
   ) async throws -> (mutation: PendingMutation?, pendingMutationCount: Int) {
     for _ in 0..<5 {
       recordActorHop(.persistence)
-      let state = try await loadStateWithDurableOutboxSynchronizingStore()
-      guard let update = InstantOutbox.confirming(id: id, in: state.snapshot.outbox) else {
-        return (
-          mutation: nil,
-          pendingMutationCount: state.snapshot.outbox.filter { $0.status == .pending }.count
-        )
+      let outboxRevision = try await persistence.currentOutboxRevision()
+      guard let confirmation = try await persistence.confirmOutboxMutationIfPresent(
+        id: id,
+        expectedOutboxRevision: outboxRevision
+      ) else { continue }
+      guard let mutation = confirmation.mutation else {
+        await outbox.remove(id: id)
+        return (nil, confirmation.pendingMutationCount)
       }
-      recordActorHop(.persistence)
-      let didSave = try await persistence.saveOutbox(
-        update.mutations,
-        replacing: state.snapshot.outbox,
-        expectedOutboxRevision: state.outboxRevision
+      recordActorHop(.outbox)
+      await outbox.remove(id: mutation.id)
+      _ = try? await publishConnectionStatusWithGateHeld(
+        pendingMutationCount: confirmation.pendingMutationCount
       )
-      if didSave {
-        recordActorHop(.outbox)
-        await outbox.remove(id: update.mutation.id)
-        _ = try? await publishConnectionStatusWithGateHeld()
-        await publishMutationLifecycle(update.mutation)
-        return (
-          mutation: update.mutation,
-          pendingMutationCount: update.mutations.filter { $0.status == .pending }.count
-        )
-      }
+      await publishMutationLifecycle(mutation)
+      return (mutation, confirmation.pendingMutationCount)
     }
 
     throw outboxChangedDuringStatusUpdate(id: id)
-  }
-
-  /// Rollback transactions for durable optimistic layers, oldest→newest peeled
-  /// in reverse (newest first), matching the prior
-  /// `removingLocalMutationOverlays` order.
-  private static func overlayRollbackTransactions(
-    in mutations: [PendingMutation]
-  ) -> [InstantStoreTransaction] {
-    mutations
-      .sorted(by: PendingMutation.creationOrder)
-      .reversed()
-      .compactMap { mutation -> InstantStoreTransaction? in
-        guard mutation.optimisticOverlayState != .removed else { return nil }
-        return mutation.rollbackTransaction
-      }
-  }
-
-  /// Entity IDs still covered by a non-failed optimistic mutation that has not
-  /// been explicitly removed. Live-query replacement retractions must not erase
-  /// these while delivery is still pending.
-  private static func pendingOptimisticEntityIDs(
-    in mutations: [PendingMutation]
-  ) -> Set<String> {
-    var entityIDs: Set<String> = []
-    for mutation in mutations {
-      guard mutation.status != .failed else { continue }
-      guard mutation.optimisticOverlayState != .removed else { continue }
-      for operation in mutation.transaction.operations {
-        switch operation {
-        case let .requireEntityMissing(entityID, _),
-          let .requireEntityExists(entityID, _),
-          let .deleteEntity(entityID),
-          let .deleteEntityInNamespace(entityID, _),
-          let .ruleParams(entityID, _, _),
-          let .requireTripleExists(entityID, _, _):
-          entityIDs.insert(entityID)
-        case let .merge(triple), let .insert(triple), let .retract(triple):
-          entityIDs.insert(triple.entityID)
-          if case let .ref(targetEntityID) = triple.value {
-            entityIDs.insert(targetEntityID)
-          }
-        case .requireEntityMissingByLookup,
-          .requireEntityExistsByLookup,
-          .mergeByLookup,
-          .insertByLookup,
-          .retractByLookup,
-          .deleteEntityByLookup,
-          .ruleParamsByLookup:
-          // Lookup-targeted writes cannot identify a concrete entity without
-          // applying the lookup; skip broad protection here (rebase still runs).
-          break
-        }
-      }
-    }
-    return entityIDs
-  }
-
-  private func rebaseLocalMutations(
-    _ mutations: [PendingMutation],
-    over preparedServer: PreparedStoreMutation,
-    authoritativeOperations: [InstantTripleOperation]
-  ) async throws -> (prepared: PreparedStoreMutation, mutations: [PendingMutation]) {
-    var preparedRebase = preparedServer
-    let authoritativeCoverage = InstantAuthoritativeWriteCoverage(
-      operations: authoritativeOperations,
-      attributes: preparedServer.attributes,
-      previousChangedEntityTriples: preparedServer.previousChangedEntityTriples,
-      changedEntityTriples: preparedServer.changedEntityTriples
-    )
-    let reconciledServerTransportIDs = Set(
-      mutations.compactMap { mutation in
-        mutation.status == .confirmed
-          && mutation.confirmationSource == .serverTransport
-          && mutation.serverTransactionID == nil
-          && authoritativeCoverage.covers(mutation.transaction.operations)
-          ? mutation.id
-          : nil
-      }
-    )
-    var rebasedMutationsByID = Dictionary(
-      uniqueKeysWithValues: mutations.map { ($0.id, $0) }
-    )
-    // A server refresh removes failed optimistic layers instead of replaying them. Clear their
-    // inverse at the same atomic persistence boundary so a later explicit discard cannot apply an
-    // obsolete before-image over newer server data (or resurrect an entity the server deleted).
-    for mutation in mutations
-    where mutation.status == .failed
-      && (mutation.optimisticOverlayState != nil || mutation.rollbackTransaction != nil)
-    {
-      rebasedMutationsByID[mutation.id]?.rollbackTransaction = nil
-      rebasedMutationsByID[mutation.id]?.optimisticOverlayState = .removed
-    }
-    for mutation in mutations.sorted(by: PendingMutation.creationOrder)
-    where mutation.status != .failed
-      && !reconciledServerTransportIDs.contains(mutation.id) {
-      let newestServerTimestamp =
-        preparedRebase.indexes.newestTransactionTimeMilliseconds ?? 0
-      let optimisticTimestamp = InstantTimestamp(
-        milliseconds: newestServerTimestamp == Int64.max
-          ? newestServerTimestamp
-          : newestServerTimestamp + 1
-      )
-      guard var rebasedMutation = rebasedMutationsByID[mutation.id] else { continue }
-      let operations = Self.rebaseDurableTransaction(
-        in: &rebasedMutation,
-        at: optimisticTimestamp
-      )
-      rebasedMutation.rollbackTransaction = nil
-      rebasedMutation.optimisticOverlayState = .applied
-      rebasedMutationsByID[mutation.id] = rebasedMutation
-      guard !operations.isEmpty else { continue }
-      preparedRebase = try await store.prepare(
-        InstantStoreTransaction(id: mutation.transaction.id, operations: operations),
-        applyingTo: preparedRebase
-      )
-      rebasedMutation.rollbackTransaction = Self.rollbackTransaction(
-        mutationID: mutation.id,
-        prepared: preparedRebase
-      )
-      rebasedMutationsByID[mutation.id] = rebasedMutation
-    }
-    var result = preparedServer.result
-    result.tripleCount = preparedRebase.indexes.tripleCount
-    return (
-      prepared: PreparedStoreMutation(
-        result: result,
-        sequence: preparedServer.sequence,
-        attributes: preparedRebase.attributes,
-        indexes: preparedRebase.indexes
-      ),
-      mutations: mutations.compactMap { mutation in
-        guard !reconciledServerTransportIDs.contains(mutation.id) else { return nil }
-        return rebasedMutationsByID[mutation.id] ?? mutation
-      }
-    )
   }
 
   private func mergeLiveRefreshAttributes(
@@ -3525,7 +4608,8 @@ public final class InstantRuntime: Sendable {
         storeSnapshot,
         replacing: previousStoreSnapshot,
         expectedStoreRevision: state.storeRevision,
-        expectedOutboxRevision: state.outboxRevision
+        expectedOutboxRevision: state.outboxRevision,
+        expectedAttributeRevision: state.attributeRevision
       )
       if didSave {
         // Merge into the live store rather than replacing its snapshot: the persisted triples
@@ -3533,6 +4617,10 @@ public final class InstantRuntime: Sendable {
         // optimistic ones.
         recordActorHop(.store)
         _ = await store.mergeAttributesIfChanged(attributesToMerge)
+        installedStoreRevisions.install(
+          storeRevision: state.storeRevision,
+          attributeRevision: state.attributeRevision + 1
+        )
         InstantDiagnostics.shared.record(
           .notice,
           subsystem: "instant-swift-data-core",
@@ -3550,11 +4638,7 @@ public final class InstantRuntime: Sendable {
         return mergedCount
       }
       recordActorHop(.persistence)
-      let reloaded = try await loadCompactStateSynchronizingStore()
-      recordActorHop(.store)
-      if !reloaded.snapshot.store.triples.isEmpty {
-        await store.replaceSnapshot(reloaded.snapshot.store)
-      }
+      _ = try await loadCompactStateSynchronizingStore()
     }
     throw InstantError(
       code: .persistenceFailed,
@@ -3577,7 +4661,11 @@ public final class InstantRuntime: Sendable {
         let nextSnapshot = try transform(state.snapshot)
         if nextSnapshot == state.snapshot {
           recordActorHop(.store)
-          await store.replaceSnapshot(state.snapshot.store)
+          await replaceStoreSnapshot(state.snapshot.store)
+          installedStoreRevisions.install(
+            storeRevision: state.storeRevision,
+            attributeRevision: state.attributeRevision
+          )
           recordActorHop(.outbox)
           await outbox.replace(with: state.snapshot.outbox)
           await leaveOperationGate()
@@ -3588,11 +4676,16 @@ public final class InstantRuntime: Sendable {
           nextSnapshot,
           replacing: state.snapshot,
           expectedStoreRevision: state.storeRevision,
+          expectedAttributeRevision: state.attributeRevision,
           expectedOutboxRevision: state.outboxRevision
         )
         if didSave {
           recordActorHop(.store)
-          await store.replaceSnapshot(nextSnapshot.store)
+          await replaceStoreSnapshot(nextSnapshot.store)
+          installedStoreRevisions.install(
+            storeRevision: state.storeRevision + 1,
+            attributeRevision: state.attributeRevision + 1
+          )
           recordActorHop(.outbox)
           await outbox.replace(with: nextSnapshot.outbox)
           await leaveOperationGate()
@@ -3611,6 +4704,16 @@ public final class InstantRuntime: Sendable {
     _ plan: InstantQueryPlan,
     remotePageInfo: InstantQueryRemotePageInfo? = nil
   ) async -> AsyncStream<InstantQueryEmission> {
+    await observeQueryLease(
+      plan,
+      remotePageInfo: remotePageInfo
+    ).stream
+  }
+
+  package func observeQueryLease(
+    _ plan: InstantQueryPlan,
+    remotePageInfo: InstantQueryRemotePageInfo? = nil
+  ) async -> InstantQueryObservationLease {
     await observe(
       plan,
       remotePageInfo: remotePageInfo,
@@ -3621,6 +4724,12 @@ public final class InstantRuntime: Sendable {
   package func observeLocally(
     _ plan: InstantQueryPlan
   ) async -> AsyncStream<InstantQueryEmission> {
+    await observeLocallyLease(plan).stream
+  }
+
+  package func observeLocallyLease(
+    _ plan: InstantQueryPlan
+  ) async -> InstantQueryObservationLease {
     await observe(
       plan,
       remotePageInfo: nil,
@@ -3632,7 +4741,38 @@ public final class InstantRuntime: Sendable {
     _ plan: InstantQueryPlan,
     remotePageInfo: InstantQueryRemotePageInfo?,
     connectsToLiveTransport: Bool
-  ) async -> AsyncStream<InstantQueryEmission> {
+  ) async -> InstantQueryObservationLease {
+    let cancellation = InstantAsyncCancellationOwner()
+    if Task.isCancelled { cancellation.cancelBeforeSetupCompletes() }
+    return await withTaskCancellationHandler {
+      let observation = await prepareObservation(
+        plan,
+        remotePageInfo: remotePageInfo,
+        connectsToLiveTransport: connectsToLiveTransport
+      )
+      cancellation.install(cancelAndWait: observation.cancel)
+      let lease = InstantQueryObservationLease(
+        stream: observation.stream,
+        cancel: {
+          cancellation.cancel()
+          await cancellation.wait()
+        }
+      )
+      if cancellation.completeSetup() {
+        await cancellation.wait()
+        return .finished()
+      }
+      return lease
+    } onCancel: {
+      cancellation.cancelBeforeSetupCompletes()
+    }
+  }
+
+  private func prepareObservation(
+    _ plan: InstantQueryPlan,
+    remotePageInfo: InstantQueryRemotePageInfo?,
+    connectsToLiveTransport: Bool
+  ) async -> InstantQueryObservationLease {
     let startupStopwatch = configuration.startupTrace.started(
       "query.observe",
       metadata: ["namespace": plan.namespace]
@@ -3651,12 +4791,18 @@ public final class InstantRuntime: Sendable {
       ],
       correlationID: plan.id
     )
+    guard !Task.isCancelled else {
+      return Self.finishedQueryObservationLease()
+    }
     // Bootstrap hydrates the in-memory store once. Query declarations must not reread the whole
     // SQLite file or wait for connection/authentication work; subsequent local and remote
     // mutations update this actor-isolated store directly.
     recordActorHop(.store)
     let schemaSnapshotStopwatch = configuration.startupTrace.stopwatch()
     let attributes = await store.attributeSnapshot()
+    guard !Task.isCancelled else {
+      return Self.finishedQueryObservationLease()
+    }
     configuration.startupTrace.completed(
       "query.schema-snapshot",
       since: schemaSnapshotStopwatch,
@@ -3686,7 +4832,10 @@ public final class InstantRuntime: Sendable {
         \(issue.recovery)
         """
       )
-      return Self.emptyObservation(plan)
+      return InstantQueryObservationLease(
+        stream: Self.emptyObservation(plan),
+        cancel: {}
+      )
     }
     let usesLiveTransport = connectsToLiveTransport && configuration.liveTransport != nil
     let liveRegistration: (query: InstantLiveJSONValue, key: String)?
@@ -3715,11 +4864,26 @@ public final class InstantRuntime: Sendable {
     }
 
     if liveRegistration != nil {
-      await enterOperationGate()
+      do {
+        try await enterOperationGateUnlessCancelled(
+          operation: "observe standard live query"
+        )
+      } catch {
+        return Self.finishedQueryObservationLease()
+      }
+      guard !Task.isCancelled else {
+        await leaveOperationGate()
+        return Self.finishedQueryObservationLease()
+      }
     }
     recordActorHop(.store)
     let localRegistrationStopwatch = configuration.startupTrace.stopwatch()
-    let stream = await store.observe(plan, remotePageInfo: remotePageInfo)
+    let storeObservation = await store.observeQueryLease(
+      plan,
+      remotePageInfo: remotePageInfo,
+      onCancellationStarted:
+        configuration.onStandardQueryObservationCleanupStartedForTesting
+    )
     configuration.startupTrace.completed(
       "query.local-registration",
       since: localRegistrationStopwatch,
@@ -3730,6 +4894,13 @@ public final class InstantRuntime: Sendable {
       since: startupStopwatch,
       metadata: ["namespace": plan.namespace]
     )
+    if Task.isCancelled {
+      if liveRegistration != nil {
+        await leaveOperationGate()
+      }
+      await storeObservation.cancel()
+      return Self.finishedQueryObservationLease()
+    }
     guard let liveRegistration else {
       if !usesLiveTransport {
         InstantDiagnostics.shared.record(
@@ -3742,10 +4913,83 @@ public final class InstantRuntime: Sendable {
           correlationID: plan.id
         )
       }
-      return stream
+      let localObservation = Self.liveObservationLease(storeObservation.stream) {
+        await storeObservation.cancel()
+      }
+      let hydration = hydratingDeferredValues(
+        in: localObservation.stream,
+        plan: plan,
+        attributes: attributes
+      )
+      let observation = Self.liveObservationLease(hydration.stream) {
+        async let cancelHydration: Void = hydration.cancel()
+        async let cancelLocalObservation: Void = localObservation.cancel()
+        _ = await (cancelHydration, cancelLocalObservation)
+      }
+      let lease = Self.queryObservationLease(observation)
+      if Task.isCancelled {
+        await lease.cancel()
+        return Self.finishedQueryObservationLease()
+      }
+      return lease
     }
     let query = liveRegistration.query
     let registrationKey = liveRegistration.key
+    do {
+      try await instantLiveWithTimeout(
+        operation: "install standard live query local observation",
+        timeoutMilliseconds: 5_000
+      ) {
+        try await self.configuration.onStandardQuerySetupCheckpointForTesting?(
+          .localObservationInstalled
+        )
+        try Task.checkCancellation()
+      }
+      try Task.checkCancellation()
+    } catch {
+      await leaveOperationGate()
+      await storeObservation.cancel()
+      return Self.finishedQueryObservationLease()
+    }
+    await liveQueryResultState.retain(key: registrationKey)
+    if Task.isCancelled {
+      await leaveOperationGate()
+      async let cancelStore: Void = storeObservation.cancel()
+      async let releaseResult: Void = liveQueryResultState.release(key: registrationKey)
+      _ = await (cancelStore, releaseResult)
+      return Self.finishedQueryObservationLease()
+    }
+
+    let liveObservation = Self.liveObservationLease(storeObservation.stream) { [weak self] in
+      await storeObservation.cancel()
+      guard let self else { return }
+      await self.liveQueryResultState.release(key: registrationKey)
+      do {
+        _ = try await self.liveSession.unregisterQuery(
+          key: registrationKey,
+          clientEventID: self.configuration.makeID()
+        )
+        InstantDiagnostics.shared.record(
+          .debug,
+          subsystem: "instant-swift-data-core",
+          category: "query",
+          event: "query-observation.live-unregistered",
+          message: "Unregistered a live Instant query observation.",
+          metadata: ["registrationKey": registrationKey],
+          correlationID: plan.id
+        )
+      } catch {
+        await self.recordConnectionError(error)
+        InstantDiagnostics.shared.record(
+          error: error,
+          subsystem: "instant-swift-data-core",
+          category: "query",
+          event: "query-observation.unregister-failed",
+          message: "Could not unregister a live Instant query observation.",
+          correlationID: plan.id
+        )
+      }
+    }
 
     do {
       try await liveSession.registerQuery(
@@ -3753,6 +4997,7 @@ public final class InstantRuntime: Sendable {
         key: registrationKey,
         clientEventID: configuration.makeID()
       )
+      try Task.checkCancellation()
       await leaveOperationGate()
       let isLiveSessionOpen = await liveSession.isOpen
       configuration.startupTrace.milestone(
@@ -3780,6 +5025,10 @@ public final class InstantRuntime: Sendable {
         ],
         correlationID: plan.id
       )
+    } catch is CancellationError {
+      await leaveOperationGate()
+      await liveObservation.cancel()
+      return Self.finishedQueryObservationLease()
     } catch {
       await leaveOperationGate()
       await recordConnectionError(error)
@@ -3793,45 +5042,59 @@ public final class InstantRuntime: Sendable {
         correlationID: plan.id
       )
     }
-    return Self.liveObservation(stream) { [weak self] in
-      guard let self else { return }
-      do {
-        let didUnload = try await self.liveSession.unregisterQuery(
-          key: registrationKey,
-          clientEventID: self.configuration.makeID()
-        )
-        if didUnload {
-          await self.liveQueryResultState.unload(key: registrationKey)
-        }
-        InstantDiagnostics.shared.record(
-          .debug,
-          subsystem: "instant-swift-data-core",
-          category: "query",
-          event: "query-observation.live-unregistered",
-          message: "Unregistered a live Instant query observation.",
-          metadata: ["registrationKey": registrationKey],
-          correlationID: plan.id
-        )
-      } catch {
-        await self.liveQueryResultState.unload(key: registrationKey)
-        await self.recordConnectionError(error)
-        InstantDiagnostics.shared.record(
-          error: error,
-          subsystem: "instant-swift-data-core",
-          category: "query",
-          event: "query-observation.unregister-failed",
-          message: "Could not unregister a live Instant query observation.",
-          correlationID: plan.id
-        )
-      }
+    if Task.isCancelled {
+      await liveObservation.cancel()
+      return Self.finishedQueryObservationLease()
     }
+    let hydration = hydratingDeferredValues(
+      in: liveObservation.stream,
+      plan: plan,
+      attributes: attributes
+    )
+    let observation = Self.liveObservationLease(hydration.stream) {
+      async let cancelHydration: Void = hydration.cancel()
+      async let cancelLiveObservation: Void = liveObservation.cancel()
+      _ = await (cancelHydration, cancelLiveObservation)
+    }
+    let lease = Self.queryObservationLease(observation)
+    if Task.isCancelled {
+      await lease.cancel()
+      return Self.finishedQueryObservationLease()
+    }
+    return lease
   }
 
   func observeLiveInfiniteQueryChunk(
-    _ plan: InstantQueryPlan
-  ) async -> AsyncStream<InstantQueryEmission> {
+    _ plan: InstantQueryPlan,
+    onCancellationStarted: (@Sendable () async -> Void)? = nil,
+    onDeferredValueHydrationFailure:
+      (@Sendable (InstantError) async -> Void)? = nil
+  ) async throws -> InstantLiveInfiniteQueryChunkObservation {
+    let attributes = await store.attributeSnapshot()
+    try Task.checkCancellation()
     guard configuration.liveTransport != nil else {
-      return await store.observe(plan)
+      let storeObservation = await store.observeInfiniteQueryLease(
+        plan,
+        onCancellationStarted: onCancellationStarted
+      )
+      let observation = Self.liveObservationLease(storeObservation.stream) {
+        await storeObservation.cancel()
+      }
+      do {
+        try Task.checkCancellation()
+      } catch {
+        await observation.cancel()
+        throw error
+      }
+      return Self.liveInfiniteQueryChunkObservation(
+        hydratingDeferredValues(
+          in: observation.stream,
+          plan: plan,
+          attributes: attributes,
+          onFailure: onDeferredValueHydrationFailure
+        ),
+        cancelUnderlyingObservation: observation.cancel
+      )
     }
 
     let query: InstantLiveJSONValue
@@ -3840,42 +5103,324 @@ public final class InstantRuntime: Sendable {
       query = try InstantLiveQueryEncoder.encode(plan)
       registrationKey = try InstantLiveQueryEncoder.registrationKey(for: query)
     } catch {
+      try Task.checkCancellation()
       await recordConnectionError(error)
-      return await store.observe(plan)
+      try Task.checkCancellation()
+      let storeObservation = await store.observeInfiniteQueryLease(
+        plan,
+        onCancellationStarted: onCancellationStarted
+      )
+      let observation = Self.liveObservationLease(storeObservation.stream) {
+        await storeObservation.cancel()
+      }
+      do {
+        try Task.checkCancellation()
+      } catch {
+        await observation.cancel()
+        throw error
+      }
+      return Self.liveInfiniteQueryChunkObservation(
+        hydratingDeferredValues(
+          in: observation.stream,
+          plan: plan,
+          attributes: attributes,
+          onFailure: onDeferredValueHydrationFailure
+        ),
+        cancelUnderlyingObservation: observation.cancel
+      )
     }
 
-    await enterOperationGate()
-    let existingPageInfo = await liveQueryPageInfo(for: registrationKey)
-    let stream = await store.observeLiveQuery(
+    try await enterOperationGateUnlessCancelled(
+      operation: "observe live infinite query chunk"
+    )
+    await liveQueryResultState.retain(key: registrationKey)
+    let existingPageInfo: InstantQueryPageInfo?
+    do {
+      existingPageInfo = try await instantLiveWithTimeout(
+        operation: "load live infinite query page info",
+        timeoutMilliseconds: 5_000
+      ) {
+        await self.configuration.onLiveInfiniteQuerySetupCheckpointForTesting?(
+          .beforePersistedPageInfoLoad
+        )
+        try Task.checkCancellation()
+        return await self.liveQueryPageInfo(for: registrationKey)
+      }
+      try Task.checkCancellation()
+    } catch {
+      await leaveOperationGate()
+      await liveQueryResultState.release(key: registrationKey)
+      throw error
+    }
+    let storeObservation = await store.observeLiveQueryLease(
       plan,
       registrationKey: registrationKey,
-      remotePageInfo: existingPageInfo.map(InstantQueryRemotePageInfo.ready) ?? .waiting
+      remotePageInfo: existingPageInfo.map(InstantQueryRemotePageInfo.ready) ?? .waiting,
+      onCancellationStarted: onCancellationStarted
     )
+    let liveObservation = Self.liveObservationLease(storeObservation.stream) { [weak self] in
+      await storeObservation.cancel()
+      guard let self else { return }
+      await self.liveQueryResultState.release(key: registrationKey)
+      do {
+        _ = try await self.liveSession.unregisterQuery(
+          key: registrationKey,
+          clientEventID: self.configuration.makeID()
+        )
+      } catch {
+        await self.recordConnectionError(error)
+      }
+    }
+    do {
+      try await instantLiveWithTimeout(
+        operation: "install live infinite query local observation",
+        timeoutMilliseconds: 5_000
+      ) {
+        await self.configuration.onLiveInfiniteQuerySetupCheckpointForTesting?(
+          .localObservationInstalled
+        )
+        try Task.checkCancellation()
+      }
+      try Task.checkCancellation()
+    } catch is CancellationError {
+      await leaveOperationGate()
+      await liveObservation.cancel()
+      throw CancellationError()
+    } catch {
+      await leaveOperationGate()
+      await liveObservation.cancel()
+      throw error
+    }
     do {
       try await liveSession.registerQuery(
         query,
         key: registrationKey,
         clientEventID: configuration.makeID()
       )
+      try Task.checkCancellation()
       await leaveOperationGate()
+    } catch is CancellationError {
+      await leaveOperationGate()
+      await liveObservation.cancel()
+      throw CancellationError()
     } catch {
       await leaveOperationGate()
       await recordConnectionError(error)
     }
-    return Self.liveObservation(stream) { [weak self] in
-      guard let self else { return }
-      do {
-        let didUnload = try await self.liveSession.unregisterQuery(
-          key: registrationKey,
-          clientEventID: self.configuration.makeID()
-        )
-        if didUnload {
-          await self.liveQueryResultState.unload(key: registrationKey)
-        }
-      } catch {
-        await self.liveQueryResultState.unload(key: registrationKey)
-        await self.recordConnectionError(error)
+    return Self.liveInfiniteQueryChunkObservation(
+      hydratingDeferredValues(
+        in: liveObservation.stream,
+        plan: plan,
+        attributes: attributes,
+        onFailure: onDeferredValueHydrationFailure
+      ),
+      cancelUnderlyingObservation: liveObservation.cancel
+    )
+  }
+
+  private func hydratingDeferredValues(
+    in stream: AsyncStream<InstantQueryEmission>,
+    plan: InstantQueryPlan,
+    attributes: [InstantAttribute],
+    onFailure: (@Sendable (InstantError) async -> Void)? = nil
+  ) -> InstantLiveInfiniteQueryChunkObservationLease<InstantQueryEmission> {
+    let requestedAttributes = configuration.deferredValueResidency.requestedAttributes(
+      for: plan,
+      attributes: attributes
+    )
+    guard !requestedAttributes.isEmpty else {
+      return InstantLiveInfiniteQueryChunkObservationLease(
+        stream: stream,
+        cancel: {}
+      )
+    }
+    let pair = AsyncStream<InstantQueryEmission>.makeStream(
+      bufferingPolicy: .bufferingNewest(1)
+    )
+    let task = Task { [weak self] in
+      guard let self else {
+        pair.continuation.finish()
+        return
       }
+      do {
+        for await emission in stream {
+          try Task.checkCancellation()
+          guard
+            let hydrated = try await self.hydrateDeferredValuesIfCurrent(
+              in: emission,
+              requestedAttributes: requestedAttributes,
+              attributes: attributes
+            )
+          else { continue }
+          await self.configuration.onLiveInfiniteQueryDeferredHydrationAcquiredForTesting?(
+            hydrated.values.count
+          )
+          try Task.checkCancellation()
+          pair.continuation.yield(hydrated)
+        }
+        pair.continuation.finish()
+      } catch is CancellationError {
+        pair.continuation.finish()
+      } catch {
+        let failure = self.deferredValueHydrationFailure(error, plan: plan)
+        await onFailure?(failure)
+        pair.continuation.finish()
+      }
+    }
+    let termination = InstantLiveObservationTermination {
+      task.cancel()
+      await task.value
+    }
+    pair.continuation.onTermination = { @Sendable _ in
+      Task { await termination.run() }
+    }
+    return InstantLiveInfiniteQueryChunkObservationLease(
+      stream: pair.stream,
+      cancel: {
+        pair.continuation.finish()
+        await termination.run()
+      }
+    )
+  }
+
+  private static func liveInfiniteQueryChunkObservation(
+    _ hydration: InstantLiveInfiniteQueryChunkObservationLease<InstantQueryEmission>,
+    cancelUnderlyingObservation: @escaping @Sendable () async -> Void
+  ) -> InstantLiveInfiniteQueryChunkObservation {
+    let termination = InstantLiveObservationTermination {
+      async let cancelHydration: Void = hydration.cancel()
+      async let underlyingCancellation: Void = cancelUnderlyingObservation()
+      _ = await (cancelHydration, underlyingCancellation)
+    }
+    return InstantLiveInfiniteQueryChunkObservation(
+      stream: hydration.stream,
+      cancel: { await termination.run() }
+    )
+  }
+
+  package func deferredValueHydrationFailure(
+    _ error: Error,
+    plan: InstantQueryPlan
+  ) -> InstantError {
+    var failure = (error as? InstantError) ?? InstantError(
+      code: .persistenceFailed,
+      operation: "hydrate deferred infinite query values",
+      namespace: plan.namespace,
+      message: String(describing: error),
+      recovery: "Inspect the local SQLite cache, then restart this query subscription."
+    )
+    failure.code = .persistenceFailed
+    failure.operation = "hydrate deferred infinite query values"
+    if failure.namespace == nil {
+      failure.namespace = plan.namespace
+    }
+    InstantDiagnostics.shared.record(
+      error: failure,
+      subsystem: "instant-swift-data-core",
+      category: "query",
+      event: "query.deferred-value-hydration-failed",
+      message: "Could not hydrate selected deferred values from the local cache.",
+      metadata: ["namespace": plan.namespace],
+      correlationID: plan.id
+    )
+    reportIssue(
+      "Instant could not hydrate selected deferred values for query '\(plan.id)': \(failure)"
+    )
+    return failure
+  }
+
+  private func hydrateDeferredValues(
+    in emission: InstantQueryEmission,
+    requestedAttributes: [InstantAttribute],
+    attributes: [InstantAttribute]
+  ) async throws -> InstantQueryEmission {
+    guard !requestedAttributes.isEmpty else { return emission }
+    let entityIDs = Set(emission.values.map(\.id))
+    guard !entityIDs.isEmpty else { return emission }
+    recordActorHop(.persistence)
+    let triples = try await persistence.loadDeferredValues(
+      attributeIDs: Set(requestedAttributes.map(\.id)),
+      entityIDs: entityIDs
+    )
+    return configuration.deferredValueResidency.hydrating(
+      emission,
+      with: triples,
+      attributes: attributes
+    )
+  }
+
+  private func hydrateDeferredValuesIfCurrent(
+    in emission: InstantQueryEmission,
+    requestedAttributes: [InstantAttribute],
+    attributes: [InstantAttribute]
+  ) async throws -> InstantQueryEmission? {
+    guard !requestedAttributes.isEmpty else { return emission }
+    try await enterOperationGateUnlessCancelled(
+      operation: "hydrate deferred query emission"
+    )
+    do {
+      guard await store.currentSequence() == emission.sequence else {
+        await leaveOperationGate()
+        return nil
+      }
+      let hydrated = try await hydrateDeferredValues(
+        in: emission,
+        requestedAttributes: requestedAttributes,
+        attributes: attributes
+      )
+      await leaveOperationGate()
+      return hydrated
+    } catch {
+      await leaveOperationGate()
+      throw error
+    }
+  }
+
+  package func hydrateDeferredInfiniteQuerySnapshot(
+    _ snapshot: InstantInfiniteQuerySnapshot,
+    entityIDs: Set<String>,
+    plan: InstantQueryPlan,
+    attributes: [InstantAttribute]
+  ) async throws -> InstantInfiniteQuerySnapshot? {
+    let requestedAttributes = configuration.deferredValueResidency.requestedAttributes(
+      for: plan,
+      attributes: attributes
+    )
+    guard !requestedAttributes.isEmpty else { return snapshot }
+    try await enterOperationGateUnlessCancelled(
+      operation: "hydrate deferred infinite query snapshot"
+    )
+    do {
+      guard await store.currentSequence() == snapshot.sequence else {
+        await leaveOperationGate()
+        return nil
+      }
+      guard !entityIDs.isEmpty else {
+        await leaveOperationGate()
+        return snapshot
+      }
+      recordActorHop(.persistence)
+      let triples = try await persistence.loadDeferredValues(
+        attributeIDs: Set(requestedAttributes.map(\.id)),
+        entityIDs: entityIDs
+      )
+      let emission = configuration.deferredValueResidency.hydrating(
+        InstantQueryEmission(
+          queryID: snapshot.queryID,
+          sequence: snapshot.sequence,
+          values: snapshot.values,
+          pageInfo: snapshot.pageInfo
+        ),
+        with: triples,
+        attributes: attributes
+      )
+      var hydrated = snapshot
+      hydrated.values = emission.values
+      await leaveOperationGate()
+      return hydrated
+    } catch {
+      await leaveOperationGate()
+      throw error
     }
   }
 
@@ -3953,93 +5498,133 @@ public final class InstantRuntime: Sendable {
   private func queryOnceThroughLive(_ plan: InstantQueryPlan) async throws -> InstantQueryEmission {
     let query = try InstantLiveQueryEncoder.encode(plan)
     let registrationKey = try InstantLiveQueryEncoder.registrationKey(for: query)
-    let observedRevision = await liveQueryAcknowledgements.revision(for: registrationKey)
-
-    // Match Reactor.queryOnce + _flushPendingMessages: record the query before
-    // reconnecting so an opening session sends add-query ahead of its durable
-    // mutation backlog.
-    await enterOperationGate()
-    do {
-      try await liveSession.registerQuery(
-        query,
-        key: registrationKey,
-        clientEventID: configuration.makeID(),
-        requiresServerAcknowledgement: true
-      )
-      await leaveOperationGate()
-    } catch {
-      await leaveOperationGate()
-      throw error
-    }
-    defer {
-      Task {
-        do {
-          let didUnload = try await self.liveSession.unregisterQuery(
-            key: registrationKey,
-            clientEventID: self.configuration.makeID()
-          )
-          if didUnload {
-            await self.liveQueryResultState.unload(key: registrationKey)
-          }
-        } catch {
-          await self.liveQueryResultState.unload(key: registrationKey)
-        }
-      }
-    }
-    try await ensureLiveConnectionIfNeeded()
-
-    do {
-      try await instantLiveWithTimeout(
-        operation: "run Instant live query",
-        timeoutMilliseconds: 5_000
-      ) {
-        try await self.liveQueryAcknowledgements.wait(
-          for: registrationKey,
-          after: observedRevision
+    await liveQueryResultState.retain(key: registrationKey)
+    let cleanupOwner = InstantAsyncCancellationOwner(
+      cancelAndWait: { [self] in
+        await liveQueryResultState.release(key: registrationKey)
+        _ = try? await liveSession.unregisterQuery(
+          key: registrationKey,
+          clientEventID: configuration.makeID()
         )
       }
-    } catch {
-      if let error = error as? InstantError,
-        error.operation == "run Instant live query",
-        error.code == .permissionRejected || error.code == .validationFailed
-      {
+    )
+    let emission: InstantQueryEmission
+    do {
+      try Task.checkCancellation()
+      let observedRevision = await liveQueryAcknowledgements.revision(for: registrationKey)
+
+      // Match Reactor.queryOnce + _flushPendingMessages: record the query before
+      // reconnecting so an opening session sends add-query ahead of its durable
+      // mutation backlog.
+      await enterOperationGate()
+      do {
+        try await liveSession.registerQuery(
+          query,
+          key: registrationKey,
+          clientEventID: configuration.makeID(),
+          requiresServerAcknowledgement: true
+        )
+        await leaveOperationGate()
+      } catch {
+        await leaveOperationGate()
+        throw error
+      }
+      try await ensureLiveConnectionIfNeeded()
+
+      let liveQueryAcknowledgementTimeoutMilliseconds: UInt64 = 5_000
+      do {
+        try await instantLiveWithTimeout(
+          operation: "run Instant live query",
+          timeoutMilliseconds: liveQueryAcknowledgementTimeoutMilliseconds
+        ) {
+          try await self.liveQueryAcknowledgements.wait(
+            for: registrationKey,
+            after: observedRevision
+          )
+        }
+      } catch {
+        if let error = error as? InstantError,
+          error.operation == "run Instant live query",
+          error.code == .permissionRejected || error.code == .validationFailed
+        {
+          InstantDiagnostics.shared.record(
+            error: error,
+            subsystem: "instant-swift-data-core",
+            category: "query",
+            event: "query.live-rejected",
+            message: "Live query was rejected by Instant validation or permissions.",
+            metadata: ["registrationKey": registrationKey],
+            correlationID: plan.id
+          )
+          throw error
+        }
         InstantDiagnostics.shared.record(
           error: error,
           subsystem: "instant-swift-data-core",
           category: "query",
-          event: "query.live-rejected",
-          message: "Live query was rejected by Instant validation or permissions.",
-          metadata: ["registrationKey": registrationKey],
+          event: "query.live-ack-timeout",
+          message:
+            "Live query did not receive a server acknowledgement within the timeout.",
+          metadata: [
+            "registrationKey": registrationKey,
+            "namespace": plan.namespace,
+            "timeoutMilliseconds": String(liveQueryAcknowledgementTimeoutMilliseconds),
+          ],
           correlationID: plan.id
         )
+        await recordConnectionError(error)
         throw error
       }
-      InstantDiagnostics.shared.record(
-        error: error,
-        subsystem: "instant-swift-data-core",
-        category: "query",
-        event: "query.live-ack-timeout",
-        message:
-          "Live query did not receive a server acknowledgement within the timeout.",
-        metadata: [
-          "registrationKey": registrationKey,
-          "namespace": plan.namespace,
-          "timeoutMilliseconds": "10000",
-        ],
-        correlationID: plan.id
+      try await configuration.onLiveQueryOnceAcknowledgedForTesting?()
+      try Task.checkCancellation()
+      let pageInfo = await liveQueryPageInfo(for: registrationKey)
+      emission = try await materializeLocalQueryOnce(
+        plan,
+        remotePageInfo: pageInfo.map(InstantQueryRemotePageInfo.ready)
       )
-      await recordConnectionError(error)
+    } catch {
+      cleanupOwner.finish()
+      await cleanupOwner.wait()
       throw error
     }
-    let pageInfo = await liveQueryPageInfo(for: registrationKey)
-    return try await materializeLocalQueryOnce(
-      plan,
-      remotePageInfo: pageInfo.map(InstantQueryRemotePageInfo.ready)
-    )
+    cleanupOwner.finish()
+    await cleanupOwner.wait()
+    try Task.checkCancellation()
+    return emission
   }
 
   package func queryLocally(_ plan: InstantQueryPlan) async throws -> InstantQueryEmission {
     try await materializeLocalQueryOnce(plan, enforcesConnectionFreshness: false)
+  }
+
+  package func materializeLocalInfiniteQueryIdentity(
+    _ plan: InstantQueryPlan
+  ) async throws -> InstantQueryEmission {
+    try await enterOperationGateUnlessCancelled(
+      operation: "materialize local infinite query identity"
+    )
+    do {
+      let state = try await loadCompactStateSynchronizingStore()
+      if let issue = TripleIndexes.validate(
+        plan,
+        attributes: AttributeStore(attributes: state.snapshot.store.attributes)
+      ) {
+        throw validationFailed(
+          operation: "validate infinite query identity expansion",
+          namespace: issue.namespace,
+          path: issue.path,
+          message: issue.message,
+          recovery: issue.recovery
+        )
+      }
+      recordActorHop(.store)
+      let emission = await store.materializeEmission(plan)
+      await leaveOperationGate()
+      return emission
+    } catch {
+      await leaveOperationGate()
+      throw error
+    }
   }
 
   private func liveQueryPageInfo(for registrationKey: String) async -> InstantQueryPageInfo? {
@@ -4095,12 +5680,10 @@ public final class InstantRuntime: Sendable {
           try await persistedConnectionState() == .closed
         {
           recordActorHop(.persistence)
-          let cachedState = try await persistence.loadStoreStateAndCachedQuery(
-            cacheKey: plan.cacheKey
-          )
+          let cachedQuery = try await persistence.cachedQuery(cacheKey: plan.cacheKey)
           if let issue = TripleIndexes.validate(
             plan,
-            attributes: AttributeStore(attributes: cachedState.state.snapshot.store.attributes)
+            attributes: AttributeStore(attributes: state.snapshot.store.attributes)
           ) {
             throw validationFailed(
               operation: "validate query",
@@ -4111,9 +5694,9 @@ public final class InstantRuntime: Sendable {
             )
           }
           let freshCachedQuery = await freshCachedQueryForClosedQuery(
-            cachedState.cachedQuery,
+            cachedQuery,
             plan: plan,
-            state: cachedState.state
+            state: state
           )
           throw InstantError(
             code: .networkFailed,
@@ -4126,11 +5709,19 @@ public final class InstantRuntime: Sendable {
           )
         }
         recordActorHop(.store)
-        if !state.snapshot.store.triples.isEmpty {
-          await store.replaceSnapshot(state.snapshot.store)
-        }
-        recordActorHop(.store)
-        let emission = await store.materializeEmission(plan, remotePageInfo: remotePageInfo)
+        let localEmission = await store.materializeEmission(
+          plan,
+          remotePageInfo: remotePageInfo
+        )
+        let requestedDeferredAttributes = configuration.deferredValueResidency.requestedAttributes(
+          for: plan,
+          attributes: state.snapshot.store.attributes
+        )
+        let emission = try await hydrateDeferredValues(
+          in: localEmission,
+          requestedAttributes: requestedDeferredAttributes,
+          attributes: state.snapshot.store.attributes
+        )
         recordActorHop(.persistence)
         let didSave = try await persistence.saveQueryCache(
           InstantCachedQuery(
@@ -4138,9 +5729,11 @@ public final class InstantRuntime: Sendable {
             plan: plan,
             emission: emission,
             updatedAt: configuration.now(),
-            storeRevision: state.storeRevision
+            storeRevision: state.storeRevision,
+            attributeRevision: state.attributeRevision
           ),
-          expectedStoreRevision: state.storeRevision
+          expectedStoreRevision: state.storeRevision,
+          expectedAttributeRevision: state.attributeRevision
         )
         if didSave {
           if queryCachePruningCadence.shouldPrune(
@@ -4239,7 +5832,11 @@ public final class InstantRuntime: Sendable {
       // An empty snapshot is the meaningful result when pruning removes the
       // final owned row. Skipping it leaves that row visible in the hot actor
       // even though SQLite has already deleted it.
-      await store.replaceSnapshot(application.state.snapshot.store)
+      await replaceStoreSnapshot(application.state.snapshot.store)
+      installedStoreRevisions.install(
+        storeRevision: application.state.storeRevision,
+        attributeRevision: application.state.attributeRevision
+      )
     }
     for key in application.result.removedQueryKeys {
       await liveQueryResultState.unload(key: key)
@@ -4269,13 +5866,14 @@ public final class InstantRuntime: Sendable {
     state: InstantPersistenceState
   ) async -> InstantCachedQuery? {
     guard let cachedQuery else { return nil }
-    guard cachedQuery.storeRevision != state.storeRevision else { return cachedQuery }
+    guard cachedQuery.storeRevision != state.storeRevision
+      || cachedQuery.attributeRevision != state.attributeRevision
+    else { return cachedQuery }
 
     recordActorHop(.store)
-    // This helper receives a full snapshot from `loadStoreStateAndCachedQuery`; an empty store is
-    // the authoritative result after another runtime deletes the final cached row.
-    await store.replaceSnapshot(state.snapshot.store)
-    recordActorHop(.store)
+    // `loadCompactStateSynchronizingStore` has already adopted the exact
+    // persisted store revision. Re-materialize against that hot actor without
+    // reconstructing or replacing its complete triple indexes again.
     let localEmission = await store.materializeEmission(plan)
     guard cachedQuery.emission.queryID == localEmission.queryID,
       cachedQuery.emission.values == localEmission.values,
@@ -4337,55 +5935,52 @@ public final class InstantRuntime: Sendable {
     guard configuration.autoConnectLiveTransport else { return }
     guard await !liveSession.isOpen else { return }
     guard try await persistedConnectionState() != .closed else { return }
-    await reconnectController.cancel()
+    await reconnectController.cancelAndWait()
     _ = try await connectLiveSession(reportsFailure: true, onlyIfNeeded: true)
   }
 
-  private func startLiveMutationDeliveryIfNeeded() {
+  private func startLiveMutationDeliveryIfNeeded() async {
     guard configuration.liveTransport != nil else { return }
-    Task { [weak self] in
-      guard let self else { return }
-      await self.mutationDeliveryPump.request(
-        sleep: self.configuration.liveReconnectSleep
-      ) { [weak self] in
-        guard let self else { return true }
-        let liveSessionIsOpen = await self.liveSession.isOpen
-        guard self.configuration.autoConnectLiveTransport || liveSessionIsOpen else {
-          return true
+    await mutationDeliveryPump.request(
+      sleep: configuration.liveReconnectSleep
+    ) { [weak self] in
+      guard let self else { return .finished }
+      let liveSessionIsOpen = await self.liveSession.isOpen
+      guard self.configuration.autoConnectLiveTransport || liveSessionIsOpen else {
+        return .finished
+      }
+      do {
+        try Task.checkCancellation()
+        try await self.ensureLiveConnectionIfNeeded()
+        guard await self.liveSession.isOpen else {
+          // An explicit close wins over a queued or sleeping hydration retry.
+          // Stop the pump instead of retaining the runtime and rereading a
+          // durable outbox that the user has deliberately taken offline.
+          return .finished
         }
-        do {
-          try await self.ensureLiveConnectionIfNeeded()
-          guard await self.liveSession.isOpen else {
-            // An explicit close wins over a queued or sleeping hydration retry.
-            // Stop the pump instead of retaining the runtime and rereading a
-            // durable outbox that the user has deliberately taken offline.
-            return true
-          }
-          return await self.sendOutstandingMutationsToLiveSession()
-        } catch {
-          await self.scheduleReconnect(
-            after: error,
-            event: "connection.optimistic-transaction-connect-failed",
-            message: "Instant could not connect after an optimistic transaction and will retry."
-          )
-          return true
-        }
+        return await self.runAutomaticMutationPumpPass()
+      } catch is CancellationError {
+        return .finished
+      } catch {
+        await self.scheduleReconnect(
+          after: error,
+          event: "connection.optimistic-transaction-connect-failed",
+          message: "Instant could not connect after an optimistic transaction and will retry."
+        )
+        return .finished
       }
     }
   }
 
   private func scheduleLiveMutationDeadlineWake(
     at deadlineMilliseconds: Int64?
-  ) {
-    Task { [weak self] in
-      guard let self else { return }
-      await self.mutationDeadlineWake.request(
-        deadlineMilliseconds: deadlineMilliseconds,
-        now: self.configuration.now,
-        sleep: self.configuration.liveReconnectSleep
-      ) { [weak self] in
-        self?.startLiveMutationDeliveryIfNeeded()
-      }
+  ) async {
+    await mutationDeadlineWake.request(
+      deadlineMilliseconds: deadlineMilliseconds,
+      now: configuration.now,
+      sleep: configuration.liveMutationDeadlineSleep
+    ) { [weak self] in
+      await self?.startLiveMutationDeliveryIfNeeded()
     }
   }
 
@@ -4393,18 +5988,66 @@ public final class InstantRuntime: Sendable {
   /// SQLite hydration or WebSocket I/O. Public server-acceptance waiters poll durable state as
   /// their completion condition; they should not create an overlapping hydration pass on every
   /// poll tick.
-  package func requestLiveMutationDelivery() {
-    startLiveMutationDeliveryIfNeeded()
+  package func requestLiveMutationDelivery() async {
+    await startLiveMutationDeliveryIfNeeded()
+  }
+
+  package func automaticMutationPumpIsIdleForTesting() async -> Bool {
+    await mutationDeliveryPump.isIdleForTesting()
+  }
+
+  package func automaticMutationPumpIsSuspendedForTesting() async -> Bool {
+    await mutationDeliveryPump.isSuspendedForTesting()
+  }
+
+  package func exactCloseBackgroundTasksAreIdleForTesting() async -> Bool {
+    await exactCloseBackgroundTaskIdleState().allIdle
+  }
+
+  private func exactCloseBackgroundTaskIdleState() async
+    -> InstantRuntimeExactCloseIdleState
+  {
+    let reconnectIsIdle = await reconnectController.isIdleForTesting()
+    let receiverIsIdle = await liveSession.receiverTaskIsIdleForTesting()
+    let mutationDeliveryIsIdle = await mutationDeliveryPump.isIdleForTesting()
+    return InstantRuntimeExactCloseIdleState(
+      automaticLiveConnection: automaticLiveConnectionTaskOwner.isIdle,
+      startupCookieSync: startupCookieSyncTaskOwner.isIdle,
+      reconnect: reconnectIsIdle,
+      receiver: receiverIsIdle,
+      mutationDeliveryPump: mutationDeliveryIsIdle,
+      explicitMutationFlush: explicitMutationFlushOwner.isIdle
+    )
+  }
+
+  package func operationGateWaiterCountForTesting() async -> Int {
+    await operationGate.waiterCount
+  }
+
+  package func liveActiveQueryKeysForTesting() async -> Set<String> {
+    await liveSession.activeQueryKeys()
+  }
+
+  package func liveQueryResultActiveKeysForTesting() async -> Set<String> {
+    await liveQueryResultState.activeKeysForTesting()
   }
 
   private func startAutomaticLiveConnectionIfNeeded() {
     guard configuration.liveTransport != nil else { return }
     guard configuration.autoConnectLiveTransport else { return }
-    Task { [weak self] in
+    _ = automaticLiveConnectionTaskOwner.start { [weak self] in
       guard let self else { return }
+      await self.configuration.onAutomaticLiveConnectionTaskStartedForTesting?()
       do {
+        try Task.checkCancellation()
         try await self.ensureLiveConnectionIfNeeded()
+      } catch is CancellationError {
+        return
       } catch {
+        // A close request can arrive while a cancellation-insensitive
+        // connector unwinds with its own error. Cancellation still owns that
+        // terminal transition and must not create a reconnect task.
+        guard !Task.isCancelled else { return }
         await self.scheduleReconnect(
           after: error,
           event: "connection.auto-connect-failed",
@@ -4414,12 +6057,28 @@ public final class InstantRuntime: Sendable {
     }
   }
 
+  private func startUserCookieSyncOnStartup() {
+    _ = startupCookieSyncTaskOwner.start(priority: .utility) { [weak self] in
+      guard let self else { return }
+      await self.configuration.onStartupCookieSyncTaskStartedForTesting?()
+      do {
+        try Task.checkCancellation()
+        try await self.syncUserCookieOnStartup()
+      } catch is CancellationError {
+        return
+      } catch {
+        // Startup cookie sync is deliberately non-fatal. The throwing helper
+        // preserves cancellation so exact close can still own its full tail.
+      }
+    }
+  }
+
   private func reconnectAfterAuthChangeIfNeeded() async {
     guard configuration.liveTransport != nil else { return }
     guard configuration.autoConnectLiveTransport else { return }
     guard (try? await persistedConnectionState()) != .closed else { return }
     do {
-      _ = try await connect()
+      _ = try await connectLiveSession(reportsFailure: false)
     } catch {
       await scheduleReconnect(
         after: error,
@@ -4462,10 +6121,10 @@ public final class InstantRuntime: Sendable {
       await operationGate.leave()
       return status
     } catch {
+      await operationGate.leave()
       if configuration.liveTransport != nil {
         await liveSession.close()
       }
-      await operationGate.leave()
       throw error
     }
   }
@@ -4488,7 +6147,7 @@ public final class InstantRuntime: Sendable {
 
   @discardableResult
   public func connect() async throws -> InstantConnectionStatus {
-    await reconnectController.cancel()
+    await reconnectController.cancelAndWait()
     return try await connectLiveSession(reportsFailure: true)
   }
 
@@ -4510,16 +6169,13 @@ public final class InstantRuntime: Sendable {
         "websocketHost": configuration.websocketURI.host ?? "unknown",
       ]
     )
-    await connectionGate.enter()
-    var enteredConnectionGate = true
+    var enteredConnectionGate = false
     var enteredOperationGate = false
     do {
-      // `AsyncSerialGate.enter()` deliberately hands off queued waiters even when their Task was
-      // cancelled. A reconnect cancelled by an explicit close must therefore stop here, before
-      // it can reopen the socket after acquiring a gate that close just released.
-      try Task.checkCancellation()
+      try await connectionGate.enterUnlessCancelled(operation: "connect live session")
+      enteredConnectionGate = true
       recordActorHop(.operationGate)
-      await operationGate.enter()
+      try await operationGate.enterUnlessCancelled(operation: "connect live session")
       enteredOperationGate = true
       if onlyIfNeeded || !reportsFailure {
         let persistedState = try await persistedConnectionState()
@@ -4567,31 +6223,42 @@ public final class InstantRuntime: Sendable {
           recordActorHop(.liveSession)
           let openedServerAttributes = await liveSession.currentServerAttributes()
           recordActorHop(.operationGate)
-          await operationGate.enter()
+          try await operationGate.enterUnlessCancelled(operation: "install opened live session")
           enteredOperationGate = true
           // Store the server's attribute set before anything reads the cache. Namespaces added
           // to the schema after this device's last sync are unknown to it until this runs, and
           // an unknown namespace cannot even be subscribed to, so nothing else would ever
           // deliver them.
           try await applyServerAttributesWithGateHeld(openedServerAttributes)
-          try await retryPersistedTransientMutationFailuresWithGateHeld()
+          let reservedMutationIDs = await automaticMutationRetryReservations.snapshot()
+          recordActorHop(.persistence)
+          let hasPersistedTransientFailure =
+            try await persistence.hasAutomaticFailedMutationRetryCandidate(
+              excludingMutationIDs: reservedMutationIDs
+            )
+          if hasPersistedTransientFailure {
+            InstantDiagnostics.shared.record(
+              .debug,
+              subsystem: "instant-swift-data-core",
+              category: "outbox",
+              event: "outbox.failed-mutation-retry.scheduled",
+              message:
+                "Scheduled indexed failed-mutation retry after the live session opened.",
+              metadata: ["appID": configuration.appID]
+            )
+          }
           recordActorHop(.operationGate)
           await operationGate.leave()
           enteredOperationGate = false
-          let outstanding: InstantAutomaticOutboxTransportSelection?
-          do {
-            outstanding = try await automaticOutboxTransportMutationsForDelivery()
-          } catch {
-            // This is a local SQLite preparation failure, not a WebSocket
-            // failure. Keep the authenticated session alive and let the
-            // bounded delivery pump retry instead of treating it as no work.
-            recordOutboxTransportHydrationFailure(error)
-            outstanding = nil
-            startLiveMutationDeliveryIfNeeded()
+        } catch is CancellationError {
+          if enteredOperationGate {
+            recordActorHop(.operationGate)
+            await operationGate.leave()
+            enteredOperationGate = false
           }
-          if let outstanding {
-            try await deliverAutomaticOutboxSelection(outstanding)
-          }
+          recordActorHop(.liveSession)
+          await liveSession.close()
+          throw CancellationError()
         } catch {
           if enteredOperationGate {
             recordActorHop(.operationGate)
@@ -4601,7 +6268,9 @@ public final class InstantRuntime: Sendable {
           recordActorHop(.liveSession)
           await liveSession.close()
           recordActorHop(.operationGate)
-          await operationGate.enter()
+          try await operationGate.enterUnlessCancelled(
+            operation: "record failed live session open"
+          )
           enteredOperationGate = true
           try await saveErroredConnectionMetadataWithGateHeld(message: String(describing: error))
           if reportsFailure {
@@ -4612,16 +6281,16 @@ public final class InstantRuntime: Sendable {
       }
       if !enteredOperationGate {
         recordActorHop(.operationGate)
-        await operationGate.enter()
+        try await operationGate.enterUnlessCancelled(operation: "finish live session open")
         enteredOperationGate = true
       }
       try await saveOpenedConnectionMetadataWithGateHeld()
       let status = try await publishConnectionStatusWithGateHeld()
+      explicitMutationFlushOwner.resume()
       recordActorHop(.operationGate)
       await operationGate.leave()
       enteredOperationGate = false
-      await connectionGate.leave()
-      enteredConnectionGate = false
+      var streamWriterReconnectError: Error?
       if configuration.liveTransport != nil {
         recordActorHop(.liveSession)
         await liveSession.startReceiving(
@@ -4629,6 +6298,7 @@ public final class InstantRuntime: Sendable {
             guard let self else { return }
             try await self.handleLiveServerEvent(event, serverAttributes: attributes)
           },
+          onEventAcquired: configuration.onLiveReceiverEventAcquiredForTesting,
           onFailure: { [weak self] error in
             guard let self else { return }
             await self.handleLiveSessionFailure(error)
@@ -4640,8 +6310,17 @@ public final class InstantRuntime: Sendable {
         } catch {
           recordActorHop(.liveSession)
           await liveSession.close()
-          await handleLiveSessionFailure(error)
+          streamWriterReconnectError = error
         }
+        if streamWriterReconnectError == nil {
+          await mutationDeliveryPump.resume()
+          await startLiveMutationDeliveryIfNeeded()
+        }
+      }
+      await connectionGate.leave()
+      enteredConnectionGate = false
+      if let streamWriterReconnectError {
+        await handleLiveSessionFailure(streamWriterReconnectError)
       }
       InstantDiagnostics.shared.record(
         .notice,
@@ -4660,6 +6339,15 @@ public final class InstantRuntime: Sendable {
         ]
       )
       return status
+    } catch is CancellationError {
+      if enteredOperationGate {
+        recordActorHop(.operationGate)
+        await operationGate.leave()
+      }
+      if enteredConnectionGate {
+        await connectionGate.leave()
+      }
+      throw CancellationError()
     } catch {
       if enteredOperationGate {
         recordActorHop(.operationGate)
@@ -4688,28 +6376,110 @@ public final class InstantRuntime: Sendable {
 
   @discardableResult
   public func closeConnection() async throws -> InstantConnectionStatus {
+    // Latch every background producer before waiting on connection work. A
+    // task that already owns the connection gate sees cancellation and leaves;
+    // no new automatic task can enter behind this close.
+    let automaticLiveConnectionTask = automaticLiveConnectionTaskOwner.requestStop()
+    let startupCookieSyncTask = startupCookieSyncTaskOwner.requestStop()
+    let reconnectTask = await reconnectController.requestStop()
+    await mutationDeliveryPump.suspend()
+    let explicitMutationFlushTask = explicitMutationFlushOwner.requestStop()
     await connectionGate.enter()
-    // Serialize cancellation with reconnect scheduling. If close wins this gate, a send failure
-    // that was already in flight observes the durable `.closed` state and cannot create a new
-    // reconnect task after this cancellation.
-    await reconnectController.cancel()
+    // Explicit response disposition uses the operation gate. Keep it free
+    // while synchronously aborted transport work, renewal, and exact-token
+    // disposition finish; only then may durable `.closed` become visible.
+    await explicitMutationFlushTask.wait()
     recordActorHop(.operationGate)
     await operationGate.enter()
+    var enteredOperationGate = true
+    // Invalidate the receiver generation and close its wire now, but retain
+    // the exact task handle. Receiver event/failure callbacks can be waiting on
+    // the operation gate, so their join belongs strictly after this gate.
+    recordActorHop(.liveSession)
+    let receiverTask = await liveSession.beginClose()
     do {
-      recordActorHop(.liveSession)
-      await liveSession.close()
+      _ = try await releaseAutomaticOutboxClaimsWithGateHeld()
       try await saveClosedConnectionMetadataWithGateHeld()
       let status = try await publishConnectionStatusWithGateHeld()
       recordActorHop(.operationGate)
       await operationGate.leave()
+      enteredOperationGate = false
+      await waitForExactCloseBackgroundTasks(
+        automaticLiveConnectionTask: automaticLiveConnectionTask,
+        startupCookieSyncTask: startupCookieSyncTask,
+        reconnectTask: reconnectTask,
+        receiverTask: receiverTask
+      )
+      explicitMutationFlushOwner.resume()
       await connectionGate.leave()
       return status
     } catch {
-      recordActorHop(.operationGate)
-      await operationGate.leave()
+      if enteredOperationGate {
+        recordActorHop(.operationGate)
+        await operationGate.leave()
+      }
+      await waitForExactCloseBackgroundTasks(
+        automaticLiveConnectionTask: automaticLiveConnectionTask,
+        startupCookieSyncTask: startupCookieSyncTask,
+        reconnectTask: reconnectTask,
+        receiverTask: receiverTask
+      )
+      explicitMutationFlushOwner.resume()
       await connectionGate.leave()
       throw error
     }
+  }
+
+  private func waitForExactCloseBackgroundTasks(
+    automaticLiveConnectionTask: InstantRuntimeExactTaskOwner.Handle,
+    startupCookieSyncTask: InstantRuntimeExactTaskOwner.Handle,
+    reconnectTask: InstantRuntimeExactTaskOwner.Handle,
+    receiverTask: InstantRuntimeExactTaskOwner.Handle
+  ) async {
+    let watchdogSleep = configuration.exactCloseWatchdogSleep
+    let watchdog = Task { [weak self] in
+      do {
+        try await watchdogSleep(5_000)
+        try Task.checkCancellation()
+      } catch {
+        return
+      }
+      guard let self else { return }
+      let state = await self.exactCloseBackgroundTaskIdleState()
+      guard !state.allIdle else { return }
+      InstantDiagnostics.shared.record(
+        .warning,
+        subsystem: "instant-swift-data-core",
+        category: "connection",
+        event: "connection.close-cleanup-stalled",
+        message:
+          "Instant close has waited 5 seconds for exact background cleanup and will continue waiting.",
+        metadata: [
+          "appID": self.configuration.appID,
+          "nonIdleOwners": state.nonIdleOwnerNames.joined(separator: ", "),
+          "automaticLiveConnectionIdle": String(state.automaticLiveConnection),
+          "startupCookieSyncIdle": String(state.startupCookieSync),
+          "reconnectIdle": String(state.reconnect),
+          "receiverIdle": String(state.receiver),
+          "mutationDeliveryPumpIdle": String(state.mutationDeliveryPump),
+          "explicitMutationFlushIdle": String(state.explicitMutationFlush),
+        ]
+      )
+    }
+    async let automaticLiveConnection: Void = automaticLiveConnectionTask.wait()
+    async let startupCookieSync: Void = startupCookieSyncTask.wait()
+    async let reconnect: Void = reconnectTask.wait()
+    async let receiver: Void = receiverTask.wait()
+    async let mutationDelivery: Void = mutationDeliveryPump.waitUntilStopped()
+    _ = await (
+      automaticLiveConnection,
+      startupCookieSync,
+      reconnect,
+      receiver,
+      mutationDelivery
+    )
+    watchdog.cancel()
+    await watchdog.value
   }
 
   private func connectionStatusWithGateHeld(
@@ -4833,6 +6603,7 @@ public final class InstantRuntime: Sendable {
   }
 
   private func recordConnectionError(_ error: Error) async {
+    guard !(error is InstantSupersededLiveSessionSend) else { return }
     await operationGate.enter()
     do {
       try await saveErroredConnectionMetadataWithGateHeld(message: String(describing: error))
@@ -4843,6 +6614,21 @@ public final class InstantRuntime: Sendable {
   }
 
   private func handleLiveSessionFailure(_ error: Error) async {
+    do {
+      _ = try await releaseAutomaticOutboxClaimsForDisconnectedSession()
+    } catch is CancellationError {
+      return
+    } catch {
+      InstantDiagnostics.shared.record(
+        error: error,
+        subsystem: "instant-swift-data-core",
+        category: "outbox",
+        event: "outbox.mutation.disconnected-claim-release-failed",
+        message: "Instant could not release durable mutation claims after the live session ended.",
+        metadata: ["appID": configuration.appID]
+      )
+    }
+    guard !Task.isCancelled else { return }
     await scheduleReconnect(
       after: error,
       event: "connection.receive-loop-failed",
@@ -4850,11 +6636,53 @@ public final class InstantRuntime: Sendable {
     )
   }
 
+  @discardableResult
+  private func releaseAutomaticOutboxClaimsForDisconnectedSession() async throws
+    -> Set<String>
+  {
+    try await enterOperationGateUnlessCancelled(
+      operation: "release automatic outbox claims for disconnected session"
+    )
+    do {
+      let released = try await releaseAutomaticOutboxClaimsWithGateHeld()
+      await leaveOperationGate()
+      return released
+    } catch {
+      await leaveOperationGate()
+      throw error
+    }
+  }
+
+  /// The operation gate orders durable claim release against the next pump
+  /// admission. Once a socket is known dead, none of its claims may survive
+  /// into the replacement session or wait for their old five-second lease.
+  @discardableResult
+  private func releaseAutomaticOutboxClaimsWithGateHeld() async throws -> Set<String> {
+    recordActorHop(.persistence)
+    let release = try await persistence.releaseAutomaticOutboxClaims(
+      claimantID: automaticDeliveryClaimantID
+    )
+    await scheduleLiveMutationDeadlineWake(
+      at: release.nextClaimDeadlineMilliseconds
+    )
+    recordActorHop(.liveSession)
+    await liveSession.releaseMutationReservations(
+      release.mutationIDs,
+      timedOut: false
+    )
+    recordActorHop(.outbox)
+    for mutationID in release.mutationIDs {
+      await outbox.remove(id: mutationID)
+    }
+    return release.mutationIDs
+  }
+
   private func scheduleReconnect(
     after error: Error,
     event: String,
     message: String
   ) async {
+    guard !Task.isCancelled else { return }
     InstantDiagnostics.shared.record(
       error: error,
       subsystem: "instant-swift-data-core",
@@ -4867,20 +6695,38 @@ public final class InstantRuntime: Sendable {
     // Order reconnect creation against explicit close. Whichever operation acquires this gate
     // first wins deterministically: close cancels a controller already created, while a later
     // scheduler sees `.closed` and returns without overwriting it or starting a new controller.
-    await connectionGate.enter()
-    await operationGate.enter()
+    do {
+      try await connectionGate.enterUnlessCancelled(operation: "schedule live reconnect")
+    } catch is CancellationError {
+      return
+    } catch {
+      return
+    }
+    var enteredOperationGate = false
     var shouldReconnect = false
     do {
+      try await enterOperationGateUnlessCancelled(operation: "schedule live reconnect")
+      enteredOperationGate = true
       if try await persistedConnectionState() == .closed {
-        await operationGate.leave()
+        await leaveOperationGate()
+        enteredOperationGate = false
         await connectionGate.leave()
         return
       }
       shouldReconnect = !recordsOnly
       try await saveErroredConnectionMetadataWithGateHeld(message: String(describing: error))
-      await operationGate.leave()
+      await leaveOperationGate()
+      enteredOperationGate = false
+    } catch is CancellationError {
+      if enteredOperationGate {
+        await leaveOperationGate()
+      }
+      await connectionGate.leave()
+      return
     } catch {
-      await operationGate.leave()
+      if enteredOperationGate {
+        await leaveOperationGate()
+      }
     }
     if shouldReconnect {
       await reconnectController.start(
@@ -5008,7 +6854,7 @@ public final class InstantRuntime: Sendable {
         id: clientEventID,
         serverTransactionID: transactionID
       )
-      startLiveMutationDeliveryIfNeeded()
+      await startLiveMutationDeliveryIfNeeded()
 
     case let .refreshPresence(refresh):
       try await applyLivePresenceRefresh(refresh)
@@ -5086,14 +6932,7 @@ public final class InstantRuntime: Sendable {
         case let .owned(claimToken) = mutationDisposition
       {
         if Self.isRetryableMutationError(error) {
-          recordActorHop(.persistence)
-          let releasedMutationIDs = try await persistence.releaseAutomaticOutboxClaim(
-            token: claimToken
-          )
-          recordActorHop(.outbox)
-          for mutationID in releasedMutationIDs {
-            await outbox.remove(id: mutationID)
-          }
+          _ = try await releaseAutomaticOutboxClaimsForDisconnectedSession()
           InstantDiagnostics.shared.record(
             .warning,
             subsystem: "instant-swift-data-core",
@@ -5138,12 +6977,13 @@ public final class InstantRuntime: Sendable {
           ],
           correlationID: clientEventID
         )
-        _ = try await failClaimedLiveMutation(
+        _ = try await failClaimedMutation(
           id: clientEventID,
           failure: Self.mutationFailure(from: error),
-          requiredClaimToken: claimToken
+          requiredClaimToken: claimToken,
+          recordsConnectionFailure: false
         )
-        startLiveMutationDeliveryIfNeeded()
+        await startLiveMutationDeliveryIfNeeded()
         return
       }
       if await liveSession.retireRejectedStreamReader(
@@ -5246,12 +7086,8 @@ public final class InstantRuntime: Sendable {
   }
 
   private static func isRetryableMutationFailureMessage(_ rawMessage: String) -> Bool {
-    let message = rawMessage.lowercased()
-    return message.contains("operation timed out")
-      || message.contains("transaction timed out")
-      || message.contains("service unavailable")
-      || message.contains("temporarily unavailable")
-      || isDeployFixableMutationFailureMessage(message)
+    InstantAutomaticFailedMutationRetryPolicy
+      .isIndependentlyRetryableFailureMessage(rawMessage)
   }
 
   private static func mutationFailure(
@@ -5274,54 +7110,43 @@ public final class InstantRuntime: Sendable {
     )
   }
 
-  /// Failures a schema deployment resolves. Retrying them on a fresh session —
-  /// which re-reads the server's attributes — lets a quarantined write deliver
-  /// once the deployment lands. Permission rejections are deliberately excluded:
-  /// upstream rejects those mutations, and silently replaying them would hide the
-  /// exact denied write from the caller.
-  private static func isDeployFixableMutationFailureMessage(_ message: String) -> Bool {
-    message.contains("could not resolve")
-  }
-
-  private func retryPersistedTransientMutationFailuresWithGateHeld() async throws {
-    let reservedMutationIDs = await automaticMutationRetryReservations.snapshot()
-    recordActorHop(.persistence)
-    let failedLifecycles = try await persistence.loadFailedMutationLifecycles(
-      limit: InstantRuntimeLiveSession.maximumMutationsPerFlush
+  /// Retries at most one bounded failed-mutation window, then releases the
+  /// operation gate so delivery and local writes can make progress.
+  ///
+  /// `nil` means the exact row proof lost a race and the pump should reload a
+  /// fresh window after yielding. A non-nil result says whether another
+  /// eligible window remains.
+  private func retryOnePersistedTransientMutationFailureWindow() async throws -> Bool? {
+    try await enterOperationGateUnlessCancelled(
+      operation: "retry one persisted transient mutation failure window"
     )
-    let retryIDs: [String] = failedLifecycles.compactMap { mutation -> String? in
-      guard mutation.status == .failed,
-        mutation.failureMessage.map(Self.isRetryableMutationFailureMessage) == true,
-        !reservedMutationIDs.contains(mutation.id)
-      else { return nil }
-      return mutation.id
-    }
-    for id in retryIDs {
-      do {
-        _ = try await performRetryMutationWithGateHeld(id: id)
-      } catch let error as InstantError
-        where error.localMutationDisposition == .retainedUnknown
-      {
-        // A row written before durable optimistic-overlay metadata existed can
-        // never be retried automatically, because its local cache effect is
-        // unknowable. Refusing it is correct; aborting this sweep is not.
-        //
-        // This sweep runs inside the live-connect path, so rethrowing closed
-        // the socket, stored an `errored` connection state, and rethrew to the
-        // caller. Every reconnect then repeated it, which meant one upgraded
-        // device row stopped queries registering, stopped every later mutation,
-        // and silenced the separate diagnostic-log client. Retain it, report it
-        // for an authoritative recovery, and keep delivering everything else.
-        reportIssue(
-          """
-          Instant retained mutation '\(id)' and skipped its automatic retry; \
-          the connection stays open.
-
-          \(String(describing: error))
-          """
-        )
-        continue
+    do {
+      let reservedMutationIDs = await automaticMutationRetryReservations.snapshot()
+      recordActorHop(.persistence)
+      guard let application = try await persistence.retryAutomaticFailedMutationWindow(
+        after: nil,
+        excludingMutationIDs: reservedMutationIDs
+      ) else {
+        await leaveOperationGate()
+        return nil
       }
+
+      recordActorHop(.outbox)
+      for mutation in application.retriedMutations {
+        await outbox.replaceIfPresent(mutation)
+      }
+      for mutation in application.isolatedMutations {
+        await outbox.replaceIfPresent(mutation)
+      }
+      for mutation in application.quarantinedMutations {
+        await outbox.replaceIfPresent(mutation)
+      }
+      _ = try? await publishConnectionStatusWithGateHeld()
+      await leaveOperationGate()
+      return application.hasMoreCandidates
+    } catch {
+      await leaveOperationGate()
+      throw error
     }
   }
 
@@ -5538,21 +7363,94 @@ public final class InstantRuntime: Sendable {
       return false
     }
     do {
-      try await deliverAutomaticOutboxSelection(outstanding)
+      let shouldContinueImmediately = try await deliverAutomaticOutboxSelection(outstanding)
+      if shouldContinueImmediately {
+        await startLiveMutationDeliveryIfNeeded()
+      }
       return true
     } catch {
-      await scheduleReconnect(
-        after: error,
-        event: "connection.mutation-delivery-failed",
-        message: "Instant could not send durable mutations and will reconnect before retrying."
-      )
+      if await liveSession.isOpen {
+        await scheduleReconnect(
+          after: error,
+          event: "connection.mutation-delivery-failed",
+          message: "Instant could not send durable mutations and will reconnect before retrying."
+        )
+      }
       return true
+    }
+  }
+
+  /// Runs one fair pump turn: one bounded retry transition followed by one
+  /// bounded delivery claim/send. Returning continuation to the coalescing
+  /// pump yields between turns instead of holding the operation gate across a
+  /// queue-depth-dependent sweep.
+  private func runAutomaticMutationPumpPass()
+    async -> InstantRuntimeMutationDeliveryPumpPassResult
+  {
+    var retryNeedsContinuation = false
+    var retryNeedsBackoff = false
+    do {
+      try Task.checkCancellation()
+      if let hasMoreCandidates = try await retryOnePersistedTransientMutationFailureWindow() {
+        retryNeedsContinuation = hasMoreCandidates
+      } else {
+        retryNeedsBackoff = true
+      }
+    } catch is CancellationError {
+      return .finished
+    } catch {
+      recordFailedMutationRetryWindowFailure(error)
+      retryNeedsBackoff = true
+    }
+
+    await configuration.onAutomaticMutationPumpRetryWindowCompletedForTesting?()
+
+    let outstanding: InstantAutomaticOutboxTransportSelection
+    do {
+      try Task.checkCancellation()
+      outstanding = try await automaticOutboxTransportMutationsForDelivery()
+    } catch is CancellationError {
+      return .finished
+    } catch {
+      recordOutboxTransportHydrationFailure(error)
+      return .retryAfterFailure
+    }
+    do {
+      try Task.checkCancellation()
+      let deliveryNeedsContinuation = try await deliverAutomaticOutboxSelection(outstanding)
+      if retryNeedsBackoff {
+        return .retryAfterFailure
+      }
+      return retryNeedsContinuation || deliveryNeedsContinuation
+        ? .continueImmediately
+        : .finished
+    } catch is CancellationError {
+      return .finished
+    } catch {
+      // A receive-loop failure may close the session between SQLite claim
+      // admission and this send. That failure already owns the reconnect;
+      // scheduling a second one makes the controller reopen a healthy
+      // replacement session again and can strand the retry indefinitely.
+      if await liveSession.isOpen {
+        await scheduleReconnect(
+          after: error,
+          event: "connection.mutation-delivery-failed",
+          message: "Instant could not send durable mutations and will reconnect before retrying."
+        )
+      }
+      return .finished
     }
   }
 
   private func deliverAutomaticOutboxSelection(
     _ selection: InstantAutomaticOutboxTransportSelection
-  ) async throws {
+  ) async throws -> Bool {
+    try Task.checkCancellation()
+    var encodingAttributeRevision: Int64?
+    if !selection.mutations.isEmpty {
+      recordActorHop(.persistence)
+      encodingAttributeRevision = try await persistence.currentAttributeRevision()
+    }
     recordActorHop(.liveSession)
     await liveSession.releaseMutationReservations(
       selection.reclaimedMutationIDs,
@@ -5562,16 +7460,22 @@ public final class InstantRuntime: Sendable {
     do {
       encodingFailures = try await liveSession.sendMutations(selection.mutations)
     } catch {
-      if let claimToken = selection.claimToken {
-        recordActorHop(.persistence)
-        let released = (try? await persistence.releaseAutomaticOutboxClaim(token: claimToken))
-          ?? selection.claimedMutationIDs
-        recordActorHop(.liveSession)
-        await liveSession.releaseMutationReservations(released, timedOut: false)
-        recordActorHop(.outbox)
-        for mutationID in released {
-          await outbox.remove(id: mutationID)
-        }
+      do {
+        _ = try await releaseAutomaticOutboxClaimsForDisconnectedSession()
+      } catch is CancellationError {
+        throw CancellationError()
+      } catch let releaseError {
+        InstantDiagnostics.shared.record(
+          error: releaseError,
+          subsystem: "instant-swift-data-core",
+          category: "outbox",
+          event: "outbox.mutation.send-failure-claim-release-failed",
+          message: "Instant could not release durable claims after a live mutation send failed.",
+          metadata: [
+            "claimTokenPresent": String(selection.claimToken != nil),
+            "claimedMutationCount": String(selection.claimedMutationIDs.count),
+          ]
+        )
       }
       throw error
     }
@@ -5579,8 +7483,11 @@ public final class InstantRuntime: Sendable {
     do {
       try await persistLiveMutationEncodingFailures(
         encodingFailures,
+        failureAttributeRevision: encodingAttributeRevision,
         claimToken: selection.claimToken
       )
+    } catch is CancellationError {
+      throw CancellationError()
     } catch {
       reportIssue(
         """
@@ -5590,17 +7497,24 @@ public final class InstantRuntime: Sendable {
         """
       )
     }
-    scheduleLiveMutationDeadlineWake(at: selection.nextClaimDeadlineMilliseconds)
-    if selection.shouldContinueImmediately || !encodingFailures.isEmpty {
-      startLiveMutationDeliveryIfNeeded()
-    }
+    await scheduleLiveMutationDeadlineWake(at: selection.nextClaimDeadlineMilliseconds)
+    return selection.shouldContinueImmediately || !encodingFailures.isEmpty
   }
 
   private func persistLiveMutationEncodingFailures(
     _ failures: [InstantLiveMutationEncodingFailure],
+    failureAttributeRevision: Int64?,
     claimToken: String?
   ) async throws {
     guard !failures.isEmpty else { return }
+    guard let failureAttributeRevision else {
+      throw InstantError(
+        code: .persistenceFailed,
+        operation: "record live mutation encoding failures",
+        message: "Encoding failures did not carry the durable attribute revision they used.",
+        recovery: "Retry automatic delivery so the mutation can be classified against a durable schema revision."
+      )
+    }
     guard let claimToken else {
       throw InstantError(
         code: .persistenceFailed,
@@ -5618,13 +7532,16 @@ public final class InstantRuntime: Sendable {
       },
       uniquingKeysWith: { _, newest in newest }
     )
-    await enterOperationGate()
+    try await enterOperationGateUnlessCancelled(
+      operation: "persist live mutation encoding failures"
+    )
     do {
       for _ in 0..<5 {
         recordActorHop(.persistence)
         let outboxRevision = try await persistence.currentOutboxRevision()
         guard let application = try await persistence.failOutboxMutationsForDelivery(
           failuresByMutationID,
+          failureAttributeRevision: failureAttributeRevision,
           claimToken: claimToken,
           expectedOutboxRevision: outboxRevision
         ) else { continue }
@@ -5648,6 +7565,26 @@ public final class InstantRuntime: Sendable {
     _ source: AsyncStream<Element>,
     onTermination: @escaping @Sendable () async -> Void
   ) -> AsyncStream<Element> {
+    liveObservationLease(source, onTermination: onTermination).stream
+  }
+
+  private static func queryObservationLease(
+    _ observation: InstantLiveInfiniteQueryChunkObservationLease<InstantQueryEmission>
+  ) -> InstantQueryObservationLease {
+    InstantQueryObservationLease(
+      stream: observation.stream,
+      cancel: observation.cancel
+    )
+  }
+
+  private static func finishedQueryObservationLease() -> InstantQueryObservationLease {
+    .finished()
+  }
+
+  private static func liveObservationLease<Element: Sendable>(
+    _ source: AsyncStream<Element>,
+    onTermination: @escaping @Sendable () async -> Void
+  ) -> InstantLiveInfiniteQueryChunkObservationLease<Element> {
     let output = AsyncStream<Element>.makeStream(
       bufferingPolicy: .bufferingNewest(1)
     )
@@ -5657,13 +7594,23 @@ public final class InstantRuntime: Sendable {
       }
       output.continuation.finish()
     }
+    let termination = InstantLiveObservationTermination(onTermination)
     output.continuation.onTermination = { @Sendable _ in
       task.cancel()
       Task {
-        await onTermination()
+        await termination.run()
+        await task.value
       }
     }
-    return output.stream
+    return InstantLiveInfiniteQueryChunkObservationLease(
+      stream: output.stream,
+      cancel: {
+        task.cancel()
+        output.continuation.finish()
+        await termination.run()
+        await task.value
+      }
+    )
   }
 
   private func connectionState(
@@ -5701,10 +7648,16 @@ public final class InstantRuntime: Sendable {
     )
     do {
       try await configuration.userCookieSyncClient.sync(request)
+    } catch is CancellationError {
+      throw CancellationError()
     } catch {
       // Match Instant's Reactor: endpoint failures are logged there, but the
       // local last-sync marker is still advanced to avoid retry loops.
     }
+    // A cancellation-insensitive endpoint can return normally after exact
+    // close requested stop. Never convert that late return into a metadata
+    // write after the runtime has published its closed boundary.
+    try Task.checkCancellation()
     recordActorHop(.persistence)
     try await persistence.saveMetadataValue(
       Self.cookieSyncISOString(from: syncedAt),
@@ -5714,7 +7667,7 @@ public final class InstantRuntime: Sendable {
     return request
   }
 
-  private func syncUserCookieOnStartup() async {
+  private func syncUserCookieOnStartup() async throws {
     guard configuration.firstPartyURL != nil else { return }
 
     do {
@@ -5732,6 +7685,8 @@ public final class InstantRuntime: Sendable {
       recordActorHop(.persistence)
       let session = try await persistence.loadAuthSession(key: authSessionKey)
       _ = try await syncUserCookieToEndpoint(session)
+    } catch is CancellationError {
+      throw CancellationError()
     } catch {
       // Match Instant's Reactor startup behavior: cookie sync failures are
       // intentionally non-fatal to runtime bootstrap.
@@ -6829,6 +8784,25 @@ public final class InstantRuntime: Sendable {
     name rawName: String? = nil,
     contentType rawContentType: String? = nil
   ) async throws -> AsyncThrowingStream<InstantFileUploadProgress, Error> {
+    try await uploadFileProgressLease(
+      from: sourceURL,
+      name: rawName,
+      contentType: rawContentType
+    ).stream
+  }
+
+  /// Progress stream lease around a single upload.
+  ///
+  /// Kept intentionally thin: the prior abortable prepared-operation graph
+  /// hung Swift 6.3 SIL `ClosureLifetimeFixup` for tens of minutes on this
+  /// 13k-line primary. Reintroduce exact cancel/join on a smaller unit after
+  /// InstantRuntime is split.
+  package func uploadFileProgressLease(
+    from sourceURL: URL,
+    name rawName: String? = nil,
+    contentType rawContentType: String? = nil
+  ) async throws
+    -> InstantManagedStreamLease<AsyncThrowingStream<InstantFileUploadProgress, Error>> {
     let file = try await preparedStoredFile(
       from: sourceURL,
       name: rawName,
@@ -6839,70 +8813,79 @@ public final class InstantRuntime: Sendable {
       at: sourceURL,
       operation: "upload file"
     )
-    let cancellation = InstantFileUploadProgressCancellation()
-
-    return AsyncThrowingStream(bufferingPolicy: .bufferingOldest(2)) { continuation in
-      Task {
-        let startedAt = self.configuration.now()
-        continuation.yield(
+    let output = AsyncThrowingStream<InstantFileUploadProgress, Error>.makeStream(
+      bufferingPolicy: .bufferingNewest(2)
+    )
+    let task = Task { [weak self] in
+      guard let self else {
+        output.continuation.finish()
+        return
+      }
+      output.continuation.yield(
+        InstantFileUploadProgress(
+          operationID: file.id,
+          appID: file.appID,
+          fileID: file.id,
+          fileName: file.name,
+          contentType: file.contentType,
+          state: .loading,
+          completedByteCount: 0,
+          totalByteCount: totalByteCount,
+          progress: 0,
+          updatedAt: self.configuration.now()
+        )
+      )
+      do {
+        try Task.checkCancellation()
+        let savedFile = try await self.savePreparedStoredFile(file, contentsOf: sourceURL)
+        try Task.checkCancellation()
+        output.continuation.yield(
           InstantFileUploadProgress(
             operationID: file.id,
             appID: file.appID,
             fileID: file.id,
             fileName: file.name,
             contentType: file.contentType,
-            state: .loading,
+            state: .success,
+            completedByteCount: savedFile.byteCount,
+            totalByteCount: max(totalByteCount, savedFile.byteCount),
+            progress: 1,
+            file: savedFile,
+            updatedAt: self.configuration.now()
+          )
+        )
+        output.continuation.finish()
+      } catch is CancellationError {
+        output.continuation.finish()
+      } catch {
+        output.continuation.yield(
+          InstantFileUploadProgress(
+            operationID: file.id,
+            appID: file.appID,
+            fileID: file.id,
+            fileName: file.name,
+            contentType: file.contentType,
+            state: .error,
             completedByteCount: 0,
             totalByteCount: totalByteCount,
             progress: 0,
-            updatedAt: startedAt
+            errorMessage: error.localizedDescription,
+            updatedAt: self.configuration.now()
           )
         )
-        do {
-          try await Task.sleep(nanoseconds: 5_000_000)
-          try cancellation.check()
-          let savedFile = try await self.savePreparedStoredFile(file, contentsOf: sourceURL)
-          continuation.yield(
-            InstantFileUploadProgress(
-              operationID: file.id,
-              appID: file.appID,
-              fileID: file.id,
-              fileName: file.name,
-              contentType: file.contentType,
-              state: .success,
-              completedByteCount: savedFile.byteCount,
-              totalByteCount: max(totalByteCount, savedFile.byteCount),
-              progress: 1,
-              file: savedFile,
-              updatedAt: self.configuration.now()
-            )
-          )
-          continuation.finish()
-        } catch is CancellationError {
-          return
-        } catch {
-          continuation.yield(
-            InstantFileUploadProgress(
-              operationID: file.id,
-              appID: file.appID,
-              fileID: file.id,
-              fileName: file.name,
-              contentType: file.contentType,
-              state: .error,
-              completedByteCount: 0,
-              totalByteCount: totalByteCount,
-              progress: 0,
-              errorMessage: error.localizedDescription,
-              updatedAt: self.configuration.now()
-            )
-          )
-          continuation.finish(throwing: error)
-        }
-      }
-      continuation.onTermination = { @Sendable _ in
-        cancellation.cancel()
+        output.continuation.finish(throwing: error)
       }
     }
+    let lease = InstantManagedStreamLease(
+      stream: output.stream,
+      onCancellationRequested: { task.cancel() }
+    )
+    lease.install {
+      task.cancel()
+      output.continuation.finish()
+      await task.value
+    }
+    return lease
   }
 
   private func savePreparedStoredFile(
@@ -6914,13 +8897,18 @@ public final class InstantRuntime: Sendable {
     var uploadedPath: String?
     var uploadedRefreshToken: String?
     if let storageTransport {
+      let byteCount = try await persistence.regularFileByteCount(
+        at: sourceURL,
+        operation: "upload file"
+      )
       let refreshToken = try await storageRefreshToken(operation: "upload file")
       let response = try await storageTransport.upload(
         InstantStorageUploadRequest(
           appID: configuration.appID,
           apiURI: configuration.apiURI,
           path: file.name,
-          data: try Data(contentsOf: sourceURL),
+          sourceURL: sourceURL,
+          byteCount: byteCount,
           refreshToken: refreshToken,
           contentType: file.contentType
         )
@@ -8682,6 +10670,25 @@ public final class InstantRuntime: Sendable {
     )
   }
 
+  private func recordFailedMutationRetryWindowFailure(_ error: Error) {
+    InstantDiagnostics.shared.record(
+      error: error,
+      subsystem: "instant-swift-data-core",
+      category: "outbox",
+      event: "outbox.failed-mutation-retry.window-failed",
+      message: "Could not transition one bounded failed-mutation retry window."
+    )
+    reportIssue(
+      """
+      Instant could not transition one bounded failed-mutation retry window.
+
+      \(String(describing: error))
+
+      The mutations remain durable in SQLite. The healthy delivery pump will retry after a bounded delay.
+      """
+    )
+  }
+
   private func outboxTransportMutationsForDelivery(includeFailed: Bool = false) async throws
     -> [InstantTransportMutation]
   {
@@ -8740,7 +10747,9 @@ public final class InstantRuntime: Sendable {
   private func automaticOutboxTransportMutationsForDelivery() async throws
     -> InstantAutomaticOutboxTransportSelection
   {
-    await enterOperationGate()
+    try await enterOperationGateUnlessCancelled(
+      operation: "claim automatic outbox transport mutations for delivery"
+    )
     do {
       recordActorHop(.persistence)
       let window = try await persistence.claimAutomaticOutboxDeliveryWindow(
@@ -8784,221 +10793,381 @@ public final class InstantRuntime: Sendable {
       throw validationFailed(
         operation: "flush outbox",
         message: "Flush limit must be greater than or equal to 0.",
-        recovery: "Pass a non-negative --limit value, or omit --limit to flush every pending mutation."
+        recovery:
+          "Pass a non-negative --limit value, or omit --limit to flush one fixed bounded delivery window."
       )
     }
+    if limit == 0 {
+      return try await emptyExplicitMutationFlushResult()
+    }
 
-    await enterMutationFlushGate()
+    try await enterMutationFlushGateUnlessCancelled()
+    guard let handle = explicitMutationFlushOwner.start({ [self] ownerToken in
+      try await performBoundedExplicitMutationFlush(
+        limit: limit,
+        ownerToken: ownerToken
+      )
+    }) else {
+      await leaveMutationFlushGate()
+      throw InstantError(
+        code: .networkFailed,
+        operation: "flush outbox",
+        message: "Cannot begin an explicit flush while Instant is closing or closed.",
+        recovery: "Call connect() before flushing one bounded pending-mutation window."
+      )
+    }
+    let completion = await withTaskCancellationHandler {
+      await handle.completion()
+    } onCancel: {
+      self.explicitMutationFlushOwner.cancel(handle)
+    }
+    await leaveMutationFlushGate()
+    guard let completion else { throw CancellationError() }
+    switch completion {
+    case let .success(result):
+      return result
+    case let .failure(error):
+      throw error
+    case .cancelled:
+      throw CancellationError()
+    }
+  }
+
+  private func emptyExplicitMutationFlushResult() async throws
+    -> InstantMutationTransportFlushResult
+  {
+    try await enterOperationGateUnlessCancelled(operation: "read empty explicit flush result")
     do {
-      let request: InstantMutationTransportRequest
-      let selectedMutations: [PendingMutation]
-      let selectedMutationIDs: Set<String>
-      let flushClaimToken = UUID().uuidString.lowercased()
-      let flushClaimantID =
-        "\(automaticDeliveryClaimantID)-explicit-\(flushClaimToken)"
-
-      await enterOperationGate()
-      do {
-        recordActorHop(.persistence)
-        let selected = try await persistence.claimPendingOutboxMutationsForExplicitFlush(
-          limit: limit,
-          claimantID: flushClaimantID,
-          claimToken: flushClaimToken,
-          now: configuration.now()
-        )
-        if !selected.isEmpty,
-          try await persistedConnectionState() == .closed
-        {
-          _ = try await persistence.releaseAutomaticOutboxClaim(token: flushClaimToken)
-          throw InstantError(
-            code: .networkFailed,
-            operation: "flush outbox",
-            message:
-              "Cannot flush \(selected.count) pending mutation(s) while the Instant connection is closed.",
-            recovery: "Call connect() before flushing pending mutations."
-          )
-        }
-        recordActorHop(.persistence)
-        let pendingCount = try await persistence.countOutboxMutations(status: .pending)
-        let mutationCount = try await persistence.countOutboxMutations()
-        request = InstantMutationTransportRequest(
+      recordActorHop(.persistence)
+      let pendingMutationCount = try await persistence.countOutboxMutations(status: .pending)
+      let mutationCount = try await persistence.countOutboxMutations()
+      await leaveOperationGate()
+      return InstantMutationTransportFlushResult(
+        request: InstantMutationTransportRequest(
           appID: configuration.appID,
           apiURI: configuration.apiURI,
           websocketURI: configuration.websocketURI,
-          mutations: selected.map(InstantTransportMutation.init)
-        )
-        selectedMutations = selected
-        selectedMutationIDs = Set(selected.map(\.id))
-
-        guard !selected.isEmpty else {
-          await leaveOperationGate()
-          await leaveMutationFlushGate()
-          return InstantMutationTransportFlushResult(
-            request: request,
-            results: [],
-            confirmed: [],
-            failed: [],
-            pendingMutationCount: pendingCount,
-            mutationCount: mutationCount
-          )
-        }
-        await leaveOperationGate()
-      } catch {
-        await leaveOperationGate()
-        throw error
-      }
-
-      let race = InstantExplicitMutationTransportRace()
-      let mutationTransport = configuration.mutationTransport
-      let transportTask = Task { () -> InstantExplicitMutationTransportOutcome in
-        let outcome: InstantExplicitMutationTransportOutcome
-        do {
-          outcome = .response(try await mutationTransport.send(request))
-        } catch let error as InstantError {
-          outcome = .failure(error)
-        } catch {
-          outcome = .failure(InstantError(
-            code: .networkFailed,
-            operation: "flush Instant mutation transport",
-            message: String(describing: error),
-            recovery: "Inspect the configured mutation transport and retry the durable outbox."
-          ))
-        }
-        await race.resolve(.completed)
-        return outcome
-      }
-      let timeoutTask = Task {
-        do {
-          try await Task.sleep(
-            nanoseconds: UInt64(
-              InstantAutomaticOutboxClaimLimits.claimTimeoutMilliseconds
-            ) * 1_000_000
-          )
-          try Task.checkCancellation()
-          await race.resolve(.timedOut)
-        } catch {}
-      }
-      let renewalTask = Task { [weak self] in
-        await self?.renewExplicitOutboxClaimUntilCancelled(
-          token: flushClaimToken,
-          claimantID: flushClaimantID
-        )
-      }
-
-      switch await race.firstEvent() {
-      case .completed:
-        timeoutTask.cancel()
-        let outcome = await transportTask.value
-        do {
-          switch outcome {
-          case let .response(response):
-            let result = try await applyExplicitMutationTransportResponse(
-              request: request,
-              response: response,
-              selectedMutations: selectedMutations,
-              selectedMutationIDs: selectedMutationIDs,
-              claimToken: flushClaimToken
-            )
-            renewalTask.cancel()
-            await leaveMutationFlushGate()
-            return result
-          case let .failure(error):
-            renewalTask.cancel()
-            recordActorHop(.persistence)
-            _ = try? await persistence.releaseAutomaticOutboxClaim(token: flushClaimToken)
-            await recordConnectionError(error)
-            throw error
-          }
-        } catch {
-          renewalTask.cancel()
-          throw error
-        }
-
-      case .timedOut:
-        transportTask.cancel()
-        Task { [weak self] in
-          let outcome = await transportTask.value
-          guard let self else {
-            renewalTask.cancel()
-            return
-          }
-          await self.finishTimedOutExplicitMutationTransport(
-            outcome,
-            request: request,
-            selectedMutations: selectedMutations,
-            selectedMutationIDs: selectedMutationIDs,
-            claimToken: flushClaimToken
-          )
-          renewalTask.cancel()
-        }
-        let timeout = InstantError(
-          code: .networkFailed,
-          operation: "flush Instant mutation transport",
-          message: "Timed out after 5000ms waiting for the configured Instant mutation transport.",
-          recovery:
-            "The durable ordered claim remains fenced until the transport exits; inspect the transport before flushing again."
-        )
-        await recordConnectionError(timeout)
-        throw timeout
-      }
+          mutations: []
+        ),
+        results: [],
+        confirmed: [],
+        failed: [],
+        pendingMutationCount: pendingMutationCount,
+        mutationCount: mutationCount
+      )
     } catch {
-      await leaveMutationFlushGate()
+      await leaveOperationGate()
       throw error
     }
   }
 
-  private func renewExplicitOutboxClaimUntilCancelled(
-    token: String,
-    claimantID: String
-  ) async {
-    while !Task.isCancelled {
-      do {
-        try await Task.sleep(nanoseconds: 1_000_000_000)
-        try Task.checkCancellation()
+  private func performBoundedExplicitMutationFlush(
+    limit: Int?,
+    ownerToken: UInt64
+  ) async throws -> InstantMutationTransportFlushResult {
+    let flushClaimToken = UUID().uuidString.lowercased()
+    let flushClaimantID = "\(automaticDeliveryClaimantID)-explicit-\(flushClaimToken)"
+    let request: InstantMutationTransportRequest
+    let selectedMutations: [PendingMutation]
+    let selectedMutationIDs: Set<String>
+    let selectionFailures: [PendingMutation]
+    let selectionDecodedBodyByteCount: Int
+    let pendingCountAfterSelection: Int
+    let mutationCountAfterSelection: Int
+
+    try await enterOperationGateUnlessCancelled(operation: "select bounded explicit outbox flush")
+    do {
+      recordActorHop(.persistence)
+      let window = try await persistence.claimExplicitOutboxDeliveryWindow(
+        limit: limit,
+        claimantID: flushClaimantID,
+        claimToken: flushClaimToken,
+        now: configuration.now()
+      )
+      selectedMutations = window.mutations
+      selectedMutationIDs = Set(window.mutations.map(\.id))
+      selectionFailures = window.failedMutations
+      selectionDecodedBodyByteCount = window.decodedBodyByteCount
+      request = InstantMutationTransportRequest(
+        appID: configuration.appID,
+        apiURI: configuration.apiURI,
+        websocketURI: configuration.websocketURI,
+        mutations: InstantBoundedOutboxDelivery.transportMutations(in: window)
+      )
+      recordActorHop(.outbox)
+      for mutation in window.failedMutations {
+        await publishMutationLifecycle(mutation)
+        await outbox.remove(id: mutation.id)
+      }
+      for mutation in window.mutations {
+        await outbox.replace(mutation)
+      }
+      if !window.failedMutations.isEmpty {
+        _ = try? await publishConnectionStatusWithGateHeld()
+      }
+      if !window.mutations.isEmpty,
+        try await persistedConnectionState() == .closed
+      {
         recordActorHop(.persistence)
-        let renewed = try await persistence.renewOutboxClaim(
-          token: token,
-          claimantID: claimantID,
-          deadlineMilliseconds: configuration.now().milliseconds
-            + InstantAutomaticOutboxClaimLimits.claimTimeoutMilliseconds
+        _ = try await persistence.releaseAutomaticOutboxClaim(token: flushClaimToken)
+        throw InstantError(
+          code: .networkFailed,
+          operation: "flush outbox",
+          message:
+            "Cannot flush \(window.mutations.count) pending mutation(s) while the Instant connection is closed.",
+          recovery: "Call connect() before flushing pending mutations."
         )
-        guard renewed else { return }
+      }
+      recordActorHop(.persistence)
+      pendingCountAfterSelection = try await persistence.countOutboxMutations(status: .pending)
+      mutationCountAfterSelection = try await persistence.countOutboxMutations()
+      await leaveOperationGate()
+    } catch {
+      await leaveOperationGate()
+      throw error
+    }
+
+    if Task.isCancelled {
+      if !selectedMutations.isEmpty {
+        let release = Task { [self] in
+          recordActorHop(.persistence)
+          _ = try? await persistence.releaseAutomaticOutboxClaim(token: flushClaimToken)
+        }
+        await release.value
+      }
+      throw CancellationError()
+    }
+
+    guard !selectedMutations.isEmpty else {
+      return InstantMutationTransportFlushResult(
+        request: request,
+        results: [],
+        confirmed: [],
+        failed: selectionFailures,
+        pendingMutationCount: pendingCountAfterSelection,
+        mutationCount: mutationCountAfterSelection
+      )
+    }
+
+    let race = InstantExplicitMutationTransportRace()
+    let transportOperation = configuration.mutationTransport.prepareOperation(request)
+    let operationCancellation = InstantExplicitMutationOperationCancellation(
+      operation: transportOperation,
+      race: race
+    )
+    explicitMutationFlushOwner.installCancellation(token: ownerToken) {
+      operationCancellation.cancel()
+    }
+    if Task.isCancelled {
+      operationCancellation.cancel()
+      let release = Task { [self] in
+        recordActorHop(.persistence)
+        _ = try? await persistence.releaseAutomaticOutboxClaim(token: flushClaimToken)
+      }
+      await release.value
+      throw CancellationError()
+    }
+    recordActorHop(.mutationTransport)
+    let transportTask = Task { () -> InstantExplicitMutationTransportOutcome in
+      let outcome: InstantExplicitMutationTransportOutcome
+      do {
+        outcome = .response(try await transportOperation.run())
       } catch is CancellationError {
-        return
+        outcome = .cancelled
+      } catch let error as InstantError {
+        outcome = .failure(error)
       } catch {
-        reportIssue(
-          "Instant could not renew the exclusive explicit-flush claim: \(error)"
+        outcome = .failure(InstantError(
+          code: .networkFailed,
+          operation: "flush Instant mutation transport",
+          message: String(describing: error),
+          recovery: "Inspect the configured mutation transport and retry the bounded durable outbox window."
+        ))
+      }
+      race.resolve(.completed)
+      return outcome
+    }
+    operationCancellation.installTransportTask(transportTask)
+    let deadlineSleep = configuration.explicitMutationTransportDeadlineSleep
+    let deadlineTask = Task {
+      do {
+        try await deadlineSleep(
+          UInt64(InstantOutboxClaimLimits.claimTimeoutMilliseconds)
+        )
+        try Task.checkCancellation()
+        transportOperation.abort()
+        transportTask.cancel()
+        race.resolve(.timedOut)
+      } catch {}
+    }
+    operationCancellation.installDeadlineTask(deadlineTask)
+    let renewalSleep = configuration.explicitMutationClaimRenewalSleep
+    let renewalTask = Task { [self] in
+      while true {
+        do {
+          try await renewalSleep(1_000)
+          try Task.checkCancellation()
+          recordActorHop(.persistence)
+          let renewed = try await persistence.renewOutboxClaim(
+            token: flushClaimToken,
+            claimantID: flushClaimantID,
+            deadlineMilliseconds: configuration.now().milliseconds
+              + InstantOutboxClaimLimits.claimTimeoutMilliseconds
+          )
+          guard renewed else {
+            throw InstantError(
+              code: .networkFailed,
+              operation: "renew explicit outbox claim",
+              message: "The exact explicit-flush claim was lost before transport disposition.",
+              recovery: "Do not resend this window until its durable mutation state is inspected."
+            )
+          }
+        } catch is CancellationError {
+          return
+        } catch let error as InstantError {
+          transportOperation.abort()
+          transportTask.cancel()
+          deadlineTask.cancel()
+          race.resolve(.renewalFailed(error))
+          return
+        } catch {
+          let failure = InstantError(
+            code: .persistenceFailed,
+            operation: "renew explicit outbox claim",
+            message: String(describing: error),
+            recovery: "Inspect the durable outbox claim before retrying this bounded window."
+          )
+          transportOperation.abort()
+          transportTask.cancel()
+          deadlineTask.cancel()
+          race.resolve(.renewalFailed(failure))
+          return
+        }
+      }
+    }
+    let event = await race.firstEvent()
+    let terminalError: InstantError?
+    let returnsCancellation: Bool
+    let cleanupPhase: String?
+    switch event {
+    case .completed:
+      terminalError = nil
+      returnsCancellation = false
+      cleanupPhase = "response-disposition"
+      deadlineTask.cancel()
+    case .timedOut:
+      terminalError = InstantError(
+        code: .networkFailed,
+        operation: "flush Instant mutation transport",
+        message: "Timed out after 5000ms waiting for the configured Instant mutation transport.",
+        recovery:
+          "Instant aborted the transport and kept the exact durable claim renewed while awaiting final response disposition."
+      )
+      returnsCancellation = false
+      cleanupPhase = "deadline"
+    case .cancelled:
+      terminalError = nil
+      returnsCancellation = true
+      cleanupPhase = "cancellation-or-close"
+    case let .renewalFailed(error):
+      terminalError = error
+      returnsCancellation = false
+      cleanupPhase = "claim-renewal"
+    }
+
+    let cleanupWatchdog: Task<Void, Never>? = cleanupPhase.map { phase in
+      let sleep = configuration.explicitMutationCleanupWatchdogSleep
+      return Task { [weak self] in
+        do {
+          try await sleep(5_000)
+          try Task.checkCancellation()
+        } catch {
+          return
+        }
+        guard let self else { return }
+        InstantDiagnostics.shared.record(
+          .warning,
+          subsystem: "instant-swift-data-core",
+          category: "outbox",
+          event: "outbox.explicit-flush.cleanup-stalled",
+          message:
+            "Instant has waited another 5 seconds for exact explicit-flush cleanup and will continue waiting.",
+          metadata: [
+            "appID": self.configuration.appID,
+            "phase": phase,
+            "claimToken": flushClaimToken,
+            "selectedMutationCount": String(selectedMutations.count),
+            "decodedBodyByteCount": String(selectionDecodedBodyByteCount),
+          ]
         )
       }
     }
-  }
 
-  private func finishTimedOutExplicitMutationTransport(
-    _ outcome: InstantExplicitMutationTransportOutcome,
-    request: InstantMutationTransportRequest,
-    selectedMutations: [PendingMutation],
-    selectedMutationIDs: Set<String>,
-    claimToken: String
-  ) async {
-    switch outcome {
-    case let .response(response):
-      do {
-        _ = try await applyExplicitMutationTransportResponse(
-          request: request,
-          response: response,
-          selectedMutations: selectedMutations,
-          selectedMutationIDs: selectedMutationIDs,
-          claimToken: claimToken
-        )
-      } catch {
-        reportIssue(
-          "Instant could not apply the fenced late explicit-flush response: \(error)"
-        )
+    let outcome = await transportTask.value
+    let disposition = Task { [self] () -> InstantExplicitMutationDisposition in
+      switch outcome {
+      case let .response(response):
+        do {
+          return .success(try await applyExplicitMutationTransportResponse(
+            request: request,
+            response: response,
+            selectedMutations: selectedMutations,
+            selectedMutationIDs: selectedMutationIDs,
+            selectionFailures: selectionFailures,
+            claimToken: flushClaimToken
+          ))
+        } catch let error as InstantError {
+          return .responseFailure(error)
+        } catch {
+          return .responseFailure(InstantError(
+            code: .persistenceFailed,
+            operation: "apply explicit mutation transport response",
+            message: String(describing: error),
+            recovery: "Inspect the exact durable outbox claim before retrying."
+          ))
+        }
+      case let .failure(error):
+        recordActorHop(.persistence)
+        _ = try? await persistence.releaseAutomaticOutboxClaim(token: flushClaimToken)
+        await recordConnectionError(error)
+        return .transportFailure(error)
+      case .cancelled:
+        recordActorHop(.persistence)
+        _ = try? await persistence.releaseAutomaticOutboxClaim(token: flushClaimToken)
+        return .transportCancelled
       }
-    case let .failure(error):
-      recordActorHop(.persistence)
-      _ = try? await persistence.releaseAutomaticOutboxClaim(token: claimToken)
-      await recordConnectionError(error)
+    }
+    let dispositionResult = await disposition.value
+    renewalTask.cancel()
+    deadlineTask.cancel()
+    _ = await (renewalTask.value, deadlineTask.value)
+    cleanupWatchdog?.cancel()
+    await cleanupWatchdog?.value
+
+    if case let .responseFailure(error) = dispositionResult {
+      throw error
+    }
+    if let terminalError {
+      await recordConnectionError(terminalError)
+      throw terminalError
+    }
+    if returnsCancellation || Task.isCancelled {
+      throw CancellationError()
+    }
+    switch dispositionResult {
+    case let .success(result):
+      return result
+    case let .transportFailure(error):
+      throw error
+    case .transportCancelled:
+      throw InstantError(
+        code: .networkFailed,
+        operation: "flush Instant mutation transport",
+        message: "The configured mutation transport ended through cancellation.",
+        recovery: "Retry the bounded durable outbox window when the transport is available."
+      )
+    case .responseFailure:
+      fatalError("The explicit response-disposition failure was handled above.")
     }
   }
 
@@ -9007,35 +11176,72 @@ public final class InstantRuntime: Sendable {
     response: InstantMutationTransportResponse,
     selectedMutations: [PendingMutation],
     selectedMutationIDs: Set<String>,
+    selectionFailures: [PendingMutation],
     claimToken: String
   ) async throws -> InstantMutationTransportFlushResult {
-    let results = response.results.filter { selectedMutationIDs.contains($0.mutationID) }
-    await enterOperationGate()
+    guard response.results.count <= InstantOutboxClaimLimits.maximumMutationCount else {
+      recordActorHop(.persistence)
+      _ = try? await persistence.releaseAutomaticOutboxClaim(token: claimToken)
+      throw InstantError(
+        code: .validationFailed,
+        operation: "apply explicit mutation transport response",
+        message:
+          "The mutation transport returned more results than one bounded delivery window permits.",
+        recovery:
+          "Return at most \(InstantOutboxClaimLimits.maximumMutationCount) results and only one outcome per mutation id."
+      )
+    }
+    var resultByMutationID: [String: InstantMutationTransportResult] = [:]
+    resultByMutationID.reserveCapacity(selectedMutationIDs.count)
+    for result in response.results where selectedMutationIDs.contains(result.mutationID) {
+      if let existing = resultByMutationID[result.mutationID] {
+        guard existing == result else {
+          recordActorHop(.persistence)
+          _ = try? await persistence.releaseAutomaticOutboxClaim(token: claimToken)
+          throw InstantError(
+            code: .validationFailed,
+            operation: "apply explicit mutation transport response",
+            localID: result.mutationID,
+            message:
+              "The mutation transport returned conflicting terminal results for one bounded-window mutation.",
+            recovery:
+              "Fix the transport to return at most one outcome per mutation id before retrying."
+          )
+        }
+      } else {
+        resultByMutationID[result.mutationID] = result
+      }
+    }
+    let results = selectedMutations.compactMap { resultByMutationID[$0.id] }
+    // A transport may return several terminal results for one claimed window. Reject each row
+    // through the row-addressed component path before confirming successors, so no accepted
+    // optimistic layer disappears before a rejected predecessor is peeled and replayed.
+    var terminalFailures = selectionFailures
     do {
-      // Preserve every later optimistic layer while removing a rejected predecessor. Applying
-      // confirmations first could remove an accepted successor from the outbox before the
-      // predecessor's exact inverse is stripped and replayed over it.
-      var terminalFailures: [PendingMutation] = []
       for result in results where result.outcome == .failed {
         let message =
           result.message ?? "The Instant mutation transport rejected the mutation."
-        if let failed = try await performClaimedFailMutationWithGateHeld(
+        if let failed = try await failClaimedMutation(
             id: result.mutationID,
             failure: InstantMutationFailure(
               code: PendingMutation.failureCode(message: message),
               message: message
             ),
-            requiredClaimToken: claimToken
+            requiredClaimToken: claimToken,
+            recordsConnectionFailure: true
           )
         {
           terminalFailures.append(failed)
         }
       }
-      if !terminalFailures.isEmpty {
-        recordActorHop(.outbox)
-        await outbox.replace(with: [])
-      }
+    } catch {
+      recordActorHop(.persistence)
+      _ = try? await persistence.releaseAutomaticOutboxClaim(token: claimToken)
+      throw error
+    }
 
+    await enterOperationGate()
+    do {
       let confirmationResults = results.filter { $0.outcome == .confirmed }
       recordActorHop(.persistence)
       let confirmedMutations = try await persistence.confirmExplicitlyFlushedOutboxMutations(
@@ -9043,9 +11249,11 @@ public final class InstantRuntime: Sendable {
         selectedMutations: selectedMutations,
         claimToken: claimToken
       )
-      for mutation in confirmedMutations {
+      if !confirmedMutations.isEmpty {
         recordActorHop(.outbox)
-        await outbox.remove(id: mutation.id)
+        await outbox.remove(ids: Set(confirmedMutations.map(\.id)))
+      }
+      for mutation in confirmedMutations {
         await publishMutationLifecycle(mutation)
       }
 
@@ -9083,30 +11291,33 @@ public final class InstantRuntime: Sendable {
 
   @discardableResult
   public func confirmMutation(id: String) async throws -> PendingMutation {
-    await operationGate.enter()
+    await enterOperationGate()
     do {
-      for _ in 0..<5 {
-        let state = try await loadStateWithDurableOutboxSynchronizingStore()
-        guard let update = InstantOutbox.confirming(id: id, in: state.snapshot.outbox) else {
-          throw outboxMutationNotFound(id: id)
-        }
-        let didSave = try await persistence.saveOutbox(
-          update.mutations,
-          replacing: state.snapshot.outbox,
-          expectedOutboxRevision: state.outboxRevision
-        )
-        if didSave {
-          await outbox.remove(id: update.mutation.id)
-          _ = try? await publishConnectionStatusWithGateHeld()
-          await publishMutationLifecycle(update.mutation)
-          await operationGate.leave()
-          return update.mutation
-        }
+      let result = try await performConfirmMutationIfPresent(id: id)
+      guard let mutation = result.mutation else {
+        throw outboxMutationNotFound(id: id)
       }
-
-      throw outboxChangedDuringStatusUpdate(id: id)
+      await leaveOperationGate()
+      InstantDiagnostics.shared.record(
+        .notice,
+        subsystem: "instant-swift-data-core",
+        category: "mutation",
+        event: "transaction.local-confirmed",
+        message: "A caller locally confirmed an outbox mutation without server-acceptance proof.",
+        metadata: ["pendingMutationCount": String(result.pendingMutationCount)],
+        correlationID: id
+      )
+      return mutation
     } catch {
-      await operationGate.leave()
+      await leaveOperationGate()
+      InstantDiagnostics.shared.record(
+        error: error,
+        subsystem: "instant-swift-data-core",
+        category: "mutation",
+        event: "transaction.confirmation-failed",
+        message: "Failed to apply a local outbox confirmation.",
+        correlationID: id
+      )
       throw error
     }
   }
@@ -9143,29 +11354,145 @@ public final class InstantRuntime: Sendable {
     }
   }
 
-  /// Applies a live terminal rejection only while this runtime still owns the
-  /// exact durable delivery claim. The socket stays open and registered live
-  /// queries stay registered; the local rollback publication is sufficient,
-  /// matching upstream Reactor `_handleMutationError`.
-  private func failClaimedLiveMutation(
+  /// Applies a transport terminal rejection only while this runtime still owns
+  /// the exact durable delivery claim. The live socket keeps its registered
+  /// queries; the local rollback publication is sufficient, matching upstream
+  /// Reactor `_handleMutationError`.
+  private func failClaimedMutation(
     id: String,
     failure: InstantMutationFailure,
-    requiredClaimToken: String
+    requiredClaimToken: String,
+    recordsConnectionFailure: Bool
   ) async throws -> PendingMutation? {
-    await operationGate.enter()
-    do {
-      let mutation = try await performFailMutationWithGateHeld(
+    for _ in 0..<5 {
+      let state: InstantPersistenceState
+      let storeSnapshot: InstantStoreSnapshot
+      await operationGate.enter()
+      do {
+        state = try await loadCompactStateSynchronizingStore()
+        storeSnapshot = await authoritativeStoreSnapshot(from: state)
+        await operationGate.leave()
+      } catch {
+        await operationGate.leave()
+        throw error
+      }
+
+      recordActorHop(.persistence)
+      let load = try await persistence.loadClaimedTerminalFailureComponent(
         id: id,
-        failure: failure,
-        recordsConnectionFailure: false,
-        requiredClaimToken: requiredClaimToken
+        claimToken: requiredClaimToken,
+        expectedStoreRevision: state.storeRevision,
+        expectedAttributeRevision: state.attributeRevision
       )
-      await operationGate.leave()
-      return mutation
-    } catch {
-      await operationGate.leave()
-      throw error
+      switch load {
+      case .alreadyTerminal:
+        return nil
+
+      case .staleClaim:
+        recordActorHop(.persistence)
+        guard try await persistence.outboxClaimMatches(
+          id: id,
+          token: requiredClaimToken
+        ) else { return nil }
+        continue
+
+      case let .normalizationRequired(firstMutationID):
+        recordActorHop(.persistence)
+        let normalization = try await persistence.normalizeOptimisticEffectMetadata(
+          startingAtMutationID: firstMutationID
+        )
+        if normalization.normalizedMutationIDs.isEmpty,
+          let blockedMutationID = normalization.blockedMutationID
+        {
+          throw InstantError(
+            code: .persistenceFailed,
+            operation: "normalize terminal failure component",
+            localID: blockedMutationID,
+            message:
+              "Mutation '\(blockedMutationID)' cannot prove its optimistic effect from the bounded durable body.",
+            recovery:
+              "Preserve the durable row and run an authoritative refresh before retrying its rejection."
+          )
+        }
+        continue
+
+      case let .componentLimitExceeded(mutationCountAtLeast, encodedBodyByteCountAtLeast):
+        throw InstantError(
+          code: .persistenceFailed,
+          operation: "load terminal failure component",
+          localID: id,
+          message:
+            "Rejecting mutation '\(id)' affects at least \(mutationCountAtLeast) durable bodies totaling at least \(encodedBodyByteCountAtLeast) bytes, beyond the 50-body / 8-MiB component limit.",
+          recovery:
+            "Preserve the claim and use an authoritative server refresh to collapse the oversized optimistic component."
+        )
+
+      case let .ready(component):
+        let removal = try await prepareClaimedTerminalFailureComponent(
+          component,
+          failure: failure,
+          snapshot: storeSnapshot
+        )
+        await operationGate.enter()
+        do {
+          recordActorHop(.persistence)
+          let commit = try await persistence.commitClaimedTerminalFailure(
+            targetID: id,
+            claimToken: requiredClaimToken,
+            expectedStoreRevision: component.expectedStoreRevision,
+            expectedAttributeRevision: state.attributeRevision,
+            expectedComponentRowRevisions: component.rowRevisions,
+            expectedComponentIDs: component.ids,
+            failedMutation: removal.failedMutation,
+            rebasedSuccessors: removal.rebasedSuccessors,
+            changedEntityTriples: removal.prepared?.changedEntityTriples ?? [:],
+            metadataEntries: connectionFailureMetadataEntries(
+              for: failure,
+              recordsConnectionFailure: recordsConnectionFailure
+            )
+          )
+          guard let commit else {
+            recordActorHop(.persistence)
+            let stillOwnsClaim = try await persistence.outboxClaimMatches(
+              id: id,
+              token: requiredClaimToken
+            )
+            await operationGate.leave()
+            guard stillOwnsClaim else { return nil }
+            continue
+          }
+          if commit.didChange {
+            if let prepared = removal.prepared {
+              recordActorHop(.store)
+              _ = await store.commitAndPublish(prepared)
+            }
+            let installedRevisions = installedStoreRevisions.snapshot()
+            installedStoreRevisions.install(
+              storeRevision: component.expectedStoreRevision + 1,
+              attributeRevision: installedRevisions.attributes
+            )
+            recordActorHop(.outbox)
+            if let failedMutation = commit.failedMutation {
+              await outbox.remove(id: failedMutation.id)
+            }
+            for successor in commit.rebasedSuccessors {
+              await outbox.replaceIfPresent(successor)
+            }
+            _ = try? await publishConnectionStatusWithGateHeld()
+            if let failedMutation = commit.failedMutation {
+              await publishMutationLifecycle(failedMutation)
+            }
+          }
+          await operationGate.leave()
+          return commit.failedMutation
+        } catch {
+          await operationGate.leave()
+          throw error
+        }
+      }
     }
+
+    throw outboxChangedDuringStatusUpdate(id: id)
   }
 
   /// Loads persistence metadata without allowing a newer SQLite revision to
@@ -9177,21 +11504,51 @@ public final class InstantRuntime: Sendable {
   /// authoritative. Otherwise a read-only outbox inspection can make the next
   /// local query or mutation use a stale actor snapshot.
   private func loadCompactStateSynchronizingStore() async throws -> InstantPersistenceState {
-    let loaded = try await persistence.loadStateWithSource()
-    if loaded.source == .sqlite {
-      recordActorHop(.store)
-      await store.replaceSnapshot(loaded.state.snapshot.store)
-    }
+    let installedRevisions = installedStoreRevisions.snapshot()
+    let loaded = try await persistence.loadStateWithSource(
+      installedStoreRevision: installedRevisions.store,
+      installedAttributeRevision: installedRevisions.attributes
+    )
+    await adoptPersistedStoreIfNeeded(loaded.storeAdoption)
+    installedStoreRevisions.install(
+      storeRevision: loaded.state.storeRevision,
+      attributeRevision: loaded.state.attributeRevision
+    )
     return loaded.state
+  }
+
+  private func adoptPersistedStoreIfNeeded(
+    _ adoption: InstantPersistenceStoreAdoption
+  ) async {
+    switch adoption {
+    case .none:
+      break
+
+    case let .attributes(attributes):
+      recordActorHop(.store)
+      _ = await store.replaceAttributes(attributes)
+
+    case let .snapshot(snapshot):
+      recordActorHop(.store)
+      await replaceStoreSnapshot(snapshot)
+    }
+  }
+
+  private func replaceStoreSnapshot(_ snapshot: InstantStoreSnapshot) async {
+    storeAdoptionMetrics.recordStoreSnapshotReplacement()
+    await store.replaceSnapshot(snapshot)
   }
 
   /// Cross-file query helpers use this gate-owning entry point so an external
   /// SQLite revision and the hot store actor become visible as one local state
   /// transition.
   package func attributesForInfiniteQueryValidation() async throws -> [InstantAttribute] {
-    await enterOperationGate()
+    try await enterOperationGateUnlessCancelled(
+      operation: "validate infinite query attributes"
+    )
     do {
       let attributes = try await loadCompactStateSynchronizingStore().snapshot.store.attributes
+      try Task.checkCancellation()
       await leaveOperationGate()
       return attributes
     } catch {
@@ -9206,11 +11563,16 @@ public final class InstantRuntime: Sendable {
     -> InstantPersistenceState
   {
     for _ in 0..<5 {
-      let loaded = try await persistence.loadStateWithSource()
-      if loaded.source == .sqlite {
-        recordActorHop(.store)
-        await store.replaceSnapshot(loaded.state.snapshot.store)
-      }
+      let installedRevisions = installedStoreRevisions.snapshot()
+      let loaded = try await persistence.loadStateWithSource(
+        installedStoreRevision: installedRevisions.store,
+        installedAttributeRevision: installedRevisions.attributes
+      )
+      await adoptPersistedStoreIfNeeded(loaded.storeAdoption)
+      installedStoreRevisions.install(
+        storeRevision: loaded.state.storeRevision,
+        attributeRevision: loaded.state.attributeRevision
+      )
       guard let outbox = try await persistence.loadOutboxMutations(
         statuses: [.pending, .confirmed, .failed],
         expectedStoreRevision: loaded.state.storeRevision,
@@ -9250,23 +11612,6 @@ public final class InstantRuntime: Sendable {
     return mutation
   }
 
-  /// Applies a transport rejection only while the exact durable claim remains
-  /// owned by this response. The token predicate participates in the same
-  /// SQLite transaction as the revision CAS and store/outbox rewrite, so a
-  /// late result cannot fail a row that another runtime reclaimed.
-  private func performClaimedFailMutationWithGateHeld(
-    id: String,
-    failure: InstantMutationFailure,
-    requiredClaimToken: String
-  ) async throws -> PendingMutation? {
-    try await performFailMutationWithGateHeld(
-      id: id,
-      failure: failure,
-      recordsConnectionFailure: true,
-      requiredClaimToken: requiredClaimToken
-    )
-  }
-
   private func performFailMutationWithGateHeld(
     id: String,
     failure: InstantMutationFailure,
@@ -9299,39 +11644,35 @@ public final class InstantRuntime: Sendable {
         failedMutations: update.mutations,
         snapshot: storeSnapshot
       )
-      let now = configuration.now()
-      let metadataEntries =
-        recordsConnectionFailure
-        ? [
-          InstantPersistenceMetadataEntry(
-            key: connectionStateMetadataKey,
-            value: InstantConnectionState.errored.rawValue,
-            updatedAt: now
-          ),
-          InstantPersistenceMetadataEntry(
-            key: connectionLastErrorMetadataKey,
-            value: failure.message,
-            updatedAt: now
-          ),
-        ]
-        : []
+      let metadataEntries = connectionFailureMetadataEntries(
+        for: failure,
+        recordsConnectionFailure: recordsConnectionFailure
+      )
       let nextSnapshot = InstantPersistenceSnapshot(
         store: removal.prepared?.snapshot ?? storeSnapshot,
         outbox: removal.mutations
       )
       let didSave = try await persistence.saveSnapshot(
         nextSnapshot,
-        replacing: InstantPersistenceSnapshot(store: storeSnapshot, outbox: state.snapshot.outbox),
+        replacing: InstantPersistenceSnapshot(
+          store: removal.replacingStoreSnapshot,
+          outbox: state.snapshot.outbox
+        ),
         metadataEntries: metadataEntries,
         requiredOutboxClaimMutationID: requiredClaimToken == nil ? nil : id,
         requiredOutboxClaimToken: requiredClaimToken,
         expectedStoreRevision: state.storeRevision,
+        expectedAttributeRevision: state.attributeRevision,
         expectedOutboxRevision: state.outboxRevision
       )
       if didSave {
         if let prepared = removal.prepared {
           _ = await store.commitAndPublish(prepared)
         }
+        installedStoreRevisions.install(
+          storeRevision: state.storeRevision + 1,
+          attributeRevision: state.attributeRevision + 1
+        )
         await outbox.replace(with: removal.mutations)
         _ = try? await publishConnectionStatusWithGateHeld()
         await publishMutationLifecycle(removal.failedMutation)
@@ -9349,12 +11690,173 @@ public final class InstantRuntime: Sendable {
     throw outboxChangedDuringStatusUpdate(id: id)
   }
 
+  private func connectionFailureMetadataEntries(
+    for failure: InstantMutationFailure,
+    recordsConnectionFailure: Bool
+  ) -> [InstantPersistenceMetadataEntry] {
+    guard recordsConnectionFailure else { return [] }
+    let now = configuration.now()
+    return [
+      InstantPersistenceMetadataEntry(
+        key: connectionStateMetadataKey,
+        value: InstantConnectionState.errored.rawValue,
+        updatedAt: now
+      ),
+      InstantPersistenceMetadataEntry(
+        key: connectionLastErrorMetadataKey,
+        value: failure.message,
+        updatedAt: now
+      ),
+    ]
+  }
+
+  /// Peels and replays only the transitive optimistic component selected from
+  /// SQLite metadata. This preparation deliberately runs outside the operation
+  /// gate; the subsequent targeted commit re-proves the complete component and
+  /// every row revision before publishing it.
+  private func prepareClaimedTerminalFailureComponent(
+    _ component: InstantTerminalFailureComponent,
+    failure: InstantMutationFailure,
+    snapshot: InstantStoreSnapshot
+  ) async throws -> (
+    prepared: PreparedStoreMutation?,
+    failedMutation: PendingMutation,
+    rebasedSuccessors: [PendingMutation]
+  ) {
+    let original = component.target
+    var failedMutation = original
+    failedMutation.status = .failed
+    failedMutation.failureMessage = failure.message
+    failedMutation.failure = failure
+    failedMutation.serverTransactionID = nil
+    failedMutation.confirmationSource = nil
+
+    guard original.optimisticOverlayState != nil || original.rollbackTransaction != nil else {
+      throw unknownOptimisticOverlayState(
+        id: original.id,
+        operation: "reject claimed mutation"
+      )
+    }
+
+    failedMutation.optimisticOverlayState = .removed
+    failedMutation.rollbackTransaction = nil
+    guard original.optimisticOverlayState != .removed else {
+      return (nil, failedMutation, component.successors)
+    }
+    guard let failedRollback = original.rollbackTransaction else {
+      let footprint = InstantOptimisticEffectFootprint.normalized(for: original)
+      guard footprint?.entityIDs.isEmpty == true, footprint?.isGlobal == false else {
+        throw InstantError(
+          code: .persistenceFailed,
+          operation: "reject claimed mutation",
+          localID: original.id,
+          message:
+            "Mutation '\(original.id)' has an active optimistic effect but no durable rollback.",
+          recovery:
+            "Preserve the row and run an authoritative refresh instead of guessing its inverse."
+        )
+      }
+      return (nil, failedMutation, component.successors)
+    }
+
+    var rebasedSuccessors = component.successors.sorted(by: PendingMutation.creationOrder)
+    let deferredTriples = try await deferredValuesForPreparing(
+      [failedRollback]
+        + rebasedSuccessors.compactMap(\.rollbackTransaction)
+        + rebasedSuccessors.map(\.transaction)
+    )
+    let hydratedSnapshot = configuration.deferredValueResidency.hydrating(
+      snapshot,
+      with: deferredTriples
+    )
+    var prepared: PreparedStoreMutation?
+    var changedEntityIDs: Set<String> = []
+
+    for successor in rebasedSuccessors.reversed() {
+      guard successor.optimisticOverlayState != .removed else { continue }
+      guard let rollback = successor.rollbackTransaction else {
+        let footprint = InstantOptimisticEffectFootprint.normalized(for: successor)
+        guard footprint?.entityIDs.isEmpty == true, footprint?.isGlobal == false else {
+          throw InstantError(
+            code: .persistenceFailed,
+            operation: "reject claimed mutation",
+            localID: successor.id,
+            message:
+              "Successor mutation '\(successor.id)' has an active optimistic effect but no durable rollback.",
+            recovery:
+              "Preserve the component and run an authoritative refresh instead of guessing its inverse."
+          )
+        }
+        continue
+      }
+      let next = if let prepared {
+        try await store.prepare(rollback, applyingTo: prepared)
+      } else {
+        try await store.prepare(rollback, applyingTo: hydratedSnapshot)
+      }
+      changedEntityIDs.formUnion(next.result.changedEntityIDs)
+      prepared = next
+    }
+
+    let removedFailure = if let prepared {
+      try await store.prepare(failedRollback, applyingTo: prepared)
+    } else {
+      try await store.prepare(failedRollback, applyingTo: hydratedSnapshot)
+    }
+    changedEntityIDs.formUnion(removedFailure.result.changedEntityIDs)
+    var replayPrepared = removedFailure
+
+    for index in rebasedSuccessors.indices {
+      var successor = rebasedSuccessors[index]
+      let newestTimestamp = replayPrepared.indexes.newestTransactionTimeMilliseconds ?? 0
+      let optimisticTimestamp = InstantTimestamp(
+        milliseconds: newestTimestamp == Int64.max ? newestTimestamp : newestTimestamp + 1
+      )
+      let operations = Self.rebaseDurableTransaction(
+        in: &successor,
+        at: optimisticTimestamp
+      )
+      successor.rollbackTransaction = nil
+      successor.optimisticOverlayState = .applied
+      if !operations.isEmpty {
+        let replay = try await store.prepare(
+          InstantStoreTransaction(id: successor.transaction.id, operations: operations),
+          applyingTo: replayPrepared
+        )
+        changedEntityIDs.formUnion(replay.result.changedEntityIDs)
+        successor.rollbackTransaction = Self.rollbackTransaction(
+          mutationID: successor.id,
+          prepared: replay
+        )
+        replayPrepared = replay
+      }
+      rebasedSuccessors[index] = successor
+    }
+
+    return (
+      PreparedStoreMutation(
+        result: InstantStoreMutationResult(
+          transactionID: failedRollback.id,
+          changedEntityIDs: changedEntityIDs,
+          tripleCount: replayPrepared.indexes.tripleCount,
+          emissions: []
+        ),
+        sequence: replayPrepared.sequence,
+        attributes: replayPrepared.attributes,
+        indexes: replayPrepared.indexes
+      ),
+      failedMutation,
+      rebasedSuccessors
+    )
+  }
+
   private func prepareTerminalFailureRemoval(
     original: PendingMutation,
     failedMutations: [PendingMutation],
     snapshot: InstantStoreSnapshot
   ) async throws -> (
     prepared: PreparedStoreMutation?,
+    replacingStoreSnapshot: InstantStoreSnapshot,
     mutations: [PendingMutation],
     failedMutation: PendingMutation
   ) {
@@ -9369,7 +11871,7 @@ public final class InstantRuntime: Sendable {
     // state. A transaction id is correlation, not a safe inverse operation.
     guard original.optimisticOverlayState != nil || original.rollbackTransaction != nil else {
       mutations[failedIndex] = failedMutation
-      return (nil, mutations, failedMutation)
+      return (nil, snapshot, mutations, failedMutation)
     }
 
     failedMutation.optimisticOverlayState = .removed
@@ -9378,7 +11880,7 @@ public final class InstantRuntime: Sendable {
     guard original.optimisticOverlayState != .removed,
       let failedRollback = original.rollbackTransaction
     else {
-      return (nil, mutations, failedMutation)
+      return (nil, snapshot, mutations, failedMutation)
     }
 
     let successors = mutations.sorted(by: PendingMutation.creationOrder).filter { mutation in
@@ -9386,6 +11888,15 @@ public final class InstantRuntime: Sendable {
         && mutation.status != .failed
         && mutation.optimisticOverlayState != .removed
     }
+    let deferredTriples = try await deferredValuesForPreparing(
+      [failedRollback]
+        + successors.compactMap(\.rollbackTransaction)
+        + successors.map(\.transaction)
+    )
+    let hydratedSnapshot = configuration.deferredValueResidency.hydrating(
+      snapshot,
+      with: deferredTriples
+    )
     var prepared: PreparedStoreMutation?
     var changedEntityIDs: Set<String> = []
 
@@ -9401,7 +11912,7 @@ public final class InstantRuntime: Sendable {
       let next = if let prepared {
         try await store.prepare(rollback, applyingTo: prepared)
       } else {
-        try await store.prepare(rollback, applyingTo: snapshot)
+        try await store.prepare(rollback, applyingTo: hydratedSnapshot)
       }
       changedEntityIDs.formUnion(next.result.changedEntityIDs)
       prepared = next
@@ -9410,7 +11921,7 @@ public final class InstantRuntime: Sendable {
     let removedFailure = if let prepared {
       try await store.prepare(failedRollback, applyingTo: prepared)
     } else {
-      try await store.prepare(failedRollback, applyingTo: snapshot)
+      try await store.prepare(failedRollback, applyingTo: hydratedSnapshot)
     }
     changedEntityIDs.formUnion(removedFailure.result.changedEntityIDs)
     var replayPrepared = removedFailure
@@ -9457,6 +11968,7 @@ public final class InstantRuntime: Sendable {
         attributes: replayPrepared.attributes,
         indexes: replayPrepared.indexes
       ),
+      hydratedSnapshot,
       mutations,
       failedMutation
     )
@@ -9528,8 +12040,12 @@ public final class InstantRuntime: Sendable {
         )
         let didSave = try await persistence.saveSnapshot(
           nextSnapshot,
-          replacing: InstantPersistenceSnapshot(store: storeSnapshot, outbox: state.snapshot.outbox),
+          replacing: InstantPersistenceSnapshot(
+            store: removal.replacingStoreSnapshot,
+            outbox: state.snapshot.outbox
+          ),
           expectedStoreRevision: state.storeRevision,
+          expectedAttributeRevision: state.attributeRevision,
           expectedOutboxRevision: state.outboxRevision
         )
         if didSave {
@@ -9537,6 +12053,10 @@ public final class InstantRuntime: Sendable {
           if let prepared = removal.prepared {
             _ = await store.commitAndPublish(prepared)
           }
+          installedStoreRevisions.install(
+            storeRevision: state.storeRevision + 1,
+            attributeRevision: state.attributeRevision + 1
+          )
           _ = try? await publishConnectionStatusWithGateHeld()
           await operationGate.leave()
           return update.mutation
@@ -9626,9 +12146,15 @@ public final class InstantRuntime: Sendable {
           preparedRetry = nil
           retriedMutation.rollbackTransaction = nil
         } else {
+          let retryTransaction = InstantStoreTransaction(
+            id: retriedMutation.transaction.id,
+            operations: operations
+          )
+          let deferredTriples = try await deferredValuesForPreparing(retryTransaction)
           recordActorHop(.store)
           let prepared = try await store.prepareCurrent(
-            InstantStoreTransaction(id: retriedMutation.transaction.id, operations: operations)
+            retryTransaction,
+            hydratingDeferredValues: deferredTriples
           )
           preparedRetry = prepared
           retriedMutation.rollbackTransaction = Self.rollbackTransaction(
@@ -9678,6 +12204,7 @@ public final class InstantRuntime: Sendable {
           metadataEntries: metadataEntries,
           deletingMetadataKeys: deletingMetadataKeys,
           expectedStoreRevision: state.storeRevision,
+          expectedAttributeRevision: state.attributeRevision,
           expectedOutboxRevision: state.outboxRevision
         )
       } else {
@@ -9695,6 +12222,10 @@ public final class InstantRuntime: Sendable {
       if let preparedRetry {
         recordActorHop(.store)
         _ = await store.commitAndPublish(preparedRetry)
+        installedStoreRevisions.install(
+          storeRevision: state.storeRevision + 1,
+          attributeRevision: state.attributeRevision
+        )
       }
       recordActorHop(.outbox)
       await outbox.replace(with: retriedMutations)
@@ -9717,7 +12248,7 @@ public final class InstantRuntime: Sendable {
       }
       let mutation = try await performRetryMutationWithGateHeld(id: id)
       await operationGate.leave()
-      startLiveMutationDeliveryIfNeeded()
+      await startLiveMutationDeliveryIfNeeded()
       return mutation
     } catch {
       await operationGate.leave()
@@ -9740,7 +12271,7 @@ public final class InstantRuntime: Sendable {
         requiringFailedStatus: true
       )
       await operationGate.leave()
-      startLiveMutationDeliveryIfNeeded()
+      await startLiveMutationDeliveryIfNeeded()
       return mutation
     } catch {
       await operationGate.leave()
@@ -10432,9 +12963,11 @@ public final class InstantRuntime: Sendable {
     await operationGate.leave()
   }
 
-  private func enterMutationFlushGate(operation: String = #function) async {
+  private func enterMutationFlushGateUnlessCancelled(
+    operation: String = #function
+  ) async throws {
     recordActorHop(.mutationFlushGate)
-    await mutationFlushGate.enter(operation: operation)
+    try await mutationFlushGate.enterUnlessCancelled(operation: operation)
   }
 
   private func leaveMutationFlushGate() async {

@@ -103,18 +103,82 @@ struct InstantDiagnosticFeedbackLoopTests {
         )
       )
     }
-    try await runtime.transact(
-      InstantStoreTransaction(id: "tx-diag-batch", operations: operations),
-      createdAt: createdAt
+    let entityGroups = BoundedBenchmarkSeed.entityCreationGroups(from: operations)
+    let transactions = BoundedBenchmarkSeed.transactions(
+      baseID: "tx-diag-batch",
+      atomicOperationGroups: entityGroups
     )
+    #expect(
+      transactions.map(\.id) == ["tx-diag-batch-0000", "tx-diag-batch-0001"]
+    )
+    for transaction in transactions {
+      try await runtime.transact(transaction, createdAt: createdAt)
+    }
     _ = try await runtime.connect()
-    _ = try await runtime.queryOnce(
-      InstantQueryPlan(
-        id: "diag.query-once.recordings",
-        namespace: ScribeProductionShapedSchema.recordingNamespace,
-        limit: 5
+
+    // The 260 transport steps split into ordered 251- and 9-step mutations.
+    // The in-flight step ceiling admits only the first mutation until its exact
+    // acknowledgement arrives, so drive the scripted server one send at a time.
+    for (index, transaction) in transactions.enumerated() {
+      try await instantLiveWithTimeout(
+        operation: "wait for diagnostic seed mutation \(index)",
+        timeoutMilliseconds: 5_000
+      ) {
+        await liveSession.waitForSentMessageCount(index + 2)
+      }
+      let sentMutation = try #require(await liveSession.sentMessages().last)
+      #expect(sentMutation.op == "transact")
+      #expect(sentMutation.clientEventID == transaction.id)
+      await liveSession.enqueue(
+        InstantLiveMessage(
+          op: "transact-ok",
+          clientEventID: transaction.id,
+          fields: ["tx-id": .string("server-\(transaction.id)")]
+        )
+      )
+    }
+    _ = try #require(
+      try await instantLiveWithTimeout(
+        operation: "wait for diagnostic seed acknowledgements",
+        timeoutMilliseconds: 5_000
+      ) {
+        try await runtime.observeConnectionStatus().first {
+          $0.pendingMutationCount == 0
+        }
+      }
+    )
+
+    let queryPlan = InstantQueryPlan(
+      id: "diag.query-once.recordings",
+      namespace: ScribeProductionShapedSchema.recordingNamespace,
+      limit: 5
+    )
+    let encodedQuery = try InstantLiveQueryEncoder.encode(queryPlan)
+    let queryTask = Task { try await runtime.queryOnce(queryPlan) }
+    defer { queryTask.cancel() }
+    try await instantLiveWithTimeout(
+      operation: "wait for diagnostic live query registration",
+      timeoutMilliseconds: 5_000
+    ) {
+      await liveSession.waitForSentMessageCount(transactions.count + 2)
+    }
+    let sentQuery = try #require(await liveSession.sentMessages().last)
+    #expect(sentQuery.op == "add-query")
+    #expect(sentQuery.fields["q"] == encodedQuery)
+    await liveSession.enqueue(
+      liveReactorAddQueryOK(
+        query: encodedQuery,
+        processedTransactionID: "server-tx-diag-batch-0001",
+        result: []
       )
     )
+    _ = try await instantLiveWithTimeout(
+      operation: "wait for diagnostic live query acknowledgement",
+      timeoutMilliseconds: 5_000
+    ) {
+      try await queryTask.value
+    }
+    _ = try await runtime.closeConnection()
 
     try await Task.sleep(for: .milliseconds(50))
 
@@ -191,10 +255,15 @@ struct InstantDiagnosticFeedbackLoopTests {
           )
         )
       }
-      try await runtime.transact(
-        InstantStoreTransaction(id: "tx-amp-\(batch)", operations: operations),
-        createdAt: InstantTimestamp(milliseconds: createdAt.milliseconds + Int64(batch))
-      )
+      // Keep each durable write within the 256-step automatic-delivery ceiling.
+      let entityGroups = BoundedBenchmarkSeed.entityCreationGroups(from: operations)
+      let createdAtBatch = InstantTimestamp(milliseconds: createdAt.milliseconds + Int64(batch))
+      for transaction in BoundedBenchmarkSeed.transactions(
+        baseID: "tx-amp-\(batch)",
+        atomicOperationGroups: entityGroups
+      ) {
+        try await runtime.transact(transaction, createdAt: createdAtBatch)
+      }
     }
     let after = InstantProcessMemory.sample()?.physicalFootprintBytes ?? baseline
     let growth = after > baseline ? after - baseline : 0
@@ -282,10 +351,13 @@ struct InstantDiagnosticFeedbackLoopTests {
             )
           )
         }
-        try? await debugRuntime.transact(
-          InstantStoreTransaction(id: "debug-log-batch-leak-\(n)", operations: operations),
-          createdAt: now
-        )
+        let entityGroups = BoundedBenchmarkSeed.entityCreationGroups(from: operations)
+        for transaction in BoundedBenchmarkSeed.transactions(
+          baseID: "debug-log-batch-leak-\(n)",
+          atomicOperationGroups: entityGroups
+        ) {
+          try? await debugRuntime.transact(transaction, createdAt: now)
+        }
       }
     }
     defer { InstantDiagnostics.shared.removeHandler(token) }
@@ -314,10 +386,13 @@ struct InstantDiagnosticFeedbackLoopTests {
         )
       )
     }
-    try await mainRuntime.transact(
-      InstantStoreTransaction(id: "dual-tx", operations: operations),
-      createdAt: now
-    )
+    let entityGroups = BoundedBenchmarkSeed.entityCreationGroups(from: operations)
+    for transaction in BoundedBenchmarkSeed.transactions(
+      baseID: "dual-tx",
+      atomicOperationGroups: entityGroups
+    ) {
+      try await mainRuntime.transact(transaction, createdAt: now)
+    }
     for index in 0..<8 {
       _ = try await mainRuntime.queryOnce(
         InstantQueryPlan(

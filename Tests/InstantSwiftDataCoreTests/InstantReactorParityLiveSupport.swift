@@ -1,16 +1,365 @@
 import Foundation
 @testable import InstantSwiftDataCore
 
-actor LiveReactorParitySession {
-  private struct SentWaiter {
+final class InstantLiveTestThrowingContinuationBox<Value: Sendable>: @unchecked Sendable {
+  private let lock = NSLock()
+  private var continuation: CheckedContinuation<Value, Error>?
+
+  init(_ continuation: CheckedContinuation<Value, Error>) {
+    self.continuation = continuation
+  }
+
+  func resume(returning value: Value) {
+    resume(with: .success(value))
+  }
+
+  func resume(throwing error: any Error) {
+    resume(with: .failure(error))
+  }
+
+  private func resume(with result: Result<Value, any Error>) {
+    let continuation = lock.withLock {
+      let continuation = self.continuation
+      self.continuation = nil
+      return continuation
+    }
+    continuation?.resume(with: result)
+  }
+}
+
+struct InstantLiveTestPendingOperation<Value: Sendable>: Sendable {
+  var id: UUID
+  var abortToken: UUID
+  var continuation: InstantLiveTestThrowingContinuationBox<Value>
+}
+
+/// Owns the exact continuation and operation task for one scripted connection
+/// attempt. `abort()` is synchronous, lock-backed, and safe to call before the
+/// connector task starts, while it is suspended, or after it returns a session.
+final class InstantLiveTestConnectionContinuation: @unchecked Sendable {
+  private typealias Outcome = Result<InstantLiveWebSocketSession, any Error>
+
+  private let lock = NSLock()
+  private var continuation:
+    InstantLiveTestThrowingContinuationBox<InstantLiveWebSocketSession>?
+  private var bufferedOutcome: Outcome?
+  private var operationTask: Task<Void, Never>?
+  private var didInstallContinuation = false
+  private var didResolve = false
+  private var didStartOperation = false
+  private var isAborted = false
+
+  func start(
+    _ operation:
+      @escaping @Sendable () async throws
+        -> InstantLiveWebSocketSession
+  ) {
+    let shouldStart = lock.withLock {
+      guard !didStartOperation, !isAborted else { return false }
+      didStartOperation = true
+      return true
+    }
+    guard shouldStart else { return }
+
+    let task = Task {
+      do {
+        resolve(.success(try await operation()))
+      } catch {
+        resolve(.failure(error))
+      }
+    }
+    let shouldCancel = lock.withLock {
+      guard !isAborted, !didResolve else { return true }
+      operationTask = task
+      return false
+    }
+    if shouldCancel { task.cancel() }
+  }
+
+  func connect() async throws -> InstantLiveWebSocketSession {
+    try await withTaskCancellationHandler {
+      try await withCheckedThrowingContinuation { rawContinuation in
+        let continuation = InstantLiveTestThrowingContinuationBox(rawContinuation)
+        let immediateOutcome = lock.withLock { () -> Outcome? in
+          guard !didInstallContinuation else {
+            return .failure(
+              InstantError(
+                code: .validationFailed,
+                operation: "connect scripted Instant live transport",
+                message: "The same scripted connection continuation was awaited twice.",
+                recovery: "Create one continuation for every connection attempt."
+              )
+            )
+          }
+          didInstallContinuation = true
+          guard !isAborted else { return .failure(CancellationError()) }
+          if let bufferedOutcome {
+            self.bufferedOutcome = nil
+            return bufferedOutcome
+          }
+          self.continuation = continuation
+          return nil
+        }
+        if let immediateOutcome {
+          resume(continuation, with: immediateOutcome)
+        }
+      }
+    } onCancel: {
+      abort()
+    }
+  }
+
+  func succeed(_ session: InstantLiveWebSocketSession) {
+    resolve(.success(session))
+  }
+
+  func fail(_ error: any Error) {
+    resolve(.failure(error))
+  }
+
+  func abort() {
+    let abandoned = lock.withLock {
+      () -> (
+        Task<Void, Never>?,
+        InstantLiveTestThrowingContinuationBox<InstantLiveWebSocketSession>?,
+        InstantLiveWebSocketSession?
+      ) in
+      guard !isAborted else { return (nil, nil, nil) }
+      isAborted = true
+      let task = operationTask
+      operationTask = nil
+      let continuation = self.continuation
+      self.continuation = nil
+      let session: InstantLiveWebSocketSession?
+      if case let .success(bufferedSession)? = bufferedOutcome {
+        session = bufferedSession
+      } else {
+        session = nil
+      }
+      bufferedOutcome = nil
+      return (task, continuation, session)
+    }
+    abandoned.0?.cancel()
+    abandoned.1?.resume(throwing: CancellationError())
+    abandoned.2?.abort()
+  }
+
+  private func resolve(_ outcome: Outcome) {
+    let resolution = lock.withLock {
+      () -> (
+        InstantLiveTestThrowingContinuationBox<InstantLiveWebSocketSession>?,
+        Outcome?,
+        InstantLiveWebSocketSession?
+      ) in
+      operationTask = nil
+      guard !didResolve else {
+        if case let .success(session) = outcome {
+          return (nil, nil, session)
+        }
+        return (nil, nil, nil)
+      }
+      didResolve = true
+      guard !isAborted else {
+        if case let .success(session) = outcome {
+          return (nil, nil, session)
+        }
+        return (nil, nil, nil)
+      }
+      if let continuation {
+        self.continuation = nil
+        return (continuation, outcome, nil)
+      }
+      bufferedOutcome = outcome
+      return (nil, nil, nil)
+    }
+    if let continuation = resolution.0, let outcome = resolution.1 {
+      resume(continuation, with: outcome)
+    }
+    resolution.2?.abort()
+  }
+
+  private func resume(
+    _ continuation:
+      InstantLiveTestThrowingContinuationBox<InstantLiveWebSocketSession>,
+    with outcome: Outcome
+  ) {
+    switch outcome {
+    case let .success(session):
+      continuation.resume(returning: session)
+    case let .failure(error):
+      continuation.resume(throwing: error)
+    }
+  }
+}
+
+final class InstantLiveTestWireAbortState: @unchecked Sendable {
+  private let lock = NSLock()
+  private var actions: [UUID: @Sendable () -> Void] = [:]
+  private var aborted = false
+
+  var isAborted: Bool {
+    lock.withLock { aborted }
+  }
+
+  func check() throws {
+    if isAborted {
+      throw CancellationError()
+    }
+  }
+
+  func register(_ action: @escaping @Sendable () -> Void) -> UUID? {
+    lock.withLock {
+      guard !aborted else { return nil }
+      let id = UUID()
+      actions[id] = action
+      return id
+    }
+  }
+
+  func unregister(_ id: UUID) {
+    lock.withLock { actions[id] = nil }
+  }
+
+  func abort() {
+    let actions = lock.withLock {
+      guard !aborted else { return [@Sendable () -> Void]() }
+      aborted = true
+      let actions = Array(self.actions.values)
+      self.actions.removeAll()
+      return actions
+    }
+    for action in actions {
+      action()
+    }
+  }
+}
+
+// SAFETY: `lock` protects every mutable field, and continuations are always
+// extracted while locked and resumed only after the lock is released.
+final class LiveReactorParityExactCloseCheckpoint: @unchecked Sendable {
+  private let lock = NSLock()
+  private var didEnterStorage = false
+  private var didObserveCancellationStorage: Bool?
+  private var releaseToCancellationContinuation: CheckedContinuation<Void, Never>?
+  private var finishContinuation: CheckedContinuation<Void, Never>?
+  private var shouldReleaseToCancellation = false
+  private var shouldFinish = false
+
+  var didEnter: Bool {
+    lock.withLock { didEnterStorage }
+  }
+
+  var didObserveCancellation: Bool? {
+    lock.withLock { didObserveCancellationStorage }
+  }
+
+  func pause() async {
+    await withCheckedContinuation { continuation in
+      lock.lock()
+      didEnterStorage = true
+      if shouldReleaseToCancellation {
+        lock.unlock()
+        continuation.resume()
+      } else {
+        releaseToCancellationContinuation = continuation
+        lock.unlock()
+      }
+    }
+
+    lock.withLock {
+      didObserveCancellationStorage = Task.isCancelled
+    }
+
+    await withCheckedContinuation { continuation in
+      lock.lock()
+      if shouldFinish {
+        lock.unlock()
+        continuation.resume()
+      } else {
+        finishContinuation = continuation
+        lock.unlock()
+      }
+    }
+  }
+
+  func releaseToCancellationObservation() {
+    let continuation = lock.withLock {
+      shouldReleaseToCancellation = true
+      let continuation = releaseToCancellationContinuation
+      releaseToCancellationContinuation = nil
+      return continuation
+    }
+    continuation?.resume()
+  }
+
+  func finish() {
+    let continuations = lock.withLock {
+      shouldReleaseToCancellation = true
+      shouldFinish = true
+      let continuations = (
+        releaseToCancellationContinuation,
+        finishContinuation
+      )
+      releaseToCancellationContinuation = nil
+      finishContinuation = nil
+      return continuations
+    }
+    continuations.0?.resume()
+    continuations.1?.resume()
+  }
+}
+
+actor LiveReactorParityCompletionProbe {
+  private var countStorage = 0
+
+  var count: Int { countStorage }
+
+  func record() {
+    countStorage += 1
+  }
+}
+
+private struct LiveReactorParityCountWaiters {
+  private struct Waiter {
+    var id: UUID
     var count: Int
     var continuation: CheckedContinuation<Void, Never>
   }
 
+  private var waiters: [Waiter] = []
+
+  mutating func append(
+    id: UUID,
+    count: Int,
+    continuation: CheckedContinuation<Void, Never>
+  ) {
+    waiters.append(Waiter(id: id, count: count, continuation: continuation))
+  }
+
+  mutating func resumeSatisfied(by count: Int) {
+    var pending: [Waiter] = []
+    for waiter in waiters {
+      if count >= waiter.count {
+        waiter.continuation.resume()
+      } else {
+        pending.append(waiter)
+      }
+    }
+    waiters = pending
+  }
+
+  mutating func cancel(id: UUID) {
+    guard let index = waiters.firstIndex(where: { $0.id == id }) else { return }
+    waiters.remove(at: index).continuation.resume()
+  }
+}
+
+actor LiveReactorParitySession {
+  nonisolated private let abortState = InstantLiveTestWireAbortState()
   private var messages: [InstantLiveMessage]
   private var sent: [InstantLiveMessage] = []
-  private var sentWaiters: [SentWaiter] = []
-  private var receiveContinuation: CheckedContinuation<InstantLiveMessage, Error>?
+  private var sentWaiters = LiveReactorParityCountWaiters()
+  private var receiveContinuation: InstantLiveTestPendingOperation<InstantLiveMessage>?
   private var receiveFailure: InstantError?
   private var isClosed = false
 
@@ -19,16 +368,20 @@ actor LiveReactorParitySession {
   }
 
   nonisolated var transport: InstantLiveTransportClient {
-    InstantLiveTransportClient { _ in
+    .immediate { _ in
       self.webSocketSession
     }
   }
 
   nonisolated var webSocketSession: InstantLiveWebSocketSession {
     InstantLiveWebSocketSession(
-      send: { message in await self.send(message) },
-      receive: { try await self.receive() },
-      close: { await self.close() }
+      send: { message in try await self.send(message) },
+      receive: {
+        try self.abortState.check()
+        return try await self.receive()
+      },
+      close: { await self.close() },
+      abort: { self.abortState.abort() }
     )
   }
 
@@ -38,43 +391,54 @@ actor LiveReactorParitySession {
 
   func waitForSentMessageCount(_ count: Int) async {
     guard sent.count < count else { return }
-    await withCheckedContinuation { continuation in
-      sentWaiters.append(SentWaiter(count: count, continuation: continuation))
+    let waiterID = UUID()
+    await withTaskCancellationHandler {
+      await withCheckedContinuation { continuation in
+        if Task.isCancelled {
+          continuation.resume()
+        } else {
+          sentWaiters.append(id: waiterID, count: count, continuation: continuation)
+        }
+      }
+    } onCancel: {
+      Task { await self.cancelSentWaiter(id: waiterID) }
     }
   }
 
   func enqueue(_ message: InstantLiveMessage) {
+    guard !abortState.isAborted else { return }
     if let receiveContinuation {
       self.receiveContinuation = nil
-      receiveContinuation.resume(returning: message)
+      abortState.unregister(receiveContinuation.abortToken)
+      receiveContinuation.continuation.resume(returning: message)
     } else if !isClosed {
       messages.append(message)
     }
   }
 
   func failReceive(_ error: InstantError) {
+    guard !abortState.isAborted else { return }
     if let receiveContinuation {
       self.receiveContinuation = nil
-      receiveContinuation.resume(throwing: error)
+      abortState.unregister(receiveContinuation.abortToken)
+      receiveContinuation.continuation.resume(throwing: error)
     } else if !isClosed {
       receiveFailure = error
     }
   }
 
-  private func send(_ message: InstantLiveMessage) {
+  private func send(_ message: InstantLiveMessage) throws {
+    try abortState.check()
     sent.append(message)
-    var pending: [SentWaiter] = []
-    for waiter in sentWaiters {
-      if sent.count >= waiter.count {
-        waiter.continuation.resume()
-      } else {
-        pending.append(waiter)
-      }
-    }
-    sentWaiters = pending
+    sentWaiters.resumeSatisfied(by: sent.count)
+  }
+
+  private func cancelSentWaiter(id: UUID) {
+    sentWaiters.cancel(id: id)
   }
 
   private func receive() async throws -> InstantLiveMessage {
+    try abortState.check()
     if !messages.isEmpty {
       return messages.removeFirst()
     }
@@ -85,27 +449,43 @@ actor LiveReactorParitySession {
     if isClosed {
       throw CancellationError()
     }
+    let id = UUID()
+    defer { clearReceiveContinuation(id: id) }
     return try await withCheckedThrowingContinuation { continuation in
-      receiveContinuation = continuation
+      let continuation = InstantLiveTestThrowingContinuationBox(continuation)
+      guard
+        let abortToken = abortState.register({
+          continuation.resume(throwing: CancellationError())
+        })
+      else {
+        continuation.resume(throwing: CancellationError())
+        return
+      }
+      receiveContinuation = InstantLiveTestPendingOperation(
+        id: id,
+        abortToken: abortToken,
+        continuation: continuation
+      )
     }
   }
 
   private func close() {
     isClosed = true
-    receiveContinuation?.resume(throwing: CancellationError())
+    abortState.abort()
     receiveContinuation = nil
+  }
+
+  private func clearReceiveContinuation(id: UUID) {
+    guard let receiveContinuation, receiveContinuation.id == id else { return }
+    abortState.unregister(receiveContinuation.abortToken)
+    self.receiveContinuation = nil
   }
 }
 
 actor LiveReactorParityTransport {
-  private struct ConnectionWaiter {
-    var count: Int
-    var continuation: CheckedContinuation<Void, Never>
-  }
-
   private var attempts: [LiveReactorParityTransportAttempt]
   private var requests: [InstantLiveSessionRequest] = []
-  private var waiters: [ConnectionWaiter] = []
+  private var waiters = LiveReactorParityCountWaiters()
 
   init(sessions: [LiveReactorParitySession]) {
     self.attempts = sessions.map(LiveReactorParityTransportAttempt.session)
@@ -116,8 +496,15 @@ actor LiveReactorParityTransport {
   }
 
   nonisolated var transport: InstantLiveTransportClient {
-    InstantLiveTransportClient { request in
-      try await self.connect(request)
+    .connectionAttempts { request in
+      let connection = InstantLiveTestConnectionContinuation()
+      return InstantLiveConnectionAttempt(
+        connect: {
+          connection.start { try await self.connect(request) }
+          return try await connection.connect()
+        },
+        abort: { connection.abort() }
+      )
     }
   }
 
@@ -127,8 +514,17 @@ actor LiveReactorParityTransport {
 
   func waitForConnectionCount(_ count: Int) async {
     guard requests.count < count else { return }
-    await withCheckedContinuation { continuation in
-      waiters.append(ConnectionWaiter(count: count, continuation: continuation))
+    let waiterID = UUID()
+    await withTaskCancellationHandler {
+      await withCheckedContinuation { continuation in
+        if Task.isCancelled {
+          continuation.resume()
+        } else {
+          waiters.append(id: waiterID, count: count, continuation: continuation)
+        }
+      }
+    } onCancel: {
+      Task { await self.cancelConnectionWaiter(id: waiterID) }
     }
   }
 
@@ -154,15 +550,11 @@ actor LiveReactorParityTransport {
   }
 
   private func resumeConnectionWaiters() {
-    var pending: [ConnectionWaiter] = []
-    for waiter in waiters {
-      if requests.count >= waiter.count {
-        waiter.continuation.resume()
-      } else {
-        pending.append(waiter)
-      }
-    }
-    waiters = pending
+    waiters.resumeSatisfied(by: requests.count)
+  }
+
+  private func cancelConnectionWaiter(id: UUID) {
+    waiters.cancel(id: id)
   }
 }
 
@@ -172,35 +564,27 @@ enum LiveReactorParityTransportAttempt: Sendable {
 }
 
 actor LiveReactorParityReconnectSleep {
-  private struct DelayWaiter {
-    var count: Int
-    var continuation: CheckedContinuation<Void, Never>
-  }
-
-  private struct CancellationWaiter {
-    var count: Int
-    var continuation: CheckedContinuation<Void, Never>
-  }
-
   private let suspendsUntilCancelled: Bool
+  private let postCancellationCheckpoint: LiveReactorParityExactCloseCheckpoint?
   private var recordedDelays: [UInt64] = []
-  private var cancellationCount = 0
-  private var delayWaiters: [DelayWaiter] = []
-  private var cancellationWaiters: [CancellationWaiter] = []
+  private var cancellationCountStorage = 0
 
-  init(suspendsUntilCancelled: Bool = false) {
+  init(
+    suspendsUntilCancelled: Bool = false,
+    postCancellationCheckpoint: LiveReactorParityExactCloseCheckpoint? = nil
+  ) {
     self.suspendsUntilCancelled = suspendsUntilCancelled
+    self.postCancellationCheckpoint = postCancellationCheckpoint
   }
 
   func sleep(milliseconds: UInt64) async throws {
     recordedDelays.append(milliseconds)
-    resumeDelayWaiters()
     guard suspendsUntilCancelled else { return }
     do {
       try await Task.sleep(nanoseconds: 60_000_000_000)
     } catch is CancellationError {
-      cancellationCount += 1
-      resumeCancellationWaiters()
+      cancellationCountStorage += 1
+      await postCancellationCheckpoint?.pause()
       throw CancellationError()
     }
   }
@@ -209,42 +593,8 @@ actor LiveReactorParityReconnectSleep {
     recordedDelays
   }
 
-  func waitForDelayCount(_ count: Int) async {
-    guard recordedDelays.count < count else { return }
-    await withCheckedContinuation { continuation in
-      delayWaiters.append(DelayWaiter(count: count, continuation: continuation))
-    }
-  }
-
-  func waitForCancellationCount(_ count: Int) async {
-    guard cancellationCount < count else { return }
-    await withCheckedContinuation { continuation in
-      cancellationWaiters.append(CancellationWaiter(count: count, continuation: continuation))
-    }
-  }
-
-  private func resumeDelayWaiters() {
-    var pending: [DelayWaiter] = []
-    for waiter in delayWaiters {
-      if recordedDelays.count >= waiter.count {
-        waiter.continuation.resume()
-      } else {
-        pending.append(waiter)
-      }
-    }
-    delayWaiters = pending
-  }
-
-  private func resumeCancellationWaiters() {
-    var pending: [CancellationWaiter] = []
-    for waiter in cancellationWaiters {
-      if cancellationCount >= waiter.count {
-        waiter.continuation.resume()
-      } else {
-        pending.append(waiter)
-      }
-    }
-    cancellationWaiters = pending
+  func cancellationCount() -> Int {
+    cancellationCountStorage
   }
 }
 

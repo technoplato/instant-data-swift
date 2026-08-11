@@ -331,6 +331,14 @@ struct InstantOutboxHydrationTests {
       await transport.waitForConnectionCount(2)
     }
     try await instantLiveWithTimeout(
+      operation: "wait for permission-service reconnect to finish opening",
+      timeoutMilliseconds: 5_000
+    ) {
+      while try await runtime.connectionStatus().state != .opened {
+        try await Task.sleep(for: .milliseconds(1))
+      }
+    }
+    try await instantLiveWithTimeout(
       operation: "wait for permission-service mutation retry",
       timeoutMilliseconds: 5_000
     ) {
@@ -1051,7 +1059,8 @@ struct InstantOutboxHydrationTests {
       metadataValue: "seeded",
       metadataUpdatedAt: now,
       expectedStoreRevision: initial.storeRevision,
-      expectedOutboxRevision: initial.outboxRevision
+      expectedOutboxRevision: initial.outboxRevision,
+      expectedAttributeRevision: initial.attributeRevision
     )
     expectNoDifference(didSave, true, upstreamDeliverySource)
     var configuration = InstantRuntimeConfiguration(
@@ -1106,7 +1115,8 @@ struct InstantOutboxHydrationTests {
           metadataValue: "deleted",
           metadataUpdatedAt: now,
           expectedStoreRevision: 1,
-          expectedOutboxRevision: 1
+          expectedOutboxRevision: 1,
+          expectedAttributeRevision: 1
         )
       case .snapshot:
         didSave = try await persistence.saveSnapshot(
@@ -1116,6 +1126,7 @@ struct InstantOutboxHydrationTests {
           metadataValue: "deleted",
           metadataUpdatedAt: now,
           expectedStoreRevision: 1,
+          expectedAttributeRevision: 1,
           expectedOutboxRevision: 1
         )
       case .liveRefresh:
@@ -1129,7 +1140,8 @@ struct InstantOutboxHydrationTests {
           metadataValue: "deleted",
           metadataUpdatedAt: now,
           expectedStoreRevision: 1,
-          expectedOutboxRevision: 1
+          expectedOutboxRevision: 1,
+          expectedAttributeRevision: 1
         )
       }
       expectNoDifference(didSave, true, "metadata diff path: \(path.rawValue)")
@@ -1171,7 +1183,8 @@ struct InstantOutboxHydrationTests {
       metadataValue: "metadata-only",
       metadataUpdatedAt: now,
       expectedStoreRevision: 1,
-      expectedOutboxRevision: 1
+      expectedOutboxRevision: 1,
+      expectedAttributeRevision: 1
     )
 
     expectNoDifference(didSave, true)
@@ -1238,6 +1251,7 @@ private actor OutboxHydrationTransportRecorder {
 }
 
 private actor CloseDuringTransactLiveTransport {
+  nonisolated private let abortState = InstantLiveTestWireAbortState()
   private var messages = [
     liveReactorInitOK(
       attrs: liveReactorTodoServerAttrs,
@@ -1245,16 +1259,25 @@ private actor CloseDuringTransactLiveTransport {
     )
   ]
   private var connections = 0
-  private var receiveContinuation: CheckedContinuation<InstantLiveMessage, Error>?
+  private var receiveContinuation: InstantLiveTestPendingOperation<InstantLiveMessage>?
   private var transactSendBlocked = false
   private var transactSendBlockWaiters: [CheckedContinuation<Void, Never>] = []
   private var transactSendFailureObserved = false
   private var transactSendFailureWaiters: [CheckedContinuation<Void, Never>] = []
-  private var transactSendContinuation: CheckedContinuation<Void, Never>?
+  private var transactSendContinuation: InstantLiveTestPendingOperation<Void>?
   private var isClosed = false
 
   nonisolated var transport: InstantLiveTransportClient {
-    InstantLiveTransportClient { _ in await self.connect() }
+    .connectionAttempts { _ in
+      let connection = InstantLiveTestConnectionContinuation()
+      return InstantLiveConnectionAttempt(
+        connect: {
+          connection.start { await self.connect() }
+          return try await connection.connect()
+        },
+        abort: { connection.abort() }
+      )
+    }
   }
 
   func connectionCount() -> Int {
@@ -1279,12 +1302,17 @@ private actor CloseDuringTransactLiveTransport {
     connections += 1
     return InstantLiveWebSocketSession(
       send: { message in try await self.send(message) },
-      receive: { try await self.receive() },
-      close: { await self.close() }
+      receive: {
+        try self.abortState.check()
+        return try await self.receive()
+      },
+      close: { await self.close() },
+      abort: { self.abortState.abort() }
     )
   }
 
   private func send(_ message: InstantLiveMessage) async throws {
+    try abortState.check()
     guard message.op == "transact" else { return }
     transactSendBlocked = true
     let blockWaiters = transactSendBlockWaiters
@@ -1293,8 +1321,24 @@ private actor CloseDuringTransactLiveTransport {
       waiter.resume()
     }
     if !isClosed {
-      await withCheckedContinuation { continuation in
-        transactSendContinuation = continuation
+      let id = UUID()
+      defer { clearTransactSendContinuation(id: id) }
+      try await withCheckedThrowingContinuation {
+        (continuation: CheckedContinuation<Void, Error>) in
+        let continuation = InstantLiveTestThrowingContinuationBox(continuation)
+        guard
+          let abortToken = abortState.register({
+            continuation.resume(returning: ())
+          })
+        else {
+          continuation.resume(returning: ())
+          return
+        }
+        transactSendContinuation = InstantLiveTestPendingOperation(
+          id: id,
+          abortToken: abortToken,
+          continuation: continuation
+        )
       }
     }
     transactSendFailureObserved = true
@@ -1312,23 +1356,50 @@ private actor CloseDuringTransactLiveTransport {
   }
 
   private func receive() async throws -> InstantLiveMessage {
+    try abortState.check()
     if !messages.isEmpty {
       return messages.removeFirst()
     }
     if isClosed {
       throw CancellationError()
     }
+    let id = UUID()
+    defer { clearReceiveContinuation(id: id) }
     return try await withCheckedThrowingContinuation { continuation in
-      receiveContinuation = continuation
+      let continuation = InstantLiveTestThrowingContinuationBox(continuation)
+      guard
+        let abortToken = abortState.register({
+          continuation.resume(throwing: CancellationError())
+        })
+      else {
+        continuation.resume(throwing: CancellationError())
+        return
+      }
+      receiveContinuation = InstantLiveTestPendingOperation(
+        id: id,
+        abortToken: abortToken,
+        continuation: continuation
+      )
     }
   }
 
   private func close() {
     isClosed = true
-    receiveContinuation?.resume(throwing: CancellationError())
+    abortState.abort()
     receiveContinuation = nil
-    transactSendContinuation?.resume()
     transactSendContinuation = nil
+  }
+
+  private func clearReceiveContinuation(id: UUID) {
+    guard let receiveContinuation, receiveContinuation.id == id else { return }
+    abortState.unregister(receiveContinuation.abortToken)
+    self.receiveContinuation = nil
+  }
+
+  private func clearTransactSendContinuation(id: UUID) {
+    guard let transactSendContinuation, transactSendContinuation.id == id else { return }
+    abortState.unregister(transactSendContinuation.abortToken)
+    self.transactSendContinuation = nil
   }
 }
 
@@ -1338,14 +1409,24 @@ private actor QueuedConnectCancellationTransport {
   private var firstConnectionStarted = false
   private var firstConnectionWaiters: [CheckedContinuation<Void, Never>] = []
   private var firstConnectionReleased = false
-  private var firstConnectionReleaseWaiters: [CheckedContinuation<Void, Never>] = []
+  private var firstConnectionPending:
+    [(InstantLiveTestConnectionContinuation, InstantLiveWebSocketSession)] = []
 
   init(sessions: [LiveReactorParitySession]) {
     self.sessions = sessions
   }
 
   nonisolated var transport: InstantLiveTransportClient {
-    InstantLiveTransportClient { _ in try await self.connect() }
+    .connectionAttempts { _ in
+      let connection = InstantLiveTestConnectionContinuation()
+      return InstantLiveConnectionAttempt(
+        connect: {
+          Task { await self.beginConnection(connection) }
+          return try await connection.connect()
+        },
+        abort: { connection.abort() }
+      )
+    }
   }
 
   func connectionCount() -> Int {
@@ -1361,24 +1442,28 @@ private actor QueuedConnectCancellationTransport {
 
   func releaseFirstConnection() {
     firstConnectionReleased = true
-    let waiters = firstConnectionReleaseWaiters
-    firstConnectionReleaseWaiters.removeAll()
-    for waiter in waiters {
-      waiter.resume()
+    let pending = firstConnectionPending
+    firstConnectionPending.removeAll()
+    for (connection, session) in pending {
+      connection.succeed(session)
     }
   }
 
-  private func connect() async throws -> InstantLiveWebSocketSession {
+  private func beginConnection(_ connection: InstantLiveTestConnectionContinuation) {
     let index = connections
     connections += 1
     guard sessions.indices.contains(index) else {
-      throw InstantError(
-        code: .networkFailed,
-        operation: "connect cancelled queued live transport",
-        message: "No scripted live session remains.",
-        recovery: "A cancelled queued connection must not reach the transport."
+      connection.fail(
+        InstantError(
+          code: .networkFailed,
+          operation: "connect cancelled queued live transport",
+          message: "No scripted live session remains.",
+          recovery: "A cancelled queued connection must not reach the transport."
+        )
       )
+      return
     }
+    let session = sessions[index].webSocketSession
     if index == 0 {
       firstConnectionStarted = true
       let waiters = firstConnectionWaiters
@@ -1387,12 +1472,11 @@ private actor QueuedConnectCancellationTransport {
         waiter.resume()
       }
       if !firstConnectionReleased {
-        await withCheckedContinuation { continuation in
-          firstConnectionReleaseWaiters.append(continuation)
-        }
+        firstConnectionPending.append((connection, session))
+        return
       }
     }
-    return sessions[index].webSocketSession
+    connection.succeed(session)
   }
 }
 

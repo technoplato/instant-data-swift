@@ -34,8 +34,11 @@ public struct InstantSwiftDataClient: Sendable {
   private var queryOperation: @Sendable (InstantQueryPlan) async throws -> [InstantEntitySnapshot]
   private var observeOperation:
     @Sendable (InstantQueryPlan) async -> AsyncStream<InstantQueryEmission>
+  private var observeQueryLeaseOperation:
+    (@Sendable (InstantQueryPlan) async -> InstantQueryObservationLease)?
   private var subscribeInfiniteQueryOperation:
-    @Sendable (InstantQueryPlan) async -> InstantInfiniteQuerySubscription
+    @Sendable (InstantQueryPlan, InstantInfiniteQueryRetentionPolicy) async
+      -> InstantInfiniteQuerySubscription
   private var infiniteQueryInitialSnapshotOperation:
     @Sendable (InstantQueryPlan) async throws -> InstantInfiniteQuerySnapshot
   private var pendingMutationsOperation: @Sendable () async -> [PendingMutation]
@@ -145,8 +148,11 @@ public struct InstantSwiftDataClient: Sendable {
     self.observeOperation = { plan in
       await runtime.observe(plan)
     }
-    self.subscribeInfiniteQueryOperation = { plan in
-      await runtime.subscribeInfiniteQuery(plan)
+    self.observeQueryLeaseOperation = { plan in
+      await runtime.observeQueryLease(plan)
+    }
+    self.subscribeInfiniteQueryOperation = { plan, retentionPolicy in
+      await runtime.subscribeInfiniteQuery(plan, retentionPolicy: retentionPolicy)
     }
     self.infiniteQueryInitialSnapshotOperation = { plan in
       try await runtime.infiniteQueryInitialSnapshot(plan)
@@ -366,7 +372,7 @@ public struct InstantSwiftDataClient: Sendable {
       message: "The local reader facet does not support mutations.",
       recovery: "Use the ordinary injected client for mutations and remote capabilities."
     )
-    return Self(
+    var client = Self(
       transact: { _ in throw readOnlyError },
       queryOnce: { plan in
         try await runtime.queryLocally(plan)
@@ -384,6 +390,10 @@ public struct InstantSwiftDataClient: Sendable {
         try await runtime.localID(named: name)
       }
     )
+    client.observeQueryLeaseOperation = { plan in
+      await runtime.observeLocallyLease(plan)
+    }
+    return client
   }
 
   public init(
@@ -394,6 +404,11 @@ public struct InstantSwiftDataClient: Sendable {
     observe: @escaping @Sendable (InstantQueryPlan) async -> AsyncStream<InstantQueryEmission>,
     subscribeInfiniteQuery:
       (@Sendable (InstantQueryPlan) async -> InstantInfiniteQuerySubscription)? = nil,
+    subscribeInfiniteQueryWithRetention:
+      (
+        @Sendable (InstantQueryPlan, InstantInfiniteQueryRetentionPolicy) async
+          -> InstantInfiniteQuerySubscription
+      )? = nil,
     infiniteQueryInitialSnapshot:
       (@Sendable (InstantQueryPlan) async throws -> InstantInfiniteQuerySnapshot)? = nil,
     pendingMutations: @escaping @Sendable () async -> [PendingMutation],
@@ -517,6 +532,7 @@ public struct InstantSwiftDataClient: Sendable {
       query: query,
       observe: observe,
       subscribeInfiniteQuery: subscribeInfiniteQuery,
+      subscribeInfiniteQueryWithRetention: subscribeInfiniteQueryWithRetention,
       infiniteQueryInitialSnapshot: infiniteQueryInitialSnapshot,
       pendingMutations: pendingMutations,
       flushPendingMutations: flushPendingMutations,
@@ -587,6 +603,11 @@ public struct InstantSwiftDataClient: Sendable {
     observe: @escaping @Sendable (InstantQueryPlan) async -> AsyncStream<InstantQueryEmission>,
     subscribeInfiniteQuery:
       (@Sendable (InstantQueryPlan) async -> InstantInfiniteQuerySubscription)? = nil,
+    subscribeInfiniteQueryWithRetention:
+      (
+        @Sendable (InstantQueryPlan, InstantInfiniteQueryRetentionPolicy) async
+          -> InstantInfiniteQuerySubscription
+      )? = nil,
     infiniteQueryInitialSnapshot:
       (@Sendable (InstantQueryPlan) async throws -> InstantInfiniteQuerySnapshot)? = nil,
     pendingMutations: @escaping @Sendable () async -> [PendingMutation],
@@ -779,10 +800,18 @@ public struct InstantSwiftDataClient: Sendable {
       }
     self.queryOperation = query
     self.observeOperation = observe
-    self.subscribeInfiniteQueryOperation =
-      subscribeInfiniteQuery
-      ?? { plan in Self.failedInfiniteQuerySubscription(error: infiniteQueryError, queryID: plan.id)
+    self.observeQueryLeaseOperation = nil
+    if let subscribeInfiniteQueryWithRetention {
+      self.subscribeInfiniteQueryOperation = subscribeInfiniteQueryWithRetention
+    } else if let subscribeInfiniteQuery {
+      self.subscribeInfiniteQueryOperation = { plan, _ in
+        await subscribeInfiniteQuery(plan)
       }
+    } else {
+      self.subscribeInfiniteQueryOperation = { plan, _ in
+        Self.failedInfiniteQuerySubscription(error: infiniteQueryError, queryID: plan.id)
+      }
+    }
     self.infiniteQueryInitialSnapshotOperation =
       infiniteQueryInitialSnapshot ?? { _ in throw infiniteQueryError }
     self.pendingMutationsOperation = pendingMutations
@@ -1191,9 +1220,10 @@ public struct InstantSwiftDataClient: Sendable {
   }
 
   public func subscribeInfiniteQuery(
-    _ plan: InstantQueryPlan
+    _ plan: InstantQueryPlan,
+    retentionPolicy: InstantInfiniteQueryRetentionPolicy = .accumulated
   ) async -> InstantInfiniteQuerySubscription {
-    await subscribeInfiniteQueryOperation(plan)
+    await subscribeInfiniteQueryOperation(plan, retentionPolicy)
   }
 
   public func infiniteQueryInitialSnapshot(
@@ -1326,6 +1356,7 @@ public struct InstantSwiftDataClient: Sendable {
           outstandingMutationCount: outstanding.count,
           firstOutstandingMutationID: outstanding.first?.id,
           firstOutstandingIsLocalOnlyConfirmation: outstanding.first?.status == .confirmed,
+          firstOutstandingConfirmationSource: outstanding.first?.confirmationSource,
           sampleOutstandingMutationIDs: outstanding.prefix(8).map(\.id),
           firstFailedMutation: mutations.first(where: { $0.status == .failed })
         )
@@ -1377,7 +1408,7 @@ public struct InstantSwiftDataClient: Sendable {
       case .connecting:
         break
       case .opened, .authenticated:
-        runtime?.requestLiveMutationDelivery()
+        await runtime?.requestLiveMutationDelivery()
       }
 
       guard clock.now < deadline else {
@@ -1385,8 +1416,9 @@ public struct InstantSwiftDataClient: Sendable {
         if barrier.firstOutstandingIsLocalOnlyConfirmation,
           let mutationID = barrier.firstOutstandingMutationID
         {
+          let source = barrier.firstOutstandingConfirmationSource?.rawValue ?? "local"
           message =
-            "Mutation '\(mutationID)' was confirmed only by a local source, "
+            "Mutation '\(mutationID)' was confirmed only by local source '\(source)', "
             + "not by the Instant server before the delivery timeout."
         } else {
           message =
@@ -1896,28 +1928,34 @@ public struct InstantSwiftDataClient: Sendable {
   public func subscribe<Entity: InstantEntityModel>(
     _ query: InstantEntityQuery<Entity>
   ) async -> FetchSubscription<[Entity]> {
-    let emissions = await observe(query.plan)
-    let stream = AsyncThrowingStream<[Entity], Error>.makeStream(
-      bufferingPolicy: .bufferingNewest(1)
-    )
-    let task = Task {
-      for await emission in emissions {
-        do {
-          try Task.checkCancellation()
-          stream.continuation.yield(try Entity.decode(emission.values))
-        } catch {
-          stream.continuation.finish(throwing: error)
-          return
-        }
+    await subscribeQueryEmissions(query.plan) { emission in
+      try Entity.decode(emission.values)
+    }
+  }
+
+  fileprivate func subscribeQueryEmissions<Value: Sendable>(
+    _ plan: InstantQueryPlan,
+    transform: @escaping @Sendable (InstantQueryEmission) throws -> Value
+  ) async -> FetchSubscription<Value> {
+    await cancellationAwareFetchSubscriptionSetup { cancellation in
+      let observation: InstantQueryObservationLease
+      if let observeQueryLeaseOperation {
+        observation = await observeQueryLeaseOperation(plan)
+      } else {
+        // Compatibility clients can only provide a bare AsyncStream. The forwarding
+        // task is still awaited exactly, but a custom producer's private asynchronous
+        // teardown cannot be awaited without adopting the runtime lease operation.
+        observation = InstantQueryObservationLease(
+          stream: await observeOperation(plan),
+          cancel: {}
+        )
       }
-      stream.continuation.finish()
-    }
-    stream.continuation.onTermination = { @Sendable _ in
-      task.cancel()
-    }
-    return FetchSubscription(stream: stream.stream) {
-      task.cancel()
-      stream.continuation.finish()
+      return fetchSubscription(
+        from: observation.stream,
+        cancelSource: observation.cancel,
+        transform: transform,
+        cancellationOwner: cancellation
+      )
     }
   }
 }
@@ -1929,28 +1967,97 @@ public enum InstantSwiftDataBootstrapContext: String, Sendable {
   case cli
 }
 
+// SAFETY: `lock` protects the stream handle while cancellation clears it.
+// Iterators created before that transition retain their own stream; a retained
+// canceled subscription no longer retains the old buffered payload.
+fileprivate final class FetchSubscriptionStreamStorage<Element: Sendable>: @unchecked Sendable {
+  private let lock = NSLock()
+  private var stream: AsyncThrowingStream<Element, Error>?
+
+  init(_ stream: AsyncThrowingStream<Element, Error>) {
+    self.stream = stream
+  }
+
+  func makeAsyncIterator() -> AsyncThrowingStream<Element, Error>.Iterator {
+    let stream = lock.withLock { self.stream }
+    guard let stream else {
+      return AsyncThrowingStream<Element, Error> { $0.finish() }.makeAsyncIterator()
+    }
+    return stream.makeAsyncIterator()
+  }
+
+  func releaseBufferedStream() {
+    lock.withLock {
+      stream = nil
+    }
+  }
+}
+
 public struct FetchSubscription<Element: Sendable>: AsyncSequence, Sendable {
   public typealias AsyncIterator = AsyncThrowingStream<Element, Error>.Iterator
 
-  private let stream: AsyncThrowingStream<Element, Error>
-  private let cancellation: FetchSubscriptionCancellation
+  fileprivate let streamStorage: FetchSubscriptionStreamStorage<Element>
+  fileprivate let cancellation: FetchSubscriptionCancellation
 
+  /// Adapts a caller-owned stream to a cancellation-driven subscription.
+  ///
+  /// This compatibility initializer does not own the stream's continuation, so
+  /// natural producer completion cannot finish ``task``. Consume the sequence
+  /// and call ``cancel()`` when its lifetime ends. Subscriptions created by the
+  /// library's query APIs own their producers and finish ``task`` naturally.
   public init(
     stream: AsyncThrowingStream<Element, Error>,
     cancel: @escaping @Sendable () -> Void
   ) {
-    self.stream = stream
-    self.cancellation = FetchSubscriptionCancellation(cancel)
+    let streamStorage = FetchSubscriptionStreamStorage(stream)
+    self.streamStorage = streamStorage
+    self.cancellation = FetchSubscriptionCancellation(cancelAndWait: {
+      cancel()
+    })
+  }
+
+  init(
+    stream: AsyncThrowingStream<Element, Error>,
+    cancellationOwner: FetchSubscriptionCancellation? = nil,
+    cancelAndWait: @escaping @Sendable () async -> Void
+  ) {
+    let streamStorage = FetchSubscriptionStreamStorage(stream)
+    self.streamStorage = streamStorage
+    if let cancellationOwner {
+      self.cancellation = cancellationOwner
+      cancellationOwner.install(cancelAndWait: {
+        await cancelAndWait()
+      })
+    } else {
+      self.cancellation = FetchSubscriptionCancellation(cancelAndWait: {
+        await cancelAndWait()
+      })
+    }
+  }
+
+  fileprivate init(
+    streamStorage: FetchSubscriptionStreamStorage<Element>,
+    cancellation: FetchSubscriptionCancellation
+  ) {
+    self.streamStorage = streamStorage
+    self.cancellation = cancellation
   }
 
   public func makeAsyncIterator() -> AsyncIterator {
-    stream.makeAsyncIterator()
+    streamStorage.makeAsyncIterator()
   }
 
   public func cancel() {
+    streamStorage.releaseBufferedStream()
     cancellation.cancel()
   }
 
+  /// Waits until the subscription's exact cleanup finishes.
+  ///
+  /// Library-managed finite subscriptions finish this task when their producer
+  /// finishes. Values built with ``init(stream:cancel:)`` remain explicitly
+  /// cancellation-driven because that initializer cannot observe the caller's
+  /// private producer teardown.
   public var task: Void {
     get async throws {
       try await withTaskCancellationHandler {
@@ -1975,29 +2082,41 @@ public struct FetchSubscription<Element: Sendable>: AsyncSequence, Sendable {
   public func map<Mapped: Sendable>(
     _ transform: @escaping @Sendable (Element) throws -> Mapped
   ) -> FetchSubscription<Mapped> {
+    map(transform, cancellationOwner: nil)
+  }
+
+  fileprivate func map<Mapped: Sendable>(
+    _ transform: @escaping @Sendable (Element) throws -> Mapped,
+    cancellationOwner: FetchSubscriptionCancellation?
+  ) -> FetchSubscription<Mapped> {
     let mapped = AsyncThrowingStream<Mapped, Error>.makeStream(
       bufferingPolicy: .bufferingNewest(1)
     )
-    let task = Task {
-      do {
-        for try await value in self {
-          try Task.checkCancellation()
-          mapped.continuation.yield(try transform(value))
+    return managedFetchSubscription(
+      stream: mapped.stream,
+      continuation: mapped.continuation,
+      cancellationOwner: cancellationOwner,
+      start: {
+        Task {
+          do {
+            for try await value in self {
+              try Task.checkCancellation()
+              mapped.continuation.yield(try transform(value))
+            }
+            mapped.continuation.finish()
+          } catch {
+            mapped.continuation.finish(throwing: error)
+          }
         }
+      },
+      cancelAndWait: { task in
+        task.cancel()
         mapped.continuation.finish()
-      } catch {
-        mapped.continuation.finish(throwing: error)
+        self.cancel()
+        await task.value
+        try? await self.task
       }
-    }
-    mapped.continuation.onTermination = { @Sendable _ in
-      task.cancel()
-      self.cancel()
-    }
-    return FetchSubscription<Mapped>(stream: mapped.stream) {
-      task.cancel()
-      mapped.continuation.finish()
-      self.cancel()
-    }
+    )
   }
 }
 
@@ -2020,6 +2139,7 @@ public struct InfiniteQuerySnapshot<Element: Sendable>: Sendable {
   public var values: [Element]
   public var pageInfo: InstantQueryPageInfo?
   public var canLoadNextPage: Bool
+  public var canLoadPreviousPage: Bool
   public var error: InstantError?
 
   public init(
@@ -2028,6 +2148,7 @@ public struct InfiniteQuerySnapshot<Element: Sendable>: Sendable {
     values: [Element],
     pageInfo: InstantQueryPageInfo? = nil,
     canLoadNextPage: Bool,
+    canLoadPreviousPage: Bool = false,
     error: InstantError? = nil
   ) {
     self.queryID = queryID
@@ -2035,6 +2156,7 @@ public struct InfiniteQuerySnapshot<Element: Sendable>: Sendable {
     self.values = values
     self.pageInfo = pageInfo
     self.canLoadNextPage = canLoadNextPage
+    self.canLoadPreviousPage = canLoadPreviousPage
     self.error = error
   }
 
@@ -2058,27 +2180,54 @@ public struct InfiniteQuerySubscription<Element: Sendable>: AsyncSequence, Senda
   public typealias AsyncIterator = AsyncThrowingStream<InfiniteQuerySnapshot<Element>, Error>
     .Iterator
 
-  private let stream: AsyncThrowingStream<InfiniteQuerySnapshot<Element>, Error>
+  private let streamStorage: FetchSubscriptionStreamStorage<InfiniteQuerySnapshot<Element>>
   private let loadNextPageOperation: @Sendable () -> Void
+  private let loadPreviousPageOperation: @Sendable () -> Void
   private let cancellation: FetchSubscriptionCancellation
 
   public init(
     stream: AsyncThrowingStream<InfiniteQuerySnapshot<Element>, Error>,
     loadNextPage: @escaping @Sendable () -> Void,
+    loadPreviousPage: @escaping @Sendable () -> Void = {},
     cancel: @escaping @Sendable () -> Void
   ) {
-    self.stream = stream
-    self.loadNextPageOperation = loadNextPage
-    self.cancellation = FetchSubscriptionCancellation(cancel)
+    self.init(
+      stream: stream,
+      commandOwner: InstantInfiniteQueryCommandOwner(
+        loadNextPage: { loadNextPage() },
+        loadPreviousPage: { loadPreviousPage() },
+        cancel: { cancel() }
+      )
+    )
+  }
+
+  package init(
+    stream: AsyncThrowingStream<InfiniteQuerySnapshot<Element>, Error>,
+    commandOwner: InstantInfiniteQueryCommandOwner
+  ) {
+    let streamStorage = FetchSubscriptionStreamStorage(stream)
+    self.streamStorage = streamStorage
+    self.loadNextPageOperation = { commandOwner.loadNextPage() }
+    self.loadPreviousPageOperation = { commandOwner.loadPreviousPage() }
+    self.cancellation = FetchSubscriptionCancellation(cancelAndWait: {
+      await commandOwner.cancelAndWait()
+      streamStorage.releaseBufferedStream()
+    })
   }
 
   public func makeAsyncIterator() -> AsyncIterator {
-    stream.makeAsyncIterator()
+    streamStorage.makeAsyncIterator()
   }
 
   public func loadNextPage() {
     cancellation.unlessCancelled {
       loadNextPageOperation()
+    }
+  }
+
+  public func loadPreviousPage() {
+    cancellation.unlessCancelled {
+      loadPreviousPageOperation()
     }
   }
 
@@ -2089,6 +2238,8 @@ public struct InfiniteQuerySubscription<Element: Sendable>: AsyncSequence, Senda
   public var task: Void {
     get async throws {
       try await withTaskCancellationHandler {
+        // `wait` returns only after the exact command-owner cleanup has finished and the
+        // canceled handle has released its buffered stream and upstream resources.
         await cancellation.wait()
         try Task.checkCancellation()
       } onCancel: {
@@ -2111,28 +2262,113 @@ public struct InfiniteQuerySubscription<Element: Sendable>: AsyncSequence, Senda
 private func fetchSubscription<Element: Sendable>(
   from values: AsyncStream<Element>
 ) -> FetchSubscription<Element> {
-  let stream = AsyncThrowingStream<Element, Error>.makeStream(
+  fetchSubscription(
+    from: values,
+    cancelSource: {},
+    transform: { $0 }
+  )
+}
+
+private func fetchSubscription<Input: Sendable, Output: Sendable>(
+  from values: AsyncStream<Input>,
+  cancelSource: @escaping @Sendable () async -> Void,
+  transform: @escaping @Sendable (Input) throws -> Output,
+  cancellationOwner: FetchSubscriptionCancellation? = nil
+) -> FetchSubscription<Output> {
+  let stream = AsyncThrowingStream<Output, Error>.makeStream(
     bufferingPolicy: .bufferingNewest(1)
   )
-  let task = Task {
-    for await value in values {
-      do {
-        try Task.checkCancellation()
-        stream.continuation.yield(value)
-      } catch {
-        stream.continuation.finish(throwing: error)
-        return
+  return managedFetchSubscription(
+    stream: stream.stream,
+    continuation: stream.continuation,
+    cancellationOwner: cancellationOwner,
+    start: {
+      Task {
+        do {
+          for await value in values {
+            try Task.checkCancellation()
+            stream.continuation.yield(try transform(value))
+          }
+          stream.continuation.finish()
+        } catch {
+          stream.continuation.finish(throwing: error)
+        }
       }
+    },
+    cancelAndWait: { task in
+      task.cancel()
+      stream.continuation.finish()
+      async let sourceCancellation: Void = cancelSource()
+      await task.value
+      await sourceCancellation
     }
-    stream.continuation.finish()
+  )
+}
+
+/// Constructs a finite observation with its termination handler installed
+/// before its producer can finish. Cancellation cleanup is intentionally late
+/// installable so a synchronous finish or cancellation cannot escape ownership.
+private func managedFetchSubscription<Element: Sendable>(
+  stream: AsyncThrowingStream<Element, Error>,
+  continuation: AsyncThrowingStream<Element, Error>.Continuation,
+  cancellationOwner: FetchSubscriptionCancellation?,
+  start: () -> Task<Void, Never>,
+  cancelAndWait: @escaping @Sendable (Task<Void, Never>) async -> Void
+) -> FetchSubscription<Element> {
+  let cancellation = cancellationOwner ?? FetchSubscriptionCancellation()
+  let streamStorage = FetchSubscriptionStreamStorage(stream)
+  let subscription = FetchSubscription(
+    streamStorage: streamStorage,
+    cancellation: cancellation
+  )
+  continuation.onTermination = {
+    @Sendable [weak cancellation, weak streamStorage] termination in
+    if case .cancelled = termination {
+      streamStorage?.releaseBufferedStream()
+      cancellation?.cancel()
+    } else {
+      cancellation?.finish()
+    }
   }
-  stream.continuation.onTermination = { @Sendable _ in
-    task.cancel()
+  let task = start()
+  cancellation.install {
+    await cancelAndWait(task)
   }
-  return FetchSubscription(stream: stream.stream) {
-    task.cancel()
-    stream.continuation.finish()
+  return subscription
+}
+
+private func cancellationAwareFetchSubscriptionSetup<Element: Sendable>(
+  _ build: @escaping @Sendable (FetchSubscriptionCancellation) async throws
+    -> FetchSubscription<Element>
+) async rethrows -> FetchSubscription<Element> {
+  let cancellation = FetchSubscriptionCancellation()
+  if Task.isCancelled { cancellation.cancelBeforeSetupCompletes() }
+  return try await withTaskCancellationHandler {
+    let subscription = try await build(cancellation)
+    if cancellation.completeSetup() {
+      await cancellation.wait()
+      return .finished()
+    }
+    return subscription
+  } onCancel: {
+    cancellation.cancelBeforeSetupCompletes()
   }
+}
+
+private func withExactFetchSubscriptionLifetime<Element: Sendable>(
+  _ subscription: FetchSubscription<Element>,
+  operation: () async throws -> Void
+) async throws {
+  do {
+    try await operation()
+  } catch {
+    subscription.cancel()
+    await subscription.cancellation.wait()
+    throw error
+  }
+  subscription.cancel()
+  await subscription.cancellation.wait()
+  try Task.checkCancellation()
 }
 
 private func validateNonNegativeLimit(
@@ -2520,74 +2756,73 @@ private func runFetchStorageSubscriptionTask<Value: Sendable>(
   )
   do {
     let subscription = try await subscribe()
-    defer {
-      subscription.cancel()
-    }
-    try Task.checkCancellation()
-    guard let subscriptionID = storage.beginActiveSubscription(subscription, after: generation)
-    else {
-      throw CancellationError()
-    }
-    activeSubscriptionID = subscriptionID
-    InstantDiagnostics.shared.record(
-      .debug,
-      subsystem: "instant-swift-data",
-      category: "fetch-wrapper",
-      event: "fetch-task.subscribed",
-      message: "Property wrapper established its subscription.",
-      metadata: [
-        "operation": operation,
-        "generation": String(generation),
-        "subscriptionID": String(subscriptionID),
-      ]
-    )
-    for try await value in subscription {
+    try await withExactFetchSubscriptionLifetime(subscription) {
       try Task.checkCancellation()
-      guard storage.updateActiveSubscriptionValue(value, id: subscriptionID) else {
+      guard let subscriptionID = storage.beginActiveSubscription(subscription, after: generation)
+      else {
         throw CancellationError()
       }
-      emissionCount += 1
-      var emissionMetadata = [
-        "operation": operation,
-        "emissionCount": String(emissionCount),
-        "subscriptionID": String(subscriptionID),
-      ]
-      let mirror = Mirror(reflecting: value)
-      if mirror.displayStyle == .collection || mirror.displayStyle == .set
-        || mirror.displayStyle == .dictionary
-      {
-        emissionMetadata["resultCount"] = String(mirror.children.count)
-      }
+      activeSubscriptionID = subscriptionID
       InstantDiagnostics.shared.record(
-        .trace,
+        .debug,
         subsystem: "instant-swift-data",
         category: "fetch-wrapper",
-        event: "fetch-task.emitted",
-        message: "Property wrapper applied a subscription emission.",
-        metadata: emissionMetadata
+        event: "fetch-task.subscribed",
+        message: "Property wrapper established its subscription.",
+        metadata: [
+          "operation": operation,
+          "generation": String(generation),
+          "subscriptionID": String(subscriptionID),
+        ]
+      )
+      for try await value in subscription {
+        try Task.checkCancellation()
+        guard storage.updateActiveSubscriptionValue(value, id: subscriptionID) else {
+          throw CancellationError()
+        }
+        emissionCount += 1
+        var emissionMetadata = [
+          "operation": operation,
+          "emissionCount": String(emissionCount),
+          "subscriptionID": String(subscriptionID),
+        ]
+        let mirror = Mirror(reflecting: value)
+        if mirror.displayStyle == .collection || mirror.displayStyle == .set
+          || mirror.displayStyle == .dictionary
+        {
+          emissionMetadata["resultCount"] = String(mirror.children.count)
+        }
+        InstantDiagnostics.shared.record(
+          .trace,
+          subsystem: "instant-swift-data",
+          category: "fetch-wrapper",
+          event: "fetch-task.emitted",
+          message: "Property wrapper applied a subscription emission.",
+          metadata: emissionMetadata
+        )
+      }
+      try Task.checkCancellation()
+      guard
+        storage.finishActiveOrPendingSubscriptionTask(
+          id: subscriptionID,
+          generation: generation,
+          loadError: nil
+        )
+      else {
+        throw CancellationError()
+      }
+      InstantDiagnostics.shared.record(
+        .debug,
+        subsystem: "instant-swift-data",
+        category: "fetch-wrapper",
+        event: "fetch-task.finished",
+        message: "Property-wrapper subscription task finished.",
+        metadata: [
+          "operation": operation,
+          "emissionCount": String(emissionCount),
+        ]
       )
     }
-    try Task.checkCancellation()
-    guard
-      storage.finishActiveOrPendingSubscriptionTask(
-        id: subscriptionID,
-        generation: generation,
-        loadError: nil
-      )
-    else {
-      throw CancellationError()
-    }
-    InstantDiagnostics.shared.record(
-      .debug,
-      subsystem: "instant-swift-data",
-      category: "fetch-wrapper",
-      event: "fetch-task.finished",
-      message: "Property-wrapper subscription task finished.",
-      metadata: [
-        "operation": operation,
-        "emissionCount": String(emissionCount),
-      ]
-    )
   } catch let error as CancellationError {
     _ = storage.finishActiveOrPendingSubscriptionTask(
       id: activeSubscriptionID,
@@ -2668,6 +2903,7 @@ private final class InfiniteQueryStorage<Element: Sendable>: @unchecked Sendable
   private var _isLoading: Bool
   private var _pageInfo: InstantQueryPageInfo?
   private var _canLoadNextPage: Bool
+  private var _canLoadPreviousPage: Bool
   private var _activeSubscriptionID = 0
   private var _activeSubscription: (id: Int, subscription: InfiniteQuerySubscription<Element>)?
 
@@ -2682,6 +2918,7 @@ private final class InfiniteQueryStorage<Element: Sendable>: @unchecked Sendable
     self._isLoading = false
     self._pageInfo = nil
     self._canLoadNextPage = false
+    self._canLoadPreviousPage = false
   }
 
   var initialValue: [Element] {
@@ -2756,6 +2993,18 @@ private final class InfiniteQueryStorage<Element: Sendable>: @unchecked Sendable
     }
   }
 
+  var canLoadPreviousPage: Bool {
+    get {
+      withLock { _canLoadPreviousPage }
+    }
+    set {
+      publishChange()
+      withLock {
+        _canLoadPreviousPage = newValue
+      }
+    }
+  }
+
   func resetToInitialValue() {
     publishChange()
     withLock {
@@ -2764,6 +3013,7 @@ private final class InfiniteQueryStorage<Element: Sendable>: @unchecked Sendable
       _isLoading = false
       _pageInfo = nil
       _canLoadNextPage = false
+      _canLoadPreviousPage = false
     }
   }
 
@@ -2775,6 +3025,7 @@ private final class InfiniteQueryStorage<Element: Sendable>: @unchecked Sendable
       _isLoading = false
       _pageInfo = snapshot.pageInfo
       _canLoadNextPage = snapshot.canLoadNextPage
+      _canLoadPreviousPage = snapshot.canLoadPreviousPage
     }
   }
 
@@ -2870,6 +3121,7 @@ private final class InfiniteQueryStorage<Element: Sendable>: @unchecked Sendable
       _isLoading = false
       _pageInfo = snapshot.pageInfo
       _canLoadNextPage = snapshot.canLoadNextPage
+      _canLoadPreviousPage = snapshot.canLoadPreviousPage
       return true
     }
   }
@@ -2886,6 +3138,7 @@ private final class InfiniteQueryStorage<Element: Sendable>: @unchecked Sendable
       _isLoading = false
       _pageInfo = snapshot.pageInfo
       _canLoadNextPage = snapshot.canLoadNextPage
+      _canLoadPreviousPage = snapshot.canLoadPreviousPage
       return true
     }
   }
@@ -2929,6 +3182,13 @@ private final class InfiniteQueryStorage<Element: Sendable>: @unchecked Sendable
     subscription?.loadNextPage()
   }
 
+  func loadPreviousPage() {
+    let subscription = withLock {
+      _activeSubscription?.subscription
+    }
+    subscription?.loadPreviousPage()
+  }
+
   private func publishChange() {
     #if canImport(SwiftUI)
       if Thread.isMainThread {
@@ -2960,6 +3220,7 @@ private func runInfiniteQueryStorageSubscriptionTask<Element: Sendable>(
 ) async throws {
   let generation = storage.prepareActiveSubscriptionTask()
   var activeSubscriptionID: Int?
+  var subscriptionForCleanup: InfiniteQuerySubscription<Element>?
   var emissionCount = 0
   InstantDiagnostics.shared.record(
     .debug,
@@ -2975,9 +3236,7 @@ private func runInfiniteQueryStorageSubscriptionTask<Element: Sendable>(
   )
   do {
     let subscription = try await subscribe()
-    defer {
-      subscription.cancel()
-    }
+    subscriptionForCleanup = subscription
     try Task.checkCancellation()
     guard let subscriptionID = storage.beginActiveSubscription(subscription, after: generation)
     else {
@@ -3039,7 +3298,15 @@ private func runInfiniteQueryStorageSubscriptionTask<Element: Sendable>(
         "emissionCount": String(emissionCount),
       ]
     )
+    subscription.cancel()
+    try? await subscription.task
+    subscriptionForCleanup = nil
   } catch let error as CancellationError {
+    if let subscription = subscriptionForCleanup {
+      subscription.cancel()
+      try? await subscription.task
+    }
+    subscriptionForCleanup = nil
     _ = storage.finishActiveOrPendingSubscriptionTask(
       id: activeSubscriptionID,
       generation: generation,
@@ -3058,6 +3325,11 @@ private func runInfiniteQueryStorageSubscriptionTask<Element: Sendable>(
     )
     throw error
   } catch let error as InstantError {
+    if let subscription = subscriptionForCleanup {
+      subscription.cancel()
+      try? await subscription.task
+    }
+    subscriptionForCleanup = nil
     guard
       storage.finishActiveOrPendingSubscriptionTask(
         id: activeSubscriptionID,
@@ -3080,6 +3352,11 @@ private func runInfiniteQueryStorageSubscriptionTask<Element: Sendable>(
     )
     throw error
   } catch {
+    if let subscription = subscriptionForCleanup {
+      subscription.cancel()
+      try? await subscription.task
+    }
+    subscriptionForCleanup = nil
     let error = InstantError(
       code: .implementationFailed,
       operation: operation,
@@ -3197,51 +3474,52 @@ private func startAutomaticFetchObservation<Value: Sendable>(
     var emissionCount = 0
     do {
       let subscription = try await subscribe(client)
-      startupTrace.completed(
-        "fetch.subscription-established",
-        since: startupStopwatch,
-        metadata: ["valueType": String(reflecting: Value.self)]
-      )
-      defer { subscription.cancel() }
-      try Task.checkCancellation()
-      guard
-        let id = storageReference.value?.beginActiveSubscription(
-          subscription,
-          after: generation
+      try await withExactFetchSubscriptionLifetime(subscription) {
+        startupTrace.completed(
+          "fetch.subscription-established",
+          since: startupStopwatch,
+          metadata: ["valueType": String(reflecting: Value.self)]
         )
-      else { return }
-      subscriptionID = id
-      for try await value in subscription {
         try Task.checkCancellation()
-        guard storageReference.value?.updateActiveSubscriptionValue(value, id: id) == true else {
-          throw CancellationError()
-        }
-        emissionCount += 1
-        let mirror = Mirror(reflecting: value)
-        if emissionCount == 1 {
-          startupTrace.completed(
-            "fetch.first-emission",
-            since: startupStopwatch,
+        guard
+          let id = storageReference.value?.beginActiveSubscription(
+            subscription,
+            after: generation
+          )
+        else { return }
+        subscriptionID = id
+        for try await value in subscription {
+          try Task.checkCancellation()
+          guard storageReference.value?.updateActiveSubscriptionValue(value, id: id) == true else {
+            throw CancellationError()
+          }
+          emissionCount += 1
+          let mirror = Mirror(reflecting: value)
+          if emissionCount == 1 {
+            startupTrace.completed(
+              "fetch.first-emission",
+              since: startupStopwatch,
+              metadata: [
+                "resultCount": String(mirror.children.count),
+                "valueType": String(reflecting: Value.self),
+              ]
+            )
+          }
+          InstantDiagnostics.shared.record(
+            .trace,
+            subsystem: "instant-swift-data",
+            category: "fetch-wrapper",
+            event: "fetch-automatic.emitted",
+            message: "Applied an automatic fetch observation emission.",
             metadata: [
+              "emissionCount": String(emissionCount),
               "resultCount": String(mirror.children.count),
               "valueType": String(reflecting: Value.self),
             ]
           )
         }
-        InstantDiagnostics.shared.record(
-          .trace,
-          subsystem: "instant-swift-data",
-          category: "fetch-wrapper",
-          event: "fetch-automatic.emitted",
-          message: "Applied an automatic fetch observation emission.",
-          metadata: [
-            "emissionCount": String(emissionCount),
-            "resultCount": String(mirror.children.count),
-            "valueType": String(reflecting: Value.self),
-          ]
-        )
+        storageReference.value?.finishActiveSubscription(id, loadError: nil)
       }
-      storageReference.value?.finishActiveSubscription(id, loadError: nil)
     } catch is CancellationError {
       if let subscriptionID {
         storageReference.value?.finishActiveSubscription(subscriptionID, loadError: nil)
@@ -3312,88 +3590,50 @@ private final class LockedValueStorage<Value: Sendable>: @unchecked Sendable {
 
 // SAFETY: all mutable state is protected by `lock`.
 final class FetchSubscriptionCancellation: @unchecked Sendable {
-  private let lock = NSLock()
-  private let operation: @Sendable () -> Void
-  private var isCancelled = false
-  private var activeOperationCount = 0
-  private var didRunCancellation = false
-  private var continuations: [CheckedContinuation<Void, Never>] = []
+  private let state: InstantAsyncCancellationOwner
+
+  init() {
+    self.state = InstantAsyncCancellationOwner()
+  }
 
   init(_ operation: @escaping @Sendable () -> Void) {
-    self.operation = operation
+    self.state = InstantAsyncCancellationOwner(cancelAndWait: { operation() })
+  }
+
+  init(cancelAndWait operation: @escaping @Sendable () async -> Void) {
+    self.state = InstantAsyncCancellationOwner(cancelAndWait: operation)
   }
 
   deinit {
-    cancel()
+    state.cancel()
   }
 
   func cancel() {
-    let continuations: [CheckedContinuation<Void, Never>]
-    lock.lock()
-    guard !isCancelled else {
-      lock.unlock()
-      return
-    }
-    isCancelled = true
-    guard activeOperationCount == 0, !didRunCancellation else {
-      lock.unlock()
-      return
-    }
-    didRunCancellation = true
-    continuations = self.continuations
-    self.continuations.removeAll()
-    lock.unlock()
+    state.cancel()
+  }
 
-    operation()
-    for continuation in continuations {
-      continuation.resume()
-    }
+  func cancelBeforeSetupCompletes() {
+    state.cancelBeforeSetupCompletes()
+  }
+
+  func finish() {
+    state.finish()
+  }
+
+  func install(cancelAndWait operation: @escaping @Sendable () async -> Void) {
+    state.install(cancelAndWait: operation)
+  }
+
+  func completeSetup() -> Bool {
+    state.completeSetup()
   }
 
   func unlessCancelled(_ action: @Sendable () -> Void) {
-    lock.lock()
-    guard !isCancelled else {
-      lock.unlock()
-      return
-    }
-    activeOperationCount += 1
-    lock.unlock()
-
-    action()
-
-    finishOperation()
+    state.unlessCancelled(action)
   }
 
   func wait() async {
-    await withCheckedContinuation { continuation in
-      lock.lock()
-      if didRunCancellation {
-        lock.unlock()
-        continuation.resume()
-      } else {
-        continuations.append(continuation)
-        lock.unlock()
-      }
-    }
-  }
-
-  private func finishOperation() {
-    let continuations: [CheckedContinuation<Void, Never>]
-    lock.lock()
-    activeOperationCount -= 1
-    guard isCancelled, activeOperationCount == 0, !didRunCancellation else {
-      lock.unlock()
-      return
-    }
-    didRunCancellation = true
-    continuations = self.continuations
-    self.continuations.removeAll()
-    lock.unlock()
-
-    operation()
-    for continuation in continuations {
-      continuation.resume()
-    }
+    await state.wait()
   }
 }
 
@@ -3761,6 +4001,7 @@ extension DependencyValues {
     firstPartyURL: URL? = nil,
     context: InstantSwiftDataBootstrapContext = .live,
     initialAttributes: [InstantAttribute] = [],
+    deferredValueResidency: InstantDeferredValueResidencyPolicy = .none,
     liveShareContract: InstantLiveShareContract? = nil,
     startupTrace: InstantStartupTrace = .live()
   ) async throws {
@@ -3772,6 +4013,7 @@ extension DependencyValues {
       firstPartyURL: firstPartyURL,
       context: context,
       initialAttributes: initialAttributes,
+      deferredValueResidency: deferredValueResidency,
       liveShareContract: liveShareContract,
       startupTrace: startupTrace
     )
@@ -3785,6 +4027,7 @@ extension DependencyValues {
     firstPartyURL: URL? = nil,
     context: InstantSwiftDataBootstrapContext = .live,
     initialAttributes: [InstantAttribute] = [],
+    deferredValueResidency: InstantDeferredValueResidencyPolicy = .none,
     liveShareContract: InstantLiveShareContract? = nil,
     startupTrace: InstantStartupTrace = .live()
   ) async throws {
@@ -3824,6 +4067,7 @@ extension DependencyValues {
         firstPartyURL: firstPartyURL,
         persistenceURL: url,
         initialAttributes: initialAttributes,
+        deferredValueResidency: deferredValueResidency,
         now: {
           InstantTimestamp(milliseconds: Int64((date().timeIntervalSince1970 * 1000).rounded()))
         },
@@ -3877,7 +4121,8 @@ extension DependencyValues {
     appID: String,
     persistenceURL: URL? = nil,
     context: InstantSwiftDataBootstrapContext = .live,
-    initialAttributes: [InstantAttribute] = []
+    initialAttributes: [InstantAttribute] = [],
+    deferredValueResidency: InstantDeferredValueResidencyPolicy = .none
   ) async throws {
     let date = self.date
     let uuid = self.uuid
@@ -3892,6 +4137,7 @@ extension DependencyValues {
       appID: appID,
       persistenceURL: url,
       initialAttributes: initialAttributes,
+      deferredValueResidency: deferredValueResidency,
       now: {
         InstantTimestamp(milliseconds: Int64((date().timeIntervalSince1970 * 1_000).rounded()))
       },
@@ -3981,6 +4227,7 @@ public struct InfiniteQuery<Element: InstantEntityModel>: @unchecked Sendable {
     @StateObject private var storageObserver: InfiniteQueryStorage<Element>
   #endif
   private let query: LockedValueStorage<InstantEntityQuery<Element>?>
+  private let retentionPolicy: InstantInfiniteQueryRetentionPolicy
 
   private var storage: InfiniteQueryStorage<Element> { storageReference.value }
 
@@ -4007,6 +4254,11 @@ public struct InfiniteQuery<Element: InstantEntityModel>: @unchecked Sendable {
   public var canLoadNextPage: Bool {
     get { storage.canLoadNextPage }
     nonmutating set { storage.canLoadNextPage = newValue }
+  }
+
+  public var canLoadPreviousPage: Bool {
+    get { storage.canLoadPreviousPage }
+    nonmutating set { storage.canLoadPreviousPage = newValue }
   }
 
   /// TanStack-shaped phase ADT derived from loading, rows, page-end, and error.
@@ -4044,36 +4296,21 @@ public struct InfiniteQuery<Element: InstantEntityModel>: @unchecked Sendable {
     }
   #endif
 
-  public init(wrappedValue: [Element] = []) {
-    self.init(wrappedValue: wrappedValue, Element.query)
-  }
-
   public init(
     wrappedValue: [Element] = [],
-    _ query: InstantEntityQuery<Element>
+    retentionPolicy: InstantInfiniteQueryRetentionPolicy = .accumulated
   ) {
-    let storage = InfiniteQueryStorage(value: wrappedValue)
-    self.storageReference = LockedValueStorage(storage)
-    #if canImport(SwiftUI)
-      self._storageObserver = StateObject(wrappedValue: storage)
-    #endif
-    self.query = LockedValueStorage(query)
+    self.init(
+      wrappedValue: wrappedValue,
+      Element.query,
+      retentionPolicy: retentionPolicy
+    )
   }
 
-  /// Page size is infinite-query config: each `loadNextPage()` expands by this
-  /// many **root** rows. It is not "only ever N rows forever."
   public init(
     wrappedValue: [Element] = [],
     _ query: InstantEntityQuery<Element>,
-    pageSize: Int
-  ) {
-    precondition(pageSize > 0, "InfiniteQuery pageSize must be greater than zero.")
-    self.init(wrappedValue: wrappedValue, query.limit(UInt(pageSize)))
-  }
-
-  public init(
-    wrappedValue: [Element] = [],
-    _ query: InstantEntityQuery<Element>?
+    retentionPolicy: InstantInfiniteQueryRetentionPolicy = .accumulated
   ) {
     let storage = InfiniteQueryStorage(value: wrappedValue)
     self.storageReference = LockedValueStorage(storage)
@@ -4081,39 +4318,91 @@ public struct InfiniteQuery<Element: InstantEntityModel>: @unchecked Sendable {
       self._storageObserver = StateObject(wrappedValue: storage)
     #endif
     self.query = LockedValueStorage(query)
+    self.retentionPolicy = retentionPolicy
+  }
+
+  /// Page size is infinite-query config: each page contains this many **root** rows.
+  /// Accumulated retention grows the resident result; window retention evicts the opposite edge.
+  public init(
+    wrappedValue: [Element] = [],
+    _ query: InstantEntityQuery<Element>,
+    pageSize: Int,
+    retentionPolicy: InstantInfiniteQueryRetentionPolicy = .accumulated
+  ) {
+    precondition(pageSize > 0, "InfiniteQuery pageSize must be greater than zero.")
+    self.init(
+      wrappedValue: wrappedValue,
+      query.limit(UInt(pageSize)),
+      retentionPolicy: retentionPolicy
+    )
+  }
+
+  public init(
+    wrappedValue: [Element] = [],
+    _ query: InstantEntityQuery<Element>?,
+    retentionPolicy: InstantInfiniteQueryRetentionPolicy = .accumulated
+  ) {
+    let storage = InfiniteQueryStorage(value: wrappedValue)
+    self.storageReference = LockedValueStorage(storage)
+    #if canImport(SwiftUI)
+      self._storageObserver = StateObject(wrappedValue: storage)
+    #endif
+    self.query = LockedValueStorage(query)
+    self.retentionPolicy = retentionPolicy
   }
 
   #if canImport(SwiftUI)
     public init(
       wrappedValue: [Element] = [],
+      retentionPolicy: InstantInfiniteQueryRetentionPolicy = .accumulated,
       animation: Animation?
     ) {
-      self.init(wrappedValue: wrappedValue, Element.query)
+      self.init(
+        wrappedValue: wrappedValue,
+        Element.query,
+        retentionPolicy: retentionPolicy
+      )
     }
 
     public init(
       wrappedValue: [Element] = [],
       _ query: InstantEntityQuery<Element>,
+      retentionPolicy: InstantInfiniteQueryRetentionPolicy = .accumulated,
       animation: Animation?
     ) {
-      self.init(wrappedValue: wrappedValue, query)
+      self.init(
+        wrappedValue: wrappedValue,
+        query,
+        retentionPolicy: retentionPolicy
+      )
     }
 
     public init(
       wrappedValue: [Element] = [],
       _ query: InstantEntityQuery<Element>,
       pageSize: Int,
+      retentionPolicy: InstantInfiniteQueryRetentionPolicy = .accumulated,
       animation: Animation?
     ) {
-      self.init(wrappedValue: wrappedValue, query, pageSize: pageSize)
+      self.init(
+        wrappedValue: wrappedValue,
+        query,
+        pageSize: pageSize,
+        retentionPolicy: retentionPolicy
+      )
     }
 
     public init(
       wrappedValue: [Element] = [],
       _ query: InstantEntityQuery<Element>?,
+      retentionPolicy: InstantInfiniteQueryRetentionPolicy = .accumulated,
       animation: Animation?
     ) {
-      self.init(wrappedValue: wrappedValue, query)
+      self.init(
+        wrappedValue: wrappedValue,
+        query,
+        retentionPolicy: retentionPolicy
+      )
     }
   #endif
 
@@ -4126,6 +4415,7 @@ public struct InfiniteQuery<Element: InstantEntityModel>: @unchecked Sendable {
       isLoading = newValue.isLoading
       pageInfo = newValue.pageInfo
       canLoadNextPage = newValue.canLoadNextPage
+      canLoadPreviousPage = newValue.canLoadPreviousPage
       query.value = newValue.query.value
     }
   }
@@ -4242,7 +4532,10 @@ public struct InfiniteQuery<Element: InstantEntityModel>: @unchecked Sendable {
       throw error
     }
 
-    return await client.subscribeInfiniteQuery(query)
+    return await client.subscribeInfiniteQuery(
+      query,
+      retentionPolicy: retentionPolicy
+    )
   }
 
   public func subscribe(
@@ -4330,6 +4623,10 @@ public struct InfiniteQuery<Element: InstantEntityModel>: @unchecked Sendable {
     storage.loadNextPage()
   }
 
+  public func loadPreviousPage() {
+    storage.loadPreviousPage()
+  }
+
   public func cancel() {
     storage.cancelActiveSubscription()
     isLoading = false
@@ -4343,6 +4640,7 @@ public struct InfiniteQuery<Element: InstantEntityModel>: @unchecked Sendable {
     isLoading = false
     pageInfo = nil
     canLoadNextPage = false
+    canLoadPreviousPage = false
   }
 }
 
@@ -4907,34 +5205,12 @@ extension FetchAll where Element: InstantValueDecodable & InstantValueRepresenta
     selectedQuery: InstantEntityQuery<Entity>,
     field: InstantAttributePath<Entity, Element>
   ) async -> FetchSubscription<[Element]> {
-    let emissions = await client.observe(selectedQuery.plan)
-    let stream = AsyncThrowingStream<[Element], Error>.makeStream(
-      bufferingPolicy: .bufferingNewest(1)
-    )
-    let task = Task {
-      for await emission in emissions {
-        do {
-          try Task.checkCancellation()
-          stream.continuation.yield(
-            try scalarValues(
-              from: emission.values,
-              field: field,
-              operation: "subscribe FetchAll"
-            )
-          )
-        } catch {
-          stream.continuation.finish(throwing: error)
-          return
-        }
-      }
-      stream.continuation.finish()
-    }
-    stream.continuation.onTermination = { @Sendable _ in
-      task.cancel()
-    }
-    return FetchSubscription<[Element]>(stream: stream.stream) {
-      task.cancel()
-      stream.continuation.finish()
+    await client.subscribeQueryEmissions(selectedQuery.plan) { emission in
+      try scalarValues(
+        from: emission.values,
+        field: field,
+        operation: "subscribe FetchAll"
+      )
     }
   }
 
@@ -5146,34 +5422,12 @@ extension FetchAll {
     field: InstantAttributePath<Entity, FieldValue>
   ) async -> FetchSubscription<[Element]>
   where Element == FieldValue?, FieldValue: InstantValueDecodable & InstantValueRepresentable {
-    let emissions = await client.observe(selectedQuery.plan)
-    let stream = AsyncThrowingStream<[Element], Error>.makeStream(
-      bufferingPolicy: .bufferingNewest(1)
-    )
-    let task = Task {
-      for await emission in emissions {
-        do {
-          try Task.checkCancellation()
-          stream.continuation.yield(
-            try optionalScalarValues(
-              from: emission.values,
-              field: field,
-              operation: "subscribe FetchAll"
-            )
-          )
-        } catch {
-          stream.continuation.finish(throwing: error)
-          return
-        }
-      }
-      stream.continuation.finish()
-    }
-    stream.continuation.onTermination = { @Sendable _ in
-      task.cancel()
-    }
-    return FetchSubscription<[Element]>(stream: stream.stream) {
-      task.cancel()
-      stream.continuation.finish()
+    await client.subscribeQueryEmissions(selectedQuery.plan) { emission in
+      try optionalScalarValues(
+        from: emission.values,
+        field: field,
+        operation: "subscribe FetchAll"
+      )
     }
   }
 
@@ -5885,35 +6139,13 @@ extension FetchOne where Value: InstantValueDecodable & InstantValueRepresentabl
     selectedQuery: InstantEntityQuery<Entity>,
     field: InstantAttributePath<Entity, Value>
   ) async -> FetchSubscription<Value> {
-    let emissions = await client.observe(selectedQuery.plan)
-    let stream = AsyncThrowingStream<Value, Error>.makeStream(
-      bufferingPolicy: .bufferingNewest(1)
-    )
-    let task = Task {
-      for await emission in emissions {
-        do {
-          try Task.checkCancellation()
-          stream.continuation.yield(
-            try scalarValue(
-              from: emission.values,
-              query: query,
-              field: field,
-              operation: "subscribe FetchOne"
-            )
-          )
-        } catch {
-          stream.continuation.finish(throwing: error)
-          return
-        }
-      }
-      stream.continuation.finish()
-    }
-    stream.continuation.onTermination = { @Sendable _ in
-      task.cancel()
-    }
-    return FetchSubscription<Value>(stream: stream.stream) {
-      task.cancel()
-      stream.continuation.finish()
+    await client.subscribeQueryEmissions(selectedQuery.plan) { emission in
+      try scalarValue(
+        from: emission.values,
+        query: query,
+        field: field,
+        operation: "subscribe FetchOne"
+      )
     }
   }
 
@@ -6182,35 +6414,13 @@ extension FetchOne {
     field: InstantAttributePath<Entity, FieldValue>
   ) async -> FetchSubscription<Value>
   where Value == FieldValue?, FieldValue: InstantValueDecodable & InstantValueRepresentable {
-    let emissions = await client.observe(selectedQuery.plan)
-    let stream = AsyncThrowingStream<Value, Error>.makeStream(
-      bufferingPolicy: .bufferingNewest(1)
-    )
-    let task = Task {
-      for await emission in emissions {
-        do {
-          try Task.checkCancellation()
-          stream.continuation.yield(
-            try optionalScalarValue(
-              from: emission.values,
-              query: query,
-              field: field,
-              operation: "subscribe FetchOne"
-            )
-          )
-        } catch {
-          stream.continuation.finish(throwing: error)
-          return
-        }
-      }
-      stream.continuation.finish()
-    }
-    stream.continuation.onTermination = { @Sendable _ in
-      task.cancel()
-    }
-    return FetchSubscription<Value>(stream: stream.stream) {
-      task.cancel()
-      stream.continuation.finish()
+    await client.subscribeQueryEmissions(selectedQuery.plan) { emission in
+      try optionalScalarValue(
+        from: emission.values,
+        query: query,
+        field: field,
+        operation: "subscribe FetchOne"
+      )
     }
   }
 
@@ -6509,28 +6719,8 @@ private struct InstantFetchSource<Value: Sendable>: Sendable {
     return InstantFetchSource<[InstantEntitySnapshot]>(
       load: { try await $0.query(plan) },
       subscribe: { client in
-        let emissions = await client.observe(plan)
-        let stream = AsyncThrowingStream<[InstantEntitySnapshot], Error>.makeStream(
-          bufferingPolicy: .bufferingNewest(1)
-        )
-        let task = Task {
-          for await emission in emissions {
-            do {
-              try Task.checkCancellation()
-              stream.continuation.yield(emission.values)
-            } catch {
-              stream.continuation.finish(throwing: error)
-              return
-            }
-          }
-          stream.continuation.finish()
-        }
-        stream.continuation.onTermination = { @Sendable _ in
-          task.cancel()
-        }
-        return FetchSubscription(stream: stream.stream) {
-          task.cancel()
-          stream.continuation.finish()
+        await client.subscribeQueryEmissions(plan) { emission in
+          emission.values
         }
       }
     )
@@ -6550,7 +6740,15 @@ private struct InstantFetchSource<Value: Sendable>: Sendable {
   ) -> InstantFetchSource<Mapped> {
     InstantFetchSource<Mapped>(
       load: { try transform(try await load($0)) },
-      subscribe: { try await subscribe($0).map(transform) }
+      subscribe: { client in
+        try await cancellationAwareFetchSubscriptionSetup { cancellation in
+          let subscription = try await subscribe(client)
+          return subscription.map(
+            transform,
+            cancellationOwner: cancellation
+          )
+        }
+      }
     )
   }
 
@@ -6565,9 +6763,21 @@ private struct InstantFetchSource<Value: Sendable>: Sendable {
         return try await (aValue, bValue)
       },
       subscribe: { client in
-        async let aSubscription = a.subscribe(client)
-        async let bSubscription = b.subscribe(client)
-        return try await combineLatest(aSubscription, bSubscription)
+        try await cancellationAwareFetchSubscriptionSetup { cancellation in
+          let aSubscription = try await a.subscribe(client)
+          do {
+            let bSubscription = try await b.subscribe(client)
+            return combineLatest(
+              aSubscription,
+              bSubscription,
+              cancellationOwner: cancellation
+            )
+          } catch {
+            aSubscription.cancel()
+            await aSubscription.cancellation.wait()
+            throw error
+          }
+        }
       }
     )
   }
@@ -6593,53 +6803,62 @@ private actor InstantFetchLatestPair<A: Sendable, B: Sendable> {
   }
 }
 
-private func combineLatest<A: Sendable, B: Sendable>(
+func combineLatest<A: Sendable, B: Sendable>(
   _ a: FetchSubscription<A>,
-  _ b: FetchSubscription<B>
+  _ b: FetchSubscription<B>,
+  cancellationOwner: FetchSubscriptionCancellation? = nil
 ) -> FetchSubscription<(A, B)> {
   let stream = AsyncThrowingStream<(A, B), Error>.makeStream(
     bufferingPolicy: .bufferingNewest(1)
   )
   let latest = InstantFetchLatestPair<A, B>()
-  let task = Task {
-    do {
-      try await withThrowingTaskGroup(of: Void.self) { group in
-        group.addTask {
-          for try await value in a {
-            try Task.checkCancellation()
-            if let pair = await latest.updateA(value) {
-              stream.continuation.yield(pair)
+  return managedFetchSubscription(
+    stream: stream.stream,
+    continuation: stream.continuation,
+    cancellationOwner: cancellationOwner,
+    start: {
+      Task {
+        do {
+          try await withThrowingTaskGroup(of: Void.self) { group in
+            group.addTask {
+              for try await value in a {
+                try Task.checkCancellation()
+                if let pair = await latest.updateA(value) {
+                  stream.continuation.yield(pair)
+                }
+              }
+            }
+            group.addTask {
+              for try await value in b {
+                try Task.checkCancellation()
+                if let pair = await latest.updateB(value) {
+                  stream.continuation.yield(pair)
+                }
+              }
+            }
+            do {
+              while try await group.next() != nil {}
+            } catch {
+              group.cancelAll()
+              throw error
             }
           }
+          stream.continuation.finish()
+        } catch {
+          stream.continuation.finish(throwing: error)
         }
-        group.addTask {
-          for try await value in b {
-            try Task.checkCancellation()
-            if let pair = await latest.updateB(value) {
-              stream.continuation.yield(pair)
-            }
-          }
-        }
-        try await group.waitForAll()
       }
+    },
+    cancelAndWait: { task in
+      task.cancel()
       stream.continuation.finish()
-    } catch {
-      stream.continuation.finish(throwing: error)
+      a.cancel()
+      b.cancel()
+      await task.value
+      try? await a.task
+      try? await b.task
     }
-    a.cancel()
-    b.cancel()
-  }
-  stream.continuation.onTermination = { @Sendable _ in
-    task.cancel()
-    a.cancel()
-    b.cancel()
-  }
-  return FetchSubscription<(A, B)>(stream: stream.stream) {
-    task.cancel()
-    a.cancel()
-    b.cancel()
-    stream.continuation.finish()
-  }
+  )
 }
 
 @dynamicMemberLookup

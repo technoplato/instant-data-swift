@@ -46,6 +46,1034 @@ private let pythonStreamFileRetryBudgetSource =
 @Suite
 struct InstantLiveTransportTests {
   @Test
+  func abortIsIdempotentAcrossSessionCopies() {
+    let probe = InstantLiveAbandonmentProbe()
+    let session = InstantLiveWebSocketSession(
+      send: { _ in },
+      receive: { throw CancellationError() },
+      close: {},
+      abort: { probe.increment() }
+    )
+    let copy = session
+
+    #expect(session.hasImmediateAbort)
+    #expect(copy.hasImmediateAbort)
+    session.abort()
+    copy.abort()
+
+    expectNoDifference(probe.value, 1)
+  }
+
+  @Test
+  func legacyClientIsRejectedBeforeConnectClosureRuns() async throws {
+    let connectorStarts = InstantLiveAbandonmentProbe()
+    let client = InstantLiveTransportClient { _ in
+      connectorStarts.increment()
+      throw InstantLiveStreamTestError.pushFailed
+    }
+
+    do {
+      _ = try await client.connectSession(
+        InstantLiveSessionRequest(appID: "legacy-client-rejected"),
+        operation: "test legacy Instant connection"
+      )
+      Issue.record("Expected the legacy client to be rejected before connector work started.")
+    } catch let error as InstantError {
+      expectNoDifference(error.code, .validationFailed)
+      expectNoDifference(error.operation, "test legacy Instant connection")
+      #expect(error.recovery.contains("connectionAttempts"))
+    }
+
+    expectNoDifference(connectorStarts.value, 0)
+  }
+
+  @Test
+  func connectTimeoutAbortsCancellationInsensitiveAttemptAndLateSession() async throws {
+    let connector = InstantLiveSynchronousReleaseSuspension()
+    let attemptAborts = InstantLiveAbandonmentProbe()
+    let sessionIO = InstantLiveSessionIOProbe()
+    let session = InstantLiveWebSocketSession(
+      send: { _ in sessionIO.recordSend() },
+      receive: {
+        sessionIO.recordReceive()
+        throw CancellationError()
+      },
+      close: { sessionIO.recordClose() },
+      abort: { sessionIO.recordAbort() }
+    )
+    let client = InstantLiveTransportClient.connectionAttempts { _ in
+      InstantLiveConnectionAttempt(
+        connect: {
+          await connector.suspend()
+          return session
+        },
+        abort: {
+          attemptAborts.increment()
+          connector.release()
+        }
+      )
+    }
+    defer { connector.release() }
+
+    let clock = ContinuousClock()
+    let startedAt = clock.now
+    do {
+      _ = try await client.connectSession(
+        InstantLiveSessionRequest(appID: "timeout-late-session"),
+        operation: "test cancellation-insensitive connection",
+        sleep: { _ in
+          try await instantLiveWithTimeout(
+            operation: "wait for cancellation-insensitive connector to start",
+            timeoutMilliseconds: 5_000
+          ) {
+            while !connector.didStart {
+              try Task.checkCancellation()
+              await Task.yield()
+            }
+          }
+        }
+      )
+      Issue.record("Expected the injected connection deadline to win.")
+    } catch let error as InstantError {
+      expectNoDifference(error.code, .networkFailed)
+      expectNoDifference(error.operation, "test cancellation-insensitive connection")
+    }
+
+    #expect(startedAt.duration(to: clock.now) < .milliseconds(250))
+    try await instantLiveWithTimeout(
+      operation: "wait for abandoned connection to release its late session",
+      timeoutMilliseconds: 5_000
+    ) {
+      while !connector.didFinish || sessionIO.snapshot().abortCount != 1 {
+        try Task.checkCancellation()
+        await Task.yield()
+      }
+    }
+    expectNoDifference(attemptAborts.value, 1)
+    expectNoDifference(
+      sessionIO.snapshot(),
+      InstantLiveSessionIOSnapshot(abortCount: 1)
+    )
+  }
+
+  @Test
+  func parentCancellationAbortsCancellationInsensitiveRuntimeConnect() async throws {
+    let connector = InstantLiveSynchronousReleaseSuspension()
+    let attemptAborts = InstantLiveAbandonmentProbe()
+    let sessionIO = InstantLiveSessionIOProbe()
+    let client = InstantLiveTransportClient.connectionAttempts { _ in
+      InstantLiveConnectionAttempt(
+        connect: {
+          await connector.suspend()
+          return InstantLiveWebSocketSession(
+            send: { _ in sessionIO.recordSend() },
+            receive: {
+              sessionIO.recordReceive()
+              throw CancellationError()
+            },
+            close: { sessionIO.recordClose() },
+            abort: { sessionIO.recordAbort() }
+          )
+        },
+        abort: {
+          attemptAborts.increment()
+          connector.release()
+        }
+      )
+    }
+    defer { connector.release() }
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "cancel-runtime-connect",
+        persistenceURL: temporaryLiveCacheURL(),
+        initialAttributes: TodoExample.attributes,
+        liveTransport: client
+      )
+    )
+    let connectTask = Task { try await runtime.connect() }
+
+    try await instantLiveWithTimeout(
+      operation: "wait for runtime connector to start before cancellation",
+      timeoutMilliseconds: 5_000
+    ) {
+      while !connector.didStart {
+        try Task.checkCancellation()
+        await Task.yield()
+      }
+    }
+    let clock = ContinuousClock()
+    let startedAt = clock.now
+    connectTask.cancel()
+    do {
+      _ = try await instantLiveWithTimeout(
+        operation: "wait for canceled runtime connection",
+        timeoutMilliseconds: 5_000,
+        onAbandon: { connectTask.cancel() }
+      ) {
+        try await connectTask.value
+      }
+      Issue.record("Expected runtime connection cancellation to propagate.")
+    } catch is CancellationError {
+    }
+
+    #expect(startedAt.duration(to: clock.now) < .milliseconds(250))
+    expectNoDifference(attemptAborts.value, 1)
+    try await instantLiveWithTimeout(
+      operation: "wait for canceled runtime connector to unwind",
+      timeoutMilliseconds: 5_000
+    ) {
+      while !connector.didFinish {
+        try Task.checkCancellation()
+        await Task.yield()
+      }
+    }
+    expectNoDifference(
+      sessionIO.snapshot(),
+      InstantLiveSessionIOSnapshot(abortCount: 1)
+    )
+  }
+
+  @Test
+  func mappedAttemptPreservesCapabilityAttemptIdentityAndSessionIdentity() async throws {
+    let sessionAborts = InstantLiveAbandonmentProbe()
+    let baseSession = InstantLiveWebSocketSession(
+      send: { _ in },
+      receive: { throw CancellationError() },
+      close: {},
+      abort: { sessionAborts.increment() }
+    )
+    let baseAttempt = InstantLiveConnectionAttempt(session: baseSession)
+    let mappedAttempt = baseAttempt.mapSession { session in
+      session.forwarding(
+        send: session.send,
+        receive: session.receive,
+        close: session.close
+      )
+    }
+
+    #expect(baseAttempt.hasImmediateAbort)
+    #expect(mappedAttempt.hasImmediateAbort)
+    expectNoDifference(mappedAttempt.identity, baseAttempt.identity)
+    let mappedSession = try await mappedAttempt.connect()
+    expectNoDifference(mappedSession.identity, baseSession.identity)
+
+    mappedAttempt.abort()
+    baseAttempt.abort()
+    expectNoDifference(sessionAborts.value, 1)
+  }
+
+  @Test
+  func mappedAttemptRejectsReplacementSessionIdentityAndAbortsBothSessions() async throws {
+    let baseAborts = InstantLiveAbandonmentProbe()
+    let replacementAborts = InstantLiveAbandonmentProbe()
+    let baseSession = InstantLiveWebSocketSession(
+      send: { _ in },
+      receive: { throw CancellationError() },
+      close: {},
+      abort: { baseAborts.increment() }
+    )
+    let replacementSession = InstantLiveWebSocketSession(
+      send: { _ in },
+      receive: { throw CancellationError() },
+      close: {},
+      abort: { replacementAborts.increment() }
+    )
+    let attempt = InstantLiveConnectionAttempt(session: baseSession)
+      .mapSession { _ in replacementSession }
+
+    do {
+      _ = try await attempt.connect()
+      Issue.record("Expected replacement session identity to be rejected.")
+    } catch let error as InstantError {
+      expectNoDifference(error.code, .validationFailed)
+      expectNoDifference(error.operation, "decorate Instant live connection attempt")
+    }
+    expectNoDifference(baseAborts.value, 1)
+    expectNoDifference(replacementAborts.value, 1)
+  }
+
+  @Test
+  func connectionAttemptSourceKeepsDecoratorsSynchronousAndTimeoutDefaultsNamed() throws {
+    let packageRoot = URL(fileURLWithPath: #filePath)
+      .deletingLastPathComponent()
+      .deletingLastPathComponent()
+      .deletingLastPathComponent()
+    let source = try String(
+      contentsOf: packageRoot
+        .appendingPathComponent("Sources/InstantSwiftDataCore/InstantLiveTransport.swift"),
+      encoding: .utf8
+    )
+
+    #expect(
+      source.contains(
+        "private let transform:\n    @Sendable (InstantLiveWebSocketSession) throws"
+      )
+    )
+    #expect(
+      source.contains(
+        "package func mapSession(\n    _ transform:\n      @escaping @Sendable (InstantLiveWebSocketSession) throws"
+      )
+    )
+    #expect(
+      source.contains(
+        "package func mapSessions(\n    _ transform:\n      @escaping @Sendable (InstantLiveWebSocketSession) throws"
+      )
+    )
+    #expect(!source.contains("mapConnectionAttempts"))
+    expectNoDifference(
+      source.components(
+        separatedBy:
+          "sleep: @escaping @Sendable (UInt64) async throws -> Void = instantLiveDefaultTimeoutSleep"
+      ).count - 1,
+      3
+    )
+  }
+
+  @Test
+  func directAttemptRejectsLegacyReturnedSession() async throws {
+    let connectorAborts = InstantLiveAbandonmentProbe()
+    let legacySession = InstantLiveWebSocketSession(
+      send: { _ in },
+      receive: { throw CancellationError() },
+      close: {}
+    )
+    let attempt = InstantLiveConnectionAttempt(
+      connect: { legacySession },
+      abort: { connectorAborts.increment() }
+    )
+
+    do {
+      _ = try await attempt.connect()
+      Issue.record("Expected direct connection attempt to reject a legacy returned session.")
+    } catch let error as InstantError {
+      expectNoDifference(error.code, .validationFailed)
+      expectNoDifference(error.operation, "connect Instant live transport")
+      #expect(error.recovery.contains("four-closure"))
+    }
+    expectNoDifference(connectorAborts.value, 1)
+  }
+
+  @Test
+  func duplicateConnectAfterSuccessDoesNotAbortHealthySession() async throws {
+    let sessionIO = InstantLiveSessionIOProbe()
+    let session = InstantLiveWebSocketSession(
+      send: { _ in sessionIO.recordSend() },
+      receive: { throw CancellationError() },
+      close: { sessionIO.recordClose() },
+      abort: { sessionIO.recordAbort() }
+    )
+    let attempt = InstantLiveConnectionAttempt(session: session)
+    let connected = try await attempt.connect()
+
+    do {
+      _ = try await attempt.connect()
+      Issue.record("Expected duplicate connection attempt to be rejected.")
+    } catch let error as InstantError {
+      expectNoDifference(error.code, .validationFailed)
+      expectNoDifference(error.operation, "connect Instant live transport")
+      #expect(error.message.contains("more than once"))
+    }
+
+    try await connected.send(.init(op: "healthy-after-duplicate"))
+    expectNoDifference(
+      sessionIO.snapshot(),
+      InstantLiveSessionIOSnapshot(sendCount: 1)
+    )
+  }
+
+  @Test
+  func concurrentDuplicateConnectDoesNotAbortOriginalConnect() async throws {
+    let connector = InstantLiveSynchronousReleaseSuspension()
+    let connectorAborts = InstantLiveAbandonmentProbe()
+    let sessionIO = InstantLiveSessionIOProbe()
+    let session = InstantLiveWebSocketSession(
+      send: { _ in sessionIO.recordSend() },
+      receive: { throw CancellationError() },
+      close: { sessionIO.recordClose() },
+      abort: { sessionIO.recordAbort() }
+    )
+    let attempt = InstantLiveConnectionAttempt(
+      connect: {
+        await connector.suspend()
+        return session
+      },
+      abort: {
+        connectorAborts.increment()
+        connector.release()
+      }
+    )
+    let original = Task { try await attempt.connect() }
+    defer {
+      connector.release()
+      original.cancel()
+    }
+
+    try await instantLiveWithTimeout(
+      operation: "wait for original connection attempt to start",
+      timeoutMilliseconds: 5_000
+    ) {
+      while !connector.didStart {
+        try Task.checkCancellation()
+        await Task.yield()
+      }
+    }
+    do {
+      _ = try await attempt.connect()
+      Issue.record("Expected concurrent duplicate connection attempt to be rejected.")
+    } catch let error as InstantError {
+      expectNoDifference(error.code, .validationFailed)
+      expectNoDifference(error.operation, "connect Instant live transport")
+      #expect(error.message.contains("more than once"))
+    }
+    expectNoDifference(connectorAborts.value, 0)
+    expectNoDifference(sessionIO.snapshot(), .init())
+
+    connector.release()
+    let connected = try await instantLiveWithTimeout(
+      operation: "wait for original connection after duplicate",
+      timeoutMilliseconds: 5_000,
+      onAbandon: { original.cancel() }
+    ) {
+      try await original.value
+    }
+    try await connected.send(.init(op: "healthy-after-concurrent-duplicate"))
+    expectNoDifference(connectorAborts.value, 0)
+    expectNoDifference(
+      sessionIO.snapshot(),
+      InstantLiveSessionIOSnapshot(sendCount: 1)
+    )
+  }
+
+  @Test
+  func alreadyCancelledConcurrentDuplicateDoesNotOwnOriginalAbort() async throws {
+    let connector = InstantLiveSynchronousReleaseSuspension()
+    let connectorAborts = InstantLiveAbandonmentProbe()
+    let sessionIO = InstantLiveSessionIOProbe()
+    let session = InstantLiveWebSocketSession(
+      send: { _ in sessionIO.recordSend() },
+      receive: { throw CancellationError() },
+      close: { sessionIO.recordClose() },
+      abort: { sessionIO.recordAbort() }
+    )
+    let attempt = InstantLiveConnectionAttempt(
+      connect: {
+        await connector.suspend()
+        return session
+      },
+      abort: {
+        connectorAborts.increment()
+        connector.release()
+      }
+    )
+    let original = Task { try await attempt.connect() }
+    defer {
+      connector.release()
+      original.cancel()
+    }
+
+    try await instantLiveWithTimeout(
+      operation: "wait for original connection attempt before canceled duplicate",
+      timeoutMilliseconds: 5_000
+    ) {
+      while !connector.didStart {
+        try Task.checkCancellation()
+        await Task.yield()
+      }
+    }
+    let cancelledDuplicate = Task {
+      withUnsafeCurrentTask { $0?.cancel() }
+      return try await attempt.connect()
+    }
+    do {
+      _ = try await instantLiveWithTimeout(
+        operation: "wait for already-cancelled duplicate connection",
+        timeoutMilliseconds: 5_000,
+        onAbandon: { cancelledDuplicate.cancel() }
+      ) {
+        try await cancelledDuplicate.value
+      }
+      Issue.record("Expected the already-cancelled duplicate caller to stop.")
+    } catch is CancellationError {
+    }
+    expectNoDifference(connectorAborts.value, 0)
+    expectNoDifference(sessionIO.snapshot(), .init())
+
+    connector.release()
+    let connected = try await instantLiveWithTimeout(
+      operation: "wait for original connection after canceled duplicate",
+      timeoutMilliseconds: 5_000,
+      onAbandon: { original.cancel() }
+    ) {
+      try await original.value
+    }
+    try await connected.send(.init(op: "healthy-after-cancelled-duplicate"))
+    expectNoDifference(connectorAborts.value, 0)
+    expectNoDifference(
+      sessionIO.snapshot(),
+      InstantLiveSessionIOSnapshot(sendCount: 1)
+    )
+  }
+
+  @Test
+  func alreadyCancelledConnectSessionSkipsAttemptFactory() async throws {
+    let factoryStarts = InstantLiveAbandonmentProbe()
+    let connectorAborts = InstantLiveAbandonmentProbe()
+    let client = InstantLiveTransportClient.connectionAttempts { _ in
+      factoryStarts.increment()
+      return InstantLiveConnectionAttempt(
+        connect: {
+          InstantLiveWebSocketSession(
+            send: { _ in },
+            receive: { throw CancellationError() },
+            close: {},
+            abort: {}
+          )
+        },
+        abort: { connectorAborts.increment() }
+      )
+    }
+    let task = Task {
+      withUnsafeCurrentTask { $0?.cancel() }
+      return try await client.connectSession(
+        InstantLiveSessionRequest(appID: "already-cancelled-connect"),
+        operation: "test already-cancelled connection"
+      )
+    }
+
+    do {
+      _ = try await instantLiveWithTimeout(
+        operation: "wait for already-cancelled connection factory check",
+        timeoutMilliseconds: 5_000,
+        onAbandon: { task.cancel() }
+      ) {
+        try await task.value
+      }
+      Issue.record("Expected already-cancelled connection to stop before its factory.")
+    } catch is CancellationError {
+    }
+    expectNoDifference(factoryStarts.value, 0)
+    expectNoDifference(connectorAborts.value, 0)
+  }
+
+  @Test
+  func cancellationAfterFreshAttemptFactoryAbortsOwnedAttempt() async throws {
+    let factoryStarts = InstantLiveAbandonmentProbe()
+    let connectorStarts = InstantLiveAbandonmentProbe()
+    let connectorAborts = InstantLiveAbandonmentProbe()
+    let client = InstantLiveTransportClient.connectionAttempts { _ in
+      factoryStarts.increment()
+      withUnsafeCurrentTask { $0?.cancel() }
+      return InstantLiveConnectionAttempt(
+        connect: {
+          connectorStarts.increment()
+          return InstantLiveWebSocketSession(
+            send: { _ in },
+            receive: { throw CancellationError() },
+            close: {},
+            abort: {}
+          )
+        },
+        abort: { connectorAborts.increment() }
+      )
+    }
+    let task = Task {
+      try await client.connectSession(
+        InstantLiveSessionRequest(appID: "cancelled-fresh-attempt"),
+        operation: "test cancellation after fresh attempt factory"
+      )
+    }
+
+    do {
+      _ = try await instantLiveWithTimeout(
+        operation: "wait for canceled fresh connection attempt",
+        timeoutMilliseconds: 5_000,
+        onAbandon: { task.cancel() }
+      ) {
+        try await task.value
+      }
+      Issue.record("Expected cancellation after the fresh attempt factory.")
+    } catch is CancellationError {
+    }
+    expectNoDifference(factoryStarts.value, 1)
+    expectNoDifference(connectorStarts.value, 0)
+    expectNoDifference(connectorAborts.value, 1)
+  }
+
+  @Test
+  func reusedAttemptFactoryDuplicateDoesNotAbortOriginalConnectSession() async throws {
+    try await assertReusedAttemptFactoryDoesNotAbortOriginalConnectSession(
+      cancelDuplicateInFactory: false
+    )
+  }
+
+  @Test
+  func reusedAttemptFactoryCancelledDuplicateDoesNotAbortOriginalConnectSession() async throws {
+    try await assertReusedAttemptFactoryDoesNotAbortOriginalConnectSession(
+      cancelDuplicateInFactory: true
+    )
+  }
+
+  private func assertReusedAttemptFactoryDoesNotAbortOriginalConnectSession(
+    cancelDuplicateInFactory: Bool
+  ) async throws {
+    let connector = InstantLiveSynchronousReleaseSuspension()
+    let connectorAborts = InstantLiveAbandonmentProbe()
+    let factoryCalls = InstantLiveAbandonmentProbe()
+    let sessionIO = InstantLiveSessionIOProbe()
+    let session = InstantLiveWebSocketSession(
+      send: { _ in sessionIO.recordSend() },
+      receive: { throw CancellationError() },
+      close: { sessionIO.recordClose() },
+      abort: { sessionIO.recordAbort() }
+    )
+    let sharedAttempt = InstantLiveConnectionAttempt(
+      connect: {
+        await connector.suspend()
+        return session
+      },
+      abort: {
+        connectorAborts.increment()
+        connector.release()
+      }
+    )
+    let client = InstantLiveTransportClient.connectionAttempts { _ in
+      factoryCalls.increment()
+      if cancelDuplicateInFactory, factoryCalls.value == 2 {
+        withUnsafeCurrentTask { $0?.cancel() }
+      }
+      return sharedAttempt
+    }
+    let original = Task {
+      try await client.connectSession(
+        InstantLiveSessionRequest(appID: "reused-attempt-original"),
+        operation: "test original reused connection attempt"
+      )
+    }
+    defer {
+      connector.release()
+      original.cancel()
+    }
+
+    try await instantLiveWithTimeout(
+      operation: "wait for original reused connection attempt to start",
+      timeoutMilliseconds: 5_000
+    ) {
+      while !connector.didStart {
+        try Task.checkCancellation()
+        await Task.yield()
+      }
+    }
+
+    let duplicate = Task {
+      try await client.connectSession(
+        InstantLiveSessionRequest(appID: "reused-attempt-duplicate"),
+        operation: "test duplicate reused connection attempt"
+      )
+    }
+    do {
+      _ = try await instantLiveWithTimeout(
+        operation: "wait for reused-attempt duplicate connection",
+        timeoutMilliseconds: 5_000,
+        onAbandon: { duplicate.cancel() }
+      ) {
+        try await duplicate.value
+      }
+      Issue.record("Expected the reused connection attempt to reject its duplicate caller.")
+    } catch {
+      if cancelDuplicateInFactory {
+        #expect(error is CancellationError)
+      } else if let error = error as? InstantError {
+        expectNoDifference(error.code, .validationFailed)
+        expectNoDifference(error.operation, "connect Instant live transport")
+        #expect(error.message.contains("more than once"))
+      } else {
+        Issue.record("Expected a duplicate-attempt validation error, got \(error).")
+      }
+    }
+    expectNoDifference(factoryCalls.value, 2)
+    expectNoDifference(connectorAborts.value, 0)
+    expectNoDifference(sessionIO.snapshot(), .init())
+
+    connector.release()
+    let connected = try await instantLiveWithTimeout(
+      operation: "wait for original reused connection attempt",
+      timeoutMilliseconds: 5_000,
+      onAbandon: { original.cancel() }
+    ) {
+      try await original.value
+    }
+    try await connected.send(.init(op: "healthy-after-reused-attempt-duplicate"))
+    expectNoDifference(connectorAborts.value, 0)
+    expectNoDifference(
+      sessionIO.snapshot(),
+      InstantLiveSessionIOSnapshot(sendCount: 1)
+    )
+  }
+
+  @Test
+  func mappedLegacyAttemptRemainsLegacy() async throws {
+    let connectorStarts = InstantLiveAbandonmentProbe()
+    let decoratorStarts = InstantLiveAbandonmentProbe()
+    let legacy = InstantLiveTransportClient { _ in
+      connectorStarts.increment()
+      throw CancellationError()
+    }
+    let mapped = legacy.mapSessions { session in
+      decoratorStarts.increment()
+      return session
+    }
+    let attempt = try mapped.makeConnectionAttempt(
+      InstantLiveSessionRequest(appID: "mapped-legacy-attempt")
+    )
+
+    #expect(!attempt.hasImmediateAbort)
+    do {
+      _ = try await mapped.connectSession(
+        InstantLiveSessionRequest(appID: "mapped-legacy-attempt"),
+        operation: "test mapped legacy attempt"
+      )
+      Issue.record("Expected mapped legacy attempt rejection.")
+    } catch let error as InstantError {
+      expectNoDifference(error.code, .validationFailed)
+      expectNoDifference(error.operation, "test mapped legacy attempt")
+    }
+    expectNoDifference(connectorStarts.value, 0)
+    expectNoDifference(decoratorStarts.value, 0)
+  }
+
+  @Test
+  func sameClientOverlappingAttemptsAbortIndependently() async throws {
+    let firstConnector = InstantLiveSynchronousReleaseSuspension()
+    let secondConnector = InstantLiveSynchronousReleaseSuspension()
+    let firstAborts = InstantLiveAbandonmentProbe()
+    let secondAborts = InstantLiveAbandonmentProbe()
+    let firstSession = InstantLiveWebSocketSession(
+      send: { _ in },
+      receive: { throw CancellationError() },
+      close: {},
+      abort: {}
+    )
+    let secondSession = InstantLiveWebSocketSession(
+      send: { _ in },
+      receive: { throw CancellationError() },
+      close: {},
+      abort: {}
+    )
+    let client = InstantLiveTransportClient.connectionAttempts { request in
+      switch request.appID {
+      case "overlap-first":
+        return InstantLiveConnectionAttempt(
+          connect: {
+            await firstConnector.suspend()
+            return firstSession
+          },
+          abort: {
+            firstAborts.increment()
+            firstConnector.release()
+          }
+        )
+      default:
+        return InstantLiveConnectionAttempt(
+          connect: {
+            await secondConnector.suspend()
+            return secondSession
+          },
+          abort: {
+            secondAborts.increment()
+            secondConnector.release()
+          }
+        )
+      }
+    }
+    let firstAttempt = try client.makeConnectionAttempt(
+      InstantLiveSessionRequest(appID: "overlap-first")
+    )
+    let secondAttempt = try client.makeConnectionAttempt(
+      InstantLiveSessionRequest(appID: "overlap-second")
+    )
+    let firstTask = Task { try await firstAttempt.connect() }
+    let secondTask = Task { try await secondAttempt.connect() }
+    defer {
+      firstConnector.release()
+      secondConnector.release()
+      firstTask.cancel()
+      secondTask.cancel()
+    }
+
+    try await instantLiveWithTimeout(
+      operation: "wait for independent connection attempts to start",
+      timeoutMilliseconds: 5_000
+    ) {
+      while !firstConnector.didStart || !secondConnector.didStart {
+        try Task.checkCancellation()
+        await Task.yield()
+      }
+    }
+    firstAttempt.abort()
+    do {
+      _ = try await instantLiveWithTimeout(
+        operation: "wait for aborted independent connection attempt",
+        timeoutMilliseconds: 5_000,
+        onAbandon: { firstTask.cancel() }
+      ) {
+        try await firstTask.value
+      }
+      Issue.record("Expected the first connection attempt to be canceled.")
+    } catch is CancellationError {
+    }
+    expectNoDifference(firstAborts.value, 1)
+    expectNoDifference(secondAborts.value, 0)
+
+    secondConnector.release()
+    let connectedSecond = try await instantLiveWithTimeout(
+      operation: "wait for healthy independent connection attempt",
+      timeoutMilliseconds: 5_000,
+      onAbandon: { secondTask.cancel() }
+    ) {
+      try await secondTask.value
+    }
+    expectNoDifference(connectedSecond.identity, secondSession.identity)
+    expectNoDifference(secondAborts.value, 0)
+  }
+
+  @Test
+  func localTransportCreatesFreshIndependentAbortableAttempts() async throws {
+    let request = InstantLiveSessionRequest(appID: "fresh-local-attempts")
+    let first = try InstantLiveTransportClient.local.makeConnectionAttempt(request)
+    let second = try InstantLiveTransportClient.local.makeConnectionAttempt(request)
+
+    #expect(first.hasImmediateAbort)
+    #expect(second.hasImmediateAbort)
+    #expect(first.identity != second.identity)
+    first.abort()
+    do {
+      _ = try await first.connect()
+      Issue.record("Expected the first local attempt to remain canceled.")
+    } catch is CancellationError {
+    }
+
+    let secondSession = try await second.connect()
+    #expect(secondSession.hasImmediateAbort)
+    second.abort()
+  }
+
+  @Test
+  func legacySessionRemainsSourceConstructibleButRuntimeRejectsItBeforeWireIO() async throws {
+    let probe = InstantLiveSessionIOProbe()
+    let attemptAborts = InstantLiveAbandonmentProbe()
+    let legacySession = InstantLiveWebSocketSession(
+      send: { _ in probe.recordSend() },
+      receive: {
+        probe.recordReceive()
+        return .initOK(clientEventID: "legacy-session-init")
+      },
+      close: { probe.recordClose() }
+    )
+    #expect(!legacySession.hasImmediateAbort)
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "legacy-live-session-rejected",
+        persistenceURL: temporaryLiveCacheURL(),
+        initialAttributes: TodoExample.attributes,
+        liveTransport: .connectionAttempts { _ in
+          InstantLiveConnectionAttempt(
+            connect: { legacySession },
+            abort: { attemptAborts.increment() }
+          )
+        }
+      )
+    )
+
+    do {
+      _ = try await runtime.connect()
+      Issue.record("Expected a custom session without immediate abort to be rejected.")
+    } catch let error as InstantError {
+      expectNoDifference(error.code, .validationFailed)
+      expectNoDifference(error.operation, "connect Instant live transport")
+      #expect(error.recovery.contains("four-closure"))
+      #expect(error.recovery.contains("Task { await close() }") )
+    }
+
+    expectNoDifference(probe.snapshot(), .init())
+    expectNoDifference(attemptAborts.value, 1)
+  }
+
+  @Test
+  func failedOpenAbortsWithoutAwaitingGracefulClose() async throws {
+    let probe = InstantLiveSessionIOProbe()
+    let session = InstantLiveWebSocketSession(
+      send: { _ in
+        probe.recordSend()
+        throw InstantLiveStreamTestError.pushFailed
+      },
+      receive: {
+        probe.recordReceive()
+        throw CancellationError()
+      },
+      close: { probe.recordClose() },
+      abort: { probe.recordAbort() }
+    )
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "failed-open-aborts",
+        persistenceURL: temporaryLiveCacheURL(),
+        initialAttributes: TodoExample.attributes,
+        liveTransport: .immediate { _ in session }
+      )
+    )
+
+    let clock = ContinuousClock()
+    let startedAt = clock.now
+    do {
+      _ = try await runtime.connect()
+      Issue.record("Expected the scripted opening send to fail.")
+    } catch is InstantLiveStreamTestError {
+    }
+
+    #expect(startedAt.duration(to: clock.now) < .milliseconds(250))
+    expectNoDifference(
+      probe.snapshot(),
+      InstantLiveSessionIOSnapshot(sendCount: 1, abortCount: 1)
+    )
+  }
+
+  @Test
+  func boundedGracefulCloseAbortsCancellationInsensitiveClose() async throws {
+    let probe = InstantLiveSessionIOProbe()
+    let close = InstantLiveSynchronousReleaseSuspension()
+    let session = InstantLiveWebSocketSession(
+      send: { _ in },
+      receive: { throw CancellationError() },
+      close: {
+        probe.recordClose()
+        await close.suspend()
+      },
+      abort: {
+        probe.recordAbort()
+        close.release()
+      }
+    )
+    defer { close.release() }
+
+    let clock = ContinuousClock()
+    let startedAt = clock.now
+    do {
+      try await session.closeGracefully(
+        operation: "test bounded graceful close",
+        timeoutMilliseconds: 5_000,
+        sleep: { _ in
+          try await instantLiveWithTimeout(
+            operation: "wait for cancellation-insensitive graceful close to start",
+            timeoutMilliseconds: 5_000
+          ) {
+            while !close.didStart {
+              try Task.checkCancellation()
+              await Task.yield()
+            }
+          }
+        }
+      )
+      Issue.record("Expected the injected graceful-close deadline to win.")
+    } catch let error as InstantError {
+      expectNoDifference(error.code, .networkFailed)
+      expectNoDifference(error.operation, "test bounded graceful close")
+    }
+
+    #expect(startedAt.duration(to: clock.now) < .milliseconds(250))
+    try await instantLiveWithTimeout(
+      operation: "wait for abandoned graceful close to unwind",
+      timeoutMilliseconds: 5_000
+    ) {
+      while !close.didFinish {
+        try Task.checkCancellation()
+        await Task.yield()
+      }
+    }
+    expectNoDifference(
+      probe.snapshot(),
+      InstantLiveSessionIOSnapshot(closeCount: 1, abortCount: 1)
+    )
+  }
+
+  @Test
+  func liveTimeoutDoesNotAwaitCancellationInsensitiveWork() async throws {
+    let work = InstantLiveNoncooperativeSuspension()
+    let abandonment = InstantLiveAbandonmentProbe()
+    let failSafe = Task {
+      try? await Task.sleep(for: .milliseconds(750))
+      await work.release()
+    }
+    defer {
+      failSafe.cancel()
+      Task { await work.release() }
+    }
+
+    let clock = ContinuousClock()
+    let startedAt = clock.now
+    do {
+      _ = try await instantLiveWithTimeout(
+        operation: "test cancellation-insensitive live work",
+        timeoutMilliseconds: 5_000,
+        onAbandon: { abandonment.increment() },
+        sleep: { _ in await work.waitUntilStarted() }
+      ) {
+        await work.suspend()
+        return "late result"
+      }
+      Issue.record("Expected the injected live timeout to win.")
+    } catch let error as InstantError {
+      expectNoDifference(error.code, .networkFailed)
+      expectNoDifference(error.operation, "test cancellation-insensitive live work")
+    }
+    let elapsed = startedAt.duration(to: clock.now)
+    #expect(elapsed < .milliseconds(250))
+    expectNoDifference(abandonment.value, 1)
+  }
+
+  @Test
+  func cancellingLiveTimeoutDoesNotAwaitEitherCancellationInsensitiveChild() async throws {
+    let work = InstantLiveNoncooperativeSuspension()
+    let deadline = InstantLiveNoncooperativeSuspension()
+    let abandonment = InstantLiveAbandonmentProbe()
+    let timeoutTask = Task {
+      try await instantLiveWithTimeout(
+        operation: "test parent cancellation",
+        timeoutMilliseconds: 5_000,
+        onAbandon: { abandonment.increment() },
+        sleep: { _ in await deadline.suspend() }
+      ) {
+        await work.suspend()
+      }
+    }
+    let failSafe = Task {
+      try? await Task.sleep(for: .milliseconds(750))
+      await work.release()
+      await deadline.release()
+    }
+    defer {
+      failSafe.cancel()
+      Task {
+        await work.release()
+        await deadline.release()
+      }
+    }
+
+    await work.waitUntilStarted()
+    await deadline.waitUntilStarted()
+    let clock = ContinuousClock()
+    let startedAt = clock.now
+    timeoutTask.cancel()
+    do {
+      try await timeoutTask.value
+      Issue.record("Expected parent cancellation to end the live timeout.")
+    } catch is CancellationError {
+    }
+    let elapsed = startedAt.duration(to: clock.now)
+    #expect(elapsed < .milliseconds(250))
+    expectNoDifference(abandonment.value, 1)
+  }
+
+  @Test
   func sameMillisecondMutationsRetainInsertionOrderAcrossRelaunch() async throws {
     let cacheURL = try temporaryLiveCacheURL()
     let sameMillisecond = InstantTimestamp(milliseconds: 1_700_000_000_000)
@@ -1117,13 +2145,7 @@ struct InstantLiveTransportTests {
       computation.objectValue?["instaql-result"]?.arrayValue
     )
     let session = InstantRuntimeScriptedLiveSession(messages: [
-      .initOK(clientEventID: "event-init", attrs: .todoServerAttrs),
-      .addQueryOK(
-        clientEventID: "event-query",
-        query: query,
-        result: initialResult,
-        processedTransactionID: "server-tx-query-once",
-      ),
+      .initOK(clientEventID: "event-init", attrs: .todoServerAttrs)
     ])
     var configuration = InstantRuntimeConfiguration(
       appID: "runtime-live-query-once",
@@ -1135,7 +2157,24 @@ struct InstantLiveTransportTests {
     configuration.autoConnectLiveTransport = true
     let runtime = try await InstantRuntime.bootstrap(configuration: configuration)
 
-    let emission = try await runtime.queryOnce(TodoExample.query)
+    let queryTask = Task { try await runtime.queryOnce(TodoExample.query) }
+    defer { queryTask.cancel() }
+    try await waitForScriptedSentMessageCount(
+      2,
+      operation: "wait for queryOnce registration",
+      in: session
+    )
+    let registeredMessages = await session.sentMessages()
+    expectNoDifference(registeredMessages.last?.fields["q"], query)
+    await session.enqueue(
+      .addQueryOK(
+        clientEventID: "event-query",
+        query: query,
+        result: initialResult,
+        processedTransactionID: "server-tx-query-once",
+      )
+    )
+    let emission = try await queryTask.value
     expectNoDifference(
       try TodoExample.decode(emission.values),
       [
@@ -1156,6 +2195,94 @@ struct InstantLiveTransportTests {
     expectNoDifference(syncState.processedTransactionID, "server-tx-query-once")
     let closed = try await runtime.closeConnection()
     expectNoDifference(closed.state, .closed)
+  }
+
+  @Test(arguments: InstantQueryOnceTerminalPath.allCases)
+  fileprivate func queryOnceWaitsForExactCleanupBeforeEveryTerminalPath(
+    _ terminalPath: InstantQueryOnceTerminalPath
+  ) async throws {
+    let query = try InstantLiveQueryEncoder.encode(TodoExample.query)
+    let session = InstantQueryRemovalRaceLiveSession()
+    var configuration = InstantRuntimeConfiguration(
+      appID: "runtime-query-once-exact-cleanup-\(terminalPath.rawValue)",
+      persistenceURL: try temporaryLiveCacheURL(),
+      initialAttributes: TodoExample.attributes,
+      liveTransport: session.transport
+    )
+    if terminalPath == .failure {
+      configuration.onLiveQueryOnceAcknowledgedForTesting = {
+        throw InstantError(
+          code: .implementationFailed,
+          operation: "finish scripted acknowledged queryOnce",
+          message: "The scripted acknowledged queryOnce failed before materialization.",
+          recovery: "Release the exact query cleanup and inspect the injected test boundary."
+        )
+      }
+    }
+    let runtime = try await InstantRuntime.bootstrap(configuration: configuration)
+    _ = try await runtime.connect()
+
+    let completion = InstantLiveAbandonmentProbe()
+    let queryTask = Task { () -> InstantQueryOnceTerminalResult in
+      defer { completion.increment() }
+      do {
+        let emission = try await runtime.queryOnce(TodoExample.query)
+        return .success(valueCount: emission.values.count)
+      } catch is CancellationError {
+        return .cancellation
+      } catch let error as InstantError {
+        return .failure(code: error.code, operation: error.operation)
+      } catch {
+        return .unexpectedFailure(String(describing: error))
+      }
+    }
+    defer { queryTask.cancel() }
+    try await session.waitForSentMessageCount(2)
+
+    switch terminalPath {
+    case .success, .failure:
+      await session.enqueue(
+        .addQueryOK(clientEventID: "query-once-exact-cleanup", query: query)
+      )
+    case .cancellation:
+      queryTask.cancel()
+    }
+
+    try await session.waitUntilRemoveEntered()
+
+    // The query has already produced its terminal outcome, and unregister has
+    // removed the local membership before its wire send. The public one-shot
+    // call must still wait for that exact send to finish rather than handing
+    // cleanup to an unowned defer task.
+    expectNoDifference(completion.value, 0)
+    let blockedLiveQueryKeys = await runtime.liveActiveQueryKeysForTesting()
+    let blockedLiveResultKeys = await runtime.liveQueryResultActiveKeysForTesting()
+    let blockedStoreObserverCount = await runtime.store.activeObservationCount()
+    expectNoDifference(blockedLiveQueryKeys, [])
+    expectNoDifference(blockedLiveResultKeys, [])
+    expectNoDifference(blockedStoreObserverCount, 0)
+
+    await session.releaseRemove()
+    let result = try await instantLiveWithTimeout(
+      operation: "finish exact queryOnce cleanup for \(terminalPath.rawValue)",
+      timeoutMilliseconds: 5_000,
+      onAbandon: { queryTask.cancel() }
+    ) {
+      await queryTask.value
+    }
+    expectNoDifference(result, terminalPath.expectedResult)
+    expectNoDifference(completion.value, 1)
+
+    try await session.waitForSentMessageCount(3)
+    let operations = await session.sentMessages().map(\.op)
+    let finalLiveQueryKeys = await runtime.liveActiveQueryKeysForTesting()
+    let finalLiveResultKeys = await runtime.liveQueryResultActiveKeysForTesting()
+    let finalStoreObserverCount = await runtime.store.activeObservationCount()
+    expectNoDifference(operations, ["init", "add-query", "remove-query"])
+    expectNoDifference(finalLiveQueryKeys, [])
+    expectNoDifference(finalLiveResultKeys, [])
+    expectNoDifference(finalStoreObserverCount, 0)
+    _ = try await runtime.closeConnection()
   }
 
   @Test
@@ -1291,7 +2418,7 @@ struct InstantLiveTransportTests {
     )
     configuration.autoConnectLiveTransport = true
     let runtime = try await InstantRuntime.bootstrap(configuration: configuration)
-    await blockedTransport.waitUntilConnectStarts()
+    try await blockedTransport.waitUntilConnectStarts()
 
     let transaction = InstantStoreTransaction(
       id: "event-tx",
@@ -1537,6 +2664,313 @@ struct InstantLiveTransportTests {
   }
 
   @Test
+  func standardLiveObservationCancelsExactStoreLeaseBeforeBlockedRemoteUnregister() async throws {
+    let session = InstantQueryRemovalRaceLiveSession()
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "runtime-standard-observation-exact-store-lease",
+        persistenceURL: temporaryLiveCacheURL(),
+        initialAttributes: TodoExample.attributes,
+        liveTransport: session.transport
+      )
+    )
+    _ = try await runtime.connect()
+
+    let observation = await runtime.observe(TodoExample.query)
+    let consumer = Task {
+      for await _ in observation {}
+    }
+    try await session.waitForSentMessageCount(2)
+    let installedObservationCount = await runtime.store.activeObservationCount()
+    let installedQueryCacheKeys = await runtime.store.activeQueryCacheKeys()
+    expectNoDifference(installedObservationCount, 1)
+    expectNoDifference(
+      installedQueryCacheKeys,
+      [TodoExample.query.cacheKey]
+    )
+
+    consumer.cancel()
+    consumer.cancel()
+    try await session.waitUntilRemoveEntered()
+
+    // Remote unregister is still deliberately blocked. Reaching it proves the
+    // exact Store lease was canceled first rather than left to stream deinit.
+    let blockedUnregisterObservationCount = await runtime.store.activeObservationCount()
+    let blockedUnregisterQueryCacheKeys = await runtime.store.activeQueryCacheKeys()
+    expectNoDifference(blockedUnregisterObservationCount, 0)
+    expectNoDifference(blockedUnregisterQueryCacheKeys, [])
+
+    await session.releaseRemove()
+    try await session.waitForSentMessageCount(3)
+    try await instantLiveWithTimeout(
+      operation: "finish the canceled standard live observation consumer",
+      timeoutMilliseconds: 5_000,
+      onAbandon: { consumer.cancel() }
+    ) {
+      await consumer.value
+    }
+    consumer.cancel()
+    let operations = await session.sentMessages().map(\.op)
+    expectNoDifference(operations, ["init", "add-query", "remove-query"])
+    _ = try await runtime.closeConnection()
+  }
+
+  @Test
+  func cancellingStandardObservationQueuedAtOperationGateReturnsFinishedWithoutLateRegistration()
+    async throws
+  {
+    let session = InstantRuntimeScriptedLiveSession(messages: [
+      .initOK(clientEventID: "standard-observation-gate-init")
+    ])
+    let pruneBarrier = InstantLiveQueryPruneBarrier()
+    var configuration = InstantRuntimeConfiguration(
+      appID: "runtime-standard-observation-cancel-at-gate",
+      persistenceURL: try temporaryLiveCacheURL(),
+      initialAttributes: TodoExample.attributes,
+      liveTransport: session.transport
+    )
+    configuration.onLiveQueryResultPruneActiveKeysCapturedForTesting = { keys in
+      await pruneBarrier.pauseAfterCapture(keys)
+    }
+    let runtime = try await InstantRuntime.bootstrap(configuration: configuration)
+
+    await pruneBarrier.arm()
+    let prune = Task {
+      try await runtime.pruneLiveQueryResults(
+        policy: InstantLiveQueryResultPruningPolicy(maxEntries: 0),
+        now: InstantTimestamp(milliseconds: 1)
+      )
+    }
+    _ = await pruneBarrier.waitForCapture()
+
+    let setup = Task {
+      await runtime.observe(TodoExample.query)
+    }
+    try await instantLiveWithTimeout(
+      operation: "wait for standard observation setup at the operation gate",
+      timeoutMilliseconds: 5_000,
+      onAbandon: { setup.cancel() }
+    ) {
+      while await runtime.operationGateWaiterCountForTesting() != 1 {
+        try Task.checkCancellation()
+        await Task.yield()
+      }
+    }
+
+    setup.cancel()
+    let observation = try await instantLiveWithTimeout(
+      operation: "cancel standard observation queued at the operation gate",
+      timeoutMilliseconds: 5_000,
+      onAbandon: { setup.cancel() }
+    ) {
+      await setup.value
+    }
+    let gateWaiterCount = await runtime.operationGateWaiterCountForTesting()
+    let storeObserverCount = await runtime.store.activeObservationCount()
+    let storeQueryKeys = await runtime.store.activeQueryCacheKeys()
+    let liveQueryKeys = await runtime.liveActiveQueryKeysForTesting()
+    expectNoDifference(gateWaiterCount, 0)
+    expectNoDifference(storeObserverCount, 0)
+    expectNoDifference(storeQueryKeys, [])
+    expectNoDifference(liveQueryKeys, [])
+    try await requireFinishedStandardObservation(
+      observation,
+      operation: "read canceled gate-queued standard observation"
+    )
+
+    await pruneBarrier.release()
+    _ = try await prune.value
+    let operationsAfterGateRelease = await session.sentMessages().map(\.op)
+    expectNoDifference(operationsAfterGateRelease, [])
+    _ = try await runtime.closeConnection()
+  }
+
+  @Test
+  func cancellingStandardObservationAfterStoreInstallationCleansBeforeRegistration() async throws {
+    let session = InstantRuntimeScriptedLiveSession(messages: [
+      .initOK(clientEventID: "standard-observation-installed-init")
+    ])
+    let setupBarrier = InstantStandardObservationSetupBarrier()
+    var configuration = InstantRuntimeConfiguration(
+      appID: "runtime-standard-observation-cancel-after-store-install",
+      persistenceURL: try temporaryLiveCacheURL(),
+      initialAttributes: TodoExample.attributes,
+      liveTransport: session.transport
+    )
+    configuration.onStandardQuerySetupCheckpointForTesting = { checkpoint in
+      guard checkpoint == .localObservationInstalled else { return }
+      try await setupBarrier.pause()
+    }
+    let runtime = try await InstantRuntime.bootstrap(configuration: configuration)
+    _ = try await runtime.connect()
+    await session.waitForSentMessageCount(1)
+
+    let setup = Task {
+      await runtime.observe(TodoExample.query)
+    }
+    try await setupBarrier.waitUntilEntered()
+    let installedStoreObserverCount = await runtime.store.activeObservationCount()
+    let installedStoreQueryKeys = await runtime.store.activeQueryCacheKeys()
+    let liveQueryKeysBeforeRegistration = await runtime.liveActiveQueryKeysForTesting()
+    expectNoDifference(installedStoreObserverCount, 1)
+    expectNoDifference(installedStoreQueryKeys, [TodoExample.query.cacheKey])
+    expectNoDifference(liveQueryKeysBeforeRegistration, [])
+
+    setup.cancel()
+    let observation = try await instantLiveWithTimeout(
+      operation: "cancel standard observation after Store installation",
+      timeoutMilliseconds: 5_000,
+      onAbandon: { setup.cancel() }
+    ) {
+      await setup.value
+    }
+    let cleanedStoreObserverCount = await runtime.store.activeObservationCount()
+    let cleanedStoreQueryKeys = await runtime.store.activeQueryCacheKeys()
+    let cleanedLiveQueryKeys = await runtime.liveActiveQueryKeysForTesting()
+    expectNoDifference(cleanedStoreObserverCount, 0)
+    expectNoDifference(cleanedStoreQueryKeys, [])
+    expectNoDifference(cleanedLiveQueryKeys, [])
+    try await requireFinishedStandardObservation(
+      observation,
+      operation: "read canceled post-Store standard observation"
+    )
+
+    await setupBarrier.release()
+    let operationsAfterCheckpointRelease = await session.sentMessages().map(\.op)
+    expectNoDifference(operationsAfterCheckpointRelease, ["init"])
+    _ = try await runtime.closeConnection()
+  }
+
+  @Test
+  func equivalentReregistrationPostfixesLateRemoval() async throws {
+    let session = InstantQueryRemovalRaceLiveSession()
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "runtime-live-query-removal-race",
+        persistenceURL: temporaryLiveCacheURL(),
+        initialAttributes: TodoExample.attributes,
+        liveTransport: session.transport
+      )
+    )
+    _ = try await runtime.connect()
+
+    let first = try await runtime.observeLiveInfiniteQueryChunk(TodoExample.query)
+    try await session.waitForSentMessageCount(2)
+    let firstCancellation = Task { await first.cancel() }
+    try await session.waitUntilRemoveEntered()
+
+    var equivalentPlan = TodoExample.query
+    equivalentPlan.id = "todos.query.equivalent-reregistration"
+    let replacement = try await runtime.observeLiveInfiniteQueryChunk(equivalentPlan)
+    try await session.waitForSentMessageCount(3)
+
+    await session.releaseRemove()
+    try await instantLiveWithTimeout(
+      operation: "finish the retired equivalent live query removal",
+      timeoutMilliseconds: 5_000
+    ) {
+      await firstCancellation.value
+    }
+    try await session.waitForSentMessageCount(5)
+    var operations = await session.sentMessages().map(\.op)
+    expectNoDifference(
+      operations,
+      ["init", "add-query", "add-query", "remove-query", "add-query"]
+    )
+
+    await replacement.cancel()
+    try await session.waitForSentMessageCount(6)
+    operations = await session.sentMessages().map(\.op)
+    expectNoDifference(operations.last, "remove-query")
+    _ = try await runtime.closeConnection()
+  }
+
+  @Test
+  func supersededRemovalFailureCannotOverwriteHealthyReplacementStatus() async throws {
+    let transport = InstantQueryRemovalFailureRaceTransport(sessionCount: 2)
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "runtime-superseded-query-removal-failure",
+        persistenceURL: temporaryLiveCacheURL(),
+        initialAttributes: TodoExample.attributes,
+        liveTransport: transport.transport
+      )
+    )
+    _ = try await runtime.connect()
+    let observation = try await runtime.observeLiveInfiniteQueryChunk(TodoExample.query)
+    let cancellation = Task { await observation.cancel() }
+    let failSafe = Task {
+      try? await Task.sleep(for: .seconds(5))
+      await transport.releaseRemovalFailure()
+    }
+    defer {
+      cancellation.cancel()
+      failSafe.cancel()
+    }
+
+    try await transport.waitUntilRemovalEntered()
+    let replacementStatus = try await runtime.connect()
+    expectNoDifference(replacementStatus.state, .opened)
+    expectNoDifference(replacementStatus.lastErrorMessage, nil)
+    let connectionCount = await transport.connectionCount()
+    expectNoDifference(connectionCount, 2)
+
+    await transport.releaseRemovalFailure()
+    try await instantLiveWithTimeout(
+      operation: "finish the superseded remove-query failure",
+      timeoutMilliseconds: 5_000
+    ) {
+      await cancellation.value
+    }
+
+    let status = try await runtime.connectionStatus()
+    expectNoDifference(status.state, .opened)
+    expectNoDifference(status.lastErrorMessage, nil)
+    _ = try await runtime.closeConnection()
+  }
+
+  @Test
+  func currentRemovalFailureStillRecordsConnectionError() async throws {
+    let transport = InstantQueryRemovalFailureRaceTransport(sessionCount: 1)
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "runtime-current-query-removal-failure",
+        persistenceURL: temporaryLiveCacheURL(),
+        initialAttributes: TodoExample.attributes,
+        liveTransport: transport.transport
+      )
+    )
+    _ = try await runtime.connect()
+    let observation = try await runtime.observeLiveInfiniteQueryChunk(TodoExample.query)
+    let cancellation = Task { await observation.cancel() }
+    let failSafe = Task {
+      try? await Task.sleep(for: .seconds(5))
+      await transport.releaseRemovalFailure()
+    }
+    defer {
+      cancellation.cancel()
+      failSafe.cancel()
+    }
+
+    try await transport.waitUntilRemovalEntered()
+    await transport.releaseRemovalFailure()
+    try await instantLiveWithTimeout(
+      operation: "finish the current remove-query failure",
+      timeoutMilliseconds: 5_000
+    ) {
+      await cancellation.value
+    }
+
+    let status = try await runtime.connectionStatus()
+    expectNoDifference(status.state, .errored)
+    #expect(
+      status.lastErrorMessage?.contains(InstantQueryRemovalFailureRaceTransport.failureMessage)
+        == true
+    )
+    _ = try await runtime.closeConnection()
+  }
+
+  @Test
   func liveQueryEncoderPortsWhereOperatorsAndReverseIncludes() throws {
     let plan = InstantQueryPlan(
       id: "runtime-live-query-operators",
@@ -1736,12 +3170,7 @@ struct InstantLiveTransportTests {
     expectNoDifference(translatedPageInfo.endCursor?.entityID, "todo-live-page-info")
 
     let session = InstantRuntimeScriptedLiveSession(messages: [
-      liveReactorInitOK(attrs: liveReactorTodoServerAttrs),
-      liveReactorAddQueryOK(
-        query: query,
-        processedTransactionID: "live-page-info-1",
-        result: result
-      ),
+      liveReactorInitOK(attrs: liveReactorTodoServerAttrs)
     ])
     let cacheURL = try temporaryLiveCacheURL()
     var configuration = InstantRuntimeConfiguration(
@@ -1754,7 +3183,23 @@ struct InstantLiveTransportTests {
     configuration.autoConnectLiveTransport = true
     let runtime = try await InstantRuntime.bootstrap(configuration: configuration)
 
-    let emission = try await runtime.queryOnce(plan)
+    let queryTask = Task { try await runtime.queryOnce(plan) }
+    defer { queryTask.cancel() }
+    try await waitForScriptedSentMessageCount(
+      2,
+      operation: "wait for opaque-cursor query registration",
+      in: session
+    )
+    let registeredMessages = await session.sentMessages()
+    expectNoDifference(registeredMessages.last?.fields["q"], query)
+    await session.enqueue(
+      liveReactorAddQueryOK(
+        query: query,
+        processedTransactionID: "live-page-info-1",
+        result: result
+      )
+    )
+    let emission = try await queryTask.value
     let endCursor = try #require(emission.pageInfo?.endCursor)
     let registrationKey = try InstantLiveQueryEncoder.registrationKey(for: query)
     let persistedResult = try #require(
@@ -1795,13 +3240,24 @@ struct InstantLiveTransportTests {
       liveReactorInitOK(
         attrs: liveReactorTodoServerAttrs,
         sessionID: "runtime-live-page-info-relaunch"
-      ),
-      .addQueryExists(clientEventID: "event-query-relaunch", query: query),
+      )
     ])
     configuration.liveTransport = relaunchedSession.transport
     let relaunched = try await InstantRuntime.bootstrap(configuration: configuration)
     _ = try await relaunched.connect()
-    let relaunchedEmission = try await relaunched.queryOnce(plan)
+    let relaunchedQueryTask = Task { try await relaunched.queryOnce(plan) }
+    defer { relaunchedQueryTask.cancel() }
+    try await waitForScriptedSentMessageCount(
+      2,
+      operation: "wait for relaunched opaque-cursor query registration",
+      in: relaunchedSession
+    )
+    let relaunchedMessages = await relaunchedSession.sentMessages()
+    expectNoDifference(relaunchedMessages.last?.fields["q"], query)
+    await relaunchedSession.enqueue(
+      .addQueryExists(clientEventID: "event-query-relaunch", query: query)
+    )
+    let relaunchedEmission = try await relaunchedQueryTask.value
 
     expectNoDifference(relaunchedEmission.pageInfo, emission.pageInfo)
     expectNoDifference(
@@ -1934,7 +3390,16 @@ struct InstantLiveTransportTests {
         transactionID: "server-tx-runtime-confirm"
       )
     )
-    let confirmedStatus = try #require(await statusIterator.next())
+    let confirmedStatus = try #require(
+      try await instantLiveWithTimeout(
+        operation: "wait for confirmed live mutation status",
+        timeoutMilliseconds: 5_000
+      ) {
+        try await runtime.observeConnectionStatus().first {
+          $0.pendingMutationCount == 0
+        }
+      }
+    )
     expectNoDifference(confirmedStatus.pendingMutationCount, 0)
     let remainingPending = await runtime.pendingMutations()
     let remainingOutbox = await runtime.outboxMutations()
@@ -2099,7 +3564,6 @@ struct InstantLiveTransportTests {
         liveTransport: session.transport
       )
     )
-    _ = try await runtime.connect()
     let createdAt = InstantTimestamp(milliseconds: 1_700_000_000_790)
     let updateAt = InstantTimestamp(milliseconds: createdAt.milliseconds + 1)
     _ = try await runtime.applyServerTransaction(
@@ -2113,7 +3577,10 @@ struct InstantLiveTransportTests {
         )
       )
     )
-    try await withKnownIssue {
+    // Encoding quarantine is reported asynchronously from the delivery pump.
+    // Mark intermittent so a late Issue.report after the block closes does not
+    // fail the suite as "Known issue was not recorded".
+    try await withKnownIssue(isIntermittent: true) {
       try await runtime.transact(
         InstantStoreTransaction(
           id: "a-runtime-live-schema-error",
@@ -2138,15 +3605,28 @@ struct InstantLiveTransportTests {
         ),
         createdAt: updateAt
       )
+      _ = try await runtime.connect()
       try await instantLiveWithTimeout(
         operation: "wait for valid mutation after encoding quarantine",
         timeoutMilliseconds: 5_000
       ) {
         await session.waitForSentMessageCount(2)
       }
+      _ = try await waitForLiveOutbox(runtime) { mutations in
+        mutations.first?.status == .failed && mutations.count == 2
+      }
+      try await instantLiveWithTimeout(
+        operation: "wait for encoding-quarantine delivery pump to become idle",
+        timeoutMilliseconds: 5_000
+      ) {
+        while !(await runtime.automaticMutationPumpIsIdleForTesting()) {
+          await Task.yield()
+        }
+      }
     } matching: { issue in
       issue.description.contains("quarantined")
         || issue.description.contains("todos/createdAt")
+        || issue.description.contains("schema")
     }
 
     let status = try await runtime.connectionStatus()
@@ -2257,6 +3737,14 @@ struct InstantLiveTransportTests {
     let connected = try await runtime.connect()
     expectNoDifference(connected.pendingMutationCount, 1)
     let pending = try #require(await runtime.pendingMutations().first)
+    try await instantLiveWithTimeout(
+      operation: "wait for persisted mutation resend",
+      timeoutMilliseconds: 5_000
+    ) {
+      while await session.sentMessages().count < 2 {
+        try await Task.sleep(for: .milliseconds(1))
+      }
+    }
     let sentMessages = await session.sentMessages()
     expectNoDifference(sentMessages.map(\.op), ["init", "transact"])
     expectNoDifference(sentMessages.last?.clientEventID, pending.id)
@@ -2986,6 +4474,63 @@ struct InstantLiveTransportTests {
   }
 
   @Test
+  func cancellingChunkObservationBeforeLeaseInstallationRemovesItsGateWaiter() async throws {
+    let cacheURL = try temporaryLiveCacheURL()
+    let barrier = InstantLiveQueryPruneBarrier()
+    var configuration = InstantRuntimeConfiguration(
+      appID: "live-query-cancel-before-lease",
+      persistenceURL: cacheURL,
+      initialAttributes: TodoExample.attributes,
+      liveTransport: .local
+    )
+    configuration.onLiveQueryResultPruneActiveKeysCapturedForTesting = { keys in
+      await barrier.pauseAfterCapture(keys)
+    }
+    let runtime = try await InstantRuntime.bootstrap(configuration: configuration)
+
+    await barrier.arm()
+    let prune = Task {
+      try await runtime.pruneLiveQueryResults(
+        policy: InstantLiveQueryResultPruningPolicy(maxEntries: 0),
+        now: InstantTimestamp(milliseconds: 1)
+      )
+    }
+    defer {
+      Task { await barrier.release() }
+      prune.cancel()
+    }
+    _ = await barrier.waitForCapture()
+
+    let observation = Task {
+      try await runtime.observeLiveInfiniteQueryChunk(TodoExample.query)
+    }
+    try await instantLiveWithTimeout(
+      operation: "wait for canceled chunk observation to queue at the operation gate",
+      timeoutMilliseconds: 5_000
+    ) {
+      while await runtime.operationGateWaiterCountForTesting() != 1 {
+        try Task.checkCancellation()
+        await Task.yield()
+      }
+    }
+
+    observation.cancel()
+    await #expect(throws: CancellationError.self) {
+      _ = try await instantLiveWithTimeout(
+        operation: "cancel chunk observation before its live lease installs",
+        timeoutMilliseconds: 5_000
+      ) {
+        try await observation.value
+      }
+    }
+    let remainingGateWaiters = await runtime.operationGateWaiterCountForTesting()
+    expectNoDifference(remainingGateWaiters, 0)
+
+    await barrier.release()
+    _ = try await prune.value
+  }
+
+  @Test
   func liveQueryRetentionPrunesUnloadedResultOnConfiguredWriteCadence() async throws {
     let cacheURL = try temporaryLiveCacheURL()
     let firstTimestamp = InstantTimestamp(milliseconds: 1_700_000_001_000)
@@ -3153,7 +4698,8 @@ struct InstantLiveTransportTests {
       metadataValue: "seeded",
       metadataUpdatedAt: InstantTimestamp(milliseconds: 2),
       expectedStoreRevision: state.storeRevision,
-      expectedOutboxRevision: state.outboxRevision
+      expectedOutboxRevision: state.outboxRevision,
+      expectedAttributeRevision: state.attributeRevision
     )
     expectNoDifference(didSave, true)
 
@@ -4158,7 +5704,7 @@ struct InstantLiveTransportTests {
         liveTransport: session.transport,
         timestamp: { InstantTimestamp(milliseconds: 1_700_000_000_000) },
         makeID: { ids.next() },
-        eventTimeoutMilliseconds: 1,
+        eventTimeoutMillisecondsForTesting: 1,
         maxServerEvents: 1
       )
       Issue.record("Expected live transaction validation to reject an unrelated refresh-ok.")
@@ -4243,6 +5789,82 @@ private actor InstantLiveQueryPruneBarrier {
   }
 }
 
+private actor InstantStandardObservationSetupBarrier {
+  private struct PendingPause: Sendable {
+    var abortToken: UUID
+    var continuation: InstantLiveTestThrowingContinuationBox<Void>
+  }
+
+  nonisolated private let abortState = InstantLiveTestWireAbortState()
+  private var didEnter = false
+  private var didRelease = false
+  private var pendingPause: PendingPause?
+
+  func pause() async throws {
+    didEnter = true
+    guard !didRelease else { return }
+    try await withTaskCancellationHandler {
+      try await withCheckedThrowingContinuation {
+        (rawContinuation: CheckedContinuation<Void, any Error>) in
+        let continuation = InstantLiveTestThrowingContinuationBox(rawContinuation)
+        guard
+          let abortToken = abortState.register({
+            continuation.resume(throwing: CancellationError())
+          })
+        else {
+          continuation.resume(throwing: CancellationError())
+          return
+        }
+        pendingPause = PendingPause(
+          abortToken: abortToken,
+          continuation: continuation
+        )
+      }
+    } onCancel: {
+      abortState.abort()
+    }
+  }
+
+  func waitUntilEntered() async throws {
+    try await instantLiveWithTimeout(
+      operation: "wait for standard observation setup after Store installation",
+      timeoutMilliseconds: 5_000
+    ) {
+      while !(await self.didEnter) {
+        try Task.checkCancellation()
+        await Task.yield()
+      }
+    }
+  }
+
+  func release() {
+    didRelease = true
+    if let pendingPause {
+      abortState.unregister(pendingPause.abortToken)
+      pendingPause.continuation.resume(returning: ())
+    }
+    pendingPause = nil
+  }
+}
+
+private func requireFinishedStandardObservation(
+  _ observation: AsyncStream<InstantQueryEmission>,
+  operation: String
+) async throws {
+  let read = Task {
+    var iterator = observation.makeAsyncIterator()
+    return await iterator.next()
+  }
+  let value = try await instantLiveWithTimeout(
+    operation: operation,
+    timeoutMilliseconds: 5_000,
+    onAbandon: { read.cancel() }
+  ) {
+    await read.value
+  }
+  #expect(value == nil)
+}
+
 private func waitForOperationGateHopCount(
   _ count: Int,
   recorder: InstantActorHopRecorder,
@@ -4265,6 +5887,7 @@ private func temporaryLiveCacheURL() throws -> URL {
 }
 
 private actor InstantScriptedLiveSession {
+  nonisolated private let abortState = InstantLiveTestWireAbortState()
   private var messages: [InstantLiveMessage]
   private var sent: [InstantLiveMessage] = []
 
@@ -4273,15 +5896,18 @@ private actor InstantScriptedLiveSession {
   }
 
   nonisolated var transport: InstantLiveTransportClient {
-    InstantLiveTransportClient { _ in
+    .immediate { _ in
       InstantLiveWebSocketSession(
         send: { message in
+          try self.abortState.check()
           await self.send(message)
         },
         receive: {
-          try await self.receive()
+          try self.abortState.check()
+          return try await self.receive()
         },
-        close: {}
+        close: { self.abortState.abort() },
+        abort: { self.abortState.abort() }
       )
     }
   }
@@ -4307,18 +5933,40 @@ private actor InstantScriptedLiveSession {
   }
 }
 
+private func waitForScriptedSentMessageCount(
+  _ count: Int,
+  operation: String,
+  in session: InstantRuntimeScriptedLiveSession
+) async throws {
+  try await instantLiveWithTimeout(
+    operation: operation,
+    timeoutMilliseconds: 5_000
+  ) {
+    while await session.sentMessages().count < count {
+      try Task.checkCancellation()
+      try await Task.sleep(for: .milliseconds(5))
+    }
+  }
+}
+
 private actor InstantRuntimeScriptedLiveSession {
   private struct SentWaiter {
     var count: Int
     var continuation: CheckedContinuation<Void, Never>
   }
 
+  private struct PendingReceive {
+    var abortToken: UUID
+    var continuation: InstantLiveTestThrowingContinuationBox<InstantLiveMessage>
+  }
+
+  nonisolated private let abortState = InstantLiveTestWireAbortState()
   private var messages: [InstantLiveMessage]
   private var sent: [InstantLiveMessage] = []
   private var sentWaiters: [SentWaiter] = []
   private var receiveRequestCountValue = 0
   private var receiveWaiters: [SentWaiter] = []
-  private var receiveContinuation: CheckedContinuation<InstantLiveMessage, Error>?
+  private var receiveContinuation: PendingReceive?
   private var isClosed = false
 
   init(messages: [InstantLiveMessage]) {
@@ -4326,17 +5974,20 @@ private actor InstantRuntimeScriptedLiveSession {
   }
 
   nonisolated var transport: InstantLiveTransportClient {
-    InstantLiveTransportClient { _ in
+    .immediate { _ in
       InstantLiveWebSocketSession(
         send: { message in
+          try self.abortState.check()
           await self.send(message)
         },
         receive: {
-          try await self.receive()
+          try self.abortState.check()
+          return try await self.receive()
         },
         close: {
           await self.close()
-        }
+        },
+        abort: { self.abortState.abort() }
       )
     }
   }
@@ -4366,7 +6017,8 @@ private actor InstantRuntimeScriptedLiveSession {
   func enqueue(_ message: InstantLiveMessage) {
     if let receiveContinuation {
       self.receiveContinuation = nil
-      receiveContinuation.resume(returning: message)
+      abortState.unregister(receiveContinuation.abortToken)
+      receiveContinuation.continuation.resume(returning: message)
     } else if !isClosed {
       messages.append(message)
     }
@@ -4403,14 +6055,409 @@ private actor InstantRuntimeScriptedLiveSession {
       throw CancellationError()
     }
     return try await withCheckedThrowingContinuation { continuation in
-      receiveContinuation = continuation
+      let continuation = InstantLiveTestThrowingContinuationBox(continuation)
+      guard
+        let abortToken = abortState.register({
+          continuation.resume(throwing: CancellationError())
+        })
+      else {
+        continuation.resume(throwing: CancellationError())
+        return
+      }
+      receiveContinuation = PendingReceive(
+        abortToken: abortToken,
+        continuation: continuation
+      )
     }
   }
 
   private func close() {
     isClosed = true
-    receiveContinuation?.resume(throwing: CancellationError())
+    abortState.abort()
     receiveContinuation = nil
+  }
+}
+
+private actor InstantQueryRemovalRaceLiveSession {
+  private struct PendingReceive {
+    var abortToken: UUID
+    var continuation: InstantLiveTestThrowingContinuationBox<InstantLiveMessage>
+  }
+
+  private struct PendingRemove {
+    var abortToken: UUID
+    var continuation: InstantLiveTestThrowingContinuationBox<Void>
+  }
+
+  nonisolated private let abortState = InstantLiveTestWireAbortState()
+  private var sent: [InstantLiveMessage] = []
+  private var messages: [InstantLiveMessage] = []
+  private var didEnterRemove = false
+  private var didReleaseRemove = false
+  private var removeReleaseContinuation: PendingRemove?
+  private var receiveContinuation: PendingReceive?
+  private var didSendInit = false
+  private var isClosed = false
+
+  nonisolated var transport: InstantLiveTransportClient {
+    .immediate { _ in
+      InstantLiveWebSocketSession(
+        send: { message in
+          try self.abortState.check()
+          try await self.send(message)
+        },
+        receive: {
+          try self.abortState.check()
+          return try await self.receive()
+        },
+        close: {
+          await self.close()
+        },
+        abort: { self.abortState.abort() }
+      )
+    }
+  }
+
+  func sentMessages() -> [InstantLiveMessage] {
+    sent
+  }
+
+  func enqueue(_ message: InstantLiveMessage) {
+    if let receiveContinuation {
+      self.receiveContinuation = nil
+      abortState.unregister(receiveContinuation.abortToken)
+      receiveContinuation.continuation.resume(returning: message)
+    } else if !isClosed {
+      messages.append(message)
+    }
+  }
+
+  func waitForSentMessageCount(_ count: Int) async throws {
+    try await instantLiveWithTimeout(
+      operation: "wait for query-removal race message count \(count)",
+      timeoutMilliseconds: 5_000
+    ) {
+      while await self.sent.count < count {
+        try Task.checkCancellation()
+        await Task.yield()
+      }
+    }
+  }
+
+  func waitUntilRemoveEntered() async throws {
+    try await instantLiveWithTimeout(
+      operation: "wait for the delayed query removal",
+      timeoutMilliseconds: 5_000
+    ) {
+      while !(await self.didEnterRemove) {
+        try Task.checkCancellation()
+        await Task.yield()
+      }
+    }
+  }
+
+  func releaseRemove() {
+    didReleaseRemove = true
+    if let removeReleaseContinuation {
+      abortState.unregister(removeReleaseContinuation.abortToken)
+      removeReleaseContinuation.continuation.resume(returning: ())
+    }
+    removeReleaseContinuation = nil
+  }
+
+  private func send(_ message: InstantLiveMessage) async throws {
+    if message.op == "remove-query", !didEnterRemove {
+      didEnterRemove = true
+      if !didReleaseRemove {
+        try await withCheckedThrowingContinuation {
+          (continuation: CheckedContinuation<Void, Error>) in
+          let continuation = InstantLiveTestThrowingContinuationBox(continuation)
+          guard
+            let abortToken = abortState.register({
+              continuation.resume(throwing: CancellationError())
+            })
+          else {
+            continuation.resume(throwing: CancellationError())
+            return
+          }
+          removeReleaseContinuation = PendingRemove(
+            abortToken: abortToken,
+            continuation: continuation
+          )
+        }
+      }
+    }
+    sent.append(message)
+  }
+
+  private func receive() async throws -> InstantLiveMessage {
+    if !didSendInit {
+      didSendInit = true
+      return .initOK(clientEventID: "query-removal-race-init")
+    }
+    if !messages.isEmpty {
+      return messages.removeFirst()
+    }
+    if isClosed { throw CancellationError() }
+    return try await withCheckedThrowingContinuation { continuation in
+      let continuation = InstantLiveTestThrowingContinuationBox(continuation)
+      guard
+        let abortToken = abortState.register({
+          continuation.resume(throwing: CancellationError())
+        })
+      else {
+        continuation.resume(throwing: CancellationError())
+        return
+      }
+      receiveContinuation = PendingReceive(
+        abortToken: abortToken,
+        continuation: continuation
+      )
+    }
+  }
+
+  private func close() {
+    isClosed = true
+    abortState.abort()
+    receiveContinuation = nil
+    removeReleaseContinuation = nil
+  }
+}
+
+private enum InstantQueryOnceTerminalPath: String, CaseIterable, Sendable {
+  case success
+  case failure
+  case cancellation
+
+  var expectedResult: InstantQueryOnceTerminalResult {
+    switch self {
+    case .success:
+      return .success(valueCount: 0)
+    case .failure:
+      return .failure(
+        code: .implementationFailed,
+        operation: "finish scripted acknowledged queryOnce"
+      )
+    case .cancellation:
+      return .cancellation
+    }
+  }
+}
+
+private enum InstantQueryOnceTerminalResult: Equatable, Sendable {
+  case success(valueCount: Int)
+  case failure(code: InstantError.Code, operation: String)
+  case cancellation
+  case unexpectedFailure(String)
+}
+
+private actor InstantQueryRemovalFailureRaceTransport {
+  static let failureMessage = "The scripted remove-query send failed."
+
+  private struct PendingOperation {
+    var id: UUID
+    var abortToken: UUID
+    var continuation: InstantLiveTestThrowingContinuationBox<Void>
+  }
+
+  private struct PendingReceive {
+    var id: UUID
+    var abortToken: UUID
+    var continuation: InstantLiveTestThrowingContinuationBox<InstantLiveMessage>
+  }
+
+  nonisolated private let firstAbortState = InstantLiveTestWireAbortState()
+  nonisolated private let secondAbortState = InstantLiveTestWireAbortState()
+  private let sessionCount: Int
+  private var connectedSessionCount = 0
+  private var initClientEventIDs: [String?]
+  private var didReturnInit: [Bool]
+  private var isClosed: [Bool]
+  private var pendingReceives: [Int: PendingReceive] = [:]
+  private var pendingRemoval: PendingOperation?
+  private var didEnterRemoval = false
+  private var didReleaseRemoval = false
+
+  init(sessionCount: Int) {
+    precondition((1...2).contains(sessionCount))
+    self.sessionCount = sessionCount
+    self.initClientEventIDs = Array(repeating: nil, count: sessionCount)
+    self.didReturnInit = Array(repeating: false, count: sessionCount)
+    self.isClosed = Array(repeating: false, count: sessionCount)
+  }
+
+  nonisolated var transport: InstantLiveTransportClient {
+    .connectionAttempts { _ in
+      let connectionAbortState = InstantLiveTestWireAbortState()
+      return InstantLiveConnectionAttempt(
+        connect: {
+          try connectionAbortState.check()
+          let session = try await self.connect()
+          try connectionAbortState.check()
+          return session
+        },
+        abort: { connectionAbortState.abort() }
+      )
+    }
+  }
+
+  func connectionCount() -> Int {
+    connectedSessionCount
+  }
+
+  func waitUntilRemovalEntered() async throws {
+    try await instantLiveWithTimeout(
+      operation: "wait for the scripted remove-query failure",
+      timeoutMilliseconds: 5_000
+    ) {
+      while !(await self.removalHasEntered()) {
+        try Task.checkCancellation()
+        await Task.yield()
+      }
+    }
+  }
+
+  func releaseRemovalFailure() {
+    guard !didReleaseRemoval else { return }
+    didReleaseRemoval = true
+    if let pendingRemoval {
+      firstAbortState.unregister(pendingRemoval.abortToken)
+      pendingRemoval.continuation.resume(returning: ())
+    }
+    pendingRemoval = nil
+  }
+
+  private func connect() throws -> InstantLiveWebSocketSession {
+    let sessionIndex = connectedSessionCount
+    guard sessionIndex < sessionCount else {
+      throw InstantError(
+        code: .networkFailed,
+        operation: "connect scripted remove-query failure transport",
+        message: "No scripted replacement live session remains.",
+        recovery: "Provide one scripted session for every expected explicit connection."
+      )
+    }
+    connectedSessionCount += 1
+    let abortState = abortState(for: sessionIndex)
+    return InstantLiveWebSocketSession(
+      send: { message in
+        try abortState.check()
+        try await self.send(message, sessionIndex: sessionIndex)
+      },
+      receive: {
+        try abortState.check()
+        return try await self.receive(sessionIndex: sessionIndex)
+      },
+      close: {
+        await self.close(sessionIndex: sessionIndex)
+      },
+      abort: {
+        abortState.abort()
+      }
+    )
+  }
+
+  private func send(
+    _ message: InstantLiveMessage,
+    sessionIndex: Int
+  ) async throws {
+    try abortState(for: sessionIndex).check()
+    guard !isClosed[sessionIndex] else { throw CancellationError() }
+    if message.op == "init" {
+      initClientEventIDs[sessionIndex] = message.clientEventID
+      return
+    }
+    guard sessionIndex == 0, message.op == "remove-query" else { return }
+
+    if !didReleaseRemoval {
+      let operationID = UUID()
+      defer { clearPendingRemoval(id: operationID) }
+      try await withCheckedThrowingContinuation {
+        (continuation: CheckedContinuation<Void, Error>) in
+        let continuation = InstantLiveTestThrowingContinuationBox(continuation)
+        guard
+          let abortToken = firstAbortState.register({
+            continuation.resume(throwing: CancellationError())
+          })
+        else {
+          continuation.resume(throwing: CancellationError())
+          return
+        }
+        pendingRemoval = PendingOperation(
+          id: operationID,
+          abortToken: abortToken,
+          continuation: continuation
+        )
+        didEnterRemoval = true
+      }
+    } else {
+      didEnterRemoval = true
+    }
+    throw InstantError(
+      code: .networkFailed,
+      operation: "send scripted remove-query",
+      message: Self.failureMessage,
+      recovery: "Keep a healthy replacement session authoritative over this retired send."
+    )
+  }
+
+  private func receive(sessionIndex: Int) async throws -> InstantLiveMessage {
+    try abortState(for: sessionIndex).check()
+    if !didReturnInit[sessionIndex] {
+      didReturnInit[sessionIndex] = true
+      return .initOK(
+        clientEventID: initClientEventIDs[sessionIndex]
+          ?? "scripted-removal-session-\(sessionIndex)-init"
+      )
+    }
+    guard !isClosed[sessionIndex] else { throw CancellationError() }
+
+    let receiveID = UUID()
+    defer { clearPendingReceive(sessionIndex: sessionIndex, id: receiveID) }
+    return try await withCheckedThrowingContinuation { continuation in
+      let continuation = InstantLiveTestThrowingContinuationBox(continuation)
+      let abortState = abortState(for: sessionIndex)
+      guard
+        let abortToken = abortState.register({
+          continuation.resume(throwing: CancellationError())
+        })
+      else {
+        continuation.resume(throwing: CancellationError())
+        return
+      }
+      pendingReceives[sessionIndex] = PendingReceive(
+        id: receiveID,
+        abortToken: abortToken,
+        continuation: continuation
+      )
+    }
+  }
+
+  private func close(sessionIndex: Int) {
+    isClosed[sessionIndex] = true
+    guard let pendingReceive = pendingReceives.removeValue(forKey: sessionIndex) else { return }
+    abortState(for: sessionIndex).unregister(pendingReceive.abortToken)
+    pendingReceive.continuation.resume(throwing: CancellationError())
+  }
+
+  private func removalHasEntered() -> Bool {
+    didEnterRemoval
+  }
+
+  private func clearPendingRemoval(id: UUID) {
+    guard pendingRemoval?.id == id else { return }
+    firstAbortState.unregister(pendingRemoval!.abortToken)
+    pendingRemoval = nil
+  }
+
+  private func clearPendingReceive(sessionIndex: Int, id: UUID) {
+    guard pendingReceives[sessionIndex]?.id == id else { return }
+    abortState(for: sessionIndex).unregister(pendingReceives[sessionIndex]!.abortToken)
+    pendingReceives[sessionIndex] = nil
+  }
+
+  nonisolated private func abortState(for sessionIndex: Int) -> InstantLiveTestWireAbortState {
+    sessionIndex == 0 ? firstAbortState : secondAbortState
   }
 }
 
@@ -4425,10 +6472,9 @@ private actor InstantRuntimeSlowSendLiveTransport {
   }
 
   nonisolated var transport: InstantLiveTransportClient {
-    InstantLiveTransportClient { request in
-      let session = try await self.base.connect(request)
-      let delay = await self.delayNanoseconds
-      return InstantLiveWebSocketSession(
+    base.mapSessions { session in
+      let delay = self.delayNanoseconds
+      return session.forwarding(
         send: { message in
           try await Task.sleep(nanoseconds: delay)
           try await session.send(message)
@@ -4444,41 +6490,44 @@ private actor InstantRuntimeSlowSendLiveTransport {
   }
 }
 
-private actor InstantRuntimeBlockedLiveTransport {
+private final class InstantRuntimeBlockedLiveTransport: @unchecked Sendable {
   private let base: InstantLiveTransportClient
-  private var didStartConnecting = false
-  private var isReleased = false
-  private var releaseContinuation: CheckedContinuation<Void, Never>?
+  private let connectionGate = InstantLiveSynchronousReleaseSuspension()
 
   init(base: InstantLiveTransportClient) {
     self.base = base
   }
 
-  nonisolated var transport: InstantLiveTransportClient {
-    InstantLiveTransportClient { request in
-      await self.waitForRelease()
-      return try await self.base.connect(request)
+  var transport: InstantLiveTransportClient {
+    .connectionAttempts { request in
+      let baseAttempt = try self.base.makeConnectionAttempt(request)
+      return InstantLiveConnectionAttempt(
+        connect: {
+          await self.connectionGate.suspend()
+          return try await baseAttempt.connect()
+        },
+        abort: {
+          self.connectionGate.release()
+          baseAttempt.abort()
+        }
+      )
     }
   }
 
-  func waitUntilConnectStarts() async {
-    while !didStartConnecting {
-      await Task.yield()
+  func waitUntilConnectStarts() async throws {
+    try await instantLiveWithTimeout(
+      operation: "wait for blocked live transport connection to start",
+      timeoutMilliseconds: 5_000
+    ) {
+      while !self.connectionGate.didStart {
+        try Task.checkCancellation()
+        await Task.yield()
+      }
     }
   }
 
-  func releaseConnection() {
-    isReleased = true
-    releaseContinuation?.resume()
-    releaseContinuation = nil
-  }
-
-  private func waitForRelease() async {
-    didStartConnecting = true
-    guard !isReleased else { return }
-    await withCheckedContinuation { continuation in
-      releaseContinuation = continuation
-    }
+  func releaseConnection() async {
+    connectionGate.release()
   }
 }
 
@@ -4717,6 +6766,122 @@ private actor InstantLiveStreamMessageRecorder {
 
   func messages() -> [InstantLiveMessage] {
     recordedMessages
+  }
+}
+
+private actor InstantLiveNoncooperativeSuspension {
+  private var continuation: CheckedContinuation<Void, Never>?
+  private var didStart = false
+  private var startWaiters: [CheckedContinuation<Void, Never>] = []
+
+  func suspend() async {
+    didStart = true
+    let waiters = startWaiters
+    startWaiters.removeAll()
+    for waiter in waiters {
+      waiter.resume()
+    }
+    await withCheckedContinuation { continuation = $0 }
+  }
+
+  func waitUntilStarted() async {
+    guard !didStart else { return }
+    await withCheckedContinuation { startWaiters.append($0) }
+  }
+
+  func release() {
+    continuation?.resume()
+    continuation = nil
+  }
+}
+
+private final class InstantLiveAbandonmentProbe: @unchecked Sendable {
+  private let lock = NSLock()
+  private var count = 0
+
+  func increment() {
+    lock.lock()
+    count += 1
+    lock.unlock()
+  }
+
+  var value: Int {
+    lock.lock()
+    defer { lock.unlock() }
+    return count
+  }
+}
+
+private struct InstantLiveSessionIOSnapshot: Equatable, Sendable {
+  var sendCount = 0
+  var receiveCount = 0
+  var closeCount = 0
+  var abortCount = 0
+}
+
+private final class InstantLiveSessionIOProbe: @unchecked Sendable {
+  private let lock = NSLock()
+  private var value = InstantLiveSessionIOSnapshot()
+
+  func recordSend() {
+    lock.withLock { value.sendCount += 1 }
+  }
+
+  func recordReceive() {
+    lock.withLock { value.receiveCount += 1 }
+  }
+
+  func recordClose() {
+    lock.withLock { value.closeCount += 1 }
+  }
+
+  func recordAbort() {
+    lock.withLock { value.abortCount += 1 }
+  }
+
+  func snapshot() -> InstantLiveSessionIOSnapshot {
+    lock.withLock { value }
+  }
+}
+
+private final class InstantLiveSynchronousReleaseSuspension: @unchecked Sendable {
+  private let lock = NSLock()
+  private var continuation: CheckedContinuation<Void, Never>?
+  private var isReleased = false
+  private var started = false
+  private var finished = false
+
+  var didStart: Bool {
+    lock.withLock { started }
+  }
+
+  var didFinish: Bool {
+    lock.withLock { finished }
+  }
+
+  func suspend() async {
+    await withCheckedContinuation { continuation in
+      let resumesImmediately = lock.withLock {
+        started = true
+        guard !isReleased else { return true }
+        self.continuation = continuation
+        return false
+      }
+      if resumesImmediately {
+        continuation.resume()
+      }
+    }
+    lock.withLock { finished = true }
+  }
+
+  func release() {
+    let continuation = lock.withLock {
+      isReleased = true
+      let continuation = self.continuation
+      self.continuation = nil
+      return continuation
+    }
+    continuation?.resume()
   }
 }
 

@@ -786,87 +786,704 @@ public struct InstantLiveSessionRequest: Hashable, Sendable {
   }
 }
 
+// SAFETY: `lock` protects the abort action and makes its take-and-clear
+// single-shot.
+private final class InstantLiveImmediateAbortHandle: @unchecked Sendable {
+  private let lock = NSLock()
+  private var action: (@Sendable () -> Void)?
+  let isAvailable: Bool
+
+  init(_ action: (@Sendable () -> Void)?) {
+    self.action = action
+    self.isAvailable = action != nil
+  }
+
+  func abort() {
+    let action = lock.withLock {
+      let action = self.action
+      self.action = nil
+      return action
+    }
+    action?()
+  }
+}
+
 public struct InstantLiveWebSocketSession: Sendable {
+  package let identity: UUID
   public var send: @Sendable (InstantLiveMessage) async throws -> Void
   public var receive: @Sendable () async throws -> InstantLiveMessage
   public var close: @Sendable () async -> Void
+  private let abortHandle: InstantLiveImmediateAbortHandle
 
+  /// Whether the custom transport supplied the synchronous terminal operation
+  /// required to bound abandoned send, receive, and close work.
+  public var hasImmediateAbort: Bool {
+    abortHandle.isAvailable
+  }
+
+  @available(
+    *,
+    deprecated,
+    message:
+      "Custom live transports must provide the four-closure initializer's immediate abort operation."
+  )
   public init(
     send: @escaping @Sendable (InstantLiveMessage) async throws -> Void,
     receive: @escaping @Sendable () async throws -> InstantLiveMessage,
     close: @escaping @Sendable () async -> Void
   ) {
+    self.identity = UUID()
     self.send = send
     self.receive = receive
     self.close = close
+    self.abortHandle = InstantLiveImmediateAbortHandle(nil)
+  }
+
+  public init(
+    send: @escaping @Sendable (InstantLiveMessage) async throws -> Void,
+    receive: @escaping @Sendable () async throws -> InstantLiveMessage,
+    close: @escaping @Sendable () async -> Void,
+    abort: @escaping @Sendable () -> Void
+  ) {
+    self.identity = UUID()
+    self.send = send
+    self.receive = receive
+    self.close = close
+    self.abortHandle = InstantLiveImmediateAbortHandle(abort)
+  }
+
+  private init(
+    identity: UUID,
+    send: @escaping @Sendable (InstantLiveMessage) async throws -> Void,
+    receive: @escaping @Sendable () async throws -> InstantLiveMessage,
+    close: @escaping @Sendable () async -> Void,
+    abortHandle: InstantLiveImmediateAbortHandle
+  ) {
+    self.identity = identity
+    self.send = send
+    self.receive = receive
+    self.close = close
+    self.abortHandle = abortHandle
+  }
+
+  /// Immediately and idempotently terminates the underlying transport.
+  ///
+  /// The operation must be thread-safe, return promptly, and make every
+  /// pending `send`, `receive`, and `close` operation return. Scheduling an
+  /// asynchronous close task does not satisfy this contract. This mirrors
+  /// upstream Instant's synchronous connection `close()` primitive.
+  public func abort() {
+    abortHandle.abort()
+  }
+
+  /// Decorates a session without changing its identity or falsely upgrading
+  /// a legacy transport that lacks immediate abort support.
+  package func forwarding(
+    send: @escaping @Sendable (InstantLiveMessage) async throws -> Void,
+    receive: @escaping @Sendable () async throws -> InstantLiveMessage,
+    close: @escaping @Sendable () async -> Void
+  ) -> Self {
+    Self(
+      identity: identity,
+      send: send,
+      receive: receive,
+      close: close,
+      abortHandle: abortHandle
+    )
+  }
+
+  package func requireImmediateAbort(operation: String) throws {
+    guard hasImmediateAbort else {
+      throw InstantError(
+        code: .validationFailed,
+        operation: operation,
+        message: "The custom Instant live session has no immediate abort operation.",
+        recovery:
+          "Use InstantLiveWebSocketSession's four-closure initializer and provide a prompt, thread-safe abort closure. Task { await close() } is not an immediate abort."
+      )
+    }
+  }
+
+  package func closeGracefully(
+    operation: String,
+    timeoutMilliseconds: UInt64 = instantLiveOperationTimeoutMilliseconds,
+    sleep: @escaping @Sendable (UInt64) async throws -> Void = instantLiveDefaultTimeoutSleep
+  ) async throws {
+    try requireImmediateAbort(operation: operation)
+    try await instantLiveWithTimeout(
+      operation: operation,
+      timeoutMilliseconds: timeoutMilliseconds,
+      onAbandon: { abort() },
+      sleep: sleep
+    ) {
+      await close()
+    }
   }
 }
 
-public struct InstantLiveTransportClient: Sendable {
-  public var connect:
-    @Sendable (InstantLiveSessionRequest) async throws
+private enum InstantLiveConnectionAttemptStart: Sendable {
+  case duplicate
+  case owner(@Sendable () async throws -> InstantLiveWebSocketSession)
+}
+
+private func instantLiveDuplicateConnectionAttemptError() -> InstantError {
+  InstantError(
+    code: .validationFailed,
+    operation: "connect Instant live transport",
+    message: "The same Instant live connection attempt was started more than once.",
+    recovery:
+      "Create one fresh connection attempt per connection. Attempts from the same transport client are independent."
+  )
+}
+
+// SAFETY: `lock` protects the session and start/abort state; all remaining
+// stored values are immutable Sendable handles.
+private final class InstantLiveConnectionAttemptState: @unchecked Sendable {
+  typealias Connect = @Sendable () async throws -> InstantLiveWebSocketSession
+
+  private enum StartDecision {
+    case canceled
+    case connected(InstantLiveWebSocketSession)
+    case duplicate
+    case start
+  }
+
+  let identity = UUID()
+  private let lock = NSLock()
+  private let connectOperation: Connect
+  private let connectorAbortHandle: InstantLiveImmediateAbortHandle
+  private var session: InstantLiveWebSocketSession?
+  private var hasStarted = false
+  private var isAborted = false
+
+  init(
+    connect: @escaping Connect,
+    abort: (@Sendable () -> Void)?
+  ) {
+    self.connectOperation = connect
+    self.connectorAbortHandle = InstantLiveImmediateAbortHandle(abort)
+  }
+
+  init(session: InstantLiveWebSocketSession) {
+    self.connectOperation = { session }
+    self.connectorAbortHandle = InstantLiveImmediateAbortHandle(nil)
+    self.session = session
+  }
+
+  var hasImmediateAbort: Bool {
+    connectorAbortHandle.isAvailable
+      || lock.withLock { session?.hasImmediateAbort == true }
+  }
+
+  var wasAborted: Bool {
+    lock.withLock { isAborted }
+  }
+
+  func requireImmediateAbort(operation: String) throws {
+    guard hasImmediateAbort else {
+      throw InstantError(
+        code: .validationFailed,
+        operation: operation,
+        message: "The custom Instant live connection has no immediate abort operation.",
+        recovery:
+          "Use InstantLiveTransportClient.connectionAttempts and return an InstantLiveConnectionAttempt with a prompt, thread-safe abort closure. The legacy async connector cannot be safely bounded."
+      )
+    }
+  }
+
+  func claimConnectionStart(
+    operation: String
+  ) throws -> InstantLiveConnectionAttemptStart {
+    try requireImmediateAbort(operation: operation)
+    let decision = lock.withLock { () -> StartDecision in
+      guard !isAborted else { return .canceled }
+      if hasStarted {
+        return .duplicate
+      }
+      hasStarted = true
+      if let session {
+        return .connected(session)
+      }
+      return .start
+    }
+
+    switch decision {
+    case .canceled:
+      throw CancellationError()
+    case .duplicate:
+      return .duplicate
+    case .connected(let session):
+      return .owner { [self] in
+        try await withTaskCancellationHandler {
+          try Task.checkCancellation()
+          return session
+        } onCancel: {
+          self.abort()
+        }
+      }
+    case .start:
+      return .owner { [self] in
+        try await withTaskCancellationHandler {
+          do {
+            try Task.checkCancellation()
+            let connectedSession = try await self.connectOperation()
+            let mustAbortLateSession = self.lock.withLock {
+              guard !self.isAborted else { return true }
+              self.session = connectedSession
+              return false
+            }
+            guard !mustAbortLateSession else {
+              connectedSession.abort()
+              throw CancellationError()
+            }
+            try Task.checkCancellation()
+            return connectedSession
+          } catch {
+            self.abort()
+            throw error
+          }
+        } onCancel: {
+          self.abort()
+        }
+      }
+    }
+  }
+
+  func abort() {
+    let connectedSession = lock.withLock { () -> InstantLiveWebSocketSession? in
+      guard !isAborted else { return nil }
+      isAborted = true
+      return session
+    }
+    connectorAbortHandle.abort()
+    connectedSession?.abort()
+  }
+}
+
+/// One cold, single-use attempt to create an Instant live session.
+///
+/// The attempt exists before any asynchronous connector work starts, so a
+/// timeout or parent cancellation can synchronously terminate the exact
+/// in-progress resource. Copies share identity and idempotent abort state.
+public struct InstantLiveConnectionAttempt: Sendable {
+  package var identity: UUID { state.identity }
+  public var hasImmediateAbort: Bool { state.hasImmediateAbort }
+
+  private let state: InstantLiveConnectionAttemptState
+  private let transform:
+    @Sendable (InstantLiveWebSocketSession) throws
       -> InstantLiveWebSocketSession
 
   public init(
     connect:
-      @escaping @Sendable (InstantLiveSessionRequest) async throws
-      -> InstantLiveWebSocketSession
+      @escaping @Sendable () async throws
+        -> InstantLiveWebSocketSession,
+    abort: @escaping @Sendable () -> Void
   ) {
-    self.connect = connect
+    self.state = InstantLiveConnectionAttemptState(
+      connect: connect,
+      abort: abort
+    )
+    self.transform = { $0 }
+  }
+
+  /// Creates an already-materialized attempt that reuses the session's exact
+  /// abort handle. A legacy session therefore remains unsupported.
+  public init(session: InstantLiveWebSocketSession) {
+    self.state = InstantLiveConnectionAttemptState(session: session)
+    self.transform = { $0 }
+  }
+
+  private init(
+    state: InstantLiveConnectionAttemptState,
+    transform:
+      @escaping @Sendable (InstantLiveWebSocketSession) throws
+        -> InstantLiveWebSocketSession
+  ) {
+    self.state = state
+    self.transform = transform
+  }
+
+  fileprivate init(
+    legacyConnect:
+      @escaping @Sendable () async throws
+        -> InstantLiveWebSocketSession
+  ) {
+    self.state = InstantLiveConnectionAttemptState(
+      connect: legacyConnect,
+      abort: nil
+    )
+    self.transform = { $0 }
+  }
+
+  public func connect() async throws -> InstantLiveWebSocketSession {
+    switch try claimConnectionStart(operation: "connect Instant live transport") {
+    case .duplicate:
+      try Task.checkCancellation()
+      throw instantLiveDuplicateConnectionAttemptError()
+    case .owner(let connect):
+      return try await connect()
+    }
+  }
+
+  fileprivate func claimConnectionStart(
+    operation: String
+  ) throws -> InstantLiveConnectionAttemptStart {
+    switch try state.claimConnectionStart(operation: operation) {
+    case .duplicate:
+      return .duplicate
+    case .owner(let connectBaseSession):
+      return .owner { [self] in
+        let baseSession = try await connectBaseSession()
+        return try await withTaskCancellationHandler {
+          do {
+            try Task.checkCancellation()
+            let mappedSession = try transform(baseSession)
+            guard mappedSession.identity == baseSession.identity else {
+              mappedSession.abort()
+              throw InstantError(
+                code: .validationFailed,
+                operation: "decorate Instant live connection attempt",
+                message: "An Instant live transport decorator replaced the session identity.",
+                recovery:
+                  "Decorate the base session with session.forwarding(send:receive:close:) so connection cleanup remains attached to the exact resource."
+              )
+            }
+            try mappedSession.requireImmediateAbort(operation: operation)
+            guard !state.wasAborted else {
+              mappedSession.abort()
+              throw CancellationError()
+            }
+            try Task.checkCancellation()
+            return mappedSession
+          } catch {
+            state.abort()
+            throw error
+          }
+        } onCancel: {
+          state.abort()
+        }
+      }
+    }
+  }
+
+  /// Immediately and idempotently terminates connector work and any session
+  /// that has already been returned, including a session returned after the
+  /// attempt was abandoned.
+  public func abort() {
+    state.abort()
+  }
+
+  /// Decorates only the already-created session value. The transform must
+  /// return promptly; keep asynchronous work inside the returned session's
+  /// operation closures so it cannot outlive the attempt's abort boundary.
+  package func mapSession(
+    _ transform:
+      @escaping @Sendable (InstantLiveWebSocketSession) throws
+        -> InstantLiveWebSocketSession
+  ) -> Self {
+    let previousTransform = self.transform
+    return Self(state: state) { baseSession in
+      let currentSession = try previousTransform(baseSession)
+      let mappedSession = try transform(currentSession)
+      guard mappedSession.identity == baseSession.identity else {
+        mappedSession.abort()
+        throw InstantError(
+          code: .validationFailed,
+          operation: "decorate Instant live connection attempt",
+          message: "An Instant live transport decorator replaced the session identity.",
+          recovery:
+            "Decorate the base session with session.forwarding(send:receive:close:) so connection cleanup remains attached to the exact resource."
+        )
+      }
+      return mappedSession
+    }
   }
 }
 
-func instantLiveWithTimeout<Value: Sendable>(
+public struct InstantLiveTransportClient: Sendable {
+  public typealias Connect =
+    @Sendable (InstantLiveSessionRequest) async throws
+      -> InstantLiveWebSocketSession
+  public typealias MakeConnectionAttempt =
+    @Sendable (InstantLiveSessionRequest) throws
+      -> InstantLiveConnectionAttempt
+
+  private var makeAttempt: MakeConnectionAttempt
+
+  public var connect: Connect {
+    get {
+      let client = self
+      return { request in
+        try await client.connectSession(
+          request,
+          operation: "connect Instant live transport"
+        )
+      }
+    }
+    set {
+      makeAttempt = Self.legacyAttemptFactory(newValue)
+    }
+  }
+
+  @available(
+    *,
+    deprecated,
+    message:
+      "Use InstantLiveTransportClient.connectionAttempts and provide a synchronous abort operation."
+  )
+  public init(
+    connect: @escaping Connect
+  ) {
+    self.makeAttempt = Self.legacyAttemptFactory(connect)
+  }
+
+  private init(makeAttempt: @escaping MakeConnectionAttempt) {
+    self.makeAttempt = makeAttempt
+  }
+
+  /// Builds a transport whose exact per-call abort handle exists before any
+  /// asynchronous connector work begins. The factory must return one fresh
+  /// attempt per invocation, return promptly, and not perform blocking work or
+  /// I/O; put that work in the attempt's asynchronous `connect` operation
+  /// instead. A reused attempt is rejected without aborting its original owner.
+  public static func connectionAttempts(
+    _ makeAttempt: @escaping MakeConnectionAttempt
+  ) -> Self {
+    Self(makeAttempt: makeAttempt)
+  }
+
+  /// Convenience for transports that synchronously create a complete session.
+  public static func immediate(
+    _ makeSession:
+      @escaping @Sendable (InstantLiveSessionRequest) throws
+        -> InstantLiveWebSocketSession
+  ) -> Self {
+    connectionAttempts { request in
+      InstantLiveConnectionAttempt(session: try makeSession(request))
+    }
+  }
+
+  public func makeConnectionAttempt(
+    _ request: InstantLiveSessionRequest
+  ) throws -> InstantLiveConnectionAttempt {
+    try makeAttempt(request)
+  }
+
+  /// Synchronously decorates each session while retaining the base attempt's
+  /// identity and exact abort handle.
+  package func mapSessions(
+    _ transform:
+      @escaping @Sendable (InstantLiveWebSocketSession) throws
+        -> InstantLiveWebSocketSession
+  ) -> Self {
+    Self.connectionAttempts { request in
+      try makeConnectionAttempt(request).mapSession(transform)
+    }
+  }
+
+  package func connectSession(
+    _ request: InstantLiveSessionRequest,
+    operation: String,
+    timeoutMilliseconds: UInt64 = instantLiveOperationTimeoutMilliseconds,
+    sleep: @escaping @Sendable (UInt64) async throws -> Void = instantLiveDefaultTimeoutSleep
+  ) async throws -> InstantLiveWebSocketSession {
+    try Task.checkCancellation()
+    let attempt = try makeConnectionAttempt(request)
+    switch try attempt.claimConnectionStart(operation: operation) {
+    case .duplicate:
+      try Task.checkCancellation()
+      throw instantLiveDuplicateConnectionAttemptError()
+    case .owner(let connect):
+      do {
+        try Task.checkCancellation()
+        let session = try await instantLiveWithTimeout(
+          operation: operation,
+          timeoutMilliseconds: timeoutMilliseconds,
+          onAbandon: { attempt.abort() },
+          sleep: sleep
+        ) {
+          try await connect()
+        }
+        try Task.checkCancellation()
+        try session.requireImmediateAbort(operation: operation)
+        return session
+      } catch {
+        attempt.abort()
+        throw error
+      }
+    }
+  }
+
+  private static func legacyAttemptFactory(
+    _ connect: @escaping Connect
+  ) -> MakeConnectionAttempt {
+    { request in
+      InstantLiveConnectionAttempt(
+        legacyConnect: { try await connect(request) }
+      )
+    }
+  }
+}
+
+let instantLiveOperationTimeoutMilliseconds: UInt64 = 5_000
+
+@usableFromInline
+func instantLiveDefaultTimeoutSleep(_ milliseconds: UInt64) async throws {
+  try await Task.sleep(nanoseconds: milliseconds * 1_000_000)
+}
+
+// SAFETY: `lock` protects the continuation, pending outcome, child tasks,
+// abandonment closure, and resolution state.
+private final class InstantLiveTimeoutState<Value: Sendable>: @unchecked Sendable {
+  typealias Outcome = Result<Value, any Error>
+
+  private let lock = NSLock()
+  private var continuation: CheckedContinuation<Outcome, Never>?
+  private var pendingOutcome: Outcome?
+  private var workTask: Task<Void, Never>?
+  private var deadlineTask: Task<Void, Never>?
+  private var onAbandon: (@Sendable () -> Void)?
+  private var isResolved = false
+
+  init(onAbandon: @escaping @Sendable () -> Void) {
+    self.onAbandon = onAbandon
+  }
+
+  func install(_ continuation: CheckedContinuation<Outcome, Never>) {
+    let outcome: Outcome?
+    lock.lock()
+    if isResolved {
+      outcome = pendingOutcome
+      pendingOutcome = nil
+    } else {
+      self.continuation = continuation
+      outcome = nil
+    }
+    lock.unlock()
+    if let outcome {
+      continuation.resume(returning: outcome)
+    }
+  }
+
+  func install(
+    workTask: Task<Void, Never>,
+    deadlineTask: Task<Void, Never>
+  ) {
+    lock.lock()
+    if isResolved {
+      lock.unlock()
+      workTask.cancel()
+      deadlineTask.cancel()
+      return
+    }
+    self.workTask = workTask
+    self.deadlineTask = deadlineTask
+    lock.unlock()
+  }
+
+  func resolve(_ outcome: Outcome, abandonsWork: Bool) {
+    let continuation: CheckedContinuation<Outcome, Never>?
+    let workTask: Task<Void, Never>?
+    let deadlineTask: Task<Void, Never>?
+    let onAbandon: (@Sendable () -> Void)?
+    lock.lock()
+    guard !isResolved else {
+      lock.unlock()
+      return
+    }
+    isResolved = true
+    continuation = self.continuation
+    self.continuation = nil
+    if continuation == nil {
+      pendingOutcome = outcome
+    }
+    workTask = self.workTask
+    self.workTask = nil
+    deadlineTask = self.deadlineTask
+    self.deadlineTask = nil
+    onAbandon = abandonsWork ? self.onAbandon : nil
+    self.onAbandon = nil
+    lock.unlock()
+
+    workTask?.cancel()
+    deadlineTask?.cancel()
+    onAbandon?()
+    continuation?.resume(returning: outcome)
+  }
+}
+
+package func instantLiveWithTimeout<Value: Sendable>(
   operation: String,
   timeoutMilliseconds: UInt64,
+  onAbandon: @escaping @Sendable () -> Void = {},
+  sleep: @escaping @Sendable (UInt64) async throws -> Void = instantLiveDefaultTimeoutSleep,
   _ work: @escaping @Sendable () async throws -> Value
 ) async throws -> Value {
   guard timeoutMilliseconds > 0 else {
     return try await work()
   }
-  return try await withThrowingTaskGroup(of: Value.self) { group in
-    group.addTask {
-      try await work()
+  let state = InstantLiveTimeoutState<Value>(onAbandon: onAbandon)
+  let outcome = await withTaskCancellationHandler {
+    await withCheckedContinuation { continuation in
+      state.install(continuation)
+      let workTask = Task {
+        do {
+          state.resolve(.success(try await work()), abandonsWork: false)
+        } catch {
+          state.resolve(.failure(error), abandonsWork: false)
+        }
+      }
+      let deadlineTask = Task {
+        do {
+          try await sleep(timeoutMilliseconds)
+        } catch is CancellationError {
+          return
+        } catch {
+          state.resolve(.failure(error), abandonsWork: true)
+          return
+        }
+        state.resolve(
+          .failure(
+            InstantError(
+              code: .networkFailed,
+              operation: operation,
+              message:
+                "Timed out after \(timeoutMilliseconds)ms waiting for Instant live transport.",
+              recovery: "Check the Instant WebSocket endpoint, credentials, and server response."
+            )
+          ),
+          abandonsWork: true
+        )
+      }
+      state.install(workTask: workTask, deadlineTask: deadlineTask)
     }
-    group.addTask {
-      try await Task.sleep(nanoseconds: timeoutMilliseconds * 1_000_000)
-      throw InstantError(
-        code: .networkFailed,
-        operation: operation,
-        message: "Timed out after \(timeoutMilliseconds)ms waiting for Instant live transport.",
-        recovery: "Check the Instant WebSocket endpoint, credentials, and server response."
-      )
-    }
-    guard let result = try await group.next() else {
-      throw InstantError(
-        code: .networkFailed,
-        operation: operation,
-        message: "Instant live transport finished without a result.",
-        recovery: "Open a new live session and retry the operation."
-      )
-    }
-    group.cancelAll()
-    return result
+  } onCancel: {
+    state.resolve(.failure(CancellationError()), abandonsWork: true)
   }
+  return try outcome.get()
 }
 
 extension InstantLiveTransportClient {
-  public static let local = Self { request in
+  public static let local = Self.immediate { request in
     let session = InstantLocalLiveSession(appID: request.appID)
     return InstantLiveWebSocketSession(
       send: { message in
-        await session.send(message)
+        session.send(message)
       },
       receive: {
-        try await session.receive()
+        try session.receive()
       },
       close: {
-        await session.close()
+        session.close()
+      },
+      abort: {
+        session.close()
       }
     )
   }
 
-  public static let live = Self { request in
+  public static let live = Self.immediate { request in
     let socket = try InstantURLSessionLiveWebSocket(url: request.sessionURL())
     return InstantLiveWebSocketSession(
       send: { message in
@@ -877,6 +1494,9 @@ extension InstantLiveTransportClient {
       },
       close: {
         await socket.close()
+      },
+      abort: {
+        socket.abort()
       }
     )
   }
@@ -1001,7 +1621,9 @@ extension InstantLiveJSONValue {
   }
 }
 
-private actor InstantLocalLiveSession {
+// SAFETY: `lock` protects the pending messages and all mutable session state.
+private final class InstantLocalLiveSession: @unchecked Sendable {
+  private let lock = NSLock()
   private let appID: String
   private var pending: [InstantLiveMessage] = []
   private var isClosed = false
@@ -1012,6 +1634,8 @@ private actor InstantLocalLiveSession {
   }
 
   func send(_ message: InstantLiveMessage) {
+    lock.lock()
+    defer { lock.unlock() }
     guard !isClosed else { return }
     switch message.op {
     case "init":
@@ -1084,6 +1708,8 @@ private actor InstantLocalLiveSession {
   }
 
   func receive() throws -> InstantLiveMessage {
+    lock.lock()
+    defer { lock.unlock() }
     guard !isClosed else {
       throw InstantError(
         code: .networkFailed,
@@ -1104,8 +1730,33 @@ private actor InstantLocalLiveSession {
   }
 
   func close() {
+    lock.lock()
+    defer { lock.unlock() }
     isClosed = true
     pending.removeAll()
+  }
+}
+
+// SAFETY: `lock` protects the abort flag and makes cancellation of the
+// immutable URLSessionWebSocketTask single-shot.
+private final class InstantLiveWebSocketAbortHandle: @unchecked Sendable {
+  private let lock = NSLock()
+  private let task: URLSessionWebSocketTask
+  private var didAbort = false
+
+  init(task: URLSessionWebSocketTask) {
+    self.task = task
+  }
+
+  func abort() {
+    lock.lock()
+    guard !didAbort else {
+      lock.unlock()
+      return
+    }
+    didAbort = true
+    lock.unlock()
+    task.cancel()
   }
 }
 
@@ -1114,7 +1765,7 @@ actor InstantURLSessionLiveWebSocket {
   private static let sharedURLSession: URLSession = {
     let configuration = URLSessionConfiguration.ephemeral
     configuration.waitsForConnectivity = true
-    configuration.timeoutIntervalForRequest = 10
+    configuration.timeoutIntervalForRequest = 5
     // A WebSocket is a long-lived resource. A short resource timeout closes an
     // otherwise healthy, idle room and silently drops presence/topic updates.
     configuration.timeoutIntervalForResource = 7 * 24 * 60 * 60
@@ -1122,6 +1773,7 @@ actor InstantURLSessionLiveWebSocket {
   }()
 
   private let task: URLSessionWebSocketTask
+  private nonisolated let abortHandle: InstantLiveWebSocketAbortHandle
   private var isClosed = false
 
   var urlSessionIdentity: ObjectIdentifier {
@@ -1136,6 +1788,7 @@ actor InstantURLSessionLiveWebSocket {
     let task = Self.sharedURLSession.webSocketTask(with: url)
     task.maximumMessageSize = Self.maximumMessageSize
     self.task = task
+    self.abortHandle = InstantLiveWebSocketAbortHandle(task: task)
     task.resume()
     InstantDiagnostics.shared.record(
       .debug,
@@ -1263,6 +1916,10 @@ actor InstantURLSessionLiveWebSocket {
       event: "urlsession-websocket.closing",
       message: "Closing the URLSession WebSocket task."
     )
-    task.cancel()
+    abortHandle.abort()
+  }
+
+  nonisolated func abort() {
+    abortHandle.abort()
   }
 }

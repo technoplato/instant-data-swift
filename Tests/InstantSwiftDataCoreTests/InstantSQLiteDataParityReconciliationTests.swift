@@ -9,9 +9,9 @@ import Testing
 /// - Repository: `https://github.com/pointfreeco/sqlite-data`
 /// - Vendored checkout: `<package root>/upstream/sqlite-data`
 ///   (override with `SQLITE_DATA_UPSTREAM_CHECKOUT`)
-/// - Pinned commit: `0c79d7a5748fc6d9ce7a1ba2b50f31b175305049`
+/// - Pinned commit: `97987458b49f0311717ecfbf7e8ac4c406afbf55`
 /// - Inventory: `docs/porting/upstream-sqlitedata-test-inventory.md`
-///   (261 runtime tests)
+///   (314 runtime tests)
 ///
 /// Same failure mode the Instant TypeScript inventory fixed: claims that
 /// nothing checks rot when upstream renames a test or we invent coverage.
@@ -45,14 +45,29 @@ struct InstantSQLiteDataParityReconciliationTests {
       return
     }
     let upstream = try Self.upstreamTestNames(in: root)
-    var claimed: Set<String> = []
+    var claimed: [UpstreamTestKey: Int] = [:]
     for record in InstantSwiftDataParityCoverage.records where record.sourceKind == .sqliteData {
-      claimed.formUnion(Self.split(record.sourceTestName).filter { !$0.hasPrefix("@") })
+      let sourceFiles = Self.sqliteDataTestFiles(record.sourceFile)
+      let sourceTestNames = Self.split(record.sourceTestName).filter { !$0.hasPrefix("@") }
+      for sourceFile in sourceFiles {
+        for sourceTestName in sourceTestNames {
+          claimed[
+            UpstreamTestKey(file: sourceFile, name: sourceTestName),
+            default: 0
+          ] += 1
+        }
+      }
     }
 
-    let unported = upstream
-      .filter { !claimed.contains($0.name) }
-      .map { "\($0.file):\($0.line) \($0.name)" }
+    var unported: [String] = []
+    for test in upstream {
+      let key = UpstreamTestKey(file: test.file, name: test.name)
+      if claimed[key, default: 0] > 0 {
+        claimed[key, default: 0] -= 1
+      } else {
+        unported.append("\(test.file):\(test.line) \(test.name)")
+      }
+    }
 
     #expect(
       unported.isEmpty,
@@ -71,11 +86,11 @@ struct InstantSQLiteDataParityReconciliationTests {
     }
     let tests = try Self.upstreamTestNames(in: root)
     let files = Set(tests.map(\.file))
-    #expect(files.count == 45, "Expected 45 SQLiteData test files, found \(files.count).")
+    #expect(files.count == 48, "Expected 48 SQLiteData test files, found \(files.count).")
     #expect(
-      tests.count == 261,
+      tests.count == 314,
       """
-      Expected 261 upstream SQLiteData runtime tests, found \(tests.count). \
+      Expected 314 upstream SQLiteData runtime tests, found \(tests.count). \
       Re-run docs/porting/upstream-sqlitedata-test-inventory.md and update pins.
       """
     )
@@ -105,6 +120,11 @@ struct InstantSQLiteDataParityReconciliationTests {
   private struct UpstreamTest {
     var file: String
     var line: Int
+    var name: String
+  }
+
+  private struct UpstreamTestKey: Hashable {
+    var file: String
     var name: String
   }
 
@@ -206,8 +226,22 @@ struct InstantSQLiteDataParityReconciliationTests {
     value
       .components(separatedBy: " / ")
       .flatMap { $0.components(separatedBy: " + ") }
+      .flatMap { $0.components(separatedBy: "; ") }
       .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
       .filter { !$0.isEmpty }
+  }
+
+  private static func sqliteDataTestFiles(_ value: String) -> [String] {
+    let prefix = "upstream/sqlite-data/"
+    return split(value).compactMap { file in
+      let normalized = file.hasPrefix(prefix)
+        ? String(file.dropFirst(prefix.count))
+        : file
+      let isTestTree =
+        normalized.hasPrefix("Tests/")
+        || normalized.range(of: #"Examples/.+Tests/"#, options: .regularExpression) != nil
+      return isTestTree ? normalized : nil
+    }
   }
 
   private func declaredSwiftTestNames() throws -> Set<String> {
@@ -234,7 +268,7 @@ struct InstantSQLiteDataParityReconciliationTests {
     return names
   }
 
-  static let pinnedUpstreamCommit = "0c79d7a5748fc6d9ce7a1ba2b50f31b175305049"
+  static let pinnedUpstreamCommit = "97987458b49f0311717ecfbf7e8ac4c406afbf55"
 
   private static func upstreamRootURL() -> URL? {
     if let override = ProcessInfo.processInfo.environment["SQLITE_DATA_UPSTREAM_CHECKOUT"],

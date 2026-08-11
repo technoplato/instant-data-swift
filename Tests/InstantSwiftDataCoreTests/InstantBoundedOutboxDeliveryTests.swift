@@ -191,6 +191,12 @@ struct InstantBoundedOutboxDeliveryTests {
     expectNoDifference(explicitRequestCount, 0)
 
     _ = try await runtime.connect()
+    try await instantLiveWithTimeout(
+      operation: "wait for automatic delivery behind the explicit confirmed barrier",
+      timeoutMilliseconds: 5_000
+    ) {
+      await liveSession.waitForSentMessageCount(3)
+    }
     let sentIDs = await liveSession.sentMessages()
       .filter { $0.op == "transact" }
       .compactMap(\.clientEventID)
@@ -261,88 +267,326 @@ struct InstantBoundedOutboxDeliveryTests {
   }
 
   @Test
-  func cancellationIgnoringExplicitTransportStaysExclusivelyFencedAfterTimeout()
+  func explicitFlushTimeoutAbortsAndExactlyJoinsCancellationIgnoringOperationAndRenewal()
     async throws
   {
     let cacheURL = try temporaryBoundedOutboxCacheURL()
-    let transport = BoundedOutboxSuspendedExplicitTransport()
-    let runtime = try await InstantRuntime.bootstrap(
-      configuration: InstantRuntimeConfiguration(
-        appID: "bounded-outbox-explicit-timeout-fence",
-        persistenceURL: cacheURL,
-        initialAttributes: TodoExample.attributes,
-        mutationTransport: InstantMutationTransportClient { request in
-          await transport.send(request)
-        }
-      )
+    let transport = BoundedOutboxCancellationIgnoringPreparedTransport()
+    let deadlineSleep = BoundedOutboxCancellationIgnoringSleep()
+    let renewalSleep = BoundedOutboxCancellationIgnoringSleep()
+    let completion = BoundedOutboxCompletionProbe()
+    var configuration = InstantRuntimeConfiguration(
+      appID: "bounded-outbox-explicit-timeout-exact-cleanup",
+      persistenceURL: cacheURL,
+      initialAttributes: TodoExample.attributes,
+      mutationTransport: .preparedOperations { request in
+        transport.operation(for: request)
+      }
     )
-    for index in 0..<2 {
-      let mutation = boundedMutation(
-        index: index,
-        prefix: "explicit-timeout-fence",
-        entityID: "one-explicit-timeout-entity"
-      )
-      _ = try await runtime.transact(mutation.transaction, createdAt: mutation.createdAt)
+    configuration.explicitMutationTransportDeadlineSleep = { milliseconds in
+      try await deadlineSleep.sleep(milliseconds: milliseconds)
     }
+    configuration.explicitMutationClaimRenewalSleep = { milliseconds in
+      try await renewalSleep.sleep(milliseconds: milliseconds)
+    }
+    let runtime = try await InstantRuntime.bootstrap(configuration: configuration)
+    let mutation = boundedMutation(
+      index: 0,
+      prefix: "explicit-timeout-exact-cleanup",
+      entityID: "one-explicit-timeout-entity"
+    )
+    _ = try await runtime.transact(mutation.transaction, createdAt: mutation.createdAt)
 
-    let flush = Task { try await runtime.flushPendingMutations(limit: 1) }
-    await transport.waitUntilEntered()
+    let flush = Task {
+      defer { completion.record() }
+      return try await runtime.flushPendingMutations(limit: 1)
+    }
+    defer {
+      flush.cancel()
+      transport.releaseWithServerAcceptance()
+      deadlineSleep.release()
+      renewalSleep.release()
+    }
+    try await instantLiveWithTimeout(
+      operation: "wait for the prepared explicit mutation operation and its owned timers",
+      timeoutMilliseconds: 5_000
+    ) {
+      while !transport.didEnter || !deadlineSleep.didEnter || !renewalSleep.didEnter {
+        try Task.checkCancellation()
+        await Task.yield()
+      }
+    }
+    expectNoDifference(transport.mutationIDs, [mutation.id])
+    expectNoDifference(
+      deadlineSleep.requestedMilliseconds,
+      UInt64(InstantAutomaticOutboxClaimLimits.claimTimeoutMilliseconds)
+    )
+
+    deadlineSleep.release()
+    try await instantLiveWithTimeout(
+      operation: "wait for explicit mutation timeout to abort transport work",
+      timeoutMilliseconds: 5_000
+    ) {
+      while transport.abortCount != 1 {
+        try Task.checkCancellation()
+        await Task.yield()
+      }
+    }
+    expectNoDifference(
+      renewalSleep.cancellationCount,
+      0,
+      "The durable claim keeps renewing until the exact late response is dispositioned."
+    )
+    expectNoDifference(
+      deadlineSleep.cancellationCount,
+      0,
+      "The five-second deadline wins naturally; it is not modeled as caller cancellation."
+    )
+    expectNoDifference(completion.didComplete, false)
+    #expect(!(await runtime.exactCloseBackgroundTasksAreIdleForTesting()))
+
+    transport.releaseWithServerAcceptance()
+    try await instantLiveWithTimeout(
+      operation: "wait for cancellation-ignoring explicit transport to return",
+      timeoutMilliseconds: 5_000
+    ) {
+      while transport.runCompletionCount != 1 {
+        try Task.checkCancellation()
+        await Task.yield()
+      }
+    }
+    try await instantLiveWithTimeout(
+      operation: "wait for late authoritative acceptance disposition before timeout returns",
+      timeoutMilliseconds: 5_000
+    ) {
+      while try await runtime.persistence.countOutboxMutations(status: .confirmed) != 1 {
+        try Task.checkCancellation()
+        await Task.yield()
+      }
+    }
+    expectNoDifference(
+      completion.didComplete,
+      false,
+      "A timeout cannot return while the exact renewal tail still owns the flush graph."
+    )
+    let outboxRevisionAfterDisposition = try await runtime.persistence.currentOutboxRevision()
+    let persistedAfterDisposition = try #require(
+      try await runtime.persistence.loadOutboxMutations(
+        statuses: [.pending, .confirmed, .failed],
+        ids: [mutation.id],
+        limit: 1,
+        expectedOutboxRevision: outboxRevisionAfterDisposition
+      )?.first
+    )
+    expectNoDifference(persistedAfterDisposition.status, .confirmed)
+    expectNoDifference(persistedAfterDisposition.confirmationSource, .serverTransport)
+    #expect(persistedAfterDisposition.provesServerAcceptance)
+    try await instantLiveWithTimeout(
+      operation: "wait for renewal cancellation after authoritative timeout disposition",
+      timeoutMilliseconds: 5_000
+    ) {
+      while renewalSleep.cancellationCount != 1 {
+        try Task.checkCancellation()
+        await Task.yield()
+      }
+    }
+    expectNoDifference(completion.didComplete, false)
+
+    renewalSleep.release()
     do {
-      _ = try await flush.value
+      _ = try await instantLiveWithTimeout(
+        operation: "wait for explicit timeout to join all exact owned work",
+        timeoutMilliseconds: 5_000
+      ) {
+        try await flush.value
+      }
       Issue.record("Expected the explicit mutation transport to time out at five seconds.")
     } catch let error as InstantError {
       expectNoDifference(error.operation, "flush Instant mutation transport")
       #expect(error.message.contains("5000ms"))
     }
 
-    let competingStore = try SQLitePersistenceStore(fileURL: cacheURL)
-    try await competingStore.bootstrap()
-    let competingClaim = try await competingStore.claimAutomaticOutboxDeliveryWindow(
-      InstantAutomaticOutboxClaimRequest(
-        claimantID: "competing-runtime",
-        claimToken: "competing-token",
-        now: InstantTimestamp(milliseconds: Int64(Date().timeIntervalSince1970 * 1_000))
-      )
-    )
+    expectNoDifference(completion.didComplete, true)
+    expectNoDifference(transport.abortCount, 1, "Prepared-operation abort is idempotent.")
+    #expect(await runtime.exactCloseBackgroundTasksAreIdleForTesting())
+    let pendingCount = try await runtime.persistence.countOutboxMutations(status: .pending)
+    expectNoDifference(pendingCount, 0)
+    let confirmedCount = try await runtime.persistence.countOutboxMutations(status: .confirmed)
+    expectNoDifference(confirmedCount, 1)
+    let outboxRevisionAfterTimeoutReturn = try await runtime.persistence.currentOutboxRevision()
     expectNoDifference(
-      competingClaim.mutations,
-      [],
-      "The retained explicit send renews its exclusive durable lane after the caller times out."
+      outboxRevisionAfterTimeoutReturn,
+      outboxRevisionAfterDisposition,
+      "The timeout error returns only after authoritative acceptance is durably complete."
     )
-    do {
-      _ = try await runtime.flushPendingMutations(limit: 1)
-      Issue.record("Expected a second explicit flush to reject the retained send.")
-    } catch let error as InstantError {
-      expectNoDifference(error.operation, "claim explicit outbox flush")
-    }
+  }
 
-    await transport.resumeServerAccepted()
+  @Test
+  func closeConnectionAbortsAndExactlyJoinsActiveExplicitFlushBeforeReturning()
+    async throws
+  {
+    let cacheURL = try temporaryBoundedOutboxCacheURL()
+    let transport = BoundedOutboxCancellationIgnoringPreparedTransport()
+    let deadlineSleep = BoundedOutboxCancellationIgnoringSleep()
+    let renewalSleep = BoundedOutboxCancellationIgnoringSleep()
+    let flushCompletion = BoundedOutboxCompletionProbe()
+    let closeCompletion = BoundedOutboxCompletionProbe()
+    var configuration = InstantRuntimeConfiguration(
+      appID: "bounded-outbox-explicit-close-exact-cleanup",
+      persistenceURL: cacheURL,
+      initialAttributes: TodoExample.attributes,
+      mutationTransport: .preparedOperations { request in
+        transport.operation(for: request)
+      }
+    )
+    configuration.explicitMutationTransportDeadlineSleep = { milliseconds in
+      try await deadlineSleep.sleep(milliseconds: milliseconds)
+    }
+    configuration.explicitMutationClaimRenewalSleep = { milliseconds in
+      try await renewalSleep.sleep(milliseconds: milliseconds)
+    }
+    let runtime = try await InstantRuntime.bootstrap(configuration: configuration)
+    let mutation = boundedMutation(index: 0, prefix: "explicit-close-exact-cleanup")
+    _ = try await runtime.transact(mutation.transaction, createdAt: mutation.createdAt)
+
+    let flush = Task {
+      defer { flushCompletion.record() }
+      return try await runtime.flushPendingMutations(limit: 1)
+    }
+    defer {
+      flush.cancel()
+      transport.releaseWithServerAcceptance()
+      deadlineSleep.release()
+      renewalSleep.release()
+    }
     try await instantLiveWithTimeout(
-      operation: "wait for fenced late explicit response disposition",
+      operation: "wait for active explicit flush before close",
       timeoutMilliseconds: 5_000
     ) {
-      while true {
-        let pendingCount = try await runtime.persistence.countOutboxMutations(status: .pending)
-        let headClaim = try await runtime.persistence.outboxDeliveryClaimForTesting(
-          id: "tx-explicit-timeout-fence-00000"
-        )
-        if pendingCount == 1, headClaim?.state == .ready { break }
+      while !transport.didEnter || !deadlineSleep.didEnter || !renewalSleep.didEnter {
+        try Task.checkCancellation()
         await Task.yield()
       }
     }
-    let successorClaim = try await competingStore.claimAutomaticOutboxDeliveryWindow(
-      InstantAutomaticOutboxClaimRequest(
-        claimantID: "competing-runtime",
-        claimToken: "competing-token-after-response",
-        now: InstantTimestamp(milliseconds: Int64(Date().timeIntervalSince1970 * 1_000))
-      )
-    )
+    expectNoDifference(transport.mutationIDs, [mutation.id])
+    let close = Task {
+      let status = try await runtime.closeConnection()
+      closeCompletion.record()
+      return status
+    }
+    defer { close.cancel() }
+    try await instantLiveWithTimeout(
+      operation: "wait for close to abort explicit transport and deadline work",
+      timeoutMilliseconds: 5_000
+    ) {
+      while transport.abortCount != 1
+        || deadlineSleep.cancellationCount != 1
+      {
+        try Task.checkCancellation()
+        await Task.yield()
+      }
+    }
     expectNoDifference(
-      successorClaim.mutations.map(\.id),
-      ["tx-explicit-timeout-fence-00001"]
+      renewalSleep.cancellationCount,
+      0,
+      "Close keeps the durable claim renewed until the exact late response is dispositioned."
     )
-    _ = try await competingStore.releaseAutomaticOutboxClaim(
-      token: "competing-token-after-response"
+    let stateWhileAuthoritativeResponseIsPending = try await runtime.connectionStatus().state
+    #expect(stateWhileAuthoritativeResponseIsPending != .closed)
+    expectNoDifference(closeCompletion.didComplete, false)
+    expectNoDifference(flushCompletion.didComplete, false)
+    #expect(!(await runtime.exactCloseBackgroundTasksAreIdleForTesting()))
+
+    transport.releaseWithServerAcceptance()
+    try await instantLiveWithTimeout(
+      operation: "wait for aborted explicit transport tail",
+      timeoutMilliseconds: 5_000
+    ) {
+      while transport.runCompletionCount != 1 {
+        try Task.checkCancellation()
+        await Task.yield()
+      }
+    }
+    try await instantLiveWithTimeout(
+      operation: "wait for authoritative acceptance disposition before close publishes closed",
+      timeoutMilliseconds: 5_000
+    ) {
+      while try await runtime.persistence.countOutboxMutations(status: .confirmed) != 1 {
+        try Task.checkCancellation()
+        await Task.yield()
+      }
+    }
+    expectNoDifference(closeCompletion.didComplete, false)
+    expectNoDifference(flushCompletion.didComplete, false)
+    let stateAfterDispositionBeforeCleanupJoin = try await runtime.connectionStatus().state
+    #expect(stateAfterDispositionBeforeCleanupJoin != .closed)
+    let outboxRevisionAfterDisposition = try await runtime.persistence.currentOutboxRevision()
+    let persistedAfterDisposition = try #require(
+      try await runtime.persistence.loadOutboxMutations(
+        statuses: [.pending, .confirmed, .failed],
+        ids: [mutation.id],
+        limit: 1,
+        expectedOutboxRevision: outboxRevisionAfterDisposition
+      )?.first
+    )
+    expectNoDifference(persistedAfterDisposition.status, .confirmed)
+    expectNoDifference(persistedAfterDisposition.confirmationSource, .serverTransport)
+    #expect(persistedAfterDisposition.provesServerAcceptance)
+    try await instantLiveWithTimeout(
+      operation: "wait for renewal cancellation after authoritative close disposition",
+      timeoutMilliseconds: 5_000
+    ) {
+      while renewalSleep.cancellationCount != 1 {
+        try Task.checkCancellation()
+        await Task.yield()
+      }
+    }
+    expectNoDifference(closeCompletion.didComplete, false)
+    expectNoDifference(flushCompletion.didComplete, false)
+
+    deadlineSleep.release()
+    renewalSleep.release()
+    let closedStatus = try await instantLiveWithTimeout(
+      operation: "wait for close to join active explicit flush",
+      timeoutMilliseconds: 5_000
+    ) {
+      try await close.value
+    }
+    expectNoDifference(closedStatus.state, .closed)
+    expectNoDifference(closeCompletion.didComplete, true)
+    #expect(await runtime.exactCloseBackgroundTasksAreIdleForTesting())
+    let pendingCountAtCloseReturn = try await runtime.persistence.countOutboxMutations(
+      status: .pending
+    )
+    expectNoDifference(pendingCountAtCloseReturn, 0)
+    let confirmedCountAtCloseReturn = try await runtime.persistence.countOutboxMutations(
+      status: .confirmed
+    )
+    expectNoDifference(confirmedCountAtCloseReturn, 1)
+    let outboxRevisionAtCloseReturn = try await runtime.persistence.currentOutboxRevision()
+    expectNoDifference(
+      outboxRevisionAtCloseReturn,
+      outboxRevisionAfterDisposition,
+      "Close publishes closed only after the exact accepted response is durable."
+    )
+
+    do {
+      _ = try await instantLiveWithTimeout(
+        operation: "wait for close-cancelled explicit flush caller",
+        timeoutMilliseconds: 5_000
+      ) {
+        try await flush.value
+      }
+    } catch {}
+
+    expectNoDifference(flushCompletion.didComplete, true)
+    expectNoDifference(transport.abortCount, 1, "Close abort is idempotent.")
+    #expect(await runtime.exactCloseBackgroundTasksAreIdleForTesting())
+    let outboxRevisionAfterFlushCaller = try await runtime.persistence.currentOutboxRevision()
+    expectNoDifference(
+      outboxRevisionAfterFlushCaller,
+      outboxRevisionAtCloseReturn,
+      "No explicit-flush disposition may write after close returns."
     )
   }
 
@@ -631,7 +875,7 @@ struct InstantBoundedOutboxDeliveryTests {
     let liveSession = LiveReactorParitySession(messages: [
       liveReactorInitOK(attrs: liveReactorTodoServerAttrs)
     ])
-    let runtime = try await connectedRuntime(
+    let runtime = try await disconnectedRuntime(
       appID: "bounded-outbox-legacy-heads",
       cacheURL: cacheURL,
       liveSession: liveSession
@@ -650,7 +894,7 @@ struct InstantBoundedOutboxDeliveryTests {
     await runtime.persistence.resetDecodedOutboxBodyCount()
 
     try await withKnownIssue {
-      runtime.requestLiveMutationDelivery()
+      _ = try await runtime.connect()
       try await instantLiveWithTimeout(
         operation: "wait for pending tail behind legacy accepted heads",
         timeoutMilliseconds: 5_000
@@ -696,7 +940,7 @@ struct InstantBoundedOutboxDeliveryTests {
       (0..<51).map { boundedMutation(index: $0, prefix: "in-flight") }
     )
 
-    runtime.requestLiveMutationDelivery()
+    await runtime.requestLiveMutationDelivery()
     try await instantLiveWithTimeout(
       operation: "wait for initial fifty-mutation window",
       timeoutMilliseconds: 5_000
@@ -767,6 +1011,12 @@ struct InstantBoundedOutboxDeliveryTests {
     await runtime.persistence.resetDecodedOutboxBodyCount()
 
     _ = try await runtime.connect()
+    try await instantLiveWithTimeout(
+      operation: "wait for the fifty-mutation same-key boundary window",
+      timeoutMilliseconds: 5_000
+    ) {
+      await liveSession.waitForSentMessageCount(51)
+    }
     let sent = await liveSession.sentMessages().filter { $0.op == "transact" }
     expectNoDifference(sent.count, 50, boundedOutboxSource)
     let boundary = try #require(sent.last)
@@ -829,6 +1079,12 @@ struct InstantBoundedOutboxDeliveryTests {
     try await runtime.persistence.saveOutbox(durable)
 
     _ = try await runtime.connect()
+    try await instantLiveWithTimeout(
+      operation: "wait for the older write protected by a failed active overlay",
+      timeoutMilliseconds: 5_000
+    ) {
+      await liveSession.waitForSentMessageCount(2)
+    }
     let sent = try #require(
       await liveSession.sentMessages().first {
         $0.op == "transact" && $0.clientEventID == older.id
@@ -875,6 +1131,12 @@ struct InstantBoundedOutboxDeliveryTests {
 
     try await withKnownIssue {
       _ = try await runtime.connect()
+      try await instantLiveWithTimeout(
+        operation: "wait for delivery after quarantining the corrupt active overlay",
+        timeoutMilliseconds: 5_000
+      ) {
+        await liveSession.waitForSentMessageCount(3)
+      }
     } matching: { issue in
       issue.description.contains("quarantined corrupt durable mutation")
     }
@@ -945,7 +1207,7 @@ struct InstantBoundedOutboxDeliveryTests {
       (0..<30).map { boundedMutation(index: $0, prefix: "step-budget", stepCount: 10) }
     )
 
-    runtime.requestLiveMutationDelivery()
+    await runtime.requestLiveMutationDelivery()
     try await instantLiveWithTimeout(
       operation: "wait for weighted automatic delivery window",
       timeoutMilliseconds: 5_000
@@ -986,7 +1248,7 @@ struct InstantBoundedOutboxDeliveryTests {
     let liveSession = LiveReactorParitySession(messages: [
       liveReactorInitOK(attrs: liveReactorTodoServerAttrs)
     ])
-    let runtime = try await connectedRuntime(
+    let runtime = try await disconnectedRuntime(
       appID: "bounded-outbox-hard-step-limit",
       cacheURL: cacheURL,
       liveSession: liveSession
@@ -1002,7 +1264,7 @@ struct InstantBoundedOutboxDeliveryTests {
     await runtime.persistence.resetDecodedOutboxBodyCount()
 
     try await withKnownIssue {
-      runtime.requestLiveMutationDelivery()
+      _ = try await runtime.connect()
       try await instantLiveWithTimeout(
         operation: "wait for tail behind an over-limit step mutation",
         timeoutMilliseconds: 5_000
@@ -1122,7 +1384,7 @@ struct InstantBoundedOutboxDeliveryTests {
     let liveSession = LiveReactorParitySession(messages: [
       liveReactorInitOK(attrs: liveReactorTodoServerAttrs)
     ])
-    let runtime = try await connectedRuntime(
+    let runtime = try await disconnectedRuntime(
       appID: "bounded-outbox-legacy-step-blocker",
       cacheURL: cacheURL,
       liveSession: liveSession
@@ -1147,7 +1409,7 @@ struct InstantBoundedOutboxDeliveryTests {
     )
     await runtime.persistence.invalidateMemoryCache()
 
-    runtime.requestLiveMutationDelivery()
+    _ = try await runtime.connect()
     try await instantLiveWithTimeout(
       operation: "wait for first mutation before legacy step blocker",
       timeoutMilliseconds: 5_000
@@ -1209,6 +1471,12 @@ struct InstantBoundedOutboxDeliveryTests {
     )
 
     _ = try await staleRuntime.connect()
+    try await instantLiveWithTimeout(
+      operation: "wait for the revision-qualified durable visible write",
+      timeoutMilliseconds: 5_000
+    ) {
+      await liveSession.waitForSentMessageCount(2)
+    }
     let sent = try #require(
       await liveSession.sentMessages().first { $0.op == "transact" }
     )
@@ -1240,7 +1508,7 @@ struct InstantBoundedOutboxDeliveryTests {
     )
     await runtime.persistence.resetDecodedOutboxBodyCount()
 
-    runtime.requestLiveMutationDelivery()
+    await runtime.requestLiveMutationDelivery()
     try await instantLiveWithTimeout(
       operation: "wait for byte-bounded automatic delivery",
       timeoutMilliseconds: 5_000
@@ -1298,7 +1566,7 @@ struct InstantBoundedOutboxDeliveryTests {
     await runtime.persistence.resetDecodedOutboxBodyCount()
 
     try await withKnownIssue {
-      runtime.requestLiveMutationDelivery()
+      await runtime.requestLiveMutationDelivery()
       try await instantLiveWithTimeout(
         operation: "wait for small tail behind oversized head",
         timeoutMilliseconds: 5_000
@@ -1331,7 +1599,7 @@ struct InstantBoundedOutboxDeliveryTests {
     let liveSession = LiveReactorParitySession(messages: [
       liveReactorInitOK(attrs: liveReactorTodoServerAttrs)
     ])
-    let runtime = try await connectedRuntime(
+    let runtime = try await disconnectedRuntime(
       appID: "bounded-outbox-corrupt-head-window",
       cacheURL: cacheURL,
       liveSession: liveSession
@@ -1347,7 +1615,7 @@ struct InstantBoundedOutboxDeliveryTests {
     await runtime.persistence.resetDecodedOutboxBodyCount()
 
     try await withKnownIssue {
-      runtime.requestLiveMutationDelivery()
+      _ = try await runtime.connect()
       try await instantLiveWithTimeout(
         operation: "wait for tail behind corrupt delivery window",
         timeoutMilliseconds: 5_000
@@ -1446,7 +1714,7 @@ struct InstantBoundedOutboxDeliveryTests {
     let liveSession = LiveReactorParitySession(messages: [
       liveReactorInitOK(attrs: liveReactorTodoServerAttrs)
     ])
-    let runtime = try await connectedRuntime(
+    let runtime = try await disconnectedRuntime(
       appID: "bounded-outbox-mixed-corrupt-window",
       cacheURL: cacheURL,
       liveSession: liveSession
@@ -1461,7 +1729,7 @@ struct InstantBoundedOutboxDeliveryTests {
     await runtime.persistence.invalidateMemoryCache()
 
     try await withKnownIssue {
-      runtime.requestLiveMutationDelivery()
+      _ = try await runtime.connect()
       try await instantLiveWithTimeout(
         operation: "wait for mixed corrupt-window refill",
         timeoutMilliseconds: 5_000
@@ -1532,14 +1800,31 @@ struct InstantBoundedOutboxDeliveryTests {
       invalid + [boundedMutation(index: 50, prefix: "encoding-head-window")]
     )
     await runtime.persistence.resetDecodedOutboxBodyCount()
+    await runtime.persistence.resetFailedMutationRetryMetricsForTesting()
+    let encodingQuarantineDiagnostics = BoundedOutboxDiagnosticCounter()
+    let diagnosticsToken = InstantDiagnostics.shared.addHandler { entry in
+      guard entry.event == "outbox.mutation.encoding-quarantined",
+        entry.metadata["mutationID"]?.hasPrefix("tx-encoding-head-window-") == true
+      else { return }
+      encodingQuarantineDiagnostics.increment()
+    }
+    defer { InstantDiagnostics.shared.removeHandler(diagnosticsToken) }
 
     try await withKnownIssue {
-      runtime.requestLiveMutationDelivery()
+      await runtime.requestLiveMutationDelivery()
       try await instantLiveWithTimeout(
         operation: "wait for tail behind encoding-failure window",
         timeoutMilliseconds: 5_000
       ) {
         await liveSession.waitForSentMessageCount(2)
+      }
+      try await instantLiveWithTimeout(
+        operation: "wait for the encoding-failure delivery pump to become idle",
+        timeoutMilliseconds: 5_000
+      ) {
+        while !(await runtime.automaticMutationPumpIsIdleForTesting()) {
+          await Task.yield()
+        }
       }
     } matching: { issue in
       issue.description.contains("quarantined")
@@ -1553,9 +1838,15 @@ struct InstantBoundedOutboxDeliveryTests {
     let decodedBodyCount = await runtime.persistence.currentDecodedOutboxBodyCount()
     let failedMutationCount = await runtime.failedMutations().count
     expectNoDifference(failedMutationCount, 50)
+    let quarantineDiagnosticCount = encodingQuarantineDiagnostics.value
+    expectNoDifference(quarantineDiagnosticCount, 50)
+    let retryMetrics = await runtime.persistence.failedMutationRetryMetricsForTesting()
+    expectNoDifference(retryMetrics.completedWindowCount, 0)
+    expectNoDifference(retryMetrics.totalCandidateRowCount, 0)
+    expectNoDifference(retryMetrics.totalDecodedBodyCount, 0)
     let maximumWindowBodyCount =
       await runtime.persistence.maximumAutomaticOutboxWindowBodyCountForTesting()
-    #expect(decodedBodyCount <= 101)
+    expectNoDifference(decodedBodyCount, 101)
     #expect(maximumWindowBodyCount <= InstantAutomaticOutboxClaimLimits.maximumBodyDecodeCount)
     _ = try? await runtime.closeConnection()
   }
@@ -1580,7 +1871,7 @@ struct InstantBoundedOutboxDeliveryTests {
     try await runtime.persistence.saveOutbox(mutations)
 
     try await withKnownIssue {
-      runtime.requestLiveMutationDelivery()
+      await runtime.requestLiveMutationDelivery()
       try await instantLiveWithTimeout(
         operation: "wait for mixed encoding-window refill",
         timeoutMilliseconds: 5_000
@@ -1663,14 +1954,24 @@ struct InstantBoundedOutboxDeliveryTests {
       liveTransport: liveSession.transport
     )
     configuration.autoConnectLiveTransport = false
-    configuration.liveReconnectSleep = { milliseconds in
+    configuration.liveMutationDeadlineSleep = { milliseconds in
       try await deadlineSleep.sleep(milliseconds: milliseconds)
     }
     let runtime = try await InstantRuntime.bootstrap(configuration: configuration)
     try await withKnownIssue {
       _ = try await runtime.connect()
-      await liveSession.waitForSentMessageCount(2)
-      await deadlineSleep.waitForFirstDelay()
+      try await instantLiveWithTimeout(
+        operation: "wait for the initial deadline-bound mutation delivery",
+        timeoutMilliseconds: 5_000
+      ) {
+        await liveSession.waitForSentMessageCount(2)
+      }
+      try await instantLiveWithTimeout(
+        operation: "wait for the durable mutation deadline schedule",
+        timeoutMilliseconds: 5_000
+      ) {
+        await deadlineSleep.waitForFirstDelay()
+      }
       let firstDelay = await deadlineSleep.firstDelay()
       expectNoDifference(firstDelay, 5_000)
       clock.advance(by: 5_000)
@@ -1810,6 +2111,134 @@ struct InstantBoundedOutboxDeliveryTests {
   }
 
   @Test
+  func unlimitedExplicitFlushOfTenThousandRowsAdmitsOneFiftyMutationWindow()
+    async throws
+  {
+    let cacheURL = try temporaryBoundedOutboxCacheURL()
+    try await seedBoundedOutbox(
+      (0..<10_000).map {
+        boundedMutation(index: $0, prefix: "unlimited-flush-ten-thousand")
+      },
+      cacheURL: cacheURL
+    )
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "bounded-outbox-unlimited-flush-ten-thousand",
+        persistenceURL: cacheURL,
+        initialAttributes: TodoExample.attributes
+      )
+    )
+    await runtime.persistence.resetDecodedOutboxBodyCount()
+
+    let result = try await runtime.flushPendingMutations()
+
+    expectNoDifference(
+      result.request.mutations.map(\.mutationID),
+      (0..<InstantAutomaticOutboxClaimLimits.maximumMutationCount).map {
+        String(format: "tx-unlimited-flush-ten-thousand-%05d", $0)
+      }
+    )
+    expectNoDifference(result.pendingMutationCount, 9_950)
+    expectNoDifference(result.mutationCount, 10_000)
+    let decodedBodyCount = await runtime.persistence.currentDecodedOutboxBodyCount()
+    expectNoDifference(
+      decodedBodyCount,
+      InstantAutomaticOutboxClaimLimits.maximumMutationCount,
+      "The exact owned window carries each selected body through disposition instead of decoding it twice or hydrating the tail."
+    )
+    let firstTailClaim = try await runtime.persistence.outboxDeliveryClaimForTesting(
+      id: "tx-unlimited-flush-ten-thousand-00050"
+    )
+    let finalTailClaim = try await runtime.persistence.outboxDeliveryClaimForTesting(
+      id: "tx-unlimited-flush-ten-thousand-09999"
+    )
+    expectNoDifference(firstTailClaim?.state, .ready)
+    expectNoDifference(firstTailClaim?.deliveryStarted, false)
+    expectNoDifference(finalTailClaim?.state, .ready)
+    expectNoDifference(finalTailClaim?.deliveryStarted, false)
+    let residentBarrier = await runtime.mutationDeliveryBarrierMutations()
+    expectNoDifference(residentBarrier, [])
+  }
+
+  @Test
+  func unlimitedExplicitFlushHonorsTheTwoHundredFiftySixStepWindow()
+    async throws
+  {
+    let cacheURL = try temporaryBoundedOutboxCacheURL()
+    try await seedBoundedOutbox(
+      (0..<30).map {
+        boundedMutation(index: $0, prefix: "explicit-step-window", stepCount: 10)
+      },
+      cacheURL: cacheURL
+    )
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "bounded-outbox-explicit-step-window",
+        persistenceURL: cacheURL,
+        initialAttributes: TodoExample.attributes
+      )
+    )
+    await runtime.persistence.resetDecodedOutboxBodyCount()
+
+    let result = try await runtime.flushPendingMutations()
+
+    expectNoDifference(result.request.mutations.count, 25)
+    let transportStepCount = result.request.mutations.reduce(into: 0) { count, mutation in
+      count += mutation.txSteps.count
+    }
+    expectNoDifference(transportStepCount, 250)
+    #expect(transportStepCount <= InstantAutomaticOutboxClaimLimits.maximumStepCount)
+    let decodedBodyCount = await runtime.persistence.currentDecodedOutboxBodyCount()
+    expectNoDifference(decodedBodyCount, 25)
+    let firstTailClaim = try await runtime.persistence.outboxDeliveryClaimForTesting(
+      id: "tx-explicit-step-window-00025"
+    )
+    expectNoDifference(firstTailClaim?.state, .ready)
+    expectNoDifference(firstTailClaim?.deliveryStarted, false)
+  }
+
+  @Test
+  func unlimitedExplicitFlushHonorsTheEightMiBDurableBodyWindowBeforeDecode()
+    async throws
+  {
+    let cacheURL = try temporaryBoundedOutboxCacheURL()
+    try await seedBoundedOutbox(
+      (0..<3).map {
+        boundedLargeMutation(
+          index: $0,
+          prefix: "explicit-byte-window",
+          valueByteCount: 5 * 1_024 * 1_024
+        )
+      },
+      cacheURL: cacheURL
+    )
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "bounded-outbox-explicit-byte-window",
+        persistenceURL: cacheURL,
+        initialAttributes: TodoExample.attributes
+      )
+    )
+    await runtime.persistence.resetDecodedOutboxBodyCount()
+
+    let result = try await runtime.flushPendingMutations()
+
+    expectNoDifference(
+      result.request.mutations.map(\.mutationID),
+      ["tx-explicit-byte-window-00000"]
+    )
+    let decodedBodyCount = await runtime.persistence.currentDecodedOutboxBodyCount()
+    expectNoDifference(decodedBodyCount, 1)
+    let decodedBodyBytes = await runtime.persistence.currentDecodedOutboxBodyByteCount()
+    #expect(decodedBodyBytes <= InstantAutomaticOutboxClaimLimits.maximumEncodedBodyBytes)
+    let firstTailClaim = try await runtime.persistence.outboxDeliveryClaimForTesting(
+      id: "tx-explicit-byte-window-00001"
+    )
+    expectNoDifference(firstTailClaim?.state, .ready)
+    expectNoDifference(firstTailClaim?.deliveryStarted, false)
+  }
+
+  @Test
   func limitedExplicitFlushOfTenThousandRowsDecodesAndDisposesOnlySelectedBody()
     async throws
   {
@@ -1836,15 +2265,129 @@ struct InstantBoundedOutboxDeliveryTests {
     let decodedBodyCount = await runtime.persistence.currentDecodedOutboxBodyCount()
     expectNoDifference(
       decodedBodyCount,
-      2,
-      "Explicit flush decodes only the selected row for transport and its current post-I/O body for the public result; it never hydrates the queue."
+      1,
+      "A smaller caller limit still owns and decodes exactly one body through transport and disposition."
     )
     let residentBarrier = await runtime.mutationDeliveryBarrierMutations()
     expectNoDifference(residentBarrier, [])
   }
+
+  @Test
+  func repeatedExplicitFailureOfTenThousandRowsKeepsResidentActorEmpty()
+    async throws
+  {
+    let cacheURL = try temporaryBoundedOutboxCacheURL()
+    var mutations = (0..<10_000).map {
+      boundedMutation(index: $0, prefix: "failed-flush-ten-thousand")
+    }
+    let targetTriples = try (0..<2).map { index in
+      let triple = try #require(
+        mutations[index].transaction.operations.compactMap { operation -> InstantTriple? in
+          guard case let .insert(triple) = operation else { return nil }
+          return triple
+        }.first
+      )
+      mutations[index].rollbackTransaction = InstantStoreTransaction(
+        id: "rollback-\(mutations[index].id)",
+        operations: [.deleteEntity(triple.entityID)]
+      )
+      return triple
+    }
+    let persistence = try SQLitePersistenceStore(fileURL: cacheURL)
+    try await persistence.bootstrap()
+    try await persistence.saveStoreSnapshot(
+      InstantStoreSnapshot(
+        attributes: TodoExample.attributes,
+        triples: targetTriples
+      )
+    )
+    try await persistence.saveOutbox(mutations)
+    await persistence.simulateUnexpectedConnectionCloseForTesting()
+    let corruptTailID = "tx-failed-flush-ten-thousand-09999"
+    try corruptBoundedOutboxBody(id: corruptTailID, cacheURL: cacheURL)
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "bounded-outbox-failed-flush-ten-thousand",
+        persistenceURL: cacheURL,
+        initialAttributes: TodoExample.attributes,
+        mutationTransport: InstantMutationTransportClient { request in
+          InstantMutationTransportResponse(
+            results: request.mutations.map {
+              InstantMutationTransportResult(
+                mutationID: $0.mutationID,
+                outcome: .failed,
+                message: "permission rejected"
+              )
+            }
+          )
+        }
+      )
+    )
+    await runtime.persistence.resetDecodedOutboxBodyCount()
+
+    let result = try await runtime.flushPendingMutations(limit: 1)
+
+    expectNoDifference(result.failed.map(\.id), ["tx-failed-flush-ten-thousand-00000"])
+    expectNoDifference(result.pendingMutationCount, 9_999)
+    expectNoDifference(result.mutationCount, 10_000)
+    let decodedBodyCount = await runtime.persistence.currentDecodedOutboxBodyCount()
+    expectNoDifference(
+      decodedBodyCount,
+      2,
+      "Explicit rejection decodes the selected transport body and only its affected terminal component."
+    )
+    let quarantinedTailByteCount = try await runtime.persistence
+      .quarantinedOutboxBodyByteCountForTesting(id: corruptTailID)
+    expectNoDifference(quarantinedTailByteCount, 0)
+    let tailDeliveryStarted = try await runtime.persistence.outboxDeliveryStartedForTesting(
+      id: corruptTailID
+    )
+    expectNoDifference(tailDeliveryStarted, false)
+    let residentBarrierAfterFirstFailure = await runtime.mutationDeliveryBarrierMutations()
+    expectNoDifference(
+      residentBarrierAfterFirstFailure,
+      [],
+      "A terminal failure removes its target shell and must not append it back to an empty resident actor."
+    )
+
+    await runtime.persistence.resetDecodedOutboxBodyCount()
+    let repeated = try await runtime.flushPendingMutations(limit: 1)
+
+    expectNoDifference(repeated.failed.map(\.id), ["tx-failed-flush-ten-thousand-00001"])
+    expectNoDifference(repeated.pendingMutationCount, 9_998)
+    expectNoDifference(repeated.mutationCount, 10_000)
+    let repeatedDecodedBodyCount = await runtime.persistence.currentDecodedOutboxBodyCount()
+    expectNoDifference(repeatedDecodedBodyCount, 2)
+    let residentBarrierAfterSecondFailure = await runtime.mutationDeliveryBarrierMutations()
+    expectNoDifference(
+      residentBarrierAfterSecondFailure,
+      [],
+      "Repeated terminal failures must keep the body-free resident actor empty."
+    )
+  }
 }
 
 private func connectedRuntime(
+  appID: String,
+  cacheURL: URL,
+  liveSession: LiveReactorParitySession
+) async throws -> InstantRuntime {
+  let runtime = try await disconnectedRuntime(
+    appID: appID,
+    cacheURL: cacheURL,
+    liveSession: liveSession
+  )
+  _ = try await runtime.connect()
+  let sentOps = await liveSession.sentMessages().map(\.op)
+  expectNoDifference(
+    sentOps,
+    ["init"],
+    boundedOutboxSource
+  )
+  return runtime
+}
+
+private func disconnectedRuntime(
   appID: String,
   cacheURL: URL,
   liveSession: LiveReactorParitySession
@@ -1856,15 +2399,7 @@ private func connectedRuntime(
     liveTransport: liveSession.transport
   )
   configuration.autoConnectLiveTransport = false
-  let runtime = try await InstantRuntime.bootstrap(configuration: configuration)
-  _ = try await runtime.connect()
-  let sentOps = await liveSession.sentMessages().map(\.op)
-  expectNoDifference(
-    sentOps,
-    ["init"],
-    boundedOutboxSource
-  )
-  return runtime
+  return try await InstantRuntime.bootstrap(configuration: configuration)
 }
 
 private func boundedMutation(
@@ -1998,8 +2533,17 @@ private func restorePreBoundedDeliveryOutboxSchema(cacheURL: URL) throws {
     FROM instant_outbox;
     DROP TABLE instant_outbox;
     ALTER TABLE instant_outbox_pre_0012 RENAME TO instant_outbox;
+    -- The effect-entity table stays at its 0015 shape, including created_at_ms.
+    -- Replay only migrations whose outbox columns or indexes were removed.
     DELETE FROM instant_schema_migrations
-    WHERE name = '0012_bounded_outbox_delivery';
+    WHERE name IN (
+      '0012_bounded_outbox_delivery',
+      '0013_outbox_supersession_lifecycle',
+      '0014_outbox_optimistic_effects',
+      '0016_failed_mutation_retry_window',
+      '0017_bounded_server_apply',
+      '0018_schema_failure_attribute_revision'
+    );
     PRAGMA foreign_keys = ON;
     """,
     cacheURL: cacheURL
@@ -2085,25 +2629,56 @@ private final class BoundedOutboxLockedClock: @unchecked Sendable {
   }
 }
 
+private final class BoundedOutboxDiagnosticCounter: @unchecked Sendable {
+  private let lock = NSLock()
+  private var count = 0
+
+  func increment() {
+    lock.withLock { count += 1 }
+  }
+
+  var value: Int {
+    lock.withLock { count }
+  }
+}
+
 private actor BoundedOutboxControlledSleep {
   private var recordedFirstDelay: UInt64?
   private var firstDelayContinuation: CheckedContinuation<Void, Error>?
-  private var delayWaiters: [CheckedContinuation<Void, Never>] = []
+  private var delayWaiters: [UUID: CheckedContinuation<Void, Never>] = [:]
 
   func sleep(milliseconds: UInt64) async throws {
     guard recordedFirstDelay == nil else { throw CancellationError() }
     recordedFirstDelay = milliseconds
-    for waiter in delayWaiters { waiter.resume() }
+    for waiter in delayWaiters.values { waiter.resume() }
     delayWaiters.removeAll()
-    try await withCheckedThrowingContinuation { continuation in
-      firstDelayContinuation = continuation
+    try await withTaskCancellationHandler {
+      try await withCheckedThrowingContinuation {
+        (continuation: CheckedContinuation<Void, Error>) in
+        if Task.isCancelled {
+          continuation.resume(throwing: CancellationError())
+        } else {
+          firstDelayContinuation = continuation
+        }
+      }
+    } onCancel: {
+      Task { await self.cancelFirstDelay() }
     }
   }
 
   func waitForFirstDelay() async {
     guard recordedFirstDelay == nil else { return }
-    await withCheckedContinuation { continuation in
-      delayWaiters.append(continuation)
+    let waiterID = UUID()
+    await withTaskCancellationHandler {
+      await withCheckedContinuation { continuation in
+        if Task.isCancelled {
+          continuation.resume()
+        } else {
+          delayWaiters[waiterID] = continuation
+        }
+      }
+    } onCancel: {
+      Task { await self.cancelDelayWaiter(id: waiterID) }
     }
   }
 
@@ -2114,6 +2689,170 @@ private actor BoundedOutboxControlledSleep {
   func resumeFirstDelay() {
     firstDelayContinuation?.resume()
     firstDelayContinuation = nil
+  }
+
+  private func cancelFirstDelay() {
+    firstDelayContinuation?.resume(throwing: CancellationError())
+    firstDelayContinuation = nil
+  }
+
+  private func cancelDelayWaiter(id: UUID) {
+    delayWaiters.removeValue(forKey: id)?.resume()
+  }
+}
+
+// SAFETY: `lock` protects the completion bit shared by the test task and its
+// observer. The probe deliberately has no asynchronous cleanup of its own.
+private final class BoundedOutboxCompletionProbe: @unchecked Sendable {
+  private let lock = NSLock()
+  private var completed = false
+
+  var didComplete: Bool {
+    lock.withLock { completed }
+  }
+
+  func record() {
+    lock.withLock { completed = true }
+  }
+}
+
+// SAFETY: `lock` protects the one-shot continuation and every observation.
+// Cancellation is recorded but intentionally does not resume the continuation,
+// allowing tests to prove exact joins rather than cooperative cancellation.
+private final class BoundedOutboxCancellationIgnoringSleep: @unchecked Sendable {
+  private let lock = NSLock()
+  private var entered = false
+  private var milliseconds: UInt64?
+  private var cancellations = 0
+  private var isReleased = false
+  private var continuation: CheckedContinuation<Void, Never>?
+
+  var didEnter: Bool {
+    lock.withLock { entered }
+  }
+
+  var requestedMilliseconds: UInt64? {
+    lock.withLock { milliseconds }
+  }
+
+  var cancellationCount: Int {
+    lock.withLock { cancellations }
+  }
+
+  func sleep(milliseconds: UInt64) async throws {
+    lock.withLock {
+      entered = true
+      self.milliseconds = milliseconds
+    }
+    await withTaskCancellationHandler {
+      await withCheckedContinuation { continuation in
+        let resumeImmediately = lock.withLock { () -> Bool in
+          guard !isReleased else { return true }
+          self.continuation = continuation
+          return false
+        }
+        if resumeImmediately {
+          continuation.resume()
+        }
+      }
+    } onCancel: {
+      self.lock.withLock { self.cancellations += 1 }
+    }
+    try Task.checkCancellation()
+  }
+
+  func release() {
+    let continuation = lock.withLock { () -> CheckedContinuation<Void, Never>? in
+      guard !isReleased else { return nil }
+      isReleased = true
+      defer { self.continuation = nil }
+      return self.continuation
+    }
+    continuation?.resume()
+  }
+}
+
+// SAFETY: `lock` protects the one-shot run continuation, request, and counters.
+// `releaseWithServerAcceptance` deliberately returns a successful response even
+// after synchronous abort, proving that the exact owner durably dispositions an
+// authoritative response before a timeout or close boundary can return.
+private final class BoundedOutboxCancellationIgnoringPreparedTransport:
+  @unchecked Sendable
+{
+  private let lock = NSLock()
+  private var request: InstantMutationTransportRequest?
+  private var entered = false
+  private var isReleased = false
+  private var continuation: CheckedContinuation<Void, Never>?
+  private var aborts = 0
+  private var runCompletions = 0
+
+  var didEnter: Bool {
+    lock.withLock { entered }
+  }
+
+  var abortCount: Int {
+    lock.withLock { aborts }
+  }
+
+  var mutationIDs: [String] {
+    lock.withLock { request?.mutations.map(\.mutationID) ?? [] }
+  }
+
+  var runCompletionCount: Int {
+    lock.withLock { runCompletions }
+  }
+
+  func operation(
+    for request: InstantMutationTransportRequest
+  ) -> InstantMutationTransportOperation {
+    InstantMutationTransportOperation(
+      run: { try await self.run(request) },
+      abort: { self.abort() }
+    )
+  }
+
+  private func run(
+    _ request: InstantMutationTransportRequest
+  ) async throws -> InstantMutationTransportResponse {
+    lock.withLock {
+      self.request = request
+      entered = true
+    }
+    await withCheckedContinuation { continuation in
+      let resumeImmediately = lock.withLock { () -> Bool in
+        guard !isReleased else { return true }
+        self.continuation = continuation
+        return false
+      }
+      if resumeImmediately {
+        continuation.resume()
+      }
+    }
+    lock.withLock { runCompletions += 1 }
+    return InstantMutationTransportResponse(
+      results: request.mutations.map {
+        InstantMutationTransportResult(
+          mutationID: $0.mutationID,
+          outcome: .confirmed,
+          acceptance: .serverAccepted
+        )
+      }
+    )
+  }
+
+  private func abort() {
+    lock.withLock { aborts += 1 }
+  }
+
+  func releaseWithServerAcceptance() {
+    let continuation = lock.withLock { () -> CheckedContinuation<Void, Never>? in
+      guard !isReleased else { return nil }
+      isReleased = true
+      defer { self.continuation = nil }
+      return self.continuation
+    }
+    continuation?.resume()
   }
 }
 

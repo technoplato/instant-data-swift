@@ -8,7 +8,19 @@ struct RecipesContractTests {
   func aggregateDocumentContainsEveryDurableEntityAndUniqueRoom() throws {
     let document = InstantSchemaExamples.recipesDocument
 
-    expectNoDifference(document.entities.map(\.namespace), ["todos", "boards"])
+    expectNoDifference(
+      document.entities.map(\.namespace),
+      [
+        "todos",
+        "boards",
+        "linked_infinite_recordings",
+        "linked_infinite_transcriptions",
+        "linked_infinite_words",
+        "recipe_public_counters",
+        "recipe_account_counters",
+        "recipe_private_notes",
+      ]
+    )
     expectNoDifference(
       document.rooms.map(\.name),
       [
@@ -34,6 +46,28 @@ struct RecipesContractTests {
       [
         .allowAll(namespace: "todos"),
         .allowAll(namespace: "boards"),
+        .allowAll(namespace: "linked_infinite_recordings"),
+        .allowAll(namespace: "linked_infinite_transcriptions"),
+        .allowAll(namespace: "linked_infinite_words"),
+        .allowAll(namespace: "recipe_public_counters"),
+        InstantNamespacePermissions(
+          namespace: "recipe_account_counters",
+          allow: [
+            .view: "auth.id == data.ownerUserID",
+            .create: "auth.id == data.ownerUserID",
+            .update: "auth.id == data.ownerUserID",
+            .delete: "auth.id == data.ownerUserID",
+          ]
+        ),
+        InstantNamespacePermissions(
+          namespace: "recipe_private_notes",
+          allow: [
+            .view: "auth.id == data.ownerUserID",
+            .create: "auth.id == data.ownerUserID",
+            .update: "auth.id == data.ownerUserID",
+            .delete: "auth.id == data.ownerUserID",
+          ]
+        ),
       ]
     )
   }

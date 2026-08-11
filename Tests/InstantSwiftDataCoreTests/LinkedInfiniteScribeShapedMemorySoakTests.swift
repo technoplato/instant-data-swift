@@ -63,24 +63,25 @@ struct LinkedInfiniteScribeShapedMemorySoakTests {
       ])
     }
 
-    let transactionID = runtime.configuration.makeID()
+    let transactionID = "linked-infinite-scribe-soak-seed"
     let now = InstantTimestamp(milliseconds: 1_700_100_000_000)
-    try await runtime.transact(
-      InstantStoreTransaction(
-        id: transactionID,
-        operations: ScribeProductionShapedSchema.soakOperations(
-          profile: profile,
-          recordingIDs: recordingIDs,
-          transcriptionIDs: transcriptionIDs,
-          wordIDsByRecording: wordIDsByRecording,
-          segmentIDsByRecording: segmentIDsByRecording,
-          attachmentIDsByRecording: attachmentIDsByRecording,
-          baseTime: now,
-          transactionID: transactionID
-        )
-      ),
-      createdAt: now
+    let operations = ScribeProductionShapedSchema.soakOperations(
+      profile: profile,
+      recordingIDs: recordingIDs,
+      transcriptionIDs: transcriptionIDs,
+      wordIDsByRecording: wordIDsByRecording,
+      segmentIDsByRecording: segmentIDsByRecording,
+      attachmentIDsByRecording: attachmentIDsByRecording,
+      baseTime: now,
+      transactionID: transactionID
     )
+    let entityGroups = BoundedBenchmarkSeed.entityCreationGroups(from: operations)
+    for transaction in BoundedBenchmarkSeed.transactions(
+      baseID: transactionID,
+      atomicOperationGroups: entityGroups
+    ) {
+      try await runtime.transact(transaction, createdAt: now)
+    }
 
     let afterSeed = InstantProcessMemory.sample()
     let plan = ScribeProductionShapedSchema.scribeShapedListQuery(pageSize: profile.listPageSize)

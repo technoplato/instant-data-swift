@@ -35,7 +35,6 @@ struct InstantStartupTraceTests {
         "started:sqlite.state-load",
         "completed:sqlite.state-load.attributes",
         "completed:sqlite.state-load.triples",
-        "completed:sqlite.state-load.outbox",
         "completed:sqlite.state-load",
         "completed:runtime.store-materialization",
         "completed:runtime.attribute-store-merge",
@@ -142,7 +141,6 @@ struct InstantStartupTraceTests {
       [
         "sqlite.state-load.attributes",
         "sqlite.state-load.triples",
-        "sqlite.state-load.outbox",
       ]
     )
     #expect(

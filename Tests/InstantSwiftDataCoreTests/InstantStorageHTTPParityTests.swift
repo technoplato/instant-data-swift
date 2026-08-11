@@ -15,13 +15,17 @@ struct InstantStorageHTTPParityTests {
     )
     let client = InstantStorageTransportClient.live(httpClient: recorder.client)
     let body = Data("export default function App() {}".utf8)
+    let sourceURL = temporaryFileURL(name: "App.tsx")
+    try body.write(to: sourceURL)
+    defer { try? FileManager.default.removeItem(at: sourceURL) }
 
     let response = try await client.upload(
       InstantStorageUploadRequest(
         appID: "app-1",
         apiURI: try #require(URL(string: "https://api.example.test/custom")),
         path: "builds/build-1 App.tsx",
-        data: body,
+        sourceURL: sourceURL,
+        byteCount: Int64(body.count),
         refreshToken: "refresh-token",
         contentType: "text/typescript",
         contentDisposition: #"inline; filename="App.tsx""#
@@ -43,7 +47,48 @@ struct InstantStorageHTTPParityTests {
       request.value(forHTTPHeaderField: "Content-Disposition"),
       #"inline; filename="App.tsx""#
     )
-    expectNoDifference(request.httpBody, body)
+    expectNoDifference(request.value(forHTTPHeaderField: "Content-Length"), "32")
+    expectNoDifference(request.httpBody, nil)
+    let uploadSourceURL = await recorder.onlyUploadSourceURL()
+    expectNoDifference(uploadSourceURL, sourceURL)
+  }
+
+  @Test("Large storage upload keeps a bounded file-backed request payload")
+  func largeUploadIsFileBacked() async throws {
+    let recorder = StorageRequestRecorder(
+      response: InstantStorageHTTPResponse(
+        statusCode: 200,
+        data: Data(#"{"data":{"id":"file-1"}}"#.utf8)
+      )
+    )
+    let client = InstantStorageTransportClient.live(httpClient: recorder.client)
+    let sourceURL = temporaryFileURL(name: "large-recording.wav")
+    try Data().write(to: sourceURL)
+    let handle = try FileHandle(forWritingTo: sourceURL)
+    let byteCount: Int64 = 64 * 1_024 * 1_024
+    try handle.truncate(atOffset: UInt64(byteCount))
+    try handle.close()
+    defer { try? FileManager.default.removeItem(at: sourceURL) }
+
+    _ = try await client.upload(
+      InstantStorageUploadRequest(
+        appID: "app-1",
+        apiURI: try #require(URL(string: "https://api.example.test")),
+        path: "recordings/large-recording.wav",
+        sourceURL: sourceURL,
+        byteCount: byteCount,
+        refreshToken: "refresh-token",
+        contentType: "audio/wav"
+      )
+    )
+
+    let request = try #require(await recorder.onlyRequest())
+    expectNoDifference(request.httpBody, nil)
+    expectNoDifference(request.value(forHTTPHeaderField: "Content-Length"), "67108864")
+    let uploadSourceURL = await recorder.onlyUploadSourceURL()
+    expectNoDifference(uploadSourceURL, sourceURL)
+    let peakRetainedRequestBodyByteCount = await recorder.peakRetainedRequestBodyByteCount()
+    expectNoDifference(peakRetainedRequestBodyByteCount, 0)
   }
 
   @Test("Storage delete uses the canonical DELETE query and bearer token")
@@ -142,10 +187,11 @@ struct InstantStorageHTTPParityTests {
 
   @Test("Storage maps authorization and malformed response failures")
   func failuresAreActionable() async throws {
+    let forbiddenRecorder = StorageRequestRecorder(
+      response: InstantStorageHTTPResponse(statusCode: 403, data: Data())
+    )
     let forbidden = InstantStorageTransportClient.live(
-      httpClient: StorageRequestRecorder(
-        response: InstantStorageHTTPResponse(statusCode: 403, data: Data())
-      ).client
+      httpClient: forbiddenRecorder.client
     )
     do {
       _ = try await forbidden.upload(uploadRequest())
@@ -154,11 +200,14 @@ struct InstantStorageHTTPParityTests {
       expectNoDifference(error.code, .permissionRejected)
       expectNoDifference(error.operation, "upload file")
     }
+    let forbiddenRequests = await forbiddenRecorder.recordedRequests()
+    expectNoDifference(forbiddenRequests.count, 1)
 
+    let malformedRecorder = StorageRequestRecorder(
+      response: InstantStorageHTTPResponse(statusCode: 200, data: Data(#"{}"#.utf8))
+    )
     let malformed = InstantStorageTransportClient.live(
-      httpClient: StorageRequestRecorder(
-        response: InstantStorageHTTPResponse(statusCode: 200, data: Data(#"{}"#.utf8))
-      ).client
+      httpClient: malformedRecorder.client
     )
     do {
       _ = try await malformed.upload(uploadRequest())
@@ -167,21 +216,32 @@ struct InstantStorageHTTPParityTests {
       expectNoDifference(error.code, .decodeFailed)
       expectNoDifference(error.operation, "upload file")
     }
+    let malformedRequests = await malformedRecorder.recordedRequests()
+    expectNoDifference(malformedRequests.count, 1)
   }
 
   private func uploadRequest() -> InstantStorageUploadRequest {
-    InstantStorageUploadRequest(
+    let sourceURL = temporaryFileURL(name: "failure.txt")
+    return InstantStorageUploadRequest(
       appID: "app-1",
       apiURI: URL(string: "https://api.example.test")!,
       path: "App.tsx",
-      data: Data("code".utf8),
+      sourceURL: sourceURL,
+      byteCount: 4,
       refreshToken: "refresh-token"
     )
+  }
+
+  private func temporaryFileURL(name: String) -> URL {
+    FileManager.default.temporaryDirectory
+      .appendingPathComponent("instant-storage-\(UUID().uuidString)-\(name)")
   }
 }
 
 private actor StorageRequestRecorder {
   private var requests: [URLRequest] = []
+  private var uploadSourceURLs: [URL] = []
+  private var peakRequestBodyByteCount = 0
   private var responses: [InstantStorageHTTPResponse]
 
   init(response: InstantStorageHTTPResponse) {
@@ -193,13 +253,25 @@ private actor StorageRequestRecorder {
   }
 
   nonisolated var client: InstantStorageHTTPClient {
-    InstantStorageHTTPClient { request in
-      await self.response(for: request)
-    }
+    InstantStorageHTTPClient(
+      send: { request in
+        await self.response(for: request)
+      },
+      uploadFile: { request, sourceURL in
+        await self.response(for: request, uploadSourceURL: sourceURL)
+      }
+    )
   }
 
-  func response(for request: URLRequest) -> InstantStorageHTTPResponse {
+  func response(
+    for request: URLRequest,
+    uploadSourceURL: URL? = nil
+  ) -> InstantStorageHTTPResponse {
     requests.append(request)
+    peakRequestBodyByteCount = max(peakRequestBodyByteCount, request.httpBody?.count ?? 0)
+    if let uploadSourceURL {
+      uploadSourceURLs.append(uploadSourceURL)
+    }
     if responses.count > 1 {
       return responses.removeFirst()
     }
@@ -212,5 +284,13 @@ private actor StorageRequestRecorder {
 
   func recordedRequests() -> [URLRequest] {
     requests
+  }
+
+  func onlyUploadSourceURL() -> URL? {
+    uploadSourceURLs.count == 1 ? uploadSourceURLs[0] : nil
+  }
+
+  func peakRetainedRequestBodyByteCount() -> Int {
+    peakRequestBodyByteCount
   }
 }

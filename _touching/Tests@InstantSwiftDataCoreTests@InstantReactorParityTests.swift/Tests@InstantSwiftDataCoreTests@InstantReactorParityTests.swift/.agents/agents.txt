@@ -1,1 +1,5 @@
 codex-019fe75c 2026-08-09T18:36:00Z mower plan=2026-08-09-outbox-wire-hydration
+codex-desktop/019fe994-1250-7b42-825e-9b75836d9173/root 2026-08-10T23:44:00-0400 mower plan=2026-08-09-bounded-intent-outbox-memory
+codex-desktop/019fe994-1250-7b42-825e-9b75836d9173/root/public_confirm_row_addressed 2026-08-11T05:07:59Z mower plan=2026-08-09-bounded-intent-outbox-memory
+codex-desktop/019fe994-1250-7b42-825e-9b75836d9173/root/exact_close_tests 2026-08-11T10:28:01-0400 mower exact-runtime-close-tests plan=2026-08-09-bounded-intent-outbox-memory
+codex-desktop/019fe994-1250-7b42-825e-9b75836d9173/root/stream_snapshot_buffer 2026-08-11T14:47:05Z mower cumulative-stream-snapshot-buffer plan=2026-08-09-bounded-intent-outbox-memory
