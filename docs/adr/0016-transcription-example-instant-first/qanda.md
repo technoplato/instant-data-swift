@@ -738,5 +738,25 @@ Meaning:
    back model.
 5. Deep link may seed a synthetic stack (for example library under timeline).
 
-Still optional after this: screen-leaf re-pass post-Q14; Instant issue #;
-plan.md when captain locks for implementation.
+Still optional after this: screen-leaf re-pass post-Q14 (skipped at lock).
+
+---
+
+## Q26 — Lock interview for implementation plan
+
+- **Status:** decided
+- **Asked:** 2026-08-11
+- **Decided:** 2026-08-11
+
+### Answer
+
+**Decisions locked** (captain: “lock”).
+
+- Status of ADR → **Decisions locked**
+- `plan.md` written (steps T0–T9)
+- Instant parent issue **#193** created with successCriteria per step
+- Optional screen re-pass deferred; screens already match locked model
+- **Do not** re-open mode/goBack/schema without captain
+
+Next execution: `query-issue 193` → first unsatisfied `issue-193-T*` → implement
+on main with workLog.

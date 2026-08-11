@@ -20,15 +20,20 @@ but separate), books/library domain, recipes UI.
 | This ADR folder | `docs/adr/0016-transcription-example-instant-first/` | https://github.com/technoplato/instant-data-swift/tree/main/docs/adr/0016-transcription-example-instant-first |
 | Q&A log | [`qanda.md`](./qanda.md) | https://github.com/technoplato/instant-data-swift/blob/main/docs/adr/0016-transcription-example-instant-first/qanda.md |
 | **Agent handoff** | [`HANDOFF.md`](./HANDOFF.md) | (local; commit with ADR) |
+| **Implementation plan** | [`plan.md`](./plan.md) | https://github.com/technoplato/instant-data-swift/blob/main/docs/adr/0016-transcription-example-instant-first/plan.md |
+| App tree | [`overviews/04-uri-tree.md`](./overviews/04-uri-tree.md) | |
 | Findings | [`findings.md`](./findings.md) | https://github.com/technoplato/instant-data-swift/blob/main/docs/adr/0016-transcription-example-instant-first/findings.md |
 | Scribe (stress case) | `/Users/laptop/Sync/tools/realtime-voice-sqlite-instant` | (private app; local checkout) |
 | Process | `$adr-decision-qanda` + `$domain-as-tree` (PISS) | skill: https://github.com/technoplato/skills/tree/master/domain-as-tree |
 
-- **Status:** In interview  
+- **Status:** Decisions locked  
 - **Date opened:** 2026-08-10  
-- **Instant issue:** TBD  
+- **Decisions locked:** 2026-08-11  
+- **Instant issue:** [#193](https://issues.knophy.com/issues/193)  
+  “Build Transcription multi-host Instant example (ADR 0016)”  
 - **Related ADRs:** 0001 (app/sync boundary), 0014 (entity lifecycle), 0015
-  (ergonomics / open-segment); toolshed SyncUps stopwatch proxy
+  (ergonomics / open-segment); toolshed SyncUps stopwatch proxy  
+- **Related issues:** #155 (ergonomics), #186 (TCA recipes later)
 
 ## One-line goal
 
@@ -50,7 +55,7 @@ segment 1 ──* response (parent = root | reply)
 Canonical field lists: skill `transcription.md`. This ADR must not drift a
 second full schema.
 
-## Locked so far (see qanda)
+## Locked decisions (see `qanda.md` Q01–Q25)
 
 | ID | Decision |
 | --- | --- |
@@ -59,11 +64,14 @@ second full schema.
 | Q03 | Words as typed array on segment; derived text/times from words |
 | Q04 | Recording is list identity; stop is message → finished |
 | Q04b | Extract Recipes debug panel into its own SPM module |
-| Q05 | Dual-lane session Mode (Idle/Recording/Playback/Both); floating toolbar |
-| Q06 | accepted — recording 1→* transcription → segment + event; skill catalog |
-| Q07 | accepted — segment responses (threaded); human or agent author |
-| Q08 | accepted — homogeneous segment body ADT; parent ADT not Optional; **floating toolbar** name |
-| Q09 | accepted — app tree + exhaustive mode; observe/send on leaves (`04-uri-tree.md`) |
+| Q05–Q08 | Floating toolbar; schema skill; responses; segment body ADT |
+| Q09–Q18 | App tree; mode leaves (paused dual-track reviewed) |
+| Q14–Q17 | Kill process bag; prefs in schema; `timeline(recordingId)`; flat mode names |
+| Q19–Q21 | Active mode leaves accepted |
+| Q22–Q24 | Idle mode leaves; public mutate **`recording.create`** only |
+| Q25 | **Program** navigation stack (Swift Navigation style); `goBack` pops |
+
+Full mode tree: `overviews/04-uri-tree.md`. Execute: `plan.md` + #193.
 
 ## Non-goals (initial)
 
@@ -82,7 +90,7 @@ One question at a time. Answers in `qanda.md` first.
 | B | Schema | skill `transcription.md` · Q06 · `overviews/01-schema.md` (pointer) |
 | C | Session / floating toolbar | Q05 · `overviews/03-session-mode-floating-toolbar.md` |
 | D+ | URI tree, messages, contracts, frames | overviews (TBD) |
-| Z | Plan + Instant issue criteria | `plan.md` after lock |
+| Z | Plan + Instant issue criteria | **done** — `plan.md` + #193 |
 
 Schema vs session stay separate. Dots = URI paths or nested types — not
 session fields smuggled onto entities.

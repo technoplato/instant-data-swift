@@ -1,37 +1,38 @@
 # Handoff — ADR 0016 Transcription app tree (interview)
 
 **Written:** 2026-08-11 (America/New_York session)  
-**Updated:** 2026-08-11 — mode leaves + goBack (Q25) accepted  
-**Status:** Interview in progress — open: optional screen re-pass; plan lock  
+**Updated:** 2026-08-11 — **decisions locked**; plan + #193  
+**Status:** Decisions locked — execute `plan.md` / issue #193  
 **Repo:** `instant-data-swift`  
-**Do not implement product code yet.** Finish remaining product questions →
-then plan.md + Instant issues (`$adr-decision-qanda` Phase B).
+**Implementation:** allowed per plan steps. Claim #193, workLog each step.
 
 ---
 
 ## Start here (cold agent)
 
 1. Read **this file**.
-2. Read `qanda.md` — statuses `decided` only (Q01–Q25; mode + goBack locked).
-3. Read `overviews/04-uri-tree.md` — system of record for the app tree.
-4. Schema skill file (durable types):
+2. Read `plan.md` and `query-issue 193` (system of record for execution).
+3. Read `qanda.md` only if a decision is unclear (Q01–Q26 decided).
+4. Read `overviews/04-uri-tree.md` — system of record for the app tree.
+5. Schema skill file (durable types):
    `/Users/laptop/Sync/skills/domain-as-tree/references/schemas/transcription.md`
-5. Skills: `$adr-decision-qanda` (file first, chat second, one question at a
-   time) + `$domain-as-tree` (PISS, no `|` bars, nested exclusive modes).
+6. Skills while implementing: `$instant-data` (+ modeling/dependencies/testing),
+   `$change-log` with `--issue 193`, `$issue-tracker` for workLog.
 
 ```text
 docs/adr/0016-transcription-example-instant-first/
   HANDOFF.md          ← you are here
   README.md
-  qanda.md            ← decision log
+  plan.md             ← execute this
+  qanda.md            ← decided log
   findings.md
   overviews/
     00-archetype.md
     01-schema.md / 01-schema-segments.md
     02-recording-activity-adt.md
     03-session-mode-floating-toolbar.md
-    04-uri-tree.md    ← active work
-    04b-message-graph-experiment.md  ← parked experiment, may discard
+    04-uri-tree.md    ← app tree SoR
+    04b-message-graph-experiment.md  ← parked; may discard
 ```
 
 Plus schema edits may live under the **skills** checkout (not this repo):
@@ -212,20 +213,12 @@ re-passed after Q14 renames. Timeline `modeRelation` locked in spirit (Q18).
 
 ## Exact next steps for the next agent
 
-### Immediate (continue interview)
+### Immediate (execute plan)
 
-1. ~~Mode leaves~~ **done** — all nine accepted (Q13–Q15, Q18–Q24).
-   Blanket: `recording.create` + goesTo handle args.
-
-2. ~~goBack~~ **done** (Q25) — **program** navigation stack, Swift
-   Navigation style. `navigation.previous` = pop. Not tree-parent-only.
-
-3. Optional re-pass of **screen** leaves post-Q14 (library openRecording →
-   `screen.timeline(id)` only; settings mutates `preference.*`).
-
-4. When captain says decisions locked: write `plan.md` + Instant issue
-   criteria (`$adr-decision-qanda` Phase B). **Do not** start large Swift
-   implementation before that.
+1. ~~Interview~~ **locked** (Q26, captain “lock”).
+2. ~~plan.md + #193~~ **done**.
+3. **Next code step:** T0 schema entities (`issue-193-T0-schema`).
+4. Claim #193 while executing; append workLog with full commit SHAs.
 
 ### Commit hygiene
 
@@ -260,13 +253,11 @@ Verbatim themes from this session:
 
 ---
 
-## Open questions (not decided)
+## Open questions (deferred / non-blocking)
 
 | Topic | Notes |
 | --- | --- |
-| Screen leaf re-pass | Optional post-Q14 |
-| Instant issue # for ADR | README still TBD |
-| plan.md / implementation | After captain locks interview |
+| Screen leaf re-pass | Deferred at lock; tree already matches |
 | 04b message graph | Parked; may discard |
 
 ---
@@ -286,19 +277,11 @@ Verbatim themes from this session:
 ## Resume recipe (copy-paste)
 
 ```text
+cd /Users/laptop/Sync/tools/realtime-voice-sqlite-instant
+scripts/with-instant-tools-credentials node scripts/instant-tools.mjs query-issue 193
+# First unsatisfied issue-193-T*
 cd /Users/laptop/Sync/instant-data-swift
-git status
-read docs/adr/0016-transcription-example-instant-first/HANDOFF.md
-read docs/adr/0016-transcription-example-instant-first/qanda.md   # Q01–Q25 decided
+read docs/adr/0016-transcription-example-instant-first/plan.md
 read docs/adr/0016-transcription-example-instant-first/overviews/04-uri-tree.md
-# Next: optional screen re-pass, then plan when captain locks
-# File first, chat second. Commit after each accepted decision.
-```
-
-When interview is done:
-
-```text
-# Write plan.md from decided qanda
-# Create/claim Instant issue, successCriteria per plan step
-# Only then implement example targets
+# Implement step on main; workLog + change-log --issue 193
 ```

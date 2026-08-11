@@ -1,9 +1,7 @@
 # Overview 04 — App tree (observe, send, goesTo, mutate)
 
-**Status:** **work in progress** — needs more captain feedback  
-**Last review:** Q25 accepted (2026-08-11):
-  Program navigation stack (Swift Navigation style) for `goBack`.  
-  Mode leaves: all nine reviewed (Q13–Q15, Q18–Q24).  
+**Status:** **decisions locked** (2026-08-11) — implement via `plan.md` / #193  
+**Last review:** Q25 goBack + Q26 lock. Mode leaves Q13–Q15, Q18–Q24.  
 **Schema:** `/Users/laptop/Sync/skills/domain-as-tree/references/schemas/transcription.md`  
 https://github.com/technoplato/skills/blob/master/domain-as-tree/references/schemas/transcription.md  
 **This file (GitHub, when pushed):**  
