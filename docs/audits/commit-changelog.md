@@ -1,3 +1,9 @@
+## 2026-08-11 17:04:29 EDT — instant-data-swift cbb679ec6480f13005537d489cbdd287a28eb4ba
+
+- **Repo:** instant-data-swift
+- **SHA:** cbb679ec6480f13005537d489cbdd287a28eb4ba
+- **Reason:** ADR 0016 decisions locked; plan.md + Instant #193 Transcription example.
+
 ## 2026-08-11 16:57:42 EDT — instant-data-swift 77307d48387372508a9be0776bffaca749ae0844
 
 - **Repo:** instant-data-swift
