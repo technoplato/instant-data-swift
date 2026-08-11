@@ -1,9 +1,9 @@
 # Overview 04 — App tree (observe, send, goesTo, mutate)
 
 **Status:** **work in progress** — needs more captain feedback  
-**Last review:** Q23–Q24 accepted (2026-08-11):
-  All nine flat mode leaves reviewed. Blanket: `recording.create` + handle
-  args on goesTo destinations that need them.  
+**Last review:** Q25 accepted (2026-08-11):
+  Program navigation stack (Swift Navigation style) for `goBack`.  
+  Mode leaves: all nine reviewed (Q13–Q15, Q18–Q24).  
 **Schema:** `/Users/laptop/Sync/skills/domain-as-tree/references/schemas/transcription.md`  
 https://github.com/technoplato/skills/blob/master/domain-as-tree/references/schemas/transcription.md  
 **This file (GitHub, when pushed):**  
@@ -29,7 +29,9 @@ Started Monday 2026-08-10 ~5:46 PM America/New_York.
   no truncated send arrows in review leaves.
 - **Reviewed:** all nine mode leaves (Q13–Q15, Q18–Q24).
   Rule: `startRecording` → `recording.create`; goesTo carries needed handles.
-- **Open:** `goBack` resolution (stack / tree / deep link).
+- **goBack:** program navigation stack (Swift Navigation style) — Q25.
+  `goesTo navigation.previous` = pop one screen frame. Not tree-parent-only.
+  Not hard-coded `library.populated`.
 - Capture and playback may target the **same** recording id (A + A).
 
 ## Rules
@@ -763,10 +765,24 @@ recording and transcription — not a `finishLinked` name.
 
 ---
 
-## Navigation (WIP)
+## Navigation (Q25 decided)
 
-`goesTo.navigation.previous` — stack / tree / deep link. Not hard-coded to
-`library.populated`.
+**Program owns a screen stack** (Swift Navigation style). Hosts present it.
+
+```text
+goBack
+  └── goesTo
+        └── navigation.previous   # pop one frame
+```
+
+Rules:
+
+1. Open screen → **push** (root may replace; host/program policy).
+2. `goBack` → **pop** → `navigation.previous`.
+3. Do **not** hard-code back to `library.populated`.
+4. Do **not** use tree-parent-only back (option B rejected).
+5. Deep link may seed a synthetic stack (for example library under timeline).
+6. Same model for CLI, TUI, iOS, Mac — one program stack, many presenters.
 
 ---
 

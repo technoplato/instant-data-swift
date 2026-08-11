@@ -1,8 +1,8 @@
 # Handoff — ADR 0016 Transcription app tree (interview)
 
 **Written:** 2026-08-11 (America/New_York session)  
-**Updated:** 2026-08-11 — all nine mode leaves accepted (Q13–Q15, Q18–Q24)  
-**Status:** Interview in progress — mode leaves done; open: goBack, screens  
+**Updated:** 2026-08-11 — mode leaves + goBack (Q25) accepted  
+**Status:** Interview in progress — open: optional screen re-pass; plan lock  
 **Repo:** `instant-data-swift`  
 **Do not implement product code yet.** Finish remaining product questions →
 then plan.md + Instant issues (`$adr-decision-qanda` Phase B).
@@ -12,7 +12,7 @@ then plan.md + Instant issues (`$adr-decision-qanda` Phase B).
 ## Start here (cold agent)
 
 1. Read **this file**.
-2. Read `qanda.md` — statuses `decided` only (Q01–Q24 locked for mode).
+2. Read `qanda.md` — statuses `decided` only (Q01–Q25; mode + goBack locked).
 3. Read `overviews/04-uri-tree.md` — system of record for the app tree.
 4. Schema skill file (durable types):
    `/Users/laptop/Sync/skills/domain-as-tree/references/schemas/transcription.md`
@@ -217,8 +217,8 @@ re-passed after Q14 renames. Timeline `modeRelation` locked in spirit (Q18).
 1. ~~Mode leaves~~ **done** — all nine accepted (Q13–Q15, Q18–Q24).
    Blanket: `recording.create` + goesTo handle args.
 
-2. Open product question: **`goBack` / `navigation.previous`** (stack vs tree
-   vs deep link). Do not hard-code back to `library.populated`.
+2. ~~goBack~~ **done** (Q25) — **program** navigation stack, Swift
+   Navigation style. `navigation.previous` = pop. Not tree-parent-only.
 
 3. Optional re-pass of **screen** leaves post-Q14 (library openRecording →
    `screen.timeline(id)` only; settings mutates `preference.*`).
@@ -255,6 +255,8 @@ Verbatim themes from this session:
   transcription; don’t expose that as the public name.
 - Don’t invent jargon about “host defaults” / “handle on arrival.”
 - Blanket apply sibling mode variants when only a few fields differ.
+- goBack is **program** stack (Swift Navigation style), not host-only glue
+  and not tree-parent-only.
 
 ---
 
@@ -262,7 +264,6 @@ Verbatim themes from this session:
 
 | Topic | Notes |
 | --- | --- |
-| goBack stack model | WIP in 04-uri-tree Navigation |
 | Screen leaf re-pass | Optional post-Q14 |
 | Instant issue # for ADR | README still TBD |
 | plan.md / implementation | After captain locks interview |
@@ -288,9 +289,9 @@ Verbatim themes from this session:
 cd /Users/laptop/Sync/instant-data-swift
 git status
 read docs/adr/0016-transcription-example-instant-first/HANDOFF.md
-read docs/adr/0016-transcription-example-instant-first/qanda.md   # Q01–Q24 decided (mode)
+read docs/adr/0016-transcription-example-instant-first/qanda.md   # Q01–Q25 decided
 read docs/adr/0016-transcription-example-instant-first/overviews/04-uri-tree.md
-# Next: goBack model, optional screen re-pass, then plan when captain locks
+# Next: optional screen re-pass, then plan when captain locks
 # File first, chat second. Commit after each accepted decision.
 ```
 

@@ -685,3 +685,58 @@ Still open product questions (not mode leaf content):
 - Optional screen-leaf re-pass post-Q14 renames
 - Instant parent issue # for ADR (README TBD)
 - plan.md only after captain says decisions locked for implementation
+
+---
+
+## Q25 — goBack / navigation.previous
+
+- **Status:** decided
+- **Asked:** 2026-08-11
+- **Decided:** 2026-08-11
+- **Recommendation:** **Program navigation stack** (Swift Navigation style).  
+  `goBack` → `goesTo navigation.previous` means “pop one screen frame.”  
+  Do **not** hard-code `library.populated`.
+
+### Question
+
+How does `goBack` resolve the next screen?
+
+### Options
+
+| Option | Meaning |
+| --- | --- |
+| **A. Program stack (recommended)** | Real push/pop history in the **program** (Swift Navigation style). `navigation.previous` = previous frame. Not tree-parent-only. |
+| **B. Tree parent** | Parent node in the screen tree only (no history). timeline → always library. |
+| **C. Explicit edges** | Each screen names its own back target in the tree. |
+
+### Why A
+
+- Matches multi-host reality (CLI path, iOS stack, Mac windows).
+- Library empty vs populated is data-driven, not a fixed back target.
+- Deep link into `timeline(id)` can still define a default prior (library) without
+  baking it into every leaf.
+
+### Answer
+
+**Accepted: A — program stack, Swift Navigation style.**
+
+Captain: done from the **program itself**, not tree-parent-only and not a
+fixed `library.populated` edge.
+
+```text
+goBack
+  └── goesTo
+        └── navigation.previous
+```
+
+Meaning:
+
+1. The program holds a **screen stack** (path / frames).
+2. Opening a screen **pushes** (or replaces per host policy for roots).
+3. `goBack` **pops** one frame → that is `navigation.previous`.
+4. Hosts (CLI, TUI, iOS, Mac) present the stack; they do not invent a second
+   back model.
+5. Deep link may seed a synthetic stack (for example library under timeline).
+
+Still optional after this: screen-leaf re-pass post-Q14; Instant issue #;
+plan.md when captain locks for implementation.
