@@ -400,3 +400,68 @@ Still fine-tune individual messages/observe slices if needed; shape is locked.
 Tree file rewritten as WIP with observe/send/goesTo/mutate nested on leaves.
 Captain feedback applied through `mode.recordingIdle.*`. Pick up at
 `mode.recordingActive.*`. Navigation stack for `goBack` still open.
+
+---
+
+## Q10 — mode.recordingActive.playbackIdle
+
+- **Status:** decided
+- **Asked:** 2026-08-11
+- **Decided:** 2026-08-11
+
+### Answer
+
+**Accepted** with clarifications:
+
+1. **`session.capture.*`** = open capture handles (not a schema type). Points at
+   the recording/transcription currently being captured.
+2. **Schema shape:** recording 1→* transcription 1→* segment (array on
+   transcription); responses on segments.
+3. **`playRecording` kept** while capturing (e.g. long-press segment to play
+   while still recording). Earlier “no play from this leaf” was withdrawn.
+4. **`speechRecognized`** replaces injectSimulatedSpeech — model real STT;
+   sim is a dependency behind that message.
+5. **`openActiveTimeline`** sets `session.focus.recordingId` from capture id.
+
+Next leaf: `mode.recordingActive.playbackPlaying`.
+
+---
+
+## Q11 — mode.recordingActive.playbackPlaying
+
+- **Status:** decided
+- **Asked:** 2026-08-11
+- **Decided:** 2026-08-11
+
+### Answer
+
+**Accepted** with amendments:
+
+1. **Session is not schema.** `session.capture.*` / `session.playback.*` /
+   `session.focus.*` are process pointers only.
+2. **session.capture** = which recording + transcription are receiving capture
+   right now (mode.recording active or paused). Not a durable type.
+3. **Live speech tail** = current non-final speech `segment` on the capture
+   transcription, when one exists. Full field list, not "fields" shorthand.
+4. **Two timeline openers** when dual-track:
+   - `openCaptureRecordingTimeline` → focus capture recording
+   - `openPlaybackRecordingTimeline` → focus playback recording
+5. Send set: pause/stop recording, pause/stop/scrub playback, both timeline
+   openers, speechRecognized.
+
+Next: `mode.recordingActive.playbackPaused`.
+
+---
+
+## Q12 — mode.recordingActive.playbackPaused
+
+- **Status:** asking
+- **Asked:** 2026-08-11
+- **Recommendation:** Same dual observe as playbackPlaying; resumePlayback
+  instead of pausePlayback; both timeline openers; speechRecognized.
+- **Question:** Accept this leaf?
+
+### Answer
+
+_(awaiting)_
+
