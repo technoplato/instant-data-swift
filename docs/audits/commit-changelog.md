@@ -1,3 +1,9 @@
+## 2026-08-11 16:53:44 EDT — instant-data-swift c44911e27a0358940b7ae4068b43ef3a21dd713f
+
+- **Repo:** instant-data-swift
+- **SHA:** c44911e27a0358940b7ae4068b43ef3a21dd713f
+- **Reason:** ADR 0016 all nine mode leaves accepted; goesTo handle args normalized (Q23–Q24 blanket).
+
 ## 2026-08-11 16:47:56 EDT — instant-data-swift f647abee9dc89a9dc3ae706ae7b9747719957b6a
 
 - **Repo:** instant-data-swift
