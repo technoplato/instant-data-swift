@@ -98,16 +98,10 @@ let package = Package(
       dependencies: [
         .product(name: "IssueReporting", package: "xctest-dynamic-overlay")
       ],
-      // Debug-only: InstantRuntime's freeze stack (13k-line primary) hangs Swift 6.3
-      // SIL ClosureLifetimeFixup for tens of minutes. Target-scoped so IssueReporting
-      // and other deps do not inherit the flag (global -Xswiftc crashed their IRGen).
-      // Remove after InstantRuntime is split into smaller translation units.
-      swiftSettings: strictConcurrencySettings + [
-        .unsafeFlags(
-          ["-Xllvm", "-sil-disable-pass=closure-lifetime-fixup"],
-          .when(configuration: .debug)
-        ),
-      ]
+      // InstantRuntime was split (LiveSession / ExactTaskOwner / VisibleWrite) so debug
+      // no longer needs -sil-disable-pass=closure-lifetime-fixup. Re-add only if
+      // ClosureLifetimeFixup hangs again after further growth.
+      swiftSettings: strictConcurrencySettings
     ),
     .target(
       name: "InstantSwiftDataSchema",

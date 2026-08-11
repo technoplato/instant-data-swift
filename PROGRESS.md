@@ -6,6 +6,18 @@ production-readiness plan
 Commit-level history stays in `docs/audits/commit-changelog.md`; this file is
 the narrative of what the library must prove and why.
 
+## 2026-08-11 14:44:11 EDT — InstantRuntime split: SIL flag removed
+
+- **Mower:** Extracted free-standing infrastructure from 13,338-line `InstantRuntime.swift` into:
+  - `InstantRuntimeExactTaskOwner.swift` (~118 lines)
+  - `InstantRuntimeLiveSession.swift` (~1,412 lines)
+  - `InstantVisibleWriteFilter.swift` (~250 lines)
+- **Primary residual:** `InstantRuntime.swift` ~11,565 lines (class + remaining private helpers).
+- **Compile:** Debug `InstantSwiftDataCore` builds in ~19s **without** `-sil-disable-pass=closure-lifetime-fixup` (Package.swift unsafeFlags removed).
+- **Tests:** Focused freeze contracts (BoundedOutbox / TerminalFailure / DeferredResidency / PersistenceCache) **80/80** pass (known issues intentional).
+- **Physical KEEP:** still blocked — Scribe dirty (~235 porcelain); iPad agent sessions on old build `9fc4ff4`, not freeze pin.
+- **Plan:** `agent-presence/grok-build/plans/2026-08-11-runtime-split-sil/PLAN.md`
+
 ## 2026-08-11 14:32:13 EDT — Performance wrap-up: freezes landed, latency + soak PASS
 
 - **Commits:** `8b7c384e` (bounded outbox/memory freezes + suite compile unblocks); `c4f20714` (changelog).
