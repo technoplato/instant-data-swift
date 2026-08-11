@@ -765,6 +765,12 @@ private struct StoredProperty {
       preconditionFailure("Cannot generate an InstantAttribute for an unsupported schema value.")
     }
 
+    // JSON payloads are not filter/order keys; keep them non-indexed so apps can
+    // opt them into InstantDeferredValueResidencyPolicy. Indexing every field
+    // (previous default) made deferred residency validation reject bootstrap
+    // for large timeline/transcript attributes and surfaced only opaque
+    // InstantError "error 1" in host UI.
+    let isIndexedLiteral = schemaValue.valueTypeLiteral == ".json" ? "false" : "true"
     var arguments = [
       "      InstantAttribute(",
       "        id: \(typeName).\(name).attributeID,",
@@ -772,7 +778,7 @@ private struct StoredProperty {
       "        name: \(typeName).\(name).name,",
       "        valueType: \(schemaValue.valueTypeLiteral),",
       "        isRequired: \(schemaValue.isOptional ? "false" : "true"),",
-      "        isIndexed: true",
+      "        isIndexed: \(isIndexedLiteral)",
     ]
     if let targetType = schemaValue.refTargetType {
       arguments[arguments.count - 1] += ","

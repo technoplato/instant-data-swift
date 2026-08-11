@@ -119,7 +119,18 @@ public final class InstantStartupTrace: @unchecked Sendable {
   ) {
     var metadata = metadata
     metadata["errorType"] = String(reflecting: type(of: error))
-    metadata["errorDescription"] = String(describing: error)
+    if let instantError = error as? InstantError {
+      metadata["errorDescription"] = instantError.userFacingSummary
+      metadata["errorCode"] = instantError.code.rawValue
+      metadata["errorOperation"] = instantError.operation
+      metadata["errorMessage"] = instantError.message
+      metadata["errorRecovery"] = instantError.recovery
+      if let path = instantError.path { metadata["errorPath"] = path }
+      if let namespace = instantError.namespace { metadata["errorNamespace"] = namespace }
+    } else {
+      metadata["errorDescription"] =
+        (error as? LocalizedError)?.errorDescription ?? String(describing: error)
+    }
     record(
       .failed,
       phase: phase,

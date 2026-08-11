@@ -265,13 +265,22 @@ public final class InstantDiagnostics: @unchecked Sendable {
   ) {
     var context = metadata
     context["errorType"] = String(reflecting: type(of: error))
-    context["errorDescription"] = String(describing: error)
     if let instantError = error as? InstantError {
+      // Prefer the structured Instant summary over Swift's opaque NSError collapse.
+      context["errorDescription"] = instantError.userFacingSummary
       context["errorCode"] = instantError.code.rawValue
       context["errorOperation"] = instantError.operation
+      context["errorMessage"] = instantError.message
+      context["errorRecovery"] = instantError.recovery
       context["errorNamespace"] = instantError.namespace
       context["errorPath"] = instantError.path
       context["serverEventID"] = instantError.serverEventID
+      context["serverStatus"] = instantError.serverStatus.map(String.init)
+      context["serverType"] = instantError.serverType
+      context["serverTraceID"] = instantError.serverTraceID
+    } else {
+      context["errorDescription"] =
+        (error as? LocalizedError)?.errorDescription ?? String(describing: error)
     }
     record(
       .error,

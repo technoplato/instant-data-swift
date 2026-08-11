@@ -26,14 +26,34 @@ public struct InstantDeferredValueResidencyPolicy: Hashable, Sendable {
   package func validate(attributes: [InstantAttribute]) throws {
     guard isEnabled else { return }
     let attributesByID = Dictionary(uniqueKeysWithValues: attributes.map { ($0.id, $0) })
+    let declaredIDs = attributesByID.keys.sorted()
     for attributeID in attributeIDs.sorted() {
       guard let attribute = attributesByID[attributeID] else {
+        let namespaceHint = attributeID.split(separator: "/", maxSplits: 1).first.map(String.init)
+        let related = declaredIDs.filter { id in
+          guard let namespaceHint else { return false }
+          return id.hasPrefix(namespaceHint + "/")
+        }
+        let relatedNote: String
+        if related.isEmpty {
+          relatedNote =
+            declaredIDs.isEmpty
+            ? " The bootstrap schema list is empty — no attributes were passed to InstantRuntime."
+            : " Declared attribute IDs in this schema: \(declaredIDs.prefix(12).joined(separator: ", "))\(declaredIDs.count > 12 ? ", …" : "")."
+        } else {
+          relatedNote =
+            " Declared attributes in namespace '\(namespaceHint ?? "")': \(related.joined(separator: ", "))."
+        }
         throw InstantError(
           code: .validationFailed,
           operation: "validate deferred value residency",
           path: attributeID,
-          message: "Deferred attribute '\(attributeID)' is not declared in the Instant schema.",
-          recovery: "Declare the attribute before enabling deferred local residency."
+          message:
+            "Deferred local residency names attribute '\(attributeID)', but that ID is not in the Instant schema passed at bootstrap.\(relatedNote)",
+          recovery:
+            "Add '\(attributeID)' to the app's Instant attributes (or InstantEntity model), "
+            + "or remove it from InstantDeferredValueResidencyPolicy before bootstrap. "
+            + "Scribe cold-start fails here when deferred IDs drift from the schema."
         )
       }
       guard attribute.cardinality == .one else {

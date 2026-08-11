@@ -571,12 +571,14 @@ struct DeferredValueResidencyTests {
       expectNoDifference(failure.error?.operation, "hydrate deferred infinite query values")
       #expect(await iterator.next() == nil)
     } matching: { issue in
+      // InstantError.description prefixes "[persistenceFailed] " before operation: message.
       issue.description.contains(
         """
         Instant could not hydrate selected deferred values for query \
-        'local-infinite-hydration-failure': hydrate deferred infinite query values:
+        'local-infinite-hydration-failure':
         """
       )
+        && issue.description.contains("hydrate deferred infinite query values:")
     }
   }
 
