@@ -1,5 +1,13 @@
 ## 2026-08-10 11:39:19 EDT
 
+## 2026-08-11 13:56:00 EDT
+
+- **Repo:** instant-data-swift
+- **Commit:** `8b7c384e45455cdbf4c5906a786b486354369eaa`
+- **Subject:** Land bounded outbox/memory freezes and unblock suite compile
+- **Reason:** Performance wrap-up after ChatGPT credit exhaustion; bounded outbox/memory freezes + suite compile unblocks (#044 #150 #155)
+
+
 - **repo:** instant-data-swift
 - **commit:** `43c1dcdb6881f7e5726d6434a43bd7f499575afe`
 - **reason:** Fence WebSocket mutation errors to the exact durable SQLite delivery claim, make duplicate and reclaimed responses body-free no-ops, atomically release terminal and retryable claims, and preserve the healthy socket/query registrations while publishing local rollback (#044, #155, #190).
