@@ -1,5 +1,11 @@
 ## 2026-08-10 11:39:19 EDT
 
+## 2026-08-11 14:44:46 EDT
+
+- **repo:** instant-data-swift
+- **commit:** `afe09bdba1fe0e0f6ce6f91cdc22ba6fc61c69b9`
+- **reason:** Split InstantRuntime translation unit (ExactTaskOwner / LiveSession / VisibleWrite) and drop debug SIL ClosureLifetimeFixup disable flag; focused freeze contracts green; physical KEEP still blocked on dirty Scribe.
+
 ## 2026-08-11 13:56:00 EDT
 
 - **Repo:** instant-data-swift

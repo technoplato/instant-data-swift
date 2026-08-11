@@ -10,6 +10,25 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## August 11th, 2026 at 2:44:46 p.m. EDT — `afe09bdba1fe` Split InstantRuntime translation unit and drop SIL hang flag.
+
+- **Implementation commit:** `afe09bdba1fe0e0f6ce6f91cdc22ba6fc61c69b9`
+- **Change:** Split InstantRuntime into smaller translation units and remove the debug SIL ClosureLifetimeFixup disable flag.
+- **Details:**
+  - Extracted InstantRuntimeExactTaskOwner, InstantRuntimeLiveSession, and InstantVisibleWriteFilter from the 13k-line InstantRuntime.swift primary.
+  - Debug InstantSwiftDataCore rebuilds in ~19s without -sil-disable-pass=closure-lifetime-fixup; focused freeze contracts 80/80 green.
+  - Physical KEEP still blocked on dirty Scribe tree; iPad agent-control sessions remain on old build 9fc4ff4.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — Shrunk primary runtime translation unit after extracts.
+  - `Sources/InstantSwiftDataCore/InstantRuntimeExactTaskOwner.swift` — Exact task owner and close-idle state extracted for compile isolation.
+  - `Sources/InstantSwiftDataCore/InstantRuntimeLiveSession.swift` — Live session actor and encoding/supersede types extracted.
+  - `Sources/InstantSwiftDataCore/InstantVisibleWriteFilter.swift` — Authoritative/visible write coverage helpers extracted.
+  - `Package.swift` — Removed debug-only SIL unsafeFlags after split proved safe.
+  - `PROGRESS.md` — Recorded split evidence and remaining KEEP blocker.
+- **User context (verbatim):**
+  > please
+- **SpecStory:** unavailable — Grok Build session; no public SpecStory share URI for this desktop agent task.
+
 ## August 11th, 2026 at 1:56:00 p.m. EDT — `8b7c384e4545` Land bounded outbox/memory freezes and unblock suite compile.
 
 - **Implementation commit:** `8b7c384e45455cdbf4c5906a786b486354369eaa`
