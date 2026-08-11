@@ -1,3 +1,9 @@
+## 2026-08-11 15:36:15 EDT
+
+- **repo:** realtime-voice-sqlite-instant
+- **commit:** dbe162caec5a0bfda431d7f5c89568755eb5a61c
+- **reason:** Scaffold @Doc(what:why:) + @DocumentedActions macros for TCA Action documentation lookup (ADR 0007); docs-only derivation next to @RemoteControl.
+
 ## 2026-08-10 11:39:19 EDT
 
 ## 2026-08-11 14:44:46 EDT
