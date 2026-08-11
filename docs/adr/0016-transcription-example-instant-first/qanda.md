@@ -400,3 +400,176 @@ Still fine-tune individual messages/observe slices if needed; shape is locked.
 Tree file rewritten as WIP with observe/send/goesTo/mutate nested on leaves.
 Captain feedback applied through `mode.recordingIdle.*`. Pick up at
 `mode.recordingActive.*`. Navigation stack for `goBack` still open.
+
+---
+
+## Q10 — Dual-track same recording id
+
+- **Status:** decided
+- **Decided:** 2026-08-11
+
+Capture and playback may target **different** or the **same** recording id
+(A+A or A+B).
+
+---
+
+## Q11 — Nested observe; speechRecognized; when isFinal
+
+- **Status:** decided
+- **Decided:** 2026-08-11
+
+Observe: `recording →* transcription →* segment`. Message: `speechRecognized`.
+Mutate uses `when isFinal` → finalize current + create next open speech.
+
+---
+
+## Q12 — Dual-track leaf messages (active)
+
+- **Status:** decided
+- **Decided:** 2026-08-11
+
+stopRecording uses explicit finish fields. Dual timeline openers. File first,
+chat second. Early `process` bag superseded by Q14.
+
+---
+
+## Q13 — recordingPausedPlaybackIdle
+
+- **Status:** decided
+- **Decided:** 2026-08-11
+
+**Accepted.** resume / stop / play / openCapture timeline.
+
+---
+
+## Q14 — Kill process; flatten timeline; prefs in schema
+
+- **Status:** decided
+- **Decided:** 2026-08-11
+
+**Accepted.** No process root. `screen.timeline(recordingId)` (not detail).
+Prefs = `schema.preference`. App roots: screen + mode only.
+
+---
+
+## Q15 — recordingPausedPlaybackPlaying
+
+- **Status:** decided
+- **Decided:** 2026-08-11
+
+**Accepted.** No speechRecognized while capture paused. Dual openers.
+
+---
+
+## Q16 — nested name (superseded)
+
+- **Status:** superseded by Q17 flat spelling; content re-asked as Q18
+
+---
+
+## Q17 — Flat Cartesian mode leaves
+
+- **Status:** decided
+- **Decided:** 2026-08-11
+
+**Accepted.** Nine flat siblings: `recordingActivePlaybackPlaying`, not
+`recordingActive.playbackPlaying`. Handle args in parentheses. True exclusive
+hierarchies still nest. Independent-axis products flatten. Code may use two
+phase ADTs; tree spelling is flat compounds.
+
+---
+
+## Q18 — recordingPausedPlaybackPaused
+
+- **Status:** decided
+- **Decided:** 2026-08-11
+
+**Accepted.** Timeline observes derived `modeRelation` (capture/playback vs
+route id). stopPlayback while paused still clears to idle.
+
+---
+
+## Q19 — recordingActivePlaybackIdle
+
+- **Status:** decided
+- **Decided:** 2026-08-11
+
+**Accepted.** Full segment `times` (wall + relative). Skeleton restores handle
+args.
+
+---
+
+## Q20 — recordingActivePlaybackPlaying
+
+- **Status:** decided
+- **Decided:** 2026-08-11
+
+### Answer
+
+**Accepted** (full tree — no truncated send block).
+
+Dual capture + playback; both timeline openers; speechRecognized + when isFinal;
+pause/stop recording; pause/stop/scrub playback.
+
+Next: Q21 `recordingActivePlaybackPaused`.
+
+---
+
+## Q21 — mode.recordingActivePlaybackPaused
+
+- **Status:** decided
+- **Asked:** 2026-08-11
+- **Decided:** 2026-08-11
+
+### Answer
+
+**Accepted.** Same dual-track shape as siblings; nothing special to call out.
+resumePlayback (not pausePlayback); speechRecognized still on (capture active).
+
+Next: remaining `recordingIdlePlayback*` leaves (no capture handle).
+
+---
+
+## Q22 — mode.recordingIdlePlaybackIdle + startRecording wording
+
+- **Status:** decided
+- **Asked:** 2026-08-11
+- **Decided:** 2026-08-11
+- **Recommendation:** Accept leaf with `recording.create` only.
+
+### Pushback (captain)
+
+- Not `recordingAndTranscription.createLinked`. Public mutate is
+  **`recording.create`**. That a transcription (and empty open segment) is
+  also written is **implementation**, not a second named mutation.
+- Drop jargon: “host defaults; mode gets capture handle on arrival.”
+
+### Plain meaning of startRecording
+
+1. **mutate** `recording.create` — new recording row.
+2. **goesTo** `mode.recordingActivePlaybackIdle(capture)` — capture ids are
+   those of the recording you just created (the destination mode case always
+   carries `capture`; no separate “handle arrival” story).
+
+### Leaf (accepted)
+
+```text
+mode.recordingIdlePlaybackIdle
+├── observe
+│   └── (no capture; no playback)
+└── send
+    └── startRecording
+          ├── goesTo
+          │     └── mode.recordingActivePlaybackIdle(capture)
+          └── mutate
+                └── recording.create
+```
+
+### Answer
+
+**Accepted** (captain: “good”).
+
+Public mutate name is **`recording.create` only**. Same wording applies to
+`startRecording` on the other idle-recording leaves when reviewed.
+
+Next: `mode.recordingIdlePlaybackPlaying(playback)`.

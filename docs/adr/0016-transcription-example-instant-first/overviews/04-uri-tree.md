@@ -1,8 +1,9 @@
 # Overview 04 — App tree (observe, send, goesTo, mutate)
 
 **Status:** **work in progress** — needs more captain feedback  
-**Last review:** captain through `mode.recordingIdle.*` (2026-08-10); pick up at
-`mode.recordingActive.*`  
+**Last review:** Q22 accepted (2026-08-11):
+  `mode.recordingIdlePlaybackIdle` — public mutate `recording.create` only.  
+  Remaining mode leaves: `recordingIdlePlaybackPlaying|Paused`.  
 **Schema:** `/Users/laptop/Sync/skills/domain-as-tree/references/schemas/transcription.md`  
 https://github.com/technoplato/skills/blob/master/domain-as-tree/references/schemas/transcription.md  
 **This file (GitHub, when pushed):**  
@@ -17,41 +18,108 @@ Started Monday 2026-08-10 ~5:46 PM America/New_York.
 
 ## WIP / handoff
 
-- Shape of **screen** + exhaustive **mode** nesting is accepted in spirit.
-- Leaves use nested `observe` / `send` / `goesTo` / `mutate` (no side arrows).
-- Captain feedback incorporated through **`mode.recordingIdle`** children.
-- **Not yet re-reviewed by captain:** `mode.recordingActive.*`,
-  `mode.recordingPaused.*`, process leaves, navigation stack model.
-- **Open:** how `goBack` resolves (nav stack / tree nav / deep link) — not
-  hard-coded to `library.populated`.
-- **Open:** field lists under observe may still grow or shrink.
+**Full agent handoff:** [`../HANDOFF.md`](../HANDOFF.md) (2026-08-11).
 
-Do not treat this file as locked for implementation until the full mode tree
-is reviewed.
+- **App roots:** `screen` + `mode` only. No `process`. Prefs = **schema**.
+- **Mode:** nine **flat** siblings (Cartesian product spelling). Handles as
+  associated values in parentheses — not URI path segments.
+- **Screen:** `timeline(recordingId)` = recording body (speech + events +
+  responses). Observes derived `modeRelation` vs route id.
+- Leaves: nested `observe` / `send` / `goesTo` / `mutate`. Full expansion —
+  no truncated send arrows in review leaves.
+- **Reviewed:** Q13–Q15, Q18–Q22 mode leaves. Remaining idle:
+  `recordingIdlePlaybackPlaying|Paused` (same `recording.create` on start).
+- **Open:** `goBack` resolution (stack / tree / deep link).
+- Capture and playback may target the **same** recording id (A + A).
 
 ## Rules
 
 - One tree. Roots, branches, leaves.
-- Leaves carry `observe` and `send`.
-- Under each message: optional `goesTo` (mode/screen change) and `mutate`
-  (data change). Nested — not arrows in the margin.
+- App roots: **`screen`** + **`mode`**.
 - No `|` bars for exclusive cases.
-- Mode: nine leaves by nesting playback under each recording phase.
-- `idle` = track off, not “no DB row.”
-- **Screen vs mode:** library/detail/settings are where you look. Start/stop
-  record and play control lives primarily on **mode** (floating toolbar /
-  app-wide). Screen messages are for navigation and list/detail editing.
-- `recording.create` + `transcription.create` are one **linked** mutation with
-  host defaults (no field shopping list on the message).
+- **Cartesian products** (independent axes): **flat sibling leaves**, camelCase
+  compounds, no intermediate dots (`recordingActivePlaybackPlaying`).
+- **True exclusive hierarchies** still nest (`library` → `empty` / `populated`).
+- Capture / playback handles hang on mode leaves that need them.
+- Conditionals under mutate use nested **`when`**.
+- Durable observe nests: `recording →* transcription →* segment`.
+- Segment `times` always expand: wall + relative (start/end each).
+- Timeline openers: pure `goesTo screen.timeline(recordingId)`.
 
 ## Conventions
 
 | Node | Meaning |
 | --- | --- |
-| observe | Schema / session slices this node needs |
+| observe | Schema slices + mode handles this node needs |
 | send | Message available here |
 | goesTo | Transition of screen and/or mode |
-| mutate | Durable or session data change |
+| mutate | Schema change |
+| when | Conditional branch under a mutate |
+
+---
+
+## Mode: algebra vs tree spelling
+
+```text
+recordingPhase: idle | active(capture) | paused(capture)
+playbackPhase:  idle | playing(playback) | paused(playback)
+```
+
+Tree spelling — nine exclusive siblings:
+
+```text
+mode
+  recordingIdlePlaybackIdle
+  recordingIdlePlaybackPlaying(playback)
+  recordingIdlePlaybackPaused(playback)
+  recordingActivePlaybackIdle(capture)
+  recordingActivePlaybackPlaying(capture, playback)
+  recordingActivePlaybackPaused(capture, playback)
+  recordingPausedPlaybackIdle(capture)
+  recordingPausedPlaybackPlaying(capture, playback)
+  recordingPausedPlaybackPaused(capture, playback)
+```
+
+Hosts may implement two phase enums in Swift; **URI/tree name is the flat compound**.
+
+### Mode handles (not schema)
+
+```text
+capture
+  recordingId          recording.id
+  transcriptionId      transcription.id
+
+playback
+  recordingId          recording.id
+  mediaPosition        Duration
+```
+
+### Schema (not app roots)
+
+```text
+recording
+└──* transcription
+    └──* segment
+          body
+            speech | event
+          └──* response
+
+preference
+  speechRate
+  speechRateDefault
+  debugPanel.presentation
+```
+
+### `speechRecognized` (kept)
+
+```text
+speechRecognized
+  └── mutate
+        ├── segment.upsertSpeech (transcriptionId, words, isFinal, times wall+relative)
+        └── when isFinal
+              ├── segment finalize current
+              └── segment.create next open speech
+```
 
 ---
 
@@ -73,9 +141,6 @@ transcription.app
 │   │   │             └── goesTo
 │   │   │                   └── screen.settings
 │   │   │
-│   │   │   # Note: startRecording is not owned here.
-│   │   │   # Primary home is mode.recordingIdle.* (toolbar / app-wide).
-│   │   │
 │   │   └── populated
 │   │       ├── observe
 │   │       │   └── recording[]
@@ -88,431 +153,633 @@ transcription.app
 │   │       │         activityBadge                  optional
 │   │       └── send
 │   │           ├── openRecording
-│   │           │   ├── goesTo
-│   │           │   │     └── screen.detail.timeline
-│   │           │   └── mutate
-│   │           │         └── focus.recordingId      set
+│   │           │   └── goesTo
+│   │           │         └── screen.timeline(row.recordingId)
 │   │           ├── deleteRecording
 │   │           │   └── mutate
-│   │           │         └── recording.deleteLinked
-│   │           │               # recording + its transcriptions/segments/…
+│   │           │         └── recording.delete
 │   │           └── openSettings
 │   │                 └── goesTo
 │   │                       └── screen.settings
 │   │
-│   ├── detail
-│   │   └── timeline
-│   │       ├── observe
-│   │       │   ├── focus.recordingId
-│   │       │   ├── recording
-│   │       │   │     id
-│   │       │   │     title
-│   │       │   │     createdAt
-│   │       │   │     updatedAt
-│   │       │   │     finishedAt
-│   │       │   │     duration
-│   │       │   ├── transcription
-│   │       │   │     id
-│   │       │   │     recordingId
-│   │       │   │     createdAt
-│   │       │   │     updatedAt
-│   │       │   │     finishedAt
-│   │       │   ├── segment[]
-│   │       │   │     id
-│   │       │   │     transcriptionId
-│   │       │   │     index
-│   │       │   │     times
-│   │       │   │       wall
-│   │       │   │         start
-│   │       │   │         end
-│   │       │   │       relative
-│   │       │   │         start
-│   │       │   │         end
-│   │       │   │     body
-│   │       │   │       speech
-│   │       │   │         words[]
-│   │       │   │         text
-│   │       │   │         isFinal
-│   │       │   │       event
-│   │       │   │         kind
-│   │       │   │         …
-│   │       │   └── response[]                     trees on segments
-│   │       │         id
-│   │       │         segmentId
-│   │       │         parent
-│   │       │           root
-│   │       │           reply
-│   │       │             responseId
-│   │       │         text
-│   │       │         author
-│   │       │         createdAt
-│   │       └── send
-│   │           ├── goBack
-│   │           │   └── goesTo
-│   │           │         └── navigation.previous
-│   │           │               # WIP: stack / tree / deep link — not hard-coded
-│   │           │               # to library.populated
-│   │           ├── postResponse
-│   │           │   └── mutate
-│   │           │         └── response.create
-│   │           │               segmentId
-│   │           │               parent.root
-│   │           │               text
-│   │           │               author
-│   │           │               createdAt
-│   │           └── replyToResponse
-│   │                 └── mutate
-│   │                       └── response.create
-│   │                             segmentId
-│   │                             parent.reply.responseId
-│   │                             text
-│   │                             author
-│   │                             createdAt
-│   │           # Two messages keep parent algebraic (root vs reply), not Optional
+│   ├── timeline(recordingId)
+│   │   ├── observe
+│   │   │   ├── modeRelation
+│   │   │   │     capture
+│   │   │   │       off
+│   │   │   │       on
+│   │   │   │     playback
+│   │   │   │       off
+│   │   │   │       playing
+│   │   │   │       paused
+│   │   │   ├── playback.mediaPosition
+│   │   │   └── recording
+│   │   │         id
+│   │   │         title
+│   │   │         createdAt
+│   │   │         updatedAt
+│   │   │         finishedAt
+│   │   │         duration
+│   │   │         └──* transcription
+│   │   │               id
+│   │   │               recordingId
+│   │   │               createdAt
+│   │   │               updatedAt
+│   │   │               finishedAt
+│   │   │               └──* segment
+│   │   │                     id
+│   │   │                     transcriptionId
+│   │   │                     index
+│   │   │                     times
+│   │   │                       wall
+│   │   │                         start
+│   │   │                         end
+│   │   │                       relative
+│   │   │                         start
+│   │   │                         end
+│   │   │                     body
+│   │   │                       speech
+│   │   │                         words[]
+│   │   │                         text
+│   │   │                         isFinal
+│   │   │                       event
+│   │   │                         kind
+│   │   │                         …
+│   │   │                     └──* response
+│   │   │                           id
+│   │   │                           segmentId
+│   │   │                           parent
+│   │   │                             root
+│   │   │                             reply
+│   │   │                               responseId
+│   │   │                           text
+│   │   │                           author
+│   │   │                           createdAt
+│   │   └── send
+│   │       ├── goBack
+│   │       │   └── goesTo
+│   │       │         └── navigation.previous
+│   │       ├── postResponse
+│   │       │   └── mutate
+│   │       │         └── response.create
+│   │       │               segmentId
+│   │       │               parent.root
+│   │       │               text
+│   │       │               author
+│   │       │               createdAt
+│   │       └── replyToResponse
+│   │             └── mutate
+│   │                   └── response.create
+│   │                         segmentId
+│   │                         parent.reply.responseId
+│   │                         text
+│   │                         author
+│   │                         createdAt
 │   │
 │   └── settings
 │       ├── observe
-│       │   ├── speechRateDefault
-│       │   └── debugPanel
-│       │         presentation
+│       │   └── preference
+│       │         speechRateDefault
+│       │         debugPanel
+│       │           presentation
 │       └── send
 │           ├── setSpeechRateDefault
 │           │   └── mutate
-│           │         └── process.speechRateDefault    set
+│           │         └── preference.speechRateDefault    set
 │           ├── setDebugPanelPresentation
 │           │   └── mutate
-│           │         └── process.debugPanel.presentation  set
+│           │         └── preference.debugPanel.presentation  set
 │           └── goBack
 │                 └── goesTo
 │                       └── navigation.previous
 │
 ├── mode
 │   │
-│   │   # Mode = app-wide capture/play combination (nine leaves).
-│   │   # Floating toolbar is one surface; mode is not limited to it.
-│   │   # Start/stop record and play primarily live here, not on library.
+│   ├── recordingIdlePlaybackIdle                      # REVIEWED Q22
+│   │   ├── observe
+│   │   │   └── (no capture; no playback)
+│   │   └── send
+│   │       └── startRecording
+│   │             ├── goesTo
+│   │             │     └── mode.recordingActivePlaybackIdle(capture)
+│   │             └── mutate
+│   │                   └── recording.create
 │   │
-│   ├── recordingIdle
-│   │   │
-│   │   ├── playbackIdle
-│   │   │   ├── observe
-│   │   │   │   └── (no open capture; no playback id)
-│   │   │   └── send
-│   │   │       └── startRecording
-│   │   │             ├── goesTo
-│   │   │             │     └── mode.recordingActive.playbackIdle
-│   │   │             └── mutate
-│   │   │                   └── recordingAndTranscription.createLinked
-│   │   │                         # one linked mutation; host defaults for
-│   │   │                         # title, times, empty duration, etc.
-│   │   │   # Cannot start playback from this leaf alone — pick a recording
-│   │   │   # on screen (library/detail), then playRecording there or via
-│   │   │   # toolbar once a target id is known.
-│   │   │
-│   │   ├── playbackPlaying
-│   │   │   ├── observe
-│   │   │   │   ├── playback.recordingId
-│   │   │   │   └── playback.mediaPosition
-│   │   │   └── send
-│   │   │       ├── pausePlayback
-│   │   │       │   └── goesTo
-│   │   │       │         └── mode.recordingIdle.playbackPaused
-│   │   │       ├── stopPlayback
-│   │   │       │   └── goesTo
-│   │   │       │         └── mode.recordingIdle.playbackIdle
-│   │   │       ├── scrubPlayback
-│   │   │       │   └── mutate
-│   │   │       │         └── playback.mediaPosition   set
-│   │   │       └── startRecording
-│   │   │             ├── goesTo
-│   │   │             │     └── mode.recordingActive.playbackPlaying
-│   │   │             └── mutate
-│   │   │                   └── recordingAndTranscription.createLinked
-│   │   │
-│   │   └── playbackPaused
-│   │       ├── observe
-│   │       │   ├── playback.recordingId
-│   │       │   └── playback.mediaPosition
-│   │       └── send
-│   │           ├── resumePlayback
-│   │           │   └── goesTo
-│   │           │         └── mode.recordingIdle.playbackPlaying
-│   │           ├── stopPlayback
-│   │           │   └── goesTo
-│   │           │         └── mode.recordingIdle.playbackIdle
-│   │           ├── scrubPlayback
-│   │           │   └── mutate
-│   │           │         └── playback.mediaPosition   set
-│   │           └── startRecording
-│   │                 ├── goesTo
-│   │                 │     └── mode.recordingActive.playbackPaused
-│   │                 └── mutate
-│   │                       └── recordingAndTranscription.createLinked
+│   ├── recordingIdlePlaybackPlaying(playback)
+│   │   ├── observe
+│   │   │   └── playback
+│   │   │         recordingId
+│   │   │         mediaPosition
+│   │   └── send
+│   │       ├── pausePlayback
+│   │       │   └── goesTo
+│   │       │         └── mode.recordingIdlePlaybackPaused
+│   │       ├── stopPlayback
+│   │       │   └── goesTo
+│   │       │         └── mode.recordingIdlePlaybackIdle
+│   │       ├── scrubPlayback
+│   │       │   └── mutate
+│   │       │         └── (mode) playback.mediaPosition   set
+│   │       └── startRecording
+│   │             ├── goesTo
+│   │             │     └── mode.recordingActivePlaybackPlaying(capture, playback)
+│   │             └── mutate
+│   │                   └── recording.create
 │   │
-│   │   # ----- captain review stopped around here; continue below -----
+│   ├── recordingIdlePlaybackPaused(playback)
+│   │   ├── observe
+│   │   │   └── playback
+│   │   │         recordingId
+│   │   │         mediaPosition
+│   │   └── send
+│   │       ├── resumePlayback
+│   │       │   └── goesTo
+│   │       │         └── mode.recordingIdlePlaybackPlaying
+│   │       ├── stopPlayback
+│   │       │   └── goesTo
+│   │       │         └── mode.recordingIdlePlaybackIdle
+│   │       ├── scrubPlayback
+│   │       │   └── mutate
+│   │       │         └── (mode) playback.mediaPosition   set
+│   │       └── startRecording
+│   │             ├── goesTo
+│   │             │     └── mode.recordingActivePlaybackPaused(capture, playback)
+│   │             └── mutate
+│   │                   └── recording.create
 │   │
-│   ├── recordingActive
-│   │   │
-│   │   ├── playbackIdle
-│   │   │   ├── observe
-│   │   │   │   ├── capture.recordingId
-│   │   │   │   ├── capture.transcriptionId
-│   │   │   │   ├── recording
-│   │   │   │   │     id
-│   │   │   │   │     title
-│   │   │   │   │     createdAt
-│   │   │   │   │     updatedAt
-│   │   │   │   │     finishedAt
-│   │   │   │   │     duration
-│   │   │   │   ├── transcription
-│   │   │   │   │     id
-│   │   │   │   │     recordingId
-│   │   │   │   │     createdAt
-│   │   │   │   │     updatedAt
-│   │   │   │   │     finishedAt
-│   │   │   │   └── segment                        open speech tail if any
-│   │   │   └── send
-│   │   │       ├── pauseRecording
-│   │   │       │   └── goesTo
-│   │   │       │         └── mode.recordingPaused.playbackIdle
-│   │   │       ├── stopRecording
-│   │   │       │   ├── goesTo
-│   │   │       │   │     └── mode.recordingIdle.playbackIdle
-│   │   │       │   └── mutate
-│   │   │       │         └── recordingAndTranscription.finishLinked
-│   │   │       ├── playRecording
-│   │   │       │   └── goesTo
-│   │   │       │         └── mode.recordingActive.playbackPlaying
-│   │   │       ├── openActiveTimeline
-│   │   │       │   ├── goesTo
-│   │   │       │   │     └── screen.detail.timeline
-│   │   │       │   └── mutate
-│   │   │       │         └── focus.recordingId        set capture id
-│   │   │       └── injectSimulatedSpeech
-│   │   │             └── mutate
-│   │   │                   └── segment.upsertSpeech
-│   │   │                         transcriptionId
-│   │   │                         words
+│   ├── recordingActivePlaybackIdle(capture)           # REVIEWED Q19
+│   │   ├── observe
+│   │   │   ├── capture
+│   │   │   │     recordingId
+│   │   │   │     transcriptionId
+│   │   │   └── recording
+│   │   │         id
+│   │   │         title
+│   │   │         createdAt
+│   │   │         updatedAt
+│   │   │         finishedAt
+│   │   │         duration
+│   │   │         └──* transcription
+│   │   │               id
+│   │   │               recordingId
+│   │   │               createdAt
+│   │   │               updatedAt
+│   │   │               finishedAt
+│   │   │               └──* segment
+│   │   │                     id
+│   │   │                     transcriptionId
+│   │   │                     index
+│   │   │                     times
+│   │   │                       wall
+│   │   │                         start
+│   │   │                         end
+│   │   │                       relative
+│   │   │                         start
+│   │   │                         end
+│   │   │                     body
+│   │   │                       speech
+│   │   │                         words[]
+│   │   │                         text
 │   │   │                         isFinal
-│   │   │                         times
-│   │   │
-│   │   ├── playbackPlaying
-│   │   │   ├── observe
-│   │   │   │   ├── capture.recordingId
-│   │   │   │   ├── capture.transcriptionId
-│   │   │   │   ├── recording                       fields as above
-│   │   │   │   ├── transcription                   fields as above
-│   │   │   │   ├── segment                         open speech tail if any
-│   │   │   │   ├── playback.recordingId
-│   │   │   │   └── playback.mediaPosition
-│   │   │   └── send
-│   │   │       ├── pauseRecording
-│   │   │       │   └── goesTo
-│   │   │       │         └── mode.recordingPaused.playbackPlaying
-│   │   │       ├── stopRecording
-│   │   │       │   ├── goesTo
-│   │   │       │   │     └── mode.recordingIdle.playbackPlaying
-│   │   │       │   └── mutate
-│   │   │       │         └── recordingAndTranscription.finishLinked
-│   │   │       ├── pausePlayback
-│   │   │       │   └── goesTo
-│   │   │       │         └── mode.recordingActive.playbackPaused
-│   │   │       ├── stopPlayback
-│   │   │       │   └── goesTo
-│   │   │       │         └── mode.recordingActive.playbackIdle
-│   │   │       ├── scrubPlayback
-│   │   │       │   └── mutate
-│   │   │       │         └── playback.mediaPosition   set
-│   │   │       ├── openActiveTimeline
-│   │   │       │   ├── goesTo
-│   │   │       │   │     └── screen.detail.timeline
-│   │   │       │   └── mutate
-│   │   │       │         └── focus.recordingId
-│   │   │       └── injectSimulatedSpeech
-│   │   │             └── mutate
-│   │   │                   └── segment.upsertSpeech
-│   │   │
-│   │   └── playbackPaused
-│   │       ├── observe
-│   │       │   ├── capture.recordingId
-│   │       │   ├── capture.transcriptionId
-│   │       │   ├── recording
-│   │       │   ├── transcription
-│   │       │   ├── segment
-│   │       │   ├── playback.recordingId
-│   │       │   └── playback.mediaPosition
-│   │       └── send
-│   │           ├── pauseRecording
-│   │           │   └── goesTo
-│   │           │         └── mode.recordingPaused.playbackPaused
-│   │           ├── stopRecording
-│   │           │   ├── goesTo
-│   │           │   │     └── mode.recordingIdle.playbackPaused
-│   │           │   └── mutate
-│   │           │         └── recordingAndTranscription.finishLinked
-│   │           ├── resumePlayback
-│   │           │   └── goesTo
-│   │           │         └── mode.recordingActive.playbackPlaying
-│   │           ├── stopPlayback
-│   │           │   └── goesTo
-│   │           │         └── mode.recordingActive.playbackIdle
-│   │           ├── scrubPlayback
-│   │           │   └── mutate
-│   │           │         └── playback.mediaPosition   set
-│   │           ├── openActiveTimeline
-│   │           │   ├── goesTo
-│   │           │   │     └── screen.detail.timeline
-│   │           │   └── mutate
-│   │           │         └── focus.recordingId
-│   │           └── injectSimulatedSpeech
-│   │                 └── mutate
-│   │                       └── segment.upsertSpeech
+│   │   │                       event
+│   │   │                         kind
+│   │   │                         …
+│   │   └── send
+│   │       ├── pauseRecording
+│   │       │   └── goesTo
+│   │       │         └── mode.recordingPausedPlaybackIdle
+│   │       ├── stopRecording
+│   │       │   ├── goesTo
+│   │       │   │     └── mode.recordingIdlePlaybackIdle
+│   │       │   └── mutate
+│   │       │         ├── recording.finishedAt         set
+│   │       │         ├── recording.duration           set
+│   │       │         ├── recording.updatedAt          set
+│   │       │         ├── transcription.finishedAt     set
+│   │       │         └── transcription.updatedAt      set
+│   │       ├── playRecording
+│   │       │   └── goesTo
+│   │       │         └── mode.recordingActivePlaybackPlaying
+│   │       ├── openCaptureRecordingTimeline
+│   │       │   └── goesTo
+│   │       │         └── screen.timeline(capture.recordingId)
+│   │       └── speechRecognized
+│   │             └── mutate
+│   │                   ├── segment.upsertSpeech
+│   │                   │     transcriptionId
+│   │                   │     words
+│   │                   │     isFinal
+│   │                   │     times
+│   │                   │       wall
+│   │                   │         start
+│   │                   │         end
+│   │                   │       relative
+│   │                   │         start
+│   │                   │         end
+│   │                   └── when isFinal
+│   │                         ├── segment finalize current
+│   │                         └── segment.create next open speech
 │   │
-│   └── recordingPaused
-│       │
-│       ├── playbackIdle
-│       │   ├── observe
-│       │   │   ├── capture.recordingId
-│       │   │   ├── capture.transcriptionId
-│       │   │   ├── recording
-│       │   │   └── transcription
-│       │   └── send
-│       │       ├── resumeRecording
-│       │       │   └── goesTo
-│       │       │         └── mode.recordingActive.playbackIdle
-│       │       ├── stopRecording
-│       │       │   ├── goesTo
-│       │       │   │     └── mode.recordingIdle.playbackIdle
-│       │       │   └── mutate
-│       │       │         └── recordingAndTranscription.finishLinked
-│       │       ├── playRecording
-│       │       │   └── goesTo
-│       │       │         └── mode.recordingPaused.playbackPlaying
-│       │       └── openActiveTimeline
-│       │             ├── goesTo
-│       │             │     └── screen.detail.timeline
-│       │             └── mutate
-│       │                   └── focus.recordingId
-│       │
-│       ├── playbackPlaying
-│       │   ├── observe
-│       │   │   ├── capture.recordingId
-│       │   │   ├── capture.transcriptionId
-│       │   │   ├── recording
-│       │   │   ├── transcription
-│       │   │   ├── playback.recordingId
-│       │   │   └── playback.mediaPosition
-│       │   └── send
-│       │       ├── resumeRecording
-│       │       │   └── goesTo
-│       │       │         └── mode.recordingActive.playbackPlaying
-│       │       ├── stopRecording
-│       │       │   ├── goesTo
-│       │       │   │     └── mode.recordingIdle.playbackPlaying
-│       │       │   └── mutate
-│       │       │         └── recordingAndTranscription.finishLinked
-│       │       ├── pausePlayback
-│       │       │   └── goesTo
-│       │       │         └── mode.recordingPaused.playbackPaused
-│       │       ├── stopPlayback
-│       │       │   └── goesTo
-│       │       │         └── mode.recordingPaused.playbackIdle
-│       │       ├── scrubPlayback
-│       │       │   └── mutate
-│       │       │         └── playback.mediaPosition   set
-│       │       └── openActiveTimeline
-│       │             ├── goesTo
-│       │             │     └── screen.detail.timeline
-│       │             └── mutate
-│       │                   └── focus.recordingId
-│       │
-│       └── playbackPaused
-│           ├── observe
-│           │   ├── capture.recordingId
-│           │   ├── capture.transcriptionId
-│           │   ├── recording
-│           │   ├── transcription
-│           │   ├── playback.recordingId
-│           │   └── playback.mediaPosition
-│           └── send
-│               ├── resumeRecording
-│               │   └── goesTo
-│               │         └── mode.recordingActive.playbackPaused
-│               ├── stopRecording
-│               │   ├── goesTo
-│               │   │     └── mode.recordingIdle.playbackPaused
-│               │   └── mutate
-│               │         └── recordingAndTranscription.finishLinked
-│               ├── resumePlayback
-│               │   └── goesTo
-│               │         └── mode.recordingPaused.playbackPlaying
-│               ├── stopPlayback
-│               │   └── goesTo
-│               │         └── mode.recordingPaused.playbackIdle
-│               ├── scrubPlayback
-│               │   └── mutate
-│               │         └── playback.mediaPosition   set
-│               └── openActiveTimeline
-│                     ├── goesTo
-│                     │     └── screen.detail.timeline
-│                     └── mutate
-│                           └── focus.recordingId
-│
-└── process
-    ├── speechRate
-    │   ├── observe
-    │   │   └── rate
-    │   └── send
-    │       └── setSpeechRate
-    │             └── mutate
-    │                   └── process.speechRate         set
-    └── debugPanel
-        ├── observe
-        │   ├── memory
-        │   ├── logs
-        │   ├── buildProvenance
-        │   └── presentation
-        └── send
-            └── setPresentation
-                  └── mutate
-                        └── process.debugPanel.presentation  set
-                  # DEV always expanded by default; presentation still mutable
+│   ├── recordingActivePlaybackPlaying(capture, playback)  # REVIEWED Q20
+│   │   ├── observe
+│   │   │   ├── capture
+│   │   │   │     recordingId
+│   │   │   │     transcriptionId
+│   │   │   ├── playback
+│   │   │   │     recordingId
+│   │   │   │     mediaPosition
+│   │   │   └── recording
+│   │   │         id
+│   │   │         title
+│   │   │         createdAt
+│   │   │         updatedAt
+│   │   │         finishedAt
+│   │   │         duration
+│   │   │         └──* transcription
+│   │   │               id
+│   │   │               recordingId
+│   │   │               createdAt
+│   │   │               updatedAt
+│   │   │               finishedAt
+│   │   │               └──* segment
+│   │   │                     id
+│   │   │                     transcriptionId
+│   │   │                     index
+│   │   │                     times
+│   │   │                       wall
+│   │   │                         start
+│   │   │                         end
+│   │   │                       relative
+│   │   │                         start
+│   │   │                         end
+│   │   │                     body
+│   │   │                       speech
+│   │   │                         words[]
+│   │   │                         text
+│   │   │                         isFinal
+│   │   │                       event
+│   │   │                         kind
+│   │   │                         …
+│   │   └── send
+│   │       ├── pauseRecording
+│   │       │   └── goesTo
+│   │       │         └── mode.recordingPausedPlaybackPlaying
+│   │       ├── stopRecording
+│   │       │   ├── goesTo
+│   │       │   │     └── mode.recordingIdlePlaybackPlaying
+│   │       │   └── mutate
+│   │       │         ├── recording.finishedAt         set
+│   │       │         ├── recording.duration           set
+│   │       │         ├── recording.updatedAt          set
+│   │       │         ├── transcription.finishedAt     set
+│   │       │         └── transcription.updatedAt      set
+│   │       ├── pausePlayback
+│   │       │   └── goesTo
+│   │       │         └── mode.recordingActivePlaybackPaused
+│   │       ├── stopPlayback
+│   │       │   └── goesTo
+│   │       │         └── mode.recordingActivePlaybackIdle
+│   │       ├── scrubPlayback
+│   │       │   └── mutate
+│   │       │         └── (mode) playback.mediaPosition   set
+│   │       ├── openCaptureRecordingTimeline
+│   │       │   └── goesTo
+│   │       │         └── screen.timeline(capture.recordingId)
+│   │       ├── openPlaybackRecordingTimeline
+│   │       │   └── goesTo
+│   │       │         └── screen.timeline(playback.recordingId)
+│   │       └── speechRecognized
+│   │             └── mutate
+│   │                   ├── segment.upsertSpeech
+│   │                   │     transcriptionId
+│   │                   │     words
+│   │                   │     isFinal
+│   │                   │     times
+│   │                   │       wall
+│   │                   │         start
+│   │                   │         end
+│   │                   │       relative
+│   │                   │         start
+│   │                   │         end
+│   │                   └── when isFinal
+│   │                         ├── segment finalize current
+│   │                         └── segment.create next open speech
+│   │
+│   ├── recordingActivePlaybackPaused(capture, playback)   # REVIEWED Q21
+│   │   ├── observe
+│   │   │   ├── capture
+│   │   │   │     recordingId
+│   │   │   │     transcriptionId
+│   │   │   ├── playback
+│   │   │   │     recordingId
+│   │   │   │     mediaPosition
+│   │   │   └── recording
+│   │   │         id
+│   │   │         title
+│   │   │         createdAt
+│   │   │         updatedAt
+│   │   │         finishedAt
+│   │   │         duration
+│   │   │         └──* transcription
+│   │   │               id
+│   │   │               recordingId
+│   │   │               createdAt
+│   │   │               updatedAt
+│   │   │               finishedAt
+│   │   │               └──* segment
+│   │   │                     id
+│   │   │                     transcriptionId
+│   │   │                     index
+│   │   │                     times
+│   │   │                       wall
+│   │   │                         start
+│   │   │                         end
+│   │   │                       relative
+│   │   │                         start
+│   │   │                         end
+│   │   │                     body
+│   │   │                       speech
+│   │   │                         words[]
+│   │   │                         text
+│   │   │                         isFinal
+│   │   │                       event
+│   │   │                         kind
+│   │   │                         …
+│   │   └── send
+│   │       ├── pauseRecording
+│   │       │   └── goesTo
+│   │       │         └── mode.recordingPausedPlaybackPaused
+│   │       ├── stopRecording
+│   │       │   ├── goesTo
+│   │       │   │     └── mode.recordingIdlePlaybackPaused
+│   │       │   └── mutate
+│   │       │         ├── recording.finishedAt         set
+│   │       │         ├── recording.duration           set
+│   │       │         ├── recording.updatedAt          set
+│   │       │         ├── transcription.finishedAt     set
+│   │       │         └── transcription.updatedAt      set
+│   │       ├── resumePlayback
+│   │       │   └── goesTo
+│   │       │         └── mode.recordingActivePlaybackPlaying
+│   │       ├── stopPlayback
+│   │       │   └── goesTo
+│   │       │         └── mode.recordingActivePlaybackIdle
+│   │       ├── scrubPlayback
+│   │       │   └── mutate
+│   │       │         └── (mode) playback.mediaPosition   set
+│   │       ├── openCaptureRecordingTimeline
+│   │       │   └── goesTo
+│   │       │         └── screen.timeline(capture.recordingId)
+│   │       ├── openPlaybackRecordingTimeline
+│   │       │   └── goesTo
+│   │       │         └── screen.timeline(playback.recordingId)
+│   │       └── speechRecognized
+│   │             └── mutate
+│   │                   ├── segment.upsertSpeech
+│   │                   │     transcriptionId
+│   │                   │     words
+│   │                   │     isFinal
+│   │                   │     times
+│   │                   │       wall
+│   │                   │         start
+│   │                   │         end
+│   │                   │       relative
+│   │                   │         start
+│   │                   │         end
+│   │                   └── when isFinal
+│   │                         ├── segment finalize current
+│   │                         └── segment.create next open speech
+│   │
+│   ├── recordingPausedPlaybackIdle(capture)               # REVIEWED Q13
+│   │   ├── observe
+│   │   │   ├── capture
+│   │   │   │     recordingId
+│   │   │   │     transcriptionId
+│   │   │   └── recording
+│   │   │         id
+│   │   │         title
+│   │   │         createdAt
+│   │   │         updatedAt
+│   │   │         finishedAt
+│   │   │         duration
+│   │   │         └──* transcription
+│   │   │               id
+│   │   │               recordingId
+│   │   │               createdAt
+│   │   │               updatedAt
+│   │   │               finishedAt
+│   │   │               └──* segment
+│   │   │                     id
+│   │   │                     transcriptionId
+│   │   │                     index
+│   │   │                     times
+│   │   │                       wall
+│   │   │                         start
+│   │   │                         end
+│   │   │                       relative
+│   │   │                         start
+│   │   │                         end
+│   │   │                     body
+│   │   │                       speech
+│   │   │                         words[]
+│   │   │                         text
+│   │   │                         isFinal
+│   │   │                       event
+│   │   │                         kind
+│   │   │                         …
+│   │   └── send
+│   │       ├── resumeRecording
+│   │       │   └── goesTo
+│   │       │         └── mode.recordingActivePlaybackIdle
+│   │       ├── stopRecording
+│   │       │   ├── goesTo
+│   │       │   │     └── mode.recordingIdlePlaybackIdle
+│   │       │   └── mutate
+│   │       │         ├── recording.finishedAt         set
+│   │       │         ├── recording.duration           set
+│   │       │         ├── recording.updatedAt          set
+│   │       │         ├── transcription.finishedAt     set
+│   │       │         └── transcription.updatedAt      set
+│   │       ├── playRecording
+│   │       │   └── goesTo
+│   │       │         └── mode.recordingPausedPlaybackPlaying
+│   │       └── openCaptureRecordingTimeline
+│   │             └── goesTo
+│   │                   └── screen.timeline(capture.recordingId)
+│   │
+│   ├── recordingPausedPlaybackPlaying(capture, playback)  # REVIEWED Q15
+│   │   ├── observe
+│   │   │   ├── capture
+│   │   │   │     recordingId
+│   │   │   │     transcriptionId
+│   │   │   ├── playback
+│   │   │   │     recordingId
+│   │   │   │     mediaPosition
+│   │   │   └── recording
+│   │   │         id
+│   │   │         title
+│   │   │         createdAt
+│   │   │         updatedAt
+│   │   │         finishedAt
+│   │   │         duration
+│   │   │         └──* transcription
+│   │   │               id
+│   │   │               recordingId
+│   │   │               createdAt
+│   │   │               updatedAt
+│   │   │               finishedAt
+│   │   │               └──* segment
+│   │   │                     id
+│   │   │                     transcriptionId
+│   │   │                     index
+│   │   │                     times
+│   │   │                       wall
+│   │   │                         start
+│   │   │                         end
+│   │   │                       relative
+│   │   │                         start
+│   │   │                         end
+│   │   │                     body
+│   │   │                       speech
+│   │   │                         words[]
+│   │   │                         text
+│   │   │                         isFinal
+│   │   │                       event
+│   │   │                         kind
+│   │   │                         …
+│   │   └── send
+│   │       ├── resumeRecording
+│   │       │   └── goesTo
+│   │       │         └── mode.recordingActivePlaybackPlaying
+│   │       ├── stopRecording
+│   │       │   ├── goesTo
+│   │       │   │     └── mode.recordingIdlePlaybackPlaying
+│   │       │   └── mutate
+│   │       │         ├── recording.finishedAt         set
+│   │       │         ├── recording.duration           set
+│   │       │         ├── recording.updatedAt          set
+│   │       │         ├── transcription.finishedAt     set
+│   │       │         └── transcription.updatedAt      set
+│   │       ├── pausePlayback
+│   │       │   └── goesTo
+│   │       │         └── mode.recordingPausedPlaybackPaused
+│   │       ├── stopPlayback
+│   │       │   └── goesTo
+│   │       │         └── mode.recordingPausedPlaybackIdle
+│   │       ├── scrubPlayback
+│   │       │   └── mutate
+│   │       │         └── (mode) playback.mediaPosition   set
+│   │       ├── openCaptureRecordingTimeline
+│   │       │   └── goesTo
+│   │       │         └── screen.timeline(capture.recordingId)
+│   │       ├── openPlaybackRecordingTimeline
+│   │       │   └── goesTo
+│   │       │         └── screen.timeline(playback.recordingId)
+│   │       └── (no speechRecognized — capture paused)
+│   │
+│   └── recordingPausedPlaybackPaused(capture, playback)   # REVIEWED Q18
+│       ├── observe
+│       │   ├── capture
+│       │   │     recordingId
+│       │   │     transcriptionId
+│       │   ├── playback
+│       │   │     recordingId
+│       │   │     mediaPosition
+│       │   └── recording
+│       │         id
+│       │         title
+│       │         createdAt
+│       │         updatedAt
+│       │         finishedAt
+│       │         duration
+│       │         └──* transcription
+│       │               id
+│       │               recordingId
+│       │               createdAt
+│       │               updatedAt
+│       │               finishedAt
+│       │               └──* segment
+│       │                     id
+│       │                     transcriptionId
+│       │                     index
+│       │                     times
+│       │                       wall
+│       │                         start
+│       │                         end
+│       │                       relative
+│       │                         start
+│       │                         end
+│       │                     body
+│       │                       speech
+│       │                         words[]
+│       │                         text
+│       │                         isFinal
+│       │                       event
+│       │                         kind
+│       │                         …
+│       └── send
+│           ├── resumeRecording
+│           │   └── goesTo
+│           │         └── mode.recordingActivePlaybackPaused
+│           ├── stopRecording
+│           │   ├── goesTo
+│           │   │     └── mode.recordingIdlePlaybackPaused
+│           │   └── mutate
+│           │         ├── recording.finishedAt         set
+│           │         ├── recording.duration           set
+│           │         ├── recording.updatedAt          set
+│           │         ├── transcription.finishedAt     set
+│           │         └── transcription.updatedAt      set
+│           ├── resumePlayback
+│           │   └── goesTo
+│           │         └── mode.recordingPausedPlaybackPlaying
+│           ├── stopPlayback
+│           │   └── goesTo
+│           │         └── mode.recordingPausedPlaybackIdle
+│           ├── scrubPlayback
+│           │   └── mutate
+│           │         └── (mode) playback.mediaPosition   set
+│           ├── openCaptureRecordingTimeline
+│           │   └── goesTo
+│           │         └── screen.timeline(capture.recordingId)
+│           └── openPlaybackRecordingTimeline
+│                 └── goesTo
+│                       └── screen.timeline(playback.recordingId)
 ```
 
 ---
 
-## Linked mutations (shorthand)
+## Mutations (shorthand)
 
 | Name | Meaning |
 | --- | --- |
-| `recordingAndTranscription.createLinked` | Create recording + transcription in one mutation; defaults for title/times |
-| `recordingAndTranscription.finishLinked` | Set finishedAt / duration on open capture |
-| `recording.deleteLinked` | Delete recording and owned transcription graph |
-| `segment.upsertSpeech` | Open-segment style upsert of speech body + words |
-| `response.create` | New thread (`parent.root`) or reply (`parent.reply`) |
+| `recording.create` | Start a new recording row. Creating the owned transcription (and empty open speech segment, if any) is **implementation** of start-record — not a second public mutate name. |
+| `recording.delete` | Delete that recording; cascade of owned graph is implementation. |
+| `segment.upsertSpeech` | Open-segment upsert of speech body + words |
+| `response.create` | Thread (`parent.root`) or reply (`parent.reply`) |
+
+Finish capture: explicit `finishedAt` / `duration` / `updatedAt` fields on
+recording and transcription — not a `finishLinked` name.
 
 ---
 
 ## Navigation (WIP)
 
-`goesTo.navigation.previous` stands for “pop / resolve back.” Contributors:
-
-- stack navigation
-- tree navigation
-- deep links
-
-Not specified yet. Do not assume back always lands on `library.populated`.
+`goesTo.navigation.previous` — stack / tree / deep link. Not hard-coded to
+`library.populated`.
 
 ---
 
-## Schema pointer
+## Killed names
 
-```text
-recording
-└──* transcription
-    └──* segment
-          ├── body
-          │     ├── speech
-          │     └── event
-          └──* response
-```
+| Dead | Replacement |
+| --- | --- |
+| `process` app root | deleted |
+| `process.focus` | `screen.timeline(recordingId)` |
+| `process.capture` / `playback` | mode leaf handles |
+| prefs under process | `schema.preference` |
+| `screen.detail.timeline` | `screen.timeline(recordingId)` |
+| `mode.recordingX.playbackY` nested | `mode.recordingXPlaybackY` flat |
+| `injectSimulatedSpeech` | `speechRecognized` |
+| `recordingAndTranscription.createLinked` | `recording.create` |
+| `recording.deleteLinked` / `finishLinked` | `recording.delete` / explicit finish fields |

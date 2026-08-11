@@ -19,6 +19,7 @@ but separate), books/library domain, recipes UI.
 | Schema catalog | `/Users/laptop/Sync/skills/domain-as-tree/references/schemas/CATALOG.md` | https://github.com/technoplato/skills/blob/master/domain-as-tree/references/schemas/CATALOG.md |
 | This ADR folder | `docs/adr/0016-transcription-example-instant-first/` | https://github.com/technoplato/instant-data-swift/tree/main/docs/adr/0016-transcription-example-instant-first |
 | Q&A log | [`qanda.md`](./qanda.md) | https://github.com/technoplato/instant-data-swift/blob/main/docs/adr/0016-transcription-example-instant-first/qanda.md |
+| **Agent handoff** | [`HANDOFF.md`](./HANDOFF.md) | (local; commit with ADR) |
 | Findings | [`findings.md`](./findings.md) | https://github.com/technoplato/instant-data-swift/blob/main/docs/adr/0016-transcription-example-instant-first/findings.md |
 | Scribe (stress case) | `/Users/laptop/Sync/tools/realtime-voice-sqlite-instant` | (private app; local checkout) |
 | Process | `$adr-decision-qanda` + `$domain-as-tree` (PISS) | skill: https://github.com/technoplato/skills/tree/master/domain-as-tree |
