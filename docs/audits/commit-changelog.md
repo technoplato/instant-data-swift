@@ -1,3 +1,9 @@
+## 2026-08-12 18:03:10 EDT — instant-data-swift 48456facf86aa871d7e129c6ee5646e48558a078
+
+- **Repo:** instant-data-swift
+- **SHA:** 48456facf86aa871d7e129c6ee5646e48558a078
+- **Reason:** Apply nested include limits to persisted live query triples (#044 #155). Autoresearch `2026-08-12-live-put-observation-memory` trial 5.
+
 ## 2026-08-12 17:27:58 EDT — instant-data-swift 6c6760b40d9c457d5c2d60f5bfa60c7c27558587
 
 - **Repo:** instant-data-swift
