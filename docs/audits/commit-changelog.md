@@ -1,3 +1,8 @@
+## 2026-08-12 10:24:42 EDT — realtime-voice-sqlite-instant 8c380cd79e0760407b134c76d977cbab178d345d
+
+- **Repo:** realtime-voice-sqlite-instant
+- **SHA:** 8c380cd79e0760407b134c76d977cbab178d345d
+- **Reason:** Bind Onboarding @Doc surface to #041 for fail-closed consolidator (no --allow-unbound).
 ## 2026-08-11 17:33:15 EDT — instant-data-swift c58253d5162fdd998bcb136ee1effcd7e302a8c5
 
 - **Repo:** instant-data-swift
