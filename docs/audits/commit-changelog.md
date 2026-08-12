@@ -1,4 +1,11 @@
+## 2026-08-12 13:57:52 EDT — instant-data-swift 437ee8fbfbbc1dbdab6f5575252cac5a87c234d2
+
+- **Repo:** instant-data-swift
+- **SHA:** 437ee8fbfbbc1dbdab6f5575252cac5a87c234d2
+- **Reason:** Prove deferred string transcript payloads stay out of TripleIndexes (#044 #155). Autoresearch `2026-08-12-live-put-observation-memory` trial 2.
+
 ## 2026-08-12 13:09:13 EDT — scribe-sqlite-data 065b712de41a400aba5b9822ad2890da5ebed9fb
+
 
 - **Repo:** scribe-sqlite-data
 - **SHA:** 065b712de41a400aba5b9822ad2890da5ebed9fb
