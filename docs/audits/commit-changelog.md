@@ -1,3 +1,9 @@
+## 2026-08-12 12:12:00 EDT — scribe-sqlite-data 8522651619d55e1757cfccc1c9e4c6c2224d3d08
+
+- **Repo:** scribe-sqlite-data
+- **SHA:** 8522651619d55e1757cfccc1c9e4c6c2224d3d08
+- **Reason:** Fix SQLiteData interim segment primary-key collision (#194); live speech no longer double-inserts the open segment.
+
 ## 2026-08-12 10:24:42 EDT — realtime-voice-sqlite-instant 8c380cd79e0760407b134c76d977cbab178d345d
 
 - **Repo:** realtime-voice-sqlite-instant
