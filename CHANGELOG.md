@@ -10,6 +10,19 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## August 12th, 2026 at 1:57:48 p.m. EDT — `437ee8fbfbbc` Prove deferred string transcript payloads stay out of TripleIndexes.
+
+- **Implementation commit:** `437ee8fbfbbc1dbdab6f5575252cac5a87c234d2`
+- **Change:** Prove deferred string transcript payloads stay out of TripleIndexes.
+- **Details:**
+  - Library harness: 1,000 Scribe-shaped segments keep 2,048,000 UTF-8 bytes of text+wordsJSON in RAM when resident, and 0 bytes when deferred. A 32-row infinite-query page still hydrates. A live put still queries. InstantRuntime unedited. Live revisions are not debounced. Issues: https://issues.knophy.com/issues/044 https://issues.knophy.com/issues/155. Autoresearch run 2026-08-12-live-put-observation-memory.
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantDeferredTranscriptPayloadMemoryTests.swift` — Measure hot-store UTF-8 bytes for deferred versus resident transcriptionSegments/text and wordsJSON.
+  - `agent-presence/_channels/2026-08-12-live-revision-cardinality.md` — Record trial 2 deferred-transcript bite and the 65 MB SQLiteData-parity goal.
+- **User context (verbatim):**
+  > okay carry on soldier /autoresearch decrease memory usage to goal of ~65 MB while still maintaining realtime sync of information via instant-data-swift
+- **SpecStory:** unavailable — Cursor Grok session; no SpecStory cloud URI
+
 ## August 12th, 2026 at 1:08:03 p.m. EDT — `6536a8345d35` Skip and splice InstantStore observers on same-entity live puts.
 
 - **Implementation commit:** `6536a8345d350117414a542da3c1f1f790a6f586`
