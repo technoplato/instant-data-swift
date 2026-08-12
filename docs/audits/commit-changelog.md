@@ -1,4 +1,10 @@
-## 2026-08-12 13:57:52 EDT — instant-data-swift 437ee8fbfbbc1dbdab6f5575252cac5a87c234d2
+## 2026-08-12 16:16:40 EDT — instant-data-swift fe9ebe07862241a572d11f3cb74ace8a5d82d79c
+
+- **Repo:** instant-data-swift
+- **SHA:** fe9ebe07862241a572d11f3cb74ace8a5d82d79c
+- **Reason:** Load InstantStore bootstrap from live query entities, not the full SQLite graph (#044 #155). Autoresearch `2026-08-12-live-put-observation-memory` trial 3.
+
+
 
 - **Repo:** instant-data-swift
 - **SHA:** 437ee8fbfbbc1dbdab6f5575252cac5a87c234d2
