@@ -1,0 +1,2 @@
+grok-4.6-live-revision 2026-08-12T16:00:00Z mower plan=2026-08-12-live-revision-cardinality
+grok-4.6-live-revision 2026-08-12T12:36:00-0400 mower steal-only-with-explicit-user-allow user-allow=2026-08-12T12:36:00-0400 plan=2026-08-12-live-revision-cardinality live-put-memory-bytes

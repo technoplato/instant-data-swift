@@ -76,10 +76,19 @@ struct PreparedStoreMutation: Sendable {
   }
 }
 
+package struct InstantStorePublishMetrics: Equatable, Sendable {
+  package var skippedObserverCount = 0
+  package var splicedObserverCount = 0
+  package var rematerializedObserverCount = 0
+  package var materializedSnapshotCount = 0
+}
+
 private struct StoreObserver: Sendable {
   var plan: InstantQueryPlan
   var remotePageInfo: InstantQueryRemotePageInfo?
   var liveQueryKey: String?
+  var lastValues: [InstantEntitySnapshot]
+  var lastPageInfo: InstantQueryPageInfo?
   var continuation: AsyncStream<InstantQueryEmission>.Continuation
 }
 
@@ -112,6 +121,7 @@ public actor InstantStore {
   private let deferredValueResidency: InstantDeferredValueResidencyPolicy
   private var observers: [UUID: StoreObserver] = [:]
   private var sequence: Int64 = 0
+  package private(set) var lastPublishMetrics = InstantStorePublishMetrics()
 
   public init(
     snapshot: InstantStoreSnapshot = InstantStoreSnapshot(),
@@ -369,14 +379,14 @@ public actor InstantStore {
       }
       observer.remotePageInfo =
         replacement.pageInfo.map(InstantQueryRemotePageInfo.ready) ?? .waiting
+      let emission = materializeEmission(
+        observer.plan,
+        remotePageInfo: observer.remotePageInfo
+      )
+      observer.apply(emission)
       observers[observerID] = observer
       guard publishing else { continue }
-      observer.continuation.yield(
-        materializeEmission(
-          observer.plan,
-          remotePageInfo: observer.remotePageInfo
-        )
-      )
+      observer.continuation.yield(emission)
     }
   }
 
@@ -773,10 +783,22 @@ public actor InstantStore {
     self.indexes = prepared.indexes
     self.sequence = prepared.sequence
 
+    var metrics = InstantStorePublishMetrics()
     var emissionsByObservation: [StoreObservationKey: InstantQueryEmission] = [:]
-    for observer in observers.values
-    where Self.shouldRematerialize(observer, changedNamespaces: changedNamespaces)
-    {
+    for observerID in Array(observers.keys) {
+      guard var observer = observers[observerID] else { continue }
+      guard
+        Self.shouldRefresh(
+          observer,
+          changedNamespaces: changedNamespaces,
+          changedEntityIDs: prepared.result.changedEntityIDs,
+          indexes: indexes,
+          attributes: attributes
+        )
+      else {
+        metrics.skippedObserverCount += 1
+        continue
+      }
       let key = StoreObservationKey(
         plan: observer.plan,
         remotePageInfo: observer.remotePageInfo
@@ -784,31 +806,47 @@ public actor InstantStore {
       let emission: InstantQueryEmission
       if let existing = emissionsByObservation[key] {
         emission = existing
+      } else if let spliced = Self.splicedEmission(
+        observer,
+        changedEntityIDs: prepared.result.changedEntityIDs,
+        indexes: indexes,
+        attributes: attributes,
+        sequence: sequence
+      ) {
+        metrics.splicedObserverCount += 1
+        metrics.materializedSnapshotCount += prepared.result.changedEntityIDs.count
+        emission = spliced
+        emissionsByObservation[key] = emission
       } else {
-        let page = indexes.materializePage(
+        let page = indexes.materializePageWithMetrics(
           observer.plan,
           attributes: attributes,
           remotePageInfo: observer.remotePageInfo
         )
+        metrics.rematerializedObserverCount += 1
+        metrics.materializedSnapshotCount += page.metrics.materializedSnapshotCount
         emission = InstantQueryEmission(
           queryID: observer.plan.id,
           sequence: sequence,
-          values: page.values,
-          pageInfo: page.pageInfo
+          values: page.page.values,
+          pageInfo: page.page.pageInfo
         )
         emissionsByObservation[key] = emission
       }
+      observer.apply(emission)
+      observers[observerID] = observer
       if shouldPublish {
         observer.continuation.yield(emission)
       }
     }
+    lastPublishMetrics = metrics
     var result = prepared.result
     result.emissions =
       emissionsByObservation
       .sorted { lhs, rhs in Self.emissionSortKey(lhs.key) < Self.emissionSortKey(rhs.key) }
       .map(\.value)
     InstantDiagnostics.shared.record(
-      .trace,
+      .debug,
       subsystem: "instant-swift-data-core",
       category: "store",
       event: shouldPublish ? "store.mutation-published" : "store.mutation-committed",
@@ -819,6 +857,10 @@ public actor InstantStore {
         "changedEntityCount": String(result.changedEntityIDs.count),
         "emissionCount": String(result.emissions.count),
         "observerCount": String(observers.count),
+        "skippedObserverCount": String(metrics.skippedObserverCount),
+        "splicedObserverCount": String(metrics.splicedObserverCount),
+        "rematerializedObserverCount": String(metrics.rematerializedObserverCount),
+        "materializedSnapshotCount": String(metrics.materializedSnapshotCount),
         "sequence": String(sequence),
         "tripleCount": String(result.tripleCount),
       ],
@@ -828,13 +870,88 @@ public actor InstantStore {
     return prepared
   }
 
-  private static func shouldRematerialize(
+  private static func shouldRefresh(
     _ observer: StoreObserver,
-    changedNamespaces: Set<String>?
+    changedNamespaces: Set<String>?,
+    changedEntityIDs: Set<String>,
+    indexes: TripleIndexes,
+    attributes: AttributeStore
   ) -> Bool {
     guard let changedNamespaces else { return true }
-    guard observer.plan.hasOnlyNamespaceLocalDependencies else { return true }
-    return changedNamespaces.contains(observer.plan.namespace)
+    if let observerNamespaces = observer.plan.dependentNamespaces {
+      if observerNamespaces.isDisjoint(with: changedNamespaces) {
+        return false
+      }
+    } else if observer.plan.hasOnlyNamespaceLocalDependencies {
+      guard changedNamespaces.contains(observer.plan.namespace) else { return false }
+    } else {
+      return true
+    }
+    if observer.plan.filters.isEmpty && (observer.plan.includes?.isEmpty ?? true) {
+      return true
+    }
+    if observer.lastValues.contains(anyEntityID: changedEntityIDs) {
+      return true
+    }
+    if observer.plan.hasOnlyNamespaceLocalDependencies {
+      for entityID in changedEntityIDs {
+        if indexes.entityMatches(entityID, plan: observer.plan, attributes: attributes) {
+          return true
+        }
+      }
+      return false
+    }
+    return true
+  }
+
+  private static func splicedEmission(
+    _ observer: StoreObserver,
+    changedEntityIDs: Set<String>,
+    indexes: TripleIndexes,
+    attributes: AttributeStore,
+    sequence: Int64
+  ) -> InstantQueryEmission? {
+    let representedIDs = observer.lastValues.allEntityIDs()
+    guard changedEntityIDs.isSubset(of: representedIDs) else { return nil }
+    var parentIDsToReplace = Set<String>()
+    for snapshot in observer.lastValues {
+      if changedEntityIDs.contains(snapshot.id)
+        || snapshot.contains(anyEntityID: changedEntityIDs)
+      {
+        parentIDsToReplace.insert(snapshot.id)
+      }
+    }
+    guard !parentIDsToReplace.isEmpty else { return nil }
+    var values = observer.lastValues
+    for index in values.indices where parentIDsToReplace.contains(values[index].id) {
+      let previous = values[index]
+      guard
+        let replacement = indexes.entitySnapshot(
+          previous.id,
+          plan: observer.plan,
+          attributes: attributes
+        )
+      else { return nil }
+      if Self.orderKeyChanged(from: previous, to: replacement, plan: observer.plan) {
+        return nil
+      }
+      values[index] = replacement
+    }
+    return InstantQueryEmission(
+      queryID: observer.plan.id,
+      sequence: sequence,
+      values: values,
+      pageInfo: observer.lastPageInfo
+    )
+  }
+
+  private static func orderKeyChanged(
+    from previous: InstantEntitySnapshot,
+    to replacement: InstantEntitySnapshot,
+    plan: InstantQueryPlan
+  ) -> Bool {
+    guard let field = plan.order?.field else { return false }
+    return previous.values[field] != replacement.values[field]
   }
 
   private static func emissionSortKey(_ key: StoreObservationKey) -> String {
@@ -1516,13 +1633,15 @@ public actor InstantStore {
     liveQueryKey: String? = nil,
     continuation: AsyncStream<InstantQueryEmission>.Continuation
   ) {
+    let initialEmission = materializeEmission(plan, remotePageInfo: remotePageInfo)
     observers[id] = StoreObserver(
       plan: plan,
       remotePageInfo: remotePageInfo,
       liveQueryKey: liveQueryKey,
+      lastValues: initialEmission.values,
+      lastPageInfo: initialEmission.pageInfo,
       continuation: continuation
     )
-    let initialEmission = materializeEmission(plan, remotePageInfo: remotePageInfo)
     continuation.yield(initialEmission)
     InstantDiagnostics.shared.record(
       .trace,
@@ -1569,12 +1688,83 @@ public actor InstantStore {
   }
 }
 
+private extension StoreObserver {
+  mutating func apply(_ emission: InstantQueryEmission) {
+    lastValues = emission.values
+    lastPageInfo = emission.pageInfo
+  }
+}
+
+extension InstantEntitySnapshot {
+  fileprivate func contains(anyEntityID ids: Set<String>) -> Bool {
+    if ids.contains(id) { return true }
+    return links?.values.contains { children in
+      children.contains { $0.contains(anyEntityID: ids) }
+    } ?? false
+  }
+
+  fileprivate func collectEntityIDs(into ids: inout Set<String>) {
+    ids.insert(id)
+    for children in (links ?? [:]).values {
+      for child in children {
+        child.collectEntityIDs(into: &ids)
+      }
+    }
+  }
+}
+
+extension InstantLinkedEntitySnapshot {
+  fileprivate func contains(anyEntityID ids: Set<String>) -> Bool {
+    if ids.contains(id) { return true }
+    return links?.values.contains { children in
+      children.contains { $0.contains(anyEntityID: ids) }
+    } ?? false
+  }
+
+  fileprivate func collectEntityIDs(into ids: inout Set<String>) {
+    ids.insert(id)
+    for children in (links ?? [:]).values {
+      for child in children {
+        child.collectEntityIDs(into: &ids)
+      }
+    }
+  }
+}
+
+extension Array where Element == InstantEntitySnapshot {
+  fileprivate func contains(anyEntityID ids: Set<String>) -> Bool {
+    contains { $0.contains(anyEntityID: ids) }
+  }
+
+  fileprivate func allEntityIDs() -> Set<String> {
+    var ids: Set<String> = []
+    for snapshot in self {
+      snapshot.collectEntityIDs(into: &ids)
+    }
+    return ids
+  }
+}
+
 private extension InstantQueryPlan {
   var hasOnlyNamespaceLocalDependencies: Bool {
     (includes?.isEmpty ?? true)
       && filters.allSatisfy(\.hasOnlyNamespaceLocalDependencies)
       && !(order?.field.contains(".") ?? false)
       && (selectedFields?.allSatisfy { !$0.contains(".") } ?? true)
+  }
+
+  var dependentNamespaces: Set<String>? {
+    var namespaces: Set<String> = [namespace]
+    func walk(_ includes: [InstantQueryInclude]?) -> Bool {
+      for include in includes ?? [] {
+        guard let query = include.query else { return false }
+        namespaces.insert(query.namespace)
+        if !walk(query.includes) { return false }
+      }
+      return true
+    }
+    guard walk(includes) else { return nil }
+    return namespaces
   }
 }
 

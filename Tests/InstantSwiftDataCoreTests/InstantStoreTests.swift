@@ -17103,13 +17103,11 @@ struct InstantStoreTests {
     _ = await completedIterator.next()
 
     let committed = await store.commitAndPublish(prepared)
-    expectNoDifference(committed.result.emissions.map { $0.queryID }, ["shared-query-id", "shared-query-id"])
-    expectNoDifference(committed.result.emissions.map { $0.values.map(\.id) }, [["todo-shared-query-id"], []])
+    expectNoDifference(committed.result.emissions.map { $0.queryID }, ["shared-query-id"])
+    expectNoDifference(committed.result.emissions.map { $0.values.map(\.id) }, [["todo-shared-query-id"]])
 
     let incompleteUpdate = await incompleteIterator.next()
-    let completedUpdate = await completedIterator.next()
     expectNoDifference(incompleteUpdate?.values.map(\.id), ["todo-shared-query-id"])
-    expectNoDifference(completedUpdate?.values, [])
   }
 
   @Test

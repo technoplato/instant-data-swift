@@ -793,6 +793,62 @@ struct TripleIndexes: Hashable, Codable, Sendable {
     return (page, metrics)
   }
 
+  func entityMatches(
+    _ entityID: String,
+    plan: InstantQueryPlan,
+    attributes: AttributeStore
+  ) -> Bool {
+    entitySnapshot(entityID, plan: plan, attributes: attributes, projecting: false) != nil
+  }
+
+  /// Materializes one entity against `plan` filters, includes, and selected fields.
+  /// Returns nil when the entity is missing or no longer matches the plan.
+  func entitySnapshot(
+    _ entityID: String,
+    plan: InstantQueryPlan,
+    attributes: AttributeStore
+  ) -> InstantEntitySnapshot? {
+    entitySnapshot(entityID, plan: plan, attributes: attributes, projecting: true)
+  }
+
+  private func entitySnapshot(
+    _ entityID: String,
+    plan: InstantQueryPlan,
+    attributes: AttributeStore,
+    projecting: Bool
+  ) -> InstantEntitySnapshot? {
+    guard let attributesByID = eav[entityID],
+      let fieldValues = materializedValues(
+        entityID: entityID,
+        namespace: plan.namespace,
+        attributesByID: attributesByID,
+        attributes: attributes
+      )
+    else { return nil }
+    let snapshot = InstantEntitySnapshot(
+      id: entityID,
+      namespace: plan.namespace,
+      values: fieldValues
+    )
+    guard
+      matches(
+        snapshot,
+        filters: plan.filters,
+        namespace: plan.namespace,
+        attributes: attributes
+      )
+    else { return nil }
+    guard projecting else { return snapshot }
+    var metrics = QueryMaterializationMetrics()
+    let linked = includeLinks(
+      [snapshot],
+      plan: plan,
+      attributes: attributes,
+      metrics: &metrics
+    )
+    return project(linked, selectedFields: plan.selectedFields).first
+  }
+
   private func materializePage(
     _ plan: InstantQueryPlan,
     attributes: AttributeStore,
