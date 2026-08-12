@@ -846,7 +846,7 @@ public actor InstantStore {
       .sorted { lhs, rhs in Self.emissionSortKey(lhs.key) < Self.emissionSortKey(rhs.key) }
       .map(\.value)
     InstantDiagnostics.shared.record(
-      .debug,
+      .info,
       subsystem: "instant-swift-data-core",
       category: "store",
       event: shouldPublish ? "store.mutation-published" : "store.mutation-committed",
