@@ -10,6 +10,21 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## August 12th, 2026 at 5:27:53 p.m. EDT — `6c6760b40d9c` Unload inactive live querySubs during session prune.
+
+- **Implementation commit:** `6c6760b40d9c457d5c2d60f5bfa60c7c27558587`
+- **Change:** Unload inactive Instant live querySubs during session prune so scoped bootstrap does not reload every historical infinite-query page.
+- **Details:**
+  - TypeScript Reactor.js _cleanupQuery calls querySubs.unloadKey when a query has no listeners, even while pendingMutations exist. Swift pruneLiveQueryResults used to protect every persisted query key whenever the outbox had an optimistic overlay. Production maxEntries is 1000, so inactive pages never unloaded during live speech.
+  - Mac soak of trial 3 KEEP (pid 52693): idle 271 MB physical, ~2 min recording 442 MB, peak 489 MB. Instant sqlite 44 MB, 92 live query keys, 372 of 426 entities in live_query_triples. Live malloc ~86 MB. Goal remains ~65 MB with realtime Instant sync on; do not debounce live revisions.
+  - Library proxy: 20 stale 32-row pages + 1 active page + pending outbox overlay. Session prune with preservingQueryKeys=[active] now remains 1 key / 32 hot-store entities (was 20 / 640). Bootstrap prune with empty preserving keys still keeps the cache. InstantRuntime unedited. https://issues.knophy.com/issues/044 https://issues.knophy.com/issues/155
+- **Files:**
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — Session prune unloads query keys that are not in the active listener set; bootstrap with an empty set still conservative-protects all keys when the outbox has overlay.
+  - `Tests/InstantSwiftDataCoreTests/InstantInactiveLiveQueryPruneMemoryTests.swift` — Proves 20 stale pages drop to 1 active page during session prune, and bootstrap keep-all still holds.
+- **User context (verbatim):**
+  > it is okay to install dirty, please just go ahead and do so unless it is not possible, you can even commit others work if need be. keep going automatically
+- **SpecStory:** unavailable — Cursor Grok 4.6 session; no SpecStory share URI for this desktop task.
+
 ## August 12th, 2026 at 4:16:11 p.m. EDT — `fe9ebe078622` Load InstantStore bootstrap from live query entities, not the full SQLite graph.
 
 - **Implementation commit:** `fe9ebe07862241a572d11f3cb74ace8a5d82d79c`
