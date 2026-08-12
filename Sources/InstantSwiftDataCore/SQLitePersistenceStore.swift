@@ -6614,7 +6614,16 @@ public actor SQLitePersistenceStore {
       // results instead of hydrating the complete durable queue just to derive
       // a narrower entity set. Pruning resumes once those lifecycle shells are
       // server-accepted or have a proven removed overlay.
-      if try outboxRequiresConservativeLiveQueryPruningWithoutTransaction() {
+      //
+      // TypeScript Reactor.js `_cleanupQuery` still calls `querySubs.unloadKey`
+      // when a query has no listeners, even while `pendingMutations` exist.
+      // Optimistic state lives on the outbox, not on stale infinite-query pages.
+      // Session prune passes the live listener set as `preservingQueryKeys`.
+      // Bootstrap prune passes an empty set and must keep today's protect-all
+      // so offline cache survives until the app resubscribes.
+      if preservingQueryKeys.isEmpty,
+        try outboxRequiresConservativeLiveQueryPruningWithoutTransaction()
+      {
         protectedQueryKeys.formUnion(rows.map(\.queryKey))
       }
 
@@ -6624,6 +6633,12 @@ public actor SQLitePersistenceStore {
         rows.removeAll { $0.queryKey == row.queryKey }
         removedRows.append(row)
         return true
+      }
+
+      if !preservingQueryKeys.isEmpty {
+        for row in Array(rows) where !preservingQueryKeys.contains(row.queryKey) {
+          _ = remove(row)
+        }
       }
 
       if let maxAgeMilliseconds = policy.maxAgeMilliseconds {

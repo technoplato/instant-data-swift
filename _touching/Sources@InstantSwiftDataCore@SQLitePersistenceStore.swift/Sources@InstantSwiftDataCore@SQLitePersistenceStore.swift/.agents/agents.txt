@@ -13,3 +13,4 @@ codex-desktop/019fe994-1250-7b42-825e-9b75836d9173/root/instant_diff_compile_aud
 codex-desktop/019fe994-1250-7b42-825e-9b75836d9173/root/explicit_flush_production 2026-08-11T14:58:40Z mower explicit-bounded-claim-only plan=2026-08-09-bounded-intent-outbox-memory
 grok-build-wrap-perf 2026-08-11T16:05:58Z mower plan=2026-08-11-suite-green-and-latency suite-green
 grok-4.6-live-revision 2026-08-12T16:10:00-0400 mower plan=2026-08-12-live-revision-cardinality trial3-query-scoped-hot-store-load user-keep-going-65mb InstantRuntime-unedited
+grok-4.6-live-revision 2026-08-12T17:25:00-0400 mower plan=2026-08-12-live-revision-cardinality trial4-session-prune-inactive-querySubs InstantRuntime-unedited
