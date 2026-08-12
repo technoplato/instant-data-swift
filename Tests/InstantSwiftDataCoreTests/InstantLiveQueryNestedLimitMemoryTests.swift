@@ -39,6 +39,20 @@ struct InstantLiveQueryNestedLimitMemoryTests {
   }
 
   @Test
+  func nestedLimitFollowsRecordingIDStringWhenRefTriplesAreAbsent() {
+    let fixture = NestedLimitFixture(childCount: childCount, childLink: .recordingID)
+    let retained = InstantLiveQueryNestedLimit.retainedEntityIDs(
+      queryKey: fixture.queryKey,
+      triples: fixture.allTriples,
+      attributes: fixture.attributes
+    )
+    expectNoDifference(
+      retained,
+      [fixture.recordingID, fixture.segmentID(8), fixture.segmentID(9)]
+    )
+  }
+
+  @Test
   func nestedLimitIsPerParentNotGlobal() {
     let fixture = NestedLimitFixture(childCount: 10, recordingCount: 2)
     let retained = InstantLiveQueryNestedLimit.retainedEntityIDs(
@@ -125,11 +139,22 @@ struct InstantLiveQueryNestedLimitMemoryTests {
 private struct NestedLimitFixture {
   let childCount: Int
   let recordingCount: Int
+  let childLink: ChildLink
   let recordingID = "recording-a"
 
-  init(childCount: Int, recordingCount: Int = 1) {
+  enum ChildLink {
+    case recordingRef
+    case recordingID
+  }
+
+  init(
+    childCount: Int,
+    recordingCount: Int = 1,
+    childLink: ChildLink = .recordingRef
+  ) {
     self.childCount = childCount
     self.recordingCount = recordingCount
+    self.childLink = childLink
   }
   let queryKey =
     """
@@ -156,6 +181,13 @@ private struct NestedLimitFixture {
     reverseIdentity: "recordings/segments",
     linkNamespace: "recordings"
   )
+  let segmentRecordingIDAttribute = InstantAttribute(
+    id: "transcriptionSegments/recordingID",
+    namespace: "transcriptionSegments",
+    name: "recordingID",
+    valueType: .string,
+    isIndexed: true
+  )
   let segmentIndexAttribute = InstantAttribute(
     id: "transcriptionSegments/segmentIndex",
     namespace: "transcriptionSegments",
@@ -170,6 +202,7 @@ private struct NestedLimitFixture {
       recordingUpdatedAtAttribute,
       segmentIDAttribute,
       segmentRecordingAttribute,
+      segmentRecordingIDAttribute,
       segmentIndexAttribute,
     ]
   }
@@ -223,8 +256,10 @@ private struct NestedLimitFixture {
             ),
             InstantTriple(
               entityID: entityID,
-              attributeID: segmentRecordingAttribute.id,
-              value: .ref(id),
+              attributeID: childLink == .recordingRef
+                ? segmentRecordingAttribute.id
+                : segmentRecordingIDAttribute.id,
+              value: childLink == .recordingRef ? .ref(id) : .string(id),
               txID: txID,
               txTime: time
             ),

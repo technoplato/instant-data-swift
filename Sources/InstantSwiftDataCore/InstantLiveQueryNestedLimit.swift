@@ -23,10 +23,18 @@ enum InstantLiveQueryNestedLimit {
       triples: triples,
       attributes: attributes
     )
-    guard retained.count < Set(triples.map(\.entityID)).count else {
-      return triples
+    let attributesByID = Dictionary(uniqueKeysWithValues: attributes.map { ($0.id, $0) })
+    return triples.filter { triple in
+      guard retained.contains(triple.entityID) else { return false }
+      guard let attribute = attributesByID[triple.attributeID],
+        attribute.valueType == .ref,
+        attribute.cardinality == .many,
+        let childID = triple.value.refValue
+      else {
+        return true
+      }
+      return retained.contains(childID)
     }
-    return triples.filter { retained.contains($0.entityID) }
   }
 
   static func retainedEntityIDs(
@@ -95,17 +103,22 @@ private struct Context {
     var retained = Set(limited)
     for (includeName, nested) in node where includeName != "$" {
       guard let nestedNode = nested as? [String: Any] else { continue }
-      let identity = "\(namespace)/\(includeName)"
-      guard let link = attributesByID.values.first(where: { $0.reverseIdentity == identity })
+      guard let resolved = resolveInclude(parentNamespace: namespace, includeName: includeName)
       else {
         continue
       }
       var childRetained: Set<String> = []
       for parentID in retained {
-        let kids = children(of: [parentID], link: link)
+        let kids = children(
+          of: parentID,
+          parentNamespace: namespace,
+          includeName: includeName,
+          reverseLink: resolved.reverseLink,
+          parentLink: resolved.parentLink
+        )
         childRetained.formUnion(
           retainedEntities(
-            namespace: link.namespace,
+            namespace: resolved.childNamespace,
             node: nestedNode,
             candidateIDs: kids
           )
@@ -116,19 +129,52 @@ private struct Context {
     return retained
   }
 
-  func children(of parentIDs: Set<String>, link: InstantAttribute) -> Set<String> {
+  func resolveInclude(
+    parentNamespace: String,
+    includeName: String
+  ) -> (childNamespace: String, reverseLink: InstantAttribute?, parentLink: InstantAttribute?)? {
+    let identity = "\(parentNamespace)/\(includeName)"
+    let reverseLink = attributesByID.values.first { $0.reverseIdentity == identity }
+    let parentLink = attributesByID.values.first {
+      $0.namespace == parentNamespace && $0.name == includeName && $0.valueType == .ref
+    }
+    let childNamespace = reverseLink?.namespace ?? parentLink?.linkNamespace
+    guard let childNamespace else { return nil }
+    return (childNamespace, reverseLink, parentLink)
+  }
+
+  func children(
+    of parentID: String,
+    parentNamespace: String,
+    includeName: String,
+    reverseLink: InstantAttribute?,
+    parentLink: InstantAttribute?
+  ) -> Set<String> {
     var ids: Set<String> = []
-    for (entityID, triples) in triplesByEntity {
-      for triple in triples where triple.attributeID == link.id {
-        if let parentID = parentID(from: triple.value), parentIDs.contains(parentID) {
+    if let reverseLink {
+      let stringAttributeID = "\(reverseLink.namespace)/\(reverseLink.name)ID"
+      for (entityID, triples) in triplesByEntity {
+        for triple in triples {
+          let matchesLink = triple.attributeID == reverseLink.id
+            || triple.attributeID == stringAttributeID
+          guard matchesLink, let linked = linkedEntityID(from: triple.value), linked == parentID else {
+            continue
+          }
           ids.insert(entityID)
+        }
+      }
+    }
+    if let parentLink, let parentTriples = triplesByEntity[parentID] {
+      for triple in parentTriples where triple.attributeID == parentLink.id {
+        if let childID = linkedEntityID(from: triple.value) {
+          ids.insert(childID)
         }
       }
     }
     return ids
   }
 
-  func parentID(from value: InstantValue) -> String? {
+  func linkedEntityID(from value: InstantValue) -> String? {
     switch value {
     case let .ref(id):
       return id
