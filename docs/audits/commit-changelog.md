@@ -1,3 +1,9 @@
+## 2026-08-12 12:22:00 EDT — scribe-sqlite-data 88ede6b2ac8578a91a801c05ba768b4f4d4ce0e7
+
+- **Repo:** scribe-sqlite-data
+- **SHA:** 88ede6b2ac8578a91a801c05ba768b4f4d4ce0e7
+- **Reason:** Accept Mac scribe-shared deep links on the SQLiteData fork (#194).
+
 ## 2026-08-12 12:12:00 EDT — scribe-sqlite-data 8522651619d55e1757cfccc1c9e4c6c2224d3d08
 
 - **Repo:** scribe-sqlite-data
