@@ -10,6 +10,22 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## August 12th, 2026 at 1:08:03 p.m. EDT — `6536a8345d35` Skip and splice InstantStore observers on same-entity live puts.
+
+- **Implementation commit:** `6536a8345d350117414a542da3c1f1f790a6f586`
+- **Change:** Skip and splice InstantStore observers on same-entity live puts.
+- **Details:**
+  - A live-row put no longer rematerializes sibling history or unrelated include queries. Every revision still publishes; membership changes still rematerialize.
+  - Issues: https://issues.knophy.com/issues/044 https://issues.knophy.com/issues/155. Autoresearch run 2026-08-12-live-put-observation-memory.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantStore.swift` — Skip disjoint observers and splice lastValues for in-page live puts.
+  - `Sources/InstantSwiftDataCore/TripleIndexes.swift` — Materialize one entity for splice without walking the namespace.
+  - `Tests/InstantSwiftDataCoreTests/InstantSameEntityLiveRevisionMemoryTests.swift` — Byte and snapshot-count contracts for live/history split, splice, and include skip.
+- **User context (verbatim):**
+  > How does instant TypeScript handle offline mode?
+  > go through and make all of the fixes that you want to make before I test it, and then go ahead and run it on Mac using Scribe remote control
+- **SpecStory:** unavailable — Cursor Grok session; no SpecStory cloud URI
+
 ## August 11th, 2026 at 5:33:15 p.m. EDT — `c58253d5162f` Add Transcription multi-host Instant example with floating toolbar.
 
 - **Implementation commit:** `c58253d5162fdd998bcb136ee1effcd7e302a8c5`
