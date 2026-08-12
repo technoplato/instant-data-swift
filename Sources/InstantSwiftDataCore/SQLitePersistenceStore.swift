@@ -5518,21 +5518,43 @@ public actor SQLitePersistenceStore {
     // mutations. IndexedDB has no second full graph. SQLite Data keeps the
     // corpus on disk and SQL-selects the visible page.
     // When live-query ownership rows exist, InstantStore bootstrap loads only
-    // those entity IDs plus pending outbox effect entities. Empty watermark
-    // query results (zero triple rows) keep the legacy full load.
+    // those entity IDs plus pending outbox effect entities, after applying
+    // nested include limits from the query JSON (InstaQL `$limit` per parent).
+    // Empty watermark query results (zero triple rows) keep the legacy full load.
     let liveQueryTripleCount = try selectInt64(
       "SELECT COUNT(*) FROM instant_live_query_triples"
     )
     if liveQueryTripleCount > 0 {
-      whereClauses.append(
-        """
-        entity_id IN (
-          SELECT DISTINCT entity_id FROM instant_live_query_triples
-          UNION
-          SELECT entity_id FROM instant_outbox_effect_entities
-        )
-        """
+      let retainedLiveQueryEntityIDs = try retainedLiveQueryEntityIDsWithoutTransaction(
+        attributes: attributes
       )
+      if retainedLiveQueryEntityIDs.isEmpty {
+        whereClauses.append(
+          """
+          entity_id IN (
+            SELECT DISTINCT entity_id FROM instant_live_query_triples
+            UNION
+            SELECT entity_id FROM instant_outbox_effect_entities
+          )
+          """
+        )
+      } else {
+        let placeholders = Array(
+          repeating: "?",
+          count: retainedLiveQueryEntityIDs.count
+        ).joined(separator: ", ")
+        whereClauses.append(
+          """
+          (
+            entity_id IN (\(placeholders))
+            OR entity_id IN (SELECT entity_id FROM instant_outbox_effect_entities)
+          )
+          """
+        )
+        tripleBindings.append(
+          contentsOf: retainedLiveQueryEntityIDs.sorted().map(SQLiteBinding.text)
+        )
+      }
     }
     if !whereClauses.isEmpty {
       triplesSQL += " WHERE " + whereClauses.joined(separator: " AND ")
@@ -9781,6 +9803,26 @@ public actor SQLitePersistenceStore {
     }
   }
 
+  private func retainedLiveQueryEntityIDsWithoutTransaction(
+    attributes: [InstantAttribute]
+  ) throws -> Set<String> {
+    let rows = try loadLiveQueryResultRowsWithoutTransaction()
+    var retained: Set<String> = []
+    for row in rows {
+      guard let result = try liveQueryResultWithoutTransaction(key: row.queryKey) else {
+        continue
+      }
+      retained.formUnion(
+        InstantLiveQueryNestedLimit.retainedEntityIDs(
+          queryKey: result.key,
+          triples: Array(result.triples),
+          attributes: attributes
+        )
+      )
+    }
+    return retained
+  }
+
   private func outboxRequiresConservativeLiveQueryPruningWithoutTransaction() throws -> Bool {
     try selectInt64(
       """
@@ -10322,6 +10364,13 @@ public actor SQLitePersistenceStore {
   private func saveLiveQueryResultWithoutTransaction(
     _ result: InstantPersistedLiveQueryResult
   ) throws {
+    let attributes = try loadAttributesWithoutTransaction(tracesStartupCollection: false)
+    var result = result
+    result.triples = InstantLiveQueryNestedLimit.limitedTriples(
+      queryKey: result.key,
+      triples: Array(result.triples),
+      attributes: attributes
+    )
     try execute(
       """
       INSERT INTO instant_live_query_results
