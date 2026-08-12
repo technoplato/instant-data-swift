@@ -10,6 +10,22 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## August 12th, 2026 at 6:03:10 p.m. EDT — `48456facf86a` Apply nested include limits to persisted live query triples.
+
+- **Implementation commit:** `48456facf86aa871d7e129c6ee5646e48558a078`
+- **Change:** Apply nested include limits to persisted live query triples so InstantStore bootstrap matches InstaQL per-parent $limit.
+- **Details:**
+  - Library: 10 children + nested limit 2 keeps 1 parent + 2 newest children in the hot store; SQLite still has 11. Per-parent: 2 recordings x 10 children -> 6 entities. Non-JSON query keys stay unfiltered. InstantRuntime unedited. No debounce.
+  - iPad overlay after trial 4 (Scribe a88d1d5, Instant 6c6760b4): idle 58-62 MB, recording 74-92 MB for 2 min, peak 191 at speech start. SQLiteData 55.7 MB. Goal ~65 MB. Fail-fast 125 current phys PASS. Mac live query keys 92->4; remaining list querySub 481 segments (max 328 on one parent) despite segments.$limit 2.
+  - Issues: https://issues.knophy.com/issues/044 https://issues.knophy.com/issues/155. Autoresearch 2026-08-12-live-put-observation-memory trial 5.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantLiveQueryNestedLimit.swift` — Pure InstaQL nested-limit filter over persisted query triples.
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — Apply the filter at live-query save and at scoped InstantStore bootstrap load.
+  - `Tests/InstantSwiftDataCoreTests/InstantLiveQueryNestedLimitMemoryTests.swift` — Prove 10 children collapse to 2 per parent at save/load; non-JSON keys unchanged.
+- **User context (verbatim):**
+  > it is okay to install dirty, please just go ahead and do so unless it is not possible, you can even commit others work if need be. keep going automatically
+- **SpecStory:** unavailable — unavailable — Cursor Grok 4.6 session; no SpecStory share URI for this desktop task.
+
 ## August 12th, 2026 at 5:27:53 p.m. EDT — `6c6760b40d9c` Unload inactive live querySubs during session prune.
 
 - **Implementation commit:** `6c6760b40d9c457d5c2d60f5bfa60c7c27558587`
