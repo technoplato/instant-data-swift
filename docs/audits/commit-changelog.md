@@ -1,3 +1,9 @@
+## 2026-08-12 13:07:02 EDT — instant-data-swift 6536a8345d350117414a542da3c1f1f790a6f586
+
+- **Repo:** instant-data-swift
+- **SHA:** 6536a8345d350117414a542da3c1f1f790a6f586
+- **Reason:** Skip and splice InstantStore observers on same-entity live puts (#044 #155). Autoresearch `2026-08-12-live-put-observation-memory`.
+
 ## 2026-08-12 12:55:49 EDT — scribe-sqlite-data cce623c51a49e114d5f4f23155ed7a1e4e0fee1f
 
 - **Repo:** scribe-sqlite-data
