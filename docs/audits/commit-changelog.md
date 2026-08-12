@@ -1,3 +1,9 @@
+## 2026-08-12 13:09:13 EDT — scribe-sqlite-data 065b712de41a400aba5b9822ad2890da5ebed9fb
+
+- **Repo:** scribe-sqlite-data
+- **SHA:** 065b712de41a400aba5b9822ad2890da5ebed9fb
+- **Reason:** Configure agent control before the root store exists; Mac loopback collector fallback when Tailscale DNS is off (#194).
+
 ## 2026-08-12 13:07:02 EDT — instant-data-swift 6536a8345d350117414a542da3c1f1f790a6f586
 
 - **Repo:** instant-data-swift
