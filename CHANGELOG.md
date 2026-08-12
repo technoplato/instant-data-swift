@@ -10,6 +10,19 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## August 12th, 2026 at 4:16:11 p.m. EDT — `fe9ebe078622` Load InstantStore bootstrap from live query entities, not the full SQLite graph.
+
+- **Implementation commit:** `fe9ebe07862241a572d11f3cb74ace8a5d82d79c`
+- **Change:** Load InstantStore bootstrap from live query entities, not the full SQLite graph.
+- **Details:**
+  - Library proxy: InstantQueryScopedHotStoreMemoryTests. A 1,000-row identity corpus plus a 32-row persisted live query now bootstraps 32 hot-store entities; SQLite still has 1,000. Empty watermark query results keep the full load. InstantRuntime unedited. Live revisions are not debounced. Issues: https://issues.knophy.com/issues/044 https://issues.knophy.com/issues/155. Autoresearch run 2026-08-12-live-put-observation-memory trial 3.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — When live-query triple rows exist, SELECT only those entity IDs plus outbox effect entities into InstantStore.
+  - `Tests/InstantSwiftDataCoreTests/InstantQueryScopedHotStoreMemoryTests.swift` — Measure hot-store entity count for a page-sized query versus a 1,000-row identity corpus.
+- **User context (verbatim):**
+  > keep going then
+- **SpecStory:** unavailable — unavailable — Cursor Grok session; no SpecStory cloud URI
+
 ## August 12th, 2026 at 1:57:48 p.m. EDT — `437ee8fbfbbc` Prove deferred string transcript payloads stay out of TripleIndexes.
 
 - **Implementation commit:** `437ee8fbfbbc1dbdab6f5575252cac5a87c234d2`
