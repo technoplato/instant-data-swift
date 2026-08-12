@@ -1,3 +1,9 @@
+## 2026-08-12 17:27:58 EDT — instant-data-swift 6c6760b40d9c457d5c2d60f5bfa60c7c27558587
+
+- **Repo:** instant-data-swift
+- **SHA:** 6c6760b40d9c457d5c2d60f5bfa60c7c27558587
+- **Reason:** Unload inactive live querySubs during session prune (#044 #155). Autoresearch `2026-08-12-live-put-observation-memory` trial 4.
+
 ## 2026-08-12 16:16:40 EDT — instant-data-swift fe9ebe07862241a572d11f3cb74ace8a5d82d79c
 
 - **Repo:** instant-data-swift
