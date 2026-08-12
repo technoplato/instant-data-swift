@@ -1,3 +1,9 @@
+## 2026-08-12 18:21:19 EDT — instant-data-swift 94f9ff30fb8c5192ab3f887c9e7ed4fb5a182295
+
+- **Repo:** instant-data-swift
+- **SHA:** 94f9ff30fb8c5192ab3f887c9e7ed4fb5a182295
+- **Reason:** Follow recordingID strings and parent many-refs in nested live-query limits (#044 #155). Trial 5 follow-up.
+
 ## 2026-08-12 18:03:10 EDT — instant-data-swift 48456facf86aa871d7e129c6ee5646e48558a078
 
 - **Repo:** instant-data-swift
