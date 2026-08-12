@@ -10,6 +10,20 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## August 12th, 2026 at 6:21:19 p.m. EDT — `94f9ff30fb8c` Follow recordingID strings and parent many-refs when limiting live query children.
+
+- **Implementation commit:** `94f9ff30fb8c5192ab3f887c9e7ed4fb5a182295`
+- **Change:** Follow recordingID strings and parent many-refs so nested live-query limits keep preview children.
+- **Details:**
+  - First trial 5 save on Mac dropped all segment entities because the list querySub stores transcriptionSegments/recordingID, not transcriptionSegments/recording. Parent recordings/segments many-ref values (dd7dc80a) stayed at 488. Follow string recordingID, reverse refs, and parent many-refs; trim many-ref values to retained children.
+  - Issues: https://issues.knophy.com/issues/044 https://issues.knophy.com/issues/155
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantLiveQueryNestedLimit.swift` — Resolve children via recordingID strings and parent many-refs; trim dropped child refs.
+  - `Tests/InstantSwiftDataCoreTests/InstantLiveQueryNestedLimitMemoryTests.swift` — Prove limit 2 still holds when only recordingID string links exist.
+- **User context (verbatim):**
+  > keep going automatically
+- **SpecStory:** unavailable — unavailable — Cursor Grok 4.6 session; no SpecStory share URI for this desktop task.
+
 ## August 12th, 2026 at 6:03:10 p.m. EDT — `48456facf86a` Apply nested include limits to persisted live query triples.
 
 - **Implementation commit:** `48456facf86aa871d7e129c6ee5646e48558a078`
