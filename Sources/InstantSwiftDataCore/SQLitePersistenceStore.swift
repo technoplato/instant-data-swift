@@ -680,6 +680,14 @@ public actor SQLitePersistenceStore {
     cacheResidencyMetrics
   }
 
+  /// Distinct `instant_triples.entity_id` rows on disk, including entities the
+  /// hot store snapshot omitted after a query-scoped bootstrap load.
+  package func storedTripleEntityCountForTesting() throws -> Int {
+    try readTransaction {
+      Int(try selectInt64("SELECT COUNT(DISTINCT entity_id) FROM instant_triples"))
+    }
+  }
+
   package func resetDecodedOutboxBodyCount() {
     decodedOutboxBodyCount = 0
     decodedOutboxBodyByteCount = 0
@@ -5493,14 +5501,41 @@ public actor SQLitePersistenceStore {
     )
     var triplesSQL = "SELECT json FROM instant_triples"
     var tripleBindings: [SQLiteBinding] = []
+    var whereClauses: [String] = []
     if deferredValueResidency.isEnabled {
-      triplesSQL += " WHERE attribute_id NOT IN ("
-        + Array(
-          repeating: "?",
-          count: deferredValueResidency.attributeIDs.count
-        ).joined(separator: ", ")
-        + ")"
+      whereClauses.append(
+        "attribute_id NOT IN ("
+          + Array(
+            repeating: "?",
+            count: deferredValueResidency.attributeIDs.count
+          ).joined(separator: ", ")
+          + ")"
+      )
       tripleBindings = deferredValueResidency.attributeIDs.sorted().map(SQLiteBinding.text)
+    }
+    // TypeScript Reactor.js keeps one `result.store` per querySub, built from
+    // that query's triples (`createStore(attrs, result.triples)`), plus pending
+    // mutations. IndexedDB has no second full graph. SQLite Data keeps the
+    // corpus on disk and SQL-selects the visible page.
+    // When live-query ownership rows exist, InstantStore bootstrap loads only
+    // those entity IDs plus pending outbox effect entities. Empty watermark
+    // query results (zero triple rows) keep the legacy full load.
+    let liveQueryTripleCount = try selectInt64(
+      "SELECT COUNT(*) FROM instant_live_query_triples"
+    )
+    if liveQueryTripleCount > 0 {
+      whereClauses.append(
+        """
+        entity_id IN (
+          SELECT DISTINCT entity_id FROM instant_live_query_triples
+          UNION
+          SELECT entity_id FROM instant_outbox_effect_entities
+        )
+        """
+      )
+    }
+    if !whereClauses.isEmpty {
+      triplesSQL += " WHERE " + whereClauses.joined(separator: " AND ")
     }
     triplesSQL += " ORDER BY entity_id, attribute_id, value_json"
     let triples: [InstantTriple] = try loadStateCollection(
