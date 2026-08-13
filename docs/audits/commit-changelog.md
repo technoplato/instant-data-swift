@@ -1,3 +1,9 @@
+## 2026-08-13 15:39:34 EDT — realtime-voice-sqlite-instant f3ecc1c05313855d16cb5e35ba7dda55a3afc68a
+
+- **Repo:** realtime-voice-sqlite-instant
+- **SHA:** f3ecc1c05313855d16cb5e35ba7dda55a3afc68a
+- **Reason:** Restore iPhone recording list and recording chrome to standard SwiftUI (#197).
+
 ## 2026-08-12 18:21:19 EDT — instant-data-swift 94f9ff30fb8c5192ab3f887c9e7ed4fb5a182295
 
 - **Repo:** instant-data-swift
