@@ -1,5 +1,12 @@
 ## 2026-08-13 16:33:33 EDT — realtime-voice-sqlite-instant 81165583871549032878bcc937954139fdceddde
 
+## 2026-08-13 18:03:31 EDT — realtime-voice-sqlite-instant 73ff8487ce53d7ecc49d8ef3ecbb9ed839b4a925
+
+- **Repo:** realtime-voice-sqlite-instant
+- **SHA:** 73ff8487ce53d7ecc49d8ef3ecbb9ed839b4a925
+- **Reason:** Debug Instant static-account sign-in so iPhone and Mac share one durable user for cross-device playback (#095).
+
+
 - **Repo:** realtime-voice-sqlite-instant
 - **SHA:** 81165583871549032878bcc937954139fdceddde
 - **Reason:** Restore the iPhone build debug overlay so Expanded actually paints and Stop taps through (#197).
