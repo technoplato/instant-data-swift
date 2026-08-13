@@ -1,3 +1,9 @@
+## 2026-08-13 16:33:33 EDT — realtime-voice-sqlite-instant 81165583871549032878bcc937954139fdceddde
+
+- **Repo:** realtime-voice-sqlite-instant
+- **SHA:** 81165583871549032878bcc937954139fdceddde
+- **Reason:** Restore the iPhone build debug overlay so Expanded actually paints and Stop taps through (#197).
+
 ## 2026-08-13 15:39:34 EDT — realtime-voice-sqlite-instant f3ecc1c05313855d16cb5e35ba7dda55a3afc68a
 
 - **Repo:** realtime-voice-sqlite-instant
