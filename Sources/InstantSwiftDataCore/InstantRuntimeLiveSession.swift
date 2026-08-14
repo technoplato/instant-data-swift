@@ -60,6 +60,10 @@ package actor InstantRuntimeLiveSession {
   /// When each in-flight mutation send began, so an
   /// unacknowledged mutation is retried instead of blocking its queue forever.
   private var inFlightMutationDeadlines: [String: Date] = [:]
+  /// Mutation IDs offered on this socket generation, retained after a response
+  /// is decoded until Runtime finishes its durable acknowledgement transition.
+  private var offeredMutationIDsInCurrentGeneration: Set<String> = []
+  private var acknowledgementUnknownMutationIDs: Set<String> = []
   private var hasReportedDeepOutbox = false
   /// Bounds the number of transactions sharing the socket at once.
   static let maximumMutationsPerFlush = InstantAutomaticOutboxClaimLimits.maximumMutationCount
@@ -72,9 +76,6 @@ package actor InstantRuntimeLiveSession {
   /// loading their raw string into Swift memory.
   static let maximumEncodedMutationBytesPerDeliveryWindow =
     InstantAutomaticOutboxClaimLimits.maximumEncodedBodyBytes
-  /// An online write that is not acknowledged this quickly is a real problem,
-  /// not a slow network: surface it and retry rather than waiting minutes.
-  static let inFlightMutationTimeout: TimeInterval = 5
   static let deepOutboxReportingThreshold = 100
   private var registeredRooms: [InstantRoomHandle: RegisteredRoom] = [:]
   private var registeredStreamReaders: [String: RegisteredStreamReader] = [:]
@@ -304,6 +305,8 @@ package actor InstantRuntimeLiveSession {
     inFlightMutationIDs.removeAll()
     inFlightMutationStepCounts.removeAll()
     inFlightMutationDeadlines.removeAll()
+    offeredMutationIDsInCurrentGeneration.removeAll()
+    acknowledgementUnknownMutationIDs.removeAll()
     for room in Array(registeredRooms.keys) {
       registeredRooms[room]?.isConnected = false
     }
@@ -445,8 +448,6 @@ package actor InstantRuntimeLiveSession {
           let message = try await session.receive()
           try Task.checkCancellation()
           let event = InstantLiveServerEvent(message: message)
-          await onEventAcquired?()
-          try Task.checkCancellation()
           guard await self?.canDeliverReceiverEvent(
             generation: generation,
             session: session
@@ -456,6 +457,7 @@ package actor InstantRuntimeLiveSession {
           guard let attributes = try await self?.record(event, generation: generation) else {
             return
           }
+          await onEventAcquired?()
           try Task.checkCancellation()
           guard await self?.canDeliverReceiverEvent(
             generation: generation,
@@ -464,6 +466,7 @@ package actor InstantRuntimeLiveSession {
             return
           }
           try await onEvent(event, attributes)
+          await self?.finishDeliveringMutationResponse(event, generation: generation)
         }
       } catch is CancellationError {
         await self?.receiverEnded(
@@ -606,12 +609,20 @@ package actor InstantRuntimeLiveSession {
     timedOut: Bool
   ) {
     guard !mutationIDs.isEmpty else { return }
+    let currentGenerationTimeouts = timedOut
+      ? mutationIDs.intersection(offeredMutationIDsInCurrentGeneration)
+      : []
     for mutationID in mutationIDs {
       inFlightMutationIDs.remove(mutationID)
       inFlightMutationStepCounts[mutationID] = nil
       inFlightMutationDeadlines[mutationID] = nil
     }
     guard timedOut else { return }
+    acknowledgementUnknownMutationIDs.formUnion(currentGenerationTimeouts)
+    if !currentGenerationTimeouts.isEmpty, let session {
+      generation += 1
+      session.abort()
+    }
     InstantDiagnostics.shared.record(
       .warning,
       subsystem: "instant-swift-data-core",
@@ -620,13 +631,17 @@ package actor InstantRuntimeLiveSession {
       message: "Instant reclaimed durable delivery claims after no server acknowledgement.",
       metadata: [
         "expiredCount": String(mutationIDs.count),
-        "ackTimeoutSeconds": "5",
+        "currentGenerationExpiredCount": String(currentGenerationTimeouts.count),
+        "acknowledgementBaseIntervalSeconds": String(
+          InstantMutationAcknowledgementDeadlinePolicy.baseIntervalMilliseconds / 1_000
+        ),
         "expiredMutationIDs": mutationIDs.sorted().prefix(12).joined(separator: ","),
       ]
     )
+    guard !currentGenerationTimeouts.isEmpty else { return }
     reportIssue(
       """
-      Instant did not acknowledge \(mutationIDs.count) mutation(s) within 5s and is retrying them.
+      Instant did not acknowledge \(currentGenerationTimeouts.count) mutation(s) before their ordinal deadlines. The live session is being replaced before retry.
 
       If this repeats, inspect the Instant WebSocket endpoint and server response.
       """
@@ -778,6 +793,18 @@ package actor InstantRuntimeLiveSession {
       }
       return []
     }
+    if let acknowledgementUnknownMutationID = acknowledgementUnknownMutationIDs.min() {
+      session.abort()
+      throw InstantError(
+        code: .networkFailed,
+        operation: "retry acknowledgement-unknown Instant mutation",
+        serverEventID: acknowledgementUnknownMutationID,
+        message:
+          "The prior live generation ended without proving whether this mutation was accepted.",
+        recovery:
+          "Replace the live session before retrying the same durable client event id."
+      )
+    }
     var encodingFailures: [InstantLiveMutationEncodingFailure] = []
     let pending = mutations
       .sorted(by: Self.mutationOrder)
@@ -787,6 +814,7 @@ package actor InstantRuntimeLiveSession {
     var skippedAlreadyInFlight = 0
     var stoppedForMutationBudget = false
     var stoppedForStepBudget = false
+    var nextAcknowledgementOrdinal = inFlightMutationIDs.count + 1
     // High-frequency path: keep at debug so host dual-write bridges that default
     // to minimumLevel `.info` (Scribe InstantDBLogger) do not re-ingest every flush
     // into Instant as multi-hundred-op debug-log batches (feedback → multi-GB idle).
@@ -877,7 +905,16 @@ package actor InstantRuntimeLiveSession {
       // reservation state without the resumed sender recreating part of it.
       inFlightMutationStepCounts[mutation.mutationID] = mutationStepCount
       inFlightMutationDeadlines[mutation.mutationID] =
-        Date().addingTimeInterval(Self.inFlightMutationTimeout)
+        InstantMutationAcknowledgementDeadlinePolicy.deadline(
+          after: Date(),
+          inFlightOrdinal: nextAcknowledgementOrdinal
+        )
+      offeredMutationIDsInCurrentGeneration.insert(mutation.mutationID)
+      let acknowledgementTimeoutMilliseconds =
+        InstantMutationAcknowledgementDeadlinePolicy.timeoutMilliseconds(
+          inFlightOrdinal: nextAcknowledgementOrdinal
+        )
+      nextAcknowledgementOrdinal += 1
       do {
         InstantDiagnostics.shared.record(
           .debug,
@@ -893,7 +930,7 @@ package actor InstantRuntimeLiveSession {
             "inFlightStepCount": String(
               inFlightMutationStepCounts.values.reduce(0, +)
             ),
-            "ackTimeoutSeconds": String(Int(Self.inFlightMutationTimeout)),
+            "ackTimeoutMilliseconds": String(acknowledgementTimeoutMilliseconds),
           ],
           correlationID: mutation.mutationID
         )
@@ -1163,6 +1200,25 @@ package actor InstantRuntimeLiveSession {
     return serverAttributes
   }
 
+  private func finishDeliveringMutationResponse(
+    _ event: InstantLiveServerEvent,
+    generation: Int
+  ) {
+    guard generation == self.generation else { return }
+    switch event {
+    case let .transactOK(transactOK):
+      if let clientEventID = transactOK.clientEventID {
+        offeredMutationIDsInCurrentGeneration.remove(clientEventID)
+      }
+    case let .error(error):
+      if let clientEventID = error.clientEventID {
+        offeredMutationIDsInCurrentGeneration.remove(clientEventID)
+      }
+    default:
+      break
+    }
+  }
+
   private static func mutationOrder(
     _ lhs: InstantTransportMutation,
     _ rhs: InstantTransportMutation
@@ -1332,6 +1388,8 @@ package actor InstantRuntimeLiveSession {
     inFlightMutationIDs.removeAll()
     inFlightMutationStepCounts.removeAll()
     inFlightMutationDeadlines.removeAll()
+    offeredMutationIDsInCurrentGeneration.removeAll()
+    acknowledgementUnknownMutationIDs.removeAll()
     for room in Array(registeredRooms.keys) {
       registeredRooms[room]?.isConnected = false
     }

@@ -70,7 +70,7 @@ struct InstantBoundedOutboxDeliveryTests {
     expectNoDifference(firstClaim?.state, .claimed)
     expectNoDifference(firstClaim?.claimToken, "claim-a")
     expectNoDifference(firstClaim?.claimantID, "runtime-a")
-    expectNoDifference(firstClaim?.deadlineMilliseconds, 15_000)
+    expectNoDifference(firstClaim?.deadlineMilliseconds, 16_000)
     expectNoDifference(firstClaim?.deliveryStarted, true)
 
     let revision = try await firstStore.currentOutboxRevision()
@@ -206,7 +206,7 @@ struct InstantBoundedOutboxDeliveryTests {
         claimToken: "no-refill-token",
         now: InstantTimestamp(
           milliseconds: 10_000
-            + InstantAutomaticOutboxClaimLimits.claimTimeoutMilliseconds
+            + InstantMutationAcknowledgementDeadlinePolicy.baseIntervalMilliseconds
         ),
         maximumMutationCount: 0
       )
@@ -736,6 +736,18 @@ struct InstantBoundedOutboxDeliveryTests {
     await transport.waitUntilEntered()
     let competingStore = try SQLitePersistenceStore(fileURL: cacheURL)
     try await competingStore.bootstrap()
+    let expired = try await competingStore.claimAutomaticOutboxDeliveryWindow(
+      InstantAutomaticOutboxClaimRequest(
+        claimantID: "reclaiming-runtime",
+        claimToken: "expiry-only-token",
+        now: InstantTimestamp(
+          milliseconds: now.milliseconds
+            + InstantAutomaticOutboxClaimLimits.claimTimeoutMilliseconds + 1
+        )
+      )
+    )
+    expectNoDifference(expired.reclaimedMutationIDs, [mutation.id])
+    expectNoDifference(expired.mutations, [])
     let reclaimed = try await competingStore.claimAutomaticOutboxDeliveryWindow(
       InstantAutomaticOutboxClaimRequest(
         claimantID: "reclaiming-runtime",
@@ -2546,19 +2558,22 @@ struct InstantBoundedOutboxDeliveryTests {
   }
 
   @Test
-  func durableFiveSecondDeadlineSelfWakesAndRetriesWithoutExternalEvent() async throws {
+  func ordinalAcknowledgementDeadlinesKeepEightRowWindowSingleSendPastFiveSeconds()
+    async throws
+  {
     let cacheURL = try temporaryBoundedOutboxCacheURL()
-    try await seedBoundedOutbox(
-      [boundedMutation(index: 0, prefix: "deadline-retry")],
-      cacheURL: cacheURL
-    )
+    let mutations = (0..<8).map {
+      boundedMutation(index: $0, prefix: "ordinal-ack-deadline")
+    }
+    try await seedBoundedOutbox(mutations, cacheURL: cacheURL)
     let clock = BoundedOutboxLockedClock(milliseconds: 100_000)
     let deadlineSleep = BoundedOutboxControlledSleep()
+    let pumpPasses = BoundedOutboxDiagnosticCounter()
     let liveSession = LiveReactorParitySession(messages: [
       liveReactorInitOK(attrs: liveReactorTodoServerAttrs)
     ])
     var configuration = InstantRuntimeConfiguration(
-      appID: "bounded-outbox-deadline-retry",
+      appID: "bounded-outbox-ordinal-ack-deadline",
       persistenceURL: cacheURL,
       initialAttributes: TodoExample.attributes,
       now: { clock.now() },
@@ -2568,14 +2583,175 @@ struct InstantBoundedOutboxDeliveryTests {
     configuration.liveMutationDeadlineSleep = { milliseconds in
       try await deadlineSleep.sleep(milliseconds: milliseconds)
     }
+    configuration.onAutomaticMutationPumpRetryWindowCompletedForTesting = {
+      pumpPasses.increment()
+    }
     let runtime = try await InstantRuntime.bootstrap(configuration: configuration)
+
+    _ = try await runtime.connect()
+    try await instantLiveWithTimeout(
+      operation: "wait for the eight-row acknowledgement window",
+      timeoutMilliseconds: 5_000
+    ) {
+      await liveSession.waitForSentMessageCount(9)
+    }
+    try await instantLiveWithTimeout(
+      operation: "wait for the ordinal acknowledgement deadline schedule",
+      timeoutMilliseconds: 5_000
+    ) {
+      await deadlineSleep.waitForFirstDelay()
+    }
+
+    var durableDeadlines: [Int64?] = []
+    for mutation in mutations {
+      durableDeadlines.append(
+        try await runtime.persistence.outboxDeliveryClaimForTesting(id: mutation.id)?
+          .deadlineMilliseconds
+      )
+    }
+    expectNoDifference(
+      durableDeadlines,
+      (1...8).map { Optional(100_000 + Int64($0) * 6_000) },
+      "The durable claim gives each in-flight ordinal its own Reactor-shaped acknowledgement budget."
+    )
+    let firstDelay = await deadlineSleep.firstDelay()
+    expectNoDifference(firstDelay, 6_000)
+
+    let completedPumpPasses = pumpPasses.value
+    clock.advance(by: 5_500)
+    await deadlineSleep.resumeFirstDelay()
+    try await instantLiveWithTimeout(
+      operation: "wait for the early deadline wake to finish without reclaiming",
+      timeoutMilliseconds: 5_000
+    ) {
+      while true {
+        let pumpIsIdle = await runtime.automaticMutationPumpIsIdleForTesting()
+        if pumpPasses.value != completedPumpPasses, pumpIsIdle { break }
+        await Task.yield()
+      }
+    }
+
+    for mutation in mutations {
+      await liveSession.enqueue(
+        InstantLiveMessage(
+          op: "transact-ok",
+          clientEventID: mutation.id,
+          fields: ["tx-id": .string("server-\(mutation.id)")]
+        )
+      )
+    }
+    try await instantLiveWithTimeout(
+      operation: "wait for all delayed acknowledgements",
+      timeoutMilliseconds: 5_000
+    ) {
+      while try await runtime.persistence.countOutboxMutations(status: .pending) != 0 {
+        await Task.yield()
+      }
+    }
+
+    let sentIDs = await liveSession.sentMessages()
+      .filter { $0.op == "transact" }
+      .compactMap(\.clientEventID)
+    expectNoDifference(sentIDs, mutations.map(\.id))
+    expectNoDifference(Set(sentIDs).count, mutations.count)
+    _ = try? await runtime.closeConnection()
+  }
+
+  @Test
+  func acknowledgementTimeoutRetriesOnlyAfterReplacingTheLiveGeneration()
+    async throws
+  {
+    let cacheURL = try temporaryBoundedOutboxCacheURL()
+    let predecessor = boundedMutation(
+      index: 0,
+      prefix: "ack-generation-barrier",
+      entityID: "ack-generation-barrier-entity"
+    )
+    let successor = boundedMutation(
+      index: 1,
+      prefix: "ack-generation-barrier",
+      entityID: "ack-generation-barrier-entity"
+    )
+    try await seedBoundedOutbox([predecessor, successor], cacheURL: cacheURL)
+    let clock = BoundedOutboxLockedClock(milliseconds: 100_000)
+    let deadlineSleep = BoundedOutboxControlledSleep()
+    let reconnectSleep = BoundedOutboxControlledSleep()
+    let pumpPasses = BoundedOutboxDiagnosticCounter()
+    let receiverEventGate = BoundedOutboxReceiverEventGate(blockingEventOrdinal: 2)
+    let firstSession = LiveReactorParitySession(messages: [
+      liveReactorInitOK(
+        attrs: liveReactorTodoServerAttrs,
+        sessionID: "before-acknowledgement-timeout"
+      )
+    ])
+    let replacementSession = LiveReactorParitySession(messages: [
+      liveReactorInitOK(
+        attrs: liveReactorTodoServerAttrs,
+        sessionID: "after-acknowledgement-timeout"
+      )
+    ])
+    let transport = LiveReactorParityTransport(sessions: [firstSession, replacementSession])
+    var configuration = InstantRuntimeConfiguration(
+      appID: "bounded-outbox-ack-generation-barrier",
+      persistenceURL: cacheURL,
+      initialAttributes: TodoExample.attributes,
+      now: { clock.now() },
+      liveTransport: transport.transport
+    )
+    configuration.autoConnectLiveTransport = false
+    configuration.liveReconnectSleep = { milliseconds in
+      try await reconnectSleep.sleep(milliseconds: milliseconds)
+    }
+    configuration.liveMutationDeadlineSleep = { milliseconds in
+      try await deadlineSleep.sleep(milliseconds: milliseconds)
+    }
+    configuration.onLiveReceiverEventAcquiredForTesting = {
+      await receiverEventGate.eventAcquired()
+    }
+    configuration.onAutomaticMutationPumpRetryWindowCompletedForTesting = {
+      pumpPasses.increment()
+    }
+    let runtime = try await InstantRuntime.bootstrap(configuration: configuration)
+
     try await withKnownIssue {
       _ = try await runtime.connect()
       try await instantLiveWithTimeout(
-        operation: "wait for the initial deadline-bound mutation delivery",
+        operation: "wait for the predecessor and successor sends",
         timeoutMilliseconds: 5_000
       ) {
-        await liveSession.waitForSentMessageCount(2)
+        await firstSession.waitForSentMessageCount(3)
+      }
+      await firstSession.enqueue(
+        InstantLiveMessage(
+          op: "transact-ok",
+          clientEventID: successor.id,
+          fields: ["tx-id": .string("server-\(successor.id)")]
+        )
+      )
+      try await instantLiveWithTimeout(
+        operation: "wait for the acknowledged successor to leave the outbox",
+        timeoutMilliseconds: 5_000
+      ) {
+        while try await runtime.persistence.countOutboxMutations(status: .pending) != 1 {
+          await Task.yield()
+        }
+      }
+      await firstSession.enqueue(
+        InstantLiveMessage(
+          op: "error",
+          clientEventID: predecessor.id,
+          fields: [
+            "message": .string("permission denied after stale replay"),
+            "status": .number(403),
+            "type": .string("permission-denied"),
+          ]
+        )
+      )
+      try await instantLiveWithTimeout(
+        operation: "hold the stale response inside the expiring generation",
+        timeoutMilliseconds: 5_000
+      ) {
+        await receiverEventGate.waitUntilBlocked()
       }
       try await instantLiveWithTimeout(
         operation: "wait for the durable mutation deadline schedule",
@@ -2584,26 +2760,67 @@ struct InstantBoundedOutboxDeliveryTests {
         await deadlineSleep.waitForFirstDelay()
       }
       let firstDelay = await deadlineSleep.firstDelay()
-      expectNoDifference(firstDelay, 5_000)
-      clock.advance(by: 5_000)
+      expectNoDifference(firstDelay, 6_000)
+      let completedPumpPasses = pumpPasses.value
+      clock.advance(by: 6_000)
       await deadlineSleep.resumeFirstDelay()
       try await instantLiveWithTimeout(
-        operation: "wait for deadline-driven mutation retry",
+        operation: "wait for reconnect before a second durable claim pass",
         timeoutMilliseconds: 5_000
       ) {
-        await liveSession.waitForSentMessageCount(3)
+        await reconnectSleep.waitForFirstDelay()
+      }
+      expectNoDifference(
+        pumpPasses.value,
+        completedPumpPasses + 1,
+        "A timed-out generation must reconnect before another durable claim pass."
+      )
+      let firstGenerationIDsBeforeReconnect = await firstSession.sentMessages()
+        .filter { $0.op == "transact" }
+        .compactMap(\.clientEventID)
+      expectNoDifference(firstGenerationIDsBeforeReconnect, [predecessor.id, successor.id])
+      await receiverEventGate.releaseBlockedEvent()
+      await reconnectSleep.resumeFirstDelay()
+      try await instantLiveWithTimeout(
+        operation: "wait for the acknowledgement-unknown replacement generation",
+        timeoutMilliseconds: 5_000
+      ) {
+        await transport.waitForConnectionCount(2)
+        await replacementSession.waitForSentMessageCount(2)
       }
     } matching: { issue in
       issue.description.contains("did not acknowledge")
     }
 
-    let sentIDs = await liveSession.sentMessages()
+    let firstGenerationIDs = await firstSession.sentMessages()
       .filter { $0.op == "transact" }
       .compactMap(\.clientEventID)
-    expectNoDifference(sentIDs, [
-      "tx-deadline-retry-00000",
-      "tx-deadline-retry-00000",
-    ])
+    let replacementGenerationIDs = await replacementSession.sentMessages()
+      .filter { $0.op == "transact" }
+      .compactMap(\.clientEventID)
+    expectNoDifference(firstGenerationIDs, [predecessor.id, successor.id])
+    expectNoDifference(replacementGenerationIDs, [predecessor.id])
+
+    let failedMutations = await runtime.failedMutations()
+    let pendingMutationIDs = await runtime.pendingMutations().map(\.id)
+    expectNoDifference(failedMutations, [])
+    expectNoDifference(pendingMutationIDs, [predecessor.id])
+
+    await replacementSession.enqueue(
+      InstantLiveMessage(
+        op: "transact-ok",
+        clientEventID: predecessor.id,
+        fields: ["tx-id": .string("server-\(predecessor.id)")]
+      )
+    )
+    try await instantLiveWithTimeout(
+      operation: "wait for replacement-generation acknowledgement",
+      timeoutMilliseconds: 5_000
+    ) {
+      while try await runtime.persistence.countOutboxMutations(status: .pending) != 0 {
+        await Task.yield()
+      }
+    }
     _ = try? await runtime.closeConnection()
   }
 
@@ -3373,6 +3590,61 @@ private final class BoundedOutboxDiagnosticCounter: @unchecked Sendable {
 
   var value: Int {
     lock.withLock { count }
+  }
+}
+
+private actor BoundedOutboxReceiverEventGate {
+  private let blockingEventOrdinal: Int
+  private var acquiredEventCount = 0
+  private var blockedEventContinuation: CheckedContinuation<Void, Never>?
+  private var blockedEventWaiters: [UUID: CheckedContinuation<Void, Never>] = [:]
+
+  init(blockingEventOrdinal: Int) {
+    precondition(blockingEventOrdinal > 0)
+    self.blockingEventOrdinal = blockingEventOrdinal
+  }
+
+  func eventAcquired() async {
+    acquiredEventCount += 1
+    guard acquiredEventCount == blockingEventOrdinal else { return }
+    for waiter in blockedEventWaiters.values { waiter.resume() }
+    blockedEventWaiters.removeAll()
+    await withTaskCancellationHandler {
+      await withCheckedContinuation { continuation in
+        if Task.isCancelled {
+          continuation.resume()
+        } else {
+          blockedEventContinuation = continuation
+        }
+      }
+    } onCancel: {
+      Task { await self.releaseBlockedEvent() }
+    }
+  }
+
+  func waitUntilBlocked() async {
+    guard acquiredEventCount < blockingEventOrdinal else { return }
+    let waiterID = UUID()
+    await withTaskCancellationHandler {
+      await withCheckedContinuation { continuation in
+        if Task.isCancelled {
+          continuation.resume()
+        } else {
+          blockedEventWaiters[waiterID] = continuation
+        }
+      }
+    } onCancel: {
+      Task { await self.cancelBlockedEventWaiter(id: waiterID) }
+    }
+  }
+
+  func releaseBlockedEvent() {
+    blockedEventContinuation?.resume()
+    blockedEventContinuation = nil
+  }
+
+  private func cancelBlockedEventWaiter(id: UUID) {
+    blockedEventWaiters.removeValue(forKey: id)?.resume()
   }
 }
 

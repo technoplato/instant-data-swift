@@ -4779,7 +4779,8 @@ public actor SQLitePersistenceStore {
           recovery: "Wait for that five-second durable claim to finish or expire, then flush again."
         )
       }
-      let cannotAdmitNewClaim = hasForeignActiveClaim || hasUnmeasuredActiveClaim
+      let cannotAdmitNewClaim =
+        hasForeignActiveClaim || hasUnmeasuredActiveClaim || !reclaimedMutationIDs.isEmpty
       let remainingMutationCount = cannotAdmitNewClaim
         ? 0
         : max(0, request.maximumMutationCount - claimedCount)
@@ -4798,7 +4799,7 @@ public actor SQLitePersistenceStore {
       var admittedBodyByteCount = 0
       var deliveryStartedBeforeClaimByMutationID: [String: Bool] = [:]
       var firstSelectedPosition: InstantOutboxDeliveryPosition?
-      var didMakeNonSendingProgress = false
+      var didMakeNonSendingProgress = !reclaimedMutationIDs.isEmpty
       var didChangeLifecycle = false
 
       if remainingMutationCount > 0, request.maximumBodyDecodeCount > 0 {
@@ -4912,8 +4913,13 @@ public actor SQLitePersistenceStore {
               id: mutation.id,
               claimantID: request.claimantID,
               claimToken: request.claimToken,
-              deadlineMilliseconds: request.now.milliseconds
-                + InstantAutomaticOutboxClaimLimits.claimTimeoutMilliseconds,
+              deadlineMilliseconds: request.requiresExclusiveLane
+                ? request.now.milliseconds
+                  + InstantAutomaticOutboxClaimLimits.claimTimeoutMilliseconds
+                : InstantMutationAcknowledgementDeadlinePolicy.deadlineMilliseconds(
+                  after: request.now,
+                  inFlightOrdinal: claimedCount + mutations.count + 1
+                ),
               projectedBodyByteCount: candidate.encodedBodyByteCount
             )
             mutations.append(mutation)

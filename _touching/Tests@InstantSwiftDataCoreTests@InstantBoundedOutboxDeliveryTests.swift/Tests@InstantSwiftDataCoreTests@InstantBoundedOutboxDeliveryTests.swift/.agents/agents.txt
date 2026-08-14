@@ -5,3 +5,4 @@ codex-desktop/019fe994-1250-7b42-825e-9b75836d9173/root/retry_window_implementat
 codex-desktop/019fe994-1250-7b42-825e-9b75836d9173/root/instant_revision_domains 2026-08-10T22:17:01-0400 mower terminal-retry-classification plan=2026-08-09-bounded-intent-outbox-memory
 codex-desktop/019fe994-1250-7b42-825e-9b75836d9173/root/explicit_flush_tests 2026-08-11T14:50:49Z mower plan=2026-08-09-bounded-intent-outbox-memory
 grok-build-wrap-perf 2026-08-11T16:05:58Z mower plan=2026-08-11-suite-green-and-latency suite-green
+codex-desktop/01a00071-f1c1-7193-adcd-3bc9f30b5f95/root/ack_deadline_fix 2026-08-14T21:28:55Z mower plan=2026-08-14-acknowledgement-deadline-generation-barrier

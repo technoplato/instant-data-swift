@@ -61,3 +61,39 @@
   every sequential recording; its exact pair passes 2/2 and watchdog suite
   passes 6/6. This is audit bookkeeping only: no Instant source, tests, package,
   changelog, progress, runtime, transport, or public API is claimed.
+
+- 2026-08-14T17:28:55-0400 plan-to-touch: `ack_deadline_fix` owns the shared
+  mutation acknowledgement-deadline policy, `InstantRuntimeLiveSession.swift`,
+  acknowledgement-deadline assignment in `SQLitePersistenceStore.swift`, and
+  focused regressions in `InstantBoundedOutboxDeliveryTests.swift`. The mower
+  slice ports Reactor's roughly six-seconds-times-in-flight-ordinal deadline,
+  and treats a genuine timeout as acknowledgement-unknown for the current live
+  generation so the same client event cannot replay on the same socket. The
+  durable outbox remains retryable after a replacement generation. No
+  `InstantRuntime.swift`, permissions, schema, public API, Scribe source,
+  commit, stage, ledger, progress, audit, build, install, or physical lane is
+  claimed. The parent explicitly owns integration and serialized handoff.
+
+- 2026-08-14T17:53:45-0400 FILES STABLE: `ack_deadline_fix` completed the
+  acknowledgement-deadline/generation-barrier slice without committing or
+  staging. The red regression pair proved all eight automatic claims used the
+  old `now + 5_000` deadline, duplicated every client event after the early
+  wake, and never opened the required replacement generation. The shared policy
+  now mirrors Reactor's six-second-times-in-flight-ordinal formula in both
+  SQLite claims and live reservations. A reclaimed current-generation offer is
+  acknowledgement-unknown: the live generation is invalidated, even an empty
+  timeout selection forces reconnect before another claim pass, and a response
+  already decoded on the old receiver is generation-gated before durable
+  handling. Successfully handled responses remove their offered-ID proof, so
+  resident tracking stays bounded. The durable row remains retryable on the
+  replacement socket. Final serialized command `swift test --jobs 1
+  --no-parallel --filter
+  'InstantBoundedOutboxDeliveryTests|InstantReactorParityTests'` passed 78/78 in
+  23.750 seconds with 12 expected known issues. The focused pair plus exact-close
+  receiver regression passed 3/3 in 0.111 seconds with one expected timeout
+  issue. `swiftc -frontend -parse` on the four owned Swift files and scoped
+  `git diff --check` passed; `.build/reproducible-build.json` is restored absent.
+  No `InstantRuntime.swift`, permission, schema, public API, Scribe source,
+  commit, stage, ledger, progress, audit, install, or physical-device lane was
+  touched. The four owned source/test files and coordination markers are stable
+  for the parent Scribe link/run.
