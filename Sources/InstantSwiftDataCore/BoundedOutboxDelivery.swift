@@ -113,6 +113,7 @@ struct InstantAutomaticOutboxClaimRequest: Sendable {
 
 struct InstantAutomaticOutboxClaimWindow: Sendable {
   var mutations: [PendingMutation]
+  var projectedMutations: [PendingMutation]
   var failedMutations: [PendingMutation]
   var successorWriteKeys: Set<InstantVisibleWriteKey>
   var hasUnknownSuccessorWriteKeys: Bool
@@ -126,11 +127,24 @@ struct InstantAutomaticOutboxClaimWindow: Sendable {
   var decodedBodyByteCount: Int
 }
 
+/// One durable mutation plus the exact later-write frontier that protects its
+/// ordered body while visible state is projected for delivery.
+struct InstantOutboxProjectionCandidate: Sendable {
+  var mutation: PendingMutation
+  var preservingWriteKeys: Set<InstantVisibleWriteKey>
+}
+
+struct InstantOutboxProjectionMetadata: Sendable {
+  var encodedBodyByteCount: Int
+  var requiredScalarKeys: Set<InstantVisibleWriteKey>
+}
+
 struct InstantOutboxDeliveryClaim: Equatable, Sendable {
   var state: InstantOutboxDeliveryClaimState
   var claimToken: String?
   var claimantID: String?
   var deadlineMilliseconds: Int64?
+  var projectedBodyByteCount: Int?
   var deliveryStarted: Bool
 }
 
@@ -213,32 +227,89 @@ enum InstantOutboxDeliveryMetadata {
 }
 
 enum InstantBoundedOutboxDelivery {
-  static func transportMutations(
-    in window: InstantAutomaticOutboxClaimWindow
-  ) -> [InstantTransportMutation] {
-    let mutations = window.mutations.sorted(by: PendingMutation.creationOrder)
+  static func projectionCandidates(
+    mutations: [PendingMutation],
+    successorWriteKeys: Set<InstantVisibleWriteKey>,
+    hasUnknownSuccessorWriteKeys: Bool
+  ) -> [InstantOutboxProjectionCandidate] {
+    let mutations = mutations.sorted(by: PendingMutation.creationOrder)
     let selectedWriteKeys = InstantVisibleWriteFilter.writeKeys(in: mutations)
-    var laterQueuedWriteKeys = window.successorWriteKeys
-    if window.hasUnknownSuccessorWriteKeys {
+    var laterQueuedWriteKeys = successorWriteKeys
+    if hasUnknownSuccessorWriteKeys {
       laterQueuedWriteKeys.formUnion(selectedWriteKeys)
     }
 
-    var filteredReversed: [PendingMutation] = []
-    filteredReversed.reserveCapacity(mutations.count)
-    for var mutation in mutations.reversed() {
-      let mutationWriteKeys = InstantVisibleWriteFilter.writeKeys(
-        in: mutation.transaction.operations
-      )
-      mutation.transaction.operations =
-        window.visibleWriteFilter.discardingWritesOlderThanVisibleState(
-          mutation.transaction.operations,
-          preserving: laterQueuedWriteKeys
+    var candidatesReversed: [InstantOutboxProjectionCandidate] = []
+    candidatesReversed.reserveCapacity(mutations.count)
+    for mutation in mutations.reversed() {
+      candidatesReversed.append(
+        InstantOutboxProjectionCandidate(
+          mutation: mutation,
+          preservingWriteKeys: laterQueuedWriteKeys
         )
-      filteredReversed.append(mutation)
-      laterQueuedWriteKeys.formUnion(mutationWriteKeys)
+      )
+      laterQueuedWriteKeys.formUnion(
+        InstantVisibleWriteFilter.writeKeys(in: mutation.transaction.operations)
+      )
     }
+    return Array(candidatesReversed.reversed())
+  }
 
-    return filteredReversed.reversed().map { mutation in
+  static func projectedPendingMutation(
+    _ candidate: InstantOutboxProjectionCandidate,
+    visibleWriteFilter: InstantVisibleWriteFilter
+  ) -> PendingMutation {
+    var mutation = candidate.mutation
+    mutation.transaction.operations =
+      visibleWriteFilter.discardingWritesOlderThanVisibleState(
+        mutation.transaction.operations,
+        preserving: candidate.preservingWriteKeys
+      )
+    return mutation
+  }
+
+  static func encodedProjectedBodyByteCount(_ mutation: PendingMutation) throws -> Int {
+    let encoder = JSONEncoder()
+    encoder.outputFormatting = [.sortedKeys]
+    return try encoder.encode(mutation).count
+  }
+
+  /// Computes the exact projected `PendingMutation` size without decoding the
+  /// authoritative scalar. Filtering first accounts for removed optional
+  /// writes; each required substitution then changes only one encoded value.
+  static func projectionMetadata(
+    for candidate: InstantOutboxProjectionCandidate,
+    visibleWriteFilter: InstantVisibleWriteFilter
+  ) throws -> InstantOutboxProjectionMetadata {
+    let hydrations = visibleWriteFilter.requiredScalarHydrations(
+      in: candidate.mutation.transaction.operations,
+      preserving: candidate.preservingWriteKeys
+    )
+    let baseMutation = projectedPendingMutation(
+      candidate,
+      visibleWriteFilter: visibleWriteFilter
+    )
+    var encodedBodyByteCount = try encodedProjectedBodyByteCount(baseMutation)
+    let valueEncoder = JSONEncoder()
+    valueEncoder.outputFormatting = [.sortedKeys]
+    for hydration in hydrations {
+      guard let authoritativeValueByteCount =
+        visibleWriteFilter.requiredScalarEncodedValueByteCount(for: hydration.key)
+      else { continue }
+      let originalValueByteCount = try valueEncoder.encode(hydration.originalValue).count
+      encodedBodyByteCount -= originalValueByteCount
+      encodedBodyByteCount += authoritativeValueByteCount
+    }
+    return InstantOutboxProjectionMetadata(
+      encodedBodyByteCount: encodedBodyByteCount,
+      requiredScalarKeys: Set(hydrations.map(\.key))
+    )
+  }
+
+  static func transportMutations(
+    in window: InstantAutomaticOutboxClaimWindow
+  ) -> [InstantTransportMutation] {
+    window.projectedMutations.sorted(by: PendingMutation.creationOrder).map { mutation in
       var transportMutation = InstantTransportMutation(mutation)
       if mutation.status == .confirmed, !mutation.provesServerAcceptance {
         transportMutation.status = .pending

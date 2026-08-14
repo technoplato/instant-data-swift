@@ -174,16 +174,29 @@ package struct InstantAuthoritativeEntityNamespace: Hashable, Sendable {
   var namespace: String
 }
 
+package struct InstantRequiredScalarHydration: Sendable {
+  var key: InstantVisibleWriteKey
+  var originalValue: InstantValue
+}
+
 package struct InstantVisibleWriteFilter: Sendable {
   private var attributesByID: [String: InstantAttribute]
   private var newestVisibleWrite: [InstantVisibleWriteKey: InstantTimestamp]
+  private var newestVisibleRequiredScalar: [InstantVisibleWriteKey: InstantTriple]
+  private var newestVisibleRequiredScalarEncodedValueByteCount:
+    [InstantVisibleWriteKey: Int]
 
   init(
     attributesByID: [String: InstantAttribute],
-    newestVisibleWrite: [InstantVisibleWriteKey: InstantTimestamp]
+    newestVisibleWrite: [InstantVisibleWriteKey: InstantTimestamp],
+    newestVisibleRequiredScalar: [InstantVisibleWriteKey: InstantTriple],
+    newestVisibleRequiredScalarEncodedValueByteCount: [InstantVisibleWriteKey: Int]
   ) {
     self.attributesByID = attributesByID
     self.newestVisibleWrite = newestVisibleWrite
+    self.newestVisibleRequiredScalar = newestVisibleRequiredScalar
+    self.newestVisibleRequiredScalarEncodedValueByteCount =
+      newestVisibleRequiredScalarEncodedValueByteCount
   }
 
   static func writeKeys(in mutations: [PendingMutation]) -> Set<InstantVisibleWriteKey> {
@@ -214,15 +227,85 @@ package struct InstantVisibleWriteFilter: Sendable {
     )
   }
 
-  func discardingWritesOlderThanVisibleState(
-    _ operations: [InstantTripleOperation],
+  /// Returns only stale required scalar writes that need authoritative values
+  /// before this mutation can be projected truthfully.
+  func requiredScalarHydrations(
+    in operations: [InstantTripleOperation],
     preserving queuedSuccessorWriteKeys: Set<InstantVisibleWriteKey> = []
-  ) -> [InstantTripleOperation] {
-    return operations.filter { operation in
+  ) -> [InstantRequiredScalarHydration] {
+    var hydrations: [InstantRequiredScalarHydration] = []
+    for operation in operations {
       let triple: InstantTriple
       switch operation {
       case .insert(let value), .merge(let value):
         triple = value
+      case .requireEntityMissing, .requireEntityMissingByLookup,
+        .requireEntityExists, .requireEntityExistsByLookup,
+        .requireTripleExists,
+        .insertByLookup, .mergeByLookup,
+        .retract, .retractByLookup,
+        .deleteEntity, .deleteEntityInNamespace, .deleteEntityByLookup,
+        .ruleParams, .ruleParamsByLookup:
+        continue
+      }
+      guard let attribute = attributesByID[triple.attributeID],
+        attribute.cardinality == .one,
+        !attribute.primaryKey,
+        attribute.isRequired,
+        attribute.valueType != .ref
+      else { continue }
+      let key = InstantVisibleWriteKey(
+        entityID: triple.entityID,
+        attributeID: triple.attributeID
+      )
+      guard !queuedSuccessorWriteKeys.contains(key),
+        let visibleWrite = newestVisibleWrite[key],
+        visibleWrite > triple.txTime,
+        newestVisibleRequiredScalar[key] == nil,
+        newestVisibleRequiredScalarEncodedValueByteCount[key] != nil
+      else { continue }
+      hydrations.append(
+        InstantRequiredScalarHydration(key: key, originalValue: triple.value)
+      )
+    }
+    return hydrations
+  }
+
+  func requiredScalarEncodedValueByteCount(for key: InstantVisibleWriteKey) -> Int? {
+    newestVisibleRequiredScalarEncodedValueByteCount[key]
+  }
+
+  func requiredScalarTimestamp(for key: InstantVisibleWriteKey) -> InstantTimestamp? {
+    guard newestVisibleRequiredScalarEncodedValueByteCount[key] != nil else { return nil }
+    return newestVisibleWrite[key]
+  }
+
+  func hydratingRequiredScalars(
+    _ triples: [InstantVisibleWriteKey: InstantTriple]
+  ) -> Self {
+    var copy = self
+    copy.newestVisibleRequiredScalar.merge(triples) { _, newest in newest }
+    return copy
+  }
+
+  /// Drops optional stale assignments while keeping required scalar upserts complete.
+  ///
+  /// Required scalars use the newest materialized value so retrying an older
+  /// relation-bearing body neither omits schema foundation nor revives stale data.
+  func discardingWritesOlderThanVisibleState(
+    _ operations: [InstantTripleOperation],
+    preserving queuedSuccessorWriteKeys: Set<InstantVisibleWriteKey> = []
+  ) -> [InstantTripleOperation] {
+    return operations.compactMap { operation in
+      let triple: InstantTriple
+      let isMerge: Bool
+      switch operation {
+      case .insert(let value):
+        triple = value
+        isMerge = false
+      case .merge(let value):
+        triple = value
+        isMerge = true
 
       case .requireEntityMissing, .requireEntityMissingByLookup,
         .requireEntityExists, .requireEntityExistsByLookup,
@@ -231,20 +314,31 @@ package struct InstantVisibleWriteFilter: Sendable {
         .retract, .retractByLookup,
         .deleteEntity, .deleteEntityInNamespace, .deleteEntityByLookup,
         .ruleParams, .ruleParamsByLookup:
-        return true
+        return operation
       }
 
       guard let attribute = attributesByID[triple.attributeID],
         attribute.cardinality == .one,
         !attribute.primaryKey
-      else { return true }
+      else { return operation }
       let key = InstantVisibleWriteKey(
         entityID: triple.entityID,
         attributeID: triple.attributeID
       )
-      if queuedSuccessorWriteKeys.contains(key) { return true }
-      guard let visibleWrite = newestVisibleWrite[key] else { return true }
-      return visibleWrite <= triple.txTime
+      if queuedSuccessorWriteKeys.contains(key) { return operation }
+      guard let visibleWrite = newestVisibleWrite[key], visibleWrite > triple.txTime
+      else { return operation }
+      guard attribute.isRequired, attribute.valueType != .ref else { return nil }
+      guard let visibleTriple = newestVisibleRequiredScalar[key] else { return operation }
+
+      // A required scalar cannot disappear from a relation-bearing create/upsert.
+      // Reusing the original value would overwrite the newer local intent, while
+      // importing an active successor here would bypass ordered rejection semantics.
+      // Successor keys are preserved above; only an otherwise-discarded required
+      // write is replaced with the exact newest materialized value.
+      var hydratedTriple = triple
+      hydratedTriple.value = visibleTriple.value
+      return isMerge ? .merge(hydratedTriple) : .insert(hydratedTriple)
     }
   }
 }

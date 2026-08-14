@@ -80,6 +80,11 @@ struct InstantBoundedOutboxDeliveryTests {
       expectedOutboxRevision: revision
     )
     _ = try #require(acceptedHead)
+    let acceptedHeadClaim = try #require(
+      try await firstStore.outboxDeliveryClaimForTesting(id: "tx-atomic-claim-00000")
+    )
+    expectNoDifference(acceptedHeadClaim.state, .ready)
+    expectNoDifference(acceptedHeadClaim.projectedBodyByteCount, nil)
     let successorClaim = try await secondStore.claimAutomaticOutboxDeliveryWindow(
       InstantAutomaticOutboxClaimRequest(
         claimantID: "runtime-b",
@@ -94,6 +99,7 @@ struct InstantBoundedOutboxDeliveryTests {
     )
     expectNoDifference(releasedSuccessor?.state, .ready)
     expectNoDifference(releasedSuccessor?.claimToken, nil)
+    expectNoDifference(releasedSuccessor?.projectedBodyByteCount, nil)
     expectNoDifference(
       releasedSuccessor?.deliveryStarted,
       true,
@@ -101,6 +107,119 @@ struct InstantBoundedOutboxDeliveryTests {
     )
     await firstStore.simulateUnexpectedConnectionCloseForTesting()
     await secondStore.simulateUnexpectedConnectionCloseForTesting()
+  }
+
+  @Test
+  func legacyClaimWithoutProjectedBytesBlocksRefillUntilReleased() async throws {
+    let cacheURL = try temporaryBoundedOutboxCacheURL()
+    let mutations = (0..<2).map {
+      boundedMutation(index: $0, prefix: "legacy-projected-byte-claim")
+    }
+    try await seedBoundedOutbox(mutations, cacheURL: cacheURL)
+    let store = try SQLitePersistenceStore(fileURL: cacheURL)
+    try await store.bootstrap()
+
+    let firstWindow = try await store.claimAutomaticOutboxDeliveryWindow(
+      InstantAutomaticOutboxClaimRequest(
+        claimantID: "legacy-projected-byte-runtime",
+        claimToken: "legacy-projected-byte-token",
+        now: InstantTimestamp(milliseconds: 10_000),
+        maximumMutationCount: 1
+      )
+    )
+    expectNoDifference(firstWindow.mutations.map(\.id), [mutations[0].id])
+    try executeBoundedOutboxSQL(
+      """
+      UPDATE instant_outbox
+      SET delivery_claim_projected_body_bytes = NULL
+      WHERE mutation_id = '\(mutations[0].id)';
+      """,
+      cacheURL: cacheURL
+    )
+
+    let blockedWindow = try await store.claimAutomaticOutboxDeliveryWindow(
+      InstantAutomaticOutboxClaimRequest(
+        claimantID: "legacy-projected-byte-runtime",
+        claimToken: "blocked-refill-token",
+        now: InstantTimestamp(milliseconds: 10_001)
+      )
+    )
+    expectNoDifference(blockedWindow.mutations.map(\.id), [])
+    let blockedTail = try #require(
+      try await store.outboxDeliveryClaimForTesting(id: mutations[1].id)
+    )
+    expectNoDifference(blockedTail.state, .ready)
+    expectNoDifference(blockedTail.claimToken, nil)
+    expectNoDifference(blockedTail.projectedBodyByteCount, nil)
+    expectNoDifference(blockedTail.deliveryStarted, false)
+
+    _ = try await store.releaseAutomaticOutboxClaim(token: "legacy-projected-byte-token")
+    let releasedHead = try #require(
+      try await store.outboxDeliveryClaimForTesting(id: mutations[0].id)
+    )
+    expectNoDifference(releasedHead.state, .ready)
+    expectNoDifference(releasedHead.projectedBodyByteCount, nil)
+    let revision = try await store.currentOutboxRevision()
+    _ = try #require(
+      try await store.acceptOutboxMutation(
+        id: mutations[0].id,
+        serverTransactionID: "server-legacy-projected-byte-head",
+        expectedOutboxRevision: revision
+      )
+    )
+    let tailWindow = try await store.claimAutomaticOutboxDeliveryWindow(
+      InstantAutomaticOutboxClaimRequest(
+        claimantID: "legacy-projected-byte-runtime",
+        claimToken: "tail-after-legacy-release-token",
+        now: InstantTimestamp(milliseconds: 10_002)
+      )
+    )
+    expectNoDifference(tailWindow.mutations.map(\.id), [mutations[1].id])
+    _ = try await store.releaseAutomaticOutboxClaim(token: "tail-after-legacy-release-token")
+    await store.simulateUnexpectedConnectionCloseForTesting()
+  }
+
+  @Test
+  func expiredClaimClearsProjectedByteReservationBeforeRefill() async throws {
+    let cacheURL = try temporaryBoundedOutboxCacheURL()
+    let mutation = boundedMutation(index: 0, prefix: "expired-projected-byte-claim")
+    try await seedBoundedOutbox([mutation], cacheURL: cacheURL)
+    let store = try SQLitePersistenceStore(fileURL: cacheURL)
+    try await store.bootstrap()
+
+    let claim = try await store.claimAutomaticOutboxDeliveryWindow(
+      InstantAutomaticOutboxClaimRequest(
+        claimantID: "expired-projected-byte-runtime",
+        claimToken: "expired-projected-byte-token",
+        now: InstantTimestamp(milliseconds: 10_000)
+      )
+    )
+    expectNoDifference(claim.mutations.map(\.id), [mutation.id])
+    #expect(
+      try await store.outboxDeliveryClaimForTesting(id: mutation.id)?
+        .projectedBodyByteCount != nil
+    )
+
+    let reclaimed = try await store.claimAutomaticOutboxDeliveryWindow(
+      InstantAutomaticOutboxClaimRequest(
+        claimantID: "expired-projected-byte-runtime",
+        claimToken: "no-refill-token",
+        now: InstantTimestamp(
+          milliseconds: 10_000
+            + InstantAutomaticOutboxClaimLimits.claimTimeoutMilliseconds
+        ),
+        maximumMutationCount: 0
+      )
+    )
+    expectNoDifference(reclaimed.reclaimedMutationIDs, [mutation.id])
+    expectNoDifference(reclaimed.mutations.map(\.id), [])
+    let expiredClaim = try #require(
+      try await store.outboxDeliveryClaimForTesting(id: mutation.id)
+    )
+    expectNoDifference(expiredClaim.state, .ready)
+    expectNoDifference(expiredClaim.claimToken, nil)
+    expectNoDifference(expiredClaim.projectedBodyByteCount, nil)
+    await store.simulateUnexpectedConnectionCloseForTesting()
   }
 
   @Test
@@ -1433,6 +1552,498 @@ struct InstantBoundedOutboxDeliveryTests {
   }
 
   @Test
+  func automaticDeliveryHydratesRequiredFoundationAndFiltersOptionalStaleWrite()
+    async throws
+  {
+    let cacheURL = try temporaryBoundedOutboxCacheURL()
+    let liveSession = LiveReactorParitySession(messages: [
+      liveReactorInitOK(attrs: liveReactorServerAttrs(from: requiredFoundationAttributes))
+    ])
+    var configuration = InstantRuntimeConfiguration(
+      appID: "bounded-outbox-required-foundation",
+      persistenceURL: cacheURL,
+      initialAttributes: requiredFoundationAttributes,
+      liveTransport: liveSession.transport
+    )
+    configuration.autoConnectLiveTransport = false
+    let runtime = try await InstantRuntime.bootstrap(configuration: configuration)
+    let mutation = requiredFoundationMutation(
+      id: "tx-required-foundation-older",
+      entityID: "segment-required-foundation",
+      text: "older text must not overwrite the visible value",
+      optionalPreview: "older preview must be filtered",
+      recordingID: "recording-required-foundation",
+      createdAt: InstantTimestamp(milliseconds: 100)
+    )
+    try await runtime.persistence.saveOutbox([mutation])
+
+    let visibleAt = InstantTimestamp(milliseconds: 200)
+    let otherRuntimePersistence = try SQLitePersistenceStore(fileURL: cacheURL)
+    try await otherRuntimePersistence.bootstrap()
+    try await otherRuntimePersistence.saveStoreSnapshot(
+      InstantStoreSnapshot(
+        attributes: requiredFoundationAttributes,
+        triples: [
+          requiredFoundationTriple(
+            entityID: "segment-required-foundation",
+            attributeID: "transcriptionSegments/id",
+            value: .string("segment-required-foundation"),
+            transactionID: mutation.id,
+            timestamp: mutation.createdAt
+          ),
+          requiredFoundationTriple(
+            entityID: "segment-required-foundation",
+            attributeID: "transcriptionSegments/recording",
+            value: .ref("recording-required-foundation"),
+            transactionID: mutation.id,
+            timestamp: mutation.createdAt
+          ),
+          requiredFoundationTriple(
+            entityID: "segment-required-foundation",
+            attributeID: "transcriptionSegments/text",
+            value: .string("newest materialized text"),
+            transactionID: "newer-visible-write",
+            timestamp: visibleAt
+          ),
+          requiredFoundationTriple(
+            entityID: "segment-required-foundation",
+            attributeID: "transcriptionSegments/searchPreview",
+            value: .string("newest optional preview"),
+            transactionID: "newer-visible-write",
+            timestamp: visibleAt
+          ),
+        ]
+      )
+    )
+
+    _ = try await runtime.connect()
+    try await instantLiveWithTimeout(
+      operation: "wait for schema-complete required-foundation delivery",
+      timeoutMilliseconds: 5_000
+    ) {
+      await liveSession.waitForSentMessageCount(2)
+    }
+    let sent = try #require(
+      await liveSession.sentMessages().first { $0.op == "transact" }
+    )
+    let valuesByAttributeID = boundedOutboxAddTripleValues(in: sent)
+
+    expectNoDifference(sent.clientEventID, mutation.id)
+    expectNoDifference(
+      valuesByAttributeID,
+      [
+        "transcriptionSegments/id": .string("segment-required-foundation"),
+        "transcriptionSegments/recording": .string("recording-required-foundation"),
+        "transcriptionSegments/text": .string("newest materialized text"),
+      ],
+      "The relation-bearing wire mutation must carry the newest required scalar without reviving an optional stale field."
+    )
+    _ = try? await runtime.closeConnection()
+    await otherRuntimePersistence.simulateUnexpectedConnectionCloseForTesting()
+  }
+
+  @Test
+  func automaticDeliveryFailsOversizedRequiredHydrationAndSendsSmallTail()
+    async throws
+  {
+    let cacheURL = try temporaryBoundedOutboxCacheURL()
+    let liveSession = LiveReactorParitySession(messages: [
+      liveReactorInitOK(attrs: liveReactorServerAttrs(from: requiredFoundationAttributes))
+    ])
+    var configuration = InstantRuntimeConfiguration(
+      appID: "bounded-outbox-required-foundation-projected-oversize",
+      persistenceURL: cacheURL,
+      initialAttributes: requiredFoundationAttributes,
+      liveTransport: liveSession.transport
+    )
+    configuration.autoConnectLiveTransport = false
+    let runtime = try await InstantRuntime.bootstrap(configuration: configuration)
+    let oversizedHead = requiredFoundationMutation(
+      id: "tx-required-foundation-projected-oversize",
+      entityID: "segment-required-foundation-projected-oversize",
+      text: "tiny persisted text",
+      optionalPreview: nil,
+      recordingID: "recording-required-foundation-projected-oversize",
+      createdAt: InstantTimestamp(milliseconds: 100)
+    )
+    let smallTail = requiredFoundationMutation(
+      id: "tx-required-foundation-projected-small-tail",
+      entityID: "segment-required-foundation-projected-small-tail",
+      text: "small tail text",
+      optionalPreview: nil,
+      recordingID: "recording-required-foundation-projected-small-tail",
+      createdAt: InstantTimestamp(milliseconds: 300)
+    )
+    try await runtime.persistence.saveOutbox([oversizedHead, smallTail])
+
+    let oversizedAuthoritativeText = String(
+      repeating: "x",
+      count: InstantAutomaticOutboxClaimLimits.maximumEncodedBodyBytes + 1_024
+    )
+    try await runtime.persistence.saveStoreSnapshot(
+      InstantStoreSnapshot(
+        attributes: requiredFoundationAttributes,
+        triples: [
+          requiredFoundationTriple(
+            entityID: "segment-required-foundation-projected-oversize",
+            attributeID: "transcriptionSegments/text",
+            value: .string(oversizedAuthoritativeText),
+            transactionID: "authoritative-required-foundation-projected-oversize",
+            timestamp: InstantTimestamp(milliseconds: 200)
+          )
+        ]
+      )
+    )
+
+    await runtime.persistence.resetVisibleRequiredScalarDecodeMetricsForTesting()
+    _ = try await runtime.connect()
+    try await instantLiveWithTimeout(
+      operation: "wait for small tail behind projected-oversize required hydration",
+      timeoutMilliseconds: 5_000
+    ) {
+      await liveSession.waitForSentMessageCount(2)
+    }
+
+    let sentMutationIDs = await liveSession.sentMessages()
+      .filter { $0.op == "transact" }
+      .compactMap(\.clientEventID)
+    let failedHead = try #require(
+      await runtime.failedMutations().first { $0.id == oversizedHead.id }
+    )
+    let headClaim = try #require(
+      try await runtime.persistence.outboxDeliveryClaimForTesting(id: oversizedHead.id)
+    )
+    let decodedRequiredScalarCount =
+      await runtime.persistence.decodedVisibleRequiredScalarCountForTesting()
+    let decodedRequiredScalarValueByteCount =
+      await runtime.persistence.decodedVisibleRequiredScalarValueByteCountForTesting()
+    let materializedText = try #require(
+      try await runtime.persistence.loadSnapshot().store.triples.first {
+        $0.entityID == "segment-required-foundation-projected-oversize"
+          && $0.attributeID == "transcriptionSegments/text"
+      }
+    )
+
+    expectNoDifference(sentMutationIDs, [smallTail.id])
+    expectNoDifference(failedHead.failure?.code, .validationFailed)
+    #expect(failedHead.failureMessage?.contains("projected pending body") == true)
+    #expect(
+      failedHead.failureMessage?.contains(
+        "\(InstantAutomaticOutboxClaimLimits.maximumEncodedBodyBytes)-byte"
+      ) == true
+    )
+    expectNoDifference(headClaim.state, .ready)
+    expectNoDifference(headClaim.claimToken, nil)
+    expectNoDifference(headClaim.projectedBodyByteCount, nil)
+    expectNoDifference(
+      decodedRequiredScalarCount,
+      0,
+      "An individually oversized projected row must fail from SQLite value-length metadata before decoding the authoritative value."
+    )
+    expectNoDifference(decodedRequiredScalarValueByteCount, 0)
+    expectNoDifference(materializedText.value, .string(oversizedAuthoritativeText))
+
+    let repeatedPumpCompleted = await runtime.sendOutstandingMutationsToLiveSession()
+    #expect(repeatedPumpCompleted)
+    let repeatedSentMutationIDs = await liveSession.sentMessages()
+      .filter { $0.op == "transact" }
+      .compactMap(\.clientEventID)
+    expectNoDifference(repeatedSentMutationIDs, [smallTail.id])
+    _ = try? await runtime.closeConnection()
+  }
+
+  @Test
+  func automaticDeliveryDefersSecondFiveMiBRequiredHydrationUntilCapacityReleases()
+    async throws
+  {
+    let cacheURL = try temporaryBoundedOutboxCacheURL()
+    let liveSession = LiveReactorParitySession(messages: [
+      liveReactorInitOK(attrs: liveReactorServerAttrs(from: requiredFoundationAttributes))
+    ])
+    var configuration = InstantRuntimeConfiguration(
+      appID: "bounded-outbox-required-foundation-projected-window",
+      persistenceURL: cacheURL,
+      initialAttributes: requiredFoundationAttributes,
+      liveTransport: liveSession.transport
+    )
+    configuration.autoConnectLiveTransport = false
+    let runtime = try await InstantRuntime.bootstrap(configuration: configuration)
+    let first = requiredFoundationMutation(
+      id: "tx-required-foundation-projected-window-first",
+      entityID: "segment-required-foundation-projected-window-first",
+      text: "tiny first persisted text",
+      optionalPreview: nil,
+      recordingID: "recording-required-foundation-projected-window-first",
+      createdAt: InstantTimestamp(milliseconds: 100)
+    )
+    let second = requiredFoundationMutation(
+      id: "tx-required-foundation-projected-window-second",
+      entityID: "segment-required-foundation-projected-window-second",
+      text: "tiny second persisted text",
+      optionalPreview: nil,
+      recordingID: "recording-required-foundation-projected-window-second",
+      createdAt: InstantTimestamp(milliseconds: 200)
+    )
+    try await runtime.persistence.saveOutbox([first, second])
+
+    let fiveMiBText = String(repeating: "y", count: 5 * 1_024 * 1_024)
+    try await runtime.persistence.saveStoreSnapshot(
+      InstantStoreSnapshot(
+        attributes: requiredFoundationAttributes,
+        triples: [
+          requiredFoundationTriple(
+            entityID: "segment-required-foundation-projected-window-first",
+            attributeID: "transcriptionSegments/text",
+            value: .string(fiveMiBText),
+            transactionID: "authoritative-required-foundation-projected-window-first",
+            timestamp: InstantTimestamp(milliseconds: 300)
+          ),
+          requiredFoundationTriple(
+            entityID: "segment-required-foundation-projected-window-second",
+            attributeID: "transcriptionSegments/text",
+            value: .string(fiveMiBText),
+            transactionID: "authoritative-required-foundation-projected-window-second",
+            timestamp: InstantTimestamp(milliseconds: 300)
+          ),
+        ]
+      )
+    )
+
+    await runtime.persistence.resetVisibleRequiredScalarDecodeMetricsForTesting()
+    _ = try await runtime.connect()
+    try await instantLiveWithTimeout(
+      operation: "wait for first five-MiB projected mutation",
+      timeoutMilliseconds: 5_000
+    ) {
+      await liveSession.waitForSentMessageCount(2)
+    }
+
+    let initiallySentMutationIDs = await liveSession.sentMessages()
+      .filter { $0.op == "transact" }
+      .compactMap(\.clientEventID)
+    let firstClaim = try #require(
+      try await runtime.persistence.outboxDeliveryClaimForTesting(id: first.id)
+    )
+    let deferredClaim = try #require(
+      try await runtime.persistence.outboxDeliveryClaimForTesting(id: second.id)
+    )
+    let initialRequiredScalarDecodeCount =
+      await runtime.persistence.decodedVisibleRequiredScalarCountForTesting()
+    let initialRequiredScalarValueByteCount =
+      await runtime.persistence.decodedVisibleRequiredScalarValueByteCountForTesting()
+    expectNoDifference(initiallySentMutationIDs, [first.id])
+    expectNoDifference(firstClaim.state, .claimed)
+    #expect((firstClaim.projectedBodyByteCount ?? 0) > 5 * 1_024 * 1_024)
+    #expect(
+      (firstClaim.projectedBodyByteCount ?? .max)
+        <= InstantAutomaticOutboxClaimLimits.maximumEncodedBodyBytes
+    )
+    expectNoDifference(deferredClaim.state, .ready)
+    expectNoDifference(deferredClaim.claimToken, nil)
+    expectNoDifference(deferredClaim.projectedBodyByteCount, nil)
+    expectNoDifference(deferredClaim.deliveryStarted, false)
+    expectNoDifference(
+      initialRequiredScalarDecodeCount,
+      1,
+      "The aggregate-overflow suffix must remain metadata-only until the admitted prefix releases capacity."
+    )
+    #expect(initialRequiredScalarValueByteCount > 5 * 1_024 * 1_024)
+    #expect(
+      initialRequiredScalarValueByteCount
+        <= InstantAutomaticOutboxClaimLimits.maximumEncodedBodyBytes
+    )
+
+    await liveSession.enqueue(
+      InstantLiveMessage(
+        op: "transact-ok",
+        clientEventID: first.id,
+        fields: ["tx-id": .string("server-required-foundation-projected-window-first")]
+      )
+    )
+    try await instantLiveWithTimeout(
+      operation: "wait for deferred five-MiB projection after capacity release",
+      timeoutMilliseconds: 5_000
+    ) {
+      await liveSession.waitForSentMessageCount(3)
+    }
+    let finallySentMutationIDs = await liveSession.sentMessages()
+      .filter { $0.op == "transact" }
+      .compactMap(\.clientEventID)
+    let finalRequiredScalarDecodeCount =
+      await runtime.persistence.decodedVisibleRequiredScalarCountForTesting()
+    expectNoDifference(finallySentMutationIDs, [first.id, second.id])
+    expectNoDifference(finalRequiredScalarDecodeCount, 2)
+    _ = try? await runtime.closeConnection()
+  }
+
+  @Test
+  func activeSuccessorKeepsOriginalThenNewRequiredFoundationValues() async throws {
+    let cacheURL = try temporaryBoundedOutboxCacheURL()
+    let liveSession = LiveReactorParitySession(messages: [
+      liveReactorInitOK(attrs: liveReactorServerAttrs(from: requiredFoundationAttributes))
+    ])
+    var configuration = InstantRuntimeConfiguration(
+      appID: "bounded-outbox-required-foundation-successor",
+      persistenceURL: cacheURL,
+      initialAttributes: requiredFoundationAttributes,
+      liveTransport: liveSession.transport
+    )
+    configuration.autoConnectLiveTransport = false
+    let runtime = try await InstantRuntime.bootstrap(configuration: configuration)
+    let older = requiredFoundationMutation(
+      id: "tx-required-foundation-successor-older",
+      entityID: "segment-required-foundation-successor",
+      text: "older ordered text",
+      optionalPreview: nil,
+      recordingID: "recording-required-foundation-successor",
+      createdAt: InstantTimestamp(milliseconds: 100)
+    )
+    let newer = requiredFoundationMutation(
+      id: "tx-required-foundation-successor-newer",
+      entityID: "segment-required-foundation-successor",
+      text: "newer ordered text",
+      optionalPreview: nil,
+      recordingID: nil,
+      createdAt: InstantTimestamp(milliseconds: 200)
+    )
+    _ = try await runtime.transact(older.transaction, createdAt: older.createdAt)
+    _ = try await runtime.transact(newer.transaction, createdAt: newer.createdAt)
+
+    _ = try await runtime.connect()
+    try await instantLiveWithTimeout(
+      operation: "wait for ordered required-foundation successor delivery",
+      timeoutMilliseconds: 5_000
+    ) {
+      await liveSession.waitForSentMessageCount(3)
+    }
+    let sent = await liveSession.sentMessages().filter { $0.op == "transact" }
+    let olderSent = try #require(sent.first { $0.clientEventID == older.id })
+    let newerSent = try #require(sent.first { $0.clientEventID == newer.id })
+
+    expectNoDifference(sent.compactMap(\.clientEventID), [older.id, newer.id])
+    expectNoDifference(
+      boundedOutboxAddTripleValues(in: olderSent)["transcriptionSegments/text"],
+      .string("older ordered text"),
+      "A pending successor is not authoritative: the predecessor must keep its original required value."
+    )
+    expectNoDifference(
+      boundedOutboxAddTripleValues(in: newerSent)["transcriptionSegments/text"],
+      .string("newer ordered text")
+    )
+    _ = try? await runtime.closeConnection()
+  }
+
+  @Test
+  func legacyActiveUnconfirmedOverlayCannotHydrateLaterFoundationMutation()
+    async throws
+  {
+    let cacheURL = try temporaryBoundedOutboxCacheURL()
+    let liveSession = LiveReactorParitySession(messages: [
+      liveReactorInitOK(attrs: liveReactorServerAttrs(from: requiredFoundationAttributes))
+    ])
+    var configuration = InstantRuntimeConfiguration(
+      appID: "bounded-outbox-required-foundation-legacy-overlay",
+      persistenceURL: cacheURL,
+      initialAttributes: requiredFoundationAttributes,
+      liveTransport: liveSession.transport
+    )
+    configuration.autoConnectLiveTransport = false
+    let runtime = try await InstantRuntime.bootstrap(configuration: configuration)
+    var activeFailedOverlay = requiredFoundationMutation(
+      id: "tx-required-foundation-active-failed-overlay",
+      entityID: "segment-required-foundation-active-failed-overlay",
+      text: "newer unconfirmed optimistic text",
+      optionalPreview: nil,
+      recordingID: nil,
+      createdAt: InstantTimestamp(milliseconds: 300)
+    )
+    activeFailedOverlay.createdAt = InstantTimestamp(milliseconds: 100)
+    activeFailedOverlay.status = .failed
+    activeFailedOverlay.failureMessage = "permission denied"
+    activeFailedOverlay.failure = InstantMutationFailure(
+      code: .permissionRejected,
+      message: "permission denied"
+    )
+    activeFailedOverlay.optimisticOverlayState = .applied
+    let foundation = requiredFoundationMutation(
+      id: "tx-required-foundation-after-active-failed-overlay",
+      entityID: "segment-required-foundation-active-failed-overlay",
+      text: "foundation text",
+      optionalPreview: nil,
+      recordingID: "recording-required-foundation-active-failed-overlay",
+      createdAt: InstantTimestamp(milliseconds: 200)
+    )
+    try await runtime.persistence.saveOutbox([activeFailedOverlay, foundation])
+    try await runtime.persistence.saveStoreSnapshot(
+      InstantStoreSnapshot(
+        attributes: requiredFoundationAttributes,
+        triples: [
+          requiredFoundationTriple(
+            entityID: "segment-required-foundation-active-failed-overlay",
+            attributeID: "transcriptionSegments/id",
+            value: .string("segment-required-foundation-active-failed-overlay"),
+            transactionID: foundation.id,
+            timestamp: foundation.createdAt
+          ),
+          requiredFoundationTriple(
+            entityID: "segment-required-foundation-active-failed-overlay",
+            attributeID: "transcriptionSegments/recording",
+            value: .ref("recording-required-foundation-active-failed-overlay"),
+            transactionID: foundation.id,
+            timestamp: foundation.createdAt
+          ),
+          requiredFoundationTriple(
+            entityID: "segment-required-foundation-active-failed-overlay",
+            attributeID: "transcriptionSegments/text",
+            value: .string("newer unconfirmed optimistic text"),
+            transactionID: activeFailedOverlay.id,
+            timestamp: InstantTimestamp(milliseconds: 300)
+          ),
+        ]
+      )
+    )
+    try executeBoundedOutboxSQL(
+      """
+      UPDATE instant_outbox
+      SET confirmation_proven = NULL
+      WHERE mutation_id = 'tx-required-foundation-active-failed-overlay';
+      """,
+      cacheURL: cacheURL
+    )
+    await runtime.persistence.invalidateMemoryCache()
+
+    _ = try await runtime.connect()
+    try await instantLiveWithTimeout(
+      operation: "wait for foundation delivery past an active legacy overlay",
+      timeoutMilliseconds: 5_000
+    ) {
+      await liveSession.waitForSentMessageCount(2)
+    }
+    let sent = try #require(
+      await liveSession.sentMessages().first { $0.op == "transact" }
+    )
+    let materializedText = try #require(
+      try await runtime.persistence.loadSnapshot().store.triples.first {
+        $0.entityID == "segment-required-foundation-active-failed-overlay"
+          && $0.attributeID == "transcriptionSegments/text"
+      }
+    )
+
+    expectNoDifference(sent.clientEventID, foundation.id)
+    expectNoDifference(
+      boundedOutboxAddTripleValues(in: sent)["transcriptionSegments/text"],
+      .string("foundation text"),
+      "An active unconfirmed overlay is locally visible but cannot become authoritative input to an older-id wire body."
+    )
+    expectNoDifference(
+      materializedText.value,
+      .string("newer unconfirmed optimistic text"),
+      "Filtering wire delivery must not disturb the newer local optimistic value."
+    )
+    _ = try? await runtime.closeConnection()
+  }
+
+  @Test
   func automaticDeliveryUsesRevisionQualifiedDurableVisibleWrites() async throws {
     let cacheURL = try temporaryBoundedOutboxCacheURL()
     let liveSession = LiveReactorParitySession(messages: [
@@ -1482,9 +2093,9 @@ struct InstantBoundedOutboxDeliveryTests {
     )
     expectNoDifference(sent.clientEventID, mutation.id)
     expectNoDifference(
-      sent.fields["tx-steps"]?.arrayValue,
-      [],
-      "The selector must use the durable store revision, not the stale runtime actor."
+      boundedOutboxAddTripleValues(in: sent),
+      ["server-todos-text": .string("newer durable value")],
+      "A required scalar must use the revision-qualified durable value instead of disappearing or reviving its stale body value."
     )
     _ = try? await staleRuntime.closeConnection()
     await otherRuntimePersistence.simulateUnexpectedConnectionCloseForTesting()
@@ -2428,6 +3039,128 @@ private func boundedMutation(
   )
 }
 
+private let requiredFoundationAttributes: [InstantAttribute] = [
+  .primaryKey(namespace: "transcriptionSegments"),
+  InstantAttribute(
+    id: "transcriptionSegments/text",
+    namespace: "transcriptionSegments",
+    name: "text",
+    valueType: .string,
+    isRequired: true
+  ),
+  InstantAttribute(
+    id: "transcriptionSegments/searchPreview",
+    namespace: "transcriptionSegments",
+    name: "searchPreview",
+    valueType: .string,
+    isRequired: false
+  ),
+  InstantAttribute(
+    id: "transcriptionSegments/recording",
+    namespace: "transcriptionSegments",
+    name: "recording",
+    valueType: .ref,
+    isRequired: false,
+    forwardIdentity: "transcriptionSegments/recording",
+    reverseIdentity: "recordings/transcriptionSegments",
+    linkNamespace: "recordings"
+  ),
+]
+
+private func requiredFoundationMutation(
+  id: String,
+  entityID: String,
+  text: String,
+  optionalPreview: String?,
+  recordingID: String?,
+  createdAt: InstantTimestamp
+) -> PendingMutation {
+  var operations: [InstantTripleOperation] = [
+    .insert(
+      requiredFoundationTriple(
+        entityID: entityID,
+        attributeID: "transcriptionSegments/id",
+        value: .string(entityID),
+        transactionID: id,
+        timestamp: createdAt
+      )
+    )
+  ]
+  if let recordingID {
+    operations.append(
+      .insert(
+        requiredFoundationTriple(
+          entityID: entityID,
+          attributeID: "transcriptionSegments/recording",
+          value: .ref(recordingID),
+          transactionID: id,
+          timestamp: createdAt
+        )
+      )
+    )
+  }
+  operations.append(
+    .insert(
+      requiredFoundationTriple(
+        entityID: entityID,
+        attributeID: "transcriptionSegments/text",
+        value: .string(text),
+        transactionID: id,
+        timestamp: createdAt
+      )
+    )
+  )
+  if let optionalPreview {
+    operations.append(
+      .insert(
+        requiredFoundationTriple(
+          entityID: entityID,
+          attributeID: "transcriptionSegments/searchPreview",
+          value: .string(optionalPreview),
+          transactionID: id,
+          timestamp: createdAt
+        )
+      )
+    )
+  }
+  return PendingMutation(
+    id: id,
+    createdAt: createdAt,
+    transaction: InstantStoreTransaction(id: id, operations: operations)
+  )
+}
+
+private func requiredFoundationTriple(
+  entityID: String,
+  attributeID: String,
+  value: InstantValue,
+  transactionID: String,
+  timestamp: InstantTimestamp
+) -> InstantTriple {
+  InstantTriple(
+    entityID: entityID,
+    attributeID: attributeID,
+    value: value,
+    txID: transactionID,
+    txTime: timestamp
+  )
+}
+
+private func boundedOutboxAddTripleValues(
+  in message: InstantLiveMessage
+) -> [String: InstantLiveJSONValue] {
+  Dictionary(
+    uniqueKeysWithValues: message.fields["tx-steps"]?.arrayValue?.compactMap { step in
+      guard let values = step.arrayValue,
+        values.count >= 4,
+        values[0].stringValue == "add-triple",
+        let attributeID = values[2].stringValue
+      else { return nil }
+      return (attributeID, values[3])
+    } ?? []
+  )
+}
+
 private func acceptedBoundedMutation(index: Int, prefix: String) -> PendingMutation {
   var mutation = boundedMutation(index: index, prefix: prefix)
   mutation.status = .confirmed
@@ -2542,7 +3275,8 @@ private func restorePreBoundedDeliveryOutboxSchema(cacheURL: URL) throws {
       '0014_outbox_optimistic_effects',
       '0016_failed_mutation_retry_window',
       '0017_bounded_server_apply',
-      '0018_schema_failure_attribute_revision'
+      '0018_schema_failure_attribute_revision',
+      '0019_projected_outbox_claim_bytes'
     );
     PRAGMA foreign_keys = ON;
     """,

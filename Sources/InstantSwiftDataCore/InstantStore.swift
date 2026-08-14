@@ -202,7 +202,12 @@ public actor InstantStore {
     }
     return InstantVisibleWriteFilter(
       attributesByID: attributesByID,
-      newestVisibleWrite: newestVisibleWrite
+      newestVisibleWrite: newestVisibleWrite,
+      // The hot store includes optimistic overlays but has no outbox provenance.
+      // Conservatively retain required scalars instead of importing an
+      // unconfirmed value into an older mutation.
+      newestVisibleRequiredScalar: [:],
+      newestVisibleRequiredScalarEncodedValueByteCount: [:]
     )
   }
 
