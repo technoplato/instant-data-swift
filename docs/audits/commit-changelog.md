@@ -1,3 +1,9 @@
+## 2026-08-14 17:25:12 EDT — realtime-voice-sqlite-instant 0da0651942e329064bdc2a8a7c63bd1f60e14dc1
+
+- **Repo:** realtime-voice-sqlite-instant
+- **SHA:** 0da0651942e329064bdc2a8a7c63bd1f60e14dc1
+- **Reason:** Keep one process-wide physical-footprint baseline while rearming the one-second safety stop for every sequential recording, with exact-identity main-actor revalidation and bounded one-UUID state (#044 #095 #155).
+
 ## 2026-08-14 16:27:12 EDT — realtime-voice-sqlite-instant bbebe7fd417994598cd6064a7359082b4274713a
 
 - **Repo:** realtime-voice-sqlite-instant

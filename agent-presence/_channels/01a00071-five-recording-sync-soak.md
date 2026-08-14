@@ -53,3 +53,11 @@
   `InstantBoundedOutboxDeliveryTests` suite passed 48/48 in 21.161 seconds with
   12 expected known issues; `InstantTerminalFailureComponentTests` passed 14/14
   in 2.416 seconds. The five owned source/test files are stable for review.
+
+- 2026-08-14T17:25:12-0400 plan-to-touch/handoff: `root` claims only
+  `docs/audits/commit-changelog.md` plus this coordination line to record Scribe
+  implementation `0da0651942e329064bdc2a8a7c63bd1f60e14dc1`. That commit keeps the
+  process-wide footprint baseline and rearms the one-second >150 MiB abort for
+  every sequential recording; its exact pair passes 2/2 and watchdog suite
+  passes 6/6. This is audit bookkeeping only: no Instant source, tests, package,
+  changelog, progress, runtime, transport, or public API is claimed.
