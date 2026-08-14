@@ -6,6 +6,29 @@ production-readiness plan
 Commit-level history stays in `docs/audits/commit-changelog.md`; this file is
 the narrative of what the library must prove and why.
 
+## 2026-08-14 16:25:25 EDT — Nested list projections hydrate only retained deferred values
+
+- **Implementation:** `5d00f27644b02397691ab46f3802193e1acedf06`; the paired intent-ledger
+  commit is the immediately following Git commit.
+- **Correctness:** selected deferred attributes now hydrate recursively through the already
+  materialized query tree, keyed by namespace plus entity ID and reapplied per include path. An
+  ordered projection that omits its order key conservatively rematerializes instead of publishing a
+  stale splice, and infinite queries suppress only fully identical consecutive snapshots.
+- **Memory boundary:** nested child limits run before SQLite payload reads. The Scribe recording
+  list can therefore retain two compact segment previews while leaving unselected `wordsJSON` out
+  of the wire projection and hot store.
+- **Verification:** focused reorder and nested-hydration tests pass; `DeferredValueResidencyTests`
+  pass 14/14 with one expected known issue; `InstantInfiniteQueryParityTests` pass 44/44;
+  `InstantSameEntityLiveRevisionMemoryTests` pass 9/9; the Scribe list-plan consumer test passes
+  against this checkout. Two independent blocker-only reviews are clean. The package-wide run was
+  stopped after its changed suites passed because it entered an unrelated long-lived integration
+  wait; before that, its only failure was the pre-existing JSON-index macro snapshot.
+- **Consumer:** Scribe now selects the compact segment fields required by list previews and omits
+  `wordsJSON`; its implementation commit follows this library checkpoint.
+- **Next:** commit the Scribe projection, build/install both physical targets from clean provenance,
+  then rerun the five consecutive five-minute recordings with CLI `xctrace`, independent
+  `physicalFootprintBytes` monitoring, and Mac/iPad realtime evidence.
+
 ## 2026-08-14 14:37:30 EDT — Required foundation survives bounded delivery projection
 
 - **Implementation:** `6cad77c8c95452ac5632bde833252a6367672429`; intent ledger

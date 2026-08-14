@@ -1,3 +1,9 @@
+## 2026-08-14 16:25:25 EDT — instant-data-swift 5d00f27644b02397691ab46f3802193e1acedf06
+
+- **Repo:** instant-data-swift
+- **SHA:** 5d00f27644b02397691ab46f3802193e1acedf06
+- **Reason:** Hydrate selected deferred values through retained nested query pages, keep unselected transcript word blobs in SQLite, and rematerialize projected ordered observations when a splice cannot prove stable order (#044 #155).
+
 ## 2026-08-14 14:37:09 EDT — realtime-voice-sqlite-instant 2c808963e3d5627ae4873f6b57227d21325155d2
 
 - **Repo:** realtime-voice-sqlite-instant

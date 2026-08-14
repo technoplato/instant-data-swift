@@ -10,6 +10,31 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## August 14th, 2026 at 4:25:22 p.m. EDT — `5d00f27644b0` Hydrate deferred values in nested query projections
+
+- **Implementation commit:** `5d00f27644b02397691ab46f3802193e1acedf06`
+- **Change:** Hydrate nested deferred query fields without loading unselected transcript blobs
+- **Details:**
+  - Walk the materialized query tree after root and child limits, then read only selected deferred attributes for retained namespace-and-entity pairs.
+  - Merge deferred values by namespace, entity, and include path so sibling projections cannot leak values and unselected wordsJSON stays in SQLite.
+  - Preserve operation-gate sequence checks, suppress only exact duplicate infinite snapshots, and rematerialize ordered projections when their order key is omitted.
+  - Focused deferred, infinite-query, same-entity, and Scribe consumer tests pass; two independent blocker-only reviews are clean.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/DeferredValueResidency.swift` — Builds bounded plan-tree hydration batches and recursively merges selected values.
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — Applies nested hydration to one-shot, observed, live-chunk, and local infinite-query paths.
+  - `Sources/InstantSwiftDataCore/InstantInfiniteQuery.swift` — Suppresses exact duplicate snapshots while preserving different same-sequence windows.
+  - `Sources/InstantSwiftDataCore/InstantStore.swift` — Rematerializes ordered projections when splice ordering cannot be proven.
+  - `Tests/InstantSwiftDataCoreTests/DeferredValueResidencyTests.swift` — Proves child limits, namespace and path isolation, reorder correctness, and bounded hydration.
+  - `_touching/Sources@InstantSwiftDataCore@DeferredValueResidency.swift/Sources@InstantSwiftDataCore@DeferredValueResidency.swift/.agents/agents.txt` — Records coordinated ownership before the production edit.
+  - `_touching/Sources@InstantSwiftDataCore@InstantInfiniteQuery.swift/Sources@InstantSwiftDataCore@InstantInfiniteQuery.swift/.agents/agents.txt` — Records coordinated ownership before the production edit.
+  - `_touching/Sources@InstantSwiftDataCore@InstantRuntime.swift/Sources@InstantSwiftDataCore@InstantRuntime.swift/.agents/agents.txt` — Records coordinated ownership before the production edit.
+  - `_touching/Sources@InstantSwiftDataCore@InstantStore.swift/Sources@InstantSwiftDataCore@InstantStore.swift/.agents/agents.txt` — Records coordinated ownership before the production edit.
+  - `_touching/Tests@InstantSwiftDataCoreTests@DeferredValueResidencyTests.swift/Tests@InstantSwiftDataCoreTests@DeferredValueResidencyTests.swift/.agents/agents.txt` — Records coordinated ownership before the test edit.
+- **User context (verbatim):**
+  > observe them syncing in realtime across mac and physical ipad
+  > ensure memory usage stays no greater than 100MB during a run
+- **SpecStory:** unavailable — Codex desktop continuation; SpecStory captures Codex CLI sessions and no synced desktop capture URI is available.
+
 ## August 14th, 2026 at 2:18:10 p.m. EDT — `6cad77c8c954` Preserve required outbox fields within bounded claims
 
 - **Implementation commit:** `6cad77c8c95452ac5632bde833252a6367672429`
