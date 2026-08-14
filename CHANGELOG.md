@@ -10,6 +10,28 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## August 14th, 2026 at 2:18:10 p.m. EDT — `6cad77c8c954` Preserve required outbox fields within bounded claims
+
+- **Implementation commit:** `6cad77c8c95452ac5632bde833252a6367672429`
+- **Change:** Preserve required scalar foundation in stale-write projection while keeping every active outbox claim inside the existing 8 MiB delivery envelope.
+- **Details:**
+  - Hydrate an otherwise-filtered required cardinality-one scalar only from newer authoritative materialized state when no active successor protects the key.
+  - Measure projected bodies from SQLite value-length metadata before scalar decode; visibly fail an individually oversized row and release an aggregate-overflow suffix unoffered.
+  - Persist and clear claim-scoped projected byte reservations across claim, acknowledgement, release, expiry, failure, retry, isolation, and quarantine paths.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/BoundedOutboxDelivery.swift` — Separates projection candidates, exact projected-byte measurement, and transport lowering.
+  - `Sources/InstantSwiftDataCore/InstantStore.swift` — Keeps the provenance-less hot store conservative for required scalars.
+  - `Sources/InstantSwiftDataCore/InstantVisibleWriteFilter.swift` — Hydrates required scalar foundation without reviving stale optional fields or bypassing successors.
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — Owns migration 0019 and atomic projected-byte claim admission and disposition.
+  - `Tests/InstantSwiftDataCoreTests/InstantBoundedOutboxDeliveryTests.swift` — Proves hydration, ordering, oversize failure, aggregate deferral, legacy claims, expiry, and release.
+  - `agent-presence/_channels/01a00071-five-recording-sync-soak.md` — Records ownership, scope expansion, red-first evidence, and stable handoff.
+  - `agent-presence/_touching/Sources@InstantSwiftDataCore@BoundedOutboxDelivery.swift/agents.txt` — Publishes the required protocol touch claim before source mutation.
+  - `agent-presence/codex-01a00071/plans/2026-08-14-required-foundation-visible-write/PLAN.md` — Captures the reviewed architecture and verification evidence.
+- **User context (verbatim):**
+  > observe them syncing in realtime across mac and physical ipad
+  > researching logs, diagnosing, and repeating until compelte
+- **SpecStory:** unavailable — Codex desktop task; SpecStory captures Codex CLI sessions and no synced desktop capture URI is available.
+
 ## August 12th, 2026 at 6:21:19 p.m. EDT — `94f9ff30fb8c` Follow recordingID strings and parent many-refs when limiting live query children.
 
 - **Implementation commit:** `94f9ff30fb8c5192ab3f887c9e7ed4fb5a182295`
