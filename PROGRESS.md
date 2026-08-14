@@ -6,6 +6,26 @@ production-readiness plan
 Commit-level history stays in `docs/audits/commit-changelog.md`; this file is
 the narrative of what the library must prove and why.
 
+## 2026-08-14 17:58:00 EDT — Delayed acknowledgements cannot replay on the same live generation
+
+- **Implementation:** `bdc7d10276132ce9cbddb010d53bde4a7b984c3e`; the paired intent-ledger
+  commit is the immediately following Git commit.
+- **Correctness:** automatic delivery now uses the upstream Reactor-shaped six-second times
+  in-flight-ordinal acknowledgement deadline. If a currently offered event expires, the runtime
+  releases its durable claim, marks that socket generation acknowledgement-unknown, aborts it, and
+  retries the same durable event only after a replacement generation opens. A stale response from
+  the old generation cannot terminal-fail the retained row.
+- **Memory boundary:** current-generation offered IDs remain resident only until durable response
+  handling finishes and are cleared on close, so the retry barrier is bounded by the existing
+  in-flight window.
+- **Verification:** the focused delayed-ack, replacement-generation, and receiver-close regressions
+  pass 3/3 with one expected timeout issue. `InstantBoundedOutboxDeliveryTests` plus
+  `InstantReactorParityTests` pass 78/78 with 12 expected known issues; parser, staged-diff, and
+  independent blocker review are clean.
+- **Next:** finish the compact Scribe signal-projection tests, install clean Mac/iPad artifacts, and
+  run the warm preflight followed by five consecutive five-minute physical recordings with CLI
+  Activity Monitor traces and independent Mac/server visibility observers.
+
 ## 2026-08-14 16:25:25 EDT — Nested list projections hydrate only retained deferred values
 
 - **Implementation:** `5d00f27644b02397691ab46f3802193e1acedf06`; the paired intent-ledger

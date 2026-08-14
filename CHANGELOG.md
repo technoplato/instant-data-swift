@@ -10,6 +10,24 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## August 14th, 2026 at 5:56:42 p.m. EDT — `bdc7d1027613` Retry unacknowledged mutations on a new live generation
+
+- **Implementation commit:** `bdc7d10276132ce9cbddb010d53bde4a7b984c3e`
+- **Change:** Retry unacknowledged mutations only after replacing the live generation
+- **Details:**
+  - Use Reactor-shaped six-second times in-flight-ordinal acknowledgement deadlines for automatic claims and live reservations.
+  - Expire a current-generation offer into an acknowledgement-unknown barrier, abort that socket generation, and retain the durable row for retry only after reconnect.
+  - Keep offered event IDs only through durable response handling, then remove them so process memory remains bounded.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantMutationAcknowledgementDeadlinePolicy.swift` — Defines the shared overflow-safe ordinal deadline policy.
+  - `Sources/InstantSwiftDataCore/InstantRuntimeLiveSession.swift` — Tracks offered event IDs, invalidates ambiguous generations, and prevents same-generation replay.
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — Assigns ordinal automatic-claim deadlines and separates expiry release from reclaim.
+  - `Tests/InstantSwiftDataCoreTests/InstantBoundedOutboxDeliveryTests.swift` — Proves delayed acknowledgements remain single-send and timed-out rows retry only after reconnect.
+- **User context (verbatim):**
+  > observe them syncing in realtime across mac and physical ipad
+  > researching logs, diagnosing, and repeating until compelte
+- **SpecStory:** unavailable — Codex desktop continuation; SpecStory captures Codex CLI sessions and no synced desktop capture URI is available.
+
 ## August 14th, 2026 at 4:25:22 p.m. EDT — `5d00f27644b0` Hydrate deferred values in nested query projections
 
 - **Implementation commit:** `5d00f27644b02397691ab46f3802193e1acedf06`

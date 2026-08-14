@@ -1,3 +1,9 @@
+## 2026-08-14 17:58:00 EDT — instant-data-swift bdc7d10276132ce9cbddb010d53bde4a7b984c3e
+
+- **Repo:** instant-data-swift
+- **SHA:** bdc7d10276132ce9cbddb010d53bde4a7b984c3e
+- **Reason:** Replace the live generation before retrying an acknowledgement-unknown durable event, using Reactor-shaped ordinal deadlines so delayed acknowledgements cannot cause same-socket replay and later permission rejection (#044 #095 #155).
+
 ## 2026-08-14 17:25:12 EDT — realtime-voice-sqlite-instant 0da0651942e329064bdc2a8a7c63bd1f60e14dc1
 
 - **Repo:** realtime-voice-sqlite-instant
