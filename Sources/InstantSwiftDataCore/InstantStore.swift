@@ -956,7 +956,15 @@ public actor InstantStore {
     plan: InstantQueryPlan
   ) -> Bool {
     guard let field = plan.order?.field else { return false }
-    return previous.values[field] != replacement.values[field]
+    guard
+      let previousValue = previous.values[field],
+      let replacementValue = replacement.values[field]
+    else {
+      // A projection can omit the order field. Without both values an in-place splice cannot
+      // prove that the entity stayed at the same position, so rematerialize the ordered result.
+      return true
+    }
+    return previousValue != replacementValue
   }
 
   private static func emissionSortKey(_ key: StoreObservationKey) -> String {

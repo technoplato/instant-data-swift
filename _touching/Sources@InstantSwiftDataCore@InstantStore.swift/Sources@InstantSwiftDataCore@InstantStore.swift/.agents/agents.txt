@@ -7,3 +7,4 @@ codex-desktop/019fe994-1250-7b42-825e-9b75836d9173/root/infinite_query_setup_can
 codex-desktop/019fe994-1250-7b42-825e-9b75836d9173/root/standard_query_exact_lease 2026-08-11T06:55:53-0400 mower standard-observation-exact-lease-only plan=2026-08-09-bounded-intent-outbox-memory
 codex-desktop/019fe994-1250-7b42-825e-9b75836d9173/root/standard_observation_lifecycle 2026-08-11T07:08:22-0400 mower standard-observation-setup-and-lease-only plan=2026-08-09-bounded-intent-outbox-memory
 grok-4.6-live-revision 2026-08-12T12:36:00-0400 mower steal-only-with-explicit-user-allow user-allow=2026-08-12T12:36:00-0400 plan=2026-08-12-live-revision-cardinality live-put-observation-memory
+codex-desktop/01a00071-f1c1-7193-adcd-3bc9f30b5f95/root/nested_deferred_hydration 2026-08-14T16:00:03-0400 mower projected-order-splice-helper-only plan=2026-08-09-bounded-intent-outbox-memory

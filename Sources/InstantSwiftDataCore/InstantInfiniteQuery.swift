@@ -2352,7 +2352,7 @@ package actor InstantInfiniteQueryCoordinator {
   private var latestCanLoadPreviousPage = false
   private var latestEmission: InstantQueryEmission?
   private var hydratedSequence: Int64?
-  private var lastPublishedSequence: Int64?
+  private var lastPublishedSnapshot: InstantInfiniteQuerySnapshot?
   private var hydratedValuesByEntityID: [String: InstantEntitySnapshot] = [:]
   private var hydrationGeneration = 0
   private var isActive = true
@@ -2420,10 +2420,11 @@ package actor InstantInfiniteQueryCoordinator {
       request.generation == hydrationGeneration,
       snapshot.sequence == hydratedSequence
     else { return false }
+    guard snapshot != lastPublishedSnapshot else { return true }
     if case .terminated = continuation.yield(snapshot) {
       return false
     }
-    lastPublishedSequence = snapshot.sequence
+    lastPublishedSnapshot = snapshot
     return true
   }
 
@@ -2457,13 +2458,13 @@ package actor InstantInfiniteQueryCoordinator {
       latestEmissionValueCount: latestEmission?.values.count ?? 0,
       hydratedEntityCount: hydratedValuesByEntityID.count,
       navigationReferenceCount: (anchorID == nil ? 0 : 1) + (windowAnchorID == nil ? 0 : 1),
-      publishedSnapshotCount: lastPublishedSequence == nil ? 0 : 1
+      publishedSnapshotCount: lastPublishedSnapshot == nil ? 0 : 1
     )
   }
 
   private func terminateAndReleaseRetainedGraph() -> Int64? {
     guard isActive else { return nil }
-    let sequence = lastPublishedSequence ?? 0
+    let sequence = lastPublishedSnapshot?.sequence ?? 0
     isActive = false
     hydrationGeneration += 1
     anchorID = nil
@@ -2474,7 +2475,7 @@ package actor InstantInfiniteQueryCoordinator {
     latestCanLoadPreviousPage = false
     latestEmission = nil
     hydratedSequence = nil
-    lastPublishedSequence = nil
+    lastPublishedSnapshot = nil
     hydratedValuesByEntityID.removeAll(keepingCapacity: false)
     return sequence
   }

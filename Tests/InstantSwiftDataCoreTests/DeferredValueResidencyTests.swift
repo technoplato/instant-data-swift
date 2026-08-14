@@ -108,6 +108,52 @@ struct DeferredValueResidencyTests {
   }
 
   @Test
+  func nestedSelectedDeferredValuesHydrateOnlyRetainedChildren() async throws {
+    let cacheURL = temporaryDeferredValueCacheURL("nested-selected-children")
+    defer { try? FileManager.default.removeItem(at: cacheURL) }
+    let fixture = DeferredNestedSelectionFixture()
+    try await seedDeferredNestedSelectionCache(cacheURL, fixture: fixture)
+    let runtime = try await deferredNestedSelectionRuntime(cacheURL, fixture: fixture)
+
+    let roots = try await runtime.query(fixture.query)
+    expectDeferredNestedSelection(roots, fixture: fixture)
+
+    let metrics = await runtime.persistence.deferredValueDecodeMetricsForTesting()
+    expectNoDifference(metrics.valueCount, 4)
+    let hotTriples = await runtime.store.snapshot().triples
+    #expect(
+      hotTriples.allSatisfy { triple in
+        triple.attributeID != fixture.textAttribute.id
+          && triple.attributeID != fixture.wordsAttribute.id
+      }
+    )
+  }
+
+  @Test
+  func localInfiniteQueryHydratesOnlyRetainedNestedChildren() async throws {
+    let cacheURL = temporaryDeferredValueCacheURL("nested-selected-infinite")
+    defer { try? FileManager.default.removeItem(at: cacheURL) }
+    let fixture = DeferredNestedSelectionFixture()
+    try await seedDeferredNestedSelectionCache(cacheURL, fixture: fixture)
+    let runtime = try await deferredNestedSelectionRuntime(cacheURL, fixture: fixture)
+    let subscription = await runtime.subscribeInfiniteQuery(fixture.query)
+    defer { subscription.unsubscribe() }
+    var iterator = subscription.snapshots.makeAsyncIterator()
+
+    let snapshot = try #require(await iterator.next())
+    expectDeferredNestedSelection(snapshot.values, fixture: fixture)
+    let metrics = await runtime.persistence.deferredValueDecodeMetricsForTesting()
+    expectNoDifference(metrics.valueCount, 4)
+    let hotTriples = await runtime.store.snapshot().triples
+    #expect(
+      hotTriples.allSatisfy { triple in
+        triple.attributeID != fixture.textAttribute.id
+          && triple.attributeID != fixture.wordsAttribute.id
+      }
+    )
+  }
+
+  @Test
   func localInfiniteQueryHydratesOnlyNewlyVisiblePages() async throws {
     let cacheURL = temporaryDeferredValueCacheURL("local-infinite-pages")
     defer { try? FileManager.default.removeItem(at: cacheURL) }
@@ -386,13 +432,13 @@ struct DeferredValueResidencyTests {
       ]
     )
     let runtime = try await deferredRouteRuntime(cacheURL, fixture: fixture)
-    let subscription = await runtime.subscribeInfiniteQuery(
-      fixture.infinitePageQuery(
-        id: "local-infinite-reorder",
-        limit: 2,
-        selectedFields: [fixture.samplesAttribute.name]
-      )
+    let plan = fixture.infinitePageQuery(
+      id: "local-infinite-reorder",
+      limit: 2,
+      selectedFields: [fixture.samplesAttribute.name]
     )
+    #expect(plan.selectedFields?.contains(fixture.titleAttribute.name) == false)
+    let subscription = await runtime.subscribeInfiniteQuery(plan)
     defer { subscription.unsubscribe() }
     var iterator = subscription.snapshots.makeAsyncIterator()
 
@@ -415,6 +461,9 @@ struct DeferredValueResidencyTests {
       )
     )
     _ = await runtime.store.commitAndPublish(prepared)
+    let publishMetrics = await runtime.store.lastPublishMetrics
+    expectNoDifference(publishMetrics.splicedObserverCount, 0)
+    expectNoDifference(publishMetrics.rematerializedObserverCount, 1)
 
     let reordered = try #require(await iterator.next())
     expectNoDifference(reordered.values.map(\.id), ["chunk-a", "chunk-d"])
@@ -427,6 +476,81 @@ struct DeferredValueResidencyTests {
     )
     let metrics = await runtime.persistence.deferredValueDecodeMetricsForTesting()
     expectNoDifference(metrics.valueCount, 4)
+
+    // Reproduce the scheduling race without depending on executor timing: an exact duplicate
+    // initial observation must be suppressed, while a different window at the same store
+    // sequence must still reach the public continuation.
+    let coordinator = InstantInfiniteQueryCoordinator(
+      plan: plan,
+      retentionPolicy: .accumulated
+    )
+    let publications = AsyncStream<InstantInfiniteQuerySnapshot>.makeStream(
+      bufferingPolicy: .unbounded
+    )
+    let duplicateSequence: Int64 = 1_000
+    func snapshot(_ marker: String) -> InstantEntitySnapshot {
+      InstantEntitySnapshot(
+        id: "chunk-\(marker)",
+        namespace: fixture.namespace,
+        values: [fixture.samplesAttribute.name: .one(.json(fixture.payload(marker)))]
+      )
+    }
+    let initialEmission = InstantQueryEmission(
+      queryID: plan.id,
+      sequence: duplicateSequence,
+      values: [snapshot("a"), snapshot("b")]
+    )
+    let initialRequest = try #require(await coordinator.hydrationRequest(for: initialEmission))
+    let firstPublication = try #require(
+      await coordinator.finishHydration(initialRequest, with: initialRequest.snapshot)
+    )
+    #expect(
+      await coordinator.publish(
+        firstPublication,
+        for: initialRequest,
+        to: publications.continuation
+      )
+    )
+    let duplicateRequest = try #require(
+      await coordinator.hydrationRequest(for: initialEmission)
+    )
+    let duplicatePublication = try #require(
+      await coordinator.finishHydration(duplicateRequest, with: duplicateRequest.snapshot)
+    )
+    #expect(
+      await coordinator.publish(
+        duplicatePublication,
+        for: duplicateRequest,
+        to: publications.continuation
+      )
+    )
+    let reorderedRequest = try #require(
+      await coordinator.hydrationRequest(
+        for: InstantQueryEmission(
+          queryID: plan.id,
+          sequence: duplicateSequence,
+          values: [snapshot("a"), snapshot("d")]
+        )
+      )
+    )
+    let reorderedPublication = try #require(
+      await coordinator.finishHydration(reorderedRequest, with: reorderedRequest.snapshot)
+    )
+    #expect(
+      await coordinator.publish(
+        reorderedPublication,
+        for: reorderedRequest,
+        to: publications.continuation
+      )
+    )
+    publications.continuation.finish()
+    var publicationIterator = publications.stream.makeAsyncIterator()
+    var publishedIDs: [[String]] = []
+    while let publication = await publicationIterator.next() {
+      publishedIDs.append(publication.values.map(\.id))
+    }
+    expectNoDifference(publishedIDs, [["chunk-a", "chunk-b"], ["chunk-a", "chunk-d"]])
+    await coordinator.cancel()
   }
 
   @Test
@@ -799,6 +923,268 @@ struct DeferredValueResidencyTests {
     ]
     #expect(restartedRejectedValue == nil)
   }
+}
+
+private struct DeferredNestedSelectionFixture {
+  let rootNamespace = "recordings"
+  let childNamespace = "segments"
+  let reverseRelationName = "segments"
+  let alternateRelationName = "alternateSegments"
+  let rootIdentifier = InstantAttribute.primaryKey(namespace: "recordings")
+  let rootOrderAttribute = InstantAttribute(
+    id: "recordings/ordinal",
+    namespace: "recordings",
+    name: "ordinal",
+    valueType: .number,
+    isIndexed: true
+  )
+  let childIdentifier = InstantAttribute.primaryKey(namespace: "segments")
+  let childOrderAttribute = InstantAttribute(
+    id: "segments/index",
+    namespace: "segments",
+    name: "index",
+    valueType: .number,
+    isIndexed: true
+  )
+  let textAttribute = InstantAttribute(
+    id: "segments/text",
+    namespace: "segments",
+    name: "text",
+    valueType: .string
+  )
+  let wordsAttribute = InstantAttribute(
+    id: "segments/wordsJSON",
+    namespace: "segments",
+    name: "wordsJSON",
+    valueType: .json
+  )
+  let recordingRelation = InstantAttribute(
+    id: "segments/recording",
+    namespace: "segments",
+    name: "recording",
+    valueType: .ref,
+    isIndexed: true,
+    forwardIdentity: "segments/recording",
+    reverseIdentity: "recordings/segments",
+    linkNamespace: "recordings"
+  )
+  let alternateRecordingRelation = InstantAttribute(
+    id: "segments/alternateRecording",
+    namespace: "segments",
+    name: "alternateRecording",
+    valueType: .ref,
+    isIndexed: true,
+    forwardIdentity: "segments/alternateRecording",
+    reverseIdentity: "recordings/alternateSegments",
+    linkNamespace: "recordings"
+  )
+
+  var attributes: [InstantAttribute] {
+    [
+      rootIdentifier,
+      rootOrderAttribute,
+      childIdentifier,
+      childOrderAttribute,
+      textAttribute,
+      wordsAttribute,
+      recordingRelation,
+      alternateRecordingRelation,
+    ]
+  }
+
+  var query: InstantQueryPlan {
+    InstantQueryPlan(
+      id: "recordings.with-bounded-selected-segments",
+      namespace: rootNamespace,
+      order: InstantQueryOrder(rootOrderAttribute.name),
+      limit: 2,
+      selectedFields: [rootOrderAttribute.name],
+      includes: [
+        InstantQueryInclude(
+          reverseRelationName,
+          direction: .reverse,
+          query: InstantQueryIncludePlan(
+            id: "segments.latest-two-selected-text",
+            namespace: childNamespace,
+            order: InstantQueryOrder(childOrderAttribute.name, .descending),
+            limit: 2,
+            selectedFields: [childOrderAttribute.name, textAttribute.name]
+          )
+        ),
+        InstantQueryInclude(
+          alternateRelationName,
+          direction: .reverse,
+          query: InstantQueryIncludePlan(
+            id: "segments.latest-two-without-deferred-values",
+            namespace: childNamespace,
+            order: InstantQueryOrder(childOrderAttribute.name, .descending),
+            limit: 2,
+            selectedFields: [childOrderAttribute.name]
+          )
+        ),
+      ]
+    )
+  }
+}
+
+private func seedDeferredNestedSelectionCache(
+  _ cacheURL: URL,
+  fixture: DeferredNestedSelectionFixture
+) async throws {
+  let persistence = try SQLitePersistenceStore(fileURL: cacheURL)
+  try await persistence.bootstrap()
+  var triples: [InstantTriple] = []
+  for (rootOffset, marker) in ["a", "b"].enumerated() {
+    let rootID = "recording-\(marker)"
+    let rootTimestamp = InstantTimestamp(milliseconds: Int64(rootOffset + 1))
+    triples.append(
+      InstantTriple(
+        entityID: rootID,
+        attributeID: fixture.rootIdentifier.id,
+        value: .string(rootID),
+        txID: "seed-\(rootID)",
+        txTime: rootTimestamp
+      )
+    )
+    triples.append(
+      InstantTriple(
+        entityID: rootID,
+        attributeID: fixture.rootOrderAttribute.id,
+        value: .number(Double(rootOffset)),
+        txID: "seed-\(rootID)",
+        txTime: rootTimestamp
+      )
+    )
+    for childOffset in 0..<5 {
+      let childID = if rootOffset == 1 && childOffset == 4 {
+        "recording-a"
+      } else {
+        "segment-\(marker)-\(childOffset)"
+      }
+      let transactionID = "seed-\(childID)"
+      let timestamp = InstantTimestamp(
+        milliseconds: Int64(10 + rootOffset * 5 + childOffset)
+      )
+      triples.append(
+        InstantTriple(
+          entityID: childID,
+          attributeID: fixture.childIdentifier.id,
+          value: .string(childID),
+          txID: transactionID,
+          txTime: timestamp
+        )
+      )
+      triples.append(
+        InstantTriple(
+          entityID: childID,
+          attributeID: fixture.alternateRecordingRelation.id,
+          value: .ref(rootID),
+          txID: transactionID,
+          txTime: timestamp
+        )
+      )
+      triples.append(
+        InstantTriple(
+          entityID: childID,
+          attributeID: fixture.childOrderAttribute.id,
+          value: .number(Double(childOffset)),
+          txID: transactionID,
+          txTime: timestamp
+        )
+      )
+      triples.append(
+        InstantTriple(
+          entityID: childID,
+          attributeID: fixture.textAttribute.id,
+          value: .string("text-\(marker)-\(childOffset)"),
+          txID: transactionID,
+          txTime: timestamp
+        )
+      )
+      triples.append(
+        InstantTriple(
+          entityID: childID,
+          attributeID: fixture.wordsAttribute.id,
+          value: .json(.array([.string("word-\(marker)-\(childOffset)")])),
+          txID: transactionID,
+          txTime: timestamp
+        )
+      )
+      triples.append(
+        InstantTriple(
+          entityID: childID,
+          attributeID: fixture.recordingRelation.id,
+          value: .ref(rootID),
+          txID: transactionID,
+          txTime: timestamp
+        )
+      )
+    }
+  }
+  try await persistence.saveStoreSnapshot(
+    InstantStoreSnapshot(attributes: fixture.attributes, triples: triples)
+  )
+}
+
+private func deferredNestedSelectionRuntime(
+  _ cacheURL: URL,
+  fixture: DeferredNestedSelectionFixture
+) async throws -> InstantRuntime {
+  try await InstantRuntime.bootstrap(
+    configuration: InstantRuntimeConfiguration(
+      appID: "deferred-nested-selected-children",
+      persistenceURL: cacheURL,
+      initialAttributes: fixture.attributes,
+      deferredValueResidency: InstantDeferredValueResidencyPolicy(
+        attributeIDs: [fixture.textAttribute.id, fixture.wordsAttribute.id]
+      )
+    )
+  )
+}
+
+private func expectDeferredNestedSelection(
+  _ roots: [InstantEntitySnapshot],
+  fixture: DeferredNestedSelectionFixture
+) {
+  expectNoDifference(roots.map(\.id), ["recording-a", "recording-b"])
+  expectNoDifference(
+    roots.map { ($0.links?[fixture.reverseRelationName] ?? []).count },
+    [2, 2]
+  )
+  let children = roots.flatMap { $0.links?[fixture.reverseRelationName] ?? [] }
+  let alternateChildren = roots.flatMap {
+    $0.links?[fixture.alternateRelationName] ?? []
+  }
+  expectNoDifference(
+    children.map(\.id),
+    ["segment-a-4", "segment-a-3", "recording-a", "segment-b-3"]
+  )
+  expectNoDifference(
+    children.map { $0.values[fixture.textAttribute.name] },
+    [
+      .one(.string("text-a-4")),
+      .one(.string("text-a-3")),
+      .one(.string("text-b-4")),
+      .one(.string("text-b-3")),
+    ]
+  )
+  #expect(
+    roots.allSatisfy { root in
+      root.values[fixture.textAttribute.name] == nil
+    }
+  )
+  #expect(
+    children.allSatisfy { child in
+      child.values[fixture.wordsAttribute.name] == nil
+    }
+  )
+  expectNoDifference(alternateChildren.map(\.id), children.map(\.id))
+  #expect(
+    alternateChildren.allSatisfy { child in
+      child.values[fixture.textAttribute.name] == nil
+        && child.values[fixture.wordsAttribute.name] == nil
+    }
+  )
 }
 
 private struct DeferredRouteFixture {

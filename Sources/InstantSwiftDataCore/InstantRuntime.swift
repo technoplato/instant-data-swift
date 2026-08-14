@@ -3699,11 +3699,10 @@ public final class InstantRuntime: Sendable {
     attributes: [InstantAttribute],
     onFailure: (@Sendable (InstantError) async -> Void)? = nil
   ) -> InstantLiveInfiniteQueryChunkObservationLease<InstantQueryEmission> {
-    let requestedAttributes = configuration.deferredValueResidency.requestedAttributes(
+    guard configuration.deferredValueResidency.hasRequestedAttributes(
       for: plan,
       attributes: attributes
-    )
-    guard !requestedAttributes.isEmpty else {
+    ) else {
       return InstantLiveInfiniteQueryChunkObservationLease(
         stream: stream,
         cancel: {}
@@ -3723,7 +3722,7 @@ public final class InstantRuntime: Sendable {
           guard
             let hydrated = try await self.hydrateDeferredValuesIfCurrent(
               in: emission,
-              requestedAttributes: requestedAttributes,
+              plan: plan,
               attributes: attributes
             )
           else { continue }
@@ -3806,19 +3805,44 @@ public final class InstantRuntime: Sendable {
 
   private func hydrateDeferredValues(
     in emission: InstantQueryEmission,
-    requestedAttributes: [InstantAttribute],
+    plan: InstantQueryPlan,
+    rootEntityIDs: Set<String>? = nil,
     attributes: [InstantAttribute]
   ) async throws -> InstantQueryEmission {
-    guard !requestedAttributes.isEmpty else { return emission }
-    let entityIDs = Set(emission.values.map(\.id))
-    guard !entityIDs.isEmpty else { return emission }
-    recordActorHop(.persistence)
-    let triples = try await persistence.loadDeferredValues(
-      attributeIDs: Set(requestedAttributes.map(\.id)),
-      entityIDs: entityIDs
+    let requests = configuration.deferredValueResidency.hydrationRequests(
+      for: plan,
+      values: emission.values,
+      rootEntityIDs: rootEntityIDs,
+      attributes: attributes
     )
+    return try await hydrateDeferredValues(
+      in: emission,
+      requests: requests,
+      plan: plan,
+      attributes: attributes
+    )
+  }
+
+  private func hydrateDeferredValues(
+    in emission: InstantQueryEmission,
+    requests: [InstantDeferredValueHydrationRequest],
+    plan: InstantQueryPlan,
+    attributes: [InstantAttribute]
+  ) async throws -> InstantQueryEmission {
+    guard !requests.isEmpty else { return emission }
+    recordActorHop(.persistence)
+    var triples: [InstantTriple] = []
+    for request in requests {
+      triples.append(
+        contentsOf: try await persistence.loadDeferredValues(
+          attributeIDs: request.attributeIDs,
+          entityIDs: request.entityIDs
+        )
+      )
+    }
     return configuration.deferredValueResidency.hydrating(
       emission,
+      for: plan,
       with: triples,
       attributes: attributes
     )
@@ -3826,10 +3850,13 @@ public final class InstantRuntime: Sendable {
 
   private func hydrateDeferredValuesIfCurrent(
     in emission: InstantQueryEmission,
-    requestedAttributes: [InstantAttribute],
+    plan: InstantQueryPlan,
     attributes: [InstantAttribute]
   ) async throws -> InstantQueryEmission? {
-    guard !requestedAttributes.isEmpty else { return emission }
+    guard configuration.deferredValueResidency.hasRequestedAttributes(
+      for: plan,
+      attributes: attributes
+    ) else { return emission }
     try await enterOperationGateUnlessCancelled(
       operation: "hydrate deferred query emission"
     )
@@ -3840,7 +3867,7 @@ public final class InstantRuntime: Sendable {
       }
       let hydrated = try await hydrateDeferredValues(
         in: emission,
-        requestedAttributes: requestedAttributes,
+        plan: plan,
         attributes: attributes
       )
       await leaveOperationGate()
@@ -3857,11 +3884,10 @@ public final class InstantRuntime: Sendable {
     plan: InstantQueryPlan,
     attributes: [InstantAttribute]
   ) async throws -> InstantInfiniteQuerySnapshot? {
-    let requestedAttributes = configuration.deferredValueResidency.requestedAttributes(
+    guard configuration.deferredValueResidency.hasRequestedAttributes(
       for: plan,
       attributes: attributes
-    )
-    guard !requestedAttributes.isEmpty else { return snapshot }
+    ) else { return snapshot }
     try await enterOperationGateUnlessCancelled(
       operation: "hydrate deferred infinite query snapshot"
     )
@@ -3874,19 +3900,15 @@ public final class InstantRuntime: Sendable {
         await leaveOperationGate()
         return snapshot
       }
-      recordActorHop(.persistence)
-      let triples = try await persistence.loadDeferredValues(
-        attributeIDs: Set(requestedAttributes.map(\.id)),
-        entityIDs: entityIDs
-      )
-      let emission = configuration.deferredValueResidency.hydrating(
-        InstantQueryEmission(
+      let emission = try await hydrateDeferredValues(
+        in: InstantQueryEmission(
           queryID: snapshot.queryID,
           sequence: snapshot.sequence,
           values: snapshot.values,
           pageInfo: snapshot.pageInfo
         ),
-        with: triples,
+        plan: plan,
+        rootEntityIDs: entityIDs,
         attributes: attributes
       )
       var hydrated = snapshot
@@ -4188,13 +4210,9 @@ public final class InstantRuntime: Sendable {
           plan,
           remotePageInfo: remotePageInfo
         )
-        let requestedDeferredAttributes = configuration.deferredValueResidency.requestedAttributes(
-          for: plan,
-          attributes: state.snapshot.store.attributes
-        )
         let emission = try await hydrateDeferredValues(
           in: localEmission,
-          requestedAttributes: requestedDeferredAttributes,
+          plan: plan,
           attributes: state.snapshot.store.attributes
         )
         recordActorHop(.persistence)

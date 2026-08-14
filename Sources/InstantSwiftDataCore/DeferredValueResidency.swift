@@ -1,11 +1,18 @@
 import Foundation
 
+package struct InstantDeferredValueHydrationRequest: Hashable, Sendable {
+  package var namespace: String
+  package var attributeIDs: Set<String>
+  package var entityIDs: Set<String>
+}
+
 /// Keeps explicitly named large scalar attributes in SQLite until a query selects them.
 ///
 /// This policy changes only local cache residency. Instant schema and wire semantics stay
-/// unchanged, and top-level query projections hydrate configured fields only for the materialized
-/// page. Configured attributes must be payload-only fields: cardinality-one, non-reference,
-/// non-indexed, and never an input to filtering, relationship traversal, or ordering.
+/// unchanged, and query projections hydrate configured fields only for materialized root and
+/// nested pages. Configured attributes must be payload-only fields: cardinality-one,
+/// non-reference, non-indexed, and never an input to filtering, relationship traversal, or
+/// ordering.
 public struct InstantDeferredValueResidencyPolicy: Hashable, Sendable {
   public static let none = Self(attributeIDs: [])
 
@@ -80,17 +87,62 @@ public struct InstantDeferredValueResidencyPolicy: Hashable, Sendable {
     }
   }
 
-  package func requestedAttributes(
+  /// Maps every selected deferred field in a query tree to only the entity IDs retained in the
+  /// materialized snapshot tree. Nested limits have already run before this mapping is built.
+  package func hydrationRequests(
+    for plan: InstantQueryPlan,
+    values: [InstantEntitySnapshot],
+    rootEntityIDs: Set<String>? = nil,
+    attributes: [InstantAttribute]
+  ) -> [InstantDeferredValueHydrationRequest] {
+    guard isEnabled else { return [] }
+    let attributesByNamespace = Dictionary(grouping: attributes, by: \.namespace)
+    var entityIDsByAttributeID: [String: Set<String>] = [:]
+    let roots = if let rootEntityIDs {
+      values.filter { rootEntityIDs.contains($0.id) }
+    } else {
+      values
+    }
+    collectHydrationEntityIDs(
+      from: roots,
+      namespace: plan.namespace,
+      selectedFields: plan.selectedFields,
+      includes: plan.includes,
+      attributesByNamespace: attributesByNamespace,
+      into: &entityIDsByAttributeID
+    )
+
+    let attributesByID = Dictionary(uniqueKeysWithValues: attributes.map { ($0.id, $0) })
+    var attributeIDsByBatch: [DeferredValueHydrationBatchKey: Set<String>] = [:]
+    for (attributeID, entityIDs) in entityIDsByAttributeID where !entityIDs.isEmpty {
+      guard let attribute = attributesByID[attributeID] else { continue }
+      let key = DeferredValueHydrationBatchKey(
+        namespace: attribute.namespace,
+        entityIDs: entityIDs.sorted()
+      )
+      attributeIDsByBatch[key, default: []].insert(attributeID)
+    }
+    return attributeIDsByBatch.map { key, attributeIDs in
+      InstantDeferredValueHydrationRequest(
+        namespace: key.namespace,
+        attributeIDs: attributeIDs,
+        entityIDs: Set(key.entityIDs)
+      )
+    }
+    .sorted(by: InstantDeferredValueHydrationRequest.stableOrder)
+  }
+
+  package func hasRequestedAttributes(
     for plan: InstantQueryPlan,
     attributes: [InstantAttribute]
-  ) -> [InstantAttribute] {
-    guard isEnabled else { return [] }
-    let selectedFields = plan.selectedFields.map(Set.init)
-    return attributes.filter { attribute in
-      attribute.namespace == plan.namespace
-        && attributeIDs.contains(attribute.id)
-        && (selectedFields?.contains(attribute.name) ?? true)
-    }
+  ) -> Bool {
+    guard isEnabled else { return false }
+    return hasRequestedAttributes(
+      namespace: plan.namespace,
+      selectedFields: plan.selectedFields,
+      includes: plan.includes,
+      attributesByNamespace: Dictionary(grouping: attributes, by: \.namespace)
+    )
   }
 
   package func directEntityIDs(in transaction: InstantStoreTransaction) -> Set<String> {
@@ -133,22 +185,32 @@ public struct InstantDeferredValueResidencyPolicy: Hashable, Sendable {
 
   package func hydrating(
     _ emission: InstantQueryEmission,
+    for plan: InstantQueryPlan,
     with triples: [InstantTriple],
     attributes: [InstantAttribute]
   ) -> InstantQueryEmission {
     guard !triples.isEmpty else { return emission }
     let attributesByID = Dictionary(uniqueKeysWithValues: attributes.map { ($0.id, $0) })
-    var valuesByEntityID: [String: [String: InstantMaterializedValue]] = [:]
+    var valuesByEntity: [DeferredValueEntityKey: [String: InstantMaterializedValue]] = [:]
     for triple in triples {
       guard let attribute = attributesByID[triple.attributeID] else { continue }
-      valuesByEntityID[triple.entityID, default: [:]][attribute.name] = .one(triple.value)
+      let key = DeferredValueEntityKey(
+        namespace: attribute.namespace,
+        entityID: triple.entityID
+      )
+      valuesByEntity[key, default: [:]][attribute.name] = .one(triple.value)
     }
+    let attributesByNamespace = Dictionary(grouping: attributes, by: \.namespace)
     var hydrated = emission
     hydrated.values = emission.values.map { snapshot in
-      guard let values = valuesByEntityID[snapshot.id] else { return snapshot }
-      var snapshot = snapshot
-      snapshot.values.merge(values) { _, deferred in deferred }
-      return snapshot
+      hydrate(
+        snapshot,
+        namespace: plan.namespace,
+        selectedFields: plan.selectedFields,
+        includes: plan.includes,
+        attributesByNamespace: attributesByNamespace,
+        valuesByEntity: valuesByEntity
+      )
     }
     return hydrated
   }
@@ -186,6 +248,187 @@ public struct InstantDeferredValueResidencyPolicy: Hashable, Sendable {
         "Deferred attribute '\(attribute.id)' must be \(requirement), but its schema is not.",
       recovery: recovery
     )
+  }
+
+  private func collectHydrationEntityIDs<Snapshot: DeferredValueHydratableSnapshot>(
+    from snapshots: [Snapshot],
+    namespace: String,
+    selectedFields: [String]?,
+    includes: [InstantQueryInclude]?,
+    attributesByNamespace: [String: [InstantAttribute]],
+    into entityIDsByAttributeID: inout [String: Set<String>]
+  ) {
+    let matchingSnapshots = snapshots.filter { $0.namespace == namespace }
+    guard !matchingSnapshots.isEmpty else { return }
+    let requestedAttributes = requestedAttributes(
+      namespace: namespace,
+      selectedFields: selectedFields,
+      attributesByNamespace: attributesByNamespace
+    )
+    let entityIDs = Set(matchingSnapshots.map(\.id))
+    for attribute in requestedAttributes {
+      entityIDsByAttributeID[attribute.id, default: []].formUnion(entityIDs)
+    }
+
+    for include in includes ?? [] {
+      let children = matchingSnapshots.flatMap { snapshot in
+        snapshot.links?[include.name] ?? []
+      }
+      guard !children.isEmpty else { continue }
+      if let query = include.query {
+        collectHydrationEntityIDs(
+          from: children,
+          namespace: query.namespace,
+          selectedFields: query.selectedFields,
+          includes: query.includes,
+          attributesByNamespace: attributesByNamespace,
+          into: &entityIDsByAttributeID
+        )
+      } else {
+        for namespace in Set(children.map(\.namespace)) {
+          collectHydrationEntityIDs(
+            from: children,
+            namespace: namespace,
+            selectedFields: nil,
+            includes: nil,
+            attributesByNamespace: attributesByNamespace,
+            into: &entityIDsByAttributeID
+          )
+        }
+      }
+    }
+  }
+
+  private func hydrate<Snapshot: DeferredValueHydratableSnapshot>(
+    _ original: Snapshot,
+    namespace: String,
+    selectedFields: [String]?,
+    includes: [InstantQueryInclude]?,
+    attributesByNamespace: [String: [InstantAttribute]],
+    valuesByEntity: [DeferredValueEntityKey: [String: InstantMaterializedValue]]
+  ) -> Snapshot {
+    var snapshot = original
+    guard snapshot.namespace == namespace else { return snapshot }
+    let key = DeferredValueEntityKey(namespace: snapshot.namespace, entityID: snapshot.id)
+    if let values = valuesByEntity[key] {
+      let requestedFieldNames = Set(
+        requestedAttributes(
+          namespace: namespace,
+          selectedFields: selectedFields,
+          attributesByNamespace: attributesByNamespace
+        )
+        .map(\.name)
+      )
+      for fieldName in requestedFieldNames {
+        if let value = values[fieldName] {
+          snapshot.values[fieldName] = value
+        }
+      }
+    }
+    guard var links = snapshot.links else { return snapshot }
+    for include in includes ?? [] {
+      guard let children = links[include.name] else { continue }
+      links[include.name] = children.map { child in
+        if let query = include.query {
+          hydrate(
+            child,
+            namespace: query.namespace,
+            selectedFields: query.selectedFields,
+            includes: query.includes,
+            attributesByNamespace: attributesByNamespace,
+            valuesByEntity: valuesByEntity
+          )
+        } else {
+          hydrate(
+            child,
+            namespace: child.namespace,
+            selectedFields: nil,
+            includes: nil,
+            attributesByNamespace: attributesByNamespace,
+            valuesByEntity: valuesByEntity
+          )
+        }
+      }
+    }
+    snapshot.links = links
+    return snapshot
+  }
+
+  private func hasRequestedAttributes(
+    namespace: String,
+    selectedFields: [String]?,
+    includes: [InstantQueryInclude]?,
+    attributesByNamespace: [String: [InstantAttribute]]
+  ) -> Bool {
+    if !requestedAttributes(
+      namespace: namespace,
+      selectedFields: selectedFields,
+      attributesByNamespace: attributesByNamespace
+    ).isEmpty {
+      return true
+    }
+    for include in includes ?? [] {
+      guard let query = include.query else {
+        // Without a nested plan the target namespace is materialization-dependent.
+        return true
+      }
+      if hasRequestedAttributes(
+        namespace: query.namespace,
+        selectedFields: query.selectedFields,
+        includes: query.includes,
+        attributesByNamespace: attributesByNamespace
+      ) {
+        return true
+      }
+    }
+    return false
+  }
+
+  private func requestedAttributes(
+    namespace: String,
+    selectedFields: [String]?,
+    attributesByNamespace: [String: [InstantAttribute]]
+  ) -> [InstantAttribute] {
+    let selectedFields = selectedFields.map(Set.init)
+    return (attributesByNamespace[namespace] ?? []).filter { attribute in
+      attributeIDs.contains(attribute.id)
+        && (selectedFields?.contains(attribute.name) ?? true)
+    }
+  }
+}
+
+private struct DeferredValueHydrationBatchKey: Hashable {
+  var namespace: String
+  var entityIDs: [String]
+}
+
+private struct DeferredValueEntityKey: Hashable {
+  var namespace: String
+  var entityID: String
+}
+
+private protocol DeferredValueHydratableSnapshot {
+  var id: String { get }
+  var namespace: String { get }
+  var values: [String: InstantMaterializedValue] { get set }
+  var links: [String: [InstantLinkedEntitySnapshot]]? { get set }
+}
+
+extension InstantEntitySnapshot: DeferredValueHydratableSnapshot {}
+extension InstantLinkedEntitySnapshot: DeferredValueHydratableSnapshot {}
+
+private extension InstantDeferredValueHydrationRequest {
+  static func stableOrder(
+    _ lhs: InstantDeferredValueHydrationRequest,
+    _ rhs: InstantDeferredValueHydrationRequest
+  ) -> Bool {
+    if lhs.namespace != rhs.namespace { return lhs.namespace < rhs.namespace }
+    let lhsAttributes = lhs.attributeIDs.sorted()
+    let rhsAttributes = rhs.attributeIDs.sorted()
+    if lhsAttributes != rhsAttributes {
+      return lhsAttributes.lexicographicallyPrecedes(rhsAttributes)
+    }
+    return lhs.entityIDs.sorted().lexicographicallyPrecedes(rhs.entityIDs.sorted())
   }
 }
 
