@@ -1,3 +1,9 @@
+## 2026-08-14 19:47:22 EDT — realtime-voice-sqlite-instant c47b8b3957f99774c20f2208e43aa0ce84317715
+
+- **Repo:** realtime-voice-sqlite-instant
+- **SHA:** c47b8b3957f99774c20f2208e43aa0ce84317715
+- **Reason:** Replace the measured capped diagnostics journal's per-event whole-file rewrite with one-file streamed low-water compaction, bounded recovery, canonical raw parity, and physical acknowledgement purge (#044 #155).
+
 ## 2026-08-14 18:06:00 EDT — realtime-voice-sqlite-instant a38761dd128138c006560514a1687b257f3bd267
 
 - **Repo:** realtime-voice-sqlite-instant
