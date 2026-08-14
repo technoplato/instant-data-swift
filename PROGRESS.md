@@ -6,6 +6,27 @@ production-readiness plan
 Commit-level history stays in `docs/audits/commit-changelog.md`; this file is
 the narrative of what the library must prove and why.
 
+## 2026-08-14 14:37:30 EDT — Required foundation survives bounded delivery projection
+
+- **Implementation:** `6cad77c8c95452ac5632bde833252a6367672429`; intent ledger
+  `9f621ad0`.
+- **Correctness:** a stale required cardinality-one scalar is replaced with the newest
+  authoritative materialized value only when no active successor protects that key. Optional stale
+  fields still drop, active successors preserve original old-then-new bodies, and unconfirmed
+  optimistic overlays never become authoritative hydration input.
+- **Memory/transport bound:** migration `0019_projected_outbox_claim_bytes` records exact
+  claim-scoped projected bytes. SQLite measures value lengths before decode, fails an individual
+  projected body above 8 MiB, defers an aggregate-overflow suffix unoffered, and clears reservations
+  on acknowledgement, release, expiry, failure, retry, isolation, and quarantine.
+- **Verification:** `InstantBoundedOutboxDeliveryTests` 48/48 and
+  `InstantTerminalFailureComponentTests` 14/14 pass; parser and whitespace checks pass; two
+  independent blocker-only reviews are clean.
+- **Consumer:** Scribe implementation `2c808963e3d5627ae4873f6b57227d21325155d2` now sends segment
+  scalars before the recording relation and classifies measured listener heartbeats as periodic.
+- **Next:** clean cross-repository audit commits, reproducible Mac/iPad install, then credentialed
+  physical proof that no required-text rejection returns and current physical footprint remains
+  within the user gate during the five-recording soak.
+
 ## 2026-08-11 16:28:28 EDT — Handoff pickup: P0 stop force-finish (WT), P1 schema green, P3 overlay committed
 
 - **Agent:** grok-build-p0-stop-hang (continuation of `docs/handoffs/2026-08-11-performance-keep-recording-hang-schema-push.md`).

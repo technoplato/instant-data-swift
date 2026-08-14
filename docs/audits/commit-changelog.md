@@ -1,3 +1,15 @@
+## 2026-08-14 14:37:09 EDT — realtime-voice-sqlite-instant 2c808963e3d5627ae4873f6b57227d21325155d2
+
+- **Repo:** realtime-voice-sqlite-instant
+- **SHA:** 2c808963e3d5627ae4873f6b57227d21325155d2
+- **Reason:** Classify measured companion-listener heartbeats before root-state diagnostics while preserving their base effect, and match upstream scalar-before-link segment transaction ordering (#044 #095 #155).
+
+## 2026-08-14 14:37:08 EDT — instant-data-swift 6cad77c8c95452ac5632bde833252a6367672429
+
+- **Repo:** instant-data-swift
+- **SHA:** 6cad77c8c95452ac5632bde833252a6367672429
+- **Reason:** Preserve required scalar foundation through stale-write projection and atomically bound post-hydration outbox claims to the existing 8 MiB envelope (#044 #095 #155).
+
 ## 2026-08-14 12:40:03 EDT — realtime-voice-sqlite-instant f3fcf958b1688a31b505997243ae6d8064f79544
 
 - **Repo:** realtime-voice-sqlite-instant
