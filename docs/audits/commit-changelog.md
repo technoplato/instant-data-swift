@@ -1,3 +1,9 @@
+## 2026-08-14 10:07:28 EDT — realtime-voice-sqlite-instant c8d0176a92ef3ee557d5f7c54bb63fedd0669801
+
+- **Repo:** realtime-voice-sqlite-instant
+- **SHA:** c8d0176a92ef3ee557d5f7c54bb63fedd0669801
+- **Reason:** Make the dependency-controlled physical soak preflight honor disabled memory gates and construct canned speech clients with deterministic Point-Free UUID dependencies before the Mac/iPad acceptance sequence (#044 #095 #155).
+
 ## 2026-08-14 09:34:08 EDT — realtime-voice-sqlite-instant 3c0b969c3412d55a9d523b380a5ac0c1c44ef164
 
 - **Repo:** realtime-voice-sqlite-instant
