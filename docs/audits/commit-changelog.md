@@ -1,3 +1,9 @@
+## 2026-08-14 18:06:00 EDT — realtime-voice-sqlite-instant a38761dd128138c006560514a1687b257f3bd267
+
+- **Repo:** realtime-voice-sqlite-instant
+- **SHA:** a38761dd128138c006560514a1687b257f3bd267
+- **Reason:** Require an explicit bounded state projection for discrete signal diagnostics, eliminating full-root copy and CustomDump diff churn while preserving base effects and agent-control visibility (#044 #095 #155).
+
 ## 2026-08-14 17:58:00 EDT — instant-data-swift bdc7d10276132ce9cbddb010d53bde4a7b984c3e
 
 - **Repo:** instant-data-swift
