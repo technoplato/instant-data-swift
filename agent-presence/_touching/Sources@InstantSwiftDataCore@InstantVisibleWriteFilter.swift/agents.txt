@@ -1,2 +1,1 @@
-codex-desktop/019fe75c-e769-71b1-a62f-14478e917459/root
 codex-desktop/01a00071-f1c1-7193-adcd-3bc9f30b5f95/root 2026-08-14T13:25:20-04:00 mower plan=2026-08-14-required-foundation-visible-write
