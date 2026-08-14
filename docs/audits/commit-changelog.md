@@ -1,3 +1,9 @@
+## 2026-08-14 09:34:08 EDT — realtime-voice-sqlite-instant 3c0b969c3412d55a9d523b380a5ac0c1c44ef164
+
+- **Repo:** realtime-voice-sqlite-instant
+- **SHA:** 3c0b969c3412d55a9d523b380a5ac0c1c44ef164
+- **Reason:** Preserve the verified iPhone transcription, stop, local playback, server projection, and remaining Mac visibility/audio blockers for #095 before continuing cross-device acceptance.
+
 ## 2026-08-13 16:33:33 EDT — realtime-voice-sqlite-instant 81165583871549032878bcc937954139fdceddde
 
 ## 2026-08-13 18:03:31 EDT — realtime-voice-sqlite-instant 73ff8487ce53d7ecc49d8ef3ecbb9ed839b4a925
