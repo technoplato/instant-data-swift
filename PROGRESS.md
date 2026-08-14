@@ -23,8 +23,9 @@ the narrative of what the library must prove and why.
   against this checkout. Two independent blocker-only reviews are clean. The package-wide run was
   stopped after its changed suites passed because it entered an unrelated long-lived integration
   wait; before that, its only failure was the pre-existing JSON-index macro snapshot.
-- **Consumer:** Scribe now selects the compact segment fields required by list previews and omits
-  `wordsJSON`; its implementation commit follows this library checkpoint.
+- **Consumer:** Scribe implementation `bbebe7fd417994598cd6064a7359082b4274713a`
+  (ledger `e4a9dd9`) selects the compact segment fields required by list previews and omits
+  `wordsJSON`.
 - **Next:** commit the Scribe projection, build/install both physical targets from clean provenance,
   then rerun the five consecutive five-minute recordings with CLI `xctrace`, independent
   `physicalFootprintBytes` monitoring, and Mac/iPad realtime evidence.

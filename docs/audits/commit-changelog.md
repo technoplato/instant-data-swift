@@ -1,3 +1,9 @@
+## 2026-08-14 16:27:12 EDT — realtime-voice-sqlite-instant bbebe7fd417994598cd6064a7359082b4274713a
+
+- **Repo:** realtime-voice-sqlite-instant
+- **SHA:** bbebe7fd417994598cd6064a7359082b4274713a
+- **Reason:** Project compact recording-list segment scalars at the server boundary while omitting detail-only wordsJSON, preserving realtime order, child limits, and the single cursor query (#044 #155).
+
 ## 2026-08-14 16:25:25 EDT — instant-data-swift 5d00f27644b02397691ab46f3802193e1acedf06
 
 - **Repo:** instant-data-swift
