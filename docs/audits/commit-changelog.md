@@ -1,3 +1,15 @@
+## 2026-08-14 12:40:03 EDT — realtime-voice-sqlite-instant f3fcf958b1688a31b505997243ae6d8064f79544
+
+- **Repo:** realtime-voice-sqlite-instant
+- **SHA:** f3fcf958b1688a31b505997243ae6d8064f79544
+- **Reason:** Give lifecycle-scoped recording attachments stable UUID identities and canonical blob binding, preserve legacy retry keys, and contain the production recording-list child overfetch with the measured 12-root page (#044 #095 #155).
+
+## 2026-08-14 12:40:02 EDT — realtime-voice-sqlite-instant de00bea0288cfbf276ae3c74129c7933842999bd
+
+- **Repo:** realtime-voice-sqlite-instant
+- **SHA:** de00bea0288cfbf276ae3c74129c7933842999bd
+- **Reason:** Join local stop and exact speech/system session release across repeated recordings, fence canned-speech activations, and construct the agent-control catalog only once per process dependency lifetime (#044 #095 #155).
+
 ## 2026-08-14 10:07:28 EDT — realtime-voice-sqlite-instant c8d0176a92ef3ee557d5f7c54bb63fedd0669801
 
 - **Repo:** realtime-voice-sqlite-instant
