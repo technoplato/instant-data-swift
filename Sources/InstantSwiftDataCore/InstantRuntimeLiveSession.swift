@@ -3,6 +3,23 @@ import IssueReporting
 
 package struct InstantSupersededLiveSessionSend: Error, Sendable {}
 
+/// The exact current receiver owns this send failure's status and reconnect.
+///
+/// The originating operation still fails with the same description, but
+/// Runtime must not persist the caller's delayed copy after a newer connection
+/// generation has closed or opened.
+package struct InstantReceiverOwnedLiveSessionSendFailure:
+  Error,
+  Sendable,
+  CustomStringConvertible
+{
+  package let description: String
+
+  package init(_ error: Error) {
+    self.description = String(describing: error)
+  }
+}
+
 
 package struct InstantLiveMutationEncodingFailure: Sendable {
   var message: String
@@ -51,6 +68,17 @@ package actor InstantRuntimeLiveSession {
     var buffer: [BufferedStreamAppend] = []
   }
 
+  private struct ReceiverFailure {
+    var error: Error
+    var generation: Int
+    var sessionIdentity: UUID
+  }
+
+  private struct SendGeneration: Hashable {
+    var generation: Int
+    var sessionIdentity: UUID
+  }
+
   private var session: InstantLiveWebSocketSession?
   private let receiverTaskOwner = InstantRuntimeExactTaskOwner()
   private var registeredQueries: [String: RegisteredQuery] = [:]
@@ -88,6 +116,10 @@ package actor InstantRuntimeLiveSession {
   private var sessionID: String?
   private var isOpened = false
   private var generation = 0
+  private var receiverFailure: ReceiverFailure?
+  private var inFlightSendCounts: [SendGeneration: Int] = [:]
+  private var sendCompletionWaiters:
+    [SendGeneration: [CheckedContinuation<Void, Never>]] = [:]
 
   var isOpen: Bool {
     isOpened
@@ -297,6 +329,7 @@ package actor InstantRuntimeLiveSession {
       ]
     )
     generation += 1
+    receiverFailure = nil
     let replacedReceiver = receiverTaskOwner.requestStop()
     let replacedSession = session
     session = nil
@@ -439,9 +472,36 @@ package actor InstantRuntimeLiveSession {
     ) async throws -> Void,
     onEventAcquired: (@Sendable () async -> Void)? = nil,
     onFailure: @escaping @Sendable (Error) async -> Void
-  ) {
-    guard receiverTaskOwner.isIdle, let session, isOpened else { return }
+  ) async throws {
+    guard receiverTaskOwner.isIdle else { return }
+    guard let session, isOpened else {
+      throw Self.receiverStartFailure()
+    }
     let generation = generation
+    let sendGeneration = SendGeneration(
+      generation: generation,
+      sessionIdentity: session.identity
+    )
+    while inFlightSendCounts[sendGeneration, default: 0] > 0 {
+      await withCheckedContinuation { continuation in
+        sendCompletionWaiters[sendGeneration, default: []].append(continuation)
+      }
+    }
+    guard
+      receiverTaskOwner.isIdle,
+      generation == self.generation,
+      self.session?.identity == session.identity,
+      isOpened
+    else {
+      throw Self.receiverStartFailure()
+    }
+    if let pendingFailure = takeReceiverFailure(
+      generation: generation,
+      session: session
+    ) {
+      _ = invalidateSessionIfCurrent(session, failure: pendingFailure)
+      throw pendingFailure
+    }
     _ = receiverTaskOwner.start { [weak self] in
       do {
         while !Task.isCancelled {
@@ -1233,6 +1293,9 @@ package actor InstantRuntimeLiveSession {
     _ message: InstantLiveMessage,
     through session: InstantLiveWebSocketSession
   ) async throws {
+    if let failure = retainedReceiverFailure(for: session) {
+      throw InstantReceiverOwnedLiveSessionSendFailure(failure)
+    }
     InstantDiagnostics.shared.record(
       .trace,
       subsystem: "instant-swift-data-core",
@@ -1246,11 +1309,12 @@ package actor InstantRuntimeLiveSession {
       ],
       correlationID: message.clientEventID
     )
+    let sendGeneration = beginSend(through: session)
+    defer { finishSend(sendGeneration) }
     do {
       try await instantLiveWithTimeout(
         operation: "send Instant live session message",
-        timeoutMilliseconds: instantLiveOperationTimeoutMilliseconds,
-        onAbandon: { session.abort() }
+        timeoutMilliseconds: instantLiveOperationTimeoutMilliseconds
       ) {
         try await session.send(message)
       }
@@ -1268,8 +1332,9 @@ package actor InstantRuntimeLiveSession {
         correlationID: message.clientEventID
       )
     } catch {
+      let currentSessionOwnsFailure = retainFailureForCurrentSession(error, from: session)
       session.abort()
-      guard invalidateSessionIfCurrent(session, failure: error) else {
+      guard currentSessionOwnsFailure || invalidateSessionIfCurrent(session, failure: error) else {
         InstantDiagnostics.shared.record(
           .debug,
           subsystem: "instant-swift-data-core",
@@ -1290,6 +1355,9 @@ package actor InstantRuntimeLiveSession {
         metadata: ["op": message.op],
         correlationID: message.clientEventID
       )
+      if currentSessionOwnsFailure {
+        throw InstantReceiverOwnedLiveSessionSendFailure(error)
+      }
       throw error
     }
   }
@@ -1319,6 +1387,7 @@ package actor InstantRuntimeLiveSession {
   ) -> Bool {
     guard session?.identity == failedSession.identity else { return false }
     generation += 1
+    receiverFailure = nil
     _ = receiverTaskOwner.requestStop()
     session = nil
     sessionID = nil
@@ -1338,6 +1407,89 @@ package actor InstantRuntimeLiveSession {
     return true
   }
 
+  /// Retains a current send failure before aborting its wire.
+  ///
+  /// An installed receive loop consumes the failure and remains the one
+  /// Runtime reconnect callback. During the low-level-open/receiver-start gap,
+  /// `startReceiving` consumes and throws the same failure before Runtime can
+  /// publish a false opened state.
+  private func retainFailureForCurrentSession(
+    _ error: Error,
+    from failedSession: InstantLiveWebSocketSession
+  ) -> Bool {
+    guard
+      session?.identity == failedSession.identity,
+      isOpened
+    else { return false }
+    if receiverFailure == nil {
+      receiverFailure = ReceiverFailure(
+        error: error,
+        generation: generation,
+        sessionIdentity: failedSession.identity
+      )
+    }
+    return true
+  }
+
+  /// A retained failure remains receiver-owned until that exact receive loop
+  /// consumes it. Retry callers must not reach the failed generation's wire.
+  private func retainedReceiverFailure(
+    for session: InstantLiveWebSocketSession
+  ) -> Error? {
+    guard let receiverFailure,
+      isOpened,
+      self.session?.identity == session.identity,
+      receiverFailure.generation == generation,
+      receiverFailure.sessionIdentity == session.identity
+    else { return nil }
+    return receiverFailure.error
+  }
+
+  private func takeReceiverFailure(
+    generation: Int,
+    session: InstantLiveWebSocketSession
+  ) -> Error? {
+    guard let receiverFailure,
+      receiverFailure.generation == generation,
+      receiverFailure.sessionIdentity == session.identity
+    else { return nil }
+    self.receiverFailure = nil
+    return receiverFailure.error
+  }
+
+  private func beginSend(
+    through session: InstantLiveWebSocketSession
+  ) -> SendGeneration {
+    let sendGeneration = SendGeneration(
+      generation: generation,
+      sessionIdentity: session.identity
+    )
+    inFlightSendCounts[sendGeneration, default: 0] += 1
+    return sendGeneration
+  }
+
+  private func finishSend(_ sendGeneration: SendGeneration) {
+    guard let count = inFlightSendCounts[sendGeneration] else { return }
+    guard count == 1 else {
+      inFlightSendCounts[sendGeneration] = count - 1
+      return
+    }
+    inFlightSendCounts[sendGeneration] = nil
+    let waiters = sendCompletionWaiters.removeValue(forKey: sendGeneration) ?? []
+    for waiter in waiters {
+      waiter.resume()
+    }
+  }
+
+  private static func receiverStartFailure() -> InstantError {
+    InstantError(
+      code: .networkFailed,
+      operation: "start receiving Instant live session",
+      message: "The Instant live session ended before its receive loop could start.",
+      recovery: "Reconnect before reporting the session as opened."
+    )
+  }
+
   private func canDeliverReceiverEvent(
     generation: Int,
     session: InstantLiveWebSocketSession
@@ -1354,6 +1506,19 @@ package actor InstantRuntimeLiveSession {
     onFailure: @escaping @Sendable (Error) async -> Void
   ) async {
     guard generation == self.generation else { return }
+    let terminalFailure = takeReceiverFailure(generation: generation, session: session)
+      ?? failure
+      // Upstream's WebSocket `onclose` always schedules reconnect. A custom
+      // Swift transport can express the same unexpected current close as
+      // `CancellationError`, so preserve that outcome instead of treating it
+      // like an explicit generation-changing close.
+      ?? InstantError(
+        code: .networkFailed,
+        operation: "receive Instant live session message",
+        message:
+          "The current Instant live receive loop ended unexpectedly without an explicit close or replacement.",
+        recovery: "Reconnect and reinstall the current live subscriptions."
+      )
     self.session = nil
     sessionID = nil
     isOpened = false
@@ -1366,20 +1531,19 @@ package actor InstantRuntimeLiveSession {
     // reconnect decision; this old task must only finish its exact handle.
     guard generation == self.generation, !Task.isCancelled else { return }
     for continuation in pendingStreamStarts.values {
-      continuation.finish(throwing: failure ?? CancellationError())
+      continuation.finish(throwing: terminalFailure)
     }
     pendingStreamStarts.removeAll()
     for continuation in pendingStreamFlushes.values {
-      continuation.finish(throwing: failure ?? CancellationError())
+      continuation.finish(throwing: terminalFailure)
     }
     pendingStreamFlushes.removeAll()
-    if let failure {
-      await onFailure(failure)
-    }
+    await onFailure(terminalFailure)
   }
 
   func beginClose() async -> InstantRuntimeExactTaskOwner.Handle {
     generation += 1
+    receiverFailure = nil
     let session = session
     let receiverTask = receiverTaskOwner.requestStop()
     self.session = nil

@@ -5,3 +5,5 @@ codex-desktop/019fe994-1250-7b42-825e-9b75836d9173/root/instant_diff_compile_aud
 codex-desktop/019fe994-1250-7b42-825e-9b75836d9173/root/abort_test_fixture_migration 2026-08-11T04:03:14-0400 mower live-session-abort-fixtures plan=2026-08-09-bounded-intent-outbox-memory
 codex-desktop/019fe994-1250-7b42-825e-9b75836d9173/root/attempt_core_fixture_migration 2026-08-11T04:33:57-0400 mower connection-attempt-fixtures plan=2026-08-09-bounded-intent-outbox-memory
 grok-4.6-live-revision 2026-08-12T12:36:00-0400 mower steal-only-with-explicit-user-allow user-allow=2026-08-12T12:36:00-0400 plan=2026-08-12-live-revision-cardinality matching-observer-only-rematerialize
+codex-desktop/01a00071-f1c1-7193-adcd-3bc9f30b5f95/root/semantic_noop_insert_fix 2026-08-14T22:19:52-0400 mower scalar-and-ref-semantic-noop-regressions plan=2026-08-14-semantic-noop-insert
+codex-desktop/01a00071-f1c1-7193-adcd-3bc9f30b5f95/root/semantic_noop_v2 2026-08-14T22:40:00-0400 mower reviewed-semantic-and-page-info-regressions plan=2026-08-14-semantic-noop-insert-v2

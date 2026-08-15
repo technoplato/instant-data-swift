@@ -160,6 +160,991 @@ struct InstantStoreTests {
   }
 
   @Test
+  func exactNormalizedScalarInsertReplaySkipsObservationInvalidation() async throws {
+    let attribute = InstantAttribute(
+      id: "segments/updatedAt",
+      namespace: "segments",
+      name: "updatedAt",
+      valueType: .date,
+      cardinality: .one
+    )
+    let valueMilliseconds: Int64 = 1_642_234_800_000
+    let value = Date(timeIntervalSince1970: Double(valueMilliseconds) / 1_000)
+    let seedTime = InstantTimestamp(milliseconds: 1)
+    let store = InstantStore(
+      snapshot: InstantStoreSnapshot(
+        attributes: [attribute],
+        triples: [
+          InstantTriple(
+            entityID: "segment-1",
+            attributeID: attribute.id,
+            value: .date(value),
+            txID: "seed-normalized-scalar",
+            txTime: seedTime
+          )
+        ]
+      )
+    )
+    let observation = await store.observe(
+      InstantQueryPlan(id: "segments.normalized-scalar", namespace: "segments")
+    )
+    let recorder = StoreSemanticEmissionRecorder()
+    let observationTask = Task {
+      for await emission in observation {
+        await recorder.append(emission)
+      }
+    }
+    defer { observationTask.cancel() }
+    let initial = try await storeSemanticEmission(
+      from: recorder,
+      at: 0,
+      operation: "await normalized scalar initial emission"
+    )
+    expectNoDifference(initial.values.first?.values[attribute.name]?.first, .date(value))
+
+    let prepared = try await store.prepareCurrent(
+      InstantStoreTransaction(
+        id: "replay-normalized-scalar",
+        operations: [
+          .insert(
+            InstantTriple(
+              entityID: "segment-1",
+              attributeID: attribute.id,
+              value: .number(Double(valueMilliseconds)),
+              txID: "replay-normalized-scalar",
+              txTime: InstantTimestamp(milliseconds: 2)
+            )
+          )
+        ]
+      ),
+      insertReplayPolicy: .preserveExactResident
+    )
+    expectNoDifference(prepared.result.changedEntityIDs, [])
+
+    let committed = await store.commitAndPublish(prepared)
+    let metrics = await store.lastPublishMetrics
+    expectNoDifference(committed.result.transactionID, "replay-normalized-scalar")
+    expectNoDifference(committed.result.emissions, [])
+    expectNoDifference(metrics.skippedObserverCount, 1)
+    expectNoDifference(metrics.rematerializedObserverCount, 0)
+    expectNoDifference(metrics.materializedSnapshotCount, 0)
+
+    let snapshot = await store.snapshot()
+    let resident = try #require(snapshot.triples.first)
+    expectNoDifference(resident.value, .date(value))
+    expectNoDifference(resident.txID, "seed-normalized-scalar")
+    expectNoDifference(resident.txTime, seedTime)
+
+    let changed = try await store.prepareCurrent(
+      InstantStoreTransaction(
+        id: "change-normalized-scalar",
+        operations: [
+          .insert(
+            InstantTriple(
+              entityID: "segment-1",
+              attributeID: attribute.id,
+              value: .number(Double(valueMilliseconds + 1_000)),
+              txID: "change-normalized-scalar",
+              txTime: InstantTimestamp(milliseconds: 3)
+            )
+          )
+        ]
+      )
+    )
+    expectNoDifference(changed.result.changedEntityIDs, ["segment-1"])
+    let committedChange = await store.commitAndPublish(changed)
+    let changedEmission = try await storeSemanticEmission(
+      from: recorder,
+      at: 1,
+      operation: "await normalized scalar change emission"
+    )
+    expectNoDifference(committedChange.result.emissions, [changedEmission])
+    expectNoDifference(
+      changedEmission.values.first?.values[attribute.name]?.first,
+      .date(Date(timeIntervalSince1970: Double(valueMilliseconds + 1_000) / 1_000))
+    )
+    let emissionCount = await recorder.count()
+    expectNoDifference(emissionCount, 2)
+  }
+
+  @Test
+  func exactRefReplaySkipsEndpointsButRelinkAndMembershipChangesInvalidate() {
+    let recordingAttribute = InstantAttribute(
+      id: "segments/recording",
+      namespace: "segments",
+      name: "recording",
+      valueType: .ref,
+      cardinality: .one,
+      isIndexed: true,
+      forwardIdentity: "segments/recording",
+      reverseIdentity: "recordings/segments",
+      linkNamespace: "recordings"
+    )
+    let speakerAttribute = InstantAttribute(
+      id: "segments/speakers",
+      namespace: "segments",
+      name: "speakers",
+      valueType: .ref,
+      cardinality: .many,
+      isIndexed: true,
+      forwardIdentity: "segments/speakers",
+      reverseIdentity: "speakers/segments",
+      linkNamespace: "speakers"
+    )
+    let attributes = AttributeStore(attributes: [recordingAttribute, speakerAttribute])
+    let seedTime = InstantTimestamp(milliseconds: 1)
+    var indexes = TripleIndexes(
+      triples: [
+        InstantTriple(
+          entityID: "segment-1",
+          attributeID: recordingAttribute.id,
+          value: .ref("recording-a"),
+          txID: "seed-ref",
+          txTime: seedTime
+        ),
+        InstantTriple(
+          entityID: "segment-1",
+          attributeID: speakerAttribute.id,
+          value: .ref("speaker-a"),
+          txID: "seed-ref-membership",
+          txTime: seedTime
+        ),
+      ],
+      attributes: attributes
+    )
+
+    let exactReplay = indexes.apply(
+      .insert(
+        InstantTriple(
+          entityID: "segment-1",
+          attributeID: recordingAttribute.id,
+          value: .ref("recording-a"),
+          txID: "replay-ref",
+          txTime: InstantTimestamp(milliseconds: 2)
+        )
+      ),
+      attributes: attributes,
+      insertReplayPolicy: .preserveExactResident
+    )
+    expectNoDifference(exactReplay, [])
+    expectNoDifference(
+      indexes.triples.first { $0.attributeID == recordingAttribute.id }?.txID,
+      "seed-ref"
+    )
+    expectNoDifference(
+      indexes.entityIDsReferencing("recording-a", attributeID: recordingAttribute.id),
+      ["segment-1"]
+    )
+
+    let relink = indexes.apply(
+      .insert(
+        InstantTriple(
+          entityID: "segment-1",
+          attributeID: recordingAttribute.id,
+          value: .ref("recording-b"),
+          txID: "relink-ref",
+          txTime: InstantTimestamp(milliseconds: 3)
+        )
+      ),
+      attributes: attributes,
+      insertReplayPolicy: .preserveExactResident
+    )
+    expectNoDifference(relink, ["recording-b", "segment-1"])
+    expectNoDifference(
+      indexes.entityIDsReferencing("recording-a", attributeID: recordingAttribute.id),
+      []
+    )
+    expectNoDifference(
+      indexes.entityIDsReferencing("recording-b", attributeID: recordingAttribute.id),
+      ["segment-1"]
+    )
+
+    let exactMembershipReplay = indexes.apply(
+      .insert(
+        InstantTriple(
+          entityID: "segment-1",
+          attributeID: speakerAttribute.id,
+          value: .ref("speaker-a"),
+          txID: "replay-ref-membership",
+          txTime: InstantTimestamp(milliseconds: 4)
+        )
+      ),
+      attributes: attributes,
+      insertReplayPolicy: .preserveExactResident
+    )
+    expectNoDifference(exactMembershipReplay, [])
+
+    let addedMembership = indexes.apply(
+      .insert(
+        InstantTriple(
+          entityID: "segment-1",
+          attributeID: speakerAttribute.id,
+          value: .ref("speaker-b"),
+          txID: "add-ref-membership",
+          txTime: InstantTimestamp(milliseconds: 5)
+        )
+      ),
+      attributes: attributes,
+      insertReplayPolicy: .preserveExactResident
+    )
+    expectNoDifference(addedMembership, ["segment-1", "speaker-b"])
+  }
+
+  @Test
+  func authoritativeExactReplayPreservesCanonicalManyToOneWinner() async throws {
+    let manyAttribute = InstantAttribute(
+      id: "segments/state",
+      namespace: "segments",
+      name: "state",
+      valueType: .string,
+      cardinality: .many
+    )
+    var oneAttribute = manyAttribute
+    oneAttribute.cardinality = .one
+    let seedTime = InstantTimestamp(milliseconds: 1)
+    let store = InstantStore(
+      snapshot: InstantStoreSnapshot(
+        attributes: [manyAttribute],
+        triples: [
+          InstantTriple(
+            entityID: "segment-1",
+            attributeID: manyAttribute.id,
+            value: .string("kept"),
+            txID: "seed-kept",
+            txTime: seedTime
+          ),
+          InstantTriple(
+            entityID: "segment-1",
+            attributeID: manyAttribute.id,
+            value: .string("malformed-sibling"),
+            txID: "seed-sibling",
+            txTime: InstantTimestamp(milliseconds: 9)
+          ),
+        ]
+      )
+    )
+    let schemaPrepared = try await store.prepare(
+      peelingOverlays: [],
+      thenApplying: InstantStoreTransaction(id: "learn-cardinality-one", operations: []),
+      mergingAttributes: [oneAttribute]
+    )
+    expectNoDifference(schemaPrepared.result.changedEntityIDs, ["segment-1"])
+    expectNoDifference(
+      Set(schemaPrepared.previousChangedEntityTriples["segment-1", default: []].map(\.value)),
+      Set([.string("kept"), .string("malformed-sibling")])
+    )
+    expectNoDifference(
+      schemaPrepared.changedEntityTriples["segment-1"]?.map(\.value),
+      [.string("malformed-sibling")]
+    )
+    expectNoDifference(
+      schemaPrepared.changedEntityTriples["segment-1"]?.map(\.txID),
+      ["seed-sibling"]
+    )
+    _ = await store.commit(schemaPrepared)
+
+    let prepared = try await store.prepareCurrent(
+      InstantStoreTransaction(
+        id: "authoritative-exact-cardinality-one",
+        operations: [
+          .insert(
+            InstantTriple(
+              entityID: "segment-1",
+              attributeID: oneAttribute.id,
+              value: .string("malformed-sibling"),
+              txID: "authoritative-exact-cardinality-one",
+              txTime: InstantTimestamp(milliseconds: 10)
+            )
+          )
+        ]
+      ),
+      insertReplayPolicy: .preserveExactResident
+    )
+
+    expectNoDifference(prepared.result.changedEntityIDs, [])
+    expectNoDifference(
+      prepared.snapshot.triples.filter { $0.entityID == "segment-1" }.map(\.value),
+      [.string("malformed-sibling")]
+    )
+    expectNoDifference(
+      prepared.snapshot.triples.filter { $0.entityID == "segment-1" }.map(\.txID),
+      ["seed-sibling"]
+    )
+
+    _ = await store.commit(prepared)
+    let snapshot = await store.snapshot()
+    expectNoDifference(snapshot.triples.map(\.value), [.string("malformed-sibling")])
+
+    let persistence = try SQLitePersistenceStore(fileURL: temporaryCacheURL())
+    try await persistence.bootstrap()
+    try await persistence.saveStoreSnapshot(snapshot)
+    let reloaded = try await persistence.loadCompactState()
+    expectNoDifference(
+      reloaded.snapshot.store.triples.map(\.value),
+      [.string("malformed-sibling")]
+    )
+    expectNoDifference(reloaded.snapshot.store.triples.map(\.txID), ["seed-sibling"])
+  }
+
+  @Test
+  func authoritativeExactSchemaLearnReconcilesIndexedOneSlot() async throws {
+    let attribute = InstantAttribute(
+      id: "segments/state",
+      namespace: "segments",
+      name: "state",
+      valueType: .string,
+      cardinality: .one,
+      isIndexed: true
+    )
+    let seed = InstantTriple(
+      entityID: "segment-1",
+      attributeID: attribute.id,
+      value: .string("ready"),
+      txID: "unknown-schema-seed",
+      txTime: InstantTimestamp(milliseconds: 1)
+    )
+    let store = InstantStore(
+      snapshot: InstantStoreSnapshot(attributes: [], triples: [seed])
+    )
+    let schemaPrepared = try await store.prepare(
+      peelingOverlays: [],
+      thenApplying: InstantStoreTransaction(id: "learn-indexed-one-schema", operations: []),
+      mergingAttributes: [attribute]
+    )
+    let prepared = try await store.prepare(
+      InstantStoreTransaction(
+        id: "authoritative-exact-schema-learn",
+        operations: [
+          .insert(
+            InstantTriple(
+              entityID: seed.entityID,
+              attributeID: seed.attributeID,
+              value: seed.value,
+              txID: "authoritative-exact-schema-learn",
+              txTime: InstantTimestamp(milliseconds: 2)
+            )
+          )
+        ]
+      ),
+      applyingTo: schemaPrepared,
+      insertReplayPolicy: .preserveExactResident
+    )
+
+    // Learning the schema repairs the resident slot and derived indexes before the exact replay.
+    // The replay is therefore a true no-op and retains the resident transaction stamp.
+    expectNoDifference(schemaPrepared.result.changedEntityIDs, [])
+    expectNoDifference(prepared.result.changedEntityIDs, [])
+    expectNoDifference(
+      prepared.snapshot.triples.filter { $0.entityID == seed.entityID }.map(\.txID),
+      [seed.txID]
+    )
+    _ = await store.commit(prepared)
+    let values = await store.materialize(
+      InstantQueryPlan(
+        id: "segments.indexed-state",
+        namespace: attribute.namespace,
+        filters: [.equals(field: attribute.name, value: seed.value)]
+      )
+    )
+    expectNoDifference(values.map(\.id), [seed.entityID])
+    expectNoDifference(values.first?.values[attribute.name]?.first, seed.value)
+  }
+
+  @Test
+  func schemaMergeManyToOneCanonicalizesNewestIndexedRefAndPersists() async throws {
+    let recordingTitle = InstantAttribute(
+      id: "recordings/title",
+      namespace: "recordings",
+      name: "title",
+      valueType: .string
+    )
+    let segmentRecordings = InstantAttribute(
+      id: "segments/recording",
+      namespace: "segments",
+      name: "recording",
+      valueType: .ref,
+      cardinality: .many,
+      isIndexed: true,
+      forwardIdentity: "segments/recording",
+      reverseIdentity: "recordings/segments",
+      linkNamespace: "recordings"
+    )
+    var segmentRecording = segmentRecordings
+    segmentRecording.cardinality = .one
+    let initialSnapshot = InstantStoreSnapshot(
+      attributes: [recordingTitle, segmentRecordings],
+      triples: [
+        InstantTriple(
+          entityID: "recording-a",
+          attributeID: recordingTitle.id,
+          value: .string("A"),
+          txID: "seed-recording-a",
+          txTime: InstantTimestamp(milliseconds: 1)
+        ),
+        InstantTriple(
+          entityID: "recording-m",
+          attributeID: recordingTitle.id,
+          value: .string("M"),
+          txID: "seed-recording-m",
+          txTime: InstantTimestamp(milliseconds: 1)
+        ),
+        InstantTriple(
+          entityID: "recording-z",
+          attributeID: recordingTitle.id,
+          value: .string("Z"),
+          txID: "seed-recording-z",
+          txTime: InstantTimestamp(milliseconds: 1)
+        ),
+        InstantTriple(
+          entityID: "segment-1",
+          attributeID: segmentRecordings.id,
+          value: .ref("recording-z"),
+          txID: "seed-older-ref",
+          txTime: InstantTimestamp(milliseconds: 2)
+        ),
+        InstantTriple(
+          entityID: "segment-1",
+          attributeID: segmentRecordings.id,
+          value: .ref("recording-a"),
+          txID: "seed-newer-ref",
+          txTime: InstantTimestamp(milliseconds: 4)
+        ),
+        InstantTriple(
+          entityID: "segment-2",
+          attributeID: segmentRecordings.id,
+          value: .ref("recording-m"),
+          txID: "seed-single-ref",
+          txTime: InstantTimestamp(milliseconds: 3)
+        ),
+      ]
+    )
+    let persistence = try SQLitePersistenceStore(fileURL: temporaryCacheURL())
+    try await persistence.bootstrap()
+    try await persistence.saveStoreSnapshot(initialSnapshot)
+    let persistedInitial = try await persistence.loadCompactState()
+    expectNoDifference(
+      Set(
+        persistedInitial.snapshot.store.triples
+          .filter { $0.entityID == "segment-1" }
+          .map(\.value)
+      ),
+      Set([.ref("recording-a"), .ref("recording-z")])
+    )
+    let store = InstantStore(
+      snapshot: initialSnapshot
+    )
+
+    let schemaPrepared = try await store.prepare(
+      peelingOverlays: [],
+      thenApplying: InstantStoreTransaction(id: "learn-ref-cardinality-one", operations: []),
+      mergingAttributes: [segmentRecording]
+    )
+    expectNoDifference(schemaPrepared.result.changedEntityIDs, ["segment-1"])
+    expectNoDifference(
+      Set(schemaPrepared.previousChangedEntityTriples["segment-1", default: []].map(\.value)),
+      Set([.ref("recording-a"), .ref("recording-z")])
+    )
+    expectNoDifference(
+      schemaPrepared.changedEntityTriples["segment-1"]?.map(\.value),
+      [.ref("recording-a")]
+    )
+    expectNoDifference(
+      schemaPrepared.changedEntityTriples["segment-1"]?.map(\.txID),
+      ["seed-newer-ref"]
+    )
+    _ = await store.commit(schemaPrepared)
+
+    let orderedSegments = await store.materialize(
+      InstantQueryPlan(
+        id: "segments.ordered-by-recording-after-many-to-one",
+        namespace: segmentRecording.namespace,
+        order: InstantQueryOrder(segmentRecording.name)
+      )
+    )
+    expectNoDifference(orderedSegments.map(\.id), ["segment-1", "segment-2"])
+    expectNoDifference(
+      orderedSegments.map { $0.values[segmentRecording.name]?.first },
+      [.ref("recording-a"), .ref("recording-m")]
+    )
+    let winningIndexHits = await store.materialize(
+      InstantQueryPlan(
+        id: "segments.by-winning-recording-after-many-to-one",
+        namespace: segmentRecording.namespace,
+        filters: [.equals(field: segmentRecording.name, value: .ref("recording-a"))]
+      )
+    )
+    let losingIndexHits = await store.materialize(
+      InstantQueryPlan(
+        id: "segments.by-losing-recording-after-many-to-one",
+        namespace: segmentRecording.namespace,
+        filters: [.equals(field: segmentRecording.name, value: .ref("recording-z"))]
+      )
+    )
+    expectNoDifference(winningIndexHits.map(\.id), ["segment-1"])
+    expectNoDifference(losingIndexHits.map(\.id), [])
+
+    let hotSnapshot = await store.snapshot()
+    expectNoDifference(
+      hotSnapshot.triples.filter { $0.entityID == "segment-1" }.map(\.value),
+      [.ref("recording-a")]
+    )
+    let didPersistCanonicalSnapshot = try await persistence.saveStoreSnapshot(
+      hotSnapshot,
+      replacing: initialSnapshot,
+      expectedStoreRevision: persistedInitial.storeRevision,
+      expectedOutboxRevision: persistedInitial.outboxRevision,
+      expectedAttributeRevision: persistedInitial.attributeRevision
+    )
+    expectNoDifference(didPersistCanonicalSnapshot, true)
+    await persistence.invalidateMemoryCache()
+    let reloaded = try await persistence.loadCompactState()
+    let reloadedSnapshot = reloaded.snapshot.store
+    expectNoDifference(reloadedSnapshot, hotSnapshot)
+    let reloadedStore = InstantStore(snapshot: reloadedSnapshot)
+
+    let deletedLoser = try await reloadedStore.prepare(
+      InstantStoreTransaction(
+        id: "delete-losing-recording-after-many-to-one",
+        operations: [.deleteEntity("recording-z")]
+      )
+    )
+    expectNoDifference(deletedLoser.result.changedEntityIDs, ["recording-z"])
+    _ = await reloadedStore.commit(deletedLoser)
+    let afterLosingDelete = await reloadedStore.materialize(
+      InstantQueryPlan(id: "segments.after-losing-delete", namespace: segmentRecording.namespace)
+    )
+    expectNoDifference(
+      afterLosingDelete.first { $0.id == "segment-1" }?.values[segmentRecording.name]?.first,
+      .ref("recording-a")
+    )
+
+    let deletedWinner = try await reloadedStore.prepare(
+      InstantStoreTransaction(
+        id: "delete-winning-recording-after-many-to-one",
+        operations: [.deleteEntity("recording-a")]
+      )
+    )
+    expectNoDifference(
+      deletedWinner.result.changedEntityIDs,
+      ["recording-a", "segment-1"]
+    )
+    _ = await reloadedStore.commit(deletedWinner)
+    let afterWinningDelete = await reloadedStore.materialize(
+      InstantQueryPlan(id: "segments.after-winning-delete", namespace: segmentRecording.namespace)
+    )
+    expectNoDifference(afterWinningDelete.map(\.id), ["segment-2"])
+  }
+
+  @Test
+  func schemaMergeNormalizesUnknownIndexedDateManyBeforeExactReplay() async throws {
+    let attribute = InstantAttribute(
+      id: "segments/timestamps",
+      namespace: "segments",
+      name: "timestamps",
+      valueType: .date,
+      cardinality: .many,
+      isIndexed: true
+    )
+    let milliseconds: Int64 = 1_642_234_800_000
+    let seed = InstantTriple(
+      entityID: "segment-1",
+      attributeID: attribute.id,
+      value: .number(Double(milliseconds)),
+      txID: "unknown-date-seed",
+      txTime: InstantTimestamp(milliseconds: 1)
+    )
+    let store = InstantStore(
+      snapshot: InstantStoreSnapshot(attributes: [], triples: [seed])
+    )
+    let schemaPrepared = try await store.prepare(
+      peelingOverlays: [],
+      thenApplying: InstantStoreTransaction(id: "learn-indexed-date-many", operations: []),
+      mergingAttributes: [attribute]
+    )
+    let exact = try await store.prepare(
+      InstantStoreTransaction(
+        id: "authoritative-exact-date-many",
+        operations: [
+          .insert(
+            InstantTriple(
+              entityID: seed.entityID,
+              attributeID: seed.attributeID,
+              value: seed.value,
+              txID: "authoritative-exact-date-many",
+              txTime: InstantTimestamp(milliseconds: 2)
+            )
+          )
+        ]
+      ),
+      applyingTo: schemaPrepared,
+      insertReplayPolicy: .preserveExactResident
+    )
+    expectNoDifference(exact.result.changedEntityIDs, [])
+    _ = await store.commit(exact)
+
+    let values = await store.materialize(
+      InstantQueryPlan(
+        id: "segments.by-normalized-date-after-schema-merge",
+        namespace: attribute.namespace,
+        filters: [.equals(field: attribute.name, value: seed.value)]
+      )
+    )
+    expectNoDifference(values.map(\.id), [seed.entityID])
+    expectNoDifference(
+      values.first?.values[attribute.name]?.values,
+      [.date(Date(timeIntervalSince1970: Double(milliseconds) / 1_000))]
+    )
+    let snapshot = await store.snapshot()
+    expectNoDifference(snapshot.triples.map(\.txID), [seed.txID])
+    expectNoDifference(snapshot.triples.count, 1)
+  }
+
+  @Test
+  func localExactValueMutationRetainsRollbackAcrossAuthoritativeReplay() async throws {
+    let cacheURL = try temporaryCacheURL()
+    let attribute = InstantAttribute(
+      id: "segments/state",
+      namespace: "segments",
+      name: "state",
+      valueType: .string,
+      cardinality: .one
+    )
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "local-exact-value-rollback",
+        persistenceURL: cacheURL,
+        initialAttributes: [attribute]
+      )
+    )
+    let seed = InstantStoreTransaction(
+      id: "server-seed-exact-value",
+      operations: [
+        .insert(
+          InstantTriple(
+            entityID: "segment-1",
+            attributeID: attribute.id,
+            value: .string("ready"),
+            txID: "server-seed-exact-value",
+            txTime: InstantTimestamp(milliseconds: 1)
+          )
+        )
+      ]
+    )
+    _ = try await runtime.applyServerTransaction(seed)
+
+    let local = InstantStoreTransaction(
+      id: "local-exact-value",
+      operations: [
+        .insert(
+          InstantTriple(
+            entityID: "segment-1",
+            attributeID: attribute.id,
+            value: .string("ready"),
+            txID: "local-exact-value",
+            txTime: InstantTimestamp(milliseconds: 2)
+          )
+        )
+      ]
+    )
+    _ = try await runtime.transact(
+      local,
+      createdAt: InstantTimestamp(milliseconds: 2)
+    )
+    let pendingMutationsBeforeRefresh = await runtime.pendingMutations()
+    let pendingBeforeRefresh = try #require(
+      pendingMutationsBeforeRefresh.first { $0.id == local.id }
+    )
+    expectNoDifference(pendingBeforeRefresh.optimisticOverlayState, .applied)
+    expectNoDifference(pendingBeforeRefresh.rollbackTransaction?.operations.count, 2)
+
+    _ = try await runtime.applyServerTransaction(
+      InstantStoreTransaction(
+        id: "server-replay-exact-value",
+        operations: [
+          .insert(
+            InstantTriple(
+              entityID: "segment-1",
+              attributeID: attribute.id,
+              value: .string("ready"),
+              txID: "server-replay-exact-value",
+              txTime: InstantTimestamp(milliseconds: 3)
+            )
+          )
+        ]
+      )
+    )
+
+    let pendingMutationsAfterRefresh = await runtime.pendingMutations()
+    let pendingAfterRefresh = try #require(
+      pendingMutationsAfterRefresh.first { $0.id == local.id }
+    )
+    expectNoDifference(pendingAfterRefresh.optimisticOverlayState, .applied)
+    expectNoDifference(pendingAfterRefresh.rollbackTransaction?.operations.count, 2)
+    let hotSnapshot = await runtime.store.snapshot()
+    let resident = try #require(
+      hotSnapshot.triples.first {
+        $0.entityID == "segment-1" && $0.attributeID == attribute.id
+      }
+    )
+    expectNoDifference(resident.txID, local.id)
+    expectNoDifference(resident.value, .string("ready"))
+  }
+
+  @Test
+  func schemaManyToOnePeelsPendingValueBeforeCanonicalizationAndRejection() async throws {
+    let cacheURL = try temporaryCacheURL()
+    let manyAttribute = InstantAttribute(
+      id: "segments/state",
+      namespace: "segments",
+      name: "state",
+      valueType: .string,
+      cardinality: .many,
+      isIndexed: true,
+      forwardIdentity: "segments/state"
+    )
+    var oneAttribute = manyAttribute
+    oneAttribute.cardinality = .one
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "schema-many-to-one-pending-overlay",
+        persistenceURL: cacheURL,
+        initialAttributes: [manyAttribute]
+      )
+    )
+    _ = try await runtime.applyServerTransaction(
+      InstantStoreTransaction(
+        id: "seed-confirmed-many-values",
+        operations: [
+          .insert(
+            InstantTriple(
+              entityID: "segment-1",
+              attributeID: manyAttribute.id,
+              value: .string("confirmed-a"),
+              txID: "seed-confirmed-a",
+              txTime: InstantTimestamp(milliseconds: 1)
+            )
+          ),
+          .insert(
+            InstantTriple(
+              entityID: "segment-1",
+              attributeID: manyAttribute.id,
+              value: .string("confirmed-b"),
+              txID: "seed-confirmed-b",
+              txTime: InstantTimestamp(milliseconds: 2)
+            )
+          ),
+        ]
+      )
+    )
+
+    let pendingTransaction = InstantStoreTransaction(
+      id: "pending-newest-c",
+      operations: [
+        .insert(
+          InstantTriple(
+            entityID: "segment-1",
+            attributeID: manyAttribute.id,
+            value: .string("pending-c"),
+            txID: "pending-newest-c",
+            txTime: InstantTimestamp(milliseconds: 3)
+          )
+        )
+      ]
+    )
+    _ = try await runtime.transact(
+      pendingTransaction,
+      createdAt: InstantTimestamp(milliseconds: 3)
+    )
+    let pendingMutationsBeforeRefresh = await runtime.pendingMutations()
+    let pendingBeforeRefresh = try #require(
+      pendingMutationsBeforeRefresh.first { $0.id == pendingTransaction.id }
+    )
+    expectNoDifference(pendingBeforeRefresh.rollbackTransaction?.operations.count, 1)
+    let beforeRefresh = await runtime.store.snapshot()
+    expectNoDifference(
+      Set(beforeRefresh.triples.filter { $0.entityID == "segment-1" }.map(\.value)),
+      Set([.string("confirmed-a"), .string("confirmed-b"), .string("pending-c")])
+    )
+
+    let refresh = try await runtime.applyServerTransactionMergingAttributesForTesting(
+      InstantStoreTransaction(id: "schema-many-to-one-server-tx", operations: []),
+      attributesToMerge: [oneAttribute],
+      receivedAt: InstantTimestamp(milliseconds: 4)
+    )
+    expectNoDifference(
+      refresh.syncState.processedTransactionID,
+      "schema-many-to-one-server-tx"
+    )
+    let pendingMutationsAfterRefresh = await runtime.pendingMutations()
+    let pendingAfterRefresh = try #require(
+      pendingMutationsAfterRefresh.first { $0.id == pendingTransaction.id }
+    )
+    expectNoDifference(pendingAfterRefresh.rollbackTransaction?.operations.count, 2)
+    let optimisticAfterRefresh = await runtime.store.snapshot()
+    expectNoDifference(
+      optimisticAfterRefresh.triples.filter { $0.entityID == "segment-1" }.map(\.value),
+      [.string("pending-c")]
+    )
+
+    let failed = try await runtime.failMutation(
+      id: pendingTransaction.id,
+      message: "server rejected pending-c"
+    )
+    expectNoDifference(failed.status, .failed)
+    let hotAfterRejection = await runtime.store.snapshot()
+    expectNoDifference(
+      hotAfterRejection.triples.filter { $0.entityID == "segment-1" }.map(\.value),
+      [.string("confirmed-b")]
+    )
+    expectNoDifference(
+      hotAfterRejection.attributes.first { $0.id == oneAttribute.id }?.cardinality,
+      .one
+    )
+
+    let persisted = try SQLitePersistenceStore(fileURL: cacheURL)
+    try await persisted.bootstrap()
+    let persistedState = try await persisted.loadState()
+    expectNoDifference(persistedState.snapshot.store, hotAfterRejection)
+
+    let relaunched = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "schema-many-to-one-pending-overlay",
+        persistenceURL: cacheURL,
+        initialAttributes: [oneAttribute]
+      )
+    )
+    let reloadedSnapshot = await relaunched.store.snapshot()
+    expectNoDifference(reloadedSnapshot, hotAfterRejection)
+    let reloadedValues = try await relaunched.query(
+      InstantQueryPlan(id: "segments.after-pending-rejection", namespace: "segments")
+    )
+    expectNoDifference(reloadedValues.map(\.id), ["segment-1"])
+    expectNoDifference(
+      reloadedValues.first?.values[oneAttribute.name]?.first,
+      .string("confirmed-b")
+    )
+  }
+
+  @Test
+  func metadataOnlyPageInfoInstallPublishesOnlyKeyedChanges() async throws {
+    let store = InstantStore(snapshot: InstantStoreSnapshot(attributes: TodoExample.attributes))
+    let plan = InstantQueryPlan(
+      id: "todos.keyed-page-info",
+      namespace: TodoExample.namespace,
+      order: InstantQueryOrder("createdAt"),
+      limit: 1
+    )
+    let matching = await store.observeLiveQueryLease(
+      plan,
+      registrationKey: "query-matching-page-info",
+      remotePageInfo: .waiting
+    )
+    let unrelated = await store.observeLiveQueryLease(
+      plan,
+      registrationKey: "query-unrelated-page-info",
+      remotePageInfo: .waiting
+    )
+    let matchingRecorder = StoreSemanticEmissionRecorder()
+    let unrelatedRecorder = StoreSemanticEmissionRecorder()
+    let matchingObservationTask = Task {
+      for await emission in matching.stream {
+        await matchingRecorder.append(emission)
+      }
+    }
+    let unrelatedObservationTask = Task {
+      for await emission in unrelated.stream {
+        await unrelatedRecorder.append(emission)
+      }
+    }
+    defer {
+      matchingObservationTask.cancel()
+      unrelatedObservationTask.cancel()
+    }
+    _ = try await storeSemanticEmission(
+      from: matchingRecorder,
+      at: 0,
+      operation: "await matching page-info initial emission"
+    )
+    _ = try await storeSemanticEmission(
+      from: unrelatedRecorder,
+      at: 0,
+      operation: "await unrelated page-info initial emission"
+    )
+
+    let readyWithNext = InstantQueryPageInfo(
+      startCursor: nil,
+      endCursor: nil,
+      hasPreviousPage: false,
+      hasNextPage: true
+    )
+    let matchingEmissions = await store.installLiveQueryPageInfo(
+      [
+        InstantLiveQueryResultReplacement(
+          key: "query-matching-page-info",
+          triples: [],
+          pageInfo: readyWithNext
+        )
+      ],
+      publishing: true
+    )
+    let matchingEmission = try await storeSemanticEmission(
+      from: matchingRecorder,
+      at: 1,
+      operation: "await keyed page-info emission"
+    )
+    expectNoDifference(matchingEmission.pageInfo, readyWithNext)
+    expectNoDifference(matchingEmissions, [matchingEmission])
+
+    let exactReplay = await store.installLiveQueryPageInfo(
+      [
+        InstantLiveQueryResultReplacement(
+          key: "query-matching-page-info",
+          triples: [],
+          pageInfo: readyWithNext
+        )
+      ],
+      publishing: true
+    )
+    expectNoDifference(exactReplay, [])
+    let replayMetrics = await store.lastPublishMetrics
+    expectNoDifference(replayMetrics.rematerializedObserverCount, 0)
+    expectNoDifference(replayMetrics.materializedSnapshotCount, 0)
+
+    // Installing the unrelated key now proves neither prior matching-key call queued a value for
+    // this observer.
+    let readyWithoutNext = InstantQueryPageInfo(
+      startCursor: nil,
+      endCursor: nil,
+      hasPreviousPage: false,
+      hasNextPage: false
+    )
+    let unrelatedEmissions = await store.installLiveQueryPageInfo(
+      [
+        InstantLiveQueryResultReplacement(
+          key: "query-unrelated-page-info",
+          triples: [],
+          pageInfo: readyWithoutNext
+        )
+      ],
+      publishing: true
+    )
+    let unrelatedEmission = try await storeSemanticEmission(
+      from: unrelatedRecorder,
+      at: 1,
+      operation: "await unrelated keyed page-info emission"
+    )
+    expectNoDifference(unrelatedEmission.pageInfo, readyWithoutNext)
+    expectNoDifference(unrelatedEmissions, [unrelatedEmission])
+    let matchingEmissionCount = await matchingRecorder.count()
+    let unrelatedEmissionCount = await unrelatedRecorder.count()
+    expectNoDifference(matchingEmissionCount, 2)
+    expectNoDifference(unrelatedEmissionCount, 2)
+
+    await matching.cancel()
+    await unrelated.cancel()
+  }
+
+  @Test
   func tripleIndexesMaterializeLargeSparseSnapshotsInIndexOrder() {
     let timestamp = InstantTimestamp(milliseconds: 1)
     let triples = (0..<50_000).reversed().map { index in
@@ -19784,6 +20769,40 @@ private func persistenceAuditCounts(at url: URL) throws -> PersistenceAuditCount
 private extension Array {
   subscript(safe index: Index) -> Element? {
     indices.contains(index) ? self[index] : nil
+  }
+}
+
+private actor StoreSemanticEmissionRecorder {
+  private var emissions: [InstantQueryEmission] = []
+
+  func append(_ emission: InstantQueryEmission) {
+    emissions.append(emission)
+  }
+
+  func emission(at index: Int) -> InstantQueryEmission? {
+    emissions[safe: index]
+  }
+
+  func count() -> Int {
+    emissions.count
+  }
+}
+
+private func storeSemanticEmission(
+  from recorder: StoreSemanticEmissionRecorder,
+  at index: Int,
+  operation: String
+) async throws -> InstantQueryEmission {
+  try await instantLiveWithTimeout(
+    operation: operation,
+    timeoutMilliseconds: 5_000
+  ) {
+    while true {
+      if let emission = await recorder.emission(at: index) {
+        return emission
+      }
+      try await Task.sleep(nanoseconds: 1_000_000)
+    }
   }
 }
 

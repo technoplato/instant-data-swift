@@ -26,3 +26,5 @@ grok-build-runtime-split 2026-08-11T18:38:04Z mower plan=2026-08-11-runtime-spli
 grok-4.6-live-revision 2026-08-12T12:36:00-0400 mower steal-only-with-explicit-user-allow user-allow=2026-08-12T12:36:00-0400 plan=2026-08-12-live-revision-cardinality live-put-observation-memory runtime-claim-no-edit-unless-store-publish-contract-requires
 codex-desktop/01a00071-f1c1-7193-adcd-3bc9f30b5f95/root/nested_deferred_hydration 2026-08-14T15:39:00-0400 mower deferred-query-hydration-section-only plan=2026-08-09-bounded-intent-outbox-memory
 codex-desktop/01a00071-f1c1-7193-adcd-3bc9f30b5f95/root/terminal_component_bounded_disposition 2026-08-14T20:57:46-0400 mower terminal-rejection-component-limit-disposition-only plan=2026-08-09-bounded-intent-outbox-memory
+codex-desktop/01a00071-f1c1-7193-adcd-3bc9f30b5f95/root/semantic_noop_v2 2026-08-14T22:40:00-0400 mower server-apply-keyed-page-info-commit-call plan=2026-08-14-semantic-noop-insert-v2
+codex-desktop/01a00071-f1c1-7193-adcd-3bc9f30b5f95/root/send_failure_reconnect_fix 2026-08-15T02:50:17Z mower connect-start-receiver-pending-failure-only plan=2026-08-14-send-failure-receiver-ownership

@@ -366,33 +366,73 @@ public actor InstantStore {
     )
   }
 
+  @discardableResult
   func installLiveQueryPageInfo(
     _ replacements: [InstantLiveQueryResultReplacement],
     publishing: Bool
-  ) {
-    guard !replacements.isEmpty else { return }
-    let replacementsByKey = Dictionary(
-      replacements.map { ($0.key, $0) },
-      uniquingKeysWith: { _, latest in latest }
-    )
+  ) -> [InstantQueryEmission] {
+    let pageInfoByKey = Self.liveQueryPageInfoByKey(replacements)
+    guard !pageInfoByKey.isEmpty else { return [] }
+    var metrics = InstantStorePublishMetrics()
+    var emissionsByObservation: [StoreObservationKey: InstantQueryEmission] = [:]
     for observerID in Array(observers.keys) {
       guard var observer = observers[observerID],
         let liveQueryKey = observer.liveQueryKey,
-        let replacement = replacementsByKey[liveQueryKey]
+        let remotePageInfo = pageInfoByKey[liveQueryKey]
       else {
         continue
       }
-      observer.remotePageInfo =
-        replacement.pageInfo.map(InstantQueryRemotePageInfo.ready) ?? .waiting
-      let emission = materializeEmission(
-        observer.plan,
+      guard observer.remotePageInfo != remotePageInfo else {
+        metrics.skippedObserverCount += 1
+        continue
+      }
+      observer.remotePageInfo = remotePageInfo
+      let key = StoreObservationKey(
+        plan: observer.plan,
         remotePageInfo: observer.remotePageInfo
       )
+      let emission: InstantQueryEmission
+      if let existing = emissionsByObservation[key] {
+        emission = existing
+      } else {
+        let page = indexes.materializePageWithMetrics(
+          observer.plan,
+          attributes: attributes,
+          remotePageInfo: observer.remotePageInfo
+        )
+        metrics.rematerializedObserverCount += 1
+        metrics.materializedSnapshotCount += page.metrics.materializedSnapshotCount
+        emission = InstantQueryEmission(
+          queryID: observer.plan.id,
+          sequence: sequence,
+          values: page.page.values,
+          pageInfo: page.page.pageInfo
+        )
+        emissionsByObservation[key] = emission
+      }
       observer.apply(emission)
       observers[observerID] = observer
       guard publishing else { continue }
       observer.continuation.yield(emission)
     }
+    lastPublishMetrics = metrics
+    return emissionsByObservation
+      .sorted { lhs, rhs in Self.emissionSortKey(lhs.key) < Self.emissionSortKey(rhs.key) }
+      .map(\.value)
+  }
+
+  private static func liveQueryPageInfoByKey(
+    _ replacements: [InstantLiveQueryResultReplacement]
+  ) -> [String: InstantQueryRemotePageInfo] {
+    Dictionary(
+      replacements.map {
+        (
+          $0.key,
+          $0.pageInfo.map(InstantQueryRemotePageInfo.ready) ?? .waiting
+        )
+      },
+      uniquingKeysWith: { _, latest in latest }
+    )
   }
 
   func prepare(_ transaction: InstantStoreTransaction) throws -> PreparedStoreMutation {
@@ -404,11 +444,15 @@ public actor InstantStore {
     return commit(prepared)
   }
 
-  func prepareCurrent(_ transaction: InstantStoreTransaction) throws -> PreparedStoreMutation {
+  func prepareCurrent(
+    _ transaction: InstantStoreTransaction,
+    insertReplayPolicy: InstantTripleInsertReplayPolicy = .replaceAndInvalidate
+  ) throws -> PreparedStoreMutation {
     try prepare(
       transaction,
       attributes: attributes,
-      indexes: indexes
+      indexes: indexes,
+      insertReplayPolicy: insertReplayPolicy
     )
   }
 
@@ -472,12 +516,14 @@ public actor InstantStore {
 
   func prepare(
     _ transaction: InstantStoreTransaction,
-    applyingTo prepared: PreparedStoreMutation
+    applyingTo prepared: PreparedStoreMutation,
+    insertReplayPolicy: InstantTripleInsertReplayPolicy = .replaceAndInvalidate
   ) throws -> PreparedStoreMutation {
     try prepare(
       transaction,
       attributes: prepared.attributes,
-      indexes: prepared.indexes
+      indexes: prepared.indexes,
+      insertReplayPolicy: insertReplayPolicy
     )
   }
 
@@ -549,8 +595,10 @@ public actor InstantStore {
     hydratingDeferredValues deferredTriples: [InstantTriple]
   ) throws -> PreparedStoreMutation {
     var attributes = self.attributes
-    attributes.merge(attributesToMerge)
     var indexes = self.indexes
+    // Optimistic inverses were authored against the resident schema. Peel them before a
+    // many-to-one schema transition can discard sibling facts that belong to the authoritative
+    // base. Upstream likewise rebuilds the server store first, then reapplies optimistic writes.
     indexes.hydrateDeferredValues(deferredTriples, attributes: attributes)
     for rollback in rollbacks {
       _ = try prepareMutating(
@@ -560,18 +608,65 @@ public actor InstantStore {
         capturePreviousChangedEntityTriples: false
       )
     }
-    return try prepareMutating(
+    attributes.merge(attributesToMerge)
+    let indexesBeforeSchemaReconciliation = indexes
+    let schemaReconciledEntityIDs: Set<String> = attributesToMerge.isEmpty
+      ? []
+      : indexes.reconcileDerivedIndexShapes(attributes: attributes)
+    var prepared = try prepareMutating(
       serverTransaction,
       attributes: &attributes,
       indexes: &indexes,
       capturePreviousChangedEntityTriples: true
+    )
+    prepared.result.changedEntityIDs.formUnion(schemaReconciledEntityIDs)
+    for entityID in schemaReconciledEntityIDs
+    where prepared.previousChangedEntityTriples[entityID] == nil {
+      prepared.previousChangedEntityTriples[entityID] =
+        indexesBeforeSchemaReconciliation.triples(entityID: entityID)
+    }
+    return prepared
+  }
+
+  /// Merge schema into an already-peeled server-apply base, then reconcile its derived indexes.
+  ///
+  /// Runtime peels durable optimistic components in bounded SQLite pages, so it cannot pass every
+  /// inverse to the array-based seam above. This phase boundary keeps canonicalization after the
+  /// final peel and before the authoritative transaction or optimistic replay.
+  func prepareMergingAttributes(
+    _ attributesToMerge: [InstantAttribute],
+    applyingTo prepared: PreparedStoreMutation
+  ) -> PreparedStoreMutation {
+    guard !attributesToMerge.isEmpty else { return prepared }
+    var attributes = prepared.attributes
+    attributes.merge(attributesToMerge)
+    var indexes = prepared.indexes
+    let indexesBeforeSchemaReconciliation = indexes
+    let changedEntityIDs = indexes.reconcileDerivedIndexShapes(attributes: attributes)
+    let previousChangedEntityTriples = Dictionary(
+      uniqueKeysWithValues: changedEntityIDs.map { entityID in
+        (entityID, indexesBeforeSchemaReconciliation.triples(entityID: entityID))
+      }
+    )
+    return PreparedStoreMutation(
+      result: InstantStoreMutationResult(
+        transactionID: prepared.result.transactionID,
+        changedEntityIDs: changedEntityIDs,
+        tripleCount: indexes.tripleCount,
+        emissions: []
+      ),
+      sequence: prepared.sequence,
+      attributes: attributes,
+      indexes: indexes,
+      previousChangedEntityTriples: previousChangedEntityTriples
     )
   }
 
   private func prepare(
     _ transaction: InstantStoreTransaction,
     attributes: AttributeStore,
-    indexes initialIndexes: TripleIndexes
+    indexes initialIndexes: TripleIndexes,
+    insertReplayPolicy: InstantTripleInsertReplayPolicy = .replaceAndInvalidate
   ) throws -> PreparedStoreMutation {
     var attributes = attributes
     var indexes = initialIndexes
@@ -579,7 +674,8 @@ public actor InstantStore {
       transaction,
       attributes: &attributes,
       indexes: &indexes,
-      capturePreviousChangedEntityTriples: true
+      capturePreviousChangedEntityTriples: true,
+      insertReplayPolicy: insertReplayPolicy
     )
   }
 
@@ -587,7 +683,8 @@ public actor InstantStore {
     _ transaction: InstantStoreTransaction,
     attributes: inout AttributeStore,
     indexes: inout TripleIndexes,
-    capturePreviousChangedEntityTriples: Bool
+    capturePreviousChangedEntityTriples: Bool,
+    insertReplayPolicy: InstantTripleInsertReplayPolicy = .replaceAndInvalidate
   ) throws -> PreparedStoreMutation {
     let previousChangedEntityTriplesBase: TripleIndexes? =
       capturePreviousChangedEntityTriples ? indexes : nil
@@ -702,7 +799,13 @@ public actor InstantStore {
               )
             }
             try Self.validateWriteValue(triple.value, triple: triple, attributes: attributes)
-            changedEntityIDs.formUnion(indexes.apply(concreteOperation, attributes: attributes))
+            changedEntityIDs.formUnion(
+              indexes.apply(
+                concreteOperation,
+                attributes: attributes,
+                insertReplayPolicy: insertReplayPolicy
+              )
+            )
 
           case .deleteEntity:
             changedEntityIDs.formUnion(indexes.apply(concreteOperation, attributes: attributes))
@@ -748,18 +851,31 @@ public actor InstantStore {
   }
 
   func commit(_ prepared: consuming PreparedStoreMutation) -> PreparedStoreMutation {
-    commit(prepared, shouldPublish: false)
+    commit(prepared, shouldPublish: false, installingLiveQueryPageInfo: [])
   }
 
   func commitAndPublish(_ prepared: consuming PreparedStoreMutation) -> PreparedStoreMutation {
-    commit(prepared, shouldPublish: true)
+    commit(prepared, shouldPublish: true, installingLiveQueryPageInfo: [])
+  }
+
+  func commitAndPublish(
+    _ prepared: consuming PreparedStoreMutation,
+    installingLiveQueryPageInfo replacements: [InstantLiveQueryResultReplacement]
+  ) -> PreparedStoreMutation {
+    commit(
+      prepared,
+      shouldPublish: true,
+      installingLiveQueryPageInfo: replacements
+    )
   }
 
   private func commit(
     _ prepared: consuming PreparedStoreMutation,
-    shouldPublish: Bool
+    shouldPublish: Bool,
+    installingLiveQueryPageInfo replacements: [InstantLiveQueryResultReplacement]
   ) -> PreparedStoreMutation {
     var prepared = prepared
+    let pageInfoByKey = Self.liveQueryPageInfoByKey(replacements)
     let changedNamespaces: Set<String>?
     if attributes != prepared.attributes {
       changedNamespaces = nil
@@ -792,14 +908,25 @@ public actor InstantStore {
     var emissionsByObservation: [StoreObservationKey: InstantQueryEmission] = [:]
     for observerID in Array(observers.keys) {
       guard var observer = observers[observerID] else { continue }
+      let pageInfoChanged: Bool
+      if let liveQueryKey = observer.liveQueryKey,
+        let replacementPageInfo = pageInfoByKey[liveQueryKey],
+        replacementPageInfo != observer.remotePageInfo
+      {
+        observer.remotePageInfo = replacementPageInfo
+        pageInfoChanged = true
+      } else {
+        pageInfoChanged = false
+      }
       guard
-        Self.shouldRefresh(
-          observer,
-          changedNamespaces: changedNamespaces,
-          changedEntityIDs: prepared.result.changedEntityIDs,
-          indexes: indexes,
-          attributes: attributes
-        )
+        pageInfoChanged
+          || Self.shouldRefresh(
+            observer,
+            changedNamespaces: changedNamespaces,
+            changedEntityIDs: prepared.result.changedEntityIDs,
+            indexes: indexes,
+            attributes: attributes
+          )
       else {
         metrics.skippedObserverCount += 1
         continue
@@ -811,13 +938,14 @@ public actor InstantStore {
       let emission: InstantQueryEmission
       if let existing = emissionsByObservation[key] {
         emission = existing
-      } else if let spliced = Self.splicedEmission(
-        observer,
-        changedEntityIDs: prepared.result.changedEntityIDs,
-        indexes: indexes,
-        attributes: attributes,
-        sequence: sequence
-      ) {
+      } else if !pageInfoChanged,
+        let spliced = Self.splicedEmission(
+          observer,
+          changedEntityIDs: prepared.result.changedEntityIDs,
+          indexes: indexes,
+          attributes: attributes,
+          sequence: sequence
+        ) {
         metrics.splicedObserverCount += 1
         metrics.materializedSnapshotCount += prepared.result.changedEntityIDs.count
         emission = spliced

@@ -204,6 +204,11 @@ struct InstantTripleStamp: Hashable, Codable, Sendable {
   var txTime: InstantTimestamp { InstantTimestamp(milliseconds: txTimeMilliseconds) }
 }
 
+enum InstantTripleInsertReplayPolicy: Equatable, Sendable {
+  case replaceAndInvalidate
+  case preserveExactResident
+}
+
 
 /// Cardinality-aware attribute binding. Cardinality-one is the common Instant case;
 /// a full `[InstantValue: Stamp]` Dictionary per attr was a dominant structural floor
@@ -302,6 +307,20 @@ enum AttrSlot: Hashable, Codable, Sendable {
 }
 
 struct TripleIndexes: Hashable, Codable, Sendable {
+  private struct DerivedIndexAttributeShape: Hashable, Sendable {
+    var namespace: String
+    var valueType: InstantValueType
+    var cardinality: InstantCardinality
+    var isIndexed: Bool
+
+    init(_ attribute: InstantAttribute) {
+      namespace = attribute.namespace
+      valueType = attribute.valueType
+      cardinality = attribute.cardinality
+      isIndexed = attribute.isIndexed
+    }
+  }
+
   private var eav: [String: [String: AttrSlot]] = [:]
   private var vae: [InstantValue: [String: [String: InstantTripleStamp]]] = [:]
   /// Compact secondary index for **schema-indexed** attributes only (not full InstantTriple AEV).
@@ -311,6 +330,9 @@ struct TripleIndexes: Hashable, Codable, Sendable {
   private var indexedEntityValues: [String: [String: InstantValue]] = [:]
   /// namespace → entityIDs that hold at least one attr in that namespace (avoids scanning segments for recordings queries).
   private var entitiesByNamespace: [String: Set<String>] = [:]
+  /// Attribute definitions used to build the derived indexes above. Not encoded: decoding or a
+  /// schema-shape transition must rebuild before an exact authoritative insert can be a no-op.
+  private var derivedIndexAttributeShapes: [String: DerivedIndexAttributeShape] = [:]
   private var storedTripleCount = 0
   private var internedTxIDs: [String] = [""]
   private var txIDToIndex: [String: UInt32] = ["": 0]
@@ -386,6 +408,7 @@ struct TripleIndexes: Hashable, Codable, Sendable {
     self.indexedValueEntities = [:]
     self.indexedEntityValues = [:]
     self.entitiesByNamespace = [:]
+    self.derivedIndexAttributeShapes = [:]
   }
 
   func encode(to encoder: Encoder) throws {
@@ -447,6 +470,11 @@ struct TripleIndexes: Hashable, Codable, Sendable {
     excludingAttributeIDs excludedAttributeIDs: Set<String> = [],
     markingDeferredAttributeIDs deferredAttributeIDs: Set<String> = []
   ) {
+    derivedIndexAttributeShapes = Dictionary(
+      uniqueKeysWithValues: attributes.attributes.map {
+        ($0.id, DerivedIndexAttributeShape($0))
+      }
+    )
     for triple in triples where !excludedAttributeIDs.contains(triple.attributeID) {
       self.insert(triple, attribute: attributes[triple.attributeID])
       if deferredAttributeIDs.contains(triple.attributeID) {
@@ -461,6 +489,12 @@ struct TripleIndexes: Hashable, Codable, Sendable {
     _ triples: [InstantTriple],
     attributes: AttributeStore
   ) {
+    if triples.contains(where: {
+      derivedIndexAttributeShapes[$0.attributeID]
+        != attributes[$0.attributeID].map(DerivedIndexAttributeShape.init)
+    }) {
+      _ = rebuildDerivedIndexes(attributes: attributes)
+    }
     deferredValueKeysToRemove.reserveCapacity(
       deferredValueKeysToRemove.count + triples.count
     )
@@ -470,6 +504,13 @@ struct TripleIndexes: Hashable, Codable, Sendable {
         EntityAttributeKey(entityID: triple.entityID, attributeID: triple.attributeID)
       )
     }
+  }
+
+  @discardableResult
+  mutating func reconcileDerivedIndexShapes(attributes: AttributeStore) -> Set<String> {
+    let currentShapes = Self.derivedIndexAttributeShapes(for: attributes)
+    guard derivedIndexAttributeShapes != currentShapes else { return [] }
+    return rebuildDerivedIndexes(attributes: attributes)
   }
 
   mutating func markDeferredValue(entityID: String, attributeID: String) {
@@ -710,7 +751,8 @@ struct TripleIndexes: Hashable, Codable, Sendable {
   @discardableResult
   mutating func apply(
     _ operation: InstantTripleOperation,
-    attributes: AttributeStore
+    attributes: AttributeStore,
+    insertReplayPolicy: InstantTripleInsertReplayPolicy = .replaceAndInvalidate
   ) -> Set<String> {
     switch operation {
     case .requireEntityMissing, .requireEntityMissingByLookup,
@@ -721,21 +763,65 @@ struct TripleIndexes: Hashable, Codable, Sendable {
       return []
 
     case let .merge(triple):
-      return merge(triple, attribute: attributes[triple.attributeID])
-        ? [triple.entityID]
-        : []
+      var changed = reconcileDerivedIndexShape(
+        for: triple.attributeID,
+        attributes: attributes
+      )
+      changed.formUnion(
+        reconcileMalformedCardinalityOneSlot(
+          entityID: triple.entityID,
+          attributeID: triple.attributeID,
+          attributes: attributes
+        )
+      )
+      if merge(triple, attribute: attributes[triple.attributeID]) {
+        changed.insert(triple.entityID)
+      }
+      return changed
 
     case let .insert(triple):
-      var changed: Set<String> = [triple.entityID]
       let attribute = attributes[triple.attributeID]
+      var changed = reconcileDerivedIndexShape(
+        for: triple.attributeID,
+        attributes: attributes
+      )
+      changed.formUnion(
+        reconcileMalformedCardinalityOneSlot(
+          entityID: triple.entityID,
+          attributeID: triple.attributeID,
+          attributes: attributes
+        )
+      )
+      // Upstream isolates refresh facts in per-query stores. Swift applies them to one shared hot
+      // store. Authoritative refreshes can preserve an exact resident fact so a repeated server
+      // page does not invalidate every observer. Local and optimistic writes retain the ordinary
+      // replace-and-invalidate behavior because their rollback captures the changed entity IDs.
+      if insertReplayPolicy == .preserveExactResident,
+        isExactVisibleSlot(triple, attribute: attribute)
+      {
+        return changed
+      }
+      insert(triple, attribute: attribute)
+
+      changed.insert(triple.entityID)
       if attribute?.valueType == .ref, let targetID = triple.value.refValue {
         changed.insert(targetID)
       }
-      insert(triple, attribute: attribute)
       return changed
 
     case let .retract(triple):
-      var changed: Set<String> = [triple.entityID]
+      var changed = reconcileDerivedIndexShape(
+        for: triple.attributeID,
+        attributes: attributes
+      )
+      changed.formUnion(
+        reconcileMalformedCardinalityOneSlot(
+          entityID: triple.entityID,
+          attributeID: triple.attributeID,
+          attributes: attributes
+        )
+      )
+      changed.insert(triple.entityID)
       let attribute = attributes[triple.attributeID]
       if attribute?.valueType == .ref, let targetID = triple.value.refValue {
         changed.insert(targetID)
@@ -756,6 +842,196 @@ struct TripleIndexes: Hashable, Codable, Sendable {
         visited: &visited
       )
     }
+  }
+
+  private func isExactVisibleSlot(
+    _ triple: InstantTriple,
+    attribute: InstantAttribute?
+  ) -> Bool {
+    let value = Self.normalizedValue(triple.value, attribute: attribute)
+    guard let slot = eav[triple.entityID]?[triple.attributeID],
+      let stamp = slot[value]
+    else {
+      return false
+    }
+    // A schema can be learned or corrected after unknown/many values were indexed. In that case
+    // an exact insert still has work to do: reconcile the slot and every derived lookup index.
+    guard let attribute else {
+      if case .many = slot { return true }
+      return false
+    }
+    guard derivedIndexAttributeShapes[triple.attributeID] == DerivedIndexAttributeShape(attribute),
+      entitiesByNamespace[attribute.namespace]?.contains(triple.entityID) == true
+    else {
+      return false
+    }
+    switch (attribute.cardinality, slot) {
+    case (.one, .one), (.many, .many):
+      break
+    default:
+      return false
+    }
+    if attribute.valueType == .ref,
+      vae[value]?[triple.attributeID]?[triple.entityID] != stamp
+    {
+      return false
+    }
+    if attribute.isIndexed {
+      guard indexedValueEntities[triple.attributeID]?[value]?.contains(triple.entityID) == true
+      else { return false }
+      if attribute.cardinality == .one,
+        indexedEntityValues[triple.attributeID]?[triple.entityID] != value
+      {
+        return false
+      }
+    }
+    return true
+  }
+
+  @discardableResult
+  private mutating func rebuildDerivedIndexes(attributes: AttributeStore) -> Set<String> {
+    var normalizedEAV: [String: [String: AttrSlot]] = [:]
+    normalizedEAV.reserveCapacity(eav.count)
+    var changedEntityIDs: Set<String> = []
+    for (entityID, attributesByID) in eav {
+      var normalizedAttributes: [String: AttrSlot] = [:]
+      normalizedAttributes.reserveCapacity(attributesByID.count)
+      for (attributeID, slot) in attributesByID {
+        let normalized = normalizedSlot(
+          slot,
+          attribute: attributes[attributeID]
+        )
+        normalizedAttributes[attributeID] = normalized
+        if normalized.count != slot.count {
+          changedEntityIDs.insert(entityID)
+        }
+      }
+      normalizedEAV[entityID] = normalizedAttributes
+    }
+    eav = normalizedEAV
+    storedTripleCount = Self.walkedTripleCount(eav)
+    vae = [:]
+    indexedValueEntities = [:]
+    indexedEntityValues = [:]
+    entitiesByNamespace = [:]
+    derivedIndexAttributeShapes = Self.derivedIndexAttributeShapes(for: attributes)
+
+    // Copy-on-write keeps the authoritative EAV storage resident while these smaller maps rebuild.
+    // Schema changes are rare, and subsequent exact inserts see the recorded attribute shape.
+    let residentEAV = eav
+    for (entityID, attributesByID) in residentEAV {
+      for (attributeID, slot) in attributesByID {
+        guard let attribute = attributes[attributeID] else { continue }
+        entitiesByNamespace[attribute.namespace, default: []].insert(entityID)
+        for value in slot.keys {
+          guard let stamp = slot[value] else { continue }
+          if attribute.valueType == .ref {
+            vae[value, default: [:]][attributeID, default: [:]][entityID] = stamp
+          }
+          if attribute.isIndexed {
+            indexIndexedAttributeInsert(
+              entityID: entityID,
+              attributeID: attributeID,
+              value: value,
+              cardinalityOne: attribute.cardinality == .one
+            )
+          }
+        }
+      }
+    }
+    return changedEntityIDs
+  }
+
+  private func normalizedSlot(
+    _ slot: AttrSlot,
+    attribute: InstantAttribute?
+  ) -> AttrSlot {
+    switch slot {
+    case let .one(value, stamp):
+      return .one(
+        value: Self.normalizedValue(value, attribute: attribute),
+        stamp: stamp
+      )
+
+    case .many:
+      var normalized: [InstantValue: InstantTripleStamp] = [:]
+      for value in slot.keys.sorted(by: { $0.comparableKey < $1.comparableKey }) {
+        guard let stamp = slot[value] else { continue }
+        let normalizedValue = Self.normalizedValue(value, attribute: attribute)
+        if let existing = normalized[normalizedValue] {
+          if stamp.txTime > existing.txTime
+            || (stamp.txTime == existing.txTime
+              && resolvedTxID(at: stamp.txIDIndex) > resolvedTxID(at: existing.txIDIndex))
+          {
+            normalized[normalizedValue] = stamp
+          }
+        } else {
+          normalized[normalizedValue] = stamp
+        }
+      }
+      if attribute?.cardinality == .one,
+        let winner = normalized.max(by: { lhs, rhs in
+          entryPrecedes(
+            lhsValue: lhs.key,
+            lhsStamp: lhs.value,
+            rhsValue: rhs.key,
+            rhsStamp: rhs.value
+          )
+        })
+      {
+        return .one(value: winner.key, stamp: winner.value)
+      }
+      return .many(normalized)
+    }
+  }
+
+  private func entryPrecedes(
+    lhsValue: InstantValue,
+    lhsStamp: InstantTripleStamp,
+    rhsValue: InstantValue,
+    rhsStamp: InstantTripleStamp
+  ) -> Bool {
+    if lhsStamp.txTimeMilliseconds != rhsStamp.txTimeMilliseconds {
+      return lhsStamp.txTimeMilliseconds < rhsStamp.txTimeMilliseconds
+    }
+    let lhsTransactionID = resolvedTxID(at: lhsStamp.txIDIndex)
+    let rhsTransactionID = resolvedTxID(at: rhsStamp.txIDIndex)
+    if lhsTransactionID != rhsTransactionID {
+      return lhsTransactionID < rhsTransactionID
+    }
+    return lhsValue.comparableKey < rhsValue.comparableKey
+  }
+
+  private static func derivedIndexAttributeShapes(
+    for attributes: AttributeStore
+  ) -> [String: DerivedIndexAttributeShape] {
+    Dictionary(
+      uniqueKeysWithValues: attributes.attributes.map {
+        ($0.id, DerivedIndexAttributeShape($0))
+      }
+    )
+  }
+
+  private mutating func reconcileDerivedIndexShape(
+    for attributeID: String,
+    attributes: AttributeStore
+  ) -> Set<String> {
+    guard
+      derivedIndexAttributeShapes[attributeID]
+        != attributes[attributeID].map(DerivedIndexAttributeShape.init)
+    else { return [] }
+    return rebuildDerivedIndexes(attributes: attributes)
+  }
+
+  private mutating func reconcileMalformedCardinalityOneSlot(
+    entityID: String,
+    attributeID: String,
+    attributes: AttributeStore
+  ) -> Set<String> {
+    guard attributes[attributeID]?.cardinality == .one,
+      eav[entityID]?[attributeID]?.count ?? 0 > 1
+    else { return [] }
+    return rebuildDerivedIndexes(attributes: attributes)
   }
 
   func materialize(
@@ -2329,7 +2605,10 @@ struct TripleIndexes: Hashable, Codable, Sendable {
     )
   }
 
-  private mutating func insert(_ triple: InstantTriple, attribute: InstantAttribute?) {
+  private mutating func insert(
+    _ triple: InstantTriple,
+    attribute: InstantAttribute?
+  ) {
     var triple = Self.normalizedTriple(triple, attribute: attribute)
     if let existing = eav[triple.entityID]?[triple.attributeID]?[triple.value] {
       triple.txTime = existing.txTime
@@ -2393,6 +2672,7 @@ struct TripleIndexes: Hashable, Codable, Sendable {
           cardinalityOne: isCardinalityOne
         )
       }
+      derivedIndexAttributeShapes[triple.attributeID] = DerivedIndexAttributeShape(attribute)
     }
   }
 

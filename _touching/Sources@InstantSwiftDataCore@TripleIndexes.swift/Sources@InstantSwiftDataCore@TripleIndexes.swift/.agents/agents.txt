@@ -1,1 +1,3 @@
 grok-4.6-live-revision 2026-08-12T12:36:00-0400 mower steal-only-with-explicit-user-allow user-allow=2026-08-12T12:36:00-0400 plan=2026-08-12-live-revision-cardinality entity-matches-for-live-put-skip
+codex-desktop/01a00071-f1c1-7193-adcd-3bc9f30b5f95/root/semantic_noop_insert_fix 2026-08-14T22:19:52-0400 mower exact-normalized-triple-noop-invalidation plan=2026-08-14-semantic-noop-insert
+codex-desktop/01a00071-f1c1-7193-adcd-3bc9f30b5f95/root/semantic_noop_v2 2026-08-14T22:40:00-0400 mower reviewed-semantic-slot-noop plan=2026-08-14-semantic-noop-insert-v2

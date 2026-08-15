@@ -217,6 +217,162 @@ struct InstantLiveQueryNestedLimitMemoryTests {
   }
 
   @Test
+  func repeatedScribeShapedRefreshInvalidatesOnlyTheChangedSegment() async throws {
+    let cacheURL = temporaryNestedLimitCacheURL("semantic-noop-refresh")
+    defer { try? FileManager.default.removeItem(at: cacheURL.deletingLastPathComponent()) }
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "nested-limit-semantic-noop-refresh",
+        persistenceURL: cacheURL,
+        initialAttributes: NestedLimitLiveRefreshFixture.attributes
+      )
+    )
+    let fixture = NestedLimitLiveRefreshFixture(childIndices: Array(0..<childCount))
+    let queryKey = try InstantLiveQueryEncoder.registrationKey(for: fixture.query())
+    let observation = await runtime.store.observeLiveQueryLease(
+      fixture.plan(),
+      registrationKey: queryKey,
+      remotePageInfo: .waiting
+    )
+    let recorder = NestedLimitEmissionRecorder()
+    let observationTask = Task {
+      for await emission in observation.stream {
+        await recorder.append(emission)
+      }
+    }
+    defer { observationTask.cancel() }
+    let emptyInitial = try await nestedLimitEmission(
+      from: recorder,
+      at: 0,
+      operation: "await Scribe-shaped initial emission"
+    )
+    expectNoDifference(emptyInitial.values, [])
+
+    let initial = try await runtime.applyLiveRefresh(
+      fixture.refresh(transactionID: "semantic-noop-refresh-initial"),
+      receivedAt: InstantTimestamp(milliseconds: 1)
+    )
+    expectNoDifference(
+      initial.application.mutation.changedEntityIDs,
+      [fixture.recordingID, fixture.segmentID(8), fixture.segmentID(9)]
+    )
+    let initialEmission = try await nestedLimitEmission(
+      from: recorder,
+      at: 1,
+      operation: "await initial Scribe-shaped refresh emission"
+    )
+    expectNoDifference(initial.application.mutation.emissions, [initialEmission])
+
+    let replay = try await runtime.applyLiveRefresh(
+      fixture.refresh(transactionID: "semantic-noop-refresh-replay"),
+      receivedAt: InstantTimestamp(milliseconds: 2)
+    )
+    expectNoDifference(replay.insertedTripleCount, 8)
+    expectNoDifference(replay.application.mutation.changedEntityIDs, [])
+    expectNoDifference(
+      replay.application.syncState.processedTransactionID,
+      "semantic-noop-refresh-replay"
+    )
+    expectNoDifference(replay.application.mutation.emissions, [])
+    let replayMetrics = await runtime.store.lastPublishMetrics
+    expectNoDifference(replayMetrics.rematerializedObserverCount, 0)
+    expectNoDifference(replayMetrics.materializedSnapshotCount, 0)
+
+    // If the identical replay leaked an emission, the recorder's fixed indexes and final count
+    // make the changed-segment assertions below fail deterministically.
+    let changed = try await runtime.applyLiveRefresh(
+      fixture.refresh(
+        transactionID: "semantic-noop-refresh-changed",
+        segmentIndexOverrides: [9: 9.5]
+      ),
+      receivedAt: InstantTimestamp(milliseconds: 3)
+    )
+    expectNoDifference(changed.application.mutation.changedEntityIDs, [fixture.segmentID(9)])
+    expectNoDifference(
+      changed.application.syncState.processedTransactionID,
+      "semantic-noop-refresh-changed"
+    )
+    let changedEmission = try await nestedLimitEmission(
+      from: recorder,
+      at: 2,
+      operation: "await changed Scribe segment emission"
+    )
+    expectNoDifference(changed.application.mutation.emissions, [changedEmission])
+    let changedSegment = try #require(
+      changedEmission.values.first?.links?["segments"]?.first {
+        $0.id == fixture.segmentID(9)
+      }
+    )
+    expectNoDifference(
+      changedSegment.values[NestedLimitLiveRefreshFixture.segmentIndexAttribute.name]?.first,
+      .number(9.5)
+    )
+
+    let firstPageInfo = try await runtime.applyLiveRefresh(
+      fixture.refresh(
+        transactionID: "semantic-noop-page-info-first",
+        segmentIndexOverrides: [9: 9.5],
+        pageInfoHasNextPage: true
+      ),
+      receivedAt: InstantTimestamp(milliseconds: 4)
+    )
+    expectNoDifference(firstPageInfo.application.mutation.changedEntityIDs, [])
+    let firstPageInfoEmission = try await nestedLimitEmission(
+      from: recorder,
+      at: 3,
+      operation: "await page-info-only Scribe emission"
+    )
+    expectNoDifference(firstPageInfoEmission.pageInfo?.hasNextPage, true)
+    expectNoDifference(firstPageInfo.application.mutation.emissions, [firstPageInfoEmission])
+
+    let unchangedPageInfo = try await runtime.applyLiveRefresh(
+      fixture.refresh(
+        transactionID: "semantic-noop-page-info-replay",
+        segmentIndexOverrides: [9: 9.5],
+        pageInfoHasNextPage: true
+      ),
+      receivedAt: InstantTimestamp(milliseconds: 5)
+    )
+    expectNoDifference(unchangedPageInfo.application.mutation.changedEntityIDs, [])
+    expectNoDifference(unchangedPageInfo.application.mutation.emissions, [])
+    let unchangedPageInfoMetrics = await runtime.store.lastPublishMetrics
+    expectNoDifference(unchangedPageInfoMetrics.rematerializedObserverCount, 0)
+    expectNoDifference(unchangedPageInfoMetrics.materializedSnapshotCount, 0)
+
+    // A second real page-info change proves the unchanged replay did not enqueue a stream value.
+    let secondPageInfo = try await runtime.applyLiveRefresh(
+      fixture.refresh(
+        transactionID: "semantic-noop-page-info-second",
+        segmentIndexOverrides: [9: 9.5],
+        pageInfoHasNextPage: false
+      ),
+      receivedAt: InstantTimestamp(milliseconds: 6)
+    )
+    let secondPageInfoEmission = try await nestedLimitEmission(
+      from: recorder,
+      at: 4,
+      operation: "await second page-info-only Scribe emission"
+    )
+    expectNoDifference(secondPageInfoEmission.pageInfo?.hasNextPage, false)
+    expectNoDifference(secondPageInfo.application.mutation.emissions, [secondPageInfoEmission])
+
+    let replacement = try #require(
+      try await runtime.persistence.liveQueryResult(key: queryKey)
+    )
+    let changedIndex = try #require(
+      replacement.triples.first {
+        $0.entityID == fixture.segmentID(9)
+          && $0.attributeID == NestedLimitLiveRefreshFixture.segmentIndexAttribute.id
+      }
+    )
+    expectNoDifference(changedIndex.value, .number(9.5))
+    expectNoDifference(replacement.pageInfo, secondPageInfoEmission.pageInfo)
+    let emissionCount = await recorder.count()
+    expectNoDifference(emissionCount, 5)
+    await observation.cancel()
+  }
+
+  @Test
   func departingChildStaysWhileAnotherLiveQueryOwnsIt() async throws {
     let cacheURL = temporaryNestedLimitCacheURL("overlapping-owner")
     defer { try? FileManager.default.removeItem(at: cacheURL.deletingLastPathComponent()) }
@@ -528,6 +684,27 @@ private struct NestedLimitLiveRefreshFixture {
     ])
   }
 
+  func plan() -> InstantQueryPlan {
+    InstantQueryPlan(
+      id: "recordings.scribe-shaped",
+      namespace: "recordings",
+      order: InstantQueryOrder("updatedAtMs", .descending),
+      limit: 50,
+      includes: [
+        InstantQueryInclude(
+          "segments",
+          direction: .reverse,
+          query: InstantQueryIncludePlan(
+            id: "recordings.scribe-shaped.segments",
+            namespace: "transcriptionSegments",
+            order: InstantQueryOrder("segmentIndex", .descending),
+            limit: 2
+          )
+        )
+      ]
+    )
+  }
+
   func segmentQuery() -> InstantLiveJSONValue {
     .object(["transcriptionSegments": .object([:])])
   }
@@ -552,13 +729,22 @@ private struct NestedLimitLiveRefreshFixture {
     transactionID: String,
     query: InstantLiveJSONValue? = nil,
     includesQuery: Bool = true,
-    additionalComputations: [InstantLiveJSONValue] = []
+    additionalComputations: [InstantLiveJSONValue] = [],
+    segmentIndexOverrides: [Int: Double] = [:],
+    pageInfoHasNextPage: Bool? = nil
   ) -> InstantLiveRefreshOK {
     InstantLiveRefreshOK(
       clientEventID: nil,
       processedTransactionID: transactionID,
       attrs: [],
-      computations: [computation(query: query, includesQuery: includesQuery)]
+      computations: [
+        computation(
+          query: query,
+          includesQuery: includesQuery,
+          segmentIndexOverrides: segmentIndexOverrides,
+          pageInfoHasNextPage: pageInfoHasNextPage
+        )
+      ]
         + additionalComputations
     )
   }
@@ -581,16 +767,35 @@ private struct NestedLimitLiveRefreshFixture {
     query: InstantLiveJSONValue? = nil,
     includesQuery: Bool = true,
     attributeIDs: WireAttributeIDs = .local,
-    childLink: ChildLink = .recording
+    childLink: ChildLink = .recording,
+    segmentIndexOverrides: [Int: Double] = [:],
+    pageInfoHasNextPage: Bool? = nil
   ) -> InstantLiveJSONValue {
+    var rootData: [String: InstantLiveJSONValue] = [
+      "datalog-result": .object([
+        "join-rows": .array(recordingRows(attributeIDs: attributeIDs))
+      ])
+    ]
+    if let pageInfoHasNextPage, let cursorEntityID = recordingIDs.first {
+      let cursor: InstantLiveJSONValue = .array([
+        .string(cursorEntityID),
+        .string(attributeIDs.recordingUpdatedAt),
+        .number(1),
+        .number(1),
+      ])
+      rootData["page-info"] = .object([
+        "recordings": .object([
+          "start-cursor": cursor,
+          "end-cursor": cursor,
+          "has-previous-page?": .bool(false),
+          "has-next-page?": .bool(pageInfoHasNextPage),
+        ])
+      ])
+    }
     var object: [String: InstantLiveJSONValue] = [
       "instaql-result": .array([
         .object([
-          "data": .object([
-            "datalog-result": .object([
-              "join-rows": .array(recordingRows(attributeIDs: attributeIDs))
-            ])
-          ]),
+          "data": .object(rootData),
           "child-nodes": .array([
             .object([
               "data": .object([
@@ -599,7 +804,8 @@ private struct NestedLimitLiveRefreshFixture {
                     segmentRows(
                       indices: childIndices,
                       attributeIDs: attributeIDs,
-                      childLink: childLink
+                      childLink: childLink,
+                      segmentIndexOverrides: segmentIndexOverrides
                     )
                   )
                 ])
@@ -653,7 +859,8 @@ private struct NestedLimitLiveRefreshFixture {
   private func segmentRows(
     indices: [Int],
     attributeIDs: WireAttributeIDs = .local,
-    childLink: ChildLink = .recording
+    childLink: ChildLink = .recording,
+    segmentIndexOverrides: [Int: Double] = [:]
   ) -> [InstantLiveJSONValue] {
     recordingIDs.flatMap { recordingID in
       indices.map { index in
@@ -667,7 +874,11 @@ private struct NestedLimitLiveRefreshFixture {
               : attributeIDs.segmentRecordingID,
             .string(recordingID)
           ),
-          wireTriple(id, attributeIDs.segmentIndex, .number(Double(index))),
+          wireTriple(
+            id,
+            attributeIDs.segmentIndex,
+            .number(segmentIndexOverrides[index] ?? Double(index))
+          ),
         ])
       }
     }
@@ -901,6 +1112,41 @@ private struct NestedLimitFixture {
       }
     }
     return triples
+  }
+}
+
+private actor NestedLimitEmissionRecorder {
+  private var emissions: [InstantQueryEmission] = []
+
+  func append(_ emission: InstantQueryEmission) {
+    emissions.append(emission)
+  }
+
+  func emission(at index: Int) -> InstantQueryEmission? {
+    guard emissions.indices.contains(index) else { return nil }
+    return emissions[index]
+  }
+
+  func count() -> Int {
+    emissions.count
+  }
+}
+
+private func nestedLimitEmission(
+  from recorder: NestedLimitEmissionRecorder,
+  at index: Int,
+  operation: String
+) async throws -> InstantQueryEmission {
+  try await instantLiveWithTimeout(
+    operation: operation,
+    timeoutMilliseconds: 5_000
+  ) {
+    while true {
+      if let emission = await recorder.emission(at: index) {
+        return emission
+      }
+      try await Task.sleep(nanoseconds: 1_000_000)
+    }
   }
 }
 

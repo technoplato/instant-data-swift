@@ -314,6 +314,10 @@ public struct InstantRuntimeConfiguration: Sendable {
     (@Sendable () async -> Void)? = nil
   package var onLiveReceiverEventAcquiredForTesting:
     (@Sendable () async -> Void)? = nil
+  package var onLiveSessionOpenedBeforeReceiverStartForTesting:
+    (@Sendable () async -> Void)? = nil
+  package var onLiveQueryUnregisterFailureBeforeConnectionErrorForTesting:
+    (@Sendable () async -> Void)? = nil
   package var onLiveQueryOnceAcknowledgedForTesting:
     (@Sendable () async throws -> Void)? = nil
   var onLocalMutationSupersessionPreparedForTesting:
@@ -2299,6 +2303,27 @@ public final class InstantRuntime: Sendable {
     }
   }
 
+  package func applyServerTransactionMergingAttributesForTesting(
+    _ transaction: InstantStoreTransaction,
+    attributesToMerge: [InstantAttribute],
+    receivedAt: InstantTimestamp? = nil
+  ) async throws -> InstantServerTransactionApplicationResult {
+    await enterOperationGate()
+    do {
+      let result = try await performApplyServerTransaction(
+        transaction,
+        processedTransactionID: transaction.id,
+        receivedAt: receivedAt,
+        mergingAttributes: attributesToMerge
+      )
+      await leaveOperationGate()
+      return result.application
+    } catch {
+      await leaveOperationGate()
+      throw error
+    }
+  }
+
   private func performApplyServerTransaction(
     _ transaction: InstantStoreTransaction,
     processedTransactionID: String?,
@@ -2345,7 +2370,7 @@ public final class InstantRuntime: Sendable {
         ) else { continue applyAttempts }
         authoritativeTransaction.operations.insert(contentsOf: protectedRetractions, at: 0)
       }
-      let footprint = Self.serverApplyFootprint(
+      var footprint = Self.serverApplyFootprint(
         operations: authoritativeTransaction.operations
       )
       let changedMergedAttributes: [InstantAttribute]
@@ -2363,13 +2388,21 @@ public final class InstantRuntime: Sendable {
         }
       }
       let mergedAttributeCount = changedMergedAttributes.count
+      // Attribute shape changes can alter every optimistic operation on that attribute, even when
+      // refresh-ok carries no triple operation. Treat the schema transition as a global server
+      // apply so every active overlay is peeled before canonicalization and replayed afterward.
+      if mergedAttributeCount > 0 {
+        footprint.isGlobal = true
+      }
+      let hasAuthoritativeStoreChanges =
+        !authoritativeTransaction.operations.isEmpty || mergedAttributeCount > 0
       let planID = "server-apply-\(configuration.makeID())"
       let plan: InstantServerApplyPlan
       normalization: while true {
         let load = try await persistence.beginServerApplyPlan(
           id: planID,
           footprint: footprint,
-          hasServerOperations: !authoritativeTransaction.operations.isEmpty,
+          hasServerOperations: hasAuthoritativeStoreChanges,
           processedTransactionID: processedTransactionID,
           confirmingMutationID: confirmingMutationID
         )
@@ -2420,10 +2453,9 @@ public final class InstantRuntime: Sendable {
           thenApplying: InstantStoreTransaction(
             id: "\(authoritativeTransaction.id)-bounded-base",
             operations: []
-          ),
-          mergingAttributes: attributesToMerge
+          )
         )
-        var changedEntityIDs: Set<String> = []
+        var changedEntityIDs = prepared.result.changedEntityIDs
         var reversePosition: InstantOutboxDeliveryPosition?
         var stalePlan = false
         while true {
@@ -2472,6 +2504,17 @@ public final class InstantRuntime: Sendable {
           continue applyAttempts
         }
 
+        // The bounded reverse pass above has now exposed the authoritative base. Only now may a
+        // many-to-one schema transition discard siblings; doing it before peeling could discard a
+        // confirmed value in favor of a newer optimistic overlay that is about to be removed.
+        recordActorHop(.store)
+        let schemaPrepared = await store.prepareMergingAttributes(
+          attributesToMerge,
+          applyingTo: prepared
+        )
+        changedEntityIDs.formUnion(schemaPrepared.result.changedEntityIDs)
+        prepared = schemaPrepared
+
         var authoritativeCoverage: InstantAuthoritativeWriteCoverage?
         if !authoritativeTransaction.operations.isEmpty {
           prepared = try await hydrateDeferredValuesForServerApply(
@@ -2481,7 +2524,8 @@ public final class InstantRuntime: Sendable {
           )
           let appliedServer = try await store.prepare(
             authoritativeTransaction,
-            applyingTo: prepared
+            applyingTo: prepared,
+            insertReplayPolicy: .preserveExactResident
           )
           changedEntityIDs.formUnion(appliedServer.result.changedEntityIDs)
           authoritativeCoverage = InstantAuthoritativeWriteCoverage(
@@ -2620,22 +2664,23 @@ public final class InstantRuntime: Sendable {
           !authoritativeTransaction.operations.isEmpty || mergedAttributeCount > 0
         let committedResult: InstantStoreMutationResult
         if changesMaterializedStore {
-          await store.installLiveQueryPageInfo(
-            liveQueryResultReplacements,
-            publishing: false
-          )
-          committedResult = await store.commitAndPublish(preparedForCommit).result
+          committedResult = await store.commitAndPublish(
+            preparedForCommit,
+            installingLiveQueryPageInfo: liveQueryResultReplacements
+          ).result
           installedStoreRevisions.install(
             storeRevision: commit.expectedStoreRevision + (commit.didChangeStore ? 1 : 0),
             attributeRevision: commit.expectedAttributeRevision
               + (commit.didChangeAttributes ? 1 : 0)
           )
         } else {
-          await store.installLiveQueryPageInfo(
+          let emissions = await store.installLiveQueryPageInfo(
             liveQueryResultReplacements,
             publishing: true
           )
-          committedResult = preparedForCommit.result
+          var pageInfoResult = preparedForCommit.result
+          pageInfoResult.emissions = emissions
+          committedResult = pageInfoResult
         }
 
         var patchPosition: InstantOutboxDeliveryPosition?
@@ -3454,6 +3499,8 @@ public final class InstantRuntime: Sendable {
           correlationID: plan.id
         )
       } catch {
+        await self.configuration
+          .onLiveQueryUnregisterFailureBeforeConnectionErrorForTesting?()
         await self.recordConnectionError(error)
         InstantDiagnostics.shared.record(
           error: error,
@@ -4493,6 +4540,10 @@ public final class InstantRuntime: Sendable {
     await mutationDeliveryPump.isSuspendedForTesting()
   }
 
+  package func liveReconnectControllerIsIdleForTesting() async -> Bool {
+    await reconnectController.isIdleForTesting()
+  }
+
   package func exactCloseBackgroundTasksAreIdleForTesting() async -> Bool {
     await exactCloseBackgroundTaskIdleState().allIdle
   }
@@ -4740,6 +4791,22 @@ public final class InstantRuntime: Sendable {
               metadata: ["appID": configuration.appID]
             )
           }
+          // Upstream installs WebSocket handlers before opening. Swift persists
+          // the server attribute bootstrap first, so atomically consume any
+          // failure captured in that receiver-free interval before `.opened`.
+          await configuration.onLiveSessionOpenedBeforeReceiverStartForTesting?()
+          recordActorHop(.liveSession)
+          try await liveSession.startReceiving(
+            onEvent: { [weak self] event, attributes in
+              guard let self else { return }
+              try await self.handleLiveServerEvent(event, serverAttributes: attributes)
+            },
+            onEventAcquired: configuration.onLiveReceiverEventAcquiredForTesting,
+            onFailure: { [weak self] error in
+              guard let self else { return }
+              await self.handleLiveSessionFailure(error)
+            }
+          )
           recordActorHop(.operationGate)
           await operationGate.leave()
           enteredOperationGate = false
@@ -4785,18 +4852,6 @@ public final class InstantRuntime: Sendable {
       enteredOperationGate = false
       var streamWriterReconnectError: Error?
       if configuration.liveTransport != nil {
-        recordActorHop(.liveSession)
-        await liveSession.startReceiving(
-          onEvent: { [weak self] event, attributes in
-            guard let self else { return }
-            try await self.handleLiveServerEvent(event, serverAttributes: attributes)
-          },
-          onEventAcquired: configuration.onLiveReceiverEventAcquiredForTesting,
-          onFailure: { [weak self] error in
-            guard let self else { return }
-            await self.handleLiveSessionFailure(error)
-          }
-        )
         do {
           recordActorHop(.liveSession)
           try await liveSession.reconnectStreamWriters()
@@ -5096,7 +5151,7 @@ public final class InstantRuntime: Sendable {
   }
 
   private func recordConnectionError(_ error: Error) async {
-    guard !(error is InstantSupersededLiveSessionSend) else { return }
+    guard Self.callerOwnsLiveSessionFailure(error) else { return }
     await operationGate.enter()
     do {
       try await saveErroredConnectionMetadataWithGateHeld(message: String(describing: error))
@@ -5104,6 +5159,13 @@ public final class InstantRuntime: Sendable {
     } catch {
       await operationGate.leave()
     }
+  }
+
+  /// Internal send markers preserve operation failure while assigning the
+  /// connection transition to the exact receiver (or a newer generation).
+  private static func callerOwnsLiveSessionFailure(_ error: Error) -> Bool {
+    !(error is InstantSupersededLiveSessionSend)
+      && !(error is InstantReceiverOwnedLiveSessionSendFailure)
   }
 
   private func handleLiveSessionFailure(_ error: Error) async {
@@ -5862,7 +5924,7 @@ public final class InstantRuntime: Sendable {
       }
       return true
     } catch {
-      if await liveSession.isOpen {
+      if Self.callerOwnsLiveSessionFailure(error), await liveSession.isOpen {
         await scheduleReconnect(
           after: error,
           event: "connection.mutation-delivery-failed",
@@ -5924,7 +5986,7 @@ public final class InstantRuntime: Sendable {
       // admission and this send. That failure already owns the reconnect;
       // scheduling a second one makes the controller reopen a healthy
       // replacement session again and can strand the retry indefinitely.
-      if await liveSession.isOpen {
+      if Self.callerOwnsLiveSessionFailure(error), await liveSession.isOpen {
         await scheduleReconnect(
           after: error,
           event: "connection.mutation-delivery-failed",

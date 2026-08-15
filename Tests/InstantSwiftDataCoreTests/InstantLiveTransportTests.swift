@@ -2930,11 +2930,348 @@ struct InstantLiveTransportTests {
   }
 
   @Test
-  func currentRemovalFailureStillRecordsConnectionError() async throws {
+  func currentRemovalFailureReconnectsAndReinstallsSurvivingQuery() async throws {
+    let transport = InstantQueryRemovalFailureRaceTransport(sessionCount: 2)
+    let reconnectBarrier = InstantLiveNoncooperativeSuspension()
+    var configuration = InstantRuntimeConfiguration(
+      appID: "runtime-current-query-removal-failure",
+      persistenceURL: try temporaryLiveCacheURL(),
+      initialAttributes: TodoExample.attributes,
+      liveTransport: transport.transport
+    )
+    configuration.liveReconnectSleep = { _ in await reconnectBarrier.suspend() }
+    let runtime = try await InstantRuntime.bootstrap(configuration: configuration)
+    _ = try await runtime.connect()
+    let removedObservation = try await runtime.observeLiveInfiniteQueryChunk(TodoExample.query)
+    var survivingQuery = TodoExample.query
+    survivingQuery.id = "todos.query.surviving-removal-failure"
+    survivingQuery.limit = 1
+    let survivingObservation = try await runtime.observeLiveInfiniteQueryChunk(survivingQuery)
+    let cancellation = Task { await removedObservation.cancel() }
+    let failSafe = Task {
+      try? await Task.sleep(for: .seconds(5))
+      await transport.releaseRemovalFailure()
+      await reconnectBarrier.release()
+    }
+    defer {
+      cancellation.cancel()
+      failSafe.cancel()
+    }
+
+    try await transport.waitUntilRemovalEntered()
+    await transport.releaseRemovalFailure()
+    try await instantLiveWithTimeout(
+      operation: "finish the current remove-query failure",
+      timeoutMilliseconds: 5_000
+    ) {
+      await cancellation.value
+    }
+
+    try await instantLiveWithTimeout(
+      operation: "wait for receiver-owned remove-query reconnect",
+      timeoutMilliseconds: 5_000
+    ) {
+      await reconnectBarrier.waitUntilStarted()
+    }
+    let errored = try await runtime.connectionStatus()
+    expectNoDifference(errored.state, .errored)
+    #expect(
+      errored.lastErrorMessage?.contains(
+        InstantQueryRemovalFailureRaceTransport.failureMessage
+      ) == true
+    )
+    await reconnectBarrier.release()
+    try await transport.waitForConnectionCount(2)
+    try await transport.waitForSentMessageCount(2, sessionIndex: 1)
+    let firstSessionOperations = await transport.sentOperations(sessionIndex: 0)
+    let secondSessionMessages = await transport.messages(sessionIndex: 1)
+    let secondSessionOperations = await transport.sentOperations(sessionIndex: 1)
+    expectNoDifference(
+      firstSessionOperations,
+      ["init", "add-query", "add-query", "remove-query"]
+    )
+    expectNoDifference(secondSessionOperations, ["init", "add-query"])
+    let survivingWireQuery = try InstantLiveQueryEncoder.encode(survivingQuery)
+    expectNoDifference(
+      secondSessionMessages[1].fields["q"],
+      survivingWireQuery
+    )
+    let survivingRegistrationKey = try InstantLiveQueryEncoder.registrationKey(
+      for: survivingWireQuery
+    )
+    let activeKeys = await runtime.liveActiveQueryKeysForTesting()
+    expectNoDifference(activeKeys, Set([survivingRegistrationKey]))
+    let status = try await instantLiveWithTimeout(
+      operation: "wait for opened status after remove-query send failure",
+      timeoutMilliseconds: 5_000
+    ) {
+      while true {
+        let status = try await runtime.connectionStatus()
+        if status.state == .opened { return status }
+        try Task.checkCancellation()
+        await Task.yield()
+      }
+    }
+    expectNoDifference(status.state, .opened)
+    expectNoDifference(status.lastErrorMessage, nil)
+
+    await survivingObservation.cancel()
+    let closed = try await runtime.closeConnection()
+    expectNoDifference(closed.state, .closed)
+    #expect(await runtime.exactCloseBackgroundTasksAreIdleForTesting())
+  }
+
+  @Test
+  func automaticMutationSendFailureLeavesReconnectToExactReceiver() async throws {
+    let transport = InstantQueryRemovalFailureRaceTransport(
+      sessionCount: 2,
+      failureOrder: .sendThrowsWhileReceiverRemainsPending,
+      failureOperation: .transact
+    )
+    let reconnectBarrier = InstantLiveNoncooperativeSuspension()
+    var configuration = InstantRuntimeConfiguration(
+      appID: "runtime-receiver-owned-mutation-send-failure",
+      persistenceURL: try temporaryLiveCacheURL(),
+      initialAttributes: TodoExample.attributes,
+      liveTransport: transport.transport
+    )
+    configuration.liveReconnectSleep = { _ in await reconnectBarrier.suspend() }
+    let runtime = try await InstantRuntime.bootstrap(configuration: configuration)
+    _ = try await runtime.connect()
+    let failSafe = Task {
+      try? await Task.sleep(for: .seconds(5))
+      await transport.releaseSendFailure()
+      await transport.abortFirstSession()
+      await reconnectBarrier.release()
+    }
+    defer { failSafe.cancel() }
+
+    let createdAt = InstantTimestamp(milliseconds: 1_700_000_000_789)
+    let transactionID = "tx-runtime-receiver-owned-send-failure"
+    _ = try await runtime.transact(
+      InstantStoreTransaction(
+        id: transactionID,
+        operations: TodoExample.createOperations(
+          id: "runtime-receiver-owned-send-failure-todo",
+          text: "Let the exact receiver reconnect",
+          createdAt: createdAt,
+          transactionID: transactionID
+        )
+      ),
+      createdAt: createdAt
+    )
+    try await transport.waitUntilSendFailureEntered()
+    await transport.releaseSendFailure()
+    try await instantLiveWithTimeout(
+      operation: "wait for receiver-owned mutation sender to finish",
+      timeoutMilliseconds: 5_000
+    ) {
+      while !(await runtime.automaticMutationPumpIsIdleForTesting()) {
+        try Task.checkCancellation()
+        await Task.yield()
+      }
+    }
+
+    // The transport deliberately leaves receive suspended after send abort.
+    // This makes sender ownership observable without a scheduler race: the
+    // reconnect controller must remain untouched until that exact receiver ends.
+    #expect(await runtime.liveReconnectControllerIsIdleForTesting())
+    let connectionCountBeforeReceiver = await transport.connectionCount()
+    expectNoDifference(connectionCountBeforeReceiver, 1)
+    let statusBeforeReceiver = try await runtime.connectionStatus()
+    expectNoDifference(statusBeforeReceiver.state, .opened)
+    expectNoDifference(statusBeforeReceiver.lastErrorMessage, nil)
+    let firstSessionOperationsBeforeReceiver =
+      await transport.sentOperations(sessionIndex: 0)
+    expectNoDifference(firstSessionOperationsBeforeReceiver, ["init", "transact"])
+
+    await transport.abortFirstSession()
+    try await instantLiveWithTimeout(
+      operation: "wait for exact receiver-owned mutation reconnect",
+      timeoutMilliseconds: 5_000
+    ) {
+      await reconnectBarrier.waitUntilStarted()
+    }
+    let errored = try await runtime.connectionStatus()
+    expectNoDifference(errored.state, .errored)
+    #expect(
+      errored.lastErrorMessage?.contains(
+        InstantQueryRemovalFailureRaceTransport.mutationFailureMessage
+      ) == true
+    )
+
+    await reconnectBarrier.release()
+    try await transport.waitForConnectionCount(2)
+    try await transport.waitForSentMessageCount(2, sessionIndex: 1)
+    let firstSessionOperations = await transport.sentOperations(sessionIndex: 0)
+    let secondSessionOperations = await transport.sentOperations(sessionIndex: 1)
+    expectNoDifference(firstSessionOperations, ["init", "transact"])
+    expectNoDifference(secondSessionOperations, ["init", "transact"])
+    let opened = try await instantLiveWithTimeout(
+      operation: "wait for opened status after receiver-owned mutation reconnect",
+      timeoutMilliseconds: 5_000
+    ) {
+      while true {
+        let status = try await runtime.connectionStatus()
+        if status.state == .opened { return status }
+        try Task.checkCancellation()
+        await Task.yield()
+      }
+    }
+    expectNoDifference(opened.lastErrorMessage, nil)
+    let finalConnectionCount = await transport.connectionCount()
+    expectNoDifference(finalConnectionCount, 2)
+
+    let closed = try await runtime.closeConnection()
+    expectNoDifference(closed.state, .closed)
+    #expect(await runtime.exactCloseBackgroundTasksAreIdleForTesting())
+  }
+
+  @Test
+  func unexpectedCurrentReceiverCancellationReconnectsBeforeLateSendFailure() async throws {
+    let transport = InstantQueryRemovalFailureRaceTransport(
+      sessionCount: 2,
+      failureOrder: .receiveCancelsBeforeSendThrows
+    )
+    let reconnectBarrier = InstantLiveNoncooperativeSuspension()
+    var configuration = InstantRuntimeConfiguration(
+      appID: "runtime-receive-wins-query-removal-failure",
+      persistenceURL: try temporaryLiveCacheURL(),
+      initialAttributes: TodoExample.attributes,
+      liveTransport: transport.transport
+    )
+    configuration.liveReconnectSleep = { _ in await reconnectBarrier.suspend() }
+    let runtime = try await InstantRuntime.bootstrap(configuration: configuration)
+    _ = try await runtime.connect()
+    let observation = try await runtime.observeLiveInfiniteQueryChunk(TodoExample.query)
+    let cancellation = Task { await observation.cancel() }
+    let failSafe = Task {
+      try? await Task.sleep(for: .seconds(5))
+      await transport.releaseRemovalFailure()
+      await reconnectBarrier.release()
+    }
+    defer {
+      cancellation.cancel()
+      failSafe.cancel()
+    }
+
+    try await transport.waitUntilRemovalEntered()
+    await transport.abortFirstSession()
+    try await instantLiveWithTimeout(
+      operation: "wait for reconnect after unexpected receiver cancellation",
+      timeoutMilliseconds: 5_000
+    ) {
+      await reconnectBarrier.waitUntilStarted()
+    }
+    let errored = try await runtime.connectionStatus()
+    expectNoDifference(errored.state, .errored)
+    #expect(
+      errored.lastErrorMessage?.contains(
+        "ended unexpectedly without an explicit close or replacement"
+      ) == true
+    )
+    let connectionCountBeforeRelease = await transport.connectionCount()
+    expectNoDifference(connectionCountBeforeRelease, 1)
+
+    await transport.releaseRemovalFailure()
+    try await instantLiveWithTimeout(
+      operation: "finish the late remove-query send failure",
+      timeoutMilliseconds: 5_000
+    ) {
+      await cancellation.value
+    }
+    await reconnectBarrier.release()
+    try await transport.waitForConnectionCount(2)
+    let opened = try await instantLiveWithTimeout(
+      operation: "wait for opened status after receive-wins reconnect",
+      timeoutMilliseconds: 5_000
+    ) {
+      while true {
+        let status = try await runtime.connectionStatus()
+        if status.state == .opened { return status }
+        try Task.checkCancellation()
+        await Task.yield()
+      }
+    }
+    expectNoDifference(opened.lastErrorMessage, nil)
+    let closed = try await runtime.closeConnection()
+    expectNoDifference(closed.state, .closed)
+    #expect(await runtime.exactCloseBackgroundTasksAreIdleForTesting())
+  }
+
+  @Test
+  func preReceiverRemovalFailureCannotReturnOpenedConnection() async throws {
+    let transport = InstantQueryRemovalFailureRaceTransport(sessionCount: 1)
+    let receiverStartBarrier = InstantLiveNoncooperativeSuspension()
+    var configuration = InstantRuntimeConfiguration(
+      appID: "runtime-pre-receiver-query-removal-failure",
+      persistenceURL: try temporaryLiveCacheURL(),
+      initialAttributes: TodoExample.attributes,
+      liveTransport: transport.transport
+    )
+    configuration.onLiveSessionOpenedBeforeReceiverStartForTesting = {
+      await receiverStartBarrier.suspend()
+    }
+    let runtime = try await InstantRuntime.bootstrap(configuration: configuration)
+    let observation = try await runtime.observeLiveInfiniteQueryChunk(TodoExample.query)
+    let connection = Task { try await runtime.connect() }
+    let failSafe = Task {
+      try? await Task.sleep(for: .seconds(5))
+      await transport.releaseRemovalFailure()
+      await receiverStartBarrier.release()
+    }
+    defer {
+      connection.cancel()
+      failSafe.cancel()
+    }
+
+    try await instantLiveWithTimeout(
+      operation: "wait for pre-receiver live-session checkpoint",
+      timeoutMilliseconds: 5_000
+    ) {
+      await receiverStartBarrier.waitUntilStarted()
+    }
+    let cancellation = Task { await observation.cancel() }
+    defer { cancellation.cancel() }
+    try await transport.waitUntilRemovalEntered()
+    await transport.releaseRemovalFailure()
+    await receiverStartBarrier.release()
+
+    do {
+      let falseOpened = try await connection.value
+      Issue.record(
+        "Expected the pending pre-receiver failure, received \(falseOpened.state.rawValue)."
+      )
+    } catch let failure as InstantError {
+      #expect(
+        failure.message.contains(InstantQueryRemovalFailureRaceTransport.failureMessage)
+      )
+    }
+    try await instantLiveWithTimeout(
+      operation: "finish the pre-receiver query cancellation",
+      timeoutMilliseconds: 5_000
+    ) {
+      await cancellation.value
+    }
+    let status = try await runtime.connectionStatus()
+    expectNoDifference(status.state, .errored)
+    #expect(
+      status.lastErrorMessage?.contains(
+        InstantQueryRemovalFailureRaceTransport.failureMessage
+      ) == true
+    )
+    let connectionCount = await transport.connectionCount()
+    expectNoDifference(connectionCount, 1)
+    _ = try await runtime.closeConnection()
+    #expect(await runtime.exactCloseBackgroundTasksAreIdleForTesting())
+  }
+
+  @Test
+  func explicitCloseSupersedesPendingRemovalFailureWithoutReconnect() async throws {
     let transport = InstantQueryRemovalFailureRaceTransport(sessionCount: 1)
     let runtime = try await InstantRuntime.bootstrap(
       configuration: InstantRuntimeConfiguration(
-        appID: "runtime-current-query-removal-failure",
+        appID: "runtime-close-pending-query-removal-failure",
         persistenceURL: temporaryLiveCacheURL(),
         initialAttributes: TodoExample.attributes,
         liveTransport: transport.transport
@@ -2953,21 +3290,99 @@ struct InstantLiveTransportTests {
     }
 
     try await transport.waitUntilRemovalEntered()
+    let closed = try await runtime.closeConnection()
     await transport.releaseRemovalFailure()
     try await instantLiveWithTimeout(
-      operation: "finish the current remove-query failure",
+      operation: "finish remove-query superseded by explicit close",
       timeoutMilliseconds: 5_000
     ) {
       await cancellation.value
     }
 
-    let status = try await runtime.connectionStatus()
-    expectNoDifference(status.state, .errored)
-    #expect(
-      status.lastErrorMessage?.contains(InstantQueryRemovalFailureRaceTransport.failureMessage)
-        == true
+    expectNoDifference(closed.state, .closed)
+    let connectionCount = await transport.connectionCount()
+    expectNoDifference(connectionCount, 1)
+    let finalStatus = try await runtime.connectionStatus()
+    expectNoDifference(finalStatus.state, .closed)
+    #expect(await runtime.exactCloseBackgroundTasksAreIdleForTesting())
+  }
+
+  @Test
+  func receiverOwnedRemovalFailureCannotOverwriteExplicitClose() async throws {
+    let transport = InstantQueryRemovalFailureRaceTransport(sessionCount: 1)
+    let delayedCaller = InstantLiveNoncooperativeSuspension()
+    let reconnectSleep = LiveReactorParityReconnectSleep(suspendsUntilCancelled: true)
+    var configuration = InstantRuntimeConfiguration(
+      appID: "runtime-receiver-owned-removal-failure-close",
+      persistenceURL: try temporaryLiveCacheURL(),
+      initialAttributes: TodoExample.attributes,
+      liveTransport: transport.transport
     )
-    _ = try await runtime.closeConnection()
+    configuration.liveReconnectSleep = {
+      try await reconnectSleep.sleep(milliseconds: $0)
+    }
+    configuration.onLiveQueryUnregisterFailureBeforeConnectionErrorForTesting = {
+      await delayedCaller.suspend()
+    }
+    let runtime = try await InstantRuntime.bootstrap(configuration: configuration)
+    _ = try await runtime.connect()
+    let observation = await runtime.observe(TodoExample.query)
+    let consumer = Task {
+      for await _ in observation {}
+    }
+    try await transport.waitForSentMessageCount(2, sessionIndex: 0)
+    consumer.cancel()
+    let failSafe = Task {
+      try? await Task.sleep(for: .seconds(5))
+      await transport.releaseRemovalFailure()
+      await delayedCaller.release()
+    }
+    defer {
+      consumer.cancel()
+      failSafe.cancel()
+    }
+
+    try await transport.waitUntilRemovalEntered()
+    await transport.releaseRemovalFailure()
+    try await instantLiveWithTimeout(
+      operation: "wait for delayed receiver-owned removal failure caller",
+      timeoutMilliseconds: 5_000
+    ) {
+      await delayedCaller.waitUntilStarted()
+    }
+    let receiverOwnedError = try await instantLiveWithTimeout(
+      operation: "wait for receiver-owned removal failure status",
+      timeoutMilliseconds: 5_000
+    ) {
+      while true {
+        let status = try await runtime.connectionStatus()
+        if status.state == .errored { return status }
+        try Task.checkCancellation()
+        await Task.yield()
+      }
+    }
+    #expect(
+      receiverOwnedError.lastErrorMessage?.contains(
+        InstantQueryRemovalFailureRaceTransport.failureMessage
+      ) == true
+    )
+
+    let closed = try await runtime.closeConnection()
+    expectNoDifference(closed.state, .closed)
+    await delayedCaller.release()
+    try await instantLiveWithTimeout(
+      operation: "finish delayed receiver-owned removal failure caller",
+      timeoutMilliseconds: 5_000
+    ) {
+      await consumer.value
+    }
+
+    let finalStatus = try await runtime.connectionStatus()
+    expectNoDifference(finalStatus.state, .closed)
+    expectNoDifference(finalStatus.lastErrorMessage, nil)
+    let connectionCount = await transport.connectionCount()
+    expectNoDifference(connectionCount, 1)
+    #expect(await runtime.exactCloseBackgroundTasksAreIdleForTesting())
   }
 
   @Test
@@ -6506,12 +6921,51 @@ private enum InstantQueryOnceTerminalResult: Equatable, Sendable {
   case unexpectedFailure(String)
 }
 
+private enum InstantQueryRemovalFailureOrder: Equatable, Sendable {
+  case sendThrowsBeforeReceiveCancels
+  case receiveCancelsBeforeSendThrows
+  case sendThrowsWhileReceiverRemainsPending
+}
+
+private enum InstantScriptedSendFailureOperation: Sendable {
+  case removeQuery
+  case transact
+
+  var wireName: String {
+    switch self {
+    case .removeQuery:
+      "remove-query"
+    case .transact:
+      "transact"
+    }
+  }
+
+  var failureMessage: String {
+    switch self {
+    case .removeQuery:
+      "The scripted remove-query send failed."
+    case .transact:
+      "The scripted transact send failed."
+    }
+  }
+
+  var initialAttributes: [InstantLiveJSONValue] {
+    switch self {
+    case .removeQuery:
+      []
+    case .transact:
+      .todoServerAttrs
+    }
+  }
+}
+
 private actor InstantQueryRemovalFailureRaceTransport {
-  static let failureMessage = "The scripted remove-query send failed."
+  static let failureMessage = InstantScriptedSendFailureOperation.removeQuery.failureMessage
+  static let mutationFailureMessage = InstantScriptedSendFailureOperation.transact.failureMessage
 
   private struct PendingOperation {
     var id: UUID
-    var abortToken: UUID
+    var abortToken: UUID?
     var continuation: InstantLiveTestThrowingContinuationBox<Void>
   }
 
@@ -6524,21 +6978,31 @@ private actor InstantQueryRemovalFailureRaceTransport {
   nonisolated private let firstAbortState = InstantLiveTestWireAbortState()
   nonisolated private let secondAbortState = InstantLiveTestWireAbortState()
   private let sessionCount: Int
+  private let failureOrder: InstantQueryRemovalFailureOrder
+  private let failureOperation: InstantScriptedSendFailureOperation
   private var connectedSessionCount = 0
   private var initClientEventIDs: [String?]
   private var didReturnInit: [Bool]
   private var isClosed: [Bool]
+  private var sentMessages: [[InstantLiveMessage]]
   private var pendingReceives: [Int: PendingReceive] = [:]
-  private var pendingRemoval: PendingOperation?
-  private var didEnterRemoval = false
-  private var didReleaseRemoval = false
+  private var pendingSendFailure: PendingOperation?
+  private var didEnterSendFailure = false
+  private var didReleaseSendFailure = false
 
-  init(sessionCount: Int) {
+  init(
+    sessionCount: Int,
+    failureOrder: InstantQueryRemovalFailureOrder = .sendThrowsBeforeReceiveCancels,
+    failureOperation: InstantScriptedSendFailureOperation = .removeQuery
+  ) {
     precondition((1...2).contains(sessionCount))
     self.sessionCount = sessionCount
+    self.failureOrder = failureOrder
+    self.failureOperation = failureOperation
     self.initClientEventIDs = Array(repeating: nil, count: sessionCount)
     self.didReturnInit = Array(repeating: false, count: sessionCount)
     self.isClosed = Array(repeating: false, count: sessionCount)
+    self.sentMessages = Array(repeating: [], count: sessionCount)
   }
 
   nonisolated var transport: InstantLiveTransportClient {
@@ -6560,12 +7024,48 @@ private actor InstantQueryRemovalFailureRaceTransport {
     connectedSessionCount
   }
 
-  func waitUntilRemovalEntered() async throws {
+  func sentOperations(sessionIndex: Int) -> [String] {
+    sentMessages[sessionIndex].map(\.op)
+  }
+
+  func messages(sessionIndex: Int) -> [InstantLiveMessage] {
+    sentMessages[sessionIndex]
+  }
+
+  func waitForConnectionCount(_ count: Int) async throws {
     try await instantLiveWithTimeout(
-      operation: "wait for the scripted remove-query failure",
+      operation: "wait for scripted remove-query replacement session",
       timeoutMilliseconds: 5_000
     ) {
-      while !(await self.removalHasEntered()) {
+      while await self.connectionCount() < count {
+        try Task.checkCancellation()
+        await Task.yield()
+      }
+    }
+  }
+
+  func waitForSentMessageCount(_ count: Int, sessionIndex: Int) async throws {
+    try await instantLiveWithTimeout(
+      operation: "wait for scripted replacement query registration",
+      timeoutMilliseconds: 5_000
+    ) {
+      while await self.sentMessageCount(sessionIndex: sessionIndex) < count {
+        try Task.checkCancellation()
+        await Task.yield()
+      }
+    }
+  }
+
+  func waitUntilRemovalEntered() async throws {
+    try await waitUntilSendFailureEntered()
+  }
+
+  func waitUntilSendFailureEntered() async throws {
+    try await instantLiveWithTimeout(
+      operation: "wait for the scripted send failure",
+      timeoutMilliseconds: 5_000
+    ) {
+      while !(await self.sendFailureHasEntered()) {
         try Task.checkCancellation()
         await Task.yield()
       }
@@ -6573,13 +7073,23 @@ private actor InstantQueryRemovalFailureRaceTransport {
   }
 
   func releaseRemovalFailure() {
-    guard !didReleaseRemoval else { return }
-    didReleaseRemoval = true
-    if let pendingRemoval {
-      firstAbortState.unregister(pendingRemoval.abortToken)
-      pendingRemoval.continuation.resume(returning: ())
+    releaseSendFailure()
+  }
+
+  func releaseSendFailure() {
+    guard !didReleaseSendFailure else { return }
+    didReleaseSendFailure = true
+    if let pendingSendFailure {
+      if let abortToken = pendingSendFailure.abortToken {
+        firstAbortState.unregister(abortToken)
+      }
+      pendingSendFailure.continuation.resume(returning: ())
     }
-    pendingRemoval = nil
+    pendingSendFailure = nil
+  }
+
+  func abortFirstSession() {
+    firstAbortState.abort()
   }
 
   private func connect() throws -> InstantLiveWebSocketSession {
@@ -6594,6 +7104,9 @@ private actor InstantQueryRemovalFailureRaceTransport {
     }
     connectedSessionCount += 1
     let abortState = abortState(for: sessionIndex)
+    let leavesReceiverPendingAfterSendFailure =
+      sessionIndex == 0
+      && failureOrder == .sendThrowsWhileReceiverRemainsPending
     return InstantLiveWebSocketSession(
       send: { message in
         try abortState.check()
@@ -6607,7 +7120,9 @@ private actor InstantQueryRemovalFailureRaceTransport {
         await self.close(sessionIndex: sessionIndex)
       },
       abort: {
-        abortState.abort()
+        if !leavesReceiverPendingAfterSendFailure {
+          abortState.abort()
+        }
       }
     )
   }
@@ -6618,40 +7133,48 @@ private actor InstantQueryRemovalFailureRaceTransport {
   ) async throws {
     try abortState(for: sessionIndex).check()
     guard !isClosed[sessionIndex] else { throw CancellationError() }
+    sentMessages[sessionIndex].append(message)
     if message.op == "init" {
       initClientEventIDs[sessionIndex] = message.clientEventID
       return
     }
-    guard sessionIndex == 0, message.op == "remove-query" else { return }
+    guard sessionIndex == 0, message.op == failureOperation.wireName else { return }
 
-    if !didReleaseRemoval {
+    if !didReleaseSendFailure {
       let operationID = UUID()
-      defer { clearPendingRemoval(id: operationID) }
+      defer { clearPendingSendFailure(id: operationID) }
       try await withCheckedThrowingContinuation {
         (continuation: CheckedContinuation<Void, Error>) in
         let continuation = InstantLiveTestThrowingContinuationBox(continuation)
-        guard
-          let abortToken = firstAbortState.register({
+        let abortToken: UUID?
+        switch failureOrder {
+        case .sendThrowsBeforeReceiveCancels:
+          guard let registered = firstAbortState.register({
             continuation.resume(throwing: CancellationError())
           })
-        else {
-          continuation.resume(throwing: CancellationError())
-          return
+          else {
+            continuation.resume(throwing: CancellationError())
+            return
+          }
+          abortToken = registered
+        case .receiveCancelsBeforeSendThrows,
+          .sendThrowsWhileReceiverRemainsPending:
+          abortToken = nil
         }
-        pendingRemoval = PendingOperation(
+        pendingSendFailure = PendingOperation(
           id: operationID,
           abortToken: abortToken,
           continuation: continuation
         )
-        didEnterRemoval = true
+        didEnterSendFailure = true
       }
     } else {
-      didEnterRemoval = true
+      didEnterSendFailure = true
     }
     throw InstantError(
       code: .networkFailed,
-      operation: "send scripted remove-query",
-      message: Self.failureMessage,
+      operation: "send scripted \(failureOperation.wireName)",
+      message: failureOperation.failureMessage,
       recovery: "Keep a healthy replacement session authoritative over this retired send."
     )
   }
@@ -6662,7 +7185,8 @@ private actor InstantQueryRemovalFailureRaceTransport {
       didReturnInit[sessionIndex] = true
       return .initOK(
         clientEventID: initClientEventIDs[sessionIndex]
-          ?? "scripted-removal-session-\(sessionIndex)-init"
+          ?? "scripted-send-failure-session-\(sessionIndex)-init",
+        attrs: failureOperation.initialAttributes
       )
     }
     guard !isClosed[sessionIndex] else { throw CancellationError() }
@@ -6695,14 +7219,20 @@ private actor InstantQueryRemovalFailureRaceTransport {
     pendingReceive.continuation.resume(throwing: CancellationError())
   }
 
-  private func removalHasEntered() -> Bool {
-    didEnterRemoval
+  private func sendFailureHasEntered() -> Bool {
+    didEnterSendFailure
   }
 
-  private func clearPendingRemoval(id: UUID) {
-    guard pendingRemoval?.id == id else { return }
-    firstAbortState.unregister(pendingRemoval!.abortToken)
-    pendingRemoval = nil
+  private func sentMessageCount(sessionIndex: Int) -> Int {
+    sentMessages[sessionIndex].count
+  }
+
+  private func clearPendingSendFailure(id: UUID) {
+    guard pendingSendFailure?.id == id else { return }
+    if let abortToken = pendingSendFailure!.abortToken {
+      firstAbortState.unregister(abortToken)
+    }
+    pendingSendFailure = nil
   }
 
   private func clearPendingReceive(sessionIndex: Int, id: UUID) {
