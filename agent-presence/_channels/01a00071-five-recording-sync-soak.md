@@ -1684,3 +1684,17 @@
   choreography repair: wait for the captured outbound `transact`, then inject
   acceptance. Production code remains unchanged; focused red/green and the
   full serialized package gate are required before physical install.
+
+- 2026-08-15T17:18:34-0400 FILES STABLE — root added the existing outbound
+  `transact`/transaction-ID fence before the fake server injects acceptance.
+  Production claim-token and payload-fingerprint behavior is unchanged. The
+  stale fixture reproduced a 10-second timeout in isolation; the rebuilt
+  focused test passes in 0.077 seconds. The final serialized package gate
+  passes 1,731 tests across 146 suites in 559.816 seconds with exactly 27
+  declared known issues and no unexpected failures. Frontend parse and scoped
+  diff-check pass. Implementation commit:
+  `a0805fc44a2c32642279d14b5d4040c7dd7a7fa6`; test SHA-256:
+  `bd272fd221829c3bb38af6db30850e2488bce580cf4715739547d72ed4ce1972`.
+  Physical install may proceed only from the clean paired ledger commit; real
+  BroadcastKit still requires one operator-confirmed system picker action per
+  recording, followed by a `healthy` closing extension verdict.

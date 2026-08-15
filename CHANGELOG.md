@@ -10,6 +10,21 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## August 15th, 2026 at 5:18:30 p.m. EDT — `a0805fc44a2c` Wait for offered message before mock acceptance
+
+- **Implementation commit:** `a0805fc44a2c32642279d14b5d4040c7dd7a7fa6`
+- **Change:** Wait for the exact offered mutation before the mock server acknowledges a typed message.
+- **Details:**
+  - Keep the production claim-token boundary intact: the acceptance fixture now observes the outbound transact before injecting transact-ok, so a protocol-impossible premature acknowledgement cannot be consumed and lost.
+  - Focused red reproduced the 10-second timeout; the rebuilt focused test passes in 0.077 seconds and the final serialized package gate passes 1,731 tests in 146 suites in 559.816 seconds with exactly 27 declared known issues.
+- **Files:**
+  - `Tests/InstantSwiftDataTests/InstantMessageServerAcceptanceTests.swift` — Adds the existing exact outbound-transact fence before mock acceptance.
+  - `_touching/Tests@InstantSwiftDataTests@InstantMessageServerAcceptanceTests.swift/Tests@InstantSwiftDataTests@InstantMessageServerAcceptanceTests.swift/.agents/agents.txt` — Records task ownership before the fixture edit.
+  - `agent-presence/_channels/01a00071-five-recording-sync-soak.md` — Records the deterministic diagnosis, scope, and verification boundary.
+- **User context (verbatim):**
+  > continue
+- **SpecStory:** unavailable — Codex desktop continuation; SpecStory captures Codex CLI sessions and no synced desktop capture URI is available.
+
 ## August 15th, 2026 at 4:33:14 p.m. EDT — `3649a63e1d41` Diff persisted live-query ownership rows
 
 - **Implementation commit:** `3649a63e1d41470f8b213fdd69d0dc4488928908`

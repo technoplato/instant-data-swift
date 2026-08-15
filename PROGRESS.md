@@ -6,6 +6,28 @@ production-readiness plan
 Commit-level history stays in `docs/audits/commit-changelog.md`; this file is
 the narrative of what the library must prove and why.
 
+## 2026-08-15 17:18:34 EDT — Fence mock acceptance behind the offered wire mutation
+
+- **Implementation:** `a0805fc44a2c32642279d14b5d4040c7dd7a7fa6`; the paired intent-ledger
+  commit is the immediately following Git commit.
+- **Cause:** the typed-message acceptance fixture injected `transact-ok` as soon as the mutation
+  became durable locally. Under full-suite scheduling, the mock acknowledgement could arrive before
+  the live session had claimed and offered the mutation. SQLite correctly rejected the frame
+  because no exact offered claim token existed, and the one-shot mock server never acknowledged the
+  later real send.
+- **Correction:** the fixture now waits for the existing fake transport to capture the exact
+  outbound `transact` and transaction ID before it injects acceptance. Production claim-token,
+  payload-fingerprint, and acknowledgement behavior are unchanged.
+- **Verification:** the stale fixture reproduced the 10-second timeout both in the full package and
+  in isolation. After the wire-send fence, the rebuilt focused test passes in 0.077 seconds. The
+  final serialized package gate passes 1,731 tests across 146 suites in 559.816 seconds with exactly
+  27 declared known issues and no unexpected failures; the xUnit report records zero failures.
+- **Next:** install a coherent Scribe candidate from the clean linked ledger commit. The physical
+  five-recording gate remains blocked at one unavoidable operator boundary per recording:
+  ReplayKit's system-owned picker and Start Broadcast confirmation cannot be invoked by Scribe's
+  reducer/agent-control action. Arm both visibility observers first, require the operator action,
+  and accept a run only when the closing BroadcastKit verdict is `healthy` with nonzero system audio.
+
 ## 2026-08-15 16:33:17 EDT — Diff persisted live-query ownership rows
 
 - **Implementation:** `3649a63e1d41470f8b213fdd69d0dc4488928908`; the paired intent-ledger

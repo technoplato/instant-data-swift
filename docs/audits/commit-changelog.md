@@ -1,3 +1,9 @@
+## 2026-08-15 17:18:34 EDT — instant-data-swift a0805fc44a2c32642279d14b5d4040c7dd7a7fa6
+
+- **Repo:** instant-data-swift
+- **SHA:** a0805fc44a2c32642279d14b5d4040c7dd7a7fa6
+- **Reason:** Wait for the exact outbound mutation before mock server acceptance so the full serialized gate exercises SQLite's claim-token boundary without injecting a protocol-impossible premature acknowledgement (#155).
+
 ## 2026-08-15 16:33:17 EDT — instant-data-swift 3649a63e1d41470f8b213fdd69d0dc4488928908
 
 - **Repo:** instant-data-swift
