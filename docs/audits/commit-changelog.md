@@ -1,3 +1,9 @@
+## 2026-08-15 14:22:57 EDT — realtime-voice-sqlite-instant 3da90f701595c6584547823b499f8d2aa9c0711f
+
+- **Repo:** realtime-voice-sqlite-instant
+- **SHA:** 3da90f701595c6584547823b499f8d2aa9c0711f
+- **Reason:** Resolve the official Swift Crypto and Swift ASN.1 packages introduced by linked Instant receipt authority so clean-provenance Scribe Mac and physical-iPad localDev builds can proceed without moving existing dependencies or changing app source (#044 #095 #155).
+
 ## 2026-08-15 14:17:01 EDT — instant-data-swift ae000fce901fff693971d1ebcbdca8bdd10a6ef4
 
 - **Repo:** instant-data-swift
