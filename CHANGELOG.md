@@ -10,6 +10,29 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## August 15th, 2026 at 12:42:37 a.m. EDT — `141d1e9ec685` Skip semantic refresh no-ops and restore reconnect ownership
+
+- **Implementation commit:** `141d1e9ec68531c4e92370521f7bb4256eeb2765`
+- **Change:** Suppress semantically unchanged authoritative refresh work and give current-session failures one reconnect owner.
+- **Details:**
+  - Preserve exact canonical resident triples during authoritative replay, while keeping local mutation rollback semantics unchanged.
+  - Reconcile schema changes on the peeled authoritative base, deterministically canonicalize many-to-one values, persist index changes, and regenerate optimistic rollback bodies.
+  - Hand current-session send failures to the exact receiver generation, block same-generation retry before wire I/O, and suppress stale caller status or reconnect work.
+  - Focused semantic/reconnect tests pass 17/17; the relevant matrix passes 197/198 with only an existing scheduler-sensitive timing characterization failing in isolation.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — Orders authoritative peeling, schema reconciliation, server apply, optimistic replay, page-info publication, and reconnect ownership.
+  - `Sources/InstantSwiftDataCore/InstantRuntimeLiveSession.swift` — Linearizes send failure, receiver startup, generation replacement, and same-generation wire admission.
+  - `Sources/InstantSwiftDataCore/InstantStore.swift` — Separates observer invalidation from exact authoritative no-ops and reconciles schema-derived indexes on a peeled base.
+  - `Sources/InstantSwiftDataCore/TripleIndexes.swift` — Validates exact resident index shape and deterministically canonicalizes schema cardinality transitions.
+  - `Tests/InstantSwiftDataCoreTests/InstantLiveQueryNestedLimitMemoryTests.swift` — Pins bounded Scribe-shaped refresh invalidation and page replacement behavior.
+  - `Tests/InstantSwiftDataCoreTests/InstantLiveTransportTests.swift` — Pins current, superseded, close, pre-receiver, retry, and replacement-generation failure ownership.
+  - `Tests/InstantSwiftDataCoreTests/InstantStoreTests.swift` — Pins exact replay, schema/index persistence, peeled optimistic rollback, rejection, and SQLite relaunch equality.
+  - `agent-presence/_channels/01a00071-five-recording-sync-soak.md` — Preserves multi-agent evidence, ownership, reviews, failures, and stable handoffs.
+- **User context (verbatim):**
+  > your goal is to successfully run 5 recordings in a row, observe them syncing in realtime across mac and physical ipad
+  > ensure memory usage stays no greater than 100MB during a run
+- **SpecStory:** unavailable — Codex desktop continuation; SpecStory captures Codex CLI sessions and no synced desktop capture URI is available.
+
 ## August 14th, 2026 at 9:35:21 p.m. EDT — `30b180423666` Bound live refreshes and isolate oversized rejections
 
 - **Implementation commit:** `30b180423666ac038210636d4377d60da2734006`

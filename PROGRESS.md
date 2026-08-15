@@ -6,6 +6,31 @@ production-readiness plan
 Commit-level history stays in `docs/audits/commit-changelog.md`; this file is
 the narrative of what the library must prove and why.
 
+## 2026-08-15 00:42:07 EDT — Skip semantic refresh no-ops and restore reconnect ownership
+
+- **Implementation:** `141d1e9ec68531c4e92370521f7bb4256eeb2765`; the paired intent-ledger
+  commit is the immediately following Git commit.
+- **Measured cause:** the post-containment physical run peaked at 107.845 MiB while 518 store
+  publications caused 1,143 observer rematerializations and 14,503 snapshot materializations in
+  about 67 seconds. Exact server rows were repeatedly reported as changed, and the Mac Instant
+  socket later lost its reconnect owner after a query-removal send failure aborted the receiver.
+- **Correctness:** authoritative exact inserts now preserve an already-canonical resident fact and
+  skip semantic invalidation, while local writes retain their rollback behavior. Schema changes
+  peel every active optimistic overlay under the resident schema, canonicalize the authoritative
+  base deterministically, persist changed triples and indexes, then replay overlays with regenerated
+  rollbacks. A current-session send failure is handed to exactly one receiver-owned reconnect path;
+  same-generation retries stop before wire I/O and explicit close or replacement remains final.
+- **Verification:** 17/17 focused semantic, schema, rollback, page-info, and reconnect regressions
+  pass. The relevant synchronization matrix passes 197/198 with one expected schema quarantine;
+  its only failure is an existing scheduler-sensitive timing characterization that compared a
+  26.14 ms full snapshot with a 29.23 ms local lookup and also failed when isolated. Seven changed
+  Swift files parse, `git diff --check` passes, the reproducible-build receipt is absent, and three
+  independent blocker reviews are clean after fixing their two discovered edge cases.
+- **Next:** build and install Scribe from this clean library commit, run one sacrificial warm-up,
+  then require five consecutive five-minute physical iPad recordings to stay at or below 100 MiB
+  while every sampled Mac-visible canned segment arrives within five seconds; abort any run above
+  150 MiB.
+
 ## 2026-08-14 21:34:53 EDT — Bound live refresh apply and isolate oversized rejection
 
 - **Implementation:** `30b180423666ac038210636d4377d60da2734006`; the paired intent-ledger
