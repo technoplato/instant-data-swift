@@ -1,0 +1,1 @@
+codex-desktop/01a00071-f1c1-7193-adcd-3bc9f30b5f95/root 2026-08-15T16:20:00-0400 mower persisted-live-query-ownership-work-regression plan=2026-08-15-live-query-ownership-diff

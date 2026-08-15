@@ -1,1 +1,2 @@
 codex-desktop-019fe75c-root 2026-08-09T12:47:39-0400 mower plan=2026-08-09-outbox-wire-hydration
+codex-desktop/01a00071-f1c1-7193-adcd-3bc9f30b5f95/root 2026-08-15T16:20:00-0400 mower live-query-ownership-diff-handoff plan=2026-08-15-live-query-ownership-diff
