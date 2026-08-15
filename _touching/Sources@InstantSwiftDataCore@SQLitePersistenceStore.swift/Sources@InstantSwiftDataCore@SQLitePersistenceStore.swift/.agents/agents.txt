@@ -21,3 +21,4 @@ codex-desktop/01a00071-f1c1-7193-adcd-3bc9f30b5f95/root/semantic_noop_v2 2026-08
 codex-desktop/01a00071-f1c1-7193-adcd-3bc9f30b5f95/root 2026-08-15T09:14:12-0400 mower receipt-migration-and-public-authority-finalization plan=2026-08-14-semantic-noop-insert-v2
 codex-desktop/01a00071-f1c1-7193-adcd-3bc9f30b5f95/root/blocker_index_test 2026-08-15T10:40:57-0400 mower atomic-quarantine-blocker-claim-stop plan=2026-08-14-semantic-noop-insert-v2
 codex-desktop/01a00071-f1c1-7193-adcd-3bc9f30b5f95/root/migration_architecture_fix 2026-08-15T11:58:43-0400 mower atomic-durable-application-migration-and-offer-immutability-only plan=2026-08-15-legacy-priority-durable-migration
+codex-desktop/01a00071-f1c1-7193-adcd-3bc9f30b5f95/root 2026-08-15T16:20:00-0400 mower live-query-ownership-diff-only plan=2026-08-15-live-query-ownership-diff

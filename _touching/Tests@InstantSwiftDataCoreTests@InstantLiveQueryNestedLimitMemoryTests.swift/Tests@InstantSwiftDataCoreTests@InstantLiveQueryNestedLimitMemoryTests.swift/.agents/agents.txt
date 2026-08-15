@@ -2,3 +2,4 @@ grok-4.6-live-revision 2026-08-12T17:58:00-0400 mower plan=2026-08-12-live-revis
 codex-desktop/01a00071-f1c1-7193-adcd-3bc9f30b5f95/root/preapply_nested_limit 2026-08-14T21:00:32-0400 mower pre-authoritative-nested-limit-regressions plan=2026-08-14-preapply-nested-limit
 codex-desktop/01a00071-f1c1-7193-adcd-3bc9f30b5f95/root/semantic_noop_insert_fix 2026-08-14T22:19:52-0400 mower scribe-shaped-repeated-refresh-invalidation plan=2026-08-14-semantic-noop-insert
 codex-desktop/01a00071-f1c1-7193-adcd-3bc9f30b5f95/root/semantic_noop_v2 2026-08-14T22:40:00-0400 mower observed-runtime-refresh-regressions plan=2026-08-14-semantic-noop-insert-v2
+codex-desktop/01a00071-f1c1-7193-adcd-3bc9f30b5f95/root 2026-08-15T16:20:00-0400 mower persisted-live-query-ownership-work-regression plan=2026-08-15-live-query-ownership-diff
