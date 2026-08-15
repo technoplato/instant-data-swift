@@ -1,3 +1,9 @@
+## 2026-08-15 00:43:07 EDT — instant-data-swift 141d1e9ec68531c4e92370521f7bb4256eeb2765
+
+- **Repo:** instant-data-swift
+- **SHA:** 141d1e9ec68531c4e92370521f7bb4256eeb2765
+- **Reason:** Suppress semantically unchanged authoritative refresh invalidation, reconcile schema transitions on the peeled server base, and give current-session failures one receiver-owned reconnect path without same-generation wire replay (#044 #095 #155).
+
 ## 2026-08-14 21:34:53 EDT — instant-data-swift 30b180423666ac038210636d4377d60da2734006
 
 - **Repo:** instant-data-swift
