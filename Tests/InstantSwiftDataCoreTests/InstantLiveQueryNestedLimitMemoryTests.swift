@@ -1,5 +1,6 @@
 import CustomDump
 import Foundation
+import SQLite3
 import Testing
 
 @testable import InstantSwiftDataCore
@@ -214,6 +215,149 @@ struct InstantLiveQueryNestedLimitMemoryTests {
     }
 
     expectNoDifference(maximumTripleCount, 8)
+  }
+
+  @Test
+  func repeatedLargeReplacementMutatesOnlyChangedOwnershipIdentities() async throws {
+    let cacheURL = temporaryNestedLimitCacheURL("ownership-diff")
+    defer { try? FileManager.default.removeItem(at: cacheURL.deletingLastPathComponent()) }
+    let attribute = InstantAttribute.primaryKey(namespace: "recordings")
+    let queryKey =
+      """
+      {"recordings":{"$":{"limit":1000,"order":{"updatedAtMs":"desc"}}}}
+      """
+    let persistence = try SQLitePersistenceStore(fileURL: cacheURL)
+    try await persistence.bootstrap()
+    try await persistence.saveStoreSnapshot(
+      InstantStoreSnapshot(attributes: [attribute])
+    )
+
+    func triples(
+      range: Range<Int>,
+      transactionID: String,
+      milliseconds: Int64
+    ) -> [InstantTriple] {
+      range.map { index in
+        InstantTriple(
+          entityID: String(format: "recording-%04d", index),
+          attributeID: attribute.id,
+          value: .string(String(format: "recording-%04d", index)),
+          txID: transactionID,
+          txTime: InstantTimestamp(milliseconds: milliseconds)
+        )
+      }
+    }
+
+    func result(
+      _ triples: [InstantTriple],
+      milliseconds: Int64
+    ) -> InstantPersistedLiveQueryResult {
+      InstantPersistedLiveQueryResult(
+        replacement: InstantLiveQueryResultReplacement(
+          key: queryKey,
+          triples: triples,
+          pageInfo: nil
+        ),
+        updatedAt: InstantTimestamp(milliseconds: milliseconds)
+      )
+    }
+
+    var state = try await persistence.loadCompactState()
+    let initialTriples = triples(
+      range: 0..<772,
+      transactionID: "ownership-initial",
+      milliseconds: 1
+    )
+    let initialSaved = try await persistence.saveLiveRefresh(
+      state.snapshot,
+      queryResults: [result(initialTriples, milliseconds: 1)],
+      storeChanged: false,
+      outboxChanged: false,
+      metadataKey: "ownership-diff-watermark",
+      metadataValue: "initial",
+      metadataUpdatedAt: InstantTimestamp(milliseconds: 1),
+      expectedStoreRevision: state.storeRevision,
+      expectedOutboxRevision: state.outboxRevision,
+      expectedAttributeRevision: state.attributeRevision
+    )
+    expectNoDifference(initialSaved, true)
+    try installLiveQueryOwnershipMutationCounter(at: cacheURL)
+
+    state = try await persistence.loadCompactState()
+    let replayTriples = triples(
+      range: 0..<772,
+      transactionID: "ownership-replay",
+      milliseconds: 2
+    )
+    let replaySaved = try await persistence.saveLiveRefresh(
+      state.snapshot,
+      queryResults: [result(replayTriples, milliseconds: 2)],
+      storeChanged: false,
+      outboxChanged: false,
+      metadataKey: "ownership-diff-watermark",
+      metadataValue: "replay",
+      metadataUpdatedAt: InstantTimestamp(milliseconds: 2),
+      expectedStoreRevision: state.storeRevision,
+      expectedOutboxRevision: state.outboxRevision,
+      expectedAttributeRevision: state.attributeRevision
+    )
+    expectNoDifference(replaySaved, true)
+    expectNoDifference(
+      try liveQueryOwnershipMutationCounts(at: cacheURL),
+      LiveQueryOwnershipMutationCounts(inserted: 0, deleted: 0, updated: 0)
+    )
+    let replayPersistedValue = try await persistence.liveQueryResult(key: queryKey)
+    let replayPersisted = try #require(replayPersistedValue)
+    expectNoDifference(replayPersisted, result(replayTriples, milliseconds: 2))
+
+    try resetLiveQueryOwnershipMutationCounter(at: cacheURL)
+    state = try await persistence.loadCompactState()
+    let changedTriples = Array(replayTriples.dropFirst())
+      + triples(
+        range: 772..<773,
+        transactionID: "ownership-changed",
+        milliseconds: 3
+      )
+    let changedSaved = try await persistence.saveLiveRefresh(
+      state.snapshot,
+      queryResults: [result(changedTriples, milliseconds: 3)],
+      storeChanged: false,
+      outboxChanged: false,
+      metadataKey: "ownership-diff-watermark",
+      metadataValue: "changed",
+      metadataUpdatedAt: InstantTimestamp(milliseconds: 3),
+      expectedStoreRevision: state.storeRevision,
+      expectedOutboxRevision: state.outboxRevision,
+      expectedAttributeRevision: state.attributeRevision
+    )
+    expectNoDifference(changedSaved, true)
+    expectNoDifference(
+      try liveQueryOwnershipMutationCounts(at: cacheURL),
+      LiveQueryOwnershipMutationCounts(inserted: 1, deleted: 1, updated: 0)
+    )
+    let persistedValue = try await persistence.liveQueryResult(key: queryKey)
+    let persisted = try #require(persistedValue)
+    expectNoDifference(persisted, result(changedTriples, milliseconds: 3))
+    let ownershipEncoder = JSONEncoder()
+    let expectedOwnership = try Set(
+      changedTriples.map { triple in
+        TestLiveQueryOwnershipIdentity(
+          queryKey: queryKey,
+          entityID: triple.entityID,
+          attributeID: triple.attributeID,
+          valueJSON: try #require(
+            String(data: ownershipEncoder.encode(triple.value), encoding: .utf8)
+          )
+        )
+      }
+    )
+    expectNoDifference(try liveQueryOwnership(at: cacheURL), expectedOwnership)
+
+    let relaunched = try SQLitePersistenceStore(fileURL: cacheURL)
+    try await relaunched.bootstrap()
+    let relaunchedValue = try await relaunched.liveQueryResult(key: queryKey)
+    let relaunchedResult = try #require(relaunchedValue)
+    expectNoDifference(relaunchedResult, persisted)
   }
 
   @Test
@@ -1156,4 +1300,190 @@ private func temporaryNestedLimitCacheURL(_ name: String) -> URL {
       "InstantLiveQueryNestedLimitMemoryTests-\(name)-\(UUID().uuidString)"
     )
     .appendingPathComponent("state.sqlite")
+}
+
+private struct LiveQueryOwnershipMutationCounts: Equatable {
+  var inserted: Int64
+  var deleted: Int64
+  var updated: Int64
+}
+
+private struct TestLiveQueryOwnershipIdentity: Hashable {
+  var queryKey: String
+  var entityID: String
+  var attributeID: String
+  var valueJSON: String
+}
+
+private func installLiveQueryOwnershipMutationCounter(at url: URL) throws {
+  try withNestedLimitSQLite(at: url) { connection in
+    try executeNestedLimitSQL(
+      """
+      CREATE TABLE test_live_query_ownership_mutations (
+        kind TEXT NOT NULL
+      );
+      CREATE TRIGGER test_live_query_ownership_inserted
+      AFTER INSERT ON instant_live_query_triples
+      BEGIN
+        INSERT INTO test_live_query_ownership_mutations (kind) VALUES ('insert');
+      END;
+      CREATE TRIGGER test_live_query_ownership_deleted
+      AFTER DELETE ON instant_live_query_triples
+      BEGIN
+        INSERT INTO test_live_query_ownership_mutations (kind) VALUES ('delete');
+      END;
+      CREATE TRIGGER test_live_query_ownership_updated
+      AFTER UPDATE ON instant_live_query_triples
+      BEGIN
+        INSERT INTO test_live_query_ownership_mutations (kind) VALUES ('update');
+      END;
+      """,
+      on: connection
+    )
+  }
+}
+
+private func resetLiveQueryOwnershipMutationCounter(at url: URL) throws {
+  try withNestedLimitSQLite(at: url) { connection in
+    try executeNestedLimitSQL(
+      "DELETE FROM test_live_query_ownership_mutations",
+      on: connection
+    )
+  }
+}
+
+private func liveQueryOwnershipMutationCounts(
+  at url: URL
+) throws -> LiveQueryOwnershipMutationCounts {
+  try withNestedLimitSQLite(at: url) { connection in
+    var statement: OpaquePointer?
+    guard sqlite3_prepare_v2(
+      connection,
+      """
+      SELECT
+        COALESCE(SUM(kind = 'insert'), 0),
+        COALESCE(SUM(kind = 'delete'), 0),
+        COALESCE(SUM(kind = 'update'), 0)
+      FROM test_live_query_ownership_mutations
+      """,
+      -1,
+      &statement,
+      nil
+    ) == SQLITE_OK,
+      sqlite3_step(statement) == SQLITE_ROW
+    else {
+      defer { sqlite3_finalize(statement) }
+      throw nestedLimitSQLiteError(
+        operation: "read live-query ownership mutation counts",
+        connection: connection
+      )
+    }
+    defer { sqlite3_finalize(statement) }
+    return LiveQueryOwnershipMutationCounts(
+      inserted: sqlite3_column_int64(statement, 0),
+      deleted: sqlite3_column_int64(statement, 1),
+      updated: sqlite3_column_int64(statement, 2)
+    )
+  }
+}
+
+private func liveQueryOwnership(
+  at url: URL
+) throws -> Set<TestLiveQueryOwnershipIdentity> {
+  try withNestedLimitSQLite(at: url) { connection in
+    var statement: OpaquePointer?
+    guard sqlite3_prepare_v2(
+      connection,
+      """
+      SELECT query_key, entity_id, attribute_id, value_json
+      FROM instant_live_query_triples
+      """,
+      -1,
+      &statement,
+      nil
+    ) == SQLITE_OK
+    else {
+      defer { sqlite3_finalize(statement) }
+      throw nestedLimitSQLiteError(
+        operation: "prepare live-query ownership read",
+        connection: connection
+      )
+    }
+    defer { sqlite3_finalize(statement) }
+
+    var ownership: Set<TestLiveQueryOwnershipIdentity> = []
+    while true {
+      let code = sqlite3_step(statement)
+      if code == SQLITE_DONE { return ownership }
+      guard
+        code == SQLITE_ROW,
+        let queryKey = sqlite3_column_text(statement, 0),
+        let entityID = sqlite3_column_text(statement, 1),
+        let attributeID = sqlite3_column_text(statement, 2),
+        let valueJSON = sqlite3_column_text(statement, 3)
+      else {
+        throw nestedLimitSQLiteError(
+          operation: "read live-query ownership",
+          connection: connection
+        )
+      }
+      ownership.insert(
+        TestLiveQueryOwnershipIdentity(
+          queryKey: String(cString: queryKey),
+          entityID: String(cString: entityID),
+          attributeID: String(cString: attributeID),
+          valueJSON: String(cString: valueJSON)
+        )
+      )
+    }
+  }
+}
+
+private func withNestedLimitSQLite<Value>(
+  at url: URL,
+  _ operation: (OpaquePointer) throws -> Value
+) throws -> Value {
+  var connection: OpaquePointer?
+  guard sqlite3_open_v2(
+    url.path,
+    &connection,
+    SQLITE_OPEN_READWRITE | SQLITE_OPEN_FULLMUTEX,
+    nil
+  ) == SQLITE_OK,
+    let connection
+  else {
+    defer { sqlite3_close(connection) }
+    throw nestedLimitSQLiteError(
+      operation: "open live-query ownership test database",
+      connection: connection
+    )
+  }
+  defer { sqlite3_close(connection) }
+  sqlite3_busy_timeout(connection, 10_000)
+  return try operation(connection)
+}
+
+private func executeNestedLimitSQL(
+  _ sql: String,
+  on connection: OpaquePointer
+) throws {
+  guard sqlite3_exec(connection, sql, nil, nil, nil) == SQLITE_OK else {
+    throw nestedLimitSQLiteError(
+      operation: "execute live-query ownership test SQL",
+      connection: connection
+    )
+  }
+}
+
+private func nestedLimitSQLiteError(
+  operation: String,
+  connection: OpaquePointer?
+) -> InstantError {
+  InstantError(
+    code: .persistenceFailed,
+    operation: operation,
+    message: connection.map { String(cString: sqlite3_errmsg($0)) }
+      ?? "SQLite connection unavailable.",
+    recovery: "Inspect the temporary live-query ownership test database."
+  )
 }

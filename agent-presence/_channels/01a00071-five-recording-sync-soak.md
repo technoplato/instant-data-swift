@@ -1655,3 +1655,21 @@
   and restartable ledgers under plan
   `2026-08-15-live-query-ownership-diff`. Cursor semantics, app retry buttons,
   query filters, and the Scribe app remain unchanged for this mower trial.
+
+- 2026-08-15T16:32:32-0400 FILES STABLE — root replaced full persisted
+  live-query ownership deletion/reinsertion with an exact raw-identity set diff
+  and one reused prepared statement per mutation direction. The 772-row
+  deterministic regression first failed against the old implementation with
+  772 deletes plus 772 inserts for both an ownership-identical replay and a
+  one-identity replacement. It now proves zero ownership writes for the replay,
+  exactly one delete plus one insert for the replacement, no UPDATE churn,
+  exact result-envelope replacement, exact raw ownership identities, and
+  relaunch restoration. The full nested-limit suite passes 14/14; stale
+  full-refresh atomicity, attribute-only revision-race, and opaque page-info
+  transport/relaunch filters also pass. Both changed Swift files pass frontend
+  parse, the full diff passes `git diff --check`, and an independent source/diff
+  review is CLEAN. No app build, install, or physical rerun has occurred yet.
+  SHA-256: `SQLitePersistenceStore.swift`
+  `11e1289a1f913e08c24c5d2f6c61af28f30d4839b931d0c78f95ce2e359e4cf2`;
+  `InstantLiveQueryNestedLimitMemoryTests.swift`
+  `0f5efc900303224f7d54e1982c5f4ba2bec67c23ed75bb79bc4fc60427e36eab`.

@@ -114,6 +114,12 @@ private struct StoredTripleKey: Hashable {
   }
 }
 
+private struct LiveQueryOwnershipIdentity: Hashable {
+  var entityID: String
+  var attributeID: String
+  var valueJSON: String
+}
+
 private struct InstantApplicationMigrationOutboxRow {
   var mutation: PendingMutation
   var deliveryStarted: Bool
@@ -12987,6 +12993,16 @@ public actor SQLitePersistenceStore {
       triples: Array(result.triples),
       attributes: attributes
     )
+    let nextOwnership = try Set(
+      result.triples.map { triple in
+        LiveQueryOwnershipIdentity(
+          entityID: triple.entityID,
+          attributeID: triple.attributeID,
+          valueJSON: try encode(triple.value)
+        )
+      }
+    )
+    let previousOwnership = try liveQueryOwnershipWithoutTransaction(queryKey: result.key)
     try execute(
       """
       INSERT INTO instant_live_query_results
@@ -13004,25 +13020,97 @@ public actor SQLitePersistenceStore {
         .text(try encode(result)),
       ]
     )
-    try execute(
-      "DELETE FROM instant_live_query_triples WHERE query_key = ?",
-      [.text(result.key)]
+    let removedOwnership = previousOwnership.subtracting(nextOwnership).sorted(
+      by: Self.liveQueryOwnershipOrder
     )
-    for triple in result.triples {
-      try execute(
-        """
-        INSERT OR REPLACE INTO instant_live_query_triples
-          (query_key, entity_id, attribute_id, value_json)
-        VALUES (?, ?, ?, ?)
-        """,
+    try executeRepeated(
+      """
+      DELETE FROM instant_live_query_triples
+      WHERE query_key = ?
+        AND entity_id = ?
+        AND attribute_id = ?
+        AND value_json = ?
+      """,
+      bindings: removedOwnership.map { identity in
         [
           .text(result.key),
-          .text(triple.entityID),
-          .text(triple.attributeID),
-          .text(try encode(triple.value)),
+          .text(identity.entityID),
+          .text(identity.attributeID),
+          .text(identity.valueJSON),
         ]
+      }
+    )
+    let insertedOwnership = nextOwnership.subtracting(previousOwnership).sorted(
+      by: Self.liveQueryOwnershipOrder
+    )
+    try executeRepeated(
+      """
+      INSERT INTO instant_live_query_triples
+        (query_key, entity_id, attribute_id, value_json)
+      VALUES (?, ?, ?, ?)
+      """,
+      bindings: insertedOwnership.map { identity in
+        [
+          .text(result.key),
+          .text(identity.entityID),
+          .text(identity.attributeID),
+          .text(identity.valueJSON),
+        ]
+      }
+    )
+  }
+
+  private func liveQueryOwnershipWithoutTransaction(
+    queryKey: String
+  ) throws -> Set<LiveQueryOwnershipIdentity> {
+    var statement: OpaquePointer?
+    try prepare(
+      """
+      SELECT entity_id, attribute_id, value_json
+      FROM instant_live_query_triples
+      WHERE query_key = ?
+      """,
+      statement: &statement
+    )
+    defer { sqlite3_finalize(statement) }
+    try bind([.text(queryKey)], to: statement)
+
+    var ownership: Set<LiveQueryOwnershipIdentity> = []
+    while true {
+      let code = sqlite3_step(statement)
+      if code == SQLITE_DONE { return ownership }
+      guard code == SQLITE_ROW else {
+        throw persistenceError(
+          operation: "read live-query ownership",
+          message: lastErrorMessage()
+        )
+      }
+      guard
+        let entityID = sqlite3_column_text(statement, 0),
+        let attributeID = sqlite3_column_text(statement, 1),
+        let valueJSON = sqlite3_column_text(statement, 2)
+      else {
+        throw persistenceError(
+          operation: "read live-query ownership",
+          message: "SQLite returned a NULL live-query ownership column."
+        )
+      }
+      ownership.insert(
+        LiveQueryOwnershipIdentity(
+          entityID: String(cString: entityID),
+          attributeID: String(cString: attributeID),
+          valueJSON: String(cString: valueJSON)
+        )
       )
     }
+  }
+
+  private static func liveQueryOwnershipOrder(
+    _ lhs: LiveQueryOwnershipIdentity,
+    _ rhs: LiveQueryOwnershipIdentity
+  ) -> Bool {
+    (lhs.entityID, lhs.attributeID, lhs.valueJSON)
+      < (rhs.entityID, rhs.attributeID, rhs.valueJSON)
   }
 
   private func saveMetadataValueWithoutTransaction(
@@ -13365,6 +13453,29 @@ public actor SQLitePersistenceStore {
     let code = sqlite3_step(statement)
     guard code == SQLITE_DONE || code == SQLITE_ROW else {
       throw persistenceError(operation: "execute SQL", message: lastErrorMessage())
+    }
+  }
+
+  private func executeRepeated(
+    _ sql: String,
+    bindings rows: [[SQLiteBinding]]
+  ) throws {
+    guard !rows.isEmpty else { return }
+    var statement: OpaquePointer?
+    try prepare(sql, statement: &statement)
+    defer { sqlite3_finalize(statement) }
+
+    for bindings in rows {
+      guard sqlite3_reset(statement) == SQLITE_OK else {
+        throw persistenceError(operation: "reset SQL", message: lastErrorMessage())
+      }
+      guard sqlite3_clear_bindings(statement) == SQLITE_OK else {
+        throw persistenceError(operation: "clear SQL bindings", message: lastErrorMessage())
+      }
+      try bind(bindings, to: statement)
+      guard sqlite3_step(statement) == SQLITE_DONE else {
+        throw persistenceError(operation: "execute repeated SQL", message: lastErrorMessage())
+      }
     }
   }
 
