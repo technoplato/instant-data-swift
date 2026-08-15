@@ -1,3 +1,9 @@
+## 2026-08-15 16:33:17 EDT — instant-data-swift 3649a63e1d41470f8b213fdd69d0dc4488928908
+
+- **Repo:** instant-data-swift
+- **SHA:** 3649a63e1d41470f8b213fdd69d0dc4488928908
+- **Reason:** Replace full persisted live-query ownership rewrites with exact identity deltas and reused prepared statements so the measured 772-row Scribe recordings refresh no longer blocks the serial receive path behind 772 deletes plus 772 inserts (#044 #155).
+
 ## 2026-08-15 15:43:20 EDT — realtime-voice-sqlite-instant e312be58deed0fb68db1ab6d81c1fc0aa95db782
 
 - **Repo:** realtime-voice-sqlite-instant

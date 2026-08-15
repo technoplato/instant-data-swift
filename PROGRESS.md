@@ -6,6 +6,32 @@ production-readiness plan
 Commit-level history stays in `docs/audits/commit-changelog.md`; this file is
 the narrative of what the library must prove and why.
 
+## 2026-08-15 16:33:17 EDT — Diff persisted live-query ownership rows
+
+- **Implementation:** `3649a63e1d41470f8b213fdd69d0dc4488928908`; the paired intent-ledger
+  commit is the immediately following Git commit.
+- **Measured cause:** the physical Scribe Mac projection persisted a 355,662-byte recordings
+  result with 772 ownership rows. Replacing that result deleted and reinserted all 772 rows while
+  the serial receive/apply path held its operation gate. Captured page-info-to-store intervals
+  reached 14.340 seconds and 12.824 seconds, and one recording became visible only after a peer
+  reset re-registered the same query.
+- **Correctness:** live-query persistence still applies nested limits and unconditionally replaces
+  the raw result envelope, but now compares exact query/entity/attribute/value-JSON ownership
+  identities and mutates only the set difference. Each direction reuses one prepared statement;
+  shared-query ownership, canonical triples, revision checks, page info, and relaunch semantics are
+  unchanged.
+- **Verification:** the red-first 772-row regression observed 772 deletes plus 772 inserts for an
+  identity-stable replay and again for a one-identity replacement. It now observes zero writes for
+  the replay and exactly one delete plus one insert for the replacement, with no UPDATE churn,
+  exact result/ownership equality, and relaunch restoration. The complete nested-limit suite passes
+  14/14; stale full-refresh atomicity, attribute-only revision-race, and opaque page-info
+  transport/relaunch filters pass. Both changed Swift files parse, `git diff --check` passes, and
+  the independent source/diff review is clean.
+- **Next:** build and install a coherent Scribe candidate from this clean library commit, then run
+  the same CLI-only short physical preflight. Require current iPad `physicalFootprintBytes` at or
+  below 100 MiB and both server and Mac-local first projection within five seconds before admitting
+  the sacrificial warm-up and five consecutive five-minute recordings.
+
 ## 2026-08-15 14:17:01 EDT — Bind durable mutation authority and migrate before services
 
 - **Implementation:** `ae000fce901fff693971d1ebcbdca8bdd10a6ef4`; the paired intent-ledger

@@ -10,6 +10,24 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## August 15th, 2026 at 4:33:14 p.m. EDT — `3649a63e1d41` Diff persisted live-query ownership rows
+
+- **Implementation commit:** `3649a63e1d41470f8b213fdd69d0dc4488928908`
+- **Change:** Persist only changed live-query ownership identities so repeated bounded refreshes no longer stall the serial receive path behind full ownership-table rewrites.
+- **Details:**
+  - Keep the raw persisted result envelope and revision semantics unchanged while diffing exact query/entity/attribute/value JSON ownership identities.
+  - Reuse one prepared DELETE and one prepared INSERT across each ownership delta instead of preparing and finalizing a statement for every retained triple.
+  - A 772-row regression proves zero ownership writes for an identity-stable replacement, exactly one delete plus one insert for a one-identity change, exact persisted ownership, and relaunch equality.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — Loads current ownership, computes exact set deltas, and executes only changed rows through reused prepared statements.
+  - `Tests/InstantSwiftDataCoreTests/InstantLiveQueryNestedLimitMemoryTests.swift` — Pins statement-level ownership work, exact identities, result replacement, and relaunch for the measured Scribe-shaped 772-row case.
+  - `agent-presence/_channels/01a00071-five-recording-sync-soak.md` — Records ownership, red-first evidence, focused verification, hashes, and the physical rerun boundary.
+- **User context (verbatim):**
+  > continue
+  > your goal is to successfully run 5 recordings in a row, observe them syncing in realtime across mac and physical ipad
+  > ensure memory usage stays no greater than 100MB during a run
+- **SpecStory:** unavailable — Codex desktop continuation; SpecStory captures Codex CLI sessions and no synced desktop capture URI is available.
+
 ## August 15th, 2026 at 2:17:17 p.m. EDT — `ae000fce901f` Harden optimistic delivery and pre-connect migrations
 
 - **Implementation commit:** `ae000fce901fff693971d1ebcbdca8bdd10a6ef4`
