@@ -1,17 +1,16 @@
 import Foundation
 
-/// Apply InstaQL nested include limits to persisted live-query triples.
+/// Apply InstaQL nested include limits before authoritative and persisted apply.
 ///
-/// TypeScript `Reactor.js` stores `querySub.result.store` from
-/// `createStore(attrs, result.triples)` after instaql has already applied
-/// per-parent nested `limit`. SQLite Data SQL-limits the visible page.
+/// TypeScript Reactor constructs a raw per-query store before InstaQL applies
+/// nested limits client-side. Swift instead has one shared authoritative hot
+/// store, so retaining the raw response would make one bounded observation grow
+/// every other observation's resident base. SQLite Data SQL-limits the page.
 ///
-/// Swift still has one global InstantStore. Session observe can persist every
-/// matching child (Mac recordings list: 481 segments, one parent 328) even
-/// when the query JSON says `segments.$limit: 2`. Bootstrap then loads that
-/// union (trial 3). This filter runs at save and load in
-/// `SQLitePersistenceStore` so InstantStore residency matches the query page.
-/// InstantRuntime is unedited. Live `transact` is unchanged.
+/// The live-refresh translator uses this as Swift-specific containment before
+/// it assembles the authoritative transaction, and persistence repeats the
+/// defense at save/load. True server-side nested-limit pushdown remains the
+/// structural fix. Live `transact` is unchanged.
 enum InstantLiveQueryNestedLimit {
   static func limitedTriples(
     queryKey: String,
@@ -70,12 +69,24 @@ enum InstantLiveQueryNestedLimit {
 }
 
 private struct Context {
+  private struct AttributeIdentity: Hashable {
+    var namespace: String
+    var name: String
+  }
+
   var triplesByEntity: [String: [InstantTriple]]
   var attributesByID: [String: InstantAttribute]
+  private var attributesByIdentity: [AttributeIdentity: InstantAttribute]
   var entityIDsByNamespace: [String: Set<String>]
 
   init(triples: [InstantTriple], attributes: [InstantAttribute]) {
     attributesByID = Dictionary(uniqueKeysWithValues: attributes.map { ($0.id, $0) })
+    attributesByIdentity = Dictionary(
+      attributes.map {
+        (AttributeIdentity(namespace: $0.namespace, name: $0.name), $0)
+      },
+      uniquingKeysWith: { current, _ in current }
+    )
     var triplesByEntity: [String: [InstantTriple]] = [:]
     var entityIDsByNamespace: [String: Set<String>] = [:]
     for triple in triples {
@@ -152,7 +163,10 @@ private struct Context {
   ) -> Set<String> {
     var ids: Set<String> = []
     if let reverseLink {
-      let stringAttributeID = "\(reverseLink.namespace)/\(reverseLink.name)ID"
+      let stringAttributeID = attribute(
+        namespace: reverseLink.namespace,
+        name: "\(reverseLink.name)ID"
+      )?.id ?? "\(reverseLink.namespace)/\(reverseLink.name)ID"
       for (entityID, triples) in triplesByEntity {
         for triple in triples {
           let matchesLink = triple.attributeID == reverseLink.id
@@ -195,7 +209,8 @@ private struct Context {
     }
     return entityIDs.sorted { lhs, rhs in
       for clause in order {
-        let attributeID = "\(namespace)/\(clause.field)"
+        let attributeID = attribute(namespace: namespace, name: clause.field)?.id
+          ?? "\(namespace)/\(clause.field)"
         let comparison = value(entityID: lhs, attributeID: attributeID)
           .compare(to: value(entityID: rhs, attributeID: attributeID))
         if comparison == .orderedSame {
@@ -212,6 +227,10 @@ private struct Context {
 
   func value(entityID: String, attributeID: String) -> InstantValue {
     triplesByEntity[entityID]?.first { $0.attributeID == attributeID }?.value ?? .null
+  }
+
+  func attribute(namespace: String, name: String) -> InstantAttribute? {
+    attributesByIdentity[AttributeIdentity(namespace: namespace, name: name)]
   }
 }
 

@@ -3965,6 +3965,193 @@ struct InstantLiveTransportTests {
   }
 
   @Test
+  func runtimeLiveOversizedTerminalComponentFailsOnlyClaimedTargetWithoutReconnect() async throws {
+    let cacheURL = try temporaryLiveCacheURL()
+    let entityID = "runtime-live-oversized-terminal-component"
+    var mutations = (0...50).map { index in
+      oversizedTerminalComponentMutation(
+        id: index == 0
+          ? "tx-runtime-live-oversized-target"
+          : String(format: "tx-runtime-live-oversized-successor-%02d", index),
+        position: Int64(index),
+        entityID: entityID,
+        before: index == 0 ? "server-base" : "local-\(index - 1)",
+        after: "local-\(index)"
+      )
+    }
+    mutations[0].status = .confirmed
+    mutations[0].confirmationSource = .localTransport
+    let target = try #require(mutations.first)
+    let competingTail = try #require(mutations.last)
+    let seed = try SQLitePersistenceStore(
+      fileURL: cacheURL,
+      declaredAttributes: TodoExample.attributes
+    )
+    try await seed.bootstrap()
+    try await seed.saveSnapshot(
+      InstantPersistenceSnapshot(
+        store: InstantStoreSnapshot(
+          attributes: TodoExample.attributes,
+          triples: [
+            oversizedTerminalComponentTriple(
+              entityID: entityID,
+              value: "local-50",
+              transactionID: competingTail.id,
+              milliseconds: 51
+            )
+          ]
+        ),
+        outbox: mutations
+      )
+    )
+
+    let session = InstantRuntimeScriptedLiveSession(messages: [
+      .initOK(clientEventID: "event-oversized-terminal", attrs: .todoServerAttrs)
+    ])
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "runtime-live-oversized-terminal-component",
+        persistenceURL: cacheURL,
+        initialAttributes: TodoExample.attributes,
+        liveTransport: session.transport
+      )
+    )
+    _ = try await runtime.connect()
+    await session.waitForSentMessageCount(51)
+    let initiallySent = await session.sentMessages()
+    expectNoDifference(initiallySent.map(\.op), ["init"] + Array(repeating: "transact", count: 50))
+    expectNoDifference(
+      Array(initiallySent.dropFirst().compactMap(\.clientEventID)),
+      Array(mutations.dropLast().map(\.id))
+    )
+
+    let competingToken = "oversized-terminal-competing-tail"
+    let didClaimCompetingTail = try await runtime.persistence
+      .claimOutboxMutationWithoutHydrationForTesting(
+        id: competingTail.id,
+        claimantID: "competing-runtime",
+        claimToken: competingToken,
+        deadlineMilliseconds: Int64.max / 4
+      )
+    #expect(didClaimCompetingTail)
+    await runtime.persistence.resetDecodedOutboxBodyCount()
+
+    await session.enqueue(
+      InstantLiveMessage(
+        op: "error",
+        clientEventID: target.id,
+        fields: [
+          "message": .string("permission denied"),
+          "status": .number(403),
+          "type": .string("permission-denied"),
+        ]
+      )
+    )
+    try await instantLiveWithTimeout(
+      operation: "wait for bounded oversized terminal disposition",
+      timeoutMilliseconds: 5_000
+    ) {
+      while true {
+        let failedCount = try await runtime.persistence.countOutboxMutations(status: .failed)
+        let residentIDs = await runtime.outbox.all().map(\.id)
+        if failedCount == 1, !residentIDs.contains(target.id) {
+          break
+        }
+        try Task.checkCancellation()
+        await Task.yield()
+      }
+    }
+
+    let terminalDispositionDecodeCount =
+      await runtime.persistence.currentDecodedOutboxBodyCount()
+    expectNoDifference(terminalDispositionDecodeCount, 1)
+    let durableAfterFailure = await runtime.outboxMutations()
+    let failedTarget = try #require(durableAfterFailure.first { $0.id == target.id })
+    expectNoDifference(failedTarget.status, .failed)
+    expectNoDifference(failedTarget.failure?.code, .permissionRejected)
+    expectNoDifference(failedTarget.optimisticOverlayState, .applied)
+    expectNoDifference(failedTarget.serverTransactionID, nil)
+    expectNoDifference(failedTarget.confirmationSource, nil)
+    #expect(failedTarget.rollbackTransaction != nil)
+    let durableSuccessors = durableAfterFailure.filter { $0.id != target.id }
+    expectNoDifference(durableSuccessors.map(\.status), Array(repeating: .pending, count: 50))
+    expectNoDifference(
+      durableSuccessors.map(\.optimisticOverlayState),
+      Array(repeating: .applied, count: 50)
+    )
+    let statusAfterFailure = try await runtime.connectionStatus()
+    expectNoDifference(statusAfterFailure.state, .opened)
+    expectNoDifference(statusAfterFailure.lastErrorMessage, nil)
+
+    let revisionBeforeDuplicate = try await runtime.persistence.currentOutboxRevision()
+    let decodeCountBeforeDuplicate = await runtime.persistence.currentDecodedOutboxBodyCount()
+    let receiveCountBeforeDuplicate = await session.receiveRequestCount()
+    await session.enqueue(
+      InstantLiveMessage(
+        op: "error",
+        clientEventID: target.id,
+        fields: [
+          "message": .string("permission denied again"),
+          "status": .number(403),
+          "type": .string("permission-denied"),
+        ]
+      )
+    )
+    await session.waitForReceiveRequestCount(receiveCountBeforeDuplicate + 1)
+    let revisionAfterDuplicate = try await runtime.persistence.currentOutboxRevision()
+    let decodeCountAfterDuplicate = await runtime.persistence.currentDecodedOutboxBodyCount()
+    expectNoDifference(revisionAfterDuplicate, revisionBeforeDuplicate)
+    expectNoDifference(decodeCountAfterDuplicate, decodeCountBeforeDuplicate)
+
+    let releasedTail = try await runtime.persistence.releaseAutomaticOutboxClaim(
+      token: competingToken
+    )
+    expectNoDifference(releasedTail, Set([competingTail.id]))
+    await runtime.requestLiveMutationDelivery()
+    await session.waitForSentMessageCount(52)
+    let sentAfterTailRelease = await session.sentMessages()
+    expectNoDifference(sentAfterTailRelease.filter { $0.op == "init" }.count, 1)
+    expectNoDifference(
+      sentAfterTailRelease.filter { $0.op == "transact" }.compactMap(\.clientEventID),
+      mutations.map(\.id)
+    )
+    let statusAfterTailRelease = try await runtime.connectionStatus()
+    expectNoDifference(statusAfterTailRelease.state, .opened)
+
+    _ = try await runtime.applyServerTransaction(
+      InstantStoreTransaction(
+        id: "server-authoritative-after-oversized-terminal",
+        operations: [
+          .insert(
+            oversizedTerminalComponentTriple(
+              entityID: entityID,
+              value: "server-authoritative",
+              transactionID: "server-authoritative-after-oversized-terminal",
+              milliseconds: 10_000
+            )
+          )
+        ]
+      )
+    )
+    let durableAfterRefresh = await runtime.outboxMutations()
+    let refreshedTarget = try #require(durableAfterRefresh.first { $0.id == target.id })
+    expectNoDifference(refreshedTarget.status, .failed)
+    expectNoDifference(refreshedTarget.optimisticOverlayState, .removed)
+    expectNoDifference(refreshedTarget.rollbackTransaction, nil)
+    let refreshedSuccessors = durableAfterRefresh.filter { $0.id != target.id }
+    expectNoDifference(refreshedSuccessors.map(\.status), Array(repeating: .pending, count: 50))
+    expectNoDifference(
+      refreshedSuccessors.map(\.optimisticOverlayState),
+      Array(repeating: .applied, count: 50)
+    )
+    let residentIDsAfterRefresh = await runtime.outbox.all().map(\.id)
+    #expect(!residentIDsAfterRefresh.contains(target.id))
+    let statusAfterRefresh = try await runtime.connectionStatus()
+    expectNoDifference(statusAfterRefresh.state, .opened)
+    _ = try await runtime.closeConnection()
+  }
+
+  @Test
   func staleLiveMutationErrorCannotFailAClaimReclaimedByAnotherRuntime() async throws {
     let session = InstantRuntimeScriptedLiveSession(messages: [
       .initOK(clientEventID: "event-init", attrs: .todoServerAttrs)
@@ -3993,14 +4180,26 @@ struct InstantLiveTransportTests {
     )
     await session.waitForSentMessageCount(2)
 
-    let competingClaim = try await runtime.persistence.claimAutomaticOutboxDeliveryWindow(
+    let reclamation = try await runtime.persistence.claimAutomaticOutboxDeliveryWindow(
       InstantAutomaticOutboxClaimRequest(
         claimantID: "competing-runtime",
         claimToken: "competing-claim-token",
         now: InstantTimestamp(milliseconds: Int64.max / 4)
       )
     )
-    expectNoDifference(competingClaim.mutations.map(\.id), ["tx-runtime-live-stale-error"])
+    expectNoDifference(reclamation.mutations, [])
+    expectNoDifference(
+      reclamation.reclaimedMutationIDs,
+      Set(["tx-runtime-live-stale-error"])
+    )
+    let didClaimForCompetingRuntime = try await runtime.persistence
+      .claimOutboxMutationWithoutHydrationForTesting(
+        id: "tx-runtime-live-stale-error",
+        claimantID: "competing-runtime",
+        claimToken: "competing-claim-token",
+        deadlineMilliseconds: Int64.max / 4
+      )
+    #expect(didClaimForCompetingRuntime)
     await runtime.persistence.resetDecodedOutboxBodyCount()
     let receiveCountBeforeError = await session.receiveRequestCount()
     await session.enqueue(
@@ -5884,6 +6083,62 @@ private func temporaryLiveCacheURL() throws -> URL {
     .appendingPathComponent("InstantLiveTransportTests-\(UUID().uuidString)")
   try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
   return directory.appendingPathComponent("state.sqlite")
+}
+
+private func oversizedTerminalComponentMutation(
+  id: String,
+  position: Int64,
+  entityID: String,
+  before: String,
+  after: String
+) -> PendingMutation {
+  let timestamp = InstantTimestamp(milliseconds: position + 1)
+  var mutation = PendingMutation(
+    id: id,
+    createdAt: InstantTimestamp(milliseconds: position),
+    transaction: InstantStoreTransaction(
+      id: id,
+      operations: [
+        .insert(
+          oversizedTerminalComponentTriple(
+            entityID: entityID,
+            value: after,
+            transactionID: id,
+            milliseconds: timestamp.milliseconds
+          )
+        )
+      ]
+    )
+  )
+  mutation.rollbackTransaction = InstantStoreTransaction(
+    id: "rollback-\(id)",
+    operations: [
+      .insert(
+        oversizedTerminalComponentTriple(
+          entityID: entityID,
+          value: before,
+          transactionID: "rollback-\(id)",
+          milliseconds: timestamp.milliseconds
+        )
+      )
+    ]
+  )
+  return mutation
+}
+
+private func oversizedTerminalComponentTriple(
+  entityID: String,
+  value: String,
+  transactionID: String,
+  milliseconds: Int64
+) -> InstantTriple {
+  InstantTriple(
+    entityID: entityID,
+    attributeID: "todos/text",
+    value: .string(value),
+    txID: transactionID,
+    txTime: InstantTimestamp(milliseconds: milliseconds)
+  )
 }
 
 private actor InstantScriptedLiveSession {

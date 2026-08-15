@@ -1,1 +1,2 @@
 grok-4.6-live-revision 2026-08-12T17:58:00-0400 mower plan=2026-08-12-live-revision-cardinality trial5-nested-include-limit-on-live-query-triples InstantRuntime-unedited
+codex-desktop/01a00071-f1c1-7193-adcd-3bc9f30b5f95/root/preapply_nested_limit 2026-08-14T21:00:32-0400 mower upstream-provenance-comment-only plan=2026-08-14-preapply-nested-limit

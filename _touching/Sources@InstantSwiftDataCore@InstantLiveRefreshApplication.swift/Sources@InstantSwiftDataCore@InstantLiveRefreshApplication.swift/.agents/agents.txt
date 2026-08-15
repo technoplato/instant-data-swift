@@ -1,1 +1,2 @@
 codex-desktop/019fe994-1250-7b42-825e-9b75836d9173/root/query_once_exact_cleanup 2026-08-11T10:48:30-0400 mower live-query-result-active-key-test-probe-only plan=2026-08-09-bounded-intent-outbox-memory
+codex-desktop/01a00071-f1c1-7193-adcd-3bc9f30b5f95/root/preapply_nested_limit 2026-08-14T21:00:32-0400 mower pre-authoritative-nested-limit plan=2026-08-14-preapply-nested-limit

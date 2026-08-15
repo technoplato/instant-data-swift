@@ -97,3 +97,88 @@
   commit, stage, ledger, progress, audit, install, or physical-device lane was
   touched. The four owned source/test files and coordination markers are stable
   for the parent Scribe link/run.
+
+- 2026-08-14T20:57:46-0400 plan-to-touch: `terminal_component_bounded_disposition`
+  owns only terminal-rejection component-limit disposition in
+  `SQLitePersistenceStore.swift` and `InstantRuntime.swift`, plus focused
+  regressions in `InstantTerminalFailureComponentTests.swift` and
+  `InstantLiveTransportTests.swift`. Test-first scope: a permission rejection
+  with one claimed target and 50 connected successors durably fails only the
+  exact token-owned target, retains its optimistic overlay until an
+  authoritative refresh, keeps every successor deliverable, decodes only the
+  target body, ignores a duplicate rejection, and keeps the current live
+  connection. Production must generalize `failOutboxMutationsForDelivery`; a
+  component-limit result removes the exact target from the hot outbox and
+  publishes lifecycle without reconnecting. Preserve all existing bounded
+  component, visible-write, acknowledgement-deadline, query, transport, and
+  persistence work. No Scribe, public API, schema, ledger, `PROGRESS.md`, commit,
+  stage, or SwiftPM run; parser and scoped diff checks only until root explicitly
+  releases the serialized build lane.
+
+- 2026-08-14T21:05:11-0400 FILES STABLE:
+  `terminal_component_bounded_disposition` completed the bounded terminal
+  disposition slice without staging, committing, or running SwiftPM. One
+  red-first live regression seeds a 51-body same-entity component, offers the
+  first 50 rows, holds the last successor behind a competing exact claim, and
+  requires a permission rejection to decode and fail only the target while its
+  overlay remains applied. It also requires the hot target shell to disappear,
+  all successors to remain pending and deliverable, the duplicate rejection to
+  change no revision or decode count, one open socket with one init, and a later
+  authoritative server transaction to remove only the failed overlay while
+  replaying every successor. Production generalizes
+  `failOutboxMutationsForDelivery` with an optional schema revision and metadata
+  entries; `componentLimitExceeded` uses that exact token-owned one-body path,
+  publishes lifecycle/status, removes the hot target, and returns without a
+  reconnect. Frontend parse across the two source files and focused test plus
+  scoped `git diff --check` pass. Exact focused filter:
+  `runtimeLiveOversizedTerminalComponentFailsOnlyClaimedTargetWithoutReconnect`;
+  broader filters: `InstantLiveTransportTests|InstantTerminalFailureComponentTests`.
+  Hashes: Runtime
+  `fc917dc284be6de769a14913a2c672c99c408db9680a451c4a4d2ed3e1d2619a`,
+  persistence
+  `af4f3fc42c54871c3282114ca3dbd5052e0177bad6fc9045bf55f5da4205f098`,
+  live test
+  `91accda016b6d1ce1a9bcb4735911381a39a8cafa5b7f6efd80ca6c57893a238`.
+  Files are frozen pending root's serialized SwiftPM lane release.
+
+- 2026-08-14T21:12:28-0400 FILES STABLE test-fixture correction: the broader
+  filter exposed that `staleLiveMutationErrorCannotFailAClaimReclaimedByAnotherRuntime`
+  still expected an expired acknowledgement-unknown claim to be reclaimed and
+  reoffered in one selector pass. The current durable generation barrier
+  correctly returns that first pass with no mutations and the target in
+  `reclaimedMutationIDs`. The test now asserts that barrier, then installs the
+  intended exact foreign claim through the existing no-hydration testing seam
+  before injecting the stale socket error. No production code changed and no
+  SwiftPM command ran. Frontend parse and scoped diff check pass; live-test hash
+  is `1a3830610fdbf9336eddef77eea0b7b7693ba9b3d9269bc63805a49b3c0efce5`.
+  Files are frozen for root's identical serialized filter rerun.
+
+- 2026-08-14T21:28:45-0400 FILES STABLE lifecycle follow-up: independent
+  review found that the generalized exact-row failure helper retained local
+  confirmation metadata that the ordinary terminal-component path clears. The
+  helper now clears `serverTransactionID` and `confirmationSource` before
+  saving every token-owned failed row. The 51-body regression seeds its target
+  as locally confirmed through `.localTransport`, proves it is still eligible
+  for live delivery, and requires both confirmation fields to be nil after the
+  bounded permission rejection. No other production or test behavior changed
+  and no SwiftPM command ran. Frontend parse and scoped diff check pass. Exact
+  focused filter:
+  `runtimeLiveOversizedTerminalComponentFailsOnlyClaimedTargetWithoutReconnect`.
+  Hashes: Runtime
+  `fc917dc284be6de769a14913a2c672c99c408db9680a451c4a4d2ed3e1d2619a`,
+  persistence
+  `09ca73cc61f53ebac0b396351866f9cf8e25153f8fffb85c78fa8f3fc5a3b22e`,
+  live test
+  `430007cacf434259075b1335e1519c69b3f04abe0f01ee09a8bae5725c8d13fc`.
+  Files are frozen for root's serialized rerun.
+
+- 2026-08-14T21:00:32-0400 plan-to-touch: `preapply_nested_limit` owns only
+  pre-authoritative nested-limit containment in `InstantLiveRefreshApplication.swift`,
+  directly related provenance-comment correction in `InstantLiveQueryNestedLimit.swift`, and
+  focused regressions in `InstantLiveQueryNestedLimitMemoryTests.swift`. The translator must use
+  one bounded insert-triple set for both authoritative operations and live-query replacement while
+  preserving non-inserts and unbounded/non-query computations. This is a Swift-specific hot-store
+  containment, not claimed upstream parity or true server pushdown. The historical claims on the
+  translator/test are committed and their agents are not live. No Runtime, SQLite persistence,
+  outbox, terminal-disposition, Scribe, public API, schema, commit, stage, or SwiftPM run is claimed;
+  parser and scoped diff checks only until root explicitly releases the serialized build lane.

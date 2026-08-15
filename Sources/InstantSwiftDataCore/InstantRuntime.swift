@@ -9910,15 +9910,58 @@ public final class InstantRuntime: Sendable {
         continue
 
       case let .componentLimitExceeded(mutationCountAtLeast, encodedBodyByteCountAtLeast):
-        throw InstantError(
-          code: .persistenceFailed,
-          operation: "load terminal failure component",
-          localID: id,
-          message:
-            "Rejecting mutation '\(id)' affects at least \(mutationCountAtLeast) durable bodies totaling at least \(encodedBodyByteCountAtLeast) bytes, beyond the 50-body / 8-MiB component limit.",
-          recovery:
-            "Preserve the claim and use an authoritative server refresh to collapse the oversized optimistic component."
-        )
+        await operationGate.enter()
+        do {
+          recordActorHop(.persistence)
+          guard let application = try await persistence.failOutboxMutationsForDelivery(
+            [id: failure],
+            failureAttributeRevision: nil,
+            claimToken: requiredClaimToken,
+            expectedOutboxRevision: state.outboxRevision,
+            metadataEntries: connectionFailureMetadataEntries(
+              for: failure,
+              recordsConnectionFailure: recordsConnectionFailure
+            )
+          ) else {
+            await operationGate.leave()
+            continue
+          }
+          guard let failedMutation = application.mutations.first(where: { $0.id == id }) else {
+            recordActorHop(.persistence)
+            let stillOwnsClaim = try await persistence.outboxClaimMatches(
+              id: id,
+              token: requiredClaimToken
+            )
+            await operationGate.leave()
+            guard stillOwnsClaim else { return nil }
+            continue
+          }
+          InstantDiagnostics.shared.record(
+            .notice,
+            subsystem: "instant-swift-data-core",
+            category: "outbox",
+            event: "outbox.mutation.terminal-component-deferred",
+            message:
+              "Recorded a terminal mutation failure without loading its oversized optimistic component.",
+            metadata: [
+              "mutationID": id,
+              "componentMutationCountAtLeast": String(mutationCountAtLeast),
+              "componentEncodedBodyByteCountAtLeast": String(encodedBodyByteCountAtLeast),
+              "decodedBodyCount": String(application.decodedBodyCount),
+              "decodedBodyByteCount": String(application.decodedBodyByteCount),
+            ],
+            correlationID: id
+          )
+          recordActorHop(.outbox)
+          await outbox.remove(id: failedMutation.id)
+          _ = try? await publishConnectionStatusWithGateHeld()
+          await publishMutationLifecycle(failedMutation)
+          await operationGate.leave()
+          return failedMutation
+        } catch {
+          await operationGate.leave()
+          throw error
+        }
 
       case let .ready(component):
         let removal = try await prepareClaimedTerminalFailureComponent(

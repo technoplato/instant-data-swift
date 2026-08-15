@@ -4409,17 +4409,19 @@ public actor SQLitePersistenceStore {
     )
   }
 
-  /// Quarantines live-encoding failures by addressing only the offered rows.
-  /// Their optimistic overlays remain applied and explicitly retained for a
-  /// later schema-deployment retry; no queue-wide rollback/rebase is attempted.
-  /// `failureAttributeRevision` is captured immediately before encoding, so a
-  /// concurrent schema refresh makes the row eligible instead of hiding it
-  /// behind the newer revision it did not actually use.
+  /// Fails only the token-owned offered rows without loading their optimistic
+  /// components. Their optimistic overlays remain applied until a later
+  /// authoritative refresh can peel and replay them in bounded pages.
+  ///
+  /// Live-encoding failures pass the attribute revision used for projection so
+  /// a later schema deployment can make them retryable. Terminal transport
+  /// rejections pass `nil` because their retry policy is independent of schema.
   func failOutboxMutationsForDelivery(
     _ failuresByMutationID: [String: InstantMutationFailure],
-    failureAttributeRevision: Int64,
+    failureAttributeRevision: Int64?,
     claimToken: String,
-    expectedOutboxRevision: Int64
+    expectedOutboxRevision: Int64,
+    metadataEntries: [InstantPersistenceMetadataEntry] = []
   ) throws -> InstantOutboxBatchFailureApplication? {
     guard !failuresByMutationID.isEmpty else {
       return InstantOutboxBatchFailureApplication(
@@ -4481,7 +4483,7 @@ public actor SQLitePersistenceStore {
           failedMutations.append(
             try quarantineInvalidOutboxMutationWithoutTransaction(
               row,
-              reason: "The durable mutation body could not be decoded while recording an encoding failure: \(error)"
+              reason: "The durable mutation body could not be decoded while recording a delivery failure: \(error)"
             )
           )
         }
@@ -4490,6 +4492,13 @@ public actor SQLitePersistenceStore {
       if failedMutations.isEmpty {
         resultingRevision = expectedOutboxRevision
       } else {
+        for entry in metadataEntries {
+          try saveMetadataValueWithoutTransaction(
+            entry.value,
+            key: entry.key,
+            updatedAt: entry.updatedAt
+          )
+        }
         resultingRevision = try bumpMetadataRevisionWithoutTransaction(Self.outboxRevisionKey)
       }
       return InstantOutboxBatchFailureApplication(
@@ -4511,8 +4520,10 @@ public actor SQLitePersistenceStore {
     mutation.status = .failed
     mutation.failureMessage = failure.message
     mutation.failure = failure
-    // Projection/encoding failed before server I/O. Retaining the known
-    // optimistic layer keeps ordinary retry and discard truthful.
+    mutation.serverTransactionID = nil
+    mutation.confirmationSource = nil
+    // Retaining the known optimistic layer keeps ordinary retry and discard
+    // truthful until an authoritative refresh can peel it in bounded pages.
     try saveOutboxMutationWithoutTransaction(
       mutation,
       failureAttributeRevision: failureAttributeRevision

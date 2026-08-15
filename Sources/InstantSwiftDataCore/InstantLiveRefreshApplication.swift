@@ -155,7 +155,7 @@ enum InstantLiveRefreshTranslator {
     var translatedComputations: [InstantTranslatedLiveComputation] = []
     var finalComputationIndexByQueryKey: [String: Int] = [:]
     for computation in refreshOK.computations {
-      let computationOperations = try operations(
+      var computationOperations = try operations(
         from: computation,
         processedTransactionID: processedTransactionID,
         defaultTxTime: receivedAt,
@@ -165,13 +165,26 @@ enum InstantLiveRefreshTranslator {
       var queryResultReplacement: InstantLiveQueryResultReplacement?
       if let query = computation.objectValue?["instaql-query"] {
         let key = try InstantLiveQueryEncoder.registrationKey(for: query)
+        let insertTriples: [InstantTriple] = computationOperations.compactMap { operation in
+          guard case let .insert(triple) = operation else { return nil }
+          return triple
+        }
+        let boundedInsertTriples = InstantLiveQueryNestedLimit.limitedTriples(
+          queryKey: key,
+          triples: insertTriples,
+          attributes: attributeContext.resolvedLocalAttributes
+        )
+        let retainedInsertIdentities = Set(
+          boundedInsertTriples.map(InstantLiveTripleIdentity.init)
+        )
+        computationOperations.removeAll { operation in
+          guard case let .insert(triple) = operation else { return false }
+          return !retainedInsertIdentities.contains(InstantLiveTripleIdentity(triple))
+        }
         queryKey = key
         queryResultReplacement = InstantLiveQueryResultReplacement(
           key: key,
-          triples: computationOperations.compactMap {
-            guard case let .insert(triple) = $0 else { return nil }
-            return triple
-          },
+          triples: boundedInsertTriples,
           pageInfo: try pageInfo(
             from: computation,
             query: query,
@@ -669,6 +682,12 @@ private struct InstantLiveRefreshAttributeContext: Sendable {
   private var serverAttributesByID: [String: InstantAttribute] = [:]
   private var localAttributeIDsByServerID: [String: String] = [:]
   var attributesToMerge: [InstantAttribute] = []
+
+  var resolvedLocalAttributes: [InstantAttribute] {
+    var resolved = existing
+    resolved.merge(attributesToMerge)
+    return resolved.attributes
+  }
 
   init(existingAttributes: [InstantAttribute], serverAttributes: [InstantAttribute]) {
     self.existing = AttributeStore(attributes: existingAttributes)
