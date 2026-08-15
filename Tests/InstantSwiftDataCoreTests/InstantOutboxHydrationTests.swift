@@ -564,36 +564,82 @@ struct InstantOutboxHydrationTests {
     let cacheURL = try temporaryOutboxHydrationCacheURL()
     let persistence = try SQLitePersistenceStore(fileURL: cacheURL)
     try await persistence.bootstrap()
-    let mutations = (0..<10_000).map { index in
+    let targetID = "tx-accept-row-09999"
+    let localReceiptID = "tx-accept-row-00001"
+    let preparedNoEffectMutations = (0..<10_000).compactMap { index -> PendingMutation? in
       let id = String(format: "tx-accept-row-%05d", index)
+      guard id != targetID, id != localReceiptID else { return nil }
       var mutation = PendingMutation(
         id: id,
-        createdAt: InstantTimestamp(milliseconds: Int64(index + 1)),
+        createdAt: InstantTimestamp(milliseconds: Int64(index + 100)),
         transaction: InstantStoreTransaction(id: id, operations: [])
       )
-      if index == 1 {
-        mutation.status = .confirmed
-        mutation.confirmationSource = .manual
-      }
+      mutation.optimisticOverlayState = .applied
+      mutation.optimisticEffectReceiptVersion =
+        PendingMutation.currentOptimisticEffectReceiptVersion
       return mutation
     }
-    try await persistence.saveOutbox(mutations)
+    let seedState = try await persistence.loadCompactState()
+    let didSeedPreparedNoEffectRows = try await persistence.saveOutbox(
+      preparedNoEffectMutations,
+      replacing: [],
+      metadataEntries: [],
+      expectedStoreRevision: seedState.storeRevision,
+      expectedOutboxRevision: seedState.outboxRevision
+    )
+    expectNoDifference(didSeedPreparedNoEffectRows, true)
     let runtime = try await makeRuntime(
       appID: "outbox-row-addressed-acceptance",
       cacheURL: cacheURL
     )
-    let targetID = "tx-accept-row-09999"
+    let targetTransaction = makeTransaction(
+      id: targetID,
+      at: InstantTimestamp(milliseconds: 1)
+    )
+    try await runtime.transact(
+      targetTransaction,
+      createdAt: InstantTimestamp(milliseconds: 1)
+    )
+    let localReceiptTransaction = makeTransaction(
+      id: localReceiptID,
+      at: InstantTimestamp(milliseconds: 2)
+    )
+    try await runtime.transact(
+      localReceiptTransaction,
+      createdAt: InstantTimestamp(milliseconds: 2)
+    )
+    _ = try await runtime.confirmMutation(id: localReceiptID)
     try corruptOutboxJSON(
       id: "tx-accept-row-00000",
       in: cacheURL
     )
     await runtime.persistence.invalidateMemoryCache()
 
+    let claimantID = await runtime.automaticDeliveryClaimantIDForTesting()
+    let targetClaimToken = "row-addressed-target-claim"
+    await runtime.persistence.resetDecodedOutboxBodyCount()
+    let targetClaim = try await runtime.persistence.claimAutomaticOutboxDeliveryWindow(
+      InstantAutomaticOutboxClaimRequest(
+        claimantID: claimantID,
+        claimToken: targetClaimToken,
+        now: InstantTimestamp(milliseconds: 10_000),
+        maximumMutationCount: 1
+      )
+    )
+    expectNoDifference(targetClaim.mutations.map(\.id), [targetID], upstreamDeliverySource)
+    let targetClaimDecodeCount = await runtime.persistence.currentDecodedOutboxBodyCount()
+    expectNoDifference(
+      targetClaimDecodeCount,
+      1,
+      "The Runtime-owned target precedes the corrupt prepared no-effect head and is the only claim body decoded."
+    )
+
     await runtime.persistence.resetDecodedOutboxBodyCount()
     let accepted = try #require(
       try await runtime.acceptMutationIfPresent(
         id: targetID,
-        serverTransactionID: "server-row-addressed-acceptance"
+        serverTransactionID: "server-row-addressed-acceptance",
+        claimToken: targetClaimToken
       )
     )
 
@@ -623,7 +669,8 @@ struct InstantOutboxHydrationTests {
     let duplicate = try #require(
       try await runtime.acceptMutationIfPresent(
         id: targetID,
-        serverTransactionID: "server-conflicting-duplicate"
+        serverTransactionID: "server-conflicting-duplicate",
+        claimToken: nil
       )
     )
     expectNoDifference(duplicate.status, .confirmed, upstreamDeliverySource)
@@ -645,11 +692,36 @@ struct InstantOutboxHydrationTests {
       upstreamDeliverySource
     )
 
+    let localReceiptClaimToken = "row-addressed-local-receipt-claim"
+    await runtime.persistence.resetDecodedOutboxBodyCount()
+    let localReceiptClaim = try await runtime.persistence
+      .claimAutomaticOutboxDeliveryWindow(
+        InstantAutomaticOutboxClaimRequest(
+          claimantID: claimantID,
+          claimToken: localReceiptClaimToken,
+          now: InstantTimestamp(milliseconds: 10_001),
+          maximumMutationCount: 1
+        )
+      )
+    expectNoDifference(
+      localReceiptClaim.mutations.map(\.id),
+      [localReceiptID],
+      upstreamDeliverySource
+    )
+    let localReceiptClaimDecodeCount =
+      await runtime.persistence.currentDecodedOutboxBodyCount()
+    expectNoDifference(
+      localReceiptClaimDecodeCount,
+      1,
+      "The local receipt is Runtime-prepared and claimed without touching the corrupt prepared row."
+    )
+
     await runtime.persistence.resetDecodedOutboxBodyCount()
     let acceptedLocalReceipt = try #require(
       try await runtime.acceptMutationIfPresent(
-        id: "tx-accept-row-00001",
-        serverTransactionID: "server-local-receipt-acceptance"
+        id: localReceiptID,
+        serverTransactionID: "server-local-receipt-acceptance",
+        claimToken: localReceiptClaimToken
       )
     )
     expectNoDifference(acceptedLocalReceipt.status, .confirmed, upstreamDeliverySource)
@@ -677,7 +749,8 @@ struct InstantOutboxHydrationTests {
     await runtime.persistence.resetDecodedOutboxBodyCount()
     let missing = try await runtime.acceptMutationIfPresent(
       id: "tx-accept-row-missing",
-      serverTransactionID: "server-missing"
+      serverTransactionID: "server-missing",
+      claimToken: nil
     )
     expectNoDifference(missing, nil, upstreamDeliverySource)
     let missingDecodeCount = await runtime.persistence.currentDecodedOutboxBodyCount()
@@ -972,7 +1045,7 @@ struct InstantOutboxHydrationTests {
       receivedAt: InstantTimestamp(milliseconds: now.milliseconds + 1)
     )
 
-    let didMigrate = try await reader.migrateLocalPersistenceSnapshot(
+    let didMigrate = try await reader.rewriteResidentPersistenceSnapshotForTesting(
       name: "identity-after-external-final-delete"
     ) { $0 }
 
@@ -1096,15 +1169,13 @@ struct InstantOutboxHydrationTests {
         guard case let .insert(triple) = operation else { return nil }
         return triple
       }
-      let mutation = PendingMutation(id: transaction.id, createdAt: now, transaction: transaction)
       let initial = InstantPersistenceSnapshot(
-        store: InstantStoreSnapshot(attributes: TodoExample.attributes, triples: triples),
-        outbox: [mutation]
+        store: InstantStoreSnapshot(attributes: TodoExample.attributes, triples: triples)
       )
       try await persistence.saveSnapshot(initial)
       _ = try await persistence.loadCompactState()
       let targetStore = InstantStoreSnapshot(attributes: TodoExample.attributes, triples: [])
-      let target = InstantPersistenceSnapshot(store: targetStore, outbox: [mutation])
+      let target = InstantPersistenceSnapshot(store: targetStore)
       let didSave: Bool
       switch path {
       case .store:
@@ -1149,7 +1220,7 @@ struct InstantOutboxHydrationTests {
       try await reopened.bootstrap()
       let durable = try await reopened.loadState().snapshot
       expectNoDifference(durable.store.triples, [], "metadata diff path: \(path.rawValue)")
-      expectNoDifference(durable.outbox.first?.transaction, transaction)
+      expectNoDifference(durable.outbox, [])
     }
   }
 
@@ -1189,7 +1260,7 @@ struct InstantOutboxHydrationTests {
 
     expectNoDifference(didSave, true)
     let compact = try await persistence.loadCompactState().snapshot
-    expectNoDifference(compact.store.attributes, TodoExample.attributes)
+    expectNoDifference(Set(compact.store.attributes), Set(TodoExample.attributes))
     expectNoDifference(compact.outbox, [])
     let full = try await persistence.loadState().snapshot
     expectNoDifference(Set(full.store.triples), Set(triples))

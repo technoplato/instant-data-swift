@@ -28,10 +28,812 @@ private enum LiveQueryPruningReceipt: String, CaseIterable, Sendable {
   var optimisticOverlayState: InstantOptimisticOverlayState? {
     self == .legacyFailed ? nil : .applied
   }
+
+  var optimisticEffectReceiptVersion: Int? {
+    self == .legacyFailed ? nil : PendingMutation.currentOptimisticEffectReceiptVersion
+  }
+}
+
+private struct OutboxEffectMetadata: Equatable {
+  var metadataVersion: Int64
+  var isGlobal: Bool
+  var isActive: Bool
+  var entityCount: Int64
 }
 
 @Suite(.serialized)
 struct InstantStoreTests {
+  @Test
+  func reminderPriorityMigrationRewritesStoreForwardIntentAndRollbackTogether() throws {
+    let timestamp = InstantTimestamp(milliseconds: 1_700_000_000_000)
+    var attributes = ReminderExample.attributes
+    let priorityAttributeIndex = try #require(
+      attributes.firstIndex { $0.id == "reminders/priority" }
+    )
+    attributes[priorityAttributeIndex].valueType = .string
+
+    let resident = InstantTriple(
+      entityID: "legacy-reminder",
+      attributeID: "reminders/priority",
+      value: .string("high"),
+      txID: "tx-legacy-priority",
+      txTime: timestamp
+    )
+    var mutation = PendingMutation(
+      id: "tx-legacy-priority",
+      createdAt: timestamp,
+      transaction: InstantStoreTransaction(
+        id: "tx-legacy-priority",
+        operations: [
+          .merge(resident),
+          .deleteEntityByLookup(
+            InstantLookupRef(
+              attributeID: resident.attributeID,
+              value: .string("high")
+            )
+          ),
+        ]
+      )
+    )
+    mutation.optimisticOverlayState = .applied
+    mutation.optimisticEffectReceiptVersion =
+      PendingMutation.currentOptimisticEffectReceiptVersion
+    mutation.rollbackTransaction = InstantStoreTransaction(
+      id: "rollback-tx-legacy-priority",
+      operations: [
+        .insert(
+          InstantTriple(
+            entityID: resident.entityID,
+            attributeID: resident.attributeID,
+            value: .string("low"),
+            txID: "tx-authoritative-priority",
+            txTime: InstantTimestamp(milliseconds: timestamp.milliseconds - 1)
+          )
+        )
+      ]
+    )
+
+    let migrated = ReminderExample.migrateLegacyPriorityRanks(
+      in: InstantPersistenceSnapshot(
+        store: InstantStoreSnapshot(attributes: attributes, triples: [resident]),
+        outbox: [mutation]
+      )
+    )
+    let migratedMutation = try #require(migrated.outbox.first)
+    expectNoDifference(migratedMutation.id, mutation.id)
+    expectNoDifference(migratedMutation.transaction.id, mutation.transaction.id)
+    expectNoDifference(
+      migratedMutation.rollbackTransaction?.id,
+      mutation.rollbackTransaction?.id
+    )
+    expectNoDifference(
+      migrated.store.attributes.first { $0.id == resident.attributeID }?.valueType,
+      .number
+    )
+    expectNoDifference(migrated.store.triples.map(\.value), [.number(3)])
+
+    func priorityValue(in operation: InstantTripleOperation) -> InstantValue? {
+      switch operation {
+      case let .insert(triple), let .retract(triple), let .merge(triple):
+        triple.attributeID == resident.attributeID ? triple.value : nil
+      default:
+        nil
+      }
+    }
+    expectNoDifference(
+      migratedMutation.transaction.operations.compactMap(priorityValue(in:)),
+      [.number(3)]
+    )
+    let migratedLookupValues = migratedMutation.transaction.operations.compactMap {
+      operation -> InstantLookupValue? in
+      guard case let .deleteEntityByLookup(lookup) = operation else { return nil }
+      return lookup.value
+    }
+    expectNoDifference(migratedLookupValues, [.number(3)])
+    expectNoDifference(
+      migratedMutation.rollbackTransaction?.operations.compactMap(priorityValue(in:)),
+      [.number(1)]
+    )
+  }
+
+  @Test
+  func reminderPriorityDurableMigrationCoversNonresidentAndLiveQueryRowsAtomically()
+    async throws
+  {
+    let cacheURL = try temporaryCacheURL()
+    defer { try? FileManager.default.removeItem(at: cacheURL.deletingLastPathComponent()) }
+    let timestamp = InstantTimestamp(milliseconds: 1_700_000_100_000)
+    var legacyAttributes = ReminderExample.attributes
+    let priorityAttributeIndex = try #require(
+      legacyAttributes.firstIndex { $0.id == "reminders/priority" }
+    )
+    legacyAttributes[priorityAttributeIndex].valueType = .string
+    let resident = InstantTriple(
+      entityID: "legacy-resident-reminder",
+      attributeID: "reminders/priority",
+      value: .string("high"),
+      txID: "tx-legacy-resident-priority",
+      txTime: timestamp
+    )
+    let nonresident = InstantTriple(
+      entityID: "legacy-nonresident-reminder",
+      attributeID: "reminders/priority",
+      value: .string("low"),
+      txID: "server-legacy-nonresident-priority",
+      txTime: InstantTimestamp(milliseconds: timestamp.milliseconds - 1)
+    )
+    let seedRuntime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "reminder-priority-durable-migration",
+        persistenceURL: cacheURL,
+        initialAttributes: legacyAttributes,
+        now: { timestamp }
+      )
+    )
+    _ = try await seedRuntime.transact(
+      InstantStoreTransaction(
+        id: resident.txID,
+        operations: [.insert(resident)]
+      ),
+      createdAt: timestamp,
+      source: "test.reminder-priority-durable-migration"
+    )
+    let seedState = try await seedRuntime.persistence.loadState()
+    var seededSnapshot = seedState.snapshot
+    seededSnapshot.store.triples.append(nonresident)
+    let liveResult = InstantPersistedLiveQueryResult(
+      replacement: InstantLiveQueryResultReplacement(
+        key: "legacy-priority-live-query",
+        triples: [resident],
+        pageInfo: nil
+      ),
+      updatedAt: timestamp
+    )
+    let didSeed = try await seedRuntime.persistence.saveLiveRefresh(
+      seededSnapshot,
+      replacing: seedState.snapshot,
+      queryResults: [liveResult],
+      storeChanged: true,
+      outboxChanged: false,
+      metadataKey: "test.reminder-priority-durable-migration",
+      metadataValue: "seeded",
+      metadataUpdatedAt: timestamp,
+      expectedStoreRevision: seedState.storeRevision,
+      expectedOutboxRevision: seedState.outboxRevision,
+      expectedAttributeRevision: seedState.attributeRevision
+    )
+    expectNoDifference(didSeed, true)
+
+    let observingStore = try SQLitePersistenceStore(fileURL: cacheURL)
+    try await observingStore.bootstrap()
+    let observerBefore = try await observingStore.loadState()
+    #expect(observerBefore.snapshot.store.triples.contains(resident))
+    #expect(!observerBefore.snapshot.store.triples.contains(nonresident))
+
+    let migratingStore = try SQLitePersistenceStore(fileURL: cacheURL)
+    try await migratingStore.bootstrap()
+    let didMigrate = try await migratingStore.applyLocalPersistenceMigration(
+      ReminderExample.legacyPriorityRankMigration
+    )
+    expectNoDifference(didMigrate, true)
+
+    let observerAfter = try await observingStore.loadState()
+    expectNoDifference(observerAfter.storeRevision, observerBefore.storeRevision + 1)
+    expectNoDifference(observerAfter.attributeRevision, observerBefore.attributeRevision + 1)
+    expectNoDifference(observerAfter.outboxRevision, observerBefore.outboxRevision + 1)
+    expectNoDifference(observerAfter.queryResultRevision, observerBefore.queryResultRevision + 1)
+    #expect(observerAfter.snapshot.store.triples.contains { triple in
+      triple.entityID == resident.entityID && triple.value == .number(3)
+    })
+    expectNoDifference(
+      observerAfter.snapshot.store.attributes.first { $0.id == resident.attributeID }?.valueType,
+      .number
+    )
+    #expect(!observerAfter.snapshot.store.triples.contains { $0.entityID == nonresident.entityID })
+
+    let durableTriples: [InstantTriple] = try persistenceMigrationJSONRows(
+      at: cacheURL,
+      sql: "SELECT json FROM instant_triples ORDER BY entity_id, attribute_id, value_json"
+    )
+    expectNoDifference(
+      Dictionary(uniqueKeysWithValues: durableTriples.map { ($0.entityID, $0.value) }),
+      [
+        resident.entityID: .number(3),
+        nonresident.entityID: .number(1),
+      ]
+    )
+    let migratedLiveResult = try #require(
+      try await migratingStore.liveQueryResult(key: liveResult.key)
+    )
+    expectNoDifference(migratedLiveResult.triples.map(\.value), [.number(3)])
+    let ownershipValues: [InstantValue] = try persistenceMigrationJSONRows(
+      at: cacheURL,
+      sql:
+        "SELECT value_json FROM instant_live_query_triples WHERE query_key = 'legacy-priority-live-query'"
+    )
+    expectNoDifference(ownershipValues, [.number(3)])
+
+    let outboxRevision = try await migratingStore.currentOutboxRevision()
+    let migratedMutation = try #require(
+      try await migratingStore.loadOutboxMutations(
+        statuses: [.pending],
+        ids: [resident.txID],
+        limit: 1,
+        expectedOutboxRevision: outboxRevision
+      )?.first
+    )
+    func priorityValues(in operations: [InstantTripleOperation]) -> [InstantValue] {
+      operations.compactMap { operation in
+        switch operation {
+        case let .insert(triple), let .merge(triple), let .retract(triple):
+          triple.attributeID == resident.attributeID ? triple.value : nil
+        default:
+          nil
+        }
+      }
+    }
+    expectNoDifference(priorityValues(in: migratedMutation.transaction.operations), [.number(3)])
+    expectNoDifference(
+      migratedMutation.rollbackTransaction?.operations,
+      [.deleteEntity(resident.entityID)]
+    )
+    let migratedStoredReceipt = try await migratingStore
+      .optimisticEffectReceiptFingerprintForTesting(id: resident.txID)
+    let migratedBodyReceipt = try migratedMutation.optimisticEffectReceiptFingerprint()
+    expectNoDifference(migratedStoredReceipt, migratedBodyReceipt)
+    let migratedEffectMetadata = try readOutboxEffectMetadata(
+      at: cacheURL,
+      mutationID: resident.txID
+    )
+    expectNoDifference(
+      migratedEffectMetadata.metadataVersion,
+      Int64(InstantOptimisticEffectFootprint.currentVersion)
+    )
+    expectNoDifference(migratedEffectMetadata.isActive, true)
+    expectNoDifference(migratedEffectMetadata.entityCount, 1)
+
+    let revisionsAfterMigration = try await migratingStore.loadCompactState()
+    let didReapply = try await migratingStore.applyLocalPersistenceMigration(
+      ReminderExample.legacyPriorityRankMigration
+    )
+    expectNoDifference(didReapply, false)
+    let revisionsAfterReapply = try await migratingStore.loadCompactState()
+    expectNoDifference(revisionsAfterReapply.storeRevision, revisionsAfterMigration.storeRevision)
+    expectNoDifference(
+      revisionsAfterReapply.attributeRevision,
+      revisionsAfterMigration.attributeRevision
+    )
+    expectNoDifference(
+      revisionsAfterReapply.outboxRevision,
+      revisionsAfterMigration.outboxRevision
+    )
+    expectNoDifference(
+      revisionsAfterReapply.queryResultRevision,
+      revisionsAfterMigration.queryResultRevision
+    )
+    expectNoDifference(
+      try persistenceMigrationLedgerCount(at: cacheURL, name: "reminders.priority-ranks"),
+      1
+    )
+  }
+
+  @Test
+  func liveResultOnlyPriorityMigrationInvalidatesCrossActorMaterializationCache() async throws {
+    let cacheURL = try temporaryCacheURL()
+    defer { try? FileManager.default.removeItem(at: cacheURL.deletingLastPathComponent()) }
+    let timestamp = InstantTimestamp(milliseconds: 1_700_000_150_000)
+    let canonical = InstantTriple(
+      entityID: "live-result-only-priority",
+      attributeID: "reminders/priority",
+      value: .number(3),
+      txID: "server-live-result-only-priority",
+      txTime: timestamp
+    )
+    var legacyOwned = canonical
+    legacyOwned.value = .string("high")
+    let seedStore = try SQLitePersistenceStore(fileURL: cacheURL)
+    try await seedStore.bootstrap()
+    let didSeed = try await seedStore.saveLiveRefresh(
+      InstantPersistenceSnapshot(
+        store: InstantStoreSnapshot(
+          attributes: ReminderExample.attributes,
+          triples: [canonical]
+        )
+      ),
+      queryResults: [
+        InstantPersistedLiveQueryResult(
+          replacement: InstantLiveQueryResultReplacement(
+            key: "live-result-only-priority-query",
+            triples: [legacyOwned],
+            pageInfo: nil
+          ),
+          updatedAt: timestamp
+        )
+      ],
+      storeChanged: true,
+      outboxChanged: false,
+      metadataKey: "test.live-result-only-priority",
+      metadataValue: "seeded",
+      metadataUpdatedAt: timestamp,
+      expectedStoreRevision: 0,
+      expectedOutboxRevision: 0,
+      expectedAttributeRevision: 0
+    )
+    expectNoDifference(didSeed, true)
+
+    let observingStore = try SQLitePersistenceStore(fileURL: cacheURL)
+    try await observingStore.bootstrap()
+    let observerBefore = try await observingStore.loadCompactState()
+    #expect(observerBefore.snapshot.store.triples.contains(canonical))
+    let migratingStore = try SQLitePersistenceStore(fileURL: cacheURL)
+    try await migratingStore.bootstrap()
+    let didMigrate = try await migratingStore.applyLocalPersistenceMigration(
+      ReminderExample.legacyPriorityRankMigration
+    )
+    expectNoDifference(didMigrate, true)
+
+    let observerAfter = try await observingStore.loadCompactState()
+    expectNoDifference(observerAfter.storeRevision, observerBefore.storeRevision + 1)
+    expectNoDifference(observerAfter.attributeRevision, observerBefore.attributeRevision)
+    expectNoDifference(observerAfter.outboxRevision, observerBefore.outboxRevision)
+    expectNoDifference(observerAfter.queryResultRevision, observerBefore.queryResultRevision + 1)
+    #expect(observerAfter.snapshot.store.triples.contains(canonical))
+  }
+
+  @Test
+  func reminderPriorityDurableMigrationRejectsExactLiveIdentityCollisionAtomically()
+    async throws
+  {
+    let cacheURL = try temporaryCacheURL()
+    defer { try? FileManager.default.removeItem(at: cacheURL.deletingLastPathComponent()) }
+    let timestamp = InstantTimestamp(milliseconds: 1_700_000_175_000)
+    var legacyAttributes = ReminderExample.attributes
+    let priorityAttributeIndex = try #require(
+      legacyAttributes.firstIndex { $0.id == "reminders/priority" }
+    )
+    legacyAttributes[priorityAttributeIndex].valueType = .string
+    let legacyPriority = InstantTriple(
+      entityID: "live-priority-collision",
+      attributeID: "reminders/priority",
+      value: .string("low"),
+      txID: "server-live-priority-collision",
+      txTime: timestamp
+    )
+    var numericPriority = legacyPriority
+    numericPriority.value = .number(1)
+    let liveResult = InstantPersistedLiveQueryResult(
+      replacement: InstantLiveQueryResultReplacement(
+        key: "live-priority-collision-query",
+        triples: [legacyPriority, numericPriority],
+        pageInfo: nil
+      ),
+      updatedAt: timestamp
+    )
+    let persistence = try SQLitePersistenceStore(fileURL: cacheURL)
+    try await persistence.bootstrap()
+    let didSeed = try await persistence.saveLiveRefresh(
+      InstantPersistenceSnapshot(
+        store: InstantStoreSnapshot(attributes: legacyAttributes, triples: [])
+      ),
+      queryResults: [liveResult],
+      storeChanged: true,
+      outboxChanged: false,
+      metadataKey: "test.live-priority-collision",
+      metadataValue: "seeded",
+      metadataUpdatedAt: timestamp,
+      expectedStoreRevision: 0,
+      expectedOutboxRevision: 0,
+      expectedAttributeRevision: 0
+    )
+    expectNoDifference(didSeed, true)
+    let stateBefore = try await persistence.loadCompactState()
+    let liveResultBefore = try await persistence.liveQueryResult(key: liveResult.key)
+    let ownershipBefore: [InstantValue] = try persistenceMigrationJSONRows(
+      at: cacheURL,
+      sql:
+        "SELECT value_json FROM instant_live_query_triples WHERE query_key = 'live-priority-collision-query' ORDER BY value_json"
+    )
+
+    do {
+      _ = try await persistence.applyLocalPersistenceMigration(
+        ReminderExample.legacyPriorityRankMigration
+      )
+      Issue.record("Expected the migration to reject a collapsed live triple identity.")
+    } catch let error as InstantError {
+      expectNoDifference(error.code, .persistenceFailed)
+      expectNoDifference(error.operation, "apply local persistence migration")
+      #expect(error.message.contains("collapsed two persisted live-query triples"))
+    }
+
+    let stateAfter = try await persistence.loadCompactState()
+    let liveResultAfter = try await persistence.liveQueryResult(key: liveResult.key)
+    let ownershipAfter: [InstantValue] = try persistenceMigrationJSONRows(
+      at: cacheURL,
+      sql:
+        "SELECT value_json FROM instant_live_query_triples WHERE query_key = 'live-priority-collision-query' ORDER BY value_json"
+    )
+    expectNoDifference(stateAfter, stateBefore)
+    expectNoDifference(liveResultAfter, liveResultBefore)
+    expectNoDifference(ownershipAfter, ownershipBefore)
+    expectNoDifference(
+      try persistenceMigrationLedgerCount(at: cacheURL, name: "reminders.priority-ranks"),
+      0
+    )
+  }
+
+  @Test
+  func reminderPriorityDurableMigrationRejectsOfferedAndAcceptedRowsWithoutPartialWrites()
+    async throws
+  {
+    for shouldAccept in [false, true] {
+      let cacheURL = try temporaryCacheURL()
+      defer { try? FileManager.default.removeItem(at: cacheURL.deletingLastPathComponent()) }
+      let timestamp = InstantTimestamp(
+        milliseconds: 1_700_000_200_000 + (shouldAccept ? 1 : 0)
+      )
+      var legacyAttributes = ReminderExample.attributes
+      let priorityAttributeIndex = try #require(
+        legacyAttributes.firstIndex { $0.id == "reminders/priority" }
+      )
+      legacyAttributes[priorityAttributeIndex].valueType = .string
+      let priority = InstantTriple(
+        entityID: shouldAccept ? "accepted-legacy-priority" : "offered-legacy-priority",
+        attributeID: "reminders/priority",
+        value: .string("medium"),
+        txID: shouldAccept ? "tx-accepted-legacy-priority" : "tx-offered-legacy-priority",
+        txTime: timestamp
+      )
+      let runtime = try await InstantRuntime.bootstrap(
+        configuration: InstantRuntimeConfiguration(
+          appID: "reminder-priority-authority-barrier",
+          persistenceURL: cacheURL,
+          initialAttributes: legacyAttributes,
+          now: { timestamp }
+        )
+      )
+      _ = try await runtime.transact(
+        InstantStoreTransaction(id: priority.txID, operations: [.merge(priority)]),
+        createdAt: timestamp,
+        source: "test.reminder-priority-authority-barrier"
+      )
+      let claim = try await runtime.persistence.claimAutomaticOutboxDeliveryWindow(
+        InstantAutomaticOutboxClaimRequest(
+          claimantID: "reminder-priority-authority-barrier",
+          claimToken: "reminder-priority-authority-token",
+          now: timestamp,
+          maximumMutationCount: 1
+        )
+      )
+      expectNoDifference(claim.mutations.map(\.id), [priority.txID])
+      if shouldAccept {
+        let acceptanceRevision = try await runtime.persistence.currentOutboxRevision()
+        let acceptance = try await runtime.persistence.acceptOutboxMutation(
+          id: priority.txID,
+          serverTransactionID: "server-accepted-legacy-priority",
+          claimantID: "reminder-priority-authority-barrier",
+          claimToken: "reminder-priority-authority-token",
+          expectedOutboxRevision: acceptanceRevision
+        )
+        expectNoDifference(acceptance?.didChange, true)
+      }
+
+      let stateBefore = try await runtime.persistence.loadCompactState()
+      let attributesBefore: [InstantAttribute] = try persistenceMigrationJSONRows(
+        at: cacheURL,
+        sql: "SELECT json FROM instant_attributes ORDER BY id"
+      )
+      let triplesBefore: [InstantTriple] = try persistenceMigrationJSONRows(
+        at: cacheURL,
+        sql: "SELECT json FROM instant_triples ORDER BY entity_id, attribute_id, value_json"
+      )
+      let outboxBefore: [PendingMutation] = try persistenceMigrationJSONRows(
+        at: cacheURL,
+        sql: "SELECT json FROM instant_outbox ORDER BY mutation_id"
+      )
+      let claimBefore = try await runtime.persistence.outboxDeliveryClaimForTesting(
+        id: priority.txID
+      )
+      let rowRevisionBefore = try await runtime.persistence.outboxMutationRevisionForTesting(
+        id: priority.txID
+      )
+      let receiptBefore = try await runtime.persistence
+        .optimisticEffectReceiptFingerprintForTesting(id: priority.txID)
+      let effectMetadataBefore = try readOutboxEffectMetadata(
+        at: cacheURL,
+        mutationID: priority.txID
+      )
+
+      do {
+        _ = try await runtime.persistence.applyLocalPersistenceMigration(
+          ReminderExample.legacyPriorityRankMigration
+        )
+        Issue.record("Expected offered or accepted wire authority to block migration.")
+      } catch let error as InstantError {
+        expectNoDifference(error.code, .persistenceFailed)
+        expectNoDifference(error.operation, "apply local persistence migration")
+        expectNoDifference(error.localID, priority.txID)
+      }
+
+      let stateAfter = try await runtime.persistence.loadCompactState()
+      let attributesAfter: [InstantAttribute] = try persistenceMigrationJSONRows(
+        at: cacheURL,
+        sql: "SELECT json FROM instant_attributes ORDER BY id"
+      )
+      let triplesAfter: [InstantTriple] = try persistenceMigrationJSONRows(
+        at: cacheURL,
+        sql: "SELECT json FROM instant_triples ORDER BY entity_id, attribute_id, value_json"
+      )
+      let outboxAfter: [PendingMutation] = try persistenceMigrationJSONRows(
+        at: cacheURL,
+        sql: "SELECT json FROM instant_outbox ORDER BY mutation_id"
+      )
+      expectNoDifference(stateAfter, stateBefore)
+      expectNoDifference(attributesAfter, attributesBefore)
+      expectNoDifference(triplesAfter, triplesBefore)
+      expectNoDifference(outboxAfter, outboxBefore)
+      let claimAfter = try await runtime.persistence.outboxDeliveryClaimForTesting(
+        id: priority.txID
+      )
+      let rowRevisionAfter = try await runtime.persistence.outboxMutationRevisionForTesting(
+        id: priority.txID
+      )
+      let receiptAfter = try await runtime.persistence
+        .optimisticEffectReceiptFingerprintForTesting(id: priority.txID)
+      expectNoDifference(claimAfter, claimBefore)
+      expectNoDifference(rowRevisionAfter, rowRevisionBefore)
+      expectNoDifference(receiptAfter, receiptBefore)
+      expectNoDifference(
+        try readOutboxEffectMetadata(at: cacheURL, mutationID: priority.txID),
+        effectMetadataBefore
+      )
+      expectNoDifference(
+        try persistenceMigrationLedgerCount(at: cacheURL, name: "reminders.priority-ranks"),
+        0
+      )
+    }
+  }
+
+  @Test
+  func reminderPriorityDurableMigrationRejectsUnchangedUnknownOptimisticOwner()
+    async throws
+  {
+    let cacheURL = try temporaryCacheURL()
+    defer { try? FileManager.default.removeItem(at: cacheURL.deletingLastPathComponent()) }
+    let timestamp = InstantTimestamp(milliseconds: 1_700_000_300_000)
+    var legacyAttributes = ReminderExample.attributes
+    let priorityAttributeIndex = try #require(
+      legacyAttributes.firstIndex { $0.id == "reminders/priority" }
+    )
+    legacyAttributes[priorityAttributeIndex].valueType = .string
+    let legacyPriority = InstantTriple(
+      entityID: "legacy-priority-with-unknown-owner",
+      attributeID: "reminders/priority",
+      value: .string("low"),
+      txID: "server-legacy-priority-with-unknown-owner",
+      txTime: timestamp
+    )
+    let unknownOwner = PendingMutation(
+      id: "unrelated-unknown-owner",
+      createdAt: timestamp,
+      transaction: InstantStoreTransaction(
+        id: "unrelated-unknown-owner",
+        operations: [
+          .insert(
+            InstantTriple(
+              entityID: "unrelated-entity",
+              attributeID: "unrelated/value",
+              value: .string("unchanged"),
+              txID: "unrelated-unknown-owner",
+              txTime: timestamp
+            )
+          )
+        ]
+      )
+    )
+    let persistence = try SQLitePersistenceStore(fileURL: cacheURL)
+    try await persistence.bootstrap()
+    try await persistence.saveStoreSnapshot(
+      InstantStoreSnapshot(attributes: legacyAttributes, triples: [legacyPriority])
+    )
+    try await persistence.saveOutbox([unknownOwner])
+    let stateBefore = try await persistence.loadCompactState()
+    let attributesBefore: [InstantAttribute] = try persistenceMigrationJSONRows(
+      at: cacheURL,
+      sql: "SELECT json FROM instant_attributes ORDER BY id"
+    )
+    let triplesBefore: [InstantTriple] = try persistenceMigrationJSONRows(
+      at: cacheURL,
+      sql: "SELECT json FROM instant_triples ORDER BY entity_id, attribute_id, value_json"
+    )
+    let outboxBefore: [PendingMutation] = try persistenceMigrationJSONRows(
+      at: cacheURL,
+      sql: "SELECT json FROM instant_outbox ORDER BY mutation_id"
+    )
+    let effectMetadataBefore = try readOutboxEffectMetadata(
+      at: cacheURL,
+      mutationID: unknownOwner.id
+    )
+    let unknownOwnerReceipt = try await persistence
+      .optimisticEffectReceiptFingerprintForTesting(id: unknownOwner.id)
+    expectNoDifference(unknownOwnerReceipt, nil)
+
+    do {
+      _ = try await persistence.applyLocalPersistenceMigration(
+        ReminderExample.legacyPriorityRankMigration
+      )
+      Issue.record("Expected an unchanged unknown optimistic owner to block migration.")
+    } catch let error as InstantError {
+      expectNoDifference(error.code, .persistenceFailed)
+      expectNoDifference(error.operation, "apply local persistence migration")
+      expectNoDifference(error.localID, unknownOwner.id)
+    }
+
+    let stateAfter = try await persistence.loadCompactState()
+    expectNoDifference(stateAfter.storeRevision, stateBefore.storeRevision)
+    expectNoDifference(stateAfter.attributeRevision, stateBefore.attributeRevision)
+    expectNoDifference(stateAfter.outboxRevision, stateBefore.outboxRevision)
+    expectNoDifference(stateAfter.queryResultRevision, stateBefore.queryResultRevision)
+    let attributesAfter: [InstantAttribute] = try persistenceMigrationJSONRows(
+      at: cacheURL,
+      sql: "SELECT json FROM instant_attributes ORDER BY id"
+    )
+    let triplesAfter: [InstantTriple] = try persistenceMigrationJSONRows(
+      at: cacheURL,
+      sql: "SELECT json FROM instant_triples ORDER BY entity_id, attribute_id, value_json"
+    )
+    let outboxAfter: [PendingMutation] = try persistenceMigrationJSONRows(
+      at: cacheURL,
+      sql: "SELECT json FROM instant_outbox ORDER BY mutation_id"
+    )
+    expectNoDifference(attributesAfter, attributesBefore)
+    expectNoDifference(triplesAfter, triplesBefore)
+    expectNoDifference(outboxAfter, outboxBefore)
+    expectNoDifference(
+      try readOutboxEffectMetadata(at: cacheURL, mutationID: unknownOwner.id),
+      effectMetadataBefore
+    )
+    expectNoDifference(
+      try persistenceMigrationLedgerCount(at: cacheURL, name: "reminders.priority-ranks"),
+      0
+    )
+  }
+
+  @Test
+  func reminderPriorityDurableMigrationRejectsUnknownLegacyRankAtomically() async throws {
+    let cacheURL = try temporaryCacheURL()
+    defer { try? FileManager.default.removeItem(at: cacheURL.deletingLastPathComponent()) }
+    let timestamp = InstantTimestamp(milliseconds: 1_700_000_400_000)
+    var legacyAttributes = ReminderExample.attributes
+    let priorityAttributeIndex = try #require(
+      legacyAttributes.firstIndex { $0.id == "reminders/priority" }
+    )
+    legacyAttributes[priorityAttributeIndex].valueType = .string
+    let incompatiblePriority = InstantTriple(
+      entityID: "incompatible-legacy-priority",
+      attributeID: "reminders/priority",
+      value: .string("urgent"),
+      txID: "server-incompatible-legacy-priority",
+      txTime: timestamp
+    )
+    let persistence = try SQLitePersistenceStore(fileURL: cacheURL)
+    try await persistence.bootstrap()
+    try await persistence.saveStoreSnapshot(
+      InstantStoreSnapshot(
+        attributes: legacyAttributes,
+        triples: [incompatiblePriority]
+      )
+    )
+    let stateBefore = try await persistence.loadCompactState()
+    let attributesBefore: [InstantAttribute] = try persistenceMigrationJSONRows(
+      at: cacheURL,
+      sql: "SELECT json FROM instant_attributes ORDER BY id"
+    )
+    let triplesBefore: [InstantTriple] = try persistenceMigrationJSONRows(
+      at: cacheURL,
+      sql: "SELECT json FROM instant_triples ORDER BY entity_id, attribute_id, value_json"
+    )
+
+    do {
+      _ = try await persistence.applyLocalPersistenceMigration(
+        ReminderExample.legacyPriorityRankMigration
+      )
+      Issue.record("Expected an unknown legacy priority rank to fail closed.")
+    } catch let error as InstantError {
+      expectNoDifference(error.code, .persistenceFailed)
+      expectNoDifference(error.operation, "migrate reminder priority persistence")
+      #expect(error.message.contains("urgent"))
+    }
+
+    let stateAfter = try await persistence.loadCompactState()
+    expectNoDifference(stateAfter.storeRevision, stateBefore.storeRevision)
+    expectNoDifference(stateAfter.attributeRevision, stateBefore.attributeRevision)
+    expectNoDifference(stateAfter.outboxRevision, stateBefore.outboxRevision)
+    expectNoDifference(stateAfter.queryResultRevision, stateBefore.queryResultRevision)
+    let attributesAfter: [InstantAttribute] = try persistenceMigrationJSONRows(
+      at: cacheURL,
+      sql: "SELECT json FROM instant_attributes ORDER BY id"
+    )
+    let triplesAfter: [InstantTriple] = try persistenceMigrationJSONRows(
+      at: cacheURL,
+      sql: "SELECT json FROM instant_triples ORDER BY entity_id, attribute_id, value_json"
+    )
+    expectNoDifference(attributesAfter, attributesBefore)
+    expectNoDifference(triplesAfter, triplesBefore)
+    expectNoDifference(
+      try persistenceMigrationLedgerCount(at: cacheURL, name: "reminders.priority-ranks"),
+      0
+    )
+  }
+
+  @Test(arguments: [0.0, 1.5, 4.0, 99.0])
+  func reminderPriorityDurableMigrationRejectsUnknownNumericRankAtomically(
+    _ rawRank: Double
+  ) async throws {
+    let cacheURL = try temporaryCacheURL()
+    defer { try? FileManager.default.removeItem(at: cacheURL.deletingLastPathComponent()) }
+    let timestamp = InstantTimestamp(milliseconds: 1_700_000_325_000)
+    var legacyAttributes = ReminderExample.attributes
+    let priorityAttributeIndex = try #require(
+      legacyAttributes.firstIndex { $0.id == "reminders/priority" }
+    )
+    legacyAttributes[priorityAttributeIndex].valueType = .string
+    let incompatiblePriority = InstantTriple(
+      entityID: "unknown-numeric-priority-rank",
+      attributeID: "reminders/priority",
+      value: .number(rawRank),
+      txID: "server-unknown-numeric-priority-rank",
+      txTime: timestamp
+    )
+    let persistence = try SQLitePersistenceStore(fileURL: cacheURL)
+    try await persistence.bootstrap()
+    try await persistence.saveStoreSnapshot(
+      InstantStoreSnapshot(
+        attributes: legacyAttributes,
+        triples: [incompatiblePriority]
+      )
+    )
+    let stateBefore = try await persistence.loadCompactState()
+    let attributesBefore: [InstantAttribute] = try persistenceMigrationJSONRows(
+      at: cacheURL,
+      sql: "SELECT json FROM instant_attributes ORDER BY id"
+    )
+    let triplesBefore: [InstantTriple] = try persistenceMigrationJSONRows(
+      at: cacheURL,
+      sql: "SELECT json FROM instant_triples ORDER BY entity_id, attribute_id, value_json"
+    )
+
+    do {
+      _ = try await persistence.applyLocalPersistenceMigration(
+        ReminderExample.legacyPriorityRankMigration
+      )
+      Issue.record("Expected an unknown numeric reminder priority rank to fail closed.")
+    } catch let error as InstantError {
+      expectNoDifference(error.code, .persistenceFailed)
+      expectNoDifference(error.operation, "migrate reminder priority persistence")
+      #expect(error.message.contains("unknown numeric reminder priority rank"))
+    }
+
+    let stateAfter = try await persistence.loadCompactState()
+    let attributesAfter: [InstantAttribute] = try persistenceMigrationJSONRows(
+      at: cacheURL,
+      sql: "SELECT json FROM instant_attributes ORDER BY id"
+    )
+    let triplesAfter: [InstantTriple] = try persistenceMigrationJSONRows(
+      at: cacheURL,
+      sql: "SELECT json FROM instant_triples ORDER BY entity_id, attribute_id, value_json"
+    )
+    expectNoDifference(stateAfter.storeRevision, stateBefore.storeRevision)
+    expectNoDifference(stateAfter.attributeRevision, stateBefore.attributeRevision)
+    expectNoDifference(stateAfter.outboxRevision, stateBefore.outboxRevision)
+    expectNoDifference(stateAfter.queryResultRevision, stateBefore.queryResultRevision)
+    expectNoDifference(attributesAfter, attributesBefore)
+    expectNoDifference(triplesAfter, triplesBefore)
+    expectNoDifference(
+      try persistenceMigrationLedgerCount(at: cacheURL, name: "reminders.priority-ranks"),
+      0
+    )
+  }
+
   @Test
   func rollbackPreparationIsScopedToChangedEntitiesInLargeStore() async throws {
     let attribute = InstantAttribute(
@@ -888,6 +1690,1259 @@ struct InstantStoreTests {
     )
     expectNoDifference(resident.txID, local.id)
     expectNoDifference(resident.value, .string("ready"))
+  }
+
+  @Test
+  func knownNoMaterializedOptimisticEffectReplaysDeleteAfterLaterServerInsert() async throws {
+    let cacheURL = try temporaryCacheURL()
+    let entityID = "todo-known-no-effect-delete"
+    let seedTime = InstantTimestamp(milliseconds: 1_700_000_000_000)
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "known-no-materialized-effect-delete",
+        persistenceURL: cacheURL,
+        initialAttributes: TodoExample.attributes
+      )
+    )
+    _ = try await runtime.applyServerTransaction(
+      InstantStoreTransaction(
+        id: "100",
+        operations: TodoExample.createOperations(
+          id: entityID,
+          text: "Original server value",
+          createdAt: seedTime,
+          transactionID: "100"
+        )
+      )
+    )
+
+    let localDelete = InstantStoreTransaction(
+      id: "local-delete-known-no-effect",
+      operations: [.deleteEntity(entityID)]
+    )
+    let unprepared = PendingMutation(
+      id: localDelete.id,
+      createdAt: InstantTimestamp(milliseconds: seedTime.milliseconds + 1),
+      transaction: localDelete
+    )
+    expectNoDifference(unprepared.optimisticOverlayState, nil)
+    expectNoDifference(unprepared.rollbackTransaction, nil)
+    expectNoDifference(unprepared.isLegacyUnknownOverlayCandidate, true)
+    var stateMissingWithRollback = unprepared
+    stateMissingWithRollback.rollbackTransaction = InstantStoreTransaction(
+      id: "unproven-rollback",
+      operations: [.deleteEntity(entityID)]
+    )
+    switch stateMissingWithRollback.optimisticEffectReceipt {
+    case .unknown:
+      break
+    case .noCurrentMaterializedEffect, .materialized(_):
+      Issue.record("A missing overlay-state receipt must remain fail-closed.")
+    }
+    expectNoDifference(stateMissingWithRollback.isLegacyUnknownOverlayCandidate, true)
+    var emptyRollback = unprepared
+    emptyRollback.optimisticOverlayState = .applied
+    emptyRollback.rollbackTransaction = InstantStoreTransaction(
+      id: "empty-unproven-rollback",
+      operations: []
+    )
+    switch emptyRollback.optimisticEffectReceipt {
+    case .unknown:
+      break
+    case .noCurrentMaterializedEffect, .materialized(_):
+      Issue.record("A canonical applied receipt requires a nonempty rollback.")
+    }
+    expectNoDifference(emptyRollback.provesReplayableOptimisticEffectReceipt, false)
+    expectNoDifference(emptyRollback.isLegacyUnknownOverlayCandidate, true)
+    expectNoDifference(InstantOptimisticEffectFootprint.normalized(for: emptyRollback), nil)
+    _ = try await runtime.transact(
+      localDelete,
+      createdAt: InstantTimestamp(milliseconds: seedTime.milliseconds + 1)
+    )
+    let effectiveLocalDelete = try #require(
+      await runtime.pendingMutations().first { $0.id == localDelete.id }
+    )
+    expectNoDifference(effectiveLocalDelete.optimisticOverlayState, .applied)
+    #expect(effectiveLocalDelete.rollbackTransaction != nil)
+    let todosAfterLocalDelete = try await TodoExample.decode(runtime.query(TodoExample.query))
+    expectNoDifference(todosAfterLocalDelete, [])
+
+    // The authoritative server state catches up to the local delete. Replaying
+    // the still-deliverable body is now a no-op, so it has no current inverse.
+    _ = try await runtime.applyServerTransaction(
+      InstantStoreTransaction(id: "150", operations: [.deleteEntity(entityID)])
+    )
+    let redundantLocalDelete = try #require(
+      await runtime.pendingMutations().first { $0.id == localDelete.id }
+    )
+    expectNoDifference(
+      redundantLocalDelete.optimisticOverlayState,
+      .applied
+    )
+    expectNoDifference(
+      redundantLocalDelete.optimisticEffectReceiptVersion,
+      PendingMutation.currentOptimisticEffectReceiptVersion
+    )
+    expectNoDifference(redundantLocalDelete.rollbackTransaction, nil)
+    let encodedReplayableReceipt = try JSONEncoder().encode(redundantLocalDelete)
+    let decodedReplayableReceipt = try JSONDecoder().decode(
+      PendingMutation.self,
+      from: encodedReplayableReceipt
+    )
+    expectNoDifference(
+      decodedReplayableReceipt.optimisticOverlayState,
+      .applied
+    )
+    expectNoDifference(
+      decodedReplayableReceipt.optimisticEffectReceiptVersion,
+      PendingMutation.currentOptimisticEffectReceiptVersion
+    )
+
+    let relaunchedRuntime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "known-no-materialized-effect-delete",
+        persistenceURL: cacheURL,
+        initialAttributes: TodoExample.attributes
+      )
+    )
+    let relaunchedReplayableDelete = try #require(
+      await relaunchedRuntime.pendingMutations().first { $0.id == localDelete.id }
+    )
+    expectNoDifference(
+      relaunchedReplayableDelete.optimisticOverlayState,
+      .applied
+    )
+    expectNoDifference(
+      relaunchedReplayableDelete.optimisticEffectReceiptVersion,
+      PendingMutation.currentOptimisticEffectReceiptVersion
+    )
+    expectNoDifference(relaunchedReplayableDelete.rollbackTransaction, nil)
+
+    // A later refresh makes the pending body effective again. It must stay
+    // replayable even though the prior replay had no materialized layer to peel.
+    _ = try await relaunchedRuntime.applyServerTransaction(
+      InstantStoreTransaction(
+        id: "160",
+        operations: TodoExample.createOperations(
+          id: entityID,
+          text: "Later server value",
+          createdAt: InstantTimestamp(milliseconds: seedTime.milliseconds + 2),
+          transactionID: "160"
+        )
+      )
+    )
+    let effectiveAgain = try #require(
+      await relaunchedRuntime.pendingMutations().first { $0.id == localDelete.id }
+    )
+    expectNoDifference(effectiveAgain.optimisticOverlayState, .applied)
+    #expect(effectiveAgain.rollbackTransaction != nil)
+    let todosAfterEffectiveReplay = try await TodoExample.decode(
+      relaunchedRuntime.query(TodoExample.query)
+    )
+    expectNoDifference(todosAfterEffectiveReplay, [])
+
+    let failed = try await relaunchedRuntime.failMutation(
+      id: localDelete.id,
+      failure: InstantMutationFailure(
+        code: .validationFailed,
+        message: "server rejected local delete"
+      ),
+      recordsConnectionFailure: false
+    )
+    expectNoDifference(failed.status, .failed)
+    expectNoDifference(failed.optimisticOverlayState, .removed)
+    expectNoDifference(failed.rollbackTransaction, nil)
+    let restored = try await TodoExample.decode(relaunchedRuntime.query(TodoExample.query))
+    expectNoDifference(restored.map(\.text), ["Later server value"])
+    let status = try await relaunchedRuntime.connectionStatus()
+    expectNoDifference(status.state, .opened)
+    expectNoDifference(status.lastErrorMessage, nil)
+  }
+
+  @Test
+  func knownNoMaterializedOptimisticEffectUnresolvedLookupSurvivesFailureRetryAndRefresh()
+    async throws
+  {
+    let cacheURL = try temporaryCacheURL()
+    let entityID = "todo-late-lookup"
+    let createdAt = InstantTimestamp(milliseconds: 1_700_000_000_000)
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "known-no-materialized-effect-lookup",
+        persistenceURL: cacheURL,
+        initialAttributes: TodoExample.attributes
+      )
+    )
+    let lookupDelete = InstantStoreTransaction(
+      id: "local-unresolved-lookup-delete",
+      operations: [
+        .deleteEntityByLookup(
+          InstantLookupRef(
+            attributeID: "todos/id",
+            value: .string(entityID)
+          )
+        )
+      ]
+    )
+
+    let localResult = try await runtime.transact(lookupDelete, createdAt: createdAt)
+    expectNoDifference(localResult.changedEntityIDs, [])
+    let unresolved = try #require(
+      await runtime.pendingMutations().first { $0.id == lookupDelete.id }
+    )
+    expectNoDifference(
+      unresolved.optimisticOverlayState,
+      .applied
+    )
+    expectNoDifference(
+      unresolved.optimisticEffectReceiptVersion,
+      PendingMutation.currentOptimisticEffectReceiptVersion
+    )
+    expectNoDifference(unresolved.rollbackTransaction, nil)
+
+    let failed = try await runtime.failMutation(
+      id: lookupDelete.id,
+      failure: InstantMutationFailure(
+        code: .validationFailed,
+        message: "server rejected unresolved lookup"
+      ),
+      recordsConnectionFailure: false
+    )
+    expectNoDifference(failed.optimisticOverlayState, .removed)
+    expectNoDifference(failed.rollbackTransaction, nil)
+    let statusAfterFailure = try await runtime.connectionStatus()
+    expectNoDifference(statusAfterFailure.state, .opened)
+    expectNoDifference(statusAfterFailure.lastErrorMessage, nil)
+
+    let retried = try await runtime.retryMutation(id: lookupDelete.id)
+    expectNoDifference(retried.status, .pending)
+    expectNoDifference(
+      retried.optimisticOverlayState,
+      .applied
+    )
+    expectNoDifference(
+      retried.optimisticEffectReceiptVersion,
+      PendingMutation.currentOptimisticEffectReceiptVersion
+    )
+    expectNoDifference(retried.rollbackTransaction, nil)
+
+    _ = try await runtime.applyServerTransaction(
+      InstantStoreTransaction(
+        id: "200",
+        operations: TodoExample.createOperations(
+          id: entityID,
+          text: "Server value resolved after retry",
+          createdAt: InstantTimestamp(milliseconds: createdAt.milliseconds + 1),
+          transactionID: "200"
+        )
+      )
+    )
+    let todosAfterLookupReplay = try await TodoExample.decode(runtime.query(TodoExample.query))
+    expectNoDifference(todosAfterLookupReplay, [])
+    let resolvedDelete = try #require(
+      await runtime.pendingMutations().first { $0.id == lookupDelete.id }
+    )
+    expectNoDifference(resolvedDelete.optimisticOverlayState, .applied)
+    #expect(resolvedDelete.rollbackTransaction != nil)
+    let statusAfterRefresh = try await runtime.connectionStatus()
+    expectNoDifference(statusAfterRefresh.state, .opened)
+    expectNoDifference(statusAfterRefresh.lastErrorMessage, nil)
+  }
+
+  @Test
+  func knownNoMaterializedOptimisticEffectAmbiguousAppliedWithoutRollbackStaysFailClosed()
+    async throws
+  {
+    let cacheURL = try temporaryCacheURL()
+    let entityID = "todo-ambiguous-applied-no-rollback"
+    let timestamp = InstantTimestamp(milliseconds: 1_700_000_000_000)
+    let persistedResult = persistedLiveTodoResult(
+      key: "ambiguous-applied-no-rollback",
+      entityID: entityID,
+      text: "Visible value with ambiguous provenance",
+      updatedAt: timestamp
+    )
+    var ambiguousMutation = PendingMutation(
+      id: "ambiguous-applied-no-rollback",
+      createdAt: timestamp,
+      transaction: InstantStoreTransaction(
+        id: "ambiguous-applied-no-rollback",
+        operations: [
+          .insert(
+            InstantTriple(
+              entityID: entityID,
+              attributeID: "todos/text",
+              value: .string("Visible value with ambiguous provenance"),
+              txID: "ambiguous-applied-no-rollback",
+              txTime: timestamp
+            )
+          )
+        ]
+      )
+    )
+    // This is the historical ambiguous shape: public construction used to say
+    // `.applied` even though no completed prepare or inverse proved provenance.
+    ambiguousMutation.optimisticOverlayState = .applied
+    ambiguousMutation.rollbackTransaction = nil
+    if case .unknown = ambiguousMutation.optimisticEffectReceipt {
+      // Expected.
+    } else {
+      Issue.record("Historical applied-without-rollback state must remain unknown.")
+    }
+    expectNoDifference(ambiguousMutation.isLegacyUnknownOverlayCandidate, true)
+
+    let persistence = try SQLitePersistenceStore(fileURL: cacheURL)
+    try await persistence.bootstrap()
+    try await persistence.saveSnapshot(
+      InstantPersistenceSnapshot(
+        store: InstantStoreSnapshot(
+          attributes: TodoExample.attributes,
+          triples: persistedResult.triples
+        ),
+        outbox: [ambiguousMutation]
+      )
+    )
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "ambiguous-applied-no-rollback",
+        persistenceURL: cacheURL,
+        initialAttributes: TodoExample.attributes
+      )
+    )
+    let beforeFailure = try await TodoExample.decode(runtime.query(TodoExample.query))
+    expectNoDifference(
+      beforeFailure.map(\.text),
+      ["Visible value with ambiguous provenance"]
+    )
+
+    do {
+      _ = try await runtime.failMutation(
+        id: ambiguousMutation.id,
+        failure: InstantMutationFailure(
+          code: .validationFailed,
+          message: "server rejected ambiguous historical mutation"
+        ),
+        recordsConnectionFailure: false
+      )
+      Issue.record("Failure disposition must refuse an unproven optimistic effect.")
+    } catch let error as InstantError {
+      expectNoDifference(error.code, .persistenceFailed)
+      expectNoDifference(error.localMutationDisposition, .retainedUnknown)
+    }
+    let afterFailure = try await TodoExample.decode(runtime.query(TodoExample.query))
+    expectNoDifference(afterFailure, beforeFailure)
+
+    let durableAfterFailure = try await runtime.persistence.loadState()
+    let durableAmbiguous = try #require(
+      durableAfterFailure.snapshot.outbox.first { $0.id == ambiguousMutation.id }
+    )
+    expectNoDifference(durableAmbiguous.status, .pending)
+    expectNoDifference(durableAmbiguous.optimisticOverlayState, .applied)
+    expectNoDifference(durableAmbiguous.rollbackTransaction, nil)
+    expectNoDifference(durableAfterFailure.snapshot.store.triples, persistedResult.triples)
+  }
+
+  @Test
+  func unknownOptimisticEffectBlocksLiveConnectionWithoutReconnect() async throws {
+    let cacheURL = try temporaryCacheURL()
+    let mutationID = "unknown-effect-live-connection-barrier"
+    let createdAt = InstantTimestamp(milliseconds: 1_700_000_000_000)
+    let persistence = try SQLitePersistenceStore(fileURL: cacheURL)
+    try await persistence.bootstrap()
+    try await persistence.saveOutbox([
+      PendingMutation(
+        id: mutationID,
+        createdAt: createdAt,
+        transaction: InstantStoreTransaction(
+          id: mutationID,
+          operations: [
+            .deleteEntity("todo-unknown-effect-live-connection-barrier")
+          ]
+        )
+      )
+    ])
+    await persistence.simulateUnexpectedConnectionCloseForTesting()
+
+    let connectionAttemptCount = LockIsolated(0)
+    let transport = InstantLiveTransportClient.connectionAttempts { _ in
+      connectionAttemptCount.withValue { $0 += 1 }
+      let connection = InstantLiveTestConnectionContinuation()
+      return InstantLiveConnectionAttempt(
+        connect: {
+          connection.start {
+            throw InstantError(
+              code: .implementationFailed,
+              operation: "open unexpected unknown-effect test transport",
+              message: "The persistence preflight should have blocked this connection.",
+              recovery: "Keep the body-free receipt check ahead of transport I/O."
+            )
+          }
+          return try await connection.connect()
+        },
+        abort: { connection.abort() }
+      )
+    }
+    var configuration = InstantRuntimeConfiguration(
+      appID: "unknown-effect-live-connection-barrier",
+      persistenceURL: cacheURL,
+      initialAttributes: TodoExample.attributes,
+      liveTransport: transport
+    )
+    configuration.autoConnectLiveTransport = false
+    configuration.liveReconnectSleep = { _ in
+      Issue.record("A local receipt-recovery condition must not schedule reconnect.")
+    }
+    let runtime = try await InstantRuntime.bootstrap(configuration: configuration)
+
+    do {
+      _ = try await runtime.connect()
+      Issue.record("An unproven active optimistic row must block live transport I/O.")
+    } catch let error as InstantError {
+      expectNoDifference(error.code, .persistenceFailed)
+      expectNoDifference(error.localID, mutationID)
+      expectNoDifference(error.localMutationDisposition, .retainedUnknown)
+      #expect(error.recovery.contains("Automatic reconnect is paused"))
+    }
+
+    expectNoDifference(connectionAttemptCount.withValue { $0 }, 0)
+    let status = try await runtime.connectionStatus()
+    expectNoDifference(status.state, .errored)
+    #expect(status.lastErrorMessage?.contains(mutationID) == true)
+    let reconnectIsIdle = await runtime.liveReconnectControllerIsIdleForTesting()
+    expectNoDifference(reconnectIsIdle, true)
+  }
+
+  @Test
+  func sameIDPendingTransactRejectsPublicBodyWithoutSQLitePreparationReceipt()
+    async throws
+  {
+    let cacheURL = try temporaryCacheURL()
+    let mutationID = "same-id-untrusted-public-body"
+    let createdAt = InstantTimestamp(milliseconds: 1_700_000_000_000)
+    let transaction = InstantStoreTransaction(
+      id: mutationID,
+      operations: TodoExample.createOperations(
+        id: "todo-same-id-untrusted-public-body",
+        text: "Must remain unmaterialized",
+        createdAt: createdAt,
+        transactionID: mutationID
+      )
+    )
+    var publicMutation = PendingMutation(
+      id: mutationID,
+      createdAt: createdAt,
+      transaction: transaction
+    )
+    // A caller-visible body can look replayable, but only Runtime's atomic
+    // SQLite write may create the preparation receipt that authorizes replay.
+    publicMutation.optimisticOverlayState = .applied
+    publicMutation.optimisticEffectReceiptVersion =
+      PendingMutation.currentOptimisticEffectReceiptVersion
+
+    let persistence = try SQLitePersistenceStore(fileURL: cacheURL)
+    try await persistence.bootstrap()
+    try await persistence.saveOutbox([publicMutation])
+    let missingReceipt = try await persistence
+      .optimisticEffectReceiptFingerprintForTesting(id: mutationID)
+    expectNoDifference(missingReceipt, nil)
+
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "same-id-untrusted-public-body",
+        persistenceURL: cacheURL,
+        initialAttributes: TodoExample.attributes
+      )
+    )
+    let before = try await runtime.persistence.loadState()
+    let beforeStore = await runtime.store.snapshot()
+
+    do {
+      _ = try await runtime.transact(transaction, createdAt: createdAt)
+      Issue.record(
+        "A same-ID replay without SQLite-owned Runtime preparation authority must fail."
+      )
+    } catch let error as InstantError {
+      let expected = InstantSynchronizationBlocker(
+        reason: .unknownOptimisticEffectReceipt,
+        firstMutationID: mutationID,
+        blockedMutationCount: 1
+      ).error(operation: "transact")
+      expectNoDifference(error, expected)
+    }
+
+    let after = try await runtime.persistence.loadState()
+    expectNoDifference(after.snapshot.store, before.snapshot.store)
+    expectNoDifference(after.storeRevision, before.storeRevision)
+    expectNoDifference(after.attributeRevision, before.attributeRevision)
+    expectNoDifference(after.outboxRevision, before.outboxRevision)
+    let afterStore = await runtime.store.snapshot()
+    expectNoDifference(afterStore, beforeStore)
+    let retained = try #require(
+      after.snapshot.outbox.first { $0.id == mutationID }
+    )
+    expectNoDifference(retained.status, .pending)
+    expectNoDifference(retained.transaction, transaction)
+    let retainedReceipt = try await runtime.persistence
+      .optimisticEffectReceiptFingerprintForTesting(id: mutationID)
+    expectNoDifference(retainedReceipt, nil)
+    let claim = try #require(
+      try await runtime.persistence.outboxDeliveryClaimForTesting(id: mutationID)
+    )
+    expectNoDifference(claim.state, .ready)
+    expectNoDifference(claim.claimToken, nil)
+    expectNoDifference(claim.deliveryStarted, false)
+  }
+
+  @Test
+  func runtimeTransactWhileSynchronizationBlockedPersistsReceiptAndRemainsUnsentAcrossRelaunch()
+    async throws
+  {
+    let cacheURL = try temporaryCacheURL()
+    let unknownID = "unknown-effect-before-local-write"
+    let localID = "receipt-backed-write-behind-blocker"
+    let timestamp = InstantTimestamp(milliseconds: 1_700_000_000_000)
+    func todoTexts(in snapshot: InstantStoreSnapshot) -> [String] {
+      snapshot.triples.compactMap { triple in
+        guard triple.attributeID == "todos/text",
+          case let .string(text) = triple.value
+        else { return nil }
+        return text
+      }
+      .sorted()
+    }
+    let persistence = try SQLitePersistenceStore(fileURL: cacheURL)
+    try await persistence.bootstrap()
+    try await persistence.saveOutbox([
+      PendingMutation(
+        id: unknownID,
+        createdAt: timestamp,
+        transaction: InstantStoreTransaction(
+          id: unknownID,
+          operations: [.deleteEntity("todo-unknown-effect-before-local-write")]
+        )
+      )
+    ])
+    await persistence.simulateUnexpectedConnectionCloseForTesting()
+    let seededBlocker = try await persistence.synchronizationBlocker()
+    expectNoDifference(
+      seededBlocker,
+      InstantSynchronizationBlocker(
+        reason: .unknownOptimisticEffectReceipt,
+        firstMutationID: unknownID,
+        blockedMutationCount: 1
+      )
+    )
+
+    let connectionAttemptCount = LockIsolated(0)
+    let reconnectSleepCount = LockIsolated(0)
+    let transport = InstantLiveTransportClient.connectionAttempts { _ in
+      connectionAttemptCount.withValue { $0 += 1 }
+      let connection = InstantLiveTestConnectionContinuation()
+      return InstantLiveConnectionAttempt(
+        connect: {
+          connection.start {
+            throw InstantError(
+              code: .implementationFailed,
+              operation: "open unexpected blocked-write test transport",
+              message: "The blocked local write test must remain offline.",
+              recovery: "Keep the body-free startup barrier ahead of transport I/O."
+            )
+          }
+          return try await connection.connect()
+        },
+        abort: { connection.abort() }
+      )
+    }
+    var configuration = InstantRuntimeConfiguration(
+      appID: "blocked-local-write",
+      persistenceURL: cacheURL,
+      initialAttributes: TodoExample.attributes,
+      liveTransport: transport
+    )
+    configuration.autoConnectLiveTransport = true
+    configuration.liveReconnectSleep = { _ in
+      reconnectSleepCount.withValue { $0 += 1 }
+    }
+    let runtime = try await InstantRuntime.bootstrap(configuration: configuration)
+    expectNoDifference(connectionAttemptCount.withValue { $0 }, 0)
+    expectNoDifference(reconnectSleepCount.withValue { $0 }, 0)
+    let initialReconnectIsIdle = await runtime.liveReconnectControllerIsIdleForTesting()
+    let initialPumpIsSuspended = await runtime.automaticMutationPumpIsSuspendedForTesting()
+    expectNoDifference(initialReconnectIsIdle, true)
+    expectNoDifference(initialPumpIsSuspended, true)
+
+    _ = try await runtime.transact(
+      InstantStoreTransaction(
+        id: localID,
+        operations: TodoExample.createOperations(
+          id: "todo-receipt-backed-write-behind-blocker",
+          text: "Persist locally behind blocker",
+          createdAt: InstantTimestamp(milliseconds: timestamp.milliseconds + 1),
+          transactionID: localID
+        )
+      ),
+      createdAt: InstantTimestamp(milliseconds: timestamp.milliseconds + 1)
+    )
+
+    let localStore = await runtime.store.snapshot()
+    expectNoDifference(todoTexts(in: localStore), ["Persist locally behind blocker"])
+    let localReceipt = try await runtime.persistence
+      .optimisticEffectReceiptFingerprintForTesting(id: localID)
+    #expect(localReceipt != nil)
+    let localClaimValue = try await runtime.persistence.outboxDeliveryClaimForTesting(id: localID)
+    let localClaim = try #require(localClaimValue)
+    expectNoDifference(localClaim.state, .ready)
+    expectNoDifference(localClaim.deliveryStarted, false)
+    let status = try await runtime.connectionStatus()
+    expectNoDifference(status.pendingMutationCount, 2)
+    expectNoDifference(
+      status.synchronizationBlocker,
+      InstantSynchronizationBlocker(
+        reason: .unknownOptimisticEffectReceipt,
+        firstMutationID: unknownID,
+        blockedMutationCount: 1
+      )
+    )
+    expectNoDifference(connectionAttemptCount.withValue { $0 }, 0)
+    expectNoDifference(reconnectSleepCount.withValue { $0 }, 0)
+    let reconnectAfterTransactIsIdle = await runtime.liveReconnectControllerIsIdleForTesting()
+    let pumpAfterTransactIsSuspended = await runtime
+      .automaticMutationPumpIsSuspendedForTesting()
+    expectNoDifference(reconnectAfterTransactIsIdle, true)
+    expectNoDifference(pumpAfterTransactIsSuspended, true)
+    _ = try await runtime.closeConnection()
+
+    let relaunched = try await InstantRuntime.bootstrap(configuration: configuration)
+    let relaunchedReconnectIsIdle = await relaunched.liveReconnectControllerIsIdleForTesting()
+    let relaunchedPumpIsSuspended = await relaunched
+      .automaticMutationPumpIsSuspendedForTesting()
+    expectNoDifference(relaunchedReconnectIsIdle, true)
+    expectNoDifference(relaunchedPumpIsSuspended, true)
+    let relaunchedStore = await relaunched.store.snapshot()
+    expectNoDifference(todoTexts(in: relaunchedStore), ["Persist locally behind blocker"])
+    let relaunchedReceipt = try await relaunched.persistence
+      .optimisticEffectReceiptFingerprintForTesting(id: localID)
+    expectNoDifference(relaunchedReceipt, localReceipt)
+    let relaunchedClaimValue = try await relaunched.persistence.outboxDeliveryClaimForTesting(
+      id: localID
+    )
+    let relaunchedClaim = try #require(relaunchedClaimValue)
+    expectNoDifference(relaunchedClaim.state, .ready)
+    expectNoDifference(relaunchedClaim.deliveryStarted, false)
+    let relaunchedStatus = try await relaunched.connectionStatus()
+    expectNoDifference(relaunchedStatus.pendingMutationCount, 2)
+    expectNoDifference(relaunchedStatus.synchronizationBlocker, status.synchronizationBlocker)
+    let unknownQuarantine = try await relaunched.persistence.quarantinedOutboxBodyForTesting(
+      id: unknownID
+    )
+    expectNoDifference(unknownQuarantine, nil)
+    expectNoDifference(connectionAttemptCount.withValue { $0 }, 0)
+    expectNoDifference(reconnectSleepCount.withValue { $0 }, 0)
+  }
+
+  @Test
+  func preparedActiveReceiptBodyMismatchBlocksLiveRefreshAtomicallyWithoutReconnect()
+    async throws
+  {
+    let cacheURL = try temporaryCacheURL()
+    let mutationID = "prepared-active-body-rewrite"
+    let entityID = "todo-prepared-active-body-rewrite"
+    let createdAt = InstantTimestamp(milliseconds: 1_700_000_000_100)
+    let liveSession = LiveReactorParitySession(messages: [
+      liveReactorInitOK(
+        attrs: liveReactorServerAttrs(from: TodoExample.attributes),
+        sessionID: "prepared-active-body-rewrite"
+      )
+    ])
+    let liveTransport = LiveReactorParityTransport(sessions: [liveSession])
+    let reconnectSleepCount = LockIsolated(0)
+    var configuration = InstantRuntimeConfiguration(
+      appID: "prepared-active-body-rewrite",
+      persistenceURL: cacheURL,
+      initialAttributes: TodoExample.attributes,
+      liveTransport: liveTransport.transport
+    )
+    configuration.autoConnectLiveTransport = false
+    configuration.liveReconnectSleep = { _ in
+      reconnectSleepCount.withValue { $0 += 1 }
+      throw CancellationError()
+    }
+    let runtime = try await InstantRuntime.bootstrap(configuration: configuration)
+
+    _ = try await runtime.transact(
+      InstantStoreTransaction(
+        id: mutationID,
+        operations: TodoExample.createOperations(
+          id: entityID,
+          text: "Original prepared value",
+          createdAt: createdAt,
+          transactionID: mutationID
+        )
+      ),
+      createdAt: createdAt
+    )
+    let claimToken = "prepared-active-body-rewrite-claim"
+    let didClaim = try await runtime.persistence.claimOutboxMutationWithoutHydrationForTesting(
+      id: mutationID,
+      claimantID: runtime.automaticDeliveryClaimantIDForTesting(),
+      claimToken: claimToken,
+      deadlineMilliseconds: Int64.max / 4
+    )
+    expectNoDifference(didClaim, true)
+    let accepted = try #require(
+      try await runtime.acceptMutationIfPresent(
+        id: mutationID,
+        serverTransactionID: "server-accepted-prepared-body-rewrite",
+        claimToken: claimToken
+      )
+    )
+    expectNoDifference(accepted.status, .confirmed)
+    expectNoDifference(accepted.confirmationSource, .webSocketTransactOK)
+    expectNoDifference(accepted.optimisticOverlayState, .applied)
+
+    let preparedState = try await runtime.persistence.loadState()
+    let prepared = try #require(
+      preparedState.snapshot.outbox.first { $0.id == mutationID }
+    )
+    let preparedReceipt = try await runtime.persistence
+      .optimisticEffectReceiptFingerprintForTesting(id: mutationID)
+    #expect(preparedReceipt != nil)
+
+    var rewritten = prepared
+    rewritten.transaction = InstantStoreTransaction(
+      id: mutationID,
+      operations: [.deleteEntity(entityID)]
+    )
+    let rewrittenData = try JSONEncoder().encode(rewritten)
+    let decodedRewrite = try JSONDecoder().decode(PendingMutation.self, from: rewrittenData)
+    expectNoDifference(decodedRewrite.transaction, rewritten.transaction)
+    try replaceStoreTestOutboxBody(
+      at: cacheURL,
+      mutationID: mutationID,
+      json: String(decoding: rewrittenData, as: UTF8.self)
+    )
+    await runtime.persistence.invalidateMemoryCache()
+    let receiptBehindRewrittenBody = try await runtime.persistence
+      .optimisticEffectReceiptFingerprintForTesting(id: mutationID)
+    expectNoDifference(receiptBehindRewrittenBody, preparedReceipt)
+
+    _ = try await runtime.connect()
+    let receiptAfterInit = try await runtime.persistence
+      .optimisticEffectReceiptFingerprintForTesting(id: mutationID)
+    expectNoDifference(receiptAfterInit, preparedReceipt)
+    let beforeRefresh = try await runtime.persistence.loadState()
+    let retainedBeforeRefresh = try #require(
+      beforeRefresh.snapshot.outbox.first { $0.id == mutationID }
+    )
+    expectNoDifference(retainedBeforeRefresh.transaction, rewritten.transaction)
+    let syncStateBeforeRefresh = try await runtime.syncState()
+    expectNoDifference(syncStateBeforeRefresh.processedTransactionID, nil)
+    let connectionCountBeforeRefresh = await liveTransport.connectionRequests().count
+    let pumpWasSuspendedBeforeRefresh = await runtime
+      .automaticMutationPumpIsSuspendedForTesting()
+    let sentTransactionsBeforeRefresh = await liveSession.sentMessages()
+      .filter { $0.op == "transact" }
+    expectNoDifference(connectionCountBeforeRefresh, 1)
+    expectNoDifference(pumpWasSuspendedBeforeRefresh, false)
+    expectNoDifference(sentTransactionsBeforeRefresh, [])
+
+    await liveSession.enqueue(
+      InstantLiveMessage(
+        op: "refresh-ok",
+        clientEventID: "event-prepared-active-body-rewrite",
+        fields: [
+          "attrs": .array(
+            liveReactorServerAttrs(from: TodoExample.attributes) + [
+              liveReactorServerAttr(
+                id: "server-only-refresh-attribute",
+                name: "serverOnlyRefreshAttribute",
+                namespace: TodoExample.namespace,
+                valueType: "string"
+              )
+            ]
+          ),
+          "computations": .array([]),
+          "processed-tx-id": .string("server-refresh-behind-rewritten-receipt"),
+        ]
+      )
+    )
+    let blockedStatus = try #require(
+      try await instantLiveWithTimeout(
+        operation: "wait for rewritten receipt blocker",
+        timeoutMilliseconds: 5_000
+      ) {
+        try await runtime.observeConnectionStatus().first {
+          $0.state == .errored && $0.synchronizationBlocker != nil
+        }
+      }
+    )
+    expectNoDifference(blockedStatus.state, .errored)
+    expectNoDifference(
+      blockedStatus.synchronizationBlocker,
+      InstantSynchronizationBlocker(
+        reason: .unknownOptimisticEffectReceipt,
+        firstMutationID: mutationID,
+        blockedMutationCount: 1
+      )
+    )
+    #expect(blockedStatus.lastErrorMessage?.contains(mutationID) == true)
+
+    let afterRefresh = try await runtime.persistence.loadState()
+    expectNoDifference(afterRefresh.snapshot.store, beforeRefresh.snapshot.store)
+    expectNoDifference(afterRefresh.storeRevision, beforeRefresh.storeRevision)
+    expectNoDifference(afterRefresh.attributeRevision, beforeRefresh.attributeRevision)
+    expectNoDifference(afterRefresh.queryResultRevision, beforeRefresh.queryResultRevision)
+    expectNoDifference(afterRefresh.outboxRevision, beforeRefresh.outboxRevision + 1)
+    let syncStateAfterRefresh = try await runtime.syncState()
+    expectNoDifference(syncStateAfterRefresh, syncStateBeforeRefresh)
+    let retainedRewrite = try #require(
+      afterRefresh.snapshot.outbox.first { $0.id == mutationID }
+    )
+    expectNoDifference(retainedRewrite.transaction, rewritten.transaction)
+    expectNoDifference(retainedRewrite.status, .confirmed)
+    let demotedReceipt = try await runtime.persistence
+      .optimisticEffectReceiptFingerprintForTesting(id: mutationID)
+    expectNoDifference(demotedReceipt, nil)
+    let quarantinedBody = try await runtime.persistence.quarantinedOutboxBodyForTesting(
+      id: mutationID
+    )
+    expectNoDifference(quarantinedBody, nil)
+    let visibleTodos = try await TodoExample.decode(runtime.query(TodoExample.query))
+    expectNoDifference(visibleTodos.map(\.text), ["Original prepared value"])
+
+    let pumpIsSuspended = await runtime.automaticMutationPumpIsSuspendedForTesting()
+    let reconnectIsIdle = await runtime.liveReconnectControllerIsIdleForTesting()
+    expectNoDifference(pumpIsSuspended, true)
+    expectNoDifference(reconnectIsIdle, true)
+    expectNoDifference(reconnectSleepCount.withValue { $0 }, 0)
+    let connectionCountAfterRefresh = await liveTransport.connectionRequests().count
+    expectNoDifference(connectionCountAfterRefresh, 1)
+  }
+
+  @Test
+  func automaticClaimThrowsSynchronizationBlockerBeforeUnpreparedPublicHeadDecodeOrSuccessorClaim()
+    async throws
+  {
+    let cacheURL = try temporaryCacheURL()
+    let timestamp = InstantTimestamp(milliseconds: 1_700_000_000_000)
+    let mutation = PendingMutation(
+      id: "unprepared-public-save",
+      createdAt: timestamp,
+      transaction: InstantStoreTransaction(
+        id: "unprepared-public-save",
+        operations: [
+          .insert(
+            InstantTriple(
+              entityID: "todo-unprepared-public-save",
+              attributeID: "todos/text",
+              value: .string("Must not reach transport"),
+              txID: "unprepared-public-save",
+              txTime: timestamp
+            )
+          )
+        ]
+      )
+    )
+    expectNoDifference(mutation.optimisticOverlayState, nil)
+    expectNoDifference(mutation.provesReplayableOptimisticEffectReceipt, false)
+
+    let successorTransaction = InstantStoreTransaction(
+      id: "prepared-successor-after-unprepared-save",
+      operations: [.deleteEntity("todo-missing-prepared-successor")]
+    )
+    var successor = PendingMutation(
+      id: successorTransaction.id,
+      createdAt: InstantTimestamp(milliseconds: timestamp.milliseconds + 1),
+      transaction: successorTransaction
+    )
+    successor.optimisticOverlayState = .applied
+    successor.optimisticEffectReceiptVersion =
+      PendingMutation.currentOptimisticEffectReceiptVersion
+    expectNoDifference(
+      successor.optimisticOverlayState,
+      .applied
+    )
+    expectNoDifference(successor.provesReplayableOptimisticEffectReceipt, true)
+
+    let persistence = try SQLitePersistenceStore(fileURL: cacheURL)
+    try await persistence.bootstrap()
+    try await persistence.saveOutbox([mutation])
+    let publicState = try await persistence.loadCompactState()
+    let didAppendPreparedSuccessor = try await persistence.saveOutbox(
+      [mutation, successor],
+      replacing: [mutation],
+      metadataEntries: [],
+      expectedStoreRevision: publicState.storeRevision,
+      expectedOutboxRevision: publicState.outboxRevision
+    )
+    expectNoDifference(didAppendPreparedSuccessor, true)
+    try installLegacyOutboxEffectMetadata(
+      at: cacheURL,
+      mutationID: mutation.id,
+      entityID: "todo-unprepared-public-save",
+      metadataVersion: 1,
+      isGlobal: true
+    )
+    let unknownReceiptBeforeClaim = try await persistence
+      .optimisticEffectReceiptFingerprintForTesting(id: mutation.id)
+    let successorReceiptBeforeClaim = try await persistence
+      .optimisticEffectReceiptFingerprintForTesting(id: successor.id)
+    expectNoDifference(unknownReceiptBeforeClaim, nil)
+    #expect(successorReceiptBeforeClaim != nil)
+    await persistence.resetDecodedOutboxBodyCount()
+
+    do {
+      _ = try await persistence.claimAutomaticOutboxDeliveryWindow(
+        InstantAutomaticOutboxClaimRequest(
+          claimantID: "unprepared-public-save-claimant",
+          claimToken: "unprepared-public-save-token",
+          now: InstantTimestamp(milliseconds: timestamp.milliseconds + 2)
+        )
+      )
+      Issue.record("Automatic delivery must stop at the durable synchronization blocker.")
+    } catch let error as InstantError {
+      expectNoDifference(error.code, .persistenceFailed)
+      expectNoDifference(error.operation, "claim automatic outbox delivery")
+      expectNoDifference(error.localID, mutation.id)
+      expectNoDifference(error.localMutationDisposition, .retainedUnknown)
+      #expect(error.message.contains("Synchronization is blocked by 1 retained mutation."))
+    }
+
+    let blockerValue = try await persistence.synchronizationBlocker()
+    let blocker = try #require(blockerValue)
+    expectNoDifference(blocker.reason, .unknownOptimisticEffectReceipt)
+    expectNoDifference(blocker.firstMutationID, mutation.id)
+    expectNoDifference(blocker.blockedMutationCount, 1)
+    let decodedBodyCount = await persistence.currentDecodedOutboxBodyCount()
+    expectNoDifference(decodedBodyCount, 0)
+    let quarantinedJSON = try await persistence.quarantinedOutboxBodyForTesting(
+      id: mutation.id
+    )
+    expectNoDifference(quarantinedJSON, nil)
+    let retainedEffect = try readOutboxEffectMetadata(
+      at: cacheURL,
+      mutationID: mutation.id
+    )
+    expectNoDifference(retainedEffect.metadataVersion, 1)
+    expectNoDifference(retainedEffect.isGlobal, true)
+    expectNoDifference(retainedEffect.isActive, true)
+    expectNoDifference(retainedEffect.entityCount, 1)
+
+    let durable = try await persistence.loadState()
+    let retainedUnknown = try #require(
+      durable.snapshot.outbox.first { $0.id == mutation.id }
+    )
+    let retainedSuccessor = try #require(
+      durable.snapshot.outbox.first { $0.id == successor.id }
+    )
+    expectNoDifference(retainedUnknown, mutation)
+    expectNoDifference(retainedSuccessor.status, .pending)
+    let unknownClaimValue = try await persistence.outboxDeliveryClaimForTesting(
+      id: mutation.id
+    )
+    let unknownClaim = try #require(unknownClaimValue)
+    expectNoDifference(unknownClaim.state, .ready)
+    expectNoDifference(unknownClaim.claimToken, nil)
+    expectNoDifference(unknownClaim.deliveryStarted, false)
+    let successorClaimValue = try await persistence.outboxDeliveryClaimForTesting(
+      id: successor.id
+    )
+    let successorClaim = try #require(successorClaimValue)
+    expectNoDifference(successorClaim.state, .ready)
+    expectNoDifference(successorClaim.claimToken, nil)
+    expectNoDifference(successorClaim.deliveryStarted, false)
+  }
+
+  @Test
+  func knownNoMaterializedOptimisticEffectServerApplyBlocksPendingUnknownBeforeClaim()
+    async throws
+  {
+    let cacheURL = try temporaryCacheURL()
+    let timestamp = InstantTimestamp(milliseconds: 1_700_000_000_000)
+    let mutation = PendingMutation(
+      id: "pending-unknown-before-claim",
+      createdAt: timestamp,
+      transaction: InstantStoreTransaction(
+        id: "pending-unknown-before-claim",
+        operations: [
+          .insert(
+            InstantTriple(
+              entityID: "todo-pending-unknown-before-claim",
+              attributeID: "todos/text",
+              value: .string("Unprepared local value"),
+              txID: "pending-unknown-before-claim",
+              txTime: timestamp
+            )
+          )
+        ]
+      )
+    )
+    let persistence = try SQLitePersistenceStore(fileURL: cacheURL)
+    try await persistence.bootstrap()
+    try await persistence.saveOutbox([mutation])
+    try installLegacyOutboxEffectMetadata(
+      at: cacheURL,
+      mutationID: mutation.id,
+      entityID: "todo-pending-unknown-before-claim",
+      metadataVersion: 1,
+      isGlobal: true
+    )
+
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "pending-unknown-before-claim",
+        persistenceURL: cacheURL,
+        initialAttributes: TodoExample.attributes
+      )
+    )
+    let applicationError = LockIsolated<InstantError?>(nil)
+    try await withKnownIssue {
+      do {
+        _ = try await runtime.applyServerTransaction(
+          InstantStoreTransaction(
+            id: "700",
+            operations: TodoExample.createOperations(
+              id: "todo-server-after-pending-unknown",
+              text: "Authoritative value after blocked apply",
+              createdAt: InstantTimestamp(milliseconds: timestamp.milliseconds + 1),
+              transactionID: "700"
+            )
+          )
+        )
+        Issue.record("An unproven active overlay must block incremental server apply.")
+      } catch let error as InstantError {
+        applicationError.withValue { $0 = error }
+      }
+    } matching: { issue in
+      issue.description.contains(
+        "Mutation 'pending-unknown-before-claim' has no matching SQLite-owned Runtime preparation receipt"
+      )
+    }
+    let error = try #require(applicationError.withValue { $0 })
+    expectNoDifference(error.code, .persistenceFailed)
+    expectNoDifference(error.localMutationDisposition, .retainedUnknown)
+
+    let todos = try await TodoExample.decode(runtime.query(TodoExample.query))
+    expectNoDifference(todos, [])
+    let durable = try await runtime.persistence.loadState()
+    let retainedUnknown = try #require(
+      durable.snapshot.outbox.first { $0.id == mutation.id }
+    )
+    expectNoDifference(retainedUnknown.status, .pending)
+    expectNoDifference(retainedUnknown.optimisticOverlayState, nil)
+    expectNoDifference(retainedUnknown.rollbackTransaction, nil)
+    let quarantinedBody = try await runtime.persistence.quarantinedOutboxBodyForTesting(
+      id: mutation.id
+    )
+    expectNoDifference(quarantinedBody, nil)
+    let effect = try readOutboxEffectMetadata(at: cacheURL, mutationID: mutation.id)
+    expectNoDifference(
+      effect,
+      OutboxEffectMetadata(
+        metadataVersion: 1,
+        isGlobal: true,
+        isActive: true,
+        entityCount: 1
+      )
+    )
+  }
+
+  @Test
+  func knownNoMaterializedOptimisticEffectServerAcceptedUnknownBlocksWatermarkWithoutMaterialProof()
+    async throws
+  {
+    let cacheURL = try temporaryCacheURL()
+    let timestamp = InstantTimestamp(milliseconds: 1_700_000_000_000)
+    let acceptedEntityID = "todo-server-accepted-unknown"
+    let persistedAccepted = persistedLiveTodoResult(
+      key: "server-accepted-unknown",
+      entityID: acceptedEntityID,
+      text: "Accepted authoritative value",
+      updatedAt: timestamp
+    )
+    let reverseOnlyEntityID = "todo-server-accepted-current-footprint"
+    let persistedReverseOnly = persistedLiveTodoResult(
+      key: "server-accepted-current-footprint",
+      entityID: reverseOnlyEntityID,
+      text: "Accepted reverse-only value",
+      updatedAt: InstantTimestamp(milliseconds: timestamp.milliseconds + 1)
+    )
+    var accepted = PendingMutation(
+      id: "server-accepted-unknown",
+      createdAt: timestamp,
+      transaction: InstantStoreTransaction(
+        id: "server-accepted-unknown",
+        operations: [
+          .insert(
+            InstantTriple(
+              entityID: acceptedEntityID,
+              attributeID: "todos/text",
+              value: .string("Accepted authoritative value"),
+              txID: "server-accepted-unknown",
+              txTime: timestamp
+            )
+          )
+        ]
+      ),
+      status: .confirmed
+    )
+    accepted.serverTransactionID = "800"
+    accepted.confirmationSource = .webSocketTransactOK
+    accepted.optimisticOverlayState = .applied
+    accepted.rollbackTransaction = nil
+    expectNoDifference(accepted.provesServerAcceptance, true)
+    expectNoDifference(accepted.provesReplayableOptimisticEffectReceipt, false)
+    var reverseOnlyAccepted = PendingMutation(
+      id: "server-accepted-current-footprint",
+      createdAt: InstantTimestamp(milliseconds: timestamp.milliseconds + 1),
+      transaction: InstantStoreTransaction(
+        id: "server-accepted-current-footprint",
+        operations: [
+          .insert(
+            InstantTriple(
+              entityID: reverseOnlyEntityID,
+              attributeID: "todos/text",
+              value: .string("Accepted reverse-only value"),
+              txID: "server-accepted-current-footprint",
+              txTime: InstantTimestamp(milliseconds: timestamp.milliseconds + 1)
+            )
+          )
+        ]
+      ),
+      status: .confirmed
+    )
+    reverseOnlyAccepted.serverTransactionID = "800"
+    reverseOnlyAccepted.confirmationSource = .webSocketTransactOK
+    reverseOnlyAccepted.optimisticOverlayState = .applied
+    reverseOnlyAccepted.rollbackTransaction = nil
+
+    let persistence = try SQLitePersistenceStore(fileURL: cacheURL)
+    try await persistence.bootstrap()
+    try await persistence.saveSnapshot(
+      InstantPersistenceSnapshot(
+        store: InstantStoreSnapshot(
+          attributes: TodoExample.attributes,
+          triples: persistedAccepted.triples + persistedReverseOnly.triples
+        ),
+        outbox: [accepted, reverseOnlyAccepted]
+      )
+    )
+    let seededState = try await persistence.loadState()
+    let didSeedOwnership = try await persistence.saveLiveRefresh(
+      seededState.snapshot,
+      queryResults: [persistedAccepted],
+      storeChanged: false,
+      outboxChanged: false,
+      metadataKey: "server-accepted-unknown.seeded",
+      metadataValue: "seeded",
+      metadataUpdatedAt: timestamp,
+      expectedStoreRevision: seededState.storeRevision,
+      expectedOutboxRevision: seededState.outboxRevision,
+      expectedAttributeRevision: seededState.attributeRevision
+    )
+    expectNoDifference(didSeedOwnership, true)
+    try installLegacyOutboxEffectMetadata(
+      at: cacheURL,
+      mutationID: accepted.id,
+      entityID: acceptedEntityID,
+      metadataVersion: 1,
+      isGlobal: true,
+      deliveryMetadataVersion: 1
+    )
+    try installLegacyOutboxEffectMetadata(
+      at: cacheURL,
+      mutationID: reverseOnlyAccepted.id,
+      entityID: reverseOnlyEntityID,
+      metadataVersion: Int64(InstantOptimisticEffectFootprint.currentVersion),
+      isGlobal: false,
+      deliveryMetadataVersion: 1
+    )
+
+    do {
+      _ = try await persistence.claimAutomaticOutboxDeliveryWindow(
+        InstantAutomaticOutboxClaimRequest(
+          claimantID: "server-accepted-unknown-claimant",
+          claimToken: "server-accepted-unknown-token",
+          now: InstantTimestamp(milliseconds: timestamp.milliseconds + 1)
+        )
+      )
+      Issue.record("Body-shaped acceptance without material authority must block delivery.")
+    } catch let error as InstantError {
+      expectNoDifference(error.code, .persistenceFailed)
+      expectNoDifference(error.localID, accepted.id)
+      expectNoDifference(error.localMutationDisposition, .retainedUnknown)
+    }
+    let stateBeforeWatermark = try await persistence.loadState()
+    let acceptedBeforeWatermark = try #require(
+      stateBeforeWatermark.snapshot.outbox.first { $0.id == accepted.id }
+    )
+    expectNoDifference(acceptedBeforeWatermark.status, .confirmed)
+    expectNoDifference(acceptedBeforeWatermark.failureMessage, nil)
+    expectNoDifference(
+      stateBeforeWatermark.snapshot.outbox.first { $0.id == reverseOnlyAccepted.id }?.status,
+      .confirmed
+    )
+
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "server-accepted-unknown-watermark",
+        persistenceURL: cacheURL,
+        initialAttributes: TodoExample.attributes
+      )
+    )
+    let watermarkError = LockIsolated<InstantError?>(nil)
+    try await withKnownIssue {
+      do {
+        _ = try await runtime.applyServerTransactionMergingAttributesForTesting(
+          InstantStoreTransaction(
+            id: "800",
+            operations: TodoExample.createOperations(
+              id: "todo-authoritative-at-watermark",
+              text: "New authoritative value",
+              createdAt: InstantTimestamp(milliseconds: timestamp.milliseconds + 2),
+              transactionID: "800"
+            )
+          ),
+          attributesToMerge: [],
+          liveQueryResultReplacements: [
+            InstantLiveQueryResultReplacement(
+              key: persistedAccepted.key,
+              triples: [],
+              pageInfo: nil
+            )
+          ]
+        )
+        Issue.record("Body-shaped server acceptance must not bypass missing material proof.")
+      } catch let error as InstantError {
+        watermarkError.withValue { $0 = error }
+      }
+    } matching: { issue in
+      issue.description.contains(
+        "Mutation 'server-accepted-unknown' has no matching SQLite-owned Runtime preparation receipt"
+      )
+    }
+    let error = try #require(watermarkError.withValue { $0 })
+    expectNoDifference(error.code, .persistenceFailed)
+    expectNoDifference(error.localMutationDisposition, .retainedUnknown)
+
+    let todos = try await TodoExample.decode(runtime.query(TodoExample.query))
+    expectNoDifference(
+      Set(todos.map(\.text)),
+      Set(["Accepted authoritative value", "Accepted reverse-only value"])
+    )
+    let durableAfterWatermark = try await runtime.persistence.loadState()
+    expectNoDifference(
+      durableAfterWatermark.snapshot.outbox.contains { $0.id == accepted.id },
+      true
+    )
+    expectNoDifference(
+      durableAfterWatermark.snapshot.outbox.contains { $0.id == reverseOnlyAccepted.id },
+      true
+    )
+    let replacementAfterWatermark = try #require(
+      await runtime.persistence.liveQueryResult(key: persistedAccepted.key)
+    )
+    expectNoDifference(replacementAfterWatermark.triples, persistedAccepted.triples)
   }
 
   @Test
@@ -2155,7 +4210,7 @@ struct InstantStoreTests {
     changedAttributes[textIndex].cardinality = .many
     var changedStore = writerState.snapshot.store
     changedStore.attributes = changedAttributes
-    let didSave = try await writer.saveStoreSnapshot(
+    let didSave = try await writer.saveRuntimePreparedStoreSnapshot(
       changedStore,
       replacing: writerState.snapshot.store,
       expectedStoreRevision: writerState.storeRevision,
@@ -3054,6 +5109,7 @@ struct InstantStoreTests {
     )
     mutation.confirmationSource = receipt.confirmationSource
     mutation.optimisticOverlayState = receipt.optimisticOverlayState
+    mutation.optimisticEffectReceiptVersion = receipt.optimisticEffectReceiptVersion
     let didSave = try await persistence.saveLiveRefresh(
       InstantPersistenceSnapshot(
         store: InstantStoreSnapshot(
@@ -5441,7 +7497,16 @@ struct InstantStoreTests {
     expectNoDifference(unresolvedResult.changedEntityIDs, [], source)
     expectNoDifference(unresolvedResult.tripleCount, 0, source)
     expectNoDifference(emptyUsers, [], source)
-    expectNoDifference(unresolvedLifecycle.optimisticOverlayState, .applied, source)
+    expectNoDifference(
+      unresolvedLifecycle.optimisticOverlayState,
+      .applied,
+      source
+    )
+    expectNoDifference(
+      unresolvedLifecycle.optimisticEffectReceiptVersion,
+      PendingMutation.currentOptimisticEffectReceiptVersion,
+      source
+    )
     expectNoDifference(unresolvedLifecycle.rollbackTransaction, nil, source)
 
     let transportMutation = InstantTransportMutation(
@@ -11602,23 +13667,66 @@ struct InstantStoreTests {
     let cacheURL = try temporaryCacheURL()
     let sourceURL = cacheURL.deletingLastPathComponent().appendingPathComponent("cancel.txt")
     try Data("cancel before save\n".utf8).write(to: sourceURL)
+    let cancellationCheckpoint = FileUploadProgressCancellationCheckpoint()
+    var configuration = InstantRuntimeConfiguration(
+      appID: "app-a",
+      persistenceURL: cacheURL,
+      makeID: { "file-cancelled-1" }
+    )
+    configuration.onFileUploadProgressLoadingPublishedForTesting = {
+      try await cancellationCheckpoint.pause()
+    }
     let runtime = try await InstantRuntime.bootstrap(
-      configuration: InstantRuntimeConfiguration(
-        appID: "app-a",
-        persistenceURL: cacheURL,
-        makeID: { "file-cancelled-1" }
-      )
+      configuration: configuration
     )
     _ = try await runtime.signInWithRefreshToken("refresh-token", userID: "user-1")
 
-    let firstEvent = try await Task {
+    let firstEvent = LockIsolated<InstantFileUploadProgress?>(nil)
+    let consumer = Task {
       let stream = try await runtime.uploadFileProgress(from: sourceURL)
       var iterator = stream.makeAsyncIterator()
-      return try #require(try await iterator.next())
-    }.value
-    expectNoDifference(firstEvent.state, .loading)
+      let event = try #require(try await iterator.next())
+      firstEvent.withValue { $0 = event }
+      _ = try await iterator.next()
+    }
+    defer { consumer.cancel() }
 
-    try await Task.sleep(nanoseconds: 50_000_000)
+    let loadingEvent = try await instantLiveWithTimeout(
+      operation: "consume upload progress loading state",
+      timeoutMilliseconds: 5_000,
+      onAbandon: { consumer.cancel() }
+    ) {
+      while true {
+        if let event = firstEvent.withValue({ $0 }) {
+          return event
+        }
+        try Task.checkCancellation()
+        await Task.yield()
+      }
+    }
+    expectNoDifference(loadingEvent.state, .loading)
+
+    consumer.cancel()
+    do {
+      try await instantLiveWithTimeout(
+        operation: "finish cancelled upload progress consumer",
+        timeoutMilliseconds: 5_000,
+        onAbandon: { consumer.cancel() }
+      ) {
+        try await consumer.value
+      }
+    } catch is CancellationError {
+    }
+
+    try await instantLiveWithTimeout(
+      operation: "observe upload progress stream cancellation",
+      timeoutMilliseconds: 5_000
+    ) {
+      while !cancellationCheckpoint.didObserveCancellation {
+        try Task.checkCancellation()
+        await Task.yield()
+      }
+    }
     let files = try await runtime.storedFiles()
     expectNoDifference(files, [])
   }
@@ -11913,7 +14021,7 @@ struct InstantStoreTests {
   }
 
   @Test
-  func byteStreamContentObservationsBufferEveryUpdate() async throws {
+  func byteStreamContentObservationsCoalesceQueuedCumulativeUpdates() async throws {
     let cacheURL = try temporaryCacheURL()
     let idSequence = LockIsolated(0)
     let runtime = try await InstantRuntime.bootstrap(
@@ -11939,16 +14047,17 @@ struct InstantStoreTests {
     expectNoDifference(initialRead.done, false)
 
     _ = try await runtime.appendStreamContent(streamID: metadata.id, content: "A")
+    let firstUpdate = try #require(await iterator.next())
+    expectNoDifference(firstUpdate.content, "A")
+    expectNoDifference(firstUpdate.done, false)
+
+    // A content read is a complete cumulative snapshot. If the consumer falls
+    // behind, retaining only the newest queued value bounds observer memory
+    // without losing any bytes or terminal metadata.
     _ = try await runtime.appendStreamContent(streamID: metadata.id, content: "B")
     _ = try await runtime.closeStream(streamID: metadata.id)
 
-    let firstUpdate = try #require(await iterator.next())
-    let secondUpdate = try #require(await iterator.next())
     let closeUpdate = try #require(await iterator.next())
-    expectNoDifference(firstUpdate.content, "A")
-    expectNoDifference(firstUpdate.done, false)
-    expectNoDifference(secondUpdate.content, "AB")
-    expectNoDifference(secondUpdate.done, false)
     expectNoDifference(closeUpdate.content, "AB")
     expectNoDifference(closeUpdate.done, true)
     expectNoDifference(closeUpdate.metadata.size, 2)
@@ -16198,9 +18307,19 @@ struct InstantStoreTests {
     let confirmed = confirmedResult.status
     expectNoDifference(confirmed.pendingMutationCount, 0)
     expectNoDifference(confirmed.processedTransactionID, "tx-remote-observed")
+    let firstClaimToken = "observed-status-claim-1"
+    let didClaimFirst = try await runtime.persistence
+      .claimOutboxMutationWithoutHydrationForTesting(
+        id: "tx-observed-status-1",
+        claimantID: runtime.automaticDeliveryClaimantIDForTesting(),
+        claimToken: firstClaimToken,
+        deadlineMilliseconds: Int64.max / 4
+      )
+    #expect(didClaimFirst)
     _ = try await runtime.acceptMutationIfPresent(
       id: "tx-observed-status-1",
-      serverTransactionID: "observed-status-server-1"
+      serverTransactionID: "observed-status-server-1",
+      claimToken: firstClaimToken
     )
 
     try await runtime.transact(
@@ -16233,9 +18352,19 @@ struct InstantStoreTests {
     statusCursor = drainedResult.nextIndex
     let drained = drainedResult.status
     expectNoDifference(drained.pendingMutationCount, 0)
+    let secondClaimToken = "observed-status-claim-2"
+    let didClaimSecond = try await runtime.persistence
+      .claimOutboxMutationWithoutHydrationForTesting(
+        id: "tx-observed-status-2",
+        claimantID: runtime.automaticDeliveryClaimantIDForTesting(),
+        claimToken: secondClaimToken,
+        deadlineMilliseconds: Int64.max / 4
+      )
+    #expect(didClaimSecond)
     _ = try await runtime.acceptMutationIfPresent(
       id: "tx-observed-status-2",
-      serverTransactionID: "observed-status-server-2"
+      serverTransactionID: "observed-status-server-2",
+      claimToken: secondClaimToken
     )
 
     _ = try await runtime.applyServerTransaction(
@@ -17419,7 +19548,13 @@ struct InstantStoreTests {
       ),
       createdAt: InstantTimestamp(milliseconds: createdAt.milliseconds + 3)
     )
-    let retitledEmission = await iterator.next()
+    let retitledEmission = try await instantLiveWithTimeout(
+      operation: "wait for nested relation filter invalidation",
+      timeoutMilliseconds: 5_000
+    ) { [stream] in
+      var iterator = stream.makeAsyncIterator()
+      return await iterator.next()
+    }
     expectNoDifference(retitledEmission?.values.map(\.id), [])
 
     let releasedPlan = InstantQueryPlan(
@@ -19904,6 +22039,80 @@ struct InstantStoreTests {
     }
   }
 
+  private func persistenceMigrationJSONRows<Value: Decodable>(
+    at url: URL,
+    sql: String
+  ) throws -> [Value] {
+    try withLiveQueryOwnershipDatabase(
+      at: url,
+      flags: SQLITE_OPEN_READONLY | SQLITE_OPEN_FULLMUTEX
+    ) { connection in
+      var statement: OpaquePointer?
+      guard sqlite3_prepare_v2(connection, sql, -1, &statement, nil) == SQLITE_OK else {
+        throw InstantError(
+          code: .persistenceFailed,
+          operation: "prepare persistence migration JSON probe",
+          message: String(cString: sqlite3_errmsg(connection)),
+          recovery: "Check the temporary test database."
+        )
+      }
+      defer { sqlite3_finalize(statement) }
+      var values: [Value] = []
+      let decoder = JSONDecoder()
+      while sqlite3_step(statement) == SQLITE_ROW {
+        guard let bytes = sqlite3_column_text(statement, 0) else {
+          throw InstantError(
+            code: .persistenceFailed,
+            operation: "read persistence migration JSON probe",
+            message: "A persisted JSON row was NULL.",
+            recovery: "Check the temporary test database."
+          )
+        }
+        values.append(try decoder.decode(Value.self, from: Data(String(cString: bytes).utf8)))
+      }
+      guard sqlite3_errcode(connection) == SQLITE_OK
+        || sqlite3_errcode(connection) == SQLITE_DONE
+      else {
+        throw InstantError(
+          code: .persistenceFailed,
+          operation: "read persistence migration JSON probe",
+          message: String(cString: sqlite3_errmsg(connection)),
+          recovery: "Check the temporary test database."
+        )
+      }
+      return values
+    }
+  }
+
+  private func persistenceMigrationLedgerCount(at url: URL, name: String) throws -> Int64 {
+    try withLiveQueryOwnershipDatabase(
+      at: url,
+      flags: SQLITE_OPEN_READONLY | SQLITE_OPEN_FULLMUTEX
+    ) { connection in
+      var statement: OpaquePointer?
+      guard sqlite3_prepare_v2(
+        connection,
+        "SELECT COUNT(*) FROM instant_application_persistence_migrations WHERE name = ?",
+        -1,
+        &statement,
+        nil
+      ) == SQLITE_OK,
+        sqlite3_bind_text(statement, 1, name, -1, testSQLiteTransient) == SQLITE_OK,
+        sqlite3_step(statement) == SQLITE_ROW
+      else {
+        defer { sqlite3_finalize(statement) }
+        throw InstantError(
+          code: .persistenceFailed,
+          operation: "read application persistence migration ledger",
+          message: String(cString: sqlite3_errmsg(connection)),
+          recovery: "Check the temporary test database."
+        )
+      }
+      defer { sqlite3_finalize(statement) }
+      return sqlite3_column_int64(statement, 0)
+    }
+  }
+
   private func removeLiveQueryOwnershipSchemaForMigrationTest(at url: URL) throws {
     try withLiveQueryOwnershipDatabase(
       at: url,
@@ -19959,6 +22168,220 @@ struct InstantStoreTests {
     defer { sqlite3_close(connection) }
     sqlite3_busy_timeout(connection, 10_000)
     return try operation(connection)
+  }
+
+  private func replaceStoreTestOutboxBody(
+    at url: URL,
+    mutationID: String,
+    json: String
+  ) throws {
+    try withLiveQueryOwnershipDatabase(
+      at: url,
+      flags: SQLITE_OPEN_READWRITE | SQLITE_OPEN_FULLMUTEX
+    ) { connection in
+      var statement: OpaquePointer?
+      guard sqlite3_prepare_v2(
+        connection,
+        "UPDATE instant_outbox SET json = ? WHERE mutation_id = ?",
+        -1,
+        &statement,
+        nil
+      ) == SQLITE_OK
+      else {
+        throw InstantError(
+          code: .persistenceFailed,
+          operation: "prepare outbox body rewrite",
+          message: String(cString: sqlite3_errmsg(connection)),
+          recovery: "Check the temporary test database."
+        )
+      }
+      defer { sqlite3_finalize(statement) }
+      guard sqlite3_bind_text(statement, 1, json, -1, testSQLiteTransient) == SQLITE_OK,
+        sqlite3_bind_text(statement, 2, mutationID, -1, testSQLiteTransient) == SQLITE_OK,
+        sqlite3_step(statement) == SQLITE_DONE,
+        sqlite3_changes(connection) == 1
+      else {
+        throw InstantError(
+          code: .persistenceFailed,
+          operation: "rewrite outbox body behind receipt",
+          message: String(cString: sqlite3_errmsg(connection)),
+          recovery: "Check the temporary test database."
+        )
+      }
+    }
+  }
+
+  private func installLegacyOutboxEffectMetadata(
+    at url: URL,
+    mutationID: String,
+    entityID: String,
+    metadataVersion: Int64,
+    isGlobal: Bool,
+    deliveryMetadataVersion: Int64? = nil
+  ) throws {
+    try withLiveQueryOwnershipDatabase(
+      at: url,
+      flags: SQLITE_OPEN_READWRITE | SQLITE_OPEN_FULLMUTEX
+    ) { connection in
+      var update: OpaquePointer?
+      guard sqlite3_prepare_v2(
+        connection,
+        """
+        UPDATE instant_outbox
+        SET optimistic_effect_metadata_version = ?,
+            optimistic_effect_is_global = ?,
+            delivery_metadata_version = COALESCE(?, delivery_metadata_version)
+        WHERE mutation_id = ?
+        """,
+        -1,
+        &update,
+        nil
+      ) == SQLITE_OK
+      else {
+        throw InstantError(
+          code: .persistenceFailed,
+          operation: "prepare legacy outbox metadata update",
+          message: String(cString: sqlite3_errmsg(connection)),
+          recovery: "Check the temporary test database."
+        )
+      }
+      defer { sqlite3_finalize(update) }
+      guard sqlite3_bind_int64(update, 1, metadataVersion) == SQLITE_OK,
+        sqlite3_bind_int64(update, 2, isGlobal ? 1 : 0) == SQLITE_OK
+      else {
+        throw InstantError(
+          code: .persistenceFailed,
+          operation: "bind legacy outbox metadata update",
+          message: String(cString: sqlite3_errmsg(connection)),
+          recovery: "Check the temporary test database."
+        )
+      }
+      if let deliveryMetadataVersion {
+        guard sqlite3_bind_int64(update, 3, deliveryMetadataVersion) == SQLITE_OK else {
+          throw InstantError(
+            code: .persistenceFailed,
+            operation: "bind legacy outbox delivery metadata update",
+            message: String(cString: sqlite3_errmsg(connection)),
+            recovery: "Check the temporary test database."
+          )
+        }
+      } else {
+        guard sqlite3_bind_null(update, 3) == SQLITE_OK else {
+          throw InstantError(
+            code: .persistenceFailed,
+            operation: "bind legacy outbox delivery metadata null",
+            message: String(cString: sqlite3_errmsg(connection)),
+            recovery: "Check the temporary test database."
+          )
+        }
+      }
+      guard sqlite3_bind_text(update, 4, mutationID, -1, testSQLiteTransient) == SQLITE_OK,
+        sqlite3_step(update) == SQLITE_DONE,
+        sqlite3_changes(connection) == 1
+      else {
+        throw InstantError(
+          code: .persistenceFailed,
+          operation: "install legacy outbox metadata",
+          message: String(cString: sqlite3_errmsg(connection)),
+          recovery: "Check the temporary test database."
+        )
+      }
+
+      var insert: OpaquePointer?
+      guard sqlite3_prepare_v2(
+        connection,
+        """
+        INSERT OR REPLACE INTO instant_outbox_effect_entities
+          (mutation_id, entity_id, created_at_ms)
+        SELECT mutation_id, ?, created_at_ms
+        FROM instant_outbox
+        WHERE mutation_id = ?
+        """,
+        -1,
+        &insert,
+        nil
+      ) == SQLITE_OK
+      else {
+        throw InstantError(
+          code: .persistenceFailed,
+          operation: "prepare legacy outbox effect entity insert",
+          message: String(cString: sqlite3_errmsg(connection)),
+          recovery: "Check the temporary test database."
+        )
+      }
+      defer { sqlite3_finalize(insert) }
+      guard sqlite3_bind_text(insert, 1, entityID, -1, testSQLiteTransient) == SQLITE_OK,
+        sqlite3_bind_text(insert, 2, mutationID, -1, testSQLiteTransient) == SQLITE_OK,
+        sqlite3_step(insert) == SQLITE_DONE,
+        sqlite3_changes(connection) == 1
+      else {
+        throw InstantError(
+          code: .persistenceFailed,
+          operation: "install legacy outbox effect entity",
+          message: String(cString: sqlite3_errmsg(connection)),
+          recovery: "Check the temporary test database."
+        )
+      }
+    }
+  }
+
+  private func readOutboxEffectMetadata(
+    at url: URL,
+    mutationID: String
+  ) throws -> OutboxEffectMetadata {
+    try withLiveQueryOwnershipDatabase(
+      at: url,
+      flags: SQLITE_OPEN_READONLY | SQLITE_OPEN_FULLMUTEX
+    ) { connection in
+      var statement: OpaquePointer?
+      guard sqlite3_prepare_v2(
+        connection,
+        """
+        SELECT optimistic_effect_metadata_version,
+               optimistic_effect_is_global,
+               optimistic_overlay_active,
+               (SELECT COUNT(*) FROM instant_outbox_effect_entities
+                WHERE mutation_id = instant_outbox.mutation_id)
+        FROM instant_outbox
+        WHERE mutation_id = ?
+        LIMIT 1
+        """,
+        -1,
+        &statement,
+        nil
+      ) == SQLITE_OK
+      else {
+        throw InstantError(
+          code: .persistenceFailed,
+          operation: "prepare outbox effect metadata read",
+          message: String(cString: sqlite3_errmsg(connection)),
+          recovery: "Check the temporary test database."
+        )
+      }
+      defer { sqlite3_finalize(statement) }
+      guard sqlite3_bind_text(
+        statement,
+        1,
+        mutationID,
+        -1,
+        testSQLiteTransient
+      ) == SQLITE_OK,
+        sqlite3_step(statement) == SQLITE_ROW
+      else {
+        throw InstantError(
+          code: .persistenceFailed,
+          operation: "read outbox effect metadata",
+          message: String(cString: sqlite3_errmsg(connection)),
+          recovery: "Check the temporary test database."
+        )
+      }
+      return OutboxEffectMetadata(
+        metadataVersion: sqlite3_column_int64(statement, 0),
+        isGlobal: sqlite3_column_int64(statement, 1) != 0,
+        isActive: sqlite3_column_int64(statement, 2) != 0,
+        entityCount: sqlite3_column_int64(statement, 3)
+      )
+    }
   }
 
   private func encodedQueryCacheByteCount(_ entry: InstantCachedQuery) throws -> Int {
@@ -20352,6 +22775,41 @@ private struct LegacyCachedQuery: Encodable, Sendable {
 private struct LiveQueryOwnershipCounts: Equatable {
   var resultRows: Int64
   var tripleRows: Int64
+}
+
+// SAFETY: `lock` protects the cancellation-aware continuation and observations.
+private final class FileUploadProgressCancellationCheckpoint: @unchecked Sendable {
+  private let lock = NSLock()
+  private var continuation: InstantLiveTestThrowingContinuationBox<Void>?
+  private var observedCancellation = false
+
+  var didObserveCancellation: Bool {
+    lock.withLock { observedCancellation }
+  }
+
+  func pause() async throws {
+    try await withTaskCancellationHandler {
+      try await withCheckedThrowingContinuation {
+        (rawContinuation: CheckedContinuation<Void, any Error>) in
+        let continuation = InstantLiveTestThrowingContinuationBox(rawContinuation)
+        let shouldCancel = lock.withLock {
+          guard !observedCancellation else { return true }
+          self.continuation = continuation
+          return false
+        }
+        if shouldCancel {
+          continuation.resume(throwing: CancellationError())
+        }
+      }
+    } onCancel: {
+      let continuation = self.lock.withLock {
+        self.observedCancellation = true
+        defer { self.continuation = nil }
+        return self.continuation
+      }
+      continuation?.resume(throwing: CancellationError())
+    }
+  }
 }
 
 private actor MutationTransportRecorder {

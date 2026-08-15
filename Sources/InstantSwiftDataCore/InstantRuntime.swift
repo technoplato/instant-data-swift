@@ -223,6 +223,33 @@ private final class InstantLiveObservationTermination: Sendable {
   }
 }
 
+package struct InstantLocalPersistenceMigration: Sendable {
+  package var name: String
+  package var affectedAttributeIDs: Set<String>
+  package var transformAttribute:
+    @Sendable (InstantAttribute) throws -> InstantAttribute
+  package var transformTriple:
+    @Sendable (InstantTriple) throws -> InstantTriple
+  package var transformMutation:
+    @Sendable (PendingMutation) throws -> PendingMutation
+
+  package init(
+    name: String,
+    affectedAttributeIDs: Set<String>,
+    transformAttribute: @escaping @Sendable (InstantAttribute) throws
+      -> InstantAttribute,
+    transformTriple: @escaping @Sendable (InstantTriple) throws -> InstantTriple,
+    transformMutation: @escaping @Sendable (PendingMutation) throws
+      -> PendingMutation
+  ) {
+    self.name = name
+    self.affectedAttributeIDs = affectedAttributeIDs
+    self.transformAttribute = transformAttribute
+    self.transformTriple = transformTriple
+    self.transformMutation = transformMutation
+  }
+}
+
 public struct InstantRuntimeConfiguration: Sendable {
   public static let defaultAPIURI = URL(string: "https://api.instantdb.com")!
   public static let defaultWebSocketURI = URL(
@@ -254,6 +281,7 @@ public struct InstantRuntimeConfiguration: Sendable {
   public var startupTrace: InstantStartupTrace = .disabled
   package var actorHopRecorder: InstantActorHopRecorder?
   package var isLocalOnly: Bool
+  package var localPersistenceMigrations: [InstantLocalPersistenceMigration] = []
   var queryCachePruningPolicy = InstantQueryCachePruningPolicy(
     maxAgeMilliseconds: 1_000 * 60 * 60 * 24 * 7 * 52,
     maxEntries: 1_000,
@@ -286,6 +314,8 @@ public struct InstantRuntimeConfiguration: Sendable {
     (@Sendable (InstantStandardQuerySetupCheckpoint) async throws -> Void)? = nil
   package var onStandardQueryObservationCleanupStartedForTesting:
     (@Sendable () async -> Void)? = nil
+  package var onFileUploadProgressLoadingPublishedForTesting:
+    (@Sendable () async throws -> Void)? = nil
   package var onStoredFilesRemoteSnapshotMergedForTesting:
     (@Sendable (_ fileCount: Int) async -> Void)? = nil
   package var onStoredFilesRemoteSnapshotPublishedForTesting:
@@ -307,6 +337,8 @@ public struct InstantRuntimeConfiguration: Sendable {
   package var onLocalInfiniteQueryTerminalPublishedBeforeObservationCleanupForTesting:
     (@Sendable () async -> Void)? = nil
   package var onAutomaticMutationPumpRetryWindowCompletedForTesting:
+    (@Sendable () async -> Void)? = nil
+  package var onManualSynchronizationBlockerBeforeConnectionGateForTesting:
     (@Sendable () async -> Void)? = nil
   package var onAutomaticLiveConnectionTaskStartedForTesting:
     (@Sendable () async -> Void)? = nil
@@ -1562,6 +1594,22 @@ public final class InstantRuntime: Sendable {
         queryCachePruningPolicy: configuration.queryCachePruningPolicy,
         now: configuration.now()
       )
+      for migration in configuration.localPersistenceMigrations {
+        configuration.actorHopRecorder?.record(.persistence)
+        let didMigrate = try await persistence.applyLocalPersistenceMigration(migration)
+        InstantDiagnostics.shared.record(
+          .notice,
+          subsystem: "instant-swift-data-core",
+          category: "persistence",
+          event: "sqlite.application-migration-completed",
+          message: "Applied an application-owned local persistence migration.",
+          metadata: [
+            "changed": String(didMigrate),
+            "name": migration.name,
+          ]
+        )
+      }
+      let bootstrapSynchronizationBlocker = try await persistence.synchronizationBlocker()
       if let bootstrapPruningResult,
         !bootstrapPruningResult.removedCacheKeys.isEmpty
       {
@@ -1621,7 +1669,7 @@ public final class InstantRuntime: Sendable {
             break
           }
           configuration.actorHopRecorder?.record(.persistence)
-          let didSave = try await persistence.saveStoreSnapshot(
+          let didSave = try await persistence.saveRuntimePreparedStoreSnapshot(
             storeSnapshot,
             replacing: previousForDiff,
             expectedStoreRevision: state.storeRevision,
@@ -1697,53 +1745,73 @@ public final class InstantRuntime: Sendable {
         attributeRevision: state.attributeRevision
       )
 
-      do {
-        configuration.actorHopRecorder?.record(.persistence)
-        let pruning = try await persistence.pruneLiveQueryResults(
-          policy: configuration.liveQueryResultPruningPolicy,
-          now: configuration.now(),
-          currentStoreSnapshot: state.snapshot.store
-        )
-        if !pruning.result.removedQueryKeys.isEmpty {
-          state = pruning.state
-          if pruning.result.removedOrphanedTripleCount > 0 {
-            configuration.actorHopRecorder?.record(.store)
-            await store.replaceSnapshot(state.snapshot.store)
-            runtime.installedStoreRevisions.install(
-              storeRevision: state.storeRevision,
-              attributeRevision: state.attributeRevision
-            )
-          }
-          configuration.actorHopRecorder?.record(.outbox)
-          await outbox.replace(with: state.snapshot.outbox)
-          InstantDiagnostics.shared.record(
-            .debug,
-            subsystem: "instant-swift-data-core",
-            category: "query",
-            event: "live-query-results.pruned-at-bootstrap",
-            message: "Pruned unloaded persisted live query results during runtime bootstrap.",
-            metadata: [
-              "remainingCount": String(pruning.result.remainingEntryCount),
-              "remainingTripleCount": String(pruning.result.remainingTripleCount),
-              "removedCount": String(pruning.result.removedQueryKeys.count),
-              "removedOrphanedTripleCount": String(
-                pruning.result.removedOrphanedTripleCount
-              ),
-            ]
-          )
-        }
-      } catch {
+      if let bootstrapSynchronizationBlocker {
+        await runtime.mutationDeliveryPump.suspend()
         InstantDiagnostics.shared.record(
-          error: error,
+          .notice,
           subsystem: "instant-swift-data-core",
           category: "query",
-          event: "live-query-results.bootstrap-prune-failed",
-          message: "Could not prune persisted live query results during runtime bootstrap."
+          event: "live-query-results.bootstrap-prune-blocked",
+          message:
+            "Preserved persisted live-query materialization because local synchronization requires manual recovery.",
+          metadata: [
+            "blockedMutationCount": String(
+              bootstrapSynchronizationBlocker.blockedMutationCount
+            ),
+            "firstMutationID": bootstrapSynchronizationBlocker.firstMutationID,
+          ]
         )
+      } else {
+        do {
+          configuration.actorHopRecorder?.record(.persistence)
+          let pruning = try await persistence.pruneLiveQueryResults(
+            policy: configuration.liveQueryResultPruningPolicy,
+            now: configuration.now(),
+            currentStoreSnapshot: state.snapshot.store
+          )
+          if !pruning.result.removedQueryKeys.isEmpty {
+            state = pruning.state
+            if pruning.result.removedOrphanedTripleCount > 0 {
+              configuration.actorHopRecorder?.record(.store)
+              await store.replaceSnapshot(state.snapshot.store)
+              runtime.installedStoreRevisions.install(
+                storeRevision: state.storeRevision,
+                attributeRevision: state.attributeRevision
+              )
+            }
+            configuration.actorHopRecorder?.record(.outbox)
+            await outbox.replace(with: state.snapshot.outbox)
+            InstantDiagnostics.shared.record(
+              .debug,
+              subsystem: "instant-swift-data-core",
+              category: "query",
+              event: "live-query-results.pruned-at-bootstrap",
+              message: "Pruned unloaded persisted live query results during runtime bootstrap.",
+              metadata: [
+                "remainingCount": String(pruning.result.remainingEntryCount),
+                "remainingTripleCount": String(pruning.result.remainingTripleCount),
+                "removedCount": String(pruning.result.removedQueryKeys.count),
+                "removedOrphanedTripleCount": String(
+                  pruning.result.removedOrphanedTripleCount
+                ),
+              ]
+            )
+          }
+        } catch {
+          InstantDiagnostics.shared.record(
+            error: error,
+            subsystem: "instant-swift-data-core",
+            category: "query",
+            event: "live-query-results.bootstrap-prune-failed",
+            message: "Could not prune persisted live query results during runtime bootstrap."
+          )
+        }
       }
 
       runtime.startUserCookieSyncOnStartup()
-      runtime.startAutomaticLiveConnectionIfNeeded()
+      if bootstrapSynchronizationBlocker == nil {
+        runtime.startAutomaticLiveConnectionIfNeeded()
+      }
       startupTrace.completed(
         "runtime.services-scheduled",
         durationMilliseconds: 0,
@@ -1992,8 +2060,6 @@ public final class InstantRuntime: Sendable {
         expectedOutboxRevision: state.outboxRevision
       ) else { continue }
       if let existingMutation = hydrated.first {
-        recordActorHop(.outbox)
-        await outbox.replace(existingMutation)
         guard existingMutation.status == .pending else {
           throw validationFailed(
             operation: "transact",
@@ -2014,6 +2080,20 @@ public final class InstantRuntime: Sendable {
               "Reuse the same prepared transaction when retrying, or generate a new transaction id."
           )
         }
+        recordActorHop(.persistence)
+        let receiptValidation = try await persistence.validatePreparedOptimisticEffectReceipts(
+          [existingMutation],
+          expectedOutboxRevision: state.outboxRevision
+        )
+        guard receiptValidation.matchesOutboxRevision else { continue }
+        if let untrustedMutationID = receiptValidation.firstUntrustedMutationID {
+          throw unknownOptimisticOverlayState(
+            id: untrustedMutationID,
+            operation: "transact"
+          )
+        }
+        recordActorHop(.outbox)
+        await outbox.replace(existingMutation)
         return InstantStoreMutationResult(
           transactionID: transaction.id,
           changedEntityIDs: [],
@@ -2115,9 +2195,12 @@ public final class InstantRuntime: Sendable {
           hydratingDeferredValues: deferredTriples
         )
       }
-      pendingMutation.rollbackTransaction = Self.rollbackTransaction(
-        mutationID: pendingMutation.id,
-        prepared: prepared
+      Self.installPreparedOptimisticEffect(
+        in: &pendingMutation,
+        rollback: Self.rollbackTransaction(
+          mutationID: pendingMutation.id,
+          prepared: prepared
+        )
       )
       mutation = pendingMutation
       try InstantAutomaticOutboxAdmission.validateNewMutation(pendingMutation)
@@ -2282,6 +2365,22 @@ public final class InstantRuntime: Sendable {
     )
   }
 
+  /// Installs one explicit receipt after Runtime has completed semantic
+  /// preparation or proved that the transaction has no materializing write steps.
+  ///
+  /// A nil rollback means the body produced no current local diff. Its explicit
+  /// replayable receipt lets delivery, server rebase, and retry replay it if later
+  /// authoritative data makes the same body effective.
+  private static func installPreparedOptimisticEffect(
+    in mutation: inout PendingMutation,
+    rollback: InstantStoreTransaction?
+  ) {
+    mutation.rollbackTransaction = rollback
+    mutation.optimisticOverlayState = .applied
+    mutation.optimisticEffectReceiptVersion =
+      PendingMutation.currentOptimisticEffectReceiptVersion
+  }
+
   @discardableResult
   public func applyServerTransaction(
     _ transaction: InstantStoreTransaction,
@@ -2303,9 +2402,10 @@ public final class InstantRuntime: Sendable {
     }
   }
 
-  package func applyServerTransactionMergingAttributesForTesting(
+  func applyServerTransactionMergingAttributesForTesting(
     _ transaction: InstantStoreTransaction,
     attributesToMerge: [InstantAttribute],
+    liveQueryResultReplacements: [InstantLiveQueryResultReplacement] = [],
     receivedAt: InstantTimestamp? = nil
   ) async throws -> InstantServerTransactionApplicationResult {
     await enterOperationGate()
@@ -2314,7 +2414,8 @@ public final class InstantRuntime: Sendable {
         transaction,
         processedTransactionID: transaction.id,
         receivedAt: receivedAt,
-        mergingAttributes: attributesToMerge
+        mergingAttributes: attributesToMerge,
+        liveQueryResultReplacements: liveQueryResultReplacements
       )
       await leaveOperationGate()
       return result.application
@@ -2398,16 +2499,29 @@ public final class InstantRuntime: Sendable {
         !authoritativeTransaction.operations.isEmpty || mergedAttributeCount > 0
       let planID = "server-apply-\(configuration.makeID())"
       let plan: InstantServerApplyPlan
+      var didChangeOptimisticEffectMetadataDuringPlanning = false
       normalization: while true {
         let load = try await persistence.beginServerApplyPlan(
           id: planID,
           footprint: footprint,
           hasServerOperations: hasAuthoritativeStoreChanges,
           processedTransactionID: processedTransactionID,
-          confirmingMutationID: confirmingMutationID
+          confirmingMutationID: confirmingMutationID,
+          confirmingClaimantID: confirmingMutationID == nil
+            ? nil
+            : automaticDeliveryClaimantID
         )
         switch load {
         case let .ready(readyPlan):
+          if didChangeOptimisticEffectMetadataDuringPlanning {
+            // Live-query retractions were protected before normalization. A
+            // row that became normalized, quarantined, or watermarked can
+            // change that protection, so discard this body-free plan and
+            // rebuild the authoritative transaction from a fresh compact
+            // snapshot once all bounded normalization work is complete.
+            try? await persistence.finishServerApplyPlan(id: readyPlan.id)
+            continue applyAttempts
+          }
           plan = readyPlan
           break normalization
 
@@ -2415,12 +2529,17 @@ public final class InstantRuntime: Sendable {
           let normalized = try await persistence.normalizeOptimisticEffectMetadata(
             startingAtMutationID: firstMutationID
           )
-          if !normalized.normalizedMutationIDs.isEmpty { continue normalization }
+          if !normalized.normalizedMutationIDs.isEmpty {
+            didChangeOptimisticEffectMetadataDuringPlanning = true
+            continue normalization
+          }
           if normalized.blockedMutationID == firstMutationID,
-            try await persistence.isolateLegacyFailedUnknownServerApplyMutation(
-              id: firstMutationID
+            try await persistence.isolateUnknownServerApplyMutation(
+              id: firstMutationID,
+              processedTransactionID: processedTransactionID
             )
           {
+            didChangeOptimisticEffectMetadataDuringPlanning = true
             continue normalization
           }
           let error = unknownOptimisticOverlayState(
@@ -2471,22 +2590,29 @@ public final class InstantRuntime: Sendable {
           }
           guard !page.entries.isEmpty else { break }
           for entry in page.entries where entry.isComponentBody {
+            // A covered, server-accepted row is already authoritative. The
+            // forward pass prunes it; reverse must not attempt to peel an
+            // ambiguous historical local-effect receipt first.
+            if entry.shouldPruneAtWatermark { continue }
             let mutation = entry.mutation
-            guard mutation.optimisticOverlayState != .removed else { continue }
-            guard let rollback = mutation.rollbackTransaction else {
-              let effect = InstantOptimisticEffectFootprint.normalized(for: mutation)
-              guard effect?.entityIDs.isEmpty == true, effect?.isGlobal == false else {
-                throw InstantError(
-                  code: .persistenceFailed,
-                  operation: "apply server transaction",
-                  localID: mutation.id,
-                  message:
-                    "Active optimistic mutation '\(mutation.id)' has no durable rollback.",
-                  recovery:
-                    "Preserve the row and run an authoritative recovery instead of guessing its inverse."
-                )
-              }
+            let rollback: InstantStoreTransaction
+            switch mutation.optimisticEffectReceipt {
+            case .unknown:
+              throw InstantError(
+                code: .persistenceFailed,
+                operation: "apply server transaction",
+                localID: mutation.id,
+                message:
+                  "Optimistic mutation '\(mutation.id)' has no durable effect receipt.",
+                recovery:
+                  "Preserve the row, stop live synchronization, and use an app-owned persistence reset or rebuild instead of guessing its local effect."
+              )
+
+            case .noCurrentMaterializedEffect:
               continue
+
+            case let .materialized(materializedRollback):
+              rollback = materializedRollback
             }
             prepared = try await hydrateDeferredValuesForServerApply(
               [rollback],
@@ -2596,8 +2722,7 @@ public final class InstantRuntime: Sendable {
               in: &mutation,
               at: optimisticTimestamp
             )
-            mutation.rollbackTransaction = nil
-            mutation.optimisticOverlayState = .applied
+            var replayRollback: InstantStoreTransaction?
             if !operations.isEmpty {
               let replayTransaction = InstantStoreTransaction(
                 id: mutation.transaction.id,
@@ -2613,12 +2738,16 @@ public final class InstantRuntime: Sendable {
                 applyingTo: prepared
               )
               changedEntityIDs.formUnion(replay.result.changedEntityIDs)
-              mutation.rollbackTransaction = Self.rollbackTransaction(
+              replayRollback = Self.rollbackTransaction(
                 mutationID: mutation.id,
                 prepared: replay
               )
               prepared = replay
             }
+            Self.installPreparedOptimisticEffect(
+              in: &mutation,
+              rollback: replayRollback
+            )
             dispositions.append(.update(mutation))
           }
           try await persistence.stageServerApplyBodyPage(
@@ -2933,13 +3062,16 @@ public final class InstantRuntime: Sendable {
 
   package func acceptMutationIfPresent(
     id: String,
-    serverTransactionID: String
+    serverTransactionID: String,
+    claimToken: String?
   ) async throws -> PendingMutation? {
     await enterOperationGate()
     do {
       let result = try await performAcceptMutationIfPresent(
         id: id,
-        serverTransactionID: serverTransactionID
+        serverTransactionID: serverTransactionID,
+        claimantID: automaticDeliveryClaimantID,
+        claimToken: claimToken
       )
       await scheduleLiveMutationDeadlineWake(
         at: result.nextClaimDeadlineMilliseconds
@@ -2991,7 +3123,9 @@ public final class InstantRuntime: Sendable {
 
   private func performAcceptMutationIfPresent(
     id: String,
-    serverTransactionID: String
+    serverTransactionID: String,
+    claimantID: String,
+    claimToken: String?
   ) async throws -> (
     mutation: PendingMutation?,
     pendingMutationCount: Int,
@@ -3004,6 +3138,8 @@ public final class InstantRuntime: Sendable {
       guard let acceptance = try await persistence.acceptOutboxMutation(
         id: id,
         serverTransactionID: serverTransactionID,
+        claimantID: claimantID,
+        claimToken: claimToken,
         expectedOutboxRevision: outboxRevision
       ) else { continue }
       guard let mutation = acceptance.mutation else {
@@ -3124,7 +3260,7 @@ public final class InstantRuntime: Sendable {
       let mergedCount = mergeLiveRefreshAttributes(attributesToMerge, into: &storeSnapshot)
       guard mergedCount > 0 else { return 0 }
       recordActorHop(.persistence)
-      let didSave = try await persistence.saveStoreSnapshot(
+      let didSave = try await persistence.saveRuntimePreparedStoreSnapshot(
         storeSnapshot,
         replacing: previousStoreSnapshot,
         expectedStoreRevision: state.storeRevision,
@@ -3169,7 +3305,7 @@ public final class InstantRuntime: Sendable {
   }
 
   @discardableResult
-  package func migrateLocalPersistenceSnapshot(
+  package func rewriteResidentPersistenceSnapshotForTesting(
     name: String,
     transform: @Sendable (InstantPersistenceSnapshot) throws -> InstantPersistenceSnapshot
   ) async throws -> Bool {
@@ -3192,22 +3328,44 @@ public final class InstantRuntime: Sendable {
           return false
         }
         recordActorHop(.persistence)
+        let receiptValidation = try await persistence.validatePreparedOptimisticEffectReceipts(
+          state.snapshot.outbox,
+          expectedOutboxRevision: state.outboxRevision
+        )
+        guard receiptValidation.matchesOutboxRevision else { continue }
+        if let untrustedMutationID = receiptValidation.firstUntrustedMutationID {
+          recordActorHop(.outbox)
+          await outbox.replace(with: state.snapshot.outbox)
+          throw unknownOptimisticOverlayState(
+            id: untrustedMutationID,
+            operation: "migrate local persistence snapshot '\(name)'"
+          )
+        }
+        recordActorHop(.persistence)
         let didSave = try await persistence.saveSnapshot(
           nextSnapshot,
           replacing: state.snapshot,
+          metadataEntries: [],
           expectedStoreRevision: state.storeRevision,
           expectedAttributeRevision: state.attributeRevision,
           expectedOutboxRevision: state.outboxRevision
         )
         if didSave {
+          // A migration may rewrite both the materialized store and its
+          // optimistic forward/inverse bodies. The original bodies were proven
+          // against SQLite above, and the Runtime-prepared CAS atomically binds
+          // the transformed bodies to the transformed store. Reinstall the
+          // exact durable result so the in-memory store/outbox share that proof.
+          recordActorHop(.persistence)
+          let persistedState = try await persistence.loadState()
           recordActorHop(.store)
-          await replaceStoreSnapshot(nextSnapshot.store)
+          await replaceStoreSnapshot(persistedState.snapshot.store)
           installedStoreRevisions.install(
-            storeRevision: state.storeRevision + 1,
-            attributeRevision: state.attributeRevision + 1
+            storeRevision: persistedState.storeRevision,
+            attributeRevision: persistedState.attributeRevision
           )
           recordActorHop(.outbox)
-          await outbox.replace(with: nextSnapshot.outbox)
+          await outbox.replace(with: persistedState.snapshot.outbox)
           await leaveOperationGate()
           return true
         }
@@ -4540,6 +4698,12 @@ public final class InstantRuntime: Sendable {
     await mutationDeliveryPump.isSuspendedForTesting()
   }
 
+  /// Exposes only the opaque claimant identity needed to exercise exact-token
+  /// acknowledgement races without opening a WebSocket in persistence tests.
+  package func automaticDeliveryClaimantIDForTesting() -> String {
+    automaticDeliveryClaimantID
+  }
+
   package func liveReconnectControllerIsIdleForTesting() async -> Bool {
     await reconnectController.isIdleForTesting()
   }
@@ -4749,6 +4913,18 @@ public final class InstantRuntime: Sendable {
       }
       if let liveTransport = configuration.liveTransport {
         recordActorHop(.persistence)
+        if let blocker = try await persistence.synchronizationBlocker() {
+          await mutationDeliveryPump.suspend()
+          let error = blocker.error(operation: "open Instant live connection")
+          try await saveErroredConnectionMetadataWithGateHeld(
+            message: String(describing: error)
+          )
+          if reportsFailure {
+            _ = try? await publishConnectionStatusWithGateHeld()
+          }
+          throw error
+        }
+        recordActorHop(.persistence)
         let session = try await persistence.loadAuthSession(key: authSessionKey)
         recordActorHop(.operationGate)
         await operationGate.leave()
@@ -4797,9 +4973,13 @@ public final class InstantRuntime: Sendable {
           await configuration.onLiveSessionOpenedBeforeReceiverStartForTesting?()
           recordActorHop(.liveSession)
           try await liveSession.startReceiving(
-            onEvent: { [weak self] event, attributes in
+            onEvent: { [weak self] event, attributes, mutationClaimToken in
               guard let self else { return }
-              try await self.handleLiveServerEvent(event, serverAttributes: attributes)
+              try await self.handleLiveServerEvent(
+                event,
+                serverAttributes: attributes,
+                mutationClaimToken: mutationClaimToken
+              )
             },
             onEventAcquired: configuration.onLiveReceiverEventAcquiredForTesting,
             onFailure: { [weak self] error in
@@ -5049,6 +5229,8 @@ public final class InstantRuntime: Sendable {
       key: connectionLastErrorMetadataKey
     )
     let liveSessionIsOpen = await liveSession.isOpen
+    recordActorHop(.persistence)
+    let synchronizationBlocker = try await persistence.synchronizationBlocker()
     return InstantConnectionStatus(
       appID: configuration.appID,
       apiURI: configuration.apiURI,
@@ -5063,7 +5245,8 @@ public final class InstantRuntime: Sendable {
       userID: session?.userID,
       pendingMutationCount: pendingMutationCount,
       processedTransactionID: processedTransactionID,
-      lastErrorMessage: lastErrorMessage
+      lastErrorMessage: lastErrorMessage,
+      synchronizationBlocker: synchronizationBlocker
     )
   }
 
@@ -5168,6 +5351,55 @@ public final class InstantRuntime: Sendable {
       && !(error is InstantReceiverOwnedLiveSessionSendFailure)
   }
 
+  /// A row without SQLite-owned preparation authority is a local persistence
+  /// repair condition, not a network failure. Reconnecting can only replay the
+  /// same unsafe refresh and burn battery; keep the exact error durable until
+  /// an operator or app-owned repair explicitly rebuilds local persistence.
+  private static func requiresManualOptimisticEffectRecovery(_ error: Error) -> Bool {
+    guard let error = error as? InstantError else { return false }
+    return error.code == .persistenceFailed
+      && error.localMutationDisposition == .retainedUnknown
+  }
+
+  /// Stops local delivery on a durable receipt-authority blocker. This is not
+  /// a network backoff condition: retrying cannot establish whether the
+  /// unknown mutation reached the server.
+  private func suspendDeliveryForManualOptimisticEffectRecovery(_ error: Error) async {
+    await configuration.onManualSynchronizationBlockerBeforeConnectionGateForTesting?()
+    var enteredConnectionGate = false
+    var enteredOperationGate = false
+    do {
+      try await connectionGate.enterUnlessCancelled(
+        operation: "persist manual synchronization blocker"
+      )
+      enteredConnectionGate = true
+      try await enterOperationGateUnlessCancelled(
+        operation: "persist manual synchronization blocker"
+      )
+      enteredOperationGate = true
+      if try await persistedConnectionState() == .closed {
+        await leaveOperationGate()
+        enteredOperationGate = false
+        await connectionGate.leave()
+        return
+      }
+      try await saveErroredConnectionMetadataWithGateHeld(message: String(describing: error))
+      _ = try await publishConnectionStatusWithGateHeld()
+      await leaveOperationGate()
+      enteredOperationGate = false
+      await connectionGate.leave()
+      enteredConnectionGate = false
+    } catch {
+      if enteredOperationGate {
+        await leaveOperationGate()
+      }
+      if enteredConnectionGate {
+        await connectionGate.leave()
+      }
+    }
+    await mutationDeliveryPump.suspend()
+  }
+
   private func handleLiveSessionFailure(_ error: Error) async {
     do {
       _ = try await releaseAutomaticOutboxClaimsForDisconnectedSession()
@@ -5238,6 +5470,10 @@ public final class InstantRuntime: Sendable {
     message: String
   ) async {
     guard !Task.isCancelled else { return }
+    if Self.requiresManualOptimisticEffectRecovery(error) {
+      await suspendDeliveryForManualOptimisticEffectRecovery(error)
+      return
+    }
     InstantDiagnostics.shared.record(
       error: error,
       subsystem: "instant-swift-data-core",
@@ -5297,7 +5533,8 @@ public final class InstantRuntime: Sendable {
 
   private func handleLiveServerEvent(
     _ event: InstantLiveServerEvent,
-    serverAttributes: [InstantLiveJSONValue]
+    serverAttributes: [InstantLiveJSONValue],
+    mutationClaimToken: String?
   ) async throws {
     InstantDiagnostics.shared.record(
       .debug,
@@ -5407,7 +5644,8 @@ public final class InstantRuntime: Sendable {
       )
       _ = try await acceptMutationIfPresent(
         id: clientEventID,
-        serverTransactionID: transactionID
+        serverTransactionID: transactionID,
+        claimToken: mutationClaimToken
       )
       await startLiveMutationDeliveryIfNeeded()
 
@@ -5442,13 +5680,57 @@ public final class InstantRuntime: Sendable {
       await liveSession.recordDeliveredStreamAppend(delivery, seenOffset: seenOffset)
 
     case let .error(error):
+      // Query and stream errors carry client event IDs too, but they are not
+      // mutation delivery responses and therefore have no SQLite claim token.
+      // Route those feature-owned errors before interpreting a missing token as
+      // a stale mutation response.
+      if await liveSession.retireRejectedStreamReader(
+        clientEventID: error.clientEventID?.nilIfEmpty,
+        message: error.message
+      ) {
+        return
+      }
+      if let originalEvent = error.originalEvent,
+        originalEvent.op == "add-query",
+        let query = originalEvent.fields["q"]
+      {
+        let registrationKey = try InstantLiveQueryEncoder.registrationKey(for: query)
+        let rejection = InstantError(
+          code: Self.isPermissionError(error)
+            ? .permissionRejected
+            : .validationFailed,
+          operation: "run Instant live query",
+          serverEventID: originalEvent.clientEventID ?? error.clientEventID,
+          serverStatus: error.status,
+          serverType: error.type,
+          serverHint: error.hint,
+          serverTraceID: error.traceID,
+          serverOriginalEventTraceID: error.originalEventTraceID,
+          message: error.message,
+          recovery: "Inspect the rejected query and its Instant permissions without reconnecting the healthy live session."
+        )
+        if await liveSession.retireRejectedQuery(key: registrationKey) {
+          await liveQueryResultState.unload(key: registrationKey)
+        }
+        await liveQueryAcknowledgements.reject(key: registrationKey, error: rejection)
+        InstantDiagnostics.shared.record(
+          error: rejection,
+          subsystem: "instant-swift-data-core",
+          category: "query",
+          event: "query.live-rejected",
+          message: "Instant rejected one live query without interrupting the shared socket.",
+          metadata: ["registrationKey": registrationKey]
+        )
+        return
+      }
       let clientEventID = error.clientEventID?.nilIfEmpty
       let mutationDisposition: InstantLiveMutationErrorDisposition
       if let clientEventID {
         recordActorHop(.persistence)
         mutationDisposition = try await persistence.liveMutationErrorDisposition(
           id: clientEventID,
-          claimantID: automaticDeliveryClaimantID
+          claimantID: automaticDeliveryClaimantID,
+          claimToken: mutationClaimToken
         )
       } else {
         mutationDisposition = .missing
@@ -5539,45 +5821,6 @@ public final class InstantRuntime: Sendable {
           recordsConnectionFailure: false
         )
         await startLiveMutationDeliveryIfNeeded()
-        return
-      }
-      if await liveSession.retireRejectedStreamReader(
-        clientEventID: error.clientEventID?.nilIfEmpty,
-        message: error.message
-      ) {
-        return
-      }
-      if let originalEvent = error.originalEvent,
-        originalEvent.op == "add-query",
-        let query = originalEvent.fields["q"]
-      {
-        let registrationKey = try InstantLiveQueryEncoder.registrationKey(for: query)
-        let rejection = InstantError(
-          code: Self.isPermissionError(error)
-            ? .permissionRejected
-            : .validationFailed,
-          operation: "run Instant live query",
-          serverEventID: originalEvent.clientEventID ?? error.clientEventID,
-          serverStatus: error.status,
-          serverType: error.type,
-          serverHint: error.hint,
-          serverTraceID: error.traceID,
-          serverOriginalEventTraceID: error.originalEventTraceID,
-          message: error.message,
-          recovery: "Inspect the rejected query and its Instant permissions without reconnecting the healthy live session."
-        )
-        if await liveSession.retireRejectedQuery(key: registrationKey) {
-          await liveQueryResultState.unload(key: registrationKey)
-        }
-        await liveQueryAcknowledgements.reject(key: registrationKey, error: rejection)
-        InstantDiagnostics.shared.record(
-          error: rejection,
-          subsystem: "instant-swift-data-core",
-          category: "query",
-          event: "query.live-rejected",
-          message: "Instant rejected one live query without interrupting the shared socket.",
-          metadata: ["registrationKey": registrationKey]
-        )
         return
       }
       throw InstantError(
@@ -5915,6 +6158,9 @@ public final class InstantRuntime: Sendable {
       outstanding = try await automaticOutboxTransportMutationsForDelivery()
     } catch {
       recordOutboxTransportHydrationFailure(error)
+      if Self.requiresManualOptimisticEffectRecovery(error) {
+        await suspendDeliveryForManualOptimisticEffectRecovery(error)
+      }
       return false
     }
     do {
@@ -5954,6 +6200,10 @@ public final class InstantRuntime: Sendable {
     } catch is CancellationError {
       return .finished
     } catch {
+      if Self.requiresManualOptimisticEffectRecovery(error) {
+        await suspendDeliveryForManualOptimisticEffectRecovery(error)
+        return .finished
+      }
       recordFailedMutationRetryWindowFailure(error)
       retryNeedsBackoff = true
     }
@@ -5967,6 +6217,10 @@ public final class InstantRuntime: Sendable {
     } catch is CancellationError {
       return .finished
     } catch {
+      if Self.requiresManualOptimisticEffectRecovery(error) {
+        await suspendDeliveryForManualOptimisticEffectRecovery(error)
+        return .finished
+      }
       recordOutboxTransportHydrationFailure(error)
       return .retryAfterFailure
     }
@@ -6013,7 +6267,10 @@ public final class InstantRuntime: Sendable {
     )
     let encodingFailures: [InstantLiveMutationEncodingFailure]
     do {
-      encodingFailures = try await liveSession.sendMutations(selection.mutations)
+      encodingFailures = try await liveSession.sendMutations(
+        selection.mutations,
+        claimToken: selection.claimToken
+      )
     } catch {
       do {
         _ = try await releaseAutomaticOutboxClaimsForDisconnectedSession()
@@ -7371,12 +7628,14 @@ public final class InstantRuntime: Sendable {
     let output = AsyncThrowingStream<InstantFileUploadProgress, Error>.makeStream(
       bufferingPolicy: .bufferingNewest(2)
     )
+    let stream = output.stream
+    let continuation = output.continuation
     let task = Task { [weak self] in
       guard let self else {
-        output.continuation.finish()
+        continuation.finish()
         return
       }
-      output.continuation.yield(
+      continuation.yield(
         InstantFileUploadProgress(
           operationID: file.id,
           appID: file.appID,
@@ -7391,10 +7650,11 @@ public final class InstantRuntime: Sendable {
         )
       )
       do {
+        try await self.configuration.onFileUploadProgressLoadingPublishedForTesting?()
         try Task.checkCancellation()
         let savedFile = try await self.savePreparedStoredFile(file, contentsOf: sourceURL)
         try Task.checkCancellation()
-        output.continuation.yield(
+        continuation.yield(
           InstantFileUploadProgress(
             operationID: file.id,
             appID: file.appID,
@@ -7409,11 +7669,11 @@ public final class InstantRuntime: Sendable {
             updatedAt: self.configuration.now()
           )
         )
-        output.continuation.finish()
+        continuation.finish()
       } catch is CancellationError {
-        output.continuation.finish()
+        continuation.finish()
       } catch {
-        output.continuation.yield(
+        continuation.yield(
           InstantFileUploadProgress(
             operationID: file.id,
             appID: file.appID,
@@ -7428,17 +7688,22 @@ public final class InstantRuntime: Sendable {
             updatedAt: self.configuration.now()
           )
         )
-        output.continuation.finish(throwing: error)
+        continuation.finish(throwing: error)
       }
     }
     let lease = InstantManagedStreamLease(
-      stream: output.stream,
+      stream: stream,
       onCancellationRequested: { task.cancel() }
     )
     lease.install {
       task.cancel()
-      output.continuation.finish()
+      continuation.finish()
       await task.value
+    }
+    let cancellationRequest = lease.cancellationRequest
+    continuation.onTermination = { @Sendable termination in
+      guard case .cancelled = termination else { return }
+      cancellationRequest()
     }
     return lease
   }
@@ -9439,6 +9704,11 @@ public final class InstantRuntime: Sendable {
         claimToken: flushClaimToken,
         now: configuration.now()
       )
+      recordActorHop(.liveSession)
+      await liveSession.releaseMutationReservations(
+        window.reclaimedMutationIDs,
+        timedOut: !window.reclaimedMutationIDs.isEmpty
+      )
       selectedMutations = window.mutations
       selectedMutationIDs = Set(window.mutations.map(\.id))
       selectionFailures = window.failedMutations
@@ -10236,6 +10506,27 @@ public final class InstantRuntime: Sendable {
         await outbox.replace(with: state.snapshot.outbox)
         throw outboxMutationNotFound(id: id)
       }
+      let receiptValidationCandidates = state.snapshot.outbox.filter { candidate in
+        candidate.id == original.id
+          || (
+            PendingMutation.creationOrder(original, candidate)
+              && candidate.status != .failed
+              && candidate.optimisticOverlayState != .removed
+          )
+      }
+      recordActorHop(.persistence)
+      let receiptValidation = try await persistence.validatePreparedOptimisticEffectReceipts(
+        receiptValidationCandidates,
+        expectedOutboxRevision: state.outboxRevision
+      )
+      guard receiptValidation.matchesOutboxRevision else { continue }
+      if let untrustedMutationID = receiptValidation.firstUntrustedMutationID {
+        await outbox.replace(with: state.snapshot.outbox)
+        throw unknownOptimisticOverlayState(
+          id: untrustedMutationID,
+          operation: "fail outbox mutation"
+        )
+      }
       let storeSnapshot = await authoritativeStoreSnapshot(from: state)
       let removal = try await prepareTerminalFailureRemoval(
         original: original,
@@ -10329,32 +10620,23 @@ public final class InstantRuntime: Sendable {
     failedMutation.serverTransactionID = nil
     failedMutation.confirmationSource = nil
 
-    guard original.optimisticOverlayState != nil || original.rollbackTransaction != nil else {
+    let failedRollback: InstantStoreTransaction
+    switch original.optimisticEffectReceipt {
+    case .unknown:
       throw unknownOptimisticOverlayState(
         id: original.id,
         operation: "reject claimed mutation"
       )
-    }
 
-    failedMutation.optimisticOverlayState = .removed
-    failedMutation.rollbackTransaction = nil
-    guard original.optimisticOverlayState != .removed else {
+    case .noCurrentMaterializedEffect:
+      failedMutation.optimisticOverlayState = .removed
+      failedMutation.rollbackTransaction = nil
       return (nil, failedMutation, component.successors)
-    }
-    guard let failedRollback = original.rollbackTransaction else {
-      let footprint = InstantOptimisticEffectFootprint.normalized(for: original)
-      guard footprint?.entityIDs.isEmpty == true, footprint?.isGlobal == false else {
-        throw InstantError(
-          code: .persistenceFailed,
-          operation: "reject claimed mutation",
-          localID: original.id,
-          message:
-            "Mutation '\(original.id)' has an active optimistic effect but no durable rollback.",
-          recovery:
-            "Preserve the row and run an authoritative refresh instead of guessing its inverse."
-        )
-      }
-      return (nil, failedMutation, component.successors)
+
+    case let .materialized(rollback):
+      failedRollback = rollback
+      failedMutation.optimisticOverlayState = .removed
+      failedMutation.rollbackTransaction = nil
     }
 
     var rebasedSuccessors = component.successors.sorted(by: PendingMutation.creationOrder)
@@ -10371,21 +10653,24 @@ public final class InstantRuntime: Sendable {
     var changedEntityIDs: Set<String> = []
 
     for successor in rebasedSuccessors.reversed() {
-      guard successor.optimisticOverlayState != .removed else { continue }
-      guard let rollback = successor.rollbackTransaction else {
-        let footprint = InstantOptimisticEffectFootprint.normalized(for: successor)
-        guard footprint?.entityIDs.isEmpty == true, footprint?.isGlobal == false else {
-          throw InstantError(
-            code: .persistenceFailed,
-            operation: "reject claimed mutation",
-            localID: successor.id,
-            message:
-              "Successor mutation '\(successor.id)' has an active optimistic effect but no durable rollback.",
-            recovery:
-              "Preserve the component and run an authoritative refresh instead of guessing its inverse."
-          )
-        }
+      let rollback: InstantStoreTransaction
+      switch successor.optimisticEffectReceipt {
+      case .unknown:
+        throw InstantError(
+          code: .persistenceFailed,
+          operation: "reject claimed mutation",
+          localID: successor.id,
+          message:
+            "Successor mutation '\(successor.id)' has no durable effect receipt.",
+          recovery:
+            "Preserve the component and use an app-owned persistence reset or rebuild instead of guessing its local effect."
+        )
+
+      case .noCurrentMaterializedEffect:
         continue
+
+      case let .materialized(materializedRollback):
+        rollback = materializedRollback
       }
       let next = if let prepared {
         try await store.prepare(rollback, applyingTo: prepared)
@@ -10414,20 +10699,23 @@ public final class InstantRuntime: Sendable {
         in: &successor,
         at: optimisticTimestamp
       )
-      successor.rollbackTransaction = nil
-      successor.optimisticOverlayState = .applied
+      var replayRollback: InstantStoreTransaction?
       if !operations.isEmpty {
         let replay = try await store.prepare(
           InstantStoreTransaction(id: successor.transaction.id, operations: operations),
           applyingTo: replayPrepared
         )
         changedEntityIDs.formUnion(replay.result.changedEntityIDs)
-        successor.rollbackTransaction = Self.rollbackTransaction(
+        replayRollback = Self.rollbackTransaction(
           mutationID: successor.id,
           prepared: replay
         )
         replayPrepared = replay
       }
+      Self.installPreparedOptimisticEffect(
+        in: &successor,
+        rollback: replayRollback
+      )
       rebasedSuccessors[index] = successor
     }
 
@@ -10464,21 +10752,26 @@ public final class InstantRuntime: Sendable {
     var mutations = failedMutations
     var failedMutation = mutations[failedIndex]
 
-    // A pre-overlay-state row cannot tell us whether its optimistic writes are still materialized.
-    // Preserve both the cache and the durable row until an authoritative recovery path proves the
-    // state. A transaction id is correlation, not a safe inverse operation.
-    guard original.optimisticOverlayState != nil || original.rollbackTransaction != nil else {
+    let failedRollback: InstantStoreTransaction
+    switch original.optimisticEffectReceipt {
+    case .unknown:
+      // A pre-receipt row cannot tell us whether its optimistic writes are still materialized.
+      // Preserve both the cache and durable row as a manual-repair barrier. A transaction id is
+      // correlation, not a safe inverse operation, so no automatic refresh may guess the state.
       mutations[failedIndex] = failedMutation
       return (nil, snapshot, mutations, failedMutation)
-    }
 
-    failedMutation.optimisticOverlayState = .removed
-    failedMutation.rollbackTransaction = nil
-    mutations[failedIndex] = failedMutation
-    guard original.optimisticOverlayState != .removed,
-      let failedRollback = original.rollbackTransaction
-    else {
+    case .noCurrentMaterializedEffect:
+      failedMutation.optimisticOverlayState = .removed
+      failedMutation.rollbackTransaction = nil
+      mutations[failedIndex] = failedMutation
       return (nil, snapshot, mutations, failedMutation)
+
+    case let .materialized(rollback):
+      failedRollback = rollback
+      failedMutation.optimisticOverlayState = .removed
+      failedMutation.rollbackTransaction = nil
+      mutations[failedIndex] = failedMutation
     }
 
     let successors = mutations.sorted(by: PendingMutation.creationOrder).filter { mutation in
@@ -10501,11 +10794,14 @@ public final class InstantRuntime: Sendable {
     // Strip successors in reverse so the rejected layer's exact inverse is applied to the state it
     // originally covered. Replaying them below rebuilds each successor inverse over the new base.
     for successor in successors.reversed() {
-      guard let rollback = successor.rollbackTransaction else {
-        guard successor.optimisticOverlayState != nil else {
-          throw unknownOptimisticOverlayState(id: successor.id, operation: "reject mutation")
-        }
+      let rollback: InstantStoreTransaction
+      switch successor.optimisticEffectReceipt {
+      case .unknown:
+        throw unknownOptimisticOverlayState(id: successor.id, operation: "reject mutation")
+      case .noCurrentMaterializedEffect:
         continue
+      case let .materialized(materializedRollback):
+        rollback = materializedRollback
       }
       let next = if let prepared {
         try await store.prepare(rollback, applyingTo: prepared)
@@ -10537,20 +10833,23 @@ public final class InstantRuntime: Sendable {
         in: &rebasedSuccessor,
         at: optimisticTimestamp
       )
-      rebasedSuccessor.rollbackTransaction = nil
-      rebasedSuccessor.optimisticOverlayState = .applied
+      var replayRollback: InstantStoreTransaction?
       if !operations.isEmpty {
         let replay = try await store.prepare(
           InstantStoreTransaction(id: rebasedSuccessor.transaction.id, operations: operations),
           applyingTo: replayPrepared
         )
         changedEntityIDs.formUnion(replay.result.changedEntityIDs)
-        rebasedSuccessor.rollbackTransaction = Self.rollbackTransaction(
+        replayRollback = Self.rollbackTransaction(
           mutationID: rebasedSuccessor.id,
           prepared: replay
         )
         replayPrepared = replay
       }
+      Self.installPreparedOptimisticEffect(
+        in: &rebasedSuccessor,
+        rollback: replayRollback
+      )
       mutations[successorIndex] = rebasedSuccessor
     }
 
@@ -10618,10 +10917,31 @@ public final class InstantRuntime: Sendable {
             recovery: "Wait for a server rejection before explicitly discarding the mutation."
           )
         }
-        guard mutation.optimisticOverlayState != nil || mutation.rollbackTransaction != nil else {
+        if case .unknown = mutation.optimisticEffectReceipt {
           await outbox.replace(with: state.snapshot.outbox)
           throw unknownOptimisticOverlayState(
             id: id,
+            operation: "discard failed outbox mutation"
+          )
+        }
+        let receiptValidationCandidates = state.snapshot.outbox.filter { candidate in
+          candidate.id == mutation.id
+            || (
+              PendingMutation.creationOrder(mutation, candidate)
+                && candidate.status != .failed
+                && candidate.optimisticOverlayState != .removed
+            )
+        }
+        recordActorHop(.persistence)
+        let receiptValidation = try await persistence.validatePreparedOptimisticEffectReceipts(
+          receiptValidationCandidates,
+          expectedOutboxRevision: state.outboxRevision
+        )
+        guard receiptValidation.matchesOutboxRevision else { continue }
+        if let untrustedMutationID = receiptValidation.firstUntrustedMutationID {
+          await outbox.replace(with: state.snapshot.outbox)
+          throw unknownOptimisticOverlayState(
+            id: untrustedMutationID,
             operation: "discard failed outbox mutation"
           )
         }
@@ -10642,6 +10962,7 @@ public final class InstantRuntime: Sendable {
             store: removal.replacingStoreSnapshot,
             outbox: state.snapshot.outbox
           ),
+          metadataEntries: [],
           expectedStoreRevision: state.storeRevision,
           expectedAttributeRevision: state.attributeRevision,
           expectedOutboxRevision: state.outboxRevision
@@ -10715,10 +11036,24 @@ public final class InstantRuntime: Sendable {
           recovery: "Refresh the failed-mutation list and retry only a retained failed mutation."
         )
       }
-      guard original.optimisticOverlayState != nil || original.rollbackTransaction != nil else {
+      if case .unknown = original.optimisticEffectReceipt {
         recordActorHop(.outbox)
         await outbox.replace(with: state.snapshot.outbox)
         throw unknownOptimisticOverlayState(id: id, operation: "retry outbox mutation")
+      }
+      recordActorHop(.persistence)
+      let receiptValidation = try await persistence.validatePreparedOptimisticEffectReceipts(
+        [original],
+        expectedOutboxRevision: state.outboxRevision
+      )
+      guard receiptValidation.matchesOutboxRevision else { continue }
+      if let untrustedMutationID = receiptValidation.firstUntrustedMutationID {
+        recordActorHop(.outbox)
+        await outbox.replace(with: state.snapshot.outbox)
+        throw unknownOptimisticOverlayState(
+          id: untrustedMutationID,
+          operation: "retry outbox mutation"
+        )
       }
 
       var retriedMutation = update.mutation
@@ -10740,9 +11075,9 @@ public final class InstantRuntime: Sendable {
           in: &retriedMutation,
           at: optimisticTimestamp
         )
+        var retryRollback: InstantStoreTransaction?
         if operations.isEmpty {
           preparedRetry = nil
-          retriedMutation.rollbackTransaction = nil
         } else {
           let retryTransaction = InstantStoreTransaction(
             id: retriedMutation.transaction.id,
@@ -10755,17 +11090,17 @@ public final class InstantRuntime: Sendable {
             hydratingDeferredValues: deferredTriples
           )
           preparedRetry = prepared
-          retriedMutation.rollbackTransaction = Self.rollbackTransaction(
+          retryRollback = Self.rollbackTransaction(
             mutationID: retriedMutation.id,
             prepared: prepared
           )
         }
-        retriedMutation.optimisticOverlayState = .applied
+        Self.installPreparedOptimisticEffect(
+          in: &retriedMutation,
+          rollback: retryRollback
+        )
       } else {
         preparedRetry = nil
-        if retriedMutation.optimisticOverlayState == nil {
-          retriedMutation.optimisticOverlayState = .applied
-        }
       }
       guard let retriedIndex = retriedMutations.firstIndex(where: { $0.id == id }) else {
         throw outboxMutationNotFound(id: id)
@@ -11020,16 +11355,11 @@ public final class InstantRuntime: Sendable {
   }
 
   private func unknownOptimisticOverlayState(id: String, operation: String) -> InstantError {
-    InstantError(
-      code: .persistenceFailed,
-      operation: operation,
-      localID: id,
-      localMutationDisposition: .retainedUnknown,
-      message:
-        "Mutation '\(id)' predates durable optimistic-overlay metadata, so its local cache effect is unknown.",
-      recovery:
-        "Retain the mutation and run an authoritative recovery that explicitly verifies the server effect before retrying or discarding it."
-    )
+    InstantSynchronizationBlocker(
+      reason: .unknownOptimisticEffectReceipt,
+      firstMutationID: id,
+      blockedMutationCount: 1
+    ).error(operation: operation)
   }
 
   private func outboxChangedDuringStatusUpdate(id: String) -> InstantError {

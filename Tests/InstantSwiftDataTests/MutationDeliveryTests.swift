@@ -6,6 +6,64 @@ import Testing
 @Suite(.serialized)
 struct MutationDeliveryTests {
   @Test
+  func synchronizationBlockerRoundTripsAndLegacyConnectionStatusDecodesWithoutIt()
+    throws
+  {
+    let blocker = InstantSynchronizationBlocker(
+      reason: .unknownOptimisticEffectReceipt,
+      firstMutationID: "tx-unknown-receipt-first",
+      blockedMutationCount: 3
+    )
+    let status = InstantConnectionStatus(
+      appID: "synchronization-blocker-codable",
+      apiURI: URL(string: "https://api.instantdb.com")!,
+      websocketURI: URL(string: "wss://api.instantdb.com/runtime/session")!,
+      transport: .webSocket,
+      state: .errored,
+      isAuthenticated: false,
+      userID: nil,
+      pendingMutationCount: 4,
+      processedTransactionID: "100",
+      lastErrorMessage: "Local synchronization is blocked.",
+      synchronizationBlocker: blocker
+    )
+
+    let encoded = try JSONEncoder().encode(status)
+    let decoded = try JSONDecoder().decode(InstantConnectionStatus.self, from: encoded)
+    expectNoDifference(decoded, status)
+
+    var legacyObject = try #require(
+      JSONSerialization.jsonObject(with: encoded) as? [String: Any]
+    )
+    expectNoDifference(legacyObject.removeValue(forKey: "synchronizationBlocker") != nil, true)
+    let legacyData = try JSONSerialization.data(withJSONObject: legacyObject)
+    let legacy = try JSONDecoder().decode(InstantConnectionStatus.self, from: legacyData)
+    var expectedLegacy = status
+    expectedLegacy.synchronizationBlocker = nil
+    expectNoDifference(legacy, expectedLegacy)
+  }
+
+  @Test
+  func unknownReceiptSynchronizationBlockerBuildsCanonicalManualRecoveryError() {
+    let blocker = InstantSynchronizationBlocker(
+      reason: .unknownOptimisticEffectReceipt,
+      firstMutationID: "tx-unknown-receipt-first",
+      blockedMutationCount: 2
+    )
+
+    let error = blocker.error(operation: "open Instant live connection")
+
+    expectNoDifference(error.code, .persistenceFailed)
+    expectNoDifference(error.operation, "open Instant live connection")
+    expectNoDifference(error.localID, "tx-unknown-receipt-first")
+    expectNoDifference(error.localMutationDisposition, .retainedUnknown)
+    #expect(error.message.contains("Synchronization is blocked by 2 retained mutations."))
+    #expect(error.recovery.contains("Automatic reconnect is paused"))
+    #expect(error.recovery.contains("destructive local persistence reset"))
+    #expect(error.recovery.contains("cannot guarantee lossless recovery"))
+  }
+
+  @Test
   func waitsForServerAcknowledgementWithoutLocallyFlushingTheOutbox() async throws {
     let probe = MutationDeliveryProbe(
       pendingResponses: [[Self.pendingMutation], []],

@@ -91,6 +91,10 @@ package actor InstantRuntimeLiveSession {
   /// Mutation IDs offered on this socket generation, retained after a response
   /// is decoded until Runtime finishes its durable acknowledgement transition.
   private var offeredMutationIDsInCurrentGeneration: Set<String> = []
+  /// Exact SQLite claim token whose payload was offered for each mutation on
+  /// this socket generation. A response captures it before any Runtime
+  /// suspension so a late frame cannot authorize a newer same-id claim.
+  private var offeredMutationClaimTokensInCurrentGeneration: [String: String] = [:]
   private var acknowledgementUnknownMutationIDs: Set<String> = []
   private var hasReportedDeepOutbox = false
   /// Bounds the number of transactions sharing the socket at once.
@@ -339,6 +343,7 @@ package actor InstantRuntimeLiveSession {
     inFlightMutationStepCounts.removeAll()
     inFlightMutationDeadlines.removeAll()
     offeredMutationIDsInCurrentGeneration.removeAll()
+    offeredMutationClaimTokensInCurrentGeneration.removeAll()
     acknowledgementUnknownMutationIDs.removeAll()
     for room in Array(registeredRooms.keys) {
       registeredRooms[room]?.isConnected = false
@@ -468,7 +473,8 @@ package actor InstantRuntimeLiveSession {
   func startReceiving(
     onEvent: @escaping @Sendable (
       InstantLiveServerEvent,
-      [InstantLiveJSONValue]
+      [InstantLiveJSONValue],
+      String?
     ) async throws -> Void,
     onEventAcquired: (@Sendable () async -> Void)? = nil,
     onFailure: @escaping @Sendable (Error) async -> Void
@@ -514,10 +520,15 @@ package actor InstantRuntimeLiveSession {
           ) == true else {
             return
           }
-          guard let attributes = try await self?.record(event, generation: generation) else {
+          guard
+            let recorded = try await self?.record(
+              event,
+              generation: generation,
+              onEventAcquired: onEventAcquired
+            )
+          else {
             return
           }
-          await onEventAcquired?()
           try Task.checkCancellation()
           guard await self?.canDeliverReceiverEvent(
             generation: generation,
@@ -525,8 +536,16 @@ package actor InstantRuntimeLiveSession {
           ) == true else {
             return
           }
-          try await onEvent(event, attributes)
-          await self?.finishDeliveringMutationResponse(event, generation: generation)
+          try await onEvent(
+            event,
+            recorded.attributes,
+            recorded.mutationClaimToken
+          )
+          await self?.finishDeliveringMutationResponse(
+            event,
+            generation: generation,
+            claimToken: recorded.mutationClaimToken
+          )
         }
       } catch is CancellationError {
         await self?.receiverEnded(
@@ -676,6 +695,7 @@ package actor InstantRuntimeLiveSession {
       inFlightMutationIDs.remove(mutationID)
       inFlightMutationStepCounts[mutationID] = nil
       inFlightMutationDeadlines[mutationID] = nil
+      offeredMutationClaimTokensInCurrentGeneration[mutationID] = nil
     }
     guard timedOut else { return }
     acknowledgementUnknownMutationIDs.formUnion(currentGenerationTimeouts)
@@ -828,7 +848,8 @@ package actor InstantRuntimeLiveSession {
 
   @discardableResult
   func sendMutations(
-    _ mutations: [InstantTransportMutation]
+    _ mutations: [InstantTransportMutation],
+    claimToken: String?
   ) async throws -> [InstantLiveMutationEncodingFailure] {
     guard let session, isOpened else {
       InstantDiagnostics.shared.record(
@@ -968,8 +989,11 @@ package actor InstantRuntimeLiveSession {
         InstantMutationAcknowledgementDeadlinePolicy.deadline(
           after: Date(),
           inFlightOrdinal: nextAcknowledgementOrdinal
-        )
+      )
       offeredMutationIDsInCurrentGeneration.insert(mutation.mutationID)
+      if let claimToken {
+        offeredMutationClaimTokensInCurrentGeneration[mutation.mutationID] = claimToken
+      }
       let acknowledgementTimeoutMilliseconds =
         InstantMutationAcknowledgementDeadlinePolicy.timeoutMilliseconds(
           inFlightOrdinal: nextAcknowledgementOrdinal
@@ -1003,6 +1027,7 @@ package actor InstantRuntimeLiveSession {
         inFlightMutationIDs.remove(mutation.mutationID)
         inFlightMutationStepCounts[mutation.mutationID] = nil
         inFlightMutationDeadlines[mutation.mutationID] = nil
+        offeredMutationClaimTokensInCurrentGeneration[mutation.mutationID] = nil
         InstantDiagnostics.shared.record(
           error: error,
           subsystem: "instant-swift-data-core",
@@ -1159,9 +1184,21 @@ package actor InstantRuntimeLiveSession {
 
   private func record(
     _ event: InstantLiveServerEvent,
-    generation: Int
-  ) async throws -> [InstantLiveJSONValue]? {
+    generation: Int,
+    onEventAcquired: (@Sendable () async -> Void)?
+  ) async throws -> (
+    attributes: [InstantLiveJSONValue],
+    mutationClaimToken: String?
+  )? {
     guard generation == self.generation else { return nil }
+    // Capture response authority before clearing the in-flight reservation.
+    // Once the id leaves `inFlightMutationIDs`, another pump can offer the same
+    // durable id under a newer token while this actor is reentrant. The decoded
+    // frame must keep the token of the payload that preceded it on this socket.
+    let mutationClaimToken = offeredMutationClaimToken(
+      for: event,
+      generation: generation
+    )
     InstantDiagnostics.shared.record(
       .trace,
       subsystem: "instant-swift-data-core",
@@ -1257,26 +1294,54 @@ package actor InstantRuntimeLiveSession {
     default:
       break
     }
-    return serverAttributes
+    let attributes = serverAttributes
+    await onEventAcquired?()
+    return (attributes, mutationClaimToken)
+  }
+
+  private func offeredMutationClaimToken(
+    for event: InstantLiveServerEvent,
+    generation: Int
+  ) -> String? {
+    guard generation == self.generation else { return nil }
+    let mutationID: String?
+    switch event {
+    case let .transactOK(transactOK):
+      mutationID = transactOK.clientEventID
+    case let .error(error):
+      mutationID = error.clientEventID
+    default:
+      mutationID = nil
+    }
+    guard let mutationID else { return nil }
+    return offeredMutationClaimTokensInCurrentGeneration[mutationID]
   }
 
   private func finishDeliveringMutationResponse(
     _ event: InstantLiveServerEvent,
-    generation: Int
+    generation: Int,
+    claimToken: String?
   ) {
     guard generation == self.generation else { return }
+    let mutationID: String?
     switch event {
     case let .transactOK(transactOK):
-      if let clientEventID = transactOK.clientEventID {
-        offeredMutationIDsInCurrentGeneration.remove(clientEventID)
-      }
+      mutationID = transactOK.clientEventID
     case let .error(error):
-      if let clientEventID = error.clientEventID {
-        offeredMutationIDsInCurrentGeneration.remove(clientEventID)
-      }
+      mutationID = error.clientEventID
     default:
-      break
+      mutationID = nil
     }
+    guard let mutationID else { return }
+    // The Runtime handler suspends while it commits the durable disposition. A
+    // deadline/reclaim path may offer the same mutation id under a newer token
+    // during that suspension. Finish only the exact response reservation we
+    // captured before suspending; never erase the newer offer's authority.
+    guard offeredMutationClaimTokensInCurrentGeneration[mutationID] == claimToken else {
+      return
+    }
+    offeredMutationIDsInCurrentGeneration.remove(mutationID)
+    offeredMutationClaimTokensInCurrentGeneration[mutationID] = nil
   }
 
   private static func mutationOrder(
@@ -1553,6 +1618,7 @@ package actor InstantRuntimeLiveSession {
     inFlightMutationStepCounts.removeAll()
     inFlightMutationDeadlines.removeAll()
     offeredMutationIDsInCurrentGeneration.removeAll()
+    offeredMutationClaimTokensInCurrentGeneration.removeAll()
     acknowledgementUnknownMutationIDs.removeAll()
     for room in Array(registeredRooms.keys) {
       registeredRooms[room]?.isConnected = false

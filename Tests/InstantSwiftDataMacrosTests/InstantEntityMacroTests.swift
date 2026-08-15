@@ -863,7 +863,7 @@
                   name: Todo.metadata.name,
                   valueType: .json,
                   isRequired: true,
-                  isIndexed: true
+                  isIndexed: false
                 ),
                 InstantAttribute(
                   id: Todo.owner.attributeID,

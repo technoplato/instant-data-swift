@@ -116,11 +116,28 @@ struct InstantServerAcceptanceProofTests {
       status: .pending
     )
     stillUnsent.optimisticOverlayState = .applied
+    stillUnsent.optimisticEffectReceiptVersion =
+      PendingMutation.currentOptimisticEffectReceiptVersion
+    stillUnsent.rollbackTransaction = InstantStoreTransaction(
+      id: "rollback-still-unsent",
+      operations: [.deleteEntity("todo-still-unsent")]
+    )
+
+    let materializedTriples: [InstantTriple] = [legacyAccepted, stillUnsent].flatMap {
+      mutation in
+      mutation.transaction.operations.compactMap { operation -> InstantTriple? in
+        guard case let .insert(triple) = operation else { return nil }
+        return triple
+      }
+    }
 
     let didSave = try await persistence.saveLiveRefresh(
       InstantPersistenceSnapshot(
-        store: InstantStoreSnapshot(attributes: TodoExample.attributes, triples: []),
-        outbox: [legacyAccepted, stillUnsent]
+        store: InstantStoreSnapshot(
+          attributes: TodoExample.attributes,
+          triples: materializedTriples
+        ),
+        outbox: [legacyAccepted]
       ),
       queryResults: [],
       storeChanged: true,
@@ -133,6 +150,26 @@ struct InstantServerAcceptanceProofTests {
       expectedAttributeRevision: 0
     )
     expectNoDifference(didSave, true)
+    let publicSeed = try await persistence.loadCompactState()
+    let didSeedPreparedPendingTail = try await persistence.saveOutbox(
+      [legacyAccepted, stillUnsent],
+      replacing: [legacyAccepted],
+      metadataEntries: [],
+      expectedStoreRevision: publicSeed.storeRevision,
+      expectedOutboxRevision: publicSeed.outboxRevision
+    )
+    expectNoDifference(didSeedPreparedPendingTail, true)
+    let acceptedFingerprint = try await persistence
+      .optimisticEffectReceiptFingerprintForTesting(id: legacyAccepted.id)
+    expectNoDifference(
+      acceptedFingerprint,
+      nil
+    )
+    #expect(
+      try await persistence.optimisticEffectReceiptFingerprintForTesting(
+        id: stillUnsent.id
+      ) != nil
+    )
 
     let runtime = try await InstantRuntime.bootstrap(
       configuration: InstantRuntimeConfiguration(

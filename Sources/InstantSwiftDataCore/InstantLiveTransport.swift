@@ -1472,7 +1472,7 @@ extension InstantLiveTransportClient {
         session.send(message)
       },
       receive: {
-        try session.receive()
+        try await session.receive()
       },
       close: {
         session.close()
@@ -1623,9 +1623,22 @@ extension InstantLiveJSONValue {
 
 // SAFETY: `lock` protects the pending messages and all mutable session state.
 private final class InstantLocalLiveSession: @unchecked Sendable {
+  // SAFETY: `InstantLocalLiveSession.lock` protects every waiter state transition.
+  private final class ReceiveWaiter: @unchecked Sendable {
+    enum State {
+      case pending
+      case waiting(CheckedContinuation<InstantLiveMessage, any Error>)
+      case cancelledBeforeWaiting
+      case resumed
+    }
+
+    var state: State = .pending
+  }
+
   private let lock = NSLock()
   private let appID: String
   private var pending: [InstantLiveMessage] = []
+  private var receiveWaiters: [ReceiveWaiter] = []
   private var isClosed = false
   private var hasQuery = false
 
@@ -1634,106 +1647,184 @@ private final class InstantLocalLiveSession: @unchecked Sendable {
   }
 
   func send(_ message: InstantLiveMessage) {
-    lock.lock()
-    defer { lock.unlock() }
-    guard !isClosed else { return }
-    switch message.op {
-    case "init":
-      pending.append(
-        InstantLiveMessage(
-          op: "init-ok",
-          clientEventID: message.clientEventID,
-          fields: [
-            "attrs": .array([]),
-            "auth": .null,
-            "session-id": .string("local-session-\(appID)"),
-          ]
-        )
-      )
-
-    case "add-query":
-      hasQuery = true
-      pending.append(
-        InstantLiveMessage(
-          op: "add-query-ok",
-          clientEventID: message.clientEventID,
-          fields: [
-            "q": message.fields["q"] ?? .object([:]),
-            "result": .array([]),
-          ]
-        )
-      )
-
-    case "remove-query":
-      hasQuery = false
-
-    case "transact":
-      let transactionID = "local-\(message.clientEventID ?? "transaction")"
-      pending.append(
-        InstantLiveMessage(
-          op: "transact-ok",
-          clientEventID: message.clientEventID,
-          fields: [
-            "isn": .string("local-isn-\(message.clientEventID ?? "transaction")"),
-            "tx-id": .string(transactionID),
-          ]
-        )
-      )
-      if hasQuery {
-        pending.append(
+    let deliveries = lock.withLock {
+      () -> [(CheckedContinuation<InstantLiveMessage, any Error>, InstantLiveMessage)] in
+      guard !isClosed else { return [] }
+      var responses: [InstantLiveMessage] = []
+      switch message.op {
+      case "init":
+        responses.append(
           InstantLiveMessage(
-            op: "refresh-ok",
+            op: "init-ok",
             clientEventID: message.clientEventID,
             fields: [
               "attrs": .array([]),
-              "computations": .array([]),
-              "processed-tx-id": .string(transactionID),
+              "auth": .null,
+              "session-id": .string("local-session-\(appID)"),
+            ]
+          )
+        )
+
+      case "add-query":
+        hasQuery = true
+        responses.append(
+          InstantLiveMessage(
+            op: "add-query-ok",
+            clientEventID: message.clientEventID,
+            fields: [
+              "q": message.fields["q"] ?? .object([:]),
+              "result": .array([]),
+            ]
+          )
+        )
+
+      case "remove-query":
+        hasQuery = false
+
+      case "transact":
+        let transactionID = "local-\(message.clientEventID ?? "transaction")"
+        responses.append(
+          InstantLiveMessage(
+            op: "transact-ok",
+            clientEventID: message.clientEventID,
+            fields: [
+              "isn": .string("local-isn-\(message.clientEventID ?? "transaction")"),
+              "tx-id": .string(transactionID),
+            ]
+          )
+        )
+        if hasQuery {
+          responses.append(
+            InstantLiveMessage(
+              op: "refresh-ok",
+              clientEventID: message.clientEventID,
+              fields: [
+                "attrs": .array([]),
+                "computations": .array([]),
+                "processed-tx-id": .string(transactionID),
+              ]
+            )
+          )
+        }
+
+      default:
+        responses.append(
+          InstantLiveMessage(
+            op: "error",
+            clientEventID: message.clientEventID,
+            fields: [
+              "message": .string("Unsupported local Instant live op '\(message.op)'."),
+              "type": .string("unsupported-op"),
             ]
           )
         )
       }
 
-    default:
-      pending.append(
-        InstantLiveMessage(
-          op: "error",
-          clientEventID: message.clientEventID,
-          fields: [
-            "message": .string("Unsupported local Instant live op '\(message.op)'."),
-            "type": .string("unsupported-op"),
-          ]
-        )
-      )
+      var deliveries: [(CheckedContinuation<InstantLiveMessage, any Error>, InstantLiveMessage)] = []
+      for response in responses {
+        if let waiter = receiveWaiters.first {
+          receiveWaiters.removeFirst()
+          guard case .waiting(let continuation) = waiter.state else { continue }
+          waiter.state = .resumed
+          deliveries.append((continuation, response))
+        } else {
+          pending.append(response)
+        }
+      }
+      return deliveries
+    }
+    for (continuation, response) in deliveries {
+      continuation.resume(returning: response)
     }
   }
 
-  func receive() throws -> InstantLiveMessage {
-    lock.lock()
-    defer { lock.unlock() }
-    guard !isClosed else {
-      throw InstantError(
-        code: .networkFailed,
-        operation: "receive local Instant live message",
-        message: "The local Instant live session is closed.",
-        recovery: "Open a new live session before receiving messages."
-      )
+  func receive() async throws -> InstantLiveMessage {
+    let waiter = ReceiveWaiter()
+    return try await withTaskCancellationHandler {
+      try await withCheckedThrowingContinuation { continuation in
+        attach(continuation, to: waiter)
+      }
+    } onCancel: {
+      cancel(waiter)
     }
-    guard !pending.isEmpty else {
-      throw InstantError(
-        code: .networkFailed,
-        operation: "receive local Instant live message",
-        message: "No local Instant live messages are pending.",
-        recovery: "Send an init or add-query message before awaiting a local response."
-      )
-    }
-    return pending.removeFirst()
   }
 
   func close() {
-    lock.lock()
-    defer { lock.unlock() }
-    isClosed = true
-    pending.removeAll()
+    let continuations = lock.withLock {
+      () -> [CheckedContinuation<InstantLiveMessage, any Error>] in
+      guard !isClosed else { return [] }
+      isClosed = true
+      pending.removeAll()
+      let continuations: [CheckedContinuation<InstantLiveMessage, any Error>] =
+        receiveWaiters.compactMap { waiter in
+        guard case .waiting(let continuation) = waiter.state else { return nil }
+        waiter.state = .resumed
+        return continuation
+      }
+      receiveWaiters.removeAll()
+      return continuations
+    }
+    let error = Self.closedError()
+    for continuation in continuations {
+      continuation.resume(throwing: error)
+    }
+  }
+
+  private func attach(
+    _ continuation: CheckedContinuation<InstantLiveMessage, any Error>,
+    to waiter: ReceiveWaiter
+  ) {
+    let result = lock.withLock { () -> Result<InstantLiveMessage, any Error>? in
+      switch waiter.state {
+      case .cancelledBeforeWaiting:
+        waiter.state = .resumed
+        return .failure(CancellationError())
+      case .pending:
+        if isClosed {
+          waiter.state = .resumed
+          return .failure(Self.closedError())
+        }
+        if !pending.isEmpty {
+          waiter.state = .resumed
+          return .success(pending.removeFirst())
+        }
+        waiter.state = .waiting(continuation)
+        receiveWaiters.append(waiter)
+        return nil
+      case .waiting, .resumed:
+        return .failure(CancellationError())
+      }
+    }
+    if let result {
+      continuation.resume(with: result)
+    }
+  }
+
+  private func cancel(_ waiter: ReceiveWaiter) {
+    let continuation = lock.withLock {
+      () -> CheckedContinuation<InstantLiveMessage, any Error>? in
+      switch waiter.state {
+      case .pending:
+        waiter.state = .cancelledBeforeWaiting
+        return nil
+      case .waiting(let continuation):
+        receiveWaiters.removeAll { $0 === waiter }
+        waiter.state = .resumed
+        return continuation
+      case .cancelledBeforeWaiting, .resumed:
+        return nil
+      }
+    }
+    continuation?.resume(throwing: CancellationError())
+  }
+
+  private static func closedError() -> InstantError {
+    InstantError(
+      code: .networkFailed,
+      operation: "receive local Instant live message",
+      message: "The local Instant live session is closed.",
+      recovery: "Open a new live session before receiving messages."
+    )
   }
 }
 

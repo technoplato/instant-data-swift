@@ -76,6 +76,7 @@ let package = Package(
     .package(url: "https://github.com/pointfreeco/swift-snapshot-testing", exact: "1.18.9"),
     .package(url: "https://github.com/pointfreeco/swift-parsing", from: "0.14.1"),
     .package(url: "https://github.com/pointfreeco/xctest-dynamic-overlay", from: "1.0.0"),
+    .package(url: "https://github.com/apple/swift-crypto.git", from: "4.0.0"),
     .package(url: "https://github.com/swiftlang/swift-syntax.git", exact: "602.0.0"),
     // TailnetDiagnostics lives at Packages/TailnetDiagnostics and depends on
     // InstantSwiftData. Do **not** declare it as a package dependency here —
@@ -98,6 +99,7 @@ let package = Package(
     .target(
       name: "InstantSwiftDataCore",
       dependencies: [
+        .product(name: "Crypto", package: "swift-crypto"),
         .product(name: "IssueReporting", package: "xctest-dynamic-overlay")
       ],
       // InstantRuntime was split (LiveSession / ExactTaskOwner / VisibleWrite) so debug

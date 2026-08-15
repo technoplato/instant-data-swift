@@ -1,7 +1,7 @@
 import Foundation
 
 struct InstantOptimisticEffectFootprint: Equatable, Sendable {
-  static let currentVersion = 1
+  static let currentVersion = 2
 
   var entityIDs: Set<String>
   var isGlobal: Bool
@@ -11,6 +11,7 @@ struct InstantOptimisticEffectFootprint: Equatable, Sendable {
     guard overlayState != .removed else {
       return Self(entityIDs: [], isGlobal: false)
     }
+    guard mutation.provesReplayableOptimisticEffectReceipt else { return nil }
 
     var footprint = Self(entityIDs: [], isGlobal: false)
     footprint.formUnion(mutation.transaction.operations)

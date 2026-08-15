@@ -70,15 +70,15 @@ struct InstantPersistenceCacheResidencyTests {
     let cacheURL = try temporaryCacheResidencyURL("automatic-retry")
     let persistence = try SQLitePersistenceStore(fileURL: cacheURL)
     try await persistence.bootstrap()
+    let mutations = (0..<101).map(cacheResidencyRetryableMutation(index:))
     try await persistence.saveStoreSnapshot(
       InstantStoreSnapshot(
         attributes: cacheResidencyAttributes,
         triples: cacheResidencyTriples(count: 10_000)
+          + cacheResidencyInsertedTriples(in: mutations)
       )
     )
-    try await persistence.saveOutbox(
-      (0..<101).map(cacheResidencyRetryableMutation(index:))
-    )
+    try await saveRuntimePreparedCacheResidencyOutbox(mutations, to: persistence)
     _ = try await persistence.loadCompactState()
     await persistence.resetCacheResidencyMetricsForTesting()
 
@@ -478,9 +478,19 @@ struct InstantPersistenceCacheResidencyTests {
     let stalePersistence = try SQLitePersistenceStore(fileURL: cacheURL)
     try await stalePersistence.bootstrap()
     let mutation = cacheResidencyTerminalMutation()
-    try await stalePersistence.saveOutbox([mutation])
+    let initialState = try await stalePersistence.loadState()
+    let materializedTriples = cacheResidencyInsertedTriples(in: [mutation])
+    let didMaterialize = try await stalePersistence.saveStoreSnapshot(
+      InstantStoreSnapshot(triples: materializedTriples),
+      replacing: initialState.snapshot.store,
+      expectedStoreRevision: initialState.storeRevision,
+      expectedOutboxRevision: initialState.outboxRevision,
+      expectedAttributeRevision: initialState.attributeRevision
+    )
+    expectNoDifference(didMaterialize, true)
+    try await saveRuntimePreparedCacheResidencyOutbox([mutation], to: stalePersistence)
     let staleState = try await stalePersistence.loadCompactState()
-    expectNoDifference(staleState.storeRevision, 0)
+    expectNoDifference(staleState.storeRevision, 1)
     expectNoDifference(staleState.attributeRevision, 0)
     expectNoDifference(staleState.outboxRevision, 1)
     let claimToken = "terminal-attribute-race-claim"
@@ -505,8 +515,11 @@ struct InstantPersistenceCacheResidencyTests {
     let attributeWriter = try SQLitePersistenceStore(fileURL: cacheURL)
     try await attributeWriter.bootstrap()
     let attributeWriterState = try await attributeWriter.loadState()
-    let didSaveAttribute = try await attributeWriter.saveStoreSnapshot(
-      InstantStoreSnapshot(attributes: cacheResidencyAttributes, triples: []),
+    let didSaveAttribute = try await attributeWriter.saveRuntimePreparedStoreSnapshot(
+      InstantStoreSnapshot(
+        attributes: cacheResidencyAttributes,
+        triples: attributeWriterState.snapshot.store.triples
+      ),
       replacing: attributeWriterState.snapshot.store,
       expectedStoreRevision: attributeWriterState.storeRevision,
       expectedOutboxRevision: attributeWriterState.outboxRevision,
@@ -514,7 +527,7 @@ struct InstantPersistenceCacheResidencyTests {
     )
     expectNoDifference(didSaveAttribute, true)
     let afterAttributeWrite = try await attributeWriter.loadCompactState()
-    expectNoDifference(afterAttributeWrite.storeRevision, 0)
+    expectNoDifference(afterAttributeWrite.storeRevision, 1)
     expectNoDifference(afterAttributeWrite.attributeRevision, 1)
     expectNoDifference(afterAttributeWrite.outboxRevision, 1)
 
@@ -558,10 +571,11 @@ struct InstantPersistenceCacheResidencyTests {
     let reopened = try SQLitePersistenceStore(fileURL: cacheURL)
     try await reopened.bootstrap()
     let finalState = try await reopened.loadState()
-    expectNoDifference(finalState.storeRevision, 0)
+    expectNoDifference(finalState.storeRevision, 1)
     expectNoDifference(finalState.attributeRevision, 1)
     expectNoDifference(finalState.outboxRevision, 1)
     expectNoDifference(finalState.snapshot.store.attributes, cacheResidencyAttributes)
+    expectNoDifference(finalState.snapshot.store.triples, materializedTriples)
     expectNoDifference(finalState.snapshot.outbox.map(\.status), [.pending])
   }
 
@@ -868,6 +882,8 @@ private func cacheResidencyRetryableMutation(index: Int) -> PendingMutation {
     message: "service unavailable"
   )
   mutation.optimisticOverlayState = .applied
+  mutation.optimisticEffectReceiptVersion =
+    PendingMutation.currentOptimisticEffectReceiptVersion
   mutation.rollbackTransaction = InstantStoreTransaction(
     id: "rollback-\(id)",
     operations: [.retract(triple)]
@@ -875,10 +891,36 @@ private func cacheResidencyRetryableMutation(index: Int) -> PendingMutation {
   return mutation
 }
 
+private func cacheResidencyInsertedTriples(
+  in mutations: [PendingMutation]
+) -> [InstantTriple] {
+  mutations.flatMap { mutation in
+    mutation.transaction.operations.compactMap { operation -> InstantTriple? in
+      guard case let .insert(triple) = operation else { return nil }
+      return triple
+    }
+  }
+}
+
+private func saveRuntimePreparedCacheResidencyOutbox(
+  _ mutations: [PendingMutation],
+  to persistence: SQLitePersistenceStore
+) async throws {
+  let state = try await persistence.loadCompactState()
+  let didSave = try await persistence.saveOutbox(
+    mutations,
+    replacing: [],
+    metadataEntries: [],
+    expectedStoreRevision: state.storeRevision,
+    expectedOutboxRevision: state.outboxRevision
+  )
+  expectNoDifference(didSave, true)
+}
+
 private func cacheResidencyPendingMutation(index: Int) -> PendingMutation {
   let id = String(format: "confirm-%05d", index)
   let timestamp = InstantTimestamp(milliseconds: Int64(index + 30_001))
-  return PendingMutation(
+  var mutation = PendingMutation(
     id: id,
     createdAt: timestamp,
     transaction: InstantStoreTransaction(
@@ -896,6 +938,10 @@ private func cacheResidencyPendingMutation(index: Int) -> PendingMutation {
       ]
     )
   )
+  mutation.optimisticOverlayState = .applied
+  mutation.optimisticEffectReceiptVersion =
+    PendingMutation.currentOptimisticEffectReceiptVersion
+  return mutation
 }
 
 private func cacheResidencyLocalMutation() -> PendingMutation {
@@ -919,6 +965,9 @@ private func cacheResidencyLocalMutation() -> PendingMutation {
     id: "rollback-local-attribute-race",
     operations: [.retract(triple)]
   )
+  mutation.optimisticOverlayState = .applied
+  mutation.optimisticEffectReceiptVersion =
+    PendingMutation.currentOptimisticEffectReceiptVersion
   return mutation
 }
 
@@ -943,6 +992,9 @@ private func cacheResidencyTerminalMutation() -> PendingMutation {
     id: "rollback-terminal-attribute-race",
     operations: [.retract(triple)]
   )
+  mutation.optimisticOverlayState = .applied
+  mutation.optimisticEffectReceiptVersion =
+    PendingMutation.currentOptimisticEffectReceiptVersion
   return mutation
 }
 

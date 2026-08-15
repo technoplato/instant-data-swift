@@ -1,0 +1,1 @@
+codex-desktop/01a00071-f1c1-7193-adcd-3bc9f30b5f95/root 2026-08-15T10:48:16-0400 mower downgrade-safe-receipt-codable plan=2026-08-14-semantic-noop-insert-v2

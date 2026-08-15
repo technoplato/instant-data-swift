@@ -92,6 +92,9 @@ public struct InstantSyncFlushAcceptedEvent: Hashable, Sendable {
     }
 
     public var summary: String {
+      if synchronizationBlocker != nil {
+        return "Local sync recovery required"
+      }
       if phase == .failed, let message = lastError?.message, !message.isEmpty {
         return message
       }
@@ -101,8 +104,15 @@ public struct InstantSyncFlushAcceptedEvent: Hashable, Sendable {
       return phase.title
     }
 
+    /// The local persistence condition preventing synchronization, if any.
+    public var synchronizationBlocker: InstantSynchronizationBlocker? {
+      connection?.synchronizationBlocker
+    }
+
     public var canFlush: Bool {
-      pendingOutboxCount > 0 && (phase == .authenticated || phase == .connected)
+      synchronizationBlocker == nil
+        && pendingOutboxCount > 0
+        && (phase == .authenticated || phase == .connected)
     }
 
     public func startObservationIfNeeded() {
@@ -200,7 +210,9 @@ public struct InstantSyncFlushAcceptedEvent: Hashable, Sendable {
       if let transactionID = status.processedTransactionID, !transactionID.isEmpty {
         lastRemoteChangeDescription = transactionID
       }
-      if let message = status.lastErrorMessage, !message.isEmpty {
+      if status.synchronizationBlocker != nil {
+        lastError = nil
+      } else if let message = status.lastErrorMessage, !message.isEmpty {
         lastError = InstantError(
           code: .networkFailed,
           operation: "observe sync status",

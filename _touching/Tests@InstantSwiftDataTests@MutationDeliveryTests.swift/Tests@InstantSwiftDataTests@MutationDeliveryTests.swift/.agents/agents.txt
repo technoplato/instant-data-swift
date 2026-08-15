@@ -1,1 +1,2 @@
 codex-desktop/019fe994-1250-7b42-825e-9b75836d9173/root/instant_bounded_outbox 2026-08-10T13:35:00-0400 mower plan=2026-08-09-bounded-intent-outbox-memory
+codex-desktop/01a00071-f1c1-7193-adcd-3bc9f30b5f95/root/legacy_head_contract_tests 2026-08-15T09:58:25-0400 mower synchronization-blocker-codable-and-error-tests plan=2026-08-14-semantic-noop-insert-v2

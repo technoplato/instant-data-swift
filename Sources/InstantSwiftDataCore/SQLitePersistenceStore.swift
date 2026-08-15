@@ -114,6 +114,20 @@ private struct StoredTripleKey: Hashable {
   }
 }
 
+private struct InstantApplicationMigrationOutboxRow {
+  var mutation: PendingMutation
+  var deliveryStarted: Bool
+  var confirmationProven: Bool
+  var optimisticOverlayActive: Bool
+  var optimisticEffectReceiptFingerprint: String?
+  var serverAcceptancePayloadFingerprint: String?
+}
+
+private struct InstantApplicationMigrationTripleRow {
+  var rowID: Int64
+  var triple: InstantTriple
+}
+
 public struct InstantQueryCachePruningPolicy: Hashable, Codable, Sendable {
   public var maxAgeMilliseconds: Int64?
   public var maxEntries: Int?
@@ -274,6 +288,15 @@ private struct InstantOutboxBodyRow: Sendable {
   var mutationID: String
   var createdAtMilliseconds: Int64
   var json: String
+  var optimisticEffectReceiptFingerprint: String?
+  var deliveryClaimPayloadFingerprint: String?
+  var serverAcceptancePayloadFingerprint: String?
+}
+
+private struct InstantTerminalLifecycleRecord: Sendable {
+  var json: String
+  var optimisticEffectReceiptFingerprint: String?
+  var serverAcceptancePayloadFingerprint: String?
 }
 
 private enum InstantOutboxInvalidImmediateTail: Sendable {
@@ -308,6 +331,7 @@ private struct InstantFailedOutboxLifecycleCandidateRow: Sendable {
   var createdAtMilliseconds: Int64
   var lifecycleByteCount: Int?
   var bodyByteCount: Int
+  var hasReceiptFingerprint: Bool
 }
 
 private struct InstantFailedMutationRetryCandidateRow: Sendable {
@@ -390,6 +414,16 @@ private struct InstantOptimisticEffectRow: Sendable {
   var encodedBodyByteCount: Int
 }
 
+private enum InstantOptimisticEffectReceiptWriteAuthority {
+  case runtimePrepared
+  case publicPersistence
+}
+
+package struct InstantOptimisticEffectReceiptValidation: Sendable {
+  package var matchesOutboxRevision: Bool
+  package var firstUntrustedMutationID: String?
+}
+
 private struct InstantOptimisticEffectComponentRows: Sendable {
   var target: InstantOptimisticEffectRow
   var successors: [InstantOptimisticEffectRow]
@@ -454,6 +488,7 @@ struct InstantServerApplyBodyPage: Sendable {
   var entries: [InstantServerApplyBodyEntry]
   var nextPosition: InstantOutboxDeliveryPosition?
   var decodedBodyByteCount: Int
+  var synchronizationBlocker: InstantSynchronizationBlocker? = nil
 }
 
 enum InstantServerApplyStagedDisposition: Sendable {
@@ -496,6 +531,7 @@ private struct InstantServerApplyPlanControl: Sendable {
   var hasServerOperations: Bool
   var rootIsGlobal: Bool
   var confirmingMutationID: String?
+  var confirmingClaimantID: String?
 }
 
 private struct InstantServerApplyBodyCandidate: Sendable {
@@ -902,6 +938,10 @@ public actor SQLitePersistenceStore {
     deadlineMilliseconds: Int64
   ) throws -> Bool {
     try transaction {
+      guard let row = try loadOutboxBodyRowWithoutTransaction(id: id),
+        let mutation: PendingMutation = try? decodeOutboxBody(row.json),
+        try hasStoredPreparedOptimisticEffectReceipt(mutation, in: row)
+      else { return false }
       let projectedBodyByteCount = Int(try selectInt64(
         """
         SELECT COALESCE(encoded_body_bytes, length(CAST(json AS BLOB)))
@@ -916,7 +956,8 @@ public actor SQLitePersistenceStore {
         claimantID: claimantID,
         claimToken: claimToken,
         deadlineMilliseconds: deadlineMilliseconds,
-        projectedBodyByteCount: projectedBodyByteCount
+        projectedBodyByteCount: projectedBodyByteCount,
+        payloadFingerprint: try mutation.mutationWireIntentFingerprint()
       )
       return sqlite3_changes(connection.raw) == 1
     }
@@ -1810,8 +1851,18 @@ public actor SQLitePersistenceStore {
         try execute(
           """
           UPDATE instant_outbox
-          SET server_transaction_id = json_extract(json, '$.serverTransactionID'),
-              confirmation_source = json_extract(json, '$.confirmationSource')
+          SET server_transaction_id = CASE
+                WHEN length(CAST(json AS BLOB)) <=
+                  \(InstantAutomaticOutboxClaimLimits.maximumEncodedBodyBytes)
+                THEN CASE WHEN json_valid(json)
+                  THEN json_extract(json, '$.serverTransactionID') END
+              END,
+              confirmation_source = CASE
+                WHEN length(CAST(json AS BLOB)) <=
+                  \(InstantAutomaticOutboxClaimLimits.maximumEncodedBodyBytes)
+                THEN CASE WHEN json_valid(json)
+                  THEN json_extract(json, '$.confirmationSource') END
+              END
           """
         )
         try execute(
@@ -1855,6 +1906,85 @@ public actor SQLitePersistenceStore {
         )
       }
     }
+    try withSQLiteBusyRetry {
+      try migrate(name: "0020_outbox_optimistic_effect_receipt_fingerprint") {
+        // The public PendingMutation body is Codable and caller-controlled.
+        // Keep Runtime preparation provenance outside that body and leave
+        // ambiguous historical rows nil so every unproven receipt fails closed.
+        // The bounded one-time compatibility backfill below grandfathers only
+        // the exact applied/rollback and no-current-effect shapes deployed
+        // Runtime versions already trusted before this external marker existed.
+        try execute(
+          "ALTER TABLE instant_outbox ADD COLUMN optimistic_effect_receipt_fingerprint TEXT"
+        )
+        // The materialized-effect receipt above is intentionally independent
+        // from the forward payload offered to the server. A Runtime rebase may
+        // regenerate rollback data without changing the wire intent, while a
+        // public forward-body edit must never inherit an in-flight ACK.
+        try execute(
+          "ALTER TABLE instant_outbox ADD COLUMN delivery_claim_payload_fingerprint TEXT"
+        )
+        try execute(
+          "ALTER TABLE instant_outbox ADD COLUMN server_acceptance_payload_fingerprint TEXT"
+        )
+        try backfillPreexistingRuntimePreparedReceiptFingerprintsWithoutTransaction()
+      }
+    }
+    try withSQLiteBusyRetry {
+      try migrate(name: "0021_outbox_lifecycle_receipt_authority") {
+        // Terminal lifecycle JSON is a bounded projection, not authority. Keep
+        // separate SQLite-owned markers so a pre-0021 or caller-shaped body
+        // cannot report server acceptance or a trusted rollback after its
+        // physical outbox row has been pruned.
+        try execute(
+          "ALTER TABLE instant_outbox_lifecycles ADD COLUMN terminal_optimistic_effect_receipt_fingerprint TEXT"
+        )
+        try execute(
+          "ALTER TABLE instant_outbox_lifecycles ADD COLUMN terminal_server_acceptance_payload_fingerprint TEXT"
+        )
+      }
+    }
+    try withSQLiteBusyRetry {
+      try migrate(name: "0022_outbox_synchronization_blocker_index") {
+        try execute(
+          """
+          CREATE INDEX instant_outbox_synchronization_blocker_idx
+          ON instant_outbox (
+            optimistic_overlay_active,
+            optimistic_effect_receipt_fingerprint,
+            created_at_ms,
+            mutation_id
+          )
+          """
+        )
+      }
+    }
+    try withSQLiteBusyRetry {
+      try migrate(name: "0023_application_persistence_migrations") {
+        try execute(
+          """
+          CREATE TABLE instant_application_persistence_migrations (
+            name TEXT PRIMARY KEY NOT NULL,
+            applied_at_ms INTEGER NOT NULL
+          )
+          """
+        )
+      }
+    }
+    // Test fixtures and app-owned restores can reconstruct `instant_outbox`
+    // while retaining newer migration ledger rows. Reassert this column-free
+    // index so the body-free blocker query never falls back to a scan/sort.
+    try execute(
+      """
+      CREATE INDEX IF NOT EXISTS instant_outbox_synchronization_blocker_idx
+      ON instant_outbox (
+        optimistic_overlay_active,
+        optimistic_effect_receipt_fingerprint,
+        created_at_ms,
+        mutation_id
+      )
+      """
+    )
     try ensureServerApplyStagingSchema()
     try Self.securePersistenceFiles(at: fileURL)
     InstantDiagnostics.shared.record(
@@ -1883,6 +2013,735 @@ public actor SQLitePersistenceStore {
         message: "Could not prune persisted query results during runtime bootstrap."
       )
       return nil
+    }
+  }
+
+  @discardableResult
+  package func applyLocalPersistenceMigration(
+    _ migration: InstantLocalPersistenceMigration
+  ) throws -> Bool {
+    guard !migration.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+      throw persistenceError(
+        operation: "apply local persistence migration",
+        message: "An application persistence migration must have a nonempty name."
+      )
+    }
+    guard !migration.affectedAttributeIDs.isEmpty,
+      migration.affectedAttributeIDs.allSatisfy({
+        !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+      })
+    else {
+      throw persistenceError(
+        operation: "apply local persistence migration",
+        message:
+          "Application persistence migration '\(migration.name)' must declare at least one nonempty affected attribute id."
+      )
+    }
+    let didChange = try transaction {
+      let alreadyApplied: String? = try selectScalar(
+        """
+        SELECT name FROM instant_application_persistence_migrations
+        WHERE name = ?
+        LIMIT 1
+        """,
+        [.text(migration.name)]
+      )
+      guard alreadyApplied == nil else { return false }
+
+      var outboxCursor: String?
+      var firstUnprovenActiveMutationID: String?
+      while let row = try nextApplicationMigrationOutboxRowWithoutTransaction(
+        after: outboxCursor
+      ) {
+        outboxCursor = row.mutation.id
+        if (row.optimisticOverlayActive
+          || row.optimisticEffectReceiptFingerprint != nil),
+          !(try applicationMigrationReceiptMatches(row))
+        {
+          firstUnprovenActiveMutationID = firstUnprovenActiveMutationID ?? row.mutation.id
+        }
+        let migrated = try migration.transformMutation(row.mutation)
+        try validateApplicationMigrationIdentity(
+          original: row.mutation,
+          migrated: migrated,
+          migrationName: migration.name,
+          affectedAttributeIDs: migration.affectedAttributeIDs
+        )
+        guard migrated != row.mutation else { continue }
+        try validateApplicationMigrationOutboxBounds(
+          migrated,
+          migrationName: migration.name
+        )
+        try validateApplicationMigrationOutboxRewrite(
+          row: row,
+          migrationName: migration.name
+        )
+      }
+
+      var attributesChanged = false
+      var attributeCursor: String?
+      while let attribute = try nextApplicationMigrationAttributeWithoutTransaction(
+        after: attributeCursor,
+        affectedAttributeIDs: migration.affectedAttributeIDs
+      ) {
+        attributeCursor = attribute.id
+        let migrated = try migration.transformAttribute(attribute)
+        guard migrated.id == attribute.id else {
+          throw persistenceError(
+            operation: "apply local persistence migration",
+            message:
+              "Application migration '\(migration.name)' changed durable attribute identity '\(attribute.id)'."
+          )
+        }
+        var migratedWithoutValueType = migrated
+        migratedWithoutValueType.valueType = attribute.valueType
+        guard migratedWithoutValueType == attribute else {
+          throw persistenceError(
+            operation: "apply local persistence migration",
+            message:
+              "Application migration '\(migration.name)' changed attribute metadata other than valueType for '\(attribute.id)'."
+          )
+        }
+        guard migrated != attribute else { continue }
+        attributesChanged = true
+        try execute(
+          "UPDATE instant_attributes SET json = ? WHERE id = ?",
+          [.text(try encode(migrated)), .text(attribute.id)]
+        )
+        guard sqlite3_changes(connection.raw) == 1 else {
+          throw persistenceError(
+            operation: "apply local persistence migration",
+            message:
+              "Application migration '\(migration.name)' did not update attribute '\(attribute.id)' exactly once."
+          )
+        }
+      }
+
+      var triplesChanged = false
+      var tripleRowID: Int64 = 0
+      while let row = try nextApplicationMigrationTripleRowWithoutTransaction(
+        after: tripleRowID,
+        affectedAttributeIDs: migration.affectedAttributeIDs
+      ) {
+        tripleRowID = row.rowID
+        let migrated = try migration.transformTriple(row.triple)
+        guard migrated.entityID == row.triple.entityID,
+          migrated.attributeID == row.triple.attributeID,
+          migrated.txID == row.triple.txID,
+          migrated.txTime == row.triple.txTime
+        else {
+          throw persistenceError(
+            operation: "apply local persistence migration",
+            message:
+              "Application migration '\(migration.name)' changed durable triple identity for entity '\(row.triple.entityID)'."
+          )
+        }
+        guard migrated != row.triple else { continue }
+        let encodedMigratedTriple = try encode(migrated)
+        guard encodedMigratedTriple.utf8.count
+          <= InstantAutomaticOutboxClaimLimits.maximumEncodedBodyBytes
+        else {
+          throw persistenceError(
+            operation: "apply local persistence migration",
+            message:
+              "Application migration '\(migration.name)' expanded a canonical triple beyond the bounded migration row limit."
+          )
+        }
+        triplesChanged = true
+        try execute(
+          """
+          UPDATE instant_triples
+          SET value_json = ?, tx_id = ?, tx_time_ms = ?, json = ?
+          WHERE rowid = ?
+          """,
+          [
+            .text(try encode(migrated.value)),
+            .text(migrated.txID),
+            .int(migrated.txTime.milliseconds),
+            .text(encodedMigratedTriple),
+            .int(row.rowID),
+          ]
+        )
+        guard sqlite3_changes(connection.raw) == 1 else {
+          throw persistenceError(
+            operation: "apply local persistence migration",
+            message:
+              "Application migration '\(migration.name)' did not update one durable triple exactly once."
+          )
+        }
+      }
+
+      var outboxChanged = false
+      outboxCursor = nil
+      while let row = try nextApplicationMigrationOutboxRowWithoutTransaction(
+        after: outboxCursor
+      ) {
+        outboxCursor = row.mutation.id
+        let migrated = try migration.transformMutation(row.mutation)
+        try validateApplicationMigrationIdentity(
+          original: row.mutation,
+          migrated: migrated,
+          migrationName: migration.name,
+          affectedAttributeIDs: migration.affectedAttributeIDs
+        )
+        guard migrated != row.mutation else { continue }
+        try validateApplicationMigrationOutboxBounds(
+          migrated,
+          migrationName: migration.name
+        )
+        try validateApplicationMigrationOutboxRewrite(
+          row: row,
+          migrationName: migration.name
+        )
+        outboxChanged = true
+        try saveOutboxMutationWithoutTransaction(
+          migrated,
+          receiptWriteAuthority: .runtimePrepared
+        )
+      }
+
+      var liveQueryResultsChanged = false
+      var liveQueryCursor: String?
+      while let result = try nextApplicationMigrationLiveQueryResultWithoutTransaction(
+        after: liveQueryCursor,
+        affectedAttributeIDs: migration.affectedAttributeIDs
+      ) {
+        liveQueryCursor = result.key
+        var migrated = result
+        var transformedTriples: [InstantLiveTripleIdentity: InstantTriple] = [:]
+        transformedTriples.reserveCapacity(result.triples.count)
+        for triple in result.triples {
+          let transformed = migration.affectedAttributeIDs.contains(triple.attributeID)
+            ? try migration.transformTriple(triple)
+            : triple
+          guard transformed.entityID == triple.entityID,
+            transformed.attributeID == triple.attributeID,
+            transformed.txID == triple.txID,
+            transformed.txTime == triple.txTime
+          else {
+            throw persistenceError(
+              operation: "apply local persistence migration",
+              message:
+                "Application migration '\(migration.name)' changed persisted live-query triple identity for query '\(result.key)'."
+            )
+          }
+          let identity = InstantLiveTripleIdentity(transformed)
+          if transformedTriples.updateValue(transformed, forKey: identity) != nil {
+            throw persistenceError(
+              operation: "apply local persistence migration",
+              message:
+                "Application migration '\(migration.name)' collapsed two persisted live-query triples for query '\(result.key)' without an explicit collision policy."
+            )
+          }
+        }
+        migrated.triples = transformedTriples.values.sorted {
+          ($0.entityID, $0.attributeID, $0.value.comparableKey)
+            < ($1.entityID, $1.attributeID, $1.value.comparableKey)
+        }
+        guard migrated != result else { continue }
+        let encodedMigratedResult = try encode(migrated)
+        guard encodedMigratedResult.utf8.count
+          <= InstantAutomaticOutboxClaimLimits.maximumEncodedBodyBytes
+        else {
+          throw persistenceError(
+            operation: "apply local persistence migration",
+            message:
+              "Application migration '\(migration.name)' expanded live-query result '\(result.key)' beyond the bounded migration row limit."
+          )
+        }
+        liveQueryResultsChanged = true
+        try saveLiveQueryResultWithoutTransaction(migrated)
+      }
+
+      let didChangeAny =
+        attributesChanged || triplesChanged || outboxChanged || liveQueryResultsChanged
+      if didChangeAny, let firstUnprovenActiveMutationID {
+        throw InstantError(
+          code: .persistenceFailed,
+          operation: "apply local persistence migration",
+          localID: firstUnprovenActiveMutationID,
+          message:
+            "Application migration '\(migration.name)' cannot change durable state while active mutation '\(firstUnprovenActiveMutationID)' has no matching SQLite optimistic-effect receipt.",
+          recovery:
+            "Preserve the state and use an app-owned persistence reset or authoritative recovery instead of guessing the mutation's inverse."
+        )
+      }
+
+      if triplesChanged || attributesChanged || liveQueryResultsChanged {
+        try execute("DELETE FROM instant_query_cache")
+      }
+      if triplesChanged || liveQueryResultsChanged {
+        _ = try bumpMetadataRevisionWithoutTransaction(Self.storeRevisionKey)
+      }
+      if attributesChanged {
+        _ = try bumpMetadataRevisionWithoutTransaction(Self.attributeRevisionKey)
+      }
+      if outboxChanged {
+        _ = try bumpMetadataRevisionWithoutTransaction(Self.outboxRevisionKey)
+      }
+      if liveQueryResultsChanged {
+        _ = try bumpMetadataRevisionWithoutTransaction(Self.queryResultRevisionKey)
+      }
+      try execute(
+        """
+        INSERT INTO instant_application_persistence_migrations (name, applied_at_ms)
+        VALUES (?, ?)
+        """,
+        [.text(migration.name), .int(Self.nowMilliseconds())]
+      )
+      return didChangeAny
+    }
+    cachedState = nil
+    cachedMaterializedStore = nil
+    return didChange
+  }
+
+  private func nextApplicationMigrationOutboxRowWithoutTransaction(
+    after mutationID: String?
+  ) throws -> InstantApplicationMigrationOutboxRow? {
+    var statement: OpaquePointer?
+    let sql: String
+    let bindings: [SQLiteBinding]
+    if let mutationID {
+      sql =
+        """
+        SELECT mutation_id, created_at_ms, length(CAST(json AS BLOB)), json,
+               delivery_started, confirmation_proven,
+               optimistic_overlay_active,
+               optimistic_effect_receipt_fingerprint,
+               server_acceptance_payload_fingerprint
+        FROM instant_outbox
+        WHERE mutation_id > ?
+        ORDER BY mutation_id
+        LIMIT 1
+        """
+      bindings = [.text(mutationID)]
+    } else {
+      sql =
+        """
+        SELECT mutation_id, created_at_ms, length(CAST(json AS BLOB)), json,
+               delivery_started, confirmation_proven,
+               optimistic_overlay_active,
+               optimistic_effect_receipt_fingerprint,
+               server_acceptance_payload_fingerprint
+        FROM instant_outbox
+        ORDER BY mutation_id
+        LIMIT 1
+        """
+      bindings = []
+    }
+    try prepare(sql, statement: &statement)
+    defer { sqlite3_finalize(statement) }
+    try bind(bindings, to: statement)
+    let code = sqlite3_step(statement)
+    if code == SQLITE_DONE { return nil }
+    guard code == SQLITE_ROW,
+      let mutationIDBytes = sqlite3_column_text(statement, 0),
+      let jsonBytes = sqlite3_column_text(statement, 3)
+    else {
+      throw persistenceError(
+        operation: "read local persistence migration outbox row",
+        message: lastErrorMessage()
+      )
+    }
+    let rowMutationID = String(cString: mutationIDBytes)
+    let createdAtMilliseconds = sqlite3_column_int64(statement, 1)
+    let bodyByteCount = sqlite3_column_int64(statement, 2)
+    guard bodyByteCount >= 0,
+      bodyByteCount <= Int64(InstantAutomaticOutboxClaimLimits.maximumEncodedBodyBytes)
+    else {
+      throw persistenceError(
+        operation: "read local persistence migration outbox row",
+        message:
+          "Mutation '\(rowMutationID)' exceeds the bounded outbox body limit and cannot be migrated safely."
+      )
+    }
+    let json = String(cString: jsonBytes)
+    let mutation: PendingMutation = try decodeOutboxBody(json)
+    guard mutation.id == rowMutationID,
+      mutation.createdAt.milliseconds == createdAtMilliseconds
+    else {
+      throw persistenceError(
+        operation: "read local persistence migration outbox row",
+        message: "The decoded durable mutation did not match its SQLite identity."
+      )
+    }
+    decodedOutboxBodyCount += 1
+    decodedOutboxBodyByteCount += Int(bodyByteCount)
+    return InstantApplicationMigrationOutboxRow(
+      mutation: mutation,
+      deliveryStarted: sqlite3_column_int64(statement, 4) != 0,
+      confirmationProven: sqlite3_column_int64(statement, 5) != 0,
+      optimisticOverlayActive: sqlite3_column_int64(statement, 6) != 0,
+      optimisticEffectReceiptFingerprint: sqlite3_column_text(statement, 7)
+        .map(String.init(cString:)),
+      serverAcceptancePayloadFingerprint: sqlite3_column_text(statement, 8)
+        .map(String.init(cString:))
+    )
+  }
+
+  private func nextApplicationMigrationAttributeWithoutTransaction(
+    after attributeID: String?,
+    affectedAttributeIDs: Set<String>
+  ) throws -> InstantAttribute? {
+    let sortedAttributeIDs = affectedAttributeIDs.sorted()
+    let placeholders = Array(repeating: "?", count: sortedAttributeIDs.count).joined(
+      separator: ", "
+    )
+    let cursorClause = attributeID == nil ? "" : "AND id > ?"
+    var bindings = sortedAttributeIDs.map(SQLiteBinding.text)
+    if let attributeID {
+      bindings.append(.text(attributeID))
+    }
+    let attributes: [InstantAttribute] = try selectJSON(
+      """
+      SELECT json FROM instant_attributes
+      WHERE id IN (\(placeholders)) \(cursorClause)
+      ORDER BY id
+      LIMIT 1
+      """,
+      bindings
+    )
+    return attributes.first
+  }
+
+  private func nextApplicationMigrationTripleRowWithoutTransaction(
+    after rowID: Int64,
+    affectedAttributeIDs: Set<String>
+  ) throws -> InstantApplicationMigrationTripleRow? {
+    var statement: OpaquePointer?
+    let sortedAttributeIDs = affectedAttributeIDs.sorted()
+    let placeholders = Array(repeating: "?", count: sortedAttributeIDs.count).joined(
+      separator: ", "
+    )
+    try prepare(
+      """
+      SELECT rowid, length(CAST(json AS BLOB)) FROM instant_triples
+      WHERE rowid > ? AND attribute_id IN (\(placeholders))
+      ORDER BY rowid
+      LIMIT 1
+      """,
+      statement: &statement
+    )
+    defer { sqlite3_finalize(statement) }
+    try bind([.int(rowID)] + sortedAttributeIDs.map(SQLiteBinding.text), to: statement)
+    let code = sqlite3_step(statement)
+    if code == SQLITE_DONE { return nil }
+    guard code == SQLITE_ROW else {
+      throw persistenceError(
+        operation: "read local persistence migration triple",
+        message: lastErrorMessage()
+      )
+    }
+    let matchingRowID = sqlite3_column_int64(statement, 0)
+    let bodyByteCount = sqlite3_column_int64(statement, 1)
+    guard bodyByteCount >= 0,
+      bodyByteCount <= Int64(InstantAutomaticOutboxClaimLimits.maximumEncodedBodyBytes)
+    else {
+      throw persistenceError(
+        operation: "read local persistence migration triple",
+        message:
+          "A matching canonical triple exceeds the bounded migration row limit and cannot be migrated safely."
+      )
+    }
+    guard let json: String = try selectScalar(
+      "SELECT json FROM instant_triples WHERE rowid = ? LIMIT 1",
+      [.int(matchingRowID)]
+    ),
+      let data = json.data(using: .utf8)
+    else {
+      throw persistenceError(
+        operation: "read local persistence migration triple",
+        message: "The matching canonical triple disappeared before it could be decoded."
+      )
+    }
+    return InstantApplicationMigrationTripleRow(
+      rowID: matchingRowID,
+      triple: try decoder.decode(InstantTriple.self, from: data)
+    )
+  }
+
+  private func nextApplicationMigrationLiveQueryResultWithoutTransaction(
+    after queryKey: String?,
+    affectedAttributeIDs: Set<String>
+  ) throws -> InstantPersistedLiveQueryResult? {
+    var statement: OpaquePointer?
+    let sortedAttributeIDs = affectedAttributeIDs.sorted()
+    let placeholders = Array(repeating: "?", count: sortedAttributeIDs.count).joined(
+      separator: ", "
+    )
+    let cursorClause = queryKey == nil ? "" : "AND result.query_key > ?"
+    var bindings = sortedAttributeIDs.map(SQLiteBinding.text)
+    if let queryKey {
+      bindings.append(.text(queryKey))
+    }
+    let sql =
+      """
+      SELECT result.query_key, length(CAST(result.json AS BLOB))
+      FROM instant_live_query_results AS result
+      WHERE EXISTS (
+        SELECT 1 FROM instant_live_query_triples AS owned
+        WHERE owned.query_key = result.query_key
+          AND owned.attribute_id IN (\(placeholders))
+      )
+      \(cursorClause)
+      ORDER BY result.query_key
+      LIMIT 1
+      """
+    try prepare(sql, statement: &statement)
+    defer { sqlite3_finalize(statement) }
+    try bind(bindings, to: statement)
+    let code = sqlite3_step(statement)
+    if code == SQLITE_DONE { return nil }
+    guard code == SQLITE_ROW,
+      let queryKeyBytes = sqlite3_column_text(statement, 0)
+    else {
+      throw persistenceError(
+        operation: "read local persistence migration live-query result",
+        message: lastErrorMessage()
+      )
+    }
+    let rowQueryKey = String(cString: queryKeyBytes)
+    let bodyByteCount = sqlite3_column_int64(statement, 1)
+    guard bodyByteCount >= 0,
+      bodyByteCount <= Int64(InstantAutomaticOutboxClaimLimits.maximumEncodedBodyBytes)
+    else {
+      throw persistenceError(
+        operation: "read local persistence migration live-query result",
+        message:
+          "Live-query result '\(rowQueryKey)' exceeds the bounded migration row limit and cannot be migrated safely."
+      )
+    }
+    guard let json: String = try selectScalar(
+      "SELECT json FROM instant_live_query_results WHERE query_key = ? LIMIT 1",
+      [.text(rowQueryKey)]
+    ),
+      let data = json.data(using: .utf8)
+    else {
+      throw persistenceError(
+        operation: "read local persistence migration live-query result",
+        message: "Live-query result '\(rowQueryKey)' disappeared before it could be decoded."
+      )
+    }
+    let result = try decoder.decode(InstantPersistedLiveQueryResult.self, from: data)
+    guard result.key == rowQueryKey else {
+      throw persistenceError(
+        operation: "read local persistence migration live-query result",
+        message: "The decoded live-query result did not match its SQLite identity."
+      )
+    }
+    return result
+  }
+
+  private func validateApplicationMigrationIdentity(
+    original: PendingMutation,
+    migrated: PendingMutation,
+    migrationName: String,
+    affectedAttributeIDs: Set<String>
+  ) throws {
+    let normalizedOriginalTransaction = normalizedApplicationMigrationTransaction(
+      original.transaction,
+      affectedAttributeIDs: affectedAttributeIDs
+    )
+    let normalizedMigratedTransaction = normalizedApplicationMigrationTransaction(
+      migrated.transaction,
+      affectedAttributeIDs: affectedAttributeIDs
+    )
+    let normalizedOriginalRollback = original.rollbackTransaction.map { transaction in
+      normalizedApplicationMigrationTransaction(
+        transaction,
+        affectedAttributeIDs: affectedAttributeIDs
+      )
+    }
+    let normalizedMigratedRollback = migrated.rollbackTransaction.map { transaction in
+      normalizedApplicationMigrationTransaction(
+        transaction,
+        affectedAttributeIDs: affectedAttributeIDs
+      )
+    }
+    guard migrated.id == original.id,
+      migrated.createdAt == original.createdAt,
+      migrated.transaction.id == original.transaction.id,
+      migrated.rollbackTransaction?.id == original.rollbackTransaction?.id,
+      migrated.status == original.status,
+      migrated.failureMessage == original.failureMessage,
+      migrated.failure == original.failure,
+      migrated.serverTransactionID == original.serverTransactionID,
+      migrated.confirmationSource == original.confirmationSource,
+      migrated.optimisticOverlayState == original.optimisticOverlayState,
+      migrated.optimisticEffectReceiptVersion == original.optimisticEffectReceiptVersion,
+      normalizedMigratedTransaction == normalizedOriginalTransaction,
+      normalizedMigratedRollback == normalizedOriginalRollback
+    else {
+      throw persistenceError(
+        operation: "apply local persistence migration",
+        message:
+          "Application migration '\(migrationName)' changed durable outbox identity or lifecycle metadata for '\(original.id)'; only forward and rollback operations may be value-transformed."
+      )
+    }
+  }
+
+  private func normalizedApplicationMigrationTransaction(
+    _ transaction: InstantStoreTransaction,
+    affectedAttributeIDs: Set<String>
+  ) -> InstantStoreTransaction {
+    InstantStoreTransaction(
+      id: transaction.id,
+      operations: transaction.operations.map { operation in
+        normalizedApplicationMigrationOperation(
+          operation,
+          affectedAttributeIDs: affectedAttributeIDs
+        )
+      }
+    )
+  }
+
+  private func normalizedApplicationMigrationOperation(
+    _ operation: InstantTripleOperation,
+    affectedAttributeIDs: Set<String>
+  ) -> InstantTripleOperation {
+    func value(_ value: InstantValue, attributeID: String) -> InstantValue {
+      affectedAttributeIDs.contains(attributeID) ? .null : value
+    }
+    func lookup(_ lookup: InstantLookupRef) -> InstantLookupRef {
+      guard affectedAttributeIDs.contains(lookup.attributeID) else { return lookup }
+      return InstantLookupRef(attributeID: lookup.attributeID, value: .null)
+    }
+    func triple(_ triple: InstantTriple) -> InstantTriple {
+      var triple = triple
+      triple.value = value(triple.value, attributeID: triple.attributeID)
+      return triple
+    }
+
+    return switch operation {
+    case .requireEntityMissing, .requireEntityExists,
+      .deleteEntity, .deleteEntityInNamespace, .ruleParams:
+      operation
+    case let .requireEntityMissingByLookup(entity, namespace):
+      .requireEntityMissingByLookup(lookup(entity), namespace: namespace)
+    case let .requireEntityExistsByLookup(entity, namespace):
+      .requireEntityExistsByLookup(lookup(entity), namespace: namespace)
+    case let .requireTripleExists(entityID, attributeID, requiredValue):
+      .requireTripleExists(
+        entityID: entityID,
+        attributeID: attributeID,
+        value: value(requiredValue, attributeID: attributeID)
+      )
+    case let .merge(merged):
+      .merge(triple(merged))
+    case let .mergeByLookup(entity, attributeID, mergedValue, txID, txTime):
+      .mergeByLookup(
+        entity: lookup(entity),
+        attributeID: attributeID,
+        value: value(mergedValue, attributeID: attributeID),
+        txID: txID,
+        txTime: txTime
+      )
+    case let .insert(inserted):
+      .insert(triple(inserted))
+    case let .insertByLookup(entity, attributeID, insertedValue, txID, txTime):
+      .insertByLookup(
+        entity: lookup(entity),
+        attributeID: attributeID,
+        value: value(insertedValue, attributeID: attributeID),
+        txID: txID,
+        txTime: txTime
+      )
+    case let .retract(retracted):
+      .retract(triple(retracted))
+    case let .retractByLookup(entity, attributeID, retractedValue, txID, txTime):
+      .retractByLookup(
+        entity: lookup(entity),
+        attributeID: attributeID,
+        value: value(retractedValue, attributeID: attributeID),
+        txID: txID,
+        txTime: txTime
+      )
+    case let .deleteEntityByLookup(entity):
+      .deleteEntityByLookup(lookup(entity))
+    case let .ruleParamsByLookup(entity, namespace, params):
+      .ruleParamsByLookup(
+        entity: lookup(entity),
+        namespace: namespace,
+        params: params
+      )
+    }
+  }
+
+  private func validateApplicationMigrationOutboxRewrite(
+    row: InstantApplicationMigrationOutboxRow,
+    migrationName: String
+  ) throws {
+    guard !row.deliveryStarted,
+      !row.confirmationProven,
+      row.serverAcceptancePayloadFingerprint == nil
+    else {
+      throw InstantError(
+        code: .persistenceFailed,
+        operation: "apply local persistence migration",
+        localID: row.mutation.id,
+        message:
+          "Application migration '\(migrationName)' cannot rewrite mutation '\(row.mutation.id)' after its payload was offered to delivery or accepted by the server.",
+        recovery:
+          "Preserve the existing mutation body and submit any changed wire intent under a new transaction id."
+      )
+    }
+    guard try applicationMigrationReceiptMatches(row) else {
+      throw InstantError(
+        code: .persistenceFailed,
+        operation: "apply local persistence migration",
+        localID: row.mutation.id,
+        message:
+          "Application migration '\(migrationName)' cannot prove the durable optimistic effect owned by mutation '\(row.mutation.id)'.",
+        recovery:
+          "Preserve the row and use an app-owned persistence reset or authoritative recovery instead of guessing its inverse."
+      )
+    }
+  }
+
+  private func validateApplicationMigrationOutboxBounds(
+    _ mutation: PendingMutation,
+    migrationName: String
+  ) throws {
+    let stepCount = InstantOutboxDeliveryMetadata.stepCount(in: mutation)
+    guard stepCount <= InstantAutomaticOutboxClaimLimits.maximumStepCount else {
+      throw InstantError(
+        code: .persistenceFailed,
+        operation: "apply local persistence migration",
+        localID: mutation.id,
+        message:
+          "Application migration '\(migrationName)' expanded mutation '\(mutation.id)' to \(stepCount) transport steps, beyond the automatic-delivery limit.",
+        recovery: "Keep the original row and submit smaller compensating transactions instead."
+      )
+    }
+    let encodedBodyByteCount = try encode(mutation).utf8.count
+    guard encodedBodyByteCount <= InstantAutomaticOutboxClaimLimits.maximumEncodedBodyBytes
+    else {
+      throw InstantError(
+        code: .persistenceFailed,
+        operation: "apply local persistence migration",
+        localID: mutation.id,
+        message:
+          "Application migration '\(migrationName)' expanded mutation '\(mutation.id)' to \(encodedBodyByteCount) bytes, beyond the durable delivery limit.",
+        recovery: "Keep the original row and submit smaller compensating transactions instead."
+      )
+    }
+  }
+
+  private func applicationMigrationReceiptMatches(
+    _ row: InstantApplicationMigrationOutboxRow
+  ) throws -> Bool {
+    guard let durableReceipt = row.optimisticEffectReceiptFingerprint,
+      let computedReceipt = try row.mutation.optimisticEffectReceiptFingerprint()
+    else { return false }
+    guard durableReceipt == computedReceipt else { return false }
+    return switch row.mutation.optimisticOverlayState {
+    case .applied:
+      row.optimisticOverlayActive
+    case .removed:
+      !row.optimisticOverlayActive
+    case nil:
+      false
     }
   }
 
@@ -1989,9 +2848,11 @@ public actor SQLitePersistenceStore {
   /// runtime after the five-second claim deadline.
   func liveMutationErrorDisposition(
     id: String,
-    claimantID: String
+    claimantID: String,
+    claimToken: String?
   ) throws -> InstantLiveMutationErrorDisposition {
     guard !id.isEmpty else { return .missing }
+    guard let claimToken, !claimToken.isEmpty else { return .stale }
     let value = try selectScalar(
       """
       SELECT CASE
@@ -2000,7 +2861,7 @@ public actor SQLitePersistenceStore {
         WHEN status IN (?, ?) AND confirmation_proven = 0
           AND delivery_state = ? AND delivery_claim_state = ?
           AND COALESCE(delivery_claimant_id, '') = ?
-          AND COALESCE(delivery_claim_token, '') != ''
+          AND COALESCE(delivery_claim_token, '') = ?
           THEN 'owned:' || delivery_claim_token
         ELSE 'stale'
       END
@@ -2016,6 +2877,7 @@ public actor SQLitePersistenceStore {
         .text(InstantOutboxDeliveryState.needsDelivery.rawValue),
         .text(InstantOutboxDeliveryClaimState.claimed.rawValue),
         .text(claimantID),
+        .text(claimToken),
         .text(id),
       ]
     )
@@ -2104,11 +2966,13 @@ public actor SQLitePersistenceStore {
         decodedOutboxBodyByteCount += bodyByteCount
         decodedByteCount += bodyByteCount
         guard mutation.id == row.mutationID,
-          mutation.createdAt.milliseconds == row.position.createdAtMilliseconds
+          mutation.createdAt.milliseconds == row.position.createdAtMilliseconds,
+          try hasStoredPreparedOptimisticEffectReceiptWithoutTransaction(mutation)
         else {
           throw persistenceError(
             operation: "load terminal failure component",
-            message: "The durable mutation body did not match its indexed component row."
+            message:
+              "The durable mutation body did not match its indexed, SQLite-owned Runtime-prepared component row."
           )
         }
         mutations.append(mutation)
@@ -2181,6 +3045,7 @@ public actor SQLitePersistenceStore {
         decodedBodyCount += 1
         decodedBodyByteCount += bodyByteCount
         guard mutation.id == candidate.mutationID,
+          try hasStoredPreparedOptimisticEffectReceiptWithoutTransaction(mutation),
           let footprint = InstantOptimisticEffectFootprint.normalized(for: mutation)
         else {
           blockedMutationID = candidate.mutationID
@@ -2241,8 +3106,13 @@ public actor SQLitePersistenceStore {
     footprint: InstantServerApplyFootprint,
     hasServerOperations: Bool,
     processedTransactionID: String,
-    confirmingMutationID: String?
+    confirmingMutationID: String?,
+    confirmingClaimantID: String?
   ) throws -> InstantServerApplyPlanLoad {
+    precondition(
+      (confirmingMutationID == nil) == (confirmingClaimantID == nil),
+      "A confirming server apply must identify both its mutation and durable claimant."
+    )
     let result: InstantServerApplyPlanLoad = try transaction {
       try deleteServerApplyPlanWithoutTransaction(id: planID)
       let expectedStoreRevision = try loadMetadataRevisionWithoutTransaction(
@@ -2270,8 +3140,9 @@ public actor SQLitePersistenceStore {
           plan_id, expected_store_revision, expected_attribute_revision,
           expected_outbox_revision, expected_query_result_revision,
           processed_transaction_id, processed_transaction_number,
-          server_has_operations, root_is_global, confirming_mutation_id
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          server_has_operations, root_is_global, confirming_mutation_id,
+          confirming_claimant_id
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         [
           .text(planID),
@@ -2284,6 +3155,7 @@ public actor SQLitePersistenceStore {
           .int(hasServerOperations ? 1 : 0),
           .int(footprint.isGlobal ? 1 : 0),
           confirmingMutationID.map(SQLiteBinding.text) ?? .null,
+          confirmingClaimantID.map(SQLiteBinding.text) ?? .null,
         ]
       )
       for entityID in footprint.entityIDs.sorted() {
@@ -2331,57 +3203,51 @@ public actor SQLitePersistenceStore {
     return result
   }
 
-  /// Marks only a failed pre-overlay row as body-free isolation metadata.
-  /// Valid failed overlays continue through ordinary footprint normalization;
-  /// non-failed unknown rows remain a loud server-apply error.
-  func isolateLegacyFailedUnknownServerApplyMutation(id: String) throws -> Bool {
-    let isolated = try transaction {
-      guard let row = try loadOutboxBodyRowWithoutTransaction(id: id) else { return false }
-      let mutation: PendingMutation = try decodeOutboxBody(row.json)
-      decodedOutboxBodyCount += 1
-      decodedOutboxBodyByteCount += row.json.utf8.count
-      guard mutation.id == id,
-        mutation.status == .failed,
-        mutation.optimisticOverlayState == nil,
-        mutation.rollbackTransaction == nil
-      else { return false }
-      try execute(
-        """
-        UPDATE instant_outbox
-        SET optimistic_overlay_active = 0,
-            optimistic_effect_metadata_version = ?,
-            optimistic_effect_is_global = 0,
-            mutation_revision = mutation_revision + 1
-        WHERE mutation_id = ? AND status = ?
-        """,
-        [
-          .int(Int64(InstantOptimisticEffectFootprint.currentVersion)),
-          .text(id),
-          .text(InstantMutationStatus.failed.rawValue),
-        ]
-      )
-      guard sqlite3_changes(connection.raw) == 1 else { return false }
-      try execute(
-        "DELETE FROM instant_outbox_effect_entities WHERE mutation_id = ?",
-        [.text(id)]
-      )
-      _ = try bumpMetadataRevisionWithoutTransaction(Self.outboxRevisionKey)
-      return true
+  /// Returns the first active optimistic row that has no SQLite-owned Runtime
+  /// preparation receipt. The check is body-free and intentionally includes
+  /// failed rows: without a proven inverse, even a terminal row can own local
+  /// triples and must block a new live connection rather than silently suppress
+  /// authoritative retractions forever.
+  func firstActiveMutationMissingPreparedReceiptFingerprint() throws -> String? {
+    try synchronizationBlocker()?.firstMutationID
+  }
+
+  /// Derives the durable synchronization blocker without reading a mutation
+  /// body. A nil SQLite receipt is the post-migration authority boundary; an
+  /// older metadata version alone is not a blocker because bounded
+  /// normalization may still repair it.
+  func synchronizationBlocker() throws -> InstantSynchronizationBlocker? {
+    try readTransaction {
+      try synchronizationBlockerWithoutTransaction()
     }
-    if isolated {
-      cachedState = nil
-      InstantDiagnostics.shared.record(
-        .error,
-        subsystem: "instant-swift-data-core",
-        category: "outbox",
-        event: "outbox.mutation.legacy-unknown-isolated",
-        message:
-          "Isolated a failed mutation that predates durable optimistic-overlay metadata; server apply continues.",
-        metadata: ["mutationID": id, "operation": "apply server transaction"],
-        correlationID: id
-      )
-    }
-    return isolated
+  }
+
+  /// Refuses to isolate an unknown-effect row during an incremental server apply.
+  ///
+  /// Neither caller-visible rollback bytes nor caller-visible acceptance fields
+  /// prove what is currently materialized. Inactivating such a row could leave
+  /// an ownerless optimistic value, even when a server watermark appears to
+  /// cover it. The active owner therefore remains as a surfaced manual-repair
+  /// barrier, and this apply stays fail-closed. Runtime stops the current live
+  /// generation rather than reconnecting through the same unsafe row.
+  func isolateUnknownServerApplyMutation(
+    id: String,
+    processedTransactionID: String
+  ) throws -> Bool {
+    _ = id
+    _ = processedTransactionID
+    return false
+  }
+
+  private static func transactionID(
+    _ transactionID: String,
+    isCoveredBy processedTransactionID: String
+  ) -> Bool {
+    if transactionID == processedTransactionID { return true }
+    guard let transactionNumber = Int64(transactionID),
+      let processedTransactionNumber = Int64(processedTransactionID)
+    else { return false }
+    return transactionNumber <= processedTransactionNumber
   }
 
   /// Filters live-query retractions using normalized optimistic-effect indexes.
@@ -2419,10 +3285,19 @@ public actor SQLitePersistenceStore {
       SELECT EXISTS(
         SELECT 1
         FROM instant_outbox
-        WHERE optimistic_overlay_active = 1 AND status != ?
+        WHERE optimistic_overlay_active = 1
           AND (
-            optimistic_effect_is_global = 1
-            OR optimistic_effect_metadata_version != ?
+            (
+              status != ? AND (
+                optimistic_effect_is_global = 1
+                OR optimistic_effect_metadata_version != ?
+                OR optimistic_effect_receipt_fingerprint IS NULL
+              )
+            )
+            OR (
+              status = ?
+              AND optimistic_effect_receipt_fingerprint IS NULL
+            )
           )
         LIMIT 1
       )
@@ -2430,6 +3305,7 @@ public actor SQLitePersistenceStore {
       [
         .text(InstantMutationStatus.failed.rawValue),
         .int(Int64(InstantOptimisticEffectFootprint.currentVersion)),
+        .text(InstantMutationStatus.failed.rawValue),
       ]
     ) != 0
     if protectsEveryRetraction {
@@ -2477,6 +3353,10 @@ public actor SQLitePersistenceStore {
         direction: direction,
         after: position
       )
+    }
+    if let blocker = page.synchronizationBlocker {
+      cachedState = nil
+      throw blocker.error(operation: "apply server transaction")
     }
     serverApplyMetrics.recordBodyPage(
       direction: direction,
@@ -2530,8 +3410,93 @@ public actor SQLitePersistenceStore {
                 "Mutation '\(mutation.id)' has a \(lifecycleByteCount)-byte compact lifecycle body, beyond the 8 MiB resident-patch limit."
             )
           }
+          guard let receiptFingerprint = try mutation.optimisticEffectReceiptFingerprint() else {
+            throw persistenceError(
+              operation: "stage bounded server apply",
+              message:
+                "Mutation '\(mutation.id)' was not Runtime-prepared before authoritative replay staging."
+            )
+          }
           let footprint = InstantOptimisticEffectFootprint.normalized(for: mutation)
-          let deliveryState = InstantOutboxDeliveryMetadata.state(for: mutation)
+          let wireFingerprint = try mutation.mutationWireIntentFingerprint()
+          let acceptanceContext: (
+            existing: String?, claim: String?, claimant: String?, confirms: Bool,
+            originalJSON: String?, expectedDeliveryStarted: Bool,
+            currentDeliveryStarted: Bool
+          ) = try {
+            var statement: OpaquePointer?
+            try prepare(
+              """
+              SELECT planned.expected_server_acceptance_payload_fingerprint,
+                     planned.expected_delivery_claim_payload_fingerprint,
+                     planned.expected_delivery_claimant_id,
+                     planned.confirm_at_apply, planned.original_json,
+                     planned.expected_delivery_started, outbox.delivery_started
+              FROM instant_server_apply_rows AS planned
+              JOIN instant_outbox AS outbox
+                ON outbox.mutation_id = planned.mutation_id
+              WHERE planned.plan_id = ? AND planned.mutation_id = ?
+              LIMIT 1
+              """,
+              statement: &statement
+            )
+            defer { sqlite3_finalize(statement) }
+            try bind([.text(planID), .text(mutation.id)], to: statement)
+            guard sqlite3_step(statement) == SQLITE_ROW else {
+              throw persistenceError(
+                operation: "stage bounded server apply",
+                message: "Mutation '\(mutation.id)' lost its planned acceptance row."
+              )
+            }
+            return (
+              sqlite3_column_text(statement, 0).map(String.init(cString:)),
+              sqlite3_column_text(statement, 1).map(String.init(cString:)),
+              sqlite3_column_text(statement, 2).map(String.init(cString:)),
+              sqlite3_column_int64(statement, 3) != 0,
+              sqlite3_column_text(statement, 4).map(String.init(cString:)),
+              sqlite3_column_int64(statement, 5) != 0,
+              sqlite3_column_int64(statement, 6) != 0
+            )
+          }()
+          let originalWireFingerprint: String? = try acceptanceContext.originalJSON.flatMap {
+            json in
+            let originalMutation: PendingMutation = try decodeOutboxBody(json)
+            guard originalMutation.id == mutation.id else { return nil }
+            return try originalMutation.mutationWireIntentFingerprint()
+          }
+          if originalWireFingerprint != wireFingerprint,
+            acceptanceContext.expectedDeliveryStarted
+              || acceptanceContext.currentDeliveryStarted
+          {
+            throw persistenceError(
+              operation: "persist offered outbox mutation",
+              message:
+                "Mutation '\(mutation.id)' was already offered to delivery, so a staged server rebase cannot change its forward wire intent. Use a new mutation id for compensating work."
+            )
+          }
+          let acceptanceFingerprint: String?
+          if acceptanceContext.confirms {
+            let control = try loadServerApplyPlanControlWithoutTransaction(id: planID)
+            guard mutation.status == .confirmed,
+              let claimedPayloadFingerprint = acceptanceContext.claim,
+              acceptanceContext.claimant == control?.confirmingClaimantID
+            else {
+              throw persistenceError(
+                operation: "stage bounded server apply",
+                message:
+                  "Mutation '\(mutation.id)' did not carry the confirmed lifecycle and exact claim required by its server ACK."
+              )
+            }
+            acceptanceFingerprint = claimedPayloadFingerprint
+          } else {
+            acceptanceFingerprint = originalWireFingerprint == wireFingerprint
+              ? acceptanceContext.existing
+              : nil
+          }
+          let deliveryState = durableDeliveryState(
+            for: mutation,
+            hasServerAcceptance: acceptanceFingerprint != nil
+          )
           try execute(
             """
             UPDATE instant_server_apply_rows
@@ -2540,7 +3505,9 @@ public actor SQLitePersistenceStore {
                 staged_delivery_state = ?, staged_transport_step_count = ?,
                 staged_failure_message = ?, staged_confirmation_proven = ?,
                 staged_overlay_active = ?, staged_effect_metadata_version = ?,
-                staged_effect_is_global = ?, staged_server_transaction_id = ?,
+                staged_effect_is_global = ?, staged_effect_receipt_fingerprint = ?,
+                staged_server_acceptance_payload_fingerprint = ?,
+                staged_server_transaction_id = ?,
                 staged_confirmation_source = ?
             WHERE plan_id = ? AND mutation_id = ?
             """,
@@ -2551,12 +3518,14 @@ public actor SQLitePersistenceStore {
               .text(deliveryState.rawValue),
               .int(Int64(InstantOutboxDeliveryMetadata.stepCount(in: mutation))),
               mutation.failureMessage.map(SQLiteBinding.text) ?? .null,
-              .int(InstantOutboxDeliveryMetadata.confirmationProven(in: mutation) ? 1 : 0),
+              .int(acceptanceFingerprint == nil ? 0 : 1),
               .int(mutation.optimisticOverlayState == .removed ? 0 : 1),
               .int(Int64(
                 footprint == nil ? 0 : InstantOptimisticEffectFootprint.currentVersion
               )),
               .int(footprint?.isGlobal == true ? 1 : 0),
+              .text(receiptFingerprint),
+              acceptanceFingerprint.map(SQLiteBinding.text) ?? .null,
               mutation.serverTransactionID.map(SQLiteBinding.text) ?? .null,
               mutation.confirmationSource.map { .text($0.rawValue) } ?? .null,
               .text(planID),
@@ -2634,6 +3603,10 @@ public actor SQLitePersistenceStore {
               planned.staged_delete = 1
               OR outbox.mutation_id IS NULL
               OR planned.staged_json != outbox.json
+              OR planned.staged_effect_receipt_fingerprint
+                IS NOT outbox.optimistic_effect_receipt_fingerprint
+              OR planned.staged_server_acceptance_payload_fingerprint
+                IS NOT outbox.server_acceptance_payload_fingerprint
             )
           LIMIT 1
         )
@@ -2721,6 +3694,15 @@ public actor SQLitePersistenceStore {
                 SELECT staged_effect_is_global FROM instant_server_apply_rows
                 WHERE plan_id = ? AND mutation_id = outbox.mutation_id
               ),
+              optimistic_effect_receipt_fingerprint = (
+                SELECT staged_effect_receipt_fingerprint FROM instant_server_apply_rows
+                WHERE plan_id = ? AND mutation_id = outbox.mutation_id
+              ),
+              server_acceptance_payload_fingerprint = (
+                SELECT staged_server_acceptance_payload_fingerprint
+                FROM instant_server_apply_rows
+                WHERE plan_id = ? AND mutation_id = outbox.mutation_id
+              ),
               server_transaction_id = (
                 SELECT staged_server_transaction_id FROM instant_server_apply_rows
                 WHERE plan_id = ? AND mutation_id = outbox.mutation_id
@@ -2736,12 +3718,18 @@ public actor SQLitePersistenceStore {
           WHERE mutation_id IN (
             SELECT mutation_id FROM instant_server_apply_rows
             WHERE plan_id = ? AND staged = 1 AND staged_delete = 0
-              AND staged_json != outbox.json
+              AND (
+                staged_json != outbox.json
+                OR staged_effect_receipt_fingerprint
+                  IS NOT outbox.optimistic_effect_receipt_fingerprint
+                OR staged_server_acceptance_payload_fingerprint
+                  IS NOT outbox.server_acceptance_payload_fingerprint
+              )
           )
           """,
           Array(repeating: SQLiteBinding.text(planID), count: 2)
             + [.int(Int64(InstantOutboxDeliveryMetadata.currentVersion))]
-            + Array(repeating: SQLiteBinding.text(planID), count: 12)
+            + Array(repeating: SQLiteBinding.text(planID), count: 14)
         )
         try execute(
           """
@@ -2950,11 +3938,44 @@ public actor SQLitePersistenceStore {
       SELECT mutation_id
       FROM instant_outbox INDEXED BY instant_outbox_effect_normalization_idx
       WHERE optimistic_overlay_active = 1
-        AND optimistic_effect_metadata_version != ?
+        AND (
+          optimistic_effect_metadata_version != ?
+          OR optimistic_effect_receipt_fingerprint IS NULL
+        )
       ORDER BY created_at_ms, mutation_id
       LIMIT 1
       """,
-      [.int(Int64(InstantOptimisticEffectFootprint.currentVersion))]
+      [
+        .int(Int64(InstantOptimisticEffectFootprint.currentVersion)),
+      ]
+    )
+  }
+
+  private func synchronizationBlockerWithoutTransaction() throws
+    -> InstantSynchronizationBlocker?
+  {
+    let predicate =
+      "optimistic_overlay_active = 1 AND optimistic_effect_receipt_fingerprint IS NULL"
+    guard let firstMutationID = try selectScalar(
+      """
+      SELECT mutation_id
+      FROM instant_outbox INDEXED BY instant_outbox_synchronization_blocker_idx
+      WHERE \(predicate)
+      ORDER BY created_at_ms, mutation_id
+      LIMIT 1
+      """
+    ) else { return nil }
+    let blockedMutationCount = Int(try selectInt64(
+      """
+      SELECT COUNT(*)
+      FROM instant_outbox INDEXED BY instant_outbox_synchronization_blocker_idx
+      WHERE \(predicate)
+      """
+    ))
+    return InstantSynchronizationBlocker(
+      reason: .unknownOptimisticEffectReceipt,
+      firstMutationID: firstMutationID,
+      blockedMutationCount: blockedMutationCount
     )
   }
 
@@ -2967,7 +3988,8 @@ public actor SQLitePersistenceStore {
       SELECT expected_store_revision, expected_attribute_revision,
              expected_outbox_revision, expected_query_result_revision,
              processed_transaction_id, processed_transaction_number,
-             server_has_operations, root_is_global, confirming_mutation_id
+             server_has_operations, root_is_global, confirming_mutation_id,
+             confirming_claimant_id
       FROM instant_server_apply_plans
       WHERE plan_id = ?
       LIMIT 1
@@ -2990,7 +4012,8 @@ public actor SQLitePersistenceStore {
         : sqlite3_column_int64(statement, 5),
       hasServerOperations: sqlite3_column_int64(statement, 6) != 0,
       rootIsGlobal: sqlite3_column_int64(statement, 7) != 0,
-      confirmingMutationID: sqlite3_column_text(statement, 8).map(String.init(cString:))
+      confirmingMutationID: sqlite3_column_text(statement, 8).map(String.init(cString:)),
+      confirmingClaimantID: sqlite3_column_text(statement, 9).map(String.init(cString:))
     )
   }
 
@@ -3008,6 +4031,11 @@ public actor SQLitePersistenceStore {
         plan_id, mutation_id, created_at_ms, expected_mutation_revision,
         expected_status, expected_confirmation_proven, expected_overlay_active,
         expected_effect_metadata_version, expected_effect_is_global,
+        expected_effect_receipt_fingerprint,
+        expected_delivery_started,
+        expected_delivery_claim_payload_fingerprint,
+        expected_delivery_claimant_id,
+        expected_server_acceptance_payload_fingerprint,
         expected_body_bytes, is_component_body, requires_body,
         prune_at_watermark, confirm_at_apply, staged_delete, staged
       )
@@ -3016,6 +4044,11 @@ public actor SQLitePersistenceStore {
              outbox.optimistic_overlay_active,
              outbox.optimistic_effect_metadata_version,
              outbox.optimistic_effect_is_global,
+             outbox.optimistic_effect_receipt_fingerprint,
+             outbox.delivery_started,
+             outbox.delivery_claim_payload_fingerprint,
+             outbox.delivery_claimant_id,
+             outbox.server_acceptance_payload_fingerprint,
              MAX(
                COALESCE(outbox.encoded_body_bytes, 0),
                length(CAST(outbox.json AS BLOB))
@@ -3068,6 +4101,7 @@ public actor SQLitePersistenceStore {
           FROM instant_outbox INDEXED BY instant_outbox_global_effect_order_idx
           WHERE optimistic_overlay_active = 1
             AND optimistic_effect_is_global = 1
+            AND optimistic_effect_receipt_fingerprint IS NOT NULL
           LIMIT 1
         )
         """
@@ -3078,7 +4112,11 @@ public actor SQLitePersistenceStore {
           componentBody: true,
           requiresBody: true,
           selectionSQL:
-            "FROM instant_outbox AS outbox WHERE outbox.optimistic_overlay_active = 1",
+            """
+            FROM instant_outbox AS outbox
+            WHERE outbox.optimistic_overlay_active = 1
+              AND outbox.optimistic_effect_receipt_fingerprint IS NOT NULL
+            """,
           bindings: []
         )
       } else {
@@ -3095,6 +4133,7 @@ public actor SQLitePersistenceStore {
             JOIN instant_outbox AS outbox
               ON outbox.mutation_id = effects.mutation_id
             WHERE roots.plan_id = ? AND outbox.optimistic_overlay_active = 1
+              AND outbox.optimistic_effect_receipt_fingerprint IS NOT NULL
             """,
           bindings: [.text(planID)]
         )
@@ -3106,6 +4145,7 @@ public actor SQLitePersistenceStore {
             """
             FROM instant_outbox AS outbox INDEXED BY instant_outbox_server_apply_failed_idx
             WHERE outbox.status = 'failed' AND outbox.optimistic_overlay_active = 1
+              AND outbox.optimistic_effect_receipt_fingerprint IS NOT NULL
             """,
           bindings: []
         )
@@ -3118,6 +4158,7 @@ public actor SQLitePersistenceStore {
             FROM instant_outbox AS outbox INDEXED BY instant_outbox_server_apply_watermark_idx
             WHERE outbox.status = ? AND outbox.confirmation_proven = 1
               AND outbox.optimistic_overlay_active = 1
+              AND outbox.optimistic_effect_receipt_fingerprint IS NOT NULL
               AND \(watermark.sql)
             """,
           bindings: [.text(InstantMutationStatus.confirmed.rawValue)] + watermark.bindings
@@ -3131,6 +4172,7 @@ public actor SQLitePersistenceStore {
               """
               FROM instant_outbox AS outbox
               WHERE outbox.mutation_id = ? AND outbox.optimistic_overlay_active = 1
+                AND outbox.optimistic_effect_receipt_fingerprint IS NOT NULL
               """,
             bindings: [.text(confirmingMutationID)]
           )
@@ -3153,6 +4195,7 @@ public actor SQLitePersistenceStore {
                 ON outbox.mutation_id = connected_effect.mutation_id
               WHERE planned.plan_id = ? AND planned.is_component_body = 1
                 AND outbox.optimistic_overlay_active = 1
+                AND outbox.optimistic_effect_receipt_fingerprint IS NOT NULL
               """,
             bindings: [.text(planID)]
           )
@@ -3207,6 +4250,7 @@ public actor SQLitePersistenceStore {
           """
           FROM instant_outbox AS outbox
           WHERE outbox.mutation_id = ?
+            AND outbox.optimistic_effect_receipt_fingerprint IS NOT NULL
           """,
         bindings: [.text(confirmingMutationID)]
       )
@@ -3292,6 +4336,7 @@ public actor SQLitePersistenceStore {
     var candidates: [InstantServerApplyBodyCandidate] = []
     var componentFlags: [String: Bool] = [:]
     var totalByteCount = 0
+    var oversizedMutationID: String?
     while sqlite3_step(statement) == SQLITE_ROW,
       candidates.count < InstantAutomaticOutboxClaimLimits.maximumBodyDecodeCount
     {
@@ -3299,11 +4344,8 @@ public actor SQLitePersistenceStore {
       let mutationID = String(cString: mutationIDBytes)
       let byteCount = Int(sqlite3_column_int64(statement, 2))
       guard byteCount <= InstantAutomaticOutboxClaimLimits.maximumEncodedBodyBytes else {
-        throw persistenceError(
-          operation: "load bounded server-apply body page",
-          message:
-            "Mutation '\(mutationID)' is \(byteCount) bytes and exceeds the 8 MiB server-apply body limit."
-        )
+        oversizedMutationID = mutationID
+        break
       }
       guard byteCount <= InstantAutomaticOutboxClaimLimits.maximumEncodedBodyBytes - totalByteCount
       else { break }
@@ -3320,6 +4362,20 @@ public actor SQLitePersistenceStore {
       candidates.append(candidate)
       componentFlags[mutationID] = sqlite3_column_int64(statement, 3) != 0
       totalByteCount += byteCount
+    }
+    sqlite3_finalize(statement)
+    statement = nil
+    if let oversizedMutationID {
+      let blocker = try revokeMismatchedPreparedReceiptWithoutTransaction(
+        mutationID: oversizedMutationID
+      )
+      return InstantServerApplyBodyPage(
+        isStale: false,
+        entries: [],
+        nextPosition: nil,
+        decodedBodyByteCount: totalByteCount,
+        synchronizationBlocker: blocker
+      )
     }
 
     var entries: [InstantServerApplyBodyEntry] = []
@@ -3349,16 +4405,47 @@ public actor SQLitePersistenceStore {
           decodedBodyByteCount: 0
         )
       }
-      let mutation: PendingMutation = try decodeOutboxBody(json)
+      let mutation: PendingMutation
+      do {
+        mutation = try decodeOutboxBody(json)
+      } catch {
+        let blocker = try revokeMismatchedPreparedReceiptWithoutTransaction(
+          mutationID: candidate.mutationID
+        )
+        return InstantServerApplyBodyPage(
+          isStale: false,
+          entries: [],
+          nextPosition: nil,
+          decodedBodyByteCount: totalByteCount,
+          synchronizationBlocker: blocker
+        )
+      }
       decodedOutboxBodyCount += 1
       decodedOutboxBodyByteCount += candidate.actualBodyByteCount
       guard mutation.id == candidate.mutationID,
         mutation.createdAt.milliseconds == candidate.position.createdAtMilliseconds
       else {
-        throw persistenceError(
-          operation: "load bounded server-apply body page",
-          message:
-            "Durable body '\(mutation.id)' did not match planned row '\(candidate.mutationID)'."
+        let blocker = try revokeMismatchedPreparedReceiptWithoutTransaction(
+          mutationID: candidate.mutationID
+        )
+        return InstantServerApplyBodyPage(
+          isStale: false,
+          entries: [],
+          nextPosition: nil,
+          decodedBodyByteCount: totalByteCount,
+          synchronizationBlocker: blocker
+        )
+      }
+      if !(try hasStoredPreparedOptimisticEffectReceiptWithoutTransaction(mutation)) {
+        let blocker = try revokeMismatchedPreparedReceiptWithoutTransaction(
+          mutationID: candidate.mutationID
+        )
+        return InstantServerApplyBodyPage(
+          isStale: false,
+          entries: [],
+          nextPosition: nil,
+          decodedBodyByteCount: totalByteCount,
+          synchronizationBlocker: blocker
         )
       }
       if direction == .reverse {
@@ -3388,6 +4475,56 @@ public actor SQLitePersistenceStore {
     )
   }
 
+  /// Converts a decoded body/receipt mismatch into the same durable authority
+  /// boundary used for migrated unknown rows. The body and active local owner
+  /// remain intact; only caller-unsafe indexes, claims, and proof markers are
+  /// revoked. The enclosing SQLite transaction commits this demotion before
+  /// `loadServerApplyBodyPage` throws the structured blocker to Runtime.
+  private func revokeMismatchedPreparedReceiptWithoutTransaction(
+    mutationID: String
+  ) throws -> InstantSynchronizationBlocker {
+    try execute(
+      """
+      UPDATE instant_outbox
+      SET delivery_claim_state = ?,
+          delivery_claim_token = NULL,
+          delivery_claimant_id = NULL,
+          delivery_claim_deadline_ms = NULL,
+          delivery_claim_projected_body_bytes = NULL,
+          delivery_claim_payload_fingerprint = NULL,
+          server_acceptance_payload_fingerprint = NULL,
+          confirmation_proven = 0,
+          delivery_state = ?,
+          optimistic_overlay_active = 1,
+          optimistic_effect_metadata_version = 0,
+          optimistic_effect_is_global = 0,
+          optimistic_effect_receipt_fingerprint = NULL,
+          mutation_revision = mutation_revision + 1
+      WHERE mutation_id = ?
+      """,
+      [
+        .text(InstantOutboxDeliveryClaimState.ready.rawValue),
+        .text(InstantOutboxDeliveryState.invalid.rawValue),
+        .text(mutationID),
+      ]
+    )
+    try execute(
+      "DELETE FROM instant_outbox_effect_entities WHERE mutation_id = ?",
+      [.text(mutationID)]
+    )
+    try execute(
+      "DELETE FROM instant_outbox_write_keys WHERE mutation_id = ?",
+      [.text(mutationID)]
+    )
+    _ = try bumpMetadataRevisionWithoutTransaction(Self.outboxRevisionKey)
+    return try synchronizationBlockerWithoutTransaction()
+      ?? InstantSynchronizationBlocker(
+        reason: .unknownOptimisticEffectReceipt,
+        firstMutationID: mutationID,
+        blockedMutationCount: 1
+      )
+  }
+
   private func serverApplyPlanRowsStillMatchWithoutTransaction(id planID: String) throws -> Bool {
     try selectInt64(
       """
@@ -3406,6 +4543,15 @@ public actor SQLitePersistenceStore {
         OR outbox.optimistic_effect_metadata_version
           != planned.expected_effect_metadata_version
         OR outbox.optimistic_effect_is_global != planned.expected_effect_is_global
+        OR outbox.optimistic_effect_receipt_fingerprint
+          IS NOT planned.expected_effect_receipt_fingerprint
+        OR outbox.delivery_started != planned.expected_delivery_started
+        OR outbox.delivery_claim_payload_fingerprint
+          IS NOT planned.expected_delivery_claim_payload_fingerprint
+        OR outbox.delivery_claimant_id
+          IS NOT planned.expected_delivery_claimant_id
+        OR outbox.server_acceptance_payload_fingerprint
+          IS NOT planned.expected_server_acceptance_payload_fingerprint
       )
       """,
       [.text(planID)]
@@ -3427,7 +4573,8 @@ public actor SQLitePersistenceStore {
       SELECT ?, expected_store_revision, expected_attribute_revision,
              expected_outbox_revision, expected_query_result_revision,
              processed_transaction_id, processed_transaction_number,
-             server_has_operations, root_is_global, confirming_mutation_id
+             server_has_operations, root_is_global, confirming_mutation_id,
+             confirming_claimant_id
       FROM instant_server_apply_plans
       WHERE plan_id = ?
       """,
@@ -3574,16 +4721,23 @@ public actor SQLitePersistenceStore {
           to: changedEntityTriples[entityID, default: []]
         )
       }
-      try saveOutboxMutationWithoutTransaction(failedMutation)
+      try saveOutboxMutationWithoutTransaction(
+        failedMutation,
+        receiptWriteAuthority: .runtimePrepared
+      )
       for successor in rebasedSuccessors {
-        try saveOutboxMutationWithoutTransaction(successor)
+        try saveOutboxMutationWithoutTransaction(
+          successor,
+          receiptWriteAuthority: .runtimePrepared
+        )
       }
       try execute(
         """
         UPDATE instant_outbox
         SET delivery_claim_state = ?, delivery_claim_token = NULL,
             delivery_claimant_id = NULL, delivery_claim_deadline_ms = NULL,
-            delivery_claim_projected_body_bytes = NULL
+            delivery_claim_projected_body_bytes = NULL,
+            delivery_claim_payload_fingerprint = NULL
         WHERE mutation_id = ? AND delivery_claim_state = ?
           AND delivery_claim_token = ?
         """,
@@ -3735,7 +4889,10 @@ public actor SQLitePersistenceStore {
                 message: "The lifecycle mutation id did not match its SQLite row id."
               )
             }
-            mutations.append(mutation.compactedForMemory)
+            mutations.append(compactedLifecycleForInspection(
+              mutation,
+              hasStoredReceiptFingerprint: candidate.hasReceiptFingerprint
+            ))
             continue
           } catch {
             reportIssue(
@@ -3770,8 +4927,15 @@ public actor SQLitePersistenceStore {
             )
           }
           mutation.status = .failed
-          try saveOutboxMutationWithoutTransaction(mutation)
-          mutations.append(mutation.compactedForMemory)
+          try saveOutboxMutationWithoutTransaction(
+            mutation,
+            receiptWriteAuthority: .publicPersistence
+          )
+          mutations.append(compactedLifecycleForInspection(
+            mutation,
+            hasStoredReceiptFingerprint:
+              try hasStoredPreparedOptimisticEffectReceiptWithoutTransaction(mutation)
+          ))
         } catch {
           let quarantined = try quarantineInvalidOutboxMutationWithoutTransaction(
             row,
@@ -3848,6 +5012,9 @@ public actor SQLitePersistenceStore {
     }
 
     let plan = try readTransaction {
+      if let blocker = try synchronizationBlockerWithoutTransaction() {
+        throw blocker.error(operation: "admit automatic failed-mutation retry")
+      }
       let attributeRevision = try loadMetadataRevisionWithoutTransaction(
         Self.attributeRevisionKey
       )
@@ -3876,6 +5043,9 @@ public actor SQLitePersistenceStore {
     )
 
     let application: InstantAutomaticFailedMutationRetryApplication? = try transaction {
+      if let blocker = try synchronizationBlockerWithoutTransaction() {
+        throw blocker.error(operation: "commit automatic failed-mutation retry")
+      }
       guard
         try loadMetadataRevisionWithoutTransaction(Self.attributeRevisionKey)
           == plan.expectedAttributeRevision,
@@ -3997,6 +5167,38 @@ public actor SQLitePersistenceStore {
     )
   }
 
+  /// Reproves the scalar ordering/claim boundary before quarantining a tail.
+  ///
+  /// A matching Runtime receipt is intentionally not required: its absence is
+  /// one of the invalid-tail conditions this guarded transition repairs.
+  private func isImmediateSupersessionTailQuarantineCandidateWithoutTransaction(
+    id mutationID: String
+  ) throws -> Bool {
+    try selectInt64(
+      """
+      SELECT EXISTS(
+        SELECT 1 FROM instant_outbox
+        WHERE mutation_id = ? AND status = ?
+          AND optimistic_overlay_active = 1
+          AND delivery_state = ?
+          AND delivery_metadata_version = ?
+          AND encoded_body_bytes IS NOT NULL
+          AND delivery_claim_state = ?
+          AND delivery_started = 0
+      )
+      """,
+      [
+        .text(mutationID),
+        .text(InstantMutationStatus.pending.rawValue),
+        .text(InstantOutboxDeliveryState.needsDelivery.rawValue),
+        .int(Int64(InstantOutboxDeliveryMetadata.currentVersion)),
+        .text(InstantOutboxDeliveryClaimState.ready.rawValue),
+      ]
+    ) == 1
+  }
+
+  /// Reproves that a tail remains Runtime-prepared before atomically replacing
+  /// it with a same-entity successor.
   private func isImmediateSupersessionTailEligibleWithoutTransaction(
     id mutationID: String
   ) throws -> Bool {
@@ -4006,6 +5208,7 @@ public actor SQLitePersistenceStore {
         SELECT 1 FROM instant_outbox
         WHERE mutation_id = ? AND status = ?
           AND optimistic_overlay_active = 1
+          AND optimistic_effect_receipt_fingerprint IS NOT NULL
           AND delivery_state = ?
           AND delivery_metadata_version = ?
           AND encoded_body_bytes IS NOT NULL
@@ -4132,12 +5335,13 @@ public actor SQLitePersistenceStore {
         let mutation: PendingMutation = try decodeOutboxBody(row.json)
         guard mutation.id == mutationID,
           mutation.status == .pending,
-          mutation.optimisticOverlayState == .applied
+          mutation.provesReplayableOptimisticEffectReceipt,
+          try hasStoredPreparedOptimisticEffectReceiptWithoutTransaction(mutation)
         else {
           throw persistenceError(
             operation: "validate immediate supersession tail",
             message:
-              "The normalized durable body disagreed with its pending, active-overlay SQLite row."
+              "The normalized durable body disagreed with its pending, SQLite-owned Runtime-prepared active-overlay row."
           )
         }
         // A lookup or precondition can be a valid active optimistic write even
@@ -4164,7 +5368,7 @@ public actor SQLitePersistenceStore {
         try loadMetadataRevisionWithoutTransaction(Self.outboxRevisionKey)
           == expectedOutboxRevision,
         try immediateOutboxTailIDWithoutTransaction() == invalidTail.mutationID,
-        try isImmediateSupersessionTailEligibleWithoutTransaction(
+        try isImmediateSupersessionTailQuarantineCandidateWithoutTransaction(
           id: invalidTail.mutationID
         )
       else { return false }
@@ -4305,10 +5509,14 @@ public actor SQLitePersistenceStore {
       let lifecycleID = try lifecycleIDWithoutTransaction(for: mutationID) ?? mutationID
       var currentMutationID = mutationID
       var terminalJSON: String?
+      var terminalReceiptFingerprint: String?
+      var terminalAcceptanceFingerprint: String?
       var statement: OpaquePointer?
       try prepare(
         """
-        SELECT current_mutation_id, terminal_json
+        SELECT current_mutation_id, terminal_json,
+               terminal_optimistic_effect_receipt_fingerprint,
+               terminal_server_acceptance_payload_fingerprint
         FROM instant_outbox_lifecycles
         WHERE lifecycle_id = ?
         LIMIT 1
@@ -4322,13 +5530,24 @@ public actor SQLitePersistenceStore {
           currentMutationID = String(cString: currentBytes)
         }
         terminalJSON = sqlite3_column_text(statement, 1).map(String.init(cString:))
+        terminalReceiptFingerprint = sqlite3_column_text(statement, 2)
+          .map(String.init(cString:))
+        terminalAcceptanceFingerprint = sqlite3_column_text(statement, 3)
+          .map(String.init(cString:))
       }
 
       if let terminalJSON {
         decodedOutboxLifecycleCount += 1
         decodedOutboxLifecycleByteCount += terminalJSON.utf8.count
         let mutation: PendingMutation = try decodeOutboxBody(terminalJSON)
-        if let event = lifecycleEvent(for: mutation) {
+        let lifecycleMutation = lifecycleMutationForInspection(
+          mutation,
+          hasStoredReceiptFingerprint: terminalReceiptFingerprint != nil
+        )
+        if let event = lifecycleEvent(
+          for: lifecycleMutation,
+          hasServerAcceptance: terminalAcceptanceFingerprint != nil
+        ) {
           return InstantMutationLifecycleResolution(
             observationID: lifecycleID,
             event: event
@@ -4345,9 +5564,20 @@ public actor SQLitePersistenceStore {
       decodedOutboxBodyCount += 1
       decodedOutboxBodyByteCount += row.json.utf8.count
       let mutation: PendingMutation = try decodeOutboxBody(row.json)
+      let hasPreparedReceipt = try hasStoredPreparedOptimisticEffectReceipt(
+        mutation,
+        in: row
+      )
+      let lifecycleMutation = lifecycleMutationForInspection(
+        mutation,
+        hasStoredReceiptFingerprint: hasPreparedReceipt
+      )
       return InstantMutationLifecycleResolution(
         observationID: lifecycleID,
-        event: lifecycleEvent(for: mutation) ?? .waiting
+        event: lifecycleEvent(
+          for: lifecycleMutation,
+          hasServerAcceptance: try hasStoredServerAcceptance(mutation, in: row)
+        ) ?? .waiting
       )
     }
   }
@@ -4468,7 +5698,22 @@ public actor SQLitePersistenceStore {
             )
             continue
           }
-          guard InstantOutboxDeliveryMetadata.state(for: mutation) == .needsDelivery else {
+          guard try hasStoredPreparedOptimisticEffectReceipt(mutation, in: row),
+            row.deliveryClaimPayloadFingerprint != nil
+          else {
+            failedMutations.append(
+              try quarantineInvalidOutboxMutationWithoutTransaction(
+                row,
+                reason:
+                  "The token-owned mutation body no longer matches its SQLite-owned materialization and wire-claim receipts."
+              )
+            )
+            continue
+          }
+          guard durableDeliveryState(
+            for: mutation,
+            hasServerAcceptance: try hasStoredServerAcceptance(mutation, in: row)
+          ) == .needsDelivery else {
             continue
           }
           failedMutations.append(
@@ -4526,14 +5771,16 @@ public actor SQLitePersistenceStore {
     // truthful until an authoritative refresh can peel it in bounded pages.
     try saveOutboxMutationWithoutTransaction(
       mutation,
-      failureAttributeRevision: failureAttributeRevision
+      failureAttributeRevision: failureAttributeRevision,
+      receiptWriteAuthority: .publicPersistence
     )
     try execute(
       """
       UPDATE instant_outbox
       SET delivery_claim_state = ?, delivery_claim_token = NULL,
           delivery_claimant_id = NULL, delivery_claim_deadline_ms = NULL,
-          delivery_claim_projected_body_bytes = NULL
+          delivery_claim_projected_body_bytes = NULL,
+          delivery_claim_payload_fingerprint = NULL
       WHERE mutation_id = ? AND delivery_claim_state = ?
         AND delivery_claim_token = ?
       """,
@@ -4570,101 +5817,76 @@ public actor SQLitePersistenceStore {
       var confirmed: [PendingMutation] = []
       confirmed.reserveCapacity(confirmations.count)
       for result in confirmations {
-        guard var selectedMutation = selectedByID[result.mutationID],
-          selectedMutation.status == .pending
+        guard let selectedMutation = selectedByID[result.mutationID],
+          selectedMutation.status == .pending,
+          let row = try loadOutboxBodyRowWithoutTransaction(id: result.mutationID)
         else { continue }
-        let originallySelectedBody = try encode(selectedMutation)
-        guard let currentBodyBeforeDisposition = try selectScalar(
-          """
-          SELECT json FROM instant_outbox
-          WHERE mutation_id = ? AND status = ? AND delivery_claim_state = ?
-            AND delivery_claim_token = ?
-          LIMIT 1
-          """,
-          [
-            .text(result.mutationID),
-            .text(InstantMutationStatus.pending.rawValue),
-            .text(InstantOutboxDeliveryClaimState.claimed.rawValue),
-            .text(claimToken),
-          ]
-        ) else { continue }
-        let durableBodyWasRebased = currentBodyBeforeDisposition != originallySelectedBody
-        selectedMutation.status = .confirmed
-        selectedMutation.failureMessage = nil
-        selectedMutation.failure = nil
-        selectedMutation.confirmationSource = result.acceptance == .serverAccepted
+        let selectedReceiptFingerprint = try selectedMutation
+          .optimisticEffectReceiptFingerprint()
+        var mutation: PendingMutation
+        if selectedReceiptFingerprint != nil,
+          selectedReceiptFingerprint == row.optimisticEffectReceiptFingerprint
+        {
+          // The selector already decoded this exact durable body. Reuse it for
+          // the ordinary disposition path so a maximum-sized row is never
+          // decoded twice. A rollback-only rebase changes the material receipt
+          // and takes the bounded current-body decode below instead.
+          mutation = selectedMutation
+        } else {
+          mutation = try decodeOutboxBody(row.json)
+          decodedOutboxBodyCount += 1
+          decodedOutboxBodyByteCount += row.json.utf8.count
+        }
+        guard mutation.id == result.mutationID,
+          mutation.status == .pending,
+          try hasStoredPreparedOptimisticEffectReceipt(mutation, in: row)
+        else { continue }
+        guard let claimPayloadFingerprint = row.deliveryClaimPayloadFingerprint else {
+          continue
+        }
+
+        mutation.status = .confirmed
+        mutation.failureMessage = nil
+        mutation.failure = nil
+        mutation.confirmationSource = result.acceptance == .serverAccepted
           ? .serverTransport
           : .localTransport
-        let confirmationSource = selectedMutation.confirmationSource!.rawValue
+        let confirmationSource = mutation.confirmationSource!.rawValue
         let deliveryState = result.acceptance == .serverAccepted
           ? InstantOutboxDeliveryState.serverAccepted
           : .needsDelivery
-        let fallbackLifecycle = try encode(selectedMutation.compactedForMemory)
-        // Mutate only lifecycle fields inside the *current* token-owned JSON.
-        // A server refresh may have rebased transaction/rollback data while the
-        // transport was suspended; SQL JSON mutation preserves that newer body.
-        // The selected row is decoded afterward so the public flush result also
-        // returns the full current transaction and rollback, not a lifecycle shell.
+        let encodedBody = try encode(mutation)
         try execute(
           """
           UPDATE instant_outbox
           SET status = ?, delivery_state = ?, failure_message = NULL,
               confirmation_proven = ?, server_transaction_id = NULL,
               confirmation_source = ?, mutation_revision = mutation_revision + 1,
-              encoded_body_bytes = length(CAST(
-                json_remove(
-                  json_set(json, '$.status', ?, '$.confirmationSource', ?),
-                  '$.failureMessage', '$.failure'
-                ) AS BLOB
-              )),
-              json = json_remove(
-                json_set(json, '$.status', ?, '$.confirmationSource', ?),
-                '$.failureMessage', '$.failure'
-              ),
-              lifecycle_json = json_remove(
-                json_set(
-                  COALESCE(lifecycle_json, ?),
-                  '$.status', ?, '$.confirmationSource', ?
-                ),
-                '$.failureMessage', '$.failure'
-              )
+              encoded_body_bytes = ?, json = ?, lifecycle_json = ?,
+              server_acceptance_payload_fingerprint = ?
           WHERE mutation_id = ? AND status = ? AND delivery_claim_state = ?
             AND delivery_claim_token = ?
+            AND delivery_claim_payload_fingerprint = ?
+            AND optimistic_effect_receipt_fingerprint = ?
           """,
           [
             .text(InstantMutationStatus.confirmed.rawValue),
             .text(deliveryState.rawValue),
             .int(result.acceptance == .serverAccepted ? 1 : 0),
             .text(confirmationSource),
-            .text(InstantMutationStatus.confirmed.rawValue),
-            .text(confirmationSource),
-            .text(InstantMutationStatus.confirmed.rawValue),
-            .text(confirmationSource),
-            .text(fallbackLifecycle),
-            .text(InstantMutationStatus.confirmed.rawValue),
-            .text(confirmationSource),
+            .int(Int64(encodedBody.utf8.count)),
+            .text(encodedBody),
+            .text(try encode(mutation.compactedForMemory)),
+            result.acceptance == .serverAccepted ? .text(claimPayloadFingerprint) : .null,
             .text(result.mutationID),
             .text(InstantMutationStatus.pending.rawValue),
             .text(InstantOutboxDeliveryClaimState.claimed.rawValue),
             .text(claimToken),
+            .text(claimPayloadFingerprint),
+            row.optimisticEffectReceiptFingerprint.map(SQLiteBinding.text) ?? .null,
           ]
         )
         guard sqlite3_changes(connection.raw) == 1 else { continue }
-        let mutation: PendingMutation
-        if durableBodyWasRebased {
-          guard let bodyJSON = try selectScalar(
-            "SELECT json FROM instant_outbox WHERE mutation_id = ? LIMIT 1",
-            [.text(result.mutationID)]
-          ) else { continue }
-          decodedOutboxBodyCount += 1
-          decodedOutboxBodyByteCount += bodyJSON.utf8.count
-          mutation = try decodeOutboxBody(bodyJSON)
-        } else {
-          // The selected value is the exact current body. Carry it through the
-          // lifecycle-only rewrite instead of decoding the same bounded body a
-          // second time. A concurrent rebase takes the branch above.
-          mutation = selectedMutation
-        }
         try saveMutationLifecycleWithoutTransaction(mutation)
         confirmed.append(mutation)
       }
@@ -4720,6 +5942,8 @@ public actor SQLitePersistenceStore {
   /// authority. It reclaims expired durable claims, walks ready rows in strict
   /// queue order, normalizes legacy rows one body at a time, quarantines corrupt
   /// rows locally, and claims only the exact rows that fit all fixed budgets.
+  /// A quarantine-created synchronization blocker commits before this method
+  /// throws, after releasing only the claims acquired by this request token.
   /// `delivery_started` means "ever offered to the encoder/delivery path" and
   /// deliberately remains true after a claim is released or expires.
   func claimAutomaticOutboxDeliveryWindow(
@@ -4732,7 +5956,13 @@ public actor SQLitePersistenceStore {
     precondition(!request.claimantID.isEmpty)
     precondition(!request.claimToken.isEmpty)
 
-    return try transaction {
+    let operation = request.requiresExclusiveLane
+      ? "claim explicit outbox flush"
+      : "claim automatic outbox delivery"
+    let window = try transaction {
+      if let blocker = try synchronizationBlockerWithoutTransaction() {
+        throw blocker.error(operation: operation)
+      }
       let startingRevisions = InstantPersistenceRevisions(
         store: try loadMetadataRevisionWithoutTransaction(Self.storeRevisionKey),
         outbox: try loadMetadataRevisionWithoutTransaction(Self.outboxRevisionKey)
@@ -4812,13 +6042,14 @@ public actor SQLitePersistenceStore {
       var firstSelectedPosition: InstantOutboxDeliveryPosition?
       var didMakeNonSendingProgress = !reclaimedMutationIDs.isEmpty
       var didChangeLifecycle = false
+      var didCreateSynchronizationBlocker = false
 
       if remainingMutationCount > 0, request.maximumBodyDecodeCount > 0 {
         let candidates = try loadAutomaticDeliveryCandidateRowsWithoutTransaction(
           limit: request.maximumBodyDecodeCount
         )
         mutations.reserveCapacity(min(remainingMutationCount, candidates.count))
-        for candidate in candidates {
+        candidateLoop: for candidate in candidates {
           guard mutations.count < remainingMutationCount else { break }
           if request.requiresExclusiveLane, candidate.status != .pending {
             // A locally confirmed but not server-proven row remains the ordered
@@ -4838,7 +6069,8 @@ public actor SQLitePersistenceStore {
               )
               didChangeLifecycle = true
               didMakeNonSendingProgress = true
-              continue
+              didCreateSynchronizationBlocker = true
+              break candidateLoop
             }
             guard automaticDeliveryStepCountFits(
               transportStepCount,
@@ -4858,7 +6090,8 @@ public actor SQLitePersistenceStore {
             )
             didChangeLifecycle = true
             didMakeNonSendingProgress = true
-            continue
+            didCreateSynchronizationBlocker = true
+            break candidateLoop
           }
           let fitsByteBudget =
             bodyByteCount <= remainingBodyByteCount
@@ -4887,15 +6120,41 @@ public actor SQLitePersistenceStore {
               )
               didChangeLifecycle = true
               didMakeNonSendingProgress = true
+              didCreateSynchronizationBlocker = true
+              break candidateLoop
+            }
+            let deliveryState = durableDeliveryState(
+              for: mutation,
+              hasServerAcceptance: try hasStoredServerAcceptance(mutation, in: row)
+            )
+            if deliveryState != .needsDelivery {
+              if candidate.metadataVersion < InstantOutboxDeliveryMetadata.currentVersion {
+                try saveOutboxDeliveryMetadataWithoutTransaction(mutation)
+              }
+              // Server acceptance is authoritative for delivery. A legacy
+              // accepted row with an ambiguous local-effect receipt must stay
+              // unsent and must not be rewritten as a failed mutation.
+              didMakeNonSendingProgress = true
               continue
+            }
+            guard mutation.provesReplayableOptimisticEffectReceipt,
+              try hasStoredPreparedOptimisticEffectReceipt(mutation, in: row)
+            else {
+              failedMutations.append(
+                try quarantineInvalidOutboxMutationWithoutTransaction(
+                  row,
+                  reason:
+                    "The durable mutation has no SQLite-owned Runtime-prepared optimistic-effect receipt and cannot enter a network-delivery claim."
+                )
+              )
+              didChangeLifecycle = true
+              didMakeNonSendingProgress = true
+              didCreateSynchronizationBlocker = true
+              break candidateLoop
             }
             if candidate.metadataVersion < InstantOutboxDeliveryMetadata.currentVersion {
               try saveOutboxDeliveryMetadataWithoutTransaction(mutation)
               didMakeNonSendingProgress = true
-            }
-            guard InstantOutboxDeliveryMetadata.state(for: mutation) == .needsDelivery else {
-              didMakeNonSendingProgress = true
-              continue
             }
             let transportStepCount = InstantOutboxDeliveryMetadata.stepCount(in: mutation)
             if transportStepCount > InstantAutomaticOutboxClaimLimits.maximumStepCount {
@@ -4908,7 +6167,8 @@ public actor SQLitePersistenceStore {
               )
               didChangeLifecycle = true
               didMakeNonSendingProgress = true
-              continue
+              didCreateSynchronizationBlocker = true
+              break candidateLoop
             }
             guard automaticDeliveryStepCountFits(
               transportStepCount,
@@ -4931,7 +6191,8 @@ public actor SQLitePersistenceStore {
                   after: request.now,
                   inFlightOrdinal: claimedCount + mutations.count + 1
                 ),
-              projectedBodyByteCount: candidate.encodedBodyByteCount
+              projectedBodyByteCount: candidate.encodedBodyByteCount,
+              payloadFingerprint: try mutation.mutationWireIntentFingerprint()
             )
             mutations.append(mutation)
             deliveryStartedBeforeClaimByMutationID[mutation.id] = candidate.deliveryStarted
@@ -4949,6 +6210,7 @@ public actor SQLitePersistenceStore {
             )
             didChangeLifecycle = true
             didMakeNonSendingProgress = true
+            didCreateSynchronizationBlocker = true
             InstantDiagnostics.shared.record(
               error: error,
               subsystem: "instant-swift-data-core",
@@ -4958,8 +6220,28 @@ public actor SQLitePersistenceStore {
               metadata: ["mutationID": row.mutationID],
               correlationID: row.mutationID
             )
+            break candidateLoop
           }
         }
+      }
+
+      if didCreateSynchronizationBlocker {
+        // Quarantine retained an active local owner but revoked the receipt
+        // needed to peel it safely. No row admitted by this request may escape
+        // to transport after that boundary is created. Restore each exact
+        // preclaim offer bit while leaving older/foreign claims untouched.
+        for mutation in mutations {
+          try releaseUnofferedOutboxClaimWithoutTransaction(
+            id: mutation.id,
+            claimToken: request.claimToken,
+            deliveryStarted: deliveryStartedBeforeClaimByMutationID[
+              mutation.id,
+              default: true
+            ]
+          )
+        }
+        mutations.removeAll(keepingCapacity: true)
+        firstSelectedPosition = nil
       }
 
       let selectedWriteKeys = InstantVisibleWriteFilter.writeKeys(in: mutations)
@@ -5106,7 +6388,8 @@ public actor SQLitePersistenceStore {
         try updateProjectedOutboxClaimByteCountWithoutTransaction(
           id: candidate.mutation.id,
           claimToken: request.claimToken,
-          projectedBodyByteCount: encodedProjectedBodyByteCount
+          projectedBodyByteCount: encodedProjectedBodyByteCount,
+          payloadFingerprint: try projectedMutation.mutationWireIntentFingerprint()
         )
         visibleWriteFilter = hydratedFilter
         admittedMutations.append(candidate.mutation)
@@ -5134,9 +6417,21 @@ public actor SQLitePersistenceStore {
         && claimedStepsAfterThisPass < request.maximumStepCount
         && claimedBodyBytesAfterThisPass < request.maximumEncodedBodyByteCount
       let shouldContinueImmediately =
-        didMakeNonSendingProgress && !didDeferProjectedSuffix
+        !didCreateSynchronizationBlocker
+        && didMakeNonSendingProgress && !didDeferProjectedSuffix
         && hasRemainingClaimCapacity && hasContinuationCandidate
       let nextClaimDeadlineMilliseconds = try minimumOutboxClaimDeadlineWithoutTransaction()
+      let synchronizationBlocker: InstantSynchronizationBlocker? =
+        if didCreateSynchronizationBlocker {
+          try synchronizationBlockerWithoutTransaction()
+            ?? InstantSynchronizationBlocker(
+              reason: .unknownOptimisticEffectReceipt,
+              firstMutationID: failedMutations.last?.id ?? "unknown",
+              blockedMutationCount: 1
+            )
+        } else {
+          nil
+        }
 
       maximumAutomaticOutboxWindowBodyCount = max(
         maximumAutomaticOutboxWindowBodyCount,
@@ -5180,9 +6475,15 @@ public actor SQLitePersistenceStore {
         nextClaimDeadlineMilliseconds: nextClaimDeadlineMilliseconds,
         shouldContinueImmediately: shouldContinueImmediately,
         decodedBodyCount: bodyDecodeCount,
-        decodedBodyByteCount: bodyByteCount
+        decodedBodyByteCount: bodyByteCount,
+        synchronizationBlocker: synchronizationBlocker
       )
     }
+    if let blocker = window.synchronizationBlocker {
+      cachedState = nil
+      throw blocker.error(operation: operation)
+    }
+    return window
   }
 
   @discardableResult
@@ -5205,7 +6506,8 @@ public actor SQLitePersistenceStore {
         UPDATE instant_outbox
         SET delivery_claim_state = ?, delivery_claim_token = NULL,
             delivery_claimant_id = NULL, delivery_claim_deadline_ms = NULL,
-            delivery_claim_projected_body_bytes = NULL
+            delivery_claim_projected_body_bytes = NULL,
+            delivery_claim_payload_fingerprint = NULL
         WHERE delivery_claim_state = ? AND delivery_claim_token = ?
         """,
         [
@@ -5250,7 +6552,8 @@ public actor SQLitePersistenceStore {
         UPDATE instant_outbox
         SET delivery_claim_state = ?, delivery_claim_token = NULL,
             delivery_claimant_id = NULL, delivery_claim_deadline_ms = NULL,
-            delivery_claim_projected_body_bytes = NULL
+            delivery_claim_projected_body_bytes = NULL,
+            delivery_claim_payload_fingerprint = NULL
         WHERE delivery_claim_state = ? AND delivery_claimant_id = ?
         """,
         [
@@ -5282,7 +6585,8 @@ public actor SQLitePersistenceStore {
         UPDATE instant_outbox
         SET delivery_claim_state = ?, delivery_claim_token = NULL,
             delivery_claimant_id = NULL, delivery_claim_deadline_ms = NULL,
-            delivery_claim_projected_body_bytes = NULL
+            delivery_claim_projected_body_bytes = NULL,
+            delivery_claim_payload_fingerprint = NULL
         WHERE mutation_id = ? AND delivery_claim_state = ?
           AND delivery_claimant_id = ?
         """,
@@ -5304,6 +6608,8 @@ public actor SQLitePersistenceStore {
   func acceptOutboxMutation(
     id: String,
     serverTransactionID: String,
+    claimantID: String,
+    claimToken: String?,
     expectedOutboxRevision: Int64
   ) throws -> InstantOutboxRowAcceptance? {
     let previousState = cachedState
@@ -5313,12 +6619,7 @@ public actor SQLitePersistenceStore {
           == expectedOutboxRevision
       else { return nil }
 
-      let rows: [PendingMutation] = try selectJSON(
-        "SELECT json FROM instant_outbox WHERE mutation_id = ? LIMIT 1",
-        [.text(id)]
-      )
-      decodedOutboxBodyCount += rows.count
-      guard var mutation = rows.first else {
+      guard let row = try loadOutboxBodyRowWithoutTransaction(id: id) else {
         return InstantOutboxRowAcceptance(
           mutation: nil,
           pendingMutationCount: Int(try selectInt64(
@@ -5329,10 +6630,73 @@ public actor SQLitePersistenceStore {
           nextClaimDeadlineMilliseconds: try minimumOutboxClaimDeadlineWithoutTransaction()
         )
       }
+      var mutation: PendingMutation = try decodeOutboxBody(row.json)
+      decodedOutboxBodyCount += 1
+      decodedOutboxBodyByteCount += row.json.utf8.count
+      guard mutation.id == id else {
+        throw persistenceError(
+          operation: "accept outbox mutation",
+          message: "The durable mutation id did not match row '\(id)'."
+        )
+      }
 
-      let alreadyAccepted = mutation.status == .confirmed
-        && mutation.provesServerAcceptance
+      let hasPreparedMaterializedEffect = try hasStoredPreparedOptimisticEffectReceipt(
+        mutation,
+        in: row
+      )
+      let alreadyAccepted = try hasStoredServerAcceptance(mutation, in: row)
       if !alreadyAccepted {
+        guard let claimPayloadFingerprint = row.deliveryClaimPayloadFingerprint,
+          let claimToken,
+          let materializedEffectFingerprint = try mutation.optimisticEffectReceiptFingerprint()
+        else {
+          return InstantOutboxRowAcceptance(
+            mutation: mutation,
+            pendingMutationCount: Int(try selectInt64(
+              "SELECT COUNT(*) FROM instant_outbox WHERE status = ?",
+              [.text(InstantMutationStatus.pending.rawValue)]
+            )),
+            didChange: false,
+            nextClaimDeadlineMilliseconds: try minimumOutboxClaimDeadlineWithoutTransaction()
+          )
+        }
+        let ownsExactClaim: Bool
+        if hasPreparedMaterializedEffect {
+          ownsExactClaim = try selectInt64(
+            """
+            SELECT EXISTS(
+              SELECT 1 FROM instant_outbox
+              WHERE mutation_id = ? AND delivery_claim_state = ?
+                AND delivery_claim_payload_fingerprint = ?
+                AND delivery_claimant_id = ?
+                AND delivery_claim_token = ?
+                AND optimistic_effect_receipt_fingerprint = ?
+              LIMIT 1
+            )
+            """,
+            [
+              .text(id),
+              .text(InstantOutboxDeliveryClaimState.claimed.rawValue),
+              .text(claimPayloadFingerprint),
+              .text(claimantID),
+              .text(claimToken),
+              .text(materializedEffectFingerprint),
+            ]
+          ) != 0
+        } else {
+          ownsExactClaim = false
+        }
+        guard ownsExactClaim else {
+          return InstantOutboxRowAcceptance(
+            mutation: mutation,
+            pendingMutationCount: Int(try selectInt64(
+              "SELECT COUNT(*) FROM instant_outbox WHERE status = ?",
+              [.text(InstantMutationStatus.pending.rawValue)]
+            )),
+            didChange: false,
+            nextClaimDeadlineMilliseconds: try minimumOutboxClaimDeadlineWithoutTransaction()
+          )
+        }
         mutation.status = .confirmed
         mutation.failureMessage = nil
         mutation.failure = nil
@@ -5350,8 +6714,13 @@ public actor SQLitePersistenceStore {
               mutation_revision = mutation_revision + 1,
               delivery_claim_token = NULL, delivery_claimant_id = NULL,
               delivery_claim_deadline_ms = NULL,
-              delivery_claim_projected_body_bytes = NULL, json = ?
-          WHERE mutation_id = ?
+              delivery_claim_projected_body_bytes = NULL,
+              delivery_claim_payload_fingerprint = NULL,
+              server_acceptance_payload_fingerprint = ?, json = ?
+          WHERE mutation_id = ? AND delivery_claim_state = ?
+            AND delivery_claim_payload_fingerprint = ?
+            AND delivery_claimant_id = ?
+            AND delivery_claim_token = ?
           """,
           [
             .text(mutation.status.rawValue),
@@ -5364,10 +6733,16 @@ public actor SQLitePersistenceStore {
             .text(InstantOutboxDeliveryClaimState.ready.rawValue),
             .text(serverTransactionID),
             .text(InstantMutationConfirmationSource.webSocketTransactOK.rawValue),
+            .text(claimPayloadFingerprint),
             .text(encodedBody),
             .text(mutation.id),
+            .text(InstantOutboxDeliveryClaimState.claimed.rawValue),
+            .text(claimPayloadFingerprint),
+            .text(claimantID),
+            .text(claimToken),
           ]
         )
+        guard sqlite3_changes(connection.raw) == 1 else { return nil }
         try replaceOutboxWriteKeysWithoutTransaction(for: mutation)
         try saveMutationLifecycleWithoutTransaction(mutation)
         _ = try bumpMetadataRevisionWithoutTransaction(Self.outboxRevisionKey)
@@ -5434,7 +6809,10 @@ public actor SQLitePersistenceStore {
           message: "The durable confirmation body did not match row '\(id)'."
         )
       }
-      try saveOutboxMutationWithoutTransaction(update.mutation)
+      try saveOutboxMutationWithoutTransaction(
+        update.mutation,
+        receiptWriteAuthority: .publicPersistence
+      )
       _ = try bumpMetadataRevisionWithoutTransaction(Self.outboxRevisionKey)
       return InstantOutboxRowAcceptance(
         mutation: update.mutation,
@@ -6065,6 +7443,13 @@ public actor SQLitePersistenceStore {
 
   public func saveStoreSnapshot(_ snapshot: InstantStoreSnapshot) throws {
     try transaction {
+      let previousSnapshot = try loadStoreSnapshotWithoutTransaction(
+        tracesStartupCollections: false
+      )
+      try requireNoActiveOptimisticOwnerForPublicStoreChangeWithoutTransaction(
+        from: previousSnapshot,
+        to: snapshot
+      )
       try saveStoreSnapshotWithoutTransaction(snapshot)
       _ = try bumpMetadataRevisionWithoutTransaction(Self.storeRevisionKey)
       _ = try bumpMetadataRevisionWithoutTransaction(Self.attributeRevisionKey)
@@ -6074,7 +7459,10 @@ public actor SQLitePersistenceStore {
 
   public func saveOutbox(_ mutations: [PendingMutation]) throws {
     try transaction {
-      try saveOutboxWithoutTransaction(mutations)
+      try saveOutboxWithoutTransaction(
+        mutations,
+        receiptWriteAuthority: .publicPersistence
+      )
       _ = try bumpMetadataRevisionWithoutTransaction(Self.outboxRevisionKey)
     }
     cachedState = nil
@@ -6085,7 +7473,6 @@ public actor SQLitePersistenceStore {
     replacing previousMutations: [PendingMutation]? = nil,
     expectedOutboxRevision: Int64
   ) throws -> Bool {
-    let previousState = cachedState
     let didSave = try transaction {
       guard
         try loadMetadataRevisionWithoutTransaction(Self.outboxRevisionKey)
@@ -6095,19 +7482,15 @@ public actor SQLitePersistenceStore {
       }
       let previousMutations = try previousMutations
         ?? loadOutboxWithoutTransaction(tracesStartupCollections: false)
-      try saveOutboxDiffWithoutTransaction(from: previousMutations, to: mutations)
+      try saveOutboxDiffWithoutTransaction(
+        from: previousMutations,
+        to: mutations,
+        receiptWriteAuthority: .publicPersistence
+      )
       _ = try bumpMetadataRevisionWithoutTransaction(Self.outboxRevisionKey)
       return true
     }
-    if didSave, var previousState,
-      previousState.outboxRevision == expectedOutboxRevision
-    {
-      previousState.snapshot.outbox = mutations
-      previousState.outboxRevision += 1
-      adoptCachedState(previousState)
-    } else if didSave {
-      cachedState = nil
-    }
+    if didSave { cachedState = nil }
     return didSave
   }
 
@@ -6129,7 +7512,11 @@ public actor SQLitePersistenceStore {
       }
       let previousMutations = try previousMutations
         ?? loadOutboxWithoutTransaction(tracesStartupCollections: false)
-      try saveOutboxDiffWithoutTransaction(from: previousMutations, to: mutations)
+      try saveOutboxDiffWithoutTransaction(
+        from: previousMutations,
+        to: mutations,
+        receiptWriteAuthority: .runtimePrepared
+      )
       for entry in metadataEntries {
         try saveMetadataValueWithoutTransaction(
           entry.value,
@@ -7173,21 +8560,26 @@ public actor SQLitePersistenceStore {
   }
 
   public func saveSnapshot(_ snapshot: InstantPersistenceSnapshot) throws {
-    let revisions = try transaction {
+    _ = try transaction {
+      let previousStore = try loadStoreSnapshotWithoutTransaction(
+        tracesStartupCollections: false
+      )
+      try requireNoActiveOptimisticOwnerForPublicStoreChangeWithoutTransaction(
+        from: previousStore,
+        to: snapshot.store
+      )
       try saveStoreSnapshotWithoutTransaction(snapshot.store)
-      try saveOutboxWithoutTransaction(snapshot.outbox)
+      try saveOutboxWithoutTransaction(
+        snapshot.outbox,
+        receiptWriteAuthority: .publicPersistence
+      )
       return (
         store: try bumpMetadataRevisionWithoutTransaction(Self.storeRevisionKey),
         attributes: try bumpMetadataRevisionWithoutTransaction(Self.attributeRevisionKey),
         outbox: try bumpMetadataRevisionWithoutTransaction(Self.outboxRevisionKey)
       )
     }
-    adoptCachedState(InstantPersistenceState(
-      snapshot: snapshot,
-      storeRevision: revisions.store,
-      outboxRevision: revisions.outbox,
-      attributeRevision: revisions.attributes
-    ))
+    cachedState = nil
     InstantDiagnostics.shared.record(
       .trace,
       subsystem: "instant-swift-data-core",
@@ -7218,8 +8610,18 @@ public actor SQLitePersistenceStore {
       else {
         return nil
       }
+      let previousStore = try loadStoreSnapshotWithoutTransaction(
+        tracesStartupCollections: false
+      )
+      try requireNoActiveOptimisticOwnerForPublicStoreChangeWithoutTransaction(
+        from: previousStore,
+        to: snapshot.store
+      )
       try saveStoreSnapshotWithoutTransaction(snapshot.store)
-      try saveOutboxWithoutTransaction(snapshot.outbox)
+      try saveOutboxWithoutTransaction(
+        snapshot.outbox,
+        receiptWriteAuthority: .publicPersistence
+      )
       return (
         store: try bumpMetadataRevisionWithoutTransaction(Self.storeRevisionKey),
         attributes: try bumpMetadataRevisionWithoutTransaction(Self.attributeRevisionKey),
@@ -7254,13 +8656,18 @@ public actor SQLitePersistenceStore {
       else {
         return nil
       }
+      try requireNoActiveOptimisticOwnerForPublicStoreChangeWithoutTransaction(
+        from: previousSnapshot.store,
+        to: snapshot.store
+      )
       try saveStoreSnapshotDiffWithoutTransaction(
         from: previousSnapshot.store,
         to: snapshot.store
       )
       try saveOutboxDiffWithoutTransaction(
         from: previousSnapshot.outbox,
-        to: snapshot.outbox
+        to: snapshot.outbox,
+        receiptWriteAuthority: .publicPersistence
       )
       return (
         store: try bumpMetadataRevisionWithoutTransaction(Self.storeRevisionKey),
@@ -7268,14 +8675,7 @@ public actor SQLitePersistenceStore {
         outbox: try bumpMetadataRevisionWithoutTransaction(Self.outboxRevisionKey)
       )
     }
-    if let revisions {
-      adoptCachedState(InstantPersistenceState(
-        snapshot: snapshot,
-        storeRevision: revisions.store,
-        outboxRevision: revisions.outbox,
-        attributeRevision: revisions.attributes
-      ))
-    }
+    if revisions != nil { cachedState = nil }
     return revisions != nil
   }
 
@@ -7328,7 +8728,8 @@ public actor SQLitePersistenceStore {
       )
       try saveOutboxDiffWithoutTransaction(
         from: previousSnapshot.outbox,
-        to: snapshot.outbox
+        to: snapshot.outbox,
+        receiptWriteAuthority: .runtimePrepared
       )
       if let requiredOutboxClaimMutationID, let requiredOutboxClaimToken {
         // The terminal disposition consumes this exact delivery claim. Leaving
@@ -7339,7 +8740,8 @@ public actor SQLitePersistenceStore {
           UPDATE instant_outbox
           SET delivery_claim_state = ?, delivery_claim_token = NULL,
               delivery_claimant_id = NULL, delivery_claim_deadline_ms = NULL,
-              delivery_claim_projected_body_bytes = NULL
+              delivery_claim_projected_body_bytes = NULL,
+              delivery_claim_payload_fingerprint = NULL
           WHERE mutation_id = ? AND delivery_claim_state = ?
             AND delivery_claim_token = ?
           """,
@@ -7374,14 +8776,7 @@ public actor SQLitePersistenceStore {
         outbox: try bumpMetadataRevisionWithoutTransaction(Self.outboxRevisionKey)
       )
     }
-    if let revisions {
-      adoptCachedState(InstantPersistenceState(
-        snapshot: snapshot,
-        storeRevision: revisions.store,
-        outboxRevision: revisions.outbox,
-        attributeRevision: revisions.attributes
-      ))
-    }
+    if revisions != nil { cachedState = nil }
     return revisions != nil
   }
 
@@ -7396,6 +8791,13 @@ public actor SQLitePersistenceStore {
     expectedAttributeRevision: Int64,
     expectedOutboxRevision: Int64
   ) throws -> Bool {
+    guard try pendingMutation.optimisticEffectReceiptFingerprint() != nil else {
+      throw persistenceError(
+        operation: "persist local mutation",
+        message:
+          "Mutation '\(pendingMutation.id)' was not prepared by Runtime before local admission."
+      )
+    }
     // Dual-residency thin cache keeps attributes/outbox/revisions only. Empty
     // triples must not be treated as "entity has no triples" — fall back to SQLite.
     let cachedChangedEntityTriples: [String: [InstantTriple]]?
@@ -7434,6 +8836,9 @@ public actor SQLitePersistenceStore {
           try immediateOutboxTailIDWithoutTransaction() == supersedingImmediateTailID,
           try isImmediateSupersessionTailEligibleWithoutTransaction(
             id: supersedingImmediateTailID
+          ),
+          try hasStoredPreparedOptimisticEffectReceiptWithoutTransaction(
+            supersedingImmediateTail
           )
         else { return false }
         let lifecycleID =
@@ -7460,7 +8865,8 @@ public actor SQLitePersistenceStore {
       try saveOutboxMutationWithoutTransaction(
         pendingMutation,
         lifecycleID: supersessionLifecycleID,
-        advancingFromMutationID: supersedingImmediateTail?.id
+        advancingFromMutationID: supersedingImmediateTail?.id,
+        receiptWriteAuthority: .runtimePrepared
       )
       if let supersedingImmediateTail, let supersessionLifecycleID {
         try saveMutationLifecycleAliasWithoutTransaction(
@@ -7514,6 +8920,41 @@ public actor SQLitePersistenceStore {
     expectedOutboxRevision: Int64,
     expectedAttributeRevision: Int64
   ) throws -> Bool {
+    try saveStoreSnapshot(
+      snapshot,
+      replacing: previousSnapshot,
+      expectedStoreRevision: expectedStoreRevision,
+      expectedOutboxRevision: expectedOutboxRevision,
+      expectedAttributeRevision: expectedAttributeRevision,
+      allowsActiveOptimisticOwners: false
+    )
+  }
+
+  package func saveRuntimePreparedStoreSnapshot(
+    _ snapshot: InstantStoreSnapshot,
+    replacing previousSnapshot: InstantStoreSnapshot,
+    expectedStoreRevision: Int64,
+    expectedOutboxRevision: Int64,
+    expectedAttributeRevision: Int64
+  ) throws -> Bool {
+    try saveStoreSnapshot(
+      snapshot,
+      replacing: previousSnapshot,
+      expectedStoreRevision: expectedStoreRevision,
+      expectedOutboxRevision: expectedOutboxRevision,
+      expectedAttributeRevision: expectedAttributeRevision,
+      allowsActiveOptimisticOwners: true
+    )
+  }
+
+  private func saveStoreSnapshot(
+    _ snapshot: InstantStoreSnapshot,
+    replacing previousSnapshot: InstantStoreSnapshot,
+    expectedStoreRevision: Int64,
+    expectedOutboxRevision: Int64,
+    expectedAttributeRevision: Int64,
+    allowsActiveOptimisticOwners: Bool
+  ) throws -> Bool {
     let triplesChanged = snapshot.triples != previousSnapshot.triples
     let attributesChanged = snapshot.attributes != previousSnapshot.attributes
     let didSave = try transaction {
@@ -7524,6 +8965,12 @@ public actor SQLitePersistenceStore {
           == expectedAttributeRevision
       else {
         return false
+      }
+      if !allowsActiveOptimisticOwners {
+        try requireNoActiveOptimisticOwnerForPublicStoreChangeWithoutTransaction(
+          from: previousSnapshot,
+          to: snapshot
+        )
       }
       try saveStoreSnapshotDiffWithoutTransaction(from: previousSnapshot, to: snapshot)
       if triplesChanged {
@@ -7575,13 +9022,18 @@ public actor SQLitePersistenceStore {
       // direct callers fall back to one atomic SQLite read.
       let previousSnapshot = try previousSnapshot
         ?? loadSnapshotWithoutTransaction(tracesStartupCollections: false)
+      try requireNoActiveOptimisticOwnerForPublicStoreChangeWithoutTransaction(
+        from: previousSnapshot.store,
+        to: snapshot.store
+      )
       try saveStoreSnapshotDiffWithoutTransaction(
         from: previousSnapshot.store,
         to: snapshot.store
       )
       try saveOutboxDiffWithoutTransaction(
         from: previousSnapshot.outbox,
-        to: snapshot.outbox
+        to: snapshot.outbox,
+        receiptWriteAuthority: .publicPersistence
       )
       try saveMetadataValueWithoutTransaction(
         metadataValue,
@@ -7614,7 +9066,6 @@ public actor SQLitePersistenceStore {
     expectedStoreRevision: Int64,
     expectedOutboxRevision: Int64
   ) throws -> Bool {
-    let previousState = cachedState
     let didSave = try transaction {
       guard
         try loadMetadataRevisionWithoutTransaction(Self.storeRevisionKey) == expectedStoreRevision,
@@ -7624,7 +9075,11 @@ public actor SQLitePersistenceStore {
       }
       let previousMutations = try previousMutations
         ?? loadOutboxWithoutTransaction(tracesStartupCollections: false)
-      try saveOutboxDiffWithoutTransaction(from: previousMutations, to: mutations)
+      try saveOutboxDiffWithoutTransaction(
+        from: previousMutations,
+        to: mutations,
+        receiptWriteAuthority: .publicPersistence
+      )
       try saveMetadataValueWithoutTransaction(
         metadataValue,
         key: metadataKey,
@@ -7633,16 +9088,7 @@ public actor SQLitePersistenceStore {
       _ = try bumpMetadataRevisionWithoutTransaction(Self.outboxRevisionKey)
       return true
     }
-    if didSave, var previousState,
-      previousState.storeRevision == expectedStoreRevision,
-      previousState.outboxRevision == expectedOutboxRevision
-    {
-      previousState.snapshot.outbox = mutations
-      previousState.outboxRevision += 1
-      adoptCachedState(previousState)
-    } else if didSave {
-      cachedState = nil
-    }
+    if didSave { cachedState = nil }
     return didSave
   }
 
@@ -7671,6 +9117,10 @@ public actor SQLitePersistenceStore {
         ?? loadStoreSnapshotWithoutTransaction(tracesStartupCollections: false)
       let triplesChanged = snapshot.triples != previousSnapshot.triples
       let attributesChanged = snapshot.attributes != previousSnapshot.attributes
+      try requireNoActiveOptimisticOwnerForPublicStoreChangeWithoutTransaction(
+        from: previousSnapshot,
+        to: snapshot
+      )
       try saveStoreSnapshotDiffWithoutTransaction(
         from: previousSnapshot,
         to: snapshot
@@ -7749,7 +9199,8 @@ public actor SQLitePersistenceStore {
           ?? loadOutboxWithoutTransaction(tracesStartupCollections: false)
         try saveOutboxDiffWithoutTransaction(
           from: previousOutbox,
-          to: snapshot.outbox
+          to: snapshot.outbox,
+          receiptWriteAuthority: .publicPersistence
         )
       }
       for result in queryResults {
@@ -7775,7 +9226,9 @@ public actor SQLitePersistenceStore {
           : try bumpMetadataRevisionWithoutTransaction(Self.queryResultRevisionKey)
       )
     }
-    if let revisions, var cachedState,
+    if outboxChanged, revisions != nil {
+      cachedState = nil
+    } else if let revisions, var cachedState,
       cachedState.storeRevision == expectedStoreRevision,
       cachedState.outboxRevision == expectedOutboxRevision,
       cachedState.attributeRevision == expectedAttributeRevision
@@ -7932,6 +9385,276 @@ public actor SQLitePersistenceStore {
     }
   }
 
+  /// Grandfathers only receipt shapes that deployed Runtime versions could
+  /// durably prepare before migration 0020. This is a one-time compatibility
+  /// trust decision, not a proof callers can recreate after the column exists.
+  /// Public writes after 0020 can only preserve a matching database-owned
+  /// fingerprint.
+  ///
+  /// The cursor reads one scalar row at a time and decodes at most one bounded
+  /// 8-MiB body, so migration memory is independent of total outbox depth.
+  private func backfillPreexistingRuntimePreparedReceiptFingerprintsWithoutTransaction() throws {
+    var cursorMutationID: String?
+    var didBackfill = false
+    while true {
+      var statement: OpaquePointer?
+      let sql: String
+      let bindings: [SQLiteBinding]
+      if let cursorMutationID {
+        sql =
+          """
+          SELECT mutation_id, created_at_ms, length(CAST(json AS BLOB)),
+                 status, server_transaction_id, confirmation_source,
+                 optimistic_overlay_active, confirmation_proven,
+                 delivery_metadata_version
+          FROM instant_outbox
+          WHERE mutation_id > ?
+          ORDER BY mutation_id
+          LIMIT 1
+          """
+        bindings = [.text(cursorMutationID)]
+      } else {
+        sql =
+          """
+          SELECT mutation_id, created_at_ms, length(CAST(json AS BLOB)),
+                 status, server_transaction_id, confirmation_source,
+                 optimistic_overlay_active, confirmation_proven,
+                 delivery_metadata_version
+          FROM instant_outbox
+          ORDER BY mutation_id
+          LIMIT 1
+          """
+        bindings = []
+      }
+      try prepare(
+        sql,
+        statement: &statement
+      )
+      defer { sqlite3_finalize(statement) }
+      try bind(bindings, to: statement)
+      let code = sqlite3_step(statement)
+      if code == SQLITE_DONE { break }
+      guard code == SQLITE_ROW,
+        let mutationIDBytes = sqlite3_column_text(statement, 0),
+        let statusBytes = sqlite3_column_text(statement, 3),
+        sqlite3_column_type(statement, 2) != SQLITE_NULL
+      else {
+        throw persistenceError(
+          operation: "backfill optimistic-effect receipt fingerprints",
+          message: lastErrorMessage()
+        )
+      }
+      let mutationID = String(cString: mutationIDBytes)
+      cursorMutationID = mutationID
+      let createdAtMilliseconds = sqlite3_column_int64(statement, 1)
+      let bodyByteCount = sqlite3_column_int64(statement, 2)
+      let scalarStatus = String(cString: statusBytes)
+      let scalarServerTransactionID = sqlite3_column_text(statement, 4)
+        .map(String.init(cString:))
+      let scalarConfirmationSource = sqlite3_column_text(statement, 5)
+        .map(String.init(cString:))
+      let scalarOverlayIsActive = sqlite3_column_int64(statement, 6) != 0
+      let scalarConfirmationIsProven: Bool? =
+        sqlite3_column_type(statement, 7) == SQLITE_NULL
+        ? nil
+        : sqlite3_column_int64(statement, 7) != 0
+      let predatesBoundedDeliveryMetadata = sqlite3_column_int64(statement, 8) == 0
+      guard bodyByteCount >= 0,
+        bodyByteCount <= Int64(InstantAutomaticOutboxClaimLimits.maximumEncodedBodyBytes),
+        let row = try loadOutboxBodyRowWithoutTransaction(id: mutationID),
+        row.createdAtMilliseconds == createdAtMilliseconds,
+        row.json.utf8.count == Int(bodyByteCount),
+        var mutation: PendingMutation = try? decodeOutboxBody(row.json),
+        mutation.id == mutationID,
+        mutation.transaction.id == mutation.id,
+        mutation.createdAt.milliseconds == createdAtMilliseconds,
+        mutation.status.rawValue == scalarStatus,
+        mutation.serverTransactionID == scalarServerTransactionID,
+        mutation.confirmationSource?.rawValue == scalarConfirmationSource,
+        mutation.optimisticOverlayState != nil,
+        mutation.optimisticEffectReceiptVersion == nil,
+        (
+          (mutation.optimisticOverlayState != .removed) == scalarOverlayIsActive
+            || (predatesBoundedDeliveryMetadata && scalarOverlayIsActive)
+        ),
+        !mutation.transaction.operations.isEmpty,
+        InstantOutboxDeliveryMetadata.stepCount(in: mutation)
+          <= InstantAutomaticOutboxClaimLimits.maximumStepCount
+      else { continue }
+
+      switch mutation.optimisticOverlayState {
+      case .applied:
+        if let rollback = mutation.rollbackTransaction {
+          guard rollback.id == "rollback-\(mutation.id)",
+            !rollback.operations.isEmpty,
+            rollback.operations.allSatisfy(Self.isPreReceiptRuntimeRollbackOperation)
+          else { continue }
+        } else {
+          // Pre-receipt Runtime used `.applied` plus a nil inverse when semantic
+          // preparation or a forward replay produced no current store diff.
+          // Keep the old-decoder-safe `.applied` value and add the explicit
+          // receipt version introduced alongside this external authority column.
+        }
+
+      case .removed:
+        guard mutation.status == .failed, mutation.rollbackTransaction == nil else {
+          continue
+        }
+
+      case nil:
+        continue
+      }
+      mutation.optimisticEffectReceiptVersion =
+        PendingMutation.currentOptimisticEffectReceiptVersion
+
+      guard let fingerprint = try? mutation.optimisticEffectReceiptFingerprint(),
+        let effectFootprint = InstantOptimisticEffectFootprint.normalized(for: mutation)
+      else { continue }
+      let encodedBody = try encode(mutation)
+      guard encodedBody.utf8.count
+        <= InstantAutomaticOutboxClaimLimits.maximumEncodedBodyBytes
+      else { continue }
+      let acceptanceFingerprint = mutation.status == .confirmed
+        && mutation.provesServerAcceptance
+        && (
+          scalarConfirmationIsProven == true
+            || (predatesBoundedDeliveryMetadata && scalarConfirmationIsProven == nil)
+        )
+        ? try mutation.mutationWireIntentFingerprint()
+        : nil
+      let deliveryState = durableDeliveryState(
+        for: mutation,
+        hasServerAcceptance: acceptanceFingerprint != nil
+      )
+      try execute(
+        """
+        UPDATE instant_outbox
+        SET json = ?, lifecycle_json = ?, encoded_body_bytes = ?,
+            delivery_metadata_version = ?, transport_step_count = ?,
+            optimistic_effect_receipt_fingerprint = ?,
+            server_acceptance_payload_fingerprint = ?,
+            confirmation_proven = ?, delivery_state = ?,
+            optimistic_overlay_active = ?,
+            optimistic_effect_metadata_version = ?,
+            optimistic_effect_is_global = ?,
+            mutation_revision = mutation_revision + 1
+        WHERE mutation_id = ?
+          AND created_at_ms = ?
+          AND optimistic_effect_receipt_fingerprint IS NULL
+          AND json = ?
+        """,
+        [
+          .text(encodedBody),
+          .text(try encode(mutation.compactedForMemory)),
+          .int(Int64(encodedBody.utf8.count)),
+          .int(Int64(InstantOutboxDeliveryMetadata.currentVersion)),
+          .int(Int64(InstantOutboxDeliveryMetadata.stepCount(in: mutation))),
+          .text(fingerprint),
+          acceptanceFingerprint.map(SQLiteBinding.text) ?? .null,
+          .int(acceptanceFingerprint == nil ? 0 : 1),
+          .text(deliveryState.rawValue),
+          .int(mutation.optimisticOverlayState == .removed ? 0 : 1),
+          .int(Int64(InstantOptimisticEffectFootprint.currentVersion)),
+          .int(effectFootprint.isGlobal ? 1 : 0),
+          .text(mutationID),
+          .int(createdAtMilliseconds),
+          .text(row.json),
+        ]
+      )
+      guard sqlite3_changes(connection.raw) == 1 else { continue }
+      try replaceOutboxEffectEntitiesWithoutTransaction(
+        mutationID: mutationID,
+        createdAtMilliseconds: createdAtMilliseconds,
+        entityIDs: effectFootprint.entityIDs
+      )
+      try replaceOutboxWriteKeysWithoutTransaction(for: mutation)
+      didBackfill = true
+    }
+    // A pre-0020 body that merely *says* it was accepted or removed has no
+    // SQLite-owned binding to the accepted payload or local materialization.
+    // Keep it retained and globally conservative, but neither resend nor prune
+    // it as an explicit manual-repair barrier rather than guessing the state.
+    try execute(
+      """
+      UPDATE instant_outbox
+      SET confirmation_proven = 0,
+          delivery_state = CASE
+            WHEN status = 'confirmed'
+              AND (server_transaction_id IS NOT NULL OR confirmation_source IN (?, ?))
+            THEN ?
+            ELSE delivery_state
+          END,
+          optimistic_overlay_active = 1,
+          optimistic_effect_metadata_version = 0,
+          optimistic_effect_is_global = 0
+      WHERE optimistic_effect_receipt_fingerprint IS NULL
+      """,
+      [
+        .text(InstantMutationConfirmationSource.webSocketTransactOK.rawValue),
+        .text(InstantMutationConfirmationSource.serverTransport.rawValue),
+        .text(InstantOutboxDeliveryState.invalid.rawValue),
+      ]
+    )
+    if sqlite3_changes(connection.raw) > 0 {
+      didBackfill = true
+    }
+    // Version-zero rows are deliberately global and fail closed. Remove any
+    // stale pre-migration indexes so no future bounded selector can mistake a
+    // caller-shaped receipt for SQLite-owned entity or write-key authority.
+    try execute(
+      """
+      DELETE FROM instant_outbox_effect_entities
+      WHERE mutation_id IN (
+        SELECT mutation_id
+        FROM instant_outbox
+        WHERE optimistic_effect_receipt_fingerprint IS NULL
+      )
+      """
+    )
+    if sqlite3_changes(connection.raw) > 0 {
+      didBackfill = true
+    }
+    try execute(
+      """
+      DELETE FROM instant_outbox_write_keys
+      WHERE mutation_id IN (
+        SELECT mutation_id
+        FROM instant_outbox
+        WHERE optimistic_effect_receipt_fingerprint IS NULL
+      )
+      """
+    )
+    if sqlite3_changes(connection.raw) > 0 {
+      didBackfill = true
+    }
+    if didBackfill {
+      _ = try bumpMetadataRevisionWithoutTransaction(Self.outboxRevisionKey)
+    }
+  }
+
+  private static func isPreReceiptRuntimeRollbackOperation(
+    _ operation: InstantTripleOperation
+  ) -> Bool {
+    switch operation {
+    case .insert, .retract, .deleteEntity:
+      true
+    case .requireEntityMissing,
+      .requireEntityMissingByLookup,
+      .requireEntityExists,
+      .requireEntityExistsByLookup,
+      .requireTripleExists,
+      .merge,
+      .mergeByLookup,
+      .insertByLookup,
+      .retractByLookup,
+      .deleteEntityInNamespace,
+      .deleteEntityByLookup,
+      .ruleParams,
+      .ruleParamsByLookup:
+      false
+    }
+  }
+
   /// Server rebase uses the connection-local SQLite temp database as a bounded
   /// spool. A component may contain thousands of durable mutation bodies, but
   /// Runtime holds at most one 50-body / 8-MiB page while this table preserves
@@ -7949,7 +9672,8 @@ public actor SQLitePersistenceStore {
         processed_transaction_number INTEGER,
         server_has_operations INTEGER NOT NULL,
         root_is_global INTEGER NOT NULL,
-        confirming_mutation_id TEXT
+        confirming_mutation_id TEXT,
+        confirming_claimant_id TEXT
       )
       """
     )
@@ -7974,6 +9698,11 @@ public actor SQLitePersistenceStore {
         expected_overlay_active INTEGER NOT NULL,
         expected_effect_metadata_version INTEGER NOT NULL,
         expected_effect_is_global INTEGER NOT NULL,
+        expected_effect_receipt_fingerprint TEXT,
+        expected_delivery_started INTEGER NOT NULL,
+        expected_delivery_claim_payload_fingerprint TEXT,
+        expected_delivery_claimant_id TEXT,
+        expected_server_acceptance_payload_fingerprint TEXT,
         expected_body_bytes INTEGER NOT NULL,
         is_component_body INTEGER NOT NULL DEFAULT 0,
         requires_body INTEGER NOT NULL DEFAULT 0,
@@ -7990,6 +9719,8 @@ public actor SQLitePersistenceStore {
         staged_overlay_active INTEGER,
         staged_effect_metadata_version INTEGER,
         staged_effect_is_global INTEGER,
+        staged_effect_receipt_fingerprint TEXT,
+        staged_server_acceptance_payload_fingerprint TEXT,
         staged_server_transaction_id TEXT,
         staged_confirmation_source TEXT,
         staged_delete INTEGER NOT NULL DEFAULT 0,
@@ -8112,7 +9843,8 @@ public actor SQLitePersistenceStore {
       SELECT mutation_id, created_at_ms,
              CASE WHEN lifecycle_json IS NULL
                THEN NULL ELSE length(CAST(lifecycle_json AS BLOB)) END,
-             COALESCE(encoded_body_bytes, length(CAST(json AS BLOB)))
+             COALESCE(encoded_body_bytes, length(CAST(json AS BLOB))),
+             optimistic_effect_receipt_fingerprint IS NOT NULL
       FROM instant_outbox
       WHERE status = ? AND (
         delivery_metadata_version < ? OR lifecycle_json IS NULL OR
@@ -8163,7 +9895,8 @@ public actor SQLitePersistenceStore {
           lifecycleByteCount: sqlite3_column_type(statement, 2) == SQLITE_NULL
             ? nil
             : Int(sqlite3_column_int64(statement, 2)),
-          bodyByteCount: Int(sqlite3_column_int64(statement, 3))
+          bodyByteCount: Int(sqlite3_column_int64(statement, 3)),
+          hasReceiptFingerprint: sqlite3_column_int64(statement, 4) != 0
         )
       )
     }
@@ -8236,9 +9969,11 @@ public actor SQLitePersistenceStore {
           )
           continue
         }
-        guard mutation.optimisticOverlayState == .applied else {
+        guard mutation.provesReplayableOptimisticEffectReceipt,
+          try hasStoredPreparedOptimisticEffectReceiptWithoutTransaction(mutation)
+        else {
           let reason =
-            "Its durable body does not prove that the optimistic overlay is still applied."
+            "Its durable body does not have a matching SQLite-owned Runtime-prepared optimistic-effect receipt."
           let message =
             "Instant isolated failed mutation '\(mutation.id)' from automatic retry. \(reason)"
           mutation.failureMessage = message
@@ -8449,6 +10184,13 @@ public actor SQLitePersistenceStore {
     originalJSON: String,
     expectedAttributeRevision: Int64
   ) throws {
+    guard let receiptFingerprint = try mutation.optimisticEffectReceiptFingerprint() else {
+      throw persistenceError(
+        operation: "retry automatic failed-mutation window",
+        message:
+          "The failed mutation '\(mutation.id)' has no canonical prepared optimistic-effect receipt."
+      )
+    }
     let encodedBody = try encode(mutation)
     try execute(
       """
@@ -8458,13 +10200,16 @@ public actor SQLitePersistenceStore {
           failure_message = NULL, confirmation_proven = 0,
           failure_attribute_revision = NULL,
           server_transaction_id = NULL, confirmation_source = NULL,
+          server_acceptance_payload_fingerprint = NULL,
           optimistic_overlay_active = 1, mutation_revision = mutation_revision + 1,
           delivery_claim_state = ?, delivery_claim_token = NULL,
           delivery_claimant_id = NULL, delivery_claim_deadline_ms = NULL,
           delivery_claim_projected_body_bytes = NULL,
+          delivery_claim_payload_fingerprint = NULL,
           json = ?
       WHERE mutation_id = ? AND created_at_ms = ? AND mutation_revision = ?
         AND delivery_state IS ? AND length(CAST(json AS BLOB)) = ?
+        AND optimistic_effect_receipt_fingerprint = ?
         AND \(Self.automaticFailedMutationRetryEligibilitySQL)
         \(Self.automaticFailedMutationRetryAttributeRevisionSQL)
         AND json = ?
@@ -8483,6 +10228,7 @@ public actor SQLitePersistenceStore {
         .int(candidate.mutationRevision),
         candidate.deliveryState.map(SQLiteBinding.text) ?? .null,
         .int(Int64(candidate.actualBodyByteCount)),
+        .text(receiptFingerprint),
         .int(expectedAttributeRevision),
         .text(originalJSON),
       ]
@@ -8512,10 +10258,12 @@ public actor SQLitePersistenceStore {
           failure_message = ?, confirmation_proven = 0,
           failure_attribute_revision = NULL,
           server_transaction_id = NULL, confirmation_source = NULL,
-          optimistic_overlay_active = ?, mutation_revision = mutation_revision + 1,
+          server_acceptance_payload_fingerprint = NULL,
+          optimistic_overlay_active = 1, mutation_revision = mutation_revision + 1,
           delivery_claim_state = ?, delivery_claim_token = NULL,
           delivery_claimant_id = NULL, delivery_claim_deadline_ms = NULL,
           delivery_claim_projected_body_bytes = NULL,
+          delivery_claim_payload_fingerprint = NULL,
           json = ?
       WHERE mutation_id = ? AND created_at_ms = ? AND mutation_revision = ?
         AND delivery_state IS ? AND length(CAST(json AS BLOB)) = ?
@@ -8531,7 +10279,6 @@ public actor SQLitePersistenceStore {
         .int(Int64(encodedBody.utf8.count)),
         .text(try encode(mutation.compactedForMemory)),
         mutation.failureMessage.map(SQLiteBinding.text) ?? .null,
-        .int(mutation.optimisticOverlayState == .removed ? 0 : 1),
         .text(InstantOutboxDeliveryClaimState.ready.rawValue),
         .text(encodedBody),
         .text(candidate.mutationID),
@@ -8549,6 +10296,9 @@ public actor SQLitePersistenceStore {
         message: "The exact failed mutation '\(candidate.mutationID)' changed during isolation."
       )
     }
+    try resetOptimisticEffectMetadataForUnknownMutationWithoutTransaction(
+      id: mutation.id
+    )
     try saveMutationLifecycleWithoutTransaction(mutation)
     InstantDiagnostics.shared.record(
       .error,
@@ -8591,7 +10341,11 @@ public actor SQLitePersistenceStore {
     var statement: OpaquePointer?
     try prepare(
       """
-      SELECT mutation_id, created_at_ms, failure_message, optimistic_overlay_active
+      SELECT mutation_id, created_at_ms, failure_message, lifecycle_json,
+             CASE WHEN lifecycle_json IS NULL
+               THEN NULL ELSE length(CAST(lifecycle_json AS BLOB)) END,
+             delivery_metadata_version,
+             optimistic_effect_receipt_fingerprint
       FROM instant_outbox
       WHERE status = ?
       ORDER BY created_at_ms, mutation_id
@@ -8612,6 +10366,29 @@ public actor SQLitePersistenceStore {
     let mutationID = String(cString: mutationIDBytes)
     let failureMessage = sqlite3_column_text(statement, 2).map(String.init(cString:))
       ?? "The Instant server rejected the mutation."
+    let lifecycleByteCount = sqlite3_column_type(statement, 4) == SQLITE_NULL
+      ? nil
+      : Int(sqlite3_column_int64(statement, 4))
+    if sqlite3_column_int64(statement, 5)
+      == Int64(InstantOutboxDeliveryMetadata.currentVersion),
+      let lifecycleByteCount,
+      lifecycleByteCount <= InstantAutomaticOutboxClaimLimits.maximumEncodedBodyBytes,
+      let lifecycleBytes = sqlite3_column_text(statement, 3),
+      let lifecycle: PendingMutation = try? decodeOutboxBody(
+        String(cString: lifecycleBytes)
+      ),
+      lifecycle.id == mutationID,
+      lifecycle.status == .failed
+    {
+      return compactedLifecycleForInspection(
+        lifecycle,
+        hasStoredReceiptFingerprint: sqlite3_column_type(statement, 6) != SQLITE_NULL
+      )
+    }
+
+    // Missing, oversized, invalid, or legacy lifecycle metadata cannot prove
+    // whether the failed row still has a local effect. Return a bounded shell
+    // with no fabricated optimistic-overlay receipt.
     var mutation = PendingMutation(
       id: mutationID,
       createdAt: InstantTimestamp(milliseconds: sqlite3_column_int64(statement, 1)),
@@ -8623,9 +10400,6 @@ public actor SQLitePersistenceStore {
       code: PendingMutation.failureCode(message: failureMessage),
       message: failureMessage
     )
-    mutation.optimisticOverlayState = sqlite3_column_int64(statement, 3) == 0
-      ? .removed
-      : .applied
     return mutation
   }
 
@@ -8678,7 +10452,10 @@ public actor SQLitePersistenceStore {
   ) throws -> InstantOutboxBodyRow? {
     try loadOutboxBodyRowsWithoutTransaction(
       """
-      SELECT mutation_id, created_at_ms, json
+      SELECT mutation_id, created_at_ms, json,
+             optimistic_effect_receipt_fingerprint,
+             delivery_claim_payload_fingerprint,
+             server_acceptance_payload_fingerprint
       FROM instant_outbox
       WHERE mutation_id = ?
       LIMIT 1
@@ -8781,7 +10558,9 @@ public actor SQLitePersistenceStore {
   private func resolveOptimisticEffectComponentRowsWithoutTransaction(
     target: InstantOptimisticEffectRow
   ) throws -> InstantOptimisticEffectComponentRowsResolution {
-    guard target.metadataVersion == InstantOptimisticEffectFootprint.currentVersion else {
+    guard target.metadataVersion == InstantOptimisticEffectFootprint.currentVersion,
+      try storedOptimisticEffectReceiptFingerprintWithoutTransaction(id: target.mutationID) != nil
+    else {
       return .normalizationRequired(mutationID: target.mutationID)
     }
     if let unknown = try loadFirstUnknownActiveOptimisticEffectRowWithoutTransaction(
@@ -8981,7 +10760,7 @@ public actor SQLitePersistenceStore {
     after position: InstantOutboxDeliveryPosition
   ) throws -> InstantOptimisticEffectRow? {
     let currentVersion = InstantOptimisticEffectFootprint.currentVersion
-    let older = try loadOptimisticEffectRowsWithoutTransaction(
+    return try loadOptimisticEffectRowsWithoutTransaction(
       """
       SELECT mutation_id, created_at_ms, mutation_revision,
              optimistic_effect_metadata_version, optimistic_effect_is_global,
@@ -8991,7 +10770,10 @@ public actor SQLitePersistenceStore {
              )
       FROM instant_outbox INDEXED BY instant_outbox_effect_normalization_idx
       WHERE optimistic_overlay_active = 1
-        AND optimistic_effect_metadata_version < ?
+        AND (
+          optimistic_effect_metadata_version != ?
+          OR optimistic_effect_receipt_fingerprint IS NULL
+        )
         AND confirmation_proven = 0
         AND (
           created_at_ms > ? OR (created_at_ms = ? AND mutation_id > ?)
@@ -9006,32 +10788,6 @@ public actor SQLitePersistenceStore {
         .text(position.mutationID),
       ]
     ).first
-    let newer = try loadOptimisticEffectRowsWithoutTransaction(
-      """
-      SELECT mutation_id, created_at_ms, mutation_revision,
-             optimistic_effect_metadata_version, optimistic_effect_is_global,
-             MAX(
-               COALESCE(encoded_body_bytes, 0),
-               length(CAST(json AS BLOB))
-             )
-      FROM instant_outbox INDEXED BY instant_outbox_effect_normalization_idx
-      WHERE optimistic_overlay_active = 1
-        AND optimistic_effect_metadata_version > ?
-        AND confirmation_proven = 0
-        AND (
-          created_at_ms > ? OR (created_at_ms = ? AND mutation_id > ?)
-        )
-      ORDER BY created_at_ms, mutation_id
-      LIMIT 1
-      """,
-      [
-        .int(Int64(currentVersion)),
-        .int(position.createdAtMilliseconds),
-        .int(position.createdAtMilliseconds),
-        .text(position.mutationID),
-      ]
-    ).first
-    return [older, newer].compactMap { $0 }.min(by: optimisticEffectRowPrecedes)
   }
 
   private func optimisticEffectRowPrecedes(
@@ -9064,7 +10820,10 @@ public actor SQLitePersistenceStore {
         mutation_id = ?
         OR (optimistic_overlay_active != 0 AND confirmation_proven = 0)
       )
-      AND optimistic_effect_metadata_version != ?
+      AND (
+        optimistic_effect_metadata_version != ?
+        OR optimistic_effect_receipt_fingerprint IS NULL
+      )
       ORDER BY created_at_ms, mutation_id
       LIMIT ?
       """,
@@ -9180,7 +10939,8 @@ public actor SQLitePersistenceStore {
     claimantID: String,
     claimToken: String,
     deadlineMilliseconds: Int64,
-    projectedBodyByteCount: Int
+    projectedBodyByteCount: Int,
+    payloadFingerprint: String
   ) throws {
     precondition(projectedBodyByteCount >= 0)
     try execute(
@@ -9188,7 +10948,8 @@ public actor SQLitePersistenceStore {
       UPDATE instant_outbox
       SET delivery_started = 1, delivery_claim_state = ?, delivery_claim_token = ?,
           delivery_claimant_id = ?, delivery_claim_deadline_ms = ?,
-          delivery_claim_projected_body_bytes = ?
+          delivery_claim_projected_body_bytes = ?,
+          delivery_claim_payload_fingerprint = ?
       WHERE mutation_id = ? AND delivery_claim_state = ?
       """,
       [
@@ -9197,6 +10958,7 @@ public actor SQLitePersistenceStore {
         .text(claimantID),
         .int(deadlineMilliseconds),
         .int(Int64(projectedBodyByteCount)),
+        .text(payloadFingerprint),
         .text(id),
         .text(InstantOutboxDeliveryClaimState.ready.rawValue),
       ]
@@ -9212,18 +10974,21 @@ public actor SQLitePersistenceStore {
   private func updateProjectedOutboxClaimByteCountWithoutTransaction(
     id: String,
     claimToken: String,
-    projectedBodyByteCount: Int
+    projectedBodyByteCount: Int,
+    payloadFingerprint: String
   ) throws {
     precondition(projectedBodyByteCount >= 0)
     try execute(
       """
       UPDATE instant_outbox
-      SET delivery_claim_projected_body_bytes = ?
+      SET delivery_claim_projected_body_bytes = ?,
+          delivery_claim_payload_fingerprint = ?
       WHERE mutation_id = ? AND delivery_claim_state = ?
         AND delivery_claim_token = ?
       """,
       [
         .int(Int64(projectedBodyByteCount)),
+        .text(payloadFingerprint),
         .text(id),
         .text(InstantOutboxDeliveryClaimState.claimed.rawValue),
         .text(claimToken),
@@ -9248,7 +11013,8 @@ public actor SQLitePersistenceStore {
       SET delivery_started = ?, delivery_claim_state = ?,
           delivery_claim_token = NULL, delivery_claimant_id = NULL,
           delivery_claim_deadline_ms = NULL,
-          delivery_claim_projected_body_bytes = NULL
+          delivery_claim_projected_body_bytes = NULL,
+          delivery_claim_payload_fingerprint = NULL
       WHERE mutation_id = ? AND delivery_claim_state = ?
         AND delivery_claim_token = ?
       """,
@@ -9290,7 +11056,8 @@ public actor SQLitePersistenceStore {
       UPDATE instant_outbox
       SET delivery_claim_state = ?, delivery_claim_token = NULL,
           delivery_claimant_id = NULL, delivery_claim_deadline_ms = NULL,
-          delivery_claim_projected_body_bytes = NULL
+          delivery_claim_projected_body_bytes = NULL,
+          delivery_claim_payload_fingerprint = NULL
       WHERE delivery_claim_state = ? AND delivery_claim_deadline_ms <= ?
       """,
       [
@@ -9332,6 +11099,131 @@ public actor SQLitePersistenceStore {
     ).flatMap(Int64.init)
   }
 
+  private func storedOptimisticEffectReceiptFingerprintWithoutTransaction(
+    id: String
+  ) throws -> String? {
+    try selectScalar(
+      """
+      SELECT optimistic_effect_receipt_fingerprint
+      FROM instant_outbox
+      WHERE mutation_id = ?
+      LIMIT 1
+      """,
+      [.text(id)]
+    )
+  }
+
+  private func hasStoredPreparedOptimisticEffectReceiptWithoutTransaction(
+    _ mutation: PendingMutation
+  ) throws -> Bool {
+    guard let candidate = try mutation.optimisticEffectReceiptFingerprint() else {
+      return false
+    }
+    return try storedOptimisticEffectReceiptFingerprintWithoutTransaction(id: mutation.id)
+      == candidate
+  }
+
+  private func hasStoredPreparedOptimisticEffectReceipt(
+    _ mutation: PendingMutation,
+    in row: InstantOutboxBodyRow
+  ) throws -> Bool {
+    guard row.mutationID == mutation.id,
+      let candidate = try mutation.optimisticEffectReceiptFingerprint()
+    else { return false }
+    return row.optimisticEffectReceiptFingerprint == candidate
+  }
+
+  private func hasStoredServerAcceptance(
+    _ mutation: PendingMutation,
+    in row: InstantOutboxBodyRow
+  ) throws -> Bool {
+    guard row.serverAcceptancePayloadFingerprint != nil else { return false }
+    return try hasStoredPreparedOptimisticEffectReceipt(mutation, in: row)
+  }
+
+  private func durableDeliveryState(
+    for mutation: PendingMutation,
+    hasServerAcceptance: Bool
+  ) -> InstantOutboxDeliveryState {
+    if hasServerAcceptance {
+      return .serverAccepted
+    }
+    switch mutation.status {
+    case .pending:
+      return .needsDelivery
+    case .failed:
+      return .terminal
+    case .confirmed:
+      // A local-only confirmation remains deliverable. A body that claims a
+      // server ACK without the SQLite-owned matching wire digest is ambiguous:
+      // never resend it and never let its historical ACK attest edited bytes.
+      return mutation.provesServerAcceptance ? .invalid : .needsDelivery
+    }
+  }
+
+  private func compactedLifecycleForInspection(
+    _ mutation: PendingMutation,
+    hasStoredReceiptFingerprint: Bool
+  ) -> PendingMutation {
+    lifecycleMutationForInspection(
+      mutation.compactedForMemory,
+      hasStoredReceiptFingerprint: hasStoredReceiptFingerprint
+    )
+  }
+
+  private func lifecycleMutationForInspection(
+    _ mutation: PendingMutation,
+    hasStoredReceiptFingerprint: Bool
+  ) -> PendingMutation {
+    var lifecycle = mutation
+    if !hasStoredReceiptFingerprint {
+      // The compact body cannot recompute the full admission fingerprint because
+      // its forward and rollback operations were intentionally removed. Keep the
+      // lifecycle bounded, but never report a body-shaped receipt as trusted when
+      // SQLite has no Runtime-owned provenance for the full durable body. A
+      // caller-authored `.removed` value is equally untrusted: only a matching
+      // SQLite tombstone fingerprint proves that no optimistic inverse remains.
+      lifecycle.optimisticOverlayState = nil
+      lifecycle.optimisticEffectReceiptVersion = nil
+      lifecycle.rollbackTransaction = nil
+    }
+    return lifecycle
+  }
+
+  /// Validates caller-visible bodies against SQLite-owned Runtime admission
+  /// authority under the same outbox revision used by the eventual CAS write.
+  package func validatePreparedOptimisticEffectReceipts(
+    _ mutations: [PendingMutation],
+    expectedOutboxRevision: Int64
+  ) throws -> InstantOptimisticEffectReceiptValidation {
+    try readTransaction {
+      guard try loadMetadataRevisionWithoutTransaction(Self.outboxRevisionKey)
+        == expectedOutboxRevision
+      else {
+        return InstantOptimisticEffectReceiptValidation(
+          matchesOutboxRevision: false,
+          firstUntrustedMutationID: nil
+        )
+      }
+      for mutation in mutations {
+        guard try hasStoredPreparedOptimisticEffectReceiptWithoutTransaction(mutation) else {
+          return InstantOptimisticEffectReceiptValidation(
+            matchesOutboxRevision: true,
+            firstUntrustedMutationID: mutation.id
+          )
+        }
+      }
+      return InstantOptimisticEffectReceiptValidation(
+        matchesOutboxRevision: true,
+        firstUntrustedMutationID: nil
+      )
+    }
+  }
+
+  package func optimisticEffectReceiptFingerprintForTesting(id: String) throws -> String? {
+    try storedOptimisticEffectReceiptFingerprintWithoutTransaction(id: id)
+  }
+
   private func decodeOutboxBody<Value: Decodable>(_ json: String) throws -> Value {
     guard let data = json.data(using: .utf8) else {
       throw persistenceError(
@@ -9346,6 +11238,17 @@ public actor SQLitePersistenceStore {
     _ mutation: PendingMutation
   ) throws {
     let encodedBody = try encode(mutation)
+    let row = try loadOutboxBodyRowWithoutTransaction(id: mutation.id)
+    let hasPreparedReceipt = if let row {
+      try hasStoredPreparedOptimisticEffectReceipt(mutation, in: row)
+    } else {
+      false
+    }
+    let hasAcceptedWireIntent = if let row {
+      try hasStoredServerAcceptance(mutation, in: row)
+    } else {
+      false
+    }
     try execute(
       """
       UPDATE instant_outbox
@@ -9355,14 +11258,17 @@ public actor SQLitePersistenceStore {
       WHERE mutation_id = ?
       """,
       [
-        .text(InstantOutboxDeliveryMetadata.state(for: mutation).rawValue),
+        .text(durableDeliveryState(
+          for: mutation,
+          hasServerAcceptance: hasAcceptedWireIntent
+        ).rawValue),
         .int(Int64(InstantOutboxDeliveryMetadata.currentVersion)),
         .int(Int64(InstantOutboxDeliveryMetadata.stepCount(in: mutation))),
         .int(Int64(encodedBody.utf8.count)),
         .text(try encode(mutation.compactedForMemory)),
         mutation.failureMessage.map(SQLiteBinding.text) ?? .null,
-        .int(InstantOutboxDeliveryMetadata.confirmationProven(in: mutation) ? 1 : 0),
-        .int(mutation.optimisticOverlayState == .removed ? 0 : 1),
+        .int(hasAcceptedWireIntent ? 1 : 0),
+        .int(mutation.optimisticOverlayState == .removed && hasPreparedReceipt ? 0 : 1),
         .text(mutation.id),
       ]
     )
@@ -9387,6 +11293,7 @@ public actor SQLitePersistenceStore {
       message: message
     )
     mutation.optimisticOverlayState = nil
+    mutation.optimisticEffectReceiptVersion = nil
     mutation.rollbackTransaction = nil
     let encodedMutation = try encode(mutation)
     let encodedLifecycle = try encode(mutation.compactedForMemory)
@@ -9420,6 +11327,9 @@ public actor SQLitePersistenceStore {
       "DELETE FROM instant_outbox_write_keys WHERE mutation_id = ?",
       [.text(row.mutationID)]
     )
+    try resetOptimisticEffectMetadataForUnknownMutationWithoutTransaction(
+      id: row.mutationID
+    )
     try saveMutationLifecycleWithoutTransaction(mutation)
     InstantDiagnostics.shared.record(
       .error,
@@ -9434,7 +11344,7 @@ public actor SQLitePersistenceStore {
       mutationID: row.mutationID,
       message: message,
       recovery:
-        "The row is now a visible failed mutation and later durable mutations remain deliverable. Its original bytes remain in instant_outbox.quarantine_json at \(fileURL.path). Because its optimistic state is unknown, automatic retry and discard are intentionally refused."
+        "The row is now a visible failed synchronization blocker. Its original bytes remain in instant_outbox.quarantine_json at \(fileURL.path). Automatic synchronization, retry, and discard are intentionally refused until an app-owned persistence reset or rebuild."
     )
     return mutation
   }
@@ -9458,6 +11368,7 @@ public actor SQLitePersistenceStore {
     )
     mutation.failure = InstantMutationFailure(code: .validationFailed, message: message)
     mutation.optimisticOverlayState = nil
+    mutation.optimisticEffectReceiptVersion = nil
     mutation.rollbackTransaction = nil
     let encodedMutation = try encode(mutation)
     try execute(
@@ -9489,6 +11400,7 @@ public actor SQLitePersistenceStore {
       "DELETE FROM instant_outbox_write_keys WHERE mutation_id = ?",
       [.text(id)]
     )
+    try resetOptimisticEffectMetadataForUnknownMutationWithoutTransaction(id: id)
     try saveMutationLifecycleWithoutTransaction(mutation)
     InstantDiagnostics.shared.record(
       .error,
@@ -9507,7 +11419,7 @@ public actor SQLitePersistenceStore {
       mutationID: id,
       message: message,
       recovery:
-        "The row is a visible failed mutation. Its original bytes remain in instant_outbox.quarantine_json at \(fileURL.path), and its unknown optimistic state prevents automatic retry or discard."
+        "The row is a visible failed synchronization blocker. Its original bytes remain in instant_outbox.quarantine_json at \(fileURL.path). Automatic synchronization, retry, and discard are intentionally refused until an app-owned persistence reset or rebuild."
     )
     return mutation
   }
@@ -9532,6 +11444,7 @@ public actor SQLitePersistenceStore {
     )
     mutation.failure = InstantMutationFailure(code: .validationFailed, message: message)
     mutation.optimisticOverlayState = nil
+    mutation.optimisticEffectReceiptVersion = nil
     mutation.rollbackTransaction = nil
     let encodedMutation = try encode(mutation)
     try execute(
@@ -9563,6 +11476,7 @@ public actor SQLitePersistenceStore {
       "DELETE FROM instant_outbox_write_keys WHERE mutation_id = ?",
       [.text(id)]
     )
+    try resetOptimisticEffectMetadataForUnknownMutationWithoutTransaction(id: id)
     try saveMutationLifecycleWithoutTransaction(mutation)
     InstantDiagnostics.shared.record(
       .error,
@@ -9581,9 +11495,35 @@ public actor SQLitePersistenceStore {
       mutationID: id,
       message: message,
       recovery:
-        "The row is a visible failed mutation. Its original bytes remain in instant_outbox.quarantine_json at \(fileURL.path), and its unknown optimistic state prevents automatic retry or discard."
+        "The row is a visible failed synchronization blocker. Its original bytes remain in instant_outbox.quarantine_json at \(fileURL.path). Automatic synchronization, retry, and discard are intentionally refused until an app-owned persistence reset or rebuild."
     )
     return mutation
+  }
+
+  /// Removes any prior body-derived footprint after quarantine replaces a row
+  /// with an unknown-effect shell. Leaving the old metadata behind could make a
+  /// later server apply treat the shell as normalized and try to peel an effect
+  /// whose provenance is intentionally unknown.
+  private func resetOptimisticEffectMetadataForUnknownMutationWithoutTransaction(
+    id: String
+  ) throws {
+    try execute(
+      """
+      UPDATE instant_outbox
+      SET optimistic_effect_metadata_version = 0,
+          optimistic_effect_is_global = 0,
+          optimistic_effect_receipt_fingerprint = NULL,
+          delivery_claim_payload_fingerprint = NULL,
+          server_acceptance_payload_fingerprint = NULL,
+          confirmation_proven = 0
+      WHERE mutation_id = ?
+      """,
+      [.text(id)]
+    )
+    try execute(
+      "DELETE FROM instant_outbox_effect_entities WHERE mutation_id = ?",
+      [.text(id)]
+    )
   }
 
   private func recordOutboxQuarantineIssue(
@@ -9974,7 +11914,13 @@ public actor SQLitePersistenceStore {
         InstantOutboxBodyRow(
           mutationID: String(cString: mutationID),
           createdAtMilliseconds: sqlite3_column_int64(statement, 1),
-          json: body
+          json: body,
+          optimisticEffectReceiptFingerprint: sqlite3_column_text(statement, 3)
+            .map(String.init(cString:)),
+          deliveryClaimPayloadFingerprint: sqlite3_column_text(statement, 4)
+            .map(String.init(cString:)),
+          serverAcceptancePayloadFingerprint: sqlite3_column_text(statement, 5)
+            .map(String.init(cString:))
         )
       )
     }
@@ -10482,29 +12428,92 @@ public actor SQLitePersistenceStore {
     }
   }
 
-  private func saveOutboxWithoutTransaction(_ mutations: [PendingMutation]) throws {
+  /// Public store persistence cannot prove how a changed snapshot relates to
+  /// Runtime-owned optimistic layers. Rejecting the write preserves both the
+  /// current cache and its active owner; clearing a receipt or deleting the row
+  /// would leave an optimistic value ownerless. Runtime's atomic prepare/rebase
+  /// seams use separate package-internal writers and are not subject to this
+  /// public boundary.
+  private func requireNoActiveOptimisticOwnerForPublicStoreChangeWithoutTransaction(
+    from previousSnapshot: InstantStoreSnapshot,
+    to snapshot: InstantStoreSnapshot
+  ) throws {
+    guard previousSnapshot != snapshot else { return }
+    let activeMutationID = try selectScalar(
+      """
+      SELECT mutation_id
+      FROM instant_outbox
+      WHERE optimistic_overlay_active != 0
+      ORDER BY created_at_ms, mutation_id
+      LIMIT 1
+      """
+    )
+    guard let activeMutationID else { return }
+    throw persistenceError(
+      operation: "save public store snapshot",
+      message:
+        "Store changes are blocked while optimistic mutation '\(activeMutationID)' owns materialized state."
+    )
+  }
+
+  private func requirePublicOutboxDeletionIsSafeWithoutTransaction(id: String) throws {
+    guard try selectInt64(
+      """
+      SELECT EXISTS(
+        SELECT 1 FROM instant_outbox
+        WHERE mutation_id = ? AND optimistic_overlay_active != 0
+        LIMIT 1
+      )
+      """,
+      [.text(id)]
+    ) == 0 else {
+      throw persistenceError(
+        operation: "save public outbox",
+        message:
+          "Active optimistic mutation '\(id)' cannot be omitted without Runtime-owned rollback; preserve it until an app-owned persistence reset or rebuild."
+      )
+    }
+  }
+
+  private func saveOutboxWithoutTransaction(
+    _ mutations: [PendingMutation],
+    receiptWriteAuthority: InstantOptimisticEffectReceiptWriteAuthority
+  ) throws {
     let mutationIDs = Set(mutations.map(\.id))
     let existingIDs = try selectStrings("SELECT mutation_id FROM instant_outbox")
     for id in existingIDs where !mutationIDs.contains(id) {
+      if case .publicPersistence = receiptWriteAuthority {
+        try requirePublicOutboxDeletionIsSafeWithoutTransaction(id: id)
+      }
       try execute("DELETE FROM instant_outbox WHERE mutation_id = ?", [.text(id)])
     }
     for mutation in mutations {
-      try saveOutboxMutationWithoutTransaction(mutation)
+      try saveOutboxMutationWithoutTransaction(
+        mutation,
+        receiptWriteAuthority: receiptWriteAuthority
+      )
     }
   }
 
   private func saveOutboxDiffWithoutTransaction(
     from previousMutations: [PendingMutation],
-    to mutations: [PendingMutation]
+    to mutations: [PendingMutation],
+    receiptWriteAuthority: InstantOptimisticEffectReceiptWriteAuthority
   ) throws {
     let previous = Dictionary(uniqueKeysWithValues: previousMutations.map { ($0.id, $0) })
     let current = Dictionary(uniqueKeysWithValues: mutations.map { ($0.id, $0) })
 
     for id in previous.keys where current[id] == nil {
+      if case .publicPersistence = receiptWriteAuthority {
+        try requirePublicOutboxDeletionIsSafeWithoutTransaction(id: id)
+      }
       try execute("DELETE FROM instant_outbox WHERE mutation_id = ?", [.text(id)])
     }
     for mutation in mutations where previous[mutation.id] != mutation {
-      try saveOutboxMutationWithoutTransaction(mutation)
+      try saveOutboxMutationWithoutTransaction(
+        mutation,
+        receiptWriteAuthority: receiptWriteAuthority
+      )
     }
   }
 
@@ -10512,11 +12521,125 @@ public actor SQLitePersistenceStore {
     _ mutation: PendingMutation,
     lifecycleID requestedLifecycleID: String? = nil,
     advancingFromMutationID: String? = nil,
-    failureAttributeRevision: Int64? = nil
+    failureAttributeRevision: Int64? = nil,
+    receiptWriteAuthority: InstantOptimisticEffectReceiptWriteAuthority
   ) throws {
-    let deliveryState = InstantOutboxDeliveryMetadata.state(for: mutation)
-    let encodedBody = try encode(mutation)
-    let effectFootprint = InstantOptimisticEffectFootprint.normalized(for: mutation)
+    let candidateFingerprint = try mutation.optimisticEffectReceiptFingerprint()
+    let candidateWireFingerprint = try mutation.mutationWireIntentFingerprint()
+    let durableMutation = mutation
+    var statement: OpaquePointer?
+    try prepare(
+      """
+      SELECT optimistic_effect_receipt_fingerprint,
+             server_acceptance_payload_fingerprint,
+             server_transaction_id, confirmation_source, json,
+             delivery_started
+      FROM instant_outbox
+      WHERE mutation_id = ?
+      LIMIT 1
+      """,
+      statement: &statement
+    )
+    try bind([.text(mutation.id)], to: statement)
+    let hasExisting = sqlite3_step(statement) == SQLITE_ROW
+    let existingReceiptFingerprint = hasExisting
+      ? sqlite3_column_text(statement, 0).map(String.init(cString:))
+      : nil
+    let existingAcceptanceFingerprint = hasExisting
+      ? sqlite3_column_text(statement, 1).map(String.init(cString:))
+      : nil
+    let existingServerTransactionID = hasExisting
+      ? sqlite3_column_text(statement, 2).map(String.init(cString:))
+      : nil
+    let existingConfirmationSource = hasExisting
+      ? sqlite3_column_text(statement, 3).map(String.init(cString:))
+      : nil
+    let existingJSON = hasExisting
+      ? sqlite3_column_text(statement, 4).map(String.init(cString:))
+      : nil
+    let existingDeliveryStarted = hasExisting
+      ? sqlite3_column_int64(statement, 5) != 0
+      : false
+    sqlite3_finalize(statement)
+    if case .publicPersistence = receiptWriteAuthority,
+      existingReceiptFingerprint != nil,
+      candidateFingerprint != existingReceiptFingerprint
+    {
+      throw persistenceError(
+        operation: "persist prepared outbox mutation",
+        message:
+          "Mutation '\(mutation.id)' already owns a SQLite-bound optimistic layer. Public persistence cannot change or remove its prepared body while that layer remains materialized; submit new work through InstantRuntime."
+      )
+    }
+    let receiptFingerprint: String?
+    switch receiptWriteAuthority {
+    case .runtimePrepared:
+      receiptFingerprint = candidateFingerprint
+    case .publicPersistence:
+      receiptFingerprint = candidateFingerprint == existingReceiptFingerprint
+        ? candidateFingerprint
+        : nil
+    }
+    // Generic persistence never mints server acceptance from caller-visible
+    // Codable fields. It can only carry an existing SQLite-owned wire binding
+    // across an exact forward-intent match. ACK/server-result seams mint it.
+    let existingWireFingerprint: String? = try existingJSON.flatMap { json in
+      let existingMutation: PendingMutation = try decodeOutboxBody(json)
+      guard existingMutation.id == mutation.id else { return nil }
+      return try existingMutation.mutationWireIntentFingerprint()
+    }
+    let preservesMaterialAuthority: Bool
+    switch receiptWriteAuthority {
+    case .runtimePrepared:
+      preservesMaterialAuthority = receiptFingerprint != nil
+    case .publicPersistence:
+      preservesMaterialAuthority = receiptFingerprint != nil
+        && receiptFingerprint == existingReceiptFingerprint
+    }
+    let preservesAcceptedPayload = preservesMaterialAuthority
+      && candidateWireFingerprint == existingWireFingerprint
+    if existingAcceptanceFingerprint != nil, !preservesAcceptedPayload {
+      throw persistenceError(
+        operation: "persist accepted outbox mutation",
+        message:
+          "Mutation '\(mutation.id)' already has SQLite-bound server acceptance and cannot change its prepared materialization or forward wire intent. Use a new mutation id for new work."
+      )
+    }
+    let acceptanceFingerprint = preservesAcceptedPayload
+      ? existingAcceptanceFingerprint
+      : nil
+    if existingAcceptanceFingerprint != nil, mutation.status != .confirmed {
+      throw persistenceError(
+        operation: "persist accepted outbox mutation",
+        message:
+          "Mutation '\(mutation.id)' cannot downgrade a SQLite-bound server acceptance to '\(mutation.status.rawValue)'."
+      )
+    }
+    if existingAcceptanceFingerprint != nil,
+      mutation.serverTransactionID != existingServerTransactionID
+        || mutation.confirmationSource?.rawValue != existingConfirmationSource
+    {
+      throw persistenceError(
+        operation: "persist accepted outbox mutation",
+        message:
+          "Mutation '\(mutation.id)' cannot rewrite SQLite-bound server-acceptance evidence."
+      )
+    }
+    if existingDeliveryStarted, candidateWireFingerprint != existingWireFingerprint {
+      throw persistenceError(
+        operation: "persist offered outbox mutation",
+        message:
+          "Mutation '\(mutation.id)' has already been offered to delivery and its forward wire intent is immutable. Use a new mutation id for compensating work."
+      )
+    }
+    let deliveryState = durableDeliveryState(
+      for: durableMutation,
+      hasServerAcceptance: acceptanceFingerprint != nil
+    )
+    let encodedBody = try encode(durableMutation)
+    let effectFootprint = receiptFingerprint == nil
+      ? nil
+      : InstantOptimisticEffectFootprint.normalized(for: durableMutation)
     try execute(
       """
       INSERT INTO instant_outbox (
@@ -10536,12 +12659,14 @@ public actor SQLitePersistenceStore {
         mutation_revision,
         optimistic_effect_metadata_version,
         optimistic_effect_is_global,
+        optimistic_effect_receipt_fingerprint,
+        server_acceptance_payload_fingerprint,
         server_transaction_id,
         confirmation_source,
         delivery_claim_state,
         json
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(mutation_id) DO UPDATE SET
         status = excluded.status,
         created_at_ms = excluded.created_at_ms,
@@ -10565,41 +12690,52 @@ public actor SQLitePersistenceStore {
         mutation_revision = instant_outbox.mutation_revision + 1,
         optimistic_effect_metadata_version = excluded.optimistic_effect_metadata_version,
         optimistic_effect_is_global = excluded.optimistic_effect_is_global,
+        optimistic_effect_receipt_fingerprint = excluded.optimistic_effect_receipt_fingerprint,
+        server_acceptance_payload_fingerprint = excluded.server_acceptance_payload_fingerprint,
         server_transaction_id = excluded.server_transaction_id,
         confirmation_source = excluded.confirmation_source,
         json = excluded.json
       """,
       [
-        .text(mutation.id),
-        .text(mutation.status.rawValue),
-        .int(mutation.createdAt.milliseconds),
+        .text(durableMutation.id),
+        .text(durableMutation.status.rawValue),
+        .int(durableMutation.createdAt.milliseconds),
         .text(deliveryState.rawValue),
         .int(Int64(InstantOutboxDeliveryMetadata.currentVersion)),
-        .int(Int64(InstantOutboxDeliveryMetadata.stepCount(in: mutation))),
+        .int(Int64(InstantOutboxDeliveryMetadata.stepCount(in: durableMutation))),
         .int(Int64(encodedBody.utf8.count)),
-        .text(try encode(mutation.compactedForMemory)),
-        mutation.failureMessage.map(SQLiteBinding.text) ?? .null,
+        .text(try encode(durableMutation.compactedForMemory)),
+        durableMutation.failureMessage.map(SQLiteBinding.text) ?? .null,
         failureAttributeRevision.map(SQLiteBinding.int) ?? .null,
-        .int(InstantOutboxDeliveryMetadata.confirmationProven(in: mutation) ? 1 : 0),
-        .int(mutation.optimisticOverlayState == .removed ? 0 : 1),
+        .int(acceptanceFingerprint == nil ? 0 : 1),
+        .int(
+          durableMutation.optimisticOverlayState == .removed
+            && receiptFingerprint != nil ? 0 : 1
+        ),
         .int(Int64(
           effectFootprint == nil ? 0 : InstantOptimisticEffectFootprint.currentVersion
         )),
         .int(effectFootprint?.isGlobal == true ? 1 : 0),
-        mutation.serverTransactionID.map(SQLiteBinding.text) ?? .null,
-        mutation.confirmationSource.map { .text($0.rawValue) } ?? .null,
+        receiptFingerprint.map(SQLiteBinding.text) ?? .null,
+        acceptanceFingerprint.map(SQLiteBinding.text) ?? .null,
+        (acceptanceFingerprint == nil
+          ? durableMutation.serverTransactionID
+          : existingServerTransactionID).map(SQLiteBinding.text) ?? .null,
+        (acceptanceFingerprint == nil
+          ? durableMutation.confirmationSource?.rawValue
+          : existingConfirmationSource).map(SQLiteBinding.text) ?? .null,
         .text(InstantOutboxDeliveryClaimState.ready.rawValue),
         .text(encodedBody),
       ]
     )
     try replaceOutboxEffectEntitiesWithoutTransaction(
-      mutationID: mutation.id,
-      createdAtMilliseconds: mutation.createdAt.milliseconds,
+      mutationID: durableMutation.id,
+      createdAtMilliseconds: durableMutation.createdAt.milliseconds,
       entityIDs: effectFootprint?.entityIDs ?? []
     )
-    try replaceOutboxWriteKeysWithoutTransaction(for: mutation)
+    try replaceOutboxWriteKeysWithoutTransaction(for: durableMutation)
     try saveMutationLifecycleWithoutTransaction(
-      mutation,
+      durableMutation,
       lifecycleID: requestedLifecycleID,
       advancingFromMutationID: advancingFromMutationID
     )
@@ -10653,7 +12789,7 @@ public actor SQLitePersistenceStore {
             "A supersession newcomer must have a distinct transaction id that has never belonged to a lifecycle."
         )
       }
-      let terminalJSON = try terminalLifecycleJSON(for: mutation)
+      let terminal = try terminalLifecycleRecord(for: mutation)
 
       let currentMutationID = try currentMutationIDWithoutTransaction(
         lifecycleID: lifecycleID
@@ -10669,12 +12805,16 @@ public actor SQLitePersistenceStore {
         try execute(
           """
           UPDATE instant_outbox_lifecycles
-          SET current_mutation_id = ?, terminal_json = ?
+          SET current_mutation_id = ?, terminal_json = ?,
+              terminal_optimistic_effect_receipt_fingerprint = ?,
+              terminal_server_acceptance_payload_fingerprint = ?
           WHERE lifecycle_id = ? AND current_mutation_id = ?
           """,
           [
             .text(mutation.id),
-            terminalJSON.map(SQLiteBinding.text) ?? .null,
+            terminal.map { .text($0.json) } ?? .null,
+            terminal?.optimisticEffectReceiptFingerprint.map(SQLiteBinding.text) ?? .null,
+            terminal?.serverAcceptancePayloadFingerprint.map(SQLiteBinding.text) ?? .null,
             .text(lifecycleID),
             .text(advancingFromMutationID),
           ]
@@ -10695,13 +12835,17 @@ public actor SQLitePersistenceStore {
         try execute(
           """
           INSERT INTO instant_outbox_lifecycles (
-            lifecycle_id, current_mutation_id, terminal_json
-          ) VALUES (?, ?, ?)
+            lifecycle_id, current_mutation_id, terminal_json,
+            terminal_optimistic_effect_receipt_fingerprint,
+            terminal_server_acceptance_payload_fingerprint
+          ) VALUES (?, ?, ?, ?, ?)
           """,
           [
             .text(lifecycleID),
             .text(mutation.id),
-            terminalJSON.map(SQLiteBinding.text) ?? .null,
+            terminal.map { .text($0.json) } ?? .null,
+            terminal?.optimisticEffectReceiptFingerprint.map(SQLiteBinding.text) ?? .null,
+            terminal?.serverAcceptancePayloadFingerprint.map(SQLiteBinding.text) ?? .null,
           ]
         )
       }
@@ -10731,15 +12875,19 @@ public actor SQLitePersistenceStore {
           "Refused to move lifecycle '\(lifecycleID)' backward through stale alias '\(mutation.id)'."
       )
     }
-    let terminalJSON = try terminalLifecycleJSON(for: mutation)
+    let terminal = try terminalLifecycleRecord(for: mutation)
     try execute(
       """
       UPDATE instant_outbox_lifecycles
-      SET terminal_json = ?
+      SET terminal_json = ?,
+          terminal_optimistic_effect_receipt_fingerprint = ?,
+          terminal_server_acceptance_payload_fingerprint = ?
       WHERE lifecycle_id = ? AND current_mutation_id = ?
       """,
       [
-        terminalJSON.map(SQLiteBinding.text) ?? .null,
+        terminal.map { .text($0.json) } ?? .null,
+        terminal?.optimisticEffectReceiptFingerprint.map(SQLiteBinding.text) ?? .null,
+        terminal?.serverAcceptancePayloadFingerprint.map(SQLiteBinding.text) ?? .null,
         .text(lifecycleID),
         .text(mutation.id),
       ]
@@ -10768,10 +12916,11 @@ public actor SQLitePersistenceStore {
   }
 
   private func lifecycleEvent(
-    for mutation: PendingMutation
+    for mutation: PendingMutation,
+    hasServerAcceptance: Bool
   ) -> InstantMutationLifecycleEvent? {
     switch mutation.status {
-    case .confirmed where mutation.provesServerAcceptance:
+    case .confirmed where hasServerAcceptance:
       .serverAccepted(mutation)
     case .failed:
       .failed(mutation)
@@ -10780,9 +12929,34 @@ public actor SQLitePersistenceStore {
     }
   }
 
-  private func terminalLifecycleJSON(for mutation: PendingMutation) throws -> String? {
-    guard lifecycleEvent(for: mutation) != nil else { return nil }
-    return try encode(mutation.compactedForMemory)
+  private func terminalLifecycleRecord(
+    for mutation: PendingMutation
+  ) throws -> InstantTerminalLifecycleRecord? {
+    guard let row = try loadOutboxBodyRowWithoutTransaction(id: mutation.id) else {
+      return nil
+    }
+    let hasPreparedReceipt = try hasStoredPreparedOptimisticEffectReceipt(
+      mutation,
+      in: row
+    )
+    let lifecycle = compactedLifecycleForInspection(
+      mutation,
+      hasStoredReceiptFingerprint: hasPreparedReceipt
+    )
+    let hasServerAcceptance = try hasStoredServerAcceptance(mutation, in: row)
+    guard lifecycleEvent(
+      for: lifecycle,
+      hasServerAcceptance: hasServerAcceptance
+    ) != nil else { return nil }
+    return InstantTerminalLifecycleRecord(
+      json: try encode(lifecycle),
+      optimisticEffectReceiptFingerprint: hasPreparedReceipt
+        ? row.optimisticEffectReceiptFingerprint
+        : nil,
+      serverAcceptancePayloadFingerprint: hasServerAcceptance
+        ? row.serverAcceptancePayloadFingerprint
+        : nil
+    )
   }
 
   private func saveQueryCacheEntryWithoutTransaction(

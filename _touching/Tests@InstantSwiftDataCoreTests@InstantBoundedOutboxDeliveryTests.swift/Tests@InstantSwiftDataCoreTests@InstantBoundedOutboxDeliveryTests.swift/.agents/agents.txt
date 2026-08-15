@@ -6,3 +6,14 @@ codex-desktop/019fe994-1250-7b42-825e-9b75836d9173/root/instant_revision_domains
 codex-desktop/019fe994-1250-7b42-825e-9b75836d9173/root/explicit_flush_tests 2026-08-11T14:50:49Z mower plan=2026-08-09-bounded-intent-outbox-memory
 grok-build-wrap-perf 2026-08-11T16:05:58Z mower plan=2026-08-11-suite-green-and-latency suite-green
 codex-desktop/01a00071-f1c1-7193-adcd-3bc9f30b5f95/root/ack_deadline_fix 2026-08-14T21:28:55Z mower plan=2026-08-14-acknowledgement-deadline-generation-barrier
+codex-desktop/01a00071-f1c1-7193-adcd-3bc9f30b5f95/root/rollback_invariant_source 2026-08-15T02:30:00-0400 mower receipt-fixture-compatibility plan=semantic_noop_v2
+codex-desktop/01a00071-f1c1-7193-adcd-3bc9f30b5f95/root/bounded_claim_token_tests 2026-08-15T08:41:45-0400 mower exact-claim-ack-authority plan=semantic_noop_v2
+codex-desktop/01a00071-f1c1-7193-adcd-3bc9f30b5f95/root 2026-08-15T09:14:12-0400 mower exact-0020-migration-matrix-and-public-write-guard plan=2026-08-14-semantic-noop-insert-v2
+codex-desktop/01a00071-f1c1-7193-adcd-3bc9f30b5f95/root/legacy_head_contract_tests 2026-08-15T09:51:02-0400 mower legacy-head-manual-recovery-and-authorized-head-non-starvation plan=2026-08-14-semantic-noop-insert-v2
+codex-desktop/01a00071-f1c1-7193-adcd-3bc9f30b5f95/root/legacy_head_contract_tests 2026-08-15T10:02:36-0400 mower atomic-blocker-explicit-claim-contract plan=2026-08-14-semantic-noop-insert-v2
+codex-desktop/01a00071-f1c1-7193-adcd-3bc9f30b5f95/root/blocker_index_test 2026-08-15T10:14:25-0400 mower synchronization-blocker-index-regression plan=2026-08-14-semantic-noop-insert-v2
+codex-desktop/01a00071-f1c1-7193-adcd-3bc9f30b5f95/root/blocker_index_test 2026-08-15T10:23:21-0400 mower compact-outbox-expectation-correction plan=2026-08-14-semantic-noop-insert-v2
+codex-desktop/01a00071-f1c1-7193-adcd-3bc9f30b5f95/root 2026-08-15T10:36:00-0400 mower broad-persistence-regressions plan=2026-08-14-semantic-noop-insert-v2
+codex-desktop/01a00071-f1c1-7193-adcd-3bc9f30b5f95/root/blocker_index_test 2026-08-15T10:40:57-0400 mower focused-quarantine-blocker-claim-contracts plan=2026-08-14-semantic-noop-insert-v2
+codex-desktop/01a00071-f1c1-7193-adcd-3bc9f30b5f95/root/migration_architecture_fix 2026-08-15T11:58:43-0400 mower offered-wire-immutability-regression-only plan=2026-08-15-legacy-priority-durable-migration
+codex-desktop/01a00071-f1c1-7193-adcd-3bc9f30b5f95/root 2026-08-15T12:26:30-0400 mower build-only-assertion-hoist plan=2026-08-15-legacy-priority-durable-migration

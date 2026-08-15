@@ -11749,11 +11749,11 @@ extension InstantStoreTests {
     }
     expectNoDifference(
       jsonOutput.metrics.first { $0.name == "triple-insert.seed" }?.samples.map(\.actorHopCount),
-      [8]
+      [9]
     )
     expectNoDifference(
       jsonOutput.metrics.first { $0.name == "high-bandwidth.scalar-updates" }?.samples.map(\.actorHopCount),
-      [400]
+      [450]
     )
     expectNoDifference(
       jsonOutput.metrics.first { $0.name == "outbox-flush.local-transport" }?.samples.map(\.operationCount),
@@ -11771,11 +11771,12 @@ extension InstantStoreTests {
       jsonOutput.metrics.first { $0.name == "outbox-flush.local-transport" }?.samples.map(\.actorHopBreakdown),
       [
         [
+          "live-session": 2,
           "mutation-flush-gate": 4,
           "mutation-transport": 1,
           "operation-gate": 8,
           "outbox": 3,
-          "persistence": 13,
+          "persistence": 14,
         ]
       ]
     )

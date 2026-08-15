@@ -3386,6 +3386,97 @@ struct InstantLiveTransportTests {
   }
 
   @Test
+  func manualSynchronizationBlockerCannotOverwriteExplicitClose() async throws {
+    let blockerGate = InstantLiveNoncooperativeSuspension()
+    let reconnectSleepCount = InstantLiveAbandonmentProbe()
+    let mutationID = "manual-blocker-close-wins"
+    let session = InstantRuntimeScriptedLiveSession(messages: [
+      .initOK(
+        clientEventID: "event-manual-blocker-close-wins",
+        attrs: .todoServerAttrs
+      )
+    ])
+    var configuration = InstantRuntimeConfiguration(
+      appID: "runtime-manual-blocker-close-wins",
+      persistenceURL: try temporaryLiveCacheURL(),
+      initialAttributes: TodoExample.attributes,
+      liveTransport: session.transport
+    )
+    configuration.autoConnectLiveTransport = false
+    configuration.liveReconnectSleep = { _ in
+      reconnectSleepCount.increment()
+    }
+    configuration.onManualSynchronizationBlockerBeforeConnectionGateForTesting = {
+      await blockerGate.suspend()
+    }
+    let runtime = try await InstantRuntime.bootstrap(configuration: configuration)
+    _ = try await runtime.connect()
+    try await runtime.persistence.saveOutbox([
+      PendingMutation(
+        id: mutationID,
+        createdAt: InstantTimestamp(milliseconds: 1_700_000_000_000),
+        transaction: InstantStoreTransaction(
+          id: mutationID,
+          operations: [.deleteEntity("todo-manual-blocker-close-wins")]
+        )
+      )
+    ])
+
+    await runtime.requestLiveMutationDelivery()
+    let failSafe = Task {
+      try? await Task.sleep(for: .seconds(5))
+      await blockerGate.release()
+    }
+    defer {
+      failSafe.cancel()
+      Task { await blockerGate.release() }
+    }
+    try await instantLiveWithTimeout(
+      operation: "wait for manual synchronization blocker persistence checkpoint",
+      timeoutMilliseconds: 5_000
+    ) {
+      await blockerGate.waitUntilStarted()
+    }
+
+    let close = Task { try await runtime.closeConnection() }
+    defer { close.cancel() }
+    let durableClosed = try await instantLiveWithTimeout(
+      operation: "wait for explicit close to persist ahead of delayed blocker",
+      timeoutMilliseconds: 5_000
+    ) {
+      while true {
+        let status = try await runtime.connectionStatus()
+        if status.state == .closed { return status }
+        try Task.checkCancellation()
+        await Task.yield()
+      }
+    }
+    expectNoDifference(durableClosed.lastErrorMessage, nil)
+
+    await blockerGate.release()
+    let closed = try await close.value
+    expectNoDifference(closed.state, .closed)
+    expectNoDifference(closed.lastErrorMessage, nil)
+    let finalStatus = try await runtime.connectionStatus()
+    expectNoDifference(finalStatus.state, .closed)
+    expectNoDifference(finalStatus.lastErrorMessage, nil)
+    expectNoDifference(
+      finalStatus.synchronizationBlocker,
+      InstantSynchronizationBlocker(
+        reason: .unknownOptimisticEffectReceipt,
+        firstMutationID: mutationID,
+        blockedMutationCount: 1
+      )
+    )
+    expectNoDifference(reconnectSleepCount.value, 0)
+    let sentOperations = await session.sentMessages().map(\.op)
+    expectNoDifference(sentOperations, ["init"])
+    #expect(await runtime.automaticMutationPumpIsSuspendedForTesting())
+    #expect(await runtime.liveReconnectControllerIsIdleForTesting())
+    #expect(await runtime.exactCloseBackgroundTasksAreIdleForTesting())
+  }
+
+  @Test
   func liveQueryEncoderPortsWhereOperatorsAndReverseIncludes() throws {
     let plan = InstantQueryPlan(
       id: "runtime-live-query-operators",
@@ -4403,22 +4494,28 @@ struct InstantLiveTransportTests {
       declaredAttributes: TodoExample.attributes
     )
     try await seed.bootstrap()
-    try await seed.saveSnapshot(
-      InstantPersistenceSnapshot(
-        store: InstantStoreSnapshot(
-          attributes: TodoExample.attributes,
-          triples: [
-            oversizedTerminalComponentTriple(
-              entityID: entityID,
-              value: "local-50",
-              transactionID: competingTail.id,
-              milliseconds: 51
-            )
-          ]
-        ),
-        outbox: mutations
+    try await seed.saveStoreSnapshot(
+      InstantStoreSnapshot(
+        attributes: TodoExample.attributes,
+        triples: [
+          oversizedTerminalComponentTriple(
+            entityID: entityID,
+            value: "local-50",
+            transactionID: competingTail.id,
+            milliseconds: 51
+          )
+        ]
       )
     )
+    let seededStore = try await seed.loadCompactState()
+    let didSeedRuntimePreparedOutbox = try await seed.saveOutbox(
+      mutations,
+      replacing: [],
+      metadataEntries: [],
+      expectedStoreRevision: seededStore.storeRevision,
+      expectedOutboxRevision: seededStore.outboxRevision
+    )
+    expectNoDifference(didSeedRuntimePreparedOutbox, true)
 
     let session = InstantRuntimeScriptedLiveSession(messages: [
       .initOK(clientEventID: "event-oversized-terminal", attrs: .todoServerAttrs)
@@ -4567,6 +4664,84 @@ struct InstantLiveTransportTests {
   }
 
   @Test
+  func explicitFlushReclaimRetiresTheOfferedLiveGeneration() async throws {
+    let clock = InstantLiveLockedClock(milliseconds: 100_000)
+    let session = InstantRuntimeScriptedLiveSession(messages: [
+      .initOK(clientEventID: "event-init-explicit-reclaim", attrs: .todoServerAttrs)
+    ])
+    var configuration = InstantRuntimeConfiguration(
+      appID: "runtime-live-explicit-reclaim",
+      persistenceURL: try temporaryLiveCacheURL(),
+      initialAttributes: TodoExample.attributes,
+      now: { clock.now() },
+      liveTransport: session.transport
+    )
+    configuration.liveReconnectSleep = { _ in
+      try await Task.sleep(for: .seconds(60))
+    }
+    configuration.liveMutationDeadlineSleep = { _ in
+      try await Task.sleep(for: .seconds(60))
+    }
+    let runtime = try await InstantRuntime.bootstrap(configuration: configuration)
+    _ = try await runtime.connect()
+    let mutationID = "tx-runtime-live-explicit-reclaim"
+    let createdAt = clock.now()
+    try await runtime.transact(
+      InstantStoreTransaction(
+        id: mutationID,
+        operations: TodoExample.createOperations(
+          id: "runtime-live-explicit-reclaim-todo",
+          text: "Replace the acknowledgement-unknown generation",
+          createdAt: createdAt,
+          transactionID: mutationID
+        )
+      ),
+      createdAt: createdAt
+    )
+    await session.waitForSentMessageCount(2)
+    let originalClaim = try #require(
+      try await runtime.persistence.outboxDeliveryClaimForTesting(id: mutationID)
+    )
+    expectNoDifference(originalClaim.state, .claimed)
+    let originalDeadlineMilliseconds = try #require(originalClaim.deadlineMilliseconds)
+
+    clock.advance(
+      by: originalDeadlineMilliseconds - clock.now().milliseconds + 1
+    )
+    await withKnownIssue(
+      "The test deliberately expires one offered mutation to verify generation retirement."
+    ) {
+      _ = try await runtime.flushPendingMutations(limit: 1)
+    }
+    #expect(
+      session.isAborted,
+      "The explicit lane must retire a live generation whose expired offer it reclaimed."
+    )
+    try await instantLiveWithTimeout(
+      operation: "wait for the aborted live generation to release its replacement claim",
+      timeoutMilliseconds: 5_000
+    ) {
+      while true {
+        let claim = try await runtime.persistence.outboxDeliveryClaimForTesting(id: mutationID)
+        if claim?.state == .ready, claim?.claimToken == nil {
+          return
+        }
+        await Task.yield()
+      }
+    }
+    let releasedClaim = try #require(
+      try await runtime.persistence.outboxDeliveryClaimForTesting(id: mutationID)
+    )
+    expectNoDifference(releasedClaim.state, .ready)
+    expectNoDifference(releasedClaim.claimToken, nil)
+    let sentMutationIDs = await session.sentMessages()
+      .filter { $0.op == "transact" }
+      .compactMap(\.clientEventID)
+    expectNoDifference(sentMutationIDs, [mutationID])
+    _ = try await runtime.closeConnection()
+  }
+
+  @Test
   func staleLiveMutationErrorCannotFailAClaimReclaimedByAnotherRuntime() async throws {
     let session = InstantRuntimeScriptedLiveSession(messages: [
       .initOK(clientEventID: "event-init", attrs: .todoServerAttrs)
@@ -4637,6 +4812,186 @@ struct InstantLiveTransportTests {
     expectNoDifference(durable.first?.failureMessage, nil)
     expectNoDifference(staleErrorDecodeCount, 0)
     expectNoDifference(sentOps, ["init", "transact"])
+    _ = try await runtime.closeConnection()
+  }
+
+  @Test
+  func staleLiveMutationAcknowledgementCannotAcceptAClaimReclaimedByAnotherRuntime()
+    async throws
+  {
+    let session = InstantRuntimeScriptedLiveSession(messages: [
+      .initOK(clientEventID: "event-init-stale-ack", attrs: .todoServerAttrs)
+    ])
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "runtime-live-stale-mutation-ack",
+        persistenceURL: temporaryLiveCacheURL(),
+        initialAttributes: TodoExample.attributes,
+        liveTransport: session.transport
+      )
+    )
+    _ = try await runtime.connect()
+    let mutationID = "tx-runtime-live-stale-ack"
+    let createdAt = InstantTimestamp(milliseconds: 1_700_000_001_000)
+    try await runtime.transact(
+      InstantStoreTransaction(
+        id: mutationID,
+        operations: TodoExample.createOperations(
+          id: "runtime-live-stale-ack-todo",
+          text: "Must remain pending",
+          createdAt: createdAt,
+          transactionID: mutationID
+        )
+      ),
+      createdAt: createdAt
+    )
+    await session.waitForSentMessageCount(2)
+
+    let reclamation = try await runtime.persistence.claimAutomaticOutboxDeliveryWindow(
+      InstantAutomaticOutboxClaimRequest(
+        claimantID: "competing-ack-runtime",
+        claimToken: "competing-ack-claim-token",
+        now: InstantTimestamp(milliseconds: Int64.max / 4)
+      )
+    )
+    expectNoDifference(reclamation.mutations, [])
+    expectNoDifference(reclamation.reclaimedMutationIDs, Set([mutationID]))
+    let didClaimForCompetingRuntime = try await runtime.persistence
+      .claimOutboxMutationWithoutHydrationForTesting(
+        id: mutationID,
+        claimantID: "competing-ack-runtime",
+        claimToken: "competing-ack-claim-token",
+        deadlineMilliseconds: Int64.max / 4
+      )
+    #expect(didClaimForCompetingRuntime)
+
+    let revisionBeforeAcknowledgement = try await runtime.persistence.currentOutboxRevision()
+    let receiveCountBeforeAcknowledgement = await session.receiveRequestCount()
+    await session.enqueue(
+      .transactOK(
+        clientEventID: mutationID,
+        transactionID: "server-stale-ack"
+      )
+    )
+    await session.waitForReceiveRequestCount(receiveCountBeforeAcknowledgement + 1)
+
+    let durable = try await runtime.persistence.loadState().snapshot.outbox
+    let mutation = try #require(durable.first { $0.id == mutationID })
+    expectNoDifference(mutation.status, .pending)
+    expectNoDifference(mutation.serverTransactionID, nil)
+    expectNoDifference(mutation.confirmationSource, nil)
+    let revisionAfterAcknowledgement = try await runtime.persistence.currentOutboxRevision()
+    expectNoDifference(
+      revisionAfterAcknowledgement,
+      revisionBeforeAcknowledgement
+    )
+    let sentOperations = await session.sentMessages().map(\.op)
+    expectNoDifference(sentOperations, ["init", "transact"])
+    _ = try await runtime.closeConnection()
+  }
+
+  @Test
+  func staleAcknowledgementCannotAdoptAClaimTokenReofferedDuringResponseRecording()
+    async throws
+  {
+    let responseGate = InstantLiveNoncooperativeSuspension()
+    defer { Task { await responseGate.release() } }
+    let session = InstantRuntimeScriptedLiveSession(messages: [
+      .initOK(clientEventID: "event-init-response-token", attrs: .todoServerAttrs)
+    ])
+    var configuration = InstantRuntimeConfiguration(
+      appID: "runtime-live-response-token",
+      persistenceURL: try temporaryLiveCacheURL(),
+      initialAttributes: TodoExample.attributes,
+      liveTransport: session.transport
+    )
+    configuration.onLiveReceiverEventAcquiredForTesting = {
+      await responseGate.suspend()
+    }
+    let runtime = try await InstantRuntime.bootstrap(configuration: configuration)
+    _ = try await runtime.connect()
+    let mutationID = "tx-runtime-live-response-token"
+    let createdAt = InstantTimestamp(milliseconds: 1_700_000_001_001)
+    try await runtime.transact(
+      InstantStoreTransaction(
+        id: mutationID,
+        operations: TodoExample.createOperations(
+          id: "runtime-live-response-token-todo",
+          text: "Keep the exact response authority",
+          createdAt: createdAt,
+          transactionID: mutationID
+        )
+      ),
+      createdAt: createdAt
+    )
+    await session.waitForSentMessageCount(2)
+    let originalClaim = try #require(
+      try await runtime.persistence.outboxDeliveryClaimForTesting(id: mutationID)
+    )
+    let originalClaimToken = try #require(originalClaim.claimToken)
+
+    let reclamation = try await runtime.persistence.claimAutomaticOutboxDeliveryWindow(
+      InstantAutomaticOutboxClaimRequest(
+        claimantID: "response-token-reclaimer",
+        claimToken: "response-token-expiry-pass",
+        now: InstantTimestamp(milliseconds: Int64.max / 4)
+      )
+    )
+    expectNoDifference(reclamation.mutations, [])
+    expectNoDifference(reclamation.reclaimedMutationIDs, Set([mutationID]))
+
+    let receiveCountBeforeAcknowledgement = await session.receiveRequestCount()
+    await session.enqueue(
+      .transactOK(
+        clientEventID: mutationID,
+        transactionID: "server-stale-response-token"
+      )
+    )
+    try await instantLiveWithTimeout(
+      operation: "pause after capturing the stale response token",
+      timeoutMilliseconds: 5_000
+    ) {
+      await responseGate.waitUntilStarted()
+    }
+
+    await runtime.requestLiveMutationDelivery()
+    try await instantLiveWithTimeout(
+      operation: "reoffer the same mutation under a new exact claim token",
+      timeoutMilliseconds: 5_000
+    ) {
+      await session.waitForSentMessageCount(3)
+    }
+    let replacementClaim = try #require(
+      try await runtime.persistence.outboxDeliveryClaimForTesting(id: mutationID)
+    )
+    let replacementClaimToken = try #require(replacementClaim.claimToken)
+    #expect(replacementClaimToken != originalClaimToken)
+    let revisionBeforeStaleDisposition = try await runtime.persistence.currentOutboxRevision()
+
+    await responseGate.release()
+    try await instantLiveWithTimeout(
+      operation: "finish the stale acknowledgement disposition",
+      timeoutMilliseconds: 5_000
+    ) {
+      await session.waitForReceiveRequestCount(receiveCountBeforeAcknowledgement + 1)
+    }
+
+    let revisionAfterStaleDisposition = try await runtime.persistence.currentOutboxRevision()
+    expectNoDifference(revisionAfterStaleDisposition, revisionBeforeStaleDisposition)
+    let durable = try await runtime.persistence.loadState().snapshot.outbox
+    let pending = try #require(durable.first { $0.id == mutationID })
+    expectNoDifference(pending.status, .pending)
+    expectNoDifference(pending.serverTransactionID, nil)
+    let claimAfterStaleDisposition = try await runtime.persistence
+      .outboxDeliveryClaimForTesting(id: mutationID)
+    expectNoDifference(
+      claimAfterStaleDisposition,
+      replacementClaim
+    )
+    let sentMutationIDs = await session.sentMessages()
+      .filter { $0.op == "transact" }
+      .compactMap(\.clientEventID)
+    expectNoDifference(sentMutationIDs, [mutationID, mutationID])
     _ = try await runtime.closeConnection()
   }
 
@@ -6538,6 +6893,9 @@ private func oversizedTerminalComponentMutation(
       )
     ]
   )
+  mutation.optimisticOverlayState = .applied
+  mutation.optimisticEffectReceiptVersion =
+    PendingMutation.currentOptimisticEffectReceiptVersion
   return mutation
 }
 
@@ -6662,6 +7020,10 @@ private actor InstantRuntimeScriptedLiveSession {
     }
   }
 
+  nonisolated var isAborted: Bool {
+    abortState.isAborted
+  }
+
   func sentMessages() -> [InstantLiveMessage] {
     sent
   }
@@ -6745,6 +7107,23 @@ private actor InstantRuntimeScriptedLiveSession {
     isClosed = true
     abortState.abort()
     receiveContinuation = nil
+  }
+}
+
+private final class InstantLiveLockedClock: @unchecked Sendable {
+  private let lock = NSLock()
+  private var milliseconds: Int64
+
+  init(milliseconds: Int64) {
+    self.milliseconds = milliseconds
+  }
+
+  func now() -> InstantTimestamp {
+    lock.withLock { InstantTimestamp(milliseconds: milliseconds) }
+  }
+
+  func advance(by delta: Int64) {
+    lock.withLock { milliseconds += delta }
   }
 }
 

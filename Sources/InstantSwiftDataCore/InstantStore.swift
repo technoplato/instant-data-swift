@@ -1889,22 +1889,27 @@ extension Array where Element == InstantEntitySnapshot {
 private extension InstantQueryPlan {
   var hasOnlyNamespaceLocalDependencies: Bool {
     (includes?.isEmpty ?? true)
-      && filters.allSatisfy(\.hasOnlyNamespaceLocalDependencies)
+      && hasOnlyNamespaceLocalFieldPaths
+  }
+
+  var hasOnlyNamespaceLocalFieldPaths: Bool {
+    filters.allSatisfy(\.hasOnlyNamespaceLocalDependencies)
       && !(order?.field.contains(".") ?? false)
       && (selectedFields?.allSatisfy { !$0.contains(".") } ?? true)
   }
 
   var dependentNamespaces: Set<String>? {
-    var namespaces: Set<String> = [namespace]
-    func walk(_ includes: [InstantQueryInclude]?) -> Bool {
-      for include in includes ?? [] {
+    var namespaces: Set<String> = []
+    func walk(_ plan: InstantQueryPlan) -> Bool {
+      guard plan.hasOnlyNamespaceLocalFieldPaths else { return false }
+      namespaces.insert(plan.namespace)
+      for include in plan.includes ?? [] {
         guard let query = include.query else { return false }
-        namespaces.insert(query.namespace)
-        if !walk(query.includes) { return false }
+        if !walk(query.queryPlan) { return false }
       }
       return true
     }
-    guard walk(includes) else { return nil }
+    guard walk(self) else { return nil }
     return namespaces
   }
 }

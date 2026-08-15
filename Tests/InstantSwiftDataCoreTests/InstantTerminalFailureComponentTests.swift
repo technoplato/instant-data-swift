@@ -91,6 +91,10 @@ struct InstantTerminalFailureComponentTests {
         )
       )
     ]
+    lookup.rollbackTransaction = nil
+    lookup.optimisticOverlayState = .applied
+    lookup.optimisticEffectReceiptVersion =
+      PendingMutation.currentOptimisticEffectReceiptVersion
     let global = try #require(InstantOptimisticEffectFootprint.normalized(for: lookup))
     #expect(global.isGlobal)
 
@@ -384,10 +388,10 @@ struct InstantTerminalFailureComponentTests {
     global.transaction.operations = [
       .ruleParams(entityID: "rule-entity", namespace: "items", params: .object([:]))
     ]
-    global.rollbackTransaction = InstantStoreTransaction(
-      id: "rollback-global",
-      operations: []
-    )
+    global.rollbackTransaction = nil
+    global.optimisticOverlayState = .applied
+    global.optimisticEffectReceiptVersion =
+      PendingMutation.currentOptimisticEffectReceiptVersion
     let disjointAfterGlobal = terminalMutation(
       id: "disjoint-after-global",
       position: 3,
@@ -447,14 +451,28 @@ struct InstantTerminalFailureComponentTests {
     )
     #expect(localLoad.component?.target.status == .confirmed)
 
-    var proven = terminalMutation(id: "proven", position: 0, entityIDs: ["proven"])
-    proven.status = .confirmed
-    proven.serverTransactionID = "server-1"
-    proven.confirmationSource = .webSocketTransactOK
+    let proven = terminalMutation(id: "proven", position: 0, entityIDs: ["proven"])
     let provenPersistence = try await terminalPersistence(
       suffix: "server-proven",
       mutations: [proven]
     )
+    let acceptanceClaim = try await provenPersistence.claimAutomaticOutboxDeliveryWindow(
+      InstantAutomaticOutboxClaimRequest(
+        claimantID: "terminal-acceptance-runtime",
+        claimToken: "terminal-acceptance-claim",
+        now: InstantTimestamp(milliseconds: 10_000)
+      )
+    )
+    expectNoDifference(acceptanceClaim.mutations.map(\.id), [proven.id])
+    let acceptanceRevision = try await provenPersistence.currentOutboxRevision()
+    let acceptance = try await provenPersistence.acceptOutboxMutation(
+      id: proven.id,
+      serverTransactionID: "server-1",
+      claimantID: "terminal-acceptance-runtime",
+      claimToken: "terminal-acceptance-claim",
+      expectedOutboxRevision: acceptanceRevision
+    )
+    expectNoDifference(acceptance?.mutation?.status, .confirmed)
     let provenState = try await provenPersistence.loadCompactState()
     let didClaimProven = try await provenPersistence.claimOutboxMutationWithoutHydrationForTesting(
       id: proven.id,
@@ -737,7 +755,15 @@ private func terminalPersistence(
     )
   )
   try await persistence.bootstrap()
-  try await persistence.saveOutbox(mutations)
+  let emptyStore = try await persistence.loadCompactState()
+  let didSeedRuntimePreparedOutbox = try await persistence.saveOutbox(
+    mutations,
+    replacing: [],
+    metadataEntries: [],
+    expectedStoreRevision: emptyStore.storeRevision,
+    expectedOutboxRevision: emptyStore.outboxRevision
+  )
+  expectNoDifference(didSeedRuntimePreparedOutbox, true)
   return persistence
 }
 
@@ -772,6 +798,14 @@ private func terminalMutation(
       return .retract(triple)
     }
   )
+  if mutation.rollbackTransaction?.operations.isEmpty == false {
+    mutation.optimisticOverlayState = .applied
+  } else {
+    mutation.rollbackTransaction = nil
+    mutation.optimisticOverlayState = .applied
+  }
+  mutation.optimisticEffectReceiptVersion =
+    PendingMutation.currentOptimisticEffectReceiptVersion
   return mutation
 }
 

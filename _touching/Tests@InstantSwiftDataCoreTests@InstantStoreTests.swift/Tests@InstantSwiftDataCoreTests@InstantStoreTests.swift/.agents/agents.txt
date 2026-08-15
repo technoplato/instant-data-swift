@@ -7,3 +7,11 @@ codex-desktop/019fe994-1250-7b42-825e-9b75836d9173/root/attempt_core_fixture_mig
 grok-4.6-live-revision 2026-08-12T12:36:00-0400 mower steal-only-with-explicit-user-allow user-allow=2026-08-12T12:36:00-0400 plan=2026-08-12-live-revision-cardinality matching-observer-only-rematerialize
 codex-desktop/01a00071-f1c1-7193-adcd-3bc9f30b5f95/root/semantic_noop_insert_fix 2026-08-14T22:19:52-0400 mower scalar-and-ref-semantic-noop-regressions plan=2026-08-14-semantic-noop-insert
 codex-desktop/01a00071-f1c1-7193-adcd-3bc9f30b5f95/root/semantic_noop_v2 2026-08-14T22:40:00-0400 mower reviewed-semantic-and-page-info-regressions plan=2026-08-14-semantic-noop-insert-v2
+codex-desktop/01a00071-f1c1-7193-adcd-3bc9f30b5f95/root/semantic_noop_v2 2026-08-15T02:10:00-0400 mower known-no-materialized-effect-regressions plan=2026-08-14-semantic-noop-insert-v2
+codex-desktop/01a00071-f1c1-7193-adcd-3bc9f30b5f95/root/semantic_noop_v2 2026-08-15T01:57:48-0400 mower known-no-materialized-optimistic-effect-regressions plan=2026-08-14-semantic-noop-insert-v2
+codex-desktop/01a00071-f1c1-7193-adcd-3bc9f30b5f95/root/legacy_head_contract_tests 2026-08-15T10:02:36-0400 mower atomic-blocker-automatic-claim-and-blocked-local-write-contracts plan=2026-08-14-semantic-noop-insert-v2
+codex-desktop/01a00071-f1c1-7193-adcd-3bc9f30b5f95/root 2026-08-15T10:32:10-0400 mower focused-blocker-test-finalization plan=2026-08-14-semantic-noop-insert-v2
+codex-desktop/01a00071-f1c1-7193-adcd-3bc9f30b5f95/root/legacy_head_contract_tests 2026-08-15T10:45:30-0400 mower same-id-receipt-validation-regression plan=2026-08-14-semantic-noop-insert-v2
+codex-desktop/01a00071-f1c1-7193-adcd-3bc9f30b5f95/root/legacy_head_contract_tests 2026-08-15T11:21:34-0400 mower attribute-only-cross-runtime-cache-fixture plan=2026-08-14-semantic-noop-insert-v2
+codex-desktop/01a00071-f1c1-7193-adcd-3bc9f30b5f95/root/migration_architecture_fix 2026-08-15T11:58:43-0400 mower durable-priority-migration-regressions-only plan=2026-08-15-legacy-priority-durable-migration
+codex-desktop/01a00071-f1c1-7193-adcd-3bc9f30b5f95/root/file_upload_cancel_triage 2026-08-15T13:31:42-0400 mower deterministic-upload-progress-cancellation-regression-only delegated-by=root plan=2026-08-14-semantic-noop-insert-v2

@@ -5,3 +5,6 @@ codex-desktop/019fe994-1250-7b42-825e-9b75836d9173/root 2026-08-10T23:44:00-0400
 codex-desktop/019fe994-1250-7b42-825e-9b75836d9173/root/instant_diff_compile_audit 2026-08-11T01:38:17-0400 mower attribute-revision-cas-caller-migration plan=2026-08-09-bounded-intent-outbox-memory
 codex-desktop/019fe994-1250-7b42-825e-9b75836d9173/root/abort_test_fixture_migration 2026-08-11T04:03:14-0400 mower live-session-abort-fixtures plan=2026-08-09-bounded-intent-outbox-memory
 codex-desktop/019fe994-1250-7b42-825e-9b75836d9173/root/attempt_core_fixture_migration 2026-08-11T04:33:57-0400 mower connection-attempt-fixtures plan=2026-08-09-bounded-intent-outbox-memory
+codex-desktop/01a00071-f1c1-7193-adcd-3bc9f30b5f95/root/bounded_claim_token_tests 2026-08-15T08:48:10-0400 mower row-addressed-exact-claim-authority plan=semantic_noop_v2
+codex-desktop/01a00071-f1c1-7193-adcd-3bc9f30b5f95/root 2026-08-15T10:42:00-0400 mower strict-receipt-fixture-alignment plan=2026-08-14-semantic-noop-insert-v2
+codex-desktop/01a00071-f1c1-7193-adcd-3bc9f30b5f95/root 2026-08-15T12:23:30-0400 mower rename-resident-snapshot-test-seam plan=2026-08-15-legacy-priority-durable-migration

@@ -44,6 +44,17 @@ enum InstantAutomaticOutboxAdmission {
   /// are quarantined by the selector, but a new local write must fail without
   /// ever materializing an undeliverable optimistic value.
   static func validateNewMutation(_ mutation: PendingMutation) throws {
+    guard mutation.provesReplayableOptimisticEffectReceipt else {
+      throw InstantError(
+        code: .validationFailed,
+        operation: "transact",
+        localID: mutation.id,
+        message:
+          "Mutation '\(mutation.id)' has no Runtime-prepared optimistic-effect receipt.",
+        recovery:
+          "Submit the transaction through InstantRuntime so local preparation and durable outbox admission commit together."
+      )
+    }
     let stepCount = InstantOutboxDeliveryMetadata.stepCount(in: mutation)
     guard stepCount <= InstantAutomaticOutboxClaimLimits.maximumStepCount else {
       throw InstantError(
@@ -125,6 +136,7 @@ struct InstantAutomaticOutboxClaimWindow: Sendable {
   var shouldContinueImmediately: Bool
   var decodedBodyCount: Int
   var decodedBodyByteCount: Int
+  var synchronizationBlocker: InstantSynchronizationBlocker?
 }
 
 /// One durable mutation plus the exact later-write frontier that protects its

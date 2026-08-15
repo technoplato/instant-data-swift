@@ -1,0 +1,1 @@
+codex-desktop/01a00071-f1c1-7193-adcd-3bc9f30b5f95/root/legacy_head_contract_tests 2026-08-15T09:58:25-0400 mower local-sync-recovery-ui-state-test plan=2026-08-14-semantic-noop-insert-v2

@@ -359,9 +359,6 @@ struct InstantBoundedServerApplyRebaseTests {
       before: nil,
       after: "accepted"
     )
-    accepted.status = .confirmed
-    accepted.serverTransactionID = "41"
-    accepted.confirmationSource = .webSocketTransactOK
     let acceptedTriple = try #require(
       accepted.transaction.operations.compactMap(\.insertedTriple).first
     )
@@ -373,6 +370,23 @@ struct InstantBoundedServerApplyRebaseTests {
           triples: [acceptedTriple]
         ),
         outbox: [accepted]
+      )
+    )
+    let claimToken = "empty-watermark-acceptance-claim"
+    let claim = try await runtime.persistence.claimAutomaticOutboxDeliveryWindow(
+      InstantAutomaticOutboxClaimRequest(
+        claimantID: runtime.automaticDeliveryClaimantIDForTesting(),
+        claimToken: claimToken,
+        now: InstantTimestamp(milliseconds: 10),
+        maximumMutationCount: 1
+      )
+    )
+    expectNoDifference(claim.mutations.map(\.id), [accepted.id])
+    _ = try #require(
+      try await runtime.acceptMutationIfPresent(
+        id: accepted.id,
+        serverTransactionID: "41",
+        claimToken: claimToken
       )
     )
     let before = try await runtime.persistence.loadCompactState()
@@ -627,6 +641,203 @@ struct InstantBoundedServerApplyRebaseTests {
   }
 
   @Test
+  func offeredRowRejectsChangedWireStagingWithoutChangingDurableAuthority() async throws {
+    let cacheURL = boundedServerApplyCacheURL("offered-stage-row")
+    let mutation = boundedServerApplyMutation(
+      id: "offered-stage-row",
+      position: 1,
+      entityID: "offered-stage-entity",
+      before: "server-base",
+      after: "local"
+    )
+    let runtime = try await boundedServerApplyRuntime(
+      suffix: "offered-stage-row",
+      cacheURL: cacheURL,
+      snapshot: boundedServerApplySnapshot(mutations: [mutation])
+    )
+    let persistence = runtime.persistence
+    let didClaim = try await persistence.claimOutboxMutationWithoutHydrationForTesting(
+      id: mutation.id,
+      claimantID: "offered-stage-claimant",
+      claimToken: "offered-stage-token",
+      deadlineMilliseconds: 5_000
+    )
+    #expect(didClaim)
+    let didRelease = try await persistence.releaseAutomaticOutboxClaim(
+      id: mutation.id,
+      claimantID: "offered-stage-claimant"
+    )
+    #expect(didRelease)
+
+    let plan = try await boundedReadyServerApplyPlan(
+      persistence: persistence,
+      id: "offered-stage-plan",
+      entityID: "offered-stage-entity"
+    )
+
+    let plannedBefore = try await persistence.loadServerApplyBodyPage(
+      planID: plan.id,
+      direction: .reverse,
+      after: nil
+    )
+    #expect(!plannedBefore.isStale)
+    let original = try #require(plannedBefore.entries.first?.mutation)
+    let changedWire = boundedChangedWireMutation(
+      original,
+      entityID: "offered-stage-entity",
+      value: "different-wire-value"
+    )
+    #expect(
+      try changedWire.mutationWireIntentFingerprint()
+        != original.mutationWireIntentFingerprint()
+    )
+    let authorityBefore = try await boundedDurableAuthority(
+      persistence: persistence,
+      mutationID: mutation.id
+    )
+    let claimBefore = try #require(authorityBefore.claim)
+    #expect(claimBefore.deliveryStarted)
+    expectNoDifference(claimBefore.state, .ready)
+
+    do {
+      try await persistence.stageServerApplyBodyPage(
+        planID: plan.id,
+        dispositions: [.update(changedWire)]
+      )
+      Issue.record("Expected an offered server-apply row to reject changed wire intent.")
+    } catch let error as InstantError {
+      expectNoDifference(error.code, .persistenceFailed)
+      expectNoDifference(error.operation, "persist offered outbox mutation")
+      #expect(error.message.contains(mutation.id))
+    }
+
+    let plannedAfter = try await persistence.loadServerApplyBodyPage(
+      planID: plan.id,
+      direction: .forward,
+      after: nil
+    )
+    let reader = try SQLitePersistenceStore(fileURL: cacheURL)
+    try await reader.bootstrap()
+    let authorityAfter = try await boundedDurableAuthority(
+      persistence: reader,
+      mutationID: mutation.id
+    )
+    #expect(!plannedAfter.isStale)
+    expectNoDifference(plannedAfter.entries.map(\.mutation), [original])
+    expectNoDifference(authorityAfter, authorityBefore)
+    try await persistence.finishServerApplyPlan(id: plan.id)
+  }
+
+  @Test
+  func claimAndReleaseMakesAnUnofferedServerApplyPlanStale() async throws {
+    let cacheURL = boundedServerApplyCacheURL("claim-release-stale-plan")
+    let mutation = boundedServerApplyMutation(
+      id: "claim-release-stale-row",
+      position: 1,
+      entityID: "claim-release-stale-entity",
+      before: "server-base",
+      after: "local"
+    )
+    let runtime = try await boundedServerApplyRuntime(
+      suffix: "claim-release-stale-plan",
+      cacheURL: cacheURL,
+      snapshot: boundedServerApplySnapshot(mutations: [mutation])
+    )
+    let persistence = runtime.persistence
+    let authorityBefore = try await boundedDurableAuthority(
+      persistence: persistence,
+      mutationID: mutation.id
+    )
+    #expect(!(try await persistence.outboxDeliveryStartedForTesting(id: mutation.id)))
+
+    let plan = try await boundedReadyServerApplyPlan(
+      persistence: persistence,
+      id: "claim-release-stale-plan",
+      entityID: "claim-release-stale-entity"
+    )
+    let plannedBefore = try await persistence.loadServerApplyBodyPage(
+      planID: plan.id,
+      direction: .reverse,
+      after: nil
+    )
+    #expect(!plannedBefore.isStale)
+    let original = try #require(plannedBefore.entries.first?.mutation)
+    let changedWire = boundedChangedWireMutation(
+      original,
+      entityID: "claim-release-stale-entity",
+      value: "stale-plan-wire-value"
+    )
+
+    let writer = try SQLitePersistenceStore(fileURL: cacheURL)
+    try await writer.bootstrap()
+    let didClaim = try await writer.claimOutboxMutationWithoutHydrationForTesting(
+      id: mutation.id,
+      claimantID: "claim-release-race-writer",
+      claimToken: "claim-release-race-token",
+      deadlineMilliseconds: 5_000
+    )
+    #expect(didClaim)
+    let didRelease = try await writer.releaseAutomaticOutboxClaim(
+      id: mutation.id,
+      claimantID: "claim-release-race-writer"
+    )
+    #expect(didRelease)
+
+    let stalePage = try await persistence.loadServerApplyBodyPage(
+      planID: plan.id,
+      direction: .forward,
+      after: nil
+    )
+    #expect(stalePage.isStale)
+    expectNoDifference(stalePage.entries.map(\.mutation), [])
+    do {
+      try await persistence.stageServerApplyBodyPage(
+        planID: plan.id,
+        dispositions: [.update(changedWire)]
+      )
+      Issue.record("Expected stale changed-wire staging to reject the newly offered row.")
+    } catch let error as InstantError {
+      expectNoDifference(error.code, .persistenceFailed)
+      expectNoDifference(error.operation, "persist offered outbox mutation")
+    }
+    let commit = try await persistence.commitServerApplyPlan(
+      planID: plan.id,
+      changedEntityTriples: [:],
+      mergingAttributes: [],
+      queryResults: [],
+      storeChanged: false,
+      metadataKey: "claim-release-stale-metadata",
+      metadataValue: "must-not-commit",
+      metadataUpdatedAt: InstantTimestamp(milliseconds: 100)
+    )
+    if case .some = commit {
+      Issue.record("Expected the claim-and-release race to invalidate the server-apply commit.")
+    }
+
+    let reader = try SQLitePersistenceStore(fileURL: cacheURL)
+    try await reader.bootstrap()
+    let authorityAfter = try await boundedDurableAuthority(
+      persistence: reader,
+      mutationID: mutation.id
+    )
+    let claimAfter = try #require(authorityAfter.claim)
+    expectNoDifference(authorityAfter.state, authorityBefore.state)
+    expectNoDifference(authorityAfter.rowRevision, authorityBefore.rowRevision)
+    expectNoDifference(claimAfter.state, .ready)
+    expectNoDifference(claimAfter.claimToken, nil)
+    expectNoDifference(claimAfter.claimantID, nil)
+    #expect(claimAfter.deliveryStarted)
+    let staleMetadata = try await reader.loadMetadataValue(
+      key: "claim-release-stale-metadata"
+    )
+    expectNoDifference(
+      staleMetadata,
+      nil
+    )
+    try await persistence.finishServerApplyPlan(id: plan.id)
+  }
+
+  @Test
   func storeRevisionRaceRetriesThePlanBeforePublishing() async throws {
     let cacheURL = boundedServerApplyCacheURL("store-revision-race")
     let race = BoundedServerApplyRaceProbe()
@@ -695,10 +906,21 @@ struct InstantBoundedServerApplyRebaseTests {
         do {
           let writer = try SQLitePersistenceStore(fileURL: cacheURL)
           try await writer.bootstrap()
+          let didClaim = try await writer.claimOutboxMutationWithoutHydrationForTesting(
+            id: mutation.id,
+            claimantID: "row-revision-race-runtime",
+            claimToken: "row-revision-race-token",
+            deadlineMilliseconds: 6_000
+          )
+          guard didClaim else {
+            throw CancellationError()
+          }
           let revision = try await writer.currentOutboxRevision()
           _ = try await writer.acceptOutboxMutation(
             id: mutation.id,
             serverTransactionID: "900",
+            claimantID: "row-revision-race-runtime",
+            claimToken: "row-revision-race-token",
             expectedOutboxRevision: revision
           )
         } catch {
@@ -809,7 +1031,16 @@ private func boundedServerApplyRuntime(
     declaredAttributes: boundedServerApplyAttributes
   )
   try await persistence.bootstrap()
-  try await persistence.saveSnapshot(snapshot)
+  try await persistence.saveStoreSnapshot(snapshot.store)
+  let seededStore = try await persistence.loadCompactState()
+  let didSeedRuntimePreparedOutbox = try await persistence.saveOutbox(
+    snapshot.outbox,
+    replacing: [],
+    metadataEntries: [],
+    expectedStoreRevision: seededStore.storeRevision,
+    expectedOutboxRevision: seededStore.outboxRevision
+  )
+  expectNoDifference(didSeedRuntimePreparedOutbox, true)
   var configuration = InstantRuntimeConfiguration(
     appID: "bounded-server-apply-\(suffix)",
     persistenceURL: cacheURL,
@@ -840,6 +1071,68 @@ private func boundedServerApplySnapshot(
     ),
     outbox: mutations
   )
+}
+
+private struct BoundedServerApplyDurableAuthority: Equatable {
+  var state: InstantPersistenceState
+  var rowRevision: Int64
+  var claim: InstantOutboxDeliveryClaim?
+}
+
+private func boundedDurableAuthority(
+  persistence: SQLitePersistenceStore,
+  mutationID: String
+) async throws -> BoundedServerApplyDurableAuthority {
+  let state = try await persistence.loadState()
+  let rowRevision = try await persistence.outboxMutationRevisionForTesting(id: mutationID)
+  let claim = try await persistence.outboxDeliveryClaimForTesting(id: mutationID)
+  return BoundedServerApplyDurableAuthority(
+    state: state,
+    rowRevision: rowRevision,
+    claim: claim
+  )
+}
+
+private func boundedReadyServerApplyPlan(
+  persistence: SQLitePersistenceStore,
+  id: String,
+  entityID: String
+) async throws -> InstantServerApplyPlan {
+  let load = try await persistence.beginServerApplyPlan(
+    id: id,
+    footprint: InstantServerApplyFootprint(entityIDs: [entityID], isGlobal: false),
+    hasServerOperations: true,
+    processedTransactionID: "\(id)-server",
+    confirmingMutationID: nil,
+    confirmingClaimantID: nil
+  )
+  switch load {
+  case let .ready(plan):
+    return plan
+  case let .normalizationRequired(firstMutationID):
+    Issue.record("Unexpected normalization blocker: \(firstMutationID)")
+    throw CancellationError()
+  }
+}
+
+private func boundedChangedWireMutation(
+  _ mutation: PendingMutation,
+  entityID: String,
+  value: String
+) -> PendingMutation {
+  var mutation = mutation
+  mutation.transaction = InstantStoreTransaction(
+    id: mutation.transaction.id,
+    operations: [
+      .insert(boundedServerApplyTriple(
+        entityID: entityID,
+        value: value,
+        transactionID: mutation.transaction.id,
+        milliseconds: 100
+      ))
+    ]
+  )
+  return mutation
 }
 
 private func boundedServerApplyServerWrite(
@@ -962,6 +1255,9 @@ private func boundedServerApplyMutation(
       ]
     } ?? [.deleteEntity(entityID)]
   )
+  mutation.optimisticOverlayState = .applied
+  mutation.optimisticEffectReceiptVersion =
+    PendingMutation.currentOptimisticEffectReceiptVersion
   return mutation
 }
 

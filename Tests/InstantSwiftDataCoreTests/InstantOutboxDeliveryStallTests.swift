@@ -497,22 +497,13 @@ struct InstantOutboxDeliveryStallTests {
 
   /// The 2026-08-02 upgrade failure. A device that upgraded to the
   /// acknowledgement release still carried `failed` rows written by an earlier
-  /// version, so those rows have neither `optimisticOverlayState` nor
-  /// `rollbackTransaction`. Refusing to guess at their local cache effect is
-  /// correct. Aborting the whole live-connect path over one of them is not.
-  ///
-  /// Their stored message is the deploy-fixable "could not resolve …" text, so
-  /// the automatic retry sweep selects them on *every* connect. The sweep's
-  /// unguarded `try` propagated out of the open path, which closed the socket,
-  /// stored an `errored` connection state, and rethrew — so the next reconnect
-  /// repeated it forever. Queries never registered, later mutations never sent,
-  /// and the separate diagnostic-log client went silent for the same reason.
-  /// In Scribe this presented as an indefinite "Loading recordings…".
-  ///
-  /// One poisoned legacy row must be isolated and reported, never allowed to
-  /// stop unrelated delivery.
+  /// version, so those rows have neither a Runtime receipt nor a trustworthy
+  /// rollback. Continuing delivery would make later server truth authoritative
+  /// over a local layer whose ownership cannot be reconstructed. The upgraded
+  /// Runtime must retain both rows, expose one manual-recovery blocker, and stop
+  /// before any wire send or reconnect loop.
   @Test
-  func legacyUnknownFailedMutationDoesNotAbortLiveConnect() async throws {
+  func legacyUnknownFailedMutationBlocksLiveConnectWithoutSendingOrReconnecting() async throws {
     let cacheURL = try temporaryOutboxStallCacheURL()
     let createdAt = InstantTimestamp(milliseconds: 1_700_000_060_000)
     let seedRuntime = try await InstantRuntime.bootstrap(
@@ -549,7 +540,7 @@ struct InstantOutboxDeliveryStallTests {
     )
     // Exactly the shape an upgraded device carries: failed, deploy-fixable
     // message, and no durable optimistic-overlay or rollback metadata.
-    _ = try await seedRuntime.migrateLocalPersistenceSnapshot(
+    _ = try await seedRuntime.rewriteResidentPersistenceSnapshotForTesting(
       name: "outbox-stall-legacy-unknown"
     ) { snapshot in
       var snapshot = snapshot
@@ -576,40 +567,47 @@ struct InstantOutboxDeliveryStallTests {
       )
     )
 
-    // The unrecoverable row is reported, because it still needs a human or an
-    // authoritative recovery. It must not take the connection down with it.
-    try await withKnownIssue {
+    do {
       _ = try await runtime.connect()
-      try? await Task.sleep(nanoseconds: 300_000_000)
-    } matching: { issue in
-      issue.description.contains("predates durable optimistic-overlay")
-        || issue.description.contains("tx-outbox-legacy-unknown")
+      Issue.record("Expected the unknown durable effect to block the live connection.")
+    } catch let error as InstantError {
+      expectNoDifference(error.code, .persistenceFailed, outboxStallSource)
+      expectNoDifference(error.operation, "open Instant live connection", outboxStallSource)
+      expectNoDifference(error.localID, "tx-outbox-legacy-unknown", outboxStallSource)
+      expectNoDifference(error.localMutationDisposition, .retainedUnknown, outboxStallSource)
     }
 
-    let transactedEventIDs = await liveSession.sentMessages()
-      .filter { $0.op == "transact" }
-      .compactMap(\.clientEventID)
+    let sentMessages = await liveSession.sentMessages()
+    expectNoDifference(sentMessages, [], outboxStallSource)
+    let status = try await runtime.connectionStatus()
+    expectNoDifference(status.state, .errored, outboxStallSource)
     expectNoDifference(
-      transactedEventIDs.contains("tx-outbox-after-legacy"),
-      true,
+      status.synchronizationBlocker,
+      InstantSynchronizationBlocker(
+        reason: .unknownOptimisticEffectReceipt,
+        firstMutationID: "tx-outbox-legacy-unknown",
+        blockedMutationCount: 1
+      ),
       outboxStallSource
     )
+    let mutationPumpIsSuspended = await runtime.automaticMutationPumpIsSuspendedForTesting()
+    expectNoDifference(mutationPumpIsSuspended, true, outboxStallSource)
+    let reconnectControllerIsIdle = await runtime.liveReconnectControllerIsIdleForTesting()
+    expectNoDifference(reconnectControllerIsIdle, true, outboxStallSource)
 
-    // The legacy row is retained untouched, not silently retried or discarded.
     let outbox = try await runtime.persistence.loadState().snapshot.outbox
     let legacy = try #require(outbox.first { $0.id == "tx-outbox-legacy-unknown" })
     expectNoDifference(legacy.status, .failed, outboxStallSource)
     expectNoDifference(legacy.optimisticOverlayState == nil, true, outboxStallSource)
+    let successor = try #require(outbox.first { $0.id == "tx-outbox-after-legacy" })
+    expectNoDifference(successor.status, .pending, outboxStallSource)
   }
 
-  /// 2026-08-05 recipes-v3 Linked Infinite (mutation `773e50f4-…`): the connect
-  /// path already isolated legacy `failed` + unknown-overlay rows, but every
-  /// live `add-query-ok` / `refresh-ok` still called `applyServerTransaction`,
-  /// which hard-threw on the same row → `connection.receive-loop-failed` →
-  /// reconnect thrash forever. Server apply must proceed; the poison stays
-  /// retained for authoritative recovery without killing the socket.
+  /// A live observation must hit the same blocker before registering a query or
+  /// accepting a refresh. This keeps the unknown local owner and server result
+  /// from being combined into a store that neither side can later reconstruct.
   @Test
-  func legacyUnknownFailedMutationDoesNotAbortLiveServerApply() async throws {
+  func legacyUnknownFailedMutationBlocksLiveObservationBeforeServerApply() async throws {
     let cacheURL = try temporaryOutboxStallCacheURL()
     let createdAt = InstantTimestamp(milliseconds: 1_700_000_061_000)
     let seedRuntime = try await InstantRuntime.bootstrap(
@@ -631,7 +629,7 @@ struct InstantOutboxDeliveryStallTests {
       ),
       createdAt: createdAt
     )
-    _ = try await seedRuntime.migrateLocalPersistenceSnapshot(
+    _ = try await seedRuntime.rewriteResidentPersistenceSnapshotForTesting(
       name: "outbox-stall-legacy-apply"
     ) { snapshot in
       var snapshot = snapshot
@@ -661,62 +659,43 @@ struct InstantOutboxDeliveryStallTests {
       liveTransport: liveSession.transport
     )
     configuration.liveReconnectSleep = { _ in }
+    configuration.autoConnectLiveTransport = false
     let runtime = try await InstantRuntime.bootstrap(configuration: configuration)
     let plan = TodoExample.query
-    let query = try InstantLiveQueryEncoder.encode(plan)
     let stream = await runtime.observe(plan)
     var iterator = stream.makeAsyncIterator()
     _ = try #require(await iterator.next())
 
-    _ = try await runtime.connect()
-    await liveSession.waitForSentMessageCount(2)
-
-    let refreshCreatedAt = InstantTimestamp(milliseconds: createdAt.milliseconds + 5_000)
-    await liveSession.enqueue(
-      liveReactorAddQueryOK(
-        query: query,
-        processedTransactionID: "server-tx-over-legacy-unknown",
-        result: liveReactorTodoQueryResult(
-          id: "todo-server-after-legacy",
-          text: "server apply survived legacy failed row",
-          createdAt: refreshCreatedAt
-        )
-      )
-    )
-
-    var sawServerApply = false
-    for _ in 0..<50 {
-      if let emission = await iterator.next() {
-        let texts = try TodoExample.decode(emission.values).map(\.text)
-        if texts.contains("server apply survived legacy failed row") {
-          sawServerApply = true
-          break
-        }
-      }
-      try await Task.sleep(nanoseconds: 20_000_000)
+    do {
+      _ = try await runtime.connect()
+      Issue.record("Expected the unknown durable effect to block live observation.")
+    } catch let error as InstantError {
+      expectNoDifference(error.localID, "tx-outbox-legacy-apply-poison", outboxStallSource)
+      expectNoDifference(error.localMutationDisposition, .retainedUnknown, outboxStallSource)
     }
-    #expect(sawServerApply, "\(outboxStallSource): live add-query-ok must apply over legacy failed unknown")
-
-    // Live session stays useful — no receive-loop thrash into `errored`.
+    let sentMessages = await liveSession.sentMessages()
+    expectNoDifference(sentMessages, [], outboxStallSource)
     let status = try await runtime.connectionStatus()
-    #expect(status.state != .errored, "\(outboxStallSource): \(status.state) \(status.lastErrorMessage ?? "")")
-    #expect(
-      status.lastErrorMessage?.contains("predates durable optimistic-overlay") != true,
-      "\(outboxStallSource)"
+    expectNoDifference(
+      status.synchronizationBlocker?.firstMutationID,
+      "tx-outbox-legacy-apply-poison",
+      outboxStallSource
     )
+    let reconnectControllerIsIdle = await runtime.liveReconnectControllerIsIdleForTesting()
+    expectNoDifference(reconnectControllerIsIdle, true, outboxStallSource)
 
-    let outbox = try await runtime.persistence.loadState().snapshot.outbox
+    let persisted = try await runtime.persistence.loadState().snapshot
+    let outbox = persisted.outbox
     let legacy = try #require(outbox.first { $0.id == "tx-outbox-legacy-apply-poison" })
     expectNoDifference(legacy.status, .failed, outboxStallSource)
     expectNoDifference(legacy.optimisticOverlayState == nil, true, outboxStallSource)
-
-    _ = try await runtime.closeConnection()
+    #expect(!persisted.store.triples.contains { $0.entityID == "todo-server-after-legacy" })
   }
 
-  /// Explicit apply API matches the live path: a failed pre-overlay row must
-  /// not freeze server truth for unrelated (or overlapping) entities.
+  /// Explicit server apply matches connection preflight: it fails before
+  /// changing the hot or durable store and retains the unknown owner verbatim.
   @Test
-  func legacyUnknownFailedMutationDoesNotBlockExplicitServerApply() async throws {
+  func legacyUnknownFailedMutationBlocksExplicitServerApplyAtomically() async throws {
     let cacheURL = try temporaryOutboxStallCacheURL()
     let baseTime = InstantTimestamp(milliseconds: 1_700_000_062_000)
     let runtime = try await InstantRuntime.bootstrap(
@@ -738,7 +717,7 @@ struct InstantOutboxDeliveryStallTests {
       ),
       createdAt: baseTime
     )
-    _ = try await runtime.migrateLocalPersistenceSnapshot(
+    _ = try await runtime.rewriteResidentPersistenceSnapshotForTesting(
       name: "outbox-stall-legacy-explicit-apply"
     ) { snapshot in
       var snapshot = snapshot
@@ -752,25 +731,37 @@ struct InstantOutboxDeliveryStallTests {
       return snapshot
     }
 
-    _ = try await runtime.applyServerTransaction(
-      InstantStoreTransaction(
-        id: "server-tx-explicit-over-legacy",
-        operations: TodoExample.upsertOperations(
-          id: "todo-server-explicit",
-          text: "server truth after isolation",
-          createdAt: InstantTimestamp(milliseconds: baseTime.milliseconds + 1_000),
-          transactionID: "server-tx-explicit-over-legacy"
+    let before = try await runtime.persistence.loadState().snapshot
+    var caughtError: InstantError?
+    try await withKnownIssue {
+      do {
+        _ = try await runtime.applyServerTransaction(
+          InstantStoreTransaction(
+            id: "server-tx-explicit-over-legacy",
+            operations: TodoExample.upsertOperations(
+              id: "todo-server-explicit",
+              text: "server truth after isolation",
+              createdAt: InstantTimestamp(milliseconds: baseTime.milliseconds + 1_000),
+              transactionID: "server-tx-explicit-over-legacy"
+            )
+          )
         )
-      )
-    )
+        Issue.record("Expected unknown receipt to block explicit server apply.")
+      } catch let error as InstantError {
+        caughtError = error
+      }
+    } matching: { issue in
+      issue.description.contains("tx-legacy-explicit-poison")
+        && issue.description.contains("apply server transaction")
+    }
+    let error = try #require(caughtError)
+    expectNoDifference(error.code, .persistenceFailed, outboxStallSource)
+    expectNoDifference(error.localID, "tx-legacy-explicit-poison", outboxStallSource)
+    expectNoDifference(error.localMutationDisposition, .retainedUnknown, outboxStallSource)
 
-    let rows = try await TodoExample.decode(runtime.query(TodoExample.query))
-    #expect(
-      rows.contains(where: { $0.text == "server truth after isolation" }),
-      "\(outboxStallSource)"
-    )
-    let outbox = try await runtime.persistence.loadState().snapshot.outbox
-    let legacy = try #require(outbox.first { $0.id == "tx-legacy-explicit-poison" })
+    let after = try await runtime.persistence.loadState().snapshot
+    expectNoDifference(after, before, outboxStallSource)
+    let legacy = try #require(after.outbox.first { $0.id == "tx-legacy-explicit-poison" })
     expectNoDifference(legacy.status, .failed, outboxStallSource)
   }
 }

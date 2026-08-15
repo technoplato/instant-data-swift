@@ -69,13 +69,13 @@ extension InstantStoreTests {
     )
     expectNoDifference(
       result.metrics.first { $0.name == "triple-insert.seed" }?.samples.map(\.actorHopCount),
-      [8, 8]
+      [9, 9]
     )
     expectNoDifference(
       result.metrics.first { $0.name == "triple-insert.seed" }?.samples.map(\.actorHopBreakdown),
       [
-        ["operation-gate": 2, "persistence": 4, "store": 2],
-        ["operation-gate": 2, "persistence": 4, "store": 2],
+        ["operation-gate": 2, "persistence": 5, "store": 2],
+        ["operation-gate": 2, "persistence": 5, "store": 2],
       ]
     )
     expectNoDifference(
@@ -99,13 +99,13 @@ extension InstantStoreTests {
     )
     expectNoDifference(
       result.metrics.first { $0.name == "high-bandwidth.scalar-updates" }?.samples.map(\.actorHopCount),
-      [400, 400]
+      [450, 450]
     )
     expectNoDifference(
       result.metrics.first { $0.name == "high-bandwidth.scalar-updates" }?.samples.map(\.actorHopBreakdown),
       [
-        ["operation-gate": 100, "persistence": 200, "store": 100],
-        ["operation-gate": 100, "persistence": 200, "store": 100],
+        ["operation-gate": 100, "persistence": 250, "store": 100],
+        ["operation-gate": 100, "persistence": 250, "store": 100],
       ]
     )
     expectNoDifference(
@@ -126,7 +126,7 @@ extension InstantStoreTests {
     )
     expectNoDifference(
       result.metrics.first { $0.name == "high-bandwidth.linked-writes" }?.samples.map(\.actorHopCount),
-      [8, 8]
+      [9, 9]
     )
     expectNoDifference(
       result.metrics.first { $0.name == "high-bandwidth.linked-writes" }?.samples.map(\.memoryDeltaBytes),
@@ -158,13 +158,13 @@ extension InstantStoreTests {
     )
     expectNoDifference(
       result.metrics.first { $0.name == "memory-growth.triples.1k" }?.samples.map(\.actorHopCount),
-      [32, 32]
+      [36, 36]
     )
     expectNoDifference(
       result.metrics.first { $0.name == "memory-growth.triples.1k" }?.samples.map(\.actorHopBreakdown),
       [
-        ["operation-gate": 8, "persistence": 16, "store": 8],
-        ["operation-gate": 8, "persistence": 16, "store": 8],
+        ["operation-gate": 8, "persistence": 20, "store": 8],
+        ["operation-gate": 8, "persistence": 20, "store": 8],
       ]
     )
     expectNoDifference(
@@ -189,13 +189,13 @@ extension InstantStoreTests {
     )
     expectNoDifference(
       result.metrics.first { $0.name == "memory-growth.triples.10k" }?.samples.map(\.actorHopCount),
-      [320, 320]
+      [360, 360]
     )
     expectNoDifference(
       result.metrics.first { $0.name == "memory-growth.triples.10k" }?.samples.map(\.actorHopBreakdown),
       [
-        ["operation-gate": 80, "persistence": 160, "store": 80],
-        ["operation-gate": 80, "persistence": 160, "store": 80],
+        ["operation-gate": 80, "persistence": 200, "store": 80],
+        ["operation-gate": 80, "persistence": 200, "store": 80],
       ]
     )
     expectNoDifference(
@@ -220,13 +220,13 @@ extension InstantStoreTests {
     )
     expectNoDifference(
       result.metrics.first { $0.name == "memory-growth.triples.50k" }?.samples.map(\.actorHopCount),
-      [1_568, 1_568]
+      [1_764, 1_764]
     )
     expectNoDifference(
       result.metrics.first { $0.name == "memory-growth.triples.50k" }?.samples.map(\.actorHopBreakdown),
       [
-        ["operation-gate": 392, "persistence": 784, "store": 392],
-        ["operation-gate": 392, "persistence": 784, "store": 392],
+        ["operation-gate": 392, "persistence": 980, "store": 392],
+        ["operation-gate": 392, "persistence": 980, "store": 392],
       ]
     )
     expectNoDifference(
@@ -295,24 +295,26 @@ extension InstantStoreTests {
     )
     expectNoDifference(
       result.metrics.first { $0.name == "outbox-flush.local-transport" }?.samples.map(\.actorHopCount),
-      [29, 29]
+      [32, 32]
     )
     expectNoDifference(
       result.metrics.first { $0.name == "outbox-flush.local-transport" }?.samples.map(\.actorHopBreakdown),
       [
         [
+          "live-session": 2,
           "mutation-flush-gate": 4,
           "mutation-transport": 1,
           "operation-gate": 8,
           "outbox": 3,
-          "persistence": 13,
+          "persistence": 14,
         ],
         [
+          "live-session": 2,
           "mutation-flush-gate": 4,
           "mutation-transport": 1,
           "operation-gate": 8,
           "outbox": 3,
-          "persistence": 13,
+          "persistence": 14,
         ],
       ]
     )

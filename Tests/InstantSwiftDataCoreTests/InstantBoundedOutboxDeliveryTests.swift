@@ -16,6 +16,234 @@ import Testing
 @Suite(.serialized)
 struct InstantBoundedOutboxDeliveryTests {
   @Test
+  func explicitClaimThrowsSynchronizationBlockerBeforeUnknownHeadDecodeOrSuccessorClaim()
+    async throws
+  {
+    let cacheURL = try temporaryBoundedOutboxCacheURL()
+    let timestamp = InstantTimestamp(milliseconds: 1)
+    let unknown = PendingMutation(
+      id: "tx-explicit-unknown-head-00000",
+      createdAt: timestamp,
+      transaction: InstantStoreTransaction(
+        id: "tx-explicit-unknown-head-00000",
+        operations: [
+          .insert(
+            InstantTriple(
+              entityID: "todo-explicit-unknown-head",
+              attributeID: "todos/text",
+              value: .string("Must be quarantined before explicit delivery"),
+              txID: "tx-explicit-unknown-head-00000",
+              txTime: timestamp
+            )
+          )
+        ]
+      )
+    )
+    let successor = boundedMutation(index: 1, prefix: "explicit-unknown-head")
+    let persistence = try SQLitePersistenceStore(fileURL: cacheURL)
+    try await persistence.bootstrap()
+    try await persistence.saveOutbox([unknown])
+    let publicSeed = try await persistence.loadCompactState()
+    let didSeedPreparedSuccessor = try await persistence.saveOutbox(
+      [unknown, successor],
+      replacing: [unknown],
+      metadataEntries: [],
+      expectedStoreRevision: publicSeed.storeRevision,
+      expectedOutboxRevision: publicSeed.outboxRevision
+    )
+    expectNoDifference(didSeedPreparedSuccessor, true)
+    let rawUnknownBeforeClaimValue = try boundedOutboxRawBody(
+      id: unknown.id,
+      cacheURL: cacheURL
+    )
+    let rawUnknownBeforeClaim = try #require(rawUnknownBeforeClaimValue)
+    await persistence.resetDecodedOutboxBodyCount()
+
+    do {
+      _ = try await persistence.claimExplicitOutboxDeliveryWindow(
+        limit: 1,
+        claimantID: "explicit-unknown-head-runtime",
+        claimToken: "explicit-unknown-head-token",
+        now: InstantTimestamp(milliseconds: 10_000)
+      )
+      Issue.record("An explicit claim must stop at the durable synchronization blocker.")
+    } catch let error as InstantError {
+      expectNoDifference(error.code, .persistenceFailed)
+      expectNoDifference(error.operation, "claim explicit outbox flush")
+      expectNoDifference(error.localID, unknown.id)
+      expectNoDifference(error.localMutationDisposition, .retainedUnknown)
+      #expect(error.message.contains("Synchronization is blocked by 1 retained mutation."))
+    }
+
+    let blockerValue = try await persistence.synchronizationBlocker()
+    let blocker = try #require(blockerValue)
+    expectNoDifference(blocker.reason, .unknownOptimisticEffectReceipt)
+    expectNoDifference(blocker.firstMutationID, unknown.id)
+    expectNoDifference(blocker.blockedMutationCount, 1)
+    let decodedBodyCount = await persistence.currentDecodedOutboxBodyCount()
+    expectNoDifference(decodedBodyCount, 0)
+    let rawUnknownAfterClaimValue = try boundedOutboxRawBody(
+      id: unknown.id,
+      cacheURL: cacheURL
+    )
+    let rawUnknownAfterClaim = try #require(rawUnknownAfterClaimValue)
+    expectNoDifference(rawUnknownAfterClaim, rawUnknownBeforeClaim)
+    let quarantinedJSON = try await persistence.quarantinedOutboxBodyForTesting(
+      id: unknown.id
+    )
+    expectNoDifference(quarantinedJSON, nil)
+    let outboxRevision = try await persistence.currentOutboxRevision()
+    let retainedRowsValue = try await persistence.loadOutboxMutations(
+      statuses: [.pending],
+      ids: [unknown.id, successor.id],
+      limit: 2,
+      expectedOutboxRevision: outboxRevision
+    )
+    let retainedRows = try #require(retainedRowsValue)
+    let retainedUnknown = try #require(
+      retainedRows.first { $0.id == unknown.id }
+    )
+    let retainedSuccessor = try #require(
+      retainedRows.first { $0.id == successor.id }
+    )
+    expectNoDifference(retainedUnknown.status, .pending)
+    expectNoDifference(retainedSuccessor.status, .pending)
+    let unknownClaimValue = try await persistence.outboxDeliveryClaimForTesting(id: unknown.id)
+    let unknownClaim = try #require(unknownClaimValue)
+    expectNoDifference(unknownClaim.state, .ready)
+    expectNoDifference(unknownClaim.claimToken, nil)
+    expectNoDifference(unknownClaim.deliveryStarted, false)
+    let successorClaimValue = try await persistence.outboxDeliveryClaimForTesting(
+      id: successor.id
+    )
+    let successorClaim = try #require(successorClaimValue)
+    expectNoDifference(successorClaim.state, .ready)
+    expectNoDifference(successorClaim.claimToken, nil)
+    expectNoDifference(successorClaim.deliveryStarted, false)
+    let unknownReceipt = try await persistence.optimisticEffectReceiptFingerprintForTesting(
+      id: unknown.id
+    )
+    let successorReceipt = try await persistence.optimisticEffectReceiptFingerprintForTesting(
+      id: successor.id
+    )
+    expectNoDifference(unknownReceipt, nil)
+    #expect(successorReceipt != nil)
+  }
+
+  @Test
+  func synchronizationBlockerUsesCoveringIndexAndRepairsReconstructedTable() async throws {
+    let cacheURL = try temporaryBoundedOutboxCacheURL()
+    try await seedBoundedOutbox(
+      (0..<1_000).map { boundedMutation(index: $0, prefix: "blocker-index") },
+      cacheURL: cacheURL
+    )
+    try executeBoundedOutboxSQL(
+      """
+      UPDATE instant_outbox
+      SET optimistic_effect_receipt_fingerprint = NULL
+      WHERE mutation_id IN (
+        'tx-blocker-index-00307',
+        'tx-blocker-index-00411',
+        'tx-blocker-index-00449'
+      );
+      UPDATE instant_outbox
+      SET optimistic_overlay_active = 0,
+          optimistic_effect_receipt_fingerprint = NULL
+      WHERE mutation_id IN (
+        'tx-blocker-index-00005',
+        'tx-blocker-index-00007'
+      );
+      """,
+      cacheURL: cacheURL
+    )
+
+    let persistence = try SQLitePersistenceStore(fileURL: cacheURL)
+    try await persistence.bootstrap()
+    let blockerValue = try await persistence.synchronizationBlocker()
+    let blocker = try #require(blockerValue)
+    expectNoDifference(blocker.reason, .unknownOptimisticEffectReceipt)
+    expectNoDifference(blocker.firstMutationID, "tx-blocker-index-00307")
+    expectNoDifference(blocker.blockedMutationCount, 3)
+
+    let firstBlockedPlan = try boundedOutboxQueryPlan(
+      """
+      SELECT mutation_id
+      FROM instant_outbox INDEXED BY instant_outbox_synchronization_blocker_idx
+      WHERE optimistic_overlay_active = 1
+        AND optimistic_effect_receipt_fingerprint IS NULL
+      ORDER BY created_at_ms, mutation_id
+      LIMIT 1
+      """,
+      cacheURL: cacheURL
+    )
+    let blockedCountPlan = try boundedOutboxQueryPlan(
+      """
+      SELECT COUNT(*)
+      FROM instant_outbox INDEXED BY instant_outbox_synchronization_blocker_idx
+      WHERE optimistic_overlay_active = 1
+        AND optimistic_effect_receipt_fingerprint IS NULL
+      """,
+      cacheURL: cacheURL
+    )
+    #expect(
+      firstBlockedPlan.contains {
+        $0.contains("USING COVERING INDEX instant_outbox_synchronization_blocker_idx")
+      }
+    )
+    #expect(!firstBlockedPlan.contains { $0.contains("USE TEMP B-TREE FOR ORDER BY") })
+    #expect(
+      blockedCountPlan.contains {
+        $0.contains("USING COVERING INDEX instant_outbox_synchronization_blocker_idx")
+      }
+    )
+
+    await persistence.simulateUnexpectedConnectionCloseForTesting()
+    expectNoDifference(
+      try boundedOutboxMigrationLedgerCount(
+        name: "0022_outbox_synchronization_blocker_index",
+        cacheURL: cacheURL
+      ),
+      1
+    )
+    try restorePreBoundedDeliveryOutboxSchema(cacheURL: cacheURL)
+    expectNoDifference(
+      try boundedOutboxMigrationLedgerCount(
+        name: "0022_outbox_synchronization_blocker_index",
+        cacheURL: cacheURL
+      ),
+      1,
+      "The reconstructed table retains migration 0022 while dropping its index."
+    )
+
+    let reconstructed = try SQLitePersistenceStore(fileURL: cacheURL)
+    try await reconstructed.bootstrap()
+    let repairedPlan = try boundedOutboxQueryPlan(
+      """
+      SELECT mutation_id
+      FROM instant_outbox INDEXED BY instant_outbox_synchronization_blocker_idx
+      WHERE optimistic_overlay_active = 1
+        AND optimistic_effect_receipt_fingerprint IS NULL
+      ORDER BY created_at_ms, mutation_id
+      LIMIT 1
+      """,
+      cacheURL: cacheURL
+    )
+    #expect(
+      repairedPlan.contains {
+        $0.contains("USING COVERING INDEX instant_outbox_synchronization_blocker_idx")
+      }
+    )
+    #expect(!repairedPlan.contains { $0.contains("USE TEMP B-TREE FOR ORDER BY") })
+    expectNoDifference(
+      try boundedOutboxMigrationLedgerCount(
+        name: "0022_outbox_synchronization_blocker_index",
+        cacheURL: cacheURL
+      ),
+      1
+    )
+  }
+
+  @Test
   func automaticClaimExcludesForeignRuntimeSuccessorUntilHeadIsAccepted()
     async throws
   {
@@ -47,7 +275,7 @@ struct InstantBoundedOutboxDeliveryTests {
       prefix: "atomic-claim",
       entityID: "shared-claim-entity"
     )
-    try await secondStore.saveOutbox([firstMutation, successor])
+    _ = try await appendRuntimePreparedBoundedOutbox([successor], to: secondStore)
     let second = try await secondStore.claimAutomaticOutboxDeliveryWindow(
       InstantAutomaticOutboxClaimRequest(
         claimantID: "runtime-b",
@@ -77,6 +305,8 @@ struct InstantBoundedOutboxDeliveryTests {
     let acceptedHead = try await firstStore.acceptOutboxMutation(
       id: "tx-atomic-claim-00000",
       serverTransactionID: "server-atomic-head",
+      claimantID: "runtime-a",
+      claimToken: "claim-a",
       expectedOutboxRevision: revision
     )
     _ = try #require(acceptedHead)
@@ -107,6 +337,270 @@ struct InstantBoundedOutboxDeliveryTests {
     )
     await firstStore.simulateUnexpectedConnectionCloseForTesting()
     await secondStore.simulateUnexpectedConnectionCloseForTesting()
+  }
+
+  @Test
+  func offeredMutationRejectsRuntimePreparedChangedWireAndPreservesOriginalClaim() async throws {
+    let cacheURL = try temporaryBoundedOutboxCacheURL()
+    let persistence = try SQLitePersistenceStore(fileURL: cacheURL)
+    try await persistence.bootstrap()
+    let original = try #require(
+      try await appendRuntimePreparedBoundedOutbox(
+        [
+          boundedMutation(
+            index: 0,
+            prefix: "stale-ack-payload-a",
+            entityID: "stale-ack-entity-a"
+          )
+        ],
+        to: persistence
+      ).first
+    )
+    let claimA = try await persistence.claimAutomaticOutboxDeliveryWindow(
+      InstantAutomaticOutboxClaimRequest(
+        claimantID: "stale-ack-runtime",
+        claimToken: "stale-ack-token-a",
+        now: InstantTimestamp(milliseconds: 10_000),
+        maximumMutationCount: 1
+      )
+    )
+    expectNoDifference(claimA.mutations.map(\.id), [original.id])
+    let optionalRawBodyBeforeRewrite = try boundedOutboxRawBody(
+      id: original.id,
+      cacheURL: cacheURL
+    )
+    let rawBodyBeforeRewrite = try #require(optionalRawBodyBeforeRewrite)
+    let wireFingerprintBeforeRewrite = try original.mutationWireIntentFingerprint()
+    let claimBeforeRewrite = try #require(
+      try await persistence.outboxDeliveryClaimForTesting(id: original.id)
+    )
+    let mutationRevisionBeforeRewrite = try await persistence
+      .outboxMutationRevisionForTesting(id: original.id)
+    let persistenceStateBeforeRewrite = try await persistence.loadCompactState()
+
+    var changedWire = original
+    changedWire.transaction = boundedMutation(
+      index: 1,
+      prefix: "stale-ack-payload-b",
+      entityID: "stale-ack-entity-b"
+    ).transaction
+    changedWire.transaction.id = original.id
+    do {
+      _ = try await replaceRuntimePreparedBoundedOutboxMutation(
+        changedWire,
+        replacing: original,
+        in: persistence
+      )
+      Issue.record("Expected an offered mutation's forward wire intent to be immutable.")
+    } catch let error as InstantError {
+      expectNoDifference(error.code, .persistenceFailed)
+      expectNoDifference(error.operation, "persist offered outbox mutation")
+      #expect(error.message.contains(original.id))
+    }
+
+    let optionalRawBodyAfterRewrite = try boundedOutboxRawBody(
+      id: original.id,
+      cacheURL: cacheURL
+    )
+    let rawBodyAfterRewrite = try #require(optionalRawBodyAfterRewrite)
+    let persistenceStateAfterRewrite = try await persistence.loadCompactState()
+    let mutationRevisionAfterRewrite = try await persistence
+      .outboxMutationRevisionForTesting(id: original.id)
+    let claimAfterRewrite = try #require(
+      try await persistence.outboxDeliveryClaimForTesting(id: original.id)
+    )
+    expectNoDifference(rawBodyAfterRewrite, rawBodyBeforeRewrite)
+    expectNoDifference(
+      try JSONDecoder().decode(PendingMutation.self, from: Data(rawBodyAfterRewrite.utf8))
+        .mutationWireIntentFingerprint(),
+      wireFingerprintBeforeRewrite
+    )
+    expectNoDifference(claimAfterRewrite, claimBeforeRewrite)
+    expectNoDifference(mutationRevisionAfterRewrite, mutationRevisionBeforeRewrite)
+    expectNoDifference(
+      persistenceStateAfterRewrite.storeRevision,
+      persistenceStateBeforeRewrite.storeRevision
+    )
+    expectNoDifference(
+      persistenceStateAfterRewrite.outboxRevision,
+      persistenceStateBeforeRewrite.outboxRevision
+    )
+    expectNoDifference(
+      persistenceStateAfterRewrite.attributeRevision,
+      persistenceStateBeforeRewrite.attributeRevision
+    )
+    expectNoDifference(
+      persistenceStateAfterRewrite.queryResultRevision,
+      persistenceStateBeforeRewrite.queryResultRevision
+    )
+
+    let revision = persistenceStateAfterRewrite.outboxRevision
+    let current = try #require(
+      try await persistence.loadOutboxMutations(
+        statuses: [.pending, .confirmed, .failed],
+        ids: [original.id],
+        limit: 1,
+        expectedOutboxRevision: revision
+      )?.first
+    )
+    expectNoDifference(current.transaction, original.transaction)
+    expectNoDifference(claimAfterRewrite.state, .claimed)
+    expectNoDifference(claimAfterRewrite.claimToken, "stale-ack-token-a")
+    expectNoDifference(claimAfterRewrite.claimantID, "stale-ack-runtime")
+
+    let accepted = try await persistence.acceptOutboxMutation(
+      id: original.id,
+      serverTransactionID: "server-original-offer",
+      claimantID: "stale-ack-runtime",
+      claimToken: "stale-ack-token-a",
+      expectedOutboxRevision: revision
+    )
+    expectNoDifference(accepted?.didChange, true)
+    expectNoDifference(accepted?.mutation?.transaction, original.transaction)
+    expectNoDifference(accepted?.mutation?.status, .confirmed)
+    expectNoDifference(accepted?.mutation?.serverTransactionID, "server-original-offer")
+  }
+
+  @Test
+  func acceptedMutationRejectsPublicAndRuntimePreparedChangedWireRewrites() async throws {
+    let cacheURL = try temporaryBoundedOutboxCacheURL()
+    let persistence = try SQLitePersistenceStore(fileURL: cacheURL)
+    try await persistence.bootstrap()
+    let original = try #require(
+      try await appendRuntimePreparedBoundedOutbox(
+        [
+          boundedMutation(
+            index: 0,
+            prefix: "accepted-rewrite-original",
+            entityID: "accepted-rewrite-original-entity"
+          )
+        ],
+        to: persistence
+      ).first
+    )
+    let claim = try await persistence.claimAutomaticOutboxDeliveryWindow(
+      InstantAutomaticOutboxClaimRequest(
+        claimantID: "accepted-rewrite-runtime",
+        claimToken: "accepted-rewrite-token",
+        now: InstantTimestamp(milliseconds: 20_000),
+        maximumMutationCount: 1
+      )
+    )
+    expectNoDifference(claim.mutations.map(\.id), [original.id])
+    let acceptanceRevision = try await persistence.currentOutboxRevision()
+    let acceptance = try await persistence.acceptOutboxMutation(
+      id: original.id,
+      serverTransactionID: "server-accepted-rewrite-original",
+      claimantID: "accepted-rewrite-runtime",
+      claimToken: "accepted-rewrite-token",
+      expectedOutboxRevision: acceptanceRevision
+    )
+    let accepted = try #require(acceptance?.mutation)
+    expectNoDifference(accepted.status, .confirmed)
+    let acceptanceFingerprint = try #require(
+      try boundedOutboxServerAcceptanceFingerprint(id: original.id, cacheURL: cacheURL)
+    )
+
+    var publicChangedWire = accepted
+    publicChangedWire.transaction = boundedMutation(
+      index: 1,
+      prefix: "accepted-rewrite-public",
+      entityID: "accepted-rewrite-public-entity"
+    ).transaction
+    publicChangedWire.transaction.id = accepted.id
+    #expect(
+      try accepted.mutationWireIntentFingerprint()
+        != publicChangedWire.mutationWireIntentFingerprint()
+    )
+    do {
+      try await persistence.saveOutbox([publicChangedWire])
+      Issue.record("Expected public persistence to reject a changed accepted payload.")
+    } catch let error as InstantError {
+      expectNoDifference(error.operation, "persist prepared outbox mutation")
+    }
+    try await requireAcceptedBoundedOutboxMutationUnchanged(
+      accepted,
+      acceptanceFingerprint: acceptanceFingerprint,
+      cacheURL: cacheURL,
+      persistence: persistence
+    )
+
+    var runtimeChangedWire = accepted
+    runtimeChangedWire.transaction = boundedMutation(
+      index: 2,
+      prefix: "accepted-rewrite-runtime",
+      entityID: "accepted-rewrite-runtime-entity"
+    ).transaction
+    runtimeChangedWire.transaction.id = accepted.id
+    #expect(
+      try accepted.mutationWireIntentFingerprint()
+        != runtimeChangedWire.mutationWireIntentFingerprint()
+    )
+    do {
+      _ = try await replaceRuntimePreparedBoundedOutboxMutation(
+        runtimeChangedWire,
+        replacing: accepted,
+        in: persistence
+      )
+      Issue.record("Expected Runtime persistence to reject a changed accepted payload.")
+    } catch let error as InstantError {
+      expectNoDifference(error.operation, "persist accepted outbox mutation")
+    }
+    try await requireAcceptedBoundedOutboxMutationUnchanged(
+      accepted,
+      acceptanceFingerprint: acceptanceFingerprint,
+      cacheURL: cacheURL,
+      persistence: persistence
+    )
+  }
+
+  @Test
+  func preparedPendingMutationRejectsPublicChangedBodyWithoutLosingItsOwner() async throws {
+    let cacheURL = try temporaryBoundedOutboxCacheURL()
+    let persistence = try SQLitePersistenceStore(fileURL: cacheURL)
+    try await persistence.bootstrap()
+    let original = try #require(
+      try await appendRuntimePreparedBoundedOutbox(
+        [
+          boundedMutation(
+            index: 0,
+            prefix: "prepared-public-rewrite",
+            entityID: "prepared-public-rewrite-original"
+          )
+        ],
+        to: persistence
+      ).first
+    )
+    let originalFingerprint = try #require(
+      try await persistence.optimisticEffectReceiptFingerprintForTesting(id: original.id)
+    )
+    let originalState = try await persistence.loadState()
+
+    var changed = original
+    changed.transaction = boundedMutation(
+      index: 1,
+      prefix: "prepared-public-rewrite",
+      entityID: "prepared-public-rewrite-changed"
+    ).transaction
+    changed.transaction.id = original.id
+    #expect(
+      try changed.optimisticEffectReceiptFingerprint() != originalFingerprint,
+      "The public body edit must invalidate the Runtime-prepared materialization receipt."
+    )
+
+    do {
+      try await persistence.saveOutbox([changed])
+      Issue.record("Expected public persistence to reject a changed prepared pending body.")
+    } catch let error as InstantError {
+      expectNoDifference(error.operation, "persist prepared outbox mutation")
+    }
+
+    let reloaded = try await persistence.loadState()
+    let reloadedFingerprint = try await persistence
+      .optimisticEffectReceiptFingerprintForTesting(id: original.id)
+    expectNoDifference(reloaded.snapshot, originalState.snapshot)
+    expectNoDifference(reloaded.outboxRevision, originalState.outboxRevision)
+    expectNoDifference(reloadedFingerprint, originalFingerprint)
   }
 
   @Test
@@ -159,11 +653,20 @@ struct InstantBoundedOutboxDeliveryTests {
     )
     expectNoDifference(releasedHead.state, .ready)
     expectNoDifference(releasedHead.projectedBodyByteCount, nil)
+    let didReclaimHead = try await store.claimOutboxMutationWithoutHydrationForTesting(
+      id: mutations[0].id,
+      claimantID: "legacy-projected-byte-runtime",
+      claimToken: "legacy-projected-byte-ack-token",
+      deadlineMilliseconds: 16_001
+    )
+    expectNoDifference(didReclaimHead, true)
     let revision = try await store.currentOutboxRevision()
     _ = try #require(
       try await store.acceptOutboxMutation(
         id: mutations[0].id,
         serverTransactionID: "server-legacy-projected-byte-head",
+        claimantID: "legacy-projected-byte-runtime",
+        claimToken: "legacy-projected-byte-ack-token",
         expectedOutboxRevision: revision
       )
     )
@@ -263,6 +766,8 @@ struct InstantBoundedOutboxDeliveryTests {
     _ = try await automaticStore.acceptOutboxMutation(
       id: "tx-explicit-head-barrier-00000",
       serverTransactionID: "server-explicit-head",
+      claimantID: "automatic-runtime",
+      claimToken: "automatic-head-token",
       expectedOutboxRevision: revision
     )
     let explicit = try await explicitStore.claimPendingOutboxMutationsForExplicitFlush(
@@ -296,13 +801,13 @@ struct InstantBoundedOutboxDeliveryTests {
     )
     configuration.autoConnectLiveTransport = false
     let runtime = try await InstantRuntime.bootstrap(configuration: configuration)
-    try await runtime.persistence.saveOutbox([
+    _ = try await appendRuntimePreparedBoundedOutbox([
       unprovenConfirmedBoundedMutation(
         index: 0,
         prefix: "explicit-confirmed-barrier"
       ),
       boundedMutation(index: 1, prefix: "explicit-confirmed-barrier"),
-    ])
+    ], to: runtime.persistence)
 
     let flush = try await runtime.flushPendingMutations(limit: 1)
     #expect(flush.request.mutations.isEmpty)
@@ -825,40 +1330,87 @@ struct InstantBoundedOutboxDeliveryTests {
   }
 
   @Test
-  func explicitConfirmationPreservesCurrentRebasedDurableBody() async throws {
+  func explicitConfirmationRejectsChangedWireAndPreservesSameWireRebase() async throws {
     let cacheURL = try temporaryBoundedOutboxCacheURL()
     let persistence = try SQLitePersistenceStore(fileURL: cacheURL)
     try await persistence.bootstrap()
-    var original = boundedMutation(index: 0, prefix: "explicit-confirm-rebase")
-    original.rollbackTransaction = InstantStoreTransaction(
-      id: "rollback-before-rebase",
-      operations: [.deleteEntity("before-rebase")]
+    let original = boundedMutation(
+      index: 0,
+      prefix: "explicit-confirm-rebase",
+      entityID: "before-rebase"
     )
-    try await persistence.saveOutbox([original])
+    let durableOriginal = try #require(
+      try await appendRuntimePreparedBoundedOutbox([original], to: persistence).first
+    )
     let selected = try await persistence.claimPendingOutboxMutationsForExplicitFlush(
       limit: 1,
       claimantID: "explicit-confirm-runtime",
       claimToken: "explicit-confirm-token",
       now: InstantTimestamp(milliseconds: 50_000)
     )
+    let optionalRawBodyBeforeChangedWire = try boundedOutboxRawBody(
+      id: durableOriginal.id,
+      cacheURL: cacheURL
+    )
+    let rawBodyBeforeChangedWire = try #require(optionalRawBodyBeforeChangedWire)
+    let claimBeforeChangedWire = try #require(
+      try await persistence.outboxDeliveryClaimForTesting(id: durableOriginal.id)
+    )
+    let rowRevisionBeforeChangedWire = try await persistence
+      .outboxMutationRevisionForTesting(id: durableOriginal.id)
+    let stateBeforeChangedWire = try await persistence.loadCompactState()
 
-    var rebased = original
-    rebased.transaction = boundedMutation(
+    var changedWire = durableOriginal
+    changedWire.transaction = boundedMutation(
       index: 1,
       prefix: "explicit-confirm-rebased-body",
       entityID: "rebased-current-entity"
     ).transaction
-    rebased.transaction.id = original.id
-    rebased.rollbackTransaction = InstantStoreTransaction(
-      id: "rollback-after-rebase",
-      operations: [.deleteEntity("rebased-current-entity")]
-    )
-    try await persistence.saveOutbox([rebased])
+    changedWire.transaction.id = durableOriginal.id
+    do {
+      _ = try await replaceRuntimePreparedBoundedOutboxMutation(
+        changedWire,
+        replacing: durableOriginal,
+        in: persistence
+      )
+      Issue.record("Expected explicit delivery to freeze the offered wire intent.")
+    } catch let error as InstantError {
+      expectNoDifference(error.code, .persistenceFailed)
+      expectNoDifference(error.operation, "persist offered outbox mutation")
+    }
 
-    let confirmed = try await persistence.confirmExplicitlyFlushedOutboxMutations(
+    let optionalRawBodyAfterChangedWire = try boundedOutboxRawBody(
+      id: durableOriginal.id,
+      cacheURL: cacheURL
+    )
+    let rawBodyAfterChangedWire = try #require(optionalRawBodyAfterChangedWire)
+    let claimAfterChangedWire = try #require(
+      try await persistence.outboxDeliveryClaimForTesting(id: durableOriginal.id)
+    )
+    let rowRevisionAfterChangedWire = try await persistence
+      .outboxMutationRevisionForTesting(id: durableOriginal.id)
+    let stateAfterChangedWire = try await persistence.loadCompactState()
+    expectNoDifference(rawBodyAfterChangedWire, rawBodyBeforeChangedWire)
+    expectNoDifference(claimAfterChangedWire, claimBeforeChangedWire)
+    expectNoDifference(rowRevisionAfterChangedWire, rowRevisionBeforeChangedWire)
+    expectNoDifference(stateAfterChangedWire.storeRevision, stateBeforeChangedWire.storeRevision)
+    expectNoDifference(
+      stateAfterChangedWire.attributeRevision,
+      stateBeforeChangedWire.attributeRevision
+    )
+    expectNoDifference(
+      stateAfterChangedWire.outboxRevision,
+      stateBeforeChangedWire.outboxRevision
+    )
+    expectNoDifference(
+      stateAfterChangedWire.queryResultRevision,
+      stateBeforeChangedWire.queryResultRevision
+    )
+
+    let confirmedOriginal = try await persistence.confirmExplicitlyFlushedOutboxMutations(
       [
         InstantMutationTransportResult(
-          mutationID: original.id,
+          mutationID: durableOriginal.id,
           outcome: .confirmed,
           acceptance: .serverAccepted
         )
@@ -866,29 +1418,107 @@ struct InstantBoundedOutboxDeliveryTests {
       selectedMutations: selected,
       claimToken: "explicit-confirm-token"
     )
-    expectNoDifference(confirmed.map(\.status), [.confirmed])
-    let returned = try #require(confirmed.first)
-    expectNoDifference(
-      returned.transaction,
-      rebased.transaction,
-      "Explicit flush must return the full current durable transaction, not its compact lifecycle shell."
-    )
-    expectNoDifference(
-      returned.rollbackTransaction,
-      rebased.rollbackTransaction,
-      "The public confirmed result must preserve the current rebased rollback body."
-    )
+    expectNoDifference(confirmedOriginal.map(\.transaction), [durableOriginal.transaction])
+    expectNoDifference(confirmedOriginal.map(\.status), [.confirmed])
     let revision = try await persistence.currentOutboxRevision()
     let currentRows = try await persistence.loadOutboxMutations(
       statuses: [.pending, .confirmed, .failed],
-      ids: [original.id],
+      ids: [durableOriginal.id],
       limit: 1,
       expectedOutboxRevision: revision
     )
     let current = try #require(currentRows?.first)
-    expectNoDifference(current.transaction, rebased.transaction)
-    expectNoDifference(current.rollbackTransaction, rebased.rollbackTransaction)
+    expectNoDifference(current.transaction, durableOriginal.transaction)
+    expectNoDifference(current.rollbackTransaction, durableOriginal.rollbackTransaction)
     expectNoDifference(current.status, .confirmed)
+
+    let sameWireURL = try temporaryBoundedOutboxCacheURL()
+    let sameWirePersistence = try SQLitePersistenceStore(fileURL: sameWireURL)
+    try await sameWirePersistence.bootstrap()
+    let sameWireOriginal = try #require(
+      try await appendRuntimePreparedBoundedOutbox(
+        [boundedMutation(index: 0, prefix: "explicit-confirm-same-wire")],
+        to: sameWirePersistence
+      ).first
+    )
+    let selectedSameWire = try await sameWirePersistence
+      .claimPendingOutboxMutationsForExplicitFlush(
+        limit: 1,
+        claimantID: "explicit-confirm-runtime",
+        claimToken: "explicit-confirm-same-wire-token",
+        now: InstantTimestamp(milliseconds: 60_000)
+      )
+    let claimBeforeSameWireRebase = try #require(
+      try await sameWirePersistence.outboxDeliveryClaimForTesting(id: sameWireOriginal.id)
+    )
+    let rowRevisionBeforeSameWireRebase = try await sameWirePersistence
+      .outboxMutationRevisionForTesting(id: sameWireOriginal.id)
+    let stateBeforeSameWireRebase = try await sameWirePersistence.loadCompactState()
+    var sameWireRebase = sameWireOriginal
+    sameWireRebase.transaction.operations = sameWireRebase.transaction.operations.map {
+      switch $0 {
+      case var .insert(triple):
+        triple.txTime = InstantTimestamp(milliseconds: 60_001)
+        return .insert(triple)
+      default:
+        return $0
+      }
+    }
+    let durableSameWireRebase = try await replaceRuntimePreparedBoundedOutboxMutation(
+      sameWireRebase,
+      replacing: sameWireOriginal,
+      in: sameWirePersistence
+    )
+    let claimAfterSameWireRebase = try #require(
+      try await sameWirePersistence.outboxDeliveryClaimForTesting(id: sameWireOriginal.id)
+    )
+    let rowRevisionAfterSameWireRebase = try await sameWirePersistence
+      .outboxMutationRevisionForTesting(id: sameWireOriginal.id)
+    let stateAfterSameWireRebase = try await sameWirePersistence.loadCompactState()
+    expectNoDifference(claimAfterSameWireRebase, claimBeforeSameWireRebase)
+    expectNoDifference(rowRevisionAfterSameWireRebase, rowRevisionBeforeSameWireRebase + 1)
+    expectNoDifference(
+      stateAfterSameWireRebase.outboxRevision,
+      stateBeforeSameWireRebase.outboxRevision + 1
+    )
+    expectNoDifference(
+      try sameWireOriginal.mutationWireIntentFingerprint(),
+      try durableSameWireRebase.mutationWireIntentFingerprint()
+    )
+    let confirmedSameWire = try await sameWirePersistence
+      .confirmExplicitlyFlushedOutboxMutations(
+        [
+          InstantMutationTransportResult(
+            mutationID: sameWireOriginal.id,
+            outcome: .confirmed,
+            acceptance: .serverAccepted
+          )
+        ],
+        selectedMutations: selectedSameWire,
+        claimToken: "explicit-confirm-same-wire-token"
+      )
+    let returnedSameWire = try #require(confirmedSameWire.first)
+    expectNoDifference(returnedSameWire.transaction, durableSameWireRebase.transaction)
+    expectNoDifference(
+      returnedSameWire.rollbackTransaction,
+      durableSameWireRebase.rollbackTransaction
+    )
+    expectNoDifference(returnedSameWire.status, .confirmed)
+
+    let sameWireRevision = try await sameWirePersistence.currentOutboxRevision()
+    let sameWireRows = try await sameWirePersistence.loadOutboxMutations(
+      statuses: [.pending, .confirmed, .failed],
+      ids: [sameWireOriginal.id],
+      limit: 1,
+      expectedOutboxRevision: sameWireRevision
+    )
+    let currentSameWire = try #require(sameWireRows?.first)
+    expectNoDifference(currentSameWire.transaction, durableSameWireRebase.transaction)
+    expectNoDifference(
+      currentSameWire.rollbackTransaction,
+      durableSameWireRebase.rollbackTransaction
+    )
+    expectNoDifference(currentSameWire.status, .confirmed)
   }
 
   @Test
@@ -925,6 +1555,323 @@ struct InstantBoundedOutboxDeliveryTests {
       newDeliveryStarted,
       false,
       "Only rows inserted with durable offer tracking may begin as never offered."
+    )
+  }
+
+  @Test
+  func receiptAuthorityMigrationGrandfathersOnlyBoundedPreReceiptRuntimeShapes() async throws {
+    let cacheURL = try temporaryBoundedOutboxCacheURL()
+    let store = try SQLitePersistenceStore(fileURL: cacheURL)
+    try await store.bootstrap()
+
+    let materialized = legacyReceiptMutation(
+      index: 0,
+      prefix: "receipt-migration-materialized",
+      overlayState: .applied,
+      rollback: .releasedInverse
+    )
+    let replayable = legacyReceiptMutation(
+      index: 1,
+      prefix: "receipt-migration-replayable",
+      overlayState: .applied,
+      rollback: .none
+    )
+    let removed = legacyReceiptMutation(
+      index: 2,
+      prefix: "receipt-migration-removed",
+      status: .failed,
+      overlayState: .removed,
+      rollback: .none
+    )
+    var accepted = legacyReceiptMutation(
+      index: 3,
+      prefix: "receipt-migration-accepted",
+      status: .confirmed,
+      overlayState: .applied,
+      rollback: .releasedInverse
+    )
+    accepted.serverTransactionID = "server-receipt-migration-accepted"
+    accepted.confirmationSource = .webSocketTransactOK
+    let wrongRollbackID = legacyReceiptMutation(
+      index: 4,
+      prefix: "receipt-migration-wrong-rollback-id",
+      overlayState: .applied,
+      rollback: .wrongID
+    )
+    let unsupportedRollback = legacyReceiptMutation(
+      index: 5,
+      prefix: "receipt-migration-unsupported-rollback",
+      overlayState: .applied,
+      rollback: .unsupportedOperation
+    )
+    let emptyForward = legacyReceiptMutation(
+      index: 6,
+      prefix: "receipt-migration-empty-forward",
+      overlayState: .applied,
+      rollback: .releasedInverse,
+      stepCount: 0
+    )
+    let overStepLimit = legacyReceiptMutation(
+      index: 7,
+      prefix: "receipt-migration-over-step-limit",
+      overlayState: .applied,
+      rollback: .releasedInverse,
+      stepCount: InstantAutomaticOutboxClaimLimits.maximumStepCount + 1
+    )
+    var newReceiptShape = legacyReceiptMutation(
+      index: 8,
+      prefix: "receipt-migration-new-shape",
+      overlayState: .applied,
+      rollback: .none
+    )
+    newReceiptShape.optimisticEffectReceiptVersion =
+      PendingMutation.currentOptimisticEffectReceiptVersion
+    let deployedDeleteInverse = legacyReceiptMutation(
+      index: 9,
+      prefix: "receipt-migration-deployed-delete-inverse",
+      overlayState: .applied,
+      rollback: .deployedDeleteEntityInverse
+    )
+    let taggedReleaseRemoved = legacyReceiptMutation(
+      index: 10,
+      prefix: "receipt-migration-tagged-release-removed",
+      status: .failed,
+      overlayState: .removed,
+      rollback: .none
+    )
+    var taggedReleaseAccepted = legacyReceiptMutation(
+      index: 11,
+      prefix: "receipt-migration-tagged-release-accepted",
+      status: .confirmed,
+      overlayState: .applied,
+      rollback: .releasedInverse
+    )
+    taggedReleaseAccepted.serverTransactionID = "server-tagged-release-accepted"
+    taggedReleaseAccepted.confirmationSource = nil
+    let malformed = legacyReceiptMutation(
+      index: 12,
+      prefix: "receipt-migration-malformed",
+      overlayState: .applied,
+      rollback: .releasedInverse
+    )
+    let seeded = [
+      materialized,
+      replayable,
+      removed,
+      accepted,
+      wrongRollbackID,
+      unsupportedRollback,
+      emptyForward,
+      overStepLimit,
+      newReceiptShape,
+      deployedDeleteInverse,
+      taggedReleaseRemoved,
+      taggedReleaseAccepted,
+      malformed,
+    ]
+    try await store.saveOutbox(seeded)
+    await store.simulateUnexpectedConnectionCloseForTesting()
+    try executeBoundedOutboxSQL(
+      """
+      UPDATE instant_outbox
+      SET optimistic_overlay_active = 0
+      WHERE mutation_id = '\(removed.id)';
+      UPDATE instant_outbox
+      SET confirmation_proven = 1
+      WHERE mutation_id = '\(accepted.id)';
+      UPDATE instant_outbox
+      SET delivery_metadata_version = 0,
+          optimistic_overlay_active = 1
+      WHERE mutation_id = '\(taggedReleaseRemoved.id)';
+      UPDATE instant_outbox
+      SET delivery_metadata_version = 0,
+          confirmation_proven = NULL
+      WHERE mutation_id = '\(taggedReleaseAccepted.id)';
+      """,
+      cacheURL: cacheURL
+    )
+    try corruptBoundedOutboxBody(id: malformed.id, cacheURL: cacheURL)
+    try restorePreReceiptAuthorityOutboxSchema(cacheURL: cacheURL)
+
+    let migrated = try SQLitePersistenceStore(fileURL: cacheURL)
+    try await migrated.bootstrap()
+    let migratedRows = try #require(
+      try await migrated.loadOutboxMutations(
+        statuses: [.pending, .confirmed, .failed],
+        ids: seeded.dropLast().map(\.id),
+        limit: seeded.count,
+        expectedOutboxRevision: try await migrated.currentOutboxRevision()
+      )
+    )
+    let migratedByID = Dictionary(uniqueKeysWithValues: migratedRows.map { ($0.id, $0) })
+
+    expectNoDifference(migratedByID[materialized.id]?.optimisticOverlayState, .applied)
+    expectNoDifference(
+      migratedByID[replayable.id]?.optimisticOverlayState,
+      .applied
+    )
+    expectNoDifference(
+      migratedByID[replayable.id]?.optimisticEffectReceiptVersion,
+      PendingMutation.currentOptimisticEffectReceiptVersion
+    )
+    expectNoDifference(migratedByID[removed.id]?.optimisticOverlayState, .removed)
+    for mutation in [
+      materialized,
+      replayable,
+      removed,
+      accepted,
+      deployedDeleteInverse,
+      taggedReleaseRemoved,
+      taggedReleaseAccepted,
+    ] {
+      #expect(
+        try await migrated.optimisticEffectReceiptFingerprintForTesting(id: mutation.id) != nil
+      )
+    }
+    for mutation in [wrongRollbackID, unsupportedRollback, emptyForward, overStepLimit, newReceiptShape] {
+      let fingerprint = try await migrated
+        .optimisticEffectReceiptFingerprintForTesting(id: mutation.id)
+      expectNoDifference(fingerprint, nil)
+    }
+    expectNoDifference(
+      try boundedOutboxReceiptFingerprint(id: malformed.id, cacheURL: cacheURL),
+      nil
+    )
+    #expect(
+      try boundedOutboxServerAcceptanceFingerprint(id: accepted.id, cacheURL: cacheURL) != nil
+    )
+    #expect(
+      try boundedOutboxServerAcceptanceFingerprint(
+        id: taggedReleaseAccepted.id,
+        cacheURL: cacheURL
+      ) != nil,
+      "A v1.5.6 acceptance reaches 0020 with confirmation_proven NULL."
+    )
+    expectNoDifference(
+      try boundedOutboxOptimisticOverlayActive(id: removed.id, cacheURL: cacheURL),
+      false
+    )
+    expectNoDifference(
+      try boundedOutboxOptimisticOverlayActive(
+        id: taggedReleaseRemoved.id,
+        cacheURL: cacheURL
+      ),
+      false,
+      "A v1.5.6 removed body reaches 0020 with the migration-0012 active default."
+    )
+
+    let migratedAuthoritySnapshot = try boundedOutboxAuthoritySnapshot(
+      ids: seeded.map(\.id),
+      cacheURL: cacheURL
+    )
+    let migratedOutboxRevision = try await migrated.currentOutboxRevision()
+    expectNoDifference(
+      try boundedOutboxMigrationLedgerCount(
+        name: "0020_outbox_optimistic_effect_receipt_fingerprint",
+        cacheURL: cacheURL
+      ),
+      1
+    )
+
+    await migrated.simulateUnexpectedConnectionCloseForTesting()
+    let relaunched = try SQLitePersistenceStore(fileURL: cacheURL)
+    try await relaunched.bootstrap()
+    let relaunchedOutboxRevision = try await relaunched.currentOutboxRevision()
+    expectNoDifference(
+      try boundedOutboxAuthoritySnapshot(ids: seeded.map(\.id), cacheURL: cacheURL),
+      migratedAuthoritySnapshot,
+      "Re-running bootstrap must not broaden, erase, or rewrite the one-time receipt decision."
+    )
+    expectNoDifference(
+      relaunchedOutboxRevision,
+      migratedOutboxRevision
+    )
+    expectNoDifference(
+      try boundedOutboxMigrationLedgerCount(
+        name: "0020_outbox_optimistic_effect_receipt_fingerprint",
+        cacheURL: cacheURL
+      ),
+      1
+    )
+  }
+
+  @Test
+  func preServerApplySchemaUpgradeToleratesMalformedAndOversizedOutboxBodies() async throws {
+    let cacheURL = try temporaryBoundedOutboxCacheURL()
+    let malformed = legacyReceiptMutation(
+      index: 0,
+      prefix: "malformed-released-upgrade",
+      overlayState: .applied,
+      rollback: .releasedInverse
+    )
+    var oversized = legacyReceiptMutation(
+      index: 1,
+      prefix: "oversized-pre-server-apply-upgrade",
+      overlayState: .applied,
+      rollback: .releasedInverse
+    )
+    oversized.transaction.operations = [
+      .insert(
+        InstantTriple(
+          entityID: "todo-oversized-pre-server-apply-upgrade",
+          attributeID: "todos/text",
+          value: .string(
+            String(
+              repeating: "x",
+              count: InstantAutomaticOutboxClaimLimits.maximumEncodedBodyBytes + 1
+            )
+          ),
+          txID: oversized.id,
+          txTime: oversized.createdAt
+        )
+      )
+    ]
+    let oversizedBody = String(
+      decoding: try JSONEncoder().encode(oversized),
+      as: UTF8.self
+    )
+    #expect(
+      oversizedBody.utf8.count > InstantAutomaticOutboxClaimLimits.maximumEncodedBodyBytes
+    )
+    let store = try SQLitePersistenceStore(fileURL: cacheURL)
+    try await store.bootstrap()
+    try await store.saveOutbox([malformed, legacyReceiptMutation(
+      index: 1,
+      prefix: "oversized-pre-server-apply-upgrade",
+      overlayState: .applied,
+      rollback: .releasedInverse
+    )])
+    await store.simulateUnexpectedConnectionCloseForTesting()
+    try corruptBoundedOutboxBody(id: malformed.id, cacheURL: cacheURL)
+    try replaceBoundedOutboxBody(
+      id: oversized.id,
+      body: oversizedBody,
+      cacheURL: cacheURL
+    )
+    let rawMalformedBodyBeforeUpgrade = try boundedOutboxRawBody(
+      id: malformed.id,
+      cacheURL: cacheURL
+    )
+    let malformedBodyBeforeUpgrade = try #require(rawMalformedBodyBeforeUpgrade)
+    try restorePreServerApplyAndReceiptAuthorityOutboxSchema(cacheURL: cacheURL)
+
+    let migrated = try SQLitePersistenceStore(fileURL: cacheURL)
+    try await migrated.bootstrap()
+    expectNoDifference(
+      try boundedOutboxReceiptFingerprint(id: malformed.id, cacheURL: cacheURL),
+      nil
+    )
+    expectNoDifference(
+      try boundedOutboxReceiptFingerprint(id: oversized.id, cacheURL: cacheURL),
+      nil
+    )
+    expectNoDifference(
+      try boundedOutboxRawBody(id: malformed.id, cacheURL: cacheURL),
+      malformedBodyBeforeUpgrade
+    )
+    expectNoDifference(
+      try boundedOutboxRawBody(id: oversized.id, cacheURL: cacheURL),
+      oversizedBody
     )
   }
 
@@ -1001,7 +1948,9 @@ struct InstantBoundedOutboxDeliveryTests {
   }
 
   @Test
-  func legacyAcceptedHeadsAndCorruptSentinelDoNotStarvePendingTail() async throws {
+  func untrustedAcceptedHeadsAndCorruptSentinelBlockConnectionBeforePendingTail()
+    async throws
+  {
     let cacheURL = try temporaryBoundedOutboxCacheURL()
     let liveSession = LiveReactorParitySession(messages: [
       liveReactorInitOK(attrs: liveReactorTodoServerAttrs)
@@ -1011,48 +1960,184 @@ struct InstantBoundedOutboxDeliveryTests {
       cacheURL: cacheURL,
       liveSession: liveSession
     )
-    var accepted = (0..<100).map {
+    let acceptedLooking = (0..<2).map {
       acceptedBoundedMutation(index: $0, prefix: "legacy-head")
     }
-    accepted.append(boundedMutation(index: 100, prefix: "legacy-tail"))
-    try await runtime.persistence.saveOutbox(accepted)
-    try clearBoundedDeliveryMetadata(cacheURL: cacheURL)
+    try await runtime.persistence.saveOutbox(acceptedLooking)
+    let preparedTail = try await appendRuntimePreparedBoundedOutbox(
+      [boundedMutation(index: 2, prefix: "legacy-tail")],
+      to: runtime.persistence
+    )
+    expectNoDifference(
+      try boundedOutboxReceiptFingerprint(
+        id: "tx-legacy-head-00000",
+        cacheURL: cacheURL
+      ),
+      nil
+    )
+    expectNoDifference(
+      try boundedOutboxServerAcceptanceFingerprint(
+        id: "tx-legacy-head-00000",
+        cacheURL: cacheURL
+      ),
+      nil
+    )
+    #expect(
+      try boundedOutboxOptimisticOverlayActive(
+        id: "tx-legacy-head-00000",
+        cacheURL: cacheURL
+      )
+    )
     try corruptBoundedOutboxBody(
-      id: "tx-legacy-head-00050",
+      id: "tx-legacy-head-00000",
       cacheURL: cacheURL
     )
     await runtime.persistence.invalidateMemoryCache()
     await runtime.persistence.resetDecodedOutboxBodyCount()
 
-    try await withKnownIssue {
+    do {
       _ = try await runtime.connect()
-      try await instantLiveWithTimeout(
-        operation: "wait for pending tail behind legacy accepted heads",
-        timeoutMilliseconds: 5_000
-      ) {
-        await liveSession.waitForSentMessageCount(2)
-      }
-    } matching: { issue in
-      issue.description.contains("quarantined corrupt durable mutation")
+      Issue.record("Untrusted accepted-looking rows must block live transport I/O.")
+    } catch let error as InstantError {
+      expectNoDifference(error.code, .persistenceFailed)
+      expectNoDifference(error.localID, "tx-legacy-head-00000")
+      expectNoDifference(error.localMutationDisposition, .retainedUnknown)
+      #expect(error.recovery.contains("Automatic reconnect is paused"))
+    }
+
+    let sentMessages = await liveSession.sentMessages()
+    let sentMutationIDs = sentMessages
+      .filter { $0.op == "transact" }
+      .compactMap(\.clientEventID)
+    expectNoDifference(sentMessages, [], boundedOutboxSource)
+    expectNoDifference(sentMutationIDs, [], boundedOutboxSource)
+    let decodedBodyCount = await runtime.persistence.currentDecodedOutboxBodyCount()
+    expectNoDifference(decodedBodyCount, 0)
+    let rawCorruptBody = try boundedOutboxRawBody(
+      id: "tx-legacy-head-00000",
+      cacheURL: cacheURL
+    )
+    expectNoDifference(rawCorruptBody, "{malformed-json")
+    let quarantinedBody = try await runtime.persistence.quarantinedOutboxBodyForTesting(
+      id: "tx-legacy-head-00000"
+    )
+    expectNoDifference(
+      quarantinedBody,
+      nil,
+      "The body-free connection preflight must retain the raw repair evidence without decoding or rewriting it."
+    )
+    let tail = try #require(preparedTail.first)
+    let tailRevision = try await runtime.persistence.currentOutboxRevision()
+    let durableTail = try #require(
+      try await runtime.persistence.loadOutboxMutations(
+        statuses: [.pending],
+        ids: [tail.id],
+        limit: 1,
+        expectedOutboxRevision: tailRevision
+      )?.first
+    )
+    expectNoDifference(durableTail.status, .pending)
+    let tailClaimValue = try await runtime.persistence.outboxDeliveryClaimForTesting(
+      id: tail.id
+    )
+    let tailClaim = try #require(tailClaimValue)
+    expectNoDifference(tailClaim.state, .ready)
+    expectNoDifference(tailClaim.claimToken, nil)
+    expectNoDifference(tailClaim.deliveryStarted, false)
+    let tailReceipt = try await runtime.persistence
+      .optimisticEffectReceiptFingerprintForTesting(id: tail.id)
+    #expect(tailReceipt != nil)
+    let connectionStatus = try await runtime.connectionStatus()
+    expectNoDifference(connectionStatus.state, .errored)
+    let reconnectIsIdle = await runtime.liveReconnectControllerIsIdleForTesting()
+    expectNoDifference(reconnectIsIdle, true)
+  }
+
+  @Test
+  func SQLiteAuthorizedAcceptedHeadsDoNotStarvePendingTail() async throws {
+    let cacheURL = try temporaryBoundedOutboxCacheURL()
+    let liveSession = LiveReactorParitySession(messages: [
+      liveReactorInitOK(attrs: liveReactorTodoServerAttrs)
+    ])
+    let runtime = try await disconnectedRuntime(
+      appID: "bounded-outbox-authorized-accepted-heads",
+      cacheURL: cacheURL,
+      liveSession: liveSession
+    )
+    let preparedHeads = try await appendRuntimePreparedBoundedOutbox(
+      (0..<2).map { boundedMutation(index: $0, prefix: "authorized-head") },
+      to: runtime.persistence
+    )
+    let claim = try await runtime.persistence.claimAutomaticOutboxDeliveryWindow(
+      InstantAutomaticOutboxClaimRequest(
+        claimantID: "authorized-head-runtime",
+        claimToken: "authorized-head-token",
+        now: InstantTimestamp(milliseconds: 10_000),
+        maximumMutationCount: 2
+      )
+    )
+    expectNoDifference(claim.mutations.map(\.id), preparedHeads.map(\.id))
+    for head in preparedHeads {
+      let revision = try await runtime.persistence.currentOutboxRevision()
+      let acceptanceValue = try await runtime.persistence.acceptOutboxMutation(
+        id: head.id,
+        serverTransactionID: "server-\(head.id)",
+        claimantID: "authorized-head-runtime",
+        claimToken: "authorized-head-token",
+        expectedOutboxRevision: revision
+      )
+      let acceptance = try #require(acceptanceValue)
+      expectNoDifference(acceptance.didChange, true)
+      expectNoDifference(acceptance.mutation?.status, .confirmed)
+      #expect(
+        try boundedOutboxServerAcceptanceFingerprint(id: head.id, cacheURL: cacheURL)
+          != nil
+      )
+    }
+    let preparedTail = try await appendRuntimePreparedBoundedOutbox(
+      [boundedMutation(index: 2, prefix: "authorized-tail")],
+      to: runtime.persistence
+    )
+    let tail = try #require(preparedTail.first)
+    await runtime.persistence.resetDecodedOutboxBodyCount()
+
+    _ = try await runtime.connect()
+    try await instantLiveWithTimeout(
+      operation: "wait for pending tail behind SQLite-authorized accepted heads",
+      timeoutMilliseconds: 5_000
+    ) {
+      await liveSession.waitForSentMessageCount(2)
     }
 
     let sentMutationIDs = await liveSession.sentMessages()
       .filter { $0.op == "transact" }
       .compactMap(\.clientEventID)
-    expectNoDifference(sentMutationIDs, ["tx-legacy-tail-00100"], boundedOutboxSource)
-    let decodedBodyCount = await runtime.persistence.currentDecodedOutboxBodyCount()
-    expectNoDifference(decodedBodyCount, 101)
-    let maximumWindowBodyCount =
-      await runtime.persistence.maximumAutomaticOutboxWindowBodyCountForTesting()
-    #expect(maximumWindowBodyCount <= InstantAutomaticOutboxClaimLimits.maximumBodyDecodeCount)
-    let quarantinedBody = try await runtime.persistence.quarantinedOutboxBodyForTesting(
-      id: "tx-legacy-head-00050"
+    expectNoDifference(sentMutationIDs, [tail.id], boundedOutboxSource)
+    let acceptedRevision = try await runtime.persistence.currentOutboxRevision()
+    let durableHeads = try #require(
+      try await runtime.persistence.loadOutboxMutations(
+        statuses: [.confirmed],
+        ids: preparedHeads.map(\.id),
+        limit: preparedHeads.count,
+        expectedOutboxRevision: acceptedRevision
+      )
     )
-    let hasVisibleFailure = await runtime.failedMutations().contains {
-      $0.id == "tx-legacy-head-00050" && $0.status == .failed
+    for head in preparedHeads {
+      let durableHead = try #require(
+        durableHeads.first { $0.id == head.id }
+      )
+      expectNoDifference(durableHead.status, .confirmed)
     }
-    expectNoDifference(quarantinedBody, "{malformed-json")
-    #expect(hasVisibleFailure)
+    let tailRevision = try await runtime.persistence.currentOutboxRevision()
+    let durableTail = try #require(
+      try await runtime.persistence.loadOutboxMutations(
+        statuses: [.pending],
+        ids: [tail.id],
+        limit: 1,
+        expectedOutboxRevision: tailRevision
+      )?.first
+    )
+    expectNoDifference(durableTail.status, .pending)
     _ = try? await runtime.closeConnection()
   }
 
@@ -1067,8 +2152,9 @@ struct InstantBoundedOutboxDeliveryTests {
       cacheURL: cacheURL,
       liveSession: liveSession
     )
-    try await runtime.persistence.saveOutbox(
-      (0..<51).map { boundedMutation(index: $0, prefix: "in-flight") }
+    _ = try await appendRuntimePreparedBoundedOutbox(
+      (0..<51).map { boundedMutation(index: $0, prefix: "in-flight") },
+      to: runtime.persistence
     )
 
     await runtime.requestLiveMutationDelivery()
@@ -1229,57 +2315,120 @@ struct InstantBoundedOutboxDeliveryTests {
   }
 
   @Test
-  func corruptActiveOverlaySuccessorInsideWindowPreservesOlderAutomaticWrite()
+  func corruptActiveOverlayInsideWindowCommitsBlockerAndReleasesOnlyNewClaims()
     async throws
   {
     let cacheURL = try temporaryBoundedOutboxCacheURL()
-    let liveSession = LiveReactorParitySession(messages: [
-      liveReactorInitOK(attrs: liveReactorTodoServerAttrs)
-    ])
-    var configuration = InstantRuntimeConfiguration(
-      appID: "bounded-outbox-corrupt-active-successor",
-      persistenceURL: cacheURL,
-      initialAttributes: TodoExample.attributes,
-      liveTransport: liveSession.transport
+    let persistence = try SQLitePersistenceStore(fileURL: cacheURL)
+    try await persistence.bootstrap()
+    let prepared = try await appendRuntimePreparedBoundedOutbox(
+      (0..<5).map { boundedMutation(index: $0, prefix: "corrupt-active-window") },
+      to: persistence
     )
-    configuration.autoConnectLiveTransport = false
-    let runtime = try await InstantRuntime.bootstrap(configuration: configuration)
-    let older = boundedMutation(
-      index: 0,
-      prefix: "corrupt-active-successor",
-      entityID: "corrupt-active-shared-entity"
+    let olderClaim = prepared[0]
+    let previouslyOfferedNewClaim = prepared[1]
+    let neverOfferedNewClaim = prepared[2]
+    let corrupt = prepared[3]
+    let untouchedTail = prepared[4]
+    let claimantID = "corrupt-active-window-runtime"
+    let didClaimOlder = try await persistence.claimOutboxMutationWithoutHydrationForTesting(
+      id: olderClaim.id,
+      claimantID: claimantID,
+      claimToken: "older-claim-token",
+      deadlineMilliseconds: 20_000
     )
-    let corruptSuccessor = boundedMutation(
-      index: 1,
-      prefix: "corrupt-active-successor",
-      entityID: "corrupt-active-shared-entity"
+    expectNoDifference(didClaimOlder, true)
+    try executeBoundedOutboxSQL(
+      """
+      UPDATE instant_outbox
+      SET delivery_started = 1
+      WHERE mutation_id = '\(previouslyOfferedNewClaim.id)';
+      """,
+      cacheURL: cacheURL
     )
-    let validTail = boundedMutation(index: 2, prefix: "corrupt-active-successor")
-    for mutation in [older, corruptSuccessor, validTail] {
-      _ = try await runtime.transact(mutation.transaction, createdAt: mutation.createdAt)
-    }
-    try corruptBoundedOutboxBody(id: corruptSuccessor.id, cacheURL: cacheURL)
+    try corruptBoundedOutboxBody(id: corrupt.id, cacheURL: cacheURL)
+    await persistence.invalidateMemoryCache()
+    await persistence.resetDecodedOutboxBodyCount()
+    let outboxRevisionBeforeClaim = try await persistence.currentOutboxRevision()
 
     try await withKnownIssue {
-      _ = try await runtime.connect()
-      try await instantLiveWithTimeout(
-        operation: "wait for delivery after quarantining the corrupt active overlay",
-        timeoutMilliseconds: 5_000
-      ) {
-        await liveSession.waitForSentMessageCount(3)
+      do {
+        _ = try await persistence.claimAutomaticOutboxDeliveryWindow(
+          InstantAutomaticOutboxClaimRequest(
+            claimantID: claimantID,
+            claimToken: "new-claim-token",
+            now: InstantTimestamp(milliseconds: 10_000)
+          )
+        )
+        Issue.record("A newly quarantined active row must block the whole claim window.")
+      } catch let error as InstantError {
+        expectNoDifference(error.code, .persistenceFailed)
+        expectNoDifference(error.operation, "claim automatic outbox delivery")
+        expectNoDifference(error.localID, corrupt.id)
+        expectNoDifference(error.localMutationDisposition, .retainedUnknown)
+        #expect(error.message.contains("Synchronization is blocked by 1 retained mutation."))
       }
     } matching: { issue in
       issue.description.contains("quarantined corrupt durable mutation")
     }
 
-    let sentMessages = await liveSession.sentMessages().filter { $0.op == "transact" }
-    expectNoDifference(sentMessages.compactMap(\.clientEventID), [older.id, validTail.id])
-    let sentOlder = try #require(sentMessages.first { $0.clientEventID == older.id })
-    #expect(
-      sentOlder.fields["tx-steps"]?.arrayValue?.isEmpty == false,
-      "Quarantining a newer active same-key overlay must not erase the older selected wire write."
+    let outboxRevisionAfterClaim = try await persistence.currentOutboxRevision()
+    expectNoDifference(
+      outboxRevisionAfterClaim,
+      outboxRevisionBeforeClaim + 1,
+      "The quarantine and claim rollback commit as one outbox revision."
     )
-    _ = try? await runtime.closeConnection()
+    let blockerValue = try await persistence.synchronizationBlocker()
+    let blocker = try #require(blockerValue)
+    expectNoDifference(blocker.firstMutationID, corrupt.id)
+    expectNoDifference(blocker.blockedMutationCount, 1)
+    let olderClaimStateValue = try await persistence.outboxDeliveryClaimForTesting(
+      id: olderClaim.id
+    )
+    let olderClaimState = try #require(olderClaimStateValue)
+    expectNoDifference(olderClaimState.state, .claimed)
+    expectNoDifference(olderClaimState.claimToken, "older-claim-token")
+    expectNoDifference(olderClaimState.deliveryStarted, true)
+    for (mutation, expectedDeliveryStarted) in [
+      (previouslyOfferedNewClaim, true),
+      (neverOfferedNewClaim, false),
+    ] {
+      let claimValue = try await persistence.outboxDeliveryClaimForTesting(
+        id: mutation.id
+      )
+      let claim = try #require(claimValue)
+      expectNoDifference(claim.state, .ready)
+      expectNoDifference(claim.claimToken, nil)
+      expectNoDifference(
+        claim.deliveryStarted,
+        expectedDeliveryStarted,
+        "The aborted window must restore the exact preclaim offer bit for '\(mutation.id)'."
+      )
+    }
+    let tailClaimValue = try await persistence.outboxDeliveryClaimForTesting(
+      id: untouchedTail.id
+    )
+    let tailClaim = try #require(tailClaimValue)
+    expectNoDifference(tailClaim.state, .ready)
+    expectNoDifference(tailClaim.claimToken, nil)
+    expectNoDifference(tailClaim.deliveryStarted, false)
+    let corruptClaimValue = try await persistence.outboxDeliveryClaimForTesting(
+      id: corrupt.id
+    )
+    let corruptClaim = try #require(corruptClaimValue)
+    expectNoDifference(corruptClaim.state, .ready)
+    expectNoDifference(corruptClaim.claimToken, nil)
+    expectNoDifference(corruptClaim.deliveryStarted, false)
+    let decodedBodyCount = await persistence.currentDecodedOutboxBodyCount()
+    expectNoDifference(
+      decodedBodyCount,
+      3,
+      "The untouched tail must not be decoded after quarantine creates the blocker."
+    )
+    let quarantinedBody = try await persistence.quarantinedOutboxBodyForTesting(
+      id: corrupt.id
+    )
+    expectNoDifference(quarantinedBody, "{malformed-json")
   }
 
   @Test
@@ -1334,8 +2483,9 @@ struct InstantBoundedOutboxDeliveryTests {
       cacheURL: cacheURL,
       liveSession: liveSession
     )
-    try await runtime.persistence.saveOutbox(
-      (0..<30).map { boundedMutation(index: $0, prefix: "step-budget", stepCount: 10) }
+    _ = try await appendRuntimePreparedBoundedOutbox(
+      (0..<30).map { boundedMutation(index: $0, prefix: "step-budget", stepCount: 10) },
+      to: runtime.persistence
     )
 
     await runtime.requestLiveMutationDelivery()
@@ -1374,53 +2524,62 @@ struct InstantBoundedOutboxDeliveryTests {
   }
 
   @Test
-  func automaticDeliveryQuarantinesOverLimitStepHeadAndContinuesToTail() async throws {
+  func overLimitStepHeadCommitsBlockerWithoutClaimingTail() async throws {
     let cacheURL = try temporaryBoundedOutboxCacheURL()
-    let liveSession = LiveReactorParitySession(messages: [
-      liveReactorInitOK(attrs: liveReactorTodoServerAttrs)
-    ])
-    let runtime = try await disconnectedRuntime(
-      appID: "bounded-outbox-hard-step-limit",
-      cacheURL: cacheURL,
-      liveSession: liveSession
+    let persistence = try SQLitePersistenceStore(fileURL: cacheURL)
+    try await persistence.bootstrap()
+    let prepared = try await appendRuntimePreparedBoundedOutbox(
+      [
+        boundedMutation(
+          index: 0,
+          prefix: "hard-step-limit",
+          stepCount: InstantAutomaticOutboxClaimLimits.maximumStepCount + 1
+        ),
+        boundedMutation(index: 1, prefix: "hard-step-limit"),
+      ],
+      to: persistence
     )
-    try await runtime.persistence.saveOutbox([
-      boundedMutation(
-        index: 0,
-        prefix: "hard-step-limit",
-        stepCount: InstantAutomaticOutboxClaimLimits.maximumStepCount + 1
-      ),
-      boundedMutation(index: 1, prefix: "hard-step-limit"),
-    ])
-    await runtime.persistence.resetDecodedOutboxBodyCount()
+    await persistence.resetDecodedOutboxBodyCount()
 
     try await withKnownIssue {
-      _ = try await runtime.connect()
-      try await instantLiveWithTimeout(
-        operation: "wait for tail behind an over-limit step mutation",
-        timeoutMilliseconds: 5_000
-      ) {
-        await liveSession.waitForSentMessageCount(2)
+      do {
+        _ = try await persistence.claimAutomaticOutboxDeliveryWindow(
+          InstantAutomaticOutboxClaimRequest(
+            claimantID: "hard-step-limit-runtime",
+            claimToken: "hard-step-limit-token",
+            now: InstantTimestamp(milliseconds: 10_000)
+          )
+        )
+        Issue.record("An over-limit active head must become a synchronization blocker.")
+      } catch let error as InstantError {
+        expectNoDifference(error.code, .persistenceFailed)
+        expectNoDifference(error.operation, "claim automatic outbox delivery")
+        expectNoDifference(error.localID, prepared[0].id)
+        expectNoDifference(error.localMutationDisposition, .retainedUnknown)
       }
     } matching: { issue in
-      issue.description.contains("257 transport steps exceeds the 256-step automatic-delivery limit")
+      issue.description.contains(
+        "257 transport steps exceeds the 256-step automatic-delivery limit"
+      )
     }
 
-    let sent = await liveSession.sentMessages().filter { $0.op == "transact" }
-    expectNoDifference(sent.compactMap(\.clientEventID), ["tx-hard-step-limit-00001"])
-    let maximumSentStepCount = sent.map {
-      $0.fields["tx-steps"]?.arrayValue?.count ?? 0
-    }.max() ?? 0
-    #expect(maximumSentStepCount <= InstantAutomaticOutboxClaimLimits.maximumStepCount)
-    let decodedBodyCount = await runtime.persistence.currentDecodedOutboxBodyCount()
+    let decodedBodyCount = await persistence.currentDecodedOutboxBodyCount()
     expectNoDifference(
       decodedBodyCount,
-      1,
-      "Normalized step metadata quarantines the 257-step head before its body is decoded."
+      0,
+      "Normalized step metadata quarantines the head before either durable body is decoded."
     )
-    let failed = await runtime.failedMutations()
-    #expect(failed.contains { $0.id == "tx-hard-step-limit-00000" && $0.status == .failed })
-    _ = try? await runtime.closeConnection()
+    let tailClaimValue = try await persistence.outboxDeliveryClaimForTesting(
+      id: prepared[1].id
+    )
+    let tailClaim = try #require(tailClaimValue)
+    expectNoDifference(tailClaim.state, .ready)
+    expectNoDifference(tailClaim.claimToken, nil)
+    expectNoDifference(tailClaim.deliveryStarted, false)
+    let blockerValue = try await persistence.synchronizationBlocker()
+    let blocker = try #require(blockerValue)
+    expectNoDifference(blocker.firstMutationID, prepared[0].id)
+    expectNoDifference(blocker.blockedMutationCount, 1)
   }
 
   @Test
@@ -1520,7 +2679,7 @@ struct InstantBoundedOutboxDeliveryTests {
       cacheURL: cacheURL,
       liveSession: liveSession
     )
-    try await runtime.persistence.saveOutbox([
+    _ = try await appendRuntimePreparedBoundedOutbox([
       boundedMutation(
         index: 0,
         prefix: "legacy-step-blocker",
@@ -1533,7 +2692,7 @@ struct InstantBoundedOutboxDeliveryTests {
         entityID: "shared-step-blocker",
         stepCount: 10
       ),
-    ])
+    ], to: runtime.persistence)
     try clearBoundedDeliveryMetadata(
       id: "tx-legacy-step-blocker-00001",
       cacheURL: cacheURL
@@ -1587,12 +2746,15 @@ struct InstantBoundedOutboxDeliveryTests {
       recordingID: "recording-required-foundation",
       createdAt: InstantTimestamp(milliseconds: 100)
     )
-    try await runtime.persistence.saveOutbox([mutation])
+    try await saveRuntimeAuthorizedBoundedOutboxBodies(
+      [mutation],
+      to: runtime.persistence
+    )
 
     let visibleAt = InstantTimestamp(milliseconds: 200)
     let otherRuntimePersistence = try SQLitePersistenceStore(fileURL: cacheURL)
     try await otherRuntimePersistence.bootstrap()
-    try await otherRuntimePersistence.saveStoreSnapshot(
+    try await saveRuntimePreparedBoundedStoreSnapshot(
       InstantStoreSnapshot(
         attributes: requiredFoundationAttributes,
         triples: [
@@ -1625,7 +2787,8 @@ struct InstantBoundedOutboxDeliveryTests {
             timestamp: visibleAt
           ),
         ]
-      )
+      ),
+      to: otherRuntimePersistence
     )
 
     _ = try await runtime.connect()
@@ -1686,13 +2849,16 @@ struct InstantBoundedOutboxDeliveryTests {
       recordingID: "recording-required-foundation-projected-small-tail",
       createdAt: InstantTimestamp(milliseconds: 300)
     )
-    try await runtime.persistence.saveOutbox([oversizedHead, smallTail])
+    try await saveRuntimeAuthorizedBoundedOutboxBodies(
+      [oversizedHead, smallTail],
+      to: runtime.persistence
+    )
 
     let oversizedAuthoritativeText = String(
       repeating: "x",
       count: InstantAutomaticOutboxClaimLimits.maximumEncodedBodyBytes + 1_024
     )
-    try await runtime.persistence.saveStoreSnapshot(
+    try await saveRuntimePreparedBoundedStoreSnapshot(
       InstantStoreSnapshot(
         attributes: requiredFoundationAttributes,
         triples: [
@@ -1704,7 +2870,8 @@ struct InstantBoundedOutboxDeliveryTests {
             timestamp: InstantTimestamp(milliseconds: 200)
           )
         ]
-      )
+      ),
+      to: runtime.persistence
     )
 
     await runtime.persistence.resetVisibleRequiredScalarDecodeMetricsForTesting()
@@ -1796,10 +2963,13 @@ struct InstantBoundedOutboxDeliveryTests {
       recordingID: "recording-required-foundation-projected-window-second",
       createdAt: InstantTimestamp(milliseconds: 200)
     )
-    try await runtime.persistence.saveOutbox([first, second])
+    try await saveRuntimeAuthorizedBoundedOutboxBodies(
+      [first, second],
+      to: runtime.persistence
+    )
 
     let fiveMiBText = String(repeating: "y", count: 5 * 1_024 * 1_024)
-    try await runtime.persistence.saveStoreSnapshot(
+    try await saveRuntimePreparedBoundedStoreSnapshot(
       InstantStoreSnapshot(
         attributes: requiredFoundationAttributes,
         triples: [
@@ -1818,7 +2988,8 @@ struct InstantBoundedOutboxDeliveryTests {
             timestamp: InstantTimestamp(milliseconds: 300)
           ),
         ]
-      )
+      ),
+      to: runtime.persistence
     )
 
     await runtime.persistence.resetVisibleRequiredScalarDecodeMetricsForTesting()
@@ -1985,8 +3156,25 @@ struct InstantBoundedOutboxDeliveryTests {
       recordingID: "recording-required-foundation-active-failed-overlay",
       createdAt: InstantTimestamp(milliseconds: 200)
     )
-    try await runtime.persistence.saveOutbox([activeFailedOverlay, foundation])
-    try await runtime.persistence.saveStoreSnapshot(
+    activeFailedOverlay.rollbackTransaction = InstantStoreTransaction(
+      id: "rollback-\(activeFailedOverlay.id)",
+      operations: [
+        .insert(
+          requiredFoundationTriple(
+            entityID: "segment-required-foundation-active-failed-overlay",
+            attributeID: "transcriptionSegments/text",
+            value: .string("foundation text"),
+            transactionID: foundation.id,
+            timestamp: foundation.createdAt
+          )
+        )
+      ]
+    )
+    try await saveRuntimeAuthorizedBoundedOutboxBodies(
+      [activeFailedOverlay, foundation],
+      to: runtime.persistence
+    )
+    try await saveRuntimePreparedBoundedStoreSnapshot(
       InstantStoreSnapshot(
         attributes: requiredFoundationAttributes,
         triples: [
@@ -2012,7 +3200,8 @@ struct InstantBoundedOutboxDeliveryTests {
             timestamp: InstantTimestamp(milliseconds: 300)
           ),
         ]
-      )
+      ),
+      to: runtime.persistence
     )
     try executeBoundedOutboxSQL(
       """
@@ -2074,11 +3263,14 @@ struct InstantBoundedOutboxDeliveryTests {
       prefix: "shared-sqlite-visible-write",
       entityID: "shared-todo"
     )
-    try await staleRuntime.persistence.saveOutbox([mutation])
+    try await saveRuntimeAuthorizedBoundedOutboxBodies(
+      [mutation],
+      to: staleRuntime.persistence
+    )
 
     let otherRuntimePersistence = try SQLitePersistenceStore(fileURL: cacheURL)
     try await otherRuntimePersistence.bootstrap()
-    try await otherRuntimePersistence.saveStoreSnapshot(
+    try await saveRuntimePreparedBoundedStoreSnapshot(
       InstantStoreSnapshot(
         attributes: TodoExample.attributes,
         triples: [
@@ -2090,7 +3282,8 @@ struct InstantBoundedOutboxDeliveryTests {
             txTime: InstantTimestamp(milliseconds: 10_000)
           )
         ]
-      )
+      ),
+      to: otherRuntimePersistence
     )
 
     _ = try await staleRuntime.connect()
@@ -2124,10 +3317,11 @@ struct InstantBoundedOutboxDeliveryTests {
       cacheURL: cacheURL,
       liveSession: liveSession
     )
-    try await runtime.persistence.saveOutbox(
+    _ = try await appendRuntimePreparedBoundedOutbox(
       (0..<3).map {
         boundedLargeMutation(index: $0, prefix: "body-bytes", valueByteCount: 5 * 1_024 * 1_024)
-      }
+      },
+      to: runtime.persistence
     )
     await runtime.persistence.resetDecodedOutboxBodyCount()
 
@@ -2168,107 +3362,126 @@ struct InstantBoundedOutboxDeliveryTests {
   }
 
   @Test
-  func oversizedHeadIsQuarantinedWithoutDecodeAndSmallTailStillDelivers() async throws {
+  func oversizedHeadCommitsBlockerWithoutDecodingOrClaimingTail() async throws {
     let cacheURL = try temporaryBoundedOutboxCacheURL()
-    let liveSession = LiveReactorParitySession(messages: [
-      liveReactorInitOK(attrs: liveReactorTodoServerAttrs)
-    ])
-    let runtime = try await connectedRuntime(
-      appID: "bounded-outbox-oversized-head",
-      cacheURL: cacheURL,
-      liveSession: liveSession
+    let persistence = try SQLitePersistenceStore(fileURL: cacheURL)
+    try await persistence.bootstrap()
+    let prepared = try await appendRuntimePreparedBoundedOutbox(
+      [
+        boundedLargeMutation(
+          index: 0,
+          prefix: "oversized-head",
+          valueByteCount: InstantAutomaticOutboxClaimLimits.maximumEncodedBodyBytes + 1_024
+        ),
+        boundedMutation(index: 1, prefix: "oversized-head"),
+      ],
+      to: persistence
     )
-    try await runtime.persistence.saveOutbox([
-      boundedLargeMutation(
-        index: 0,
-        prefix: "oversized-head",
-        valueByteCount: InstantAutomaticOutboxClaimLimits.maximumEncodedBodyBytes + 1_024
-      ),
-      boundedMutation(index: 1, prefix: "oversized-head"),
-    ])
-    await runtime.persistence.resetDecodedOutboxBodyCount()
+    await persistence.resetDecodedOutboxBodyCount()
 
     try await withKnownIssue {
-      await runtime.requestLiveMutationDelivery()
-      try await instantLiveWithTimeout(
-        operation: "wait for small tail behind oversized head",
-        timeoutMilliseconds: 5_000
-      ) {
-        await liveSession.waitForSentMessageCount(2)
+      do {
+        _ = try await persistence.claimAutomaticOutboxDeliveryWindow(
+          InstantAutomaticOutboxClaimRequest(
+            claimantID: "oversized-head-runtime",
+            claimToken: "oversized-head-token",
+            now: InstantTimestamp(milliseconds: 10_000)
+          )
+        )
+        Issue.record("An oversized active head must become a synchronization blocker.")
+      } catch let error as InstantError {
+        expectNoDifference(error.code, .persistenceFailed)
+        expectNoDifference(error.operation, "claim automatic outbox delivery")
+        expectNoDifference(error.localID, prepared[0].id)
+        expectNoDifference(error.localMutationDisposition, .retainedUnknown)
       }
     } matching: { issue in
       issue.description.contains("exceeds the 8388608-byte automatic-delivery limit")
     }
 
-    let sentIDs = await liveSession.sentMessages()
-      .filter { $0.op == "transact" }
-      .compactMap(\.clientEventID)
-    let decodedBodyCount = await runtime.persistence.currentDecodedOutboxBodyCount()
-    let decodedBodyBytes = await runtime.persistence.currentDecodedOutboxBodyByteCount()
-    let quarantinedBodyBytes = try await runtime.persistence
-      .quarantinedOutboxBodyByteCountForTesting(id: "tx-oversized-head-00000")
-    let failedIDs = Set(await runtime.failedMutations().map(\.id))
-    expectNoDifference(sentIDs, ["tx-oversized-head-00001"])
-    expectNoDifference(decodedBodyCount, 1, "Only the small tail body is decoded.")
-    #expect(decodedBodyBytes <= InstantAutomaticOutboxClaimLimits.maximumEncodedBodyBytes)
+    let decodedBodyCount = await persistence.currentDecodedOutboxBodyCount()
+    let decodedBodyBytes = await persistence.currentDecodedOutboxBodyByteCount()
+    let quarantinedBodyBytes = try await persistence
+      .quarantinedOutboxBodyByteCountForTesting(id: prepared[0].id)
+    expectNoDifference(decodedBodyCount, 0)
+    expectNoDifference(decodedBodyBytes, 0)
     #expect(quarantinedBodyBytes > InstantAutomaticOutboxClaimLimits.maximumEncodedBodyBytes)
-    #expect(failedIDs.contains("tx-oversized-head-00000"))
-    _ = try? await runtime.closeConnection()
+    let tailClaimValue = try await persistence.outboxDeliveryClaimForTesting(
+      id: prepared[1].id
+    )
+    let tailClaim = try #require(tailClaimValue)
+    expectNoDifference(tailClaim.state, .ready)
+    expectNoDifference(tailClaim.claimToken, nil)
+    expectNoDifference(tailClaim.deliveryStarted, false)
+    let blockerValue = try await persistence.synchronizationBlocker()
+    let blocker = try #require(blockerValue)
+    expectNoDifference(blocker.firstMutationID, prepared[0].id)
+    expectNoDifference(blocker.blockedMutationCount, 1)
   }
 
   @Test
-  func fiftyCorruptHeadsBecomeVisibleFailuresAndDoNotStarveTail() async throws {
+  func corruptHeadWindowStopsAtFirstBlockerWithoutDecodingTail() async throws {
     let cacheURL = try temporaryBoundedOutboxCacheURL()
-    let liveSession = LiveReactorParitySession(messages: [
-      liveReactorInitOK(attrs: liveReactorTodoServerAttrs)
-    ])
-    let runtime = try await disconnectedRuntime(
-      appID: "bounded-outbox-corrupt-head-window",
-      cacheURL: cacheURL,
-      liveSession: liveSession
-    )
-    try await runtime.persistence.saveOutbox(
-      (0..<51).map { boundedMutation(index: $0, prefix: "corrupt-head-window") }
+    let persistence = try SQLitePersistenceStore(fileURL: cacheURL)
+    try await persistence.bootstrap()
+    let prepared = try await appendRuntimePreparedBoundedOutbox(
+      (0..<51).map { boundedMutation(index: $0, prefix: "corrupt-head-window") },
+      to: persistence
     )
     try corruptBoundedOutboxBodies(
       ids: (0..<50).map { String(format: "tx-corrupt-head-window-%05d", $0) },
       cacheURL: cacheURL
     )
-    await runtime.persistence.invalidateMemoryCache()
-    await runtime.persistence.resetDecodedOutboxBodyCount()
+    await persistence.invalidateMemoryCache()
+    await persistence.resetDecodedOutboxBodyCount()
 
     try await withKnownIssue {
-      _ = try await runtime.connect()
-      try await instantLiveWithTimeout(
-        operation: "wait for tail behind corrupt delivery window",
-        timeoutMilliseconds: 5_000
-      ) {
-        await liveSession.waitForSentMessageCount(2)
+      do {
+        _ = try await persistence.claimAutomaticOutboxDeliveryWindow(
+          InstantAutomaticOutboxClaimRequest(
+            claimantID: "corrupt-head-window-runtime",
+            claimToken: "corrupt-head-window-token",
+            now: InstantTimestamp(milliseconds: 10_000)
+          )
+        )
+        Issue.record("The first corrupt active head must block the claim window.")
+      } catch let error as InstantError {
+        expectNoDifference(error.code, .persistenceFailed)
+        expectNoDifference(error.localID, prepared[0].id)
+        expectNoDifference(error.localMutationDisposition, .retainedUnknown)
       }
     } matching: { issue in
       issue.description.contains("quarantined corrupt durable mutation")
     }
 
-    let sentIDs = await liveSession.sentMessages()
-      .filter { $0.op == "transact" }
-      .compactMap(\.clientEventID)
-    expectNoDifference(sentIDs, ["tx-corrupt-head-window-00050"])
-    let decodedBodyCount = await runtime.persistence.currentDecodedOutboxBodyCount()
-    let failedMutationCount = await runtime.failedMutations().count
-    expectNoDifference(failedMutationCount, 50)
-    let quarantinedBody = try await runtime.persistence.quarantinedOutboxBodyForTesting(
-      id: "tx-corrupt-head-window-00000"
+    let decodedBodyCount = await persistence.currentDecodedOutboxBodyCount()
+    let quarantinedBody = try await persistence.quarantinedOutboxBodyForTesting(
+      id: prepared[0].id
     )
     expectNoDifference(quarantinedBody, "{malformed-json")
-    expectNoDifference(decodedBodyCount, 51)
+    expectNoDifference(decodedBodyCount, 1)
+    let secondQuarantinedBody = try await persistence.quarantinedOutboxBodyForTesting(
+      id: prepared[1].id
+    )
+    expectNoDifference(
+      secondQuarantinedBody,
+      nil,
+      "Rows after the new blocker remain byte-for-byte repair evidence, not a batch quarantine."
+    )
+    let tailClaimValue = try await persistence.outboxDeliveryClaimForTesting(
+      id: prepared[50].id
+    )
+    let tailClaim = try #require(tailClaimValue)
+    expectNoDifference(tailClaim.state, .ready)
+    expectNoDifference(tailClaim.claimToken, nil)
+    expectNoDifference(tailClaim.deliveryStarted, false)
     let maximumWindowBodyCount =
-      await runtime.persistence.maximumAutomaticOutboxWindowBodyCountForTesting()
+      await persistence.maximumAutomaticOutboxWindowBodyCountForTesting()
     #expect(maximumWindowBodyCount <= InstantAutomaticOutboxClaimLimits.maximumBodyDecodeCount)
-    _ = try? await runtime.closeConnection()
   }
 
   @Test
-  func malformedLifecycleWithOversizedFailedBodyCannotPoisonConnectOrTail() async throws {
+  func malformedLifecycleWithOversizedFailedBodyBlocksConnectAndRetainsTail() async throws {
     let cacheURL = try temporaryBoundedOutboxCacheURL()
     var oversizedFailure = boundedLargeMutation(
       index: 0,
@@ -2281,10 +3494,13 @@ struct InstantBoundedOutboxDeliveryTests {
       code: .validationFailed,
       message: oversizedFailure.failureMessage!
     )
-    try await seedBoundedOutbox([
-      oversizedFailure,
-      boundedMutation(index: 1, prefix: "oversized-failed-lifecycle"),
-    ], cacheURL: cacheURL)
+    try await seedBoundedOutbox(
+      [
+        oversizedFailure,
+        boundedMutation(index: 1, prefix: "oversized-failed-lifecycle"),
+      ],
+      cacheURL: cacheURL
+    )
     try corruptBoundedOutboxLifecycle(
       id: oversizedFailure.id,
       cacheURL: cacheURL
@@ -2305,72 +3521,45 @@ struct InstantBoundedOutboxDeliveryTests {
 
     try await withKnownIssue {
       _ = try await runtime.connect()
-      try await instantLiveWithTimeout(
-        operation: "wait for pending tail after oversized failed lifecycle",
+      _ = try await instantLiveWithTimeout(
+        operation: "wait for oversized failed lifecycle blocker",
         timeoutMilliseconds: 5_000
       ) {
-        await liveSession.waitForSentMessageCount(2)
+        while true {
+          let status = try await runtime.connectionStatus()
+          if status.state == .errored, status.synchronizationBlocker != nil {
+            return status
+          }
+          try Task.checkCancellation()
+          await Task.yield()
+        }
       }
     } matching: { issue in
       issue.description.contains("invalid lifecycle metadata")
         || issue.description.contains("exceeds the 8388608-byte automatic-delivery limit")
     }
+    let connectionStatus = try await runtime.connectionStatus()
 
     let sentIDs = await liveSession.sentMessages()
       .filter { $0.op == "transact" }
       .compactMap(\.clientEventID)
     let decodedBodyCount = await runtime.persistence.currentDecodedOutboxBodyCount()
     let decodedBodyBytes = await runtime.persistence.currentDecodedOutboxBodyByteCount()
-    let failedIDs = Set(await runtime.failedMutations().map(\.id))
-    expectNoDifference(sentIDs, ["tx-oversized-failed-lifecycle-00001"])
-    expectNoDifference(decodedBodyCount, 1, "Only the small pending tail body is decoded.")
-    #expect(decodedBodyBytes <= InstantAutomaticOutboxClaimLimits.maximumEncodedBodyBytes)
-    #expect(failedIDs.contains(oversizedFailure.id))
-    let connectionStatus = try await runtime.connectionStatus()
-    #expect(connectionStatus.state == .opened)
-    _ = try? await runtime.closeConnection()
-  }
-
-  @Test
-  func mixedCorruptWindowRefillsBeforeTheValidRowsAreAcknowledged() async throws {
-    let cacheURL = try temporaryBoundedOutboxCacheURL()
-    let liveSession = LiveReactorParitySession(messages: [
-      liveReactorInitOK(attrs: liveReactorTodoServerAttrs)
-    ])
-    let runtime = try await disconnectedRuntime(
-      appID: "bounded-outbox-mixed-corrupt-window",
-      cacheURL: cacheURL,
-      liveSession: liveSession
+    expectNoDifference(sentIDs, [])
+    expectNoDifference(decodedBodyCount, 0)
+    expectNoDifference(decodedBodyBytes, 0)
+    let tailClaimValue = try await runtime.persistence.outboxDeliveryClaimForTesting(
+      id: "tx-oversized-failed-lifecycle-00001"
     )
-    try await runtime.persistence.saveOutbox(
-      (0..<51).map { boundedMutation(index: $0, prefix: "mixed-corrupt-window") }
+    let tailClaim = try #require(tailClaimValue)
+    expectNoDifference(tailClaim.state, .ready)
+    expectNoDifference(tailClaim.claimToken, nil)
+    expectNoDifference(tailClaim.deliveryStarted, false)
+    expectNoDifference(connectionStatus.state, .errored)
+    expectNoDifference(
+      connectionStatus.synchronizationBlocker?.firstMutationID,
+      oversizedFailure.id
     )
-    try corruptBoundedOutboxBodies(
-      ids: (0..<49).map { String(format: "tx-mixed-corrupt-window-%05d", $0) },
-      cacheURL: cacheURL
-    )
-    await runtime.persistence.invalidateMemoryCache()
-
-    try await withKnownIssue {
-      _ = try await runtime.connect()
-      try await instantLiveWithTimeout(
-        operation: "wait for mixed corrupt-window refill",
-        timeoutMilliseconds: 5_000
-      ) {
-        await liveSession.waitForSentMessageCount(3)
-      }
-    } matching: { issue in
-      issue.description.contains("quarantined corrupt durable mutation")
-    }
-
-    let sentIDs = await liveSession.sentMessages()
-      .filter { $0.op == "transact" }
-      .compactMap(\.clientEventID)
-    expectNoDifference(sentIDs, [
-      "tx-mixed-corrupt-window-00049",
-      "tx-mixed-corrupt-window-00050",
-    ])
-    expectNoDifference(Set(sentIDs).count, sentIDs.count)
     _ = try? await runtime.closeConnection()
   }
 
@@ -2419,8 +3608,9 @@ struct InstantBoundedOutboxDeliveryTests {
     let invalid = (0..<50).map {
       boundedEncodingFailureMutation(index: $0, prefix: "encoding-head-window")
     }
-    try await runtime.persistence.saveOutbox(
-      invalid + [boundedMutation(index: 50, prefix: "encoding-head-window")]
+    _ = try await appendRuntimePreparedBoundedOutbox(
+      invalid + [boundedMutation(index: 50, prefix: "encoding-head-window")],
+      to: runtime.persistence
     )
     await runtime.persistence.resetDecodedOutboxBodyCount()
     await runtime.persistence.resetFailedMutationRetryMetricsForTesting()
@@ -2491,7 +3681,7 @@ struct InstantBoundedOutboxDeliveryTests {
       boundedMutation(index: 49, prefix: "mixed-encoding-window"),
       boundedMutation(index: 50, prefix: "mixed-encoding-window"),
     ]
-    try await runtime.persistence.saveOutbox(mutations)
+    _ = try await appendRuntimePreparedBoundedOutbox(mutations, to: runtime.persistence)
 
     try await withKnownIssue {
       await runtime.requestLiveMutationDelivery()
@@ -3119,6 +4309,7 @@ struct InstantBoundedOutboxDeliveryTests {
         id: "rollback-\(mutations[index].id)",
         operations: [.deleteEntity(triple.entityID)]
       )
+      mutations[index].optimisticOverlayState = .applied
       return triple
     }
     let persistence = try SQLitePersistenceStore(fileURL: cacheURL)
@@ -3129,7 +4320,15 @@ struct InstantBoundedOutboxDeliveryTests {
         triples: targetTriples
       )
     )
-    try await persistence.saveOutbox(mutations)
+    let preparedState = try await persistence.loadCompactState()
+    let didAdmitPreparedMutations = try await persistence.saveOutbox(
+      mutations,
+      replacing: [],
+      metadataEntries: [],
+      expectedStoreRevision: preparedState.storeRevision,
+      expectedOutboxRevision: preparedState.outboxRevision
+    )
+    expectNoDifference(didAdmitPreparedMutations, true)
     await persistence.simulateUnexpectedConnectionCloseForTesting()
     let corruptTailID = "tx-failed-flush-ten-thousand-09999"
     try corruptBoundedOutboxBody(id: corruptTailID, cacheURL: cacheURL)
@@ -3249,11 +4448,84 @@ private func boundedMutation(
       )
     )
   }
-  return PendingMutation(
+  var mutation = PendingMutation(
     id: id,
     createdAt: createdAt,
     transaction: InstantStoreTransaction(id: id, operations: operations)
   )
+  mutation.optimisticOverlayState = .applied
+  mutation.optimisticEffectReceiptVersion =
+    PendingMutation.currentOptimisticEffectReceiptVersion
+  return mutation
+}
+
+private enum LegacyReceiptRollback {
+  case none
+  case releasedInverse
+  case deployedDeleteEntityInverse
+  case wrongID
+  case unsupportedOperation
+}
+
+private func legacyReceiptMutation(
+  index: Int,
+  prefix: String,
+  status: InstantMutationStatus = .pending,
+  overlayState: InstantOptimisticOverlayState,
+  rollback: LegacyReceiptRollback,
+  stepCount: Int = 1
+) -> PendingMutation {
+  var mutation = boundedMutation(
+    index: index,
+    prefix: prefix,
+    stepCount: stepCount
+  )
+  mutation.status = status
+  mutation.optimisticOverlayState = overlayState
+  mutation.optimisticEffectReceiptVersion = nil
+  let inverseTriple: InstantTriple
+  if case let .insert(triple)? = mutation.transaction.operations.first {
+    inverseTriple = triple
+  } else {
+    inverseTriple = InstantTriple(
+      entityID: "todo-\(prefix)-\(index)-inverse",
+      attributeID: "todos/text",
+      value: .string("legacy inverse"),
+      txID: mutation.id,
+      txTime: mutation.createdAt
+    )
+  }
+  switch rollback {
+  case .none:
+    mutation.rollbackTransaction = nil
+  case .releasedInverse:
+    mutation.rollbackTransaction = InstantStoreTransaction(
+      id: "rollback-\(mutation.id)",
+      operations: [.retract(inverseTriple)]
+    )
+  case .deployedDeleteEntityInverse:
+    mutation.rollbackTransaction = InstantStoreTransaction(
+      id: "rollback-\(mutation.id)",
+      operations: [.deleteEntity(inverseTriple.entityID)]
+    )
+  case .wrongID:
+    mutation.rollbackTransaction = InstantStoreTransaction(
+      id: "wrong-rollback-\(mutation.id)",
+      operations: [.retract(inverseTriple)]
+    )
+  case .unsupportedOperation:
+    mutation.rollbackTransaction = InstantStoreTransaction(
+      id: "rollback-\(mutation.id)",
+      operations: [
+        .ruleParams(
+          entityID: inverseTriple.entityID,
+          namespace: "todos",
+          params: .object(["allow": .bool(true)])
+        )
+      ]
+    )
+  }
+  return mutation
 }
 
 private let requiredFoundationAttributes: [InstantAttribute] = [
@@ -3340,11 +4612,15 @@ private func requiredFoundationMutation(
       )
     )
   }
-  return PendingMutation(
+  var mutation = PendingMutation(
     id: id,
     createdAt: createdAt,
     transaction: InstantStoreTransaction(id: id, operations: operations)
   )
+  mutation.optimisticOverlayState = .applied
+  mutation.optimisticEffectReceiptVersion =
+    PendingMutation.currentOptimisticEffectReceiptVersion
+  return mutation
 }
 
 private func requiredFoundationTriple(
@@ -3439,8 +4715,193 @@ private func seedBoundedOutbox(
 ) async throws {
   let persistence = try SQLitePersistenceStore(fileURL: cacheURL)
   try await persistence.bootstrap()
-  try await persistence.saveOutbox(mutations)
+  _ = try await appendRuntimePreparedBoundedOutbox(mutations, to: persistence)
   await persistence.simulateUnexpectedConnectionCloseForTesting()
+}
+
+private func saveRuntimePreparedBoundedStoreSnapshot(
+  _ snapshot: InstantStoreSnapshot,
+  to persistence: SQLitePersistenceStore
+) async throws {
+  let state = try await persistence.loadState()
+  let didSave = try await persistence.saveRuntimePreparedStoreSnapshot(
+    snapshot,
+    replacing: state.snapshot.store,
+    expectedStoreRevision: state.storeRevision,
+    expectedOutboxRevision: state.outboxRevision,
+    expectedAttributeRevision: state.attributeRevision
+  )
+  expectNoDifference(didSave, true)
+}
+
+private func saveRuntimeAuthorizedBoundedOutboxBodies(
+  _ mutations: [PendingMutation],
+  to persistence: SQLitePersistenceStore
+) async throws {
+  let state = try await persistence.loadState()
+  let didSave = try await persistence.saveOutbox(
+    state.snapshot.outbox + mutations,
+    replacing: state.snapshot.outbox,
+    metadataEntries: [],
+    expectedStoreRevision: state.storeRevision,
+    expectedOutboxRevision: state.outboxRevision
+  )
+  expectNoDifference(didSave, true)
+}
+
+@discardableResult
+private func appendRuntimePreparedBoundedOutbox(
+  _ mutations: [PendingMutation],
+  to persistence: SQLitePersistenceStore
+) async throws -> [PendingMutation] {
+  let state = try await persistence.loadState()
+  let prepared = try await prepareBoundedOutboxFixture(
+    mutations,
+    applyingTo: state.snapshot.store
+  )
+  let existingIDs = Set(state.snapshot.outbox.map(\.id))
+  #expect(prepared.mutations.allSatisfy { !existingIDs.contains($0.id) })
+  let didSave = try await persistence.saveSnapshot(
+    InstantPersistenceSnapshot(
+      store: prepared.store,
+      outbox: state.snapshot.outbox + prepared.mutations
+    ),
+    replacing: state.snapshot,
+    metadataEntries: [],
+    expectedStoreRevision: state.storeRevision,
+    expectedAttributeRevision: state.attributeRevision,
+    expectedOutboxRevision: state.outboxRevision
+  )
+  expectNoDifference(didSave, true)
+  return prepared.mutations
+}
+
+private func replaceRuntimePreparedBoundedOutboxMutation(
+  _ replacement: PendingMutation,
+  replacing original: PendingMutation,
+  in persistence: SQLitePersistenceStore
+) async throws -> PendingMutation {
+  let state = try await persistence.loadState()
+  let originalIndex = try #require(
+    state.snapshot.outbox.firstIndex { $0.id == original.id }
+  )
+  let fixtureStore = InstantStore(snapshot: state.snapshot.store)
+  switch original.optimisticEffectReceipt {
+  case .unknown:
+    Issue.record("A Runtime rebase fixture requires a proven original receipt.")
+  case .noCurrentMaterializedEffect:
+    break
+  case let .materialized(rollback):
+    _ = await fixtureStore.commitAndPublish(
+      try await fixtureStore.prepareCurrent(rollback)
+    )
+  }
+  let preparedReplacement = try await prepareBoundedOutboxFixture(
+    [replacement],
+    applyingTo: await fixtureStore.snapshot()
+  )
+  let durableReplacement = try #require(preparedReplacement.mutations.first)
+  var nextOutbox = state.snapshot.outbox
+  nextOutbox[originalIndex] = durableReplacement
+  let didSave = try await persistence.saveSnapshot(
+    InstantPersistenceSnapshot(
+      store: preparedReplacement.store,
+      outbox: nextOutbox
+    ),
+    replacing: state.snapshot,
+    metadataEntries: [],
+    expectedStoreRevision: state.storeRevision,
+    expectedAttributeRevision: state.attributeRevision,
+    expectedOutboxRevision: state.outboxRevision
+  )
+  expectNoDifference(didSave, true)
+  return durableReplacement
+}
+
+private func prepareBoundedOutboxFixture(
+  _ mutations: [PendingMutation],
+  applyingTo baseStore: InstantStoreSnapshot
+) async throws -> (store: InstantStoreSnapshot, mutations: [PendingMutation]) {
+  let preparationAttribute = InstantAttribute(
+    id: "missing-bounded-attribute",
+    namespace: "missingBoundedAttributes",
+    name: "value",
+    valueType: .string
+  )
+  var preparationStore = baseStore
+  for attribute in TodoExample.attributes + [preparationAttribute]
+  where !preparationStore.attributes.contains(where: { $0.id == attribute.id }) {
+    preparationStore.attributes.append(attribute)
+  }
+  let fixtureStore = InstantStore(snapshot: preparationStore)
+
+  var insertedEntityIDs: [Set<String>] = []
+  insertedEntityIDs.reserveCapacity(mutations.count)
+  var allInsertedEntityIDs: Set<String> = []
+  var canPrepareAsIndependentCreates = true
+  for mutation in mutations {
+    var entityIDs: Set<String> = []
+    for operation in mutation.transaction.operations {
+      guard case let .insert(triple) = operation else {
+        canPrepareAsIndependentCreates = false
+        break
+      }
+      entityIDs.insert(triple.entityID)
+    }
+    if !allInsertedEntityIDs.isDisjoint(with: entityIDs) {
+      canPrepareAsIndependentCreates = false
+    }
+    allInsertedEntityIDs.formUnion(entityIDs)
+    insertedEntityIDs.append(entityIDs)
+  }
+  if baseStore.triples.contains(where: { allInsertedEntityIDs.contains($0.entityID) }) {
+    canPrepareAsIndependentCreates = false
+  }
+
+  var preparedMutations: [PendingMutation] = []
+  preparedMutations.reserveCapacity(mutations.count)
+  if canPrepareAsIndependentCreates {
+    let aggregate = InstantStoreTransaction(
+      id: "bounded-outbox-fixture-aggregate",
+      operations: mutations.flatMap { $0.transaction.operations }
+    )
+    _ = await fixtureStore.commitAndPublish(
+      try await fixtureStore.prepareCurrent(aggregate)
+    )
+    for (mutation, entityIDs) in zip(mutations, insertedEntityIDs) {
+      var preparedMutation = mutation
+      if entityIDs.isEmpty {
+        preparedMutation.rollbackTransaction = nil
+        preparedMutation.optimisticOverlayState = .applied
+      } else {
+        preparedMutation.rollbackTransaction = InstantStoreTransaction(
+          id: "rollback-\(mutation.id)",
+          operations: entityIDs.sorted().map(InstantTripleOperation.deleteEntity)
+        )
+        preparedMutation.optimisticOverlayState = .applied
+      }
+      preparedMutation.optimisticEffectReceiptVersion =
+        PendingMutation.currentOptimisticEffectReceiptVersion
+      preparedMutations.append(preparedMutation)
+    }
+  } else {
+    for var mutation in mutations {
+      let prepared = try await fixtureStore.prepareCurrent(mutation.transaction)
+      mutation.rollbackTransaction = InstantRuntime.rollbackTransaction(
+        mutationID: mutation.id,
+        prepared: prepared
+      )
+      mutation.optimisticOverlayState = .applied
+      mutation.optimisticEffectReceiptVersion =
+        PendingMutation.currentOptimisticEffectReceiptVersion
+      _ = await fixtureStore.commitAndPublish(prepared)
+      preparedMutations.append(mutation)
+    }
+  }
+
+  var durableStore = await fixtureStore.snapshot()
+  durableStore.attributes = baseStore.attributes
+  return (durableStore, preparedMutations)
 }
 
 private func clearBoundedDeliveryMetadata(cacheURL: URL) throws {
@@ -3479,7 +4940,11 @@ private func restorePreBoundedDeliveryOutboxSchema(cacheURL: URL) throws {
       json TEXT NOT NULL
     );
     INSERT INTO instant_outbox_pre_0012 (mutation_id, status, created_at_ms, json)
-    SELECT mutation_id, status, created_at_ms, json
+    SELECT
+      mutation_id,
+      status,
+      created_at_ms,
+      json_remove(json, '$.optimisticEffectReceiptVersion')
     FROM instant_outbox;
     DROP TABLE instant_outbox;
     ALTER TABLE instant_outbox_pre_0012 RENAME TO instant_outbox;
@@ -3493,7 +4958,8 @@ private func restorePreBoundedDeliveryOutboxSchema(cacheURL: URL) throws {
       '0016_failed_mutation_retry_window',
       '0017_bounded_server_apply',
       '0018_schema_failure_attribute_revision',
-      '0019_projected_outbox_claim_bytes'
+      '0019_projected_outbox_claim_bytes',
+      '0020_outbox_optimistic_effect_receipt_fingerprint'
     );
     PRAGMA foreign_keys = ON;
     """,
@@ -3501,7 +4967,58 @@ private func restorePreBoundedDeliveryOutboxSchema(cacheURL: URL) throws {
   )
 }
 
+private func restorePreReceiptAuthorityOutboxSchema(cacheURL: URL) throws {
+  try executeBoundedOutboxSQL(
+    """
+    DROP INDEX IF EXISTS instant_outbox_synchronization_blocker_idx;
+    ALTER TABLE instant_outbox DROP COLUMN optimistic_effect_receipt_fingerprint;
+    ALTER TABLE instant_outbox DROP COLUMN delivery_claim_payload_fingerprint;
+    ALTER TABLE instant_outbox DROP COLUMN server_acceptance_payload_fingerprint;
+    DELETE FROM instant_schema_migrations
+    WHERE name = '0020_outbox_optimistic_effect_receipt_fingerprint';
+    """,
+    cacheURL: cacheURL
+  )
+}
+
+private func restorePreServerApplyAndReceiptAuthorityOutboxSchema(cacheURL: URL) throws {
+  try executeBoundedOutboxSQL(
+    """
+    DROP INDEX IF EXISTS instant_outbox_synchronization_blocker_idx;
+    DROP INDEX IF EXISTS instant_outbox_server_apply_watermark_idx;
+    DROP INDEX IF EXISTS instant_outbox_server_apply_failed_idx;
+    ALTER TABLE instant_outbox DROP COLUMN server_transaction_id;
+    ALTER TABLE instant_outbox DROP COLUMN confirmation_source;
+    ALTER TABLE instant_outbox DROP COLUMN failure_attribute_revision;
+    ALTER TABLE instant_outbox DROP COLUMN delivery_claim_projected_body_bytes;
+    ALTER TABLE instant_outbox DROP COLUMN optimistic_effect_receipt_fingerprint;
+    ALTER TABLE instant_outbox DROP COLUMN delivery_claim_payload_fingerprint;
+    ALTER TABLE instant_outbox DROP COLUMN server_acceptance_payload_fingerprint;
+    DELETE FROM instant_schema_migrations
+    WHERE name IN (
+      '0017_bounded_server_apply',
+      '0018_schema_failure_attribute_revision',
+      '0019_projected_outbox_claim_bytes',
+      '0020_outbox_optimistic_effect_receipt_fingerprint'
+    );
+    """,
+    cacheURL: cacheURL
+  )
+}
+
 private func corruptBoundedOutboxBody(id: String, cacheURL: URL) throws {
+  try replaceBoundedOutboxBody(
+    id: id,
+    body: "{malformed-json",
+    cacheURL: cacheURL
+  )
+}
+
+private func replaceBoundedOutboxBody(
+  id: String,
+  body: String,
+  cacheURL: URL
+) throws {
   var database: OpaquePointer?
   guard sqlite3_open_v2(cacheURL.path, &database, SQLITE_OPEN_READWRITE, nil) == SQLITE_OK else {
     defer { sqlite3_close(database) }
@@ -3512,7 +5029,7 @@ private func corruptBoundedOutboxBody(id: String, cacheURL: URL) throws {
   guard
     sqlite3_prepare_v2(
       database,
-      "UPDATE instant_outbox SET json = '{malformed-json' WHERE mutation_id = ?",
+      "UPDATE instant_outbox SET json = ? WHERE mutation_id = ?",
       -1,
       &statement,
       nil
@@ -3521,11 +5038,16 @@ private func corruptBoundedOutboxBody(id: String, cacheURL: URL) throws {
     throw boundedOutboxSQLiteError(database, operation: "prepare body corruption")
   }
   defer { sqlite3_finalize(statement) }
-  let bindResult = id.withCString {
+  let bodyBindResult = body.withCString {
     sqlite3_bind_text(statement, 1, $0, -1, boundedOutboxSQLiteTransient)
   }
-  guard bindResult == SQLITE_OK, sqlite3_step(statement) == SQLITE_DONE else {
-    throw boundedOutboxSQLiteError(database, operation: "corrupt outbox body")
+  let idBindResult = id.withCString {
+    sqlite3_bind_text(statement, 2, $0, -1, boundedOutboxSQLiteTransient)
+  }
+  guard bodyBindResult == SQLITE_OK, idBindResult == SQLITE_OK,
+    sqlite3_step(statement) == SQLITE_DONE
+  else {
+    throw boundedOutboxSQLiteError(database, operation: "replace outbox body")
   }
 }
 
@@ -3950,6 +5472,281 @@ private actor BoundedOutboxSuspendedExplicitTransport {
   }
 }
 
+private func requireAcceptedBoundedOutboxMutationUnchanged(
+  _ expected: PendingMutation,
+  acceptanceFingerprint: String,
+  cacheURL: URL,
+  persistence: SQLitePersistenceStore
+) async throws {
+  let state = try await persistence.loadState()
+  let durable = try #require(
+    state.snapshot.outbox.first { $0.id == expected.id }
+  )
+  expectNoDifference(durable, expected)
+  expectNoDifference(
+    try boundedOutboxServerAcceptanceFingerprint(id: expected.id, cacheURL: cacheURL),
+    acceptanceFingerprint
+  )
+}
+
+private func boundedOutboxServerAcceptanceFingerprint(
+  id: String,
+  cacheURL: URL
+) throws -> String? {
+  var database: OpaquePointer?
+  guard sqlite3_open_v2(cacheURL.path, &database, SQLITE_OPEN_READONLY, nil) == SQLITE_OK else {
+    defer { sqlite3_close(database) }
+    throw boundedOutboxSQLiteError(database, operation: "open acceptance probe database")
+  }
+  defer { sqlite3_close(database) }
+  var statement: OpaquePointer?
+  guard
+    sqlite3_prepare_v2(
+      database,
+      """
+      SELECT server_acceptance_payload_fingerprint
+      FROM instant_outbox
+      WHERE mutation_id = ?
+      LIMIT 1
+      """,
+      -1,
+      &statement,
+      nil
+    ) == SQLITE_OK
+  else {
+    throw boundedOutboxSQLiteError(database, operation: "prepare acceptance probe")
+  }
+  defer { sqlite3_finalize(statement) }
+  let bindResult = id.withCString {
+    sqlite3_bind_text(statement, 1, $0, -1, boundedOutboxSQLiteTransient)
+  }
+  guard bindResult == SQLITE_OK, sqlite3_step(statement) == SQLITE_ROW else {
+    throw boundedOutboxSQLiteError(database, operation: "read acceptance proof")
+  }
+  return sqlite3_column_text(statement, 0).map(String.init(cString:))
+}
+
+private func boundedOutboxReceiptFingerprint(
+  id: String,
+  cacheURL: URL
+) throws -> String? {
+  try boundedOutboxOptionalText(
+    column: "optimistic_effect_receipt_fingerprint",
+    id: id,
+    cacheURL: cacheURL
+  )
+}
+
+private struct BoundedOutboxAuthorityRowSnapshot: Equatable {
+  var mutationID: String
+  var body: String
+  var encodedBodyBytes: Int64?
+  var receiptFingerprint: String?
+  var claimFingerprint: String?
+  var acceptanceFingerprint: String?
+  var overlayIsActive: Bool
+  var confirmationIsProven: Bool?
+  var deliveryState: String?
+  var mutationRevision: Int64
+}
+
+private func boundedOutboxAuthoritySnapshot(
+  ids: [String],
+  cacheURL: URL
+) throws -> [BoundedOutboxAuthorityRowSnapshot] {
+  var database: OpaquePointer?
+  guard sqlite3_open_v2(cacheURL.path, &database, SQLITE_OPEN_READONLY, nil) == SQLITE_OK else {
+    defer { sqlite3_close(database) }
+    throw boundedOutboxSQLiteError(database, operation: "open authority snapshot database")
+  }
+  defer { sqlite3_close(database) }
+
+  return try ids.sorted().map { id in
+    var statement: OpaquePointer?
+    guard
+      sqlite3_prepare_v2(
+        database,
+        """
+        SELECT json, encoded_body_bytes,
+               optimistic_effect_receipt_fingerprint,
+               delivery_claim_payload_fingerprint,
+               server_acceptance_payload_fingerprint,
+               optimistic_overlay_active, confirmation_proven,
+               delivery_state, mutation_revision
+        FROM instant_outbox
+        WHERE mutation_id = ?
+        LIMIT 1
+        """,
+        -1,
+        &statement,
+        nil
+      ) == SQLITE_OK
+    else {
+      throw boundedOutboxSQLiteError(database, operation: "prepare authority snapshot")
+    }
+    defer { sqlite3_finalize(statement) }
+    let bindResult = id.withCString {
+      sqlite3_bind_text(statement, 1, $0, -1, boundedOutboxSQLiteTransient)
+    }
+    guard bindResult == SQLITE_OK, sqlite3_step(statement) == SQLITE_ROW,
+      let bodyBytes = sqlite3_column_text(statement, 0)
+    else {
+      throw boundedOutboxSQLiteError(database, operation: "read authority snapshot")
+    }
+    return BoundedOutboxAuthorityRowSnapshot(
+      mutationID: id,
+      body: String(cString: bodyBytes),
+      encodedBodyBytes: sqlite3_column_type(statement, 1) == SQLITE_NULL
+        ? nil
+        : sqlite3_column_int64(statement, 1),
+      receiptFingerprint: sqlite3_column_text(statement, 2).map(String.init(cString:)),
+      claimFingerprint: sqlite3_column_text(statement, 3).map(String.init(cString:)),
+      acceptanceFingerprint: sqlite3_column_text(statement, 4).map(String.init(cString:)),
+      overlayIsActive: sqlite3_column_int64(statement, 5) != 0,
+      confirmationIsProven: sqlite3_column_type(statement, 6) == SQLITE_NULL
+        ? nil
+        : sqlite3_column_int64(statement, 6) != 0,
+      deliveryState: sqlite3_column_text(statement, 7).map(String.init(cString:)),
+      mutationRevision: sqlite3_column_int64(statement, 8)
+    )
+  }
+}
+
+private func boundedOutboxMigrationLedgerCount(
+  name: String,
+  cacheURL: URL
+) throws -> Int64 {
+  var database: OpaquePointer?
+  guard sqlite3_open_v2(cacheURL.path, &database, SQLITE_OPEN_READONLY, nil) == SQLITE_OK else {
+    defer { sqlite3_close(database) }
+    throw boundedOutboxSQLiteError(database, operation: "open migration ledger database")
+  }
+  defer { sqlite3_close(database) }
+  var statement: OpaquePointer?
+  guard
+    sqlite3_prepare_v2(
+      database,
+      "SELECT COUNT(*) FROM instant_schema_migrations WHERE name = ?",
+      -1,
+      &statement,
+      nil
+    ) == SQLITE_OK
+  else {
+    throw boundedOutboxSQLiteError(database, operation: "prepare migration ledger probe")
+  }
+  defer { sqlite3_finalize(statement) }
+  let bindResult = name.withCString {
+    sqlite3_bind_text(statement, 1, $0, -1, boundedOutboxSQLiteTransient)
+  }
+  guard bindResult == SQLITE_OK, sqlite3_step(statement) == SQLITE_ROW else {
+    throw boundedOutboxSQLiteError(database, operation: "read migration ledger")
+  }
+  return sqlite3_column_int64(statement, 0)
+}
+
+private func boundedOutboxRawBody(id: String, cacheURL: URL) throws -> String? {
+  var database: OpaquePointer?
+  guard sqlite3_open_v2(cacheURL.path, &database, SQLITE_OPEN_READONLY, nil) == SQLITE_OK else {
+    defer { sqlite3_close(database) }
+    throw boundedOutboxSQLiteError(database, operation: "open raw body database")
+  }
+  defer { sqlite3_close(database) }
+  var statement: OpaquePointer?
+  guard
+    sqlite3_prepare_v2(
+      database,
+      "SELECT json FROM instant_outbox WHERE mutation_id = ? LIMIT 1",
+      -1,
+      &statement,
+      nil
+    ) == SQLITE_OK
+  else {
+    throw boundedOutboxSQLiteError(database, operation: "prepare raw body probe")
+  }
+  defer { sqlite3_finalize(statement) }
+  let bindResult = id.withCString {
+    sqlite3_bind_text(statement, 1, $0, -1, boundedOutboxSQLiteTransient)
+  }
+  guard bindResult == SQLITE_OK else {
+    throw boundedOutboxSQLiteError(database, operation: "bind raw body probe")
+  }
+  let stepResult = sqlite3_step(statement)
+  guard stepResult == SQLITE_ROW else {
+    if stepResult == SQLITE_DONE { return nil }
+    throw boundedOutboxSQLiteError(database, operation: "read raw body")
+  }
+  return sqlite3_column_text(statement, 0).map(String.init(cString:))
+}
+
+private func boundedOutboxOptimisticOverlayActive(
+  id: String,
+  cacheURL: URL
+) throws -> Bool {
+  var database: OpaquePointer?
+  guard sqlite3_open_v2(cacheURL.path, &database, SQLITE_OPEN_READONLY, nil) == SQLITE_OK else {
+    defer { sqlite3_close(database) }
+    throw boundedOutboxSQLiteError(database, operation: "open overlay probe database")
+  }
+  defer { sqlite3_close(database) }
+  var statement: OpaquePointer?
+  guard
+    sqlite3_prepare_v2(
+      database,
+      "SELECT optimistic_overlay_active FROM instant_outbox WHERE mutation_id = ? LIMIT 1",
+      -1,
+      &statement,
+      nil
+    ) == SQLITE_OK
+  else {
+    throw boundedOutboxSQLiteError(database, operation: "prepare overlay probe")
+  }
+  defer { sqlite3_finalize(statement) }
+  let bindResult = id.withCString {
+    sqlite3_bind_text(statement, 1, $0, -1, boundedOutboxSQLiteTransient)
+  }
+  guard bindResult == SQLITE_OK, sqlite3_step(statement) == SQLITE_ROW else {
+    throw boundedOutboxSQLiteError(database, operation: "read overlay activity")
+  }
+  return sqlite3_column_int64(statement, 0) != 0
+}
+
+private func boundedOutboxOptionalText(
+  column: String,
+  id: String,
+  cacheURL: URL
+) throws -> String? {
+  precondition(
+    ["optimistic_effect_receipt_fingerprint"].contains(column),
+    "Only fixed test-owned column names may be interpolated."
+  )
+  var database: OpaquePointer?
+  guard sqlite3_open_v2(cacheURL.path, &database, SQLITE_OPEN_READONLY, nil) == SQLITE_OK else {
+    defer { sqlite3_close(database) }
+    throw boundedOutboxSQLiteError(database, operation: "open receipt probe database")
+  }
+  defer { sqlite3_close(database) }
+  var statement: OpaquePointer?
+  guard
+    sqlite3_prepare_v2(
+      database,
+      "SELECT \(column) FROM instant_outbox WHERE mutation_id = ? LIMIT 1",
+      -1,
+      &statement,
+      nil
+    ) == SQLITE_OK
+  else {
+    throw boundedOutboxSQLiteError(database, operation: "prepare receipt probe")
+  }
+  defer { sqlite3_finalize(statement) }
+  let bindResult = id.withCString {
+    sqlite3_bind_text(statement, 1, $0, -1, boundedOutboxSQLiteTransient)
+  }
+  guard bindResult == SQLITE_OK, sqlite3_step(statement) == SQLITE_ROW else {
+    throw boundedOutboxSQLiteError(database, operation: "read receipt proof")
+  }
+  return sqlite3_column_text(statement, 0).map(String.init(cString:))
+}
+
 private func boundedOutboxDeliveryStarted(id: String, cacheURL: URL) throws -> Bool {
   var database: OpaquePointer?
   guard sqlite3_open_v2(cacheURL.path, &database, SQLITE_OPEN_READONLY, nil) == SQLITE_OK else {
@@ -3988,6 +5785,43 @@ private func executeBoundedOutboxSQL(_ sql: String, cacheURL: URL) throws {
   defer { sqlite3_close(database) }
   guard sqlite3_exec(database, sql, nil, nil, nil) == SQLITE_OK else {
     throw boundedOutboxSQLiteError(database, operation: "clear delivery metadata")
+  }
+}
+
+private func boundedOutboxQueryPlan(_ sql: String, cacheURL: URL) throws -> [String] {
+  var database: OpaquePointer?
+  guard sqlite3_open_v2(cacheURL.path, &database, SQLITE_OPEN_READONLY, nil) == SQLITE_OK else {
+    defer { sqlite3_close(database) }
+    throw boundedOutboxSQLiteError(database, operation: "open query-plan database")
+  }
+  defer { sqlite3_close(database) }
+  var statement: OpaquePointer?
+  guard
+    sqlite3_prepare_v2(
+      database,
+      "EXPLAIN QUERY PLAN \(sql)",
+      -1,
+      &statement,
+      nil
+    ) == SQLITE_OK
+  else {
+    throw boundedOutboxSQLiteError(database, operation: "prepare query plan")
+  }
+  defer { sqlite3_finalize(statement) }
+
+  var details: [String] = []
+  while true {
+    switch sqlite3_step(statement) {
+    case SQLITE_ROW:
+      guard let detail = sqlite3_column_text(statement, 3) else {
+        throw boundedOutboxSQLiteError(database, operation: "read query-plan detail")
+      }
+      details.append(String(cString: detail))
+    case SQLITE_DONE:
+      return details
+    default:
+      throw boundedOutboxSQLiteError(database, operation: "read query plan")
+    }
   }
 }
 

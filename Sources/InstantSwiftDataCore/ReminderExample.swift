@@ -2260,6 +2260,16 @@ public enum ReminderExample {
     .equals(field: "priority", value: .number(Double(priority.rank)))
   }
 
+  package static var legacyPriorityRankMigration: InstantLocalPersistenceMigration {
+    InstantLocalPersistenceMigration(
+      name: "reminders.priority-ranks",
+      affectedAttributeIDs: ["reminders/priority"],
+      transformAttribute: migrateLegacyPriorityRank(in:),
+      transformTriple: migrateDurableLegacyPriorityRank(in:),
+      transformMutation: migrateDurableLegacyPriorityRanks(in:)
+    )
+  }
+
   public static func migrateLegacyPriorityRanks(
     in snapshot: InstantPersistenceSnapshot
   ) -> InstantPersistenceSnapshot {
@@ -2272,13 +2282,7 @@ public enum ReminderExample {
   public static func migrateLegacyPriorityRanks(
     in snapshot: InstantStoreSnapshot
   ) -> InstantStoreSnapshot {
-    let attributes = snapshot.attributes.map { attribute in
-      var attribute = attribute
-      if attribute.id == "reminders/priority" {
-        attribute.valueType = .number
-      }
-      return attribute
-    }
+    let attributes = snapshot.attributes.map(migrateLegacyPriorityRank(in:))
     var seenTriples: Set<InstantTriple> = []
     let triples = snapshot.triples.compactMap { triple -> InstantTriple? in
       let migrated = migrateLegacyPriorityRank(in: triple)
@@ -2288,21 +2292,52 @@ public enum ReminderExample {
     return InstantStoreSnapshot(attributes: attributes, triples: triples)
   }
 
+  private static func migrateLegacyPriorityRank(
+    in attribute: InstantAttribute
+  ) -> InstantAttribute {
+    var attribute = attribute
+    if attribute.id == "reminders/priority" {
+      attribute.valueType = .number
+    }
+    return attribute
+  }
+
   private static func migrateLegacyPriorityRanks(
     in mutation: PendingMutation
   ) -> PendingMutation {
     var mutation = mutation
-    mutation.transaction = InstantStoreTransaction(
-      id: mutation.transaction.id,
-      operations: mutation.transaction.operations.map(migrateLegacyPriorityRank(in:))
+    mutation.transaction = migrateLegacyPriorityRanks(in: mutation.transaction)
+    mutation.rollbackTransaction = mutation.rollbackTransaction.map(
+      migrateLegacyPriorityRanks(in:)
     )
     return mutation
+  }
+
+  private static func migrateLegacyPriorityRanks(
+    in transaction: InstantStoreTransaction
+  ) -> InstantStoreTransaction {
+    InstantStoreTransaction(
+      id: transaction.id,
+      operations: transaction.operations.map(migrateLegacyPriorityRank(in:))
+    )
   }
 
   private static func migrateLegacyPriorityRank(
     in operation: InstantTripleOperation
   ) -> InstantTripleOperation {
     switch operation {
+    case let .requireEntityMissingByLookup(entity, namespace):
+      return .requireEntityMissingByLookup(
+        migrateLegacyPriorityRank(in: entity),
+        namespace: namespace
+      )
+
+    case let .requireEntityExistsByLookup(entity, namespace):
+      return .requireEntityExistsByLookup(
+        migrateLegacyPriorityRank(in: entity),
+        namespace: namespace
+      )
+
     case let .requireTripleExists(entityID, attributeID, value):
       return .requireTripleExists(
         entityID: entityID,
@@ -2315,7 +2350,7 @@ public enum ReminderExample {
 
     case let .mergeByLookup(entity, attributeID, value, txID, txTime):
       return .mergeByLookup(
-        entity: entity,
+        entity: migrateLegacyPriorityRank(in: entity),
         attributeID: attributeID,
         value: migrateLegacyPriorityRank(attributeID: attributeID, value: value),
         txID: txID,
@@ -2327,7 +2362,7 @@ public enum ReminderExample {
 
     case let .insertByLookup(entity, attributeID, value, txID, txTime):
       return .insertByLookup(
-        entity: entity,
+        entity: migrateLegacyPriorityRank(in: entity),
         attributeID: attributeID,
         value: migrateLegacyPriorityRank(attributeID: attributeID, value: value),
         txID: txID,
@@ -2339,18 +2374,146 @@ public enum ReminderExample {
 
     case let .retractByLookup(entity, attributeID, value, txID, txTime):
       return .retractByLookup(
-        entity: entity,
+        entity: migrateLegacyPriorityRank(in: entity),
         attributeID: attributeID,
         value: migrateLegacyPriorityRank(attributeID: attributeID, value: value),
         txID: txID,
         txTime: txTime
       )
 
-    case .requireEntityMissing, .requireEntityMissingByLookup,
-      .requireEntityExists, .requireEntityExistsByLookup,
-      .deleteEntity, .deleteEntityInNamespace, .deleteEntityByLookup,
-      .ruleParams, .ruleParamsByLookup:
+    case let .deleteEntityByLookup(entity):
+      return .deleteEntityByLookup(migrateLegacyPriorityRank(in: entity))
+
+    case let .ruleParamsByLookup(entity, namespace, params):
+      return .ruleParamsByLookup(
+        entity: migrateLegacyPriorityRank(in: entity),
+        namespace: namespace,
+        params: params
+      )
+
+    case .requireEntityMissing, .requireEntityExists,
+      .deleteEntity, .deleteEntityInNamespace, .ruleParams:
       return operation
+    }
+  }
+
+  private static func migrateLegacyPriorityRank(
+    in lookup: InstantLookupRef
+  ) -> InstantLookupRef {
+    InstantLookupRef(
+      attributeID: lookup.attributeID,
+      value: InstantLookupValue(
+        migrateLegacyPriorityRank(
+          attributeID: lookup.attributeID,
+          value: lookup.value.instantValue
+        )
+      )
+    )
+  }
+
+  private static func migrateDurableLegacyPriorityRanks(
+    in mutation: PendingMutation
+  ) throws -> PendingMutation {
+    try validateDurableLegacyPriorityRanks(in: mutation.transaction)
+    if let rollbackTransaction = mutation.rollbackTransaction {
+      try validateDurableLegacyPriorityRanks(in: rollbackTransaction)
+    }
+    return migrateLegacyPriorityRanks(in: mutation)
+  }
+
+  private static func migrateDurableLegacyPriorityRank(
+    in triple: InstantTriple
+  ) throws -> InstantTriple {
+    var triple = triple
+    triple.value = try migrateDurableLegacyPriorityRank(
+      attributeID: triple.attributeID,
+      value: triple.value
+    )
+    return triple
+  }
+
+  private static func validateDurableLegacyPriorityRanks(
+    in transaction: InstantStoreTransaction
+  ) throws {
+    for operation in transaction.operations {
+      switch operation {
+      case let .requireEntityMissingByLookup(entity, _),
+        let .requireEntityExistsByLookup(entity, _),
+        let .deleteEntityByLookup(entity):
+        try validateDurableLegacyPriorityRank(in: entity)
+
+      case let .requireTripleExists(_, attributeID, value):
+        _ = try migrateDurableLegacyPriorityRank(
+          attributeID: attributeID,
+          value: value
+        )
+
+      case let .merge(triple), let .insert(triple), let .retract(triple):
+        _ = try migrateDurableLegacyPriorityRank(in: triple)
+
+      case let .mergeByLookup(entity, attributeID, value, _, _),
+        let .insertByLookup(entity, attributeID, value, _, _),
+        let .retractByLookup(entity, attributeID, value, _, _):
+        try validateDurableLegacyPriorityRank(in: entity)
+        _ = try migrateDurableLegacyPriorityRank(
+          attributeID: attributeID,
+          value: value
+        )
+
+      case let .ruleParamsByLookup(entity, _, _):
+        try validateDurableLegacyPriorityRank(in: entity)
+
+      case .requireEntityMissing, .requireEntityExists,
+        .deleteEntity, .deleteEntityInNamespace, .ruleParams:
+        break
+      }
+    }
+  }
+
+  private static func validateDurableLegacyPriorityRank(
+    in lookup: InstantLookupRef
+  ) throws {
+    _ = try migrateDurableLegacyPriorityRank(
+      attributeID: lookup.attributeID,
+      value: lookup.value.instantValue
+    )
+  }
+
+  private static func migrateDurableLegacyPriorityRank(
+    attributeID: String,
+    value: InstantValue
+  ) throws -> InstantValue {
+    guard attributeID == "reminders/priority" else { return value }
+    switch value {
+    case let .string(rawValue):
+      guard let priority = ReminderPriority(rawValue: rawValue) else {
+        throw InstantError(
+          code: .persistenceFailed,
+          operation: "migrate reminder priority persistence",
+          message: "Unknown legacy reminder priority '\(rawValue)' cannot be migrated safely.",
+          recovery: "Repair or reset the incompatible local row before retrying startup."
+        )
+      }
+      return .number(Double(priority.rank))
+    case let .number(rawValue):
+      guard let rank = Int(exactly: rawValue), ReminderPriority(rank: rank) != nil else {
+        throw InstantError(
+          code: .persistenceFailed,
+          operation: "migrate reminder priority persistence",
+          message: "An unknown numeric reminder priority rank cannot be migrated safely.",
+          recovery: "Repair or reset the incompatible local row before retrying startup."
+        )
+      }
+      return value
+    case .null:
+      return value
+    case .bool, .date, .json, .ref, .lookupRef:
+      throw InstantError(
+        code: .persistenceFailed,
+        operation: "migrate reminder priority persistence",
+        message: "An incompatible reminder priority value cannot be migrated safely.",
+        recovery: "Repair or reset the incompatible local row before retrying startup."
+      )
     }
   }
 

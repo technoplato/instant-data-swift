@@ -1,1 +1,3 @@
 codex-desktop/019fe75c-e769-71b1-a62f-14478e917459/root
+codex-desktop/01a00071-f1c1-7193-adcd-3bc9f30b5f95/root/semantic_noop_v2 2026-08-15T02:10:00-0400 mower pending-overlay-provenance-only plan=2026-08-14-semantic-noop-insert-v2
+codex-desktop/01a00071-f1c1-7193-adcd-3bc9f30b5f95/root/legacy_head_contract_tests 2026-08-15T09:58:25-0400 mower typed-synchronization-blocker-model plan=2026-08-14-semantic-noop-insert-v2

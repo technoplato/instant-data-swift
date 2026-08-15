@@ -11703,13 +11703,12 @@ private struct CLIContext: Sendable {
       liveTransport: liveMode ? .live : nil
     )
     runtimeConfiguration.autoConnectLiveTransport = liveMode
+    runtimeConfiguration.localPersistenceMigrations = [
+      ReminderExample.legacyPriorityRankMigration
+    ]
     let runtime = try await InstantRuntime.bootstrap(
       configuration: runtimeConfiguration,
       storageTransport: liveMode ? .live() : nil
-    )
-    try await runtime.migrateLocalPersistenceSnapshot(
-      name: "reminders.priority-ranks",
-      transform: ReminderExample.migrateLegacyPriorityRanks(in:)
     )
     return Self(
       appID: resolved.appID,

@@ -17,6 +17,18 @@ private actor BootstrapLiveConnectionProbe {
   }
 }
 
+private actor BootstrapLiveReceiveProbe {
+  private var count = 0
+
+  func record() {
+    count += 1
+  }
+
+  func snapshot() -> Int {
+    count
+  }
+}
+
 private actor BootstrapLiveTestSession {
   nonisolated private let abortState = InstantLiveTestWireAbortState()
   private var queued: [InstantLiveMessage] = []
@@ -1898,13 +1910,23 @@ struct BootstrapTests {
   @Test
   func bootstrapUsesLiveTransportDependency() async throws {
     let appID = "live-transport-dependency-\(UUID().uuidString)"
+    let receiveProbe = BootstrapLiveReceiveProbe()
     let directory = FileManager.default.temporaryDirectory
       .appendingPathComponent("InstantSwiftDataLiveTransport-\(UUID().uuidString)", isDirectory: true)
     try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
     defer { try? FileManager.default.removeItem(at: directory) }
 
     try await withDependencies {
-      $0.instantLiveTransport = .local
+      $0.instantLiveTransport = InstantLiveTransportClient.local.mapSessions { session in
+        session.forwarding(
+          send: session.send,
+          receive: {
+            await receiveProbe.record()
+            return try await session.receive()
+          },
+          close: session.close
+        )
+      }
       try await $0.bootstrapInstantSwiftData(
         appID: appID,
         websocketURI: try #require(URL(string: "wss://ws.example.test/runtime/session")),
@@ -1921,10 +1943,22 @@ struct BootstrapTests {
         "wss://ws.example.test/runtime/session"
       )
 
+      let receiveCountBeforeConnect = await receiveProbe.snapshot()
       let connectedStatus = try await client.connect()
       expectNoDifference(connectedStatus.transport, .webSocket)
       expectNoDifference(connectedStatus.state, .opened)
       expectNoDifference(connectedStatus.pendingMutationCount, 0)
+      try await instantLiveWithTimeout(
+        operation: "wait for the local live transport's idle receive",
+        timeoutMilliseconds: 5_000
+      ) {
+        while await receiveProbe.snapshot() < receiveCountBeforeConnect + 2 {
+          try Task.checkCancellation()
+          await Task.yield()
+        }
+      }
+      let idleStatus = try await client.connectionStatus()
+      expectNoDifference(idleStatus.state, .opened)
 
       let closedStatus = try await client.closeConnection()
       expectNoDifference(closedStatus.transport, .webSocket)

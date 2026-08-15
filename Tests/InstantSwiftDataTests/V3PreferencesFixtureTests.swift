@@ -73,6 +73,48 @@ import Testing
     }
 
     @Test @MainActor
+    func localSynchronizationBlockerRequiresRecoveryWithoutBecomingANetworkError()
+      async throws
+    {
+      let recorder = V3PreferencesStatusRecorder()
+      let state = InstantSyncStatusState()
+      let blocker = InstantSynchronizationBlocker(
+        reason: .unknownOptimisticEffectReceipt,
+        firstMutationID: "preferences-unknown-receipt",
+        blockedMutationCount: 2
+      )
+      state.startObservationIfNeeded(using: v3PreferencesClient(recorder))
+      await recorder.waitUntilSubscribed()
+
+      await recorder.yield(
+        v3PreferencesStatus(
+          state: .authenticated,
+          pending: 3,
+          error: "This local blocker is not a network failure.",
+          synchronizationBlocker: blocker
+        )
+      )
+      try await waitForV3PreferencesCondition {
+        state.synchronizationBlocker == blocker
+      }
+
+      expectNoDifference(state.phase, .authenticated)
+      expectNoDifference(state.connection?.synchronizationBlocker, blocker)
+      expectNoDifference(state.summary, "Local sync recovery required")
+      expectNoDifference(state.canFlush, false)
+      expectNoDifference(state.lastError, nil)
+
+      await recorder.yield(v3PreferencesStatus(state: .authenticated, pending: 3))
+      try await waitForV3PreferencesCondition {
+        state.synchronizationBlocker == nil
+      }
+      expectNoDifference(state.summary, "3 pending")
+      expectNoDifference(state.canFlush, true)
+      expectNoDifference(state.lastError, nil)
+      state.stopObservation()
+    }
+
+    @Test @MainActor
     func manualFlushCallbacksMatchTheExplicitUserActionOnce() async throws {
       let recorder = V3PreferencesStatusRecorder()
       let client = v3PreferencesClient(recorder)
@@ -314,7 +356,8 @@ import Testing
     state: InstantConnectionState,
     pending: Int = 0,
     txID: String? = nil,
-    error: String? = nil
+    error: String? = nil,
+    synchronizationBlocker: InstantSynchronizationBlocker? = nil
   ) -> InstantConnectionStatus {
     InstantConnectionStatus(
       appID: "preferences-test",
@@ -326,7 +369,8 @@ import Testing
       userID: state == .authenticated ? "preferences-user" : nil,
       pendingMutationCount: pending,
       processedTransactionID: txID,
-      lastErrorMessage: error
+      lastErrorMessage: error,
+      synchronizationBlocker: synchronizationBlocker
     )
   }
 

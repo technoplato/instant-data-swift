@@ -1,6 +1,7 @@
 import Foundation
 import IssueReporting
 
+// SAFETY: `lock` protects every mutable task-owner field and transition.
 package final class InstantRuntimeExactTaskOwner: @unchecked Sendable {
   struct Handle: Sendable {
     fileprivate var token: UInt64?

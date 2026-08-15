@@ -447,7 +447,7 @@ struct TypedAPITests {
           namespace: MacroGeneratedTodo.instantNamespace,
           name: "metadata",
           valueType: .json,
-          isIndexed: true
+          isIndexed: false
         ),
         InstantAttribute(
           id: "macroGeneratedTodos/isCompleted",

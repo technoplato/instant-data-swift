@@ -384,7 +384,9 @@ struct InstantOutboxSupersessionIntegrationTests {
     async throws
   {
     let cacheURL = temporaryCacheURL("alias-idempotence")
-    let runtime = try await makeOfflineRuntime(cacheURL: cacheURL)
+    let (runtime, liveSession) = try await makeDisconnectedLiveSupersessionRuntime(
+      cacheURL: cacheURL
+    )
     let predecessor = integrationTransaction(id: "older", value: "one", timestamp: 1)
     let survivor = integrationTransaction(id: "newer", value: "two", timestamp: 2)
     _ = try await runtime.transact(
@@ -439,14 +441,30 @@ struct InstantOutboxSupersessionIntegrationTests {
     expectNoDifference(durable.map(\.id), [survivor.id])
 
     let lifecycle = try await runtime.observeMutationLifecycle(id: predecessor.id)
-    var iterator = lifecycle.makeAsyncIterator()
-    let initialLifecycle = await iterator.next()
-    expectNoDifference(initialLifecycle, .waiting)
-    _ = try await runtime.acceptMutationIfPresent(
-      id: survivor.id,
+    let lifecycleTask = Task { () -> [InstantMutationLifecycleEvent] in
+      var iterator = lifecycle.makeAsyncIterator()
+      var events: [InstantMutationLifecycleEvent] = []
+      for _ in 0..<2 {
+        guard let event = await iterator.next() else { break }
+        events.append(event)
+      }
+      return events
+    }
+    defer { lifecycleTask.cancel() }
+    try await sendSupersessionServerAcceptance(
+      runtime: runtime,
+      session: liveSession,
+      mutationID: survivor.id,
       serverTransactionID: "42"
     )
-    guard case let .serverAccepted(accepted) = await iterator.next() else {
+    let acceptance = try await instantLiveWithTimeout(
+      operation: "wait for immutable predecessor alias acceptance",
+      timeoutMilliseconds: 5_000
+    ) {
+      await lifecycleTask.value
+    }
+    expectNoDifference(acceptance.first, .waiting)
+    guard case let .serverAccepted(accepted) = acceptance.last else {
       Issue.record("Expected the immutable predecessor alias to observe survivor acceptance.")
       return
     }
@@ -457,6 +475,7 @@ struct InstantOutboxSupersessionIntegrationTests {
     )
     let prunedCount = try await runtime.persistence.countOutboxMutations()
     expectNoDifference(prunedCount, 0)
+    _ = try? await runtime.closeConnection()
 
     let reopened = try await makeOfflineRuntime(cacheURL: cacheURL)
     do {
@@ -561,16 +580,34 @@ struct InstantOutboxSupersessionIntegrationTests {
       createdAt: InstantTimestamp(milliseconds: 2)
     )
 
-    let reopened = try await makeOfflineRuntime(cacheURL: cacheURL)
+    let (reopened, liveSession) = try await makeDisconnectedLiveSupersessionRuntime(
+      cacheURL: cacheURL
+    )
     let lifecycle = try await reopened.observeMutationLifecycle(id: "older")
-    var iterator = lifecycle.makeAsyncIterator()
-    let initialLifecycle = await iterator.next()
-    expectNoDifference(initialLifecycle, .waiting)
-    _ = try await reopened.acceptMutationIfPresent(
-      id: "newer",
+    let lifecycleTask = Task { () -> [InstantMutationLifecycleEvent] in
+      var iterator = lifecycle.makeAsyncIterator()
+      var events: [InstantMutationLifecycleEvent] = []
+      for _ in 0..<2 {
+        guard let event = await iterator.next() else { break }
+        events.append(event)
+      }
+      return events
+    }
+    defer { lifecycleTask.cancel() }
+    try await sendSupersessionServerAcceptance(
+      runtime: reopened,
+      session: liveSession,
+      mutationID: "newer",
       serverTransactionID: "42"
     )
-    guard case let .serverAccepted(accepted) = await iterator.next() else {
+    let acceptance = try await instantLiveWithTimeout(
+      operation: "wait for restarted survivor acceptance",
+      timeoutMilliseconds: 5_000
+    ) {
+      await lifecycleTask.value
+    }
+    expectNoDifference(acceptance.first, .waiting)
+    guard case let .serverAccepted(accepted) = acceptance.last else {
       Issue.record("Expected the original id to observe survivor acceptance.")
       return
     }
@@ -582,6 +619,7 @@ struct InstantOutboxSupersessionIntegrationTests {
     )
     let remainingCount = try await reopened.persistence.countOutboxMutations()
     expectNoDifference(remainingCount, 0)
+    _ = try? await reopened.closeConnection()
 
     let afterPrune = try await makeOfflineRuntime(cacheURL: cacheURL)
     let terminal = try await afterPrune.observeMutationLifecycle(id: "older")
@@ -615,7 +653,9 @@ struct InstantOutboxSupersessionIntegrationTests {
 
   @Test
   func ordinaryMutationsDoNotCreatePermanentLifecycleHistory() async throws {
-    let runtime = try await makeOfflineRuntime(cacheURL: temporaryCacheURL("ordinary-history"))
+    let (runtime, liveSession) = try await makeDisconnectedLiveSupersessionRuntime(
+      cacheURL: temporaryCacheURL("ordinary-history")
+    )
     _ = try await runtime.transact(
       integrationTransaction(id: "ordinary", value: "one", timestamp: 1),
       createdAt: InstantTimestamp(milliseconds: 1)
@@ -624,13 +664,26 @@ struct InstantOutboxSupersessionIntegrationTests {
     expectNoDifference(counts.lifecycles, 0)
     expectNoDifference(counts.aliases, 0)
 
-    _ = try await runtime.acceptMutationIfPresent(
-      id: "ordinary",
+    try await sendSupersessionServerAcceptance(
+      runtime: runtime,
+      session: liveSession,
+      mutationID: "ordinary",
       serverTransactionID: "42"
+    )
+    _ = try #require(
+      try await instantLiveWithTimeout(
+        operation: "wait for ordinary mutation acceptance",
+        timeoutMilliseconds: 5_000
+      ) {
+        try await runtime.observeConnectionStatus().first {
+          $0.pendingMutationCount == 0
+        }
+      }
     )
     counts = try await runtime.persistence.outboxLifecycleCountsForTesting()
     expectNoDifference(counts.lifecycles, 0)
     expectNoDifference(counts.aliases, 0)
+    _ = try? await runtime.closeConnection()
   }
 
   @Test
@@ -684,6 +737,95 @@ struct InstantOutboxSupersessionIntegrationTests {
   }
 
   @Test
+  func wellFormedPublicTailIsQuarantinedWithoutSupersessionAndNewcomerProgresses()
+    async throws
+  {
+    let cacheURL = temporaryCacheURL("public-untrusted-tail")
+    let persistence = try SQLitePersistenceStore(fileURL: cacheURL)
+    try await persistence.bootstrap()
+    let tailTransaction = integrationTransaction(
+      id: "public-untrusted-tail",
+      value: "old",
+      timestamp: 1
+    )
+    let tailTriples = tailTransaction.operations.compactMap { operation -> InstantTriple? in
+      guard case let .insert(triple) = operation else { return nil }
+      return triple
+    }
+    try await persistence.saveStoreSnapshot(
+      InstantStoreSnapshot(
+        attributes: TodoExample.attributes,
+        triples: tailTriples
+      )
+    )
+    var tail = PendingMutation(
+      id: tailTransaction.id,
+      createdAt: InstantTimestamp(milliseconds: 1),
+      transaction: tailTransaction
+    )
+    tail.rollbackTransaction = InstantStoreTransaction(
+      id: "rollback-public-untrusted-tail",
+      operations: [.deleteEntity("shared-item")]
+    )
+    tail.optimisticOverlayState = .applied
+    tail.optimisticEffectReceiptVersion =
+      PendingMutation.currentOptimisticEffectReceiptVersion
+    try await persistence.saveOutbox([tail])
+    let publicTailFingerprint = try await persistence
+      .optimisticEffectReceiptFingerprintForTesting(id: tail.id)
+    expectNoDifference(
+      publicTailFingerprint,
+      nil
+    )
+    let originalJSON = try supersessionOutboxRawRow(id: tail.id, cacheURL: cacheURL).json
+    await persistence.simulateUnexpectedConnectionCloseForTesting()
+
+    let runtime = try await makeOfflineRuntime(cacheURL: cacheURL)
+    try await withKnownIssue {
+      _ = try await runtime.transact(
+        integrationTransaction(id: "after-public-untrusted-tail", value: "new", timestamp: 2),
+        createdAt: InstantTimestamp(milliseconds: 2)
+      )
+    } matching: { issue in
+      issue.description.contains(
+        "Instant quarantined corrupt durable mutation 'public-untrusted-tail'"
+      )
+        && issue.description.contains("SQLite-owned Runtime-prepared")
+    }
+
+    let state = try await runtime.persistence.loadState()
+    expectNoDifference(
+      state.snapshot.outbox.map(\.id),
+      ["public-untrusted-tail", "after-public-untrusted-tail"]
+    )
+    expectNoDifference(state.snapshot.outbox.map(\.status), [.failed, .pending])
+    let newcomer = try #require(
+      state.snapshot.outbox.first { $0.id == "after-public-untrusted-tail" }
+    )
+    expectNoDifference(newcomer.optimisticOverlayState, .applied)
+    #expect(newcomer.rollbackTransaction?.operations.isEmpty == false)
+    #expect(
+      try await runtime.persistence.optimisticEffectReceiptFingerprintForTesting(
+        id: newcomer.id
+      ) != nil
+    )
+    let quarantinedTailJSON = try await runtime.persistence
+      .quarantinedOutboxBodyForTesting(id: tail.id)
+    expectNoDifference(quarantinedTailJSON, originalJSON)
+    let lifecycleCounts = try await runtime.persistence.outboxLifecycleCountsForTesting()
+    expectNoDifference(lifecycleCounts.lifecycles, 0)
+    expectNoDifference(lifecycleCounts.aliases, 0)
+    let alias = try await runtime.persistence.loadOutboxAliasReplay(
+      id: tail.id,
+      expectedStoreRevision: state.storeRevision,
+      expectedOutboxRevision: state.outboxRevision
+    )
+    expectNoDifference(alias.matchesRevisions, true)
+    #expect(alias.alias == nil)
+    expectNoDifference(currentIntegrationValue(in: state.snapshot.store), "new")
+  }
+
+  @Test
   func claimRaceAtSupersessionSaveFallsBackToOrderedAppend() async throws {
     let cacheURL = temporaryCacheURL("claim-race")
     let competingStore = try SQLitePersistenceStore(fileURL: cacheURL)
@@ -720,7 +862,9 @@ struct InstantOutboxSupersessionIntegrationTests {
   }
 
   @Test
-  func claimAfterInvalidTailReadPreventsQuarantineAndPreservesRawEvidence() async throws {
+  func claimAcquiredBeforeTailCorruptionPreventsQuarantineAndPreservesRawEvidence()
+    async throws
+  {
     let cacheURL = temporaryCacheURL("invalid-tail-claim-race")
     let seedStore = try SQLitePersistenceStore(fileURL: cacheURL)
     try await seedStore.bootstrap()
@@ -740,8 +884,30 @@ struct InstantOutboxSupersessionIntegrationTests {
       id: "rollback-invalid-claimed-tail",
       operations: [.deleteEntity("shared-item")]
     )
-    try await seedStore.saveOutbox([tail])
+    tail.optimisticOverlayState = .applied
+    tail.optimisticEffectReceiptVersion =
+      PendingMutation.currentOptimisticEffectReceiptVersion
+    try await saveRuntimePreparedSupersessionTail(tail, to: seedStore)
     await seedStore.simulateUnexpectedConnectionCloseForTesting()
+    let competingStore = try SQLitePersistenceStore(fileURL: cacheURL)
+    try await competingStore.bootstrap()
+    let receipt = try await competingStore.optimisticEffectReceiptFingerprintForTesting(
+      id: tail.id
+    )
+    #expect(receipt != nil)
+    let claimed = try await competingStore.claimOutboxMutationWithoutHydrationForTesting(
+      id: tail.id,
+      claimantID: "invalid-tail-race-claimant",
+      claimToken: "invalid-tail-race-token",
+      deadlineMilliseconds: 5_000
+    )
+    expectNoDifference(claimed, true)
+    let claimBeforeCorruption = try await competingStore.outboxDeliveryClaimForTesting(
+      id: tail.id
+    )
+    expectNoDifference(claimBeforeCorruption?.state, .claimed)
+    expectNoDifference(claimBeforeCorruption?.deliveryStarted, true)
+
     let rawTail = try supersessionOutboxRawRow(
       id: tail.id,
       cacheURL: cacheURL
@@ -749,29 +915,23 @@ struct InstantOutboxSupersessionIntegrationTests {
     let corruptJSON = String(repeating: "x", count: rawTail.encodedBodyByteCount)
     try replaceSupersessionOutboxBody(id: tail.id, json: corruptJSON, cacheURL: cacheURL)
 
-    let competingStore = try SQLitePersistenceStore(fileURL: cacheURL)
-    try await competingStore.bootstrap()
-    let race = SupersessionClaimRace()
     let runtime = try await makeOfflineRuntime(cacheURL: cacheURL)
-    await runtime.persistence.setInvalidImmediateSupersessionTailReadHookForTesting { id in
-      await race.claimWithoutHydrationOnce(store: competingStore, expectedID: id)
-    }
-
     _ = try await runtime.transact(
       integrationTransaction(id: "after-invalid-claim", value: "new", timestamp: 2),
       createdAt: InstantTimestamp(milliseconds: 2)
     )
-    await runtime.persistence.setInvalidImmediateSupersessionTailReadHookForTesting(nil)
 
     let claim = try await competingStore.outboxDeliveryClaimForTesting(id: tail.id)
     let quarantine = try await runtime.persistence.quarantinedOutboxBodyForTesting(id: tail.id)
     let durableCount = try await runtime.persistence.countOutboxMutations()
+    let storeSnapshot = await runtime.store.snapshot()
     let preservedJSON = try supersessionOutboxRawRow(id: tail.id, cacheURL: cacheURL).json
     expectNoDifference(claim?.state, .claimed)
     expectNoDifference(claim?.deliveryStarted, true)
     expectNoDifference(quarantine, nil)
     expectNoDifference(preservedJSON, corruptJSON)
     expectNoDifference(durableCount, 2)
+    expectNoDifference(currentIntegrationValue(in: storeSnapshot), "new")
   }
 
   @Test
@@ -851,7 +1011,10 @@ struct InstantOutboxSupersessionIntegrationTests {
       id: "rollback-stale-size-tail",
       operations: [.deleteEntity("shared-item")]
     )
-    try await persistence.saveOutbox([tail])
+    tail.optimisticOverlayState = .applied
+    tail.optimisticEffectReceiptVersion =
+      PendingMutation.currentOptimisticEffectReceiptVersion
+    try await saveRuntimePreparedSupersessionTail(tail, to: persistence)
     await persistence.simulateUnexpectedConnectionCloseForTesting()
 
     let oversizedJSON = String(
@@ -917,7 +1080,10 @@ struct InstantOutboxSupersessionIntegrationTests {
       id: "rollback-corrupt-tail",
       operations: [.deleteEntity("shared-item")]
     )
-    try await persistence.saveOutbox([corruptTail])
+    corruptTail.optimisticOverlayState = .applied
+    corruptTail.optimisticEffectReceiptVersion =
+      PendingMutation.currentOptimisticEffectReceiptVersion
+    try await saveRuntimePreparedSupersessionTail(corruptTail, to: persistence)
     await persistence.simulateUnexpectedConnectionCloseForTesting()
     let rawTail = try supersessionOutboxRawRow(
       id: corruptTail.id,
@@ -1043,6 +1209,70 @@ private func makeOfflineRuntime(cacheURL: URL) async throws -> InstantRuntime {
   return try await InstantRuntime.bootstrap(configuration: configuration)
 }
 
+private func makeDisconnectedLiveSupersessionRuntime(
+  cacheURL: URL
+) async throws -> (runtime: InstantRuntime, session: LiveReactorParitySession) {
+  let session = LiveReactorParitySession(messages: [
+    liveReactorInitOK(attrs: liveReactorTodoServerAttrs)
+  ])
+  var configuration = InstantRuntimeConfiguration(
+    appID: "outbox-supersession-live-\(UUID().uuidString)",
+    persistenceURL: cacheURL,
+    initialAttributes: TodoExample.attributes,
+    liveTransport: session.transport
+  )
+  configuration.autoConnectLiveTransport = false
+  return (
+    try await InstantRuntime.bootstrap(configuration: configuration),
+    session
+  )
+}
+
+private func sendSupersessionServerAcceptance(
+  runtime: InstantRuntime,
+  session: LiveReactorParitySession,
+  mutationID: String,
+  serverTransactionID: String
+) async throws {
+  _ = try await runtime.connect()
+  try await instantLiveWithTimeout(
+    operation: "wait for supersession mutation delivery",
+    timeoutMilliseconds: 5_000
+  ) {
+    await session.waitForSentMessageCount(2)
+  }
+  let sentMutationIDs = await session.sentMessages()
+    .filter { $0.op == "transact" }
+    .compactMap(\.clientEventID)
+  expectNoDifference(sentMutationIDs, [mutationID])
+  let claim = try await runtime.persistence.outboxDeliveryClaimForTesting(id: mutationID)
+  expectNoDifference(claim?.state, .claimed)
+  #expect(claim?.claimantID?.isEmpty == false)
+  #expect(claim?.claimToken?.isEmpty == false)
+  await session.enqueue(
+    InstantLiveMessage(
+      op: "transact-ok",
+      clientEventID: mutationID,
+      fields: ["tx-id": .string(serverTransactionID)]
+    )
+  )
+}
+
+private func saveRuntimePreparedSupersessionTail(
+  _ mutation: PendingMutation,
+  to persistence: SQLitePersistenceStore
+) async throws {
+  let seededStore = try await persistence.loadCompactState()
+  let didSave = try await persistence.saveOutbox(
+    [mutation],
+    replacing: [],
+    metadataEntries: [],
+    expectedStoreRevision: seededStore.storeRevision,
+    expectedOutboxRevision: seededStore.outboxRevision
+  )
+  expectNoDifference(didSave, true)
+}
+
 private func integrationTransaction(
   id: String,
   value: String,
@@ -1144,27 +1374,6 @@ private actor SupersessionClaimRace {
       }
     } catch {
       Issue.record("Could not install deterministic competing claim: \(error)")
-    }
-  }
-
-  func claimWithoutHydrationOnce(
-    store: SQLitePersistenceStore,
-    expectedID: String
-  ) async {
-    guard !didClaim else { return }
-    didClaim = true
-    do {
-      let claimed = try await store.claimOutboxMutationWithoutHydrationForTesting(
-        id: expectedID,
-        claimantID: "invalid-tail-race-claimant",
-        claimToken: "invalid-tail-race-token",
-        deadlineMilliseconds: 5_000
-      )
-      if !claimed {
-        Issue.record("Expected the invalid tail race hook to claim \(expectedID).")
-      }
-    } catch {
-      Issue.record("Could not install the invalid tail race claim: \(error)")
     }
   }
 }

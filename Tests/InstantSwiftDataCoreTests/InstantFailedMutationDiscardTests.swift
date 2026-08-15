@@ -2386,20 +2386,24 @@ struct InstantFailedMutationDiscardTests {
       runtime: updateRuntime
     )
 
-    // Server apply must proceed over a failed+unknown-overlay row so live
-    // refresh cannot thrash the receive loop (#134 / recipes 773e50f4). Retry
-    // and discard still refuse — those paths would guess at the local effect.
-    _ = try await updateRuntime.applyServerTransaction(
-      InstantStoreTransaction(
-        id: "server-refresh-over-legacy-update",
-        operations: TodoExample.updateTextOperations(
-          id: "todo-legacy-update",
-          text: "server refresh applies without guessing rollback",
-          updatedAt: InstantTimestamp(milliseconds: baseTime.milliseconds + 2_000_000),
-          transactionID: "server-refresh-over-legacy-update"
+    let updateStateBeforeRefresh = try await updateRuntime.persistence.loadState().snapshot
+    await withExpectedIssue {
+      await expectUnknownStateFailure(id: "tx-legacy-unknown-update", operation: "refresh") {
+        _ = try await updateRuntime.applyServerTransaction(
+          InstantStoreTransaction(
+            id: "server-refresh-over-legacy-update",
+            operations: TodoExample.updateTextOperations(
+              id: "todo-legacy-update",
+              text: "server refresh must not overwrite unknown failed state",
+              updatedAt: InstantTimestamp(milliseconds: baseTime.milliseconds + 2_000_000),
+              transactionID: "server-refresh-over-legacy-update"
+            )
+          )
         )
-      )
-    )
+      }
+    }
+    let updateStateAfterRefresh = try await updateRuntime.persistence.loadState().snapshot
+    expectNoDifference(updateStateAfterRefresh, updateStateBeforeRefresh)
     await expectUnknownStateFailure(id: "tx-legacy-unknown-update", operation: "discard") {
       _ = try await updateRuntime.discardFailedMutation(id: "tx-legacy-unknown-update")
     }
@@ -2407,10 +2411,7 @@ struct InstantFailedMutationDiscardTests {
       _ = try await updateRuntime.retryMutation(id: "tx-legacy-unknown-update")
     }
     let retainedUpdate = try await TodoExample.decode(updateRuntime.query(TodoExample.query))
-    expectNoDifference(
-      retainedUpdate.map(\.text),
-      ["server refresh applies without guessing rollback"]
-    )
+    expectNoDifference(retainedUpdate.map(\.text), ["future unknown value"])
 
     let deleteRuntime = try await discardRuntime(
       cacheURL: temporaryDiscardCacheURL("legacy-unknown-delete")
@@ -2437,19 +2438,24 @@ struct InstantFailedMutationDiscardTests {
       runtime: deleteRuntime
     )
 
-    // Authoritative server upsert is allowed; the failed+unknown row stays
-    // retained and still blocks retry/discard (cannot invent a before-image).
-    _ = try await deleteRuntime.applyServerTransaction(
-      InstantStoreTransaction(
-        id: "server-refresh-over-legacy-delete",
-        operations: TodoExample.upsertOperations(
-          id: "todo-legacy-delete",
-          text: "server refresh re-asserts entity",
-          createdAt: InstantTimestamp(milliseconds: baseTime.milliseconds + 2_000_000),
-          transactionID: "server-refresh-over-legacy-delete"
+    let deleteStateBeforeRefresh = try await deleteRuntime.persistence.loadState().snapshot
+    await withExpectedIssue {
+      await expectUnknownStateFailure(id: "tx-legacy-unknown-delete", operation: "refresh") {
+        _ = try await deleteRuntime.applyServerTransaction(
+          InstantStoreTransaction(
+            id: "server-refresh-over-legacy-delete",
+            operations: TodoExample.upsertOperations(
+              id: "todo-legacy-delete",
+              text: "server refresh must not resurrect unknown failed delete",
+              createdAt: InstantTimestamp(milliseconds: baseTime.milliseconds + 2_000_000),
+              transactionID: "server-refresh-over-legacy-delete"
+            )
+          )
         )
-      )
-    )
+      }
+    }
+    let deleteStateAfterRefresh = try await deleteRuntime.persistence.loadState().snapshot
+    expectNoDifference(deleteStateAfterRefresh, deleteStateBeforeRefresh)
     await expectUnknownStateFailure(id: "tx-legacy-unknown-delete", operation: "discard") {
       _ = try await deleteRuntime.discardFailedMutation(id: "tx-legacy-unknown-delete")
     }
@@ -2457,7 +2463,7 @@ struct InstantFailedMutationDiscardTests {
       _ = try await deleteRuntime.retryMutation(id: "tx-legacy-unknown-delete")
     }
     let retainedDelete = try await TodoExample.decode(deleteRuntime.query(TodoExample.query))
-    expectNoDifference(retainedDelete.map(\.text), ["server refresh re-asserts entity"])
+    expectNoDifference(retainedDelete, [])
   }
 
   @Test
@@ -2498,39 +2504,93 @@ private func makeLegacyUnknownFailure(
   id: String,
   runtime: InstantRuntime
 ) async throws {
-  _ = try await runtime.migrateLocalPersistenceSnapshot(name: "legacy-unknown-\(id)") { snapshot in
+  _ = try await runtime.rewriteResidentPersistenceSnapshotForTesting(
+    name: "legacy-unknown-\(id)"
+  ) { snapshot in
     var snapshot = snapshot
     guard let index = snapshot.outbox.firstIndex(where: { $0.id == id }) else { return snapshot }
     snapshot.outbox[index].status = .failed
     snapshot.outbox[index].failureMessage = "legacy unknown failure"
-    snapshot.outbox[index].rollbackTransaction = nil
-    snapshot.outbox[index].optimisticOverlayState = nil
     return snapshot
   }
+  try await revokePreparedReceiptAuthority(id: id, runtime: runtime)
 }
 
 private func makeLegacyUnknownPending(
   id: String,
   runtime: InstantRuntime
 ) async throws {
-  _ = try await runtime.migrateLocalPersistenceSnapshot(name: "legacy-unknown-pending-\(id)") {
-    snapshot in
-    var snapshot = snapshot
-    guard let index = snapshot.outbox.firstIndex(where: { $0.id == id }) else { return snapshot }
-    snapshot.outbox[index].status = .pending
-    snapshot.outbox[index].failureMessage = nil
-    snapshot.outbox[index].failure = nil
-    snapshot.outbox[index].rollbackTransaction = nil
-    snapshot.outbox[index].optimisticOverlayState = nil
-    return snapshot
+  try await revokePreparedReceiptAuthority(id: id, runtime: runtime)
+}
+
+/// Installs the exact durable ambiguity produced by a pre-receipt database or
+/// out-of-band corruption. Supported public persistence must not be able to
+/// strip a Runtime-owned receipt from an active optimistic layer, so this
+/// historical-state fixture deliberately crosses the SQLite boundary.
+private func revokePreparedReceiptAuthority(
+  id: String,
+  runtime: InstantRuntime
+) async throws {
+  let cacheURL = await runtime.persistence.fileURLForTesting()
+  var database: OpaquePointer?
+  guard sqlite3_open_v2(
+    cacheURL.path,
+    &database,
+    SQLITE_OPEN_READWRITE | SQLITE_OPEN_FULLMUTEX,
+    nil
+  ) == SQLITE_OK, let database
+  else {
+    defer { sqlite3_close(database) }
+    throw NSError(
+      domain: "InstantFailedMutationDiscardTests",
+      code: 3,
+      userInfo: [NSLocalizedDescriptionKey: "Could not open the legacy receipt fixture database."]
+    )
   }
+  defer { sqlite3_close(database) }
+  sqlite3_busy_timeout(database, 10_000)
+  var statement: OpaquePointer?
+  guard sqlite3_prepare_v2(
+    database,
+    """
+    UPDATE instant_outbox
+    SET optimistic_effect_receipt_fingerprint = NULL,
+        optimistic_effect_metadata_version = 0
+    WHERE mutation_id = ?
+    """,
+    -1,
+    &statement,
+    nil
+  ) == SQLITE_OK
+  else {
+    throw NSError(
+      domain: "InstantFailedMutationDiscardTests",
+      code: 4,
+      userInfo: [NSLocalizedDescriptionKey: String(cString: sqlite3_errmsg(database))]
+    )
+  }
+  defer { sqlite3_finalize(statement) }
+  let transient = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
+  guard sqlite3_bind_text(statement, 1, id, -1, transient) == SQLITE_OK,
+    sqlite3_step(statement) == SQLITE_DONE,
+    sqlite3_changes(database) == 1
+  else {
+    throw NSError(
+      domain: "InstantFailedMutationDiscardTests",
+      code: 5,
+      userInfo: [NSLocalizedDescriptionKey: String(cString: sqlite3_errmsg(database))]
+    )
+  }
+  await runtime.persistence.invalidateMemoryCache()
 }
 
 private func markMutationFailedWithoutRemovingOverlay(
   id: String,
   runtime: InstantRuntime
 ) async throws {
-  _ = try await runtime.migrateLocalPersistenceSnapshot(name: "failed-applied-overlay-\(id)") {
+  _ = try await runtime.rewriteResidentPersistenceSnapshotForTesting(
+    name: "failed-applied-overlay-\(id)"
+  ) {
     snapshot in
     var snapshot = snapshot
     guard let index = snapshot.outbox.firstIndex(where: { $0.id == id }) else { return snapshot }
@@ -2555,7 +2615,7 @@ private func expectUnknownStateFailure(
   } catch let error as InstantError {
     expectNoDifference(error.localID, id)
     expectNoDifference(error.localMutationDisposition, .retainedUnknown)
-    #expect(error.message.contains("optimistic-overlay metadata"))
+    #expect(error.message.contains("matching SQLite-owned Runtime preparation receipt"))
   } catch {
     Issue.record("Unexpected \(operation) error for '\(id)': \(error)")
   }

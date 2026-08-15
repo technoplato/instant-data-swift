@@ -1,3 +1,4 @@
+import Crypto
 import Foundation
 
 public struct InstantID<Entity>: Hashable, Codable, Sendable, CustomStringConvertible {
@@ -886,6 +887,19 @@ package enum InstantOptimisticOverlayState: String, Hashable, Codable, Sendable 
   case removed
 }
 
+/// Runtime-only interpretation of the durable optimistic-overlay receipt.
+///
+/// This interpretation is deliberately not encoded as another enum case. The
+/// historical `optimisticOverlayState` plus an additive optional receipt version
+/// form the downgrade-safe durable shape, while this value makes all cache
+/// invalidation paths agree about whether there is currently a materialized layer
+/// to peel.
+package enum InstantOptimisticEffectReceipt: Sendable {
+  case unknown
+  case noCurrentMaterializedEffect
+  case materialized(rollback: InstantStoreTransaction)
+}
+
 package struct InstantMutationFailure: Hashable, Codable, Sendable {
   package var code: InstantError.Code
   package var message: String
@@ -914,6 +928,22 @@ package struct InstantMutationFailure: Hashable, Codable, Sendable {
   }
 }
 
+private struct InstantOptimisticEffectReceiptFingerprintPayload: Encodable {
+  var schemaVersion: Int
+  var mutationID: String
+  var createdAt: InstantTimestamp
+  var transaction: InstantStoreTransaction
+  var rollbackTransaction: InstantStoreTransaction?
+  var optimisticOverlayState: InstantOptimisticOverlayState
+  var optimisticEffectReceiptVersion: Int
+}
+
+package func instantSHA256HexDigest(_ data: Data) -> String {
+  SHA256.hash(data: data)
+    .map { String(format: "%02x", $0) }
+    .joined()
+}
+
 public struct PendingMutation: Hashable, Codable, Sendable, Identifiable {
   public var id: String
   public var createdAt: InstantTimestamp
@@ -925,25 +955,150 @@ public struct PendingMutation: Hashable, Codable, Sendable, Identifiable {
   package var rollbackTransaction: InstantStoreTransaction?
   package var failure: InstantMutationFailure?
   package var optimisticOverlayState: InstantOptimisticOverlayState?
-
-  /// `true` when this row predates durable optimistic-overlay / rollback metadata.
+  /// Versioned proof shape written only after Runtime prepares this mutation.
   ///
-  /// Such rows are isolated: retry/discard refuse without guessing the local cache
-  /// effect, and live server apply continues past them (#134 / recipes panel).
+  /// This optional key is deliberately additive. Older decoders ignore it and
+  /// continue to see the historical `applied` / `removed` overlay-state values.
+  /// SQLite's matching external fingerprint, not this caller-controlled Codable
+  /// field, remains the authority for delivery, rollback, and pruning.
+  package var optimisticEffectReceiptVersion: Int?
+
+  package static let currentOptimisticEffectReceiptVersion = 1
+
+  /// `true` when this Codable value has no optimistic-overlay receipt shape.
+  ///
+  /// This includes both rows that predate overlay metadata and newly constructed
+  /// values that Runtime has not prepared yet. SQLite-backed Runtime operations
+  /// additionally require a matching database-owned admission fingerprint even
+  /// when this body-shaped check returns `false`. Unknown rows are isolated:
+  /// retry and discard refuse without guessing the local cache effect (#134 /
+  /// recipes panel).
   public var isLegacyUnknownOverlayCandidate: Bool {
-    optimisticOverlayState == nil && rollbackTransaction == nil
+    if case .unknown = optimisticEffectReceipt {
+      true
+    } else {
+      false
+    }
   }
 
-  /// Whether the server has demonstrably accepted this mutation.
+  /// The cache effect proven by this mutation's explicit durable receipt.
   ///
-  /// A server-assigned `serverTransactionID` counts on its own. `Outbox.accepting` is its only
-  /// writer, reached only from a `transact-ok` carrying the server's `tx-id`, and the rollback
-  /// paths clear it — so a non-nil value cannot be produced locally.
+  /// An explicit current receipt version plus `.applied` and no rollback is a
+  /// valid, replayable mutation whose most recent preparation produced no current
+  /// local diff. This occurs for unresolved lookups and preconditions, and when
+  /// an authoritative refresh makes a previously effective pending write
+  /// temporarily redundant. Keeping the serialized overlay state as `.applied`
+  /// lets older binaries decode and replay the forward intent.
   ///
-  /// Consulting `confirmationSource` alone is not sufficient, because it was introduced after
-  /// `serverTransactionID`: every mutation accepted by an earlier build has the ID and no source.
-  /// Reading those as unproven re-offers them for delivery forever. `Outbox.pruningConfirmed`
-  /// already treats the transaction ID as the authority; this makes delivery agree with pruning.
+  /// Historical `.applied` rows without the versioned proof remain ambiguous and
+  /// unknown. A row with no explicit state is also unknown, even if malformed or
+  /// manually persisted bytes include a rollback.
+  package var optimisticEffectReceipt: InstantOptimisticEffectReceipt {
+    guard optimisticEffectReceiptVersion == Self.currentOptimisticEffectReceiptVersion else {
+      return .unknown
+    }
+    return switch optimisticOverlayState {
+    case nil:
+      .unknown
+    case .removed:
+      if rollbackTransaction == nil {
+        .noCurrentMaterializedEffect
+      } else {
+        .unknown
+      }
+    case .applied:
+      if let rollbackTransaction,
+        !rollbackTransaction.operations.isEmpty || transaction.operations.isEmpty
+      {
+        // Resident lifecycle shells intentionally compact both bodies to empty
+        // operations while preserving the non-nil rollback marker. Canonical
+        // durable/network bodies are proven separately below.
+        .materialized(rollback: rollbackTransaction)
+      } else if rollbackTransaction == nil {
+        .noCurrentMaterializedEffect
+      } else {
+        .unknown
+      }
+    }
+  }
+
+  /// Whether this row has an exact Runtime-produced receipt that permits its
+  /// durable body to enter a network-delivery claim.
+  package var provesReplayableOptimisticEffectReceipt: Bool {
+    guard optimisticEffectReceiptVersion == Self.currentOptimisticEffectReceiptVersion else {
+      return false
+    }
+    return switch optimisticOverlayState {
+    case .applied:
+      rollbackTransaction == nil || rollbackTransaction?.operations.isEmpty == false
+    case nil, .removed:
+      false
+    }
+  }
+
+  /// A canonical SHA-256 digest of the admission payload whose transaction,
+  /// ordering, rollback, and overlay-state combination Runtime prepared.
+  ///
+  /// SQLite stores this digest outside the public Codable body. Public
+  /// persistence can preserve an exact existing digest, but only Runtime-owned
+  /// atomic paths may mint one for a new prepared body. Delivery status,
+  /// confirmation, server acceptance, and failure details are intentionally
+  /// excluded so lifecycle-only changes preserve the same admission authority.
+  package func optimisticEffectReceiptFingerprint() throws -> String? {
+    guard let optimisticOverlayState,
+      let optimisticEffectReceiptVersion,
+      optimisticEffectReceiptVersion == Self.currentOptimisticEffectReceiptVersion
+    else { return nil }
+    switch optimisticOverlayState {
+    case .applied:
+      guard provesReplayableOptimisticEffectReceipt else { return nil }
+    case .removed:
+      // A removed layer is not deliverable, but persistence still needs a
+      // Runtime-owned tombstone proving that no optimistic inverse remains.
+      // Public Codable bytes alone are not authority for this state.
+      guard rollbackTransaction == nil else { return nil }
+    }
+    let payload = InstantOptimisticEffectReceiptFingerprintPayload(
+      schemaVersion: 1,
+      mutationID: id,
+      createdAt: createdAt,
+      transaction: transaction,
+      rollbackTransaction: rollbackTransaction,
+      optimisticOverlayState: optimisticOverlayState,
+      optimisticEffectReceiptVersion: optimisticEffectReceiptVersion
+    )
+    let encoder = JSONEncoder()
+    encoder.outputFormatting = [.sortedKeys]
+    let data = try encoder.encode(payload)
+    return "v1:" + instantSHA256HexDigest(data)
+  }
+
+  /// A stable digest of the forward intent Instant sends over the wire.
+  ///
+  /// Lowering removes local triple stamps, while normalizing lifecycle fields
+  /// keeps the digest stable across failure/status changes and rollback-only
+  /// authoritative rebases. A changed transaction, id, or creation order gets
+  /// a different digest and therefore cannot inherit an earlier claim or ACK.
+  package func mutationWireIntentFingerprint() throws -> String {
+    var transportMutation = InstantTransportMutation(self)
+    transportMutation.status = .pending
+    transportMutation.failureMessage = nil
+    let encoder = JSONEncoder()
+    encoder.outputFormatting = [.sortedKeys]
+    return "wire-v1:" + instantSHA256HexDigest(try encoder.encode(transportMutation))
+  }
+
+  /// Whether this Codable body carries a legacy server-acceptance claim.
+  ///
+  /// A server-assigned `serverTransactionID` counts on its own so bodies written
+  /// before `confirmationSource` was introduced retain their historical shape.
+  /// This property is not persistence authority: `PendingMutation` is public
+  /// `Codable`, so SQLite-backed delivery, pruning, and lifecycle APIs additionally
+  /// require the database-owned acceptance fingerprint minted by an exact claim.
+  ///
+  /// Consulting `confirmationSource` alone remains insufficient for decoding old
+  /// bodies, because accepted mutations from that era have the transaction id and
+  /// no source.
   package var provesServerAcceptance: Bool {
     confirmationSource?.provesServerAcceptance == true || serverTransactionID != nil
   }
@@ -964,11 +1119,21 @@ public struct PendingMutation: Hashable, Codable, Sendable, Identifiable {
     self.confirmationSource = nil
     self.rollbackTransaction = nil
     self.failure = nil
-    self.optimisticOverlayState = .applied
+    // Only Runtime can prove that the transaction has been prepared against the
+    // current store. Public construction alone must not claim a materialized or
+    // known-no-diff optimistic effect.
+    self.optimisticOverlayState = nil
+    self.optimisticEffectReceiptVersion = nil
   }
 
   package func rejectionError(operation: String, recovery: String) -> InstantError {
-    InstantError(
+    let localMutationDisposition: InstantMutationLocalStateDisposition
+    if case .unknown = optimisticEffectReceipt {
+      localMutationDisposition = .retainedUnknown
+    } else {
+      localMutationDisposition = .retainedForRetry
+    }
+    return InstantError(
       code: failure?.code ?? Self.failureCode(message: failureMessage),
       operation: operation,
       localID: id,
@@ -977,9 +1142,7 @@ public struct PendingMutation: Hashable, Codable, Sendable, Identifiable {
       serverHint: failure?.hint,
       serverTraceID: failure?.traceID,
       serverOriginalEventTraceID: failure?.originalEventTraceID,
-      localMutationDisposition: optimisticOverlayState == nil
-        ? .retainedUnknown
-        : .retainedForRetry,
+      localMutationDisposition: localMutationDisposition,
       message: failure?.message ?? failureMessage ?? "The Instant server rejected the mutation.",
       recovery: recovery
     )
@@ -1032,6 +1195,56 @@ public enum InstantRuntimeTransportKind: String, Codable, Sendable {
   case serverSentEvents = "sse"
 }
 
+/// A local persistence condition that prevents Instant from synchronizing safely.
+///
+/// This is not a network failure. Applications should keep the retained local
+/// state visible and require an explicit reset or repair before resuming sync.
+public struct InstantSynchronizationBlocker: Hashable, Codable, Sendable {
+  /// The local condition that made synchronization unsafe.
+  public enum Reason: String, Hashable, Codable, Sendable {
+    /// An active mutation has no SQLite-owned Runtime preparation receipt, so
+    /// Instant cannot prove how to undo or replay its local materialization.
+    case unknownOptimisticEffectReceipt
+  }
+
+  /// Why synchronization is blocked.
+  public var reason: Reason
+  /// The first blocked mutation in durable creation order.
+  public var firstMutationID: String
+  /// The number of active mutations that currently block synchronization.
+  public var blockedMutationCount: Int
+
+  public init(
+    reason: Reason,
+    firstMutationID: String,
+    blockedMutationCount: Int
+  ) {
+    self.reason = reason
+    self.firstMutationID = firstMutationID
+    self.blockedMutationCount = blockedMutationCount
+  }
+
+  /// Builds the canonical error for an operation stopped by this blocker.
+  package func error(operation: String) -> InstantError {
+    let retainedMutations = blockedMutationCount == 1
+      ? "1 retained mutation"
+      : "\(blockedMutationCount) retained mutations"
+    switch reason {
+    case .unknownOptimisticEffectReceipt:
+      return InstantError(
+        code: .persistenceFailed,
+        operation: operation,
+        localID: firstMutationID,
+        localMutationDisposition: .retainedUnknown,
+        message:
+          "Mutation '\(firstMutationID)' has no matching SQLite-owned Runtime preparation receipt, so its local cache effect is unknown. Synchronization is blocked by \(retainedMutations).",
+        recovery:
+          "Automatic reconnect is paused. Synchronization remains blocked until the app explicitly performs a destructive local persistence reset or an operator repairs the retained SQLite state. Back up the database first. Instant cannot guarantee lossless recovery because the local effect is unknown."
+      )
+    }
+  }
+}
+
 public struct InstantConnectionStatus: Hashable, Codable, Sendable {
   public var appID: String
   public var apiURI: URL
@@ -1043,6 +1256,8 @@ public struct InstantConnectionStatus: Hashable, Codable, Sendable {
   public var pendingMutationCount: Int
   public var processedTransactionID: String?
   public var lastErrorMessage: String?
+  /// A local condition that must be resolved before synchronization can resume.
+  public var synchronizationBlocker: InstantSynchronizationBlocker?
 
   public init(
     appID: String,
@@ -1054,7 +1269,8 @@ public struct InstantConnectionStatus: Hashable, Codable, Sendable {
     userID: String?,
     pendingMutationCount: Int,
     processedTransactionID: String?,
-    lastErrorMessage: String? = nil
+    lastErrorMessage: String? = nil,
+    synchronizationBlocker: InstantSynchronizationBlocker? = nil
   ) {
     self.appID = appID
     self.apiURI = apiURI
@@ -1066,6 +1282,7 @@ public struct InstantConnectionStatus: Hashable, Codable, Sendable {
     self.pendingMutationCount = pendingMutationCount
     self.processedTransactionID = processedTransactionID
     self.lastErrorMessage = lastErrorMessage
+    self.synchronizationBlocker = synchronizationBlocker
   }
 }
 

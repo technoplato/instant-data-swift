@@ -26,7 +26,10 @@ struct InstantFailedMutationRetryWindowTests {
         failureMessage: "could not resolve deployed attribute"
       )
     }
-    try await persistence.saveOutbox(terminal + retryable)
+    try await saveRuntimePreparedRetryWindowOutbox(
+      terminal + retryable,
+      to: persistence
+    )
     await persistence.simulateUnexpectedConnectionCloseForTesting()
 
     let liveSession = LiveReactorParitySession(messages: [
@@ -89,7 +92,10 @@ struct InstantFailedMutationRetryWindowTests {
         failureMessage: "could not resolve deployed attribute"
       )
     }
-    try await seedPersistence.saveOutbox(retryable)
+    try await saveRuntimePreparedRetryWindowOutbox(
+      retryable,
+      to: seedPersistence
+    )
     await seedPersistence.simulateUnexpectedConnectionCloseForTesting()
 
     let liveSession = LiveReactorParitySession(messages: [
@@ -171,7 +177,7 @@ struct InstantFailedMutationRetryWindowTests {
   }
 
   @Test
-  func corruptAndLegacyCandidatesDoNotBlockLaterRetryableRows() async throws {
+  func legacyUnknownCandidateBlocksRetryBeforeCorruptOrLaterRows() async throws {
     let seedPersistence = try await retryWindowPersistence(
       suffix: "corrupt-legacy",
       mutations: [
@@ -204,35 +210,39 @@ struct InstantFailedMutationRetryWindowTests {
     try await persistence.bootstrap()
     await persistence.resetDecodedOutboxBodyCount()
 
-    try await withKnownIssue {
-      let application = try #require(
-        await persistence.retryAutomaticFailedMutationWindow(
+    do {
+      _ = try await persistence.retryAutomaticFailedMutationWindow(
           after: nil,
           excludingMutationIDs: []
         )
-      )
-
-      expectNoDifference(application.retriedMutations.map(\.id), [
-        "tx-corrupt-legacy-00002"
-      ])
-      expectNoDifference(application.isolatedMutations.map(\.id), [
-        "tx-corrupt-legacy-00001"
-      ])
-      expectNoDifference(application.quarantinedMutations.map(\.id), [
-        "tx-corrupt-legacy-00000"
-      ])
-      expectNoDifference(application.decodedBodyCount, 3)
-      expectNoDifference(application.hasMoreCandidates, false)
-    } matching: { issue in
-      issue.description.contains("quarantined corrupt durable mutation")
-        || issue.description.contains("isolated failed mutation")
+      Issue.record("An unproven active effect must block retry before any body decode.")
+    } catch let error as InstantError {
+      expectNoDifference(error.code, .persistenceFailed)
+      expectNoDifference(error.operation, "admit automatic failed-mutation retry")
+      expectNoDifference(error.localID, "tx-corrupt-legacy-00001")
+      expectNoDifference(error.localMutationDisposition, .retainedUnknown)
     }
 
     let pendingMutationCount = try await persistence.countOutboxMutations(status: .pending)
     let failedMutationCount = try await persistence.countOutboxMutations(status: .failed)
+    let decodedBodyCount = await persistence.currentDecodedOutboxBodyCount()
+    let corruptQuarantine = try await persistence.quarantinedOutboxBodyForTesting(
+      id: "tx-corrupt-legacy-00000"
+    )
+    let blocker = try await persistence.synchronizationBlocker()
     let queueWideReadCount = await persistence.localMutationQueueWideReadCountForTesting()
-    expectNoDifference(pendingMutationCount, 1)
-    expectNoDifference(failedMutationCount, 2)
+    expectNoDifference(pendingMutationCount, 0)
+    expectNoDifference(failedMutationCount, 3)
+    expectNoDifference(decodedBodyCount, 0)
+    expectNoDifference(corruptQuarantine, nil)
+    expectNoDifference(
+      blocker,
+      InstantSynchronizationBlocker(
+        reason: .unknownOptimisticEffectReceipt,
+        firstMutationID: "tx-corrupt-legacy-00001",
+        blockedMutationCount: 1
+      )
+    )
     expectNoDifference(queueWideReadCount, 0)
   }
 
@@ -390,8 +400,23 @@ private func retryWindowPersistence(
     )
   )
   try await persistence.bootstrap()
-  try await persistence.saveOutbox(mutations)
+  try await saveRuntimePreparedRetryWindowOutbox(mutations, to: persistence)
   return persistence
+}
+
+private func saveRuntimePreparedRetryWindowOutbox(
+  _ mutations: [PendingMutation],
+  to persistence: SQLitePersistenceStore
+) async throws {
+  let emptyStore = try await persistence.loadCompactState()
+  let didSave = try await persistence.saveOutbox(
+    mutations,
+    replacing: [],
+    metadataEntries: [],
+    expectedStoreRevision: emptyStore.storeRevision,
+    expectedOutboxRevision: emptyStore.outboxRevision
+  )
+  expectNoDifference(didSave, true)
 }
 
 private func retryWindowMutation(
@@ -421,6 +446,10 @@ private func retryWindowMutation(
     message: failureMessage
   )
   mutation.optimisticOverlayState = overlayState
+  if overlayState != nil {
+    mutation.optimisticEffectReceiptVersion =
+      PendingMutation.currentOptimisticEffectReceiptVersion
+  }
   mutation.rollbackTransaction = InstantStoreTransaction(
     id: "rollback-\(id)",
     operations: [.retract(triple)]
