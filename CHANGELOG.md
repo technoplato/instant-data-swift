@@ -10,6 +10,39 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## August 15th, 2026 at 2:17:17 p.m. EDT — `ae000fce901f` Harden optimistic delivery and pre-connect migrations
+
+- **Implementation commit:** `ae000fce901fff693971d1ebcbdca8bdd10a6ef4`
+- **Change:** Bind optimistic-effect, delivery-claim, and server-acceptance authority to SQLite-owned receipts; run bounded application persistence migrations before services; and close the reconnect, cancellation, and observer invalidation races found by physical Scribe work.
+- **Details:**
+  - Represent a prepared mutation with a versioned receipt, keep no-current-effect mutations replayable, fail closed on unknown authority, and publish a typed synchronization blocker without silently resending or discarding local state.
+  - Bind claims and acknowledgements to exact claimant tokens and payload fingerprints, retire reclaimed live reservations, preserve explicit close, and prohibit changed wire intent after offer or acceptance.
+  - Run full-durable, revision-checked application migrations before Runtime services or auto-connect; migrate Reminder priority values and rollback bodies atomically while rejecting offered, accepted, unknown-owner, collision, and invalid-rank states.
+  - Restore cross-namespace observer invalidation, public upload-stream cancellation, idle local live-session receive, and portable SHA-256 through official Swift Crypto without changing persisted digest versions.
+  - The full serialized package gate passes 1,729 tests in 146 suites with exactly 27 deliberate known issues; the focused portable receipt and authority matrix passes 78 tests in four suites with 10 deliberate known issues.
+- **Files:**
+  - `Package.swift` — Adds official Swift Crypto only to InstantSwiftDataCore so receipt authority remains Linux-clean.
+  - `Sources/InstantSwiftDataCore/InstantModels.swift` — Defines versioned optimistic receipts, typed synchronization blockers, and stable receipt and wire fingerprints.
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — Owns receipt provenance, bounded migrations, exact claim and acceptance authority, blocker indexing, and fail-closed recovery.
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — Orders pre-service migrations, local materialization, delivery suspension, explicit close, reconnect ownership, upload cancellation, and server rebase.
+  - `Sources/InstantSwiftDataCore/InstantRuntimeLiveSession.swift` — Captures exact offered claim tokens before response teardown and prevents stale generations from adopting reoffers.
+  - `Sources/InstantSwiftDataCore/InstantStore.swift` — Reconciles schema changes on the peeled base and conservatively refreshes unresolved relation-dependent observers.
+  - `Sources/InstantSwiftDataCore/ReminderExample.swift` — Defines the bounded durable legacy-priority migration and validates closed numeric ranks.
+  - `Sources/InstantSwiftDataCore/InstantLiveTransport.swift` — Keeps the injected local session open while idle with cancellation-safe FIFO receive waiters.
+  - `Sources/InstantSwiftData/InstantSyncStatus.swift` — Projects durable synchronization blockers into user-visible status and disables unsafe flush.
+  - `Sources/instant-swift-data/main.swift` — Registers Reminder persistence migration before CLI bootstrap.
+  - `Tests/InstantSwiftDataCoreTests/InstantPendingMutationCompatibilityTests.swift` — Pins downgrade-safe receipt encoding and the exact portable SHA-256 digest.
+  - `Tests/InstantSwiftDataCoreTests/InstantStoreTests.swift` — Covers migrations, receipt mismatch blocking, optimistic replay, local-write behavior, and observer invalidation.
+  - `Tests/InstantSwiftDataCoreTests/InstantBoundedOutboxDeliveryTests.swift` — Covers bounded claims, exact acknowledgements, migration authority, blockers, and unchanged offered or accepted rows.
+  - `Tests/InstantSwiftDataCoreTests/InstantLiveTransportTests.swift` — Covers reconnect ownership, claim-token races, explicit reclaim, close ordering, and upload cancellation.
+  - `Tests/InstantSwiftDataTests/BootstrapTests.swift` — Proves the injected local transport remains opened through its idle receive.
+  - `agent-presence/_channels/01a00071-five-recording-sync-soak.md` — Preserves multi-agent ownership, release blockers, independent reviews, and exact verification evidence.
+- **User context (verbatim):**
+  > your goal is to successfully run 5 recordings in a row, observe them syncing in realtime across mac and physical ipad
+  > ensure memory usage stays no greater than 100MB during a run
+  > continue
+- **SpecStory:** unavailable — Codex desktop continuation; SpecStory captures Codex CLI sessions and no synced desktop capture URI is available.
+
 ## August 15th, 2026 at 12:42:37 a.m. EDT — `141d1e9ec685` Skip semantic refresh no-ops and restore reconnect ownership
 
 - **Implementation commit:** `141d1e9ec68531c4e92370521f7bb4256eeb2765`

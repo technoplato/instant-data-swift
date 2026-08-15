@@ -6,6 +6,42 @@ production-readiness plan
 Commit-level history stays in `docs/audits/commit-changelog.md`; this file is
 the narrative of what the library must prove and why.
 
+## 2026-08-15 14:17:01 EDT — Bind durable mutation authority and migrate before services
+
+- **Implementation:** `ae000fce901fff693971d1ebcbdca8bdd10a6ef4`; the paired intent-ledger
+  commit is the immediately following Git commit.
+- **Measured cause:** physical Scribe refreshes exposed a valid durable mutation state in which a
+  replay currently materializes no local difference and therefore has no rollback body. The prior
+  bounded rebase guard treated that as missing evidence, repeatedly closed the socket, and prevented
+  the accepted mutation from pruning. The deeper audit found that public Codable bodies could also
+  claim applied, removed, or server-accepted state without SQLite-owned provenance; stale responses
+  could adopt a same-ID reoffer; and the Reminder CLI rewrote persistence only after auto-connect
+  could already offer the old wire body.
+- **Correctness:** SQLite now owns versioned material-effect, exact claim-payload, and
+  server-acceptance fingerprints. Known no-current-effect mutations remain replayable; unknown or
+  mismatched authority stays visible as a typed synchronization blocker and suspends delivery
+  without guessing at rollback. Claim, acknowledgement, reclaim, retry, explicit flush, terminal
+  lifecycle, supersession, close, and server rebase paths require the exact durable proof. Bounded
+  application migrations run against the full durable graph before Runtime services or auto-connect,
+  and Reminder priority store values, forward intent, and rollback bodies migrate atomically only
+  when no offered, accepted, or unknown owner makes the rewrite ambiguous.
+- **Adjacent release fixes:** relation-dependent observers conservatively refresh when a dotted
+  filter, order, or selection cannot prove one-namespace ownership; public upload progress
+  termination again cancels and joins its producer before save; the injected local live transport
+  waits while idle instead of closing; and receipt SHA-256 uses the official portable Swift Crypto
+  product with unchanged `v1:` and `wire-v1:` formats.
+- **Verification:** a current-source full serialized package run passes 1,729 tests across 146
+  suites in 578.263 seconds with exactly 27 deliberate known issues and no unexpected failures.
+  After the portability repair, the four-suite receipt, claim, acceptance, and server-apply matrix
+  passes 78/78 with 10 deliberate known issues, including the fixed SHA-256 `abc` vector. All
+  changed Swift files parse, both complete and staged diff checks pass, staged secret scanning is
+  clean, and independent release reviews are clean. A Swift 6.3.3 Linux container compiled the
+  official Crypto product before reaching this repository's pre-existing `SQLite3` module-map gap.
+- **Next:** use the clean linked commit to build and install one coherent Scribe Dev candidate from
+  the CLI, first taking an integrity-checked backup of the physical iPad SQLite/WAL/SHM set. Then
+  require five consecutive five-minute physical recordings at or below 100 MiB while sampled Mac
+  visibility stays within five seconds; the existing 150 MiB watchdog remains the abort ceiling.
+
 ## 2026-08-15 00:42:07 EDT — Skip semantic refresh no-ops and restore reconnect ownership
 
 - **Implementation:** `141d1e9ec68531c4e92370521f7bb4256eeb2765`; the paired intent-ledger

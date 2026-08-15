@@ -1,3 +1,9 @@
+## 2026-08-15 14:17:01 EDT — instant-data-swift ae000fce901fff693971d1ebcbdca8bdd10a6ef4
+
+- **Repo:** instant-data-swift
+- **SHA:** ae000fce901fff693971d1ebcbdca8bdd10a6ef4
+- **Reason:** Bind optimistic-effect, exact claim, and server-acceptance authority to SQLite-owned receipts; run bounded full-durable application migrations before services; and close the reconnect, cancellation, local-transport, and observer invalidation races uncovered by the physical Scribe program (#044 #095 #155).
+
 ## 2026-08-15 00:43:07 EDT — instant-data-swift 141d1e9ec68531c4e92370521f7bb4256eeb2765
 
 - **Repo:** instant-data-swift
