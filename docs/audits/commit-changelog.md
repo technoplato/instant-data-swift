@@ -1,3 +1,9 @@
+## 2026-08-14 20:21:05 EDT — realtime-voice-sqlite-instant d0350deaf8a66669c4338e495a0b091fe461b1f9
+
+- **Repo:** realtime-voice-sqlite-instant
+- **SHA:** d0350deaf8a66669c4338e495a0b091fe461b1f9
+- **Reason:** Resolve the agent-control endpoint from explicit diagnostics configuration before asynchronous bootstrap, preserving process-lifetime connection deduplication and fail-closed opt-out semantics (#095 #155).
+
 ## 2026-08-14 19:47:22 EDT — realtime-voice-sqlite-instant c47b8b3957f99774c20f2208e43aa0ce84317715
 
 - **Repo:** realtime-voice-sqlite-instant
