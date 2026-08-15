@@ -10,6 +10,28 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## August 14th, 2026 at 9:35:21 p.m. EDT — `30b180423666` Bound live refreshes and isolate oversized rejections
+
+- **Implementation commit:** `30b180423666ac038210636d4377d60da2734006`
+- **Change:** Bound nested live-query children before authoritative apply and isolate oversized terminal rejection to one claimed row.
+- **Details:**
+  - Use resolved local attribute metadata to apply per-parent nested limits once, then feed the same bounded triple set to authoritative operations and live-query replacement.
+  - On a component-limit rejection, decode and fail only the exact token-owned target, retain its optimistic overlay for authoritative reconciliation, keep successors deliverable, and leave the live socket open.
+  - Affected suites pass 156/156; the unrelated package-wide baseline later stalled in an existing concurrent local-ID integration test after an unrelated macro snapshot mismatch.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantLiveQueryNestedLimit.swift` — Resolves opaque local relation and order attributes while documenting Swift-specific pre-apply containment.
+  - `Sources/InstantSwiftDataCore/InstantLiveRefreshApplication.swift` — Bounds insert triples before building both authoritative operations and query replacement.
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — Routes oversized terminal components through the exact claimed-row disposition path without reconnecting.
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — Generalizes exact-row delivery failure and clears stale confirmation metadata.
+  - `Tests/InstantSwiftDataCoreTests/InstantLiveQueryNestedLimitMemoryTests.swift` — Proves per-parent bounds, opaque IDs, window plateau, owner overlap, and optimistic protection.
+  - `Tests/InstantSwiftDataCoreTests/InstantLiveTransportTests.swift` — Proves one-body terminal disposition, successor delivery, duplicate idempotence, and socket continuity.
+  - `agent-presence/_channels/01a00071-five-recording-sync-soak.md` — Records coordinated ownership and stable handoffs for both fixes.
+  - `agent-presence/codex-01a00071/plans/2026-08-14-preapply-nested-limit/PLAN.md` — Preserves the pre-apply containment plan and scope boundary.
+- **User context (verbatim):**
+  > observe them syncing in realtime across mac and physical ipad
+  > researching logs, diagnosing, and repeating until compelte
+- **SpecStory:** unavailable — Codex desktop continuation; SpecStory captures Codex CLI sessions and no synced desktop capture URI is available.
+
 ## August 14th, 2026 at 5:56:42 p.m. EDT — `bdc7d1027613` Retry unacknowledged mutations on a new live generation
 
 - **Implementation commit:** `bdc7d10276132ce9cbddb010d53bde4a7b984c3e`

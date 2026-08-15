@@ -1,3 +1,9 @@
+## 2026-08-14 21:34:53 EDT — instant-data-swift 30b180423666ac038210636d4377d60da2734006
+
+- **Repo:** instant-data-swift
+- **SHA:** 30b180423666ac038210636d4377d60da2734006
+- **Reason:** Bound nested live-query children before authoritative hot-store apply and isolate oversized terminal rejection to the exact claimed target without reconnecting (#044 #095 #155).
+
 ## 2026-08-14 20:21:05 EDT — realtime-voice-sqlite-instant d0350deaf8a66669c4338e495a0b091fe461b1f9
 
 - **Repo:** realtime-voice-sqlite-instant

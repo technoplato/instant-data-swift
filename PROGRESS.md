@@ -6,6 +6,28 @@ production-readiness plan
 Commit-level history stays in `docs/audits/commit-changelog.md`; this file is
 the narrative of what the library must prove and why.
 
+## 2026-08-14 21:34:53 EDT — Bound live refresh apply and isolate oversized rejection
+
+- **Implementation:** `30b180423666ac038210636d4377d60da2734006`; the paired intent-ledger
+  commit is the immediately following Git commit.
+- **Measured cause:** physical run 1 stayed below the 100 MiB memory gate (95.579 MiB peak) but
+  remote segment visibility degraded to 26.801 seconds. Before detail opened, the bounded list
+  response still fed 61–161 raw entities into the serial authoritative apply path. A later
+  permission rejection touched a 51-body optimistic component, repeatedly closed the socket, and
+  replayed on replacement generations.
+- **Correctness:** live refresh translation now applies per-parent nested limits with resolved local
+  attribute metadata before both authoritative operations and query replacement. An oversized
+  rejected component now fails only the exact token-owned target body, retains its optimistic
+  overlay until authoritative refresh, keeps successors deliverable, and leaves the socket open.
+- **Verification:** the four affected suites pass 156/156 with one expected known schema issue;
+  parser, whitespace, reproducible-receipt, and independent blocker review gates are clean. The
+  package-wide baseline did not complete: an unrelated macro snapshot first expected
+  `isIndexed: true` while generation produced `false`, and after restoring that auto-recorded test
+  edit the run later stalled in the existing concurrent local-ID resolution integration test.
+- **Next:** build and install Scribe from this clean library commit, run one sacrificial warm-up, then
+  require five consecutive five-minute physical iPad recordings to stay at or below 100 MiB while
+  every sampled Mac-visible canned segment arrives within five seconds.
+
 ## 2026-08-14 17:58:00 EDT — Delayed acknowledgements cannot replay on the same live generation
 
 - **Implementation:** `bdc7d10276132ce9cbddb010d53bde4a7b984c3e`; the paired intent-ledger
