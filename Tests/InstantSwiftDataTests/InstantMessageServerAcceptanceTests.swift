@@ -112,6 +112,7 @@ struct InstantMessageServerAcceptanceTests {
     let preparedBeforeAcceptance = await counter.value
     expectNoDifference(preparedBeforeAcceptance, 1)
     #expect(await !completion.isFinished)
+    try await waitForAcceptanceMutationSend(id: "tx-accepted", in: session)
     await session.acceptMutation(id: "tx-accepted", serverTransactionID: "server-tx-accepted")
 
     let acceptedChange = try await task.value

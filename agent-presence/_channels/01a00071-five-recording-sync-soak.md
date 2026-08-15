@@ -1673,3 +1673,14 @@
   `11e1289a1f913e08c24c5d2f6c61af28f30d4839b931d0c78f95ce2e359e4cf2`;
   `InstantLiveQueryNestedLimitMemoryTests.swift`
   `0f5efc900303224f7d54e1982c5f4ba2bec67c23ed75bb79bc4fc60427e36eab`.
+
+- 2026-08-15T17:06:31-0400 root plan-to-touch — the committed ownership-diff
+  implementation passes its focused gates, but the full package gate exposed a
+  deterministic stale fixture in
+  `InstantMessageServerAcceptanceTests.preparesOnceAndReturnsOnlyAfterServerAcceptance`.
+  The test injects `transact-ok` after durable local persistence but before the
+  mutation is actually offered; SQLite's exact claim-token boundary correctly
+  ignores that premature acknowledgement. Root owns only the smallest test
+  choreography repair: wait for the captured outbound `transact`, then inject
+  acceptance. Production code remains unchanged; focused red/green and the
+  full serialized package gate are required before physical install.
