@@ -1,3 +1,9 @@
+## 2026-08-15 15:43:20 EDT — realtime-voice-sqlite-instant e312be58deed0fb68db1ab6d81c1fc0aa95db782
+
+- **Repo:** realtime-voice-sqlite-instant
+- **SHA:** e312be58deed0fb68db1ab6d81c1fc0aa95db782
+- **Reason:** Replace full-library PhotoKit enumeration with incremental inserted-asset tracking, cleanup-on-deinit temporary-file leases, and recording-identity validation for every asynchronous image completion so Photo Library attachments remain enabled without the measured recording-start footprint spike (#044).
+
 ## 2026-08-15 14:22:57 EDT — realtime-voice-sqlite-instant 3da90f701595c6584547823b499f8d2aa9c0711f
 
 - **Repo:** realtime-voice-sqlite-instant
