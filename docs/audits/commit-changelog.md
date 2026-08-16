@@ -1,3 +1,15 @@
+## 2026-08-16 05:56:24 EDT — realtime-voice-sqlite-instant 5fe583919f70de88daf97416d775ac9c5221e7fe
+
+- **Repo:** realtime-voice-sqlite-instant
+- **SHA:** 5fe583919f70de88daf97416d775ac9c5221e7fe
+- **Reason:** Restore canonical parent-forward recording-list children, production-compatible relation metadata, and current correctness fixtures so receiving devices retain bounded transcription, segment, and attachment projection across fresh and upgraded stores (#073).
+
+## 2026-08-16 05:55:41 EDT — realtime-voice-sqlite-instant 2a79d84141edcb31ed2c77393094d04d03f3a59c
+
+- **Repo:** realtime-voice-sqlite-instant
+- **SHA:** 2a79d84141edcb31ed2c77393094d04d03f3a59c
+- **Reason:** Bound synthetic transcript section and word timestamps by PCM16 delivered during the exact speech-session activation, preserving pending-final identity without allowing stop or same-ID reuse to extend or inherit the audio timeline (#044 #073).
+
 ## 2026-08-16 05:54:23 EDT — instant-data-swift 73ff55491fbd18efeaa19375c0b725d40096ce5f
 
 - **Repo:** instant-data-swift
