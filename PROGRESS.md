@@ -1,3 +1,25 @@
+## 2026-08-16 05:54:23 EDT — Preserve one durable relation across schema upgrades
+
+- **Implementation:** `73ff55491fbd18efeaa19375c0b725d40096ce5f`; the paired intent-ledger
+  commit is the immediately following Git commit.
+- **Measured cause:** existing Scribe databases held canonical server UUID relation attributes,
+  while the receiving app declared the same links under logical forward and reverse IDs. Bootstrap
+  previously merged by attribute ID, so one relationship could split across competing physical
+  attributes and the Mac list could reopen without the transcription or segment children.
+- **Correction:** retain one exact server physical relation and its metadata, expose logical
+  declarations as direction-aware aliases, transpose affected resident and durable cold/live rows,
+  and preserve outbox wire intent and receipt authority. The migration is transactional,
+  idempotent, and skips unrelated schema and triple storage.
+- **Verification:** all 5 new identity-upgrade tests, all 14 bounded live-query tests, all 13
+  persistence-residency tests, and the exact stale-refresh atomicity regression pass. The upgrade
+  coverage includes both physical-ID arrival orders, cold nonresident triples, live-result JSON and
+  ownership, collision stamps, marker invalidation, and a zero-scan second launch. Two independent
+  source reviews are clean.
+- **Physical status:** not yet accepted. Build only from the clean linked Scribe and Instant ledger
+  commits, then require a fresh isolated iPhone recording to appear on the server and Mac within
+  five seconds, converge on exact segment/word/duration values, and survive app relaunch. The old
+  Recording 052 outbox remains untouched.
+
 ## 2026-08-16 02:00:09 EDT — Let recording writes proceed during server refresh
 
 - **Implementation:** `46024e30df6e7cf3b7df81c38c296349627ab2ce`; the paired intent-ledger

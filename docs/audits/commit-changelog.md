@@ -1,3 +1,9 @@
+## 2026-08-16 05:54:23 EDT — instant-data-swift 73ff55491fbd18efeaa19375c0b725d40096ce5f
+
+- **Repo:** instant-data-swift
+- **SHA:** 73ff55491fbd18efeaa19375c0b725d40096ce5f
+- **Reason:** Reconcile logical forward/reverse declarations with one exact durable server relation, transactionally transpose affected resident and SQLite cold/live rows, and preserve outbox intent so upgraded Scribe list projections cannot lose their recording children (#073).
+
 ## 2026-08-16 02:53:37 EDT — realtime-voice-sqlite-instant 177fc7972dfc4f883a86020b292a0e52dd36e7d1
 
 - **Repo:** realtime-voice-sqlite-instant

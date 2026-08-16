@@ -10,6 +10,25 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## August 16th, 2026 at 5:54:19 a.m. EDT — `73ff55491fbd` Reconcile durable relation identities
+
+- **Implementation commit:** `73ff55491fbd18efeaa19375c0b725d40096ce5f`
+- **Change:** Reconcile durable relation identities
+- **Details:**
+  - Preserve one exact physical server relation and expose application declarations as forward or reverse aliases, so upgraded stores do not split one link across competing attribute IDs.
+  - Transpose affected resident, cold SQLite, live-result, and ownership rows transactionally while preserving newest stamps, exact server metadata, outbox intent, receipts, and unrelated revisions.
+  - Pass all 5 identity-upgrade tests, 14 bounded live-query tests, 13 persistence-residency tests, and the exact atomic stale-refresh test; independent final review is clean.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/TripleIndexes.swift` — Reconciles logical and physical relation identities and affected resident triples.
+  - `Sources/InstantSwiftDataCore/InstantStore.swift` — Normalizes forward and reverse local operations to the retained physical relation.
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — Migrates durable cold/live relation storage idempotently before compact bootstrap.
+  - `Tests/InstantSwiftDataCoreTests/AttributeStoreIdentityUpgradeTests.swift` — Covers fresh and upgraded IDs, cold/hot rows, metadata, ownership, marker invalidation, and relaunch.
+  - `agent-presence/_channels/2026-08-16-attribute-identity-upgrade.md` — Records ownership and verification evidence.
+- **User context (verbatim):**
+  > Nothing syncing, like this isn't quite the best.
+  > Are you sure your correctness tests are up to date?
+- **SpecStory:** unavailable — Codex desktop task; no supported SpecStory capture URI was exposed.
+
 ## August 16th, 2026 at 2:00:06 a.m. EDT — `46024e30df6e` Prevent server refresh from starving local writes
 
 - **Implementation commit:** `46024e30df6e7cf3b7df81c38c296349627ab2ce`
