@@ -1,3 +1,15 @@
+## 2026-08-16 02:00:09 EDT — instant-data-swift 46024e30df6e7cf3b7df81c38c296349627ab2ce
+
+- **Repo:** instant-data-swift
+- **SHA:** 46024e30df6e7cf3b7df81c38c296349627ab2ce
+- **Reason:** Move long authoritative refresh planning outside the local-write gate, then catch up only proven append-only rows with bounded peer-runtime fallback so recording writes remain durable and observable without weakening claim, receipt, closure, or acceptance authority (#008 #073 #107).
+
+## 2026-08-16 02:00:09 EDT — realtime-voice-sqlite-instant 9040be5b8bbb2854a8e4ddc1d6e0de8d7b6493cb
+
+- **Repo:** realtime-voice-sqlite-instant
+- **SHA:** 9040be5b8bbb2854a8e4ddc1d6e0de8d7b6493cb
+- **Reason:** Give speech and system audio independent segment identity, persist final child words before rejectable derived summaries, and strictly order those durable groups so Recording 052's index holes and stale-summary atomic data loss cannot recur (#008 #073 #107).
+
 ## 2026-08-15 17:18:34 EDT — instant-data-swift a0805fc44a2c32642279d14b5d4040c7dd7a7fa6
 
 - **Repo:** instant-data-swift

@@ -10,6 +10,22 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## August 16th, 2026 at 2:00:06 a.m. EDT — `46024e30df6e` Prevent server refresh from starving local writes
+
+- **Implementation commit:** `46024e30df6e7cf3b7df81c38c296349627ab2ce`
+- **Change:** Let local writes proceed during server refresh
+- **Details:**
+  - Move long server-refresh preparation outside the local operation gate while retaining a dedicated server-apply gate and exact final revision checks.
+  - Catch up proven append-only local writes, preserve claim, acceptance, component-closure, hot-store, and durable-state authority, and fall back after bounded peer-runtime contention.
+  - Pass all 24 server-apply rebase tests and all 22 outbox supersession integration tests, including sustained local writes, peer writes, empty authoritative transactions, and stale closure races.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — Moves long server apply work outside the local write gate and catches up bounded local tails.
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — Proves append-only catch-up and preserves durable plan authority.
+  - `Tests/InstantSwiftDataCoreTests/InstantBoundedServerApplyRebaseTests.swift` — Covers sustained, peer, closure, no-effect, and hot-store catch-up behavior.
+- **User context (verbatim):**
+  > I'm not sure the words actually sync, and now the times don't sync.
+- **SpecStory:** unavailable — Codex desktop task; no supported SpecStory capture URI was exposed.
+
 ## August 15th, 2026 at 5:18:30 p.m. EDT — `a0805fc44a2c` Wait for offered message before mock acceptance
 
 - **Implementation commit:** `a0805fc44a2c32642279d14b5d4040c7dd7a7fa6`

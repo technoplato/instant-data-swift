@@ -1,3 +1,27 @@
+## 2026-08-16 02:00:09 EDT — Let recording writes proceed during server refresh
+
+- **Implementation:** `46024e30df6e7cf3b7df81c38c296349627ab2ce`; the paired intent-ledger
+  commit is the immediately following Git commit. The paired Scribe implementation is
+  `9040be5b8bbb2854a8e4ddc1d6e0de8d7b6493cb`.
+- **Measured cause:** the old server-refresh path held the same operation gate used by local
+  recording writes for multi-second planning and SQLite replacement. Recording 052 then accumulated
+  459 pending and 15 failed related mutations while the Mac/server projection fell behind the
+  locally materialized recording.
+- **Correction:** serialize authoritative refreshes behind a dedicated server-apply gate, prepare
+  outside the local-write gate, and catch up only append-only rows whose revisions, receipts,
+  claims, acceptance state, and effect closure remain exactly proven. One outside-gate replay pass
+  is followed by a forced final drain; sustained peer-runtime contention falls back after bounded
+  attempts instead of starving forever. Empty authoritative transactions still install caught-up
+  hot and durable state.
+- **Verification:** all 24 bounded server-apply rebase tests pass, including sustained local writes,
+  peer writers, empty/no-current-effect transactions, component-closure corruption, and hot-store
+  publication. All 22 outbox supersession integration tests pass with only their three declared
+  quarantine known issues. Independent cross-layer and queue-order reviews are clean.
+- **Physical status:** not yet accepted. Install only from the clean linked ledger commits and
+  require a fresh iPad-to-server-to-Mac recording to prove five-second visibility, exact words and
+  duration, immediate reopen, and the current-footprint gate. The original Recording 052 queue is
+  intentionally untouched because current code cannot safely rewrite its already-offered bodies.
+
 # InstantSwiftData progress log
 
 Newest-first. This log tracks library-side work driven by the Scribe
