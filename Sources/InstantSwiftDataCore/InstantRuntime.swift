@@ -358,6 +358,10 @@ public struct InstantRuntimeConfiguration: Sendable {
     (@Sendable (_ transactionID: String) async -> Void)? = nil
   var onServerApplyPreparedBeforeCommitForTesting:
     (@Sendable (_ planID: String) async -> Void)? = nil
+  package var onServerApplyCatchUpReplayedOutsideOperationGateForTesting:
+    (@Sendable (_ appendedBodyCount: Int) async -> Void)? = nil
+  package var onServerApplyCatchUpReplayedForTesting:
+    (@Sendable (_ replayCount: Int, _ appendedBodyCount: Int) async -> Void)? = nil
 
   public init(
     appID: String,
@@ -1261,6 +1265,28 @@ private struct InstantAppliedServerTransaction: Sendable {
   var mergedAttributeCount: Int
 }
 
+/// One revision-qualified hot-store snapshot used for a server-apply attempt.
+///
+/// Capturing the durable revisions and the in-memory store under the same
+/// operation-gate ownership prevents a slow refresh from adopting an older
+/// persistence snapshot after a newer local write has already published.
+private struct InstantServerApplySeed: Sendable {
+  var state: InstantPersistenceState
+  var preparedStore: PreparedStoreMutation
+}
+
+private enum InstantServerApplyCatchUpLimits {
+  /// One already-large tail may be copied to SQLite staging under the gate and
+  /// replayed page-by-page after local admission resumes. One final pass keeps
+  /// admission frozen through its page-bounded replay. If another Runtime still
+  /// appends after that forced drain, this plan falls back to a fresh bounded
+  /// attempt instead of holding `serverApplyGate` forever.
+  static let maximumBodyCountWhileHoldingOperationGate = 50
+  static let maximumBodyBytesWhileHoldingOperationGate = 1_024 * 1_024
+  static let maximumOutsideOperationGateReplayCount = 1
+  static let maximumReplayCountPerPlan = maximumOutsideOperationGateReplayCount + 1
+}
+
 private actor InstantLiveQueryAcknowledgementState {
   private enum Outcome: Sendable {
     case acknowledged
@@ -1466,6 +1492,12 @@ public final class InstantRuntime: Sendable {
   private let sharesObservers =
     InstantSnapshotObservers<InstantSharesObservationKey, [InstantShareSnapshot]>()
   private let operationGate = AsyncSerialGate(label: "operation")
+  // Server refresh preparation can page through a large query result. Keep
+  // those preparations serial without holding the operation gate that protects
+  // local writes. The final revision-checked transition acquires
+  // `operationGate`, catches up a proven append-only optimistic tail, and
+  // rejects every other concurrent state change as stale.
+  private let serverApplyGate = AsyncSerialGate(label: "server-apply")
   private let authPromotionGate = AsyncSerialGate(label: "auth-promotion")
   private let connectionGate = AsyncSerialGate(label: "connection")
   private let mutationFlushGate = AsyncSerialGate(label: "mutation-flush")
@@ -2145,7 +2177,13 @@ public final class InstantRuntime: Sendable {
         pendingMutation = newMutation
       }
       let immediateTail: InstantOutboxImmediateTailLoad
-      if OutboxSameEntitySupersession.isEligibleImmediateTailNewcomer(
+      // A server refresh may be preparing from the exact current tail outside
+      // the operation gate. Keep each new mutation append-only until that
+      // refresh has either caught it up or committed; replacing the old tail
+      // would erase the durable delta needed to preserve both overlays.
+      let serverApplyIsActive = await serverApplyGate.isHeld
+      if !serverApplyIsActive,
+        OutboxSameEntitySupersession.isEligibleImmediateTailNewcomer(
         pendingMutation,
         attributes: state.snapshot.store.attributes
       ) {
@@ -2387,17 +2425,18 @@ public final class InstantRuntime: Sendable {
     processedTransactionID: String? = nil,
     receivedAt: InstantTimestamp? = nil
   ) async throws -> InstantServerTransactionApplicationResult {
-    await enterOperationGate()
+    try await serverApplyGate.enterUnlessCancelled(operation: #function)
     do {
+      try Task.checkCancellation()
       let result = try await performApplyServerTransaction(
         transaction,
         processedTransactionID: processedTransactionID,
         receivedAt: receivedAt
       )
-      await leaveOperationGate()
+      await serverApplyGate.leave()
       return result.application
     } catch {
-      await leaveOperationGate()
+      await serverApplyGate.leave()
       throw error
     }
   }
@@ -2408,8 +2447,9 @@ public final class InstantRuntime: Sendable {
     liveQueryResultReplacements: [InstantLiveQueryResultReplacement] = [],
     receivedAt: InstantTimestamp? = nil
   ) async throws -> InstantServerTransactionApplicationResult {
-    await enterOperationGate()
+    try await serverApplyGate.enterUnlessCancelled(operation: #function)
     do {
+      try Task.checkCancellation()
       let result = try await performApplyServerTransaction(
         transaction,
         processedTransactionID: transaction.id,
@@ -2417,10 +2457,42 @@ public final class InstantRuntime: Sendable {
         mergingAttributes: attributesToMerge,
         liveQueryResultReplacements: liveQueryResultReplacements
       )
-      await leaveOperationGate()
+      await serverApplyGate.leave()
       return result.application
     } catch {
-      await leaveOperationGate()
+      await serverApplyGate.leave()
+      throw error
+    }
+  }
+
+  /// Captures persistence revisions and the matching hot-store contents as one
+  /// short operation-gated transition. Long body paging and optimistic rebase
+  /// work happens only after this gate is released.
+  private func loadServerApplySeed(
+    operationGateAlreadyHeld: Bool
+  ) async throws -> InstantServerApplySeed {
+    if !operationGateAlreadyHeld {
+      try await enterOperationGateUnlessCancelled(operation: "snapshot server apply")
+    }
+    do {
+      recordActorHop(.persistence)
+      let state = try await loadCompactStateSynchronizingStore()
+      recordActorHop(.store)
+      let preparedStore = try await store.prepare(
+        peelingOverlays: [],
+        thenApplying: InstantStoreTransaction(
+          id: "server-apply-snapshot",
+          operations: []
+        )
+      )
+      if !operationGateAlreadyHeld {
+        await leaveOperationGate()
+      }
+      return InstantServerApplySeed(state: state, preparedStore: preparedStore)
+    } catch {
+      if !operationGateAlreadyHeld {
+        await leaveOperationGate()
+      }
       throw error
     }
   }
@@ -2431,7 +2503,9 @@ public final class InstantRuntime: Sendable {
     receivedAt: InstantTimestamp?,
     confirmingMutationID: String? = nil,
     mergingAttributes attributesToMerge: [InstantAttribute] = [],
-    liveQueryResultReplacements: [InstantLiveQueryResultReplacement] = []
+    liveQueryResultReplacements: [InstantLiveQueryResultReplacement] = [],
+    operationGateAlreadyHeld: Bool = false,
+    initialSeed: InstantServerApplySeed? = nil
   ) async throws -> InstantAppliedServerTransaction {
     let processedTransactionID = (processedTransactionID ?? transaction.id)
       .trimmingCharacters(in: .whitespacesAndNewlines)
@@ -2455,9 +2529,18 @@ public final class InstantRuntime: Sendable {
       InstantPersistedLiveQueryResult(replacement: $0, updatedAt: metadataUpdatedAt)
     }
 
+    var initialSeed = initialSeed
     applyAttempts: for _ in 0..<5 {
-      recordActorHop(.persistence)
-      let compactState = try await loadCompactStateSynchronizingStore()
+      let seed: InstantServerApplySeed
+      if let firstSeed = initialSeed {
+        seed = firstSeed
+        initialSeed = nil
+      } else {
+        seed = try await loadServerApplySeed(
+          operationGateAlreadyHeld: operationGateAlreadyHeld
+        )
+      }
+      let compactState = seed.state
       var authoritativeTransaction = baseAuthoritativeTransaction
       if !liveQueryResultReplacements.isEmpty {
         recordActorHop(.persistence)
@@ -2560,20 +2643,14 @@ public final class InstantRuntime: Sendable {
         continue applyAttempts
       }
 
+      var enteredOperationGateForCommit = false
       do {
         // Upstream Reactor rebuilds a server store and then applies optimistic
         // mutations in creation order. Swift's one-store representation first
         // peels only the indexed connected components in reverse order. The
         // durable bodies are copied to SQLite temp staging one bounded page at
         // a time; no component-sized Swift array exists.
-        recordActorHop(.store)
-        var prepared = try await store.prepare(
-          peelingOverlays: [],
-          thenApplying: InstantStoreTransaction(
-            id: "\(authoritativeTransaction.id)-bounded-base",
-            operations: []
-          )
-        )
+        var prepared = seed.preparedStore
         var changedEntityIDs = prepared.result.changedEntityIDs
         var reversePosition: InstantOutboxDeliveryPosition?
         var stalePlan = false
@@ -2761,6 +2838,196 @@ public final class InstantRuntime: Sendable {
           continue applyAttempts
         }
 
+        await configuration.onServerApplyPreparedBeforeCommitForTesting?(plan.id)
+
+        // Local writes admitted while the long server preparation ran are a
+        // durable optimistic tail, not a reason to discard all completed
+        // work. Snapshot that exact append-only tail under the operation gate,
+        // replay it over the prepared server result, and regenerate each
+        // rollback receipt before the one atomic commit. At most one already-
+        // large tail is replayed after releasing local admission. The next
+        // pass is a forced, page-bounded drain under the gate. A further append
+        // from another Runtime abandons this plan after bounded work.
+        var catchUpTail = plan.baselineOutboxTail
+        var catchUpOutboxRowCount = plan.baselineOutboxRowCount
+        var outsideOperationGateReplayCount = 0
+        var catchUpReplayCount = 0
+        var didCatchUpLocalMutations = false
+        catchUp: while true {
+          if !operationGateAlreadyHeld, !enteredOperationGateForCommit {
+            await enterOperationGate(operation: "catch up server apply")
+            enteredOperationGateForCommit = true
+          }
+          recordActorHop(.persistence)
+          let catchUpLoad = try await persistence
+            .extendServerApplyPlanWithAppendedLocalMutations(
+              planID: plan.id,
+              after: catchUpTail,
+              baselineOutboxRowCount: catchUpOutboxRowCount
+            )
+          let catchUp: InstantServerApplyCatchUp
+          switch catchUpLoad {
+          case .stale:
+            stalePlan = true
+            break catchUp
+          case let .ready(readyCatchUp):
+            catchUp = readyCatchUp
+          }
+          guard catchUp.appendedBodyCount > 0 else { break catchUp }
+          guard
+            catchUpReplayCount
+              < InstantServerApplyCatchUpLimits.maximumReplayCountPerPlan
+          else {
+            stalePlan = true
+            break catchUp
+          }
+          catchUpReplayCount += 1
+
+          let shouldReplayOutsideOperationGate =
+            !operationGateAlreadyHeld
+            && outsideOperationGateReplayCount
+              < InstantServerApplyCatchUpLimits.maximumOutsideOperationGateReplayCount
+            && (
+              catchUp.appendedBodyCount
+                > InstantServerApplyCatchUpLimits.maximumBodyCountWhileHoldingOperationGate
+                || catchUp.appendedBodyByteCount
+                  > InstantServerApplyCatchUpLimits.maximumBodyBytesWhileHoldingOperationGate
+            )
+          if shouldReplayOutsideOperationGate, enteredOperationGateForCommit {
+            outsideOperationGateReplayCount += 1
+            await leaveOperationGate()
+            enteredOperationGateForCommit = false
+          }
+
+          var catchUpPosition = catchUp.previousTail
+          var replayedBodyCount = 0
+          var replayedBodyByteCount = 0
+          while replayedBodyCount < catchUp.appendedBodyCount {
+            recordActorHop(.persistence)
+            let page = try await persistence.loadServerApplyBodyPage(
+              planID: plan.id,
+              direction: .forward,
+              after: catchUpPosition
+            )
+            if page.isStale {
+              stalePlan = true
+              break
+            }
+            guard !page.entries.isEmpty else {
+              throw InstantError(
+                code: .persistenceFailed,
+                operation: "catch up server transaction",
+                localID: processedTransactionID,
+                message:
+                  "The durable optimistic tail ended before every appended mutation was replayed.",
+                recovery:
+                  "Preserve the outbox and retry after reloading the local cache."
+              )
+            }
+            var dispositions: [InstantServerApplyStagedDisposition] = []
+            dispositions.reserveCapacity(page.entries.count)
+            for entry in page.entries {
+              guard entry.isComponentBody,
+                !entry.shouldPruneAtWatermark,
+                !entry.shouldConfirm,
+                entry.mutation.status == .pending
+              else {
+                stalePlan = true
+                break
+              }
+              var mutation = entry.mutation
+              let newestServerTimestamp =
+                prepared.indexes.newestTransactionTimeMilliseconds ?? 0
+              let optimisticTimestamp = InstantTimestamp(
+                milliseconds: newestServerTimestamp == Int64.max
+                  ? newestServerTimestamp
+                  : newestServerTimestamp + 1
+              )
+              let operations = Self.rebaseDurableTransaction(
+                in: &mutation,
+                at: optimisticTimestamp
+              )
+              var replayRollback: InstantStoreTransaction?
+              if !operations.isEmpty {
+                let replayTransaction = InstantStoreTransaction(
+                  id: mutation.transaction.id,
+                  operations: operations
+                )
+                prepared = try await hydrateDeferredValuesForServerApply(
+                  [replayTransaction],
+                  over: prepared,
+                  planID: plan.id
+                )
+                let replay = try await store.prepare(
+                  replayTransaction,
+                  applyingTo: prepared
+                )
+                changedEntityIDs.formUnion(replay.result.changedEntityIDs)
+                replayRollback = Self.rollbackTransaction(
+                  mutationID: mutation.id,
+                  prepared: replay
+                )
+                prepared = replay
+              }
+              Self.installPreparedOptimisticEffect(
+                in: &mutation,
+                rollback: replayRollback
+              )
+              dispositions.append(.update(mutation))
+            }
+            if stalePlan { break }
+            try await persistence.stageServerApplyBodyPage(
+              planID: plan.id,
+              dispositions: dispositions
+            )
+            replayedBodyCount += page.entries.count
+            replayedBodyByteCount += page.decodedBodyByteCount
+            catchUpPosition = page.nextPosition
+          }
+          if stalePlan { break catchUp }
+          guard replayedBodyCount == catchUp.appendedBodyCount,
+            replayedBodyByteCount == catchUp.appendedBodyByteCount,
+            catchUpPosition == catchUp.currentTail
+          else {
+            throw InstantError(
+              code: .persistenceFailed,
+              operation: "catch up server transaction",
+              localID: processedTransactionID,
+              message:
+                "The bounded optimistic tail did not match its SQLite staging envelope.",
+              recovery:
+                "Preserve the outbox and retry after reloading the local cache."
+            )
+          }
+          catchUpTail = catchUp.currentTail
+          catchUpOutboxRowCount = catchUp.currentOutboxRowCount
+          didCatchUpLocalMutations = true
+          if shouldReplayOutsideOperationGate {
+            await configuration.onServerApplyCatchUpReplayedOutsideOperationGateForTesting?(
+              catchUp.appendedBodyCount
+            )
+          }
+          await configuration.onServerApplyCatchUpReplayedForTesting?(
+            catchUpReplayCount,
+            catchUp.appendedBodyCount
+          )
+        }
+        if stalePlan {
+          if enteredOperationGateForCommit {
+            await leaveOperationGate()
+            enteredOperationGateForCommit = false
+          }
+          try? await persistence.finishServerApplyPlan(id: plan.id)
+          continue applyAttempts
+        }
+
+        // Every local transaction publishes a hot-store sequence even when it
+        // has no currently materializing operation (for example rule params).
+        // The final zero-tail proof is still under the operation gate, so this
+        // is the exact next sequence after every caught-up local publication.
+        recordActorHop(.store)
+        prepared.sequence = await store.currentSequence() + 1
+
         let preparedForCommit = PreparedStoreMutation(
           result: InstantStoreMutationResult(
             transactionID: authoritativeTransaction.id,
@@ -2772,27 +3039,32 @@ public final class InstantRuntime: Sendable {
           attributes: prepared.attributes,
           indexes: prepared.indexes
         )
-        await configuration.onServerApplyPreparedBeforeCommitForTesting?(plan.id)
+        let changesMaterializedStore =
+          !authoritativeTransaction.operations.isEmpty || mergedAttributeCount > 0
         recordActorHop(.persistence)
         guard let commit = try await persistence.commitServerApplyPlan(
           planID: plan.id,
           changedEntityTriples: preparedForCommit.changedEntityTriples,
           mergingAttributes: changedMergedAttributes,
           queryResults: persistedLiveQueryResults,
-          storeChanged: !authoritativeTransaction.operations.isEmpty || mergedAttributeCount > 0,
+          storeChanged: changesMaterializedStore || didCatchUpLocalMutations,
           metadataKey: processedTransactionIDMetadataKey,
           metadataValue: processedTransactionID,
           metadataUpdatedAt: metadataUpdatedAt
         ) else {
+          if enteredOperationGateForCommit {
+            await leaveOperationGate()
+            enteredOperationGateForCommit = false
+          }
           try? await persistence.finishServerApplyPlan(id: plan.id)
           continue applyAttempts
         }
 
         recordActorHop(.store)
-        let changesMaterializedStore =
-          !authoritativeTransaction.operations.isEmpty || mergedAttributeCount > 0
+        let requiresPreparedStoreInstallation =
+          changesMaterializedStore || didCatchUpLocalMutations
         let committedResult: InstantStoreMutationResult
-        if changesMaterializedStore {
+        if requiresPreparedStoreInstallation {
           committedResult = await store.commitAndPublish(
             preparedForCommit,
             installingLiveQueryPageInfo: liveQueryResultReplacements
@@ -2842,13 +3114,21 @@ public final class InstantRuntime: Sendable {
           syncState: InstantSyncState(processedTransactionID: processedTransactionID),
           pendingMutationCount: commit.pendingMutationCount
         )
-        return InstantAppliedServerTransaction(
+        let applied = InstantAppliedServerTransaction(
           transaction: authoritativeTransaction,
           application: application,
           confirmedMutation: confirmedMutation,
           mergedAttributeCount: mergedAttributeCount
         )
+        if enteredOperationGateForCommit {
+          await leaveOperationGate()
+          enteredOperationGateForCommit = false
+        }
+        return applied
       } catch {
+        if enteredOperationGateForCommit {
+          await leaveOperationGate()
+        }
         try? await persistence.finishServerApplyPlan(id: plan.id)
         throw error
       }
@@ -2973,10 +3253,11 @@ public final class InstantRuntime: Sendable {
     receivedAt: InstantTimestamp? = nil
   ) async throws -> InstantLiveRefreshApplicationResult {
     let receivedAt = receivedAt ?? configuration.now()
-    await enterOperationGate()
+    try await serverApplyGate.enterUnlessCancelled(operation: #function)
     do {
-      recordActorHop(.persistence)
-      let state = try await loadCompactStateSynchronizingStore()
+      try Task.checkCancellation()
+      let seed = try await loadServerApplySeed(operationGateAlreadyHeld: false)
+      let state = seed.state
       let translated = try InstantLiveRefreshTranslator.translate(
         refreshOK,
         existingAttributes: state.snapshot.store.attributes,
@@ -2988,7 +3269,8 @@ public final class InstantRuntime: Sendable {
         receivedAt: receivedAt,
         confirmingMutationID: translated.confirmationMutationID,
         mergingAttributes: translated.attributesToMerge,
-        liveQueryResultReplacements: translated.queryResultReplacements
+        liveQueryResultReplacements: translated.queryResultReplacements,
+        initialSeed: seed
       )
       await liveQueryResultState.record(translated.queryResultReplacements)
       if !translated.queryResultReplacements.isEmpty,
@@ -2997,7 +3279,7 @@ public final class InstantRuntime: Sendable {
         )
       {
         do {
-          _ = try await performPruneLiveQueryResults(
+          _ = try await pruneLiveQueryResults(
             policy: configuration.liveQueryResultPruningPolicy,
             now: configuration.now()
           )
@@ -3012,7 +3294,7 @@ public final class InstantRuntime: Sendable {
         }
       }
 
-      await leaveOperationGate()
+      await serverApplyGate.leave()
       return InstantLiveRefreshApplicationResult(
         transaction: applied.transaction,
         application: applied.application,
@@ -3021,7 +3303,7 @@ public final class InstantRuntime: Sendable {
         mergedAttributeCount: applied.mergedAttributeCount
       )
     } catch {
-      await leaveOperationGate()
+      await serverApplyGate.leave()
       throw error
     }
   }
@@ -4732,6 +5014,14 @@ public final class InstantRuntime: Sendable {
     await operationGate.waiterCount
   }
 
+  package func serverApplyGateWaiterCountForTesting() async -> Int {
+    await serverApplyGate.waiterCount
+  }
+
+  package func installedStoreRevisionsForTesting() -> (store: Int64, attributes: Int64) {
+    installedStoreRevisions.snapshot()
+  }
+
   package func liveActiveQueryKeysForTesting() async -> Set<String> {
     await liveSession.activeQueryKeys()
   }
@@ -5117,6 +5407,11 @@ public final class InstantRuntime: Sendable {
     // while synchronously aborted transport work, renewal, and exact-token
     // disposition finish; only then may durable `.closed` become visible.
     await explicitMutationFlushTask.wait()
+    // Lock order is server apply, then operation. A refresh that was already in
+    // progress must either commit or fail before `.closed` becomes durable, and
+    // no later refresh may cross that explicit-close boundary.
+    await serverApplyGate.enter(operation: "close connection")
+    var enteredServerApplyGate = true
     recordActorHop(.operationGate)
     await operationGate.enter()
     var enteredOperationGate = true
@@ -5132,6 +5427,8 @@ public final class InstantRuntime: Sendable {
       recordActorHop(.operationGate)
       await operationGate.leave()
       enteredOperationGate = false
+      await serverApplyGate.leave()
+      enteredServerApplyGate = false
       await waitForExactCloseBackgroundTasks(
         automaticLiveConnectionTask: automaticLiveConnectionTask,
         startupCookieSyncTask: startupCookieSyncTask,
@@ -5145,6 +5442,9 @@ public final class InstantRuntime: Sendable {
       if enteredOperationGate {
         recordActorHop(.operationGate)
         await operationGate.leave()
+      }
+      if enteredServerApplyGate {
+        await serverApplyGate.leave()
       }
       await waitForExactCloseBackgroundTasks(
         automaticLiveConnectionTask: automaticLiveConnectionTask,
@@ -6764,10 +7064,15 @@ public final class InstantRuntime: Sendable {
       )
     }
 
+    // Magic-code verification already owns `operationGate` for the surrounding
+    // auth transaction. Its server-style local materialization therefore uses
+    // that existing commit boundary instead of entering the normal
+    // `serverApplyGate -> operationGate` path in reverse order.
     _ = try await performApplyServerTransaction(
       InstantStoreTransaction(id: transactionID, operations: operations),
       processedTransactionID: transactionID,
-      receivedAt: verifiedAt
+      receivedAt: verifiedAt,
+      operationGateAlreadyHeld: true
     )
     return !userExists
   }
@@ -6790,7 +7095,7 @@ public final class InstantRuntime: Sendable {
     guard !userExists else { return false }
 
     let transactionID = "auth.guest.\(configuration.makeID())"
-    _ = try await performApplyServerTransaction(
+    _ = try await applyServerTransaction(
       InstantStoreTransaction(
         id: transactionID,
         operations: [

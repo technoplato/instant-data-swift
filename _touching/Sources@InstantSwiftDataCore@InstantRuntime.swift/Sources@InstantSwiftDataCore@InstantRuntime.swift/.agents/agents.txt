@@ -35,3 +35,4 @@ codex-desktop/01a00071-f1c1-7193-adcd-3bc9f30b5f95/root/legacy_head_contract_tes
 codex-desktop/01a00071-f1c1-7193-adcd-3bc9f30b5f95/root/migration_architecture_fix 2026-08-15T11:58:43-0400 mower pre-runtime-application-migration-bootstrap-only plan=2026-08-15-legacy-priority-durable-migration
 codex-desktop/01a00071-f1c1-7193-adcd-3bc9f30b5f95/root 2026-08-15T12:23:30-0400 mower rename-resident-snapshot-test-seam plan=2026-08-15-legacy-priority-durable-migration
 codex-desktop/01a00071-f1c1-7193-adcd-3bc9f30b5f95/root/file_upload_cancel_triage 2026-08-15T13:31:42-0400 mower upload-progress-public-termination-cancel-only delegated-by=root plan=2026-08-14-semantic-noop-insert-v2
+codex-desktop/01a00071-f1c1-7193-adcd-3bc9f30b5f95/root 2026-08-15T23:58:00-0400 mower local-write-server-refresh-gate-only plan=2026-08-15-local-write-server-refresh

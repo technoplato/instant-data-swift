@@ -2,3 +2,4 @@ codex-desktop/019fe994-1250-7b42-825e-9b75836d9173/root/retry_window_implementat
 codex-desktop/01a00071-f1c1-7193-adcd-3bc9f30b5f95/root/rollback_invariant_source 2026-08-15T02:55:34-0400 mower receipt-fixture-compatibility plan=semantic_noop_v2
 codex-desktop/01a00071-f1c1-7193-adcd-3bc9f30b5f95/root/offered_server_apply_tests 2026-08-15T12:12:26-0400 mower offered-wire-server-apply-regressions plan=semantic_noop_v2
 codex-desktop/01a00071-f1c1-7193-adcd-3bc9f30b5f95/root 2026-08-15T12:26:30-0400 mower build-only-assertion-hoist plan=2026-08-15-legacy-priority-durable-migration
+codex-desktop/01a00071-f1c1-7193-adcd-3bc9f30b5f95/root 2026-08-15T23:58:00-0400 mower local-write-server-refresh-race-contract plan=2026-08-15-local-write-server-refresh

@@ -468,8 +468,23 @@ struct InstantServerApplyPlan: Sendable {
   var expectedAttributeRevision: Int64
   var expectedOutboxRevision: Int64
   var expectedQueryResultRevision: Int64
+  var baselineOutboxRowCount: Int
+  var baselineOutboxTail: InstantOutboxDeliveryPosition?
   var plannedBodyCount: Int
   var plannedBodyByteCount: Int
+}
+
+struct InstantServerApplyCatchUp: Sendable {
+  var previousTail: InstantOutboxDeliveryPosition?
+  var currentTail: InstantOutboxDeliveryPosition?
+  var currentOutboxRowCount: Int
+  var appendedBodyCount: Int
+  var appendedBodyByteCount: Int
+}
+
+enum InstantServerApplyCatchUpLoad: Sendable {
+  case ready(InstantServerApplyCatchUp)
+  case stale
 }
 
 enum InstantServerApplyPlanLoad: Sendable {
@@ -3133,6 +3148,10 @@ public actor SQLitePersistenceStore {
       let expectedQueryResultRevision = try loadMetadataRevisionWithoutTransaction(
         Self.queryResultRevisionKey
       )
+      let baselineOutboxRowCount = Int(try selectInt64(
+        "SELECT COUNT(*) FROM instant_outbox"
+      ))
+      let baselineOutboxTail = try latestOutboxPositionWithoutTransaction()
 
       if hasServerOperations,
         let unknownMutationID = try firstUnknownActiveServerApplyMutationIDWithoutTransaction()
@@ -3196,6 +3215,8 @@ public actor SQLitePersistenceStore {
           expectedAttributeRevision: expectedAttributeRevision,
           expectedOutboxRevision: expectedOutboxRevision,
           expectedQueryResultRevision: expectedQueryResultRevision,
+          baselineOutboxRowCount: baselineOutboxRowCount,
+          baselineOutboxTail: baselineOutboxTail,
           plannedBodyCount: bodyCount,
           plannedBodyByteCount: bodyByteCount
         )
@@ -3562,6 +3583,195 @@ public actor SQLitePersistenceStore {
           }
         }
       }
+    }
+  }
+
+  /// Extends an already prepared server plan with local mutations that were
+  /// durably appended while Runtime performed the long peel/replay work.
+  ///
+  /// This is deliberately narrower than a general revision merge. It accepts
+  /// only one Runtime admission per store/outbox revision, no deletion or
+  /// replacement of the preexisting queue, and only prepared pending rows
+  /// strictly after the prior durable tail. Any other concurrent change makes
+  /// the plan stale and falls back to a fresh authoritative plan.
+  func extendServerApplyPlanWithAppendedLocalMutations(
+    planID: String,
+    after previousTail: InstantOutboxDeliveryPosition?,
+    baselineOutboxRowCount: Int
+  ) throws -> InstantServerApplyCatchUpLoad {
+    try transaction {
+      guard let control = try loadServerApplyPlanControlWithoutTransaction(id: planID),
+        try serverApplyPlanRowsStillMatchWithoutTransaction(id: planID)
+      else { return .stale }
+
+      let currentStoreRevision = try loadMetadataRevisionWithoutTransaction(
+        Self.storeRevisionKey
+      )
+      let currentAttributeRevision = try loadMetadataRevisionWithoutTransaction(
+        Self.attributeRevisionKey
+      )
+      let currentOutboxRevision = try loadMetadataRevisionWithoutTransaction(
+        Self.outboxRevisionKey
+      )
+      let currentQueryResultRevision = try loadMetadataRevisionWithoutTransaction(
+        Self.queryResultRevisionKey
+      )
+      guard currentAttributeRevision == control.expectedAttributeRevision,
+        currentQueryResultRevision == control.expectedQueryResultRevision,
+        currentStoreRevision >= control.expectedStoreRevision,
+        currentOutboxRevision >= control.expectedOutboxRevision
+      else { return .stale }
+
+      let currentOutboxRowCount = Int(try selectInt64(
+        "SELECT COUNT(*) FROM instant_outbox"
+      ))
+      guard currentOutboxRowCount >= baselineOutboxRowCount else { return .stale }
+      let appendedCount = currentOutboxRowCount - baselineOutboxRowCount
+      let storeRevisionDelta = currentStoreRevision - control.expectedStoreRevision
+      let outboxRevisionDelta = currentOutboxRevision - control.expectedOutboxRevision
+      guard storeRevisionDelta == Int64(appendedCount),
+        outboxRevisionDelta == Int64(appendedCount)
+      else { return .stale }
+
+      let positionPredicate: String
+      let positionBindings: [SQLiteBinding]
+      if let previousTail {
+        positionPredicate =
+          """
+          (outbox.created_at_ms > ? OR (
+            outbox.created_at_ms = ? AND outbox.mutation_id > ?
+          ))
+          """
+        positionBindings = [
+          .int(previousTail.createdAtMilliseconds),
+          .int(previousTail.createdAtMilliseconds),
+          .text(previousTail.mutationID),
+        ]
+      } else {
+        positionPredicate = "1 = 1"
+        positionBindings = []
+      }
+      let selectedCount = Int(try selectInt64(
+        "SELECT COUNT(*) FROM instant_outbox AS outbox WHERE \(positionPredicate)",
+        positionBindings
+      ))
+      guard selectedCount == appendedCount else { return .stale }
+
+      let currentTail = try latestOutboxPositionWithoutTransaction()
+      guard appendedCount > 0 else {
+        guard currentTail == previousTail else { return .stale }
+        return .ready(
+          InstantServerApplyCatchUp(
+            previousTail: previousTail,
+            currentTail: currentTail,
+            currentOutboxRowCount: currentOutboxRowCount,
+            appendedBodyCount: 0,
+            appendedBodyByteCount: 0
+          )
+        )
+      }
+
+      let invalidCount = try selectInt64(
+        """
+        SELECT COUNT(*)
+        FROM instant_outbox AS outbox
+        WHERE \(positionPredicate) AND (
+          outbox.status != ?
+          OR outbox.optimistic_overlay_active != 1
+          OR outbox.optimistic_effect_metadata_version != ?
+          OR outbox.optimistic_effect_receipt_fingerprint IS NULL
+        )
+        """,
+        positionBindings + [
+          .text(InstantMutationStatus.pending.rawValue),
+          .int(Int64(InstantOptimisticEffectFootprint.currentVersion)),
+        ]
+      )
+      guard invalidCount == 0 else { return .stale }
+
+      let appendedBodyByteCount = Int(try selectInt64(
+        """
+        SELECT COALESCE(SUM(length(CAST(outbox.json AS BLOB))), 0)
+        FROM instant_outbox AS outbox
+        WHERE \(positionPredicate)
+        """,
+        positionBindings
+      ))
+      try execute(
+        """
+        INSERT INTO instant_server_apply_rows (
+          plan_id, mutation_id, created_at_ms, expected_mutation_revision,
+          expected_status, expected_confirmation_proven, expected_overlay_active,
+          expected_effect_metadata_version, expected_effect_is_global,
+          expected_effect_receipt_fingerprint,
+          expected_delivery_started,
+          expected_delivery_claim_payload_fingerprint,
+          expected_delivery_claimant_id,
+          expected_server_acceptance_payload_fingerprint,
+          expected_body_bytes, is_component_body, requires_body,
+          is_catch_up, prune_at_watermark, confirm_at_apply, original_json,
+          staged_delete, staged
+        )
+        SELECT ?, outbox.mutation_id, outbox.created_at_ms,
+               outbox.mutation_revision, outbox.status,
+               COALESCE(outbox.confirmation_proven, 0),
+               outbox.optimistic_overlay_active,
+               outbox.optimistic_effect_metadata_version,
+               outbox.optimistic_effect_is_global,
+               outbox.optimistic_effect_receipt_fingerprint,
+               outbox.delivery_started,
+               outbox.delivery_claim_payload_fingerprint,
+               outbox.delivery_claimant_id,
+               outbox.server_acceptance_payload_fingerprint,
+               MAX(
+                 COALESCE(outbox.encoded_body_bytes, 0),
+                 length(CAST(outbox.json AS BLOB))
+               ),
+               1, 1, 1, 0, 0, outbox.json, 0, 0
+        FROM instant_outbox AS outbox
+        WHERE \(positionPredicate)
+        ORDER BY outbox.created_at_ms, outbox.mutation_id
+        """,
+        [.text(planID)] + positionBindings
+      )
+      guard sqlite3_changes(connection.raw) == appendedCount else {
+        throw persistenceError(
+          operation: "extend bounded server apply",
+          message:
+            "The appended outbox tail did not copy atomically into server-apply staging."
+        )
+      }
+      try execute(
+        """
+        UPDATE instant_server_apply_plans
+        SET expected_store_revision = ?, expected_outbox_revision = ?
+        WHERE plan_id = ?
+          AND expected_store_revision = ?
+          AND expected_outbox_revision = ?
+        """,
+        [
+          .int(currentStoreRevision),
+          .int(currentOutboxRevision),
+          .text(planID),
+          .int(control.expectedStoreRevision),
+          .int(control.expectedOutboxRevision),
+        ]
+      )
+      guard sqlite3_changes(connection.raw) == 1 else {
+        throw persistenceError(
+          operation: "extend bounded server apply",
+          message: "The server-apply revision boundary changed during tail staging."
+        )
+      }
+      return .ready(
+        InstantServerApplyCatchUp(
+          previousTail: previousTail,
+          currentTail: currentTail,
+          currentOutboxRowCount: currentOutboxRowCount,
+          appendedBodyCount: appendedCount,
+          appendedBodyByteCount: appendedBodyByteCount
+        )
+      )
     }
   }
 
@@ -4043,7 +4253,7 @@ public actor SQLitePersistenceStore {
         expected_delivery_claimant_id,
         expected_server_acceptance_payload_fingerprint,
         expected_body_bytes, is_component_body, requires_body,
-        prune_at_watermark, confirm_at_apply, staged_delete, staged
+        is_catch_up, prune_at_watermark, confirm_at_apply, staged_delete, staged
       )
       SELECT ?, outbox.mutation_id, outbox.created_at_ms, outbox.mutation_revision,
              outbox.status, COALESCE(outbox.confirmation_proven, 0),
@@ -4059,7 +4269,7 @@ public actor SQLitePersistenceStore {
                COALESCE(outbox.encoded_body_bytes, 0),
                length(CAST(outbox.json AS BLOB))
              ),
-             ?, ?, 0, 0, 0, 0
+             ?, ?, 0, 0, 0, 0, 0
       \(selectionSQL)
       """,
       [
@@ -4601,7 +4811,8 @@ public actor SQLitePersistenceStore {
       SELECT COUNT(*) FROM (
         SELECT mutation_id, is_component_body, requires_body,
                prune_at_watermark, confirm_at_apply
-        FROM instant_server_apply_rows WHERE plan_id = ?
+        FROM instant_server_apply_rows
+        WHERE plan_id = ? AND is_catch_up = 0
         EXCEPT
         SELECT mutation_id, is_component_body, requires_body,
                prune_at_watermark, confirm_at_apply
@@ -9712,6 +9923,7 @@ public actor SQLitePersistenceStore {
         expected_body_bytes INTEGER NOT NULL,
         is_component_body INTEGER NOT NULL DEFAULT 0,
         requires_body INTEGER NOT NULL DEFAULT 0,
+        is_catch_up INTEGER NOT NULL DEFAULT 0,
         prune_at_watermark INTEGER NOT NULL DEFAULT 0,
         confirm_at_apply INTEGER NOT NULL DEFAULT 0,
         original_json TEXT,
@@ -10485,6 +10697,29 @@ public actor SQLitePersistenceStore {
     )
     defer { sqlite3_finalize(statement) }
     try bind([.text(id)], to: statement)
+    guard sqlite3_step(statement) == SQLITE_ROW,
+      let mutationID = sqlite3_column_text(statement, 1)
+    else { return nil }
+    return InstantOutboxDeliveryPosition(
+      createdAtMilliseconds: sqlite3_column_int64(statement, 0),
+      mutationID: String(cString: mutationID)
+    )
+  }
+
+  private func latestOutboxPositionWithoutTransaction()
+    throws -> InstantOutboxDeliveryPosition?
+  {
+    var statement: OpaquePointer?
+    try prepare(
+      """
+      SELECT created_at_ms, mutation_id
+      FROM instant_outbox
+      ORDER BY created_at_ms DESC, mutation_id DESC
+      LIMIT 1
+      """,
+      statement: &statement
+    )
+    defer { sqlite3_finalize(statement) }
     guard sqlite3_step(statement) == SQLITE_ROW,
       let mutationID = sqlite3_column_text(statement, 1)
     else { return nil }
