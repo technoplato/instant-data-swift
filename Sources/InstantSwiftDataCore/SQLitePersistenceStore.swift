@@ -725,11 +725,20 @@ public actor SQLitePersistenceStore {
   private var terminalFailureMetadataMetrics = InstantTerminalFailureMetadataMetrics()
   private var failedMutationRetryMetrics = InstantFailedMutationRetryMetrics()
   private var serverApplyMetrics = InstantServerApplyMetrics()
+  private var declaredRelationReconciliationLiveResultScanCount = 0
+  private var installedDeclaredRelationStorageMarker:
+    DeclaredRelationStorageReconciliationMarker?
+  private var installedDeclaredRelationStorageObsoleteAttributeIDs: Set<String> = []
+  private var didLoadDeclaredRelationStorageMarker = false
   private var onFailedMutationRetryWindowLoadedForTesting:
     (@Sendable (_ mutationIDs: [String]) async throws -> Void)?
 
   package func deferredValueDecodeMetricsForTesting() -> InstantDeferredValueDecodeMetrics {
     deferredValueDecodeMetrics
+  }
+
+  package func declaredRelationReconciliationLiveResultScanCountForTesting() -> Int {
+    declaredRelationReconciliationLiveResultScanCount
   }
 
   package func resetCacheResidencyMetricsForTesting() {
@@ -2023,6 +2032,7 @@ public actor SQLitePersistenceStore {
     now: InstantTimestamp
   ) throws -> InstantQueryCachePruningResult? {
     try bootstrap()
+    try reconcileDeclaredRelationStorageIfNeeded()
     do {
       return try pruneQueryCache(policy: queryCachePruningPolicy, now: now)
     } catch {
@@ -2035,6 +2045,418 @@ public actor SQLitePersistenceStore {
       )
       return nil
     }
+  }
+
+  /// Reconciles reciprocal application declarations with the server's durable physical link.
+  ///
+  /// Runtime bootstrap normally hydrates only live-query and outbox-owned entities. Performing
+  /// this transition in SQLite before that compact load keeps cold triples queryable after the
+  /// duplicate attribute metadata is removed. The original outbox remains the caller's logical
+  /// intent; only materialized storage and persisted query ownership use the canonical direction.
+  private func reconcileDeclaredRelationStorageIfNeeded() throws {
+    guard !declaredAttributes.isEmpty else { return }
+    let didChange = try transaction {
+      let durableAttributes = try loadAttributesWithoutTransaction(
+        tracesStartupCollection: false
+      )
+      guard
+        let reconciliation = AttributeStore.relationStorageReconciliation(
+          durableAttributes: durableAttributes,
+          declaredAttributes: declaredAttributes
+        )
+      else { return false }
+
+      let marker = try encode(
+        DeclaredRelationStorageReconciliationMarker(
+          retainedAttributes: reconciliation.markerAttributes,
+          declaredAttributes: reconciliation.declaredRelationAttributes,
+          obsoleteAttributeIDs: reconciliation.obsoleteAttributeIDs.sorted()
+        )
+      )
+      let installedMarkerJSON: String? = try selectScalar(
+        "SELECT value FROM instant_sync_metadata WHERE key = ? LIMIT 1",
+        [.text(Self.declaredRelationStorageReconciliationMarkerKey)]
+      )
+      installedDeclaredRelationStorageMarker = try installedMarkerJSON.map {
+        try decoder.decode(
+          DeclaredRelationStorageReconciliationMarker.self,
+          from: Data($0.utf8)
+        )
+      }
+      installedDeclaredRelationStorageObsoleteAttributeIDs = Set(
+        installedDeclaredRelationStorageMarker?.obsoleteAttributeIDs ?? []
+      )
+      didLoadDeclaredRelationStorageMarker = true
+      guard installedMarkerJSON != marker else { return false }
+
+      let obsoleteAttributeIDs = reconciliation.obsoleteAttributeIDs
+      var triplesChanged = false
+      var tripleRowID: Int64 = 0
+      while let row = try nextApplicationMigrationTripleRowWithoutTransaction(
+        after: tripleRowID,
+        affectedAttributeIDs: obsoleteAttributeIDs
+      ) {
+        tripleRowID = row.rowID
+        let canonical = reconciliation.canonicalized(row.triple)
+        guard !obsoleteAttributeIDs.contains(canonical.attributeID) else {
+          throw persistenceError(
+            operation: "reconcile declared relation storage",
+            message:
+              "Relation triple '\(row.triple.entityID)/\(row.triple.attributeID)' did not resolve to the retained physical attribute."
+          )
+        }
+        try upsertCanonicalRelationTripleWithoutTransaction(canonical)
+        try execute("DELETE FROM instant_triples WHERE rowid = ?", [.int(row.rowID)])
+        guard sqlite3_changes(connection.raw) == 1 else {
+          throw persistenceError(
+            operation: "reconcile declared relation storage",
+            message: "An obsolete relation triple disappeared before it could be removed."
+          )
+        }
+        triplesChanged = true
+      }
+
+      var liveQueryResultsChanged = false
+      var liveQueryCursor: String?
+      while let result = try nextDeclaredRelationLiveQueryResultWithoutTransaction(
+        after: liveQueryCursor
+      ) {
+        liveQueryCursor = result.key
+        var canonicalByIdentity: [InstantLiveTripleIdentity: InstantTriple] = [:]
+        canonicalByIdentity.reserveCapacity(result.triples.count)
+        for triple in result.triples {
+          let canonical = obsoleteAttributeIDs.contains(triple.attributeID)
+            ? reconciliation.canonicalized(triple)
+            : triple
+          guard !obsoleteAttributeIDs.contains(canonical.attributeID) else {
+            throw persistenceError(
+              operation: "reconcile declared relation storage",
+              message:
+                "Live-query relation triple '\(triple.entityID)/\(triple.attributeID)' did not resolve to the retained physical attribute."
+            )
+          }
+          let identity = InstantLiveTripleIdentity(canonical)
+          if let existing = canonicalByIdentity[identity] {
+            if Self.relationTripleStampPrecedes(existing, canonical) {
+              canonicalByIdentity[identity] = canonical
+            }
+          } else {
+            canonicalByIdentity[identity] = canonical
+          }
+        }
+        var canonicalResult = result
+        canonicalResult.triples = canonicalByIdentity.values.sorted(by: Self.relationTriplePrecedes)
+        let expectedOwnership = try Set(
+          canonicalResult.triples.map { triple in
+            LiveQueryOwnershipIdentity(
+              entityID: triple.entityID,
+              attributeID: triple.attributeID,
+              valueJSON: try encode(triple.value)
+            )
+          }
+        )
+        let currentOwnership = try liveQueryOwnershipWithoutTransaction(queryKey: result.key)
+        guard canonicalResult != result || expectedOwnership != currentOwnership else { continue }
+        try replaceReconciledLiveQueryResultWithoutTransaction(
+          canonicalResult,
+          ownership: expectedOwnership
+        )
+        liveQueryResultsChanged = true
+      }
+
+      let reconciledAttributes = reconciliation.attributes
+      let attributesChanged = reconciledAttributes != durableAttributes.sorted { $0.id < $1.id }
+      if attributesChanged {
+        let durableByID = Dictionary(uniqueKeysWithValues: durableAttributes.map { ($0.id, $0) })
+        let reconciledByID = Dictionary(
+          uniqueKeysWithValues: reconciledAttributes.map { ($0.id, $0) }
+        )
+        // Install retained metadata before deleting obsolete rows. All triple and live-query rows
+        // have already moved, so no durable fact can be orphaned by the following deletes.
+        for attribute in reconciledAttributes where durableByID[attribute.id] != attribute {
+          try execute(
+            "INSERT OR REPLACE INTO instant_attributes (id, json) VALUES (?, ?)",
+            [.text(attribute.id), .text(try encode(attribute))]
+          )
+        }
+        for attributeID in durableByID.keys.sorted() where reconciledByID[attributeID] == nil {
+          try execute("DELETE FROM instant_attributes WHERE id = ?", [.text(attributeID)])
+        }
+      }
+
+      let didChange = attributesChanged || triplesChanged || liveQueryResultsChanged
+      if didChange {
+        try execute("DELETE FROM instant_query_cache")
+      }
+      if triplesChanged || liveQueryResultsChanged {
+        _ = try bumpMetadataRevisionWithoutTransaction(Self.storeRevisionKey)
+      }
+      if attributesChanged {
+        _ = try bumpMetadataRevisionWithoutTransaction(Self.attributeRevisionKey)
+      }
+      if liveQueryResultsChanged {
+        _ = try bumpMetadataRevisionWithoutTransaction(Self.queryResultRevisionKey)
+      }
+      try saveMetadataValueWithoutTransaction(
+        marker,
+        key: Self.declaredRelationStorageReconciliationMarkerKey,
+        updatedAt: InstantTimestamp(milliseconds: Self.nowMilliseconds())
+      )
+      installedDeclaredRelationStorageMarker = DeclaredRelationStorageReconciliationMarker(
+        retainedAttributes: reconciliation.markerAttributes,
+        declaredAttributes: reconciliation.declaredRelationAttributes,
+        obsoleteAttributeIDs: reconciliation.obsoleteAttributeIDs.sorted()
+      )
+      installedDeclaredRelationStorageObsoleteAttributeIDs = reconciliation.obsoleteAttributeIDs
+      didLoadDeclaredRelationStorageMarker = true
+      return didChange
+    }
+    guard didChange else { return }
+    cachedState = nil
+    cachedMaterializedStore = nil
+  }
+
+  /// Reads every persisted result through a one-row keyset cursor.
+  ///
+  /// Ownership is an index of the encoded result, but an interrupted older build or imported
+  /// fixture can drift on either side. Scanning all bounded result bodies lets reconciliation heal
+  /// both an obsolete triple that exists only in JSON and obsolete ownership whose JSON is already
+  /// canonical.
+  private func nextDeclaredRelationLiveQueryResultWithoutTransaction(
+    after queryKey: String?
+  ) throws -> InstantPersistedLiveQueryResult? {
+    var statement: OpaquePointer?
+    let sql: String
+    let bindings: [SQLiteBinding]
+    if let queryKey {
+      sql =
+        "SELECT query_key, length(CAST(json AS BLOB)) FROM instant_live_query_results WHERE query_key > ? ORDER BY query_key LIMIT 1"
+      bindings = [.text(queryKey)]
+    } else {
+      sql =
+        "SELECT query_key, length(CAST(json AS BLOB)) FROM instant_live_query_results ORDER BY query_key LIMIT 1"
+      bindings = []
+    }
+    try prepare(sql, statement: &statement)
+    defer { sqlite3_finalize(statement) }
+    try bind(bindings, to: statement)
+    let code = sqlite3_step(statement)
+    if code == SQLITE_DONE { return nil }
+    guard code == SQLITE_ROW,
+      let queryKeyBytes = sqlite3_column_text(statement, 0)
+    else {
+      throw persistenceError(
+        operation: "read declared relation live-query result",
+        message: lastErrorMessage()
+      )
+    }
+    let rowQueryKey = String(cString: queryKeyBytes)
+    let bodyByteCount = sqlite3_column_int64(statement, 1)
+    guard bodyByteCount >= 0,
+      bodyByteCount <= Int64(InstantAutomaticOutboxClaimLimits.maximumEncodedBodyBytes)
+    else {
+      throw persistenceError(
+        operation: "read declared relation live-query result",
+        message:
+          "Live-query result '\(rowQueryKey)' exceeds the bounded reconciliation row limit."
+      )
+    }
+    guard let json: String = try selectScalar(
+      "SELECT json FROM instant_live_query_results WHERE query_key = ? LIMIT 1",
+      [.text(rowQueryKey)]
+    ),
+      let data = json.data(using: .utf8)
+    else {
+      throw persistenceError(
+        operation: "read declared relation live-query result",
+        message: "Live-query result '\(rowQueryKey)' disappeared before it could be decoded."
+      )
+    }
+    let result = try decoder.decode(InstantPersistedLiveQueryResult.self, from: data)
+    guard result.key == rowQueryKey else {
+      throw persistenceError(
+        operation: "read declared relation live-query result",
+        message: "The decoded live-query result did not match its SQLite identity."
+      )
+    }
+    declaredRelationReconciliationLiveResultScanCount += 1
+    return result
+  }
+
+  private func upsertCanonicalRelationTripleWithoutTransaction(
+    _ triple: InstantTriple
+  ) throws {
+    try execute(
+      """
+      INSERT INTO instant_triples
+        (entity_id, attribute_id, value_json, tx_id, tx_time_ms, json)
+      VALUES (?, ?, ?, ?, ?, ?)
+      ON CONFLICT(entity_id, attribute_id, value_json) DO UPDATE SET
+        tx_id = excluded.tx_id,
+        tx_time_ms = excluded.tx_time_ms,
+        json = excluded.json
+      WHERE excluded.tx_time_ms > instant_triples.tx_time_ms
+         OR (
+           excluded.tx_time_ms = instant_triples.tx_time_ms
+           AND excluded.tx_id > instant_triples.tx_id
+         )
+      """,
+      [
+        .text(triple.entityID),
+        .text(triple.attributeID),
+        .text(try encode(triple.value)),
+        .text(triple.txID),
+        .int(triple.txTime.milliseconds),
+        .text(try encode(triple)),
+      ]
+    )
+  }
+
+  private func replaceReconciledLiveQueryResultWithoutTransaction(
+    _ result: InstantPersistedLiveQueryResult,
+    ownership: Set<LiveQueryOwnershipIdentity>
+  ) throws {
+    try execute(
+      """
+      UPDATE instant_live_query_results
+      SET triple_count = ?, json = ?
+      WHERE query_key = ?
+      """,
+      [
+        .int(Int64(result.triples.count)),
+        .text(try encode(result)),
+        .text(result.key),
+      ]
+    )
+    guard sqlite3_changes(connection.raw) == 1 else {
+      throw persistenceError(
+        operation: "reconcile declared relation storage",
+        message: "Persisted live-query result '\(result.key)' disappeared during reconciliation."
+      )
+    }
+    try execute(
+      "DELETE FROM instant_live_query_triples WHERE query_key = ?",
+      [.text(result.key)]
+    )
+    try executeRepeated(
+      """
+      INSERT INTO instant_live_query_triples
+        (query_key, entity_id, attribute_id, value_json)
+      VALUES (?, ?, ?, ?)
+      """,
+      bindings: ownership.sorted(by: Self.liveQueryOwnershipOrder).map { identity in
+        [
+          .text(result.key),
+          .text(identity.entityID),
+          .text(identity.attributeID),
+          .text(identity.valueJSON),
+        ]
+      }
+    )
+  }
+
+  private static func relationTripleStampPrecedes(
+    _ lhs: InstantTriple,
+    _ rhs: InstantTriple
+  ) -> Bool {
+    if lhs.txTime != rhs.txTime { return lhs.txTime < rhs.txTime }
+    return lhs.txID < rhs.txID
+  }
+
+  private static func relationTriplePrecedes(_ lhs: InstantTriple, _ rhs: InstantTriple) -> Bool {
+    if lhs.entityID != rhs.entityID { return lhs.entityID < rhs.entityID }
+    if lhs.attributeID != rhs.attributeID { return lhs.attributeID < rhs.attributeID }
+    return lhs.value.comparableKey < rhs.value.comparableKey
+  }
+
+  private func declaredRelationStorageMarkerWithoutTransaction() throws
+    -> DeclaredRelationStorageReconciliationMarker?
+  {
+    if didLoadDeclaredRelationStorageMarker {
+      return installedDeclaredRelationStorageMarker
+    }
+    let markerJSON: String? = try selectScalar(
+      "SELECT value FROM instant_sync_metadata WHERE key = ? LIMIT 1",
+      [.text(Self.declaredRelationStorageReconciliationMarkerKey)]
+    )
+    installedDeclaredRelationStorageMarker = try markerJSON.map {
+      try decoder.decode(
+        DeclaredRelationStorageReconciliationMarker.self,
+        from: Data($0.utf8)
+      )
+    }
+    installedDeclaredRelationStorageObsoleteAttributeIDs = Set(
+      installedDeclaredRelationStorageMarker?.obsoleteAttributeIDs ?? []
+    )
+    didLoadDeclaredRelationStorageMarker = true
+    return installedDeclaredRelationStorageMarker
+  }
+
+  private func invalidateDeclaredRelationStorageMarkerWithoutTransaction() throws {
+    try deleteMetadataValueWithoutTransaction(
+      key: Self.declaredRelationStorageReconciliationMarkerKey
+    )
+    installedDeclaredRelationStorageMarker = nil
+    installedDeclaredRelationStorageObsoleteAttributeIDs = []
+    didLoadDeclaredRelationStorageMarker = true
+  }
+
+  private func invalidateDeclaredRelationStorageMarkerIfNeeded(
+    forAttributeIDs attributeIDs: Set<String>
+  ) throws {
+    guard !attributeIDs.isEmpty,
+      try declaredRelationStorageMarkerWithoutTransaction() != nil,
+      !installedDeclaredRelationStorageObsoleteAttributeIDs.isDisjoint(with: attributeIDs)
+    else { return }
+    try invalidateDeclaredRelationStorageMarkerWithoutTransaction()
+  }
+
+  private func invalidateDeclaredRelationStorageMarkerIfNeeded(
+    forIncomingAttributes attributes: [InstantAttribute]
+  ) throws {
+    guard !attributes.isEmpty,
+      let marker = try declaredRelationStorageMarkerWithoutTransaction()
+    else { return }
+    let obsoleteAttributeIDs = installedDeclaredRelationStorageObsoleteAttributeIDs
+    let logicalIdentities = Set(
+      marker.declaredAttributes.flatMap { attribute in
+        [attribute.forwardIdentity, attribute.reverseIdentity].compactMap { $0 }
+      }
+    )
+    let retainedAttributes = Set(marker.retainedAttributes)
+    let invalidatesMarker = attributes.contains { attribute in
+      if obsoleteAttributeIDs.contains(attribute.id) { return true }
+      guard attribute.valueType == .ref,
+        let forwardIdentity = attribute.forwardIdentity,
+        let reverseIdentity = attribute.reverseIdentity,
+        logicalIdentities.contains(forwardIdentity) || logicalIdentities.contains(reverseIdentity)
+      else { return false }
+      return !retainedAttributes.contains(attribute)
+    }
+    if invalidatesMarker {
+      try invalidateDeclaredRelationStorageMarkerWithoutTransaction()
+    }
+  }
+
+  private func invalidateDeclaredRelationStorageMarkerIfNeeded(
+    replacingAttributes attributes: [InstantAttribute]
+  ) throws {
+    guard let marker = try declaredRelationStorageMarkerWithoutTransaction() else { return }
+    let logicalIdentities = Set(
+      marker.declaredAttributes.flatMap { attribute in
+        [attribute.forwardIdentity, attribute.reverseIdentity].compactMap { $0 }
+      }
+    )
+    let relevantAttributes = attributes.filter { attribute in
+      guard attribute.valueType == .ref else { return false }
+      return [attribute.forwardIdentity, attribute.reverseIdentity]
+        .compactMap { $0 }
+        .contains { logicalIdentities.contains($0) }
+    }
+    guard Set(relevantAttributes) != Set(marker.retainedAttributes)
+      || !Set(marker.obsoleteAttributeIDs).isDisjoint(with: Set(attributes.map(\.id)))
+    else { return }
+    try invalidateDeclaredRelationStorageMarkerWithoutTransaction()
   }
 
   @discardableResult
@@ -3846,6 +4268,9 @@ public actor SQLitePersistenceStore {
         }
       }
       if didChangeAttributes {
+        try invalidateDeclaredRelationStorageMarkerIfNeeded(
+          forIncomingAttributes: attributes
+        )
         for attribute in attributes {
           try execute(
             "INSERT OR REPLACE INTO instant_attributes (id, json) VALUES (?, ?)",
@@ -10002,6 +10427,12 @@ public actor SQLitePersistenceStore {
     } catch {
       try? execute("ROLLBACK")
       activeOutboxQuarantineIssueBatch = nil
+      // Marker helpers participate in the same transaction but live on the actor. A rollback must
+      // discard their speculative cache so the next writer reloads the durable marker instead of
+      // trusting state that SQLite did not commit.
+      installedDeclaredRelationStorageMarker = nil
+      installedDeclaredRelationStorageObsoleteAttributeIDs = []
+      didLoadDeclaredRelationStorageMarker = false
       throw error
     }
   }
@@ -12511,6 +12942,9 @@ public actor SQLitePersistenceStore {
   }
 
   private func saveStoreSnapshotWithoutTransaction(_ snapshot: InstantStoreSnapshot) throws {
+    try invalidateDeclaredRelationStorageMarkerIfNeeded(
+      replacingAttributes: snapshot.attributes
+    )
     try execute("DELETE FROM instant_attributes")
     try execute("DELETE FROM instant_triples")
 
@@ -12527,6 +12961,9 @@ public actor SQLitePersistenceStore {
   }
 
   private func insertTripleWithoutTransaction(_ triple: InstantTriple) throws {
+    try invalidateDeclaredRelationStorageMarkerIfNeeded(
+      forAttributeIDs: [triple.attributeID]
+    )
     if deferredValueResidency.attributeIDs.contains(triple.attributeID) {
       try execute(
         "DELETE FROM instant_triples WHERE entity_id = ? AND attribute_id = ?",
@@ -12624,6 +13061,11 @@ public actor SQLitePersistenceStore {
     from previousSnapshot: InstantStoreSnapshot,
     to snapshot: InstantStoreSnapshot
   ) throws {
+    if previousSnapshot.attributes != snapshot.attributes {
+      try invalidateDeclaredRelationStorageMarkerIfNeeded(
+        replacingAttributes: snapshot.attributes
+      )
+    }
     let previousAttributes = Dictionary(
       uniqueKeysWithValues: previousSnapshot.attributes.map { ($0.id, $0) }
     )
@@ -13221,6 +13663,9 @@ public actor SQLitePersistenceStore {
   private func saveLiveQueryResultWithoutTransaction(
     _ result: InstantPersistedLiveQueryResult
   ) throws {
+    try invalidateDeclaredRelationStorageMarkerIfNeeded(
+      forAttributeIDs: Set(result.triples.map(\.attributeID))
+    )
     let attributes = try loadAttributesWithoutTransaction(tracesStartupCollection: false)
     var result = result
     result.triples = InstantLiveQueryNestedLimit.limitedTriples(
@@ -13817,12 +14262,20 @@ public actor SQLitePersistenceStore {
   private static let attributeRevisionKey = "attribute_revision"
   private static let outboxRevisionKey = "outbox_revision"
   private static let queryResultRevisionKey = "query_result_revision"
+  private static let declaredRelationStorageReconciliationMarkerKey =
+    "instant.internal.declared-relation-storage-reconciliation.v1"
 }
 
 private enum SQLiteBinding: Sendable {
   case int(Int64)
   case text(String)
   case null
+}
+
+private struct DeclaredRelationStorageReconciliationMarker: Codable, Equatable {
+  var retainedAttributes: [InstantAttribute]
+  var declaredAttributes: [InstantAttribute]
+  var obsoleteAttributeIDs: [String]
 }
 
 private struct QueryCacheStorageRow: Sendable {

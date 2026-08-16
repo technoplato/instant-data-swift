@@ -2,6 +2,7 @@ import Foundation
 
 struct AttributeStore: Hashable, Codable, Sendable {
   private var attributesByID: [String: InstantAttribute] = [:]
+  private var attributesByForwardIdentity: [String: InstantAttribute] = [:]
   private var attributesByNamespaceAndName: [String: [String: InstantAttribute]] = [:]
   private var attributesByNamespace: [String: [InstantAttribute]] = [:]
   private var reverseAttributesByNamespaceAndName: [String: [String: InstantAttribute]] = [:]
@@ -56,13 +57,59 @@ struct AttributeStore: Hashable, Codable, Sendable {
 
   mutating func merge(_ attributes: [InstantAttribute]) {
     for attribute in Self.withPrimaryKeys(attributes) {
-      attributesByID[attribute.id] = attribute
+      guard
+        attribute.valueType == .ref,
+        attribute.forwardIdentity != nil,
+        attribute.reverseIdentity != nil
+      else {
+        attributesByID[attribute.id] = attribute
+        continue
+      }
+
+      let sameDirectionIDs = Set(
+        attributesByID.values
+        .filter { Self.hasSameRelationIdentity($0, as: attribute) }
+        .map(\.id)
+          + [attribute.id]
+      ).sorted()
+      let reverseDirectionIDs = attributesByID.values
+        .filter { Self.hasReverseRelationIdentity($0, as: attribute) }
+        .map(\.id)
+        .sorted()
+
+      if let retainedID = durableRelationID(
+        declaredAttribute: attribute,
+        sameDirectionIDs: sameDirectionIDs,
+        reverseDirectionIDs: reverseDirectionIDs
+      ) {
+        for duplicateID in sameDirectionIDs + reverseDirectionIDs
+        where duplicateID != retainedID {
+          attributesByID.removeValue(forKey: duplicateID)
+        }
+
+        if retainedID == attribute.id {
+          // A fresh declaration or an incoming server attribute installs its own metadata.
+          attributesByID[retainedID] = attribute
+        } else {
+          // An existing non-logical/server ID is the durable schema authority. Preserve its entire
+          // metadata and orientation rather than projecting application cardinality, required,
+          // index, or delete flags onto a physical attribute with different server semantics.
+          // Lookup indexes still expose the incoming declaration as a forward or reverse alias.
+          guard attributesByID[retainedID] != nil else { continue }
+        }
+      } else {
+        attributesByID[attribute.id] = attribute
+      }
     }
     rebuildLookupIndexes()
   }
 
   subscript(id: String) -> InstantAttribute? {
-    attributesByID[id] ?? Self.primaryKeyAttribute(id: id)
+    forwardAttribute(id: id) ?? reverseAttributesByID[id]
+  }
+
+  func exactAttribute(id: String) -> InstantAttribute? {
+    attributesByID[id]
   }
 
   func attribute(namespace: String, name: String) -> InstantAttribute? {
@@ -84,7 +131,7 @@ struct AttributeStore: Hashable, Codable, Sendable {
   }
 
   func lookupAttribute(id: String) -> InstantResolvedLookupAttribute? {
-    if let attribute = self[id] {
+    if let attribute = forwardAttribute(id: id) {
       return InstantResolvedLookupAttribute(
         attribute: attribute,
         direction: .forward,
@@ -103,21 +150,130 @@ struct AttributeStore: Hashable, Codable, Sendable {
     )
   }
 
+  /// Canonicalizes a stored relation fact through the current physical schema.
+  ///
+  /// `logicalAttributeID` is used while reconciling an old physical attribute that is no longer
+  /// present after merge. Ordinary loads omit it so durable logical forward and reverse IDs are
+  /// resolved through the current alias indexes.
+  func canonicalizedStorageTriple(
+    _ triple: InstantTriple,
+    logicalAttributeID: String? = nil
+  ) -> InstantTriple {
+    guard let resolvedAttribute = lookupAttribute(id: logicalAttributeID ?? triple.attributeID)
+    else { return triple }
+
+    guard resolvedAttribute.direction == .reverse else {
+      var canonical = triple
+      canonical.attributeID = resolvedAttribute.attribute.id
+      return canonical
+    }
+    guard case let .ref(forwardEntityID) = triple.value else { return triple }
+    var canonical = triple
+    canonical.entityID = forwardEntityID
+    canonical.attributeID = resolvedAttribute.attribute.id
+    canonical.value = .ref(triple.entityID)
+    return canonical
+  }
+
   func reverseAttribute(namespace: String, name: String) -> InstantAttribute? {
     reverseAttributesByNamespaceAndName[namespace]?[name]
   }
 
+  /// Returns only the resident attribute keys whose stored relation orientation or physical ID
+  /// changed across a schema merge.
+  ///
+  /// This is deliberately schema-only. A scalar declaration, or a relation declaration that
+  /// resolves to the same physical forward attribute, can therefore skip walking resident triple
+  /// storage entirely.
+  func remappedRelationAttributeIDs(from previousAttributes: AttributeStore) -> Set<String> {
+    Set(
+      previousAttributes.attributes.compactMap { previousAttribute in
+        guard
+          previousAttribute.valueType == .ref,
+          let logicalForwardIdentity = previousAttribute.forwardIdentity,
+          let resolvedAttribute = lookupAttribute(id: logicalForwardIdentity),
+          resolvedAttribute.attribute.id != previousAttribute.id
+            || resolvedAttribute.direction == .reverse
+        else { return nil }
+        return previousAttribute.id
+      }
+    )
+  }
+
+  /// Describes the durable rows that must move before reciprocal relation attributes can merge.
+  ///
+  /// A fresh database has no durable relation identity to preserve and returns `nil`. An upgraded
+  /// database returns only obsolete source IDs; the retained physical ID is deliberately excluded
+  /// so a row-addressed SQLite rewrite cannot re-read a canonical row it just inserted.
+  static func relationStorageReconciliation(
+    durableAttributes: [InstantAttribute],
+    declaredAttributes: [InstantAttribute]
+  ) -> InstantRelationStorageReconciliation? {
+    let previousAttributes = AttributeStore(attributes: durableAttributes)
+    let declaredRelations = Self.withPrimaryKeys(declaredAttributes).filter { declaration in
+      guard
+        declaration.valueType == .ref,
+        declaration.forwardIdentity != nil,
+        declaration.reverseIdentity != nil
+      else { return false }
+      return previousAttributes.attributes.contains { candidate in
+        (Self.hasSameRelationIdentity(candidate, as: declaration)
+          && candidate.id != declaration.id)
+          || Self.hasReverseRelationIdentity(candidate, as: declaration)
+      }
+    }
+    guard !declaredRelations.isEmpty else { return nil }
+
+    var mergedAttributes = previousAttributes
+    // Install the complete declaration set at the same durable boundary. This preserves scalar
+    // and permission metadata exactly as the ordinary runtime merge would, while ensuring only
+    // one attribute revision is published for the bootstrap transition.
+    mergedAttributes.merge(declaredAttributes)
+
+    var obsoleteAttributeIDs: Set<String> = []
+    for declaration in declaredRelations {
+      guard let retainedID = mergedAttributes.lookupAttribute(id: declaration.id)?.attribute.id
+      else { continue }
+      for candidate in previousAttributes.attributes
+      where Self.hasSameRelationIdentity(candidate, as: declaration)
+        || Self.hasReverseRelationIdentity(candidate, as: declaration)
+      {
+        if candidate.id != retainedID {
+          obsoleteAttributeIDs.insert(candidate.id)
+        }
+      }
+      for logicalID in [
+        declaration.id,
+        declaration.forwardIdentity,
+        declaration.reverseIdentity,
+      ].compactMap({ $0 }) where logicalID != retainedID {
+        obsoleteAttributeIDs.insert(logicalID)
+      }
+    }
+    guard !obsoleteAttributeIDs.isEmpty else { return nil }
+    return InstantRelationStorageReconciliation(
+      previousAttributes: previousAttributes,
+      mergedAttributes: mergedAttributes,
+      obsoleteAttributeIDs: obsoleteAttributeIDs,
+      declaredRelationAttributes: declaredRelations.sorted { $0.id < $1.id }
+    )
+  }
+
   private mutating func rebuildLookupIndexes() {
+    attributesByForwardIdentity = [:]
     attributesByNamespaceAndName = [:]
     attributesByNamespace = [:]
     reverseAttributesByNamespaceAndName = [:]
     reverseAttributesByID = [:]
     namespaceSet = []
 
-    for attribute in attributesByID.values {
+    for attribute in attributesByID.values.sorted(by: { $0.id < $1.id }) {
       namespaceSet.insert(attribute.namespace)
       attributesByNamespaceAndName[attribute.namespace, default: [:]][attribute.name] = attribute
       attributesByNamespace[attribute.namespace, default: []].append(attribute)
+      if let forwardIdentity = attribute.forwardIdentity {
+        attributesByForwardIdentity[forwardIdentity] = attribute
+      }
       guard
         attribute.valueType == .ref,
         let linkNamespace = attribute.linkNamespace,
@@ -131,6 +287,61 @@ struct AttributeStore: Hashable, Codable, Sendable {
     for namespace in attributesByNamespace.keys {
       attributesByNamespace[namespace]?.sort { $0.id < $1.id }
     }
+  }
+
+  /// Reconciles a schema declaration with the server-issued ID already owning its triples.
+  ///
+  /// Relation IDs are physical storage keys, while forward and reverse identities are the stable
+  /// schema names used by application declarations. An existing physical ID therefore wins over a
+  /// newly merged logical ID. If a previous bootstrap left both rows behind, a non-declaration ID
+  /// wins deterministically and the duplicate is removed.
+  private func durableRelationID(
+    declaredAttribute: InstantAttribute,
+    sameDirectionIDs: [String],
+    reverseDirectionIDs: [String]
+  ) -> String? {
+    let matchingIDs = Set(sameDirectionIDs).union(reverseDirectionIDs).sorted()
+    guard !matchingIDs.isEmpty else { return nil }
+    let logicalIDs = Set(
+      [declaredAttribute.forwardIdentity, declaredAttribute.reverseIdentity].compactMap { $0 }
+    )
+    // Server-issued physical IDs are not one of the application schema's path identities. They
+    // win across both orientations; otherwise a reciprocal local declaration could delete the
+    // server attribute and orphan the next server transaction under that UUID.
+    if let durableID = matchingIDs.first(where: { !logicalIDs.contains($0) }) {
+      return durableID
+    }
+    if attributesByID[declaredAttribute.id] != nil {
+      return declaredAttribute.id
+    }
+    return matchingIDs.first(where: { attributesByID[$0] != nil })
+      ?? declaredAttribute.id
+  }
+
+  private static func hasSameRelationIdentity(
+    _ candidate: InstantAttribute,
+    as declared: InstantAttribute
+  ) -> Bool {
+    candidate.valueType == .ref
+      && candidate.namespace == declared.namespace
+      && candidate.name == declared.name
+      && candidate.forwardIdentity == declared.forwardIdentity
+      && candidate.reverseIdentity == declared.reverseIdentity
+  }
+
+  private static func hasReverseRelationIdentity(
+    _ candidate: InstantAttribute,
+    as declared: InstantAttribute
+  ) -> Bool {
+    candidate.valueType == .ref
+      && candidate.forwardIdentity == declared.reverseIdentity
+      && candidate.reverseIdentity == declared.forwardIdentity
+  }
+
+  private func forwardAttribute(id: String) -> InstantAttribute? {
+    attributesByID[id]
+      ?? attributesByForwardIdentity[id]
+      ?? Self.primaryKeyAttribute(id: id)
   }
 
   private static func withPrimaryKeys(_ attributes: [InstantAttribute]) -> [InstantAttribute] {
@@ -173,6 +384,38 @@ struct AttributeStore: Hashable, Codable, Sendable {
       attributeID.index(after: separator) != attributeID.endIndex
     else { return nil }
     return String(attributeID[attributeID.index(after: separator)...])
+  }
+}
+
+struct InstantRelationStorageReconciliation: Sendable {
+  var previousAttributes: AttributeStore
+  var mergedAttributes: AttributeStore
+  var obsoleteAttributeIDs: Set<String>
+  var declaredRelationAttributes: [InstantAttribute]
+
+  var attributes: [InstantAttribute] {
+    mergedAttributes.attributes
+  }
+
+  var markerAttributes: [InstantAttribute] {
+    mergedAttributes.attributes.filter { candidate in
+      guard candidate.valueType == .ref else { return false }
+      return declaredRelationAttributes.contains { declaration in
+        (candidate.forwardIdentity == declaration.forwardIdentity
+          && candidate.reverseIdentity == declaration.reverseIdentity)
+          || (candidate.forwardIdentity == declaration.reverseIdentity
+            && candidate.reverseIdentity == declaration.forwardIdentity)
+      }
+    }
+  }
+
+  func canonicalized(_ triple: InstantTriple) -> InstantTriple {
+    let logicalAttributeID = previousAttributes.exactAttribute(id: triple.attributeID)?
+      .forwardIdentity
+    return mergedAttributes.canonicalizedStorageTriple(
+      triple,
+      logicalAttributeID: logicalAttributeID
+    )
   }
 }
 
@@ -453,10 +696,27 @@ struct TripleIndexes: Hashable, Codable, Sendable {
     var attributeID: String
   }
 
+  private struct StoredTripleIdentity: Hashable {
+    var entityID: String
+    var attributeID: String
+    var value: InstantValue
+  }
+
   struct DeferredValueRemovalMetrics: Equatable, Sendable {
     var examinedKeyCount = 0
     var residentKeyCount = 0
     var removedValueCount = 0
+  }
+
+  struct RelationStorageReconciliationMetrics: Equatable, Sendable {
+    var examinedAttributeSlotCount = 0
+    var examinedTripleCount = 0
+    var movedTripleCount = 0
+  }
+
+  struct RelationStorageReconciliationResult: Equatable, Sendable {
+    var changedEntityIDs: Set<String> = []
+    var metrics = RelationStorageReconciliationMetrics()
   }
 
   private struct DeleteVisit: Hashable, Sendable {
@@ -475,7 +735,19 @@ struct TripleIndexes: Hashable, Codable, Sendable {
         ($0.id, DerivedIndexAttributeShape($0))
       }
     )
-    for triple in triples where !excludedAttributeIDs.contains(triple.attributeID) {
+    var canonicalTriples = triples
+    var didCanonicalize = false
+    for index in canonicalTriples.indices {
+      let canonical = attributes.canonicalizedStorageTriple(canonicalTriples[index])
+      guard canonical != canonicalTriples[index] else { continue }
+      canonicalTriples[index] = canonical
+      didCanonicalize = true
+    }
+    if didCanonicalize {
+      canonicalTriples = Self.deduplicatingStoredTriples(canonicalTriples)
+    }
+    for triple in canonicalTriples
+    where !excludedAttributeIDs.contains(triple.attributeID) {
       self.insert(triple, attribute: attributes[triple.attributeID])
       if deferredAttributeIDs.contains(triple.attributeID) {
         deferredValueKeysToRemove.insert(
@@ -511,6 +783,129 @@ struct TripleIndexes: Hashable, Codable, Sendable {
     let currentShapes = Self.derivedIndexAttributeShapes(for: attributes)
     guard derivedIndexAttributeShapes != currentShapes else { return [] }
     return rebuildDerivedIndexes(attributes: attributes)
+  }
+
+  /// Moves only relation slots whose physical identity changed during a schema merge.
+  ///
+  /// Earlier reconciliation first materialized and sorted every resident triple, even when a
+  /// merge added only scalar metadata. Scribe's long recordings make that a large transient
+  /// allocation. This path discovers remaps from the schema, materializes only obsolete slots,
+  /// and leaves all unrelated EAV storage in place. Exact canonical collisions retain the newest
+  /// transaction stamp, with transaction ID as the deterministic tie-break.
+  @discardableResult
+  mutating func reconcileRelationStorage(
+    previousAttributes: AttributeStore,
+    mergedAttributes: AttributeStore
+  ) -> RelationStorageReconciliationResult {
+    let remappedAttributeIDs = mergedAttributes.remappedRelationAttributeIDs(
+      from: previousAttributes
+    )
+    guard !remappedAttributeIDs.isEmpty else {
+      return RelationStorageReconciliationResult(
+        changedEntityIDs: reconcileDerivedIndexShapes(attributes: mergedAttributes)
+      )
+    }
+
+    var result = RelationStorageReconciliationResult()
+    var sourceTriples: [InstantTriple] = []
+    for (entityID, attributesByID) in eav {
+      for attributeID in remappedAttributeIDs {
+        guard let slot = attributesByID[attributeID] else { continue }
+        result.metrics.examinedAttributeSlotCount += 1
+        sourceTriples.reserveCapacity(sourceTriples.count + slot.count)
+        slot.forEachPair { value, stamp in
+          result.metrics.examinedTripleCount += 1
+          sourceTriples.append(
+            materializeTriple(
+              entityID: entityID,
+              attributeID: attributeID,
+              value: value,
+              stamp: stamp
+            )
+          )
+        }
+      }
+    }
+
+    guard !sourceTriples.isEmpty else {
+      result.changedEntityIDs = reconcileDerivedIndexShapes(attributes: mergedAttributes)
+      return result
+    }
+
+    var canonicalByIdentity: [StoredTripleIdentity: InstantTriple] = [:]
+    var remappedDeferredKeys: Set<EntityAttributeKey> = []
+    for sourceTriple in sourceTriples {
+      guard
+        let previousAttribute = previousAttributes.exactAttribute(id: sourceTriple.attributeID),
+        let logicalForwardIdentity = previousAttribute.forwardIdentity
+      else { continue }
+      let canonicalTriple = mergedAttributes.canonicalizedStorageTriple(
+        sourceTriple,
+        logicalAttributeID: logicalForwardIdentity
+      )
+      let identity = StoredTripleIdentity(
+        entityID: canonicalTriple.entityID,
+        attributeID: canonicalTriple.attributeID,
+        value: canonicalTriple.value
+      )
+      if let existing = canonicalByIdentity[identity] {
+        if Self.transactionStampPrecedes(existing, canonicalTriple) {
+          canonicalByIdentity[identity] = canonicalTriple
+        }
+      } else {
+        canonicalByIdentity[identity] = canonicalTriple
+      }
+
+      let sourceKey = EntityAttributeKey(
+        entityID: sourceTriple.entityID,
+        attributeID: sourceTriple.attributeID
+      )
+      if deferredValueKeysToRemove.contains(sourceKey) {
+        remappedDeferredKeys.insert(
+          EntityAttributeKey(
+            entityID: canonicalTriple.entityID,
+            attributeID: canonicalTriple.attributeID
+          )
+        )
+      }
+      result.changedEntityIDs.formUnion(Self.entityIDsAffected(by: sourceTriple))
+      result.changedEntityIDs.formUnion(Self.entityIDsAffected(by: canonicalTriple))
+    }
+
+    // Remove every obsolete slot before inserting canonical candidates. This prevents a reverse
+    // source from competing with itself after transposition and lets `insert` retain its ordinary
+    // cardinality semantics for the physical attribute.
+    for sourceTriple in sourceTriples {
+      removeNormalized(
+        sourceTriple,
+        attribute: previousAttributes.exactAttribute(id: sourceTriple.attributeID)
+      )
+      deferredValueKeysToRemove.remove(
+        EntityAttributeKey(
+          entityID: sourceTriple.entityID,
+          attributeID: sourceTriple.attributeID
+        )
+      )
+    }
+
+    for canonicalTriple in canonicalByIdentity.values.sorted(by: Self.triplePrecedes) {
+      let physicalAttribute = mergedAttributes.exactAttribute(id: canonicalTriple.attributeID)
+        ?? mergedAttributes[canonicalTriple.attributeID]
+      guard shouldInstallReconciledTriple(canonicalTriple, attribute: physicalAttribute) else {
+        continue
+      }
+      removeCompetingReconciledTriples(
+        for: canonicalTriple,
+        attribute: physicalAttribute
+      )
+      insert(canonicalTriple, attribute: physicalAttribute)
+      result.metrics.movedTripleCount += 1
+    }
+    deferredValueKeysToRemove.formUnion(remappedDeferredKeys)
+    result.changedEntityIDs.formUnion(
+      reconcileDerivedIndexShapes(attributes: mergedAttributes)
+    )
+    return result
   }
 
   mutating func markDeferredValue(entityID: String, attributeID: String) {
@@ -2676,6 +3071,84 @@ struct TripleIndexes: Hashable, Codable, Sendable {
     }
   }
 
+  private static func transactionStampPrecedes(
+    _ lhs: InstantTriple,
+    _ rhs: InstantTriple
+  ) -> Bool {
+    if lhs.txTime != rhs.txTime { return lhs.txTime < rhs.txTime }
+    return lhs.txID < rhs.txID
+  }
+
+  private static func entityIDsAffected(by triple: InstantTriple) -> Set<String> {
+    guard case let .ref(targetEntityID) = triple.value else {
+      return [triple.entityID]
+    }
+    return [triple.entityID, targetEntityID]
+  }
+
+  private func shouldInstallReconciledTriple(
+    _ candidate: InstantTriple,
+    attribute: InstantAttribute?
+  ) -> Bool {
+    guard let slot = eav[candidate.entityID]?[candidate.attributeID] else { return true }
+    if attribute?.cardinality == .one {
+      var newest: InstantTriple?
+      slot.forEachPair { value, stamp in
+        let existing = materializeTriple(
+          entityID: candidate.entityID,
+          attributeID: candidate.attributeID,
+          value: value,
+          stamp: stamp
+        )
+        if newest.map({ Self.transactionStampPrecedes($0, existing) }) ?? true {
+          newest = existing
+        }
+      }
+      return newest.map { Self.transactionStampPrecedes($0, candidate) } ?? true
+    }
+    guard let stamp = slot[candidate.value] else { return true }
+    let existing = materializeTriple(
+      entityID: candidate.entityID,
+      attributeID: candidate.attributeID,
+      value: candidate.value,
+      stamp: stamp
+    )
+    return Self.transactionStampPrecedes(existing, candidate)
+  }
+
+  private mutating func removeCompetingReconciledTriples(
+    for candidate: InstantTriple,
+    attribute: InstantAttribute?
+  ) {
+    guard let slot = eav[candidate.entityID]?[candidate.attributeID] else { return }
+    var existingTriples: [InstantTriple] = []
+    if attribute?.cardinality == .one {
+      existingTriples.reserveCapacity(slot.count)
+      slot.forEachPair { value, stamp in
+        existingTriples.append(
+          materializeTriple(
+            entityID: candidate.entityID,
+            attributeID: candidate.attributeID,
+            value: value,
+            stamp: stamp
+          )
+        )
+      }
+    } else if let stamp = slot[candidate.value] {
+      existingTriples.append(
+        materializeTriple(
+          entityID: candidate.entityID,
+          attributeID: candidate.attributeID,
+          value: candidate.value,
+          stamp: stamp
+        )
+      )
+    }
+    for existingTriple in existingTriples {
+      removeNormalized(existingTriple, attribute: attribute)
+    }
+  }
+
   private mutating func indexIndexedAttributeInsert(
     entityID: String,
     attributeID: String,
@@ -4381,6 +4854,30 @@ struct TripleIndexes: Hashable, Codable, Sendable {
       return lhs.attributeID < rhs.attributeID
     }
     return lhs.value.comparableKey < rhs.value.comparableKey
+  }
+
+  private static func deduplicatingStoredTriples(
+    _ triples: [InstantTriple]
+  ) -> [InstantTriple] {
+    var triplesByIdentity: [StoredTripleIdentity: InstantTriple] = [:]
+    triplesByIdentity.reserveCapacity(triples.count)
+    for triple in triples {
+      let identity = StoredTripleIdentity(
+        entityID: triple.entityID,
+        attributeID: triple.attributeID,
+        value: triple.value
+      )
+      if let existing = triplesByIdentity[identity] {
+        if existing.txTime < triple.txTime
+          || (existing.txTime == triple.txTime && existing.txID < triple.txID)
+        {
+          triplesByIdentity[identity] = triple
+        }
+      } else {
+        triplesByIdentity[identity] = triple
+      }
+    }
+    return triplesByIdentity.values.sorted(by: triplePrecedes)
   }
 
   private static func lexicographicallyPrecedes(_ lhs: [String], _ rhs: [String]) -> Bool {

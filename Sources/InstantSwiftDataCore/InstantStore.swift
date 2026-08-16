@@ -165,8 +165,11 @@ public actor InstantStore {
     var mergedAttributes = self.attributes
     mergedAttributes.merge(attributes)
     guard mergedAttributes != self.attributes else { return nil }
+    _ = indexes.reconcileRelationStorage(
+      previousAttributes: self.attributes,
+      mergedAttributes: mergedAttributes
+    )
     self.attributes = mergedAttributes
-    self.indexes = TripleIndexes(triples: self.indexes.triples, attributes: self.attributes)
     return snapshot()
   }
 
@@ -608,11 +611,21 @@ public actor InstantStore {
         capturePreviousChangedEntityTriples: false
       )
     }
+    let previousAttributes = attributes
     attributes.merge(attributesToMerge)
     let indexesBeforeSchemaReconciliation = indexes
-    let schemaReconciledEntityIDs: Set<String> = attributesToMerge.isEmpty
-      ? []
-      : indexes.reconcileDerivedIndexShapes(attributes: attributes)
+    let schemaReconciledEntityIDs: Set<String>
+    if attributesToMerge.isEmpty {
+      schemaReconciledEntityIDs = []
+    } else {
+      let reconciliation = Self.schemaReconciledIndexes(
+        indexes,
+        previousAttributes: previousAttributes,
+        mergedAttributes: attributes
+      )
+      indexes = reconciliation.indexes
+      schemaReconciledEntityIDs = reconciliation.changedEntityIDs
+    }
     var prepared = try prepareMutating(
       serverTransaction,
       attributes: &attributes,
@@ -639,10 +652,16 @@ public actor InstantStore {
   ) -> PreparedStoreMutation {
     guard !attributesToMerge.isEmpty else { return prepared }
     var attributes = prepared.attributes
+    let previousAttributes = attributes
     attributes.merge(attributesToMerge)
-    var indexes = prepared.indexes
-    let indexesBeforeSchemaReconciliation = indexes
-    let changedEntityIDs = indexes.reconcileDerivedIndexShapes(attributes: attributes)
+    let indexesBeforeSchemaReconciliation = prepared.indexes
+    let reconciliation = Self.schemaReconciledIndexes(
+      prepared.indexes,
+      previousAttributes: previousAttributes,
+      mergedAttributes: attributes
+    )
+    let indexes = reconciliation.indexes
+    let changedEntityIDs = reconciliation.changedEntityIDs
     let previousChangedEntityTriples = Dictionary(
       uniqueKeysWithValues: changedEntityIDs.map { entityID in
         (entityID, indexesBeforeSchemaReconciliation.triples(entityID: entityID))
@@ -726,12 +745,18 @@ public actor InstantStore {
         }
 
       case let .requireTripleExists(entityID, attributeID, value):
+        let canonical = try Self.canonicalTripleIdentity(
+          entityID: entityID,
+          attributeID: attributeID,
+          value: value,
+          attributes: attributes
+        )
         guard
           indexes.containsTriple(
-            entityID: entityID,
-            attributeID: attributeID,
-            value: value,
-            attribute: attributes[attributeID]
+            entityID: canonical.entityID,
+            attributeID: canonical.attributeID,
+            value: canonical.value,
+            attribute: attributes[canonical.attributeID]
           )
         else {
           throw Self.missingTripleError(
@@ -1162,7 +1187,7 @@ public actor InstantStore {
     value: InstantValue,
     attributes: AttributeStore
   ) -> InstantError {
-    let attribute = attributes[attributeID]
+    let attribute = attributes.lookupAttribute(id: attributeID)
     return InstantError(
       code: .validationFailed,
       operation: "require triple",
@@ -1173,6 +1198,88 @@ public actor InstantStore {
         "No existing triple was found for '\(entityID)' at '\(attributeID)' with value '\(value)'.",
       recovery: "Refresh the local cache and retry with the current relationship value."
     )
+  }
+
+  private struct CanonicalTripleIdentity: Hashable {
+    var entityID: String
+    var attributeID: String
+    var value: InstantValue
+  }
+
+  private static func schemaReconciledIndexes(
+    _ indexes: TripleIndexes,
+    previousAttributes: AttributeStore,
+    mergedAttributes: AttributeStore
+  ) -> (indexes: TripleIndexes, changedEntityIDs: Set<String>) {
+    var indexes = indexes
+    let result = indexes.reconcileRelationStorage(
+      previousAttributes: previousAttributes,
+      mergedAttributes: mergedAttributes
+    )
+    return (indexes, result.changedEntityIDs)
+  }
+
+  /// Converts a logical reverse relation write into the single physical forward triple.
+  ///
+  /// The transaction retained in the outbox stays in the caller's logical direction. Only the
+  /// optimistic/local-store operation is transposed here, after lookup refs have been resolved.
+  private static func canonicalTripleIdentity(
+    entityID: String,
+    attributeID: String,
+    value: InstantValue,
+    attributes: AttributeStore
+  ) throws -> CanonicalTripleIdentity {
+    guard let resolvedAttribute = attributes.lookupAttribute(id: attributeID) else {
+      return CanonicalTripleIdentity(
+        entityID: entityID,
+        attributeID: attributeID,
+        value: value
+      )
+    }
+
+    guard resolvedAttribute.direction == .reverse else {
+      return CanonicalTripleIdentity(
+        entityID: entityID,
+        attributeID: resolvedAttribute.attribute.id,
+        value: value
+      )
+    }
+
+    guard case let .ref(forwardEntityID) = value else {
+      throw InstantError(
+        code: .validationFailed,
+        operation: "write reverse relation",
+        namespace: resolvedAttribute.namespace,
+        path: resolvedAttribute.name,
+        localID: entityID,
+        message:
+          "Reverse relation '\(attributeID)' requires a reference value before it can be stored.",
+        recovery: "Link the related entity by id or by a lookup ref."
+      )
+    }
+
+    return CanonicalTripleIdentity(
+      entityID: forwardEntityID,
+      attributeID: resolvedAttribute.attribute.id,
+      value: .ref(entityID)
+    )
+  }
+
+  private static func canonicalizedTriple(
+    _ triple: InstantTriple,
+    attributes: AttributeStore
+  ) throws -> InstantTriple {
+    let canonical = try canonicalTripleIdentity(
+      entityID: triple.entityID,
+      attributeID: triple.attributeID,
+      value: triple.value,
+      attributes: attributes
+    )
+    var triple = triple
+    triple.entityID = canonical.entityID
+    triple.attributeID = canonical.attributeID
+    triple.value = canonical.value
+    return triple
   }
 
   private static func concreteOperations(
@@ -1194,7 +1301,7 @@ public actor InstantStore {
       else { return [] }
       var triple = triple
       triple.value = value
-      return [.insert(triple)]
+      return [.insert(try canonicalizedTriple(triple, attributes: attributes))]
 
     case let .merge(triple):
       guard
@@ -1208,7 +1315,7 @@ public actor InstantStore {
       else { return [] }
       var triple = triple
       triple.value = value
-      return [.merge(triple)]
+      return [.merge(try canonicalizedTriple(triple, attributes: attributes))]
 
     case let .retract(triple):
       guard
@@ -1222,7 +1329,7 @@ public actor InstantStore {
       else { return [] }
       var triple = triple
       triple.value = value
-      return [.retract(triple)]
+      return [.retract(try canonicalizedTriple(triple, attributes: attributes))]
 
     case .deleteEntity, .deleteEntityInNamespace:
       return [operation]
@@ -1231,7 +1338,7 @@ public actor InstantStore {
       guard
         let entityID = try resolveEntityID(
           entity,
-          expectedNamespace: attributes[attributeID]?.namespace,
+          expectedNamespace: attributes.lookupAttribute(id: attributeID)?.namespace,
           indexes: indexes,
           attributes: attributes,
           resolvedLookups: &resolvedLookups
@@ -1246,18 +1353,21 @@ public actor InstantStore {
       else { return [] }
       return [
         .insert(
-          InstantTriple(
-            entityID: entityID,
-            attributeID: attributeID,
-            value: value,
-            txID: txID,
-            txTime: txTime
+          try canonicalizedTriple(
+            InstantTriple(
+              entityID: entityID,
+              attributeID: attributeID,
+              value: value,
+              txID: txID,
+              txTime: txTime
+            ),
+            attributes: attributes
           )
         )
       ]
 
     case let .mergeByLookup(entity, attributeID, value, txID, txTime):
-      if attributes[attributeID]?.valueType == .ref {
+      if attributes.lookupAttribute(id: attributeID)?.attribute.valueType == .ref {
         throw unsupportedMergeError(
           triple: InstantTriple(
             entityID: entity.description,
@@ -1272,7 +1382,7 @@ public actor InstantStore {
       guard
         let entityID = try resolveEntityID(
           entity,
-          expectedNamespace: attributes[attributeID]?.namespace,
+          expectedNamespace: attributes.lookupAttribute(id: attributeID)?.namespace,
           indexes: indexes,
           attributes: attributes,
           resolvedLookups: &resolvedLookups
@@ -1287,12 +1397,15 @@ public actor InstantStore {
       else { return [] }
       return [
         .merge(
-          InstantTriple(
-            entityID: entityID,
-            attributeID: attributeID,
-            value: value,
-            txID: txID,
-            txTime: txTime
+          try canonicalizedTriple(
+            InstantTriple(
+              entityID: entityID,
+              attributeID: attributeID,
+              value: value,
+              txID: txID,
+              txTime: txTime
+            ),
+            attributes: attributes
           )
         )
       ]
@@ -1301,7 +1414,7 @@ public actor InstantStore {
       guard
         let entityID = try resolveEntityID(
           entity,
-          expectedNamespace: attributes[attributeID]?.namespace,
+          expectedNamespace: attributes.lookupAttribute(id: attributeID)?.namespace,
           indexes: indexes,
           attributes: attributes,
           resolvedLookups: &resolvedLookups
@@ -1316,12 +1429,15 @@ public actor InstantStore {
       else { return [] }
       return [
         .retract(
-          InstantTriple(
-            entityID: entityID,
-            attributeID: attributeID,
-            value: value,
-            txID: txID,
-            txTime: txTime
+          try canonicalizedTriple(
+            InstantTriple(
+              entityID: entityID,
+              attributeID: attributeID,
+              value: value,
+              txID: txID,
+              txTime: txTime
+            ),
+            attributes: attributes
           )
         )
       ]
@@ -1361,7 +1477,7 @@ public actor InstantStore {
   ) throws -> InstantValue? {
     guard case let .lookupRef(lookup) = value else { return value }
 
-    guard let attribute = attributes[attributeID] else {
+    guard let resolvedAttribute = attributes.lookupAttribute(id: attributeID) else {
       throw InstantError(
         code: .validationFailed,
         operation: "resolve lookup ref",
@@ -1371,9 +1487,19 @@ public actor InstantStore {
         recovery: "Declare '\(attributeID)' before using a lookup ref as a triple value."
       )
     }
+    let attribute = resolvedAttribute.attribute
 
-    let expectedNamespace =
-      attribute.valueType == .ref ? attribute.linkNamespace : attribute.namespace
+    let expectedNamespace: String?
+    if attribute.valueType == .ref {
+      switch resolvedAttribute.direction {
+      case .forward:
+        expectedNamespace = attribute.linkNamespace
+      case .reverse:
+        expectedNamespace = attribute.namespace
+      }
+    } else {
+      expectedNamespace = resolvedAttribute.namespace
+    }
     guard
       let entityID = try resolveEntityID(
         lookup,
