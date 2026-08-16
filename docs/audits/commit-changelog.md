@@ -1,3 +1,9 @@
+## 2026-08-16 02:53:37 EDT — realtime-voice-sqlite-instant 177fc7972dfc4f883a86020b292a0e52dd36e7d1
+
+- **Repo:** realtime-voice-sqlite-instant
+- **SHA:** 177fc7972dfc4f883a86020b292a0e52dd36e7d1
+- **Reason:** Derive the memory-soak transcript's section and word offsets from each stream's injected wall clock, preserving interim/final identities and duration-drain behavior so an eight-minute recording cannot display or persist transcript timestamps around 22 minutes (#044).
+
 ## 2026-08-16 02:00:09 EDT — instant-data-swift 46024e30df6e7cf3b7df81c38c296349627ab2ce
 
 - **Repo:** instant-data-swift
