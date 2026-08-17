@@ -1,3 +1,9 @@
+## 2026-08-17 18:03:06 EDT — scribe-sqlite-data 70a4f3a5ca2933bc993a95df9e53f3de6ba5040e
+
+- **Repo:** scribe-sqlite-data
+- **SHA:** 70a4f3a5ca2933bc993a95df9e53f3de6ba5040e
+- **Reason:** Port Instant #197 standard SwiftUI iPhone chrome onto the SQLiteData fallback so product UI matches Instant main without copying Instant façades (#214 #197 #194).
+
 ## 2026-08-16 05:56:24 EDT — realtime-voice-sqlite-instant 5fe583919f70de88daf97416d775ac9c5221e7fe
 
 - **Repo:** realtime-voice-sqlite-instant
