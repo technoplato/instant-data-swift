@@ -1,3 +1,45 @@
+## 2026-08-18 11:25:18 EDT — scribe-sqlite-data 8e2cae7b6f5247ea1cff6fe82928464e8030ec78
+
+- **Repo:** scribe-sqlite-data
+- **SHA:** 8e2cae7b6f5247ea1cff6fe82928464e8030ec78
+- **Reason:** Never replace first playable CloudKit prefix; prefix-only persist; list poll no longer loads CKAsset blobs. Scribe 0.1 (32). #112 #044 #194.
+
+## 2026-08-18 10:55:56 EDT — scribe-sqlite-data f47a1694f3ecb34f0af2b86b0fe7724949925034
+
+- **Repo:** scribe-sqlite-data
+- **SHA:** f47a1694f3ecb34f0af2b86b0fe7724949925034
+- **Reason:** Source sendChanges after first playable WAV prefix; hold growth while sending. Scribe 0.1 (30). #112 #194.
+
+## 2026-08-18 10:39:44 EDT — scribe-sqlite-data e67904747138c4e2c2ee2dcb8b6b4747e4cd7253
+
+- **Repo:** scribe-sqlite-data
+- **SHA:** e67904747138c4e2c2ee2dcb8b6b4747e4cd7253
+- **Reason:** Process-lifetime CloudKit fetch so dest audio does not wait for a scene-active kick. Scribe 0.1 (29). #112 #194.
+
+## 2026-08-18 10:00:53 EDT — scribe-sqlite-data 77aefe08a52bd9b721e238a3b6926dd0762c72a6
+
+- **Repo:** scribe-sqlite-data
+- **SHA:** 77aefe08a52bd9b721e238a3b6926dd0762c72a6
+- **Reason:** Kick CloudKit fetchChanges on appear and persist a first playable WAV prefix so Mac can receive and dest can play within 10s. Scribe 0.1 (27). #112 #194.
+
+## 2026-08-18 09:17:50 EDT — scribe-sqlite-data 671ab7f6c1e37cb59fc111ea9cde41da7d060638
+
+- **Repo:** scribe-sqlite-data
+- **SHA:** 671ab7f6c1e37cb59fc111ea9cde41da7d060638
+- **Reason:** Refuse header-only WAV persist/hydrate clobber so iPhone playback works, and align the Xcode Mac host to catalog com.scribe.realtime. Scribe 0.1 (26). #112 #194.
+
+## 2026-08-18 00:20:00 EDT — scribe-sqlite-data 0498cc97d9e8f989062014d19132e6ba379ce6ac
+
+- **Repo:** scribe-sqlite-data
+- **SHA:** 0498cc97d9e8f989062014d19132e6ba379ce6ac
+- **Reason:** Embed broadcast/widget/Watch/App Clip in the SQLite iOS host so ReplayKit system audio can attach (#215). Scribe 0.1 (25).
+
+## 2026-08-18 00:08:00 EDT — scribe-sqlite-data 55495fd68500903130928e5e4d43373f00675875
+
+- **Repo:** scribe-sqlite-data
+- **SHA:** 55495fd68500903130928e5e4d43373f00675875
+- **Reason:** Retarget SQLite localDev extension App Groups, exception-safe AirPods removeTap, progressive WAV so audio persist is not a 2s prefix, and a Mac Grok LaunchAgent on the local SQLite mirror (#215 #147 #216 #194).
+
 ## 2026-08-17 20:48:40 EDT — scribe-sqlite-data 9e767382c3019cfe3a6dc83abefd5e6f8f0f3369
 
 - **Repo:** scribe-sqlite-data
