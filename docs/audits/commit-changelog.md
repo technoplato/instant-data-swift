@@ -1,3 +1,9 @@
+## 2026-08-17 20:48:40 EDT — scribe-sqlite-data 9e767382c3019cfe3a6dc83abefd5e6f8f0f3369
+
+- **Repo:** scribe-sqlite-data
+- **SHA:** 9e767382c3019cfe3a6dc83abefd5e6f8f0f3369
+- **Reason:** Persist timeline images as SQLiteData ScribeAttachment rows and isolate Instant-drift tests so #214 function-lane proof (attachments, media, progressive audio, words-JSON save) can compile and pass. Scribe 0.1 (21).
+
 ## 2026-08-17 18:03:06 EDT — scribe-sqlite-data 70a4f3a5ca2933bc993a95df9e53f3de6ba5040e
 
 - **Repo:** scribe-sqlite-data
