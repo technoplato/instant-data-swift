@@ -1,3 +1,9 @@
+## 2026-08-19 10:10:20 EDT — scribe-sqlite-data d7242ef750eaf13546d307c5ed252f7065b2f449
+
+- **Repo:** scribe-sqlite-data
+- **SHA:** d7242ef750eaf13546d307c5ed252f7065b2f449
+- **Reason:** Upload the finalized WAV once at stop. Mid-take persist no longer publishes a growing CKAsset. Local ProgressiveWAVWriter growth stays. Scribe 0.1 (39). #217.
+
 ## 2026-08-17 20:48:40 EDT — scribe-sqlite-data 9e767382c3019cfe3a6dc83abefd5e6f8f0f3369
 
 - **Repo:** scribe-sqlite-data
