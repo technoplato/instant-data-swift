@@ -1,3 +1,12 @@
+## 2026-08-19 11:55:42 EDT — scribe-sqlite-data `742f853770f0bdf41f97c5f67ed3a09a9add0e53`
+Stream dest CKAsset apply onto disk and restore process.memory.sample on the SQLite lane (#218).
+
+## 2026-08-19 11:35:00 EDT — scribe-sqlite-data f17f4f7292d3f7a92e9d2e9017edc28763e204f4
+
+- **Repo:** scribe-sqlite-data
+- **SHA:** f17f4f7292d3f7a92e9d2e9017edc28763e204f4
+- **Reason:** Empty snapshotJSON on persist, 1s stamp-skipped list observe, 5s CloudKit fetch, chunked hydrate, CloudKit reader/writer harness. Scribe 0.1 (40). #218.
+
 ## 2026-08-19 10:10:20 EDT — scribe-sqlite-data d7242ef750eaf13546d307c5ed252f7065b2f449
 
 - **Repo:** scribe-sqlite-data
