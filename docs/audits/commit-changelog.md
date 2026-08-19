@@ -1,8 +1,46 @@
+## 2026-08-19 14:44:42 EDT — scribe-sqlite-data `cc07a71099c035ac14e22ccc443083ebad691136`
+Bump Scribe SQLiteData Dev to 0.1 (48) for the #147 engine-reset install.
+
+## 2026-08-19 14:44:42 EDT — scribe-sqlite-data `34a936958d8a6567d07eebf116a798184d08a39c`
+Reset the audio engine before the recovery reinstall so a route change cannot leave the graph at the stale format (kAudioUnitErr -10868, physical AirPods evidence) (#147).
+
+## 2026-08-19 14:44:42 EDT — scribe-sqlite-data `1cbad3151246676b444c664ea8f856f082e6a750`
+Install the mic tap with a nil format; AdaptiveTapConverter adapts conversion per live buffer format (physical AirPods format-mismatch evidence) (#147).
+
+## 2026-08-19 14:44:42 EDT — scribe-sqlite-data `5e234707ca049d42a09e96aad15907f7aa9065c2`
+Add updateVideoSampleInterval to the non-iOS capture client fallback so the watch slice builds for device installs (#219).
+
+## 2026-08-19 14:43:13 EDT — scribe-sqlite-data `6a1edf7edec0959b228802ecaff5eab7275014dd`
+Record #218 C1 072 numbers: upload-at-stop works, dest apply still over 100.
+
+## 2026-08-19 13:39:38 EDT — scribe-sqlite-data `5304b4e`
+Keep dest WAV recovery tests off live recording IDs so they cannot delete product files (#218).
+
+## 2026-08-19 13:40:00 EDT — scribe-sqlite-data `2255d46644b1`
+Bump Scribe SQLiteData Dev to 0.1 (45) for the #218 C1 leftover install.
+
+## 2026-08-19 13:38:30 EDT — scribe-sqlite-data `5304b4eb3557`
+Keep dest WAV recovery tests off live recording IDs so they cannot delete product files (#218).
+
+## 2026-08-19 13:30:30 EDT — scribe-sqlite-data `c69125a0de13c2135d217837a0f962f5b9e36d6b`
+Mix system audio into the recording WAV (dedicated capture lane + capture-clock-aligned saturating writer mix), force Apple Speech mid-stream finalization past a 30 s open-section cap so continuous audio rolls segments, and enforce the periodic-frame preference at host admission plus the configured Mac frame interval (#142 #222 #223).
+
+## 2026-08-19 13:07:41 EDT — scribe-sqlite-data `7ce73b37f103ffe125f6ee47cda9412bf6c27a86`
+Recover dest WAVs from CloudKit when the blob is empty. Hydrate refetches a staged CKAsset onto Documents/Scribe/recordings/<UUID>/audio.wav (#218).
+
+## 2026-08-19 13:07:41 EDT — sqlite-data `ccf420a5e9efeb76315bf939f658ba2843cf12be`
+CloudKitAssetLanding hook at SyncEngine apply (~2055 and ~2486). Never Data(contentsOf:) a full CKAsset into a SQL BLOB (#218).
+
+## 2026-08-19 13:07:41 EDT — scribe-sqlite-data `1f90b14be50de4ffb06303e0322b7072b2b0cc35`
+Bump Scribe SQLiteData Dev to 0.1 (43) for the #218 C1 install.
+
 ## 2026-08-19 11:55:42 EDT — scribe-sqlite-data `742f853770f0bdf41f97c5f67ed3a09a9add0e53`
 Stream dest CKAsset apply onto disk and restore process.memory.sample on the SQLite lane (#218).
 
 ## 2026-08-19 11:35:00 EDT — scribe-sqlite-data f17f4f7292d3f7a92e9d2e9017edc28763e204f4
 
+- 2026-08-19 14:15:54 EDT — scribe-sqlite-data — ffed6a670f21df10209e1f6854cbeca79f95b2af — Log every path that pops the open playback surface (#221): compact navigation pop, presentation dismiss, detail-mode transitions.
+- 2026-08-19 14:15:54 EDT — scribe-sqlite-data — 89a1a2d9e875b59376b6fe637befb652cbe5a765 — Bump Scribe SQLiteData Dev to 0.1 (46) for the #221 instrumentation install.
 - **Repo:** scribe-sqlite-data
 - **SHA:** f17f4f7292d3f7a92e9d2e9017edc28763e204f4
 - **Reason:** Empty snapshotJSON on persist, 1s stamp-skipped list observe, 5s CloudKit fetch, chunked hydrate, CloudKit reader/writer harness. Scribe 0.1 (40). #218.
