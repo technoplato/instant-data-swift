@@ -1,3 +1,12 @@
+## 2026-08-20 14:32:00 EDT — scribe-sqlite-data `a6ed0a8b8f9cdd7f2451bfddd3f091de88769153`
+Document fb7a7c6 in the change log (#228).
+
+## 2026-08-20 14:31:40 EDT — scribe-sqlite-data `fb7a7c66a71c5155fea1282d7e2c9e7043b39ff5`
+Record Scribe 0.1 (55) iPhone install for system transcript PiP (#228).
+
+## 2026-08-20 14:30:49 EDT — scribe-sqlite-data `f347fc76e7ee8d4f0a8bee8d22f3e8bafda979d5`
+Installed Scribe 0.1 (55) localDev on Michael’s iPhone for system transcript PiP (#228).
+
 ## 2026-08-20 14:23:30 EDT — scribe-sqlite-data `f347fc76e7ee8d4f0a8bee8d22f3e8bafda979d5`
 Document 1c7e756 in the change log (#228).
 
