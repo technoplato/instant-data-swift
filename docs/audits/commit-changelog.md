@@ -1,3 +1,9 @@
+## 2026-08-20 14:23:30 EDT — scribe-sqlite-data `f347fc76e7ee8d4f0a8bee8d22f3e8bafda979d5`
+Document 1c7e756 in the change log (#228).
+
+## 2026-08-20 14:23:20 EDT — scribe-sqlite-data `1c7e756c3a0d910b603d8ea46ead3bacad73aeec`
+Compile the iOS transcript PiP host without a MainActor NSObject subclass (#228).
+
 ## 2026-08-20 14:08:20 EDT — scribe-sqlite-data `ecd4133f48a85d5ca9dad75a8ff22e946457d19a`
 Document c3007a8 in the change log (#228).
 
