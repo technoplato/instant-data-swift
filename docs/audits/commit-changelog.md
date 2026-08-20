@@ -1,3 +1,99 @@
+## 2026-08-20 14:08:20 EDT — scribe-sqlite-data `ecd4133f48a85d5ca9dad75a8ff22e946457d19a`
+Document c3007a8 in the change log (#228).
+
+## 2026-08-20 14:08:10 EDT — scribe-sqlite-data `c3007a87637f43a9ae4e83d04f2a4d0744cc9163`
+Arm system transcript Picture-in-Picture before the user leaves the app (#228).
+
+## 2026-08-20 13:37:10 EDT — scribe-sqlite-data `c62361614bd34848ebe8754cbd7b371148c1dfaf`
+Document 8b67c2c in the change log (#228 #229).
+
+## 2026-08-20 13:37:00 EDT — scribe-sqlite-data `8b67c2c24955d9afc9091104937107c362d81548`
+Record Scribe 0.1 (54) iPhone install for #228 #229.
+
+## 2026-08-20 13:28:20 EDT — scribe-sqlite-data `84fe65dc1be1b5c35533fec7281fb14163b17f45`
+Document 8bb810d in the change log (#228 #229).
+
+## 2026-08-20 13:28:10 EDT — scribe-sqlite-data `8bb810df8e885d0ba05dbb079471917cdff8ffdf`
+Bump CURRENT_PROJECT_VERSION 53 -> 54 for the combined #228 #229 localDev install.
+
+## 2026-08-20 13:23:40 EDT — scribe-sqlite-data `ad81b721` ledger for `65e09102bfcf1871f105543e3937096bae786322`
+Keep the Mac CloudKit observer lean and show a list robot (#216).
+
+## 2026-08-20 13:23:20 EDT — scribe-sqlite-data `65e09102bfcf1871f105543e3937096bae786322`
+Keep the Mac CloudKit observer lean and show a list robot (#216).
+
+## 2026-08-20 13:20:20 EDT — scribe-sqlite-data `f87c2fc86f408312a1ef6b4eeed6081389d94770`
+Record the 0.1 (53) install note in the change log (#147).
+
+## 2026-08-20 13:20:10 EDT — scribe-sqlite-data `199dc9bbbc50e94cd02aa61131d464b20bbc6f06`
+Record Scribe 0.1 (53) iPhone install for AirPods HFP reconnect (#147).
+
+## 2026-08-20 13:05:57 EDT — scribe-sqlite-data `ba2fbabbb75b89318684a80df7945255a4c01a81`
+Record a4c6bb1 in the change log (#147).
+
+## 2026-08-20 13:05:50 EDT — scribe-sqlite-data `a4c6bb1aae702317df81365ab29c949f915c582c`
+Skip preferred sample rate on watchOS during HFP recovery (#147).
+
+## 2026-08-20 13:03:52 EDT — scribe-sqlite-data `ef3e2f06db832b441fac42fccf4c96f8cf4e8ed7`
+Document c47bf9a in the change log (#229).
+
+## 2026-08-20 13:03:42 EDT — scribe-sqlite-data `c47bf9a0f692d6c6b93d48bb4cc9b674286388e1`
+Convert ReplayKit PCM by layout so Photos and WAV audio is not static (#229).
+
+## 2026-08-20 12:57:27 EDT — scribe-sqlite-data `13bd805342c0be196fcaf64af5c9b51cbac5f44b`
+Add a settings-driven transcript Picture-in-Picture window (#228).
+
+## 2026-08-20 12:47:30 EDT — scribe-sqlite-data `593f1ee6a229f2840c67b5be826d9bd3e9a6e8dc`
+Record 1efe7b9 in the change log (#147).
+
+## 2026-08-20 12:47:13 EDT — scribe-sqlite-data `1efe7b9221f4651c5b1a97fde0f00dd78c6f764c`
+Keep recording through AirPods HFP connect instead of a 5-attempt dead-end (#147).
+
+## 2026-08-20 12:37:40 EDT — scribe-sqlite-data `e40a6663379f976ca0a0b58b15c5ae19769bf61f`
+Add a separate CloudKit observer app for Mac Grok sessions (#216).
+
+## 2026-08-20 12:16:10 EDT — scribe-sqlite-data `f4b6bccb31d160024c59a3b8e133b90b1a64ddc5`
+Record Scribe 0.1 (52) iPhone install for Photos movie audio (#224).
+
+## 2026-08-20 12:05:40 EDT — scribe-sqlite-data `eea5f4fc5d8bb0fddab663ea4c3bb65f519ddb47`
+Log d3eadf6 in the change log (#224).
+
+## 2026-08-20 12:05:20 EDT — scribe-sqlite-data `d3eadf63af9fa3aed670703f30f703b88b667fd8`
+Mix system and microphone audio onto one Photos movie track (#224).
+
+## 2026-08-20 11:33:20 EDT — scribe-sqlite-data `be2e5108d0e1b267d73ccb6fda7c8e27fed79267`
+Log bbb1ec5 in the change log (#227).
+
+## 2026-08-20 11:33:05 EDT — scribe-sqlite-data `bbb1ec53969fd6bb8f5d14798b646e15d691e062`
+Keep the recording overflow menu from rebuilding on every waveform tick (#227).
+
+## 2026-08-20 11:08:22 EDT — scribe-sqlite-data `397bd88e7102cc3708a48884cda8b81358cf1879`
+Log e147ecc in the change log (#226).
+
+## 2026-08-20 11:07:48 EDT — scribe-sqlite-data `e147ecc825a6dc17b5917eabfb80b0e1bbc856a6`
+Keep the collapsed build debug overlay fully on-screen (#226).
+
+## 2026-08-20 10:24:10 EDT — scribe-sqlite-data `72df11926bd7f31025e07aaf5cb41e92f29f7e8e`
+Log 3e5ade8 in the change log (#224 #225 #114).
+
+## 2026-08-20 10:23:38 EDT — scribe-sqlite-data `3e5ade8ca1144fdd51447aea7dce6d0fa2878efc`
+Persist opt-in ReplayKit movies to Photos and reclaim the recording bottom bar (#224 #225 #114).
+
+## 2026-08-19 14:59:39 EDT — scribe-sqlite-data `c316fa113db9584aff774102929a84e9140d03fe`
+Log 53e1363 in the change log (#218).
+
+## 2026-08-19 14:59:39 EDT — scribe-sqlite-data `53e136325cea4f1d201c08aada715d40874acfee`
+Bump Scribe SQLiteData Dev to 0.1 (49) for the #218 file-backed CKAsset install.
+
+## 2026-08-19 14:59:39 EDT — scribe-sqlite-data `9a0c2b8c66443c73ce559d2943a81317d770aba6`
+Log 9f4fddd in the change log (#218).
+
+## 2026-08-19 14:59:39 EDT — scribe-sqlite-data `9f4fddde4f18c41b9a2a892cf07f979ff61b540c`
+Send evacuated audio as a file-backed CKAsset so dest receives real bytes (#218).
+
+## 2026-08-19 14:59:39 EDT — tca/sqlite-data `b87466a4baf1db900add8d9064f5aed56c7e9f17`
+Build outgoing CKAssets from evacuated files so empty SQL blobs do not upload (#218). Local fork only.
+
 ## 2026-08-19 14:44:42 EDT — scribe-sqlite-data `cc07a71099c035ac14e22ccc443083ebad691136`
 Bump Scribe SQLiteData Dev to 0.1 (48) for the #147 engine-reset install.
 
