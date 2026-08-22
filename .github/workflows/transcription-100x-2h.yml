@@ -1,0 +1,75 @@
+name: 100x Two-Hour Transcription on Michael's Mac
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - '.github/workflows/transcription-100x-2h.yml'
+      - '.home-runner/transcription-100x-2h.sh'
+      - 'Sources/InstantSwiftDataCore/AcceleratedTranscriptionEvolutionBench*.swift'
+      - 'Tests/InstantSwiftDataCoreTests/AcceleratedTranscriptionEvolutionBench*.swift'
+      - 'validation/accelerated-transcription-*'
+      - 'validation/run-accelerated-transcription-evolution-bench.sh'
+      - 'validation/ts-runner/src/accelerated-transcription-evolution-bench.ts'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: transcription-100x-2h-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  queue-and-watch:
+    name: Queue exact commit on laptop runner
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      GH_TOKEN: ${{ secrets.HOME_RUNNER_TOKEN }}
+      TARGET_REF: ${{ github.event.pull_request.head.sha || github.sha }}
+    steps:
+      - name: Require the private runner dispatch token
+        run: test -n "${GH_TOKEN}"
+
+      - name: Dispatch exact target commit
+        id: dispatch
+        shell: bash
+        run: |
+          set -euo pipefail
+          started_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          echo "started_at=${started_at}" >> "${GITHUB_OUTPUT}"
+          gh workflow run run-job.yml \
+            --repo technoplato/home-runner \
+            --ref main \
+            -f repo=technoplato/instant-data-swift \
+            -f job=transcription-100x-2h \
+            -f ref="${TARGET_REF}"
+
+      - name: Find and watch the dispatched Mac run
+        shell: bash
+        run: |
+          set -euo pipefail
+          run_id=""
+          for _ in $(seq 1 30); do
+            run_id="$(
+              gh run list \
+                --repo technoplato/home-runner \
+                --workflow run-job.yml \
+                --event workflow_dispatch \
+                --limit 20 \
+                --json databaseId,createdAt \
+                --jq '[.[] | select(.createdAt >= "${{ steps.dispatch.outputs.started_at }}")][0].databaseId // empty'
+            )"
+            if [[ -n "${run_id}" ]]; then
+              break
+            fi
+            sleep 2
+          done
+          if [[ -z "${run_id}" ]]; then
+            echo "The home-runner workflow was dispatched but no matching run appeared." >&2
+            exit 1
+          fi
+          echo "Watching technoplato/home-runner run ${run_id} for ${TARGET_REF}"
+          gh run watch "${run_id}" \
+            --repo technoplato/home-runner \
+            --exit-status
