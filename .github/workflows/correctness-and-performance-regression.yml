@@ -1,0 +1,51 @@
+name: Correctness and performance regression
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: instant-regression-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  deterministic-gate:
+    name: Correctness and checked-in performance baseline
+    runs-on: macos-15
+    timeout-minutes: 120
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: validation/ts-runner/pnpm-lock.yaml
+
+      - name: Enable pinned package manager
+        run: corepack enable
+
+      - name: Run deterministic gate
+        env:
+          INSTANT_SWIFT_DATA_BENCHMARK_COMPARISON_ITERATIONS: 7
+          INSTANT_GATE_BASELINE_TOLERANCE: 0.03
+          INSTANT_GATE_NEW_WORKLOAD_MAX_COST_RATIO: 1.25
+        run: |
+          chmod +x validation/run-performance-gate.sh
+          ./validation/run-performance-gate.sh --mode smoke
+
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: instant-regression-${{ github.sha }}
+          path: validation/results/performance-gate/
+          if-no-files-found: error
+          retention-days: 30
