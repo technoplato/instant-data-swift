@@ -1,0 +1,118 @@
+name: Publish gated version
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Exact semantic version from VERSION, without v
+        required: true
+        type: string
+      ref:
+        description: Commit or branch to verify; must resolve to origin/main
+        required: false
+        default: main
+        type: string
+      duration_seconds:
+        description: Seconds per sustained live lane
+        required: false
+        default: "60"
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: publish-version
+  cancel-in-progress: false
+
+jobs:
+  release-gate:
+    name: Verify before making the tag public
+    runs-on: macos-15
+    timeout-minutes: 240
+    environment: production-release
+
+    steps:
+      - name: Check out the exact candidate
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+          fetch-depth: 0
+          submodules: recursive
+
+      - name: Require the current main commit and an unused version
+        env:
+          REQUESTED_VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          git fetch origin main --tags
+          test "$(git rev-parse HEAD)" = "$(git rev-parse origin/main)" || {
+            echo "Releases must be cut from the exact origin/main commit." >&2
+            exit 1
+          }
+          test -f VERSION
+          ACTUAL_VERSION="$(tr -d '[:space:]' < VERSION)"
+          test "${ACTUAL_VERSION}" = "${REQUESTED_VERSION}" || {
+            echo "VERSION=${ACTUAL_VERSION}, requested=${REQUESTED_VERSION}" >&2
+            exit 1
+          }
+          [[ "${ACTUAL_VERSION}" =~ ^[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]]
+          ! git rev-parse "refs/tags/v${ACTUAL_VERSION}" >/dev/null 2>&1 || {
+            echo "v${ACTUAL_VERSION} already exists." >&2
+            exit 1
+          }
+
+      - name: Set up Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: |
+            validation/ts-runner/pnpm-lock.yaml
+            validation/exercise-gym/pnpm-lock.yaml
+
+      - name: Enable pinned package manager
+        run: corepack enable
+
+      - name: Run release correctness and performance gate
+        env:
+          GITHUB_REF_NAME: v${{ inputs.version }}
+          INSTANT_CLI_AUTH_TOKEN: ${{ secrets.INSTANT_CLI_AUTH_TOKEN }}
+          INSTANT_APP_ID: ${{ secrets.INSTANT_PERFORMANCE_APP_ID }}
+          INSTANT_ADMIN_TOKEN: ${{ secrets.INSTANT_PERFORMANCE_ADMIN_TOKEN }}
+          INSTANT_APP_ADMIN_TOKEN: ${{ secrets.INSTANT_PERFORMANCE_ADMIN_TOKEN }}
+          INSTANT_SWIFT_DATA_BENCH_DURATION_SECONDS: ${{ inputs.duration_seconds }}
+          EXERCISE_GYM_DURATION_SECONDS: ${{ inputs.duration_seconds }}
+          INSTANT_SWIFT_DATA_BENCHMARK_COMPARISON_ITERATIONS: 15
+          INSTANT_GATE_MAX_LATENCY_RATIO: 1
+          INSTANT_GATE_MIN_THROUGHPUT_RATIO: 1
+          INSTANT_GATE_MAX_MEMORY_RATIO: 1
+          INSTANT_GATE_MAX_MEMORY_GROWTH_MIB_PER_MINUTE: 0.5
+        run: |
+          chmod +x validation/run-performance-gate.sh
+          ./validation/run-performance-gate.sh --mode release
+
+      - name: Upload release evidence before publication
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-evidence-v${{ inputs.version }}-${{ github.sha }}
+          path: validation/results/performance-gate/
+          if-no-files-found: error
+          retention-days: 365
+
+      - name: Create the verified SwiftPM tag and GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a "v${VERSION}" -m "Instant Swift Data v${VERSION}: correctness and performance gate passed"
+          git push origin "v${VERSION}"
+          gh release create "v${VERSION}" \
+            --verify-tag \
+            --generate-notes \
+            --title "Instant Swift Data v${VERSION}" \
+            validation/results/performance-gate/*/SUMMARY.md \
+            validation/results/performance-gate/*/assessment.json
