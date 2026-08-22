@@ -1,0 +1,32 @@
+name: Performance on Michael's Mac
+
+on:
+  schedule:
+    - cron: "17 9 * * 1"
+  workflow_dispatch:
+    inputs:
+      live:
+        description: Include credentialed Swift↔TypeScript network lanes
+        required: true
+        type: boolean
+        default: false
+
+concurrency:
+  group: instant-data-performance-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  queue-home-runner:
+    name: Strict correctness, memory, latency, and throughput gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v6
+      - name: Queue the performance job on the private Mac runner
+        env:
+          GH_TOKEN: ${{ secrets.HOME_RUNNER_TOKEN }}
+          TARGET_JOB: ${{ github.event_name == 'workflow_dispatch' && inputs.live && 'performance-live' || 'performance' }}
+        run: bash scripts/dispatch-home-runner.sh "${TARGET_JOB}" "${{ github.sha }}"
