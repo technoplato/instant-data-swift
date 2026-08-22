@@ -4,6 +4,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 RESULTS="${HOME_RUNNER_RESULTS_DIR:-${ROOT}/.home-runner-results}/correctness"
 RUNNER="${ROOT}/validation/ts-runner"
+PNPM_VERSION="${INSTANT_SWIFT_DATA_PNPM_VERSION:-9.15.0}"
 rm -rf "${RESULTS}"
 mkdir -p "${RESULTS}"
 export CI=1
@@ -11,6 +12,7 @@ export NO_COLOR=1
 
 echo "Instant Swift Data correctness on $(hostname)"
 echo "commit=$(git -C "${ROOT}" rev-parse HEAD)"
+echo "pnpm=${PNPM_VERSION}"
 
 git -C "${ROOT}" submodule sync -- upstream/instant
 git -C "${ROOT}" submodule update --init --recursive upstream/instant
@@ -18,14 +20,14 @@ corepack enable
 
 node --test "${ROOT}/validation/tests/benchmark-policy.test.mjs" \
   2>&1 | tee "${RESULTS}/benchmark-policy.log"
-corepack pnpm --dir "${RUNNER}" install --frozen-lockfile \
+corepack "pnpm@${PNPM_VERSION}" --dir "${RUNNER}" install --frozen-lockfile \
   2>&1 | tee "${RESULTS}/typescript-install.log"
 swift test --package-path "${ROOT}" -c release \
   2>&1 | tee "${RESULTS}/swift-release-tests.log"
 INSTANT_SWIFT_DATA_MACRO_TESTING_JOBS=1 \
   "${ROOT}/validation/run-macro-tests.sh" \
   2>&1 | tee "${RESULTS}/macro-tests.log"
-corepack pnpm --dir "${RUNNER}" test \
+corepack "pnpm@${PNPM_VERSION}" --dir "${RUNNER}" test \
   2>&1 | tee "${RESULTS}/typescript-contracts.log"
 
 if rg -n '(^|[[:space:]])warning:' \
