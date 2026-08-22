@@ -35,6 +35,9 @@ jobs:
       - name: Install TypeScript contract dependencies
         run: corepack pnpm --dir validation/ts-runner install --frozen-lockfile
 
+      - name: Fail-closed benchmark policy tests
+        run: node --test validation/tests/benchmark-policy.test.mjs
+
       - name: Swift release tests
         run: swift test -c release
 
