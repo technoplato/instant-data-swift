@@ -1,0 +1,32 @@
+name: Normalize transcription home-runner job mode
+
+on:
+  push:
+    branches:
+      - agent/gpt-5-6-pro/impl-2026-08-22-100x-two-hour-transcription-soak-v2
+
+permissions:
+  contents: write
+
+jobs:
+  chmod:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref }}
+          fetch-depth: 0
+      - name: Commit executable job metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          chmod +x .home-runner/transcription-100x-2h.sh
+          if git diff --quiet -- .home-runner/transcription-100x-2h.sh; then
+            exit 0
+          fi
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add .home-runner/transcription-100x-2h.sh
+          git commit -m 'Mark the 100x transcription Mac job executable'
+          git push origin HEAD:${GITHUB_REF_NAME}
