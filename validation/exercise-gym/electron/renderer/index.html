@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'"
+    />
+    <title>Instant Exercise Gym</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        font-family: ui-sans-serif, system-ui, -apple-system, sans-serif;
+        background: #0b1020;
+        color: #e8eefc;
+      }
+      body { margin: 0; padding: 16px; }
+      h1 { font-size: 18px; margin: 0 0 8px; }
+      .meta { opacity: 0.75; font-size: 12px; margin-bottom: 12px; }
+      .row { display: flex; gap: 8px; margin-bottom: 12px; align-items: center; }
+      button {
+        background: #3b82f6; color: white; border: 0; border-radius: 8px;
+        padding: 8px 14px; font-weight: 600; cursor: pointer;
+      }
+      button.stop { background: #ef4444; }
+      .stats {
+        display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px;
+        margin-bottom: 12px;
+      }
+      .stat {
+        background: #141b2f; border: 1px solid #243049; border-radius: 10px;
+        padding: 10px;
+      }
+      .stat .label { font-size: 11px; opacity: 0.7; }
+      .stat .value { font-size: 18px; font-variant-numeric: tabular-nums; }
+      table { width: 100%; border-collapse: collapse; font-size: 12px; }
+      th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid #243049; }
+      th { opacity: 0.7; font-weight: 600; }
+      tbody tr:nth-child(odd) { background: rgba(255,255,255,0.02); }
+      #log {
+        margin-top: 12px; max-height: 120px; overflow: auto;
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 11px; opacity: 0.8; white-space: pre-wrap;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Instant Exercise Gym — Electron live list</h1>
+    <div class="meta">
+      High-frequency Instant writes + read-path observations. clientId + descriptor on every row.
+    </div>
+    <div class="row">
+      <button id="start">Start live</button>
+      <button id="stop" class="stop">Stop</button>
+      <span id="status">idle</span>
+    </div>
+    <div class="stats">
+      <div class="stat"><div class="label">Observed / s</div><div class="value" id="ops">0</div></div>
+      <div class="stat"><div class="label">RTT p50 ms</div><div class="value" id="p50">—</div></div>
+      <div class="stat"><div class="label">App RSS MiB</div><div class="value" id="rss">—</div></div>
+      <div class="stat"><div class="label">Last seq</div><div class="value" id="seq">0</div></div>
+    </div>
+    <table>
+      <thead>
+        <tr>
+          <th>seq</th>
+          <th>rtt ms</th>
+          <th>clientId</th>
+          <th>descriptor</th>
+          <th>entity</th>
+        </tr>
+      </thead>
+      <tbody id="tbody"></tbody>
+    </table>
+    <div id="log"></div>
+    <script src="./app.js"></script>
+  </body>
+</html>
