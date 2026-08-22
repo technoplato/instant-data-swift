@@ -1,0 +1,10 @@
+{
+  "name": "instant-cross-runtime-exercise-gym",
+  "private": true,
+  "type": "module",
+  "version": "0.2.0",
+  "description": "Current-main consolidated Swift/TypeScript correctness and performance report",
+  "devDependencies": {
+    "tsx": "file:./tsx-shim"
+  }
+}
