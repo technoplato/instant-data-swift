@@ -1,4 +1,4 @@
-name: Performance
+name: Performance on Michael's Mac
 
 on:
   schedule:
@@ -6,89 +6,27 @@ on:
   workflow_dispatch:
     inputs:
       live:
-        description: Run credentialed Swift↔TypeScript network lanes
+        description: Include credentialed Swift↔TypeScript network lanes
         required: true
         type: boolean
         default: false
 
 concurrency:
-  group: performance-${{ github.ref }}
+  group: instant-data-performance-${{ github.ref }}
   cancel-in-progress: false
 
 permissions:
   contents: read
 
 jobs:
-  deterministic:
-    name: Strict deterministic publication gate
-    runs-on: macos-15
-    timeout-minutes: 120
+  queue-home-runner:
+    name: Strict correctness, memory, latency, and throughput gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
     steps:
-      - uses: actions/checkout@v4
-        with:
-          submodules: recursive
-          fetch-depth: 0
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: pnpm
-          cache-dependency-path: validation/ts-runner/pnpm-lock.yaml
-
-      - name: Enable pinned pnpm
-        run: corepack enable
-
-      - name: Run correctness, memory, latency, and throughput gates
+      - uses: actions/checkout@v6
+      - name: Queue the performance job on the private Mac runner
         env:
-          INSTANT_SWIFT_DATA_PERFORMANCE_RESULTS_DIR: ${{ runner.temp }}/instant-performance
-          INSTANT_SWIFT_DATA_MAX_P50_RATIO: "1"
-          INSTANT_SWIFT_DATA_MAX_P95_RATIO: "1"
-        run: bash validation/run-performance-gate.sh deterministic
-
-      - name: Upload deterministic evidence
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: instant-performance-${{ github.sha }}
-          path: ${{ runner.temp }}/instant-performance
-          if-no-files-found: error
-          retention-days: 30
-
-  live:
-    name: Bidirectional live synchronization
-    if: ${{ github.event_name == 'workflow_dispatch' && inputs.live }}
-    needs: deterministic
-    runs-on: macos-15
-    timeout-minutes: 120
-    environment: performance-live
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          submodules: recursive
-          fetch-depth: 0
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: pnpm
-          cache-dependency-path: validation/ts-runner/pnpm-lock.yaml
-
-      - name: Enable pinned pnpm
-        run: corepack enable
-
-      - name: Run strict live gate
-        env:
-          INSTANT_CLI_AUTH_TOKEN: ${{ secrets.INSTANT_CLI_AUTH_TOKEN }}
-          INSTANT_SWIFT_DATA_PERFORMANCE_RESULTS_DIR: ${{ runner.temp }}/instant-performance-live
-          INSTANT_SWIFT_DATA_MAX_P50_RATIO: "1"
-          INSTANT_SWIFT_DATA_MAX_P95_RATIO: "1"
-        run: bash validation/run-performance-gate.sh live
-
-      - name: Upload live evidence
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: instant-performance-live-${{ github.sha }}
-          path: ${{ runner.temp }}/instant-performance-live
-          if-no-files-found: error
-          retention-days: 30
+          GH_TOKEN: ${{ secrets.HOME_RUNNER_TOKEN }}
+          TARGET_JOB: ${{ github.event_name == 'workflow_dispatch' && inputs.live && 'performance-live' || 'performance' }}
+        run: bash scripts/dispatch-home-runner.sh "${TARGET_JOB}" "${{ github.sha }}"
