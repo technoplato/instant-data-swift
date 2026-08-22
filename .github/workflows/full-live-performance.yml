@@ -1,0 +1,64 @@
+name: Full live correctness and performance
+
+on:
+  workflow_dispatch:
+    inputs:
+      duration_seconds:
+        description: Sustained seconds per live lane
+        required: false
+        default: "30"
+        type: string
+  schedule:
+    - cron: "17 7 * * *"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: instant-full-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  full-gate:
+    name: Swift↔TypeScript, memory, CPU, and throughput
+    runs-on: macos-15
+    timeout-minutes: 240
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: validation/ts-runner/pnpm-lock.yaml
+
+      - name: Enable pinned package manager
+        run: corepack enable
+
+      - name: Run strict full gate
+        env:
+          INSTANT_CLI_AUTH_TOKEN: ${{ secrets.INSTANT_CLI_AUTH_TOKEN }}
+          INSTANT_APP_ID: ${{ secrets.INSTANT_PERFORMANCE_APP_ID }}
+          INSTANT_ADMIN_TOKEN: ${{ secrets.INSTANT_PERFORMANCE_ADMIN_TOKEN }}
+          INSTANT_APP_ADMIN_TOKEN: ${{ secrets.INSTANT_PERFORMANCE_ADMIN_TOKEN }}
+          INSTANT_SWIFT_DATA_BENCH_DURATION_SECONDS: ${{ inputs.duration_seconds || '30' }}
+          INSTANT_SWIFT_DATA_BENCHMARK_COMPARISON_ITERATIONS: 11
+          INSTANT_GATE_MAX_COST_RATIO: 1
+          INSTANT_GATE_MIN_THROUGHPUT_RATIO: 1
+          INSTANT_GATE_MAX_MEMORY_RATIO: 1
+          INSTANT_GATE_MAX_MEMORY_GROWTH_MIB_PER_MINUTE: 0.5
+        run: |
+          chmod +x validation/run-performance-gate.sh
+          ./validation/run-performance-gate.sh --mode full
+
+      - name: Upload full evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: instant-full-${{ github.sha }}-${{ github.run_attempt }}
+          path: validation/results/performance-gate/
+          if-no-files-found: error
+          retention-days: 90

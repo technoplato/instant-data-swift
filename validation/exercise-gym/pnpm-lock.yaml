@@ -1,0 +1,21 @@
+lockfileVersion: '9.0'
+
+settings:
+  autoInstallPeers: true
+  excludeLinksFromLockfile: false
+
+importers:
+  .:
+    devDependencies:
+      tsx:
+        specifier: file:./tsx-shim
+        version: file:tsx-shim
+
+packages:
+  tsx@file:tsx-shim:
+    resolution: {directory: tsx-shim, type: directory}
+    hasBin: true
+    dev: true
+
+snapshots:
+  tsx@file:tsx-shim: {}
