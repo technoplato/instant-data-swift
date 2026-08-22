@@ -1,3 +1,4 @@
 codex-desktop-019fe75c-root 2026-08-09T12:47:39-0400 mower plan=2026-08-09-outbox-wire-hydration
 codex-desktop/01a00071-f1c1-7193-adcd-3bc9f30b5f95/root 2026-08-15T16:20:00-0400 mower cross-repository-audit-entry plan=2026-08-15-live-query-ownership-diff
 codex-desktop/019fe75c-e769-71b1-a62f-14478e917459/root 2026-08-09T20:23:00-04:00 mower plan=2026-08-09-iphone-replaykit-memory #044 #187
+gpt-5-6-pro 2026-08-22T14:20:00Z grower/mower plan=2026-08-22-100x-two-hour-transcription-soak #155 #156
