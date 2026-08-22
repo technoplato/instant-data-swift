@@ -1,0 +1,16 @@
+{
+  "name": "instant-cross-runtime-exercise-gym",
+  "private": true,
+  "type": "module",
+  "version": "0.2.0",
+  "description": "Consolidated reporting and sustained workload gym for InstantDB TypeScript and Instant Swift Data",
+  "scripts": {
+    "gym": "tsx src/run.ts --suite all",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "22.13.0",
+    "tsx": "4.19.3",
+    "typescript": "5.9.3"
+  }
+}

@@ -1,0 +1,57 @@
+name: Correctness and local performance
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: correctness-local-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  smoke-gate:
+    name: Swift and TypeScript deterministic gate
+    runs-on: macos-15
+    timeout-minutes: 90
+
+    steps:
+      - name: Check out source and references
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          submodules: recursive
+
+      - name: Set up Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: |
+            validation/ts-runner/pnpm-lock.yaml
+            validation/exercise-gym/pnpm-lock.yaml
+
+      - name: Enable pinned package manager
+        run: corepack enable
+
+      - name: Run deterministic correctness and parity gate
+        env:
+          INSTANT_SWIFT_DATA_BENCHMARK_COMPARISON_ITERATIONS: 7
+          INSTANT_GATE_MAX_LATENCY_RATIO: 1
+          INSTANT_GATE_MIN_THROUGHPUT_RATIO: 1
+          INSTANT_GATE_MAX_MEMORY_RATIO: 1
+        run: |
+          chmod +x validation/run-performance-gate.sh
+          ./validation/run-performance-gate.sh --mode smoke
+
+      - name: Upload immutable gate evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: correctness-local-${{ github.sha }}
+          path: validation/results/performance-gate/
+          if-no-files-found: error
+          retention-days: 30
