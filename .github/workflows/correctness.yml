@@ -1,4 +1,4 @@
-name: Correctness
+name: Correctness on Michael's Mac
 
 on:
   pull_request:
@@ -6,50 +6,22 @@ on:
     branches: [main]
 
 concurrency:
-  group: correctness-${{ github.workflow }}-${{ github.ref }}
+  group: instant-data-correctness-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 permissions:
   contents: read
 
 jobs:
-  swift-and-typescript:
+  queue-home-runner:
     name: Swift + TypeScript contracts
-    runs-on: macos-15
-    timeout-minutes: 60
+    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
     steps:
-      - uses: actions/checkout@v4
-        with:
-          submodules: recursive
-          fetch-depth: 0
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: pnpm
-          cache-dependency-path: validation/ts-runner/pnpm-lock.yaml
-
-      - name: Enable pinned pnpm
-        run: corepack enable
-
-      - name: Install TypeScript contract dependencies
-        run: corepack pnpm --dir validation/ts-runner install --frozen-lockfile
-
-      - name: Fail-closed benchmark policy tests
-        run: node --test validation/tests/benchmark-policy.test.mjs
-
-      - name: Swift release tests
-        run: swift test -c release
-
-      - name: Macro tests
+      - uses: actions/checkout@v6
+      - name: Queue exact commit on the private Mac runner
         env:
-          INSTANT_SWIFT_DATA_MACRO_TESTING_JOBS: 1
-        run: bash validation/run-macro-tests.sh
-
-      - name: TypeScript compatibility matrix
-        run: corepack pnpm --dir validation/ts-runner test
-
-      - name: Verify generated contract is clean
-        run: |
-          git diff --exit-code
-          test -z "$(git status --porcelain)"
+          GH_TOKEN: ${{ secrets.HOME_RUNNER_TOKEN }}
+          TARGET_REF: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: bash scripts/dispatch-home-runner.sh correctness "${TARGET_REF}"
