@@ -5,6 +5,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 RUNNER="${ROOT}/validation/ts-runner"
 ITERATIONS="${INSTANT_SWIFT_DATA_BENCHMARK_COMPARISON_ITERATIONS:-5}"
 RESULTS_DIR="${INSTANT_SWIFT_DATA_BENCHMARK_COMPARISON_RESULTS_DIR:-/tmp/instant-data-swift-benchmark-comparison-$(date -u +%Y%m%dT%H%M%SZ)}"
+PNPM_VERSION="${INSTANT_SWIFT_DATA_PNPM_VERSION:-9.15.0}"
 
 if [[ -n "$(git -C "${ROOT}" status --porcelain)" ]]; then
   echo "Cross-SDK benchmark comparison requires a clean worktree." >&2
@@ -36,7 +37,7 @@ swift run --package-path "${ROOT}" -c release instant-swift-data-benchmarks \
   --app-id cross-sdk-core-benchmark \
   --json >"${RESULTS_DIR}/swift-core.json"
 
-corepack pnpm --dir "${RUNNER}" exec tsx src/cross-sdk-core-benchmark.ts \
+corepack "pnpm@${PNPM_VERSION}" --dir "${RUNNER}" exec tsx src/cross-sdk-core-benchmark.ts \
   --iterations "${ITERATIONS}" >"${RESULTS_DIR}/typescript-core.json"
 
 (
@@ -52,7 +53,7 @@ swift run --package-path "${ROOT}" -c release instant-swift-data-benchmarks \
   --app-id cross-sdk-runtime-benchmark \
   --json >"${RESULTS_DIR}/swift-runtime.json"
 
-corepack pnpm --dir "${RUNNER}" exec tsx src/cross-sdk-runtime-benchmark.ts \
+corepack "pnpm@${PNPM_VERSION}" --dir "${RUNNER}" exec tsx src/cross-sdk-runtime-benchmark.ts \
   --iterations "${ITERATIONS}" >"${RESULTS_DIR}/typescript-runtime.json"
 
 (

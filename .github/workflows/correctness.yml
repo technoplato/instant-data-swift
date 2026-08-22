@@ -1,0 +1,27 @@
+name: Correctness on Michael's Mac
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: instant-data-correctness-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  queue-home-runner:
+    name: Swift + TypeScript contracts
+    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v6
+      - name: Queue exact commit on the private Mac runner
+        env:
+          GH_TOKEN: ${{ secrets.HOME_RUNNER_TOKEN }}
+          TARGET_REF: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: bash scripts/dispatch-home-runner.sh correctness "${TARGET_REF}"

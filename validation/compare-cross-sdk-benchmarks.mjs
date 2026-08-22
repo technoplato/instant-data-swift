@@ -6,10 +6,16 @@ import os from "node:os";
 import { resolve } from "node:path";
 
 const [swiftPath, typeScriptPath] = process.argv.slice(2);
-assert.ok(swiftPath && typeScriptPath, "Usage: compare-cross-sdk-benchmarks.mjs <swift.json> <typescript.json>");
+assert.ok(
+  swiftPath && typeScriptPath,
+  "Usage: compare-cross-sdk-benchmarks.mjs <swift.json> <typescript.json>",
+);
 
 const swift = JSON.parse(readFileSync(resolve(swiftPath), "utf8"));
 const typeScript = JSON.parse(readFileSync(resolve(typeScriptPath), "utf8"));
+const maxP50Ratio = positiveNumber("INSTANT_SWIFT_DATA_MAX_P50_RATIO", 1);
+const maxP95Ratio = positiveNumber("INSTANT_SWIFT_DATA_MAX_P95_RATIO", 1);
+
 const workloads = {
   "transaction-transform.scalar": { units: 1_000, unit: "entity" },
   "triple-insert.todos": { units: 1_000, unit: "entity" },
@@ -33,65 +39,73 @@ assert.equal(typeScript.sdk, "typescript");
 assert.equal(typeScript.contractVersion, 1);
 assert.equal(typeScript.ok, true);
 assert.equal(swift.iterations, typeScript.iterations);
-assert.deepStrictEqual(
-  swift.metrics.map((metric) => metric.name),
-  Object.keys(workloads),
-);
-assert.deepStrictEqual(
-  typeScript.metrics.map((metric) => metric.name),
-  Object.keys(workloads),
-);
+assert.deepStrictEqual(swift.metrics.map(({ name }) => name), Object.keys(workloads));
+assert.deepStrictEqual(typeScript.metrics.map(({ name }) => name), Object.keys(workloads));
 
 const swiftMetrics = new Map(swift.metrics.map((metric) => [metric.name, metric]));
-const typeScriptMetrics = new Map(
-  typeScript.metrics.map((metric) => [metric.name, metric]),
-);
+const typeScriptMetrics = new Map(typeScript.metrics.map((metric) => [metric.name, metric]));
 const comparisons = Object.entries(workloads).map(([name, workload]) => {
   const swiftMetric = swiftMetrics.get(name);
   const typeScriptMetric = typeScriptMetrics.get(name);
-  const swiftPerUnit = swiftMetric.p50Nanoseconds / workload.units;
-  const typeScriptPerUnit = typeScriptMetric.p50Nanoseconds / workload.units;
-  const ratio = swiftPerUnit / typeScriptPerUnit;
-  const slower = ratio > 1;
-  const optimizationTarget = slower
-    ? optimizationTargetFor(name, ratio)
-    : undefined;
+  assert.ok(swiftMetric && typeScriptMetric, `Missing benchmark metric ${name}`);
+
+  const p50Ratio = ratio(swiftMetric.p50Nanoseconds, typeScriptMetric.p50Nanoseconds);
+  const p95Ratio = ratio(swiftMetric.p95Nanoseconds, typeScriptMetric.p95Nanoseconds);
+  const resultCountParity = sampleFieldParity(swiftMetric, typeScriptMetric, "resultCount");
+  const explicitHashParity = optionalHashParity(swiftMetric, typeScriptMetric);
+  const correctnessPass = resultCountParity && explicitHashParity;
+  const performancePass = p50Ratio <= maxP50Ratio && p95Ratio <= maxP95Ratio;
+  const pass = correctnessPass && performancePass;
+
   return {
     name,
     unit: workload.unit,
     units: workload.units,
     swiftP50Nanoseconds: swiftMetric.p50Nanoseconds,
     typeScriptP50Nanoseconds: typeScriptMetric.p50Nanoseconds,
-    swiftNanosecondsPerUnit: swiftPerUnit,
-    typeScriptNanosecondsPerUnit: typeScriptPerUnit,
-    swiftToTypeScriptRatio: ratio,
-    deltaPercent: (ratio - 1) * 100,
-    status: slower ? "optimization-target" : "meets-or-exceeds",
-    ...(optimizationTarget ? { optimizationTarget } : {}),
+    swiftP95Nanoseconds: swiftMetric.p95Nanoseconds,
+    typeScriptP95Nanoseconds: typeScriptMetric.p95Nanoseconds,
+    swiftNanosecondsPerUnit: swiftMetric.p50Nanoseconds / workload.units,
+    typeScriptNanosecondsPerUnit: typeScriptMetric.p50Nanoseconds / workload.units,
+    swiftToTypeScriptP50Ratio: p50Ratio,
+    swiftToTypeScriptP95Ratio: p95Ratio,
+    limits: { maxP50Ratio, maxP95Ratio },
+    correctness: {
+      resultCountParity,
+      explicitHashParity,
+      evidence: "SDK-internal assertions plus cross-SDK result-count parity; explicit hashes are compared when emitted",
+    },
+    status: pass ? "pass" : "fail",
+    failures: [
+      ...(p50Ratio > maxP50Ratio
+        ? [`p50 ratio ${p50Ratio.toFixed(3)} exceeds ${maxP50Ratio}`]
+        : []),
+      ...(p95Ratio > maxP95Ratio
+        ? [`p95 ratio ${p95Ratio.toFixed(3)} exceeds ${maxP95Ratio}`]
+        : []),
+      ...(!resultCountParity ? ["result-count samples differ"] : []),
+      ...(!explicitHashParity ? ["correctness hashes differ"] : []),
+    ],
   };
 });
 
-const slower = comparisons.filter(
-  (comparison) => comparison.status === "optimization-target",
-);
+const failures = comparisons.filter(({ status }) => status === "fail");
 const result = {
   case: "benchmark.cross-sdk.core-comparison",
   event: "release-mode-summary",
-  ok: comparisons.every(
-    (comparison) =>
-      comparison.status === "meets-or-exceeds"
-      || Boolean(comparison.optimizationTarget?.id)
-      && Boolean(comparison.optimizationTarget?.reason),
-  ),
+  ok: failures.length === 0,
+  policy: {
+    failClosed: true,
+    maxP50Ratio,
+    maxP95Ratio,
+    note: "An optimization explanation never converts a failed metric into a pass.",
+  },
   details: {
-    contractVersion: 1,
+    contractVersion: 2,
     iterations: swift.iterations,
     swiftRevision: git("rev-parse", "HEAD"),
     upstreamRevision: git("-C", "upstream/instant", "rev-parse", "HEAD"),
-    versions: {
-      typeScriptCore: typeScript.coreVersion,
-      node: process.version,
-    },
+    versions: { typeScriptCore: typeScript.coreVersion, node: process.version },
     environment: {
       platform: os.platform(),
       release: os.release(),
@@ -102,46 +116,43 @@ const result = {
     },
     summary: {
       workloadCount: comparisons.length,
-      meetsOrExceedsCount: comparisons.length - slower.length,
-      optimizationTargetCount: slower.length,
+      passCount: comparisons.length - failures.length,
+      failureCount: failures.length,
     },
     comparisons,
   },
 };
 
-assert.equal(result.ok, true);
 process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+if (!result.ok) process.exitCode = 1;
 
-function optimizationTargetFor(name, ratio) {
-  const category = name.startsWith("query-") || name.includes("query")
-    ? "query-materialization"
-    : name.includes("linked") || name.includes("link")
-      ? "link-indexing"
-      : name.includes("transform")
-        ? "transaction-lowering"
-        : name.includes("storage") || name.includes("stream")
-          ? "system-record-materialization"
-          : "incremental-store-commit";
-  const reasons = {
-    "query-materialization":
-      "Swift currently materializes Sendable value snapshots and performs stable typed ordering across actor isolation; the canonical TypeScript store returns JavaScript object graphs from persistent-map indexes.",
-    "link-indexing":
-      "Swift validates typed refs and rebuilds value-semantic index snapshots at commit boundaries; the canonical TypeScript store applies optimized persistent-map link updates.",
-    "transaction-lowering":
-      "Swift constructs strongly typed Sendable operation values and deterministically sorts payload fields; TypeScript lowers proxy transaction chunks directly into JavaScript arrays.",
-    "system-record-materialization":
-      "This core comparison models system metadata as typed value records; Swift pays typed decoding and stable ordering costs that JavaScript defers to dynamic objects.",
-    "incremental-store-commit":
-      "Swift's current actor store commits through value-semantic snapshots and index reconstruction, while the canonical TypeScript store uses optimized structural sharing.",
-  };
-  return {
-    id: `perf.${category}.${name}`,
-    targetRatio: 1,
-    observedRatio: ratio,
-    reason: reasons[category],
-    nextAction:
-      "Profile this exact workload, preserve semantics, and reduce the release-mode Swift p50 to at most the canonical TypeScript p50 on the same machine.",
-  };
+function ratio(numerator, denominator) {
+  assert.ok(Number.isFinite(numerator) && numerator >= 0, "Invalid Swift duration");
+  assert.ok(Number.isFinite(denominator) && denominator > 0, "Invalid TypeScript duration");
+  return numerator / denominator;
+}
+
+function sampleFieldParity(a, b, field) {
+  const left = a.samples.map((sample) => sample[field] ?? null);
+  const right = b.samples.map((sample) => sample[field] ?? null);
+  if (left.every((value) => value === null) && right.every((value) => value === null)) {
+    return true;
+  }
+  return JSON.stringify(left) === JSON.stringify(right);
+}
+
+function optionalHashParity(a, b) {
+  const left = a.correctnessHash ?? null;
+  const right = b.correctnessHash ?? null;
+  return left === null && right === null ? true : left === right;
+}
+
+function positiveNumber(name, fallback) {
+  const raw = process.env[name];
+  if (raw === undefined || raw === "") return fallback;
+  const value = Number(raw);
+  assert.ok(Number.isFinite(value) && value > 0, `${name} must be a positive number`);
+  return value;
 }
 
 function git(...args) {

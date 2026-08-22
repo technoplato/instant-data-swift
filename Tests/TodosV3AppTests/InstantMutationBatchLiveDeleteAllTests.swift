@@ -3,7 +3,7 @@ import Dependencies
 import Foundation
 import InstantSwiftData
 import Testing
-import TodosV3App
+@testable import TodosV3App
 
 /// Live multi-device contract: batch delete-all must reach Instant (not local-only).
 @Suite(.serialized)
