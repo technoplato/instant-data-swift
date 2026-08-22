@@ -14,6 +14,7 @@ MODE="${1:-${INSTANT_SWIFT_DATA_PERFORMANCE_MODE:-deterministic}}"
 RESULTS_DIR="${INSTANT_SWIFT_DATA_PERFORMANCE_RESULTS_DIR:-${ROOT}/validation/results/performance-gate-$(date -u +%Y%m%dT%H%M%SZ)}"
 RUNNER="${ROOT}/validation/ts-runner"
 GYM="${ROOT}/validation/exercise-gym"
+PNPM_VERSION="${INSTANT_SWIFT_DATA_PNPM_VERSION:-9.15.0}"
 
 case "${MODE}" in
   deterministic|live|all) ;;
@@ -30,7 +31,7 @@ mkdir -p "${RESULTS_DIR}"
 export CI=1
 export NO_COLOR=1
 
-echo "[gate] mode=${MODE} results=${RESULTS_DIR}"
+echo "[gate] mode=${MODE} results=${RESULTS_DIR} pnpm=${PNPM_VERSION}"
 git -C "${ROOT}" rev-parse HEAD | tee "${RESULTS_DIR}/swift-revision.txt"
 
 git -C "${ROOT}" submodule sync -- upstream/instant
@@ -46,9 +47,9 @@ if [[ "${ACTUAL_UPSTREAM}" != "${EXPECTED_UPSTREAM}" ]]; then
   exit 1
 fi
 
-corepack pnpm --dir "${RUNNER}" install --frozen-lockfile \
+corepack "pnpm@${PNPM_VERSION}" --dir "${RUNNER}" install --frozen-lockfile \
   >"${RESULTS_DIR}/typescript-install.log" 2>&1
-corepack pnpm --dir "${RUNNER}" test \
+corepack "pnpm@${PNPM_VERSION}" --dir "${RUNNER}" test \
   >"${RESULTS_DIR}/typescript-contracts.log" 2>&1
 
 swift test --package-path "${ROOT}" -c release \
@@ -63,6 +64,7 @@ INSTANT_SWIFT_DATA_SCRIBE_SOAK_RESULTS_DIR="${RESULTS_DIR}/scribe-memory" \
 
 INSTANT_SWIFT_DATA_BENCHMARK_COMPARISON_RESULTS_DIR="${RESULTS_DIR}/cross-sdk" \
 INSTANT_SWIFT_DATA_BENCHMARK_COMPARISON_ITERATIONS="${INSTANT_SWIFT_DATA_BENCHMARK_COMPARISON_ITERATIONS:-7}" \
+INSTANT_SWIFT_DATA_PNPM_VERSION="${PNPM_VERSION}" \
   "${ROOT}/validation/run-cross-sdk-benchmark-comparison.sh" \
   >"${RESULTS_DIR}/cross-sdk.log" 2>&1
 
@@ -79,11 +81,11 @@ GYM_REPORT=""
 if [[ "${MODE}" == "all" ]]; then
   : "${INSTANT_APP_ID:?all mode requires INSTANT_APP_ID}"
   : "${INSTANT_ADMIN_TOKEN:?all mode requires INSTANT_ADMIN_TOKEN}"
-  corepack pnpm --dir "${GYM}" install --no-frozen-lockfile \
+  corepack "pnpm@${PNPM_VERSION}" --dir "${GYM}" install --no-frozen-lockfile \
     >"${RESULTS_DIR}/gym-install.log" 2>&1
-  corepack pnpm --dir "${GYM}" run typecheck \
+  corepack "pnpm@${PNPM_VERSION}" --dir "${GYM}" run typecheck \
     >"${RESULTS_DIR}/gym-typecheck.log" 2>&1
-  corepack pnpm --dir "${GYM}" exec tsx src/full-compare.ts \
+  corepack "pnpm@${PNPM_VERSION}" --dir "${GYM}" exec tsx src/full-compare.ts \
     --simple "${INSTANT_EXERCISE_GYM_SIMPLE_WRITES:-100}" \
     --complex "${INSTANT_EXERCISE_GYM_COMPLEX_WRITES:-20}" \
     --out "${RESULTS_DIR}/exercise-gym" \
