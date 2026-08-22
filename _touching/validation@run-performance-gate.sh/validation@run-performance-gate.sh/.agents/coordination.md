@@ -1,0 +1,1 @@
+The 100× soak consumes the native-media/backpressure plan as an independent progressive-audio lane. Do not alter its retry, spool, or publication contract; only assert that transcript progress remains independent and bounded.
