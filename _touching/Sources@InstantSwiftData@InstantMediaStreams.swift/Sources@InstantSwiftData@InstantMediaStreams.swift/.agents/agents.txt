@@ -1,2 +1,1 @@
-gpt-5-6-pro 2026-08-22T14:20:00Z grower/mower plan=2026-08-22-100x-two-hour-transcription-soak #155 #156
 gpt-5-6-pro 2026-08-22T15:25:00Z grower/mower plan=2026-08-22-native-media-streams parent=2026-08-22-100x-two-hour-transcription-soak #155 #156
