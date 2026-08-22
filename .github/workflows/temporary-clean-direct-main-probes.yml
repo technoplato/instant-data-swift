@@ -1,0 +1,40 @@
+name: Temporary cleanup of direct-main probes
+
+on:
+  push:
+    branches:
+      - codex/performance-correctness-gate-2026-08-22
+
+permissions:
+  contents: write
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - name: Remove only exact temporary probe files
+        run: |
+          set -euo pipefail
+          changed=0
+          probe='.github/.write-access-probe-20260822'
+          if [[ -f "$probe" ]] && [[ "$(cat "$probe")" == 'write-access verified for performance audit branch' ]]; then
+            git rm "$probe"
+            changed=1
+          fi
+          wip='AUDIT-WORK-IN-PROGRESS.md'
+          if [[ -f "$wip" ]] && grep -Fq 'This branch is reserved for the 2026-08-22 cross-runtime memory' "$wip"; then
+            git rm "$wip"
+            changed=1
+          fi
+          if [[ "$changed" -eq 0 ]]; then
+            echo 'No exact temporary probes found.'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'chore: remove temporary write-access probes'
+          git push origin HEAD:main
