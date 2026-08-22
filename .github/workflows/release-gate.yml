@@ -1,0 +1,77 @@
+name: Publish gated release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Semantic version without the v prefix
+        required: true
+        type: string
+
+concurrency:
+  group: instant-data-release
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+env:
+  RELEASE_RESULTS: ${{ runner.temp }}/instant-release-gate
+
+jobs:
+  verify-and-publish:
+    name: Verify and create version
+    runs-on: macos-15
+    timeout-minutes: 180
+    environment: release
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          submodules: recursive
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: validation/ts-runner/pnpm-lock.yaml
+
+      - name: Enable pinned pnpm
+        run: corepack enable
+
+      - name: Validate requested version
+        run: bash scripts/validate-release-version.sh "${{ inputs.version }}"
+
+      - name: Run strict deterministic and bidirectional live gates
+        env:
+          INSTANT_CLI_AUTH_TOKEN: ${{ secrets.INSTANT_CLI_AUTH_TOKEN }}
+          INSTANT_SWIFT_DATA_PERFORMANCE_RESULTS_DIR: ${{ env.RELEASE_RESULTS }}
+          INSTANT_SWIFT_DATA_MAX_P50_RATIO: "1"
+          INSTANT_SWIFT_DATA_MAX_P95_RATIO: "1"
+        run: bash validation/run-performance-gate.sh live
+
+      - name: Upload immutable release evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: instant-data-v${{ inputs.version }}-evidence
+          path: ${{ env.RELEASE_RESULTS }}
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Create tag only after every gate passes
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          test "$(git branch --show-current)" = "main"
+          test -z "$(git status --porcelain)"
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git tag -a "v${VERSION}" -m "Instant Swift Data v${VERSION}"
+          git push origin "v${VERSION}"
+
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ inputs.version }}
+        run: gh release create "v${VERSION}" --verify-tag --title "v${VERSION}" --notes-file "docs/releases/v${VERSION}.md"
