@@ -1,0 +1,97 @@
+name: Publish verified SwiftPM version
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Exact value from VERSION, without v
+        required: true
+        type: string
+      duration_seconds:
+        description: Sustained seconds per live lane
+        required: false
+        default: "60"
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: instant-publish-version
+  cancel-in-progress: false
+
+jobs:
+  gate-and-publish:
+    name: Test first, create tag last
+    runs-on: macos-15
+    timeout-minutes: 300
+    environment: production-release
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Require exact main candidate and unused matching version
+        env:
+          RELEASE_VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          git fetch origin main --tags
+          test "$(git rev-parse HEAD)" = "$(git rev-parse origin/main)"
+          test -f VERSION
+          test "$(tr -d '[:space:]' < VERSION)" = "${RELEASE_VERSION}"
+          [[ "${RELEASE_VERSION}" =~ ^[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]]
+          ! git rev-parse "refs/tags/v${RELEASE_VERSION}" >/dev/null 2>&1
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: validation/ts-runner/pnpm-lock.yaml
+
+      - name: Enable pinned package manager
+        run: corepack enable
+
+      - name: Run strict release gate
+        env:
+          RELEASE_VERSION: ${{ inputs.version }}
+          INSTANT_CLI_AUTH_TOKEN: ${{ secrets.INSTANT_CLI_AUTH_TOKEN }}
+          INSTANT_APP_ID: ${{ secrets.INSTANT_PERFORMANCE_APP_ID }}
+          INSTANT_ADMIN_TOKEN: ${{ secrets.INSTANT_PERFORMANCE_ADMIN_TOKEN }}
+          INSTANT_APP_ADMIN_TOKEN: ${{ secrets.INSTANT_PERFORMANCE_ADMIN_TOKEN }}
+          INSTANT_SWIFT_DATA_BENCH_DURATION_SECONDS: ${{ inputs.duration_seconds }}
+          INSTANT_SWIFT_DATA_BENCHMARK_COMPARISON_ITERATIONS: 15
+          INSTANT_GATE_MAX_COST_RATIO: 1
+          INSTANT_GATE_MIN_THROUGHPUT_RATIO: 1
+          INSTANT_GATE_MAX_MEMORY_RATIO: 1
+          INSTANT_GATE_MAX_MEMORY_GROWTH_MIB_PER_MINUTE: 0.5
+        run: |
+          chmod +x validation/run-performance-gate.sh
+          ./validation/run-performance-gate.sh --mode release
+
+      - name: Upload immutable release evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: instant-release-v${{ inputs.version }}-${{ github.sha }}
+          path: validation/results/performance-gate/
+          if-no-files-found: error
+          retention-days: 365
+
+      - name: Publish tag and GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git tag -a "v${RELEASE_VERSION}" -m "Instant Swift Data v${RELEASE_VERSION}: release gate passed"
+          git push origin "v${RELEASE_VERSION}"
+          gh release create "v${RELEASE_VERSION}" \
+            --verify-tag \
+            --generate-notes \
+            --title "Instant Swift Data v${RELEASE_VERSION}" \
+            validation/results/performance-gate/*/SUMMARY.md \
+            validation/results/performance-gate/*/assessment.json
