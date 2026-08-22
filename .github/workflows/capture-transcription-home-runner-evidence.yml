@@ -1,0 +1,93 @@
+name: Capture 100x transcription Mac evidence
+
+on:
+  push:
+    branches:
+      - agent/gpt-5-6-pro/impl-2026-08-22-100x-two-hour-transcription-soak-v2
+
+permissions:
+  contents: write
+
+concurrency:
+  group: capture-transcription-home-runner-evidence
+  cancel-in-progress: true
+
+jobs:
+  capture:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    env:
+      GH_TOKEN: ${{ secrets.HOME_RUNNER_TOKEN }}
+      TARGET_REF: ${{ github.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref }}
+          fetch-depth: 0
+
+      - name: Dispatch and capture the Mac run
+        id: run
+        shell: bash
+        run: |
+          set -uo pipefail
+          mkdir -p validation/results/accelerated-transcription/latest
+          started_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          gh workflow run run-job.yml \
+            --repo technoplato/home-runner \
+            --ref main \
+            -f repo=technoplato/instant-data-swift \
+            -f job=transcription-100x-2h \
+            -f ref="${TARGET_REF}"
+          run_id=""
+          for _ in $(seq 1 30); do
+            run_id="$(
+              gh run list \
+                --repo technoplato/home-runner \
+                --workflow run-job.yml \
+                --event workflow_dispatch \
+                --limit 20 \
+                --json databaseId,createdAt \
+                --jq '[.[] | select(.createdAt >= "'"${started_at}"'")][0].databaseId // empty'
+            )"
+            [[ -n "${run_id}" ]] && break
+            sleep 2
+          done
+          status=1
+          if [[ -n "${run_id}" ]]; then
+            gh run watch "${run_id}" --repo technoplato/home-runner --exit-status
+            status=$?
+            gh run view "${run_id}" --repo technoplato/home-runner --log \
+              | tail -n 3000 \
+              | sed -E 's/((TOKEN|SECRET|PASSWORD)[A-Z0-9_]*=)[^[:space:]]+/\1[REDACTED]/Ig' \
+              > validation/results/accelerated-transcription/latest/home-runner.log
+          else
+            echo 'No dispatched home-runner run appeared.' \
+              > validation/results/accelerated-transcription/latest/home-runner.log
+          fi
+          cat > validation/results/accelerated-transcription/latest/status.json <<EOF
+          {
+            "targetRevision": "${TARGET_REF}",
+            "homeRunnerRunID": "${run_id}",
+            "exitCode": ${status},
+            "capturedAt": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          }
+          EOF
+          echo "status=${status}" >> "${GITHUB_OUTPUT}"
+          exit 0
+
+      - name: Commit the redacted diagnostic evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add validation/results/accelerated-transcription/latest
+          git commit -m 'Record the latest 100x transcription Mac evidence' || exit 0
+          git pull --rebase origin "${GITHUB_REF_NAME}"
+          git push origin HEAD:"${GITHUB_REF_NAME}"
+
+      - name: Preserve the Mac conclusion
+        if: always()
+        shell: bash
+        run: exit "${{ steps.run.outputs.status || 1 }}"
