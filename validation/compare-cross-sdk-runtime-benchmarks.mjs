@@ -13,6 +13,15 @@ assert.ok(
 
 const swift = JSON.parse(readFileSync(resolve(swiftPath), "utf8"));
 const typeScript = JSON.parse(readFileSync(resolve(typeScriptPath), "utf8"));
+const maxP50Ratio = positiveNumber(
+  "INSTANT_SWIFT_DATA_MAX_RUNTIME_P50_RATIO",
+  positiveNumber("INSTANT_SWIFT_DATA_MAX_P50_RATIO", 1),
+);
+const maxP95Ratio = positiveNumber(
+  "INSTANT_SWIFT_DATA_MAX_RUNTIME_P95_RATIO",
+  positiveNumber("INSTANT_SWIFT_DATA_MAX_P95_RATIO", 1),
+);
+
 const workloads = {
   "pending-mutation-enqueue.update": { units: 1, unit: "mutation" },
   "offline-restore.relaunch": { units: 1, unit: "relaunch" },
@@ -28,62 +37,91 @@ assert.equal(typeScript.contractVersion, 1);
 assert.equal(typeScript.persistence, "canonical-indexeddb-semantics-fake-backend");
 assert.equal(typeScript.ok, true);
 assert.equal(swift.iterations, typeScript.iterations);
-assert.deepStrictEqual(swift.metrics.map((metric) => metric.name), Object.keys(workloads));
-assert.deepStrictEqual(
-  typeScript.metrics.map((metric) => metric.name),
-  Object.keys(workloads),
-);
+assert.deepStrictEqual(swift.metrics.map(({ name }) => name), Object.keys(workloads));
+assert.deepStrictEqual(typeScript.metrics.map(({ name }) => name), Object.keys(workloads));
 
 const swiftMetrics = new Map(swift.metrics.map((metric) => [metric.name, metric]));
 const typeScriptMetrics = new Map(typeScript.metrics.map((metric) => [metric.name, metric]));
 const comparisons = Object.entries(workloads).map(([name, workload]) => {
   const swiftMetric = swiftMetrics.get(name);
   const typeScriptMetric = typeScriptMetrics.get(name);
-  const ratio = swiftMetric.p50Nanoseconds / typeScriptMetric.p50Nanoseconds;
+  assert.ok(swiftMetric && typeScriptMetric, `Missing benchmark metric ${name}`);
+
   const actorHopCounts = swiftMetric.samples.map((sample) => sample.actorHopCount);
-  assert.ok(actorHopCounts.every((count) => Number.isInteger(count) && count > 0));
-  const slower = ratio > 1;
+  const actorHopInstrumentationValid = actorHopCounts.every(
+    (count) => Number.isInteger(count) && count > 0,
+  );
+  const p50Ratio = ratio(swiftMetric.p50Nanoseconds, typeScriptMetric.p50Nanoseconds);
+  const p95Ratio = ratio(swiftMetric.p95Nanoseconds, typeScriptMetric.p95Nanoseconds);
+  const pendingCountParity = sampleFieldParity(
+    swiftMetric,
+    typeScriptMetric,
+    "pendingMutationCount",
+  );
+  const resultCountParity = sampleFieldParity(swiftMetric, typeScriptMetric, "resultCount");
+  const correctnessPass =
+    actorHopInstrumentationValid && pendingCountParity && resultCountParity;
+  const performancePass = p50Ratio <= maxP50Ratio && p95Ratio <= maxP95Ratio;
+  const pass = correctnessPass && performancePass;
+
   return {
     name,
     unit: workload.unit,
     units: workload.units,
     swiftP50Nanoseconds: swiftMetric.p50Nanoseconds,
     typeScriptP50Nanoseconds: typeScriptMetric.p50Nanoseconds,
-    swiftToTypeScriptRatio: ratio,
-    deltaPercent: (ratio - 1) * 100,
+    swiftP95Nanoseconds: swiftMetric.p95Nanoseconds,
+    typeScriptP95Nanoseconds: typeScriptMetric.p95Nanoseconds,
+    swiftToTypeScriptP50Ratio: p50Ratio,
+    swiftToTypeScriptP95Ratio: p95Ratio,
+    limits: { maxP50Ratio, maxP95Ratio },
     swiftActorHops: {
+      valid: actorHopInstrumentationValid,
       counts: actorHopCounts,
       breakdowns: swiftMetric.samples.map((sample) => sample.actorHopBreakdown),
     },
-    status: slower ? "optimization-target" : "meets-or-exceeds",
-    ...(slower ? { optimizationTarget: optimizationTargetFor(name, ratio) } : {}),
+    correctness: {
+      pendingCountParity,
+      resultCountParity,
+      evidence: "durable pending-count/result-count parity plus Swift actor-hop instrumentation",
+    },
+    status: pass ? "pass" : "fail",
+    failures: [
+      ...(p50Ratio > maxP50Ratio
+        ? [`p50 ratio ${p50Ratio.toFixed(3)} exceeds ${maxP50Ratio}`]
+        : []),
+      ...(p95Ratio > maxP95Ratio
+        ? [`p95 ratio ${p95Ratio.toFixed(3)} exceeds ${maxP95Ratio}`]
+        : []),
+      ...(!pendingCountParity ? ["pending-mutation counts differ"] : []),
+      ...(!resultCountParity ? ["result counts differ"] : []),
+      ...(!actorHopInstrumentationValid ? ["Swift actor-hop evidence is missing"] : []),
+    ],
   };
 });
 
-const slower = comparisons.filter(({ status }) => status === "optimization-target");
+const failures = comparisons.filter(({ status }) => status === "fail");
 const result = {
   case: "benchmark.cross-sdk.runtime-comparison",
   event: "release-mode-summary",
-  ok: comparisons.every(
-    (comparison) =>
-      comparison.status === "meets-or-exceeds"
-      || Boolean(comparison.optimizationTarget?.id)
-        && Boolean(comparison.optimizationTarget?.reason),
-  ),
+  ok: failures.length === 0,
+  policy: {
+    failClosed: true,
+    maxP50Ratio,
+    maxP95Ratio,
+    note: "Durability or latency regressions block publication; explanations are diagnostic only.",
+  },
   details: {
-    contractVersion: 1,
+    contractVersion: 2,
     iterations: swift.iterations,
     swiftRevision: git("rev-parse", "HEAD"),
     upstreamRevision: git("-C", "upstream/instant", "rev-parse", "HEAD"),
-    versions: {
-      typeScriptCore: typeScript.coreVersion,
-      node: process.version,
-    },
+    versions: { typeScriptCore: typeScript.coreVersion, node: process.version },
     persistence: {
       swift: "SQLite file-backed runtime",
       typeScript: typeScript.persistence,
       comparability:
-        "The logical durable-state workload is identical; storage media are platform-native and the TypeScript benchmark uses fake-indexeddb for reproducible Node execution.",
+        "The logical durable-state chronology is identical; storage engines remain platform-native.",
     },
     environment: {
       platform: os.platform(),
@@ -95,43 +133,40 @@ const result = {
     },
     summary: {
       workloadCount: comparisons.length,
-      meetsOrExceedsCount: comparisons.length - slower.length,
-      optimizationTargetCount: slower.length,
-      actorHopInstrumentedWorkloadCount: comparisons.length,
+      passCount: comparisons.length - failures.length,
+      failureCount: failures.length,
+      actorHopInstrumentedWorkloadCount: comparisons.filter(
+        ({ swiftActorHops }) => swiftActorHops.valid,
+      ).length,
     },
     comparisons,
   },
 };
 
-assert.equal(result.ok, true);
 process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+if (!result.ok) process.exitCode = 1;
 
-function optimizationTargetFor(name, ratio) {
-  const details = {
-    "pending-mutation-enqueue.update": {
-      category: "durable-enqueue",
-      reason:
-        "Swift validates typed operations, crosses its operation, store, outbox, and persistence actors, and commits a SQLite snapshot; TypeScript lowers dynamic chunks into its pending map and persists IndexedDB state.",
-    },
-    "offline-restore.relaunch": {
-      category: "durable-restore",
-      reason:
-        "Swift opens and decodes a file-backed SQLite snapshot before restoring typed store and outbox actors; the canonical TypeScript persistence semantics run over an in-process fake IndexedDB backend in this reproducible Node gate.",
-    },
-    "reconnect-outbox-drain": {
-      category: "outbox-drain",
-      reason:
-        "Swift reconnects its runtime state, sends through the mutation transport boundary, and commits confirmed outbox state through actor-isolated SQLite; TypeScript acknowledges and persists its canonical pending-mutation state machine.",
-    },
-  }[name];
-  return {
-    id: `perf.${details.category}.${name}`,
-    targetRatio: 1,
-    observedRatio: ratio,
-    reason: details.reason,
-    nextAction:
-      "Profile this exact workload and its recorded Swift actor-hop breakdown, preserve semantics, and reduce the release-mode Swift p50 to at most the canonical TypeScript p50 on the same machine.",
-  };
+function ratio(numerator, denominator) {
+  assert.ok(Number.isFinite(numerator) && numerator >= 0, "Invalid Swift duration");
+  assert.ok(Number.isFinite(denominator) && denominator > 0, "Invalid TypeScript duration");
+  return numerator / denominator;
+}
+
+function sampleFieldParity(a, b, field) {
+  const left = a.samples.map((sample) => sample[field] ?? null);
+  const right = b.samples.map((sample) => sample[field] ?? null);
+  if (left.every((value) => value === null) && right.every((value) => value === null)) {
+    return true;
+  }
+  return JSON.stringify(left) === JSON.stringify(right);
+}
+
+function positiveNumber(name, fallback) {
+  const raw = process.env[name];
+  if (raw === undefined || raw === "") return fallback;
+  const value = Number(raw);
+  assert.ok(Number.isFinite(value) && value > 0, `${name} must be a positive number`);
+  return value;
 }
 
 function git(...args) {
