@@ -44,15 +44,26 @@ corepack "pnpm@${PNPM_VERSION}" --dir "${RUNNER}" install --frozen-lockfile \
 # held by `swift test`.
 #
 # NOTE: DomainAEV 0.069 ms is the TypeScript InstaQL floor. Keep the bar.
-# `--filter` still compiles every package test target, including gym apps.
-# Score DomainAEV in InstantSwiftDataDomainAEVTests first, before gym
-# products compile. If it fails, still run the remaining suite, then fail
-# closed.
+# Swift 6.3 `swift test` has no `--target`. `--filter` still compiles every
+# package test target, including gym apps. Score the floor by building and
+# running `instant-domain-aev-bench` before gym products compile. If it
+# fails, still run the remaining suite, then fail closed.
 domain_aev_status=0
-swift test --package-path "${ROOT}" -c release --no-parallel \
-  --target InstantSwiftDataDomainAEVTests \
-  2>&1 | tee "${RESULTS}/swift-release-domain-aev.log" \
+swift build --package-path "${ROOT}" -c release --product instant-domain-aev-bench \
+  2>&1 | tee "${RESULTS}/swift-release-domain-aev-build.log" \
   || domain_aev_status=$?
+if [[ "${domain_aev_status}" -eq 0 ]]; then
+  DOMAIN_AEV_BIN="$(
+    swift build --package-path "${ROOT}" -c release \
+      --product instant-domain-aev-bench --show-bin-path
+  )"
+  "${DOMAIN_AEV_BIN}/instant-domain-aev-bench" \
+    2>&1 | tee "${RESULTS}/swift-release-domain-aev.log" \
+    || domain_aev_status=$?
+else
+  printf '%s\n' "DOMAIN_AEV_SHIP_GATE failed: instant-domain-aev-bench did not build" \
+    | tee "${RESULTS}/swift-release-domain-aev.log"
+fi
 printf '%s\n' "${domain_aev_status}" > "${RESULTS}/domain-aev-exit.txt"
 
 swift build --package-path "${ROOT}" -c release --product instant-swift-data \
@@ -92,6 +103,7 @@ import sys
 results = Path(sys.argv[1])
 logs = [
     results / "swift-release-cli-products.log",
+    results / "swift-release-domain-aev-build.log",
     results / "swift-release-domain-aev.log",
     results / "swift-release-tests.log",
     results / "macro-tests.log",
@@ -125,6 +137,7 @@ const results = process.env.RESULTS;
 for (const file of [
   "benchmark-policy.log",
   "swift-release-cli-products.log",
+  "swift-release-domain-aev-build.log",
   "swift-release-domain-aev.log",
   "swift-release-tests.log",
   "macro-tests.log",
@@ -152,7 +165,7 @@ const remaining = readFileSync(
   "utf8",
 );
 assert.match(domainAev, /STORE_ONLY_BENCH/);
-assert.match(domainAev, /Test run with .* passed/);
+assert.match(domainAev, /DOMAIN_AEV_SHIP_GATE passed/);
 assert.match(remaining, /Test run with .* passed/);
 const evidence = {
   case: "instant-swift-data.home-runner.correctness",

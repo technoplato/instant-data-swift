@@ -65,6 +65,10 @@ let package = Package(
       name: "scribe-shaped-20s-write-bench",
       targets: ["ScribeShaped20sWriteBench"]
     ),
+    .executable(
+      name: "instant-domain-aev-bench",
+      targets: ["InstantDomainAEVBench"]
+    ),
   ],
   dependencies: [
     // Accept the CasePaths 1.x line so TCA hosts can unify on their newer compatible release.
@@ -307,6 +311,13 @@ let package = Package(
     ),
     .executableTarget(
       name: "ScribeShaped20sWriteBench",
+      dependencies: [
+        "InstantSwiftDataCore",
+      ],
+      swiftSettings: strictConcurrencySettings
+    ),
+    .executableTarget(
+      name: "InstantDomainAEVBench",
       dependencies: [
         "InstantSwiftDataCore",
       ],

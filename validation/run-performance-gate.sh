@@ -53,15 +53,25 @@ corepack "pnpm@${PNPM_VERSION}" --dir "${RUNNER}" test \
   >"${RESULTS_DIR}/typescript-contracts.log" 2>&1
 
 # NOTE: DomainAEV 0.069 ms is the TypeScript InstaQL floor. Keep the bar.
-# `--filter` still compiles every package test target, including gym apps.
-# Score DomainAEV in InstantSwiftDataDomainAEVTests first, before gym
-# products compile. If it fails, still run the remaining suite, then fail
-# closed.
+# Swift 6.3 `swift test` has no `--target`. Score the floor by building and
+# running `instant-domain-aev-bench` before gym products compile. If it
+# fails, still run the remaining suite, then fail closed.
 domain_aev_status=0
-swift test --package-path "${ROOT}" -c release --no-parallel \
-  --target InstantSwiftDataDomainAEVTests \
-  >"${RESULTS_DIR}/swift-release-domain-aev.log" 2>&1 \
+swift build --package-path "${ROOT}" -c release --product instant-domain-aev-bench \
+  >"${RESULTS_DIR}/swift-release-domain-aev-build.log" 2>&1 \
   || domain_aev_status=$?
+if [[ "${domain_aev_status}" -eq 0 ]]; then
+  DOMAIN_AEV_BIN="$(
+    swift build --package-path "${ROOT}" -c release \
+      --product instant-domain-aev-bench --show-bin-path
+  )"
+  "${DOMAIN_AEV_BIN}/instant-domain-aev-bench" \
+    >"${RESULTS_DIR}/swift-release-domain-aev.log" 2>&1 \
+    || domain_aev_status=$?
+else
+  printf '%s\n' "DOMAIN_AEV_SHIP_GATE failed: instant-domain-aev-bench did not build" \
+    >"${RESULTS_DIR}/swift-release-domain-aev.log"
+fi
 printf '%s\n' "${domain_aev_status}" > "${RESULTS_DIR}/domain-aev-exit.txt"
 
 # Nested `swift run` waits forever on the package `.build.lock` held by
@@ -152,7 +162,7 @@ const remaining = readFileSync(
   "utf8",
 );
 assert.match(domainAev, /STORE_ONLY_BENCH/);
-assert.match(domainAev, /Test run with .* passed/);
+assert.match(domainAev, /DOMAIN_AEV_SHIP_GATE passed/);
 assert.match(remaining, /Test run with .* passed/);
 const comparison = readJSON(resolve(results, "cross-sdk/comparison.json"));
 const memory = readJSON(resolve(results, "scribe-memory/evidence.json"));
@@ -216,6 +226,7 @@ import sys
 results = Path(sys.argv[1])
 logs = [
     results / "swift-release-cli-products.log",
+    results / "swift-release-domain-aev-build.log",
     results / "swift-release-domain-aev.log",
     results / "swift-release-tests.log",
     results / "macro-tests.log",
