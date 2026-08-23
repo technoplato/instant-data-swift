@@ -225,7 +225,7 @@ public actor InstantMediaStreamBuffer<Frame: InstantMediaStreamFrame> {
     metricsValue.totalEnqueuedFrames += 1
     metricsValue.peakResidentBytes = max(metricsValue.peakResidentBytes, residentBytes)
     metricsValue.peakResidentFrames = max(metricsValue.peakResidentFrames, count)
-    resumeElementWaiters()
+    resumeOneElementWaiter()
   }
 
   public func next() async throws -> Frame? {
@@ -236,7 +236,7 @@ public actor InstantMediaStreamBuffer<Frame: InstantMediaStreamFrame> {
     let frame = removeFirst()
     if frame != nil {
       metricsValue.totalDequeuedFrames += 1
-      resumeSpaceWaiters()
+      resumeOneSpaceWaiter()
     }
     return frame
   }
@@ -298,6 +298,22 @@ public actor InstantMediaStreamBuffer<Frame: InstantMediaStreamFrame> {
 
   private func cancelElementWaiter(_ id: UUID) {
     elementWaiters.removeValue(forKey: id)?.resume(throwing: CancellationError())
+  }
+
+  /// Resume only one blocked producer for one newly available queue slot.
+  /// Waking every producer creates an avoidable actor-hop stampede where all but
+  /// one immediately suspend again under a bounded lossless policy.
+  private func resumeOneSpaceWaiter() {
+    guard let (id, waiter) = spaceWaiters.first else { return }
+    spaceWaiters.removeValue(forKey: id)
+    waiter.resume()
+  }
+
+  /// Resume only one consumer for one newly enqueued frame.
+  private func resumeOneElementWaiter() {
+    guard let (id, waiter) = elementWaiters.first else { return }
+    elementWaiters.removeValue(forKey: id)
+    waiter.resume()
   }
 
   private func resumeSpaceWaiters(throwing error: (any Error)? = nil) {
