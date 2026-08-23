@@ -12,5 +12,5 @@ export INSTANT_SWIFT_DATA_MAX_P95_RATIO="${INSTANT_SWIFT_DATA_MAX_P95_RATIO:-1}"
 export INSTANT_SWIFT_DATA_BENCHMARK_COMPARISON_ITERATIONS="${INSTANT_SWIFT_DATA_BENCHMARK_COMPARISON_ITERATIONS:-7}"
 
 echo "Instant Swift Data strict deterministic performance gate on $(hostname)"
-"${ROOT}/validation/run-performance-gate.sh" deterministic \
+bash "${ROOT}/validation/run-performance-gate.sh" deterministic \
   2>&1 | tee "${RESULTS}/home-runner.log"
