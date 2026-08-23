@@ -6,19 +6,15 @@ RESULTS="${HOME_RUNNER_RESULTS_DIR:-${ROOT}/.home-runner-results}/performance-li
 rm -rf "${RESULTS}"
 mkdir -p "${RESULTS}"
 
-# Explicit suite credentials, when configured, take precedence. Otherwise the
-# live wire harness provisions an isolated temporary app through getadb.com.
-for env_file in \
-  "${HOME}/.config/instant-tools/instant.env" \
-  "${HOME}/.config/instant-tools/scribe-main.env"
-do
-  if [[ -f "${env_file}" ]]; then
-    set -a
-    # shellcheck disable=SC1090
-    source "${env_file}"
-    set +a
-  fi
-done
+# Only a test-suite-specific environment file may override ephemeral getadb
+# provisioning. Never inherit Scribe or general-purpose production app secrets.
+TEST_ENV_FILE="${INSTANT_SWIFT_DATA_TEST_ENV_FILE:-${HOME}/.config/instant-tools/instant-data-swift-test.env}"
+if [[ -f "${TEST_ENV_FILE}" ]]; then
+  set -a
+  # shellcheck disable=SC1090
+  source "${TEST_ENV_FILE}"
+  set +a
+fi
 
 export INSTANT_SWIFT_DATA_PERFORMANCE_RESULTS_DIR="${RESULTS}"
 export INSTANT_SWIFT_DATA_MAX_P50_RATIO="${INSTANT_SWIFT_DATA_MAX_P50_RATIO:-1}"
