@@ -1,5 +1,6 @@
 # Instant self-host for Exercise Gym (localhost).
 # Base services from upstream Instant self-hosting + host port publish.
+# Local credentials load from gitignored docker/.env via env_file.
 name: instant-exercise-gym
 
 services:
@@ -7,10 +8,12 @@ services:
     image: ghcr.io/instantdb/postgresql:postgresql-16-pg-hint-plan
     ports:
       - "8890:5432"
+    env_file:
+      - .env
     environment:
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-instant_gym_pass}
       POSTGRES_USER: ${POSTGRES_USER:-instant}
       POSTGRES_DB: ${POSTGRES_DB:-instant}
+      GYM_PG_AUTH: ${GYM_PG_AUTH:?run scripts/docker-up.sh to write docker/.env}
     volumes:
       - "backend-db:/var/lib/postgresql/data"
     healthcheck:
@@ -46,9 +49,11 @@ services:
     ports:
       - "9000:9000"
       - "9001:9001"
+    env_file:
+      - .env
     environment:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:-instantminio}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-instantminiopass}
+      GYM_OBJECT_STORE_AUTH: ${GYM_OBJECT_STORE_AUTH:?run scripts/docker-up.sh to write docker/.env}
       MINIO_BROWSER: "on"
       MINIO_SKIP_CLIENT_CERT_VALIDATION: "on"
     command: server /data --console-address ":9001" --address ":9000"
@@ -62,16 +67,18 @@ services:
 
   createbuckets:
     image: minio/mc
+    env_file:
+      - .env
     environment:
-      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-instantminio}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-instantminiopass}
+      GYM_OBJECT_STORE_USER: ${GYM_OBJECT_STORE_USER:-instantminio}
+      GYM_OBJECT_STORE_AUTH: ${GYM_OBJECT_STORE_AUTH:?run scripts/docker-up.sh to write docker/.env}
       S3_BUCKET: ${S3_BUCKET:-instant-bucket}
     depends_on:
       minio:
         condition: service_healthy
     entrypoint: >
       /bin/sh -c "
-      /usr/bin/mc alias set local http://minio:9000 $$MINIO_ROOT_USER $$MINIO_ROOT_PASSWORD;
+      /usr/bin/mc alias set local http://minio:9000 $$GYM_OBJECT_STORE_USER $$GYM_OBJECT_STORE_AUTH;
       /usr/bin/mc mb --ignore-existing local/$$S3_BUCKET;
       exit"
 
@@ -84,9 +91,11 @@ services:
     image: "ghcr.io/instantdb/server:latest"
     ports:
       - "8888:8888"
+    env_file:
+      - .env
     environment:
       WAL_HISTORY_STORAGE: pg
-      DATABASE_URL: "postgresql://${POSTGRES_USER:-instant}:${POSTGRES_PASSWORD:-instant_gym_pass}@postgres:5432/${POSTGRES_DB:-instant}?sslmode=disable"
+      DATABASE_URL: ${GYM_DATABASE_DSN:?run scripts/docker-up.sh to write docker/.env}
       INSTANT_BACKEND_URL: ${INSTANT_BACKEND_URL:-http://localhost:8888}
       INSTANT_DASHBOARD_URL: ${INSTANT_DASHBOARD_URL:-http://localhost:3000}
       STRIPE_API_KEY: ${STRIPE_API_KEY:-}
@@ -98,8 +107,7 @@ services:
       INSTANT_APP_EMAIL_SENDER_EMAIL: ${INSTANT_APP_EMAIL_SENDER_EMAIL:-}
       INSTANT_TEAM_EMAIL_SENDER_NAME: ${INSTANT_TEAM_EMAIL_SENDER_NAME:-}
       INSTANT_TEAM_EMAIL_SENDER_EMAIL: ${INSTANT_TEAM_EMAIL_SENDER_EMAIL:-}
-      AWS_ACCESS_KEY_ID: ${MINIO_ROOT_USER:-instantminio}
-      AWS_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD:-instantminiopass}
+      AWS_ACCESS_KEY_ID: ${GYM_OBJECT_STORE_USER:-instantminio}
       AWS_REGION: ${AWS_REGION:-us-east-1}
       S3_ENDPOINT: ${S3_ENDPOINT:-http://minio:9000}
       S3_PUBLIC_ENDPOINT: ${S3_PUBLIC_ENDPOINT:-http://localhost:9000}
