@@ -11,10 +11,12 @@ rm -rf "${RESULTS}"
 mkdir -p "${RESULTS}"
 export CI=1
 export NO_COLOR=1
+export MACOSX_DEPLOYMENT_TARGET="${MACOSX_DEPLOYMENT_TARGET:-14.0}"
 
 echo "Instant Swift Data correctness on $(hostname)"
 echo "commit=$(git -C "${ROOT}" rev-parse HEAD)"
 echo "pnpm=${PNPM_VERSION}"
+echo "macOS deployment target=${MACOSX_DEPLOYMENT_TARGET}"
 
 git -C "${ROOT}" submodule sync -- upstream/instant
 git -C "${ROOT}" submodule update --init --recursive upstream/instant
