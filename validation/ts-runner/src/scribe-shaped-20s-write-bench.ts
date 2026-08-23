@@ -10,7 +10,7 @@
  */
 import { spawn, type ChildProcessByStdio } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { performance } from "node:perf_hooks";
@@ -70,6 +70,12 @@ const wordsPerUpsert = Number(
     ?? process.env.INSTANT_SWIFT_DATA_BENCH_WORDS_PER_UPSERT
     ?? "12",
 );
+const parsedDrainTimeout = Number(
+  flagValue(args, "--drain-timeout")
+    ?? process.env.INSTANT_SWIFT_DATA_BENCH_DRAIN_TIMEOUT_SECONDS
+    ?? "30",
+);
+const drainTimeoutSeconds = parsedDrainTimeout > 0 ? parsedDrainTimeout : 30;
 
 const appId = requiredEnvironment("INSTANT_APP_ID");
 const adminToken = requiredEnvironment("INSTANT_ADMIN_TOKEN");
@@ -117,6 +123,7 @@ async function coordinate() {
     const scenarioSegmentID = randomUUID();
     await seedEntities(admin, scenarioRecordingID, scenarioSegmentID);
 
+    const writerFinalPath = resolve(resultsDir, `${entry.scenario}-writer-final.json`);
     const commonEnv = {
       ...process.env,
       INSTANT_APP_ID: appId,
@@ -128,11 +135,15 @@ async function coordinate() {
       INSTANT_SWIFT_DATA_BENCH_SEGMENT_ID: scenarioSegmentID,
       INSTANT_SWIFT_DATA_BENCH_DURATION_SECONDS: String(durationSeconds),
       INSTANT_SWIFT_DATA_BENCH_WORDS_PER_UPSERT: String(wordsPerUpsert),
+      INSTANT_SWIFT_DATA_BENCH_WRITER_FINAL_PATH: writerFinalPath,
+      INSTANT_SWIFT_DATA_BENCH_DRAIN_TIMEOUT_SECONDS: String(drainTimeoutSeconds),
     };
 
     // Observer first (subscription/poll hot), then writer. Each process starts its
-    // 20s clock only after printing BENCH_READY (post auth/seed), so Swift process
-    // spawn time does not eat the observer window.
+    // scored clock only after printing BENCH_READY (post auth/seed), so Swift process
+    // spawn time does not eat the observer window. After the writer stops, the
+    // observer keeps polling until it matches writer final sequence/word count or
+    // the fail-closed drain timeout.
     const observerHandle =
       entry.observer === "ts-admin"
         ? startAdminRole("observer", entry.scenario, {
@@ -143,6 +154,8 @@ async function coordinate() {
           segmentID: scenarioSegmentID,
           durationSeconds,
           wordsPerUpsert,
+          writerFinalPath,
+          drainTimeoutSeconds,
         })
         : startSwift("observer", entry.scenario, {
           ...commonEnv,
@@ -165,10 +178,15 @@ async function coordinate() {
           INSTANT_SWIFT_DATA_BENCH_DURATION_SECONDS: String(durationSeconds),
         });
     await writerHandle.ready;
-    const [writer, observer] = await Promise.all([
-      writerHandle.result,
-      observerHandle.result,
-    ]);
+    const writer = await writerHandle.result;
+    writeFileSync(
+      writerFinalPath,
+      `${JSON.stringify({
+        maxSeqSeen: Number(writer.maxSeqSeen ?? 0),
+        finalWordCount: Number(writer.finalWordCount ?? 0),
+      })}\n`,
+    );
+    const observer = await observerHandle.result;
 
     // Post-flight admin read (ground truth on the server for this segment).
     const verify = await admin.query({
@@ -216,6 +234,7 @@ async function coordinate() {
     ok: scenarios.every((s) => s.validWritesObserved >= 0 && s.writer?.ok !== false && s.observer?.ok !== false),
     appID: appId,
     durationSeconds,
+    drainTimeoutSeconds,
     wordsPerUpsert,
     profile: "open-segment-words-json",
     compareRule: "network-vs-network-only",
@@ -249,6 +268,7 @@ async function coordinate() {
       "validWritesObserved counts monotonic seq advances seen by the observer process.",
       "Never ratio local store throughput against these network numbers.",
       "Words are a JSON blob on the single open segment (no word entities).",
+      "Observers keep polling after the writer stops until writer final sequence and word count match, or the fail-closed drain timeout.",
     ],
     timestampMs: Date.now(),
   };
@@ -361,6 +381,8 @@ async function runAdminObserver(
     segmentID: string;
     durationSeconds: number;
     wordsPerUpsert: number;
+    writerFinalPath?: string;
+    drainTimeoutSeconds?: number;
   },
 ) {
   const app = opts?.appId ?? appId;
@@ -370,6 +392,10 @@ async function runAdminObserver(
   const segmentID = opts?.segmentID ?? requiredEnvironment("INSTANT_SWIFT_DATA_BENCH_SEGMENT_ID");
   const duration = opts?.durationSeconds ?? durationSeconds;
   const wordsN = opts?.wordsPerUpsert ?? wordsPerUpsert;
+  const writerFinalPath =
+    opts?.writerFinalPath
+    ?? process.env.INSTANT_SWIFT_DATA_BENCH_WRITER_FINAL_PATH;
+  const drainTimeout = opts?.drainTimeoutSeconds ?? drainTimeoutSeconds;
 
   const admin = initAdmin({ appId: app, adminToken: token, apiURI: uri, schema, useDateObjects: true });
   // Touch the namespace once before READY so the first timed poll is warm.
@@ -384,7 +410,7 @@ async function runAdminObserver(
   const started = performance.now();
   const deadline = started + duration * 1000;
 
-  while (performance.now() < deadline) {
+  async function observeOnce() {
     // Prefer unfiltered namespace scan + client-side id match: concurrent live
     // writes have returned empty for `$where: { id }` mid-flight even when the
     // row is present (post-flight verify with the same where works).
@@ -398,8 +424,35 @@ async function runAdminObserver(
       finalWordCount = Math.max(finalWordCount, Number(row.wordCount ?? 0));
     }
     rssPeak = Math.max(rssPeak, process.memoryUsage().rss);
+  }
+
+  while (performance.now() < deadline) {
+    await observeOnce();
     await sleep(25);
   }
+
+  const drainStarted = performance.now();
+  let writerFinal = loadWriterFinal(writerFinalPath);
+  let drainTimedOut = false;
+  while (true) {
+    await observeOnce();
+    if (!writerFinal) {
+      writerFinal = loadWriterFinal(writerFinalPath);
+    }
+    if (
+      writerFinal
+      && maxSeqSeen >= writerFinal.maxSeqSeen
+      && finalWordCount >= writerFinal.finalWordCount
+    ) {
+      break;
+    }
+    if ((performance.now() - drainStarted) >= drainTimeout * 1000) {
+      drainTimedOut = true;
+      break;
+    }
+    await sleep(25);
+  }
+  const drainWallSeconds = (performance.now() - drainStarted) / 1000;
 
   const wallSeconds = (performance.now() - started) / 1000;
   const cpu = process.cpuUsage(cpuStart);
@@ -423,6 +476,10 @@ async function runAdminObserver(
     finalWordCount,
     wordsPerUpsert: wordsN,
     ok: true,
+    drainWallSeconds,
+    drainTimedOut,
+    writerFinalSequence: writerFinal?.maxSeqSeen ?? null,
+    writerFinalWordCount: writerFinal?.finalWordCount ?? null,
     process: {
       rssStartBytes: memStart.rss,
       rssPeakBytes: rssPeak,
@@ -433,6 +490,7 @@ async function runAdminObserver(
     },
     notes: [
       "Observer polls admin.query for monotonic seq advances (network path).",
+      "Observer keeps polling after the writer duration until writer final sequence and word count match, or the fail-closed drain timeout.",
     ],
     timestampMs: Date.now(),
   };
@@ -474,6 +532,8 @@ function startAdminRole(
     segmentID: string;
     durationSeconds: number;
     wordsPerUpsert: number;
+    writerFinalPath?: string;
+    drainTimeoutSeconds?: number;
   },
 ): RoleHandle {
   let resolveReady!: () => void;
@@ -632,6 +692,23 @@ function flagValue(argv: string[], name: string): string | undefined {
 
 function sleep(ms: number) {
   return new Promise((resolvePromise) => setTimeout(resolvePromise, ms));
+}
+
+function loadWriterFinal(
+  path: string | undefined,
+): { maxSeqSeen: number; finalWordCount: number } | null {
+  if (!path || !existsSync(path)) return null;
+  try {
+    const parsed = JSON.parse(readFileSync(path, "utf8"));
+    const maxSeqSeen = Number(parsed.maxSeqSeen);
+    const finalWordCount = Number(parsed.finalWordCount);
+    if (!Number.isFinite(maxSeqSeen) || !Number.isFinite(finalWordCount)) {
+      return null;
+    }
+    return { maxSeqSeen, finalWordCount };
+  } catch {
+    return null;
+  }
 }
 
 function firstEntity(collection: any, id: string): any | undefined {

@@ -1,0 +1,36 @@
+name: Bidirectional Wire Correctness on Michael's Mac
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/wire-correctness.yml'
+      - '.home-runner/wire-correctness.sh'
+      - 'Sources/InstantSwiftDataCore/**'
+      - 'Sources/ScribeShaped20sWriteBench/**'
+      - 'validation/assert-bidirectional-wire-correctness.mjs'
+      - 'validation/run-scribe-shaped-20s-write-bench.sh'
+      - 'validation/ts-runner/src/scribe-shaped-20s-write-bench.ts'
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: instant-data-wire-correctness-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  queue-home-runner:
+    name: TypeScript writer ↔ Swift reader and Swift writer ↔ TypeScript reader
+    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v6
+      - name: Queue exact commit on the private Mac runner
+        env:
+          GH_TOKEN: ${{ secrets.HOME_RUNNER_TOKEN }}
+          TARGET_REF: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: bash scripts/dispatch-home-runner.sh wire-correctness "${TARGET_REF}"

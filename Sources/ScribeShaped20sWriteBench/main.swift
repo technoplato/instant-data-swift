@@ -17,6 +17,8 @@ import InstantSwiftDataCore
 ///   INSTANT_WEBSOCKET_URI
 ///   INSTANT_SWIFT_DATA_BENCH_DURATION_SECONDS (default 20)
 ///   INSTANT_SWIFT_DATA_BENCH_WORDS_PER_UPSERT (default 12)
+///   INSTANT_SWIFT_DATA_BENCH_WRITER_FINAL_PATH
+///   INSTANT_SWIFT_DATA_BENCH_DRAIN_TIMEOUT_SECONDS (default 30)
 @main
 struct ScribeShaped20sWriteBench {
   static func main() async {

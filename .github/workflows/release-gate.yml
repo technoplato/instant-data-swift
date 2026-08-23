@@ -1,0 +1,24 @@
+name: Publish latest gated release on Michael's Mac
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: instant-data-release
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  queue-home-runner-release:
+    name: Verify, tag, and publish only after every gate passes
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    environment: release
+    steps:
+      - uses: actions/checkout@v6
+      - name: Queue the release publisher on the private Mac runner
+        env:
+          GH_TOKEN: ${{ secrets.HOME_RUNNER_TOKEN }}
+        run: bash scripts/dispatch-home-runner.sh release "${{ github.sha }}"
