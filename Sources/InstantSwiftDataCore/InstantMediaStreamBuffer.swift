@@ -87,14 +87,82 @@ public struct InstantMediaStreamBufferMetrics: Codable, Equatable, Hashable, Sen
   }
 }
 
+/// Amortized O(1) FIFO storage that never shifts live media payloads.
+///
+/// The backing array grows geometrically only up to the caller's explicit frame
+/// bound. Popping a frame clears its slot immediately, releasing the payload
+/// without retaining a consumed prefix or periodically copying the remaining queue.
+private struct InstantMediaRingStorage<Element> {
+  private var elements: ContiguousArray<Element?>
+  private var head = 0
+  private(set) var count = 0
+  private let maximumCapacity: Int
+
+  init(maximumCapacity: Int) {
+    self.maximumCapacity = maximumCapacity
+    self.elements = ContiguousArray(
+      repeating: nil,
+      count: min(maximumCapacity, 16)
+    )
+  }
+
+  mutating func append(_ element: Element) {
+    precondition(count < maximumCapacity)
+    if count == elements.count {
+      grow()
+    }
+    let index = (head + count) % elements.count
+    elements[index] = element
+    count += 1
+  }
+
+  mutating func popFirst() -> Element? {
+    guard count > 0 else { return nil }
+    let element = elements[head]
+    elements[head] = nil
+    head = (head + 1) % elements.count
+    count -= 1
+    if count == 0 {
+      head = 0
+    }
+    return element
+  }
+
+  mutating func removeAll(releasingCapacity: Bool) {
+    guard count > 0 || releasingCapacity else { return }
+    if releasingCapacity {
+      elements = ContiguousArray(
+        repeating: nil,
+        count: min(maximumCapacity, 16)
+      )
+    } else {
+      for offset in 0..<count {
+        elements[(head + offset) % elements.count] = nil
+      }
+    }
+    head = 0
+    count = 0
+  }
+
+  private mutating func grow() {
+    let nextCapacity = min(maximumCapacity, max(1, elements.count * 2))
+    precondition(nextCapacity > elements.count)
+    var grown = ContiguousArray<Element?>(repeating: nil, count: nextCapacity)
+    for offset in 0..<count {
+      grown[offset] = elements[(head + offset) % elements.count]
+    }
+    elements = grown
+    head = 0
+  }
+}
+
 /// Byte- and frame-bounded asynchronous media channel.
 ///
 /// The default policy suspends producers instead of accumulating an unbounded
 /// array. Cancellation and finish release every continuation and retained frame.
 public actor InstantMediaStreamBuffer<Frame: InstantMediaStreamFrame> {
   private let policy: InstantMediaStreamBufferPolicy
-  private var storage: [Frame] = []
-  private var headIndex = 0
+  private var storage: InstantMediaRingStorage<Frame>
   private var residentBytes = 0
   private var isClosed = false
 
@@ -107,6 +175,7 @@ public actor InstantMediaStreamBuffer<Frame: InstantMediaStreamFrame> {
       throw InstantMediaStreamBufferError.invalidPolicy
     }
     self.policy = policy
+    self.storage = InstantMediaRingStorage(maximumCapacity: policy.maximumFrames)
   }
 
   public var metrics: InstantMediaStreamBufferMetrics {
@@ -116,7 +185,7 @@ public actor InstantMediaStreamBuffer<Frame: InstantMediaStreamFrame> {
     return metrics
   }
 
-  public var count: Int { storage.count - headIndex }
+  public var count: Int { storage.count }
   public var bufferedByteCount: Int { residentBytes }
 
   public func send(_ frame: Frame) async throws {
@@ -183,8 +252,7 @@ public actor InstantMediaStreamBuffer<Frame: InstantMediaStreamFrame> {
   public func cancel() {
     guard !isClosed || count > 0 else { return }
     isClosed = true
-    storage.removeAll(keepingCapacity: false)
-    headIndex = 0
+    storage.removeAll(releasingCapacity: true)
     residentBytes = 0
     resumeElementWaiters(throwing: CancellationError())
     resumeSpaceWaiters(throwing: CancellationError())
@@ -197,17 +265,8 @@ public actor InstantMediaStreamBuffer<Frame: InstantMediaStreamFrame> {
 
   @discardableResult
   private func removeFirst() -> Frame? {
-    guard headIndex < storage.count else { return nil }
-    let frame = storage[headIndex]
+    guard let frame = storage.popFirst() else { return nil }
     residentBytes -= frame.payload.count
-    headIndex += 1
-    if headIndex >= 64, headIndex * 2 >= storage.count {
-      storage.removeFirst(headIndex)
-      headIndex = 0
-    } else if headIndex == storage.count {
-      storage.removeAll(keepingCapacity: true)
-      headIndex = 0
-    }
     return frame
   }
 
