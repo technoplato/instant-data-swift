@@ -109,9 +109,7 @@ import Testing
       )
 
       let mutationID = try await waitForV3RecordingActionMutation(runtime)
-      let pendingCreate = try #require(
-        await runtime.pendingMutations().first(where: { $0.id == mutationID })
-      )
+      let pendingCreate = try await requirePendingMutation(runtime, id: mutationID)
       let createTransport = try v3RecordingTransportShape(pendingCreate)
       expectNoDifference(createTransport.preconditions, [
         "entity-missing",
@@ -252,8 +250,9 @@ import Testing
       )
 
       let attachmentMutationID = try await waitForV3RecordingActionMutation(runtime)
-      let pendingAttachment = try #require(
-        await runtime.pendingMutations().first(where: { $0.id == attachmentMutationID })
+      let pendingAttachment = try await requirePendingMutation(
+        runtime,
+        id: attachmentMutationID
       )
       let attachmentTransport = try v3RecordingTransportShape(pendingAttachment)
       expectNoDifference(attachmentTransport.preconditions, ["entity-missing"])
@@ -295,9 +294,7 @@ import Testing
       )
 
       let finishMutationID = try await waitForV3RecordingActionMutation(runtime)
-      let pendingFinish = try #require(
-        await runtime.pendingMutations().first(where: { $0.id == finishMutationID })
-      )
+      let pendingFinish = try await requirePendingMutation(runtime, id: finishMutationID)
       let finishTransport = try v3RecordingTransportShape(pendingFinish)
       expectNoDifference(finishTransport.preconditions, [
         "entity-exists",
@@ -1218,6 +1215,17 @@ import Testing
         }
       )
     )
+  }
+
+  // NOTE: Keep `#require` on the local array. Wrapping
+  // `await pendingMutations().first(where:)` inside `#require` on a
+  // `@MainActor` test SIGTRAPs in Release (isolation assert).
+  private func requirePendingMutation(
+    _ runtime: InstantRuntime,
+    id: String
+  ) async throws -> PendingMutation {
+    let pending = await runtime.pendingMutations()
+    return try #require(pending.first(where: { $0.id == id }))
   }
 
   private func waitForV3RecordingActionMutation(_ runtime: InstantRuntime) async throws
