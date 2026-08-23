@@ -66,6 +66,10 @@ for (const requirement of required) {
     writerWordCount,
     observerWordCount,
     serverWordCount,
+    drainWallSeconds: Number(row.observer?.drainWallSeconds ?? 0),
+    drainTimedOut: row.observer?.drainTimedOut === true,
+    writerFinalSequence: row.observer?.writerFinalSequence ?? null,
+    writerFinalWordCount: row.observer?.writerFinalWordCount ?? null,
     checks,
   });
 }

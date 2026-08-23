@@ -164,6 +164,10 @@ public struct ScribeOpenSegmentBenchResult: Codable, Equatable, Sendable {
   public var ok: Bool
   public var process: ScribeOpenSegmentBenchProcessMetrics
   public var notes: [String]
+  public var drainWallSeconds: Double
+  public var drainTimedOut: Bool
+  public var writerFinalSequence: Int?
+  public var writerFinalWordCount: Int?
   public var timestampMs: Int64
 
   public init(
@@ -184,6 +188,10 @@ public struct ScribeOpenSegmentBenchResult: Codable, Equatable, Sendable {
     ok: Bool,
     process: ScribeOpenSegmentBenchProcessMetrics,
     notes: [String] = [],
+    drainWallSeconds: Double = 0,
+    drainTimedOut: Bool = false,
+    writerFinalSequence: Int? = nil,
+    writerFinalWordCount: Int? = nil,
     timestampMs: Int64 = Int64(Date().timeIntervalSince1970 * 1_000)
   ) {
     self.suite = suite
@@ -203,6 +211,10 @@ public struct ScribeOpenSegmentBenchResult: Codable, Equatable, Sendable {
     self.ok = ok
     self.process = process
     self.notes = notes
+    self.drainWallSeconds = drainWallSeconds
+    self.drainTimedOut = drainTimedOut
+    self.writerFinalSequence = writerFinalSequence
+    self.writerFinalWordCount = writerFinalWordCount
     self.timestampMs = timestampMs
   }
 }
@@ -211,6 +223,7 @@ public struct ScribeOpenSegmentBenchResult: Codable, Equatable, Sendable {
 public enum ScribeOpenSegmentNetworkBench {
   public static let defaultDurationSeconds: Double = 20
   public static let defaultWordsPerUpsert = 12
+  public static let defaultDrainTimeoutSeconds: Double = 30
 
   public static func runWriter(
     appID: String,
@@ -377,10 +390,20 @@ public enum ScribeOpenSegmentNetworkBench {
     // Seed always starts at seq 0; first sight must not become the baseline or
     // a late first poll undercounts every intermediate write.
     let baselineSeq = 0
+    let environment = ProcessInfo.processInfo.environment
+    let writerFinalPath = environment["INSTANT_SWIFT_DATA_BENCH_WRITER_FINAL_PATH"]
+    let drainTimeoutSeconds: Double = {
+      if let parsed = Double(environment["INSTANT_SWIFT_DATA_BENCH_DRAIN_TIMEOUT_SECONDS"] ?? ""),
+        parsed > 0
+      {
+        return parsed
+      }
+      return defaultDrainTimeoutSeconds
+    }()
     let started = ContinuousClock.now
     let deadline = started + .seconds(durationSeconds)
 
-    while ContinuousClock.now < deadline {
+    func observeOnce() async {
       if let emission = try? await runtime.queryOnce(plan) {
         if let seq = seq(from: emission) {
           maxSeqSeen = max(maxSeqSeen, seq)
@@ -393,8 +416,34 @@ public enum ScribeOpenSegmentNetworkBench {
         peakFootprint = max(peakFootprint, sample.physicalFootprintBytes)
         peakResident = max(peakResident, sample.residentBytes)
       }
+    }
+
+    while ContinuousClock.now < deadline {
+      await observeOnce()
       try await Task.sleep(for: .milliseconds(25))
     }
+
+    let drainStarted = ContinuousClock.now
+    var writerFinal = loadWriterFinal(from: writerFinalPath)
+    var drainTimedOut = false
+    while true {
+      await observeOnce()
+      if writerFinal == nil {
+        writerFinal = loadWriterFinal(from: writerFinalPath)
+      }
+      if let writerFinal,
+        maxSeqSeen >= writerFinal.maxSeqSeen,
+        finalWordCount >= writerFinal.finalWordCount
+      {
+        break
+      }
+      if seconds(ContinuousClock.now - drainStarted) >= drainTimeoutSeconds {
+        drainTimedOut = true
+        break
+      }
+      try await Task.sleep(for: .milliseconds(25))
+    }
+    let drainWallSeconds = seconds(ContinuousClock.now - drainStarted)
 
     let wall = ContinuousClock.now - started
     let wallSeconds = seconds(wall)
@@ -428,11 +477,27 @@ public enum ScribeOpenSegmentNetworkBench {
       notes: [
         "validWritesObserved = maxSeqSeen - seed baseline 0 (monotonic advances observed live).",
         "Physical footprint only (never VSZ as a gate).",
-      ]
+        "Observer keeps polling after the writer duration until writer final sequence and word count match, or the fail-closed drain timeout.",
+      ],
+      drainWallSeconds: drainWallSeconds,
+      drainTimedOut: drainTimedOut,
+      writerFinalSequence: writerFinal?.maxSeqSeen,
+      writerFinalWordCount: writerFinal?.finalWordCount
     )
   }
 
   // MARK: - Internals
+
+  private struct WriterFinalTarget: Decodable {
+    var maxSeqSeen: Int
+    var finalWordCount: Int
+  }
+
+  private static func loadWriterFinal(from path: String?) -> WriterFinalTarget? {
+    guard let path, !path.isEmpty else { return nil }
+    guard let data = try? Data(contentsOf: URL(fileURLWithPath: path)) else { return nil }
+    return try? JSONDecoder().decode(WriterFinalTarget.self, from: data)
+  }
 
   private static func waitForServerAcceptance(
     runtime: InstantRuntime,
