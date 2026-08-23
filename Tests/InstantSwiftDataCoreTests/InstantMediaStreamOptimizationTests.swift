@@ -70,7 +70,8 @@ struct InstantMediaStreamOptimizationTests {
     )
 
     let binaryBytes = try binary.encode(frame)
-    let compatibilityBytes = Data(try compatibility.encode(frame).utf8)
+    let compatibilityString = try compatibility.encode(frame)
+    let compatibilityBytes = Data(compatibilityString.utf8)
     expectNoDifference(
       binaryBytes.count,
       InstantMediaStreamBinaryCodec<InstantAudioFrame>.headerByteCount + payload.count
@@ -88,7 +89,8 @@ struct InstantMediaStreamOptimizationTests {
     let compatibilitySeconds = try bestOfThreeSeconds {
       var byteCount = 0
       for _ in 0..<iterationCount {
-        byteCount += try compatibility.encode(frame).utf8.count
+        let encoded = try compatibility.encode(frame)
+        byteCount += encoded.utf8.count
       }
       #expect(byteCount > 0)
     }
@@ -176,7 +178,7 @@ struct InstantMediaStreamOptimizationTests {
     for producer in producers {
       try await producer.value
     }
-    expectNoDifference(observed, Set(0...8).map(Int64.init).reduce(into: Set<Int64>()) { $0.insert($1) })
+    expectNoDifference(observed, Set((0...8).map(Int64.init)))
     metrics = await buffer.metrics
     expectNoDifference(metrics.totalEnqueuedFrames, 9)
     expectNoDifference(metrics.totalDequeuedFrames, 9)
