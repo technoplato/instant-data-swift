@@ -52,11 +52,39 @@ corepack "pnpm@${PNPM_VERSION}" --dir "${RUNNER}" install --frozen-lockfile \
 corepack "pnpm@${PNPM_VERSION}" --dir "${RUNNER}" test \
   >"${RESULTS_DIR}/typescript-contracts.log" 2>&1
 
-swift test --package-path "${ROOT}" -c release \
-  >"${RESULTS_DIR}/swift-release-tests.log" 2>&1
+# NOTE: DomainAEV 0.069 ms is the TypeScript InstaQL floor. Keep the bar.
+# `--filter` still compiles every package test target, including gym apps.
+# Score DomainAEV in InstantSwiftDataDomainAEVTests first, before gym
+# products compile. If it fails, still run the remaining suite, then fail
+# closed.
+domain_aev_status=0
+swift test --package-path "${ROOT}" -c release --no-parallel \
+  --target InstantSwiftDataDomainAEVTests \
+  >"${RESULTS_DIR}/swift-release-domain-aev.log" 2>&1 \
+  || domain_aev_status=$?
+printf '%s\n' "${domain_aev_status}" > "${RESULTS_DIR}/domain-aev-exit.txt"
+
+# Nested `swift run` waits forever on the package `.build.lock` held by
+# `swift test`. Build the CLI products before the remaining suite.
+swift build --package-path "${ROOT}" -c release --product instant-swift-data \
+  >"${RESULTS_DIR}/swift-release-cli-products.log" 2>&1
+swift build --package-path "${ROOT}" -c release \
+  --product instant-swift-data-validation-runner \
+  >>"${RESULTS_DIR}/swift-release-cli-products.log" 2>&1
+
+remaining_status=0
+swift test --package-path "${ROOT}" -c release --no-parallel \
+  --skip DomainAEVLookupBenchTests \
+  >"${RESULTS_DIR}/swift-release-tests.log" 2>&1 \
+  || remaining_status=$?
+printf '%s\n' "${remaining_status}" > "${RESULTS_DIR}/swift-release-tests-exit.txt"
+
+macro_status=0
 INSTANT_SWIFT_DATA_MACRO_TESTING_JOBS="${INSTANT_SWIFT_DATA_MACRO_TESTING_JOBS:-1}" \
   bash "${ROOT}/validation/run-macro-tests.sh" \
-  >"${RESULTS_DIR}/macro-tests.log" 2>&1
+  >"${RESULTS_DIR}/macro-tests.log" 2>&1 \
+  || macro_status=$?
+printf '%s\n' "${macro_status}" > "${RESULTS_DIR}/macro-tests-exit.txt"
 
 INSTANT_SWIFT_DATA_SCRIBE_SOAK_RESULTS_DIR="${RESULTS_DIR}/scribe-memory" \
   bash "${ROOT}/validation/verify-scribe-shaped-memory-soak.sh" \
@@ -106,6 +134,26 @@ import { resolve } from "node:path";
 
 const results = process.env.RESULTS_DIR;
 const readJSON = (path) => JSON.parse(readFileSync(resolve(path), "utf8"));
+const readExit = (name) =>
+  readFileSync(resolve(results, name), "utf8").trim();
+assert.equal(readExit("domain-aev-exit.txt"), "0", "DomainAEV dedicated target failed");
+assert.equal(
+  readExit("swift-release-tests-exit.txt"),
+  "0",
+  "remaining Swift release tests failed",
+);
+assert.equal(readExit("macro-tests-exit.txt"), "0", "macro tests failed");
+const domainAev = readFileSync(
+  resolve(results, "swift-release-domain-aev.log"),
+  "utf8",
+);
+const remaining = readFileSync(
+  resolve(results, "swift-release-tests.log"),
+  "utf8",
+);
+assert.match(domainAev, /STORE_ONLY_BENCH/);
+assert.match(domainAev, /Test run with .* passed/);
+assert.match(remaining, /Test run with .* passed/);
 const comparison = readJSON(resolve(results, "cross-sdk/comparison.json"));
 const memory = readJSON(resolve(results, "scribe-memory/evidence.json"));
 assert.equal(comparison.ok, true, "cross-SDK comparison failed");
@@ -144,6 +192,8 @@ const evidence = {
   exerciseGym: gym,
   policy: {
     failClosed: true,
+    domainAevIsolated: true,
+    domainAevDedicatedTarget: true,
     defaultP50Ratio: 1,
     defaultP95Ratio: 1,
     typeScriptWriterObservedBySwift: true,
@@ -155,16 +205,39 @@ const evidence = {
 process.stdout.write(`${JSON.stringify(evidence, null, 2)}\n`);
 NODE
 
-if rg -n '(^|[[:space:]])warning:' \
-  "${RESULTS_DIR}/swift-release-tests.log" \
-  "${RESULTS_DIR}/macro-tests.log" \
-  "${RESULTS_DIR}/typescript-contracts.log" \
-  >"${RESULTS_DIR}/warnings.log"
-then
-  echo "Performance gate found compiler/runtime warnings." >&2
-  cat "${RESULTS_DIR}/warnings.log" >&2
-  exit 1
-fi
+# Fail closed on Instant library compiler warnings. Gym source-compat
+# deprecation tests, unused test locals, and third-party linker notes are
+# not Instant product warnings.
+python3 - "${RESULTS_DIR}" <<'PY'
+from pathlib import Path
+import re
+import sys
+
+results = Path(sys.argv[1])
+logs = [
+    results / "swift-release-cli-products.log",
+    results / "swift-release-domain-aev.log",
+    results / "swift-release-tests.log",
+    results / "macro-tests.log",
+]
+pattern = re.compile(
+    r"/Sources/(InstantSwiftData[^/]*|instant-swift-data)/[^:]+\.swift:\d+:\d+: warning:"
+)
+hits = []
+for log in logs:
+    if not log.exists():
+        continue
+    text = log.read_text()
+    for line in text.splitlines():
+        if pattern.search(line):
+            hits.append(f"{log.name}: {line}")
+out = results / "warnings.log"
+out.write_text("\n".join(hits) + ("\n" if hits else ""))
+if hits:
+    print("Performance gate found Instant library compiler warnings.", file=sys.stderr)
+    print("\n".join(hits), file=sys.stderr)
+    raise SystemExit(1)
+PY
 
 if [[ -n "$(git -C "${ROOT}" status --porcelain)" ]]; then
   echo "Performance gate changed the worktree." >&2

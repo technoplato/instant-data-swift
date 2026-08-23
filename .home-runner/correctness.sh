@@ -42,25 +42,44 @@ corepack "pnpm@${PNPM_VERSION}" --dir "${RUNNER}" install --frozen-lockfile \
 # Process-level CLI and validation-runner tests must invoke already-built
 # products. Nested `swift run` waits forever on the package `.build.lock`
 # held by `swift test`.
+#
+# NOTE: DomainAEV 0.069 ms is the TypeScript InstaQL floor. Keep the bar.
+# `--filter` still compiles every package test target, including gym apps.
+# Score DomainAEV in InstantSwiftDataDomainAEVTests first, before gym
+# products compile. If it fails, still run the remaining suite, then fail
+# closed.
+domain_aev_status=0
+swift test --package-path "${ROOT}" -c release --no-parallel \
+  --target InstantSwiftDataDomainAEVTests \
+  2>&1 | tee "${RESULTS}/swift-release-domain-aev.log" \
+  || domain_aev_status=$?
+printf '%s\n' "${domain_aev_status}" > "${RESULTS}/domain-aev-exit.txt"
+
 swift build --package-path "${ROOT}" -c release --product instant-swift-data \
   2>&1 | tee "${RESULTS}/swift-release-cli-products.log"
 swift build --package-path "${ROOT}" -c release \
   --product instant-swift-data-validation-runner \
   2>&1 | tee -a "${RESULTS}/swift-release-cli-products.log"
-# NOTE: DomainAEV 0.069 ms is the TypeScript InstaQL floor. Shared-suite
-# allocator and CPU contention inflate the same lookup path. Keep the bar
-# and score it in its own process.
-swift test --package-path "${ROOT}" -c release --no-parallel \
-  --filter DomainAEVLookupBenchTests \
-  2>&1 | tee "${RESULTS}/swift-release-domain-aev.log"
+
+remaining_status=0
 swift test --package-path "${ROOT}" -c release --no-parallel \
   --skip DomainAEVLookupBenchTests \
-  2>&1 | tee "${RESULTS}/swift-release-tests.log"
+  2>&1 | tee "${RESULTS}/swift-release-tests.log" \
+  || remaining_status=$?
+printf '%s\n' "${remaining_status}" > "${RESULTS}/swift-release-tests-exit.txt"
+
+macro_status=0
 INSTANT_SWIFT_DATA_MACRO_TESTING_JOBS=1 \
   "${ROOT}/validation/run-macro-tests.sh" \
-  2>&1 | tee "${RESULTS}/macro-tests.log"
+  2>&1 | tee "${RESULTS}/macro-tests.log" \
+  || macro_status=$?
+printf '%s\n' "${macro_status}" > "${RESULTS}/macro-tests-exit.txt"
+
+ts_status=0
 corepack "pnpm@${PNPM_VERSION}" --dir "${RUNNER}" test \
-  2>&1 | tee "${RESULTS}/typescript-contracts.log"
+  2>&1 | tee "${RESULTS}/typescript-contracts.log" \
+  || ts_status=$?
+printf '%s\n' "${ts_status}" > "${RESULTS}/typescript-contracts-exit.txt"
 
 # Fail closed on Instant library compiler warnings. Gym source-compat
 # deprecation tests, unused test locals, and third-party linker notes are
@@ -82,6 +101,8 @@ pattern = re.compile(
 )
 hits = []
 for log in logs:
+    if not log.exists():
+        continue
     text = log.read_text()
     for line in text.splitlines():
         if pattern.search(line):
@@ -112,12 +133,27 @@ for (const file of [
   const value = readFileSync(resolve(results, file), "utf8");
   assert.ok(value.length > 0, `${file} was empty`);
 }
+const readExit = (name) =>
+  readFileSync(resolve(results, name), "utf8").trim();
+assert.equal(readExit("domain-aev-exit.txt"), "0", "DomainAEV dedicated target failed");
+assert.equal(
+  readExit("swift-release-tests-exit.txt"),
+  "0",
+  "remaining Swift release tests failed",
+);
+assert.equal(readExit("macro-tests-exit.txt"), "0", "macro tests failed");
+assert.equal(readExit("typescript-contracts-exit.txt"), "0", "TypeScript contracts failed");
 const domainAev = readFileSync(
   resolve(results, "swift-release-domain-aev.log"),
   "utf8",
 );
+const remaining = readFileSync(
+  resolve(results, "swift-release-tests.log"),
+  "utf8",
+);
 assert.match(domainAev, /STORE_ONLY_BENCH/);
 assert.match(domainAev, /Test run with .* passed/);
+assert.match(remaining, /Test run with .* passed/);
 const evidence = {
   case: "instant-swift-data.home-runner.correctness",
   ok: true,
@@ -127,6 +163,7 @@ const evidence = {
   checks: {
     failClosedPolicy: true,
     domainAevIsolated: true,
+    domainAevDedicatedTarget: true,
     swiftReleaseTests: true,
     macroTests: true,
     typeScriptContracts: true,

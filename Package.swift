@@ -408,6 +408,13 @@ let package = Package(
       swiftSettings: strictConcurrencySettings
     ),
     .testTarget(
+      name: "InstantSwiftDataDomainAEVTests",
+      dependencies: [
+        "InstantSwiftDataCore",
+      ],
+      swiftSettings: strictConcurrencySettings
+    ),
+    .testTarget(
       name: "InstantSwiftDataTests",
       dependencies: [
         "InstantSwiftData",

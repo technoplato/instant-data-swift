@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 import Testing
 @testable import InstantSwiftDataCore
@@ -69,6 +70,7 @@ struct DomainAEVLookupBenchTests {
     print(
       """
       STORE_ONLY_BENCH profile=200rec×8seg_wordsJSON \
+      \(hostLoadAverageLine()) \
       physical_growth_bytes=\(growth) mb_growth=\(String(format: "%.1f", Double(growth) / 1024 / 1024)) \
       triple_count=\(prepared.result.tripleCount) \
       list50_avg_ms=\(String(format: "%.4f", listAvgMs)) list_count=\(listCount) \
@@ -203,6 +205,7 @@ struct DomainAEVLookupBenchTests {
     print(
       """
       DOMAIN_AEV_BENCH profile=200rec×8seg_wordsJSON \
+      \(hostLoadAverageLine()) \
       physical_growth_bytes=\(growth) mb_growth=\(String(format: "%.1f", Double(growth) / 1024 / 1024)) \
       list50_ms=\(String(format: "%.3f", listMs)) list_count=\(page.count) \
       location_eq_avg_ms=\(String(format: "%.4f", locationAvgMs)) location_matches=\(locationCount) \
@@ -411,86 +414,23 @@ struct DomainAEVLookupBenchTests {
       ),
     ]
   }
-}
 
-/// Deterministically packs benchmark seed work into durable transactions that
-/// fit the same transport-step ceiling enforced for product writes.
-///
-/// Callers choose the atomic operation groups. A plain insert-only seed can use
-/// one operation per group, while an entity-creation seed keeps its missing
-/// precondition and every field write for that entity in one group.
-enum BoundedBenchmarkSeed {
-  static func transactions(
-    baseID: String,
-    atomicOperationGroups: [[InstantTripleOperation]]
-  ) -> [InstantStoreTransaction] {
-    var batches: [[InstantTripleOperation]] = []
-    var currentBatch: [InstantTripleOperation] = []
-    var currentStepCount = 0
-
-    for group in atomicOperationGroups {
-      let groupStepCount = group.reduce(into: 0) { count, operation in
-        count += transportStepCount(of: operation)
+  private func hostLoadAverageLine() -> String {
+    var loads = [Double](repeating: 0, count: 3)
+    let count = loads.withUnsafeMutableBufferPointer { buffer -> Int32 in
+      guard let base = buffer.baseAddress else {
+        return -1
       }
-      precondition(
-        groupStepCount <= InstantAutomaticOutboxClaimLimits.maximumStepCount,
-        "A benchmark seed's atomic operation group must fit one durable transaction."
-      )
-
-      if !currentBatch.isEmpty,
-        currentStepCount + groupStepCount > InstantAutomaticOutboxClaimLimits.maximumStepCount
-      {
-        batches.append(currentBatch)
-        currentBatch.removeAll(keepingCapacity: true)
-        currentStepCount = 0
-      }
-
-      currentBatch.append(contentsOf: group)
-      currentStepCount += groupStepCount
+      return getloadavg(base, 3)
     }
-
-    if !currentBatch.isEmpty {
-      batches.append(currentBatch)
+    guard count == 3 else {
+      return "host_loadavg=unavailable"
     }
-
-    return batches.enumerated().map { batchIndex, operations in
-      InstantStoreTransaction(
-        id: "\(baseID)-\(String(format: "%04d", batchIndex))",
-        operations: operations
-      )
-    }
-  }
-
-  static func entityCreationGroups(
-    from operations: [InstantTripleOperation]
-  ) -> [[InstantTripleOperation]] {
-    var groups: [[InstantTripleOperation]] = []
-    for operation in operations {
-      switch operation {
-      case .requireEntityMissing, .requireEntityMissingByLookup:
-        groups.append([operation])
-
-      default:
-        precondition(
-          !groups.isEmpty,
-          "An entity-creation benchmark seed must begin each entity with a missing precondition."
-        )
-        groups[groups.index(before: groups.endIndex)].append(operation)
-      }
-    }
-    return groups
-  }
-
-  private static func transportStepCount(of operation: InstantTripleOperation) -> Int {
-    switch operation {
-    case .requireEntityMissing, .requireEntityMissingByLookup,
-      .requireEntityExists, .requireEntityExistsByLookup, .requireTripleExists:
-      0
-
-    case .merge, .mergeByLookup, .insert, .insertByLookup, .retract, .retractByLookup,
-      .deleteEntity, .deleteEntityInNamespace, .deleteEntityByLookup,
-      .ruleParams, .ruleParamsByLookup:
-      1
-    }
+    return String(
+      format: "host_loadavg=%.2f %.2f %.2f",
+      loads[0],
+      loads[1],
+      loads[2]
+    )
   }
 }
