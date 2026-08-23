@@ -38,6 +38,15 @@ corepack "pnpm@${PNPM_VERSION}" --dir "${RUNNER}" install --frozen-lockfile \
 # Swift Testing is parallel by default. Correctness, cancellation, SQLite, and
 # timing tests share process resources, so the publication gate executes them
 # serially and leaves comparative performance to the isolated benchmark lanes.
+#
+# Process-level CLI and validation-runner tests must invoke already-built
+# products. Nested `swift run` waits forever on the package `.build.lock`
+# held by `swift test`.
+swift build --package-path "${ROOT}" -c release --product instant-swift-data \
+  2>&1 | tee "${RESULTS}/swift-release-cli-products.log"
+swift build --package-path "${ROOT}" -c release \
+  --product instant-swift-data-validation-runner \
+  2>&1 | tee -a "${RESULTS}/swift-release-cli-products.log"
 swift test --package-path "${ROOT}" -c release --no-parallel \
   2>&1 | tee "${RESULTS}/swift-release-tests.log"
 INSTANT_SWIFT_DATA_MACRO_TESTING_JOBS=1 \
@@ -66,6 +75,7 @@ import { resolve } from "node:path";
 const results = process.env.RESULTS;
 for (const file of [
   "benchmark-policy.log",
+  "swift-release-cli-products.log",
   "swift-release-tests.log",
   "macro-tests.log",
   "typescript-contracts.log",

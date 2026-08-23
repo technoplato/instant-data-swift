@@ -11863,17 +11863,23 @@ extension InstantStoreTests {
     standardInput: String? = nil
   ) throws -> CLITestProcessResult {
     let packageURL = packageRootURL()
-    let executableURL = packageURL.appendingPathComponent(".build/debug/instant-swift-data")
-
-    let process = Process()
-    if FileManager.default.isExecutableFile(atPath: executableURL.path) {
-      try requireFreshCLIExecutable(executableURL, packageURL: packageURL)
-      process.executableURL = executableURL
-      process.arguments = arguments
-    } else {
-      process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
-      process.arguments = ["swift", "run", "instant-swift-data"] + arguments
+    guard let executableURL = builtPackageProductURL(
+      named: "instant-swift-data",
+      packageURL: packageURL
+    ) else {
+      throw CLITestError(
+        """
+        instant-swift-data executable is missing under .build/release or .build/debug. \
+        Build it with 'swift build -c release --product instant-swift-data' before \
+        process-level CLI tests. Nested 'swift run' deadlocks the package .build.lock \
+        already held by 'swift test'.
+        """
+      )
     }
+    try requireFreshCLIExecutable(executableURL, packageURL: packageURL)
+    let process = Process()
+    process.executableURL = executableURL
+    process.arguments = arguments
     process.currentDirectoryURL = packageURL
     var processEnvironment = ProcessInfo.processInfo.environment.merging(
       [
@@ -11935,6 +11941,18 @@ extension InstantStoreTests {
       .deletingLastPathComponent()
   }
 
+  private func builtPackageProductURL(named name: String, packageURL: URL) -> URL? {
+    let relativePaths = [
+      ".build/release/\(name)",
+      ".build/debug/\(name)",
+      ".build/arm64-apple-macosx/release/\(name)",
+      ".build/arm64-apple-macosx/debug/\(name)",
+    ]
+    return relativePaths
+      .map { packageURL.appendingPathComponent($0) }
+      .first { FileManager.default.isExecutableFile(atPath: $0.path) }
+  }
+
   private func requireFreshCLIExecutable(_ executableURL: URL, packageURL: URL) throws {
     let executableModifiedAt = try modificationDate(of: executableURL)
     let newestSourceModifiedAt = try newestModificationDate(
@@ -11947,8 +11965,8 @@ extension InstantStoreTests {
     guard executableModifiedAt >= newestSourceModifiedAt else {
       throw CLITestError(
         """
-        .build/debug/instant-swift-data is older than CLI sources. Run \
-        'swift build --product instant-swift-data' before process-level CLI tests.
+        \(executableURL.path) is older than CLI sources. Run \
+        'swift build -c release --product instant-swift-data' before process-level CLI tests.
         """
       )
     }
