@@ -16,13 +16,21 @@ struct InstantMediaStreamOptimizationTests {
       formatIdentifier: InstantAudioStreamFormat.voice().identifier,
       maximumFrameBytes: 64
     )
-    let expected = (0..<32).map { index in
-      InstantAudioFrame(
-        sequence: Int64(index),
-        presentationTimeMicroseconds: Int64(index * 20_000),
-        durationMicroseconds: 20_000,
-        flags: index == 31 ? [.endOfSegment] : [],
-        payload: Data(repeating: UInt8(index), count: 16)
+    var expected: [InstantAudioFrame] = []
+    expected.reserveCapacity(32)
+    for index in 0..<32 {
+      let sequence = Int64(index)
+      let presentationTime = sequence * 20_000
+      let flags: InstantMediaStreamFrameFlags = index == 31 ? [.endOfSegment] : []
+      let payload = Data(repeating: UInt8(index), count: 16)
+      expected.append(
+        InstantAudioFrame(
+          sequence: sequence,
+          presentationTimeMicroseconds: presentationTime,
+          durationMicroseconds: 20_000,
+          flags: flags,
+          payload: payload
+        )
       )
     }
     var encoded = Data()
@@ -89,8 +97,8 @@ struct InstantMediaStreamOptimizationTests {
     let compatibilitySeconds = try bestOfThreeSeconds {
       var byteCount = 0
       for _ in 0..<iterationCount {
-        let encoded = try compatibility.encode(frame)
-        byteCount += encoded.utf8.count
+        let value = try compatibility.encode(frame)
+        byteCount += value.utf8.count
       }
       #expect(byteCount > 0)
     }
@@ -150,10 +158,14 @@ struct InstantMediaStreamOptimizationTests {
     )
     try await buffer.send(oneByteFrame(sequence: 0))
 
-    let producers = (1...8).map { sequence in
-      Task {
-        try await buffer.send(oneByteFrame(sequence: Int64(sequence)))
-      }
+    var producers: [Task<Void, any Error>] = []
+    producers.reserveCapacity(8)
+    for sequence in 1...8 {
+      producers.append(
+        Task {
+          try await buffer.send(oneByteFrame(sequence: Int64(sequence)))
+        }
+      )
     }
     defer { producers.forEach { $0.cancel() } }
 
@@ -186,13 +198,22 @@ struct InstantMediaStreamOptimizationTests {
 
   @Test("Allocation-free rolling digest matches the compatibility digest")
   func rollingDigestMatchesCompatibilityContract() {
-    let frames = (0..<64).map { index in
-      InstantVideoFrame(
-        sequence: Int64(index),
-        presentationTimeMicroseconds: Int64(index * 33_333),
-        durationMicroseconds: 33_333,
-        flags: index.isMultiple(of: 30) ? [.keyFrame] : [],
-        payload: Data(repeating: UInt8(truncatingIfNeeded: index * 7), count: 128)
+    var frames: [InstantVideoFrame] = []
+    frames.reserveCapacity(64)
+    for index in 0..<64 {
+      let sequence = Int64(index)
+      let flags: InstantMediaStreamFrameFlags = index.isMultiple(of: 30) ? [.keyFrame] : []
+      frames.append(
+        InstantVideoFrame(
+          sequence: sequence,
+          presentationTimeMicroseconds: sequence * 33_333,
+          durationMicroseconds: 33_333,
+          flags: flags,
+          payload: Data(
+            repeating: UInt8(truncatingIfNeeded: index * 7),
+            count: 128
+          )
+        )
       )
     }
     var compatibility = InstantMediaStreamDigest()
