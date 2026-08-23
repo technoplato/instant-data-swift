@@ -8,7 +8,7 @@ services:
     ports:
       - "8890:5432"
     environment:
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-instant_gym_pass}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in docker/.env}
       POSTGRES_USER: ${POSTGRES_USER:-instant}
       POSTGRES_DB: ${POSTGRES_DB:-instant}
     volumes:
@@ -48,7 +48,7 @@ services:
       - "9001:9001"
     environment:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:-instantminio}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-instantminiopass}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?set MINIO_ROOT_PASSWORD in docker/.env}
       MINIO_BROWSER: "on"
       MINIO_SKIP_CLIENT_CERT_VALIDATION: "on"
     command: server /data --console-address ":9001" --address ":9000"
@@ -64,7 +64,7 @@ services:
     image: minio/mc
     environment:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:-instantminio}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-instantminiopass}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?set MINIO_ROOT_PASSWORD in docker/.env}
       S3_BUCKET: ${S3_BUCKET:-instant-bucket}
     depends_on:
       minio:
@@ -86,7 +86,7 @@ services:
       - "8888:8888"
     environment:
       WAL_HISTORY_STORAGE: pg
-      DATABASE_URL: "postgresql://${POSTGRES_USER:-instant}:${POSTGRES_PASSWORD:-instant_gym_pass}@postgres:5432/${POSTGRES_DB:-instant}?sslmode=disable"
+      DATABASE_URL: ${DATABASE_URL:?set DATABASE_URL in docker/.env}
       INSTANT_BACKEND_URL: ${INSTANT_BACKEND_URL:-http://localhost:8888}
       INSTANT_DASHBOARD_URL: ${INSTANT_DASHBOARD_URL:-http://localhost:3000}
       STRIPE_API_KEY: ${STRIPE_API_KEY:-}
@@ -99,7 +99,7 @@ services:
       INSTANT_TEAM_EMAIL_SENDER_NAME: ${INSTANT_TEAM_EMAIL_SENDER_NAME:-}
       INSTANT_TEAM_EMAIL_SENDER_EMAIL: ${INSTANT_TEAM_EMAIL_SENDER_EMAIL:-}
       AWS_ACCESS_KEY_ID: ${MINIO_ROOT_USER:-instantminio}
-      AWS_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD:-instantminiopass}
+      AWS_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD:?set MINIO_ROOT_PASSWORD in docker/.env}
       AWS_REGION: ${AWS_REGION:-us-east-1}
       S3_ENDPOINT: ${S3_ENDPOINT:-http://minio:9000}
       S3_PUBLIC_ENDPOINT: ${S3_PUBLIC_ENDPOINT:-http://localhost:9000}

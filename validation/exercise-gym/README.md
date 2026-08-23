@@ -11,6 +11,8 @@ Tracks [issue #156](https://issues.knophy.com/issues/156).
 
 ```bash
 # Start Instant on localhost (API :8888, dashboard :3000, postgres :8890)
+# docker-up.sh writes gitignored docker/.env with generated local passwords
+# if that file is missing. Compose has no committed password defaults.
 bash scripts/docker-up.sh
 
 # Provision ephemeral app on self-host + run all suites

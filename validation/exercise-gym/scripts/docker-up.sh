@@ -17,6 +17,24 @@ if ! docker info >/dev/null 2>&1; then
   exit 1
 fi
 
+if [[ ! -f .env ]]; then
+  postgres_user="${POSTGRES_USER:-instant}"
+  postgres_db="${POSTGRES_DB:-instant}"
+  postgres_password="$(openssl rand -hex 16)"
+  minio_user="${MINIO_ROOT_USER:-instantminio}"
+  minio_password="$(openssl rand -hex 16)"
+  umask 077
+  cat > .env <<EOF
+POSTGRES_USER=${postgres_user}
+POSTGRES_DB=${postgres_db}
+POSTGRES_PASSWORD=${postgres_password}
+MINIO_ROOT_USER=${minio_user}
+MINIO_ROOT_PASSWORD=${minio_password}
+DATABASE_URL=postgresql://${postgres_user}:${postgres_password}@postgres:5432/${postgres_db}?sslmode=disable
+EOF
+  echo "Wrote gitignored docker/.env with generated local-only credentials."
+fi
+
 docker compose --env-file .env up -d
 echo "Waiting for Instant health on http://localhost:8888/health/system …"
 for i in $(seq 1 90); do
