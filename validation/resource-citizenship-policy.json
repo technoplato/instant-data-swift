@@ -37,7 +37,11 @@
       "maximumFinalFailedOutboxRows": 0,
       "minimumCPUSpeedLimitPercent": 100,
       "minimumSchedulerLimitPercent": 100,
-      "maximumThrottledThermalSamples": 0
+      "maximumThrottledThermalSamples": 0,
+      "minimumProgressiveAudioWriteCount": 1,
+      "requireProgressiveAudioClose": true,
+      "maximumAudioContainerSizeToPayloadRatio": 1.05,
+      "maximumAudioContainerOverheadBytes": 1048576
     },
     "realtimeSyncSubsystem": {
       "maximumAverageCPUPercentOfOneCore": 5.0,
