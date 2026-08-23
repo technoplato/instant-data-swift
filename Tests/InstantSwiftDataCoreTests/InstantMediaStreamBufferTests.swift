@@ -96,9 +96,11 @@ struct InstantMediaStreamBufferTests {
     expectNoDifference(metrics.residentFrames, 1)
     expectNoDifference(metrics.totalEnqueuedFrames, 1)
 
-    expectNoDifference(try await buffer.next(), first)
+    let dequeuedFirst = try await buffer.next()
+    expectNoDifference(dequeuedFirst, first)
     try await blocked.value
-    expectNoDifference(try await buffer.next(), second)
+    let dequeuedSecond = try await buffer.next()
+    expectNoDifference(dequeuedSecond, second)
 
     metrics = await buffer.metrics
     expectNoDifference(metrics.peakResidentBytes, 4)
@@ -123,8 +125,10 @@ struct InstantMediaStreamBufferTests {
       )
     }
 
-    expectNoDifference(try await buffer.next()?.sequence, 1)
-    expectNoDifference(try await buffer.next()?.sequence, 2)
+    let firstRemainingSequence = try await buffer.next()?.sequence
+    let secondRemainingSequence = try await buffer.next()?.sequence
+    expectNoDifference(firstRemainingSequence, 1)
+    expectNoDifference(secondRemainingSequence, 2)
     let metrics = await buffer.metrics
     expectNoDifference(metrics.droppedFrames, 1)
     expectNoDifference(metrics.peakResidentBytes, 8)
@@ -201,7 +205,7 @@ private func waitUntil(
 ) async throws {
   let clock = ContinuousClock()
   let deadline = clock.now.advanced(by: timeout)
-  while !await condition() {
+  while !(await condition()) {
     guard clock.now < deadline else {
       throw InstantError(
         code: .validationFailed,
