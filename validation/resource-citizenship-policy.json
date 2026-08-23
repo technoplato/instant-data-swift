@@ -29,6 +29,7 @@
       "maximumIncrementalPeakPhysicalFootprintBytes": 50331648,
       "maximumSettledPhysicalFootprintGrowthBytes": 8388608,
       "maximumSettledGrowthBytesPerLogicalHour": 4194304,
+      "maximumSecondHalfPhysicalFootprintSlopeBytesPerSecond": 65536,
       "maximumPeakSQLiteResidencyGrowthBytes": 67108864,
       "maximumSettledSQLiteResidencyGrowthBytes": 25165824,
       "maximumPeakWALBytes": 33554432,
@@ -50,6 +51,7 @@
       "maximumEquivalentRealtimeCPUPercentOfOneCore": 5.0,
       "maximumPhysicalFootprintBytes": 104857600,
       "maximumSettledGrowthBytesPerHour": 4194304,
+      "maximumPhysicalFootprintSlopeBytesPerSecond": 1165,
       "maximumDroppedDurableFrames": 0,
       "maximumFinalPendingOutboxRows": 0,
       "allowedThermalStates": [
