@@ -2,8 +2,8 @@
 # Strict publication gate for Instant Swift Data.
 #
 # Usage:
-#   validation/run-performance-gate.sh deterministic   # default; PR/release-safe local evidence
-#   validation/run-performance-gate.sh live            # adds Swift↔TypeScript network lanes
+#   validation/run-performance-gate.sh deterministic   # local evidence
+#   validation/run-performance-gate.sh live            # adds Swift↔TypeScript wire lanes
 #   validation/run-performance-gate.sh all             # deterministic + live + exercise gym
 #
 # The gate fails closed. A diagnostic explanation never turns a failed metric green.
@@ -55,32 +55,35 @@ corepack "pnpm@${PNPM_VERSION}" --dir "${RUNNER}" test \
 swift test --package-path "${ROOT}" -c release \
   >"${RESULTS_DIR}/swift-release-tests.log" 2>&1
 INSTANT_SWIFT_DATA_MACRO_TESTING_JOBS="${INSTANT_SWIFT_DATA_MACRO_TESTING_JOBS:-1}" \
-  "${ROOT}/validation/run-macro-tests.sh" \
+  bash "${ROOT}/validation/run-macro-tests.sh" \
   >"${RESULTS_DIR}/macro-tests.log" 2>&1
 
 INSTANT_SWIFT_DATA_SCRIBE_SOAK_RESULTS_DIR="${RESULTS_DIR}/scribe-memory" \
-  "${ROOT}/validation/verify-scribe-shaped-memory-soak.sh" \
+  bash "${ROOT}/validation/verify-scribe-shaped-memory-soak.sh" \
   >"${RESULTS_DIR}/scribe-memory.log" 2>&1
 
 INSTANT_SWIFT_DATA_BENCHMARK_COMPARISON_RESULTS_DIR="${RESULTS_DIR}/cross-sdk" \
 INSTANT_SWIFT_DATA_BENCHMARK_COMPARISON_ITERATIONS="${INSTANT_SWIFT_DATA_BENCHMARK_COMPARISON_ITERATIONS:-7}" \
 INSTANT_SWIFT_DATA_PNPM_VERSION="${PNPM_VERSION}" \
-  "${ROOT}/validation/run-cross-sdk-benchmark-comparison.sh" \
+  bash "${ROOT}/validation/run-cross-sdk-benchmark-comparison.sh" \
   >"${RESULTS_DIR}/cross-sdk.log" 2>&1
 
 LIVE_SUMMARY=""
+WIRE_CORRECTNESS=""
 if [[ "${MODE}" == "live" || "${MODE}" == "all" ]]; then
-  : "${INSTANT_CLI_AUTH_TOKEN:?live mode requires INSTANT_CLI_AUTH_TOKEN}"
+  # Suite-provided credentials win. Otherwise the wire harness provisions an
+  # isolated temporary app through getadb.com and removes local secret material.
   INSTANT_SWIFT_DATA_BENCH_RESULTS_DIR="${RESULTS_DIR}/scribe-wire" \
-    "${ROOT}/validation/run-scribe-shaped-20s-write-bench.sh" \
+    bash "${ROOT}/validation/run-scribe-shaped-20s-write-bench.sh" \
     >"${RESULTS_DIR}/scribe-wire.log" 2>&1
   LIVE_SUMMARY="${RESULTS_DIR}/scribe-wire/summary.json"
+  WIRE_CORRECTNESS="${RESULTS_DIR}/scribe-wire/wire-correctness.json"
 fi
 
 GYM_REPORT=""
 if [[ "${MODE}" == "all" ]]; then
-  : "${INSTANT_APP_ID:?all mode requires INSTANT_APP_ID}"
-  : "${INSTANT_ADMIN_TOKEN:?all mode requires INSTANT_ADMIN_TOKEN}"
+  : "${INSTANT_APP_ID:?all mode exercise-gym requires an explicit isolated app ID}"
+  : "${INSTANT_ADMIN_TOKEN:?all mode exercise-gym requires its admin token}"
   corepack "pnpm@${PNPM_VERSION}" --dir "${GYM}" install --no-frozen-lockfile \
     >"${RESULTS_DIR}/gym-install.log" 2>&1
   corepack "pnpm@${PNPM_VERSION}" --dir "${GYM}" run typecheck \
@@ -94,7 +97,8 @@ if [[ "${MODE}" == "all" ]]; then
 fi
 
 ROOT="${ROOT}" RESULTS_DIR="${RESULTS_DIR}" MODE="${MODE}" \
-LIVE_SUMMARY="${LIVE_SUMMARY}" GYM_REPORT="${GYM_REPORT}" \
+LIVE_SUMMARY="${LIVE_SUMMARY}" WIRE_CORRECTNESS="${WIRE_CORRECTNESS}" \
+GYM_REPORT="${GYM_REPORT}" \
 node --input-type=module <<'NODE' | tee "${RESULTS_DIR}/evidence.json"
 import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
@@ -109,15 +113,14 @@ assert.equal(comparison.details.summary.failureCount, 0, "cross-SDK failures rem
 assert.equal(memory.status, "passed", "Scribe-shaped memory gate failed");
 
 let live = null;
+let wireCorrectness = null;
 if (process.env.LIVE_SUMMARY) {
   assert.ok(existsSync(process.env.LIVE_SUMMARY), "live summary is missing");
+  assert.ok(existsSync(process.env.WIRE_CORRECTNESS), "wire correctness is missing");
   live = readJSON(process.env.LIVE_SUMMARY);
-  assert.equal(live.ok ?? true, true, "bidirectional live synchronization failed");
-  for (const lane of [live.netA, live.netB].filter(Boolean)) {
-    assert.equal(lane.lost ?? 0, 0, "live lane lost writes");
-    assert.equal(lane.duplicates ?? 0, 0, "live lane duplicated writes");
-    assert.equal(lane.reordered ?? 0, 0, "live lane reordered writes");
-  }
+  wireCorrectness = readJSON(process.env.WIRE_CORRECTNESS);
+  assert.equal(wireCorrectness.ok, true, "bidirectional wire correctness failed");
+  assert.equal(wireCorrectness.evidence.length, 2, "both wire directions are required");
 }
 
 let gym = null;
@@ -129,7 +132,7 @@ if (process.env.GYM_REPORT) {
 
 const evidence = {
   case: "validation.performance-publication-gate",
-  contractVersion: 1,
+  contractVersion: 2,
   ok: true,
   mode: process.env.MODE,
   swiftRevision: readFileSync(resolve(results, "swift-revision.txt"), "utf8").trim(),
@@ -137,12 +140,16 @@ const evidence = {
   crossSDK: comparison.details.summary,
   memory,
   live,
+  wireCorrectness,
   exerciseGym: gym,
   policy: {
     failClosed: true,
     defaultP50Ratio: 1,
     defaultP95Ratio: 1,
-    noLostDuplicateOrReorderedWireUpdates: true,
+    typeScriptWriterObservedBySwift: true,
+    swiftWriterObservedByTypeScript: true,
+    exactFinalSequenceAndWordCountConvergence: true,
+    ephemeralAppWhenSuiteCredentialsAreAbsent: true,
   },
 };
 process.stdout.write(`${JSON.stringify(evidence, null, 2)}\n`);
