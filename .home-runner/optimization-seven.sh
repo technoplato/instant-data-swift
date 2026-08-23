@@ -53,8 +53,27 @@ if "SEVEN_OPT_BINARY_CODEC" not in optimization_log:
     raise SystemExit("binary codec comparison evidence is missing")
 if "SEVEN_OPT_STREAM_RESOURCE" not in optimization_log:
     raise SystemExit("stream resource evidence is missing")
-if "failed" in optimization_log.lower() and "0 tests failed" not in optimization_log.lower():
-    raise SystemExit("focused optimization suite reported failure")
+
+optimization_summary = re.search(
+    r"Test run with ([0-9]+) tests? in ([0-9]+) suites? passed",
+    optimization_log,
+)
+contract_summary = re.search(
+    r"Test run with ([0-9]+) tests? in ([0-9]+) suites? passed",
+    contract_log,
+)
+if not optimization_summary:
+    raise SystemExit("focused optimization suite did not report a passing Swift Testing summary")
+if int(optimization_summary.group(1)) < len(required_tests):
+    raise SystemExit(
+        "focused optimization suite passed fewer tests than the required optimization set"
+    )
+if not contract_summary:
+    raise SystemExit("media stream contract suite did not report a passing Swift Testing summary")
+if re.search(r"Test run with .* failed", optimization_log):
+    raise SystemExit("focused optimization suite reported a failing Swift Testing summary")
+if re.search(r"Test run with .* failed", contract_log):
+    raise SystemExit("media stream contract suite reported a failing Swift Testing summary")
 
 binary = re.search(
     r"SEVEN_OPT_BINARY_CODEC binary_s=([0-9.]+) compatibility_s=([0-9.]+) ratio=([0-9.]+) binary_bytes=([0-9]+) compatibility_bytes=([0-9]+)",
@@ -127,6 +146,8 @@ report = {
     "revision": os.popen(f"git -C '{os.environ['ROOT']}' rev-parse HEAD").read().strip(),
     "optimizationCount": len(optimizations),
     "optimizations": optimizations,
+    "optimizationTestCount": int(optimization_summary.group(1)),
+    "contractTestCount": int(contract_summary.group(1)),
     "contractSuiteObserved": "InstantMediaStreamBufferTests" in contract_log,
 }
 print(json.dumps(report, indent=2, sort_keys=True))
