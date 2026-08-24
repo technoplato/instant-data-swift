@@ -67,7 +67,7 @@ import Testing
       let client = v3LocalIDClient(recorder)
       var localID = LocalID("device")
 
-      await withDependencies {
+      try await withDependencies {
         $0.defaultInstantSwiftData = client
       } operation: {
         localID.update()
