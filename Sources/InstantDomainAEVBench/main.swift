@@ -379,6 +379,26 @@ struct InstantDomainAEVBench {
       loads.2
     )
   }
+
+  private static func scoredLatencyMetric(
+    wallMilliseconds: Double,
+    threadCPUMilliseconds: Double,
+    isQuiet: Bool
+  ) -> ScoredLatencyMetric {
+    if wallMilliseconds < maximumLocationAverageMilliseconds {
+      return .wall
+    }
+    if isQuiet {
+      return .product
+    }
+    if threadCPUMilliseconds <= 0 {
+      return .threadCPUUnavailable
+    }
+    if threadCPUMilliseconds < maximumLocationAverageMilliseconds {
+      return .threadCPU
+    }
+    return .product
+  }
 }
 
 private struct QuietHostWait {
@@ -391,24 +411,4 @@ private enum ScoredLatencyMetric: String {
   case threadCPU = "thread_cpu"
   case threadCPUUnavailable = "thread_cpu_unavailable"
   case product
-}
-
-private func scoredLatencyMetric(
-  wallMilliseconds: Double,
-  threadCPUMilliseconds: Double,
-  isQuiet: Bool
-) -> ScoredLatencyMetric {
-  if wallMilliseconds < InstantDomainAEVBench.maximumLocationAverageMilliseconds {
-    return .wall
-  }
-  if isQuiet {
-    return .product
-  }
-  if threadCPUMilliseconds <= 0 {
-    return .threadCPUUnavailable
-  }
-  if threadCPUMilliseconds < InstantDomainAEVBench.maximumLocationAverageMilliseconds {
-    return .threadCPU
-  }
-  return .product
 }
