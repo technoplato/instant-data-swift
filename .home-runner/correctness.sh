@@ -46,8 +46,10 @@ corepack "pnpm@${PNPM_VERSION}" --dir "${RUNNER}" install --frozen-lockfile \
 # NOTE: DomainAEV 0.069 ms is the TypeScript InstaQL floor. Keep the bar.
 # Swift 6.3 `swift test` has no `--target`. `--filter` still compiles every
 # package test target, including gym apps. Score the floor by building and
-# running `instant-domain-aev-bench` before gym products compile. If it
-# fails, still run the remaining suite, then fail closed.
+# running `instant-domain-aev-bench` before gym products compile. The
+# executable waits until 1-minute loadavg is at or below ncpu so a lagged
+# compile spike is not scored as a product miss. If it fails, still run the
+# remaining suite, then fail closed.
 domain_aev_status=0
 swift build --package-path "${ROOT}" -c release --product instant-domain-aev-bench \
   2>&1 | tee "${RESULTS}/swift-release-domain-aev-build.log" \

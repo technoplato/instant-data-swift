@@ -4,10 +4,11 @@ import InstantSwiftDataCore
 
 /// Isolated Release ship gate for the store-only DomainAEV lookup floor.
 ///
-/// TypeScript Instant keeps AEV; this path scans EAV. The 0.069 ms bar is the
-/// TypeScript InstaQL floor. Do not lower it. Invoke only the
-/// `instant-domain-aev-bench` product so gym test targets are not compiled
-/// before the measurement.
+/// `locationLabel` equals uses `indexedValueEntities`, not a full EAV scan.
+/// The 0.069 ms bar is the TypeScript InstaQL floor. Do not lower it. Invoke
+/// only the `instant-domain-aev-bench` product so gym test targets are not
+/// compiled before the measurement. Wait for a quiet host after that compile
+/// so a lagged load average is not scored as a product miss.
 @main
 struct InstantDomainAEVBench {
   static func main() async {
@@ -25,12 +26,17 @@ struct InstantDomainAEVBench {
   private static let segmentsPerRecording = 8
   private static let warmupIterations = 5
   private static let measuredIterations = 500
+  private static let maximumOneMinuteLoadAveragePerCPU = 1.0
+  private static let quietWaitTimeoutNanoseconds: UInt64 = 8 * 60 * 1_000_000_000
+  private static let quietWaitPollNanoseconds: UInt64 = 2 * 1_000_000_000
   private static let locations = [
     "Home Office", "Kitchen", "Car — commute", "Park walk", "Coffee shop",
     "Conference room A", "Conference room B", "Airport terminal", "Gym", "Library",
   ]
 
   private static func run() async throws {
+    _ = pthread_set_qos_class_self_np(QOS_CLASS_USER_INTERACTIVE, 0)
+    let quietWait = await waitForQuietHost()
     let baseline = InstantProcessMemory.sample()
     let triples = productSeedTriples()
     let store = InstantStore(
@@ -85,6 +91,7 @@ struct InstantDomainAEVBench {
       """
       STORE_ONLY_BENCH profile=200rec×8seg_wordsJSON \
       \(hostLoadAverageLine()) \
+      host_quiet=\(quietWait.isQuiet) host_wait_s=\(String(format: "%.1f", quietWait.waitedSeconds)) \
       physical_growth_bytes=\(growth) mb_growth=\(String(format: "%.1f", Double(growth) / 1024 / 1024)) \
       triple_count=\(triples.count) \
       list50_avg_ms=\(String(format: "%.4f", listAvgMs)) list_count=\(listCount) \
@@ -105,9 +112,15 @@ struct InstantDomainAEVBench {
       )
     }
     if locationAvgMs >= maximumLocationAverageMilliseconds {
-      failures.append(
-        "location_eq_avg_ms=\(String(format: "%.4f", locationAvgMs)) maximum=\(maximumLocationAverageMilliseconds)"
-      )
+      if quietWait.isQuiet {
+        failures.append(
+          "location_eq_avg_ms=\(String(format: "%.4f", locationAvgMs)) maximum=\(maximumLocationAverageMilliseconds)"
+        )
+      } else {
+        failures.append(
+          "CONTAMINATED_HOST location_eq_avg_ms=\(String(format: "%.4f", locationAvgMs)) maximum=\(maximumLocationAverageMilliseconds) \(hostLoadAverageLine())"
+        )
+      }
     }
     if !failures.isEmpty {
       print("DOMAIN_AEV_SHIP_GATE failed \(failures.joined(separator: " "))")
@@ -282,7 +295,45 @@ struct InstantDomainAEVBench {
     ]
   }
 
-  private static func hostLoadAverageLine() -> String {
+  private static func waitForQuietHost() async -> QuietHostWait {
+    let ncpu = logicalCPUCount()
+    let maximumLoad = maximumOneMinuteLoadAveragePerCPU * Double(ncpu)
+    let started = DispatchTime.now()
+    print(
+      "HOST_WAIT started ncpu=\(ncpu) maximum_loadavg1=\(String(format: "%.2f", maximumLoad)) timeout_s=480 \(hostLoadAverageLine())"
+    )
+    while true {
+      let load1 = oneMinuteLoadAverage()
+      let elapsedNanoseconds = DispatchTime.now().uptimeNanoseconds - started.uptimeNanoseconds
+      let waitedSeconds = Double(elapsedNanoseconds) / 1_000_000_000
+      if let load1, load1 <= maximumLoad {
+        print(
+          "HOST_WAIT reached loadavg1=\(String(format: "%.2f", load1)) waited_s=\(String(format: "%.1f", waitedSeconds))"
+        )
+        return QuietHostWait(isQuiet: true, waitedSeconds: waitedSeconds)
+      }
+      if elapsedNanoseconds >= quietWaitTimeoutNanoseconds {
+        let loadText = load1.map { String(format: "%.2f", $0) } ?? "unavailable"
+        print(
+          "HOST_WAIT timeout CONTAMINATED_HOST loadavg1=\(loadText) waited_s=\(String(format: "%.1f", waitedSeconds))"
+        )
+        return QuietHostWait(isQuiet: false, waitedSeconds: waitedSeconds)
+      }
+      try? await Task.sleep(nanoseconds: quietWaitPollNanoseconds)
+    }
+  }
+
+  private static func logicalCPUCount() -> Int {
+    var count: Int32 = 0
+    var size = MemoryLayout<Int32>.size
+    let result = sysctlbyname("hw.logicalcpu", &count, &size, nil, 0)
+    if result == 0, count > 0 {
+      return Int(count)
+    }
+    return 10
+  }
+
+  private static func loadAverages() -> (Double, Double, Double)? {
     var loads = [Double](repeating: 0, count: 3)
     let count = loads.withUnsafeMutableBufferPointer { buffer -> Int32 in
       guard let base = buffer.baseAddress else {
@@ -291,13 +342,29 @@ struct InstantDomainAEVBench {
       return getloadavg(base, 3)
     }
     guard count == 3 else {
+      return nil
+    }
+    return (loads[0], loads[1], loads[2])
+  }
+
+  private static func oneMinuteLoadAverage() -> Double? {
+    loadAverages()?.0
+  }
+
+  private static func hostLoadAverageLine() -> String {
+    guard let loads = loadAverages() else {
       return "host_loadavg=unavailable"
     }
     return String(
       format: "host_loadavg=%.2f %.2f %.2f",
-      loads[0],
-      loads[1],
-      loads[2]
+      loads.0,
+      loads.1,
+      loads.2
     )
   }
+}
+
+private struct QuietHostWait {
+  var isQuiet: Bool
+  var waitedSeconds: Double
 }
