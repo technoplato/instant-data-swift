@@ -571,6 +571,11 @@ struct TripleIndexes: Hashable, Codable, Sendable {
   private var indexedValueEntities: [String: [InstantValue: Set<String>]] = [:]
   /// attributeID → entityID → value for cardinality-one indexed attrs (sort / ordered page).
   private var indexedEntityValues: [String: [String: InstantValue]] = [:]
+  /// entityID → namespace → interned snapshot, filled on first indexed-equals materialize.
+  /// Seed init does not intern every entity. Not encoded.
+  private var internedCardinalityOneSnapshots: [String: [String: InstantEntitySnapshot]] = [:]
+  /// entityID → serverCreatedAt as `.number(txTime.milliseconds)` from the primary-key triple.
+  private var internedServerCreatedAt: [String: InstantValue] = [:]
   /// namespace → entityIDs that hold at least one attr in that namespace (avoids scanning segments for recordings queries).
   private var entitiesByNamespace: [String: Set<String>] = [:]
   /// Attribute definitions used to build the derived indexes above. Not encoded: decoding or a
@@ -650,6 +655,8 @@ struct TripleIndexes: Hashable, Codable, Sendable {
     // (or InstantStore rebuild via init(triples:attributes:)).
     self.indexedValueEntities = [:]
     self.indexedEntityValues = [:]
+    self.internedCardinalityOneSnapshots = [:]
+    self.internedServerCreatedAt = [:]
     self.entitiesByNamespace = [:]
     self.derivedIndexAttributeShapes = [:]
   }
@@ -1308,6 +1315,8 @@ struct TripleIndexes: Hashable, Codable, Sendable {
     vae = [:]
     indexedValueEntities = [:]
     indexedEntityValues = [:]
+    internedCardinalityOneSnapshots = [:]
+    internedServerCreatedAt = [:]
     entitiesByNamespace = [:]
     derivedIndexAttributeShapes = Self.derivedIndexAttributeShapes(for: attributes)
 
@@ -1429,12 +1438,19 @@ struct TripleIndexes: Hashable, Codable, Sendable {
     return rebuildDerivedIndexes(attributes: attributes)
   }
 
-  func materialize(
+  mutating func materialize(
     _ plan: InstantQueryPlan,
     attributes: AttributeStore,
     remotePageInfo: InstantQueryRemotePageInfo? = nil
   ) -> [InstantEntitySnapshot] {
-    materializePage(plan, attributes: attributes, remotePageInfo: remotePageInfo).values
+    if let values = materializeIndexedEqualsPrefix(
+      plan,
+      attributes: attributes,
+      remotePageInfo: remotePageInfo
+    ) {
+      return values
+    }
+    return materializePage(plan, attributes: attributes, remotePageInfo: remotePageInfo).values
   }
 
   func materializePage(
@@ -1462,6 +1478,94 @@ struct TripleIndexes: Hashable, Codable, Sendable {
       metrics: &metrics
     )
     return (page, metrics)
+  }
+
+  private mutating func materializeIndexedEqualsPrefix(
+    _ plan: InstantQueryPlan,
+    attributes: AttributeStore,
+    remotePageInfo: InstantQueryRemotePageInfo?
+  ) -> [InstantEntitySnapshot]? {
+    guard remotePageInfo == nil,
+      plan.includes == nil,
+      plan.selectedFields == nil,
+      plan.offset == nil,
+      plan.first == nil,
+      plan.last == nil,
+      plan.after == nil,
+      plan.before == nil,
+      let limit = plan.limit,
+      !plan.filters.isEmpty
+    else { return nil }
+
+    let order = Self.effectiveOrder(plan.order)
+    guard order.isServerCreatedAt else { return nil }
+
+    let candidateSource = resolveBoundedCandidateSource(plan: plan, attributes: attributes)
+    guard candidateSource.filtersFullyCoveredByIndex else { return nil }
+
+    var entityIDs: [String] = []
+    forEachEntityID(in: candidateSource) { entityIDs.append($0) }
+
+    var ranked: [(createdAt: InstantValue, entityID: String)] = []
+    ranked.reserveCapacity(entityIDs.count)
+    for entityID in entityIDs {
+      if let createdAt = internedServerCreatedAt[entityID] {
+        ranked.append((createdAt, entityID))
+        continue
+      }
+      guard
+        let createdAt = serverCreatedAtValue(
+          entityID: entityID,
+          namespace: plan.namespace,
+          attributes: attributes
+        )
+      else { return nil }
+      internedServerCreatedAt[entityID] = createdAt
+      ranked.append((createdAt, entityID))
+    }
+
+    ranked.sort { lhs, rhs in
+      let valueComparison = Self.compare(lhs.createdAt, rhs.createdAt)
+      let directedComparison: ComparisonResult
+      switch order.direction {
+      case .ascending:
+        directedComparison = valueComparison
+      case .descending:
+        directedComparison = valueComparison.reversed
+      }
+      if directedComparison != .orderedSame {
+        return directedComparison == .orderedAscending
+      }
+      switch order.direction {
+      case .ascending:
+        return lhs.entityID < rhs.entityID
+      case .descending:
+        return lhs.entityID > rhs.entityID
+      }
+    }
+
+    if ranked.count > limit {
+      ranked.removeLast(ranked.count - limit)
+    }
+
+    var snapshots: [InstantEntitySnapshot] = []
+    snapshots.reserveCapacity(ranked.count)
+    for item in ranked {
+      if let interned = internedCardinalityOneSnapshots[item.entityID]?[plan.namespace] {
+        snapshots.append(interned)
+        continue
+      }
+      guard
+        let row = self.snapshot(
+          entityID: item.entityID,
+          namespace: plan.namespace,
+          attributes: attributes
+        )
+      else { return nil }
+      internedCardinalityOneSnapshots[item.entityID, default: [:]][plan.namespace] = row
+      snapshots.append(row)
+    }
+    return snapshots
   }
 
   func entityMatches(
@@ -3057,6 +3161,7 @@ struct TripleIndexes: Hashable, Codable, Sendable {
       vae[triple.value, default: [:]][triple.attributeID, default: [:]][triple.entityID] = stamp
     }
 
+    invalidateInternedEntity(triple.entityID)
     if let attribute {
       entitiesByNamespace[attribute.namespace, default: []].insert(triple.entityID)
       if attribute.isIndexed {
@@ -3069,6 +3174,11 @@ struct TripleIndexes: Hashable, Codable, Sendable {
       }
       derivedIndexAttributeShapes[triple.attributeID] = DerivedIndexAttributeShape(attribute)
     }
+  }
+
+  private mutating func invalidateInternedEntity(_ entityID: String) {
+    internedCardinalityOneSnapshots[entityID] = nil
+    internedServerCreatedAt[entityID] = nil
   }
 
   private static func transactionStampPrecedes(
@@ -3297,6 +3407,7 @@ struct TripleIndexes: Hashable, Codable, Sendable {
         }
       }
     }
+    invalidateInternedEntity(triple.entityID)
   }
 
   private static func normalizedTriple(

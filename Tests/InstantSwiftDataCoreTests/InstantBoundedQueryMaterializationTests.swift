@@ -118,6 +118,17 @@ struct InstantBoundedQueryMaterializationTests {
     expectNoDifference(result.metrics.materializedSnapshotCount, 2)
     expectNoDifference(result.metrics.maximumRetainedCandidateCount, 3)
     expectNoDifference(result.metrics.boundedSelectionCount, 1)
+
+    let materialized = await fixture.store.materialize(
+      InstantQueryPlan(
+        id: "bounded.implicit-order.values",
+        namespace: fixture.namespace,
+        filters: [.equals(field: fixture.category.name, value: .string("included"))],
+        limit: 2
+      )
+    )
+    expectNoDifference(materialized.map(\.id), result.page.values.map(\.id))
+    expectNoDifference(materialized.map(\.values), result.page.values.map(\.values))
   }
 
   @Test

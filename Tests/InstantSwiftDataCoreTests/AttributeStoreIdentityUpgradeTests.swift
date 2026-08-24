@@ -167,7 +167,7 @@ struct AttributeStoreIdentityUpgradeTests {
     // loaded later, after reciprocal attribute metadata has already been removed.
     let laterLoadedTimestamp = InstantTimestamp(milliseconds: 1_700_000_002_000)
     let laterLoadedAttributes = AttributeStore(attributes: upgraded.attributes)
-    let laterLoadedIndexes = TripleIndexes(
+    var laterLoadedIndexes = TripleIndexes(
       triples: [
         triple("parent-cold", "parents/id", .string("parent-cold"), timestamp: timestamp),
         triple("child-cold", "children/id", .string("child-cold"), timestamp: timestamp),
