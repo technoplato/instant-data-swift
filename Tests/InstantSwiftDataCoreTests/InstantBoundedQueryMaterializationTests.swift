@@ -132,6 +132,43 @@ struct InstantBoundedQueryMaterializationTests {
   }
 
   @Test
+  func indexedEqualsMaterializeDropsAStaleCachedPrefixAfterAWrite() async throws {
+    let fixture = ImplicitOrderIndexedFixture()
+    let plan = InstantQueryPlan(
+      id: "bounded.implicit-order.cached",
+      namespace: fixture.namespace,
+      filters: [.equals(field: fixture.category.name, value: .string("included"))],
+      limit: 2
+    )
+    let first = await fixture.store.materialize(plan)
+    let second = await fixture.store.materialize(plan)
+    expectNoDifference(first.map(\.id), ["z-oldest", "m-middle"])
+    expectNoDifference(second.map(\.id), first.map(\.id))
+    expectNoDifference(second.map(\.values), first.map(\.values))
+
+    let prepared = try await fixture.store.prepareCurrent(
+      InstantStoreTransaction(
+        id: "exclude-oldest",
+        operations: [
+          .insert(
+            InstantTriple(
+              entityID: "z-oldest",
+              attributeID: fixture.category.id,
+              value: .string("excluded"),
+              txID: "exclude-oldest",
+              txTime: InstantTimestamp(milliseconds: 11)
+            )
+          )
+        ]
+      )
+    )
+    _ = await fixture.store.commitAndPublish(prepared)
+
+    let afterWrite = await fixture.store.materialize(plan)
+    expectNoDifference(afterWrite.map(\.id), ["m-middle", "a-latest"])
+  }
+
+  @Test
   func finitePaginationRequiresPositiveBoundsAndComposesThemInOrder() async throws {
     let fixture = BoundedQueryFixture(rowCount: 10)
     let store = fixture.store()

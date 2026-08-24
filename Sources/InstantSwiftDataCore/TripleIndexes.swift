@@ -576,6 +576,9 @@ struct TripleIndexes: Hashable, Codable, Sendable {
   private var internedCardinalityOneSnapshots: [String: [String: InstantEntitySnapshot]] = [:]
   /// entityID → serverCreatedAt as `.number(txTime.milliseconds)` from the primary-key triple.
   private var internedServerCreatedAt: [String: InstantValue] = [:]
+  /// Indexed-equals `materialize()` results, filled on first call for that plan shape.
+  /// Cleared when any interned entity is invalidated. Not encoded.
+  private var internedIndexedEqualsResults: [IndexedEqualsResultKey: [InstantEntitySnapshot]] = [:]
   /// namespace → entityIDs that hold at least one attr in that namespace (avoids scanning segments for recordings queries).
   private var entitiesByNamespace: [String: Set<String>] = [:]
   /// Attribute definitions used to build the derived indexes above. Not encoded: decoding or a
@@ -657,6 +660,7 @@ struct TripleIndexes: Hashable, Codable, Sendable {
     self.indexedEntityValues = [:]
     self.internedCardinalityOneSnapshots = [:]
     self.internedServerCreatedAt = [:]
+    self.internedIndexedEqualsResults = [:]
     self.entitiesByNamespace = [:]
     self.derivedIndexAttributeShapes = [:]
   }
@@ -681,6 +685,13 @@ struct TripleIndexes: Hashable, Codable, Sendable {
         count += slot.count
       }
     }
+  }
+
+  private struct IndexedEqualsResultKey: Hashable {
+    var namespace: String
+    var limit: Int
+    var isAscending: Bool
+    var filters: [InstantQueryFilter]
   }
 
   private struct QuerySnapshot: Hashable, Sendable {
@@ -1317,6 +1328,7 @@ struct TripleIndexes: Hashable, Codable, Sendable {
     indexedEntityValues = [:]
     internedCardinalityOneSnapshots = [:]
     internedServerCreatedAt = [:]
+    internedIndexedEqualsResults = [:]
     entitiesByNamespace = [:]
     derivedIndexAttributeShapes = Self.derivedIndexAttributeShapes(for: attributes)
 
@@ -1500,6 +1512,16 @@ struct TripleIndexes: Hashable, Codable, Sendable {
     let order = Self.effectiveOrder(plan.order)
     guard order.isServerCreatedAt else { return nil }
 
+    let resultKey = IndexedEqualsResultKey(
+      namespace: plan.namespace,
+      limit: limit,
+      isAscending: order.direction == .ascending,
+      filters: plan.filters
+    )
+    if let cached = internedIndexedEqualsResults[resultKey] {
+      return cached
+    }
+
     let candidateSource = resolveBoundedCandidateSource(plan: plan, attributes: attributes)
     guard candidateSource.filtersFullyCoveredByIndex else { return nil }
 
@@ -1565,6 +1587,7 @@ struct TripleIndexes: Hashable, Codable, Sendable {
       internedCardinalityOneSnapshots[item.entityID, default: [:]][plan.namespace] = row
       snapshots.append(row)
     }
+    internedIndexedEqualsResults[resultKey] = snapshots
     return snapshots
   }
 
@@ -3179,6 +3202,7 @@ struct TripleIndexes: Hashable, Codable, Sendable {
   private mutating func invalidateInternedEntity(_ entityID: String) {
     internedCardinalityOneSnapshots[entityID] = nil
     internedServerCreatedAt[entityID] = nil
+    internedIndexedEqualsResults = [:]
   }
 
   private static func transactionStampPrecedes(
