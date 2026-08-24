@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 
 public struct InstantStoreMutationResult: Hashable, Codable, Sendable {
@@ -223,21 +224,59 @@ public actor InstantStore {
 
   /// In-actor microbench: iterations of materialize without inter-call actor hops.
   /// Used to compare pure store latency to TypeScript `@instantdb/core` store scans.
+  ///
+  /// Wall time includes host preemption. Thread CPU is the work itself. The
+  /// DomainAEV ship gate keeps the 0.069 ms TypeScript InstaQL floor on both.
   package func measureMaterializeAverageNanoseconds(
     _ plan: InstantQueryPlan,
     iterations: Int
   ) -> (averageNanoseconds: Double, lastCount: Int) {
+    let measured = measureMaterializeAverages(plan, iterations: iterations)
+    return (measured.averageWallNanoseconds, measured.lastCount)
+  }
+
+  package func measureMaterializeAverages(
+    _ plan: InstantQueryPlan,
+    iterations: Int
+  ) -> (
+    averageWallNanoseconds: Double,
+    averageThreadCPUNanoseconds: Double,
+    lastCount: Int
+  ) {
     precondition(iterations > 0)
-    var total: UInt64 = 0
+    var wallTotal: UInt64 = 0
+    var cpuTotal: UInt64 = 0
     var lastCount = 0
+    var cpuSamples = 0
     for _ in 0..<iterations {
-      let t0 = DispatchTime.now().uptimeNanoseconds
+      let wall0 = DispatchTime.now().uptimeNanoseconds
+      let cpu0 = Self.currentThreadCPUNanoseconds()
       let rows = indexes.materialize(plan, attributes: attributes)
-      let t1 = DispatchTime.now().uptimeNanoseconds
-      total += t1 - t0
+      let cpu1 = Self.currentThreadCPUNanoseconds()
+      let wall1 = DispatchTime.now().uptimeNanoseconds
+      wallTotal += wall1 &- wall0
       lastCount = rows.count
+      if let cpu0, let cpu1, cpu1 >= cpu0 {
+        cpuTotal += cpu1 - cpu0
+        cpuSamples += 1
+      }
     }
-    return (Double(total) / Double(iterations), lastCount)
+    let averageCPU: Double
+    if cpuSamples == iterations {
+      averageCPU = Double(cpuTotal) / Double(iterations)
+    } else {
+      averageCPU = 0
+    }
+    return (Double(wallTotal) / Double(iterations), averageCPU, lastCount)
+  }
+
+  private static func currentThreadCPUNanoseconds() -> UInt64? {
+    var ts = timespec()
+    let result = clock_gettime(CLOCK_THREAD_CPUTIME_ID, &ts)
+    guard result == 0, ts.tv_sec >= 0, ts.tv_nsec >= 0 else {
+      return nil
+    }
+    return UInt64(ts.tv_sec) * 1_000_000_000 + UInt64(ts.tv_nsec)
   }
 
   public func materializeInstaQL(

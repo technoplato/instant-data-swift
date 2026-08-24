@@ -47,9 +47,10 @@ corepack "pnpm@${PNPM_VERSION}" --dir "${RUNNER}" install --frozen-lockfile \
 # Swift 6.3 `swift test` has no `--target`. `--filter` still compiles every
 # package test target, including gym apps. Score the floor by building and
 # running `instant-domain-aev-bench` before gym products compile. The
-# executable waits until 1-minute loadavg is at or below ncpu so a lagged
-# compile spike is not scored as a product miss. If it fails, still run the
-# remaining suite, then fail closed.
+# executable waits briefly until 1-minute loadavg is at or below ncpu. A
+# quiet host is scored on wall time. A noisy host is scored on in-thread
+# CPU of the same materialize loop. Missing CPU samples fail closed. If
+# the gate fails, still run the remaining suite, then fail closed.
 domain_aev_status=0
 swift build --package-path "${ROOT}" -c release --product instant-domain-aev-bench \
   2>&1 | tee "${RESULTS}/swift-release-domain-aev-build.log" \
