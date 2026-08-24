@@ -74,10 +74,10 @@ import Testing
         localID.update()
 
         await recorder.resumeResolution(with: "device-local-id")
-        try? await waitForV3RecordingCondition(
+        try await waitForV3RecordingCondition(
           operation: "wait for automatic local ID resolution"
         ) {
-          localID.wrappedValue == "device-local-id"
+          localID.wrappedValue == "device-local-id" && !localID.isLoading
         }
       }
 

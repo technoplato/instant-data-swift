@@ -2600,6 +2600,23 @@ private final class FetchStorage<Value: Sendable>: @unchecked Sendable {
     publishChange()
   }
 
+  func completeLoadSuccess(_ value: Value) {
+    withLock {
+      _wrappedValue = value
+      _loadError = nil
+      _isLoading = false
+    }
+    publishChange()
+  }
+
+  func completeLoadFailure(_ loadError: InstantError?) {
+    withLock {
+      _loadError = loadError
+      _isLoading = false
+    }
+    publishChange()
+  }
+
   func reserveAutomaticObservationTask() -> Int? {
     withLock {
       guard
@@ -9188,16 +9205,12 @@ public struct LocalID: @unchecked Sendable {
     do {
       let value = try await client.localID(named: name)
       try Task.checkCancellation()
-      wrappedValue = value
-      loadError = nil
-      isLoading = false
+      completeLoadSuccess(value)
     } catch let error as CancellationError {
-      loadError = nil
-      isLoading = false
+      completeLoadFailure(nil)
       throw error
     } catch let error as InstantError {
-      loadError = error
-      isLoading = false
+      completeLoadFailure(error)
       throw error
     } catch {
       let error = InstantError(
@@ -9207,10 +9220,19 @@ public struct LocalID: @unchecked Sendable {
         message: String(describing: error),
         recovery: "Inspect the configured InstantSwiftDataClient local ID operation."
       )
-      loadError = error
-      isLoading = false
+      completeLoadFailure(error)
       throw error
     }
+  }
+
+  private func completeLoadSuccess(_ value: String) {
+    lifecycle.storage.completeLoadSuccess(value)
+    lifecycle.publishChange()
+  }
+
+  private func completeLoadFailure(_ loadError: InstantError?) {
+    lifecycle.storage.completeLoadFailure(loadError)
+    lifecycle.publishChange()
   }
 
   public func task() async throws {
