@@ -47,6 +47,18 @@ if [[ "${ACTUAL_UPSTREAM}" != "${EXPECTED_UPSTREAM}" ]]; then
   exit 1
 fi
 
+SQLITE_DATA_REVISION="97987458b49f0311717ecfbf7e8ac4c406afbf55"
+SQLITE_DATA_CHECKOUT="${ROOT}/upstream/sqlite-data"
+if [[ ! -d "${SQLITE_DATA_CHECKOUT}/.git" ]]; then
+  rm -rf "${SQLITE_DATA_CHECKOUT}"
+  git clone --filter=blob:none --no-checkout \
+    https://github.com/pointfreeco/sqlite-data.git \
+    "${SQLITE_DATA_CHECKOUT}"
+fi
+git -C "${SQLITE_DATA_CHECKOUT}" fetch --force --depth 1 origin "${SQLITE_DATA_REVISION}"
+git -C "${SQLITE_DATA_CHECKOUT}" checkout --force --detach FETCH_HEAD
+export SQLITE_DATA_UPSTREAM_CHECKOUT="${SQLITE_DATA_CHECKOUT}"
+
 corepack "pnpm@${PNPM_VERSION}" --dir "${RUNNER}" install --frozen-lockfile \
   >"${RESULTS_DIR}/typescript-install.log" 2>&1
 corepack "pnpm@${PNPM_VERSION}" --dir "${RUNNER}" test \
