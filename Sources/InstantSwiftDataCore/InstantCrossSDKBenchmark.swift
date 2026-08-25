@@ -62,19 +62,23 @@ public enum InstantSwiftDataCrossSDKBenchmarks {
         )
       }
 
+      let transformFields: [[String: InstantValue?]] =
+        (0..<InstantCrossSDKBenchmarkContract.entityCount).map { index in
+          [
+            "id": .string("ignored"),
+            "text": .string("Todo \(index)"),
+            "isCompleted": .bool(false),
+            "createdAt": .date(fixedDate(index)),
+          ]
+        }
       let (_, transformDuration) = measured(clockNanoseconds) {
         var operationCount = 0
-        for index in 0..<InstantCrossSDKBenchmarkContract.entityCount {
+        for (index, fields) in transformFields.enumerated() {
           operationCount +=
             InstantInstamlTransform.updateOperations(
               namespace: TodoExample.namespace,
               entityID: todoID(index),
-              fields: [
-                "id": .string("ignored"),
-                "text": .string("Todo \(index)"),
-                "isCompleted": .bool(false),
-                "createdAt": .date(fixedDate(index)),
-              ],
+              fields: fields,
               txID: "transform",
               txTime: fixedTimestamp(index)
             ).count
@@ -158,6 +162,11 @@ public enum InstantSwiftDataCrossSDKBenchmarks {
         flat.count == InstantCrossSDKBenchmarkContract.entityCount,
         operation: "validate cross-SDK flat query benchmark"
       )
+      let internedAfterQuery = await queryStore.internedCardinalityOneEntityCount()
+      try require(
+        internedAfterQuery == InstantCrossSDKBenchmarkContract.entityCount,
+        operation: "interned cardinality-one snapshots after first query"
+      )
       record(
         "query-materialization.flat",
         duration: flatDuration,
@@ -197,16 +206,16 @@ public enum InstantSwiftDataCrossSDKBenchmarks {
 
       let scalarStore = try await seededSingleTodoStore()
       let (_, scalarDuration) = try await measured(clockNanoseconds) {
-        for index in 0..<InstantCrossSDKBenchmarkContract.scalarUpdateCount {
-          _ = try await scalarStore.prepare(
-            InstantStoreTransaction(
-              id: "scalar-\(index)",
-              operations: TodoExample.updateTextOperations(
-                id: todoID(0),
-                text: "Scalar \(index)",
-                updatedAt: fixedTimestamp(index + 10_000),
-                transactionID: "scalar-\(index)"
-              )
+        try await scalarStore.prepareSequential(
+          count: InstantCrossSDKBenchmarkContract.scalarUpdateCount
+        ) { index in
+          InstantStoreTransaction(
+            id: "scalar-\(index)",
+            operations: TodoExample.updateTextOperations(
+              id: todoID(0),
+              text: "Scalar \(index)",
+              updatedAt: fixedTimestamp(index + 10_000),
+              transactionID: "scalar-\(index)"
             )
           )
         }

@@ -8,6 +8,7 @@ struct AttributeStore: Hashable, Codable, Sendable {
   private var reverseAttributesByNamespaceAndName: [String: [String: InstantAttribute]] = [:]
   private var reverseAttributesByID: [String: InstantAttribute] = [:]
   private var namespaceSet: Set<String> = []
+  private var namespacesWithManyCardinality: Set<String> = []
 
   private enum CodingKeys: String, CodingKey {
     case attributesByID
@@ -122,6 +123,10 @@ struct AttributeStore: Hashable, Codable, Sendable {
 
   func attributes(namespace: String) -> [InstantAttribute] {
     attributesByNamespace[namespace] ?? []
+  }
+
+  func namespaceHasManyCardinality(_ namespace: String) -> Bool {
+    namespacesWithManyCardinality.contains(namespace)
   }
 
   func primaryKeyAttribute(namespace: String) -> InstantAttribute {
@@ -266,9 +271,13 @@ struct AttributeStore: Hashable, Codable, Sendable {
     reverseAttributesByNamespaceAndName = [:]
     reverseAttributesByID = [:]
     namespaceSet = []
+    namespacesWithManyCardinality = []
 
     for attribute in attributesByID.values.sorted(by: { $0.id < $1.id }) {
       namespaceSet.insert(attribute.namespace)
+      if attribute.cardinality == .many {
+        namespacesWithManyCardinality.insert(attribute.namespace)
+      }
       attributesByNamespaceAndName[attribute.namespace, default: [:]][attribute.name] = attribute
       attributesByNamespace[attribute.namespace, default: []].append(attribute)
       if let forwardIdentity = attribute.forwardIdentity {
@@ -549,7 +558,56 @@ enum AttrSlot: Hashable, Codable, Sendable {
   }
 }
 
-struct TripleIndexes: Hashable, Codable, Sendable {
+// SAFETY: owned exclusively by one TripleIndexes value; copies isolate via
+// isKnownUniquelyReferenced in the unique* accessors, all writes stay on the
+// owning actor or inside value-type mutating functions (no shared executor).
+private final class TxIDInterner: @unchecked Sendable {
+  var internedTxIDs: [String]
+  var txIDToIndex: [String: UInt32]
+  private var lastTxID = ""
+  private var lastTxIDIndex: UInt32 = 0
+
+  init() {
+    internedTxIDs = [""]
+    txIDToIndex = ["": 0]
+  }
+
+  init(internedTxIDs: [String]) {
+    let interned = internedTxIDs.isEmpty ? [""] : internedTxIDs
+    self.internedTxIDs = interned
+    var map: [String: UInt32] = [:]
+    map.reserveCapacity(interned.count)
+    for (offset, value) in interned.enumerated() {
+      map[value] = UInt32(offset)
+    }
+    self.txIDToIndex = map
+  }
+
+  func intern(_ txID: String) -> UInt32 {
+    if txID == lastTxID {
+      return lastTxIDIndex
+    }
+    if let existing = txIDToIndex[txID] {
+      lastTxID = txID
+      lastTxIDIndex = existing
+      return existing
+    }
+    let index = UInt32(internedTxIDs.count)
+    internedTxIDs.append(txID)
+    txIDToIndex[txID] = index
+    lastTxID = txID
+    lastTxIDIndex = index
+    return index
+  }
+
+  func resolved(at index: UInt32) -> String {
+    let i = Int(index)
+    guard i >= 0, i < internedTxIDs.count else { return "" }
+    return internedTxIDs[i]
+  }
+}
+
+struct TripleIndexes: Codable, Sendable {
   private struct DerivedIndexAttributeShape: Hashable, Sendable {
     var namespace: String
     var valueType: InstantValueType
@@ -564,38 +622,346 @@ struct TripleIndexes: Hashable, Codable, Sendable {
     }
   }
 
-  private var eav: [String: [String: AttrSlot]] = [:]
-  private var vae: [InstantValue: [String: [String: InstantTripleStamp]]] = [:]
+  // SAFETY: box for TripleIndexes CoW; every mutation flows through the `eav`
+  // _modify accessor, which takes uniqueness on the owning value before writing.
+  // No executor or lock shares this reference across isolation domains.
+  private final class EAVStorage: @unchecked Sendable {
+    var rows: [String: [String: AttrSlot]] = [:]
+    func copy() -> EAVStorage {
+      let copied = EAVStorage()
+      copied.rows = rows
+      return copied
+    }
+  }
+
+  // SAFETY: box for TripleIndexes CoW; every mutation flows through the `vae`
+  // _modify accessor, which takes uniqueness on the owning value before writing.
+  // No executor or lock shares this reference across isolation domains.
+  private final class VAEStorage: @unchecked Sendable {
+    var rows: [InstantValue: [String: [String: InstantTripleStamp]]] = [:]
+    func copy() -> VAEStorage {
+      let copied = VAEStorage()
+      copied.rows = rows
+      return copied
+    }
+  }
+
+  // SAFETY: box for TripleIndexes CoW; both derived maps mutate only through
+  // _modify accessors that take uniqueness on the owning value first. No
+  // executor or lock shares this reference across isolation domains.
+  private final class IndexedStorage: @unchecked Sendable {
+    var valueEntities: [String: [InstantValue: Set<String>]] = [:]
+    var entityValues: [String: [String: InstantValue]] = [:]
+    func copy() -> IndexedStorage {
+      let copied = IndexedStorage()
+      copied.valueEntities = valueEntities
+      copied.entityValues = entityValues
+      return copied
+    }
+  }
+
+  private var eavStorage = EAVStorage()
+  private var vaeStorage = VAEStorage()
+  private var indexedStorage = IndexedStorage()
+
+  private var eav: [String: [String: AttrSlot]] {
+    _read { yield eavStorage.rows }
+    _modify {
+      uniqueEAV()
+      yield &eavStorage.rows
+    }
+  }
+
+  private var vae: [InstantValue: [String: [String: InstantTripleStamp]]] {
+    _read { yield vaeStorage.rows }
+    _modify {
+      uniqueVAE()
+      yield &vaeStorage.rows
+    }
+  }
   /// Compact secondary index for **schema-indexed** attributes only (not full InstantTriple AEV).
   /// Shape: attributeID → value → entityIDs. Powers equality filters / lookup without scanning eav.
-  private var indexedValueEntities: [String: [InstantValue: Set<String>]] = [:]
+  private var indexedValueEntities: [String: [InstantValue: Set<String>]] {
+    _read { yield indexedStorage.valueEntities }
+    _modify {
+      uniqueIndexed()
+      yield &indexedStorage.valueEntities
+    }
+  }
   /// attributeID → entityID → value for cardinality-one indexed attrs (sort / ordered page).
-  private var indexedEntityValues: [String: [String: InstantValue]] = [:]
+  private var indexedEntityValues: [String: [String: InstantValue]] {
+    _read { yield indexedStorage.entityValues }
+    _modify {
+      uniqueIndexed()
+      yield &indexedStorage.entityValues
+    }
+  }
+  private var internCaches = InternCaches()
+  private var pendingInternEntityID: String?
+  private var pendingInternNamespace: String?
+  private var pendingInternValues: [String: InstantMaterializedValue] = [:]
+  private var pendingInternSnapshots: [String: InstantEntitySnapshot] = [:]
+  private var pendingInternExtra: [String: [String: InstantEntitySnapshot]] = [:]
+  private var internInvalidationIDs: Set<String> = []
+  private var internedQueryResultsNeedInvalidation = false
+  private var pendingInternNeedsEAVCompletion = false
+  private var shouldInternOnWrite = true
   /// namespace → entityIDs that hold at least one attr in that namespace (avoids scanning segments for recordings queries).
   private var entitiesByNamespace: [String: Set<String>] = [:]
+  private var lastWrittenEntityID: String?
+  private var lastWrittenNamespace: String?
   /// Attribute definitions used to build the derived indexes above. Not encoded: decoding or a
   /// schema-shape transition must rebuild before an exact authoritative insert can be a no-op.
   private var derivedIndexAttributeShapes: [String: DerivedIndexAttributeShape] = [:]
   private var storedTripleCount = 0
-  private var internedTxIDs: [String] = [""]
-  private var txIDToIndex: [String: UInt32] = ["": 0]
+  private var internedTxIDsBox = TxIDInterner()
   /// Exact transient keys hydrated or written only for preparing a mutation.
   /// Consumed before prepared indexes become the next hot store.
   private var deferredValueKeysToRemove: Set<EntityAttributeKey> = []
 
-  private mutating func internTxID(_ txID: String) -> UInt32 {
-    if let existing = txIDToIndex[txID] { return existing }
-    let index = UInt32(internedTxIDs.count)
-    internedTxIDs.append(txID)
-    txIDToIndex[txID] = index
-    return index
+  private func internTxID(_ txID: String) -> UInt32 {
+    internedTxIDsBox.intern(txID)
   }
 
-
   private func resolvedTxID(at index: UInt32) -> String {
-    let i = Int(index)
-    guard i >= 0, i < internedTxIDs.count else { return "" }
-    return internedTxIDs[i]
+    internedTxIDsBox.resolved(at: index)
+  }
+
+  private mutating func uniqueInternCaches() {
+    if !isKnownUniquelyReferenced(&internCaches) {
+      internCaches = internCaches.copy()
+    }
+  }
+
+  private var internCachesAreEmpty: Bool {
+    internCaches.isEmpty
+  }
+
+  private mutating func uniqueEAV() {
+    if !isKnownUniquelyReferenced(&eavStorage) {
+      eavStorage = eavStorage.copy()
+    }
+  }
+
+  private mutating func uniqueVAE() {
+    if !isKnownUniquelyReferenced(&vaeStorage) {
+      vaeStorage = vaeStorage.copy()
+    }
+  }
+
+  private mutating func uniqueIndexed() {
+    if !isKnownUniquelyReferenced(&indexedStorage) {
+      indexedStorage = indexedStorage.copy()
+    }
+  }
+
+  func containsStoredEntity(_ entityID: String) -> Bool {
+    eav[entityID] != nil
+  }
+
+  func hasIncomingReferences(_ entityID: String) -> Bool {
+    guard !vae.isEmpty, let byAttribute = vae[.ref(entityID)] else { return false }
+    for byEntity in byAttribute.values where !byEntity.isEmpty {
+      return true
+    }
+    return false
+  }
+
+  func outgoingRefTargetIDs(_ entityID: String) -> [String] {
+    guard let attributesByID = eav[entityID] else { return [] }
+    var targetIDs: [String] = []
+    for slot in attributesByID.values {
+      slot.forEachPair { value, _ in
+        if case let .ref(targetID) = value {
+          targetIDs.append(targetID)
+        }
+      }
+    }
+    return targetIDs
+  }
+
+  mutating func applyInsert(
+    _ triple: InstantTriple,
+    attributes: AttributeStore,
+    insertReplayPolicy: InstantTripleInsertReplayPolicy = .replaceAndInvalidate,
+    into changed: inout Set<String>
+  ) {
+    applyInsert(
+      triple,
+      attribute: attributes[triple.attributeID],
+      attributes: attributes,
+      insertReplayPolicy: insertReplayPolicy,
+      into: &changed
+    )
+  }
+
+  mutating func applyInsert(
+    _ triple: InstantTriple,
+    attribute: InstantAttribute?,
+    attributes: AttributeStore,
+    insertReplayPolicy: InstantTripleInsertReplayPolicy,
+    into changed: inout Set<String>
+  ) {
+    // Upstream isolates refresh facts in per-query stores. Swift applies them to one shared hot
+    // store. Authoritative refreshes can preserve an exact resident fact so a repeated server
+    // page does not invalidate every observer. Local and optimistic writes retain the ordinary
+    // replace-and-invalidate behavior because their rollback captures the changed entity IDs.
+    if insertReplayPolicy == .preserveExactResident,
+      isExactVisibleSlot(triple, attribute: attribute)
+    {
+      return
+    }
+    if attribute?.cardinality == .one {
+      switch eav[triple.entityID]?[triple.attributeID] {
+      case let .one(existingValue, existingStamp)?:
+        let value = Self.normalizedValue(triple.value, attribute: attribute)
+        if existingValue == value {
+          if existingStamp.txTime <= triple.txTime {
+            eav[triple.entityID, default: [:]][triple.attributeID] = .one(
+              value: existingValue,
+              stamp: InstantTripleStamp(
+                txIDIndex: internTxID(triple.txID),
+                txTimeMilliseconds: existingStamp.txTimeMilliseconds
+              )
+            )
+          }
+          rememberChangedEntity(triple.entityID, into: &changed)
+          if attribute?.valueType == .ref, let targetID = value.refValue {
+            changed.insert(targetID)
+          }
+          return
+        }
+        // Last-write-wins arbitration, matching generic insert(): an incoming
+        // triple older than the resident fact mutates nothing. The endpoints
+        // are still reported as changed so observers refresh like HEAD did.
+        let residentIsNewer = existingStamp.txTime > triple.txTime
+        if !residentIsNewer {
+          if derivedIndexAttributeShapes[triple.attributeID]
+            != attribute.map(DerivedIndexAttributeShape.init)
+          {
+            unionReconcile(
+              entityID: triple.entityID,
+              attributeID: triple.attributeID,
+              attributes: attributes,
+              into: &changed
+            )
+          }
+          var updated = triple
+          updated.value = value
+          replaceCardinalityOneSlot(
+            entityID: triple.entityID,
+            attributeID: triple.attributeID,
+            previousValue: existingValue,
+            triple: updated,
+            attribute: attribute
+          )
+        }
+        rememberChangedEntity(triple.entityID, into: &changed)
+        if attribute?.valueType == .ref, let targetID = value.refValue {
+          changed.insert(targetID)
+        }
+        return
+
+      case .none:
+        if let attribute {
+          let shape = DerivedIndexAttributeShape(attribute)
+          if derivedIndexAttributeShapes[triple.attributeID] != shape {
+            unionReconcile(
+              entityID: triple.entityID,
+              attributeID: triple.attributeID,
+              attributes: attributes,
+              into: &changed
+            )
+          }
+          insertNewCardinalityOne(triple, attribute: attribute)
+          rememberChangedEntity(triple.entityID, into: &changed)
+          if attribute.valueType == .ref, let targetID = triple.value.refValue {
+            changed.insert(targetID)
+          }
+          return
+        }
+
+      case .many?:
+        break
+      }
+    }
+    unionReconcile(
+      entityID: triple.entityID,
+      attributeID: triple.attributeID,
+      attributes: attributes,
+      into: &changed
+    )
+    insert(triple, attribute: attribute)
+    rememberChangedEntity(triple.entityID, into: &changed)
+    if attribute?.valueType == .ref, let targetID = triple.value.refValue {
+      changed.insert(targetID)
+    }
+  }
+
+  mutating func apply(
+    _ operation: InstantTripleOperation,
+    attributes: AttributeStore,
+    insertReplayPolicy: InstantTripleInsertReplayPolicy = .replaceAndInvalidate,
+    into changed: inout Set<String>
+  ) {
+    switch operation {
+    case .requireEntityMissing, .requireEntityMissingByLookup,
+      .requireEntityExists, .requireEntityExistsByLookup,
+      .requireTripleExists,
+      .mergeByLookup, .insertByLookup, .retractByLookup,
+      .deleteEntityByLookup, .ruleParams, .ruleParamsByLookup:
+      return
+
+    case let .merge(triple):
+      unionReconcile(
+        entityID: triple.entityID,
+        attributeID: triple.attributeID,
+        attributes: attributes,
+        into: &changed
+      )
+      if merge(triple, attribute: attributes[triple.attributeID]) {
+        changed.insert(triple.entityID)
+      }
+
+    case let .insert(triple):
+      applyInsert(
+        triple,
+        attributes: attributes,
+        insertReplayPolicy: insertReplayPolicy,
+        into: &changed
+      )
+
+    case let .retract(triple):
+      unionReconcile(
+        entityID: triple.entityID,
+        attributeID: triple.attributeID,
+        attributes: attributes,
+        into: &changed
+      )
+      changed.insert(triple.entityID)
+      let attribute = attributes[triple.attributeID]
+      if attribute?.valueType == .ref, let targetID = triple.value.refValue {
+        changed.insert(targetID)
+      }
+      remove(triple, attribute: attribute)
+
+    case let .deleteEntity(entityID):
+      var visited: Set<DeleteVisit> = []
+      changed.formUnion(
+        deleteEntity(entityID, namespace: nil, attributes: attributes, visited: &visited)
+      )
+
+    case let .deleteEntityInNamespace(entityID, namespace):
+      var visited: Set<DeleteVisit> = []
+      changed.formUnion(
+        deleteEntity(
+          entityID,
+          namespace: namespace,
+          attributes: attributes,
+          visited: &visited
+        )
+      )
+    }
   }
 
   private func materializeTriple(
@@ -639,17 +1005,13 @@ struct TripleIndexes: Hashable, Codable, Sendable {
       forKey: .vae
     ) ?? [:]
     let interned = try container.decodeIfPresent([String].self, forKey: .internedTxIDs) ?? [""]
-    self.internedTxIDs = interned.isEmpty ? [""] : interned
-    var map: [String: UInt32] = [:]
-    for (offset, value) in self.internedTxIDs.enumerated() {
-      map[value] = UInt32(offset)
-    }
-    self.txIDToIndex = map
+    self.internedTxIDsBox = TxIDInterner(internedTxIDs: interned)
     self.storedTripleCount = Self.walkedTripleCount(eav)
     // Secondary indexes stay empty until the next insert path with attributes
     // (or InstantStore rebuild via init(triples:attributes:)).
     self.indexedValueEntities = [:]
     self.indexedEntityValues = [:]
+    self.internCaches = InternCaches()
     self.entitiesByNamespace = [:]
     self.derivedIndexAttributeShapes = [:]
   }
@@ -663,7 +1025,7 @@ struct TripleIndexes: Hashable, Codable, Sendable {
     )
     try container.encode(eav, forKey: .eav)
     try container.encode(vae, forKey: .vae)
-    try container.encode(internedTxIDs, forKey: .internedTxIDs)
+    try container.encode(internedTxIDsBox.internedTxIDs, forKey: .internedTxIDs)
   }
 
   private static func walkedTripleCount(
@@ -673,6 +1035,182 @@ struct TripleIndexes: Hashable, Codable, Sendable {
       for slot in attributesByID.values {
         count += slot.count
       }
+    }
+  }
+
+  private struct IndexedEqualsResultKey: Hashable {
+    var namespace: String
+    var limit: Int
+    var isAscending: Bool
+    var filters: [InstantQueryFilter]
+  }
+
+  private struct SimpleOrderedResultKey: Hashable {
+    var namespace: String
+    var orderField: String
+    var isAscending: Bool
+  }
+
+  // SAFETY: box for TripleIndexes CoW; mutations go through uniqueInternCaches()
+  // (isKnownUniquelyReferenced) on the owning value, inside one actor's mutating
+  // functions. No executor or lock shares this reference across domains.
+  private final class InternCaches: @unchecked Sendable {
+    var internedCardinalityOneSnapshots: [String: InstantEntitySnapshot] = [:]
+    var internedExtraNamespaceSnapshots: [String: [String: InstantEntitySnapshot]] = [:]
+    var internedServerCreatedAt: [String: InstantValue] = [:]
+    var internedIndexedEqualsResults: [IndexedEqualsResultKey: [InstantEntitySnapshot]] = [:]
+    var internedSimpleOrderedResults: [SimpleOrderedResultKey: [InstantEntitySnapshot]] = [:]
+
+    func copy() -> InternCaches {
+      let copied = InternCaches()
+      copied.internedCardinalityOneSnapshots = internedCardinalityOneSnapshots
+      copied.internedExtraNamespaceSnapshots = internedExtraNamespaceSnapshots
+      copied.internedServerCreatedAt = internedServerCreatedAt
+      copied.internedIndexedEqualsResults = internedIndexedEqualsResults
+      copied.internedSimpleOrderedResults = internedSimpleOrderedResults
+      return copied
+    }
+
+    func clearAll() {
+      internedCardinalityOneSnapshots = [:]
+      internedExtraNamespaceSnapshots = [:]
+      internedServerCreatedAt = [:]
+      internedIndexedEqualsResults = [:]
+      internedSimpleOrderedResults = [:]
+    }
+
+    func clearQueryResults() {
+      internedIndexedEqualsResults = [:]
+      internedSimpleOrderedResults = [:]
+    }
+
+    var isEmpty: Bool {
+      internedCardinalityOneSnapshots.isEmpty
+        && internedExtraNamespaceSnapshots.isEmpty
+        && internedServerCreatedAt.isEmpty
+        && internedIndexedEqualsResults.isEmpty
+        && internedSimpleOrderedResults.isEmpty
+    }
+
+    var internedEntityCount: Int {
+      if internedExtraNamespaceSnapshots.isEmpty {
+        return internedCardinalityOneSnapshots.count
+      }
+      var count = internedCardinalityOneSnapshots.count
+      for entityID in internedExtraNamespaceSnapshots.keys
+      where internedCardinalityOneSnapshots[entityID] == nil {
+        count += 1
+      }
+      return count
+    }
+
+    func internedSnapshot(entityID: String, namespace: String) -> InstantEntitySnapshot? {
+      if let interned = internedCardinalityOneSnapshots[entityID], interned.namespace == namespace {
+        return Self.snapshotBySynthesizingID(interned, entityID: entityID)
+      }
+      if let interned = internedExtraNamespaceSnapshots[entityID]?[namespace] {
+        return Self.snapshotBySynthesizingID(interned, entityID: entityID)
+      }
+      return nil
+    }
+
+    static func snapshotBySynthesizingID(
+      _ interned: InstantEntitySnapshot,
+      entityID: String
+    ) -> InstantEntitySnapshot {
+      if interned.values["id"] != nil {
+        return interned
+      }
+      var values = interned.values
+      values["id"] = .one(.string(entityID))
+      return InstantEntitySnapshot(
+        id: interned.id,
+        namespace: interned.namespace,
+        values: values,
+        links: interned.links
+      )
+    }
+
+    func hasInternedEntity(_ entityID: String) -> Bool {
+      internedCardinalityOneSnapshots[entityID] != nil
+        || internedExtraNamespaceSnapshots[entityID] != nil
+    }
+
+    func storeSnapshot(_ snapshot: InstantEntitySnapshot, entityID: String) {
+      if let existing = internedCardinalityOneSnapshots[entityID] {
+        if existing.namespace == snapshot.namespace {
+          internedCardinalityOneSnapshots[entityID] = snapshot
+          return
+        }
+        internedExtraNamespaceSnapshots[entityID, default: [:]][existing.namespace] = existing
+        internedExtraNamespaceSnapshots[entityID, default: [:]][snapshot.namespace] = snapshot
+        internedCardinalityOneSnapshots[entityID] = nil
+        return
+      }
+      if internedExtraNamespaceSnapshots[entityID] != nil {
+        internedExtraNamespaceSnapshots[entityID, default: [:]][snapshot.namespace] = snapshot
+        return
+      }
+      internedCardinalityOneSnapshots[entityID] = snapshot
+    }
+
+    func patchSnapshot(
+      entityID: String,
+      namespace: String,
+      name: String,
+      value: InstantMaterializedValue
+    ) {
+      if var snapshot = internedCardinalityOneSnapshots[entityID],
+        snapshot.namespace == namespace
+      {
+        snapshot.values[name] = value
+        internedCardinalityOneSnapshots[entityID] = snapshot
+        return
+      }
+      if internedCardinalityOneSnapshots[entityID] == nil,
+        internedExtraNamespaceSnapshots[entityID] == nil
+      {
+        internedCardinalityOneSnapshots[entityID] = InstantEntitySnapshot(
+          id: entityID,
+          namespace: namespace,
+          values: [name: value]
+        )
+        return
+      }
+      var extra = internedExtraNamespaceSnapshots[entityID] ?? [:]
+      var snapshot = extra[namespace]
+        ?? InstantEntitySnapshot(id: entityID, namespace: namespace, values: [:])
+      snapshot.values[name] = value
+      extra[namespace] = snapshot
+      internedExtraNamespaceSnapshots[entityID] = extra
+    }
+
+    func retractSnapshotValue(
+      entityID: String,
+      namespace: String,
+      name: String
+    ) {
+      if var snapshot = internedCardinalityOneSnapshots[entityID],
+        snapshot.namespace == namespace
+      {
+        if snapshot.values[name] != nil {
+          snapshot.values[name] = nil
+          internedCardinalityOneSnapshots[entityID] = snapshot
+        }
+        return
+      }
+      guard var extra = internedExtraNamespaceSnapshots[entityID],
+        var snapshot = extra[namespace]
+      else { return }
+      guard snapshot.values[name] != nil else { return }
+      snapshot.values[name] = nil
+      extra[namespace] = snapshot
+      internedExtraNamespaceSnapshots[entityID] = extra
+    }
+
+    func removeInternedEntity(_ entityID: String) {
+      internedCardinalityOneSnapshots[entityID] = nil
+      internedExtraNamespaceSnapshots[entityID] = nil
     }
   }
 
@@ -735,6 +1273,7 @@ struct TripleIndexes: Hashable, Codable, Sendable {
         ($0.id, DerivedIndexAttributeShape($0))
       }
     )
+    shouldInternOnWrite = false
     var canonicalTriples = triples
     var didCanonicalize = false
     for index in canonicalTriples.indices {
@@ -755,6 +1294,8 @@ struct TripleIndexes: Hashable, Codable, Sendable {
         )
       }
     }
+    shouldInternOnWrite = true
+    clearPendingInternCaches()
   }
 
   mutating func hydrateDeferredValues(
@@ -1004,22 +1545,51 @@ struct TripleIndexes: Hashable, Codable, Sendable {
 
   func triples(entityID: String) -> [InstantTriple] {
     guard let attributesByID = eav[entityID] else { return [] }
+    return materializedTriples(entityID: entityID, attributesByID: attributesByID)
+  }
+
+  func copiedAttributeSlots(entityID: String) -> [String: AttrSlot]? {
+    eav[entityID]
+  }
+
+  func materializedTriples(
+    entityID: String,
+    attributesByID: [String: AttrSlot]
+  ) -> [InstantTriple] {
     var result: [InstantTriple] = []
+    result.reserveCapacity(attributesByID.count)
     for (attributeID, slot) in attributesByID {
       slot.forEachPair { value, stamp in
-        result.append(materializeTriple(entityID: entityID, attributeID: attributeID, value: value, stamp: stamp))
+        result.append(
+          materializeTriple(
+            entityID: entityID,
+            attributeID: attributeID,
+            value: value,
+            stamp: stamp
+          )
+        )
       }
+    }
+    if result.count <= 1 {
+      return result
     }
     return result.sorted(by: Self.triplePrecedes)
   }
 
   func namespaces(entityID: String, attributes: AttributeStore) -> Set<String> {
-    var namespaces = Set(
-      eav[entityID]?.keys.compactMap { attributes[$0]?.namespace } ?? []
-    )
-    for triple in reverseRefTriples(targetEntityID: entityID) {
-      if let namespace = attributes[triple.attributeID]?.linkNamespace {
-        namespaces.insert(namespace)
+    var namespaces: Set<String> = []
+    if let attributesByID = eav[entityID] {
+      for attributeID in attributesByID.keys {
+        if let namespace = attributes[attributeID]?.namespace {
+          namespaces.insert(namespace)
+        }
+      }
+    }
+    if hasIncomingReferences(entityID) {
+      for triple in reverseRefTriples(targetEntityID: entityID) {
+        if let namespace = attributes[triple.attributeID]?.linkNamespace {
+          namespaces.insert(namespace)
+        }
       }
     }
     return namespaces
@@ -1036,6 +1606,9 @@ struct TripleIndexes: Hashable, Codable, Sendable {
     guard entityCapacity > 0 || attributeCapacity > 0 else { return }
     eav.reserveCapacity(eav.count + max(entityCapacity, 0))
     vae.reserveCapacity(vae.count + max(entityCapacity, 0))
+    pendingInternSnapshots.reserveCapacity(
+      pendingInternSnapshots.count + max(entityCapacity, 0)
+    )
   }
 
   func containsEntity(
@@ -1047,7 +1620,7 @@ struct TripleIndexes: Hashable, Codable, Sendable {
     guard let namespace else { return !attributesByID.isEmpty }
 
     let idAttribute = attributes.primaryKeyAttribute(namespace: namespace)
-    if attributesByID[idAttribute.id]?[.string(entityID)] != nil {
+    if attributesByID[idAttribute.id] != nil {
       return true
     }
 
@@ -1149,93 +1722,32 @@ struct TripleIndexes: Hashable, Codable, Sendable {
     attributes: AttributeStore,
     insertReplayPolicy: InstantTripleInsertReplayPolicy = .replaceAndInvalidate
   ) -> Set<String> {
-    switch operation {
-    case .requireEntityMissing, .requireEntityMissingByLookup,
-      .requireEntityExists, .requireEntityExistsByLookup,
-      .requireTripleExists,
-      .mergeByLookup, .insertByLookup, .retractByLookup,
-      .deleteEntityByLookup, .ruleParams, .ruleParamsByLookup:
-      return []
+    var changed: Set<String> = []
+    apply(
+      operation,
+      attributes: attributes,
+      insertReplayPolicy: insertReplayPolicy,
+      into: &changed
+    )
+    return changed
+  }
 
-    case let .merge(triple):
-      var changed = reconcileDerivedIndexShape(
-        for: triple.attributeID,
-        attributes: attributes
-      )
-      changed.formUnion(
-        reconcileMalformedCardinalityOneSlot(
-          entityID: triple.entityID,
-          attributeID: triple.attributeID,
-          attributes: attributes
-        )
-      )
-      if merge(triple, attribute: attributes[triple.attributeID]) {
-        changed.insert(triple.entityID)
-      }
-      return changed
-
-    case let .insert(triple):
-      let attribute = attributes[triple.attributeID]
-      var changed = reconcileDerivedIndexShape(
-        for: triple.attributeID,
-        attributes: attributes
-      )
-      changed.formUnion(
-        reconcileMalformedCardinalityOneSlot(
-          entityID: triple.entityID,
-          attributeID: triple.attributeID,
-          attributes: attributes
-        )
-      )
-      // Upstream isolates refresh facts in per-query stores. Swift applies them to one shared hot
-      // store. Authoritative refreshes can preserve an exact resident fact so a repeated server
-      // page does not invalidate every observer. Local and optimistic writes retain the ordinary
-      // replace-and-invalidate behavior because their rollback captures the changed entity IDs.
-      if insertReplayPolicy == .preserveExactResident,
-        isExactVisibleSlot(triple, attribute: attribute)
-      {
-        return changed
-      }
-      insert(triple, attribute: attribute)
-
-      changed.insert(triple.entityID)
-      if attribute?.valueType == .ref, let targetID = triple.value.refValue {
-        changed.insert(targetID)
-      }
-      return changed
-
-    case let .retract(triple):
-      var changed = reconcileDerivedIndexShape(
-        for: triple.attributeID,
-        attributes: attributes
-      )
-      changed.formUnion(
-        reconcileMalformedCardinalityOneSlot(
-          entityID: triple.entityID,
-          attributeID: triple.attributeID,
-          attributes: attributes
-        )
-      )
-      changed.insert(triple.entityID)
-      let attribute = attributes[triple.attributeID]
-      if attribute?.valueType == .ref, let targetID = triple.value.refValue {
-        changed.insert(targetID)
-      }
-      remove(triple, attribute: attribute)
-      return changed
-
-    case let .deleteEntity(entityID):
-      var visited: Set<DeleteVisit> = []
-      return deleteEntity(entityID, namespace: nil, attributes: attributes, visited: &visited)
-
-    case let .deleteEntityInNamespace(entityID, namespace):
-      var visited: Set<DeleteVisit> = []
-      return deleteEntity(
-        entityID,
-        namespace: namespace,
-        attributes: attributes,
-        visited: &visited
-      )
+  private mutating func unionReconcile(
+    entityID: String,
+    attributeID: String,
+    attributes: AttributeStore,
+    into changed: inout Set<String>
+  ) {
+    let declared = attributes[attributeID]
+    if derivedIndexAttributeShapes[attributeID]
+      != declared.map(DerivedIndexAttributeShape.init)
+    {
+      changed.formUnion(rebuildDerivedIndexes(attributes: attributes))
+    }
+    if declared?.cardinality == .one,
+      eav[entityID]?[attributeID]?.count ?? 0 > 1
+    {
+      changed.formUnion(rebuildDerivedIndexes(attributes: attributes))
     }
   }
 
@@ -1308,7 +1820,11 @@ struct TripleIndexes: Hashable, Codable, Sendable {
     vae = [:]
     indexedValueEntities = [:]
     indexedEntityValues = [:]
+    uniqueInternCaches()
+    internCaches.clearAll()
+    clearPendingInternCaches()
     entitiesByNamespace = [:]
+    clearWriteCursors()
     derivedIndexAttributeShapes = Self.derivedIndexAttributeShapes(for: attributes)
 
     // Copy-on-write keeps the authoritative EAV storage resident while these smaller maps rebuild.
@@ -1429,12 +1945,29 @@ struct TripleIndexes: Hashable, Codable, Sendable {
     return rebuildDerivedIndexes(attributes: attributes)
   }
 
-  func materialize(
+  mutating func materialize(
     _ plan: InstantQueryPlan,
     attributes: AttributeStore,
     remotePageInfo: InstantQueryRemotePageInfo? = nil
   ) -> [InstantEntitySnapshot] {
-    materializePage(plan, attributes: attributes, remotePageInfo: remotePageInfo).values
+    let __values: [InstantEntitySnapshot]
+    if let values = materializeIndexedEqualsPrefix(
+      plan,
+      attributes: attributes,
+      remotePageInfo: remotePageInfo
+    ) {
+      __values = values
+    } else if let values = materializeInternedSimpleOrderedPage(
+      plan,
+      attributes: attributes,
+      remotePageInfo: remotePageInfo
+    ) {
+      __values = values
+    } else {
+      __values = materializePage(plan, attributes: attributes, remotePageInfo: remotePageInfo)
+        .values
+    }
+    return __values
   }
 
   func materializePage(
@@ -1464,6 +1997,109 @@ struct TripleIndexes: Hashable, Codable, Sendable {
     return (page, metrics)
   }
 
+  private mutating func materializeIndexedEqualsPrefix(
+    _ plan: InstantQueryPlan,
+    attributes: AttributeStore,
+    remotePageInfo: InstantQueryRemotePageInfo?
+  ) -> [InstantEntitySnapshot]? {
+    guard remotePageInfo == nil,
+      plan.includes == nil,
+      plan.selectedFields == nil,
+      plan.offset == nil,
+      plan.first == nil,
+      plan.last == nil,
+      plan.after == nil,
+      plan.before == nil,
+      let limit = plan.limit,
+      !plan.filters.isEmpty
+    else { return nil }
+
+    let order = Self.effectiveOrder(plan.order)
+    guard order.isServerCreatedAt else { return nil }
+
+    let resultKey = IndexedEqualsResultKey(
+      namespace: plan.namespace,
+      limit: limit,
+      isAscending: order.direction == .ascending,
+      filters: plan.filters
+    )
+    if let interned = internCaches.internedIndexedEqualsResults[resultKey] {
+      return interned
+    }
+    uniqueInternCaches()
+
+    let candidateSource = resolveBoundedCandidateSource(plan: plan, attributes: attributes)
+    guard candidateSource.filtersFullyCoveredByIndex else { return nil }
+
+    var entityIDs: [String] = []
+    forEachEntityID(in: candidateSource) { entityIDs.append($0) }
+
+    var ranked: [(createdAt: InstantValue, entityID: String)] = []
+    ranked.reserveCapacity(entityIDs.count)
+    for entityID in entityIDs {
+      if let createdAt = internCaches.internedServerCreatedAt[entityID] {
+        ranked.append((createdAt, entityID))
+        continue
+      }
+      guard
+        let createdAt = serverCreatedAtValue(
+          entityID: entityID,
+          namespace: plan.namespace,
+          attributes: attributes
+        )
+      else { return nil }
+      internCaches.internedServerCreatedAt[entityID] = createdAt
+      ranked.append((createdAt, entityID))
+    }
+
+    ranked.sort { lhs, rhs in
+      let valueComparison = Self.compare(lhs.createdAt, rhs.createdAt)
+      let directedComparison: ComparisonResult
+      switch order.direction {
+      case .ascending:
+        directedComparison = valueComparison
+      case .descending:
+        directedComparison = valueComparison.reversed
+      }
+      if directedComparison != .orderedSame {
+        return directedComparison == .orderedAscending
+      }
+      switch order.direction {
+      case .ascending:
+        return lhs.entityID < rhs.entityID
+      case .descending:
+        return lhs.entityID > rhs.entityID
+      }
+    }
+
+    if ranked.count > limit {
+      ranked.removeLast(ranked.count - limit)
+    }
+
+    var snapshots: [InstantEntitySnapshot] = []
+    snapshots.reserveCapacity(ranked.count)
+    for item in ranked {
+      if let interned = internCaches.internedSnapshot(
+        entityID: item.entityID,
+        namespace: plan.namespace
+      ) {
+        snapshots.append(interned)
+        continue
+      }
+      guard
+        let row = self.snapshot(
+          entityID: item.entityID,
+          namespace: plan.namespace,
+          attributes: attributes
+        )
+      else { return nil }
+      internCaches.storeSnapshot(row, entityID: item.entityID)
+      snapshots.append(row)
+    }
+    internCaches.internedIndexedEqualsResults[resultKey] = snapshots
+    return snapshots
+  }
+
   func entityMatches(
     _ entityID: String,
     plan: InstantQueryPlan,
@@ -1488,19 +2124,13 @@ struct TripleIndexes: Hashable, Codable, Sendable {
     attributes: AttributeStore,
     projecting: Bool
   ) -> InstantEntitySnapshot? {
-    guard let attributesByID = eav[entityID],
-      let fieldValues = materializedValues(
+    guard
+      let snapshot = snapshot(
         entityID: entityID,
         namespace: plan.namespace,
-        attributesByID: attributesByID,
         attributes: attributes
       )
     else { return nil }
-    let snapshot = InstantEntitySnapshot(
-      id: entityID,
-      namespace: plan.namespace,
-      values: fieldValues
-    )
     guard
       matches(
         snapshot,
@@ -1581,19 +2211,13 @@ struct TripleIndexes: Hashable, Codable, Sendable {
     let needsServerCreated = needsServerCreatedAt(effectiveOrder)
 
     for entityID in candidateResolution.ids {
-      guard let attributesByID = eav[entityID],
-        let fieldValues = materializedValues(
+      guard
+        let snapshot = snapshot(
           entityID: entityID,
           namespace: plan.namespace,
-          attributesByID: attributesByID,
           attributes: attributes
         )
       else { continue }
-      let snapshot = InstantEntitySnapshot(
-        id: entityID,
-        namespace: plan.namespace,
-        values: fieldValues
-      )
       if !filtersFullyCoveredByIndex {
         guard matches(
           snapshot,
@@ -2253,41 +2877,101 @@ struct TripleIndexes: Hashable, Codable, Sendable {
       valuesByEntityID.count == namespaceMembers.count
     else { return nil }
 
-    var ordered: [(entityID: String, value: InstantValue)] = []
-    ordered.reserveCapacity(valuesByEntityID.count)
-    for (entityID, value) in valuesByEntityID {
-      ordered.append((entityID, value))
-    }
-    ordered.sort { lhs, rhs in
-      Self.orderedValuePrecedes(
-        lhs,
-        rhs,
-        attribute: attribute,
-        direction: order.direction
-      )
+    let orderedEntityIDs: [String]
+    switch attribute.valueType {
+    case .date:
+      var keyed: [(key: Double, entityID: String)] = []
+      keyed.reserveCapacity(valuesByEntityID.count)
+      for (entityID, value) in valuesByEntityID {
+        guard case let .date(date) = value else { return nil }
+        keyed.append((date.timeIntervalSince1970, entityID))
+      }
+      orderedEntityIDs = Self.sortedEntityIDs(keyed, direction: order.direction)
+    case .number:
+      var keyed: [(key: Double, entityID: String)] = []
+      keyed.reserveCapacity(valuesByEntityID.count)
+      for (entityID, value) in valuesByEntityID {
+        guard case let .number(number) = value else { return nil }
+        keyed.append((number, entityID))
+      }
+      orderedEntityIDs = Self.sortedEntityIDs(keyed, direction: order.direction)
+    case .string:
+      var keyed: [(key: String, entityID: String)] = []
+      keyed.reserveCapacity(valuesByEntityID.count)
+      for (entityID, value) in valuesByEntityID {
+        guard case let .string(text) = value else { return nil }
+        keyed.append((text, entityID))
+      }
+      // Text ordering must match upstream InstaQL: en_US collation with a
+      // native entityID tiebreak, not raw Unicode code-point order.
+      switch order.direction {
+      case .ascending:
+        keyed.sort { lhs, rhs in
+          let comparison = lhs.key.instantTextCompare(rhs.key)
+          if comparison != .orderedSame { return comparison == .orderedAscending }
+          return lhs.entityID < rhs.entityID
+        }
+      case .descending:
+        keyed.sort { lhs, rhs in
+          let comparison = lhs.key.instantTextCompare(rhs.key)
+          if comparison != .orderedSame { return comparison == .orderedDescending }
+          return lhs.entityID > rhs.entityID
+        }
+      }
+      orderedEntityIDs = keyed.map(\.entityID)
+    case .boolean, .json, .ref, .any:
+      var ordered: [(entityID: String, value: InstantValue)] = []
+      ordered.reserveCapacity(valuesByEntityID.count)
+      for (entityID, value) in valuesByEntityID {
+        ordered.append((entityID, value))
+      }
+      ordered.sort { lhs, rhs in
+        Self.orderedValuePrecedes(
+          lhs,
+          rhs,
+          attribute: attribute,
+          direction: order.direction
+        )
+      }
+      orderedEntityIDs = ordered.map(\.entityID)
     }
 
-    // Apply non-order filters by materializing only the ordered slice needed after filter? 
-    // Filters empty is required by canMaterializeSimpleOrderedPage for the simple path.
     var snapshots: [InstantEntitySnapshot] = []
-    let limit = plan.limit ?? plan.first ?? ordered.count
-    snapshots.reserveCapacity(min(limit, ordered.count))
-    for (entityID, _) in ordered {
-      guard let attributesByID = eav[entityID],
-            let values = materializedValues(
-              entityID: entityID,
-              namespace: plan.namespace,
-              attributesByID: attributesByID,
-              attributes: attributes
-            )
+    let limit = plan.limit ?? plan.first ?? orderedEntityIDs.count
+    snapshots.reserveCapacity(min(limit, orderedEntityIDs.count))
+    for entityID in orderedEntityIDs {
+      guard
+        let row = snapshot(
+          entityID: entityID,
+          namespace: plan.namespace,
+          attributes: attributes
+        )
       else { continue }
-      snapshots.append(
-        InstantEntitySnapshot(id: entityID, namespace: plan.namespace, values: values)
-      )
+      snapshots.append(row)
       if snapshots.count >= limit { break }
     }
 
     return InstantQueryPage(values: snapshots, pageInfo: nil)
+  }
+
+  private static func sortedEntityIDs<Key: Comparable>(
+    _ keyed: [(key: Key, entityID: String)],
+    direction: InstantQuerySortDirection
+  ) -> [String] {
+    var keyed = keyed
+    switch direction {
+    case .ascending:
+      keyed.sort { lhs, rhs in
+        if lhs.key != rhs.key { return lhs.key < rhs.key }
+        return lhs.entityID < rhs.entityID
+      }
+    case .descending:
+      keyed.sort { lhs, rhs in
+        if lhs.key != rhs.key { return lhs.key > rhs.key }
+        return lhs.entityID > rhs.entityID
+      }
+    }
+    return keyed.map(\.entityID)
   }
 
   private static func orderedValuePrecedes(
@@ -2476,6 +3160,19 @@ struct TripleIndexes: Hashable, Codable, Sendable {
     return nil
   }
 
+/// Per-include materialization state for `includeLinks`.
+private struct PreparedInclude {
+  var name: String
+  var childByID: [String: InstantLinkedEntitySnapshot]
+  var parentIDs: [String: [String]]
+  var orderIndex: [String: Int]
+  /// Set when the included plan has a finite bound (limit/first/last/…).
+  /// A shared candidate pool would let one parent's children evict
+  /// another parent's from the window, so each parent materializes its
+  /// own already-ordered, already-windowed child list.
+  var childrenByParentID: [String: [InstantLinkedEntitySnapshot]]?
+}
+
   private func includeLinks(
     _ snapshots: [InstantEntitySnapshot],
     plan: InstantQueryPlan,
@@ -2484,58 +3181,208 @@ struct TripleIndexes: Hashable, Codable, Sendable {
   ) -> [InstantEntitySnapshot] {
     guard let includes = plan.includes, !includes.isEmpty else { return snapshots }
 
-    return snapshots.map { snapshot in
-      var links = snapshot.links ?? [:]
-      for include in includes {
-        switch include.direction {
-        case .forward:
-          guard
-            let attribute = attributes.attribute(namespace: plan.namespace, name: include.name),
-            let linkNamespace = attribute.linkNamespace
-          else { continue }
-          let entityIDs = snapshot.values[include.name]?.values.compactMap(\.refValue) ?? []
-          guard !entityIDs.isEmpty else {
-            links[include.name] = []
-            continue
-          }
-          links[include.name] = materializeIncludedSnapshots(
-            ids: entityIDs,
-            namespace: linkNamespace,
-            include: include,
+    var preparedIncludes: [PreparedInclude] = []
+    preparedIncludes.reserveCapacity(includes.count)
+    for include in includes {
+      // A finite bound must be applied per parent. Batch the pool only when
+      // every matching child is returned unbounded.
+      let includePlan = include.query?.queryPlan
+      let needsPerParentWindows =
+        includePlan.map(Self.hasFiniteResultBound) ?? false
+      if needsPerParentWindows {
+        guard
+          let prepared = preparedIncludeWithPerParentWindows(
+            include,
+            planNamespace: plan.namespace,
+            snapshots: snapshots,
             attributes: attributes,
             metrics: &metrics
           )
+        else { continue }
+        preparedIncludes.append(prepared)
+        continue
+      }
+      var uniqueIDs: [String] = []
+      uniqueIDs.reserveCapacity(snapshots.count)
+      var seen: Set<String> = []
+      var parentIDs: [String: [String]] = [:]
+      parentIDs.reserveCapacity(snapshots.count)
+      let childNamespace: String
+      switch include.direction {
+      case .forward:
+        guard
+          let attribute = attributes.attribute(namespace: plan.namespace, name: include.name),
+          let linkNamespace = attribute.linkNamespace
+        else { continue }
+        childNamespace = linkNamespace
+        for snapshot in snapshots {
+          let ids = Self.linkedEntityIDs(snapshot.values[include.name])
+          parentIDs[snapshot.id] = ids
+          for id in ids where seen.insert(id).inserted {
+            uniqueIDs.append(id)
+          }
+        }
 
-        case .reverse:
-          guard
-            let attribute = reverseAttribute(
-              namespace: plan.namespace,
-              name: include.name,
-              attributes: attributes
-            )
-          else { continue }
-          guard let referringEntities = vae[.ref(snapshot.id)]?[attribute.id],
-            !referringEntities.isEmpty
-          else {
-            links[include.name] = []
-            continue
-          }
-          links[include.name] = materializeIncludedSnapshots(
-            ids: referringEntities.keys,
-            namespace: attribute.namespace,
-            include: include,
-            attributes: attributes,
-            metrics: &metrics
+      case .reverse:
+        guard
+          let attribute = reverseAttribute(
+            namespace: plan.namespace,
+            name: include.name,
+            attributes: attributes
           )
+        else { continue }
+        childNamespace = attribute.namespace
+        for snapshot in snapshots {
+          let ids = vae[.ref(snapshot.id)]?[attribute.id].map { Array($0.keys) } ?? []
+          parentIDs[snapshot.id] = ids
+          for id in ids where seen.insert(id).inserted {
+            uniqueIDs.append(id)
+          }
         }
       }
 
+      let sortedChildren =
+        uniqueIDs.isEmpty
+        ? []
+        : materializeIncludedSnapshots(
+          ids: uniqueIDs,
+          namespace: childNamespace,
+          include: include,
+          attributes: attributes,
+          metrics: &metrics
+        )
+      var childByID: [String: InstantLinkedEntitySnapshot] = [:]
+      childByID.reserveCapacity(sortedChildren.count)
+      var orderIndex: [String: Int] = [:]
+      orderIndex.reserveCapacity(sortedChildren.count)
+      for (offset, child) in sortedChildren.enumerated() {
+        childByID[child.id] = child
+        orderIndex[child.id] = offset
+      }
+      preparedIncludes.append(
+        PreparedInclude(
+          name: include.name,
+          childByID: childByID,
+          parentIDs: parentIDs,
+          orderIndex: orderIndex,
+          childrenByParentID: nil
+        )
+      )
+    }
+
+    return snapshots.map { snapshot in
+      var links = snapshot.links ?? [:]
+      for prepared in preparedIncludes {
+        if let childrenByParentID = prepared.childrenByParentID {
+          links[prepared.name] = childrenByParentID[snapshot.id] ?? []
+          continue
+        }
+        let ids = prepared.parentIDs[snapshot.id] ?? []
+        if ids.isEmpty {
+          links[prepared.name] = []
+          continue
+        }
+        let children = ids.compactMap { prepared.childByID[$0] }
+        if children.count <= 1 {
+          links[prepared.name] = children
+          continue
+        }
+        links[prepared.name] = children.sorted {
+          (prepared.orderIndex[$0.id] ?? 0) < (prepared.orderIndex[$1.id] ?? 0)
+        }
+      }
       return InstantEntitySnapshot(
         id: snapshot.id,
         namespace: snapshot.namespace,
         values: snapshot.values,
         links: links.isEmpty ? nil : links
       )
+    }
+  }
+
+  /// Materializes a bounded include one parent at a time so each parent's
+  /// limit window is independent. Returns nil when the direction cannot be
+  /// resolved against the current schema.
+  private func preparedIncludeWithPerParentWindows(
+    _ include: InstantQueryInclude,
+    planNamespace: String,
+    snapshots: [InstantEntitySnapshot],
+    attributes: AttributeStore,
+    metrics: inout QueryMaterializationMetrics
+  ) -> PreparedInclude? {
+    var parentIDs: [String: [String]] = [:]
+    parentIDs.reserveCapacity(snapshots.count)
+    var childrenByParentID: [String: [InstantLinkedEntitySnapshot]] = [:]
+    childrenByParentID.reserveCapacity(snapshots.count)
+
+    func childIDs(_ snapshot: InstantEntitySnapshot) -> [String]? {
+      switch include.direction {
+      case .forward:
+        guard
+          let attribute = attributes.attribute(
+            namespace: planNamespace,
+            name: include.name
+          ),
+          let linkNamespace = attribute.linkNamespace
+        else { return nil }
+        var seen: Set<String> = []
+        return Self.linkedEntityIDs(snapshot.values[include.name]).filter {
+          seen.insert($0).inserted
+        }
+      case .reverse:
+        guard
+          let attribute = reverseAttribute(
+            namespace: planNamespace,
+            name: include.name,
+            attributes: attributes
+          )
+        else { return nil }
+        return vae[.ref(snapshot.id)]?[attribute.id].map { Array($0.keys) } ?? []
+      }
+    }
+
+    for snapshot in snapshots {
+      guard let ids = childIDs(snapshot) else { return nil }
+      parentIDs[snapshot.id] = ids
+      guard !ids.isEmpty else {
+        childrenByParentID[snapshot.id] = []
+        continue
+      }
+      childrenByParentID[snapshot.id] = materializeIncludedSnapshots(
+        ids: ids,
+        namespace: include.direction == .reverse
+          ? reverseAttribute(
+            namespace: planNamespace,
+            name: include.name,
+            attributes: attributes
+          )?.namespace ?? ""
+          : attributes.attribute(namespace: planNamespace, name: include.name)?
+            .linkNamespace ?? "",
+        include: include,
+        attributes: attributes,
+        metrics: &metrics
+      )
+    }
+    return PreparedInclude(
+      name: include.name,
+      childByID: [:],
+      parentIDs: parentIDs,
+      orderIndex: [:],
+      childrenByParentID: childrenByParentID
+    )
+  }
+
+  private static func linkedEntityIDs(_ value: InstantMaterializedValue?) -> [String] {
+    switch value {
+    case let .one(stored)?:
+      if let id = stored.refValue {
+        return [id]
+      }
+      return []
+    case let .many(stored)?:
+      return stored.compactMap(\.refValue)
+    case nil:
+      return []
     }
   }
 
@@ -2691,6 +3538,20 @@ struct TripleIndexes: Hashable, Codable, Sendable {
     namespace: String,
     attributes: AttributeStore
   ) -> InstantEntitySnapshot? {
+    if let interned = internCaches.internedSnapshot(
+      entityID: entityID,
+      namespace: namespace
+    ) {
+      guard attributes.namespaceHasManyCardinality(namespace) else {
+        return interned
+      }
+      return internedSnapshotByMergingManyCardinality(
+        interned,
+        entityID: entityID,
+        namespace: namespace,
+        attributes: attributes
+      )
+    }
     guard let attributesByID = eav[entityID] else { return nil }
 
     guard
@@ -2702,6 +3563,50 @@ struct TripleIndexes: Hashable, Codable, Sendable {
       )
     else { return nil }
     return InstantEntitySnapshot(id: entityID, namespace: namespace, values: values)
+  }
+
+  private func internedSnapshotByMergingManyCardinality(
+    _ interned: InstantEntitySnapshot,
+    entityID: String,
+    namespace: String,
+    attributes: AttributeStore
+  ) -> InstantEntitySnapshot {
+    let namespaceAttributes = attributes.attributes(namespace: namespace)
+    var hasManyCardinality = false
+    for attribute in namespaceAttributes where attribute.cardinality == .many {
+      hasManyCardinality = true
+      break
+    }
+    guard hasManyCardinality, let attributesByID = eav[entityID] else {
+      return interned
+    }
+    var values = interned.values
+    var didChange = false
+    for attribute in namespaceAttributes where attribute.cardinality == .many {
+      guard let slot = attributesByID[attribute.id] else {
+        if values[attribute.name] != nil {
+          values[attribute.name] = nil
+          didChange = true
+        }
+        continue
+      }
+      if let value = materializedValue(slot, attribute: attribute) {
+        if values[attribute.name] != value {
+          values[attribute.name] = value
+          didChange = true
+        }
+      } else if values[attribute.name] != nil {
+        values[attribute.name] = nil
+        didChange = true
+      }
+    }
+    guard didChange else { return interned }
+    return InstantEntitySnapshot(
+      id: interned.id,
+      namespace: interned.namespace,
+      values: values,
+      links: interned.links
+    )
   }
 
   private func materializedValues(
@@ -3000,6 +3905,40 @@ struct TripleIndexes: Hashable, Codable, Sendable {
     )
   }
 
+  private mutating func insertNewCardinalityOne(
+    _ triple: InstantTriple,
+    attribute: InstantAttribute
+  ) {
+    let value = Self.normalizedValue(triple.value, attribute: attribute)
+    let stamp = InstantTripleStamp(
+      txIDIndex: internTxID(triple.txID),
+      txTimeMilliseconds: triple.txTime.milliseconds
+    )
+    storedTripleCount += 1
+    eav[triple.entityID, default: [:]][triple.attributeID] = .one(
+      value: value,
+      stamp: stamp
+    )
+    if attribute.valueType == .ref {
+      vae[value, default: [:]][triple.attributeID, default: [:]][triple.entityID] = stamp
+    }
+    if !attribute.primaryKey {
+      touchInternCachesAfterWrite(entityID: triple.entityID, attribute: attribute, value: value)
+    }
+    rememberEntityInNamespace(triple.entityID, namespace: attribute.namespace)
+    if attribute.isIndexed {
+      indexIndexedAttributeInsert(
+        entityID: triple.entityID,
+        attributeID: triple.attributeID,
+        value: value,
+        cardinalityOne: true
+      )
+    }
+    if derivedIndexAttributeShapes[triple.attributeID] == nil {
+      derivedIndexAttributeShapes[triple.attributeID] = DerivedIndexAttributeShape(attribute)
+    }
+  }
+
   private mutating func insert(
     _ triple: InstantTriple,
     attribute: InstantAttribute?
@@ -3009,26 +3948,47 @@ struct TripleIndexes: Hashable, Codable, Sendable {
       triple.txTime = existing.txTime
     }
 
-    // Only explicit cardinality-one evicts siblings. Unknown attrs (nil) accumulate
-    // like a multi-value map — matches pre-AttrSlot Dictionary leaf behavior.
     let isCardinalityOne = attribute?.cardinality == .one
-    if isCardinalityOne {
-      if let existingSlot = eav[triple.entityID]?[triple.attributeID] {
-        guard !existingSlot.values.contains(where: { $0.txTime > triple.txTime }) else { return }
-        var toRemove: [InstantTriple] = []
-        existingSlot.forEachPair { value, stamp in
-          toRemove.append(
-            materializeTriple(
-              entityID: triple.entityID,
-              attributeID: triple.attributeID,
-              value: value,
-              stamp: stamp
-            )
+    if isCardinalityOne,
+      let existingSlot = eav[triple.entityID]?[triple.attributeID]
+    {
+      guard !existingSlot.values.contains(where: { $0.txTime > triple.txTime }) else { return }
+      if case let .one(existingValue, _) = existingSlot {
+        if existingValue == triple.value {
+          let existingStamp = existingSlot.firstEntry?.value
+          let stamp = InstantTripleStamp(
+            txIDIndex: internTxID(triple.txID),
+            txTimeMilliseconds: (existingStamp?.txTimeMilliseconds)
+              ?? triple.txTime.milliseconds
           )
+          eav[triple.entityID, default: [:]][triple.attributeID] = .one(
+            value: existingValue,
+            stamp: stamp
+          )
+          return
         }
-        for existing in toRemove {
-          removeNormalized(existing, attribute: attribute)
-        }
+        replaceCardinalityOneSlot(
+          entityID: triple.entityID,
+          attributeID: triple.attributeID,
+          previousValue: existingValue,
+          triple: triple,
+          attribute: attribute
+        )
+        return
+      }
+      var toRemove: [InstantTriple] = []
+      existingSlot.forEachPair { value, stamp in
+        toRemove.append(
+          materializeTriple(
+            entityID: triple.entityID,
+            attributeID: triple.attributeID,
+            value: value,
+            stamp: stamp
+          )
+        )
+      }
+      for existing in toRemove {
+        removeNormalized(existing, attribute: attribute)
       }
     }
 
@@ -3039,26 +3999,27 @@ struct TripleIndexes: Hashable, Codable, Sendable {
       txIDIndex: internTxID(triple.txID),
       txTimeMilliseconds: triple.txTime.milliseconds
     )
-    var attrs = eav[triple.entityID] ?? [:]
     if isCardinalityOne {
-      attrs[triple.attributeID] = .one(value: triple.value, stamp: stamp)
+      eav[triple.entityID, default: [:]][triple.attributeID] = .one(
+        value: triple.value,
+        stamp: stamp
+      )
     } else {
-      var slot = attrs[triple.attributeID] ?? .many([:])
-      // Promote lone .one to many when accumulating without schema
+      var slot = eav[triple.entityID]?[triple.attributeID] ?? .many([:])
       if case let .one(existingValue, existingStamp) = slot {
         slot = .many([existingValue: existingStamp])
       }
       slot.set(value: triple.value, stamp: stamp, asMany: true)
-      attrs[triple.attributeID] = slot
+      eav[triple.entityID, default: [:]][triple.attributeID] = slot
     }
-    eav[triple.entityID] = attrs
 
     if attribute?.valueType == .ref {
       vae[triple.value, default: [:]][triple.attributeID, default: [:]][triple.entityID] = stamp
     }
 
+    touchInternCachesAfterWrite(entityID: triple.entityID, attribute: attribute, value: triple.value)
     if let attribute {
-      entitiesByNamespace[attribute.namespace, default: []].insert(triple.entityID)
+      rememberEntityInNamespace(triple.entityID, namespace: attribute.namespace)
       if attribute.isIndexed {
         indexIndexedAttributeInsert(
           entityID: triple.entityID,
@@ -3068,6 +4029,497 @@ struct TripleIndexes: Hashable, Codable, Sendable {
         )
       }
       derivedIndexAttributeShapes[triple.attributeID] = DerivedIndexAttributeShape(attribute)
+    }
+  }
+
+  private mutating func replaceCardinalityOneSlot(
+    entityID: String,
+    attributeID: String,
+    previousValue: InstantValue,
+    triple: InstantTriple,
+    attribute: InstantAttribute?
+  ) {
+    if let attribute, attribute.isIndexed {
+      indexIndexedAttributeRemove(
+        entityID: entityID,
+        attributeID: attributeID,
+        value: previousValue,
+        cardinalityOne: true
+      )
+    }
+    if attribute?.valueType == .ref {
+      removeVAE(value: previousValue, attributeID: attributeID, entityID: entityID)
+    }
+    let stamp = InstantTripleStamp(
+      txIDIndex: internTxID(triple.txID),
+      txTimeMilliseconds: triple.txTime.milliseconds
+    )
+    eav[entityID, default: [:]][attributeID] = .one(value: triple.value, stamp: stamp)
+    if attribute?.valueType == .ref {
+      vae[triple.value, default: [:]][attributeID, default: [:]][entityID] = stamp
+    }
+    touchInternCachesAfterWrite(entityID: entityID, attribute: attribute, value: triple.value)
+    if let attribute, attribute.isIndexed {
+      indexIndexedAttributeInsert(
+        entityID: entityID,
+        attributeID: attributeID,
+        value: triple.value,
+        cardinalityOne: true
+      )
+    }
+  }
+
+  private mutating func removeVAE(
+    value: InstantValue,
+    attributeID: String,
+    entityID: String
+  ) {
+    uniqueVAE()
+    guard var byAttribute = vaeStorage.rows[value] else { return }
+    guard var byEntity = byAttribute[attributeID] else { return }
+    byEntity[entityID] = nil
+    if byEntity.isEmpty {
+      byAttribute[attributeID] = nil
+    } else {
+      byAttribute[attributeID] = byEntity
+    }
+    if byAttribute.isEmpty {
+      vaeStorage.rows[value] = nil
+    } else {
+      vaeStorage.rows[value] = byAttribute
+    }
+  }
+
+  private mutating func touchInternCachesAfterWrite(
+    entityID: String,
+    attribute: InstantAttribute?,
+    value: InstantValue
+  ) {
+    guard shouldInternOnWrite else { return }
+    if !internCachesAreEmpty {
+      if !internCaches.internedIndexedEqualsResults.isEmpty
+        || !internCaches.internedSimpleOrderedResults.isEmpty
+      {
+        internedQueryResultsNeedInvalidation = true
+      }
+      if !internCaches.internedServerCreatedAt.isEmpty {
+        uniqueInternCaches()
+        internCaches.internedServerCreatedAt[entityID] = nil
+      }
+    }
+    internCardinalityOneSnapshot(
+      entityID: entityID,
+      attribute: attribute,
+      value: value
+    )
+  }
+
+  private mutating func internCardinalityOneSnapshot(
+    entityID: String,
+    attribute: InstantAttribute?,
+    value: InstantValue
+  ) {
+    guard let attribute, attribute.cardinality == .one, !attribute.primaryKey else { return }
+    let materialized = InstantMaterializedValue.one(value)
+    if pendingInternEntityID == entityID, pendingInternNamespace == attribute.namespace {
+      pendingInternValues[attribute.name] = materialized
+      return
+    }
+    if !internCachesAreEmpty, internCaches.hasInternedEntity(entityID) {
+      internInvalidationIDs.insert(entityID)
+      internedQueryResultsNeedInvalidation = true
+      return
+    }
+    if !internInvalidationIDs.isEmpty, internInvalidationIDs.contains(entityID) {
+      internedQueryResultsNeedInvalidation = true
+      return
+    }
+    if !pendingInternSnapshots.isEmpty,
+      var existing = pendingInternSnapshots[entityID],
+      existing.namespace == attribute.namespace
+    {
+      existing.values[attribute.name] = materialized
+      pendingInternSnapshots[entityID] = existing
+      return
+    }
+    if !pendingInternExtra.isEmpty,
+      var extra = pendingInternExtra[entityID],
+      var existing = extra[attribute.namespace]
+    {
+      existing.values[attribute.name] = materialized
+      extra[attribute.namespace] = existing
+      pendingInternExtra[entityID] = extra
+      return
+    }
+    flushPendingIntern()
+    pendingInternEntityID = entityID
+    pendingInternNamespace = attribute.namespace
+    pendingInternValues = [:]
+    pendingInternValues.reserveCapacity(8)
+    pendingInternValues[attribute.name] = materialized
+  }
+
+  private func pendingInternOmitsExistingCardinalityOneFields(
+    entityID: String,
+    namespace: String
+  ) -> Bool {
+    // Attribute IDs may be canonical UUIDs instead of "namespace/name" strings,
+    // so completeness cannot be derived from id prefixes. Compare the pending
+    // snapshot's field count (written fields plus the synthesized id) against
+    // every stored slot of the entity. Any leftover slot may hold an
+    // uninterned cardinality-one field, so treat it as omitting and skip
+    // interning rather than serve a partial snapshot later.
+    guard let existingCount = eavStorage.rows[entityID]?.count else { return false }
+    return existingCount > pendingInternValues.count + 1
+  }
+
+  private mutating func flushPendingIntern() {
+    guard
+      let entityID = pendingInternEntityID,
+      let namespace = pendingInternNamespace
+    else { return }
+    if pendingInternOmitsExistingCardinalityOneFields(
+      entityID: entityID,
+      namespace: namespace
+    ) {
+      pendingInternEntityID = nil
+      pendingInternNamespace = nil
+      pendingInternValues = [:]
+      internedQueryResultsNeedInvalidation = true
+      if pendingInternSnapshots[entityID] != nil || pendingInternExtra[entityID] != nil {
+        pendingInternNeedsEAVCompletion = true
+      } else {
+        internInvalidationIDs.insert(entityID)
+      }
+      return
+    }
+    pendingInternValues["id"] = .one(.string(entityID))
+    let snapshot = InstantEntitySnapshot(
+      id: entityID,
+      namespace: namespace,
+      values: pendingInternValues
+    )
+    pendingInternEntityID = nil
+    pendingInternNamespace = nil
+    pendingInternValues = [:]
+    if var existing = pendingInternSnapshots[entityID] {
+      if existing.namespace == namespace {
+        existing.values.merge(snapshot.values) { _, new in new }
+        pendingInternSnapshots[entityID] = existing
+      } else {
+        pendingInternExtra[entityID, default: [:]][existing.namespace] = existing
+        pendingInternExtra[entityID, default: [:]][namespace] = snapshot
+        pendingInternSnapshots[entityID] = nil
+      }
+    } else if pendingInternExtra[entityID] != nil {
+      if var extraSnapshot = pendingInternExtra[entityID]?[namespace] {
+        extraSnapshot.values.merge(snapshot.values) { _, new in new }
+        pendingInternExtra[entityID, default: [:]][namespace] = extraSnapshot
+      } else {
+        pendingInternExtra[entityID, default: [:]][namespace] = snapshot
+      }
+    } else {
+      pendingInternSnapshots[entityID] = snapshot
+    }
+  }
+
+  mutating func discardInternedQueryResultsBeforeWrite() {
+    internedQueryResultsNeedInvalidation = false
+    invalidateInternedQueryResults()
+    clearPendingInternCaches()
+    clearWriteCursors()
+  }
+
+  private mutating func rememberEntityInNamespace(_ entityID: String, namespace: String) {
+    if lastWrittenEntityID == entityID, lastWrittenNamespace == namespace {
+      return
+    }
+    entitiesByNamespace[namespace, default: []].insert(entityID)
+    lastWrittenEntityID = entityID
+    lastWrittenNamespace = namespace
+  }
+
+  private mutating func rememberChangedEntity(_ entityID: String, into changed: inout Set<String>) {
+    changed.insert(entityID)
+  }
+
+  private mutating func clearWriteCursors() {
+    lastWrittenEntityID = nil
+    lastWrittenNamespace = nil
+  }
+
+  private mutating func clearPendingInternCaches() {
+    pendingInternEntityID = nil
+    pendingInternNamespace = nil
+    pendingInternValues = [:]
+    pendingInternSnapshots = [:]
+    pendingInternExtra = [:]
+    internInvalidationIDs = []
+    internedQueryResultsNeedInvalidation = false
+    pendingInternNeedsEAVCompletion = false
+  }
+
+  mutating func finishInternCachesAfterWrite(
+    invalidating changedEntityIDs: Set<String> = [],
+    attributes: AttributeStore
+  ) {
+    dropPendingIntern(for: internInvalidationIDs)
+    flushPendingIntern()
+    if pendingInternNeedsEAVCompletion {
+      completePendingInternSnapshotsFromEAV(attributes: attributes)
+      pendingInternNeedsEAVCompletion = false
+    }
+    internedQueryResultsNeedInvalidation = false
+    invalidateInternedQueryResults()
+    if pendingInternSnapshots.isEmpty && pendingInternExtra.isEmpty {
+      internInvalidationIDs.formUnion(changedEntityIDs)
+    } else if !internInvalidationIDs.isEmpty {
+      internInvalidationIDs.subtract(pendingInternSnapshots.keys)
+      internInvalidationIDs.subtract(pendingInternExtra.keys)
+    }
+    applyPendingInternSnapshots()
+    if !internInvalidationIDs.isEmpty {
+      invalidateInternedEntities(internInvalidationIDs)
+      internInvalidationIDs = []
+    }
+  }
+
+  private mutating func completePendingInternSnapshotsFromEAV(
+    attributes: AttributeStore
+  ) {
+    for entityID in pendingInternSnapshots.keys {
+      guard var snapshot = pendingInternSnapshots[entityID] else { continue }
+      if completeInternSnapshotFromEAV(&snapshot, attributes: attributes) {
+        pendingInternSnapshots[entityID] = snapshot
+      }
+    }
+    guard !pendingInternExtra.isEmpty else { return }
+    for entityID in pendingInternExtra.keys {
+      guard var byNamespace = pendingInternExtra[entityID] else { continue }
+      var didChangeEntity = false
+      for namespace in byNamespace.keys {
+        guard var snapshot = byNamespace[namespace] else { continue }
+        if completeInternSnapshotFromEAV(&snapshot, attributes: attributes) {
+          byNamespace[namespace] = snapshot
+          didChangeEntity = true
+        }
+      }
+      if didChangeEntity {
+        pendingInternExtra[entityID] = byNamespace
+      }
+    }
+  }
+
+  private func completeInternSnapshotFromEAV(
+    _ snapshot: inout InstantEntitySnapshot,
+    attributes: AttributeStore
+  ) -> Bool {
+    guard let attrs = eav[snapshot.id] else { return false }
+    var didChange = false
+    for (attributeID, slot) in attrs {
+      guard let attribute = attributes[attributeID] else { continue }
+      guard attribute.namespace == snapshot.namespace, attribute.cardinality == .one,
+        !attribute.primaryKey
+      else { continue }
+      guard case let .one(value, _) = slot else { continue }
+      if snapshot.values[attribute.name] == nil {
+        snapshot.values[attribute.name] = .one(value)
+        didChange = true
+      }
+    }
+    if snapshot.values["id"] == nil {
+      snapshot.values["id"] = .one(.string(snapshot.id))
+      didChange = true
+    }
+    return didChange
+  }
+
+  private mutating func dropPendingIntern(for entityIDs: Set<String>) {
+    guard !entityIDs.isEmpty else { return }
+    if let pendingID = pendingInternEntityID, entityIDs.contains(pendingID) {
+      pendingInternEntityID = nil
+      pendingInternNamespace = nil
+      pendingInternValues = [:]
+    }
+    if !pendingInternSnapshots.isEmpty || !pendingInternExtra.isEmpty {
+      for entityID in entityIDs {
+        pendingInternSnapshots[entityID] = nil
+        pendingInternExtra[entityID] = nil
+      }
+    }
+  }
+
+  private mutating func applyPendingInternSnapshots() {
+    guard !pendingInternSnapshots.isEmpty || !pendingInternExtra.isEmpty else { return }
+    uniqueInternCaches()
+    if internCaches.internedExtraNamespaceSnapshots.isEmpty, pendingInternExtra.isEmpty {
+      if internCaches.internedCardinalityOneSnapshots.isEmpty {
+        internCaches.internedCardinalityOneSnapshots = pendingInternSnapshots
+      } else {
+        internCaches.internedCardinalityOneSnapshots.merge(pendingInternSnapshots) { _, new in new }
+      }
+    } else {
+      internCaches.internedCardinalityOneSnapshots.reserveCapacity(
+        internCaches.internedCardinalityOneSnapshots.count + pendingInternSnapshots.count
+      )
+      for (entityID, snapshot) in pendingInternSnapshots {
+        internCaches.storeSnapshot(snapshot, entityID: entityID)
+      }
+      for (entityID, byNamespace) in pendingInternExtra {
+        for snapshot in byNamespace.values {
+          internCaches.storeSnapshot(snapshot, entityID: entityID)
+        }
+      }
+    }
+    pendingInternSnapshots = [:]
+    pendingInternExtra = [:]
+  }
+
+  private mutating func materializeInternedSimpleOrderedPage(
+    _ plan: InstantQueryPlan,
+    attributes: AttributeStore,
+    remotePageInfo: InstantQueryRemotePageInfo?
+  ) -> [InstantEntitySnapshot]? {
+    let order = Self.effectiveOrder(plan.order)
+    guard
+      Self.canMaterializeSimpleOrderedPage(plan, remotePageInfo: remotePageInfo),
+      !order.isServerCreatedAt
+    else { return nil }
+    let resultKey = SimpleOrderedResultKey(
+      namespace: plan.namespace,
+      orderField: order.field,
+      isAscending: order.direction == .ascending
+    )
+    if let interned = internCaches.internedSimpleOrderedResults[resultKey] {
+      return interned
+    }
+    uniqueInternCaches()
+    guard
+      let page = materializeSimpleOrderedPage(
+        plan,
+        order: order,
+        attributes: attributes,
+        remotePageInfo: remotePageInfo
+      )
+    else { return nil }
+    internCaches.internedSimpleOrderedResults[resultKey] = page.values
+    return page.values
+  }
+
+  private mutating func invalidateInternedQueryResults() {
+    if internCaches.internedIndexedEqualsResults.isEmpty,
+      internCaches.internedSimpleOrderedResults.isEmpty
+    {
+      return
+    }
+    uniqueInternCaches()
+    internCaches.clearQueryResults()
+  }
+
+  private mutating func invalidateInternedEntity(_ entityID: String) {
+    invalidateInternedEntities([entityID])
+  }
+
+  private mutating func invalidateInternedEntities(_ entityIDs: Set<String>) {
+    guard !internCachesAreEmpty, !entityIDs.isEmpty else { return }
+    flushPendingIntern()
+    uniqueInternCaches()
+    invalidateInternedQueryResults()
+    if internCaches.internedEntityCount <= entityIDs.count {
+      var allInternedAreDeleted = true
+      for internedID in internCaches.internedCardinalityOneSnapshots.keys {
+        if !entityIDs.contains(internedID) {
+          allInternedAreDeleted = false
+          break
+        }
+      }
+      if allInternedAreDeleted {
+        for internedID in internCaches.internedExtraNamespaceSnapshots.keys {
+          if !entityIDs.contains(internedID) {
+            allInternedAreDeleted = false
+            break
+          }
+        }
+      }
+      if allInternedAreDeleted {
+        internCaches.internedCardinalityOneSnapshots = [:]
+        internCaches.internedExtraNamespaceSnapshots = [:]
+        internCaches.internedServerCreatedAt = [:]
+        return
+      }
+    }
+    let shouldClearCreatedAt = !internCaches.internedServerCreatedAt.isEmpty
+    for entityID in entityIDs {
+      internCaches.removeInternedEntity(entityID)
+      if shouldClearCreatedAt {
+        internCaches.internedServerCreatedAt[entityID] = nil
+      }
+    }
+  }
+
+  var internedCardinalityOneEntityCount: Int {
+    internCaches.internedEntityCount
+  }
+
+  mutating func internChangedEntities(
+    _ entityIDs: Set<String>,
+    attributes: AttributeStore
+  ) {
+    guard !entityIDs.isEmpty else { return }
+    var snapshots: [String: InstantEntitySnapshot] = [:]
+    var extraSnapshots: [String: [String: InstantEntitySnapshot]] = [:]
+    snapshots.reserveCapacity(entityIDs.count)
+    for entityID in entityIDs {
+      if internCaches.hasInternedEntity(entityID) { continue }
+      guard let attributesByID = eav[entityID] else { continue }
+      var values: [String: InstantMaterializedValue] = [:]
+      values.reserveCapacity(4)
+      var snapshotNamespace: String?
+      var extra: [String: [String: InstantMaterializedValue]] = [:]
+      for (attributeID, slot) in attributesByID {
+        guard let attribute = attributes[attributeID] else { continue }
+        guard attribute.cardinality == .one, !attribute.primaryKey else { continue }
+        guard let materialized = materializedValue(slot, attribute: attribute) else { continue }
+        if snapshotNamespace == nil || snapshotNamespace == attribute.namespace {
+          snapshotNamespace = attribute.namespace
+          values[attribute.name] = materialized
+        } else {
+          extra[attribute.namespace, default: [:]][attribute.name] = materialized
+        }
+      }
+      guard let snapshotNamespace, !values.isEmpty else { continue }
+      snapshots[entityID] = InstantEntitySnapshot(
+        id: entityID,
+        namespace: snapshotNamespace,
+        values: values
+      )
+      if !extra.isEmpty {
+        var extraByNamespace: [String: InstantEntitySnapshot] = [:]
+        extraByNamespace.reserveCapacity(extra.count)
+        for (namespace, extraValues) in extra {
+          extraByNamespace[namespace] = InstantEntitySnapshot(
+            id: entityID,
+            namespace: namespace,
+            values: extraValues
+          )
+        }
+        extraSnapshots[entityID] = extraByNamespace
+      }
+    }
+    guard !snapshots.isEmpty || !extraSnapshots.isEmpty else { return }
+    uniqueInternCaches()
+    if internCaches.internedCardinalityOneSnapshots.isEmpty,
+      internCaches.internedExtraNamespaceSnapshots.isEmpty,
+      extraSnapshots.isEmpty
+    {
+      internCaches.internedCardinalityOneSnapshots = snapshots
+      return
+    }
+    internCaches.internedCardinalityOneSnapshots.merge(snapshots) { _, new in new }
+    for (entityID, byNamespace) in extraSnapshots {
+      for snapshot in byNamespace.values {
+        internCaches.storeSnapshot(snapshot, entityID: entityID)
+      }
     }
   }
 
@@ -3157,9 +4609,9 @@ struct TripleIndexes: Hashable, Codable, Sendable {
   ) {
     if cardinalityOne {
       if let previous = indexedEntityValues[attributeID]?[entityID], previous != value {
-        indexedValueEntities[attributeID]?[previous]?.remove(entityID)
+        indexedValueEntities[attributeID, default: [:]][previous, default: []].remove(entityID)
         if indexedValueEntities[attributeID]?[previous]?.isEmpty == true {
-          indexedValueEntities[attributeID]?[previous] = nil
+          indexedValueEntities[attributeID, default: [:]][previous] = nil
         }
       }
       indexedEntityValues[attributeID, default: [:]][entityID] = value
@@ -3173,16 +4625,16 @@ struct TripleIndexes: Hashable, Codable, Sendable {
     value: InstantValue,
     cardinalityOne: Bool
   ) {
-    indexedValueEntities[attributeID]?[value]?.remove(entityID)
+    indexedValueEntities[attributeID, default: [:]][value, default: []].remove(entityID)
     if indexedValueEntities[attributeID]?[value]?.isEmpty == true {
-      indexedValueEntities[attributeID]?[value] = nil
+      indexedValueEntities[attributeID, default: [:]][value] = nil
     }
     if indexedValueEntities[attributeID]?.isEmpty == true {
       indexedValueEntities[attributeID] = nil
     }
     if cardinalityOne {
       if indexedEntityValues[attributeID]?[entityID] == value {
-        indexedEntityValues[attributeID]?[entityID] = nil
+        indexedEntityValues[attributeID, default: [:]][entityID] = nil
       }
       if indexedEntityValues[attributeID]?.isEmpty == true {
         indexedEntityValues[attributeID] = nil
@@ -3241,8 +4693,13 @@ struct TripleIndexes: Hashable, Codable, Sendable {
     removeNormalized(triple, attribute: attribute)
   }
 
-  private mutating func removeNormalized(_ triple: InstantTriple, attribute: InstantAttribute?) {
-    guard var attrs = eav[triple.entityID], var slot = attrs[triple.attributeID] else {
+  private mutating func removeNormalized(
+    _ triple: InstantTriple,
+    attribute: InstantAttribute?,
+    invalidateIntern: Bool = true
+  ) {
+    uniqueEAV()
+    guard var attrs = eavStorage.rows[triple.entityID], var slot = attrs[triple.attributeID] else {
       return
     }
     if slot[triple.value] != nil {
@@ -3254,19 +4711,17 @@ struct TripleIndexes: Hashable, Codable, Sendable {
       attrs[triple.attributeID] = slot
     }
     if attrs.isEmpty {
-      eav[triple.entityID] = nil
+      eavStorage.rows[triple.entityID] = nil
     } else {
-      eav[triple.entityID] = attrs
+      eavStorage.rows[triple.entityID] = attrs
     }
 
     if attribute?.valueType == .ref {
-      vae[triple.value]?[triple.attributeID]?[triple.entityID] = nil
-      if vae[triple.value]?[triple.attributeID]?.isEmpty == true {
-        vae[triple.value]?[triple.attributeID] = nil
-      }
-      if vae[triple.value]?.isEmpty == true {
-        vae[triple.value] = nil
-      }
+      removeVAE(
+        value: triple.value,
+        attributeID: triple.attributeID,
+        entityID: triple.entityID
+      )
     }
 
     if let attribute, attribute.isIndexed {
@@ -3280,22 +4735,35 @@ struct TripleIndexes: Hashable, Codable, Sendable {
     if let attribute {
       if eav[triple.entityID] == nil {
         for namespace in entitiesByNamespace.keys {
-          entitiesByNamespace[namespace]?.remove(triple.entityID)
+          entitiesByNamespace[namespace, default: []].remove(triple.entityID)
           if entitiesByNamespace[namespace]?.isEmpty == true {
             entitiesByNamespace[namespace] = nil
           }
+        }
+        if lastWrittenEntityID == triple.entityID {
+          clearWriteCursors()
         }
       } else {
         let remainsInThisNamespace = (eav[triple.entityID] ?? [:]).keys.contains { key in
           key.hasPrefix(attribute.namespace + "/")
         }
         if !remainsInThisNamespace {
-          entitiesByNamespace[attribute.namespace]?.remove(triple.entityID)
+          entitiesByNamespace[attribute.namespace, default: []].remove(triple.entityID)
           if entitiesByNamespace[attribute.namespace]?.isEmpty == true {
             entitiesByNamespace[attribute.namespace] = nil
           }
+          if lastWrittenEntityID == triple.entityID,
+            lastWrittenNamespace == attribute.namespace
+          {
+            lastWrittenEntityID = nil
+            lastWrittenNamespace = nil
+          }
         }
       }
+    }
+    if internCaches.hasInternedEntity(triple.entityID) || invalidateIntern {
+      internInvalidationIDs.insert(triple.entityID)
+      internedQueryResultsNeedInvalidation = true
     }
   }
 
@@ -3312,9 +4780,9 @@ struct TripleIndexes: Hashable, Codable, Sendable {
     _ value: InstantValue,
     attribute: InstantAttribute?
   ) -> InstantValue {
-    guard attribute?.valueType == .date, let date = InstantDateCoercion.coerce(value) else {
-      return value
-    }
+    guard attribute?.valueType == .date else { return value }
+    if case .date = value { return value }
+    guard let date = InstantDateCoercion.coerce(value) else { return value }
     return .date(date)
   }
 
@@ -3329,28 +4797,42 @@ struct TripleIndexes: Hashable, Codable, Sendable {
     }
 
     var changed: Set<String> = [entityID]
-    let outgoingTriples = triples(entityID: entityID).filter { triple in
-      guard let namespace else { return true }
-      return attributes[triple.attributeID]?.namespace == namespace
-    }
-    let incomingTriples = reverseRefTriples(targetEntityID: entityID).filter { triple in
-      guard let namespace else { return true }
-      return attributes[triple.attributeID]?.linkNamespace == namespace
+    var outgoingRefs: [(attribute: InstantAttribute, targetID: String)] = []
+    if let attributesByID = eav[entityID] {
+      for (attributeID, slot) in attributesByID {
+        let attribute = attributes[attributeID]
+        if let namespace, attribute?.namespace != namespace {
+          continue
+        }
+        guard let attribute, attribute.valueType == .ref else { continue }
+        slot.forEachPair { value, _ in
+          guard case let .ref(targetID) = value else { return }
+          outgoingRefs.append((attribute, targetID))
+        }
+      }
     }
 
-    for triple in outgoingTriples {
-      guard
-        let attribute = attributes[triple.attributeID],
-        attribute.valueType == .ref,
-        let targetID = triple.value.refValue
-      else { continue }
+    var incomingRefs: [(sourceID: String, attributeID: String, attribute: InstantAttribute?)] = []
+    if !vae.isEmpty, let byAttribute = vae[.ref(entityID)] {
+      for (attributeID, byEntity) in byAttribute {
+        let attribute = attributes[attributeID]
+        if let namespace, attribute?.linkNamespace != namespace {
+          continue
+        }
+        incomingRefs.reserveCapacity(incomingRefs.count + byEntity.count)
+        for sourceID in byEntity.keys {
+          incomingRefs.append((sourceID, attributeID, attribute))
+        }
+      }
+    }
 
-      changed.insert(targetID)
-      if attribute.onDeleteReverse == .cascade {
+    for item in outgoingRefs {
+      changed.insert(item.targetID)
+      if item.attribute.onDeleteReverse == .cascade {
         changed.formUnion(
           deleteEntity(
-            targetID,
-            namespace: attribute.linkNamespace,
+            item.targetID,
+            namespace: item.attribute.linkNamespace,
             attributes: attributes,
             visited: &visited
           )
@@ -3358,14 +4840,13 @@ struct TripleIndexes: Hashable, Codable, Sendable {
       }
     }
 
-    for triple in incomingTriples {
-      let attribute = attributes[triple.attributeID]
-      changed.insert(triple.entityID)
-      if attribute?.onDelete == .cascade {
+    for item in incomingRefs {
+      changed.insert(item.sourceID)
+      if item.attribute?.onDelete == .cascade {
         changed.formUnion(
           deleteEntity(
-            triple.entityID,
-            namespace: attribute?.namespace,
+            item.sourceID,
+            namespace: item.attribute?.namespace,
             attributes: attributes,
             visited: &visited
           )
@@ -3373,14 +4854,89 @@ struct TripleIndexes: Hashable, Codable, Sendable {
       }
     }
 
-    for triple in outgoingTriples {
-      removeNormalized(triple, attribute: attributes[triple.attributeID])
+    removeEntityAttributes(entityID, namespace: namespace, attributes: attributes)
+    let deletedRef = InstantValue.ref(entityID)
+    for item in incomingRefs {
+      removeNormalized(
+        InstantTriple(
+          entityID: item.sourceID,
+          attributeID: item.attributeID,
+          value: deletedRef,
+          txID: "",
+          txTime: InstantTimestamp(milliseconds: 0)
+        ),
+        attribute: item.attribute,
+        invalidateIntern: false
+      )
     }
-    for triple in incomingTriples {
-      removeNormalized(triple, attribute: attributes[triple.attributeID])
-    }
+    internInvalidationIDs.formUnion(changed)
+    dropPendingIntern(for: changed)
 
     return changed
+  }
+
+  private mutating func removeEntityAttributes(
+    _ entityID: String,
+    namespace: String?,
+    attributes: AttributeStore
+  ) {
+    guard let attributesByID = eav[entityID] else { return }
+    var remaining: [String: AttrSlot] = [:]
+    var removedNamespaces: Set<String> = []
+    remaining.reserveCapacity(attributesByID.count)
+    for (attributeID, slot) in attributesByID {
+      let attribute = attributes[attributeID]
+      if let namespace, attribute?.namespace != namespace {
+        remaining[attributeID] = slot
+        continue
+      }
+      storedTripleCount -= slot.count
+      slot.forEachPair { value, _ in
+        if attribute?.valueType == .ref {
+          removeVAE(value: value, attributeID: attributeID, entityID: entityID)
+        }
+        if let attribute, attribute.isIndexed {
+          indexIndexedAttributeRemove(
+            entityID: entityID,
+            attributeID: attributeID,
+            value: value,
+            cardinalityOne: attribute.cardinality == .one
+          )
+        }
+      }
+      if let attribute {
+        removedNamespaces.insert(attribute.namespace)
+      }
+    }
+    if remaining.isEmpty {
+      eav[entityID] = nil
+      for namespace in removedNamespaces {
+        entitiesByNamespace[namespace, default: []].remove(entityID)
+        if entitiesByNamespace[namespace]?.isEmpty == true {
+          entitiesByNamespace[namespace] = nil
+        }
+      }
+      if lastWrittenEntityID == entityID {
+        clearWriteCursors()
+      }
+      return
+    }
+    eav[entityID] = remaining
+    for namespace in removedNamespaces {
+      let remainsInNamespace = remaining.keys.contains { key in
+        attributes[key]?.namespace == namespace
+      }
+      if !remainsInNamespace {
+        entitiesByNamespace[namespace, default: []].remove(entityID)
+        if entitiesByNamespace[namespace]?.isEmpty == true {
+          entitiesByNamespace[namespace] = nil
+        }
+        if lastWrittenEntityID == entityID, lastWrittenNamespace == namespace {
+          lastWrittenEntityID = nil
+          lastWrittenNamespace = nil
+        }
+      }
+    }
   }
 
   private func matches(
@@ -4912,6 +6468,32 @@ struct TripleIndexes: Hashable, Codable, Sendable {
         return lexicographicallyPrecedes(lhsTieBreaker, rhsTieBreaker)
       }
     }
+  }
+}
+
+extension TripleIndexes: Hashable {
+  static func == (lhs: TripleIndexes, rhs: TripleIndexes) -> Bool {
+    lhs.eav == rhs.eav
+      && lhs.vae == rhs.vae
+      && lhs.indexedValueEntities == rhs.indexedValueEntities
+      && lhs.indexedEntityValues == rhs.indexedEntityValues
+      && lhs.entitiesByNamespace == rhs.entitiesByNamespace
+      && lhs.derivedIndexAttributeShapes == rhs.derivedIndexAttributeShapes
+      && lhs.storedTripleCount == rhs.storedTripleCount
+      && lhs.internedTxIDsBox.internedTxIDs == rhs.internedTxIDsBox.internedTxIDs
+      && lhs.deferredValueKeysToRemove == rhs.deferredValueKeysToRemove
+  }
+
+  func hash(into hasher: inout Hasher) {
+    hasher.combine(eav)
+    hasher.combine(vae)
+    hasher.combine(indexedValueEntities)
+    hasher.combine(indexedEntityValues)
+    hasher.combine(entitiesByNamespace)
+    hasher.combine(derivedIndexAttributeShapes)
+    hasher.combine(storedTripleCount)
+    hasher.combine(internedTxIDsBox.internedTxIDs)
+    hasher.combine(deferredValueKeysToRemove)
   }
 }
 

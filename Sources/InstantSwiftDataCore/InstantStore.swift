@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 
 public struct InstantStoreMutationResult: Hashable, Codable, Sendable {
@@ -19,14 +20,73 @@ public struct InstantStoreMutationResult: Hashable, Codable, Sendable {
   }
 }
 
+// SAFETY: rollback capture owned by one PreparedStoreMutation inside a single
+// InstantStore actor mutation; never crossed an executor while mutable. Copies
+// of the owning value take uniqueness before writing, no shared executor.
+private final class PreviousChangedEntityCapture: @unchecked Sendable {
+  private var emptyIDs: Set<String> = []
+  private var slots: [String: [String: AttrSlot]] = [:]
+  private var materializer: TripleIndexes?
+  private var materialized: [String: [InstantTriple]]?
+
+  func contains(_ entityID: String) -> Bool {
+    emptyIDs.contains(entityID) || slots[entityID] != nil || materialized?[entityID] != nil
+  }
+
+  func capture(entityID: String, from indexes: TripleIndexes) {
+    guard !contains(entityID) else { return }
+    if materializer == nil {
+      materializer = indexes
+    }
+    if let copied = indexes.copiedAttributeSlots(entityID: entityID) {
+      slots[entityID] = copied
+    } else {
+      emptyIDs.insert(entityID)
+    }
+  }
+
+  var triplesByEntityID: [String: [InstantTriple]] {
+    if let materialized {
+      return materialized
+    }
+    var result: [String: [InstantTriple]] = [:]
+    result.reserveCapacity(emptyIDs.count + slots.count)
+    for entityID in emptyIDs {
+      result[entityID] = []
+    }
+    if let materializer {
+      for (entityID, attributesByID) in slots {
+        result[entityID] = materializer.materializedTriples(
+          entityID: entityID,
+          attributesByID: attributesByID
+        )
+      }
+    }
+    materialized = result
+    return result
+  }
+
+  func replaceAll(_ triples: [String: [InstantTriple]]) {
+    emptyIDs = []
+    slots = [:]
+    materializer = nil
+    materialized = triples
+  }
+}
+
 struct PreparedStoreMutation: Sendable {
   var result: InstantStoreMutationResult
   var sequence: Int64
   var attributes: AttributeStore
   var indexes: TripleIndexes
-  var previousChangedEntityTriples: [String: [InstantTriple]]
   var deferredValueRemovalMetrics: TripleIndexes.DeferredValueRemovalMetrics
+  private var previousCapture = PreviousChangedEntityCapture()
   private var preparedSnapshot: InstantStoreSnapshot?
+
+  var previousChangedEntityTriples: [String: [InstantTriple]] {
+    get { previousCapture.triplesByEntityID }
+    set { previousCapture.replaceAll(newValue) }
+  }
 
   var snapshot: InstantStoreSnapshot {
     preparedSnapshot
@@ -70,9 +130,25 @@ struct PreparedStoreMutation: Sendable {
     self.sequence = sequence
     self.attributes = attributes
     self.indexes = indexes
-    self.previousChangedEntityTriples = previousChangedEntityTriples
     self.deferredValueRemovalMetrics = deferredValueRemovalMetrics
     self.preparedSnapshot = snapshot
+    previousCapture.replaceAll(previousChangedEntityTriples)
+  }
+
+  fileprivate init(
+    result: InstantStoreMutationResult,
+    sequence: Int64,
+    attributes: AttributeStore,
+    indexes: TripleIndexes,
+    previousCapture: PreviousChangedEntityCapture,
+    deferredValueRemovalMetrics: TripleIndexes.DeferredValueRemovalMetrics = .init()
+  ) {
+    self.result = result
+    self.sequence = sequence
+    self.attributes = attributes
+    self.indexes = indexes
+    self.deferredValueRemovalMetrics = deferredValueRemovalMetrics
+    self.previousCapture = previousCapture
   }
 }
 
@@ -221,23 +297,65 @@ public actor InstantStore {
     indexes.materialize(plan, attributes: attributes, remotePageInfo: remotePageInfo)
   }
 
+  func internedCardinalityOneEntityCount() -> Int {
+    indexes.internedCardinalityOneEntityCount
+  }
+
   /// In-actor microbench: iterations of materialize without inter-call actor hops.
   /// Used to compare pure store latency to TypeScript `@instantdb/core` store scans.
+  ///
+  /// Wall time includes host preemption. Thread CPU is the work itself. The
+  /// DomainAEV ship gate keeps the 0.069 ms TypeScript InstaQL floor on both.
   package func measureMaterializeAverageNanoseconds(
     _ plan: InstantQueryPlan,
     iterations: Int
   ) -> (averageNanoseconds: Double, lastCount: Int) {
+    let measured = measureMaterializeAverages(plan, iterations: iterations)
+    return (measured.averageWallNanoseconds, measured.lastCount)
+  }
+
+  package func measureMaterializeAverages(
+    _ plan: InstantQueryPlan,
+    iterations: Int
+  ) -> (
+    averageWallNanoseconds: Double,
+    averageThreadCPUNanoseconds: Double,
+    lastCount: Int
+  ) {
     precondition(iterations > 0)
-    var total: UInt64 = 0
+    var wallTotal: UInt64 = 0
+    var cpuTotal: UInt64 = 0
     var lastCount = 0
+    var cpuSamples = 0
     for _ in 0..<iterations {
-      let t0 = DispatchTime.now().uptimeNanoseconds
+      let wall0 = DispatchTime.now().uptimeNanoseconds
+      let cpu0 = Self.currentThreadCPUNanoseconds()
       let rows = indexes.materialize(plan, attributes: attributes)
-      let t1 = DispatchTime.now().uptimeNanoseconds
-      total += t1 - t0
+      let cpu1 = Self.currentThreadCPUNanoseconds()
+      let wall1 = DispatchTime.now().uptimeNanoseconds
+      wallTotal += wall1 &- wall0
       lastCount = rows.count
+      if let cpu0, let cpu1, cpu1 >= cpu0 {
+        cpuTotal += cpu1 - cpu0
+        cpuSamples += 1
+      }
     }
-    return (Double(total) / Double(iterations), lastCount)
+    let averageCPU: Double
+    if cpuSamples == iterations {
+      averageCPU = Double(cpuTotal) / Double(iterations)
+    } else {
+      averageCPU = 0
+    }
+    return (Double(wallTotal) / Double(iterations), averageCPU, lastCount)
+  }
+
+  private static func currentThreadCPUNanoseconds() -> UInt64? {
+    var ts = timespec()
+    let result = clock_gettime(CLOCK_THREAD_CPUTIME_ID, &ts)
+    guard result == 0, ts.tv_sec >= 0, ts.tv_nsec >= 0 else {
+      return nil
+    }
+    return UInt64(ts.tv_sec) * 1_000_000_000 + UInt64(ts.tv_nsec)
   }
 
   public func materializeInstaQL(
@@ -445,6 +563,21 @@ public actor InstantStore {
       indexes: indexes
     )
     return commit(prepared)
+  }
+
+  func prepareSequential(
+    count: Int,
+    transactionAtIndex: (Int) throws -> InstantStoreTransaction
+  ) throws {
+    for index in 0..<count {
+      let prepared = try prepareMutating(
+        transactionAtIndex(index),
+        attributes: &attributes,
+        indexes: &indexes,
+        capturePreviousChangedEntityTriples: false
+      )
+      sequence = prepared.sequence
+    }
   }
 
   func prepareCurrent(
@@ -705,13 +838,167 @@ public actor InstantStore {
     capturePreviousChangedEntityTriples: Bool,
     insertReplayPolicy: InstantTripleInsertReplayPolicy = .replaceAndInvalidate
   ) throws -> PreparedStoreMutation {
-    let previousChangedEntityTriplesBase: TripleIndexes? =
-      capturePreviousChangedEntityTriples ? indexes : nil
+    indexes.discardInternedQueryResultsBeforeWrite()
     indexes.reserveCapacity(
       entityCapacity: transaction.operations.count,
       attributeCapacity: attributes.count
     )
     var changedEntityIDs: Set<String> = []
+    let previousCapture = PreviousChangedEntityCapture()
+    let shouldMarkDeferred = !deferredValueResidency.attributeIDs.isEmpty
+
+    var lastCapturedEntityID: String?
+    func capturePrevious(of entityID: String) {
+      guard capturePreviousChangedEntityTriples else { return }
+      if lastCapturedEntityID == entityID {
+        return
+      }
+      lastCapturedEntityID = entityID
+      previousCapture.capture(entityID: entityID, from: indexes)
+    }
+
+    func captureDeletePrevious(of entityID: String) {
+      guard capturePreviousChangedEntityTriples else { return }
+      capturePrevious(of: entityID)
+      if indexes.hasIncomingReferences(entityID) {
+        for triple in indexes.reverseRefTriples(targetEntityID: entityID) {
+          capturePrevious(of: triple.entityID)
+        }
+      }
+      for targetEntityID in indexes.outgoingRefTargetIDs(entityID) {
+        capturePrevious(of: targetEntityID)
+      }
+    }
+
+    func markDeferred(of triple: InstantTriple) {
+      if deferredValueResidency.attributeIDs.contains(triple.attributeID) {
+        indexes.markDeferredValue(
+          entityID: triple.entityID,
+          attributeID: triple.attributeID
+        )
+      }
+    }
+
+    func applyDirectInsert(_ triple: InstantTriple) throws {
+      var canonical = triple
+      var attribute = attributes[triple.attributeID]
+      if attribute?.id != triple.attributeID {
+        canonical = try Self.canonicalizedTripleIfNeeded(triple, attributes: attributes)
+        attribute = attributes[canonical.attributeID]
+      }
+      capturePrevious(of: canonical.entityID)
+      if case let .ref(targetEntityID) = canonical.value {
+        capturePrevious(of: targetEntityID)
+      }
+      if shouldMarkDeferred {
+        markDeferred(of: canonical)
+      }
+      try Self.validateWriteValue(
+        canonical.value,
+        triple: canonical,
+        attribute: attribute,
+        attributes: attributes
+      )
+      indexes.applyInsert(
+        canonical,
+        attribute: attribute,
+        attributes: attributes,
+        insertReplayPolicy: insertReplayPolicy,
+        into: &changedEntityIDs
+      )
+    }
+
+    func applyDirectMerge(_ triple: InstantTriple) throws {
+      let canonical = try Self.canonicalizedTripleIfNeeded(triple, attributes: attributes)
+      capturePrevious(of: canonical.entityID)
+      if shouldMarkDeferred {
+        markDeferred(of: canonical)
+      }
+      try Self.validateWriteValue(
+        canonical.value,
+        triple: canonical,
+        attribute: attributes[canonical.attributeID],
+        attributes: attributes
+      )
+      if attributes[canonical.attributeID]?.valueType == .ref {
+        throw Self.unsupportedMergeError(triple: canonical, attributes: attributes)
+      }
+      indexes.apply(.merge(canonical), attributes: attributes, into: &changedEntityIDs)
+    }
+
+    func applyDirectRetract(_ triple: InstantTriple) throws {
+      let canonical = try Self.canonicalizedTripleIfNeeded(triple, attributes: attributes)
+      capturePrevious(of: canonical.entityID)
+      if case let .ref(targetEntityID) = canonical.value {
+        capturePrevious(of: targetEntityID)
+      }
+      if shouldMarkDeferred {
+        markDeferred(of: canonical)
+      }
+      try Self.validateWriteValue(
+        canonical.value,
+        triple: canonical,
+        attribute: attributes[canonical.attributeID],
+        attributes: attributes
+      )
+      indexes.apply(
+        .retract(canonical),
+        attributes: attributes,
+        insertReplayPolicy: insertReplayPolicy,
+        into: &changedEntityIDs
+      )
+    }
+
+    func applyResolved(_ operation: InstantTripleOperation) throws {
+      var resolvedLookups: [InstantLookupRef: String] = [:]
+      let concreteOperations = try Self.concreteOperations(
+        for: operation,
+        indexes: indexes,
+        attributes: attributes,
+        resolvedLookups: &resolvedLookups
+      )
+      for concreteOperation in concreteOperations {
+        switch concreteOperation {
+        case let .merge(triple):
+          capturePrevious(of: triple.entityID)
+          markDeferred(of: triple)
+          try Self.validateWriteValue(triple.value, triple: triple, attributes: attributes)
+          if attributes[triple.attributeID]?.valueType == .ref {
+            throw Self.unsupportedMergeError(triple: triple, attributes: attributes)
+          }
+          indexes.apply(concreteOperation, attributes: attributes, into: &changedEntityIDs)
+
+        case let .insert(triple), let .retract(triple):
+          capturePrevious(of: triple.entityID)
+          if case let .ref(targetEntityID) = triple.value {
+            capturePrevious(of: targetEntityID)
+          }
+          markDeferred(of: triple)
+          try Self.validateWriteValue(triple.value, triple: triple, attributes: attributes)
+          indexes.apply(
+            concreteOperation,
+            attributes: attributes,
+            insertReplayPolicy: insertReplayPolicy,
+            into: &changedEntityIDs
+          )
+
+        case let .deleteEntity(entityID):
+          captureDeletePrevious(of: entityID)
+          indexes.apply(concreteOperation, attributes: attributes, into: &changedEntityIDs)
+
+        case let .deleteEntityInNamespace(entityID, _):
+          captureDeletePrevious(of: entityID)
+          indexes.apply(concreteOperation, attributes: attributes, into: &changedEntityIDs)
+
+        case .requireEntityMissing, .requireEntityMissingByLookup,
+          .requireEntityExists, .requireEntityExistsByLookup,
+          .requireTripleExists,
+          .mergeByLookup, .insertByLookup, .retractByLookup,
+          .deleteEntityByLookup, .ruleParams, .ruleParamsByLookup:
+          break
+        }
+      }
+    }
 
     for operation in transaction.operations {
       switch operation {
@@ -792,62 +1079,54 @@ public actor InstantStore {
           attributes: attributes
         )
 
-      case .merge, .mergeByLookup, .insert, .insertByLookup, .retract, .retractByLookup,
-        .deleteEntity, .deleteEntityInNamespace, .deleteEntityByLookup:
-        var resolvedLookups: [InstantLookupRef: String] = [:]
-        let concreteOperations = try Self.concreteOperations(
-          for: operation,
-          indexes: indexes,
-          attributes: attributes,
-          resolvedLookups: &resolvedLookups
-        )
-        for concreteOperation in concreteOperations {
-          switch concreteOperation {
-          case let .merge(triple):
-            if deferredValueResidency.attributeIDs.contains(triple.attributeID) {
-              indexes.markDeferredValue(
-                entityID: triple.entityID,
-                attributeID: triple.attributeID
-              )
-            }
-            try Self.validateWriteValue(triple.value, triple: triple, attributes: attributes)
-            if attributes[triple.attributeID]?.valueType == .ref {
-              throw Self.unsupportedMergeError(triple: triple, attributes: attributes)
-            }
-            changedEntityIDs.formUnion(indexes.apply(concreteOperation, attributes: attributes))
-
-          case let .insert(triple), let .retract(triple):
-            if deferredValueResidency.attributeIDs.contains(triple.attributeID) {
-              indexes.markDeferredValue(
-                entityID: triple.entityID,
-                attributeID: triple.attributeID
-              )
-            }
-            try Self.validateWriteValue(triple.value, triple: triple, attributes: attributes)
-            changedEntityIDs.formUnion(
-              indexes.apply(
-                concreteOperation,
-                attributes: attributes,
-                insertReplayPolicy: insertReplayPolicy
-              )
-            )
-
-          case .deleteEntity:
-            changedEntityIDs.formUnion(indexes.apply(concreteOperation, attributes: attributes))
-
-          case .deleteEntityInNamespace:
-            changedEntityIDs.formUnion(indexes.apply(concreteOperation, attributes: attributes))
-
-          case .requireEntityMissing, .requireEntityMissingByLookup,
-            .requireEntityExists, .requireEntityExistsByLookup,
-            .requireTripleExists,
-            .mergeByLookup, .insertByLookup, .retractByLookup,
-            .deleteEntityByLookup, .ruleParams, .ruleParamsByLookup:
-            break
-          }
+      case let .insert(triple):
+        if case .lookupRef = triple.value {
+          try applyResolved(operation)
+        } else {
+          try applyDirectInsert(triple)
         }
+
+      case let .merge(triple):
+        if case .lookupRef = triple.value {
+          try applyResolved(operation)
+        } else {
+          try applyDirectMerge(triple)
+        }
+
+      case let .retract(triple):
+        if case .lookupRef = triple.value {
+          try applyResolved(operation)
+        } else {
+          try applyDirectRetract(triple)
+        }
+
+      case let .deleteEntity(entityID):
+        captureDeletePrevious(of: entityID)
+        indexes.apply(
+          operation,
+          attributes: attributes,
+          insertReplayPolicy: insertReplayPolicy,
+          into: &changedEntityIDs
+        )
+
+      case let .deleteEntityInNamespace(entityID, _):
+        captureDeletePrevious(of: entityID)
+        indexes.apply(
+          operation,
+          attributes: attributes,
+          insertReplayPolicy: insertReplayPolicy,
+          into: &changedEntityIDs
+        )
+
+      case .mergeByLookup, .insertByLookup, .retractByLookup, .deleteEntityByLookup:
+        try applyResolved(operation)
       }
     }
+
+    indexes.finishInternCachesAfterWrite(
+      invalidating: changedEntityIDs,
+      attributes: attributes
+    )
 
     let nextSequence = sequence + 1
     let result = InstantStoreMutationResult(
@@ -856,22 +1135,17 @@ public actor InstantStore {
       tripleCount: indexes.tripleCount,
       emissions: []
     )
-    let previousChangedEntityTriples: [String: [InstantTriple]]
-    if capturePreviousChangedEntityTriples, let base = previousChangedEntityTriplesBase {
-      previousChangedEntityTriples = Dictionary(
-        uniqueKeysWithValues: changedEntityIDs.map { entityID in
-          (entityID, base.triples(entityID: entityID))
-        }
-      )
-    } else {
-      previousChangedEntityTriples = [:]
+    if capturePreviousChangedEntityTriples {
+      for entityID in changedEntityIDs where !previousCapture.contains(entityID) {
+        previousCapture.capture(entityID: entityID, from: indexes)
+      }
     }
     return PreparedStoreMutation(
       result: result,
       sequence: nextSequence,
       attributes: attributes,
       indexes: indexes,
-      previousChangedEntityTriples: previousChangedEntityTriples
+      previousCapture: previousCapture
     )
   }
 
@@ -900,21 +1174,64 @@ public actor InstantStore {
     installingLiveQueryPageInfo replacements: [InstantLiveQueryResultReplacement]
   ) -> PreparedStoreMutation {
     var prepared = prepared
+    prepared.deferredValueRemovalMetrics = prepared.indexes.removeMarkedDeferredValues(
+      attributes: prepared.attributes
+    )
+    if observers.isEmpty {
+      self.attributes = prepared.attributes
+      self.indexes = prepared.indexes
+      self.sequence = prepared.sequence
+      lastPublishMetrics = InstantStorePublishMetrics()
+      if InstantDiagnostics.shared.isEnabled {
+        InstantDiagnostics.shared.record(
+          .info,
+          subsystem: "instant-swift-data-core",
+          category: "store",
+          event: shouldPublish ? "store.mutation-published" : "store.mutation-committed",
+          message: shouldPublish
+            ? "Committed a store mutation and published query emissions."
+            : "Committed a store mutation without publishing query emissions.",
+          metadata: [
+            "changedEntityCount": String(prepared.result.changedEntityIDs.count),
+            "emissionCount": "0",
+            "observerCount": "0",
+            "skippedObserverCount": "0",
+            "splicedObserverCount": "0",
+            "rematerializedObserverCount": "0",
+            "materializedSnapshotCount": "0",
+            "sequence": String(sequence),
+            "tripleCount": String(prepared.result.tripleCount),
+          ],
+          correlationID: prepared.result.transactionID
+        )
+      }
+      return prepared
+    }
+
+    let previousIndexes = indexes
+    let previousAttributes = attributes
+    self.attributes = prepared.attributes
+    self.indexes = prepared.indexes
+    self.sequence = prepared.sequence
+
     let pageInfoByKey = Self.liveQueryPageInfoByKey(replacements)
     let changedNamespaces: Set<String>?
-    if attributes != prepared.attributes {
+    if previousAttributes != prepared.attributes {
       changedNamespaces = nil
     } else {
       var resolvedNamespaces: Set<String> = []
       var resolvedEveryEntity = true
       for entityID in prepared.result.changedEntityIDs {
-        let entityNamespaces = indexes.namespaces(entityID: entityID, attributes: attributes)
-          .union(
-            prepared.indexes.namespaces(
-              entityID: entityID,
-              attributes: prepared.attributes
-            )
+        let entityNamespaces = previousIndexes.namespaces(
+          entityID: entityID,
+          attributes: previousAttributes
+        )
+        .union(
+          prepared.indexes.namespaces(
+            entityID: entityID,
+            attributes: prepared.attributes
           )
+        )
         if entityNamespaces.isEmpty {
           resolvedEveryEntity = false
         }
@@ -922,12 +1239,6 @@ public actor InstantStore {
       }
       changedNamespaces = resolvedEveryEntity ? resolvedNamespaces : nil
     }
-    prepared.deferredValueRemovalMetrics = prepared.indexes.removeMarkedDeferredValues(
-      attributes: prepared.attributes
-    )
-    self.attributes = prepared.attributes
-    self.indexes = prepared.indexes
-    self.sequence = prepared.sequence
 
     var metrics = InstantStorePublishMetrics()
     var emissionsByObservation: [StoreObservationKey: InstantQueryEmission] = [:]
@@ -1003,27 +1314,29 @@ public actor InstantStore {
       emissionsByObservation
       .sorted { lhs, rhs in Self.emissionSortKey(lhs.key) < Self.emissionSortKey(rhs.key) }
       .map(\.value)
-    InstantDiagnostics.shared.record(
-      .info,
-      subsystem: "instant-swift-data-core",
-      category: "store",
-      event: shouldPublish ? "store.mutation-published" : "store.mutation-committed",
-      message: shouldPublish
-        ? "Committed a store mutation and published query emissions."
-        : "Committed a store mutation without publishing query emissions.",
-      metadata: [
-        "changedEntityCount": String(result.changedEntityIDs.count),
-        "emissionCount": String(result.emissions.count),
-        "observerCount": String(observers.count),
-        "skippedObserverCount": String(metrics.skippedObserverCount),
-        "splicedObserverCount": String(metrics.splicedObserverCount),
-        "rematerializedObserverCount": String(metrics.rematerializedObserverCount),
-        "materializedSnapshotCount": String(metrics.materializedSnapshotCount),
-        "sequence": String(sequence),
-        "tripleCount": String(result.tripleCount),
-      ],
-      correlationID: result.transactionID
-    )
+    if InstantDiagnostics.shared.isEnabled {
+      InstantDiagnostics.shared.record(
+        .info,
+        subsystem: "instant-swift-data-core",
+        category: "store",
+        event: shouldPublish ? "store.mutation-published" : "store.mutation-committed",
+        message: shouldPublish
+          ? "Committed a store mutation and published query emissions."
+          : "Committed a store mutation without publishing query emissions.",
+        metadata: [
+          "changedEntityCount": String(result.changedEntityIDs.count),
+          "emissionCount": String(result.emissions.count),
+          "observerCount": String(observers.count),
+          "skippedObserverCount": String(metrics.skippedObserverCount),
+          "splicedObserverCount": String(metrics.splicedObserverCount),
+          "rematerializedObserverCount": String(metrics.rematerializedObserverCount),
+          "materializedSnapshotCount": String(metrics.materializedSnapshotCount),
+          "sequence": String(sequence),
+          "tripleCount": String(result.tripleCount),
+        ],
+        correlationID: result.transactionID
+      )
+    }
     prepared.result = result
     return prepared
   }
@@ -1263,6 +1576,19 @@ public actor InstantStore {
       attributeID: resolvedAttribute.attribute.id,
       value: .ref(entityID)
     )
+  }
+
+  private static func canonicalizedTripleIfNeeded(
+    _ triple: InstantTriple,
+    attributes: AttributeStore
+  ) throws -> InstantTriple {
+    guard let resolved = attributes.lookupAttribute(id: triple.attributeID) else {
+      return triple
+    }
+    if resolved.direction == .forward, resolved.attribute.id == triple.attributeID {
+      return triple
+    }
+    return try canonicalizedTriple(triple, attributes: attributes)
   }
 
   private static func canonicalizedTriple(
@@ -1536,6 +1862,23 @@ public actor InstantStore {
     triple: InstantTriple,
     attributes: AttributeStore
   ) throws {
+    try validateWriteValue(
+      value,
+      triple: triple,
+      attribute: attributes[triple.attributeID],
+      attributes: attributes
+    )
+  }
+
+  private static func validateWriteValue(
+    _ value: InstantValue,
+    triple: InstantTriple,
+    attribute: InstantAttribute?,
+    attributes: AttributeStore
+  ) throws {
+    // Namespace existence must be checked before any declared-attribute fast
+    // path: forwardAttribute synthesizes primary keys for unknown "<ns>/id"
+    // lookups, so a non-nil attribute does not imply a declared namespace.
     let attributeNamespace = namespace(in: triple.attributeID)
     if !attributes.namespaces.isEmpty,
       let attributeNamespace,
@@ -1551,61 +1894,62 @@ public actor InstantStore {
       )
     }
 
-    guard let attribute = attributes[triple.attributeID] else {
+    if let attribute {
       guard isFinitePayload(value) else {
         throw InstantError(
           code: .validationFailed,
           operation: "write entity attribute",
-          namespace: attributeNamespace,
-          path: triple.attributeID,
+          namespace: attribute.namespace,
+          path: attribute.name,
           localID: triple.entityID,
-          message: "Invalid non-finite number in attribute '\(triple.attributeID)'.",
+          message: "Invalid non-finite number in attribute '\(attribute.id)'.",
           recovery: "Use only finite numbers in local writes."
         )
       }
 
-      switch value {
-      case .ref where attributes.namespaces.isEmpty:
-        return
-
-      case .ref, .lookupRef:
+      guard isWriteValue(value, compatibleWith: attribute) else {
         throw InstantError(
           code: .validationFailed,
           operation: "write entity attribute",
-          path: triple.attributeID,
+          namespace: attribute.namespace,
+          path: attribute.name,
           localID: triple.entityID,
-          message: "No ref attribute named '\(triple.attributeID)' is declared.",
-          recovery: "Declare the link in the schema before writing ref values."
+          message:
+            "Invalid value for attribute '\(attribute.id)'. Expected \(attribute.valueType.storeValidationDescription), but received \(value.storeValidationTypeDescription).",
+          recovery: "Use a value that matches the declared schema attribute type."
         )
-
-      case .null, .string, .number, .bool, .date, .json:
-        return
       }
+      return
     }
 
     guard isFinitePayload(value) else {
       throw InstantError(
         code: .validationFailed,
         operation: "write entity attribute",
-        namespace: attribute.namespace,
-        path: attribute.name,
+        namespace: attributeNamespace,
+        path: triple.attributeID,
         localID: triple.entityID,
-        message: "Invalid non-finite number in attribute '\(attribute.id)'.",
+        message: "Invalid non-finite number in attribute '\(triple.attributeID)'.",
         recovery: "Use only finite numbers in local writes."
       )
     }
 
-    guard isWriteValue(value, compatibleWith: attribute) else {
+    switch value {
+    case .ref where attributes.namespaces.isEmpty:
+      return
+
+    case .ref, .lookupRef:
       throw InstantError(
         code: .validationFailed,
         operation: "write entity attribute",
-        namespace: attribute.namespace,
-        path: attribute.name,
+        path: triple.attributeID,
         localID: triple.entityID,
-        message:
-          "Invalid value for attribute '\(attribute.id)'. Expected \(attribute.valueType.storeValidationDescription), but received \(value.storeValidationTypeDescription).",
-        recovery: "Use a value that matches the declared schema attribute type."
+        message: "No ref attribute named '\(triple.attributeID)' is declared.",
+        recovery: "Declare the link in the schema before writing ref values."
       )
+
+    case .null, .string, .number, .bool, .date, .json:
+      return
     }
   }
 

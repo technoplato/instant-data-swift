@@ -65,6 +65,10 @@ let package = Package(
       name: "scribe-shaped-20s-write-bench",
       targets: ["ScribeShaped20sWriteBench"]
     ),
+    .executable(
+      name: "instant-domain-aev-bench",
+      targets: ["InstantDomainAEVBench"]
+    ),
   ],
   dependencies: [
     // Accept the CasePaths 1.x line so TCA hosts can unify on their newer compatible release.
@@ -313,6 +317,13 @@ let package = Package(
       swiftSettings: strictConcurrencySettings
     ),
     .executableTarget(
+      name: "InstantDomainAEVBench",
+      dependencies: [
+        "InstantSwiftDataCore",
+      ],
+      swiftSettings: strictConcurrencySettings
+    ),
+    .executableTarget(
       name: "AppBuilderV3Executable",
       dependencies: ["AppBuilderV3App"],
       swiftSettings: strictConcurrencySettings
@@ -404,6 +415,13 @@ let package = Package(
         "InstantStorageHTTPParityTests.swift",
         // Cookie sync app-scoped lastSynced metadata still red under freeze stack.
         "InstantCookieSyncParityTests.swift",
+      ],
+      swiftSettings: strictConcurrencySettings
+    ),
+    .testTarget(
+      name: "InstantSwiftDataDomainAEVTests",
+      dependencies: [
+        "InstantSwiftDataCore",
       ],
       swiftSettings: strictConcurrencySettings
     ),

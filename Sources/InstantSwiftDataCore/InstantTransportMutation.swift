@@ -52,13 +52,22 @@ enum InstantInstamlTransform {
     txID: String,
     txTime: InstantTimestamp
   ) -> [InstantTripleOperation] {
+    let namespacePrefix = namespace + "/"
+    var fieldNames: [String] = []
+    fieldNames.reserveCapacity(fields.count)
+    for field in fields.keys where field != "id" {
+      fieldNames.append(field)
+    }
+    fieldNames.sort()
     var operations: [InstantTripleOperation] = []
-    for (field, value) in payloadFields(fields) {
+    operations.reserveCapacity(fieldNames.count + 1)
+    for field in fieldNames {
+      guard let value = fields[field] ?? nil else { continue }
       operations.append(
         .insert(
           InstantTriple(
             entityID: entityID,
-            attributeID: "\(namespace)/\(field)",
+            attributeID: namespacePrefix + field,
             value: value,
             txID: txID,
             txTime: txTime
@@ -70,7 +79,7 @@ enum InstantInstamlTransform {
       .insert(
         InstantTriple(
           entityID: entityID,
-          attributeID: InstantAttribute.primaryKeyID(namespace: namespace),
+          attributeID: namespacePrefix + "id",
           value: .string(entityID),
           txID: txID,
           txTime: txTime

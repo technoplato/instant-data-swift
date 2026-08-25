@@ -67,17 +67,17 @@ import Testing
       let client = v3LocalIDClient(recorder)
       var localID = LocalID("device")
 
-      await withDependencies {
+      try await withDependencies {
         $0.defaultInstantSwiftData = client
       } operation: {
         localID.update()
         localID.update()
 
         await recorder.resumeResolution(with: "device-local-id")
-        try? await waitForV3RecordingCondition(
+        try await waitForV3RecordingCondition(
           operation: "wait for automatic local ID resolution"
         ) {
-          localID.wrappedValue == "device-local-id"
+          localID.wrappedValue == "device-local-id" && !localID.isLoading
         }
       }
 

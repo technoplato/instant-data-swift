@@ -811,6 +811,11 @@ struct InstantInfiniteQueryParityTests {
     expectNoDifference(firstPage.canLoadNextPage, true)
 
     subscription.loadNextPage()
+    let blockedLocalPayloadCount = try await waitForInfinitePayloadBarrier(
+      barrier,
+      operation: "block after acquiring the ten-thousand-row local navigation request"
+    )
+    expectNoDifference(blockedLocalPayloadCount, 10_000)
     for navigationIndex in 0..<9_999 {
       if navigationIndex.isMultiple(of: 2) {
         subscription.loadPreviousPage()
@@ -818,11 +823,6 @@ struct InstantInfiniteQueryParityTests {
         subscription.loadNextPage()
       }
     }
-    let blockedLocalPayloadCount = try await waitForInfinitePayloadBarrier(
-      barrier,
-      operation: "block after acquiring the ten-thousand-row local navigation request"
-    )
-    expectNoDifference(blockedLocalPayloadCount, 10_000)
     let boundedNavigationResidency = try await waitForInfiniteResidency(
       in: subscription,
       operation: "coalesce ten thousand blocked local navigation calls into one task and one scalar"

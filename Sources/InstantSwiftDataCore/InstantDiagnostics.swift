@@ -124,6 +124,7 @@ public final class InstantDiagnostics: @unchecked Sendable {
   private var sequence: UInt64 = 0
   private var lastWriteError: String?
   private var handlers: [UUID: InstantDiagnosticHandler] = [:]
+  private var hasActiveSink = false
 
   public init(
     configuration: InstantDiagnosticsConfiguration,
@@ -137,6 +138,7 @@ public final class InstantDiagnostics: @unchecked Sendable {
     self.processName = processName
     self.encoder = JSONEncoder()
     self.encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
+    self.hasActiveSink = configuration.fileURL != nil
   }
 
   public static func defaultLogFileURL(processName: String) -> URL {
@@ -157,6 +159,7 @@ public final class InstantDiagnostics: @unchecked Sendable {
     lock.withLock {
       self.configuration = configuration
       self.lastWriteError = nil
+      refreshHasActiveSinkLocked()
     }
   }
 
@@ -167,6 +170,7 @@ public final class InstantDiagnostics: @unchecked Sendable {
     let token = UUID()
     lock.withLock {
       handlers[token] = handler
+      refreshHasActiveSinkLocked()
     }
     return token
   }
@@ -174,8 +178,15 @@ public final class InstantDiagnostics: @unchecked Sendable {
   public func removeHandler(_ token: UUID) {
     lock.withLock {
       handlers[token] = nil
+      refreshHasActiveSinkLocked()
     }
   }
+
+  private func refreshHasActiveSinkLocked() {
+    hasActiveSink = configuration.fileURL != nil || !handlers.isEmpty
+  }
+
+  public var isEnabled: Bool { hasActiveSink }
 
   public var status: InstantDiagnosticsStatus {
     lock.withLock {
@@ -199,6 +210,7 @@ public final class InstantDiagnostics: @unchecked Sendable {
     line: UInt = #line,
     function: String = #function
   ) {
+    guard hasActiveSink else { return }
     var entry: InstantDiagnosticEntry?
     var fileURL: URL?
     var activeHandlers: [InstantDiagnosticHandler] = []

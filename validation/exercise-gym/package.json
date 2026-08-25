@@ -1,0 +1,33 @@
+{
+  "name": "instant-exercise-gym",
+  "private": true,
+  "type": "module",
+  "version": "0.1.0",
+  "description": "InstantDB TypeScript vs Swift correctness + throughput exercise gym (#156)",
+  "scripts": {
+    "gym": "tsx src/run.ts",
+    "gym:simple": "tsx src/run.ts --suite simple",
+    "gym:complex": "tsx src/run.ts --suite complex",
+    "gym:speed": "tsx src/run.ts --suite speed",
+    "gym:memory": "tsx src/run.ts --suite memory-cap",
+    "gym:bandwidth": "tsx src/run.ts --suite bandwidth-cap",
+    "gym:cpu": "tsx src/run.ts --suite cpu-cap",
+    "gym:all": "tsx src/run.ts --suite all",
+    "gym:analyze": "tsx src/run.ts --suite analyze-only",
+    "gym:full-compare": "tsx src/full-compare.ts",
+    "electron": "electron electron/main.mjs",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@instantdb/admin": "1.0.49",
+    "@instantdb/core": "1.0.49"
+  },
+  "devDependencies": {
+    "@types/node": "22.13.0",
+    "@types/ws": "8.5.13",
+    "electron": "35.1.2",
+    "tsx": "4.19.3",
+    "typescript": "5.9.3",
+    "ws": "8.18.0"
+  }
+}

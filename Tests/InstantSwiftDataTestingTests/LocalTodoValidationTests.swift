@@ -4364,18 +4364,16 @@ private func runValidationRunner(
   environment: [String: String?] = [:]
 ) throws -> (status: Int32, stdout: String, stderr: String) {
   let packageURL = packageRootURL()
-  let executableURL = packageURL.appendingPathComponent(
-    ".build/debug/instant-swift-data-validation-runner"
-  )
+  guard let executableURL = builtPackageProductURL(
+    named: "instant-swift-data-validation-runner",
+    packageURL: packageURL
+  ) else {
+    throw ValidationScriptTestError.missingBuiltProduct("instant-swift-data-validation-runner")
+  }
 
   let process = Process()
-  if FileManager.default.isExecutableFile(atPath: executableURL.path) {
-    process.executableURL = executableURL
-    process.arguments = arguments
-  } else {
-    process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
-    process.arguments = ["swift", "run", "instant-swift-data-validation-runner"] + arguments
-  }
+  process.executableURL = executableURL
+  process.arguments = arguments
   process.currentDirectoryURL = packageURL
   var processEnvironment = ProcessInfo.processInfo.environment
   for (key, value) in environment {
@@ -4503,8 +4501,35 @@ private func parseJSONLines(_ output: String) throws -> [[String: Any]] {
     }
 }
 
-private enum ValidationScriptTestError: Error {
+private func builtPackageProductURL(named name: String, packageURL: URL) -> URL? {
+  let relativePaths = [
+    ".build/release/\(name)",
+    ".build/debug/\(name)",
+    ".build/arm64-apple-macosx/release/\(name)",
+    ".build/arm64-apple-macosx/debug/\(name)",
+  ]
+  return relativePaths
+    .map { packageURL.appendingPathComponent($0) }
+    .first { FileManager.default.isExecutableFile(atPath: $0.path) }
+}
+
+private enum ValidationScriptTestError: Error, CustomStringConvertible {
   case invalidJSONLine(String)
+  case missingBuiltProduct(String)
+
+  var description: String {
+    switch self {
+    case .invalidJSONLine(let line):
+      "invalid JSON line: \(line)"
+    case .missingBuiltProduct(let name):
+      """
+      \(name) executable is missing under .build/release or .build/debug. \
+      Build it with 'swift build -c release --product \(name)' before \
+      process-level validation-runner tests. Nested 'swift run' deadlocks \
+      the package .build.lock already held by 'swift test'.
+      """
+    }
+  }
 }
 
 private final class ValidationIDGenerator: @unchecked Sendable {

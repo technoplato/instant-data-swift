@@ -555,9 +555,11 @@ extension InstantValue {
   }
 }
 
-private extension String {
-  static let instantTextLocale = Locale(identifier: "en_US")
+extension String {
+  fileprivate static let instantTextLocale = Locale(identifier: "en_US")
 
+  /// En_US collation, matching upstream InstaQL text ordering. Do not replace
+  /// with native Unicode `<`: parity tests pin locale groupings like a<A<b<B.
   func instantTextCompare(_ other: String) -> ComparisonResult {
     (self as NSString).compare(
       other,

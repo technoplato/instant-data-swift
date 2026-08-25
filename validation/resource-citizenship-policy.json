@@ -1,0 +1,62 @@
+{
+  "protocol": "instant-resource-citizenship-v1",
+  "description": "Fail-closed resource budgets for native media primitives, the 100x Scribe product soak, and steady-state realtime synchronization. Burst CPU and realtime-equivalent CPU are intentionally reported separately.",
+  "profiles": {
+    "nativeMediaPrimitiveBurst": {
+      "logicalFrameDurationMicroseconds": 20000,
+      "maximumBurstAverageCPUPercentOfOneCore": 200.0,
+      "maximumEquivalentRealtimeCPUPercentOfOneCore": 0.5,
+      "maximumCPUSecondsPerLogicalSecond": 0.005,
+      "maximumIncrementalPeakPhysicalFootprintBytes": 8388608,
+      "maximumSettledPhysicalFootprintGrowthBytes": 1048576,
+      "maximumBufferBytes": 1048576,
+      "maximumBufferFrames": 256,
+      "maximumDroppedFrames": 0,
+      "allowedTerminalThermalStates": [
+        "nominal",
+        "fair"
+      ]
+    },
+    "scribeTwoLogicalHoursAt100x": {
+      "logicalDurationSeconds": 7200,
+      "maximumWallSeconds": 72.0,
+      "maximumAverageCPUPercentOfOneCore": 150.0,
+      "maximumP95CPUPercentOfOneCore": 200.0,
+      "maximumPeakCPUPercentOfOneCore": 300.0,
+      "maximumEquivalentRealtimeCPUPercentOfOneCore": 2.0,
+      "maximumCPUSecondsPerLogicalSecond": 0.02,
+      "maximumPhysicalFootprintBytes": 104857600,
+      "maximumIncrementalPeakPhysicalFootprintBytes": 50331648,
+      "maximumSettledPhysicalFootprintGrowthBytes": 8388608,
+      "maximumSettledGrowthBytesPerLogicalHour": 4194304,
+      "maximumSecondHalfPhysicalFootprintSlopeBytesPerSecond": 65536,
+      "maximumPeakSQLiteResidencyGrowthBytes": 67108864,
+      "maximumSettledSQLiteResidencyGrowthBytes": 25165824,
+      "maximumPeakWALBytes": 33554432,
+      "maximumSettledWALBytes": 4194304,
+      "maximumFinalPendingOutboxRows": 0,
+      "maximumFinalFailedOutboxRows": 0,
+      "minimumCPUSpeedLimitPercent": 100,
+      "minimumSchedulerLimitPercent": 100,
+      "maximumThrottledThermalSamples": 0,
+      "minimumProgressiveAudioWriteCount": 1,
+      "requireProgressiveAudioClose": true,
+      "maximumAudioContainerSizeToPayloadRatio": 1.05,
+      "maximumAudioContainerOverheadBytes": 1048576
+    },
+    "realtimeSyncSubsystem": {
+      "maximumAverageCPUPercentOfOneCore": 5.0,
+      "maximumP95CPUPercentOfOneCore": 15.0,
+      "maximumPeakCPUPercentOfOneCore": 35.0,
+      "maximumEquivalentRealtimeCPUPercentOfOneCore": 5.0,
+      "maximumPhysicalFootprintBytes": 104857600,
+      "maximumSettledGrowthBytesPerHour": 4194304,
+      "maximumPhysicalFootprintSlopeBytesPerSecond": 1165,
+      "maximumDroppedDurableFrames": 0,
+      "maximumFinalPendingOutboxRows": 0,
+      "allowedThermalStates": [
+        "nominal"
+      ]
+    }
+  }
+}
