@@ -4278,11 +4278,34 @@ private struct PreparedInclude {
       internInvalidationIDs.subtract(pendingInternExtra.keys)
     }
     applyPendingInternSnapshots()
+    enforceInternCacheBudget()
     if !internInvalidationIDs.isEmpty {
       invalidateInternedEntities(internInvalidationIDs)
       internInvalidationIDs = []
     }
   }
+
+  /// Intern caches are pure memoization: dropping them never changes query
+  /// results, only rebuild cost. Append-heavy workloads (live transcription,
+  /// soak streams) grow the per-entity maps monotonically, so keep a hard
+  /// budget and clear wholesale instead of retaining unbounded snapshots.
+  private mutating func enforceInternCacheBudget() {
+    if internCaches.internedEntityCount > Self.internedEntityCapacity {
+      uniqueInternCaches()
+      internCaches.clearAll()
+      return
+    }
+    if internCaches.internedIndexedEqualsResults.count
+      + internCaches.internedSimpleOrderedResults.count
+      > Self.internedQueryResultCapacity
+    {
+      uniqueInternCaches()
+      internCaches.clearQueryResults()
+    }
+  }
+
+  static let internedEntityCapacity = 4_096
+  static let internedQueryResultCapacity = 64
 
   private mutating func completePendingInternSnapshotsFromEAV(
     attributes: AttributeStore
