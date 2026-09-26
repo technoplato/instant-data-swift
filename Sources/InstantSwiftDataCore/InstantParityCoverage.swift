@@ -1533,7 +1533,7 @@ public enum InstantSwiftDataParityCoverage {
       swiftTestName: "upstreamInstaQLPaginationOrderingAndFields",
       surface: "query",
       status: .adapted,
-      notes: "Swift rejects paginated nested includes at construction time instead of allowing the raw query and emitting a runtime warning."
+      notes: "Like upstream, Swift sends nested limit/first/last and trims each parent's children locally after the server returns all of them (InstantLiveQueryNestedLimit); it does not emit the runtime warning. Nested offset and cursors are rejected at construction."
     ),
     instant(
       id: "instant.query.pagination-offset-page-info",

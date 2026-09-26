@@ -2024,8 +2024,9 @@ public struct InstantEntityQuery<Entity: InstantEntityModel>: Hashable, Sendable
     query: InstantEntityQuery<Target>
   ) -> Self {
     let includePlan = query.plan
-    // Nested limit/first/last are supported (per-parent bounds, ADR 0015 L1).
-    // Nested offset/cursors remain unsupported.
+    // Nested limit/first/last bound each parent's children locally (ADR 0015 L1). The server
+    // ignores them and sends every child (ADR 0015 Q32), so they do not bound network or decode
+    // cost. Nested offset/cursors remain unsupported.
     precondition(
       includePlan.offset == nil
         && includePlan.after == nil

@@ -6640,7 +6640,7 @@ public struct InstantFetchRequest<Value: Sendable>: Sendable {
   /// root and its named included children, then builds rows. The view only sees
   /// `[Row]` — it does not dig nested graphs.
   ///
-  /// Prefer pairing with nested `.limit` on the include (L1):
+  /// A nested `.limit` on the include trims each root's children locally:
   ///
   /// ```swift
   /// InstantFetchRequest(
@@ -6651,6 +6651,12 @@ public struct InstantFetchRequest<Value: Sendable>: Sendable {
   ///   }
   /// )
   /// ```
+  ///
+  /// It does not bound the network. The Instant server applies `limit` to top-level namespaces
+  /// only (`instaql.clj` `page-info-of-form`; the TypeScript client warns the same), so every
+  /// refresh downloads every child of every root. For relations that grow without bound, bound
+  /// them on the server: link the few children a row needs through has-one relations and
+  /// include those (Scribe's recording list uses two preview-slot links, ADR 0015 Q32).
   public init<Root: InstantEntityModel, Child: InstantEntityModel, Row: Sendable>(
     _ query: InstantEntityQuery<Root>,
     children relation: InstantReverseRelation<Root, Child>,
