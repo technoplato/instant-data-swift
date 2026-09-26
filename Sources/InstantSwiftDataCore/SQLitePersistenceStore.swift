@@ -9039,6 +9039,17 @@ public actor SQLitePersistenceStore {
     return application
   }
 
+  /// Whether this app has any unrevoked share. Without one, shared-root authorization cannot
+  /// refuse a write, so `transact` skips it and the full store snapshot it would build.
+  public func hasActiveShares(appID: String) throws -> Bool {
+    try readTransaction {
+      try selectInt64(
+        "SELECT EXISTS(SELECT 1 FROM instant_shares WHERE app_id = ? AND revoked_at_ms IS NULL)",
+        [.text(appID)]
+      ) != 0
+    }
+  }
+
   public func loadActiveShareSnapshots(
     appID: String,
     rootNamespace: String?,

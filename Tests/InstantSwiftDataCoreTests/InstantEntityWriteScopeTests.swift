@@ -188,6 +188,69 @@ struct InstantEntityWriteScopeTests {
     expectNoDifference(prepared.factScope["segment-7"], .wholeEntity)
   }
 
+  /// A local write must not materialize the whole store.
+  ///
+  /// Shared-root authorization built a full store snapshot on every `transact` to resolve write
+  /// targets, even when the app had no shares to authorize against. A 30-minute Scribe soak on
+  /// 2026-09-26 spent about 0.9 s of every 30 s in `InstantStore.snapshot` →
+  /// `TripleIndexes.triples.getter`, reached from `performTransact`.
+  @Test
+  func writesWithoutSharesDoNotMaterializeTheStore() async throws {
+    let directory = FileManager.default.temporaryDirectory.appending(
+      path: "InstantEntityWriteScope-\(UUID().uuidString)",
+      directoryHint: .isDirectory
+    )
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "write-scope-app",
+        persistenceURL: directory.appending(path: "instant.sqlite"),
+        initialAttributes: Self.attributes
+      )
+    )
+    // Durable delivery caps one transaction at 256 steps, so seed in batches.
+    let seed = Self.recordingTriples(segmentCount: 20_000)
+    for (batch, start) in stride(from: 0, to: seed.count, by: 250).enumerated() {
+      let id = "seed-\(batch)"
+      try await runtime.transact(
+        InstantStoreTransaction(
+          id: id,
+          operations: seed[start..<min(start + 250, seed.count)].map { triple in
+            var triple = triple
+            triple.txID = id
+            return .insert(triple)
+          }
+        ),
+        createdAt: InstantTimestamp(milliseconds: 1)
+      )
+    }
+
+    let started = ContinuousClock.now
+    for index in 0..<40 {
+      let time = InstantTimestamp(milliseconds: 10 + Int64(index))
+      try await runtime.transact(
+        InstantStoreTransaction(
+          id: "write-\(index)",
+          operations: [
+            .insert(InstantTriple(
+              entityID: "recording", attributeID: Self.updatedAtAttribute.id,
+              value: .number(Double(10 + index)), txID: "write-\(index)", txTime: time))
+          ]
+        ),
+        createdAt: time
+      )
+    }
+    let elapsed = ContinuousClock.now - started
+    #expect(
+      elapsed < .seconds(2),
+      """
+      40 one-field writes cost \(elapsed) on a store of about 20,000 facts. A write is \
+      materializing the whole store (check shared-root authorization in performTransact).
+      """
+    )
+  }
+
   /// Preparing that write must not materialize, sort, or diff the entity's other facts.
   ///
   /// Measured 2026-09-26 (Debug, M1 Max): whole-entity capture cost 2.0 s for 50 writes at 1,000

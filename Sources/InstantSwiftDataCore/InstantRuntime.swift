@@ -2082,8 +2082,15 @@ public final class InstantRuntime: Sendable {
           emissions: []
         )
       }
-      let storeSnapshotForAuth = await authoritativeStoreSnapshot(from: state)
-      try await authorizeSharedRootWrites(transaction: transaction, snapshot: storeSnapshotForAuth)
+      // Resolving shared-root targets needs a full store snapshot, which materializes and sorts
+      // every fact. Without an active share no target can be refused, so skip both.
+      if try await persistence.hasActiveShares(appID: configuration.appID) {
+        let storeSnapshotForAuth = await authoritativeStoreSnapshot(from: state)
+        try await authorizeSharedRootWrites(
+          transaction: transaction,
+          snapshot: storeSnapshotForAuth
+        )
+      }
       guard let hydrated = try await persistence.loadOutboxMutations(
         statuses: [.pending, .confirmed, .failed],
         ids: [transaction.id],
