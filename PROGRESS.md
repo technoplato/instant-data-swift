@@ -1,3 +1,25 @@
+## 2026-09-26 16:54:50 EDT — Writes capture and persist only the facts they touch (#044 #155)
+
+- **Implementation:** `636c348880612ad6e11d1feed6ba4c3b39962a51` on local branch
+  `agent/claude-opus-5.5/scribe-perf-2026-09-24` (not pushed); change log `9d892c99`.
+- **Cause:** rollback capture, `changedEntityTriples`, and SQLite persistence were per entity.
+  Scribe stores one `recordings/segments` link per segment on the recording, so every segment
+  write copied, sorted, read back, and diffed the whole recording.
+- **Fix:** `InstantFactScope` (per-entity touched attributes and multi-value values); per-fact
+  capture; scoped SQLite reads and rewrites; scope unions at composed server-apply and
+  failure-removal commits; pure-create rollback needs proof of creation; deletes widen only
+  cascaded entities; multi-value slots mutate in place. Upstream comparison: `Reactor` layers
+  pending mutations on read and needs no capture (ADR 0015 Q33).
+- **Evidence:** 50 prepared writes on a 16,000-link recording 33.4 s -> 0.13 s (Debug);
+  500 link inserts into a 16,000-link slot 0.27 s -> 0.019 s. Full suite 1,762 tests, no new
+  failures versus the pre-change baseline (30 pre-existing). Scribe's ScribeInstantStoreTests
+  (46) and ScribeRecordingLibraryMemoryTests (12) pass against this library.
+- **Also decided (ADR 0015 Q32):** the server ignores nested include limits; Scribe list previews
+  use two has-one preview slots, pushed to production and backfilled 2026-09-26.
+- **Remaining:** preparing on a copy of the hot store still copies each large map a write
+  mutates once per transaction (link slot, value index, reverse-link index).
+- **Next:** Scribe soak against this library; then push both branches after review.
+
 ## 2026-08-16 05:54:23 EDT — Preserve one durable relation across schema upgrades
 
 - **Implementation:** `73ff55491fbd18efeaa19375c0b725d40096ce5f`; the paired intent-ledger

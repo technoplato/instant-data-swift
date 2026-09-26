@@ -1,3 +1,12 @@
+## 2026-09-26 16:53:50 EDT — instant-data-swift `636c348880612ad6e11d1feed6ba4c3b39962a51`
+Capture and persist only the facts a write touches: per-fact rollback capture, scoped SQLite rewrites, and in-place multi-value slots; 50 writes on a 16,000-link recording 33.4 s -> 0.13 s (Debug). Local branch `agent/claude-opus-5.5/scribe-perf-2026-09-24`, not pushed (#044 #155).
+
+## 2026-09-26 16:12:45 EDT — realtime-voice-sqlite-instant `100e69b024e7bd83e20946af86d0cf9c8823bb76`
+Pace the preview-slot backfill and retry admin rate limits; applied to production 2026-09-26: 241 recordings linked, 116 without segments. Local branch `agent/claude-opus-5.5/combine-instant-2026-09-24`, not pushed (#044 #155).
+
+## 2026-09-24 23:49:13 EDT — realtime-voice-sqlite-instant `7fb9ea4a8124165b12b9b9900f5e943d99286f24`
+Bound list previews with two has-one slots instead of an unbounded nested include; the two links were pushed to the production schema on 2026-09-26. Merged into local branch `agent/claude-opus-5.5/combine-instant-2026-09-24`, not pushed (#044 #155).
+
 ## 2026-08-20 14:32:00 EDT — scribe-sqlite-data `a6ed0a8b8f9cdd7f2451bfddd3f091de88769153`
 Document fb7a7c6 in the change log (#228).
 
