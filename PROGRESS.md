@@ -18,7 +18,15 @@
   use two has-one preview slots, pushed to production and backfilled 2026-09-26.
 - **Remaining:** preparing on a copy of the hot store still copies each large map a write
   mutates once per transaction (link slot, value index, reverse-link index).
-- **Next:** Scribe soak against this library; then push both branches after review.
+- **Scribe soak (library 636c3488, slots, 30 min, two arms):** memory 117 -> 123 MB and CPU
+  27-29% -> 31-35% from minute 5 to 30 (old library without previews: 124 -> 146 MB, 26% -> 39%);
+  `ScribeRecordingLibrary.persist` at minute 25 2.88 s -> 1.15 s per 30 s; `materializedTriples`
+  gone from the profile.
+- **Follow-up `546da49f`:** writes no longer build a full store snapshot for shared-root
+  authorization when the app has no active share (40 writes on 20,000 facts 6.09 s -> 0.069 s).
+  The soak above predates it. Docs fix `7c567126`: nested limits do not bound the network.
+- **Next:** push both branches after review; merge the library branch before Scribe ships (Scribe
+  reaches this library only through an uncommitted local symlink).
 
 ## 2026-08-16 05:54:23 EDT — Preserve one durable relation across schema upgrades
 
