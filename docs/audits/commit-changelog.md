@@ -1,7 +1,7 @@
 ## 2026-09-26 17:35:34 EDT — instant-data-swift `546da49f2783bf3b3af122fbb51d097961ecc7ed`
 Skip the full-store snapshot on writes when no share can refuse them; 40 one-field writes on a 20,000-fact store 6.09 s -> 0.069 s (Debug). Local branch `agent/claude-opus-5.5/scribe-perf-2026-09-24`, not pushed (#044).
 
-## 2026-09-26 17:03:30 EDT — instant-data-swift `7c567126f9a0`
+## 2026-09-26 16:59:27 EDT — instant-data-swift `7c567126f9a0eb35cade7e3d8d4f324bc8562997`
 Say plainly that nested include limits do not bound the network: fetch-request guidance, include comment, and parity note (#155).
 
 ## 2026-09-26 16:53:50 EDT — instant-data-swift `636c348880612ad6e11d1feed6ba4c3b39962a51`
