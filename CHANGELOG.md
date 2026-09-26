@@ -10,6 +10,21 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## September 26th, 2026 at 4:59:28 p.m. EDT — `7c567126f9a0` Say plainly that nested include limits do not bound the network (#155)
+
+- **Implementation commit:** `7c567126f9a0eb35cade7e3d8d4f324bc8562997`
+- **Change:** Say plainly that nested include limits do not bound the network (#155)
+- **Details:**
+  - Guidance, include comment, and parity note now match the server: nested limits trim locally only.
+- **Files:**
+  - `Sources/InstantSwiftData/InstantSwiftData.swift` — Fetch-request guidance warns that nested limits do not bound the network.
+  - `Sources/InstantSwiftData/InstantTypedAPI.swift` — Include comment states the server ignores nested limits.
+  - `Sources/InstantSwiftDataCore/InstantParityCoverage.swift` — Correct the stale nested-limit parity note.
+  - `Tests/InstantSwiftDataCoreTests/InstantStoreParityTests.swift` — Pin the corrected note.
+- **User context (verbatim):**
+  > is there any way to get the preview, like the preview lines at the top level? W wouldould it be two queries. Yeah, let's try that.
+- **SpecStory:** unavailable — unavailable — Claude Code CLI session; no SpecStory capture for this task
+
 ## September 26th, 2026 at 4:54:06 p.m. EDT — `636c34888061` Capture and persist only the facts a write touches (#044 #155)
 
 - **Implementation commit:** `636c348880612ad6e11d1feed6ba4c3b39962a51`
