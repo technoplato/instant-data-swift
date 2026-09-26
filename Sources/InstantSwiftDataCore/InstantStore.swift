@@ -20,55 +20,165 @@ public struct InstantStoreMutationResult: Hashable, Codable, Sendable {
   }
 }
 
+/// The state each touched fact had before one prepared mutation, for its exact inverse.
+///
+/// Captures are per fact: the previous slot of a single-value attribute, or the previous stamp of
+/// one value of a multi-value attribute. Whole-entity images are taken only for deletes, schema
+/// reconciliation, and changes the store could not attribute to specific facts. Capturing whole
+/// entities on every write made each write cost as much as the largest entity it touched.
 // SAFETY: rollback capture owned by one PreparedStoreMutation inside a single
 // InstantStore actor mutation; never crossed an executor while mutable. Copies
 // of the owning value take uniqueness before writing, no shared executor.
 private final class PreviousChangedEntityCapture: @unchecked Sendable {
-  private var emptyIDs: Set<String> = []
-  private var slots: [String: [String: AttrSlot]] = [:]
+  private(set) var createdEntityIDs: Set<String> = []
+  private var touchedEntityIDs: Set<String> = []
+  private var wholeSlots: [String: [String: AttrSlot]] = [:]
+  private var attributeSlots: [String: [String: AttrSlot?]] = [:]
+  private var valueStamps: [String: [String: [InstantValue: InstantTripleStamp?]]] = [:]
+  private var explicitTriples: [String: [InstantTriple]] = [:]
   private var materializer: TripleIndexes?
   private var materialized: [String: [InstantTriple]]?
 
   func contains(_ entityID: String) -> Bool {
-    emptyIDs.contains(entityID) || slots[entityID] != nil || materialized?[entityID] != nil
+    touchedEntityIDs.contains(entityID)
   }
 
-  func capture(entityID: String, from indexes: TripleIndexes) {
-    guard !contains(entityID) else { return }
+  private func noteTouch(_ entityID: String, in indexes: TripleIndexes) {
+    materialized = nil
     if materializer == nil {
       materializer = indexes
     }
-    if let copied = indexes.copiedAttributeSlots(entityID: entityID) {
-      slots[entityID] = copied
-    } else {
-      emptyIDs.insert(entityID)
+    guard touchedEntityIDs.insert(entityID).inserted else { return }
+    if indexes.copiedAttributeSlots(entityID: entityID) == nil {
+      createdEntityIDs.insert(entityID)
     }
+  }
+
+  func captureAttribute(entityID: String, attributeID: String, from indexes: TripleIndexes) {
+    noteTouch(entityID, in: indexes)
+    guard wholeSlots[entityID] == nil, explicitTriples[entityID] == nil,
+      attributeSlots[entityID]?.index(forKey: attributeID) == nil
+    else { return }
+    var previous = indexes.attributeSlot(entityID: entityID, attributeID: attributeID)
+    if let stamps = valueStamps[entityID]?.removeValue(forKey: attributeID) {
+      previous = Self.restoring(stamps, into: previous)
+    }
+    attributeSlots[entityID, default: [:]].updateValue(previous, forKey: attributeID)
+  }
+
+  func captureValue(
+    entityID: String,
+    attributeID: String,
+    value: InstantValue,
+    from indexes: TripleIndexes
+  ) {
+    noteTouch(entityID, in: indexes)
+    guard wholeSlots[entityID] == nil, explicitTriples[entityID] == nil,
+      attributeSlots[entityID]?.index(forKey: attributeID) == nil,
+      valueStamps[entityID]?[attributeID]?.index(forKey: value) == nil
+    else { return }
+    valueStamps[entityID, default: [:]][attributeID, default: [:]].updateValue(
+      indexes.stamp(entityID: entityID, attributeID: attributeID, value: value),
+      forKey: value
+    )
+  }
+
+  /// The entity's image as of before this mutation first touched it.
+  func captureWholeEntity(entityID: String, from indexes: TripleIndexes) {
+    noteTouch(entityID, in: indexes)
+    guard wholeSlots[entityID] == nil, explicitTriples[entityID] == nil else { return }
+    var slots = indexes.copiedAttributeSlots(entityID: entityID) ?? [:]
+    if let captured = attributeSlots.removeValue(forKey: entityID) {
+      for (attributeID, previous) in captured {
+        slots[attributeID] = previous
+      }
+    }
+    if let captured = valueStamps.removeValue(forKey: entityID) {
+      for (attributeID, stamps) in captured {
+        slots[attributeID] = Self.restoring(stamps, into: slots[attributeID])
+      }
+    }
+    wholeSlots[entityID] = slots
+  }
+
+  func setWholeEntityTriples(_ triples: [InstantTriple], for entityID: String) {
+    materialized = nil
+    touchedEntityIDs.insert(entityID)
+    wholeSlots[entityID] = nil
+    attributeSlots[entityID] = nil
+    valueStamps[entityID] = nil
+    explicitTriples[entityID] = triples
+  }
+
+  private static func restoring(
+    _ stamps: [InstantValue: InstantTripleStamp?],
+    into slot: AttrSlot?
+  ) -> AttrSlot? {
+    var slot = slot
+    for (value, previous) in stamps {
+      if let previous {
+        if slot == nil {
+          slot = .many([value: previous])
+        } else {
+          slot?.set(value: value, stamp: previous, asMany: true)
+        }
+      } else if slot?.removeValue(value) == true {
+        slot = nil
+      }
+    }
+    return slot
   }
 
   var triplesByEntityID: [String: [InstantTriple]] {
     if let materialized {
       return materialized
     }
-    var result: [String: [InstantTriple]] = [:]
-    result.reserveCapacity(emptyIDs.count + slots.count)
-    for entityID in emptyIDs {
-      result[entityID] = []
-    }
+    var result = explicitTriples
+    result.reserveCapacity(touchedEntityIDs.count)
     if let materializer {
-      for (entityID, attributesByID) in slots {
+      for (entityID, slots) in wholeSlots {
         result[entityID] = materializer.materializedTriples(
           entityID: entityID,
-          attributesByID: attributesByID
+          attributesByID: slots
         )
       }
+      for entityID in Set(attributeSlots.keys).union(valueStamps.keys) {
+        var slots: [String: AttrSlot] = [:]
+        for (attributeID, previous) in attributeSlots[entityID] ?? [:] {
+          if let previous {
+            slots[attributeID] = previous
+          }
+        }
+        for (attributeID, stamps) in valueStamps[entityID] ?? [:] {
+          var present: [InstantValue: InstantTripleStamp] = [:]
+          for (value, previous) in stamps {
+            if let previous {
+              present[value] = previous
+            }
+          }
+          if !present.isEmpty {
+            slots[attributeID] = .many(present)
+          }
+        }
+        result[entityID] = materializer.materializedTriples(
+          entityID: entityID,
+          attributesByID: slots
+        )
+      }
+    }
+    for entityID in touchedEntityIDs where result[entityID] == nil {
+      result[entityID] = []
     }
     materialized = result
     return result
   }
 
   func replaceAll(_ triples: [String: [InstantTriple]]) {
-    emptyIDs = []
-    slots = [:]
+    touchedEntityIDs = Set(triples.keys)
+    wholeSlots = [:]
+    attributeSlots = [:]
+    valueStamps = [:]
+    explicitTriples = triples
     materializer = nil
     materialized = triples
   }
@@ -82,10 +192,19 @@ struct PreparedStoreMutation: Sendable {
   var deferredValueRemovalMetrics: TripleIndexes.DeferredValueRemovalMetrics
   private var previousCapture = PreviousChangedEntityCapture()
   private var preparedSnapshot: InstantStoreSnapshot?
+  /// Which facts of each changed entity this mutation may have changed. Both
+  /// `previousChangedEntityTriples` and `changedEntityTriples` cover exactly these facts, and
+  /// persistence rewrites only them.
+  var factScope: InstantFactScope
 
   var previousChangedEntityTriples: [String: [InstantTriple]] {
     get { previousCapture.triplesByEntityID }
     set { previousCapture.replaceAll(newValue) }
+  }
+
+  /// Entities that held no facts before this mutation first touched them.
+  var createdEntityIDs: Set<String> {
+    previousCapture.createdEntityIDs
   }
 
   var snapshot: InstantStoreSnapshot {
@@ -96,9 +215,22 @@ struct PreparedStoreMutation: Sendable {
   var changedEntityTriples: [String: [InstantTriple]] {
     Dictionary(
       uniqueKeysWithValues: result.changedEntityIDs.map { entityID in
-        (entityID, indexes.triples(entityID: entityID))
+        (entityID, indexes.triples(entityID: entityID, within: factScope[entityID]))
       }
     )
+  }
+
+  /// Treats `entityID` as a whole-entity change, keeping its before-image exact.
+  mutating func recordWholeEntityChange(
+    _ entityID: String,
+    previousTriplesIfUntouched: () -> [InstantTriple]
+  ) {
+    factScope.recordWholeEntity(entityID)
+    if previousCapture.contains(entityID) {
+      previousCapture.captureWholeEntity(entityID: entityID, from: indexes)
+    } else {
+      previousCapture.setWholeEntityTriples(previousTriplesIfUntouched(), for: entityID)
+    }
   }
 
   init(
@@ -123,6 +255,7 @@ struct PreparedStoreMutation: Sendable {
     attributes: AttributeStore,
     indexes: TripleIndexes,
     previousChangedEntityTriples: [String: [InstantTriple]] = [:],
+    factScope: InstantFactScope = InstantFactScope(),
     deferredValueRemovalMetrics: TripleIndexes.DeferredValueRemovalMetrics = .init(),
     snapshot: InstantStoreSnapshot? = nil
   ) {
@@ -130,6 +263,7 @@ struct PreparedStoreMutation: Sendable {
     self.sequence = sequence
     self.attributes = attributes
     self.indexes = indexes
+    self.factScope = factScope
     self.deferredValueRemovalMetrics = deferredValueRemovalMetrics
     self.preparedSnapshot = snapshot
     previousCapture.replaceAll(previousChangedEntityTriples)
@@ -141,12 +275,14 @@ struct PreparedStoreMutation: Sendable {
     attributes: AttributeStore,
     indexes: TripleIndexes,
     previousCapture: PreviousChangedEntityCapture,
+    factScope: InstantFactScope,
     deferredValueRemovalMetrics: TripleIndexes.DeferredValueRemovalMetrics = .init()
   ) {
     self.result = result
     self.sequence = sequence
     self.attributes = attributes
     self.indexes = indexes
+    self.factScope = factScope
     self.deferredValueRemovalMetrics = deferredValueRemovalMetrics
     self.previousCapture = previousCapture
   }
@@ -766,10 +902,10 @@ public actor InstantStore {
       capturePreviousChangedEntityTriples: true
     )
     prepared.result.changedEntityIDs.formUnion(schemaReconciledEntityIDs)
-    for entityID in schemaReconciledEntityIDs
-    where prepared.previousChangedEntityTriples[entityID] == nil {
-      prepared.previousChangedEntityTriples[entityID] =
+    for entityID in schemaReconciledEntityIDs {
+      prepared.recordWholeEntityChange(entityID) {
         indexesBeforeSchemaReconciliation.triples(entityID: entityID)
+      }
     }
     return prepared
   }
@@ -845,29 +981,105 @@ public actor InstantStore {
     )
     var changedEntityIDs: Set<String> = []
     let previousCapture = PreviousChangedEntityCapture()
+    var factScope = InstantFactScope()
     let shouldMarkDeferred = !deferredValueResidency.attributeIDs.isEmpty
 
-    var lastCapturedEntityID: String?
-    func capturePrevious(of entityID: String) {
-      guard capturePreviousChangedEntityTriples else { return }
-      if lastCapturedEntityID == entityID {
-        return
-      }
-      lastCapturedEntityID = entityID
-      previousCapture.capture(entityID: entityID, from: indexes)
-    }
-
-    func captureDeletePrevious(of entityID: String) {
-      guard capturePreviousChangedEntityTriples else { return }
-      capturePrevious(of: entityID)
-      if indexes.hasIncomingReferences(entityID) {
-        for triple in indexes.reverseRefTriples(targetEntityID: entityID) {
-          capturePrevious(of: triple.entityID)
+    /// Records the one fact `triple` writes, before it is applied. A multi-value attribute is
+    /// scoped to the written value; everything else to the attribute. Peeled overlays skip the
+    /// before-image but still record scope, so persistence sees every fact they changed.
+    func touchFact(_ triple: InstantTriple, attribute: InstantAttribute?) {
+      if attribute?.cardinality == .many, attribute?.valueType != .date {
+        factScope.record(
+          .facts(attributeIDs: [], values: [triple.attributeID: [triple.value]]),
+          for: triple.entityID
+        )
+        if capturePreviousChangedEntityTriples {
+          previousCapture.captureValue(
+            entityID: triple.entityID,
+            attributeID: triple.attributeID,
+            value: triple.value,
+            from: indexes
+          )
+        }
+      } else {
+        factScope.record(
+          .facts(attributeIDs: [triple.attributeID], values: [:]),
+          for: triple.entityID
+        )
+        if capturePreviousChangedEntityTriples {
+          previousCapture.captureAttribute(
+            entityID: triple.entityID,
+            attributeID: triple.attributeID,
+            from: indexes
+          )
         }
       }
-      for targetEntityID in indexes.outgoingRefTargetIDs(entityID) {
-        capturePrevious(of: targetEntityID)
+      if case let .ref(targetEntityID) = triple.value {
+        // A link fact is stored on its source; the target only gains or loses a reverse
+        // reference.
+        factScope.record(.noStoredFacts, for: targetEntityID)
       }
+    }
+
+    func touchWholeEntity(_ entityID: String) {
+      factScope.recordWholeEntity(entityID)
+      if capturePreviousChangedEntityTriples {
+        previousCapture.captureWholeEntity(entityID: entityID, from: indexes)
+      }
+    }
+
+    /// Mirrors the cascade rules in `TripleIndexes.deleteEntity`: an entity the delete will also
+    /// delete is captured whole; one that only loses a link is scoped to that link, so deleting
+    /// a segment does not copy every other link on its recording.
+    func captureDeletePrevious(of entityID: String) {
+      touchWholeEntity(entityID)
+      if indexes.hasIncomingReferences(entityID) {
+        for triple in indexes.reverseRefTriples(targetEntityID: entityID) {
+          let attribute = attributes[triple.attributeID]
+          if attribute?.onDelete == .cascade {
+            touchWholeEntity(triple.entityID)
+          } else {
+            touchFact(triple, attribute: attribute)
+          }
+        }
+      }
+      if let attributesByID = indexes.copiedAttributeSlots(entityID: entityID) {
+        for (attributeID, slot) in attributesByID {
+          guard let attribute = attributes[attributeID], attribute.valueType == .ref else {
+            continue
+          }
+          let cascades = attribute.onDeleteReverse == .cascade
+          slot.forEachPair { value, _ in
+            guard case let .ref(targetEntityID) = value else { return }
+            if cascades {
+              touchWholeEntity(targetEntityID)
+            } else {
+              factScope.record(.noStoredFacts, for: targetEntityID)
+            }
+          }
+        }
+      }
+    }
+
+    /// Applies a delete, then widens any entity it removed entirely (a deeper cascade) so
+    /// persistence deletes all of its rows rather than only the facts scoped earlier.
+    func applyDelete(_ operation: InstantTripleOperation, entityID: String) {
+      captureDeletePrevious(of: entityID)
+      var deleted: Set<String> = []
+      indexes.apply(
+        operation,
+        attributes: attributes,
+        insertReplayPolicy: insertReplayPolicy,
+        into: &deleted
+      )
+      for deletedEntityID in deleted
+      where factScope.scopes[deletedEntityID] != nil
+        && factScope[deletedEntityID] != .wholeEntity
+        && indexes.copiedAttributeSlots(entityID: deletedEntityID) == nil
+      {
+        touchWholeEntity(deletedEntityID)
+      }
+      changedEntityIDs.formUnion(deleted)
     }
 
     func markDeferred(of triple: InstantTriple) {
@@ -886,10 +1098,7 @@ public actor InstantStore {
         canonical = try Self.canonicalizedTripleIfNeeded(triple, attributes: attributes)
         attribute = attributes[canonical.attributeID]
       }
-      capturePrevious(of: canonical.entityID)
-      if case let .ref(targetEntityID) = canonical.value {
-        capturePrevious(of: targetEntityID)
-      }
+      touchFact(canonical, attribute: attribute)
       if shouldMarkDeferred {
         markDeferred(of: canonical)
       }
@@ -910,7 +1119,7 @@ public actor InstantStore {
 
     func applyDirectMerge(_ triple: InstantTriple) throws {
       let canonical = try Self.canonicalizedTripleIfNeeded(triple, attributes: attributes)
-      capturePrevious(of: canonical.entityID)
+      touchFact(canonical, attribute: attributes[canonical.attributeID])
       if shouldMarkDeferred {
         markDeferred(of: canonical)
       }
@@ -928,10 +1137,7 @@ public actor InstantStore {
 
     func applyDirectRetract(_ triple: InstantTriple) throws {
       let canonical = try Self.canonicalizedTripleIfNeeded(triple, attributes: attributes)
-      capturePrevious(of: canonical.entityID)
-      if case let .ref(targetEntityID) = canonical.value {
-        capturePrevious(of: targetEntityID)
-      }
+      touchFact(canonical, attribute: attributes[canonical.attributeID])
       if shouldMarkDeferred {
         markDeferred(of: canonical)
       }
@@ -960,7 +1166,7 @@ public actor InstantStore {
       for concreteOperation in concreteOperations {
         switch concreteOperation {
         case let .merge(triple):
-          capturePrevious(of: triple.entityID)
+          touchFact(triple, attribute: attributes[triple.attributeID])
           markDeferred(of: triple)
           try Self.validateWriteValue(triple.value, triple: triple, attributes: attributes)
           if attributes[triple.attributeID]?.valueType == .ref {
@@ -969,10 +1175,7 @@ public actor InstantStore {
           indexes.apply(concreteOperation, attributes: attributes, into: &changedEntityIDs)
 
         case let .insert(triple), let .retract(triple):
-          capturePrevious(of: triple.entityID)
-          if case let .ref(targetEntityID) = triple.value {
-            capturePrevious(of: targetEntityID)
-          }
+          touchFact(triple, attribute: attributes[triple.attributeID])
           markDeferred(of: triple)
           try Self.validateWriteValue(triple.value, triple: triple, attributes: attributes)
           indexes.apply(
@@ -983,12 +1186,10 @@ public actor InstantStore {
           )
 
         case let .deleteEntity(entityID):
-          captureDeletePrevious(of: entityID)
-          indexes.apply(concreteOperation, attributes: attributes, into: &changedEntityIDs)
+          applyDelete(concreteOperation, entityID: entityID)
 
         case let .deleteEntityInNamespace(entityID, _):
-          captureDeletePrevious(of: entityID)
-          indexes.apply(concreteOperation, attributes: attributes, into: &changedEntityIDs)
+          applyDelete(concreteOperation, entityID: entityID)
 
         case .requireEntityMissing, .requireEntityMissingByLookup,
           .requireEntityExists, .requireEntityExistsByLookup,
@@ -1101,22 +1302,10 @@ public actor InstantStore {
         }
 
       case let .deleteEntity(entityID):
-        captureDeletePrevious(of: entityID)
-        indexes.apply(
-          operation,
-          attributes: attributes,
-          insertReplayPolicy: insertReplayPolicy,
-          into: &changedEntityIDs
-        )
+        applyDelete(operation, entityID: entityID)
 
       case let .deleteEntityInNamespace(entityID, _):
-        captureDeletePrevious(of: entityID)
-        indexes.apply(
-          operation,
-          attributes: attributes,
-          insertReplayPolicy: insertReplayPolicy,
-          into: &changedEntityIDs
-        )
+        applyDelete(operation, entityID: entityID)
 
       case .mergeByLookup, .insertByLookup, .retractByLookup, .deleteEntityByLookup:
         try applyResolved(operation)
@@ -1135,9 +1324,12 @@ public actor InstantStore {
       tripleCount: indexes.tripleCount,
       emissions: []
     )
-    if capturePreviousChangedEntityTriples {
-      for entityID in changedEntityIDs where !previousCapture.contains(entityID) {
-        previousCapture.capture(entityID: entityID, from: indexes)
+    // A change the store did not attribute to specific facts (for example derived-index
+    // reconciliation) keeps the whole-entity behavior: persisted whole, captured as it is now.
+    for entityID in changedEntityIDs where factScope.scopes[entityID] == nil {
+      factScope.recordWholeEntity(entityID)
+      if capturePreviousChangedEntityTriples, !previousCapture.contains(entityID) {
+        previousCapture.captureWholeEntity(entityID: entityID, from: indexes)
       }
     }
     return PreparedStoreMutation(
@@ -1145,7 +1337,8 @@ public actor InstantStore {
       sequence: nextSequence,
       attributes: attributes,
       indexes: indexes,
-      previousCapture: previousCapture
+      previousCapture: previousCapture,
+      factScope: factScope
     )
   }
 

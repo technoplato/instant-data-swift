@@ -1044,6 +1044,7 @@ public actor SQLitePersistenceStore {
     expectedOutboxRevision: Int64,
     expectedQueryResultRevision: Int64,
     changedEntityTriples: [String: [InstantTriple]],
+    changedFactScope: InstantFactScope,
     mergingAttributes attributes: [InstantAttribute],
     storeChanged: Bool,
     attributesChanged: Bool,
@@ -1061,7 +1062,8 @@ public actor SQLitePersistenceStore {
       if storeChanged, !snapshot.triples.isEmpty {
         replaceCachedTriples(
           in: &snapshot.triples,
-          with: changedEntityTriples
+          with: changedEntityTriples,
+          scope: changedFactScope
         )
       }
       if attributesChanged {
@@ -4200,6 +4202,7 @@ public actor SQLitePersistenceStore {
   func commitServerApplyPlan(
     planID: String,
     changedEntityTriples: [String: [InstantTriple]],
+    changedFactScope: InstantFactScope = InstantFactScope(),
     mergingAttributes attributes: [InstantAttribute],
     queryResults: [InstantPersistedLiveQueryResult],
     storeChanged: Bool,
@@ -4257,13 +4260,10 @@ public actor SQLitePersistenceStore {
 
       if didChangeStore {
         for entityID in changedEntityTriples.keys.sorted() {
-          let previousTriples: [InstantTriple] = try selectJSON(
-            "SELECT json FROM instant_triples WHERE entity_id = ? ORDER BY attribute_id, value_json",
-            [.text(entityID)]
-          )
-          try saveTripleDiffWithoutTransaction(
-            from: previousTriples,
-            to: changedEntityTriples[entityID, default: []]
+          try saveChangedEntityFactsWithoutTransaction(
+            entityID: entityID,
+            scope: changedFactScope[entityID],
+            triples: changedEntityTriples[entityID, default: []]
           )
         }
       }
@@ -4437,6 +4437,7 @@ public actor SQLitePersistenceStore {
         expectedOutboxRevision: commit.expectedOutboxRevision,
         expectedQueryResultRevision: commit.expectedQueryResultRevision,
         changedEntityTriples: changedEntityTriples,
+        changedFactScope: changedFactScope,
         mergingAttributes: attributes,
         storeChanged: commit.didChangeStore,
         attributesChanged: commit.didChangeAttributes,
@@ -5295,6 +5296,7 @@ public actor SQLitePersistenceStore {
     failedMutation: PendingMutation,
     rebasedSuccessors: [PendingMutation],
     changedEntityTriples: [String: [InstantTriple]],
+    changedFactScope: InstantFactScope = InstantFactScope(),
     metadataEntries: [InstantPersistenceMetadataEntry]
   ) throws -> InstantTerminalFailureCommit? {
     let result: InstantTerminalFailureCommit? = try transaction {
@@ -5354,13 +5356,10 @@ public actor SQLitePersistenceStore {
       }
 
       for entityID in changedEntityTriples.keys.sorted() {
-        let previousTriples: [InstantTriple] = try selectJSON(
-          "SELECT json FROM instant_triples WHERE entity_id = ? ORDER BY attribute_id, value_json",
-          [.text(entityID)]
-        )
-        try saveTripleDiffWithoutTransaction(
-          from: previousTriples,
-          to: changedEntityTriples[entityID, default: []]
+        try saveChangedEntityFactsWithoutTransaction(
+          entityID: entityID,
+          scope: changedFactScope[entityID],
+          triples: changedEntityTriples[entityID, default: []]
         )
       }
       try saveOutboxMutationWithoutTransaction(
@@ -9424,6 +9423,7 @@ public actor SQLitePersistenceStore {
 
   func saveLocalMutation(
     changedEntityTriples: [String: [InstantTriple]],
+    changedFactScope: InstantFactScope = InstantFactScope(),
     outbox: [PendingMutation]? = nil,
     pendingMutation: PendingMutation,
     supersedingImmediateTail: PendingMutation? = nil,
@@ -9494,14 +9494,11 @@ public actor SQLitePersistenceStore {
       }
 
       for entityID in changedEntityTriples.keys.sorted() {
-        let previousTriples = try cachedChangedEntityTriples?[entityID]
-          ?? selectJSON(
-            "SELECT json FROM instant_triples WHERE entity_id = ? ORDER BY attribute_id, value_json",
-            [.text(entityID)]
-          )
-        try saveTripleDiffWithoutTransaction(
-          from: previousTriples,
-          to: changedEntityTriples[entityID, default: []]
+        try saveChangedEntityFactsWithoutTransaction(
+          entityID: entityID,
+          scope: changedFactScope[entityID],
+          triples: changedEntityTriples[entityID, default: []],
+          cachedPreviousTriples: cachedChangedEntityTriples?[entityID]
         )
       }
       try saveOutboxMutationWithoutTransaction(
@@ -9539,7 +9536,8 @@ public actor SQLitePersistenceStore {
       if !cachedState.snapshot.store.triples.isEmpty {
         replaceCachedTriples(
           in: &cachedState.snapshot.store.triples,
-          with: changedEntityTriples
+          with: changedEntityTriples,
+          scope: changedFactScope
         )
       }
       // SQLite is the queue authority. Runtime callers may pass a hydrated
@@ -12987,6 +12985,52 @@ public actor SQLitePersistenceStore {
     )
   }
 
+  /// Rewrites only the facts of `entityID` inside `scope`.
+  ///
+  /// `triples` is already limited to that scope (`PreparedStoreMutation.changedEntityTriples`),
+  /// so the previous rows must be too; otherwise every row outside the scope would look deleted.
+  /// A whole-entity scope reads the entity's rows as before.
+  private func saveChangedEntityFactsWithoutTransaction(
+    entityID: String,
+    scope: InstantEntityFactScope,
+    triples: [InstantTriple],
+    cachedPreviousTriples: [InstantTriple]? = nil
+  ) throws {
+    let previousTriples: [InstantTriple]
+    if let cachedPreviousTriples {
+      previousTriples = cachedPreviousTriples.filter(scope.contains)
+    } else {
+      switch scope {
+      case .wholeEntity:
+        previousTriples = try selectJSON(
+          "SELECT json FROM instant_triples WHERE entity_id = ? ORDER BY attribute_id, value_json",
+          [.text(entityID)]
+        )
+      case let .facts(attributeIDs, values):
+        var scoped: [InstantTriple] = []
+        for attributeID in attributeIDs.sorted() {
+          scoped += try selectJSON(
+            "SELECT json FROM instant_triples WHERE entity_id = ? AND attribute_id = ?",
+            [.text(entityID), .text(attributeID)]
+          ) as [InstantTriple]
+        }
+        for attributeID in values.keys.sorted() where !attributeIDs.contains(attributeID) {
+          for value in values[attributeID] ?? [] {
+            scoped += try selectJSON(
+              """
+              SELECT json FROM instant_triples
+              WHERE entity_id = ? AND attribute_id = ? AND value_json = ?
+              """,
+              [.text(entityID), .text(attributeID), .text(try encode(value))]
+            ) as [InstantTriple]
+          }
+        }
+        previousTriples = scoped
+      }
+    }
+    try saveTripleDiffWithoutTransaction(from: previousTriples, to: triples)
+  }
+
   private func saveTripleDiffWithoutTransaction(
     from previousTriples: [InstantTriple],
     to triples: [InstantTriple]
@@ -13011,12 +13055,19 @@ public actor SQLitePersistenceStore {
 
   private func replaceCachedTriples(
     in triples: inout [InstantTriple],
-    with changedEntityTriples: [String: [InstantTriple]]
+    with changedEntityTriples: [String: [InstantTriple]],
+    scope: InstantFactScope
   ) {
     for entityID in changedEntityTriples.keys.sorted() {
       let lowerBound = tripleIndex(in: triples, entityID: entityID, includingEqual: true)
       let upperBound = tripleIndex(in: triples, entityID: entityID, includingEqual: false)
-      let replacement = changedEntityTriples[entityID, default: []].sorted {
+      let entityScope = scope[entityID]
+      var changed = changedEntityTriples[entityID, default: []]
+      if entityScope != .wholeEntity {
+        // Scoped changes replace only their own facts; the entity's other facts stay.
+        changed += triples[lowerBound..<upperBound].filter { !entityScope.contains($0) }
+      }
+      let replacement = changed.sorted {
         if $0.attributeID != $1.attributeID {
           return $0.attributeID < $1.attributeID
         }

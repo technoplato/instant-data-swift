@@ -2251,6 +2251,7 @@ public final class InstantRuntime: Sendable {
       recordActorHop(.persistence)
       let didSave = try await persistence.saveLocalMutation(
         changedEntityTriples: prepared.changedEntityTriples,
+        changedFactScope: prepared.factScope,
         pendingMutation: pendingMutation,
         supersedingImmediateTail: supersededTail,
         expectedStoreRevision: state.storeRevision,
@@ -2377,7 +2378,11 @@ public final class InstantRuntime: Sendable {
       let after = changedEntityTriples[entityID, default: []]
       // Pure create: one deleteEntity replaces N retract triples (publishGate seed
       // outbox floor — autoresearch #044). Semantics: remove all attrs on entity.
-      if before.isEmpty, !after.isEmpty {
+      // A scoped before-image is also empty when a write adds only new facts to an existing
+      // entity, so the shortcut needs proof the entity did not exist.
+      let entityIsNew = prepared.createdEntityIDs.contains(entityID)
+        || prepared.factScope[entityID] == .wholeEntity
+      if entityIsNew, before.isEmpty, !after.isEmpty {
         operations.append(.deleteEntity(entityID))
         continue
       }
@@ -2652,6 +2657,8 @@ public final class InstantRuntime: Sendable {
         // a time; no component-sized Swift array exists.
         var prepared = seed.preparedStore
         var changedEntityIDs = prepared.result.changedEntityIDs
+        // Persistence rewrites exactly the facts every composed step touched.
+        var changedFactScope = prepared.factScope.completed(over: prepared.result.changedEntityIDs)
         var reversePosition: InstantOutboxDeliveryPosition?
         var stalePlan = false
         while true {
@@ -2698,6 +2705,9 @@ public final class InstantRuntime: Sendable {
             )
             let peeled = try await store.prepare(rollback, applyingTo: prepared)
             changedEntityIDs.formUnion(peeled.result.changedEntityIDs)
+            changedFactScope.formUnion(
+              peeled.factScope.completed(over: peeled.result.changedEntityIDs)
+            )
             prepared = peeled
           }
           reversePosition = page.nextPosition
@@ -2716,6 +2726,9 @@ public final class InstantRuntime: Sendable {
           applyingTo: prepared
         )
         changedEntityIDs.formUnion(schemaPrepared.result.changedEntityIDs)
+        changedFactScope.formUnion(
+          schemaPrepared.factScope.completed(over: schemaPrepared.result.changedEntityIDs)
+        )
         prepared = schemaPrepared
 
         var authoritativeCoverage: InstantAuthoritativeWriteCoverage?
@@ -2731,6 +2744,9 @@ public final class InstantRuntime: Sendable {
             insertReplayPolicy: .preserveExactResident
           )
           changedEntityIDs.formUnion(appliedServer.result.changedEntityIDs)
+          changedFactScope.formUnion(
+            appliedServer.factScope.completed(over: appliedServer.result.changedEntityIDs)
+          )
           authoritativeCoverage = InstantAuthoritativeWriteCoverage(
             operations: authoritativeTransaction.operations,
             attributes: appliedServer.attributes,
@@ -2815,6 +2831,9 @@ public final class InstantRuntime: Sendable {
                 applyingTo: prepared
               )
               changedEntityIDs.formUnion(replay.result.changedEntityIDs)
+              changedFactScope.formUnion(
+                replay.factScope.completed(over: replay.result.changedEntityIDs)
+              )
               replayRollback = Self.rollbackTransaction(
                 mutationID: mutation.id,
                 prepared: replay
@@ -2963,6 +2982,9 @@ public final class InstantRuntime: Sendable {
                   applyingTo: prepared
                 )
                 changedEntityIDs.formUnion(replay.result.changedEntityIDs)
+                changedFactScope.formUnion(
+                  replay.factScope.completed(over: replay.result.changedEntityIDs)
+                )
                 replayRollback = Self.rollbackTransaction(
                   mutationID: mutation.id,
                   prepared: replay
@@ -3037,7 +3059,8 @@ public final class InstantRuntime: Sendable {
           ),
           sequence: prepared.sequence,
           attributes: prepared.attributes,
-          indexes: prepared.indexes
+          indexes: prepared.indexes,
+          factScope: changedFactScope
         )
         let changesMaterializedStore =
           !authoritativeTransaction.operations.isEmpty || mergedAttributeCount > 0
@@ -3045,6 +3068,7 @@ public final class InstantRuntime: Sendable {
         guard let commit = try await persistence.commitServerApplyPlan(
           planID: plan.id,
           changedEntityTriples: preparedForCommit.changedEntityTriples,
+          changedFactScope: preparedForCommit.factScope,
           mergingAttributes: changedMergedAttributes,
           queryResults: persistedLiveQueryResults,
           storeChanged: changesMaterializedStore || didCatchUpLocalMutations,
@@ -10619,6 +10643,7 @@ public final class InstantRuntime: Sendable {
             failedMutation: removal.failedMutation,
             rebasedSuccessors: removal.rebasedSuccessors,
             changedEntityTriples: removal.prepared?.changedEntityTriples ?? [:],
+            changedFactScope: removal.prepared?.factScope ?? InstantFactScope(),
             metadataEntries: connectionFailureMetadataEntries(
               for: failure,
               recordsConnectionFailure: recordsConnectionFailure
@@ -10956,6 +10981,7 @@ public final class InstantRuntime: Sendable {
     )
     var prepared: PreparedStoreMutation?
     var changedEntityIDs: Set<String> = []
+    var changedFactScope = InstantFactScope()
 
     for successor in rebasedSuccessors.reversed() {
       let rollback: InstantStoreTransaction
@@ -10983,6 +11009,7 @@ public final class InstantRuntime: Sendable {
         try await store.prepare(rollback, applyingTo: hydratedSnapshot)
       }
       changedEntityIDs.formUnion(next.result.changedEntityIDs)
+      changedFactScope.formUnion(next.factScope.completed(over: next.result.changedEntityIDs))
       prepared = next
     }
 
@@ -10992,6 +11019,9 @@ public final class InstantRuntime: Sendable {
       try await store.prepare(failedRollback, applyingTo: hydratedSnapshot)
     }
     changedEntityIDs.formUnion(removedFailure.result.changedEntityIDs)
+    changedFactScope.formUnion(
+      removedFailure.factScope.completed(over: removedFailure.result.changedEntityIDs)
+    )
     var replayPrepared = removedFailure
 
     for index in rebasedSuccessors.indices {
@@ -11011,6 +11041,7 @@ public final class InstantRuntime: Sendable {
           applyingTo: replayPrepared
         )
         changedEntityIDs.formUnion(replay.result.changedEntityIDs)
+        changedFactScope.formUnion(replay.factScope.completed(over: replay.result.changedEntityIDs))
         replayRollback = Self.rollbackTransaction(
           mutationID: successor.id,
           prepared: replay
@@ -11034,7 +11065,8 @@ public final class InstantRuntime: Sendable {
         ),
         sequence: replayPrepared.sequence,
         attributes: replayPrepared.attributes,
-        indexes: replayPrepared.indexes
+        indexes: replayPrepared.indexes,
+        factScope: changedFactScope
       ),
       failedMutation,
       rebasedSuccessors
@@ -11095,6 +11127,7 @@ public final class InstantRuntime: Sendable {
     )
     var prepared: PreparedStoreMutation?
     var changedEntityIDs: Set<String> = []
+    var changedFactScope = InstantFactScope()
 
     // Strip successors in reverse so the rejected layer's exact inverse is applied to the state it
     // originally covered. Replaying them below rebuilds each successor inverse over the new base.
@@ -11114,6 +11147,7 @@ public final class InstantRuntime: Sendable {
         try await store.prepare(rollback, applyingTo: hydratedSnapshot)
       }
       changedEntityIDs.formUnion(next.result.changedEntityIDs)
+      changedFactScope.formUnion(next.factScope.completed(over: next.result.changedEntityIDs))
       prepared = next
     }
 
@@ -11123,6 +11157,9 @@ public final class InstantRuntime: Sendable {
       try await store.prepare(failedRollback, applyingTo: hydratedSnapshot)
     }
     changedEntityIDs.formUnion(removedFailure.result.changedEntityIDs)
+    changedFactScope.formUnion(
+      removedFailure.factScope.completed(over: removedFailure.result.changedEntityIDs)
+    )
     var replayPrepared = removedFailure
 
     for successor in successors {
@@ -11145,6 +11182,7 @@ public final class InstantRuntime: Sendable {
           applyingTo: replayPrepared
         )
         changedEntityIDs.formUnion(replay.result.changedEntityIDs)
+        changedFactScope.formUnion(replay.factScope.completed(over: replay.result.changedEntityIDs))
         replayRollback = Self.rollbackTransaction(
           mutationID: rebasedSuccessor.id,
           prepared: replay
@@ -11168,7 +11206,8 @@ public final class InstantRuntime: Sendable {
         ),
         sequence: replayPrepared.sequence,
         attributes: replayPrepared.attributes,
-        indexes: replayPrepared.indexes
+        indexes: replayPrepared.indexes,
+        factScope: changedFactScope
       ),
       hydratedSnapshot,
       mutations,
@@ -11437,6 +11476,7 @@ public final class InstantRuntime: Sendable {
       if let preparedRetry {
         didSave = try await persistence.saveLocalMutation(
           changedEntityTriples: preparedRetry.changedEntityTriples,
+          changedFactScope: preparedRetry.factScope,
           outbox: retriedMutations,
           pendingMutation: retriedMutation,
           metadataEntries: metadataEntries,

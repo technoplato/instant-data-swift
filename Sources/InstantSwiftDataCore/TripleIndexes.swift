@@ -529,27 +529,32 @@ enum AttrSlot: Hashable, Codable, Sendable {
     }
   }
 
+  /// Mutates in place when called through a `_modify` accessor.
+  ///
+  /// Binding `case var .many(map)` leaves `self` holding a second reference, so the next write
+  /// copied every value in the slot. Resetting `self` first leaves `map` uniquely referenced.
   mutating func set(value: InstantValue, stamp: InstantTripleStamp, asMany: Bool) {
     if asMany {
-      if case var .many(map) = self {
+      switch self {
+      case .many(var map):
+        self = .many([:])
         map[value] = stamp
         self = .many(map)
-      } else if case let .one(existingValue, existingStamp) = self {
+      case let .one(existingValue, existingStamp):
         self = .many([existingValue: existingStamp, value: stamp])
-      } else {
-        self = .many([value: stamp])
       }
     } else {
       self = .one(value: value, stamp: stamp)
     }
   }
 
-  /// Returns true if the attribute key should be removed entirely.
+  /// Returns true if the attribute key should be removed entirely. In place, like `set`.
   mutating func removeValue(_ value: InstantValue) -> Bool {
     switch self {
     case let .one(stored, _):
       return stored == value
-    case var .many(map):
+    case .many(var map):
+      self = .many([:])
       map.removeValue(forKey: value)
       if map.isEmpty { return true }
       self = .many(map)
@@ -1550,6 +1555,41 @@ struct TripleIndexes: Codable, Sendable {
 
   func copiedAttributeSlots(entityID: String) -> [String: AttrSlot]? {
     eav[entityID]
+  }
+
+  func attributeSlot(entityID: String, attributeID: String) -> AttrSlot? {
+    eav[entityID]?[attributeID]
+  }
+
+  func stamp(entityID: String, attributeID: String, value: InstantValue) -> InstantTripleStamp? {
+    eav[entityID]?[attributeID]?[value]
+  }
+
+  /// The entity's facts inside `scope`, sorted like `triples(entityID:)`.
+  func triples(entityID: String, within scope: InstantEntityFactScope) -> [InstantTriple] {
+    guard case let .facts(attributeIDs, values) = scope else {
+      return triples(entityID: entityID)
+    }
+    guard let attributesByID = eav[entityID] else { return [] }
+    var scoped: [String: AttrSlot] = [:]
+    for attributeID in attributeIDs {
+      if let slot = attributesByID[attributeID] {
+        scoped[attributeID] = slot
+      }
+    }
+    for (attributeID, attributeValues) in values where !attributeIDs.contains(attributeID) {
+      guard let slot = attributesByID[attributeID] else { continue }
+      var present: [InstantValue: InstantTripleStamp] = [:]
+      for value in attributeValues {
+        if let stamp = slot[value] {
+          present[value] = stamp
+        }
+      }
+      if !present.isEmpty {
+        scoped[attributeID] = .many(present)
+      }
+    }
+    return materializedTriples(entityID: entityID, attributesByID: scoped)
   }
 
   func materializedTriples(
@@ -4005,12 +4045,9 @@ private struct PreparedInclude {
         stamp: stamp
       )
     } else {
-      var slot = eav[triple.entityID]?[triple.attributeID] ?? .many([:])
-      if case let .one(existingValue, existingStamp) = slot {
-        slot = .many([existingValue: existingStamp])
-      }
-      slot.set(value: triple.value, stamp: stamp, asMany: true)
-      eav[triple.entityID, default: [:]][triple.attributeID] = slot
+      // Through the `_modify` accessors so one new value does not copy the slot's others.
+      eav[triple.entityID, default: [:]][triple.attributeID, default: .many([:])]
+        .set(value: triple.value, stamp: stamp, asMany: true)
     }
 
     if attribute?.valueType == .ref {
@@ -4722,21 +4759,21 @@ private struct PreparedInclude {
     invalidateIntern: Bool = true
   ) {
     uniqueEAV()
-    guard var attrs = eavStorage.rows[triple.entityID], var slot = attrs[triple.attributeID] else {
+    // Read-only probes release their temporaries before the in-place removal below; holding
+    // `attrs` or `slot` in locals would copy every value in the slot on write.
+    guard let hadValue = eavStorage.rows[triple.entityID]?[triple.attributeID].map({
+      $0[triple.value] != nil
+    }) else {
       return
     }
-    if slot[triple.value] != nil {
+    if hadValue {
       storedTripleCount -= 1
     }
-    if slot.removeValue(triple.value) {
-      attrs[triple.attributeID] = nil
-    } else {
-      attrs[triple.attributeID] = slot
-    }
-    if attrs.isEmpty {
-      eavStorage.rows[triple.entityID] = nil
-    } else {
-      eavStorage.rows[triple.entityID] = attrs
+    if eavStorage.rows[triple.entityID]?[triple.attributeID]?.removeValue(triple.value) == true {
+      eavStorage.rows[triple.entityID]?[triple.attributeID] = nil
+      if eavStorage.rows[triple.entityID]?.isEmpty == true {
+        eavStorage.rows[triple.entityID] = nil
+      }
     }
 
     if attribute?.valueType == .ref {

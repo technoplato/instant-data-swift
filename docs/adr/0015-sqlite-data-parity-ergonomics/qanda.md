@@ -704,3 +704,68 @@ thumbnails** (not count). Multi-bag map is the target API (Shape 1). Single
 
 Overview: `overviews/01-recordings-list.md`.
 
+
+## Q32 — Nested include limits are client-side only; list previews use slots
+
+- **Status:** decided
+- **Asked:** 2026-09-25
+- **Decided:** 2026-09-26
+- **Supersedes:** the premise of Q28 ("not an Instant product rule ... incomplete
+  implementation") and the bounded-include mechanism of Q20/Q31 for list previews.
+- **Question:** The server ignores nested `limit`, so `recordings.include(segments.limit(2))`
+  downloads every segment of every listed recording on each refresh. How should list rows get
+  their preview lines?
+
+### Evidence
+
+- Server: `upstream/instant/server/src/instant/db/instaql.clj` `page-info-of-form` paginates
+  only `(= level 0)` ("Don't bother ordering child forms since you can't paginate them");
+  `datalog.clj` adds SQL `LIMIT` only for pattern groups with page-info.
+- TypeScript client: `packages/core/src/instaql.ts` slices nested limits client-side and warns
+  "Limits in child queries are only run client-side. Data returned from the server will not
+  have a limit." Docs: "limit is only supported for top-level namespaces right now".
+- Reproduction with the canonical `@instantdb/core` 1.0.49 client and Swift's exact wire JSON:
+  455 of 455 seeded segments arrived for `limit: 2` (719 KB), then 456 after one write.
+- Scribe production first list page: 349 segments / 259,936 bytes with the nested include.
+- Mac soak, same binary, include on vs off: 220 vs 146 MB and 89% vs 39% CPU at 30 minutes;
+  with 10 long recordings the include-on arm peaked at 426 MB and the server timed out.
+
+### Answer
+
+Preview slots: two has-one links `recordings.previewSegmentA/B`; segment `n` occupies slot
+`n % 2`, set in the final-segment summary transaction. Pushed to production and backfilled on
+2026-09-26 (241 recordings linked). Denormalized preview text on the recording stays rejected:
+
+> "no, we're not going to make our data shape stupid to make the um to make the preview line show up."
+
+List search over preview lines is out of scope ("It seems like we should have more of a
+different search solution anyway than using instant naively for string matching"). The list
+stays observed while a recording is on screen ("we always want to observe that because we don't
+want to have to load anything"). Follow-up to try: preview lines through a second top-level
+query.
+
+## Q33 — Writes capture and persist only the facts they touch
+
+- **Status:** decided
+- **Asked:** 2026-09-26
+- **Decided:** 2026-09-26
+- **Question:** Every write copied, sorted, and re-persisted every fact of each entity it
+  touched, for rollback and persistence. Scribe's recording holds one `recordings/segments` link
+  per segment, so each segment write cost as much as the whole recording. Fix?
+
+### Answer
+
+> "every write copies all of the recording stored fields for rollback. That seems really, really inefficient and naive. ... let's focus on fixing that now."
+
+Upstream keeps per-query server stores and layers pending mutations on read
+(`Reactor.dataForQuery` → `_applyOptimisticUpdates`; `_handleMutationError` drops the pending
+mutation), so it needs no rollback capture. Swift keeps one persisted store, so a prepared
+mutation still records an inverse, but now per fact: `InstantFactScope` names each changed
+entity's touched attributes or multi-value values; the capture holds only their previous state;
+persistence reads and rewrites only those rows; composed server-apply and failure-removal steps
+union their scopes. Deletes capture whole only the entities they cascade to. Multi-value slots
+mutate in place instead of copying on every insert and remove.
+
+Measured (Debug): 50 prepared writes on a recording with 16,000 links went from 33.4 s to
+0.13 s. Remaining: preparing on a copy of the hot store still copies each large map a write
+mutates once per transaction (link slot, value index, reverse-link index).
