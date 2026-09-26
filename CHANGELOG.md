@@ -10,6 +10,26 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## September 26th, 2026 at 4:54:06 p.m. EDT — `636c34888061` Capture and persist only the facts a write touches (#044 #155)
+
+- **Implementation commit:** `636c348880612ad6e11d1feed6ba4c3b39962a51`
+- **Change:** Capture and persist only the facts a write touches (#044 #155)
+- **Details:**
+  - Rollback capture, changedEntityTriples, and SQLite persistence were per entity; Scribe's recording holds one link per segment, so every segment write cost the whole recording.
+  - InstantFactScope names touched attributes and multi-value values; composed server-apply and failure-removal steps union scopes; deletes widen only cascaded entities.
+  - Measured (Debug): 50 prepared writes on a 16,000-link recording 33.4 s -> 0.13 s; full suite 1,762 tests, no new failures versus the pre-change baseline.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantFactScope.swift` — Per-entity touched-fact scopes and their union.
+  - `Sources/InstantSwiftDataCore/InstantStore.swift` — Per-fact rollback capture; prepareMutating records scope; cascade-aware delete capture.
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — Scope unions at composed commits; pure-create rollback requires proof of creation.
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — Scoped row reads and rewrites; scoped cached-snapshot replacement.
+  - `Sources/InstantSwiftDataCore/TripleIndexes.swift` — In-place multi-value slot mutation; scoped materialization helpers.
+  - `Tests/InstantSwiftDataCoreTests/InstantEntityWriteScopeTests.swift` — Regression guards for scoped capture, delete scope, and write cost.
+  - `docs/adr/0015-sqlite-data-parity-ergonomics/qanda.md` — Q32 nested limits client-side only; Q33 per-fact capture.
+- **User context (verbatim):**
+  > every write copies all of the recording stored fields for rollback. That seems really, really inefficient and naive. Um. And let's focus on fixing that now.
+- **SpecStory:** unavailable — unavailable — Claude Code CLI session; no SpecStory capture for this task
+
 ## August 16th, 2026 at 5:54:19 a.m. EDT — `73ff55491fbd` Reconcile durable relation identities
 
 - **Implementation commit:** `73ff55491fbd18efeaa19375c0b725d40096ce5f`
