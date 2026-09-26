@@ -769,3 +769,26 @@ mutate in place instead of copying on every insert and remove.
 Measured (Debug): 50 prepared writes on a recording with 16,000 links went from 33.4 s to
 0.13 s. Remaining: preparing on a copy of the hot store still copies each large map a write
 mutates once per transaction (link slot, value index, reverse-link index).
+
+### Amendment (2026-09-26, release gate)
+
+The v1.6.0 release gate's cross-SDK core suite caught a cost on small entities: per-fact
+bookkeeping made writes 12–45% slower than 1.5.7 (release build, same machine; `triple-insert`
+and `stream-write` +45%). Whole-entity capture of a small entity is only a retain of its
+attribute map, so per-fact scope now applies only where it pays:
+
+- New entities (no facts at the first touch) and entities with at most
+  `InstantStore.wholeEntityWriteFactLimit` (32) facts are handled whole, decided once at the
+  mutation's first touch of the entity. Larger entities, such as Scribe's recording, are scoped
+  per fact.
+- Scopes grow in place instead of being rebuilt for every fact, which was quadratic for many
+  values of one attribute.
+- Deletes capture every entity their cascade removes, at every depth, before the delete runs.
+  Capturing one level deep, as 1.5.7 did, could not restore a grandchild on rollback. With
+  per-fact scopes it also lost the untouched facts of an entity the same mutation had edited.
+- Prepares without capture (store-level overlay peels and benchmark sequences, whose results are
+  discarded) track no scope.
+
+After the amendment (median of 10 alternating runs): inserts, streams, scalar updates, and reads
+match 1.5.7; small-entity updates and deletes stay 7–10% slower in the in-memory step (below
+1 µs per entity).

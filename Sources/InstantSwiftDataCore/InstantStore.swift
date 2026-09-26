@@ -38,13 +38,21 @@ private final class PreviousChangedEntityCapture: @unchecked Sendable {
   private var explicitTriples: [String: [InstantTriple]] = [:]
   private var materializer: TripleIndexes?
   private var materialized: [String: [InstantTriple]]?
+  private var lastNotedEntityID: String?
 
   func contains(_ entityID: String) -> Bool {
     touchedEntityIDs.contains(entityID)
   }
 
+  func reserveCapacity(_ entityCount: Int) {
+    touchedEntityIDs.reserveCapacity(entityCount)
+    wholeSlots.reserveCapacity(entityCount)
+  }
+
   private func noteTouch(_ entityID: String, in indexes: TripleIndexes) {
     materialized = nil
+    if entityID == lastNotedEntityID { return }
+    lastNotedEntityID = entityID
     if materializer == nil {
       materializer = indexes
     }
@@ -54,13 +62,42 @@ private final class PreviousChangedEntityCapture: @unchecked Sendable {
     }
   }
 
+  /// Records an entity that held no facts when this mutation first touched it. Its
+  /// before-image is empty, so nothing is captured for it.
+  func noteCreated(_ entityID: String) {
+    materialized = nil
+    if touchedEntityIDs.insert(entityID).inserted {
+      createdEntityIDs.insert(entityID)
+    }
+  }
+
+  /// Captures an existing entity whole at this mutation's first touch of it, when its current
+  /// `slots` are still its before-image. Holding the map is a retain, not a copy.
+  func captureWholeEntityAtFirstTouch(
+    entityID: String,
+    slots: [String: AttrSlot],
+    from indexes: TripleIndexes
+  ) {
+    materialized = nil
+    if materializer == nil {
+      materializer = indexes
+    }
+    touchedEntityIDs.insert(entityID)
+    wholeSlots[entityID] = slots
+  }
+
+  private func hasWholeImage(_ entityID: String) -> Bool {
+    (!wholeSlots.isEmpty && wholeSlots[entityID] != nil)
+      || (!explicitTriples.isEmpty && explicitTriples[entityID] != nil)
+  }
+
   func captureAttribute(entityID: String, attributeID: String, from indexes: TripleIndexes) {
     noteTouch(entityID, in: indexes)
-    guard wholeSlots[entityID] == nil, explicitTriples[entityID] == nil,
+    guard !hasWholeImage(entityID),
       attributeSlots[entityID]?.index(forKey: attributeID) == nil
     else { return }
     var previous = indexes.attributeSlot(entityID: entityID, attributeID: attributeID)
-    if let stamps = valueStamps[entityID]?.removeValue(forKey: attributeID) {
+    if !valueStamps.isEmpty, let stamps = valueStamps[entityID]?.removeValue(forKey: attributeID) {
       previous = Self.restoring(stamps, into: previous)
     }
     attributeSlots[entityID, default: [:]].updateValue(previous, forKey: attributeID)
@@ -73,8 +110,8 @@ private final class PreviousChangedEntityCapture: @unchecked Sendable {
     from indexes: TripleIndexes
   ) {
     noteTouch(entityID, in: indexes)
-    guard wholeSlots[entityID] == nil, explicitTriples[entityID] == nil,
-      attributeSlots[entityID]?.index(forKey: attributeID) == nil,
+    guard !hasWholeImage(entityID),
+      attributeSlots.isEmpty || attributeSlots[entityID]?.index(forKey: attributeID) == nil,
       valueStamps[entityID]?[attributeID]?.index(forKey: value) == nil
     else { return }
     valueStamps[entityID, default: [:]][attributeID, default: [:]].updateValue(
@@ -86,14 +123,15 @@ private final class PreviousChangedEntityCapture: @unchecked Sendable {
   /// The entity's image as of before this mutation first touched it.
   func captureWholeEntity(entityID: String, from indexes: TripleIndexes) {
     noteTouch(entityID, in: indexes)
-    guard wholeSlots[entityID] == nil, explicitTriples[entityID] == nil else { return }
+    // A created entity's before-image is empty however much this mutation has written to it.
+    guard !createdEntityIDs.contains(entityID), !hasWholeImage(entityID) else { return }
     var slots = indexes.copiedAttributeSlots(entityID: entityID) ?? [:]
-    if let captured = attributeSlots.removeValue(forKey: entityID) {
+    if !attributeSlots.isEmpty, let captured = attributeSlots.removeValue(forKey: entityID) {
       for (attributeID, previous) in captured {
         slots[attributeID] = previous
       }
     }
-    if let captured = valueStamps.removeValue(forKey: entityID) {
+    if !valueStamps.isEmpty, let captured = valueStamps.removeValue(forKey: entityID) {
       for (attributeID, stamps) in captured {
         slots[attributeID] = Self.restoring(stamps, into: slots[attributeID])
       }
@@ -181,6 +219,7 @@ private final class PreviousChangedEntityCapture: @unchecked Sendable {
     explicitTriples = triples
     materializer = nil
     materialized = triples
+    lastNotedEntityID = nil
   }
 }
 
@@ -967,6 +1006,24 @@ public actor InstantStore {
     )
   }
 
+  /// Entities with at most this many facts are handled whole by a write, as every entity was
+  /// before per-fact scopes. Capturing one is a single retain of its attribute map, and
+  /// materializing or persisting it whole is bounded by this size. Measured 2026-09-26 (release,
+  /// cross-SDK core suite): per-fact bookkeeping made small-entity writes 12–45% slower, while
+  /// entities that keep growing (Scribe's recording holds one link per segment) need it.
+  static let wholeEntityWriteFactLimit = 32
+
+  private static func isCapturedWhole(_ slots: [String: AttrSlot]) -> Bool {
+    var factCount = 0
+    for slot in slots.values {
+      factCount += slot.count
+      if factCount > wholeEntityWriteFactLimit {
+        return false
+      }
+    }
+    return true
+  }
+
   private func prepareMutating(
     _ transaction: InstantStoreTransaction,
     attributes: inout AttributeStore,
@@ -982,31 +1039,74 @@ public actor InstantStore {
     var changedEntityIDs: Set<String> = []
     let previousCapture = PreviousChangedEntityCapture()
     var factScope = InstantFactScope()
+    if capturePreviousChangedEntityTriples {
+      // Growing these per-entity maps op by op rehashed every key on each resize.
+      let expectedEntityCount = min(transaction.operations.count, 4_096)
+      factScope.reserveCapacity(expectedEntityCount)
+      previousCapture.reserveCapacity(expectedEntityCount)
+    }
     let shouldMarkDeferred = !deferredValueResidency.attributeIDs.isEmpty
+    var lastTouchedEntityID: String?
+    var lastTouchedEntityUsesWholeScope = false
+
+    /// Whether `entityID` is handled whole rather than per fact, decided once at this
+    /// mutation's first touch of it, so deleting and re-creating an entity within one mutation
+    /// still counts as an existing entity. New and small entities are handled whole: a new
+    /// entity's before-image is empty, a small one is captured by reference, and persisting
+    /// either whole is cheap. Per-fact bookkeeping only pays off for large entities.
+    ///
+    /// The decision is read back from `factScope`: a decided entity is whole or has recorded
+    /// facts, while an empty scope only marks a link target, which decides nothing.
+    func usesWholeEntityScope(_ entityID: String) -> Bool {
+      if entityID == lastTouchedEntityID {
+        return lastTouchedEntityUsesWholeScope
+      }
+      let whole: Bool
+      switch factScope.scopes[entityID] {
+      case .wholeEntity?:
+        whole = true
+      case let .facts(attributeIDs, values)? where !attributeIDs.isEmpty || !values.isEmpty:
+        whole = false
+      case .facts?, nil:
+        let slots = indexes.copiedAttributeSlots(entityID: entityID)
+        whole = slots.map(Self.isCapturedWhole) ?? true
+        if whole {
+          factScope.recordWholeEntity(entityID)
+          if let slots {
+            previousCapture.captureWholeEntityAtFirstTouch(
+              entityID: entityID,
+              slots: slots,
+              from: indexes
+            )
+          } else {
+            previousCapture.noteCreated(entityID)
+          }
+        }
+      }
+      lastTouchedEntityID = entityID
+      lastTouchedEntityUsesWholeScope = whole
+      return whole
+    }
 
     /// Records the one fact `triple` writes, before it is applied. A multi-value attribute is
-    /// scoped to the written value; everything else to the attribute. Peeled overlays skip the
-    /// before-image but still record scope, so persistence sees every fact they changed.
+    /// scoped to the written value; everything else to the attribute.
+    ///
+    /// Without capture nothing is tracked. Those callers (store-level overlay peels and
+    /// benchmark sequences) discard the prepared mutation, and an empty scope reads as
+    /// whole-entity everywhere, which is the conservative answer.
     func touchFact(_ triple: InstantTriple, attribute: InstantAttribute?) {
-      if attribute?.cardinality == .many, attribute?.valueType != .date {
-        factScope.record(
-          .facts(attributeIDs: [], values: [triple.attributeID: [triple.value]]),
-          for: triple.entityID
-        )
-        if capturePreviousChangedEntityTriples {
+      guard capturePreviousChangedEntityTriples else { return }
+      if !usesWholeEntityScope(triple.entityID) {
+        if attribute?.cardinality == .many, attribute?.valueType != .date {
+          factScope.record(triple.value, of: triple.attributeID, for: triple.entityID)
           previousCapture.captureValue(
             entityID: triple.entityID,
             attributeID: triple.attributeID,
             value: triple.value,
             from: indexes
           )
-        }
-      } else {
-        factScope.record(
-          .facts(attributeIDs: [triple.attributeID], values: [:]),
-          for: triple.entityID
-        )
-        if capturePreviousChangedEntityTriples {
+        } else {
+          factScope.record(attributeID: triple.attributeID, for: triple.entityID)
           previousCapture.captureAttribute(
             entityID: triple.entityID,
             attributeID: triple.attributeID,
@@ -1022,22 +1122,38 @@ public actor InstantStore {
     }
 
     func touchWholeEntity(_ entityID: String) {
+      // New and small entities were scoped and captured whole at their first touch.
+      guard capturePreviousChangedEntityTriples, !usesWholeEntityScope(entityID) else { return }
       factScope.recordWholeEntity(entityID)
-      if capturePreviousChangedEntityTriples {
-        previousCapture.captureWholeEntity(entityID: entityID, from: indexes)
+      previousCapture.captureWholeEntity(entityID: entityID, from: indexes)
+      lastTouchedEntityUsesWholeScope = true
+    }
+
+    /// Mirrors the cascade rules in `TripleIndexes.deleteEntity`, at every depth, before the
+    /// delete runs: each entity the delete removes is captured whole; one that only loses a link
+    /// is scoped to that link, so deleting a segment does not copy every other link on its
+    /// recording. Capturing after the delete would find cascaded entities already gone.
+    func captureDeletePrevious(of entityID: String) {
+      guard capturePreviousChangedEntityTriples else { return }
+      var cascaded: [String] = []
+      captureDeleteStep(entityID, cascadingInto: &cascaded)
+      guard !cascaded.isEmpty else { return }
+      var visited: Set<String> = [entityID]
+      while let cascadedEntityID = cascaded.popLast() {
+        guard visited.insert(cascadedEntityID).inserted else { continue }
+        captureDeleteStep(cascadedEntityID, cascadingInto: &cascaded)
       }
     }
 
-    /// Mirrors the cascade rules in `TripleIndexes.deleteEntity`: an entity the delete will also
-    /// delete is captured whole; one that only loses a link is scoped to that link, so deleting
-    /// a segment does not copy every other link on its recording.
-    func captureDeletePrevious(of entityID: String) {
+    /// Captures `entityID` whole and scopes each entity that only loses a link to it to that
+    /// link; appends the entities the delete cascades into.
+    func captureDeleteStep(_ entityID: String, cascadingInto cascaded: inout [String]) {
       touchWholeEntity(entityID)
       if indexes.hasIncomingReferences(entityID) {
         for triple in indexes.reverseRefTriples(targetEntityID: entityID) {
           let attribute = attributes[triple.attributeID]
           if attribute?.onDelete == .cascade {
-            touchWholeEntity(triple.entityID)
+            cascaded.append(triple.entityID)
           } else {
             touchFact(triple, attribute: attribute)
           }
@@ -1045,14 +1161,18 @@ public actor InstantStore {
       }
       if let attributesByID = indexes.copiedAttributeSlots(entityID: entityID) {
         for (attributeID, slot) in attributesByID {
-          guard let attribute = attributes[attributeID], attribute.valueType == .ref else {
-            continue
-          }
-          let cascades = attribute.onDeleteReverse == .cascade
+          // Only ref values name a target; look the attribute up only once one appears.
+          var cascades: Bool?
           slot.forEachPair { value, _ in
             guard case let .ref(targetEntityID) = value else { return }
-            if cascades {
-              touchWholeEntity(targetEntityID)
+            if cascades == nil {
+              guard let attribute = attributes[attributeID], attribute.valueType == .ref else {
+                return
+              }
+              cascades = attribute.onDeleteReverse == .cascade
+            }
+            if cascades == true {
+              cascaded.append(targetEntityID)
             } else {
               factScope.record(.noStoredFacts, for: targetEntityID)
             }
@@ -1061,25 +1181,14 @@ public actor InstantStore {
       }
     }
 
-    /// Applies a delete, then widens any entity it removed entirely (a deeper cascade) so
-    /// persistence deletes all of its rows rather than only the facts scoped earlier.
     func applyDelete(_ operation: InstantTripleOperation, entityID: String) {
       captureDeletePrevious(of: entityID)
-      var deleted: Set<String> = []
       indexes.apply(
         operation,
         attributes: attributes,
         insertReplayPolicy: insertReplayPolicy,
-        into: &deleted
+        into: &changedEntityIDs
       )
-      for deletedEntityID in deleted
-      where factScope.scopes[deletedEntityID] != nil
-        && factScope[deletedEntityID] != .wholeEntity
-        && indexes.copiedAttributeSlots(entityID: deletedEntityID) == nil
-      {
-        touchWholeEntity(deletedEntityID)
-      }
-      changedEntityIDs.formUnion(deleted)
     }
 
     func markDeferred(of triple: InstantTriple) {
@@ -1326,10 +1435,12 @@ public actor InstantStore {
     )
     // A change the store did not attribute to specific facts (for example derived-index
     // reconciliation) keeps the whole-entity behavior: persisted whole, captured as it is now.
-    for entityID in changedEntityIDs where factScope.scopes[entityID] == nil {
-      factScope.recordWholeEntity(entityID)
-      if capturePreviousChangedEntityTriples, !previousCapture.contains(entityID) {
-        previousCapture.captureWholeEntity(entityID: entityID, from: indexes)
+    if capturePreviousChangedEntityTriples {
+      for entityID in changedEntityIDs where factScope.scopes[entityID] == nil {
+        factScope.recordWholeEntity(entityID)
+        if !previousCapture.contains(entityID) {
+          previousCapture.captureWholeEntity(entityID: entityID, from: indexes)
+        }
       }
     }
     return PreparedStoreMutation(

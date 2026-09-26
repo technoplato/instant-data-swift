@@ -33,22 +33,36 @@ package enum InstantEntityFactScope: Sendable, Equatable {
     }
   }
 
+  // The mutators below reset `self` before changing the extracted collections so they are
+  // uniquely referenced and grow in place. Rebuilding the payload instead copied every
+  // collection once per recorded fact, which is quadratic for many values of one attribute.
+
   package mutating func formUnion(_ other: InstantEntityFactScope) {
-    switch (self, other) {
-    case (.wholeEntity, _):
-      return
-    case (_, .wholeEntity):
+    guard case .facts(var attributeIDs, var values) = self else { return }
+    guard case let .facts(otherAttributeIDs, otherValues) = other else {
       self = .wholeEntity
-    case let (.facts(attributeIDs, values), .facts(otherAttributeIDs, otherValues)):
-      var mergedValues = values
-      for (attributeID, attributeValues) in otherValues {
-        mergedValues[attributeID, default: []].formUnion(attributeValues)
-      }
-      self = .facts(
-        attributeIDs: attributeIDs.union(otherAttributeIDs),
-        values: mergedValues
-      )
+      return
     }
+    self = .wholeEntity
+    attributeIDs.formUnion(otherAttributeIDs)
+    for (attributeID, attributeValues) in otherValues {
+      values[attributeID, default: []].formUnion(attributeValues)
+    }
+    self = .facts(attributeIDs: attributeIDs, values: values)
+  }
+
+  package mutating func insert(attributeID: String) {
+    guard case .facts(var attributeIDs, let values) = self else { return }
+    self = .wholeEntity
+    attributeIDs.insert(attributeID)
+    self = .facts(attributeIDs: attributeIDs, values: values)
+  }
+
+  package mutating func insert(_ value: InstantValue, of attributeID: String) {
+    guard case .facts(let attributeIDs, var values) = self else { return }
+    self = .wholeEntity
+    values[attributeID, default: []].insert(value)
+    self = .facts(attributeIDs: attributeIDs, values: values)
   }
 }
 
@@ -63,12 +77,24 @@ package struct InstantFactScope: Sendable, Equatable {
     self.scopes = scopes
   }
 
+  package mutating func reserveCapacity(_ entityCount: Int) {
+    scopes.reserveCapacity(entityCount)
+  }
+
   package subscript(entityID: String) -> InstantEntityFactScope {
     scopes[entityID] ?? .wholeEntity
   }
 
   package mutating func record(_ scope: InstantEntityFactScope, for entityID: String) {
     scopes[entityID, default: .noStoredFacts].formUnion(scope)
+  }
+
+  package mutating func record(attributeID: String, for entityID: String) {
+    scopes[entityID, default: .noStoredFacts].insert(attributeID: attributeID)
+  }
+
+  package mutating func record(_ value: InstantValue, of attributeID: String, for entityID: String) {
+    scopes[entityID, default: .noStoredFacts].insert(value, of: attributeID)
   }
 
   package mutating func recordWholeEntity(_ entityID: String) {

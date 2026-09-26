@@ -188,6 +188,164 @@ struct InstantEntityWriteScopeTests {
     expectNoDifference(prepared.factScope["segment-7"], .wholeEntity)
   }
 
+  /// A delete that cascades two levels captures every entity it removes whole, before it runs,
+  /// even one this mutation already changed fact by fact. Capturing after the delete found such
+  /// an entity gone and kept only the facts touched earlier, so a rollback restored the edited
+  /// word's text but not its link or timing.
+  @Test
+  func deepCascadeDeleteCapturesAnEntityTheMutationAlreadyEdited() async throws {
+    let segmentRecording = InstantAttribute(
+      id: "transcriptionSegments/recording",
+      namespace: "transcriptionSegments",
+      name: "recording",
+      valueType: .ref,
+      isRequired: false,
+      isIndexed: true,
+      forwardIdentity: "transcriptionSegments/recording",
+      reverseIdentity: "recordings/segmentsOwned",
+      linkNamespace: "recordings",
+      onDelete: .cascade
+    )
+    let wordSegment = InstantAttribute(
+      id: "words/segment",
+      namespace: "words",
+      name: "segment",
+      valueType: .ref,
+      isRequired: false,
+      isIndexed: true,
+      forwardIdentity: "words/segment",
+      reverseIdentity: "transcriptionSegments/words",
+      linkNamespace: "transcriptionSegments",
+      onDelete: .cascade
+    )
+    let wordText = InstantAttribute(
+      id: "words/text", namespace: "words", name: "text", valueType: .string, isRequired: false)
+    let wordStart = InstantAttribute(
+      id: "words/startMs", namespace: "words", name: "startMs", valueType: .number,
+      isRequired: false)
+    // Enough facts that the word is scoped per fact rather than captured whole up front.
+    let wordAlternatives = InstantAttribute(
+      id: "words/alternatives", namespace: "words", name: "alternatives", valueType: .string,
+      isRequired: false, cardinality: .many)
+    func seeded(_ entityID: String, _ attribute: InstantAttribute, _ value: InstantValue)
+      -> InstantTriple
+    {
+      InstantTriple(
+        entityID: entityID, attributeID: attribute.id, value: value, txID: "seed",
+        txTime: InstantTimestamp(milliseconds: 1))
+    }
+    let alternatives = (0...InstantStore.wholeEntityWriteFactLimit).map {
+      seeded("word", wordAlternatives, .string("alternative-\($0)"))
+    }
+    let store = InstantStore(
+      snapshot: InstantStoreSnapshot(
+        attributes: [
+          Self.titleAttribute, segmentRecording, wordSegment, wordText, wordStart,
+          wordAlternatives,
+        ],
+        triples: [
+          seeded("recording", Self.titleAttribute, .string("Long recording")),
+          seeded("segment", segmentRecording, .ref("recording")),
+          seeded("word", wordSegment, .ref("segment")),
+          seeded("word", wordText, .string("hello")),
+          seeded("word", wordStart, .number(120)),
+        ] + alternatives
+      )
+    )
+
+    let prepared = try await store.prepareCurrent(
+      InstantStoreTransaction(
+        id: "edit-then-delete",
+        operations: [
+          .insert(InstantTriple(
+            entityID: "word", attributeID: wordText.id, value: .string("hullo"),
+            txID: "edit-then-delete", txTime: InstantTimestamp(milliseconds: 5))),
+          .deleteEntity("recording"),
+        ]
+      )
+    )
+
+    expectNoDifference(prepared.result.changedEntityIDs, ["recording", "segment", "word"])
+    expectNoDifference(prepared.createdEntityIDs, [])
+    expectNoDifference(prepared.factScope["word"], .wholeEntity)
+    expectNoDifference(
+      prepared.previousChangedEntityTriples["word", default: []]
+        .map { "\($0.attributeID)=\($0.value)" }.sorted(),
+      (alternatives.map { "\($0.attributeID)=\($0.value)" } + [
+        "words/segment=\(InstantValue.ref("segment"))",
+        "words/startMs=\(InstantValue.number(120))",
+        "words/text=\(InstantValue.string("hello"))",
+      ]).sorted()
+    )
+    let rollback = try #require(
+      InstantRuntime.rollbackTransaction(mutationID: "edit-then-delete", prepared: prepared)
+    )
+    #expect(rollback.operations.contains(.insert(seeded("word", wordStart, .number(120)))))
+  }
+
+  /// A small entity is handled whole, as before per-fact scopes: capturing it is one retain and
+  /// persisting it whole is cheap, while per-fact bookkeeping made such writes 12–45% slower.
+  @Test
+  func smallEntitiesAreHandledWholeByAWrite() async throws {
+    let store = InstantStore(
+      snapshot: InstantStoreSnapshot(
+        attributes: Self.attributes,
+        triples: Self.recordingTriples(segmentCount: 3)
+      )
+    )
+    let prepared = try await store.prepareCurrent(
+      InstantStoreTransaction(
+        id: "retitle",
+        operations: [
+          .insert(InstantTriple(
+            entityID: "recording", attributeID: Self.titleAttribute.id,
+            value: .string("Short recording"), txID: "retitle",
+            txTime: InstantTimestamp(milliseconds: 2)))
+        ]
+      )
+    )
+
+    expectNoDifference(prepared.factScope["recording"], .wholeEntity)
+    expectNoDifference(prepared.createdEntityIDs, [])
+    expectNoDifference(prepared.previousChangedEntityTriples["recording", default: []].count, 5)
+    expectNoDifference(
+      InstantRuntime.rollbackTransaction(mutationID: "retitle", prepared: prepared)?.operations
+        .count,
+      2
+    )
+  }
+
+  /// Writing new entities costs no more than it did before per-fact scopes. A new entity's
+  /// before-image is empty and every fact it holds was written by the mutation, so it takes the
+  /// whole-entity scope once instead of per-fact bookkeeping.
+  @Test
+  func newEntitiesTakeTheWholeEntityScopeWithoutPerFactCapture() async throws {
+    let store = InstantStore(snapshot: InstantStoreSnapshot(attributes: Self.attributes))
+    let time = InstantTimestamp(milliseconds: 2)
+    let prepared = try await store.prepareCurrent(
+      InstantStoreTransaction(
+        id: "create",
+        operations: [
+          .insert(InstantTriple(
+            entityID: "fresh", attributeID: Self.titleAttribute.id, value: .string("New"),
+            txID: "create", txTime: time)),
+          .insert(InstantTriple(
+            entityID: "fresh", attributeID: Self.segmentsAttribute.id,
+            value: .ref("segment-1"), txID: "create", txTime: time)),
+        ]
+      )
+    )
+
+    expectNoDifference(prepared.createdEntityIDs, ["fresh"])
+    expectNoDifference(prepared.factScope["fresh"], .wholeEntity)
+    expectNoDifference(prepared.previousChangedEntityTriples["fresh", default: []], [])
+    expectNoDifference(prepared.factScope["segment-1"], .noStoredFacts)
+    expectNoDifference(
+      InstantRuntime.rollbackTransaction(mutationID: "create", prepared: prepared)?.operations,
+      [.deleteEntity("fresh")]
+    )
+  }
+
   /// A local write must not materialize the whole store.
   ///
   /// Shared-root authorization built a full store snapshot on every `transact` to resolve write
