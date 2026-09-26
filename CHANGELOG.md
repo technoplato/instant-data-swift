@@ -10,6 +10,21 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## September 26th, 2026 at 5:35:34 p.m. EDT — `546da49f2783` Skip the full-store snapshot on writes when no share can refuse them (#044)
+
+- **Implementation commit:** `546da49f2783bf3b3af122fbb51d097961ecc7ed`
+- **Change:** Skip the full-store snapshot on writes when no share can refuse them (#044)
+- **Details:**
+  - Shared-root authorization materialized and sorted every fact on every transact; an EXISTS query over unrevoked shares now gates it.
+  - Measured (Debug): 40 one-field writes on a 20,000-fact store 6.09 s -> 0.069 s; sharedRootWritePermissionsReject* tests still pass.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — Gate shared-root authorization and its snapshot on active shares.
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — hasActiveShares(appID:) existence query.
+  - `Tests/InstantSwiftDataCoreTests/InstantEntityWriteScopeTests.swift` — Guard against whole-store materialization on writes.
+- **User context (verbatim):**
+  > every write copies all of the recording stored fields for rollback. That seems really, really inefficient and naive.
+- **SpecStory:** unavailable — unavailable — Claude Code CLI session; no SpecStory capture for this task
+
 ## September 26th, 2026 at 4:59:28 p.m. EDT — `7c567126f9a0` Say plainly that nested include limits do not bound the network (#155)
 
 - **Implementation commit:** `7c567126f9a0eb35cade7e3d8d4f324bc8562997`
