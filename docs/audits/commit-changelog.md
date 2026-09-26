@@ -1,3 +1,6 @@
+## 2026-09-26 19:28:43 EDT — instant-data-swift `94166c5a05df475e831fbcedeff24e11d2a8c700`
+Handle new and small entities whole and capture whole delete cascades: the v1.6.0 release gate showed per-fact bookkeeping made small-entity writes 12-45% slower than 1.5.7; after the fix inserts/streams/scalar/reads are at parity, update 1.09x, delete 1.10x; rollback now restores multi-level cascade deletes (#044 #155).
+
 ## 2026-09-26 18:04:43 EDT — instant-data-swift `c24724c9871a5859b82bd2013e309a0db13b1689`
 Document the v1.6.0 release (writes cost what they touch): per-fact write scope, in-place multi-value slots, share-gated store snapshot, nested-limit docs; measured before/after and the offline-runner publication rule (#044 #155).
 

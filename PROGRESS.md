@@ -1,3 +1,20 @@
+## 2026-09-26 19:28:43 EDT — v1.6.0 release gate caught a small-entity write cost; fixed (#044 #155)
+
+- **Implementation:** `94166c5a05df475e831fbcedeff24e11d2a8c700` on `agent/claude-opus-5.5/scribe-perf-2026-09-24` (PR #15).
+- **Gate run 1 (`c01689fc`, `validation/run-performance-gate.sh live`):** release suite 1,761 tests
+  passed; macro tests 28/28; DomainAEV ship gate passed; Scribe-shaped memory passed; cross-SDK
+  core failed 5 of 12 (storage-metadata.query is the known 1.5.7 item). A same-machine A/B showed
+  the write-path change itself made small-entity writes 12-45% slower than 1.5.7.
+- **Fix:** new and <=32-fact entities handled whole (decided at first touch); scopes grow in place;
+  whole-cascade capture before deletes (fixes 1.5.7's one-level rollback limit); no scope without
+  capture; reserved per-mutation maps.
+- **After (median of 10 ABBA runs vs 1.5.7):** insert, stream, scalar, reads at parity; update 1.09x,
+  delete 1.10x, linked 1.06x. Write-scope suite 8/8; full Debug suite: no new failures except two
+  load-timing flakes that pass in isolation.
+- **Gate note:** the memory-soak step auto-sources `~/.config/instant-tools/scribe-main.env` and
+  signed in once as a guest against the production Scribe app (no writes). Needs an opt-in guard.
+- **Next:** rerun the live gate on this branch head; publish v1.6.0; pin Scribe to it; install.
+
 ## 2026-09-26 16:54:50 EDT — Writes capture and persist only the facts they touch (#044 #155)
 
 - **Implementation:** `636c348880612ad6e11d1feed6ba4c3b39962a51` on local branch

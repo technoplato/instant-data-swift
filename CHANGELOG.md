@@ -10,6 +10,24 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## September 26th, 2026 at 7:29:00 p.m. EDT — `94166c5a05df` Handle new and small entities whole and capture whole delete cascades (#044 #155)
+
+- **Implementation commit:** `94166c5a05df475e831fbcedeff24e11d2a8c700`
+- **Change:** Handle new and small entities whole and capture whole delete cascades (#044 #155)
+- **Details:**
+  - Release gate (cross-SDK core, release, same machine) showed per-fact bookkeeping made small-entity writes 12-45% slower than 1.5.7; new and <=32-fact entities are now handled whole, decided at first touch.
+  - Deletes capture their whole cascade before running (1.5.7 could not restore grandchildren on rollback); scopes grow in place; no scope without capture; reserved per-mutation maps.
+  - After (median of 10 ABBA runs): insert/stream/scalar/reads at parity; update 1.09x, delete 1.10x, linked 1.06x.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantStore.swift` — Size-adaptive first-touch decision, whole-cascade delete capture, no scope without capture.
+  - `Sources/InstantSwiftDataCore/InstantFactScope.swift` — In-place scope mutators and capacity reservation.
+  - `Tests/InstantSwiftDataCoreTests/InstantEntityWriteScopeTests.swift` — Deep-cascade rollback, small-entity, and new-entity tests.
+  - `docs/adr/0015-sqlite-data-parity-ergonomics/qanda.md` — Q33 amendment with the gate finding.
+  - `docs/releases/v1.6.0.md` — Release notes updated with the A/B table and remaining costs.
+- **User context (verbatim):**
+  > get this library merged and pushed the release via GitHub. [...] a new minor version, I think, for this fix.
+- **SpecStory:** unavailable — Claude Code CLI session; no SpecStory capture for this task
+
 ## September 26th, 2026 at 6:05:05 p.m. EDT — `c24724c9871a` Document the v1.6.0 release: writes cost what they touch (#044 #155)
 
 - **Implementation commit:** `c24724c9871a5859b82bd2013e309a0db13b1689`
