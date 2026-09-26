@@ -10,6 +10,19 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## September 26th, 2026 at 6:05:05 p.m. EDT — `c24724c9871a` Document the v1.6.0 release: writes cost what they touch (#044 #155)
+
+- **Implementation commit:** `c24724c9871a5859b82bd2013e309a0db13b1689`
+- **Change:** Document the v1.6.0 release: writes cost what they touch (#044 #155)
+- **Details:**
+  - Release notes for per-fact write scope, in-place multi-value slots, the share-gated store snapshot, and the nested-limit documentation fix.
+  - Measured: 50 writes on a 16,000-link recording 33.4 s -> 0.13 s; 40 writes on a 20,000-fact store 6.09 s -> 0.069 s (Debug). No public API break, no SQLite migration.
+- **Files:**
+  - `docs/releases/v1.6.0.md` — Release document validated by scripts/validate-release-version.sh 1.6.0.
+- **User context (verbatim):**
+  > get this library merged and pushed the release via GitHub. [...] deploy the instant SQI or S Instant data Swift library with a new version, a new minor version, I think, for this fix.
+- **SpecStory:** unavailable — Claude Code CLI session; no SpecStory capture for this task
+
 ## September 26th, 2026 at 5:35:34 p.m. EDT — `546da49f2783` Skip the full-store snapshot on writes when no share can refuse them (#044)
 
 - **Implementation commit:** `546da49f2783bf3b3af122fbb51d097961ecc7ed`

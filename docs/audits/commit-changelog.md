@@ -1,3 +1,9 @@
+## 2026-09-26 18:04:43 EDT — instant-data-swift `c24724c9871a5859b82bd2013e309a0db13b1689`
+Document the v1.6.0 release (writes cost what they touch): per-fact write scope, in-place multi-value slots, share-gated store snapshot, nested-limit docs; measured before/after and the offline-runner publication rule (#044 #155).
+
+## 2026-09-26 18:03:26 EDT — instant-data-swift `183370d9d923af3dd2a126fc5c10d5f6c89095a6`
+Plan-only commit on `main`: write-scope and v1.6.0 release plan, channel note, and `_touching` claims for every path the implementation changes (#044 #155).
+
 ## 2026-09-26 17:35:34 EDT — instant-data-swift `546da49f2783bf3b3af122fbb51d097961ecc7ed`
 Skip the full-store snapshot on writes when no share can refuse them; 40 one-field writes on a 20,000-fact store 6.09 s -> 0.069 s (Debug). Local branch `agent/claude-opus-5.5/scribe-perf-2026-09-24`, not pushed (#044).
 
