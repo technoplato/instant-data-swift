@@ -1,3 +1,6 @@
+## 2026-09-26 23:58:30 EDT — instant-data-swift `cb6e9e45ed4cd826a4ed33af977ddaf8924b53de`
+Cap the diagnostics file at 16 MiB by default and keep one previous file; a writer on a just-rotated file reopens instead of rotating again (#254). Needs a library release before Scribe (pinned 1.6.0) picks it up.
+
 ## 2026-09-26 23:31:55 EDT — realtime-voice-sqlite-instant `d0c3fbbc740613df6557070b2240467e885327fe`
 Change-log ledger for the launch watchdog fix and the memory diagnostics (#252 #044).
 
