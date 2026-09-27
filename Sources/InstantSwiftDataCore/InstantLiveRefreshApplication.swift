@@ -52,12 +52,19 @@ struct InstantPersistedLiveQueryResult: Hashable, Codable, Sendable {
       uniquingKeysWith: { _, latest in latest }
     )
     .values
-    .sorted {
-      ($0.entityID, $0.attributeID, $0.value.comparableKey)
-        < ($1.entityID, $1.attributeID, $1.value.comparableKey)
-    }
+    .sorted(by: Self.storedOrder)
     self.pageInfo = replacement.pageInfo
     self.updatedAt = updatedAt
+  }
+
+  /// Entity, then attribute, then value, the same order as comparing
+  /// `(entityID, attributeID, value.comparableKey)` tuples. A tuple comparison builds both
+  /// `comparableKey` strings before comparing its first element, so every comparison copied both
+  /// values into new strings even when the entity IDs already differed.
+  static func storedOrder(_ lhs: InstantTriple, _ rhs: InstantTriple) -> Bool {
+    if lhs.entityID != rhs.entityID { return lhs.entityID < rhs.entityID }
+    if lhs.attributeID != rhs.attributeID { return lhs.attributeID < rhs.attributeID }
+    return lhs.value.comparableKey < rhs.value.comparableKey
   }
 }
 
@@ -188,6 +195,7 @@ enum InstantLiveRefreshTranslator {
           pageInfo: try pageInfo(
             from: computation,
             query: query,
+            queryKey: key,
             attributes: attributeContext
           )
         )
@@ -228,6 +236,7 @@ enum InstantLiveRefreshTranslator {
   private static func pageInfo(
     from computation: InstantLiveJSONValue,
     query: InstantLiveJSONValue,
+    queryKey: String,
     attributes: InstantLiveRefreshAttributeContext
   ) throws -> InstantQueryPageInfo? {
     guard let namespace = query.objectValue?.keys.sorted().first,
@@ -285,7 +294,8 @@ enum InstantLiveRefreshTranslator {
         "endEntityFingerprint": InstantInfiniteQueryDiagnostics.fingerprint(
           pageInfo.endCursor?.entityID
         ),
-      ]
+      ],
+      changeKey: queryKey
     )
     return pageInfo
   }
@@ -681,16 +691,15 @@ private struct InstantLiveRefreshAttributeContext: Sendable {
   private var existing = AttributeStore()
   private var serverAttributesByID: [String: InstantAttribute] = [:]
   private var localAttributeIDsByServerID: [String: String] = [:]
-  var attributesToMerge: [InstantAttribute] = []
+  private(set) var attributesToMerge: [InstantAttribute] = []
 
-  var resolvedLocalAttributes: [InstantAttribute] {
-    var resolved = existing
-    resolved.merge(attributesToMerge)
-    return resolved.attributes
-  }
+  /// The local schema after this refresh's new attributes merge in, resolved once per refresh.
+  /// Resolving it per computation re-merged and re-sorted the whole schema for every query result.
+  let resolvedLocalAttributes: [InstantAttribute]
 
   init(existingAttributes: [InstantAttribute], serverAttributes: [InstantAttribute]) {
     self.existing = AttributeStore(attributes: existingAttributes)
+    var attributesToMerge: [InstantAttribute] = []
     for attribute in serverAttributes {
       serverAttributesByID[attribute.id] = attribute
       if let local = existing.attribute(namespace: attribute.namespace, name: attribute.name) {
@@ -699,6 +708,10 @@ private struct InstantLiveRefreshAttributeContext: Sendable {
         attributesToMerge.append(attribute)
       }
     }
+    self.attributesToMerge = attributesToMerge
+    var resolved = existing
+    resolved.merge(attributesToMerge)
+    self.resolvedLocalAttributes = resolved.attributes
   }
 
   func localAttributeID(forServerAttributeID attributeID: String) -> String {

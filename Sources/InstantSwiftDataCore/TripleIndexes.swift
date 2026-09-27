@@ -57,6 +57,9 @@ struct AttributeStore: Hashable, Codable, Sendable {
   }
 
   mutating func merge(_ attributes: [InstantAttribute]) {
+    // Every server apply merges the refresh's new attributes, which is usually none. Rebuilding
+    // the lookup indexes for an unchanged schema cost a sort of every attribute per refresh.
+    guard !attributes.isEmpty else { return }
     for attribute in Self.withPrimaryKeys(attributes) {
       guard
         attribute.valueType == .ref,

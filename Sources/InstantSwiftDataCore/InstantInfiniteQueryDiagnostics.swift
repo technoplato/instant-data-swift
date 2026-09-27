@@ -14,17 +14,31 @@ enum InstantInfiniteQueryDiagnostics {
     event: String,
     message: String,
     metadata: [String: String] = [:],
-    correlationID: String? = nil
+    correlationID: String? = nil,
+    changeKey: String? = nil
   ) {
-    InstantDiagnostics.shared.record(
-      level,
-      subsystem: subsystem,
-      category: category,
-      event: event,
-      message: message,
-      metadata: metadata,
-      correlationID: correlationID
-    )
+    if let changeKey {
+      InstantDiagnostics.shared.record(
+        level,
+        subsystem: subsystem,
+        category: category,
+        event: event,
+        message: message,
+        metadata: metadata,
+        correlationID: correlationID,
+        changeKey: changeKey
+      )
+    } else {
+      InstantDiagnostics.shared.record(
+        level,
+        subsystem: subsystem,
+        category: category,
+        event: event,
+        message: message,
+        metadata: metadata,
+        correlationID: correlationID
+      )
+    }
   }
 
   static func fingerprint(_ value: String?, length: Int = 8) -> String {
