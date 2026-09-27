@@ -1,3 +1,9 @@
+## 2026-09-27 16:57:42 EDT — instant-data-swift `af3c05849c4ad07b812a8f56abed07dbf757b1cb`
+Local writes no longer wait behind server apply: breadth-first component closure and an uncorrelated outbox rewrite cut the operation gate hold during server apply from 23.5 s to 570 ms at 2,000 pending (969 -> 207 ms at 439); the gate names its holder's phase and reports long waits (#277).
+
+## 2026-09-27 16:23:24 EDT — instant-data-swift `686c6a3d9b0258491f7c5aa8ed6d6b5abc568de0`
+Plan and claims for triage L: server-apply operation gate and selected-field row quarantine (#277 #278).
+
 ## 2026-09-27 14:54:01 EDT — realtime-voice-sqlite-instant `f57bf4e683e0742dbf2dd13ca234cf5b22bdd2d3`
 Merge main into triage B (#259 #274 #261).
 

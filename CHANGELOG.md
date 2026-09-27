@@ -10,6 +10,25 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## September 27th, 2026 at 4:58:05 p.m. EDT — `af3c05849c4a` Keep local writes from waiting behind server apply's quadratic commit (#277)
+
+- **Implementation commit:** `af3c05849c4ad07b812a8f56abed07dbf757b1cb`
+- **Change:** Local writes no longer wait behind server apply's commit, which was quadratic in the pending tail (#277).
+- **Details:**
+  - Evidence: the 2026-09-27 iPhone pull logged serial-gate.stalled with holder 'catch up server apply' held 5,632 ms and a transact waiting 5,057 ms, 439 pending mutations. Profiling and phase timers put the time in commitServerApplyPlan under the operation gate: the component closure re-joined every planned row through every shared entity each round (N^2 around one recording's sections), and the outbox rewrite's IN subquery was correlated through outbox.json, so every outbox row rescanned the plan.
+  - Fix: breadth-first closure over a temp frontier table (each entity expanded once, rows tagged by round); uncorrelated outbox rewrite with a per-row EXISTS. Gate held at 2,000 pending 23,479 -> 570 ms, at 439 pending 969 -> 207 ms. InstantServerApplyOperationGateTests: 1,000 pending plus a local write every 25 ms fails before (gate 4,796 ms, longest write 4,799 ms) and passes after (202 ms, 175 ms).
+  - Diagnostics: the gate holder names its phase; serial-gate.waited reports a caller that queued 250 ms or more (warning from 1 s) with the holder and phase; server-apply.operation-gate-held records per-phase durations. Upstream Reactor.js has no such gate (pushOps line 1509, refresh-ok line 725).
+  - Validation: 12 focused suites, 544 tests pass; full suite has one failure outside the known lists (publishGatePendingAndColdReopenMetrics, a process-wide footprint check under parallel load) and it passes in isolation; Scribe-shaped memory soak passed with INSTANT_SWIFT_DATA_LIVE_AUTH_SOAK=0.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — breadth-first component closure and uncorrelated outbox rewrite
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — gate timeline, phase names, server-apply.operation-gate-held, upstream note
+  - `Sources/InstantSwiftDataCore/AsyncSerialGate.swift` — holder phase and wait reports
+  - `Tests/InstantSwiftDataCoreTests/InstantServerApplyOperationGateTests.swift` — local writes during a 1,000-pending hub apply stay fast and durable
+  - `Tests/InstantSwiftDataCoreTests/AsyncSerialGateTests.swift` — wait report names holder and phase; quick handoff reports nothing; stall names the phase
+- **User context (verbatim):**
+  > After pause: home shows paused but resume recording button does nothing — only stop works.
+- **SpecStory:** unavailable — Claude Code CLI session (triage agent L); no SpecStory capture configured.
+
 ## September 27th, 2026 at 3:13:03 p.m. EDT — `fc7ce10c5940` Saturate the live timeout sleep instead of trapping on a far-future deadline (#259)
 
 - **Implementation commit:** `fc7ce10c59400fe1f7ba28702ec990984d78d03e`
