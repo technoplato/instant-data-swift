@@ -1,5 +1,20 @@
+## 2026-09-27 11:09:19 EDT — realtime-voice-sqlite-instant `c241f29e5fe98e8e84a3fe2b91f585c65fb3f040`
+Change-log ledger.
+
+## 2026-09-27 11:09:18 EDT — realtime-voice-sqlite-instant `2477874337d40581310a089dd6bf5fc8b640346f`
+Release Scribe 0.1 (60).
+
+## 2026-09-27 11:04:36 EDT — realtime-voice-sqlite-instant `cf95ad4fa3fc266889f7db0d75cc3739e535d60b`
+Merge fork E's Stream Interactor into main: directed-speech trigger (2.3% false starts vs 51%), Mac worker threads, transcript cards, thread screen, taps, deep links (#256).
+
+## 2026-09-27 10:56:39 EDT — realtime-voice-sqlite-instant `9af9ee523fefcc9bff3ebb6f83b4e574bb9ebc34`
+Merge fork H's audio fixes into main: system-audio sections timed over their own audio in the recording (#142), loudspeaker routing preference and microphone level logging (#122), scripts/audio-route-ab.py.
+
 ## 2026-09-27 10:53:29 EDT — realtime-voice-sqlite-instant `aeb843a2160d29cc567f587c63af8c67b1284e23`
 Print the speaker-routing microphone A/B from a diagnostics pull (#122).
+
+## 2026-09-27 10:49:27 EDT — realtime-voice-sqlite-instant `3867d05b307fe8d88b91d711561564d62a5c3f0d`
+PROGRESS: Scribe 0.1 (59) installed on iPhone with route maps and the permissions fix (#028 #083).
 
 ## 2026-09-27 10:45:33 EDT — realtime-voice-sqlite-instant `b92af88078ec62351c1dbfed55b1568a423eb74d`
 Keep other apps on the loudspeaker while recording, behind a preference (#122).
@@ -9,6 +24,24 @@ Time system-audio sections over their own audio in the recording (#142).
 
 ## 2026-09-27 10:39:59 EDT — realtime-voice-sqlite-instant `e6dd18453fad37ea4428ecbf2271990eb3c6d3c7`
 Deep link to interactor threads, answers, and transcript moments (#256).
+
+## 2026-09-27 10:39:46 EDT — realtime-voice-sqlite-instant `fb4340a092db1d3553060fce5ba53101da7c92d8`
+Change-log ledger.
+
+## 2026-09-27 10:39:46 EDT — realtime-voice-sqlite-instant `da2cb1fdf6a338fd405aaf1fae310e1e25581fc5`
+Release Scribe 0.1 (59).
+
+## 2026-09-27 10:28:30 EDT — realtime-voice-sqlite-instant `06f5d27b62b6bfde8edc88274e68ec6c745febf3`
+Remove route-finalize-shapes.mjs, whose expectations the permissions fix inverted; route-update-shapes.mjs covers both shapes (#028 #083).
+
+## 2026-09-27 10:28:14 EDT — realtime-voice-sqlite-instant `f8f60159e72376433bcc72ae6c832225689f183d`
+Merge fork G's route maps into main: route chunks in their own transactions, elapsed-stamped capture, playback/live/recordings maps, route deep links (#028 #083).
+
+## 2026-09-27 10:27:49 EDT — realtime-voice-sqlite-instant `f0be586fc1989aa84dee786029d10ecc030537ce`
+Change-log ledger.
+
+## 2026-09-27 10:27:35 EDT — realtime-voice-sqlite-instant `ad37dd61b17044a9f95e53b2afda278e80a0c762`
+Production route chunk rule accepts re-sent identity fields and the same-recording link, so build 58 recordings with a route keep their final summary; pushed to production, drift check matches; route-update-shapes 10/10, app-write-shapes 14/14 (#028 #083).
 
 ## 2026-09-27 10:23:00 EDT — realtime-voice-sqlite-instant `9606f5a8da90fa263124d2ccdb2eb747fcdddef5`
 Show worker threads in the transcript and buzz gently on answers (#256).
@@ -21,6 +54,12 @@ Document recording route maps: time mapping, capture rules, write isolation, bou
 
 ## 2026-09-27 10:01:49 EDT — realtime-voice-sqlite-instant `47391ebbce77e2d922718ccc81c898e12e8ff5cd`
 Close a recording's last route chunk with only its mutable fields, and add a terminal route probe (#083 #028).
+
+## 2026-09-27 10:01:31 EDT — realtime-voice-sqlite-instant `c5dcba4939f9f2c56fc7f9a48d437ffa92bae392`
+Change-log ledger.
+
+## 2026-09-27 10:01:30 EDT — realtime-voice-sqlite-instant `2ca1ed194a9957791756e26409506dc2da1fe377`
+Scribe pins Instant 1.7.0 and the installer expects it; v1.7.0 sources equal 2f55c81b, which Scribe 0.1 (58) embeds (#250 #254 #155). Scribe main fast-forwarded to c5dcba49.
 
 ## 2026-09-27 09:58:40 EDT — realtime-voice-sqlite-instant `f3d84d33b5b7690f7df182f327b0a3db4a45e38f`
 Run Stream Interactor workers from a Mac daemon (#256).
@@ -43,51 +82,6 @@ Map recording routes to moments of the audio and back, with a bounded live trail
 ## 2026-09-27 09:18:51 EDT — realtime-voice-sqlite-instant `397311f633478c56d5dbbdcab1d64503d9142f80`
 Keep stale and cell-tower fixes off recording routes and stamp each sample with elapsed time (#083 #028).
 
-## 2026-09-27 08:58:19 EDT — realtime-voice-sqlite-instant `2435063de5b93dd02a33e8f6c51cdf4414157e7c`
-Start interactor work only for speech addressed to it (#256).
-
-## 2026-09-27 08:50:49 EDT — realtime-voice-sqlite-instant `233799644121b9caebd6f17eb281dc7e2b42e85c`
-Write route chunks in their own transactions so a chunk can never block recording data (#083 #028).
-
-## 2026-09-27 11:09:19 EDT — realtime-voice-sqlite-instant `c241f29e5fe98e8e84a3fe2b91f585c65fb3f040`
-Change-log ledger.
-
-## 2026-09-27 11:09:18 EDT — realtime-voice-sqlite-instant `2477874337d40581310a089dd6bf5fc8b640346f`
-Release Scribe 0.1 (60).
-
-## 2026-09-27 11:04:36 EDT — realtime-voice-sqlite-instant `cf95ad4fa3fc266889f7db0d75cc3739e535d60b`
-Merge fork E's Stream Interactor into main: directed-speech trigger (2.3% false starts vs 51%), Mac worker threads, transcript cards, thread screen, taps, deep links (#256).
-
-## 2026-09-27 10:56:39 EDT — realtime-voice-sqlite-instant `9af9ee523fefcc9bff3ebb6f83b4e574bb9ebc34`
-Merge fork H's audio fixes into main: system-audio sections timed over their own audio in the recording (#142), loudspeaker routing preference and microphone level logging (#122), scripts/audio-route-ab.py.
-
-## 2026-09-27 10:49:27 EDT — realtime-voice-sqlite-instant `3867d05b307fe8d88b91d711561564d62a5c3f0d`
-PROGRESS: Scribe 0.1 (59) installed on iPhone with route maps and the permissions fix (#028 #083).
-
-## 2026-09-27 10:39:46 EDT — realtime-voice-sqlite-instant `fb4340a092db1d3553060fce5ba53101da7c92d8`
-Change-log ledger.
-
-## 2026-09-27 10:39:46 EDT — realtime-voice-sqlite-instant `da2cb1fdf6a338fd405aaf1fae310e1e25581fc5`
-Release Scribe 0.1 (59).
-
-## 2026-09-27 10:28:30 EDT — realtime-voice-sqlite-instant `06f5d27b62b6bfde8edc88274e68ec6c745febf3`
-Remove route-finalize-shapes.mjs, whose expectations the permissions fix inverted; route-update-shapes.mjs covers both shapes (#028 #083).
-
-## 2026-09-27 10:28:14 EDT — realtime-voice-sqlite-instant `f8f60159e72376433bcc72ae6c832225689f183d`
-Merge fork G's route maps into main: route chunks in their own transactions, elapsed-stamped capture, playback/live/recordings maps, route deep links (#028 #083).
-
-## 2026-09-27 10:27:49 EDT — realtime-voice-sqlite-instant `f0be586fc1989aa84dee786029d10ecc030537ce`
-Change-log ledger.
-
-## 2026-09-27 10:27:35 EDT — realtime-voice-sqlite-instant `ad37dd61b17044a9f95e53b2afda278e80a0c762`
-Production route chunk rule accepts re-sent identity fields and the same-recording link, so build 58 recordings with a route keep their final summary; pushed to production, drift check matches; route-update-shapes 10/10, app-write-shapes 14/14 (#028 #083).
-
-## 2026-09-27 10:01:31 EDT — realtime-voice-sqlite-instant `c5dcba4939f9f2c56fc7f9a48d437ffa92bae392`
-Change-log ledger.
-
-## 2026-09-27 10:01:30 EDT — realtime-voice-sqlite-instant `2ca1ed194a9957791756e26409506dc2da1fe377`
-Scribe pins Instant 1.7.0 and the installer expects it; v1.7.0 sources equal 2f55c81b, which Scribe 0.1 (58) embeds (#250 #254 #155). Scribe main fast-forwarded to c5dcba49.
-
 ## 2026-09-27 09:09:12 EDT — instant-data-swift `252bb6cd79ed6fa6b966de29a770e204598cbc0a`
 Release commit for v1.7.0 (change log, audit ledger, PROGRESS); tagged v1.7.0 and published, main fast-forwarded (#250 #254 #155).
 
@@ -96,6 +90,12 @@ Release document for v1.7.0: payload-order JSON decode, one schema resolution pe
 
 ## 2026-09-27 09:07:37 EDT — realtime-voice-sqlite-instant `319ce767bfd0b34dbfe9a7dcb37ab4ad9459e1d4`
 PROGRESS: Scribe 0.1 (58) iPhone install on the merged library (#247 #252 #224 #250 #257).
+
+## 2026-09-27 08:58:19 EDT — realtime-voice-sqlite-instant `2435063de5b93dd02a33e8f6c51cdf4414157e7c`
+Start interactor work only for speech addressed to it (#256).
+
+## 2026-09-27 08:50:49 EDT — realtime-voice-sqlite-instant `233799644121b9caebd6f17eb281dc7e2b42e85c`
+Write route chunks in their own transactions so a chunk can never block recording data (#083 #028).
 
 ## 2026-09-27 08:23:44 EDT — realtime-voice-sqlite-instant `c1c7b6e578bcea2bc96cbe5e6dc8f927c37bce08`
 Change-log ledger.
@@ -151,6 +151,9 @@ Log redactor skips the regex for values without ':' or '='; 21.9 -> 2.5 us per e
 ## 2026-09-27 01:27:05 EDT — realtime-voice-sqlite-instant `0a3b8b4b8acb46c86ed81b8bdcbd70979107481a`
 Claims for the next change (coordination protocol).
 
+## 2026-09-27 00:51:27 EDT — realtime-voice-sqlite-instant `99a6e5ae2d3bd09a375adf428ca6eae8fd83e658`
+Mac CPU regression harness (scripts/perf) and performance-budget reference numbers from the audit's paired soaks (#250). Branch agent/claude-opus-5.5/perf-audit-2026-09-26.
+
 ## 2026-09-27 00:46:15 EDT — realtime-voice-sqlite-instant `5ea26b81d260ef5a0f1a584d6efe073f4be8a0d2`
 Claims for the next change (coordination protocol).
 
@@ -162,6 +165,15 @@ Recorder test guard: thread assertions apply only when TestStore's main serial e
 
 ## 2026-09-27 00:39:55 EDT — realtime-voice-sqlite-instant `1abf3e0d491d6aa133e5cffc73cc8644dbe17ba1`
 Journal rows kept in a read-only map of the file after load, compaction, and every 256 KiB of appends; MallocStackLogging: 6.46 MB live heap -> 0.54 MB for 4,000 rows (#252 #044).
+
+## 2026-09-27 00:20:42 EDT — realtime-voice-sqlite-instant `2ed42916dd301acf7ce087e1d96ee2694be45ba6`
+Read transcript row values once per pass instead of per row through the scoped store (#250 #044). Branch agent/claude-opus-5.5/perf-audit-2026-09-26.
+
+## 2026-09-27 00:20:32 EDT — instant-data-swift `e3cf7c01a1fc5f64753ef0d857e851140c67a39d`
+Decode server JSON without throwing an error per string; ABBA thread CPU 513 -> 225 ms per 40 refresh decodes (#250 #155). Branch agent/claude-opus-5.5/perf-audit-2026-09-26.
+
+## 2026-09-26 23:58:30 EDT — instant-data-swift `cb6e9e45ed4cd826a4ed33af977ddaf8924b53de`
+Cap the diagnostics file at 16 MiB by default and keep one previous file; a writer on a just-rotated file reopens instead of rotating again (#254). Needs a library release before Scribe (pinned 1.6.0) picks it up.
 
 ## 2026-09-26 23:48:59 EDT — realtime-voice-sqlite-instant `5afb78fca3ea92ebc1ddd931a92744120b3444d3`
 Change-log ledger.
@@ -178,14 +190,14 @@ Change-log ledger.
 ## 2026-09-26 23:41:43 EDT — realtime-voice-sqlite-instant `cda248bf77adde7b1fabd832582ac052c783ba36`
 One first-sample region breakdown per process (trigger shared across sampling-task restarts); dylib __DATA split from VM_ALLOCATE; pull script reads the library's previous log file (#252 #044).
 
-## 2026-09-26 23:58:30 EDT — instant-data-swift `cb6e9e45ed4cd826a4ed33af977ddaf8924b53de`
-Cap the diagnostics file at 16 MiB by default and keep one previous file; a writer on a just-rotated file reopens instead of rotating again (#254). Needs a library release before Scribe (pinned 1.6.0) picks it up.
-
 ## 2026-09-26 23:31:55 EDT — realtime-voice-sqlite-instant `d0c3fbbc740613df6557070b2240467e885327fe`
 Change-log ledger for the launch watchdog fix and the memory diagnostics (#252 #044).
 
 ## 2026-09-26 23:31:34 EDT — realtime-voice-sqlite-instant `36af3ae1286554b1fc6589cdb9a5ad7d4d3c31fd`
 Record where memory lives: kernel ledgers (graphics, media, neural, purgeable, compressed, headroom) on every memory sample, VM region breakdowns on thresholds and jumps, and samples every 30 s while recording in the background with feature context (#252 #044).
+
+## 2026-09-26 23:31:28 EDT — instant-data-swift `87b7687dcbf34103def0fcca51fb9bbbcd07967a`
+Record repeating infinite-query snapshots only when they change; 97.8% / 79.7% of two per-refresh events were exact repeats on the phone (#250 #155). Branch agent/claude-opus-5.5/perf-audit-2026-09-26.
 
 ## 2026-09-26 23:31:01 EDT — realtime-voice-sqlite-instant `4e4d9908f4a54473f31137a3a36598822157a272`
 Stop resolving the host name in App.init: ProcessInfo.hostName blocked a first launch for 20 s and iOS killed the app (0x8BADF00D); local device name plus an architecture test (#252 #044).
@@ -195,21 +207,6 @@ Change-log ledger for the device diagnostics pull (#044).
 
 ## 2026-09-26 23:22:57 EDT — realtime-voice-sqlite-instant `db51b89467084adaa388855b48a705462b051394`
 scripts/pull-device-diagnostics.py pulls on-device diagnostics after the fact and writes a Markdown/JSON report; skill scribe-device-diagnostics, referenced from scribe-install (#044).
-
-## 2026-09-26 22:33:35 EDT — realtime-voice-sqlite-instant `06988a4c36c03451ec343fae0d4df7c08b5f21bc`
-Plan-only commit: memory audit and after-the-fact device diagnostics, with _touching claims (#044).
-
-## 2026-09-27 00:51:27 EDT — realtime-voice-sqlite-instant `99a6e5ae2d3bd09a375adf428ca6eae8fd83e658`
-Mac CPU regression harness (scripts/perf) and performance-budget reference numbers from the audit's paired soaks (#250). Branch agent/claude-opus-5.5/perf-audit-2026-09-26.
-
-## 2026-09-27 00:20:42 EDT — realtime-voice-sqlite-instant `2ed42916dd301acf7ce087e1d96ee2694be45ba6`
-Read transcript row values once per pass instead of per row through the scoped store (#250 #044). Branch agent/claude-opus-5.5/perf-audit-2026-09-26.
-
-## 2026-09-27 00:20:32 EDT — instant-data-swift `e3cf7c01a1fc5f64753ef0d857e851140c67a39d`
-Decode server JSON without throwing an error per string; ABBA thread CPU 513 -> 225 ms per 40 refresh decodes (#250 #155). Branch agent/claude-opus-5.5/perf-audit-2026-09-26.
-
-## 2026-09-26 23:31:28 EDT — instant-data-swift `87b7687dcbf34103def0fcca51fb9bbbcd07967a`
-Record repeating infinite-query snapshots only when they change; 97.8% / 79.7% of two per-refresh events were exact repeats on the phone (#250 #155). Branch agent/claude-opus-5.5/perf-audit-2026-09-26.
 
 ## 2026-09-26 23:13:13 EDT — realtime-voice-sqlite-instant `d2e6fbc69a2f5dec5ffbc28d7f0d23a102222577`
 Render the recording timeline once per mutation, not per internal write; ABBA thread CPU (debug) 300 live partials on a full window 1,020 -> 199 ms (#250 #044). Branch agent/claude-opus-5.5/perf-audit-2026-09-26, not on main.
@@ -222,6 +219,9 @@ Plan-only commit: performance and concurrency audit, Scribe side, with _touching
 
 ## 2026-09-26 22:58:49 EDT — instant-data-swift `fc1134fd6be928f3e327f2a47989be3d2735b60e`
 Plan-only commit: performance and concurrency audit, library side, with _touching claims (#250).
+
+## 2026-09-26 22:33:35 EDT — realtime-voice-sqlite-instant `06988a4c36c03451ec343fae0d4df7c08b5f21bc`
+Plan-only commit: memory audit and after-the-fact device diagnostics, with _touching claims (#044).
 
 ## 2026-09-26 21:10:38 EDT — realtime-voice-sqlite-instant `b2a8614ead7ec79f20977e775ac3057235b8c2bf`
 PROGRESS: Scribe 0.1 (57) installed and running on Michael's iPhone from clean cc684872 with instant-data-swift 1.6.0 (#247 #044).
