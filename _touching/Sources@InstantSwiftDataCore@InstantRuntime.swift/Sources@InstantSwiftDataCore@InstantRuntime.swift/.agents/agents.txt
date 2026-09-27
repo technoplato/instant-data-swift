@@ -40,3 +40,4 @@ codex-desktop/01a00071-f1c1-7193-adcd-3bc9f30b5f95/root/mac_segment_gap 2026-08-
 claude-opus-5.5 2026-09-26T18:02:58-0400 mower plan=2026-09-26-write-scope-release #044 #155
 claude-opus-5.5 2026-09-26T22:58:48-0400 mower plan=2026-09-26-perf-concurrency-audit #250 #155
 claude-opus-5.5-triage-b 2026-09-27T14:01:57-0400 grower plan=2026-09-27-deferred-hydration-progress #259 #274
+claude-opus-5.5-triage-l 2026-09-27T20:23:23Z mower plan=2026-09-27-triage-l-operation-gate #277 #278
