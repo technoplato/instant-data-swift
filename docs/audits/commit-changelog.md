@@ -1,3 +1,21 @@
+## 2026-09-26 23:31:55 EDT — realtime-voice-sqlite-instant `d0c3fbbc740613df6557070b2240467e885327fe`
+Change-log ledger for the launch watchdog fix and the memory diagnostics (#252 #044).
+
+## 2026-09-26 23:31:34 EDT — realtime-voice-sqlite-instant `36af3ae1286554b1fc6589cdb9a5ad7d4d3c31fd`
+Record where memory lives: kernel ledgers (graphics, media, neural, purgeable, compressed, headroom) on every memory sample, VM region breakdowns on thresholds and jumps, and samples every 30 s while recording in the background with feature context (#252 #044).
+
+## 2026-09-26 23:31:01 EDT — realtime-voice-sqlite-instant `4e4d9908f4a54473f31137a3a36598822157a272`
+Stop resolving the host name in App.init: ProcessInfo.hostName blocked a first launch for 20 s and iOS killed the app (0x8BADF00D); local device name plus an architecture test (#252 #044).
+
+## 2026-09-26 23:23:17 EDT — realtime-voice-sqlite-instant `1a9392ddbc05d4e3441edff89ca5257cb18999cd`
+Change-log ledger for the device diagnostics pull (#044).
+
+## 2026-09-26 23:22:57 EDT — realtime-voice-sqlite-instant `db51b89467084adaa388855b48a705462b051394`
+scripts/pull-device-diagnostics.py pulls on-device diagnostics after the fact and writes a Markdown/JSON report; skill scribe-device-diagnostics, referenced from scribe-install (#044).
+
+## 2026-09-26 22:33:35 EDT — realtime-voice-sqlite-instant `06988a4c36c03451ec343fae0d4df7c08b5f21bc`
+Plan-only commit: memory audit and after-the-fact device diagnostics, with _touching claims (#044).
+
 ## 2026-09-26 21:10:38 EDT — realtime-voice-sqlite-instant `b2a8614ead7ec79f20977e775ac3057235b8c2bf`
 PROGRESS: Scribe 0.1 (57) installed and running on Michael's iPhone from clean cc684872 with instant-data-swift 1.6.0 (#247 #044).
 
