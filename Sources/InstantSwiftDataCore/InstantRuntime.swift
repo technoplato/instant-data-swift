@@ -326,6 +326,10 @@ public struct InstantRuntimeConfiguration: Sendable {
     (@Sendable (_ valueCount: Int) async throws -> Void)? = nil
   package var onLiveInfiniteQueryDeferredHydrationAcquiredForTesting:
     (@Sendable (_ valueCount: Int) async -> Void)? = nil
+  /// Runs before a query observation hydrates deferred values for one emission, with that
+  /// emission's sequence. Tests land a write here to make the emission stale.
+  package var onDeferredQueryEmissionHydrationStartingForTesting:
+    (@Sendable (_ sequence: Int64) async -> Void)? = nil
   package var liveInfiniteQueryRetirementWatchdogSleep:
     @Sendable (UInt64) async throws -> Void = instantLiveDefaultTimeoutSleep
   package var onLiveInfiniteQueryRetirementCleanupStartedForTesting:
@@ -4237,6 +4241,9 @@ public final class InstantRuntime: Sendable {
       do {
         for await emission in stream {
           try Task.checkCancellation()
+          await self.configuration.onDeferredQueryEmissionHydrationStartingForTesting?(
+            emission.sequence
+          )
           guard
             let hydrated = try await self.hydrateDeferredValuesIfCurrent(
               in: emission,
@@ -4366,6 +4373,19 @@ public final class InstantRuntime: Sendable {
     )
   }
 
+  /// Whether a query emission can be hydrated as the query's current result. Call inside the
+  /// operation gate, so no write can land between this check and the SQLite read.
+  ///
+  /// Checking the global sequence alone stranded observations: a write to an unrelated namespace
+  /// advances it without refreshing this query, so the emission was dropped and no newer one ever
+  /// came (Scribe: a timeline stuck on "Loading saved transcript…", a finished recording with no
+  /// words). An emission is stale only when its query was refreshed after it; that refresh queued
+  /// the newer emission, so dropping this one also never pairs old metadata with newer payloads.
+  private func isStillCurrent(queryID: String, emittedAt sequence: Int64) async -> Bool {
+    guard await store.currentSequence() != sequence else { return true }
+    return await !store.wasRefreshed(queryID: queryID, after: sequence)
+  }
+
   private func hydrateDeferredValuesIfCurrent(
     in emission: InstantQueryEmission,
     plan: InstantQueryPlan,
@@ -4379,7 +4399,9 @@ public final class InstantRuntime: Sendable {
       operation: "hydrate deferred query emission"
     )
     do {
-      guard await store.currentSequence() == emission.sequence else {
+      guard
+        await isStillCurrent(queryID: emission.queryID, emittedAt: emission.sequence)
+      else {
         await leaveOperationGate()
         return nil
       }
@@ -4410,7 +4432,7 @@ public final class InstantRuntime: Sendable {
       operation: "hydrate deferred infinite query snapshot"
     )
     do {
-      guard await store.currentSequence() == snapshot.sequence else {
+      guard await isStillCurrent(queryID: snapshot.queryID, emittedAt: snapshot.sequence) else {
         await leaveOperationGate()
         return nil
       }

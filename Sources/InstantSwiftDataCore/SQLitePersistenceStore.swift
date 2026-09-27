@@ -7752,6 +7752,28 @@ public actor SQLitePersistenceStore {
     )
   }
 
+  /// Deletes the deferred payload rows of entities that no longer exist in the store.
+  private func deleteDeferredValuesWithoutTransaction(entityIDs: Set<String>) throws {
+    let attributeIDs = deferredValueResidency.attributeIDs.sorted()
+    guard !attributeIDs.isEmpty else { return }
+    let sortedEntityIDs = entityIDs.sorted()
+    let attributePlaceholders = Array(repeating: "?", count: attributeIDs.count)
+      .joined(separator: ", ")
+    // Stay well under SQLite's bound-parameter limit.
+    for start in stride(from: 0, to: sortedEntityIDs.count, by: 500) {
+      let batch = Array(sortedEntityIDs[start..<min(start + 500, sortedEntityIDs.count)])
+      let entityPlaceholders = Array(repeating: "?", count: batch.count).joined(separator: ", ")
+      try execute(
+        """
+        DELETE FROM instant_triples
+        WHERE attribute_id IN (\(attributePlaceholders))
+          AND entity_id IN (\(entityPlaceholders))
+        """,
+        attributeIDs.map(SQLiteBinding.text) + batch.map(SQLiteBinding.text)
+      )
+    }
+  }
+
   private func loadStoreSnapshotWithoutTransaction(
     tracesStartupCollections: Bool = true
   ) throws -> InstantStoreSnapshot {
@@ -9001,6 +9023,22 @@ public actor SQLitePersistenceStore {
         else { continue }
         orphanedIdentities.insert(identity)
       }
+      // Collect whole entities only. An entity that still has a fact no remaining result owns
+      // (typically one this device wrote that the pruned query never selected) is local data;
+      // removing just the pruned query's facts left rows with `text` but no `recordingID`, which
+      // no relationship or filter can reach again (#259).
+      let candidateEntityIDs = Set(orphanedIdentities.map(\.entityID))
+      var retainedEntityIDs: Set<String> = []
+      for triple in snapshot.store.triples
+      where candidateEntityIDs.contains(triple.entityID)
+        && !orphanedIdentities.contains(InstantLiveTripleIdentity(triple))
+      {
+        retainedEntityIDs.insert(triple.entityID)
+      }
+      orphanedIdentities = orphanedIdentities.filter {
+        !retainedEntityIDs.contains($0.entityID)
+      }
+      let removedEntityIDs = candidateEntityIDs.subtracting(retainedEntityIDs)
       snapshot.store.triples.removeAll {
         orphanedIdentities.contains(InstantLiveTripleIdentity($0))
       }
@@ -9009,6 +9047,10 @@ public actor SQLitePersistenceStore {
           from: previousStore,
           to: snapshot.store
         )
+      }
+      // Deferred payloads never enter the store snapshot, so the diff above cannot delete them.
+      if deferredValueResidency.isEnabled, !removedEntityIDs.isEmpty {
+        try deleteDeferredValuesWithoutTransaction(entityIDs: removedEntityIDs)
       }
       let nextStoreRevision = if orphanedIdentities.isEmpty {
         storeRevision
