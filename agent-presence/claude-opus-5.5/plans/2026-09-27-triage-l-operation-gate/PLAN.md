@@ -19,3 +19,8 @@ offline. The server-apply phases under the gate are not logged, so the slow phas
 
 Touches: Sources/InstantSwiftDataCore/AsyncSerialGate.swift, InstantRuntime.swift (server apply),
 SQLitePersistenceStore.swift (if the commit or row decode changes), new tests.
+
+#278 also touches: Sources/InstantSwiftData/InstantRowQuarantine.swift (new), InstantSwiftData.swift and
+InstantTypedAPI.swift (typed reads decode through the quarantine), InstantSwiftDataCore/InstantParityCoverage.swift
+(the SQLiteData fetchFailure record), SQLitePersistenceStore.swift (migration 0024: one-time removal of entities
+that lost their id fact), Tests/InstantSwiftDataTests/TypedAPITests.swift, and new tests.
