@@ -1,3 +1,12 @@
+## 2026-09-27 10:01:31 EDT — realtime-voice-sqlite-instant `c5dcba4939f9f2c56fc7f9a48d437ffa92bae392`
+Change-log ledger.
+
+## 2026-09-27 10:01:30 EDT — realtime-voice-sqlite-instant `2ca1ed194a9957791756e26409506dc2da1fe377`
+Scribe pins Instant 1.7.0 and the installer expects it; v1.7.0 sources equal 2f55c81b, which Scribe 0.1 (58) embeds (#250 #254 #155). Scribe main fast-forwarded to c5dcba49.
+
+## 2026-09-27 09:09:12 EDT — instant-data-swift `252bb6cd79ed6fa6b966de29a770e204598cbc0a`
+Release commit for v1.7.0 (change log, audit ledger, PROGRESS); tagged v1.7.0 and published, main fast-forwarded (#250 #254 #155).
+
 ## 2026-09-27 09:08:40 EDT — instant-data-swift `18831d088dbb50cfc7e6950c47fe8d7e5d40d1d0`
 Release document for v1.7.0: payload-order JSON decode, one schema resolution per refresh, copy-free result sort, change-only snapshots, 16 MiB diagnostics file cap (#250 #254 #155).
 

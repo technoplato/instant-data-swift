@@ -1,3 +1,18 @@
+## 2026-09-27 10:05:00 EDT — v1.7.0 published; Scribe main pins it (#250 #254 #155)
+
+- **Published:** tag `v1.7.0` on `main` `252bb6cd` (fast-forward from `c5974110`), GitHub release
+  https://github.com/technoplato/instant-data-swift/releases/tag/v1.7.0, by direct maintainer
+  authorization (home runner offline; gate run locally).
+- **Gate (`validation/results/performance-gate-20260927T130928Z`):** DomainAEV 7.8 MiB pass; macro
+  28/28; TypeScript contracts; Scribe-shaped memory soak pass (`INSTANT_SWIFT_DATA_LIVE_AUTH_SOAK=0`);
+  wire correctness on a temporary getadb app ts->swift 185/185 writes, 2,220 words; swift->ts
+  150/150, 1,800; zero lost/duplicate/reordered. Release suite: 2 of 1,775 failed under load and pass
+  alone (5/5 each; InstantLiveTransportTests 110/110 twice serially). Cross-SDK core failed policy
+  on a host at load 45–110; ABBA vs a `git archive` v1.6.0 build, 20 runs per arm: core p50
+  0.97–1.02, runtime p50 0.99–1.01, so the TypeScript misses predate this release.
+- **Scribe:** `main` fast-forwarded to `c5dcba49` (pin `exact: "1.7.0"`, installer expects 1.7.0).
+  v1.7.0 sources equal `2f55c81b`, which the installed Scribe 0.1 (58) embeds.
+
 ## 2026-09-27 09:12:00 EDT — v1.7.0 release candidate; integration branch installed in Scribe 0.1 (58) (#250 #254 #155)
 
 - **Branch:** `agent/claude-opus-5.5/integration-2026-09-27` (pushed; not on `main` yet) = `main`
