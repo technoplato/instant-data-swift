@@ -2003,6 +2003,11 @@ public actor SQLitePersistenceStore {
         )
       }
     }
+    try withSQLiteBusyRetry {
+      try migrate(name: "0024_remove_entities_missing_their_id_fact") {
+        try removeEntitiesMissingTheirIDFactWithoutTransaction()
+      }
+    }
     // Test fixtures and app-owned restores can reconstruct `instant_outbox`
     // while retaining newer migration ledger rows. Reassert this column-free
     // index so the body-free blocker query never falls back to a scan/sort.
@@ -10130,6 +10135,90 @@ public actor SQLitePersistenceStore {
         [.text(name), .int(Self.nowMilliseconds())]
       )
     }
+  }
+
+  /// One-time repair for stores that live-query pruning damaged before it collected whole
+  /// entities (#259, #278).
+  ///
+  /// Pruning used to delete some of an entity's facts and keep the rest. One iPhone kept 1,067
+  /// transcription segments with a few facts (usually `text` and `wordsJSON`) but without `id`,
+  /// `recordingID`, or `segmentIndex`: no relationship or filter could reach them, and a query that
+  /// met one failed to decode it. The
+  /// Instant server sends an entity's `id` fact with every selection (`instaql.clj`
+  /// `etype-attr-ids`: "Make sure we give them the id or else the client won't be able to find the
+  /// entity"), and typed writes always write it, so facts without their entity's `id` fact are what
+  /// that bug left. Removing them lets the server deliver those entities whole again. Entities a
+  /// pending mutation touches are kept, and a store that has never synced is left alone.
+  private func removeEntitiesMissingTheirIDFactWithoutTransaction() throws {
+    let hasSynced = try selectInt64(
+      """
+      SELECT EXISTS (
+        SELECT 1 FROM instant_sync_metadata
+        WHERE instr(key, 'sync.processed_transaction_id:') = 1
+      )
+      """
+    )
+    guard hasSynced == 1 else { return }
+    try execute("DROP TABLE IF EXISTS temp.instant_repair_entities")
+    try execute(
+      "CREATE TEMP TABLE instant_repair_entities (entity_id TEXT PRIMARY KEY NOT NULL) WITHOUT ROWID"
+    )
+    defer { try? execute("DROP TABLE IF EXISTS temp.instant_repair_entities") }
+    try execute(
+      """
+      INSERT INTO temp.instant_repair_entities (entity_id)
+      SELECT entity_id FROM instant_triples
+      WHERE instr(attribute_id, '/') > 1
+        AND entity_id NOT IN (SELECT entity_id FROM instant_outbox_effect_entities)
+      GROUP BY entity_id
+      HAVING max(substr(attribute_id, -3) = '/id') = 0
+      """
+    )
+    let entityCount = try selectInt64("SELECT count(*) FROM temp.instant_repair_entities")
+    guard entityCount > 0 else { return }
+    let namespaceCounts = try selectStrings(
+      """
+      SELECT namespace || ':' || count(*) FROM (
+        SELECT DISTINCT entity_id, substr(attribute_id, 1, instr(attribute_id, '/') - 1) AS namespace
+        FROM instant_triples
+        WHERE entity_id IN (SELECT entity_id FROM temp.instant_repair_entities)
+          AND instr(attribute_id, '/') > 1
+      )
+      GROUP BY namespace
+      ORDER BY count(*) DESC, namespace
+      """
+    )
+    let sampleEntityIDs = try selectStrings(
+      "SELECT entity_id FROM temp.instant_repair_entities ORDER BY entity_id LIMIT 5"
+    )
+    try execute(
+      "DELETE FROM instant_triples WHERE entity_id IN (SELECT entity_id FROM temp.instant_repair_entities)"
+    )
+    let factCount = try selectInt64("SELECT changes()")
+    try execute(
+      """
+      DELETE FROM instant_live_query_triples
+      WHERE entity_id IN (SELECT entity_id FROM temp.instant_repair_entities)
+      """
+    )
+    _ = try bumpMetadataRevisionWithoutTransaction(Self.storeRevisionKey)
+    _ = try bumpMetadataRevisionWithoutTransaction(Self.queryResultRevisionKey)
+    InstantDiagnostics.shared.record(
+      .warning,
+      subsystem: "instant-swift-data-core",
+      category: "persistence",
+      event: "sqlite.repair.entities-missing-id-removed",
+      message: """
+        Removed \(entityCount) local entities whose facts had lost their entity's id fact; the \
+        server delivers them again when a query needs them.
+        """,
+      metadata: [
+        "entityCount": String(entityCount),
+        "factCount": String(factCount),
+        "namespaces": namespaceCounts.joined(separator: ","),
+        "sampleEntityIDs": sampleEntityIDs.joined(separator: ","),
+      ]
+    )
   }
 
   /// Grandfathers only receipt shapes that deployed Runtime versions could
