@@ -10,6 +10,37 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## September 27th, 2026 at 12:23:28 a.m. EDT — `e3cf7c01a1fc` Decode server JSON without throwing an error per string (#250 #155)
+
+- **Implementation commit:** `e3cf7c01a1fc5f64753ef0d857e851140c67a39d`
+- **Change:** Decode server JSON without throwing an error per string (#250 #155)
+- **Details:**
+  - Profile: 625 ms per 30 s decoding server messages, 246 ms building coding paths for thrown errors.
+  - Order String, Double, array, object, Bool; result identical (independent-parse test). ABBA thread CPU 513 -> 225 ms per 40 decodes of an 18 KB refresh.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantLiveTransport.swift` — Decode attempts in payload frequency order.
+  - `Tests/InstantSwiftDataCoreTests/InstantLiveJSONValueDecodeCostTests.swift` — Equivalence and cost benchmark.
+- **User context (verbatim):**
+  > please do a complete audit on this entire applications structure as well as the library. And if there's anywhere else that there's just not performance, please let me know.
+- **SpecStory:** unavailable — Claude Code CLI session; no SpecStory capture for this task
+
+## September 27th, 2026 at 12:23:28 a.m. EDT — `87b7687dcbf3` Record repeating infinite-query snapshots only when they change (#250 #155)
+
+- **Implementation commit:** `87b7687dcbf34103def0fcca51fb9bbbcd07967a`
+- **Change:** Record repeating infinite-query snapshots only when they change (#250 #155)
+- **Details:**
+  - Phone (2026-09-26): 97.8% of infinite.starter.snapshot and 79.7% of infinite.remote-page-info.decoded events were exact repeats.
+  - New record overload with a required changeKey records only transitions; original signature unchanged.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantDiagnostics.swift` — changeKey overload with a bounded last-metadata memo under the existing lock.
+  - `Sources/InstantSwiftDataCore/InstantInfiniteQueryDiagnostics.swift` — Forwards changeKey.
+  - `Sources/InstantSwiftDataCore/InstantInfiniteQuery.swift` — Starter snapshots keyed by plan.
+  - `Sources/InstantSwiftDataCore/InstantLiveRefreshApplication.swift` — Page-info events keyed by query registration key.
+  - `Tests/InstantSwiftDataCoreTests/InstantDiagnosticsTests.swift` — Keyed snapshots collapse to transitions.
+- **User context (verbatim):**
+  > please do a complete audit on this entire applications structure as well as the library. And if there's anywhere else that there's just not performance, please let me know.
+- **SpecStory:** unavailable — Claude Code CLI session; no SpecStory capture for this task
+
 ## September 26th, 2026 at 11:14:24 p.m. EDT — `44b176a492b5` Resolve the schema once per live refresh and sort persisted results without string copies (#250 #155)
 
 - **Implementation commit:** `44b176a492b5d883fb58c6bf29287b689354ebb5`
