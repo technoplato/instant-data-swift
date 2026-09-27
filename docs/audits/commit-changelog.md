@@ -1,3 +1,18 @@
+## 2026-09-27 17:37:07 EDT — instant-data-swift `2fced8d1930cb26334ce4581ce14ea94188a01c2`
+Migration 0024 drops, once, local entities that lost their id fact to partial pruning (1,067 sections on the iPhone, nothing else), keeping pending ones and never-synced stores, so the server delivers them whole (#278).
+
+## 2026-09-27 17:36:38 EDT — instant-data-swift `246e191d556dd5f873a678eeb019e318dd26a202`
+Typed reads leave out and report (reportIssue plus query.row-decode-quarantined) a row that fails to decode instead of failing the whole query; one damaged section had failed recording 008's playback detail (#278).
+
+## 2026-09-27 17:32:08 EDT — instant-data-swift `cd19ba2f59ca890f6ca8b0900ec6bfd84c75e11c`
+Claims for triage L's row quarantine: typed read paths, the SQLiteData parity record, and TypedAPITests (#278).
+
+## 2026-09-27 17:19:54 EDT — instant-data-swift `8c66edca71fa7d8eb0be03ccc718b00f7d06d2cc`
+Merge the triage integration branch's audit ledger (355f6629) into triage L.
+
+## 2026-09-27 16:58:17 EDT — instant-data-swift `e08c0327dcb2db442fbe14b482f885cdc9646898`
+Change-log ledger.
+
 ## 2026-09-27 16:57:42 EDT — instant-data-swift `af3c05849c4ad07b812a8f56abed07dbf757b1cb`
 Local writes no longer wait behind server apply: breadth-first component closure and an uncorrelated outbox rewrite cut the operation gate hold during server apply from 23.5 s to 570 ms at 2,000 pending (969 -> 207 ms at 439); the gate names its holder's phase and reports long waits (#277).
 

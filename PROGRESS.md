@@ -1,3 +1,28 @@
+## 2026-09-27 17:40:00 EDT — Triage L: server apply no longer holds local writes; bad rows quarantined (#277 #278)
+
+- **Branch:** `agent/claude-opus-5.5/triage-l-operation-gate-2026-09-27` (pushed; not on `main`), built
+  on `agent/claude-opus-5.5/triage-integration-2026-09-27` and merged with its head `355f6629`. Main
+  integrates; nothing published.
+- **#277 (`af3c0584`):** under the operation gate, server apply's plan commit was quadratic in the pending
+  tail linked to one recording (component closure re-join; outbox rewrite correlated through
+  `outbox.json`). Breadth-first closure plus an uncorrelated rewrite: gate held 969 -> 207 ms at 439
+  pending, 23,479 -> 570 ms at 2,000. New `serial-gate.waited` and `server-apply.operation-gate-held`
+  diagnostics; the stall report names the holder's phase.
+- **#278 (`246e191d`, `2fced8d1`):** typed reads leave out and report a row that fails to decode
+  (`reportIssue` plus `query.row-decode-quarantined`) instead of failing the whole query; new public
+  `decodeQuarantiningFailures(_:operation:)`. Migration 0024 drops, once, local entities that lost
+  their id fact (1,067 sections on the iPhone copy, nothing else; bootstrap 0.25 s).
+- **Evidence:** red/green tests for both; focused suites pass; full debug suite failures all match the
+  known lists or pass alone (load average 50–120); Scribe-shaped memory soak passed with
+  `INSTANT_SWIFT_DATA_LIVE_AUTH_SOAK=0`. The release performance gate was not run (full release
+  rebuild on a loaded shared Mac).
+- **Next:** main merges the branch and installs; then check the phone's diagnostics for
+  `server-apply.operation-gate-held`, `serial-gate.waited`, `query.row-decode-quarantined`, and one
+  `sqlite.repair.entities-missing-id-removed`. Open: server-apply preparation (outside the gate) is
+  still superlinear (~10.5 s apply at 2,000 pending); recording 008's sections are not in the phone's
+  store at all offline (235 of 237), so showing them offline needs a retention decision.
+- Report: `/Users/laptop/Sync/audit/scribe-triage-2026-09-27/L-operation-gate.md`.
+
 ## 2026-09-27 10:05:00 EDT — v1.7.0 published; Scribe main pins it (#250 #254 #155)
 
 - **Published:** tag `v1.7.0` on `main` `252bb6cd` (fast-forward from `c5974110`), GitHub release

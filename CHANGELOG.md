@@ -10,6 +10,42 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## September 27th, 2026 at 5:37:29 p.m. EDT — `2fced8d1930c` Drop local entities that lost their id fact once, so the server delivers them whole (#278)
+
+- **Implementation commit:** `2fced8d1930cb26334ce4581ce14ea94188a01c2`
+- **Change:** Stores damaged by partial pruning drop their entities that lost the id fact, once, so the server delivers them whole (#278).
+- **Details:**
+  - Evidence: the 2026-09-27 iPhone store holds 1,067 transcriptionSegments with facts but no id fact; every other entity in every namespace has its id fact and no pending mutation touches any of the 1,067. The Instant server sends the id fact with every selection (instaql.clj etype-attr-ids) and typed writes always write it.
+  - Migration 0024 removes every entity with facts but no <namespace>/id fact, keeping entities a pending mutation touches and skipping stores that never synced; drops their live-query ownership rows, bumps the store and query-result revisions, and records sqlite.repair.entities-missing-id-removed. Refreshes insert every result triple, so the rows come back when a query needs them.
+  - On a copy of the phone's store: removed exactly 1,067 entities (6,172 facts), all transcriptionSegments; every remaining entity has its id fact; outbox untouched; whole bootstrap 0.25 s. InstantPartialEntityRepairTests fails 3 ways with the repair disabled and passes with it.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — migration 0024 one-time removal of entities missing their id fact
+  - `Tests/InstantSwiftDataCoreTests/InstantPartialEntityRepairTests.swift` — synced store drops the id-less entity no mutation touches; never-synced store keeps everything
+- **User context (verbatim):**
+  > It was the transcription text that wasn't showing in a freshly recorded thing.
+- **SpecStory:** unavailable — Claude Code CLI session (triage agent L); no SpecStory capture configured.
+
+## September 27th, 2026 at 5:37:29 p.m. EDT — `246e191d556d` Leave a row that fails to decode out of a query instead of failing the whole query (#278)
+
+- **Implementation commit:** `246e191d556dd5f873a678eeb019e318dd26a202`
+- **Change:** A row that fails to decode is left out of a typed read and reported, instead of failing the whole query (#278).
+- **Details:**
+  - Evidence: at 13:41:31 on 2026-09-27 the iPhone's playback detail fetch failed with "Expected number for selected Instant field 'wallClockStartedAtMs'" and recording 008 showed 27 of 237 sections. Every typed read decoded with try map(init(snapshot:)), so the first bad row threw for the whole query; InstantRowQuarantineTests reproduces the phone's exact error.
+  - Typed reads decode row by row through InstantRowQuarantine: query, queryOnceDecoded, the infinite query snapshot and subscription, subscribe, FetchAll (entities and selected fields), FetchOne of an entity, and InstantFetchRequest roots and included children. Each newly failed row is reported once per read with reportIssue and an error-level query.row-decode-quarantined diagnostic. New public decodeQuarantiningFailures(_:operation:); decode(_:) still throws. FetchOne of a single selected field still fails with the decode error.
+  - Deliberately differs from SQLiteData, which fails the whole fetch (QueryCursor._element): SQLite's column constraints keep partial rows from existing, while Instant stores each field as its own fact. The sqlite.fetch-all.decode-failure parity record now names fetchAllLoadLeavesOutAMalformedRowAndReportsIt.
+  - Validation: new tests red before, green after; TypedAPITests' decode-error tests updated for the new contract (and the scalar selection test no longer races the post-load observation). Full suite: the only failure outside the known lists (fiftyEncodingFailuresUseBoundedRowAddressedQuarantineAndDoNotStarveTail, outbox encoding quarantine) passes alone 3/3.
+- **Files:**
+  - `Sources/InstantSwiftData/InstantRowQuarantine.swift` — row-by-row decode, once-per-read reporting, decodeQuarantiningFailures
+  - `Sources/InstantSwiftData/InstantTypedAPI.swift` — query, queryOnceDecoded, and infinite query reads decode through the quarantine
+  - `Sources/InstantSwiftData/InstantSwiftData.swift` — subscribe, selected-field FetchAll, and InstantFetchRequest children maps decode through the quarantine
+  - `Sources/InstantSwiftDataCore/InstantParityCoverage.swift` — SQLiteData fetchFailure record explains the adaptation
+  - `Tests/InstantSwiftDataTests/InstantRowQuarantineTests.swift` — one damaged row among good ones through query, a live subscribe, and a mapped fetch
+  - `Tests/InstantSwiftDataTests/TypedAPITests.swift` — FetchAll decode-error tests expect the quarantine; scalar test race fixed
+  - `skills/instant-data-modeling/SKILL.md` — fetches quarantine bad rows; keep init(snapshot:) strict
+- **User context (verbatim):**
+  > It was the transcription text that wasn't showing in a freshly recorded thing.
+- **SpecStory:** unavailable — Claude Code CLI session (triage agent L); no SpecStory capture configured.
+
 ## September 27th, 2026 at 4:58:05 p.m. EDT — `af3c05849c4a` Keep local writes from waiting behind server apply's quadratic commit (#277)
 
 - **Implementation commit:** `af3c05849c4ad07b812a8f56abed07dbf757b1cb`
