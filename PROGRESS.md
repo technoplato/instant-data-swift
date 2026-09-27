@@ -1,3 +1,21 @@
+## 2026-09-26 20:20:00 EDT — v1.6.0 published; Scribe main pins it (#044 #155)
+
+- **Release:** tag `v1.6.0` (annotated) on `a7d0eafd`, GitHub release marked Latest:
+  https://github.com/technoplato/instant-data-swift/releases/tag/v1.6.0. PR #15 merged by
+  fast-forward. Published by direct maintainer authorization (home runner offline), as v1.5.7.
+- **Gate run 2 on `a7d0eafd`:** release suite 1,764 passed (serial); macro 28/28; TS contracts;
+  DomainAEV (6.4 MiB); Scribe-shaped memory (live guest probe off: `INSTANT_SWIFT_DATA_LIVE_AUTH_SOAK=0`);
+  live wire correctness on a temporary getadb app, ts->swift 192/192 writes and swift->ts 150/150,
+  zero lost/duplicate/reordered.
+- **Open gate items:** cross-SDK core `high-bandwidth.linked-writes` 1.04-1.12x TS (new; v1.5.7 ~0.98).
+  Pre-existing on this Mac, where v1.5.7 fails the same: `storage-metadata.query` ~4x,
+  `stream-write.chunks` ~1.15x, `triple-insert.todos` ~1.05x, and all three cross-SDK runtime
+  workloads 5-7x (v1.6.0 equal or better). Compiler warning: unused `linkNamespace` (TripleIndexes).
+- **Scribe:** GitHub `main` fast-forwarded to `6d829c54` (Instant line + preview slots + #248 #249),
+  exact 1.6.0 pin, build 57, installer expects 1.6.0. SQLite kept on `backup/sqlite-data-lane`.
+- **Next:** guard the memory soak's production auto-login; consider trimming the remaining
+  small-entity write overhead (linked-writes); iPhone install of Scribe 0.1 (57) awaits device unlock.
+
 ## 2026-09-26 19:28:43 EDT — v1.6.0 release gate caught a small-entity write cost; fixed (#044 #155)
 
 - **Implementation:** `94166c5a05df475e831fbcedeff24e11d2a8c700` on `agent/claude-opus-5.5/scribe-perf-2026-09-24` (PR #15).

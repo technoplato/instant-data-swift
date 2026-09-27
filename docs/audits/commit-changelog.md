@@ -1,3 +1,21 @@
+## 2026-09-26 20:10:25 EDT — realtime-voice-sqlite-instant `6d829c54233ff0e1456f3347a034fa08ad9f8722`
+Installer expects instant-data-swift 1.6.0 (stable-deployment check); GitHub main fast-forwarded 9a7dba56 -> 6d829c54, SQLite kept on backup/sqlite-data-lane (#044 #155).
+
+## 2026-09-26 20:08:44 EDT — realtime-voice-sqlite-instant `f871e43f060ef9e3ac75b959c5ff3fa0da19f3ad`
+Change-log ledger for the 1.6.0 pin and Scribe 0.1 (57).
+
+## 2026-09-26 20:08:13 EDT — realtime-voice-sqlite-instant `baaafb580e7fdad4c385e273fc01242731e3b423`
+Pin instant-data-swift exact 1.6.0 (a7d0eafd) instead of the local path dependency; ScribeInstantStoreTests 46, ScribeRecordingLibraryMemoryTests 12, InstantRecordingWriteCoordinatorTests 12 pass against the tag (#044 #155).
+
+## 2026-09-26 20:08:13 EDT — realtime-voice-sqlite-instant `8ca78b8ede0e8fb862f9eed2705ad9d3fcfc834e`
+Release Scribe 0.1 (57): GitHub main shipped 56, the Instant merge carried 13, 57 never used.
+
+## 2026-09-26 20:08:04 EDT — realtime-voice-sqlite-instant `6bfd5c7bd5a6b9534dd11f9ae7e51855249a82c5`
+Plan-only commit: Instant 1.6.0 pin and Scribe 0.1 (57) install, with _touching claims (#044 #155).
+
+## 2026-09-26 18:07:24 EDT — realtime-voice-sqlite-instant `5bf28e38594c4cf8339f67a81b96ab7f0168ac9d`
+Merge the preview-slot list fix and library write-scope follow-ups into the Instant main candidate (GitHub main + combined + #248 #249); only CHANGELOG/PROGRESS conflicted (#044 #155).
+
 ## 2026-09-26 19:28:43 EDT — instant-data-swift `94166c5a05df475e831fbcedeff24e11d2a8c700`
 Handle new and small entities whole and capture whole delete cascades: the v1.6.0 release gate showed per-fact bookkeeping made small-entity writes 12-45% slower than 1.5.7; after the fix inserts/streams/scalar/reads are at parity, update 1.09x, delete 1.10x; rollback now restores multi-level cascade deletes (#044 #155).
 
