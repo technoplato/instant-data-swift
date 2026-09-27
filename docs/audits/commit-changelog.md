@@ -1,3 +1,30 @@
+## 2026-09-27 12:37:15 EDT — realtime-voice-sqlite-instant `f16bc252530987631e3478de3555e38c2b810e78`
+Change-log ledger.
+
+## 2026-09-27 12:37:15 EDT — realtime-voice-sqlite-instant `d719ec8b024143a5508fb875b08b4219edc0a891`
+Release Scribe 0.1 (61).
+
+## 2026-09-27 12:37:15 EDT — realtime-voice-sqlite-instant `c577c7eac0b3bcef430504fac7229489f6995c7b`
+Change-log ledger.
+
+## 2026-09-27 12:35:10 EDT — realtime-voice-sqlite-instant `f36908497ea916e745c38c3e3346b0d4cf70c3c9`
+Agent room thread-page test expects the bounded tool-call query the Stream Interactor added (limit 32) (#256).
+
+## 2026-09-27 12:14:42 EDT — realtime-voice-sqlite-instant `e89b9182f9a3198ef9cfdf64229e868b0fd3344a`
+Merge fork F's phone-to-Mac stream into main: broadcast extension encodes and streams screen with mixed system audio and mic to the Mac ingest, OBS relay goes live only once phone media arrives, LiveKit removed (#003 #224 #229 #255).
+
+## 2026-09-27 12:05:33 EDT — realtime-voice-sqlite-instant `e4e26c6402f28dfa375c4a20e2b005dc8eb04061`
+Renumber the stream decision to ADR 0009; fork E's Stream Interactor took 0008 (#003).
+
+## 2026-09-27 12:02:00 EDT — realtime-voice-sqlite-instant `b9e47fb7600dbd32334bf839b90543af4744f075`
+Refuse streams to sessions a restarted Mac forgot, and keep the ingest types building on watchOS (#003).
+
+## 2026-09-27 11:44:07 EDT — realtime-voice-sqlite-instant `67df82eda5083871595e42d17958a25d9c003309`
+Keep quiet broadcasts streaming in sync, let OBS open early, and check OBS from the harness (#003).
+
+## 2026-09-27 11:14:33 EDT — realtime-voice-sqlite-instant `4da1b812151314381d68025ea697d1812a3ce53d`
+Log Scribe 0.1 (60) with the audio fixes and the Stream Interactor in PROGRESS (#142 #122 #256).
+
 ## 2026-09-27 11:09:19 EDT — realtime-voice-sqlite-instant `c241f29e5fe98e8e84a3fe2b91f585c65fb3f040`
 Change-log ledger.
 
@@ -21,6 +48,9 @@ Keep other apps on the loudspeaker while recording, behind a preference (#122).
 
 ## 2026-09-27 10:45:21 EDT — realtime-voice-sqlite-instant `17f99e8de3248de22693d30926ef9cca50e3b49d`
 Time system-audio sections over their own audio in the recording (#142).
+
+## 2026-09-27 10:42:03 EDT — realtime-voice-sqlite-instant `72a548659fd4a6e6d0141c67247d1cb4ed3ba56b`
+Remove LiveKit from Scribe and add the Mac-side stream harness (#003).
 
 ## 2026-09-27 10:39:59 EDT — realtime-voice-sqlite-instant `e6dd18453fad37ea4428ecbf2271990eb3c6d3c7`
 Deep link to interactor threads, answers, and transcript moments (#256).
@@ -52,6 +82,9 @@ Keep route taps off tvOS and add the finalize-shape permissions regression (#028
 ## 2026-09-27 10:10:10 EDT — realtime-voice-sqlite-instant `39e4ca0704d32905718232c15541fb5adf4c5c85`
 Document recording route maps: time mapping, capture rules, write isolation, bounds, links (#028).
 
+## 2026-09-27 10:01:56 EDT — realtime-voice-sqlite-instant `7fe341cfb1c02cc23d63b994b9b4c79078adc706`
+Serve the phone stream from the Mac's ingest server and relay it through OBS to Twitch or YouTube (#003).
+
 ## 2026-09-27 10:01:49 EDT — realtime-voice-sqlite-instant `47391ebbce77e2d922718ccc81c898e12e8ff5cd`
 Close a recording's last route chunk with only its mutable fields, and add a terminal route probe (#083 #028).
 
@@ -69,6 +102,9 @@ Page agent segments with queries the Instant server accepts (#256).
 
 ## 2026-09-27 09:45:50 EDT — realtime-voice-sqlite-instant `10868c034210116b899e659b844b0e66ee3d48ad`
 Draw every recording's route on the map, open a recording from any point, and deep link route moments (#028 #018).
+
+## 2026-09-27 09:44:10 EDT — realtime-voice-sqlite-instant `0167a28c12a608139ef897405b35ea43846c2977`
+Stream the broadcast from the extension to a Mac ingest server, next to the Photos movie (#003 #224 #255).
 
 ## 2026-09-27 09:42:04 EDT — realtime-voice-sqlite-instant `7c26725dcce962a5a7f430da3775f6f70fc7c6b0`
 Show the route walked so far on the recording screen and scroll the transcript from it (#028).
@@ -250,11 +286,11 @@ Release Scribe 0.1 (57): GitHub main shipped 56, the Instant merge carried 13, 5
 ## 2026-09-26 20:08:04 EDT — realtime-voice-sqlite-instant `6bfd5c7bd5a6b9534dd11f9ae7e51855249a82c5`
 Plan-only commit: Instant 1.6.0 pin and Scribe 0.1 (57) install, with _touching claims (#044 #155).
 
-## 2026-09-26 18:07:24 EDT — realtime-voice-sqlite-instant `5bf28e38594c4cf8339f67a81b96ab7f0168ac9d`
-Merge the preview-slot list fix and library write-scope follow-ups into the Instant main candidate (GitHub main + combined + #248 #249); only CHANGELOG/PROGRESS conflicted (#044 #155).
-
 ## 2026-09-26 19:28:43 EDT — instant-data-swift `94166c5a05df475e831fbcedeff24e11d2a8c700`
 Handle new and small entities whole and capture whole delete cascades: the v1.6.0 release gate showed per-fact bookkeeping made small-entity writes 12-45% slower than 1.5.7; after the fix inserts/streams/scalar/reads are at parity, update 1.09x, delete 1.10x; rollback now restores multi-level cascade deletes (#044 #155).
+
+## 2026-09-26 18:07:24 EDT — realtime-voice-sqlite-instant `5bf28e38594c4cf8339f67a81b96ab7f0168ac9d`
+Merge the preview-slot list fix and library write-scope follow-ups into the Instant main candidate (GitHub main + combined + #248 #249); only CHANGELOG/PROGRESS conflicted (#044 #155).
 
 ## 2026-09-26 18:04:43 EDT — instant-data-swift `c24724c9871a5859b82bd2013e309a0db13b1689`
 Document the v1.6.0 release (writes cost what they touch): per-fact write scope, in-place multi-value slots, share-gated store snapshot, nested-limit docs; measured before/after and the offline-runner publication rule (#044 #155).
