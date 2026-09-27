@@ -1,3 +1,6 @@
+## 2026-09-27 00:51:27 EDT — realtime-voice-sqlite-instant `99a6e5ae2d3bd09a375adf428ca6eae8fd83e658`
+Mac CPU regression harness (scripts/perf) and performance-budget reference numbers from the audit's paired soaks (#250). Branch agent/claude-opus-5.5/perf-audit-2026-09-26.
+
 ## 2026-09-27 00:20:42 EDT — realtime-voice-sqlite-instant `2ed42916dd301acf7ce087e1d96ee2694be45ba6`
 Read transcript row values once per pass instead of per row through the scoped store (#250 #044). Branch agent/claude-opus-5.5/perf-audit-2026-09-26.
 

@@ -1,3 +1,20 @@
+## 2026-09-27 00:51:51 EDT — Performance and concurrency audit, library side (#250)
+
+- **Branch:** `agent/claude-opus-5.5/perf-audit-2026-09-26` (not on `main`). Commits: plan `fc1134fd`,
+  live-refresh schema + persisted-result sort `44b176a4`, change-only diagnostics `87b7687d`,
+  JSON decode order `e3cf7c01`, ledgers.
+- **Measured (thread CPU, debug, ABBA medians of 4):** translate 100 refreshes x 8 computations
+  5,123 -> 1,223 ms; persisted results 1,071 -> 627 ms; empty merges eliminated; 40 refresh decodes
+  513 -> 225 ms. Phone log: 97.8% / 79.7% of two per-refresh events were exact repeats (now recorded
+  only on change). Paired Mac soak: applyLiveRefresh 2,103 -> 1,335 ms, message decode 827 -> 450 ms,
+  index rebuilds 349 -> 120 ms per 30 s.
+- **Tests:** full suite failures are the known environmental set plus load flakes that pass in
+  isolation on both the before and after binaries.
+- **Next (not done):** cache the translator's AttributeStore per attribute revision (remaining
+  ~120 ms of rebuilds); server apply re-decodes pending outbox bodies per refresh (176 ms);
+  receipt fingerprinting and live-result pruning per refresh (82 + 97 ms).
+- **Report:** `/Users/laptop/Sync/audit/scribe-perf-2026-09-26/D-perf-concurrency-audit.md`.
+
 ## 2026-09-26 20:20:00 EDT — v1.6.0 published; Scribe main pins it (#044 #155)
 
 - **Release:** tag `v1.6.0` (annotated) on `a7d0eafd`, GitHub release marked Latest:
