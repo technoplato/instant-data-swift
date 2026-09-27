@@ -10,6 +10,18 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## September 27th, 2026 at 9:08:53 a.m. EDT — `18831d088dbb` Document the v1.7.0 release: cheaper live refresh and a capped diagnostics log (#250 #254 #155)
+
+- **Implementation commit:** `18831d088dbb50cfc7e6950c47fe8d7e5d40d1d0`
+- **Change:** Document the v1.7.0 release: cheaper live refresh and a capped diagnostics log (#250 #254 #155).
+- **Details:**
+  - Minor release: new public diagnostics API is additive (maximumFileBytes, defaultMaximumFileBytes, record(...changeKey:), previousLogFileURL(for:)). Measured against 1.6.0 (ABBA thread CPU, Debug, M1 Max): 40 decodes of an 18 KB refresh 513 -> 225 ms; translate 100 refreshes x 8 results 5,123 -> 1,223 ms; 200 persisted results 1,071 -> 627 ms; diagnostics record path 222 -> 134 ms per 30 s. The log file rotates at 16 MiB with one previous file (27.5 MB/h unbounded before).
+- **Files:**
+  - `docs/releases/v1.7.0.md` — release document; passes scripts/validate-release-version.sh 1.7.0
+- **User context (verbatim):**
+  > please install the app with all the fixes you made last night
+- **SpecStory:** unavailable — Claude Code CLI session; no SpecStory capture configured for this session.
+
 ## September 27th, 2026 at 12:23:28 a.m. EDT — `e3cf7c01a1fc` Decode server JSON without throwing an error per string (#250 #155)
 
 - **Implementation commit:** `e3cf7c01a1fc5f64753ef0d857e851140c67a39d`

@@ -1,3 +1,39 @@
+## 2026-09-27 09:08:40 EDT — instant-data-swift `18831d088dbb50cfc7e6950c47fe8d7e5d40d1d0`
+Release document for v1.7.0: payload-order JSON decode, one schema resolution per refresh, copy-free result sort, change-only snapshots, 16 MiB diagnostics file cap (#250 #254 #155).
+
+## 2026-09-27 09:07:37 EDT — realtime-voice-sqlite-instant `319ce767bfd0b34dbfe9a7dcb37ab4ad9459e1d4`
+PROGRESS: Scribe 0.1 (58) iPhone install on the merged library (#247 #252 #224 #250 #257).
+
+## 2026-09-27 08:23:44 EDT — realtime-voice-sqlite-instant `c1c7b6e578bcea2bc96cbe5e6dc8f927c37bce08`
+Change-log ledger.
+
+## 2026-09-27 08:23:22 EDT — realtime-voice-sqlite-instant `ab4ef7812c180d6a6829c756708765dac85316b9`
+Local-Instant installs build the Instant checkout edit mode verified instead of a hardcoded path (#257).
+
+## 2026-09-27 08:23:22 EDT — realtime-voice-sqlite-instant `3e2b26f320b57b80130def5b3d9b42c7432b8595`
+Release Scribe 0.1 (58).
+
+## 2026-09-27 08:19:54 EDT — realtime-voice-sqlite-instant `5731cc8481b2028d8143aa4840c8ea518870b7cd`
+Merge fork A's memory diagnostics work into the integration branch (#252 #254 #044).
+
+## 2026-09-27 08:19:49 EDT — realtime-voice-sqlite-instant `f9c0583f8b018766878d45b0c03f6ad8606ea559`
+Merge fork B's broadcast reliability work into the integration branch (#224 #044).
+
+## 2026-09-27 08:19:29 EDT — realtime-voice-sqlite-instant `5cb0d29f85794a1b96165869ee364936900488be`
+Merge fork D's Scribe performance and concurrency audit into the integration branch (#250 #155).
+
+## 2026-09-27 08:09:57 EDT — instant-data-swift `2f55c81bf40084a7f206eb2e182a349b0b37829e`
+Merge fork A's diagnostics file cap into the integration branch (#252 #254 #044).
+
+## 2026-09-27 08:09:46 EDT — instant-data-swift `886a6fabb1a59d1db493a324bfc677e5476a5a03`
+Merge fork D's library performance audit (decode order, one schema resolution per refresh, change-only snapshots) into the integration branch (#250 #155).
+
+## 2026-09-27 08:08:55 EDT — realtime-voice-sqlite-instant `355161370e88070e5c8f763e9e23a88cc4fff338`
+Change-log ledger and permissions channel for the production permissions fix.
+
+## 2026-09-27 08:08:54 EDT — realtime-voice-sqlite-instant `15e300aa467fe597d2dcd8cc4a03ed3cda342df2`
+Production permissions: CEL int/double comparisons wrapped in double() with null guards; route chunks link through explicit owner and recording checks; recordings allow linking routeChunks. Throwaway-app suite: 14 of 14 cases as expected (8 owner writes accepted, 6 refused).
+
 ## 2026-09-27 01:55:14 EDT — realtime-voice-sqlite-instant `fe804fe8992c0d45618020dcf0a0324fb651bed6`
 Change-log ledger.
 

@@ -1,3 +1,22 @@
+## 2026-09-27 09:12:00 EDT — v1.7.0 release candidate; integration branch installed in Scribe 0.1 (58) (#250 #254 #155)
+
+- **Branch:** `agent/claude-opus-5.5/integration-2026-09-27` (pushed; not on `main` yet) = `main`
+  `c5974110` + fork D perf audit (merge `886a6fab`) + fork A diagnostics file cap (merge `2f55c81b`),
+  then the release document `18831d08` and this ledger commit.
+- **Version:** v1.7.0 (minor): the diagnostics cap adds public API (`maximumFileBytes`,
+  `defaultMaximumFileBytes`, `record(...changeKey:)`, `previousLogFileURL(for:)`). Default behavior
+  change: a configured log rotates at 16 MiB with one previous file; `INSTANT_SWIFT_DATA_LOG_MAX_BYTES=0`
+  keeps everything.
+- **Tests on `2f55c81b`:** 1,777 tests; failures match the known environmental set except
+  `storeOnlyProductSeedMemoryAndLookups` (152 MB growth in the parallel run, 5.7–6.5 MB alone).
+  A stale-object link error in `RemindersV3Executable`/`RecipesV3App` (old 2-argument
+  `InstantDiagnosticsConfiguration.init` symbol) left an old test binary in place on the first run;
+  touching the callers rebuilt it.
+- **Installed:** Scribe 0.1 (58) on Michael's iPhone embeds this branch at `2f55c81b` (edit mode).
+- **Next:** `INSTANT_SWIFT_DATA_LIVE_AUTH_SOAK=0 validation/run-performance-gate.sh live` on the
+  release commit, then fast-forward `main`, tag `v1.7.0`, `gh release create --verify-tag --latest`,
+  and repin Scribe (`exact: "1.7.0"` + installer `REQUIRED_PUBLISHED_DEPENDENCIES`).
+
 ## 2026-09-27 00:51:51 EDT — Performance and concurrency audit, library side (#250)
 
 - **Branch:** `agent/claude-opus-5.5/perf-audit-2026-09-26` (not on `main`). Commits: plan `fc1134fd`,
