@@ -1334,7 +1334,10 @@ let instantLiveOperationTimeoutMilliseconds: UInt64 = 5_000
 
 @usableFromInline
 func instantLiveDefaultTimeoutSleep(_ milliseconds: UInt64) async throws {
-  try await Task.sleep(nanoseconds: milliseconds * 1_000_000)
+  // A far-future deadline waits (and stays cancellable) instead of trapping: above about 584
+  // years the nanosecond product overflows, and the multiplication crashed the process.
+  let (nanoseconds, overflow) = milliseconds.multipliedReportingOverflow(by: 1_000_000)
+  try await Task.sleep(nanoseconds: overflow ? .max : nanoseconds)
 }
 
 // SAFETY: `lock` protects the continuation, pending outcome, child tasks,
