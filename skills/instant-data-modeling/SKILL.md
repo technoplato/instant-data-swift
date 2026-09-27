@@ -56,6 +56,17 @@ var todos: [Todo]
 Do not add a task, `load`, subscribe call, or refresh method to start a static
 fetch.
 
+In an entity or collection fetch, a row that fails to decode is left out of the
+result instead of failing the whole fetch: the library reports it with
+`reportIssue` and a `query.row-decode-quarantined` diagnostic, and the other rows
+load. (`FetchOne` of a single selected field still fails with the decode error.)
+Instant stores each field as its own fact, so an entity can lack a field its
+model requires (a narrower query loaded only some fields, or a bug removed
+some). Keep `init(snapshot:)` strict and let the library quarantine; do not add
+`try?` fallbacks that invent values. Decode by hand with
+`decodeQuarantiningFailures(_:)`, or `decode(_:)` when every row or none is the
+right answer.
+
 For dynamic input, derive one query/request value from feature state and use a
 currently implemented replacement API. Do not require `Hashable` of
 `InstantFetchKeyRequest`; its current public requirement is `Sendable`. Require

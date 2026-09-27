@@ -1928,8 +1928,14 @@ public struct InstantSwiftDataClient: Sendable {
   public func subscribe<Entity: InstantEntityModel>(
     _ query: InstantEntityQuery<Entity>
   ) async -> FetchSubscription<[Entity]> {
-    await subscribeQueryEmissions(query.plan) { emission in
-      try Entity.decode(emission.values)
+    let quarantine = InstantRowQuarantine()
+    return await subscribeQueryEmissions(query.plan) { emission in
+      quarantine.decode(
+        emission.values,
+        namespace: Entity.instantNamespace,
+        operation: "subscribe",
+        Entity.init(snapshot:)
+      )
     }
   }
 
@@ -5203,16 +5209,23 @@ extension FetchAll where Element: InstantValueDecodable & InstantValueRepresenta
     selecting field: InstantAttributePath<Entity, Element>
   ) -> FetchOperations<[Element]> {
     let selectedQuery = query.select(field)
+    let quarantine = InstantRowQuarantine()
     return FetchOperations(
       load: { client in
-        try await scalarValues(
-          from: client.query(selectedQuery.plan),
+        scalarValues(
+          from: try await client.query(selectedQuery.plan),
           field: field,
-          operation: "load FetchAll"
+          operation: "load FetchAll",
+          quarantine: quarantine
         )
       },
       subscribe: { client in
-        await scalarSubscription(client: client, selectedQuery: selectedQuery, field: field)
+        await scalarSubscription(
+          client: client,
+          selectedQuery: selectedQuery,
+          field: field,
+          quarantine: quarantine
+        )
       }
     )
   }
@@ -5220,13 +5233,15 @@ extension FetchAll where Element: InstantValueDecodable & InstantValueRepresenta
   private static func scalarSubscription<Entity: InstantEntityModel>(
     client: InstantSwiftDataClient,
     selectedQuery: InstantEntityQuery<Entity>,
-    field: InstantAttributePath<Entity, Element>
+    field: InstantAttributePath<Entity, Element>,
+    quarantine: InstantRowQuarantine
   ) async -> FetchSubscription<[Element]> {
     await client.subscribeQueryEmissions(selectedQuery.plan) { emission in
-      try scalarValues(
+      scalarValues(
         from: emission.values,
         field: field,
-        operation: "subscribe FetchAll"
+        operation: "subscribe FetchAll",
+        quarantine: quarantine
       )
     }
   }
@@ -5234,9 +5249,11 @@ extension FetchAll where Element: InstantValueDecodable & InstantValueRepresenta
   private static func scalarValues<Entity: InstantEntityModel>(
     from snapshots: [InstantEntitySnapshot],
     field: InstantAttributePath<Entity, Element>,
-    operation: String
-  ) throws -> [Element] {
-    try snapshots.map { snapshot in
+    operation: String,
+    quarantine: InstantRowQuarantine
+  ) -> [Element] {
+    quarantine.decode(snapshots, namespace: Entity.instantNamespace, operation: operation) {
+      snapshot in
       try Element.decodeInstantValue(
         snapshot.values[field.name]?.first,
         namespace: Entity.instantNamespace,
@@ -5419,16 +5436,23 @@ extension FetchAll {
   ) -> FetchOperations<[Element]>
   where Element == FieldValue?, FieldValue: InstantValueDecodable & InstantValueRepresentable {
     let selectedQuery = query.select(field)
+    let quarantine = InstantRowQuarantine()
     return FetchOperations(
       load: { client in
-        try await optionalScalarValues(
-          from: client.query(selectedQuery.plan),
+        optionalScalarValues(
+          from: try await client.query(selectedQuery.plan),
           field: field,
-          operation: "load FetchAll"
+          operation: "load FetchAll",
+          quarantine: quarantine
         )
       },
       subscribe: { client in
-        await optionalScalarSubscription(client: client, selectedQuery: selectedQuery, field: field)
+        await optionalScalarSubscription(
+          client: client,
+          selectedQuery: selectedQuery,
+          field: field,
+          quarantine: quarantine
+        )
       }
     )
   }
@@ -5436,14 +5460,16 @@ extension FetchAll {
   private static func optionalScalarSubscription<Entity: InstantEntityModel, FieldValue>(
     client: InstantSwiftDataClient,
     selectedQuery: InstantEntityQuery<Entity>,
-    field: InstantAttributePath<Entity, FieldValue>
+    field: InstantAttributePath<Entity, FieldValue>,
+    quarantine: InstantRowQuarantine
   ) async -> FetchSubscription<[Element]>
   where Element == FieldValue?, FieldValue: InstantValueDecodable & InstantValueRepresentable {
     await client.subscribeQueryEmissions(selectedQuery.plan) { emission in
-      try optionalScalarValues(
+      optionalScalarValues(
         from: emission.values,
         field: field,
-        operation: "subscribe FetchAll"
+        operation: "subscribe FetchAll",
+        quarantine: quarantine
       )
     }
   }
@@ -5451,10 +5477,12 @@ extension FetchAll {
   private static func optionalScalarValues<Entity: InstantEntityModel, FieldValue>(
     from snapshots: [InstantEntitySnapshot],
     field: InstantAttributePath<Entity, FieldValue>,
-    operation: String
-  ) throws -> [Element]
+    operation: String,
+    quarantine: InstantRowQuarantine
+  ) -> [Element]
   where Element == FieldValue?, FieldValue: InstantValueDecodable & InstantValueRepresentable {
-    try snapshots.map { snapshot in
+    quarantine.decode(snapshots, namespace: Entity.instantNamespace, operation: operation) {
+      snapshot -> Element in
       guard let value = snapshot.values[field.name]?.first, value != .null else {
         return nil
       }
@@ -6663,12 +6691,11 @@ public struct InstantFetchRequest<Value: Sendable>: Sendable {
     map: @escaping @Sendable (_ root: Root, _ children: [Child]) throws -> Row
   ) where Value == [Row] {
     let linkName = relation.name
+    let quarantine = InstantRowQuarantine()
     self.init(
       source: InstantFetchSource.entitySnapshots(query).map { snapshots in
-        try snapshots.map { snapshot in
-          let root = try Root(snapshot: snapshot)
-          let children = try snapshot.decodeIncludedChildren(linkName, as: Child.self)
-          return try map(root, children)
+        try quarantine.decodeRoots(snapshots, as: Root.self).map { snapshot, root in
+          try map(root, quarantine.decodeChildren(of: snapshot, named: linkName, as: Child.self))
         }
       }
     )
@@ -6706,13 +6733,15 @@ public struct InstantFetchRequest<Value: Sendable>: Sendable {
   ) where Value == [Row] {
     let nameA = relationA.name
     let nameB = relationB.name
+    let quarantine = InstantRowQuarantine()
     self.init(
       source: InstantFetchSource.entitySnapshots(query).map { snapshots in
-        try snapshots.map { snapshot in
-          let root = try Root(snapshot: snapshot)
-          let a = try snapshot.decodeIncludedChildren(nameA, as: ChildA.self)
-          let b = try snapshot.decodeIncludedChildren(nameB, as: ChildB.self)
-          return try map(root, a, b)
+        try quarantine.decodeRoots(snapshots, as: Root.self).map { snapshot, root in
+          try map(
+            root,
+            quarantine.decodeChildren(of: snapshot, named: nameA, as: ChildA.self),
+            quarantine.decodeChildren(of: snapshot, named: nameB, as: ChildB.self)
+          )
         }
       }
     )

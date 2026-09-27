@@ -2655,10 +2655,10 @@ public enum InstantSwiftDataParityCoverage {
       sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/FetchAllTests.swift",
       sourceTestName: "fetchFailure",
       swiftFile: typedAPISwiftFile,
-      swiftTestName: "fetchAllLoadPreservesLastValueAndRecordsDecodeError",
+      swiftTestName: "fetchAllLoadLeavesOutAMalformedRowAndReportsIt",
       surface: "adapter-fetch",
       status: .adapted,
-      notes: "A malformed Instant query result throws a decode error, records it on FetchAll, and preserves the last successful value."
+      notes: "SQLiteData fails the whole fetch and names the NULL column. Instant stores each field as its own fact, so one entity can lack a field while the rest are whole: that row is left out and reported (reportIssue and query.row-decode-quarantined) naming the entity and field, and the other rows load (#278)."
     ),
     sqlite(
       id: "sqlite.fetch-all.scalar-selection",
