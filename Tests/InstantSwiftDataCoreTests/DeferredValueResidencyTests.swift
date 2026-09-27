@@ -661,6 +661,116 @@ struct DeferredValueResidencyTests {
     }
   }
 
+  /// A write to another namespace that lands between an emission and its hydration advances the
+  /// store sequence without refreshing this query. Hydration used to drop the emission as stale
+  /// and wait for a newer one that never came, so the observation delivered nothing: Scribe's
+  /// timeline sat on "Loading saved transcript…" and a finished recording showed no words
+  /// (#259 #274).
+  @Test
+  func observationDeliversItsResultWhenAnUnrelatedWriteLandsBeforeHydration() async throws {
+    let cacheURL = temporaryDeferredValueCacheURL("observation-unrelated-write")
+    defer { try? FileManager.default.removeItem(at: cacheURL) }
+    let fixture = DeferredRouteFixture()
+    let unrelated = UnrelatedSessionFixture()
+    try await seedDeferredRouteCache(
+      cacheURL,
+      fixture: fixture,
+      rows: [(id: "chunk-a", title: "A", payload: fixture.payload("a"))]
+    )
+    let runtimeBox = DeferredRuntimeBox()
+    let unrelatedWrite = DeferredOnce()
+    var configuration = InstantRuntimeConfiguration(
+      appID: "deferred-observation-unrelated-write",
+      persistenceURL: cacheURL,
+      initialAttributes: fixture.attributes + unrelated.attributes,
+      deferredValueResidency: InstantDeferredValueResidencyPolicy(
+        attributeIDs: [fixture.samplesAttribute.id]
+      )
+    )
+    configuration.onDeferredQueryEmissionHydrationStartingForTesting = { _ in
+      guard unrelatedWrite.claim(), let runtime = await runtimeBox.runtime else { return }
+      _ = try? await runtime.transact(
+        unrelated.heartbeat(sessionID: "session-1", transactionID: "unrelated-heartbeat"),
+        createdAt: InstantTimestamp(milliseconds: 50)
+      )
+    }
+    let runtime = try await InstantRuntime.bootstrap(configuration: configuration)
+    await runtimeBox.set(runtime)
+
+    let stream = await runtime.observe(
+      fixture.pageQuery(
+        id: "observation-unrelated-write",
+        selectedFields: [fixture.titleAttribute.name, fixture.samplesAttribute.name]
+      )
+    )
+    let first = await firstDeferredElement(of: stream, within: .seconds(5)) {
+      !$0.values.isEmpty
+    }
+
+    #expect(unrelatedWrite.wasClaimed, "The unrelated write must land before hydration.")
+    expectNoDifference(
+      first?.values.first?.values[fixture.samplesAttribute.name],
+      .one(.json(fixture.payload("a")))
+    )
+  }
+
+  /// The local infinite query hydrates its visible window the same way and had the same stall.
+  @Test
+  func localInfiniteQueryDeliversItsWindowWhenAnUnrelatedWriteLandsBeforeHydration()
+    async throws
+  {
+    let cacheURL = temporaryDeferredValueCacheURL("local-infinite-unrelated-write")
+    defer { try? FileManager.default.removeItem(at: cacheURL) }
+    let fixture = DeferredRouteFixture()
+    let unrelated = UnrelatedSessionFixture()
+    try await seedDeferredRouteCache(
+      cacheURL,
+      fixture: fixture,
+      rows: [
+        (id: "chunk-a", title: "A", payload: fixture.payload("a")),
+        (id: "chunk-b", title: "B", payload: fixture.payload("b")),
+      ]
+    )
+    let runtimeBox = DeferredRuntimeBox()
+    let unrelatedWrite = DeferredOnce()
+    var configuration = InstantRuntimeConfiguration(
+      appID: "deferred-local-infinite-unrelated-write",
+      persistenceURL: cacheURL,
+      initialAttributes: fixture.attributes + unrelated.attributes,
+      deferredValueResidency: InstantDeferredValueResidencyPolicy(
+        attributeIDs: [fixture.samplesAttribute.id]
+      )
+    )
+    configuration.onLocalInfiniteQueryHydrationRequestAcquiredForTesting = { _, _ in
+      guard unrelatedWrite.claim(), let runtime = await runtimeBox.runtime else { return }
+      _ = try? await runtime.transact(
+        unrelated.heartbeat(sessionID: "session-1", transactionID: "unrelated-heartbeat"),
+        createdAt: InstantTimestamp(milliseconds: 50)
+      )
+    }
+    let runtime = try await InstantRuntime.bootstrap(configuration: configuration)
+    await runtimeBox.set(runtime)
+
+    let subscription = await runtime.subscribeInfiniteQuery(
+      fixture.infinitePageQuery(
+        id: "local-infinite-unrelated-write",
+        limit: 1,
+        selectedFields: [fixture.titleAttribute.name, fixture.samplesAttribute.name]
+      )
+    )
+    defer { subscription.unsubscribe() }
+    let first = await firstDeferredElement(of: subscription.snapshots, within: .seconds(5)) {
+      !$0.values.isEmpty
+    }
+
+    #expect(unrelatedWrite.wasClaimed, "The unrelated write must land before hydration.")
+    expectNoDifference(first?.values.map(\.id), ["chunk-a"])
+    expectNoDifference(
+      first?.values.first?.values[fixture.samplesAttribute.name],
+      .one(.json(fixture.payload("a")))
+    )
+  }
+
   @Test
   func localInfiniteQueryHydrationFailureEmitsOneTypedFailureThenTerminates() async throws {
     let cacheURL = temporaryDeferredValueCacheURL("local-infinite-failure")
@@ -1451,4 +1561,94 @@ private func waitForDeferredOperationGateHop(
     await Task.yield()
   }
   return recorder.summary(since: baseline).breakdown["operation-gate", default: 0] >= 1
+}
+
+/// A namespace no deferred query depends on, so a write to it advances the store sequence
+/// without refreshing those queries.
+private struct UnrelatedSessionFixture {
+  let idAttribute = InstantAttribute.primaryKey(namespace: "sessions")
+  let heartbeatAttribute = InstantAttribute(
+    id: "sessions/heartbeatAtMs",
+    namespace: "sessions",
+    name: "heartbeatAtMs",
+    valueType: .number
+  )
+
+  var attributes: [InstantAttribute] {
+    [idAttribute, heartbeatAttribute]
+  }
+
+  func heartbeat(sessionID: String, transactionID: String) -> InstantStoreTransaction {
+    InstantStoreTransaction(
+      id: transactionID,
+      operations: [
+        .insert(
+          InstantTriple(
+            entityID: sessionID,
+            attributeID: idAttribute.id,
+            value: .string(sessionID),
+            txID: transactionID,
+            txTime: InstantTimestamp(milliseconds: 50)
+          )
+        ),
+        .insert(
+          InstantTriple(
+            entityID: sessionID,
+            attributeID: heartbeatAttribute.id,
+            value: .number(50),
+            txID: transactionID,
+            txTime: InstantTimestamp(milliseconds: 50)
+          )
+        ),
+      ]
+    )
+  }
+}
+
+private actor DeferredRuntimeBox {
+  private(set) var runtime: InstantRuntime?
+
+  func set(_ runtime: InstantRuntime) {
+    self.runtime = runtime
+  }
+}
+
+private final class DeferredOnce: @unchecked Sendable {
+  private let lock = NSLock()
+  private var claimed = false
+
+  /// Returns true exactly once.
+  func claim() -> Bool {
+    lock.withLock {
+      defer { claimed = true }
+      return !claimed
+    }
+  }
+
+  var wasClaimed: Bool {
+    lock.withLock { claimed }
+  }
+}
+
+/// The first element matching `predicate`, or nil when none arrives within `duration`.
+private func firstDeferredElement<Element: Sendable>(
+  of stream: AsyncStream<Element>,
+  within duration: Duration,
+  where predicate: @escaping @Sendable (Element) -> Bool
+) async -> Element? {
+  await withTaskGroup(of: Element?.self) { group in
+    group.addTask {
+      for await element in stream where predicate(element) {
+        return element
+      }
+      return nil
+    }
+    group.addTask {
+      try? await Task.sleep(for: duration)
+      return nil
+    }
+    let first = await group.next() ?? nil
+    group.cancelAll()
+    return first
+  }
 }

@@ -10,6 +10,22 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## September 27th, 2026 at 2:41:21 p.m. EDT — `552457420ee3` Keep observations and pruned entities intact: stale-emission hydration and whole-entity orphan collection (#259 #274)
+
+- **Implementation commit:** `552457420ee3dfea8b72514257307b76606b027d`
+- **Change:** Deferred hydration no longer strands an observation after an unrelated write, and live-query pruning collects whole entities only (#259 #274).
+- **Details:**
+  - isStillCurrent drops a stale emission only when its query was refreshed after it (store records each query's last published refresh); otherwise the emission is the query's current result and is hydrated. Pruning keeps an entity whole when any fact is unowned and deletes the deferred payload rows of fully collected entities. Evidence: iPhone store had 1,055 segments with text but no recordingID; tests reproduce both stalls and the partial prune (red before, green after). Full suite (clean build): no new failures; the 14 load-sensitive failures pass in isolation.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantStore.swift` — per-query last refresh sequence and wasRefreshed(queryID:after:)
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — isStillCurrent replaces the global-sequence stale check; testing hook
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — whole-entity orphan collection and deferred payload cleanup
+  - `Tests/InstantSwiftDataCoreTests/DeferredValueResidencyTests.swift` — unrelated write between emission and hydration (observation, local infinite)
+  - `Tests/InstantSwiftDataCoreTests/InstantStoreTests.swift` — partially owned entity survives pruning whole
+- **User context (verbatim):**
+  > On an immediately just-completed recording: words/transcript are NOT showing up, but screenshots, copies, the route, and everything else DO
+- **SpecStory:** unavailable — Claude Code CLI session (triage agent B); no SpecStory capture configured.
+
 ## September 27th, 2026 at 9:08:53 a.m. EDT — `18831d088dbb` Document the v1.7.0 release: cheaper live refresh and a capped diagnostics log (#250 #254 #155)
 
 - **Implementation commit:** `18831d088dbb50cfc7e6950c47fe8d7e5d40d1d0`

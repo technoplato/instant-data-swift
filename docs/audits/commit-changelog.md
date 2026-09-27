@@ -1,3 +1,27 @@
+## 2026-09-27 14:54:01 EDT — realtime-voice-sqlite-instant `f57bf4e683e0742dbf2dd13ca234cf5b22bdd2d3`
+Merge main into triage B (#259 #274 #261).
+
+## 2026-09-27 14:53:51 EDT — realtime-voice-sqlite-instant `cddae46615df349d00562f89d52551c957d8a97e`
+Change-log ledger.
+
+## 2026-09-27 14:53:35 EDT — realtime-voice-sqlite-instant `e97acdbdda37e4d99b788af85256bef1733f66b3`
+Saved-transcript first page bounded to 5 s with a named failure and Retry; playback.detail.words-missing diagnostic (#274 #259).
+
+## 2026-09-27 14:53:35 EDT — realtime-voice-sqlite-instant `95eaeb93320a1bf7523af3a24d989b0ad2347861`
+Delete Return to Live and Newer; Return to Latest is the only jump and returns a paged window to the newest rows (#261).
+
+## 2026-09-27 14:41:21 EDT — instant-data-swift `4a5d63a1fe892de63e00dca746150fd0d8de2f43`
+Change-log ledger.
+
+## 2026-09-27 14:25:33 EDT — instant-data-swift `552457420ee3dfea8b72514257307b76606b027d`
+Deferred hydration drops a stale emission only when its query was refreshed after it; live-query pruning collects whole entities only and deletes their deferred payloads (#259 #274).
+
+## 2026-09-27 14:02:19 EDT — instant-data-swift `436bebe3eed8b84783b09d8e2d144f43c3db3656`
+Plan and claims for the deferred hydration progress fix (#259 #274).
+
+## 2026-09-27 14:02:18 EDT — realtime-voice-sqlite-instant `5d59438ad370dff5a45caa1411426e48bf88ee7a`
+Plan and claims for triage B: words, saved-transcript loading, jump controls (#259 #274 #261 #020 #262).
+
 ## 2026-09-27 12:47:34 EDT — realtime-voice-sqlite-instant `a5b192c298927e36080235ef352386bc6f760c6f`
 PROGRESS: Scribe 0.1 (61) on the iPhone and the Mac app with the phone-to-Mac stream (#003 #224 #257).
 

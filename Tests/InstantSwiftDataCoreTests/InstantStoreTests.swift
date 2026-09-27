@@ -4774,6 +4774,67 @@ struct InstantStoreTests {
     expectNoDifference(reloadedTriples, retained.triples)
   }
 
+  /// Pruning collected orphans one fact at a time, so an entity lost the facts a pruned query had
+  /// selected and kept the rest. Scribe's transcript segments lost `recordingID`, `segmentIndex`,
+  /// and their times when the recording's timeline query was pruned, while `text` and facts the
+  /// query never selected stayed: 1,055 such rows on an iPhone, and a finished recording showed no
+  /// words (#259). An entity with any fact no query result owns is local data and stays whole.
+  @Test
+  func liveQueryResultPruningKeepsAnEntityWholeWhenOnlySomeOfItsFactsWereOwned()
+    async throws
+  {
+    let cacheURL = try temporaryCacheURL()
+    let store = try SQLitePersistenceStore(fileURL: cacheURL)
+    try await store.bootstrap()
+    let written = persistedLiveTodoResult(
+      key: "query-selected-fields",
+      entityID: "written-todo",
+      text: "Written on this device",
+      updatedAt: InstantTimestamp(milliseconds: 1)
+    )
+    var selected = written
+    selected.triples = written.triples.filter { $0.attributeID == "todos/text" }
+    #expect(selected.triples.count == 1)
+    #expect(written.triples.count > selected.triples.count)
+    let didSave = try await store.saveLiveRefresh(
+      InstantPersistenceSnapshot(
+        store: InstantStoreSnapshot(
+          attributes: TodoExample.attributes,
+          triples: written.triples
+        )
+      ),
+      queryResults: [selected],
+      storeChanged: true,
+      outboxChanged: false,
+      metadataKey: "test.live-query-result-partial-owner-pruning",
+      metadataValue: "seeded",
+      metadataUpdatedAt: InstantTimestamp(milliseconds: 1),
+      expectedStoreRevision: 0,
+      expectedOutboxRevision: 0,
+      expectedAttributeRevision: 0
+    )
+    expectNoDifference(didSave, true)
+
+    let application = try await store.pruneLiveQueryResults(
+      policy: InstantLiveQueryResultPruningPolicy(maxEntries: 0),
+      now: InstantTimestamp(milliseconds: 2)
+    )
+
+    expectNoDifference(application.result.removedQueryKeys, [selected.key])
+    expectNoDifference(application.result.removedOrphanedTripleCount, 0)
+    expectNoDifference(
+      application.state.snapshot.store.triples.sorted { $0.attributeID < $1.attributeID },
+      written.triples.sorted { $0.attributeID < $1.attributeID }
+    )
+    let reloaded = try SQLitePersistenceStore(fileURL: cacheURL)
+    try await reloaded.bootstrap()
+    let reloadedTriples = try await reloaded.loadSnapshot().store.triples
+    expectNoDifference(
+      reloadedTriples.sorted { $0.attributeID < $1.attributeID },
+      written.triples.sorted { $0.attributeID < $1.attributeID }
+    )
+  }
+
   @Test
   func liveQueryResultPruningUsesOwnedTripleBudgetAndStrictAgeCutoff() async throws {
     let cacheURL = try temporaryCacheURL()
