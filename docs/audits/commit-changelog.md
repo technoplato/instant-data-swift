@@ -1,3 +1,15 @@
+## 2026-09-26 21:10:38 EDT — realtime-voice-sqlite-instant `b2a8614ead7ec79f20977e775ac3057235b8c2bf`
+PROGRESS: Scribe 0.1 (57) installed and running on Michael's iPhone from clean cc684872 with instant-data-swift 1.6.0 (#247 #044).
+
+## 2026-09-26 21:02:46 EDT — realtime-voice-sqlite-instant `cc684872d7f36fb33c492b446f35ac633e4e60a6`
+Change-log ledger for the single guest sign-in fix; this commit was installed on the iPhone as Scribe 0.1 (57) (#247).
+
+## 2026-09-26 21:02:30 EDT — realtime-voice-sqlite-instant `59f9bb55b9680ca816eb9d554ac3d648bdd4a72a`
+Sign in as one guest per app at launch: ScribeInstantAuthGate joins concurrent reconciliations; the composition root opens the live default client once per app and database file (ScribeLiveClientRegistry). The regression test reproduces two guests without the gate (#247).
+
+## 2026-09-26 21:00:33 EDT — realtime-voice-sqlite-instant `2b73c7b824deb86279c5f4ffdae3a3f8c1a03c5d`
+Plan-only commit: single guest sign-in fix with _touching claims (#247).
+
 ## 2026-09-26 20:10:25 EDT — realtime-voice-sqlite-instant `6d829c54233ff0e1456f3347a034fa08ad9f8722`
 Installer expects instant-data-swift 1.6.0 (stable-deployment check); GitHub main fast-forwarded 9a7dba56 -> 6d829c54, SQLite kept on backup/sqlite-data-lane (#044 #155).
 
