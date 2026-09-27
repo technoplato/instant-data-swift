@@ -1,3 +1,24 @@
+## 2026-09-27 10:49:27 EDT — realtime-voice-sqlite-instant `3867d05b307fe8d88b91d711561564d62a5c3f0d`
+PROGRESS: Scribe 0.1 (59) installed on iPhone with route maps and the permissions fix (#028 #083).
+
+## 2026-09-27 10:39:46 EDT — realtime-voice-sqlite-instant `fb4340a092db1d3553060fce5ba53101da7c92d8`
+Change-log ledger.
+
+## 2026-09-27 10:39:46 EDT — realtime-voice-sqlite-instant `da2cb1fdf6a338fd405aaf1fae310e1e25581fc5`
+Release Scribe 0.1 (59).
+
+## 2026-09-27 10:28:30 EDT — realtime-voice-sqlite-instant `06f5d27b62b6bfde8edc88274e68ec6c745febf3`
+Remove route-finalize-shapes.mjs, whose expectations the permissions fix inverted; route-update-shapes.mjs covers both shapes (#028 #083).
+
+## 2026-09-27 10:28:14 EDT — realtime-voice-sqlite-instant `f8f60159e72376433bcc72ae6c832225689f183d`
+Merge fork G's route maps into main: route chunks in their own transactions, elapsed-stamped capture, playback/live/recordings maps, route deep links (#028 #083).
+
+## 2026-09-27 10:27:49 EDT — realtime-voice-sqlite-instant `f0be586fc1989aa84dee786029d10ecc030537ce`
+Change-log ledger.
+
+## 2026-09-27 10:27:35 EDT — realtime-voice-sqlite-instant `ad37dd61b17044a9f95e53b2afda278e80a0c762`
+Production route chunk rule accepts re-sent identity fields and the same-recording link, so build 58 recordings with a route keep their final summary; pushed to production, drift check matches; route-update-shapes 10/10, app-write-shapes 14/14 (#028 #083).
+
 ## 2026-09-27 10:01:31 EDT — realtime-voice-sqlite-instant `c5dcba4939f9f2c56fc7f9a48d437ffa92bae392`
 Change-log ledger.
 
