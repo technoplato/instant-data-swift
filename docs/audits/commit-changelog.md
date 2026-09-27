@@ -1,3 +1,12 @@
+## 2026-09-27 17:58:41 EDT — realtime-voice-sqlite-instant `22330e27eb4ea017ab9ac32f3c5e0179a94d6f72`
+Log Scribe 0.1 (65) with the reconnect write gate and bad-row repair in PROGRESS (#277 #278).
+
+## 2026-09-27 17:51:24 EDT — realtime-voice-sqlite-instant `a1fa965a462957e83ffaf3852e9277f551c9e37f`
+Record Scribe 0.1 (65) in the change log.
+
+## 2026-09-27 17:51:24 EDT — realtime-voice-sqlite-instant `dcec639e97491c51d316d7231aa158445b26adef`
+Release Scribe 0.1 (65).
+
 ## 2026-09-27 17:37:07 EDT — instant-data-swift `2fced8d1930cb26334ce4581ce14ea94188a01c2`
 Migration 0024 drops, once, local entities that lost their id fact to partial pruning (1,067 sections on the iPhone, nothing else), keeping pending ones and never-synced stores, so the server delivers them whole (#278).
 
@@ -10,11 +19,20 @@ Claims for triage L's row quarantine: typed read paths, the SQLiteData parity re
 ## 2026-09-27 17:19:54 EDT — instant-data-swift `8c66edca71fa7d8eb0be03ccc718b00f7d06d2cc`
 Merge the triage integration branch's audit ledger (355f6629) into triage L.
 
+## 2026-09-27 17:06:56 EDT — realtime-voice-sqlite-instant `0258cd0128bac7f724a5a758027443e1f343d3d6`
+Log Scribe 0.1 (64), the first Xcode 27 beta build, in PROGRESS (#272 #123).
+
 ## 2026-09-27 16:58:17 EDT — instant-data-swift `e08c0327dcb2db442fbe14b482f885cdc9646898`
 Change-log ledger.
 
 ## 2026-09-27 16:57:42 EDT — instant-data-swift `af3c05849c4ad07b812a8f56abed07dbf757b1cb`
 Local writes no longer wait behind server apply: breadth-first component closure and an uncorrelated outbox rewrite cut the operation gate hold during server apply from 23.5 s to 570 ms at 2,000 pending (969 -> 207 ms at 439); the gate names its holder's phase and reports long waits (#277).
+
+## 2026-09-27 16:56:30 EDT — realtime-voice-sqlite-instant `cfcb07ea7e0ae0a18e84b5b5190607560f1157cb`
+Record Scribe 0.1 (64) in the change log.
+
+## 2026-09-27 16:56:30 EDT — realtime-voice-sqlite-instant `8c298bc579ea03e1dba4464e37be46f7cab73892`
+Release Scribe 0.1 (64), the first build with the Xcode 27 beta (iOS 27 SDK, Swift 6.4).
 
 ## 2026-09-27 16:48:46 EDT — realtime-voice-sqlite-instant `7eb83e3c217b8847712a6f87370a7d890b552c2a`
 Log Scribe 0.1 (63) with the audio upload and broadcast fixes in PROGRESS (#258 #260).
