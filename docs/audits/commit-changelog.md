@@ -1,3 +1,66 @@
+## 2026-09-27 10:53:29 EDT — realtime-voice-sqlite-instant `aeb843a2160d29cc567f587c63af8c67b1284e23`
+Print the speaker-routing microphone A/B from a diagnostics pull (#122).
+
+## 2026-09-27 10:45:33 EDT — realtime-voice-sqlite-instant `b92af88078ec62351c1dbfed55b1568a423eb74d`
+Keep other apps on the loudspeaker while recording, behind a preference (#122).
+
+## 2026-09-27 10:45:21 EDT — realtime-voice-sqlite-instant `17f99e8de3248de22693d30926ef9cca50e3b49d`
+Time system-audio sections over their own audio in the recording (#142).
+
+## 2026-09-27 10:39:59 EDT — realtime-voice-sqlite-instant `e6dd18453fad37ea4428ecbf2271990eb3c6d3c7`
+Deep link to interactor threads, answers, and transcript moments (#256).
+
+## 2026-09-27 10:23:00 EDT — realtime-voice-sqlite-instant `9606f5a8da90fa263124d2ccdb2eb747fcdddef5`
+Show worker threads in the transcript and buzz gently on answers (#256).
+
+## 2026-09-27 10:20:33 EDT — realtime-voice-sqlite-instant `8c0b917a29ae5e4c10dc3f571288842dcc47a366`
+Keep route taps off tvOS and add the finalize-shape permissions regression (#028 #083).
+
+## 2026-09-27 10:10:10 EDT — realtime-voice-sqlite-instant `39e4ca0704d32905718232c15541fb5adf4c5c85`
+Document recording route maps: time mapping, capture rules, write isolation, bounds, links (#028).
+
+## 2026-09-27 10:01:49 EDT — realtime-voice-sqlite-instant `47391ebbce77e2d922718ccc81c898e12e8ff5cd`
+Close a recording's last route chunk with only its mutable fields, and add a terminal route probe (#083 #028).
+
+## 2026-09-27 09:58:40 EDT — realtime-voice-sqlite-instant `f3d84d33b5b7690f7df182f327b0a3db4a45e38f`
+Run Stream Interactor workers from a Mac daemon (#256).
+
+## 2026-09-27 09:58:40 EDT — realtime-voice-sqlite-instant `9b5be52e6de6e4e195709e1287a98d3062ec5291`
+Page agent segments with queries the Instant server accepts (#256).
+
+## 2026-09-27 09:45:50 EDT — realtime-voice-sqlite-instant `10868c034210116b899e659b844b0e66ee3d48ad`
+Draw every recording's route on the map, open a recording from any point, and deep link route moments (#028 #018).
+
+## 2026-09-27 09:42:04 EDT — realtime-voice-sqlite-instant `7c26725dcce962a5a7f430da3775f6f70fc7c6b0`
+Show the route walked so far on the recording screen and scroll the transcript from it (#028).
+
+## 2026-09-27 09:36:47 EDT — realtime-voice-sqlite-instant `963bb3bbd9610353c82b67933f755280ba70e36e`
+Show a recording's route in playback and move playback by tapping the route (#028 #018).
+
+## 2026-09-27 09:24:48 EDT — realtime-voice-sqlite-instant `c32825e2e229c356768565ae9f5cf20d10098453`
+Map recording routes to moments of the audio and back, with a bounded live trail (#028).
+
+## 2026-09-27 09:18:51 EDT — realtime-voice-sqlite-instant `397311f633478c56d5dbbdcab1d64503d9142f80`
+Keep stale and cell-tower fixes off recording routes and stamp each sample with elapsed time (#083 #028).
+
+## 2026-09-27 08:58:19 EDT — realtime-voice-sqlite-instant `2435063de5b93dd02a33e8f6c51cdf4414157e7c`
+Start interactor work only for speech addressed to it (#256).
+
+## 2026-09-27 08:50:49 EDT — realtime-voice-sqlite-instant `233799644121b9caebd6f17eb281dc7e2b42e85c`
+Write route chunks in their own transactions so a chunk can never block recording data (#083 #028).
+
+## 2026-09-27 11:09:19 EDT — realtime-voice-sqlite-instant `c241f29e5fe98e8e84a3fe2b91f585c65fb3f040`
+Change-log ledger.
+
+## 2026-09-27 11:09:18 EDT — realtime-voice-sqlite-instant `2477874337d40581310a089dd6bf5fc8b640346f`
+Release Scribe 0.1 (60).
+
+## 2026-09-27 11:04:36 EDT — realtime-voice-sqlite-instant `cf95ad4fa3fc266889f7db0d75cc3739e535d60b`
+Merge fork E's Stream Interactor into main: directed-speech trigger (2.3% false starts vs 51%), Mac worker threads, transcript cards, thread screen, taps, deep links (#256).
+
+## 2026-09-27 10:56:39 EDT — realtime-voice-sqlite-instant `9af9ee523fefcc9bff3ebb6f83b4e574bb9ebc34`
+Merge fork H's audio fixes into main: system-audio sections timed over their own audio in the recording (#142), loudspeaker routing preference and microphone level logging (#122), scripts/audio-route-ab.py.
+
 ## 2026-09-27 10:49:27 EDT — realtime-voice-sqlite-instant `3867d05b307fe8d88b91d711561564d62a5c3f0d`
 PROGRESS: Scribe 0.1 (59) installed on iPhone with route maps and the permissions fix (#028 #083).
 
