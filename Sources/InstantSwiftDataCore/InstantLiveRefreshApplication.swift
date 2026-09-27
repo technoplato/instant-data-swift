@@ -195,6 +195,7 @@ enum InstantLiveRefreshTranslator {
           pageInfo: try pageInfo(
             from: computation,
             query: query,
+            queryKey: key,
             attributes: attributeContext
           )
         )
@@ -235,6 +236,7 @@ enum InstantLiveRefreshTranslator {
   private static func pageInfo(
     from computation: InstantLiveJSONValue,
     query: InstantLiveJSONValue,
+    queryKey: String,
     attributes: InstantLiveRefreshAttributeContext
   ) throws -> InstantQueryPageInfo? {
     guard let namespace = query.objectValue?.keys.sorted().first,
@@ -292,7 +294,8 @@ enum InstantLiveRefreshTranslator {
         "endEntityFingerprint": InstantInfiniteQueryDiagnostics.fingerprint(
           pageInfo.endCursor?.entityID
         ),
-      ]
+      ],
+      changeKey: queryKey
     )
     return pageInfo
   }

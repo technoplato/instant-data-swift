@@ -46,6 +46,36 @@ struct InstantDiagnosticsTests {
     #expect(entries[0].function == "test()")
   }
 
+  @Test("records a keyed snapshot only when its metadata changes")
+  func recordsKeyedSnapshotsOnlyOnChange() throws {
+    let fileURL = temporaryLogURL()
+    let diagnostics = InstantDiagnostics(
+      configuration: InstantDiagnosticsConfiguration(fileURL: fileURL, minimumLevel: .trace)
+    )
+    func snapshot(_ key: String, hasNextPage: Bool) {
+      diagnostics.record(
+        subsystem: "runtime",
+        category: "infinite-query",
+        event: "infinite.starter.snapshot",
+        message: "Starter page.",
+        metadata: ["hasNextPage": hasNextPage.description],
+        changeKey: key
+      )
+    }
+
+    snapshot("list", hasNextPage: false)
+    snapshot("list", hasNextPage: false)
+    snapshot("list", hasNextPage: false)
+    snapshot("detail", hasNextPage: false)
+    snapshot("list", hasNextPage: true)
+    snapshot("list", hasNextPage: true)
+    snapshot("list", hasNextPage: false)
+
+    let entries = try readEntries(at: fileURL)
+    #expect(entries.map(\.metadata["hasNextPage"]) == ["false", "false", "true", "false"])
+    #expect(entries.count == 4)
+  }
+
   @Test("redacts credentials while retaining useful non-secret context")
   func redactsCredentials() throws {
     let fileURL = temporaryLogURL()

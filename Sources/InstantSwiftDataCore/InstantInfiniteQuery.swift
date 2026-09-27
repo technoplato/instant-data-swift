@@ -1404,7 +1404,8 @@ private actor InstantLiveInfiniteQueryCoordinator {
         ? "Pre-kickstart starter page can expand from local fullness."
         : "Pre-kickstart starter page closed (short of page size or already closed).",
       metadata: starterMeta,
-      correlationID: plan.id
+      correlationID: plan.id,
+      changeKey: plan.id
     )
 
     setForwardChunk(

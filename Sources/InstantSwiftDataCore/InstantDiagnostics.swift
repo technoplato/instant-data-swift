@@ -125,6 +125,9 @@ public final class InstantDiagnostics: @unchecked Sendable {
   private var lastWriteError: String?
   private var handlers: [UUID: InstantDiagnosticHandler] = [:]
   private var hasActiveSink = false
+  /// Last metadata emitted per `changeKey`, for events that record only transitions.
+  private var lastMetadataByChangeKey: [String: [String: String]] = [:]
+  private static let maximumChangeKeys = 512
 
   public init(
     configuration: InstantDiagnosticsConfiguration,
@@ -210,6 +213,52 @@ public final class InstantDiagnostics: @unchecked Sendable {
     line: UInt = #line,
     function: String = #function
   ) {
+    recordEntry(
+      level, subsystem: subsystem, category: category, event: event, message: message,
+      metadata: metadata, correlationID: correlationID, changeKey: nil,
+      fileID: fileID, line: line, function: function
+    )
+  }
+
+  /// Records a state snapshot only when its metadata differs from the last one recorded for the
+  /// same `event` and `changeKey`.
+  ///
+  /// For snapshots that repeat on every refresh. On an iPhone on 2026-09-26, 97.8% of
+  /// `infinite.starter.snapshot` and 79.7% of `infinite.remote-page-info.decoded` events repeated
+  /// the previous one exactly.
+  public func record(
+    _ level: InstantDiagnosticLevel = .info,
+    subsystem: String,
+    category: String,
+    event: String,
+    message: String,
+    metadata: [String: String] = [:],
+    correlationID: String? = nil,
+    changeKey: String,
+    fileID: String = #fileID,
+    line: UInt = #line,
+    function: String = #function
+  ) {
+    recordEntry(
+      level, subsystem: subsystem, category: category, event: event, message: message,
+      metadata: metadata, correlationID: correlationID, changeKey: changeKey,
+      fileID: fileID, line: line, function: function
+    )
+  }
+
+  private func recordEntry(
+    _ level: InstantDiagnosticLevel,
+    subsystem: String,
+    category: String,
+    event: String,
+    message: String,
+    metadata: [String: String],
+    correlationID: String?,
+    changeKey: String?,
+    fileID: String,
+    line: UInt,
+    function: String
+  ) {
     guard hasActiveSink else { return }
     var entry: InstantDiagnosticEntry?
     var fileURL: URL?
@@ -220,6 +269,14 @@ public final class InstantDiagnostics: @unchecked Sendable {
       // still supported for CLI/tools; Scribe installs a handler so events reach
       // the Tailscale dual-write collector even when the file path is unset.
       guard configuration.fileURL != nil || !handlers.isEmpty else { return }
+      if let changeKey {
+        let memoKey = event + "\u{1F}" + changeKey
+        guard lastMetadataByChangeKey[memoKey] != metadata else { return }
+        if lastMetadataByChangeKey.count >= Self.maximumChangeKeys {
+          lastMetadataByChangeKey.removeAll(keepingCapacity: true)
+        }
+        lastMetadataByChangeKey[memoKey] = metadata
+      }
 
       sequence &+= 1
       entry = InstantDiagnosticEntry(
