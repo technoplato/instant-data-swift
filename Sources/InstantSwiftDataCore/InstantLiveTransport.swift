@@ -15,20 +15,24 @@ public enum InstantLiveJSONValue: Hashable, Codable, Sendable {
   public init(from decoder: Decoder) throws {
     let container = try decoder.singleValueContainer()
 
+    // Each failed attempt throws a `DecodingError` that records its coding path, so try the kinds
+    // in the order they occur in server payloads: strings, then numbers, then containers.
+    // `JSONDecoder` never converts between JSON kinds, so exactly one attempt can succeed and the
+    // order cannot change the result. Trying `Bool`, `Int`, and `Double` first made every string
+    // throw three errors (625 ms per 30 s of a Mac soak, 2026-09-26). `Int` was redundant: both
+    // integers and fractions become `.number(Double)`.
     if container.decodeNil() {
       self = .null
-    } else if let value = try? container.decode(Bool.self) {
-      self = .bool(value)
-    } else if let value = try? container.decode(Int.self) {
-      self = .number(Double(value))
-    } else if let value = try? container.decode(Double.self) {
-      self = .number(value)
     } else if let value = try? container.decode(String.self) {
       self = .string(value)
+    } else if let value = try? container.decode(Double.self) {
+      self = .number(value)
     } else if let value = try? container.decode([InstantLiveJSONValue].self) {
       self = .array(value)
     } else if let value = try? container.decode([String: InstantLiveJSONValue].self) {
       self = .object(value)
+    } else if let value = try? container.decode(Bool.self) {
+      self = .bool(value)
     } else {
       throw DecodingError.dataCorruptedError(
         in: container,
