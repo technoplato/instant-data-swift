@@ -1,3 +1,15 @@
+## 2026-09-26 23:13:13 EDT — realtime-voice-sqlite-instant `d2e6fbc69a2f5dec5ffbc28d7f0d23a102222577`
+Render the recording timeline once per mutation, not per internal write; ABBA thread CPU (debug) 300 live partials on a full window 1,020 -> 199 ms (#250 #044). Branch agent/claude-opus-5.5/perf-audit-2026-09-26, not on main.
+
+## 2026-09-26 23:08:29 EDT — instant-data-swift `44b176a492b5d883fb58c6bf29287b689354ebb5`
+Resolve the schema once per live refresh and sort persisted results without string copies; ABBA thread CPU (debug) translate 5,123 -> 1,223 ms, persisted results 1,071 -> 627 ms, empty merges eliminated (#250 #155). Branch agent/claude-opus-5.5/perf-audit-2026-09-26, not on main.
+
+## 2026-09-26 22:58:49 EDT — realtime-voice-sqlite-instant `088f6c79fa35b17671545d5ac202a2aa1610ce30`
+Plan-only commit: performance and concurrency audit, Scribe side, with _touching claims (#250).
+
+## 2026-09-26 22:58:49 EDT — instant-data-swift `fc1134fd6be928f3e327f2a47989be3d2735b60e`
+Plan-only commit: performance and concurrency audit, library side, with _touching claims (#250).
+
 ## 2026-09-26 21:10:38 EDT — realtime-voice-sqlite-instant `b2a8614ead7ec79f20977e775ac3057235b8c2bf`
 PROGRESS: Scribe 0.1 (57) installed and running on Michael's iPhone from clean cc684872 with instant-data-swift 1.6.0 (#247 #044).
 

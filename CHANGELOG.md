@@ -10,6 +10,23 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## September 26th, 2026 at 11:14:24 p.m. EDT — `44b176a492b5` Resolve the schema once per live refresh and sort persisted results without string copies (#250 #155)
+
+- **Implementation commit:** `44b176a492b5d883fb58c6bf29287b689354ebb5`
+- **Change:** Resolve the schema once per live refresh and sort persisted results without string copies (#250 #155)
+- **Details:**
+  - Mac soak profile: 310 ms per 30 s rebuilding AttributeStore indexes in live refresh (per-computation resolvedLocalAttributes, empty merges).
+  - ABBA thread CPU (debug): translate 5,123 -> 1,223 ms; persisted-result inits 1,071 -> 627 ms; 1,000 empty merges 2,856 -> 0.1 ms.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/TripleIndexes.swift` — Empty merge is a no-op.
+  - `Sources/InstantSwiftDataCore/InstantLiveRefreshApplication.swift` — Attributes resolved once per refresh; persisted results sorted without per-comparison string copies.
+  - `Tests/InstantSwiftDataCoreTests/InstantLiveRefreshAttributeCostTests.swift` — Empty-merge equivalence and cost benchmarks.
+  - `Tests/InstantSwiftDataCoreTests/InstantPersistedLiveQueryResultCostTests.swift` — Order equivalence and cost benchmark.
+  - `Tests/InstantSwiftDataCoreTests/ThreadCPUClock.swift` — Thread CPU clock for load-robust measurement.
+- **User context (verbatim):**
+  > please do a complete audit on this entire applications structure as well as the library. And if there's anywhere else that there's just not performance, please let me know.
+- **SpecStory:** unavailable — Claude Code CLI session; no SpecStory capture for this task
+
 ## September 26th, 2026 at 7:29:00 p.m. EDT — `94166c5a05df` Handle new and small entities whole and capture whole delete cascades (#044 #155)
 
 - **Implementation commit:** `94166c5a05df475e831fbcedeff24e11d2a8c700`
