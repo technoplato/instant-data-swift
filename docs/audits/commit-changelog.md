@@ -1,3 +1,12 @@
+## 2026-09-27 12:47:34 EDT — realtime-voice-sqlite-instant `a5b192c298927e36080235ef352386bc6f760c6f`
+PROGRESS: Scribe 0.1 (61) on the iPhone and the Mac app with the phone-to-Mac stream (#003 #224 #257).
+
+## 2026-09-27 12:44:30 EDT — realtime-voice-sqlite-instant `a89cf77c577991f6ee2793a73f5deff22b54589e`
+Mac installs with the published Instant pin no longer die on macOS bash 3.2's empty-array rule in install_scribe_shared_app.sh; new /bin/bash test (#257).
+
+## 2026-09-27 12:44:30 EDT — realtime-voice-sqlite-instant `4ebefe7b27fd632c1de0f9b4bfeef1d31723fc1b`
+Change-log ledger.
+
 ## 2026-09-27 12:37:15 EDT — realtime-voice-sqlite-instant `f16bc252530987631e3478de3555e38c2b810e78`
 Change-log ledger.
 
