@@ -10,6 +10,19 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## September 27th, 2026 at 3:13:03 p.m. EDT — `fc7ce10c5940` Saturate the live timeout sleep instead of trapping on a far-future deadline (#259)
+
+- **Implementation commit:** `fc7ce10c59400fe1f7ba28702ec990984d78d03e`
+- **Change:** The live timeout sleep saturates instead of trapping on a far-future deadline.
+- **Details:**
+  - UInt64 milliseconds * 1,000,000 overflowed for deadlines beyond about 584 years (max(0, deadline - now) from an Int64 deadline) and crashed the process with signal 5; the full suite hit it under load on 2026-09-27. multipliedReportingOverflow saturates to UInt64.max nanoseconds. InstantLiveTimeoutSleepTests: crash before, pass after.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantLiveTransport.swift` — saturating millisecond-to-nanosecond conversion
+  - `Tests/InstantSwiftDataCoreTests/InstantLiveTimeoutSleepTests.swift` — far-future sleep cancels instead of trapping; ordinary sleep still waits
+- **User context (verbatim):**
+  > It was the transcription text that wasn't showing in a freshly recorded thing.
+- **SpecStory:** unavailable — Claude Code CLI session; no SpecStory capture configured for this session.
+
 ## September 27th, 2026 at 2:41:21 p.m. EDT — `552457420ee3` Keep observations and pruned entities intact: stale-emission hydration and whole-entity orphan collection (#259 #274)
 
 - **Implementation commit:** `552457420ee3dfea8b72514257307b76606b027d`
