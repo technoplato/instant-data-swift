@@ -259,6 +259,92 @@ struct InstantDiagnosticsTests {
     #expect(entry.metadata["large"]?.count == 4_097)
   }
 
+  @Test("keeps the file under its limit with one previous file")
+  func rotatesAtTheLimit() throws {
+    let fileURL = temporaryLogURL()
+    let previousURL = InstantDiagnostics.previousLogFileURL(for: fileURL)
+    let diagnostics = InstantDiagnostics(
+      configuration: InstantDiagnosticsConfiguration(fileURL: fileURL, maximumFileBytes: 4_096)
+    )
+
+    for index in 0..<100 {
+      diagnostics.record(
+        subsystem: "test",
+        category: "rotation",
+        event: "row.\(index)",
+        message: String(repeating: "x", count: 100)
+      )
+    }
+
+    let current = try readEntries(at: fileURL)
+    let previous = try readEntries(at: previousURL)
+    #expect(try fileSize(fileURL) <= 4_096)
+    #expect(try fileSize(previousURL) <= 4_096)
+    #expect(previousURL.lastPathComponent.hasSuffix(".previous.jsonl"))
+    // Newest rows survive in order across the two files; older rotations were replaced.
+    let events = (previous + current).map(\.event)
+    #expect(events.last == "row.99")
+    #expect(events == (100 - events.count..<100).map { "row.\($0)" })
+    #expect(diagnostics.status.lastWriteError == nil)
+  }
+
+  @Test("grows without limit only when asked")
+  func unlimitedWhenNil() throws {
+    let fileURL = temporaryLogURL()
+    let diagnostics = InstantDiagnostics(
+      configuration: InstantDiagnosticsConfiguration(fileURL: fileURL, maximumFileBytes: nil)
+    )
+    for index in 0..<50 {
+      diagnostics.record(
+        subsystem: "test", category: "rotation", event: "row.\(index)",
+        message: String(repeating: "x", count: 100)
+      )
+    }
+    #expect(try readEntries(at: fileURL).count == 50)
+    #expect(!FileManager.default.fileExists(atPath: InstantDiagnostics.previousLogFileURL(for: fileURL).path))
+    #expect(InstantDiagnosticsConfiguration(fileURL: fileURL).maximumFileBytes == 16 * 1_024 * 1_024)
+    #expect(
+      InstantDiagnosticsConfiguration.environment([
+        "INSTANT_SWIFT_DATA_LOG_PATH": fileURL.path, "INSTANT_SWIFT_DATA_LOG_MAX_BYTES": "0",
+      ]).maximumFileBytes == nil
+    )
+  }
+
+  /// Threads that opened the file before another rotated it must reopen, not rotate again: a
+  /// second rotation from the stale file would move the fresh file over the previous one.
+  @Test("concurrent writers across rotations write only whole rows and lose none they should keep")
+  func concurrentRotation() async throws {
+    let fileURL = temporaryLogURL()
+    let diagnostics = InstantDiagnostics(
+      configuration: InstantDiagnosticsConfiguration(fileURL: fileURL, maximumFileBytes: 64 * 1_024)
+    )
+    await withTaskGroup(of: Void.self) { group in
+      for writer in 0..<8 {
+        group.addTask {
+          for index in 0..<150 {
+            diagnostics.record(
+              subsystem: "test", category: "rotation", event: "w\(writer).\(index)",
+              message: String(repeating: "x", count: 120)
+            )
+          }
+        }
+      }
+    }
+
+    let current = try readEntries(at: fileURL)
+    let previous = try readEntries(at: InstantDiagnostics.previousLogFileURL(for: fileURL))
+    #expect(try fileSize(fileURL) <= 64 * 1_024)
+    #expect(diagnostics.status.lastWriteError == nil)
+    // The two files together hold at least one full file of the newest rows.
+    let rowBytes = try fileSize(fileURL) / max(1, current.count)
+    #expect(current.count + previous.count >= (64 * 1_024 / rowBytes) - 1)
+    #expect(Set((current + previous).map(\.event)).count == current.count + previous.count)
+  }
+
+  private func fileSize(_ url: URL) throws -> Int {
+    try (FileManager.default.attributesOfItem(atPath: url.path)[.size] as? NSNumber)?.intValue ?? 0
+  }
+
   private func temporaryLogURL() -> URL {
     FileManager.default.temporaryDirectory
       .appendingPathComponent("instant-diagnostics-tests")

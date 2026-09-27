@@ -1,3 +1,75 @@
+## 2026-09-27 01:55:14 EDT — realtime-voice-sqlite-instant `fe804fe8992c0d45618020dcf0a0324fb651bed6`
+Change-log ledger.
+
+## 2026-09-27 01:55:14 EDT — realtime-voice-sqlite-instant `6a596fd0c9f5ca242d2324a01ba357841e6c11e1`
+MetricKit signposts for recording and broadcast intervals; pull script summarizes signpost metrics (#252 #044).
+
+## 2026-09-27 01:37:57 EDT — realtime-voice-sqlite-instant `947a5642be98b488a81de7e0174a9483bde8405e`
+Change-log ledger.
+
+## 2026-09-27 01:37:57 EDT — realtime-voice-sqlite-instant `5365c7102caa39c6d5302a6a31abce1d294f106c`
+Region breakdowns on falls of 12 MB or more too, so a footprint flip is captured on both sides (#252 #044).
+
+## 2026-09-27 01:33:54 EDT — realtime-voice-sqlite-instant `9d4a951eb10d18e0d84a9a814d1286d85d054854`
+Change-log ledger.
+
+## 2026-09-27 01:33:39 EDT — realtime-voice-sqlite-instant `2b29b0508a4ad35bbf5df336e889d7a652acb94b`
+System surface updates flow through one long-lived effect fed by @Shared state, so TCA no longer retains a task per timer tick, section, or list update; Simulator soak: live tasks +142/min before, flat after (#252 #044).
+
+## 2026-09-27 01:32:22 EDT — realtime-voice-sqlite-instant `aa560a222befa6e8dc06b9a4fd0204fa7de205ef`
+Log redactor skips the regex for values without ':' or '='; 21.9 -> 2.5 us per event, identical results (#252 #250).
+
+## 2026-09-27 01:27:05 EDT — realtime-voice-sqlite-instant `0a3b8b4b8acb46c86ed81b8bdcbd70979107481a`
+Claims for the next change (coordination protocol).
+
+## 2026-09-27 00:46:15 EDT — realtime-voice-sqlite-instant `5ea26b81d260ef5a0f1a584d6efe073f4be8a0d2`
+Claims for the next change (coordination protocol).
+
+## 2026-09-27 00:40:09 EDT — realtime-voice-sqlite-instant `2ba82fd657aaf8d06ef5c9afbd1d9ec8e350cd61`
+Change-log ledger.
+
+## 2026-09-27 00:40:09 EDT — realtime-voice-sqlite-instant `dab45cbef7aaf0f55823cfd1ffa46a9d07df7b5a`
+Recorder test guard: thread assertions apply only when TestStore's main serial executor was off (#252).
+
+## 2026-09-27 00:39:55 EDT — realtime-voice-sqlite-instant `1abf3e0d491d6aa133e5cffc73cc8644dbe17ba1`
+Journal rows kept in a read-only map of the file after load, compaction, and every 256 KiB of appends; MallocStackLogging: 6.46 MB live heap -> 0.54 MB for 4,000 rows (#252 #044).
+
+## 2026-09-26 23:48:59 EDT — realtime-voice-sqlite-instant `5afb78fca3ea92ebc1ddd931a92744120b3444d3`
+Change-log ledger.
+
+## 2026-09-26 23:48:49 EDT — realtime-voice-sqlite-instant `2b5d4e8536046c77605f037e67ee1b3f9afe9acd`
+Collector outbox spool capped as a delivery queue (1,024 rows / 2 MiB) instead of a second device log; phone outbox was 4.3 MB after the hour (#252 #044).
+
+## 2026-09-26 23:46:09 EDT — realtime-voice-sqlite-instant `4ea3db281a2c3a2ba68ba60d01cc8e432b567b41`
+Claims for the next change (coordination protocol).
+
+## 2026-09-26 23:41:53 EDT — realtime-voice-sqlite-instant `acedae1b63f57883023b4c77c39ed0bd36f8d574`
+Change-log ledger.
+
+## 2026-09-26 23:41:43 EDT — realtime-voice-sqlite-instant `cda248bf77adde7b1fabd832582ac052c783ba36`
+One first-sample region breakdown per process (trigger shared across sampling-task restarts); dylib __DATA split from VM_ALLOCATE; pull script reads the library's previous log file (#252 #044).
+
+## 2026-09-26 23:58:30 EDT — instant-data-swift `cb6e9e45ed4cd826a4ed33af977ddaf8924b53de`
+Cap the diagnostics file at 16 MiB by default and keep one previous file; a writer on a just-rotated file reopens instead of rotating again (#254). Needs a library release before Scribe (pinned 1.6.0) picks it up.
+
+## 2026-09-26 23:31:55 EDT — realtime-voice-sqlite-instant `d0c3fbbc740613df6557070b2240467e885327fe`
+Change-log ledger for the launch watchdog fix and the memory diagnostics (#252 #044).
+
+## 2026-09-26 23:31:34 EDT — realtime-voice-sqlite-instant `36af3ae1286554b1fc6589cdb9a5ad7d4d3c31fd`
+Record where memory lives: kernel ledgers (graphics, media, neural, purgeable, compressed, headroom) on every memory sample, VM region breakdowns on thresholds and jumps, and samples every 30 s while recording in the background with feature context (#252 #044).
+
+## 2026-09-26 23:31:01 EDT — realtime-voice-sqlite-instant `4e4d9908f4a54473f31137a3a36598822157a272`
+Stop resolving the host name in App.init: ProcessInfo.hostName blocked a first launch for 20 s and iOS killed the app (0x8BADF00D); local device name plus an architecture test (#252 #044).
+
+## 2026-09-26 23:23:17 EDT — realtime-voice-sqlite-instant `1a9392ddbc05d4e3441edff89ca5257cb18999cd`
+Change-log ledger for the device diagnostics pull (#044).
+
+## 2026-09-26 23:22:57 EDT — realtime-voice-sqlite-instant `db51b89467084adaa388855b48a705462b051394`
+scripts/pull-device-diagnostics.py pulls on-device diagnostics after the fact and writes a Markdown/JSON report; skill scribe-device-diagnostics, referenced from scribe-install (#044).
+
+## 2026-09-26 22:33:35 EDT — realtime-voice-sqlite-instant `06988a4c36c03451ec343fae0d4df7c08b5f21bc`
+Plan-only commit: memory audit and after-the-fact device diagnostics, with _touching claims (#044).
+
 ## 2026-09-27 00:51:27 EDT — realtime-voice-sqlite-instant `99a6e5ae2d3bd09a375adf428ca6eae8fd83e658`
 Mac CPU regression harness (scripts/perf) and performance-budget reference numbers from the audit's paired soaks (#250). Branch agent/claude-opus-5.5/perf-audit-2026-09-26.
 

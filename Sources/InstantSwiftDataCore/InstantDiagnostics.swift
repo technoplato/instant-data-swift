@@ -51,13 +51,24 @@ public struct InstantDiagnosticEntry: Codable, Hashable, Sendable {
 public struct InstantDiagnosticsConfiguration: Hashable, Sendable {
   public var fileURL: URL?
   public var minimumLevel: InstantDiagnosticLevel
+  /// The most the log file may hold before it becomes `<name>.previous.jsonl` (replacing the
+  /// older one) and a new file starts, so the log never holds more than twice this. `nil` lets
+  /// the file grow without limit.
+  ///
+  /// An app records thousands of entries an hour: on 2026-09-26 an iPhone recording wrote
+  /// 27.5 MB in an hour to a file nothing ever trimmed (#254).
+  public var maximumFileBytes: Int?
+
+  public static let defaultMaximumFileBytes = 16 * 1_024 * 1_024
 
   public init(
     fileURL: URL?,
-    minimumLevel: InstantDiagnosticLevel = .debug
+    minimumLevel: InstantDiagnosticLevel = .debug,
+    maximumFileBytes: Int? = Self.defaultMaximumFileBytes
   ) {
     self.fileURL = fileURL
     self.minimumLevel = minimumLevel
+    self.maximumFileBytes = maximumFileBytes.map { max(1, $0) }
   }
 
   public static func environment(
@@ -75,7 +86,16 @@ public struct InstantDiagnosticsConfiguration: Hashable, Sendable {
       environment["INSTANT_SWIFT_DATA_LOG_LEVEL"]
       .flatMap { InstantDiagnosticLevel(rawValue: $0.lowercased()) }
       ?? .debug
-    return Self(fileURL: URL(fileURLWithPath: rawPath), minimumLevel: level)
+    // INSTANT_SWIFT_DATA_LOG_MAX_BYTES=0 lets a long tool run keep everything.
+    let maximumFileBytes =
+      environment["INSTANT_SWIFT_DATA_LOG_MAX_BYTES"].flatMap(Int.init)
+      .map { $0 > 0 ? $0 : nil }
+      ?? defaultMaximumFileBytes
+    return Self(
+      fileURL: URL(fileURLWithPath: rawPath),
+      minimumLevel: level,
+      maximumFileBytes: maximumFileBytes
+    )
   }
 }
 
@@ -262,6 +282,7 @@ public final class InstantDiagnostics: @unchecked Sendable {
     guard hasActiveSink else { return }
     var entry: InstantDiagnosticEntry?
     var fileURL: URL?
+    var maximumFileBytes: Int?
     var activeHandlers: [InstantDiagnosticHandler] = []
     lock.withLock {
       guard level.priority >= configuration.minimumLevel.priority else { return }
@@ -299,6 +320,7 @@ public final class InstantDiagnostics: @unchecked Sendable {
         function: Self.bounded(function, limit: 256)
       )
       fileURL = configuration.fileURL
+      maximumFileBytes = configuration.maximumFileBytes
       activeHandlers = Array(handlers.values)
     }
 
@@ -308,7 +330,7 @@ public final class InstantDiagnostics: @unchecked Sendable {
       do {
         var data = try encoder.encode(entry)
         data.append(0x0A)
-        try Self.append(data, to: fileURL)
+        try Self.append(data, to: fileURL, maximumFileBytes: maximumFileBytes)
         lock.withLock { lastWriteError = nil }
       } catch {
         lock.withLock { lastWriteError = String(describing: error) }
@@ -392,7 +414,12 @@ public final class InstantDiagnostics: @unchecked Sendable {
     return bounded(value, limit: 256)
   }
 
-  private static func append(_ data: Data, to fileURL: URL) throws {
+  /// The file that holds the entries written before the last rotation.
+  public static func previousLogFileURL(for fileURL: URL) -> URL {
+    fileURL.deletingPathExtension().appendingPathExtension("previous.jsonl")
+  }
+
+  private static func append(_ data: Data, to fileURL: URL, maximumFileBytes: Int?) throws {
     let directory = fileURL.deletingLastPathComponent()
     try FileManager.default.createDirectory(
       at: directory,
@@ -400,30 +427,56 @@ public final class InstantDiagnostics: @unchecked Sendable {
       attributes: [.posixPermissions: 0o700]
     )
 
-    let descriptor = open(fileURL.path, O_WRONLY | O_CREAT | O_APPEND, 0o600)
-    guard descriptor >= 0 else {
-      throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
-    }
-    defer { _ = close(descriptor) }
-    _ = fchmod(descriptor, 0o600)
+    // A writer that opened the file just before another rotated it holds the renamed file, so it
+    // checks the path still names its file and reopens if not. Rotating from a stale descriptor
+    // would move the new file over the previous one and lose a whole file of entries.
+    for _ in 0..<4 {
+      let descriptor = open(fileURL.path, O_WRONLY | O_CREAT | O_APPEND, 0o600)
+      guard descriptor >= 0 else {
+        throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
+      }
+      defer { _ = close(descriptor) }
+      _ = fchmod(descriptor, 0o600)
 
-    guard flock(descriptor, LOCK_EX) == 0 else {
-      throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
-    }
-    defer { _ = flock(descriptor, LOCK_UN) }
+      guard flock(descriptor, LOCK_EX) == 0 else {
+        throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
+      }
+      defer { _ = flock(descriptor, LOCK_UN) }
 
-    try data.withUnsafeBytes { rawBuffer in
-      guard let baseAddress = rawBuffer.baseAddress else { return }
-      var offset = 0
-      while offset < rawBuffer.count {
-        let result = write(descriptor, baseAddress.advanced(by: offset), rawBuffer.count - offset)
-        if result < 0 {
-          if errno == EINTR { continue }
+      var opened = stat()
+      var current = stat()
+      guard fstat(descriptor, &opened) == 0 else {
+        throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
+      }
+      guard
+        stat(fileURL.path, &current) == 0,
+        current.st_ino == opened.st_ino,
+        current.st_dev == opened.st_dev
+      else { continue }
+      if let maximumFileBytes, opened.st_size > 0,
+        Int(opened.st_size) + data.count > maximumFileBytes
+      {
+        guard rename(fileURL.path, previousLogFileURL(for: fileURL).path) == 0 else {
           throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
         }
-        offset += result
+        continue
       }
+
+      try data.withUnsafeBytes { rawBuffer in
+        guard let baseAddress = rawBuffer.baseAddress else { return }
+        var offset = 0
+        while offset < rawBuffer.count {
+          let result = write(descriptor, baseAddress.advanced(by: offset), rawBuffer.count - offset)
+          if result < 0 {
+            if errno == EINTR { continue }
+            throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
+          }
+          offset += result
+        }
+      }
+      _ = fsync(descriptor)
+      return
     }
-    _ = fsync(descriptor)
+    throw POSIXError(.EAGAIN)
   }
 }

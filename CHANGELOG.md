@@ -58,6 +58,21 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
   > please do a complete audit on this entire applications structure as well as the library. And if there's anywhere else that there's just not performance, please let me know.
 - **SpecStory:** unavailable — Claude Code CLI session; no SpecStory capture for this task
 
+## September 26th, 2026 at 11:41:15 p.m. EDT — `cb6e9e45ed4c` Cap the diagnostics file and keep one previous file (#254)
+
+- **Implementation commit:** `cb6e9e45ed4cd826a4ed33af977ddaf8924b53de`
+- **Change:** Cap the diagnostics file and keep one previous file (#254)
+- **Details:**
+  - InstantDiagnosticsConfiguration.maximumFileBytes (default 16 MiB; nil or INSTANT_SWIFT_DATA_LOG_MAX_BYTES=0 for unlimited) rotates the file to <name>.previous.jsonl, so the log holds at most twice the limit.
+  - A writer holding a descriptor to a file another writer just rotated reopens instead of rotating again; 11 diagnostics tests pass including 8 concurrent writers.
+  - Measured motivation: Scribe on an iPhone wrote 27.5 MB in an hour (31,372 rows) to a never-trimmed file (2026-09-26).
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantDiagnostics.swift` — maximumFileBytes, rotation with a stale-descriptor check.
+  - `Tests/InstantSwiftDataCoreTests/InstantDiagnosticsTests.swift` — Rotation order, unlimited when nil, concurrent writers.
+- **User context (verbatim):**
+  > set it up so that whenever you run these kinds of builds, we can get diagnostics after the fact
+- **SpecStory:** unavailable — unavailable — Claude Code CLI session; no SpecStory capture for this task
+
 ## September 26th, 2026 at 7:29:00 p.m. EDT — `94166c5a05df` Handle new and small entities whole and capture whole delete cascades (#044 #155)
 
 - **Implementation commit:** `94166c5a05df475e831fbcedeff24e11d2a8c700`
