@@ -1,8 +1,122 @@
 ## 2026-09-27 16:57:42 EDT — instant-data-swift `af3c05849c4ad07b812a8f56abed07dbf757b1cb`
 Local writes no longer wait behind server apply: breadth-first component closure and an uncorrelated outbox rewrite cut the operation gate hold during server apply from 23.5 s to 570 ms at 2,000 pending (969 -> 207 ms at 439); the gate names its holder's phase and reports long waits (#277).
 
+## 2026-09-27 16:48:46 EDT — realtime-voice-sqlite-instant `7eb83e3c217b8847712a6f87370a7d890b552c2a`
+Log Scribe 0.1 (63) with the audio upload and broadcast fixes in PROGRESS (#258 #260).
+
+## 2026-09-27 16:36:22 EDT — realtime-voice-sqlite-instant `2b53e001d770f8f66f9ab3ae3e9c56d7187e7c77`
+Record Scribe 0.1 (63) in the change log.
+
+## 2026-09-27 16:36:21 EDT — realtime-voice-sqlite-instant `5bbeeeaeae3053f578b8bac139697a5fa3187e75`
+Release Scribe 0.1 (63).
+
 ## 2026-09-27 16:23:24 EDT — instant-data-swift `686c6a3d9b0258491f7c5aa8ed6d6b5abc568de0`
 Plan and claims for triage L: server-apply operation gate and selected-field row quarantine (#277 #278).
+
+## 2026-09-27 16:21:21 EDT — realtime-voice-sqlite-instant `ce0ef0f24ab42bbff5c342d8a8422c38e8e86a09`
+Merge triage A: upload retries from the local store, broadcast survives pauses and interruptions, robust PCM reader, lane and extension diagnostics (#258 #260 #272).
+
+## 2026-09-27 16:19:30 EDT — realtime-voice-sqlite-instant `141775b65c324266b90356a7445923ce5395b754`
+Note triage A's landed changes for D, E, F, and G in the channel (#258 #260 #272).
+
+## 2026-09-27 16:18:33 EDT — realtime-voice-sqlite-instant `ae67047dcc9739b24ba1e90931bccac14d54e7ae`
+Log Scribe 0.1 (62) with the recording-8 triage fixes in PROGRESS (#259 #274 #273 #275 #272 #123).
+
+## 2026-09-27 16:17:51 EDT — realtime-voice-sqlite-instant `d31ce4365b5b942b5a1b7a72a53f391550c1fa50`
+Record triage A's broadcast audio, media scan, and device log commits in the change log.
+
+## 2026-09-27 16:12:15 EDT — realtime-voice-sqlite-instant `3bdf6db664783dd809bae0ffd1447a39680d0ba7`
+Merge main into triage A (#258 #260 #272).
+
+## 2026-09-27 16:12:04 EDT — realtime-voice-sqlite-instant `757e209e4090e26d29b721fd0d80f412e61643a4`
+Record lane stalls, end reasons, and system-audio evidence in the device log (#258 #260 #272).
+
+## 2026-09-27 16:07:21 EDT — realtime-voice-sqlite-instant `d5ac987a86af7f8c64f7c9449d89be9e2cf9f413`
+Release Scribe 0.1 (62).
+
+## 2026-09-27 16:07:21 EDT — realtime-voice-sqlite-instant `0422b3a29402dc8a97c8bca9d503bf144c211663`
+Record Scribe 0.1 (62) in the change log.
+
+## 2026-09-27 15:55:57 EDT — realtime-voice-sqlite-instant `90707c27dc3a39b303d8a3d166a3b64fc3fba593`
+Declare the capture telemetry dependency once in the Recording reducer (#276).
+
+## 2026-09-27 15:49:15 EDT — realtime-voice-sqlite-instant `7a4ed61b4467b81160c23dabfd8cc7ae06d4e17f`
+Merge triage E: recognizer restarts through other apps' voice mode and dictation, stall detection, telemetry, smooth waveform (#272 #123 #225).
+
+## 2026-09-27 15:43:45 EDT — realtime-voice-sqlite-instant `203695fde65462051262a867c44fae9c6c093eb1`
+Pausing for another app's voice session no longer ends the user's broadcast (#260).
+
+## 2026-09-27 15:42:57 EDT — realtime-voice-sqlite-instant `efe6991cac2c048bbc06dbf2e9e136b0c480a8d5`
+Record the waveform scroll commit in the change log.
+
+## 2026-09-27 15:42:56 EDT — realtime-voice-sqlite-instant `485c131218994e8a2ad7e06c55d1ea040a0da1ac`
+Scroll the recording waveform smoothly between level updates (#225).
+
+## 2026-09-27 15:40:33 EDT — realtime-voice-sqlite-instant `2547dfa8a87476510029cfba2294734de667aa7c`
+Merge triage F: slow saves never block or pause, self-retrying blocks, interruptions keep recording, capture-health banner, telemetry call sites (#273 #275 #276).
+
+## 2026-09-27 15:36:01 EDT — realtime-voice-sqlite-instant `57a475faf13a4b3ceee87b677d066aa1e6f19ea9`
+Record the resume and never-auto-pause commits in the change log (#273 #275).
+
+## 2026-09-27 15:35:28 EDT — realtime-voice-sqlite-instant `3568d897686273ee43854a50458bf2860a8db5cd`
+Keep recordings live through durability stalls, interruptions, and capture failures (#273 #275).
+
+## 2026-09-27 15:34:23 EDT — realtime-voice-sqlite-instant `612377c5e1640a11858577f9c4cc9f928078259a`
+Record the capture telemetry call sites in the change log.
+
+## 2026-09-27 15:34:22 EDT — realtime-voice-sqlite-instant `82abfba7fd0c5a39900e42bbdc701d1f60445c3e`
+Record interruptions, route changes, recognizer errors, and transcription recovery in capture telemetry (#276 #272 #123).
+
+## 2026-09-27 15:32:56 EDT — realtime-voice-sqlite-instant `f8ba32d9fddc572e8ec4d2041f7f0fce1559e0a2`
+Merge triage D: saved-movie notification that plays it, live preview of the growing broadcast movie, ADR 0010 (#266 #267).
+
+## 2026-09-27 15:32:47 EDT — realtime-voice-sqlite-instant `0961b2119db8c1bf337101c6fadd5d2611517dfe`
+Keep timeline tests off the real 5-second first-snapshot clock (#274).
+
+## 2026-09-27 15:20:59 EDT — realtime-voice-sqlite-instant `84edc77574d44670b8eedb8a129e849db56c052d`
+Merge main into the triage D branch (#266 #267).
+
+## 2026-09-27 15:20:33 EDT — realtime-voice-sqlite-instant `b274612bcc25bafa9d40ebdb1ba60a8d2d2b80a8`
+Record the saved-movie notification and ADR 0010 live scrub in the change log (#266 #267).
+
+## 2026-09-27 15:19:54 EDT — realtime-voice-sqlite-instant `63348354ba941ca264b54bee29302efb2893e63d`
+Decide live scrub plays the growing broadcast movie in Scribe, not Photos; prototype it (#267).
+
+## 2026-09-27 15:19:53 EDT — realtime-voice-sqlite-instant `e72ebd23ad79b732605c5009370a8977acc96a3f`
+Announce saved broadcast movies with a notification that opens them in Scribe (#266).
+
+## 2026-09-27 15:13:36 EDT — realtime-voice-sqlite-instant `e5578f3b1ff6d79ec86311ee6f58ed83af7bc952`
+Merge main (capture telemetry #276 and triage work) into the speech recovery branch (#272 #123).
+
+## 2026-09-27 15:13:31 EDT — realtime-voice-sqlite-instant `099041a05607c0bce6f6f92a183bf03976e2071b`
+Merge triage C: static route snapshot inline, live map mode, iPhone landscape side column, map-state memory context (#263 #264 #265).
+
+## 2026-09-27 15:13:21 EDT — realtime-voice-sqlite-instant `a1ee2a2ad5a270fe1e28128ed39ed08b83fc5e95`
+Record the speech recovery commit in the change log.
+
+## 2026-09-27 15:13:21 EDT — realtime-voice-sqlite-instant `8dad9e969803f11c456ffcfbbe8475062a97304f`
+Record every mid-broadcast audio format change and the extension footprint (#260 #272 #258).
+
+## 2026-09-27 15:13:15 EDT — realtime-voice-sqlite-instant `ed9ebe06570e0a3e894b7e7faf9fcafc188a6b81`
+Merge triage B: 5-second saved-transcript cap with retry, words-missing diagnostic, Return to Latest as the only jump control (#259 #274 #261).
+
+## 2026-09-27 15:13:08 EDT — realtime-voice-sqlite-instant `31068bed756f447d877545fc210d5c7bd049da76`
+Restart transcription when the recognizer ends mid-recording, and let Resume start a new speech session (#272 #123 #273).
+
+## 2026-09-27 15:13:03 EDT — instant-data-swift `fc7ce10c59400fe1f7ba28702ec990984d78d03e`
+Saturate the live timeout sleep instead of trapping on a far-future deadline (#259).
+
+## 2026-09-27 15:13:03 EDT — instant-data-swift `44f4c0c3c889136603122c9dd0640a8a33ad6e99`
+Record the timeout sleep overflow fix in the change log.
+
+## 2026-09-27 15:04:27 EDT — instant-data-swift `14007bdee6ad4387da81c58ffdedef1d4881d914`
+Merge the deferred hydration fixes: whole-entity pruning and hydration that keeps its result (#259 #274).
+
+## 2026-09-27 15:02:42 EDT — realtime-voice-sqlite-instant `dc32dee7df5496c7a1ddbcf60543ff59a063993c`
+Note agent C's landed regions in the recording screen channel (#263 #264 #265).
+
+## 2026-09-27 15:01:34 EDT — instant-data-swift `27745b1c9eadcfbe800c0a6fa99556f23a155a9e`
+Record triage B's library and Scribe commits in the audit ledger (#259 #274 #261).
 
 ## 2026-09-27 14:54:01 EDT — realtime-voice-sqlite-instant `f57bf4e683e0742dbf2dd13ca234cf5b22bdd2d3`
 Merge main into triage B (#259 #274 #261).
@@ -16,17 +130,86 @@ Saved-transcript first page bounded to 5 s with a named failure and Retry; playb
 ## 2026-09-27 14:53:35 EDT — realtime-voice-sqlite-instant `95eaeb93320a1bf7523af3a24d989b0ad2347861`
 Delete Return to Live and Newer; Return to Latest is the only jump and returns a paged window to the newest rows (#261).
 
+## 2026-09-27 14:53:12 EDT — realtime-voice-sqlite-instant `e4f68b4387bf63acea455dc42b82d82ff56963ee`
+Merge main into the map layout branch (#263 #264 #265).
+
+## 2026-09-27 14:49:59 EDT — realtime-voice-sqlite-instant `eeca44e496957d106b53f03d159063b001e1654a`
+Scan pending media from the local store, not a live one-shot query (#258).
+
+## 2026-09-27 14:42:17 EDT — realtime-voice-sqlite-instant `8ef6a2511e5e20b935532d13e2ac04536616a51f`
+Record the snapshot route map, map mode, and landscape layout in the change log.
+
+## 2026-09-27 14:42:01 EDT — realtime-voice-sqlite-instant `5f46fdc442b8e3a0eb2be60438f246b7c6f4aca9`
+Add map mode and a landscape side column to the recording screen (#264 #265 #263).
+
+## 2026-09-27 14:41:27 EDT — realtime-voice-sqlite-instant `975ceaa2c1473060c4def9f27ddc7c19672c0982`
+Draw the inline route map over one snapshot image instead of a live map (#263).
+
 ## 2026-09-27 14:41:21 EDT — instant-data-swift `4a5d63a1fe892de63e00dca746150fd0d8de2f43`
 Change-log ledger.
 
+## 2026-09-27 14:28:19 EDT — realtime-voice-sqlite-instant `ef245700542f6277f6690fb8b88267fd982c7ebc`
+WIP: resume-after-block lane, list, and reducer changes before merging telemetry (#273 #275).
+
+## 2026-09-27 14:28:19 EDT — realtime-voice-sqlite-instant `1ec66938c9b31594e20b3c29960dd2478f34d85a`
+Merge main (capture telemetry #276) into the resume branch (#273 #275).
+
+## 2026-09-27 14:25:41 EDT — realtime-voice-sqlite-instant `be9d727c73d84f592aa2a11f36cdb709609bb632`
+Merge capture telemetry: typed, lock-light event recorder with batched background writes (#276).
+
 ## 2026-09-27 14:25:33 EDT — instant-data-swift `552457420ee3dfea8b72514257307b76606b027d`
 Deferred hydration drops a stale emission only when its query was refreshed after it; live-query pruning collects whole entities only and deletes their deferred payloads (#259 #274).
+
+## 2026-09-27 14:24:16 EDT — realtime-voice-sqlite-instant `a910b6332f5a79df5cdbc1b8031342c3c45b51a8`
+Record the #273 device evidence and the fix split in the channel (#273 #275).
+
+## 2026-09-27 14:23:30 EDT — realtime-voice-sqlite-instant `b0e60432ed3fe9188538233d4d06bc9097bbd7f9`
+Record the capture telemetry module commit in the change log (#276).
+
+## 2026-09-27 14:23:07 EDT — realtime-voice-sqlite-instant `f511f75613d197f9bc05095f5c433dab57312c10`
+Record the capture telemetry commits in the change log; post the API for agents E and F (#276).
+
+## 2026-09-27 14:22:45 EDT — realtime-voice-sqlite-instant `a674927cd4164888f304d44fd08cc0cc7207fcae`
+Export capture telemetry through the device pull and the triage skills (#276).
+
+## 2026-09-27 14:22:45 EDT — realtime-voice-sqlite-instant `998d0c68ca216711d4188870a4a3f012ab565782`
+Add lightweight capture telemetry: typed events, two rings, batched off-thread JSONL (#276).
+
+## 2026-09-27 14:21:42 EDT — realtime-voice-sqlite-instant `acc004ff9176d0e1e0c82e3e97b4b5d2a54b80ca`
+Read ReplayKit PCM at its real sample width and never past a buffer's end (#260 #272 #229).
+
+## 2026-09-27 14:10:22 EDT — realtime-voice-sqlite-instant `23614c42db043949b39f1a45a9c063d7ff071374`
+Plan lightweight capture telemetry; claim its paths (#276).
 
 ## 2026-09-27 14:02:19 EDT — instant-data-swift `436bebe3eed8b84783b09d8e2d144f43c3db3656`
 Plan and claims for the deferred hydration progress fix (#259 #274).
 
 ## 2026-09-27 14:02:18 EDT — realtime-voice-sqlite-instant `5d59438ad370dff5a45caa1411426e48bf88ee7a`
 Plan and claims for triage B: words, saved-transcript loading, jump controls (#259 #274 #261 #020 #262).
+
+## 2026-09-27 14:00:01 EDT — realtime-voice-sqlite-instant `5a8156d014c661e3240f6025d70fd29125560a80`
+Plan the resume-after-pause fix; claim paths (#273).
+
+## 2026-09-27 13:59:00 EDT — realtime-voice-sqlite-instant `41ebe817812fc5bec6a86a8147f903dc6b39288b`
+Plan speech recovery through other apps' voice modes, audio input selection, and meter rate; claim paths (#272 #123 #268 #225 #271).
+
+## 2026-09-27 13:58:46 EDT — realtime-voice-sqlite-instant `e2d2b022cad12e5b0641bf4bb9eabdecf0a51544`
+Add the triage-scribe skill and a read-only recording evidence script (#270).
+
+## 2026-09-27 13:58:46 EDT — realtime-voice-sqlite-instant `6122b84052c4b63ebe5bc3ac32434090a8928cf7`
+Record the triage-scribe skill in the change log.
+
+## 2026-09-27 13:56:49 EDT — realtime-voice-sqlite-instant `74b42ff8ee8f8a6fb04b52bbf11456dafef01dda`
+Plan the triage-scribe skill; claim its new paths (#270).
+
+## 2026-09-27 13:56:24 EDT — realtime-voice-sqlite-instant `b42db55844a85f14a649820c8eb3214c58eaff9d`
+Plan triage A: broadcast audio, extension stop, voice-session audio; claim paths (#258 #260 #272).
+
+## 2026-09-27 13:52:25 EDT — realtime-voice-sqlite-instant `7d6f97c5a8c31969c13c80d627b0614a3b016d0f`
+Plan the map memory cut, map mode, and landscape layout; claim paths (#263 #264 #265).
+
+## 2026-09-27 13:50:59 EDT — realtime-voice-sqlite-instant `dfaccd6a6c4fe3242b70462eb5408d7c3431b264`
+Plan the saved-movie notification and live scrub research; claim paths (#266 #267).
 
 ## 2026-09-27 12:47:34 EDT — realtime-voice-sqlite-instant `a5b192c298927e36080235ef352386bc6f760c6f`
 PROGRESS: Scribe 0.1 (61) on the iPhone and the Mac app with the phone-to-Mac stream (#003 #224 #257).
@@ -478,11 +661,11 @@ Add updateVideoSampleInterval to the non-iOS capture client fallback so the watc
 ## 2026-08-19 14:43:13 EDT — scribe-sqlite-data `6a1edf7edec0959b228802ecaff5eab7275014dd`
 Record #218 C1 072 numbers: upload-at-stop works, dest apply still over 100.
 
-## 2026-08-19 13:39:38 EDT — scribe-sqlite-data `5304b4e`
-Keep dest WAV recovery tests off live recording IDs so they cannot delete product files (#218).
-
 ## 2026-08-19 13:40:00 EDT — scribe-sqlite-data `2255d46644b1`
 Bump Scribe SQLiteData Dev to 0.1 (45) for the #218 C1 leftover install.
+
+## 2026-08-19 13:39:38 EDT — scribe-sqlite-data `5304b4e`
+Keep dest WAV recovery tests off live recording IDs so they cannot delete product files (#218).
 
 ## 2026-08-19 13:38:30 EDT — scribe-sqlite-data `5304b4eb3557`
 Keep dest WAV recovery tests off live recording IDs so they cannot delete product files (#218).
@@ -684,8 +867,6 @@ Stream dest CKAsset apply onto disk and restore process.memory.sample on the SQL
 - **SHA:** 3c0b969c3412d55a9d523b380a5ac0c1c44ef164
 - **Reason:** Preserve the verified iPhone transcription, stop, local playback, server projection, and remaining Mac visibility/audio blockers for #095 before continuing cross-device acceptance.
 
-## 2026-08-13 16:33:33 EDT — realtime-voice-sqlite-instant 81165583871549032878bcc937954139fdceddde
-
 ## 2026-08-13 18:03:31 EDT — realtime-voice-sqlite-instant 73ff8487ce53d7ecc49d8ef3ecbb9ed839b4a925
 
 - **Repo:** realtime-voice-sqlite-instant
@@ -696,6 +877,8 @@ Stream dest CKAsset apply onto disk and restore process.memory.sample on the SQL
 - **Repo:** realtime-voice-sqlite-instant
 - **SHA:** 81165583871549032878bcc937954139fdceddde
 - **Reason:** Restore the iPhone build debug overlay so Expanded actually paints and Stop taps through (#197).
+
+## 2026-08-13 16:33:33 EDT — realtime-voice-sqlite-instant 81165583871549032878bcc937954139fdceddde
 
 ## 2026-08-13 15:39:34 EDT — realtime-voice-sqlite-instant f3ecc1c05313855d16cb5e35ba7dda55a3afc68a
 
