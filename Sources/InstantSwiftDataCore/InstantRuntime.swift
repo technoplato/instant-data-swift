@@ -1291,6 +1291,42 @@ private enum InstantServerApplyCatchUpLimits {
   static let maximumReplayCountPerPlan = maximumOutsideOperationGateReplayCount + 1
 }
 
+/// When server apply last took the operation gate, and when each part of its commit ended, so a
+/// slow apply names the part that kept local writes queued (#277).
+///
+/// Upstream has no such gate: `Reactor.js` `pushOps` (line 1509) records and sends a mutation
+/// without waiting on server results, and `refresh-ok` (line 725) rebuilds each query's store and
+/// layers pending mutations on at read time (`_applyOptimisticUpdates`). This runtime keeps both in
+/// one SQLite outbox, so server apply shares `operationGate` with `transact`, and the part it holds
+/// must stay small, never proportional to the pending tail.
+struct InstantServerApplyGateTimeline: Sendable {
+  var enteredAt: ContinuousClock.Instant
+  var catchUpEndedAt: ContinuousClock.Instant?
+  var commitEndedAt: ContinuousClock.Instant?
+  var publishEndedAt: ContinuousClock.Instant?
+  var patchEndedAt: ContinuousClock.Instant?
+
+  /// Milliseconds per part, in order: catch up, commit, publish, patch, finish.
+  func phaseMilliseconds(endedAt: ContinuousClock.Instant) -> [(name: String, milliseconds: Int)] {
+    let catchUp = catchUpEndedAt ?? endedAt
+    let commit = commitEndedAt ?? catchUp
+    let publish = publishEndedAt ?? commit
+    let patch = patchEndedAt ?? publish
+    return [
+      ("catchUp", Self.milliseconds(from: enteredAt, to: catchUp)),
+      ("commit", Self.milliseconds(from: catchUp, to: commit)),
+      ("publish", Self.milliseconds(from: commit, to: publish)),
+      ("patch", Self.milliseconds(from: publish, to: patch)),
+      ("finish", Self.milliseconds(from: patch, to: endedAt)),
+    ]
+  }
+
+  static func milliseconds(from start: ContinuousClock.Instant, to end: ContinuousClock.Instant) -> Int {
+    let duration = start.duration(to: end)
+    return Int(duration.components.seconds * 1_000 + duration.components.attoseconds / 1_000_000_000_000_000)
+  }
+}
+
 private actor InstantLiveQueryAcknowledgementState {
   private enum Outcome: Sendable {
     case acknowledged
@@ -2882,12 +2918,16 @@ public final class InstantRuntime: Sendable {
         var catchUpOutboxRowCount = plan.baselineOutboxRowCount
         var outsideOperationGateReplayCount = 0
         var catchUpReplayCount = 0
+        var catchUpBodyCount = 0
         var didCatchUpLocalMutations = false
+        var gateTimeline = InstantServerApplyGateTimeline(enteredAt: ContinuousClock.now)
         catchUp: while true {
           if !operationGateAlreadyHeld, !enteredOperationGateForCommit {
             await enterOperationGate(operation: "catch up server apply")
             enteredOperationGateForCommit = true
+            gateTimeline = InstantServerApplyGateTimeline(enteredAt: ContinuousClock.now)
           }
+          await operationGate.setHolderPhase("catch up local writes")
           recordActorHop(.persistence)
           let catchUpLoad = try await persistence
             .extendServerApplyPlanWithAppendedLocalMutations(
@@ -3034,6 +3074,7 @@ public final class InstantRuntime: Sendable {
           }
           catchUpTail = catchUp.currentTail
           catchUpOutboxRowCount = catchUp.currentOutboxRowCount
+          catchUpBodyCount += catchUp.appendedBodyCount
           didCatchUpLocalMutations = true
           if shouldReplayOutsideOperationGate {
             await configuration.onServerApplyCatchUpReplayedOutsideOperationGateForTesting?(
@@ -3075,6 +3116,8 @@ public final class InstantRuntime: Sendable {
         )
         let changesMaterializedStore =
           !authoritativeTransaction.operations.isEmpty || mergedAttributeCount > 0
+        gateTimeline.catchUpEndedAt = ContinuousClock.now
+        await operationGate.setHolderPhase("commit plan")
         recordActorHop(.persistence)
         guard let commit = try await persistence.commitServerApplyPlan(
           planID: plan.id,
@@ -3095,6 +3138,8 @@ public final class InstantRuntime: Sendable {
           continue applyAttempts
         }
 
+        gateTimeline.commitEndedAt = ContinuousClock.now
+        await operationGate.setHolderPhase("publish store")
         recordActorHop(.store)
         let requiresPreparedStoreInstallation =
           changesMaterializedStore || didCatchUpLocalMutations
@@ -3119,6 +3164,8 @@ public final class InstantRuntime: Sendable {
           committedResult = pageInfoResult
         }
 
+        gateTimeline.publishEndedAt = ContinuousClock.now
+        await operationGate.setHolderPhase("patch resident outbox")
         var patchPosition: InstantOutboxDeliveryPosition?
         while true {
           recordActorHop(.persistence)
@@ -3137,6 +3184,8 @@ public final class InstantRuntime: Sendable {
           }
           patchPosition = patch.nextPosition
         }
+        gateTimeline.patchEndedAt = ContinuousClock.now
+        await operationGate.setHolderPhase("finish plan")
         try await persistence.finishServerApplyPlan(id: plan.id)
         _ = try? await publishConnectionStatusWithGateHeld(
           pendingMutationCount: commit.pendingMutationCount
@@ -3154,6 +3203,15 @@ public final class InstantRuntime: Sendable {
           application: application,
           confirmedMutation: confirmedMutation,
           mergedAttributeCount: mergedAttributeCount
+        )
+        await recordServerApplyGateTimeline(
+          gateTimeline,
+          endedAt: ContinuousClock.now,
+          processedTransactionID: processedTransactionID,
+          pendingMutationCount: commit.pendingMutationCount,
+          catchUpReplayCount: catchUpReplayCount,
+          catchUpBodyCount: catchUpBodyCount,
+          changedEntityCount: changedEntityIDs.count
         )
         if enteredOperationGateForCommit {
           await leaveOperationGate()
@@ -3209,6 +3267,50 @@ public final class InstantRuntime: Sendable {
       }
     }
     return InstantServerApplyFootprint(entityIDs: entityIDs, isGlobal: isGlobal)
+  }
+
+  /// One record per server apply: how long it held the operation gate, split by part. Local
+  /// writes queue behind every millisecond of it, so an apply past 250 ms is reported at `info`
+  /// and past 1 s at `warning` (#277).
+  private func recordServerApplyGateTimeline(
+    _ timeline: InstantServerApplyGateTimeline,
+    endedAt: ContinuousClock.Instant,
+    processedTransactionID: String,
+    pendingMutationCount: Int,
+    catchUpReplayCount: Int,
+    catchUpBodyCount: Int,
+    changedEntityCount: Int
+  ) async {
+    let heldMilliseconds = InstantServerApplyGateTimeline.milliseconds(
+      from: timeline.enteredAt,
+      to: endedAt
+    )
+    let phases = timeline.phaseMilliseconds(endedAt: endedAt)
+    let waiterCount = await operationGate.waiterCount
+    var metadata: [String: String] = [
+      "heldMilliseconds": String(heldMilliseconds),
+      "waiterCount": String(waiterCount),
+      "pendingMutationCount": String(pendingMutationCount),
+      "catchUpReplayCount": String(catchUpReplayCount),
+      "catchUpBodyCount": String(catchUpBodyCount),
+      "changedEntityCount": String(changedEntityCount),
+    ]
+    for phase in phases {
+      metadata["\(phase.name)Milliseconds"] = String(phase.milliseconds)
+    }
+    let summary = phases.map { "\($0.name) \($0.milliseconds) ms" }.joined(separator: ", ")
+    InstantDiagnostics.shared.record(
+      heldMilliseconds >= 1_000 ? .warning : heldMilliseconds >= 250 ? .info : .debug,
+      subsystem: "instant-swift-data-core",
+      category: "concurrency",
+      event: "server-apply.operation-gate-held",
+      message: """
+        Server apply held the operation gate \(heldMilliseconds) ms with \(pendingMutationCount) \
+        pending mutations (\(summary)); \(waiterCount) caller(s) queued behind it.
+        """,
+      metadata: metadata,
+      correlationID: processedTransactionID
+    )
   }
 
   private func hydrateDeferredValuesForServerApply(

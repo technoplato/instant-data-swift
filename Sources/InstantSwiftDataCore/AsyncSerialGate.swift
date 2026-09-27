@@ -34,6 +34,27 @@ actor AsyncSerialGate {
     var waiterCount: Int
     /// How many times this stall has already been reported for this holder.
     var stallCount: Int
+    /// What the holder was doing, when it names its phases (``setHolderPhase(_:)``).
+    var holderPhase: String? = nil
+  }
+
+  /// Emitted when a caller acquires the gate after queuing past the wait threshold, so a slow
+  /// local write names the holder, and the phase, it waited behind (#277).
+  struct WaitReport: Sendable, Equatable {
+    /// Which gate the caller waited on.
+    var label: String
+    /// The function that waited and now holds the gate.
+    var waitingOperation: String
+    /// How long it was queued.
+    var waitMilliseconds: Int
+    /// The holder that handed over the gate.
+    var previousHolder: String
+    /// The phase that holder named last, if it names its phases.
+    var previousHolderPhase: String?
+    /// How long that holder held the gate.
+    var previousHolderHeldMilliseconds: Int
+    /// Callers still queued after this handoff.
+    var remainingWaiterCount: Int
   }
 
   // SAFETY: every stored property is read and written only on the enclosing
@@ -63,10 +84,13 @@ actor AsyncSerialGate {
 
   private let label: String
   private let stallThresholdMilliseconds: UInt64
+  private let waitReportThresholdMilliseconds: Int
   private let report: @Sendable (StallReport) -> Void
+  private let waitReport: @Sendable (WaitReport) -> Void
 
   private var waiters: [Waiter] = []
   private var holderOperation: String?
+  private var holderPhase: String?
   private var holderAcquiredAt: Date?
   private var stallCount = 0
   private var stallWatchdog: Task<Void, Never>?
@@ -74,11 +98,15 @@ actor AsyncSerialGate {
   init(
     label: String,
     stallThresholdMilliseconds: UInt64 = 5_000,
-    report: (@Sendable (StallReport) -> Void)? = nil
+    waitReportThresholdMilliseconds: Int = 250,
+    report: (@Sendable (StallReport) -> Void)? = nil,
+    waitReport: (@Sendable (WaitReport) -> Void)? = nil
   ) {
     self.label = label
     self.stallThresholdMilliseconds = stallThresholdMilliseconds
+    self.waitReportThresholdMilliseconds = waitReportThresholdMilliseconds
     self.report = report ?? { AsyncSerialGate.reportStallLoudly($0) }
+    self.waitReport = waitReport ?? { AsyncSerialGate.reportWait($0) }
   }
 
   deinit {
@@ -123,9 +151,20 @@ actor AsyncSerialGate {
     try await waitForBaton(operation: operation, honoringCancellation: true)
   }
 
+  /// Names what the current holder is doing, so stall and wait reports can say which part of a
+  /// long critical section kept other callers queued. Cleared when the holder leaves.
+  func setHolderPhase(_ phase: String?) {
+    guard holderOperation != nil else { return }
+    holderPhase = phase
+  }
+
   /// Releases the gate, handing it to the longest-queued caller if there is one.
   func leave() {
     stallCount = 0
+    let previousHolder = holderOperation
+    let previousHolderPhase = holderPhase
+    let previousHolderAcquiredAt = holderAcquiredAt
+    holderPhase = nil
     while let waiter = waiters.first {
       waiters.removeFirst()
       guard case .waiting(let continuation) = waiter.state else {
@@ -133,8 +172,25 @@ actor AsyncSerialGate {
         continue
       }
       waiter.state = .resumed
+      let now = Date()
       holderOperation = waiter.operation
-      holderAcquiredAt = Date()
+      holderAcquiredAt = now
+      let waitMilliseconds = Self.milliseconds(since: waiter.enqueuedAt, to: now)
+      if waitMilliseconds >= waitReportThresholdMilliseconds, let previousHolder {
+        waitReport(
+          WaitReport(
+            label: label,
+            waitingOperation: waiter.operation,
+            waitMilliseconds: waitMilliseconds,
+            previousHolder: previousHolder,
+            previousHolderPhase: previousHolderPhase,
+            previousHolderHeldMilliseconds: previousHolderAcquiredAt.map {
+              Self.milliseconds(since: $0, to: now)
+            } ?? 0,
+            remainingWaiterCount: waiters.count
+          )
+        )
+      }
       continuation.resume()
       return
     }
@@ -146,6 +202,7 @@ actor AsyncSerialGate {
 
   private func acquire(operation: String) {
     holderOperation = operation
+    holderPhase = nil
     holderAcquiredAt = Date()
     stallCount = 0
   }
@@ -253,7 +310,8 @@ actor AsyncSerialGate {
         longestWaitingOperation: longestWaiting.operation,
         longestWaitMilliseconds: longestWaitMilliseconds,
         waiterCount: waiters.count,
-        stallCount: stallCount
+        stallCount: stallCount,
+        holderPhase: holderPhase
       )
     )
     return true
@@ -263,9 +321,35 @@ actor AsyncSerialGate {
     Int((end.timeIntervalSince(start) * 1_000).rounded())
   }
 
+  /// A slow handoff is evidence, not a library bug: logged, never `reportIssue`d.
+  private static func reportWait(_ wait: WaitReport) {
+    let phase = wait.previousHolderPhase.map { " (phase: \($0))" } ?? ""
+    InstantDiagnostics.shared.record(
+      wait.waitMilliseconds >= 1_000 ? .warning : .info,
+      subsystem: "instant-swift-data-core",
+      category: "concurrency",
+      event: "serial-gate.waited",
+      message: """
+        \(wait.waitingOperation) waited \(wait.waitMilliseconds) ms for Instant's \(wait.label) \
+        gate behind \(wait.previousHolder)\(phase), which held it \
+        \(wait.previousHolderHeldMilliseconds) ms.
+        """,
+      metadata: [
+        "gate": wait.label,
+        "waitingOperation": wait.waitingOperation,
+        "waitMilliseconds": String(wait.waitMilliseconds),
+        "previousHolder": wait.previousHolder,
+        "previousHolderPhase": wait.previousHolderPhase ?? "",
+        "previousHolderHeldMilliseconds": String(wait.previousHolderHeldMilliseconds),
+        "remainingWaiterCount": String(wait.remainingWaiterCount),
+      ]
+    )
+  }
+
   private static func reportStallLoudly(_ stall: StallReport) {
+    let phase = stall.holderPhase.map { " (phase: \($0))" } ?? ""
     let message = """
-      Instant's \(stall.label) gate has been held by \(stall.holder) for \
+      Instant's \(stall.label) gate has been held by \(stall.holder)\(phase) for \
       \(stall.holderHeldMilliseconds) ms. \(stall.waiterCount) caller(s) are \
       queued behind it; \(stall.longestWaitingOperation) has waited \
       \(stall.longestWaitMilliseconds) ms. Every transact, query, observe, and \
@@ -283,6 +367,7 @@ actor AsyncSerialGate {
       metadata: [
         "gate": stall.label,
         "holder": stall.holder,
+        "holderPhase": stall.holderPhase ?? "",
         "holderHeldMilliseconds": String(stall.holderHeldMilliseconds),
         "longestWaitingOperation": stall.longestWaitingOperation,
         "longestWaitMilliseconds": String(stall.longestWaitMilliseconds),

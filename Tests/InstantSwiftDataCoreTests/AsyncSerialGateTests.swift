@@ -212,6 +212,85 @@ struct AsyncSerialGateTests {
     await waiter.value
   }
 
+  // #277: a local write that queued behind server apply must say what it waited behind, in
+  // which phase, and for how long, instead of only a 5-second stall.
+  @Test("a caller that waited past the threshold reports the holder and phase it waited behind")
+  func waitedCallerReportsTheHolderAndPhase() async throws {
+    let waits = GateWaitReportRecorder()
+    let gate = AsyncSerialGate(
+      label: "operation",
+      waitReportThresholdMilliseconds: 20,
+      waitReport: { report in Task { await waits.record(report) } }
+    )
+
+    await gate.enter(operation: "catch up server apply")
+    await gate.setHolderPhase("commit plan")
+    let waiter = Task {
+      await gate.enter(operation: "transact(_:createdAt:source:)")
+      await gate.leave()
+    }
+    try await gate.waitForWaiterCount(1)
+    try await Task.sleep(for: .milliseconds(40))
+    await gate.leave()
+    await waiter.value
+
+    let report = try await waits.waitForFirst()
+    #expect(report.label == "operation")
+    #expect(report.waitingOperation == "transact(_:createdAt:source:)")
+    #expect(report.previousHolder == "catch up server apply")
+    #expect(report.previousHolderPhase == "commit plan")
+    #expect(report.waitMilliseconds >= 20)
+    #expect(report.previousHolderHeldMilliseconds >= report.waitMilliseconds)
+    #expect(report.remainingWaiterCount == 0)
+  }
+
+  @Test("a quick handoff reports no wait")
+  func quickHandoffReportsNoWait() async throws {
+    let waits = GateWaitReportRecorder()
+    let gate = AsyncSerialGate(
+      label: "operation",
+      waitReportThresholdMilliseconds: 1_000,
+      waitReport: { report in Task { await waits.record(report) } }
+    )
+
+    await gate.enter(operation: "catch up server apply")
+    let waiter = Task {
+      await gate.enter(operation: "transact(_:createdAt:source:)")
+      await gate.leave()
+    }
+    try await gate.waitForWaiterCount(1)
+    await gate.leave()
+    await waiter.value
+    try await Task.sleep(for: .milliseconds(50))
+
+    #expect(await waits.recorded.isEmpty)
+  }
+
+  @Test("a stall report names the holder's current phase")
+  func stallReportNamesTheHolderPhase() async throws {
+    let reports = GateStallReportRecorder()
+    let gate = AsyncSerialGate(
+      label: "operation",
+      stallThresholdMilliseconds: 50,
+      report: { report in Task { await reports.record(report) } }
+    )
+
+    await gate.enter(operation: "catch up server apply")
+    await gate.setHolderPhase("commit plan")
+    let waiter = Task {
+      await gate.enter(operation: "transact(_:createdAt:source:)")
+      await gate.leave()
+    }
+    try await gate.waitForWaiterCount(1)
+
+    let first = try await reports.waitForFirst()
+    #expect(first.holder == "catch up server apply")
+    #expect(first.holderPhase == "commit plan")
+
+    await gate.leave()
+    await waiter.value
+  }
+
   @Test("a gate that is not contended never reports a stall")
   func uncontendedGateNeverReportsAStall() async throws {
     let reports = GateStallReportRecorder()
@@ -314,5 +393,26 @@ extension AsyncSerialGate {
       }
       try await Task.sleep(for: .milliseconds(2))
     }
+  }
+}
+
+private actor GateWaitReportRecorder {
+  private var values: [AsyncSerialGate.WaitReport] = []
+
+  func record(_ value: AsyncSerialGate.WaitReport) {
+    values.append(value)
+  }
+
+  var recorded: [AsyncSerialGate.WaitReport] { values }
+
+  func waitForFirst(timeout: Duration = .seconds(5)) async throws -> AsyncSerialGate.WaitReport {
+    let deadline = ContinuousClock.now.advanced(by: timeout)
+    while values.isEmpty {
+      if ContinuousClock.now >= deadline {
+        throw GateTestTimeout(reason: "expected a wait report")
+      }
+      try await Task.sleep(for: .milliseconds(2))
+    }
+    return values[0]
   }
 }

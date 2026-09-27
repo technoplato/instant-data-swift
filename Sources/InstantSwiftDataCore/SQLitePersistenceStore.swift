@@ -4359,18 +4359,26 @@ public actor SQLitePersistenceStore {
           WHERE mutation_id IN (
             SELECT mutation_id FROM instant_server_apply_rows
             WHERE plan_id = ? AND staged = 1 AND staged_delete = 0
-              AND (
-                staged_json != outbox.json
-                OR staged_effect_receipt_fingerprint
-                  IS NOT outbox.optimistic_effect_receipt_fingerprint
-                OR staged_server_acceptance_payload_fingerprint
-                  IS NOT outbox.server_acceptance_payload_fingerprint
-              )
           )
+            AND EXISTS (
+              SELECT 1 FROM instant_server_apply_rows AS planned
+              WHERE planned.plan_id = ? AND planned.mutation_id = outbox.mutation_id
+                AND (
+                  planned.staged_json != outbox.json
+                  OR planned.staged_effect_receipt_fingerprint
+                    IS NOT outbox.optimistic_effect_receipt_fingerprint
+                  OR planned.staged_server_acceptance_payload_fingerprint
+                    IS NOT outbox.server_acceptance_payload_fingerprint
+                )
+            )
           """,
+          // The IN set is uncorrelated, so SQLite visits only the plan's rows through the outbox
+          // key; the changed-row test is one primary-key lookup per row. Comparing the outer row
+          // inside the IN made it correlated: every outbox row rescanned every plan row and
+          // compared bodies, 7.4 s for 2,000 pending mutations under the operation gate (#277).
           Array(repeating: SQLiteBinding.text(planID), count: 2)
             + [.int(Int64(InstantOutboxDeliveryMetadata.currentVersion))]
-            + Array(repeating: SQLiteBinding.text(planID), count: 14)
+            + Array(repeating: SQLiteBinding.text(planID), count: 15)
         )
         try execute(
           """
@@ -4664,6 +4672,7 @@ public actor SQLitePersistenceStore {
     planID: String,
     componentBody: Bool,
     requiresBody: Bool,
+    closureRound: Int = 0,
     selectionSQL: String,
     bindings selectionBindings: [SQLiteBinding]
   ) throws -> Int {
@@ -4679,7 +4688,8 @@ public actor SQLitePersistenceStore {
         expected_delivery_claimant_id,
         expected_server_acceptance_payload_fingerprint,
         expected_body_bytes, is_component_body, requires_body,
-        is_catch_up, prune_at_watermark, confirm_at_apply, staged_delete, staged
+        is_catch_up, prune_at_watermark, confirm_at_apply, staged_delete, staged,
+        closure_round
       )
       SELECT ?, outbox.mutation_id, outbox.created_at_ms, outbox.mutation_revision,
              outbox.status, COALESCE(outbox.confirmation_proven, 0),
@@ -4695,14 +4705,37 @@ public actor SQLitePersistenceStore {
                COALESCE(outbox.encoded_body_bytes, 0),
                length(CAST(outbox.json AS BLOB))
              ),
-             ?, ?, 0, 0, 0, 0, 0
+             ?, ?, 0, 0, 0, 0, 0, ?
       \(selectionSQL)
       """,
       [
         .text(planID),
         .int(componentBody ? 1 : 0),
         .int(requiresBody ? 1 : 0),
+        .int(Int64(closureRound)),
       ] + selectionBindings
+    )
+    return Int(try selectInt64("SELECT changes()"))
+  }
+
+  /// Marks the entities of the component rows found in `round` as visited, and returns how many
+  /// were new. Only new entities are expanded in the next round.
+  private func insertServerApplyClosureEntitiesWithoutTransaction(
+    planID: String,
+    fromRowsInRound round: Int
+  ) throws -> Int {
+    try execute(
+      """
+      INSERT OR IGNORE INTO instant_server_apply_closure_entities (plan_id, entity_id, round)
+      SELECT ?, effects.entity_id, ?
+      FROM instant_server_apply_rows AS planned
+        INDEXED BY instant_server_apply_rows_closure_round_idx
+      JOIN instant_outbox_effect_entities AS effects
+        ON effects.mutation_id = planned.mutation_id
+      WHERE planned.plan_id = ? AND planned.closure_round = ?
+        AND planned.is_component_body = 1
+      """,
+      [.text(planID), .int(Int64(round)), .text(planID), .int(Int64(round))]
     )
     return Int(try selectInt64("SELECT changes()"))
   }
@@ -4820,29 +4853,46 @@ public actor SQLitePersistenceStore {
           )
         }
 
+        // The component closure is a breadth-first search over entities: each round expands
+        // only the entities first seen in the previous round, so every entity is expanded once
+        // and every mutation is found once, linear in (mutation, entity) effect pairs. Joining
+        // every planned row through every shared entity each round was quadratic around a hub:
+        // 2,000 pending sections linked to one recording held the operation gate 23 s in the
+        // commit's closure revalidation (#277).
+        var round = 0
         while true {
+          let newEntities = try insertServerApplyClosureEntitiesWithoutTransaction(
+            planID: planID,
+            fromRowsInRound: round
+          )
+          if newEntities == 0 { break }
           let inserted = try insertServerApplyRowsWithoutTransaction(
             planID: planID,
             componentBody: true,
             requiresBody: true,
+            closureRound: round + 1,
             selectionSQL:
               """
-              FROM instant_server_apply_rows AS planned
-              JOIN instant_outbox_effect_entities AS source_effect
-                ON source_effect.mutation_id = planned.mutation_id
+              FROM instant_server_apply_closure_entities AS frontier
+                INDEXED BY instant_server_apply_closure_entities_round_idx
               JOIN instant_outbox_effect_entities AS connected_effect
                 INDEXED BY instant_outbox_effect_entities_lookup_idx
-                ON connected_effect.entity_id = source_effect.entity_id
+                ON connected_effect.entity_id = frontier.entity_id
               JOIN instant_outbox AS outbox
                 ON outbox.mutation_id = connected_effect.mutation_id
-              WHERE planned.plan_id = ? AND planned.is_component_body = 1
+              WHERE frontier.plan_id = ? AND frontier.round = ?
                 AND outbox.optimistic_overlay_active = 1
                 AND outbox.optimistic_effect_receipt_fingerprint IS NOT NULL
               """,
-            bindings: [.text(planID)]
+            bindings: [.text(planID), .int(Int64(round))]
           )
           if inserted == 0 { break }
+          round += 1
         }
+        try execute(
+          "DELETE FROM instant_server_apply_closure_entities WHERE plan_id = ?",
+          [.text(planID)]
+        )
       }
     }
 
@@ -5265,6 +5315,10 @@ public actor SQLitePersistenceStore {
   }
 
   private func deleteServerApplyPlanWithoutTransaction(id: String) throws {
+    try execute(
+      "DELETE FROM instant_server_apply_closure_entities WHERE plan_id = ?",
+      [.text(id)]
+    )
     try execute(
       "DELETE FROM instant_server_apply_effect_entities WHERE plan_id = ?",
       [.text(id)]
@@ -10419,8 +10473,33 @@ public actor SQLitePersistenceStore {
         staged_confirmation_source TEXT,
         staged_delete INTEGER NOT NULL DEFAULT 0,
         staged INTEGER NOT NULL DEFAULT 0,
+        closure_round INTEGER NOT NULL DEFAULT 0,
         PRIMARY KEY (plan_id, mutation_id)
       ) WITHOUT ROWID
+      """
+    )
+    // The entities a plan's component closure has already expanded, with the round that found
+    // them, so each entity is expanded once (#277).
+    try execute(
+      """
+      CREATE TEMP TABLE IF NOT EXISTS instant_server_apply_closure_entities (
+        plan_id TEXT NOT NULL,
+        entity_id TEXT NOT NULL,
+        round INTEGER NOT NULL,
+        PRIMARY KEY (plan_id, entity_id)
+      ) WITHOUT ROWID
+      """
+    )
+    try execute(
+      """
+      CREATE INDEX IF NOT EXISTS instant_server_apply_closure_entities_round_idx
+      ON instant_server_apply_closure_entities (plan_id, round, entity_id)
+      """
+    )
+    try execute(
+      """
+      CREATE INDEX IF NOT EXISTS instant_server_apply_rows_closure_round_idx
+      ON instant_server_apply_rows (plan_id, closure_round, mutation_id)
       """
     )
     try execute(
