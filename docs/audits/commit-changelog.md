@@ -1,3 +1,18 @@
+## 2026-09-28 10:54:59 EDT — realtime-voice-sqlite-instant `3f7226602defbbe7b79cf8c990620beb65b063ff`
+Record Scribe 0.1 (67) in the change log.
+
+## 2026-09-28 10:54:59 EDT — realtime-voice-sqlite-instant `d7475aa2324691e9b257ad6bf5d531dce606f19a`
+Release Scribe 0.1 (67): recording 018 feedback on copies and links, on the Xcode 27 beta (#280 #036 #233).
+
+## 2026-09-28 10:54:59 EDT — realtime-voice-sqlite-instant `36dff0a2920924be4121bb1ead0ba019a8c066ee`
+Record the recording 018 link and copy fixes in the change log (#280 #036 #233).
+
+## 2026-09-28 10:54:36 EDT — realtime-voice-sqlite-instant `08456f96d16b161093cfcd9689bad5d23154a0cf`
+Copies made in Scribe join the recording timeline by default, tagged by the clipboard client from the pasteboard change count, with a toggle to leave them out; a long press on any transcript section offers Copy Text and link actions; the full-screen double tap no longer delays taps on controls (#280 #036 #233).
+
+## 2026-09-28 10:36:14 EDT — realtime-voice-sqlite-instant `67c057f772ab3d7968f8e8267f6314f3c7d596fe`
+Plan recording 018's link and copy feedback and claim its paths (#036 #280 #233).
+
 ## 2026-09-28 09:23:32 EDT — realtime-voice-sqlite-instant `a938e1fd46602af964917ea82a4815e1ca159317`
 Log Scribe 0.1 (66) with section and recording links in PROGRESS, including main's red baseline (63 failing, 2 crashing tests) (#036).
 
