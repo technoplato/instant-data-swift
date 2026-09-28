@@ -1,3 +1,24 @@
+## 2026-09-28 14:29:09 EDT — realtime-voice-sqlite-instant `0c1643ee83f3defac25807bf977a23457ee228d9`
+Record Scribe 0.1 (68) in the change log.
+
+## 2026-09-28 14:29:09 EDT — realtime-voice-sqlite-instant `8f943b9cfe331433f807e79416cbfd326ee6c6f5`
+Release Scribe 0.1 (68): universal links on words.knophy.com with build 67's copy and link fixes, on the Xcode 27 beta (#283 #282).
+
+## 2026-09-28 14:28:58 EDT — realtime-voice-sqlite-instant `c8e8e3876a3b4820656ebbc04f6765c01c2767dc`
+ADR 0012: record the words.knophy.com deployment (dedicated tunnel, Access bypass for only the universal links file) and the iPhone-first sign-in order from the guest upgrade audit (#282 #283 #113).
+
+## 2026-09-28 14:07:58 EDT — realtime-voice-sqlite-instant `299dbed641251e05de5c2e136581a76c349cdef0`
+Record the universal links change in the change log (#283).
+
+## 2026-09-28 14:07:40 EDT — realtime-voice-sqlite-instant `03c7e1a1409fdc1dae5b67abeb79404ce113107e`
+Parse and emit https://words.knophy.com links: shares, copies, and QR codes use the web form; in-app surfaces keep the custom scheme; applinks entitlement on both iPhone lanes (#283).
+
+## 2026-09-28 13:42:16 EDT — realtime-voice-sqlite-instant `f8053eb537cd449bd220fda9d09f15ce8dd8ab65`
+Plan universal links on words.knophy.com and claim the link-emission paths (#283).
+
+## 2026-09-28 13:30:57 EDT — realtime-voice-sqlite-instant `e9a80c5fccaf643f5458cb95122e07721a8fc2a6`
+ADR 0012: web Scribe on words.knophy.com with one link format for the iPhone and the web (#282 #283 #113).
+
 ## 2026-09-28 10:57:13 EDT — realtime-voice-sqlite-instant `0098da75acc67232037846e036cdb4b5c216210b`
 Log recording 018's copy and link fixes and build 67 in PROGRESS, with the install held while a recording is active (#280 #036 #233).
 
