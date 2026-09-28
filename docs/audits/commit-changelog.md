@@ -1,3 +1,12 @@
+## 2026-09-28 09:14:44 EDT — realtime-voice-sqlite-instant `894346a79b7289e2722dd03efcf37d6cb1cff409`
+Record the section and recording links change in the change log (#036).
+
+## 2026-09-28 09:14:25 EDT — realtime-voice-sqlite-instant `96d6c602a45032a7e6da8933e4c09acdc50b633f`
+Section timestamps (live and playback) copy or share a link to that moment and the recording list copies or shares a recording link; opening a section link for another recording positions playback and scrolls to and highlights the section once the transcript shows it (#036).
+
+## 2026-09-28 08:42:24 EDT — realtime-voice-sqlite-instant `b8c0d795b076211be389e3cf11fbec902d8d26dc`
+Plan deep links to sections and recordings and claim their paths (#036).
+
 ## 2026-09-27 17:58:41 EDT — realtime-voice-sqlite-instant `22330e27eb4ea017ab9ac32f3c5e0179a94d6f72`
 Log Scribe 0.1 (65) with the reconnect write gate and bad-row repair in PROGRESS (#277 #278).
 
