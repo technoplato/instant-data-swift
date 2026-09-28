@@ -1,3 +1,17 @@
+## 2026-09-28 14:15:00 EDT — Guest-upgrade audit: magic code upgrades in place or links; non-guest token fix (#113)
+
+- **Branch:** `agent/claude-opus-5.5/guest-upgrade-audit` from `agent/claude-opus-5.5/triage-integration-2026-09-27`
+  (`944582a4`); not merged, nothing published.
+- **Measured live on Scribe's Instant app** (coordinator direction; test users only, all deleted): a guest that verifies a
+  magic code for a new email keeps its id (type user); for an existing email (web `createToken` first) it is linked
+  (`linkedPrimaryUser`) and the client holds the primary's session. Old guest tokens stay valid. Same in the TS client.
+- **Fix `aa3d9779`:** magic-code sign-in forwards the refresh token only for a guest session (TS parity). A revoked
+  non-guest token made verify_magic_code fail (record-not-found, HTTP 400); fixed live. Auth failures now carry Instant's
+  error type and message (not the hint). `InstantMagicCodeGuestTokenTests` red before, green after; 590 related tests pass.
+- **Open gaps (not fixed):** no `promoteGuestWithMagicCode` disposition; AuthV3LoginScreen shows no email card for a guest;
+  an identity change does not fence the outbox (a queued guest-owned create was rejected after linking).
+- Report: `/Users/laptop/Sync/audit/web-scribe-2026-09-28/AUTH-AUDIT.md`.
+
 ## 2026-09-27 17:40:00 EDT — Triage L: server apply no longer holds local writes; bad rows quarantined (#277 #278)
 
 - **Branch:** `agent/claude-opus-5.5/triage-l-operation-gate-2026-09-27` (pushed; not on `main`), built

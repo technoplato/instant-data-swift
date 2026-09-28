@@ -1,3 +1,9 @@
+## 2026-09-28 14:13:05 EDT — instant-data-swift `b65192594f019106ae3d39a48d2c6ed2a41fb84c`
+Record the guest-token magic-code fix in the change log (#113).
+
+## 2026-09-28 14:12:40 EDT — instant-data-swift `aa3d97795b2e7a78830bbd9631534cd4357f8625`
+Magic-code sign-in forwards only a guest session's refresh token (upstream parity; a revoked non-guest token made verify_magic_code fail live), and auth HTTP failures keep Instant's error type and message without the hint (#113). Branch agent/claude-opus-5.5/guest-upgrade-audit; audit /Users/laptop/Sync/audit/web-scribe-2026-09-28/AUTH-AUDIT.md.
+
 ## 2026-09-28 10:57:13 EDT — realtime-voice-sqlite-instant `0098da75acc67232037846e036cdb4b5c216210b`
 Log recording 018's copy and link fixes and build 67 in PROGRESS, with the install held while a recording is active (#280 #036 #233).
 
