@@ -1,3 +1,12 @@
+## 2026-09-28 09:23:32 EDT — realtime-voice-sqlite-instant `a938e1fd46602af964917ea82a4815e1ca159317`
+Log Scribe 0.1 (66) with section and recording links in PROGRESS, including main's red baseline (63 failing, 2 crashing tests) (#036).
+
+## 2026-09-28 09:16:52 EDT — realtime-voice-sqlite-instant `fda9ea6cb47188b14c72523815011a7f2ff3c6ad`
+Record Scribe 0.1 (66) in the change log.
+
+## 2026-09-28 09:16:45 EDT — realtime-voice-sqlite-instant `48b3e5022190e78e98692e3f383dd4f96eb8bf7c`
+Release Scribe 0.1 (66): section and recording links on the Xcode 27 beta (#036).
+
 ## 2026-09-28 09:14:44 EDT — realtime-voice-sqlite-instant `894346a79b7289e2722dd03efcf37d6cb1cff409`
 Record the section and recording links change in the change log (#036).
 
