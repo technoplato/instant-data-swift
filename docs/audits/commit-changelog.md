@@ -1,3 +1,6 @@
+## 2026-09-28 14:43:30 EDT — realtime-voice-sqlite-instant `195f16b9623ebb991f038f3e5577d08c231d9b71`
+Log web Scribe on words.knophy.com and Scribe 0.1 (68) with universal links in PROGRESS (#282 #283 #113).
+
 ## 2026-09-28 14:29:09 EDT — realtime-voice-sqlite-instant `0c1643ee83f3defac25807bf977a23457ee228d9`
 Record Scribe 0.1 (68) in the change log.
 
