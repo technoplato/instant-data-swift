@@ -32,6 +32,28 @@ public typealias AuthAppConfiguration = AuthV3AppConfiguration
 #if canImport(SwiftUI)
   import SwiftUI
 
+  private struct AuthV3AllowsDiscardingGuestSessionKey: EnvironmentKey {
+    static let defaultValue = true
+  }
+
+  extension EnvironmentValues {
+    /// Whether ``AuthV3LoginScreen``'s guest card offers "Discard guest session".
+    ///
+    /// Discarding signs the guest out. The next launch creates a new guest, and nothing on this
+    /// device can read the old guest's data again. Apps whose guest owns user data turn this off,
+    /// so the only way off a guest session is a provider sign-in, which upgrades the guest in place
+    /// or links it to an existing account:
+    ///
+    /// ```swift
+    /// AuthV3LoginScreen()
+    ///   .environment(\.authV3AllowsDiscardingGuestSession, false)
+    /// ```
+    public var authV3AllowsDiscardingGuestSession: Bool {
+      get { self[AuthV3AllowsDiscardingGuestSessionKey.self] }
+      set { self[AuthV3AllowsDiscardingGuestSessionKey.self] = newValue }
+    }
+  }
+
   @MainActor
   public final class AuthV3BootstrapModel: ObservableObject {
     @Published public private(set) var client: InstantSwiftDataClient?
@@ -104,6 +126,7 @@ public typealias AuthAppConfiguration = AuthV3AppConfiguration
     @StateObject private var auth: InstantAuthState<AuthV3User>
 
     @State private var message: String?
+    @Environment(\.authV3AllowsDiscardingGuestSession) private var allowsDiscardingGuestSession
     private let allowsProviderSignIn: Bool
 
     public init(
@@ -290,8 +313,14 @@ public typealias AuthAppConfiguration = AuthV3AppConfiguration
             .font(.caption.monospaced())
             .foregroundStyle(.secondary)
             .textSelection(.enabled)
-          Button("Discard guest session", role: .destructive, action: signOutButtonTapped)
-            .buttonStyle(.bordered)
+          if allowsDiscardingGuestSession {
+            Button("Discard guest session", role: .destructive, action: signOutButtonTapped)
+              .buttonStyle(.bordered)
+          } else {
+            Text("Sign in below to keep this device's data in your account.")
+              .font(.footnote)
+              .foregroundStyle(.secondary)
+          }
         }
       }
     }
