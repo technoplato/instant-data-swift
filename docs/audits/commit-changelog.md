@@ -1,3 +1,63 @@
+## 2026-09-29 02:12:54 EDT — instant-data-swift `ee3dea04a2a5449b4f36b0f0dd6bc9faf6154859`
+Record the Discard guest session flag in the change log (#113).
+
+## 2026-09-29 02:10:15 EDT — realtime-voice-sqlite-instant `cf22dac76254865d7dd70e8fd51e08b703839293`
+Keep the product-source architecture rule: no sync-internals wording in the Account feature (#113).
+
+## 2026-09-29 01:53:30 EDT — realtime-voice-sqlite-instant `911c92c7aa487565fbff7e2fee92f81d238ab8d5`
+Record the sharing, privacy, and linked-guest merge commits in the change log (#113 #095 #287).
+
+## 2026-09-29 01:52:16 EDT — realtime-voice-sqlite-instant `9db224f6ca2cf298b1523d564b91a6b25623866d`
+Merge remote-tracking branch 'origin/main' into agent/claude-opus-5.5/sharing-accounts.
+
+## 2026-09-29 01:51:48 EDT — realtime-voice-sqlite-instant `04c3855c03f4c15037ea715a979a9a2d9d20b064`
+Sync settings per account instead of one row every Scribe user shared (#095).
+
+## 2026-09-29 01:51:48 EDT — realtime-voice-sqlite-instant `e3580f00b3edc7101fa9b1303bb48be1012ee290`
+Keep the session that owns the library: no static-account button in Settings, a swap guard, no guest discard (#113 #095).
+
+## 2026-09-29 01:44:05 EDT — instant-data-swift `fa570b3d5602b43d6113d928d6e82d2c66fc80cd`
+Let apps hide "Discard guest session" on the login screen (#113).
+
+## 2026-09-29 01:42:34 EDT — realtime-voice-sqlite-instant `fa2fb9d11562af62e41d4fad88aee2b76817ccee`
+Claim the debug-account settings hunks, the account-swap guard, and per-user settings for the sharing work (#113 #095).
+
+## 2026-09-29 01:38:38 EDT — realtime-voice-sqlite-instant `8da19ec2b38b7fbfe0c9fcb261ac8f108530b487`
+Let the sharing access matrix write its rows as JSON for the audit report (#095).
+
+## 2026-09-29 01:38:38 EDT — realtime-voice-sqlite-instant `70aac10ddd73800794874a91b2c993962b0d4d8c`
+Add the range share screen with recipient autocomplete (RecordingShareFeature) (#287).
+
+## 2026-09-29 01:38:25 EDT — realtime-voice-sqlite-instant `f0534be282f1955ccdf7a93f27edff2adb3884e6`
+Merge a linked guest's library into the account after sign-in; make member and range-share writes work (#113 #095 #287).
+
+## 2026-09-29 00:46:53 EDT — realtime-voice-sqlite-instant `d28f72ac67bb2da84f54d4fd35c493a63e6796eb`
+Record the linked-guest merge in ADR 0005 and let the admin tool adopt named earlier-install guests (#113).
+
+## 2026-09-29 00:42:05 EDT — realtime-voice-sqlite-instant `1e806c96cb960d9bc4242a0e28a2dd4833fc1c7f`
+Prove the linked-guest library merge end to end and add a dry-run admin fallback (#113).
+
+## 2026-09-29 00:28:17 EDT — realtime-voice-sqlite-instant `3d90401ce721d25be2cf29322a7a1037880114a4`
+Merge remote-tracking branch 'origin/main' into agent/claude-opus-5.5/sharing-accounts.
+
+## 2026-09-29 00:28:05 EDT — realtime-voice-sqlite-instant `5b84153fae351eddd0c8e3c1c25d3cce698df0e2`
+Claim the schema registration list in ScribeInstantStore.swift for the sharing work (#113).
+
+## 2026-09-29 00:16:28 EDT — realtime-voice-sqlite-instant `3a0f19a977d68c7126b132bf3f2410ca0520d90a`
+Pin the prepared sharing and linked-guest rules in the schema contract tests (#113 #095).
+
+## 2026-09-29 00:11:33 EDT — realtime-voice-sqlite-instant `4edb7e061c99594dcdad0c9ff200c939e8c4aef6`
+Prepare private media, working member links, range shares, and linked-guest adoption rules (not pushed to production) (#113 #095).
+
+## 2026-09-29 00:09:10 EDT — realtime-voice-sqlite-instant `e13f16831ae57655a8ec117e8afdbc353c6760f0`
+ADR 0014: range shares and recipient history (data model for the web and iOS) (#113 #095).
+
+## 2026-09-28 23:43:17 EDT — instant-data-swift `0b0471a89842395ed67eb4b409c23855f9eee091`
+Merge remote-tracking branch 'origin/agent/claude-opus-5.5/guest-upgrade-audit' into agent/claude-opus-5.5/sharing-accounts.
+
+## 2026-09-28 23:40:19 EDT — realtime-voice-sqlite-instant `51c59a083c439485cfd4109ce971e206d15153fa`
+Plan the sharing audit, linked-guest library merge, and range shares; claim their paths (#113 #095).
+
 ## 2026-09-29 00:48:46 EDT — instant-data-swift `204f1e78926692d03c6dcd0c96809ab9b6183356`
 Record the log-safe auth session change in the change log (#113).
 
