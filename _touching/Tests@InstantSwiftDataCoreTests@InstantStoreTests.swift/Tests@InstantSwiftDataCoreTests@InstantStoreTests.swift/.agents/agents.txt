@@ -15,3 +15,4 @@ codex-desktop/01a00071-f1c1-7193-adcd-3bc9f30b5f95/root/legacy_head_contract_tes
 codex-desktop/01a00071-f1c1-7193-adcd-3bc9f30b5f95/root/legacy_head_contract_tests 2026-08-15T11:21:34-0400 mower attribute-only-cross-runtime-cache-fixture plan=2026-08-14-semantic-noop-insert-v2
 codex-desktop/01a00071-f1c1-7193-adcd-3bc9f30b5f95/root/migration_architecture_fix 2026-08-15T11:58:43-0400 mower durable-priority-migration-regressions-only plan=2026-08-15-legacy-priority-durable-migration
 codex-desktop/01a00071-f1c1-7193-adcd-3bc9f30b5f95/root/file_upload_cancel_triage 2026-08-15T13:31:42-0400 mower deterministic-upload-progress-cancellation-regression-only delegated-by=root plan=2026-08-14-semantic-noop-insert-v2
+claude-opus-5.5-sharing-accounts 2026-09-29T00:28:10-0400 mower plan=2026-09-29-sharing-accounts-auth-parity #113
