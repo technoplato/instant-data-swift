@@ -10,6 +10,21 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## September 29th, 2026 at 12:41:47 a.m. EDT — `2d29e8f2e740` Pin that a guest's pending writes survive a link into an existing account; document the divergence from Reactor.updateUser (#113)
+
+- **Implementation commit:** `2d29e8f2e7401d7b1d3f38830d5d479db987b5ec`
+- **Change:** Pin and document that a guest's pending writes survive a link into an existing account and are delivered under the promoted session, a deliberate divergence from upstream Reactor.updateUser (#113).
+- **Details:**
+  - Upstream Reactor.updateUser (Reactor.js 2240-2274), run by changeCurrentUser on every sign-in or sign-out that changes the user, fails each pending mutation with user-changed and drops it. This runtime never clears the outbox on an auth change (saveAuthSession, commitGuestPromotion, and signOut leave it untouched; PendingMutation has no user).
+  - InstantGuestPromotionOutboxTests: a guest writes, promoteGuestWithOAuth links it to an existing user (linkedToExistingUser), the write is still pending (not failed) and deliverable, and connect() sends init with the promoted refresh token followed by transact for the guest's write. Protocol-level evidence with a scripted socket, not a live server; it passes before and after (pins current behavior).
+  - Why Scribe keeps delivery: Instant links the guest, rules that admit linked-guest rows accept the write, and the app adopts the rows (Scribe ADR 0005, ADR 0014 section 9, Instant guest-auth docs 'Handling conflicting users'). Rules that require direct ownership reject it: on 2026-09-28 a guest create queued offline was denied after linking (/Users/laptop/Sync/audit/web-scribe-2026-09-28/AUTH-AUDIT.md).
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantGuestPromotionOutboxTests.swift` — a guest's pending write stays pending across a link into an existing account and is sent under the promoted session
+  - `skills/instant-data/SKILL.md` — auth changes keep the outbox: the divergence from Reactor.updateUser, why, and when to drain first
+- **User context (verbatim):**
+  > audit that I can upload upgrade an anonymous account to an account that already exists, and the recordings will be merged in the uh real users library.
+- **SpecStory:** unavailable — Claude Code CLI session; no SpecStory capture configured for this session.
+
 ## September 29th, 2026 at 12:41:13 a.m. EDT — `f5e1aec4835f` Forward only a guest session's refresh token to the OAuth code exchange (#113)
 
 - **Implementation commit:** `f5e1aec4835f5ec7284d5f5019735ac4f65e3e4b`
