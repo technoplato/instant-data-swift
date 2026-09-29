@@ -10,6 +10,18 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## September 29th, 2026 at 2:12:54 a.m. EDT — `fa570b3d5602` Let apps hide "Discard guest session" on the login screen (#113)
+
+- **Implementation commit:** `fa570b3d5602b43d6113d928d6e82d2c66fc80cd`
+- **Change:** Apps can hide Discard guest session on AuthV3LoginScreen (#113).
+- **Details:**
+  - New environment value authV3AllowsDiscardingGuestSession (default true). Scribe turns it off: discarding signed the guest out, and the next launch made a new guest that could not read the old guest's recordings. Additive; swift build --target AuthV3App passes.
+- **Files:**
+  - `Sources/AuthV3App/AuthApp.swift` — environment value and guest card
+- **User context (verbatim):**
+  > audit that I can upload upgrade an anonymous account to an account that already exists, and the recordings will be merged in the uh real users library.
+- **SpecStory:** unavailable — Claude Code CLI session; no SpecStory capture configured for this session.
+
 ## September 29th, 2026 at 12:48:45 a.m. EDT — `a9a555636838` Print, debug-print, and reflect auth sessions without the refresh token or email (#113)
 
 - **Implementation commit:** `a9a55563683867e7ab1ed640745a25fa832ff550`
