@@ -1,3 +1,22 @@
+## 2026-09-29 00:49:08 EDT — Sharing accounts: guest-only OAuth token, log-safe auth sessions, outbox across a guest link (#113)
+
+- **Branch:** `agent/claude-opus-5.5/sharing-accounts` (pushed; not merged; nothing published). Plan
+  `agent-presence/claude-opus-5.5/plans/2026-09-29-sharing-accounts-auth-parity/PLAN.md` (`857e7053`).
+- **`f5e1aec4`:** the ordinary `signInWithOAuth` forwards the refresh token only for a guest session
+  (upstream `Reactor.exchangeCodeForToken`); `signInWithIDToken` keeps forwarding any token (upstream
+  `Reactor.signInWithIdToken`), now pinned by a test.
+- **`a9a55563`:** `InstantAuthSession` prints, debug-prints, and reflects with `refreshToken: <redacted>`
+  and `email: <present>` (image URL too in dumps). Before: all 45 renderings (9 carrier values x 5 methods)
+  contained the token and the email. Codable, Equatable, and Hashable unchanged.
+- **`2d29e8f2`:** `InstantGuestPromotionOutboxTests` pins that a guest's pending write survives a link into an
+  existing account and is sent under the promoted session (diverges from `Reactor.updateUser`, which drops
+  it); `skills/instant-data/SKILL.md` says why and when to drain first.
+- **Evidence (deterministic local and scripted-socket tests, not live):** baseline 25 of 26 focused tests pass
+  (`cliAuthOAuthSignInPersistsAcrossLaunches` needs a fresh release CLI build and was not rebuilt); the new
+  tests were red where expected; after: 67 tests in 10 suites pass (the same 25 baseline tests, the 9 new tests, and 33 more session-related tests with no baseline).
+- **Open:** request and verification types still print tokens; the "ADR 0005 amendment" that Scribe ADR 0014
+  section 9 cites is not written in ADR 0005 on any branch; #113 workLog not updated by this agent.
+
 ## 2026-09-28 14:15:00 EDT — Guest-upgrade audit: magic code upgrades in place or links; non-guest token fix (#113)
 
 - **Branch:** `agent/claude-opus-5.5/guest-upgrade-audit` from `agent/claude-opus-5.5/triage-integration-2026-09-27`

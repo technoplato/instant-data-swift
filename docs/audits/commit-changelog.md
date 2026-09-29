@@ -1,3 +1,24 @@
+## 2026-09-29 00:48:46 EDT — instant-data-swift `204f1e78926692d03c6dcd0c96809ab9b6183356`
+Record the log-safe auth session change in the change log (#113).
+
+## 2026-09-29 00:48:24 EDT — instant-data-swift `a9a55563683867e7ab1ed640745a25fa832ff550`
+InstantAuthSession prints, debug-prints, and reflects without its refresh token or email, so logging a session or a value that carries one cannot leak the token (#113).
+
+## 2026-09-29 00:41:47 EDT — instant-data-swift `8f313c1a46189f8c2d3f9083f4e9f763040a0e06`
+Record the guest-promotion outbox pin and guidance in the change log (#113).
+
+## 2026-09-29 00:41:42 EDT — instant-data-swift `2d29e8f2e7401d7b1d3f38830d5d479db987b5ec`
+Pin that a guest's pending write survives a link into an existing account and is sent under the promoted session, and document this divergence from Reactor.updateUser in skills/instant-data/SKILL.md (#113).
+
+## 2026-09-29 00:41:17 EDT — instant-data-swift `3dfe15f9afc345485e2f8e45ba982732d533a8b6`
+Record the guest-only OAuth token change in the change log (#113).
+
+## 2026-09-29 00:41:02 EDT — instant-data-swift `f5e1aec4835f5ec7284d5f5019735ac4f65e3e4b`
+The ordinary OAuth sign-in forwards the refresh token only for a guest session, matching Reactor.exchangeCodeForToken; ID-token sign-in keeps forwarding any token, matching Reactor.signInWithIdToken (#113). Branch agent/claude-opus-5.5/sharing-accounts.
+
+## 2026-09-29 00:28:37 EDT — instant-data-swift `857e7053d2768844110f1cdc2b4534289b208624`
+Plan guest-only OAuth token forwarding, log-safe auth sessions, and the outbox across a guest link; claim paths (#113).
+
 ## 2026-09-28 14:43:30 EDT — realtime-voice-sqlite-instant `195f16b9623ebb991f038f3e5577d08c231d9b71`
 Log web Scribe on words.knophy.com and Scribe 0.1 (68) with universal links in PROGRESS (#282 #283 #113).
 
