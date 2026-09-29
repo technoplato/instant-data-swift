@@ -10,6 +10,23 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## September 29th, 2026 at 12:41:13 a.m. EDT — `f5e1aec4835f` Forward only a guest session's refresh token to the OAuth code exchange (#113)
+
+- **Implementation commit:** `f5e1aec4835f5ec7284d5f5019735ac4f65e3e4b`
+- **Change:** The ordinary OAuth sign-in forwards the current refresh token only for a guest session, as Instant's TypeScript client does; ID-token sign-in keeps forwarding any current token, as upstream does (#113).
+- **Details:**
+  - Upstream Reactor.exchangeCodeForToken (Reactor.js 2381-2394) and the redirect handler _oauthLoginInit (1974-2030) send refreshToken only when the current user is a guest; Reactor.signInWithIdToken (2408-2423) sends any current token. aa3d9779 applied the same guest-only rule to magic codes after a revoked non-guest token made verify_magic_code fail live (2026-09-28).
+  - Guest promotion (promoteGuestWithOAuth, promoteGuestWithIDToken) is unchanged. Scribe's sources on main and on the sharing branch call neither signInWithOAuth nor signInWithIDToken, so no Scribe path changes today.
+  - Validation: InstantOAuthGuestTokenTests red before (a non-guest token was forwarded), green after; the guest-token and ID-token cases pass before and after. The two tests that expected a non-guest token to reach OAuth now expect none. Focused run (InstantOAuthGuestTokenTests, InstantGuestPromotionOutboxTests, InstantGuestPromotionTests, InstantMagicCodeGuestTokenTests, V3AuthLoginFixtureTests, InstantAuthHTTPParityTests, and the four OAuth and ID-token exchange tests in InstantStoreTests and BootstrapTests): 29 tests in 8 suites pass; the same 25 existing tests passed before the change.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — signInWithOAuth forwards the refresh token only for a guest session (upstream parity)
+  - `Tests/InstantSwiftDataCoreTests/InstantOAuthGuestTokenTests.swift` — guest token forwarded, non-guest token not forwarded, ID-token sign-in still forwards any token
+  - `Tests/InstantSwiftDataCoreTests/InstantStoreTests.swift` — the OAuth exchange test expects no token from a non-guest session
+  - `Tests/InstantSwiftDataTests/BootstrapTests.swift` — the OAuth dependency test expects no token from a non-guest session
+- **User context (verbatim):**
+  > audit that I can upload upgrade an anonymous account to an account that already exists, and the recordings will be merged in the uh real users library.
+- **SpecStory:** unavailable — Claude Code CLI session; no SpecStory capture configured for this session.
+
 ## September 28th, 2026 at 2:12:59 p.m. EDT — `aa3d97795b2e` Forward only a guest session's refresh token to verify_magic_code; keep Instant's auth error type and message (#113)
 
 - **Implementation commit:** `aa3d97795b2e7a78830bbd9631534cd4357f8625`
