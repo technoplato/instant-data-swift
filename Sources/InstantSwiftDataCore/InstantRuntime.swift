@@ -7104,8 +7104,12 @@ public final class InstantRuntime: Sendable {
         state: stateBeforeVerification
       )
       let now = configuration.now()
-      let currentRefreshToken = try await persistence.loadAuthSession(key: authSessionKey)?
-        .refreshToken
+      // Upstream `Reactor.signInWithMagicCode` forwards the refresh token only for a guest
+      // session, so Instant can upgrade that guest in place or link it to the email's user. A
+      // non-guest token has no effect on the server except to fail verification with
+      // `record-not-found` once it has been revoked (measured 2026-09-28, #113).
+      let currentSession = try await persistence.loadAuthSession(key: authSessionKey)
+      let guestRefreshToken = currentSession?.isGuest == true ? currentSession?.refreshToken : nil
       let verification = try await configuration.magicCodeExchange.verify(
         InstantMagicCodeVerifyRequest(
           appID: configuration.appID,
@@ -7113,7 +7117,7 @@ public final class InstantRuntime: Sendable {
           email: email,
           code: code,
           challenge: challenge,
-          refreshToken: currentRefreshToken,
+          refreshToken: guestRefreshToken,
           extraFields: extraFields,
           verifiedAt: now
         )

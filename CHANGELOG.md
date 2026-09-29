@@ -10,6 +10,22 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## September 28th, 2026 at 2:12:59 p.m. EDT — `aa3d97795b2e` Forward only a guest session's refresh token to verify_magic_code; keep Instant's auth error type and message (#113)
+
+- **Implementation commit:** `aa3d97795b2e7a78830bbd9631534cd4357f8625`
+- **Change:** Magic-code sign-in forwards only a guest session's refresh token, and auth failures keep Instant's error type and message (#113).
+- **Details:**
+  - Evidence: on 2026-09-28 against Scribe's Instant app, a Swift client holding a revoked non-guest refresh token failed verify_magic_code (record-not-found, HTTP 400) because it forwarded the token; the TypeScript client, which forwards only guest tokens (Reactor.signInWithMagicCode), signed in. After the fix the same live run signs in, and a Swift guest still links into an existing account.
+  - InstantAuthHTTPClient: non-2xx auth responses report 'HTTP <status> (<type>): <message>' from Instant's body; the hint is dropped because it can echo refresh tokens.
+  - Validation: InstantMagicCodeGuestTokenTests red before (non-guest token forwarded; bare HTTP 400 message), green after; 590 tests across InstantStoreTests, BootstrapTests, CLIArgumentParserTests, InstantAuthHTTPParityTests, InstantGuestPromotionTests and V3AuthLoginFixtureTests pass (4 known issues). Audit report /Users/laptop/Sync/audit/web-scribe-2026-09-28/AUTH-AUDIT.md.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — forward the refresh token to verify_magic_code only for a guest session (upstream parity)
+  - `Sources/InstantSwiftDataCore/InstantAuthHTTPClient.swift` — keep Instant's error type and message on auth HTTP failures, never the hint
+  - `Tests/InstantSwiftDataCoreTests/InstantMagicCodeGuestTokenTests.swift` — guest token forwarded, non-guest token not forwarded, error body kept without tokens
+- **User context (verbatim):**
+  > I also want you to audit that I can upgrade an anon account into either an existing account or a nw account
+- **SpecStory:** unavailable — Claude Code subagent session (guest-upgrade audit); no SpecStory capture configured.
+
 ## September 27th, 2026 at 5:37:29 p.m. EDT — `2fced8d1930c` Drop local entities that lost their id fact once, so the server delivers them whole (#278)
 
 - **Implementation commit:** `2fced8d1930cb26334ce4581ce14ea94188a01c2`

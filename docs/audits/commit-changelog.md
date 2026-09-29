@@ -10,6 +10,12 @@ Release Scribe 0.1 (68): universal links on words.knophy.com with build 67's cop
 ## 2026-09-28 14:28:58 EDT — realtime-voice-sqlite-instant `c8e8e3876a3b4820656ebbc04f6765c01c2767dc`
 ADR 0012: record the words.knophy.com deployment (dedicated tunnel, Access bypass for only the universal links file) and the iPhone-first sign-in order from the guest upgrade audit (#282 #283 #113).
 
+## 2026-09-28 14:13:05 EDT — instant-data-swift `b65192594f019106ae3d39a48d2c6ed2a41fb84c`
+Record the guest-token magic-code fix in the change log (#113).
+
+## 2026-09-28 14:12:40 EDT — instant-data-swift `aa3d97795b2e7a78830bbd9631534cd4357f8625`
+Magic-code sign-in forwards only a guest session's refresh token (upstream parity; a revoked non-guest token made verify_magic_code fail live), and auth HTTP failures keep Instant's error type and message without the hint (#113). Branch agent/claude-opus-5.5/guest-upgrade-audit; audit /Users/laptop/Sync/audit/web-scribe-2026-09-28/AUTH-AUDIT.md.
+
 ## 2026-09-28 14:07:58 EDT — realtime-voice-sqlite-instant `299dbed641251e05de5c2e136581a76c349cdef0`
 Record the universal links change in the change log (#283).
 

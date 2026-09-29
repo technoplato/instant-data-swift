@@ -268,8 +268,32 @@ func validateInstantAuthResponse(
     throw InstantError(
       code: .authFailed,
       operation: operation,
-      message: "Instant auth returned HTTP \(response.statusCode).",
+      message: instantAuthFailureMessage(response),
       recovery: "Verify the app ID and authentication credentials, then try again."
     )
   }
+}
+
+/// The HTTP status plus Instant's error `type` and `message`, for example
+/// `Instant auth returned HTTP 400 (record-not-found): Record not found: app-user`.
+///
+/// Instant's `hint` is never copied: it can echo request arguments, including refresh tokens.
+private func instantAuthFailureMessage(_ response: InstantAuthHTTPResponse) -> String {
+  struct Body: Decodable {
+    var type: String?
+    var message: String?
+  }
+  let body = try? JSONDecoder().decode(Body.self, from: response.data)
+  var message = "Instant auth returned HTTP \(response.statusCode)"
+  if let type = body?.type, !type.isEmpty {
+    message += " (\(type))"
+  }
+  if let serverMessage = body?.message?.trimmingCharacters(in: .whitespacesAndNewlines),
+    !serverMessage.isEmpty
+  {
+    message += ": \(serverMessage.prefix(300))"
+  } else {
+    message += "."
+  }
+  return message
 }
