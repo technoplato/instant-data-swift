@@ -10,6 +10,23 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## September 29th, 2026 at 12:48:45 a.m. EDT — `a9a555636838` Print, debug-print, and reflect auth sessions without the refresh token or email (#113)
+
+- **Implementation commit:** `a9a55563683867e7ab1ed640745a25fa832ff550`
+- **Change:** Auth sessions print, debug-print, and reflect without the refresh token or the email address, so logging a session or anything that carries one cannot leak the token (#113).
+- **Details:**
+  - InstantAuthSession now conforms to CustomStringConvertible, CustomDebugStringConvertible, and CustomReflectable. description: InstantAuthSession(appID: "app-1", userID: "user-1", isGuest: false, email: <present>, refreshToken: <redacted>). The mirror keeps every field for dump and customDump, with refreshToken, email, and imageURL as presence markers (nil when absent).
+  - Before the change every rendering (interpolation, String(describing:), String(reflecting:), dump, customDump) of a session, an optional or array of sessions, InstantGuestPromotionResult, InstantAuthIdentityTransition, InstantAuthSignedInEvent, InstantAuthStatus, InstantGuestPromotionExchangeResult, and InstantMagicCodeSignInResult contained the token and the email: all 45 renderings (9 values, 5 methods), and the default rendering also showed the image URL. AuthV3App posts String(describing: event.identityTransition) in a notification for host loggers.
+  - Codable, Equatable, and Hashable are unchanged (the persisted session keeps its token). Trade-off: expectNoDifference between two sessions that differ only in token or email still fails, but CustomDump reports no visible difference; compare session.refreshToken directly when that matters.
+  - Not covered: request and verification types (InstantOAuthSignInRequest, InstantIDTokenSignInRequest, InstantMagicCodeVerifyRequest, the *Verification types, InstantMagicCodeChallenge.code) still print their tokens; they stay inside auth exchanges today.
+  - Validation: InstantAuthSessionRedactionTests 4 of 5 red before, green after; final focused run of 67 tests in 10 suites passes (the 25 baseline tests, the 9 new tests, and 33 more session-related tests in InstantStoreTests, BootstrapTests, and AuthV3AppTests with no baseline).
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantModels.swift` — log-safe description, debugDescription, and mirror for InstantAuthSession
+  - `Tests/InstantSwiftDataTests/InstantAuthSessionRedactionTests.swift` — exact log-safe renderings; no rendering of any carrier contains the token or email; Codable and equality keep the token
+- **User context (verbatim):**
+  > audit that I can upload upgrade an anonymous account to an account that already exists, and the recordings will be merged in the uh real users library.
+- **SpecStory:** unavailable — Claude Code CLI session; no SpecStory capture configured for this session.
+
 ## September 29th, 2026 at 12:41:47 a.m. EDT — `2d29e8f2e740` Pin that a guest's pending writes survive a link into an existing account; document the divergence from Reactor.updateUser (#113)
 
 - **Implementation commit:** `2d29e8f2e7401d7b1d3f38830d5d479db987b5ec`
