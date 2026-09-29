@@ -7511,16 +7511,20 @@ public final class InstantRuntime: Sendable {
     }
 
     let now = configuration.now()
-    // Match Instant's transport shape: pass the current refresh token so a live
-    // OAuth exchange can upgrade/link the existing session when supported.
-    let refreshToken = try await authSession()?.refreshToken
+    // Upstream `Reactor.exchangeCodeForToken` forwards the refresh token only for a guest
+    // session, so Instant can upgrade that guest in place or link it to the provider's user.
+    // Forwarding a non-guest token has no upstream counterpart; on the magic-code path it made a
+    // revoked token fail sign-in (measured 2026-09-28, #113). `signInWithIDToken` forwards any
+    // current token because `Reactor.signInWithIdToken` does.
+    let currentSession = try await authSession()
+    let guestRefreshToken = currentSession?.isGuest == true ? currentSession?.refreshToken : nil
     let verification = try await configuration.oauthExchange.signIn(
       InstantOAuthSignInRequest(
         appID: configuration.appID,
         apiURI: configuration.apiURI,
         code: code,
         codeVerifier: rawCodeVerifier,
-        refreshToken: refreshToken,
+        refreshToken: guestRefreshToken,
         signedInAt: now,
         makeID: configuration.makeID
       )

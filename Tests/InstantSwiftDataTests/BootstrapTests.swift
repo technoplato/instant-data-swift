@@ -1790,9 +1790,11 @@ struct BootstrapTests {
         code: " oauth-code ",
         codeVerifier: " verifier with spaces "
       )
+      // A non-guest session's refresh token is not forwarded to the OAuth exchange
+      // (upstream `Reactor.exchangeCodeForToken`; see `InstantOAuthGuestTokenTests`).
       expectNoDifference(
         session.userID,
-        "dependency:\(appID):oauth-code: verifier with spaces :existing-refresh"
+        "dependency:\(appID):oauth-code: verifier with spaces :nil"
       )
       expectNoDifference(session.refreshToken, "dependency-oauth-refresh:1700000000000")
       let persistedSession = try await client.authSession()

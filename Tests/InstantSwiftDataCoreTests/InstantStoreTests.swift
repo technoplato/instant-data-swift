@@ -17886,11 +17886,13 @@ struct InstantStoreTests {
       code: " oauth-code ",
       codeVerifier: " verifier with spaces "
     )
+    // The existing session is not a guest, so its refresh token is not forwarded
+    // (upstream `Reactor.exchangeCodeForToken`; see `InstantOAuthGuestTokenTests`).
     expectNoDifference(
       session,
       InstantAuthSession(
         appID: "app-a",
-        userID: "dependency:app-a:oauth-code: verifier with spaces :existing-refresh",
+        userID: "dependency:app-a:oauth-code: verifier with spaces :nil",
         refreshToken: "oauth-refresh:1700000000000",
         isGuest: false,
         createdAt: signedInAt,
