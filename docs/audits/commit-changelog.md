@@ -1,3 +1,9 @@
+## 2026-09-29 02:34:15 EDT — realtime-voice-sqlite-instant `f0f9b225375c8df52069e88c20eaa607d4c3de91`
+Record the double-comparison share-rule fix in the change log (#113 #282).
+
+## 2026-09-29 02:33:49 EDT — realtime-voice-sqlite-instant `b9b8891b0f20626554a64011019c93d1e44c1596`
+Compare share-rule numbers as doubles so shares with fractional section seconds are accepted (#113 #282).
+
 ## 2026-09-29 02:12:54 EDT — instant-data-swift `ee3dea04a2a5449b4f36b0f0dd6bc9faf6154859`
 Record the Discard guest session flag in the change log (#113).
 
