@@ -1,3 +1,45 @@
+## 2026-09-30 13:04:58 EDT — instant-data-swift `e503090047d3123a337ef20f920d7415de15b6ee`
+Record the stale-acknowledgement settle fix in the change log (#296).
+
+## 2026-09-30 13:04:58 EDT — instant-data-swift `bc5dc403a9df82f68e160a5c767cb590e9976b3c`
+Record the measurement wording fix in the change log (#296).
+
+## 2026-09-30 13:04:58 EDT — instant-data-swift `b3e1c6f6f0f69ebcf23696b229c3e5b9aef6a816`
+Record the stale-acknowledgement deadline tolerance in the change log (#296).
+
+## 2026-09-30 13:04:27 EDT — instant-data-swift `5e994bdc92e5fc0543798ab23283828d9ea9d8c8`
+The stale-acknowledgement test waits for the delivery pump to settle before its reclaim, so a pass cannot strand the reoffer it waits for; the reader widened this pre-existing window (6 of 35 runs timed out, now 0 of 40 at load 693-929) (#296).
+
+## 2026-09-30 12:04:51 EDT — instant-data-swift `2ddad19f7056b3fed9e6b7d42166888fb1a1ecf4`
+Comments name the server of the keepalive measurements: Instant's hosted server through the throwaway app bd40c50a, not Scribe's production app (#296).
+
+## 2026-09-30 12:04:44 EDT — instant-data-swift `8abcc002cdfaa45eefd87d20aa1d76a1d72c7ba0`
+The stale-acknowledgement test accepts a claim deadline the acknowledgement deferral moved later; the race is pre-existing (20 of 20 failures on 0078484f at load 680-940) (#296).
+
+## 2026-09-30 11:39:56 EDT — instant-data-swift `73a94b6ea0c3634d0aa1ac5d6edd24051c3c5f2d`
+Record the reader and applier receiver in the change log (#296).
+
+## 2026-09-30 11:39:42 EDT — instant-data-swift `7cf2658e6ccd55fb763dc054ebccb8ec15b56a72`
+The live receiver keeps a receive() outstanding while a frame applies (a reader plus one sequential applier, 128-frame buffer), so URLSession keeps answering server pings; a 40 s apply against bd40c50a now keeps its connection (#296).
+
+## 2026-09-30 11:19:40 EDT — instant-data-swift `20fa140bf35567af11879d89dfda16cf7e98b152`
+Claim InstantLiveTransportTests.swift for plan 2026-09-30-connection-survival (#296).
+
+## 2026-09-30 10:39:05 EDT — instant-data-swift `d72e8b809b29bab0f0570429c85ac1e4d70cf0f4`
+Record the one-replacement reconnect fix in the change log (#296).
+
+## 2026-09-30 10:38:54 EDT — instant-data-swift `473fc933766d7db56e91c41a51b0871c171abd80`
+One socket death opens exactly one replacement connection: the delivery pump defers to a scheduled reconnect instead of cancelling it, and a reconnect reuses a session opened after its loss (#296).
+
+## 2026-09-30 10:38:20 EDT — instant-data-swift `2a74f9a8e2f9f1d56d8402b07ac33037bc585be3`
+Record the live keepalive evidence suite in the change log (#296).
+
+## 2026-09-30 10:37:52 EDT — instant-data-swift `5740987826273333323c80f40309c839ca823b0a`
+An opt-in live suite proves with the library's URLSession transport that a withheld receive() loses the socket after about 20-30 s (POSIX 57), measured through the throwaway app bd40c50a (#296).
+
+## 2026-09-30 09:32:45 EDT — instant-data-swift `920c9f0ae01b1cfb5b26ffd2b2282364589ba2d7`
+Claim the connection-survival paths for plan 2026-09-30-connection-survival (#296).
+
 ## 2026-09-30 08:29:29 EDT — instant-data-swift `25ac7c612b4279a3fdbd9d76ee89ef44f23f6fa2`
 Record the fast-drain revert in the change log (#296).
 
