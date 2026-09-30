@@ -1,3 +1,21 @@
+## 2026-09-30 16:05:26 EDT — realtime-voice-sqlite-instant `40de746ca78c0e5e13ec749ac39f51900e3e599e`
+Record the list owner scope and its ADR 0004 amendment in the change log (#298)
+
+## 2026-09-30 16:04:56 EDT — realtime-voice-sqlite-instant `97ed7d750724213db1f79f4a8d62f8e4be518b82`
+Record in ADR 0004 that the list pages only its viewer's recordings, and why the where reads only recording fields (#298)
+
+## 2026-09-30 16:04:49 EDT — realtime-voice-sqlite-instant `753f52e05294aa7fbdf1f14bcab791888c804ee1`
+Page only the signed-in viewer's recordings in the list, so the server filters before it pages (#298). Read-only in production: the Mac account's first page goes from 1 row to 12 and pages to all 86; the phone guest's from 4 to 12, paging to all 24. No library change: the library's short-first-page close matches upstream infiniteQuery.ts. Branch agent/claude-opus-5.5/list-owner-scope.
+
+## 2026-09-30 11:30:32 EDT — realtime-voice-sqlite-instant `1fc2fbf1f7dc1a5d8cd7cf93eb1d82e02ec57558`
+Answer auto-paging in its channel: what list-owner-scope changes in the list observation (#298 #299)
+
+## 2026-09-30 11:25:05 EDT — realtime-voice-sqlite-instant `8484f433ac96ecf84aae8c996181a18e250b3dbc`
+Claim the bootstrap trace test's recording-list request for list-owner-scope (#298)
+
+## 2026-09-30 10:54:26 EDT — realtime-voice-sqlite-instant `2754dcf7c0aabc25614f75248bed930f4b373184`
+Plan the recording list's owner-scoped query and claim its paths (#298)
+
 ## 2026-09-30 13:51:53 EDT — instant-data-swift `46c131d7413cb3185c80d6e0ce70f467879dfc9e`
 Merge connection survival (984cc351) into build 73's library: one reconnect per socket death, and reading while a frame applies (#296).
 
