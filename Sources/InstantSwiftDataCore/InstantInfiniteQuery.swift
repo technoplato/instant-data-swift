@@ -4,8 +4,13 @@ import Foundation
 public enum InstantInfiniteQueryRetentionPolicy: Hashable, Codable, Sendable {
   /// Retains every page loaded by the subscription.
   case accumulated
-  /// Retains a contiguous sliding window and evicts the opposite edge as navigation advances.
-  /// Live queries keep at most this many data-page chunks plus one payload-bounded leading watcher.
+  /// Retains a contiguous sliding window of at most this many pages and evicts the opposite edge as the window
+  /// moves.
+  ///
+  /// Loading the next page evicts pages at the top, and loading the previous page evicts pages at the bottom. While
+  /// the window starts at the top of the list, live queries also show rows ordered before the first row, as
+  /// upstream's reverse chunk does. Those rows fill pages like any others, so a window at the top follows a live
+  /// head by evicting pages at the bottom. Evicted pages load again with `loadNextPage` and `loadPreviousPage`.
   case window(maximumPageCount: Int)
 
   fileprivate var maximumPageCount: Int? {
@@ -605,6 +610,8 @@ package struct InstantInfiniteQueryResidencySnapshot: Equatable, Sendable {
   package var pendingSubscriptionCount: Int
   package var retirementWatchdogCount: Int
   package var publishedSnapshotCount: Int
+  /// Live chunk subscriptions that have not received a result with page info yet.
+  package var awaitingResultSubscriptionCount: Int
 
   package init(
     latestEmissionValueCount: Int = 0,
@@ -616,7 +623,8 @@ package struct InstantInfiniteQueryResidencySnapshot: Equatable, Sendable {
     retiringSubscriptionCount: Int = 0,
     pendingSubscriptionCount: Int = 0,
     retirementWatchdogCount: Int = 0,
-    publishedSnapshotCount: Int = 0
+    publishedSnapshotCount: Int = 0,
+    awaitingResultSubscriptionCount: Int = 0
   ) {
     self.latestEmissionValueCount = latestEmissionValueCount
     self.hydratedEntityCount = hydratedEntityCount
@@ -628,6 +636,7 @@ package struct InstantInfiniteQueryResidencySnapshot: Equatable, Sendable {
     self.pendingSubscriptionCount = pendingSubscriptionCount
     self.retirementWatchdogCount = retirementWatchdogCount
     self.publishedSnapshotCount = publishedSnapshotCount
+    self.awaitingResultSubscriptionCount = awaitingResultSubscriptionCount
   }
 }
 
@@ -886,6 +895,8 @@ private struct InstantLiveInfiniteSubscription: Sendable {
   var id: Int
   var task: Task<Void, Never>
   var termination: InstantLiveInfiniteSubscriptionSetupLease
+  /// Whether a result with page info has arrived (residency diagnostics only).
+  var hasResult = false
 }
 
 private struct InstantLiveInfinitePendingSubscription: Sendable {
@@ -977,7 +988,13 @@ private actor InstantLiveInfiniteQueryCoordinator {
   private var reverseChunks: [InstantQueryCursor: InstantLiveInfiniteChunk] = [:]
   private var advancedForwardChunks: Set<InstantLiveInfiniteForwardChunkKey> = []
   private var advancedReverseChunks: Set<InstantLiveInfiniteReverseAdvance> = []
+  /// The `before` bound each frozen chunk was frozen with (upstream `freezeForward` and `freezeReverse`). Upstream
+  /// starts the next chunk at that same cursor, so when the window loads an evicted neighbor again it starts there.
+  private var frozenForwardEndCursors: [InstantLiveInfiniteForwardChunkKey: InstantQueryCursor] = [:]
+  private var frozenReverseEndCursors: [InstantQueryCursor: InstantQueryCursor] = [:]
   private var reverseNavigationKeys: Set<InstantQueryCursor> = []
+  /// Upstream's live reverse chunk: rows ordered before the first row. It exists only while the window starts at the
+  /// top of the list; once it holds rows it is one of the window's pages, like every other chunk.
   private var leadingWatcherKey: InstantQueryCursor?
   private var hasEvictedBefore = false
   private var hasEvictedAfter = false
@@ -1067,12 +1084,8 @@ private actor InstantLiveInfiniteQueryCoordinator {
       return
     }
 
-    if retentionPolicy.maximumPageCount != nil,
-      forwardKeys.allSatisfy({ forwardChunks[$0]?.data.isEmpty != false }),
-      hasEvictedAfter,
-      let lastVisibleCursor
-    {
-      pushNewForward(startCursor: lastVisibleCursor)
+    if retentionPolicy.maximumPageCount != nil, hasEvictedAfter {
+      reloadPageAfterTheWindow()
       return
     }
 
@@ -1118,6 +1131,42 @@ private actor InstantLiveInfiniteQueryCoordinator {
     pushNewForward(startCursor: endCursor)
   }
 
+  /// The pages after the window were evicted, by backward navigation or by a live head the window followed. Loads the
+  /// page that follows the window again, from the exact cursor where the window ends, so no row is skipped or shown
+  /// twice.
+  private func reloadPageAfterTheWindow() {
+    guard let boundary = windowEndBoundary else {
+      InstantInfiniteQueryDiagnostics.record(
+        event: "infinite.load-next.noop-cannot-advance",
+        message: "loadNextPage no-op: the page after the window is already loading.",
+        metadata: [
+          "namespace": plan.namespace,
+          "pageSize": pageSize.description,
+          "hasKickstarted": "true",
+          "phase": "liveCursor",
+          "reason": "pageAfterWindowLoading",
+          "forwardChunkCount": forwardKeys.count.description,
+        ],
+        correlationID: plan.id
+      )
+      pushSnapshot()
+      return
+    }
+    InstantInfiniteQueryDiagnostics.record(
+      event: "infinite.load-next.reload-evicted",
+      message: "loadNextPage loading the evicted page after the window again.",
+      metadata: [
+        "namespace": plan.namespace,
+        "pageSize": pageSize.description,
+        "startEntityFingerprint": InstantInfiniteQueryDiagnostics.fingerprint(boundary.cursor.entityID),
+        "startInclusive": boundary.isInclusive.description,
+        "phase": "liveCursor",
+      ],
+      correlationID: plan.id
+    )
+    pushNewForward(startCursor: boundary.cursor, afterInclusive: boundary.isInclusive)
+  }
+
   func loadPreviousPage() {
     guard isActive, retentionPolicy.maximumPageCount != nil else { return }
     guard latestCanLoadPreviousPage else {
@@ -1129,11 +1178,15 @@ private actor InstantLiveInfiniteQueryCoordinator {
       schedulePreBootstrapExpansion()
       return
     }
-    guard let startCursor = firstVisibleCursor else {
+    guard let boundary = windowStartBoundary() else {
       pushSnapshot()
       return
     }
-    pushNewReverse(startCursor: startCursor, advancesAutomatically: false)
+    pushNewReverse(
+      startCursor: boundary.cursor,
+      inclusive: boundary.isInclusive,
+      advancesAutomatically: false
+    )
   }
 
   func unsubscribe() {
@@ -1209,6 +1262,8 @@ private actor InstantLiveInfiniteQueryCoordinator {
     reverseChunks.removeAll(keepingCapacity: false)
     advancedForwardChunks.removeAll(keepingCapacity: false)
     advancedReverseChunks.removeAll(keepingCapacity: false)
+    frozenForwardEndCursors.removeAll(keepingCapacity: false)
+    frozenReverseEndCursors.removeAll(keepingCapacity: false)
     reverseNavigationKeys.removeAll(keepingCapacity: false)
     leadingWatcherKey = nil
     hasEvictedBefore = false
@@ -1241,6 +1296,7 @@ private actor InstantLiveInfiniteQueryCoordinator {
       hydratedEntityCount: preBootstrapHydratedValuesByEntityID.count,
       navigationReferenceCount: forwardKeys.count + reverseKeys.count
         + advancedForwardChunks.count + advancedReverseChunks.count
+        + frozenForwardEndCursors.count + frozenReverseEndCursors.count
         + reverseNavigationKeys.count + (leadingWatcherKey == nil ? 0 : 1)
         + (preBootstrapPendingNavigation == nil ? 0 : 1)
         + pendingSubscriptionCount,
@@ -1250,7 +1306,8 @@ private actor InstantLiveInfiniteQueryCoordinator {
       activeSubscriptionCount: subscriptions.count,
       retiringSubscriptionCount: retiringSubscriptions.count,
       pendingSubscriptionCount: pendingSubscriptionCount,
-      retirementWatchdogCount: retirementWatchdogCount
+      retirementWatchdogCount: retirementWatchdogCount,
+      awaitingResultSubscriptionCount: subscriptions.values.count { !$0.hasResult }
     )
   }
 
@@ -1740,7 +1797,12 @@ private actor InstantLiveInfiniteQueryCoordinator {
       isActive,
       let pageInfo = emission.pageInfo
     else { return }
-    if retentionPolicy.maximumPageCount != nil, key == forwardKeys.last {
+    // The page after the window arrived, so nothing after the window is evicted any more. A refresh of the frozen
+    // chunk above an evicted page does not count: that page is still evicted.
+    if retentionPolicy.maximumPageCount != nil,
+      key == forwardKeys.last,
+      frozenForwardEndCursors[key] == nil
+    {
       hasEvictedAfter = false
     }
     setForwardChunk(
@@ -1764,9 +1826,6 @@ private actor InstantLiveInfiniteQueryCoordinator {
       isActive,
       let pageInfo = emission.pageInfo
     else { return }
-    if reverseNavigationKeys.contains(startCursor) {
-      hasEvictedBefore = pageInfo.hasNextPage
-    }
     setReverseChunk(
       startCursor: startCursor,
       chunk: InstantLiveInfiniteChunk(
@@ -1789,7 +1848,6 @@ private actor InstantLiveInfiniteQueryCoordinator {
     }
     forwardChunks[key] = chunk
     trimRetainedChunks(evicting: .previous)
-    ensureLeadingWatcher()
     pushSnapshot()
   }
 
@@ -1801,11 +1859,22 @@ private actor InstantLiveInfiniteQueryCoordinator {
       reverseKeys.append(startCursor)
     }
     reverseChunks[startCursor] = chunk
-    if !reverseNavigationKeys.contains(startCursor) {
+    if reverseNavigationKeys.contains(startCursor) {
+      // A page loaded by `loadPreviousPage`. While it is the top chunk and still growing, it says whether rows remain
+      // above the window; when none do, the window starts at the top of the list again.
+      if startCursor == reverseKeys.last, frozenReverseEndCursors[startCursor] == nil {
+        hasEvictedBefore = chunk.hasMore
+        if !chunk.hasMore {
+          windowReachedTheTop(navigationKey: startCursor)
+        }
+      }
+    } else {
+      // The leading watcher, or a page it froze (upstream `setReverseChunk` and `maybeAdvanceReverse`).
       maybeAdvanceReverse()
     }
+    // Rows before the window's first row, from backward navigation or a live head the window follows: make room at
+    // the bottom.
     trimRetainedChunks(evicting: .next)
-    ensureLeadingWatcher()
     pushSnapshot()
   }
 
@@ -1841,6 +1910,7 @@ private actor InstantLiveInfiniteQueryCoordinator {
       return
     }
     forwardChunks[key] = chunk
+    frozenForwardEndCursors[key] = endCursor
     let queryPlan = chunkPlan(
       name: "forward-frozen",
       order: resolvedOrder,
@@ -1851,28 +1921,33 @@ private actor InstantLiveInfiniteQueryCoordinator {
     replaceSubscription(key: .forward(key), plan: queryPlan)
   }
 
+  /// Subscribes a reverse chunk: rows ordered before `startCursor`, nearest first (upstream `pushNewReverse`). The
+  /// chunk's key is the cursor with `inclusive` set, so a chunk that includes its cursor differs from one that
+  /// does not.
   private func pushNewReverse(
     startCursor: InstantQueryCursor,
+    inclusive: Bool = false,
     advancesAutomatically: Bool = true
   ) {
-    if reverseChunks[startCursor] == nil {
-      reverseKeys.append(startCursor)
-      reverseChunks[startCursor] = placeholderChunk()
+    let key = cursor(startCursor, inclusive: inclusive)
+    if reverseChunks[key] == nil {
+      reverseKeys.append(key)
+      reverseChunks[key] = placeholderChunk()
     }
     if advancesAutomatically {
-      leadingWatcherKey = startCursor
-      reverseNavigationKeys.remove(startCursor)
+      leadingWatcherKey = key
+      reverseNavigationKeys.remove(key)
     } else {
-      reverseNavigationKeys.insert(startCursor)
+      reverseNavigationKeys.insert(key)
     }
     let queryPlan = chunkPlan(
       name: "reverse",
       order: reversedOrder,
       limit: pageSize,
-      after: cursor(startCursor, inclusive: false),
+      after: key,
       before: nil
     )
-    replaceSubscription(key: .reverse(startCursor), plan: queryPlan)
+    replaceSubscription(key: .reverse(key), plan: queryPlan)
   }
 
   private func freezeReverse(
@@ -1881,16 +1956,18 @@ private actor InstantLiveInfiniteQueryCoordinator {
   ) {
     guard let endCursor = chunk.endCursor else { return }
     reverseChunks[startCursor] = chunk
+    frozenReverseEndCursors[startCursor] = endCursor
     let queryPlan = chunkPlan(
       name: "reverse-frozen",
       order: reversedOrder,
       limit: nil,
-      after: cursor(startCursor, inclusive: false),
+      after: startCursor,
       before: cursor(endCursor, inclusive: true)
     )
     replaceSubscription(key: .reverse(startCursor), plan: queryPlan)
   }
 
+  /// Upstream `maybeAdvanceReverse`: a full leading watcher is frozen as a page and a new watcher starts at its end.
   private func maybeAdvanceReverse() {
     guard let startCursor = leadingWatcherKey,
       let chunk = reverseChunks[startCursor],
@@ -1909,43 +1986,113 @@ private actor InstantLiveInfiniteQueryCoordinator {
     pushNewReverse(startCursor: endCursor, advancesAutomatically: true)
   }
 
+  /// A page loaded by `loadPreviousPage` found no rows above it: the window starts at the top of the list again.
+  /// Watch for rows ordered before it, as upstream's reverse chunk does: freeze the page at its end and start the
+  /// leading watcher there. A page without rows becomes the leading watcher itself.
+  private func windowReachedTheTop(navigationKey key: InstantQueryCursor) {
+    InstantInfiniteQueryDiagnostics.record(
+      event: "infinite.window.top-reached",
+      message: "The window starts at the top of the list again; watching for rows ordered before it.",
+      metadata: [
+        "namespace": plan.namespace,
+        "pageSize": pageSize.description,
+        "pageResultCount": (reverseChunks[key]?.data.count ?? 0).description,
+        "phase": "liveCursor",
+      ],
+      correlationID: plan.id
+    )
+    guard let chunk = reverseChunks[key], !chunk.data.isEmpty, let endCursor = chunk.endCursor else {
+      reverseNavigationKeys.remove(key)
+      leadingWatcherKey = key
+      return
+    }
+    freezeReverse(startCursor: key, chunk: chunk)
+    pushNewReverse(startCursor: endCursor, advancesAutomatically: true)
+  }
+
+  /// Where the page after the window starts: the `before` bound the bottom forward chunk was frozen with, or, when the
+  /// window holds only reverse chunks, the bottom one's key (the cursor a reverse chunk grows away from). `nil` while
+  /// the page after the window is already loading.
+  private var windowEndBoundary: (cursor: InstantQueryCursor, isInclusive: Bool)? {
+    if let key = forwardKeys.last {
+      guard let endCursor = frozenForwardEndCursors[key] else { return nil }
+      return (cursor(endCursor, inclusive: false), false)
+    }
+    guard let bottom = reverseKeys.first else { return nil }
+    return (cursor(bottom, inclusive: false), !bottom.inclusive)
+  }
+
+  /// Where the page before the window starts, in reverse order. For a top forward chunk that is its key's cursor, on
+  /// the other side of its inclusivity. A top page loaded by `loadPreviousPage` that is still growing is frozen
+  /// first, as upstream `loadNextPage` freezes the chunk it grows from, so the new page cannot overlap it. `nil`
+  /// while the page before the window is loading, or while the window starts at the top of the list.
+  private func windowStartBoundary() -> (cursor: InstantQueryCursor, isInclusive: Bool)? {
+    if let top = reverseKeys.last {
+      if let endCursor = frozenReverseEndCursors[top] {
+        return (cursor(endCursor, inclusive: false), false)
+      }
+      guard top != leadingWatcherKey,
+        let chunk = reverseChunks[top],
+        chunk.pageInfo != nil,
+        let endCursor = chunk.endCursor
+      else {
+        return nil
+      }
+      freezeReverse(startCursor: top, chunk: chunk)
+      return (cursor(endCursor, inclusive: false), false)
+    }
+    guard let first = forwardKeys.first, case let .cursor(startCursor, afterInclusive) = first else {
+      return nil
+    }
+    return (cursor(startCursor, inclusive: false), !afterInclusive)
+  }
+
+  /// Keeps at most `maximumPageCount` pages by cutting the window at a page boundary. `.previous` removes the top page
+  /// and everything above it (the leading watcher, a page still loading); `.next` removes the bottom page and
+  /// everything below it. So no chunk is ever left on the far side of a gap.
   private func trimRetainedChunks(
     evicting direction: InstantInfiniteQueryNavigationDirection
   ) {
     guard let maximumPageCount = retentionPolicy.maximumPageCount else { return }
-    while retainedPageChunkKeys.count > maximumPageCount {
-      let key: InstantLiveInfiniteRetainedChunkKey?
+    while true {
+      let pages = retainedPageChunkKeys
+      guard pages.count > maximumPageCount else { return }
+      let chunks = orderedChunkKeys
       switch direction {
-      case .next:
-        key = retainedPageChunkKeys.last
       case .previous:
-        key = retainedPageChunkKeys.first
-      case .refresh:
-        key = nil
-      }
-      guard let key else { return }
-      removeRetainedChunk(key)
-      switch direction {
-      case .next:
-        hasEvictedAfter = true
-      case .previous:
+        guard let cut = pages.first, let index = chunks.firstIndex(of: cut) else { return }
+        for key in chunks[...index] {
+          removeRetainedChunk(key)
+        }
         hasEvictedBefore = true
+      case .next:
+        guard let cut = pages.last, let index = chunks.lastIndex(of: cut) else { return }
+        for key in chunks[index...] {
+          removeRetainedChunk(key)
+        }
+        hasEvictedAfter = true
       case .refresh:
-        break
+        return
       }
     }
   }
 
+  /// Every chunk from the top of the window to the bottom.
+  private var orderedChunkKeys: [InstantLiveInfiniteRetainedChunkKey] {
+    reverseKeys.reversed().map(InstantLiveInfiniteRetainedChunkKey.reverse)
+      + forwardKeys.map(InstantLiveInfiniteRetainedChunkKey.forward)
+  }
+
+  /// The window's pages, top to bottom: every chunk with rows.
   private var retainedPageChunkKeys: [InstantLiveInfiniteRetainedChunkKey] {
-    let reverse: [InstantLiveInfiniteRetainedChunkKey] = reverseKeys.reversed().compactMap { key in
-      guard reverseChunks[key]?.data.isEmpty == false else { return nil }
-      return InstantLiveInfiniteRetainedChunkKey.reverse(key)
+    orderedChunkKeys.filter { key in
+      switch key {
+      case .forward(let forwardKey):
+        return forwardChunks[forwardKey]?.data.isEmpty == false
+      case .reverse(let startCursor):
+        return reverseChunks[startCursor]?.data.isEmpty == false
+      }
     }
-    let forward: [InstantLiveInfiniteRetainedChunkKey] = forwardKeys.compactMap { key in
-      guard forwardChunks[key]?.data.isEmpty == false else { return nil }
-      return InstantLiveInfiniteRetainedChunkKey.forward(key)
-    }
-    return reverse + forward
   }
 
   private func removeRetainedChunk(_ key: InstantLiveInfiniteRetainedChunkKey) {
@@ -1954,11 +2101,13 @@ private actor InstantLiveInfiniteQueryCoordinator {
       forwardKeys.removeAll { $0 == forwardKey }
       forwardChunks[forwardKey] = nil
       advancedForwardChunks.remove(forwardKey)
+      frozenForwardEndCursors[forwardKey] = nil
       retireSubscription(.forward(forwardKey))
     case .reverse(let startCursor):
       reverseKeys.removeAll { $0 == startCursor }
       reverseChunks[startCursor] = nil
       reverseNavigationKeys.remove(startCursor)
+      frozenReverseEndCursors[startCursor] = nil
       advancedReverseChunks = Set(
         advancedReverseChunks.filter { $0.startCursor != startCursor }
       )
@@ -1967,49 +2116,6 @@ private actor InstantLiveInfiniteQueryCoordinator {
         leadingWatcherKey = nil
       }
     }
-  }
-
-  private func ensureLeadingWatcher() {
-    guard retentionPolicy.maximumPageCount != nil,
-      hasKickstarted,
-      leadingWatcherKey == nil,
-      let firstVisibleCursor
-    else {
-      return
-    }
-    pushNewReverse(startCursor: firstVisibleCursor, advancesAutomatically: true)
-  }
-
-  private var firstVisibleCursor: InstantQueryCursor? {
-    for key in reverseKeys.reversed() {
-      guard let chunk = reverseChunks[key], !chunk.data.isEmpty else { continue }
-      if let cursor = chunk.pageInfo?.endCursor {
-        return cursor
-      }
-    }
-    for key in forwardKeys {
-      guard let chunk = forwardChunks[key], !chunk.data.isEmpty else { continue }
-      if let cursor = chunk.pageInfo?.startCursor {
-        return cursor
-      }
-    }
-    return nil
-  }
-
-  private var lastVisibleCursor: InstantQueryCursor? {
-    for key in forwardKeys.reversed() {
-      guard let chunk = forwardChunks[key], !chunk.data.isEmpty else { continue }
-      if let cursor = chunk.pageInfo?.endCursor {
-        return cursor
-      }
-    }
-    for key in reverseKeys {
-      guard let chunk = reverseChunks[key], !chunk.data.isEmpty else { continue }
-      if let cursor = chunk.pageInfo?.startCursor {
-        return cursor
-      }
-    }
-    return nil
   }
 
   private func replaceSubscription(
@@ -2226,6 +2332,9 @@ private actor InstantLiveInfiniteQueryCoordinator {
     for key: InstantLiveInfiniteSubscriptionKey,
     subscriptionID: Int
   ) {
+    if emission.pageInfo != nil, subscriptions[key]?.id == subscriptionID {
+      subscriptions[key]?.hasResult = true
+    }
     switch key {
     case .starter:
       receiveStarter(emission, subscriptionID: subscriptionID)
@@ -2254,11 +2363,17 @@ private actor InstantLiveInfiniteQueryCoordinator {
     let firstForwardChunk = orderedForwardChunks.first(where: { !$0.data.isEmpty })
     let lastReverseChunk = orderedReverseChunks.last(where: { !$0.data.isEmpty })
     let lastForwardChunk = orderedForwardChunks.last(where: { !$0.data.isEmpty })
-    let canLoadPreviousPage = retentionPolicy.maximumPageCount == nil
-      ? false
-      : hasEvictedBefore
-        || firstReverseChunk?.hasMore == true
-        || firstForwardChunk?.pageInfo?.hasPreviousPage == true
+    let canLoadPreviousPage: Bool
+    if retentionPolicy.maximumPageCount == nil {
+      canLoadPreviousPage = false
+    } else if hasKickstarted {
+      // Rows are above the window only when its top was evicted: until then the leading watcher shows them. A
+      // chunk's own `hasPreviousPage` cannot say, because the server computes it over the whole list, so it is true
+      // whenever the leading watcher holds rows.
+      canLoadPreviousPage = hasEvictedBefore
+    } else {
+      canLoadPreviousPage = firstForwardChunk?.pageInfo?.hasPreviousPage == true
+    }
     let canLoadNextPage = hasEvictedAfter || lastForwardChunk?.hasMore == true
     latestCanLoadPreviousPage = canLoadPreviousPage
     let startCursor = firstReverseChunk?.pageInfo?.endCursor
