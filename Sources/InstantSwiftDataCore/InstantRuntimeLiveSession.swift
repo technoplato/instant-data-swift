@@ -26,6 +26,192 @@ package struct InstantLiveMutationEncodingFailure: Sendable {
   var mutationID: String
 }
 
+/// The frames one live generation's reader has received and its applier has not taken yet (#296).
+///
+/// URLSession answers the server's pings only while a `receive()` is outstanding, and the server closes a client
+/// that sends nothing, not even a pong, for its idle timeout (measured against production: about 20-30 s; see
+/// `InstantURLSessionKeepaliveLiveTests`). So one task reads and another applies: the reader keeps a `receive()`
+/// outstanding while the applier is inside a long frame. Frames leave in arrival order. The reader's terminal error
+/// leaves only after every frame received before it, the order upstream's `onmessage` and `onclose` events have.
+///
+/// When `capacity` frames are waiting, the reader waits for the applier, as the single receive loop always did. That
+/// bounds memory when an applier is stuck, and only then can the socket stop answering pings.
+// SAFETY: `lock` protects every mutable field. Continuations are taken under the lock and resumed after it.
+final class InstantLiveReceivedFrames: @unchecked Sendable {
+  private typealias Applier = CheckedContinuation<InstantLiveMessage, any Error>
+  private typealias Reader = CheckedContinuation<Bool, Never>
+
+  private enum Offer {
+    case refused
+    case buffered
+    case handed(Applier)
+    case full
+  }
+
+  private let lock = NSLock()
+  private let capacity: Int
+  private var frames: [InstantLiveMessage] = []
+  private var terminalError: (any Error)?
+  private var isClosed = false
+  private var waitingApplier: Applier?
+  private var applierCancelledBeforeWaiting = false
+  private var waitingReader: (continuation: Reader, frame: InstantLiveMessage)?
+  private var readerCancelledBeforeWaiting = false
+
+  init(capacity: Int) {
+    precondition(capacity > 0, "A live receive buffer needs room for at least one frame.")
+    self.capacity = capacity
+  }
+
+  var bufferedCountForTesting: Int {
+    lock.withLock { frames.count }
+  }
+
+  var readerIsWaitingForTesting: Bool {
+    lock.withLock { waitingReader != nil }
+  }
+
+  var applierIsWaitingForTesting: Bool {
+    lock.withLock { waitingApplier != nil }
+  }
+
+  /// Hands one received frame to the applier. Returns `false` once the applier has stopped, and then the reader
+  /// stops too. Waits while `capacity` frames are already waiting.
+  func append(_ frame: InstantLiveMessage) async -> Bool {
+    switch lock.withLock({ offerLocked(frame) }) {
+    case .refused:
+      return false
+    case .buffered:
+      return true
+    case let .handed(applier):
+      applier.resume(returning: frame)
+      return true
+    case .full:
+      break
+    }
+    return await withTaskCancellationHandler {
+      await withCheckedContinuation { (continuation: Reader) in
+        let offer = lock.withLock { () -> Offer in
+          guard !readerCancelledBeforeWaiting else { return .refused }
+          let offer = offerLocked(frame)
+          if case .full = offer {
+            waitingReader = (continuation, frame)
+          }
+          return offer
+        }
+        switch offer {
+        case .refused:
+          continuation.resume(returning: false)
+        case .buffered:
+          continuation.resume(returning: true)
+        case let .handed(applier):
+          applier.resume(returning: frame)
+          continuation.resume(returning: true)
+        case .full:
+          break
+        }
+      }
+    } onCancel: {
+      let reader = lock.withLock { () -> Reader? in
+        guard let waiting = waitingReader else {
+          readerCancelledBeforeWaiting = true
+          return nil
+        }
+        waitingReader = nil
+        return waiting.continuation
+      }
+      reader?.resume(returning: false)
+    }
+  }
+
+  /// Records the reader's terminal error. The applier receives it after every frame received before it.
+  func finish(throwing error: any Error) {
+    let applier = lock.withLock { () -> Applier? in
+      guard !isClosed, terminalError == nil else { return nil }
+      terminalError = error
+      // An applier waits only when no frame is waiting, so nothing is skipped.
+      defer { waitingApplier = nil }
+      return waitingApplier
+    }
+    applier?.resume(throwing: error)
+  }
+
+  /// The next frame in arrival order. After the last frame it throws the reader's terminal error. After `close()`
+  /// or cancellation it throws `CancellationError`.
+  func next() async throws -> InstantLiveMessage {
+    try Task.checkCancellation()
+    return try await withTaskCancellationHandler {
+      try await withCheckedThrowingContinuation { (continuation: Applier) in
+        let taken = lock.withLock { () -> (Result<InstantLiveMessage, any Error>, Reader?)? in
+          if let taken = takeFrameLocked() {
+            return (.success(taken.frame), taken.reader)
+          }
+          if let terminalError {
+            return (.failure(terminalError), nil)
+          }
+          if isClosed || applierCancelledBeforeWaiting {
+            return (.failure(CancellationError()), nil)
+          }
+          waitingApplier = continuation
+          return nil
+        }
+        if let taken {
+          taken.1?.resume(returning: true)
+          continuation.resume(with: taken.0)
+        }
+      }
+    } onCancel: {
+      let applier = lock.withLock { () -> Applier? in
+        guard let waiting = waitingApplier else {
+          applierCancelledBeforeWaiting = true
+          return nil
+        }
+        waitingApplier = nil
+        return waiting
+      }
+      applier?.resume(throwing: CancellationError())
+    }
+  }
+
+  /// Drops every waiting frame and stops the reader. The applier calls this when it stops.
+  func close() {
+    let waiting = lock.withLock { () -> (Applier?, Reader?) in
+      isClosed = true
+      frames.removeAll()
+      defer {
+        waitingApplier = nil
+        waitingReader = nil
+      }
+      return (waitingApplier, waitingReader?.continuation)
+    }
+    waiting.0?.resume(throwing: CancellationError())
+    waiting.1?.resume(returning: false)
+  }
+
+  private func offerLocked(_ frame: InstantLiveMessage) -> Offer {
+    if isClosed || terminalError != nil {
+      return .refused
+    }
+    if let applier = waitingApplier {
+      waitingApplier = nil
+      return .handed(applier)
+    }
+    guard frames.count < capacity else { return .full }
+    frames.append(frame)
+    return .buffered
+  }
+
+  /// Takes the oldest frame. A reader waiting on a full buffer moves its frame in behind the others.
+  private func takeFrameLocked() -> (frame: InstantLiveMessage, reader: Reader?)? {
+    guard !frames.isEmpty else { return nil }
+    let frame = frames.removeFirst()
+    guard let reader = waitingReader else { return (frame, nil) }
+    waitingReader = nil
+    frames.append(reader.frame)
+    return (frame, reader.continuation)
+  }
+}
+
 package actor InstantRuntimeLiveSession {
   private struct RegisteredQuery: Sendable {
     var query: InstantLiveJSONValue
@@ -96,11 +282,21 @@ package actor InstantRuntimeLiveSession {
   /// suspension so a late frame cannot authorize a newer same-id claim.
   private var offeredMutationClaimTokensInCurrentGeneration: [String: String] = [:]
   private var acknowledgementUnknownMutationIDs: Set<String> = []
-  /// The server frame this generation's receive loop is applying, from the moment `receive()` returned it until the
-  /// runtime has handled it (#296). While it is set, this socket has proved the server is answering, and an
+  /// The server frame this generation's applier is applying, from the moment it took the frame from the reader until
+  /// the runtime has handled it (#296). While it is set, this socket has proved the server is answering, and an
   /// acknowledgement queued behind it is not late. See `frameBeingApplied()`.
   private var frameBeingAppliedState: (generation: Int, sequence: UInt64, op: String)?
   private var nextFrameSequence: UInt64 = 0
+  /// How many received frames may wait for the applier (#296). The server answers each in-flight mutation (at most
+  /// `maximumMutationsPerFlush`, 50) with one frame and each registered query with one `add-query-ok`. While it
+  /// recomputes, it combines queued refreshes into one (`combine [:refresh :refresh]`, upstream
+  /// `server/src/instant/reactive/session.clj`). One long apply therefore has about 70 frames behind it in a
+  /// Scribe-sized session. 128 leaves room for that. A full buffer makes the reader wait: the old behaviour, so only a
+  /// stuck applier can cost the socket.
+  static let maximumBufferedReceivedFrames = 128
+  /// The current generation's receive buffer. Only tests read it, to wait until the applier has applied every frame
+  /// the reader took (`applierIsWaitingForAFrameForTesting()`).
+  private var receivedFrames: InstantLiveReceivedFrames?
   /// Mutation IDs an earlier connection offered and never answered (#296). A server refusal of one of these is a
   /// replay: the earlier offer may have been applied, so the refusal alone does not prove the write was lost. Only
   /// used to classify refusals in diagnostics; bounded because it outlives generations.
@@ -520,59 +716,86 @@ package actor InstantRuntimeLiveSession {
       _ = invalidateSessionIfCurrent(session, failure: pendingFailure)
       throw pendingFailure
     }
+    // Upstream `Reactor.js` applies each frame synchronously in `_handleReceive`, and a browser answers the server's
+    // pings below JavaScript, so a long frame never silences its socket. URLSession answers pings only while a
+    // `receive()` is outstanding, and the server closes a client that sends nothing for about 20-30 s. So this
+    // receiver has a reader, which keeps a `receive()` outstanding, and one applier, which applies the frames one at
+    // a time in arrival order with the checks the single receive loop had (#296). Both belong to this generation's
+    // task: replacement and close cancel and wait for both, and the buffer dies with them.
+    let frames = InstantLiveReceivedFrames(capacity: Self.maximumBufferedReceivedFrames)
+    receivedFrames = frames
     _ = receiverTaskOwner.start { [weak self] in
-      do {
-        while !Task.isCancelled {
-          let message = try await session.receive()
-          try Task.checkCancellation()
-          let event = InstantLiveServerEvent(message: message)
-          guard await self?.canDeliverReceiverEvent(
-            generation: generation,
-            session: session
-          ) == true else {
-            return
+      await withTaskGroup(of: Void.self) { group in
+        group.addTask {
+          do {
+            while !Task.isCancelled {
+              let message = try await session.receive()
+              guard await frames.append(message) else { return }
+            }
+          } catch {
+            frames.finish(throwing: error)
           }
-          guard
-            let recorded = try await self?.record(
+        }
+        do {
+          while !Task.isCancelled {
+            let message = try await frames.next()
+            try Task.checkCancellation()
+            let event = InstantLiveServerEvent(message: message)
+            guard
+              try await self?.applierMayApplyNextFrame(
+                generation: generation,
+                session: session
+              ) == true
+            else {
+              break
+            }
+            guard
+              let recorded = try await self?.record(
+                event,
+                generation: generation,
+                onEventAcquired: onEventAcquired
+              )
+            else {
+              break
+            }
+            try Task.checkCancellation()
+            guard await self?.canDeliverReceiverEvent(
+              generation: generation,
+              session: session
+            ) == true else {
+              break
+            }
+            try await onEvent(
+              event,
+              recorded.attributes,
+              recorded.mutationClaimToken
+            )
+            await self?.finishDeliveringMutationResponse(
               event,
               generation: generation,
-              onEventAcquired: onEventAcquired
+              claimToken: recorded.mutationClaimToken
             )
-          else {
-            return
           }
-          try Task.checkCancellation()
-          guard await self?.canDeliverReceiverEvent(
+        } catch is CancellationError {
+          await self?.receiverEnded(
             generation: generation,
-            session: session
-          ) == true else {
-            return
-          }
-          try await onEvent(
-            event,
-            recorded.attributes,
-            recorded.mutationClaimToken
+            session: session,
+            failure: nil,
+            onFailure: onFailure
           )
-          await self?.finishDeliveringMutationResponse(
-            event,
+        } catch {
+          await self?.receiverEnded(
             generation: generation,
-            claimToken: recorded.mutationClaimToken
+            session: session,
+            failure: error,
+            onFailure: onFailure
           )
         }
-      } catch is CancellationError {
-        await self?.receiverEnded(
-          generation: generation,
-          session: session,
-          failure: nil,
-          onFailure: onFailure
-        )
-      } catch {
-        await self?.receiverEnded(
-          generation: generation,
-          session: session,
-          failure: error,
-          onFailure: onFailure
-        )
+        // The reader stops with the applier. Every path that stops the applier has already closed or aborted this
+        // socket, or is about to; aborting it here as well guarantees the reader's outstanding `receive()` returns.
+        frames.close()
+        session.abort()
+        group.cancelAll()
       }
     }
   }
@@ -677,14 +900,14 @@ package actor InstantRuntimeLiveSession {
     Set(registeredQueries.keys)
   }
 
-  /// The server frame the current generation's receive loop is still applying, if any (#296).
+  /// The server frame the current generation's applier is still applying, if any (#296).
   ///
-  /// A frame counts from the moment `receive()` returned it until the runtime finished handling it. Upstream
+  /// A frame counts from the moment the applier took it until the runtime finished handling it. Upstream
   /// `Reactor.js` handles each frame synchronously (`_handleReceive`), so a mutation timer cannot fire while a frame
   /// is being handled; the runtime defers durable acknowledgement deadlines while this returns a frame to keep that
   /// outcome. `sequence` identifies one frame, so the runtime can bound how long it defers for any single frame.
   func frameBeingApplied() -> (sequence: UInt64, op: String)? {
-    // A receive loop that stops early for a replaced or closed session leaves its frame behind; only an open
+    // An applier that stops early for a replaced or closed session leaves its frame behind; only an open
     // session's current frame counts.
     guard let frame = frameBeingAppliedState, frame.generation == generation, isOpened else { return nil }
     return (frame.sequence, frame.op)
@@ -1611,6 +1834,23 @@ package actor InstantRuntimeLiveSession {
       && isOpened
   }
 
+  /// Whether the applier may apply the next frame it took from the reader (#296).
+  ///
+  /// `false` stops the applier without a reconnect, because a close or a replacement owns this generation now. A send
+  /// failure retained for this socket is thrown, so `receiverEnded` handles it. That send aborted the wire, and the
+  /// single receive loop's next `receive()` failed at this point, so frames the reader took before the failure are
+  /// dropped the same way.
+  private func applierMayApplyNextFrame(
+    generation: Int,
+    session: InstantLiveWebSocketSession
+  ) throws -> Bool {
+    guard canDeliverReceiverEvent(generation: generation, session: session) else { return false }
+    if let failure = retainedReceiverFailure(for: session) {
+      throw failure
+    }
+    return true
+  }
+
   private func receiverEnded(
     generation: Int,
     session: InstantLiveWebSocketSession,
@@ -1695,6 +1935,12 @@ package actor InstantRuntimeLiveSession {
 
   func receiverTaskIsIdleForTesting() -> Bool {
     receiverTaskOwner.isIdle
+  }
+
+  /// The current applier has applied every frame its reader took and is waiting for the next one. The reader asks
+  /// for the next frame as soon as it buffers one, so a new `receive()` no longer proves a frame was applied (#296).
+  func applierIsWaitingForAFrameForTesting() -> Bool {
+    receivedFrames?.applierIsWaitingForTesting == true
   }
 
   private func recordRoomEvent(op: String, roomID: String) async throws {

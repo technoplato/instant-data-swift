@@ -5,11 +5,247 @@ import Testing
 
 /// Connection survival for Recording 023 (#296).
 ///
-/// Build 72 opened more than one replacement connection for each socket death: the reconnect controller and the
-/// delivery pump both reacted to the same loss. These tests drive the runtime through scripted sockets. No network is
-/// involved.
+/// Build 72 lost its socket after every long server frame and opened more than one replacement for each loss. Two
+/// facts explain the first defect:
+/// - The server pings every 5 s and closes a client that sends nothing, not even a pong, for its idle timeout
+///   (upstream `server/src/instant/lib/ring/websocket.clj`, `straight-jacket-run-ping-job`). Measured against
+///   production, that is about 20-30 s.
+/// - URLSession answers a server ping only while a `receive()` is outstanding (measured; see
+///   `InstantURLSessionKeepaliveLiveTests`).
+///
+/// The receive loop applied each frame before it called `receive()` again, so a 26-37 s apply meant no pongs. The
+/// other defect: the reconnect controller and the delivery pump both reacted to the same loss. These tests drive the
+/// runtime through scripted sockets. No network is involved.
 @Suite(.serialized)
 struct InstantLiveConnectionSurvivalTests {
+  /// A frame the runtime applies for a long time must not stop the socket from reading. Upstream `Reactor.js` handles
+  /// each frame synchronously in `_handleReceive`, and a browser answers pings below JavaScript either way. A Swift
+  /// transport such as URLSession answers them only while a `receive()` is outstanding.
+  @Test
+  func aLongFrameApplyKeepsAReceiveOutstandingSoServerPingsAreAnswered() async throws {
+    let transport = SurvivalTransport()
+    let gate = SurvivalApplyGate()
+    var configuration = try survivalConfiguration(appID: "survival-keepalive", transport: transport)
+    configuration.onLiveReceiverEventAcquiredForTesting = { await gate.enter() }
+    let runtime = try await InstantRuntime.bootstrap(configuration: configuration)
+
+    try await withSurvivalCleanup({ await gate.release() }) {
+      _ = try await runtime.connect()
+      let socket = try #require(await transport.socket(0))
+
+      await socket.push(survivalLongFrame)
+      try await waitUntil("the runtime to start applying the long frame") {
+        await gate.enteredCount == 1
+      }
+      try await waitUntil("a receive() outstanding while the long frame applies") {
+        await socket.hasOutstandingReceive
+      }
+      let ping = await socket.serverPing()
+      expectNoDifference(ping, .answered)
+
+      await gate.release()
+      _ = try await runtime.closeConnection()
+    }
+  }
+
+  /// Answers that arrive while an earlier frame applies are applied afterwards, one at a time, in arrival order. Each
+  /// one still carries the claim token of its own offer, so each write is accepted exactly when its answer applies.
+  @Test
+  func framesThatArriveDuringALongApplyAreAppliedInArrivalOrder() async throws {
+    let transport = SurvivalTransport()
+    let gate = SurvivalApplyGate()
+    let runtimeBox = SurvivalRuntimeBox()
+    let pendingAtEachFrame = SurvivalRecorder<[String]>()
+    var configuration = try survivalConfiguration(appID: "survival-order", transport: transport)
+    configuration.onLiveReceiverEventAcquiredForTesting = {
+      if let runtime = await runtimeBox.runtime {
+        await pendingAtEachFrame.append(await runtime.pendingMutations().map(\.id).sorted())
+      }
+      await gate.enter()
+    }
+    let runtime = try await InstantRuntime.bootstrap(configuration: configuration)
+    await runtimeBox.set(runtime)
+    let ids = ["tx-order-a", "tx-order-b", "tx-order-c"]
+
+    try await withSurvivalCleanup({ await gate.release() }) {
+      _ = try await runtime.connect()
+      let socket = try #require(await transport.socket(0))
+      for (index, id) in ids.enumerated() {
+        try await transactSurvivalTodo(id: id, index: index, on: runtime)
+      }
+      try await waitUntil("the pump to offer all three writes") {
+        await socket.sentTransactIDs == ids
+      }
+
+      await socket.push(survivalLongFrame)
+      try await waitUntil("the runtime to start applying the long frame") {
+        await gate.enteredCount == 1
+      }
+      for id in ids {
+        await socket.push(survivalTransactOK(id))
+      }
+      try await waitUntil("the socket to hand over every answer while the long frame applies") {
+        await socket.isCaughtUp
+      }
+
+      await gate.release()
+      try await waitUntil("all three answers to be applied") {
+        await runtime.pendingMutations().isEmpty
+      }
+      let observed = await pendingAtEachFrame.values
+      expectNoDifference(
+        observed,
+        [ids, ids, ["tx-order-b", "tx-order-c"], ["tx-order-c"]],
+        "The long frame, then a, b, and c, each applied only after the one before it finished."
+      )
+      _ = try await runtime.closeConnection()
+    }
+  }
+
+  /// Replacing the connection while a frame applies drops every frame that arrived on the old connection. A buffered
+  /// answer must never be applied after its connection was replaced.
+  @Test
+  func anAnswerThatArrivedOnAReplacedConnectionIsNeverApplied() async throws {
+    let transport = SurvivalTransport()
+    let gate = SurvivalApplyGate()
+    var configuration = try survivalConfiguration(appID: "survival-replaced", transport: transport)
+    configuration.onLiveReceiverEventAcquiredForTesting = { await gate.enter() }
+    let runtime = try await InstantRuntime.bootstrap(configuration: configuration)
+    let id = "tx-replaced-a"
+
+    try await withSurvivalCleanup({ await gate.release() }) {
+      _ = try await runtime.connect()
+      let socket = try #require(await transport.socket(0))
+      try await transactSurvivalTodo(id: id, index: 0, on: runtime)
+      try await waitUntil("the pump to offer the write") { await socket.sentTransactIDs == [id] }
+
+      await socket.push(survivalLongFrame)
+      try await waitUntil("the runtime to start applying the long frame") {
+        await gate.enteredCount == 1
+      }
+      await socket.push(survivalTransactOK(id))
+      try await waitUntil("the socket to hand over the answer while the long frame applies") {
+        await socket.isCaughtUp
+      }
+
+      let replacement = Task { try await runtime.connect() }
+      try await waitUntil("the replacement to close the old socket") { await socket.isClosed }
+      await gate.release()
+      _ = try await replacement.value
+
+      let appliedFrameCount = await gate.enteredCount
+      expectNoDifference(appliedFrameCount, 1, "Only the long frame reached the applier.")
+      let pending = await runtime.pendingMutations().map(\.id)
+      expectNoDifference(pending, [id], "The old connection's answer was not applied.")
+      _ = try await runtime.closeConnection()
+    }
+  }
+
+  /// A failed send aborts the socket, and the frames taken from it before the failure are not applied. This keeps the
+  /// build-72 behaviour: its next `receive()` failed at that point. The failure still leads to exactly one reconnect.
+  @Test
+  func framesTakenBeforeAFailedSendAreNotApplied() async throws {
+    let transport = SurvivalTransport()
+    let gate = SurvivalApplyGate()
+    var configuration = try survivalConfiguration(appID: "survival-send-failure", transport: transport)
+    configuration.onLiveReceiverEventAcquiredForTesting = { await gate.enter() }
+    let runtime = try await InstantRuntime.bootstrap(configuration: configuration)
+    let first = "tx-send-failure-a"
+    let second = "tx-send-failure-b"
+
+    try await withSurvivalCleanup({ await gate.release() }) {
+      _ = try await runtime.connect()
+      let socket = try #require(await transport.socket(0))
+      try await transactSurvivalTodo(id: first, index: 0, on: runtime)
+      try await waitUntil("the pump to offer the first write") { await socket.sentTransactIDs == [first] }
+
+      await socket.push(survivalLongFrame)
+      try await waitUntil("the runtime to start applying the long frame") {
+        await gate.enteredCount == 1
+      }
+      await socket.push(survivalTransactOK(first))
+      try await waitUntil("the socket to hand over the answer while the long frame applies") {
+        await socket.isCaughtUp
+      }
+
+      await socket.dieOnNextSend(of: "transact", with: survivalSocketNotConnected)
+      try await transactSurvivalTodo(id: second, index: 1, on: runtime)
+      try await waitUntil("the second write's send to kill the socket") { await socket.isDead }
+      await gate.release()
+
+      try await waitUntil("both writes to be offered again on one replacement") {
+        await transport.socket(1)?.sentTransactIDs == [first, second]
+      }
+      let appliedFrameCount = await gate.enteredCount
+      expectNoDifference(appliedFrameCount, 1, "The answer taken before the failed send was not applied.")
+      let attempts = await transport.attemptCount
+      expectNoDifference(attempts, 2, "One replacement connection.")
+      _ = try await runtime.closeConnection()
+    }
+  }
+
+  /// The reader's buffer hands frames over in arrival order. The reader's terminal error comes only after every earlier
+  /// frame, and a full buffer makes the reader wait instead of growing.
+  @Test
+  func theReceiveBufferKeepsArrivalOrderAndMakesAFullReaderWait() async throws {
+    let frames = InstantLiveReceivedFrames(capacity: 2)
+    let firstAccepted = await frames.append(InstantLiveMessage(op: "first"))
+    let secondAccepted = await frames.append(InstantLiveMessage(op: "second"))
+    expectNoDifference([firstAccepted, secondAccepted], [true, true])
+
+    let thirdAppend = Task { await frames.append(InstantLiveMessage(op: "third")) }
+    try await waitUntil("the reader to wait on the full buffer") { frames.readerIsWaitingForTesting }
+    expectNoDifference(frames.bufferedCountForTesting, 2)
+    let taken = try await frames.next()
+    expectNoDifference(taken.op, "first")
+    let thirdAccepted = await thirdAppend.value
+    expectNoDifference(thirdAccepted, true)
+
+    frames.finish(throwing: survivalSocketNotConnected)
+    let second = try await frames.next()
+    let third = try await frames.next()
+    expectNoDifference([second.op, third.op], ["second", "third"])
+    do {
+      _ = try await frames.next()
+      Issue.record("The reader's terminal error must follow the last frame.")
+    } catch {
+      expectNoDifference((error as NSError).code, 57)
+    }
+    let acceptedAfterFailure = await frames.append(InstantLiveMessage(op: "late"))
+    expectNoDifference(acceptedAfterFailure, false)
+  }
+
+  /// A cancelled applier stops waiting. Closing the buffer drops what is waiting and releases a reader that waits on
+  /// a full buffer, so a stopped applier never leaves its reader behind.
+  @Test
+  func closingTheReceiveBufferReleasesAWaitingReader() async throws {
+    let frames = InstantLiveReceivedFrames(capacity: 1)
+    let applier = Task { try await frames.next() }
+    try await waitUntil("the applier to wait for a frame") { frames.applierIsWaitingForTesting }
+    applier.cancel()
+    switch await applier.result {
+    case .success(let frame):
+      Issue.record("A cancelled applier took \(frame.op).")
+    case .failure(let error):
+      #expect(error is CancellationError)
+    }
+
+    let firstAccepted = await frames.append(InstantLiveMessage(op: "first"))
+    expectNoDifference(firstAccepted, true)
+    let blockedAppend = Task { await frames.append(InstantLiveMessage(op: "second")) }
+    try await waitUntil("the reader to wait on the full buffer") { frames.readerIsWaitingForTesting }
+    frames.close()
+    let blockedAccepted = await blockedAppend.value
+    expectNoDifference(blockedAccepted, false)
+    expectNoDifference(frames.bufferedCountForTesting, 0)
+    do {
+      _ = try await frames.next()
+      Issue.record("A closed buffer has no frames.")
+    } catch {
+      #expect(error is CancellationError)
+    }
+  }
+
   /// Recording 023 on build 72: each socket death logged `connection.open-started` from the delivery pump and from the
   /// reconnect controller within 1 ms, then a third `open-started`. Here the reconnect's handshake is slow, and a new
   /// write arrives meanwhile. Exactly one replacement connection may open.
@@ -152,6 +388,14 @@ private let survivalSocketNotConnected = NSError(
   code: 57,
   userInfo: [NSLocalizedDescriptionKey: "Socket is not connected"]
 )
+
+/// An unknown op: the runtime records it as the frame being applied and ignores it otherwise. The apply gate holds
+/// it to stand in for Recording 023's 26-37 s rebase.
+private let survivalLongFrame = InstantLiveMessage(op: "survival-long-frame", clientEventID: nil, fields: [:])
+
+private func survivalTransactOK(_ id: String) -> InstantLiveMessage {
+  InstantLiveMessage(op: "transact-ok", clientEventID: id, fields: ["tx-id": .string("server-\(id)")])
+}
 
 /// One scripted Instant socket.
 ///
@@ -342,6 +586,29 @@ private actor SurvivalTransport {
   }
 }
 
+/// Holds frames in the runtime's applier through `onLiveReceiverEventAcquiredForTesting`, which runs after the live
+/// session marks a frame as the one being applied. It stands in for a long optimistic rebase.
+private actor SurvivalApplyGate {
+  private var holds = true
+  private var parked: [CheckedContinuation<Void, Never>] = []
+  private(set) var enteredCount = 0
+
+  func enter() async {
+    enteredCount += 1
+    guard holds else { return }
+    await withCheckedContinuation { parked.append($0) }
+  }
+
+  func release() {
+    holds = false
+    let parked = parked
+    self.parked.removeAll()
+    for frame in parked {
+      frame.resume()
+    }
+  }
+}
+
 /// Parks the reconnect controller in its first real backoff (a delay above zero) until `release()`.
 private actor SurvivalBackoffGate {
   private var released = false
@@ -366,6 +633,22 @@ private actor SurvivalBackoffGate {
 
   func release() {
     released = true
+  }
+}
+
+private actor SurvivalRuntimeBox {
+  private(set) var runtime: InstantRuntime?
+
+  func set(_ runtime: InstantRuntime) {
+    self.runtime = runtime
+  }
+}
+
+private actor SurvivalRecorder<Value: Sendable> {
+  private(set) var values: [Value] = []
+
+  func append(_ value: Value) {
+    values.append(value)
   }
 }
 

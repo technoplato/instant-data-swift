@@ -5180,6 +5180,11 @@ public final class InstantRuntime: Sendable {
     await reconnectController.isIdleForTesting()
   }
 
+  /// The live receiver has applied every frame it took from the socket and is waiting for the next one (#296).
+  package func liveReceiverIsWaitingForAFrameForTesting() async -> Bool {
+    await liveSession.applierIsWaitingForAFrameForTesting()
+  }
+
   package func exactCloseBackgroundTasksAreIdleForTesting() async -> Bool {
     await exactCloseBackgroundTaskIdleState().allIdle
   }

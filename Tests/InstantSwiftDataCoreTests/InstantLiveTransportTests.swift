@@ -4461,6 +4461,7 @@ struct InstantLiveTransportTests {
       )
     )
     await session.waitForReceiveRequestCount(receiveCountBeforeDuplicate + 1)
+    try await waitForLiveReceiverToApplyTakenFrames(runtime)
     let duplicateDecodeCount = await runtime.persistence.currentDecodedOutboxBodyCount()
     let revisionAfterDuplicate = try await runtime.persistence.currentOutboxRevision()
     let sentAfterDuplicate = await session.sentMessages().map(\.op)
@@ -4610,6 +4611,7 @@ struct InstantLiveTransportTests {
       )
     )
     await session.waitForReceiveRequestCount(receiveCountBeforeDuplicate + 1)
+    try await waitForLiveReceiverToApplyTakenFrames(runtime)
     let revisionAfterDuplicate = try await runtime.persistence.currentOutboxRevision()
     let decodeCountAfterDuplicate = await runtime.persistence.currentDecodedOutboxBodyCount()
     expectNoDifference(revisionAfterDuplicate, revisionBeforeDuplicate)
@@ -4804,6 +4806,7 @@ struct InstantLiveTransportTests {
       )
     )
     await session.waitForReceiveRequestCount(receiveCountBeforeError + 1)
+    try await waitForLiveReceiverToApplyTakenFrames(runtime)
 
     let staleErrorDecodeCount = await runtime.persistence.currentDecodedOutboxBodyCount()
     let durable = try await runtime.persistence.loadState().snapshot.outbox
@@ -4874,6 +4877,7 @@ struct InstantLiveTransportTests {
       )
     )
     await session.waitForReceiveRequestCount(receiveCountBeforeAcknowledgement + 1)
+    try await waitForLiveReceiverToApplyTakenFrames(runtime)
 
     let durable = try await runtime.persistence.loadState().snapshot.outbox
     let mutation = try #require(durable.first { $0.id == mutationID })
@@ -4975,6 +4979,7 @@ struct InstantLiveTransportTests {
     ) {
       await session.waitForReceiveRequestCount(receiveCountBeforeAcknowledgement + 1)
     }
+    try await waitForLiveReceiverToApplyTakenFrames(runtime)
 
     let revisionAfterStaleDisposition = try await runtime.persistence.currentOutboxRevision()
     expectNoDifference(revisionAfterStaleDisposition, revisionBeforeStaleDisposition)
@@ -6846,6 +6851,20 @@ private func waitForOperationGateHopCount(
     await Task.yield()
   }
   return recorder.summary(since: baseline).breakdown["operation-gate", default: 0] >= count
+}
+
+/// Waits until the live receiver has applied every frame it took and is waiting for the next one (#296). The reader
+/// asks for the next frame as soon as it buffers one, so the next `receive()` request alone no longer proves that the
+/// frame before it was applied.
+private func waitForLiveReceiverToApplyTakenFrames(_ runtime: InstantRuntime) async throws {
+  try await instantLiveWithTimeout(
+    operation: "wait for the live receiver to apply the frames it took",
+    timeoutMilliseconds: 5_000
+  ) {
+    while await !runtime.liveReceiverIsWaitingForAFrameForTesting() {
+      try await Task.sleep(nanoseconds: 1_000_000)
+    }
+  }
 }
 
 private func temporaryLiveCacheURL() throws -> URL {
