@@ -8,8 +8,8 @@ import Testing
 /// Build 72 lost its socket after every long server frame and opened more than one replacement for each loss. Two
 /// facts explain the first defect:
 /// - The server pings every 5 s and closes a client that sends nothing, not even a pong, for its idle timeout
-///   (upstream `server/src/instant/lib/ring/websocket.clj`, `straight-jacket-run-ping-job`). Measured against
-///   production, that is about 20-30 s.
+///   (upstream `server/src/instant/lib/ring/websocket.clj`, `straight-jacket-run-ping-job`). Measured on Instant's
+///   hosted server through the throwaway app bd40c50a, that is about 20-30 s.
 /// - URLSession answers a server ping only while a `receive()` is outstanding (measured; see
 ///   `InstantURLSessionKeepaliveLiveTests`).
 ///

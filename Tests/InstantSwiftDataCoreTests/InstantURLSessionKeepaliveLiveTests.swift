@@ -10,10 +10,10 @@ import Testing
 /// answers a ping only while a `receive()` is outstanding. So a receive loop that applies one frame for longer than
 /// that loses its socket.
 ///
-/// Measured on 2026-09-30 against production Instant: with `receive()` withheld, the socket survived 20 s (2 of 2),
-/// died at 24-28 s in 3 of 6 trials, and died at 32-45 s in 7 of 7, each time with "Socket is not connected" (POSIX
-/// 57), as on the device. A Node client that reads but never pongs is closed at about 25 s. So these probes hold 40 s,
-/// clear of that jitter.
+/// Measured on 2026-09-30 on Instant's hosted server (api.instantdb.com) through the throwaway app bd40c50a: with
+/// `receive()` withheld, the socket survived 20 s (2 of 2), died at 24-28 s in 3 of 6 trials, and died at 32-45 s in
+/// 7 of 7, each time with "Socket is not connected" (POSIX 57), as on the device. A Node client that reads but never
+/// pongs is closed at about 25 s. So these probes hold 40 s, clear of that jitter.
 ///
 /// The probes keep the socket quiet while they hold it: no query subscription, so no `refresh-ok` traffic. Heavy
 /// server traffic that the client is not reading postpones the close. The server's idle check runs in the same job as

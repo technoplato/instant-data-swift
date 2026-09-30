@@ -29,10 +29,11 @@ package struct InstantLiveMutationEncodingFailure: Sendable {
 /// The frames one live generation's reader has received and its applier has not taken yet (#296).
 ///
 /// URLSession answers the server's pings only while a `receive()` is outstanding, and the server closes a client
-/// that sends nothing, not even a pong, for its idle timeout (measured against production: about 20-30 s; see
-/// `InstantURLSessionKeepaliveLiveTests`). So one task reads and another applies: the reader keeps a `receive()`
-/// outstanding while the applier is inside a long frame. Frames leave in arrival order. The reader's terminal error
-/// leaves only after every frame received before it, the order upstream's `onmessage` and `onclose` events have.
+/// that sends nothing, not even a pong, for its idle timeout (about 20-30 s, measured on Instant's hosted server
+/// through the throwaway app bd40c50a; see `InstantURLSessionKeepaliveLiveTests`). So one task reads and another
+/// applies: the reader keeps a `receive()` outstanding while the applier is inside a long frame. Frames leave in
+/// arrival order. The reader's terminal error leaves only after every frame received before it, the order upstream's
+/// `onmessage` and `onclose` events have.
 ///
 /// When `capacity` frames are waiting, the reader waits for the applier, as the single receive loop always did. That
 /// bounds memory when an applier is stuck, and only then can the socket stop answering pings.
