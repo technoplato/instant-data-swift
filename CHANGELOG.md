@@ -10,6 +10,24 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## September 30th, 2026 at 11:47:07 a.m. EDT — `b4b9fbe32d6d` Hydrate deferred values, prove reverse-form links from their writers' receipts, and order the tail check by id (#296)
+
+- **Implementation commit:** `b4b9fbe32d6d89f223a69f76e05dc1180bc8fe3b`
+- **Change:** The reduction sees Scribe's deferred segment text and its links written from the other side, so live frames stop falling back to the whole-component rebase; the stamp guard orders the tail by id (#296).
+- **Details:**
+  - First live soak of 2666d343 (instrumented, iPhone simulator, bd40c50a): most declines were changesShadowedFact on transcriptionSegments/text and wordsJSON (Scribe keeps them deferred, so the reduction could not see them) and reverseLinkWriter on recordings/transcriptions and recordings/attachments (Scribe writes those links from the other side). It applied 0 receipt patches.
+  - The reduction now hydrates the frame's deferred values before classifying, as the full rebase does. A forward link whose reverse-form slot has surviving writers is decided from the first writer's receipt in physical form: if the receipt retracts the link, the server added it and the receipt is patched; if not (including a stamp-only re-assertion), it was already there. A patch on a many-valued slot changes only the patched values.
+  - The tail-write stamp guard compares (createdAt, id) with the outbox's newest row. Same-createdAt writes had lost to a later-stamped resident fact, which the Scribe-shaped differential caught in seeds 11, 13, and 16. InstantBoundedServerApplyRebaseTests now select the whole-component rebase they measure.
+  - Red on 2666d343 with the live reasons (12 text declines; 6 reverseLinkWriter declines), green after. 12 differential seeds in both shapes match the full rebase after every event, with 10-31 receipt patches per seed. Instrumented live soak of b4b9fbe3 at host load 565-1,003: pending 0-11 (one burst to 33), CPU mostly 25-27%, about 99% of applies reduced, 7 component bodies in 5 min.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — deferred hydration before classifying; reverse-link receipts (linkBeforeImage); many-valued receipt patches; tail check by (createdAt, id)
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — first and last reverse-link writers in the reduction context; the creation cursor returns the tail position
+  - `Tests/InstantSwiftDataCoreTests/InstantFastDrainTests.swift` — deferred-text and reverse-link tests; the Scribe-shaped differential defers text
+  - `Tests/InstantSwiftDataCoreTests/InstantBoundedServerApplyRebaseTests.swift` — the runtime selects the whole-component rebase these tests measure
+- **User context (verbatim):**
+  > It must keep up like 4e281ddd (pending near 0, CPU about 30%) and also beat it on the big backlog.
+- **SpecStory:** unavailable — Claude Code agent session (fast-drain); no SpecStory capture configured for this session.
+
 ## September 30th, 2026 at 10:05:34 a.m. EDT — `2666d34396f4` Re-receipt the first pending writer when the server changes a slot beneath it, instead of rebasing the component (#296)
 
 - **Implementation commit:** `2666d34396f43800a94692cfd7b8925afa5d890b`
