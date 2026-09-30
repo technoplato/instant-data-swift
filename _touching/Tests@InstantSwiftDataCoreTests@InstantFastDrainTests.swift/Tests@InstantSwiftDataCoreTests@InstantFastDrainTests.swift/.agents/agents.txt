@@ -1,1 +1,2 @@
 claude-opus-5.5-fast-drain 2026-09-30T01:48:55-04:00 mower plan=2026-09-30-fast-drain #296
+claude-opus-5.5-fast-drain 2026-09-30T08:28:32-04:00 mower plan=2026-09-30-fast-drain-revert #296

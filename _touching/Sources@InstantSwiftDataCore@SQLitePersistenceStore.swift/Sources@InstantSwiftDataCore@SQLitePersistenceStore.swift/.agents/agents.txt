@@ -28,3 +28,4 @@ claude-opus-5.5 2026-09-26T18:02:58-0400 mower plan=2026-09-26-write-scope-relea
 claude-opus-5.5-triage-l 2026-09-27T20:23:23Z mower plan=2026-09-27-triage-l-operation-gate #277 #278
 claude-opus-5.5-stale-writes 2026-09-30T00:50:43-04:00 grower plan=2026-09-29-stale-writes #113 #296
 claude-opus-5.5-fast-drain 2026-09-30T01:48:55-04:00 mower plan=2026-09-30-fast-drain #296
+claude-opus-5.5-fast-drain 2026-09-30T08:28:32-04:00 mower plan=2026-09-30-fast-drain-revert #296
