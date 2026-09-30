@@ -4912,6 +4912,10 @@ struct InstantLiveTransportTests {
     configuration.onLiveReceiverEventAcquiredForTesting = {
       await responseGate.suspend()
     }
+    // No acknowledgement-deadline wake may start a delivery pass mid-test (see the settle wait below).
+    configuration.liveMutationDeadlineSleep = { _ in
+      try await Task.sleep(nanoseconds: 3_600_000_000_000)
+    }
     let runtime = try await InstantRuntime.bootstrap(configuration: configuration)
     _ = try await runtime.connect()
     let mutationID = "tx-runtime-live-response-token"
@@ -4929,6 +4933,18 @@ struct InstantLiveTransportTests {
       createdAt: createdAt
     )
     await session.waitForSentMessageCount(2)
+    // Let every delivery pass the write started finish before the reclaim below (#296). A pass that runs between the
+    // reclaim and the stale answer's recording claims the write under a new token but cannot send it while the first
+    // offer is still in flight, so the reoffer this test waits for never comes. The reader's hand-off to the applier
+    // widened that window enough to hit it under load.
+    try await instantLiveWithTimeout(
+      operation: "wait for the write's delivery passes to settle",
+      timeoutMilliseconds: 5_000
+    ) {
+      while await !runtime.automaticMutationPumpIsIdleForTesting() {
+        try await Task.sleep(nanoseconds: 1_000_000)
+      }
+    }
     let originalClaim = try #require(
       try await runtime.persistence.outboxDeliveryClaimForTesting(id: mutationID)
     )
