@@ -1,3 +1,12 @@
+## 2026-09-30 05:53:47 EDT — instant-data-swift `095c7995483f3fb92a84fd4a85b66fdd2aa7b4d9`
+Record the retry fault injection's busy timeout in the change log (#296).
+
+## 2026-09-30 05:53:31 EDT — instant-data-swift `ce40ebe3ae5da73a13909922ae07bc17acd184a2`
+Let the discard tests' retry fault injection wait for the runtime's own write instead of failing "database is locked" (#296). Measured on frozen exports of 80db4271 and 773429ae alike (24 of 120 and 17 of 120 injections failed; 0 of 480 with a busy timeout): a pre-existing test-harness race, not caused by the fast-drain branch.
+
+## 2026-09-30 05:50:36 EDT — instant-data-swift `69fb74600fb5d8018567430962117d07c73ad262`
+Claim the discard tests' retry fault injection for plan 2026-09-30-fast-drain (#296).
+
 ## 2026-09-30 04:22:20 EDT — instant-data-swift `214d175f1ccc710a11667a6c818d29dbb52ef9ec`
 Record the fast-drain server-apply reduction and the tail-write stamp guard in the change log (#296).
 
