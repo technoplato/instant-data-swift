@@ -8063,11 +8063,18 @@ public actor SQLitePersistenceStore {
     }
 
     var removed: [InstantLiveTripleIdentity: InstantTriple] = [:]
+    // Facts of entities that left a result entirely, rather than facts a server edit changed on an entity that is
+    // still in the result.
+    var departed: Set<InstantLiveTripleIdentity> = []
     for replacement in replacements {
       let next = Self.indexLiveTriples(replacement.triples)
       let previous = prospective[replacement.key] ?? [:]
+      let nextEntityIDs = Set(next.keys.map(\.entityID))
       for (identity, triple) in previous where next[identity] == nil {
         removed[identity] = triple
+        if !nextEntityIDs.contains(identity.entityID) {
+          departed.insert(identity)
+        }
       }
       prospective[replacement.key] = next
     }
@@ -8084,6 +8091,26 @@ public actor SQLitePersistenceStore {
       if let triple = removed[identity] {
         retractions.append(triple)
       }
+    }
+    // An entity that left one result is collected whole or not at all, as result pruning collects it (#259). If it
+    // still has a stored fact this retraction would not remove (another result owns it, or no result ever did, like a
+    // field this device wrote), it still exists: keep every fact it left behind. Retracting them one at a time
+    // stripped the list-only fields (wallClockStartedAtMs, wallClockEndedAtMs, sentToInstantAtMs) from Scribe segments
+    // the live timeline still held when their preview slot moved (Recording 023, #296).
+    let candidates = Set(retractions.map(InstantLiveTripleIdentity.init))
+    let departedEntityIDs = Set(candidates.intersection(departed).map(\.entityID))
+    var keptEntityIDs: Set<String> = []
+    for entityID in departedEntityIDs.sorted() {
+      let stored: [InstantTriple] = try selectJSON(
+        "SELECT json FROM instant_triples WHERE entity_id = ?",
+        [.text(entityID)]
+      )
+      if stored.contains(where: { !candidates.contains(InstantLiveTripleIdentity($0)) }) {
+        keptEntityIDs.insert(entityID)
+      }
+    }
+    retractions.removeAll {
+      keptEntityIDs.contains($0.entityID) && departed.contains(InstantLiveTripleIdentity($0))
     }
     return retractions
       .sorted {
