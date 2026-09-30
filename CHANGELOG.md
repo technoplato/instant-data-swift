@@ -10,6 +10,23 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## September 30th, 2026 at 4:22:14 a.m. EDT — `8bee78eb3dd6` Skip the whole-component rebase for server frames that cannot change the base beneath pending writes (#296)
+
+- **Implementation commit:** `8bee78eb3dd6974734b45280cbeb72d6ab5ac999`
+- **Change:** A server frame that cannot change the base beneath the pending writes no longer peels and replays the outbox; a tail write that lost to a later-stamped fact now shows (#296).
+- **Details:**
+  - Recording 023 (build 69): the phone's 2,487 pending writes form two connected components (1,864 and 616). Every server frame that touched them peeled and replayed the whole component: the two rebases that finished took 22.5 s and 24.9 s, and the drain resolved about 33 writes per 55 s. A drain frame restates this device's own accepted writes, so it never changes the base beneath an overlay; upstream Reactor.js keeps each query's result in its own store and reapplies pending mutations on top.
+  - Before planning, the runtime classifies every server fact against the store and the pending writes' durable receipts in one indexed, revision-checked read. A fact on an entity no surviving write touches applies as before or is skipped when it holds. A fact on a shadowed entity must already hold beneath the writes: in the store when no surviving write inserts that slot, else as the first such write's receipt before-image, provided the earlier writes only insert and the store shows the last writer's value. When nothing left touches a shadowed entity and the watermark prunes only a prefix, the plan is body-free (excludes_watermark_roots). Failed overlays, global or unproven receipts, lookups, merges, confirmations, non-prefix watermarks, and real changes beneath pending writes keep the whole-component rebase; server-apply.reduction-declined logs each reason.
+  - A write appended at the outbox tail whose cardinality-one insert lost to a later-stamped resident fact (a faster server clock, or an overlay a rebase restamped) has those facts restamped past the newest fact. Before, it stayed invisible and delivery dropped it as older than the visible state until the next whole-component rebase; writes created before queued ones keep domain order.
+  - Measured (debug, macOS harness, one frame per accepted write): at 2,502 pending writes every frame of the full rebase rebased all ~2,500 bodies, 25.6 s wall and 12 s CPU per frame; reduced, 0 rebases for all 2,502 frames and 73 s process CPU for the whole drain (load average ~400). App time on a simulator or device is not measured. Differential test: 6 seeds x 70 randomized events, every read equal to the full rebase. Pattern B reproduced (known issue, whole-component path, not fixed).
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — the reduction and its call site, the tail-write stamp guard in performTransact, reducesServerApplyToAffectedOverlays, a live-refusal test seam
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — loadServerApplyReductionContext (indexed probes), the excludes_watermark_roots plan option, reduction metrics
+  - `Tests/InstantSwiftDataCoreTests/InstantFastDrainTests.swift` — Scribe-shaped drain harness, focused red/green tests, the differential test, the Pattern B reproduction, the measurement
+- **User context (verbatim):**
+  > Make instant-data-swift catch up fast when the outbox is large: stop paying a whole-outbox rebase for every server frame, and prove it with a measured 2,500-write drain.
+- **SpecStory:** unavailable — unavailable — Claude Code agent session (fast-drain); no SpecStory capture configured for this session.
+
 ## September 30th, 2026 at 12:58:24 a.m. EDT — `4e281ddd0e22` Keep delivery claims while a server frame is still applying, and name what a refusal refused (#296)
 
 - **Implementation commit:** `4e281ddd0e22a1c4263b44559bf530ab99c4cef4`
