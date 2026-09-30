@@ -462,6 +462,51 @@ struct InstantServerApplyFootprint: Sendable {
   var isGlobal: Bool
 }
 
+/// Why a server apply keeps the whole-component rebase instead of dropping the facts it cannot change (#296).
+enum InstantServerApplyReductionIneligibility: String, Sendable {
+  case revisionChanged
+  case failedOverlay
+  case unscopedOverlay
+  case nonPrefixWatermark
+  case tooManyBodies
+  case unsupportedOperation
+  case changesShadowedFact
+  case retractsShadowedFact
+  case linksToShadowedEntity
+}
+
+enum InstantServerApplyReduction: Sendable {
+  /// The operations that can change the base; every other one already holds beneath the pending writes.
+  case reduced([InstantTripleOperation])
+  /// The first fact that needs the whole-component rebase, when one fact decided it.
+  case declined(InstantServerApplyReductionIneligibility, fact: InstantTriple? = nil)
+}
+
+enum InstantServerApplyReductionLoad: Sendable {
+  case ineligible(InstantServerApplyReductionIneligibility)
+  case ready(InstantServerApplyReductionContext)
+}
+
+/// The pending writes that survive one server apply, as far as the facts that apply names can see them.
+struct InstantServerApplyReductionContext: Sendable {
+  /// Entities of the apply that a surviving pending write touches (its effect entities).
+  var shadowedEntityIDs: Set<String> = []
+  /// For each slot of a shadowed entity that a surviving pending write inserts or merges, the earliest such write.
+  var firstWriterBySlot: [InstantVisibleWriteKey: String] = [:]
+  /// For the same slots, the latest such write, whose value the store must show.
+  var lastWriterBySlot: [InstantVisibleWriteKey: String] = [:]
+  /// Surviving pending writes on each shadowed entity that precede its latest first writer.
+  var earlierOverlayIDsByEntity: [String: [String]] = [:]
+  /// The durable bodies of every write named above.
+  var bodies: [String: PendingMutation] = [:]
+}
+
+enum InstantServerApplyReductionLimits {
+  /// Bounds the bodies one apply decodes to prove a frame cannot change the base; past it, the full rebase runs.
+  static let maximumBodies = 256
+  static let maximumEarlierOverlaysPerEntity = 32
+}
+
 struct InstantServerApplyPlan: Sendable {
   var id: String
   var expectedStoreRevision: Int64
@@ -553,6 +598,10 @@ private struct InstantServerApplyPlanControl: Sendable {
   var rootIsGlobal: Bool
   var confirmingMutationID: String?
   var confirmingClaimantID: String?
+  /// Set when Runtime proved the watermark prunes only a prefix of the overlays and this apply changes no entity a
+  /// surviving overlay touches (#296). The pruned rows then leave the outbox as staged deletions without pulling their
+  /// connected component into a peel and replay that could not change anything.
+  var excludesWatermarkRoots = false
 }
 
 private struct InstantServerApplyBodyCandidate: Sendable {
@@ -613,6 +662,10 @@ package struct InstantServerApplyMetrics: Equatable, Sendable {
   package var maximumResidentPatchPageByteCount = 0
   package var commitAttemptCount = 0
   package var staleCommitCount = 0
+  /// Server applies that asked whether their facts could change the base beneath the pending writes (#296).
+  package var reductionCount = 0
+  /// Of those, the applies that could drop the facts they cannot change instead of rebasing everything.
+  package var reducedCount = 0
 
   mutating func recordBodyPage(
     direction: InstantServerApplyBodyDirection,
@@ -3557,7 +3610,8 @@ public actor SQLitePersistenceStore {
     hasServerOperations: Bool,
     processedTransactionID: String,
     confirmingMutationID: String?,
-    confirmingClaimantID: String?
+    confirmingClaimantID: String?,
+    excludesWatermarkRoots: Bool = false
   ) throws -> InstantServerApplyPlanLoad {
     precondition(
       (confirmingMutationID == nil) == (confirmingClaimantID == nil),
@@ -3595,8 +3649,8 @@ public actor SQLitePersistenceStore {
           expected_outbox_revision, expected_query_result_revision,
           processed_transaction_id, processed_transaction_number,
           server_has_operations, root_is_global, confirming_mutation_id,
-          confirming_claimant_id
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          confirming_claimant_id, excludes_watermark_roots
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         [
           .text(planID),
@@ -3610,6 +3664,7 @@ public actor SQLitePersistenceStore {
           .int(footprint.isGlobal ? 1 : 0),
           confirmingMutationID.map(SQLiteBinding.text) ?? .null,
           confirmingClaimantID.map(SQLiteBinding.text) ?? .null,
+          .int(excludesWatermarkRoots ? 1 : 0),
         ]
       )
       for entityID in footprint.entityIDs.sorted() {
@@ -3796,6 +3851,316 @@ public actor SQLitePersistenceStore {
       if !hasOwner { protected.append(operation) }
     }
     return protected
+  }
+
+  /// Loads what `InstantRuntime` needs to decide which facts of one server apply can change the authoritative base
+  /// beneath the pending writes (#296), or the reason the whole-component rebase must run instead.
+  ///
+  /// Upstream `Reactor.js` keeps each query's server result in its own store and reapplies pending mutations on top
+  /// (`dataForQuery`, `_applyOptimisticUpdates`). Swift keeps one materialized store, so it peels and replays the
+  /// connected component instead. That replay changes nothing when every server fact already holds beneath the
+  /// overlays, which is the common frame while a large outbox drains. Deciding that needs, for each entity the frame
+  /// names, whether a pending write that survives this apply touches it, and for each slot such a write inserts, the
+  /// first such write's durable receipt (its before-image is the base value). Everything is read in one transaction
+  /// at the revisions the caller's seed was taken at.
+  func loadServerApplyReductionContext(
+    slots: [String: Set<String>],
+    processedTransactionID: String,
+    expectedStoreRevision: Int64,
+    expectedAttributeRevision: Int64,
+    expectedOutboxRevision: Int64,
+    expectedQueryResultRevision: Int64
+  ) throws -> InstantServerApplyReductionLoad {
+    // Every query below is an indexed probe that stops at its first match, so deciding a frame costs the same with 30
+    // pending writes as with 2,500.
+    let load: InstantServerApplyReductionLoad = try readTransaction {
+      guard
+        try loadMetadataRevisionWithoutTransaction(Self.storeRevisionKey) == expectedStoreRevision,
+        try loadMetadataRevisionWithoutTransaction(Self.attributeRevisionKey) == expectedAttributeRevision,
+        try loadMetadataRevisionWithoutTransaction(Self.outboxRevisionKey) == expectedOutboxRevision,
+        try loadMetadataRevisionWithoutTransaction(Self.queryResultRevisionKey)
+          == expectedQueryResultRevision
+      else { return .ineligible(.revisionChanged) }
+
+      // Rows whose effect a full rebase treats specially: a failed overlay is removed, a global or unproven receipt
+      // cannot be scoped, an old delivery-metadata row has no trustworthy write keys, and a transport confirmation
+      // without a transaction id is replaced by the server's coverage.
+      if try selectInt64(
+        """
+        SELECT EXISTS(
+          SELECT 1 FROM instant_outbox INDEXED BY instant_outbox_server_apply_failed_idx
+          WHERE status = 'failed' AND optimistic_overlay_active = 1 LIMIT 1
+        )
+        """
+      ) != 0 {
+        return .ineligible(.failedOverlay)
+      }
+      let unscoped: [(sql: String, bindings: [SQLiteBinding])] = [
+        (
+          """
+          SELECT EXISTS(
+            SELECT 1 FROM instant_outbox INDEXED BY instant_outbox_global_effect_order_idx
+            WHERE optimistic_overlay_active = 1 AND optimistic_effect_is_global = 1 LIMIT 1
+          )
+          """,
+          []
+        ),
+        (
+          """
+          SELECT EXISTS(
+            SELECT 1 FROM instant_outbox INDEXED BY instant_outbox_synchronization_blocker_idx
+            WHERE optimistic_overlay_active = 1 AND optimistic_effect_receipt_fingerprint IS NULL LIMIT 1
+          )
+          """,
+          []
+        ),
+        (
+          """
+          SELECT EXISTS(
+            SELECT 1 FROM instant_outbox INDEXED BY instant_outbox_effect_normalization_idx
+            WHERE optimistic_overlay_active = 1
+              AND (optimistic_effect_metadata_version < ? OR optimistic_effect_metadata_version > ?)
+            LIMIT 1
+          )
+          """,
+          [
+            .int(Int64(InstantOptimisticEffectFootprint.currentVersion)),
+            .int(Int64(InstantOptimisticEffectFootprint.currentVersion)),
+          ]
+        ),
+        (
+          """
+          SELECT EXISTS(
+            SELECT 1 FROM instant_outbox
+            WHERE status IN (?, ?) AND delivery_metadata_version < ? AND optimistic_overlay_active = 1
+            LIMIT 1
+          )
+          """,
+          [
+            .text(InstantMutationStatus.pending.rawValue),
+            .text(InstantMutationStatus.confirmed.rawValue),
+            .int(Int64(InstantOutboxDeliveryMetadata.currentVersion)),
+          ]
+        ),
+        (
+          """
+          SELECT EXISTS(
+            SELECT 1 FROM instant_outbox INDEXED BY instant_outbox_server_apply_watermark_idx
+            WHERE status = ? AND optimistic_overlay_active = 1
+              AND COALESCE(server_transaction_id, '') = '' AND COALESCE(confirmation_source, '') = ?
+            LIMIT 1
+          )
+          """,
+          [
+            .text(InstantMutationStatus.confirmed.rawValue),
+            .text(InstantMutationConfirmationSource.serverTransport.rawValue),
+          ]
+        ),
+      ]
+      for check in unscoped where try selectInt64(check.sql, check.bindings) != 0 {
+        return .ineligible(.unscopedOverlay)
+      }
+
+      let prunable = Self.serverApplyReductionPrunablePredicate(
+        processedTransactionID: processedTransactionID,
+        alias: "outbox"
+      )
+      // The watermark may prune only a prefix of the active overlays. A pending write older than a pruned one would
+      // be replayed on top of it by the full rebase, which can change what the device shows.
+      var newestPrunedStatement: OpaquePointer?
+      try prepare(
+        """
+        SELECT outbox.created_at_ms, outbox.mutation_id
+        FROM instant_outbox AS outbox INDEXED BY instant_outbox_server_apply_watermark_idx
+        WHERE outbox.optimistic_overlay_active = 1 AND \(prunable.sql)
+        ORDER BY outbox.created_at_ms DESC, outbox.mutation_id DESC
+        LIMIT 1
+        """,
+        statement: &newestPrunedStatement
+      )
+      defer { sqlite3_finalize(newestPrunedStatement) }
+      try bind(prunable.bindings, to: newestPrunedStatement)
+      if sqlite3_step(newestPrunedStatement) == SQLITE_ROW,
+        let newestPrunedIDBytes = sqlite3_column_text(newestPrunedStatement, 1)
+      {
+        let newestPrunedMilliseconds = sqlite3_column_int64(newestPrunedStatement, 0)
+        let newestPrunedID = String(cString: newestPrunedIDBytes)
+        let olderSurvivorExists = try selectInt64(
+          """
+          SELECT EXISTS(
+            SELECT 1 FROM instant_outbox AS outbox INDEXED BY instant_outbox_global_effect_order_idx
+            WHERE outbox.optimistic_overlay_active = 1 AND outbox.optimistic_effect_is_global = 0
+              AND (
+                outbox.created_at_ms < ?
+                OR (outbox.created_at_ms = ? AND outbox.mutation_id < ?)
+              )
+              AND outbox.status != 'failed' AND NOT \(prunable.sql)
+            LIMIT 1
+          )
+          """,
+          [.int(newestPrunedMilliseconds), .int(newestPrunedMilliseconds), .text(newestPrunedID)]
+            + prunable.bindings
+        ) != 0
+        if olderSurvivorExists { return .ineligible(.nonPrefixWatermark) }
+      }
+
+      let remaining = """
+        outbox.optimistic_overlay_active = 1 AND outbox.status != 'failed' AND NOT \(prunable.sql)
+        """
+      var context = InstantServerApplyReductionContext()
+      for entityID in slots.keys.sorted() {
+        let isShadowed = try selectInt64(
+          """
+          SELECT EXISTS(
+            SELECT 1
+            FROM instant_outbox_effect_entities AS effects
+              INDEXED BY instant_outbox_effect_entities_lookup_idx
+            JOIN instant_outbox AS outbox ON outbox.mutation_id = effects.mutation_id
+            WHERE effects.entity_id = ? AND \(remaining)
+            LIMIT 1
+          )
+          """,
+          [.text(entityID)] + prunable.bindings
+        ) != 0
+        if isShadowed { context.shadowedEntityIDs.insert(entityID) }
+      }
+
+      // The surviving writes that insert one slot, walked in delivery order along the effect index (the write-key
+      // index is not ordered by creation), stopping at the first.
+      func writer(
+        of attributeID: String,
+        on entityID: String,
+        newest: Bool
+      ) throws -> InstantOutboxDeliveryPosition? {
+        var statement: OpaquePointer?
+        try prepare(
+          """
+          SELECT effects.mutation_id, effects.created_at_ms
+          FROM instant_outbox_effect_entities AS effects
+            INDEXED BY instant_outbox_effect_entities_lookup_idx
+          JOIN instant_outbox AS outbox ON outbox.mutation_id = effects.mutation_id
+          WHERE effects.entity_id = ? AND \(remaining)
+            AND EXISTS(
+              SELECT 1 FROM instant_outbox_write_keys AS write_keys
+              WHERE write_keys.mutation_id = effects.mutation_id
+                AND write_keys.entity_id = ? AND write_keys.attribute_id = ?
+            )
+          ORDER BY effects.created_at_ms \(newest ? "DESC" : "ASC"), effects.mutation_id \(newest ? "DESC" : "ASC")
+          LIMIT 1
+          """,
+          statement: &statement
+        )
+        defer { sqlite3_finalize(statement) }
+        try bind(
+          [.text(entityID)] + prunable.bindings + [.text(entityID), .text(attributeID)],
+          to: statement
+        )
+        guard sqlite3_step(statement) == SQLITE_ROW,
+          let mutationIDBytes = sqlite3_column_text(statement, 0)
+        else { return nil }
+        return InstantOutboxDeliveryPosition(
+          createdAtMilliseconds: sqlite3_column_int64(statement, 1),
+          mutationID: String(cString: mutationIDBytes)
+        )
+      }
+
+      var bodyIDs: Set<String> = []
+      for entityID in context.shadowedEntityIDs.sorted() {
+        var latestFirstWriter: InstantOutboxDeliveryPosition?
+        for attributeID in (slots[entityID] ?? []).sorted() {
+          guard let first = try writer(of: attributeID, on: entityID, newest: false) else { continue }
+          let slot = InstantVisibleWriteKey(entityID: entityID, attributeID: attributeID)
+          context.firstWriterBySlot[slot] = first.mutationID
+          bodyIDs.insert(first.mutationID)
+          if let last = try writer(of: attributeID, on: entityID, newest: true) {
+            context.lastWriterBySlot[slot] = last.mutationID
+            bodyIDs.insert(last.mutationID)
+          }
+          if latestFirstWriter.map({
+            (first.createdAtMilliseconds, first.mutationID) > ($0.createdAtMilliseconds, $0.mutationID)
+          }) ?? true {
+            latestFirstWriter = first
+          }
+        }
+        guard let latestFirstWriter else { continue }
+        // Pending writes on this entity that precede its first writers: a retraction or deletion among them would make
+        // a first writer's before-image differ from the base.
+        let earlier = try selectStrings(
+          """
+          SELECT effects.mutation_id
+          FROM instant_outbox_effect_entities AS effects
+            INDEXED BY instant_outbox_effect_entities_lookup_idx
+          JOIN instant_outbox AS outbox ON outbox.mutation_id = effects.mutation_id
+          WHERE effects.entity_id = ? AND \(remaining)
+            AND (
+              effects.created_at_ms < ?
+              OR (effects.created_at_ms = ? AND effects.mutation_id < ?)
+            )
+          ORDER BY effects.created_at_ms, effects.mutation_id
+          LIMIT ?
+          """,
+          [.text(entityID)] + prunable.bindings + [
+            .int(latestFirstWriter.createdAtMilliseconds),
+            .int(latestFirstWriter.createdAtMilliseconds),
+            .text(latestFirstWriter.mutationID),
+            .int(Int64(InstantServerApplyReductionLimits.maximumEarlierOverlaysPerEntity + 1)),
+          ]
+        )
+        guard earlier.count <= InstantServerApplyReductionLimits.maximumEarlierOverlaysPerEntity else {
+          return .ineligible(.tooManyBodies)
+        }
+        context.earlierOverlayIDsByEntity[entityID] = earlier
+        bodyIDs.formUnion(earlier)
+      }
+      guard bodyIDs.count <= InstantServerApplyReductionLimits.maximumBodies else {
+        return .ineligible(.tooManyBodies)
+      }
+      for mutationID in bodyIDs.sorted() {
+        guard let row = try loadOutboxBodyRowWithoutTransaction(id: mutationID) else {
+          return .ineligible(.revisionChanged)
+        }
+        let mutation: PendingMutation = try decodeOutboxBody(row.json)
+        decodedOutboxBodyCount += 1
+        decodedOutboxBodyByteCount += row.json.utf8.count
+        context.bodies[mutationID] = mutation
+      }
+      return .ready(context)
+    }
+    serverApplyMetrics.reductionCount += 1
+    if case .ready = load { serverApplyMetrics.reducedCount += 1 }
+    return load
+  }
+
+  /// `outbox.status = confirmed`, proven, and covered by `processedTransactionID` (the watermark prune), as SQL that is
+  /// never NULL.
+  private static func serverApplyReductionPrunablePredicate(
+    processedTransactionID: String,
+    alias: String
+  ) -> (sql: String, bindings: [SQLiteBinding]) {
+    let serverTransactionID = "COALESCE(\(alias).server_transaction_id, '')"
+    let covered: String
+    var bindings: [SQLiteBinding] = [
+      .text(InstantMutationStatus.confirmed.rawValue),
+      .text(processedTransactionID),
+    ]
+    if let processedNumber = Int64(processedTransactionID) {
+      covered = """
+        (\(serverTransactionID) = ? OR (
+          \(serverTransactionID) != ''
+          AND \(serverTransactionID) NOT GLOB '*[^0-9]*'
+          AND CAST(\(serverTransactionID) AS INTEGER) <= ?
+        ))
+        """
+      bindings.append(.int(processedNumber))
+    } else {
+      covered = "\(serverTransactionID) = ?"
+    }
+    return (
+      """
+      (\(alias).status = ? AND COALESCE(\(alias).confirmation_proven, 0) = 1 AND \(covered))
+      """,
+      bindings
+    )
   }
 
   func loadServerApplyBodyPage(
@@ -4644,7 +5009,7 @@ public actor SQLitePersistenceStore {
              expected_outbox_revision, expected_query_result_revision,
              processed_transaction_id, processed_transaction_number,
              server_has_operations, root_is_global, confirming_mutation_id,
-             confirming_claimant_id
+             confirming_claimant_id, excludes_watermark_roots
       FROM instant_server_apply_plans
       WHERE plan_id = ?
       LIMIT 1
@@ -4668,7 +5033,8 @@ public actor SQLitePersistenceStore {
       hasServerOperations: sqlite3_column_int64(statement, 6) != 0,
       rootIsGlobal: sqlite3_column_int64(statement, 7) != 0,
       confirmingMutationID: sqlite3_column_text(statement, 8).map(String.init(cString:)),
-      confirmingClaimantID: sqlite3_column_text(statement, 9).map(String.init(cString:))
+      confirmingClaimantID: sqlite3_column_text(statement, 9).map(String.init(cString:)),
+      excludesWatermarkRoots: sqlite3_column_int64(statement, 10) != 0
     )
   }
 
@@ -4800,6 +5166,15 @@ public actor SQLitePersistenceStore {
           bindings: []
         )
       } else {
+        // A reduced apply (#296) has proven the watermark prunes only a prefix, so a pruned row keeps its effect and
+        // is no reason to peel what it connects to.
+        let excludesPruned = control.excludesWatermarkRoots
+          ? """
+            AND NOT COALESCE(
+              (outbox.status = ? AND COALESCE(outbox.confirmation_proven, 0) = 1 AND \(watermark.sql)), 0
+            )
+            """
+          : ""
         try insertServerApplyRowsWithoutTransaction(
           planID: planID,
           componentBody: true,
@@ -4814,8 +5189,12 @@ public actor SQLitePersistenceStore {
               ON outbox.mutation_id = effects.mutation_id
             WHERE roots.plan_id = ? AND outbox.optimistic_overlay_active = 1
               AND outbox.optimistic_effect_receipt_fingerprint IS NOT NULL
+              \(excludesPruned)
             """,
           bindings: [.text(planID)]
+            + (control.excludesWatermarkRoots
+              ? [.text(InstantMutationStatus.confirmed.rawValue)] + watermark.bindings
+              : [])
         )
         try insertServerApplyRowsWithoutTransaction(
           planID: planID,
@@ -4829,20 +5208,22 @@ public actor SQLitePersistenceStore {
             """,
           bindings: []
         )
-        try insertServerApplyRowsWithoutTransaction(
-          planID: planID,
-          componentBody: true,
-          requiresBody: true,
-          selectionSQL:
-            """
-            FROM instant_outbox AS outbox INDEXED BY instant_outbox_server_apply_watermark_idx
-            WHERE outbox.status = ? AND outbox.confirmation_proven = 1
-              AND outbox.optimistic_overlay_active = 1
-              AND outbox.optimistic_effect_receipt_fingerprint IS NOT NULL
-              AND \(watermark.sql)
-            """,
-          bindings: [.text(InstantMutationStatus.confirmed.rawValue)] + watermark.bindings
-        )
+        if !control.excludesWatermarkRoots {
+          try insertServerApplyRowsWithoutTransaction(
+            planID: planID,
+            componentBody: true,
+            requiresBody: true,
+            selectionSQL:
+              """
+              FROM instant_outbox AS outbox INDEXED BY instant_outbox_server_apply_watermark_idx
+              WHERE outbox.status = ? AND outbox.confirmation_proven = 1
+                AND outbox.optimistic_overlay_active = 1
+                AND outbox.optimistic_effect_receipt_fingerprint IS NOT NULL
+                AND \(watermark.sql)
+              """,
+            bindings: [.text(InstantMutationStatus.confirmed.rawValue)] + watermark.bindings
+          )
+        }
         if let confirmingMutationID = control.confirmingMutationID {
           try insertServerApplyRowsWithoutTransaction(
             planID: planID,
@@ -5271,7 +5652,7 @@ public actor SQLitePersistenceStore {
              expected_outbox_revision, expected_query_result_revision,
              processed_transaction_id, processed_transaction_number,
              server_has_operations, root_is_global, confirming_mutation_id,
-             confirming_claimant_id
+             confirming_claimant_id, excludes_watermark_roots
       FROM instant_server_apply_plans
       WHERE plan_id = ?
       """,
@@ -10581,7 +10962,8 @@ public actor SQLitePersistenceStore {
         server_has_operations INTEGER NOT NULL,
         root_is_global INTEGER NOT NULL,
         confirming_mutation_id TEXT,
-        confirming_claimant_id TEXT
+        confirming_claimant_id TEXT,
+        excludes_watermark_roots INTEGER NOT NULL DEFAULT 0
       )
       """
     )
