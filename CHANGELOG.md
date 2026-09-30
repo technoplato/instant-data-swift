@@ -10,6 +10,23 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## September 30th, 2026 at 11:39:55 a.m. EDT — `7cf2658e6ccd` Keep reading the socket while a frame applies, so URLSession keeps answering server pings (#296)
+
+- **Implementation commit:** `7cf2658e6ccd55fb763dc054ebccb8ec15b56a72`
+- **Change:** The live receiver keeps a receive() outstanding while a frame applies, so URLSession keeps answering server pings and a long apply no longer loses the socket (#296).
+- **Details:**
+  - URLSession answers a ping only while a receive() is outstanding; the server closes a client silent for its idle timeout (about 20-30 s measured). Build 72 applied each frame before calling receive() again, so Recording 023's 26-37 s applies lost the socket: connection 3 applied an add-query-ok from 319.7 s to 350.3 s, then failed its next send and receive with POSIX 57.
+  - The receiver is now a reader and one sequential applier in one generation's task group, joined by InstantLiveReceivedFrames (128 frames, backpressure when full). The applier keeps the single loop's checks and bookkeeping: generation and session checks, record's in-flight and claim-token capture, frameBeingApplied() for the acknowledgement deferral and its 120 s cap. A frame buffered for an old generation is never applied, a retained send failure stops the applier before the next frame, and the terminal error follows every earlier frame (upstream onmessage before onclose).
+  - Five InstantLiveTransportTests now also wait for liveReceiverIsWaitingForAFrameForTesting(), because the next receive() request no longer proves a frame was applied. Four deterministic tests were red on 0078484f and are green; two buffer tests are new. Live against bd40c50a the runtime check went from 2 connection attempts and 1 receive-loop failure after a 40 s apply to 1 and 0.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantRuntimeLiveSession.swift` — InstantLiveReceivedFrames, the reader and applier receiver, the retained-failure check, and the applier-idle test accessor
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — liveReceiverIsWaitingForAFrameForTesting
+  - `Tests/InstantSwiftDataCoreTests/InstantLiveConnectionSurvivalTests.swift` — keepalive, ordering, replacement, send-failure, and buffer tests
+  - `Tests/InstantSwiftDataCoreTests/InstantLiveTransportTests.swift` — five tests wait for the applier instead of the next receive() request
+- **User context (verbatim):**
+  > Keep the socket answering pings while a frame applies.
+- **SpecStory:** unavailable — Claude Code agent session (connection-survival); no SpecStory capture configured for this session.
+
 ## September 30th, 2026 at 10:39:05 a.m. EDT — `473fc933766d` Open one replacement connection per socket death, and keep the reconnect backoff when writes arrive (#296)
 
 - **Implementation commit:** `473fc933766d7db56e91c41a51b0871c171abd80`
