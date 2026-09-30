@@ -10,6 +10,22 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## September 30th, 2026 at 7:42:44 p.m. EDT — `0d66e6bb5d7c` Start a backward-navigation page from the server's answer, not an earlier query's stored result (#300)
+
+- **Implementation commit:** `0d66e6bb5d7ce8d3283dca446ef7f389bfa26704`
+- **Change:** A page loaded by loadPreviousPage starts from the server's answer, not from a result stored for the same query earlier, so a stale answer about the rows above cannot make the window climb to the head (#300).
+- **Details:**
+  - Found by the #300 property test's operation trace on 3bcf817d: the page above the first page repeats the original leading watcher's exact query (asc limit 3 after 240). The runtime seeded the new registration from that query's persisted result ([241], no rows above) before the server's answer ([241, 242, 243], more above) arrived. The coordinator took the stale flag as reaching the top, froze the page at 241 and started a leading watcher there, and the watcher chain climbed to the head in one call, cutting the bottom. No row was lost, but one loadPreviousPage skipped rows.
+  - Fix: observeLiveInfiniteQueryChunk takes seedsFromStoredResult (default true, so a relaunch still shows the last known page first). The coordinator passes false for chunks created by loadPreviousPage: they start from an active registration's page info or wait for the server. Other chunks keep the stored seed; a stale flag there only adds an extra chunk or delays canLoadNextPage, and never moves the window.
+  - Tests: aPreviousPageWaitsForTheServerInsteadOfAnEarlierQuerysStoredResult reproduces the trace (red on 3bcf817d, green after). The model server keeps an operation log of every query, change, and navigation, and the first problem a test records carries its tail. The property test now ends with a pass back to the top without changes, so rows inserted there after the window last left the top are reached too.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — observeLiveInfiniteQueryChunk's seedsFromStoredResult parameter
+  - `Sources/InstantSwiftDataCore/InstantInfiniteQuery.swift` — backward-navigation chunks start without the stored seed
+  - `Tests/InstantSwiftDataCoreTests/InstantInfiniteQueryLeadingRowsTests.swift` — the stale-seed reproduction and the model server's operation log
+- **User context (verbatim):**
+  > Test first, and keep parity with upstream Instant.
+- **SpecStory:** unavailable — Claude Code agent session (infinite-leading-rows); no SpecStory capture configured for this session.
+
 ## September 30th, 2026 at 6:24:06 p.m. EDT — `3bcf817da881` Keep a windowed live infinite query paging when rows appear above its first row (#300)
 
 - **Implementation commit:** `3bcf817da8813bbf1733df51ccc4fa3729926e19`
