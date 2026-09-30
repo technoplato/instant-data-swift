@@ -1,3 +1,45 @@
+## 2026-09-30 01:03:17 EDT — realtime-voice-sqlite-instant `e600c66bc02627992b2fa43468624f78d9413865`
+Note the stale-writes branches, the reconnect-loop finding, and the waiting recovery in the Recording 023 channel (#296 #113).
+
+## 2026-09-30 00:58:29 EDT — instant-data-swift `987395d9e540ed8059c70df00af1bd87e94a8dc7`
+Record the whole-entity replacement and the deadline deferral with refusal diagnostics in the change log (#296).
+
+## 2026-09-30 00:57:10 EDT — instant-data-swift `4e281ddd0e22a1c4263b44559bf530ab99c4cef4`
+Keep delivery claims while a server frame is still applying, and name what a refusal refused (#296). Recording 023's outbox never drained: each reconnect's first query result started a 22-25 s rebase, and the 6 s acknowledgement deadline replaced the connection first, 385 times.
+
+## 2026-09-30 00:51:05 EDT — instant-data-swift `8ed26be3e87a6607200040214bf94094ec5e52df`
+Keep an entity whole when it leaves one live query result (#296). Per-fact retraction stripped three list-only fields from 4 of Recording 023's segments on the phone, and typed reads quarantined them.
+
+## 2026-09-30 00:50:50 EDT — instant-data-swift `0666573728322d9f7effaad17ced526bb3cc7ddc`
+Claim the delivery-loop, refusal-diagnostics, and whole-entity replacement paths for plan 2026-09-29-stale-writes (#296 #113).
+
+## 2026-09-30 00:30:14 EDT — realtime-voice-sqlite-instant `15ab9dfbac94f26be61f84c6d873eddcc31371f8`
+Record ADR 0018 in the change log (#296).
+
+## 2026-09-30 00:30:13 EDT — realtime-voice-sqlite-instant `534e3553238eaad46c91a25d07d6e6e96e2701a7`
+Record the recovery tool's cleanup fix in the change log (#296).
+
+## 2026-09-30 00:30:13 EDT — realtime-voice-sqlite-instant `11e8bf532e3a7ec3138fd8479f97bc342ae0c61b`
+Record the one monotonic write clock in the change log (#296).
+
+## 2026-09-30 00:29:54 EDT — realtime-voice-sqlite-instant `d90a21365ec78c8767ad01e7655ed7fbc0d22921`
+Record ADR 0018: refused replays, one write clock, and recovering a stuck outbox (#296).
+
+## 2026-09-30 00:04:11 EDT — realtime-voice-sqlite-instant `fe1eb9715b79bab2f74e3e9a56dc63cbbfddebef`
+Remove the recovery tool's temporary store copy after reading it (#296).
+
+## 2026-09-30 00:04:04 EDT — realtime-voice-sqlite-instant `ac61758495ccbdd1a2bcba1a18c59eae41247cf0`
+Give every recording write one monotonic clock for its queue order and updatedAtMs (#296). Later writes of one device can no longer carry earlier stamps, and consecutive final segments no longer interleave their transactions.
+
+## 2026-09-29 23:20:54 EDT — realtime-voice-sqlite-instant `50f88730fa22a2ae4a4b00f9cda373cbc095a931`
+Record the outbox recovery script in the change log (#296).
+
+## 2026-09-29 23:20:36 EDT — realtime-voice-sqlite-instant `71588c3d8335abab6e00affb1e695b29e81cacfa`
+Add a dry-run-first recovery for a recording whose writes are stuck in a phone's outbox (#296). It writes to production only with --execute --approved-by-michael.
+
+## 2026-09-29 23:08:15 EDT — realtime-voice-sqlite-instant `8b985a5b06ee8e3a8e117400d480da833dff5751`
+Plan the Recording 023 refused-write, stalled-outbox, and recovery work and claim its paths (#296 #113).
+
 ## 2026-09-29 02:34:15 EDT — realtime-voice-sqlite-instant `f0f9b225375c8df52069e88c20eaa607d4c3de91`
 Record the double-comparison share-rule fix in the change log (#113 #282).
 
