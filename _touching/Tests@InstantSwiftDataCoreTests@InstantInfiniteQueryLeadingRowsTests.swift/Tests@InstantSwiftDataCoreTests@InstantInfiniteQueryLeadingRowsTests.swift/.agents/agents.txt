@@ -1,0 +1,1 @@
+claude-opus-5.5-infinite-leading-rows 2026-09-30T16:41:49-04:00 mower plan=2026-09-30-infinite-leading-rows #300
