@@ -1,3 +1,12 @@
+## 2026-09-30 08:29:29 EDT — instant-data-swift `25ac7c612b4279a3fdbd9d76ee89ef44f23f6fa2`
+Record the fast-drain revert in the change log (#296).
+
+## 2026-09-30 08:28:59 EDT — instant-data-swift `184767d5f68555d5d26ce0abb8c1ccbe8ed39c7c`
+Revert 8bee78eb (the fast-drain server-apply reduction and tail-write stamp guard) for Scribe build 72 (#296). On an iPhone simulator against bd40c50a, bb88af72 (build 71) fell behind a live recording (about 830 pending writes after 11 minutes; accepts 4-15 per 30 s) while 4e281ddd, whose library sources equal 80db4271's, kept up (pending 0-1, accepts 49-54 per 30 s). Library sources are byte-identical to 80db4271 again; ce40ebe3's test-only busy timeout stays.
+
+## 2026-09-30 08:28:44 EDT — instant-data-swift `d0817ce07e3f38ca8e8cd937895802066805f5a1`
+Claim the fast-drain revert paths for plan 2026-09-30-fast-drain-revert (#296).
+
 ## 2026-09-30 05:53:47 EDT — instant-data-swift `095c7995483f3fb92a84fd4a85b66fdd2aa7b4d9`
 Record the retry fault injection's busy timeout in the change log (#296).
 
