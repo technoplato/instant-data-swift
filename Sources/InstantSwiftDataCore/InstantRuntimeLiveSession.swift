@@ -96,6 +96,16 @@ package actor InstantRuntimeLiveSession {
   /// suspension so a late frame cannot authorize a newer same-id claim.
   private var offeredMutationClaimTokensInCurrentGeneration: [String: String] = [:]
   private var acknowledgementUnknownMutationIDs: Set<String> = []
+  /// The server frame this generation's receive loop is applying, from the moment `receive()` returned it until the
+  /// runtime has handled it (#296). While it is set, this socket has proved the server is answering, and an
+  /// acknowledgement queued behind it is not late. See `frameBeingApplied()`.
+  private var frameBeingAppliedState: (generation: Int, sequence: UInt64, op: String)?
+  private var nextFrameSequence: UInt64 = 0
+  /// Mutation IDs an earlier connection offered and never answered (#296). A server refusal of one of these is a
+  /// replay: the earlier offer may have been applied, so the refusal alone does not prove the write was lost. Only
+  /// used to classify refusals in diagnostics; bounded because it outlives generations.
+  private var offeredWithoutAnswerOnEarlierConnections: Set<String> = []
+  private static let maximumRememberedUnansweredOffers = 4_096
   private var hasReportedDeepOutbox = false
   /// Bounds the number of transactions sharing the socket at once.
   static let maximumMutationsPerFlush = InstantAutomaticOutboxClaimLimits.maximumMutationCount
@@ -342,9 +352,11 @@ package actor InstantRuntimeLiveSession {
     inFlightMutationIDs.removeAll()
     inFlightMutationStepCounts.removeAll()
     inFlightMutationDeadlines.removeAll()
+    rememberUnansweredOffersOfEndingGeneration()
     offeredMutationIDsInCurrentGeneration.removeAll()
     offeredMutationClaimTokensInCurrentGeneration.removeAll()
     acknowledgementUnknownMutationIDs.removeAll()
+    frameBeingAppliedState = nil
     for room in Array(registeredRooms.keys) {
       registeredRooms[room]?.isConnected = false
     }
@@ -663,6 +675,34 @@ package actor InstantRuntimeLiveSession {
 
   func activeQueryKeys() -> Set<String> {
     Set(registeredQueries.keys)
+  }
+
+  /// The server frame the current generation's receive loop is still applying, if any (#296).
+  ///
+  /// A frame counts from the moment `receive()` returned it until the runtime finished handling it. Upstream
+  /// `Reactor.js` handles each frame synchronously (`_handleReceive`), so a mutation timer cannot fire while a frame
+  /// is being handled; the runtime defers durable acknowledgement deadlines while this returns a frame to keep that
+  /// outcome. `sequence` identifies one frame, so the runtime can bound how long it defers for any single frame.
+  func frameBeingApplied() -> (sequence: UInt64, op: String)? {
+    // A receive loop that stops early for a replaced or closed session leaves its frame behind; only an open
+    // session's current frame counts.
+    guard let frame = frameBeingAppliedState, frame.generation == generation, isOpened else { return nil }
+    return (frame.sequence, frame.op)
+  }
+
+  /// Whether an earlier connection offered this mutation and never delivered an answer for it (#296).
+  func wasOfferedWithoutAnswerOnAnEarlierConnection(_ mutationID: String) -> Bool {
+    offeredWithoutAnswerOnEarlierConnections.contains(mutationID)
+  }
+
+  private func rememberUnansweredOffersOfEndingGeneration() {
+    offeredWithoutAnswerOnEarlierConnections.formUnion(offeredMutationIDsInCurrentGeneration)
+    if offeredWithoutAnswerOnEarlierConnections.count > Self.maximumRememberedUnansweredOffers {
+      offeredWithoutAnswerOnEarlierConnections = Set(
+        offeredWithoutAnswerOnEarlierConnections.sorted()
+          .prefix(Self.maximumRememberedUnansweredOffers)
+      )
+    }
   }
 
   /// The raw attribute payload the server sent in the current session's `init-ok`, or the most
@@ -1191,6 +1231,8 @@ package actor InstantRuntimeLiveSession {
     mutationClaimToken: String?
   )? {
     guard generation == self.generation else { return nil }
+    nextFrameSequence &+= 1
+    frameBeingAppliedState = (generation, nextFrameSequence, event.op)
     // Capture response authority before clearing the in-flight reservation.
     // Once the id leaves `inFlightMutationIDs`, another pump can offer the same
     // durable id under a newer token while this actor is reentrant. The decoded
@@ -1323,6 +1365,9 @@ package actor InstantRuntimeLiveSession {
     claimToken: String?
   ) {
     guard generation == self.generation else { return }
+    if frameBeingAppliedState?.generation == generation {
+      frameBeingAppliedState = nil
+    }
     let mutationID: String?
     switch event {
     case let .transactOK(transactOK):
@@ -1333,6 +1378,8 @@ package actor InstantRuntimeLiveSession {
       mutationID = nil
     }
     guard let mutationID else { return }
+    // Answered on this connection: it no longer counts as an unanswered earlier offer.
+    offeredWithoutAnswerOnEarlierConnections.remove(mutationID)
     // The Runtime handler suspends while it commits the durable disposition. A
     // deadline/reclaim path may offer the same mutation id under a newer token
     // during that suspension. Finish only the exact response reservation we
@@ -1584,6 +1631,7 @@ package actor InstantRuntimeLiveSession {
           "The current Instant live receive loop ended unexpectedly without an explicit close or replacement.",
         recovery: "Reconnect and reinstall the current live subscriptions."
       )
+    frameBeingAppliedState = nil
     self.session = nil
     sessionID = nil
     isOpened = false
@@ -1617,9 +1665,11 @@ package actor InstantRuntimeLiveSession {
     inFlightMutationIDs.removeAll()
     inFlightMutationStepCounts.removeAll()
     inFlightMutationDeadlines.removeAll()
+    rememberUnansweredOffersOfEndingGeneration()
     offeredMutationIDsInCurrentGeneration.removeAll()
     offeredMutationClaimTokensInCurrentGeneration.removeAll()
     acknowledgementUnknownMutationIDs.removeAll()
+    frameBeingAppliedState = nil
     for room in Array(registeredRooms.keys) {
       registeredRooms[room]?.isConnected = false
     }

@@ -3889,6 +3889,10 @@ struct InstantBoundedOutboxDeliveryTests {
       liveTransport: transport.transport
     )
     configuration.autoConnectLiveTransport = false
+    // This test holds a frame and expects the deadline to expire anyway: the path a stuck frame takes once the
+    // acknowledgement deferral is exhausted (#296). The deferral itself is covered by
+    // acknowledgementDeadlineWaitsWhileTheReceiverStillAppliesAnEarlierFrame.
+    configuration.acknowledgementDeferralLimitMilliseconds = 0
     configuration.liveReconnectSleep = { milliseconds in
       try await reconnectSleep.sleep(milliseconds: milliseconds)
     }
@@ -4011,6 +4015,218 @@ struct InstantBoundedOutboxDeliveryTests {
         await Task.yield()
       }
     }
+    _ = try? await runtime.closeConnection()
+  }
+
+  /// Recording 023 (#296): each connection's first query result started a 22-25 s rebase of a 2,487-mutation outbox
+  /// while the head's `transact-ok` waited behind it on the same socket. The 6 s deadline treated the head as
+  /// unacknowledged, replaced the connection (discarding the answer and cancelling the rebase), and repeated this 385
+  /// times. A frame that is still being applied proves the server answered, so the deadline must wait behind it, the
+  /// way upstream `Reactor.js` handles frames synchronously and never fires a mutation timer mid-frame.
+  @Test
+  func acknowledgementDeadlineWaitsWhileTheReceiverStillAppliesAnEarlierFrame() async throws {
+    let cacheURL = try temporaryBoundedOutboxCacheURL()
+    let head = boundedMutation(
+      index: 0,
+      prefix: "ack-behind-frame",
+      entityID: "ack-behind-frame-entity"
+    )
+    try await seedBoundedOutbox([head], cacheURL: cacheURL)
+    let clock = BoundedOutboxLockedClock(milliseconds: 100_000)
+    let deadlineSleep = BoundedOutboxControlledSleep()
+    let reconnectSleep = BoundedOutboxControlledSleep()
+    let receiverEventGate = BoundedOutboxReceiverEventGate(blockingEventOrdinal: 1)
+    let firstSession = LiveReactorParitySession(messages: [
+      liveReactorInitOK(attrs: liveReactorTodoServerAttrs, sessionID: "applying-a-long-frame")
+    ])
+    let replacementSession = LiveReactorParitySession(messages: [
+      liveReactorInitOK(attrs: liveReactorTodoServerAttrs, sessionID: "must-not-be-needed")
+    ])
+    let transport = LiveReactorParityTransport(sessions: [firstSession, replacementSession])
+    var configuration = InstantRuntimeConfiguration(
+      appID: "bounded-outbox-ack-behind-frame",
+      persistenceURL: cacheURL,
+      initialAttributes: TodoExample.attributes,
+      now: { clock.now() },
+      liveTransport: transport.transport
+    )
+    configuration.autoConnectLiveTransport = false
+    configuration.liveReconnectSleep = { milliseconds in
+      try await reconnectSleep.sleep(milliseconds: milliseconds)
+    }
+    configuration.liveMutationDeadlineSleep = { milliseconds in
+      try await deadlineSleep.sleep(milliseconds: milliseconds)
+    }
+    configuration.onLiveReceiverEventAcquiredForTesting = {
+      await receiverEventGate.eventAcquired()
+    }
+    let runtime = try await InstantRuntime.bootstrap(configuration: configuration)
+
+    _ = try await runtime.connect()
+    try await instantLiveWithTimeout(
+      operation: "wait for the head's send",
+      timeoutMilliseconds: 5_000
+    ) {
+      await firstSession.waitForSentMessageCount(2)
+    }
+    // A frame the receive loop is still applying (a long rebase), then the head's answer behind it.
+    await firstSession.enqueue(
+      InstantLiveMessage(op: "long-frame-for-test", clientEventID: nil, fields: [:])
+    )
+    await firstSession.enqueue(
+      InstantLiveMessage(
+        op: "transact-ok",
+        clientEventID: head.id,
+        fields: ["tx-id": .string("server-\(head.id)")]
+      )
+    )
+    try await instantLiveWithTimeout(
+      operation: "hold the earlier frame in the receive loop",
+      timeoutMilliseconds: 5_000
+    ) {
+      await receiverEventGate.waitUntilBlocked()
+    }
+    try await instantLiveWithTimeout(
+      operation: "wait for the head's acknowledgement deadline",
+      timeoutMilliseconds: 5_000
+    ) {
+      await deadlineSleep.waitForFirstDelay()
+    }
+    let headDeadlineDelay = await deadlineSleep.firstDelay()
+    expectNoDifference(headDeadlineDelay, 6_000)
+
+    clock.advance(by: 6_000)
+    await deadlineSleep.resumeFirstDelay()
+    try await instantLiveWithTimeout(
+      operation: "wait for the deadline pass to move the head's claim",
+      timeoutMilliseconds: 5_000
+    ) {
+      while try await runtime.persistence.outboxDeliveryClaimForTesting(id: head.id)?.deadlineMilliseconds
+        ?? 0 <= 106_000
+      {
+        await Task.yield()
+      }
+    }
+
+    let reconnectDelay = await reconnectSleep.firstDelay()
+    expectNoDifference(reconnectDelay, nil, "The socket is answering; keep it.")
+    let connectionsWhileApplying = await transport.connectionRequests().count
+    expectNoDifference(connectionsWhileApplying, 1)
+
+    await receiverEventGate.releaseBlockedEvent()
+    try await instantLiveWithTimeout(
+      operation: "wait for the head's acknowledgement on the first connection",
+      timeoutMilliseconds: 5_000
+    ) {
+      while try await runtime.persistence.countOutboxMutations(status: .pending) != 0 {
+        await Task.yield()
+      }
+    }
+    let sentHeads = await firstSession.sentMessages()
+      .filter { $0.op == "transact" }
+      .compactMap(\.clientEventID)
+    expectNoDifference(sentHeads, [head.id], "The head is sent once and acknowledged on its first connection.")
+    let connectionsAfterAcknowledgement = await transport.connectionRequests().count
+    expectNoDifference(connectionsAfterAcknowledgement, 1)
+    _ = try? await runtime.closeConnection()
+  }
+
+  /// #296: in Recording 023 every refusal was a re-send of a write an earlier connection had offered without an
+  /// answer, and the device log said only "Permission denied: not perms-pass?". A refusal now says whether it was
+  /// such a replay, and names the refused namespace, entity, attributes, and values.
+  @Test
+  func refusalOfAWriteAnEarlierConnectionNeverAnsweredIsLoggedAsAReplayWithItsValues() async throws {
+    let cacheURL = try temporaryBoundedOutboxCacheURL()
+    let head = boundedMutation(index: 0, prefix: "refused-replay", entityID: "refused-replay-entity")
+    try await seedBoundedOutbox([head], cacheURL: cacheURL)
+    let clock = BoundedOutboxLockedClock(milliseconds: 100_000)
+    let deadlineSleep = BoundedOutboxControlledSleep()
+    let reconnectSleep = BoundedOutboxControlledSleep()
+    let firstSession = LiveReactorParitySession(messages: [
+      liveReactorInitOK(attrs: liveReactorTodoServerAttrs, sessionID: "offers-without-an-answer")
+    ])
+    let replacementSession = LiveReactorParitySession(messages: [
+      liveReactorInitOK(attrs: liveReactorTodoServerAttrs, sessionID: "refuses-the-replay")
+    ])
+    let transport = LiveReactorParityTransport(sessions: [firstSession, replacementSession])
+    var configuration = InstantRuntimeConfiguration(
+      appID: "bounded-outbox-refused-replay",
+      persistenceURL: cacheURL,
+      initialAttributes: TodoExample.attributes,
+      now: { clock.now() },
+      liveTransport: transport.transport
+    )
+    configuration.autoConnectLiveTransport = false
+    configuration.liveReconnectSleep = { milliseconds in
+      try await reconnectSleep.sleep(milliseconds: milliseconds)
+    }
+    configuration.liveMutationDeadlineSleep = { milliseconds in
+      try await deadlineSleep.sleep(milliseconds: milliseconds)
+    }
+    let capture = BoundedOutboxDiagnosticCapture(correlationID: head.id)
+    let handler = InstantDiagnostics.shared.addHandler { capture.record($0) }
+    defer { InstantDiagnostics.shared.removeHandler(handler) }
+    let runtime = try await InstantRuntime.bootstrap(configuration: configuration)
+
+    try await withKnownIssue {
+      _ = try await runtime.connect()
+      try await instantLiveWithTimeout(operation: "wait for the first offer", timeoutMilliseconds: 5_000) {
+        await firstSession.waitForSentMessageCount(2)
+      }
+      try await instantLiveWithTimeout(operation: "wait for its deadline", timeoutMilliseconds: 5_000) {
+        await deadlineSleep.waitForFirstDelay()
+      }
+      clock.advance(by: 6_000)
+      await deadlineSleep.resumeFirstDelay()
+      try await instantLiveWithTimeout(
+        operation: "wait for the replacement connection",
+        timeoutMilliseconds: 5_000
+      ) {
+        await reconnectSleep.waitForFirstDelay()
+      }
+      await reconnectSleep.resumeFirstDelay()
+      try await instantLiveWithTimeout(operation: "wait for the re-sent offer", timeoutMilliseconds: 5_000) {
+        await transport.waitForConnectionCount(2)
+        await replacementSession.waitForSentMessageCount(2)
+      }
+    } matching: { issue in
+      issue.description.contains("did not acknowledge")
+    }
+
+    await replacementSession.enqueue(
+      InstantLiveMessage(
+        op: "error",
+        clientEventID: head.id,
+        fields: [
+          "message": .string("Permission denied: not perms-pass?"),
+          "status": .number(400),
+          "type": .string("permission-denied"),
+          "hint": .object([
+            "expected": .string("perms-pass?"),
+            "input": .array([.string("todos"), .string("object")]),
+          ]),
+        ]
+      )
+    )
+    try await instantLiveWithTimeout(
+      operation: "wait for the refusal to resolve the head",
+      timeoutMilliseconds: 5_000
+    ) {
+      while try await runtime.persistence.countOutboxMutations(status: .pending) != 0 {
+        await Task.yield()
+      }
+    }
+
+    let terminal = try #require(capture.entries(named: "outbox.mutation.server-error-terminal").first)
+    expectNoDifference(terminal.metadata["refusalKind"], "replay")
+    expectNoDifference(terminal.metadata["refusedNamespace"], "todos")
+    expectNoDifference(terminal.metadata["refusedCheck"], "perms-pass?")
+    let hint = try #require(terminal.metadata["serverHint"])
+    #expect(hint.contains(#""input":["todos","object"]"#), "The hint is plain JSON, not a Swift description.")
+    let refused = try #require(capture.entries(named: "outbox.mutation.refused-write").first)
+    expectNoDifference(refused.metadata["refusedAttributes"], "text")
+    expectNoDifference(refused.metadata["refusedEntityIDs"], "refused-replay-entity")
+    expectNoDifference(refused.metadata["refusedValues"], "refused-/text=value-0-0")
     _ = try? await runtime.closeConnection()
   }
 
@@ -5846,3 +6062,23 @@ private let boundedOutboxSQLiteTransient = unsafeBitCast(
 
 private let boundedOutboxSource =
   "upstream Reactor.js pending-mutation order adapted to a fixed durable SQLite delivery window"
+
+/// Keeps the library diagnostics of one correlation id. Tests run in parallel and share the handler list.
+private final class BoundedOutboxDiagnosticCapture: @unchecked Sendable {
+  private let lock = NSLock()
+  private let correlationID: String
+  private var captured: [InstantDiagnosticEntry] = []
+
+  init(correlationID: String) {
+    self.correlationID = correlationID
+  }
+
+  func record(_ entry: InstantDiagnosticEntry) {
+    guard entry.correlationID == correlationID else { return }
+    lock.withLock { captured.append(entry) }
+  }
+
+  func entries(named event: String) -> [InstantDiagnosticEntry] {
+    lock.withLock { captured.filter { $0.event == event } }
+  }
+}

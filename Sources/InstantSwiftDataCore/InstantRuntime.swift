@@ -298,6 +298,12 @@ public struct InstantRuntimeConfiguration: Sendable {
     instantLiveDefaultTimeoutSleep
   var liveMutationDeadlineSleep: @Sendable (UInt64) async throws -> Void =
     instantLiveDefaultTimeoutSleep
+  /// How long the durable acknowledgement deadline keeps waiting behind one server frame that the receive loop is
+  /// still applying (#296). This is not a network timeout: the frame proves the server answered, and the deadline
+  /// keeps running every six seconds while the frame applies. The bound exists only to treat a stuck frame as stuck.
+  /// Measured: one frame's optimistic rebase of a 2,487-mutation outbox took 22-25 s on an iPhone (Recording 023);
+  /// 120 s leaves room for that and still reports a real hang within two minutes. 0 disables the deferral.
+  package var acknowledgementDeferralLimitMilliseconds: Int64 = 120_000
   package var explicitMutationTransportDeadlineSleep:
     @Sendable (UInt64) async throws -> Void = instantLiveDefaultTimeoutSleep
   package var explicitMutationClaimRenewalSleep:
@@ -1207,6 +1213,25 @@ private final class InstantExplicitMutationFlushOwner: @unchecked Sendable {
   }
 }
 
+/// Remembers when the delivery pump first saw each server frame still being applied, so the runtime can bound how
+/// long durable acknowledgement deadlines wait behind any single frame (#296).
+private actor InstantRuntimeAcknowledgementDeferral {
+  private var frame: (sequence: UInt64, firstSeenAt: InstantTimestamp)?
+
+  /// Milliseconds since the pump first saw this frame being applied (0 the first time).
+  func milliseconds(behindFrame sequence: UInt64, now: InstantTimestamp) -> Int64 {
+    guard let frame, frame.sequence == sequence else {
+      self.frame = (sequence, now)
+      return 0
+    }
+    return max(0, now.milliseconds - frame.firstSeenAt.milliseconds)
+  }
+
+  func reset() {
+    frame = nil
+  }
+}
+
 private actor InstantRuntimeMutationDeadlineWake {
   private var task: Task<Void, Never>?
   private var deadlineMilliseconds: Int64?
@@ -1555,6 +1580,7 @@ public final class InstantRuntime: Sendable {
   private let explicitMutationFlushOwner = InstantExplicitMutationFlushOwner()
   private let mutationDeadlineWake = InstantRuntimeMutationDeadlineWake()
   private let automaticDeliveryClaimantID = UUID().uuidString.lowercased()
+  private let acknowledgementDeferral = InstantRuntimeAcknowledgementDeferral()
   private let automaticMutationRetryReservations = InstantAutomaticMutationRetryReservations()
   private let storeAdoptionMetrics = InstantRuntimeStoreAdoptionMetrics()
   private let installedStoreRevisions: InstantRuntimeInstalledStoreRevisions
@@ -6253,20 +6279,48 @@ public final class InstantRuntime: Sendable {
             recovery: "Reconnect and resend the durable pending mutation."
           )
         }
+        // A refusal of a re-sent write that an earlier connection offered without an answer is a replay: the earlier
+        // offer may have been applied, with a newer write of the same row after it (Recording 023, #296).
+        recordActorHop(.liveSession)
+        let isReplay = await liveSession.wasOfferedWithoutAnswerOnAnEarlierConnection(clientEventID)
+        let refusalKind = isReplay ? "replay" : "first-offer"
         InstantDiagnostics.shared.record(
           .error,
           subsystem: "instant-swift-data-core",
           category: "outbox",
           event: "outbox.mutation.server-error-terminal",
-          message: "Server permanently rejected an outbox mutation.",
+          message: isReplay
+            ? "Server refused a re-sent outbox mutation that an earlier connection offered without an answer; a newer write of the same row may already be applied."
+            : "Server permanently rejected an outbox mutation.",
           metadata: [
             "mutationID": clientEventID,
             "errorMessage": error.message,
             "serverStatus": error.status.map(String.init) ?? "",
             "serverType": error.type ?? "",
             "serverTraceID": error.traceID ?? "",
-            "serverHint": error.hint.map { String(describing: $0) } ?? "",
-          ],
+            "serverHint": error.hint?.compactJSONText ?? "",
+            "refusalKind": refusalKind,
+          ].merging(InstantMutationRefusal(hint: error.hint, transaction: nil).metadata) { current, _ in current },
+          correlationID: clientEventID
+        )
+        // The refused write's own values, read before the failure is recorded so the log never depends on how the
+        // failure resolves (a stale claim or a concurrent resolution returns no mutation).
+        recordActorHop(.persistence)
+        let refusedMutation = try? await persistence.outboxMutationForDiagnostics(id: clientEventID)
+        InstantDiagnostics.shared.record(
+          .error,
+          subsystem: "instant-swift-data-core",
+          category: "outbox",
+          event: "outbox.mutation.refused-write",
+          message:
+            "The write the server refused, by namespace, entity, attribute, and value. Compare its stamps with the row's current values to name the rule.",
+          metadata: InstantMutationRefusal(hint: error.hint, transaction: refusedMutation?.transaction)
+            .metadata
+            .merging([
+              "mutationID": clientEventID,
+              "refusalKind": refusalKind,
+              "createdAtMilliseconds": refusedMutation.map { String($0.createdAt.milliseconds) } ?? "",
+            ]) { current, _ in current },
           correlationID: clientEventID
         )
         _ = try await failClaimedMutation(
@@ -6668,6 +6722,8 @@ public final class InstantRuntime: Sendable {
     let outstanding: InstantAutomaticOutboxTransportSelection
     do {
       try Task.checkCancellation()
+      // Claiming reclaims expired claims as acknowledgement timeouts; keep them while a frame is still applying.
+      try await deferAcknowledgementDeadlinesWhileAFrameIsApplied()
       outstanding = try await automaticOutboxTransportMutationsForDelivery()
     } catch is CancellationError {
       return .finished
@@ -6704,6 +6760,72 @@ public final class InstantRuntime: Sendable {
       }
       return .finished
     }
+  }
+
+  /// Keeps this socket's delivery claims while its receive loop is still applying a server frame (#296).
+  ///
+  /// The durable acknowledgement deadline exists to notice a silent server. A frame that is still being applied proves
+  /// the server answered, and the answer to the outbox head may be queued behind it on the same socket. Treating the
+  /// head as unacknowledged then replaces the connection, drops that answer, cancels the frame's work, and repeats the
+  /// same work on the next connection. In Recording 023 (build 69) the first query result after each connection
+  /// started a 22-25 s rebase of a 2,487-mutation outbox, so the 6 s deadline replaced the connection 385 times in
+  /// 84 minutes and the outbox never drained.
+  ///
+  /// Upstream `Reactor.js` handles each frame synchronously (`_handleReceive`), so its mutation timers cannot fire
+  /// while a frame is handled. This moves the claims' deadlines instead of reclaiming them, which keeps that outcome
+  /// under Swift's durable claims. A frame applied for longer than `acknowledgementDeferralLimitMilliseconds` is
+  /// treated as stuck: the deadline expires as before, and that is reported as a warning.
+  private func deferAcknowledgementDeadlinesWhileAFrameIsApplied() async throws {
+    let limit = configuration.acknowledgementDeferralLimitMilliseconds
+    recordActorHop(.liveSession)
+    guard limit > 0, let frame = await liveSession.frameBeingApplied() else {
+      await acknowledgementDeferral.reset()
+      return
+    }
+    let now = configuration.now()
+    let behindFrameMilliseconds = await acknowledgementDeferral.milliseconds(
+      behindFrame: frame.sequence,
+      now: now
+    )
+    guard behindFrameMilliseconds < limit else {
+      InstantDiagnostics.shared.record(
+        .warning,
+        subsystem: "instant-swift-data-core",
+        category: "outbox",
+        event: "outbox.mutation.ack-deadline-deferral-exhausted",
+        message:
+          "A server frame has been applying longer than the acknowledgement deferral limit; unacknowledged claims now expire as timeouts.",
+        metadata: [
+          "frameOp": frame.op,
+          "applyingForMilliseconds": String(behindFrameMilliseconds),
+          "limitMilliseconds": String(limit),
+        ]
+      )
+      return
+    }
+    recordActorHop(.persistence)
+    let deferral = try await persistence.deferAutomaticOutboxClaimDeadlines(
+      claimantID: automaticDeliveryClaimantID,
+      earliestDeadlineMilliseconds: InstantMutationAcknowledgementDeadlinePolicy.deadlineMilliseconds(
+        after: now,
+        inFlightOrdinal: 1
+      )
+    )
+    guard deferral.deferredClaimCount > 0 else { return }
+    InstantDiagnostics.shared.record(
+      .info,
+      subsystem: "instant-swift-data-core",
+      category: "outbox",
+      event: "outbox.mutation.ack-deadline-deferred",
+      message:
+        "Kept this socket's delivery claims: its receive loop is still applying a server frame, and the next acknowledgement may be queued behind it.",
+      metadata: [
+        "frameOp": frame.op,
+        "applyingForMilliseconds": String(behindFrameMilliseconds),
+        "deferredClaimCount": String(deferral.deferredClaimCount),
+        "nextClaimDeadlineMilliseconds": deferral.nextClaimDeadlineMilliseconds.map(String.init) ?? "",
+      ]
+    )
   }
 
   private func deliverAutomaticOutboxSelection(

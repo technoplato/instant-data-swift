@@ -6622,6 +6622,51 @@ public actor SQLitePersistenceStore {
     }
   }
 
+  /// Moves every live claim of one claimant later, so the earliest deadline is at least
+  /// `earliestDeadlineMilliseconds`, keeping the claims' ordinal spacing (#296).
+  ///
+  /// Only deadlines change: tokens, claimants, and claim states stay, so an acknowledgement that arrives for a
+  /// renewed claim still matches it. Returns how many claims moved and the earliest deadline after the move.
+  func deferAutomaticOutboxClaimDeadlines(
+    claimantID: String,
+    earliestDeadlineMilliseconds: Int64
+  ) throws -> (deferredClaimCount: Int, nextClaimDeadlineMilliseconds: Int64?) {
+    try transaction {
+      let claimed = InstantOutboxDeliveryClaimState.claimed.rawValue
+      guard
+        let earliest = try selectScalar(
+          """
+          SELECT CAST(MIN(delivery_claim_deadline_ms) AS TEXT) FROM instant_outbox
+          WHERE delivery_claim_state = ? AND delivery_claimant_id = ?
+            AND delivery_claim_deadline_ms IS NOT NULL
+          """,
+          [.text(claimed), .text(claimantID)]
+        ).flatMap(Int64.init)
+      else { return (0, nil) }
+      guard earliest < earliestDeadlineMilliseconds else { return (0, earliest) }
+      let shift = earliestDeadlineMilliseconds - earliest
+      try execute(
+        """
+        UPDATE instant_outbox
+        SET delivery_claim_deadline_ms = delivery_claim_deadline_ms + ?
+        WHERE delivery_claim_state = ? AND delivery_claimant_id = ?
+          AND delivery_claim_deadline_ms IS NOT NULL
+        """,
+        [.int(shift), .text(claimed), .text(claimantID)]
+      )
+      return (Int(sqlite3_changes(connection.raw)), earliestDeadlineMilliseconds)
+    }
+  }
+
+  /// Decodes one outbox row by id so a refusal can be logged with the refused write's values (#296). Read-only; a
+  /// missing or undecodable row returns nil rather than failing the refusal it describes.
+  func outboxMutationForDiagnostics(id: String) throws -> PendingMutation? {
+    try readTransaction {
+      guard let row = try loadOutboxBodyRowWithoutTransaction(id: id) else { return nil }
+      return try? decodeOutboxBody(row.json)
+    }
+  }
+
   func outboxClaimMatches(id: String, token: String) throws -> Bool {
     try selectScalar(
       """
