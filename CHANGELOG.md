@@ -10,6 +10,38 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## September 30th, 2026 at 10:05:34 a.m. EDT — `2666d34396f4` Re-receipt the first pending writer when the server changes a slot beneath it, instead of rebasing the component (#296)
+
+- **Implementation commit:** `2666d34396f43800a94692cfd7b8925afa5d890b`
+- **Change:** A server frame that changes a slot beneath pending writes re-receipts the slot's first writer instead of rebasing the whole component; this is why build 71 fell behind a live recording (#296).
+- **Details:**
+  - Instrumented build-71 soak (iPhone simulator, bd40c50a): Instant can send a query's refresh-ok before the transact-ok of the write it reflects (50 ms apart). The write is still pending, so every such frame declined into the whole-component rebase. Caught up, those were tiny. After one slow moment every frame declined (0 of 13-18 reduced per 30 s), and pending went 11 to 109 in 90 s.
+  - When every surviving writer replaces a cardinality-one slot and the store shows the latest one, the base value lives only in the first writer's rollback receipt, the one receipt the full rebase would change. The plan now stages that writer as a receipt-patch body (kept with the plan so the commit's revalidation plans the same rows) and rebases its receipt onto the server fact. A create whose receipt deletes the entity gets retractions of what it wrote plus the server's facts. A later refusal restores the server's value, as after the full rebase.
+  - F1: the capped earlier-overlays check is gone (every frame after a Stop used to rebase; the Stop drain is now 0 of 30 frames, 0.36 s, against 27 of 30 and 3.4 s). F2: a Scribe forward link written from the other side declines (reverseLinkWriter). Decline reasons are split, and metrics count component bodies and receipt patches.
+  - Tests red on the reapplied 8bee78eb and green after: frames ahead of their answers (24, 24, and 19 bodies before, 0 after), the lost-answer replay (12, then 0), the Stop drain. The differential test gained frames ahead of answers and refused replays; 12 seeds in both link shapes match the full rebase after every event, with 7-19 receipt patches per seed. The fast-drain suite passes with Pattern B's 2 known issues.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — receipt patches in the classifier and the forward pass; BeforeImage; rollbackTransaction(of:rebasedOnto:attributes:); F1 and F2
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — first overlay per entity and reverse-link writers in the context; instant_server_apply_receipt_patches with the plan and its revalidation; split decline reasons; component-body and patch metrics
+  - `Tests/InstantSwiftDataCoreTests/InstantFastDrainTests.swift` — in-flight, lost-answer, and Stop tests; frames ahead of answers and refused replays in the differential; component-body measurement
+- **User context (verbatim):**
+  > Find why the reduction rewrote nearly every pending row on live frames, and fix it on a new branch, with the live soak as the gate.
+- **SpecStory:** unavailable — Claude Code agent session (fast-drain); no SpecStory capture configured for this session.
+
+## September 30th, 2026 at 10:05:34 a.m. EDT — `81eb122c04cc` Reapply the server-apply reduction and the tail-write stamp guard (8bee78eb) as the base for its fixes (#296)
+
+- **Implementation commit:** `81eb122c04cc300940b694944a8eb33a533bf7ca`
+- **Change:** The build-73 branch reapplies 8bee78eb (the server-apply reduction and the tail-write stamp guard) as the base for its fixes; not shippable alone (#296).
+- **Details:**
+  - Reverts 184767d5 on agent/claude-opus-5.5/fast-drain-2 only, so the fixes that follow are reviewable as diffs over the reduction that fell behind live (build 71). Sources equal bb88af72's again and InstantFastDrainTests returns.
+  - Build 73 ships only from a head that passes the live soak, the Recording 023-shape backlog, the ten suites, and the differential test.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — the reduction, its call site, and the stamp guard, restored
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — the reduction context, the excludes_watermark_roots plan option, and metrics, restored
+  - `Tests/InstantSwiftDataCoreTests/InstantFastDrainTests.swift` — the fast-drain suite, restored
+- **User context (verbatim):**
+  > Michael needs a library that (a) keeps up live, like 4e281ddd, and (b) drains a Recording 023-sized backlog in minutes without pegging a core.
+- **SpecStory:** unavailable — Claude Code agent session (fast-drain); no SpecStory capture configured for this session.
+
 ## September 30th, 2026 at 8:29:24 a.m. EDT — `184767d5f685` Revert "Skip the whole-component rebase for server frames that cannot change the base beneath pending writes (#296)"
 
 - **Implementation commit:** `184767d5f68555d5d26ce0abb8c1ccbe8ed39c7c`
