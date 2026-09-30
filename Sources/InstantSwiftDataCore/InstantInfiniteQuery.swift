@@ -2149,6 +2149,15 @@ private actor InstantLiveInfiniteQueryCoordinator {
     let termination = InstantLiveInfiniteSubscriptionSetupLease()
     let cleanupStarted =
       runtime.configuration.onLiveInfiniteQueryRetirementCleanupStartedForTesting
+    // A page loaded by `loadPreviousPage` can repeat an earlier chunk's query exactly (the page above the first page
+    // is the original leading watcher's query). That query's stored answer about the rows above it can predate rows
+    // that arrived since, and this page's answer decides whether the window reached the top, so it waits for the server.
+    let seedsFromStoredResult: Bool
+    if case .reverse(let startCursor) = key, reverseNavigationKeys.contains(startCursor) {
+      seedsFromStoredResult = false
+    } else {
+      seedsFromStoredResult = true
+    }
     let task = Task { [runtime, weak self] in
       guard !Task.isCancelled else {
         await termination.finishWithoutInstallation()
@@ -2158,6 +2167,7 @@ private actor InstantLiveInfiniteQueryCoordinator {
       do {
         observation = try await runtime.observeLiveInfiniteQueryChunk(
           plan,
+          seedsFromStoredResult: seedsFromStoredResult,
           onCancellationStarted: {
             await cleanupStarted?(subscriptionID)
           },

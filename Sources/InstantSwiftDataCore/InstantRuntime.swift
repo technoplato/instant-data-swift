@@ -4949,8 +4949,13 @@ public final class InstantRuntime: Sendable {
     return lease
   }
 
+  /// - Parameter seedsFromStoredResult: Whether the chunk may start from the page info of a result stored for the same
+  ///   query earlier, so a relaunch shows the last known page before the server answers. Pass `false` for a chunk whose
+  ///   first answer decides where the window is: it then starts from an active registration's page info or waits for
+  ///   the server, because a stored answer can predate rows that arrived since (#300).
   func observeLiveInfiniteQueryChunk(
     _ plan: InstantQueryPlan,
+    seedsFromStoredResult: Bool = true,
     onCancellationStarted: (@Sendable () async -> Void)? = nil,
     onDeferredValueHydrationFailure:
       (@Sendable (InstantError) async -> Void)? = nil
@@ -5029,6 +5034,9 @@ public final class InstantRuntime: Sendable {
           .beforePersistedPageInfoLoad
         )
         try Task.checkCancellation()
+        guard seedsFromStoredResult else {
+          return await self.liveQueryResultState.pageInfo(for: registrationKey)
+        }
         return await self.liveQueryPageInfo(for: registrationKey)
       }
       try Task.checkCancellation()

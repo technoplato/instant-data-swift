@@ -86,6 +86,46 @@ struct InstantInfiniteQueryLeadingRowsTests {
     await harness.finish()
   }
 
+  /// The page above the first page has the original leading watcher's exact query, and the runtime keeps that query's
+  /// last result: one row above the top and no more. Seeded from it, the new page would claim the top was reached, and
+  /// the window would climb to the head in one call. A page loaded by `loadPreviousPage` must wait for the server.
+  @Test
+  func aPreviousPageWaitsForTheServerInsteadOfAnEarlierQuerysStoredResult() async throws {
+    let harness = try await InfiniteWindowHarness(
+      values: (1...24).map { $0 * 10 },
+      order: .descending,
+      pageSize: 3,
+      maximumPageCount: 2
+    )
+    _ = try await harness.settledWindow("open the list")
+    try await harness.insertAtTop()
+    var window = try await harness.settledWindow("show a row above the first row")
+    expectNoDifference(
+      window,
+      InfiniteWindow(values: [241, 240, 230, 220], canLoadPreviousPage: false, canLoadNextPage: true)
+    )
+    // The next page evicts the leading watcher with the top; its last result, [241] with no more above, stays stored.
+    window = try await harness.loadNextPage()
+    expectNoDifference(
+      window,
+      InfiniteWindow(values: [240, 230, 220, 210, 200, 190], canLoadPreviousPage: true, canLoadNextPage: true)
+    )
+    for _ in 1...6 {
+      try await harness.insertAtTop()
+    }
+    _ = try await harness.settledWindow("add rows above the evicted top")
+
+    window = try await harness.loadPreviousPage()
+    expectNoDifference(
+      window,
+      InfiniteWindow(values: [243, 242, 241, 240, 230, 220], canLoadPreviousPage: true, canLoadNextPage: true)
+    )
+    try await harness.page(.previous, untilTheWindowStopsAt: "the top of the list")
+    window = try await harness.settledWindow("return to the top")
+    expectNoDifference(window.values.first, 247)
+    await harness.finish()
+  }
+
   /// #302, not #300: a row that moves above the top while the window's top is evicted keeps its old values at its old
   /// place until the window returns to the top. No active query covers its new place, and the shared store keeps a
   /// departed row's facts while another stored result owns them, here the cached result of its chunk before the
@@ -191,10 +231,10 @@ struct InstantInfiniteQueryLeadingRowsTests {
     await harness.finish()
   }
 
-  /// A property test: slide windows down, up, and down again while rows are inserted at the top of the list at random
-  /// (and, while the window includes the top, moved there). At every quiet point the window must be a contiguous run
-  /// of the list with no row twice, its flags must never claim an end that is not there, each page load must move the
-  /// window without skipping rows, and every row must be reached.
+  /// A property test: slide windows down, up, down, and up again while rows are inserted at the top of the list at
+  /// random (and, while the window includes the top, moved there). At every quiet point the window must be a
+  /// contiguous run of the list with no row twice, its flags must never claim an end that is not there, each page load
+  /// must move the window without skipping rows, and every row must be reached.
   @Test(arguments: InfiniteWindowScenario.all)
   func slidingWindowsReachEveryRowExactlyOnceWhileRowsArriveAtTheTop(
     scenario: InfiniteWindowScenario
@@ -207,11 +247,13 @@ struct InstantInfiniteQueryLeadingRowsTests {
       maximumPageCount: scenario.maximumPageCount
     )
     _ = try await harness.settledWindow("open the list")
-    // A budget of changes, so paging toward the top can outrun rows arriving there.
+    // A budget of changes, so paging toward the top can outrun rows arriving there. The last pass back to the top makes
+    // no changes: it reaches the rows inserted there after the window last left the top.
     var changesLeft = scenario.rowCount / 2
-    for direction in [InfiniteWindowDirection.next, .previous, .next] {
+    let passes: [InfiniteWindowDirection] = [.next, .previous, .next, .previous]
+    for (pass, direction) in passes.enumerated() {
       try await harness.page(direction, untilTheWindowStopsAt: direction.end) {
-        guard changesLeft > 0, random.chance(40) else { return }
+        guard pass < passes.count - 1, changesLeft > 0, random.chance(40) else { return }
         for _ in 0..<min(changesLeft, random.int(1...3)) {
           changesLeft -= 1
           let rows = await harness.server.orderedRowIDs()
@@ -334,6 +376,16 @@ actor InfiniteListModelServer {
   private var receiveContinuation: InstantLiveTestPendingOperation<InstantLiveMessage>?
   private var isClosed = false
   private(set) var receivedMessageCount = 0
+  /// Every query the client adds or removes, every change, and the harness's notes, for failure messages.
+  private var operationLog: [String] = []
+
+  func note(_ line: String) {
+    operationLog.append(line)
+  }
+
+  func recentOperations(_ count: Int) -> [String] {
+    Array(operationLog.suffix(count))
+  }
 
   init(values: [Int], order: InfiniteListOrder) {
     self.order = order
@@ -397,6 +449,7 @@ actor InfiniteListModelServer {
     nextRowNumber += 1
     let now = tick()
     rows[id] = Row(id: id, value: value, createdAtMilliseconds: now, valueChangedAtMilliseconds: now)
+    operationLog.append("insert \(id) at \(value)")
     refreshActiveQueries()
     return value
   }
@@ -404,10 +457,11 @@ actor InfiniteListModelServer {
   /// Gives a row a value ordered before every other row, as an update to Scribe's `updatedAtMs` does.
   @discardableResult
   func moveToTop(rowID id: String) -> Int? {
-    guard rows[id] != nil else { return nil }
+    guard let old = rows[id]?.value else { return nil }
     let value = topValue
     rows[id]?.value = value
     rows[id]?.valueChangedAtMilliseconds = tick()
+    operationLog.append("move \(id) from \(old) to \(value)")
     refreshActiveQueries()
     return value
   }
@@ -438,6 +492,8 @@ actor InfiniteListModelServer {
     case "add-query":
       guard let query = message.fields["q"] else { return }
       activeQueries.append(query)
+      let result = result(for: query)
+      operationLog.append("add \(Self.describe(query)) -> \(Self.describe(result))")
       enqueue(
         InstantLiveMessage(
           op: "add-query-ok",
@@ -445,13 +501,14 @@ actor InfiniteListModelServer {
           fields: [
             "q": query,
             "processed-tx-id": .string(processedTransactionID),
-            "result": .array(result(for: query)),
+            "result": .array(result),
           ]
         )
       )
     case "remove-query":
       guard let query = message.fields["q"], let index = activeQueries.firstIndex(of: query) else { return }
       activeQueries.remove(at: index)
+      operationLog.append("remove \(Self.describe(query))")
     default:
       break
     }
@@ -460,9 +517,11 @@ actor InfiniteListModelServer {
   private func refreshActiveQueries() {
     transactionNumber += 1
     let computations = activeQueries.map { query in
-      InstantLiveJSONValue.object([
+      let result = result(for: query)
+      operationLog.append("  refresh \(Self.describe(query)) -> \(Self.describe(result))")
+      return InstantLiveJSONValue.object([
         "instaql-query": query,
-        "instaql-result": .array(result(for: query)),
+        "instaql-result": .array(result),
         "processed-tx-id": .string(processedTransactionID),
       ])
     }
@@ -580,6 +639,35 @@ actor InfiniteListModelServer {
       case let .number(value) = tuple[2]
     else { return nil }
     return Position(value: value, id: id)
+  }
+
+  /// "desc limit 3 after 10 incl before 7 incl" for a query's options.
+  private static func describe(_ query: InstantLiveJSONValue) -> String {
+    let options = query.objectValue?["items"]?.objectValue?["$"]?.objectValue ?? [:]
+    var parts = [options["order"]?.objectValue?["value"]?.stringValue ?? "asc"]
+    if case let .number(limit)? = options["limit"] {
+      parts.append("limit \(Int(limit))")
+    }
+    for (name, inclusive) in [("after", "afterInclusive"), ("before", "beforeInclusive")] {
+      if let position = options[name].flatMap(Self.position(fromCursor:)) {
+        parts.append("\(name) \(Int(position.value))\(options[inclusive] == .bool(true) ? " incl" : "")")
+      }
+    }
+    return parts.joined(separator: " ")
+  }
+
+  /// "[9, 8, 7] next prev" for a result's rows and page flags.
+  private static func describe(_ result: [InstantLiveJSONValue]) -> String {
+    let data = result.first?.objectValue?["data"]?.objectValue
+    let rows = data?["datalog-result"]?.objectValue?["join-rows"]?.arrayValue ?? []
+    let values = rows.compactMap { row -> Int? in
+      guard case let .number(value)? = row.arrayValue?.last?.arrayValue?[2] else { return nil }
+      return Int(value)
+    }
+    let info = data?["page-info"]?.objectValue?["items"]?.objectValue
+    let next = info?["has-next-page?"] == .bool(true) ? " next" : ""
+    let previous = info?["has-previous-page?"] == .bool(true) ? " prev" : ""
+    return "\(values)\(next)\(previous)"
   }
 
   private static func cursor(for row: Row) -> InstantLiveJSONValue {
@@ -722,8 +810,15 @@ final class InfiniteWindowHarness: Sendable {
   }
 
   func loadNextPage(sourceLocation: SourceLocation = #_sourceLocation) async throws -> InfiniteWindow {
+    await server.note("-- loadNextPage")
     subscription.loadNextPage()
     return try await settledWindow("load the next page", sourceLocation: sourceLocation)
+  }
+
+  func loadPreviousPage(sourceLocation: SourceLocation = #_sourceLocation) async throws -> InfiniteWindow {
+    await server.note("-- loadPreviousPage")
+    subscription.loadPreviousPage()
+    return try await settledWindow("load the previous page", sourceLocation: sourceLocation)
   }
 
   /// Pages in one direction until the window reports its end, checking that every load moves the window without
@@ -748,6 +843,7 @@ final class InfiniteWindowHarness: Sendable {
       loads += 1
       try await beforeEachPage()
       let before = try await settledSnapshot("settle before a page load", sourceLocation: sourceLocation)
+      await server.note("-- \(direction == .next ? "loadNextPage" : "loadPreviousPage") from \(infiniteWindow(before))")
       switch direction {
       case .next:
         subscription.loadNextPage()
@@ -794,10 +890,18 @@ final class InfiniteWindowHarness: Sendable {
       problems = await windowProblems(snapshot)
     }
     for problem in problems {
-      Issue.record("After \"\(operation)\": \(problem)", sourceLocation: sourceLocation)
+      let report = await operationReport()
+      Issue.record("After \"\(operation)\": \(problem)\(report)", sourceLocation: sourceLocation)
     }
     await recorder.recordQuietPoint(snapshot)
     return snapshot
+  }
+
+  /// The model server's last operations, attached to the first problem a test records.
+  private func operationReport() async -> String {
+    guard await recorder.claimOperationReport() else { return "" }
+    let lines = await server.recentOperations(60)
+    return "\nLast operations:\n" + lines.joined(separator: "\n")
   }
 
   private func quietSnapshot(
@@ -891,35 +995,28 @@ final class InfiniteWindowHarness: Sendable {
       Issue.record("A page load left an empty window: \(shownAfter)", sourceLocation: sourceLocation)
       return
     }
+    var problem: String?
     switch direction {
     case .next:
       if afterLast > beforeLast {
         if afterFirst > beforeLast + 1 {
-          Issue.record(
-            "loadNextPage skipped rows: \(shownBefore.values) -> \(shownAfter.values)",
-            sourceLocation: sourceLocation
-          )
+          problem = "loadNextPage skipped rows: \(shownBefore.values) -> \(shownAfter.values)"
         }
       } else if after.canLoadNextPage || afterLast != rows.count - 1 {
-        Issue.record(
-          "loadNextPage did not advance: \(shownBefore) -> \(shownAfter)",
-          sourceLocation: sourceLocation
-        )
+        problem = "loadNextPage did not advance: \(shownBefore) -> \(shownAfter)"
       }
     case .previous:
       if afterFirst < beforeFirst {
         if afterLast < beforeFirst - 1 {
-          Issue.record(
-            "loadPreviousPage skipped rows: \(shownBefore.values) -> \(shownAfter.values)",
-            sourceLocation: sourceLocation
-          )
+          problem = "loadPreviousPage skipped rows: \(shownBefore.values) -> \(shownAfter.values)"
         }
       } else if after.canLoadPreviousPage || afterFirst != 0 {
-        Issue.record(
-          "loadPreviousPage did not advance: \(shownBefore) -> \(shownAfter)",
-          sourceLocation: sourceLocation
-        )
+        problem = "loadPreviousPage did not advance: \(shownBefore) -> \(shownAfter)"
       }
+    }
+    if let problem {
+      let report = await operationReport()
+      Issue.record("\(problem)\(report)", sourceLocation: sourceLocation)
     }
   }
 
@@ -956,9 +1053,17 @@ private actor InfiniteSnapshotRecorder {
   private(set) var count = 0
   private(set) var seenAtQuietPoints: Set<String> = []
 
+  private var hasReportedOperations = false
+
   func record(_ snapshot: InstantInfiniteQuerySnapshot) {
     latest = snapshot
     count += 1
+  }
+
+  /// True once per test, so only the first recorded problem carries the operation log.
+  func claimOperationReport() -> Bool {
+    defer { hasReportedOperations = true }
+    return !hasReportedOperations
   }
 
   func recordQuietPoint(_ snapshot: InstantInfiniteQuerySnapshot) {
