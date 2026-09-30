@@ -10,6 +10,22 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## September 30th, 2026 at 8:29:24 a.m. EDT — `184767d5f685` Revert "Skip the whole-component rebase for server frames that cannot change the base beneath pending writes (#296)"
+
+- **Implementation commit:** `184767d5f68555d5d26ce0abb8c1ccbe8ed39c7c`
+- **Change:** Scribe build 71's library fell behind a live recording; 8bee78eb is reverted, so the library sources match 80db4271 again (#296).
+- **Details:**
+  - Measured on an iPhone simulator against the throwaway app bd40c50a, same perf soak, 30 s samples. bb88af72 (build 71): pending writes reached 20 in the first minute and about 830 after 11 minutes; accepts fell from 51 to 4-15 per 30 s; CPU 60-114%; 240-880 pending rows rewritten per 30 s, so server frames kept peeling and replaying the outbox.
+  - Every older library kept up under the same soak: 1.7.0 (pending 0-3), c9f25d45 (0-2), 8ed26be3 (one burst to 51 that drained), and 4e281ddd (0-1, accepts 49-54 per 30 s, CPU 27-36%, 0 ack timeouts, 0 reconnects). 4e281ddd's library sources are identical to 80db4271's; bb88af72 differs from 80db4271 only by 8bee78eb.
+  - Removed: the server-apply reduction, the tail-write stamp guard, and InstantFastDrainTests (including the Pattern B known issue). Kept: 4e281ddd's acknowledgement deadline deferral and 120 s cap, 8ed26be3's whole-entity rule, and ce40ebe3's test-only busy timeout. The mechanism is still under investigation; a corrected reduction becomes a later build, gated on the live soak.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — reduction, call site, stamp guard, and flag removed
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — reduction context, excludes_watermark_roots plan option, and metrics removed
+  - `Tests/InstantSwiftDataCoreTests/InstantFastDrainTests.swift` — deleted with the reduction it tested
+- **User context (verbatim):**
+  > The mitigation for build 72 is reverting 8bee78eb.
+- **SpecStory:** unavailable — Claude Code agent session (fast-drain); no SpecStory capture configured for this session.
+
 ## September 30th, 2026 at 5:53:46 a.m. EDT — `ce40ebe3ae5d` Let the retry fault injection wait for the runtime's own write instead of failing "database is locked" (#296)
 
 - **Implementation commit:** `ce40ebe3ae5da73a13909922ae07bc17acd184a2`
