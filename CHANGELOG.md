@@ -10,6 +10,23 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## September 30th, 2026 at 1:50:18 p.m. EDT — `5424c73365c6` Remove refused writes' overlays without the whole-component rebase, and respect last-write-wins in receipt patches (#296)
+
+- **Implementation commit:** `5424c73365c63d487fe8f0f4768531450f970c2e`
+- **Change:** A refused write's overlay is removed without the whole-component rebase, and receipt patches follow last-write-wins, so the Recording 023 backlog's refusals stop forcing 2,500-row rebases (#296).
+- **Details:**
+  - b4b9fbe3's backlog run: every refused replay left its overlay, and any refused overlay declined every frame (failedOverlay) into a whole-component rebase of about 2,500 rows (gate 12-16 s): 22 refusals and 20 accepts in 10 minutes.
+  - The reduction removes up to 16 refused overlays itself. Each slot a refused write changed goes back to its before-image: in the next surviving writer's receipt when that write replaces the slot, otherwise in the store (an entity it created is deleted when nothing after it touches the entity). The refused rows are plan rows staged as removed, the store operations are hydrated and applied before the server facts, and they count as a store change. Two refused writes on one slot, a later merge, a re-asserted link, or later writes on a created entity keep the full rebase.
+  - Receipt patches follow the store's last-write-wins rule: a present before-image with a later stamp than the server's fact is left alone, as the full rebase's apply leaves the base.
+  - aRefusedWriteIsRemovedWithoutARebase (two cases, the live deferring refusal path) is red on b4b9fbe3 (failedOverlay, a rebase, 0 removed) and green after (0 rebases, 1 removed, equal to a full-rebase twin). The differential now refuses through the deferral path with 60 pending writes; 12 seeds in both shapes match after every event, with removals in 4 seeds.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — failureSplice; spliced receipts and store operations in the classification and the plan; last-write-wins in receipt patches
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — refused overlays, their next writers, and created entities in the reduction context; reduced plans skip refused component roots; InstantServerApplyFailureSplice; removed-overlay metric
+  - `Tests/InstantSwiftDataCoreTests/InstantFastDrainTests.swift` — refused-write test through the live deferral; the differential refuses any write of a window through that path with 60 pending writes
+- **User context (verbatim):**
+  > If refusals still force rebases, go ahead with overlay removal without a rebase.
+- **SpecStory:** unavailable — Claude Code agent session (fast-drain); no SpecStory capture configured for this session.
+
 ## September 30th, 2026 at 11:47:07 a.m. EDT — `b4b9fbe32d6d` Hydrate deferred values, prove reverse-form links from their writers' receipts, and order the tail check by id (#296)
 
 - **Implementation commit:** `b4b9fbe32d6d89f223a69f76e05dc1180bc8fe3b`
