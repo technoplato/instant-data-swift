@@ -2319,7 +2319,10 @@ public final class InstantRuntime: Sendable {
       // rebase restamped it (#296). A write appended at the outbox tail is newest in domain order, so stamp the facts
       // that lost past the store's newest fact, as that replay would. A write created before a queued one keeps domain
       // order and may lose. Only local stamps change; `add-triple` carries no time.
-      let isOutboxTail = creationCursor.timestamp.map { pendingMutation.createdAt > $0 } ?? true
+      // Ties on `createdAt` are ordered by id, as delivery orders them.
+      let isOutboxTail = creationCursor.tail.map { tail in
+        (pendingMutation.createdAt.milliseconds, pendingMutation.id) > (tail.createdAtMilliseconds, tail.mutationID)
+      } ?? true
       if isOutboxTail, let winning = Self.localWriteStampedToWin(
         pendingMutation.transaction,
         prepared: prepared,
@@ -3485,11 +3488,43 @@ public final class InstantRuntime: Sendable {
       if case let .ineligible(reason) = load { return declined(reason) }
       return nil
     }
+    // Deferred values (Scribe's segment text and words) are not resident, so the store cannot show them until they are
+    // hydrated, as the full rebase hydrates them before applying the same facts.
+    var classified = seed.preparedStore
+    let policy = configuration.deferredValueResidency
+    if policy.isEnabled {
+      var deferredEntityIDs: Set<String> = []
+      for operation in operations {
+        switch operation {
+        case let .insert(triple), let .retract(triple):
+          if policy.attributeIDs.contains(triple.attributeID) { deferredEntityIDs.insert(triple.entityID) }
+        default:
+          continue
+        }
+      }
+      if !deferredEntityIDs.isEmpty {
+        recordActorHop(.persistence)
+        let deferredTriples = try await persistence.loadDeferredValues(
+          attributeIDs: policy.attributeIDs,
+          entityIDs: deferredEntityIDs
+        )
+        if !deferredTriples.isEmpty {
+          recordActorHop(.store)
+          classified = try await store.prepare(
+            InstantStoreTransaction(
+              id: "server-apply-reduction-\(processedTransactionID)-deferred-hydration",
+              operations: deferredTriples.map(InstantTripleOperation.insert)
+            ),
+            applyingTo: seed.preparedStore
+          )
+        }
+      }
+    }
     switch Self.reducedServerApplyOperations(
       operations,
       context: context,
-      attributes: seed.preparedStore.attributes,
-      indexes: seed.preparedStore.indexes
+      attributes: classified.attributes,
+      indexes: classified.indexes
     ) {
     case let .reduced(reduced, receiptPatches):
       return (reduced, receiptPatches)
@@ -3532,12 +3567,28 @@ public final class InstantRuntime: Sendable {
           continue
         }
         let slot = InstantVisibleWriteKey(entityID: triple.entityID, attributeID: triple.attributeID)
-        // A pending write that inserts this link from the other side (a segment's `recording`, materialized as the
-        // recording's `segments`) leaves no write key on this slot; the full rebase decides it.
+        // A pending write that inserts this link from the other side (an attachment's or a transcription's
+        // `recording`, materialized as the recording's `attachments` or `transcriptions`) leaves no write key on this
+        // slot. Its receipt, in the store's physical form, still shows whether the link was there beneath it.
         if let reverseSlot = Self.reverseLinkSlot(of: triple, attributes: attributes),
-          context.reverseLinkSlotsWithWriters.contains(reverseSlot)
+          let firstReverseWriterID = context.firstReverseLinkWriterBySlot[reverseSlot]
         {
-          return .declined(.reverseLinkWriter, fact: triple)
+          guard context.firstWriterBySlot[slot] == nil,
+            factHolds,
+            let firstReverseWriter = context.bodies[firstReverseWriterID],
+            let lastReverseWriter = context.lastReverseLinkWriterBySlot[reverseSlot].flatMap({ context.bodies[$0] }),
+            Self.insertedValue(of: reverseSlot, in: lastReverseWriter) == .ref(triple.entityID)
+          else { return .declined(.reverseLinkWriter, fact: triple) }
+          switch Self.linkBeforeImage(of: triple, in: firstReverseWriter) {
+          case .present:
+            continue
+          case .absent:
+            // The server added the link beneath the writer (its answer is in flight, or a replay was applied).
+            receiptPatches[firstReverseWriterID, default: []].append(triple)
+            continue
+          case .entityCreated, .unknown:
+            return .declined(.reverseLinkWriter, fact: triple)
+          }
         }
         guard let firstWriterID = context.firstWriterBySlot[slot] else {
           guard factHolds else { return .declined(.changesShadowedFact, fact: triple) }
@@ -3669,6 +3720,34 @@ public final class InstantRuntime: Sendable {
     }
   }
 
+  /// Whether one link fact, in the store's physical (forward) form, was there before `mutation` applied: its receipt
+  /// retracts the fact when the mutation added it. A receipt that restores the target under another entity, removes
+  /// the fact, or deletes the linking entity is `.unknown`.
+  static func linkBeforeImage(of fact: InstantTriple, in mutation: PendingMutation) -> BeforeImage {
+    guard case let .materialized(rollback) = mutation.optimisticEffectReceipt else { return .unknown }
+    var retracted = false
+    var restored = false
+    for operation in rollback.operations {
+      switch operation {
+      case let .retract(triple)
+      where triple.entityID == fact.entityID && triple.attributeID == fact.attributeID && triple.value == fact.value:
+        retracted = true
+      case let .insert(triple) where triple.attributeID == fact.attributeID && triple.value == fact.value:
+        // The same fact restored under its old stamp means the write only re-asserted it; under another entity it
+        // means the write moved the target.
+        guard triple.entityID == fact.entityID else { return .unknown }
+        restored = true
+      case let .deleteEntity(entityID) where entityID == fact.entityID:
+        return .unknown
+      case let .deleteEntityInNamespace(entityID, _) where entityID == fact.entityID:
+        return .unknown
+      default:
+        continue
+      }
+    }
+    return retracted && !restored ? .absent : .present(fact.value)
+  }
+
   /// The rollback receipt `mutation` would carry had it been prepared over `baseFacts` (#296), the receipt a
   /// whole-component rebase computes when it replays the mutation over a base that holds those facts:
   /// - On each slot of an existing entity that the mutation writes, the receipt retracts the written value and restores
@@ -3713,12 +3792,24 @@ public final class InstantRuntime: Sendable {
     for fact in baseFacts {
       baseBySlot[InstantVisibleWriteKey(entityID: fact.entityID, attributeID: fact.attributeID), default: []].append(fact)
     }
-    func rebased(_ slot: InstantVisibleWriteKey, existing: [InstantTripleOperation]) -> [InstantTripleOperation] {
+    func rebased(
+      _ slot: InstantVisibleWriteKey,
+      existing: [InstantTripleOperation],
+      isCreated: Bool
+    ) -> [InstantTripleOperation] {
       let writtenTriples = written[slot] ?? []
       let base = baseBySlot[slot] ?? []
       if attributes[slot.attributeID]?.cardinality == .many {
         let baseValues = Set(base.map(\.value))
-        return writtenTriples.filter { !baseValues.contains($0.value) }.map(InstantTripleOperation.retract)
+        guard !isCreated else {
+          return writtenTriples.filter { !baseValues.contains($0.value) }.map(InstantTripleOperation.retract)
+        }
+        // A many-valued slot keeps every other value's operation: the base now holds these values, so the receipt
+        // no longer removes them.
+        return existing.filter { operation in
+          if case let .retract(triple) = operation { return !baseValues.contains(triple.value) }
+          return true
+        }
       }
       guard let shown = writtenTriples.last else { return [] }
       let retraction = existing.first { operation in
@@ -3754,7 +3845,9 @@ public final class InstantRuntime: Sendable {
         default: false
         }
       }
-      let replacement = writtenOrder.filter { $0.entityID == entityID }.flatMap { rebased($0, existing: []) }
+      let replacement = writtenOrder.filter { $0.entityID == entityID }.flatMap {
+        rebased($0, existing: [], isCreated: true)
+      }
       operations.insert(contentsOf: replacement, at: min(index, operations.endIndex))
     }
     for slot in baseBySlot.keys.sorted(by: { ($0.entityID, $0.attributeID) < ($1.entityID, $1.attributeID) })
@@ -3763,7 +3856,10 @@ public final class InstantRuntime: Sendable {
       let position = operations.firstIndex { isOn(slot, $0) } ?? operations.endIndex
       // `position` is the slot's first operation, so removing the slot's operations leaves it in place.
       operations.removeAll { isOn(slot, $0) }
-      operations.insert(contentsOf: rebased(slot, existing: existing), at: min(position, operations.endIndex))
+      operations.insert(
+        contentsOf: rebased(slot, existing: existing, isCreated: false),
+        at: min(position, operations.endIndex)
+      )
     }
     return InstantStoreTransaction(id: rollback.id, operations: operations)
   }

@@ -407,7 +407,8 @@ struct FastDrainFixture {
     reducesServerApply: Bool = true,
     timelineWindow: Int? = nil,
     scribeLinks: Bool = false,
-    endsWithStop: Bool = false
+    endsWithStop: Bool = false,
+    defersSegmentText: Bool = false
   ) async throws -> Self {
     let attributes = scribeLinks ? FastDrainSchema.scribeLinkAttributes : FastDrainSchema.attributes
     let cacheURL = FileManager.default.temporaryDirectory.appendingPathComponent(
@@ -424,6 +425,12 @@ struct FastDrainFixture {
     // fast drain, so these tests can be seen failing against it.
     configuration.reducesServerApplyToAffectedOverlays =
       reducesServerApply && ProcessInfo.processInfo.environment["INSTANT_FAST_DRAIN_FULL_REBASE"] != "1"
+    if defersSegmentText {
+      // Scribe keeps a segment's text and words out of memory (`ScribeInstantBootstrap.deferredValueResidency`).
+      configuration.deferredValueResidency = InstantDeferredValueResidencyPolicy(
+        attributeIDs: ["transcriptionSegments/text", "transcriptionSegments/wordsJSON"]
+      )
+    }
     let runtime = try await InstantRuntime.bootstrap(configuration: configuration)
 
     // The server's history before this device went offline: the same writes, already accepted.
@@ -833,7 +840,8 @@ struct FastDrainDifferentialPair {
     serverSegmentCount: Int,
     pendingSegmentCount: Int,
     scribeLinks: Bool = false,
-    endsWithStop: Bool = false
+    endsWithStop: Bool = false,
+    defersSegmentText: Bool = false
   ) async throws -> Self {
     Self(
       reduced: try await FastDrainFixture.make(
@@ -843,7 +851,8 @@ struct FastDrainDifferentialPair {
         reducesServerApply: true,
         timelineWindow: 5,
         scribeLinks: scribeLinks,
-        endsWithStop: endsWithStop
+        endsWithStop: endsWithStop,
+        defersSegmentText: defersSegmentText
       ),
       full: try await FastDrainFixture.make(
         suffix: "differential-\(seed)-full",
@@ -852,7 +861,8 @@ struct FastDrainDifferentialPair {
         reducesServerApply: false,
         timelineWindow: 5,
         scribeLinks: scribeLinks,
-        endsWithStop: endsWithStop
+        endsWithStop: endsWithStop,
+        defersSegmentText: defersSegmentText
       )
     )
   }
@@ -945,8 +955,9 @@ extension InstantFastDrainTests {
     try await runDifferential(seed: seed, scribeLinks: false)
   }
 
-  /// The same randomized interleavings with Scribe's own link shape (forward links on the recording, written from the
-  /// segment side) and a Stop behind the pending writes, which the fake-server schema above does not exercise.
+  /// The same randomized interleavings with Scribe's own shape, which the fake-server schema above does not exercise:
+  /// forward links on the recording written from the segment side, segment text and words kept out of memory, and a
+  /// Stop behind the pending writes.
   @Test(arguments: [UInt64(11), 12, 13, 14, 15, 16])
   func theReducedApplyObservesWhatTheFullRebaseObservesWithScribeLinks(seed: UInt64) async throws {
     try await runDifferential(seed: seed, scribeLinks: true)
@@ -959,7 +970,8 @@ extension InstantFastDrainTests {
       serverSegmentCount: 6,
       pendingSegmentCount: 8,
       scribeLinks: scribeLinks,
-      endsWithStop: scribeLinks
+      endsWithStop: scribeLinks,
+      defersSegmentText: scribeLinks
     )
     guard try await pair.expectSameObservation(after: "setup") else { return }
     for step in 0..<70 {
@@ -1177,6 +1189,54 @@ extension InstantFastDrainTests {
       expectNoDifference(reducedObservation.persistedFacts, fullObservation.persistedFacts, "round \(round)")
       expectNoDifference(reducedObservation.outbox, fullObservation.outbox, "round \(round)")
     }
+  }
+
+  /// Scribe keeps segment text and words out of memory (deferred residency), so the store could not show them to the
+  /// reduction, which then saw every restated segment as a change beneath its pending writes. Seen live on the fixed
+  /// reduction's first soak: changesShadowedFact on `transcriptionSegments/text` and `wordsJSON` in most declines. The
+  /// reduction must hydrate them, as the full rebase does, and match the full rebase afterwards.
+  @Test
+  func deferredSegmentTextDoesNotForceARebase() async throws {
+    var reduced = try await FastDrainFixture.make(
+      suffix: "deferred-reduced", serverSegmentCount: 6, pendingSegmentCount: 4, defersSegmentText: true
+    )
+    var full = try await FastDrainFixture.make(
+      suffix: "deferred-full", serverSegmentCount: 6, pendingSegmentCount: 4, reducesServerApply: false,
+      defersSegmentText: true
+    )
+    let (measurement, declines) = try await FastDrainDeclineCounter.counting {
+      try await reduced.drain(maximumFrames: 12)
+    }
+    _ = try await full.drain(maximumFrames: 12)
+    expectNoDifference(measurement.rebases, 0, "declines: \(declines)")
+    let reducedObservation = try await FastDrainObservation.observe(reduced.runtime)
+    let fullObservation = try await FastDrainObservation.observe(full.runtime)
+    expectNoDifference(reducedObservation.persistedFacts, fullObservation.persistedFacts)
+    expectNoDifference(reducedObservation.outbox, fullObservation.outbox)
+  }
+
+  /// Scribe writes a recording's links from the other side: each summary re-asserts the transcription's `recording`,
+  /// which the store keeps as the recording's `transcriptions`. Seen live: reverseLinkWriter declines on
+  /// `recordings/transcriptions` and `recordings/attachments` whenever such a write was pending. The writer's receipt
+  /// shows the link was already there, so the frame changes nothing beneath it.
+  @Test
+  func aLinkReassertedFromTheOtherSideDoesNotForceARebase() async throws {
+    var reduced = try await FastDrainFixture.make(
+      suffix: "reverse-link-reduced", serverSegmentCount: 6, pendingSegmentCount: 4, scribeLinks: true
+    )
+    var full = try await FastDrainFixture.make(
+      suffix: "reverse-link-full", serverSegmentCount: 6, pendingSegmentCount: 4, reducesServerApply: false,
+      scribeLinks: true
+    )
+    let (measurement, declines) = try await FastDrainDeclineCounter.counting {
+      try await reduced.drain(maximumFrames: 12)
+    }
+    _ = try await full.drain(maximumFrames: 12)
+    expectNoDifference(measurement.rebases, 0, "declines: \(declines)")
+    let reducedObservation = try await FastDrainObservation.observe(reduced.runtime)
+    let fullObservation = try await FastDrainObservation.observe(full.runtime)
+    expectNoDifference(reducedObservation.persistedFacts, fullObservation.persistedFacts)
+    expectNoDifference(reducedObservation.outbox, fullObservation.outbox)
   }
 
   /// Recording 023 ends with a Stop: the only pending write of `activityKind`, behind every other pending write of the

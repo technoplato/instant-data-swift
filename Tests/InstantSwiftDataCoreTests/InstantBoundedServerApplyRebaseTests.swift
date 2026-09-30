@@ -1748,6 +1748,10 @@ private func boundedServerApplyRuntime(
     initialAttributes: boundedServerApplyAttributes,
     deferredValueResidency: deferredValueResidency
   )
+  // These tests measure the whole-component rebase: paging, closure, and catch-up. The server-apply reduction
+  // (#296) handles several of their frames without one (a server change beneath a chain of writers becomes a receipt
+  // patch), so select the rebase explicitly. InstantFastDrainTests compares the two paths.
+  configuration.reducesServerApplyToAffectedOverlays = false
   configuration.onServerApplyPreparedBeforeCommitForTesting = onPrepared
   configuration.onServerApplyCatchUpReplayedOutsideOperationGateForTesting =
     onCatchUpReplayedOutsideOperationGate
@@ -1769,6 +1773,7 @@ private func boundedServerApplyPeerRuntime(
     persistenceURL: cacheURL,
     initialAttributes: boundedServerApplyAttributes
   )
+  configuration.reducesServerApplyToAffectedOverlays = false
   configuration.onServerApplyPreparedBeforeCommitForTesting = onPrepared
   configuration.onServerApplyCatchUpReplayedForTesting = onCatchUpReplayed
   return try await InstantRuntime.bootstrap(configuration: configuration)

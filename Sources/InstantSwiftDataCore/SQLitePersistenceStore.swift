@@ -508,10 +508,12 @@ struct InstantServerApplyReductionContext: Sendable {
   /// For each shadowed entity with a first writer, the earliest surviving pending write that touches the entity at
   /// all. When it is the slot's first writer, no earlier pending write can have removed the slot's base value.
   var firstOverlayByEntity: [String: String] = [:]
-  /// Reverse-form link slots (target entity, reverse attribute) that a surviving pending write inserts. A write of
-  /// `transcriptionSegments/recording` on a segment materializes as `recordings/segments` on the recording, but its
-  /// write key names the segment's slot, so a forward link fact alone cannot see that write.
-  var reverseLinkSlotsWithWriters: Set<InstantVisibleWriteKey> = []
+  /// For each reverse-form link slot (target entity, reverse attribute) that surviving pending writes insert, the
+  /// earliest and the latest such write. A write of `transcriptionSegments/recording` on a segment materializes as
+  /// `recordings/segments` on the recording, but its write key names the segment's slot, so a forward link fact alone
+  /// cannot see that write.
+  var firstReverseLinkWriterBySlot: [InstantVisibleWriteKey: String] = [:]
+  var lastReverseLinkWriterBySlot: [InstantVisibleWriteKey: String] = [:]
   /// The durable bodies of every write named above.
   var bodies: [String: PendingMutation] = [:]
 }
@@ -4140,9 +4142,14 @@ public actor SQLitePersistenceStore {
           bodyIDs.insert(firstOverlay)
         }
       }
-      for slot in reverseLinkSlots.sorted(by: { ($0.entityID, $0.attributeID) < ($1.entityID, $1.attributeID) })
-      where try writer(of: slot.attributeID, on: slot.entityID, newest: false) != nil {
-        context.reverseLinkSlotsWithWriters.insert(slot)
+      for slot in reverseLinkSlots.sorted(by: { ($0.entityID, $0.attributeID) < ($1.entityID, $1.attributeID) }) {
+        guard let first = try writer(of: slot.attributeID, on: slot.entityID, newest: false) else { continue }
+        context.firstReverseLinkWriterBySlot[slot] = first.mutationID
+        bodyIDs.insert(first.mutationID)
+        if let last = try writer(of: slot.attributeID, on: slot.entityID, newest: true) {
+          context.lastReverseLinkWriterBySlot[slot] = last.mutationID
+          bodyIDs.insert(last.mutationID)
+        }
       }
       guard bodyIDs.count <= InstantServerApplyReductionLimits.maximumBodies else {
         return .ineligible(.tooManyBodies)
@@ -6283,18 +6290,18 @@ public actor SQLitePersistenceStore {
     return application
   }
 
+  /// The outbox's newest creation time, and the newest row in delivery order (`created_at_ms`, then `mutation_id`),
+  /// which a write must follow to be the tail.
   func latestOutboxCreationTimestamp(expectedOutboxRevision: Int64) throws
-    -> (matchesRevision: Bool, timestamp: InstantTimestamp?)
+    -> (matchesRevision: Bool, timestamp: InstantTimestamp?, tail: InstantOutboxDeliveryPosition?)
   {
     try readTransaction {
       guard
         try loadMetadataRevisionWithoutTransaction(Self.outboxRevisionKey)
           == expectedOutboxRevision
-      else { return (false, nil) }
-      let timestamp = try selectScalar(
-        "SELECT CAST(MAX(created_at_ms) AS TEXT) FROM instant_outbox"
-      ).flatMap(Int64.init).map(InstantTimestamp.init(milliseconds:))
-      return (true, timestamp)
+      else { return (false, nil, nil) }
+      let tail = try latestOutboxPositionWithoutTransaction()
+      return (true, tail.map { InstantTimestamp(milliseconds: $0.createdAtMilliseconds) }, tail)
     }
   }
 
