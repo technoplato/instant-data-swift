@@ -1,3 +1,6 @@
+## 2026-09-30 01:19:55 EDT — realtime-voice-sqlite-instant `3fbf226f12afa98cfbca21b669b734ab90551308`
+Correct the stale-writes channel note: which server results the phone applied during the loop (#296).
+
 ## 2026-09-30 01:03:17 EDT — realtime-voice-sqlite-instant `e600c66bc02627992b2fa43468624f78d9413865`
 Note the stale-writes branches, the reconnect-loop finding, and the waiting recovery in the Recording 023 channel (#296 #113).
 
