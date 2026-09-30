@@ -860,6 +860,11 @@ private actor InstantRuntimeReconnectController {
     taskOwner.isIdle
   }
 
+  /// A reconnect is waiting out its backoff or connecting, so it owns the next connection (#296).
+  var ownsNextConnection: Bool {
+    !taskOwner.isIdle
+  }
+
   private func run(
     sleep: @escaping @Sendable (UInt64) async throws -> Void,
     reconnect: @escaping @Sendable () async throws -> Void
@@ -5850,8 +5855,12 @@ public final class InstantRuntime: Sendable {
     guard configuration.liveTransport != nil else { return }
     guard configuration.autoConnectLiveTransport else { return }
     guard await !liveSession.isOpen else { return }
+    // A scheduled reconnect owns the next connection (#296). Upstream `Reactor.js` reconnects only from
+    // `_transportOnClose` through `_scheduleReconnect`; `_trySend` never starts a socket, and `_reconnectTimeoutMs`
+    // resets only on init-ok. Build 72 cancelled the controller here and connected at once: every write reset the
+    // backoff, and a socket death opened a second connection for the same failure.
+    guard await !reconnectController.ownsNextConnection else { return }
     guard try await persistedConnectionState() != .closed else { return }
-    await reconnectController.cancelAndWait()
     _ = try await connectLiveSession(reportsFailure: true, onlyIfNeeded: true)
   }
 
@@ -5924,6 +5933,11 @@ public final class InstantRuntime: Sendable {
 
   package func liveReconnectControllerIsIdleForTesting() async -> Bool {
     await reconnectController.isIdleForTesting()
+  }
+
+  /// The live receiver has applied every frame it took from the socket and is waiting for the next one (#296).
+  package func liveReceiverIsWaitingForAFrameForTesting() async -> Bool {
+    await liveSession.applierIsWaitingForAFrameForTesting()
   }
 
   package func exactCloseBackgroundTasksAreIdleForTesting() async -> Bool {
@@ -6090,19 +6104,6 @@ public final class InstantRuntime: Sendable {
     onlyIfNeeded: Bool = false
   ) async throws -> InstantConnectionStatus {
     let startedAt = Date()
-    InstantDiagnostics.shared.record(
-      .info,
-      subsystem: "instant-swift-data-core",
-      category: "connection",
-      event: "connection.open-started",
-      message: "Opening the Instant connection.",
-      metadata: [
-        "appID": configuration.appID,
-        "transport": configuration.liveTransport == nil ? "local-cache" : "websocket",
-        "isReconnect": String(!reportsFailure),
-        "websocketHost": configuration.websocketURI.host ?? "unknown",
-      ]
-    )
     var enteredConnectionGate = false
     var enteredOperationGate = false
     do {
@@ -6137,6 +6138,20 @@ public final class InstantRuntime: Sendable {
           return status
         }
       }
+      // Logged once the call has decided to open, so `open-started` counts connections, not reused ones (#296).
+      InstantDiagnostics.shared.record(
+        .info,
+        subsystem: "instant-swift-data-core",
+        category: "connection",
+        event: "connection.open-started",
+        message: "Opening the Instant connection.",
+        metadata: [
+          "appID": configuration.appID,
+          "transport": configuration.liveTransport == nil ? "local-cache" : "websocket",
+          "isReconnect": String(!reportsFailure),
+          "websocketHost": configuration.websocketURI.host ?? "unknown",
+        ]
+      )
       if let liveTransport = configuration.liveTransport {
         recordActorHop(.persistence)
         if let blocker = try await persistence.synchronizationBlocker() {
@@ -6700,10 +6715,19 @@ public final class InstantRuntime: Sendable {
     return release.mutationIDs
   }
 
+  /// Schedules one reconnect after `error`, with the controller's backoff.
+  ///
+  /// - Parameter replacesOpenSession: `true` when the session that still reports open is the one that failed: a
+  ///   mutation send failed on it. Every other failure has already ended its session, so a session that is open when
+  ///   the attempt runs opened after the failure, and the attempt reuses it instead of opening another (#296).
+  ///   Upstream `_startSocket` closes an open previous transport, but it runs only from `_scheduleReconnect` and the
+  ///   network listener, so it rarely meets a session this fresh. Swift has more connection paths (the delivery pump,
+  ///   sign-in), and replacing a fresh session re-adds every query. In Recording 023 that meant another 26-37 s apply.
   private func scheduleReconnect(
     after error: Error,
     event: String,
-    message: String
+    message: String,
+    replacesOpenSession: Bool = false
   ) async {
     guard !Task.isCancelled else { return }
     if Self.requiresManualOptimisticEffectRecovery(error) {
@@ -6760,7 +6784,10 @@ public final class InstantRuntime: Sendable {
         sleep: configuration.liveReconnectSleep,
         reconnect: { [weak self] in
           guard let self else { throw CancellationError() }
-          _ = try await self.connectLiveSession(reportsFailure: false)
+          _ = try await self.connectLiveSession(
+            reportsFailure: false,
+            onlyIfNeeded: !replacesOpenSession
+          )
         }
       )
     }
@@ -7438,7 +7465,8 @@ public final class InstantRuntime: Sendable {
         await scheduleReconnect(
           after: error,
           event: "connection.mutation-delivery-failed",
-          message: "Instant could not send durable mutations and will reconnect before retrying."
+          message: "Instant could not send durable mutations and will reconnect before retrying.",
+          replacesOpenSession: true
         )
       }
       return true
@@ -7510,7 +7538,8 @@ public final class InstantRuntime: Sendable {
         await scheduleReconnect(
           after: error,
           event: "connection.mutation-delivery-failed",
-          message: "Instant could not send durable mutations and will reconnect before retrying."
+          message: "Instant could not send durable mutations and will reconnect before retrying.",
+          replacesOpenSession: true
         )
       }
       return .finished

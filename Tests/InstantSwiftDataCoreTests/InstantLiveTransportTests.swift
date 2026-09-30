@@ -4461,6 +4461,7 @@ struct InstantLiveTransportTests {
       )
     )
     await session.waitForReceiveRequestCount(receiveCountBeforeDuplicate + 1)
+    try await waitForLiveReceiverToApplyTakenFrames(runtime)
     let duplicateDecodeCount = await runtime.persistence.currentDecodedOutboxBodyCount()
     let revisionAfterDuplicate = try await runtime.persistence.currentOutboxRevision()
     let sentAfterDuplicate = await session.sentMessages().map(\.op)
@@ -4610,6 +4611,7 @@ struct InstantLiveTransportTests {
       )
     )
     await session.waitForReceiveRequestCount(receiveCountBeforeDuplicate + 1)
+    try await waitForLiveReceiverToApplyTakenFrames(runtime)
     let revisionAfterDuplicate = try await runtime.persistence.currentOutboxRevision()
     let decodeCountAfterDuplicate = await runtime.persistence.currentDecodedOutboxBodyCount()
     expectNoDifference(revisionAfterDuplicate, revisionBeforeDuplicate)
@@ -4804,6 +4806,7 @@ struct InstantLiveTransportTests {
       )
     )
     await session.waitForReceiveRequestCount(receiveCountBeforeError + 1)
+    try await waitForLiveReceiverToApplyTakenFrames(runtime)
 
     let staleErrorDecodeCount = await runtime.persistence.currentDecodedOutboxBodyCount()
     let durable = try await runtime.persistence.loadState().snapshot.outbox
@@ -4874,6 +4877,7 @@ struct InstantLiveTransportTests {
       )
     )
     await session.waitForReceiveRequestCount(receiveCountBeforeAcknowledgement + 1)
+    try await waitForLiveReceiverToApplyTakenFrames(runtime)
 
     let durable = try await runtime.persistence.loadState().snapshot.outbox
     let mutation = try #require(durable.first { $0.id == mutationID })
@@ -4908,6 +4912,10 @@ struct InstantLiveTransportTests {
     configuration.onLiveReceiverEventAcquiredForTesting = {
       await responseGate.suspend()
     }
+    // No acknowledgement-deadline wake may start a delivery pass mid-test (see the settle wait below).
+    configuration.liveMutationDeadlineSleep = { _ in
+      try await Task.sleep(nanoseconds: 3_600_000_000_000)
+    }
     let runtime = try await InstantRuntime.bootstrap(configuration: configuration)
     _ = try await runtime.connect()
     let mutationID = "tx-runtime-live-response-token"
@@ -4925,6 +4933,18 @@ struct InstantLiveTransportTests {
       createdAt: createdAt
     )
     await session.waitForSentMessageCount(2)
+    // Let every delivery pass the write started finish before the reclaim below (#296). A pass that runs between the
+    // reclaim and the stale answer's recording claims the write under a new token but cannot send it while the first
+    // offer is still in flight, so the reoffer this test waits for never comes. The reader's hand-off to the applier
+    // widened that window enough to hit it under load.
+    try await instantLiveWithTimeout(
+      operation: "wait for the write's delivery passes to settle",
+      timeoutMilliseconds: 5_000
+    ) {
+      while await !runtime.automaticMutationPumpIsIdleForTesting() {
+        try await Task.sleep(nanoseconds: 1_000_000)
+      }
+    }
     let originalClaim = try #require(
       try await runtime.persistence.outboxDeliveryClaimForTesting(id: mutationID)
     )
@@ -4975,6 +4995,7 @@ struct InstantLiveTransportTests {
     ) {
       await session.waitForReceiveRequestCount(receiveCountBeforeAcknowledgement + 1)
     }
+    try await waitForLiveReceiverToApplyTakenFrames(runtime)
 
     let revisionAfterStaleDisposition = try await runtime.persistence.currentOutboxRevision()
     expectNoDifference(revisionAfterStaleDisposition, revisionBeforeStaleDisposition)
@@ -4982,11 +5003,18 @@ struct InstantLiveTransportTests {
     let pending = try #require(durable.first { $0.id == mutationID })
     expectNoDifference(pending.status, .pending)
     expectNoDifference(pending.serverTransactionID, nil)
-    let claimAfterStaleDisposition = try await runtime.persistence
-      .outboxDeliveryClaimForTesting(id: mutationID)
-    expectNoDifference(
-      claimAfterStaleDisposition,
-      replacementClaim
+    let claimAfterStaleDisposition = try #require(
+      try await runtime.persistence.outboxDeliveryClaimForTesting(id: mutationID)
+    )
+    // The stale answer must not adopt or alter the replacement's claim. Only the deadline may move, and only later:
+    // the disposition requests delivery while its frame still counts as applied, and that pump pass defers this
+    // socket's claim deadlines (deferAcknowledgementDeadlinesWhileAFrameIsApplied, #296).
+    var claimIgnoringDeadline = claimAfterStaleDisposition
+    claimIgnoringDeadline.deadlineMilliseconds = replacementClaim.deadlineMilliseconds
+    expectNoDifference(claimIgnoringDeadline, replacementClaim)
+    #expect(
+      (claimAfterStaleDisposition.deadlineMilliseconds ?? .min)
+        >= (replacementClaim.deadlineMilliseconds ?? .min)
     )
     let sentMutationIDs = await session.sentMessages()
       .filter { $0.op == "transact" }
@@ -6846,6 +6874,20 @@ private func waitForOperationGateHopCount(
     await Task.yield()
   }
   return recorder.summary(since: baseline).breakdown["operation-gate", default: 0] >= count
+}
+
+/// Waits until the live receiver has applied every frame it took and is waiting for the next one (#296). The reader
+/// asks for the next frame as soon as it buffers one, so the next `receive()` request alone no longer proves that the
+/// frame before it was applied.
+private func waitForLiveReceiverToApplyTakenFrames(_ runtime: InstantRuntime) async throws {
+  try await instantLiveWithTimeout(
+    operation: "wait for the live receiver to apply the frames it took",
+    timeoutMilliseconds: 5_000
+  ) {
+    while await !runtime.liveReceiverIsWaitingForAFrameForTesting() {
+      try await Task.sleep(nanoseconds: 1_000_000)
+    }
+  }
 }
 
 private func temporaryLiveCacheURL() throws -> URL {

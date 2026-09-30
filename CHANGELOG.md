@@ -27,6 +27,46 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
   > If refusals still force rebases, go ahead with overlay removal without a rebase.
 - **SpecStory:** unavailable — Claude Code agent session (fast-drain); no SpecStory capture configured for this session.
 
+## September 30th, 2026 at 1:04:58 p.m. EDT — `5e994bdc92e5` Let the stale-acknowledgement test settle its delivery passes before it reclaims the write (#296)
+
+- **Implementation commit:** `5e994bdc92e5fc0543798ab23283828d9ea9d8c8`
+- **Change:** The stale-acknowledgement test lets its delivery passes settle before it reclaims the write, so a pass cannot strand the reoffer it waits for (#296).
+- **Details:**
+  - A pass that ran between the test's external reclaim and the stale answer's recording claimed the write under a new token but could not send it while the first offer was still in flight (pendingCount=1, skippedAlreadyInFlight=1); the next pass only deferred that claim. The reader's hand-off to the applier widened this pre-existing window: 6 timeouts in 35 runs on this branch at load 216-790, 0 in 20 on 0078484f at load 680-940.
+  - The test waits for automaticMutationPumpIsIdleForTesting() before reading and reclaiming the claim, and parks acknowledgement-deadline wakes. 40 of 40 runs pass at load 693-929. Production is unaffected: a single runtime reclaims only its own claims, through the timeout path that also clears the in-flight reservation.
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantLiveTransportTests.swift` — settle wait and parked deadline wake in the stale-acknowledgement test
+- **User context (verbatim):**
+  > If your reader/applier change touches the deferral, please run this test several times under load.
+- **SpecStory:** unavailable — Claude Code agent session (connection-survival); no SpecStory capture configured for this session.
+
+## September 30th, 2026 at 1:04:58 p.m. EDT — `2ddad19f7056` Say which server the keepalive measurements came from (#296)
+
+- **Implementation commit:** `2ddad19f7056b3fed9e6b7d42166888fb1a1ecf4`
+- **Change:** Comments name the server the keepalive measurements came from: Instant's hosted server through the throwaway app bd40c50a, not Scribe's production app (#296).
+- **Details:**
+  - Comment-only change in the receive buffer's documentation and both new test files. No connection was made to Scribe's production app; the live probe refuses its app id prefix.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantRuntimeLiveSession.swift` — InstantLiveReceivedFrames documentation
+  - `Tests/InstantSwiftDataCoreTests/InstantLiveConnectionSurvivalTests.swift` — suite documentation
+  - `Tests/InstantSwiftDataCoreTests/InstantURLSessionKeepaliveLiveTests.swift` — suite documentation
+- **User context (verbatim):**
+  > If you mean Instant's hosted server (api.instantdb.com) reached through the throwaway app bd40c50a, say exactly that
+- **SpecStory:** unavailable — Claude Code agent session (connection-survival); no SpecStory capture configured for this session.
+
+## September 30th, 2026 at 1:04:57 p.m. EDT — `8abcc002cdfa` Let the stale-acknowledgement test accept a deadline the acknowledgement deferral moved later (#296)
+
+- **Implementation commit:** `8abcc002cdfaa45eefd87d20aa1d76a1d72c7ba0`
+- **Change:** The stale-acknowledgement test accepts a claim deadline that the acknowledgement deferral moved later, and still asserts that the stale answer adopted nothing (#296).
+- **Details:**
+  - The stale answer's disposition requests delivery while its frame still counts as applied, so that pump pass runs deferAcknowledgementDeadlinesWhileAFrameIsApplied (4e281ddd) and moves the replacement claim's deadline a few milliseconds later. The test compared the whole claim, deadline included.
+  - Pre-existing: on 0078484f the unmodified test failed 20 of 20 runs at load 680-940 with a 3 ms deadline difference; claude-opus-5.5-fast-drain saw it at load 490-790. On the reader commit it failed 3 of 15 at load 340-760. The test now compares every field except the deadline and requires the deadline not to move earlier; skipping the deferral would be wrong, because the replacement's answer is queued behind the paused frame.
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantLiveTransportTests.swift` — staleAcknowledgementCannotAdoptAClaimTokenReofferedDuringResponseRecording ignores only a later deadline
+- **User context (verbatim):**
+  > Either make the test tolerate a deferred deadline (compare token, claimant, and state rather than the deadline), or make the deferral skip claims the paused frame cannot be holding. Your call.
+- **SpecStory:** unavailable — Claude Code agent session (connection-survival); no SpecStory capture configured for this session.
+
 ## September 30th, 2026 at 11:47:07 a.m. EDT — `b4b9fbe32d6d` Hydrate deferred values, prove reverse-form links from their writers' receipts, and order the tail check by id (#296)
 
 - **Implementation commit:** `b4b9fbe32d6d89f223a69f76e05dc1180bc8fe3b`
@@ -45,6 +85,51 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
   > It must keep up like 4e281ddd (pending near 0, CPU about 30%) and also beat it on the big backlog.
 - **SpecStory:** unavailable — Claude Code agent session (fast-drain); no SpecStory capture configured for this session.
 
+## September 30th, 2026 at 11:39:55 a.m. EDT — `7cf2658e6ccd` Keep reading the socket while a frame applies, so URLSession keeps answering server pings (#296)
+
+- **Implementation commit:** `7cf2658e6ccd55fb763dc054ebccb8ec15b56a72`
+- **Change:** The live receiver keeps a receive() outstanding while a frame applies, so URLSession keeps answering server pings and a long apply no longer loses the socket (#296).
+- **Details:**
+  - URLSession answers a ping only while a receive() is outstanding; the server closes a client silent for its idle timeout (about 20-30 s measured). Build 72 applied each frame before calling receive() again, so Recording 023's 26-37 s applies lost the socket: connection 3 applied an add-query-ok from 319.7 s to 350.3 s, then failed its next send and receive with POSIX 57.
+  - The receiver is now a reader and one sequential applier in one generation's task group, joined by InstantLiveReceivedFrames (128 frames, backpressure when full). The applier keeps the single loop's checks and bookkeeping: generation and session checks, record's in-flight and claim-token capture, frameBeingApplied() for the acknowledgement deferral and its 120 s cap. A frame buffered for an old generation is never applied, a retained send failure stops the applier before the next frame, and the terminal error follows every earlier frame (upstream onmessage before onclose).
+  - Five InstantLiveTransportTests now also wait for liveReceiverIsWaitingForAFrameForTesting(), because the next receive() request no longer proves a frame was applied. Four deterministic tests were red on 0078484f and are green; two buffer tests are new. Live against bd40c50a the runtime check went from 2 connection attempts and 1 receive-loop failure after a 40 s apply to 1 and 0.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantRuntimeLiveSession.swift` — InstantLiveReceivedFrames, the reader and applier receiver, the retained-failure check, and the applier-idle test accessor
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — liveReceiverIsWaitingForAFrameForTesting
+  - `Tests/InstantSwiftDataCoreTests/InstantLiveConnectionSurvivalTests.swift` — keepalive, ordering, replacement, send-failure, and buffer tests
+  - `Tests/InstantSwiftDataCoreTests/InstantLiveTransportTests.swift` — five tests wait for the applier instead of the next receive() request
+- **User context (verbatim):**
+  > Keep the socket answering pings while a frame applies.
+- **SpecStory:** unavailable — Claude Code agent session (connection-survival); no SpecStory capture configured for this session.
+
+## September 30th, 2026 at 10:39:05 a.m. EDT — `473fc933766d` Open one replacement connection per socket death, and keep the reconnect backoff when writes arrive (#296)
+
+- **Implementation commit:** `473fc933766d7db56e91c41a51b0871c171abd80`
+- **Change:** One socket death opens exactly one replacement connection, and writes no longer reset the reconnect backoff (#296).
+- **Details:**
+  - Build 72 had two reconnect paths for one loss: the receive loop's failure scheduled a reconnect, and the pump's next pass cancelled the controller (cancelAndWait) and connected itself. The cancelled attempt was aborted mid-handshake, or the controller later replaced the pump's fresh session because a reconnect never reused an open session. Recording 023 logged two or three connection.open-started per socket death.
+  - ensureLiveConnectionIfNeeded() defers to a reconnect that is waiting out its backoff or connecting (ownsNextConnection), like upstream _trySend, which never starts a socket; _reconnectTimeoutMs resets only on init-ok. A reconnect for a lost session reuses a session opened after the loss; only connection.mutation-delivery-failed replaces the open session, which is the failed one there. Divergence from upstream _startSocket, which closes an open previous transport, is cited in scheduleReconnect's documentation.
+  - connection.open-started is logged only when a connection will actually open. Tests seen red on 0078484f and green here: one replacement per death (3 attempts before, 2 after), reuse of a session opened by sign-in during the backoff (4 before, 3 after), and no connection or backoff cancellation from a write during the backoff.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — reconnect ownership in ensureLiveConnectionIfNeeded, reuse semantics in scheduleReconnect, and the open-started log position
+  - `Tests/InstantSwiftDataCoreTests/InstantLiveConnectionSurvivalTests.swift` — deterministic scripted-socket tests for one replacement per socket death, reuse, and backoff
+- **User context (verbatim):**
+  > Make the fix so that exactly one replacement connection opens.
+- **SpecStory:** unavailable — Claude Code agent session (connection-survival); no SpecStory capture configured for this session.
+
+## September 30th, 2026 at 10:38:16 a.m. EDT — `574098782627` Prove with the library's URLSession transport that a withheld receive() loses the socket (#296)
+
+- **Implementation commit:** `5740987826273333323c80f40309c839ca823b0a`
+- **Change:** An opt-in live suite proves, with the library's own URLSession transport, that a withheld receive() loses the socket (#296).
+- **Details:**
+  - Server rule (upstream websocket.clj, straight-jacket-run-ping-job): ping every 5 s; close a client that sent no text, binary, or pong frame for the idle timeout. Measured against the throwaway app bd40c50a: with receive() withheld the socket survived 20 s (2 of 2), died at 24-28 s in 3 of 6 trials and at 32-45 s in 7 of 7, always with POSIX 57, as on the device; a Node client that never pongs is closed at 25.2-25.7 s.
+  - Locally (127.0.0.1, the library's URLSession configuration): with no receive() outstanding URLSession sent 0 pongs over plain, TLS, and permessage-deflate sockets, with and without server data frames; with a receive() pending it answered 30 of 30 pings within about 10 ms.
+  - The suite's probe: 10 s alive; 40 s without receive() closed; 40 s with a receive() pending alive. Its runtime check holds one frame's apply for 40 s on a fresh room join; on build 72's receive loop it fails with 2 connection attempts and 1 receive-loop failure. Heavy unread server traffic postpones the close through TCP backpressure on the server's ping job, so the probes keep their sockets quiet.
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantURLSessionKeepaliveLiveTests.swift` — credentialed, opt-in measurement of the close threshold and of the runtime through a long apply; refuses the production app prefix
+- **User context (verbatim):**
+  > Prove the cause with URLSession specifically (red evidence).
+- **SpecStory:** unavailable — Claude Code agent session (connection-survival); no SpecStory capture configured for this session.
 ## September 30th, 2026 at 10:05:34 a.m. EDT — `2666d34396f4` Re-receipt the first pending writer when the server changes a slot beneath it, instead of rebasing the component (#296)
 
 - **Implementation commit:** `2666d34396f43800a94692cfd7b8925afa5d890b`
