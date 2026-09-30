@@ -10,6 +10,41 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## September 30th, 2026 at 12:58:24 a.m. EDT — `4e281ddd0e22` Keep delivery claims while a server frame is still applying, and name what a refusal refused (#296)
+
+- **Implementation commit:** `4e281ddd0e22a1c4263b44559bf530ab99c4cef4`
+- **Change:** Delivery claims wait behind a server frame the receive loop is still applying, and every refusal names what it refused and whether it was a replay (#296).
+- **Details:**
+  - Recording 023 (build 69): after each reconnect the first query result started a 22-25 s optimistic rebase of the 2,487-mutation outbox, and the head's transact-ok waited behind it. The 6 s acknowledgement deadline reclaimed the head, replaced the connection, and started over: 385 times in 84 minutes. Nothing after 18:23 reached the server.
+  - While the current generation applies a frame, the pump now moves this claimant's claim deadlines to at least now + 6 s before claiming. Upstream Reactor.js handles each frame synchronously (_handleReceive), so its mutation timers never fire mid-frame. One frame is deferred for at most acknowledgementDeferralLimitMilliseconds (120 s, measured reason at the declaration); after that the deadline expires as before and ack-deadline-deferral-exhausted is logged as a warning.
+  - server-error-terminal carries the hint as JSON and a refusalKind: replay when an earlier connection offered the write without an answer, otherwise first-offer. A new refused-write event names the namespace, check, entity, attributes, and short values. Both are logged before the failure is recorded.
+  - Tests: acknowledgementDeadlineWaitsWhileTheReceiverStillAppliesAnEarlierFrame fails before (2 issues) and passes after; the refusal tests were written with the change and not run red. Ten suites, 682 tests, pass with 21 known issues: 20 in tests this change does not touch, 1 declared ack-timeout report in the new replay test. Not yet measured on a device.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — deadline deferral before claiming, refusal kind and refused-write diagnostics, the deferral limit
+  - `Sources/InstantSwiftDataCore/InstantRuntimeLiveSession.swift` — the frame being applied in each generation; offers earlier connections never answered
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — move one claimant's claim deadlines; read one outbox row for diagnostics
+  - `Sources/InstantSwiftDataCore/InstantMutationRefusal.swift` — what a refusal refused, from the hint and the refused transaction
+  - `Tests/InstantSwiftDataCoreTests/InstantBoundedOutboxDeliveryTests.swift` — the deferral and the replay refusal; the stuck-frame test sets the limit to 0
+  - `Tests/InstantSwiftDataCoreTests/InstantMutationRefusalTests.swift` — refusal metadata shapes
+- **User context (verbatim):**
+  > the transcript is not loading from within the app, although the word count is
+- **SpecStory:** unavailable — Claude Code agent session (stale-writes); no SpecStory capture configured for this session.
+
+## September 30th, 2026 at 12:58:24 a.m. EDT — `8ed26be3e87a` Keep an entity whole when it leaves one live query result (#296)
+
+- **Implementation commit:** `8ed26be3e87a6607200040214bf94094ec5e52df`
+- **Change:** Replacing a live query result keeps an entity whole when it leaves that result but still has a stored fact the retraction would not remove, as #259's pruning rule already did (#296).
+- **Details:**
+  - Before: each fact the old result held and the new one lacks was retracted unless another saved result owned that exact fact. In Recording 023 the recording list's result dropped a segment when a preview slot moved while the live timeline still held 12 of its facts; the 3 list-only facts (wallClockStartedAtMs, wallClockEndedAtMs, sentToInstantAtMs) were stripped locally on 4 of 847 segments, and typed reads quarantined those rows. The server has all 16 fields.
+  - Unchanged: a server edit to an entity still in the result is applied, and an entity only one result ever held is retracted in full. Cost, the same as #259's: a remote delete of such an entity no longer propagates by it leaving a result.
+  - Tests: liveQueryReplacementKeepsAnEntityWholeWhenItOnlyLeftOneResult fails before (it retracted createdAt and isCompleted) and passes after; the control liveQueryReplacementStillRetractsEntitiesNoOtherResultHoldsAndServerEdits passes both ways. Ten suites, 682 tests, pass.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — replacement retraction collects an entity that left a result whole or not at all
+  - `Tests/InstantSwiftDataCoreTests/InstantStoreTests.swift` — the Recording 023 shape and a control
+- **User context (verbatim):**
+  > the transcript is not loading from within the app, although the word count is
+- **SpecStory:** unavailable — Claude Code agent session (stale-writes); no SpecStory capture configured for this session.
+
 ## September 29th, 2026 at 2:12:54 a.m. EDT — `fa570b3d5602` Let apps hide "Discard guest session" on the login screen (#113)
 
 - **Implementation commit:** `fa570b3d5602b43d6113d928d6e82d2c66fc80cd`
