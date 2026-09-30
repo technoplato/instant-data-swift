@@ -45,6 +45,10 @@ Touching:
 - Tests/InstantSwiftDataCoreTests/InstantInfiniteQueryLeadingRowsTests.swift (new)
 - Tests/InstantSwiftDataCoreTests/InstantInfiniteQueryParityTests.swift (the live-window test's expectations, only
   where the fix changes them)
+- Sources/InstantSwiftDataCore/InstantRuntime.swift (added 2026-09-30 19:02 EDT; `observeLiveInfiniteQueryChunk` only: a
+  defaulted parameter so a chunk created by backward navigation is not seeded from a persisted result. The property
+  test's trace showed such a page reusing the original leading watcher's query, whose cached "no rows above" made the
+  window believe it reached the top and climb to the head.)
 - CHANGELOG.md, docs/audits/commit-changelog.md, PROGRESS.md
 
 Conflict check: the last claims on InstantInfiniteQuery.swift and its parity tests are from 2026-08 and 2026-09-26
