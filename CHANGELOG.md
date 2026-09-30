@@ -10,6 +10,20 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## September 30th, 2026 at 1:04:58 p.m. EDT — `2ddad19f7056` Say which server the keepalive measurements came from (#296)
+
+- **Implementation commit:** `2ddad19f7056b3fed9e6b7d42166888fb1a1ecf4`
+- **Change:** Comments name the server the keepalive measurements came from: Instant's hosted server through the throwaway app bd40c50a, not Scribe's production app (#296).
+- **Details:**
+  - Comment-only change in the receive buffer's documentation and both new test files. No connection was made to Scribe's production app; the live probe refuses its app id prefix.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantRuntimeLiveSession.swift` — InstantLiveReceivedFrames documentation
+  - `Tests/InstantSwiftDataCoreTests/InstantLiveConnectionSurvivalTests.swift` — suite documentation
+  - `Tests/InstantSwiftDataCoreTests/InstantURLSessionKeepaliveLiveTests.swift` — suite documentation
+- **User context (verbatim):**
+  > If you mean Instant's hosted server (api.instantdb.com) reached through the throwaway app bd40c50a, say exactly that
+- **SpecStory:** unavailable — Claude Code agent session (connection-survival); no SpecStory capture configured for this session.
+
 ## September 30th, 2026 at 1:04:57 p.m. EDT — `8abcc002cdfa` Let the stale-acknowledgement test accept a deadline the acknowledgement deferral moved later (#296)
 
 - **Implementation commit:** `8abcc002cdfaa45eefd87d20aa1d76a1d72c7ba0`
