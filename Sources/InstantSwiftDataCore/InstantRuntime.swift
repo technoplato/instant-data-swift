@@ -304,11 +304,6 @@ public struct InstantRuntimeConfiguration: Sendable {
   /// Measured: one frame's optimistic rebase of a 2,487-mutation outbox took 22-25 s on an iPhone (Recording 023);
   /// 120 s leaves room for that and still reports a real hang within two minutes. 0 disables the deferral.
   package var acknowledgementDeferralLimitMilliseconds: Int64 = 120_000
-  /// Whether a server apply first drops the server facts that cannot change the authoritative base under the
-  /// pending writes, so a frame that only restates what the device shows prunes and records its results without
-  /// peeling and replaying the outbox (#296). False keeps the whole-component rebase for every frame; the
-  /// differential tests run both and compare every read.
-  package var reducesServerApplyToAffectedOverlays = true
   package var explicitMutationTransportDeadlineSleep:
     @Sendable (UInt64) async throws -> Void = instantLiveDefaultTimeoutSleep
   package var explicitMutationClaimRenewalSleep:
@@ -2294,40 +2289,22 @@ public final class InstantRuntime: Sendable {
         return predecessor
       }
       let deferredTriples = try await deferredValuesForPreparing(transaction)
-      func prepareLocalWrite(_ transaction: InstantStoreTransaction) async throws -> PreparedStoreMutation {
-        if let supersededTail, let rollback = supersededTail.rollbackTransaction {
-          // The current store includes the predecessor overlay. Peel exactly that
-          // layer and apply the newcomer on the pre-predecessor baseline. The
-          // generated newcomer rollback therefore restores authoritative state
-          // directly, regardless of how many earlier ids alias this survivor.
-          return try await store.prepare(
-            peelingOverlays: [rollback],
-            thenApplying: transaction,
-            hydratingDeferredValues: deferredTriples
-          )
-        }
-        return try await store.prepareCurrent(
+      let prepared: PreparedStoreMutation
+      if let supersededTail, let rollback = supersededTail.rollbackTransaction {
+        // The current store includes the predecessor overlay. Peel exactly that
+        // layer and apply the newcomer on the pre-predecessor baseline. The
+        // generated newcomer rollback therefore restores authoritative state
+        // directly, regardless of how many earlier ids alias this survivor.
+        prepared = try await store.prepare(
+          peelingOverlays: [rollback],
+          thenApplying: transaction,
+          hydratingDeferredValues: deferredTriples
+        )
+      } else {
+        prepared = try await store.prepareCurrent(
           transaction,
           hydratingDeferredValues: deferredTriples
         )
-      }
-      var prepared = try await prepareLocalWrite(pendingMutation.transaction)
-      // A pending write shows on top of everything the server sent (upstream `_applyOptimisticUpdates`), but
-      // cardinality-one facts resolve by stamp, and a resident fact can carry a later stamp than this write: a server
-      // fact from a clock ahead of this device's, or an overlay a server rebase restamped. The write then lost and
-      // stayed invisible, and delivery dropped it as older than the visible state, until the next whole-component
-      // rebase restamped it (#296). A write appended at the outbox tail is newest in domain order, so stamp the facts
-      // that lost past the store's newest fact, as that replay would. A write created before a queued one keeps domain
-      // order and may lose. Only local stamps change; `add-triple` carries no time.
-      let isOutboxTail = creationCursor.timestamp.map { pendingMutation.createdAt > $0 } ?? true
-      if isOutboxTail, let winning = Self.localWriteStampedToWin(
-        pendingMutation.transaction,
-        prepared: prepared,
-        deferredAttributeIDs: configuration.deferredValueResidency.attributeIDs
-      ) {
-        pendingMutation.transaction = winning
-        mutation = pendingMutation
-        prepared = try await prepareLocalWrite(winning)
       }
       Self.installPreparedOptimisticEffect(
         in: &pendingMutation,
@@ -2445,46 +2422,6 @@ public final class InstantRuntime: Sendable {
     )
     return existing.preconditions == replay.preconditions
       && existing.txSteps == replay.txSteps
-  }
-
-  /// The local write with each cardinality-one insert that preparing it left invisible (the resident fact carried a
-  /// later stamp) restamped just past the newest fact in the store (#296); nil when every insert shows. Other facts keep
-  /// their stamps, so an entity's creation time does not move. Deferred attributes are not resident, so they are not
-  /// checked.
-  static func localWriteStampedToWin(
-    _ transaction: InstantStoreTransaction,
-    prepared: PreparedStoreMutation,
-    deferredAttributeIDs: Set<String>
-  ) -> InstantStoreTransaction? {
-    var lostSlots: Set<InstantVisibleWriteKey> = []
-    for operation in transaction.operations {
-      guard case let .insert(triple) = operation,
-        !deferredAttributeIDs.contains(triple.attributeID),
-        let attribute = prepared.attributes[triple.attributeID],
-        attribute.cardinality == .one,
-        attribute.valueType != .date,
-        case let .one(shown, _)? = Self.visibleSlot(
-          prepared.indexes,
-          entityID: triple.entityID,
-          attributeID: triple.attributeID
-        ),
-        shown != triple.value
-      else { continue }
-      lostSlots.insert(InstantVisibleWriteKey(entityID: triple.entityID, attributeID: triple.attributeID))
-    }
-    guard !lostSlots.isEmpty else { return nil }
-    let newest = prepared.indexes.newestTransactionTimeMilliseconds ?? 0
-    let stamp = InstantTimestamp(milliseconds: newest == .max ? newest : newest + 1)
-    return InstantStoreTransaction(
-      id: transaction.id,
-      operations: transaction.operations.map { operation in
-        guard case var .insert(triple) = operation,
-          lostSlots.contains(InstantVisibleWriteKey(entityID: triple.entityID, attributeID: triple.attributeID))
-        else { return operation }
-        triple.txTime = stamp
-        return .insert(triple)
-      }
-    )
   }
 
   /// Keep the durable transaction and its replayed overlay on the same logical timestamp.
@@ -2719,28 +2656,6 @@ public final class InstantRuntime: Sendable {
       if mergedAttributeCount > 0 {
         footprint.isGlobal = true
       }
-      // #296: keep only the server facts that can change the authoritative base beneath the pending
-      // writes. When what remains touches no entity a surviving pending write touches, the plan peels
-      // and replays nothing.
-      // Callers see the whole authoritative transaction, including the facts this apply skipped.
-      let reportedAuthoritativeTransaction = authoritativeTransaction
-      var excludesWatermarkRoots = false
-      if configuration.reducesServerApplyToAffectedOverlays,
-        mergedAttributeCount == 0,
-        confirmingMutationID == nil,
-        !footprint.isGlobal,
-        let reduced = try await reducedServerApplyOperations(
-          authoritativeTransaction.operations,
-          processedTransactionID: processedTransactionID,
-          seed: seed
-        )
-      {
-        authoritativeTransaction.operations = reduced
-        // A reduced apply changes only entities no surviving pending write touches, so a link it changes is no
-        // reason to peel the linked entity's writes.
-        footprint = Self.serverApplyFootprint(operations: reduced, includingReferenceTargets: false)
-        excludesWatermarkRoots = true
-      }
       let hasAuthoritativeStoreChanges =
         !authoritativeTransaction.operations.isEmpty || mergedAttributeCount > 0
       let planID = "server-apply-\(configuration.makeID())"
@@ -2755,8 +2670,7 @@ public final class InstantRuntime: Sendable {
           confirmingMutationID: confirmingMutationID,
           confirmingClaimantID: confirmingMutationID == nil
             ? nil
-            : automaticDeliveryClaimantID,
-          excludesWatermarkRoots: excludesWatermarkRoots
+            : automaticDeliveryClaimantID
         )
         switch load {
         case let .ready(readyPlan):
@@ -3311,7 +3225,7 @@ public final class InstantRuntime: Sendable {
           pendingMutationCount: commit.pendingMutationCount
         )
         let applied = InstantAppliedServerTransaction(
-          transaction: reportedAuthoritativeTransaction,
+          transaction: authoritativeTransaction,
           application: application,
           confirmedMutation: confirmedMutation,
           mergedAttributeCount: mergedAttributeCount
@@ -3343,8 +3257,7 @@ public final class InstantRuntime: Sendable {
   }
 
   private static func serverApplyFootprint(
-    operations: [InstantTripleOperation],
-    includingReferenceTargets: Bool = true
+    operations: [InstantTripleOperation]
   ) -> InstantServerApplyFootprint {
     var entityIDs: Set<String> = []
     var isGlobal = false
@@ -3354,7 +3267,7 @@ public final class InstantRuntime: Sendable {
         entityIDs.insert(triple.entityID)
         switch triple.value {
         case let .ref(targetEntityID):
-          if includingReferenceTargets { entityIDs.insert(targetEntityID) }
+          entityIDs.insert(targetEntityID)
         case .lookupRef:
           isGlobal = true
         case .null, .string, .number, .bool, .date, .json:
@@ -3380,235 +3293,6 @@ public final class InstantRuntime: Sendable {
       }
     }
     return InstantServerApplyFootprint(entityIDs: entityIDs, isGlobal: isGlobal)
-  }
-
-  /// Keeps only the server facts of one apply that can change the authoritative base beneath the pending writes
-  /// (#296), or returns nil when the whole-component rebase must run.
-  ///
-  /// Upstream `Reactor.js` keeps each query's server result in its own store and reapplies every pending mutation on
-  /// top of it (`dataForQuery`, `_applyOptimisticUpdates`). Swift keeps one materialized store and peels and replays
-  /// the connected component instead, which reproduces the same store whenever every server fact already holds beneath
-  /// the overlays. While a large outbox drains, nearly every frame is of that kind: the server restates the writes this
-  /// device made. Recording 023's iPhone peeled and replayed 2,487 writes for each one, 22-25 s apiece.
-  ///
-  /// A fact on an entity that no surviving pending write touches applies exactly as the full rebase applies it, and is
-  /// skipped when it already holds. A fact on an entity a surviving write touches must already hold beneath that write:
-  /// - When no surviving write inserts its slot, pending writes can only remove from the slot, so the store holds a
-  ///   subset of the base, and a fact the store holds holds in the base.
-  /// - Otherwise the first such write's durable receipt holds the base value as its before-image, provided the writes
-  ///   before it on that entity only insert.
-  /// Anything else, and any outbox state the full rebase treats specially, returns nil.
-  private func reducedServerApplyOperations(
-    _ operations: [InstantTripleOperation],
-    processedTransactionID: String,
-    seed: InstantServerApplySeed
-  ) async throws -> [InstantTripleOperation]? {
-    func declined(
-      _ reason: InstantServerApplyReductionIneligibility,
-      fact: InstantTriple? = nil
-    ) -> [InstantTripleOperation]? {
-      var metadata = ["reason": reason.rawValue, "operationCount": String(operations.count)]
-      if let fact {
-        metadata["entityID"] = fact.entityID
-        metadata["attributeID"] = fact.attributeID
-      }
-      InstantDiagnostics.shared.record(
-        .debug,
-        subsystem: "instant-swift-data-core",
-        category: "server-apply",
-        event: "server-apply.reduction-declined",
-        message: "A server apply peels and replays its component: \(reason.rawValue).",
-        metadata: metadata,
-        correlationID: processedTransactionID
-      )
-      return nil
-    }
-    var slots: [String: Set<String>] = [:]
-    for operation in operations {
-      switch operation {
-      case let .insert(triple), let .retract(triple):
-        slots[triple.entityID, default: []].insert(triple.attributeID)
-        switch triple.value {
-        case let .ref(targetEntityID):
-          slots[targetEntityID, default: []] = slots[targetEntityID, default: []]
-        case .lookupRef:
-          return declined(.unsupportedOperation)
-        case .null, .string, .number, .bool, .date, .json:
-          break
-        }
-      default:
-        return declined(.unsupportedOperation)
-      }
-    }
-    guard !slots.isEmpty else { return operations }
-    let state = seed.state
-    recordActorHop(.persistence)
-    let load = try await persistence.loadServerApplyReductionContext(
-      slots: slots,
-      processedTransactionID: processedTransactionID,
-      expectedStoreRevision: state.storeRevision,
-      expectedAttributeRevision: state.attributeRevision,
-      expectedOutboxRevision: state.outboxRevision,
-      expectedQueryResultRevision: state.queryResultRevision
-    )
-    guard case let .ready(context) = load else {
-      if case let .ineligible(reason) = load { return declined(reason) }
-      return nil
-    }
-    switch Self.reducedServerApplyOperations(
-      operations,
-      context: context,
-      attributes: seed.preparedStore.attributes,
-      indexes: seed.preparedStore.indexes
-    ) {
-    case let .reduced(reduced):
-      return reduced
-    case let .declined(reason, fact):
-      return declined(reason, fact: fact)
-    }
-  }
-
-  static func reducedServerApplyOperations(
-    _ operations: [InstantTripleOperation],
-    context: InstantServerApplyReductionContext,
-    attributes: AttributeStore,
-    indexes: TripleIndexes
-  ) -> InstantServerApplyReduction {
-    func holds(_ triple: InstantTriple) -> Bool {
-      Self.visibleSlot(indexes, entityID: triple.entityID, attributeID: triple.attributeID)?[triple.value] != nil
-    }
-    func shownValue(of slot: InstantVisibleWriteKey) -> InstantValue? {
-      guard case let .one(value, _)? = Self.visibleSlot(
-        indexes,
-        entityID: slot.entityID,
-        attributeID: slot.attributeID
-      ) else { return nil }
-      return value
-    }
-    var kept: [InstantTripleOperation] = []
-    for operation in operations {
-      switch operation {
-      case let .insert(triple):
-        let factHolds = holds(triple)
-        guard context.shadowedEntityIDs.contains(triple.entityID) else {
-          if factHolds { continue }
-          if case let .ref(targetEntityID) = triple.value,
-            context.shadowedEntityIDs.contains(targetEntityID)
-          {
-            return .declined(.linksToShadowedEntity, fact: triple)
-          }
-          kept.append(operation)
-          continue
-        }
-        let slot = InstantVisibleWriteKey(entityID: triple.entityID, attributeID: triple.attributeID)
-        guard let firstWriterID = context.firstWriterBySlot[slot] else {
-          guard factHolds else { return .declined(.changesShadowedFact, fact: triple) }
-          continue
-        }
-        // The store must also show the latest surviving writer's value: a write that lost to a later-stamped
-        // resident fact is invisible, and only the full rebase's replay would surface it.
-        guard attributes[triple.attributeID]?.cardinality == .one,
-          let firstWriter = context.bodies[firstWriterID],
-          let lastWriter = context.lastWriterBySlot[slot].flatMap({ context.bodies[$0] }),
-          let lastWrittenValue = Self.insertedValue(of: slot, in: lastWriter),
-          shownValue(of: slot) == lastWrittenValue,
-          Self.onlyInsertsBefore(
-            firstWriter,
-            earlierOverlays: (context.earlierOverlayIDsByEntity[triple.entityID] ?? []).map {
-              context.bodies[$0]
-            }
-          ),
-          Self.beforeImage(of: slot, in: firstWriter) == triple.value
-        else { return .declined(.changesShadowedFact, fact: triple) }
-
-      case let .retract(triple):
-        if context.shadowedEntityIDs.contains(triple.entityID) {
-          return .declined(.retractsShadowedFact, fact: triple)
-        }
-        // Removing a free entity's link commutes with the pending writes on the linked entity unless a delete
-        // cascades along the link: those writes insert, and none of them depends on another entity's link being
-        // present. (A scrolled-away transcript segment leaves a paged result this way.)
-        if case let .ref(targetEntityID) = triple.value,
-          context.shadowedEntityIDs.contains(targetEntityID),
-          attributes[triple.attributeID].map({ $0.onDelete != .none || $0.onDeleteReverse != .none }) ?? true
-        {
-          return .declined(.linksToShadowedEntity, fact: triple)
-        }
-        kept.append(operation)
-
-      default:
-        return .declined(.unsupportedOperation)
-      }
-    }
-    return .reduced(kept)
-  }
-
-  /// The visible values of one slot, without materializing the entity's other facts: an entity can hold 20,000 links
-  /// (`InstantEntityWriteScopeTests`).
-  static func visibleSlot(_ indexes: TripleIndexes, entityID: String, attributeID: String) -> AttrSlot? {
-    indexes.copiedAttributeSlots(entityID: entityID)?[attributeID]
-  }
-
-  /// Whether a first writer and the pending writes before it on the same entity only insert, merge, or check. A
-  /// retraction or deletion (which can cascade) among them could make the base differ from the writer's before-image.
-  private static func onlyInsertsBefore(
-    _ firstWriter: PendingMutation,
-    earlierOverlays: [PendingMutation?]
-  ) -> Bool {
-    for mutation in [firstWriter] + earlierOverlays {
-      guard let mutation else { return false }
-      for operation in mutation.transaction.operations {
-        switch operation {
-        case .insert, .merge, .requireEntityExists, .requireEntityMissing, .requireTripleExists:
-          continue
-        default:
-          return false
-        }
-      }
-    }
-    return true
-  }
-
-  /// The value `mutation` last inserts into a slot; nil when it merges into the slot instead or never writes it.
-  private static func insertedValue(
-    of slot: InstantVisibleWriteKey,
-    in mutation: PendingMutation
-  ) -> InstantValue? {
-    var value: InstantValue?
-    for operation in mutation.transaction.operations {
-      switch operation {
-      case let .insert(triple) where triple.entityID == slot.entityID && triple.attributeID == slot.attributeID:
-        value = triple.value
-      case let .merge(triple) where triple.entityID == slot.entityID && triple.attributeID == slot.attributeID:
-        return nil
-      default:
-        continue
-      }
-    }
-    return value
-  }
-
-  /// The value a cardinality-one slot held before `mutation` applied, from its durable rollback receipt; nil when the
-  /// slot was empty, the receipt deletes the entity, or the receipt does not name exactly one prior value.
-  private static func beforeImage(
-    of slot: InstantVisibleWriteKey,
-    in mutation: PendingMutation
-  ) -> InstantValue? {
-    guard case let .materialized(rollback) = mutation.optimisticEffectReceipt else { return nil }
-    var values: [InstantValue] = []
-    for operation in rollback.operations {
-      switch operation {
-      case let .insert(triple) where triple.entityID == slot.entityID && triple.attributeID == slot.attributeID:
-        values.append(triple.value)
-      case let .deleteEntity(entityID) where entityID == slot.entityID:
-        return nil
-      case let .deleteEntityInNamespace(entityID, _) where entityID == slot.entityID:
-        return nil
-      default:
-        continue
-      }
-    }
-    return values.count == 1 ? values[0] : nil
   }
 
   /// One record per server apply: how long it held the operation gate, split by part. Local
@@ -11089,21 +10773,6 @@ public final class InstantRuntime: Sendable {
   /// the exact durable delivery claim. The live socket keeps its registered
   /// queries; the local rollback publication is sufficient, matching upstream
   /// Reactor `_handleMutationError`.
-  /// The live refusal path (an `error` frame for a claimed write) for tests, including its deferral of a component
-  /// larger than one claim window to the next server apply.
-  package func failClaimedMutationForTesting(
-    id: String,
-    message: String,
-    claimToken: String
-  ) async throws -> PendingMutation? {
-    try await failClaimedMutation(
-      id: id,
-      failure: InstantMutationFailure(code: PendingMutation.failureCode(message: message), message: message),
-      requiredClaimToken: claimToken,
-      recordsConnectionFailure: false
-    )
-  }
-
   private func failClaimedMutation(
     id: String,
     failure: InstantMutationFailure,
