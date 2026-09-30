@@ -265,30 +265,63 @@ func validateInstantAuthResponse(
   operation: String
 ) throws {
   guard (200..<300).contains(response.statusCode) else {
+    let body = InstantAuthFailureBody(response.data)
     throw InstantError(
       code: .authFailed,
       operation: operation,
-      message: instantAuthFailureMessage(response),
-      recovery: "Verify the app ID and authentication credentials, then try again."
+      message: instantAuthFailureMessage(statusCode: response.statusCode, body: body),
+      recovery: instantAuthFailureRecovery(body)
     )
+  }
+}
+
+/// The parts of an Instant auth error body that are safe to show: `type`, `message`, and the
+/// name of the refused input (`hint.data-type`, for example `shared-credentials`).
+///
+/// The rest of Instant's `hint` is never read: it can echo request arguments, including refresh
+/// tokens.
+private struct InstantAuthFailureBody: Decodable {
+  var type: String?
+  var message: String?
+  var refusedInput: String?
+
+  init(_ data: Data) {
+    self = (try? JSONDecoder().decode(Self.self, from: data)) ?? Self()
+  }
+
+  private init() {}
+
+  private enum CodingKeys: String, CodingKey {
+    case type
+    case message
+    case hint
+  }
+
+  private struct Hint: Decodable {
+    var dataType: String?
+
+    private enum CodingKeys: String, CodingKey {
+      case dataType = "data-type"
+    }
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    type = try? container.decodeIfPresent(String.self, forKey: .type)
+    message = try? container.decodeIfPresent(String.self, forKey: .message)
+    // A hint that is not an object is ignored, so the type and message still reach the user.
+    refusedInput = (try? container.decodeIfPresent(Hint.self, forKey: .hint))?.dataType
   }
 }
 
 /// The HTTP status plus Instant's error `type` and `message`, for example
 /// `Instant auth returned HTTP 400 (record-not-found): Record not found: app-user`.
-///
-/// Instant's `hint` is never copied: it can echo request arguments, including refresh tokens.
-private func instantAuthFailureMessage(_ response: InstantAuthHTTPResponse) -> String {
-  struct Body: Decodable {
-    var type: String?
-    var message: String?
-  }
-  let body = try? JSONDecoder().decode(Body.self, from: response.data)
-  var message = "Instant auth returned HTTP \(response.statusCode)"
-  if let type = body?.type, !type.isEmpty {
+private func instantAuthFailureMessage(statusCode: Int, body: InstantAuthFailureBody) -> String {
+  var message = "Instant auth returned HTTP \(statusCode)"
+  if let type = body.type, !type.isEmpty {
     message += " (\(type))"
   }
-  if let serverMessage = body?.message?.trimmingCharacters(in: .whitespacesAndNewlines),
+  if let serverMessage = body.message?.trimmingCharacters(in: .whitespacesAndNewlines),
     !serverMessage.isEmpty
   {
     message += ": \(serverMessage.prefix(300))"
@@ -296,4 +329,18 @@ private func instantAuthFailureMessage(_ response: InstantAuthHTTPResponse) -> S
     message += "."
   }
   return message
+}
+
+/// What to do next, from what Instant refused.
+///
+/// Instant refuses its shared development OAuth credentials for new users once an app has 100
+/// users (upstream `instant.model.shared-oauth-client/assert-shared-credentials-allowed!`). The
+/// provider sign-in itself succeeded; only the app's OAuth client configuration can fix it.
+private func instantAuthFailureRecovery(_ body: InstantAuthFailureBody) -> String {
+  switch body.refusedInput {
+  case "shared-credentials":
+    "This app's OAuth client uses Instant's shared development credentials, which Instant refuses for new users once the app has 100 users. Give that client its own client ID and client secret in the Instant dashboard or with `instant-cli auth client update`, then sign in again."
+  default:
+    "Instant refused this request for the reason in the message above. Correct what it names, then try again."
+  }
 }
