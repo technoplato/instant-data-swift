@@ -10,6 +10,21 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## September 30th, 2026 at 10:39:05 a.m. EDT — `473fc933766d` Open one replacement connection per socket death, and keep the reconnect backoff when writes arrive (#296)
+
+- **Implementation commit:** `473fc933766d7db56e91c41a51b0871c171abd80`
+- **Change:** One socket death opens exactly one replacement connection, and writes no longer reset the reconnect backoff (#296).
+- **Details:**
+  - Build 72 had two reconnect paths for one loss: the receive loop's failure scheduled a reconnect, and the pump's next pass cancelled the controller (cancelAndWait) and connected itself. The cancelled attempt was aborted mid-handshake, or the controller later replaced the pump's fresh session because a reconnect never reused an open session. Recording 023 logged two or three connection.open-started per socket death.
+  - ensureLiveConnectionIfNeeded() defers to a reconnect that is waiting out its backoff or connecting (ownsNextConnection), like upstream _trySend, which never starts a socket; _reconnectTimeoutMs resets only on init-ok. A reconnect for a lost session reuses a session opened after the loss; only connection.mutation-delivery-failed replaces the open session, which is the failed one there. Divergence from upstream _startSocket, which closes an open previous transport, is cited in scheduleReconnect's documentation.
+  - connection.open-started is logged only when a connection will actually open. Tests seen red on 0078484f and green here: one replacement per death (3 attempts before, 2 after), reuse of a session opened by sign-in during the backoff (4 before, 3 after), and no connection or backoff cancellation from a write during the backoff.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — reconnect ownership in ensureLiveConnectionIfNeeded, reuse semantics in scheduleReconnect, and the open-started log position
+  - `Tests/InstantSwiftDataCoreTests/InstantLiveConnectionSurvivalTests.swift` — deterministic scripted-socket tests for one replacement per socket death, reuse, and backoff
+- **User context (verbatim):**
+  > Make the fix so that exactly one replacement connection opens.
+- **SpecStory:** unavailable — Claude Code agent session (connection-survival); no SpecStory capture configured for this session.
+
 ## September 30th, 2026 at 10:38:16 a.m. EDT — `574098782627` Prove with the library's URLSession transport that a withheld receive() loses the socket (#296)
 
 - **Implementation commit:** `5740987826273333323c80f40309c839ca823b0a`
