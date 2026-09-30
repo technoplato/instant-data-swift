@@ -1,3 +1,39 @@
+## 2026-09-30 13:51:53 EDT — instant-data-swift `46c131d7413cb3185c80d6e0ce70f467879dfc9e`
+Merge connection survival (984cc351) into build 73's library: one reconnect per socket death, and reading while a frame applies (#296).
+
+## 2026-09-30 13:50:18 EDT — instant-data-swift `a18786c8f017a46cce09edcdb18d64b31021def4`
+Record the refused-overlay removal in the change log (#296).
+
+## 2026-09-30 13:50:01 EDT — instant-data-swift `5424c73365c63d487fe8f0f4768531450f970c2e`
+Remove refused writes' overlays without the whole-component rebase, and respect last-write-wins in receipt patches (#296).
+
+## 2026-09-30 11:47:07 EDT — instant-data-swift `b4d6bce2e948f324910525de243299efb6a64bf9`
+Record the deferred-value, reverse-link, and tail-order fixes in the change log (#296).
+
+## 2026-09-30 11:14:09 EDT — instant-data-swift `b4b9fbe32d6d89f223a69f76e05dc1180bc8fe3b`
+Hydrate deferred values before classifying, decide links written from the other side from their writer's receipt, and order the stamp guard's tail check by id; pin the bounded rebase tests to the full rebase (#296).
+
+## 2026-09-30 10:53:07 EDT — instant-data-swift `22a24ab857a3f50971d082d6a0cb64a8228757ef`
+Claim InstantBoundedServerApplyRebaseTests for plan 2026-09-30-fast-drain-2 (#296).
+
+## 2026-09-30 10:05:34 EDT — instant-data-swift `69ae247687f0eb73ca3f37907d788f530cc1dff8`
+Record the build-73 reapply and the receipt-patch reduction in the change log (#296).
+
+## 2026-09-30 10:05:07 EDT — instant-data-swift `ae55eeda35195ba27671356227b34e7964c71cf9`
+Add the production check of build 72's six refusals to the refused-replay open item (#296, N47).
+
+## 2026-09-30 10:04:54 EDT — instant-data-swift `bcbcaaed00cf2511456dbb6e14e7fc8840fe62d8`
+Record the refused replays behind "32 failed mutations" as an open item for N47, with the read-only bd40c50a comparison (#296).
+
+## 2026-09-30 10:01:15 EDT — instant-data-swift `2666d34396f43800a94692cfd7b8925afa5d890b`
+Receipt patches: a server change beneath a slot's writers re-receipts the first writer instead of rebasing the component; F1 (no earlier-overlays cap) and F2 (links written from the other side decline) (#296).
+
+## 2026-09-30 09:09:15 EDT — instant-data-swift `81eb122c04cc300940b694944a8eb33a533bf7ca`
+Reapply 8bee78eb on the build-73 branch as the base for its fixes; not shippable alone (#296).
+
+## 2026-09-30 09:08:09 EDT — instant-data-swift `83652b96cc33d74bb6cd8ae79b51f9513b06d2fe`
+Claim the build-73 fast-drain paths for plan 2026-09-30-fast-drain-2, with the channel that splits InstantRuntime.swift with the connection-survival worker (#296).
+
 ## 2026-09-30 13:04:58 EDT — instant-data-swift `e503090047d3123a337ef20f920d7415de15b6ee`
 Record the stale-acknowledgement settle fix in the change log (#296).
 
