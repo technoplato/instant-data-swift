@@ -2729,6 +2729,7 @@ public final class InstantRuntime: Sendable {
       let reportedAuthoritativeTransaction = authoritativeTransaction
       var excludesWatermarkRoots = false
       var receiptPatches: [String: [InstantTriple]] = [:]
+      var failureSplice = InstantServerApplyFailureSplice()
       if configuration.reducesServerApplyToAffectedOverlays,
         mergedAttributeCount == 0,
         confirmingMutationID == nil,
@@ -2741,6 +2742,7 @@ public final class InstantRuntime: Sendable {
       {
         authoritativeTransaction.operations = reduced.operations
         receiptPatches = reduced.receiptPatches
+        failureSplice = reduced.failureSplice
         // A reduced apply changes only entities no surviving pending write touches, so a link it changes is no
         // reason to peel the linked entity's writes.
         footprint = Self.serverApplyFootprint(operations: reduced.operations, includingReferenceTargets: false)
@@ -2762,7 +2764,7 @@ public final class InstantRuntime: Sendable {
             ? nil
             : automaticDeliveryClaimantID,
           excludesWatermarkRoots: excludesWatermarkRoots,
-          receiptPatchMutationIDs: Set(receiptPatches.keys)
+          receiptPatchMutationIDs: Set(receiptPatches.keys).union(failureSplice.patchedMutationIDs)
         )
         switch load {
         case let .ready(readyPlan):
@@ -2896,6 +2898,21 @@ public final class InstantRuntime: Sendable {
         )
         prepared = schemaPrepared
 
+        // A reduced apply removes refused writes itself: each slot a refused write changed and no surviving write
+        // replaced goes back to its before-image in the store, as the full rebase's replay would leave it.
+        if !failureSplice.storeOperations.isEmpty {
+          let splice = InstantStoreTransaction(
+            id: "\(plan.id)-failure-splice",
+            operations: failureSplice.storeOperations
+          )
+          prepared = try await hydrateDeferredValuesForServerApply([splice], over: prepared, planID: plan.id)
+          recordActorHop(.store)
+          let spliced = try await store.prepare(splice, applyingTo: prepared)
+          changedEntityIDs.formUnion(spliced.result.changedEntityIDs)
+          changedFactScope.formUnion(spliced.factScope.completed(over: spliced.result.changedEntityIDs))
+          prepared = spliced
+        }
+
         var authoritativeCoverage: InstantAuthoritativeWriteCoverage?
         if !authoritativeTransaction.operations.isEmpty {
           prepared = try await hydrateDeferredValuesForServerApply(
@@ -2951,12 +2968,40 @@ public final class InstantRuntime: Sendable {
               mutation.confirmationSource = .manual
               confirmedMutation = mutation
             }
-            if !entry.isComponentBody, let baseFacts = receiptPatches[mutation.id] {
-              // The server changed these slots beneath this write, its first surviving writer. The full rebase would
-              // replay it over the new base value and record that value as its before-image; nothing it shows changes.
+            if !entry.isComponentBody, failureSplice.removedFailedIDs.contains(mutation.id), mutation.status == .failed {
+              // A refused write the reduction removes itself: the full rebase's forward pass drops its overlay the same way.
+              mutation.rollbackTransaction = nil
+              mutation.optimisticOverlayState = .removed
+              stagedReceiptPatchIDs.insert(mutation.id)
+              dispositions.append(.update(mutation))
+              continue
+            }
+            if !entry.isComponentBody,
+              receiptPatches[mutation.id] != nil || failureSplice.receiptRebases[mutation.id] != nil
+            {
+              // A refused write beneath this one is removed (its before-image becomes this write's), and the server
+              // changed these slots beneath it. The full rebase would replay it over that base and record the result as
+              // its receipt; nothing it shows changes.
+              if let rebase = failureSplice.receiptRebases[mutation.id] {
+                guard let spliced = Self.rollbackTransaction(
+                  of: mutation,
+                  rebasedOnto: rebase.baseFacts,
+                  absentSlots: rebase.absentSlots,
+                  attributes: prepared.attributes
+                ) else {
+                  throw InstantError(
+                    code: .persistenceFailed,
+                    operation: "apply server transaction",
+                    localID: mutation.id,
+                    message: "Optimistic mutation '\(mutation.id)' lost the receipt its refused predecessor was removed into.",
+                    recovery: "Retry the server apply; the plan is revalidated from a fresh snapshot."
+                  )
+                }
+                Self.installPreparedOptimisticEffect(in: &mutation, rollback: spliced)
+              }
               guard let patched = Self.rollbackTransaction(
                 of: mutation,
-                rebasedOnto: baseFacts,
+                rebasedOnto: receiptPatches[mutation.id] ?? [],
                 attributes: prepared.attributes
               ) else {
                 throw InstantError(
@@ -3040,7 +3085,9 @@ public final class InstantRuntime: Sendable {
           forwardPosition = page.nextPosition
         }
         // Every receipt patch must have reached its row; a target that left the plan means the outbox moved.
-        if stalePlan || stagedReceiptPatchIDs != Set(receiptPatches.keys) {
+        if stalePlan
+          || stagedReceiptPatchIDs != Set(receiptPatches.keys).union(failureSplice.patchedMutationIDs)
+        {
           try? await persistence.finishServerApplyPlan(id: plan.id)
           continue applyAttempts
         }
@@ -3255,8 +3302,10 @@ public final class InstantRuntime: Sendable {
           indexes: prepared.indexes,
           factScope: changedFactScope
         )
+        // A removed refused write can change the store even when every server fact was dropped.
         let changesMaterializedStore =
           !authoritativeTransaction.operations.isEmpty || mergedAttributeCount > 0
+          || !failureSplice.storeOperations.isEmpty
         gateTimeline.catchUpEndedAt = ContinuousClock.now
         await operationGate.setHolderPhase("commit plan")
         recordActorHop(.persistence)
@@ -3433,11 +3482,19 @@ public final class InstantRuntime: Sendable {
     _ operations: [InstantTripleOperation],
     processedTransactionID: String,
     seed: InstantServerApplySeed
-  ) async throws -> (operations: [InstantTripleOperation], receiptPatches: [String: [InstantTriple]])? {
+  ) async throws -> (
+    operations: [InstantTripleOperation],
+    receiptPatches: [String: [InstantTriple]],
+    failureSplice: InstantServerApplyFailureSplice
+  )? {
     func declined(
       _ reason: InstantServerApplyReductionIneligibility,
       fact: InstantTriple? = nil
-    ) -> (operations: [InstantTripleOperation], receiptPatches: [String: [InstantTriple]])? {
+    ) -> (
+      operations: [InstantTripleOperation],
+      receiptPatches: [String: [InstantTriple]],
+      failureSplice: InstantServerApplyFailureSplice
+    )? {
       var metadata = ["reason": reason.rawValue, "operationCount": String(operations.count)]
       if let fact {
         metadata["entityID"] = fact.entityID
@@ -3471,7 +3528,7 @@ public final class InstantRuntime: Sendable {
         return declined(.unsupportedOperation)
       }
     }
-    guard !slots.isEmpty else { return (operations, [:]) }
+    guard !slots.isEmpty else { return (operations, [:], InstantServerApplyFailureSplice()) }
     let reverseLinkSlots = Self.reverseLinkSlots(of: operations, attributes: seed.preparedStore.attributes)
     let state = seed.state
     recordActorHop(.persistence)
@@ -3484,9 +3541,26 @@ public final class InstantRuntime: Sendable {
       expectedOutboxRevision: state.outboxRevision,
       expectedQueryResultRevision: state.queryResultRevision
     )
-    guard case let .ready(context) = load else {
+    guard case var .ready(context) = load else {
       if case let .ineligible(reason) = load { return declined(reason) }
       return nil
+    }
+    // Refused writes still on the store are removed by the reduction itself, before the frame is classified against
+    // the store and receipts they leave behind.
+    guard let failureSplice = Self.failureSplice(context: context, attributes: seed.preparedStore.attributes) else {
+      return declined(.failedOverlay)
+    }
+    for (mutationID, rebase) in failureSplice.receiptRebases {
+      guard var body = context.bodies[mutationID],
+        let spliced = Self.rollbackTransaction(
+          of: body,
+          rebasedOnto: rebase.baseFacts,
+          absentSlots: rebase.absentSlots,
+          attributes: seed.preparedStore.attributes
+        )
+      else { return declined(.failedOverlay) }
+      Self.installPreparedOptimisticEffect(in: &body, rollback: spliced)
+      context.bodies[mutationID] = body
     }
     // Deferred values (Scribe's segment text and words) are not resident, so the store cannot show them until they are
     // hydrated, as the full rebase hydrates them before applying the same facts.
@@ -3494,7 +3568,7 @@ public final class InstantRuntime: Sendable {
     let policy = configuration.deferredValueResidency
     if policy.isEnabled {
       var deferredEntityIDs: Set<String> = []
-      for operation in operations {
+      for operation in operations + failureSplice.storeOperations {
         switch operation {
         case let .insert(triple), let .retract(triple):
           if policy.attributeIDs.contains(triple.attributeID) { deferredEntityIDs.insert(triple.entityID) }
@@ -3515,10 +3589,23 @@ public final class InstantRuntime: Sendable {
               id: "server-apply-reduction-\(processedTransactionID)-deferred-hydration",
               operations: deferredTriples.map(InstantTripleOperation.insert)
             ),
-            applyingTo: seed.preparedStore
+            applyingTo: classified
           )
         }
       }
+    }
+    if !failureSplice.storeOperations.isEmpty {
+      let splice = InstantStoreTransaction(
+        id: "server-apply-reduction-\(processedTransactionID)-failure-splice",
+        operations: failureSplice.storeOperations
+      )
+      classified = try await hydrateDeferredValuesForServerApply(
+        [splice],
+        over: classified,
+        planID: "server-apply-reduction-\(processedTransactionID)"
+      )
+      recordActorHop(.store)
+      classified = try await store.prepare(splice, applyingTo: classified)
     }
     switch Self.reducedServerApplyOperations(
       operations,
@@ -3527,7 +3614,7 @@ public final class InstantRuntime: Sendable {
       indexes: classified.indexes
     ) {
     case let .reduced(reduced, receiptPatches):
-      return (reduced, receiptPatches)
+      return (reduced, receiptPatches, failureSplice)
     case let .declined(reason, fact):
       return declined(reason, fact: fact)
     }
@@ -3612,7 +3699,11 @@ public final class InstantRuntime: Sendable {
           .flatMap { context.bodies[$0] }
           .map { Self.beforeImageState(of: slot, in: $0) == .entityCreated } ?? false
         switch Self.beforeImageState(of: slot, in: firstWriter) {
-        case let .present(value) where value == triple.value:
+        case let .present(fact) where fact.value == triple.value:
+          continue
+        case let .present(fact) where fact.txTime > triple.txTime:
+          // The base value beneath the writers carries a later stamp than the server's fact, so applying it there
+          // changes nothing (cardinality-one facts are last-write-wins), as in the full rebase.
           continue
         case .present:
           receiptPatches[firstWriterID, default: []].append(triple)
@@ -3688,8 +3779,8 @@ public final class InstantRuntime: Sendable {
 
   /// What a cardinality-one slot held before `mutation` applied, from its durable rollback receipt.
   enum BeforeImage: Equatable {
-    /// The receipt restores exactly this value.
-    case present(InstantValue)
+    /// The receipt restores exactly this fact (value and stamp).
+    case present(InstantTriple)
     /// The receipt restores no value: the slot was empty.
     case absent
     /// The receipt deletes the entity: this write created it, so the slot was empty.
@@ -3700,11 +3791,11 @@ public final class InstantRuntime: Sendable {
 
   static func beforeImageState(of slot: InstantVisibleWriteKey, in mutation: PendingMutation) -> BeforeImage {
     guard case let .materialized(rollback) = mutation.optimisticEffectReceipt else { return .unknown }
-    var values: [InstantValue] = []
+    var values: [InstantTriple] = []
     for operation in rollback.operations {
       switch operation {
       case let .insert(triple) where triple.entityID == slot.entityID && triple.attributeID == slot.attributeID:
-        values.append(triple.value)
+        values.append(triple)
       case let .deleteEntity(entityID) where entityID == slot.entityID:
         return values.isEmpty ? .entityCreated : .unknown
       case let .deleteEntityInNamespace(entityID, _) where entityID == slot.entityID:
@@ -3745,7 +3836,80 @@ public final class InstantRuntime: Sendable {
         continue
       }
     }
-    return retracted && !restored ? .absent : .present(fact.value)
+    return retracted && !restored ? .absent : .present(fact)
+  }
+
+  /// Removes refused writes without the whole-component rebase (#296). Each slot a refused write changed goes back to
+  /// its before-image: in the next surviving writer's receipt when a later write replaces the slot, or in the store
+  /// when none does. That is what the full rebase's replay without the refused write leaves. Nil (the full rebase runs)
+  /// when two refused writes share a slot, a later write merges into one of its slots or re-asserts a link it added, or
+  /// a later write touches an entity it created.
+  static func failureSplice(
+    context: InstantServerApplyReductionContext,
+    attributes: AttributeStore
+  ) -> InstantServerApplyFailureSplice? {
+    var splice = InstantServerApplyFailureSplice()
+    var splicedSlots: Set<InstantVisibleWriteKey> = []
+    for failedID in context.failedOverlayIDs {
+      guard let failed = context.bodies[failedID],
+        case let .materialized(rollback) = failed.optimisticEffectReceipt
+      else { return nil }
+      if !(context.createdEntitiesTouchedAfterFailed[failedID] ?? []).isEmpty { return nil }
+      let nextWriters = context.nextWriterAfterFailed[failedID] ?? [:]
+      // The refused write's write keys, by the physical slot each lands on.
+      var nextWriterBySlot: [InstantVisibleWriteKey: String] = [:]
+      for (key, writerID) in nextWriters {
+        guard let resolved = attributes.lookupAttribute(id: key.attributeID) else {
+          nextWriterBySlot[key] = writerID
+          continue
+        }
+        // A later write that re-asserts a link the refused write made from the other side: the full rebase decides.
+        guard resolved.direction == .forward else { return nil }
+        nextWriterBySlot[InstantVisibleWriteKey(entityID: key.entityID, attributeID: resolved.attribute.id)] = writerID
+      }
+      var operationsBySlot: [InstantVisibleWriteKey: [InstantTripleOperation]] = [:]
+      var slotOrder: [InstantVisibleWriteKey] = []
+      for operation in rollback.operations {
+        switch operation {
+        case let .insert(triple), let .retract(triple):
+          let slot = InstantVisibleWriteKey(entityID: triple.entityID, attributeID: triple.attributeID)
+          if operationsBySlot[slot] == nil { slotOrder.append(slot) }
+          operationsBySlot[slot, default: []].append(operation)
+        case .deleteEntity, .deleteEntityInNamespace:
+          // It created the entity and nothing after it touches the entity: delete it.
+          splice.storeOperations.append(operation)
+        default:
+          return nil
+        }
+      }
+      for slot in slotOrder {
+        guard splicedSlots.insert(slot).inserted else { return nil }
+        let slotOperations = operationsBySlot[slot] ?? []
+        guard let nextWriterID = nextWriterBySlot[slot] else {
+          // No surviving write replaces the slot: the store goes back to the refused write's before-image.
+          splice.storeOperations.append(contentsOf: slotOperations)
+          continue
+        }
+        guard attributes[slot.attributeID]?.cardinality == .one,
+          let nextWriter = context.bodies[nextWriterID],
+          insertedValue(of: slot, in: nextWriter) != nil
+        else { return nil }
+        let beforeImage: [InstantTriple] = slotOperations.compactMap { operation in
+          if case let .insert(triple) = operation { return triple }
+          return nil
+        }
+        guard beforeImage.count <= 1 else { return nil }
+        var rebase = splice.receiptRebases[nextWriterID] ?? InstantServerApplyFailureSplice.ReceiptRebase()
+        if let fact = beforeImage.first {
+          rebase.baseFacts.append(fact)
+        } else {
+          rebase.absentSlots.insert(slot)
+        }
+        splice.receiptRebases[nextWriterID] = rebase
+      }
+      splice.removedFailedIDs.insert(failedID)
+    }
+    return splice
   }
 
   /// The rollback receipt `mutation` would carry had it been prepared over `baseFacts` (#296), the receipt a
@@ -3759,6 +3923,7 @@ public final class InstantRuntime: Sendable {
   static func rollbackTransaction(
     of mutation: PendingMutation,
     rebasedOnto baseFacts: [InstantTriple],
+    absentSlots: Set<InstantVisibleWriteKey> = [],
     attributes: AttributeStore
   ) -> InstantStoreTransaction? {
     guard case let .materialized(rollback) = mutation.optimisticEffectReceipt else { return nil }
@@ -3789,6 +3954,8 @@ public final class InstantRuntime: Sendable {
       }
     }
     var baseBySlot: [InstantVisibleWriteKey: [InstantTriple]] = [:]
+    // A slot that is empty beneath the write (a refused write beneath it set it, and is removed).
+    for slot in absentSlots { baseBySlot[slot] = [] }
     for fact in baseFacts {
       baseBySlot[InstantVisibleWriteKey(entityID: fact.entityID, attributeID: fact.attributeID), default: []].append(fact)
     }

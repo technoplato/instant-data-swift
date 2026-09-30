@@ -965,10 +965,12 @@ extension InstantFastDrainTests {
 
   private func runDifferential(seed: UInt64, scribeLinks: Bool) async throws {
     var random = FastDrainRandom(seed: seed)
+    // Ten segments of pending writes (60 writes): past the 50-write component bound, so a refusal defers its peel to
+    // the next server apply, as Recording 023's refusals did, and the reduced apply removes it there.
     var pair = try await FastDrainDifferentialPair.make(
       seed: seed,
       serverSegmentCount: 6,
-      pendingSegmentCount: 8,
+      pendingSegmentCount: 10,
       scribeLinks: scribeLinks,
       endsWithStop: scribeLinks,
       defersSegmentText: scribeLinks
@@ -1016,11 +1018,20 @@ extension InstantFastDrainTests {
         _ = pair.full.server.acceptForeignWrite(entityID: entityID, attributeID: attributeID, value: value)
         try await pair.frame(queries: pair.reduced.server.queries(touching: [entityID]), processedTransactionID: transactionID)
       case 63...70:
-        guard let claimed = try await pair.claim(random.int(1...4)), let refused = claimed.first else { continue }
+        guard let claimed = try await pair.claim(random.int(1...6)), !claimed.isEmpty else { continue }
+        // Any write of the window can be refused: a segment's create, its updates, a summary, or a duration tick.
+        let refusedIndex = random.int(0...(claimed.count - 1))
+        let refused = claimed[refusedIndex]
         event = "refuse \(refused.mutation.id) of \(claimed.count)"
-        _ = try await pair.reduced.runtime.failMutation(id: refused.mutation.id, message: "Permission denied: not perms-pass?")
-        _ = try await pair.full.runtime.failMutation(id: refused.mutation.id, message: "Permission denied: not perms-pass?")
-        try await pair.deliver(Array(claimed.dropFirst()), losesAcknowledgements: false, framePercent: 50, random: &random)
+        _ = try await pair.reduced.runtime.failClaimedMutationForTesting(
+          id: refused.mutation.id, message: "Permission denied: not perms-pass?", claimToken: refused.reduced
+        )
+        _ = try await pair.full.runtime.failClaimedMutationForTesting(
+          id: refused.mutation.id, message: "Permission denied: not perms-pass?", claimToken: refused.full
+        )
+        var delivered = claimed
+        delivered.remove(at: refusedIndex)
+        try await pair.deliver(delivered, losesAcknowledgements: false, framePercent: 50, random: &random)
       case 71...78:
         guard let claimed = try await pair.claim(random.int(1...6)) else { return }
         event = "lost acknowledgements for \(claimed.count)"
@@ -1040,8 +1051,12 @@ extension InstantFastDrainTests {
         }
         event = "refuse \(replays.count) replays of \(claimed.count)"
         for replay in replays {
-          _ = try await pair.reduced.runtime.failMutation(id: replay.mutation.id, message: "Permission denied: not perms-pass?")
-          _ = try await pair.full.runtime.failMutation(id: replay.mutation.id, message: "Permission denied: not perms-pass?")
+          _ = try await pair.reduced.runtime.failClaimedMutationForTesting(
+            id: replay.mutation.id, message: "Permission denied: not perms-pass?", claimToken: replay.reduced
+          )
+          _ = try await pair.full.runtime.failClaimedMutationForTesting(
+            id: replay.mutation.id, message: "Permission denied: not perms-pass?", claimToken: replay.full
+          )
         }
         let fresh = claimed.filter { !pair.appliedMutationIDs.contains($0.mutation.id) }
         try await pair.deliver(fresh, losesAcknowledgements: false, framePercent: 50, random: &random)
@@ -1076,7 +1091,7 @@ extension InstantFastDrainTests {
       """
       differential seed \(seed)\(scribeLinks ? " (Scribe links)" : ""): \(metrics.reductionCount) reductions, \
       \(metrics.reducedCount) reduced, \(metrics.receiptPatchCount) receipt patches, \
-      \(metrics.plannedComponentBodyCount) component bodies
+      \(metrics.plannedComponentBodyCount) component bodies, \(metrics.removedFailedOverlayCount) refused overlays removed
       """
     )
   }
@@ -1235,6 +1250,69 @@ extension InstantFastDrainTests {
     expectNoDifference(measurement.rebases, 0, "declines: \(declines)")
     let reducedObservation = try await FastDrainObservation.observe(reduced.runtime)
     let fullObservation = try await FastDrainObservation.observe(full.runtime)
+    expectNoDifference(reducedObservation.persistedFacts, fullObservation.persistedFacts)
+    expectNoDifference(reducedObservation.outbox, fullObservation.outbox)
+  }
+
+  /// A refused write left its overlay on the store, and any overlay of a refused write made every frame fall back to
+  /// the whole-component rebase: about 2,500 rows, 12-16 s under the operation gate, for each refusal of the Recording
+  /// 023-shape backlog (seen on b4b9fbe3: 22 refusals and 20 accepts in 10 minutes). The reduction must remove it
+  /// itself, and match the full rebase afterwards.
+  @Test(arguments: [false, true])
+  func aRefusedWriteIsRemovedWithoutARebase(refusesASegmentsFinalWrite: Bool) async throws {
+    // Twenty segments of pending writes: the recording's own writes alone exceed one claim window, so the live refusal
+    // path defers the peel to the next server apply.
+    var reduced = try await FastDrainFixture.make(
+      suffix: "refused-reduced-\(refusesASegmentsFinalWrite)", serverSegmentCount: 4, pendingSegmentCount: 20
+    )
+    var full = try await FastDrainFixture.make(
+      suffix: "refused-full-\(refusesASegmentsFinalWrite)", serverSegmentCount: 4, pendingSegmentCount: 20,
+      reducesServerApply: false
+    )
+    // An early summary hands its before-image to the next summary. A segment's final write is the last writer of the
+    // segment's slots, so its removal also changes the store (the segment goes back to its last open update).
+    let pending = await reduced.runtime.pendingMutations()
+    let refused = try #require(
+      refusesASegmentsFinalWrite
+        ? pending.first { mutation in
+          mutation.transaction.operations.contains { $0.fastDrainInsertedTriple?.value == .bool(true) }
+        }
+        : pending.filter { mutation in
+          mutation.transaction.operations.contains { $0.fastDrainInsertedTriple?.attributeID == "recordings/previewSegmentB" }
+        }.dropFirst().first
+    )
+    // The live refusal path (an `error` frame for a claimed write). Past one claim window of connected writes it
+    // records the refusal and leaves the overlay for the next server apply, as each of Recording 023's refusals did.
+    for index in 0..<2 {
+      let window = index == 0 ? try await reduced.claimWindow() : try await full.claimWindow()
+      try #require(window.mutations.contains { $0.id == refused.id })
+      let runtime = index == 0 ? reduced.runtime : full.runtime
+      let failed = try await runtime.failClaimedMutationForTesting(
+        id: refused.id,
+        message: "Permission denied: not perms-pass?",
+        claimToken: window.token
+      )
+      #expect(failed?.status == .failed)
+      let durable = try await runtime.persistence.loadState().snapshot.outbox.first { $0.id == refused.id }
+      #expect(durable?.optimisticOverlayState == .applied, "the refusal must defer its peel")
+    }
+    // The next server frame removes the refused overlay: the whole-component rebase peels it, the reduced apply must
+    // not need to. Then the drain continues.
+    let (frame, declines) = try await FastDrainDeclineCounter.counting {
+      try await reduced.refresh(queries: FastDrainQuery.allCases)
+    }
+    _ = try await full.refresh(queries: FastDrainQuery.allCases)
+    expectNoDifference(frame.plannedBodyCount, 0, "declines: \(declines)")
+    let removed = await reduced.runtime.persistence.serverApplyMetricsForTesting().removedFailedOverlayCount
+    expectNoDifference(removed, 1)
+    reduced.claimMilliseconds += 10_000
+    full.claimMilliseconds += 10_000
+    let measurement = try await reduced.drain(maximumFrames: 6)
+    _ = try await full.drain(maximumFrames: 6)
+    expectNoDifference(measurement.rebases, 0)
+    let reducedObservation = try await FastDrainObservation.observe(reduced.runtime)
+    let fullObservation = try await FastDrainObservation.observe(full.runtime)
+    expectNoDifference(reducedObservation.hotFacts, fullObservation.hotFacts)
     expectNoDifference(reducedObservation.persistedFacts, fullObservation.persistedFacts)
     expectNoDifference(reducedObservation.outbox, fullObservation.outbox)
   }

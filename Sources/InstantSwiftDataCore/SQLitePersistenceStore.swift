@@ -492,6 +492,28 @@ enum InstantServerApplyReduction: Sendable {
   case declined(InstantServerApplyReductionIneligibility, fact: InstantTriple? = nil)
 }
 
+/// Refused writes a reduced server apply removes itself (#296), and what their removal changes.
+struct InstantServerApplyFailureSplice: Sendable {
+  struct ReceiptRebase: Sendable {
+    /// The refused write's before-image facts on slots this write replaces.
+    var baseFacts: [InstantTriple] = []
+    /// Slots the refused write set from empty.
+    var absentSlots: Set<InstantVisibleWriteKey> = []
+  }
+
+  /// What the store goes back to where no surviving write replaces a refused write's change.
+  var storeOperations: [InstantTripleOperation] = []
+  /// The next surviving writer of each slot a refused write changed, with the before-image its receipt takes over.
+  var receiptRebases: [String: ReceiptRebase] = [:]
+  /// Refused writes whose overlays this apply removes.
+  var removedFailedIDs: Set<String> = []
+
+  /// Rows the plan must stage: the removed refused writes and the re-receipted writers.
+  var patchedMutationIDs: Set<String> {
+    removedFailedIDs.union(receiptRebases.keys)
+  }
+}
+
 enum InstantServerApplyReductionLoad: Sendable {
   case ineligible(InstantServerApplyReductionIneligibility)
   case ready(InstantServerApplyReductionContext)
@@ -514,6 +536,13 @@ struct InstantServerApplyReductionContext: Sendable {
   /// cannot see that write.
   var firstReverseLinkWriterBySlot: [InstantVisibleWriteKey: String] = [:]
   var lastReverseLinkWriterBySlot: [InstantVisibleWriteKey: String] = [:]
+  /// Refused writes whose overlays are still on the store, in delivery order. The reduction removes them itself: each
+  /// slot a refused write changed goes back to its before-image, in the store or in the next surviving writer's receipt.
+  var failedOverlayIDs: [String] = []
+  /// For each refused write and each slot it writes (its write keys), the next surviving writer of that slot.
+  var nextWriterAfterFailed: [String: [InstantVisibleWriteKey: String]] = [:]
+  /// For each refused write, the entities it created (its receipt deletes them) that a surviving write after it touches.
+  var createdEntitiesTouchedAfterFailed: [String: Set<String>] = [:]
   /// The durable bodies of every write named above.
   var bodies: [String: PendingMutation] = [:]
 }
@@ -521,6 +550,8 @@ struct InstantServerApplyReductionContext: Sendable {
 enum InstantServerApplyReductionLimits {
   /// Bounds the bodies one apply decodes to prove a frame cannot change the base; past it, the full rebase runs.
   static let maximumBodies = 256
+  /// Refused writes one apply removes without the full rebase; past it, the full rebase removes them all at once.
+  static let maximumFailedOverlays = 16
 }
 
 struct InstantServerApplyPlan: Sendable {
@@ -688,6 +719,8 @@ package struct InstantServerApplyMetrics: Equatable, Sendable {
   package var reducedCount = 0
   /// Receipts re-based onto a server change beneath their pending write, without peeling or replaying it.
   package var receiptPatchCount = 0
+  /// Refused writes' overlays a reduced apply removed without the whole-component rebase.
+  package var removedFailedOverlayCount = 0
 
   mutating func recordBodyPage(
     direction: InstantServerApplyBodyDirection,
@@ -3751,6 +3784,15 @@ public actor SQLitePersistenceStore {
       serverApplyMetrics.plannedBodyCount += plan.plannedBodyCount
       serverApplyMetrics.plannedComponentBodyCount += plan.plannedComponentBodyCount
       serverApplyMetrics.receiptPatchCount += receiptPatchMutationIDs.count
+      serverApplyMetrics.removedFailedOverlayCount += Int(try selectInt64(
+        """
+        SELECT COUNT(*) FROM instant_server_apply_rows AS planned
+        JOIN instant_outbox AS outbox ON outbox.mutation_id = planned.mutation_id
+        WHERE planned.plan_id = ? AND planned.is_component_body = 0 AND planned.requires_body = 1
+          AND outbox.status = 'failed'
+        """,
+        [.text(plan.id)]
+      ))
       serverApplyMetrics.plannedBodyByteCount += plan.plannedBodyByteCount
     }
     return result
@@ -3928,14 +3970,33 @@ public actor SQLitePersistenceStore {
       // Rows whose effect a full rebase treats specially: a failed overlay is removed, a global or unproven receipt
       // cannot be scoped, an old delivery-metadata row has no trustworthy write keys, and a transport confirmation
       // without a transaction id is replaced by the server's coverage.
-      if try selectInt64(
-        """
-        SELECT EXISTS(
-          SELECT 1 FROM instant_outbox INDEXED BY instant_outbox_server_apply_failed_idx
-          WHERE status = 'failed' AND optimistic_overlay_active = 1 LIMIT 1
+      // Refused writes whose overlays are still on the store: up to a bound, the reduction removes them itself.
+      var failedPositions: [InstantOutboxDeliveryPosition] = []
+      do {
+        var statement: OpaquePointer?
+        try prepare(
+          """
+          SELECT mutation_id, created_at_ms
+          FROM instant_outbox INDEXED BY instant_outbox_server_apply_failed_idx
+          WHERE status = 'failed' AND optimistic_overlay_active = 1
+          ORDER BY created_at_ms, mutation_id
+          LIMIT ?
+          """,
+          statement: &statement
         )
-        """
-      ) != 0 {
+        defer { sqlite3_finalize(statement) }
+        try bind([.int(Int64(InstantServerApplyReductionLimits.maximumFailedOverlays + 1))], to: statement)
+        while sqlite3_step(statement) == SQLITE_ROW {
+          guard let idBytes = sqlite3_column_text(statement, 0) else { continue }
+          failedPositions.append(
+            InstantOutboxDeliveryPosition(
+              createdAtMilliseconds: sqlite3_column_int64(statement, 1),
+              mutationID: String(cString: idBytes)
+            )
+          )
+        }
+      }
+      guard failedPositions.count <= InstantServerApplyReductionLimits.maximumFailedOverlays else {
         return .ineligible(.failedOverlay)
       }
       let unscoped: [(sql: String, bindings: [SQLiteBinding])] = [
@@ -4073,9 +4134,18 @@ public actor SQLitePersistenceStore {
       func writer(
         of attributeID: String,
         on entityID: String,
-        newest: Bool
+        newest: Bool,
+        after position: InstantOutboxDeliveryPosition? = nil
       ) throws -> InstantOutboxDeliveryPosition? {
         var statement: OpaquePointer?
+        let afterSQL = position == nil
+          ? ""
+          : """
+            AND (
+              effects.created_at_ms > ?
+              OR (effects.created_at_ms = ? AND effects.mutation_id > ?)
+            )
+            """
         try prepare(
           """
           SELECT effects.mutation_id, effects.created_at_ms
@@ -4088,14 +4158,18 @@ public actor SQLitePersistenceStore {
               WHERE write_keys.mutation_id = effects.mutation_id
                 AND write_keys.entity_id = ? AND write_keys.attribute_id = ?
             )
+            \(afterSQL)
           ORDER BY effects.created_at_ms \(newest ? "DESC" : "ASC"), effects.mutation_id \(newest ? "DESC" : "ASC")
           LIMIT 1
           """,
           statement: &statement
         )
         defer { sqlite3_finalize(statement) }
+        let afterBindings: [SQLiteBinding] = position.map {
+          [.int($0.createdAtMilliseconds), .int($0.createdAtMilliseconds), .text($0.mutationID)]
+        } ?? []
         try bind(
-          [.text(entityID)] + prunable.bindings + [.text(entityID), .text(attributeID)],
+          [.text(entityID)] + prunable.bindings + [.text(entityID), .text(attributeID)] + afterBindings,
           to: statement
         )
         guard sqlite3_step(statement) == SQLITE_ROW,
@@ -4142,6 +4216,43 @@ public actor SQLitePersistenceStore {
           bodyIDs.insert(firstOverlay)
         }
       }
+      // Each refused write's slots (its write keys), and the next surviving writer of each.
+      for failed in failedPositions {
+        context.failedOverlayIDs.append(failed.mutationID)
+        bodyIDs.insert(failed.mutationID)
+        var statement: OpaquePointer?
+        try prepare(
+          """
+          SELECT entity_id, attribute_id FROM instant_outbox_write_keys
+          WHERE mutation_id = ?
+          ORDER BY entity_id, attribute_id
+          """,
+          statement: &statement
+        )
+        var keys: [InstantVisibleWriteKey] = []
+        do {
+          defer { sqlite3_finalize(statement) }
+          try bind([.text(failed.mutationID)], to: statement)
+          while sqlite3_step(statement) == SQLITE_ROW {
+            guard let entityBytes = sqlite3_column_text(statement, 0),
+              let attributeBytes = sqlite3_column_text(statement, 1)
+            else { continue }
+            keys.append(
+              InstantVisibleWriteKey(
+                entityID: String(cString: entityBytes),
+                attributeID: String(cString: attributeBytes)
+              )
+            )
+          }
+        }
+        for key in keys {
+          guard let next = try writer(of: key.attributeID, on: key.entityID, newest: false, after: failed) else {
+            continue
+          }
+          context.nextWriterAfterFailed[failed.mutationID, default: [:]][key] = next.mutationID
+          bodyIDs.insert(next.mutationID)
+        }
+      }
       for slot in reverseLinkSlots.sorted(by: { ($0.entityID, $0.attributeID) < ($1.entityID, $1.attributeID) }) {
         guard let first = try writer(of: slot.attributeID, on: slot.entityID, newest: false) else { continue }
         context.firstReverseLinkWriterBySlot[slot] = first.mutationID
@@ -4162,6 +4273,44 @@ public actor SQLitePersistenceStore {
         decodedOutboxBodyCount += 1
         decodedOutboxBodyByteCount += row.json.utf8.count
         context.bodies[mutationID] = mutation
+      }
+      // An entity a refused write created stays only if no surviving write after it touches the entity; the reduction
+      // then deletes it, as the full rebase's replay would leave it out.
+      for failed in failedPositions {
+        guard let body = context.bodies[failed.mutationID],
+          case let .materialized(rollback) = body.optimisticEffectReceipt
+        else { continue }
+        for operation in rollback.operations {
+          let createdEntityID: String
+          switch operation {
+          case let .deleteEntity(entityID), let .deleteEntityInNamespace(entityID, _):
+            createdEntityID = entityID
+          default:
+            continue
+          }
+          let touchedLater = try selectInt64(
+            """
+            SELECT EXISTS(
+              SELECT 1
+              FROM instant_outbox_effect_entities AS effects
+                INDEXED BY instant_outbox_effect_entities_lookup_idx
+              JOIN instant_outbox AS outbox ON outbox.mutation_id = effects.mutation_id
+              WHERE effects.entity_id = ? AND \(remaining)
+                AND (
+                  effects.created_at_ms > ?
+                  OR (effects.created_at_ms = ? AND effects.mutation_id > ?)
+                )
+              LIMIT 1
+            )
+            """,
+            [.text(createdEntityID)] + prunable.bindings + [
+              .int(failed.createdAtMilliseconds), .int(failed.createdAtMilliseconds), .text(failed.mutationID),
+            ]
+          ) != 0
+          if touchedLater {
+            context.createdEntitiesTouchedAfterFailed[failed.mutationID, default: []].insert(createdEntityID)
+          }
+        }
       }
       return .ready(context)
     }
@@ -5235,18 +5384,21 @@ public actor SQLitePersistenceStore {
               ? [.text(InstantMutationStatus.confirmed.rawValue)] + watermark.bindings
               : [])
         )
-        try insertServerApplyRowsWithoutTransaction(
-          planID: planID,
-          componentBody: true,
-          requiresBody: true,
-          selectionSQL:
-            """
-            FROM instant_outbox AS outbox INDEXED BY instant_outbox_server_apply_failed_idx
-            WHERE outbox.status = 'failed' AND outbox.optimistic_overlay_active = 1
-              AND outbox.optimistic_effect_receipt_fingerprint IS NOT NULL
-            """,
-          bindings: []
-        )
+        // A reduced apply (#296) removes refused writes itself, as receipt-patch rows; a whole-component rebase peels them.
+        if !control.excludesWatermarkRoots {
+          try insertServerApplyRowsWithoutTransaction(
+            planID: planID,
+            componentBody: true,
+            requiresBody: true,
+            selectionSQL:
+              """
+              FROM instant_outbox AS outbox INDEXED BY instant_outbox_server_apply_failed_idx
+              WHERE outbox.status = 'failed' AND outbox.optimistic_overlay_active = 1
+                AND outbox.optimistic_effect_receipt_fingerprint IS NOT NULL
+              """,
+            bindings: []
+          )
+        }
         if !control.excludesWatermarkRoots {
           try insertServerApplyRowsWithoutTransaction(
             planID: planID,
