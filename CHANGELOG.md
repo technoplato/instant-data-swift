@@ -10,6 +10,20 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## September 30th, 2026 at 10:38:16 a.m. EDT — `574098782627` Prove with the library's URLSession transport that a withheld receive() loses the socket (#296)
+
+- **Implementation commit:** `5740987826273333323c80f40309c839ca823b0a`
+- **Change:** An opt-in live suite proves, with the library's own URLSession transport, that a withheld receive() loses the socket (#296).
+- **Details:**
+  - Server rule (upstream websocket.clj, straight-jacket-run-ping-job): ping every 5 s; close a client that sent no text, binary, or pong frame for the idle timeout. Measured against the throwaway app bd40c50a: with receive() withheld the socket survived 20 s (2 of 2), died at 24-28 s in 3 of 6 trials and at 32-45 s in 7 of 7, always with POSIX 57, as on the device; a Node client that never pongs is closed at 25.2-25.7 s.
+  - Locally (127.0.0.1, the library's URLSession configuration): with no receive() outstanding URLSession sent 0 pongs over plain, TLS, and permessage-deflate sockets, with and without server data frames; with a receive() pending it answered 30 of 30 pings within about 10 ms.
+  - The suite's probe: 10 s alive; 40 s without receive() closed; 40 s with a receive() pending alive. Its runtime check holds one frame's apply for 40 s on a fresh room join; on build 72's receive loop it fails with 2 connection attempts and 1 receive-loop failure. Heavy unread server traffic postpones the close through TCP backpressure on the server's ping job, so the probes keep their sockets quiet.
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantURLSessionKeepaliveLiveTests.swift` — credentialed, opt-in measurement of the close threshold and of the runtime through a long apply; refuses the production app prefix
+- **User context (verbatim):**
+  > Prove the cause with URLSession specifically (red evidence).
+- **SpecStory:** unavailable — Claude Code agent session (connection-survival); no SpecStory capture configured for this session.
+
 ## September 30th, 2026 at 8:29:24 a.m. EDT — `184767d5f685` Revert "Skip the whole-component rebase for server frames that cannot change the base beneath pending writes (#296)"
 
 - **Implementation commit:** `184767d5f68555d5d26ce0abb8c1ccbe8ed39c7c`
