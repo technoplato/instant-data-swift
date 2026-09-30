@@ -1,3 +1,12 @@
+## 2026-09-30 04:22:20 EDT — instant-data-swift `214d175f1ccc710a11667a6c818d29dbb52ef9ec`
+Record the fast-drain server-apply reduction and the tail-write stamp guard in the change log (#296).
+
+## 2026-09-30 04:19:27 EDT — instant-data-swift `8bee78eb3dd6974734b45280cbeb72d6ab5ac999`
+Skip the whole-component rebase for server frames that cannot change the base beneath pending writes (#296). Recording 023's phone peeled and replayed 2,487 writes for each server frame (22.5-24.9 s); in the harness a 2,502-write drain now does 0 rebases, and a tail write that lost to a later-stamped fact shows instead of being dropped from delivery.
+
+## 2026-09-30 01:49:05 EDT — instant-data-swift `e8331558e0a7838ee3a0fec40b9df8190b5ac03e`
+Claim the server-apply fast-drain paths for plan 2026-09-30-fast-drain (#296).
+
 ## 2026-09-30 01:19:55 EDT — realtime-voice-sqlite-instant `3fbf226f12afa98cfbca21b669b734ab90551308`
 Correct the stale-writes channel note: which server results the phone applied during the loop (#296).
 
