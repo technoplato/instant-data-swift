@@ -1,3 +1,15 @@
+## 2026-09-29 20:30:48 EDT — realtime-voice-sqlite-instant `03c2c1e94b6265bb86095e140d59cc06cdef6331`
+Record the Scribe Dev Google sign-in diagnostics in the change log (#113).
+
+## 2026-09-29 20:30:23 EDT — realtime-voice-sqlite-instant `16ae652411b19337299bb37155a5caa991063ff9`
+Log every Account sign-in step and check Instant's OAuth setup from the terminal: Scribe Dev's Google sign-in failed because Instant's shared development Google credentials refuse new users once the app has 100 users (#113).
+
+## 2026-09-29 20:06:19 EDT — instant-data-swift `e64604641f689f4d8e4b7665084c55100835181c`
+Name the real fix when Instant refuses an auth request: a shared-credentials refusal no longer says to verify the app ID (#113).
+
+## 2026-09-29 19:39:45 EDT — realtime-voice-sqlite-instant `36fac39f3278a8a15d192dd055da442da41aa9ef`
+Plan the Scribe Dev Google sign-in fix and claim its files (#113).
+
 ## 2026-09-29 02:34:15 EDT — realtime-voice-sqlite-instant `f0f9b225375c8df52069e88c20eaa607d4c3de91`
 Record the double-comparison share-rule fix in the change log (#113 #282).
 

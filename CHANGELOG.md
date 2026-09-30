@@ -10,6 +10,22 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## September 29th, 2026 at 8:33:59 p.m. EDT — `e64604641f68` Name the real fix when Instant refuses an auth request (#113)
+
+- **Implementation commit:** `e64604641f689f4d8e4b7665084c55100835181c`
+- **Change:** An Instant auth refusal now names the real fix: a shared-credentials refusal says to give the OAuth client its own client ID and secret, and no refusal tells the user to verify the app ID when Instant said something else.
+- **Issues:** [#113](https://issues.knophy.com/issues/113)
+- **Details:**
+  - Scribe Dev's Google sign-in (Recording 020 screenshot) failed at the code exchange with 'Validation failed for shared-credentials: Shared dev credentials are limited to 100 users' and then advised 'Verify the app ID and authentication credentials'; the app ID was fine.
+  - Only the hint's data-type is read; the rest of the hint can echo refresh tokens and is still never copied. Upstream reference: instant.model.shared-oauth-client/assert-shared-credentials-allowed!.
+  - Tests: InstantAuthFailureRecoveryTests red before, green after; 13 tests in 4 auth suites green with Swift 6.3.3 and 6.4 in a harness against this tree.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantAuthHTTPClient.swift` — recovery text from the refused input; lenient error-body decoding
+  - `Tests/InstantSwiftDataCoreTests/InstantAuthFailureRecoveryTests.swift` — shared-credentials, other refusals, and odd hint shapes
+- **User context (verbatim):**
+  > Authentication for Google wasn't working. Something about an app ID.
+- **SpecStory:** unavailable — Claude Code agent session (google-signin); no SpecStory capture configured for this session.
+
 ## September 29th, 2026 at 2:12:54 a.m. EDT — `fa570b3d5602` Let apps hide "Discard guest session" on the login screen (#113)
 
 - **Implementation commit:** `fa570b3d5602b43d6113d928d6e82d2c66fc80cd`
