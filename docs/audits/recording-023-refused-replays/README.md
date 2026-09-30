@@ -36,9 +36,15 @@ reports 32 failed mutations, and a "Not synced" display (N47) would show them as
 
 - `refusalKind` knows only this process's own earlier connections: the set of unanswered offers lives in memory. A
   re-send of a write an earlier process offered is labeled `first-offer`. On Michael's phone (build 72, 2026-09-30
-  10:00:41 to 10:02:29), 6 refusals were all labeled `first-offer` (3 recordings, 3 transcriptionSegments). They are
-  probably the same kind of stale replay from build 69's connections, but they have not been checked against the
-  server.
+  10:00:41 to 10:02:29), 6 refusals were all labeled `first-offer` (3 recordings, 3 transcriptionSegments). The
+  coordinator checked them against production (read-only), and all 6 are superseded replays from build 69's
+  connections, not lost data:
+  - Three refused updates of Recording 023 were stamped 1790720575452, 1790720577624, and 1790720582634.
+    Production held 1790720586969 before the day's drain and 1790720630335 during it.
+  - Three refused writes of segment 548 (`1e44786f`) were created at 1790720581266, 1790720581789, and 1790720584499.
+    Production holds its final version (1790720585180, `isFinal` true, 10 words).
+
+  The `first-offer` label is wrong for all 6.
 - Build 73's receipt patches keep what the device shows correct after such a refusal: the rollback restores the
   server's value. They do not change the status the outbox reports.
 
@@ -55,4 +61,5 @@ reports 32 failed mutations, and a "Not synced" display (N47) would show them as
 - Tell apart "refused, but the server holds this entity at a newer value" from "refused and not applied".
   Candidates: compare with the next query result for the entity, or treat a refused replay whose entity exists on the
   server with a newer `updatedAtMs` as superseded.
-- Persist the unanswered-offer set, so a replay after an app restart is labeled `replay`.
+- Persist the unanswered-offer set, so a replay after an app restart is labeled `replay`. The phone's 6 refusals above
+  show the mislabel in production.
