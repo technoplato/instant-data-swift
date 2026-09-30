@@ -34,6 +34,8 @@ Touching:
 - Sources/InstantSwiftDataCore/InstantRuntime.swift (server apply: performApplyServerTransaction and the reduction only)
 - Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift (server-apply plan and reduction queries)
 - Tests/InstantSwiftDataCoreTests/InstantFastDrainTests.swift
+- Tests/InstantSwiftDataCoreTests/InstantBoundedServerApplyRebaseTests.swift (pin its runtime to the whole-component
+  rebase it measures; added 2026-09-30 after the corrected reduction stopped declining its frames)
 - docs/audits/recording-023-refused-replays/ (new: the open item's data)
 - CHANGELOG.md, docs/audits/commit-changelog.md
 
