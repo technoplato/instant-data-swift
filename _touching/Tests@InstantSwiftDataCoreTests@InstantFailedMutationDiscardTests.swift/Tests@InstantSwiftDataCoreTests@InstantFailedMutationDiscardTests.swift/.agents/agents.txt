@@ -4,3 +4,4 @@ codex-desktop/019fe994-1250-7b42-825e-9b75836d9173/root/abort_test_fixture_migra
 codex-desktop/019fe994-1250-7b42-825e-9b75836d9173/root/attempt_core_fixture_migration 2026-08-11T04:33:57-0400 mower connection-attempt-fixtures plan=2026-08-09-bounded-intent-outbox-memory
 codex-desktop/01a00071-f1c1-7193-adcd-3bc9f30b5f95/root/rollback_invariant_source 2026-08-15T03:10:18-0400 mower retained-unknown-receipt-wording plan=semantic_noop_v2
 codex-desktop/01a00071-f1c1-7193-adcd-3bc9f30b5f95/root 2026-08-15T12:23:30-0400 mower rename-resident-snapshot-test-seam plan=2026-08-15-legacy-priority-durable-migration
+claude-opus-5.5-fast-drain 2026-09-30T05:50:36-04:00 mower plan=2026-09-30-fast-drain #296
