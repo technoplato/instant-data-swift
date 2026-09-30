@@ -10,6 +10,19 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## September 30th, 2026 at 1:04:58 p.m. EDT — `5e994bdc92e5` Let the stale-acknowledgement test settle its delivery passes before it reclaims the write (#296)
+
+- **Implementation commit:** `5e994bdc92e5fc0543798ab23283828d9ea9d8c8`
+- **Change:** The stale-acknowledgement test lets its delivery passes settle before it reclaims the write, so a pass cannot strand the reoffer it waits for (#296).
+- **Details:**
+  - A pass that ran between the test's external reclaim and the stale answer's recording claimed the write under a new token but could not send it while the first offer was still in flight (pendingCount=1, skippedAlreadyInFlight=1); the next pass only deferred that claim. The reader's hand-off to the applier widened this pre-existing window: 6 timeouts in 35 runs on this branch at load 216-790, 0 in 20 on 0078484f at load 680-940.
+  - The test waits for automaticMutationPumpIsIdleForTesting() before reading and reclaiming the claim, and parks acknowledgement-deadline wakes. 40 of 40 runs pass at load 693-929. Production is unaffected: a single runtime reclaims only its own claims, through the timeout path that also clears the in-flight reservation.
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantLiveTransportTests.swift` — settle wait and parked deadline wake in the stale-acknowledgement test
+- **User context (verbatim):**
+  > If your reader/applier change touches the deferral, please run this test several times under load.
+- **SpecStory:** unavailable — Claude Code agent session (connection-survival); no SpecStory capture configured for this session.
+
 ## September 30th, 2026 at 1:04:58 p.m. EDT — `2ddad19f7056` Say which server the keepalive measurements came from (#296)
 
 - **Implementation commit:** `2ddad19f7056b3fed9e6b7d42166888fb1a1ecf4`
