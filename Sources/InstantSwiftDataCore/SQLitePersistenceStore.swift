@@ -495,8 +495,10 @@ struct InstantServerApplyReductionContext: Sendable {
   var firstWriterBySlot: [InstantVisibleWriteKey: String] = [:]
   /// For the same slots, the latest such write, whose value the store must show.
   var lastWriterBySlot: [InstantVisibleWriteKey: String] = [:]
-  /// Surviving pending writes on each shadowed entity that precede its latest first writer.
-  var earlierOverlayIDsByEntity: [String: [String]] = [:]
+  /// Reverse-form link slots (target entity, reverse attribute) that a surviving pending write inserts. A write of
+  /// `transcriptionSegments/recording` on a segment materializes as `recordings/segments` on the recording, but its
+  /// write key names the segment's slot, so a forward link fact alone cannot see that write.
+  var reverseLinkSlotsWithWriters: Set<InstantVisibleWriteKey> = []
   /// The durable bodies of every write named above.
   var bodies: [String: PendingMutation] = [:]
 }
@@ -504,7 +506,6 @@ struct InstantServerApplyReductionContext: Sendable {
 enum InstantServerApplyReductionLimits {
   /// Bounds the bodies one apply decodes to prove a frame cannot change the base; past it, the full rebase runs.
   static let maximumBodies = 256
-  static let maximumEarlierOverlaysPerEntity = 32
 }
 
 struct InstantServerApplyPlan: Sendable {
@@ -3865,6 +3866,7 @@ public actor SQLitePersistenceStore {
   /// at the revisions the caller's seed was taken at.
   func loadServerApplyReductionContext(
     slots: [String: Set<String>],
+    reverseLinkSlots: Set<InstantVisibleWriteKey> = [],
     processedTransactionID: String,
     expectedStoreRevision: Int64,
     expectedAttributeRevision: Int64,
@@ -4066,7 +4068,6 @@ public actor SQLitePersistenceStore {
 
       var bodyIDs: Set<String> = []
       for entityID in context.shadowedEntityIDs.sorted() {
-        var latestFirstWriter: InstantOutboxDeliveryPosition?
         for attributeID in (slots[entityID] ?? []).sorted() {
           guard let first = try writer(of: attributeID, on: entityID, newest: false) else { continue }
           let slot = InstantVisibleWriteKey(entityID: entityID, attributeID: attributeID)
@@ -4076,41 +4077,11 @@ public actor SQLitePersistenceStore {
             context.lastWriterBySlot[slot] = last.mutationID
             bodyIDs.insert(last.mutationID)
           }
-          if latestFirstWriter.map({
-            (first.createdAtMilliseconds, first.mutationID) > ($0.createdAtMilliseconds, $0.mutationID)
-          }) ?? true {
-            latestFirstWriter = first
-          }
         }
-        guard let latestFirstWriter else { continue }
-        // Pending writes on this entity that precede its first writers: a retraction or deletion among them would make
-        // a first writer's before-image differ from the base.
-        let earlier = try selectStrings(
-          """
-          SELECT effects.mutation_id
-          FROM instant_outbox_effect_entities AS effects
-            INDEXED BY instant_outbox_effect_entities_lookup_idx
-          JOIN instant_outbox AS outbox ON outbox.mutation_id = effects.mutation_id
-          WHERE effects.entity_id = ? AND \(remaining)
-            AND (
-              effects.created_at_ms < ?
-              OR (effects.created_at_ms = ? AND effects.mutation_id < ?)
-            )
-          ORDER BY effects.created_at_ms, effects.mutation_id
-          LIMIT ?
-          """,
-          [.text(entityID)] + prunable.bindings + [
-            .int(latestFirstWriter.createdAtMilliseconds),
-            .int(latestFirstWriter.createdAtMilliseconds),
-            .text(latestFirstWriter.mutationID),
-            .int(Int64(InstantServerApplyReductionLimits.maximumEarlierOverlaysPerEntity + 1)),
-          ]
-        )
-        guard earlier.count <= InstantServerApplyReductionLimits.maximumEarlierOverlaysPerEntity else {
-          return .ineligible(.tooManyBodies)
-        }
-        context.earlierOverlayIDsByEntity[entityID] = earlier
-        bodyIDs.formUnion(earlier)
+      }
+      for slot in reverseLinkSlots.sorted(by: { ($0.entityID, $0.attributeID) < ($1.entityID, $1.attributeID) })
+      where try writer(of: slot.attributeID, on: slot.entityID, newest: false) != nil {
+        context.reverseLinkSlotsWithWriters.insert(slot)
       }
       guard bodyIDs.count <= InstantServerApplyReductionLimits.maximumBodies else {
         return .ineligible(.tooManyBodies)

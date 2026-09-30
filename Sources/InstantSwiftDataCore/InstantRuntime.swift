@@ -3441,10 +3441,15 @@ public final class InstantRuntime: Sendable {
       }
     }
     guard !slots.isEmpty else { return operations }
+    let reverseLinkSlots = Self.reverseLinkSlots(
+      of: operations,
+      attributes: seed.preparedStore.attributes
+    )
     let state = seed.state
     recordActorHop(.persistence)
     let load = try await persistence.loadServerApplyReductionContext(
       slots: slots,
+      reverseLinkSlots: reverseLinkSlots,
       processedTransactionID: processedTransactionID,
       expectedStoreRevision: state.storeRevision,
       expectedAttributeRevision: state.attributeRevision,
@@ -3501,6 +3506,13 @@ public final class InstantRuntime: Sendable {
           continue
         }
         let slot = InstantVisibleWriteKey(entityID: triple.entityID, attributeID: triple.attributeID)
+        // A pending write that inserts this link from the other side (a segment's `recording`, materialized as the
+        // recording's `segments`) leaves no write key on this slot; the full rebase decides it.
+        if let reverseSlot = Self.reverseLinkSlot(of: triple, attributes: attributes),
+          context.reverseLinkSlotsWithWriters.contains(reverseSlot)
+        {
+          return .declined(.changesShadowedFact, fact: triple)
+        }
         guard let firstWriterID = context.firstWriterBySlot[slot] else {
           guard factHolds else { return .declined(.changesShadowedFact, fact: triple) }
           continue
@@ -3512,12 +3524,6 @@ public final class InstantRuntime: Sendable {
           let lastWriter = context.lastWriterBySlot[slot].flatMap({ context.bodies[$0] }),
           let lastWrittenValue = Self.insertedValue(of: slot, in: lastWriter),
           shownValue(of: slot) == lastWrittenValue,
-          Self.onlyInsertsBefore(
-            firstWriter,
-            earlierOverlays: (context.earlierOverlayIDsByEntity[triple.entityID] ?? []).map {
-              context.bodies[$0]
-            }
-          ),
           Self.beforeImage(of: slot, in: firstWriter) == triple.value
         else { return .declined(.changesShadowedFact, fact: triple) }
 
@@ -3549,24 +3555,28 @@ public final class InstantRuntime: Sendable {
     indexes.copiedAttributeSlots(entityID: entityID)?[attributeID]
   }
 
-  /// Whether a first writer and the pending writes before it on the same entity only insert, merge, or check. A
-  /// retraction or deletion (which can cascade) among them could make the base differ from the writer's before-image.
-  private static func onlyInsertsBefore(
-    _ firstWriter: PendingMutation,
-    earlierOverlays: [PendingMutation?]
-  ) -> Bool {
-    for mutation in [firstWriter] + earlierOverlays {
-      guard let mutation else { return false }
-      for operation in mutation.transaction.operations {
-        switch operation {
-        case .insert, .merge, .requireEntityExists, .requireEntityMissing, .requireTripleExists:
-          continue
-        default:
-          return false
-        }
-      }
+  /// The reverse-form slot a pending write would insert to create this link fact, when the attribute is a link: for
+  /// `(recording, recordings/segments, segment)` it is `(segment, transcriptionSegments/recording)`.
+  static func reverseLinkSlot(of triple: InstantTriple, attributes: AttributeStore) -> InstantVisibleWriteKey? {
+    guard case let .ref(targetEntityID) = triple.value,
+      let reverseIdentity = attributes[triple.attributeID]?.reverseIdentity,
+      reverseIdentity != triple.attributeID
+    else { return nil }
+    return InstantVisibleWriteKey(entityID: targetEntityID, attributeID: reverseIdentity)
+  }
+
+  private static func reverseLinkSlots(
+    of operations: [InstantTripleOperation],
+    attributes: AttributeStore
+  ) -> Set<InstantVisibleWriteKey> {
+    var slots: Set<InstantVisibleWriteKey> = []
+    for operation in operations {
+      guard case let .insert(triple) = operation,
+        let slot = reverseLinkSlot(of: triple, attributes: attributes)
+      else { continue }
+      slots.insert(slot)
     }
-    return true
+    return slots
   }
 
   /// The value `mutation` last inserts into a slot; nil when it merges into the slot instead or never writes it.
