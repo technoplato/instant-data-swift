@@ -4987,11 +4987,18 @@ struct InstantLiveTransportTests {
     let pending = try #require(durable.first { $0.id == mutationID })
     expectNoDifference(pending.status, .pending)
     expectNoDifference(pending.serverTransactionID, nil)
-    let claimAfterStaleDisposition = try await runtime.persistence
-      .outboxDeliveryClaimForTesting(id: mutationID)
-    expectNoDifference(
-      claimAfterStaleDisposition,
-      replacementClaim
+    let claimAfterStaleDisposition = try #require(
+      try await runtime.persistence.outboxDeliveryClaimForTesting(id: mutationID)
+    )
+    // The stale answer must not adopt or alter the replacement's claim. Only the deadline may move, and only later:
+    // the disposition requests delivery while its frame still counts as applied, and that pump pass defers this
+    // socket's claim deadlines (deferAcknowledgementDeadlinesWhileAFrameIsApplied, #296).
+    var claimIgnoringDeadline = claimAfterStaleDisposition
+    claimIgnoringDeadline.deadlineMilliseconds = replacementClaim.deadlineMilliseconds
+    expectNoDifference(claimIgnoringDeadline, replacementClaim)
+    #expect(
+      (claimAfterStaleDisposition.deadlineMilliseconds ?? .min)
+        >= (replacementClaim.deadlineMilliseconds ?? .min)
     )
     let sentMutationIDs = await session.sentMessages()
       .filter { $0.op == "transact" }
