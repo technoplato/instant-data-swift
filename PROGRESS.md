@@ -1,3 +1,37 @@
+## 2026-09-30 14:50:00 EDT — Build 73's library: live-safe fast drain, refused-write removal, connection survival (#296)
+
+- **Branch:** `agent/claude-opus-5.5/fast-drain-2` from build 72's `0078484f` (pushed; not merged). Build 73's library
+  is **`506089b22043c2f5bcb02712f5b7df698e31b6d3`**. Plan
+  `agent-presence/claude-opus-5.5/plans/2026-09-30-fast-drain-2/PLAN.md` (`83652b96`, `22a24ab8`). The InstantRuntime.swift
+  split with the parallel worker is recorded in `agent-presence/_channels/2026-09-30-build-73-runtime.md`.
+- **Why:**
+  - Build 71 (`bb88af72`, reduction `8bee78eb`) fell behind a live recording on an iPhone simulator against `bd40c50a`.
+    The bisect named `8bee78eb`. Build 72 reverted it (`agent/claude-opus-5.5/fast-drain-revert`, `0078484f`, sources
+    equal to `80db4271`).
+  - Build 72 does not drain a Recording 023-sized backlog: 53 accepts in 10 minutes, 25 connections.
+- **Commits:**
+  - `81eb122c`: reapplies `8bee78eb`.
+  - `2666d343`: receipt patches in place of whole-component rebases.
+  - `b4b9fbe3`: deferred-value hydration, links written from the other side, tail order by id.
+  - `5424c733`: refused writes removed without a rebase; last-write-wins in patches.
+  - `46c131d7`: merges connection survival `984cc351` (reader/applier, one reconnect per socket death).
+  - Data: `bcbcaaed` and `ae55eeda` (the N47 open item: refused replays already superseded on the server).
+  - Change log and ledger: `69ae2476`, `b4d6bce2`, `a18786c8`, `506089b2`.
+- **Evidence** (simulator against `bd40c50a`, uninstrumented, exact head `506089b2`, host load 370-980):
+  - Recording 023-shape backlog: 2,581 → 0 in 3 min 47 s, 1 connection, 0 reconnects, 0 refusals, CPU 63% while
+    draining.
+  - Live soak: CPU 24-29%, pending bounded at 0-30.
+  - Ten suites: 683 tests, 21 known issues (3 load flakes pass on rerun).
+  - Differential: 12 seeds in both shapes equal to the full rebase after every event.
+  - Details: `/Users/laptop/Sync/audit/recording-023-fixes/FAST-DRAIN.md` section 14.
+- **Open:**
+  - One server-apply retry exhaustion under load 900 caused a reconnect; hardening is a follow-up.
+  - Every refresh-ok carries all 447 attrs (134 KB), because Swift does not advertise a core version.
+  - N47: superseded replays still count as failed mutations.
+  - Pattern B known issue unchanged.
+- **Next:** the coordinator builds and installs Scribe build 73 with `506089b2`, then watches Recording 023 drain on the
+  phone.
+
 ## 2026-09-29 00:49:08 EDT — Sharing accounts: guest-only OAuth token, log-safe auth sessions, outbox across a guest link (#113)
 
 - **Branch:** `agent/claude-opus-5.5/sharing-accounts` (pushed; not merged; nothing published). Plan
