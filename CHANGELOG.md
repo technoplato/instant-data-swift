@@ -10,6 +10,21 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## September 30th, 2026 at 5:53:46 a.m. EDT — `ce40ebe3ae5d` Let the retry fault injection wait for the runtime's own write instead of failing "database is locked" (#296)
+
+- **Implementation commit:** `ce40ebe3ae5da73a13909922ae07bc17acd184a2`
+- **Change:** The discard tests' retry fault injection waits for the runtime's own write instead of failing with 'database is locked' (#296).
+- **Details:**
+  - failedAtomicRetryCommitRetainsRejectionAndDoesNotResend failed intermittently in full parallel suite runs on a loaded machine. The error came from the test's fault injection: a second SQLite connection with no busy timeout creating a trigger while the runtime's own connection could still hold a short write transaction.
+  - Measured on frozen exports, interleaved, under the shared build lock, at load about 6. A write-lock probe at the injection point was busy in 64 of 80 scenarios on 80db4271 and 60 of 80 on 773429ae; the lock was free again within 0.5 ms. The exact injection failed in 24 of 120 concurrent scenarios on 80db4271 and 17 of 120 on 773429ae, and 0 of 480 on both with a 10 s busy timeout. The ten stale-writes suites, 3 interleaved runs per tree at loads 8 to 399: the target test passed 3 of 3 on both.
+  - Not caused by the fast-drain branch, and the app cannot meet it on the iPhone: the library opens one connection per store with a 10 s busy timeout, and only the app process opens the store (the widget and broadcast extensions do not).
+  - The helper now uses the same 10 s busy timeout as the library's connection and the file's other raw-connection helper. retryFaultInjectionWaitsForTheRuntimesOwnWrite runs the scenario 64 times at once: it failed 2 of 3 runs without the fix and passes 5 of 5 with it.
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantFailedMutationDiscardTests.swift` — busy timeout on the retry fault injection's connection; a concurrent regression test for it
+- **User context (verbatim):**
+  > Settle one thing before fast-drain ships as build 71: is the "database is locked" failure in failedAtomicRetryCommitRetainsRejectionAndDoesNotResend pre-existing, or caused by your branch?
+- **SpecStory:** unavailable — unavailable — Claude Code agent session (fast-drain); no SpecStory capture configured for this session.
+
 ## September 30th, 2026 at 4:22:14 a.m. EDT — `8bee78eb3dd6` Skip the whole-component rebase for server frames that cannot change the base beneath pending writes (#296)
 
 - **Implementation commit:** `8bee78eb3dd6974734b45280cbeb72d6ab5ac999`
