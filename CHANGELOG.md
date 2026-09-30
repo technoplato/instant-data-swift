@@ -10,6 +10,19 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## September 30th, 2026 at 1:04:57 p.m. EDT — `8abcc002cdfa` Let the stale-acknowledgement test accept a deadline the acknowledgement deferral moved later (#296)
+
+- **Implementation commit:** `8abcc002cdfaa45eefd87d20aa1d76a1d72c7ba0`
+- **Change:** The stale-acknowledgement test accepts a claim deadline that the acknowledgement deferral moved later, and still asserts that the stale answer adopted nothing (#296).
+- **Details:**
+  - The stale answer's disposition requests delivery while its frame still counts as applied, so that pump pass runs deferAcknowledgementDeadlinesWhileAFrameIsApplied (4e281ddd) and moves the replacement claim's deadline a few milliseconds later. The test compared the whole claim, deadline included.
+  - Pre-existing: on 0078484f the unmodified test failed 20 of 20 runs at load 680-940 with a 3 ms deadline difference; claude-opus-5.5-fast-drain saw it at load 490-790. On the reader commit it failed 3 of 15 at load 340-760. The test now compares every field except the deadline and requires the deadline not to move earlier; skipping the deferral would be wrong, because the replacement's answer is queued behind the paused frame.
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantLiveTransportTests.swift` — staleAcknowledgementCannotAdoptAClaimTokenReofferedDuringResponseRecording ignores only a later deadline
+- **User context (verbatim):**
+  > Either make the test tolerate a deferred deadline (compare token, claimant, and state rather than the deadline), or make the deferral skip claims the paused frame cannot be holding. Your call.
+- **SpecStory:** unavailable — Claude Code agent session (connection-survival); no SpecStory capture configured for this session.
+
 ## September 30th, 2026 at 11:39:55 a.m. EDT — `7cf2658e6ccd` Keep reading the socket while a frame applies, so URLSession keeps answering server pings (#296)
 
 - **Implementation commit:** `7cf2658e6ccd55fb763dc054ebccb8ec15b56a72`
