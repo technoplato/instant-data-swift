@@ -22,6 +22,26 @@ enum FastDrainSchema {
     "fast-drain-segment-\(String(format: "%05d", index))"
   }
 
+  /// Scribe's own link shape: `recordings/segments` and `recordings/transcriptions` are forward on the recording, with
+  /// many values, and each write inserts the reverse form (`transcriptionSegments/recording`), which the store
+  /// materializes on the recording. Recording 023's phone store holds them this way.
+  static let scribeLinkAttributes: [InstantAttribute] = attributes.filter {
+    $0.id != "transcriptionSegments/recording" && $0.id != "transcriptions/recording"
+  } + [
+    InstantAttribute(
+      id: "recordings/segments", namespace: "recordings", name: "segments", valueType: .ref,
+      isRequired: false, cardinality: .many, isIndexed: true,
+      forwardIdentity: "recordings/segments", reverseIdentity: "transcriptionSegments/recording",
+      linkNamespace: "transcriptionSegments", onDeleteReverse: .cascade
+    ),
+    InstantAttribute(
+      id: "recordings/transcriptions", namespace: "recordings", name: "transcriptions", valueType: .ref,
+      isRequired: false, cardinality: .many, isIndexed: true,
+      forwardIdentity: "recordings/transcriptions", reverseIdentity: "transcriptions/recording",
+      linkNamespace: "transcriptions", onDeleteReverse: .cascade
+    ),
+  ]
+
   static let attributes: [InstantAttribute] = [
     InstantAttribute(
       id: "recordings/id", namespace: "recordings", name: "id", valueType: .string,
@@ -169,6 +189,30 @@ struct FastDrainWriteScript {
     )
   }
 
+  /// The write that marks the recording live (`activityKind`), as Scribe's start does.
+  mutating func startWrite() -> InstantStoreTransaction {
+    activityWrite("active")
+  }
+
+  /// The Stop: the only write of `activityKind` after the start, so its slot's first pending writer is the newest
+  /// write, behind every other pending write of the recording (Recording 023's 18:44:07 Stop).
+  mutating func stopWrite() -> InstantStoreTransaction {
+    activityWrite("idle")
+  }
+
+  private mutating func activityWrite(_ kind: String) -> InstantStoreTransaction {
+    let (id, time, updatedAt) = stamp()
+    let recording = FastDrainSchema.recordingID
+    return InstantStoreTransaction(
+      id: id,
+      operations: [
+        .insert(InstantTriple(entityID: recording, attributeID: "recordings/id", value: .string(recording), txID: id, txTime: time)),
+        .insert(InstantTriple(entityID: recording, attributeID: "recordings/activityKind", value: .string(kind), txID: id, txTime: time)),
+        .insert(InstantTriple(entityID: recording, attributeID: "recordings/updatedAtMs", value: .number(updatedAt), txID: id, txTime: time)),
+      ]
+    )
+  }
+
   private mutating func durationWrite() -> InstantStoreTransaction {
     let (id, time, updatedAt) = stamp()
     let recording = FastDrainSchema.recordingID
@@ -218,12 +262,41 @@ struct FastDrainServer {
     return window == 0 ? .max : window
   }()
 
-  private(set) var facts: [String: [String: Fact]] = [:]
+  /// The list result's link window, like Scribe's `attachments` include (limit 24).
+  static let listLinkWindow = 24
+
+  /// Every fact by entity, attribute, and value. Cardinality-one attributes hold one value.
+  private(set) var facts: [String: [String: [InstantValue: Int64]]] = [:]
   private(set) var lastTransactionNumber: Int64 = 10_000
   private(set) var serverMilliseconds: Int64
+  private let attributesByID: [String: InstantAttribute]
+  /// Forward link attributes by their reverse identity, so a reverse-form write lands where the server keeps it.
+  private let forwardByReverseIdentity: [String: InstantAttribute]
 
-  init(serverMilliseconds: Int64) {
+  init(serverMilliseconds: Int64, attributes: [InstantAttribute] = FastDrainSchema.attributes) {
     self.serverMilliseconds = serverMilliseconds
+    attributesByID = Dictionary(uniqueKeysWithValues: attributes.map { ($0.id, $0) })
+    forwardByReverseIdentity = Dictionary(
+      attributes.compactMap { attribute in attribute.reverseIdentity.map { ($0, attribute) } },
+      uniquingKeysWith: { first, _ in first }
+    )
+  }
+
+  /// The one value a cardinality-one fact holds, for assertions.
+  func value(_ entityID: String, _ attributeID: String) -> InstantValue? {
+    facts[entityID]?[attributeID]?.keys.first
+  }
+
+  private mutating func store(entityID: String, attributeID: String, value: InstantValue, txTime: Int64) {
+    if let forward = forwardByReverseIdentity[attributeID], case let .ref(targetID) = value {
+      store(entityID: targetID, attributeID: forward.id, value: .ref(entityID), txTime: txTime)
+      return
+    }
+    if attributesByID[attributeID]?.cardinality == .many {
+      facts[entityID, default: [:]][attributeID, default: [:]][value] = txTime
+    } else {
+      facts[entityID, default: [:]][attributeID] = [value: txTime]
+    }
   }
 
   /// Applies one accepted transaction's inserts and returns its server transaction id.
@@ -232,7 +305,7 @@ struct FastDrainServer {
     serverMilliseconds += 3
     for operation in operations {
       guard case let .insert(triple) = operation else { continue }
-      facts[triple.entityID, default: [:]][triple.attributeID] = Fact(value: triple.value, txTime: serverMilliseconds)
+      store(entityID: triple.entityID, attributeID: triple.attributeID, value: triple.value, txTime: serverMilliseconds)
     }
     return String(lastTransactionNumber)
   }
@@ -241,7 +314,7 @@ struct FastDrainServer {
   mutating func acceptForeignWrite(entityID: String, attributeID: String, value: InstantValue) -> String {
     lastTransactionNumber += 1
     serverMilliseconds += 1_000_000
-    facts[entityID, default: [:]][attributeID] = Fact(value: value, txTime: serverMilliseconds)
+    store(entityID: entityID, attributeID: attributeID, value: value, txTime: serverMilliseconds)
     return String(lastTransactionNumber)
   }
 
@@ -250,15 +323,13 @@ struct FastDrainServer {
     switch query {
     case .timeline:
       let segments = facts
-        .filter { $0.value["transcriptionSegments/recording"]?.value == .ref(recording) }
+        .filter { $0.value["transcriptionSegments/recordingID"]?.keys.first == .string(recording) }
         .map(\.key)
         .sorted()
       return (facts[recording] == nil ? [] : [recording]) + segments.suffix(timelineWindow)
     case .list:
       var entities = facts[recording] == nil ? [] : [recording]
-      if case let .ref(preview)? = facts[recording]?["recordings/previewSegmentB"]?.value,
-        facts[preview] != nil
-      {
+      if case let .ref(preview)? = value(recording, "recordings/previewSegmentB"), facts[preview] != nil {
         entities.append(preview)
       }
       return entities
@@ -269,15 +340,24 @@ struct FastDrainServer {
 
   func triples(in query: FastDrainQuery, transactionID: String) -> [InstantTriple] {
     entities(in: query).flatMap { entityID in
-      (facts[entityID] ?? [:]).keys.sorted().filter { !query.omittedAttributeIDs.contains($0) }.map { attributeID in
-        let fact = facts[entityID]![attributeID]!
-        return InstantTriple(
-          entityID: entityID,
-          attributeID: attributeID,
-          value: fact.value,
-          txID: transactionID,
-          txTime: InstantTimestamp(milliseconds: fact.txTime)
-        )
+      (facts[entityID] ?? [:]).keys.sorted().filter { attributeID in
+        guard !query.omittedAttributeIDs.contains(attributeID) else { return false }
+        // Links from the recording travel only in the list result, as Scribe's attachments do.
+        return query == .list || attributesByID[attributeID]?.cardinality != .many
+      }.flatMap { attributeID -> [InstantTriple] in
+        var values = facts[entityID]![attributeID]!.sorted { $0.key.comparableKey < $1.key.comparableKey }
+        if attributesByID[attributeID]?.cardinality == .many {
+          values = Array(values.suffix(Self.listLinkWindow))
+        }
+        return values.map { value, txTime in
+          InstantTriple(
+            entityID: entityID,
+            attributeID: attributeID,
+            value: value,
+            txID: transactionID,
+            txTime: InstantTimestamp(milliseconds: txTime)
+          )
+        }
       }
     }
   }
@@ -325,8 +405,11 @@ struct FastDrainFixture {
     serverSegmentCount: Int,
     pendingSegmentCount: Int,
     reducesServerApply: Bool = true,
-    timelineWindow: Int? = nil
+    timelineWindow: Int? = nil,
+    scribeLinks: Bool = false,
+    endsWithStop: Bool = false
   ) async throws -> Self {
+    let attributes = scribeLinks ? FastDrainSchema.scribeLinkAttributes : FastDrainSchema.attributes
     let cacheURL = FileManager.default.temporaryDirectory.appendingPathComponent(
       "instant-fast-drain-\(suffix)-\(UUID().uuidString).sqlite"
     )
@@ -334,7 +417,7 @@ struct FastDrainFixture {
     var configuration = InstantRuntimeConfiguration(
       appID: "fast-drain-\(suffix)",
       persistenceURL: cacheURL,
-      initialAttributes: FastDrainSchema.attributes,
+      initialAttributes: attributes,
       now: { clock.now() }
     )
     // INSTANT_FAST_DRAIN_FULL_REBASE=1 runs every fixture on the whole-component rebase, the behavior before #296's
@@ -344,9 +427,12 @@ struct FastDrainFixture {
     let runtime = try await InstantRuntime.bootstrap(configuration: configuration)
 
     // The server's history before this device went offline: the same writes, already accepted.
-    var server = FastDrainServer(serverMilliseconds: 1_790_700_000_000)
+    var server = FastDrainServer(serverMilliseconds: 1_790_700_000_000, attributes: attributes)
     if let timelineWindow { server.timelineWindow = timelineWindow }
     var history = FastDrainWriteScript(firstSegmentIndex: 0, deviceMilliseconds: 1_790_600_000_000)
+    if endsWithStop {
+      _ = server.accept(history.startWrite().operations)
+    }
     for _ in 0..<serverSegmentCount {
       for write in history.nextSegmentWrites() {
         _ = server.accept(write.operations)
@@ -368,6 +454,10 @@ struct FastDrainFixture {
       for write in script.nextSegmentWrites() {
         _ = try await runtime.transact(write, createdAt: InstantTimestamp(milliseconds: script.deviceMilliseconds))
       }
+    }
+    if endsWithStop {
+      let stop = script.stopWrite()
+      _ = try await runtime.transact(stop, createdAt: InstantTimestamp(milliseconds: script.deviceMilliseconds))
     }
     return Self(runtime: runtime, server: server, script: script)
   }
@@ -433,7 +523,7 @@ struct FastDrainFixture {
     let after = await runtime.persistence.serverApplyMetricsForTesting()
     return FastDrainFrameMeasurement(
       duration: elapsed,
-      plannedBodyCount: after.plannedBodyCount - before.plannedBodyCount,
+      plannedBodyCount: after.plannedComponentBodyCount - before.plannedComponentBodyCount,
       decodedBodyCount: after.decodedBodyCount - before.decodedBodyCount
     )
   }
@@ -445,6 +535,8 @@ struct FastDrainFixture {
 
 struct FastDrainFrameMeasurement {
   var duration: Duration
+  /// Pending writes the frame peeled and replayed (its component); pruned, confirmed, and re-receipted rows are not
+  /// counted.
   var plannedBodyCount: Int
   var decodedBodyCount: Int
 
@@ -505,6 +597,20 @@ enum FastDrainProcessCPU {
 final class FastDrainDeclineCounter: @unchecked Sendable {
   private let lock = NSLock()
   private var counts: [String: Int] = [:]
+
+  /// Counts the reduction's decline reasons (with the attribute that decided each) while `body` runs.
+  static func counting<T>(_ body: () async throws -> T) async rethrows -> (T, [String: Int]) {
+    let declines = FastDrainDeclineCounter()
+    let token = InstantDiagnostics.shared.addHandler { entry in
+      guard entry.event == "server-apply.reduction-declined" else { return }
+      declines.record(
+        [entry.metadata["reason"], entry.metadata["attributeID"]].compactMap { $0 }.joined(separator: " ")
+      )
+    }
+    defer { InstantDiagnostics.shared.removeHandler(token) }
+    let value = try await body()
+    return (value, declines.snapshot())
+  }
 
   func record(_ reason: String) {
     lock.lock()
@@ -719,22 +825,34 @@ struct FastDrainDifferentialPair {
   var reduced: FastDrainFixture
   var full: FastDrainFixture
   var log: [String] = []
+  /// Writes the server has applied, answered or not. A re-send of one is a replay the app's rules can refuse.
+  var appliedMutationIDs: Set<String> = []
 
-  static func make(seed: UInt64, serverSegmentCount: Int, pendingSegmentCount: Int) async throws -> Self {
+  static func make(
+    seed: UInt64,
+    serverSegmentCount: Int,
+    pendingSegmentCount: Int,
+    scribeLinks: Bool = false,
+    endsWithStop: Bool = false
+  ) async throws -> Self {
     Self(
       reduced: try await FastDrainFixture.make(
         suffix: "differential-\(seed)-reduced",
         serverSegmentCount: serverSegmentCount,
         pendingSegmentCount: pendingSegmentCount,
         reducesServerApply: true,
-        timelineWindow: 5
+        timelineWindow: 5,
+        scribeLinks: scribeLinks,
+        endsWithStop: endsWithStop
       ),
       full: try await FastDrainFixture.make(
         suffix: "differential-\(seed)-full",
         serverSegmentCount: serverSegmentCount,
         pendingSegmentCount: pendingSegmentCount,
         reducesServerApply: false,
-        timelineWindow: 5
+        timelineWindow: 5,
+        scribeLinks: scribeLinks,
+        endsWithStop: endsWithStop
       )
     )
   }
@@ -776,23 +894,31 @@ struct FastDrainDifferentialPair {
 
   /// The server applies the claimed writes in order. Each is acknowledged unless `losesAcknowledgements`; a frame
   /// follows each write with probability `framePercent`, and one frame for all touched queries always ends the batch.
+  /// With `framesAheadOfAnswers`, a write's frame reaches the device before its answer, as Instant sometimes sends a
+  /// refresh-ok ahead of the transact-ok it reflects.
   mutating func deliver(
     _ claimed: [(reduced: String, full: String, mutation: PendingMutation)],
     losesAcknowledgements: Bool,
     framePercent: Int,
+    framesAheadOfAnswers: Bool = false,
     random: inout FastDrainRandom
   ) async throws {
     var touched: Set<String> = []
     for (reducedToken, fullToken, mutation) in claimed {
       let transactionID = reduced.server.accept(mutation.transaction.operations)
       _ = full.server.accept(mutation.transaction.operations)
+      appliedMutationIDs.insert(mutation.id)
+      let entities = Set(mutation.transaction.operations.compactMap(\.fastDrainInsertedTriple).map(\.entityID))
+      touched.formUnion(entities)
+      let framed = random.chance(framePercent)
+      if framed, framesAheadOfAnswers {
+        try await frame(queries: reduced.server.queries(touching: entities), processedTransactionID: transactionID)
+      }
       if !losesAcknowledgements {
         _ = try await reduced.runtime.acceptMutationIfPresent(id: mutation.id, serverTransactionID: transactionID, claimToken: reducedToken)
         _ = try await full.runtime.acceptMutationIfPresent(id: mutation.id, serverTransactionID: transactionID, claimToken: fullToken)
       }
-      let entities = Set(mutation.transaction.operations.compactMap(\.fastDrainInsertedTriple).map(\.entityID))
-      touched.formUnion(entities)
-      if random.chance(framePercent) {
+      if framed, !framesAheadOfAnswers {
         try await frame(queries: reduced.server.queries(touching: entities), processedTransactionID: transactionID)
       }
     }
@@ -816,18 +942,43 @@ extension InstantFastDrainTests {
   /// every event the reduced device must observe exactly what the full-rebase device observes.
   @Test(arguments: [UInt64(1), 2, 3, 4, 5, 6])
   func theReducedApplyObservesWhatTheFullRebaseObserves(seed: UInt64) async throws {
+    try await runDifferential(seed: seed, scribeLinks: false)
+  }
+
+  /// The same randomized interleavings with Scribe's own link shape (forward links on the recording, written from the
+  /// segment side) and a Stop behind the pending writes, which the fake-server schema above does not exercise.
+  @Test(arguments: [UInt64(11), 12, 13, 14, 15, 16])
+  func theReducedApplyObservesWhatTheFullRebaseObservesWithScribeLinks(seed: UInt64) async throws {
+    try await runDifferential(seed: seed, scribeLinks: true)
+  }
+
+  private func runDifferential(seed: UInt64, scribeLinks: Bool) async throws {
     var random = FastDrainRandom(seed: seed)
-    var pair = try await FastDrainDifferentialPair.make(seed: seed, serverSegmentCount: 6, pendingSegmentCount: 8)
+    var pair = try await FastDrainDifferentialPair.make(
+      seed: seed,
+      serverSegmentCount: 6,
+      pendingSegmentCount: 8,
+      scribeLinks: scribeLinks,
+      endsWithStop: scribeLinks
+    )
     guard try await pair.expectSameObservation(after: "setup") else { return }
     for step in 0..<70 {
       let roll = random.int(1...100)
       let event: String
       switch roll {
-      case 1...40:
+      case 1...32:
         let count = random.int(1...12)
         guard let claimed = try await pair.claim(count) else { return }
         event = "deliver \(claimed.count)"
         try await pair.deliver(claimed, losesAcknowledgements: false, framePercent: random.int(0...100), random: &random)
+      case 33...40:
+        let count = random.int(1...12)
+        guard let claimed = try await pair.claim(count) else { return }
+        event = "deliver \(claimed.count), frames ahead of answers"
+        try await pair.deliver(
+          claimed, losesAcknowledgements: false, framePercent: random.int(30...100), framesAheadOfAnswers: true,
+          random: &random
+        )
       case 41...50:
         event = "reconnect re-send"
         for query in FastDrainQuery.allCases where random.chance(70) {
@@ -865,6 +1016,23 @@ extension InstantFastDrainTests {
         // The answers never arrive: the claims expire and the next window sends the writes again.
         pair.reduced.claimMilliseconds += 10_000
         pair.full.claimMilliseconds += 10_000
+      case 79...84:
+        // The next window re-sends writes the server already applied; the app's rules refuse those replays
+        // (Recording 023's validUpdate refusals), and the device rolls each back.
+        guard let claimed = try await pair.claim(random.int(1...6)) else { return }
+        let replays = claimed.filter { pair.appliedMutationIDs.contains($0.mutation.id) }
+        guard !replays.isEmpty else {
+          event = "no replays among \(claimed.count); deliver"
+          try await pair.deliver(claimed, losesAcknowledgements: false, framePercent: 50, random: &random)
+          break
+        }
+        event = "refuse \(replays.count) replays of \(claimed.count)"
+        for replay in replays {
+          _ = try await pair.reduced.runtime.failMutation(id: replay.mutation.id, message: "Permission denied: not perms-pass?")
+          _ = try await pair.full.runtime.failMutation(id: replay.mutation.id, message: "Permission denied: not perms-pass?")
+        }
+        let fresh = claimed.filter { !pair.appliedMutationIDs.contains($0.mutation.id) }
+        try await pair.deliver(fresh, losesAcknowledgements: false, framePercent: 50, random: &random)
       default:
         event = "local writes"
         let reducedIDs = try await pair.reduced.writeSegments(1)
@@ -884,13 +1052,21 @@ extension InstantFastDrainTests {
           """
           trace \(step): \(event) | reductions \(metrics.reductionCount) reduced \(metrics.reducedCount) \
           | reduced \(await duration(pair.reduced.runtime)) | full \(await duration(pair.full.runtime)) \
-          | server \(pair.reduced.server.facts[FastDrainSchema.recordingID]?["recordings/durationSeconds"].map { "\($0.value) t \($0.txTime)" } ?? "none") \
+          | server \(pair.reduced.server.value(FastDrainSchema.recordingID, "recordings/durationSeconds").map { "\($0)" } ?? "none") \
           | pending \(pendingIDs.count) first \(pendingIDs.first ?? "-")
           """
         )
       }
       guard try await pair.expectSameObservation(after: "step \(step): \(event)") else { return }
     }
+    let metrics = await pair.reduced.runtime.persistence.serverApplyMetricsForTesting()
+    print(
+      """
+      differential seed \(seed)\(scribeLinks ? " (Scribe links)" : ""): \(metrics.reductionCount) reductions, \
+      \(metrics.reducedCount) reduced, \(metrics.receiptPatchCount) receipt patches, \
+      \(metrics.plannedComponentBodyCount) component bodies
+      """
+    )
   }
 }
 
@@ -924,21 +1100,97 @@ extension InstantFastDrainTests {
   }
 
   /// Recording 023's replays: the server applied a write whose answer was lost, so the write is still pending when a
-  /// frame restates it. The base beneath the pending write changed, so this frame must rebase.
+  /// frame restates it, and its re-send is later refused. The base beneath the write changed, so its receipt must hold
+  /// the server's values when the refusal rolls it back. The reduced apply patches that receipt instead of peeling and
+  /// replaying the component; afterwards both devices must observe the same thing.
   @Test
-  func aFrameRestatingAWriteWhoseAnswerWasLostStillRebases() async throws {
-    var fixture = try await FastDrainFixture.make(suffix: "lost-answer", serverSegmentCount: 4, pendingSegmentCount: 2)
-    let window = try await fixture.claimWindow(maximumMutationCount: 1)
-    let head = try #require(window.mutations.first)
-    let transactionID = fixture.server.accept(head.transaction.operations)
-    let touched = Set(head.transaction.operations.compactMap(\.fastDrainInsertedTriple).map(\.entityID))
-    let frame = try await fixture.refresh(
-      queries: fixture.server.queries(touching: touched),
-      processedTransactionID: transactionID
+  func aFrameRestatingAWriteWhoseAnswerWasLostPatchesItsReceiptWithoutARebase() async throws {
+    var reduced = try await FastDrainFixture.make(suffix: "lost-answer-reduced", serverSegmentCount: 4, pendingSegmentCount: 2)
+    var full = try await FastDrainFixture.make(
+      suffix: "lost-answer-full", serverSegmentCount: 4, pendingSegmentCount: 2, reducesServerApply: false
     )
-    #expect(frame.isRebase)
-    let pendingIDs = await fixture.runtime.pendingMutations().map(\.id)
+    let window = try await reduced.claimWindow(maximumMutationCount: 1)
+    _ = try await full.claimWindow(maximumMutationCount: 1)
+    let head = try #require(window.mutations.first)
+    let transactionID = reduced.server.accept(head.transaction.operations)
+    _ = full.server.accept(head.transaction.operations)
+    let touched = Set(head.transaction.operations.compactMap(\.fastDrainInsertedTriple).map(\.entityID))
+    let queries = reduced.server.queries(touching: touched)
+    let (frame, declines) = try await FastDrainDeclineCounter.counting {
+      try await reduced.refresh(queries: queries, processedTransactionID: transactionID)
+    }
+    _ = try await full.refresh(queries: queries, processedTransactionID: transactionID)
+    expectNoDifference(frame.plannedBodyCount, 0, "declines: \(declines)")
+    let pendingIDs = await reduced.runtime.pendingMutations().map(\.id)
     #expect(pendingIDs.contains(head.id))
+
+    // The re-send is refused: the server applied the first offer. Rolling the write back must keep what the server has.
+    _ = try await reduced.runtime.failMutation(id: head.id, message: "Permission denied: not perms-pass?")
+    _ = try await full.runtime.failMutation(id: head.id, message: "Permission denied: not perms-pass?")
+    let reducedObservation = try await FastDrainObservation.observe(reduced.runtime)
+    let fullObservation = try await FastDrainObservation.observe(full.runtime)
+    expectNoDifference(reducedObservation.hotFacts, fullObservation.hotFacts)
+    expectNoDifference(reducedObservation.persistedFacts, fullObservation.persistedFacts)
+    expectNoDifference(reducedObservation.outbox, fullObservation.outbox)
+  }
+
+  /// Seen live on the build-71 soak: Instant can send a query's refresh before the answer to the write it reflects
+  /// (a refresh-ok 50 ms ahead of its transact-ok). The write is still pending, so the frame changes the base beneath
+  /// it. Every such frame fell back to the whole-component rebase, the rebases grew with the backlog, and the device
+  /// fell behind the recording. The frame must patch the receipts instead, and match the full rebase afterwards.
+  @Test
+  func aFrameAheadOfItsAnswersDoesNotRebaseThePendingWrites() async throws {
+    var reduced = try await FastDrainFixture.make(suffix: "in-flight-reduced", serverSegmentCount: 4, pendingSegmentCount: 4)
+    var full = try await FastDrainFixture.make(
+      suffix: "in-flight-full", serverSegmentCount: 4, pendingSegmentCount: 4, reducesServerApply: false
+    )
+    for round in 0..<3 {
+      let window = try await reduced.claimWindow(maximumMutationCount: 5)
+      let fullWindow = try await full.claimWindow(maximumMutationCount: 5)
+      expectNoDifference(window.mutations.map(\.id), fullWindow.mutations.map(\.id))
+      var accepted: [(mutation: PendingMutation, transactionID: String)] = []
+      var touched: Set<String> = []
+      for mutation in window.mutations {
+        let transactionID = reduced.server.accept(mutation.transaction.operations)
+        _ = full.server.accept(mutation.transaction.operations)
+        accepted.append((mutation, transactionID))
+        touched.formUnion(mutation.transaction.operations.compactMap(\.fastDrainInsertedTriple).map(\.entityID))
+      }
+      // The refresh for the whole window arrives first.
+      let queries = reduced.server.queries(touching: touched)
+      let processed = accepted.last?.transactionID
+      let (frame, declines) = try await FastDrainDeclineCounter.counting {
+        try await reduced.refresh(queries: queries, processedTransactionID: processed)
+      }
+      _ = try await full.refresh(queries: queries, processedTransactionID: processed)
+      expectNoDifference(
+        frame.plannedBodyCount, 0, "round \(round): the frame ahead of its answers rebased; declines: \(declines)"
+      )
+      // Then the answers.
+      for (mutation, transactionID) in accepted {
+        _ = try await reduced.runtime.acceptMutationIfPresent(id: mutation.id, serverTransactionID: transactionID, claimToken: window.token)
+        _ = try await full.runtime.acceptMutationIfPresent(id: mutation.id, serverTransactionID: transactionID, claimToken: fullWindow.token)
+      }
+      let reducedObservation = try await FastDrainObservation.observe(reduced.runtime)
+      let fullObservation = try await FastDrainObservation.observe(full.runtime)
+      expectNoDifference(reducedObservation.hotFacts, fullObservation.hotFacts, "round \(round)")
+      expectNoDifference(reducedObservation.persistedFacts, fullObservation.persistedFacts, "round \(round)")
+      expectNoDifference(reducedObservation.outbox, fullObservation.outbox, "round \(round)")
+    }
+  }
+
+  /// Recording 023 ends with a Stop: the only pending write of `activityKind`, behind every other pending write of the
+  /// recording. The reduction used to prove that none of the recording's earlier writes retracted the slot by
+  /// decoding them, capped at 32, so every frame after a Stop fell back to the whole-component rebase. The Stop's own
+  /// receipt already shows the base value beneath it.
+  @Test
+  func aStopBehindManyPendingWritesDoesNotRebaseTheDrainFrames() async throws {
+    var fixture = try await FastDrainFixture.make(
+      suffix: "stop", serverSegmentCount: 4, pendingSegmentCount: 10, endsWithStop: true
+    )
+    let measurement = try await fixture.drain(maximumFrames: 30)
+    print("frames behind a Stop: \(measurement)")
+    expectNoDifference(measurement.rebases, 0)
   }
 }
 
@@ -995,7 +1247,7 @@ extension InstantFastDrainTests {
     let text = state.snapshot.store.triples.first {
       $0.entityID == segment && $0.attributeID == "transcriptionSegments/text"
     }
-    expectNoDifference(text?.value, fixture.server.facts[segment]?["transcriptionSegments/text"]?.value)
+    expectNoDifference(text?.value, fixture.server.value(segment, "transcriptionSegments/text"))
   }
 }
 

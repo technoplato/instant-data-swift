@@ -470,14 +470,24 @@ enum InstantServerApplyReductionIneligibility: String, Sendable {
   case nonPrefixWatermark
   case tooManyBodies
   case unsupportedOperation
+  /// A fact on a shadowed slot that no surviving write inserts does not hold in the store.
   case changesShadowedFact
+  /// A surviving write merges into the slot, or its latest writer's value is not what the store shows.
+  case shadowedSlotNotReplaced
+  /// The first writer's receipt cannot name the base value beneath it (it deletes the entity, or restores several
+  /// values), or restores none while earlier pending writes touch the entity.
+  case unprovenBeforeImage
+  /// A surviving write inserts this link from the other side, which leaves no write key on this slot.
+  case reverseLinkWriter
   case retractsShadowedFact
   case linksToShadowedEntity
 }
 
 enum InstantServerApplyReduction: Sendable {
-  /// The operations that can change the base; every other one already holds beneath the pending writes.
-  case reduced([InstantTripleOperation])
+  /// The operations that can change the base; every other one already holds beneath the pending writes. Where the
+  /// server changed a slot beneath its pending writers, `receiptPatches` names each slot's first surviving writer and
+  /// the server fact that becomes its before-image, which is the only receipt the full rebase would change there.
+  case reduced([InstantTripleOperation], receiptPatches: [String: [InstantTriple]] = [:])
   /// The first fact that needs the whole-component rebase, when one fact decided it.
   case declined(InstantServerApplyReductionIneligibility, fact: InstantTriple? = nil)
 }
@@ -495,8 +505,13 @@ struct InstantServerApplyReductionContext: Sendable {
   var firstWriterBySlot: [InstantVisibleWriteKey: String] = [:]
   /// For the same slots, the latest such write, whose value the store must show.
   var lastWriterBySlot: [InstantVisibleWriteKey: String] = [:]
-  /// Surviving pending writes on each shadowed entity that precede its latest first writer.
-  var earlierOverlayIDsByEntity: [String: [String]] = [:]
+  /// For each shadowed entity with a first writer, the earliest surviving pending write that touches the entity at
+  /// all. When it is the slot's first writer, no earlier pending write can have removed the slot's base value.
+  var firstOverlayByEntity: [String: String] = [:]
+  /// Reverse-form link slots (target entity, reverse attribute) that a surviving pending write inserts. A write of
+  /// `transcriptionSegments/recording` on a segment materializes as `recordings/segments` on the recording, but its
+  /// write key names the segment's slot, so a forward link fact alone cannot see that write.
+  var reverseLinkSlotsWithWriters: Set<InstantVisibleWriteKey> = []
   /// The durable bodies of every write named above.
   var bodies: [String: PendingMutation] = [:]
 }
@@ -504,7 +519,6 @@ struct InstantServerApplyReductionContext: Sendable {
 enum InstantServerApplyReductionLimits {
   /// Bounds the bodies one apply decodes to prove a frame cannot change the base; past it, the full rebase runs.
   static let maximumBodies = 256
-  static let maximumEarlierOverlaysPerEntity = 32
 }
 
 struct InstantServerApplyPlan: Sendable {
@@ -517,6 +531,8 @@ struct InstantServerApplyPlan: Sendable {
   var baselineOutboxTail: InstantOutboxDeliveryPosition?
   var plannedBodyCount: Int
   var plannedBodyByteCount: Int
+  /// Of the planned bodies, the component the apply peels and replays; the rest are pruned, confirmed, or re-receipted.
+  var plannedComponentBodyCount: Int = 0
 }
 
 struct InstantServerApplyCatchUp: Sendable {
@@ -644,6 +660,8 @@ package struct InstantServerApplyMetrics: Equatable, Sendable {
   package var planCount = 0
   package var plannedBodyCount = 0
   package var plannedBodyByteCount = 0
+  /// Planned bodies that are peeled and replayed (the component), as opposed to pruned, confirmed, or re-receipted.
+  package var plannedComponentBodyCount = 0
   package var decodedBodyCount = 0
   package var decodedBodyByteCount = 0
   package var reverseBodyPageCount = 0
@@ -666,6 +684,8 @@ package struct InstantServerApplyMetrics: Equatable, Sendable {
   package var reductionCount = 0
   /// Of those, the applies that could drop the facts they cannot change instead of rebasing everything.
   package var reducedCount = 0
+  /// Receipts re-based onto a server change beneath their pending write, without peeling or replaying it.
+  package var receiptPatchCount = 0
 
   mutating func recordBodyPage(
     direction: InstantServerApplyBodyDirection,
@@ -3611,7 +3631,8 @@ public actor SQLitePersistenceStore {
     processedTransactionID: String,
     confirmingMutationID: String?,
     confirmingClaimantID: String?,
-    excludesWatermarkRoots: Bool = false
+    excludesWatermarkRoots: Bool = false,
+    receiptPatchMutationIDs: Set<String> = []
   ) throws -> InstantServerApplyPlanLoad {
     precondition(
       (confirmingMutationID == nil) == (confirmingClaimantID == nil),
@@ -3676,6 +3697,15 @@ public actor SQLitePersistenceStore {
           [.text(planID), .text(entityID)]
         )
       }
+      for mutationID in receiptPatchMutationIDs.sorted() {
+        try execute(
+          """
+          INSERT INTO instant_server_apply_receipt_patches (plan_id, mutation_id)
+          VALUES (?, ?)
+          """,
+          [.text(planID), .text(mutationID)]
+        )
+      }
       try populateServerApplyPlanRowsWithoutTransaction(id: planID)
       let bodyCount = Int(try selectInt64(
         """
@@ -3692,6 +3722,13 @@ public actor SQLitePersistenceStore {
         """,
         [.text(planID)]
       ))
+      let componentBodyCount = Int(try selectInt64(
+        """
+        SELECT COUNT(*) FROM instant_server_apply_rows
+        WHERE plan_id = ? AND requires_body = 1 AND is_component_body = 1
+        """,
+        [.text(planID)]
+      ))
       return .ready(
         InstantServerApplyPlan(
           id: planID,
@@ -3702,13 +3739,16 @@ public actor SQLitePersistenceStore {
           baselineOutboxRowCount: baselineOutboxRowCount,
           baselineOutboxTail: baselineOutboxTail,
           plannedBodyCount: bodyCount,
-          plannedBodyByteCount: bodyByteCount
+          plannedBodyByteCount: bodyByteCount,
+          plannedComponentBodyCount: componentBodyCount
         )
       )
     }
     if case let .ready(plan) = result {
       serverApplyMetrics.planCount += 1
       serverApplyMetrics.plannedBodyCount += plan.plannedBodyCount
+      serverApplyMetrics.plannedComponentBodyCount += plan.plannedComponentBodyCount
+      serverApplyMetrics.receiptPatchCount += receiptPatchMutationIDs.count
       serverApplyMetrics.plannedBodyByteCount += plan.plannedBodyByteCount
     }
     return result
@@ -3865,6 +3905,7 @@ public actor SQLitePersistenceStore {
   /// at the revisions the caller's seed was taken at.
   func loadServerApplyReductionContext(
     slots: [String: Set<String>],
+    reverseLinkSlots: Set<InstantVisibleWriteKey> = [],
     processedTransactionID: String,
     expectedStoreRevision: Int64,
     expectedAttributeRevision: Int64,
@@ -4066,9 +4107,10 @@ public actor SQLitePersistenceStore {
 
       var bodyIDs: Set<String> = []
       for entityID in context.shadowedEntityIDs.sorted() {
-        var latestFirstWriter: InstantOutboxDeliveryPosition?
+        var hasFirstWriter = false
         for attributeID in (slots[entityID] ?? []).sorted() {
           guard let first = try writer(of: attributeID, on: entityID, newest: false) else { continue }
+          hasFirstWriter = true
           let slot = InstantVisibleWriteKey(entityID: entityID, attributeID: attributeID)
           context.firstWriterBySlot[slot] = first.mutationID
           bodyIDs.insert(first.mutationID)
@@ -4076,41 +4118,31 @@ public actor SQLitePersistenceStore {
             context.lastWriterBySlot[slot] = last.mutationID
             bodyIDs.insert(last.mutationID)
           }
-          if latestFirstWriter.map({
-            (first.createdAtMilliseconds, first.mutationID) > ($0.createdAtMilliseconds, $0.mutationID)
-          }) ?? true {
-            latestFirstWriter = first
-          }
         }
-        guard let latestFirstWriter else { continue }
-        // Pending writes on this entity that precede its first writers: a retraction or deletion among them would make
-        // a first writer's before-image differ from the base.
-        let earlier = try selectStrings(
+        guard hasFirstWriter else { continue }
+        // The earliest surviving write on this entity: a first writer that is also the entity's first overlay has no
+        // earlier pending write beneath it that could have retracted or deleted the slot.
+        let firstOverlay = try selectStrings(
           """
           SELECT effects.mutation_id
           FROM instant_outbox_effect_entities AS effects
             INDEXED BY instant_outbox_effect_entities_lookup_idx
           JOIN instant_outbox AS outbox ON outbox.mutation_id = effects.mutation_id
           WHERE effects.entity_id = ? AND \(remaining)
-            AND (
-              effects.created_at_ms < ?
-              OR (effects.created_at_ms = ? AND effects.mutation_id < ?)
-            )
           ORDER BY effects.created_at_ms, effects.mutation_id
-          LIMIT ?
+          LIMIT 1
           """,
-          [.text(entityID)] + prunable.bindings + [
-            .int(latestFirstWriter.createdAtMilliseconds),
-            .int(latestFirstWriter.createdAtMilliseconds),
-            .text(latestFirstWriter.mutationID),
-            .int(Int64(InstantServerApplyReductionLimits.maximumEarlierOverlaysPerEntity + 1)),
-          ]
+          [.text(entityID)] + prunable.bindings
         )
-        guard earlier.count <= InstantServerApplyReductionLimits.maximumEarlierOverlaysPerEntity else {
-          return .ineligible(.tooManyBodies)
+        if let firstOverlay = firstOverlay.first {
+          context.firstOverlayByEntity[entityID] = firstOverlay
+          // Its receipt shows whether it created the entity.
+          bodyIDs.insert(firstOverlay)
         }
-        context.earlierOverlayIDsByEntity[entityID] = earlier
-        bodyIDs.formUnion(earlier)
+      }
+      for slot in reverseLinkSlots.sorted(by: { ($0.entityID, $0.attributeID) < ($1.entityID, $1.attributeID) })
+      where try writer(of: slot.attributeID, on: slot.entityID, newest: false) != nil {
+        context.reverseLinkSlotsWithWriters.insert(slot)
       }
       guard bodyIDs.count <= InstantServerApplyReductionLimits.maximumBodies else {
         return .ineligible(.tooManyBodies)
@@ -5341,6 +5373,22 @@ public actor SQLitePersistenceStore {
         [.text(planID), .text(confirmingMutationID)]
       )
     }
+
+    // A reduced apply's receipt patches (#296): each named first writer is loaded, re-receipted, and staged, but not
+    // peeled or replayed. Its row is addressed like any other body, so the commit revalidates it.
+    try insertServerApplyRowsWithoutTransaction(
+      planID: planID,
+      componentBody: false,
+      requiresBody: true,
+      selectionSQL:
+        """
+        FROM instant_server_apply_receipt_patches AS patches
+        JOIN instant_outbox AS outbox ON outbox.mutation_id = patches.mutation_id
+        WHERE patches.plan_id = ? AND outbox.optimistic_overlay_active = 1
+          AND outbox.optimistic_effect_receipt_fingerprint IS NOT NULL
+        """,
+      bindings: [.text(planID)]
+    )
   }
 
   private func loadServerApplyBodyPageWithoutTransaction(
@@ -5667,6 +5715,15 @@ public actor SQLitePersistenceStore {
       """,
       [.text(validationID), .text(planID)]
     )
+    try execute(
+      """
+      INSERT INTO instant_server_apply_receipt_patches (plan_id, mutation_id)
+      SELECT ?, mutation_id
+      FROM instant_server_apply_receipt_patches
+      WHERE plan_id = ?
+      """,
+      [.text(validationID), .text(planID)]
+    )
     try populateServerApplyPlanRowsWithoutTransaction(id: validationID)
     let originalMinusValidation = try selectInt64(
       """
@@ -5715,6 +5772,10 @@ public actor SQLitePersistenceStore {
     )
     try execute(
       "DELETE FROM instant_server_apply_roots WHERE plan_id = ?",
+      [.text(id)]
+    )
+    try execute(
+      "DELETE FROM instant_server_apply_receipt_patches WHERE plan_id = ?",
       [.text(id)]
     )
     try execute(
@@ -10973,6 +11034,17 @@ public actor SQLitePersistenceStore {
         plan_id TEXT NOT NULL,
         entity_id TEXT NOT NULL,
         PRIMARY KEY (plan_id, entity_id)
+      ) WITHOUT ROWID
+      """
+    )
+    // A reduced apply's receipt patches (#296), kept with the plan like its roots, so the commit's revalidation
+    // plans the same rows.
+    try execute(
+      """
+      CREATE TEMP TABLE IF NOT EXISTS instant_server_apply_receipt_patches (
+        plan_id TEXT NOT NULL,
+        mutation_id TEXT NOT NULL,
+        PRIMARY KEY (plan_id, mutation_id)
       ) WITHOUT ROWID
       """
     )
