@@ -42,6 +42,9 @@ Touching:
   `scheduleReconnect`, the reconnect controller)
 - Tests/InstantSwiftDataCoreTests/InstantLiveConnectionSurvivalTests.swift (new, deterministic)
 - Tests/InstantSwiftDataCoreTests/InstantURLSessionKeepaliveLiveTests.swift (new, credentialed, opt-in)
+- Tests/InstantSwiftDataCoreTests/InstantLiveTransportTests.swift (added 2026-09-30 11:00: five tests used the next
+  `receive()` request as proof that a frame was applied, which the reader breaks; and the stale-acknowledgement test
+  compared a claim deadline that the acknowledgement deferral may legitimately move, reported by the parent)
 - CHANGELOG.md, docs/audits/commit-changelog.md
 
 Conflict check: claude-opus-5.5-fast-drain also claims InstantRuntime.swift, for server apply only
