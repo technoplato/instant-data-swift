@@ -1,3 +1,18 @@
+## 2026-09-30 18:21:06 EDT — realtime-voice-sqlite-instant `5979f822107d7614d61fe68cfc5d558d6627ac0b`
+Record the owner-scoped settings row and listener queries and their ADR 0004 note in the change log (#301)
+
+## 2026-09-30 18:20:53 EDT — realtime-voice-sqlite-instant `55e5123318b2a2e3c0c1032fe1eba15bad6280d0`
+Record in ADR 0004 that settings and the Stream Companion listeners read only the signed-in account's rows, and when a device writes the first settings row (#301)
+
+## 2026-09-30 18:20:46 EDT — realtime-voice-sqlite-instant `c70f7a4ecad4511b8f3e8eab1b38ac70dd19432f`
+Read the settings row and the Stream Companion listeners by the signed-in account, so the server filters before it pages (#301). Read-only in production: the settings query gives the Mac account and the phone guest their own row (0 before: the page was another account's row); the Mac account's listener query reads its 3 of 3. No library change. Branch agent/claude-opus-5.5/settings-scope.
+
+## 2026-09-30 17:02:46 EDT — realtime-voice-sqlite-instant `1b6e676119b9e277179e7a0e42e05c8f988b164e`
+Claim the shared session fake test file for settings-scope (#301)
+
+## 2026-09-30 16:45:16 EDT — realtime-voice-sqlite-instant `af6f43537167bb9b94194a7c3fdbef19052563c9`
+Plan the owner-scoped settings row and Stream Companion listener queries and claim their paths (#301)
+
 ## 2026-09-30 16:05:26 EDT — realtime-voice-sqlite-instant `40de746ca78c0e5e13ec749ac39f51900e3e599e`
 Record the list owner scope and its ADR 0004 amendment in the change log (#298)
 
