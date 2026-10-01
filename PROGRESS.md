@@ -1,3 +1,57 @@
+## 2026-10-01 15:33:32 EDT — Account linking: a second sign-in beside the session, account links, and AuthV3 linked sign-ins (#361)
+
+- **Branch:** `agent/claude-opus-5.5/account-linking` from build 77's `956fce52` (pushed; not merged). Plan
+  `agent-presence/claude-opus-5.5/plans/2026-10-01-account-linking/PLAN.md` (`a31d059e`). Scribe ADR draft 0024 and
+  the Scribe branch `agent/claude-opus-5.5/account-linking` are the parent agent's.
+- **Why:** Michael, 2026-10-01: "Let's add a functionality to link accounts then. If you have Apple, I want to be
+  able to link it with Google as well so that we aggregate all these different recordings. So it's a library change
+  and"
+- **Commits:**
+  - `ea6764c7189f4daa2a6f4bae1dcfcfd0f8c69832`: `InstantSecondSignIn` and the fake Instant server tests (15).
+  - `4473db630827f86d3f1649964224b14dda5a7b38`: `InstantAccountLinks` and its tests (18).
+  - `c1b53e517427011a0cea8d42f6f86f9e336d7fb3`: `InstantAuthState` linking, the AuthV3 card behind
+    `authV3ShowsLinkedSignIns`, the skill section, and tests (`InstantAuthStateLinkingTests` 5, `AuthV3AppTests` +2).
+  - Change log and ledger: `cf0e6910`, `3d2ce213`, `f50ce86e`.
+- **What it does:**
+  - `InstantSecondSignIn` signs a second identity in on a temporary client of the primary's app (own store under
+    `$TMPDIR/InstantSecondSignIn/`, own connection, no session). Its exchanges send no refresh token; the primary's
+    session, outbox, and `InstantClientID.current` never change. `open(sharingSessionOf:)` / `adoptRefreshToken`
+    adopt a verified token and never revoke it. `close()` revokes every token this sign-in's own exchanges minted
+    (recorded at the exchange, so a sign-in that finishes after close is revoked too), then deletes the store.
+  - `InstantAccountLinks`: an `accountLinks` row whose `members` (has many `$users`, reverse `$users.accountLink`)
+    lists one person's identities. Invite then join, each accepted before the next; refusals write nothing; a store
+    without the schema fails before any read or write and names the fix. `permissionRulesTemplate` is verbatim.
+  - AuthV3: `InstantAuthState` linking actions and an opt-in "Linked sign-ins" card (`authV3ShowsLinkedSignIns`,
+    off by default) that posts `recipes.auth.link.linked`, `.unlinked`, `.failed` (ids, provider, code, operation,
+    and an email-redacted error).
+- **Evidence (protocol/mock only: fake auth HTTP endpoints and fake websockets; no live Instant):**
+  - Red at skeletons (load ~1000): 36 tests in 3 suites, 34 failed with 90 issues, for the product reason. A naive second
+    sign-in on the primary sent the guest's refresh token to `verify_magic_code` and replaced the primary session
+    (`guest-a` became `user-b`). Two passed against the skeletons ("An identity in no link reads no link" and "Opening
+    never resolves a client id"). The registered-primary and missing-schema tests and the AuthV3 switch and redaction
+    tests were added later and not observed red separately.
+  - First green run: 182 of 183 passed. The failure was a real leak: a sign-in that finished after `close()` minted a
+    token that the deleted store refused to save ("disk I/O error"), so the token was never revoked. Fixed by recording
+    minted tokens where the exchange returns them.
+  - Final run (load ~800): `swift test --filter 'Auth|GuestPromotion|RecipesV3AppTests|InstantSecondSignInTests|InstantAccountLinksTests'`
+    passed 183 tests in 35 suites, with 0 failures and 1 skip (an environment-gated soak). New: `InstantSecondSignInTests`
+    15, `InstantAccountLinksTests` 18, `InstantAuthStateLinkingTests` 5, `AuthV3AppTests` +2. Regression:
+    `AuthV3AppTests` 8, `V3AuthLoginFixtureTests` 8, `RecipesV3AppTests` 5 + `RecipesV3PackagingContractTests` 2,
+    `InstantGuestPromotionTests` 6, `InstantGuestPromotionOutboxTests` 1, `InstantOAuthGuestTokenTests` 3,
+    `InstantAuthHTTPParityTests` 4.
+  - The `Auth` subset of that run (the same regex SwiftPM applied, checked against all 183 selections) is 102 tests in 25
+    suites, all passing. That does not match the 62 tests in 13 suites quoted before; I did not reproduce that count.
+  - `recipes-v3` was re-linked from these sources. It was not launched or exercised.
+  - No failure needed a comparison at `956fce52`.
+- **Open:**
+  - No live run yet. The parent runs the throwaway-server link (`bd40c50a`) and the soak.
+  - One invite slot per link: two devices inviting into the same link at once refuse the earlier join (retry).
+  - A refused join leaves the invite open until it expires (10 minutes); only the invited identity can use it.
+  - Sign-in HTTP exchanges are unbounded, as everywhere in the library; server reads and writes wait 5 seconds.
+- **Next:** the Scribe schema, rules, and Account screen are on the parent's Scribe branch (`799af89c` through
+  `a7a317e1` in the ledger). Scribe registers `InstantAccountLinks.default.attributes` once this branch lands, then the
+  parent runs a live link on `bd40c50a` and the soak before anything ships. Merging and tagging are the parent's.
+
 ## 2026-09-30 14:50:00 EDT — Build 73's library: live-safe fast drain, refused-write removal, connection survival (#296)
 
 - **Branch:** `agent/claude-opus-5.5/fast-drain-2` from build 72's `0078484f` (pushed; not merged). Build 73's library

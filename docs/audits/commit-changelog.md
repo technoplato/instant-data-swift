@@ -7,6 +7,18 @@ Link one person's Instant identities, such as Apple and Google, through an app-l
 ## 2026-10-01 15:06:16 EDT — instant-data-swift `ea6764c7189f4daa2a6f4bae1dcfcfd0f8c69832`
 Sign a second identity in beside the primary client on its own temporary store and connection, so a sign-in proves another identity without promoting, linking, or replacing the primary's session; close() revokes only the tokens it minted (#361).
 
+## 2026-10-01 14:51:53 EDT — scribe `a7a317e157293b4236eddb8151208cfdad35eb1c`
+Show linked sign-ins on the Account screen (iPhone, iPad, Mac): Link another sign-in, the linked list, and Unlink, with every step logged (#361).
+
+## 2026-10-01 13:06:25 EDT — scribe `3c6d2717d37f139bc52e7e6007244d3f3aee05b9`
+Read every account path across linked sign-ins: the list, settings, companion listeners, sharing, and the session-health beat (#361).
+
+## 2026-10-01 10:38:32 EDT — scribe `ffc32f2bd8368c5849cda62c2f7db499c2579909`
+Add a two-credential account-link script for identities stored on this Mac, such as the agent CLI's old guest (#361).
+
+## 2026-10-01 10:14:56 EDT — scribe `799af89c2cefcbf7705d3c14e8359337cff51afd`
+Design account links (ADR draft 0024) and add their schema, rules, and rules regression harness: one person's sign-ins read, write, and share each other's recordings (#361).
+
 ## 2026-10-01 04:22:17 EDT — instant-data-swift `1ba0077985528f9633d987cedaa145baeb698452`
 End every stream observation behind a subscription the server refuses (Stream is missing), and pin the offline stream writer gap as a known issue (#303 #329).
 
