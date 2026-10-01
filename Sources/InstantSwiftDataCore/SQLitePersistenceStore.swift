@@ -7314,6 +7314,382 @@ public actor SQLitePersistenceStore {
   /// throws, after releasing only the claims acquired by this request token.
   /// `delivery_started` means "ever offered to the encoder/delivery path" and
   /// deliberately remains true after a claim is released or expires.
+  /// Which later writes of this device cover every operation of a write, if any (library-78, item 3).
+  ///
+  /// A write offered again after its first offer may have been applied (a lost acknowledgment, a reconnect, a
+  /// transient error) is refused by an `updatedAtMs >= data.updatedAtMs`-style rule when a newer write of the same row
+  /// reached the server first, although the server holds a newer value for every slot it sets. Coverage is
+  /// conservative: the write may hold only inserts and merges (lookups, retractions, and deletes never count as
+  /// covered); a cardinality-one slot is covered by a later insert of the slot, any other value only by the same value
+  /// (`InstantAuthoritativeWriteCoverage`). Failed rows never cover. Candidates come from the stored write keys, so a
+  /// write no later row shares a slot with costs one indexed query and no body decode.
+  ///
+  /// - Parameters:
+  ///   - decoded: The write's body when the caller already decoded it.
+  ///   - acceptedOnly: Consider only later writes the server accepted.
+  ///   - pendingMustBeClaimed: Count a later write the server has not accepted only while it is in flight, so a write
+  ///     parked behind it waits for an answer that is coming.
+  /// - Returns: The coverage and the write's decoded body (`nil` when no later write shares a slot with it).
+  private func laterWriteCoverageWithoutTransaction(
+    ofMutationID mutationID: String,
+    createdAtMilliseconds: Int64,
+    decoded: PendingMutation?,
+    acceptedOnly: Bool,
+    pendingMustBeClaimed: Bool = false,
+    attributes: () throws -> AttributeStore
+  ) throws -> (coverage: InstantOutboxWriteCoverage, mutation: PendingMutation?) {
+    var candidates: [(id: String, createdAt: Int64, accepted: Bool, serverTransactionID: String?)] = []
+    var statement: OpaquePointer?
+    try prepare(
+      """
+      SELECT DISTINCT o.mutation_id, o.created_at_ms, o.status, o.confirmation_proven, o.server_transaction_id,
+             o.delivery_claim_state
+      FROM instant_outbox_write_keys own
+      JOIN instant_outbox_write_keys other
+        ON other.entity_id = own.entity_id AND other.attribute_id = own.attribute_id
+      JOIN instant_outbox o ON o.mutation_id = other.mutation_id
+      WHERE own.mutation_id = ? AND o.mutation_id != ? AND o.status != ?
+        AND (o.created_at_ms > ? OR (o.created_at_ms = ? AND o.mutation_id > ?))
+        AND (? = 0 OR (o.status = ? AND COALESCE(o.confirmation_proven, 0) = 1))
+      ORDER BY o.created_at_ms, o.mutation_id
+      LIMIT 64
+      """,
+      statement: &statement
+    )
+    defer { sqlite3_finalize(statement) }
+    try bind(
+      [
+        .text(mutationID),
+        .text(mutationID),
+        .text(InstantMutationStatus.failed.rawValue),
+        .int(createdAtMilliseconds),
+        .int(createdAtMilliseconds),
+        .text(mutationID),
+        .int(acceptedOnly ? 1 : 0),
+        .text(InstantMutationStatus.confirmed.rawValue),
+      ],
+      to: statement
+    )
+    while true {
+      let code = sqlite3_step(statement)
+      if code == SQLITE_DONE { break }
+      guard code == SQLITE_ROW, let idBytes = sqlite3_column_text(statement, 0) else {
+        throw persistenceError(operation: "find covering outbox writes", message: lastErrorMessage())
+      }
+      let status = sqlite3_column_text(statement, 2).map { String(cString: $0) }
+      let accepted = status == InstantMutationStatus.confirmed.rawValue && sqlite3_column_int64(statement, 3) == 1
+      let claimed = sqlite3_column_text(statement, 5).map { String(cString: $0) }
+        == InstantOutboxDeliveryClaimState.claimed.rawValue
+      guard accepted || !pendingMustBeClaimed || claimed else { continue }
+      candidates.append((
+        id: String(cString: idBytes),
+        createdAt: sqlite3_column_int64(statement, 1),
+        accepted: accepted,
+        serverTransactionID: sqlite3_column_text(statement, 4).map { String(cString: $0) }
+      ))
+    }
+    guard !candidates.isEmpty else { return (.none, decoded) }
+    let mutation: PendingMutation
+    if let decoded {
+      mutation = decoded
+    } else {
+      guard let row = try loadOutboxBodyRowWithoutTransaction(id: mutationID) else { return (.none, nil) }
+      mutation = try decodeOutboxBody(row.json)
+      decodedOutboxBodyCount += 1
+      decodedOutboxBodyByteCount += row.json.utf8.count
+    }
+    var hasWrite = false
+    for operation in mutation.transaction.operations {
+      switch operation {
+      case .insert, .merge:
+        hasWrite = true
+      case .requireEntityMissing, .requireEntityMissingByLookup,
+        .requireEntityExists, .requireEntityExistsByLookup,
+        .requireTripleExists, .ruleParams, .ruleParamsByLookup:
+        continue
+      case .retract, .retractByLookup, .insertByLookup, .mergeByLookup,
+        .deleteEntity, .deleteEntityInNamespace, .deleteEntityByLookup:
+        return (.none, mutation)
+      }
+    }
+    guard hasWrite else { return (.none, mutation) }
+    var acceptedOperations: [InstantTripleOperation] = []
+    var allOperations: [InstantTripleOperation] = []
+    var acceptedIDs: [String] = []
+    var allIDs: [String] = []
+    var newestAcceptedTransactionID: String?
+    for candidate in candidates {
+      guard let row = try loadOutboxBodyRowWithoutTransaction(id: candidate.id) else { continue }
+      let covering: PendingMutation = try decodeOutboxBody(row.json)
+      decodedOutboxBodyCount += 1
+      decodedOutboxBodyByteCount += row.json.utf8.count
+      allOperations.append(contentsOf: covering.transaction.operations)
+      allIDs.append(candidate.id)
+      guard candidate.accepted else { continue }
+      acceptedOperations.append(contentsOf: covering.transaction.operations)
+      acceptedIDs.append(candidate.id)
+      if let transactionID = candidate.serverTransactionID, !transactionID.isEmpty {
+        newestAcceptedTransactionID = Self.newerServerTransactionID(newestAcceptedTransactionID, transactionID)
+      }
+    }
+    let attributeStore = try attributes()
+    if !acceptedOperations.isEmpty,
+      let serverTransactionID = newestAcceptedTransactionID,
+      InstantAuthoritativeWriteCoverage(
+        operations: acceptedOperations,
+        attributes: attributeStore,
+        previousChangedEntityTriples: [:],
+        changedEntityTriples: [:]
+      ).covers(mutation.transaction.operations)
+    {
+      return (.acceptedWrites(serverTransactionID: serverTransactionID, mutationIDs: acceptedIDs), mutation)
+    }
+    if !acceptedOnly,
+      InstantAuthoritativeWriteCoverage(
+        operations: allOperations,
+        attributes: attributeStore,
+        previousChangedEntityTriples: [:],
+        changedEntityTriples: [:]
+      ).covers(mutation.transaction.operations)
+    {
+      return (.pendingWrites(mutationIDs: allIDs), mutation)
+    }
+    return (.none, mutation)
+  }
+
+  /// The newer of two server transaction ids: numeric when both are, otherwise the later one.
+  private static func newerServerTransactionID(_ current: String?, _ candidate: String) -> String {
+    guard let current else { return candidate }
+    if let lhs = Int64(current), let rhs = Int64(candidate) {
+      return rhs > lhs ? candidate : current
+    }
+    return candidate
+  }
+
+  /// Resolves a pending write as accepted because later accepted writes of this device cover it (item 3).
+  ///
+  /// The row becomes confirmed with `supersededByAcceptedWrite` and the newest covering server transaction id, so it
+  /// leaves the outbox with its covering writes when the watermark passes them; its optimistic overlay stays until
+  /// then, beneath the covering writes' values. It is not offered again.
+  private func supersedeOutboxMutationWithoutTransaction(
+    _ mutation: PendingMutation,
+    serverTransactionID: String
+  ) throws -> PendingMutation? {
+    var superseded = mutation
+    superseded.status = .confirmed
+    superseded.failureMessage = nil
+    superseded.failure = nil
+    superseded.serverTransactionID = serverTransactionID
+    superseded.confirmationSource = .supersededByAcceptedWrite
+    let encodedBody = try encode(superseded)
+    try execute(
+      """
+      UPDATE instant_outbox
+      SET status = ?, delivery_state = ?, delivery_metadata_version = ?,
+          transport_step_count = ?, encoded_body_bytes = ?, delivery_started = 1,
+          lifecycle_json = ?, failure_message = NULL, confirmation_proven = 1,
+          optimistic_overlay_active = ?, delivery_claim_state = ?,
+          server_transaction_id = ?, confirmation_source = ?,
+          mutation_revision = mutation_revision + 1,
+          delivery_claim_token = NULL, delivery_claimant_id = NULL,
+          delivery_claim_deadline_ms = NULL,
+          delivery_claim_projected_body_bytes = NULL,
+          delivery_claim_payload_fingerprint = NULL,
+          server_acceptance_payload_fingerprint = ?, json = ?
+      WHERE mutation_id = ? AND delivery_state = ? AND status IN (?, ?)
+        AND COALESCE(confirmation_proven, 0) = 0
+      """,
+      [
+        .text(superseded.status.rawValue),
+        .text(InstantOutboxDeliveryState.serverAccepted.rawValue),
+        .int(Int64(InstantOutboxDeliveryMetadata.currentVersion)),
+        .int(Int64(InstantOutboxDeliveryMetadata.stepCount(in: superseded))),
+        .int(Int64(encodedBody.utf8.count)),
+        .text(try encode(superseded.compactedForMemory)),
+        .int(superseded.optimisticOverlayState == .removed ? 0 : 1),
+        .text(InstantOutboxDeliveryClaimState.ready.rawValue),
+        .text(serverTransactionID),
+        .text(InstantMutationConfirmationSource.supersededByAcceptedWrite.rawValue),
+        .text(try mutation.mutationWireIntentFingerprint()),
+        .text(encodedBody),
+        .text(mutation.id),
+        .text(InstantOutboxDeliveryState.needsDelivery.rawValue),
+        .text(InstantMutationStatus.pending.rawValue),
+        .text(InstantMutationStatus.confirmed.rawValue),
+      ]
+    )
+    guard sqlite3_changes(connection.raw) == 1 else { return nil }
+    try replaceOutboxWriteKeysWithoutTransaction(for: superseded)
+    try saveMutationLifecycleWithoutTransaction(superseded)
+    InstantDiagnostics.shared.record(
+      .notice,
+      subsystem: "instant-swift-data-core",
+      category: "outbox",
+      event: "outbox.mutation.superseded",
+      message:
+        "Later writes of this device that the server accepted cover every operation of this write, so it is resolved as accepted and not offered again.",
+      metadata: [
+        "mutationID": mutation.id,
+        "serverTransactionID": serverTransactionID,
+      ],
+      correlationID: mutation.id
+    )
+    return superseded
+  }
+
+  /// Resolves a write the server refused, when later writes of this device cover all of it (item 3).
+  ///
+  /// The server holds a newer value for every slot the refused write sets, or will once the covering writes in flight
+  /// are answered. Covered by accepted writes: superseded now. Covered by writes not yet accepted: the write keeps its
+  /// claim, parked with a distant acknowledgement deadline, until they are answered (`resolveParkedRefusal`); delivery
+  /// stays an ordered prefix. Otherwise the refusal stands.
+  /// - Parameter holdsBehindPendingWrites: Hold the write behind covering writes not yet accepted. Only for a write
+  ///   whose earlier offer may have been applied (a replay): a refusal of a first offer is the server's verdict on
+  ///   the write itself, so only accepted covering writes make it moot.
+  ///   - parkedDeadlineMilliseconds: The acknowledgement deadline a parked write's claim takes, so the claim does not
+  ///     expire as an acknowledgement timeout while the covering writes are answered.
+  func resolveRefusedWriteIfCovered(
+    id: String,
+    claimantID: String,
+    claimToken: String,
+    holdsBehindPendingWrites: Bool,
+    parkedDeadlineMilliseconds: Int64
+  ) throws -> InstantRefusedWriteResolution {
+    let previousState = cachedState
+    let resolution: InstantRefusedWriteResolution = try transaction {
+      guard
+        try selectInt64(
+          """
+          SELECT EXISTS(
+            SELECT 1 FROM instant_outbox
+            WHERE mutation_id = ? AND delivery_claim_state = ?
+              AND delivery_claimant_id = ? AND delivery_claim_token = ?
+              AND status IN (?, ?) AND COALESCE(confirmation_proven, 0) = 0
+            LIMIT 1
+          )
+          """,
+          [
+            .text(id),
+            .text(InstantOutboxDeliveryClaimState.claimed.rawValue),
+            .text(claimantID),
+            .text(claimToken),
+            .text(InstantMutationStatus.pending.rawValue),
+            .text(InstantMutationStatus.confirmed.rawValue),
+          ]
+        ) != 0,
+        let position = try loadOutboxPositionWithoutTransaction(id: id)
+      else { return .notCovered }
+      let (coverage, mutation) = try laterWriteCoverageWithoutTransaction(
+        ofMutationID: id,
+        createdAtMilliseconds: position.createdAtMilliseconds,
+        decoded: nil,
+        acceptedOnly: !holdsBehindPendingWrites,
+        pendingMustBeClaimed: true,
+        attributes: {
+          AttributeStore(attributes: try loadAttributesWithoutTransaction(tracesStartupCollection: false))
+        }
+      )
+      switch coverage {
+      case let .acceptedWrites(serverTransactionID, coveringIDs):
+        guard let mutation,
+          let superseded = try supersedeOutboxMutationWithoutTransaction(
+            mutation,
+            serverTransactionID: serverTransactionID
+          )
+        else { return .notCovered }
+        _ = try bumpMetadataRevisionWithoutTransaction(Self.outboxRevisionKey)
+        return .superseded(superseded, coveringMutationIDs: coveringIDs)
+      case let .pendingWrites(coveringIDs):
+        guard holdsBehindPendingWrites else { return .notCovered }
+        try execute(
+          """
+          UPDATE instant_outbox
+          SET delivery_claim_deadline_ms = ?
+          WHERE mutation_id = ? AND delivery_claim_state = ? AND delivery_claim_token = ?
+          """,
+          [
+            .int(parkedDeadlineMilliseconds),
+            .text(id),
+            .text(InstantOutboxDeliveryClaimState.claimed.rawValue),
+            .text(claimToken),
+          ]
+        )
+        return sqlite3_changes(connection.raw) == 1
+          ? .heldBehindPendingWrites(coveringMutationIDs: coveringIDs)
+          : .notCovered
+      case .none:
+        return .notCovered
+      }
+    }
+    if case .superseded = resolution {
+      cachedState = nil
+      _ = previousState
+    }
+    return resolution
+  }
+
+  /// Resolves a refusal parked behind covering writes in flight (item 3), while this runtime still holds its claim:
+  /// superseded once the covering writes are accepted; `.notCovered` once they no longer cover it (one of them failed),
+  /// so the runtime records the original refusal; still parked otherwise.
+  func resolveParkedRefusal(
+    id: String,
+    claimantID: String,
+    claimToken: String
+  ) throws -> InstantRefusedWriteResolution {
+    let resolution: InstantRefusedWriteResolution = try transaction {
+      guard
+        try selectInt64(
+          """
+          SELECT EXISTS(
+            SELECT 1 FROM instant_outbox
+            WHERE mutation_id = ? AND delivery_claim_state = ?
+              AND delivery_claimant_id = ? AND delivery_claim_token = ?
+              AND status IN (?, ?) AND COALESCE(confirmation_proven, 0) = 0
+            LIMIT 1
+          )
+          """,
+          [
+            .text(id),
+            .text(InstantOutboxDeliveryClaimState.claimed.rawValue),
+            .text(claimantID),
+            .text(claimToken),
+            .text(InstantMutationStatus.pending.rawValue),
+            .text(InstantMutationStatus.confirmed.rawValue),
+          ]
+        ) != 0,
+        let position = try loadOutboxPositionWithoutTransaction(id: id)
+      else { return .stale }
+      let (coverage, mutation) = try laterWriteCoverageWithoutTransaction(
+        ofMutationID: id,
+        createdAtMilliseconds: position.createdAtMilliseconds,
+        decoded: nil,
+        acceptedOnly: false,
+        attributes: {
+          AttributeStore(attributes: try loadAttributesWithoutTransaction(tracesStartupCollection: false))
+        }
+      )
+      switch coverage {
+      case let .acceptedWrites(serverTransactionID, coveringIDs):
+        guard let mutation,
+          let superseded = try supersedeOutboxMutationWithoutTransaction(
+            mutation,
+            serverTransactionID: serverTransactionID
+          )
+        else { return .notCovered }
+        _ = try bumpMetadataRevisionWithoutTransaction(Self.outboxRevisionKey)
+        return .superseded(superseded, coveringMutationIDs: coveringIDs)
+      case let .pendingWrites(coveringIDs):
+        return .heldBehindPendingWrites(coveringMutationIDs: coveringIDs)
+      case .none:
+        return .notCovered
+      }
+    }
+    if case .superseded = resolution {
+      cachedState = nil
+    }
+    return resolution
+  }
+
   func claimAutomaticOutboxDeliveryWindow(
     _ request: InstantAutomaticOutboxClaimRequest
   ) throws -> InstantAutomaticOutboxClaimWindow {
@@ -7403,6 +7779,16 @@ public actor SQLitePersistenceStore {
       var bodyDecodeCount = 0
       var bodyByteCount = 0
       var failedMutations: [PendingMutation] = []
+      var supersededMutations: [PendingMutation] = []
+      var coverageAttributes: AttributeStore?
+      func coverageAttributeStore() throws -> AttributeStore {
+        if let coverageAttributes { return coverageAttributes }
+        let loaded = AttributeStore(
+          attributes: try loadAttributesWithoutTransaction(tracesStartupCollection: false)
+        )
+        coverageAttributes = loaded
+        return loaded
+      }
       var mutations: [PendingMutation] = []
       var admittedStepCount = 0
       var admittedBodyByteCount = 0
@@ -7523,6 +7909,29 @@ public actor SQLitePersistenceStore {
             if candidate.metadataVersion < InstantOutboxDeliveryMetadata.currentVersion {
               try saveOutboxDeliveryMetadataWithoutTransaction(mutation)
               didMakeNonSendingProgress = true
+            }
+            // Item 3 (library-78): a write offered before may already be applied. When later writes of this device
+            // that the server accepted cover all of it, the server holds a newer value for every slot it sets, and
+            // offering it again only earns a replay refusal; resolve it as accepted instead. Delivery stays an
+            // ordered prefix: a write covered only by writes not yet accepted is still offered, and its refusal is
+            // parked until they are answered (resolveRefusedWriteIfCovered).
+            if candidate.deliveryStarted, !request.requiresExclusiveLane,
+              case let .acceptedWrites(serverTransactionID, _) = try laterWriteCoverageWithoutTransaction(
+                ofMutationID: mutation.id,
+                createdAtMilliseconds: candidate.createdAtMilliseconds,
+                decoded: mutation,
+                acceptedOnly: true,
+                attributes: coverageAttributeStore
+              ).coverage,
+              let superseded = try supersedeOutboxMutationWithoutTransaction(
+                mutation,
+                serverTransactionID: serverTransactionID
+              )
+            {
+              supersededMutations.append(superseded)
+              didChangeLifecycle = true
+              didMakeNonSendingProgress = true
+              continue
             }
             let transportStepCount = InstantOutboxDeliveryMetadata.stepCount(in: mutation)
             if transportStepCount > InstantAutomaticOutboxClaimLimits.maximumStepCount {
@@ -7844,12 +8253,16 @@ public actor SQLitePersistenceStore {
         shouldContinueImmediately: shouldContinueImmediately,
         decodedBodyCount: bodyDecodeCount,
         decodedBodyByteCount: bodyByteCount,
-        synchronizationBlocker: synchronizationBlocker
+        synchronizationBlocker: synchronizationBlocker,
+        supersededMutations: supersededMutations
       )
     }
     if let blocker = window.synchronizationBlocker {
       cachedState = nil
       throw blocker.error(operation: operation)
+    }
+    if !window.supersededMutations.isEmpty {
+      cachedState = nil
     }
     return window
   }

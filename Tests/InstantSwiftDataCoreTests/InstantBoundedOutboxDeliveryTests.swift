@@ -3992,12 +3992,23 @@ struct InstantBoundedOutboxDeliveryTests {
         timeoutMilliseconds: 5_000
       ) {
         await transport.waitForConnectionCount(2)
-        await replacementSession.waitForSentMessageCount(2)
+        await replacementSession.waitForSentMessageCount(1)
       }
     } matching: { issue in
       issue.description.contains("did not acknowledge")
     }
 
+    // Library-78, item 3: the predecessor is not offered again on the replacement generation. The accepted successor
+    // writes the same slot, so the server already holds a newer value for everything the predecessor sets, and a
+    // re-send could only be refused as a replay. It resolves as accepted instead (supersededByAcceptedWrite).
+    try await instantLiveWithTimeout(
+      operation: "wait for the superseded predecessor to leave the pending outbox",
+      timeoutMilliseconds: 5_000
+    ) {
+      while try await runtime.persistence.countOutboxMutations(status: .pending) != 0 {
+        await Task.yield()
+      }
+    }
     let firstGenerationIDs = await firstSession.sentMessages()
       .filter { $0.op == "transact" }
       .compactMap(\.clientEventID)
@@ -4005,28 +4016,15 @@ struct InstantBoundedOutboxDeliveryTests {
       .filter { $0.op == "transact" }
       .compactMap(\.clientEventID)
     expectNoDifference(firstGenerationIDs, [predecessor.id, successor.id])
-    expectNoDifference(replacementGenerationIDs, [predecessor.id])
+    expectNoDifference(replacementGenerationIDs, [])
 
     let failedMutations = await runtime.failedMutations()
     let pendingMutationIDs = await runtime.pendingMutations().map(\.id)
     expectNoDifference(failedMutations, [])
-    expectNoDifference(pendingMutationIDs, [predecessor.id])
-
-    await replacementSession.enqueue(
-      InstantLiveMessage(
-        op: "transact-ok",
-        clientEventID: predecessor.id,
-        fields: ["tx-id": .string("server-\(predecessor.id)")]
-      )
-    )
-    try await instantLiveWithTimeout(
-      operation: "wait for replacement-generation acknowledgement",
-      timeoutMilliseconds: 5_000
-    ) {
-      while try await runtime.persistence.countOutboxMutations(status: .pending) != 0 {
-        await Task.yield()
-      }
-    }
+    expectNoDifference(pendingMutationIDs, [])
+    let superseded = await runtime.durableOutboxMutationsForTesting(statuses: [.confirmed])
+      .first { $0.id == predecessor.id }
+    expectNoDifference(superseded?.confirmationSource, .supersededByAcceptedWrite)
     _ = try? await runtime.closeConnection()
   }
 

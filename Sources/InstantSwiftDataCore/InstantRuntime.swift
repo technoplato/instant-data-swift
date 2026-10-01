@@ -1625,6 +1625,8 @@ public final class InstantRuntime: Sendable {
   private let automaticMutationRetryReservations = InstantAutomaticMutationRetryReservations()
   /// Writes the server answered with a transient error, and the delivery pause they started (#376).
   private let mutationServerErrorBackoff = InstantMutationServerErrorBackoffState()
+  /// Refused writes parked behind later writes in flight that cover them (library-78, item 3).
+  private let parkedRefusals = InstantParkedRefusals()
   private let storeAdoptionMetrics = InstantRuntimeStoreAdoptionMetrics()
   private let installedStoreRevisions: InstantRuntimeInstalledStoreRevisions
 
@@ -6993,6 +6995,8 @@ public final class InstantRuntime: Sendable {
     let release = try await persistence.releaseAutomaticOutboxClaims(
       claimantID: automaticDeliveryClaimantID
     )
+    // Parked refusals held claims of this socket; the next connection offers those writes again.
+    await parkedRefusals.removeAll()
     await scheduleLiveMutationDeadlineWake(
       at: release.nextClaimDeadlineMilliseconds
     )
@@ -7007,6 +7011,184 @@ public final class InstantRuntime: Sendable {
     }
     return release.mutationIDs
   }
+
+  /// Resolves the refusals parked behind covering writes once those are answered (library-78, item 3): superseded
+  /// when they were accepted, or recorded as the server's original refusal when one of them failed.
+  private func resolveParkedRefusalsIfNeeded() async {
+    guard await !parkedRefusals.isEmpty else { return }
+    for (mutationID, parked) in await parkedRefusals.snapshot.sorted(by: { $0.key < $1.key }) {
+      do {
+        try await enterOperationGateUnlessCancelled(operation: "resolve a parked refusal")
+        let resolution: InstantRefusedWriteResolution
+        do {
+          recordActorHop(.persistence)
+          resolution = try await persistence.resolveParkedRefusal(
+            id: mutationID,
+            claimantID: automaticDeliveryClaimantID,
+            claimToken: parked.claimToken
+          )
+          if case let .superseded(mutation, _) = resolution {
+            recordActorHop(.outbox)
+            await outbox.remove(id: mutation.id)
+            _ = try? await publishConnectionStatusWithGateHeld()
+            await publishMutationLifecycle(mutation)
+          }
+          await leaveOperationGate()
+        } catch {
+          await leaveOperationGate()
+          throw error
+        }
+        switch resolution {
+        case let .superseded(_, coveringIDs):
+          await parkedRefusals.remove(mutationID)
+          await liveSession.forgetEarlierOffers(of: mutationID)
+          InstantDiagnostics.shared.record(
+            .notice,
+            subsystem: "instant-swift-data-core",
+            category: "outbox",
+            event: "outbox.mutation.refusal-superseded",
+            message:
+              "A parked refusal resolved: the later writes that cover it were accepted, so it is accepted, not failed.",
+            metadata: [
+              "mutationID": mutationID,
+              "coveringMutationIDs": coveringIDs.prefix(12).joined(separator: ","),
+            ],
+            correlationID: mutationID
+          )
+        case .notCovered:
+          await parkedRefusals.remove(mutationID)
+          InstantDiagnostics.shared.record(
+            .error,
+            subsystem: "instant-swift-data-core",
+            category: "outbox",
+            event: "outbox.mutation.server-error-terminal",
+            message: "A parked refusal stands: a later write that covered it did not land.",
+            metadata: [
+              "mutationID": mutationID,
+              "errorMessage": parked.failure.message,
+              "refusalKind": "replay",
+            ],
+            correlationID: mutationID
+          )
+          _ = try await failClaimedMutation(
+            id: mutationID,
+            failure: parked.failure,
+            requiredClaimToken: parked.claimToken,
+            recordsConnectionFailure: false
+          )
+          await liveSession.forgetEarlierOffers(of: mutationID)
+        case .stale:
+          await parkedRefusals.remove(mutationID)
+        case .heldBehindPendingWrites:
+          continue
+        }
+      } catch {
+        InstantDiagnostics.shared.record(
+          error: error,
+          subsystem: "instant-swift-data-core",
+          category: "outbox",
+          event: "outbox.mutation.parked-refusal-resolution-failed",
+          message: "Could not resolve a parked refusal; it stays parked until the next answer.",
+          metadata: ["mutationID": mutationID],
+          correlationID: mutationID
+        )
+      }
+    }
+  }
+
+  /// A server refusal of a write that later writes of this device cover is not a failure (library-78, item 3).
+  ///
+  /// Michael, verbatim: "I want to know why rights are refused in the first place? I don't think they really should
+  /// be". A write offered again after its first offer was applied is refused by Scribe's `validUpdate` rule
+  /// (`newData.updatedAtMs >= data.updatedAtMs`) when a newer write of the same row reached the server first, yet the
+  /// server holds a newer value for every slot it sets. Covered by accepted writes: resolved as accepted now. Covered
+  /// by writes in flight: held, and resolved by their answers. Upstream `Reactor.js` drops every refused mutation as
+  /// an error (`_handleMutationError`); Swift keeps refusals it cannot explain as failures, as before.
+  private func resolveRefusedWriteIfCovered(
+    id mutationID: String,
+    claimToken: String,
+    error: InstantLiveErrorMessage
+  ) async throws -> Bool {
+    recordActorHop(.liveSession)
+    let isReplay = await liveSession.mayHaveAppliedAnEarlierOffer(of: mutationID)
+    try await enterOperationGateUnlessCancelled(operation: "resolve a refused write that later writes cover")
+    let resolution: InstantRefusedWriteResolution
+    do {
+      recordActorHop(.persistence)
+      resolution = try await persistence.resolveRefusedWriteIfCovered(
+        id: mutationID,
+        claimantID: automaticDeliveryClaimantID,
+        claimToken: claimToken,
+        holdsBehindPendingWrites: isReplay,
+        parkedDeadlineMilliseconds: configuration.now().milliseconds + Self.parkedRefusalDeadlineMilliseconds
+      )
+      switch resolution {
+      case let .superseded(mutation, _):
+        recordActorHop(.outbox)
+        await outbox.remove(id: mutation.id)
+        _ = try? await publishConnectionStatusWithGateHeld()
+        await publishMutationLifecycle(mutation)
+      case .heldBehindPendingWrites:
+        await parkedRefusals.park(
+          mutationID,
+          claimToken: claimToken,
+          failure: Self.mutationFailure(from: error)
+        )
+      case .notCovered, .stale:
+        break
+      }
+      await leaveOperationGate()
+    } catch {
+      await leaveOperationGate()
+      throw error
+    }
+    switch resolution {
+    case let .superseded(_, coveringIDs):
+      await liveSession.forgetEarlierOffers(of: mutationID)
+      await mutationServerErrorBackoff.forget(mutationID)
+      InstantDiagnostics.shared.record(
+        .notice,
+        subsystem: "instant-swift-data-core",
+        category: "outbox",
+        event: "outbox.mutation.refusal-superseded",
+        message:
+          "The server refused a write that later accepted writes of this device cover; it is resolved as accepted, not failed.",
+        metadata: [
+          "mutationID": mutationID,
+          "coveringMutationIDs": coveringIDs.prefix(12).joined(separator: ","),
+          "errorMessage": error.message,
+          "serverTraceID": error.traceID ?? "",
+        ],
+        correlationID: mutationID
+      )
+      await startLiveMutationDeliveryIfNeeded()
+      return true
+    case let .heldBehindPendingWrites(coveringIDs):
+      InstantDiagnostics.shared.record(
+        .info,
+        subsystem: "instant-swift-data-core",
+        category: "outbox",
+        event: "outbox.mutation.refusal-parked",
+        message:
+          "The server refused a re-sent write that later writes in flight cover; it keeps its claim, parked, until they are answered, and is not failed.",
+        metadata: [
+          "mutationID": mutationID,
+          "coveringMutationIDs": coveringIDs.prefix(12).joined(separator: ","),
+          "errorMessage": error.message,
+          "serverTraceID": error.traceID ?? "",
+        ],
+        correlationID: mutationID
+      )
+      await startLiveMutationDeliveryIfNeeded()
+      return true
+    case .notCovered, .stale:
+      return false
+    }
+  }
+
+  /// How long a parked refusal's claim waits for the covering writes' answers before it expires as an
+  /// acknowledgement timeout and the write is offered again.
+  private static let parkedRefusalDeadlineMilliseconds: Int64 = 10 * 60 * 1_000
 
   /// Keeps the socket when the server answers a write with a transient error, and offers the write again on it
   /// after a growing, jittered backoff (#376).
@@ -7290,6 +7472,7 @@ public final class InstantRuntime: Sendable {
       )
       await mutationServerErrorBackoff.recordAcceptance(of: clientEventID)
       await liveSession.forgetEarlierOffers(of: clientEventID)
+      await resolveParkedRefusalsIfNeeded()
       await startLiveMutationDeliveryIfNeeded()
 
     case let .refreshPresence(refresh):
@@ -7458,6 +7641,11 @@ public final class InstantRuntime: Sendable {
           )
           return
         }
+        if Self.isPermissionError(error),
+          try await resolveRefusedWriteIfCovered(id: clientEventID, claimToken: claimToken, error: error)
+        {
+          return
+        }
         // A refusal of a re-sent write that an earlier connection offered without an answer is a replay: the earlier
         // offer may have been applied, with a newer write of the same row after it (Recording 023, #296).
         recordActorHop(.liveSession)
@@ -7510,6 +7698,7 @@ public final class InstantRuntime: Sendable {
         )
         await mutationServerErrorBackoff.forget(clientEventID)
         await liveSession.forgetEarlierOffers(of: clientEventID)
+        await resolveParkedRefusalsIfNeeded()
         await startLiveMutationDeliveryIfNeeded()
         return
       }
@@ -11317,6 +11506,14 @@ public final class InstantRuntime: Sendable {
     ) { [outbox] in await outbox.all().filter { $0.status != .confirmed } }
   }
 
+  /// Every durable outbox row with one of `statuses`, including accepted rows waiting for the watermark.
+  @concurrent
+  package func durableOutboxMutationsForTesting(
+    statuses: [InstantMutationStatus] = [.pending, .confirmed, .failed]
+  ) async -> [PendingMutation] {
+    await durableOutboxMutations(statuses: statuses) { [] }
+  }
+
   @concurrent
   package func mutationDeliveryBarrierMutations() async -> [PendingMutation] {
     await outbox.all()
@@ -11497,6 +11694,11 @@ public final class InstantRuntime: Sendable {
         )
       )
       recordActorHop(.outbox)
+      for mutation in window.supersededMutations {
+        await publishMutationLifecycle(mutation)
+        await outbox.remove(id: mutation.id)
+        await liveSession.forgetEarlierOffers(of: mutation.id)
+      }
       for mutation in window.failedMutations {
         await publishMutationLifecycle(mutation)
         await outbox.remove(id: mutation.id)
@@ -11504,7 +11706,7 @@ public final class InstantRuntime: Sendable {
       for mutation in window.mutations {
         await outbox.replace(mutation)
       }
-      if !window.failedMutations.isEmpty {
+      if !window.failedMutations.isEmpty || !window.supersededMutations.isEmpty {
         _ = try? await publishConnectionStatusWithGateHeld()
       }
       let mutations = InstantBoundedOutboxDelivery.transportMutations(in: window)

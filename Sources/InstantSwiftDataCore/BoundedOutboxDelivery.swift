@@ -122,6 +122,27 @@ struct InstantAutomaticOutboxClaimRequest: Sendable {
   }
 }
 
+/// Later writes of this device that cover every operation of a write (library-78, item 3).
+enum InstantOutboxWriteCoverage: Sendable {
+  /// Accepted writes cover it; `serverTransactionID` is the newest of theirs.
+  case acceptedWrites(serverTransactionID: String, mutationIDs: [String])
+  /// Writes not all accepted yet cover it.
+  case pendingWrites(mutationIDs: [String])
+  case none
+}
+
+/// How a server refusal of a write resolves when later writes of this device may cover it (item 3).
+enum InstantRefusedWriteResolution: Sendable {
+  /// Accepted writes cover it: resolved as accepted, not failed.
+  case superseded(PendingMutation, coveringMutationIDs: [String])
+  /// Writes still in flight cover it: it keeps its claim, parked, until they are answered.
+  case heldBehindPendingWrites(coveringMutationIDs: [String])
+  /// The refusal stands.
+  case notCovered
+  /// This runtime no longer holds the write's claim.
+  case stale
+}
+
 struct InstantAutomaticOutboxClaimWindow: Sendable {
   var mutations: [PendingMutation]
   var projectedMutations: [PendingMutation]
@@ -137,6 +158,8 @@ struct InstantAutomaticOutboxClaimWindow: Sendable {
   var decodedBodyCount: Int
   var decodedBodyByteCount: Int
   var synchronizationBlocker: InstantSynchronizationBlocker?
+  /// Re-sends that accepted later writes cover, resolved as accepted instead of offered again (item 3).
+  var supersededMutations: [PendingMutation] = []
 }
 
 /// One durable mutation plus the exact later-write frontier that protects its
@@ -328,5 +351,33 @@ enum InstantBoundedOutboxDelivery {
       }
       return transportMutation
     }
+  }
+}
+
+/// Refusals parked behind covering writes in flight (library-78, item 3), with the claim each still holds and the
+/// failure to record if the covering writes do not land. In memory only: a socket's death releases every claim, and
+/// the next connection offers the write again.
+actor InstantParkedRefusals {
+  struct Parked: Sendable {
+    var claimToken: String
+    var failure: InstantMutationFailure
+  }
+
+  private var parked: [String: Parked] = [:]
+
+  var isEmpty: Bool { parked.isEmpty }
+
+  var snapshot: [String: Parked] { parked }
+
+  func park(_ mutationID: String, claimToken: String, failure: InstantMutationFailure) {
+    parked[mutationID] = Parked(claimToken: claimToken, failure: failure)
+  }
+
+  func remove(_ mutationID: String) {
+    parked[mutationID] = nil
+  }
+
+  func removeAll() {
+    parked.removeAll()
   }
 }
