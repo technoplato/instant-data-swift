@@ -586,6 +586,34 @@ package actor InstantRuntimeLiveSession {
     )
   }
 
+  /// Takes the writers of `serverStreamID` off the live path after the server refused or could not flush one of
+  /// their appends, as upstream `Stream.ts` `onAppendFailed` calls `onDisconnect` before it restarts the write stream
+  /// on the same socket. Their appends then wait in SQLite for the writer's catch-up, a close already sent goes out
+  /// again after the content, and a close waiting for the server's flush fails now instead of at its timeout.
+  ///
+  /// Returns whether a writer this device holds owns `serverStreamID`.
+  func markStreamWriterBehind(serverStreamID: String, reason: String) -> Bool {
+    var owned = false
+    for (localStreamID, var writer) in registeredStreamWriters where writer.serverStreamID == serverStreamID {
+      writer.liveGeneration = nil
+      writer.closeSentGeneration = nil
+      registeredStreamWriters[localStreamID] = writer
+      owned = true
+    }
+    guard owned else { return false }
+    if let flushes = pendingStreamFlushes.removeValue(forKey: serverStreamID) {
+      flushes.finish(
+        throwing: InstantError(
+          code: .networkFailed,
+          operation: "finish Instant live stream",
+          message: "Instant could not take the appends of stream '\(serverStreamID)': \(reason)",
+          recovery: "The close is stored on this device; the stream's writer restarts on this connection and sends it again."
+        )
+      )
+    }
+    return true
+  }
+
   /// Ends a writer's catch-up once it sent everything through `offset`, unless the runtime appended past it
   /// meanwhile. The writer is then live; if the stream is closed, its terminal append goes out, and the caller waits
   /// on the returned flushes for the server's confirmation.
@@ -1788,15 +1816,10 @@ package actor InstantRuntimeLiveSession {
           registeredStreamWriters[localStreamID] = nil
         }
       }
-    case let .appendFailed(failed):
-      guard !registeredStreamWriters.values.contains(where: { $0.serverStreamID == failed.streamID }) else {
-        throw InstantError(
-          code: .networkFailed,
-          operation: "retry Instant live stream writer",
-          message: "Instant could not flush stream '\(failed.streamID)'.",
-          recovery: "Reconnect the writer with its original token and resend unflushed chunks."
-        )
-      }
+    case .appendFailed:
+      // The runtime restarts the writer on this socket (`markStreamWriterBehind`); the socket stays open, as
+      // upstream `Stream.ts` `onAppendFailed` restarts only the write stream (library-78).
+      break
     case let .joinRoomOK(room):
       try await recordRoomEvent(op: room.op, roomID: room.roomID)
     case let .leaveRoomOK(room):

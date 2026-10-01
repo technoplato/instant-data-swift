@@ -7597,6 +7597,36 @@ public final class InstantRuntime: Sendable {
         await endStreamContentObservations(ofRefusedReader: refusedReaderKey, error: error)
         return
       }
+      // Upstream `Stream.ts` `onRecieveError` routes stream errors by the original event: an `append-stream` error
+      // goes to the writer's `onAppendFailed`, and a `start-stream` error to the pending start, which
+      // `InstantRuntimeLiveSession.record` already ended with it for the writer's catch-up to record (ADR 0017).
+      switch error.originalEvent?.op {
+      case "append-stream"?:
+        if let serverStreamID = error.originalEvent?.fields["stream-id"]?.stringValue,
+          await restartStreamWriterAfterFailedAppend(serverStreamID: serverStreamID, reason: error.message)
+        {
+          return
+        }
+      case "start-stream"?:
+        InstantDiagnostics.shared.record(
+          .warning,
+          subsystem: "instant-swift-data-core",
+          category: "stream",
+          event: "stream.start-error",
+          message: "Instant refused to start a stream; the stream's writer records the refusal and the socket stays open.",
+          metadata: [
+            "clientEventID": error.clientEventID ?? "",
+            "clientID": error.originalEvent?.fields["client-id"]?.stringValue ?? "",
+            "errorMessage": error.message,
+            "serverStatus": error.status.map(String.init) ?? "",
+            "serverType": error.type ?? "",
+          ],
+          correlationID: error.clientEventID
+        )
+        return
+      default:
+        break
+      }
       if let originalEvent = error.originalEvent,
         originalEvent.op == "add-query",
         let query = originalEvent.fields["q"]
@@ -7805,10 +7835,44 @@ public final class InstantRuntime: Sendable {
         correlationID: error.clientEventID
       )
 
+    case let .appendFailed(failed):
+      _ = await restartStreamWriterAfterFailedAppend(
+        serverStreamID: failed.streamID,
+        reason: "Instant could not flush the stream's appends (append-failed)."
+      )
+
     case .initOK, .joinRoomOK, .leaveRoomOK, .startStreamOK,
-      .streamFlushed, .appendFailed, .other:
+      .streamFlushed, .other:
       break
     }
+  }
+
+  /// The server refused or could not flush an append of a stream this device writes (`append-failed`, or an `error`
+  /// for `append-stream`). Upstream `Stream.ts` `onAppendFailed` restarts that write stream on the same socket
+  /// (`onDisconnect`, then `onConnectionReconnect`). Swift takes the writer off the live path and runs its catch-up,
+  /// which restarts it with its stored reconnect token and resends from SQLite what the server lacks; the socket and
+  /// every query on it stay as they are (library-78).
+  ///
+  /// Returns whether a writer this device holds owns the stream.
+  private func restartStreamWriterAfterFailedAppend(serverStreamID: String, reason: String) async -> Bool {
+    recordActorHop(.liveSession)
+    guard await liveSession.markStreamWriterBehind(serverStreamID: serverStreamID, reason: reason) else {
+      return false
+    }
+    InstantDiagnostics.shared.record(
+      .warning,
+      subsystem: "instant-swift-data-core",
+      category: "stream",
+      event: "stream.writer-append-failed",
+      message:
+        "Instant did not take an append of a stream this device writes; the writer restarts on this connection and resends from the server's offset.",
+      metadata: [
+        "serverStreamID": serverStreamID,
+        "errorMessage": reason,
+      ]
+    )
+    startStreamWriterCatchUp()
+    return true
   }
 
   /// The server answered the live query `key`: its error clears for its observers and its backoff starts over

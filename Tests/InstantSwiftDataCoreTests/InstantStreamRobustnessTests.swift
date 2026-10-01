@@ -604,6 +604,101 @@ struct InstantStreamRobustnessTests {
     _ = try await runtime.closeConnection()
   }
 
+  // MARK: - Refused appends (library-78)
+
+  /// The server refuses an append of a live writer: upstream `Stream.ts` `onRecieveError` hands an `append-stream`
+  /// error to the writer's `onAppendFailed`, which restarts the write stream on the same socket. Library-78 keeps the
+  /// socket open for an error nothing owns, so without that restart the writer kept sending appends the server
+  /// refuses until some other reconnect; before library-78 the refusal reconnected the socket.
+  @Test
+  func aRefusedAppendRestartsTheWriterOnTheSameSocketFromTheServersOffset() async throws {
+    try await Self.assertTheWriterRestartsOnTheSameSocket(appID: "stream-refused-append") { first, append in
+      await first.enqueue(
+        InstantLiveMessage(
+          op: "error",
+          clientEventID: append.clientEventID,
+          fields: [
+            "message": .string("Validation failed for append-stream: Invalid offset for stream."),
+            "type": .string("validation-failed"),
+            "status": .number(400),
+            "original-event": .object([
+              "client-event-id": append.clientEventID.map(InstantLiveJSONValue.string) ?? .null,
+              "op": .string("append-stream"),
+              "stream-id": .string(onlineServerStreamID),
+              "offset": .number(0),
+            ]),
+          ]
+        )
+      )
+    }
+  }
+
+  /// The server could not flush a live writer's appends (`append-failed`): upstream `Reactor.js` hands it to
+  /// `Stream.ts` `onAppendFailed`, which restarts the write stream on the same socket. Swift threw from the receive
+  /// loop instead, which closed a healthy socket and re-added every query.
+  @Test
+  func anAppendTheServerCouldNotFlushRestartsTheWriterOnTheSameSocket() async throws {
+    try await Self.assertTheWriterRestartsOnTheSameSocket(appID: "stream-append-failed") { first, _ in
+      await first.enqueue(
+        InstantLiveMessage(op: "append-failed", fields: ["stream-id": .string(onlineServerStreamID)])
+      )
+    }
+  }
+
+  static func assertTheWriterRestartsOnTheSameSocket(
+    appID: String,
+    failAppend: (LiveReactorParitySession, InstantLiveMessage) async -> Void
+  ) async throws {
+    let first = LiveReactorParitySession(messages: [
+      liveReactorInitOK(attrs: liveReactorTodoServerAttrs, sessionID: "\(appID)-socket")
+    ])
+    let second = LiveReactorParitySession(messages: [
+      liveReactorInitOK(attrs: liveReactorTodoServerAttrs, sessionID: "\(appID)-reconnected")
+    ])
+    let transport = LiveReactorParityTransport(sessions: [first, second])
+    let runtime = try await liveStreamRuntime(appID: appID, transport: transport.transport)
+    _ = try await runtime.signInAsGuest()
+    _ = try await runtime.connect()
+    let createTask = Task { try await runtime.createStream(clientID: "\(appID)-media") }
+    let firstStart = try #require(try await sentMessages(of: first, op: "start-stream").first)
+    await first.enqueue(
+      startStreamOK(clientEventID: firstStart.clientEventID, clientID: "\(appID)-media", streamID: onlineServerStreamID)
+    )
+    let metadata = try await createTask.value
+    _ = try await runtime.appendStreamContent(streamID: metadata.id, content: "hello", expectedOffset: 0)
+    let append = try #require(try await sentMessages(of: first, op: "append-stream").first)
+
+    await failAppend(first, append)
+
+    // The writer restarts with its original token on this socket; the server answers with what it holds.
+    let starts = try await sentMessages(of: first, op: "start-stream", count: 2)
+    expectNoDifference(starts.last?.fields, firstStart.fields, typescriptFailedAppendSource)
+    await first.enqueue(
+      startStreamOK(
+        clientEventID: starts.last?.clientEventID,
+        clientID: "\(appID)-media",
+        streamID: onlineServerStreamID,
+        offset: 0
+      )
+    )
+    let resent = try await sentMessages(of: first, op: "append-stream", count: 2)
+    expectNoDifference(
+      resent.last?.fields,
+      appendStreamFields(chunks: ["hello"], offset: 0, streamID: onlineServerStreamID),
+      typescriptFailedAppendSource
+    )
+    // Caught up again, the writer sends appends as they happen.
+    _ = try await runtime.appendStreamContent(streamID: metadata.id, content: " world", expectedOffset: 5)
+    let live = try await sentMessages(of: first, op: "append-stream", count: 3)
+    expectNoDifference(
+      live.last?.fields,
+      appendStreamFields(chunks: [" world"], offset: 5, streamID: onlineServerStreamID)
+    )
+    let reconnected = await second.sentMessages().map(\.op)
+    expectNoDifference(reconnected, [], "The socket stays open: a failed append is the writer's, not the connection's.")
+    _ = try await runtime.closeConnection()
+  }
+
   @Test
   func theWritersOwnObservationOfAStreamWrittenOfflineDoesNotSubscribe() async throws {
     let session = LiveReactorParitySession(messages: [
@@ -687,6 +782,9 @@ private let typescriptOfflineWriterSource =
 
 private let typescriptRefusedWriterSource =
   "upstream/instant/client/packages/core/src/Stream.ts onRecieveError (start-stream errors the write stream for good) [adapted: Swift records the refusal in SQLite so no later connection starts the stream again.]"
+
+private let typescriptFailedAppendSource =
+  "upstream/instant/client/packages/core/src/Stream.ts onAppendFailed (onDisconnect, then onConnectionReconnect on the same socket), reached from Reactor.js 'append-failed' and onRecieveError 'append-stream' [adapted: the writer's catch-up restarts it with its stored reconnect token and resends from SQLite what the server lacks.]"
 
 private actor StreamReadRecorder {
   private(set) var reads: [InstantStreamContentRead] = []

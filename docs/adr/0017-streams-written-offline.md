@@ -127,9 +127,14 @@ a handle valid on this device only.**
   content digest, so the same media finds the old local stream and reuses it.
 - A stream left open (never closed) is restarted on every connection until it closes, as upstream restarts an open
   write stream after every reconnect.
-- Until the live session routes `start-stream` errors to the stream (upstream `Reactor.js` `_handleReceiveError`
-  sends every stream op's error to `Stream.ts` `onRecieveError`), a refused start still ends the connection once; the
-  refusal is recorded first, so the next connection does not ask again.
+- Stream errors are routed by their original event, as upstream `Reactor.js` `_handleReceiveError` hands every
+  stream op's error to `Stream.ts` `onRecieveError`, and none of them ends the connection (library-78 keeps the socket
+  open for errors, as upstream does). A refused start ends the pending start; the catch-up records the refusal, so no
+  later connection asks again. A refused append (an `append-stream` error) or one the server could not flush
+  (`append-failed`) takes only that writer off the live path: its catch-up restarts it on the same socket with its
+  reconnect token and resends from the server's offset, as upstream `onAppendFailed` does
+  (`InstantStreamRobustnessTests` `aRefusedAppendRestartsTheWriterOnTheSameSocketFromTheServersOffset`,
+  `anAppendTheServerCouldNotFlushRestartsTheWriterOnTheSameSocket`). Before library-78 both reconnected the socket.
 - Readers that subscribe by a server stream id keep working unchanged; this decision only adds the client-id path for
   streams written offline.
 
