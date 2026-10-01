@@ -28,3 +28,17 @@ Touching (experiment switches only):
 
 Conflict check: both Swift files carry the fast-drain agent's claims (plan 2026-09-30-fast-drain-3). The switches touch
 neither the server-apply reduction nor the splice; see agent-presence/_channels/2026-09-30-ts-parity.md.
+
+Status (2026-10-01 04:55 EDT): done. The measurement finished; nothing on this branch ships.
+
+- Findings and numbers: Instant issue #306 workLog (https://issues.knophy.com/issues/306). Evidence:
+  /Users/laptop/Sync/audit/instant-ts-vs-swift-2026-09-30/ (logs/*/summary.txt, results/RESULTS.tsv, replay/, profiles/).
+  No REPORT.md exists there: the agent harness refuses report files, so the report went to the coordinator as text.
+- Adopted by claude-opus-5.5-fast-drain in library-77: the @instantdb/core v0.22.75 advert (778c793b), the attribute
+  caches (7799d170), transient add-query errors keep the query (#324, 67bda26b), subscribe-stream refusals reach the
+  observer (1ba00779).
+- Measured with no effect: SQLite cache_size 0 vs the default, wal_autocheckpoint 1000 vs 0 on a busy disk. The
+  synchronous A/B compared NORMAL with NORMAL (Apple's WAL default is 1), so it shows nothing about FULL.
+- Open, with the fast-drain agent: resident previous results with write-behind persistence; incremental stream
+  snapshots (build 78); the server-apply retry limit that fails the receive loop while dictation continues in a large
+  store; -O for device builds (SWIFT_OPTIMIZATION_LEVEL=-O on the installer's xcodebuild command, Scribe side).
