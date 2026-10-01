@@ -1,3 +1,12 @@
+## 2026-10-01 03:37:23 EDT — scribe `b78a2bafe8a0ff83018cda6174e2c49ffa4c23c3`
+Record the root view's off-main auth session read in the change log (#303).
+
+## 2026-10-01 03:36:54 EDT — scribe `63947d107965aeafe82b68f304bda654ff10f509`
+Read ScribeSharedRootView's auth session off the main actor (ScribeAuthSessionSubscription.run, @concurrent), so InstantRuntime.observeAuthSession() no longer holds the operation gate while SwiftUI's first render keeps the main thread busy (23-101 s in the 2026-09-30 soaks). ScribeAuthSessionSubscriptionTests and MainActorAuthSessionTests, red then green (#303). Library side for the owner: gate-holding runtime methods inherit their caller's executor under NonisolatedNonsendingByDefault.
+
+## 2026-10-01 01:02:00 EDT — scribe `4797a8b64a95a5eb9b6671d531ebbe62e23a72cd`
+Plan the root view's auth session read off the main actor and claim its paths, plan 2026-10-01-live-write-regression (#303).
+
 ## 2026-09-30 13:51:53 EDT — instant-data-swift `46c131d7413cb3185c80d6e0ce70f467879dfc9e`
 Merge connection survival (984cc351) into build 73's library: one reconnect per socket death, and reading while a frame applies (#296).
 
