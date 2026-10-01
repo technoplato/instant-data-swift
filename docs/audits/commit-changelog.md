@@ -1,3 +1,21 @@
+## 2026-09-30 20:35:50 EDT — scribe `ce0f01801274fc22c6c02e3a4df53c2dae87e688`
+Record the Account screen without the demo counters in the change log (#289).
+
+## 2026-09-30 20:26:07 EDT — scribe `a70b8850cb03e07afbe9dc39aa40d44d0f256206`
+Hide the library's demo counters on the Account screen on iPhone, iPad, and Mac, and drop the discard switch's iOS-only guard; ScribeAccountViewSchemaTests fails when the screen reads or writes an entity instant.schema.ts does not declare (#289). Needs instant-data-swift 9f72413d.
+
+## 2026-09-30 20:25:22 EDT — instant-data-swift `41b912d7b6ea9eab04815c2c23174832ce251424`
+Record the AuthV3 demo counters switch in the change log (#289).
+
+## 2026-09-30 20:24:34 EDT — instant-data-swift `9f72413db9fb8db1bcc496fcea3c6344e6b63194`
+Let apps turn off AuthV3LoginScreen's demo counters: environment value authV3ShowsDemoCounters, default on; AuthV3 UI module only, no InstantSwiftDataCore change (#289).
+
+## 2026-09-30 19:30:48 EDT — scribe `44e9379db3e61168ce6ea967cb23b95b62806ce8`
+Plan the Account screen without the library's demo counters and claim its paths, plan 2026-09-30-auth-counters (#289).
+
+## 2026-09-30 19:29:59 EDT — instant-data-swift `54c8a963267a9843b9f8522e94d0f1fc3545ab08`
+Claim the AuthV3 login screen and its tests for plan 2026-09-30-auth-counters (#289).
+
 ## 2026-09-30 13:51:53 EDT — instant-data-swift `46c131d7413cb3185c80d6e0ce70f467879dfc9e`
 Merge connection survival (984cc351) into build 73's library: one reconnect per socket death, and reading while a frame applies (#296).
 
