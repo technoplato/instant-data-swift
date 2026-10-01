@@ -14,3 +14,4 @@ codex-desktop/01a00071-f1c1-7193-adcd-3bc9f30b5f95/root/final_acceptance_review 
 codex-desktop/01a00071-f1c1-7193-adcd-3bc9f30b5f95/root 2026-08-15T10:32:10-0400 mower focused-reclaim-test-finalization plan=2026-08-14-semantic-noop-insert-v2
 codex-desktop/01a00071-f1c1-7193-adcd-3bc9f30b5f95/root/legacy_head_contract_tests 2026-08-15T10:45:30-0400 mower manual-blocker-explicit-close-wins-regression plan=2026-08-14-semantic-noop-insert-v2
 claude-opus-5.5-connection-survival 2026-09-30T11:19:39-04:00 mower plan=2026-09-30-connection-survival #296
+claude-opus-5.5-fast-drain 2026-10-01T00:42:36-04:00 mower plan=2026-10-01-library-77 #303 #296 attribute-context-cache tests
