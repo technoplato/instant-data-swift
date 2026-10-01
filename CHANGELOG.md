@@ -10,6 +10,21 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## September 30th, 2026 at 8:25:12 p.m. EDT — `9f72413db9fb` Let apps turn off AuthV3LoginScreen's demo counters (#289)
+
+- **Implementation commit:** `9f72413db9fb8db1bcc496fcea3c6344e6b63194`
+- **Change:** Apps can turn off AuthV3LoginScreen's demo counters (#289).
+- **Details:**
+  - New environment value authV3ShowsDemoCounters (default true, so the Auth recipe app and every other app are unchanged). When false the screen leaves out AuthV3CountersCard, which observes recipe_public_counters and recipe_account_counters and creates the public row on appear. Scribe turns it off: its schema has neither entity, and opening the Account sheet on Michael's iPad (0.1 (72)) failed two query observations and one write with no tap; each Increment public tap failed twice more.
+  - Tests: AuthV3AppTests (macOS) lays out two login screens headless with local-only clients; the default screen creates the public counter row, the screen with the value off creates none. Red against a stub that ignored the value, then 6 of 6; AuthV3, Recipes, VoiceTrail, and AppBuilder suites 62 of 62.
+  - Scope: only the AuthV3 UI module and its tests. git diff --stat 506089b2 lists no Sources/InstantSwiftDataCore file, so the sync engine is untouched and the live-recording simulator soak is not required.
+- **Files:**
+  - `Sources/AuthV3App/AuthApp.swift` — environment value authV3ShowsDemoCounters; the login screen reads it around the counters card
+  - `Tests/AuthV3AppTests/AuthV3AppTests.swift` — default-on test and the headless two-screen write test
+- **User context (verbatim):**
+  > Remove the "Increment public / Increment mine" demo counters from Scribe's Account screen on every platform, so tapping them can't write a namespace Scribe's schema doesn't have.
+- **SpecStory:** unavailable — Claude Code CLI session; no SpecStory capture configured for this session.
+
 ## September 30th, 2026 at 1:50:18 p.m. EDT — `5424c73365c6` Remove refused writes' overlays without the whole-component rebase, and respect last-write-wins in receipt patches (#296)
 
 - **Implementation commit:** `5424c73365c63d487fe8f0f4768531450f970c2e`
