@@ -758,6 +758,14 @@ package struct InstantServerApplyMetrics: Equatable, Sendable {
   }
 }
 
+/// What reading stream content from SQLite cost: the reads, and the stored chunks and bytes they decoded. A stream
+/// append must not re-read the whole stream to tell its observers (upstream `Stream.ts` pushes only the new chunk).
+package struct InstantStreamContentReadMetrics: Equatable, Sendable {
+  package var readCount = 0
+  package var decodedChunkCount = 0
+  package var decodedByteCount = 0
+}
+
 enum InstantAutomaticFailedMutationRetryPolicy {
   static func isIndependentlyRetryableFailureMessage(_ rawMessage: String) -> Bool {
     let message = rawMessage.lowercased()
@@ -833,6 +841,7 @@ public actor SQLitePersistenceStore {
   private var terminalFailureMetadataMetrics = InstantTerminalFailureMetadataMetrics()
   private var failedMutationRetryMetrics = InstantFailedMutationRetryMetrics()
   private var serverApplyMetrics = InstantServerApplyMetrics()
+  private var streamContentReadMetrics = InstantStreamContentReadMetrics()
   /// The attributes a live-result save limits its rows with, reused while neither this connection nor another process
   /// has written `instant_attributes` (#303). Every server apply used to load and decode every attribute row once per
   /// query result it saved, inside the commit.
@@ -939,6 +948,14 @@ public actor SQLitePersistenceStore {
 
   package func serverApplyMetricsForTesting() -> InstantServerApplyMetrics {
     serverApplyMetrics
+  }
+
+  package func streamContentReadMetricsForTesting() -> InstantStreamContentReadMetrics {
+    streamContentReadMetrics
+  }
+
+  package func resetStreamContentReadMetricsForTesting() {
+    streamContentReadMetrics = InstantStreamContentReadMetrics()
   }
 
   package func setFailedMutationRetryWindowLoadedHookForTesting(
@@ -14986,6 +15003,9 @@ public actor SQLitePersistenceStore {
     for chunk in chunks {
       data.append(contentsOf: chunk.content.utf8)
     }
+    streamContentReadMetrics.readCount += 1
+    streamContentReadMetrics.decodedChunkCount += chunks.count
+    streamContentReadMetrics.decodedByteCount += data.count
     if let firstChunk = chunks.first {
       let droppedByteCount = byteOffset - firstChunk.offset
       if droppedByteCount > 0 {
