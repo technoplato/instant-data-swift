@@ -117,22 +117,23 @@ replay() {
   if [[ "${NO_LOCK}" == 1 ]]; then "$@"; else locked "$@"; fi
 }
 echo "replaying, $(date '+%H:%M:%S'); REPLAY lines go to ${LOG}" >&2
-set +e
-(
-  echo "LOAD-BEFORE $(load) $(date '+%H:%M:%S') head ${HEAD_LABEL}"
-  replay env \
-    INSTANT_PHONE_REPLAY_STORE="${COPY}" \
-    INSTANT_PHONE_REPLAY_REFUSALS="${REFUSALS}" \
-    INSTANT_PHONE_REPLAY_FRAMES="${FRAMES}" \
-    INSTANT_PHONE_REPLAY_WINDOW="${WINDOW}" \
-    INSTANT_PHONE_REPLAY_SCRATCH="${WORK}" \
-    swift test --package-path "${ROOT}" --skip-build --filter "${FILTER}" 2>&1 \
-    | grep --line-buffered -E "REPLAY|passed after|failed after|recorded an issue|error:|Fatal" \
+# One lock hold covers the whole measured block, so LOAD-BEFORE and LOAD-AFTER bracket the replay, not the wait.
+MEASURED='
+  echo "LOAD-BEFORE $(uptime | sed "s/.*load averages*: //") $(date "+%H:%M:%S") head $0"
+  "$@" 2>&1 | grep --line-buffered -E "REPLAY|passed after|failed after|recorded an issue|error:|Fatal" \
     | grep --line-buffered -v maintenance.lock | cut -c1-600
-  test_status="${PIPESTATUS[0]}"
-  echo "LOAD-AFTER $(load) $(date '+%H:%M:%S')"
-  exit "${test_status}"
-) > "${LOG}"
+  status=${PIPESTATUS[0]}
+  echo "LOAD-AFTER $(uptime | sed "s/.*load averages*: //") $(date "+%H:%M:%S")"
+  exit "${status}"
+'
+set +e
+replay /bin/bash -c "${MEASURED}" "${HEAD_LABEL}" env \
+  INSTANT_PHONE_REPLAY_STORE="${COPY}" \
+  INSTANT_PHONE_REPLAY_REFUSALS="${REFUSALS}" \
+  INSTANT_PHONE_REPLAY_FRAMES="${FRAMES}" \
+  INSTANT_PHONE_REPLAY_WINDOW="${WINDOW}" \
+  INSTANT_PHONE_REPLAY_SCRATCH="${WORK}" \
+  swift test --package-path "${ROOT}" --skip-build --filter "${FILTER}" > "${LOG}"
 status=$?
 set -e
 grep -E "^REPLAY (start|drain|declines)|Test run with" "${LOG}" >&2 || true
