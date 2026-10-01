@@ -60,27 +60,23 @@ struct InstantReactorParityTests {
     expectNoDifference(sentMessages.map(\.op), ["init", "add-query"], reactorQuerySubsSource)
     expectNoDifference(sentMessages.last?.fields["q"], query, reactorQuerySubsSource)
 
-    let queryOnceTask = Task { try await runtime.queryOnce(plan) }
-    defer { queryOnceTask.cancel() }
-    try await instantLiveWithTimeout(
-      operation: "wait for querySubs parity queryOnce registration",
+    // Upstream `queryOnce` sends add-query for this subscribed query too and resolves on add-query-exists with the
+    // subscription's local result. Swift answers from that same local result without the round trip, because the
+    // exact subscription was answered on the open socket (library-78 item 7, #317). The observer saw the rows a moment
+    // before the receive loop recorded the answer.
+    let answeredBy = ContinuousClock.now + .seconds(5)
+    while try await !runtime.isAnsweredOnCurrentSocketForTesting(plan), ContinuousClock.now < answeredBy {
+      try await Task.sleep(for: .milliseconds(5))
+    }
+    let once = try await instantLiveWithTimeout(
+      operation: "answer querySubs parity queryOnce from the device",
       timeoutMilliseconds: 5_000
     ) {
-      await liveSession.waitForSentMessageCount(3)
+      try await runtime.queryOnce(plan)
     }
-    await liveSession.enqueue(
-      InstantLiveMessage(
-        op: "add-query-exists",
-        clientEventID: "event-query-subs-query-once",
-        fields: ["q": query]
-      )
-    )
-    _ = try await instantLiveWithTimeout(
-      operation: "wait for querySubs parity queryOnce acknowledgement",
-      timeoutMilliseconds: 5_000
-    ) {
-      try await queryOnceTask.value
-    }
+    expectNoDifference(once.values, emission.values, reactorQuerySubsSource)
+    let sentAfterQueryOnce = await liveSession.sentMessages().map(\.op)
+    expectNoDifference(sentAfterQueryOnce, ["init", "add-query"], reactorQuerySubsSource)
     let loadedCachedQuery = try await runtime.cachedQuery(plan)
     let cachedQuery = try #require(loadedCachedQuery)
     expectNoDifference(emission.queryID, "reactor.query-subs.todos", reactorQuerySubsSource)
@@ -3015,7 +3011,7 @@ private let reactorGetLocalIDSource =
   "upstream/instant/client/packages/core/__tests__/src/Reactor.test.ts getLocalId always returns the same id [adapted: Swift uses InstantRuntime.localID over the local SQLite cache instead of the IndexedDB-backed Reactor harness.]"
 
 private let reactorQuerySubsSource =
-  "upstream/instant/client/packages/core/__tests__/src/Reactor.test.ts querySubs round-trips [adapted: Swift installs the query on the runtime live session, applies add-query-ok through the public observer, persists the resulting store and query cache in SQLite, and proves relaunch and closed-query fallback.]"
+  "upstream/instant/client/packages/core/__tests__/src/Reactor.test.ts querySubs round-trips [adapted: Swift installs the query on the runtime live session, applies add-query-ok through the public observer, persists the resulting store and query cache in SQLite, and proves relaunch and closed-query fallback. A queryOnce of the answered subscription resolves from the device without add-query; upstream sends add-query and resolves on add-query-exists with the same local result.]"
 
 private let reactorOptimisticRefreshSource =
   "upstream/instant/client/packages/core/__tests__/src/Reactor.test.ts optimisticTx is not overwritten by refresh-ok [adapted: Swift applies the raw refresh-ok payload after confirming the earlier mutation and proves the later optimistic write remains visible and persisted.]"

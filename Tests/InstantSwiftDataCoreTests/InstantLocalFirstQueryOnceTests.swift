@@ -72,6 +72,15 @@ struct InstantLocalFirstQueryOnceTests {
     while texts != ["already on the device"], let emission = await iterator.next() {
       texts = try TodoExample.decode(emission.values).map(\.text)
     }
+    // Observers see the rows a moment before the receive loop records the answer.
+    let deadline = ContinuousClock.now + .seconds(5)
+    while try await !runtime.isAnsweredOnCurrentSocketForTesting(TodoExample.query) {
+      guard ContinuousClock.now < deadline else {
+        Issue.record("The server's answer was never recorded for the subscription.")
+        break
+      }
+      try await Task.sleep(for: .milliseconds(5))
+    }
     return Fixture(runtime: runtime, session: session, query: query, observation: observation)
   }
 

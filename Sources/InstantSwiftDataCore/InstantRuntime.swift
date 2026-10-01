@@ -5710,6 +5710,9 @@ public final class InstantRuntime: Sendable {
     // what upstream's add-query-exists answer resolves to, minus the round trip. That round trip waited behind
     // Scribe's backlog of server frames for 5 s and more (#307's Copy Transcript failure). Every other query asks the
     // server as before; a local-only read stays the injected local-only client's job (ADR 0001).
+    // Read before the answered check: the receive loop records an answer before its acknowledgement, so either this
+    // query is answered here, or any acknowledgement after this revision ends the wait below.
+    let observedRevision = await liveQueryAcknowledgements.revision(for: registrationKey)
     recordActorHop(.liveSession)
     if await liveSession.isAnsweredOnCurrentSocket(key: registrationKey) {
       let pageInfo = await liveQueryPageInfo(for: registrationKey)
@@ -5741,7 +5744,6 @@ public final class InstantRuntime: Sendable {
     let emission: InstantQueryEmission
     do {
       try Task.checkCancellation()
-      let observedRevision = await liveQueryAcknowledgements.revision(for: registrationKey)
 
       // Match Reactor.queryOnce + _flushPendingMessages: record the query before
       // reconnecting so an opening session sends add-query ahead of its durable
@@ -6333,6 +6335,16 @@ public final class InstantRuntime: Sendable {
   @concurrent
   package func serverApplyGateWaiterCountForTesting() async -> Int {
     await serverApplyGate.waiterCount
+  }
+
+  /// Whether `queryOnce(plan)` answers from the device: the server answered this exact query on the open socket.
+  ///
+  /// Observers see the server's rows a moment before the answer is recorded, so a test that reacts to the rows waits
+  /// for this before it expects a local answer.
+  @concurrent
+  package func isAnsweredOnCurrentSocketForTesting(_ plan: InstantQueryPlan) async throws -> Bool {
+    let registrationKey = try InstantLiveQueryEncoder.registrationKey(for: InstantLiveQueryEncoder.encode(plan))
+    return await liveSession.isAnsweredOnCurrentSocket(key: registrationKey)
   }
 
   package func installedStoreRevisionsForTesting() -> (store: Int64, attributes: Int64) {
@@ -7457,8 +7469,8 @@ public final class InstantRuntime: Sendable {
       }
       let registrationKey = try InstantLiveQueryEncoder.registrationKey(for: query)
       guard !queryOK.result.isEmpty else {
-        await liveQueryAcknowledgements.record(key: registrationKey)
         await recordLiveQueryAnswered(key: registrationKey)
+        await liveQueryAcknowledgements.record(key: registrationKey)
         return
       }
       guard let processedTransactionID = queryOK.processedTransactionID?.nilIfEmpty else {
@@ -7482,8 +7494,10 @@ public final class InstantRuntime: Sendable {
           ]
         )
       )
-      await liveQueryAcknowledgements.record(key: registrationKey)
+      // Answered before acknowledged: a queryOnce that sees this acknowledgement also sees the answer, and answers
+      // from the device instead of waiting on the socket (library-78 item 7).
       await recordLiveQueryAnswered(key: registrationKey)
+      await liveQueryAcknowledgements.record(key: registrationKey)
 
     case let .addQueryExists(queryOK):
       guard let query = queryOK.query else {
@@ -7495,8 +7509,8 @@ public final class InstantRuntime: Sendable {
         )
       }
       let registrationKey = try InstantLiveQueryEncoder.registrationKey(for: query)
-      await liveQueryAcknowledgements.record(key: registrationKey)
       await recordLiveQueryAnswered(key: registrationKey)
+      await liveQueryAcknowledgements.record(key: registrationKey)
 
     case let .refreshOK(refreshOK):
       try await applyLiveRefresh(
