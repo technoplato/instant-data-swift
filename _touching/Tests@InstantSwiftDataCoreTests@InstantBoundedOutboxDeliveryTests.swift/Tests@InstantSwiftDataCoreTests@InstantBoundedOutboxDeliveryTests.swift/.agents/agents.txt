@@ -18,3 +18,4 @@ codex-desktop/01a00071-f1c1-7193-adcd-3bc9f30b5f95/root/blocker_index_test 2026-
 codex-desktop/01a00071-f1c1-7193-adcd-3bc9f30b5f95/root/migration_architecture_fix 2026-08-15T11:58:43-0400 mower offered-wire-immutability-regression-only plan=2026-08-15-legacy-priority-durable-migration
 codex-desktop/01a00071-f1c1-7193-adcd-3bc9f30b5f95/root 2026-08-15T12:26:30-0400 mower build-only-assertion-hoist plan=2026-08-15-legacy-priority-durable-migration
 claude-opus-5.5-stale-writes 2026-09-30T00:50:43-04:00 grower plan=2026-09-29-stale-writes #113 #296
+claude-opus-5.5-fast-drain 2026-10-01T03:36:11-04:00 mower plan=2026-10-01-library-77 #303 test-race fixes

@@ -39,5 +39,8 @@ Touching:
   InstantOperationGateAwaitTests.swift, InstantWALCheckpointTests.swift
 - CHANGELOG.md, docs/audits/commit-changelog.md, PROGRESS.md
 
+- Tests: InstantBoundedOutboxDeliveryTests.swift (added 2026-10-01 03:36 for two pre-existing test races the gates hit:
+  the flush timeout's idle check, and the reclaim test's known-issue scope in InstantLiveTransportTests.swift)
+
 Conflict check: these paths' latest claims are finished plans already merged into d487ee09 (perf audit, connection
-survival, infinite leading rows, fast-drain-3).
+survival, infinite leading rows, fast-drain-3, and stale-writes for InstantBoundedOutboxDeliveryTests.swift).
