@@ -10,6 +10,20 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## September 30th, 2026 at 11:23:41 p.m. EDT — `d2f7bf7e3739` Add experiment-only switches for SQLite synchronous, cache_size, and the advertised core version (#306)
+
+- **Implementation commit:** `d2f7bf7e373936fc61d63553d5a16dc81d4956ee`
+- **Change:** Add experiment-only switches for SQLite synchronous, cache_size, and the advertised core version (#306)
+- **Details:**
+  - Measurement tool for plan 2026-09-30-ts-parity: INSTANT_SWIFT_DATA_EXPERIMENT_SQLITE_SYNCHRONOUS, INSTANT_SWIFT_DATA_EXPERIMENT_SQLITE_CACHE_SIZE, and INSTANT_SWIFT_DATA_EXPERIMENT_CORE_VERSION, each read once; unset, behavior equals ab33cb35. Not a merge candidate; the fast-drain agent owns the library.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantMeasurementSwitches.swift` — the three switches
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — optional pragmas after the store's own
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — the init frame's versions come from the switches
+- **User context (verbatim):**
+  > figure out a parallel experiment with TypeScript with voice dictation and see if there's some and trace everything
+- **SpecStory:** unavailable — Claude Code subagent session (claude-opus-5.5 ts-parity); no SpecStory capture available for this harness
+
 ## September 30th, 2026 at 8:25:12 p.m. EDT — `9f72413db9fb` Let apps turn off AuthV3LoginScreen's demo counters (#289)
 
 - **Implementation commit:** `9f72413db9fb8db1bcc496fcea3c6344e6b63194`

@@ -1,3 +1,9 @@
+## 2026-09-30 23:23:16 EDT — instant-data-swift `d2f7bf7e373936fc61d63553d5a16dc81d4956ee`
+Add experiment-only switches for SQLite synchronous, cache_size, and the advertised @instantdb/core version on the measurement branch agent/claude-opus-5.5/ts-parity-experiments; unset, behavior equals ab33cb35 (#306).
+
+## 2026-09-30 23:22:31 EDT — instant-data-swift `43f48145e3b2092938c100d3ce1ce6f08e4eac30`
+Claim the measurement switches for plan 2026-09-30-ts-parity (#306).
+
 ## 2026-09-30 20:35:50 EDT — scribe `ce0f01801274fc22c6c02e3a4df53c2dae87e688`
 Record the Account screen without the demo counters in the change log (#289).
 
