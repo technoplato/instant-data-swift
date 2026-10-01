@@ -1,3 +1,6 @@
+## 2026-10-01 05:27:00 EDT — instant-data-swift `f9cb539640f7a847bc6af046408efd206c1b1933`
+Apply a server transaction under an exclusive operation-gate hold once local writes have made every optimistic attempt stale, instead of ending the receive loop (#303).
+
 ## 2026-10-01 04:22:17 EDT — instant-data-swift `1ba0077985528f9633d987cedaa145baeb698452`
 End every stream observation behind a subscription the server refuses (Stream is missing), and pin the offline stream writer gap as a known issue (#303 #329).
 
