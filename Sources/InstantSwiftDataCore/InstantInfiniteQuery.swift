@@ -949,6 +949,9 @@ private struct InstantLiveInfiniteChunk: Sendable {
   var pageInfo: InstantQueryPageInfo?
   var hasMore: Bool
   var endCursor: InstantQueryCursor?
+  /// When the coordinator stored this chunk's rows, counted across the window's chunks. Two chunks can hold one row
+  /// for a moment after it moves between them; the copy stored later is where the store has it now (#388).
+  var storedOrdinal: UInt64 = 0
 }
 
 private struct InstantLiveInfiniteReverseAdvance: Hashable, Sendable {
@@ -1016,6 +1019,14 @@ private actor InstantLiveInfiniteQueryCoordinator {
   /// subscription while the runtime sends the query again; the snapshot reports the error until it clears.
   private var chunkServerErrors: [InstantLiveInfiniteSubscriptionKey: InstantError] = [:]
   private var pushedSnapshotCount = 0
+  private var nextStoredChunkOrdinal: UInt64 = 0
+  /// The last snapshot this query published (#388).
+  private var lastPublishedSnapshot: InstantInfiniteQuerySnapshot?
+  /// The kickstart's first forward chunk, until its server answer arrives. The starter's rows leave with the
+  /// pre-bootstrap chunk at kickstart, so a snapshot published before that answer would show the window without them:
+  /// the Mac's recording list showed no rows for about 0.6 s at every kickstart when the leading watcher answered
+  /// first (#388). Until then the coordinator keeps the last published snapshot when it showed rows.
+  private var kickstartForwardKeyAwaitingAnswer: InstantLiveInfiniteForwardChunkKey?
 
   init(
     runtime: InstantRuntime,
@@ -1274,6 +1285,8 @@ private actor InstantLiveInfiniteQueryCoordinator {
     hasEvictedAfter = false
     latestCanLoadPreviousPage = false
     hasKickstarted = false
+    kickstartForwardKeyAwaitingAnswer = nil
+    lastPublishedSnapshot = nil
     preBootstrapLoadedPages = 1
     preBootstrapWindowOffsetPages = 0
     preBootstrapPendingNavigation = nil
@@ -1360,6 +1373,7 @@ private actor InstantLiveInfiniteQueryCoordinator {
         metadata: kickMeta,
         correlationID: plan.id
       )
+      kickstartForwardKeyAwaitingAnswer = .cursor(startCursor, afterInclusive: true)
       pushNewForward(startCursor: startCursor, afterInclusive: true)
       pushNewReverse(startCursor: startCursor)
       return
@@ -1850,7 +1864,7 @@ private actor InstantLiveInfiniteQueryCoordinator {
     if forwardChunks[key] == nil {
       forwardKeys.append(key)
     }
-    forwardChunks[key] = chunk
+    forwardChunks[key] = stamped(chunk)
     trimRetainedChunks(evicting: .previous)
     pushSnapshot()
   }
@@ -1862,7 +1876,7 @@ private actor InstantLiveInfiniteQueryCoordinator {
     if reverseChunks[startCursor] == nil {
       reverseKeys.append(startCursor)
     }
-    reverseChunks[startCursor] = chunk
+    reverseChunks[startCursor] = stamped(chunk)
     if reverseNavigationKeys.contains(startCursor) {
       // A page loaded by `loadPreviousPage`. While it is the top chunk and still growing, it says whether rows remain
       // above the window; when none do, the window starts at the top of the list again.
@@ -2381,12 +2395,76 @@ private actor InstantLiveInfiniteQueryCoordinator {
     }
   }
 
+  private func stamped(_ chunk: InstantLiveInfiniteChunk) -> InstantLiveInfiniteChunk {
+    var chunk = chunk
+    nextStoredChunkOrdinal &+= 1
+    chunk.storedOrdinal = nextStoredChunkOrdinal
+    return chunk
+  }
+
+  /// The window's rows in order, each entity once (#388).
+  ///
+  /// A row that moves between chunks leaves one chunk and joins another in the same store commit, but each chunk's
+  /// emission reaches the coordinator through its own task, so for a moment both chunks hold it: the chunk that heard
+  /// first shows it where it is now, and the other where it was. A chunk frozen by `loadNextPage` keeps its old rows
+  /// until its replacement answers, so the moment can last a round trip. Upstream `normalizeChunks` concatenates the
+  /// chunks anyway, which costs React a key warning; a consumer keyed by id traps (Scribe's recording list,
+  /// `IdentifiedArray(uniqueElements:)`, on the Mac and the iPhone on 2026-10-01). The copy from the newer store
+  /// commit wins, and between copies from one commit the chunk stored later; the row keeps that copy's position.
+  private static func windowRows(
+    reverse orderedReverseChunks: [InstantLiveInfiniteChunk],
+    forward orderedForwardChunks: [InstantLiveInfiniteChunk]
+  ) -> [InstantEntitySnapshot] {
+    let chunks = orderedReverseChunks.map { (chunk: $0, rows: Array($0.data.reversed())) }
+      + orderedForwardChunks.map { (chunk: $0, rows: $0.data) }
+    var owner: [String: Int] = [:]
+    var hasRepeat = false
+    for (index, entry) in chunks.enumerated() {
+      for row in entry.rows {
+        guard let current = owner[row.id] else {
+          owner[row.id] = index
+          continue
+        }
+        hasRepeat = true
+        let holder = chunks[current].chunk
+        if (entry.chunk.sequence, entry.chunk.storedOrdinal) > (holder.sequence, holder.storedOrdinal) {
+          owner[row.id] = index
+        }
+      }
+    }
+    guard hasRepeat else { return chunks.flatMap(\.rows) }
+    var listed = Set<String>()
+    var rows: [InstantEntitySnapshot] = []
+    for (index, entry) in chunks.enumerated() {
+      for row in entry.rows where owner[row.id] == index && listed.insert(row.id).inserted {
+        rows.append(row)
+      }
+    }
+    return rows
+  }
+
   private func pushSnapshot() {
     guard isActive else { return }
+    if let key = kickstartForwardKeyAwaitingAnswer {
+      if let chunk = forwardChunks[key], chunk.pageInfo == nil, var held = lastPublishedSnapshot,
+        !held.values.isEmpty
+      {
+        // Keep the starter's rows until the first forward chunk answers; report a server error on them meanwhile. A
+        // window that showed no rows has nothing to keep, so it shows the leading watcher's rows as they arrive.
+        let error = currentChunkServerError()
+        if held.error != error {
+          held.error = error
+          lastPublishedSnapshot = held
+          pushedSnapshotCount &+= 1
+          continuation.yield(held)
+        }
+        return
+      }
+      kickstartForwardKeyAwaitingAnswer = nil
+    }
     let orderedReverseChunks = reverseKeys.reversed().compactMap { reverseChunks[$0] }
     let orderedForwardChunks = forwardKeys.compactMap { forwardChunks[$0] }
-    let values = orderedReverseChunks.flatMap { $0.data.reversed() }
-      + orderedForwardChunks.flatMap(\.data)
+    let values = Self.windowRows(reverse: orderedReverseChunks, forward: orderedForwardChunks)
     let firstReverseChunk = orderedReverseChunks.first(where: { !$0.data.isEmpty })
     let firstForwardChunk = orderedForwardChunks.first(where: { !$0.data.isEmpty })
     let lastReverseChunk = orderedReverseChunks.last(where: { !$0.data.isEmpty })
@@ -2420,18 +2498,18 @@ private actor InstantLiveInfiniteQueryCoordinator {
         hasPreviousPage: canLoadPreviousPage,
         hasNextPage: canLoadNextPage
       )
-    pushedSnapshotCount &+= 1
-    continuation.yield(
-      InstantInfiniteQuerySnapshot(
-        queryID: plan.id,
-        sequence: sequence,
-        values: values,
-        pageInfo: pageInfo,
-        canLoadNextPage: canLoadNextPage,
-        canLoadPreviousPage: canLoadPreviousPage,
-        error: currentChunkServerError()
-      )
+    let snapshot = InstantInfiniteQuerySnapshot(
+      queryID: plan.id,
+      sequence: sequence,
+      values: values,
+      pageInfo: pageInfo,
+      canLoadNextPage: canLoadNextPage,
+      canLoadPreviousPage: canLoadPreviousPage,
+      error: currentChunkServerError()
     )
+    lastPublishedSnapshot = snapshot
+    pushedSnapshotCount &+= 1
+    continuation.yield(snapshot)
   }
 
   /// The first chunk's server error, in window order, starting with the starter page (#360).
