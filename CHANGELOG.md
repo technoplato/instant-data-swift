@@ -24,6 +24,37 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 - **User context (verbatim):**
   > Remove the "Increment public / Increment mine" demo counters from Scribe's Account screen on every platform, so tapping them can't write a namespace Scribe's schema doesn't have.
 - **SpecStory:** unavailable — Claude Code CLI session; no SpecStory capture configured for this session.
+## September 30th, 2026 at 8:55:52 p.m. EDT — `f53f779317bd` Let the server's facts win against what a refused write restores, on every removal path (#296)
+
+- **Implementation commit:** `f53f779317bdddba4912d92d5a676e5982001a02`
+- **Change:** Facts that removing a refused write restores are base facts stamped txTime 0 at every removal site, so the server's fact wins against them as upstream shows it (#296).
+- **Details:**
+  - A refused write's receipt can restore values with this device's stamps, and Instant stamps a cardinality-one fact with the time its slot was first set (triple.clj keeps created_at on update unless overwrite-t is set, which only app streams do), so the restored value could win last-write-wins against the server's newer value and stay.
+  - The differential's new 'refuse several before a frame' event found it: Scribe-links seed 15 showed a final segment as not final on the reduced device. Turning build 73's splice off does not fix it; the whole-component rebase restores the same before-image.
+  - Applied in the reduced splice (store operations and receipt base facts), both terminal-failure removals, and the full rebase's reverse pass for refused rows. Upstream shows the server's results with the remaining pending writes on top, and a refused write leaves nothing behind.
+  - aRefusedReplayLeavesTheServersValueOnBothPaths and the differential event are red on b78e978f (3 issues; seed 15 at step 38), also with the splice disabled, and green here. InstantFastDrainTests: 16 tests pass with 2 declared known issues (Pattern B).
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — restoredAsBase at the splice, the terminal-failure removals, and the full rebase's reverse pass
+  - `Tests/InstantSwiftDataCoreTests/InstantFastDrainTests.swift` — the refused-replay twin test and the differential's multi-refusal event
+- **User context (verbatim):**
+  > Add the divergent shape to the differential as a permanent case, and show it red on b78e978f and green after the guard.
+  > Agreed on the txTime-0 restore at all three removal sites.
+- **SpecStory:** unavailable — Claude Code agent session (fast-drain-3); no SpecStory capture configured for this session.
+
+## September 30th, 2026 at 8:55:35 p.m. EDT — `b78e978f8aee` Skip a restated fact that loses to a later-stamped resident fact, as the full rebase's last-write-wins does (#296)
+
+- **Implementation commit:** `b78e978f8aee30821485d10ad312d70e1b4604d9`
+- **Change:** A restated server fact that loses to a later-stamped resident fact no longer forces the whole-component rebase, so the phone's list frames reduce again (#296).
+- **Details:**
+  - Build 73 on Michael's iPhone declined every restated list frame (changesShadowedFact on recordings/clipboardEntries): the slot had no surviving writer, and the server's restated fact carried an earlier stamp than the resident fact a pruned local write left, so the fact did not hold and the frame fell back to the full rebase (about 3.5 s on the phone, every 16 s).
+  - On a shadowed slot with no surviving writer, a cardinality-one fact stamped earlier than the resident fact is skipped, exactly as the full rebase's last-write-wins leaves it. This changes cost, not state.
+  - aRestatedFactThatLosesToALaterStampedResidentFactDoesNotRebase is red on build 73's library, 506089b2 (changesShadowedFact recordings/title, 18 bodies) and green after (0 bodies). Replaying the phone's stored list result on a scratch copy of its pre-71 store (auth rows deleted, no transport): 21-24 s and 1,864 bodies per frame before, 0.11-0.14 s and 0 bodies after the first frame.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — residentFactWins in the shadowed-slot classification
+  - `Tests/InstantSwiftDataCoreTests/InstantFastDrainTests.swift` — the later-stamped resident fact test
+- **User context (verbatim):**
+  > Name the persisting decline, then fix both it and the splice cases
+- **SpecStory:** unavailable — Claude Code agent session (fast-drain-3); no SpecStory capture configured for this session.
 
 ## September 30th, 2026 at 1:50:18 p.m. EDT — `5424c73365c6` Remove refused writes' overlays without the whole-component rebase, and respect last-write-wins in receipt patches (#296)
 

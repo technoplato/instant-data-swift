@@ -10,4 +10,5 @@ claude-opus-5.5-fast-drain 2026-09-30T01:48:55-04:00 mower plan=2026-09-30-fast-
 claude-opus-5.5-fast-drain 2026-09-30T08:28:32-04:00 mower plan=2026-09-30-fast-drain-revert #296
 claude-opus-5.5-fast-drain 2026-09-30T09:07:59-04:00 mower plan=2026-09-30-fast-drain-2 #296
 claude-opus-5.5-connection-survival 2026-09-30T09:32:17-04:00 mower plan=2026-09-30-connection-survival #296
+claude-opus-5.5-fast-drain 2026-09-30T18:34:28-04:00 mower plan=2026-09-30-fast-drain-3 #296
 claude-opus-5.5-auth-counters 2026-09-30T19:29:49-04:00 grower plan=2026-09-30-auth-counters #289

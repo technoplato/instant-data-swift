@@ -15,6 +15,23 @@ Plan the Account screen without the library's demo counters and claim its paths,
 
 ## 2026-09-30 19:29:59 EDT — instant-data-swift `54c8a963267a9843b9f8522e94d0f1fc3545ab08`
 Claim the AuthV3 login screen and its tests for plan 2026-09-30-auth-counters (#289).
+## 2026-09-30 20:55:10 EDT — instant-data-swift `f53f779317bdddba4912d92d5a676e5982001a02`
+Let the server's facts win against what a refused write restores: restored facts are base facts at txTime 0 at the splice, the terminal-failure removals, and the full rebase's reverse pass; the differential gains a multi-refusal event (#296).
+
+## 2026-09-30 20:18:37 EDT — instant-data-swift `b78e978f8aee30821485d10ad312d70e1b4604d9`
+Skip a restated fact that loses to a later-stamped resident fact, as the full rebase's last-write-wins does, so the phone's list frames stop declining on recordings/clipboardEntries (#296).
+
+## 2026-09-30 18:34:29 EDT — instant-data-swift `678b5faf1722c6e75274828f426d5f2f928061f0`
+Claim the build-75 fast-drain paths for plan 2026-09-30-fast-drain-3 (#296).
+
+## 2026-09-30 14:51:40 EDT — instant-data-swift `ad1da185ed8f46ff422924425e46fa60a9aeb5c9`
+Record build 73's library, its gates, and the open follow-ups in PROGRESS (#296).
+
+## 2026-09-30 14:51:40 EDT — instant-data-swift `3980a73df9317c4d5280e1f256e68a2928569992`
+Claim PROGRESS.md for plan 2026-09-30-fast-drain-2 (#296).
+
+## 2026-09-30 14:10:53 EDT — instant-data-swift `506089b22043c2f5bcb02712f5b7df698e31b6d3`
+Record build 73's library commits in the audit ledger (#296); this is build 73's library head.
 
 ## 2026-09-30 13:51:53 EDT — instant-data-swift `46c131d7413cb3185c80d6e0ce70f467879dfc9e`
 Merge connection survival (984cc351) into build 73's library: one reconnect per socket death, and reading while a frame applies (#296).
