@@ -4,3 +4,4 @@ codex-desktop/01a00071-f1c1-7193-adcd-3bc9f30b5f95/root/offered_server_apply_tes
 codex-desktop/01a00071-f1c1-7193-adcd-3bc9f30b5f95/root 2026-08-15T12:26:30-0400 mower build-only-assertion-hoist plan=2026-08-15-legacy-priority-durable-migration
 codex-desktop/01a00071-f1c1-7193-adcd-3bc9f30b5f95/root 2026-08-15T23:58:00-0400 mower local-write-server-refresh-race-contract plan=2026-08-15-local-write-server-refresh
 claude-opus-5.5-fast-drain 2026-09-30T10:53:07-04:00 mower plan=2026-09-30-fast-drain-2 #296
+claude-opus-5.5-library-78 2026-10-01T12:48:54-04:00 mower plan=2026-10-01-library-78 #376 #360 #303 #317 #329
