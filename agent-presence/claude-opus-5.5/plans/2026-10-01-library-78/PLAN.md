@@ -38,6 +38,9 @@ Steps (no code here; a red test first in each, upstream `Reactor.js` / `Stream.t
    Their failing test goes in first (InstantInfiniteQueryDuplicateRowsTests), then the fix in pushSnapshot.
 8b. A caller that cancels while its message is being sent no longer ends the socket (found while checking the #388
    property tests: a cancelled chunk's add-query send aborted the session).
+8c. #394 from the mac-memory agent (added 2026-10-01 19:35): an observation must end when its consumer stops
+   iterating (a consumer that returned out of `for await` leaked its store observer and live query). New
+   InstantObservationReleaseTests.swift.
 9. Gates on the final head: differential and connection survival, the ten suites, the 211 infinite-query tests, the
    library-77 and new tests, the phone-shaped replay, the Recording 023-shape backlog, the large-store drop A/B against
    956fce52 (2+ interleaved pairs), a 30-minute calibrated-car soak on Scribe main, the companion fault scenarios

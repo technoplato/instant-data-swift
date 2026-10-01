@@ -1,3 +1,42 @@
+## 2026-10-01 19:39:52 EDT — instant-data-swift `18e52df0adb9bec3a1d48b1992d115924ee8c656`
+End an observation when its consumer stops iterating: returning out of for-await leaked a store observer and the live query (#394).
+
+## 2026-10-01 19:27:46 EDT — instant-data-swift `8358090e216f289ecd08a5ed6bcdfe308aec8b68`
+Finish a write its caller cancels instead of ending the socket: cancelling an observation mid-send reconnected (#376).
+
+## 2026-10-01 19:23:17 EDT — instant-data-swift `b465ae1442f74c437c3bcbbf0dabf5828cb34549`
+List each entity once in a live infinite query's snapshot, and keep shown rows while a kickstart waits for its first forward chunk (#388).
+
+## 2026-10-01 19:23:02 EDT — instant-data-swift `9a65aaeb5dde1a41c371039c148f75cd5dfb2d59`
+Pin the list-crash defects with red tests: a snapshot that lists one entity twice, and a kickstart that shows the window empty (#388).
+
+## 2026-10-01 19:18:50 EDT — scribe `fdda2d6a3c679b1dcde39b18342f79c92a9c4c2b`
+Record list-crash's uniqueness audit in the change log (#388). Sent by the list-crash agent for this ledger.
+
+## 2026-10-01 19:18:32 EDT — scribe `79f4671a80ec2796e02aaebe74234fca356a39fb`
+Stop trapping on repeated ids in the remaining synchronized-data paths, and fail the build on any new trapping uniqueness initializer (#388). Sent by the list-crash agent for this ledger.
+
+## 2026-10-01 18:36:47 EDT — scribe `8c365b3a7a8d2989a0d0c3c5363f16ef95620815`
+Record list-crash's list prefetching and page-refusal logs in the change log (#388 #299). Sent by the list-crash agent for this ledger.
+
+## 2026-10-01 18:36:29 EDT — scribe `2fd3916f08ebc255a6b327fca9e1b0d69fc2d5ba`
+Load the list's next page without a scroll while its end is within one screen, and log why a page request is refused (#388 #299). Sent by the list-crash agent for this ledger.
+
+## 2026-10-01 18:17:46 EDT — scribe `ed085b95acac7e20b586865a7e289d3b9a172c8a`
+Record the client-id media read and its live two-device test in Scribe's change log and PROGRESS (#329), on agent/claude-opus-5.5/library-78-scribe.
+
+## 2026-10-01 18:17:08 EDT — scribe `8b8aa42500eeff0744f388098aa8bd4c7d0cada0`
+Read recording media by its stream's client id, so media the phone synchronized offline reaches the user's other devices (#329), on agent/claude-opus-5.5/library-78-scribe.
+
+## 2026-10-01 17:59:31 EDT — scribe `54c6f00be0117bf0661bd6733e7c9105c6a48d05`
+Record list-crash's hotfix in the change log (#388). Sent by the list-crash agent for this ledger.
+
+## 2026-10-01 17:58:41 EDT — scribe `7a210011d44a0e2994e1294c31de57e65cb6276f`
+Keep one row per id in the recording list's projection, the newest by updatedAtMs, and log each repeat instead of trapping (#388). Sent by the list-crash agent for this ledger.
+
+## 2026-10-01 17:56:48 EDT — scribe `68693778b3e55c2eaee0b099c1f39ac3e7382a78`
+Pin offline-written media reaching the same user's other device with a live two-device test on the throwaway app (#329), on agent/claude-opus-5.5/library-78-scribe.
+
 ## 2026-10-01 17:20:19 EDT — instant-data-swift `bc6a0c818358307eaa93f19cbe4e05efca782622`
 Record a live query's answer before its acknowledgement and pin the local-first queryOnce in the querySubs parity test (library-78 item 7, #317).
 

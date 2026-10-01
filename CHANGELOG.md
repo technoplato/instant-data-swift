@@ -10,6 +10,64 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## October 1st, 2026 at 7:40:29 p.m. EDT — `18e52df0adb9` End an observation when its consumer stops iterating: returning out of for-await leaked a store observer and the live query (#394)
+
+- **Implementation commit:** `18e52df0adb9bec3a1d48b1992d115924ee8c656`
+- **Change:** An observation ends when its consumer stops iterating; returning out of for-await no longer leaks a store observer and its live query (#394).
+- **Details:**
+  - observe(_:)'s stream was fed by a forwarding task that held its continuation, so a consumer that returned out of for-await never triggered onTermination. The mac-memory agent measured one leaked store observer per Scribe media-retry scan: 2 to 224 in 20 minutes in its process, and 151 to 405 in 45 minutes on Michael's Mac.
+  - The consumer's stream now holds a release token in its storage. Dropping the stream and its iterator ends the observation; a held stream stays open; cancelling the consuming task still ends it.
+  - InstantObservationReleaseTests: red before (observers above baseline for 5 s), green 3 of 3 after; controls pass before and after.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — InstantObservationConsumerStream release token in liveObservationLease
+  - `Tests/InstantSwiftDataCoreTests/InstantObservationReleaseTests.swift` — the #394 tests
+- **User context (verbatim):**
+  > fix this please so it works efficiently as as well as the typescript core library
+- **SpecStory:** unavailable — unavailable — Claude Code agent session (library-78); no SpecStory capture configured for this session.
+
+## October 1st, 2026 at 7:40:29 p.m. EDT — `8358090e216f` Finish a write its caller cancels instead of ending the socket: cancelling an observation mid-send reconnected (#376)
+
+- **Implementation commit:** `8358090e216f289ecd08a5ed6bcdfe308aec8b68`
+- **Change:** A write its caller cancels finishes on the socket instead of ending it; cancelling an observation mid-send no longer reconnects (#376).
+- **Details:**
+  - The live session wrote under instantLiveWithTimeout, which also ends on the caller's cancellation, and any failed write aborted the session, so the receive loop failed and the runtime reconnected. Upstream Reactor.js writes with a synchronous ws.send. The write now runs in an unstructured task that does not inherit the caller's cancellation; a write that began finishes or times out after 5 s.
+  - Found through the #388 property tests: the window-1 sliding scenario failed about 1 in 10 runs before (websocket.message-send-failed CancellationError add-query, then a reconnect); 12 of 12 passed after.
+  - InstantCancelledSendTests red 3 of 3 before, green 3 of 3 after; six transport and parity suites: 185 tests, 3 known issues.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantRuntimeLiveSession.swift` — send shields the write from the caller's cancellation
+  - `Tests/InstantSwiftDataCoreTests/InstantCancelledSendTests.swift` — the cancelled-send test
+- **User context (verbatim):**
+  > Why couldn't it just reconnect? Yeah, why are the reconnects there in the first place?
+- **SpecStory:** unavailable — unavailable — Claude Code agent session (library-78); no SpecStory capture configured for this session.
+
+## October 1st, 2026 at 7:40:28 p.m. EDT — `b465ae1442f7` List each entity once in a live infinite query's snapshot, and keep shown rows while a kickstart waits for its first forward chunk (#388)
+
+- **Implementation commit:** `b465ae1442f74c437c3bcbbf0dabf5828cb34549`
+- **Change:** A live infinite query's snapshot lists each entity once, and a kickstart keeps the rows it showed until its first forward chunk answers (#388).
+- **Details:**
+  - pushSnapshot concatenated the chunks after every chunk update, and each chunk's emission arrives through its own task, so a row moving between chunks was listed twice until the slower chunk caught up (a frozen chunk keeps old rows for a round trip). Each entity is now listed once: the copy from the newer store commit wins, then the chunk stored later; the row keeps that copy's position.
+  - At a kickstart the starter's rows left with the pre-bootstrap chunk, so a leading watcher answering first published an empty window (the Mac: 12 rows, 0, 12 within 0.6 s). The coordinator now keeps the last published snapshot, if it showed rows, until the kickstart's first forward chunk answers.
+  - InstantInfiniteQueryDuplicateRowsTests 3 of 3 (five runs); the kickstart test is red with the hold removed. Infinite-query and #360 suites: 221 tests, 10 known issues plus #304.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantInfiniteQuery.swift` — windowRows dedup by store commit and stored ordinal; the kickstart hold
+- **User context (verbatim):**
+  > treat it as P0 for library-78
+- **SpecStory:** unavailable — unavailable — Claude Code agent session (library-78); no SpecStory capture configured for this session.
+
+## October 1st, 2026 at 7:40:28 p.m. EDT — `9a65aaeb5dde` Pin the list-crash defects with red tests: a snapshot that lists one entity twice, and a kickstart that shows the window empty (#388)
+
+- **Implementation commit:** `9a65aaeb5dde1a41c371039c148f75cd5dfb2d59`
+- **Change:** Red tests pin the list-crash defects: a live infinite query's snapshot that lists one entity twice, and a kickstart that shows the window empty (#388).
+- **Details:**
+  - From the list-crash agent (Scribe #388, P0): Scribe's recording list trapped in IdentifiedArray(uniqueElements:) on the Mac (build 77) and the iPhone (build 76) on a snapshot that listed one recording twice.
+  - aRowThatLeavesAChunkBeingReplacedIsNeverListedTwice (deterministic, red 3 of 3 on 956fce52 and 2ef273cb) and aRowThatMovesBetweenChunksInOneRefreshIsNeverListedTwice (a race, red 2 of 3); theWindowKeepsItsRowsWhileTheKickstartWaitsForItsFirstForwardChunk added here, with InfiniteListModelServer able to hold forward answers.
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantInfiniteQueryDuplicateRowsTests.swift` — the #388 suite
+  - `Tests/InstantSwiftDataCoreTests/InstantInfiniteQueryLeadingRowsTests.swift` — the model server's forward-answer hold
+- **User context (verbatim):**
+  > treat it as P0 for library-78
+- **SpecStory:** unavailable — unavailable — Claude Code agent session (library-78); no SpecStory capture configured for this session.
+
 ## October 1st, 2026 at 5:21:37 p.m. EDT — `bc6a0c818358` Record a live query's answer before its acknowledgement, and pin the local-first queryOnce in the querySubs parity test (library-78 item 7, #317)
 
 - **Implementation commit:** `bc6a0c818358307eaa93f19cbe4e05efca782622`
