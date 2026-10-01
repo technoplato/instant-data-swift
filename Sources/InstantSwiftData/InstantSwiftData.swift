@@ -1798,6 +1798,15 @@ public struct InstantSwiftDataClient: Sendable {
     return subscription
   }
 
+  /// Creates a stream this device writes, named by `clientID`.
+  ///
+  /// Connected, this waits for the server to start the stream, and the returned `id` is the server's. Offline it
+  /// succeeds locally: the `id` names the stream on this device only, and the stream reaches the server once a
+  /// connection opens. Other devices read a stream by its client id, which works either way (ADR 0017).
+  ///
+  /// ```swift
+  /// let stream = try await client.createStream(clientID: "recording-\(id)-audio")
+  /// ```
   @discardableResult
   public func createStream(clientID: String) async throws -> InstantStreamMetadata {
     try await createStreamOperation(clientID)
@@ -1811,6 +1820,10 @@ public struct InstantSwiftDataClient: Sendable {
     try await streamMetadataByClientIDOperation(clientID)
   }
 
+  /// Appends `content` to a stream this device writes, by the id `createStream(clientID:)` returned.
+  ///
+  /// Success means the content is stored on this device. It reaches the server as soon as the stream is caught up
+  /// on a connection; it never waits for the server.
   @discardableResult
   public func appendStreamContent(
     streamID: String,
@@ -1824,6 +1837,10 @@ public struct InstantSwiftDataClient: Sendable {
     return try await appendStreamContentOperation(streamID, content, expectedOffset)
   }
 
+  /// Closes a stream this device writes.
+  ///
+  /// While the stream is caught up on a connection, this waits for the server to confirm the close. Otherwise the
+  /// close is stored on this device and reaches the server after the stream's content.
   @discardableResult
   public func closeStream(
     streamID: String,
@@ -1848,6 +1865,19 @@ public struct InstantSwiftDataClient: Sendable {
     return try await streamContentByClientIDOperation(clientID, byteOffset)
   }
 
+  /// Observes a stream's content from `byteOffset`.
+  ///
+  /// Every read holds the stream's content from `byteOffset` so far, not only the newest bytes, so a consumer that
+  /// falls behind loses nothing. The observation ends after the first read whose `done` is `true`.
+  ///
+  /// Read a stream another device wrote by its client id with ``observeStreamContent(clientID:byteOffset:)``: a
+  /// stream id names a stream across devices only when its writer was connected when it created the stream.
+  ///
+  /// ```swift
+  /// for await read in try await client.observeStreamContent(streamID: id) where read.done {
+  ///   return read.content
+  /// }
+  /// ```
   public func observeStreamContent(
     streamID: String,
     byteOffset: Int64 = 0
@@ -1856,6 +1886,10 @@ public struct InstantSwiftDataClient: Sendable {
     return try await observeStreamContentByStreamIDOperation(streamID, byteOffset)
   }
 
+  /// Observes the content of the stream `clientID` names, from `byteOffset`.
+  ///
+  /// The client id names a stream on every device, including a stream its writer created offline. Reads behave as in
+  /// ``observeStreamContent(streamID:byteOffset:)``.
   public func observeStreamContent(
     clientID: String,
     byteOffset: Int64 = 0

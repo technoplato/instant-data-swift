@@ -33,3 +33,4 @@ claude-opus-5.5-fast-drain 2026-09-30T09:07:59-04:00 mower plan=2026-09-30-fast-
 claude-opus-5.5-fast-drain 2026-09-30T18:34:28-04:00 mower plan=2026-09-30-fast-drain-3 #296
 claude-opus-5.5-fast-drain 2026-10-01T00:40:56-04:00 mower plan=2026-10-01-library-77 #303 #296
 claude-opus-5.5-library-78 2026-10-01T12:48:54-04:00 mower plan=2026-10-01-library-78 #376 #360 #303 #317 #329
+claude-opus-5.5-library-78-streams 2026-10-01T13:16:05-04:00 mower plan=2026-10-01-library-78 #329

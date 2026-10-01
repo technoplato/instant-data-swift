@@ -223,6 +223,12 @@ private final class InstantLiveObservationTermination: Sendable {
   }
 }
 
+/// The server refused a stream this device writes, or its stored content cannot be resent from the server's offset;
+/// asking again cannot succeed, so the stream stays on this device (#329).
+private struct InstantStreamWriterRefusal: Error {
+  var message: String
+}
+
 package struct InstantLocalPersistenceMigration: Sendable {
   package var name: String
   package var affectedAttributeIDs: Set<String>
@@ -1624,6 +1630,8 @@ public final class InstantRuntime: Sendable {
   private let startupCookieSyncTaskOwner = InstantRuntimeExactTaskOwner()
   private let reconnectController = InstantRuntimeReconnectController()
   private let mutationDeliveryPump = InstantRuntimeMutationDeliveryPump()
+  /// Brings the server's copy of each stream this device writes up to date after a connection opens (#329).
+  private let streamWriterCatchUpOwner = InstantRuntimeExactTaskOwner()
   private let explicitMutationFlushOwner = InstantExplicitMutationFlushOwner()
   private let mutationDeadlineWake = InstantRuntimeMutationDeadlineWake()
   private let automaticDeliveryClaimantID = UUID().uuidString.lowercased()
@@ -6312,7 +6320,8 @@ public final class InstantRuntime: Sendable {
       reconnect: reconnectIsIdle,
       receiver: receiverIsIdle,
       mutationDeliveryPump: mutationDeliveryIsIdle,
-      explicitMutationFlush: explicitMutationFlushOwner.isIdle
+      explicitMutationFlush: explicitMutationFlushOwner.isIdle,
+      streamWriterCatchUp: streamWriterCatchUpOwner.isIdle
     )
   }
 
@@ -6635,26 +6644,15 @@ public final class InstantRuntime: Sendable {
       recordActorHop(.operationGate)
       await operationGate.leave()
       enteredOperationGate = false
-      var streamWriterReconnectError: Error?
       if configuration.liveTransport != nil {
-        do {
-          recordActorHop(.liveSession)
-          try await liveSession.reconnectStreamWriters()
-        } catch {
-          recordActorHop(.liveSession)
-          await liveSession.close()
-          streamWriterReconnectError = error
-        }
-        if streamWriterReconnectError == nil {
-          await mutationDeliveryPump.resume()
-          await startLiveMutationDeliveryIfNeeded()
-        }
+        await mutationDeliveryPump.resume()
+        await startLiveMutationDeliveryIfNeeded()
+        // The streams this device writes catch up beside the outbox rather than ahead of it, and one stream the
+        // server refuses or leaves unanswered does not end the connection (#329).
+        startStreamWriterCatchUp()
       }
       await connectionGate.leave()
       enteredConnectionGate = false
-      if let streamWriterReconnectError {
-        await handleLiveSessionFailure(streamWriterReconnectError)
-      }
       InstantDiagnostics.shared.record(
         .notice,
         subsystem: "instant-swift-data-core",
@@ -6718,6 +6716,7 @@ public final class InstantRuntime: Sendable {
     let reconnectTask = await reconnectController.requestStop()
     await mutationDeliveryPump.suspend()
     let explicitMutationFlushTask = explicitMutationFlushOwner.requestStop()
+    let streamWriterCatchUpTask = streamWriterCatchUpOwner.requestStop()
     await connectionGate.enter()
     // Explicit response disposition uses the operation gate. Keep it free
     // while synchronously aborted transport work, renewal, and exact-token
@@ -6749,9 +6748,11 @@ public final class InstantRuntime: Sendable {
         automaticLiveConnectionTask: automaticLiveConnectionTask,
         startupCookieSyncTask: startupCookieSyncTask,
         reconnectTask: reconnectTask,
-        receiverTask: receiverTask
+        receiverTask: receiverTask,
+        streamWriterCatchUpTask: streamWriterCatchUpTask
       )
       explicitMutationFlushOwner.resume()
+      streamWriterCatchUpOwner.resume()
       await connectionGate.leave()
       return status
     } catch {
@@ -6766,9 +6767,11 @@ public final class InstantRuntime: Sendable {
         automaticLiveConnectionTask: automaticLiveConnectionTask,
         startupCookieSyncTask: startupCookieSyncTask,
         reconnectTask: reconnectTask,
-        receiverTask: receiverTask
+        receiverTask: receiverTask,
+        streamWriterCatchUpTask: streamWriterCatchUpTask
       )
       explicitMutationFlushOwner.resume()
+      streamWriterCatchUpOwner.resume()
       await connectionGate.leave()
       throw error
     }
@@ -6778,7 +6781,8 @@ public final class InstantRuntime: Sendable {
     automaticLiveConnectionTask: InstantRuntimeExactTaskOwner.Handle,
     startupCookieSyncTask: InstantRuntimeExactTaskOwner.Handle,
     reconnectTask: InstantRuntimeExactTaskOwner.Handle,
-    receiverTask: InstantRuntimeExactTaskOwner.Handle
+    receiverTask: InstantRuntimeExactTaskOwner.Handle,
+    streamWriterCatchUpTask: InstantRuntimeExactTaskOwner.Handle
   ) async {
     let watchdogSleep = configuration.exactCloseWatchdogSleep
     let watchdog = Task { [weak self] in
@@ -6807,6 +6811,7 @@ public final class InstantRuntime: Sendable {
           "receiverIdle": String(state.receiver),
           "mutationDeliveryPumpIdle": String(state.mutationDeliveryPump),
           "explicitMutationFlushIdle": String(state.explicitMutationFlush),
+          "streamWriterCatchUpIdle": String(state.streamWriterCatchUp),
         ]
       )
     }
@@ -6815,12 +6820,14 @@ public final class InstantRuntime: Sendable {
     async let reconnect: Void = reconnectTask.wait()
     async let receiver: Void = receiverTask.wait()
     async let mutationDelivery: Void = mutationDeliveryPump.waitUntilStopped()
+    async let streamWriterCatchUp: Void = streamWriterCatchUpTask.wait()
     _ = await (
       automaticLiveConnection,
       startupCookieSync,
       reconnect,
       receiver,
-      mutationDelivery
+      mutationDelivery,
+      streamWriterCatchUp
     )
     watchdog.cancel()
     await watchdog.value
@@ -7574,6 +7581,9 @@ public final class InstantRuntime: Sendable {
         }
       }
       await liveSession.recordDeliveredStreamAppend(delivery, seenOffset: seenOffset)
+      if delivery.done {
+        await retireFinishedStreamReader(delivery)
+      }
 
     case let .error(error):
       // Query and stream errors carry client event IDs too, but they are not
@@ -7937,12 +7947,13 @@ public final class InstantRuntime: Sendable {
   }
 
   private func applyLiveStreamAppend(_ append: InstantLiveStreamAppend) async throws -> Int64 {
-    var current = try await persistence.loadStreamContent(
+    // Only the stored byte count matters here, not the content: reading the whole stream for every append made each
+    // append cost the stream's length.
+    var storedByteCount = try await persistence.loadStreamContentByteCount(
       appID: configuration.appID,
-      streamID: append.streamID,
-      byteOffset: 0
+      streamID: append.streamID
     )
-    if current == nil {
+    if storedByteCount == nil {
       let userID = try await resolvedAuthenticatedUserID(
         operation: "bootstrap stream metadata",
         noun: "Stream"
@@ -7954,13 +7965,12 @@ public final class InstantRuntime: Sendable {
         userID: userID,
         createdAt: configuration.now()
       )
-      current = try await persistence.loadStreamContent(
+      storedByteCount = try await persistence.loadStreamContentByteCount(
         appID: configuration.appID,
-        streamID: append.streamID,
-        byteOffset: 0
+        streamID: append.streamID
       )
     }
-    guard let current else {
+    guard let seenOffset = storedByteCount else {
       throw InstantError(
         code: .persistenceFailed,
         operation: "bootstrap stream metadata",
@@ -7969,7 +7979,6 @@ public final class InstantRuntime: Sendable {
         recovery: "Inspect the local stream persistence transaction and retry the subscription."
       )
     }
-    let seenOffset = current.byteOffset + current.byteCount
     let materialization = try await InstantStreamFileAppendMaterializer.materialize(
       append,
       seenOffset: seenOffset,
@@ -10354,11 +10363,15 @@ public final class InstantRuntime: Sendable {
     await operationGate.enter()
     do {
       let userID = try await resolvedAuthenticatedUserID(operation: "create stream", noun: "Stream")
+      // The reconnect token lets this device restart the server's copy after any reconnect or relaunch (#329): the
+      // server accepts a restart of an existing client id only with it (`session.clj` `handle-start-stream!`).
       let metadata: InstantStreamMetadata
+      let startsLater: Bool
       if configuration.liveTransport != nil, await liveSession.isOpen {
+        let reconnectToken = configuration.makeID()
         let started = try await liveSession.startStream(
           clientID: clientID,
-          reconnectToken: configuration.makeID(),
+          reconnectToken: reconnectToken,
           clientEventID: configuration.makeID()
         )
         guard started.clientID == clientID, started.offset == 0 else {
@@ -10372,23 +10385,32 @@ public final class InstantRuntime: Sendable {
             recovery: "Use a new client id, or reconnect the existing writer with its original token."
           )
         }
-        metadata = try await persistence.ensureStreamMetadata(
+        metadata = try await persistence.ensureWrittenStreamMetadata(
           appID: configuration.appID,
           streamID: started.streamID,
           clientID: clientID,
+          reconnectToken: reconnectToken,
           userID: userID,
           createdAt: configuration.now()
         )
+        startsLater = false
       } else {
-        metadata = try await persistence.createStream(
+        // Offline the stream has only its client id until the server assigns one, so this device names it by a local
+        // id, and the server's copy starts by the client id once a connection opens (ADR 0017).
+        metadata = try await persistence.createWrittenStream(
           appID: configuration.appID,
           streamID: configuration.makeID(),
           clientID: clientID,
           userID: userID,
           createdAt: configuration.now()
         )
+        startsLater = true
       }
       await operationGate.leave()
+      // A connection that opened while this ran may have looked for streams to start before this one existed.
+      if startsLater, configuration.liveTransport != nil, await liveSession.isOpen {
+        startStreamWriterCatchUp()
+      }
       return metadata
     } catch {
       await operationGate.leave()
@@ -10495,11 +10517,9 @@ public final class InstantRuntime: Sendable {
         streamID: streamID,
         chunks: [content],
         offset: append.offset,
-        done: false,
-        abortReason: nil,
         clientEventID: configuration.makeID()
       )
-      try await publishStreamContentUpdates(streamID: streamID)
+      try await publishStreamContent(.appended(append.chunk, metadata: append.metadata))
       await operationGate.leave()
       return append
     } catch {
@@ -10538,13 +10558,17 @@ public final class InstantRuntime: Sendable {
           recovery: "Create the stream before closing it."
         )
       }
-      try await liveSession.finishStream(
+      // Live, this waits for the server's terminal flush, as before. Otherwise the close is durable and the writer's
+      // catch-up sends it once the server has every byte (#329).
+      if try await liveSession.finishStream(
         streamID: streamID,
         offset: metadata.size ?? 0,
         abortReason: normalizedAbortReason,
         clientEventID: configuration.makeID()
-      )
-      try await publishStreamContentUpdates(streamID: streamID)
+      ) {
+        try await persistence.recordStreamWriterDelivered(appID: configuration.appID, streamID: streamID)
+      }
+      try await publishStreamContent(.closed(metadata))
       await operationGate.leave()
       return metadata
     } catch {
@@ -10661,6 +10685,7 @@ public final class InstantRuntime: Sendable {
         stream,
         key: Self.liveStreamReaderKey(.streamID(streamID), byteOffset: byteOffset),
         streamID: streamID,
+        initialRead: read,
         initialByteOffset: read.map { $0.byteOffset + $0.byteCount } ?? byteOffset
       )
     } catch {
@@ -10707,6 +10732,7 @@ public final class InstantRuntime: Sendable {
         stream,
         key: Self.liveStreamReaderKey(.clientID(clientID), byteOffset: byteOffset),
         clientID: clientID,
+        initialRead: read,
         initialByteOffset: read.map { $0.byteOffset + $0.byteCount } ?? byteOffset
       )
     } catch {
@@ -10749,17 +10775,214 @@ public final class InstantRuntime: Sendable {
     )
   }
 
+  /// Starts the catch-up of the streams this device writes, or runs it again once the current pass ends.
+  private func startStreamWriterCatchUp() {
+    guard configuration.liveTransport != nil else { return }
+    _ = streamWriterCatchUpOwner.start(restartIfRunning: true) { [weak self] in
+      await self?.catchUpStreamWriters()
+    }
+  }
+
+  /// Sends the server what it lacks of every stream this device writes, in the order the streams were created (#329).
+  ///
+  /// Upstream `Stream.ts` starts a write stream when the socket authenticates (`start`, through
+  /// `Reactor.js` `_trySendAuthed`) and restarts it after every reconnect (`onConnectionReconnect`): `start-stream`
+  /// with the writer's client id and reconnect token, then the chunks the server has not flushed, then the close.
+  /// Swift keeps the content and the token in SQLite, so this pass covers streams written offline, appends and closes
+  /// made while the socket was down, and a relaunch in between. It ends at the first transport failure; the next
+  /// connection runs it again.
+  private func catchUpStreamWriters() async {
+    let writers: [InstantStreamWriterRecord]
+    do {
+      // Only the signed-in user's streams: the connection authenticates as that user, and the server would make
+      // another user's stream theirs.
+      guard let userID = try await persistence.loadAuthSession(key: authSessionKey)?.userID else { return }
+      writers = try await persistence.loadStreamWritersAwaitingServer(appID: configuration.appID, userID: userID)
+    } catch {
+      InstantDiagnostics.shared.record(
+        error: error,
+        subsystem: "instant-swift-data-core",
+        category: "stream",
+        event: "stream.writer-catch-up-failed",
+        message: "Instant could not load the streams this device writes."
+      )
+      return
+    }
+    for writer in writers {
+      guard !Task.isCancelled else { return }
+      do {
+        try await catchUpStreamWriter(writer)
+      } catch let refusal as InstantStreamWriterRefusal {
+        // The server refuses a restart of a stream it holds closed (`session.clj` `handle-start-stream!`): its close
+        // was flushed before this device recorded that, and the server has the whole stream.
+        if refusal.message.contains("Stream is closed") {
+          try? await persistence.recordStreamWriterDelivered(appID: configuration.appID, streamID: writer.streamID)
+          continue
+        }
+        // Upstream errors the write stream for good (`onRecieveError`, start-stream); recording the refusal keeps
+        // every later connection from asking again.
+        try? await persistence.recordStreamWriterRefused(
+          appID: configuration.appID,
+          streamID: writer.streamID,
+          message: refusal.message
+        )
+        InstantDiagnostics.shared.record(
+          .warning,
+          subsystem: "instant-swift-data-core",
+          category: "stream",
+          event: "stream.writer-start-refused",
+          message: "Instant refused to start a stream this device wrote, so it stays on this device only.",
+          metadata: [
+            "streamID": writer.streamID,
+            "clientID": writer.clientID,
+            "errorMessage": refusal.message,
+          ]
+        )
+      } catch {
+        InstantDiagnostics.shared.record(
+          .debug,
+          subsystem: "instant-swift-data-core",
+          category: "stream",
+          event: "stream.writer-catch-up-interrupted",
+          message: "A stream this device writes stopped catching up with the connection; the next one resumes it.",
+          metadata: [
+            "streamID": writer.streamID,
+            "errorMessage": String(describing: error),
+          ]
+        )
+        return
+      }
+    }
+  }
+
+  private func catchUpStreamWriter(_ writer: InstantStreamWriterRecord) async throws {
+    let reconnectToken: String
+    if let stored = writer.reconnectToken {
+      reconnectToken = stored
+    } else {
+      // A stream written offline gets its token at its first start. It is stored before it is sent, so every later
+      // restart, after a reconnect or a relaunch, presents the same one.
+      reconnectToken = configuration.makeID()
+      try await persistence.recordStreamWriterReconnectToken(
+        appID: configuration.appID,
+        streamID: writer.streamID,
+        reconnectToken: reconnectToken
+      )
+    }
+    let startEventID = configuration.makeID()
+    let restart: InstantStreamWriterRestart
+    do {
+      guard let restarted = try await liveSession.restartStreamWriter(
+        localStreamID: writer.streamID,
+        clientID: writer.clientID,
+        reconnectToken: reconnectToken,
+        clientEventID: startEventID
+      ) else {
+        return
+      }
+      restart = restarted
+    } catch let error as InstantError
+      where error.operation == "start Instant live stream" && error.serverEventID == startEventID
+    {
+      throw InstantStreamWriterRefusal(message: error.message)
+    }
+    if writer.serverStreamID != restart.serverStreamID {
+      try await persistence.recordStreamWriterServerStreamID(
+        appID: configuration.appID,
+        streamID: writer.streamID,
+        serverStreamID: restart.serverStreamID
+      )
+    }
+    // Upstream `discardFlushed` drops what the server already flushed and resends the rest from there.
+    var sentEnd = restart.serverOffset
+    while true {
+      let chunks = try await persistence.loadStreamContentChunks(
+        appID: configuration.appID,
+        streamID: writer.streamID,
+        endingAfter: sentEnd,
+        limit: Self.streamWriterCatchUpPageSize
+      )
+      for chunk in chunks {
+        try await liveSession.sendStreamWriterCatchUp(
+          localStreamID: writer.streamID,
+          content: try Self.streamContent(of: chunk, from: sentEnd),
+          offset: sentEnd,
+          generation: restart.generation,
+          clientEventID: configuration.makeID()
+        )
+        sentEnd = chunk.offset + chunk.byteCount
+      }
+      guard chunks.count < Self.streamWriterCatchUpPageSize else { continue }
+      let metadata = try await persistence.loadStreamMetadata(appID: configuration.appID, streamID: writer.streamID)
+      switch try await liveSession.endStreamWriterCatchUp(
+        localStreamID: writer.streamID,
+        through: sentEnd,
+        closedLocally: metadata?.done == true,
+        abortReason: metadata?.abortReason,
+        generation: restart.generation,
+        clientEventID: configuration.makeID()
+      ) {
+      case .appendedMore:
+        continue
+      case .live:
+        return
+      case let .closing(flushes):
+        let flushed = try await instantLiveWithTimeout(
+          operation: "finish Instant live stream",
+          timeoutMilliseconds: instantLiveOperationTimeoutMilliseconds
+        ) {
+          var iterator = flushes.makeAsyncIterator()
+          return try await iterator.next()
+        }
+        if flushed?.done == true {
+          try await persistence.recordStreamWriterDelivered(appID: configuration.appID, streamID: writer.streamID)
+        }
+        return
+      }
+    }
+  }
+
+  private static let streamWriterCatchUpPageSize = 32
+
+  /// The part of `chunk` at and after `offset`. The server flushes whole chunks, so a restart's offset falls between
+  /// chunks; a chunk it splits must still split at a UTF-8 boundary.
+  private static func streamContent(of chunk: InstantStreamContentChunk, from offset: Int64) throws -> String {
+    guard offset > chunk.offset else { return chunk.content }
+    let remaining = Data(chunk.content.utf8).dropFirst(Int(offset - chunk.offset))
+    guard let content = String(data: remaining, encoding: .utf8) else {
+      throw InstantStreamWriterRefusal(
+        message: "The server's offset \(offset) splits a UTF-8 character in the stored chunk at \(chunk.offset)."
+      )
+    }
+    return content
+  }
+
   private func liveStreamContentObservation(
     _ stream: AsyncStream<InstantStreamContentRead>,
     key: String,
     clientID: String? = nil,
     streamID: String? = nil,
+    initialRead: InstantStreamContentRead?,
     initialByteOffset: Int64
   ) async -> AsyncStream<InstantStreamContentRead> {
     guard configuration.liveTransport != nil else { return stream }
+    if let initialRead {
+      // A done stream changes no more, so its observation ends after the stored read (upstream closes a reader at
+      // done). A stream this device writes holds every byte here and reaches the server through its writer (#329);
+      // a subscription would only echo it back, and a stream written offline is unknown to the server by this id.
+      if initialRead.done { return stream }
+      if (try? await persistence.isWrittenStream(
+        appID: configuration.appID,
+        streamID: initialRead.metadata.id
+      )) == true {
+        return stream
+      }
+    }
+    let observationID = UUID()
     do {
       try await liveSession.registerStreamReader(
         key: key,
+        observationID: observationID,
         clientID: clientID,
         streamID: streamID,
         initialByteOffset: initialByteOffset,
@@ -10773,11 +10996,23 @@ public final class InstantRuntime: Sendable {
       do {
         try await self.liveSession.unregisterStreamReader(
           key: key,
+          observationID: observationID,
           clientEventID: self.configuration.makeID()
         )
       } catch {
         await self.recordConnectionError(error)
       }
+    }
+  }
+
+  /// Deletes the reader whose subscription delivered the stream's end, as upstream `Stream.ts` `onStreamAppend` does
+  /// at done, so no reconnect subscribes it again and no unsubscribe follows. Its observations already ended with
+  /// the done read; this ends any that could not take it.
+  private func retireFinishedStreamReader(_ append: InstantLiveStreamAppend) async {
+    guard let readerKey = await liveSession.retireFinishedStreamReader(clientEventID: append.clientEventID)
+    else { return }
+    await streamContentObservers.finish { key, byteOffset in
+      Self.liveStreamReaderKey(key.selector, byteOffset: byteOffset) == readerKey
     }
   }
 
@@ -14160,21 +14395,22 @@ public final class InstantRuntime: Sendable {
     InstantSharesObservationKey(appID: configuration.appID, userID: userID)
   }
 
-  private func publishStreamContentUpdates(streamID: String) async throws {
-    guard let metadata = try await persistence.loadStreamMetadata(
-      appID: configuration.appID,
-      streamID: streamID
-    ) else { return }
+  /// Tells the observations of a stream about one write. Each extends the read it last received with the change, as
+  /// upstream `Stream.ts` hands a reader only the new bytes, so an append costs its own bytes, not a read of the whole
+  /// stream. Only an observation with no read yet, or one whose read does not line up with the change, reads the
+  /// stored stream.
+  private func publishStreamContent(_ change: InstantStreamContentChange) async throws {
+    let metadata = change.metadata
     let keys = [
-      streamContentObservationKey(streamID: streamID),
+      streamContentObservationKey(streamID: metadata.id),
       streamContentObservationKey(clientID: metadata.clientID),
     ]
     for key in keys {
-      let byteOffsets = await streamContentObservers.byteOffsets(for: key)
-      for byteOffset in byteOffsets {
+      let unextended = await streamContentObservers.publish(change, for: key)
+      for byteOffset in unextended.sorted() {
         if let read = try await persistence.loadStreamContent(
           appID: configuration.appID,
-          streamID: streamID,
+          streamID: metadata.id,
           byteOffset: byteOffset
         ) {
           await streamContentObservers.publish(read, for: key, byteOffset: byteOffset)
