@@ -294,6 +294,12 @@ public struct InstantRuntimeConfiguration: Sendable {
     maxTripleCount: 1_000_000
   )
   var liveQueryResultPruningWriteInterval = 64
+  /// How many result triples one prune batch removes before it releases the operation gate (#303, item 6). The
+  /// experiment's large store held the gate 5.8-13.2 s to prune 24 results of about 2,500 triples each while a transact
+  /// waited; `nil` prunes everything at once.
+  var liveQueryResultPruneBatchTripleCount: Int? = 5_000
+  /// Runs after each prune batch, with the number of results it removed.
+  var onLiveQueryResultPruneBatchFinishedForTesting: (@Sendable (_ removedResultCount: Int) async -> Void)? = nil
   var liveReconnectSleep: @Sendable (UInt64) async throws -> Void =
     instantLiveDefaultTimeoutSleep
   var liveMutationDeadlineSleep: @Sendable (UInt64) async throws -> Void =
@@ -5981,25 +5987,62 @@ public final class InstantRuntime: Sendable {
     }
   }
 
+  /// Removes the results the policy selects in bounded batches, releasing the operation gate between them, so a local
+  /// write waits for one batch rather than the whole prune (#303, item 6).
+  ///
+  /// In the experiment's large-store drop, the first prune after 24 detail queries ended held the gate 5.8-13.2 s
+  /// while the store fell from about 60,000 triples to 3,000, and the transact behind it was that lane's slowest local
+  /// write in 7 of 8 lanes. Each batch re-reads the active queries and checks ownership under the gate, so a query that
+  /// becomes active between batches keeps its result. Facts that a batch released but kept, because their entity had
+  /// facts a later batch releases, are carried into that batch, so whole-entity removal (#259) is the same as one
+  /// prune's. Upstream `Reactor.js` collects unused query results lazily (`PersistedObject`'s garbage collection at
+  /// idle); Swift prunes on its write cadence, so it bounds each hold instead.
   func pruneLiveQueryResults(
     policy: InstantLiveQueryResultPruningPolicy,
     now: InstantTimestamp
   ) async throws -> InstantLiveQueryResultPruningResult {
-    await enterOperationGate()
-    do {
-      let result = try await performPruneLiveQueryResults(policy: policy, now: now)
-      await leaveOperationGate()
-      return result
-    } catch {
-      await leaveOperationGate()
-      throw error
+    var carried: Set<InstantLiveTripleIdentity> = []
+    var removedQueryKeys: [String] = []
+    var removedOrphanedTripleCount = 0
+    var lastResult: InstantLiveQueryResultPruningResult?
+    while true {
+      await enterOperationGate()
+      let application: InstantLiveQueryResultPruningApplication
+      do {
+        application = try await performPruneLiveQueryResults(
+          policy: policy,
+          now: now,
+          carriedReleasedIdentities: carried
+        )
+        await leaveOperationGate()
+      } catch {
+        await leaveOperationGate()
+        throw error
+      }
+      removedQueryKeys.append(contentsOf: application.result.removedQueryKeys)
+      removedOrphanedTripleCount += application.result.removedOrphanedTripleCount
+      lastResult = application.result
+      carried = application.retainedReleasedIdentities
+      await configuration.onLiveQueryResultPruneBatchFinishedForTesting?(
+        application.result.removedQueryKeys.count
+      )
+      guard application.hasMoreToRemove, !application.result.removedQueryKeys.isEmpty else { break }
+      await Task.yield()
     }
+    return InstantLiveQueryResultPruningResult(
+      removedQueryKeys: removedQueryKeys,
+      remainingQueryKeys: lastResult?.remainingQueryKeys ?? [],
+      removedOrphanedTripleCount: removedOrphanedTripleCount,
+      remainingEntryCount: lastResult?.remainingEntryCount ?? 0,
+      remainingTripleCount: lastResult?.remainingTripleCount ?? 0
+    )
   }
 
   private func performPruneLiveQueryResults(
     policy: InstantLiveQueryResultPruningPolicy,
-    now: InstantTimestamp
-  ) async throws -> InstantLiveQueryResultPruningResult {
+    now: InstantTimestamp,
+    carriedReleasedIdentities: Set<InstantLiveTripleIdentity>
+  ) async throws -> InstantLiveQueryResultPruningApplication {
     let activeQueryKeys = await liveSession.activeQueryKeys()
     if let onActiveKeysCaptured =
       configuration.onLiveQueryResultPruneActiveKeysCapturedForTesting
@@ -6012,10 +6055,12 @@ public final class InstantRuntime: Sendable {
       policy: policy,
       now: now,
       preservingQueryKeys: activeQueryKeys,
-      currentStoreSnapshot: currentStoreSnapshot
+      currentStoreSnapshot: currentStoreSnapshot,
+      maximumRemovedTripleCount: configuration.liveQueryResultPruneBatchTripleCount,
+      carriedReleasedIdentities: carriedReleasedIdentities
     )
     guard !application.result.removedQueryKeys.isEmpty else {
-      return application.result
+      return application
     }
     if application.result.removedOrphanedTripleCount > 0 {
       recordActorHop(.store)
@@ -6045,9 +6090,10 @@ public final class InstantRuntime: Sendable {
         "removedOrphanedTripleCount": String(
           application.result.removedOrphanedTripleCount
         ),
+        "moreToRemove": String(application.hasMoreToRemove),
       ]
     )
-    return application.result
+    return application
   }
 
   private func freshCachedQueryForClosedQuery(

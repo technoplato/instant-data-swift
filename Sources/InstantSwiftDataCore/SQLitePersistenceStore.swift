@@ -210,6 +210,11 @@ public struct InstantLiveQueryResultPruningResult: Hashable, Codable, Sendable {
 struct InstantLiveQueryResultPruningApplication: Sendable {
   var result: InstantLiveQueryResultPruningResult
   var state: InstantPersistenceState
+  /// Rows the policy removes that a bounded batch left for the next one (#303, item 6).
+  var hasMoreToRemove = false
+  /// Facts a removed row released that the whole-entity rule kept, because their entity still had a fact no removed
+  /// row released. A later batch that releases the rest of the entity removes them together.
+  var retainedReleasedIdentities: Set<InstantLiveTripleIdentity> = []
 }
 
 private struct LiveQueryResultStorageRow: Sendable {
@@ -10053,11 +10058,18 @@ public actor SQLitePersistenceStore {
     }
   }
 
+  /// - Parameters:
+  ///   - maximumRemovedTripleCount: Remove at most this many result triples in this call (at least one row), and say
+  ///     whether rows the policy removes are left, so the caller can release the operation gate between bounded
+  ///     batches (#303, item 6). `nil` removes everything the policy selects at once.
+  ///   - carriedReleasedIdentities: The previous batch's `retainedReleasedIdentities`.
   func pruneLiveQueryResults(
     policy: InstantLiveQueryResultPruningPolicy,
     now: InstantTimestamp,
     preservingQueryKeys: Set<String> = [],
-    currentStoreSnapshot: InstantStoreSnapshot? = nil
+    currentStoreSnapshot: InstantStoreSnapshot? = nil,
+    maximumRemovedTripleCount: Int? = nil,
+    carriedReleasedIdentities: Set<InstantLiveTripleIdentity> = []
   ) throws -> InstantLiveQueryResultPruningApplication {
     let application = try transaction {
       let storeRevision = try loadMetadataRevisionWithoutTransaction(Self.storeRevisionKey)
@@ -10153,6 +10165,24 @@ public actor SQLitePersistenceStore {
         }
       }
 
+      // A bounded batch removes the selected rows in selection order until it holds about the budget's triples; the
+      // rest stay for the next batch, which selects them again.
+      var deferredRows: [LiveQueryResultStorageRow] = []
+      if let maximumRemovedTripleCount, removedRows.count > 1 {
+        var batch: [LiveQueryResultStorageRow] = []
+        var batchTripleCount = 0
+        for row in removedRows {
+          if !batch.isEmpty, batchTripleCount + row.tripleCount > maximumRemovedTripleCount {
+            deferredRows.append(row)
+            continue
+          }
+          batch.append(row)
+          batchTripleCount += row.tripleCount
+        }
+        removedRows = batch
+        rows.append(contentsOf: deferredRows)
+      }
+
       guard !removedRows.isEmpty else {
         return InstantLiveQueryResultPruningApplication(
           result: InstantLiveQueryResultPruningResult(
@@ -10167,7 +10197,7 @@ public actor SQLitePersistenceStore {
       }
 
       var snapshot = currentState.snapshot
-      var removedIdentities: Set<InstantLiveTripleIdentity> = []
+      var removedIdentities = carriedReleasedIdentities
       for row in removedRows {
         guard let result = try liveQueryResultWithoutTransaction(key: row.queryKey) else {
           continue
@@ -10213,6 +10243,9 @@ public actor SQLitePersistenceStore {
         !retainedEntityIDs.contains($0.entityID)
       }
       let removedEntityIDs = candidateEntityIDs.subtracting(retainedEntityIDs)
+      let retainedReleasedIdentities = Set(
+        removedIdentities.lazy.filter { retainedEntityIDs.contains($0.entityID) && currentTriples[$0] != nil }
+      )
       snapshot.store.triples.removeAll {
         orphanedIdentities.contains(InstantLiveTripleIdentity($0))
       }
@@ -10248,7 +10281,9 @@ public actor SQLitePersistenceStore {
           outboxRevision: outboxRevision,
           attributeRevision: attributeRevision,
           queryResultRevision: nextQueryResultRevision
-        )
+        ),
+        hasMoreToRemove: !deferredRows.isEmpty,
+        retainedReleasedIdentities: retainedReleasedIdentities
       )
     }
     adoptCachedState(application.state)
