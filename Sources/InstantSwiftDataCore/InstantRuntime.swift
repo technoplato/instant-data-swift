@@ -7070,10 +7070,16 @@ public final class InstantRuntime: Sendable {
         let query = originalEvent.fields["q"]
       {
         let registrationKey = try InstantLiveQueryEncoder.registrationKey(for: query)
+        // Upstream `Reactor.js` `_handleReceiveError` only notifies the query's error callbacks; the subscription
+        // stays in `queryCbs`, and `_flushPendingMessages` sends add-query again for every subscription on the next
+        // `init-ok`. Swift retires a query only when the server would refuse it again (a permission or validation
+        // rejection), so a reconnect does not re-send a query that cannot succeed. A stalled server answers with
+        // 500 `operation-timed-out`; retiring the query then froze its view until relaunch (#324).
+        let rejectionRepeats = Self.addQueryRejectionRepeats(error)
         let rejection = InstantError(
           code: Self.isPermissionError(error)
             ? .permissionRejected
-            : .validationFailed,
+            : rejectionRepeats ? .validationFailed : .networkFailed,
           operation: "run Instant live query",
           serverEventID: originalEvent.clientEventID ?? error.clientEventID,
           serverStatus: error.status,
@@ -7082,9 +7088,11 @@ public final class InstantRuntime: Sendable {
           serverTraceID: error.traceID,
           serverOriginalEventTraceID: error.originalEventTraceID,
           message: error.message,
-          recovery: "Inspect the rejected query and its Instant permissions without reconnecting the healthy live session."
+          recovery: rejectionRepeats
+            ? "Inspect the rejected query and its Instant permissions without reconnecting the healthy live session."
+            : "The query stays registered and is sent again on the next connection."
         )
-        if await liveSession.retireRejectedQuery(key: registrationKey) {
+        if rejectionRepeats, await liveSession.retireRejectedQuery(key: registrationKey) {
           await liveQueryResultState.unload(key: registrationKey)
         }
         await liveQueryAcknowledgements.reject(key: registrationKey, error: rejection)
@@ -7092,9 +7100,14 @@ public final class InstantRuntime: Sendable {
           error: rejection,
           subsystem: "instant-swift-data-core",
           category: "query",
-          event: "query.live-rejected",
-          message: "Instant rejected one live query without interrupting the shared socket.",
-          metadata: ["registrationKey": registrationKey]
+          event: rejectionRepeats ? "query.live-rejected" : "query.live-failed",
+          message: rejectionRepeats
+            ? "Instant rejected one live query without interrupting the shared socket."
+            : "One Instant live query failed on the server; it stays registered and is sent again on the next connection.",
+          metadata: [
+            "registrationKey": registrationKey,
+            "retired": String(rejectionRepeats),
+          ]
         )
         return
       }
@@ -7263,6 +7276,27 @@ public final class InstantRuntime: Sendable {
       return true
     }
     return isRetryableMutationFailureMessage(error.message)
+  }
+
+  /// Whether the server would refuse this add-query again (#324): a permission or validation rejection, or another
+  /// 4xx except a request timeout or a rate limit. Server failures (5xx), timeouts, and errors without a status are
+  /// transient, as upstream treats every add-query error.
+  private static func addQueryRejectionRepeats(_ error: InstantLiveErrorMessage) -> Bool {
+    let type = error.type?.lowercased() ?? ""
+    if type.contains("timed-out") || type.contains("timeout") {
+      return false
+    }
+    if let status = error.status {
+      if (500...599).contains(status) || status == 408 || status == 429 {
+        return false
+      }
+      if (400...499).contains(status) {
+        return true
+      }
+    }
+    return isPermissionError(error)
+      || type.contains("validation")
+      || type.contains("invalid")
   }
 
   private static func isPermissionError(_ error: InstantLiveErrorMessage) -> Bool {

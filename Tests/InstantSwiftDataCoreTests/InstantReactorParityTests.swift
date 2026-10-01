@@ -3289,3 +3289,143 @@ private final class SequentialLocalIDFactory: @unchecked Sendable {
     return "local-\(nextID)"
   }
 }
+
+/// #324: Instant answers add-query from a stalled server with 500 `operation-timed-out` ("Operation timed out:
+/// handle-receive"). Upstream `Reactor.js` `_handleReceiveError` only notifies the query's error callbacks; the
+/// subscription stays in `queryCbs`, and `_flushPendingMessages` re-sends add-query for every subscription on the
+/// next `init-ok`. Swift retired the query for good, so the view stopped updating until relaunch while writes kept
+/// landing. A rejection that repeats (a permission or validation error) still retires the query.
+extension InstantReactorParityTests {
+  static func addQueryError(
+    to query: InstantLiveJSONValue,
+    clientEventID: String?,
+    status: Int,
+    type: String,
+    message: String
+  ) -> InstantLiveMessage {
+    InstantLiveMessage(
+      op: "error",
+      clientEventID: clientEventID,
+      fields: [
+        "message": .string(message),
+        "type": .string(type),
+        "status": .number(Double(status)),
+        "original-event": .object([
+          "client-event-id": clientEventID.map(InstantLiveJSONValue.string) ?? .null,
+          "op": .string("add-query"),
+          "q": query,
+        ]),
+      ]
+    )
+  }
+
+  /// The ops `session` sent, once `predicate` holds or `timeout` passes.
+  static func sentOps(
+    of session: LiveReactorParitySession,
+    within timeout: Duration = .seconds(3),
+    until predicate: ([String]) -> Bool
+  ) async throws -> [String] {
+    let deadline = ContinuousClock.now + timeout
+    while true {
+      let ops = await session.sentMessages().map(\.op)
+      if predicate(ops) || ContinuousClock.now >= deadline { return ops }
+      try await Task.sleep(for: .milliseconds(20))
+    }
+  }
+
+  /// Connects, answers the query's add-query with `error`, then drops the socket so the runtime reconnects.
+  static func reconnectingAfterAddQueryError(
+    status: Int,
+    type: String,
+    message: String,
+    suffix: String
+  ) async throws -> (
+    runtime: InstantRuntime,
+    secondSession: LiveReactorParitySession,
+    iterator: AsyncStream<InstantQueryEmission>.AsyncIterator,
+    query: InstantLiveJSONValue
+  ) {
+    let query = try InstantLiveQueryEncoder.encode(TodoExample.query)
+    let firstSession = LiveReactorParitySession(messages: [
+      liveReactorInitOK(attrs: liveReactorTodoServerAttrs, sessionID: "add-query-error-\(suffix)")
+    ])
+    let secondSession = LiveReactorParitySession(messages: [
+      liveReactorInitOK(attrs: liveReactorTodoServerAttrs, sessionID: "add-query-error-\(suffix)-reconnect")
+    ])
+    let transport = LiveReactorParityTransport(sessions: [firstSession, secondSession])
+    var configuration = InstantRuntimeConfiguration(
+      appID: "reactor-add-query-error-\(suffix)",
+      persistenceURL: try temporaryReactorParityCacheURL(),
+      initialAttributes: TodoExample.attributes,
+      liveTransport: transport.transport
+    )
+    configuration.liveReconnectSleep = { _ in }
+    let runtime = try await InstantRuntime.bootstrap(configuration: configuration)
+    let stream = await runtime.observe(TodoExample.query)
+    var iterator = stream.makeAsyncIterator()
+    _ = try #require(await iterator.next())
+    _ = try await runtime.connect()
+    let firstOps = try await sentOps(of: firstSession) { $0.contains("add-query") }
+    try #require(firstOps.contains("add-query"))
+    let addQuery = await firstSession.sentMessages().first { $0.op == "add-query" }
+    await firstSession.enqueue(
+      addQueryError(to: query, clientEventID: addQuery?.clientEventID, status: status, type: type, message: message)
+    )
+    try await Task.sleep(for: .milliseconds(100))
+    await firstSession.failReceive(
+      InstantError(
+        code: .networkFailed,
+        operation: "receive Reactor parity live event",
+        message: "socket dropped after the server stall",
+        recovery: "Reconnect."
+      )
+    )
+    return (runtime, secondSession, iterator, query)
+  }
+
+  @Test
+  func aTimedOutAddQueryStaysRegisteredAndIsResentAfterReconnect() async throws {
+    var (runtime, secondSession, iterator, query) = try await Self.reconnectingAfterAddQueryError(
+      status: 500,
+      type: "operation-timed-out",
+      message: "Operation timed out: handle-receive",
+      suffix: "timeout"
+    )
+    let ops = try await Self.sentOps(of: secondSession) { $0.contains("add-query") }
+    expectNoDifference(ops, ["init", "add-query"])
+    guard ops.contains("add-query") else {
+      _ = try await runtime.closeConnection()
+      return
+    }
+    await secondSession.enqueue(
+      liveReactorAddQueryOK(
+        query: query,
+        processedTransactionID: "server-tx-after-timeout",
+        result: liveReactorTodoQueryResult(
+          id: "todo-after-timeout",
+          text: "refreshed after the timeout",
+          createdAt: InstantTimestamp(milliseconds: 1_700_000_066_000)
+        )
+      )
+    )
+    var texts: [String] = []
+    while texts != ["refreshed after the timeout"], let snapshot = await iterator.next() {
+      texts = try TodoExample.decode(snapshot.values).map(\.text)
+    }
+    expectNoDifference(texts, ["refreshed after the timeout"])
+    _ = try await runtime.closeConnection()
+  }
+
+  @Test
+  func aPermissionRejectedAddQueryIsNotResentAfterReconnect() async throws {
+    let (runtime, secondSession, _, _) = try await Self.reconnectingAfterAddQueryError(
+      status: 400,
+      type: "permission-denied",
+      message: "Permission denied: not perms-pass?",
+      suffix: "permission"
+    )
+    let ops = try await Self.sentOps(of: secondSession, within: .milliseconds(800)) { $0.contains("add-query") }
+    expectNoDifference(ops, ["init"])
+    _ = try await runtime.closeConnection()
+  }
+}
