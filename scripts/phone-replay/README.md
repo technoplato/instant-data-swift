@@ -49,7 +49,7 @@ scripts/phone-replay/run-phone-replay.sh \
   --until TIME`. The journal keeps growing while the session runs, so keep the extracted file rather than
   re-extracting it.
 
-Wall time is a Debug build: 900-1,350 s on the Mac at host load 130-1,000 for the pre-71 store, plus 5-7 minutes for
+Wall time is a Debug build: 530-1,350 s on the Mac at host load 130-1,000 for the pre-71 store, plus 5-7 minutes for
 a fresh test build.
 
 ## The pre-71 store and its 103 refusals
@@ -70,4 +70,4 @@ counts. This tool on `956fce52` (library-77's build) reproduces every count; its
 | Declines | `failedOverlay` 16; `changesShadowedFact` 1 on a transcription segment's `transcriptionID` (`recordingID` on `23a80571`) | the same; the fixed order names the segment's `id` |
 | After the drain | 4 segments missing, 20 segments without `ownerUserID` (Pattern B), one route chunk missing 6 fields and another with 2 behind, `clipboardEntries` | the same 34 example lines |
 | After a full restatement | only `recordings/clipboardEntries` differs (the phone's older copy of its own write) | the same |
-| Wall (Debug) | 900-1,341 s | 900 s drain, 907 s test, host load 126-1,003 |
+| Wall (Debug) | 900-1,341 s | 900 s and 528 s drains in two runs whose lines are identical apart from times; host load 126-1,003 |
