@@ -56,3 +56,15 @@ Conflict check: the last claims on InstantInfiniteQuery.swift and its parity tes
 agent/claude-opus-5.5/list-owner-scope adds only audit-ledger lines on top of 506089b2; the ledger is newest-first,
 so a merge resolves by keeping both blocks in time order. Scribe's auto-paging worker (#299) owns the app side and is
 told through #300's work log.
+
+Status (2026-09-30 22:06:32 EDT): done on the branch, not merged; nothing published.
+
+- Implemented in `3bcf817d` (the window fix) and `0d66e6bb` (pages loaded by `loadPreviousPage` wait for the server's
+  answer instead of an earlier query's stored result).
+- Changed from step 3 while implementing: the leading watcher counts as a page once it holds rows, like upstream's
+  other chunks, and a full watcher always advances. A window at the top follows a live head by evicting at the bottom;
+  the uncounted watcher and "canLoadPreviousPage reports the rows above it" were dropped, because Scribe's timeline (two
+  pages of 32, newest first) decodes at most 64 rows and must follow its live head.
+- Gates: PROGRESS.md (2026-09-30 20:48:46 EDT and this follow-up) and #300's work log. The live soak passed at 20:13 EDT (pending 0-3). Later runs on the loaded machine built backlogs with the baseline library too (#303).
+- Filed: #302 (store: a moved row's old facts), #303 (Scribe main falls behind a live recording), #304 (TypedAPITests,
+  pre-existing), #305 (Scribe list pages by update time and draws by start time).

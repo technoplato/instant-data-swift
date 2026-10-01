@@ -1,3 +1,16 @@
+## 2026-09-30 22:06:32 EDT — #300 follow-up: live cursor check, the Mac's on-screen detail, and Scribe main measured again (#300 #303 #305)
+
+- **Branch:** the code is unchanged (`0d66e6bb`). This commit adds bookkeeping only: this entry, the plan's status, and
+  upstream-parity notes in the two #300 change-log entries.
+- **Live cursor check (bd40c50a, 21:11 EDT):** a reversed (asc) query after r3 with `afterInclusive` returns
+  [r3, r2]; without it, [r2, r1]. Backward pages after a top eviction rely on this, and upstream never sends it on
+  the reversed order. Evidence: audit `live-cursor-check/output.txt`. The 18 seeded rows are deleted.
+- **Mac detail:** the library loaded all 121 rows, and 118 were drawn on screen. The 3 moved rows sat inside the
+  63-row window but never appeared on screen. Scribe draws by start date while the query pages by update time, so they
+  draw below the window's other rows; that placement is inferred from the sort, not observed. Filed as #305 (Scribe).
+- **Scribe main:** measured again. Current origin/main abba8983 (build 74) + 0d66e6bb fell behind: pending reached 216 and was still growing. Build 73 + 0d66e6bb drained both of its later backlogs (136 to 80, and 56 to 1). Between those runs, build 73's own library 506089b2 grew to 165. So this change is never worse than the baseline in the same window. Tonight's backlogs come from server apply and deferred-value hydration holding the operation gate under the machine's load, and #303's attribution to 753f52e0 is not established (details on #303). Repeat the soak on a quieter machine before a Scribe build ships.
+- **Next:** unchanged. Merge the branch, tag it, and bump Scribe's pin. Scribe main waits for #303.
+
 ## 2026-09-30 20:48:46 EDT — Infinite query: a windowed live query keeps paging when rows appear above its first row (#300)
 
 - **Branch:** `agent/claude-opus-5.5/infinite-leading-rows` from `506089b2` (pushed; not merged; nothing published).
