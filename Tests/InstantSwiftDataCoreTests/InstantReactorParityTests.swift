@@ -3429,3 +3429,240 @@ extension InstantReactorParityTests {
     _ = try await runtime.closeConnection()
   }
 }
+
+/// The `@instantdb/core` v0.22.75 advert: above v0.20.4 the server skips the attrs in refresh-ok (`session.clj`
+/// :skip-attrs), and above v0.17.5 it sends presence patches. Frames without attrs apply with the session's cached
+/// attrs, so these pin that the cache follows the session: the init advertises the version, a reconnect's init-ok
+/// replaces the cached attrs, a refresh that adds an attribute is used by the next attr-less frame, and a refresh with
+/// nothing in it changes nothing.
+extension InstantReactorParityTests {
+  static func joinRowsResult(_ rows: [[InstantLiveJSONValue]]) -> [InstantLiveJSONValue] {
+    [
+      .object([
+        "data": .object([
+          "datalog-result": .object([
+            "join-rows": .array([.array(rows.map(InstantLiveJSONValue.array))])
+          ])
+        ]),
+        "child-nodes": .array([]),
+      ])
+    ]
+  }
+
+  static func todoRow(
+    _ id: String,
+    text: String,
+    attributeIDPrefix: String = "server-todos",
+    at time: InstantTimestamp
+  ) -> [[InstantLiveJSONValue]] {
+    let t = InstantLiveJSONValue.number(Double(time.milliseconds))
+    return [
+      [.string(id), .string("\(attributeIDPrefix)-id"), .string(id), t],
+      [.string(id), .string("\(attributeIDPrefix)-text"), .string(text), t],
+      [.string(id), .string("\(attributeIDPrefix)-is-completed"), .bool(false), t],
+      [.string(id), .string("\(attributeIDPrefix)-created-at"), .number(Double(time.milliseconds)), t],
+    ]
+  }
+
+  static func todoAttrs(prefix: String) -> [InstantLiveJSONValue] {
+    [
+      liveReactorServerAttr(id: "\(prefix)-id", name: "id"),
+      liveReactorServerAttr(id: "\(prefix)-text", name: "text"),
+      liveReactorServerAttr(id: "\(prefix)-is-completed", name: "isCompleted"),
+      liveReactorServerAttr(id: "\(prefix)-created-at", name: "createdAt"),
+    ]
+  }
+
+  @Test
+  func theInitAdvertisesTheCoreVersionThatSkipsAttrs() async throws {
+    let session = LiveReactorParitySession(messages: [liveReactorInitOK(attrs: liveReactorTodoServerAttrs)])
+    let transport = LiveReactorParityTransport(sessions: [session])
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "reactor-core-version-advert",
+        persistenceURL: try temporaryReactorParityCacheURL(),
+        initialAttributes: TodoExample.attributes,
+        liveTransport: transport.transport
+      )
+    )
+    _ = try await runtime.connect()
+    await session.waitForSentMessageCount(1)
+    let initMessage = try #require(await session.sentMessages().first)
+    expectNoDifference(initMessage.op, "init")
+    expectNoDifference(
+      initMessage.fields["versions"],
+      .object(["InstantDB-Swift": .string("0.1.0"), "@instantdb/core": .string("v0.22.75")])
+    )
+    expectNoDifference(
+      InstantLiveMessage.initMessage(appID: "app", clientEventID: "event").fields["versions"],
+      .object(["InstantDB-Swift": .string("0.1.0"), "@instantdb/core": .string("v0.22.75")])
+    )
+    _ = try await runtime.closeConnection()
+  }
+
+  @Test
+  func aReconnectsInitAttrsReplaceTheCachedAttrs() async throws {
+    let query = try InstantLiveQueryEncoder.encode(TodoExample.query)
+    let createdAt = InstantTimestamp(milliseconds: 1_700_000_067_000)
+    let firstSession = LiveReactorParitySession(messages: [
+      liveReactorInitOK(attrs: Self.todoAttrs(prefix: "first-todos"), sessionID: "attrs-before-reconnect")
+    ])
+    let secondSession = LiveReactorParitySession(messages: [
+      liveReactorInitOK(attrs: Self.todoAttrs(prefix: "second-todos"), sessionID: "attrs-after-reconnect")
+    ])
+    let transport = LiveReactorParityTransport(sessions: [firstSession, secondSession])
+    var configuration = InstantRuntimeConfiguration(
+      appID: "reactor-reconnect-attrs",
+      persistenceURL: try temporaryReactorParityCacheURL(),
+      initialAttributes: TodoExample.attributes,
+      liveTransport: transport.transport
+    )
+    configuration.liveReconnectSleep = { _ in }
+    let runtime = try await InstantRuntime.bootstrap(configuration: configuration)
+    let stream = await runtime.observe(TodoExample.query)
+    var iterator = stream.makeAsyncIterator()
+    _ = try #require(await iterator.next())
+    _ = try await runtime.connect()
+    _ = try await Self.sentOps(of: firstSession) { $0.contains("add-query") }
+    await firstSession.failReceive(
+      InstantError(code: .networkFailed, operation: "receive", message: "socket dropped", recovery: "Reconnect.")
+    )
+    let ops = try await Self.sentOps(of: secondSession) { $0.contains("add-query") }
+    try #require(ops.contains("add-query"))
+    // An attr-less refresh with the second session's attribute ids: it resolves only with that session's attrs.
+    await secondSession.enqueue(
+      InstantLiveMessage(
+        op: "refresh-ok",
+        clientEventID: nil,
+        fields: [
+          "attrs": .array([]),
+          "computations": .array([
+            .object([
+              "instaql-query": query,
+              "instaql-result": .array(
+                Self.joinRowsResult(
+                  Self.todoRow("todo-second-session", text: "resolved with the new attrs", attributeIDPrefix: "second-todos", at: createdAt)
+                )
+              ),
+            ])
+          ]),
+          "processed-tx-id": .string("server-tx-second-session"),
+        ]
+      )
+    )
+    var texts: [String] = []
+    while texts != ["resolved with the new attrs"], let snapshot = await iterator.next() {
+      texts = try TodoExample.decode(snapshot.values).map(\.text)
+    }
+    expectNoDifference(texts, ["resolved with the new attrs"])
+    _ = try await runtime.closeConnection()
+  }
+
+  @Test
+  func anAttributeARefreshAddsIsUsedByTheNextAttrLessFrame() async throws {
+    let query = try InstantLiveQueryEncoder.encode(TodoExample.query)
+    let createdAt = InstantTimestamp(milliseconds: 1_700_000_069_000)
+    let session = LiveReactorParitySession(messages: [liveReactorInitOK(attrs: liveReactorTodoServerAttrs)])
+    let transport = LiveReactorParityTransport(sessions: [session])
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "reactor-attribute-from-refresh",
+        persistenceURL: try temporaryReactorParityCacheURL(),
+        initialAttributes: TodoExample.attributes,
+        liveTransport: transport.transport
+      )
+    )
+    let stream = await runtime.observe(TodoExample.query)
+    var iterator = stream.makeAsyncIterator()
+    _ = try #require(await iterator.next())
+    _ = try await runtime.connect()
+    _ = try await Self.sentOps(of: session) { $0.contains("add-query") }
+    let t = InstantLiveJSONValue.number(Double(createdAt.milliseconds))
+    func refresh(_ id: String, attrs: [InstantLiveJSONValue], processed: String) -> InstantLiveMessage {
+      InstantLiveMessage(
+        op: "refresh-ok",
+        clientEventID: nil,
+        fields: [
+          "attrs": .array(attrs),
+          "computations": .array([
+            .object([
+              "instaql-query": query,
+              "instaql-result": .array(
+                Self.joinRowsResult(
+                  Self.todoRow(id, text: id, at: createdAt)
+                    + [[.string(id), .string("server-todos-priority"), .number(3), t]]
+                )
+              ),
+            ])
+          ]),
+          "processed-tx-id": .string(processed),
+        ]
+      )
+    }
+    // The schema gains todos/priority in a refresh that carries attrs; the next frame carries none.
+    await session.enqueue(
+      refresh(
+        "todo-with-new-attrs",
+        attrs: liveReactorTodoServerAttrs + [liveReactorServerAttr(id: "server-todos-priority", name: "priority", valueType: "number")],
+        processed: "server-tx-new-attrs"
+      )
+    )
+    await session.enqueue(refresh("todo-attr-less", attrs: [], processed: "server-tx-attr-less"))
+    for _ in 0..<200 {
+      if try await runtime.syncState().processedTransactionID == "server-tx-attr-less" { break }
+      try await Task.sleep(for: .milliseconds(20))
+    }
+    let priorities = Set(await runtime.store.snapshot().triples.filter { $0.attributeID.hasSuffix("priority") }.map(\.entityID))
+    #expect(priorities.contains("todo-attr-less"))
+    withKnownIssue("The frame that adds an attribute drops its own rows' values for it; the next frame stores them (already so at d487ee09)") {
+      #expect(priorities.contains("todo-with-new-attrs"))
+    }
+    _ = try await runtime.closeConnection()
+  }
+
+  @Test
+  func anEmptyRefreshChangesNothing() async throws {
+    let query = try InstantLiveQueryEncoder.encode(TodoExample.query)
+    let createdAt = InstantTimestamp(milliseconds: 1_700_000_068_000)
+    let session = LiveReactorParitySession(messages: [liveReactorInitOK(attrs: liveReactorTodoServerAttrs)])
+    let transport = LiveReactorParityTransport(sessions: [session])
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "reactor-empty-refresh",
+        persistenceURL: try temporaryReactorParityCacheURL(),
+        initialAttributes: TodoExample.attributes,
+        liveTransport: transport.transport
+      )
+    )
+    let stream = await runtime.observe(TodoExample.query)
+    var iterator = stream.makeAsyncIterator()
+    _ = try #require(await iterator.next())
+    _ = try await runtime.connect()
+    _ = try await Self.sentOps(of: session) { $0.contains("add-query") }
+    await session.enqueue(
+      liveReactorAddQueryOK(
+        query: query,
+        processedTransactionID: "server-tx-before-empty",
+        result: liveReactorTodoQueryResult(id: "todo-before-empty", text: "kept", createdAt: createdAt)
+      )
+    )
+    var texts: [String] = []
+    while texts != ["kept"], let snapshot = await iterator.next() {
+      texts = try TodoExample.decode(snapshot.values).map(\.text)
+    }
+    let before = await runtime.store.snapshot().triples.count
+    await session.enqueue(
+      InstantLiveMessage(
+        op: "refresh-ok",
+        clientEventID: nil,
+        fields: ["attrs": .array([]), "computations": .array([]), "processed-tx-id": .string("server-tx-empty")]
+      )
+    )
+    try await Task.sleep(for: .milliseconds(300))
+    let after = await runtime.store.snapshot().triples.count
+    expectNoDifference(after, before)
+    let status = try await runtime.connectionStatus()
+    expectNoDifference(status.state, .opened)
+    _ = try await runtime.closeConnection()
+  }
+}
