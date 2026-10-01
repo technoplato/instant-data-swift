@@ -42,5 +42,9 @@ Touching:
 - Tests: InstantBoundedOutboxDeliveryTests.swift (added 2026-10-01 03:36 for two pre-existing test races the gates hit:
   the flush timeout's idle check, and the reclaim test's known-issue scope in InstantLiveTransportTests.swift)
 
+- Sources/InstantSwiftDataCore/InstantSnapshotObservers.swift and Tests: InstantReactorParityTests.swift (added
+  2026-10-01 04:01, coordinator-approved: a refused subscribe-stream ends the observations that share the reader)
+
 Conflict check: these paths' latest claims are finished plans already merged into d487ee09 (perf audit, connection
-survival, infinite leading rows, fast-drain-3, and stale-writes for InstantBoundedOutboxDeliveryTests.swift).
+survival, infinite leading rows, fast-drain-3, and stale-writes for InstantBoundedOutboxDeliveryTests.swift), or, for
+InstantSnapshotObservers.swift, a finished August plan (2026-08-09-bounded-intent-outbox-memory).
