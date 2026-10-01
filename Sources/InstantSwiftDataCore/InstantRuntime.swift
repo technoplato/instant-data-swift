@@ -388,6 +388,10 @@ public struct InstantRuntimeConfiguration: Sendable {
   /// when the attempt holds the operation gate, so a local write started here waits for it.
   var onServerApplySeedLoadedForTesting:
     (@Sendable (_ operationGateHeld: Bool) async -> Void)? = nil
+  /// Runs after each attempt to record a refused write has loaded its component and before it commits;
+  /// `operationGateHeld` is true for the exclusive attempt, so a local write started here would wait for it.
+  package var onClaimedTerminalFailureLoadedForTesting:
+    (@Sendable (_ operationGateHeld: Bool) async -> Void)? = nil
   package var onServerApplyCatchUpReplayedOutsideOperationGateForTesting:
     (@Sendable (_ appendedBodyCount: Int) async -> Void)? = nil
   package var onServerApplyCatchUpReplayedForTesting:
@@ -1327,6 +1331,14 @@ private struct InstantAppliedServerTransaction: Sendable {
 private struct InstantServerApplySeed: Sendable {
   var state: InstantPersistenceState
   var preparedStore: PreparedStoreMutation
+}
+
+/// The outcome of one attempt to record a server refusal of a claimed write.
+private enum InstantClaimedTerminalFailureAttempt: Sendable {
+  /// Recorded, already terminal, or no longer this runtime's claim.
+  case finished(PendingMutation?)
+  /// The outbox or store moved under the attempt; try again.
+  case retry
 }
 
 private enum InstantServerApplyCatchUpLimits {
@@ -12115,178 +12127,268 @@ public final class InstantRuntime: Sendable {
     recordsConnectionFailure: Bool
   ) async throws -> PendingMutation? {
     for _ in 0..<5 {
-      let state: InstantPersistenceState
-      let storeSnapshot: InstantStoreSnapshot
-      await operationGate.enter()
+      switch try await failClaimedMutationAttempt(
+        id: id,
+        failure: failure,
+        requiredClaimToken: requiredClaimToken,
+        recordsConnectionFailure: recordsConnectionFailure,
+        operationGateHeld: false
+      ) {
+      case let .finished(mutation):
+        return mutation
+      case .retry:
+        continue
+      }
+    }
+    // #303: each attempt loads its state under the operation gate, releases the gate to load and prepare the
+    // component, and takes it again to commit. This runtime's own local writes landed in that window every time while
+    // dictation kept writing, so all five attempts went stale, and the throw ended the live receive loop: the
+    // reconnect re-sent every write in flight, and the server refused them as replays. One more attempt holds the gate
+    // from load to commit, so local writes wait and the refusal is recorded, as the exclusive server apply does.
+    let exclusiveStartedAt = ContinuousClock.now
+    try await enterOperationGateUnlessCancelled(operation: "record a refused write exclusively")
+    InstantDiagnostics.shared.record(
+      .warning,
+      subsystem: "instant-swift-data-core",
+      category: "outbox",
+      event: "outbox.mutation.terminal-failure-exclusive-fallback",
+      message:
+        "Local writes changed the outbox during every attempt to record a refused write, so this one holds local writes until it lands.",
+      metadata: ["mutationID": id],
+      correlationID: id
+    )
+    let outcome: InstantClaimedTerminalFailureAttempt
+    do {
+      outcome = try await failClaimedMutationAttempt(
+        id: id,
+        failure: failure,
+        requiredClaimToken: requiredClaimToken,
+        recordsConnectionFailure: recordsConnectionFailure,
+        operationGateHeld: true
+      )
+      await leaveOperationGate()
+    } catch {
+      await leaveOperationGate()
+      recordExclusiveTerminalFailure(id: id, startedAt: exclusiveStartedAt, outcome: "failed")
+      throw error
+    }
+    switch outcome {
+    case let .finished(mutation):
+      recordExclusiveTerminalFailure(id: id, startedAt: exclusiveStartedAt, outcome: "recorded")
+      return mutation
+    case .retry:
+      recordExclusiveTerminalFailure(id: id, startedAt: exclusiveStartedAt, outcome: "stale")
+      throw outboxChangedDuringStatusUpdate(id: id)
+    }
+  }
+
+  private func recordExclusiveTerminalFailure(
+    id: String,
+    startedAt: ContinuousClock.Instant,
+    outcome: String
+  ) {
+    let elapsed = startedAt.duration(to: ContinuousClock.now)
+    let milliseconds = elapsed.components.seconds * 1_000
+      + elapsed.components.attoseconds / 1_000_000_000_000_000
+    InstantDiagnostics.shared.record(
+      outcome == "recorded" ? .info : .warning,
+      subsystem: "instant-swift-data-core",
+      category: "outbox",
+      event: "outbox.mutation.terminal-failure-exclusive-fallback-finished",
+      message: "The exclusive attempt to record a refused write finished.",
+      metadata: [
+        "mutationID": id,
+        "elapsedMilliseconds": String(milliseconds),
+        "outcome": outcome,
+      ],
+      correlationID: id
+    )
+  }
+
+  /// One attempt to record a server refusal of a claimed write. With `operationGateHeld`, the caller holds the
+  /// operation gate across the whole attempt, so no local write can make it stale.
+  private func failClaimedMutationAttempt(
+    id: String,
+    failure: InstantMutationFailure,
+    requiredClaimToken: String,
+    recordsConnectionFailure: Bool,
+    operationGateHeld: Bool
+  ) async throws -> InstantClaimedTerminalFailureAttempt {
+    let state: InstantPersistenceState
+    let storeSnapshot: InstantStoreSnapshot
+    if !operationGateHeld { await operationGate.enter() }
+    do {
+      state = try await loadCompactStateSynchronizingStore()
+      storeSnapshot = await authoritativeStoreSnapshot(from: state)
+      if !operationGateHeld { await operationGate.leave() }
+    } catch {
+      if !operationGateHeld { await operationGate.leave() }
+      throw error
+    }
+
+    recordActorHop(.persistence)
+    let load = try await persistence.loadClaimedTerminalFailureComponent(
+      id: id,
+      claimToken: requiredClaimToken,
+      expectedStoreRevision: state.storeRevision,
+      expectedAttributeRevision: state.attributeRevision
+    )
+    await configuration.onClaimedTerminalFailureLoadedForTesting?(operationGateHeld)
+    switch load {
+    case .alreadyTerminal:
+      return .finished(nil)
+
+    case .staleClaim:
+      recordActorHop(.persistence)
+      guard try await persistence.outboxClaimMatches(
+        id: id,
+        token: requiredClaimToken
+      ) else { return .finished(nil) }
+      return .retry
+
+    case let .normalizationRequired(firstMutationID):
+      recordActorHop(.persistence)
+      let normalization = try await persistence.normalizeOptimisticEffectMetadata(
+        startingAtMutationID: firstMutationID
+      )
+      if normalization.normalizedMutationIDs.isEmpty,
+        let blockedMutationID = normalization.blockedMutationID
+      {
+        throw InstantError(
+          code: .persistenceFailed,
+          operation: "normalize terminal failure component",
+          localID: blockedMutationID,
+          message:
+            "Mutation '\(blockedMutationID)' cannot prove its optimistic effect from the bounded durable body.",
+          recovery:
+            "Preserve the durable row and run an authoritative refresh before retrying its rejection."
+        )
+      }
+      return .retry
+
+    case let .componentLimitExceeded(mutationCountAtLeast, encodedBodyByteCountAtLeast):
+      if !operationGateHeld { await operationGate.enter() }
       do {
-        state = try await loadCompactStateSynchronizingStore()
-        storeSnapshot = await authoritativeStoreSnapshot(from: state)
-        await operationGate.leave()
+        // This branch records the failure without the component, so the outbox it saw before the gate was
+        // released does not matter; the row's claim token is the guard. The revision read before the gate let any
+        // local write in between make the commit stale, five times in a row while dictation kept writing (#303).
+        recordActorHop(.persistence)
+        let outboxRevision = try await persistence.currentOutboxRevision()
+        recordActorHop(.persistence)
+        guard let application = try await persistence.failOutboxMutationsForDelivery(
+          [id: failure],
+          failureAttributeRevision: nil,
+          claimToken: requiredClaimToken,
+          expectedOutboxRevision: outboxRevision,
+          metadataEntries: connectionFailureMetadataEntries(
+            for: failure,
+            recordsConnectionFailure: recordsConnectionFailure
+          )
+        ) else {
+          if !operationGateHeld { await operationGate.leave() }
+          return .retry
+        }
+        guard let failedMutation = application.mutations.first(where: { $0.id == id }) else {
+          recordActorHop(.persistence)
+          let stillOwnsClaim = try await persistence.outboxClaimMatches(
+            id: id,
+            token: requiredClaimToken
+          )
+          if !operationGateHeld { await operationGate.leave() }
+          guard stillOwnsClaim else { return .finished(nil) }
+          return .retry
+        }
+        InstantDiagnostics.shared.record(
+          .notice,
+          subsystem: "instant-swift-data-core",
+          category: "outbox",
+          event: "outbox.mutation.terminal-component-deferred",
+          message:
+            "Recorded a terminal mutation failure without loading its oversized optimistic component.",
+          metadata: [
+            "mutationID": id,
+            "componentMutationCountAtLeast": String(mutationCountAtLeast),
+            "componentEncodedBodyByteCountAtLeast": String(encodedBodyByteCountAtLeast),
+            "decodedBodyCount": String(application.decodedBodyCount),
+            "decodedBodyByteCount": String(application.decodedBodyByteCount),
+          ],
+          correlationID: id
+        )
+        recordActorHop(.outbox)
+        await outbox.remove(id: failedMutation.id)
+        _ = try? await publishConnectionStatusWithGateHeld()
+        await publishMutationLifecycle(failedMutation)
+        if !operationGateHeld { await operationGate.leave() }
+        return .finished(failedMutation)
       } catch {
-        await operationGate.leave()
+        if !operationGateHeld { await operationGate.leave() }
         throw error
       }
 
-      recordActorHop(.persistence)
-      let load = try await persistence.loadClaimedTerminalFailureComponent(
-        id: id,
-        claimToken: requiredClaimToken,
-        expectedStoreRevision: state.storeRevision,
-        expectedAttributeRevision: state.attributeRevision
+    case let .ready(component):
+      let removal = try await prepareClaimedTerminalFailureComponent(
+        component,
+        failure: failure,
+        snapshot: storeSnapshot
       )
-      switch load {
-      case .alreadyTerminal:
-        return nil
-
-      case .staleClaim:
+      if !operationGateHeld { await operationGate.enter() }
+      do {
         recordActorHop(.persistence)
-        guard try await persistence.outboxClaimMatches(
-          id: id,
-          token: requiredClaimToken
-        ) else { return nil }
-        continue
-
-      case let .normalizationRequired(firstMutationID):
-        recordActorHop(.persistence)
-        let normalization = try await persistence.normalizeOptimisticEffectMetadata(
-          startingAtMutationID: firstMutationID
-        )
-        if normalization.normalizedMutationIDs.isEmpty,
-          let blockedMutationID = normalization.blockedMutationID
-        {
-          throw InstantError(
-            code: .persistenceFailed,
-            operation: "normalize terminal failure component",
-            localID: blockedMutationID,
-            message:
-              "Mutation '\(blockedMutationID)' cannot prove its optimistic effect from the bounded durable body.",
-            recovery:
-              "Preserve the durable row and run an authoritative refresh before retrying its rejection."
+        let commit = try await persistence.commitClaimedTerminalFailure(
+          targetID: id,
+          claimToken: requiredClaimToken,
+          expectedStoreRevision: component.expectedStoreRevision,
+          expectedAttributeRevision: state.attributeRevision,
+          expectedComponentRowRevisions: component.rowRevisions,
+          expectedComponentIDs: component.ids,
+          failedMutation: removal.failedMutation,
+          rebasedSuccessors: removal.rebasedSuccessors,
+          changedEntityTriples: removal.prepared?.changedEntityTriples ?? [:],
+          changedFactScope: removal.prepared?.factScope ?? InstantFactScope(),
+          metadataEntries: connectionFailureMetadataEntries(
+            for: failure,
+            recordsConnectionFailure: recordsConnectionFailure
           )
-        }
-        continue
-
-      case let .componentLimitExceeded(mutationCountAtLeast, encodedBodyByteCountAtLeast):
-        await operationGate.enter()
-        do {
+        )
+        guard let commit else {
           recordActorHop(.persistence)
-          guard let application = try await persistence.failOutboxMutationsForDelivery(
-            [id: failure],
-            failureAttributeRevision: nil,
-            claimToken: requiredClaimToken,
-            expectedOutboxRevision: state.outboxRevision,
-            metadataEntries: connectionFailureMetadataEntries(
-              for: failure,
-              recordsConnectionFailure: recordsConnectionFailure
-            )
-          ) else {
-            await operationGate.leave()
-            continue
+          let stillOwnsClaim = try await persistence.outboxClaimMatches(
+            id: id,
+            token: requiredClaimToken
+          )
+          if !operationGateHeld { await operationGate.leave() }
+          guard stillOwnsClaim else { return .finished(nil) }
+          return .retry
+        }
+        if commit.didChange {
+          if let prepared = removal.prepared {
+            recordActorHop(.store)
+            _ = await store.commitAndPublish(prepared)
           }
-          guard let failedMutation = application.mutations.first(where: { $0.id == id }) else {
-            recordActorHop(.persistence)
-            let stillOwnsClaim = try await persistence.outboxClaimMatches(
-              id: id,
-              token: requiredClaimToken
-            )
-            await operationGate.leave()
-            guard stillOwnsClaim else { return nil }
-            continue
-          }
-          InstantDiagnostics.shared.record(
-            .notice,
-            subsystem: "instant-swift-data-core",
-            category: "outbox",
-            event: "outbox.mutation.terminal-component-deferred",
-            message:
-              "Recorded a terminal mutation failure without loading its oversized optimistic component.",
-            metadata: [
-              "mutationID": id,
-              "componentMutationCountAtLeast": String(mutationCountAtLeast),
-              "componentEncodedBodyByteCountAtLeast": String(encodedBodyByteCountAtLeast),
-              "decodedBodyCount": String(application.decodedBodyCount),
-              "decodedBodyByteCount": String(application.decodedBodyByteCount),
-            ],
-            correlationID: id
+          let installedRevisions = installedStoreRevisions.snapshot()
+          installedStoreRevisions.install(
+            storeRevision: component.expectedStoreRevision + 1,
+            attributeRevision: installedRevisions.attributes
           )
           recordActorHop(.outbox)
-          await outbox.remove(id: failedMutation.id)
+          if let failedMutation = commit.failedMutation {
+            await outbox.remove(id: failedMutation.id)
+          }
+          for successor in commit.rebasedSuccessors {
+            await outbox.replaceIfPresent(successor)
+          }
           _ = try? await publishConnectionStatusWithGateHeld()
-          await publishMutationLifecycle(failedMutation)
-          await operationGate.leave()
-          return failedMutation
-        } catch {
-          await operationGate.leave()
-          throw error
-        }
-
-      case let .ready(component):
-        let removal = try await prepareClaimedTerminalFailureComponent(
-          component,
-          failure: failure,
-          snapshot: storeSnapshot
-        )
-        await operationGate.enter()
-        do {
-          recordActorHop(.persistence)
-          let commit = try await persistence.commitClaimedTerminalFailure(
-            targetID: id,
-            claimToken: requiredClaimToken,
-            expectedStoreRevision: component.expectedStoreRevision,
-            expectedAttributeRevision: state.attributeRevision,
-            expectedComponentRowRevisions: component.rowRevisions,
-            expectedComponentIDs: component.ids,
-            failedMutation: removal.failedMutation,
-            rebasedSuccessors: removal.rebasedSuccessors,
-            changedEntityTriples: removal.prepared?.changedEntityTriples ?? [:],
-            changedFactScope: removal.prepared?.factScope ?? InstantFactScope(),
-            metadataEntries: connectionFailureMetadataEntries(
-              for: failure,
-              recordsConnectionFailure: recordsConnectionFailure
-            )
-          )
-          guard let commit else {
-            recordActorHop(.persistence)
-            let stillOwnsClaim = try await persistence.outboxClaimMatches(
-              id: id,
-              token: requiredClaimToken
-            )
-            await operationGate.leave()
-            guard stillOwnsClaim else { return nil }
-            continue
+          if let failedMutation = commit.failedMutation {
+            await publishMutationLifecycle(failedMutation)
           }
-          if commit.didChange {
-            if let prepared = removal.prepared {
-              recordActorHop(.store)
-              _ = await store.commitAndPublish(prepared)
-            }
-            let installedRevisions = installedStoreRevisions.snapshot()
-            installedStoreRevisions.install(
-              storeRevision: component.expectedStoreRevision + 1,
-              attributeRevision: installedRevisions.attributes
-            )
-            recordActorHop(.outbox)
-            if let failedMutation = commit.failedMutation {
-              await outbox.remove(id: failedMutation.id)
-            }
-            for successor in commit.rebasedSuccessors {
-              await outbox.replaceIfPresent(successor)
-            }
-            _ = try? await publishConnectionStatusWithGateHeld()
-            if let failedMutation = commit.failedMutation {
-              await publishMutationLifecycle(failedMutation)
-            }
-          }
-          await operationGate.leave()
-          return commit.failedMutation
-        } catch {
-          await operationGate.leave()
-          throw error
         }
+        if !operationGateHeld { await operationGate.leave() }
+        return .finished(commit.failedMutation)
+      } catch {
+        if !operationGateHeld { await operationGate.leave() }
+        throw error
       }
     }
-
-    throw outboxChangedDuringStatusUpdate(id: id)
   }
 
   /// Loads persistence metadata without allowing a newer SQLite revision to
