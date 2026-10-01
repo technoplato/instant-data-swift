@@ -10,6 +10,79 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## October 1st, 2026 at 2:34:55 a.m. EDT — `778c793bb1fa` Advertise @instantdb/core v0.22.75 so refresh-ok frames stop carrying the attrs (#303)
+
+- **Implementation commit:** `778c793bb1fa5e19ace26e11f96e2f8ba4c53df1`
+- **Change:** init advertises @instantdb/core v0.22.75, so refresh-ok frames stop carrying the attrs (#303).
+- **Details:**
+  - Above v0.20.4 the server skips refresh-ok attrs and above v0.17.5 sends presence patches; above v0.22.75 it batches messages, which Swift does not decode. Confirmed safe by the experiment agent; frames 173 KB -> 43.6 KB.
+  - Tests: the init carries v0.22.75 (red before); a reconnect's init-ok replaces the cached attrs; a refresh-added attribute is used by the next attr-less frame; an empty refresh changes nothing. The frame that adds an attribute drops its own rows' values for it, already so at d487ee09 (known issue).
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantLiveTransport.swift` — InstantLiveMessage.defaultVersions at both init sites
+  - `Tests/InstantSwiftDataCoreTests/InstantReactorParityTests.swift` — advert and cached-attrs tests
+- **User context (verbatim):**
+  > The experiment agent's sign-off: the @instantdb/core v0.22.75 advert is SAFE. Include it in library-77.
+- **SpecStory:** unavailable — Claude Code agent session (library-77); no SpecStory capture configured for this session.
+
+## October 1st, 2026 at 2:34:54 a.m. EDT — `67bda26b4ff7` Keep a live query registered after a transient add-query failure, and send it again on the next connection (#324)
+
+- **Implementation commit:** `67bda26b4ff7e2786fe3e5f7ef274f32e53cb2a0`
+- **Change:** A transient add-query failure keeps the live query registered and sends it again on the next connection; only a repeating rejection retires it (#324).
+- **Details:**
+  - A stalled server answered add-query with 500 operation-timed-out and Swift retired the query for good, freezing its view until relaunch. Upstream keeps every subscription after any add-query error and re-sends on init-ok.
+  - After a 500 timeout and a reconnect the new session sent only init (red); it now sends init and add-query and the refreshed result reaches the observer. A permission rejection is still not re-sent.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — addQueryRejectionRepeats and the add-query error handling
+  - `Tests/InstantSwiftDataCoreTests/InstantReactorParityTests.swift` — transient and permanent add-query error tests
+- **User context (verbatim):**
+  > Please put this first in library-77, ahead of the efficiency work: it freezes Michael's views until relaunch
+- **SpecStory:** unavailable — Claude Code agent session (library-77); no SpecStory capture configured for this session.
+
+## October 1st, 2026 at 2:34:54 a.m. EDT — `bde67df7783e` Run every InstantRuntime entry point off its caller's executor, so no critical section waits for the main thread (#303)
+
+- **Implementation commit:** `bde67df7783e98eabf4429ec4dca0f9fc88477fd`
+- **Change:** Every async InstantRuntime entry point is @concurrent, so no gate-held critical section resumes on its caller's executor (#303).
+- **Details:**
+  - With NonisolatedNonsendingByDefault the class's methods ran on the caller's executor; Scribe's main-actor observeAuthSession held the operation gate 23-101 s while the first render held the main thread (#303's samples).
+  - A main-actor caller holding the gate while main was blocked made a write from another task wait 2.82 s; it no longer waits. An incremental build kept stale test-tool objects and crashed in transact; a clean build passes 914 tests in 18 suites.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — @concurrent on 111 async entry points; an observeAuthSession testing hook
+  - `Tests/InstantSwiftDataCoreTests/InstantOperationGateAwaitTests.swift` — the main-actor gate test
+- **User context (verbatim):**
+  > make the gate-holding InstantRuntime methods @concurrent, or otherwise guarantee no critical section runs on a caller's executor
+- **SpecStory:** unavailable — Claude Code agent session (library-77); no SpecStory capture configured for this session.
+
+## October 1st, 2026 at 2:34:54 a.m. EDT — `7799d1706652` Reuse the stored attributes across live-result saves instead of reloading them per result (#303)
+
+- **Implementation commit:** `7799d1706652a352f8e7a74a0e59529e123e3b60`
+- **Change:** Live-result saves reuse the stored attributes instead of loading and decoding the whole attribute table per result inside every server-apply commit (#303).
+- **Details:**
+  - The experiment agent's profile put the reload at 17% of the reader's CPU. The store keeps the attributes with the attribute revision and a write generation; every write to instant_attributes goes through one helper that bumps the generation.
+  - 10 refreshes loaded the attributes 10 times, now once. With 504 attributes, 100 full loads take 1.08 s and 100 reused ones 0.018 s (debug).
+- **Files:**
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — attributesForLiveResultSave, executeAttributeWrite, testing hooks
+  - `Tests/InstantSwiftDataCoreTests/InstantLiveTransportTests.swift` — live-result attribute reuse tests
+  - `Tests/InstantSwiftDataCoreTests/InstantLiveRefreshAttributeCostTests.swift` — reload versus reuse cost
+- **User context (verbatim):**
+  > make the in-memory attribute cache ... the first change in library-77, next to the translator cache
+- **SpecStory:** unavailable — Claude Code agent session (library-77); no SpecStory capture configured for this session.
+
+## October 1st, 2026 at 2:34:54 a.m. EDT — `f5fed9053d38` Reuse a live refresh's attribute context while the session's attrs and the local schema are unchanged (#303)
+
+- **Implementation commit:** `f5fed9053d38cd2b405be7007f0d0e81c5d62be6`
+- **Change:** A live refresh reuses its attribute context while the session's attrs and the local schema are unchanged, instead of parsing every attr and rebuilding the schema lookups per frame (#303).
+- **Details:**
+  - Attr-less frames pass the session's same attrs array, so the reuse check is a buffer-identity comparison; frames carrying equal attrs compare in memory. A merged attribute or changed attrs rebuild.
+  - 10 attr-less frames built the context 10 times, now once; a frame adding an attribute rebuilds and merges it. 50 Scribe-shaped refreshes with 504 attrs: 728 ms CPU uncached, 357 ms cached (debug).
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantLiveRefreshApplication.swift` — InstantLiveRefreshAttributeContextCache and the translator's prebuilt-context parameter
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — applyLiveRefresh uses the cache; a testing build counter
+  - `Tests/InstantSwiftDataCoreTests/InstantLiveTransportTests.swift` — attribute-context reuse and invalidation tests
+  - `Tests/InstantSwiftDataCoreTests/InstantLiveRefreshAttributeCostTests.swift` — cached versus uncached cost
+- **User context (verbatim):**
+  > fix this please so it works efficiently as as well as the typescript core library
+- **SpecStory:** unavailable — Claude Code agent session (library-77); no SpecStory capture configured for this session.
+
 ## September 30th, 2026 at 8:25:12 p.m. EDT — `9f72413db9fb` Let apps turn off AuthV3LoginScreen's demo counters (#289)
 
 - **Implementation commit:** `9f72413db9fb8db1bcc496fcea3c6344e6b63194`

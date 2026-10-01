@@ -1,3 +1,18 @@
+## 2026-10-01 02:33:57 EDT — instant-data-swift `778c793bb1fa5e19ace26e11f96e2f8ba4c53df1`
+Advertise @instantdb/core v0.22.75 so refresh-ok frames stop carrying the attrs (#303).
+
+## 2026-10-01 02:25:18 EDT — instant-data-swift `67bda26b4ff7e2786fe3e5f7ef274f32e53cb2a0`
+Keep a live query registered after a transient add-query failure and send it again on the next connection; only a repeating rejection retires it (#324).
+
+## 2026-10-01 02:12:34 EDT — instant-data-swift `bde67df7783e98eabf4429ec4dca0f9fc88477fd`
+Run every InstantRuntime entry point off its caller's executor (@concurrent), so no gate-held critical section waits for the main thread (#303).
+
+## 2026-10-01 01:21:38 EDT — instant-data-swift `7799d1706652a352f8e7a74a0e59529e123e3b60`
+Reuse the stored attributes across live-result saves instead of reloading the attribute table per result inside each commit (#303).
+
+## 2026-10-01 01:01:47 EDT — instant-data-swift `f5fed9053d38cd2b405be7007f0d0e81c5d62be6`
+Reuse a live refresh's attribute context while the session's attrs and the local schema are unchanged (#303).
+
 ## 2026-09-30 20:35:50 EDT — scribe `ce0f01801274fc22c6c02e3a4df53c2dae87e688`
 Record the Account screen without the demo counters in the change log (#289).
 
