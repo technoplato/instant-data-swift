@@ -1394,6 +1394,12 @@ public actor SQLitePersistenceStore {
     if let cacheSize = InstantMeasurementSwitches.sqliteCacheSize {
       try execute("PRAGMA cache_size = \(cacheSize)")
     }
+    if let pages = InstantMeasurementSwitches.sqliteWALAutocheckpoint {
+      try execute("PRAGMA wal_autocheckpoint = \(pages)")
+    }
+    if let fullFsync = InstantMeasurementSwitches.sqliteCheckpointFullFsync {
+      try execute("PRAGMA checkpoint_fullfsync = \(fullFsync)")
+    }
     try execute("PRAGMA foreign_keys = ON")
     try withSQLiteBusyRetry {
       try execute(
