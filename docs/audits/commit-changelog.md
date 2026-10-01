@@ -1,3 +1,6 @@
+## 2026-10-01 19:55:44 EDT — scribe `2b447245f90beb81275c737798e2649c5354c4c5`
+Record the library's live link test in ADR 0024's evidence (#361).
+
 ## 2026-10-01 19:54:30 EDT — instant-data-swift `4d928d70f01397625f5cdd1906268acab32f6e89`
 Link and unlink through a second sign-in against a real Instant server's rules, in an environment-gated live test (#361).
 
