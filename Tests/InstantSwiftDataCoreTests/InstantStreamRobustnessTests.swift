@@ -645,6 +645,28 @@ struct InstantStreamRobustnessTests {
     expectNoDifference(subscriptionCount, 0)
     _ = try await runtime.closeConnection()
   }
+
+  @Test
+  func anotherUsersStreamWrittenOfflineIsNotStartedForTheSignedInUser() async throws {
+    let session = LiveReactorParitySession(messages: [
+      liveReactorInitOK(attrs: liveReactorTodoServerAttrs, sessionID: "offline-writer-other-user")
+    ])
+    let runtime = try await liveStreamRuntime(appID: "stream-offline-other-user", transport: session.transport)
+    _ = try await runtime.signInAsGuest()
+    let firstUsers = try await runtime.createStream(clientID: "first-users-media")
+    _ = try await runtime.appendStreamContent(streamID: firstUsers.id, content: "private", expectedOffset: 0)
+    try await runtime.signOut()
+    _ = try await runtime.signInAsGuest()
+    _ = try await runtime.createStream(clientID: "second-users-media")
+    _ = try await runtime.connect()
+
+    _ = try await sentMessages(of: session, op: "start-stream")
+    try await Task.sleep(for: .milliseconds(200))
+    // The connection authenticates as the second user, and the server would make the first user's stream theirs.
+    let starts = await session.sentMessages().filter { $0.op == "start-stream" }
+    expectNoDifference(starts.map { $0.fields["client-id"] }, [.string("second-users-media")])
+    _ = try await runtime.closeConnection()
+  }
 }
 
 // MARK: - Support

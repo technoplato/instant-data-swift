@@ -213,6 +213,24 @@ final class InstantLiveReceivedFrames: @unchecked Sendable {
   }
 }
 
+/// A stream this device writes, restarted on the current connection (#329).
+struct InstantStreamWriterRestart: Sendable {
+  var serverStreamID: String
+  /// The bytes the server already holds; the writer resends from here.
+  var serverOffset: Int64
+  var generation: Int
+}
+
+/// How a writer's catch-up ended.
+enum InstantStreamWriterCatchUpEnd: Sendable {
+  /// The runtime appended past what the catch-up sent; send the rest from SQLite, then end again.
+  case appendedMore
+  /// The writer is live; appends go straight to the socket.
+  case live
+  /// The writer is live and its terminal append went out; the server confirms it with a `stream-flushed`.
+  case closing(AsyncThrowingStream<InstantLiveStreamFlushed, Error>)
+}
+
 package actor InstantRuntimeLiveSession {
   private struct RegisteredQuery: Sendable {
     var query: InstantLiveJSONValue
@@ -239,22 +257,29 @@ package actor InstantRuntimeLiveSession {
     var observationIDs: Set<UUID>
   }
 
-  private struct BufferedStreamAppend: Sendable {
-    var chunks: [String]
-    var offset: Int64
-    var done: Bool
-    var abortReason: String?
-
-    var endOffset: Int64 {
-      offset + chunks.reduce(Int64(0)) { $0 + Int64($1.utf8.count) }
-    }
+  /// A stream this device writes, as the server knows it on this connection (#329).
+  ///
+  /// The content and the close are durable in SQLite before they reach here, so the writer holds no buffer: a
+  /// restart resends from SQLite what the server has not flushed (upstream `Stream.ts` keeps that buffer in memory).
+  private struct RegisteredStreamWriter: Sendable {
+    /// The id `createStream` returned on this device; the runtime names the stream by it.
+    var localStreamID: String
+    /// The id from `start-stream-ok`; `append-stream` names the stream by it.
+    var serverStreamID: String
+    /// The connection generation on which the server has every byte the runtime appended, so appends and the close
+    /// go straight to the socket. Until then they wait for the writer's catch-up, as upstream's write stream holds
+    /// writes while `disconnected`.
+    var liveGeneration: Int?
+    /// The end of what the runtime appended while the writer was not live; the catch-up sends at least this far.
+    var appendedEnd: Int64 = 0
+    /// A close the runtime made while the writer was not live; the catch-up sends it after the content.
+    var pendingClose: PendingStreamClose?
+    /// The generation on which the terminal append went out, so it goes out once per connection.
+    var closeSentGeneration: Int?
   }
 
-  private struct RegisteredStreamWriter: Sendable {
-    var clientID: String
-    var reconnectToken: String
-    var streamID: String
-    var buffer: [BufferedStreamAppend] = []
+  private struct PendingStreamClose: Sendable {
+    var abortReason: String?
   }
 
   private struct ReceiverFailure {
@@ -390,10 +415,11 @@ package actor InstantRuntimeLiveSession {
       }
       pendingStreamStarts[clientEventID] = nil
       if registersWriter {
+        // A stream created online: the server's id is its local id, and there is nothing to catch up.
         registeredStreamWriters[started.streamID] = RegisteredStreamWriter(
-          clientID: clientID,
-          reconnectToken: reconnectToken,
-          streamID: started.streamID
+          localStreamID: started.streamID,
+          serverStreamID: started.streamID,
+          liveGeneration: generation
         )
       }
       return started
@@ -404,45 +430,69 @@ package actor InstantRuntimeLiveSession {
     }
   }
 
+  /// Sends a live writer's append. A writer that is not live on this connection only notes how far the runtime
+  /// appended; the content is durable, and the writer's catch-up sends it (#329).
   func appendStream(
-    streamID: String,
+    streamID localStreamID: String,
     chunks: [String],
     offset: Int64,
-    done: Bool,
-    abortReason: String?,
     clientEventID: String
   ) async throws {
-    guard let session, isOpened, var writer = registeredStreamWriters[streamID] else { return }
-    let buffered = BufferedStreamAppend(
-      chunks: chunks,
-      offset: offset,
-      done: done,
-      abortReason: abortReason
+    guard var writer = registeredStreamWriters[localStreamID] else { return }
+    guard let session, isOpened, writer.liveGeneration == generation else {
+      let end = offset + chunks.reduce(Int64(0)) { $0 + Int64($1.utf8.count) }
+      writer.appendedEnd = max(writer.appendedEnd, end)
+      registeredStreamWriters[localStreamID] = writer
+      return
+    }
+    try await send(
+      .appendStream(
+        streamID: writer.serverStreamID,
+        chunks: chunks,
+        offset: offset,
+        done: false,
+        clientEventID: clientEventID
+      ),
+      through: session
     )
-    writer.buffer.append(buffered)
-    registeredStreamWriters[streamID] = writer
-    try await sendStreamAppend(buffered, streamID: streamID, through: session, clientEventID: clientEventID)
   }
 
+  /// Sends a live writer's close and waits for the server's terminal flush; `true` once the server confirmed it.
+  ///
+  /// Returns `false` without waiting when the writer is not live on this connection, or its catch-up already sent
+  /// the close: the close is durable, and the catch-up sends it once the server has every byte, as upstream's
+  /// `close()` appends `done` only once the stream id is known (#329).
   func finishStream(
-    streamID: String,
+    streamID localStreamID: String,
     offset: Int64,
     abortReason: String?,
     clientEventID: String
-  ) async throws {
-    guard registeredStreamWriters[streamID] != nil else { return }
+  ) async throws -> Bool {
+    guard var writer = registeredStreamWriters[localStreamID] else { return false }
+    guard let session, isOpened, writer.liveGeneration == generation else {
+      writer.pendingClose = PendingStreamClose(abortReason: abortReason)
+      registeredStreamWriters[localStreamID] = writer
+      return false
+    }
+    guard writer.closeSentGeneration != generation else { return false }
+    writer.closeSentGeneration = generation
+    registeredStreamWriters[localStreamID] = writer
+    let serverStreamID = writer.serverStreamID
     let response = AsyncThrowingStream<InstantLiveStreamFlushed, Error>.makeStream(
       bufferingPolicy: .bufferingNewest(1)
     )
-    pendingStreamFlushes[streamID] = response.continuation
+    pendingStreamFlushes[serverStreamID] = response.continuation
     do {
-      try await appendStream(
-        streamID: streamID,
-        chunks: [],
-        offset: offset,
-        done: true,
-        abortReason: abortReason,
-        clientEventID: clientEventID
+      try await send(
+        .appendStream(
+          streamID: serverStreamID,
+          chunks: [],
+          offset: offset,
+          done: true,
+          abortReason: abortReason,
+          clientEventID: clientEventID
+        ),
+        through: session
       )
       let responseStream = response.stream
       let acknowledged = try await instantLiveWithTimeout(
@@ -460,68 +510,114 @@ package actor InstantRuntimeLiveSession {
           recovery: "Reconnect the writer and resend its terminal append."
         )
       }
-      pendingStreamFlushes[streamID] = nil
+      pendingStreamFlushes[serverStreamID] = nil
+      return true
     } catch {
-      pendingStreamFlushes[streamID]?.finish(throwing: error)
-      pendingStreamFlushes[streamID] = nil
+      pendingStreamFlushes[serverStreamID]?.finish(throwing: error)
+      pendingStreamFlushes[serverStreamID] = nil
       throw error
     }
   }
 
-  func reconnectStreamWriters() async throws {
-    guard isOpened, let makeID else { return }
-    for streamID in registeredStreamWriters.keys.sorted() {
-      guard var writer = registeredStreamWriters[streamID] else { continue }
-      let started = try await startStream(
-        clientID: writer.clientID,
-        reconnectToken: writer.reconnectToken,
-        clientEventID: makeID(),
-        registersWriter: false
-      )
-      guard started.streamID == streamID else {
-        throw InstantError(
-          code: .decodeFailed,
-          operation: "reconnect Instant live stream writer",
-          serverEventID: started.clientEventID,
-          message: "Instant resolved writer '\(writer.clientID)' to unexpected stream '\(started.streamID)'.",
-          recovery: "Reconnect using the original writer client id and reconnect token."
-        )
-      }
-      writer.buffer.removeAll { $0.endOffset <= started.offset }
-      registeredStreamWriters[streamID] = writer
-      guard let session else { throw CancellationError() }
-      for append in writer.buffer {
-        try await sendStreamAppend(
-          append,
-          streamID: streamID,
-          through: session,
-          clientEventID: makeID()
-        )
-      }
-    }
+  /// Restarts a stream this device writes on this connection, as upstream's write stream `start` and
+  /// `onConnectionReconnect` send `start-stream` with the writer's client id and reconnect token (#329).
+  ///
+  /// Returns the server's id and the byte offset it already holds; the writer then catches up on this generation.
+  /// `nil` when the writer is already live on this connection.
+  func restartStreamWriter(
+    localStreamID: String,
+    clientID: String,
+    reconnectToken: String,
+    clientEventID: String
+  ) async throws -> InstantStreamWriterRestart? {
+    let generation = generation
+    guard registeredStreamWriters[localStreamID]?.liveGeneration != generation else { return nil }
+    let started = try await startStream(
+      clientID: clientID,
+      reconnectToken: reconnectToken,
+      clientEventID: clientEventID,
+      registersWriter: false
+    )
+    guard generation == self.generation, isOpened else { throw InstantSupersededLiveSessionSend() }
+    var writer = registeredStreamWriters[localStreamID]
+      ?? RegisteredStreamWriter(localStreamID: localStreamID, serverStreamID: started.streamID)
+    writer.serverStreamID = started.streamID
+    writer.liveGeneration = nil
+    registeredStreamWriters[localStreamID] = writer
+    return InstantStreamWriterRestart(
+      serverStreamID: started.streamID,
+      serverOffset: started.offset,
+      generation: generation
+    )
   }
 
-  private func sendStreamAppend(
-    _ append: BufferedStreamAppend,
-    streamID: String,
-    through session: InstantLiveWebSocketSession,
+  /// Sends one stored chunk of a writer that is catching up on `generation`.
+  func sendStreamWriterCatchUp(
+    localStreamID: String,
+    content: String,
+    offset: Int64,
+    generation: Int,
     clientEventID: String
   ) async throws {
+    guard generation == self.generation, let session, isOpened,
+      let writer = registeredStreamWriters[localStreamID], writer.liveGeneration == nil
+    else {
+      throw InstantSupersededLiveSessionSend()
+    }
     try await send(
       .appendStream(
-        streamID: streamID,
-        chunks: append.chunks,
-        offset: append.offset,
-        done: append.done,
-        abortReason: append.abortReason,
+        streamID: writer.serverStreamID,
+        chunks: [content],
+        offset: offset,
+        done: false,
         clientEventID: clientEventID
       ),
       through: session
     )
   }
 
-  func ownsStreamWriter(streamID: String) -> Bool {
-    registeredStreamWriters[streamID] != nil
+  /// Ends a writer's catch-up once it sent everything through `offset`, unless the runtime appended past it
+  /// meanwhile. The writer is then live; if the stream is closed, its terminal append goes out, and the caller waits
+  /// on the returned flushes for the server's confirmation.
+  func endStreamWriterCatchUp(
+    localStreamID: String,
+    through offset: Int64,
+    closedLocally: Bool,
+    abortReason: String?,
+    generation: Int,
+    clientEventID: String
+  ) async throws -> InstantStreamWriterCatchUpEnd {
+    guard generation == self.generation, let session, isOpened,
+      var writer = registeredStreamWriters[localStreamID], writer.liveGeneration == nil
+    else {
+      throw InstantSupersededLiveSessionSend()
+    }
+    guard writer.appendedEnd <= offset else { return .appendedMore }
+    let close = writer.pendingClose ?? (closedLocally ? PendingStreamClose(abortReason: abortReason) : nil)
+    writer.liveGeneration = generation
+    writer.pendingClose = nil
+    guard let close, writer.closeSentGeneration != generation else {
+      registeredStreamWriters[localStreamID] = writer
+      return .live
+    }
+    writer.closeSentGeneration = generation
+    registeredStreamWriters[localStreamID] = writer
+    let response = AsyncThrowingStream<InstantLiveStreamFlushed, Error>.makeStream(
+      bufferingPolicy: .bufferingNewest(1)
+    )
+    pendingStreamFlushes[writer.serverStreamID] = response.continuation
+    try await send(
+      .appendStream(
+        streamID: writer.serverStreamID,
+        chunks: [],
+        offset: offset,
+        done: true,
+        abortReason: close.abortReason,
+        clientEventID: clientEventID
+      ),
+      through: session
+    )
+    return .closing(response.stream)
   }
 
   func open(
@@ -1541,17 +1637,13 @@ package actor InstantRuntimeLiveSession {
       pendingStreamFlushes[flushed.streamID]?.yield(flushed)
       if flushed.done {
         pendingStreamFlushes[flushed.streamID]?.finish()
-      }
-      if var writer = registeredStreamWriters[flushed.streamID] {
-        writer.buffer.removeAll { $0.endOffset <= flushed.offset }
-        if flushed.done {
-          registeredStreamWriters[flushed.streamID] = nil
-        } else {
-          registeredStreamWriters[flushed.streamID] = writer
+        // Upstream deletes the write stream once its end is flushed (`Stream.ts` `onStreamFlushed`).
+        for (localStreamID, writer) in registeredStreamWriters where writer.serverStreamID == flushed.streamID {
+          registeredStreamWriters[localStreamID] = nil
         }
       }
     case let .appendFailed(failed):
-      guard registeredStreamWriters[failed.streamID] == nil else {
+      guard !registeredStreamWriters.values.contains(where: { $0.serverStreamID == failed.streamID }) else {
         throw InstantError(
           code: .networkFailed,
           operation: "retry Instant live stream writer",

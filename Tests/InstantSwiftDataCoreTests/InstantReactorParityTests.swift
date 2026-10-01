@@ -1834,9 +1834,14 @@ struct InstantReactorParityTests {
         liveTransport: transport.transport
       )
     )
-    _ = try await runtime.signInAsGuest()
-    let metadata = try await runtime.createStream(clientID: "stream-reader-reconnect")
-    _ = try await runtime.appendStreamContent(streamID: metadata.id, content: "hello")
+    let auth = try await runtime.signInAsGuest()
+    let metadata = try await Self.storeReadStream(
+      runtime,
+      appID: "python-stream-reader-reconnect-parity",
+      userID: auth.userID,
+      clientID: "stream-reader-reconnect",
+      content: "hello"
+    )
     _ = try await runtime.connect()
 
     let observation = try await runtime.observeStreamContent(
@@ -1945,9 +1950,14 @@ struct InstantReactorParityTests {
         liveTransport: transport.transport
       )
     )
-    _ = try await runtime.signInAsGuest()
-    let metadata = try await runtime.createStream(clientID: "stream-append-retry")
-    _ = try await runtime.appendStreamContent(streamID: metadata.id, content: "hello")
+    let auth = try await runtime.signInAsGuest()
+    let metadata = try await Self.storeReadStream(
+      runtime,
+      appID: "python-stream-append-retry-parity",
+      userID: auth.userID,
+      clientID: "stream-append-retry",
+      content: "hello"
+    )
     _ = try await runtime.connect()
 
     let observation = try await runtime.observeStreamContent(streamID: metadata.id)
@@ -2026,9 +2036,14 @@ struct InstantReactorParityTests {
         liveTransport: transport.transport
       )
     )
-    _ = try await runtime.signInAsGuest()
-    let metadata = try await runtime.createStream(clientID: "stream-inline-append")
-    _ = try await runtime.appendStreamContent(streamID: metadata.id, content: "hello")
+    let auth = try await runtime.signInAsGuest()
+    let metadata = try await Self.storeReadStream(
+      runtime,
+      appID: "python-stream-inline-append-parity",
+      userID: auth.userID,
+      clientID: "stream-inline-append",
+      content: "hello"
+    )
     _ = try await runtime.connect()
 
     let observation = try await runtime.observeStreamContent(streamID: metadata.id)
@@ -2141,9 +2156,14 @@ struct InstantReactorParityTests {
       storageTransport: nil,
       streamFileTransport: fileTransport
     )
-    _ = try await runtime.signInAsGuest()
-    let metadata = try await runtime.createStream(clientID: "stream-file-append")
-    _ = try await runtime.appendStreamContent(streamID: metadata.id, content: "hello")
+    let auth = try await runtime.signInAsGuest()
+    let metadata = try await Self.storeReadStream(
+      runtime,
+      appID: "python-stream-file-append-parity",
+      userID: auth.userID,
+      clientID: "stream-file-append",
+      content: "hello"
+    )
     _ = try await runtime.connect()
 
     let observation = try await runtime.observeStreamContent(streamID: metadata.id)
@@ -2247,9 +2267,14 @@ struct InstantReactorParityTests {
         InstantStreamFileFetchResponse(statusCode: 503, data: Data())
       }
     )
-    _ = try await runtime.signInAsGuest()
-    let metadata = try await runtime.createStream(clientID: "stream-file-failure")
-    _ = try await runtime.appendStreamContent(streamID: metadata.id, content: "hello")
+    let auth = try await runtime.signInAsGuest()
+    let metadata = try await Self.storeReadStream(
+      runtime,
+      appID: "python-stream-file-failure-parity",
+      userID: auth.userID,
+      clientID: "stream-file-failure",
+      content: "hello"
+    )
     _ = try await runtime.connect()
 
     let observation = try await runtime.observeStreamContent(streamID: metadata.id)
@@ -3762,12 +3787,12 @@ extension InstantReactorParityTests {
   }
 }
 
-/// A stream written while the socket is closed never reaches the server. `createStream` makes a local-only stream with a
-/// client-made id when the live session is not open, the live session registers no writer for it, so `appendStream` and
-/// `finishStream` return without sending, and nothing starts it later. Upstream `Stream.ts` `createWriteStream` queues
-/// `start-stream` through `trySend` and restarts its write streams on reconnect, so the server gets the stream. Scribe
-/// publishes recording audio and images as streams (`InstantRecordingRealtime.synchronizeMedia`), so media synced
-/// offline reaches other devices as an asset row whose stream the server never gets. Pinned until the fix (#329).
+/// A stream written while the socket is closed reaches the server once it opens (#329). `createStream` made a local-only
+/// stream with a client-made id, the live session registered no writer for it, and nothing started it later. Upstream
+/// `Stream.ts` `createWriteStream` sends `start-stream` once the socket authenticates (`Reactor.js` `_trySendAuthed`)
+/// and restarts its write streams on reconnect. Scribe publishes recording audio and images as streams
+/// (`InstantRecordingRealtime.synchronizeMedia`), so media synced offline reached other devices as an asset row whose
+/// stream the server never got.
 extension InstantReactorParityTests {
   @Test
   func aStreamWrittenWhileOfflineStartsOnTheServerOnceConnected() async throws {
@@ -3790,17 +3815,79 @@ extension InstantReactorParityTests {
     expectNoDifference(sentWhileOffline, [], "Nothing is sent while the socket is closed.")
 
     _ = try await runtime.connect()
-    let ops = try await Self.sentOps(of: session, within: .seconds(2)) { $0.contains("start-stream") }
-    withKnownIssue("A stream written while offline never starts on the server (#329).") {
-      #expect(ops.contains("start-stream"), Comment(rawValue: typescriptOfflineStreamWriterSource))
-      #expect(ops.contains("append-stream"), Comment(rawValue: typescriptOfflineStreamWriterSource))
-    }
+    let ops = try await Self.sentOps(of: session) { $0.contains("start-stream") }
+    expectNoDifference(ops, ["init", "start-stream"], typescriptOfflineStreamWriterSource)
+    let start = try #require(await session.sentMessages().last)
+    expectNoDifference(start.fields["client-id"], .string("offline-writer"), typescriptOfflineStreamWriterSource)
+    await session.enqueue(
+      InstantLiveMessage(
+        op: "start-stream-ok",
+        clientEventID: start.clientEventID,
+        fields: [
+          "client-id": .string("offline-writer"),
+          "offset": .number(0),
+          "stream-id": .string("00000000-0000-0000-0000-000000000329"),
+        ]
+      )
+    )
+    _ = try await Self.sentOps(of: session) { $0.filter { $0 == "append-stream" }.count == 2 }
+    let appends = await session.sentMessages().filter { $0.op == "append-stream" }
+    expectNoDifference(
+      appends.map(\.fields),
+      [
+        [
+          "chunks": .array([.string("hello")]),
+          "done": .bool(false),
+          "offset": .number(0),
+          "stream-id": .string("00000000-0000-0000-0000-000000000329"),
+        ],
+        [
+          "chunks": .array([]),
+          "done": .bool(true),
+          "offset": .number(5),
+          "stream-id": .string("00000000-0000-0000-0000-000000000329"),
+        ],
+      ],
+      typescriptOfflineStreamWriterSource
+    )
     _ = try await runtime.closeConnection()
   }
 }
 
+/// A stream this device reads, stored as a reader device materializes one from the server
+/// (`InstantRuntime.applyLiveStreamAppend`), not as one it writes, which `createStream` records for the server (#329).
+extension InstantReactorParityTests {
+  static func storeReadStream(
+    _ runtime: InstantRuntime,
+    appID: String,
+    userID: String,
+    clientID: String,
+    content: String
+  ) async throws -> InstantStreamMetadata {
+    let streamID = UUID().uuidString.lowercased()
+    let createdAt = InstantTimestamp(milliseconds: 1_700_000_095_000)
+    _ = try await runtime.persistence.ensureStreamMetadata(
+      appID: appID,
+      streamID: streamID,
+      clientID: clientID,
+      userID: userID,
+      createdAt: createdAt
+    )
+    _ = try await runtime.persistence.appendStreamContent(
+      appID: appID,
+      streamID: streamID,
+      chunkID: UUID().uuidString.lowercased(),
+      content: content,
+      expectedOffset: 0,
+      userID: userID,
+      createdAt: createdAt
+    )
+    return try await runtime.streamMetadata(streamID: streamID)
+  }
+}
+
 private let typescriptOfflineStreamWriterSource =
-  "upstream/instant/client/packages/core/src/Stream.ts createWriteStream, startWriteStream (trySend), and the write streams' reconnect [Swift gap: a stream created with the socket closed stays local, and its appends and close are never sent.]"
+  "upstream/instant/client/packages/core/src/Stream.ts createWriteStream start, startWriteStream (trySend), and onConnectionReconnect [adapted: Swift keeps the stream's content and reconnect token in SQLite and resends from the server's offset after each connection opens; see docs/adr/0017-streams-written-offline.md.]"
 
 private let typescriptStreamRefusalSource =
   "upstream/instant/client/packages/core/src/Stream.ts onRecieveError (subscribe-stream) and Reactor.js _handleReceiveError [adapted: Swift's stream content observation is a non-throwing AsyncStream, so the refusal ends every observation that shares the refused reader instead of throwing into one iterator, and the refusal is recorded as a diagnostic.]"

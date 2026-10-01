@@ -758,6 +758,28 @@ package struct InstantServerApplyMetrics: Equatable, Sendable {
   }
 }
 
+/// A stream this device writes, with what it needs to bring the server's copy up to date (#329, ADR 0017).
+struct InstantStreamWriterRecord: Hashable, Codable, Sendable {
+  /// The id `createStream` returned on this device.
+  var streamID: String
+  var clientID: String
+  /// Lets this device restart the server's copy; the server accepts no other (`session.clj` `handle-start-stream!`).
+  /// `nil` until the stream first starts on the server: a stream written offline gets its token then.
+  var reconnectToken: String?
+  /// The id the server assigned, once a `start-stream-ok` named it.
+  var serverStreamID: String?
+}
+
+/// Where the server's copy of a stream this device writes stands.
+enum InstantStreamWriterState: String, Sendable {
+  /// The server may lack some of the stream or its close; each connection's catch-up sends what it lacks.
+  case catchingUp = "catching-up"
+  /// The server confirmed the close (`stream-flushed` with `done`).
+  case delivered
+  /// The server refused to start the stream; asking again cannot succeed.
+  case refused
+}
+
 /// What reading stream content from SQLite cost: the reads, and the stored chunks and bytes they decoded. A stream
 /// append must not re-read the whole stream to tell its observers (upstream `Stream.ts` pushes only the new chunk).
 package struct InstantStreamContentReadMetrics: Equatable, Sendable {
@@ -2153,6 +2175,33 @@ public actor SQLitePersistenceStore {
     try withSQLiteBusyRetry {
       try migrate(name: "0024_remove_entities_missing_their_id_fact") {
         try removeEntitiesMissingTheirIDFactWithoutTransaction()
+      }
+    }
+    try withSQLiteBusyRetry {
+      // The streams this device writes, and what the server has of them (#329, ADR 0017).
+      try migrate(name: "0025_stream_writers") {
+        try execute(
+          """
+          CREATE TABLE IF NOT EXISTS instant_stream_writers (
+            app_id TEXT NOT NULL,
+            stream_id TEXT NOT NULL,
+            client_id TEXT NOT NULL,
+            reconnect_token TEXT,
+            server_stream_id TEXT,
+            state TEXT NOT NULL,
+            refusal TEXT,
+            PRIMARY KEY (app_id, stream_id),
+            FOREIGN KEY (app_id, stream_id) REFERENCES instant_streams (app_id, stream_id)
+              ON DELETE CASCADE
+          )
+          """
+        )
+        try execute(
+          """
+          CREATE INDEX IF NOT EXISTS instant_stream_writers_state_idx
+          ON instant_stream_writers (app_id, state)
+          """
+        )
       }
     }
     // Test fixtures and app-owned restores can reconstruct `instant_outbox`
@@ -9368,34 +9417,77 @@ public actor SQLitePersistenceStore {
     createdAt: InstantTimestamp
   ) throws -> InstantStreamMetadata {
     try transaction {
-      if let existing = try streamMetadataWithoutTransaction(appID: appID, clientID: clientID) {
-        throw streamValidationError(
-          operation: "create stream",
-          localID: clientID,
-          message:
-            "Stream client id '\(clientID)' already belongs to stream '\(existing.id)'.",
-          recovery: "Choose a unique client id before creating another stream."
-        )
-      }
-      if try streamMetadataWithoutTransaction(appID: appID, streamID: streamID) != nil {
-        throw streamValidationError(
-          operation: "create stream",
-          localID: streamID,
-          message: "Stream id '\(streamID)' already exists.",
-          recovery: "Retry stream creation with a freshly generated stream id."
-        )
-      }
-      let metadata = InstantStreamMetadata(
-        id: streamID,
+      try createStreamWithoutTransaction(
         appID: appID,
+        streamID: streamID,
         clientID: clientID,
         userID: userID,
-        createdAt: createdAt,
-        updatedAt: createdAt
+        createdAt: createdAt
       )
-      try insertStreamMetadataWithoutTransaction(metadata)
+    }
+  }
+
+  /// Creates a stream this device writes while the server cannot name it, and records it for the server (#329).
+  func createWrittenStream(
+    appID: String,
+    streamID: String,
+    clientID: String,
+    userID: String,
+    createdAt: InstantTimestamp
+  ) throws -> InstantStreamMetadata {
+    try transaction {
+      let metadata = try createStreamWithoutTransaction(
+        appID: appID,
+        streamID: streamID,
+        clientID: clientID,
+        userID: userID,
+        createdAt: createdAt
+      )
+      try insertStreamWriterWithoutTransaction(
+        appID: appID,
+        streamID: streamID,
+        clientID: clientID,
+        reconnectToken: nil,
+        serverStreamID: nil
+      )
       return metadata
     }
+  }
+
+  private func createStreamWithoutTransaction(
+    appID: String,
+    streamID: String,
+    clientID: String,
+    userID: String,
+    createdAt: InstantTimestamp
+  ) throws -> InstantStreamMetadata {
+    if let existing = try streamMetadataWithoutTransaction(appID: appID, clientID: clientID) {
+      throw streamValidationError(
+        operation: "create stream",
+        localID: clientID,
+        message:
+          "Stream client id '\(clientID)' already belongs to stream '\(existing.id)'.",
+        recovery: "Choose a unique client id before creating another stream."
+      )
+    }
+    if try streamMetadataWithoutTransaction(appID: appID, streamID: streamID) != nil {
+      throw streamValidationError(
+        operation: "create stream",
+        localID: streamID,
+        message: "Stream id '\(streamID)' already exists.",
+        recovery: "Retry stream creation with a freshly generated stream id."
+      )
+    }
+    let metadata = InstantStreamMetadata(
+      id: streamID,
+      appID: appID,
+      clientID: clientID,
+      userID: userID,
+      createdAt: createdAt,
+      updatedAt: createdAt
+    )
+    try insertStreamMetadataWithoutTransaction(metadata)
+    return metadata
   }
 
   public func loadStreamMetadata(
@@ -9437,38 +9529,179 @@ public actor SQLitePersistenceStore {
     createdAt: InstantTimestamp
   ) throws -> InstantStreamMetadata {
     try transaction {
-      if let existing = try streamMetadataWithoutTransaction(appID: appID, streamID: streamID) {
-        guard existing.clientID == clientID else {
-          throw streamValidationError(
-            operation: "bootstrap stream metadata",
-            localID: streamID,
-            message:
-              "Stream '\(streamID)' is already associated with client id '\(existing.clientID)', not '\(clientID)'.",
-            recovery: "Reconnect using the client id returned by the canonical stream append."
-          )
-        }
-        return existing
-      }
-      if let existing = try streamMetadataWithoutTransaction(appID: appID, clientID: clientID) {
-        throw streamValidationError(
-          operation: "bootstrap stream metadata",
-          localID: clientID,
-          message:
-            "Stream client id '\(clientID)' already belongs to stream '\(existing.id)', not '\(streamID)'.",
-          recovery: "Reconnect the client-id reader and inspect the canonical stream id."
-        )
-      }
-      let metadata = InstantStreamMetadata(
-        id: streamID,
+      try ensureStreamMetadataWithoutTransaction(
         appID: appID,
+        streamID: streamID,
         clientID: clientID,
         userID: userID,
-        createdAt: createdAt,
-        updatedAt: createdAt
+        createdAt: createdAt
       )
-      try insertStreamMetadataWithoutTransaction(metadata)
+    }
+  }
+
+  /// Stores a stream this device writes, which the server started under `streamID`, and records it for the server
+  /// so a reconnect or relaunch can restart it (#329).
+  func ensureWrittenStreamMetadata(
+    appID: String,
+    streamID: String,
+    clientID: String,
+    reconnectToken: String,
+    userID: String,
+    createdAt: InstantTimestamp
+  ) throws -> InstantStreamMetadata {
+    try transaction {
+      let metadata = try ensureStreamMetadataWithoutTransaction(
+        appID: appID,
+        streamID: streamID,
+        clientID: clientID,
+        userID: userID,
+        createdAt: createdAt
+      )
+      try insertStreamWriterWithoutTransaction(
+        appID: appID,
+        streamID: streamID,
+        clientID: clientID,
+        reconnectToken: reconnectToken,
+        serverStreamID: streamID
+      )
       return metadata
     }
+  }
+
+  private func ensureStreamMetadataWithoutTransaction(
+    appID: String,
+    streamID: String,
+    clientID: String,
+    userID: String,
+    createdAt: InstantTimestamp
+  ) throws -> InstantStreamMetadata {
+    if let existing = try streamMetadataWithoutTransaction(appID: appID, streamID: streamID) {
+      guard existing.clientID == clientID else {
+        throw streamValidationError(
+          operation: "bootstrap stream metadata",
+          localID: streamID,
+          message:
+            "Stream '\(streamID)' is already associated with client id '\(existing.clientID)', not '\(clientID)'.",
+          recovery: "Reconnect using the client id returned by the canonical stream append."
+        )
+      }
+      return existing
+    }
+    if let existing = try streamMetadataWithoutTransaction(appID: appID, clientID: clientID) {
+      throw streamValidationError(
+        operation: "bootstrap stream metadata",
+        localID: clientID,
+        message:
+          "Stream client id '\(clientID)' already belongs to stream '\(existing.id)', not '\(streamID)'.",
+        recovery: "Reconnect the client-id reader and inspect the canonical stream id."
+      )
+    }
+    let metadata = InstantStreamMetadata(
+      id: streamID,
+      appID: appID,
+      clientID: clientID,
+      userID: userID,
+      createdAt: createdAt,
+      updatedAt: createdAt
+    )
+    try insertStreamMetadataWithoutTransaction(metadata)
+    return metadata
+  }
+
+  /// The streams `userID` writes on this device whose server copy may lack content or the close, oldest first.
+  func loadStreamWritersAwaitingServer(appID: String, userID: String) throws -> [InstantStreamWriterRecord] {
+    try readTransaction {
+      try selectJSON(
+        """
+        SELECT json_object(
+          'streamID', writers.stream_id,
+          'clientID', writers.client_id,
+          'reconnectToken', writers.reconnect_token,
+          'serverStreamID', writers.server_stream_id
+        )
+        FROM instant_stream_writers AS writers
+        JOIN instant_streams AS streams
+          ON streams.app_id = writers.app_id AND streams.stream_id = writers.stream_id
+        WHERE writers.app_id = ? AND writers.state = ? AND streams.user_id = ?
+        ORDER BY writers.rowid
+        """,
+        [.text(appID), .text(InstantStreamWriterState.catchingUp.rawValue), .text(userID)]
+      )
+    }
+  }
+
+  /// Whether this device writes the stream, as opposed to reading one another device writes.
+  func isWrittenStream(appID: String, streamID: String) throws -> Bool {
+    try readTransaction {
+      let found: String? = try selectScalar(
+        "SELECT stream_id FROM instant_stream_writers WHERE app_id = ? AND stream_id = ? LIMIT 1",
+        [.text(appID), .text(streamID)]
+      )
+      return found != nil
+    }
+  }
+
+  /// Stores the reconnect token a stream written offline presents at its first start, before it is sent.
+  func recordStreamWriterReconnectToken(appID: String, streamID: String, reconnectToken: String) throws {
+    try transaction {
+      try execute(
+        "UPDATE instant_stream_writers SET reconnect_token = ? WHERE app_id = ? AND stream_id = ?",
+        [.text(reconnectToken), .text(appID), .text(streamID)]
+      )
+    }
+  }
+
+  func recordStreamWriterServerStreamID(appID: String, streamID: String, serverStreamID: String) throws {
+    try transaction {
+      try execute(
+        "UPDATE instant_stream_writers SET server_stream_id = ? WHERE app_id = ? AND stream_id = ?",
+        [.text(serverStreamID), .text(appID), .text(streamID)]
+      )
+    }
+  }
+
+  /// Records that the server confirmed the stream's close, so no later connection restarts it.
+  func recordStreamWriterDelivered(appID: String, streamID: String) throws {
+    try transaction {
+      try execute(
+        "UPDATE instant_stream_writers SET state = ? WHERE app_id = ? AND stream_id = ?",
+        [.text(InstantStreamWriterState.delivered.rawValue), .text(appID), .text(streamID)]
+      )
+    }
+  }
+
+  /// Records that the server refused the stream, so no later connection asks again.
+  func recordStreamWriterRefused(appID: String, streamID: String, message: String) throws {
+    try transaction {
+      try execute(
+        "UPDATE instant_stream_writers SET state = ?, refusal = ? WHERE app_id = ? AND stream_id = ?",
+        [.text(InstantStreamWriterState.refused.rawValue), .text(message), .text(appID), .text(streamID)]
+      )
+    }
+  }
+
+  private func insertStreamWriterWithoutTransaction(
+    appID: String,
+    streamID: String,
+    clientID: String,
+    reconnectToken: String?,
+    serverStreamID: String?
+  ) throws {
+    try execute(
+      """
+      INSERT OR IGNORE INTO instant_stream_writers
+        (app_id, stream_id, client_id, reconnect_token, server_stream_id, state)
+      VALUES (?, ?, ?, ?, ?, ?)
+      """,
+      [
+        .text(appID),
+        .text(streamID),
+        .text(clientID),
+        reconnectToken.map { .text($0) } ?? .null,
+        serverStreamID.map { .text($0) } ?? .null,
+        .text(InstantStreamWriterState.catchingUp.rawValue),
+      ]
+    )
   }
 
   public func appendStreamContent(
@@ -9584,6 +9817,27 @@ public actor SQLitePersistenceStore {
     try readTransaction {
       guard try streamMetadataWithoutTransaction(appID: appID, streamID: streamID) != nil else { return nil }
       return try streamContentSizeWithoutTransaction(appID: appID, streamID: streamID)
+    }
+  }
+
+  /// Up to `limit` stored chunks of a stream that end after `offset`, in order: what a writer resends to a server
+  /// that holds `offset` bytes (#329).
+  func loadStreamContentChunks(
+    appID: String,
+    streamID: String,
+    endingAfter offset: Int64,
+    limit: Int
+  ) throws -> [InstantStreamContentChunk] {
+    try readTransaction {
+      try selectJSON(
+        """
+        SELECT json FROM instant_stream_content_chunks
+        WHERE app_id = ? AND stream_id = ? AND offset + byte_count > ?
+        ORDER BY offset, chunk_id
+        LIMIT ?
+        """,
+        [.text(appID), .text(streamID), .int(offset), .int(Int64(limit))]
+      )
     }
   }
 
