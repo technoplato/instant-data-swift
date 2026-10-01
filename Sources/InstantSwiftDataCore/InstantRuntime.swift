@@ -363,6 +363,9 @@ public struct InstantRuntimeConfiguration: Sendable {
     (@Sendable () async -> Void)? = nil
   package var onLiveSessionOpenedBeforeReceiverStartForTesting:
     (@Sendable () async -> Void)? = nil
+  /// Runs inside `observeAuthSession()` after it holds the operation gate, before its awaits (#303).
+  package var onAuthSessionObservationHoldsOperationGateForTesting:
+    (@Sendable () async -> Void)? = nil
   package var onLiveQueryUnregisterFailureBeforeConnectionErrorForTesting:
     (@Sendable () async -> Void)? = nil
   package var onLiveQueryOnceAcknowledgedForTesting:
@@ -1624,11 +1627,13 @@ public final class InstantRuntime: Sendable {
     liveRefreshAttributeContexts.buildCount
   }
 
+  @concurrent
   package func resetPersistenceCacheResidencyMetricsForTesting() async {
     storeAdoptionMetrics.reset()
     await persistence.resetCacheResidencyMetricsForTesting()
   }
 
+  @concurrent
   package func persistenceCacheResidencyMetricsForTesting() async
     -> InstantPersistenceCacheResidencyMetrics
   {
@@ -2058,6 +2063,7 @@ public final class InstantRuntime: Sendable {
   }
 
   @discardableResult
+  @concurrent
   public func transact(
     operations: [InstantTripleOperation],
     source: String = "local"
@@ -2071,6 +2077,7 @@ public final class InstantRuntime: Sendable {
   }
 
   @discardableResult
+  @concurrent
   public func transact(
     _ transaction: InstantStoreTransaction,
     createdAt: InstantTimestamp? = nil,
@@ -2576,6 +2583,7 @@ public final class InstantRuntime: Sendable {
   }
 
   @discardableResult
+  @concurrent
   public func applyServerTransaction(
     _ transaction: InstantStoreTransaction,
     processedTransactionID: String? = nil,
@@ -4227,6 +4235,7 @@ public final class InstantRuntime: Sendable {
   }
 
   @discardableResult
+  @concurrent
   public func applyLiveRefresh(
     _ refreshOK: InstantLiveRefreshOK,
     receivedAt: InstantTimestamp? = nil
@@ -4294,6 +4303,7 @@ public final class InstantRuntime: Sendable {
   }
 
   @discardableResult
+  @concurrent
   public func confirmMutationIfPresent(id: String) async throws -> PendingMutation? {
     await enterOperationGate()
     do {
@@ -4327,6 +4337,7 @@ public final class InstantRuntime: Sendable {
     }
   }
 
+  @concurrent
   package func acceptMutationIfPresent(
     id: String,
     serverTransactionID: String,
@@ -4480,6 +4491,7 @@ public final class InstantRuntime: Sendable {
 
   /// The attributes this device holds durably, as opposed to the ones a live session happens to
   /// be holding in memory.
+  @concurrent
   package func persistedStoreAttributes() async throws -> [InstantAttribute] {
     await enterOperationGate()
     do {
@@ -4572,6 +4584,7 @@ public final class InstantRuntime: Sendable {
   }
 
   @discardableResult
+  @concurrent
   package func rewriteResidentPersistenceSnapshotForTesting(
     name: String,
     transform: @Sendable (InstantPersistenceSnapshot) throws -> InstantPersistenceSnapshot
@@ -4645,6 +4658,7 @@ public final class InstantRuntime: Sendable {
     }
   }
 
+  @concurrent
   public func observe(
     _ plan: InstantQueryPlan,
     remotePageInfo: InstantQueryRemotePageInfo? = nil
@@ -4655,6 +4669,7 @@ public final class InstantRuntime: Sendable {
     ).stream
   }
 
+  @concurrent
   package func observeQueryLease(
     _ plan: InstantQueryPlan,
     remotePageInfo: InstantQueryRemotePageInfo? = nil
@@ -4666,12 +4681,14 @@ public final class InstantRuntime: Sendable {
     )
   }
 
+  @concurrent
   package func observeLocally(
     _ plan: InstantQueryPlan
   ) async -> AsyncStream<InstantQueryEmission> {
     await observeLocallyLease(plan).stream
   }
 
+  @concurrent
   package func observeLocallyLease(
     _ plan: InstantQueryPlan
   ) async -> InstantQueryObservationLease {
@@ -5376,6 +5393,7 @@ public final class InstantRuntime: Sendable {
     }
   }
 
+  @concurrent
   package func hydrateDeferredInfiniteQuerySnapshot(
     _ snapshot: InstantInfiniteQuerySnapshot,
     entityIDs: Set<String>,
@@ -5419,10 +5437,12 @@ public final class InstantRuntime: Sendable {
     }
   }
 
+  @concurrent
   public func query(_ plan: InstantQueryPlan) async throws -> [InstantEntitySnapshot] {
     try await queryOnce(plan).values
   }
 
+  @concurrent
   public func queryOnce(_ plan: InstantQueryPlan) async throws -> InstantQueryEmission {
     let startedAt = Date()
     do {
@@ -5588,10 +5608,12 @@ public final class InstantRuntime: Sendable {
     return emission
   }
 
+  @concurrent
   package func queryLocally(_ plan: InstantQueryPlan) async throws -> InstantQueryEmission {
     try await materializeLocalQueryOnce(plan, enforcesConnectionFreshness: false)
   }
 
+  @concurrent
   package func materializeLocalInfiniteQueryIdentity(
     _ plan: InstantQueryPlan
   ) async throws -> InstantQueryEmission {
@@ -5875,19 +5897,23 @@ public final class InstantRuntime: Sendable {
     return cachedQuery
   }
 
+  @concurrent
   public func cachedQuery(_ plan: InstantQueryPlan) async throws -> InstantCachedQuery? {
     recordActorHop(.persistence)
     return try await persistence.cachedQuery(cacheKey: plan.cacheKey)
   }
 
+  @concurrent
   public func cachedQueries() async throws -> [InstantCachedQuery] {
     try await persistence.loadQueryCache()
   }
 
+  @concurrent
   public func selectedAppID() async throws -> String? {
     try await persistence.loadMetadataValue(key: Self.selectedAppIDMetadataKey)
   }
 
+  @concurrent
   public func saveSelectedAppID(_ appID: String) async throws -> String {
     let appID = appID.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !appID.isEmpty else {
@@ -5913,6 +5939,7 @@ public final class InstantRuntime: Sendable {
     }
   }
 
+  @concurrent
   public func syncState() async throws -> InstantSyncState {
     InstantSyncState(
       processedTransactionID: try await persistence.loadMetadataValue(
@@ -5983,14 +6010,17 @@ public final class InstantRuntime: Sendable {
   /// SQLite hydration or WebSocket I/O. Public server-acceptance waiters poll durable state as
   /// their completion condition; they should not create an overlapping hydration pass on every
   /// poll tick.
+  @concurrent
   package func requestLiveMutationDelivery() async {
     await startLiveMutationDeliveryIfNeeded()
   }
 
+  @concurrent
   package func automaticMutationPumpIsIdleForTesting() async -> Bool {
     await mutationDeliveryPump.isIdleForTesting()
   }
 
+  @concurrent
   package func automaticMutationPumpIsSuspendedForTesting() async -> Bool {
     await mutationDeliveryPump.isSuspendedForTesting()
   }
@@ -6001,15 +6031,18 @@ public final class InstantRuntime: Sendable {
     automaticDeliveryClaimantID
   }
 
+  @concurrent
   package func liveReconnectControllerIsIdleForTesting() async -> Bool {
     await reconnectController.isIdleForTesting()
   }
 
   /// The live receiver has applied every frame it took from the socket and is waiting for the next one (#296).
+  @concurrent
   package func liveReceiverIsWaitingForAFrameForTesting() async -> Bool {
     await liveSession.applierIsWaitingForAFrameForTesting()
   }
 
+  @concurrent
   package func exactCloseBackgroundTasksAreIdleForTesting() async -> Bool {
     await exactCloseBackgroundTaskIdleState().allIdle
   }
@@ -6030,10 +6063,12 @@ public final class InstantRuntime: Sendable {
     )
   }
 
+  @concurrent
   package func operationGateWaiterCountForTesting() async -> Int {
     await operationGate.waiterCount
   }
 
+  @concurrent
   package func serverApplyGateWaiterCountForTesting() async -> Int {
     await serverApplyGate.waiterCount
   }
@@ -6042,10 +6077,12 @@ public final class InstantRuntime: Sendable {
     installedStoreRevisions.snapshot()
   }
 
+  @concurrent
   package func liveActiveQueryKeysForTesting() async -> Set<String> {
     await liveSession.activeQueryKeys()
   }
 
+  @concurrent
   package func liveQueryResultActiveKeysForTesting() async -> Set<String> {
     await liveQueryResultState.activeKeysForTesting()
   }
@@ -6106,6 +6143,7 @@ public final class InstantRuntime: Sendable {
     }
   }
 
+  @concurrent
   public func markProcessedTransaction(id transactionID: String) async throws -> InstantSyncState {
     let transactionID = transactionID.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !transactionID.isEmpty else {
@@ -6132,6 +6170,7 @@ public final class InstantRuntime: Sendable {
     }
   }
 
+  @concurrent
   public func connectionStatus() async throws -> InstantConnectionStatus {
     await operationGate.enter()
     do {
@@ -6147,6 +6186,7 @@ public final class InstantRuntime: Sendable {
     }
   }
 
+  @concurrent
   public func observeConnectionStatus() async throws -> AsyncStream<InstantConnectionStatus> {
     await operationGate.enter()
     do {
@@ -6164,6 +6204,7 @@ public final class InstantRuntime: Sendable {
   }
 
   @discardableResult
+  @concurrent
   public func connect() async throws -> InstantConnectionStatus {
     await reconnectController.cancelAndWait()
     return try await connectLiveSession(reportsFailure: true)
@@ -6414,6 +6455,7 @@ public final class InstantRuntime: Sendable {
   }
 
   @discardableResult
+  @concurrent
   public func closeConnection() async throws -> InstantConnectionStatus {
     // Latch every background producer before waiting on connection work. A
     // task that already owns the connection gate sees cancellation and leaves;
@@ -7512,6 +7554,7 @@ public final class InstantRuntime: Sendable {
   }
 
   @discardableResult
+  @concurrent
   package func sendOutstandingMutationsToLiveSession() async -> Bool {
     guard configuration.liveTransport != nil else { return true }
     let outstanding: InstantAutomaticOutboxTransportSelection
@@ -7872,11 +7915,13 @@ public final class InstantRuntime: Sendable {
     }
   }
 
+  @concurrent
   public func authSession() async throws -> InstantAuthSession? {
     try await persistence.loadAuthSession(key: authSessionKey)
   }
 
   @discardableResult
+  @concurrent
   public func syncUserCookieToEndpoint(
     _ session: InstantAuthSession?
   ) async throws -> InstantUserCookieSyncRequest? {
@@ -7936,9 +7981,11 @@ public final class InstantRuntime: Sendable {
     }
   }
 
+  @concurrent
   public func observeAuthSession() async throws -> AsyncStream<InstantAuthSession?> {
     await operationGate.enter()
     do {
+      await configuration.onAuthSessionObservationHoldsOperationGateForTesting?()
       let session = try await persistence.loadAuthSession(key: authSessionKey)
       let stream = await authSessionObservers.observe(current: session)
       await operationGate.leave()
@@ -7949,6 +7996,7 @@ public final class InstantRuntime: Sendable {
     }
   }
 
+  @concurrent
   public func signInAsGuest() async throws -> InstantAuthSession {
     let startedAt = Date()
     InstantDiagnostics.shared.record(
@@ -8016,6 +8064,7 @@ public final class InstantRuntime: Sendable {
     }
   }
 
+  @concurrent
   public func sendMagicCode(email rawEmail: String) async throws -> InstantMagicCodeChallenge {
     let email = try normalizedEmail(rawEmail, operation: "send magic code")
     let now = configuration.now()
@@ -8040,6 +8089,7 @@ public final class InstantRuntime: Sendable {
     }
   }
 
+  @concurrent
   public func signInWithMagicCode(
     email rawEmail: String,
     code rawCode: String
@@ -8047,6 +8097,7 @@ public final class InstantRuntime: Sendable {
     try await signInWithMagicCodeResult(email: rawEmail, code: rawCode).session
   }
 
+  @concurrent
   public func signInWithMagicCodeResult(
     email rawEmail: String,
     code rawCode: String,
@@ -8317,6 +8368,7 @@ public final class InstantRuntime: Sendable {
     return validated
   }
 
+  @concurrent
   public func signInWithRefreshToken(
     _ refreshToken: String,
     userID: String? = nil
@@ -8363,6 +8415,7 @@ public final class InstantRuntime: Sendable {
     return session
   }
 
+  @concurrent
   public func signInWithIDToken(
     clientName rawClientName: String,
     idToken rawIDToken: String,
@@ -8413,6 +8466,7 @@ public final class InstantRuntime: Sendable {
     return session
   }
 
+  @concurrent
   public func promoteGuestWithIDToken(
     clientName rawClientName: String,
     idToken rawIDToken: String,
@@ -8473,6 +8527,7 @@ public final class InstantRuntime: Sendable {
     }
   }
 
+  @concurrent
   public func signInWithOAuth(
     code rawCode: String,
     codeVerifier rawCodeVerifier: String? = nil
@@ -8520,6 +8575,7 @@ public final class InstantRuntime: Sendable {
     return session
   }
 
+  @concurrent
   public func promoteGuestWithOAuth(
     code rawCode: String,
     codeVerifier rawCodeVerifier: String? = nil
@@ -8719,10 +8775,12 @@ public final class InstantRuntime: Sendable {
     return url
   }
 
+  @concurrent
   public func signOut() async throws {
     try await signOut(invalidateToken: true)
   }
 
+  @concurrent
   public func signOut(invalidateToken: Bool = true) async throws {
     let signedOutAt = configuration.now()
     var invalidationRequest: InstantAuthTokenInvalidationRequest?
@@ -8758,6 +8816,7 @@ public final class InstantRuntime: Sendable {
     }
   }
 
+  @concurrent
   public func joinRoom(_ room: InstantRoomHandle = .default) async throws -> InstantRoomHandle {
     let room = try validatedRoom(room, operation: "join room")
     if configuration.liveTransport != nil {
@@ -8766,6 +8825,7 @@ public final class InstantRuntime: Sendable {
     return room
   }
 
+  @concurrent
   public func leaveRoom(_ room: InstantRoomHandle = .default) async throws -> InstantRoomHandle {
     let room = try validatedRoom(room, operation: "leave room")
     if configuration.liveTransport != nil {
@@ -8777,6 +8837,7 @@ public final class InstantRuntime: Sendable {
   }
 
   @discardableResult
+  @concurrent
   public func setPresence(
     room: InstantRoomHandle,
     userID: String? = nil,
@@ -8823,6 +8884,7 @@ public final class InstantRuntime: Sendable {
     }
   }
 
+  @concurrent
   public func roomPresence(room: InstantRoomHandle) async throws -> [InstantRoomPresenceMember] {
     let room = try validatedRoom(room, operation: "list room presence")
     let localMembers = try await persistence.loadRoomPresence(
@@ -8832,6 +8894,7 @@ public final class InstantRuntime: Sendable {
     return await combinedRoomPresence(localMembers, room: room)
   }
 
+  @concurrent
   public func observeRoomPresence(room: InstantRoomHandle) async throws
     -> AsyncStream<[InstantRoomPresenceMember]>
   {
@@ -8856,6 +8919,7 @@ public final class InstantRuntime: Sendable {
     }
   }
 
+  @concurrent
   public func leavePresence(room: InstantRoomHandle, userID: String? = nil) async throws -> String {
     let room = try validatedRoom(room, operation: "leave room presence")
 
@@ -8893,6 +8957,7 @@ public final class InstantRuntime: Sendable {
   }
 
   @discardableResult
+  @concurrent
   public func publishTopicMessage(
     room: InstantRoomHandle,
     topic rawTopic: String,
@@ -8946,6 +9011,7 @@ public final class InstantRuntime: Sendable {
     }
   }
 
+  @concurrent
   public func roomTopicMessages(
     room: InstantRoomHandle,
     topic rawTopic: String,
@@ -8973,6 +9039,7 @@ public final class InstantRuntime: Sendable {
     )
   }
 
+  @concurrent
   public func observeRoomTopicMessages(
     room: InstantRoomHandle,
     topic rawTopic: String
@@ -9021,6 +9088,7 @@ public final class InstantRuntime: Sendable {
     )
   }
 
+  @concurrent
   public func uploadFile(
     from sourceURL: URL,
     name rawName: String? = nil,
@@ -9035,6 +9103,7 @@ public final class InstantRuntime: Sendable {
     return try await savePreparedStoredFile(file, contentsOf: sourceURL)
   }
 
+  @concurrent
   public func uploadFileProgress(
     from sourceURL: URL,
     name rawName: String? = nil,
@@ -9053,6 +9122,7 @@ public final class InstantRuntime: Sendable {
   /// hung Swift 6.3 SIL `ClosureLifetimeFixup` for tens of minutes on this
   /// 13k-line primary. Reintroduce exact cancel/join on a smaller unit after
   /// InstantRuntime is split.
+  @concurrent
   package func uploadFileProgressLease(
     from sourceURL: URL,
     name rawName: String? = nil,
@@ -9235,6 +9305,7 @@ public final class InstantRuntime: Sendable {
     )
   }
 
+  @concurrent
   public func storedFiles() async throws -> [InstantStoredFile] {
     _ = try await resolvedFileUserID(operation: "list files")
     if storageTransport != nil, configuration.liveTransport != nil {
@@ -9249,6 +9320,7 @@ public final class InstantRuntime: Sendable {
     return try await persistence.loadStoredFiles(appID: configuration.appID)
   }
 
+  @concurrent
   public func storageSnapshot() async throws -> InstantStorageSnapshot {
     await operationGate.enter()
     do {
@@ -9261,6 +9333,7 @@ public final class InstantRuntime: Sendable {
     }
   }
 
+  @concurrent
   public func observeStoredFiles() async throws -> AsyncStream<[InstantStoredFile]> {
     if storageTransport != nil, configuration.liveTransport != nil {
       _ = try await resolvedFileUserID(operation: "observe files")
@@ -9308,6 +9381,7 @@ public final class InstantRuntime: Sendable {
     }
   }
 
+  @concurrent
   public func storedFileContents(
     id rawID: String,
     name rawName: String? = nil
@@ -9397,6 +9471,7 @@ public final class InstantRuntime: Sendable {
   }
 
   @discardableResult
+  @concurrent
   public func deleteStoredFile(id rawID: String) async throws -> InstantStoredFile {
     let id = try validatedNonEmpty(
       rawID,
@@ -9518,6 +9593,7 @@ public final class InstantRuntime: Sendable {
     return refreshToken
   }
 
+  @concurrent
   public func appendStreamChunk(
     streamID rawStreamID: String,
     payload: JSONValue
@@ -9561,6 +9637,7 @@ public final class InstantRuntime: Sendable {
     }
   }
 
+  @concurrent
   public func streamChunks(
     streamID rawStreamID: String,
     limit: Int? = nil,
@@ -9606,6 +9683,7 @@ public final class InstantRuntime: Sendable {
     }
   }
 
+  @concurrent
   public func observeStreamChunks(
     streamID rawStreamID: String,
     afterIndex: Int64? = nil
@@ -9670,6 +9748,7 @@ public final class InstantRuntime: Sendable {
     return mapped.stream
   }
 
+  @concurrent
   public func createStream(clientID rawClientID: String) async throws -> InstantStreamMetadata {
     let clientID = try validatedNonEmpty(
       rawClientID,
@@ -9723,6 +9802,7 @@ public final class InstantRuntime: Sendable {
     }
   }
 
+  @concurrent
   public func streamMetadata(streamID rawStreamID: String) async throws -> InstantStreamMetadata {
     let streamID = try validatedNonEmpty(
       rawStreamID,
@@ -9752,6 +9832,7 @@ public final class InstantRuntime: Sendable {
     }
   }
 
+  @concurrent
   public func streamMetadata(clientID rawClientID: String) async throws -> InstantStreamMetadata {
     let clientID = try validatedNonEmpty(
       rawClientID,
@@ -9781,6 +9862,7 @@ public final class InstantRuntime: Sendable {
     }
   }
 
+  @concurrent
   public func appendStreamContent(
     streamID rawStreamID: String,
     content: String,
@@ -9832,6 +9914,7 @@ public final class InstantRuntime: Sendable {
     }
   }
 
+  @concurrent
   public func closeStream(
     streamID rawStreamID: String,
     abortReason rawAbortReason: String? = nil
@@ -9876,6 +9959,7 @@ public final class InstantRuntime: Sendable {
     }
   }
 
+  @concurrent
   public func streamContent(
     streamID rawStreamID: String,
     byteOffset: Int64 = 0
@@ -9910,6 +9994,7 @@ public final class InstantRuntime: Sendable {
     }
   }
 
+  @concurrent
   public func streamContent(
     clientID rawClientID: String,
     byteOffset: Int64 = 0
@@ -9944,6 +10029,7 @@ public final class InstantRuntime: Sendable {
     }
   }
 
+  @concurrent
   public func observeStreamContent(
     streamID rawStreamID: String,
     byteOffset: Int64 = 0
@@ -9989,6 +10075,7 @@ public final class InstantRuntime: Sendable {
     }
   }
 
+  @concurrent
   public func observeStreamContent(
     clientID rawClientID: String,
     byteOffset: Int64 = 0
@@ -10090,6 +10177,7 @@ public final class InstantRuntime: Sendable {
     )
   }
 
+  @concurrent
   public func createShare(
     rootNamespace rawRootNamespace: String,
     rootID rawRootID: String
@@ -10152,6 +10240,7 @@ public final class InstantRuntime: Sendable {
     }
   }
 
+  @concurrent
   public func acceptShare(token rawToken: String) async throws -> InstantShareSnapshot {
     let token = try validatedNonEmpty(
       rawToken,
@@ -10184,6 +10273,7 @@ public final class InstantRuntime: Sendable {
     }
   }
 
+  @concurrent
   public func shares() async throws -> [InstantShareSnapshot] {
     await operationGate.enter()
     var gateIsHeld = true
@@ -10209,6 +10299,7 @@ public final class InstantRuntime: Sendable {
     }
   }
 
+  @concurrent
   public func observeShares() async throws -> AsyncStream<[InstantShareSnapshot]> {
     await operationGate.enter()
     var gateIsHeld = true
@@ -10248,6 +10339,7 @@ public final class InstantRuntime: Sendable {
     }
   }
 
+  @concurrent
   public func updateShareMembershipRole(
     shareID rawShareID: String,
     userID rawTargetUserID: String,
@@ -10327,6 +10419,7 @@ public final class InstantRuntime: Sendable {
     }
   }
 
+  @concurrent
   public func revokeShare(id rawShareID: String) async throws -> InstantShareSnapshot {
     let shareID = try validatedNonEmpty(
       rawShareID,
@@ -10791,18 +10884,21 @@ public final class InstantRuntime: Sendable {
     return lhs.id < rhs.id
   }
 
+  @concurrent
   public func pendingMutations() async -> [PendingMutation] {
     await durableOutboxMutations(
       statuses: [.pending]
     ) { [outbox] in await outbox.pending() }
   }
 
+  @concurrent
   public func failedMutations() async -> [PendingMutation] {
     await durableOutboxMutations(
       statuses: [.failed]
     ) { [outbox] in await outbox.all().filter { $0.status == .failed } }
   }
 
+  @concurrent
   public func pendingMutationCount() async -> Int {
     do {
       recordActorHop(.persistence)
@@ -10821,6 +10917,7 @@ public final class InstantRuntime: Sendable {
     }
   }
 
+  @concurrent
   public func observeMutationLifecycle(
     id rawID: String
   ) async throws -> AsyncStream<InstantMutationLifecycleEvent> {
@@ -10846,16 +10943,19 @@ public final class InstantRuntime: Sendable {
     )
   }
 
+  @concurrent
   public func outboxMutations() async -> [PendingMutation] {
     await durableOutboxMutations(
       statuses: [.pending, .failed]
     ) { [outbox] in await outbox.all().filter { $0.status != .confirmed } }
   }
 
+  @concurrent
   package func mutationDeliveryBarrierMutations() async -> [PendingMutation] {
     await outbox.all()
   }
 
+  @concurrent
   package func mutationDeliveryBarrierSummary() async throws
     -> InstantMutationDeliveryBarrierSummary
   {
@@ -10904,6 +11004,7 @@ public final class InstantRuntime: Sendable {
     await liveSession.mutationReservationCountsForTesting()
   }
 
+  @concurrent
   public func outboxTransportMutations(includeFailed: Bool = false) async
     -> [InstantTransportMutation]
   {
@@ -11050,6 +11151,7 @@ public final class InstantRuntime: Sendable {
     }
   }
 
+  @concurrent
   public func flushPendingMutations(limit: Int? = nil) async throws
     -> InstantMutationTransportFlushResult
   {
@@ -11559,6 +11661,7 @@ public final class InstantRuntime: Sendable {
   }
 
   @discardableResult
+  @concurrent
   public func confirmMutation(id: String) async throws -> PendingMutation {
     await enterOperationGate()
     do {
@@ -11592,6 +11695,7 @@ public final class InstantRuntime: Sendable {
   }
 
   @discardableResult
+  @concurrent
   public func failMutation(id: String, message: String) async throws -> PendingMutation {
     try await failMutation(
       id: id,
@@ -11603,6 +11707,7 @@ public final class InstantRuntime: Sendable {
   }
 
   @discardableResult
+  @concurrent
   package func failMutation(
     id: String,
     failure: InstantMutationFailure,
@@ -11629,6 +11734,7 @@ public final class InstantRuntime: Sendable {
   /// Reactor `_handleMutationError`.
   /// The live refusal path (an `error` frame for a claimed write) for tests, including its deferral of a component
   /// larger than one claim window to the next server apply.
+  @concurrent
   package func failClaimedMutationForTesting(
     id: String,
     message: String,
@@ -11870,6 +11976,7 @@ public final class InstantRuntime: Sendable {
   /// Cross-file query helpers use this gate-owning entry point so an external
   /// SQLite revision and the hot store actor become visible as one local state
   /// transition.
+  @concurrent
   package func attributesForInfiniteQueryValidation() async throws -> [InstantAttribute] {
     try await enterOperationGateUnlessCancelled(
       operation: "validate infinite query attributes"
@@ -12357,6 +12464,7 @@ public final class InstantRuntime: Sendable {
   /// durable failed row for diagnostics and retry by default, and only deleting it through this
   /// package-scoped acknowledgement boundary after the caller returns `.discard`.
   @discardableResult
+  @concurrent
   package func discardFailedMutation(
     id: String,
     allowingActiveDisposition: Bool = false
@@ -12473,6 +12581,7 @@ public final class InstantRuntime: Sendable {
     }
   }
 
+  @concurrent
   package func withAutomaticMutationRetrySuspended<Result: Sendable>(
     id: String,
     operation: @Sendable () async throws -> Result
@@ -12649,6 +12758,7 @@ public final class InstantRuntime: Sendable {
   }
 
   @discardableResult
+  @concurrent
   public func retryMutation(id: String) async throws -> PendingMutation {
     await operationGate.enter()
     do {
@@ -12669,6 +12779,7 @@ public final class InstantRuntime: Sendable {
   }
 
   @discardableResult
+  @concurrent
   package func retryFailedMutation(id: String) async throws -> PendingMutation {
     await operationGate.enter()
     do {
@@ -12706,6 +12817,7 @@ public final class InstantRuntime: Sendable {
   }
 
   @discardableResult
+  @concurrent
   public func drainPendingMutationsLocally(limit: Int? = nil) async throws -> [PendingMutation] {
     if let limit, limit < 0 {
       throw validationFailed(
@@ -12752,10 +12864,12 @@ public final class InstantRuntime: Sendable {
     }
   }
 
+  @concurrent
   public func localID(named name: String) async throws -> String {
     try await persistence.localID(named: name, makeID: configuration.makeID)
   }
 
+  @concurrent
   public func localIDs() async throws -> [InstantLocalID] {
     try await persistence.loadLocalIDs()
   }
@@ -12769,6 +12883,7 @@ public final class InstantRuntime: Sendable {
   ///
   /// Caches into ``InstantClientID/current`` for **synchronous** product reads
   /// after the first resolve (bootstrap / auth setup).
+  @concurrent
   public func clientID() async throws -> String {
     let id = try await localID(named: InstantClientID.name)
     InstantClientID.prepareCurrent(id)
