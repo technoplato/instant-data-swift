@@ -1,3 +1,9 @@
+## 2026-10-01 04:22:17 EDT — instant-data-swift `1ba0077985528f9633d987cedaa145baeb698452`
+End every stream observation behind a subscription the server refuses (Stream is missing), and pin the offline stream writer gap as a known issue (#303 #329).
+
+## 2026-10-01 03:46:22 EDT — instant-data-swift `2c4cf84b4b75365364f3b8fcecdc6030f6bdffb5`
+Close two pre-existing test races the build 77 gates hit (the flush timeout's idle check, the reclaim test's known-issue scope), and name a busy owner when the idle check fails (#303).
+
 ## 2026-10-01 02:33:57 EDT — instant-data-swift `778c793bb1fa5e19ace26e11f96e2f8ba4c53df1`
 Advertise @instantdb/core v0.22.75 so refresh-ok frames stop carrying the attrs (#303).
 

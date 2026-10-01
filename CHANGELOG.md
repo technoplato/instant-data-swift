@@ -10,6 +10,37 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## October 1st, 2026 at 4:23:01 a.m. EDT — `1ba007798552` End every stream observation behind a subscription the server refuses, and pin the offline stream writer gap (#303 #329)
+
+- **Implementation commit:** `1ba0077985528f9633d987cedaa145baeb698452`
+- **Change:** A subscription the server refuses now ends every stream observation behind it, and the offline stream writer gap is pinned as a known issue (#303 #329).
+- **Details:**
+  - A reader that subscribes before the writer creates the stream gets 400 Stream is missing. The live session retired the reader but never ended its observations, so Scribe's materializeMedia waited forever and every later recording's media waited behind it. The refusal now ends the observations that share the reader and logs stream.subscription-refused, as upstream Stream.ts onRecieveError closes the iterator; the reader records its event id before sending, as upstream startReadStream does.
+  - Tests: two observations sharing a refused subscription both end, no observer remains, and the session stays as it was (red before: still waiting after 3 s; 20 of 20 after). A stream written while offline sends only init after connect() (pinned, #329; fix planned for build 78).
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — endStreamContentObservations and liveStreamReaderKey
+  - `Sources/InstantSwiftDataCore/InstantRuntimeLiveSession.swift` — retireRejectedStreamReader returns the reader key; event id recorded before send
+  - `Sources/InstantSwiftDataCore/InstantSnapshotObservers.swift` — InstantStreamContentObservers.finish(where:)
+  - `Tests/InstantSwiftDataCoreTests/InstantReactorParityTests.swift` — refused subscription and offline writer tests
+- **User context (verbatim):**
+  > Yes, put the subscribe-stream fix in 77.
+- **SpecStory:** unavailable — Claude Code agent session (library-77); no SpecStory capture configured for this session.
+
+## October 1st, 2026 at 4:23:01 a.m. EDT — `2c4cf84b4b75` Close two pre-existing test races the build 77 gates hit, and name a busy owner when the flush idle check fails (#303)
+
+- **Implementation commit:** `2c4cf84b4b75365364f3b8fcecdc6030f6bdffb5`
+- **Change:** Two older test races the build 77 gates hit are closed, and the flush idle check names a busy owner (#303).
+- **Details:**
+  - Both races predate library-77: on 23a80571's code, run alone, the reclaim test failed 4 of 12 and the flush timeout test 2 of 12. The owner-name diagnostic named the startup cookie sync, a utility-priority bootstrap task still pending when the 30-45 ms test ended; the test now waits for bootstrap's background work before the flush.
+  - The reclaim test's automatic pump could reclaim the expired offer itself and report it outside the known-issue scope; the test now waits for the pump to go idle. Each test then passed 30 of 30 alone.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — exactCloseBackgroundTaskNonIdleOwnersForTesting
+  - `Tests/InstantSwiftDataCoreTests/InstantBoundedOutboxDeliveryTests.swift` — wait for bootstrap's startup work, name non-idle owners
+  - `Tests/InstantSwiftDataCoreTests/InstantLiveTransportTests.swift` — wait for the automatic pump before expiring the offer
+- **User context (verbatim):**
+  > At this load, rerun any timing or timeout failure alone before you count it, and note the load during each run.
+- **SpecStory:** unavailable — Claude Code agent session (library-77); no SpecStory capture configured for this session.
+
 ## October 1st, 2026 at 2:34:55 a.m. EDT — `778c793bb1fa` Advertise @instantdb/core v0.22.75 so refresh-ok frames stop carrying the attrs (#303)
 
 - **Implementation commit:** `778c793bb1fa5e19ace26e11f96e2f8ba4c53df1`
