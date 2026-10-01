@@ -37,6 +37,19 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 - **User context (verbatim):**
   > I don't really understand why it would do that, reconnecting song and dance or why what was causing the problem. Why couldn't it just reconnect? Yeah, why are the reconnects there in the first place?
 - **SpecStory:** unavailable — unavailable — Claude Code agent session (library-78); no SpecStory capture configured for this session.
+## October 1st, 2026 at 5:27:11 a.m. EDT — `f9cb539640f7` Apply a server transaction under an exclusive operation-gate hold once local writes have made every optimistic attempt stale, instead of ending the receive loop (#303)
+
+- **Implementation commit:** `f9cb539640f7a847bc6af046408efd206c1b1933`
+- **Change:** A server apply whose optimistic attempts all go stale because of this runtime's own local writes now applies once under an exclusive operation-gate hold instead of ending the receive loop (#303).
+- **Details:**
+  - Each attempt prepares outside the operation gate; dictation's local writes landed between the attempt's seed and its plan every time, so all five went stale and the apply threw. That ended the live receive loop, the reconnect re-sent in-flight writes, and the server refused them as replays (the experiment's large-store drop, and 9 refusals in 956fce52's lane of the A/B's first pair).
+  - The exclusive attempt makes local writes wait; a peer runtime on the same file can still make it stale, and then the apply throws, bounded as before. Diagnostics log the fallback and how long local writes waited. Tests: a same-runtime write after each seed (red before, the transaction now lands with the local writes on top); the peer test now expects six attempts.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — exclusive fallback after the optimistic attempts, maximumAttempts, diagnostics, seed-loaded testing hook
+  - `Tests/InstantSwiftDataCoreTests/InstantBoundedServerApplyRebaseTests.swift` — outpaced-local-writes test, peer test's attempt counts
+- **User context (verbatim):**
+  > Size a fix where exhausting the retries falls back to applying under an exclusive hold (local writes wait briefly) instead of throwing, so progress is guaranteed.
+- **SpecStory:** unavailable — Claude Code agent session (library-78 apply fallback); no SpecStory capture configured for this session.
 
 ## October 1st, 2026 at 4:23:01 a.m. EDT — `1ba007798552` End every stream observation behind a subscription the server refuses, and pin the offline stream writer gap (#303 #329)
 
