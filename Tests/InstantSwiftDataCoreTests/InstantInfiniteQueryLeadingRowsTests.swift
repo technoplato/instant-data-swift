@@ -378,6 +378,23 @@ actor InfiniteListModelServer {
   private(set) var receivedMessageCount = 0
   /// Every query the client adds or removes, every change, and the harness's notes, for failure messages.
   private var operationLog: [String] = []
+  /// While set, the answers to forward chunk queries (the list's order, after a cursor) wait for
+  /// `releaseForwardAnswers()`, so the leading watcher answers first, as the Mac's kickstarts showed (#388).
+  private var holdsForwardAnswers = false
+  private var heldForwardAnswers: [InstantLiveMessage] = []
+
+  func holdForwardAnswers() {
+    holdsForwardAnswers = true
+  }
+
+  func releaseForwardAnswers() {
+    holdsForwardAnswers = false
+    let held = heldForwardAnswers
+    heldForwardAnswers.removeAll()
+    held.forEach(enqueue)
+  }
+
+  var heldForwardAnswerCount: Int { heldForwardAnswers.count }
 
   func note(_ line: String) {
     operationLog.append(line)
@@ -494,17 +511,21 @@ actor InfiniteListModelServer {
       activeQueries.append(query)
       let result = result(for: query)
       operationLog.append("add \(Self.describe(query)) -> \(Self.describe(result))")
-      enqueue(
-        InstantLiveMessage(
-          op: "add-query-ok",
-          clientEventID: message.clientEventID,
-          fields: [
-            "q": query,
-            "processed-tx-id": .string(processedTransactionID),
-            "result": .array(result),
-          ]
-        )
+      let answer = InstantLiveMessage(
+        op: "add-query-ok",
+        clientEventID: message.clientEventID,
+        fields: [
+          "q": query,
+          "processed-tx-id": .string(processedTransactionID),
+          "result": .array(result),
+        ]
       )
+      if holdsForwardAnswers, isForwardChunkQuery(query) {
+        operationLog.append("  held until releaseForwardAnswers()")
+        heldForwardAnswers.append(answer)
+      } else {
+        enqueue(answer)
+      }
     case "remove-query":
       guard let query = message.fields["q"], let index = activeQueries.firstIndex(of: query) else { return }
       activeQueries.remove(at: index)
@@ -512,6 +533,14 @@ actor InfiniteListModelServer {
     default:
       break
     }
+  }
+
+  /// A query in the list's order that starts after a cursor: a forward chunk, not the starter or a reverse chunk.
+  private func isForwardChunkQuery(_ query: InstantLiveJSONValue) -> Bool {
+    let options = query.objectValue?["items"]?.objectValue?["$"]?.objectValue ?? [:]
+    let direction: InfiniteListOrder =
+      options["order"]?.objectValue?["value"]?.stringValue == "desc" ? .descending : .ascending
+    return direction == order && options["after"] != nil
   }
 
   private func refreshActiveQueries() {
