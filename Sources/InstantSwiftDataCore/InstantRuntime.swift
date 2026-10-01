@@ -1580,6 +1580,8 @@ public final class InstantRuntime: Sendable {
   private let liveQueryResultPruningCadence = InstantQueryCachePruningCadence()
   private let liveSession = InstantRuntimeLiveSession()
   private let liveQueryResultState = InstantLiveQueryResultState()
+  /// The attribute context of the latest live refresh, reused across frames that share the session's attrs (#303).
+  private let liveRefreshAttributeContexts = InstantLiveRefreshAttributeContextCache()
   private let liveQueryAcknowledgements = InstantLiveQueryAcknowledgementState()
   private let liveRoomPresenceState = InstantRuntimeLiveRoomPresenceState()
   private let activeRoomPresenceState = InstantRuntimeActiveRoomPresenceState()
@@ -1615,6 +1617,11 @@ public final class InstantRuntime: Sendable {
       storeRevision: storeRevision,
       attributeRevision: attributeRevision
     )
+  }
+
+  /// How many live refreshes built their attribute context instead of reusing the previous frame's (#303).
+  package func liveRefreshAttributeContextBuildCountForTesting() -> Int {
+    liveRefreshAttributeContexts.buildCount
   }
 
   package func resetPersistenceCacheResidencyMetricsForTesting() async {
@@ -4230,10 +4237,16 @@ public final class InstantRuntime: Sendable {
       try Task.checkCancellation()
       let seed = try await loadServerApplySeed(operationGateAlreadyHeld: false)
       let state = seed.state
+      let attributeContext = try liveRefreshAttributeContexts.context(
+        serverAttributes: refreshOK.attrs,
+        existingAttributes: state.snapshot.store.attributes,
+        localAttributeRevision: state.attributeRevision
+      )
       let translated = try InstantLiveRefreshTranslator.translate(
         refreshOK,
         existingAttributes: state.snapshot.store.attributes,
-        receivedAt: receivedAt
+        receivedAt: receivedAt,
+        attributeContext: attributeContext
       )
       let applied = try await performApplyServerTransaction(
         translated.transaction,

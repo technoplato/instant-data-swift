@@ -123,6 +123,63 @@ struct InstantLiveRefreshAttributeCostTests {
     print("LIVE_REFRESH_TRANSLATE_COST cpu_ms=\(cost.cpuMilliseconds) wall=\(cost.wall) (100 refreshes x 8 computations, \(attributes.count) attributes)")
   }
 
+  /// The schema as a server's `attrs` payload: Scribe's frames carried 447 of these before init advertised a core
+  /// version, and attr-less frames apply with the session's cached copy.
+  static func serverAttrs(for attributes: [InstantAttribute]) -> [InstantLiveJSONValue] {
+    attributes.map { attribute in
+      .object([
+        "id": .string("server-\(attribute.id)"),
+        "forward-identity": .array([
+          .string("identity-\(attribute.id)"), .string(attribute.namespace), .string(attribute.name),
+        ]),
+        "value-type": .string(attribute.valueType == .ref ? "ref" : "blob"),
+        "cardinality": .string(attribute.cardinality == .many ? "many" : "one"),
+        "unique?": .bool(attribute.isUnique),
+        "index?": .bool(attribute.isIndexed),
+      ])
+    }
+  }
+
+  /// #303: with the session's attrs in every frame, the attribute context (the attrs parsed and the schema lookups
+  /// rebuilt) cost more than the frame's rows. Reusing the context while the attrs and schema stay the same removes
+  /// that from every frame after the first.
+  @Test
+  func reusingTheAttributeContextRemovesThePerFrameAttributeCost() throws {
+    let attributes = Self.scribeShapedAttributes()
+    let attrs = Self.serverAttrs(for: attributes)
+    var refresh = Self.refresh(computationCount: 8, transactionID: "refresh")
+    refresh.attrs = attrs
+    let uncached = try ThreadCPUClock.measure {
+      for iteration in 0..<50 {
+        _ = try InstantLiveRefreshTranslator.translate(
+          refresh,
+          existingAttributes: attributes,
+          receivedAt: InstantTimestamp(milliseconds: Int64(iteration + 1))
+        )
+      }
+    }
+    let cache = InstantLiveRefreshAttributeContextCache()
+    let cached = try ThreadCPUClock.measure {
+      for iteration in 0..<50 {
+        let context = try cache.context(
+          serverAttributes: refresh.attrs,
+          existingAttributes: attributes,
+          localAttributeRevision: 1
+        )
+        _ = try InstantLiveRefreshTranslator.translate(
+          refresh,
+          existingAttributes: attributes,
+          receivedAt: InstantTimestamp(milliseconds: Int64(iteration + 1)),
+          attributeContext: context
+        )
+      }
+    }
+    expectNoDifference(cache.buildCount, 1)
+    print("LIVE_REFRESH_ATTRIBUTE_CONTEXT_COST uncached_cpu_ms=\(uncached.cpuMilliseconds) cached_cpu_ms=\(cached.cpuMilliseconds) (50 refreshes x 8 computations, \(attrs.count) server attrs over \(attributes.count) local attributes)")
+    // CPU time, not wall time, so host load does not decide it; the context was about half of each frame here.
+    #expect(cached.cpuMilliseconds < uncached.cpuMilliseconds * 0.8)
+  }
+
   @Test
   func mergingAnEmptyListCostsNothing() {
     var store = AttributeStore(attributes: Self.scribeShapedAttributes())

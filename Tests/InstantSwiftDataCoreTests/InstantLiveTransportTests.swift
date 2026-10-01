@@ -8098,3 +8098,99 @@ private enum InstantLiveStreamTestError: LocalizedError {
     "push failed"
   }
 }
+
+/// #303: every refresh-ok used to carry Scribe's 447 attrs, and every frame paid to parse them and rebuild the schema
+/// lookups, even for a frame without attrs, which applies with the session's cached ones. These pin that the
+/// translator builds the attribute context once per set of attrs and local schema, and rebuilds it when either changes.
+@Suite
+struct InstantLiveRefreshAttributeContextCacheTests {
+  static let createdAt = InstantTimestamp(milliseconds: 1_700_000_000_456)
+
+  static func refresh(_ index: Int, attrs: [InstantLiveJSONValue] = []) -> InstantLiveMessage {
+    .refreshOK(
+      clientEventID: "event-refresh-\(index)",
+      processedTransactionID: "server-tx-\(index)",
+      attrs: attrs,
+      computations: [
+        .todoJoinRowsComputation(
+          entityID: "cached-attrs-todo-\(index)",
+          text: "Todo \(index)",
+          isCompleted: false,
+          createdAt: createdAt,
+          processedTransactionID: "server-tx-\(index)"
+        )
+      ]
+    )
+  }
+
+  /// Connects a runtime to `messages` (after init-ok with the todo attrs and the query's add-query-ok) and waits until
+  /// the last refresh is applied.
+  static func applying(
+    _ refreshes: [InstantLiveMessage],
+    lastTransactionID: String,
+    suffix: String
+  ) async throws -> InstantRuntime {
+    let session = InstantRuntimeScriptedLiveSession(messages: [
+      .initOK(clientEventID: "event-init", attrs: .todoServerAttrs),
+      .addQueryOK(clientEventID: "event-query"),
+    ] + refreshes)
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "runtime-attribute-context-\(suffix)",
+        persistenceURL: temporaryLiveCacheURL(),
+        initialAttributes: TodoExample.attributes,
+        liveTransport: session.transport
+      )
+    )
+    let stream = await runtime.observe(TodoExample.query)
+    var iterator = stream.makeAsyncIterator()
+    _ = await iterator.next()
+    _ = try await runtime.connect()
+    for _ in 0..<1_000 {
+      if try await runtime.syncState().processedTransactionID == lastTransactionID { return runtime }
+      try await Task.sleep(for: .milliseconds(10))
+    }
+    Issue.record("The last refresh (\(lastTransactionID)) was not applied.")
+    return runtime
+  }
+
+  @Test
+  func attrLessRefreshesBuildTheAttributeContextOnce() async throws {
+    let runtime = try await Self.applying(
+      (1...10).map { Self.refresh($0) },
+      lastTransactionID: "server-tx-10",
+      suffix: "attr-less"
+    )
+    expectNoDifference(runtime.liveRefreshAttributeContextBuildCountForTesting(), 1)
+    _ = try await runtime.closeConnection()
+  }
+
+  @Test
+  func refreshesCarryingTheSameAttrsReuseTheAttributeContext() async throws {
+    let runtime = try await Self.applying(
+      (1...10).map { Self.refresh($0, attrs: .todoServerAttrs) },
+      lastTransactionID: "server-tx-10",
+      suffix: "same-attrs"
+    )
+    expectNoDifference(runtime.liveRefreshAttributeContextBuildCountForTesting(), 1)
+    _ = try await runtime.closeConnection()
+  }
+
+  @Test
+  func aNewServerAttributeRebuildsTheAttributeContextAndMergesIt() async throws {
+    let widened: [InstantLiveJSONValue] = .todoServerAttrs + [
+      .serverAttr(id: "server-todos-priority", namespace: "todos", name: "priority")
+    ]
+    let runtime = try await Self.applying(
+      [Self.refresh(1), Self.refresh(2), Self.refresh(3, attrs: widened), Self.refresh(4), Self.refresh(5)],
+      lastTransactionID: "server-tx-5",
+      suffix: "new-attribute"
+    )
+    // Built for the first frame, again for the widened attrs, and once more over the schema that merged the new
+    // attribute; the last frame reuses it.
+    expectNoDifference(runtime.liveRefreshAttributeContextBuildCountForTesting(), 3)
+    let attributes = try await runtime.persistence.loadCompactState().snapshot.store.attributes
+    #expect(attributes.contains { $0.namespace == "todos" && $0.name == "priority" })
+    _ = try await runtime.closeConnection()
+  }
+}
