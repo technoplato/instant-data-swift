@@ -5696,6 +5696,30 @@ public final class InstantRuntime: Sendable {
   private func queryOnceThroughLive(_ plan: InstantQueryPlan) async throws -> InstantQueryEmission {
     let query = try InstantLiveQueryEncoder.encode(plan)
     let registrationKey = try InstantLiveQueryEncoder.registrationKey(for: query)
+    // Library-78, item 7: rows already on the device answer without waiting on the socket. When a subscription of this
+    // exact query (same where, order, limit, cursors, fields, and includes) was answered by the server on the open
+    // socket and has not failed since, the store holds the server's result for it and every refresh since, which is
+    // what upstream's add-query-exists answer resolves to, minus the round trip. That round trip waited behind
+    // Scribe's backlog of server frames for 5 s and more (#307's Copy Transcript failure). Every other query asks the
+    // server as before; a local-only read stays the injected local-only client's job (ADR 0001).
+    recordActorHop(.liveSession)
+    if await liveSession.isAnsweredOnCurrentSocket(key: registrationKey) {
+      let pageInfo = await liveQueryPageInfo(for: registrationKey)
+      let emission = try await materializeLocalQueryOnce(
+        plan,
+        remotePageInfo: pageInfo.map(InstantQueryRemotePageInfo.ready)
+      )
+      InstantDiagnostics.shared.record(
+        .debug,
+        subsystem: "instant-swift-data-core",
+        category: "query",
+        event: "query-once.answered-from-subscription",
+        message: "Answered a one-shot query from the device: the server answered the same live query on this socket.",
+        metadata: ["registrationKey": registrationKey, "resultCount": String(emission.values.count)],
+        correlationID: plan.id
+      )
+      return emission
+    }
     await liveQueryResultState.retain(key: registrationKey)
     let cleanupOwner = InstantAsyncCancellationOwner(
       cancelAndWait: { [self] in
@@ -7594,6 +7618,8 @@ public final class InstantRuntime: Sendable {
           await liveQueryResultState.unload(key: registrationKey)
         }
         await liveQueryAcknowledgements.reject(key: registrationKey, error: rejection)
+        recordActorHop(.liveSession)
+        await liveSession.recordQueryFailed(key: registrationKey)
         // Upstream `notifyQueryError`: the query's observers see the error and keep their streams (#360).
         await liveQueryErrors.publish(rejection, for: registrationKey)
         // A healthy socket never reconnects, so a query that waited for the next `init-ok` waited forever (#360):

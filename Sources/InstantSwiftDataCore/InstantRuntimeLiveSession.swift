@@ -272,6 +272,10 @@ package actor InstantRuntimeLiveSession {
   /// Consecutive transient server errors of each live query, and its pending re-send on this socket (#360).
   private var queryResendAttempts: [String: Int] = [:]
   private var queryResends: [String: (id: UUID, task: Task<Void, Never>)] = [:]
+  /// The socket generation on which the server last answered each registered query (add-query-ok or
+  /// add-query-exists), cleared by a server error for it (library-78, item 7). While a query is answered on the open
+  /// socket, the store holds the server's result for it and every refresh since.
+  private var answeredQueryGenerations: [String: Int] = [:]
   private var serverAttributes: [InstantLiveJSONValue] = []
   private var inFlightMutationIDs: Set<String> = []
   private var inFlightMutationStepCounts: [String: Int] = [:]
@@ -944,6 +948,22 @@ package actor InstantRuntimeLiveSession {
   func recordQueryAnswered(key: String) {
     queryResendAttempts[key] = nil
     queryResends.removeValue(forKey: key)?.task.cancel()
+    if registeredQueries[key] != nil, isOpened {
+      answeredQueryGenerations[key] = generation
+    }
+  }
+
+  /// The server failed the live query `key`: until it answers again, its result on the device may be behind.
+  func recordQueryFailed(key: String) {
+    answeredQueryGenerations[key] = nil
+  }
+
+  /// Whether a registered query was answered by the server on the socket that is open now and has not failed since
+  /// (library-78, item 7). Upstream `Reactor.js` `queryOnce` asks the server even then and resolves on
+  /// add-query-exists with the same local result, a round trip that Scribe's backlog of server frames made take 5 s and
+  /// more.
+  func isAnsweredOnCurrentSocket(key: String) -> Bool {
+    isOpened && registeredQueries[key] != nil && answeredQueryGenerations[key] == generation
   }
 
   func pendingQueryResendCountForTesting() -> Int {
@@ -988,6 +1008,7 @@ package actor InstantRuntimeLiveSession {
   private func forgetQueryResend(key: String) {
     queryResendAttempts[key] = nil
     queryResends.removeValue(forKey: key)?.task.cancel()
+    answeredQueryGenerations[key] = nil
   }
 
   private func cancelQueryResends() {
