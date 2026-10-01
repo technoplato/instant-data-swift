@@ -1,3 +1,6 @@
+## 2026-10-01 15:07:01 EDT — instant-data-swift `4473db630827f86d3f1649964224b14dda5a7b38`
+Link one person's Instant identities, such as Apple and Google, through an app-level accountLinks row: the linked identity invites (or creates the row), the other joins and clears the invite, each write accepted before the next; refusals write nothing (#361).
+
 ## 2026-10-01 15:06:16 EDT — instant-data-swift `ea6764c7189f4daa2a6f4bae1dcfcfd0f8c69832`
 Sign a second identity in beside the primary client on its own temporary store and connection, so a sign-in proves another identity without promoting, linking, or replacing the primary's session; close() revokes only the tokens it minted (#361).
 

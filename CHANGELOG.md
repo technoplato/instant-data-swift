@@ -10,6 +10,21 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## October 1st, 2026 at 3:07:01 p.m. EDT — `4473db630827` Link one person's Instant identities through an app-level accountLinks row (#361)
+
+- **Implementation commit:** `4473db630827f86d3f1649964224b14dda5a7b38`
+- **Change:** One person's identities link through an app-level accountLinks row, an invite from the linked identity and a join from the other, each accepted before the next (#361).
+- **Details:**
+  - Instant links only guests and joins two provider sign-ins only on matching emails. An accountLinks row's members link (has many $users; reverse $users.accountLink, has one) lists one person's identities, with provider, linkedAtMs, and deviceName labels in membersJSON. The rules let an identity link only itself, so the linked identity writes the invite (or creates the row) through a twin of the primary's session, and the invited identity joins and clears the invite through its second sign-in.
+  - link() reads both identities from Instant first: the same link returns unchanged with no writes; different links refuse with no writes; the same account refuses. unlink() removes a member and its label, or deletes the row when fewer than two members would remain. Every read first checks the store declares the account-link schema and names the fix. permissionRulesTemplate publishes the rules verbatim. Failures name their step (connecting, reading the account link, inviting, joining, unlinking).
+  - Tests (fake websockets per temporary client, frames attributed to the refresh token that opened each socket): 18, including exact tx-steps for the create, invite, and join cases, the join held until the invite is accepted, an unanswered invite that sends no join and closes the twin, and a primary that registers the attributes. Red at a skeleton that threw; final run, load ~800: 183 tests in 35 suites passed.
+- **Files:**
+  - `Sources/InstantSwiftData/InstantAccountLinks.swift` — account links: attributes, rules template, read, link, unlink, schema check
+  - `Tests/InstantSwiftDataTests/InstantAccountLinksTests.swift` — the five link cases, refusals, timeout, unlink, schema, attributes, and rules tests
+- **User context (verbatim):**
+  > Let's add a functionality to link accounts then. If you have Apple, I want to be able to link it with Google as well so that we aggregate all these different recordings. So it's a library change and
+- **SpecStory:** unavailable — Claude Code agent session (account-linking-library); no SpecStory capture for this session
+
 ## October 1st, 2026 at 3:06:16 p.m. EDT — `ea6764c7189f` Sign a second identity in beside the primary client, on its own temporary store and connection (#361)
 
 - **Implementation commit:** `ea6764c7189f4daa2a6f4bae1dcfcfd0f8c69832`
