@@ -180,6 +180,27 @@ struct InstantLiveRefreshAttributeCostTests {
     #expect(cached.cpuMilliseconds < uncached.cpuMilliseconds * 0.8)
   }
 
+  /// #303: each server apply saved its query results inside the commit, and each save loaded and decoded every
+  /// attribute row. With Scribe's schema that is a full table read and JSON decode per result, under the operation
+  /// gate.
+  @Test
+  func liveResultSavesNoLongerReloadTheAttributeRows() async throws {
+    let url = FileManager.default.temporaryDirectory.appendingPathComponent("attribute-load-cost-\(UUID().uuidString).sqlite")
+    let store = try SQLitePersistenceStore(fileURL: url)
+    try await store.bootstrap()
+    try await store.saveSnapshot(InstantPersistenceSnapshot(store: InstantStoreSnapshot(attributes: Self.scribeShapedAttributes(), triples: [])))
+    // The work runs on the store's executor, so this compares wall time, back to back.
+    let clock = ContinuousClock()
+    let reload = try await clock.measure {
+      for _ in 0..<100 { _ = try await store.loadAttributesForTesting() }
+    }
+    let reuse = try await clock.measure {
+      for _ in 0..<100 { _ = try await store.attributesForLiveResultSaveForTesting() }
+    }
+    print("LIVE_RESULT_ATTRIBUTE_LOAD_COST reload_wall=\(reload) reuse_wall=\(reuse) (100 saves, \(Self.scribeShapedAttributes().count) attributes)")
+    #expect(reuse < reload / 2)
+  }
+
   @Test
   func mergingAnEmptyListCostsNothing() {
     var store = AttributeStore(attributes: Self.scribeShapedAttributes())

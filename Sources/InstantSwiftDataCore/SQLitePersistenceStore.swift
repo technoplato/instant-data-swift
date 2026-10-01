@@ -833,6 +833,13 @@ public actor SQLitePersistenceStore {
   private var terminalFailureMetadataMetrics = InstantTerminalFailureMetadataMetrics()
   private var failedMutationRetryMetrics = InstantFailedMutationRetryMetrics()
   private var serverApplyMetrics = InstantServerApplyMetrics()
+  /// The attributes a live-result save limits its rows with, reused while neither this connection nor another process
+  /// has written `instant_attributes` (#303). Every server apply used to load and decode every attribute row once per
+  /// query result it saved, inside the commit.
+  private var liveResultAttributes: (revision: Int64, generation: Int, attributes: [InstantAttribute])?
+  /// Bumped by every write to `instant_attributes` on this connection.
+  private var attributeWriteGeneration = 0
+  private var liveResultAttributeLoads = 0
   private var declaredRelationReconciliationLiveResultScanCount = 0
   private var installedDeclaredRelationStorageMarker:
     DeclaredRelationStorageReconciliationMarker?
@@ -913,6 +920,21 @@ public actor SQLitePersistenceStore {
 
   package func resetServerApplyMetricsForTesting() {
     serverApplyMetrics = InstantServerApplyMetrics()
+  }
+
+  /// How many live-result saves loaded the attributes from SQLite instead of reusing them (#303).
+  package func liveResultAttributeLoadCountForTesting() -> Int {
+    liveResultAttributeLoads
+  }
+
+  /// One full attribute load, as each live-result save did before it reused them; for cost tests.
+  package func loadAttributesForTesting() throws -> [InstantAttribute] {
+    try loadAttributesWithoutTransaction(tracesStartupCollection: false)
+  }
+
+  /// The attributes a live-result save uses now; for cost tests.
+  package func attributesForLiveResultSaveForTesting() throws -> [InstantAttribute] {
+    try attributesForLiveResultSaveWithoutTransaction()
   }
 
   package func serverApplyMetricsForTesting() -> InstantServerApplyMetrics {
@@ -2289,13 +2311,13 @@ public actor SQLitePersistenceStore {
         // Install retained metadata before deleting obsolete rows. All triple and live-query rows
         // have already moved, so no durable fact can be orphaned by the following deletes.
         for attribute in reconciledAttributes where durableByID[attribute.id] != attribute {
-          try execute(
+          try executeAttributeWrite(
             "INSERT OR REPLACE INTO instant_attributes (id, json) VALUES (?, ?)",
             [.text(attribute.id), .text(try encode(attribute))]
           )
         }
         for attributeID in durableByID.keys.sorted() where reconciledByID[attributeID] == nil {
-          try execute("DELETE FROM instant_attributes WHERE id = ?", [.text(attributeID)])
+          try executeAttributeWrite("DELETE FROM instant_attributes WHERE id = ?", [.text(attributeID)])
         }
       }
 
@@ -2662,7 +2684,7 @@ public actor SQLitePersistenceStore {
         }
         guard migrated != attribute else { continue }
         attributesChanged = true
-        try execute(
+        try executeAttributeWrite(
           "UPDATE instant_attributes SET json = ? WHERE id = ?",
           [.text(try encode(migrated)), .text(attribute.id)]
         )
@@ -4830,7 +4852,7 @@ public actor SQLitePersistenceStore {
           forIncomingAttributes: attributes
         )
         for attribute in attributes {
-          try execute(
+          try executeAttributeWrite(
             "INSERT OR REPLACE INTO instant_attributes (id, json) VALUES (?, ?)",
             [.text(attribute.id), .text(try encode(attribute))]
           )
@@ -13849,11 +13871,11 @@ public actor SQLitePersistenceStore {
     try invalidateDeclaredRelationStorageMarkerIfNeeded(
       replacingAttributes: snapshot.attributes
     )
-    try execute("DELETE FROM instant_attributes")
+    try executeAttributeWrite("DELETE FROM instant_attributes")
     try execute("DELETE FROM instant_triples")
 
     for attribute in snapshot.attributes {
-      try execute(
+      try executeAttributeWrite(
         "INSERT INTO instant_attributes (id, json) VALUES (?, ?)",
         [.text(attribute.id), .text(try encode(attribute))]
       )
@@ -14029,10 +14051,10 @@ public actor SQLitePersistenceStore {
     let attributes = Dictionary(uniqueKeysWithValues: snapshot.attributes.map { ($0.id, $0) })
 
     for id in previousAttributes.keys where attributes[id] == nil {
-      try execute("DELETE FROM instant_attributes WHERE id = ?", [.text(id)])
+      try executeAttributeWrite("DELETE FROM instant_attributes WHERE id = ?", [.text(id)])
     }
     for attribute in snapshot.attributes where previousAttributes[attribute.id] != attribute {
-      try execute(
+      try executeAttributeWrite(
         "INSERT OR REPLACE INTO instant_attributes (id, json) VALUES (?, ?)",
         [.text(attribute.id), .text(try encode(attribute))]
       )
@@ -14617,13 +14639,35 @@ public actor SQLitePersistenceStore {
     )
   }
 
+  /// Runs one statement that writes `instant_attributes`, and forgets the attributes live-result saves reuse.
+  private func executeAttributeWrite(_ sql: String, _ bindings: [SQLiteBinding] = []) throws {
+    attributeWriteGeneration &+= 1
+    try execute(sql, bindings)
+  }
+
+  /// The stored attributes, reused while this connection has not written them and the attribute revision another
+  /// process would bump is unchanged.
+  private func attributesForLiveResultSaveWithoutTransaction() throws -> [InstantAttribute] {
+    let revision = try loadMetadataRevisionWithoutTransaction(Self.attributeRevisionKey)
+    if let cached = liveResultAttributes,
+      cached.revision == revision,
+      cached.generation == attributeWriteGeneration
+    {
+      return cached.attributes
+    }
+    let attributes = try loadAttributesWithoutTransaction(tracesStartupCollection: false)
+    liveResultAttributeLoads += 1
+    liveResultAttributes = (revision, attributeWriteGeneration, attributes)
+    return attributes
+  }
+
   private func saveLiveQueryResultWithoutTransaction(
     _ result: InstantPersistedLiveQueryResult
   ) throws {
     try invalidateDeclaredRelationStorageMarkerIfNeeded(
       forAttributeIDs: Set(result.triples.map(\.attributeID))
     )
-    let attributes = try loadAttributesWithoutTransaction(tracesStartupCollection: false)
+    let attributes = try attributesForLiveResultSaveWithoutTransaction()
     var result = result
     result.triples = InstantLiveQueryNestedLimit.limitedTriples(
       queryKey: result.key,

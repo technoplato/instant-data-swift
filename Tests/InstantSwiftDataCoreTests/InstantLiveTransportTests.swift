@@ -8176,6 +8176,37 @@ struct InstantLiveRefreshAttributeContextCacheTests {
     _ = try await runtime.closeConnection()
   }
 
+  /// Each server apply saves its query results inside the commit, under the operation gate, and each save loaded and
+  /// decoded every attribute row to bound the result's nested includes.
+  @Test
+  func liveResultSavesReuseTheStoredAttributes() async throws {
+    let runtime = try await Self.applying(
+      (1...10).map { Self.refresh($0) },
+      lastTransactionID: "server-tx-10",
+      suffix: "live-result-attributes"
+    )
+    let loads = await runtime.persistence.liveResultAttributeLoadCountForTesting()
+    expectNoDifference(loads, 1)
+    _ = try await runtime.closeConnection()
+  }
+
+  @Test
+  func aMergedAttributeReachesTheNextLiveResultSave() async throws {
+    let widened: [InstantLiveJSONValue] = .todoServerAttrs + [
+      .serverAttr(id: "server-todos-priority", namespace: "todos", name: "priority")
+    ]
+    let runtime = try await Self.applying(
+      [Self.refresh(1), Self.refresh(2), Self.refresh(3, attrs: widened), Self.refresh(4), Self.refresh(5)],
+      lastTransactionID: "server-tx-5",
+      suffix: "live-result-merged-attribute"
+    )
+    // Loaded for the first save, again inside the commit that merged the new attribute, and once more after that
+    // commit bumped the attribute revision; the last frame reuses it.
+    let loads = await runtime.persistence.liveResultAttributeLoadCountForTesting()
+    expectNoDifference(loads, 3)
+    _ = try await runtime.closeConnection()
+  }
+
   @Test
   func aNewServerAttributeRebuildsTheAttributeContextAndMergesIt() async throws {
     let widened: [InstantLiveJSONValue] = .todoServerAttrs + [
