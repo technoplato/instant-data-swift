@@ -1,3 +1,15 @@
+## 2026-10-01 11:13:38 EDT — scribe `4fa312a517438062456ea809de285c9ff583d379`
+Record the Mac app's version and build stamp in the change log (#365).
+
+## 2026-10-01 11:09:14 EDT — scribe `3d695f3af249548fdc930f87e0c8bebe63acb07a`
+Stamp the Mac app with the iPhone's version and build: scripts/scribe_app_version.py reads the ScribeSharediOS target's MARKETING_VERSION and CURRENT_PROJECT_VERSION from project.yml (VERSION must agree); install_scribe_shared_app.sh reads them before building, records them in the provenance, stamps the wrapper's Info.plist, and refuses any other version before signing; Settings > About shows a Version row. Every Mac install had said 1.0 (1) (#365).
+
+## 2026-10-01 11:04:36 EDT — scribe `43569b3289526c41cd657608f748a6d5973e49d7`
+Correct plan 2026-10-01-mac-version's issue to #365; #364 is voice-actions' Private Cloud Compute issue.
+
+## 2026-10-01 10:57:12 EDT — scribe `4d2aa12a2893b2fdab215ac70e7eff0485a1677e`
+Plan the Mac app's version and build stamp and claim its paths, plan 2026-10-01-mac-version (cites #364 by mistake; the issue is #365).
+
 ## 2026-10-01 04:22:17 EDT — instant-data-swift `1ba0077985528f9633d987cedaa145baeb698452`
 End every stream observation behind a subscription the server refuses (Stream is missing), and pin the offline stream writer gap as a known issue (#303 #329).
 
