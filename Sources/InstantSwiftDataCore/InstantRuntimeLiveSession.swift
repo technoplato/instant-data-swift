@@ -234,7 +234,9 @@ package actor InstantRuntimeLiveSession {
 
   private struct RegisteredStreamReader: Sendable {
     var reader: InstantLiveStreamReaderState
-    var observerCount: Int
+    /// The observations sharing this reader. It unsubscribes when the last one ends; naming them, not counting them,
+    /// keeps an observation that ended after its reader was retired from ending a newer reader of the same key.
+    var observationIDs: Set<UUID>
   }
 
   private struct BufferedStreamAppend: Sendable {
@@ -994,6 +996,7 @@ package actor InstantRuntimeLiveSession {
 
   func registerStreamReader(
     key: String,
+    observationID: UUID,
     clientID: String? = nil,
     streamID: String? = nil,
     initialByteOffset: Int64,
@@ -1001,7 +1004,7 @@ package actor InstantRuntimeLiveSession {
     clientEventID: String
   ) async throws {
     if var registration = registeredStreamReaders[key] {
-      registration.observerCount += 1
+      registration.observationIDs.insert(observationID)
       registeredStreamReaders[key] = registration
       return
     }
@@ -1011,7 +1014,7 @@ package actor InstantRuntimeLiveSession {
       initialByteOffset: initialByteOffset,
       ruleParams: ruleParams
     )
-    registeredStreamReaders[key] = RegisteredStreamReader(reader: reader, observerCount: 1)
+    registeredStreamReaders[key] = RegisteredStreamReader(reader: reader, observationIDs: [observationID])
     guard let session, isOpened else { return }
     let message = try await reader.subscribeMessage(clientEventID: clientEventID)
     // Record the event id before sending, as upstream `Stream.ts` `startReadStream` registers the iterator before
@@ -1020,10 +1023,13 @@ package actor InstantRuntimeLiveSession {
     try await send(message, through: session)
   }
 
-  func unregisterStreamReader(key: String, clientEventID: String) async throws {
-    guard var registration = registeredStreamReaders[key] else { return }
-    if registration.observerCount > 1 {
-      registration.observerCount -= 1
+  func unregisterStreamReader(key: String, observationID: UUID, clientEventID: String) async throws {
+    guard var registration = registeredStreamReaders[key],
+      registration.observationIDs.remove(observationID) != nil
+    else {
+      return
+    }
+    guard registration.observationIDs.isEmpty else {
       registeredStreamReaders[key] = registration
       return
     }
@@ -1089,6 +1095,26 @@ package actor InstantRuntimeLiveSession {
       return await registration.reader.recordFileFetchFailure()
     }
     return .ignored
+  }
+
+  /// Deletes the reader whose subscription delivered the stream's end, and returns its key; `nil` when no reader owns
+  /// `clientEventID`.
+  ///
+  /// Upstream `Stream.ts` `onStreamAppend` deletes the reader at done, so no reconnect subscribes it again, and it
+  /// sends no `unsubscribe-stream` for it: for a stream already done when subscribed, the server registered no reader
+  /// and refuses one (`session.clj` `handle-subscribe-stream!` and `handle-unsubscribe-stream!`).
+  func retireFinishedStreamReader(clientEventID: String?) async -> String? {
+    guard let clientEventID else { return nil }
+    for key in registeredStreamReaders.keys.sorted() {
+      guard let registration = registeredStreamReaders[key],
+        await registration.reader.subscriptionEventID == clientEventID
+      else {
+        continue
+      }
+      registeredStreamReaders[key] = nil
+      return key
+    }
+    return nil
   }
 
   /// Retires the reader whose subscription the server refused, and returns its registration key so the runtime can end

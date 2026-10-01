@@ -9579,6 +9579,14 @@ public actor SQLitePersistenceStore {
     }
   }
 
+  /// The stored byte count of a stream, without reading its content; `nil` when the stream is not stored here.
+  func loadStreamContentByteCount(appID: String, streamID: String) throws -> Int64? {
+    try readTransaction {
+      guard try streamMetadataWithoutTransaction(appID: appID, streamID: streamID) != nil else { return nil }
+      return try streamContentSizeWithoutTransaction(appID: appID, streamID: streamID)
+    }
+  }
+
   public func createShare(
     _ share: InstantShare,
     ownerMembership: InstantShareMembership
@@ -14959,13 +14967,18 @@ public actor SQLitePersistenceStore {
     )
   }
 
+  /// Where a stream's content ends. Chunks are stored back to back (each append starts at the previous end), so the
+  /// chunk with the greatest offset ends the stream; the index finds it without summing every chunk, which made each
+  /// append cost the stream's length.
   private func streamContentSizeWithoutTransaction(appID: String, streamID: String) throws -> Int64
   {
     let value: String? = try selectScalar(
       """
-      SELECT CAST(COALESCE(SUM(byte_count), 0) AS TEXT)
+      SELECT CAST(offset + byte_count AS TEXT)
       FROM instant_stream_content_chunks
       WHERE app_id = ? AND stream_id = ?
+      ORDER BY offset DESC, byte_count DESC
+      LIMIT 1
       """,
       [.text(appID), .text(streamID)]
     )

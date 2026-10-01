@@ -7059,6 +7059,9 @@ public final class InstantRuntime: Sendable {
         }
       }
       await liveSession.recordDeliveredStreamAppend(delivery, seenOffset: seenOffset)
+      if delivery.done {
+        await retireFinishedStreamReader(delivery)
+      }
 
     case let .error(error):
       // Query and stream errors carry client event IDs too, but they are not
@@ -7393,12 +7396,13 @@ public final class InstantRuntime: Sendable {
   }
 
   private func applyLiveStreamAppend(_ append: InstantLiveStreamAppend) async throws -> Int64 {
-    var current = try await persistence.loadStreamContent(
+    // Only the stored byte count matters here, not the content: reading the whole stream for every append made each
+    // append cost the stream's length.
+    var storedByteCount = try await persistence.loadStreamContentByteCount(
       appID: configuration.appID,
-      streamID: append.streamID,
-      byteOffset: 0
+      streamID: append.streamID
     )
-    if current == nil {
+    if storedByteCount == nil {
       let userID = try await resolvedAuthenticatedUserID(
         operation: "bootstrap stream metadata",
         noun: "Stream"
@@ -7410,13 +7414,12 @@ public final class InstantRuntime: Sendable {
         userID: userID,
         createdAt: configuration.now()
       )
-      current = try await persistence.loadStreamContent(
+      storedByteCount = try await persistence.loadStreamContentByteCount(
         appID: configuration.appID,
-        streamID: append.streamID,
-        byteOffset: 0
+        streamID: append.streamID
       )
     }
-    guard let current else {
+    guard let seenOffset = storedByteCount else {
       throw InstantError(
         code: .persistenceFailed,
         operation: "bootstrap stream metadata",
@@ -7425,7 +7428,6 @@ public final class InstantRuntime: Sendable {
         recovery: "Inspect the local stream persistence transaction and retry the subscription."
       )
     }
-    let seenOffset = current.byteOffset + current.byteCount
     let materialization = try await InstantStreamFileAppendMaterializer.materialize(
       append,
       seenOffset: seenOffset,
@@ -9946,7 +9948,7 @@ public final class InstantRuntime: Sendable {
         abortReason: nil,
         clientEventID: configuration.makeID()
       )
-      try await publishStreamContentUpdates(streamID: streamID)
+      try await publishStreamContent(.appended(append.chunk, metadata: append.metadata))
       await operationGate.leave()
       return append
     } catch {
@@ -9991,7 +9993,7 @@ public final class InstantRuntime: Sendable {
         abortReason: normalizedAbortReason,
         clientEventID: configuration.makeID()
       )
-      try await publishStreamContentUpdates(streamID: streamID)
+      try await publishStreamContent(.closed(metadata))
       await operationGate.leave()
       return metadata
     } catch {
@@ -10108,6 +10110,7 @@ public final class InstantRuntime: Sendable {
         stream,
         key: Self.liveStreamReaderKey(.streamID(streamID), byteOffset: byteOffset),
         streamID: streamID,
+        initialRead: read,
         initialByteOffset: read.map { $0.byteOffset + $0.byteCount } ?? byteOffset
       )
     } catch {
@@ -10154,6 +10157,7 @@ public final class InstantRuntime: Sendable {
         stream,
         key: Self.liveStreamReaderKey(.clientID(clientID), byteOffset: byteOffset),
         clientID: clientID,
+        initialRead: read,
         initialByteOffset: read.map { $0.byteOffset + $0.byteCount } ?? byteOffset
       )
     } catch {
@@ -10201,12 +10205,17 @@ public final class InstantRuntime: Sendable {
     key: String,
     clientID: String? = nil,
     streamID: String? = nil,
+    initialRead: InstantStreamContentRead?,
     initialByteOffset: Int64
   ) async -> AsyncStream<InstantStreamContentRead> {
     guard configuration.liveTransport != nil else { return stream }
+    // A done stream changes no more, so its observation ends after the stored read (upstream closes a reader at done).
+    if initialRead?.done == true { return stream }
+    let observationID = UUID()
     do {
       try await liveSession.registerStreamReader(
         key: key,
+        observationID: observationID,
         clientID: clientID,
         streamID: streamID,
         initialByteOffset: initialByteOffset,
@@ -10220,11 +10229,23 @@ public final class InstantRuntime: Sendable {
       do {
         try await self.liveSession.unregisterStreamReader(
           key: key,
+          observationID: observationID,
           clientEventID: self.configuration.makeID()
         )
       } catch {
         await self.recordConnectionError(error)
       }
+    }
+  }
+
+  /// Deletes the reader whose subscription delivered the stream's end, as upstream `Stream.ts` `onStreamAppend` does
+  /// at done, so no reconnect subscribes it again and no unsubscribe follows. Its observations already ended with
+  /// the done read; this ends any that could not take it.
+  private func retireFinishedStreamReader(_ append: InstantLiveStreamAppend) async {
+    guard let readerKey = await liveSession.retireFinishedStreamReader(clientEventID: append.clientEventID)
+    else { return }
+    await streamContentObservers.finish { key, byteOffset in
+      Self.liveStreamReaderKey(key.selector, byteOffset: byteOffset) == readerKey
     }
   }
 
@@ -13499,21 +13520,22 @@ public final class InstantRuntime: Sendable {
     InstantSharesObservationKey(appID: configuration.appID, userID: userID)
   }
 
-  private func publishStreamContentUpdates(streamID: String) async throws {
-    guard let metadata = try await persistence.loadStreamMetadata(
-      appID: configuration.appID,
-      streamID: streamID
-    ) else { return }
+  /// Tells the observations of a stream about one write. Each extends the read it last received with the change, as
+  /// upstream `Stream.ts` hands a reader only the new bytes, so an append costs its own bytes, not a read of the whole
+  /// stream. Only an observation with no read yet, or one whose read does not line up with the change, reads the
+  /// stored stream.
+  private func publishStreamContent(_ change: InstantStreamContentChange) async throws {
+    let metadata = change.metadata
     let keys = [
-      streamContentObservationKey(streamID: streamID),
+      streamContentObservationKey(streamID: metadata.id),
       streamContentObservationKey(clientID: metadata.clientID),
     ]
     for key in keys {
-      let byteOffsets = await streamContentObservers.byteOffsets(for: key)
-      for byteOffset in byteOffsets {
+      let unextended = await streamContentObservers.publish(change, for: key)
+      for byteOffset in unextended.sorted() {
         if let read = try await persistence.loadStreamContent(
           appID: configuration.appID,
-          streamID: streamID,
+          streamID: metadata.id,
           byteOffset: byteOffset
         ) {
           await streamContentObservers.publish(read, for: key, byteOffset: byteOffset)
