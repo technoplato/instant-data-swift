@@ -10,6 +10,91 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## October 1st, 2026 at 5:21:37 p.m. EDT — `bc6a0c818358` Record a live query's answer before its acknowledgement, and pin the local-first queryOnce in the querySubs parity test (library-78 item 7, #317)
+
+- **Implementation commit:** `bc6a0c818358307eaa93f19cbe4e05efca782622`
+- **Change:** A live query's answer is recorded before its acknowledgement, so a queryOnce right after the rows appear answers from the device; the querySubs parity test pins the local-first queryOnce (library-78 item 7, #317).
+- **Details:**
+  - Item 7 left the querySubs parity test expecting upstream's add-query/add-query-exists round trip, and exposed a race: the acknowledgement was recorded before the answered flag, so a queryOnce in between sent add-query and waited for a second acknowledgement (a round trip; a 5 s hang against the scripted server).
+  - The answer is now recorded first and queryOnce reads the acknowledgement revision before the answered check. Tests wait for isAnsweredOnCurrentSocketForTesting before expecting a local answer. Four suites, three runs at load 860-990: 59 tests passed each time (1 known issue).
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — answer before acknowledgement; revision read first; testing hook
+  - `Tests/InstantSwiftDataCoreTests/InstantReactorParityTests.swift` — queryOnce of an answered subscription resolves locally
+  - `Tests/InstantSwiftDataCoreTests/InstantLocalFirstQueryOnceTests.swift` — wait for the recorded answer
+- **User context (verbatim):**
+  > fix this please so it works efficiently as as well as the typescript core library
+- **SpecStory:** unavailable — unavailable — Claude Code agent session (library-78); no SpecStory capture configured for this session.
+
+## October 1st, 2026 at 5:21:36 p.m. EDT — `95fba702b64f` Restart a stream writer on the same socket when the server refuses or cannot flush its append, instead of reconnecting (#329 #376)
+
+- **Implementation commit:** `95fba702b64f1973b53475fe97cf496dbc987c54`
+- **Change:** A stream writer whose append the server refuses or cannot flush restarts on the same socket instead of reconnecting it (#329 #376).
+- **Details:**
+  - With library-78's unrouted errors kept on the socket and the new stream writer, an append-stream refusal left the writer sending appends the server refuses until another reconnect; append-failed threw from the receive loop and closed a healthy socket.
+  - Upstream Stream.ts onAppendFailed restarts only the write stream on the same socket. markStreamWriterBehind takes the writer off the live path (appends wait in SQLite, a sent close goes out again, a waiting close fails at once), and the catch-up restarts it with its reconnect token and resends from the server's offset. Start-stream errors log as stream.start-error.
+  - Tests: aRefusedAppendRestartsTheWriterOnTheSameSocketFromTheServersOffset and anAppendTheServerCouldNotFlushRestartsTheWriterOnTheSameSocket, red on the merge and green here; InstantStreamRobustnessTests 14/14.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — stream error routing by original event; append-failed restarts the writer
+  - `Sources/InstantSwiftDataCore/InstantRuntimeLiveSession.swift` — markStreamWriterBehind; append-failed no longer throws
+  - `Tests/InstantSwiftDataCoreTests/InstantStreamRobustnessTests.swift` — two refused-append tests
+  - `docs/adr/0017-streams-written-offline.md` — stream errors no longer end the connection
+- **User context (verbatim):**
+  > Why couldn't it just reconnect? Yeah, why are the reconnects there in the first place?
+- **SpecStory:** unavailable — unavailable — Claude Code agent session (library-78); no SpecStory capture configured for this session.
+
+## October 1st, 2026 at 5:21:36 p.m. EDT — `0eb8f502cb48` Start streams written offline on the server once connected, named by their client id, with a durable reconnect token (#329, ADR 0017)
+
+- **Implementation commit:** `0eb8f502cb4863132924a539cd3b40637d47e0f6`
+- **Change:** A stream written offline starts on the server once connected, named by its client id, with a durable reconnect token (#329, ADR 0017; merged into build 78's library at 1f098e0c).
+- **Details:**
+  - 0eb8f502: a stream written offline starts on the server once a connection opens, named by its client id, with a durable reconnect token (migration 0025_stream_writers). The writer's catch-up runs beside the outbox, resends stored chunks from the server's offset, and no longer blocks connect() or closes the connection. Scribe must read media by asset.streamClientID.
+  - Merged into build 78's library at 1f098e0c; the source files merged without conflicts.
+- **Files:**
+  - `Sources/InstantSwiftData/InstantSwiftData.swift` — public stream API docs: local ids, client ids, what success waits for
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — stream writer catch-up beside the outbox
+  - `Sources/InstantSwiftDataCore/InstantRuntimeExactTaskOwner.swift` — catch-up owner in the exact-close idle state
+  - `Sources/InstantSwiftDataCore/InstantRuntimeLiveSession.swift` — writers without buffers; restart and catch-up
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — 0025_stream_writers and chunk pages
+  - `Tests/InstantSwiftDataCoreTests/InstantReactorParityTests.swift` — offline-stream parity test no longer a known issue
+  - `Tests/InstantSwiftDataCoreTests/InstantStreamRobustnessTests.swift` — offline writer tests
+  - `docs/adr/0017-streams-written-offline.md` — the client-id decision
+- **User context (verbatim):**
+  > I don't really understand why it would do that, reconnecting song and dance or why what was causing the problem.
+- **SpecStory:** unavailable — unavailable — Claude Code agent session (library-78); no SpecStory capture configured for this session.
+
+## October 1st, 2026 at 5:21:36 p.m. EDT — `378598c8f069` Tell stream observations each append instead of re-reading the whole stream, and retire a stream's reader at done (#329)
+
+- **Implementation commit:** `378598c8f0699d96a4ab8cf70eb51e8d27800dc7`
+- **Change:** An append tells each stream observation the new bytes instead of re-reading the whole stream, and a stream's reader is retired at done (#329; merged into build 78's library at 1f098e0c).
+- **Details:**
+  - 378598c8: an append extends each stream observation's last read instead of re-reading the whole stream (each read still holds the content from its offset, so Scribe's materializeMedia contract holds); chunk decodes per append with three observations fell from 5, 8, ... 122 to 0. A reader is retired at done, as upstream Stream.ts onStreamAppend does, and a stream already done locally is read without subscribing.
+  - Merged into build 78's library at 1f098e0c.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — incremental publish and finished-reader retirement
+  - `Sources/InstantSwiftDataCore/InstantRuntimeLiveSession.swift` — reader observation ids; retire at done
+  - `Sources/InstantSwiftDataCore/InstantSnapshotObservers.swift` — observations extended by each change
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — stored byte counts through the index
+- **User context (verbatim):**
+  > I don't really understand why it would do that, reconnecting song and dance or why what was causing the problem.
+- **SpecStory:** unavailable — unavailable — Claude Code agent session (library-78); no SpecStory capture configured for this session.
+
+## October 1st, 2026 at 5:21:35 p.m. EDT — `0adbe9727169` Commit the phone-shaped replay as a reusable gate: an opt-in test plus scripts that take the store and refusals (#296)
+
+- **Implementation commit:** `0adbe9727169e3e9182a5aee4ae9b80a66741ac8`
+- **Change:** The phone-shaped replay is a reusable gate: an opt-in test plus scripts that take the store and the refusals (#296; merged into build 78's library at 3196ad50).
+- **Details:**
+  - agent/claude-opus-5.5/library-78-phone-replay at 0eff1981: FAST-DRAIN 15.5's replay of Michael's pre-71 store through his 103 build-73 refusals, recovered from the session that wrote it and committed as an opt-in test (PhoneReplayGateTests, skipped unless INSTANT_PHONE_REPLAY_STORE is set) plus scripts/phone-replay (runner, refusal extractor, log comparator, README).
+  - On 956fce52 it reproduces every published count: 119 frames, 17 rebased, 26,288 bodies, 2,384 accepted and 103 refused, failed rows 116 to 219, and only recordings/clipboardEntries differing after a full restatement. The data stays outside the repository; the store path is an argument.
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/PhoneReplayGateTests.swift` — the replay gate, driven by environment variables
+  - `scripts/phone-replay/run-phone-replay.sh` — builds, replays a /tmp copy, compares with a reference log
+  - `scripts/phone-replay/compare-replay-logs.py` — exit 0 equal or better, 1 worse, 2 inputs differ
+  - `scripts/phone-replay/refused-mutation-ids.py` — extracts a session's refusals from the collector journal
+  - `scripts/phone-replay/README.md` — usage and the 956fce52 reproduction
+- **User context (verbatim):**
+  > fix this please so it works efficiently as as well as the typescript core library
+- **SpecStory:** unavailable — unavailable — Claude Code agent session (library-78); no SpecStory capture configured for this session.
+
 ## October 1st, 2026 at 3:45:08 p.m. EDT — `6dce825d80c3` Answer a one-shot query from the device when its exact subscription was answered on the open socket (library-78 item 7, #317 #307)
 
 - **Implementation commit:** `6dce825d80c3cdac96cf9e9ea11fc6dcc9b65cdf`

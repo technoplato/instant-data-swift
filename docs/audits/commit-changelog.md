@@ -1,3 +1,12 @@
+## 2026-10-01 17:20:19 EDT — instant-data-swift `bc6a0c818358307eaa93f19cbe4e05efca782622`
+Record a live query's answer before its acknowledgement and pin the local-first queryOnce in the querySubs parity test (library-78 item 7, #317).
+
+## 2026-10-01 17:19:58 EDT — instant-data-swift `95fba702b64f1973b53475fe97cf496dbc987c54`
+Restart a stream writer on the same socket when the server refuses or cannot flush its append, instead of reconnecting (upstream onAppendFailed) (#329 #376).
+
+## 2026-10-01 16:41:11 EDT — instant-data-swift `0eb8f502cb4863132924a539cd3b40637d47e0f6`
+Start streams written offline on the server once connected, named by their client id, with a durable reconnect token (#329, ADR 0017), merged into build 78's library at 1f098e0c.
+
 ## 2026-10-01 15:44:34 EDT — instant-data-swift `6dce825d80c3cdac96cf9e9ea11fc6dcc9b65cdf`
 Answer a one-shot query from the device when its exact subscription was answered on the open socket, instead of a 5 s round trip (library-78 item 7, #317 #307).
 
@@ -10,8 +19,14 @@ Resolve refused writes that are only duplicates: a re-send that accepted later w
 ## 2026-10-01 15:28:13 EDT — instant-data-swift `bc605468dcef5b0f5116429ddca0bbf903424097`
 Pin the same-session retry in the permission-service 500 test (#376).
 
+## 2026-10-01 14:57:04 EDT — instant-data-swift `378598c8f0699d96a4ab8cf70eb51e8d27800dc7`
+Tell stream observations each append instead of re-reading the whole stream, and retire a stream's reader at done (#329), merged into build 78's library at 1f098e0c.
+
 ## 2026-10-01 14:08:14 EDT — instant-data-swift `af2928d5d9c40d7f817b5c1e3ddd683b53052c7a`
 Record a refused write under one exclusive attempt when local writes made every attempt stale, instead of ending the receive loop; the measured exhaustion was failClaimedMutation, not acceptMutation (#303).
+
+## 2026-10-01 13:51:16 EDT — instant-data-swift `0adbe9727169e3e9182a5aee4ae9b80a66741ac8`
+Commit the phone-shaped replay as a reusable gate (PhoneReplayGateTests + scripts/phone-replay; runner fix 970d8db0), merged into build 78's library at 3196ad50; it reproduces FAST-DRAIN 15.5's published counts on 956fce52 (#296).
 
 ## 2026-10-01 13:51:01 EDT — instant-data-swift `8dd3bf28a6bb2a25aed21980ff24c7bdc23382aa`
 Keep the socket on transient server errors: a write or live query the server answers with a 5xx or timeout is retried on the same socket with a growing, jittered backoff, and its subscribers see the error without their streams ending; unrouted errors keep the socket (#376 #360).
