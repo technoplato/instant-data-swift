@@ -1,3 +1,6 @@
+## 2026-10-01 15:44:34 EDT — instant-data-swift `6dce825d80c3cdac96cf9e9ea11fc6dcc9b65cdf`
+Answer a one-shot query from the device when its exact subscription was answered on the open socket, instead of a 5 s round trip (library-78 item 7, #317 #307).
+
 ## 2026-10-01 15:38:48 EDT — instant-data-swift `aa1cca45cc816986647526fc9e693358df236a69`
 Prune inactive live-query results in bounded batches so a local write waits for one batch, not the whole prune (#303).
 

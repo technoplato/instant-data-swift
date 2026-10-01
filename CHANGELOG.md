@@ -10,6 +10,22 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## October 1st, 2026 at 3:45:08 p.m. EDT — `6dce825d80c3` Answer a one-shot query from the device when its exact subscription was answered on the open socket (library-78 item 7, #317 #307)
+
+- **Implementation commit:** `6dce825d80c3cdac96cf9e9ea11fc6dcc9b65cdf`
+- **Change:** A one-shot query is answered from the device when its exact subscription was answered by the server on the open socket (library-78 item 7, #317 #307).
+- **Details:**
+  - queryOnce sent add-query and waited up to 5 s even for a subscribed, answered query, as upstream does (add-query-exists); behind Scribe's frame backlog that failed Copy Transcript at 5,004 ms (#307), and the Watch's startup reads stalled behind the socket (#317).
+  - The live session records the generation on which each registered query was last answered and clears it on a server error, retirement, unregistration, and every new socket; queryOnce reads the store with the subscription's page info only then. Every other query asks the server as before (ADR 0001 allows reusing applicable local state while connected).
+  - Tests: InstantLocalFirstQueryOnceTests (red with the branch disabled: a second add-query; green: ['init', 'add-query'] on the wire), plus the other-query and after-error cases.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — queryOnceThroughLive answers from an answered subscription; failures clear it
+  - `Sources/InstantSwiftDataCore/InstantRuntimeLiveSession.swift` — answered generations per registered query
+  - `Tests/InstantSwiftDataCoreTests/InstantLocalFirstQueryOnceTests.swift` — item 7 tests
+- **User context (verbatim):**
+  > fix this please so it works efficiently as as well as the typescript core library
+- **SpecStory:** unavailable — unavailable — Claude Code agent session (library-78); no SpecStory capture configured for this session.
+
 ## October 1st, 2026 at 3:39:12 p.m. EDT — `aa1cca45cc81` Prune inactive live-query results in bounded batches so a local write waits for one batch, not the whole prune (#303)
 
 - **Implementation commit:** `aa1cca45cc816986647526fc9e693358df236a69`
