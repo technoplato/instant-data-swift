@@ -1,3 +1,12 @@
+## 2026-10-01 08:44:01 EDT — scribe `ccb05eab20fe4cb2bfc3888d83800783b1f19da4`
+Record the refused-write recovery tool in the change log (#332).
+
+## 2026-10-01 08:39:15 EDT — scribe `79e3c6a160745f9244d11ea6e2583d4f72e45803`
+The outbox recovery tool folds chosen failed rows with per-value write stamps (a refused value production superseded is never written back), adds --plan-only (no token), terminates chunks with production's samples, uploads attachment bytes to the row's storageName before writing the row, and writes one entity per transaction with a re-read, journal, and verification. Used for the 2026-09-26/27 recovery Michael approved: 19 owner writes, 0 refused (#332).
+
+## 2026-10-01 08:24:36 EDT — scribe `3e70cacac4b921d22f57d7ea8127b1ac898347e9`
+Plan the Sept 26-27 recovery into production and claim the outbox recovery tool's paths, plan 2026-10-01-recovery-0926 (#332).
+
 ## 2026-09-30 20:35:50 EDT — scribe `ce0f01801274fc22c6c02e3a4df53c2dae87e688`
 Record the Account screen without the demo counters in the change log (#289).
 
