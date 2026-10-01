@@ -2868,7 +2868,9 @@ public final class InstantRuntime: Sendable {
               continue
 
             case let .materialized(materializedRollback):
-              rollback = materializedRollback
+              // A refused write is removed for good: what it restores is the base as this device knows it, so the
+              // server facts applied next must win against it (#296).
+              rollback = mutation.status == .failed ? Self.restoredAsBase(materializedRollback) : materializedRollback
             }
             prepared = try await hydrateDeferredValuesForServerApply(
               [rollback],
@@ -3907,7 +3909,7 @@ public final class InstantRuntime: Sendable {
         let slotOperations = operationsBySlot[slot] ?? []
         guard let nextWriterID = nextWriterBySlot[slot] else {
           // No surviving write replaces the slot: the store goes back to the refused write's before-image.
-          splice.storeOperations.append(contentsOf: slotOperations)
+          splice.storeOperations.append(contentsOf: restoredAsBase(slotOperations))
           continue
         }
         guard attributes[slot.attributeID]?.cardinality == .one,
@@ -3921,7 +3923,7 @@ public final class InstantRuntime: Sendable {
         guard beforeImage.count <= 1 else { return nil }
         var rebase = splice.receiptRebases[nextWriterID] ?? InstantServerApplyFailureSplice.ReceiptRebase()
         if let fact = beforeImage.first {
-          rebase.baseFacts.append(fact)
+          rebase.baseFacts.append(restoredAsBase(fact))
         } else {
           rebase.absentSlots.insert(slot)
         }
@@ -3930,6 +3932,32 @@ public final class InstantRuntime: Sendable {
       splice.removedFailedIDs.insert(failedID)
     }
     return splice
+  }
+
+  /// A refused write's restored facts, stamped so that any server fact wins against them under last-write-wins (#296).
+  ///
+  /// Removing a refused write restores what lay beneath it: base facts, or the values of an earlier pending write,
+  /// which still shows through its own receipt. Upstream shows the server's results with the remaining pending writes
+  /// on top, and a refused write leaves nothing behind, so the server's facts must win against what it restores. The
+  /// restored facts can carry this device's stamps, and Instant stamps a cardinality-one fact with the time its slot
+  /// was first set (an update keeps `created_at`), so a device stamp usually wins. The differential test's seed 15
+  /// showed a final segment as not final after a refused replay, whether the splice or the whole-component rebase
+  /// removed the write.
+  static func restoredAsBase(_ rollback: InstantStoreTransaction) -> InstantStoreTransaction {
+    InstantStoreTransaction(id: rollback.id, operations: restoredAsBase(rollback.operations))
+  }
+
+  static func restoredAsBase(_ operations: [InstantTripleOperation]) -> [InstantTripleOperation] {
+    operations.map { operation in
+      guard case let .insert(triple) = operation else { return operation }
+      return .insert(restoredAsBase(triple))
+    }
+  }
+
+  static func restoredAsBase(_ triple: InstantTriple) -> InstantTriple {
+    var triple = triple
+    triple.txTime = InstantTimestamp(milliseconds: 0)
+    return triple
   }
 
   /// The rollback receipt `mutation` would carry had it been prepared over `baseFacts` (#296), the receipt a
@@ -12088,10 +12116,12 @@ public final class InstantRuntime: Sendable {
       prepared = next
     }
 
+    // What a refused write restores is the base as this device knows it; server facts must win against it (#296).
+    let restoredFailure = Self.restoredAsBase(failedRollback)
     let removedFailure = if let prepared {
-      try await store.prepare(failedRollback, applyingTo: prepared)
+      try await store.prepare(restoredFailure, applyingTo: prepared)
     } else {
-      try await store.prepare(failedRollback, applyingTo: hydratedSnapshot)
+      try await store.prepare(restoredFailure, applyingTo: hydratedSnapshot)
     }
     changedEntityIDs.formUnion(removedFailure.result.changedEntityIDs)
     changedFactScope.formUnion(
@@ -12226,10 +12256,12 @@ public final class InstantRuntime: Sendable {
       prepared = next
     }
 
+    // What a refused write restores is the base as this device knows it; server facts must win against it (#296).
+    let restoredFailure = Self.restoredAsBase(failedRollback)
     let removedFailure = if let prepared {
-      try await store.prepare(failedRollback, applyingTo: prepared)
+      try await store.prepare(restoredFailure, applyingTo: prepared)
     } else {
-      try await store.prepare(failedRollback, applyingTo: hydratedSnapshot)
+      try await store.prepare(restoredFailure, applyingTo: hydratedSnapshot)
     }
     changedEntityIDs.formUnion(removedFailure.result.changedEntityIDs)
     changedFactScope.formUnion(

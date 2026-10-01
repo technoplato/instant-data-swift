@@ -1017,7 +1017,42 @@ extension InstantFastDrainTests {
         let transactionID = pair.reduced.server.acceptForeignWrite(entityID: entityID, attributeID: attributeID, value: value)
         _ = pair.full.server.acceptForeignWrite(entityID: entityID, attributeID: attributeID, value: value)
         try await pair.frame(queries: pair.reduced.server.queries(touching: [entityID]), processedTransactionID: transactionID)
-      case 63...70:
+      case 67...70:
+        // Several refusals in one window before any frame, as Michael's iPhone refused build 72's unanswered offers
+        // (a create and the update after it, summaries sharing slots). The refused writes' first offers are on the
+        // server, and the other writes of the window are accepted. Seed 15 of the Scribe-shaped run found a stale
+        // value here (see aRefusedReplayLeavesTheServersValueOnBothPaths).
+        guard let claimed = try await pair.claim(random.int(4...8)), claimed.count >= 2 else { continue }
+        let refusedCount = random.int(2...min(4, claimed.count))
+        var refusedIndices: Set<Int> = []
+        let start = random.int(0...(claimed.count - 1))
+        for offset in 0..<refusedCount where random.chance(70) || refusedIndices.isEmpty {
+          refusedIndices.insert((start + offset) % claimed.count)
+        }
+        event = "refuse \(refusedIndices.count) of \(claimed.count) before a frame"
+        for (index, item) in claimed.enumerated() {
+          let transactionID = pair.reduced.server.accept(item.mutation.transaction.operations)
+          _ = pair.full.server.accept(item.mutation.transaction.operations)
+          pair.appliedMutationIDs.insert(item.mutation.id)
+          if refusedIndices.contains(index) {
+            _ = try await pair.reduced.runtime.failClaimedMutationForTesting(
+              id: item.mutation.id, message: "Permission denied: not perms-pass?", claimToken: item.reduced
+            )
+            _ = try await pair.full.runtime.failClaimedMutationForTesting(
+              id: item.mutation.id, message: "Permission denied: not perms-pass?", claimToken: item.full
+            )
+          } else {
+            _ = try await pair.reduced.runtime.acceptMutationIfPresent(
+              id: item.mutation.id, serverTransactionID: transactionID, claimToken: item.reduced
+            )
+            _ = try await pair.full.runtime.acceptMutationIfPresent(
+              id: item.mutation.id, serverTransactionID: transactionID, claimToken: item.full
+            )
+          }
+        }
+        let touched = Set(claimed.flatMap { $0.mutation.transaction.operations.compactMap(\.fastDrainInsertedTriple).map(\.entityID) })
+        try await pair.frame(queries: pair.reduced.server.queries(touching: touched), processedTransactionID: nil)
+      case 63...66:
         guard let claimed = try await pair.claim(random.int(1...6)), !claimed.isEmpty else { continue }
         // Any write of the window can be refused: a segment's create, its updates, a summary, or a duration tick.
         let refusedIndex = random.int(0...(claimed.count - 1))
@@ -1379,6 +1414,68 @@ extension InstantFastDrainTests {
       $0.entityID == FastDrainSchema.recordingID && $0.attributeID == "recordings/title"
     }
     expectNoDifference(shownTitle?.value, #"string("local title")"#)
+  }
+
+  /// The differential's seed 15 found this: a segment's open updates reached the server, but their answers were lost.
+  /// Their re-sends were then accepted, together with the first offer of the segment's final write, whose own re-send
+  /// was refused. The whole-component rebase had rebuilt the segment beneath its pending writes from the server's
+  /// facts. The reduced apply had patched only the receipts, so the device kept its own, later stamps. When the refused
+  /// final write was removed, the before-image it restored won last-write-wins against the server's isFinal = true on
+  /// the reduced device, and the segment showed as not final; with build 73's splice turned off, the whole-component
+  /// rebase that removed it there restored the same value. Facts a refused write restores are base facts as far as the
+  /// device knows, so the server's facts must win against them on both paths.
+  @Test
+  func aRefusedReplayLeavesTheServersValueOnBothPaths() async throws {
+    var fixtures: [FastDrainFixture] = []
+    for reduces in [true, false] {
+      var fixture = try await FastDrainFixture.make(
+        suffix: "refused-replay-\(reduces)", serverSegmentCount: 4, pendingSegmentCount: 20, reducesServerApply: reduces,
+        scribeLinks: true, defersSegmentText: true
+      )
+      // 1. The segment's 3 open updates reach the server; their answers are lost. A frame restates the segment.
+      let lost = try await fixture.claimWindow(maximumMutationCount: 3)
+      try #require(lost.mutations.count == 3)
+      var touched: Set<String> = []
+      for mutation in lost.mutations {
+        _ = fixture.server.accept(mutation.transaction.operations)
+        touched.formUnion(mutation.transaction.operations.compactMap(\.fastDrainInsertedTriple).map(\.entityID))
+      }
+      _ = try await fixture.refresh(queries: fixture.server.queries(touching: touched))
+      // 2. The claims expire. The re-sends of the 3 are accepted with the final write's first offer, whose own re-send
+      //    is refused; the refusal leaves its overlay for the next apply.
+      fixture.claimMilliseconds += 120_000
+      // The first pass reclaims the expired claims; the next one claims the window again.
+      let reclaim = try await fixture.claimWindow(maximumMutationCount: 4)
+      #expect(reclaim.mutations.isEmpty)
+      let resent = try await fixture.claimWindow(maximumMutationCount: 4)
+      try #require(resent.mutations.count == 4)
+      for (index, mutation) in resent.mutations.enumerated() {
+        let transactionID = fixture.server.accept(mutation.transaction.operations)
+        if index == 3 {
+          let failed = try await fixture.runtime.failClaimedMutationForTesting(
+            id: mutation.id, message: "Permission denied: not perms-pass?", claimToken: resent.token
+          )
+          #expect(failed?.status == .failed)
+        } else {
+          _ = try await fixture.runtime.acceptMutationIfPresent(
+            id: mutation.id, serverTransactionID: transactionID, claimToken: resent.token
+          )
+        }
+      }
+      _ = try await fixture.refresh(queries: fixture.server.queries(touching: touched))
+      fixtures.append(fixture)
+    }
+    let segment = FastDrainSchema.segmentID(4)
+    let serverIsFinal = fixtures[0].server.value(segment, "transcriptionSegments/isFinal")
+    expectNoDifference(serverIsFinal, .bool(true))
+    let reducedObservation = try await FastDrainObservation.observe(fixtures[0].runtime)
+    let fullObservation = try await FastDrainObservation.observe(fixtures[1].runtime)
+    expectNoDifference(reducedObservation.hotFacts, fullObservation.hotFacts)
+    expectNoDifference(reducedObservation.persistedFacts, fullObservation.persistedFacts)
+    for observation in [reducedObservation, fullObservation] {
+      let shown = observation.hotFacts.first { $0.entityID == segment && $0.attributeID == "transcriptionSegments/isFinal" }
+      expectNoDifference(shown?.value, "bool(true)")
+    }
   }
 
   /// Recording 023 ends with a Stop: the only pending write of `activityKind`, behind every other pending write of the
