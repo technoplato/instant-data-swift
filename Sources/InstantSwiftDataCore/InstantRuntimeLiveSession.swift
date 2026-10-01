@@ -1939,12 +1939,19 @@ package actor InstantRuntimeLiveSession {
     let sendGeneration = beginSend(through: session)
     defer { finishSend(sendGeneration) }
     do {
-      try await instantLiveWithTimeout(
-        operation: "send Instant live session message",
-        timeoutMilliseconds: instantLiveOperationTimeoutMilliseconds
-      ) {
-        try await session.send(message)
-      }
+      // A write that began finishes, or fails the socket within its timeout, whatever happens to its caller. The
+      // timeout used to end on the caller's cancellation too, and a failed write ends the socket below, so cancelling
+      // an observation while its add-query was being written closed a healthy socket and re-added every query
+      // (library-78). Upstream `Reactor.js` writes with a synchronous `ws.send`, which no caller can interrupt. The
+      // unstructured task does not inherit the caller's cancellation, and awaiting its value does not propagate it.
+      try await Task {
+        try await instantLiveWithTimeout(
+          operation: "send Instant live session message",
+          timeoutMilliseconds: instantLiveOperationTimeoutMilliseconds
+        ) {
+          try await session.send(message)
+        }
+      }.value
       // Routine send chatter is debug; failures remain error-level.
       InstantDiagnostics.shared.record(
         .debug,
