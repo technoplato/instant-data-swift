@@ -1,3 +1,54 @@
+## 2026-09-30 23:00:00 EDT — Build 75's and 76's library: the persisting decline, refused writes restore the server's values (#296)
+
+- **Branch:** `agent/claude-opus-5.5/fast-drain-3` from `ad1da185` (build 73's library code, `506089b2`); pushed, not
+  merged. Plan `agent-presence/claude-opus-5.5/plans/2026-09-30-fast-drain-3/PLAN.md` (`678b5faf`).
+  - The coordinator shipped `df0a711a` in build 75: library `ab33cb35`, with auth counters `7ed903d3`.
+  - `23a80571` is in build 76's candidate `d487ee09` (`agent/claude-opus-5.5/library-76`).
+- **Why:** build 73 drained at about 25 writes a minute on Michael's iPhone.
+  - Every restated list frame declined (`changesShadowedFact recordings/clipboardEntries`) into a whole-component
+    rebase. The resident value is the phone's own write, and it carries a later stamp than the server's first-set
+    stamp.
+  - The widened differential then found refused writes restoring stale values on either path.
+- **Commits:**
+  - `b78e978f`: skip a restated fact that loses to a later-stamped resident fact.
+  - `f53f7793`: restored facts of a refused write become base facts at txTime 0, at every removal site, plus the
+    multi-refusal differential event.
+  - `1907c0b4`: apply the receipt as written, then restamp what it restored. The ten suites caught an insert-only
+    receipt on `df0a711a`.
+  - Change log and ledger: `df0a711a`, `23a80571`.
+- **Evidence** (Debug builds at `-Onone`; simulator and Mac against `bd40c50a`; host load 175-1,000):
+  - On `23a80571`:
+    - Live soak: pending 0-3, CPU 25-28%.
+    - Recording 023-shape backlog: 2,529 → 0 in 3 min 31 s, 0 reconnects.
+    - Ten suites: 683 tests, 21 known issues, and 1 load flake that passes 3 of 3.
+    - Differential: 25 tests, 2 known issues.
+  - Phone replay of the pre-71 store through the phone's 103 refusals:
+    - `506089b2`: 118 of 119 frames rebased, 3,701 s.
+    - `23a80571`: 17 rebased, 900-929 s.
+  - Michael's post-drain store on build 75 equals production in 20,991 of 21,001 fields. The 10 that differ are
+    stale local copies: clipboardEntries ×4, one route chunk, and 3 fenceposts.
+  - Writes refused on 2026-09-26 to 09-28 left values production never got: 3 segments' finals, 3 Stops, route chunks,
+    and attachments.
+  - Details: `/Users/laptop/Sync/audit/recording-023-fixes/FAST-DRAIN.md` section 15.
+- **Open:**
+  - Stamp parity in place (FAST-DRAIN 15.7), with a fake server that keeps `created_at`.
+  - The splice for the phone's refusal shapes: each refusal window still costs one full rebase.
+  - Recovering the 2026-09-26 to 09-28 values from the failed rows.
+  - N47.
+  - Pattern B unchanged.
+- **Gates on build 76's candidate `d487ee09`**, merged by the coordinator:
+  - Pass: differential, ten suites, the 211 infinite-query tests (only the known #304 failure), phone replay, and
+    the backlog (2,522 → 0 in 3 min 3 s).
+  - The live soak passes by an interleaved A/B against `23a80571`:
+    - Gate holds: 26 and 7 for `d487ee09`, 53 and 20 for `23a80571`.
+    - The holds are commit-dominated on both, and the infinite-query work is equal, so the first soak's holds were
+      host load.
+- **Next**, each only with the coordinator's go-ahead:
+  - Stamp parity.
+  - The ranked efficiency items (FAST-DRAIN 15.7): the core advert so frames skip attrs, the operation gate held
+    across awaits, and checkpoints outside gated commits (p99 commit about 7-12 times lower in a benchmark).
+  - The recovery plan (15.10).
+
 ## 2026-09-30 14:50:00 EDT — Build 73's library: live-safe fast drain, refused-write removal, connection survival (#296)
 
 - **Branch:** `agent/claude-opus-5.5/fast-drain-2` from build 72's `0078484f` (pushed; not merged). Build 73's library

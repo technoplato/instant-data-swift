@@ -40,3 +40,12 @@ Touching:
 
 Conflict check: these paths' latest claims are this agent's own fast-drain plans. The connection-survival worker is
 done, and its branch is merged into fast-drain-2.
+
+Status (2026-09-30 23:00 EDT):
+
+- Step 1 landed as `b78e978f`. The coordinator shipped it in build 75 (library `ab33cb35`, from `df0a711a`).
+- Step 2 changed. The widened differential found that refused writes restore stale values on either path. The fix is
+  to restore them as base facts at txTime 0 (`f53f7793`, `1907c0b4`); build 76's candidate `d487ee09` merges it. The
+  splice extension moved to a later build, and its WIP is saved outside the repository.
+- Step 3 was done as a temporary probe, never committed. 506089b2 against 23a80571: 118 against 17 rebased frames.
+- Step 4 passed on `23a80571` (FAST-DRAIN.md section 15.4). Gates on `d487ee09` are running.
