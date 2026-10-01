@@ -44,7 +44,8 @@ Touching:
   SQLitePersistenceStore.swift, InstantSnapshotObservers.swift, InstantModels.swift, InstantInfiniteQuery.swift,
   BoundedOutboxDelivery.swift, and new InstantServerErrorRetryPolicy.swift and InstantLiveQueryErrors.swift (added
   2026-10-01 13:10)
-- Sources/InstantSwiftData/InstantSwiftData.swift, and Tests/InstantSwiftDataTests: new
+- Sources/InstantSwiftData/InstantSwiftData.swift and InstantTypedAPI.swift (added 2026-10-01 13:36: the typed infinite
+  snapshot keeps its rows with a live-query error), and Tests/InstantSwiftDataTests: new
   InstantLiveQueryErrorSubscriptionTests.swift (added 2026-10-01 13:10)
 - Tests/InstantSwiftDataCoreTests: new InstantTransientMutationRetryTests.swift, InstantLiveQueryErrorRecoveryTests.swift,
   InstantSupersededReplayTests.swift, InstantOutboxRevisionGateTests.swift, InstantPruneGateHoldTests.swift,
