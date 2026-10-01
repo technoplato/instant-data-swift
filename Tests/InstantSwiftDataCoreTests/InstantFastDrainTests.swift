@@ -1317,6 +1317,70 @@ extension InstantFastDrainTests {
     expectNoDifference(reducedObservation.outbox, fullObservation.outbox)
   }
 
+  /// Michael's iPhone on build 73 rebased the whole component on every frame. Its store holds a value of
+  /// `recordings/clipboardEntries` for Recording 023 that is stamped later than the server's fact. The value came from a
+  /// local write that is no longer in the outbox, and no pending write writes that slot. Every refresh-ok restated the
+  /// server's older fact, which did not hold, so the reduction declined (changesShadowedFact) into a whole-component
+  /// rebase. The rebase's last-write-wins then kept the resident value anyway. Such a fact changes nothing, so it must
+  /// not rebase.
+  @Test
+  func aRestatedFactThatLosesToALaterStampedResidentFactDoesNotRebase() async throws {
+    var fixtures: [FastDrainFixture] = []
+    for reduces in [true, false] {
+      var fixture = try await FastDrainFixture.make(
+        suffix: "lww-\(reduces)", serverSegmentCount: 4, pendingSegmentCount: 0, reducesServerApply: reduces
+      )
+      // A local title, accepted and pruned: the base keeps the local fact and its device stamp, later than the
+      // server's stamps.
+      let title = InstantStoreTransaction(
+        id: "fast-drain-local-title",
+        operations: [
+          .insert(
+            InstantTriple(
+              entityID: FastDrainSchema.recordingID,
+              attributeID: "recordings/title",
+              value: .string("local title"),
+              txID: "fast-drain-local-title",
+              txTime: InstantTimestamp(milliseconds: fixture.script.deviceMilliseconds)
+            )
+          ),
+        ]
+      )
+      _ = try await fixture.runtime.transact(title, createdAt: InstantTimestamp(milliseconds: fixture.script.deviceMilliseconds))
+      _ = try await fixture.writeSegments(3)
+      let window = try await fixture.claimWindow(maximumMutationCount: 1)
+      let head = try #require(window.mutations.first)
+      #expect(head.id == title.id)
+      _ = try await fixture.acceptAndRefresh(head, claimToken: window.token)
+      fixtures.append(fixture)
+    }
+    // Another device's title, which the server stamps earlier than this device's resident title.
+    var frames: [FastDrainFrameMeasurement] = []
+    var declineCounts: [[String: Int]] = []
+    for index in fixtures.indices {
+      let transactionID = fixtures[index].server.acceptForeignWrite(
+        entityID: FastDrainSchema.recordingID, attributeID: "recordings/title", value: .string("another device's title")
+      )
+      let queries = fixtures[index].server.queries(touching: [FastDrainSchema.recordingID])
+      let fixture = fixtures[index]
+      let (frame, declines) = try await FastDrainDeclineCounter.counting {
+        try await fixture.refresh(queries: queries, processedTransactionID: transactionID)
+      }
+      frames.append(frame)
+      declineCounts.append(declines)
+    }
+    expectNoDifference(frames[0].plannedBodyCount, 0, "declines: \(declineCounts[0])")
+    let reducedObservation = try await FastDrainObservation.observe(fixtures[0].runtime)
+    let fullObservation = try await FastDrainObservation.observe(fixtures[1].runtime)
+    expectNoDifference(reducedObservation.hotFacts, fullObservation.hotFacts)
+    expectNoDifference(reducedObservation.persistedFacts, fullObservation.persistedFacts)
+    expectNoDifference(reducedObservation.outbox, fullObservation.outbox)
+    let shownTitle = reducedObservation.hotFacts.first {
+      $0.entityID == FastDrainSchema.recordingID && $0.attributeID == "recordings/title"
+    }
+    expectNoDifference(shownTitle?.value, #"string("local title")"#)
+  }
+
   /// Recording 023 ends with a Stop: the only pending write of `activityKind`, behind every other pending write of the
   /// recording. The reduction used to prove that none of the recording's earlier writes retracted the slot by
   /// decoding them, capped at 32, so every frame after a Stop fell back to the whole-component rebase. The Stop's own
