@@ -1387,6 +1387,13 @@ public actor SQLitePersistenceStore {
     try execute("PRAGMA cache_size = 0")  // ~2MiB
 
     }
+    // Measurement only (plan 2026-09-30-ts-parity, #306): unset, these change nothing.
+    if let synchronous = InstantMeasurementSwitches.sqliteSynchronous {
+      try execute("PRAGMA synchronous = \(synchronous)")
+    }
+    if let cacheSize = InstantMeasurementSwitches.sqliteCacheSize {
+      try execute("PRAGMA cache_size = \(cacheSize)")
+    }
     try execute("PRAGMA foreign_keys = ON")
     try withSQLiteBusyRetry {
       try execute(

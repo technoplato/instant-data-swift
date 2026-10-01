@@ -6219,7 +6219,8 @@ public final class InstantRuntime: Sendable {
             request: InstantLiveSessionRequest(
               appID: configuration.appID,
               websocketURI: configuration.websocketURI,
-              refreshToken: session?.refreshToken
+              refreshToken: session?.refreshToken,
+              versions: InstantMeasurementSwitches.initVersions
             ),
             transport: liveTransport,
             makeID: configuration.makeID
