@@ -50,3 +50,4 @@ claude-opus-5.5-connection-survival 2026-09-30T09:32:17-04:00 mower plan=2026-09
 claude-opus-5.5-fast-drain 2026-09-30T18:34:28-04:00 mower plan=2026-09-30-fast-drain-3 #296
 claude-opus-5.5-infinite-leading-rows 2026-09-30T19:02:02-04:00 mower plan=2026-09-30-infinite-leading-rows #300 observeLiveInfiniteQueryChunk-only
 claude-opus-5.5-fast-drain 2026-10-01T00:40:56-04:00 mower plan=2026-10-01-library-77 #303 #296
+claude-opus-5.5-fast-drain 2026-10-01T05:00:01-04:00 mower plan=2026-10-01-apply-fallback #303 exclusive server-apply fallback
