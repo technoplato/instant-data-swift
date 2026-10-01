@@ -3289,3 +3289,518 @@ private final class SequentialLocalIDFactory: @unchecked Sendable {
     return "local-\(nextID)"
   }
 }
+
+/// #324: Instant answers add-query from a stalled server with 500 `operation-timed-out` ("Operation timed out:
+/// handle-receive"). Upstream `Reactor.js` `_handleReceiveError` only notifies the query's error callbacks; the
+/// subscription stays in `queryCbs`, and `_flushPendingMessages` re-sends add-query for every subscription on the
+/// next `init-ok`. Swift retired the query for good, so the view stopped updating until relaunch while writes kept
+/// landing. A rejection that repeats (a permission or validation error) still retires the query.
+extension InstantReactorParityTests {
+  static func addQueryError(
+    to query: InstantLiveJSONValue,
+    clientEventID: String?,
+    status: Int,
+    type: String,
+    message: String
+  ) -> InstantLiveMessage {
+    InstantLiveMessage(
+      op: "error",
+      clientEventID: clientEventID,
+      fields: [
+        "message": .string(message),
+        "type": .string(type),
+        "status": .number(Double(status)),
+        "original-event": .object([
+          "client-event-id": clientEventID.map(InstantLiveJSONValue.string) ?? .null,
+          "op": .string("add-query"),
+          "q": query,
+        ]),
+      ]
+    )
+  }
+
+  /// The ops `session` sent, once `predicate` holds or `timeout` passes.
+  static func sentOps(
+    of session: LiveReactorParitySession,
+    within timeout: Duration = .seconds(3),
+    until predicate: ([String]) -> Bool
+  ) async throws -> [String] {
+    let deadline = ContinuousClock.now + timeout
+    while true {
+      let ops = await session.sentMessages().map(\.op)
+      if predicate(ops) || ContinuousClock.now >= deadline { return ops }
+      try await Task.sleep(for: .milliseconds(20))
+    }
+  }
+
+  /// Connects, answers the query's add-query with `error`, then drops the socket so the runtime reconnects.
+  static func reconnectingAfterAddQueryError(
+    status: Int,
+    type: String,
+    message: String,
+    suffix: String
+  ) async throws -> (
+    runtime: InstantRuntime,
+    secondSession: LiveReactorParitySession,
+    iterator: AsyncStream<InstantQueryEmission>.AsyncIterator,
+    query: InstantLiveJSONValue
+  ) {
+    let query = try InstantLiveQueryEncoder.encode(TodoExample.query)
+    let firstSession = LiveReactorParitySession(messages: [
+      liveReactorInitOK(attrs: liveReactorTodoServerAttrs, sessionID: "add-query-error-\(suffix)")
+    ])
+    let secondSession = LiveReactorParitySession(messages: [
+      liveReactorInitOK(attrs: liveReactorTodoServerAttrs, sessionID: "add-query-error-\(suffix)-reconnect")
+    ])
+    let transport = LiveReactorParityTransport(sessions: [firstSession, secondSession])
+    var configuration = InstantRuntimeConfiguration(
+      appID: "reactor-add-query-error-\(suffix)",
+      persistenceURL: try temporaryReactorParityCacheURL(),
+      initialAttributes: TodoExample.attributes,
+      liveTransport: transport.transport
+    )
+    configuration.liveReconnectSleep = { _ in }
+    let runtime = try await InstantRuntime.bootstrap(configuration: configuration)
+    let stream = await runtime.observe(TodoExample.query)
+    var iterator = stream.makeAsyncIterator()
+    _ = try #require(await iterator.next())
+    _ = try await runtime.connect()
+    let firstOps = try await sentOps(of: firstSession) { $0.contains("add-query") }
+    try #require(firstOps.contains("add-query"))
+    let addQuery = await firstSession.sentMessages().first { $0.op == "add-query" }
+    await firstSession.enqueue(
+      addQueryError(to: query, clientEventID: addQuery?.clientEventID, status: status, type: type, message: message)
+    )
+    try await Task.sleep(for: .milliseconds(100))
+    await firstSession.failReceive(
+      InstantError(
+        code: .networkFailed,
+        operation: "receive Reactor parity live event",
+        message: "socket dropped after the server stall",
+        recovery: "Reconnect."
+      )
+    )
+    return (runtime, secondSession, iterator, query)
+  }
+
+  @Test
+  func aTimedOutAddQueryStaysRegisteredAndIsResentAfterReconnect() async throws {
+    var (runtime, secondSession, iterator, query) = try await Self.reconnectingAfterAddQueryError(
+      status: 500,
+      type: "operation-timed-out",
+      message: "Operation timed out: handle-receive",
+      suffix: "timeout"
+    )
+    let ops = try await Self.sentOps(of: secondSession) { $0.contains("add-query") }
+    expectNoDifference(ops, ["init", "add-query"])
+    guard ops.contains("add-query") else {
+      _ = try await runtime.closeConnection()
+      return
+    }
+    await secondSession.enqueue(
+      liveReactorAddQueryOK(
+        query: query,
+        processedTransactionID: "server-tx-after-timeout",
+        result: liveReactorTodoQueryResult(
+          id: "todo-after-timeout",
+          text: "refreshed after the timeout",
+          createdAt: InstantTimestamp(milliseconds: 1_700_000_066_000)
+        )
+      )
+    )
+    var texts: [String] = []
+    while texts != ["refreshed after the timeout"], let snapshot = await iterator.next() {
+      texts = try TodoExample.decode(snapshot.values).map(\.text)
+    }
+    expectNoDifference(texts, ["refreshed after the timeout"])
+    _ = try await runtime.closeConnection()
+  }
+
+  @Test
+  func aPermissionRejectedAddQueryIsNotResentAfterReconnect() async throws {
+    let (runtime, secondSession, _, _) = try await Self.reconnectingAfterAddQueryError(
+      status: 400,
+      type: "permission-denied",
+      message: "Permission denied: not perms-pass?",
+      suffix: "permission"
+    )
+    let ops = try await Self.sentOps(of: secondSession, within: .milliseconds(800)) { $0.contains("add-query") }
+    expectNoDifference(ops, ["init"])
+    _ = try await runtime.closeConnection()
+  }
+}
+
+/// The `@instantdb/core` v0.22.75 advert: above v0.20.4 the server skips the attrs in refresh-ok (`session.clj`
+/// :skip-attrs), and above v0.17.5 it sends presence patches. Frames without attrs apply with the session's cached
+/// attrs, so these pin that the cache follows the session: the init advertises the version, a reconnect's init-ok
+/// replaces the cached attrs, a refresh that adds an attribute is used by the next attr-less frame, and a refresh with
+/// nothing in it changes nothing.
+extension InstantReactorParityTests {
+  static func joinRowsResult(_ rows: [[InstantLiveJSONValue]]) -> [InstantLiveJSONValue] {
+    [
+      .object([
+        "data": .object([
+          "datalog-result": .object([
+            "join-rows": .array([.array(rows.map(InstantLiveJSONValue.array))])
+          ])
+        ]),
+        "child-nodes": .array([]),
+      ])
+    ]
+  }
+
+  static func todoRow(
+    _ id: String,
+    text: String,
+    attributeIDPrefix: String = "server-todos",
+    at time: InstantTimestamp
+  ) -> [[InstantLiveJSONValue]] {
+    let t = InstantLiveJSONValue.number(Double(time.milliseconds))
+    return [
+      [.string(id), .string("\(attributeIDPrefix)-id"), .string(id), t],
+      [.string(id), .string("\(attributeIDPrefix)-text"), .string(text), t],
+      [.string(id), .string("\(attributeIDPrefix)-is-completed"), .bool(false), t],
+      [.string(id), .string("\(attributeIDPrefix)-created-at"), .number(Double(time.milliseconds)), t],
+    ]
+  }
+
+  static func todoAttrs(prefix: String) -> [InstantLiveJSONValue] {
+    [
+      liveReactorServerAttr(id: "\(prefix)-id", name: "id"),
+      liveReactorServerAttr(id: "\(prefix)-text", name: "text"),
+      liveReactorServerAttr(id: "\(prefix)-is-completed", name: "isCompleted"),
+      liveReactorServerAttr(id: "\(prefix)-created-at", name: "createdAt"),
+    ]
+  }
+
+  @Test
+  func theInitAdvertisesTheCoreVersionThatSkipsAttrs() async throws {
+    let session = LiveReactorParitySession(messages: [liveReactorInitOK(attrs: liveReactorTodoServerAttrs)])
+    let transport = LiveReactorParityTransport(sessions: [session])
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "reactor-core-version-advert",
+        persistenceURL: try temporaryReactorParityCacheURL(),
+        initialAttributes: TodoExample.attributes,
+        liveTransport: transport.transport
+      )
+    )
+    _ = try await runtime.connect()
+    await session.waitForSentMessageCount(1)
+    let initMessage = try #require(await session.sentMessages().first)
+    expectNoDifference(initMessage.op, "init")
+    expectNoDifference(
+      initMessage.fields["versions"],
+      .object(["InstantDB-Swift": .string("0.1.0"), "@instantdb/core": .string("v0.22.75")])
+    )
+    expectNoDifference(
+      InstantLiveMessage.initMessage(appID: "app", clientEventID: "event").fields["versions"],
+      .object(["InstantDB-Swift": .string("0.1.0"), "@instantdb/core": .string("v0.22.75")])
+    )
+    _ = try await runtime.closeConnection()
+  }
+
+  @Test
+  func aReconnectsInitAttrsReplaceTheCachedAttrs() async throws {
+    let query = try InstantLiveQueryEncoder.encode(TodoExample.query)
+    let createdAt = InstantTimestamp(milliseconds: 1_700_000_067_000)
+    let firstSession = LiveReactorParitySession(messages: [
+      liveReactorInitOK(attrs: Self.todoAttrs(prefix: "first-todos"), sessionID: "attrs-before-reconnect")
+    ])
+    let secondSession = LiveReactorParitySession(messages: [
+      liveReactorInitOK(attrs: Self.todoAttrs(prefix: "second-todos"), sessionID: "attrs-after-reconnect")
+    ])
+    let transport = LiveReactorParityTransport(sessions: [firstSession, secondSession])
+    var configuration = InstantRuntimeConfiguration(
+      appID: "reactor-reconnect-attrs",
+      persistenceURL: try temporaryReactorParityCacheURL(),
+      initialAttributes: TodoExample.attributes,
+      liveTransport: transport.transport
+    )
+    configuration.liveReconnectSleep = { _ in }
+    let runtime = try await InstantRuntime.bootstrap(configuration: configuration)
+    let stream = await runtime.observe(TodoExample.query)
+    var iterator = stream.makeAsyncIterator()
+    _ = try #require(await iterator.next())
+    _ = try await runtime.connect()
+    _ = try await Self.sentOps(of: firstSession) { $0.contains("add-query") }
+    await firstSession.failReceive(
+      InstantError(code: .networkFailed, operation: "receive", message: "socket dropped", recovery: "Reconnect.")
+    )
+    let ops = try await Self.sentOps(of: secondSession) { $0.contains("add-query") }
+    try #require(ops.contains("add-query"))
+    // An attr-less refresh with the second session's attribute ids: it resolves only with that session's attrs.
+    await secondSession.enqueue(
+      InstantLiveMessage(
+        op: "refresh-ok",
+        clientEventID: nil,
+        fields: [
+          "attrs": .array([]),
+          "computations": .array([
+            .object([
+              "instaql-query": query,
+              "instaql-result": .array(
+                Self.joinRowsResult(
+                  Self.todoRow("todo-second-session", text: "resolved with the new attrs", attributeIDPrefix: "second-todos", at: createdAt)
+                )
+              ),
+            ])
+          ]),
+          "processed-tx-id": .string("server-tx-second-session"),
+        ]
+      )
+    )
+    var texts: [String] = []
+    while texts != ["resolved with the new attrs"], let snapshot = await iterator.next() {
+      texts = try TodoExample.decode(snapshot.values).map(\.text)
+    }
+    expectNoDifference(texts, ["resolved with the new attrs"])
+    _ = try await runtime.closeConnection()
+  }
+
+  @Test
+  func anAttributeARefreshAddsIsUsedByTheNextAttrLessFrame() async throws {
+    let query = try InstantLiveQueryEncoder.encode(TodoExample.query)
+    let createdAt = InstantTimestamp(milliseconds: 1_700_000_069_000)
+    let session = LiveReactorParitySession(messages: [liveReactorInitOK(attrs: liveReactorTodoServerAttrs)])
+    let transport = LiveReactorParityTransport(sessions: [session])
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "reactor-attribute-from-refresh",
+        persistenceURL: try temporaryReactorParityCacheURL(),
+        initialAttributes: TodoExample.attributes,
+        liveTransport: transport.transport
+      )
+    )
+    let stream = await runtime.observe(TodoExample.query)
+    var iterator = stream.makeAsyncIterator()
+    _ = try #require(await iterator.next())
+    _ = try await runtime.connect()
+    _ = try await Self.sentOps(of: session) { $0.contains("add-query") }
+    let t = InstantLiveJSONValue.number(Double(createdAt.milliseconds))
+    func refresh(_ id: String, attrs: [InstantLiveJSONValue], processed: String) -> InstantLiveMessage {
+      InstantLiveMessage(
+        op: "refresh-ok",
+        clientEventID: nil,
+        fields: [
+          "attrs": .array(attrs),
+          "computations": .array([
+            .object([
+              "instaql-query": query,
+              "instaql-result": .array(
+                Self.joinRowsResult(
+                  Self.todoRow(id, text: id, at: createdAt)
+                    + [[.string(id), .string("server-todos-priority"), .number(3), t]]
+                )
+              ),
+            ])
+          ]),
+          "processed-tx-id": .string(processed),
+        ]
+      )
+    }
+    // The schema gains todos/priority in a refresh that carries attrs; the next frame carries none.
+    await session.enqueue(
+      refresh(
+        "todo-with-new-attrs",
+        attrs: liveReactorTodoServerAttrs + [liveReactorServerAttr(id: "server-todos-priority", name: "priority", valueType: "number")],
+        processed: "server-tx-new-attrs"
+      )
+    )
+    await session.enqueue(refresh("todo-attr-less", attrs: [], processed: "server-tx-attr-less"))
+    for _ in 0..<200 {
+      if try await runtime.syncState().processedTransactionID == "server-tx-attr-less" { break }
+      try await Task.sleep(for: .milliseconds(20))
+    }
+    let priorities = Set(await runtime.store.snapshot().triples.filter { $0.attributeID.hasSuffix("priority") }.map(\.entityID))
+    #expect(priorities.contains("todo-attr-less"))
+    withKnownIssue("The frame that adds an attribute drops its own rows' values for it; the next frame stores them (already so at d487ee09)") {
+      #expect(priorities.contains("todo-with-new-attrs"))
+    }
+    _ = try await runtime.closeConnection()
+  }
+
+  @Test
+  func anEmptyRefreshChangesNothing() async throws {
+    let query = try InstantLiveQueryEncoder.encode(TodoExample.query)
+    let createdAt = InstantTimestamp(milliseconds: 1_700_000_068_000)
+    let session = LiveReactorParitySession(messages: [liveReactorInitOK(attrs: liveReactorTodoServerAttrs)])
+    let transport = LiveReactorParityTransport(sessions: [session])
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "reactor-empty-refresh",
+        persistenceURL: try temporaryReactorParityCacheURL(),
+        initialAttributes: TodoExample.attributes,
+        liveTransport: transport.transport
+      )
+    )
+    let stream = await runtime.observe(TodoExample.query)
+    var iterator = stream.makeAsyncIterator()
+    _ = try #require(await iterator.next())
+    _ = try await runtime.connect()
+    _ = try await Self.sentOps(of: session) { $0.contains("add-query") }
+    await session.enqueue(
+      liveReactorAddQueryOK(
+        query: query,
+        processedTransactionID: "server-tx-before-empty",
+        result: liveReactorTodoQueryResult(id: "todo-before-empty", text: "kept", createdAt: createdAt)
+      )
+    )
+    var texts: [String] = []
+    while texts != ["kept"], let snapshot = await iterator.next() {
+      texts = try TodoExample.decode(snapshot.values).map(\.text)
+    }
+    let before = await runtime.store.snapshot().triples.count
+    await session.enqueue(
+      InstantLiveMessage(
+        op: "refresh-ok",
+        clientEventID: nil,
+        fields: ["attrs": .array([]), "computations": .array([]), "processed-tx-id": .string("server-tx-empty")]
+      )
+    )
+    try await Task.sleep(for: .milliseconds(300))
+    let after = await runtime.store.snapshot().triples.count
+    expectNoDifference(after, before)
+    let status = try await runtime.connectionStatus()
+    expectNoDifference(status.state, .opened)
+    _ = try await runtime.closeConnection()
+  }
+}
+
+/// A subscribe-stream the server refuses (it answers 400 "Stream is missing" when a reader subscribes before the writer
+/// creates the stream) ends the reader's observation. Upstream `Reactor.js` `_handleReceiveError` routes every stream
+/// op's error to `Stream.ts` `onRecieveError`, which pushes the error into the reader's iterator, closes it, and deletes
+/// the reader by its event id. Swift only retired the reader's registration, so the observation never ended: Scribe's
+/// media fetch on a reader device awaited it forever, and every later recording's media waited behind it (#303).
+extension InstantReactorParityTests {
+  static func subscribeStreamRefusal(
+    clientEventID: String?,
+    streamID: String,
+    message: String = "Validation failed for subscribe-stream: Stream is missing."
+  ) -> InstantLiveMessage {
+    InstantLiveMessage(
+      op: "error",
+      clientEventID: clientEventID,
+      fields: [
+        "message": .string(message),
+        "type": .string("validation-failed"),
+        "status": .number(400),
+        "original-event": .object([
+          "client-event-id": clientEventID.map(InstantLiveJSONValue.string) ?? .null,
+          "op": .string("subscribe-stream"),
+          "stream-id": .string(streamID),
+        ]),
+      ]
+    )
+  }
+
+  @Test
+  func aRefusedStreamSubscriptionEndsEveryObservationThatSharesIt() async throws {
+    let session = LiveReactorParitySession(messages: [
+      liveReactorInitOK(attrs: liveReactorTodoServerAttrs, sessionID: "refused-stream-reader")
+    ])
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "typescript-refused-stream-subscription-parity",
+        persistenceURL: try temporaryReactorParityCacheURL(),
+        initialAttributes: TodoExample.attributes,
+        liveTransport: session.transport
+      )
+    )
+    _ = try await runtime.signInAsGuest()
+    _ = try await runtime.connect()
+
+    let first = try await runtime.observeStreamContent(streamID: "missing-stream")
+    let second = try await runtime.observeStreamContent(streamID: "missing-stream")
+    let firstObserver = Task { () -> [InstantStreamContentRead] in
+      var values: [InstantStreamContentRead] = []
+      for await value in first { values.append(value) }
+      return values
+    }
+    let secondObserver = Task { () -> [InstantStreamContentRead] in
+      var values: [InstantStreamContentRead] = []
+      for await value in second { values.append(value) }
+      return values
+    }
+    defer {
+      firstObserver.cancel()
+      secondObserver.cancel()
+    }
+    _ = try await Self.sentOps(of: session) { $0.contains("subscribe-stream") }
+    let subscriptions = await session.sentMessages().filter { $0.op == "subscribe-stream" }
+    expectNoDifference(subscriptions.count, 1, "Both observations share one reader and one subscription.")
+    let subscribe = try #require(subscriptions.first)
+    let statusBeforeRefusal = try await runtime.connectionStatus()
+
+    await session.enqueue(
+      Self.subscribeStreamRefusal(clientEventID: subscribe.clientEventID, streamID: "missing-stream")
+    )
+
+    let firstValues = try await instantLiveWithTimeout(
+      operation: "wait for the first refused stream observation to end",
+      timeoutMilliseconds: 3_000
+    ) {
+      await firstObserver.value
+    }
+    let secondValues = try await instantLiveWithTimeout(
+      operation: "wait for the second refused stream observation to end",
+      timeoutMilliseconds: 3_000
+    ) {
+      await secondObserver.value
+    }
+    expectNoDifference(firstValues, [], typescriptStreamRefusalSource)
+    expectNoDifference(secondValues, [], typescriptStreamRefusalSource)
+    let observers = try await runtime.activeStreamContentObservationCount(streamID: "missing-stream")
+    expectNoDifference(observers, 0, typescriptStreamRefusalSource)
+    let status = try await runtime.connectionStatus()
+    expectNoDifference(
+      status.state,
+      statusBeforeRefusal.state,
+      "A refused reader leaves the shared live session as it was."
+    )
+    _ = try await runtime.closeConnection()
+  }
+}
+
+/// A stream written while the socket is closed never reaches the server. `createStream` makes a local-only stream with a
+/// client-made id when the live session is not open, the live session registers no writer for it, so `appendStream` and
+/// `finishStream` return without sending, and nothing starts it later. Upstream `Stream.ts` `createWriteStream` queues
+/// `start-stream` through `trySend` and restarts its write streams on reconnect, so the server gets the stream. Scribe
+/// publishes recording audio and images as streams (`InstantRecordingRealtime.synchronizeMedia`), so media synced
+/// offline reaches other devices as an asset row whose stream the server never gets. Pinned until the fix (#329).
+extension InstantReactorParityTests {
+  @Test
+  func aStreamWrittenWhileOfflineStartsOnTheServerOnceConnected() async throws {
+    let session = LiveReactorParitySession(messages: [
+      liveReactorInitOK(attrs: liveReactorTodoServerAttrs, sessionID: "offline-stream-writer")
+    ])
+    var configuration = InstantRuntimeConfiguration(
+      appID: "typescript-offline-stream-writer-parity",
+      persistenceURL: try temporaryReactorParityCacheURL(),
+      initialAttributes: TodoExample.attributes,
+      liveTransport: session.transport
+    )
+    configuration.autoConnectLiveTransport = false
+    let runtime = try await InstantRuntime.bootstrap(configuration: configuration)
+    _ = try await runtime.signInAsGuest()
+    let metadata = try await runtime.createStream(clientID: "offline-writer")
+    _ = try await runtime.appendStreamContent(streamID: metadata.id, content: "hello", expectedOffset: 0)
+    _ = try await runtime.closeStream(streamID: metadata.id)
+    let sentWhileOffline = await session.sentMessages().map(\.op)
+    expectNoDifference(sentWhileOffline, [], "Nothing is sent while the socket is closed.")
+
+    _ = try await runtime.connect()
+    let ops = try await Self.sentOps(of: session, within: .seconds(2)) { $0.contains("start-stream") }
+    withKnownIssue("A stream written while offline never starts on the server (#329).") {
+      #expect(ops.contains("start-stream"), Comment(rawValue: typescriptOfflineStreamWriterSource))
+      #expect(ops.contains("append-stream"), Comment(rawValue: typescriptOfflineStreamWriterSource))
+    }
+    _ = try await runtime.closeConnection()
+  }
+}
+
+private let typescriptOfflineStreamWriterSource =
+  "upstream/instant/client/packages/core/src/Stream.ts createWriteStream, startWriteStream (trySend), and the write streams' reconnect [Swift gap: a stream created with the socket closed stays local, and its appends and close are never sent.]"
+
+private let typescriptStreamRefusalSource =
+  "upstream/instant/client/packages/core/src/Stream.ts onRecieveError (subscribe-stream) and Reactor.js _handleReceiveError [adapted: Swift's stream content observation is a non-throwing AsyncStream, so the refusal ends every observation that shares the refused reader instead of throwing into one iterator, and the refusal is recorded as a diagnostic.]"

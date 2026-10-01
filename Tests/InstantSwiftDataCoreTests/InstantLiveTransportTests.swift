@@ -4461,6 +4461,7 @@ struct InstantLiveTransportTests {
       )
     )
     await session.waitForReceiveRequestCount(receiveCountBeforeDuplicate + 1)
+    try await waitForLiveReceiverToApplyTakenFrames(runtime)
     let duplicateDecodeCount = await runtime.persistence.currentDecodedOutboxBodyCount()
     let revisionAfterDuplicate = try await runtime.persistence.currentOutboxRevision()
     let sentAfterDuplicate = await session.sentMessages().map(\.op)
@@ -4610,6 +4611,7 @@ struct InstantLiveTransportTests {
       )
     )
     await session.waitForReceiveRequestCount(receiveCountBeforeDuplicate + 1)
+    try await waitForLiveReceiverToApplyTakenFrames(runtime)
     let revisionAfterDuplicate = try await runtime.persistence.currentOutboxRevision()
     let decodeCountAfterDuplicate = await runtime.persistence.currentDecodedOutboxBodyCount()
     expectNoDifference(revisionAfterDuplicate, revisionBeforeDuplicate)
@@ -4699,6 +4701,18 @@ struct InstantLiveTransportTests {
       createdAt: createdAt
     )
     await session.waitForSentMessageCount(2)
+    // The automatic pump that offered the mutation can still be finishing its pass. If it sees the expired offer, it
+    // reclaims it and reports the expiry outside the known-issue scope below. Let it go idle first, so the explicit
+    // flush is the only lane that sees the expiry.
+    try await instantLiveWithTimeout(
+      operation: "wait for the automatic pump to finish offering the mutation",
+      timeoutMilliseconds: 5_000
+    ) {
+      while !(await runtime.automaticMutationPumpIsIdleForTesting()) {
+        try Task.checkCancellation()
+        await Task.yield()
+      }
+    }
     let originalClaim = try #require(
       try await runtime.persistence.outboxDeliveryClaimForTesting(id: mutationID)
     )
@@ -4804,6 +4818,7 @@ struct InstantLiveTransportTests {
       )
     )
     await session.waitForReceiveRequestCount(receiveCountBeforeError + 1)
+    try await waitForLiveReceiverToApplyTakenFrames(runtime)
 
     let staleErrorDecodeCount = await runtime.persistence.currentDecodedOutboxBodyCount()
     let durable = try await runtime.persistence.loadState().snapshot.outbox
@@ -4874,6 +4889,7 @@ struct InstantLiveTransportTests {
       )
     )
     await session.waitForReceiveRequestCount(receiveCountBeforeAcknowledgement + 1)
+    try await waitForLiveReceiverToApplyTakenFrames(runtime)
 
     let durable = try await runtime.persistence.loadState().snapshot.outbox
     let mutation = try #require(durable.first { $0.id == mutationID })
@@ -4908,6 +4924,10 @@ struct InstantLiveTransportTests {
     configuration.onLiveReceiverEventAcquiredForTesting = {
       await responseGate.suspend()
     }
+    // No acknowledgement-deadline wake may start a delivery pass mid-test (see the settle wait below).
+    configuration.liveMutationDeadlineSleep = { _ in
+      try await Task.sleep(nanoseconds: 3_600_000_000_000)
+    }
     let runtime = try await InstantRuntime.bootstrap(configuration: configuration)
     _ = try await runtime.connect()
     let mutationID = "tx-runtime-live-response-token"
@@ -4925,6 +4945,18 @@ struct InstantLiveTransportTests {
       createdAt: createdAt
     )
     await session.waitForSentMessageCount(2)
+    // Let every delivery pass the write started finish before the reclaim below (#296). A pass that runs between the
+    // reclaim and the stale answer's recording claims the write under a new token but cannot send it while the first
+    // offer is still in flight, so the reoffer this test waits for never comes. The reader's hand-off to the applier
+    // widened that window enough to hit it under load.
+    try await instantLiveWithTimeout(
+      operation: "wait for the write's delivery passes to settle",
+      timeoutMilliseconds: 5_000
+    ) {
+      while await !runtime.automaticMutationPumpIsIdleForTesting() {
+        try await Task.sleep(nanoseconds: 1_000_000)
+      }
+    }
     let originalClaim = try #require(
       try await runtime.persistence.outboxDeliveryClaimForTesting(id: mutationID)
     )
@@ -4975,6 +5007,7 @@ struct InstantLiveTransportTests {
     ) {
       await session.waitForReceiveRequestCount(receiveCountBeforeAcknowledgement + 1)
     }
+    try await waitForLiveReceiverToApplyTakenFrames(runtime)
 
     let revisionAfterStaleDisposition = try await runtime.persistence.currentOutboxRevision()
     expectNoDifference(revisionAfterStaleDisposition, revisionBeforeStaleDisposition)
@@ -4982,11 +5015,18 @@ struct InstantLiveTransportTests {
     let pending = try #require(durable.first { $0.id == mutationID })
     expectNoDifference(pending.status, .pending)
     expectNoDifference(pending.serverTransactionID, nil)
-    let claimAfterStaleDisposition = try await runtime.persistence
-      .outboxDeliveryClaimForTesting(id: mutationID)
-    expectNoDifference(
-      claimAfterStaleDisposition,
-      replacementClaim
+    let claimAfterStaleDisposition = try #require(
+      try await runtime.persistence.outboxDeliveryClaimForTesting(id: mutationID)
+    )
+    // The stale answer must not adopt or alter the replacement's claim. Only the deadline may move, and only later:
+    // the disposition requests delivery while its frame still counts as applied, and that pump pass defers this
+    // socket's claim deadlines (deferAcknowledgementDeadlinesWhileAFrameIsApplied, #296).
+    var claimIgnoringDeadline = claimAfterStaleDisposition
+    claimIgnoringDeadline.deadlineMilliseconds = replacementClaim.deadlineMilliseconds
+    expectNoDifference(claimIgnoringDeadline, replacementClaim)
+    #expect(
+      (claimAfterStaleDisposition.deadlineMilliseconds ?? .min)
+        >= (replacementClaim.deadlineMilliseconds ?? .min)
     )
     let sentMutationIDs = await session.sentMessages()
       .filter { $0.op == "transact" }
@@ -6848,6 +6888,20 @@ private func waitForOperationGateHopCount(
   return recorder.summary(since: baseline).breakdown["operation-gate", default: 0] >= count
 }
 
+/// Waits until the live receiver has applied every frame it took and is waiting for the next one (#296). The reader
+/// asks for the next frame as soon as it buffers one, so the next `receive()` request alone no longer proves that the
+/// frame before it was applied.
+private func waitForLiveReceiverToApplyTakenFrames(_ runtime: InstantRuntime) async throws {
+  try await instantLiveWithTimeout(
+    operation: "wait for the live receiver to apply the frames it took",
+    timeoutMilliseconds: 5_000
+  ) {
+    while await !runtime.liveReceiverIsWaitingForAFrameForTesting() {
+      try await Task.sleep(nanoseconds: 1_000_000)
+    }
+  }
+}
+
 private func temporaryLiveCacheURL() throws -> URL {
   let directory = FileManager.default.temporaryDirectory
     .appendingPathComponent("InstantLiveTransportTests-\(UUID().uuidString)")
@@ -8054,5 +8108,132 @@ private enum InstantLiveStreamTestError: LocalizedError {
 
   var errorDescription: String? {
     "push failed"
+  }
+}
+
+/// #303: every refresh-ok used to carry Scribe's 447 attrs, and every frame paid to parse them and rebuild the schema
+/// lookups, even for a frame without attrs, which applies with the session's cached ones. These pin that the
+/// translator builds the attribute context once per set of attrs and local schema, and rebuilds it when either changes.
+@Suite
+struct InstantLiveRefreshAttributeContextCacheTests {
+  static let createdAt = InstantTimestamp(milliseconds: 1_700_000_000_456)
+
+  static func refresh(_ index: Int, attrs: [InstantLiveJSONValue] = []) -> InstantLiveMessage {
+    .refreshOK(
+      clientEventID: "event-refresh-\(index)",
+      processedTransactionID: "server-tx-\(index)",
+      attrs: attrs,
+      computations: [
+        .todoJoinRowsComputation(
+          entityID: "cached-attrs-todo-\(index)",
+          text: "Todo \(index)",
+          isCompleted: false,
+          createdAt: createdAt,
+          processedTransactionID: "server-tx-\(index)"
+        )
+      ]
+    )
+  }
+
+  /// Connects a runtime to `messages` (after init-ok with the todo attrs and the query's add-query-ok) and waits until
+  /// the last refresh is applied.
+  static func applying(
+    _ refreshes: [InstantLiveMessage],
+    lastTransactionID: String,
+    suffix: String
+  ) async throws -> InstantRuntime {
+    let session = InstantRuntimeScriptedLiveSession(messages: [
+      .initOK(clientEventID: "event-init", attrs: .todoServerAttrs),
+      .addQueryOK(clientEventID: "event-query"),
+    ] + refreshes)
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "runtime-attribute-context-\(suffix)",
+        persistenceURL: temporaryLiveCacheURL(),
+        initialAttributes: TodoExample.attributes,
+        liveTransport: session.transport
+      )
+    )
+    let stream = await runtime.observe(TodoExample.query)
+    var iterator = stream.makeAsyncIterator()
+    _ = await iterator.next()
+    _ = try await runtime.connect()
+    for _ in 0..<1_000 {
+      if try await runtime.syncState().processedTransactionID == lastTransactionID { return runtime }
+      try await Task.sleep(for: .milliseconds(10))
+    }
+    Issue.record("The last refresh (\(lastTransactionID)) was not applied.")
+    return runtime
+  }
+
+  @Test
+  func attrLessRefreshesBuildTheAttributeContextOnce() async throws {
+    let runtime = try await Self.applying(
+      (1...10).map { Self.refresh($0) },
+      lastTransactionID: "server-tx-10",
+      suffix: "attr-less"
+    )
+    expectNoDifference(runtime.liveRefreshAttributeContextBuildCountForTesting(), 1)
+    _ = try await runtime.closeConnection()
+  }
+
+  @Test
+  func refreshesCarryingTheSameAttrsReuseTheAttributeContext() async throws {
+    let runtime = try await Self.applying(
+      (1...10).map { Self.refresh($0, attrs: .todoServerAttrs) },
+      lastTransactionID: "server-tx-10",
+      suffix: "same-attrs"
+    )
+    expectNoDifference(runtime.liveRefreshAttributeContextBuildCountForTesting(), 1)
+    _ = try await runtime.closeConnection()
+  }
+
+  /// Each server apply saves its query results inside the commit, under the operation gate, and each save loaded and
+  /// decoded every attribute row to bound the result's nested includes.
+  @Test
+  func liveResultSavesReuseTheStoredAttributes() async throws {
+    let runtime = try await Self.applying(
+      (1...10).map { Self.refresh($0) },
+      lastTransactionID: "server-tx-10",
+      suffix: "live-result-attributes"
+    )
+    let loads = await runtime.persistence.liveResultAttributeLoadCountForTesting()
+    expectNoDifference(loads, 1)
+    _ = try await runtime.closeConnection()
+  }
+
+  @Test
+  func aMergedAttributeReachesTheNextLiveResultSave() async throws {
+    let widened: [InstantLiveJSONValue] = .todoServerAttrs + [
+      .serverAttr(id: "server-todos-priority", namespace: "todos", name: "priority")
+    ]
+    let runtime = try await Self.applying(
+      [Self.refresh(1), Self.refresh(2), Self.refresh(3, attrs: widened), Self.refresh(4), Self.refresh(5)],
+      lastTransactionID: "server-tx-5",
+      suffix: "live-result-merged-attribute"
+    )
+    // Loaded for the first save, again inside the commit that merged the new attribute, and once more after that
+    // commit bumped the attribute revision; the last frame reuses it.
+    let loads = await runtime.persistence.liveResultAttributeLoadCountForTesting()
+    expectNoDifference(loads, 3)
+    _ = try await runtime.closeConnection()
+  }
+
+  @Test
+  func aNewServerAttributeRebuildsTheAttributeContextAndMergesIt() async throws {
+    let widened: [InstantLiveJSONValue] = .todoServerAttrs + [
+      .serverAttr(id: "server-todos-priority", namespace: "todos", name: "priority")
+    ]
+    let runtime = try await Self.applying(
+      [Self.refresh(1), Self.refresh(2), Self.refresh(3, attrs: widened), Self.refresh(4), Self.refresh(5)],
+      lastTransactionID: "server-tx-5",
+      suffix: "new-attribute"
+    )
+    // Built for the first frame, again for the widened attrs, and once more over the schema that merged the new
+    // attribute; the last frame reuses it.
+    expectNoDifference(runtime.liveRefreshAttributeContextBuildCountForTesting(), 3)
+    let attributes = try await runtime.persistence.loadCompactState().snapshot.store.attributes
+    #expect(attributes.contains { $0.namespace == "todos" && $0.name == "priority" })
+    _ = try await runtime.closeConnection()
   }
 }

@@ -10,6 +10,601 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## October 1st, 2026 at 4:23:01 a.m. EDT — `1ba007798552` End every stream observation behind a subscription the server refuses, and pin the offline stream writer gap (#303 #329)
+
+- **Implementation commit:** `1ba0077985528f9633d987cedaa145baeb698452`
+- **Change:** A subscription the server refuses now ends every stream observation behind it, and the offline stream writer gap is pinned as a known issue (#303 #329).
+- **Details:**
+  - A reader that subscribes before the writer creates the stream gets 400 Stream is missing. The live session retired the reader but never ended its observations, so Scribe's materializeMedia waited forever and every later recording's media waited behind it. The refusal now ends the observations that share the reader and logs stream.subscription-refused, as upstream Stream.ts onRecieveError closes the iterator; the reader records its event id before sending, as upstream startReadStream does.
+  - Tests: two observations sharing a refused subscription both end, no observer remains, and the session stays as it was (red before: still waiting after 3 s; 20 of 20 after). A stream written while offline sends only init after connect() (pinned, #329; fix planned for build 78).
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — endStreamContentObservations and liveStreamReaderKey
+  - `Sources/InstantSwiftDataCore/InstantRuntimeLiveSession.swift` — retireRejectedStreamReader returns the reader key; event id recorded before send
+  - `Sources/InstantSwiftDataCore/InstantSnapshotObservers.swift` — InstantStreamContentObservers.finish(where:)
+  - `Tests/InstantSwiftDataCoreTests/InstantReactorParityTests.swift` — refused subscription and offline writer tests
+- **User context (verbatim):**
+  > Yes, put the subscribe-stream fix in 77.
+- **SpecStory:** unavailable — Claude Code agent session (library-77); no SpecStory capture configured for this session.
+
+## October 1st, 2026 at 4:23:01 a.m. EDT — `2c4cf84b4b75` Close two pre-existing test races the build 77 gates hit, and name a busy owner when the flush idle check fails (#303)
+
+- **Implementation commit:** `2c4cf84b4b75365364f3b8fcecdc6030f6bdffb5`
+- **Change:** Two older test races the build 77 gates hit are closed, and the flush idle check names a busy owner (#303).
+- **Details:**
+  - Both races predate library-77: on 23a80571's code, run alone, the reclaim test failed 4 of 12 and the flush timeout test 2 of 12. The owner-name diagnostic named the startup cookie sync, a utility-priority bootstrap task still pending when the 30-45 ms test ended; the test now waits for bootstrap's background work before the flush.
+  - The reclaim test's automatic pump could reclaim the expired offer itself and report it outside the known-issue scope; the test now waits for the pump to go idle. Each test then passed 30 of 30 alone.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — exactCloseBackgroundTaskNonIdleOwnersForTesting
+  - `Tests/InstantSwiftDataCoreTests/InstantBoundedOutboxDeliveryTests.swift` — wait for bootstrap's startup work, name non-idle owners
+  - `Tests/InstantSwiftDataCoreTests/InstantLiveTransportTests.swift` — wait for the automatic pump before expiring the offer
+- **User context (verbatim):**
+  > At this load, rerun any timing or timeout failure alone before you count it, and note the load during each run.
+- **SpecStory:** unavailable — Claude Code agent session (library-77); no SpecStory capture configured for this session.
+
+## October 1st, 2026 at 2:34:55 a.m. EDT — `778c793bb1fa` Advertise @instantdb/core v0.22.75 so refresh-ok frames stop carrying the attrs (#303)
+
+- **Implementation commit:** `778c793bb1fa5e19ace26e11f96e2f8ba4c53df1`
+- **Change:** init advertises @instantdb/core v0.22.75, so refresh-ok frames stop carrying the attrs (#303).
+- **Details:**
+  - Above v0.20.4 the server skips refresh-ok attrs and above v0.17.5 sends presence patches; above v0.22.75 it batches messages, which Swift does not decode. Confirmed safe by the experiment agent; frames 173 KB -> 43.6 KB.
+  - Tests: the init carries v0.22.75 (red before); a reconnect's init-ok replaces the cached attrs; a refresh-added attribute is used by the next attr-less frame; an empty refresh changes nothing. The frame that adds an attribute drops its own rows' values for it, already so at d487ee09 (known issue).
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantLiveTransport.swift` — InstantLiveMessage.defaultVersions at both init sites
+  - `Tests/InstantSwiftDataCoreTests/InstantReactorParityTests.swift` — advert and cached-attrs tests
+- **User context (verbatim):**
+  > The experiment agent's sign-off: the @instantdb/core v0.22.75 advert is SAFE. Include it in library-77.
+- **SpecStory:** unavailable — Claude Code agent session (library-77); no SpecStory capture configured for this session.
+
+## October 1st, 2026 at 2:34:54 a.m. EDT — `67bda26b4ff7` Keep a live query registered after a transient add-query failure, and send it again on the next connection (#324)
+
+- **Implementation commit:** `67bda26b4ff7e2786fe3e5f7ef274f32e53cb2a0`
+- **Change:** A transient add-query failure keeps the live query registered and sends it again on the next connection; only a repeating rejection retires it (#324).
+- **Details:**
+  - A stalled server answered add-query with 500 operation-timed-out and Swift retired the query for good, freezing its view until relaunch. Upstream keeps every subscription after any add-query error and re-sends on init-ok.
+  - After a 500 timeout and a reconnect the new session sent only init (red); it now sends init and add-query and the refreshed result reaches the observer. A permission rejection is still not re-sent.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — addQueryRejectionRepeats and the add-query error handling
+  - `Tests/InstantSwiftDataCoreTests/InstantReactorParityTests.swift` — transient and permanent add-query error tests
+- **User context (verbatim):**
+  > Please put this first in library-77, ahead of the efficiency work: it freezes Michael's views until relaunch
+- **SpecStory:** unavailable — Claude Code agent session (library-77); no SpecStory capture configured for this session.
+
+## October 1st, 2026 at 2:34:54 a.m. EDT — `bde67df7783e` Run every InstantRuntime entry point off its caller's executor, so no critical section waits for the main thread (#303)
+
+- **Implementation commit:** `bde67df7783e98eabf4429ec4dca0f9fc88477fd`
+- **Change:** Every async InstantRuntime entry point is @concurrent, so no gate-held critical section resumes on its caller's executor (#303).
+- **Details:**
+  - With NonisolatedNonsendingByDefault the class's methods ran on the caller's executor; Scribe's main-actor observeAuthSession held the operation gate 23-101 s while the first render held the main thread (#303's samples).
+  - A main-actor caller holding the gate while main was blocked made a write from another task wait 2.82 s; it no longer waits. An incremental build kept stale test-tool objects and crashed in transact; a clean build passes 914 tests in 18 suites.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — @concurrent on 111 async entry points; an observeAuthSession testing hook
+  - `Tests/InstantSwiftDataCoreTests/InstantOperationGateAwaitTests.swift` — the main-actor gate test
+- **User context (verbatim):**
+  > make the gate-holding InstantRuntime methods @concurrent, or otherwise guarantee no critical section runs on a caller's executor
+- **SpecStory:** unavailable — Claude Code agent session (library-77); no SpecStory capture configured for this session.
+
+## October 1st, 2026 at 2:34:54 a.m. EDT — `7799d1706652` Reuse the stored attributes across live-result saves instead of reloading them per result (#303)
+
+- **Implementation commit:** `7799d1706652a352f8e7a74a0e59529e123e3b60`
+- **Change:** Live-result saves reuse the stored attributes instead of loading and decoding the whole attribute table per result inside every server-apply commit (#303).
+- **Details:**
+  - The experiment agent's profile put the reload at 17% of the reader's CPU. The store keeps the attributes with the attribute revision and a write generation; every write to instant_attributes goes through one helper that bumps the generation.
+  - 10 refreshes loaded the attributes 10 times, now once. With 504 attributes, 100 full loads take 1.08 s and 100 reused ones 0.018 s (debug).
+- **Files:**
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — attributesForLiveResultSave, executeAttributeWrite, testing hooks
+  - `Tests/InstantSwiftDataCoreTests/InstantLiveTransportTests.swift` — live-result attribute reuse tests
+  - `Tests/InstantSwiftDataCoreTests/InstantLiveRefreshAttributeCostTests.swift` — reload versus reuse cost
+- **User context (verbatim):**
+  > make the in-memory attribute cache ... the first change in library-77, next to the translator cache
+- **SpecStory:** unavailable — Claude Code agent session (library-77); no SpecStory capture configured for this session.
+
+## October 1st, 2026 at 2:34:54 a.m. EDT — `f5fed9053d38` Reuse a live refresh's attribute context while the session's attrs and the local schema are unchanged (#303)
+
+- **Implementation commit:** `f5fed9053d38cd2b405be7007f0d0e81c5d62be6`
+- **Change:** A live refresh reuses its attribute context while the session's attrs and the local schema are unchanged, instead of parsing every attr and rebuilding the schema lookups per frame (#303).
+- **Details:**
+  - Attr-less frames pass the session's same attrs array, so the reuse check is a buffer-identity comparison; frames carrying equal attrs compare in memory. A merged attribute or changed attrs rebuild.
+  - 10 attr-less frames built the context 10 times, now once; a frame adding an attribute rebuilds and merges it. 50 Scribe-shaped refreshes with 504 attrs: 728 ms CPU uncached, 357 ms cached (debug).
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantLiveRefreshApplication.swift` — InstantLiveRefreshAttributeContextCache and the translator's prebuilt-context parameter
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — applyLiveRefresh uses the cache; a testing build counter
+  - `Tests/InstantSwiftDataCoreTests/InstantLiveTransportTests.swift` — attribute-context reuse and invalidation tests
+  - `Tests/InstantSwiftDataCoreTests/InstantLiveRefreshAttributeCostTests.swift` — cached versus uncached cost
+- **User context (verbatim):**
+  > fix this please so it works efficiently as as well as the typescript core library
+- **SpecStory:** unavailable — Claude Code agent session (library-77); no SpecStory capture configured for this session.
+
+## September 30th, 2026 at 8:25:12 p.m. EDT — `9f72413db9fb` Let apps turn off AuthV3LoginScreen's demo counters (#289)
+
+- **Implementation commit:** `9f72413db9fb8db1bcc496fcea3c6344e6b63194`
+- **Change:** Apps can turn off AuthV3LoginScreen's demo counters (#289).
+- **Details:**
+  - New environment value authV3ShowsDemoCounters (default true, so the Auth recipe app and every other app are unchanged). When false the screen leaves out AuthV3CountersCard, which observes recipe_public_counters and recipe_account_counters and creates the public row on appear. Scribe turns it off: its schema has neither entity, and opening the Account sheet on Michael's iPad (0.1 (72)) failed two query observations and one write with no tap; each Increment public tap failed twice more.
+  - Tests: AuthV3AppTests (macOS) lays out two login screens headless with local-only clients; the default screen creates the public counter row, the screen with the value off creates none. Red against a stub that ignored the value, then 6 of 6; AuthV3, Recipes, VoiceTrail, and AppBuilder suites 62 of 62.
+  - Scope: only the AuthV3 UI module and its tests. git diff --stat 506089b2 lists no Sources/InstantSwiftDataCore file, so the sync engine is untouched and the live-recording simulator soak is not required.
+- **Files:**
+  - `Sources/AuthV3App/AuthApp.swift` — environment value authV3ShowsDemoCounters; the login screen reads it around the counters card
+  - `Tests/AuthV3AppTests/AuthV3AppTests.swift` — default-on test and the headless two-screen write test
+- **User context (verbatim):**
+  > Remove the "Increment public / Increment mine" demo counters from Scribe's Account screen on every platform, so tapping them can't write a namespace Scribe's schema doesn't have.
+- **SpecStory:** unavailable — Claude Code CLI session; no SpecStory capture configured for this session.
+## September 30th, 2026 at 9:53:48 p.m. EDT — `1907c0b49859` Restore a refused write's receipt as written, then restamp what it restored to txTime 0 (#296)
+
+- **Implementation commit:** `1907c0b49859612372531a9ab36aa8044e461d73`
+- **Change:** A refused write's receipt is applied as written and what it restored is then restamped to txTime 0, so a receipt that replaces the overlay by its own stamp still removes it (#296).
+- **Details:**
+  - f53f7793 stamped the receipt's inserts at txTime 0 before applying them. An insert-only receipt that relies on its stamp to replace the overlay's value then lost last-write-wins, and the refused value stayed: InstantBoundedServerApplyRebaseTests' failedActiveOverlayIsARootEvenWhenTheServerWriteIsDisjoint failed in the ten suites on df0a711a (store kept failed-local instead of server-base).
+  - The library builds its receipts retract-first (rollbackTransaction(mutationID:prepared:) and rollbackTransaction(of:rebasedOnto:)), and the refusal suites passed on df0a711a, so receipts the library wrote were not affected; the synthetic insert-only receipt was.
+  - Now the receipt's operations run as written, and each restored fact is retracted and inserted again at txTime 0: the receipt decides what comes back, only the stamp changes. The scripted refused-replay case also asserts the refused write's overlay is removed on both paths.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — restoredAsBase keeps the receipt's operations and appends the restamp
+  - `Tests/InstantSwiftDataCoreTests/InstantFastDrainTests.swift` — the refused-replay case checks that the refused overlay is removed
+- **User context (verbatim):**
+  > Then run the gates on that head: the live soak, the Recording 023-shape backlog, the phone-shaped replay through its acceptances and refusals, the ten suites, and the differential.
+- **SpecStory:** unavailable — Claude Code agent session (fast-drain-3); no SpecStory capture configured for this session.
+
+## September 30th, 2026 at 8:55:52 p.m. EDT — `f53f779317bd` Let the server's facts win against what a refused write restores, on every removal path (#296)
+
+- **Implementation commit:** `f53f779317bdddba4912d92d5a676e5982001a02`
+- **Change:** Facts that removing a refused write restores are base facts stamped txTime 0 at every removal site, so the server's fact wins against them as upstream shows it (#296).
+- **Details:**
+  - A refused write's receipt can restore values with this device's stamps, and Instant stamps a cardinality-one fact with the time its slot was first set (triple.clj keeps created_at on update unless overwrite-t is set, which only app streams do), so the restored value could win last-write-wins against the server's newer value and stay.
+  - The differential's new 'refuse several before a frame' event found it: Scribe-links seed 15 showed a final segment as not final on the reduced device. Turning build 73's splice off does not fix it; the whole-component rebase restores the same before-image.
+  - Applied in the reduced splice (store operations and receipt base facts), both terminal-failure removals, and the full rebase's reverse pass for refused rows. Upstream shows the server's results with the remaining pending writes on top, and a refused write leaves nothing behind.
+  - aRefusedReplayLeavesTheServersValueOnBothPaths and the differential event are red on b78e978f (3 issues; seed 15 at step 38), also with the splice disabled, and green here. InstantFastDrainTests: 16 tests pass with 2 declared known issues (Pattern B).
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — restoredAsBase at the splice, the terminal-failure removals, and the full rebase's reverse pass
+  - `Tests/InstantSwiftDataCoreTests/InstantFastDrainTests.swift` — the refused-replay twin test and the differential's multi-refusal event
+- **User context (verbatim):**
+  > Add the divergent shape to the differential as a permanent case, and show it red on b78e978f and green after the guard.
+  > Agreed on the txTime-0 restore at all three removal sites.
+- **SpecStory:** unavailable — Claude Code agent session (fast-drain-3); no SpecStory capture configured for this session.
+
+## September 30th, 2026 at 8:55:35 p.m. EDT — `b78e978f8aee` Skip a restated fact that loses to a later-stamped resident fact, as the full rebase's last-write-wins does (#296)
+
+- **Implementation commit:** `b78e978f8aee30821485d10ad312d70e1b4604d9`
+- **Change:** A restated server fact that loses to a later-stamped resident fact no longer forces the whole-component rebase, so the phone's list frames reduce again (#296).
+- **Details:**
+  - Build 73 on Michael's iPhone declined every restated list frame (changesShadowedFact on recordings/clipboardEntries): the slot had no surviving writer, and the server's restated fact carried an earlier stamp than the resident fact a pruned local write left, so the fact did not hold and the frame fell back to the full rebase (about 3.5 s on the phone, every 16 s).
+  - On a shadowed slot with no surviving writer, a cardinality-one fact stamped earlier than the resident fact is skipped, exactly as the full rebase's last-write-wins leaves it. This changes cost, not state.
+  - aRestatedFactThatLosesToALaterStampedResidentFactDoesNotRebase is red on build 73's library, 506089b2 (changesShadowedFact recordings/title, 18 bodies) and green after (0 bodies). Replaying the phone's stored list result on a scratch copy of its pre-71 store (auth rows deleted, no transport): 21-24 s and 1,864 bodies per frame before, 0.11-0.14 s and 0 bodies after the first frame.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — residentFactWins in the shadowed-slot classification
+  - `Tests/InstantSwiftDataCoreTests/InstantFastDrainTests.swift` — the later-stamped resident fact test
+- **User context (verbatim):**
+  > Name the persisting decline, then fix both it and the splice cases
+- **SpecStory:** unavailable — Claude Code agent session (fast-drain-3); no SpecStory capture configured for this session.
+## September 30th, 2026 at 7:42:44 p.m. EDT — `0d66e6bb5d7c` Start a backward-navigation page from the server's answer, not an earlier query's stored result (#300)
+
+- **Implementation commit:** `0d66e6bb5d7ce8d3283dca446ef7f389bfa26704`
+- **Change:** A page loaded by loadPreviousPage starts from the server's answer, not from a result stored for the same query earlier, so a stale answer about the rows above cannot make the window climb to the head (#300).
+- **Details:**
+  - Found by the #300 property test's operation trace on 3bcf817d: the page above the first page repeats the original leading watcher's exact query (asc limit 3 after 240). The runtime seeded the new registration from that query's persisted result ([241], no rows above) before the server's answer ([241, 242, 243], more above) arrived. The coordinator took the stale flag as reaching the top, froze the page at 241 and started a leading watcher there, and the watcher chain climbed to the head in one call, cutting the bottom. No row was lost, but one loadPreviousPage skipped rows.
+  - Fix: observeLiveInfiniteQueryChunk takes seedsFromStoredResult (default true, so a relaunch still shows the last known page first). The coordinator passes false for chunks created by loadPreviousPage: they start from an active registration's page info or wait for the server. Other chunks keep the stored seed; a stale flag there only adds an extra chunk or delays canLoadNextPage, and never moves the window.
+  - Tests: aPreviousPageWaitsForTheServerInsteadOfAnEarlierQuerysStoredResult reproduces the trace (red on 3bcf817d, green after). The model server keeps an operation log of every query, change, and navigation, and the first problem a test records carries its tail. The property test now ends with a pass back to the top without changes, so rows inserted there after the window last left the top are reached too.
+  - Upstream parity: an intentional difference. Upstream's Reactor.subscribeQuery also answers from the previous result for the same query (getPreviousResult) before the server answers. Every chunk except a backward-navigation page still does the same here. Those pages exist only because the Swift window evicts; upstream never evicts, so it has no such page.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — observeLiveInfiniteQueryChunk's seedsFromStoredResult parameter
+  - `Sources/InstantSwiftDataCore/InstantInfiniteQuery.swift` — backward-navigation chunks start without the stored seed
+  - `Tests/InstantSwiftDataCoreTests/InstantInfiniteQueryLeadingRowsTests.swift` — the stale-seed reproduction and the model server's operation log
+- **User context (verbatim):**
+  > Test first, and keep parity with upstream Instant.
+- **SpecStory:** unavailable — Claude Code agent session (infinite-leading-rows); no SpecStory capture configured for this session.
+
+## September 30th, 2026 at 6:24:06 p.m. EDT — `3bcf817da881` Keep a windowed live infinite query paging when rows appear above its first row (#300)
+
+- **Implementation commit:** `3bcf817da8813bbf1733df51ccc4fa3729926e19`
+- **Change:** A windowed live infinite query keeps paging when rows appear above its first row: the leading watcher leaves with the evicted top page, trims cut at page boundaries, and evicted pages reload from their exact boundaries (#300).
+- **Details:**
+  - Root cause (506089b2): after the window's top page was evicted, ensureLeadingWatcher re-created the leading watcher (upstream's live reverse chunk) at the first visible cursor. It found the rows above again, counted as a page, and its arrival evicted the page just loaded; loadNextPage then found the last forward chunk already advanced and recorded infinite.load-next.noop-cannot-advance while canLoadNextPage stayed true. The original watcher also stayed subscribed at the old top after the window slid, so a row that later moved above the top was shown above a gap and evicted the bottom page. A second path to the same stall: after a bottom eviction, any refresh of the last (frozen) forward chunk cleared hasEvictedAfter.
+  - Fix: the leading watcher leaves with the evicted top page and is created again only when backward navigation reaches the top of the list (that page is frozen at its end and the watcher starts above it, upstream's freeze-then-watch). A trim cuts the window at a page boundary and drops every chunk beyond the cut. loadNextPage after a bottom eviction reloads the evicted page from the cursor its neighbor was frozen at, and only that page's first result clears hasEvictedAfter. loadPreviousPage freezes the page it grows from and starts at the exact boundary, so a reversed-order query can carry afterInclusive (the server's add-cursor-comparisons supports it). After kickstart canLoadPreviousPage means the top was evicted; the first chunk's server hasPreviousPage, which the server computes over the whole list, no longer makes it true while the leading rows are on screen.
+  - Kept on purpose: the leading watcher counts as a page once it holds rows, like upstream's other chunks, so a window at the top follows a live head by evicting at the bottom. Scribe's recording timeline (newest first, two pages of 32) relies on this, and ScribeRecordingTimelineQuery.decode rejects more than 64 rows; the issue's proposal (leading rows join the first chunk, uncounted) would allow 96 and stop following the head.
+  - Tests: InstantInfiniteQueryLeadingRowsTests pages against a model of Instant's server (datalog.clj add-page-info and add-cursor-comparisons rules, one refresh-ok for every active query after each change): five deterministic tests (the reduced stall, a row moving above the top after the window slid, a live head, the Mac reproduction's 121-row shape, and #302 pinned as a known issue) and an eight-seed property test that slides windows down, up, and down while rows are inserted at the top at random and moved there while the window includes the top. Red on 506089b2's logic: 1,150 issues, including the Mac's exact 63-row stall. The live-window parity test now expects the watcher to leave with the evicted top page, the previous page to start at item-2 inclusive, and the page that reaches the top to be frozen with the watcher above it.
+  - Upstream parity: ordering, cursors, and chunk shapes follow infiniteQuery.ts (e7101761). Intentional differences, because upstream has no retention window: the watcher's retirement and return, reloading an evicted page, backward navigation with exact boundaries, and a structural canLoadPreviousPage. Upstream sends afterInclusive only on its first forward chunk. A backward page that starts at a forward chunk's boundary sends it on the reversed order. The live server honors that: on bd40c50a at 21:11 EDT, a reversed query after r3 with afterInclusive returned [r3, r2], and without it [r2, r1] (audit `live-cursor-check/`).
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantInfiniteQuery.swift` — live coordinator: leading-watcher lifecycle, cut trim, exact-boundary reload and backward navigation, structural canLoadPreviousPage, awaiting-result residency count; retention policy documentation
+  - `Tests/InstantSwiftDataCoreTests/InstantInfiniteQueryLeadingRowsTests.swift` — model server, five deterministic tests (one pins #302 as a known issue), and the eight-seed property test
+  - `Tests/InstantSwiftDataCoreTests/InstantInfiniteQueryParityTests.swift` — the live-window test's expected queries under the new chunk lifecycle
+- **User context (verbatim):**
+  > Fix instant-data-swift issue #300: a windowed live infinite query stops loading older pages when rows appear above the first row. Test first, and keep parity with upstream Instant.
+- **SpecStory:** unavailable — Claude Code agent session (infinite-leading-rows); no SpecStory capture configured for this session.
+
+## September 30th, 2026 at 1:50:18 p.m. EDT — `5424c73365c6` Remove refused writes' overlays without the whole-component rebase, and respect last-write-wins in receipt patches (#296)
+
+- **Implementation commit:** `5424c73365c63d487fe8f0f4768531450f970c2e`
+- **Change:** A refused write's overlay is removed without the whole-component rebase, and receipt patches follow last-write-wins, so the Recording 023 backlog's refusals stop forcing 2,500-row rebases (#296).
+- **Details:**
+  - b4b9fbe3's backlog run: every refused replay left its overlay, and any refused overlay declined every frame (failedOverlay) into a whole-component rebase of about 2,500 rows (gate 12-16 s): 22 refusals and 20 accepts in 10 minutes.
+  - The reduction removes up to 16 refused overlays itself. Each slot a refused write changed goes back to its before-image: in the next surviving writer's receipt when that write replaces the slot, otherwise in the store (an entity it created is deleted when nothing after it touches the entity). The refused rows are plan rows staged as removed, the store operations are hydrated and applied before the server facts, and they count as a store change. Two refused writes on one slot, a later merge, a re-asserted link, or later writes on a created entity keep the full rebase.
+  - Receipt patches follow the store's last-write-wins rule: a present before-image with a later stamp than the server's fact is left alone, as the full rebase's apply leaves the base.
+  - aRefusedWriteIsRemovedWithoutARebase (two cases, the live deferring refusal path) is red on b4b9fbe3 (failedOverlay, a rebase, 0 removed) and green after (0 rebases, 1 removed, equal to a full-rebase twin). The differential now refuses through the deferral path with 60 pending writes; 12 seeds in both shapes match after every event, with removals in 4 seeds.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — failureSplice; spliced receipts and store operations in the classification and the plan; last-write-wins in receipt patches
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — refused overlays, their next writers, and created entities in the reduction context; reduced plans skip refused component roots; InstantServerApplyFailureSplice; removed-overlay metric
+  - `Tests/InstantSwiftDataCoreTests/InstantFastDrainTests.swift` — refused-write test through the live deferral; the differential refuses any write of a window through that path with 60 pending writes
+- **User context (verbatim):**
+  > If refusals still force rebases, go ahead with overlay removal without a rebase.
+- **SpecStory:** unavailable — Claude Code agent session (fast-drain); no SpecStory capture configured for this session.
+
+## September 30th, 2026 at 1:04:58 p.m. EDT — `5e994bdc92e5` Let the stale-acknowledgement test settle its delivery passes before it reclaims the write (#296)
+
+- **Implementation commit:** `5e994bdc92e5fc0543798ab23283828d9ea9d8c8`
+- **Change:** The stale-acknowledgement test lets its delivery passes settle before it reclaims the write, so a pass cannot strand the reoffer it waits for (#296).
+- **Details:**
+  - A pass that ran between the test's external reclaim and the stale answer's recording claimed the write under a new token but could not send it while the first offer was still in flight (pendingCount=1, skippedAlreadyInFlight=1); the next pass only deferred that claim. The reader's hand-off to the applier widened this pre-existing window: 6 timeouts in 35 runs on this branch at load 216-790, 0 in 20 on 0078484f at load 680-940.
+  - The test waits for automaticMutationPumpIsIdleForTesting() before reading and reclaiming the claim, and parks acknowledgement-deadline wakes. 40 of 40 runs pass at load 693-929. Production is unaffected: a single runtime reclaims only its own claims, through the timeout path that also clears the in-flight reservation.
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantLiveTransportTests.swift` — settle wait and parked deadline wake in the stale-acknowledgement test
+- **User context (verbatim):**
+  > If your reader/applier change touches the deferral, please run this test several times under load.
+- **SpecStory:** unavailable — Claude Code agent session (connection-survival); no SpecStory capture configured for this session.
+
+## September 30th, 2026 at 1:04:58 p.m. EDT — `2ddad19f7056` Say which server the keepalive measurements came from (#296)
+
+- **Implementation commit:** `2ddad19f7056b3fed9e6b7d42166888fb1a1ecf4`
+- **Change:** Comments name the server the keepalive measurements came from: Instant's hosted server through the throwaway app bd40c50a, not Scribe's production app (#296).
+- **Details:**
+  - Comment-only change in the receive buffer's documentation and both new test files. No connection was made to Scribe's production app; the live probe refuses its app id prefix.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantRuntimeLiveSession.swift` — InstantLiveReceivedFrames documentation
+  - `Tests/InstantSwiftDataCoreTests/InstantLiveConnectionSurvivalTests.swift` — suite documentation
+  - `Tests/InstantSwiftDataCoreTests/InstantURLSessionKeepaliveLiveTests.swift` — suite documentation
+- **User context (verbatim):**
+  > If you mean Instant's hosted server (api.instantdb.com) reached through the throwaway app bd40c50a, say exactly that
+- **SpecStory:** unavailable — Claude Code agent session (connection-survival); no SpecStory capture configured for this session.
+
+## September 30th, 2026 at 1:04:57 p.m. EDT — `8abcc002cdfa` Let the stale-acknowledgement test accept a deadline the acknowledgement deferral moved later (#296)
+
+- **Implementation commit:** `8abcc002cdfaa45eefd87d20aa1d76a1d72c7ba0`
+- **Change:** The stale-acknowledgement test accepts a claim deadline that the acknowledgement deferral moved later, and still asserts that the stale answer adopted nothing (#296).
+- **Details:**
+  - The stale answer's disposition requests delivery while its frame still counts as applied, so that pump pass runs deferAcknowledgementDeadlinesWhileAFrameIsApplied (4e281ddd) and moves the replacement claim's deadline a few milliseconds later. The test compared the whole claim, deadline included.
+  - Pre-existing: on 0078484f the unmodified test failed 20 of 20 runs at load 680-940 with a 3 ms deadline difference; claude-opus-5.5-fast-drain saw it at load 490-790. On the reader commit it failed 3 of 15 at load 340-760. The test now compares every field except the deadline and requires the deadline not to move earlier; skipping the deferral would be wrong, because the replacement's answer is queued behind the paused frame.
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantLiveTransportTests.swift` — staleAcknowledgementCannotAdoptAClaimTokenReofferedDuringResponseRecording ignores only a later deadline
+- **User context (verbatim):**
+  > Either make the test tolerate a deferred deadline (compare token, claimant, and state rather than the deadline), or make the deferral skip claims the paused frame cannot be holding. Your call.
+- **SpecStory:** unavailable — Claude Code agent session (connection-survival); no SpecStory capture configured for this session.
+
+## September 30th, 2026 at 11:47:07 a.m. EDT — `b4b9fbe32d6d` Hydrate deferred values, prove reverse-form links from their writers' receipts, and order the tail check by id (#296)
+
+- **Implementation commit:** `b4b9fbe32d6d89f223a69f76e05dc1180bc8fe3b`
+- **Change:** The reduction sees Scribe's deferred segment text and its links written from the other side, so live frames stop falling back to the whole-component rebase; the stamp guard orders the tail by id (#296).
+- **Details:**
+  - First live soak of 2666d343 (instrumented, iPhone simulator, bd40c50a): most declines were changesShadowedFact on transcriptionSegments/text and wordsJSON (Scribe keeps them deferred, so the reduction could not see them) and reverseLinkWriter on recordings/transcriptions and recordings/attachments (Scribe writes those links from the other side). It applied 0 receipt patches.
+  - The reduction now hydrates the frame's deferred values before classifying, as the full rebase does. A forward link whose reverse-form slot has surviving writers is decided from the first writer's receipt in physical form: if the receipt retracts the link, the server added it and the receipt is patched; if not (including a stamp-only re-assertion), it was already there. A patch on a many-valued slot changes only the patched values.
+  - The tail-write stamp guard compares (createdAt, id) with the outbox's newest row. Same-createdAt writes had lost to a later-stamped resident fact, which the Scribe-shaped differential caught in seeds 11, 13, and 16. InstantBoundedServerApplyRebaseTests now select the whole-component rebase they measure.
+  - Red on 2666d343 with the live reasons (12 text declines; 6 reverseLinkWriter declines), green after. 12 differential seeds in both shapes match the full rebase after every event, with 10-31 receipt patches per seed. Instrumented live soak of b4b9fbe3 at host load 565-1,003: pending 0-11 (one burst to 33), CPU mostly 25-27%, about 99% of applies reduced, 7 component bodies in 5 min.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — deferred hydration before classifying; reverse-link receipts (linkBeforeImage); many-valued receipt patches; tail check by (createdAt, id)
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — first and last reverse-link writers in the reduction context; the creation cursor returns the tail position
+  - `Tests/InstantSwiftDataCoreTests/InstantFastDrainTests.swift` — deferred-text and reverse-link tests; the Scribe-shaped differential defers text
+  - `Tests/InstantSwiftDataCoreTests/InstantBoundedServerApplyRebaseTests.swift` — the runtime selects the whole-component rebase these tests measure
+- **User context (verbatim):**
+  > It must keep up like 4e281ddd (pending near 0, CPU about 30%) and also beat it on the big backlog.
+- **SpecStory:** unavailable — Claude Code agent session (fast-drain); no SpecStory capture configured for this session.
+
+## September 30th, 2026 at 11:39:55 a.m. EDT — `7cf2658e6ccd` Keep reading the socket while a frame applies, so URLSession keeps answering server pings (#296)
+
+- **Implementation commit:** `7cf2658e6ccd55fb763dc054ebccb8ec15b56a72`
+- **Change:** The live receiver keeps a receive() outstanding while a frame applies, so URLSession keeps answering server pings and a long apply no longer loses the socket (#296).
+- **Details:**
+  - URLSession answers a ping only while a receive() is outstanding; the server closes a client silent for its idle timeout (about 20-30 s measured). Build 72 applied each frame before calling receive() again, so Recording 023's 26-37 s applies lost the socket: connection 3 applied an add-query-ok from 319.7 s to 350.3 s, then failed its next send and receive with POSIX 57.
+  - The receiver is now a reader and one sequential applier in one generation's task group, joined by InstantLiveReceivedFrames (128 frames, backpressure when full). The applier keeps the single loop's checks and bookkeeping: generation and session checks, record's in-flight and claim-token capture, frameBeingApplied() for the acknowledgement deferral and its 120 s cap. A frame buffered for an old generation is never applied, a retained send failure stops the applier before the next frame, and the terminal error follows every earlier frame (upstream onmessage before onclose).
+  - Five InstantLiveTransportTests now also wait for liveReceiverIsWaitingForAFrameForTesting(), because the next receive() request no longer proves a frame was applied. Four deterministic tests were red on 0078484f and are green; two buffer tests are new. Live against bd40c50a the runtime check went from 2 connection attempts and 1 receive-loop failure after a 40 s apply to 1 and 0.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantRuntimeLiveSession.swift` — InstantLiveReceivedFrames, the reader and applier receiver, the retained-failure check, and the applier-idle test accessor
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — liveReceiverIsWaitingForAFrameForTesting
+  - `Tests/InstantSwiftDataCoreTests/InstantLiveConnectionSurvivalTests.swift` — keepalive, ordering, replacement, send-failure, and buffer tests
+  - `Tests/InstantSwiftDataCoreTests/InstantLiveTransportTests.swift` — five tests wait for the applier instead of the next receive() request
+- **User context (verbatim):**
+  > Keep the socket answering pings while a frame applies.
+- **SpecStory:** unavailable — Claude Code agent session (connection-survival); no SpecStory capture configured for this session.
+
+## September 30th, 2026 at 10:39:05 a.m. EDT — `473fc933766d` Open one replacement connection per socket death, and keep the reconnect backoff when writes arrive (#296)
+
+- **Implementation commit:** `473fc933766d7db56e91c41a51b0871c171abd80`
+- **Change:** One socket death opens exactly one replacement connection, and writes no longer reset the reconnect backoff (#296).
+- **Details:**
+  - Build 72 had two reconnect paths for one loss: the receive loop's failure scheduled a reconnect, and the pump's next pass cancelled the controller (cancelAndWait) and connected itself. The cancelled attempt was aborted mid-handshake, or the controller later replaced the pump's fresh session because a reconnect never reused an open session. Recording 023 logged two or three connection.open-started per socket death.
+  - ensureLiveConnectionIfNeeded() defers to a reconnect that is waiting out its backoff or connecting (ownsNextConnection), like upstream _trySend, which never starts a socket; _reconnectTimeoutMs resets only on init-ok. A reconnect for a lost session reuses a session opened after the loss; only connection.mutation-delivery-failed replaces the open session, which is the failed one there. Divergence from upstream _startSocket, which closes an open previous transport, is cited in scheduleReconnect's documentation.
+  - connection.open-started is logged only when a connection will actually open. Tests seen red on 0078484f and green here: one replacement per death (3 attempts before, 2 after), reuse of a session opened by sign-in during the backoff (4 before, 3 after), and no connection or backoff cancellation from a write during the backoff.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — reconnect ownership in ensureLiveConnectionIfNeeded, reuse semantics in scheduleReconnect, and the open-started log position
+  - `Tests/InstantSwiftDataCoreTests/InstantLiveConnectionSurvivalTests.swift` — deterministic scripted-socket tests for one replacement per socket death, reuse, and backoff
+- **User context (verbatim):**
+  > Make the fix so that exactly one replacement connection opens.
+- **SpecStory:** unavailable — Claude Code agent session (connection-survival); no SpecStory capture configured for this session.
+
+## September 30th, 2026 at 10:38:16 a.m. EDT — `574098782627` Prove with the library's URLSession transport that a withheld receive() loses the socket (#296)
+
+- **Implementation commit:** `5740987826273333323c80f40309c839ca823b0a`
+- **Change:** An opt-in live suite proves, with the library's own URLSession transport, that a withheld receive() loses the socket (#296).
+- **Details:**
+  - Server rule (upstream websocket.clj, straight-jacket-run-ping-job): ping every 5 s; close a client that sent no text, binary, or pong frame for the idle timeout. Measured against the throwaway app bd40c50a: with receive() withheld the socket survived 20 s (2 of 2), died at 24-28 s in 3 of 6 trials and at 32-45 s in 7 of 7, always with POSIX 57, as on the device; a Node client that never pongs is closed at 25.2-25.7 s.
+  - Locally (127.0.0.1, the library's URLSession configuration): with no receive() outstanding URLSession sent 0 pongs over plain, TLS, and permessage-deflate sockets, with and without server data frames; with a receive() pending it answered 30 of 30 pings within about 10 ms.
+  - The suite's probe: 10 s alive; 40 s without receive() closed; 40 s with a receive() pending alive. Its runtime check holds one frame's apply for 40 s on a fresh room join; on build 72's receive loop it fails with 2 connection attempts and 1 receive-loop failure. Heavy unread server traffic postpones the close through TCP backpressure on the server's ping job, so the probes keep their sockets quiet.
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantURLSessionKeepaliveLiveTests.swift` — credentialed, opt-in measurement of the close threshold and of the runtime through a long apply; refuses the production app prefix
+- **User context (verbatim):**
+  > Prove the cause with URLSession specifically (red evidence).
+- **SpecStory:** unavailable — Claude Code agent session (connection-survival); no SpecStory capture configured for this session.
+## September 30th, 2026 at 10:05:34 a.m. EDT — `2666d34396f4` Re-receipt the first pending writer when the server changes a slot beneath it, instead of rebasing the component (#296)
+
+- **Implementation commit:** `2666d34396f43800a94692cfd7b8925afa5d890b`
+- **Change:** A server frame that changes a slot beneath pending writes re-receipts the slot's first writer instead of rebasing the whole component; this is why build 71 fell behind a live recording (#296).
+- **Details:**
+  - Instrumented build-71 soak (iPhone simulator, bd40c50a): Instant can send a query's refresh-ok before the transact-ok of the write it reflects (50 ms apart). The write is still pending, so every such frame declined into the whole-component rebase. Caught up, those were tiny. After one slow moment every frame declined (0 of 13-18 reduced per 30 s), and pending went 11 to 109 in 90 s.
+  - When every surviving writer replaces a cardinality-one slot and the store shows the latest one, the base value lives only in the first writer's rollback receipt, the one receipt the full rebase would change. The plan now stages that writer as a receipt-patch body (kept with the plan so the commit's revalidation plans the same rows) and rebases its receipt onto the server fact. A create whose receipt deletes the entity gets retractions of what it wrote plus the server's facts. A later refusal restores the server's value, as after the full rebase.
+  - F1: the capped earlier-overlays check is gone (every frame after a Stop used to rebase; the Stop drain is now 0 of 30 frames, 0.36 s, against 27 of 30 and 3.4 s). F2: a Scribe forward link written from the other side declines (reverseLinkWriter). Decline reasons are split, and metrics count component bodies and receipt patches.
+  - Tests red on the reapplied 8bee78eb and green after: frames ahead of their answers (24, 24, and 19 bodies before, 0 after), the lost-answer replay (12, then 0), the Stop drain. The differential test gained frames ahead of answers and refused replays; 12 seeds in both link shapes match the full rebase after every event, with 7-19 receipt patches per seed. The fast-drain suite passes with Pattern B's 2 known issues.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — receipt patches in the classifier and the forward pass; BeforeImage; rollbackTransaction(of:rebasedOnto:attributes:); F1 and F2
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — first overlay per entity and reverse-link writers in the context; instant_server_apply_receipt_patches with the plan and its revalidation; split decline reasons; component-body and patch metrics
+  - `Tests/InstantSwiftDataCoreTests/InstantFastDrainTests.swift` — in-flight, lost-answer, and Stop tests; frames ahead of answers and refused replays in the differential; component-body measurement
+- **User context (verbatim):**
+  > Find why the reduction rewrote nearly every pending row on live frames, and fix it on a new branch, with the live soak as the gate.
+- **SpecStory:** unavailable — Claude Code agent session (fast-drain); no SpecStory capture configured for this session.
+
+## September 30th, 2026 at 10:05:34 a.m. EDT — `81eb122c04cc` Reapply the server-apply reduction and the tail-write stamp guard (8bee78eb) as the base for its fixes (#296)
+
+- **Implementation commit:** `81eb122c04cc300940b694944a8eb33a533bf7ca`
+- **Change:** The build-73 branch reapplies 8bee78eb (the server-apply reduction and the tail-write stamp guard) as the base for its fixes; not shippable alone (#296).
+- **Details:**
+  - Reverts 184767d5 on agent/claude-opus-5.5/fast-drain-2 only, so the fixes that follow are reviewable as diffs over the reduction that fell behind live (build 71). Sources equal bb88af72's again and InstantFastDrainTests returns.
+  - Build 73 ships only from a head that passes the live soak, the Recording 023-shape backlog, the ten suites, and the differential test.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — the reduction, its call site, and the stamp guard, restored
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — the reduction context, the excludes_watermark_roots plan option, and metrics, restored
+  - `Tests/InstantSwiftDataCoreTests/InstantFastDrainTests.swift` — the fast-drain suite, restored
+- **User context (verbatim):**
+  > Michael needs a library that (a) keeps up live, like 4e281ddd, and (b) drains a Recording 023-sized backlog in minutes without pegging a core.
+- **SpecStory:** unavailable — Claude Code agent session (fast-drain); no SpecStory capture configured for this session.
+
+## September 30th, 2026 at 8:29:24 a.m. EDT — `184767d5f685` Revert "Skip the whole-component rebase for server frames that cannot change the base beneath pending writes (#296)"
+
+- **Implementation commit:** `184767d5f68555d5d26ce0abb8c1ccbe8ed39c7c`
+- **Change:** Scribe build 71's library fell behind a live recording; 8bee78eb is reverted, so the library sources match 80db4271 again (#296).
+- **Details:**
+  - Measured on an iPhone simulator against the throwaway app bd40c50a, same perf soak, 30 s samples. bb88af72 (build 71): pending writes reached 20 in the first minute and about 830 after 11 minutes; accepts fell from 51 to 4-15 per 30 s; CPU 60-114%; 240-880 pending rows rewritten per 30 s, so server frames kept peeling and replaying the outbox.
+  - Every older library kept up under the same soak: 1.7.0 (pending 0-3), c9f25d45 (0-2), 8ed26be3 (one burst to 51 that drained), and 4e281ddd (0-1, accepts 49-54 per 30 s, CPU 27-36%, 0 ack timeouts, 0 reconnects). 4e281ddd's library sources are identical to 80db4271's; bb88af72 differs from 80db4271 only by 8bee78eb.
+  - Removed: the server-apply reduction, the tail-write stamp guard, and InstantFastDrainTests (including the Pattern B known issue). Kept: 4e281ddd's acknowledgement deadline deferral and 120 s cap, 8ed26be3's whole-entity rule, and ce40ebe3's test-only busy timeout. The mechanism is still under investigation; a corrected reduction becomes a later build, gated on the live soak.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — reduction, call site, stamp guard, and flag removed
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — reduction context, excludes_watermark_roots plan option, and metrics removed
+  - `Tests/InstantSwiftDataCoreTests/InstantFastDrainTests.swift` — deleted with the reduction it tested
+- **User context (verbatim):**
+  > The mitigation for build 72 is reverting 8bee78eb.
+- **SpecStory:** unavailable — Claude Code agent session (fast-drain); no SpecStory capture configured for this session.
+
+## September 30th, 2026 at 5:53:46 a.m. EDT — `ce40ebe3ae5d` Let the retry fault injection wait for the runtime's own write instead of failing "database is locked" (#296)
+
+- **Implementation commit:** `ce40ebe3ae5da73a13909922ae07bc17acd184a2`
+- **Change:** The discard tests' retry fault injection waits for the runtime's own write instead of failing with 'database is locked' (#296).
+- **Details:**
+  - failedAtomicRetryCommitRetainsRejectionAndDoesNotResend failed intermittently in full parallel suite runs on a loaded machine. The error came from the test's fault injection: a second SQLite connection with no busy timeout creating a trigger while the runtime's own connection could still hold a short write transaction.
+  - Measured on frozen exports, interleaved, under the shared build lock, at load about 6. A write-lock probe at the injection point was busy in 64 of 80 scenarios on 80db4271 and 60 of 80 on 773429ae; the lock was free again within 0.5 ms. The exact injection failed in 24 of 120 concurrent scenarios on 80db4271 and 17 of 120 on 773429ae, and 0 of 480 on both with a 10 s busy timeout. The ten stale-writes suites, 3 interleaved runs per tree at loads 8 to 399: the target test passed 3 of 3 on both.
+  - Not caused by the fast-drain branch, and the app cannot meet it on the iPhone: the library opens one connection per store with a 10 s busy timeout, and only the app process opens the store (the widget and broadcast extensions do not).
+  - The helper now uses the same 10 s busy timeout as the library's connection and the file's other raw-connection helper. retryFaultInjectionWaitsForTheRuntimesOwnWrite runs the scenario 64 times at once: it failed 2 of 3 runs without the fix and passes 5 of 5 with it.
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantFailedMutationDiscardTests.swift` — busy timeout on the retry fault injection's connection; a concurrent regression test for it
+- **User context (verbatim):**
+  > Settle one thing before fast-drain ships as build 71: is the "database is locked" failure in failedAtomicRetryCommitRetainsRejectionAndDoesNotResend pre-existing, or caused by your branch?
+- **SpecStory:** unavailable — unavailable — Claude Code agent session (fast-drain); no SpecStory capture configured for this session.
+
+## September 30th, 2026 at 4:22:14 a.m. EDT — `8bee78eb3dd6` Skip the whole-component rebase for server frames that cannot change the base beneath pending writes (#296)
+
+- **Implementation commit:** `8bee78eb3dd6974734b45280cbeb72d6ab5ac999`
+- **Change:** A server frame that cannot change the base beneath the pending writes no longer peels and replays the outbox; a tail write that lost to a later-stamped fact now shows (#296).
+- **Details:**
+  - Recording 023 (build 69): the phone's 2,487 pending writes form two connected components (1,864 and 616). Every server frame that touched them peeled and replayed the whole component: the two rebases that finished took 22.5 s and 24.9 s, and the drain resolved about 33 writes per 55 s. A drain frame restates this device's own accepted writes, so it never changes the base beneath an overlay; upstream Reactor.js keeps each query's result in its own store and reapplies pending mutations on top.
+  - Before planning, the runtime classifies every server fact against the store and the pending writes' durable receipts in one indexed, revision-checked read. A fact on an entity no surviving write touches applies as before or is skipped when it holds. A fact on a shadowed entity must already hold beneath the writes: in the store when no surviving write inserts that slot, else as the first such write's receipt before-image, provided the earlier writes only insert and the store shows the last writer's value. When nothing left touches a shadowed entity and the watermark prunes only a prefix, the plan is body-free (excludes_watermark_roots). Failed overlays, global or unproven receipts, lookups, merges, confirmations, non-prefix watermarks, and real changes beneath pending writes keep the whole-component rebase; server-apply.reduction-declined logs each reason.
+  - A write appended at the outbox tail whose cardinality-one insert lost to a later-stamped resident fact (a faster server clock, or an overlay a rebase restamped) has those facts restamped past the newest fact. Before, it stayed invisible and delivery dropped it as older than the visible state until the next whole-component rebase; writes created before queued ones keep domain order.
+  - Measured (debug, macOS harness, one frame per accepted write): at 2,502 pending writes every frame of the full rebase rebased all ~2,500 bodies, 25.6 s wall and 12 s CPU per frame; reduced, 0 rebases for all 2,502 frames and 73 s process CPU for the whole drain (load average ~400). App time on a simulator or device is not measured. Differential test: 6 seeds x 70 randomized events, every read equal to the full rebase. Pattern B reproduced (known issue, whole-component path, not fixed).
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — the reduction and its call site, the tail-write stamp guard in performTransact, reducesServerApplyToAffectedOverlays, a live-refusal test seam
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — loadServerApplyReductionContext (indexed probes), the excludes_watermark_roots plan option, reduction metrics
+  - `Tests/InstantSwiftDataCoreTests/InstantFastDrainTests.swift` — Scribe-shaped drain harness, focused red/green tests, the differential test, the Pattern B reproduction, the measurement
+- **User context (verbatim):**
+  > Make instant-data-swift catch up fast when the outbox is large: stop paying a whole-outbox rebase for every server frame, and prove it with a measured 2,500-write drain.
+- **SpecStory:** unavailable — unavailable — Claude Code agent session (fast-drain); no SpecStory capture configured for this session.
+
+## September 30th, 2026 at 12:58:24 a.m. EDT — `4e281ddd0e22` Keep delivery claims while a server frame is still applying, and name what a refusal refused (#296)
+
+- **Implementation commit:** `4e281ddd0e22a1c4263b44559bf530ab99c4cef4`
+- **Change:** Delivery claims wait behind a server frame the receive loop is still applying, and every refusal names what it refused and whether it was a replay (#296).
+- **Details:**
+  - Recording 023 (build 69): after each reconnect the first query result started a 22-25 s optimistic rebase of the 2,487-mutation outbox, and the head's transact-ok waited behind it. The 6 s acknowledgement deadline reclaimed the head, replaced the connection, and started over: 385 times in 84 minutes. Nothing after 18:23 reached the server.
+  - While the current generation applies a frame, the pump now moves this claimant's claim deadlines to at least now + 6 s before claiming. Upstream Reactor.js handles each frame synchronously (_handleReceive), so its mutation timers never fire mid-frame. One frame is deferred for at most acknowledgementDeferralLimitMilliseconds (120 s, measured reason at the declaration); after that the deadline expires as before and ack-deadline-deferral-exhausted is logged as a warning.
+  - server-error-terminal carries the hint as JSON and a refusalKind: replay when an earlier connection offered the write without an answer, otherwise first-offer. A new refused-write event names the namespace, check, entity, attributes, and short values. Both are logged before the failure is recorded.
+  - Tests: acknowledgementDeadlineWaitsWhileTheReceiverStillAppliesAnEarlierFrame fails before (2 issues) and passes after; the refusal tests were written with the change and not run red. Ten suites, 682 tests, pass with 21 known issues: 20 in tests this change does not touch, 1 declared ack-timeout report in the new replay test. Not yet measured on a device.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — deadline deferral before claiming, refusal kind and refused-write diagnostics, the deferral limit
+  - `Sources/InstantSwiftDataCore/InstantRuntimeLiveSession.swift` — the frame being applied in each generation; offers earlier connections never answered
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — move one claimant's claim deadlines; read one outbox row for diagnostics
+  - `Sources/InstantSwiftDataCore/InstantMutationRefusal.swift` — what a refusal refused, from the hint and the refused transaction
+  - `Tests/InstantSwiftDataCoreTests/InstantBoundedOutboxDeliveryTests.swift` — the deferral and the replay refusal; the stuck-frame test sets the limit to 0
+  - `Tests/InstantSwiftDataCoreTests/InstantMutationRefusalTests.swift` — refusal metadata shapes
+- **User context (verbatim):**
+  > the transcript is not loading from within the app, although the word count is
+- **SpecStory:** unavailable — Claude Code agent session (stale-writes); no SpecStory capture configured for this session.
+
+## September 30th, 2026 at 12:58:24 a.m. EDT — `8ed26be3e87a` Keep an entity whole when it leaves one live query result (#296)
+
+- **Implementation commit:** `8ed26be3e87a6607200040214bf94094ec5e52df`
+- **Change:** Replacing a live query result keeps an entity whole when it leaves that result but still has a stored fact the retraction would not remove, as #259's pruning rule already did (#296).
+- **Details:**
+  - Before: each fact the old result held and the new one lacks was retracted unless another saved result owned that exact fact. In Recording 023 the recording list's result dropped a segment when a preview slot moved while the live timeline still held 12 of its facts; the 3 list-only facts (wallClockStartedAtMs, wallClockEndedAtMs, sentToInstantAtMs) were stripped locally on 4 of 847 segments, and typed reads quarantined those rows. The server has all 16 fields.
+  - Unchanged: a server edit to an entity still in the result is applied, and an entity only one result ever held is retracted in full. Cost, the same as #259's: a remote delete of such an entity no longer propagates by it leaving a result.
+  - Tests: liveQueryReplacementKeepsAnEntityWholeWhenItOnlyLeftOneResult fails before (it retracted createdAt and isCompleted) and passes after; the control liveQueryReplacementStillRetractsEntitiesNoOtherResultHoldsAndServerEdits passes both ways. Ten suites, 682 tests, pass.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — replacement retraction collects an entity that left a result whole or not at all
+  - `Tests/InstantSwiftDataCoreTests/InstantStoreTests.swift` — the Recording 023 shape and a control
+- **User context (verbatim):**
+  > the transcript is not loading from within the app, although the word count is
+- **SpecStory:** unavailable — Claude Code agent session (stale-writes); no SpecStory capture configured for this session.
+
+## September 29th, 2026 at 2:12:54 a.m. EDT — `fa570b3d5602` Let apps hide "Discard guest session" on the login screen (#113)
+
+- **Implementation commit:** `fa570b3d5602b43d6113d928d6e82d2c66fc80cd`
+- **Change:** Apps can hide Discard guest session on AuthV3LoginScreen (#113).
+- **Details:**
+  - New environment value authV3AllowsDiscardingGuestSession (default true). Scribe turns it off: discarding signed the guest out, and the next launch made a new guest that could not read the old guest's recordings. Additive; swift build --target AuthV3App passes.
+- **Files:**
+  - `Sources/AuthV3App/AuthApp.swift` — environment value and guest card
+- **User context (verbatim):**
+  > audit that I can upload upgrade an anonymous account to an account that already exists, and the recordings will be merged in the uh real users library.
+- **SpecStory:** unavailable — Claude Code CLI session; no SpecStory capture configured for this session.
+
+## September 29th, 2026 at 12:48:45 a.m. EDT — `a9a555636838` Print, debug-print, and reflect auth sessions without the refresh token or email (#113)
+
+- **Implementation commit:** `a9a55563683867e7ab1ed640745a25fa832ff550`
+- **Change:** Auth sessions print, debug-print, and reflect without the refresh token or the email address, so logging a session or anything that carries one cannot leak the token (#113).
+- **Details:**
+  - InstantAuthSession now conforms to CustomStringConvertible, CustomDebugStringConvertible, and CustomReflectable. description: InstantAuthSession(appID: "app-1", userID: "user-1", isGuest: false, email: <present>, refreshToken: <redacted>). The mirror keeps every field for dump and customDump, with refreshToken, email, and imageURL as presence markers (nil when absent).
+  - Before the change every rendering (interpolation, String(describing:), String(reflecting:), dump, customDump) of a session, an optional or array of sessions, InstantGuestPromotionResult, InstantAuthIdentityTransition, InstantAuthSignedInEvent, InstantAuthStatus, InstantGuestPromotionExchangeResult, and InstantMagicCodeSignInResult contained the token and the email: all 45 renderings (9 values, 5 methods), and the default rendering also showed the image URL. AuthV3App posts String(describing: event.identityTransition) in a notification for host loggers.
+  - Codable, Equatable, and Hashable are unchanged (the persisted session keeps its token). Trade-off: expectNoDifference between two sessions that differ only in token or email still fails, but CustomDump reports no visible difference; compare session.refreshToken directly when that matters.
+  - Not covered: request and verification types (InstantOAuthSignInRequest, InstantIDTokenSignInRequest, InstantMagicCodeVerifyRequest, the *Verification types, InstantMagicCodeChallenge.code) still print their tokens; they stay inside auth exchanges today.
+  - Validation: InstantAuthSessionRedactionTests 4 of 5 red before, green after; final focused run of 67 tests in 10 suites passes (the 25 baseline tests, the 9 new tests, and 33 more session-related tests in InstantStoreTests, BootstrapTests, and AuthV3AppTests with no baseline).
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantModels.swift` — log-safe description, debugDescription, and mirror for InstantAuthSession
+  - `Tests/InstantSwiftDataTests/InstantAuthSessionRedactionTests.swift` — exact log-safe renderings; no rendering of any carrier contains the token or email; Codable and equality keep the token
+- **User context (verbatim):**
+  > audit that I can upload upgrade an anonymous account to an account that already exists, and the recordings will be merged in the uh real users library.
+- **SpecStory:** unavailable — Claude Code CLI session; no SpecStory capture configured for this session.
+
+## September 29th, 2026 at 12:41:47 a.m. EDT — `2d29e8f2e740` Pin that a guest's pending writes survive a link into an existing account; document the divergence from Reactor.updateUser (#113)
+
+- **Implementation commit:** `2d29e8f2e7401d7b1d3f38830d5d479db987b5ec`
+- **Change:** Pin and document that a guest's pending writes survive a link into an existing account and are delivered under the promoted session, a deliberate divergence from upstream Reactor.updateUser (#113).
+- **Details:**
+  - Upstream Reactor.updateUser (Reactor.js 2240-2274), run by changeCurrentUser on every sign-in or sign-out that changes the user, fails each pending mutation with user-changed and drops it. This runtime never clears the outbox on an auth change (saveAuthSession, commitGuestPromotion, and signOut leave it untouched; PendingMutation has no user).
+  - InstantGuestPromotionOutboxTests: a guest writes, promoteGuestWithOAuth links it to an existing user (linkedToExistingUser), the write is still pending (not failed) and deliverable, and connect() sends init with the promoted refresh token followed by transact for the guest's write. Protocol-level evidence with a scripted socket, not a live server; it passes before and after (pins current behavior).
+  - Why Scribe keeps delivery: Instant links the guest, rules that admit linked-guest rows accept the write, and the app adopts the rows (Scribe ADR 0005, ADR 0014 section 9, Instant guest-auth docs 'Handling conflicting users'). Rules that require direct ownership reject it: on 2026-09-28 a guest create queued offline was denied after linking (/Users/laptop/Sync/audit/web-scribe-2026-09-28/AUTH-AUDIT.md).
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantGuestPromotionOutboxTests.swift` — a guest's pending write stays pending across a link into an existing account and is sent under the promoted session
+  - `skills/instant-data/SKILL.md` — auth changes keep the outbox: the divergence from Reactor.updateUser, why, and when to drain first
+- **User context (verbatim):**
+  > audit that I can upload upgrade an anonymous account to an account that already exists, and the recordings will be merged in the uh real users library.
+- **SpecStory:** unavailable — Claude Code CLI session; no SpecStory capture configured for this session.
+
+## September 29th, 2026 at 12:41:13 a.m. EDT — `f5e1aec4835f` Forward only a guest session's refresh token to the OAuth code exchange (#113)
+
+- **Implementation commit:** `f5e1aec4835f5ec7284d5f5019735ac4f65e3e4b`
+- **Change:** The ordinary OAuth sign-in forwards the current refresh token only for a guest session, as Instant's TypeScript client does; ID-token sign-in keeps forwarding any current token, as upstream does (#113).
+- **Details:**
+  - Upstream Reactor.exchangeCodeForToken (Reactor.js 2381-2394) and the redirect handler _oauthLoginInit (1974-2030) send refreshToken only when the current user is a guest; Reactor.signInWithIdToken (2408-2423) sends any current token. aa3d9779 applied the same guest-only rule to magic codes after a revoked non-guest token made verify_magic_code fail live (2026-09-28).
+  - Guest promotion (promoteGuestWithOAuth, promoteGuestWithIDToken) is unchanged. Scribe's sources on main and on the sharing branch call neither signInWithOAuth nor signInWithIDToken, so no Scribe path changes today.
+  - Validation: InstantOAuthGuestTokenTests red before (a non-guest token was forwarded), green after; the guest-token and ID-token cases pass before and after. The two tests that expected a non-guest token to reach OAuth now expect none. Focused run (InstantOAuthGuestTokenTests, InstantGuestPromotionOutboxTests, InstantGuestPromotionTests, InstantMagicCodeGuestTokenTests, V3AuthLoginFixtureTests, InstantAuthHTTPParityTests, and the four OAuth and ID-token exchange tests in InstantStoreTests and BootstrapTests): 29 tests in 8 suites pass; the same 25 existing tests passed before the change.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — signInWithOAuth forwards the refresh token only for a guest session (upstream parity)
+  - `Tests/InstantSwiftDataCoreTests/InstantOAuthGuestTokenTests.swift` — guest token forwarded, non-guest token not forwarded, ID-token sign-in still forwards any token
+  - `Tests/InstantSwiftDataCoreTests/InstantStoreTests.swift` — the OAuth exchange test expects no token from a non-guest session
+  - `Tests/InstantSwiftDataTests/BootstrapTests.swift` — the OAuth dependency test expects no token from a non-guest session
+- **User context (verbatim):**
+  > audit that I can upload upgrade an anonymous account to an account that already exists, and the recordings will be merged in the uh real users library.
+- **SpecStory:** unavailable — Claude Code CLI session; no SpecStory capture configured for this session.
+
+## September 28th, 2026 at 2:12:59 p.m. EDT — `aa3d97795b2e` Forward only a guest session's refresh token to verify_magic_code; keep Instant's auth error type and message (#113)
+
+- **Implementation commit:** `aa3d97795b2e7a78830bbd9631534cd4357f8625`
+- **Change:** Magic-code sign-in forwards only a guest session's refresh token, and auth failures keep Instant's error type and message (#113).
+- **Details:**
+  - Evidence: on 2026-09-28 against Scribe's Instant app, a Swift client holding a revoked non-guest refresh token failed verify_magic_code (record-not-found, HTTP 400) because it forwarded the token; the TypeScript client, which forwards only guest tokens (Reactor.signInWithMagicCode), signed in. After the fix the same live run signs in, and a Swift guest still links into an existing account.
+  - InstantAuthHTTPClient: non-2xx auth responses report 'HTTP <status> (<type>): <message>' from Instant's body; the hint is dropped because it can echo refresh tokens.
+  - Validation: InstantMagicCodeGuestTokenTests red before (non-guest token forwarded; bare HTTP 400 message), green after; 590 tests across InstantStoreTests, BootstrapTests, CLIArgumentParserTests, InstantAuthHTTPParityTests, InstantGuestPromotionTests and V3AuthLoginFixtureTests pass (4 known issues). Audit report /Users/laptop/Sync/audit/web-scribe-2026-09-28/AUTH-AUDIT.md.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — forward the refresh token to verify_magic_code only for a guest session (upstream parity)
+  - `Sources/InstantSwiftDataCore/InstantAuthHTTPClient.swift` — keep Instant's error type and message on auth HTTP failures, never the hint
+  - `Tests/InstantSwiftDataCoreTests/InstantMagicCodeGuestTokenTests.swift` — guest token forwarded, non-guest token not forwarded, error body kept without tokens
+- **User context (verbatim):**
+  > I also want you to audit that I can upgrade an anon account into either an existing account or a nw account
+- **SpecStory:** unavailable — Claude Code subagent session (guest-upgrade audit); no SpecStory capture configured.
+
+## September 27th, 2026 at 5:37:29 p.m. EDT — `2fced8d1930c` Drop local entities that lost their id fact once, so the server delivers them whole (#278)
+
+- **Implementation commit:** `2fced8d1930cb26334ce4581ce14ea94188a01c2`
+- **Change:** Stores damaged by partial pruning drop their entities that lost the id fact, once, so the server delivers them whole (#278).
+- **Details:**
+  - Evidence: the 2026-09-27 iPhone store holds 1,067 transcriptionSegments with facts but no id fact; every other entity in every namespace has its id fact and no pending mutation touches any of the 1,067. The Instant server sends the id fact with every selection (instaql.clj etype-attr-ids) and typed writes always write it.
+  - Migration 0024 removes every entity with facts but no <namespace>/id fact, keeping entities a pending mutation touches and skipping stores that never synced; drops their live-query ownership rows, bumps the store and query-result revisions, and records sqlite.repair.entities-missing-id-removed. Refreshes insert every result triple, so the rows come back when a query needs them.
+  - On a copy of the phone's store: removed exactly 1,067 entities (6,172 facts), all transcriptionSegments; every remaining entity has its id fact; outbox untouched; whole bootstrap 0.25 s. InstantPartialEntityRepairTests fails 3 ways with the repair disabled and passes with it.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — migration 0024 one-time removal of entities missing their id fact
+  - `Tests/InstantSwiftDataCoreTests/InstantPartialEntityRepairTests.swift` — synced store drops the id-less entity no mutation touches; never-synced store keeps everything
+- **User context (verbatim):**
+  > It was the transcription text that wasn't showing in a freshly recorded thing.
+- **SpecStory:** unavailable — Claude Code CLI session (triage agent L); no SpecStory capture configured.
+
+## September 27th, 2026 at 5:37:29 p.m. EDT — `246e191d556d` Leave a row that fails to decode out of a query instead of failing the whole query (#278)
+
+- **Implementation commit:** `246e191d556dd5f873a678eeb019e318dd26a202`
+- **Change:** A row that fails to decode is left out of a typed read and reported, instead of failing the whole query (#278).
+- **Details:**
+  - Evidence: at 13:41:31 on 2026-09-27 the iPhone's playback detail fetch failed with "Expected number for selected Instant field 'wallClockStartedAtMs'" and recording 008 showed 27 of 237 sections. Every typed read decoded with try map(init(snapshot:)), so the first bad row threw for the whole query; InstantRowQuarantineTests reproduces the phone's exact error.
+  - Typed reads decode row by row through InstantRowQuarantine: query, queryOnceDecoded, the infinite query snapshot and subscription, subscribe, FetchAll (entities and selected fields), FetchOne of an entity, and InstantFetchRequest roots and included children. Each newly failed row is reported once per read with reportIssue and an error-level query.row-decode-quarantined diagnostic. New public decodeQuarantiningFailures(_:operation:); decode(_:) still throws. FetchOne of a single selected field still fails with the decode error.
+  - Deliberately differs from SQLiteData, which fails the whole fetch (QueryCursor._element): SQLite's column constraints keep partial rows from existing, while Instant stores each field as its own fact. The sqlite.fetch-all.decode-failure parity record now names fetchAllLoadLeavesOutAMalformedRowAndReportsIt.
+  - Validation: new tests red before, green after; TypedAPITests' decode-error tests updated for the new contract (and the scalar selection test no longer races the post-load observation). Full suite: the only failure outside the known lists (fiftyEncodingFailuresUseBoundedRowAddressedQuarantineAndDoNotStarveTail, outbox encoding quarantine) passes alone 3/3.
+- **Files:**
+  - `Sources/InstantSwiftData/InstantRowQuarantine.swift` — row-by-row decode, once-per-read reporting, decodeQuarantiningFailures
+  - `Sources/InstantSwiftData/InstantTypedAPI.swift` — query, queryOnceDecoded, and infinite query reads decode through the quarantine
+  - `Sources/InstantSwiftData/InstantSwiftData.swift` — subscribe, selected-field FetchAll, and InstantFetchRequest children maps decode through the quarantine
+  - `Sources/InstantSwiftDataCore/InstantParityCoverage.swift` — SQLiteData fetchFailure record explains the adaptation
+  - `Tests/InstantSwiftDataTests/InstantRowQuarantineTests.swift` — one damaged row among good ones through query, a live subscribe, and a mapped fetch
+  - `Tests/InstantSwiftDataTests/TypedAPITests.swift` — FetchAll decode-error tests expect the quarantine; scalar test race fixed
+  - `skills/instant-data-modeling/SKILL.md` — fetches quarantine bad rows; keep init(snapshot:) strict
+- **User context (verbatim):**
+  > It was the transcription text that wasn't showing in a freshly recorded thing.
+- **SpecStory:** unavailable — Claude Code CLI session (triage agent L); no SpecStory capture configured.
+
+## September 27th, 2026 at 4:58:05 p.m. EDT — `af3c05849c4a` Keep local writes from waiting behind server apply's quadratic commit (#277)
+
+- **Implementation commit:** `af3c05849c4ad07b812a8f56abed07dbf757b1cb`
+- **Change:** Local writes no longer wait behind server apply's commit, which was quadratic in the pending tail (#277).
+- **Details:**
+  - Evidence: the 2026-09-27 iPhone pull logged serial-gate.stalled with holder 'catch up server apply' held 5,632 ms and a transact waiting 5,057 ms, 439 pending mutations. Profiling and phase timers put the time in commitServerApplyPlan under the operation gate: the component closure re-joined every planned row through every shared entity each round (N^2 around one recording's sections), and the outbox rewrite's IN subquery was correlated through outbox.json, so every outbox row rescanned the plan.
+  - Fix: breadth-first closure over a temp frontier table (each entity expanded once, rows tagged by round); uncorrelated outbox rewrite with a per-row EXISTS. Gate held at 2,000 pending 23,479 -> 570 ms, at 439 pending 969 -> 207 ms. InstantServerApplyOperationGateTests: 1,000 pending plus a local write every 25 ms fails before (gate 4,796 ms, longest write 4,799 ms) and passes after (202 ms, 175 ms).
+  - Diagnostics: the gate holder names its phase; serial-gate.waited reports a caller that queued 250 ms or more (warning from 1 s) with the holder and phase; server-apply.operation-gate-held records per-phase durations. Upstream Reactor.js has no such gate (pushOps line 1509, refresh-ok line 725).
+  - Validation: 12 focused suites, 544 tests pass; full suite has one failure outside the known lists (publishGatePendingAndColdReopenMetrics, a process-wide footprint check under parallel load) and it passes in isolation; Scribe-shaped memory soak passed with INSTANT_SWIFT_DATA_LIVE_AUTH_SOAK=0.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — breadth-first component closure and uncorrelated outbox rewrite
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — gate timeline, phase names, server-apply.operation-gate-held, upstream note
+  - `Sources/InstantSwiftDataCore/AsyncSerialGate.swift` — holder phase and wait reports
+  - `Tests/InstantSwiftDataCoreTests/InstantServerApplyOperationGateTests.swift` — local writes during a 1,000-pending hub apply stay fast and durable
+  - `Tests/InstantSwiftDataCoreTests/AsyncSerialGateTests.swift` — wait report names holder and phase; quick handoff reports nothing; stall names the phase
+- **User context (verbatim):**
+  > After pause: home shows paused but resume recording button does nothing — only stop works.
+- **SpecStory:** unavailable — Claude Code CLI session (triage agent L); no SpecStory capture configured.
+
+## September 27th, 2026 at 3:13:03 p.m. EDT — `fc7ce10c5940` Saturate the live timeout sleep instead of trapping on a far-future deadline (#259)
+
+- **Implementation commit:** `fc7ce10c59400fe1f7ba28702ec990984d78d03e`
+- **Change:** The live timeout sleep saturates instead of trapping on a far-future deadline.
+- **Details:**
+  - UInt64 milliseconds * 1,000,000 overflowed for deadlines beyond about 584 years (max(0, deadline - now) from an Int64 deadline) and crashed the process with signal 5; the full suite hit it under load on 2026-09-27. multipliedReportingOverflow saturates to UInt64.max nanoseconds. InstantLiveTimeoutSleepTests: crash before, pass after.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantLiveTransport.swift` — saturating millisecond-to-nanosecond conversion
+  - `Tests/InstantSwiftDataCoreTests/InstantLiveTimeoutSleepTests.swift` — far-future sleep cancels instead of trapping; ordinary sleep still waits
+- **User context (verbatim):**
+  > It was the transcription text that wasn't showing in a freshly recorded thing.
+- **SpecStory:** unavailable — Claude Code CLI session; no SpecStory capture configured for this session.
+
+## September 27th, 2026 at 2:41:21 p.m. EDT — `552457420ee3` Keep observations and pruned entities intact: stale-emission hydration and whole-entity orphan collection (#259 #274)
+
+- **Implementation commit:** `552457420ee3dfea8b72514257307b76606b027d`
+- **Change:** Deferred hydration no longer strands an observation after an unrelated write, and live-query pruning collects whole entities only (#259 #274).
+- **Details:**
+  - isStillCurrent drops a stale emission only when its query was refreshed after it (store records each query's last published refresh); otherwise the emission is the query's current result and is hydrated. Pruning keeps an entity whole when any fact is unowned and deletes the deferred payload rows of fully collected entities. Evidence: iPhone store had 1,055 segments with text but no recordingID; tests reproduce both stalls and the partial prune (red before, green after). Full suite (clean build): no new failures; the 14 load-sensitive failures pass in isolation.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantStore.swift` — per-query last refresh sequence and wasRefreshed(queryID:after:)
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — isStillCurrent replaces the global-sequence stale check; testing hook
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — whole-entity orphan collection and deferred payload cleanup
+  - `Tests/InstantSwiftDataCoreTests/DeferredValueResidencyTests.swift` — unrelated write between emission and hydration (observation, local infinite)
+  - `Tests/InstantSwiftDataCoreTests/InstantStoreTests.swift` — partially owned entity survives pruning whole
+- **User context (verbatim):**
+  > On an immediately just-completed recording: words/transcript are NOT showing up, but screenshots, copies, the route, and everything else DO
+- **SpecStory:** unavailable — Claude Code CLI session (triage agent B); no SpecStory capture configured.
+
 ## September 27th, 2026 at 9:08:53 a.m. EDT — `18831d088dbb` Document the v1.7.0 release: cheaper live refresh and a capped diagnostics log (#250 #254 #155)
 
 - **Implementation commit:** `18831d088dbb50cfc7e6950c47fe8d7e5d40d1d0`

@@ -4636,6 +4636,9 @@ struct TypedAPITests {
       expectNoDifference(dueDates, [baseDate, nil, baseDate.addingTimeInterval(2)])
       expectNoDifference($dueDates.loadError, nil)
 
+      // SQLiteData fails the whole fetch when a selected column does not decode. Instant stores
+      // each field as its own fact, so one entity can lack a required field while the others are
+      // whole; that row is left out and reported instead (#278).
       let requiredMissingRecorder = ClientCallRecorder(queryResults: [
         [
           InstantEntitySnapshot(
@@ -4644,7 +4647,14 @@ struct TypedAPITests {
             values: [
               "score": .one(.number(4))
             ]
-          )
+          ),
+          InstantEntitySnapshot(
+            id: "todo-scalar-all-present-title",
+            namespace: MacroGeneratedTodo.instantNamespace,
+            values: [
+              "title": .one(.string("Present required scalar all"))
+            ]
+          ),
         ]
       ])
       let requiredTitles = FetchAll<String>(
@@ -4652,15 +4662,15 @@ struct TypedAPITests {
         MacroGeneratedTodo.query,
         selecting: MacroGeneratedTodo.title
       )
-      do {
-        try await requiredTitles.load(using: recordingClient(requiredMissingRecorder))
-        Issue.record("Expected malformed selected FetchAll row to fail decoding.")
-      } catch let error as InstantError {
-        expectNoDifference(error.code, .decodeFailed)
-        expectNoDifference(error.operation, "load FetchAll")
+      try await withKnownIssue {
+        try await requiredTitles.load(
+          using: recordingClient(requiredMissingRecorder, observationEmitsEmptySnapshot: false)
+        )
+      } matching: { issue in
+        issue.description.contains("todo-scalar-all-missing-title")
       }
-      expectNoDifference(requiredTitles.wrappedValue, ["Cached scalar all"])
-      expectNoDifference(requiredTitles.loadError?.operation, "load FetchAll")
+      expectNoDifference(requiredTitles.wrappedValue, ["Present required scalar all"])
+      expectNoDifference(requiredTitles.loadError, nil)
       let requiredPlans = await requiredMissingRecorder.queryPlans()
       expectNoDifference(requiredPlans.map(\.selectedFields), [["title"]])
 
@@ -4684,7 +4694,10 @@ struct TypedAPITests {
         MacroGeneratedTodo.query,
         selecting: MacroGeneratedTodo.title
       )
-      try await optionalTitles.load(using: recordingClient(optionalMissingRecorder))
+      // The automatic observation a successful load starts must not overwrite the loaded value.
+      try await optionalTitles.load(
+        using: recordingClient(optionalMissingRecorder, observationEmitsEmptySnapshot: false)
+      )
       expectNoDifference(optionalTitles.wrappedValue, [nil, "Present optional scalar all"])
       expectNoDifference(optionalTitles.loadError, nil)
       let optionalPlans = await optionalMissingRecorder.queryPlans()
@@ -7218,8 +7231,9 @@ struct TypedAPITests {
     expectNoDifference(fetch.loadError, nil)
   }
 
+  /// #278: a malformed row is left out and reported; the rest of the emission still arrives.
   @Test
-  func fetchAllTaskPreservesLastValueAndRecordsDecodeError() async throws {
+  func fetchAllTaskLeavesOutAMalformedRowAndReportsIt() async throws {
     let baseDate = Date(timeIntervalSince1970: 1_700_000_365)
     let client = stagedObservationClient([
       [
@@ -7231,25 +7245,32 @@ struct TypedAPITests {
         )
       ],
       [
-        InstantEntitySnapshot(id: "todo-invalid", namespace: TypedTodo.instantNamespace, values: [:])
+        typedTodoSnapshot(
+          id: "todo-still-here",
+          text: "Still here",
+          isCompleted: false,
+          createdAt: baseDate
+        ),
+        InstantEntitySnapshot(id: "todo-invalid", namespace: TypedTodo.instantNamespace, values: [:]),
       ],
     ])
 
     let fetch = FetchAll<TypedTodo>(TypedTodo.query.order(TypedTodo.createdAt))
-    do {
+    try await withKnownIssue {
       try await fetch.task(using: client)
-      Issue.record("Expected malformed subscription emission to fail decoding.")
-    } catch let error as InstantError {
-      expectNoDifference(error.code, .decodeFailed)
+    } matching: { issue in
+      issue.description.contains("todo-invalid")
     }
 
-    #expect(fetch.wrappedValue.map(\.text) == ["Before error"])
-    expectNoDifference(fetch.loadError?.code, .decodeFailed)
+    expectNoDifference(fetch.wrappedValue.map(\.text), ["Still here"])
+    expectNoDifference(fetch.loadError, nil)
     expectNoDifference(fetch.isLoading, false)
   }
 
+  /// #278: a load whose only row is malformed replaces the cached value with the rows that
+  /// decode (none) and reports the row; it is not a load error.
   @Test
-  func fetchAllLoadPreservesLastValueAndRecordsDecodeError() async throws {
+  func fetchAllLoadLeavesOutAMalformedRowAndReportsIt() async throws {
     let baseDate = Date(timeIntervalSince1970: 1_700_000_365.5)
     let todo = TypedTodo(
       id: InstantID(rawValue: "todo-before-load-error"),
@@ -7273,21 +7294,17 @@ struct TypedAPITests {
       TypedTodo.query.order(TypedTodo.createdAt)
     )
 
-    do {
+    try await withKnownIssue {
       try await fetch.load(using: recordingClient(recorder))
-      Issue.record("Expected malformed query result to fail decoding.")
-    } catch let error as InstantError {
-      expectNoDifference(error.code, .decodeFailed)
-      expectNoDifference(error.operation, "decode typed todo")
+    } matching: { issue in
+      issue.description.contains("todo-invalid-load")
     }
 
-    expectNoDifference(fetch.wrappedValue.map(\.text), ["Before load error"])
-    expectNoDifference(fetch.loadError?.code, .decodeFailed)
-    expectNoDifference(fetch.loadError?.operation, "decode typed todo")
+    expectNoDifference(fetch.wrappedValue, [])
+    expectNoDifference(fetch.loadError, nil)
     expectNoDifference(fetch.isLoading, false)
     let counts = await recorder.counts()
     expectNoDifference(counts.queryCount, 1)
-    expectNoDifference(counts.observationCount, 0)
   }
 
   @Test

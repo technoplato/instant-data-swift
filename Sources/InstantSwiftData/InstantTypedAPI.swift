@@ -2237,7 +2237,7 @@ extension InstantSwiftDataClient {
   public func query<Entity: InstantEntityModel>(
     _ query: InstantEntityQuery<Entity>
   ) async throws -> [Entity] {
-    try Entity.decode(try await self.query(query.plan))
+    Entity.decodeQuarantiningFailures(try await self.query(query.plan), operation: "query")
   }
 
   public func queryOnce<Entity: InstantEntityModel>(
@@ -2250,7 +2250,10 @@ extension InstantSwiftDataClient {
     _ query: InstantEntityQuery<Entity>
   ) async throws -> (values: [Entity], pageInfo: InstantQueryPageInfo?) {
     let emission = try await queryOnce(query)
-    return (try Entity.decode(emission.values), emission.pageInfo)
+    return (
+      Entity.decodeQuarantiningFailures(emission.values, operation: "queryOnce"),
+      emission.pageInfo
+    )
   }
 
   public func infiniteQueryInitialSnapshot<Entity: InstantEntityModel>(
@@ -2260,7 +2263,9 @@ extension InstantSwiftDataClient {
     return InfiniteQuerySnapshot(
       queryID: snapshot.queryID,
       sequence: snapshot.sequence,
-      values: snapshot.error == nil ? try Entity.decode(snapshot.values) : [],
+      values: snapshot.error == nil
+        ? Entity.decodeQuarantiningFailures(snapshot.values, operation: "infinite query")
+        : [],
       pageInfo: snapshot.pageInfo,
       canLoadNextPage: snapshot.canLoadNextPage,
       canLoadPreviousPage: snapshot.canLoadPreviousPage,
@@ -2279,6 +2284,7 @@ extension InstantSwiftDataClient {
     let stream = AsyncThrowingStream<InfiniteQuerySnapshot<Entity>, Error>.makeStream(
       bufferingPolicy: .bufferingNewest(1)
     )
+    let quarantine = InstantRowQuarantine()
     let task = Task {
       for await snapshot in subscription.snapshots {
         do {
@@ -2301,7 +2307,12 @@ extension InstantSwiftDataClient {
             InfiniteQuerySnapshot(
               queryID: snapshot.queryID,
               sequence: snapshot.sequence,
-              values: try Entity.decode(snapshot.values),
+              values: quarantine.decode(
+                snapshot.values,
+                namespace: Entity.instantNamespace,
+                operation: "subscribe infinite query",
+                Entity.init(snapshot:)
+              ),
               pageInfo: snapshot.pageInfo,
               canLoadNextPage: snapshot.canLoadNextPage,
               canLoadPreviousPage: snapshot.canLoadPreviousPage,

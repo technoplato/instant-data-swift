@@ -147,17 +147,31 @@ enum InstantLiveRefreshTranslator {
     .attributesToMerge
   }
 
+  /// The attribute context for `serverAttributes` over the device's `existingAttributes`: the server attrs parsed, the
+  /// local id of each, and the attributes the device has never seen.
+  static func attributeContext(
+    serverAttributes: [InstantLiveJSONValue],
+    existingAttributes: [InstantAttribute]
+  ) throws -> InstantLiveRefreshAttributeContext {
+    InstantLiveRefreshAttributeContext(
+      existingAttributes: existingAttributes,
+      serverAttributes: try serverAttributes.map(parseAttribute)
+    )
+  }
+
+  /// - Parameter attributeContext: The context for `refreshOK.attrs` over `existingAttributes`, when the caller already
+  ///   has it (``InstantLiveRefreshAttributeContextCache``); built here otherwise.
   static func translate(
     _ refreshOK: InstantLiveRefreshOK,
     existingAttributes: [InstantAttribute],
-    receivedAt: InstantTimestamp
+    receivedAt: InstantTimestamp,
+    attributeContext prebuiltAttributeContext: InstantLiveRefreshAttributeContext? = nil
   ) throws -> InstantLiveRefreshTranslation {
     let processedTransactionID = nonEmpty(refreshOK.processedTransactionID)
       ?? "live-refresh-\(receivedAt.milliseconds)"
-    let serverAttributes = try refreshOK.attrs.map(parseAttribute)
-    let attributeContext = InstantLiveRefreshAttributeContext(
-      existingAttributes: existingAttributes,
-      serverAttributes: serverAttributes
+    let attributeContext = try prebuiltAttributeContext ?? attributeContext(
+      serverAttributes: refreshOK.attrs,
+      existingAttributes: existingAttributes
     )
     var translatedComputations: [InstantTranslatedLiveComputation] = []
     var finalComputationIndexByQueryKey: [String: Int] = [:]
@@ -687,7 +701,64 @@ private struct InstantLiveAttributeIdentity: Hashable, Sendable {
   var name: String
 }
 
-private struct InstantLiveRefreshAttributeContext: Sendable {
+/// The attribute context of the latest live refresh, reused while the session's attrs and the device's schema stay the
+/// same (#303).
+///
+/// A live session keeps the attrs of its `init-ok`, and of any refresh that carries them, and applies every attr-less
+/// refresh with those. Parsing Scribe's 447 attrs and rebuilding the schema lookups for each frame cost more than
+/// translating the frame's own rows. The cache keeps the attrs array and the local attribute revision its context was
+/// built for. An attr-less refresh passes the session's same array, so the comparison is a buffer-identity check; a
+/// refresh that carries equal attrs is compared in memory, still far cheaper than parsing it. A merged attribute bumps
+/// the local revision, and changed attrs fail the comparison: either rebuilds the context.
+final class InstantLiveRefreshAttributeContextCache: @unchecked Sendable {
+  private struct Entry {
+    var serverAttributes: [InstantLiveJSONValue]
+    var localAttributeRevision: Int64
+    var localAttributeCount: Int
+    var context: InstantLiveRefreshAttributeContext
+  }
+
+  private let lock = NSLock()
+  private var entry: Entry?
+  private var builds = 0
+
+  func context(
+    serverAttributes: [InstantLiveJSONValue],
+    existingAttributes: [InstantAttribute],
+    localAttributeRevision: Int64
+  ) throws -> InstantLiveRefreshAttributeContext {
+    lock.lock()
+    defer { lock.unlock() }
+    if let entry,
+      entry.localAttributeRevision == localAttributeRevision,
+      entry.localAttributeCount == existingAttributes.count,
+      entry.serverAttributes == serverAttributes
+    {
+      return entry.context
+    }
+    let context = try InstantLiveRefreshTranslator.attributeContext(
+      serverAttributes: serverAttributes,
+      existingAttributes: existingAttributes
+    )
+    builds += 1
+    entry = Entry(
+      serverAttributes: serverAttributes,
+      localAttributeRevision: localAttributeRevision,
+      localAttributeCount: existingAttributes.count,
+      context: context
+    )
+    return context
+  }
+
+  /// How many times a context was built rather than reused.
+  var buildCount: Int {
+    lock.lock()
+    defer { lock.unlock() }
+    return builds
+  }
+}
+
+struct InstantLiveRefreshAttributeContext: Sendable {
   private var existing = AttributeStore()
   private var serverAttributesByID: [String: InstantAttribute] = [:]
   private var localAttributeIDsByServerID: [String: String] = [:]

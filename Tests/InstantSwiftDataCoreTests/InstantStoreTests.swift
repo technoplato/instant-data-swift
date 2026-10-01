@@ -4774,6 +4774,172 @@ struct InstantStoreTests {
     expectNoDifference(reloadedTriples, retained.triples)
   }
 
+  /// Pruning collected orphans one fact at a time, so an entity lost the facts a pruned query had
+  /// selected and kept the rest. Scribe's transcript segments lost `recordingID`, `segmentIndex`,
+  /// and their times when the recording's timeline query was pruned, while `text` and facts the
+  /// query never selected stayed: 1,055 such rows on an iPhone, and a finished recording showed no
+  /// words (#259). An entity with any fact no query result owns is local data and stays whole.
+  @Test
+  func liveQueryResultPruningKeepsAnEntityWholeWhenOnlySomeOfItsFactsWereOwned()
+    async throws
+  {
+    let cacheURL = try temporaryCacheURL()
+    let store = try SQLitePersistenceStore(fileURL: cacheURL)
+    try await store.bootstrap()
+    let written = persistedLiveTodoResult(
+      key: "query-selected-fields",
+      entityID: "written-todo",
+      text: "Written on this device",
+      updatedAt: InstantTimestamp(milliseconds: 1)
+    )
+    var selected = written
+    selected.triples = written.triples.filter { $0.attributeID == "todos/text" }
+    #expect(selected.triples.count == 1)
+    #expect(written.triples.count > selected.triples.count)
+    let didSave = try await store.saveLiveRefresh(
+      InstantPersistenceSnapshot(
+        store: InstantStoreSnapshot(
+          attributes: TodoExample.attributes,
+          triples: written.triples
+        )
+      ),
+      queryResults: [selected],
+      storeChanged: true,
+      outboxChanged: false,
+      metadataKey: "test.live-query-result-partial-owner-pruning",
+      metadataValue: "seeded",
+      metadataUpdatedAt: InstantTimestamp(milliseconds: 1),
+      expectedStoreRevision: 0,
+      expectedOutboxRevision: 0,
+      expectedAttributeRevision: 0
+    )
+    expectNoDifference(didSave, true)
+
+    let application = try await store.pruneLiveQueryResults(
+      policy: InstantLiveQueryResultPruningPolicy(maxEntries: 0),
+      now: InstantTimestamp(milliseconds: 2)
+    )
+
+    expectNoDifference(application.result.removedQueryKeys, [selected.key])
+    expectNoDifference(application.result.removedOrphanedTripleCount, 0)
+    expectNoDifference(
+      application.state.snapshot.store.triples.sorted { $0.attributeID < $1.attributeID },
+      written.triples.sorted { $0.attributeID < $1.attributeID }
+    )
+    let reloaded = try SQLitePersistenceStore(fileURL: cacheURL)
+    try await reloaded.bootstrap()
+    let reloadedTriples = try await reloaded.loadSnapshot().store.triples
+    expectNoDifference(
+      reloadedTriples.sorted { $0.attributeID < $1.attributeID },
+      written.triples.sorted { $0.attributeID < $1.attributeID }
+    )
+  }
+
+  /// Recording 023 (#296): a Scribe segment left the recording list's result when its preview slot moved, while the
+  /// live timeline still held it. Replacing the list's result retracted, one fact at a time, the fields only the list
+  /// selected (`wallClockStartedAtMs`, `wallClockEndedAtMs`, `sentToInstantAtMs`), so typed reads quarantined the row.
+  /// An entity that leaves one result but still has a fact another result owns, or one no result owns, stays whole,
+  /// exactly as result pruning keeps it (#259).
+  @Test
+  func liveQueryReplacementKeepsAnEntityWholeWhenItOnlyLeftOneResult() async throws {
+    let cacheURL = try temporaryCacheURL()
+    let store = try SQLitePersistenceStore(fileURL: cacheURL)
+    try await store.bootstrap()
+    let written = persistedLiveTodoResult(
+      key: "list",
+      entityID: "segment-91",
+      text: "Call her daddy",
+      updatedAt: InstantTimestamp(milliseconds: 1)
+    )
+    #expect(written.triples.count >= 3)
+    let attributeIDs = written.triples.map(\.attributeID).sorted()
+    var list = written
+    list.triples = written.triples.filter { $0.attributeID != attributeIDs.last }
+    var timeline = written
+    timeline.key = "timeline"
+    timeline.triples = written.triples.filter {
+      $0.attributeID == "todos/id" || $0.attributeID == "todos/text"
+    }
+    #expect(timeline.triples.count == 2)
+    #expect(list.triples.count > timeline.triples.count)
+    let didSave = try await store.saveLiveRefresh(
+      InstantPersistenceSnapshot(
+        store: InstantStoreSnapshot(attributes: TodoExample.attributes, triples: written.triples)
+      ),
+      queryResults: [list, timeline],
+      storeChanged: true,
+      outboxChanged: false,
+      metadataKey: "test.live-query-replacement-whole-entity",
+      metadataValue: "seeded",
+      metadataUpdatedAt: InstantTimestamp(milliseconds: 1),
+      expectedStoreRevision: 0,
+      expectedOutboxRevision: 0,
+      expectedAttributeRevision: 0
+    )
+    expectNoDifference(didSave, true)
+
+    let retractions = try await store.liveQueryReplacementRetractions(
+      for: [InstantLiveQueryResultReplacement(key: "list", triples: [], pageInfo: nil)]
+    )
+
+    expectNoDifference(retractions, [])
+  }
+
+  /// The whole-entity rule only spares entities that are still held elsewhere. An entity only one result ever held is
+  /// still retracted in full when it leaves that result, and a server edit to an entity still in the result is still
+  /// applied as a retraction of the old value.
+  @Test
+  func liveQueryReplacementStillRetractsEntitiesNoOtherResultHoldsAndServerEdits() async throws {
+    let cacheURL = try temporaryCacheURL()
+    let store = try SQLitePersistenceStore(fileURL: cacheURL)
+    try await store.bootstrap()
+    let departing = persistedLiveTodoResult(
+      key: "list",
+      entityID: "only-in-list",
+      text: "Only the list holds me",
+      updatedAt: InstantTimestamp(milliseconds: 1)
+    )
+    let staying = persistedLiveTodoResult(
+      key: "list",
+      entityID: "stays-in-list",
+      text: "Old text",
+      updatedAt: InstantTimestamp(milliseconds: 1)
+    )
+    var list = departing
+    list.triples = departing.triples + staying.triples
+    let didSave = try await store.saveLiveRefresh(
+      InstantPersistenceSnapshot(
+        store: InstantStoreSnapshot(attributes: TodoExample.attributes, triples: list.triples)
+      ),
+      queryResults: [list],
+      storeChanged: true,
+      outboxChanged: false,
+      metadataKey: "test.live-query-replacement-controls",
+      metadataValue: "seeded",
+      metadataUpdatedAt: InstantTimestamp(milliseconds: 1),
+      expectedStoreRevision: 0,
+      expectedOutboxRevision: 0,
+      expectedAttributeRevision: 0
+    )
+    expectNoDifference(didSave, true)
+    let oldText = try #require(staying.triples.first { $0.attributeID == "todos/text" })
+    var newText = oldText
+    newText.value = .string("New text")
+    let nextList = staying.triples.filter { $0.attributeID != "todos/text" } + [newText]
+
+    let retractions = try await store.liveQueryReplacementRetractions(
+      for: [InstantLiveQueryResultReplacement(key: "list", triples: nextList, pageInfo: nil)]
+    )
+
+    let expected = (departing.triples + [oldText])
+      .sorted {
+        ($0.entityID, $0.attributeID, $0.value.comparableKey)
+          < ($1.entityID, $1.attributeID, $1.value.comparableKey)
+      }
+      .map(InstantTripleOperation.retract)
+    expectNoDifference(retractions, expected)
+  }
+
   @Test
   func liveQueryResultPruningUsesOwnedTripleBudgetAndStrictAgeCutoff() async throws {
     let cacheURL = try temporaryCacheURL()
@@ -17825,11 +17991,13 @@ struct InstantStoreTests {
       code: " oauth-code ",
       codeVerifier: " verifier with spaces "
     )
+    // The existing session is not a guest, so its refresh token is not forwarded
+    // (upstream `Reactor.exchangeCodeForToken`; see `InstantOAuthGuestTokenTests`).
     expectNoDifference(
       session,
       InstantAuthSession(
         appID: "app-a",
-        userID: "dependency:app-a:oauth-code: verifier with spaces :existing-refresh",
+        userID: "dependency:app-a:oauth-code: verifier with spaces :nil",
         refreshToken: "oauth-refresh:1700000000000",
         isGuest: false,
         createdAt: signedInAt,

@@ -1,1 +1,2 @@
 claude-opus-5.5 2026-09-26T22:58:48-0400 mower plan=2026-09-26-perf-concurrency-audit #250 #155
+claude-opus-5.5-fast-drain 2026-10-01T00:40:56-04:00 mower plan=2026-10-01-library-77 #303 #296

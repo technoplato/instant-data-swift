@@ -372,6 +372,11 @@ public actor InstantStore {
   private let deferredValueResidency: InstantDeferredValueResidencyPolicy
   private var observers: [UUID: StoreObserver] = [:]
   private var sequence: Int64 = 0
+  /// The sequence of the last commit that refreshed each query's observers, by plan ID.
+  ///
+  /// Commits skip observers their changes cannot affect, so the global sequence moving past an
+  /// emission does not mean that query has a newer result. See `wasRefreshed(queryID:after:)`.
+  private var lastRefreshSequenceByQueryID: [String: Int64] = [:]
   package private(set) var lastPublishMetrics = InstantStorePublishMetrics()
 
   public init(
@@ -430,6 +435,16 @@ public actor InstantStore {
 
   func currentSequence() -> Int64 {
     sequence
+  }
+
+  /// Whether a commit after `sequence` refreshed the observers of query `queryID`.
+  ///
+  /// Deferred hydration asks this before discarding an emission that went stale while it waited:
+  /// when the query was refreshed, a newer emission is already queued; when it was not, the
+  /// intervening writes did not touch it and the stale emission is still its current result.
+  func wasRefreshed(queryID: String, after sequence: Int64) -> Bool {
+    guard let refreshed = lastRefreshSequenceByQueryID[queryID] else { return false }
+    return refreshed > sequence
   }
 
   public func snapshot() -> InstantStoreSnapshot {
@@ -709,6 +724,7 @@ public actor InstantStore {
       observer.apply(emission)
       observers[observerID] = observer
       guard publishing else { continue }
+      lastRefreshSequenceByQueryID[observer.plan.id] = sequence
       observer.continuation.yield(emission)
     }
     lastPublishMetrics = metrics
@@ -1609,6 +1625,7 @@ public actor InstantStore {
       observer.apply(emission)
       observers[observerID] = observer
       if shouldPublish {
+        lastRefreshSequenceByQueryID[observer.plan.id] = sequence
         observer.continuation.yield(emission)
       }
     }
@@ -2576,6 +2593,11 @@ public actor InstantStore {
 
   private func cancelObservation(id: UUID) {
     let observer = observers.removeValue(forKey: id)
+    if let queryID = observer?.plan.id,
+      !observers.values.contains(where: { $0.plan.id == queryID })
+    {
+      lastRefreshSequenceByQueryID[queryID] = nil
+    }
     InstantDiagnostics.shared.record(
       .trace,
       subsystem: "instant-swift-data-core",

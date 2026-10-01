@@ -1328,6 +1328,65 @@ public struct InstantAuthSession: Hashable, Codable, Sendable, Identifiable {
   }
 }
 
+extension InstantAuthSession: CustomStringConvertible, CustomDebugStringConvertible,
+  CustomReflectable
+{
+  /// A one-line summary of the session that is safe to log.
+  ///
+  /// The refresh token authenticates the account and the email address identifies the person, so
+  /// the summary shows only whether each one is present:
+  ///
+  /// ```swift
+  /// print(session)
+  /// // InstantAuthSession(appID: "app-1", userID: "user-1", isGuest: false, email: <present>, refreshToken: <redacted>)
+  /// ```
+  ///
+  /// Read ``refreshToken`` and ``email`` directly when code needs the values. Persistence,
+  /// equality, and hashing still use them.
+  public var description: String {
+    """
+    InstantAuthSession(appID: \(String(reflecting: appID)), userID: \(String(reflecting: userID)), \
+    isGuest: \(isGuest), email: \(email == nil ? "nil" : "<present>"), \
+    refreshToken: \(refreshToken == nil ? "nil" : "<redacted>"))
+    """
+  }
+
+  public var debugDescription: String { description }
+
+  /// Every field for `dump` and `customDump`, with the refresh token, email address, and image URL
+  /// replaced by presence markers.
+  public var customMirror: Mirror {
+    Mirror(
+      self,
+      children: [
+        "appID": appID,
+        "userID": userID,
+        "refreshToken": refreshToken.map { _ in InstantLogRedaction.redacted } as Any,
+        "email": email.map { _ in InstantLogRedaction.present } as Any,
+        "imageURL": imageURL.map { _ in InstantLogRedaction.present } as Any,
+        "type": type as Any,
+        "isGuest": isGuest,
+        "createdAt": createdAt,
+        "updatedAt": updatedAt,
+      ],
+      displayStyle: .struct
+    )
+  }
+}
+
+/// A stand-in that prints and reflects as a marker, so a log shows that a value exists without
+/// showing the value.
+private struct InstantLogRedaction: CustomStringConvertible, CustomDebugStringConvertible,
+  CustomReflectable, Sendable
+{
+  static let redacted = Self(description: "<redacted>")
+  static let present = Self(description: "<present>")
+
+  let description: String
+  var debugDescription: String { description }
+  var customMirror: Mirror { Mirror(self, children: [:]) }
+}
+
 public struct InstantMagicCodeChallenge: Hashable, Codable, Sendable, Identifiable {
   public var id: String { "\(appID):\(email)" }
   public var appID: String

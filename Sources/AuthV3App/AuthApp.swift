@@ -32,6 +32,49 @@ public typealias AuthAppConfiguration = AuthV3AppConfiguration
 #if canImport(SwiftUI)
   import SwiftUI
 
+  private struct AuthV3AllowsDiscardingGuestSessionKey: EnvironmentKey {
+    static let defaultValue = true
+  }
+
+  private struct AuthV3ShowsDemoCountersKey: EnvironmentKey {
+    static let defaultValue = true
+  }
+
+  extension EnvironmentValues {
+    /// Whether ``AuthV3LoginScreen``'s guest card offers "Discard guest session".
+    ///
+    /// Discarding signs the guest out. The next launch creates a new guest, and nothing on this
+    /// device can read the old guest's data again. Apps whose guest owns user data turn this off,
+    /// so the only way off a guest session is a provider sign-in, which upgrades the guest in place
+    /// or links it to an existing account:
+    ///
+    /// ```swift
+    /// AuthV3LoginScreen()
+    ///   .environment(\.authV3AllowsDiscardingGuestSession, false)
+    /// ```
+    public var authV3AllowsDiscardingGuestSession: Bool {
+      get { self[AuthV3AllowsDiscardingGuestSessionKey.self] }
+      set { self[AuthV3AllowsDiscardingGuestSessionKey.self] = newValue }
+    }
+
+    /// Whether ``AuthV3LoginScreen`` shows the Auth recipe's demo counters ("Increment public" and
+    /// "Increment mine").
+    ///
+    /// The counters demonstrate a public row and a per-account row in the recipe's own
+    /// `recipe_public_counters` and `recipe_account_counters` entities. While the card is on screen it
+    /// observes both entities, and it creates the public row as soon as it appears. Apps whose schema
+    /// does not declare those entities turn the card off, or every one of those reads and writes fails:
+    ///
+    /// ```swift
+    /// AuthV3LoginScreen()
+    ///   .environment(\.authV3ShowsDemoCounters, false)
+    /// ```
+    public var authV3ShowsDemoCounters: Bool {
+      get { self[AuthV3ShowsDemoCountersKey.self] }
+      set { self[AuthV3ShowsDemoCountersKey.self] = newValue }
+    }
+  }
+
   @MainActor
   public final class AuthV3BootstrapModel: ObservableObject {
     @Published public private(set) var client: InstantSwiftDataClient?
@@ -104,6 +147,8 @@ public typealias AuthAppConfiguration = AuthV3AppConfiguration
     @StateObject private var auth: InstantAuthState<AuthV3User>
 
     @State private var message: String?
+    @Environment(\.authV3AllowsDiscardingGuestSession) private var allowsDiscardingGuestSession
+    @Environment(\.authV3ShowsDemoCounters) private var showsDemoCounters
     private let allowsProviderSignIn: Bool
 
     public init(
@@ -130,9 +175,11 @@ public typealias AuthAppConfiguration = AuthV3AppConfiguration
         ScrollView {
           VStack(spacing: 20) {
             header
-            // Public counter (no perms) + mine counter that switches with login/logout.
-            if #available(iOS 17.0, macOS 14.0, tvOS 17.0, watchOS 10.0, *) {
-              AuthV3CountersCard(session: auth.session)
+            if showsDemoCounters {
+              // Public counter (no perms) + mine counter that switches with login/logout.
+              if #available(iOS 17.0, macOS 14.0, tvOS 17.0, watchOS 10.0, *) {
+                AuthV3CountersCard(session: auth.session)
+              }
             }
             if let message {
               statusCard(message)
@@ -290,8 +337,14 @@ public typealias AuthAppConfiguration = AuthV3AppConfiguration
             .font(.caption.monospaced())
             .foregroundStyle(.secondary)
             .textSelection(.enabled)
-          Button("Discard guest session", role: .destructive, action: signOutButtonTapped)
-            .buttonStyle(.bordered)
+          if allowsDiscardingGuestSession {
+            Button("Discard guest session", role: .destructive, action: signOutButtonTapped)
+              .buttonStyle(.bordered)
+          } else {
+            Text("Sign in below to keep this device's data in your account.")
+              .font(.footnote)
+              .foregroundStyle(.secondary)
+          }
         }
       }
     }

@@ -298,6 +298,17 @@ public struct InstantRuntimeConfiguration: Sendable {
     instantLiveDefaultTimeoutSleep
   var liveMutationDeadlineSleep: @Sendable (UInt64) async throws -> Void =
     instantLiveDefaultTimeoutSleep
+  /// How long the durable acknowledgement deadline keeps waiting behind one server frame that the receive loop is
+  /// still applying (#296). This is not a network timeout: the frame proves the server answered, and the deadline
+  /// keeps running every six seconds while the frame applies. The bound exists only to treat a stuck frame as stuck.
+  /// Measured: one frame's optimistic rebase of a 2,487-mutation outbox took 22-25 s on an iPhone (Recording 023);
+  /// 120 s leaves room for that and still reports a real hang within two minutes. 0 disables the deferral.
+  package var acknowledgementDeferralLimitMilliseconds: Int64 = 120_000
+  /// Whether a server apply first drops the server facts that cannot change the authoritative base under the
+  /// pending writes, so a frame that only restates what the device shows prunes and records its results without
+  /// peeling and replaying the outbox (#296). False keeps the whole-component rebase for every frame; the
+  /// differential tests run both and compare every read.
+  package var reducesServerApplyToAffectedOverlays = true
   package var explicitMutationTransportDeadlineSleep:
     @Sendable (UInt64) async throws -> Void = instantLiveDefaultTimeoutSleep
   package var explicitMutationClaimRenewalSleep:
@@ -326,6 +337,10 @@ public struct InstantRuntimeConfiguration: Sendable {
     (@Sendable (_ valueCount: Int) async throws -> Void)? = nil
   package var onLiveInfiniteQueryDeferredHydrationAcquiredForTesting:
     (@Sendable (_ valueCount: Int) async -> Void)? = nil
+  /// Runs before a query observation hydrates deferred values for one emission, with that
+  /// emission's sequence. Tests land a write here to make the emission stale.
+  package var onDeferredQueryEmissionHydrationStartingForTesting:
+    (@Sendable (_ sequence: Int64) async -> Void)? = nil
   package var liveInfiniteQueryRetirementWatchdogSleep:
     @Sendable (UInt64) async throws -> Void = instantLiveDefaultTimeoutSleep
   package var onLiveInfiniteQueryRetirementCleanupStartedForTesting:
@@ -347,6 +362,9 @@ public struct InstantRuntimeConfiguration: Sendable {
   package var onLiveReceiverEventAcquiredForTesting:
     (@Sendable () async -> Void)? = nil
   package var onLiveSessionOpenedBeforeReceiverStartForTesting:
+    (@Sendable () async -> Void)? = nil
+  /// Runs inside `observeAuthSession()` after it holds the operation gate, before its awaits (#303).
+  package var onAuthSessionObservationHoldsOperationGateForTesting:
     (@Sendable () async -> Void)? = nil
   package var onLiveQueryUnregisterFailureBeforeConnectionErrorForTesting:
     (@Sendable () async -> Void)? = nil
@@ -845,6 +863,11 @@ private actor InstantRuntimeReconnectController {
     taskOwner.isIdle
   }
 
+  /// A reconnect is waiting out its backoff or connecting, so it owns the next connection (#296).
+  var ownsNextConnection: Bool {
+    !taskOwner.isIdle
+  }
+
   private func run(
     sleep: @escaping @Sendable (UInt64) async throws -> Void,
     reconnect: @escaping @Sendable () async throws -> Void
@@ -1203,6 +1226,25 @@ private final class InstantExplicitMutationFlushOwner: @unchecked Sendable {
   }
 }
 
+/// Remembers when the delivery pump first saw each server frame still being applied, so the runtime can bound how
+/// long durable acknowledgement deadlines wait behind any single frame (#296).
+private actor InstantRuntimeAcknowledgementDeferral {
+  private var frame: (sequence: UInt64, firstSeenAt: InstantTimestamp)?
+
+  /// Milliseconds since the pump first saw this frame being applied (0 the first time).
+  func milliseconds(behindFrame sequence: UInt64, now: InstantTimestamp) -> Int64 {
+    guard let frame, frame.sequence == sequence else {
+      self.frame = (sequence, now)
+      return 0
+    }
+    return max(0, now.milliseconds - frame.firstSeenAt.milliseconds)
+  }
+
+  func reset() {
+    frame = nil
+  }
+}
+
 private actor InstantRuntimeMutationDeadlineWake {
   private var task: Task<Void, Never>?
   private var deadlineMilliseconds: Int64?
@@ -1285,6 +1327,42 @@ private enum InstantServerApplyCatchUpLimits {
   static let maximumBodyBytesWhileHoldingOperationGate = 1_024 * 1_024
   static let maximumOutsideOperationGateReplayCount = 1
   static let maximumReplayCountPerPlan = maximumOutsideOperationGateReplayCount + 1
+}
+
+/// When server apply last took the operation gate, and when each part of its commit ended, so a
+/// slow apply names the part that kept local writes queued (#277).
+///
+/// Upstream has no such gate: `Reactor.js` `pushOps` (line 1509) records and sends a mutation
+/// without waiting on server results, and `refresh-ok` (line 725) rebuilds each query's store and
+/// layers pending mutations on at read time (`_applyOptimisticUpdates`). This runtime keeps both in
+/// one SQLite outbox, so server apply shares `operationGate` with `transact`, and the part it holds
+/// must stay small, never proportional to the pending tail.
+struct InstantServerApplyGateTimeline: Sendable {
+  var enteredAt: ContinuousClock.Instant
+  var catchUpEndedAt: ContinuousClock.Instant?
+  var commitEndedAt: ContinuousClock.Instant?
+  var publishEndedAt: ContinuousClock.Instant?
+  var patchEndedAt: ContinuousClock.Instant?
+
+  /// Milliseconds per part, in order: catch up, commit, publish, patch, finish.
+  func phaseMilliseconds(endedAt: ContinuousClock.Instant) -> [(name: String, milliseconds: Int)] {
+    let catchUp = catchUpEndedAt ?? endedAt
+    let commit = commitEndedAt ?? catchUp
+    let publish = publishEndedAt ?? commit
+    let patch = patchEndedAt ?? publish
+    return [
+      ("catchUp", Self.milliseconds(from: enteredAt, to: catchUp)),
+      ("commit", Self.milliseconds(from: catchUp, to: commit)),
+      ("publish", Self.milliseconds(from: commit, to: publish)),
+      ("patch", Self.milliseconds(from: publish, to: patch)),
+      ("finish", Self.milliseconds(from: patch, to: endedAt)),
+    ]
+  }
+
+  static func milliseconds(from start: ContinuousClock.Instant, to end: ContinuousClock.Instant) -> Int {
+    let duration = start.duration(to: end)
+    return Int(duration.components.seconds * 1_000 + duration.components.attoseconds / 1_000_000_000_000_000)
+  }
 }
 
 private actor InstantLiveQueryAcknowledgementState {
@@ -1505,6 +1583,8 @@ public final class InstantRuntime: Sendable {
   private let liveQueryResultPruningCadence = InstantQueryCachePruningCadence()
   private let liveSession = InstantRuntimeLiveSession()
   private let liveQueryResultState = InstantLiveQueryResultState()
+  /// The attribute context of the latest live refresh, reused across frames that share the session's attrs (#303).
+  private let liveRefreshAttributeContexts = InstantLiveRefreshAttributeContextCache()
   private let liveQueryAcknowledgements = InstantLiveQueryAcknowledgementState()
   private let liveRoomPresenceState = InstantRuntimeLiveRoomPresenceState()
   private let activeRoomPresenceState = InstantRuntimeActiveRoomPresenceState()
@@ -1515,6 +1595,7 @@ public final class InstantRuntime: Sendable {
   private let explicitMutationFlushOwner = InstantExplicitMutationFlushOwner()
   private let mutationDeadlineWake = InstantRuntimeMutationDeadlineWake()
   private let automaticDeliveryClaimantID = UUID().uuidString.lowercased()
+  private let acknowledgementDeferral = InstantRuntimeAcknowledgementDeferral()
   private let automaticMutationRetryReservations = InstantAutomaticMutationRetryReservations()
   private let storeAdoptionMetrics = InstantRuntimeStoreAdoptionMetrics()
   private let installedStoreRevisions: InstantRuntimeInstalledStoreRevisions
@@ -1541,11 +1622,18 @@ public final class InstantRuntime: Sendable {
     )
   }
 
+  /// How many live refreshes built their attribute context instead of reusing the previous frame's (#303).
+  package func liveRefreshAttributeContextBuildCountForTesting() -> Int {
+    liveRefreshAttributeContexts.buildCount
+  }
+
+  @concurrent
   package func resetPersistenceCacheResidencyMetricsForTesting() async {
     storeAdoptionMetrics.reset()
     await persistence.resetCacheResidencyMetricsForTesting()
   }
 
+  @concurrent
   package func persistenceCacheResidencyMetricsForTesting() async
     -> InstantPersistenceCacheResidencyMetrics
   {
@@ -1975,6 +2063,7 @@ public final class InstantRuntime: Sendable {
   }
 
   @discardableResult
+  @concurrent
   public func transact(
     operations: [InstantTripleOperation],
     source: String = "local"
@@ -1988,6 +2077,7 @@ public final class InstantRuntime: Sendable {
   }
 
   @discardableResult
+  @concurrent
   public func transact(
     _ transaction: InstantStoreTransaction,
     createdAt: InstantTimestamp? = nil,
@@ -2223,22 +2313,43 @@ public final class InstantRuntime: Sendable {
         return predecessor
       }
       let deferredTriples = try await deferredValuesForPreparing(transaction)
-      let prepared: PreparedStoreMutation
-      if let supersededTail, let rollback = supersededTail.rollbackTransaction {
-        // The current store includes the predecessor overlay. Peel exactly that
-        // layer and apply the newcomer on the pre-predecessor baseline. The
-        // generated newcomer rollback therefore restores authoritative state
-        // directly, regardless of how many earlier ids alias this survivor.
-        prepared = try await store.prepare(
-          peelingOverlays: [rollback],
-          thenApplying: transaction,
-          hydratingDeferredValues: deferredTriples
-        )
-      } else {
-        prepared = try await store.prepareCurrent(
+      func prepareLocalWrite(_ transaction: InstantStoreTransaction) async throws -> PreparedStoreMutation {
+        if let supersededTail, let rollback = supersededTail.rollbackTransaction {
+          // The current store includes the predecessor overlay. Peel exactly that
+          // layer and apply the newcomer on the pre-predecessor baseline. The
+          // generated newcomer rollback therefore restores authoritative state
+          // directly, regardless of how many earlier ids alias this survivor.
+          return try await store.prepare(
+            peelingOverlays: [rollback],
+            thenApplying: transaction,
+            hydratingDeferredValues: deferredTriples
+          )
+        }
+        return try await store.prepareCurrent(
           transaction,
           hydratingDeferredValues: deferredTriples
         )
+      }
+      var prepared = try await prepareLocalWrite(pendingMutation.transaction)
+      // A pending write shows on top of everything the server sent (upstream `_applyOptimisticUpdates`), but
+      // cardinality-one facts resolve by stamp, and a resident fact can carry a later stamp than this write: a server
+      // fact from a clock ahead of this device's, or an overlay a server rebase restamped. The write then lost and
+      // stayed invisible, and delivery dropped it as older than the visible state, until the next whole-component
+      // rebase restamped it (#296). A write appended at the outbox tail is newest in domain order, so stamp the facts
+      // that lost past the store's newest fact, as that replay would. A write created before a queued one keeps domain
+      // order and may lose. Only local stamps change; `add-triple` carries no time.
+      // Ties on `createdAt` are ordered by id, as delivery orders them.
+      let isOutboxTail = creationCursor.tail.map { tail in
+        (pendingMutation.createdAt.milliseconds, pendingMutation.id) > (tail.createdAtMilliseconds, tail.mutationID)
+      } ?? true
+      if isOutboxTail, let winning = Self.localWriteStampedToWin(
+        pendingMutation.transaction,
+        prepared: prepared,
+        deferredAttributeIDs: configuration.deferredValueResidency.attributeIDs
+      ) {
+        pendingMutation.transaction = winning
+        mutation = pendingMutation
+        prepared = try await prepareLocalWrite(winning)
       }
       Self.installPreparedOptimisticEffect(
         in: &pendingMutation,
@@ -2358,6 +2469,46 @@ public final class InstantRuntime: Sendable {
       && existing.txSteps == replay.txSteps
   }
 
+  /// The local write with each cardinality-one insert that preparing it left invisible (the resident fact carried a
+  /// later stamp) restamped just past the newest fact in the store (#296); nil when every insert shows. Other facts keep
+  /// their stamps, so an entity's creation time does not move. Deferred attributes are not resident, so they are not
+  /// checked.
+  static func localWriteStampedToWin(
+    _ transaction: InstantStoreTransaction,
+    prepared: PreparedStoreMutation,
+    deferredAttributeIDs: Set<String>
+  ) -> InstantStoreTransaction? {
+    var lostSlots: Set<InstantVisibleWriteKey> = []
+    for operation in transaction.operations {
+      guard case let .insert(triple) = operation,
+        !deferredAttributeIDs.contains(triple.attributeID),
+        let attribute = prepared.attributes[triple.attributeID],
+        attribute.cardinality == .one,
+        attribute.valueType != .date,
+        case let .one(shown, _)? = Self.visibleSlot(
+          prepared.indexes,
+          entityID: triple.entityID,
+          attributeID: triple.attributeID
+        ),
+        shown != triple.value
+      else { continue }
+      lostSlots.insert(InstantVisibleWriteKey(entityID: triple.entityID, attributeID: triple.attributeID))
+    }
+    guard !lostSlots.isEmpty else { return nil }
+    let newest = prepared.indexes.newestTransactionTimeMilliseconds ?? 0
+    let stamp = InstantTimestamp(milliseconds: newest == .max ? newest : newest + 1)
+    return InstantStoreTransaction(
+      id: transaction.id,
+      operations: transaction.operations.map { operation in
+        guard case var .insert(triple) = operation,
+          lostSlots.contains(InstantVisibleWriteKey(entityID: triple.entityID, attributeID: triple.attributeID))
+        else { return operation }
+        triple.txTime = stamp
+        return .insert(triple)
+      }
+    )
+  }
+
   /// Keep the durable transaction and its replayed overlay on the same logical timestamp.
   /// Delivery compares these timestamps to suppress genuinely stale writes; rebasing only the
   /// overlay makes the mutation suppress its own wire operations after a refresh or rejection.
@@ -2432,6 +2583,7 @@ public final class InstantRuntime: Sendable {
   }
 
   @discardableResult
+  @concurrent
   public func applyServerTransaction(
     _ transaction: InstantStoreTransaction,
     processedTransactionID: String? = nil,
@@ -2590,6 +2742,32 @@ public final class InstantRuntime: Sendable {
       if mergedAttributeCount > 0 {
         footprint.isGlobal = true
       }
+      // #296: keep only the server facts that can change the authoritative base beneath the pending
+      // writes. When what remains touches no entity a surviving pending write touches, the plan peels
+      // and replays nothing.
+      // Callers see the whole authoritative transaction, including the facts this apply skipped.
+      let reportedAuthoritativeTransaction = authoritativeTransaction
+      var excludesWatermarkRoots = false
+      var receiptPatches: [String: [InstantTriple]] = [:]
+      var failureSplice = InstantServerApplyFailureSplice()
+      if configuration.reducesServerApplyToAffectedOverlays,
+        mergedAttributeCount == 0,
+        confirmingMutationID == nil,
+        !footprint.isGlobal,
+        let reduced = try await reducedServerApplyOperations(
+          authoritativeTransaction.operations,
+          processedTransactionID: processedTransactionID,
+          seed: seed
+        )
+      {
+        authoritativeTransaction.operations = reduced.operations
+        receiptPatches = reduced.receiptPatches
+        failureSplice = reduced.failureSplice
+        // A reduced apply changes only entities no surviving pending write touches, so a link it changes is no
+        // reason to peel the linked entity's writes.
+        footprint = Self.serverApplyFootprint(operations: reduced.operations, includingReferenceTargets: false)
+        excludesWatermarkRoots = true
+      }
       let hasAuthoritativeStoreChanges =
         !authoritativeTransaction.operations.isEmpty || mergedAttributeCount > 0
       let planID = "server-apply-\(configuration.makeID())"
@@ -2604,7 +2782,9 @@ public final class InstantRuntime: Sendable {
           confirmingMutationID: confirmingMutationID,
           confirmingClaimantID: confirmingMutationID == nil
             ? nil
-            : automaticDeliveryClaimantID
+            : automaticDeliveryClaimantID,
+          excludesWatermarkRoots: excludesWatermarkRoots,
+          receiptPatchMutationIDs: Set(receiptPatches.keys).union(failureSplice.patchedMutationIDs)
         )
         switch load {
         case let .ready(readyPlan):
@@ -2703,7 +2883,9 @@ public final class InstantRuntime: Sendable {
               continue
 
             case let .materialized(materializedRollback):
-              rollback = materializedRollback
+              // A refused write is removed for good: what it restores is the base as this device knows it, so the
+              // server facts applied next must win against it (#296).
+              rollback = mutation.status == .failed ? Self.restoredAsBase(materializedRollback) : materializedRollback
             }
             prepared = try await hydrateDeferredValuesForServerApply(
               [rollback],
@@ -2738,6 +2920,21 @@ public final class InstantRuntime: Sendable {
         )
         prepared = schemaPrepared
 
+        // A reduced apply removes refused writes itself: each slot a refused write changed and no surviving write
+        // replaced goes back to its before-image in the store, as the full rebase's replay would leave it.
+        if !failureSplice.storeOperations.isEmpty {
+          let splice = InstantStoreTransaction(
+            id: "\(plan.id)-failure-splice",
+            operations: failureSplice.storeOperations
+          )
+          prepared = try await hydrateDeferredValuesForServerApply([splice], over: prepared, planID: plan.id)
+          recordActorHop(.store)
+          let spliced = try await store.prepare(splice, applyingTo: prepared)
+          changedEntityIDs.formUnion(spliced.result.changedEntityIDs)
+          changedFactScope.formUnion(spliced.factScope.completed(over: spliced.result.changedEntityIDs))
+          prepared = spliced
+        }
+
         var authoritativeCoverage: InstantAuthoritativeWriteCoverage?
         if !authoritativeTransaction.operations.isEmpty {
           prepared = try await hydrateDeferredValuesForServerApply(
@@ -2765,6 +2962,7 @@ public final class InstantRuntime: Sendable {
 
         var confirmedMutation: PendingMutation?
         var forwardPosition: InstantOutboxDeliveryPosition?
+        var stagedReceiptPatchIDs: Set<String> = []
         while true {
           recordActorHop(.persistence)
           let page = try await persistence.loadServerApplyBodyPage(
@@ -2791,6 +2989,55 @@ public final class InstantRuntime: Sendable {
               mutation.failure = nil
               mutation.confirmationSource = .manual
               confirmedMutation = mutation
+            }
+            if !entry.isComponentBody, failureSplice.removedFailedIDs.contains(mutation.id), mutation.status == .failed {
+              // A refused write the reduction removes itself: the full rebase's forward pass drops its overlay the same way.
+              mutation.rollbackTransaction = nil
+              mutation.optimisticOverlayState = .removed
+              stagedReceiptPatchIDs.insert(mutation.id)
+              dispositions.append(.update(mutation))
+              continue
+            }
+            if !entry.isComponentBody,
+              receiptPatches[mutation.id] != nil || failureSplice.receiptRebases[mutation.id] != nil
+            {
+              // A refused write beneath this one is removed (its before-image becomes this write's), and the server
+              // changed these slots beneath it. The full rebase would replay it over that base and record the result as
+              // its receipt; nothing it shows changes.
+              if let rebase = failureSplice.receiptRebases[mutation.id] {
+                guard let spliced = Self.rollbackTransaction(
+                  of: mutation,
+                  rebasedOnto: rebase.baseFacts,
+                  absentSlots: rebase.absentSlots,
+                  attributes: prepared.attributes
+                ) else {
+                  throw InstantError(
+                    code: .persistenceFailed,
+                    operation: "apply server transaction",
+                    localID: mutation.id,
+                    message: "Optimistic mutation '\(mutation.id)' lost the receipt its refused predecessor was removed into.",
+                    recovery: "Retry the server apply; the plan is revalidated from a fresh snapshot."
+                  )
+                }
+                Self.installPreparedOptimisticEffect(in: &mutation, rollback: spliced)
+              }
+              guard let patched = Self.rollbackTransaction(
+                of: mutation,
+                rebasedOnto: receiptPatches[mutation.id] ?? [],
+                attributes: prepared.attributes
+              ) else {
+                throw InstantError(
+                  code: .persistenceFailed,
+                  operation: "apply server transaction",
+                  localID: mutation.id,
+                  message: "Optimistic mutation '\(mutation.id)' lost the receipt its server-apply patch was planned for.",
+                  recovery: "Retry the server apply; the plan is revalidated from a fresh snapshot."
+                )
+              }
+              Self.installPreparedOptimisticEffect(in: &mutation, rollback: patched)
+              stagedReceiptPatchIDs.insert(mutation.id)
+              dispositions.append(.update(mutation))
+              continue
             }
             guard entry.isComponentBody else {
               dispositions.append(.update(mutation))
@@ -2859,7 +3106,10 @@ public final class InstantRuntime: Sendable {
           )
           forwardPosition = page.nextPosition
         }
-        if stalePlan {
+        // Every receipt patch must have reached its row; a target that left the plan means the outbox moved.
+        if stalePlan
+          || stagedReceiptPatchIDs != Set(receiptPatches.keys).union(failureSplice.patchedMutationIDs)
+        {
           try? await persistence.finishServerApplyPlan(id: plan.id)
           continue applyAttempts
         }
@@ -2878,12 +3128,16 @@ public final class InstantRuntime: Sendable {
         var catchUpOutboxRowCount = plan.baselineOutboxRowCount
         var outsideOperationGateReplayCount = 0
         var catchUpReplayCount = 0
+        var catchUpBodyCount = 0
         var didCatchUpLocalMutations = false
+        var gateTimeline = InstantServerApplyGateTimeline(enteredAt: ContinuousClock.now)
         catchUp: while true {
           if !operationGateAlreadyHeld, !enteredOperationGateForCommit {
             await enterOperationGate(operation: "catch up server apply")
             enteredOperationGateForCommit = true
+            gateTimeline = InstantServerApplyGateTimeline(enteredAt: ContinuousClock.now)
           }
+          await operationGate.setHolderPhase("catch up local writes")
           recordActorHop(.persistence)
           let catchUpLoad = try await persistence
             .extendServerApplyPlanWithAppendedLocalMutations(
@@ -3030,6 +3284,7 @@ public final class InstantRuntime: Sendable {
           }
           catchUpTail = catchUp.currentTail
           catchUpOutboxRowCount = catchUp.currentOutboxRowCount
+          catchUpBodyCount += catchUp.appendedBodyCount
           didCatchUpLocalMutations = true
           if shouldReplayOutsideOperationGate {
             await configuration.onServerApplyCatchUpReplayedOutsideOperationGateForTesting?(
@@ -3069,8 +3324,12 @@ public final class InstantRuntime: Sendable {
           indexes: prepared.indexes,
           factScope: changedFactScope
         )
+        // A removed refused write can change the store even when every server fact was dropped.
         let changesMaterializedStore =
           !authoritativeTransaction.operations.isEmpty || mergedAttributeCount > 0
+          || !failureSplice.storeOperations.isEmpty
+        gateTimeline.catchUpEndedAt = ContinuousClock.now
+        await operationGate.setHolderPhase("commit plan")
         recordActorHop(.persistence)
         guard let commit = try await persistence.commitServerApplyPlan(
           planID: plan.id,
@@ -3091,6 +3350,8 @@ public final class InstantRuntime: Sendable {
           continue applyAttempts
         }
 
+        gateTimeline.commitEndedAt = ContinuousClock.now
+        await operationGate.setHolderPhase("publish store")
         recordActorHop(.store)
         let requiresPreparedStoreInstallation =
           changesMaterializedStore || didCatchUpLocalMutations
@@ -3115,6 +3376,8 @@ public final class InstantRuntime: Sendable {
           committedResult = pageInfoResult
         }
 
+        gateTimeline.publishEndedAt = ContinuousClock.now
+        await operationGate.setHolderPhase("patch resident outbox")
         var patchPosition: InstantOutboxDeliveryPosition?
         while true {
           recordActorHop(.persistence)
@@ -3133,6 +3396,8 @@ public final class InstantRuntime: Sendable {
           }
           patchPosition = patch.nextPosition
         }
+        gateTimeline.patchEndedAt = ContinuousClock.now
+        await operationGate.setHolderPhase("finish plan")
         try await persistence.finishServerApplyPlan(id: plan.id)
         _ = try? await publishConnectionStatusWithGateHeld(
           pendingMutationCount: commit.pendingMutationCount
@@ -3146,10 +3411,19 @@ public final class InstantRuntime: Sendable {
           pendingMutationCount: commit.pendingMutationCount
         )
         let applied = InstantAppliedServerTransaction(
-          transaction: authoritativeTransaction,
+          transaction: reportedAuthoritativeTransaction,
           application: application,
           confirmedMutation: confirmedMutation,
           mergedAttributeCount: mergedAttributeCount
+        )
+        await recordServerApplyGateTimeline(
+          gateTimeline,
+          endedAt: ContinuousClock.now,
+          processedTransactionID: processedTransactionID,
+          pendingMutationCount: commit.pendingMutationCount,
+          catchUpReplayCount: catchUpReplayCount,
+          catchUpBodyCount: catchUpBodyCount,
+          changedEntityCount: changedEntityIDs.count
         )
         if enteredOperationGateForCommit {
           await leaveOperationGate()
@@ -3169,7 +3443,8 @@ public final class InstantRuntime: Sendable {
   }
 
   private static func serverApplyFootprint(
-    operations: [InstantTripleOperation]
+    operations: [InstantTripleOperation],
+    includingReferenceTargets: Bool = true
   ) -> InstantServerApplyFootprint {
     var entityIDs: Set<String> = []
     var isGlobal = false
@@ -3179,7 +3454,7 @@ public final class InstantRuntime: Sendable {
         entityIDs.insert(triple.entityID)
         switch triple.value {
         case let .ref(targetEntityID):
-          entityIDs.insert(targetEntityID)
+          if includingReferenceTargets { entityIDs.insert(targetEntityID) }
         case .lookupRef:
           isGlobal = true
         case .null, .string, .number, .bool, .date, .json:
@@ -3205,6 +3480,687 @@ public final class InstantRuntime: Sendable {
       }
     }
     return InstantServerApplyFootprint(entityIDs: entityIDs, isGlobal: isGlobal)
+  }
+
+  /// Keeps only the server facts of one apply that can change the authoritative base beneath the pending writes
+  /// (#296), or returns nil when the whole-component rebase must run.
+  ///
+  /// Upstream `Reactor.js` keeps each query's server result in its own store and reapplies every pending mutation on
+  /// top of it (`dataForQuery`, `_applyOptimisticUpdates`). Swift keeps one materialized store and peels and replays
+  /// the connected component instead, which reproduces the same store whenever every server fact already holds beneath
+  /// the overlays. While a large outbox drains, nearly every frame is of that kind: the server restates the writes this
+  /// device made. Recording 023's iPhone peeled and replayed 2,487 writes for each one, 22-25 s apiece.
+  ///
+  /// A fact on an entity that no surviving pending write touches applies exactly as the full rebase applies it, and is
+  /// skipped when it already holds. A fact on an entity a surviving write touches:
+  /// - When no surviving write inserts its slot, pending writes can only remove from the slot, so the store holds a
+  ///   subset of the base, and a fact the store holds holds in the base. Otherwise the full rebase runs.
+  /// - When every surviving writer replaces the cardinality-one slot and the store shows the latest one, the base value
+  ///   lives only in the first writer's before-image. A fact equal to it is skipped. A different one (the server
+  ///   applied a write whose answer is still in flight, a replay, or another device's write) becomes that receipt's
+  ///   new before-image: the one change the full rebase would make there.
+  /// Anything else, and any outbox state the full rebase treats specially, returns nil.
+  private func reducedServerApplyOperations(
+    _ operations: [InstantTripleOperation],
+    processedTransactionID: String,
+    seed: InstantServerApplySeed
+  ) async throws -> (
+    operations: [InstantTripleOperation],
+    receiptPatches: [String: [InstantTriple]],
+    failureSplice: InstantServerApplyFailureSplice
+  )? {
+    func declined(
+      _ reason: InstantServerApplyReductionIneligibility,
+      fact: InstantTriple? = nil
+    ) -> (
+      operations: [InstantTripleOperation],
+      receiptPatches: [String: [InstantTriple]],
+      failureSplice: InstantServerApplyFailureSplice
+    )? {
+      var metadata = ["reason": reason.rawValue, "operationCount": String(operations.count)]
+      if let fact {
+        metadata["entityID"] = fact.entityID
+        metadata["attributeID"] = fact.attributeID
+      }
+      InstantDiagnostics.shared.record(
+        .debug,
+        subsystem: "instant-swift-data-core",
+        category: "server-apply",
+        event: "server-apply.reduction-declined",
+        message: "A server apply peels and replays its component: \(reason.rawValue).",
+        metadata: metadata,
+        correlationID: processedTransactionID
+      )
+      return nil
+    }
+    var slots: [String: Set<String>] = [:]
+    for operation in operations {
+      switch operation {
+      case let .insert(triple), let .retract(triple):
+        slots[triple.entityID, default: []].insert(triple.attributeID)
+        switch triple.value {
+        case let .ref(targetEntityID):
+          slots[targetEntityID, default: []] = slots[targetEntityID, default: []]
+        case .lookupRef:
+          return declined(.unsupportedOperation)
+        case .null, .string, .number, .bool, .date, .json:
+          break
+        }
+      default:
+        return declined(.unsupportedOperation)
+      }
+    }
+    guard !slots.isEmpty else { return (operations, [:], InstantServerApplyFailureSplice()) }
+    let reverseLinkSlots = Self.reverseLinkSlots(of: operations, attributes: seed.preparedStore.attributes)
+    let state = seed.state
+    recordActorHop(.persistence)
+    let load = try await persistence.loadServerApplyReductionContext(
+      slots: slots,
+      reverseLinkSlots: reverseLinkSlots,
+      processedTransactionID: processedTransactionID,
+      expectedStoreRevision: state.storeRevision,
+      expectedAttributeRevision: state.attributeRevision,
+      expectedOutboxRevision: state.outboxRevision,
+      expectedQueryResultRevision: state.queryResultRevision
+    )
+    guard case var .ready(context) = load else {
+      if case let .ineligible(reason) = load { return declined(reason) }
+      return nil
+    }
+    // Refused writes still on the store are removed by the reduction itself, before the frame is classified against
+    // the store and receipts they leave behind.
+    guard let failureSplice = Self.failureSplice(context: context, attributes: seed.preparedStore.attributes) else {
+      return declined(.failedOverlay)
+    }
+    for (mutationID, rebase) in failureSplice.receiptRebases {
+      guard var body = context.bodies[mutationID],
+        let spliced = Self.rollbackTransaction(
+          of: body,
+          rebasedOnto: rebase.baseFacts,
+          absentSlots: rebase.absentSlots,
+          attributes: seed.preparedStore.attributes
+        )
+      else { return declined(.failedOverlay) }
+      Self.installPreparedOptimisticEffect(in: &body, rollback: spliced)
+      context.bodies[mutationID] = body
+    }
+    // Deferred values (Scribe's segment text and words) are not resident, so the store cannot show them until they are
+    // hydrated, as the full rebase hydrates them before applying the same facts.
+    var classified = seed.preparedStore
+    let policy = configuration.deferredValueResidency
+    if policy.isEnabled {
+      var deferredEntityIDs: Set<String> = []
+      for operation in operations + failureSplice.storeOperations {
+        switch operation {
+        case let .insert(triple), let .retract(triple):
+          if policy.attributeIDs.contains(triple.attributeID) { deferredEntityIDs.insert(triple.entityID) }
+        default:
+          continue
+        }
+      }
+      if !deferredEntityIDs.isEmpty {
+        recordActorHop(.persistence)
+        let deferredTriples = try await persistence.loadDeferredValues(
+          attributeIDs: policy.attributeIDs,
+          entityIDs: deferredEntityIDs
+        )
+        if !deferredTriples.isEmpty {
+          recordActorHop(.store)
+          classified = try await store.prepare(
+            InstantStoreTransaction(
+              id: "server-apply-reduction-\(processedTransactionID)-deferred-hydration",
+              operations: deferredTriples.map(InstantTripleOperation.insert)
+            ),
+            applyingTo: classified
+          )
+        }
+      }
+    }
+    if !failureSplice.storeOperations.isEmpty {
+      let splice = InstantStoreTransaction(
+        id: "server-apply-reduction-\(processedTransactionID)-failure-splice",
+        operations: failureSplice.storeOperations
+      )
+      classified = try await hydrateDeferredValuesForServerApply(
+        [splice],
+        over: classified,
+        planID: "server-apply-reduction-\(processedTransactionID)"
+      )
+      recordActorHop(.store)
+      classified = try await store.prepare(splice, applyingTo: classified)
+    }
+    switch Self.reducedServerApplyOperations(
+      operations,
+      context: context,
+      attributes: classified.attributes,
+      indexes: classified.indexes
+    ) {
+    case let .reduced(reduced, receiptPatches):
+      return (reduced, receiptPatches, failureSplice)
+    case let .declined(reason, fact):
+      return declined(reason, fact: fact)
+    }
+  }
+
+  static func reducedServerApplyOperations(
+    _ operations: [InstantTripleOperation],
+    context: InstantServerApplyReductionContext,
+    attributes: AttributeStore,
+    indexes: TripleIndexes
+  ) -> InstantServerApplyReduction {
+    func holds(_ triple: InstantTriple) -> Bool {
+      Self.visibleSlot(indexes, entityID: triple.entityID, attributeID: triple.attributeID)?[triple.value] != nil
+    }
+    func shownValue(of slot: InstantVisibleWriteKey) -> InstantValue? {
+      guard case let .one(value, _)? = Self.visibleSlot(
+        indexes,
+        entityID: slot.entityID,
+        attributeID: slot.attributeID
+      ) else { return nil }
+      return value
+    }
+    var kept: [InstantTripleOperation] = []
+    var receiptPatches: [String: [InstantTriple]] = [:]
+    for operation in operations {
+      switch operation {
+      case let .insert(triple):
+        let factHolds = holds(triple)
+        guard context.shadowedEntityIDs.contains(triple.entityID) else {
+          if factHolds { continue }
+          if case let .ref(targetEntityID) = triple.value,
+            context.shadowedEntityIDs.contains(targetEntityID)
+          {
+            return .declined(.linksToShadowedEntity, fact: triple)
+          }
+          kept.append(operation)
+          continue
+        }
+        let slot = InstantVisibleWriteKey(entityID: triple.entityID, attributeID: triple.attributeID)
+        // A pending write that inserts this link from the other side (an attachment's or a transcription's
+        // `recording`, materialized as the recording's `attachments` or `transcriptions`) leaves no write key on this
+        // slot. Its receipt, in the store's physical form, still shows whether the link was there beneath it.
+        if let reverseSlot = Self.reverseLinkSlot(of: triple, attributes: attributes),
+          let firstReverseWriterID = context.firstReverseLinkWriterBySlot[reverseSlot]
+        {
+          guard context.firstWriterBySlot[slot] == nil,
+            factHolds,
+            let firstReverseWriter = context.bodies[firstReverseWriterID],
+            let lastReverseWriter = context.lastReverseLinkWriterBySlot[reverseSlot].flatMap({ context.bodies[$0] }),
+            Self.insertedValue(of: reverseSlot, in: lastReverseWriter) == .ref(triple.entityID)
+          else { return .declined(.reverseLinkWriter, fact: triple) }
+          switch Self.linkBeforeImage(of: triple, in: firstReverseWriter) {
+          case .present:
+            continue
+          case .absent:
+            // The server added the link beneath the writer (its answer is in flight, or a replay was applied).
+            receiptPatches[firstReverseWriterID, default: []].append(triple)
+            continue
+          case .entityCreated, .unknown:
+            return .declined(.reverseLinkWriter, fact: triple)
+          }
+        }
+        guard let firstWriterID = context.firstWriterBySlot[slot] else {
+          // No surviving write inserts this slot, so the store's value here is the base's. A cardinality-one fact
+          // stamped earlier than it changes nothing: the whole-component rebase applies it under last-write-wins
+          // (`applyInsert`), where the later-stamped resident fact stays. Michael's iPhone restated such a fact
+          // (Recording 023's clipboardEntries) on every frame of build 73, and every frame rebased for nothing.
+          guard factHolds || Self.residentFactWins(over: triple, indexes: indexes, attributes: attributes) else {
+            return .declined(.changesShadowedFact, fact: triple)
+          }
+          continue
+        }
+        // Every surviving writer replaces this cardinality-one slot, so what the store shows is the latest writer's
+        // value whatever the base holds. The store must show it: a write that lost to a later-stamped resident fact
+        // is invisible, and only the full rebase's replay would surface it. The first writer must replace the slot
+        // too (a merge reads the base).
+        guard attributes[triple.attributeID]?.cardinality == .one,
+          let firstWriter = context.bodies[firstWriterID],
+          Self.insertedValue(of: slot, in: firstWriter) != nil,
+          let lastWriter = context.lastWriterBySlot[slot].flatMap({ context.bodies[$0] }),
+          let lastWrittenValue = Self.insertedValue(of: slot, in: lastWriter),
+          shownValue(of: slot) == lastWrittenValue
+        else { return .declined(.shadowedSlotNotReplaced, fact: triple) }
+        // The base value beneath the writers lives in one place: the first writer's before-image. When the server
+        // changed it (a write whose answer is still in flight, a replay the server already applied, another device),
+        // the full rebase would replay the writers over the new value and change only that receipt. Patch it instead.
+        let firstOverlayCreatedEntity = context.firstOverlayByEntity[triple.entityID]
+          .flatMap { context.bodies[$0] }
+          .map { Self.beforeImageState(of: slot, in: $0) == .entityCreated } ?? false
+        switch Self.beforeImageState(of: slot, in: firstWriter) {
+        case let .present(fact) where fact.value == triple.value:
+          continue
+        case let .present(fact) where fact.txTime > triple.txTime:
+          // The base value beneath the writers carries a later stamp than the server's fact, so applying it there
+          // changes nothing (cardinality-one facts are last-write-wins), as in the full rebase.
+          continue
+        case .present:
+          receiptPatches[firstWriterID, default: []].append(triple)
+        case .entityCreated:
+          // The first writer created the entity, and the server now has it (the create's answer is in flight, or it
+          // was a replay the server applied).
+          receiptPatches[firstWriterID, default: []].append(triple)
+        case .absent where context.firstOverlayByEntity[triple.entityID] == firstWriterID || firstOverlayCreatedEntity:
+          // No earlier pending write touches the entity, or the earliest one created it: either way nothing beneath
+          // the first writer removed a base value.
+          receiptPatches[firstWriterID, default: []].append(triple)
+        case .absent, .unknown:
+          return .declined(.unprovenBeforeImage, fact: triple)
+        }
+        if firstOverlayCreatedEntity, let firstOverlayID = context.firstOverlayByEntity[triple.entityID],
+          firstOverlayID != firstWriterID
+        {
+          // The server has the entity, so the create beneath this writer no longer deletes it on rollback.
+          receiptPatches[firstOverlayID, default: []].append(triple)
+        }
+
+      case let .retract(triple):
+        if context.shadowedEntityIDs.contains(triple.entityID) {
+          return .declined(.retractsShadowedFact, fact: triple)
+        }
+        // Removing a free entity's link commutes with the pending writes on the linked entity unless a delete
+        // cascades along the link: those writes insert, and none of them depends on another entity's link being
+        // present. (A scrolled-away transcript segment leaves a paged result this way.)
+        if case let .ref(targetEntityID) = triple.value,
+          context.shadowedEntityIDs.contains(targetEntityID),
+          attributes[triple.attributeID].map({ $0.onDelete != .none || $0.onDeleteReverse != .none }) ?? true
+        {
+          return .declined(.linksToShadowedEntity, fact: triple)
+        }
+        kept.append(operation)
+
+      default:
+        return .declined(.unsupportedOperation)
+      }
+    }
+    return .reduced(kept, receiptPatches: receiptPatches)
+  }
+
+  /// Whether the store's cardinality-one fact in this slot has a strictly later stamp than `triple`, so applying
+  /// `triple` under last-write-wins leaves the slot unchanged.
+  static func residentFactWins(over triple: InstantTriple, indexes: TripleIndexes, attributes: AttributeStore) -> Bool {
+    guard attributes[triple.attributeID]?.cardinality == .one,
+      case let .one(_, stamp)? = visibleSlot(indexes, entityID: triple.entityID, attributeID: triple.attributeID)
+    else { return false }
+    return stamp.txTime > triple.txTime
+  }
+
+  /// The visible values of one slot, without materializing the entity's other facts: an entity can hold 20,000 links
+  /// (`InstantEntityWriteScopeTests`).
+  static func visibleSlot(_ indexes: TripleIndexes, entityID: String, attributeID: String) -> AttrSlot? {
+    indexes.copiedAttributeSlots(entityID: entityID)?[attributeID]
+  }
+
+  /// The reverse-form slot a pending write would insert to create this link fact, when the attribute is a link: for
+  /// `(recording, recordings/segments, segment)` it is `(segment, transcriptionSegments/recording)`.
+  static func reverseLinkSlot(of triple: InstantTriple, attributes: AttributeStore) -> InstantVisibleWriteKey? {
+    guard case let .ref(targetEntityID) = triple.value,
+      let reverseIdentity = attributes[triple.attributeID]?.reverseIdentity,
+      reverseIdentity != triple.attributeID
+    else { return nil }
+    return InstantVisibleWriteKey(entityID: targetEntityID, attributeID: reverseIdentity)
+  }
+
+  private static func reverseLinkSlots(
+    of operations: [InstantTripleOperation],
+    attributes: AttributeStore
+  ) -> Set<InstantVisibleWriteKey> {
+    var slots: Set<InstantVisibleWriteKey> = []
+    for operation in operations {
+      guard case let .insert(triple) = operation,
+        let slot = reverseLinkSlot(of: triple, attributes: attributes)
+      else { continue }
+      slots.insert(slot)
+    }
+    return slots
+  }
+
+  /// What a cardinality-one slot held before `mutation` applied, from its durable rollback receipt.
+  enum BeforeImage: Equatable {
+    /// The receipt restores exactly this fact (value and stamp).
+    case present(InstantTriple)
+    /// The receipt restores no value: the slot was empty.
+    case absent
+    /// The receipt deletes the entity: this write created it, so the slot was empty.
+    case entityCreated
+    /// The receipt restores several values, or is not materialized.
+    case unknown
+  }
+
+  static func beforeImageState(of slot: InstantVisibleWriteKey, in mutation: PendingMutation) -> BeforeImage {
+    guard case let .materialized(rollback) = mutation.optimisticEffectReceipt else { return .unknown }
+    var values: [InstantTriple] = []
+    for operation in rollback.operations {
+      switch operation {
+      case let .insert(triple) where triple.entityID == slot.entityID && triple.attributeID == slot.attributeID:
+        values.append(triple)
+      case let .deleteEntity(entityID) where entityID == slot.entityID:
+        return values.isEmpty ? .entityCreated : .unknown
+      case let .deleteEntityInNamespace(entityID, _) where entityID == slot.entityID:
+        return values.isEmpty ? .entityCreated : .unknown
+      default:
+        continue
+      }
+    }
+    switch values.count {
+    case 0: return .absent
+    case 1: return .present(values[0])
+    default: return .unknown
+    }
+  }
+
+  /// Whether one link fact, in the store's physical (forward) form, was there before `mutation` applied: its receipt
+  /// retracts the fact when the mutation added it. A receipt that restores the target under another entity, removes
+  /// the fact, or deletes the linking entity is `.unknown`.
+  static func linkBeforeImage(of fact: InstantTriple, in mutation: PendingMutation) -> BeforeImage {
+    guard case let .materialized(rollback) = mutation.optimisticEffectReceipt else { return .unknown }
+    var retracted = false
+    var restored = false
+    for operation in rollback.operations {
+      switch operation {
+      case let .retract(triple)
+      where triple.entityID == fact.entityID && triple.attributeID == fact.attributeID && triple.value == fact.value:
+        retracted = true
+      case let .insert(triple) where triple.attributeID == fact.attributeID && triple.value == fact.value:
+        // The same fact restored under its old stamp means the write only re-asserted it; under another entity it
+        // means the write moved the target.
+        guard triple.entityID == fact.entityID else { return .unknown }
+        restored = true
+      case let .deleteEntity(entityID) where entityID == fact.entityID:
+        return .unknown
+      case let .deleteEntityInNamespace(entityID, _) where entityID == fact.entityID:
+        return .unknown
+      default:
+        continue
+      }
+    }
+    return retracted && !restored ? .absent : .present(fact)
+  }
+
+  /// Removes refused writes without the whole-component rebase (#296). Each slot a refused write changed goes back to
+  /// its before-image: in the next surviving writer's receipt when a later write replaces the slot, or in the store
+  /// when none does. That is what the full rebase's replay without the refused write leaves. Nil (the full rebase runs)
+  /// when two refused writes share a slot, a later write merges into one of its slots or re-asserts a link it added, or
+  /// a later write touches an entity it created.
+  static func failureSplice(
+    context: InstantServerApplyReductionContext,
+    attributes: AttributeStore
+  ) -> InstantServerApplyFailureSplice? {
+    var splice = InstantServerApplyFailureSplice()
+    var splicedSlots: Set<InstantVisibleWriteKey> = []
+    for failedID in context.failedOverlayIDs {
+      guard let failed = context.bodies[failedID],
+        case let .materialized(rollback) = failed.optimisticEffectReceipt
+      else { return nil }
+      if !(context.createdEntitiesTouchedAfterFailed[failedID] ?? []).isEmpty { return nil }
+      let nextWriters = context.nextWriterAfterFailed[failedID] ?? [:]
+      // The refused write's write keys, by the physical slot each lands on.
+      var nextWriterBySlot: [InstantVisibleWriteKey: String] = [:]
+      for (key, writerID) in nextWriters {
+        guard let resolved = attributes.lookupAttribute(id: key.attributeID) else {
+          nextWriterBySlot[key] = writerID
+          continue
+        }
+        // A later write that re-asserts a link the refused write made from the other side: the full rebase decides.
+        guard resolved.direction == .forward else { return nil }
+        nextWriterBySlot[InstantVisibleWriteKey(entityID: key.entityID, attributeID: resolved.attribute.id)] = writerID
+      }
+      var operationsBySlot: [InstantVisibleWriteKey: [InstantTripleOperation]] = [:]
+      var slotOrder: [InstantVisibleWriteKey] = []
+      for operation in rollback.operations {
+        switch operation {
+        case let .insert(triple), let .retract(triple):
+          let slot = InstantVisibleWriteKey(entityID: triple.entityID, attributeID: triple.attributeID)
+          if operationsBySlot[slot] == nil { slotOrder.append(slot) }
+          operationsBySlot[slot, default: []].append(operation)
+        case .deleteEntity, .deleteEntityInNamespace:
+          // It created the entity and nothing after it touches the entity: delete it.
+          splice.storeOperations.append(operation)
+        default:
+          return nil
+        }
+      }
+      for slot in slotOrder {
+        guard splicedSlots.insert(slot).inserted else { return nil }
+        let slotOperations = operationsBySlot[slot] ?? []
+        guard let nextWriterID = nextWriterBySlot[slot] else {
+          // No surviving write replaces the slot: the store goes back to the refused write's before-image.
+          splice.storeOperations.append(contentsOf: restoredAsBase(slotOperations))
+          continue
+        }
+        guard attributes[slot.attributeID]?.cardinality == .one,
+          let nextWriter = context.bodies[nextWriterID],
+          insertedValue(of: slot, in: nextWriter) != nil
+        else { return nil }
+        let beforeImage: [InstantTriple] = slotOperations.compactMap { operation in
+          if case let .insert(triple) = operation { return triple }
+          return nil
+        }
+        guard beforeImage.count <= 1 else { return nil }
+        var rebase = splice.receiptRebases[nextWriterID] ?? InstantServerApplyFailureSplice.ReceiptRebase()
+        if let fact = beforeImage.first {
+          rebase.baseFacts.append(restoredAsBase(fact))
+        } else {
+          rebase.absentSlots.insert(slot)
+        }
+        splice.receiptRebases[nextWriterID] = rebase
+      }
+      splice.removedFailedIDs.insert(failedID)
+    }
+    return splice
+  }
+
+  /// A refused write's restored facts, stamped so that any server fact wins against them under last-write-wins (#296).
+  ///
+  /// Removing a refused write restores what lay beneath it: base facts, or the values of an earlier pending write,
+  /// which still shows through its own receipt. Upstream shows the server's results with the remaining pending writes
+  /// on top, and a refused write leaves nothing behind, so the server's facts must win against what it restores. The
+  /// restored facts can carry this device's stamps, and Instant stamps a cardinality-one fact with the time its slot
+  /// was first set (an update keeps `created_at`), so a device stamp usually wins. The differential test's seed 15
+  /// showed a final segment as not final after a refused replay, whether the splice or the whole-component rebase
+  /// removed the write.
+  static func restoredAsBase(_ rollback: InstantStoreTransaction) -> InstantStoreTransaction {
+    InstantStoreTransaction(id: rollback.id, operations: restoredAsBase(rollback.operations))
+  }
+
+  /// The receipt's operations as written, then each fact it restored again at txTime 0. The receipt itself decides
+  /// what comes back (it retracts the overlay's value before restoring the before-image); only the restored facts'
+  /// stamps change, so a receipt that relies on its own stamp to replace the overlay's value still does.
+  static func restoredAsBase(_ operations: [InstantTripleOperation]) -> [InstantTripleOperation] {
+    var restored = operations
+    for operation in operations {
+      guard case let .insert(triple) = operation else { continue }
+      restored.append(.retract(triple))
+      restored.append(.insert(restoredAsBase(triple)))
+    }
+    return restored
+  }
+
+  static func restoredAsBase(_ triple: InstantTriple) -> InstantTriple {
+    var triple = triple
+    triple.txTime = InstantTimestamp(milliseconds: 0)
+    return triple
+  }
+
+  /// The rollback receipt `mutation` would carry had it been prepared over `baseFacts` (#296), the receipt a
+  /// whole-component rebase computes when it replays the mutation over a base that holds those facts:
+  /// - On each slot of an existing entity that the mutation writes, the receipt retracts the written value and restores
+  ///   the base fact. Other slots keep their operations.
+  /// - When the receipt deletes an entity the mutation created and the base now holds it, the delete becomes a
+  ///   retraction of each written fact on that entity, restoring the base fact where the base holds the slot.
+  /// Base facts on slots the mutation does not write only prove that their entity exists. Nil when the receipt is not
+  /// materialized.
+  static func rollbackTransaction(
+    of mutation: PendingMutation,
+    rebasedOnto baseFacts: [InstantTriple],
+    absentSlots: Set<InstantVisibleWriteKey> = [],
+    attributes: AttributeStore
+  ) -> InstantStoreTransaction? {
+    guard case let .materialized(rollback) = mutation.optimisticEffectReceipt else { return nil }
+    // What the mutation's overlay shows, in the store's physical form: the last value per cardinality-one slot, and
+    // every value of a many-valued one.
+    var written: [InstantVisibleWriteKey: [InstantTriple]] = [:]
+    var writtenOrder: [InstantVisibleWriteKey] = []
+    for operation in mutation.transaction.operations {
+      guard case let .insert(logical) = operation else { continue }
+      var triple = logical
+      if let resolved = attributes.lookupAttribute(id: logical.attributeID) {
+        if resolved.direction == .reverse {
+          guard case let .ref(forwardEntityID) = logical.value else { return nil }
+          triple.entityID = forwardEntityID
+          triple.attributeID = resolved.attribute.id
+          triple.value = .ref(logical.entityID)
+        } else {
+          triple.attributeID = resolved.attribute.id
+        }
+      }
+      let slot = InstantVisibleWriteKey(entityID: triple.entityID, attributeID: triple.attributeID)
+      if written[slot] == nil { writtenOrder.append(slot) }
+      if attributes[triple.attributeID]?.cardinality == .many {
+        written[slot, default: []].removeAll { $0.value == triple.value }
+        written[slot, default: []].append(triple)
+      } else {
+        written[slot] = [triple]
+      }
+    }
+    var baseBySlot: [InstantVisibleWriteKey: [InstantTriple]] = [:]
+    // A slot that is empty beneath the write (a refused write beneath it set it, and is removed).
+    for slot in absentSlots { baseBySlot[slot] = [] }
+    for fact in baseFacts {
+      baseBySlot[InstantVisibleWriteKey(entityID: fact.entityID, attributeID: fact.attributeID), default: []].append(fact)
+    }
+    func rebased(
+      _ slot: InstantVisibleWriteKey,
+      existing: [InstantTripleOperation],
+      isCreated: Bool
+    ) -> [InstantTripleOperation] {
+      let writtenTriples = written[slot] ?? []
+      let base = baseBySlot[slot] ?? []
+      if attributes[slot.attributeID]?.cardinality == .many {
+        let baseValues = Set(base.map(\.value))
+        guard !isCreated else {
+          return writtenTriples.filter { !baseValues.contains($0.value) }.map(InstantTripleOperation.retract)
+        }
+        // A many-valued slot keeps every other value's operation: the base now holds these values, so the receipt
+        // no longer removes them.
+        return existing.filter { operation in
+          if case let .retract(triple) = operation { return !baseValues.contains(triple.value) }
+          return true
+        }
+      }
+      guard let shown = writtenTriples.last else { return [] }
+      let retraction = existing.first { operation in
+        if case let .retract(triple) = operation { return triple.value == shown.value }
+        return false
+      } ?? .retract(shown)
+      return [retraction] + base.prefix(1).map(InstantTripleOperation.insert)
+    }
+    func isOn(_ slot: InstantVisibleWriteKey, _ operation: InstantTripleOperation) -> Bool {
+      switch operation {
+      case let .insert(triple), let .retract(triple):
+        triple.entityID == slot.entityID && triple.attributeID == slot.attributeID
+      default:
+        false
+      }
+    }
+    var operations = rollback.operations
+    let baseEntities = Set(baseFacts.map(\.entityID))
+    var createdEntities: Set<String> = []
+    for entityID in baseEntities.sorted() {
+      guard let index = operations.firstIndex(where: { operation in
+        switch operation {
+        case let .deleteEntity(deleted): deleted == entityID
+        case let .deleteEntityInNamespace(deleted, _): deleted == entityID
+        default: false
+        }
+      }) else { continue }
+      createdEntities.insert(entityID)
+      operations.removeAll { operation in
+        switch operation {
+        case let .deleteEntity(deleted): deleted == entityID
+        case let .deleteEntityInNamespace(deleted, _): deleted == entityID
+        default: false
+        }
+      }
+      let replacement = writtenOrder.filter { $0.entityID == entityID }.flatMap {
+        rebased($0, existing: [], isCreated: true)
+      }
+      operations.insert(contentsOf: replacement, at: min(index, operations.endIndex))
+    }
+    for slot in baseBySlot.keys.sorted(by: { ($0.entityID, $0.attributeID) < ($1.entityID, $1.attributeID) })
+    where !createdEntities.contains(slot.entityID) && written[slot] != nil {
+      let existing = operations.filter { isOn(slot, $0) }
+      let position = operations.firstIndex { isOn(slot, $0) } ?? operations.endIndex
+      // `position` is the slot's first operation, so removing the slot's operations leaves it in place.
+      operations.removeAll { isOn(slot, $0) }
+      operations.insert(
+        contentsOf: rebased(slot, existing: existing, isCreated: false),
+        at: min(position, operations.endIndex)
+      )
+    }
+    return InstantStoreTransaction(id: rollback.id, operations: operations)
+  }
+
+  /// The value `mutation` last inserts into a slot; nil when it merges into the slot instead or never writes it.
+  private static func insertedValue(
+    of slot: InstantVisibleWriteKey,
+    in mutation: PendingMutation
+  ) -> InstantValue? {
+    var value: InstantValue?
+    for operation in mutation.transaction.operations {
+      switch operation {
+      case let .insert(triple) where triple.entityID == slot.entityID && triple.attributeID == slot.attributeID:
+        value = triple.value
+      case let .merge(triple) where triple.entityID == slot.entityID && triple.attributeID == slot.attributeID:
+        return nil
+      default:
+        continue
+      }
+    }
+    return value
+  }
+
+  /// One record per server apply: how long it held the operation gate, split by part. Local
+  /// writes queue behind every millisecond of it, so an apply past 250 ms is reported at `info`
+  /// and past 1 s at `warning` (#277).
+  private func recordServerApplyGateTimeline(
+    _ timeline: InstantServerApplyGateTimeline,
+    endedAt: ContinuousClock.Instant,
+    processedTransactionID: String,
+    pendingMutationCount: Int,
+    catchUpReplayCount: Int,
+    catchUpBodyCount: Int,
+    changedEntityCount: Int
+  ) async {
+    let heldMilliseconds = InstantServerApplyGateTimeline.milliseconds(
+      from: timeline.enteredAt,
+      to: endedAt
+    )
+    let phases = timeline.phaseMilliseconds(endedAt: endedAt)
+    let waiterCount = await operationGate.waiterCount
+    var metadata: [String: String] = [
+      "heldMilliseconds": String(heldMilliseconds),
+      "waiterCount": String(waiterCount),
+      "pendingMutationCount": String(pendingMutationCount),
+      "catchUpReplayCount": String(catchUpReplayCount),
+      "catchUpBodyCount": String(catchUpBodyCount),
+      "changedEntityCount": String(changedEntityCount),
+    ]
+    for phase in phases {
+      metadata["\(phase.name)Milliseconds"] = String(phase.milliseconds)
+    }
+    let summary = phases.map { "\($0.name) \($0.milliseconds) ms" }.joined(separator: ", ")
+    InstantDiagnostics.shared.record(
+      heldMilliseconds >= 1_000 ? .warning : heldMilliseconds >= 250 ? .info : .debug,
+      subsystem: "instant-swift-data-core",
+      category: "concurrency",
+      event: "server-apply.operation-gate-held",
+      message: """
+        Server apply held the operation gate \(heldMilliseconds) ms with \(pendingMutationCount) \
+        pending mutations (\(summary)); \(waiterCount) caller(s) queued behind it.
+        """,
+      metadata: metadata,
+      correlationID: processedTransactionID
+    )
   }
 
   private func hydrateDeferredValuesForServerApply(
@@ -3279,6 +4235,7 @@ public final class InstantRuntime: Sendable {
   }
 
   @discardableResult
+  @concurrent
   public func applyLiveRefresh(
     _ refreshOK: InstantLiveRefreshOK,
     receivedAt: InstantTimestamp? = nil
@@ -3289,10 +4246,16 @@ public final class InstantRuntime: Sendable {
       try Task.checkCancellation()
       let seed = try await loadServerApplySeed(operationGateAlreadyHeld: false)
       let state = seed.state
+      let attributeContext = try liveRefreshAttributeContexts.context(
+        serverAttributes: refreshOK.attrs,
+        existingAttributes: state.snapshot.store.attributes,
+        localAttributeRevision: state.attributeRevision
+      )
       let translated = try InstantLiveRefreshTranslator.translate(
         refreshOK,
         existingAttributes: state.snapshot.store.attributes,
-        receivedAt: receivedAt
+        receivedAt: receivedAt,
+        attributeContext: attributeContext
       )
       let applied = try await performApplyServerTransaction(
         translated.transaction,
@@ -3340,6 +4303,7 @@ public final class InstantRuntime: Sendable {
   }
 
   @discardableResult
+  @concurrent
   public func confirmMutationIfPresent(id: String) async throws -> PendingMutation? {
     await enterOperationGate()
     do {
@@ -3373,6 +4337,7 @@ public final class InstantRuntime: Sendable {
     }
   }
 
+  @concurrent
   package func acceptMutationIfPresent(
     id: String,
     serverTransactionID: String,
@@ -3526,6 +4491,7 @@ public final class InstantRuntime: Sendable {
 
   /// The attributes this device holds durably, as opposed to the ones a live session happens to
   /// be holding in memory.
+  @concurrent
   package func persistedStoreAttributes() async throws -> [InstantAttribute] {
     await enterOperationGate()
     do {
@@ -3618,6 +4584,7 @@ public final class InstantRuntime: Sendable {
   }
 
   @discardableResult
+  @concurrent
   package func rewriteResidentPersistenceSnapshotForTesting(
     name: String,
     transform: @Sendable (InstantPersistenceSnapshot) throws -> InstantPersistenceSnapshot
@@ -3691,6 +4658,7 @@ public final class InstantRuntime: Sendable {
     }
   }
 
+  @concurrent
   public func observe(
     _ plan: InstantQueryPlan,
     remotePageInfo: InstantQueryRemotePageInfo? = nil
@@ -3701,6 +4669,7 @@ public final class InstantRuntime: Sendable {
     ).stream
   }
 
+  @concurrent
   package func observeQueryLease(
     _ plan: InstantQueryPlan,
     remotePageInfo: InstantQueryRemotePageInfo? = nil
@@ -3712,12 +4681,14 @@ public final class InstantRuntime: Sendable {
     )
   }
 
+  @concurrent
   package func observeLocally(
     _ plan: InstantQueryPlan
   ) async -> AsyncStream<InstantQueryEmission> {
     await observeLocallyLease(plan).stream
   }
 
+  @concurrent
   package func observeLocallyLease(
     _ plan: InstantQueryPlan
   ) async -> InstantQueryObservationLease {
@@ -4057,8 +5028,13 @@ public final class InstantRuntime: Sendable {
     return lease
   }
 
+  /// - Parameter seedsFromStoredResult: Whether the chunk may start from the page info of a result stored for the same
+  ///   query earlier, so a relaunch shows the last known page before the server answers. Pass `false` for a chunk whose
+  ///   first answer decides where the window is: it then starts from an active registration's page info or waits for
+  ///   the server, because a stored answer can predate rows that arrived since (#300).
   func observeLiveInfiniteQueryChunk(
     _ plan: InstantQueryPlan,
+    seedsFromStoredResult: Bool = true,
     onCancellationStarted: (@Sendable () async -> Void)? = nil,
     onDeferredValueHydrationFailure:
       (@Sendable (InstantError) async -> Void)? = nil
@@ -4137,6 +5113,9 @@ public final class InstantRuntime: Sendable {
           .beforePersistedPageInfoLoad
         )
         try Task.checkCancellation()
+        guard seedsFromStoredResult else {
+          return await self.liveQueryResultState.pageInfo(for: registrationKey)
+        }
         return await self.liveQueryPageInfo(for: registrationKey)
       }
       try Task.checkCancellation()
@@ -4237,6 +5216,9 @@ public final class InstantRuntime: Sendable {
       do {
         for await emission in stream {
           try Task.checkCancellation()
+          await self.configuration.onDeferredQueryEmissionHydrationStartingForTesting?(
+            emission.sequence
+          )
           guard
             let hydrated = try await self.hydrateDeferredValuesIfCurrent(
               in: emission,
@@ -4366,6 +5348,19 @@ public final class InstantRuntime: Sendable {
     )
   }
 
+  /// Whether a query emission can be hydrated as the query's current result. Call inside the
+  /// operation gate, so no write can land between this check and the SQLite read.
+  ///
+  /// Checking the global sequence alone stranded observations: a write to an unrelated namespace
+  /// advances it without refreshing this query, so the emission was dropped and no newer one ever
+  /// came (Scribe: a timeline stuck on "Loading saved transcript…", a finished recording with no
+  /// words). An emission is stale only when its query was refreshed after it; that refresh queued
+  /// the newer emission, so dropping this one also never pairs old metadata with newer payloads.
+  private func isStillCurrent(queryID: String, emittedAt sequence: Int64) async -> Bool {
+    guard await store.currentSequence() != sequence else { return true }
+    return await !store.wasRefreshed(queryID: queryID, after: sequence)
+  }
+
   private func hydrateDeferredValuesIfCurrent(
     in emission: InstantQueryEmission,
     plan: InstantQueryPlan,
@@ -4379,7 +5374,9 @@ public final class InstantRuntime: Sendable {
       operation: "hydrate deferred query emission"
     )
     do {
-      guard await store.currentSequence() == emission.sequence else {
+      guard
+        await isStillCurrent(queryID: emission.queryID, emittedAt: emission.sequence)
+      else {
         await leaveOperationGate()
         return nil
       }
@@ -4396,6 +5393,7 @@ public final class InstantRuntime: Sendable {
     }
   }
 
+  @concurrent
   package func hydrateDeferredInfiniteQuerySnapshot(
     _ snapshot: InstantInfiniteQuerySnapshot,
     entityIDs: Set<String>,
@@ -4410,7 +5408,7 @@ public final class InstantRuntime: Sendable {
       operation: "hydrate deferred infinite query snapshot"
     )
     do {
-      guard await store.currentSequence() == snapshot.sequence else {
+      guard await isStillCurrent(queryID: snapshot.queryID, emittedAt: snapshot.sequence) else {
         await leaveOperationGate()
         return nil
       }
@@ -4439,10 +5437,12 @@ public final class InstantRuntime: Sendable {
     }
   }
 
+  @concurrent
   public func query(_ plan: InstantQueryPlan) async throws -> [InstantEntitySnapshot] {
     try await queryOnce(plan).values
   }
 
+  @concurrent
   public func queryOnce(_ plan: InstantQueryPlan) async throws -> InstantQueryEmission {
     let startedAt = Date()
     do {
@@ -4608,10 +5608,12 @@ public final class InstantRuntime: Sendable {
     return emission
   }
 
+  @concurrent
   package func queryLocally(_ plan: InstantQueryPlan) async throws -> InstantQueryEmission {
     try await materializeLocalQueryOnce(plan, enforcesConnectionFreshness: false)
   }
 
+  @concurrent
   package func materializeLocalInfiniteQueryIdentity(
     _ plan: InstantQueryPlan
   ) async throws -> InstantQueryEmission {
@@ -4895,19 +5897,23 @@ public final class InstantRuntime: Sendable {
     return cachedQuery
   }
 
+  @concurrent
   public func cachedQuery(_ plan: InstantQueryPlan) async throws -> InstantCachedQuery? {
     recordActorHop(.persistence)
     return try await persistence.cachedQuery(cacheKey: plan.cacheKey)
   }
 
+  @concurrent
   public func cachedQueries() async throws -> [InstantCachedQuery] {
     try await persistence.loadQueryCache()
   }
 
+  @concurrent
   public func selectedAppID() async throws -> String? {
     try await persistence.loadMetadataValue(key: Self.selectedAppIDMetadataKey)
   }
 
+  @concurrent
   public func saveSelectedAppID(_ appID: String) async throws -> String {
     let appID = appID.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !appID.isEmpty else {
@@ -4933,6 +5939,7 @@ public final class InstantRuntime: Sendable {
     }
   }
 
+  @concurrent
   public func syncState() async throws -> InstantSyncState {
     InstantSyncState(
       processedTransactionID: try await persistence.loadMetadataValue(
@@ -4945,8 +5952,12 @@ public final class InstantRuntime: Sendable {
     guard configuration.liveTransport != nil else { return }
     guard configuration.autoConnectLiveTransport else { return }
     guard await !liveSession.isOpen else { return }
+    // A scheduled reconnect owns the next connection (#296). Upstream `Reactor.js` reconnects only from
+    // `_transportOnClose` through `_scheduleReconnect`; `_trySend` never starts a socket, and `_reconnectTimeoutMs`
+    // resets only on init-ok. Build 72 cancelled the controller here and connected at once: every write reset the
+    // backoff, and a socket death opened a second connection for the same failure.
+    guard await !reconnectController.ownsNextConnection else { return }
     guard try await persistedConnectionState() != .closed else { return }
-    await reconnectController.cancelAndWait()
     _ = try await connectLiveSession(reportsFailure: true, onlyIfNeeded: true)
   }
 
@@ -4999,14 +6010,17 @@ public final class InstantRuntime: Sendable {
   /// SQLite hydration or WebSocket I/O. Public server-acceptance waiters poll durable state as
   /// their completion condition; they should not create an overlapping hydration pass on every
   /// poll tick.
+  @concurrent
   package func requestLiveMutationDelivery() async {
     await startLiveMutationDeliveryIfNeeded()
   }
 
+  @concurrent
   package func automaticMutationPumpIsIdleForTesting() async -> Bool {
     await mutationDeliveryPump.isIdleForTesting()
   }
 
+  @concurrent
   package func automaticMutationPumpIsSuspendedForTesting() async -> Bool {
     await mutationDeliveryPump.isSuspendedForTesting()
   }
@@ -5017,12 +6031,26 @@ public final class InstantRuntime: Sendable {
     automaticDeliveryClaimantID
   }
 
+  @concurrent
   package func liveReconnectControllerIsIdleForTesting() async -> Bool {
     await reconnectController.isIdleForTesting()
   }
 
+  /// The live receiver has applied every frame it took from the socket and is waiting for the next one (#296).
+  @concurrent
+  package func liveReceiverIsWaitingForAFrameForTesting() async -> Bool {
+    await liveSession.applierIsWaitingForAFrameForTesting()
+  }
+
+  @concurrent
   package func exactCloseBackgroundTasksAreIdleForTesting() async -> Bool {
     await exactCloseBackgroundTaskIdleState().allIdle
+  }
+
+  /// The background owners that are not idle, by name; empty when all are idle.
+  @concurrent
+  package func exactCloseBackgroundTaskNonIdleOwnersForTesting() async -> [String] {
+    await exactCloseBackgroundTaskIdleState().nonIdleOwnerNames
   }
 
   private func exactCloseBackgroundTaskIdleState() async
@@ -5041,10 +6069,12 @@ public final class InstantRuntime: Sendable {
     )
   }
 
+  @concurrent
   package func operationGateWaiterCountForTesting() async -> Int {
     await operationGate.waiterCount
   }
 
+  @concurrent
   package func serverApplyGateWaiterCountForTesting() async -> Int {
     await serverApplyGate.waiterCount
   }
@@ -5053,10 +6083,12 @@ public final class InstantRuntime: Sendable {
     installedStoreRevisions.snapshot()
   }
 
+  @concurrent
   package func liveActiveQueryKeysForTesting() async -> Set<String> {
     await liveSession.activeQueryKeys()
   }
 
+  @concurrent
   package func liveQueryResultActiveKeysForTesting() async -> Set<String> {
     await liveQueryResultState.activeKeysForTesting()
   }
@@ -5117,6 +6149,7 @@ public final class InstantRuntime: Sendable {
     }
   }
 
+  @concurrent
   public func markProcessedTransaction(id transactionID: String) async throws -> InstantSyncState {
     let transactionID = transactionID.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !transactionID.isEmpty else {
@@ -5143,6 +6176,7 @@ public final class InstantRuntime: Sendable {
     }
   }
 
+  @concurrent
   public func connectionStatus() async throws -> InstantConnectionStatus {
     await operationGate.enter()
     do {
@@ -5158,6 +6192,7 @@ public final class InstantRuntime: Sendable {
     }
   }
 
+  @concurrent
   public func observeConnectionStatus() async throws -> AsyncStream<InstantConnectionStatus> {
     await operationGate.enter()
     do {
@@ -5175,6 +6210,7 @@ public final class InstantRuntime: Sendable {
   }
 
   @discardableResult
+  @concurrent
   public func connect() async throws -> InstantConnectionStatus {
     await reconnectController.cancelAndWait()
     return try await connectLiveSession(reportsFailure: true)
@@ -5185,19 +6221,6 @@ public final class InstantRuntime: Sendable {
     onlyIfNeeded: Bool = false
   ) async throws -> InstantConnectionStatus {
     let startedAt = Date()
-    InstantDiagnostics.shared.record(
-      .info,
-      subsystem: "instant-swift-data-core",
-      category: "connection",
-      event: "connection.open-started",
-      message: "Opening the Instant connection.",
-      metadata: [
-        "appID": configuration.appID,
-        "transport": configuration.liveTransport == nil ? "local-cache" : "websocket",
-        "isReconnect": String(!reportsFailure),
-        "websocketHost": configuration.websocketURI.host ?? "unknown",
-      ]
-    )
     var enteredConnectionGate = false
     var enteredOperationGate = false
     do {
@@ -5232,6 +6255,20 @@ public final class InstantRuntime: Sendable {
           return status
         }
       }
+      // Logged once the call has decided to open, so `open-started` counts connections, not reused ones (#296).
+      InstantDiagnostics.shared.record(
+        .info,
+        subsystem: "instant-swift-data-core",
+        category: "connection",
+        event: "connection.open-started",
+        message: "Opening the Instant connection.",
+        metadata: [
+          "appID": configuration.appID,
+          "transport": configuration.liveTransport == nil ? "local-cache" : "websocket",
+          "isReconnect": String(!reportsFailure),
+          "websocketHost": configuration.websocketURI.host ?? "unknown",
+        ]
+      )
       if let liveTransport = configuration.liveTransport {
         recordActorHop(.persistence)
         if let blocker = try await persistence.synchronizationBlocker() {
@@ -5424,6 +6461,7 @@ public final class InstantRuntime: Sendable {
   }
 
   @discardableResult
+  @concurrent
   public func closeConnection() async throws -> InstantConnectionStatus {
     // Latch every background producer before waiting on connection work. A
     // task that already owns the connection gate sees cancellation and leaves;
@@ -5795,10 +6833,19 @@ public final class InstantRuntime: Sendable {
     return release.mutationIDs
   }
 
+  /// Schedules one reconnect after `error`, with the controller's backoff.
+  ///
+  /// - Parameter replacesOpenSession: `true` when the session that still reports open is the one that failed: a
+  ///   mutation send failed on it. Every other failure has already ended its session, so a session that is open when
+  ///   the attempt runs opened after the failure, and the attempt reuses it instead of opening another (#296).
+  ///   Upstream `_startSocket` closes an open previous transport, but it runs only from `_scheduleReconnect` and the
+  ///   network listener, so it rarely meets a session this fresh. Swift has more connection paths (the delivery pump,
+  ///   sign-in), and replacing a fresh session re-adds every query. In Recording 023 that meant another 26-37 s apply.
   private func scheduleReconnect(
     after error: Error,
     event: String,
-    message: String
+    message: String,
+    replacesOpenSession: Bool = false
   ) async {
     guard !Task.isCancelled else { return }
     if Self.requiresManualOptimisticEffectRecovery(error) {
@@ -5855,7 +6902,10 @@ public final class InstantRuntime: Sendable {
         sleep: configuration.liveReconnectSleep,
         reconnect: { [weak self] in
           guard let self else { throw CancellationError() }
-          _ = try await self.connectLiveSession(reportsFailure: false)
+          _ = try await self.connectLiveSession(
+            reportsFailure: false,
+            onlyIfNeeded: !replacesOpenSession
+          )
         }
       )
     }
@@ -6015,10 +7065,11 @@ public final class InstantRuntime: Sendable {
       // mutation delivery responses and therefore have no SQLite claim token.
       // Route those feature-owned errors before interpreting a missing token as
       // a stale mutation response.
-      if await liveSession.retireRejectedStreamReader(
+      if let refusedReaderKey = await liveSession.retireRejectedStreamReader(
         clientEventID: error.clientEventID?.nilIfEmpty,
         message: error.message
       ) {
+        await endStreamContentObservations(ofRefusedReader: refusedReaderKey, error: error)
         return
       }
       if let originalEvent = error.originalEvent,
@@ -6026,10 +7077,16 @@ public final class InstantRuntime: Sendable {
         let query = originalEvent.fields["q"]
       {
         let registrationKey = try InstantLiveQueryEncoder.registrationKey(for: query)
+        // Upstream `Reactor.js` `_handleReceiveError` only notifies the query's error callbacks; the subscription
+        // stays in `queryCbs`, and `_flushPendingMessages` sends add-query again for every subscription on the next
+        // `init-ok`. Swift retires a query only when the server would refuse it again (a permission or validation
+        // rejection), so a reconnect does not re-send a query that cannot succeed. A stalled server answers with
+        // 500 `operation-timed-out`; retiring the query then froze its view until relaunch (#324).
+        let rejectionRepeats = Self.addQueryRejectionRepeats(error)
         let rejection = InstantError(
           code: Self.isPermissionError(error)
             ? .permissionRejected
-            : .validationFailed,
+            : rejectionRepeats ? .validationFailed : .networkFailed,
           operation: "run Instant live query",
           serverEventID: originalEvent.clientEventID ?? error.clientEventID,
           serverStatus: error.status,
@@ -6038,9 +7095,11 @@ public final class InstantRuntime: Sendable {
           serverTraceID: error.traceID,
           serverOriginalEventTraceID: error.originalEventTraceID,
           message: error.message,
-          recovery: "Inspect the rejected query and its Instant permissions without reconnecting the healthy live session."
+          recovery: rejectionRepeats
+            ? "Inspect the rejected query and its Instant permissions without reconnecting the healthy live session."
+            : "The query stays registered and is sent again on the next connection."
         )
-        if await liveSession.retireRejectedQuery(key: registrationKey) {
+        if rejectionRepeats, await liveSession.retireRejectedQuery(key: registrationKey) {
           await liveQueryResultState.unload(key: registrationKey)
         }
         await liveQueryAcknowledgements.reject(key: registrationKey, error: rejection)
@@ -6048,9 +7107,14 @@ public final class InstantRuntime: Sendable {
           error: rejection,
           subsystem: "instant-swift-data-core",
           category: "query",
-          event: "query.live-rejected",
-          message: "Instant rejected one live query without interrupting the shared socket.",
-          metadata: ["registrationKey": registrationKey]
+          event: rejectionRepeats ? "query.live-rejected" : "query.live-failed",
+          message: rejectionRepeats
+            ? "Instant rejected one live query without interrupting the shared socket."
+            : "One Instant live query failed on the server; it stays registered and is sent again on the next connection.",
+          metadata: [
+            "registrationKey": registrationKey,
+            "retired": String(rejectionRepeats),
+          ]
         )
         return
       }
@@ -6129,20 +7193,48 @@ public final class InstantRuntime: Sendable {
             recovery: "Reconnect and resend the durable pending mutation."
           )
         }
+        // A refusal of a re-sent write that an earlier connection offered without an answer is a replay: the earlier
+        // offer may have been applied, with a newer write of the same row after it (Recording 023, #296).
+        recordActorHop(.liveSession)
+        let isReplay = await liveSession.wasOfferedWithoutAnswerOnAnEarlierConnection(clientEventID)
+        let refusalKind = isReplay ? "replay" : "first-offer"
         InstantDiagnostics.shared.record(
           .error,
           subsystem: "instant-swift-data-core",
           category: "outbox",
           event: "outbox.mutation.server-error-terminal",
-          message: "Server permanently rejected an outbox mutation.",
+          message: isReplay
+            ? "Server refused a re-sent outbox mutation that an earlier connection offered without an answer; a newer write of the same row may already be applied."
+            : "Server permanently rejected an outbox mutation.",
           metadata: [
             "mutationID": clientEventID,
             "errorMessage": error.message,
             "serverStatus": error.status.map(String.init) ?? "",
             "serverType": error.type ?? "",
             "serverTraceID": error.traceID ?? "",
-            "serverHint": error.hint.map { String(describing: $0) } ?? "",
-          ],
+            "serverHint": error.hint?.compactJSONText ?? "",
+            "refusalKind": refusalKind,
+          ].merging(InstantMutationRefusal(hint: error.hint, transaction: nil).metadata) { current, _ in current },
+          correlationID: clientEventID
+        )
+        // The refused write's own values, read before the failure is recorded so the log never depends on how the
+        // failure resolves (a stale claim or a concurrent resolution returns no mutation).
+        recordActorHop(.persistence)
+        let refusedMutation = try? await persistence.outboxMutationForDiagnostics(id: clientEventID)
+        InstantDiagnostics.shared.record(
+          .error,
+          subsystem: "instant-swift-data-core",
+          category: "outbox",
+          event: "outbox.mutation.refused-write",
+          message:
+            "The write the server refused, by namespace, entity, attribute, and value. Compare its stamps with the row's current values to name the rule.",
+          metadata: InstantMutationRefusal(hint: error.hint, transaction: refusedMutation?.transaction)
+            .metadata
+            .merging([
+              "mutationID": clientEventID,
+              "refusalKind": refusalKind,
+              "createdAtMilliseconds": refusedMutation.map { String($0.createdAt.milliseconds) } ?? "",
+            ]) { current, _ in current },
           correlationID: clientEventID
         )
         _ = try await failClaimedMutation(
@@ -6191,6 +7283,27 @@ public final class InstantRuntime: Sendable {
       return true
     }
     return isRetryableMutationFailureMessage(error.message)
+  }
+
+  /// Whether the server would refuse this add-query again (#324): a permission or validation rejection, or another
+  /// 4xx except a request timeout or a rate limit. Server failures (5xx), timeouts, and errors without a status are
+  /// transient, as upstream treats every add-query error.
+  private static func addQueryRejectionRepeats(_ error: InstantLiveErrorMessage) -> Bool {
+    let type = error.type?.lowercased() ?? ""
+    if type.contains("timed-out") || type.contains("timeout") {
+      return false
+    }
+    if let status = error.status {
+      if (500...599).contains(status) || status == 408 || status == 429 {
+        return false
+      }
+      if (400...499).contains(status) {
+        return true
+      }
+    }
+    return isPermissionError(error)
+      || type.contains("validation")
+      || type.contains("invalid")
   }
 
   private static func isPermissionError(_ error: InstantLiveErrorMessage) -> Bool {
@@ -6482,6 +7595,7 @@ public final class InstantRuntime: Sendable {
   }
 
   @discardableResult
+  @concurrent
   package func sendOutstandingMutationsToLiveSession() async -> Bool {
     guard configuration.liveTransport != nil else { return true }
     let outstanding: InstantAutomaticOutboxTransportSelection
@@ -6505,7 +7619,8 @@ public final class InstantRuntime: Sendable {
         await scheduleReconnect(
           after: error,
           event: "connection.mutation-delivery-failed",
-          message: "Instant could not send durable mutations and will reconnect before retrying."
+          message: "Instant could not send durable mutations and will reconnect before retrying.",
+          replacesOpenSession: true
         )
       }
       return true
@@ -6544,6 +7659,8 @@ public final class InstantRuntime: Sendable {
     let outstanding: InstantAutomaticOutboxTransportSelection
     do {
       try Task.checkCancellation()
+      // Claiming reclaims expired claims as acknowledgement timeouts; keep them while a frame is still applying.
+      try await deferAcknowledgementDeadlinesWhileAFrameIsApplied()
       outstanding = try await automaticOutboxTransportMutationsForDelivery()
     } catch is CancellationError {
       return .finished
@@ -6575,11 +7692,78 @@ public final class InstantRuntime: Sendable {
         await scheduleReconnect(
           after: error,
           event: "connection.mutation-delivery-failed",
-          message: "Instant could not send durable mutations and will reconnect before retrying."
+          message: "Instant could not send durable mutations and will reconnect before retrying.",
+          replacesOpenSession: true
         )
       }
       return .finished
     }
+  }
+
+  /// Keeps this socket's delivery claims while its receive loop is still applying a server frame (#296).
+  ///
+  /// The durable acknowledgement deadline exists to notice a silent server. A frame that is still being applied proves
+  /// the server answered, and the answer to the outbox head may be queued behind it on the same socket. Treating the
+  /// head as unacknowledged then replaces the connection, drops that answer, cancels the frame's work, and repeats the
+  /// same work on the next connection. In Recording 023 (build 69) the first query result after each connection
+  /// started a 22-25 s rebase of a 2,487-mutation outbox, so the 6 s deadline replaced the connection 385 times in
+  /// 84 minutes and the outbox never drained.
+  ///
+  /// Upstream `Reactor.js` handles each frame synchronously (`_handleReceive`), so its mutation timers cannot fire
+  /// while a frame is handled. This moves the claims' deadlines instead of reclaiming them, which keeps that outcome
+  /// under Swift's durable claims. A frame applied for longer than `acknowledgementDeferralLimitMilliseconds` is
+  /// treated as stuck: the deadline expires as before, and that is reported as a warning.
+  private func deferAcknowledgementDeadlinesWhileAFrameIsApplied() async throws {
+    let limit = configuration.acknowledgementDeferralLimitMilliseconds
+    recordActorHop(.liveSession)
+    guard limit > 0, let frame = await liveSession.frameBeingApplied() else {
+      await acknowledgementDeferral.reset()
+      return
+    }
+    let now = configuration.now()
+    let behindFrameMilliseconds = await acknowledgementDeferral.milliseconds(
+      behindFrame: frame.sequence,
+      now: now
+    )
+    guard behindFrameMilliseconds < limit else {
+      InstantDiagnostics.shared.record(
+        .warning,
+        subsystem: "instant-swift-data-core",
+        category: "outbox",
+        event: "outbox.mutation.ack-deadline-deferral-exhausted",
+        message:
+          "A server frame has been applying longer than the acknowledgement deferral limit; unacknowledged claims now expire as timeouts.",
+        metadata: [
+          "frameOp": frame.op,
+          "applyingForMilliseconds": String(behindFrameMilliseconds),
+          "limitMilliseconds": String(limit),
+        ]
+      )
+      return
+    }
+    recordActorHop(.persistence)
+    let deferral = try await persistence.deferAutomaticOutboxClaimDeadlines(
+      claimantID: automaticDeliveryClaimantID,
+      earliestDeadlineMilliseconds: InstantMutationAcknowledgementDeadlinePolicy.deadlineMilliseconds(
+        after: now,
+        inFlightOrdinal: 1
+      )
+    )
+    guard deferral.deferredClaimCount > 0 else { return }
+    InstantDiagnostics.shared.record(
+      .info,
+      subsystem: "instant-swift-data-core",
+      category: "outbox",
+      event: "outbox.mutation.ack-deadline-deferred",
+      message:
+        "Kept this socket's delivery claims: its receive loop is still applying a server frame, and the next acknowledgement may be queued behind it.",
+      metadata: [
+        "frameOp": frame.op,
+        "applyingForMilliseconds": String(behindFrameMilliseconds),
+        "deferredClaimCount": String(deferral.deferredClaimCount),
+        "nextClaimDeadlineMilliseconds": deferral.nextClaimDeadlineMilliseconds.map(String.init) ?? "",
+      ]
+    )
   }
 
   private func deliverAutomaticOutboxSelection(
@@ -6772,11 +7956,13 @@ public final class InstantRuntime: Sendable {
     }
   }
 
+  @concurrent
   public func authSession() async throws -> InstantAuthSession? {
     try await persistence.loadAuthSession(key: authSessionKey)
   }
 
   @discardableResult
+  @concurrent
   public func syncUserCookieToEndpoint(
     _ session: InstantAuthSession?
   ) async throws -> InstantUserCookieSyncRequest? {
@@ -6836,9 +8022,11 @@ public final class InstantRuntime: Sendable {
     }
   }
 
+  @concurrent
   public func observeAuthSession() async throws -> AsyncStream<InstantAuthSession?> {
     await operationGate.enter()
     do {
+      await configuration.onAuthSessionObservationHoldsOperationGateForTesting?()
       let session = try await persistence.loadAuthSession(key: authSessionKey)
       let stream = await authSessionObservers.observe(current: session)
       await operationGate.leave()
@@ -6849,6 +8037,7 @@ public final class InstantRuntime: Sendable {
     }
   }
 
+  @concurrent
   public func signInAsGuest() async throws -> InstantAuthSession {
     let startedAt = Date()
     InstantDiagnostics.shared.record(
@@ -6916,6 +8105,7 @@ public final class InstantRuntime: Sendable {
     }
   }
 
+  @concurrent
   public func sendMagicCode(email rawEmail: String) async throws -> InstantMagicCodeChallenge {
     let email = try normalizedEmail(rawEmail, operation: "send magic code")
     let now = configuration.now()
@@ -6940,6 +8130,7 @@ public final class InstantRuntime: Sendable {
     }
   }
 
+  @concurrent
   public func signInWithMagicCode(
     email rawEmail: String,
     code rawCode: String
@@ -6947,6 +8138,7 @@ public final class InstantRuntime: Sendable {
     try await signInWithMagicCodeResult(email: rawEmail, code: rawCode).session
   }
 
+  @concurrent
   public func signInWithMagicCodeResult(
     email rawEmail: String,
     code rawCode: String,
@@ -6980,8 +8172,12 @@ public final class InstantRuntime: Sendable {
         state: stateBeforeVerification
       )
       let now = configuration.now()
-      let currentRefreshToken = try await persistence.loadAuthSession(key: authSessionKey)?
-        .refreshToken
+      // Upstream `Reactor.signInWithMagicCode` forwards the refresh token only for a guest
+      // session, so Instant can upgrade that guest in place or link it to the email's user. A
+      // non-guest token has no effect on the server except to fail verification with
+      // `record-not-found` once it has been revoked (measured 2026-09-28, #113).
+      let currentSession = try await persistence.loadAuthSession(key: authSessionKey)
+      let guestRefreshToken = currentSession?.isGuest == true ? currentSession?.refreshToken : nil
       let verification = try await configuration.magicCodeExchange.verify(
         InstantMagicCodeVerifyRequest(
           appID: configuration.appID,
@@ -6989,7 +8185,7 @@ public final class InstantRuntime: Sendable {
           email: email,
           code: code,
           challenge: challenge,
-          refreshToken: currentRefreshToken,
+          refreshToken: guestRefreshToken,
           extraFields: extraFields,
           verifiedAt: now
         )
@@ -7213,6 +8409,7 @@ public final class InstantRuntime: Sendable {
     return validated
   }
 
+  @concurrent
   public func signInWithRefreshToken(
     _ refreshToken: String,
     userID: String? = nil
@@ -7259,6 +8456,7 @@ public final class InstantRuntime: Sendable {
     return session
   }
 
+  @concurrent
   public func signInWithIDToken(
     clientName rawClientName: String,
     idToken rawIDToken: String,
@@ -7309,6 +8507,7 @@ public final class InstantRuntime: Sendable {
     return session
   }
 
+  @concurrent
   public func promoteGuestWithIDToken(
     clientName rawClientName: String,
     idToken rawIDToken: String,
@@ -7369,6 +8568,7 @@ public final class InstantRuntime: Sendable {
     }
   }
 
+  @concurrent
   public func signInWithOAuth(
     code rawCode: String,
     codeVerifier rawCodeVerifier: String? = nil
@@ -7383,16 +8583,20 @@ public final class InstantRuntime: Sendable {
     }
 
     let now = configuration.now()
-    // Match Instant's transport shape: pass the current refresh token so a live
-    // OAuth exchange can upgrade/link the existing session when supported.
-    let refreshToken = try await authSession()?.refreshToken
+    // Upstream `Reactor.exchangeCodeForToken` forwards the refresh token only for a guest
+    // session, so Instant can upgrade that guest in place or link it to the provider's user.
+    // Forwarding a non-guest token has no upstream counterpart; on the magic-code path it made a
+    // revoked token fail sign-in (measured 2026-09-28, #113). `signInWithIDToken` forwards any
+    // current token because `Reactor.signInWithIdToken` does.
+    let currentSession = try await authSession()
+    let guestRefreshToken = currentSession?.isGuest == true ? currentSession?.refreshToken : nil
     let verification = try await configuration.oauthExchange.signIn(
       InstantOAuthSignInRequest(
         appID: configuration.appID,
         apiURI: configuration.apiURI,
         code: code,
         codeVerifier: rawCodeVerifier,
-        refreshToken: refreshToken,
+        refreshToken: guestRefreshToken,
         signedInAt: now,
         makeID: configuration.makeID
       )
@@ -7412,6 +8616,7 @@ public final class InstantRuntime: Sendable {
     return session
   }
 
+  @concurrent
   public func promoteGuestWithOAuth(
     code rawCode: String,
     codeVerifier rawCodeVerifier: String? = nil
@@ -7611,10 +8816,12 @@ public final class InstantRuntime: Sendable {
     return url
   }
 
+  @concurrent
   public func signOut() async throws {
     try await signOut(invalidateToken: true)
   }
 
+  @concurrent
   public func signOut(invalidateToken: Bool = true) async throws {
     let signedOutAt = configuration.now()
     var invalidationRequest: InstantAuthTokenInvalidationRequest?
@@ -7650,6 +8857,7 @@ public final class InstantRuntime: Sendable {
     }
   }
 
+  @concurrent
   public func joinRoom(_ room: InstantRoomHandle = .default) async throws -> InstantRoomHandle {
     let room = try validatedRoom(room, operation: "join room")
     if configuration.liveTransport != nil {
@@ -7658,6 +8866,7 @@ public final class InstantRuntime: Sendable {
     return room
   }
 
+  @concurrent
   public func leaveRoom(_ room: InstantRoomHandle = .default) async throws -> InstantRoomHandle {
     let room = try validatedRoom(room, operation: "leave room")
     if configuration.liveTransport != nil {
@@ -7669,6 +8878,7 @@ public final class InstantRuntime: Sendable {
   }
 
   @discardableResult
+  @concurrent
   public func setPresence(
     room: InstantRoomHandle,
     userID: String? = nil,
@@ -7715,6 +8925,7 @@ public final class InstantRuntime: Sendable {
     }
   }
 
+  @concurrent
   public func roomPresence(room: InstantRoomHandle) async throws -> [InstantRoomPresenceMember] {
     let room = try validatedRoom(room, operation: "list room presence")
     let localMembers = try await persistence.loadRoomPresence(
@@ -7724,6 +8935,7 @@ public final class InstantRuntime: Sendable {
     return await combinedRoomPresence(localMembers, room: room)
   }
 
+  @concurrent
   public func observeRoomPresence(room: InstantRoomHandle) async throws
     -> AsyncStream<[InstantRoomPresenceMember]>
   {
@@ -7748,6 +8960,7 @@ public final class InstantRuntime: Sendable {
     }
   }
 
+  @concurrent
   public func leavePresence(room: InstantRoomHandle, userID: String? = nil) async throws -> String {
     let room = try validatedRoom(room, operation: "leave room presence")
 
@@ -7785,6 +8998,7 @@ public final class InstantRuntime: Sendable {
   }
 
   @discardableResult
+  @concurrent
   public func publishTopicMessage(
     room: InstantRoomHandle,
     topic rawTopic: String,
@@ -7838,6 +9052,7 @@ public final class InstantRuntime: Sendable {
     }
   }
 
+  @concurrent
   public func roomTopicMessages(
     room: InstantRoomHandle,
     topic rawTopic: String,
@@ -7865,6 +9080,7 @@ public final class InstantRuntime: Sendable {
     )
   }
 
+  @concurrent
   public func observeRoomTopicMessages(
     room: InstantRoomHandle,
     topic rawTopic: String
@@ -7913,6 +9129,7 @@ public final class InstantRuntime: Sendable {
     )
   }
 
+  @concurrent
   public func uploadFile(
     from sourceURL: URL,
     name rawName: String? = nil,
@@ -7927,6 +9144,7 @@ public final class InstantRuntime: Sendable {
     return try await savePreparedStoredFile(file, contentsOf: sourceURL)
   }
 
+  @concurrent
   public func uploadFileProgress(
     from sourceURL: URL,
     name rawName: String? = nil,
@@ -7945,6 +9163,7 @@ public final class InstantRuntime: Sendable {
   /// hung Swift 6.3 SIL `ClosureLifetimeFixup` for tens of minutes on this
   /// 13k-line primary. Reintroduce exact cancel/join on a smaller unit after
   /// InstantRuntime is split.
+  @concurrent
   package func uploadFileProgressLease(
     from sourceURL: URL,
     name rawName: String? = nil,
@@ -8127,6 +9346,7 @@ public final class InstantRuntime: Sendable {
     )
   }
 
+  @concurrent
   public func storedFiles() async throws -> [InstantStoredFile] {
     _ = try await resolvedFileUserID(operation: "list files")
     if storageTransport != nil, configuration.liveTransport != nil {
@@ -8141,6 +9361,7 @@ public final class InstantRuntime: Sendable {
     return try await persistence.loadStoredFiles(appID: configuration.appID)
   }
 
+  @concurrent
   public func storageSnapshot() async throws -> InstantStorageSnapshot {
     await operationGate.enter()
     do {
@@ -8153,6 +9374,7 @@ public final class InstantRuntime: Sendable {
     }
   }
 
+  @concurrent
   public func observeStoredFiles() async throws -> AsyncStream<[InstantStoredFile]> {
     if storageTransport != nil, configuration.liveTransport != nil {
       _ = try await resolvedFileUserID(operation: "observe files")
@@ -8200,6 +9422,7 @@ public final class InstantRuntime: Sendable {
     }
   }
 
+  @concurrent
   public func storedFileContents(
     id rawID: String,
     name rawName: String? = nil
@@ -8289,6 +9512,7 @@ public final class InstantRuntime: Sendable {
   }
 
   @discardableResult
+  @concurrent
   public func deleteStoredFile(id rawID: String) async throws -> InstantStoredFile {
     let id = try validatedNonEmpty(
       rawID,
@@ -8410,6 +9634,7 @@ public final class InstantRuntime: Sendable {
     return refreshToken
   }
 
+  @concurrent
   public func appendStreamChunk(
     streamID rawStreamID: String,
     payload: JSONValue
@@ -8453,6 +9678,7 @@ public final class InstantRuntime: Sendable {
     }
   }
 
+  @concurrent
   public func streamChunks(
     streamID rawStreamID: String,
     limit: Int? = nil,
@@ -8498,6 +9724,7 @@ public final class InstantRuntime: Sendable {
     }
   }
 
+  @concurrent
   public func observeStreamChunks(
     streamID rawStreamID: String,
     afterIndex: Int64? = nil
@@ -8562,6 +9789,7 @@ public final class InstantRuntime: Sendable {
     return mapped.stream
   }
 
+  @concurrent
   public func createStream(clientID rawClientID: String) async throws -> InstantStreamMetadata {
     let clientID = try validatedNonEmpty(
       rawClientID,
@@ -8615,6 +9843,7 @@ public final class InstantRuntime: Sendable {
     }
   }
 
+  @concurrent
   public func streamMetadata(streamID rawStreamID: String) async throws -> InstantStreamMetadata {
     let streamID = try validatedNonEmpty(
       rawStreamID,
@@ -8644,6 +9873,7 @@ public final class InstantRuntime: Sendable {
     }
   }
 
+  @concurrent
   public func streamMetadata(clientID rawClientID: String) async throws -> InstantStreamMetadata {
     let clientID = try validatedNonEmpty(
       rawClientID,
@@ -8673,6 +9903,7 @@ public final class InstantRuntime: Sendable {
     }
   }
 
+  @concurrent
   public func appendStreamContent(
     streamID rawStreamID: String,
     content: String,
@@ -8724,6 +9955,7 @@ public final class InstantRuntime: Sendable {
     }
   }
 
+  @concurrent
   public func closeStream(
     streamID rawStreamID: String,
     abortReason rawAbortReason: String? = nil
@@ -8768,6 +10000,7 @@ public final class InstantRuntime: Sendable {
     }
   }
 
+  @concurrent
   public func streamContent(
     streamID rawStreamID: String,
     byteOffset: Int64 = 0
@@ -8802,6 +10035,7 @@ public final class InstantRuntime: Sendable {
     }
   }
 
+  @concurrent
   public func streamContent(
     clientID rawClientID: String,
     byteOffset: Int64 = 0
@@ -8836,6 +10070,7 @@ public final class InstantRuntime: Sendable {
     }
   }
 
+  @concurrent
   public func observeStreamContent(
     streamID rawStreamID: String,
     byteOffset: Int64 = 0
@@ -8871,7 +10106,7 @@ public final class InstantRuntime: Sendable {
       await operationGate.leave()
       return await liveStreamContentObservation(
         stream,
-        key: "stream-id:\(streamID):\(byteOffset)",
+        key: Self.liveStreamReaderKey(.streamID(streamID), byteOffset: byteOffset),
         streamID: streamID,
         initialByteOffset: read.map { $0.byteOffset + $0.byteCount } ?? byteOffset
       )
@@ -8881,6 +10116,7 @@ public final class InstantRuntime: Sendable {
     }
   }
 
+  @concurrent
   public func observeStreamContent(
     clientID rawClientID: String,
     byteOffset: Int64 = 0
@@ -8916,7 +10152,7 @@ public final class InstantRuntime: Sendable {
       await operationGate.leave()
       return await liveStreamContentObservation(
         stream,
-        key: "client-id:\(clientID):\(byteOffset)",
+        key: Self.liveStreamReaderKey(.clientID(clientID), byteOffset: byteOffset),
         clientID: clientID,
         initialByteOffset: read.map { $0.byteOffset + $0.byteCount } ?? byteOffset
       )
@@ -8924,6 +10160,40 @@ public final class InstantRuntime: Sendable {
       await operationGate.leave()
       throw error
     }
+  }
+
+  /// The live reader's registration key for the observations of one stream from one byte offset; they share a reader.
+  static func liveStreamReaderKey(_ selector: InstantStreamContentSelector, byteOffset: Int64) -> String {
+    switch selector {
+    case let .streamID(streamID): "stream-id:\(streamID):\(byteOffset)"
+    case let .clientID(clientID): "client-id:\(clientID):\(byteOffset)"
+    }
+  }
+
+  /// Ends the observations behind a reader whose subscription the server refused, as upstream `Stream.ts`
+  /// `onRecieveError` closes the reader's iterator. A stream content observation is a non-throwing `AsyncStream`, so
+  /// the refusal ends iteration (a caller waiting for `done` sees the stream end without it), and is logged here.
+  private func endStreamContentObservations(
+    ofRefusedReader readerKey: String,
+    error: InstantLiveErrorMessage
+  ) async {
+    await streamContentObservers.finish { key, byteOffset in
+      Self.liveStreamReaderKey(key.selector, byteOffset: byteOffset) == readerKey
+    }
+    InstantDiagnostics.shared.record(
+      .warning,
+      subsystem: "instant-swift-data-core",
+      category: "stream",
+      event: "stream.subscription-refused",
+      message: "Instant refused a stream subscription, so the observations of that stream ended.",
+      metadata: [
+        "reader": readerKey,
+        "errorMessage": error.message,
+        "serverStatus": error.status.map(String.init) ?? "",
+        "serverType": error.type ?? "",
+      ],
+      correlationID: error.clientEventID
+    )
   }
 
   private func liveStreamContentObservation(
@@ -8982,6 +10252,7 @@ public final class InstantRuntime: Sendable {
     )
   }
 
+  @concurrent
   public func createShare(
     rootNamespace rawRootNamespace: String,
     rootID rawRootID: String
@@ -9044,6 +10315,7 @@ public final class InstantRuntime: Sendable {
     }
   }
 
+  @concurrent
   public func acceptShare(token rawToken: String) async throws -> InstantShareSnapshot {
     let token = try validatedNonEmpty(
       rawToken,
@@ -9076,6 +10348,7 @@ public final class InstantRuntime: Sendable {
     }
   }
 
+  @concurrent
   public func shares() async throws -> [InstantShareSnapshot] {
     await operationGate.enter()
     var gateIsHeld = true
@@ -9101,6 +10374,7 @@ public final class InstantRuntime: Sendable {
     }
   }
 
+  @concurrent
   public func observeShares() async throws -> AsyncStream<[InstantShareSnapshot]> {
     await operationGate.enter()
     var gateIsHeld = true
@@ -9140,6 +10414,7 @@ public final class InstantRuntime: Sendable {
     }
   }
 
+  @concurrent
   public func updateShareMembershipRole(
     shareID rawShareID: String,
     userID rawTargetUserID: String,
@@ -9219,6 +10494,7 @@ public final class InstantRuntime: Sendable {
     }
   }
 
+  @concurrent
   public func revokeShare(id rawShareID: String) async throws -> InstantShareSnapshot {
     let shareID = try validatedNonEmpty(
       rawShareID,
@@ -9683,18 +10959,21 @@ public final class InstantRuntime: Sendable {
     return lhs.id < rhs.id
   }
 
+  @concurrent
   public func pendingMutations() async -> [PendingMutation] {
     await durableOutboxMutations(
       statuses: [.pending]
     ) { [outbox] in await outbox.pending() }
   }
 
+  @concurrent
   public func failedMutations() async -> [PendingMutation] {
     await durableOutboxMutations(
       statuses: [.failed]
     ) { [outbox] in await outbox.all().filter { $0.status == .failed } }
   }
 
+  @concurrent
   public func pendingMutationCount() async -> Int {
     do {
       recordActorHop(.persistence)
@@ -9713,6 +10992,7 @@ public final class InstantRuntime: Sendable {
     }
   }
 
+  @concurrent
   public func observeMutationLifecycle(
     id rawID: String
   ) async throws -> AsyncStream<InstantMutationLifecycleEvent> {
@@ -9738,16 +11018,19 @@ public final class InstantRuntime: Sendable {
     )
   }
 
+  @concurrent
   public func outboxMutations() async -> [PendingMutation] {
     await durableOutboxMutations(
       statuses: [.pending, .failed]
     ) { [outbox] in await outbox.all().filter { $0.status != .confirmed } }
   }
 
+  @concurrent
   package func mutationDeliveryBarrierMutations() async -> [PendingMutation] {
     await outbox.all()
   }
 
+  @concurrent
   package func mutationDeliveryBarrierSummary() async throws
     -> InstantMutationDeliveryBarrierSummary
   {
@@ -9796,6 +11079,7 @@ public final class InstantRuntime: Sendable {
     await liveSession.mutationReservationCountsForTesting()
   }
 
+  @concurrent
   public func outboxTransportMutations(includeFailed: Bool = false) async
     -> [InstantTransportMutation]
   {
@@ -9942,6 +11226,7 @@ public final class InstantRuntime: Sendable {
     }
   }
 
+  @concurrent
   public func flushPendingMutations(limit: Int? = nil) async throws
     -> InstantMutationTransportFlushResult
   {
@@ -10451,6 +11736,7 @@ public final class InstantRuntime: Sendable {
   }
 
   @discardableResult
+  @concurrent
   public func confirmMutation(id: String) async throws -> PendingMutation {
     await enterOperationGate()
     do {
@@ -10484,6 +11770,7 @@ public final class InstantRuntime: Sendable {
   }
 
   @discardableResult
+  @concurrent
   public func failMutation(id: String, message: String) async throws -> PendingMutation {
     try await failMutation(
       id: id,
@@ -10495,6 +11782,7 @@ public final class InstantRuntime: Sendable {
   }
 
   @discardableResult
+  @concurrent
   package func failMutation(
     id: String,
     failure: InstantMutationFailure,
@@ -10519,6 +11807,22 @@ public final class InstantRuntime: Sendable {
   /// the exact durable delivery claim. The live socket keeps its registered
   /// queries; the local rollback publication is sufficient, matching upstream
   /// Reactor `_handleMutationError`.
+  /// The live refusal path (an `error` frame for a claimed write) for tests, including its deferral of a component
+  /// larger than one claim window to the next server apply.
+  @concurrent
+  package func failClaimedMutationForTesting(
+    id: String,
+    message: String,
+    claimToken: String
+  ) async throws -> PendingMutation? {
+    try await failClaimedMutation(
+      id: id,
+      failure: InstantMutationFailure(code: PendingMutation.failureCode(message: message), message: message),
+      requiredClaimToken: claimToken,
+      recordsConnectionFailure: false
+    )
+  }
+
   private func failClaimedMutation(
     id: String,
     failure: InstantMutationFailure,
@@ -10747,6 +12051,7 @@ public final class InstantRuntime: Sendable {
   /// Cross-file query helpers use this gate-owning entry point so an external
   /// SQLite revision and the hot store actor become visible as one local state
   /// transition.
+  @concurrent
   package func attributesForInfiniteQueryValidation() async throws -> [InstantAttribute] {
     try await enterOperationGateUnlessCancelled(
       operation: "validate infinite query attributes"
@@ -11020,10 +12325,12 @@ public final class InstantRuntime: Sendable {
       prepared = next
     }
 
+    // What a refused write restores is the base as this device knows it; server facts must win against it (#296).
+    let restoredFailure = Self.restoredAsBase(failedRollback)
     let removedFailure = if let prepared {
-      try await store.prepare(failedRollback, applyingTo: prepared)
+      try await store.prepare(restoredFailure, applyingTo: prepared)
     } else {
-      try await store.prepare(failedRollback, applyingTo: hydratedSnapshot)
+      try await store.prepare(restoredFailure, applyingTo: hydratedSnapshot)
     }
     changedEntityIDs.formUnion(removedFailure.result.changedEntityIDs)
     changedFactScope.formUnion(
@@ -11158,10 +12465,12 @@ public final class InstantRuntime: Sendable {
       prepared = next
     }
 
+    // What a refused write restores is the base as this device knows it; server facts must win against it (#296).
+    let restoredFailure = Self.restoredAsBase(failedRollback)
     let removedFailure = if let prepared {
-      try await store.prepare(failedRollback, applyingTo: prepared)
+      try await store.prepare(restoredFailure, applyingTo: prepared)
     } else {
-      try await store.prepare(failedRollback, applyingTo: hydratedSnapshot)
+      try await store.prepare(restoredFailure, applyingTo: hydratedSnapshot)
     }
     changedEntityIDs.formUnion(removedFailure.result.changedEntityIDs)
     changedFactScope.formUnion(
@@ -11230,6 +12539,7 @@ public final class InstantRuntime: Sendable {
   /// durable failed row for diagnostics and retry by default, and only deleting it through this
   /// package-scoped acknowledgement boundary after the caller returns `.discard`.
   @discardableResult
+  @concurrent
   package func discardFailedMutation(
     id: String,
     allowingActiveDisposition: Bool = false
@@ -11346,6 +12656,7 @@ public final class InstantRuntime: Sendable {
     }
   }
 
+  @concurrent
   package func withAutomaticMutationRetrySuspended<Result: Sendable>(
     id: String,
     operation: @Sendable () async throws -> Result
@@ -11522,6 +12833,7 @@ public final class InstantRuntime: Sendable {
   }
 
   @discardableResult
+  @concurrent
   public func retryMutation(id: String) async throws -> PendingMutation {
     await operationGate.enter()
     do {
@@ -11542,6 +12854,7 @@ public final class InstantRuntime: Sendable {
   }
 
   @discardableResult
+  @concurrent
   package func retryFailedMutation(id: String) async throws -> PendingMutation {
     await operationGate.enter()
     do {
@@ -11579,6 +12892,7 @@ public final class InstantRuntime: Sendable {
   }
 
   @discardableResult
+  @concurrent
   public func drainPendingMutationsLocally(limit: Int? = nil) async throws -> [PendingMutation] {
     if let limit, limit < 0 {
       throw validationFailed(
@@ -11625,10 +12939,12 @@ public final class InstantRuntime: Sendable {
     }
   }
 
+  @concurrent
   public func localID(named name: String) async throws -> String {
     try await persistence.localID(named: name, makeID: configuration.makeID)
   }
 
+  @concurrent
   public func localIDs() async throws -> [InstantLocalID] {
     try await persistence.loadLocalIDs()
   }
@@ -11642,6 +12958,7 @@ public final class InstantRuntime: Sendable {
   ///
   /// Caches into ``InstantClientID/current`` for **synchronous** product reads
   /// after the first resolve (bootstrap / auth setup).
+  @concurrent
   public func clientID() async throws -> String {
     let id = try await localID(named: InstantClientID.name)
     InstantClientID.prepareCurrent(id)

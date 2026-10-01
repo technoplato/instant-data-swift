@@ -143,12 +143,24 @@ public struct InstantLiveMessage: Hashable, Codable, Sendable {
 }
 
 extension InstantLiveMessage {
+  /// The client versions `init` advertises.
+  ///
+  /// Instant's server keys session features on the `@instantdb/core` version (`session.clj`): above v0.20.4 a
+  /// refresh-ok skips the attrs (the client applies it with the session's attrs, which Swift caches), above v0.17.5
+  /// presence arrives as patches, and above v0.22.75 messages arrive batched in arrays, which Swift does not decode.
+  /// Advertising v0.22.75 turns on the first two only. Without it every refresh-ok carried all of Scribe's 447 attrs,
+  /// about 134 KB of a 151 KB frame (#303).
+  public static let defaultVersions: [String: String] = [
+    "InstantDB-Swift": "0.1.0",
+    "@instantdb/core": "v0.22.75",
+  ]
+
   public static func initMessage(
     appID: String,
     refreshToken: String? = nil,
     adminToken: String? = nil,
     clientEventID: String,
-    versions: [String: String] = ["InstantDB-Swift": "0.1.0"]
+    versions: [String: String] = InstantLiveMessage.defaultVersions
   ) -> Self {
     var fields: [String: InstantLiveJSONValue] = [
       "app-id": .string(appID),
@@ -741,7 +753,7 @@ public struct InstantLiveSessionRequest: Hashable, Sendable {
     websocketURI: URL = InstantRuntimeConfiguration.defaultWebSocketURI,
     refreshToken: String? = nil,
     adminToken: String? = nil,
-    versions: [String: String] = ["InstantDB-Swift": "0.1.0"]
+    versions: [String: String] = InstantLiveMessage.defaultVersions
   ) {
     self.appID = appID
     self.websocketURI = websocketURI
@@ -1334,7 +1346,10 @@ let instantLiveOperationTimeoutMilliseconds: UInt64 = 5_000
 
 @usableFromInline
 func instantLiveDefaultTimeoutSleep(_ milliseconds: UInt64) async throws {
-  try await Task.sleep(nanoseconds: milliseconds * 1_000_000)
+  // A far-future deadline waits (and stays cancellable) instead of trapping: above about 584
+  // years the nanosecond product overflows, and the multiplication crashed the process.
+  let (nanoseconds, overflow) = milliseconds.multipliedReportingOverflow(by: 1_000_000)
+  try await Task.sleep(nanoseconds: overflow ? .max : nanoseconds)
 }
 
 // SAFETY: `lock` protects the continuation, pending outcome, child tasks,

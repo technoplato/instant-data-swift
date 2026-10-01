@@ -825,6 +825,43 @@ struct InstantFailedMutationDiscardTests {
     expectNoDifference(textValues, ["optimistic once"])
   }
 
+  /// The retry fault injection below opens a second SQLite connection to the runtime's store. The runtime's own
+  /// connection can still hold a short write transaction at that moment, and a connection with no busy timeout fails
+  /// at once with "database is locked". Measured 2026-09-30 on frozen exports of 80db4271 and 773429ae alike: the
+  /// injection met a held write lock in about one scenario in six when many ran at once, and it failed
+  /// `failedAtomicRetryCommitRetainsRejectionAndDoesNotResend` in full parallel suite runs on a loaded machine (#296).
+  /// The injection must wait for the lock, as the library's own connection does.
+  @Test
+  func retryFaultInjectionWaitsForTheRuntimesOwnWrite() async throws {
+    try await withThrowingTaskGroup(of: Void.self) { group in
+      // 64 scenarios at once: before the fix, 24 caught the race in 2 of 3 runs on an idle machine.
+      for lane in 0..<64 {
+        group.addTask {
+          let cacheURL = temporaryDiscardCacheURL("retry-injection-contention-\(lane)")
+          defer {
+            for suffix in ["", "-wal", "-shm"] {
+              try? FileManager.default.removeItem(atPath: cacheURL.path + suffix)
+            }
+          }
+          let session = DiscardReconnectLiveSession()
+          let runtime = try await discardRuntime(cacheURL: cacheURL, liveTransport: session.transport)
+          _ = try await runtime.connect()
+          await session.waitForSentMessageCount(1)
+          try await enqueueDiscardMutation(id: "tx-retry-atomic-failure", runtime: runtime, offset: 0)
+          await session.waitForSentMessageCount(2)
+          _ = try await runtime.failMutation(
+            id: "tx-retry-atomic-failure",
+            message: "retained rejection before retry"
+          )
+          _ = try await runtime.connectionStatus()
+          try installRetryMetadataDeletionFailure(in: cacheURL)
+          _ = try? await runtime.closeConnection()
+        }
+      }
+      try await group.waitForAll()
+    }
+  }
+
   @Test
   func failedAtomicRetryCommitRetainsRejectionAndDoesNotResend() async throws {
     let cacheURL = temporaryDiscardCacheURL("retry-atomic-failure")
@@ -2992,6 +3029,9 @@ private func installRetryMetadataDeletionFailure(in cacheURL: URL) throws {
     )
   }
   defer { sqlite3_close(database) }
+  // The runtime's own connection can still hold a short write transaction here. Wait for it, as the library's
+  // connection does (10 s), instead of failing with "database is locked" (#296).
+  sqlite3_busy_timeout(database, 10_000)
   let sql =
     """
     CREATE TRIGGER instant_test_fail_retry_metadata_delete

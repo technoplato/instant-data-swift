@@ -462,6 +462,98 @@ struct InstantServerApplyFootprint: Sendable {
   var isGlobal: Bool
 }
 
+/// Why a server apply keeps the whole-component rebase instead of dropping the facts it cannot change (#296).
+enum InstantServerApplyReductionIneligibility: String, Sendable {
+  case revisionChanged
+  case failedOverlay
+  case unscopedOverlay
+  case nonPrefixWatermark
+  case tooManyBodies
+  case unsupportedOperation
+  /// A fact on a shadowed slot that no surviving write inserts does not hold in the store.
+  case changesShadowedFact
+  /// A surviving write merges into the slot, or its latest writer's value is not what the store shows.
+  case shadowedSlotNotReplaced
+  /// The first writer's receipt cannot name the base value beneath it (it deletes the entity, or restores several
+  /// values), or restores none while earlier pending writes touch the entity.
+  case unprovenBeforeImage
+  /// A surviving write inserts this link from the other side, which leaves no write key on this slot.
+  case reverseLinkWriter
+  case retractsShadowedFact
+  case linksToShadowedEntity
+}
+
+enum InstantServerApplyReduction: Sendable {
+  /// The operations that can change the base; every other one already holds beneath the pending writes. Where the
+  /// server changed a slot beneath its pending writers, `receiptPatches` names each slot's first surviving writer and
+  /// the server fact that becomes its before-image, which is the only receipt the full rebase would change there.
+  case reduced([InstantTripleOperation], receiptPatches: [String: [InstantTriple]] = [:])
+  /// The first fact that needs the whole-component rebase, when one fact decided it.
+  case declined(InstantServerApplyReductionIneligibility, fact: InstantTriple? = nil)
+}
+
+/// Refused writes a reduced server apply removes itself (#296), and what their removal changes.
+struct InstantServerApplyFailureSplice: Sendable {
+  struct ReceiptRebase: Sendable {
+    /// The refused write's before-image facts on slots this write replaces.
+    var baseFacts: [InstantTriple] = []
+    /// Slots the refused write set from empty.
+    var absentSlots: Set<InstantVisibleWriteKey> = []
+  }
+
+  /// What the store goes back to where no surviving write replaces a refused write's change.
+  var storeOperations: [InstantTripleOperation] = []
+  /// The next surviving writer of each slot a refused write changed, with the before-image its receipt takes over.
+  var receiptRebases: [String: ReceiptRebase] = [:]
+  /// Refused writes whose overlays this apply removes.
+  var removedFailedIDs: Set<String> = []
+
+  /// Rows the plan must stage: the removed refused writes and the re-receipted writers.
+  var patchedMutationIDs: Set<String> {
+    removedFailedIDs.union(receiptRebases.keys)
+  }
+}
+
+enum InstantServerApplyReductionLoad: Sendable {
+  case ineligible(InstantServerApplyReductionIneligibility)
+  case ready(InstantServerApplyReductionContext)
+}
+
+/// The pending writes that survive one server apply, as far as the facts that apply names can see them.
+struct InstantServerApplyReductionContext: Sendable {
+  /// Entities of the apply that a surviving pending write touches (its effect entities).
+  var shadowedEntityIDs: Set<String> = []
+  /// For each slot of a shadowed entity that a surviving pending write inserts or merges, the earliest such write.
+  var firstWriterBySlot: [InstantVisibleWriteKey: String] = [:]
+  /// For the same slots, the latest such write, whose value the store must show.
+  var lastWriterBySlot: [InstantVisibleWriteKey: String] = [:]
+  /// For each shadowed entity with a first writer, the earliest surviving pending write that touches the entity at
+  /// all. When it is the slot's first writer, no earlier pending write can have removed the slot's base value.
+  var firstOverlayByEntity: [String: String] = [:]
+  /// For each reverse-form link slot (target entity, reverse attribute) that surviving pending writes insert, the
+  /// earliest and the latest such write. A write of `transcriptionSegments/recording` on a segment materializes as
+  /// `recordings/segments` on the recording, but its write key names the segment's slot, so a forward link fact alone
+  /// cannot see that write.
+  var firstReverseLinkWriterBySlot: [InstantVisibleWriteKey: String] = [:]
+  var lastReverseLinkWriterBySlot: [InstantVisibleWriteKey: String] = [:]
+  /// Refused writes whose overlays are still on the store, in delivery order. The reduction removes them itself: each
+  /// slot a refused write changed goes back to its before-image, in the store or in the next surviving writer's receipt.
+  var failedOverlayIDs: [String] = []
+  /// For each refused write and each slot it writes (its write keys), the next surviving writer of that slot.
+  var nextWriterAfterFailed: [String: [InstantVisibleWriteKey: String]] = [:]
+  /// For each refused write, the entities it created (its receipt deletes them) that a surviving write after it touches.
+  var createdEntitiesTouchedAfterFailed: [String: Set<String>] = [:]
+  /// The durable bodies of every write named above.
+  var bodies: [String: PendingMutation] = [:]
+}
+
+enum InstantServerApplyReductionLimits {
+  /// Bounds the bodies one apply decodes to prove a frame cannot change the base; past it, the full rebase runs.
+  static let maximumBodies = 256
+  /// Refused writes one apply removes without the full rebase; past it, the full rebase removes them all at once.
+  static let maximumFailedOverlays = 16
+}
+
 struct InstantServerApplyPlan: Sendable {
   var id: String
   var expectedStoreRevision: Int64
@@ -472,6 +564,8 @@ struct InstantServerApplyPlan: Sendable {
   var baselineOutboxTail: InstantOutboxDeliveryPosition?
   var plannedBodyCount: Int
   var plannedBodyByteCount: Int
+  /// Of the planned bodies, the component the apply peels and replays; the rest are pruned, confirmed, or re-receipted.
+  var plannedComponentBodyCount: Int = 0
 }
 
 struct InstantServerApplyCatchUp: Sendable {
@@ -553,6 +647,10 @@ private struct InstantServerApplyPlanControl: Sendable {
   var rootIsGlobal: Bool
   var confirmingMutationID: String?
   var confirmingClaimantID: String?
+  /// Set when Runtime proved the watermark prunes only a prefix of the overlays and this apply changes no entity a
+  /// surviving overlay touches (#296). The pruned rows then leave the outbox as staged deletions without pulling their
+  /// connected component into a peel and replay that could not change anything.
+  var excludesWatermarkRoots = false
 }
 
 private struct InstantServerApplyBodyCandidate: Sendable {
@@ -595,6 +693,8 @@ package struct InstantServerApplyMetrics: Equatable, Sendable {
   package var planCount = 0
   package var plannedBodyCount = 0
   package var plannedBodyByteCount = 0
+  /// Planned bodies that are peeled and replayed (the component), as opposed to pruned, confirmed, or re-receipted.
+  package var plannedComponentBodyCount = 0
   package var decodedBodyCount = 0
   package var decodedBodyByteCount = 0
   package var reverseBodyPageCount = 0
@@ -613,6 +713,14 @@ package struct InstantServerApplyMetrics: Equatable, Sendable {
   package var maximumResidentPatchPageByteCount = 0
   package var commitAttemptCount = 0
   package var staleCommitCount = 0
+  /// Server applies that asked whether their facts could change the base beneath the pending writes (#296).
+  package var reductionCount = 0
+  /// Of those, the applies that could drop the facts they cannot change instead of rebasing everything.
+  package var reducedCount = 0
+  /// Receipts re-based onto a server change beneath their pending write, without peeling or replaying it.
+  package var receiptPatchCount = 0
+  /// Refused writes' overlays a reduced apply removed without the whole-component rebase.
+  package var removedFailedOverlayCount = 0
 
   mutating func recordBodyPage(
     direction: InstantServerApplyBodyDirection,
@@ -725,6 +833,13 @@ public actor SQLitePersistenceStore {
   private var terminalFailureMetadataMetrics = InstantTerminalFailureMetadataMetrics()
   private var failedMutationRetryMetrics = InstantFailedMutationRetryMetrics()
   private var serverApplyMetrics = InstantServerApplyMetrics()
+  /// The attributes a live-result save limits its rows with, reused while neither this connection nor another process
+  /// has written `instant_attributes` (#303). Every server apply used to load and decode every attribute row once per
+  /// query result it saved, inside the commit.
+  private var liveResultAttributes: (revision: Int64, generation: Int, attributes: [InstantAttribute])?
+  /// Bumped by every write to `instant_attributes` on this connection.
+  private var attributeWriteGeneration = 0
+  private var liveResultAttributeLoads = 0
   private var declaredRelationReconciliationLiveResultScanCount = 0
   private var installedDeclaredRelationStorageMarker:
     DeclaredRelationStorageReconciliationMarker?
@@ -805,6 +920,21 @@ public actor SQLitePersistenceStore {
 
   package func resetServerApplyMetricsForTesting() {
     serverApplyMetrics = InstantServerApplyMetrics()
+  }
+
+  /// How many live-result saves loaded the attributes from SQLite instead of reusing them (#303).
+  package func liveResultAttributeLoadCountForTesting() -> Int {
+    liveResultAttributeLoads
+  }
+
+  /// One full attribute load, as each live-result save did before it reused them; for cost tests.
+  package func loadAttributesForTesting() throws -> [InstantAttribute] {
+    try loadAttributesWithoutTransaction(tracesStartupCollection: false)
+  }
+
+  /// The attributes a live-result save uses now; for cost tests.
+  package func attributesForLiveResultSaveForTesting() throws -> [InstantAttribute] {
+    try attributesForLiveResultSaveWithoutTransaction()
   }
 
   package func serverApplyMetricsForTesting() -> InstantServerApplyMetrics {
@@ -2003,6 +2133,11 @@ public actor SQLitePersistenceStore {
         )
       }
     }
+    try withSQLiteBusyRetry {
+      try migrate(name: "0024_remove_entities_missing_their_id_fact") {
+        try removeEntitiesMissingTheirIDFactWithoutTransaction()
+      }
+    }
     // Test fixtures and app-owned restores can reconstruct `instant_outbox`
     // while retaining newer migration ledger rows. Reassert this column-free
     // index so the body-free blocker query never falls back to a scan/sort.
@@ -2176,13 +2311,13 @@ public actor SQLitePersistenceStore {
         // Install retained metadata before deleting obsolete rows. All triple and live-query rows
         // have already moved, so no durable fact can be orphaned by the following deletes.
         for attribute in reconciledAttributes where durableByID[attribute.id] != attribute {
-          try execute(
+          try executeAttributeWrite(
             "INSERT OR REPLACE INTO instant_attributes (id, json) VALUES (?, ?)",
             [.text(attribute.id), .text(try encode(attribute))]
           )
         }
         for attributeID in durableByID.keys.sorted() where reconciledByID[attributeID] == nil {
-          try execute("DELETE FROM instant_attributes WHERE id = ?", [.text(attributeID)])
+          try executeAttributeWrite("DELETE FROM instant_attributes WHERE id = ?", [.text(attributeID)])
         }
       }
 
@@ -2549,7 +2684,7 @@ public actor SQLitePersistenceStore {
         }
         guard migrated != attribute else { continue }
         attributesChanged = true
-        try execute(
+        try executeAttributeWrite(
           "UPDATE instant_attributes SET json = ? WHERE id = ?",
           [.text(try encode(migrated)), .text(attribute.id)]
         )
@@ -3552,7 +3687,9 @@ public actor SQLitePersistenceStore {
     hasServerOperations: Bool,
     processedTransactionID: String,
     confirmingMutationID: String?,
-    confirmingClaimantID: String?
+    confirmingClaimantID: String?,
+    excludesWatermarkRoots: Bool = false,
+    receiptPatchMutationIDs: Set<String> = []
   ) throws -> InstantServerApplyPlanLoad {
     precondition(
       (confirmingMutationID == nil) == (confirmingClaimantID == nil),
@@ -3590,8 +3727,8 @@ public actor SQLitePersistenceStore {
           expected_outbox_revision, expected_query_result_revision,
           processed_transaction_id, processed_transaction_number,
           server_has_operations, root_is_global, confirming_mutation_id,
-          confirming_claimant_id
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          confirming_claimant_id, excludes_watermark_roots
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         [
           .text(planID),
@@ -3605,6 +3742,7 @@ public actor SQLitePersistenceStore {
           .int(footprint.isGlobal ? 1 : 0),
           confirmingMutationID.map(SQLiteBinding.text) ?? .null,
           confirmingClaimantID.map(SQLiteBinding.text) ?? .null,
+          .int(excludesWatermarkRoots ? 1 : 0),
         ]
       )
       for entityID in footprint.entityIDs.sorted() {
@@ -3614,6 +3752,15 @@ public actor SQLitePersistenceStore {
           VALUES (?, ?)
           """,
           [.text(planID), .text(entityID)]
+        )
+      }
+      for mutationID in receiptPatchMutationIDs.sorted() {
+        try execute(
+          """
+          INSERT INTO instant_server_apply_receipt_patches (plan_id, mutation_id)
+          VALUES (?, ?)
+          """,
+          [.text(planID), .text(mutationID)]
         )
       }
       try populateServerApplyPlanRowsWithoutTransaction(id: planID)
@@ -3632,6 +3779,13 @@ public actor SQLitePersistenceStore {
         """,
         [.text(planID)]
       ))
+      let componentBodyCount = Int(try selectInt64(
+        """
+        SELECT COUNT(*) FROM instant_server_apply_rows
+        WHERE plan_id = ? AND requires_body = 1 AND is_component_body = 1
+        """,
+        [.text(planID)]
+      ))
       return .ready(
         InstantServerApplyPlan(
           id: planID,
@@ -3642,13 +3796,25 @@ public actor SQLitePersistenceStore {
           baselineOutboxRowCount: baselineOutboxRowCount,
           baselineOutboxTail: baselineOutboxTail,
           plannedBodyCount: bodyCount,
-          plannedBodyByteCount: bodyByteCount
+          plannedBodyByteCount: bodyByteCount,
+          plannedComponentBodyCount: componentBodyCount
         )
       )
     }
     if case let .ready(plan) = result {
       serverApplyMetrics.planCount += 1
       serverApplyMetrics.plannedBodyCount += plan.plannedBodyCount
+      serverApplyMetrics.plannedComponentBodyCount += plan.plannedComponentBodyCount
+      serverApplyMetrics.receiptPatchCount += receiptPatchMutationIDs.count
+      serverApplyMetrics.removedFailedOverlayCount += Int(try selectInt64(
+        """
+        SELECT COUNT(*) FROM instant_server_apply_rows AS planned
+        JOIN instant_outbox AS outbox ON outbox.mutation_id = planned.mutation_id
+        WHERE planned.plan_id = ? AND planned.is_component_body = 0 AND planned.requires_body = 1
+          AND outbox.status = 'failed'
+        """,
+        [.text(plan.id)]
+      ))
       serverApplyMetrics.plannedBodyByteCount += plan.plannedBodyByteCount
     }
     return result
@@ -3791,6 +3957,420 @@ public actor SQLitePersistenceStore {
       if !hasOwner { protected.append(operation) }
     }
     return protected
+  }
+
+  /// Loads what `InstantRuntime` needs to decide which facts of one server apply can change the authoritative base
+  /// beneath the pending writes (#296), or the reason the whole-component rebase must run instead.
+  ///
+  /// Upstream `Reactor.js` keeps each query's server result in its own store and reapplies pending mutations on top
+  /// (`dataForQuery`, `_applyOptimisticUpdates`). Swift keeps one materialized store, so it peels and replays the
+  /// connected component instead. That replay changes nothing when every server fact already holds beneath the
+  /// overlays, which is the common frame while a large outbox drains. Deciding that needs, for each entity the frame
+  /// names, whether a pending write that survives this apply touches it, and for each slot such a write inserts, the
+  /// first such write's durable receipt (its before-image is the base value). Everything is read in one transaction
+  /// at the revisions the caller's seed was taken at.
+  func loadServerApplyReductionContext(
+    slots: [String: Set<String>],
+    reverseLinkSlots: Set<InstantVisibleWriteKey> = [],
+    processedTransactionID: String,
+    expectedStoreRevision: Int64,
+    expectedAttributeRevision: Int64,
+    expectedOutboxRevision: Int64,
+    expectedQueryResultRevision: Int64
+  ) throws -> InstantServerApplyReductionLoad {
+    // Every query below is an indexed probe that stops at its first match, so deciding a frame costs the same with 30
+    // pending writes as with 2,500.
+    let load: InstantServerApplyReductionLoad = try readTransaction {
+      guard
+        try loadMetadataRevisionWithoutTransaction(Self.storeRevisionKey) == expectedStoreRevision,
+        try loadMetadataRevisionWithoutTransaction(Self.attributeRevisionKey) == expectedAttributeRevision,
+        try loadMetadataRevisionWithoutTransaction(Self.outboxRevisionKey) == expectedOutboxRevision,
+        try loadMetadataRevisionWithoutTransaction(Self.queryResultRevisionKey)
+          == expectedQueryResultRevision
+      else { return .ineligible(.revisionChanged) }
+
+      // Rows whose effect a full rebase treats specially: a failed overlay is removed, a global or unproven receipt
+      // cannot be scoped, an old delivery-metadata row has no trustworthy write keys, and a transport confirmation
+      // without a transaction id is replaced by the server's coverage.
+      // Refused writes whose overlays are still on the store: up to a bound, the reduction removes them itself.
+      var failedPositions: [InstantOutboxDeliveryPosition] = []
+      do {
+        var statement: OpaquePointer?
+        try prepare(
+          """
+          SELECT mutation_id, created_at_ms
+          FROM instant_outbox INDEXED BY instant_outbox_server_apply_failed_idx
+          WHERE status = 'failed' AND optimistic_overlay_active = 1
+          ORDER BY created_at_ms, mutation_id
+          LIMIT ?
+          """,
+          statement: &statement
+        )
+        defer { sqlite3_finalize(statement) }
+        try bind([.int(Int64(InstantServerApplyReductionLimits.maximumFailedOverlays + 1))], to: statement)
+        while sqlite3_step(statement) == SQLITE_ROW {
+          guard let idBytes = sqlite3_column_text(statement, 0) else { continue }
+          failedPositions.append(
+            InstantOutboxDeliveryPosition(
+              createdAtMilliseconds: sqlite3_column_int64(statement, 1),
+              mutationID: String(cString: idBytes)
+            )
+          )
+        }
+      }
+      guard failedPositions.count <= InstantServerApplyReductionLimits.maximumFailedOverlays else {
+        return .ineligible(.failedOverlay)
+      }
+      let unscoped: [(sql: String, bindings: [SQLiteBinding])] = [
+        (
+          """
+          SELECT EXISTS(
+            SELECT 1 FROM instant_outbox INDEXED BY instant_outbox_global_effect_order_idx
+            WHERE optimistic_overlay_active = 1 AND optimistic_effect_is_global = 1 LIMIT 1
+          )
+          """,
+          []
+        ),
+        (
+          """
+          SELECT EXISTS(
+            SELECT 1 FROM instant_outbox INDEXED BY instant_outbox_synchronization_blocker_idx
+            WHERE optimistic_overlay_active = 1 AND optimistic_effect_receipt_fingerprint IS NULL LIMIT 1
+          )
+          """,
+          []
+        ),
+        (
+          """
+          SELECT EXISTS(
+            SELECT 1 FROM instant_outbox INDEXED BY instant_outbox_effect_normalization_idx
+            WHERE optimistic_overlay_active = 1
+              AND (optimistic_effect_metadata_version < ? OR optimistic_effect_metadata_version > ?)
+            LIMIT 1
+          )
+          """,
+          [
+            .int(Int64(InstantOptimisticEffectFootprint.currentVersion)),
+            .int(Int64(InstantOptimisticEffectFootprint.currentVersion)),
+          ]
+        ),
+        (
+          """
+          SELECT EXISTS(
+            SELECT 1 FROM instant_outbox
+            WHERE status IN (?, ?) AND delivery_metadata_version < ? AND optimistic_overlay_active = 1
+            LIMIT 1
+          )
+          """,
+          [
+            .text(InstantMutationStatus.pending.rawValue),
+            .text(InstantMutationStatus.confirmed.rawValue),
+            .int(Int64(InstantOutboxDeliveryMetadata.currentVersion)),
+          ]
+        ),
+        (
+          """
+          SELECT EXISTS(
+            SELECT 1 FROM instant_outbox INDEXED BY instant_outbox_server_apply_watermark_idx
+            WHERE status = ? AND optimistic_overlay_active = 1
+              AND COALESCE(server_transaction_id, '') = '' AND COALESCE(confirmation_source, '') = ?
+            LIMIT 1
+          )
+          """,
+          [
+            .text(InstantMutationStatus.confirmed.rawValue),
+            .text(InstantMutationConfirmationSource.serverTransport.rawValue),
+          ]
+        ),
+      ]
+      for check in unscoped where try selectInt64(check.sql, check.bindings) != 0 {
+        return .ineligible(.unscopedOverlay)
+      }
+
+      let prunable = Self.serverApplyReductionPrunablePredicate(
+        processedTransactionID: processedTransactionID,
+        alias: "outbox"
+      )
+      // The watermark may prune only a prefix of the active overlays. A pending write older than a pruned one would
+      // be replayed on top of it by the full rebase, which can change what the device shows.
+      var newestPrunedStatement: OpaquePointer?
+      try prepare(
+        """
+        SELECT outbox.created_at_ms, outbox.mutation_id
+        FROM instant_outbox AS outbox INDEXED BY instant_outbox_server_apply_watermark_idx
+        WHERE outbox.optimistic_overlay_active = 1 AND \(prunable.sql)
+        ORDER BY outbox.created_at_ms DESC, outbox.mutation_id DESC
+        LIMIT 1
+        """,
+        statement: &newestPrunedStatement
+      )
+      defer { sqlite3_finalize(newestPrunedStatement) }
+      try bind(prunable.bindings, to: newestPrunedStatement)
+      if sqlite3_step(newestPrunedStatement) == SQLITE_ROW,
+        let newestPrunedIDBytes = sqlite3_column_text(newestPrunedStatement, 1)
+      {
+        let newestPrunedMilliseconds = sqlite3_column_int64(newestPrunedStatement, 0)
+        let newestPrunedID = String(cString: newestPrunedIDBytes)
+        let olderSurvivorExists = try selectInt64(
+          """
+          SELECT EXISTS(
+            SELECT 1 FROM instant_outbox AS outbox INDEXED BY instant_outbox_global_effect_order_idx
+            WHERE outbox.optimistic_overlay_active = 1 AND outbox.optimistic_effect_is_global = 0
+              AND (
+                outbox.created_at_ms < ?
+                OR (outbox.created_at_ms = ? AND outbox.mutation_id < ?)
+              )
+              AND outbox.status != 'failed' AND NOT \(prunable.sql)
+            LIMIT 1
+          )
+          """,
+          [.int(newestPrunedMilliseconds), .int(newestPrunedMilliseconds), .text(newestPrunedID)]
+            + prunable.bindings
+        ) != 0
+        if olderSurvivorExists { return .ineligible(.nonPrefixWatermark) }
+      }
+
+      let remaining = """
+        outbox.optimistic_overlay_active = 1 AND outbox.status != 'failed' AND NOT \(prunable.sql)
+        """
+      var context = InstantServerApplyReductionContext()
+      for entityID in slots.keys.sorted() {
+        let isShadowed = try selectInt64(
+          """
+          SELECT EXISTS(
+            SELECT 1
+            FROM instant_outbox_effect_entities AS effects
+              INDEXED BY instant_outbox_effect_entities_lookup_idx
+            JOIN instant_outbox AS outbox ON outbox.mutation_id = effects.mutation_id
+            WHERE effects.entity_id = ? AND \(remaining)
+            LIMIT 1
+          )
+          """,
+          [.text(entityID)] + prunable.bindings
+        ) != 0
+        if isShadowed { context.shadowedEntityIDs.insert(entityID) }
+      }
+
+      // The surviving writes that insert one slot, walked in delivery order along the effect index (the write-key
+      // index is not ordered by creation), stopping at the first.
+      func writer(
+        of attributeID: String,
+        on entityID: String,
+        newest: Bool,
+        after position: InstantOutboxDeliveryPosition? = nil
+      ) throws -> InstantOutboxDeliveryPosition? {
+        var statement: OpaquePointer?
+        let afterSQL = position == nil
+          ? ""
+          : """
+            AND (
+              effects.created_at_ms > ?
+              OR (effects.created_at_ms = ? AND effects.mutation_id > ?)
+            )
+            """
+        try prepare(
+          """
+          SELECT effects.mutation_id, effects.created_at_ms
+          FROM instant_outbox_effect_entities AS effects
+            INDEXED BY instant_outbox_effect_entities_lookup_idx
+          JOIN instant_outbox AS outbox ON outbox.mutation_id = effects.mutation_id
+          WHERE effects.entity_id = ? AND \(remaining)
+            AND EXISTS(
+              SELECT 1 FROM instant_outbox_write_keys AS write_keys
+              WHERE write_keys.mutation_id = effects.mutation_id
+                AND write_keys.entity_id = ? AND write_keys.attribute_id = ?
+            )
+            \(afterSQL)
+          ORDER BY effects.created_at_ms \(newest ? "DESC" : "ASC"), effects.mutation_id \(newest ? "DESC" : "ASC")
+          LIMIT 1
+          """,
+          statement: &statement
+        )
+        defer { sqlite3_finalize(statement) }
+        let afterBindings: [SQLiteBinding] = position.map {
+          [.int($0.createdAtMilliseconds), .int($0.createdAtMilliseconds), .text($0.mutationID)]
+        } ?? []
+        try bind(
+          [.text(entityID)] + prunable.bindings + [.text(entityID), .text(attributeID)] + afterBindings,
+          to: statement
+        )
+        guard sqlite3_step(statement) == SQLITE_ROW,
+          let mutationIDBytes = sqlite3_column_text(statement, 0)
+        else { return nil }
+        return InstantOutboxDeliveryPosition(
+          createdAtMilliseconds: sqlite3_column_int64(statement, 1),
+          mutationID: String(cString: mutationIDBytes)
+        )
+      }
+
+      var bodyIDs: Set<String> = []
+      for entityID in context.shadowedEntityIDs.sorted() {
+        var hasFirstWriter = false
+        for attributeID in (slots[entityID] ?? []).sorted() {
+          guard let first = try writer(of: attributeID, on: entityID, newest: false) else { continue }
+          hasFirstWriter = true
+          let slot = InstantVisibleWriteKey(entityID: entityID, attributeID: attributeID)
+          context.firstWriterBySlot[slot] = first.mutationID
+          bodyIDs.insert(first.mutationID)
+          if let last = try writer(of: attributeID, on: entityID, newest: true) {
+            context.lastWriterBySlot[slot] = last.mutationID
+            bodyIDs.insert(last.mutationID)
+          }
+        }
+        guard hasFirstWriter else { continue }
+        // The earliest surviving write on this entity: a first writer that is also the entity's first overlay has no
+        // earlier pending write beneath it that could have retracted or deleted the slot.
+        let firstOverlay = try selectStrings(
+          """
+          SELECT effects.mutation_id
+          FROM instant_outbox_effect_entities AS effects
+            INDEXED BY instant_outbox_effect_entities_lookup_idx
+          JOIN instant_outbox AS outbox ON outbox.mutation_id = effects.mutation_id
+          WHERE effects.entity_id = ? AND \(remaining)
+          ORDER BY effects.created_at_ms, effects.mutation_id
+          LIMIT 1
+          """,
+          [.text(entityID)] + prunable.bindings
+        )
+        if let firstOverlay = firstOverlay.first {
+          context.firstOverlayByEntity[entityID] = firstOverlay
+          // Its receipt shows whether it created the entity.
+          bodyIDs.insert(firstOverlay)
+        }
+      }
+      // Each refused write's slots (its write keys), and the next surviving writer of each.
+      for failed in failedPositions {
+        context.failedOverlayIDs.append(failed.mutationID)
+        bodyIDs.insert(failed.mutationID)
+        var statement: OpaquePointer?
+        try prepare(
+          """
+          SELECT entity_id, attribute_id FROM instant_outbox_write_keys
+          WHERE mutation_id = ?
+          ORDER BY entity_id, attribute_id
+          """,
+          statement: &statement
+        )
+        var keys: [InstantVisibleWriteKey] = []
+        do {
+          defer { sqlite3_finalize(statement) }
+          try bind([.text(failed.mutationID)], to: statement)
+          while sqlite3_step(statement) == SQLITE_ROW {
+            guard let entityBytes = sqlite3_column_text(statement, 0),
+              let attributeBytes = sqlite3_column_text(statement, 1)
+            else { continue }
+            keys.append(
+              InstantVisibleWriteKey(
+                entityID: String(cString: entityBytes),
+                attributeID: String(cString: attributeBytes)
+              )
+            )
+          }
+        }
+        for key in keys {
+          guard let next = try writer(of: key.attributeID, on: key.entityID, newest: false, after: failed) else {
+            continue
+          }
+          context.nextWriterAfterFailed[failed.mutationID, default: [:]][key] = next.mutationID
+          bodyIDs.insert(next.mutationID)
+        }
+      }
+      for slot in reverseLinkSlots.sorted(by: { ($0.entityID, $0.attributeID) < ($1.entityID, $1.attributeID) }) {
+        guard let first = try writer(of: slot.attributeID, on: slot.entityID, newest: false) else { continue }
+        context.firstReverseLinkWriterBySlot[slot] = first.mutationID
+        bodyIDs.insert(first.mutationID)
+        if let last = try writer(of: slot.attributeID, on: slot.entityID, newest: true) {
+          context.lastReverseLinkWriterBySlot[slot] = last.mutationID
+          bodyIDs.insert(last.mutationID)
+        }
+      }
+      guard bodyIDs.count <= InstantServerApplyReductionLimits.maximumBodies else {
+        return .ineligible(.tooManyBodies)
+      }
+      for mutationID in bodyIDs.sorted() {
+        guard let row = try loadOutboxBodyRowWithoutTransaction(id: mutationID) else {
+          return .ineligible(.revisionChanged)
+        }
+        let mutation: PendingMutation = try decodeOutboxBody(row.json)
+        decodedOutboxBodyCount += 1
+        decodedOutboxBodyByteCount += row.json.utf8.count
+        context.bodies[mutationID] = mutation
+      }
+      // An entity a refused write created stays only if no surviving write after it touches the entity; the reduction
+      // then deletes it, as the full rebase's replay would leave it out.
+      for failed in failedPositions {
+        guard let body = context.bodies[failed.mutationID],
+          case let .materialized(rollback) = body.optimisticEffectReceipt
+        else { continue }
+        for operation in rollback.operations {
+          let createdEntityID: String
+          switch operation {
+          case let .deleteEntity(entityID), let .deleteEntityInNamespace(entityID, _):
+            createdEntityID = entityID
+          default:
+            continue
+          }
+          let touchedLater = try selectInt64(
+            """
+            SELECT EXISTS(
+              SELECT 1
+              FROM instant_outbox_effect_entities AS effects
+                INDEXED BY instant_outbox_effect_entities_lookup_idx
+              JOIN instant_outbox AS outbox ON outbox.mutation_id = effects.mutation_id
+              WHERE effects.entity_id = ? AND \(remaining)
+                AND (
+                  effects.created_at_ms > ?
+                  OR (effects.created_at_ms = ? AND effects.mutation_id > ?)
+                )
+              LIMIT 1
+            )
+            """,
+            [.text(createdEntityID)] + prunable.bindings + [
+              .int(failed.createdAtMilliseconds), .int(failed.createdAtMilliseconds), .text(failed.mutationID),
+            ]
+          ) != 0
+          if touchedLater {
+            context.createdEntitiesTouchedAfterFailed[failed.mutationID, default: []].insert(createdEntityID)
+          }
+        }
+      }
+      return .ready(context)
+    }
+    serverApplyMetrics.reductionCount += 1
+    if case .ready = load { serverApplyMetrics.reducedCount += 1 }
+    return load
+  }
+
+  /// `outbox.status = confirmed`, proven, and covered by `processedTransactionID` (the watermark prune), as SQL that is
+  /// never NULL.
+  private static func serverApplyReductionPrunablePredicate(
+    processedTransactionID: String,
+    alias: String
+  ) -> (sql: String, bindings: [SQLiteBinding]) {
+    let serverTransactionID = "COALESCE(\(alias).server_transaction_id, '')"
+    let covered: String
+    var bindings: [SQLiteBinding] = [
+      .text(InstantMutationStatus.confirmed.rawValue),
+      .text(processedTransactionID),
+    ]
+    if let processedNumber = Int64(processedTransactionID) {
+      covered = """
+        (\(serverTransactionID) = ? OR (
+          \(serverTransactionID) != ''
+          AND \(serverTransactionID) NOT GLOB '*[^0-9]*'
+          AND CAST(\(serverTransactionID) AS INTEGER) <= ?
+        ))
+        """
+      bindings.append(.int(processedNumber))
+    } else {
+      covered = "\(serverTransactionID) = ?"
+    }
+    return (
+      """
+      (\(alias).status = ? AND COALESCE(\(alias).confirmation_proven, 0) = 1 AND \(covered))
+      """,
+      bindings
+    )
   }
 
   func loadServerApplyBodyPage(
@@ -4272,7 +4852,7 @@ public actor SQLitePersistenceStore {
           forIncomingAttributes: attributes
         )
         for attribute in attributes {
-          try execute(
+          try executeAttributeWrite(
             "INSERT OR REPLACE INTO instant_attributes (id, json) VALUES (?, ?)",
             [.text(attribute.id), .text(try encode(attribute))]
           )
@@ -4359,18 +4939,26 @@ public actor SQLitePersistenceStore {
           WHERE mutation_id IN (
             SELECT mutation_id FROM instant_server_apply_rows
             WHERE plan_id = ? AND staged = 1 AND staged_delete = 0
-              AND (
-                staged_json != outbox.json
-                OR staged_effect_receipt_fingerprint
-                  IS NOT outbox.optimistic_effect_receipt_fingerprint
-                OR staged_server_acceptance_payload_fingerprint
-                  IS NOT outbox.server_acceptance_payload_fingerprint
-              )
           )
+            AND EXISTS (
+              SELECT 1 FROM instant_server_apply_rows AS planned
+              WHERE planned.plan_id = ? AND planned.mutation_id = outbox.mutation_id
+                AND (
+                  planned.staged_json != outbox.json
+                  OR planned.staged_effect_receipt_fingerprint
+                    IS NOT outbox.optimistic_effect_receipt_fingerprint
+                  OR planned.staged_server_acceptance_payload_fingerprint
+                    IS NOT outbox.server_acceptance_payload_fingerprint
+                )
+            )
           """,
+          // The IN set is uncorrelated, so SQLite visits only the plan's rows through the outbox
+          // key; the changed-row test is one primary-key lookup per row. Comparing the outer row
+          // inside the IN made it correlated: every outbox row rescanned every plan row and
+          // compared bodies, 7.4 s for 2,000 pending mutations under the operation gate (#277).
           Array(repeating: SQLiteBinding.text(planID), count: 2)
             + [.int(Int64(InstantOutboxDeliveryMetadata.currentVersion))]
-            + Array(repeating: SQLiteBinding.text(planID), count: 14)
+            + Array(repeating: SQLiteBinding.text(planID), count: 15)
         )
         try execute(
           """
@@ -4631,7 +5219,7 @@ public actor SQLitePersistenceStore {
              expected_outbox_revision, expected_query_result_revision,
              processed_transaction_id, processed_transaction_number,
              server_has_operations, root_is_global, confirming_mutation_id,
-             confirming_claimant_id
+             confirming_claimant_id, excludes_watermark_roots
       FROM instant_server_apply_plans
       WHERE plan_id = ?
       LIMIT 1
@@ -4655,7 +5243,8 @@ public actor SQLitePersistenceStore {
       hasServerOperations: sqlite3_column_int64(statement, 6) != 0,
       rootIsGlobal: sqlite3_column_int64(statement, 7) != 0,
       confirmingMutationID: sqlite3_column_text(statement, 8).map(String.init(cString:)),
-      confirmingClaimantID: sqlite3_column_text(statement, 9).map(String.init(cString:))
+      confirmingClaimantID: sqlite3_column_text(statement, 9).map(String.init(cString:)),
+      excludesWatermarkRoots: sqlite3_column_int64(statement, 10) != 0
     )
   }
 
@@ -4664,6 +5253,7 @@ public actor SQLitePersistenceStore {
     planID: String,
     componentBody: Bool,
     requiresBody: Bool,
+    closureRound: Int = 0,
     selectionSQL: String,
     bindings selectionBindings: [SQLiteBinding]
   ) throws -> Int {
@@ -4679,7 +5269,8 @@ public actor SQLitePersistenceStore {
         expected_delivery_claimant_id,
         expected_server_acceptance_payload_fingerprint,
         expected_body_bytes, is_component_body, requires_body,
-        is_catch_up, prune_at_watermark, confirm_at_apply, staged_delete, staged
+        is_catch_up, prune_at_watermark, confirm_at_apply, staged_delete, staged,
+        closure_round
       )
       SELECT ?, outbox.mutation_id, outbox.created_at_ms, outbox.mutation_revision,
              outbox.status, COALESCE(outbox.confirmation_proven, 0),
@@ -4695,14 +5286,37 @@ public actor SQLitePersistenceStore {
                COALESCE(outbox.encoded_body_bytes, 0),
                length(CAST(outbox.json AS BLOB))
              ),
-             ?, ?, 0, 0, 0, 0, 0
+             ?, ?, 0, 0, 0, 0, 0, ?
       \(selectionSQL)
       """,
       [
         .text(planID),
         .int(componentBody ? 1 : 0),
         .int(requiresBody ? 1 : 0),
+        .int(Int64(closureRound)),
       ] + selectionBindings
+    )
+    return Int(try selectInt64("SELECT changes()"))
+  }
+
+  /// Marks the entities of the component rows found in `round` as visited, and returns how many
+  /// were new. Only new entities are expanded in the next round.
+  private func insertServerApplyClosureEntitiesWithoutTransaction(
+    planID: String,
+    fromRowsInRound round: Int
+  ) throws -> Int {
+    try execute(
+      """
+      INSERT OR IGNORE INTO instant_server_apply_closure_entities (plan_id, entity_id, round)
+      SELECT ?, effects.entity_id, ?
+      FROM instant_server_apply_rows AS planned
+        INDEXED BY instant_server_apply_rows_closure_round_idx
+      JOIN instant_outbox_effect_entities AS effects
+        ON effects.mutation_id = planned.mutation_id
+      WHERE planned.plan_id = ? AND planned.closure_round = ?
+        AND planned.is_component_body = 1
+      """,
+      [.text(planID), .int(Int64(round)), .text(planID), .int(Int64(round))]
     )
     return Int(try selectInt64("SELECT changes()"))
   }
@@ -4762,6 +5376,15 @@ public actor SQLitePersistenceStore {
           bindings: []
         )
       } else {
+        // A reduced apply (#296) has proven the watermark prunes only a prefix, so a pruned row keeps its effect and
+        // is no reason to peel what it connects to.
+        let excludesPruned = control.excludesWatermarkRoots
+          ? """
+            AND NOT COALESCE(
+              (outbox.status = ? AND COALESCE(outbox.confirmation_proven, 0) = 1 AND \(watermark.sql)), 0
+            )
+            """
+          : ""
         try insertServerApplyRowsWithoutTransaction(
           planID: planID,
           componentBody: true,
@@ -4776,35 +5399,44 @@ public actor SQLitePersistenceStore {
               ON outbox.mutation_id = effects.mutation_id
             WHERE roots.plan_id = ? AND outbox.optimistic_overlay_active = 1
               AND outbox.optimistic_effect_receipt_fingerprint IS NOT NULL
+              \(excludesPruned)
             """,
           bindings: [.text(planID)]
+            + (control.excludesWatermarkRoots
+              ? [.text(InstantMutationStatus.confirmed.rawValue)] + watermark.bindings
+              : [])
         )
-        try insertServerApplyRowsWithoutTransaction(
-          planID: planID,
-          componentBody: true,
-          requiresBody: true,
-          selectionSQL:
-            """
-            FROM instant_outbox AS outbox INDEXED BY instant_outbox_server_apply_failed_idx
-            WHERE outbox.status = 'failed' AND outbox.optimistic_overlay_active = 1
-              AND outbox.optimistic_effect_receipt_fingerprint IS NOT NULL
-            """,
-          bindings: []
-        )
-        try insertServerApplyRowsWithoutTransaction(
-          planID: planID,
-          componentBody: true,
-          requiresBody: true,
-          selectionSQL:
-            """
-            FROM instant_outbox AS outbox INDEXED BY instant_outbox_server_apply_watermark_idx
-            WHERE outbox.status = ? AND outbox.confirmation_proven = 1
-              AND outbox.optimistic_overlay_active = 1
-              AND outbox.optimistic_effect_receipt_fingerprint IS NOT NULL
-              AND \(watermark.sql)
-            """,
-          bindings: [.text(InstantMutationStatus.confirmed.rawValue)] + watermark.bindings
-        )
+        // A reduced apply (#296) removes refused writes itself, as receipt-patch rows; a whole-component rebase peels them.
+        if !control.excludesWatermarkRoots {
+          try insertServerApplyRowsWithoutTransaction(
+            planID: planID,
+            componentBody: true,
+            requiresBody: true,
+            selectionSQL:
+              """
+              FROM instant_outbox AS outbox INDEXED BY instant_outbox_server_apply_failed_idx
+              WHERE outbox.status = 'failed' AND outbox.optimistic_overlay_active = 1
+                AND outbox.optimistic_effect_receipt_fingerprint IS NOT NULL
+              """,
+            bindings: []
+          )
+        }
+        if !control.excludesWatermarkRoots {
+          try insertServerApplyRowsWithoutTransaction(
+            planID: planID,
+            componentBody: true,
+            requiresBody: true,
+            selectionSQL:
+              """
+              FROM instant_outbox AS outbox INDEXED BY instant_outbox_server_apply_watermark_idx
+              WHERE outbox.status = ? AND outbox.confirmation_proven = 1
+                AND outbox.optimistic_overlay_active = 1
+                AND outbox.optimistic_effect_receipt_fingerprint IS NOT NULL
+                AND \(watermark.sql)
+              """,
+            bindings: [.text(InstantMutationStatus.confirmed.rawValue)] + watermark.bindings
+          )
+        }
         if let confirmingMutationID = control.confirmingMutationID {
           try insertServerApplyRowsWithoutTransaction(
             planID: planID,
@@ -4820,29 +5452,46 @@ public actor SQLitePersistenceStore {
           )
         }
 
+        // The component closure is a breadth-first search over entities: each round expands
+        // only the entities first seen in the previous round, so every entity is expanded once
+        // and every mutation is found once, linear in (mutation, entity) effect pairs. Joining
+        // every planned row through every shared entity each round was quadratic around a hub:
+        // 2,000 pending sections linked to one recording held the operation gate 23 s in the
+        // commit's closure revalidation (#277).
+        var round = 0
         while true {
+          let newEntities = try insertServerApplyClosureEntitiesWithoutTransaction(
+            planID: planID,
+            fromRowsInRound: round
+          )
+          if newEntities == 0 { break }
           let inserted = try insertServerApplyRowsWithoutTransaction(
             planID: planID,
             componentBody: true,
             requiresBody: true,
+            closureRound: round + 1,
             selectionSQL:
               """
-              FROM instant_server_apply_rows AS planned
-              JOIN instant_outbox_effect_entities AS source_effect
-                ON source_effect.mutation_id = planned.mutation_id
+              FROM instant_server_apply_closure_entities AS frontier
+                INDEXED BY instant_server_apply_closure_entities_round_idx
               JOIN instant_outbox_effect_entities AS connected_effect
                 INDEXED BY instant_outbox_effect_entities_lookup_idx
-                ON connected_effect.entity_id = source_effect.entity_id
+                ON connected_effect.entity_id = frontier.entity_id
               JOIN instant_outbox AS outbox
                 ON outbox.mutation_id = connected_effect.mutation_id
-              WHERE planned.plan_id = ? AND planned.is_component_body = 1
+              WHERE frontier.plan_id = ? AND frontier.round = ?
                 AND outbox.optimistic_overlay_active = 1
                 AND outbox.optimistic_effect_receipt_fingerprint IS NOT NULL
               """,
-            bindings: [.text(planID)]
+            bindings: [.text(planID), .int(Int64(round))]
           )
           if inserted == 0 { break }
+          round += 1
         }
+        try execute(
+          "DELETE FROM instant_server_apply_closure_entities WHERE plan_id = ?",
+          [.text(planID)]
+        )
       }
     }
 
@@ -4905,6 +5554,22 @@ public actor SQLitePersistenceStore {
         [.text(planID), .text(confirmingMutationID)]
       )
     }
+
+    // A reduced apply's receipt patches (#296): each named first writer is loaded, re-receipted, and staged, but not
+    // peeled or replayed. Its row is addressed like any other body, so the commit revalidates it.
+    try insertServerApplyRowsWithoutTransaction(
+      planID: planID,
+      componentBody: false,
+      requiresBody: true,
+      selectionSQL:
+        """
+        FROM instant_server_apply_receipt_patches AS patches
+        JOIN instant_outbox AS outbox ON outbox.mutation_id = patches.mutation_id
+        WHERE patches.plan_id = ? AND outbox.optimistic_overlay_active = 1
+          AND outbox.optimistic_effect_receipt_fingerprint IS NOT NULL
+        """,
+      bindings: [.text(planID)]
+    )
   }
 
   private func loadServerApplyBodyPageWithoutTransaction(
@@ -5216,7 +5881,7 @@ public actor SQLitePersistenceStore {
              expected_outbox_revision, expected_query_result_revision,
              processed_transaction_id, processed_transaction_number,
              server_has_operations, root_is_global, confirming_mutation_id,
-             confirming_claimant_id
+             confirming_claimant_id, excludes_watermark_roots
       FROM instant_server_apply_plans
       WHERE plan_id = ?
       """,
@@ -5227,6 +5892,15 @@ public actor SQLitePersistenceStore {
       INSERT INTO instant_server_apply_roots (plan_id, entity_id)
       SELECT ?, entity_id
       FROM instant_server_apply_roots
+      WHERE plan_id = ?
+      """,
+      [.text(validationID), .text(planID)]
+    )
+    try execute(
+      """
+      INSERT INTO instant_server_apply_receipt_patches (plan_id, mutation_id)
+      SELECT ?, mutation_id
+      FROM instant_server_apply_receipt_patches
       WHERE plan_id = ?
       """,
       [.text(validationID), .text(planID)]
@@ -5266,6 +5940,10 @@ public actor SQLitePersistenceStore {
 
   private func deleteServerApplyPlanWithoutTransaction(id: String) throws {
     try execute(
+      "DELETE FROM instant_server_apply_closure_entities WHERE plan_id = ?",
+      [.text(id)]
+    )
+    try execute(
       "DELETE FROM instant_server_apply_effect_entities WHERE plan_id = ?",
       [.text(id)]
     )
@@ -5275,6 +5953,10 @@ public actor SQLitePersistenceStore {
     )
     try execute(
       "DELETE FROM instant_server_apply_roots WHERE plan_id = ?",
+      [.text(id)]
+    )
+    try execute(
+      "DELETE FROM instant_server_apply_receipt_patches WHERE plan_id = ?",
       [.text(id)]
     )
     try execute(
@@ -5782,18 +6464,18 @@ public actor SQLitePersistenceStore {
     return application
   }
 
+  /// The outbox's newest creation time, and the newest row in delivery order (`created_at_ms`, then `mutation_id`),
+  /// which a write must follow to be the tail.
   func latestOutboxCreationTimestamp(expectedOutboxRevision: Int64) throws
-    -> (matchesRevision: Bool, timestamp: InstantTimestamp?)
+    -> (matchesRevision: Bool, timestamp: InstantTimestamp?, tail: InstantOutboxDeliveryPosition?)
   {
     try readTransaction {
       guard
         try loadMetadataRevisionWithoutTransaction(Self.outboxRevisionKey)
           == expectedOutboxRevision
-      else { return (false, nil) }
-      let timestamp = try selectScalar(
-        "SELECT CAST(MAX(created_at_ms) AS TEXT) FROM instant_outbox"
-      ).flatMap(Int64.init).map(InstantTimestamp.init(milliseconds:))
-      return (true, timestamp)
+      else { return (false, nil, nil) }
+      let tail = try latestOutboxPositionWithoutTransaction()
+      return (true, tail.map { InstantTimestamp(milliseconds: $0.createdAtMilliseconds) }, tail)
     }
   }
 
@@ -6560,6 +7242,51 @@ public actor SQLitePersistenceStore {
         ]
       )
       return sqlite3_changes(connection.raw) > 0
+    }
+  }
+
+  /// Moves every live claim of one claimant later, so the earliest deadline is at least
+  /// `earliestDeadlineMilliseconds`, keeping the claims' ordinal spacing (#296).
+  ///
+  /// Only deadlines change: tokens, claimants, and claim states stay, so an acknowledgement that arrives for a
+  /// renewed claim still matches it. Returns how many claims moved and the earliest deadline after the move.
+  func deferAutomaticOutboxClaimDeadlines(
+    claimantID: String,
+    earliestDeadlineMilliseconds: Int64
+  ) throws -> (deferredClaimCount: Int, nextClaimDeadlineMilliseconds: Int64?) {
+    try transaction {
+      let claimed = InstantOutboxDeliveryClaimState.claimed.rawValue
+      guard
+        let earliest = try selectScalar(
+          """
+          SELECT CAST(MIN(delivery_claim_deadline_ms) AS TEXT) FROM instant_outbox
+          WHERE delivery_claim_state = ? AND delivery_claimant_id = ?
+            AND delivery_claim_deadline_ms IS NOT NULL
+          """,
+          [.text(claimed), .text(claimantID)]
+        ).flatMap(Int64.init)
+      else { return (0, nil) }
+      guard earliest < earliestDeadlineMilliseconds else { return (0, earliest) }
+      let shift = earliestDeadlineMilliseconds - earliest
+      try execute(
+        """
+        UPDATE instant_outbox
+        SET delivery_claim_deadline_ms = delivery_claim_deadline_ms + ?
+        WHERE delivery_claim_state = ? AND delivery_claimant_id = ?
+          AND delivery_claim_deadline_ms IS NOT NULL
+        """,
+        [.int(shift), .text(claimed), .text(claimantID)]
+      )
+      return (Int(sqlite3_changes(connection.raw)), earliestDeadlineMilliseconds)
+    }
+  }
+
+  /// Decodes one outbox row by id so a refusal can be logged with the refused write's values (#296). Read-only; a
+  /// missing or undecodable row returns nil rather than failing the refusal it describes.
+  func outboxMutationForDiagnostics(id: String) throws -> PendingMutation? {
+    try readTransaction {
+      guard let row = try loadOutboxBodyRowWithoutTransaction(id: id) else { return nil }
+      return try? decodeOutboxBody(row.json)
     }
   }
 
@@ -7752,6 +8479,28 @@ public actor SQLitePersistenceStore {
     )
   }
 
+  /// Deletes the deferred payload rows of entities that no longer exist in the store.
+  private func deleteDeferredValuesWithoutTransaction(entityIDs: Set<String>) throws {
+    let attributeIDs = deferredValueResidency.attributeIDs.sorted()
+    guard !attributeIDs.isEmpty else { return }
+    let sortedEntityIDs = entityIDs.sorted()
+    let attributePlaceholders = Array(repeating: "?", count: attributeIDs.count)
+      .joined(separator: ", ")
+    // Stay well under SQLite's bound-parameter limit.
+    for start in stride(from: 0, to: sortedEntityIDs.count, by: 500) {
+      let batch = Array(sortedEntityIDs[start..<min(start + 500, sortedEntityIDs.count)])
+      let entityPlaceholders = Array(repeating: "?", count: batch.count).joined(separator: ", ")
+      try execute(
+        """
+        DELETE FROM instant_triples
+        WHERE attribute_id IN (\(attributePlaceholders))
+          AND entity_id IN (\(entityPlaceholders))
+        """,
+        attributeIDs.map(SQLiteBinding.text) + batch.map(SQLiteBinding.text)
+      )
+    }
+  }
+
   private func loadStoreSnapshotWithoutTransaction(
     tracesStartupCollections: Bool = true
   ) throws -> InstantStoreSnapshot {
@@ -7982,11 +8731,18 @@ public actor SQLitePersistenceStore {
     }
 
     var removed: [InstantLiveTripleIdentity: InstantTriple] = [:]
+    // Facts of entities that left a result entirely, rather than facts a server edit changed on an entity that is
+    // still in the result.
+    var departed: Set<InstantLiveTripleIdentity> = []
     for replacement in replacements {
       let next = Self.indexLiveTriples(replacement.triples)
       let previous = prospective[replacement.key] ?? [:]
+      let nextEntityIDs = Set(next.keys.map(\.entityID))
       for (identity, triple) in previous where next[identity] == nil {
         removed[identity] = triple
+        if !nextEntityIDs.contains(identity.entityID) {
+          departed.insert(identity)
+        }
       }
       prospective[replacement.key] = next
     }
@@ -8003,6 +8759,26 @@ public actor SQLitePersistenceStore {
       if let triple = removed[identity] {
         retractions.append(triple)
       }
+    }
+    // An entity that left one result is collected whole or not at all, as result pruning collects it (#259). If it
+    // still has a stored fact this retraction would not remove (another result owns it, or no result ever did, like a
+    // field this device wrote), it still exists: keep every fact it left behind. Retracting them one at a time
+    // stripped the list-only fields (wallClockStartedAtMs, wallClockEndedAtMs, sentToInstantAtMs) from Scribe segments
+    // the live timeline still held when their preview slot moved (Recording 023, #296).
+    let candidates = Set(retractions.map(InstantLiveTripleIdentity.init))
+    let departedEntityIDs = Set(candidates.intersection(departed).map(\.entityID))
+    var keptEntityIDs: Set<String> = []
+    for entityID in departedEntityIDs.sorted() {
+      let stored: [InstantTriple] = try selectJSON(
+        "SELECT json FROM instant_triples WHERE entity_id = ?",
+        [.text(entityID)]
+      )
+      if stored.contains(where: { !candidates.contains(InstantLiveTripleIdentity($0)) }) {
+        keptEntityIDs.insert(entityID)
+      }
+    }
+    retractions.removeAll {
+      keptEntityIDs.contains($0.entityID) && departed.contains(InstantLiveTripleIdentity($0))
     }
     return retractions
       .sorted {
@@ -9001,6 +9777,22 @@ public actor SQLitePersistenceStore {
         else { continue }
         orphanedIdentities.insert(identity)
       }
+      // Collect whole entities only. An entity that still has a fact no remaining result owns
+      // (typically one this device wrote that the pruned query never selected) is local data;
+      // removing just the pruned query's facts left rows with `text` but no `recordingID`, which
+      // no relationship or filter can reach again (#259).
+      let candidateEntityIDs = Set(orphanedIdentities.map(\.entityID))
+      var retainedEntityIDs: Set<String> = []
+      for triple in snapshot.store.triples
+      where candidateEntityIDs.contains(triple.entityID)
+        && !orphanedIdentities.contains(InstantLiveTripleIdentity(triple))
+      {
+        retainedEntityIDs.insert(triple.entityID)
+      }
+      orphanedIdentities = orphanedIdentities.filter {
+        !retainedEntityIDs.contains($0.entityID)
+      }
+      let removedEntityIDs = candidateEntityIDs.subtracting(retainedEntityIDs)
       snapshot.store.triples.removeAll {
         orphanedIdentities.contains(InstantLiveTripleIdentity($0))
       }
@@ -9009,6 +9801,10 @@ public actor SQLitePersistenceStore {
           from: previousStore,
           to: snapshot.store
         )
+      }
+      // Deferred payloads never enter the store snapshot, so the diff above cannot delete them.
+      if deferredValueResidency.isEnabled, !removedEntityIDs.isEmpty {
+        try deleteDeferredValuesWithoutTransaction(entityIDs: removedEntityIDs)
       }
       let nextStoreRevision = if orphanedIdentities.isEmpty {
         storeRevision
@@ -10036,6 +10832,90 @@ public actor SQLitePersistenceStore {
     }
   }
 
+  /// One-time repair for stores that live-query pruning damaged before it collected whole
+  /// entities (#259, #278).
+  ///
+  /// Pruning used to delete some of an entity's facts and keep the rest. One iPhone kept 1,067
+  /// transcription segments with a few facts (usually `text` and `wordsJSON`) but without `id`,
+  /// `recordingID`, or `segmentIndex`: no relationship or filter could reach them, and a query that
+  /// met one failed to decode it. The
+  /// Instant server sends an entity's `id` fact with every selection (`instaql.clj`
+  /// `etype-attr-ids`: "Make sure we give them the id or else the client won't be able to find the
+  /// entity"), and typed writes always write it, so facts without their entity's `id` fact are what
+  /// that bug left. Removing them lets the server deliver those entities whole again. Entities a
+  /// pending mutation touches are kept, and a store that has never synced is left alone.
+  private func removeEntitiesMissingTheirIDFactWithoutTransaction() throws {
+    let hasSynced = try selectInt64(
+      """
+      SELECT EXISTS (
+        SELECT 1 FROM instant_sync_metadata
+        WHERE instr(key, 'sync.processed_transaction_id:') = 1
+      )
+      """
+    )
+    guard hasSynced == 1 else { return }
+    try execute("DROP TABLE IF EXISTS temp.instant_repair_entities")
+    try execute(
+      "CREATE TEMP TABLE instant_repair_entities (entity_id TEXT PRIMARY KEY NOT NULL) WITHOUT ROWID"
+    )
+    defer { try? execute("DROP TABLE IF EXISTS temp.instant_repair_entities") }
+    try execute(
+      """
+      INSERT INTO temp.instant_repair_entities (entity_id)
+      SELECT entity_id FROM instant_triples
+      WHERE instr(attribute_id, '/') > 1
+        AND entity_id NOT IN (SELECT entity_id FROM instant_outbox_effect_entities)
+      GROUP BY entity_id
+      HAVING max(substr(attribute_id, -3) = '/id') = 0
+      """
+    )
+    let entityCount = try selectInt64("SELECT count(*) FROM temp.instant_repair_entities")
+    guard entityCount > 0 else { return }
+    let namespaceCounts = try selectStrings(
+      """
+      SELECT namespace || ':' || count(*) FROM (
+        SELECT DISTINCT entity_id, substr(attribute_id, 1, instr(attribute_id, '/') - 1) AS namespace
+        FROM instant_triples
+        WHERE entity_id IN (SELECT entity_id FROM temp.instant_repair_entities)
+          AND instr(attribute_id, '/') > 1
+      )
+      GROUP BY namespace
+      ORDER BY count(*) DESC, namespace
+      """
+    )
+    let sampleEntityIDs = try selectStrings(
+      "SELECT entity_id FROM temp.instant_repair_entities ORDER BY entity_id LIMIT 5"
+    )
+    try execute(
+      "DELETE FROM instant_triples WHERE entity_id IN (SELECT entity_id FROM temp.instant_repair_entities)"
+    )
+    let factCount = try selectInt64("SELECT changes()")
+    try execute(
+      """
+      DELETE FROM instant_live_query_triples
+      WHERE entity_id IN (SELECT entity_id FROM temp.instant_repair_entities)
+      """
+    )
+    _ = try bumpMetadataRevisionWithoutTransaction(Self.storeRevisionKey)
+    _ = try bumpMetadataRevisionWithoutTransaction(Self.queryResultRevisionKey)
+    InstantDiagnostics.shared.record(
+      .warning,
+      subsystem: "instant-swift-data-core",
+      category: "persistence",
+      event: "sqlite.repair.entities-missing-id-removed",
+      message: """
+        Removed \(entityCount) local entities whose facts had lost their entity's id fact; the \
+        server delivers them again when a query needs them.
+        """,
+      metadata: [
+        "entityCount": String(entityCount),
+        "factCount": String(factCount),
+        "namespaces": namespaceCounts.joined(separator: ","),
+        "sampleEntityIDs": sampleEntityIDs.joined(separator: ","),
+      ]
+    )
+  }
+
   /// Grandfathers only receipt shapes that deployed Runtime versions could
   /// durably prepare before migration 0020. This is a one-time compatibility
   /// trust decision, not a proof callers can recreate after the column exists.
@@ -10324,7 +11204,8 @@ public actor SQLitePersistenceStore {
         server_has_operations INTEGER NOT NULL,
         root_is_global INTEGER NOT NULL,
         confirming_mutation_id TEXT,
-        confirming_claimant_id TEXT
+        confirming_claimant_id TEXT,
+        excludes_watermark_roots INTEGER NOT NULL DEFAULT 0
       )
       """
     )
@@ -10334,6 +11215,17 @@ public actor SQLitePersistenceStore {
         plan_id TEXT NOT NULL,
         entity_id TEXT NOT NULL,
         PRIMARY KEY (plan_id, entity_id)
+      ) WITHOUT ROWID
+      """
+    )
+    // A reduced apply's receipt patches (#296), kept with the plan like its roots, so the commit's revalidation
+    // plans the same rows.
+    try execute(
+      """
+      CREATE TEMP TABLE IF NOT EXISTS instant_server_apply_receipt_patches (
+        plan_id TEXT NOT NULL,
+        mutation_id TEXT NOT NULL,
+        PRIMARY KEY (plan_id, mutation_id)
       ) WITHOUT ROWID
       """
     )
@@ -10377,8 +11269,33 @@ public actor SQLitePersistenceStore {
         staged_confirmation_source TEXT,
         staged_delete INTEGER NOT NULL DEFAULT 0,
         staged INTEGER NOT NULL DEFAULT 0,
+        closure_round INTEGER NOT NULL DEFAULT 0,
         PRIMARY KEY (plan_id, mutation_id)
       ) WITHOUT ROWID
+      """
+    )
+    // The entities a plan's component closure has already expanded, with the round that found
+    // them, so each entity is expanded once (#277).
+    try execute(
+      """
+      CREATE TEMP TABLE IF NOT EXISTS instant_server_apply_closure_entities (
+        plan_id TEXT NOT NULL,
+        entity_id TEXT NOT NULL,
+        round INTEGER NOT NULL,
+        PRIMARY KEY (plan_id, entity_id)
+      ) WITHOUT ROWID
+      """
+    )
+    try execute(
+      """
+      CREATE INDEX IF NOT EXISTS instant_server_apply_closure_entities_round_idx
+      ON instant_server_apply_closure_entities (plan_id, round, entity_id)
+      """
+    )
+    try execute(
+      """
+      CREATE INDEX IF NOT EXISTS instant_server_apply_rows_closure_round_idx
+      ON instant_server_apply_rows (plan_id, closure_round, mutation_id)
       """
     )
     try execute(
@@ -12954,11 +13871,11 @@ public actor SQLitePersistenceStore {
     try invalidateDeclaredRelationStorageMarkerIfNeeded(
       replacingAttributes: snapshot.attributes
     )
-    try execute("DELETE FROM instant_attributes")
+    try executeAttributeWrite("DELETE FROM instant_attributes")
     try execute("DELETE FROM instant_triples")
 
     for attribute in snapshot.attributes {
-      try execute(
+      try executeAttributeWrite(
         "INSERT INTO instant_attributes (id, json) VALUES (?, ?)",
         [.text(attribute.id), .text(try encode(attribute))]
       )
@@ -13134,10 +14051,10 @@ public actor SQLitePersistenceStore {
     let attributes = Dictionary(uniqueKeysWithValues: snapshot.attributes.map { ($0.id, $0) })
 
     for id in previousAttributes.keys where attributes[id] == nil {
-      try execute("DELETE FROM instant_attributes WHERE id = ?", [.text(id)])
+      try executeAttributeWrite("DELETE FROM instant_attributes WHERE id = ?", [.text(id)])
     }
     for attribute in snapshot.attributes where previousAttributes[attribute.id] != attribute {
-      try execute(
+      try executeAttributeWrite(
         "INSERT OR REPLACE INTO instant_attributes (id, json) VALUES (?, ?)",
         [.text(attribute.id), .text(try encode(attribute))]
       )
@@ -13722,13 +14639,35 @@ public actor SQLitePersistenceStore {
     )
   }
 
+  /// Runs one statement that writes `instant_attributes`, and forgets the attributes live-result saves reuse.
+  private func executeAttributeWrite(_ sql: String, _ bindings: [SQLiteBinding] = []) throws {
+    attributeWriteGeneration &+= 1
+    try execute(sql, bindings)
+  }
+
+  /// The stored attributes, reused while this connection has not written them and the attribute revision another
+  /// process would bump is unchanged.
+  private func attributesForLiveResultSaveWithoutTransaction() throws -> [InstantAttribute] {
+    let revision = try loadMetadataRevisionWithoutTransaction(Self.attributeRevisionKey)
+    if let cached = liveResultAttributes,
+      cached.revision == revision,
+      cached.generation == attributeWriteGeneration
+    {
+      return cached.attributes
+    }
+    let attributes = try loadAttributesWithoutTransaction(tracesStartupCollection: false)
+    liveResultAttributeLoads += 1
+    liveResultAttributes = (revision, attributeWriteGeneration, attributes)
+    return attributes
+  }
+
   private func saveLiveQueryResultWithoutTransaction(
     _ result: InstantPersistedLiveQueryResult
   ) throws {
     try invalidateDeclaredRelationStorageMarkerIfNeeded(
       forAttributeIDs: Set(result.triples.map(\.attributeID))
     )
-    let attributes = try loadAttributesWithoutTransaction(tracesStartupCollection: false)
+    let attributes = try attributesForLiveResultSaveWithoutTransaction()
     var result = result
     result.triples = InstantLiveQueryNestedLimit.limitedTriples(
       queryKey: result.key,

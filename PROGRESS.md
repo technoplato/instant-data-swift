@@ -1,3 +1,220 @@
+## 2026-10-01 05:55:20 EDT — library-77: frames without the attrs' cost, no gate across the caller's executor, add-query timeouts kept, refused stream reads end (#303 #324 #329)
+
+- **Branch:** `agent/claude-opus-5.5/library-77` from build 76's library `d487ee09`; pushed, not merged. Plan
+  `agent-presence/claude-opus-5.5/plans/2026-10-01-library-77/PLAN.md` (`ba087478`). Gated head
+  **`956fce521ed6f5fc1a374840bbe2f84c4191de6d`** (this PROGRESS entry is the only later commit).
+- **Goal** (Michael, via the coordinator): "fix this please so it works efficiently as as well as the typescript core
+  library".
+- **Commits:**
+  - `f5fed905`: the translator reuses its attribute context per session attrs and local schema.
+  - `7799d170`: live-result saves reuse the stored attributes. Each save inside every commit used to reload the whole
+    attribute table: 17% of the reader's CPU in the experiment's profile.
+  - `bde67df7`: all 111 async InstantRuntime entry points are `@concurrent`, so no gate-held await resumes on the
+    caller's executor. A main-actor `observeAuthSession` held the gate 23-101 s while the first render held main.
+  - `67bda26b`: an add-query timeout or server failure keeps the live query registered and re-sends it on the next
+    init-ok; only a repeating rejection retires it (#324, P1, filed this session).
+  - `778c793b`: init advertises `@instantdb/core` v0.22.75 (skip-attrs and presence patches; batched frames stay
+    off).
+  - `2c4cf84b`: two older test races the gates hit are closed (both fail alone on 23a80571's code too: the flush
+    timeout's idle check 2 of 12, the reclaim test's known-issue scope 4 of 12), and the idle check names a busy owner.
+  - `1ba00779`: a subscribe-stream the server refuses ("Stream is missing") ends every observation behind the reader.
+    Scribe's media fetch on reader devices waited forever behind one missing stream. The same commit pins #329 (a
+    stream written while the socket is closed never reaches the server) as a known issue; its fix is for 78.
+  - Change log and ledger: `6a81039a`, `956fce52`.
+- **Replay benchmark** (the experiment's fixed harness, release, min of 3 rounds, CPU ms per frame, back to back at
+  load 260-990):
+
+  | Build | advert | plain |
+  |---|---|---|
+  | d487ee09 | 20.96 | 32.19 |
+  | 6a81039a | 15.92 | 27.12 |
+  | TS core | 1.1-1.3 | — |
+
+  On the phone d487ee09 runs plain (no advert) and library-77 runs with the advert: 32.19 to 15.92, -51%.
+- **Gates on 6a81039a** (load 400-1,000; each wall-clock failure rerun alone):
+  - Differential and connection survival: pass (25 tests, 2 known issues).
+  - Ten suites (694 tests): 3 wall-clock 250 ms limits (pass alone) and the 2 test races fixed in `2c4cf84b`.
+  - The 211 infinite-query tests: only #304. The 11 library-77 tests: pass.
+  - Phone replay: pass; after a full restatement only clipboardEntries differs, as on d487ee09.
+  - 5-minute live soak: 0 pending, 0 refusals, 1 connection; 41 gate holds (median 458 ms, max 2,585 ms, 22.7 s), inside
+    build 76's interleaved A/B noise band (d487ee09: 49, 419 ms, 1,737 ms, 26.7 s).
+  - Recording 023-shape backlog: 2,505 pending drained in 2:35 (d487ee09: 2,522 in 3:03), 0 expired claims, 0 refusals.
+  - Calibrated-car 30-minute soaks (bd40c50a, the real app, Debug), d487ee09 vs 6a81039a: pending max 4 vs 2, accepts
+    3,574 vs 3,348, 0 refusals, 0 ack timeouts, 1 connection each, CPU median 29% vs 27%. d487ee09's observeAuthSession
+    held the operation gate 48 s at startup (9 serial-gate.stalled); 6a81039a had no stalls and a 2.4 s longest gate
+    wait. The store's WAL stayed at 0.1-3.8 MB over 6a81039a's last 12 minutes.
+- **Gates on 956fce52** (load 550-1,000; failures rerun alone ten times each):
+  - Differential and connection survival: pass (25 tests, 2 known issues).
+  - Ten suites (696 tests): four 250 ms wall-clock limits and transientMutationServerErrorReconnectsAndResendsDurableMutation
+    (a fixed 100 ms sleep); all pass 10 of 10 alone.
+  - The 211 infinite-query tests: #304 and retainedCanceledRawInfiniteHandleReleasesCoordinatorAndRuntime (a release
+    check), which passes 10 of 10 alone. The 11 library-77 tests: pass.
+  - Replay benchmark: 16.59 advert / 28.50 plain (6a81039a 15.92 / 27.12, within noise).
+  - Calibrated-car 10-minute soak: pending max 3, 1,187 of 1,197 writes accepted, 0 refusals, 0 stalls.
+  - Large-store drop A/B (the experiment's harness: a phone-sized store with 24 detail queries, a 120 s outage with
+    dictation at 6x during it; both -O; both lanes in one window). Logs:
+    `/Users/laptop/Sync/audit/instant-ts-vs-swift-2026-09-30/logs/ab-large-drop-76-vs-77-r{1,2,3}/summary.txt`.
+
+    | Pair (slot 1 first) | Shape, host load mean | d487ee09 restore to 0 | 956fce52 restore to 0 |
+    |---|---|---|---|
+    | r1: d487ee09, 956fce52 | outage during the 122 s warmup, 596 | never (2,061 pending at schedule end) | 173 s |
+    | r2: 956fce52, d487ee09 | outage about 168 s into dictation, 783 | 115 s (463 writes/min) | 108 s (494 writes/min) |
+    | r3: d487ee09, 956fce52 | the same as r2, 480 | 90 s (592 writes/min) | 82 s (648 writes/min) |
+
+    Apply commit p50: 1,054 vs 12 ms (r1), 20 vs 13 ms (r2), 18 vs 12 ms (r3). Writer frames: d487ee09's carry the attrs
+    (264-298 KB mean), 956fce52's do not (115-152 KB). In r1 d487ee09 fell into a stall: its flushes found nothing to
+    send while acks waited behind slow applies, and applies slowed as the backlog grew (the experiment agent's count;
+    the mechanism is inference). 956fce52 had one retry exhaustion in r1 (a reconnect and 9 replay refusals); r2 and r3
+    had none in either lane. 77 is never worse on this shape, so the exclusive-apply fallback goes to 78.
+- **Build 78 queue** (sizes):
+  - S, done: the exclusive server-apply fallback, `agent/claude-opus-5.5/library-78-apply-fallback` at `a8030bbe`
+    (on 956fce52). Its test reproduces the large-store drop's exhaustion with this runtime's own writes.
+  - S once its mover is named: acceptMutation's 5-attempt loop also runs out ("The local outbox changed repeatedly
+    while updating mutation") and ends the receive loop; it already holds the operation gate, so something outside it
+    moves the outbox revision.
+  - S-M: pruneLiveQueryResults holds the operation gate 5-13 s while transact waits (serial-gate.stalled).
+  - M: incremental stream snapshots; observers re-read the whole stream on every append (the experiment measured
+    about 15 ms per line and rising visibility). Keep each observer's last snapshot and append to it.
+  - M: #329, start streams written offline once the socket opens (client id versus server id first).
+  - L: resident previous results with write-behind persistence, the TS model (Codable round trips 25-30% and
+    retraction diffs 12.6% of the reader profile).
+  - S: a done stream's reader stays registered after its observation goes out of scope (a scratch test: the observer
+    count stays 1, and a reconnect subscribes it again); upstream deletes the reader at done.
+  - S: an unrouted stream-reader error (no reader owns it) is treated as a failed live session and reconnects; upstream
+    ignores it. Reachable when an observation is cancelled before its refusal arrives (inferred, not yet tested).
+  - Dropped: checkpoints outside the gate. The experiment measured wal_autocheckpoint 1000 vs 0 with no difference.
+  - Known issue: the frame that adds an attribute drops its own rows' values for it, already so at d487ee09.
+- **Next:** the coordinator integrates `956fce52` as build 77's library.
+
+## 2026-09-30 14:50:00 EDT — Build 73's library: live-safe fast drain, refused-write removal, connection survival (#296)
+
+- **Branch:** `agent/claude-opus-5.5/fast-drain-2` from build 72's `0078484f` (pushed; not merged). Build 73's library
+  is **`506089b22043c2f5bcb02712f5b7df698e31b6d3`**. Plan
+  `agent-presence/claude-opus-5.5/plans/2026-09-30-fast-drain-2/PLAN.md` (`83652b96`, `22a24ab8`). The InstantRuntime.swift
+  split with the parallel worker is recorded in `agent-presence/_channels/2026-09-30-build-73-runtime.md`.
+- **Why:**
+  - Build 71 (`bb88af72`, reduction `8bee78eb`) fell behind a live recording on an iPhone simulator against `bd40c50a`.
+    The bisect named `8bee78eb`. Build 72 reverted it (`agent/claude-opus-5.5/fast-drain-revert`, `0078484f`, sources
+    equal to `80db4271`).
+  - Build 72 does not drain a Recording 023-sized backlog: 53 accepts in 10 minutes, 25 connections.
+- **Commits:**
+  - `81eb122c`: reapplies `8bee78eb`.
+  - `2666d343`: receipt patches in place of whole-component rebases.
+  - `b4b9fbe3`: deferred-value hydration, links written from the other side, tail order by id.
+  - `5424c733`: refused writes removed without a rebase; last-write-wins in patches.
+  - `46c131d7`: merges connection survival `984cc351` (reader/applier, one reconnect per socket death).
+  - Data: `bcbcaaed` and `ae55eeda` (the N47 open item: refused replays already superseded on the server).
+  - Change log and ledger: `69ae2476`, `b4d6bce2`, `a18786c8`, `506089b2`.
+- **Evidence** (simulator against `bd40c50a`, uninstrumented, exact head `506089b2`, host load 370-980):
+  - Recording 023-shape backlog: 2,581 → 0 in 3 min 47 s, 1 connection, 0 reconnects, 0 refusals, CPU 63% while
+    draining.
+  - Live soak: CPU 24-29%, pending bounded at 0-30.
+  - Ten suites: 683 tests, 21 known issues (3 load flakes pass on rerun).
+  - Differential: 12 seeds in both shapes equal to the full rebase after every event.
+  - Details: `/Users/laptop/Sync/audit/recording-023-fixes/FAST-DRAIN.md` section 14.
+- **Open:**
+  - One server-apply retry exhaustion under load 900 caused a reconnect; hardening is a follow-up.
+  - Every refresh-ok carries all 447 attrs (134 KB), because Swift does not advertise a core version.
+  - N47: superseded replays still count as failed mutations.
+  - Pattern B known issue unchanged.
+- **Next:** the coordinator builds and installs Scribe build 73 with `506089b2`, then watches Recording 023 drain on the
+  phone.
+## 2026-09-30 22:06:32 EDT — #300 follow-up: live cursor check, the Mac's on-screen detail, and Scribe main measured again (#300 #303 #305)
+
+- **Branch:** the code is unchanged (`0d66e6bb`). This commit adds bookkeeping only: this entry, the plan's status, and
+  upstream-parity notes in the two #300 change-log entries.
+- **Live cursor check (bd40c50a, 21:11 EDT):** a reversed (asc) query after r3 with `afterInclusive` returns
+  [r3, r2]; without it, [r2, r1]. Backward pages after a top eviction rely on this, and upstream never sends it on
+  the reversed order. Evidence: audit `live-cursor-check/output.txt`. The 18 seeded rows are deleted.
+- **Mac detail:** the library loaded all 121 rows, and 118 were drawn on screen. The 3 moved rows sat inside the
+  63-row window but never appeared on screen. Scribe draws by start date while the query pages by update time, so they
+  draw below the window's other rows; that placement is inferred from the sort, not observed. Filed as #305 (Scribe).
+- **Scribe main:** measured again. Current origin/main abba8983 (build 74) + 0d66e6bb fell behind: pending reached 216 and was still growing. Build 73 + 0d66e6bb drained both of its later backlogs (136 to 80, and 56 to 1). Between those runs, build 73's own library 506089b2 grew to 165. So this change is never worse than the baseline in the same window. Tonight's backlogs come from server apply and deferred-value hydration holding the operation gate under the machine's load, and #303's attribution to 753f52e0 is not established (details on #303). Repeat the soak on a quieter machine before a Scribe build ships.
+- **Next:** unchanged. Merge the branch, tag it, and bump Scribe's pin. Scribe main waits for #303.
+
+## 2026-09-30 20:48:46 EDT — Infinite query: a windowed live query keeps paging when rows appear above its first row (#300)
+
+- **Branch:** `agent/claude-opus-5.5/infinite-leading-rows` from `506089b2` (pushed; not merged; nothing published).
+  Plan `agent-presence/claude-opus-5.5/plans/2026-09-30-infinite-leading-rows/PLAN.md` (claims `d30c538d`, `1562eeee`).
+- **`3bcf817d`:** the leading watcher (upstream's live reverse chunk) leaves with the evicted top page and is created
+  again only when backward navigation reaches the top (that page is frozen, the watcher starts above it); trims cut at
+  a page boundary and drop everything beyond; `loadNextPage` after a bottom eviction reloads from the exact frozen
+  boundary, and a frozen chunk's refresh no longer clears `hasEvictedAfter`; `loadPreviousPage` freezes the page it
+  grows from and uses exact boundaries; `canLoadPreviousPage` after kickstart means the top was evicted. The watcher
+  still counts as a page once it holds rows, so Scribe's timeline follows its live head within 2 x 32 rows.
+- **`0d66e6bb`:** a page loaded by `loadPreviousPage` starts from the server's answer, not an earlier query's stored
+  result (`observeLiveInfiniteQueryChunk(seedsFromStoredResult:)`); a stale stored "no rows above" had made the window
+  climb to the head.
+- **Evidence (model-server tests; real-server Mac and simulator runs on bd40c50a):** red on 506089b2's logic, 1,150
+  issues including the Mac's exact 63-row stall; the stale-seed test red on 3bcf817d. Final: 8 focused tests and 8
+  property seeds pass (6 known issues are #302); the ten suites 683 tests, 21 known issues, and one known 250 ms timing
+  flake that passes 3 of 3 alone; the infinite-query suites 211 tests (TypedAPITests has one failure that also fails 3 of 3 on a clean 506089b2 export, now #304). Mac reproduction (Scribe auto-paging
+  7983f557 plus 0d66e6bb): every row down to AP299 list 118 and back to the top, 0 noop-cannot-advance. Live soak (Scribe
+  build 73 cd8039c9 plus 0d66e6bb): pending 0-3, 50-60 accepts per 30 s, CPU about 23%.
+- **Open:** #302 (a moved row's stale facts while the window's top is evicted; store-level, pinned as a known issue).
+  #303 (Scribe main 0c359886 fails the live soak with 506089b2 too; build 73 passes; only 753f52e0 changed in Sources).
+- **Next:** merge the branch into the library line, tag it, and bump Scribe's pin (Package.swift, the installer's
+  REQUIRED_PUBLISHED_DEPENDENCIES and its fixtures). Do not ship Scribe main until #303 is fixed. Report:
+  `/Users/laptop/Sync/audit/infinite-leading-rows-2026-09-30/`.
+
+## 2026-09-29 00:49:08 EDT — Sharing accounts: guest-only OAuth token, log-safe auth sessions, outbox across a guest link (#113)
+
+- **Branch:** `agent/claude-opus-5.5/sharing-accounts` (pushed; not merged; nothing published). Plan
+  `agent-presence/claude-opus-5.5/plans/2026-09-29-sharing-accounts-auth-parity/PLAN.md` (`857e7053`).
+- **`f5e1aec4`:** the ordinary `signInWithOAuth` forwards the refresh token only for a guest session
+  (upstream `Reactor.exchangeCodeForToken`); `signInWithIDToken` keeps forwarding any token (upstream
+  `Reactor.signInWithIdToken`), now pinned by a test.
+- **`a9a55563`:** `InstantAuthSession` prints, debug-prints, and reflects with `refreshToken: <redacted>`
+  and `email: <present>` (image URL too in dumps). Before: all 45 renderings (9 carrier values x 5 methods)
+  contained the token and the email. Codable, Equatable, and Hashable unchanged.
+- **`2d29e8f2`:** `InstantGuestPromotionOutboxTests` pins that a guest's pending write survives a link into an
+  existing account and is sent under the promoted session (diverges from `Reactor.updateUser`, which drops
+  it); `skills/instant-data/SKILL.md` says why and when to drain first.
+- **Evidence (deterministic local and scripted-socket tests, not live):** baseline 25 of 26 focused tests pass
+  (`cliAuthOAuthSignInPersistsAcrossLaunches` needs a fresh release CLI build and was not rebuilt); the new
+  tests were red where expected; after: 67 tests in 10 suites pass (the same 25 baseline tests, the 9 new tests, and 33 more session-related tests with no baseline).
+- **Open:** request and verification types still print tokens; the "ADR 0005 amendment" that Scribe ADR 0014
+  section 9 cites is not written in ADR 0005 on any branch; #113 workLog not updated by this agent.
+
+## 2026-09-28 14:15:00 EDT — Guest-upgrade audit: magic code upgrades in place or links; non-guest token fix (#113)
+
+- **Branch:** `agent/claude-opus-5.5/guest-upgrade-audit` from `agent/claude-opus-5.5/triage-integration-2026-09-27`
+  (`944582a4`); not merged, nothing published.
+- **Measured live on Scribe's Instant app** (coordinator direction; test users only, all deleted): a guest that verifies a
+  magic code for a new email keeps its id (type user); for an existing email (web `createToken` first) it is linked
+  (`linkedPrimaryUser`) and the client holds the primary's session. Old guest tokens stay valid. Same in the TS client.
+- **Fix `aa3d9779`:** magic-code sign-in forwards the refresh token only for a guest session (TS parity). A revoked
+  non-guest token made verify_magic_code fail (record-not-found, HTTP 400); fixed live. Auth failures now carry Instant's
+  error type and message (not the hint). `InstantMagicCodeGuestTokenTests` red before, green after; 590 related tests pass.
+- **Open gaps (not fixed):** no `promoteGuestWithMagicCode` disposition; AuthV3LoginScreen shows no email card for a guest;
+  an identity change does not fence the outbox (a queued guest-owned create was rejected after linking).
+- Report: `/Users/laptop/Sync/audit/web-scribe-2026-09-28/AUTH-AUDIT.md`.
+
+## 2026-09-27 17:40:00 EDT — Triage L: server apply no longer holds local writes; bad rows quarantined (#277 #278)
+
+- **Branch:** `agent/claude-opus-5.5/triage-l-operation-gate-2026-09-27` (pushed; not on `main`), built
+  on `agent/claude-opus-5.5/triage-integration-2026-09-27` and merged with its head `355f6629`. Main
+  integrates; nothing published.
+- **#277 (`af3c0584`):** under the operation gate, server apply's plan commit was quadratic in the pending
+  tail linked to one recording (component closure re-join; outbox rewrite correlated through
+  `outbox.json`). Breadth-first closure plus an uncorrelated rewrite: gate held 969 -> 207 ms at 439
+  pending, 23,479 -> 570 ms at 2,000. New `serial-gate.waited` and `server-apply.operation-gate-held`
+  diagnostics; the stall report names the holder's phase.
+- **#278 (`246e191d`, `2fced8d1`):** typed reads leave out and report a row that fails to decode
+  (`reportIssue` plus `query.row-decode-quarantined`) instead of failing the whole query; new public
+  `decodeQuarantiningFailures(_:operation:)`. Migration 0024 drops, once, local entities that lost
+  their id fact (1,067 sections on the iPhone copy, nothing else; bootstrap 0.25 s).
+- **Evidence:** red/green tests for both; focused suites pass; full debug suite failures all match the
+  known lists or pass alone (load average 50–120); Scribe-shaped memory soak passed with
+  `INSTANT_SWIFT_DATA_LIVE_AUTH_SOAK=0`. The release performance gate was not run (full release
+  rebuild on a loaded shared Mac).
+- **Next:** main merges the branch and installs; then check the phone's diagnostics for
+  `server-apply.operation-gate-held`, `serial-gate.waited`, `query.row-decode-quarantined`, and one
+  `sqlite.repair.entities-missing-id-removed`. Open: server-apply preparation (outside the gate) is
+  still superlinear (~10.5 s apply at 2,000 pending); recording 008's sections are not in the phone's
+  store at all offline (235 of 237), so showing them offline needs a retention decision.
+- Report: `/Users/laptop/Sync/audit/scribe-triage-2026-09-27/L-operation-gate.md`.
+
 ## 2026-09-27 10:05:00 EDT — v1.7.0 published; Scribe main pins it (#250 #254 #155)
 
 - **Published:** tag `v1.7.0` on `main` `252bb6cd` (fast-forward from `c5974110`), GitHub release

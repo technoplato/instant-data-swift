@@ -119,6 +119,20 @@ wrapper with an explicit `nil` key so it does not start a broad observation.
 - Ban polymorphic writes where `await` sometimes means network. Name server
   waits in the API.
 
+### Auth changes keep the outbox (divergence from upstream)
+
+- Upstream `Reactor.updateUser` (`Reactor.js` 2240-2274; `changeCurrentUser` runs it
+  whenever sign-in or sign-out changes the user) fails and drops every pending
+  mutation (`user-changed`). This library keeps the outbox: `PendingMutation` has no
+  user, and delivery resumes under the next session (`InstantGuestPromotionOutboxTests`).
+- Why: a guest who signs in to an existing account keeps the guest's writes. Instant
+  links the guest; rules that admit linked-guest rows accept them and the app adopts
+  them (Scribe ADR 0005 and ADR 0014 §9; `upstream/instant/client/www/app/docs/auth/guest-auth/page.md`).
+- Rules that require direct ownership reject them (a queued guest create was denied
+  after linking, measured 2026-09-28, #113). Unless the rules admit the previous
+  identity's rows, drain the outbox (`waitForAllPendingMutations`) before an upgrade
+  or an account switch.
+
 ### Live speech write shape (Scribe product, library must make cheap)
 
 - **Recipe:** `docs/adr/0015-sqlite-data-parity-ergonomics/open-segment-write-recipe.md`
