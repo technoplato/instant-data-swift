@@ -24,6 +24,21 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 - **User context (verbatim):**
   > Remove the "Increment public / Increment mine" demo counters from Scribe's Account screen on every platform, so tapping them can't write a namespace Scribe's schema doesn't have.
 - **SpecStory:** unavailable — Claude Code CLI session; no SpecStory capture configured for this session.
+## September 30th, 2026 at 9:53:48 p.m. EDT — `1907c0b49859` Restore a refused write's receipt as written, then restamp what it restored to txTime 0 (#296)
+
+- **Implementation commit:** `1907c0b49859612372531a9ab36aa8044e461d73`
+- **Change:** A refused write's receipt is applied as written and what it restored is then restamped to txTime 0, so a receipt that replaces the overlay by its own stamp still removes it (#296).
+- **Details:**
+  - f53f7793 stamped the receipt's inserts at txTime 0 before applying them. An insert-only receipt that relies on its stamp to replace the overlay's value then lost last-write-wins, and the refused value stayed: InstantBoundedServerApplyRebaseTests' failedActiveOverlayIsARootEvenWhenTheServerWriteIsDisjoint failed in the ten suites on df0a711a (store kept failed-local instead of server-base).
+  - The library builds its receipts retract-first (rollbackTransaction(mutationID:prepared:) and rollbackTransaction(of:rebasedOnto:)), and the refusal suites passed on df0a711a, so receipts the library wrote were not affected; the synthetic insert-only receipt was.
+  - Now the receipt's operations run as written, and each restored fact is retracted and inserted again at txTime 0: the receipt decides what comes back, only the stamp changes. The scripted refused-replay case also asserts the refused write's overlay is removed on both paths.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — restoredAsBase keeps the receipt's operations and appends the restamp
+  - `Tests/InstantSwiftDataCoreTests/InstantFastDrainTests.swift` — the refused-replay case checks that the refused overlay is removed
+- **User context (verbatim):**
+  > Then run the gates on that head: the live soak, the Recording 023-shape backlog, the phone-shaped replay through its acceptances and refusals, the ten suites, and the differential.
+- **SpecStory:** unavailable — Claude Code agent session (fast-drain-3); no SpecStory capture configured for this session.
+
 ## September 30th, 2026 at 8:55:52 p.m. EDT — `f53f779317bd` Let the server's facts win against what a refused write restores, on every removal path (#296)
 
 - **Implementation commit:** `f53f779317bdddba4912d92d5a676e5982001a02`

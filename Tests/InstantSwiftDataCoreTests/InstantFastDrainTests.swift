@@ -1427,6 +1427,7 @@ extension InstantFastDrainTests {
   @Test
   func aRefusedReplayLeavesTheServersValueOnBothPaths() async throws {
     var fixtures: [FastDrainFixture] = []
+    var refusedIDs: [String] = []
     for reduces in [true, false] {
       var fixture = try await FastDrainFixture.make(
         suffix: "refused-replay-\(reduces)", serverSegmentCount: 4, pendingSegmentCount: 20, reducesServerApply: reduces,
@@ -1456,6 +1457,7 @@ extension InstantFastDrainTests {
             id: mutation.id, message: "Permission denied: not perms-pass?", claimToken: resent.token
           )
           #expect(failed?.status == .failed)
+          refusedIDs.append(mutation.id)
         } else {
           _ = try await fixture.runtime.acceptMutationIfPresent(
             id: mutation.id, serverTransactionID: transactionID, claimToken: resent.token
@@ -1472,9 +1474,13 @@ extension InstantFastDrainTests {
     let fullObservation = try await FastDrainObservation.observe(fixtures[1].runtime)
     expectNoDifference(reducedObservation.hotFacts, fullObservation.hotFacts)
     expectNoDifference(reducedObservation.persistedFacts, fullObservation.persistedFacts)
-    for observation in [reducedObservation, fullObservation] {
+    for (observation, refusedID) in zip([reducedObservation, fullObservation], refusedIDs) {
       let shown = observation.hotFacts.first { $0.entityID == segment && $0.attributeID == "transcriptionSegments/isFinal" }
       expectNoDifference(shown?.value, "bool(true)")
+      // The value is the server's, not the refused write's: its overlay is gone.
+      let refused = observation.outbox.first { $0.id == refusedID }
+      expectNoDifference(refused?.status, .failed)
+      expectNoDifference(refused?.overlay, "\(Optional(InstantOptimisticOverlayState.removed))")
     }
   }
 

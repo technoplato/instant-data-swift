@@ -3947,11 +3947,17 @@ public final class InstantRuntime: Sendable {
     InstantStoreTransaction(id: rollback.id, operations: restoredAsBase(rollback.operations))
   }
 
+  /// The receipt's operations as written, then each fact it restored again at txTime 0. The receipt itself decides
+  /// what comes back (it retracts the overlay's value before restoring the before-image); only the restored facts'
+  /// stamps change, so a receipt that relies on its own stamp to replace the overlay's value still does.
   static func restoredAsBase(_ operations: [InstantTripleOperation]) -> [InstantTripleOperation] {
-    operations.map { operation in
-      guard case let .insert(triple) = operation else { return operation }
-      return .insert(restoredAsBase(triple))
+    var restored = operations
+    for operation in operations {
+      guard case let .insert(triple) = operation else { continue }
+      restored.append(.retract(triple))
+      restored.append(.insert(restoredAsBase(triple)))
     }
+    return restored
   }
 
   static func restoredAsBase(_ triple: InstantTriple) -> InstantTriple {
