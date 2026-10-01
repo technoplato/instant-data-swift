@@ -210,6 +210,60 @@ private struct InstantLiveInfiniteQueryChunkObservationLease<Element: Sendable>:
   var cancel: @Sendable () async -> Void
 }
 
+/// The stream an observation's consumer iterates (#394).
+///
+/// An observation's emissions reach its consumer through a forwarding task that holds the inner stream's continuation,
+/// so the inner stream's `onTermination` never runs when the consumer simply stops iterating. This stream's storage
+/// holds a release token instead: when the consumer drops the stream and its iterator, as returning out of `for await`
+/// does, the token ends the observation. A consumer that keeps the stream keeps the observation; cancelling the
+/// consuming task ends it through the inner stream, as before.
+private enum InstantObservationConsumerStream {
+  static func make<Element: Sendable>(
+    _ inner: AsyncStream<Element>,
+    onRelease: @escaping @Sendable () -> Void
+  ) -> AsyncStream<Element> {
+    let reader = Reader(inner.makeAsyncIterator(), release: Release(onRelease))
+    return AsyncStream(unfolding: { await reader.next() }, onCancel: { reader.release.fire() })
+  }
+
+  // SAFETY: `lock` guards `action`, which runs at most once.
+  final class Release: @unchecked Sendable {
+    private let lock = NSLock()
+    private var action: (@Sendable () -> Void)?
+
+    init(_ action: @escaping @Sendable () -> Void) {
+      self.action = action
+    }
+
+    func fire() {
+      let action = lock.withLock { () -> (@Sendable () -> Void)? in
+        defer { self.action = nil }
+        return self.action
+      }
+      action?()
+    }
+
+    deinit {
+      fire()
+    }
+  }
+
+  // SAFETY: an `AsyncStream` has one consumer, and its unfolding closure runs one `next()` at a time.
+  final class Reader<Element: Sendable>: @unchecked Sendable {
+    private var iterator: AsyncStream<Element>.Iterator
+    let release: Release
+
+    init(_ iterator: AsyncStream<Element>.Iterator, release: Release) {
+      self.iterator = iterator
+      self.release = release
+    }
+
+    func next() async -> Element? {
+      await iterator.next()
+    }
+  }
+}
+
 private final class InstantLiveObservationTermination: Sendable {
   private let owner: InstantAsyncCancellationOwner
 
@@ -8569,14 +8623,20 @@ public final class InstantRuntime: Sendable {
         await task.value
       }
     }
+    let cancel: @Sendable () async -> Void = {
+      task.cancel()
+      output.continuation.finish()
+      await termination.run()
+      await task.value
+    }
+    // The forwarding task holds `output`'s continuation, so `output` never learns that its consumer left. The consumer
+    // gets a stream whose storage holds a release token instead: returning out of `for await`, or dropping the stream,
+    // ends the observation as an explicit cancel does (#394).
     return InstantLiveInfiniteQueryChunkObservationLease(
-      stream: output.stream,
-      cancel: {
-        task.cancel()
-        output.continuation.finish()
-        await termination.run()
-        await task.value
-      }
+      stream: InstantObservationConsumerStream.make(output.stream) {
+        Task { await cancel() }
+      },
+      cancel: cancel
     )
   }
 
