@@ -49,7 +49,7 @@ scripts/phone-replay/run-phone-replay.sh \
   --until TIME`. The journal keeps growing while the session runs, so keep the extracted file rather than
   re-extracting it.
 
-Wall time is a Debug build: 900-1,350 s on the Mac at host load 300-1,000 for the pre-71 store, plus 5-7 minutes for
+Wall time is a Debug build: 900-1,350 s on the Mac at host load 130-1,000 for the pre-71 store, plus 5-7 minutes for
 a fresh test build.
 
 ## The pre-71 store and its 103 refusals
@@ -59,12 +59,15 @@ a fresh test build.
   on 2026-09-30), all pending in that store. The same journal now also holds 27 later `replay` refusals of that
   session (22:05:54-22:08:30); they are not part of this input.
 
-Published numbers (list frames; `23a80571`, `d487ee09`, and `6a81039a` gave the same counts):
+List frames. The published runs used the original probe on `23a80571`, `d487ee09`, and `6a81039a`, which gave the same
+counts. This tool on `956fce52` (library-77's build) reproduces every count; its log is the reference above.
 
-| | |
-|---|---|
-| Start | 2,487 pending, 116 failed, 103 of 103 refusals pending, window 50 |
-| Drain | 2,487 -> 0 pending, 119 frames, 17 with a component rebase, 26,288 bodies; accepted 2,384, refused 103; failed rows 116 -> 219 |
-| Declines | `failedOverlay` 16, `changesShadowedFact` on a transcription segment 1 |
-| After the drain | 4 segments missing, 20 segments without `ownerUserID` (Pattern B), one route chunk missing 6 fields and another behind, `clipboardEntries` |
-| After a full restatement | only `recordings/clipboardEntries` differs (the phone's older copy of its own write) |
+| | Published | This tool on `956fce52` |
+|---|---|---|
+| Start | 2,487 pending, 116 failed, 103 of 103 refusals pending, window 50 | the same |
+| Drain | 2,487 -> 0 pending, 119 frames, 17 with a component rebase, 26,288 bodies; accepted 2,384, refused 103; failed rows 116 -> 219 | the same, and all 28 printed windows equal |
+| Reductions | 119, all reduced; 1 receipt patch; 1 refused overlay removed by the reduction | the same |
+| Declines | `failedOverlay` 16; `changesShadowedFact` 1 on a transcription segment's `transcriptionID` (`recordingID` on `23a80571`) | the same; the fixed order names the segment's `id` |
+| After the drain | 4 segments missing, 20 segments without `ownerUserID` (Pattern B), one route chunk missing 6 fields and another with 2 behind, `clipboardEntries` | the same 34 example lines |
+| After a full restatement | only `recordings/clipboardEntries` differs (the phone's older copy of its own write) | the same |
+| Wall (Debug) | 900-1,341 s | 900 s drain, 907 s test, host load 126-1,003 |
