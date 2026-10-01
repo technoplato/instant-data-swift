@@ -7065,10 +7065,11 @@ public final class InstantRuntime: Sendable {
       // mutation delivery responses and therefore have no SQLite claim token.
       // Route those feature-owned errors before interpreting a missing token as
       // a stale mutation response.
-      if await liveSession.retireRejectedStreamReader(
+      if let refusedReaderKey = await liveSession.retireRejectedStreamReader(
         clientEventID: error.clientEventID?.nilIfEmpty,
         message: error.message
       ) {
+        await endStreamContentObservations(ofRefusedReader: refusedReaderKey, error: error)
         return
       }
       if let originalEvent = error.originalEvent,
@@ -10105,7 +10106,7 @@ public final class InstantRuntime: Sendable {
       await operationGate.leave()
       return await liveStreamContentObservation(
         stream,
-        key: "stream-id:\(streamID):\(byteOffset)",
+        key: Self.liveStreamReaderKey(.streamID(streamID), byteOffset: byteOffset),
         streamID: streamID,
         initialByteOffset: read.map { $0.byteOffset + $0.byteCount } ?? byteOffset
       )
@@ -10151,7 +10152,7 @@ public final class InstantRuntime: Sendable {
       await operationGate.leave()
       return await liveStreamContentObservation(
         stream,
-        key: "client-id:\(clientID):\(byteOffset)",
+        key: Self.liveStreamReaderKey(.clientID(clientID), byteOffset: byteOffset),
         clientID: clientID,
         initialByteOffset: read.map { $0.byteOffset + $0.byteCount } ?? byteOffset
       )
@@ -10159,6 +10160,40 @@ public final class InstantRuntime: Sendable {
       await operationGate.leave()
       throw error
     }
+  }
+
+  /// The live reader's registration key for the observations of one stream from one byte offset; they share a reader.
+  static func liveStreamReaderKey(_ selector: InstantStreamContentSelector, byteOffset: Int64) -> String {
+    switch selector {
+    case let .streamID(streamID): "stream-id:\(streamID):\(byteOffset)"
+    case let .clientID(clientID): "client-id:\(clientID):\(byteOffset)"
+    }
+  }
+
+  /// Ends the observations behind a reader whose subscription the server refused, as upstream `Stream.ts`
+  /// `onRecieveError` closes the reader's iterator. A stream content observation is a non-throwing `AsyncStream`, so
+  /// the refusal ends iteration (a caller waiting for `done` sees the stream end without it), and is logged here.
+  private func endStreamContentObservations(
+    ofRefusedReader readerKey: String,
+    error: InstantLiveErrorMessage
+  ) async {
+    await streamContentObservers.finish { key, byteOffset in
+      Self.liveStreamReaderKey(key.selector, byteOffset: byteOffset) == readerKey
+    }
+    InstantDiagnostics.shared.record(
+      .warning,
+      subsystem: "instant-swift-data-core",
+      category: "stream",
+      event: "stream.subscription-refused",
+      message: "Instant refused a stream subscription, so the observations of that stream ended.",
+      metadata: [
+        "reader": readerKey,
+        "errorMessage": error.message,
+        "serverStatus": error.status.map(String.init) ?? "",
+        "serverType": error.type ?? "",
+      ],
+      correlationID: error.clientEventID
+    )
   }
 
   private func liveStreamContentObservation(

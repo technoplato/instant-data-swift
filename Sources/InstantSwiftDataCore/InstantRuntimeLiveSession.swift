@@ -1014,8 +1014,10 @@ package actor InstantRuntimeLiveSession {
     registeredStreamReaders[key] = RegisteredStreamReader(reader: reader, observerCount: 1)
     guard let session, isOpened else { return }
     let message = try await reader.subscribeMessage(clientEventID: clientEventID)
-    try await send(message, through: session)
+    // Record the event id before sending, as upstream `Stream.ts` `startReadStream` registers the iterator before
+    // `trySend`: a refusal can arrive while this actor waits for the send, and must find its reader.
     await reader.recordSubscriptionEventID(clientEventID)
+    try await send(message, through: session)
   }
 
   func unregisterStreamReader(key: String, clientEventID: String) async throws {
@@ -1089,11 +1091,13 @@ package actor InstantRuntimeLiveSession {
     return .ignored
   }
 
+  /// Retires the reader whose subscription the server refused, and returns its registration key so the runtime can end
+  /// the observations behind it; `nil` when no reader owns `clientEventID`.
   func retireRejectedStreamReader(
     clientEventID: String?,
     message: String
-  ) async -> Bool {
-    guard let clientEventID else { return false }
+  ) async -> String? {
+    guard let clientEventID else { return nil }
     for key in registeredStreamReaders.keys.sorted() {
       guard let registration = registeredStreamReaders[key],
         await registration.reader.subscriptionEventID == clientEventID
@@ -1105,9 +1109,9 @@ package actor InstantRuntimeLiveSession {
         message: message
       )
       registeredStreamReaders[key] = nil
-      return true
+      return key
     }
-    return false
+    return nil
   }
 
   @discardableResult

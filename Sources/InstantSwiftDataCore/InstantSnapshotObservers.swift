@@ -122,6 +122,14 @@ actor InstantStreamContentObservers {
     observers.values.filter { $0.key == key }.count
   }
 
+  /// Ends the observations `isEnded` selects, as when the server refuses the stream subscription behind them.
+  func finish(where isEnded: (InstantStreamContentObservationKey, Int64) -> Bool) {
+    for (id, observer) in observers where isEnded(observer.key, observer.byteOffset) {
+      observers[id] = nil
+      observer.continuation.finish()
+    }
+  }
+
   private func cancel(id: UUID) {
     observers[id] = nil
   }

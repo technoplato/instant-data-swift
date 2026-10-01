@@ -3666,3 +3666,141 @@ extension InstantReactorParityTests {
     _ = try await runtime.closeConnection()
   }
 }
+
+/// A subscribe-stream the server refuses (it answers 400 "Stream is missing" when a reader subscribes before the writer
+/// creates the stream) ends the reader's observation. Upstream `Reactor.js` `_handleReceiveError` routes every stream
+/// op's error to `Stream.ts` `onRecieveError`, which pushes the error into the reader's iterator, closes it, and deletes
+/// the reader by its event id. Swift only retired the reader's registration, so the observation never ended: Scribe's
+/// media fetch on a reader device awaited it forever, and every later recording's media waited behind it (#303).
+extension InstantReactorParityTests {
+  static func subscribeStreamRefusal(
+    clientEventID: String?,
+    streamID: String,
+    message: String = "Validation failed for subscribe-stream: Stream is missing."
+  ) -> InstantLiveMessage {
+    InstantLiveMessage(
+      op: "error",
+      clientEventID: clientEventID,
+      fields: [
+        "message": .string(message),
+        "type": .string("validation-failed"),
+        "status": .number(400),
+        "original-event": .object([
+          "client-event-id": clientEventID.map(InstantLiveJSONValue.string) ?? .null,
+          "op": .string("subscribe-stream"),
+          "stream-id": .string(streamID),
+        ]),
+      ]
+    )
+  }
+
+  @Test
+  func aRefusedStreamSubscriptionEndsEveryObservationThatSharesIt() async throws {
+    let session = LiveReactorParitySession(messages: [
+      liveReactorInitOK(attrs: liveReactorTodoServerAttrs, sessionID: "refused-stream-reader")
+    ])
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "typescript-refused-stream-subscription-parity",
+        persistenceURL: try temporaryReactorParityCacheURL(),
+        initialAttributes: TodoExample.attributes,
+        liveTransport: session.transport
+      )
+    )
+    _ = try await runtime.signInAsGuest()
+    _ = try await runtime.connect()
+
+    let first = try await runtime.observeStreamContent(streamID: "missing-stream")
+    let second = try await runtime.observeStreamContent(streamID: "missing-stream")
+    let firstObserver = Task { () -> [InstantStreamContentRead] in
+      var values: [InstantStreamContentRead] = []
+      for await value in first { values.append(value) }
+      return values
+    }
+    let secondObserver = Task { () -> [InstantStreamContentRead] in
+      var values: [InstantStreamContentRead] = []
+      for await value in second { values.append(value) }
+      return values
+    }
+    defer {
+      firstObserver.cancel()
+      secondObserver.cancel()
+    }
+    _ = try await Self.sentOps(of: session) { $0.contains("subscribe-stream") }
+    let subscriptions = await session.sentMessages().filter { $0.op == "subscribe-stream" }
+    expectNoDifference(subscriptions.count, 1, "Both observations share one reader and one subscription.")
+    let subscribe = try #require(subscriptions.first)
+    let statusBeforeRefusal = try await runtime.connectionStatus()
+
+    await session.enqueue(
+      Self.subscribeStreamRefusal(clientEventID: subscribe.clientEventID, streamID: "missing-stream")
+    )
+
+    let firstValues = try await instantLiveWithTimeout(
+      operation: "wait for the first refused stream observation to end",
+      timeoutMilliseconds: 3_000
+    ) {
+      await firstObserver.value
+    }
+    let secondValues = try await instantLiveWithTimeout(
+      operation: "wait for the second refused stream observation to end",
+      timeoutMilliseconds: 3_000
+    ) {
+      await secondObserver.value
+    }
+    expectNoDifference(firstValues, [], typescriptStreamRefusalSource)
+    expectNoDifference(secondValues, [], typescriptStreamRefusalSource)
+    let observers = try await runtime.activeStreamContentObservationCount(streamID: "missing-stream")
+    expectNoDifference(observers, 0, typescriptStreamRefusalSource)
+    let status = try await runtime.connectionStatus()
+    expectNoDifference(
+      status.state,
+      statusBeforeRefusal.state,
+      "A refused reader leaves the shared live session as it was."
+    )
+    _ = try await runtime.closeConnection()
+  }
+}
+
+/// A stream written while the socket is closed never reaches the server. `createStream` makes a local-only stream with a
+/// client-made id when the live session is not open, the live session registers no writer for it, so `appendStream` and
+/// `finishStream` return without sending, and nothing starts it later. Upstream `Stream.ts` `createWriteStream` queues
+/// `start-stream` through `trySend` and restarts its write streams on reconnect, so the server gets the stream. Scribe
+/// publishes recording audio and images as streams (`InstantRecordingRealtime.synchronizeMedia`), so media synced
+/// offline reaches other devices as an asset row whose stream the server never gets. Pinned until the fix (#329).
+extension InstantReactorParityTests {
+  @Test
+  func aStreamWrittenWhileOfflineStartsOnTheServerOnceConnected() async throws {
+    let session = LiveReactorParitySession(messages: [
+      liveReactorInitOK(attrs: liveReactorTodoServerAttrs, sessionID: "offline-stream-writer")
+    ])
+    var configuration = InstantRuntimeConfiguration(
+      appID: "typescript-offline-stream-writer-parity",
+      persistenceURL: try temporaryReactorParityCacheURL(),
+      initialAttributes: TodoExample.attributes,
+      liveTransport: session.transport
+    )
+    configuration.autoConnectLiveTransport = false
+    let runtime = try await InstantRuntime.bootstrap(configuration: configuration)
+    _ = try await runtime.signInAsGuest()
+    let metadata = try await runtime.createStream(clientID: "offline-writer")
+    _ = try await runtime.appendStreamContent(streamID: metadata.id, content: "hello", expectedOffset: 0)
+    _ = try await runtime.closeStream(streamID: metadata.id)
+    let sentWhileOffline = await session.sentMessages().map(\.op)
+    expectNoDifference(sentWhileOffline, [], "Nothing is sent while the socket is closed.")
+
+    _ = try await runtime.connect()
+    let ops = try await Self.sentOps(of: session, within: .seconds(2)) { $0.contains("start-stream") }
+    withKnownIssue("A stream written while offline never starts on the server (#329).") {
+      #expect(ops.contains("start-stream"), Comment(rawValue: typescriptOfflineStreamWriterSource))
+      #expect(ops.contains("append-stream"), Comment(rawValue: typescriptOfflineStreamWriterSource))
+    }
+    _ = try await runtime.closeConnection()
+  }
+}
+
+private let typescriptOfflineStreamWriterSource =
+  "upstream/instant/client/packages/core/src/Stream.ts createWriteStream, startWriteStream (trySend), and the write streams' reconnect [Swift gap: a stream created with the socket closed stays local, and its appends and close are never sent.]"
+
+private let typescriptStreamRefusalSource =
+  "upstream/instant/client/packages/core/src/Stream.ts onRecieveError (subscribe-stream) and Reactor.js _handleReceiveError [adapted: Swift's stream content observation is a non-throwing AsyncStream, so the refusal ends every observation that shares the refused reader instead of throwing into one iterator, and the refusal is recorded as a diagnostic.]"
