@@ -1,3 +1,18 @@
+## 2026-10-01 19:55:28 EDT — Account linking verified live: the link path against Instant's real rules, the soak, and the apps (#361)
+
+- **Live test:** `4d928d70` adds `InstantAccountLinksLiveTests` (environment-gated). On the throwaway app `bd40c50a`
+  with Scribe's account-link rules it passed in 5.0 s: a guest primary, `InstantSecondSignIn` verifying a magic code
+  from the admin API (only the email delivery is replaced; Instant's mail provider refuses `example.com`),
+  `InstantAccountLinks` link, reads from both sides, unlink (row deleted), close; the primary's session never changed.
+  Evidence: `/Users/laptop/Sync/audit/account-linking-2026-10-01/evidence/library-live-test/`.
+- **Soak (`scripts/soak-fixed-progression.sh`, 600 s, Scribe with this branch's sources):** pending at most 1, 412 of
+  415 writes accepted, 0 refusals, CPU median 22 percent, RSS at most 399 MB.
+- **Apps:** Scribe's Account screen card on Mac and iPhone (`bd40c50a`): the aggregated list, and the card's Unlink, a
+  live library write (`second-sign-in.write-accepted`, then the unlinked notification).
+- **Follow-ups (not blocking):** the card reads the link only when it appears and opens a temporary client for each
+  read; its email field and AuthV3's sign-in email field capitalize the first letter; sign-in HTTP exchanges have no
+  5-second bound (as everywhere in the library).
+
 ## 2026-10-01 15:33:32 EDT — Account linking: a second sign-in beside the session, account links, and AuthV3 linked sign-ins (#361)
 
 - **Branch:** `agent/claude-opus-5.5/account-linking` from build 77's `956fce52` (pushed; not merged). Plan

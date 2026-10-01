@@ -10,6 +10,20 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## October 1st, 2026 at 7:55:15 p.m. EDT — `4d928d70f013` Link and unlink through a second sign-in against a real Instant server's rules, in an environment-gated live test (#361)
+
+- **Implementation commit:** `4d928d70f01397625f5cdd1906268acab32f6e89`
+- **Change:** Link and unlink through a second sign-in against a real Instant server's rules, in an environment-gated live test (#361)
+- **Details:**
+  - InstantAccountLinksLiveTests: a guest primary, InstantSecondSignIn with a magic code from the admin API (send only records the pending code; Instant's mail provider refuses example.com; verify is live), InstantAccountLinks link, reads from both sides, unlink, close; the primary's session never changes.
+  - Runs only with INSTANT_ACCOUNT_LINK_LIVE_APP_ID (never production), INSTANT_ACCOUNT_LINK_LIVE_EMAIL, and INSTANT_ACCOUNT_LINK_LIVE_CODE.
+  - Evidence on bd40c50a: passed in 5.0 s (guest acd8f353, member 3034496e, link 27aa1dce; no accountLinks row afterwards). A first run failed before any write because signInWithMagicCode needs the pending code a send records. Issue #361.
+- **Files:**
+  - `Tests/InstantSwiftDataTests/InstantAccountLinksLiveTests.swift` — new environment-gated live test of the link path against real rules
+- **User context (verbatim):**
+  > Let's add a functionality to link accounts then. If you have Apple, I want to be able to link it with Google as well so that we aggregate all these different recordings. So it's a library change and
+- **SpecStory:** unavailable — unavailable — Claude Code agent session (account-linking); no SpecStory capture configured for this session.
+
 ## October 1st, 2026 at 3:07:48 p.m. EDT — `c1b53e517427` Link another sign-in from AuthV3 without changing the session, behind authV3ShowsLinkedSignIns (#361)
 
 - **Implementation commit:** `c1b53e517427011a0cea8d42f6f86f9e336d7fb3`

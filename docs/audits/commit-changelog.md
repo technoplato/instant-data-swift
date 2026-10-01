@@ -1,3 +1,15 @@
+## 2026-10-01 19:54:30 EDT — instant-data-swift `4d928d70f01397625f5cdd1906268acab32f6e89`
+Link and unlink through a second sign-in against a real Instant server's rules, in an environment-gated live test (#361).
+
+## 2026-10-01 17:30:56 EDT — scribe `07e51707b33c96dfe01eedc7a9cb2086c158ab79`
+Close accountLinks before the production schema push, and roll back with a deny block: Instant leaves a namespace without rules open (#361).
+
+## 2026-10-01 17:03:01 EDT — scribe `44558453a9b0a5f954e3f2f2151f537e8f6aeaf6`
+Record account linking's soak, iPhone, and Mac evidence, and its progress entry (#361).
+
+## 2026-10-01 15:49:55 EDT — scribe `21f5e7cf10a055f02278867268f9f218ba8a5efe`
+Correct the account-link steps: the Mac signs in with Google since 10:38, so the Apple identity links from the Mac's card (#361).
+
 ## 2026-10-01 15:07:48 EDT — instant-data-swift `c1b53e517427011a0cea8d42f6f86f9e336d7fb3`
 Link another sign-in from AuthV3 (Apple, Google, or an email code) without changing the session: InstantAuthState linking actions and a Linked sign-ins card behind authV3ShowsLinkedSignIns, off by default (#361).
 
