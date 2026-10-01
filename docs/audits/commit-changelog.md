@@ -1,3 +1,21 @@
+## 2026-10-01 15:22:20 EDT — scribe `284ab52b966f6d85f96d38d3b76b132bbbf11ab3`
+Change-log ledger: the stream verification in CHANGELOG and PROGRESS, branch agent/claude-opus-5.5/stream-verify (#003).
+
+## 2026-10-01 15:21:54 EDT — scribe `33f6032462b24d744ca1f052c2cd6f75b21fb7ff`
+The Mac's Phone Screen window plays and recovers by itself (AVPlayer's default waiting, 3 s offset and buffer, a supervising reducer that logs player state, buffer, first frame, stalls, and restarts to the collector), Mac preview gives OBS the phone whenever OBS opens and after restarts, both devices name a Scribe account mismatch, a missed claim says whether the request left the phone, retries never wait on the previous cancel, and the Mac app reaches the loopback collector; verified end to end on bd40c50a; branch agent/claude-opus-5.5/stream-verify, not merged (#003).
+
+## 2026-10-01 15:07:31 EDT — scribe `07115d75b6c1393e53a62f876be1e560dd87fbcd`
+Companion channel: stream-verify's simulator released, the throwaway-app proof, and claims for ScreenStreamLocalSessionClient.swift and OBSWebSocketConfigurationTests.swift (#003).
+
+## 2026-10-01 14:07:24 EDT — scribe `ba9fe7de90cc0154d5faa8a2b87982f8f88c70cb`
+Companion channel: stream-verify's simulator and first Mac proof (#003).
+
+## 2026-10-01 11:39:20 EDT — scribe `839a509cae40b2a1d8a16d7bf0f48545d7dcfe9f`
+Claim the stream accounts test file for plan 2026-10-01-stream-verify; `d2d30b0b260339c3e079f471ac12122766b85ebe` (11:38:55) is the same claim on the branch (#003).
+
+## 2026-10-01 10:59:29 EDT — scribe `5831c682da8d6eb0b2e89c087c2e18460cd59399`
+Plan 2026-10-01-stream-verify and its claims: the Mac player starts by itself, OBS gets the phone, and every setup failure says where (#003).
+
 ## 2026-09-27 12:47:34 EDT — realtime-voice-sqlite-instant `a5b192c298927e36080235ef352386bc6f760c6f`
 PROGRESS: Scribe 0.1 (61) on the iPhone and the Mac app with the phone-to-Mac stream (#003 #224 #257).
 
