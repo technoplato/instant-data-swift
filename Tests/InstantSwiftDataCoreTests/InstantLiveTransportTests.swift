@@ -4701,6 +4701,18 @@ struct InstantLiveTransportTests {
       createdAt: createdAt
     )
     await session.waitForSentMessageCount(2)
+    // The automatic pump that offered the mutation can still be finishing its pass. If it sees the expired offer, it
+    // reclaims it and reports the expiry outside the known-issue scope below. Let it go idle first, so the explicit
+    // flush is the only lane that sees the expiry.
+    try await instantLiveWithTimeout(
+      operation: "wait for the automatic pump to finish offering the mutation",
+      timeoutMilliseconds: 5_000
+    ) {
+      while !(await runtime.automaticMutationPumpIsIdleForTesting()) {
+        try Task.checkCancellation()
+        await Task.yield()
+      }
+    }
     let originalClaim = try #require(
       try await runtime.persistence.outboxDeliveryClaimForTesting(id: mutationID)
     )

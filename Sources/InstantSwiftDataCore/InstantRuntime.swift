@@ -6047,6 +6047,12 @@ public final class InstantRuntime: Sendable {
     await exactCloseBackgroundTaskIdleState().allIdle
   }
 
+  /// The background owners that are not idle, by name; empty when all are idle.
+  @concurrent
+  package func exactCloseBackgroundTaskNonIdleOwnersForTesting() async -> [String] {
+    await exactCloseBackgroundTaskIdleState().nonIdleOwnerNames
+  }
+
   private func exactCloseBackgroundTaskIdleState() async
     -> InstantRuntimeExactCloseIdleState
   {

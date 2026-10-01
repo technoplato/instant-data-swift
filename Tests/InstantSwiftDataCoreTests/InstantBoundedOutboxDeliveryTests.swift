@@ -920,6 +920,17 @@ struct InstantBoundedOutboxDeliveryTests {
       entityID: "one-explicit-timeout-entity"
     )
     _ = try await runtime.transact(mutation.transaction, createdAt: mutation.createdAt)
+    // Bootstrap starts the startup cookie sync at utility priority, and under load it can still be pending when this
+    // short test ends. Let it finish first, so the last idle check measures only what the flush leaves behind.
+    try await instantLiveWithTimeout(
+      operation: "wait for bootstrap's startup cookie sync to finish",
+      timeoutMilliseconds: 5_000
+    ) {
+      while !(await runtime.exactCloseBackgroundTasksAreIdleForTesting()) {
+        try Task.checkCancellation()
+        await Task.yield()
+      }
+    }
 
     let flush = Task {
       defer { completion.record() }
@@ -1032,7 +1043,8 @@ struct InstantBoundedOutboxDeliveryTests {
 
     expectNoDifference(completion.didComplete, true)
     expectNoDifference(transport.abortCount, 1, "Prepared-operation abort is idempotent.")
-    #expect(await runtime.exactCloseBackgroundTasksAreIdleForTesting())
+    let nonIdleOwners = await runtime.exactCloseBackgroundTaskNonIdleOwnersForTesting()
+    expectNoDifference(nonIdleOwners, [])
     let pendingCount = try await runtime.persistence.countOutboxMutations(status: .pending)
     expectNoDifference(pendingCount, 0)
     let confirmedCount = try await runtime.persistence.countOutboxMutations(status: .confirmed)
