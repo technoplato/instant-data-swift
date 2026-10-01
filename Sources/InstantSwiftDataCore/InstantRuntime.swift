@@ -376,6 +376,10 @@ public struct InstantRuntimeConfiguration: Sendable {
     (@Sendable (_ transactionID: String) async -> Void)? = nil
   var onServerApplyPreparedBeforeCommitForTesting:
     (@Sendable (_ planID: String) async -> Void)? = nil
+  /// Runs after each server-apply attempt takes its seed and before it begins its plan; `operationGateHeld` is true
+  /// when the attempt holds the operation gate, so a local write started here waits for it.
+  var onServerApplySeedLoadedForTesting:
+    (@Sendable (_ operationGateHeld: Bool) async -> Void)? = nil
   package var onServerApplyCatchUpReplayedOutsideOperationGateForTesting:
     (@Sendable (_ appendedBodyCount: Int) async -> Void)? = nil
   package var onServerApplyCatchUpReplayedForTesting:
@@ -2669,7 +2673,8 @@ public final class InstantRuntime: Sendable {
     mergingAttributes attributesToMerge: [InstantAttribute] = [],
     liveQueryResultReplacements: [InstantLiveQueryResultReplacement] = [],
     operationGateAlreadyHeld: Bool = false,
-    initialSeed: InstantServerApplySeed? = nil
+    initialSeed: InstantServerApplySeed? = nil,
+    maximumAttempts: Int = 5
   ) async throws -> InstantAppliedServerTransaction {
     let processedTransactionID = (processedTransactionID ?? transaction.id)
       .trimmingCharacters(in: .whitespacesAndNewlines)
@@ -2694,7 +2699,7 @@ public final class InstantRuntime: Sendable {
     }
 
     var initialSeed = initialSeed
-    applyAttempts: for _ in 0..<5 {
+    applyAttempts: for _ in 0..<maximumAttempts {
       let seed: InstantServerApplySeed
       if let firstSeed = initialSeed {
         seed = firstSeed
@@ -2704,6 +2709,7 @@ public final class InstantRuntime: Sendable {
           operationGateAlreadyHeld: operationGateAlreadyHeld
         )
       }
+      await configuration.onServerApplySeedLoadedForTesting?(operationGateAlreadyHeld)
       let compactState = seed.state
       var authoritativeTransaction = baseAuthoritativeTransaction
       if !liveQueryResultReplacements.isEmpty {
@@ -3439,7 +3445,72 @@ public final class InstantRuntime: Sendable {
       }
     }
 
+    if !operationGateAlreadyHeld {
+      // #303: each optimistic attempt prepares outside the operation gate, and this runtime's own local writes landed
+      // between its seed and its plan every time (dictation that keeps writing beneath a large frame). Throwing here
+      // ended the live receive loop: the reconnect re-sent in-flight writes, and the server refused them as replays.
+      // Apply once more holding the operation gate from seed to commit, so local writes wait and this transaction
+      // lands. A peer runtime writing the same file is not held by this gate; if it still moves the store, the single
+      // exclusive attempt is stale too and the apply throws, bounded as before.
+      let exclusiveStartedAt = ContinuousClock.now
+      try await enterOperationGateUnlessCancelled(operation: "apply server transaction exclusively")
+      InstantDiagnostics.shared.record(
+        .warning,
+        subsystem: "instant-swift-data-core",
+        category: "server-apply",
+        event: "server-apply.exclusive-fallback",
+        message:
+          "Local writes changed the store during every optimistic server-apply attempt, so this one applies while local writes wait.",
+        metadata: [
+          "processedTransactionID": processedTransactionID,
+          "optimisticAttemptCount": String(maximumAttempts),
+        ]
+      )
+      do {
+        let applied = try await performApplyServerTransaction(
+          transaction,
+          processedTransactionID: processedTransactionID,
+          receivedAt: receivedAt,
+          confirmingMutationID: confirmingMutationID,
+          mergingAttributes: attributesToMerge,
+          liveQueryResultReplacements: liveQueryResultReplacements,
+          operationGateAlreadyHeld: true,
+          maximumAttempts: 1
+        )
+        await leaveOperationGate()
+        recordExclusiveServerApply(processedTransactionID: processedTransactionID, startedAt: exclusiveStartedAt, error: nil)
+        return applied
+      } catch {
+        await leaveOperationGate()
+        recordExclusiveServerApply(processedTransactionID: processedTransactionID, startedAt: exclusiveStartedAt, error: error)
+        throw error
+      }
+    }
     throw serverTransactionChangedDuringPersistence(id: processedTransactionID)
+  }
+
+  /// How long the exclusive server-apply fallback held local writes, from its wait for the operation gate to release.
+  private func recordExclusiveServerApply(
+    processedTransactionID: String,
+    startedAt: ContinuousClock.Instant,
+    error: Error?
+  ) {
+    let elapsed = startedAt.duration(to: ContinuousClock.now)
+    let milliseconds = elapsed.components.seconds * 1_000 + elapsed.components.attoseconds / 1_000_000_000_000_000
+    InstantDiagnostics.shared.record(
+      error == nil ? .info : .warning,
+      subsystem: "instant-swift-data-core",
+      category: "server-apply",
+      event: "server-apply.exclusive-fallback-finished",
+      message: error == nil
+        ? "The exclusive server apply landed."
+        : "The exclusive server apply failed too.",
+      metadata: [
+        "processedTransactionID": processedTransactionID,
+        "elapsedMilliseconds": String(milliseconds),
+        "outcome": error == nil ? "applied" : "failed",
+      ]
+    )
   }
 
   private static func serverApplyFootprint(
