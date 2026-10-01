@@ -10,6 +10,70 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## October 1st, 2026 at 3:39:12 p.m. EDT — `aa1cca45cc81` Prune inactive live-query results in bounded batches so a local write waits for one batch, not the whole prune (#303)
+
+- **Implementation commit:** `aa1cca45cc816986647526fc9e693358df236a69`
+- **Change:** Inactive live-query results are pruned in bounded batches, one operation-gate hold each, so a local write waits for one batch (#303).
+- **Details:**
+  - The large-store drop held the gate 5.8-13.2 s per first prune while about 57,000 triples were removed, and the queued transact was the lane's slowest local write in 7 of 8 lanes.
+  - Batches of about 5,000 result triples (liveQueryResultPruneBatchTripleCount); facts a batch released but kept for their entity are carried into the next batch, so whole-entity removal (#259) equals one prune's.
+  - Tests: InstantPruneGateHoldTests, with the bound off the write lands after all 24 results (one batch); with a 2,000-triple bound after the first of 6 batches, with the split entity removed and the local-data entity kept.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — bounded batch and carried releases
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — batch loop with the gate released between batches
+  - `Tests/InstantSwiftDataCoreTests/InstantPruneGateHoldTests.swift` — gate-hold tests
+- **User context (verbatim):**
+  > fix this please so it works efficiently as as well as the typescript core library
+- **SpecStory:** unavailable — unavailable — Claude Code agent session (library-78); no SpecStory capture configured for this session.
+
+## October 1st, 2026 at 3:39:12 p.m. EDT — `c60763464b63` Resolve refused writes that are only duplicates: don't re-send a write that accepted later writes cover, and park a replay refusal behind the covering writes in flight (library-78 item 3)
+
+- **Implementation commit:** `c60763464b6301f93ab9cdcdb7199d6d1cbdddfe`
+- **Change:** Refused writes that are only duplicates resolve as accepted: a re-send that accepted later writes cover is not offered again, and a replay refusal that writes in flight cover is parked until they are answered (library-78 item 3).
+- **Details:**
+  - In the experiment's large-store drop runs every replay refusal was a re-send whose first offer the server had applied and answered; the receive loop's failure discarded the buffered acknowledgements and the reconnect re-sent the window in order.
+  - Coverage: later non-failed rows sharing a stored write key; inserts and merges only; cardinality-one slots by a later insert, other values by the same value. A write with no later row on its slots costs one indexed query.
+  - A covered re-send is resolved at claim time with the new confirmation source supersededByAcceptedWrite and the newest covering server transaction id. A permission refusal that accepted writes cover resolves the same way; a replay refusal that writes in flight cover keeps its claim (10-minute deadline) until they are answered. First-offer refusals stand unless accepted writes cover them.
+  - Delivery stays an ordered prefix: holding re-sends out of the window made the differential's seed 3 diverge, so it is not in the commit.
+  - Tests: InstantSupersededReplayTests (3 behavior tests red with coverage off, 2 controls); the ack-timeout generation test now expects the predecessor superseded, not re-sent.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — coverage, supersession, refusal resolution, parked refusals, claim-time supersession
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — refusal resolution before the terminal path, parked refusals resolved on answers, durableOutboxMutationsForTesting
+  - `Sources/InstantSwiftDataCore/BoundedOutboxDelivery.swift` — coverage and resolution types, parked refusal state
+  - `Sources/InstantSwiftDataCore/InstantModels.swift` — InstantMutationConfirmationSource.supersededByAcceptedWrite
+  - `Tests/InstantSwiftDataCoreTests/InstantSupersededReplayTests.swift` — item 3 tests
+  - `Tests/InstantSwiftDataCoreTests/InstantBoundedOutboxDeliveryTests.swift` — ack-timeout test expects supersession
+- **User context (verbatim):**
+  > I want to know why rights are refused in the first place? I don't think they really should be
+- **SpecStory:** unavailable — unavailable — Claude Code agent session (library-78); no SpecStory capture configured for this session.
+
+## October 1st, 2026 at 3:39:12 p.m. EDT — `bc605468dcef` Pin the same-session retry in the permission-service 500 test (#376)
+
+- **Implementation commit:** `bc605468dcef5b0f5116429ddca0bbf903424097`
+- **Change:** The permission-service 500 test pins the same-session retry (#376).
+- **Details:**
+  - server500PermissionEvaluationFailureRemainsRetryable expected a reconnect; since 8dd3bf28 a transient server error keeps the socket and the write is offered again on the same session, still pending and not failed.
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantOutboxHydrationTests.swift` — same-session retry, one connection
+- **User context (verbatim):**
+  > Why couldn't it just reconnect? Yeah, why are the reconnects there in the first place?
+- **SpecStory:** unavailable — unavailable — Claude Code agent session (library-78); no SpecStory capture configured for this session.
+
+## October 1st, 2026 at 3:39:11 p.m. EDT — `af2928d5d9c4` Record a refused write under one exclusive attempt when local writes made every attempt stale, instead of ending the receive loop (#303)
+
+- **Implementation commit:** `af2928d5d9c40d7f817b5c1e3ddd683b53052c7a`
+- **Change:** Recording a refused write gets one exclusive attempt when local writes made every attempt stale, instead of ending the receive loop (#303).
+- **Details:**
+  - The measured 'local outbox changed repeatedly while updating mutation' exhaustions (pair-large-drop-r1) are in failClaimedMutation, not acceptMutation: acceptMutation holds the operation gate for its whole loop, so only a peer connection could move its revision. failClaimedMutation releases the gate between loading and committing, and dictation's own writes landed in that window five times in a row.
+  - The component-limit branch reads the outbox revision after re-entering the gate (the row's claim token is the guard); after five optimistic attempts one attempt holds the gate from load to commit, as the exclusive server apply does.
+  - Test first: InstantOutboxRevisionGateTests lands a local write after each attempt's load; with only the hook the refusal is never recorded and the receive loop fails (red), now one exclusive attempt records it and the socket stays open.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — failClaimedMutation split into attempts with an exclusive final attempt; testing hook
+  - `Tests/InstantSwiftDataCoreTests/InstantOutboxRevisionGateTests.swift` — red/green test
+- **User context (verbatim):**
+  > fix this please so it works efficiently as as well as the typescript core library
+- **SpecStory:** unavailable — unavailable — Claude Code agent session (library-78); no SpecStory capture configured for this session.
+
 ## October 1st, 2026 at 1:51:46 p.m. EDT — `8dd3bf28a6bb` Keep the socket on transient server errors: retry the write or the live query on it with backoff, and tell subscribers (#376 #360)
 
 - **Implementation commit:** `8dd3bf28a6bb2a25aed21980ff24c7bdc23382aa`

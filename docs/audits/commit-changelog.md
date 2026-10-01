@@ -1,3 +1,15 @@
+## 2026-10-01 15:38:48 EDT — instant-data-swift `aa1cca45cc816986647526fc9e693358df236a69`
+Prune inactive live-query results in bounded batches so a local write waits for one batch, not the whole prune (#303).
+
+## 2026-10-01 15:35:23 EDT — instant-data-swift `c60763464b6301f93ab9cdcdb7199d6d1cbdddfe`
+Resolve refused writes that are only duplicates: a re-send that accepted later writes cover is not offered again, and a replay refusal that writes in flight cover is parked until they are answered (library-78 item 3).
+
+## 2026-10-01 15:28:13 EDT — instant-data-swift `bc605468dcef5b0f5116429ddca0bbf903424097`
+Pin the same-session retry in the permission-service 500 test (#376).
+
+## 2026-10-01 14:08:14 EDT — instant-data-swift `af2928d5d9c40d7f817b5c1e3ddd683b53052c7a`
+Record a refused write under one exclusive attempt when local writes made every attempt stale, instead of ending the receive loop; the measured exhaustion was failClaimedMutation, not acceptMutation (#303).
+
 ## 2026-10-01 13:51:01 EDT — instant-data-swift `8dd3bf28a6bb2a25aed21980ff24c7bdc23382aa`
 Keep the socket on transient server errors: a write or live query the server answers with a 5xx or timeout is retried on the same socket with a growing, jittered backoff, and its subscribers see the error without their streams ending; unrouted errors keep the socket (#376 #360).
 
