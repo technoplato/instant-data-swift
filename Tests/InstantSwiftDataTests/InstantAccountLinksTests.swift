@@ -673,3 +673,198 @@ func secondSignInStores(appID: String) -> [String] {
   let names = (try? FileManager.default.contentsOfDirectory(atPath: directory.path)) ?? []
   return names.filter { $0.hasPrefix(appID + "-") && $0.hasSuffix(".sqlite") }.sorted()
 }
+
+// MARK: - InstantAuthState linking
+
+/// `InstantAuthState`'s linking actions drive ``InstantSecondSignIn`` and ``InstantAccountLinks`` for AuthV3. Through
+/// the same fake server: the primary session never changes, the link lands in `accountLink`, and every second sign-in
+/// closes (its minted token revoked, its store deleted) on success, on failure, and on cancel.
+@Suite(.serialized)
+@MainActor
+struct InstantAuthStateLinkingTests {
+  static let google = AuthProvider.google(
+    clientName: "google",
+    presentation: .externalBrowser,
+    redirectURL: URL(string: "account-linking-test://oauth-callback")
+  )
+
+  /// Answers Google with the authorization code `code-b`, as the browser sign-in would.
+  static let authorizer = InstantAuthProviderAuthorizer { provider in
+    InstantAuthProviderCredential(
+      providerID: provider.id,
+      payload: .authorizationCode(value: "code-b", codeVerifier: "verifier-b")
+    )
+  }
+
+  @Test("linkAnotherSignIn keeps the primary session, updates the link, and closes the second sign-in")
+  func linkAnotherSignInLinksAndClosesTheSecond() async throws {
+    let fixture = try await SecondSignInFixture.make(primary: .user)
+    defer { fixture.removePrimaryStore() }
+    await fixture.server.expectOAuthCode("code-b", signsIn: "user-b")
+    let state = InstantAuthState<LinkingTestUser>(providers: [Self.google])
+    let callbacks = LinkingCallbacks()
+    let before = try await fixture.primaryState()
+
+    await state.linkAnotherSignIn(
+      Self.google,
+      using: fixture.primary,
+      authorizer: Self.authorizer,
+      deviceName: "Test Mac",
+      onLinked: { callbacks.linked.append($0) },
+      onFailure: { callbacks.failures.append($0) }
+    ).value
+
+    expectNoDifference(state.linking, .idle)
+    expectNoDifference(state.accountLink?.members.map(\.userID), ["user-a", "user-b"])
+    expectNoDifference(state.accountLink?.members.map(\.provider), [nil, .google])
+    expectNoDifference(callbacks.linked, state.accountLink.map { [$0] } ?? [])
+    expectNoDifference(callbacks.failures, [])
+    let after = try await fixture.primaryState()
+    expectNoDifference(after, before)
+    let minted = await fixture.server.mintedTokens
+    let signOuts = await fixture.server.signOutTokens
+    expectNoDifference(minted.count, 1)
+    expectNoDifference(signOuts, minted)
+    expectNoDifference(secondSignInStores(appID: fixture.appID), [])
+  }
+
+  @Test("A failed link ends in failed, names the step, and still closes the second sign-in")
+  func aFailedLinkStillClosesTheSecond() async throws {
+    let fixture = try await SecondSignInFixture.make(primary: .user)
+    defer { fixture.removePrimaryStore() }
+    await fixture.server.expectOAuthCode("code-b", signsIn: "user-b")
+    await fixture.server.answerTransacts { frame in
+      frame.userID == "user-b" ? .refuse("Permission denied: link members") : .accept
+    }
+    let state = InstantAuthState<LinkingTestUser>(providers: [Self.google])
+    let callbacks = LinkingCallbacks()
+    let before = try await fixture.primaryState()
+
+    await state.linkAnotherSignIn(
+      Self.google,
+      using: fixture.primary,
+      authorizer: Self.authorizer,
+      onLinked: { callbacks.linked.append($0) },
+      onFailure: { callbacks.failures.append($0) }
+    ).value
+
+    guard case .failed(let error) = state.linking else {
+      Issue.record("Expected a failed link, got \(state.linking).")
+      return
+    }
+    expectNoDifference(
+      error.message,
+      "Account linking stopped while joining: Permission denied: link members"
+    )
+    expectNoDifference(callbacks.failures, [error])
+    expectNoDifference(callbacks.linked, [])
+    expectNoDifference(state.accountLink, nil)
+    let after = try await fixture.primaryState()
+    expectNoDifference(after, before)
+    let minted = await fixture.server.mintedTokens
+    let signOuts = await fixture.server.signOutTokens
+    expectNoDifference(signOuts, minted)
+    expectNoDifference(secondSignInStores(appID: fixture.appID), [])
+  }
+
+  @Test("The email code path holds the second sign-in until the code links it, then closes it")
+  func theEmailCodePathHoldsThenCloses() async throws {
+    let fixture = try await SecondSignInFixture.make(primary: .user)
+    defer { fixture.removePrimaryStore() }
+    await fixture.server.expectMagicCode(email: "b@example.com", code: "123456", signsIn: "user-b")
+    let state = InstantAuthState<LinkingTestUser>(providers: [Self.google])
+
+    await state.sendLinkMagicCode(email: " b@example.com ", using: fixture.primary).value
+    expectNoDifference(state.linking, .codeSent(email: "b@example.com"))
+    expectNoDifference(state.linkCodeEmail, "b@example.com")
+    expectNoDifference(secondSignInStores(appID: fixture.appID).count, 1)
+
+    await state.verifyLinkMagicCode(email: "b@example.com", code: "000000", using: fixture.primary).value
+    guard case .failed = state.linking else {
+      Issue.record("Expected a wrong code to fail, got \(state.linking).")
+      return
+    }
+    expectNoDifference(state.linkCodeEmail, "b@example.com")
+    expectNoDifference(secondSignInStores(appID: fixture.appID).count, 1)
+
+    await state.verifyLinkMagicCode(
+      email: "b@example.com",
+      code: "123456",
+      using: fixture.primary,
+      deviceName: "Test Mac"
+    ).value
+    expectNoDifference(state.linking, .idle)
+    expectNoDifference(state.linkCodeEmail, nil)
+    expectNoDifference(state.accountLink?.members.map(\.userID), ["user-a", "user-b"])
+    expectNoDifference(state.accountLink?.members.map(\.provider), [nil, .magicCode])
+    expectNoDifference(secondSignInStores(appID: fixture.appID), [])
+    let minted = await fixture.server.mintedTokens
+    let signOuts = await fixture.server.signOutTokens
+    expectNoDifference(signOuts, minted)
+  }
+
+  @Test("Cancelling a pending code closes the held second sign-in")
+  func cancellingAPendingCodeClosesTheHeldSecond() async throws {
+    let fixture = try await SecondSignInFixture.make(primary: .user)
+    defer { fixture.removePrimaryStore() }
+    await fixture.server.expectMagicCode(email: "b@example.com", code: "123456", signsIn: "user-b")
+    let state = InstantAuthState<LinkingTestUser>(providers: [Self.google])
+    await state.sendLinkMagicCode(email: "b@example.com", using: fixture.primary).value
+    expectNoDifference(secondSignInStores(appID: fixture.appID).count, 1)
+
+    await state.cancelLinking().value
+
+    expectNoDifference(state.linking, .idle)
+    expectNoDifference(state.linkCodeEmail, nil)
+    expectNoDifference(secondSignInStores(appID: fixture.appID), [])
+    let signOuts = await fixture.server.signOutTokens
+    expectNoDifference(signOuts, [])
+  }
+
+  @Test("refreshAccountLink reads the link, and unlink updates it")
+  func refreshAndUnlinkUpdateTheAccountLink() async throws {
+    let fixture = try await SecondSignInFixture.make(primary: .user)
+    defer { fixture.removePrimaryStore() }
+    await seedLink(fixture.server, id: "link-ab", members: ["user-a", "user-b"])
+    let state = InstantAuthState<LinkingTestUser>(providers: [Self.google])
+    let callbacks = LinkingCallbacks()
+
+    await state.refreshAccountLink(using: fixture.primary).value
+    expectNoDifference(state.accountLink?.id, "link-ab")
+    expectNoDifference(state.accountLink?.members.map(\.userID), ["user-a", "user-b"])
+
+    await state.unlink(
+      memberUserID: "user-b",
+      using: fixture.primary,
+      onUnlinked: { callbacks.unlinked.append($0) },
+      onFailure: { callbacks.failures.append($0) }
+    ).value
+
+    expectNoDifference(state.linking, .idle)
+    expectNoDifference(state.accountLink, nil)
+    expectNoDifference(callbacks.unlinked, [nil])
+    expectNoDifference(callbacks.failures, [])
+    let transacts = await fixture.server.transacts
+    expectNoDifference(transacts.map(\.userID), ["user-a"])
+    expectNoDifference(secondSignInStores(appID: fixture.appID), [])
+  }
+}
+
+/// The smallest `$users` model `InstantAuthState` needs.
+struct LinkingTestUser: InstantEntityModel {
+  static let instantNamespace = "$users"
+  static let instantAttributes: [InstantAttribute] = []
+
+  var id: InstantID<Self>
+
+  init(snapshot: InstantEntitySnapshot) throws {
+    id = InstantID(rawValue: snapshot.id)
+  }
+}
+
+@MainActor
+final class LinkingCallbacks {
+  var linked: [InstantAccountLink] = []
+  var unlinked: [InstantAccountLink?] = []
+  var failures: [InstantError] = []
+}
