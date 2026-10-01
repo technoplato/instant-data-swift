@@ -1,3 +1,6 @@
+## 2026-10-01 13:51:01 EDT — instant-data-swift `8dd3bf28a6bb2a25aed21980ff24c7bdc23382aa`
+Keep the socket on transient server errors: a write or live query the server answers with a 5xx or timeout is retried on the same socket with a growing, jittered backoff, and its subscribers see the error without their streams ending; unrouted errors keep the socket (#376 #360).
+
 ## 2026-10-01 04:22:17 EDT — instant-data-swift `1ba0077985528f9633d987cedaa145baeb698452`
 End every stream observation behind a subscription the server refuses (Stream is missing), and pin the offline stream writer gap as a known issue (#303 #329).
 

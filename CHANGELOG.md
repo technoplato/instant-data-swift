@@ -10,6 +10,34 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## October 1st, 2026 at 1:51:46 p.m. EDT — `8dd3bf28a6bb` Keep the socket on transient server errors: retry the write or the live query on it with backoff, and tell subscribers (#376 #360)
+
+- **Implementation commit:** `8dd3bf28a6bb2a25aed21980ff24c7bdc23382aa`
+- **Change:** Transient server errors keep the socket: the write or the live query is retried on it with a growing, jittered backoff, and subscribers see the error without their streams ending (#376 #360).
+- **Details:**
+  - A write answered with 408/425/429/5xx or a timeout type releases only its own claim; delivery pauses for 250 ms doubling per consecutive failure of that write, capped at 5 s, jitter 0.5-1x, then probes one write at a time until the server accepts one. Swift used to close the healthy socket and reconnect at once: 36 reconnects and 324 add-queries in 12 s in the companion harness (#376).
+  - A transient add-query error re-sends the add-query on the same socket with the same backoff (reset on add-query-ok or add-query-exists); permission and validation rejections are still retired. Library-77 waited for the next init-ok, which a healthy socket never sends (#360: 0 of 6 reply cards on the phone).
+  - Subscribers get the error without the stream ending: InstantQueryEmission.error, the infinite snapshot's error with its rows kept, FetchSubscription.liveQueryError, and FetchAll/FetchOne/Fetch loadError; the latest values are re-emitted when the error changes. Upstream Reactor.js keeps the socket in both cases (_handleMutationError, notifyQueryError).
+  - An error no write, query, or stream owns is logged (websocket.error-unrouted) and keeps the socket, as upstream console.errors it.
+  - Tests: InstantTransientMutationRetryTests and InstantLiveQueryErrorRecoveryTests (red on 956fce52 for the same-socket retry and re-send) and InstantLiveQueryErrorSubscriptionTests; 187 parity, transport, survival, and differential tests pass (7 known issues, one 250 ms bound at load 280).
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — same-socket write retry, delivery pause and probe, add-query error delivery and resend, reportingLiveQueryErrors, unrouted errors logged
+  - `Sources/InstantSwiftDataCore/InstantRuntimeLiveSession.swift` — scheduleQueryResend, recordQueryAnswered, inconclusive answers count as possibly applied
+  - `Sources/InstantSwiftDataCore/InstantServerErrorRetryPolicy.swift` — the backoff policy and the delivery pause state
+  - `Sources/InstantSwiftDataCore/InstantLiveQueryErrors.swift` — the per-query error broadcaster
+  - `Sources/InstantSwiftDataCore/InstantModels.swift` — InstantQueryEmission.error, boxed
+  - `Sources/InstantSwiftDataCore/InstantInfiniteQuery.swift` — chunk errors in the live snapshot
+  - `Sources/InstantSwiftData/InstantSwiftData.swift` — FetchSubscription.liveQueryError and non-terminal loadError
+  - `Sources/InstantSwiftData/InstantTypedAPI.swift` — typed infinite snapshots keep their rows with an error
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — token-qualified single-claim release
+  - `Tests/InstantSwiftDataCoreTests/InstantTransientMutationRetryTests.swift` — #376 tests
+  - `Tests/InstantSwiftDataCoreTests/InstantLiveQueryErrorRecoveryTests.swift` — #360 tests
+  - `Tests/InstantSwiftDataTests/InstantLiveQueryErrorSubscriptionTests.swift` — typed subscription and FetchAll tests
+  - `Tests/InstantSwiftDataCoreTests/InstantReactorParityTests.swift` — the reconnect test now pins the same-session retry
+- **User context (verbatim):**
+  > I don't really understand why it would do that, reconnecting song and dance or why what was causing the problem. Why couldn't it just reconnect? Yeah, why are the reconnects there in the first place?
+- **SpecStory:** unavailable — unavailable — Claude Code agent session (library-78); no SpecStory capture configured for this session.
+
 ## October 1st, 2026 at 4:23:01 a.m. EDT — `1ba007798552` End every stream observation behind a subscription the server refuses, and pin the offline stream writer gap (#303 #329)
 
 - **Implementation commit:** `1ba0077985528f9633d987cedaa145baeb698452`
