@@ -1,3 +1,9 @@
+## 2026-09-30 21:53:30 EDT — instant-data-swift `1907c0b49859612372531a9ab36aa8044e461d73`
+Restore a refused write's receipt as written, then restamp what it restored to txTime 0, so an insert-only receipt still removes the overlay (the ten suites' failedActiveOverlayIsARootEvenWhenTheServerWriteIsDisjoint on df0a711a) (#296).
+
+## 2026-09-30 20:56:20 EDT — instant-data-swift `df0a711a66b33fd768eec9527f71abd5e0817103`
+Record the persisting-decline fix and the refused-write restore in the change log and the audit ledger (#296).
+
 ## 2026-09-30 20:55:10 EDT — instant-data-swift `f53f779317bdddba4912d92d5a676e5982001a02`
 Let the server's facts win against what a refused write restores: restored facts are base facts at txTime 0 at the splice, the terminal-failure removals, and the full rebase's reverse pass; the differential gains a multi-refusal event (#296).
 
