@@ -1,3 +1,21 @@
+## 2026-09-30 19:42:44 EDT — instant-data-swift `9d5e185cd1a80eddbaf0f83a93e3d8ece8aee897`
+Record the backward-navigation seed fix in the change log (#300).
+
+## 2026-09-30 19:42:29 EDT — instant-data-swift `0d66e6bb5d7ce8d3283dca446ef7f389bfa26704`
+Start a backward-navigation page from the server's answer, not an earlier query's stored result: a stale stored "no rows above" made the window believe it reached the top and climb to the head (#300).
+
+## 2026-09-30 19:02:12 EDT — instant-data-swift `1562eeeef3ba821983515b18834f9422cc0263ee`
+Claim observeLiveInfiniteQueryChunk in InstantRuntime.swift for plan 2026-09-30-infinite-leading-rows (#300).
+
+## 2026-09-30 18:24:18 EDT — instant-data-swift `ce374ab734aa6771b2f574d8e4c3acdebf5ec047`
+Record the leading-rows window fix in the change log (#300).
+
+## 2026-09-30 18:23:33 EDT — instant-data-swift `3bcf817da8813bbf1733df51ccc4fa3729926e19`
+Keep a windowed live infinite query paging when rows appear above its first row: the leading watcher leaves with the evicted top page and returns only when navigation reaches the top, trims cut at page boundaries, and evicted pages reload from their exact boundaries (#300).
+
+## 2026-09-30 16:42:06 EDT — instant-data-swift `d30c538d43055859d31163133294ae3b80b45e48`
+Claim the live infinite query's retention window for plan 2026-09-30-infinite-leading-rows (#300).
+
 ## 2026-09-30 13:51:53 EDT — instant-data-swift `46c131d7413cb3185c80d6e0ce70f467879dfc9e`
 Merge connection survival (984cc351) into build 73's library: one reconnect per socket death, and reading while a frame applies (#296).
 

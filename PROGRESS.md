@@ -1,3 +1,28 @@
+## 2026-09-30 20:48:46 EDT — Infinite query: a windowed live query keeps paging when rows appear above its first row (#300)
+
+- **Branch:** `agent/claude-opus-5.5/infinite-leading-rows` from `506089b2` (pushed; not merged; nothing published).
+  Plan `agent-presence/claude-opus-5.5/plans/2026-09-30-infinite-leading-rows/PLAN.md` (claims `d30c538d`, `1562eeee`).
+- **`3bcf817d`:** the leading watcher (upstream's live reverse chunk) leaves with the evicted top page and is created
+  again only when backward navigation reaches the top (that page is frozen, the watcher starts above it); trims cut at
+  a page boundary and drop everything beyond; `loadNextPage` after a bottom eviction reloads from the exact frozen
+  boundary, and a frozen chunk's refresh no longer clears `hasEvictedAfter`; `loadPreviousPage` freezes the page it
+  grows from and uses exact boundaries; `canLoadPreviousPage` after kickstart means the top was evicted. The watcher
+  still counts as a page once it holds rows, so Scribe's timeline follows its live head within 2 x 32 rows.
+- **`0d66e6bb`:** a page loaded by `loadPreviousPage` starts from the server's answer, not an earlier query's stored
+  result (`observeLiveInfiniteQueryChunk(seedsFromStoredResult:)`); a stale stored "no rows above" had made the window
+  climb to the head.
+- **Evidence (model-server tests; real-server Mac and simulator runs on bd40c50a):** red on 506089b2's logic, 1,150
+  issues including the Mac's exact 63-row stall; the stale-seed test red on 3bcf817d. Final: 8 focused tests and 8
+  property seeds pass (6 known issues are #302); the ten suites 683 tests, 21 known issues, and one known 250 ms timing
+  flake that passes 3 of 3 alone; the infinite-query suites 211 tests (TypedAPITests has one failure that also fails 3 of 3 on a clean 506089b2 export, now #304). Mac reproduction (Scribe auto-paging
+  7983f557 plus 0d66e6bb): every row down to AP299 list 118 and back to the top, 0 noop-cannot-advance. Live soak (Scribe
+  build 73 cd8039c9 plus 0d66e6bb): pending 0-3, 50-60 accepts per 30 s, CPU about 23%.
+- **Open:** #302 (a moved row's stale facts while the window's top is evicted; store-level, pinned as a known issue).
+  #303 (Scribe main 0c359886 fails the live soak with 506089b2 too; build 73 passes; only 753f52e0 changed in Sources).
+- **Next:** merge the branch into the library line, tag it, and bump Scribe's pin (Package.swift, the installer's
+  REQUIRED_PUBLISHED_DEPENDENCIES and its fixtures). Do not ship Scribe main until #303 is fixed. Report:
+  `/Users/laptop/Sync/audit/infinite-leading-rows-2026-09-30/`.
+
 ## 2026-09-29 00:49:08 EDT — Sharing accounts: guest-only OAuth token, log-safe auth sessions, outbox across a guest link (#113)
 
 - **Branch:** `agent/claude-opus-5.5/sharing-accounts` (pushed; not merged; nothing published). Plan
