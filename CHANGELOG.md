@@ -10,6 +10,24 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## October 1st, 2026 at 3:07:48 p.m. EDT — `c1b53e517427` Link another sign-in from AuthV3 without changing the session, behind authV3ShowsLinkedSignIns (#361)
+
+- **Implementation commit:** `c1b53e517427011a0cea8d42f6f86f9e336d7fb3`
+- **Change:** AuthV3 links another sign-in (Apple, Google, or an email code) without changing the session, behind the authV3ShowsLinkedSignIns switch, off by default (#361).
+- **Details:**
+  - InstantAuthState gains accountLink, linking (idle, signingInSecond, sendingCode, codeSent, linking, unlinking, failed), and linkCodeEmail, with refreshAccountLink, linkAnotherSignIn, sendLinkMagicCode and verifyLinkMagicCode (a held second sign-in; a wrong code keeps it), cancelLinking, and unlink, each with a using-client overload. Every second sign-in closes on success, failure, and cancel; a session change to another user clears the link and cancels a pending code.
+  - AuthV3LoginScreen shows a Linked sign-ins card only when authV3ShowsLinkedSignIns is on: members (email, or Guest and 8 characters of the id; provider; This device), Unlink behind a confirmation, Link Apple or Google, and an email code. It posts recipes.auth.link.linked {linkID, userID, memberUserIDs, providerID}, .unlinked {linkID, userID, memberUserID}, and .failed {providerID, userID, linkID, code, operation, error with email addresses redacted}. The instant-data skill documents second sign-ins and account links.
+  - Tests: InstantAuthStateLinkingTests 5 (red at no-op skeletons), AuthV3AppTests +2 (the switch default and the email redaction; not observed red separately). Final run, load ~800: 183 tests in 35 suites passed, including AuthV3AppTests, V3AuthLoginFixtureTests, RecipesV3AppTests, and the guest-promotion suites.
+- **Files:**
+  - `Sources/InstantSwiftData/InstantAuth.swift` — InstantAccountLinkingStatus and InstantAuthState's linking actions
+  - `Sources/AuthV3App/AuthApp.swift` — authV3ShowsLinkedSignIns and the Linked sign-ins card with its notifications
+  - `Tests/AuthV3AppTests/AuthV3AppTests.swift` — switch default and email redaction tests
+  - `Tests/InstantSwiftDataTests/InstantAccountLinksTests.swift` — InstantAuthStateLinkingTests against the fake server
+  - `skills/instant-data/SKILL.md` — second sign-ins and account links guidance
+- **User context (verbatim):**
+  > Let's add a functionality to link accounts then. If you have Apple, I want to be able to link it with Google as well so that we aggregate all these different recordings. So it's a library change and
+- **SpecStory:** unavailable — Claude Code agent session (account-linking-library); no SpecStory capture for this session
+
 ## October 1st, 2026 at 3:07:01 p.m. EDT — `4473db630827` Link one person's Instant identities through an app-level accountLinks row (#361)
 
 - **Implementation commit:** `4473db630827f86d3f1649964224b14dda5a7b38`

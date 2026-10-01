@@ -1,3 +1,6 @@
+## 2026-10-01 15:07:48 EDT — instant-data-swift `c1b53e517427011a0cea8d42f6f86f9e336d7fb3`
+Link another sign-in from AuthV3 (Apple, Google, or an email code) without changing the session: InstantAuthState linking actions and a Linked sign-ins card behind authV3ShowsLinkedSignIns, off by default (#361).
+
 ## 2026-10-01 15:07:01 EDT — instant-data-swift `4473db630827f86d3f1649964224b14dda5a7b38`
 Link one person's Instant identities, such as Apple and Google, through an app-level accountLinks row: the linked identity invites (or creates the row), the other joins and clears the invite, each write accepted before the next; refusals write nothing (#361).
 
