@@ -1,3 +1,12 @@
+## 2026-10-01 17:10:58 EDT — instant-data-swift `194f75324acadc3118b789a16489410681a96abc`
+Document the v1.8.0 release in docs/releases/v1.8.0.md: build 77's library and every fix builds 62-76 shipped since v1.7.0, in plain words, with library-77's gate evidence and the open items (#155 #303 #324 #329 #296).
+
+## 2026-10-01 17:04:48 EDT — instant-data-swift `38aaf747c228fe33df6101fd6e55a1cdf0305802`
+Plan the v1.8.0 release (plan 2026-10-01-release-1.8.0) and claim the release document, CHANGELOG.md, PROGRESS.md, and this ledger; note the overlap with library-78's unmerged claims on the same logs (#155 #303 #324 #329).
+
+## 2026-10-01 17:03:54 EDT — instant-data-swift `d9ac85f0c97848e99ac4b47c287fe750c415b390`
+Merge build 77's library (agent/claude-opus-5.5/library-77 at 66f49197, gated head 956fce52) into main without fast-forward over 646c0ebc: every library change Scribe builds 62-77 shipped since v1.7.0 (#303 #324 #329 #296 #300 #289 #278 #277 #259 #274 #113).
+
 ## 2026-10-01 04:22:17 EDT — instant-data-swift `1ba0077985528f9633d987cedaa145baeb698452`
 End every stream observation behind a subscription the server refuses (Stream is missing), and pin the offline stream writer gap as a known issue (#303 #329).
 

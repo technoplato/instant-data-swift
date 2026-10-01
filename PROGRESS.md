@@ -1,3 +1,21 @@
+## 2026-10-01 17:14:00 EDT — v1.8.0 candidate on main: build 77's library merged and documented; the gate runs on this commit (#155 #303 #324 #329)
+
+- **Owner:** release agent (`claude-opus-5.5-release`, workLog agentId `claude-code/claude-opus-5.5/release`), plan
+  `2026-10-01-release-1.8.0` (`38aaf747`), under Michael's maintainer authorization (2026-10-01 about 16:46): "make
+  sure the the library is deployed and has a release triggered, etc., from uh GitHub with all these fixes and
+  whatnot".
+- **main:** `d9ac85f0` merges `agent/claude-opus-5.5/library-77` (`66f49197`: gated head `956fce52` plus its
+  PROGRESS entry) without fast-forward over `646c0ebc`; the merged tree equals `66f49197`'s. Pushed with the plan
+  (`38aaf747`). Release document `docs/releases/v1.8.0.md` (`194f7532`, passes `scripts/validate-release-version.sh
+  1.8.0`). This entry's commit is the release commit.
+- **Not in 1.8.0:** library-78 (`agent/claude-opus-5.5/library-78` and its sub-branches).
+- **Next:** on this commit, in `/Users/laptop/Sync/worktrees/instant-data-swift-release-1.8.0`, run
+  `INSTANT_SWIFT_DATA_LIVE_AUTH_SOAK=0 validation/run-performance-gate.sh live` with no Instant credentials in the
+  environment; run the stages it skips after a cross-SDK failure by hand (the cross-SDK runtime suite, then
+  `validation/run-scribe-shaped-20s-write-bench.sh` on a temporary app); ABBA any performance miss against v1.7.0;
+  then tag `v1.8.0` here, push, and `gh release create v1.8.0 --verify-tag --latest`. Scribe then pins
+  `exact: "1.8.0"`.
+
 ## 2026-10-01 05:55:20 EDT — library-77: frames without the attrs' cost, no gate across the caller's executor, add-query timeouts kept, refused stream reads end (#303 #324 #329)
 
 - **Branch:** `agent/claude-opus-5.5/library-77` from build 76's library `d487ee09`; pushed, not merged. Plan

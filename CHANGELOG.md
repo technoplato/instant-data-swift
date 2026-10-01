@@ -10,6 +10,19 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## October 1st, 2026 at 5:11:46 p.m. EDT — `194f75324aca` Document the v1.8.0 release: a device keeps up live, catches up a backlog in minutes, and no longer stalls behind the main thread (#155 #303 #324 #329 #296)
+
+- **Implementation commit:** `194f75324acadc3118b789a16489410681a96abc`
+- **Change:** Document the v1.8.0 release: a device keeps up live, catches up a backlog in minutes, and no longer stalls behind the main thread (#155 #303 #324 #329 #296).
+- **Details:**
+  - Minor release from main: build 77's library (library-77 66f49197, gated head 956fce52) merged without fast-forward as d9ac85f0 over 646c0ebc. Additive public API: InstantEntityModel.decodeQuarantiningFailures(_:operation:), InstantLiveMessage.defaultVersions, the AuthV3 environment values authV3AllowsDiscardingGuestSession and authV3ShowsDemoCounters, and InstantAuthSession's log-safe description conformances. Async InstantRuntime methods are now @concurrent, so code compiled against 1.7.0 must be rebuilt. One data migration (0024) removes local entities missing their id fact; no table schema change; dependencies unchanged.
+  - Plain-words notes for the @instantdb/core v0.22.75 advert (Scribe refreshes 173 KB to 44 KB), the attribute caches, @concurrent, the add-query retry (#324), refused stream subscriptions, and builds 62-76's fixes (#296 fast drain, refused-write restore, delivery deferral, connection survival; #277; #278; #300; #259 #274; #113; #289). Cites library-77's gate evidence in /Users/laptop/Sync/audit/recording-023-fixes/fast-drain/library-77/ and FAST-DRAIN.md section 15; lists the open items library-78 carries (#329, Pattern B, #304).
+- **Files:**
+  - `docs/releases/v1.8.0.md` — release document; passes scripts/validate-release-version.sh 1.8.0
+- **User context (verbatim):**
+  > make sure the the library is deployed and has a release triggered, etc., from uh GitHub with all these fixes and whatnot
+- **SpecStory:** unavailable — Claude Code agent session (release); no SpecStory capture configured for this session.
+
 ## October 1st, 2026 at 4:23:01 a.m. EDT — `1ba007798552` End every stream observation behind a subscription the server refuses, and pin the offline stream writer gap (#303 #329)
 
 - **Implementation commit:** `1ba0077985528f9633d987cedaa145baeb698452`
