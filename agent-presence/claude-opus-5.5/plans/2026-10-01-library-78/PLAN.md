@@ -33,6 +33,11 @@ Steps (no code here; a red test first in each, upstream `Reactor.js` / `Stream.t
 8. Streams: incremental snapshots (keep materializeMedia's cumulative contract); a finished stream's reader
    unregisters; an unrouted stream-reader error does not reconnect; #329 streams written offline reach the server, with
    the client id versus server id decision written up (ADR 0017).
+8a. P0 from the list-crash agent (Scribe #388, added 2026-10-01 18:20): a windowed live infinite query's snapshot can
+   list one entity twice (Scribe's list traps on it), and the window shows no rows for about 0.6 s at a kickstart.
+   Their failing test goes in first (InstantInfiniteQueryDuplicateRowsTests), then the fix in pushSnapshot.
+8b. A caller that cancels while its message is being sent no longer ends the socket (found while checking the #388
+   property tests: a cancelled chunk's add-query send aborted the session).
 9. Gates on the final head: differential and connection survival, the ten suites, the 211 infinite-query tests, the
    library-77 and new tests, the phone-shaped replay, the Recording 023-shape backlog, the large-store drop A/B against
    956fce52 (2+ interleaved pairs), a 30-minute calibrated-car soak on Scribe main, the companion fault scenarios
@@ -47,6 +52,8 @@ Touching:
 - Sources/InstantSwiftData/InstantSwiftData.swift and InstantTypedAPI.swift (added 2026-10-01 13:36: the typed infinite
   snapshot keeps its rows with a live-query error), and Tests/InstantSwiftDataTests: new
   InstantLiveQueryErrorSubscriptionTests.swift (added 2026-10-01 13:10)
+- Tests/InstantSwiftDataCoreTests/InstantInfiniteQueryDuplicateRowsTests.swift (new) and
+  InstantInfiniteQueryLeadingRowsTests.swift (the model server's forward-answer hold only), added 2026-10-01 18:55 (#388)
 - Tests/InstantSwiftDataCoreTests: new InstantTransientMutationRetryTests.swift, InstantLiveQueryErrorRecoveryTests.swift,
   InstantSupersededReplayTests.swift, InstantOutboxRevisionGateTests.swift, InstantPruneGateHoldTests.swift,
   InstantLocalFirstQueryOnceTests.swift, InstantStreamRobustnessTests.swift; existing InstantLiveTransportTests.swift,
