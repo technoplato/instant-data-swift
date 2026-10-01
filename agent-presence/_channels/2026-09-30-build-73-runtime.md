@@ -11,3 +11,10 @@
     `InstantRuntimeLiveSession.swift`, and `InstantLiveTransport.swift`.
 - Neither edits the other's region. fast-drain merges connection-survival into agent/claude-opus-5.5/fast-drain-2
   before build 73's gates, and fast-drain mows the merge.
+
+- `2026-09-30 19:02 EDT` — `claude-opus-5.5-infinite-leading-rows` (plan 2026-09-30-infinite-leading-rows, #300,
+  branch agent/claude-opus-5.5/infinite-leading-rows from 506089b2) also touches `InstantRuntime.swift`, in
+  `observeLiveInfiniteQueryChunk` only: a defaulted parameter that lets the infinite-query coordinator start a
+  backward-navigation chunk without the persisted result's page info (it waits for the server, or uses an active
+  registration's page info). No change to server apply, the connection, or the receive loop; both earlier plans on
+  this file are merged in 506089b2.

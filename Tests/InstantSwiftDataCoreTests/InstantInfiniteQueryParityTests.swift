@@ -2447,7 +2447,8 @@ struct InstantInfiniteQueryParityTests {
     expectNoDifference(second.values.map(\.id), ["item-3", "item-4"])
     expectNoDifference(second.canLoadPreviousPage, true)
     expectNoDifference(second.canLoadNextPage, true)
-    let expectedAfterForward = Set([leadingWatcherQuery, secondForwardQuery])
+    // The leading watcher leaves with the evicted top page: rows before item-1 are no longer next to the window (#300).
+    let expectedAfterForward = Set([secondForwardQuery])
     let activeAfterForward = try await waitForActiveInfiniteQueries(
       expectedAfterForward,
       in: session
@@ -2480,9 +2481,12 @@ struct InstantInfiniteQueryParityTests {
     )
 
     subscription.loadPreviousPage()
+    // The previous page starts at the top chunk's own boundary: item-2, which the forward chunk after it excludes
+    // (upstream chunks share boundary cursors, inclusive on one side only) (#300).
     let previousQuery = try #require(await waitForInfiniteQuery(in: session) { options in
       options == [
-        "after": .array(thirdCursor),
+        "after": .array(secondCursor),
+        "afterInclusive": .bool(true),
         "limit": .number(2),
         "order": .object(["value": .string("desc")]),
       ]
@@ -2507,7 +2511,18 @@ struct InstantInfiniteQueryParityTests {
     expectNoDifference(previous.values.map(\.id), ["item-1", "item-2"])
     expectNoDifference(previous.canLoadPreviousPage, false)
     expectNoDifference(previous.canLoadNextPage, true)
-    let expectedAfterPrevious = Set([leadingWatcherQuery, previousQuery])
+    // The previous page found no rows above it: the window is at the top again, so the page is frozen at item-1 and
+    // the leading watcher watches above it once more (upstream `maybeAdvanceReverse`'s freeze-then-watch) (#300).
+    let frozenPreviousQuery = try #require(await waitForInfiniteQuery(in: session) { options in
+      options == [
+        "after": .array(secondCursor),
+        "afterInclusive": .bool(true),
+        "before": .array(firstCursor),
+        "beforeInclusive": .bool(true),
+        "order": .object(["value": .string("desc")]),
+      ]
+    })
+    let expectedAfterPrevious = Set([leadingWatcherQuery, frozenPreviousQuery])
     let activeAfterPrevious = try await waitForActiveInfiniteQueries(
       expectedAfterPrevious,
       in: session
@@ -2542,6 +2557,7 @@ struct InstantInfiniteQueryParityTests {
     expectNoDifference(forwardAgain.values.map(\.id), ["item-3", "item-4"])
     expectNoDifference(forwardAgain.canLoadPreviousPage, true)
     expectNoDifference(forwardAgain.canLoadNextPage, true)
+    // Loading the next page again evicts the top page, with the leading watcher above it.
     let activeAfterForwardAgain = try await waitForActiveInfiniteQueries(
       expectedAfterForward,
       in: session
@@ -2563,9 +2579,10 @@ struct InstantInfiniteQueryParityTests {
       starterQuery: ["add-query", "remove-query"],
       firstForwardQuery: ["add-query", "remove-query"],
       frozenForwardQuery: ["add-query", "remove-query"],
-      leadingWatcherQuery: ["add-query", "remove-query"],
+      leadingWatcherQuery: ["add-query", "remove-query", "add-query", "remove-query"],
       secondForwardQuery: ["add-query", "remove-query", "add-query", "remove-query"],
       previousQuery: ["add-query", "remove-query"],
+      frozenPreviousQuery: ["add-query", "remove-query"],
     ]
     expectNoDifference(registeredQueries, Set(expectedRegistrationOperations.keys))
     for (query, expectedOperations) in expectedRegistrationOperations {
