@@ -10,6 +10,19 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## October 1st, 2026 at 12:54:42 a.m. EDT — `689ab0947fca` Add measurement switches for wal_autocheckpoint and checkpoint_fullfsync (#306)
+
+- **Implementation commit:** `689ab0947fca81bca86a8c3f219a2396772d5db3`
+- **Change:** Add measurement switches for wal_autocheckpoint and checkpoint_fullfsync (#306)
+- **Details:**
+  - Apple's SQLite runs WAL at synchronous NORMAL (DEFAULT_WAL_SYNCHRONOUS=1), so the commit-time suspects are uncached page reads and inline F_FULLFSYNC checkpoints every 1,000 WAL pages; these switches measure the checkpoint side. Unset, behavior equals ab33cb35.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantMeasurementSwitches.swift` — two more switches, and the synchronous note corrected
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — optional wal_autocheckpoint and checkpoint_fullfsync pragmas
+- **User context (verbatim):**
+  > fix this please so it works efficiently as as well as the typescript core library
+- **SpecStory:** unavailable — Claude Code subagent session (claude-opus-5.5 ts-parity); no SpecStory capture available for this harness
+
 ## September 30th, 2026 at 11:23:41 p.m. EDT — `d2f7bf7e3739` Add experiment-only switches for SQLite synchronous, cache_size, and the advertised core version (#306)
 
 - **Implementation commit:** `d2f7bf7e373936fc61d63553d5a16dc81d4956ee`

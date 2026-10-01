@@ -1,3 +1,6 @@
+## 2026-10-01 00:54:26 EDT — instant-data-swift `689ab0947fca81bca86a8c3f219a2396772d5db3`
+Add measurement switches for wal_autocheckpoint and checkpoint_fullfsync on the measurement branch; Apple's SQLite already runs WAL at synchronous NORMAL (#306).
+
 ## 2026-09-30 23:23:16 EDT — instant-data-swift `d2f7bf7e373936fc61d63553d5a16dc81d4956ee`
 Add experiment-only switches for SQLite synchronous, cache_size, and the advertised @instantdb/core version on the measurement branch agent/claude-opus-5.5/ts-parity-experiments; unset, behavior equals ab33cb35 (#306).
 
