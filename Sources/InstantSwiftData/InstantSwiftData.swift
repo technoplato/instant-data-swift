@@ -1956,12 +1956,18 @@ public struct InstantSwiftDataClient: Sendable {
           cancel: {}
         )
       }
-      return fetchSubscription(
+      let liveQueryError = FetchSubscriptionLiveQueryError()
+      var subscription = fetchSubscription(
         from: observation.stream,
         cancelSource: observation.cancel,
-        transform: transform,
+        transform: { emission in
+          liveQueryError.value = emission.error
+          return try transform(emission)
+        },
         cancellationOwner: cancellation
       )
+      subscription.liveQueryErrorStorage = liveQueryError
+      return subscription
     }
   }
 }
@@ -2004,6 +2010,27 @@ public struct FetchSubscription<Element: Sendable>: AsyncSequence, Sendable {
 
   fileprivate let streamStorage: FetchSubscriptionStreamStorage<Element>
   fileprivate let cancellation: FetchSubscriptionCancellation
+  fileprivate var liveQueryErrorStorage: FetchSubscriptionLiveQueryError?
+
+  /// The server's latest error for this subscription's live query, or `nil` while the server answers it.
+  ///
+  /// When the server fails a live query, the subscription keeps going and keeps its latest values. After a transient
+  /// error, such as a stalled server's `operation-timed-out`, the library sends the query again on the open socket,
+  /// and the error clears once the server answers. The subscription repeats its latest value each time the error
+  /// changes, so read it after each value:
+  ///
+  /// ```swift
+  /// let todos = await client.subscribe(Todo.all)
+  /// for try await rows in todos {
+  ///   render(rows, serverError: todos.liveQueryError)
+  /// }
+  /// ```
+  ///
+  /// Always `nil` for subscriptions that are not live queries and for local-only clients. Upstream Instant reports the
+  /// same error to the query's callback (`Reactor.js` `notifyQueryError`).
+  public var liveQueryError: InstantError? {
+    liveQueryErrorStorage?.value
+  }
 
   /// Adapts a caller-owned stream to a cancellation-driven subscription.
   ///
@@ -2098,7 +2125,7 @@ public struct FetchSubscription<Element: Sendable>: AsyncSequence, Sendable {
     let mapped = AsyncThrowingStream<Mapped, Error>.makeStream(
       bufferingPolicy: .bufferingNewest(1)
     )
-    return managedFetchSubscription(
+    var subscription = managedFetchSubscription(
       stream: mapped.stream,
       continuation: mapped.continuation,
       cancellationOwner: cancellationOwner,
@@ -2123,6 +2150,20 @@ public struct FetchSubscription<Element: Sendable>: AsyncSequence, Sendable {
         try? await self.task
       }
     )
+    subscription.liveQueryErrorStorage = liveQueryErrorStorage
+    return subscription
+  }
+}
+
+// SAFETY: `lock` protects `storedValue`.
+/// The latest server error of the live query behind a ``FetchSubscription`` (#360).
+final class FetchSubscriptionLiveQueryError: @unchecked Sendable {
+  private let lock = NSLock()
+  private var storedValue: InstantError?
+
+  var value: InstantError? {
+    get { lock.withLock { storedValue } }
+    set { lock.withLock { storedValue = newValue } }
   }
 }
 
@@ -2656,11 +2697,17 @@ private final class FetchStorage<Value: Sendable>: @unchecked Sendable {
     }
   }
 
-  func updateActiveSubscriptionValue(_ value: Value, id: Int) -> Bool {
+  /// - Parameter loadError: The live query's server error, which the subscription keeps reporting while the
+  ///   library sends the query again (#360); `nil` once the server answers.
+  func updateActiveSubscriptionValue(
+    _ value: Value,
+    loadError: InstantError? = nil,
+    id: Int
+  ) -> Bool {
     let didUpdate = withLock {
       guard _activeSubscription?.id == id else { return false }
       _wrappedValue = value
-      _loadError = nil
+      _loadError = loadError
       _isLoading = false
       return true
     }
@@ -2800,7 +2847,13 @@ private func runFetchStorageSubscriptionTask<Value: Sendable>(
       )
       for try await value in subscription {
         try Task.checkCancellation()
-        guard storage.updateActiveSubscriptionValue(value, id: subscriptionID) else {
+        guard
+          storage.updateActiveSubscriptionValue(
+            value,
+            loadError: subscription.liveQueryError,
+            id: subscriptionID
+          )
+        else {
           throw CancellationError()
         }
         emissionCount += 1
@@ -3513,7 +3566,13 @@ private func startAutomaticFetchObservation<Value: Sendable>(
         subscriptionID = id
         for try await value in subscription {
           try Task.checkCancellation()
-          guard storageReference.value?.updateActiveSubscriptionValue(value, id: id) == true else {
+          guard
+            storageReference.value?.updateActiveSubscriptionValue(
+              value,
+              loadError: subscription.liveQueryError,
+              id: id
+            ) == true
+          else {
             throw CancellationError()
           }
           emissionCount += 1

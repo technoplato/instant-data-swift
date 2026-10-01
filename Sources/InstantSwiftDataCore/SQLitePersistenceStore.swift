@@ -7941,10 +7941,14 @@ public actor SQLitePersistenceStore {
   /// the durable claim. The claimant predicate prevents a late socket event
   /// from releasing a row another runtime reclaimed after the five-second
   /// deadline.
+  ///
+  /// - Parameter claimToken: When given, the claim is released only if it is still the claim the response answered;
+  ///   a late response must not release a newer claim of the same row (#376).
   @discardableResult
   func releaseAutomaticOutboxClaim(
     id: String,
-    claimantID: String
+    claimantID: String,
+    claimToken: String? = nil
   ) throws -> Bool {
     guard !id.isEmpty, !claimantID.isEmpty else { return false }
     return try transaction {
@@ -7957,12 +7961,15 @@ public actor SQLitePersistenceStore {
             delivery_claim_payload_fingerprint = NULL
         WHERE mutation_id = ? AND delivery_claim_state = ?
           AND delivery_claimant_id = ?
+          AND (? IS NULL OR delivery_claim_token = ?)
         """,
         [
           .text(InstantOutboxDeliveryClaimState.ready.rawValue),
           .text(id),
           .text(InstantOutboxDeliveryClaimState.claimed.rawValue),
           .text(claimantID),
+          claimToken.map(SQLiteBinding.text) ?? .null,
+          claimToken.map(SQLiteBinding.text) ?? .null,
         ]
       )
       return sqlite3_changes(connection.raw) == 1

@@ -269,6 +269,9 @@ package actor InstantRuntimeLiveSession {
   private var session: InstantLiveWebSocketSession?
   private let receiverTaskOwner = InstantRuntimeExactTaskOwner()
   private var registeredQueries: [String: RegisteredQuery] = [:]
+  /// Consecutive transient server errors of each live query, and its pending re-send on this socket (#360).
+  private var queryResendAttempts: [String: Int] = [:]
+  private var queryResends: [String: (id: UUID, task: Task<Void, Never>)] = [:]
   private var serverAttributes: [InstantLiveJSONValue] = []
   private var inFlightMutationIDs: Set<String> = []
   private var inFlightMutationStepCounts: [String: Int] = [:]
@@ -302,6 +305,9 @@ package actor InstantRuntimeLiveSession {
   /// replay: the earlier offer may have been applied, so the refusal alone does not prove the write was lost. Only
   /// used to classify refusals in diagnostics; bounded because it outlives generations.
   private var offeredWithoutAnswerOnEarlierConnections: Set<String> = []
+  /// Mutation IDs whose offer the server answered with a transient error (#376). Like an unanswered offer, the
+  /// server may have applied it; only used to classify a later refusal as a replay.
+  private var offersAnsweredInconclusively: Set<String> = []
   private static let maximumRememberedUnansweredOffers = 4_096
   private var hasReportedDeepOutbox = false
   /// Bounds the number of transactions sharing the socket at once.
@@ -541,6 +547,8 @@ package actor InstantRuntimeLiveSession {
     )
     generation += 1
     receiverFailure = nil
+    // The new session's init sends every registered query, so a re-send waiting on the old socket is moot (#360).
+    cancelQueryResends()
     let replacedReceiver = receiverTaskOwner.requestStop()
     let replacedSession = session
     session = nil
@@ -839,6 +847,7 @@ package actor InstantRuntimeLiveSession {
       return false
     }
     registeredQueries[key] = nil
+    forgetQueryResend(key: key)
     try await reconcileQueryMembership(
       key: key,
       fallbackQuery: registration.query,
@@ -894,7 +903,98 @@ package actor InstantRuntimeLiveSession {
 
   @discardableResult
   func retireRejectedQuery(key: String) -> Bool {
-    registeredQueries.removeValue(forKey: key) != nil
+    forgetQueryResend(key: key)
+    return registeredQueries.removeValue(forKey: key) != nil
+  }
+
+  /// Sends the live query `key` again on this socket after a transient server error, once `delayMilliseconds` of its
+  /// consecutive failures has passed (#360).
+  ///
+  /// Upstream `Reactor.js` leaves a failed query for `_flushPendingMessages` on the next `init-ok`, which needs a
+  /// reconnect; a healthy socket never makes one, so the query went silent. The re-send is dropped if the socket is
+  /// replaced first (the next `init` sends every registered query) or the query is unregistered.
+  ///
+  /// - Returns: The attempt number and the delay, or `nil` when the query is not registered on an open socket.
+  func scheduleQueryResend(
+    key: String,
+    delayMilliseconds: @Sendable (Int) -> UInt64,
+    sleep: @escaping @Sendable (UInt64) async throws -> Void
+  ) -> (attempt: Int, delayMilliseconds: UInt64)? {
+    guard registeredQueries[key] != nil, isOpened, session != nil else { return nil }
+    let attempt = queryResendAttempts[key, default: 0] + 1
+    queryResendAttempts[key] = attempt
+    let delay = delayMilliseconds(attempt)
+    let generation = generation
+    let id = UUID()
+    queryResends[key]?.task.cancel()
+    let task = Task { [weak self] in
+      do {
+        try await sleep(delay)
+      } catch {
+        return
+      }
+      guard !Task.isCancelled else { return }
+      await self?.resendQuery(key: key, id: id, generation: generation)
+    }
+    queryResends[key] = (id, task)
+    return (attempt, delay)
+  }
+
+  /// The server answered the live query `key`, so its backoff starts over.
+  func recordQueryAnswered(key: String) {
+    queryResendAttempts[key] = nil
+    queryResends.removeValue(forKey: key)?.task.cancel()
+  }
+
+  func pendingQueryResendCountForTesting() -> Int {
+    queryResends.count
+  }
+
+  private func resendQuery(key: String, id: UUID, generation: Int) async {
+    guard queryResends[key]?.id == id else { return }
+    queryResends[key] = nil
+    guard generation == self.generation, isOpened, let registration = registeredQueries[key] else { return }
+    InstantDiagnostics.shared.record(
+      .info,
+      subsystem: "instant-swift-data-core",
+      category: "query",
+      event: "query.live-resent",
+      message: "Sent a live query again on the open socket after a transient server error.",
+      metadata: [
+        "registrationKey": key,
+        "attempt": String(queryResendAttempts[key, default: 0]),
+      ]
+    )
+    do {
+      try await reconcileQueryMembership(
+        key: key,
+        fallbackQuery: registration.query,
+        initialClientEventID: makeID?() ?? UUID().uuidString.lowercased()
+      )
+    } catch {
+      // A send fails only on a dead socket; its receiver reports that failure, and the reconnect's init sends the
+      // query again.
+      InstantDiagnostics.shared.record(
+        error: error,
+        subsystem: "instant-swift-data-core",
+        category: "query",
+        event: "query.live-resend-failed",
+        message: "Could not send a live query again; the next connection sends it.",
+        metadata: ["registrationKey": key]
+      )
+    }
+  }
+
+  private func forgetQueryResend(key: String) {
+    queryResendAttempts[key] = nil
+    queryResends.removeValue(forKey: key)?.task.cancel()
+  }
+
+  private func cancelQueryResends() {
+    for resend in queryResends.values {
+      resend.task.cancel()
+    }
+    queryResends.removeAll()
   }
 
   func activeQueryKeys() -> Set<String> {
@@ -917,6 +1017,31 @@ package actor InstantRuntimeLiveSession {
   /// Whether an earlier connection offered this mutation and never delivered an answer for it (#296).
   func wasOfferedWithoutAnswerOnAnEarlierConnection(_ mutationID: String) -> Bool {
     offeredWithoutAnswerOnEarlierConnections.contains(mutationID)
+  }
+
+  /// Records that the server answered an offer of this mutation with a transient error, such as a stalled server's
+  /// 500 `operation-timed-out` (#376). The server may still have applied that offer, so a later refusal of the same
+  /// mutation is a replay, as for an offer a dead connection never answered.
+  func recordInconclusiveAnswer(to mutationID: String) {
+    offersAnsweredInconclusively.insert(mutationID)
+    if offersAnsweredInconclusively.count > Self.maximumRememberedUnansweredOffers {
+      offersAnsweredInconclusively = Set(
+        offersAnsweredInconclusively.sorted().prefix(Self.maximumRememberedUnansweredOffers)
+      )
+    }
+  }
+
+  /// Whether an earlier offer of this mutation may have been applied without this runtime learning so: a connection
+  /// ended before answering it, or the server answered it with a transient error (#296, #376).
+  func mayHaveAppliedAnEarlierOffer(of mutationID: String) -> Bool {
+    offeredWithoutAnswerOnEarlierConnections.contains(mutationID)
+      || offersAnsweredInconclusively.contains(mutationID)
+  }
+
+  /// Forgets a mutation's earlier offers once the server has given it a final answer.
+  func forgetEarlierOffers(of mutationID: String) {
+    offeredWithoutAnswerOnEarlierConnections.remove(mutationID)
+    offersAnsweredInconclusively.remove(mutationID)
   }
 
   private func rememberUnansweredOffersOfEndingGeneration() {
@@ -1902,6 +2027,7 @@ package actor InstantRuntimeLiveSession {
   func beginClose() async -> InstantRuntimeExactTaskOwner.Handle {
     generation += 1
     receiverFailure = nil
+    cancelQueryResends()
     let session = session
     let receiverTask = receiverTaskOwner.requestStop()
     self.session = nil

@@ -298,6 +298,14 @@ public struct InstantRuntimeConfiguration: Sendable {
     instantLiveDefaultTimeoutSleep
   var liveMutationDeadlineSleep: @Sendable (UInt64) async throws -> Void =
     instantLiveDefaultTimeoutSleep
+  /// The backoff for writes and add-queries the server answered with a transient error (#376, #360).
+  var liveServerErrorRetryPolicy = InstantServerErrorRetryPolicy()
+  /// Sleeps before a live query is sent again on the same socket after a transient server error (#360).
+  var liveQueryRetrySleep: @Sendable (UInt64) async throws -> Void = instantLiveDefaultTimeoutSleep
+  /// Runs each time a write or a live query is scheduled for another attempt after a transient server error.
+  package var onServerErrorRetryScheduledForTesting:
+    (@Sendable (_ owner: InstantServerErrorRetryOwner, _ attempt: Int, _ delayMilliseconds: UInt64) async -> Void)? =
+      nil
   /// How long the durable acknowledgement deadline keeps waiting behind one server frame that the receive loop is
   /// still applying (#296). This is not a network timeout: the frame proves the server answered, and the deadline
   /// keeps running every six seconds while the frame applies. The bound exists only to treat a stuck frame as stuck.
@@ -1586,6 +1594,8 @@ public final class InstantRuntime: Sendable {
   /// The attribute context of the latest live refresh, reused across frames that share the session's attrs (#303).
   private let liveRefreshAttributeContexts = InstantLiveRefreshAttributeContextCache()
   private let liveQueryAcknowledgements = InstantLiveQueryAcknowledgementState()
+  /// Each live query's latest server error, delivered to its observers without ending them (#360).
+  private let liveQueryErrors = InstantLiveQueryErrors()
   private let liveRoomPresenceState = InstantRuntimeLiveRoomPresenceState()
   private let activeRoomPresenceState = InstantRuntimeActiveRoomPresenceState()
   private let automaticLiveConnectionTaskOwner = InstantRuntimeExactTaskOwner()
@@ -1597,6 +1607,8 @@ public final class InstantRuntime: Sendable {
   private let automaticDeliveryClaimantID = UUID().uuidString.lowercased()
   private let acknowledgementDeferral = InstantRuntimeAcknowledgementDeferral()
   private let automaticMutationRetryReservations = InstantAutomaticMutationRetryReservations()
+  /// Writes the server answered with a transient error, and the delivery pause they started (#376).
+  private let mutationServerErrorBackoff = InstantMutationServerErrorBackoffState()
   private let storeAdoptionMetrics = InstantRuntimeStoreAdoptionMetrics()
   private let installedStoreRevisions: InstantRuntimeInstalledStoreRevisions
 
@@ -5015,10 +5027,15 @@ public final class InstantRuntime: Sendable {
       plan: plan,
       attributes: attributes
     )
-    let observation = Self.liveObservationLease(hydration.stream) {
+    let reporting = await reportingLiveQueryErrors(
+      in: hydration.stream,
+      registrationKey: registrationKey
+    )
+    let observation = Self.liveObservationLease(reporting.stream) {
+      async let cancelReporting: Void = reporting.cancel()
       async let cancelHydration: Void = hydration.cancel()
       async let cancelLiveObservation: Void = liveObservation.cancel()
-      _ = await (cancelHydration, cancelLiveObservation)
+      _ = await (cancelReporting, cancelHydration, cancelLiveObservation)
     }
     let lease = Self.queryObservationLease(observation)
     if Task.isCancelled {
@@ -5179,15 +5196,90 @@ public final class InstantRuntime: Sendable {
       await leaveOperationGate()
       await recordConnectionError(error)
     }
+    let hydration = hydratingDeferredValues(
+      in: liveObservation.stream,
+      plan: plan,
+      attributes: attributes,
+      onFailure: onDeferredValueHydrationFailure
+    )
+    let reporting = await reportingLiveQueryErrors(
+      in: hydration.stream,
+      registrationKey: registrationKey
+    )
     return Self.liveInfiniteQueryChunkObservation(
-      hydratingDeferredValues(
-        in: liveObservation.stream,
-        plan: plan,
-        attributes: attributes,
-        onFailure: onDeferredValueHydrationFailure
+      InstantLiveInfiniteQueryChunkObservationLease(
+        stream: reporting.stream,
+        cancel: {
+          async let cancelReporting: Void = reporting.cancel()
+          async let cancelHydration: Void = hydration.cancel()
+          _ = await (cancelReporting, cancelHydration)
+        }
       ),
       cancelUnderlyingObservation: liveObservation.cancel
     )
+  }
+
+  /// Adds the live query's latest server error to each emission of `source`, and repeats the latest emission whenever
+  /// that error changes, so an observer sees an error, and its clearing, without waiting for new data (#360).
+  ///
+  /// Upstream `Reactor.js` `notifyQueryError` calls the query's callbacks with `{ error }`, and the next result
+  /// replaces it. Swift keeps the values in the same emission, because a local-first observer must not lose what it
+  /// shows when the server stalls.
+  private func reportingLiveQueryErrors(
+    in source: AsyncStream<InstantQueryEmission>,
+    registrationKey: String
+  ) async -> InstantLiveInfiniteQueryChunkObservationLease<InstantQueryEmission> {
+    let errorUpdates = await liveQueryErrors.updates(for: registrationKey)
+    let events = AsyncStream<InstantLiveQueryErrorReportingEvent>.makeStream()
+    let output = AsyncStream<InstantQueryEmission>.makeStream(bufferingPolicy: .bufferingNewest(1))
+    let emissionFeed = Task {
+      for await emission in source {
+        events.continuation.yield(.emission(emission))
+      }
+      events.continuation.yield(.sourceFinished)
+    }
+    let errorFeed = Task {
+      for await error in errorUpdates {
+        events.continuation.yield(.serverError(error))
+      }
+    }
+    let consumer = Task {
+      var latest: InstantQueryEmission?
+      var serverError: InstantError?
+      events: for await event in events.stream {
+        switch event {
+        case let .emission(emission):
+          let reported = emission.reportingServerError(serverError)
+          latest = reported
+          output.continuation.yield(reported)
+        case let .serverError(error):
+          serverError = error
+          guard let current = latest, current.error != error else { continue }
+          let reported = current.reportingServerError(error)
+          latest = reported
+          output.continuation.yield(reported)
+        case .sourceFinished:
+          break events
+        }
+      }
+      errorFeed.cancel()
+      output.continuation.finish()
+    }
+    let cancel: @Sendable () async -> Void = {
+      emissionFeed.cancel()
+      errorFeed.cancel()
+      consumer.cancel()
+      events.continuation.finish()
+      output.continuation.finish()
+      await emissionFeed.value
+      await errorFeed.value
+      await consumer.value
+    }
+    output.continuation.onTermination = { @Sendable termination in
+      guard case .cancelled = termination else { return }
+      Task { await cancel() }
+    }
+    return InstantLiveInfiniteQueryChunkObservationLease(stream: output.stream, cancel: cancel)
   }
 
   private func hydratingDeferredValues(
@@ -6833,6 +6925,88 @@ public final class InstantRuntime: Sendable {
     return release.mutationIDs
   }
 
+  /// Keeps the socket when the server answers a write with a transient error, and offers the write again on it
+  /// after a growing, jittered backoff (#376).
+  ///
+  /// A stalled server answers every write with 500 `operation-timed-out`. Swift used to release every claim and
+  /// close the socket for it, so each reconnect re-sent init, every query, and the same write, and got the same
+  /// 500: 36 reconnects and 324 add-queries in 12 s in the companion harness. The socket is healthy, so only this
+  /// write's claim is released. Delivery pauses for the backoff of the write's consecutive failures, then probes with
+  /// one write at a time until the server accepts one. The other writes in flight keep their claims and answers.
+  ///
+  /// Upstream `Reactor.js` `_handleMutationError` drops the mutation and keeps the socket. Swift keeps the socket too,
+  /// but retries the durable write rather than losing it. The server may have applied a timed-out write, so its later
+  /// refusal is classified as a replay.
+  private func retryMutationAfterTransientServerError(
+    id mutationID: String,
+    claimToken: String,
+    error: InstantLiveErrorMessage
+  ) async throws {
+    try await enterOperationGateUnlessCancelled(
+      operation: "retry a write after a transient server error"
+    )
+    let released: Bool
+    do {
+      recordActorHop(.persistence)
+      released = try await persistence.releaseAutomaticOutboxClaim(
+        id: mutationID,
+        claimantID: automaticDeliveryClaimantID,
+        claimToken: claimToken
+      )
+      if released {
+        recordActorHop(.outbox)
+        await outbox.remove(id: mutationID)
+      }
+      await leaveOperationGate()
+    } catch {
+      await leaveOperationGate()
+      throw error
+    }
+    recordActorHop(.liveSession)
+    await liveSession.recordInconclusiveAnswer(to: mutationID)
+    guard released else {
+      InstantDiagnostics.shared.record(
+        .debug,
+        subsystem: "instant-swift-data-core",
+        category: "outbox",
+        event: "outbox.mutation.server-error-stale-claim",
+        message: "Ignored a transient mutation error after this socket lost its durable delivery claim.",
+        metadata: ["mutationID": mutationID, "errorMessage": error.message],
+        correlationID: mutationID
+      )
+      return
+    }
+    let retry = await mutationServerErrorBackoff.recordFailure(
+      of: mutationID,
+      now: configuration.now().milliseconds,
+      policy: configuration.liveServerErrorRetryPolicy
+    )
+    InstantDiagnostics.shared.record(
+      .warning,
+      subsystem: "instant-swift-data-core",
+      category: "outbox",
+      event: "outbox.mutation.server-error-retry-scheduled",
+      message: "The server answered a write with a transient error; the socket stays open and the write is offered again after a backoff.",
+      metadata: [
+        "mutationID": mutationID,
+        "attempt": String(retry.attempt),
+        "delayMilliseconds": String(retry.delayMilliseconds),
+        "deliveryResumesAtMilliseconds": String(retry.resumesAtMilliseconds),
+        "errorMessage": error.message,
+        "serverStatus": error.status.map(String.init) ?? "",
+        "serverType": error.type ?? "",
+        "serverTraceID": error.traceID ?? "",
+      ],
+      correlationID: mutationID
+    )
+    await configuration.onServerErrorRetryScheduledForTesting?(
+      .mutation(mutationID),
+      retry.attempt,
+      retry.delayMilliseconds
+    )
+    await scheduleLiveMutationDeadlineWake(at: retry.resumesAtMilliseconds)
+  }
+
   /// Schedules one reconnect after `error`, with the controller's backoff.
   ///
   /// - Parameter replacesOpenSession: `true` when the session that still reports open is the one that failed: a
@@ -6942,6 +7116,7 @@ public final class InstantRuntime: Sendable {
       let registrationKey = try InstantLiveQueryEncoder.registrationKey(for: query)
       guard !queryOK.result.isEmpty else {
         await liveQueryAcknowledgements.record(key: registrationKey)
+        await recordLiveQueryAnswered(key: registrationKey)
         return
       }
       guard let processedTransactionID = queryOK.processedTransactionID?.nilIfEmpty else {
@@ -6966,6 +7141,7 @@ public final class InstantRuntime: Sendable {
         )
       )
       await liveQueryAcknowledgements.record(key: registrationKey)
+      await recordLiveQueryAnswered(key: registrationKey)
 
     case let .addQueryExists(queryOK):
       guard let query = queryOK.query else {
@@ -6978,6 +7154,7 @@ public final class InstantRuntime: Sendable {
       }
       let registrationKey = try InstantLiveQueryEncoder.registrationKey(for: query)
       await liveQueryAcknowledgements.record(key: registrationKey)
+      await recordLiveQueryAnswered(key: registrationKey)
 
     case let .refreshOK(refreshOK):
       try await applyLiveRefresh(
@@ -7028,6 +7205,8 @@ public final class InstantRuntime: Sendable {
         serverTransactionID: transactionID,
         claimToken: mutationClaimToken
       )
+      await mutationServerErrorBackoff.recordAcceptance(of: clientEventID)
+      await liveSession.forgetEarlierOffers(of: clientEventID)
       await startLiveMutationDeliveryIfNeeded()
 
     case let .refreshPresence(refresh):
@@ -7097,12 +7276,28 @@ public final class InstantRuntime: Sendable {
           message: error.message,
           recovery: rejectionRepeats
             ? "Inspect the rejected query and its Instant permissions without reconnecting the healthy live session."
-            : "The query stays registered and is sent again on the next connection."
+            : "The query stays registered and is sent again on this socket after a backoff."
         )
         if rejectionRepeats, await liveSession.retireRejectedQuery(key: registrationKey) {
           await liveQueryResultState.unload(key: registrationKey)
         }
         await liveQueryAcknowledgements.reject(key: registrationKey, error: rejection)
+        // Upstream `notifyQueryError`: the query's observers see the error and keep their streams (#360).
+        await liveQueryErrors.publish(rejection, for: registrationKey)
+        // A healthy socket never reconnects, so a query that waited for the next `init-ok` waited forever (#360):
+        // send it again on this socket once the backoff of its consecutive failures has passed.
+        let retry: (attempt: Int, delayMilliseconds: UInt64)?
+        if rejectionRepeats {
+          retry = nil
+        } else {
+          let policy = configuration.liveServerErrorRetryPolicy
+          recordActorHop(.liveSession)
+          retry = await liveSession.scheduleQueryResend(
+            key: registrationKey,
+            delayMilliseconds: { policy.delayMilliseconds(afterFailure: $0) },
+            sleep: configuration.liveQueryRetrySleep
+          )
+        }
         InstantDiagnostics.shared.record(
           error: rejection,
           subsystem: "instant-swift-data-core",
@@ -7110,12 +7305,21 @@ public final class InstantRuntime: Sendable {
           event: rejectionRepeats ? "query.live-rejected" : "query.live-failed",
           message: rejectionRepeats
             ? "Instant rejected one live query without interrupting the shared socket."
-            : "One Instant live query failed on the server; it stays registered and is sent again on the next connection.",
+            : "One Instant live query failed on the server; it stays registered and is sent again on this socket after a backoff.",
           metadata: [
             "registrationKey": registrationKey,
             "retired": String(rejectionRepeats),
+            "attempt": retry.map { String($0.attempt) } ?? "",
+            "retryDelayMilliseconds": retry.map { String($0.delayMilliseconds) } ?? "",
           ]
         )
+        if let retry {
+          await configuration.onServerErrorRetryScheduledForTesting?(
+            .query(registrationKey),
+            retry.attempt,
+            retry.delayMilliseconds
+          )
+        }
         return
       }
       let clientEventID = error.clientEventID?.nilIfEmpty
@@ -7164,39 +7368,17 @@ public final class InstantRuntime: Sendable {
         case let .owned(claimToken) = mutationDisposition
       {
         if Self.isRetryableMutationError(error) {
-          _ = try await releaseAutomaticOutboxClaimsForDisconnectedSession()
-          InstantDiagnostics.shared.record(
-            .warning,
-            subsystem: "instant-swift-data-core",
-            category: "outbox",
-            event: "outbox.mutation.server-error-retryable",
-            message: "Server returned a retryable error for an outbox mutation.",
-            metadata: [
-              "mutationID": clientEventID,
-              "errorMessage": error.message,
-              "serverStatus": error.status.map(String.init) ?? "",
-              "serverType": error.type ?? "",
-              "serverTraceID": error.traceID ?? "",
-            ],
-            correlationID: clientEventID
+          try await retryMutationAfterTransientServerError(
+            id: clientEventID,
+            claimToken: claimToken,
+            error: error
           )
-          throw InstantError(
-            code: .networkFailed,
-            operation: "receive retryable Instant live mutation error",
-            serverEventID: clientEventID,
-            serverStatus: error.status,
-            serverType: error.type,
-            serverHint: error.hint,
-            serverTraceID: error.traceID,
-            serverOriginalEventTraceID: error.originalEventTraceID,
-            message: error.message,
-            recovery: "Reconnect and resend the durable pending mutation."
-          )
+          return
         }
         // A refusal of a re-sent write that an earlier connection offered without an answer is a replay: the earlier
         // offer may have been applied, with a newer write of the same row after it (Recording 023, #296).
         recordActorHop(.liveSession)
-        let isReplay = await liveSession.wasOfferedWithoutAnswerOnAnEarlierConnection(clientEventID)
+        let isReplay = await liveSession.mayHaveAppliedAnEarlierOffer(of: clientEventID)
         let refusalKind = isReplay ? "replay" : "first-offer"
         InstantDiagnostics.shared.record(
           .error,
@@ -7243,26 +7425,44 @@ public final class InstantRuntime: Sendable {
           requiredClaimToken: claimToken,
           recordsConnectionFailure: false
         )
+        await mutationServerErrorBackoff.forget(clientEventID)
+        await liveSession.forgetEarlierOffers(of: clientEventID)
         await startLiveMutationDeliveryIfNeeded()
         return
       }
-      throw InstantError(
-        code: .networkFailed,
-        operation: "receive Instant live server event",
-        serverEventID: error.clientEventID,
-        serverStatus: error.status,
-        serverType: error.type,
-        serverHint: error.hint,
-        serverTraceID: error.traceID,
-        serverOriginalEventTraceID: error.originalEventTraceID,
-        message: error.message,
-        recovery: "Inspect the Instant runtime WebSocket event and reconnect."
+      // No write, query, or stream owns this error: an answer to a write this runtime no longer holds, a refusal
+      // for a stream reader whose observation already ended, or a server error without a request. Upstream
+      // `Reactor.js` `_handleReceiveError` logs such an error (`console.error`) and keeps the socket; closing a
+      // healthy socket for it would only re-add every query. Swift used to throw here, which reconnected.
+      InstantDiagnostics.shared.record(
+        .error,
+        subsystem: "instant-swift-data-core",
+        category: "transport",
+        event: "websocket.error-unrouted",
+        message: "Instant sent an error that no write, query, or stream owns; the socket stays open.",
+        metadata: [
+          "clientEventID": error.clientEventID ?? "",
+          "originalEventOp": error.originalEvent?.op ?? "",
+          "errorMessage": error.message,
+          "serverStatus": error.status.map(String.init) ?? "",
+          "serverType": error.type ?? "",
+          "serverTraceID": error.traceID ?? "",
+        ],
+        correlationID: error.clientEventID
       )
 
     case .initOK, .joinRoomOK, .leaveRoomOK, .startStreamOK,
       .streamFlushed, .appendFailed, .other:
       break
     }
+  }
+
+  /// The server answered the live query `key`: its error clears for its observers and its backoff starts over
+  /// (#360).
+  private func recordLiveQueryAnswered(key: String) async {
+    recordActorHop(.liveSession)
+    await liveSession.recordQueryAnswered(key: key)
+    await liveQueryErrors.publish(nil, for: key)
   }
 
   private static func isRetryableMutationError(_ error: InstantLiveErrorMessage) -> Bool {
@@ -7656,12 +7856,21 @@ public final class InstantRuntime: Sendable {
 
     await configuration.onAutomaticMutationPumpRetryWindowCompletedForTesting?()
 
+    // A write the server answered with a transient error pauses delivery for its backoff (#376); the wake set when
+    // it failed runs this pass again when the pause ends.
+    if let resumesAt = await mutationServerErrorBackoff.pauseDeadline(now: configuration.now().milliseconds) {
+      await scheduleLiveMutationDeadlineWake(at: resumesAt)
+      return retryNeedsBackoff ? .retryAfterFailure : .finished
+    }
+
     let outstanding: InstantAutomaticOutboxTransportSelection
     do {
       try Task.checkCancellation()
       // Claiming reclaims expired claims as acknowledgement timeouts; keep them while a frame is still applying.
       try await deferAcknowledgementDeadlinesWhileAFrameIsApplied()
-      outstanding = try await automaticOutboxTransportMutationsForDelivery()
+      outstanding = try await automaticOutboxTransportMutationsForDelivery(
+        probesOneWrite: await mutationServerErrorBackoff.probesOneWrite
+      )
     } catch is CancellationError {
       return .finished
     } catch {
@@ -11184,9 +11393,11 @@ public final class InstantRuntime: Sendable {
     }
   }
 
-  private func automaticOutboxTransportMutationsForDelivery() async throws
-    -> InstantAutomaticOutboxTransportSelection
-  {
+  /// - Parameter probesOneWrite: Claim at most one write in flight, while the server has answered a write with a
+  ///   transient error and has not accepted one since (#376).
+  private func automaticOutboxTransportMutationsForDelivery(
+    probesOneWrite: Bool = false
+  ) async throws -> InstantAutomaticOutboxTransportSelection {
     try await enterOperationGateUnlessCancelled(
       operation: "claim automatic outbox transport mutations for delivery"
     )
@@ -11196,7 +11407,10 @@ public final class InstantRuntime: Sendable {
         InstantAutomaticOutboxClaimRequest(
           claimantID: automaticDeliveryClaimantID,
           claimToken: UUID().uuidString.lowercased(),
-          now: configuration.now()
+          now: configuration.now(),
+          maximumMutationCount: probesOneWrite
+            ? 1
+            : InstantAutomaticOutboxClaimLimits.maximumMutationCount
         )
       )
       recordActorHop(.outbox)

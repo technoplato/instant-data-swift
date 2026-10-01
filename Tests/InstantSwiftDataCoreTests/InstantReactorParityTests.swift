@@ -1138,15 +1138,18 @@ struct InstantReactorParityTests {
     _ = try await runtime.closeConnection()
   }
 
+  /// A transient server error on a write keeps the healthy socket (#376): the write is offered again on the same
+  /// session after a backoff. Upstream `Reactor.js` `_handleMutationError` keeps the socket too, but drops the write;
+  /// Swift's outbox is durable, so it retries. This test used to pin a reconnect and a resend on a second session.
   @Test
-  func transientMutationServerErrorReconnectsAndResendsDurableMutation() async throws {
+  func transientMutationServerErrorKeepsTheSessionAndResendsTheDurableMutationOnIt() async throws {
     let firstSession = LiveReactorParitySession(messages: [
       liveReactorInitOK(attrs: liveReactorTodoServerAttrs, sessionID: "before-timeout")
     ])
-    let secondSession = LiveReactorParitySession(messages: [
+    let unusedSession = LiveReactorParitySession(messages: [
       liveReactorInitOK(attrs: liveReactorTodoServerAttrs, sessionID: "after-timeout")
     ])
-    let transport = LiveReactorParityTransport(sessions: [firstSession, secondSession])
+    let transport = LiveReactorParityTransport(sessions: [firstSession, unusedSession])
     var configuration = InstantRuntimeConfiguration(
       appID: "reactor-transient-mutation-error",
       persistenceURL: try temporaryReactorParityCacheURL(),
@@ -1154,6 +1157,11 @@ struct InstantReactorParityTests {
       liveTransport: transport.transport
     )
     configuration.liveReconnectSleep = { _ in }
+    configuration.liveServerErrorRetryPolicy = InstantServerErrorRetryPolicy(
+      baseMilliseconds: 10,
+      maximumMilliseconds: 10,
+      jitter: { 1 }
+    )
     let runtime = try await InstantRuntime.bootstrap(configuration: configuration)
     _ = try await runtime.connect()
 
@@ -1179,14 +1187,16 @@ struct InstantReactorParityTests {
       )
     )
 
-    try await Task.sleep(for: .milliseconds(100))
+    try await instantLiveWithTimeout(
+      operation: "wait for the write to be offered again on the same session",
+      timeoutMilliseconds: 5_000
+    ) {
+      await firstSession.waitForSentMessageCount(3)
+    }
     let connectionRequests = await transport.connectionRequests()
-    expectNoDifference(connectionRequests.map(\.appID), [
-      "reactor-transient-mutation-error",
-      "reactor-transient-mutation-error",
-    ])
-    let retriedMessages = await secondSession.sentMessages()
-    expectNoDifference(retriedMessages.map(\.op), ["init", "transact"])
+    expectNoDifference(connectionRequests.map(\.appID), ["reactor-transient-mutation-error"])
+    let retriedMessages = await firstSession.sentMessages()
+    expectNoDifference(retriedMessages.map(\.op), ["init", "transact", "transact"])
     expectNoDifference(
       retriedMessages.last?.clientEventID,
       "tx-retry-after-handle-receive-timeout"
@@ -1194,7 +1204,7 @@ struct InstantReactorParityTests {
     let pending = await runtime.pendingMutations()
     expectNoDifference(pending.map(\.id), ["tx-retry-after-handle-receive-timeout"])
 
-    await secondSession.enqueue(
+    await firstSession.enqueue(
       InstantLiveMessage(
         op: "transact-ok",
         clientEventID: "tx-retry-after-handle-receive-timeout",
@@ -1204,7 +1214,7 @@ struct InstantReactorParityTests {
     _ = try #require(
       try await instantLiveWithTimeout(
         operation: "wait for retried mutation acknowledgement",
-        timeoutMilliseconds: 500
+        timeoutMilliseconds: 5_000
       ) {
         try await runtime.observeConnectionStatus().first { $0.pendingMutationCount == 0 }
       }

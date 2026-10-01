@@ -1012,6 +1012,10 @@ private actor InstantLiveInfiniteQueryCoordinator {
   private var preBootstrapExpansionTask: Task<Void, Never>?
   private var preBootstrapExpansionGeneration = 0
   private var preBootstrapExpansionPayloadValueCount = 0
+  /// The server's latest error for each chunk's live query (#360). A failed chunk keeps its rows and its
+  /// subscription while the runtime sends the query again; the snapshot reports the error until it clears.
+  private var chunkServerErrors: [InstantLiveInfiniteSubscriptionKey: InstantError] = [:]
+  private var pushedSnapshotCount = 0
 
   init(
     runtime: InstantRuntime,
@@ -2240,6 +2244,7 @@ private actor InstantLiveInfiniteQueryCoordinator {
     guard retiringSubscriptions[key] == nil,
       let subscription = subscriptions.removeValue(forKey: key)
     else { return }
+    chunkServerErrors[key] = nil
     subscription.task.cancel()
     let retiredSubscriptionID = subscription.id
     let cleanupTask = Task { [weak self] in
@@ -2345,6 +2350,19 @@ private actor InstantLiveInfiniteQueryCoordinator {
     if emission.pageInfo != nil, subscriptions[key]?.id == subscriptionID {
       subscriptions[key]?.hasResult = true
     }
+    var serverErrorChanged = false
+    if subscriptions[key]?.id == subscriptionID, chunkServerErrors[key] != emission.error {
+      chunkServerErrors[key] = emission.error
+      serverErrorChanged = true
+    }
+    let pushedSnapshotCountBefore = pushedSnapshotCount
+    defer {
+      // An emission that only reports or clears a server error changes no rows, so the chunk handlers may not
+      // publish it (#360).
+      if serverErrorChanged, pushedSnapshotCount == pushedSnapshotCountBefore {
+        pushSnapshot()
+      }
+    }
     switch key {
     case .starter:
       receiveStarter(emission, subscriptionID: subscriptionID)
@@ -2402,6 +2420,7 @@ private actor InstantLiveInfiniteQueryCoordinator {
         hasPreviousPage: canLoadPreviousPage,
         hasNextPage: canLoadNextPage
       )
+    pushedSnapshotCount &+= 1
     continuation.yield(
       InstantInfiniteQuerySnapshot(
         queryID: plan.id,
@@ -2409,9 +2428,25 @@ private actor InstantLiveInfiniteQueryCoordinator {
         values: values,
         pageInfo: pageInfo,
         canLoadNextPage: canLoadNextPage,
-        canLoadPreviousPage: canLoadPreviousPage
+        canLoadPreviousPage: canLoadPreviousPage,
+        error: currentChunkServerError()
       )
     )
+  }
+
+  /// The first chunk's server error, in window order, starting with the starter page (#360).
+  private func currentChunkServerError() -> InstantError? {
+    guard !chunkServerErrors.isEmpty else { return nil }
+    if let error = chunkServerErrors[.starter] {
+      return error
+    }
+    for key in forwardKeys {
+      if let error = chunkServerErrors[.forward(key)] { return error }
+    }
+    for key in reverseKeys {
+      if let error = chunkServerErrors[.reverse(key)] { return error }
+    }
+    return chunkServerErrors.values.first
   }
 
   private func placeholderChunk() -> InstantLiveInfiniteChunk {
