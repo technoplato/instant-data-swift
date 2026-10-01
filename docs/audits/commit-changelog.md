@@ -1,3 +1,6 @@
+## 2026-10-01 15:06:16 EDT — instant-data-swift `ea6764c7189f4daa2a6f4bae1dcfcfd0f8c69832`
+Sign a second identity in beside the primary client on its own temporary store and connection, so a sign-in proves another identity without promoting, linking, or replacing the primary's session; close() revokes only the tokens it minted (#361).
+
 ## 2026-10-01 04:22:17 EDT — instant-data-swift `1ba0077985528f9633d987cedaa145baeb698452`
 End every stream observation behind a subscription the server refuses (Stream is missing), and pin the offline stream writer gap as a known issue (#303 #329).
 

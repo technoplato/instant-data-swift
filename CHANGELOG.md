@@ -10,6 +10,21 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## October 1st, 2026 at 3:06:16 p.m. EDT — `ea6764c7189f` Sign a second identity in beside the primary client, on its own temporary store and connection (#361)
+
+- **Implementation commit:** `ea6764c7189f4daa2a6f4bae1dcfcfd0f8c69832`
+- **Change:** A second identity signs in beside the primary client on its own temporary store and connection, without changing the primary's session (#361).
+- **Details:**
+  - A client keeps one auth session per store, and its exchanges forward the current refresh token (a guest's for magic code and OAuth, any for ID tokens), so a sign-in on the primary promotes or links the primary identity. InstantSecondSignIn copies the primary's endpoints, exchanges, and live transport onto a temporary store under $TMPDIR/InstantSecondSignIn with no session; its sign-ins send no refresh token, and the primary's session, outbox, and InstantClientID.current never change.
+  - open(sharingSessionOf:) and adoptRefreshToken adopt a verified token and never revoke it. transactAwaitingServer and queryServer wait up to 5 seconds and name the write in a timeout. close() revokes every token this sign-in's own exchanges minted (recorded at the exchange, so a sign-in that finishes after close is revoked too), closes the connection, and deletes the store.
+  - Tests (fake auth endpoints and websockets): 15. Red at a skeleton that signed in on the primary: the guest's token went to verify_magic_code and the primary session became user-b. The first green run caught a leak (a sign-in finishing after close minted a token the deleted store refused, never revoked), fixed with the minted-token ledger. Final run, load ~800: 183 tests in 35 suites passed.
+- **Files:**
+  - `Sources/InstantSwiftData/InstantSecondSignIn.swift` — the second sign-in: temporary configuration, sign-ins, server waits, close, minted-token ledger
+  - `Tests/InstantSwiftDataTests/InstantSecondSignInTests.swift` — fake Instant server (auth endpoints, websockets, triples) and the second sign-in tests
+- **User context (verbatim):**
+  > Let's add a functionality to link accounts then. If you have Apple, I want to be able to link it with Google as well so that we aggregate all these different recordings. So it's a library change and
+- **SpecStory:** unavailable — Claude Code agent session (account-linking-library); no SpecStory capture for this session
+
 ## October 1st, 2026 at 4:23:01 a.m. EDT — `1ba007798552` End every stream observation behind a subscription the server refuses, and pin the offline stream writer gap (#303 #329)
 
 - **Implementation commit:** `1ba0077985528f9633d987cedaa145baeb698452`
