@@ -42,8 +42,10 @@ Touching:
 
 - Sources/InstantSwiftDataCore/InstantRuntime.swift, InstantRuntimeLiveSession.swift, InstantLiveTransport.swift,
   SQLitePersistenceStore.swift, InstantSnapshotObservers.swift, InstantModels.swift, InstantInfiniteQuery.swift,
-  BoundedOutboxDelivery.swift
-- Sources/InstantSwiftData/InstantSwiftData.swift
+  BoundedOutboxDelivery.swift, and new InstantServerErrorRetryPolicy.swift and InstantLiveQueryErrors.swift (added
+  2026-10-01 13:10)
+- Sources/InstantSwiftData/InstantSwiftData.swift, and Tests/InstantSwiftDataTests: new
+  InstantLiveQueryErrorSubscriptionTests.swift (added 2026-10-01 13:10)
 - Tests/InstantSwiftDataCoreTests: new InstantTransientMutationRetryTests.swift, InstantLiveQueryErrorRecoveryTests.swift,
   InstantSupersededReplayTests.swift, InstantOutboxRevisionGateTests.swift, InstantPruneGateHoldTests.swift,
   InstantLocalFirstQueryOnceTests.swift, InstantStreamRobustnessTests.swift; existing InstantLiveTransportTests.swift,
