@@ -1156,6 +1156,73 @@ struct InstantBoundedServerApplyRebaseTests {
     expectNoDifference(metrics.forwardMaximumBodyPageCount, 50)
   }
 
+  /// #303: this runtime's own local writes landed between each attempt's seed and its plan, so every optimistic
+  /// attempt went stale and the apply threw "changed repeatedly". On the live path that ended the receive loop; the
+  /// reconnect re-sent in-flight writes, which Scribe's validUpdate rule refused as replays. The experiment agent's
+  /// large-store drop hit it while dictation continued after an outage (pair-large-drop-r1). Once the optimistic
+  /// attempts are spent, one attempt holds the operation gate from its seed to its commit, so the local writes wait
+  /// and the server transaction lands.
+  @Test
+  func localWritesThatOutpaceEveryAttemptGetOneExclusiveApply() async throws {
+    let writer = BoundedServerApplyConcurrentLocalWriter(
+      rootEntityID: "outpaced-root",
+      writesPerPreparation: 1
+    )
+    let runtime = try await boundedServerApplyRuntime(
+      suffix: "outpaced-by-local-writes",
+      snapshot: InstantPersistenceSnapshot(
+        store: InstantStoreSnapshot(attributes: boundedServerApplyAttributes)
+      ),
+      onSeedLoaded: { operationGateHeld in
+        if operationGateHeld {
+          // The exclusive attempt holds the gate, so this write waits for it, as dictation would.
+          Task { await writer.writeBatchForPreparation() }
+        } else {
+          await writer.writeBatchForPreparation()
+        }
+      }
+    )
+    await writer.install(runtime)
+
+    let application = try await runtime.applyServerTransaction(
+      boundedServerApplyServerWrite(entityID: "outpaced-root", id: "outpaced-server")
+    )
+
+    expectNoDifference(application.syncState.processedTransactionID, "outpaced-server")
+    try await instantLiveWithTimeout(
+      operation: "wait for the write that waited behind the exclusive apply",
+      timeoutMilliseconds: 5_000
+    ) {
+      while await writer.mutationIDs().count < 6 {
+        try Task.checkCancellation()
+        await Task.yield()
+      }
+    }
+    let writeFailures = await writer.failures()
+    expectNoDifference(writeFailures, [])
+    let localMutationIDs = await writer.mutationIDs()
+    expectNoDifference(localMutationIDs, (0..<6).map { "continuous-local-\($0)" })
+    let state = try await runtime.persistence.loadState()
+    expectNoDifference(state.snapshot.outbox.map(\.id), localMutationIDs)
+    expectNoDifference(
+      state.snapshot.store.triples.first(where: {
+        $0.entityID == "outpaced-root" && $0.attributeID == "items/value"
+      })?.value,
+      .string("local-5"),
+      "The newest pending write stays on top of the server's value."
+    )
+    let firstWrite = try #require(state.snapshot.outbox.first)
+    expectNoDifference(
+      firstWrite.rollbackTransaction?.operations.compactMap(\.insertedTriple).first(where: {
+        $0.entityID == "outpaced-root" && $0.attributeID == "items/value"
+      })?.value,
+      .string("server"),
+      "Under the pending writes, the base is the server's value."
+    )
+    let syncState = try await runtime.syncState()
+    expectNoDifference(syncState.processedTransactionID, "outpaced-server")
+  }
+
   @Test
   func continuouslyAppendingPeerTakesBoundedFallbackAndDoesNotBlockClose() async throws {
     let cacheURL = boundedServerApplyCacheURL("continuous-peer-catch-up")
@@ -1247,14 +1314,16 @@ struct InstantBoundedServerApplyRebaseTests {
       applyError.message,
       "The local store changed repeatedly while applying server transaction 'continuous-peer-server'."
     )
+    // Five optimistic attempts, then one exclusive attempt (#303). The peer runtime is not held by this runtime's
+    // operation gate, so it makes the exclusive attempt stale as well, and the apply still throws.
     let replayCounts = await replayProbe.replayCounts()
     let replayBodyCounts = await replayProbe.appendedBodyCounts()
-    expectNoDifference(replayCounts, Array(repeating: [1, 2], count: 5).flatMap { $0 })
-    expectNoDifference(replayBodyCounts, Array(repeating: 1, count: 10))
+    expectNoDifference(replayCounts, Array(repeating: [1, 2], count: 6).flatMap { $0 })
+    expectNoDifference(replayBodyCounts, Array(repeating: 1, count: 12))
     let writeFailures = await writer.failures()
     let localMutationIDs = await writer.mutationIDs()
     expectNoDifference(writeFailures, [])
-    expectNoDifference(localMutationIDs, (0..<15).map { "continuous-local-\($0)" })
+    expectNoDifference(localMutationIDs, (0..<18).map { "continuous-local-\($0)" })
 
     let durableState = try await runtime.persistence.loadState()
     expectNoDifference(durableState.snapshot.outbox.map(\.id), localMutationIDs)
@@ -1262,10 +1331,10 @@ struct InstantBoundedServerApplyRebaseTests {
       durableState.snapshot.store.triples.first(where: {
         $0.entityID == "continuous-peer-root"
       })?.value,
-      .string("local-14")
+      .string("local-17")
     )
     let metrics = await runtime.persistence.serverApplyMetricsForTesting()
-    expectNoDifference(metrics.planCount, 5)
+    expectNoDifference(metrics.planCount, 6)
     expectNoDifference(metrics.commitAttemptCount, 0)
     expectNoDifference(metrics.staleCommitCount, 0)
     let serverApplyGateWaiterCount = await runtime.serverApplyGateWaiterCountForTesting()
@@ -1723,7 +1792,8 @@ private func boundedServerApplyRuntime(
   onCatchUpReplayedOutsideOperationGate:
     (@Sendable (_ appendedBodyCount: Int) async -> Void)? = nil,
   onCatchUpReplayed:
-    (@Sendable (_ replayCount: Int, _ appendedBodyCount: Int) async -> Void)? = nil
+    (@Sendable (_ replayCount: Int, _ appendedBodyCount: Int) async -> Void)? = nil,
+  onSeedLoaded: (@Sendable (_ operationGateHeld: Bool) async -> Void)? = nil
 ) async throws -> InstantRuntime {
   let cacheURL = providedCacheURL ?? boundedServerApplyCacheURL(suffix)
   let persistence = try SQLitePersistenceStore(
@@ -1756,6 +1826,7 @@ private func boundedServerApplyRuntime(
   configuration.onServerApplyCatchUpReplayedOutsideOperationGateForTesting =
     onCatchUpReplayedOutsideOperationGate
   configuration.onServerApplyCatchUpReplayedForTesting = onCatchUpReplayed
+  configuration.onServerApplySeedLoadedForTesting = onSeedLoaded
   return try await InstantRuntime.bootstrap(
     configuration: configuration
   )

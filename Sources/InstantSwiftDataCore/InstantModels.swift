@@ -867,10 +867,14 @@ public enum InstantMutationConfirmationSource: String, Hashable, Codable, Sendab
   case localTransport
   case serverTransport
   case webSocketTransactOK
+  /// Later writes of this device that the server accepted cover every operation of this one, so the server holds
+  /// its effect or a newer one, and it is not offered again. A re-send of a write the server already applied, refused
+  /// because a newer write of the same row was applied after it, resolves this way instead of failing.
+  case supersededByAcceptedWrite
 
   public var provesServerAcceptance: Bool {
     switch self {
-    case .serverTransport, .webSocketTransactOK:
+    case .serverTransport, .webSocketTransactOK, .supersededByAcceptedWrite:
       true
     case .manual, .localDrain, .localTransport:
       false
@@ -2043,17 +2047,74 @@ public struct InstantQueryEmission: Hashable, Codable, Sendable {
   public var sequence: Int64
   public var values: [InstantEntitySnapshot]
   public var pageInfo: InstantQueryPageInfo?
+  /// The server's latest error for this live query, or `nil` while the server answers it.
+  ///
+  /// A failed live query keeps its stream and its last values. After a transient error (a stalled server's
+  /// `operation-timed-out`, for example) the library sends the query again on the open socket, and the next
+  /// emission clears the error once the server answers; the emission is repeated with the same values whenever the
+  /// error changes. A permission or validation rejection stays until the query is observed again. Local-only
+  /// observations never report one. Upstream `Reactor.js` delivers the same error to the query's callbacks
+  /// (`notifyQueryError`).
+  public var error: InstantError? {
+    get { serverError?.value }
+    set { serverError = newValue.map(InstantQueryEmissionServerError.init) }
+  }
+  // Boxed: an `InstantError` can carry a cached query, which holds an emission.
+  private var serverError: InstantQueryEmissionServerError?
 
   public init(
     queryID: String,
     sequence: Int64,
     values: [InstantEntitySnapshot],
-    pageInfo: InstantQueryPageInfo? = nil
+    pageInfo: InstantQueryPageInfo? = nil,
+    error: InstantError? = nil
   ) {
     self.queryID = queryID
     self.sequence = sequence
     self.values = values
     self.pageInfo = pageInfo
+    self.serverError = error.map(InstantQueryEmissionServerError.init)
+  }
+
+  private enum CodingKeys: String, CodingKey {
+    case queryID, sequence, values, pageInfo, error
+  }
+
+  public init(from decoder: any Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    self.init(
+      queryID: try container.decode(String.self, forKey: .queryID),
+      sequence: try container.decode(Int64.self, forKey: .sequence),
+      values: try container.decode([InstantEntitySnapshot].self, forKey: .values),
+      pageInfo: try container.decodeIfPresent(InstantQueryPageInfo.self, forKey: .pageInfo),
+      error: try container.decodeIfPresent(InstantError.self, forKey: .error)
+    )
+  }
+
+  public func encode(to encoder: any Encoder) throws {
+    var container = encoder.container(keyedBy: CodingKeys.self)
+    try container.encode(queryID, forKey: .queryID)
+    try container.encode(sequence, forKey: .sequence)
+    try container.encode(values, forKey: .values)
+    try container.encodeIfPresent(pageInfo, forKey: .pageInfo)
+    try container.encodeIfPresent(error, forKey: .error)
+  }
+}
+
+/// The boxed server error of an ``InstantQueryEmission``.
+private final class InstantQueryEmissionServerError: Hashable, Sendable {
+  let value: InstantError
+
+  init(_ value: InstantError) {
+    self.value = value
+  }
+
+  static func == (lhs: InstantQueryEmissionServerError, rhs: InstantQueryEmissionServerError) -> Bool {
+    lhs.value == rhs.value
+  }
+
+  func hash(into hasher: inout Hasher) {
+    hasher.combine(value)
   }
 }
 

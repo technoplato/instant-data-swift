@@ -10,6 +10,177 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## October 1st, 2026 at 8:45:52 p.m. EDT — `01175cff5f84` Name what protects the attribute context cache and the observation reader in their SAFETY comments
+
+- **Implementation commit:** `01175cff5f84039d20007afee40e3195102da3d8`
+- **Change:** The attribute context cache and the observation reader name what protects them in their SAFETY comments.
+- **Details:**
+  - SwiftConcurrencyGuidanceTests.uncheckedSendableConformancesDocumentProtectionMechanism requires every production @unchecked Sendable to name its lock, actor, or executor. Library-77's InstantLiveRefreshAttributeContextCache (f5fed905) had no SAFETY comment, so the test failed on 956fce52 and every v1.8.0 gate run (the release agent's finding); its NSLock guards all its state.
+  - Library-78's observation reader (18e52df0) now names the consuming task's executor as what serializes it. The guidance test passes in library-78's gate.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantLiveRefreshApplication.swift` — SAFETY comment on the attribute context cache
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — SAFETY comment on the observation reader
+- **User context (verbatim):**
+  > fix this please so it works efficiently as as well as the typescript core library
+- **SpecStory:** unavailable — unavailable — Claude Code agent session (library-78); no SpecStory capture configured for this session.
+
+## October 1st, 2026 at 7:55:15 p.m. EDT — `4d928d70f013` Link and unlink through a second sign-in against a real Instant server's rules, in an environment-gated live test (#361)
+
+- **Implementation commit:** `4d928d70f01397625f5cdd1906268acab32f6e89`
+- **Change:** Link and unlink through a second sign-in against a real Instant server's rules, in an environment-gated live test (#361)
+- **Details:**
+  - InstantAccountLinksLiveTests: a guest primary, InstantSecondSignIn with a magic code from the admin API (send only records the pending code; Instant's mail provider refuses example.com; verify is live), InstantAccountLinks link, reads from both sides, unlink, close; the primary's session never changes.
+  - Runs only with INSTANT_ACCOUNT_LINK_LIVE_APP_ID (never production), INSTANT_ACCOUNT_LINK_LIVE_EMAIL, and INSTANT_ACCOUNT_LINK_LIVE_CODE.
+  - Evidence on bd40c50a: passed in 5.0 s (guest acd8f353, member 3034496e, link 27aa1dce; no accountLinks row afterwards). A first run failed before any write because signInWithMagicCode needs the pending code a send records. Issue #361.
+- **Files:**
+  - `Tests/InstantSwiftDataTests/InstantAccountLinksLiveTests.swift` — new environment-gated live test of the link path against real rules
+- **User context (verbatim):**
+  > Let's add a functionality to link accounts then. If you have Apple, I want to be able to link it with Google as well so that we aggregate all these different recordings. So it's a library change and
+- **SpecStory:** unavailable — unavailable — Claude Code agent session (account-linking); no SpecStory capture configured for this session.
+
+## October 1st, 2026 at 7:40:29 p.m. EDT — `18e52df0adb9` End an observation when its consumer stops iterating: returning out of for-await leaked a store observer and the live query (#394)
+
+- **Implementation commit:** `18e52df0adb9bec3a1d48b1992d115924ee8c656`
+- **Change:** An observation ends when its consumer stops iterating; returning out of for-await no longer leaks a store observer and its live query (#394).
+- **Details:**
+  - observe(_:)'s stream was fed by a forwarding task that held its continuation, so a consumer that returned out of for-await never triggered onTermination. The mac-memory agent measured one leaked store observer per Scribe media-retry scan: 2 to 224 in 20 minutes in its process, and 151 to 405 in 45 minutes on Michael's Mac.
+  - The consumer's stream now holds a release token in its storage. Dropping the stream and its iterator ends the observation; a held stream stays open; cancelling the consuming task still ends it.
+  - InstantObservationReleaseTests: red before (observers above baseline for 5 s), green 3 of 3 after; controls pass before and after.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — InstantObservationConsumerStream release token in liveObservationLease
+  - `Tests/InstantSwiftDataCoreTests/InstantObservationReleaseTests.swift` — the #394 tests
+- **User context (verbatim):**
+  > fix this please so it works efficiently as as well as the typescript core library
+- **SpecStory:** unavailable — unavailable — Claude Code agent session (library-78); no SpecStory capture configured for this session.
+
+## October 1st, 2026 at 7:40:29 p.m. EDT — `8358090e216f` Finish a write its caller cancels instead of ending the socket: cancelling an observation mid-send reconnected (#376)
+
+- **Implementation commit:** `8358090e216f289ecd08a5ed6bcdfe308aec8b68`
+- **Change:** A write its caller cancels finishes on the socket instead of ending it; cancelling an observation mid-send no longer reconnects (#376).
+- **Details:**
+  - The live session wrote under instantLiveWithTimeout, which also ends on the caller's cancellation, and any failed write aborted the session, so the receive loop failed and the runtime reconnected. Upstream Reactor.js writes with a synchronous ws.send. The write now runs in an unstructured task that does not inherit the caller's cancellation; a write that began finishes or times out after 5 s.
+  - Found through the #388 property tests: the window-1 sliding scenario failed about 1 in 10 runs before (websocket.message-send-failed CancellationError add-query, then a reconnect); 12 of 12 passed after.
+  - InstantCancelledSendTests red 3 of 3 before, green 3 of 3 after; six transport and parity suites: 185 tests, 3 known issues.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantRuntimeLiveSession.swift` — send shields the write from the caller's cancellation
+  - `Tests/InstantSwiftDataCoreTests/InstantCancelledSendTests.swift` — the cancelled-send test
+- **User context (verbatim):**
+  > Why couldn't it just reconnect? Yeah, why are the reconnects there in the first place?
+- **SpecStory:** unavailable — unavailable — Claude Code agent session (library-78); no SpecStory capture configured for this session.
+
+## October 1st, 2026 at 7:40:28 p.m. EDT — `b465ae1442f7` List each entity once in a live infinite query's snapshot, and keep shown rows while a kickstart waits for its first forward chunk (#388)
+
+- **Implementation commit:** `b465ae1442f74c437c3bcbbf0dabf5828cb34549`
+- **Change:** A live infinite query's snapshot lists each entity once, and a kickstart keeps the rows it showed until its first forward chunk answers (#388).
+- **Details:**
+  - pushSnapshot concatenated the chunks after every chunk update, and each chunk's emission arrives through its own task, so a row moving between chunks was listed twice until the slower chunk caught up (a frozen chunk keeps old rows for a round trip). Each entity is now listed once: the copy from the newer store commit wins, then the chunk stored later; the row keeps that copy's position.
+  - At a kickstart the starter's rows left with the pre-bootstrap chunk, so a leading watcher answering first published an empty window (the Mac: 12 rows, 0, 12 within 0.6 s). The coordinator now keeps the last published snapshot, if it showed rows, until the kickstart's first forward chunk answers.
+  - InstantInfiniteQueryDuplicateRowsTests 3 of 3 (five runs); the kickstart test is red with the hold removed. Infinite-query and #360 suites: 221 tests, 10 known issues plus #304.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantInfiniteQuery.swift` — windowRows dedup by store commit and stored ordinal; the kickstart hold
+- **User context (verbatim):**
+  > treat it as P0 for library-78
+- **SpecStory:** unavailable — unavailable — Claude Code agent session (library-78); no SpecStory capture configured for this session.
+
+## October 1st, 2026 at 7:40:28 p.m. EDT — `9a65aaeb5dde` Pin the list-crash defects with red tests: a snapshot that lists one entity twice, and a kickstart that shows the window empty (#388)
+
+- **Implementation commit:** `9a65aaeb5dde1a41c371039c148f75cd5dfb2d59`
+- **Change:** Red tests pin the list-crash defects: a live infinite query's snapshot that lists one entity twice, and a kickstart that shows the window empty (#388).
+- **Details:**
+  - From the list-crash agent (Scribe #388, P0): Scribe's recording list trapped in IdentifiedArray(uniqueElements:) on the Mac (build 77) and the iPhone (build 76) on a snapshot that listed one recording twice.
+  - aRowThatLeavesAChunkBeingReplacedIsNeverListedTwice (deterministic, red 3 of 3 on 956fce52 and 2ef273cb) and aRowThatMovesBetweenChunksInOneRefreshIsNeverListedTwice (a race, red 2 of 3); theWindowKeepsItsRowsWhileTheKickstartWaitsForItsFirstForwardChunk added here, with InfiniteListModelServer able to hold forward answers.
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantInfiniteQueryDuplicateRowsTests.swift` — the #388 suite
+  - `Tests/InstantSwiftDataCoreTests/InstantInfiniteQueryLeadingRowsTests.swift` — the model server's forward-answer hold
+- **User context (verbatim):**
+  > treat it as P0 for library-78
+- **SpecStory:** unavailable — unavailable — Claude Code agent session (library-78); no SpecStory capture configured for this session.
+
+## October 1st, 2026 at 5:21:37 p.m. EDT — `bc6a0c818358` Record a live query's answer before its acknowledgement, and pin the local-first queryOnce in the querySubs parity test (library-78 item 7, #317)
+
+- **Implementation commit:** `bc6a0c818358307eaa93f19cbe4e05efca782622`
+- **Change:** A live query's answer is recorded before its acknowledgement, so a queryOnce right after the rows appear answers from the device; the querySubs parity test pins the local-first queryOnce (library-78 item 7, #317).
+- **Details:**
+  - Item 7 left the querySubs parity test expecting upstream's add-query/add-query-exists round trip, and exposed a race: the acknowledgement was recorded before the answered flag, so a queryOnce in between sent add-query and waited for a second acknowledgement (a round trip; a 5 s hang against the scripted server).
+  - The answer is now recorded first and queryOnce reads the acknowledgement revision before the answered check. Tests wait for isAnsweredOnCurrentSocketForTesting before expecting a local answer. Four suites, three runs at load 860-990: 59 tests passed each time (1 known issue).
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — answer before acknowledgement; revision read first; testing hook
+  - `Tests/InstantSwiftDataCoreTests/InstantReactorParityTests.swift` — queryOnce of an answered subscription resolves locally
+  - `Tests/InstantSwiftDataCoreTests/InstantLocalFirstQueryOnceTests.swift` — wait for the recorded answer
+- **User context (verbatim):**
+  > fix this please so it works efficiently as as well as the typescript core library
+- **SpecStory:** unavailable — unavailable — Claude Code agent session (library-78); no SpecStory capture configured for this session.
+
+## October 1st, 2026 at 5:21:36 p.m. EDT — `95fba702b64f` Restart a stream writer on the same socket when the server refuses or cannot flush its append, instead of reconnecting (#329 #376)
+
+- **Implementation commit:** `95fba702b64f1973b53475fe97cf496dbc987c54`
+- **Change:** A stream writer whose append the server refuses or cannot flush restarts on the same socket instead of reconnecting it (#329 #376).
+- **Details:**
+  - With library-78's unrouted errors kept on the socket and the new stream writer, an append-stream refusal left the writer sending appends the server refuses until another reconnect; append-failed threw from the receive loop and closed a healthy socket.
+  - Upstream Stream.ts onAppendFailed restarts only the write stream on the same socket. markStreamWriterBehind takes the writer off the live path (appends wait in SQLite, a sent close goes out again, a waiting close fails at once), and the catch-up restarts it with its reconnect token and resends from the server's offset. Start-stream errors log as stream.start-error.
+  - Tests: aRefusedAppendRestartsTheWriterOnTheSameSocketFromTheServersOffset and anAppendTheServerCouldNotFlushRestartsTheWriterOnTheSameSocket, red on the merge and green here; InstantStreamRobustnessTests 14/14.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — stream error routing by original event; append-failed restarts the writer
+  - `Sources/InstantSwiftDataCore/InstantRuntimeLiveSession.swift` — markStreamWriterBehind; append-failed no longer throws
+  - `Tests/InstantSwiftDataCoreTests/InstantStreamRobustnessTests.swift` — two refused-append tests
+  - `docs/adr/0017-streams-written-offline.md` — stream errors no longer end the connection
+- **User context (verbatim):**
+  > Why couldn't it just reconnect? Yeah, why are the reconnects there in the first place?
+- **SpecStory:** unavailable — unavailable — Claude Code agent session (library-78); no SpecStory capture configured for this session.
+
+## October 1st, 2026 at 5:21:36 p.m. EDT — `0eb8f502cb48` Start streams written offline on the server once connected, named by their client id, with a durable reconnect token (#329, ADR 0017)
+
+- **Implementation commit:** `0eb8f502cb4863132924a539cd3b40637d47e0f6`
+- **Change:** A stream written offline starts on the server once connected, named by its client id, with a durable reconnect token (#329, ADR 0017; merged into build 78's library at 1f098e0c).
+- **Details:**
+  - 0eb8f502: a stream written offline starts on the server once a connection opens, named by its client id, with a durable reconnect token (migration 0025_stream_writers). The writer's catch-up runs beside the outbox, resends stored chunks from the server's offset, and no longer blocks connect() or closes the connection. Scribe must read media by asset.streamClientID.
+  - Merged into build 78's library at 1f098e0c; the source files merged without conflicts.
+- **Files:**
+  - `Sources/InstantSwiftData/InstantSwiftData.swift` — public stream API docs: local ids, client ids, what success waits for
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — stream writer catch-up beside the outbox
+  - `Sources/InstantSwiftDataCore/InstantRuntimeExactTaskOwner.swift` — catch-up owner in the exact-close idle state
+  - `Sources/InstantSwiftDataCore/InstantRuntimeLiveSession.swift` — writers without buffers; restart and catch-up
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — 0025_stream_writers and chunk pages
+  - `Tests/InstantSwiftDataCoreTests/InstantReactorParityTests.swift` — offline-stream parity test no longer a known issue
+  - `Tests/InstantSwiftDataCoreTests/InstantStreamRobustnessTests.swift` — offline writer tests
+  - `docs/adr/0017-streams-written-offline.md` — the client-id decision
+- **User context (verbatim):**
+  > I don't really understand why it would do that, reconnecting song and dance or why what was causing the problem.
+- **SpecStory:** unavailable — unavailable — Claude Code agent session (library-78); no SpecStory capture configured for this session.
+
+## October 1st, 2026 at 5:21:36 p.m. EDT — `378598c8f069` Tell stream observations each append instead of re-reading the whole stream, and retire a stream's reader at done (#329)
+
+- **Implementation commit:** `378598c8f0699d96a4ab8cf70eb51e8d27800dc7`
+- **Change:** An append tells each stream observation the new bytes instead of re-reading the whole stream, and a stream's reader is retired at done (#329; merged into build 78's library at 1f098e0c).
+- **Details:**
+  - 378598c8: an append extends each stream observation's last read instead of re-reading the whole stream (each read still holds the content from its offset, so Scribe's materializeMedia contract holds); chunk decodes per append with three observations fell from 5, 8, ... 122 to 0. A reader is retired at done, as upstream Stream.ts onStreamAppend does, and a stream already done locally is read without subscribing.
+  - Merged into build 78's library at 1f098e0c.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — incremental publish and finished-reader retirement
+  - `Sources/InstantSwiftDataCore/InstantRuntimeLiveSession.swift` — reader observation ids; retire at done
+  - `Sources/InstantSwiftDataCore/InstantSnapshotObservers.swift` — observations extended by each change
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — stored byte counts through the index
+- **User context (verbatim):**
+  > I don't really understand why it would do that, reconnecting song and dance or why what was causing the problem.
+- **SpecStory:** unavailable — unavailable — Claude Code agent session (library-78); no SpecStory capture configured for this session.
+
+## October 1st, 2026 at 5:21:35 p.m. EDT — `0adbe9727169` Commit the phone-shaped replay as a reusable gate: an opt-in test plus scripts that take the store and refusals (#296)
+
+- **Implementation commit:** `0adbe9727169e3e9182a5aee4ae9b80a66741ac8`
+- **Change:** The phone-shaped replay is a reusable gate: an opt-in test plus scripts that take the store and the refusals (#296; merged into build 78's library at 3196ad50).
+- **Details:**
+  - agent/claude-opus-5.5/library-78-phone-replay at 0eff1981: FAST-DRAIN 15.5's replay of Michael's pre-71 store through his 103 build-73 refusals, recovered from the session that wrote it and committed as an opt-in test (PhoneReplayGateTests, skipped unless INSTANT_PHONE_REPLAY_STORE is set) plus scripts/phone-replay (runner, refusal extractor, log comparator, README).
+  - On 956fce52 it reproduces every published count: 119 frames, 17 rebased, 26,288 bodies, 2,384 accepted and 103 refused, failed rows 116 to 219, and only recordings/clipboardEntries differing after a full restatement. The data stays outside the repository; the store path is an argument.
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/PhoneReplayGateTests.swift` — the replay gate, driven by environment variables
+  - `scripts/phone-replay/run-phone-replay.sh` — builds, replays a /tmp copy, compares with a reference log
+  - `scripts/phone-replay/compare-replay-logs.py` — exit 0 equal or better, 1 worse, 2 inputs differ
+  - `scripts/phone-replay/refused-mutation-ids.py` — extracts a session's refusals from the collector journal
+  - `scripts/phone-replay/README.md` — usage and the 956fce52 reproduction
+- **User context (verbatim):**
+  > fix this please so it works efficiently as as well as the typescript core library
+- **SpecStory:** unavailable — unavailable — Claude Code agent session (library-78); no SpecStory capture configured for this session.
+
 ## October 1st, 2026 at 5:11:46 p.m. EDT — `194f75324aca` Document the v1.8.0 release: a device keeps up live, catches up a backlog in minutes, and no longer stalls behind the main thread (#155 #303 #324 #329 #296)
 
 - **Implementation commit:** `194f75324acadc3118b789a16489410681a96abc`
@@ -22,6 +193,176 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 - **User context (verbatim):**
   > make sure the the library is deployed and has a release triggered, etc., from uh GitHub with all these fixes and whatnot
 - **SpecStory:** unavailable — Claude Code agent session (release); no SpecStory capture configured for this session.
+
+## October 1st, 2026 at 3:45:08 p.m. EDT — `6dce825d80c3` Answer a one-shot query from the device when its exact subscription was answered on the open socket (library-78 item 7, #317 #307)
+
+- **Implementation commit:** `6dce825d80c3cdac96cf9e9ea11fc6dcc9b65cdf`
+- **Change:** A one-shot query is answered from the device when its exact subscription was answered by the server on the open socket (library-78 item 7, #317 #307).
+- **Details:**
+  - queryOnce sent add-query and waited up to 5 s even for a subscribed, answered query, as upstream does (add-query-exists); behind Scribe's frame backlog that failed Copy Transcript at 5,004 ms (#307), and the Watch's startup reads stalled behind the socket (#317).
+  - The live session records the generation on which each registered query was last answered and clears it on a server error, retirement, unregistration, and every new socket; queryOnce reads the store with the subscription's page info only then. Every other query asks the server as before (ADR 0001 allows reusing applicable local state while connected).
+  - Tests: InstantLocalFirstQueryOnceTests (red with the branch disabled: a second add-query; green: ['init', 'add-query'] on the wire), plus the other-query and after-error cases.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — queryOnceThroughLive answers from an answered subscription; failures clear it
+  - `Sources/InstantSwiftDataCore/InstantRuntimeLiveSession.swift` — answered generations per registered query
+  - `Tests/InstantSwiftDataCoreTests/InstantLocalFirstQueryOnceTests.swift` — item 7 tests
+- **User context (verbatim):**
+  > fix this please so it works efficiently as as well as the typescript core library
+- **SpecStory:** unavailable — unavailable — Claude Code agent session (library-78); no SpecStory capture configured for this session.
+
+## October 1st, 2026 at 3:39:12 p.m. EDT — `aa1cca45cc81` Prune inactive live-query results in bounded batches so a local write waits for one batch, not the whole prune (#303)
+
+- **Implementation commit:** `aa1cca45cc816986647526fc9e693358df236a69`
+- **Change:** Inactive live-query results are pruned in bounded batches, one operation-gate hold each, so a local write waits for one batch (#303).
+- **Details:**
+  - The large-store drop held the gate 5.8-13.2 s per first prune while about 57,000 triples were removed, and the queued transact was the lane's slowest local write in 7 of 8 lanes.
+  - Batches of about 5,000 result triples (liveQueryResultPruneBatchTripleCount); facts a batch released but kept for their entity are carried into the next batch, so whole-entity removal (#259) equals one prune's.
+  - Tests: InstantPruneGateHoldTests, with the bound off the write lands after all 24 results (one batch); with a 2,000-triple bound after the first of 6 batches, with the split entity removed and the local-data entity kept.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — bounded batch and carried releases
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — batch loop with the gate released between batches
+  - `Tests/InstantSwiftDataCoreTests/InstantPruneGateHoldTests.swift` — gate-hold tests
+- **User context (verbatim):**
+  > fix this please so it works efficiently as as well as the typescript core library
+- **SpecStory:** unavailable — unavailable — Claude Code agent session (library-78); no SpecStory capture configured for this session.
+
+## October 1st, 2026 at 3:39:12 p.m. EDT — `c60763464b63` Resolve refused writes that are only duplicates: don't re-send a write that accepted later writes cover, and park a replay refusal behind the covering writes in flight (library-78 item 3)
+
+- **Implementation commit:** `c60763464b6301f93ab9cdcdb7199d6d1cbdddfe`
+- **Change:** Refused writes that are only duplicates resolve as accepted: a re-send that accepted later writes cover is not offered again, and a replay refusal that writes in flight cover is parked until they are answered (library-78 item 3).
+- **Details:**
+  - In the experiment's large-store drop runs every replay refusal was a re-send whose first offer the server had applied and answered; the receive loop's failure discarded the buffered acknowledgements and the reconnect re-sent the window in order.
+  - Coverage: later non-failed rows sharing a stored write key; inserts and merges only; cardinality-one slots by a later insert, other values by the same value. A write with no later row on its slots costs one indexed query.
+  - A covered re-send is resolved at claim time with the new confirmation source supersededByAcceptedWrite and the newest covering server transaction id. A permission refusal that accepted writes cover resolves the same way; a replay refusal that writes in flight cover keeps its claim (10-minute deadline) until they are answered. First-offer refusals stand unless accepted writes cover them.
+  - Delivery stays an ordered prefix: holding re-sends out of the window made the differential's seed 3 diverge, so it is not in the commit.
+  - Tests: InstantSupersededReplayTests (3 behavior tests red with coverage off, 2 controls); the ack-timeout generation test now expects the predecessor superseded, not re-sent.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — coverage, supersession, refusal resolution, parked refusals, claim-time supersession
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — refusal resolution before the terminal path, parked refusals resolved on answers, durableOutboxMutationsForTesting
+  - `Sources/InstantSwiftDataCore/BoundedOutboxDelivery.swift` — coverage and resolution types, parked refusal state
+  - `Sources/InstantSwiftDataCore/InstantModels.swift` — InstantMutationConfirmationSource.supersededByAcceptedWrite
+  - `Tests/InstantSwiftDataCoreTests/InstantSupersededReplayTests.swift` — item 3 tests
+  - `Tests/InstantSwiftDataCoreTests/InstantBoundedOutboxDeliveryTests.swift` — ack-timeout test expects supersession
+- **User context (verbatim):**
+  > I want to know why rights are refused in the first place? I don't think they really should be
+- **SpecStory:** unavailable — unavailable — Claude Code agent session (library-78); no SpecStory capture configured for this session.
+
+## October 1st, 2026 at 3:39:12 p.m. EDT — `bc605468dcef` Pin the same-session retry in the permission-service 500 test (#376)
+
+- **Implementation commit:** `bc605468dcef5b0f5116429ddca0bbf903424097`
+- **Change:** The permission-service 500 test pins the same-session retry (#376).
+- **Details:**
+  - server500PermissionEvaluationFailureRemainsRetryable expected a reconnect; since 8dd3bf28 a transient server error keeps the socket and the write is offered again on the same session, still pending and not failed.
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantOutboxHydrationTests.swift` — same-session retry, one connection
+- **User context (verbatim):**
+  > Why couldn't it just reconnect? Yeah, why are the reconnects there in the first place?
+- **SpecStory:** unavailable — unavailable — Claude Code agent session (library-78); no SpecStory capture configured for this session.
+
+## October 1st, 2026 at 3:39:11 p.m. EDT — `af2928d5d9c4` Record a refused write under one exclusive attempt when local writes made every attempt stale, instead of ending the receive loop (#303)
+
+- **Implementation commit:** `af2928d5d9c40d7f817b5c1e3ddd683b53052c7a`
+- **Change:** Recording a refused write gets one exclusive attempt when local writes made every attempt stale, instead of ending the receive loop (#303).
+- **Details:**
+  - The measured 'local outbox changed repeatedly while updating mutation' exhaustions (pair-large-drop-r1) are in failClaimedMutation, not acceptMutation: acceptMutation holds the operation gate for its whole loop, so only a peer connection could move its revision. failClaimedMutation releases the gate between loading and committing, and dictation's own writes landed in that window five times in a row.
+  - The component-limit branch reads the outbox revision after re-entering the gate (the row's claim token is the guard); after five optimistic attempts one attempt holds the gate from load to commit, as the exclusive server apply does.
+  - Test first: InstantOutboxRevisionGateTests lands a local write after each attempt's load; with only the hook the refusal is never recorded and the receive loop fails (red), now one exclusive attempt records it and the socket stays open.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — failClaimedMutation split into attempts with an exclusive final attempt; testing hook
+  - `Tests/InstantSwiftDataCoreTests/InstantOutboxRevisionGateTests.swift` — red/green test
+- **User context (verbatim):**
+  > fix this please so it works efficiently as as well as the typescript core library
+- **SpecStory:** unavailable — unavailable — Claude Code agent session (library-78); no SpecStory capture configured for this session.
+
+## October 1st, 2026 at 3:07:48 p.m. EDT — `c1b53e517427` Link another sign-in from AuthV3 without changing the session, behind authV3ShowsLinkedSignIns (#361)
+
+- **Implementation commit:** `c1b53e517427011a0cea8d42f6f86f9e336d7fb3`
+- **Change:** AuthV3 links another sign-in (Apple, Google, or an email code) without changing the session, behind the authV3ShowsLinkedSignIns switch, off by default (#361).
+- **Details:**
+  - InstantAuthState gains accountLink, linking (idle, signingInSecond, sendingCode, codeSent, linking, unlinking, failed), and linkCodeEmail, with refreshAccountLink, linkAnotherSignIn, sendLinkMagicCode and verifyLinkMagicCode (a held second sign-in; a wrong code keeps it), cancelLinking, and unlink, each with a using-client overload. Every second sign-in closes on success, failure, and cancel; a session change to another user clears the link and cancels a pending code.
+  - AuthV3LoginScreen shows a Linked sign-ins card only when authV3ShowsLinkedSignIns is on: members (email, or Guest and 8 characters of the id; provider; This device), Unlink behind a confirmation, Link Apple or Google, and an email code. It posts recipes.auth.link.linked {linkID, userID, memberUserIDs, providerID}, .unlinked {linkID, userID, memberUserID}, and .failed {providerID, userID, linkID, code, operation, error with email addresses redacted}. The instant-data skill documents second sign-ins and account links.
+  - Tests: InstantAuthStateLinkingTests 5 (red at no-op skeletons), AuthV3AppTests +2 (the switch default and the email redaction; not observed red separately). Final run, load ~800: 183 tests in 35 suites passed, including AuthV3AppTests, V3AuthLoginFixtureTests, RecipesV3AppTests, and the guest-promotion suites.
+- **Files:**
+  - `Sources/InstantSwiftData/InstantAuth.swift` — InstantAccountLinkingStatus and InstantAuthState's linking actions
+  - `Sources/AuthV3App/AuthApp.swift` — authV3ShowsLinkedSignIns and the Linked sign-ins card with its notifications
+  - `Tests/AuthV3AppTests/AuthV3AppTests.swift` — switch default and email redaction tests
+  - `Tests/InstantSwiftDataTests/InstantAccountLinksTests.swift` — InstantAuthStateLinkingTests against the fake server
+  - `skills/instant-data/SKILL.md` — second sign-ins and account links guidance
+- **User context (verbatim):**
+  > Let's add a functionality to link accounts then. If you have Apple, I want to be able to link it with Google as well so that we aggregate all these different recordings. So it's a library change and
+- **SpecStory:** unavailable — Claude Code agent session (account-linking-library); no SpecStory capture for this session
+
+## October 1st, 2026 at 3:07:01 p.m. EDT — `4473db630827` Link one person's Instant identities through an app-level accountLinks row (#361)
+
+- **Implementation commit:** `4473db630827f86d3f1649964224b14dda5a7b38`
+- **Change:** One person's identities link through an app-level accountLinks row, an invite from the linked identity and a join from the other, each accepted before the next (#361).
+- **Details:**
+  - Instant links only guests and joins two provider sign-ins only on matching emails. An accountLinks row's members link (has many $users; reverse $users.accountLink, has one) lists one person's identities, with provider, linkedAtMs, and deviceName labels in membersJSON. The rules let an identity link only itself, so the linked identity writes the invite (or creates the row) through a twin of the primary's session, and the invited identity joins and clears the invite through its second sign-in.
+  - link() reads both identities from Instant first: the same link returns unchanged with no writes; different links refuse with no writes; the same account refuses. unlink() removes a member and its label, or deletes the row when fewer than two members would remain. Every read first checks the store declares the account-link schema and names the fix. permissionRulesTemplate publishes the rules verbatim. Failures name their step (connecting, reading the account link, inviting, joining, unlinking).
+  - Tests (fake websockets per temporary client, frames attributed to the refresh token that opened each socket): 18, including exact tx-steps for the create, invite, and join cases, the join held until the invite is accepted, an unanswered invite that sends no join and closes the twin, and a primary that registers the attributes. Red at a skeleton that threw; final run, load ~800: 183 tests in 35 suites passed.
+- **Files:**
+  - `Sources/InstantSwiftData/InstantAccountLinks.swift` — account links: attributes, rules template, read, link, unlink, schema check
+  - `Tests/InstantSwiftDataTests/InstantAccountLinksTests.swift` — the five link cases, refusals, timeout, unlink, schema, attributes, and rules tests
+- **User context (verbatim):**
+  > Let's add a functionality to link accounts then. If you have Apple, I want to be able to link it with Google as well so that we aggregate all these different recordings. So it's a library change and
+- **SpecStory:** unavailable — Claude Code agent session (account-linking-library); no SpecStory capture for this session
+
+## October 1st, 2026 at 3:06:16 p.m. EDT — `ea6764c7189f` Sign a second identity in beside the primary client, on its own temporary store and connection (#361)
+
+- **Implementation commit:** `ea6764c7189f4daa2a6f4bae1dcfcfd0f8c69832`
+- **Change:** A second identity signs in beside the primary client on its own temporary store and connection, without changing the primary's session (#361).
+- **Details:**
+  - A client keeps one auth session per store, and its exchanges forward the current refresh token (a guest's for magic code and OAuth, any for ID tokens), so a sign-in on the primary promotes or links the primary identity. InstantSecondSignIn copies the primary's endpoints, exchanges, and live transport onto a temporary store under $TMPDIR/InstantSecondSignIn with no session; its sign-ins send no refresh token, and the primary's session, outbox, and InstantClientID.current never change.
+  - open(sharingSessionOf:) and adoptRefreshToken adopt a verified token and never revoke it. transactAwaitingServer and queryServer wait up to 5 seconds and name the write in a timeout. close() revokes every token this sign-in's own exchanges minted (recorded at the exchange, so a sign-in that finishes after close is revoked too), closes the connection, and deletes the store.
+  - Tests (fake auth endpoints and websockets): 15. Red at a skeleton that signed in on the primary: the guest's token went to verify_magic_code and the primary session became user-b. The first green run caught a leak (a sign-in finishing after close minted a token the deleted store refused, never revoked), fixed with the minted-token ledger. Final run, load ~800: 183 tests in 35 suites passed.
+- **Files:**
+  - `Sources/InstantSwiftData/InstantSecondSignIn.swift` — the second sign-in: temporary configuration, sign-ins, server waits, close, minted-token ledger
+  - `Tests/InstantSwiftDataTests/InstantSecondSignInTests.swift` — fake Instant server (auth endpoints, websockets, triples) and the second sign-in tests
+- **User context (verbatim):**
+  > Let's add a functionality to link accounts then. If you have Apple, I want to be able to link it with Google as well so that we aggregate all these different recordings. So it's a library change and
+- **SpecStory:** unavailable — Claude Code agent session (account-linking-library); no SpecStory capture for this session
+
+## October 1st, 2026 at 1:51:46 p.m. EDT — `8dd3bf28a6bb` Keep the socket on transient server errors: retry the write or the live query on it with backoff, and tell subscribers (#376 #360)
+
+- **Implementation commit:** `8dd3bf28a6bb2a25aed21980ff24c7bdc23382aa`
+- **Change:** Transient server errors keep the socket: the write or the live query is retried on it with a growing, jittered backoff, and subscribers see the error without their streams ending (#376 #360).
+- **Details:**
+  - A write answered with 408/425/429/5xx or a timeout type releases only its own claim; delivery pauses for 250 ms doubling per consecutive failure of that write, capped at 5 s, jitter 0.5-1x, then probes one write at a time until the server accepts one. Swift used to close the healthy socket and reconnect at once: 36 reconnects and 324 add-queries in 12 s in the companion harness (#376).
+  - A transient add-query error re-sends the add-query on the same socket with the same backoff (reset on add-query-ok or add-query-exists); permission and validation rejections are still retired. Library-77 waited for the next init-ok, which a healthy socket never sends (#360: 0 of 6 reply cards on the phone).
+  - Subscribers get the error without the stream ending: InstantQueryEmission.error, the infinite snapshot's error with its rows kept, FetchSubscription.liveQueryError, and FetchAll/FetchOne/Fetch loadError; the latest values are re-emitted when the error changes. Upstream Reactor.js keeps the socket in both cases (_handleMutationError, notifyQueryError).
+  - An error no write, query, or stream owns is logged (websocket.error-unrouted) and keeps the socket, as upstream console.errors it.
+  - Tests: InstantTransientMutationRetryTests and InstantLiveQueryErrorRecoveryTests (red on 956fce52 for the same-socket retry and re-send) and InstantLiveQueryErrorSubscriptionTests; 187 parity, transport, survival, and differential tests pass (7 known issues, one 250 ms bound at load 280).
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — same-socket write retry, delivery pause and probe, add-query error delivery and resend, reportingLiveQueryErrors, unrouted errors logged
+  - `Sources/InstantSwiftDataCore/InstantRuntimeLiveSession.swift` — scheduleQueryResend, recordQueryAnswered, inconclusive answers count as possibly applied
+  - `Sources/InstantSwiftDataCore/InstantServerErrorRetryPolicy.swift` — the backoff policy and the delivery pause state
+  - `Sources/InstantSwiftDataCore/InstantLiveQueryErrors.swift` — the per-query error broadcaster
+  - `Sources/InstantSwiftDataCore/InstantModels.swift` — InstantQueryEmission.error, boxed
+  - `Sources/InstantSwiftDataCore/InstantInfiniteQuery.swift` — chunk errors in the live snapshot
+  - `Sources/InstantSwiftData/InstantSwiftData.swift` — FetchSubscription.liveQueryError and non-terminal loadError
+  - `Sources/InstantSwiftData/InstantTypedAPI.swift` — typed infinite snapshots keep their rows with an error
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — token-qualified single-claim release
+  - `Tests/InstantSwiftDataCoreTests/InstantTransientMutationRetryTests.swift` — #376 tests
+  - `Tests/InstantSwiftDataCoreTests/InstantLiveQueryErrorRecoveryTests.swift` — #360 tests
+  - `Tests/InstantSwiftDataTests/InstantLiveQueryErrorSubscriptionTests.swift` — typed subscription and FetchAll tests
+  - `Tests/InstantSwiftDataCoreTests/InstantReactorParityTests.swift` — the reconnect test now pins the same-session retry
+- **User context (verbatim):**
+  > I don't really understand why it would do that, reconnecting song and dance or why what was causing the problem. Why couldn't it just reconnect? Yeah, why are the reconnects there in the first place?
+- **SpecStory:** unavailable — unavailable — Claude Code agent session (library-78); no SpecStory capture configured for this session.
+
+## October 1st, 2026 at 5:27:11 a.m. EDT — `f9cb539640f7` Apply a server transaction under an exclusive operation-gate hold once local writes have made every optimistic attempt stale, instead of ending the receive loop (#303)
+
+- **Implementation commit:** `f9cb539640f7a847bc6af046408efd206c1b1933`
+- **Change:** A server apply whose optimistic attempts all go stale because of this runtime's own local writes now applies once under an exclusive operation-gate hold instead of ending the receive loop (#303).
+- **Details:**
+  - Each attempt prepares outside the operation gate; dictation's local writes landed between the attempt's seed and its plan every time, so all five went stale and the apply threw. That ended the live receive loop, the reconnect re-sent in-flight writes, and the server refused them as replays (the experiment's large-store drop, and 9 refusals in 956fce52's lane of the A/B's first pair).
+  - The exclusive attempt makes local writes wait; a peer runtime on the same file can still make it stale, and then the apply throws, bounded as before. Diagnostics log the fallback and how long local writes waited. Tests: a same-runtime write after each seed (red before, the transaction now lands with the local writes on top); the peer test now expects six attempts.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — exclusive fallback after the optimistic attempts, maximumAttempts, diagnostics, seed-loaded testing hook
+  - `Tests/InstantSwiftDataCoreTests/InstantBoundedServerApplyRebaseTests.swift` — outpaced-local-writes test, peer test's attempt counts
+- **User context (verbatim):**
+  > Size a fix where exhausting the retries falls back to applying under an exclusive hold (local writes wait briefly) instead of throwing, so progress is guaranteed.
+- **SpecStory:** unavailable — Claude Code agent session (library-78 apply fallback); no SpecStory capture configured for this session.
 
 ## October 1st, 2026 at 4:23:01 a.m. EDT — `1ba007798552` End every stream observation behind a subscription the server refuses, and pin the offline stream writer gap (#303 #329)
 

@@ -6,3 +6,5 @@ gpt-5-6-pro 2026-08-22T15:25:00Z grower/mower plan=2026-08-22-native-media-strea
 claude-opus-5.5-stale-writes 2026-09-30T00:50:43-04:00 grower plan=2026-09-29-stale-writes #113 #296
 claude-opus-5.5-connection-survival 2026-09-30T09:32:17-04:00 mower plan=2026-09-30-connection-survival #296
 claude-opus-5.5-fast-drain 2026-10-01T00:40:56-04:00 mower plan=2026-10-01-library-77 #303 #296
+claude-opus-5.5-library-78 2026-10-01T12:48:54-04:00 mower plan=2026-10-01-library-78 #376 #360 #303 #317 #329
+claude-opus-5.5-library-78-streams 2026-10-01T13:16:05-04:00 mower plan=2026-10-01-library-78 #329

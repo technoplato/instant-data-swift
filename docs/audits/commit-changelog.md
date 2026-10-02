@@ -1,3 +1,180 @@
+## 2026-10-02 11:38:26 EDT — scribe `d83e5958f321dcf1cc6ec9e8de945212b2bd5424`
+Record the installer's stale workspace Package.resolved fix in the change log (#404).
+
+## 2026-10-02 11:38:16 EDT — scribe `5883bb93c339c48fcb60bb6c272866f78f5dec0a`
+Remove the stale generated workspace Package.resolved before every published build (#404).
+
+## 2026-10-02 11:36:51 EDT — scribe `60b3032cc3d656d9ad5229b92318905f52cb7f95`
+Plan the installer fix for the stale workspace Package.resolved and claim its paths (#404).
+
+## 2026-10-02 11:32:55 EDT — scribe `ad729056a5dac0ee8cca219450c031bf385d7be8`
+Merge main's mac-memory handoff note into the build 79 integration (#394).
+
+## 2026-10-02 10:34:36 EDT — scribe `db53a687f9f023e8a5dbc8955cc2b88f348ecf15`
+Merge mac-memory's follow-up: the media-retry test fakes keep their streams, as the library does (#394).
+
+## 2026-10-02 10:34:09 EDT — scribe `cc908207ff741277973bcda255c66be727139821`
+Merge instant-1.8.0-pin: pin the published instant-data-swift 1.8.0, the build 77 library (#155 #303).
+
+## 2026-10-02 10:02:50 EDT — scribe `14db800539baa43e86ebcfeeefa9d86aa818dfeb`
+Merge scribe-mirror-gaps: the mirror's image and clipboard times past capture gaps, and capture.gap events (#272 #346).
+
+## 2026-10-02 10:02:24 EDT — scribe `2b49058774c51967d8231bb4a56db27e1814a247`
+Merge scribe-mirror: every recording mirrored live into plain files, a scribe CLI like Tuple's, a router, and triggers (#385 #400).
+
+## 2026-10-02 09:46:03 EDT — scribe `4e6a879dc9d5009be2ab54eb6d51039d08367977`
+Record the voice-actions coverage excuses in the change log (#161 #391 #393).
+
+## 2026-10-02 09:45:56 EDT — scribe `65e03b6deb5bab2f87fb6a2c7dc3445eb30ab21e`
+Excuse playback's full screen and Back to Live in the voice-actions coverage test (#161 #391 #393).
+
+## 2026-10-02 09:37:46 EDT — scribe `619506b3cfcab68c7f0e7aa3b068d72c6fb482e0`
+Record the second simulator proof of agent reply notifications in ADR 0029 (#340 #342 #387).
+
+## 2026-10-02 09:29:44 EDT — scribe `dc54847bd395b1407317eb848baa726792d992ec`
+Let the notification offer's sentence wrap instead of ending in an ellipsis (#340).
+
+## 2026-10-02 09:13:51 EDT — scribe `74d4612b376aaa087f92bb528ba51d83f4222731`
+Record the voice-actions ADR renumbering in the change log (#161 #160).
+
+## 2026-10-02 09:13:31 EDT — scribe `1ed136b51aaca11c0bdc33abf950b7f72c522562`
+Renumber the voice-actions ADR to 0033: visionos merged first and keeps 0026 (#161 #160).
+
+## 2026-10-02 09:12:58 EDT — scribe `bc403f53723763db657fa02d0650ffe37490037a`
+Merge voice-actions: speak to Scribe while it records, behind a setting that stays off (#161 #160).
+
+## 2026-10-02 09:12:18 EDT — scribe `5fc4db9ee1b56f4f19519a0809a8eae9dba205b2`
+Merge visionos: the Vision Pro bar as an ornament, 60-point targets, windows side by side, and a compile check (#367).
+
+## 2026-10-02 09:10:52 EDT — scribe `f607bb895669a80bc55a7867bf34bf984f5be2f4`
+Merge main's live-follow claim into the build 79 integration (#401).
+
+## 2026-10-02 08:49:29 EDT — scribe `e09e6489d8ea644c99c9289658c04b69e2608448`
+Log the Instant 1.8.0 pin and Scribe 0.1 (78)'s GitHub release in PROGRESS: the pin's checks (installer tests, a clean resolve, ArchitectureTests 60/60 compiled against the published 1.8.0, an iPhone compile with no override that compiled instant-data-swift eeea9b12), the scribe-0.1-78 release, and what the pin means for override scripts and branches with their own pins (#155 #303).
+
+## 2026-10-02 08:44:05 EDT — scribe `0224599e5a0a4352284498052d52857ccdddbf1b`
+A late answer to the launch permission check still counts, so the offer shows and Settings recovers (#340).
+
+## 2026-10-02 08:27:03 EDT — scribe `a812df75201a2709dc134b00ada93cfd6e80b1a3`
+Merge mac-live: a live mark, a clock that ticks every second, follow-live with Back to Live, and why audio cannot play yet (#393).
+
+## 2026-10-02 08:26:00 EDT — scribe `66230bac1b6b679106c13da0660553430321fbba`
+Merge list-design: two-line recording rows, a compact playback header, Show Route in a More menu, and full-screen playback (#391).
+
+## 2026-10-02 08:25:47 EDT — scribe `35484454ad3ba181ed7b3c417d81f05af32988de`
+Merge mac-memory: stop the media-retry observer leak, stop two test-target crashes, and add memory fenceposts (#394).
+
+## 2026-10-02 08:20:29 EDT — scribe `5d1d5df4812b954bece832063f2a683e99c2d9e8`
+An answer notifies within five seconds even when Instant cannot read its thread and agent in time (#340).
+
+## 2026-10-02 08:14:55 EDT — scribe `753af2ab52579cfe491e39ad1e0f80793e443273`
+Show one status line per thread even when the room lists a thread twice (#387 #388).
+
+## 2026-10-02 08:10:15 EDT — scribe `e22446e6f614e68d6635353bada0ff686173d86a`
+Agent replies: dot-free app storage keys, and stub the notification taps and UUIDs the tests reach (#340 #342 #387).
+
+## 2026-10-02 07:50:14 EDT — scribe `280431fc05bb2e8a507aca15ce1ad9512f6560be`
+WIP checkpoint of the lost session's agent reply notifications: notify on every device when an answer lands, a quiet per-thread status line, and read-aloud that never touches capture (#340 #342 #387).
+
+## 2026-10-02 07:49:15 EDT — scribe `660dd1a15fbfc1ecccf942ad854ef96a9cca9f14`
+scribe-mirror: map image and clipboard times past capture gaps, and write capture.gap events (#272 #346).
+
+## 2026-10-02 07:47:25 EDT — scribe `f3e7e0b7d2745dc54d7330efe287217973a0627e`
+scribe-mirror: no client's name in the guide, the code, the tests, or the docs (#400 #385).
+
+## 2026-10-02 07:42:18 EDT — scribe `4633792214476bd7ab15620d14a4999a7c2fa6cb`
+scribe-mirror: scribe route prints only verdicts and owners (#400 #385).
+
+## 2026-10-02 07:35:19 EDT — scribe `ff6e0c56e77c683281ab93a6204c32cdda3ab31a`
+scribe-mirror: AGENTS.md, docs and ADR 0028 for connect, capture, route and triggers (#385 #400).
+
+## 2026-10-02 07:34:40 EDT — scribe `c302d36189e711e9fbdb84e471a4d34f7e25463b`
+scribe-mirror: the scribe CLI works like Tuple's (#385 #400).
+
+## 2026-10-02 07:34:22 EDT — scribe `c49b9db1c0056fd9d2e1102117182f7f4c768ddd`
+scribe-mirror: a router that says who a spoken line is for (#400 #385).
+
+## 2026-10-02 07:16:40 EDT — scribe `16dc3f50b7daed67c01dc8a546aa740b6fbc7f5f`
+Merge main's live-follow plan and claims into the build 79 integration (#401).
+
+## 2026-10-02 07:02:13 EDT — scribe `a05986775a7ed29a9de4a92740d7fd1d9d1c161c`
+scribe-mirror: rule 7 in AGENTS.md, check who an instruction is for before acting on it (#385 #400).
+
+## 2026-10-02 06:58:27 EDT — scribe `b421e3dae09647e9158a32f1aaa8980495f9e17c`
+Record the Instant 1.8.0 pin in the change log (#155 #303).
+
+## 2026-10-02 06:57:59 EDT — scribe `5235fc4f38cf7d4baab1db4e44f1900302cf2356`
+Pin instant-data-swift exactly 1.8.0 in Package.swift and Package.resolved. That is the published build 77 library: tag object 5cda4412 on library main eeea9b12, the code of library-77 956fce52. Also expect it in the installer's REQUIRED_PUBLISHED_DEPENDENCIES and its six test fixtures, and document GitHub releases for device builds in docs/versioning.md (scribe-<marketing>-<build>; the first is scribe-0.1-78 on 0d76686d). Scribe's device and Mac builds of this library no longer need the Xcode local-package override (#155 #303).
+
+## 2026-10-02 06:56:14 EDT — scribe `64336697abb62982483f27572ba8a9340e05a674`
+Amend plan 2026-10-01-instant-1-8-0-pin: the GitHub release is Scribe 0.1 (78) on 0d76686d, and the integrator agent merges the pin into Scribe main (#155 #303).
+
+## 2026-10-01 20:47:14 EDT — scribe `7de7b5e4cad5bbfd5d7348504168321f77b3a157`
+Record the orientation reader exemption in the change log (#381 #368).
+
+## 2026-10-01 20:47:00 EDT — scribe `07412875068210b8686e7d401f093ce6c948d8f3`
+Let the runtime context read the physical orientation for its timeline moment (#381 #368).
+
+## 2026-10-01 20:39:37 EDT — scribe `6d8daccca04997f7e97882bda42b78d5a2faf835`
+Merge iphone-duo: the recordings list follows size classes, not the device model (#381).
+
+## 2026-10-01 20:22:23 EDT — instant-data-swift `01175cff5f84039d20007afee40e3195102da3d8`
+Name what protects the attribute context cache and the observation reader in their SAFETY comments.
+
+## 2026-10-01 19:55:44 EDT — scribe `2b447245f90beb81275c737798e2649c5354c4c5`
+Record the library's live link test in ADR 0024's evidence (#361).
+
+## 2026-10-01 19:54:30 EDT — instant-data-swift `4d928d70f01397625f5cdd1906268acab32f6e89`
+Link and unlink through a second sign-in against a real Instant server's rules, in an environment-gated live test (#361).
+
+## 2026-10-01 19:39:52 EDT — instant-data-swift `18e52df0adb9bec3a1d48b1992d115924ee8c656`
+End an observation when its consumer stops iterating: returning out of for-await leaked a store observer and the live query (#394).
+
+## 2026-10-01 19:27:46 EDT — instant-data-swift `8358090e216f289ecd08a5ed6bcdfe308aec8b68`
+Finish a write its caller cancels instead of ending the socket: cancelling an observation mid-send reconnected (#376).
+
+## 2026-10-01 19:23:17 EDT — instant-data-swift `b465ae1442f74c437c3bcbbf0dabf5828cb34549`
+List each entity once in a live infinite query's snapshot, and keep shown rows while a kickstart waits for its first forward chunk (#388).
+
+## 2026-10-01 19:23:02 EDT — instant-data-swift `9a65aaeb5dde1a41c371039c148f75cd5dfb2d59`
+Pin the list-crash defects with red tests: a snapshot that lists one entity twice, and a kickstart that shows the window empty (#388).
+
+## 2026-10-01 19:18:50 EDT — scribe `fdda2d6a3c679b1dcde39b18342f79c92a9c4c2b`
+Record list-crash's uniqueness audit in the change log (#388). Sent by the list-crash agent for this ledger.
+
+## 2026-10-01 19:18:32 EDT — scribe `79f4671a80ec2796e02aaebe74234fca356a39fb`
+Stop trapping on repeated ids in the remaining synchronized-data paths, and fail the build on any new trapping uniqueness initializer (#388). Sent by the list-crash agent for this ledger.
+
+## 2026-10-01 18:36:47 EDT — scribe `8c365b3a7a8d2989a0d0c3c5363f16ef95620815`
+Record list-crash's list prefetching and page-refusal logs in the change log (#388 #299). Sent by the list-crash agent for this ledger.
+
+## 2026-10-01 18:36:29 EDT — scribe `2fd3916f08ebc255a6b327fca9e1b0d69fc2d5ba`
+Load the list's next page without a scroll while its end is within one screen, and log why a page request is refused (#388 #299). Sent by the list-crash agent for this ledger.
+
+## 2026-10-01 18:17:46 EDT — scribe `ed085b95acac7e20b586865a7e289d3b9a172c8a`
+Record the client-id media read and its live two-device test in Scribe's change log and PROGRESS (#329), on agent/claude-opus-5.5/library-78-scribe.
+
+## 2026-10-01 18:17:08 EDT — scribe `8b8aa42500eeff0744f388098aa8bd4c7d0cada0`
+Read recording media by its stream's client id, so media the phone synchronized offline reaches the user's other devices (#329), on agent/claude-opus-5.5/library-78-scribe.
+
+## 2026-10-01 17:59:31 EDT — scribe `54c6f00be0117bf0661bd6733e7c9105c6a48d05`
+Record list-crash's hotfix in the change log (#388). Sent by the list-crash agent for this ledger.
+
+## 2026-10-01 17:58:41 EDT — scribe `7a210011d44a0e2994e1294c31de57e65cb6276f`
+Keep one row per id in the recording list's projection, the newest by updatedAtMs, and log each repeat instead of trapping (#388). Sent by the list-crash agent for this ledger.
+
+## 2026-10-01 17:56:48 EDT — scribe `68693778b3e55c2eaee0b099c1f39ac3e7382a78`
+Pin offline-written media reaching the same user's other device with a live two-device test on the throwaway app (#329), on agent/claude-opus-5.5/library-78-scribe.
+
+## 2026-10-01 17:30:56 EDT — scribe `07e51707b33c96dfe01eedc7a9cb2086c158ab79`
+Close accountLinks before the production schema push, and roll back with a deny block: Instant leaves a namespace without rules open (#361).
+
+## 2026-10-01 17:20:19 EDT — instant-data-swift `bc6a0c818358307eaa93f19cbe4e05efca782622`
+Record a live query's answer before its acknowledgement and pin the local-first queryOnce in the querySubs parity test (library-78 item 7, #317).
+
+## 2026-10-01 17:19:58 EDT — instant-data-swift `95fba702b64f1973b53475fe97cf496dbc987c54`
+Restart a stream writer on the same socket when the server refuses or cannot flush its append, instead of reconnecting (upstream onAppendFailed) (#329 #376).
+
 ## 2026-10-01 17:10:58 EDT — instant-data-swift `194f75324acadc3118b789a16489410681a96abc`
 Document the v1.8.0 release in docs/releases/v1.8.0.md: build 77's library and every fix builds 62-76 shipped since v1.7.0, in plain words, with library-77's gate evidence and the open items (#155 #303 #324 #329 #296).
 
@@ -6,6 +183,63 @@ Plan the v1.8.0 release (plan 2026-10-01-release-1.8.0) and claim the release do
 
 ## 2026-10-01 17:03:54 EDT — instant-data-swift `d9ac85f0c97848e99ac4b47c287fe750c415b390`
 Merge build 77's library (agent/claude-opus-5.5/library-77 at 66f49197, gated head 956fce52) into main without fast-forward over 646c0ebc: every library change Scribe builds 62-77 shipped since v1.7.0 (#303 #324 #329 #296 #300 #289 #278 #277 #259 #274 #113).
+
+## 2026-10-01 17:03:01 EDT — scribe `44558453a9b0a5f954e3f2f2151f537e8f6aeaf6`
+Record account linking's soak, iPhone, and Mac evidence, and its progress entry (#361).
+
+## 2026-10-01 16:41:11 EDT — instant-data-swift `0eb8f502cb4863132924a539cd3b40637d47e0f6`
+Start streams written offline on the server once connected, named by their client id, with a durable reconnect token (#329, ADR 0017), merged into build 78's library at 1f098e0c.
+
+## 2026-10-01 15:49:55 EDT — scribe `21f5e7cf10a055f02278867268f9f218ba8a5efe`
+Correct the account-link steps: the Mac signs in with Google since 10:38, so the Apple identity links from the Mac's card (#361).
+
+## 2026-10-01 15:44:34 EDT — instant-data-swift `6dce825d80c3cdac96cf9e9ea11fc6dcc9b65cdf`
+Answer a one-shot query from the device when its exact subscription was answered on the open socket, instead of a 5 s round trip (library-78 item 7, #317 #307).
+
+## 2026-10-01 15:38:48 EDT — instant-data-swift `aa1cca45cc816986647526fc9e693358df236a69`
+Prune inactive live-query results in bounded batches so a local write waits for one batch, not the whole prune (#303).
+
+## 2026-10-01 15:35:23 EDT — instant-data-swift `c60763464b6301f93ab9cdcdb7199d6d1cbdddfe`
+Resolve refused writes that are only duplicates: a re-send that accepted later writes cover is not offered again, and a replay refusal that writes in flight cover is parked until they are answered (library-78 item 3).
+
+## 2026-10-01 15:28:13 EDT — instant-data-swift `bc605468dcef5b0f5116429ddca0bbf903424097`
+Pin the same-session retry in the permission-service 500 test (#376).
+
+## 2026-10-01 15:07:48 EDT — instant-data-swift `c1b53e517427011a0cea8d42f6f86f9e336d7fb3`
+Link another sign-in from AuthV3 (Apple, Google, or an email code) without changing the session: InstantAuthState linking actions and a Linked sign-ins card behind authV3ShowsLinkedSignIns, off by default (#361).
+
+## 2026-10-01 15:07:01 EDT — instant-data-swift `4473db630827f86d3f1649964224b14dda5a7b38`
+Link one person's Instant identities, such as Apple and Google, through an app-level accountLinks row: the linked identity invites (or creates the row), the other joins and clears the invite, each write accepted before the next; refusals write nothing (#361).
+
+## 2026-10-01 15:06:16 EDT — instant-data-swift `ea6764c7189f4daa2a6f4bae1dcfcfd0f8c69832`
+Sign a second identity in beside the primary client on its own temporary store and connection, so a sign-in proves another identity without promoting, linking, or replacing the primary's session; close() revokes only the tokens it minted (#361).
+
+## 2026-10-01 14:57:04 EDT — instant-data-swift `378598c8f0699d96a4ab8cf70eb51e8d27800dc7`
+Tell stream observations each append instead of re-reading the whole stream, and retire a stream's reader at done (#329), merged into build 78's library at 1f098e0c.
+
+## 2026-10-01 14:51:53 EDT — scribe `a7a317e157293b4236eddb8151208cfdad35eb1c`
+Show linked sign-ins on the Account screen (iPhone, iPad, Mac): Link another sign-in, the linked list, and Unlink, with every step logged (#361).
+
+## 2026-10-01 14:08:14 EDT — instant-data-swift `af2928d5d9c40d7f817b5c1e3ddd683b53052c7a`
+Record a refused write under one exclusive attempt when local writes made every attempt stale, instead of ending the receive loop; the measured exhaustion was failClaimedMutation, not acceptMutation (#303).
+
+## 2026-10-01 13:51:16 EDT — instant-data-swift `0adbe9727169e3e9182a5aee4ae9b80a66741ac8`
+Commit the phone-shaped replay as a reusable gate (PhoneReplayGateTests + scripts/phone-replay; runner fix 970d8db0), merged into build 78's library at 3196ad50; it reproduces FAST-DRAIN 15.5's published counts on 956fce52 (#296).
+
+## 2026-10-01 13:51:01 EDT — instant-data-swift `8dd3bf28a6bb2a25aed21980ff24c7bdc23382aa`
+Keep the socket on transient server errors: a write or live query the server answers with a 5xx or timeout is retried on the same socket with a growing, jittered backoff, and its subscribers see the error without their streams ending; unrouted errors keep the socket (#376 #360).
+
+## 2026-10-01 13:06:25 EDT — scribe `3c6d2717d37f139bc52e7e6007244d3f3aee05b9`
+Read every account path across linked sign-ins: the list, settings, companion listeners, sharing, and the session-health beat (#361).
+
+## 2026-10-01 10:38:32 EDT — scribe `ffc32f2bd8368c5849cda62c2f7db499c2579909`
+Add a two-credential account-link script for identities stored on this Mac, such as the agent CLI's old guest (#361).
+
+## 2026-10-01 10:14:56 EDT — scribe `799af89c2cefcbf7705d3c14e8359337cff51afd`
+Design account links (ADR draft 0024) and add their schema, rules, and rules regression harness: one person's sign-ins read, write, and share each other's recordings (#361).
+
+## 2026-10-01 05:27:00 EDT — instant-data-swift `f9cb539640f7a847bc6af046408efd206c1b1933`
+Apply a server transaction under an exclusive operation-gate hold once local writes have made every optimistic attempt stale, instead of ending the receive loop (#303).
 
 ## 2026-10-01 04:22:17 EDT — instant-data-swift `1ba0077985528f9633d987cedaa145baeb698452`
 End every stream observation behind a subscription the server refuses (Stream is missing), and pin the offline stream writer gap as a known issue (#303 #329).

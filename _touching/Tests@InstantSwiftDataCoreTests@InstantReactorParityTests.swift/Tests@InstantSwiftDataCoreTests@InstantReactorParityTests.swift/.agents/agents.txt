@@ -4,3 +4,5 @@ codex-desktop/019fe994-1250-7b42-825e-9b75836d9173/root/public_confirm_row_addre
 codex-desktop/019fe994-1250-7b42-825e-9b75836d9173/root/exact_close_tests 2026-08-11T10:28:01-0400 mower exact-runtime-close-tests plan=2026-08-09-bounded-intent-outbox-memory
 codex-desktop/019fe994-1250-7b42-825e-9b75836d9173/root/stream_snapshot_buffer 2026-08-11T14:47:05Z mower cumulative-stream-snapshot-buffer plan=2026-08-09-bounded-intent-outbox-memory
 claude-opus-5.5-fast-drain 2026-10-01T02:14:30-04:00 mower plan=2026-10-01-library-77 #303 add-query-transient-errors
+claude-opus-5.5-library-78 2026-10-01T12:48:54-04:00 mower plan=2026-10-01-library-78 #376 #360 #303 #317 #329
+claude-opus-5.5-library-78-streams 2026-10-01T13:16:05-04:00 mower plan=2026-10-01-library-78 #329

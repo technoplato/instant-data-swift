@@ -1798,6 +1798,15 @@ public struct InstantSwiftDataClient: Sendable {
     return subscription
   }
 
+  /// Creates a stream this device writes, named by `clientID`.
+  ///
+  /// Connected, this waits for the server to start the stream, and the returned `id` is the server's. Offline it
+  /// succeeds locally: the `id` names the stream on this device only, and the stream reaches the server once a
+  /// connection opens. Other devices read a stream by its client id, which works either way (ADR 0017).
+  ///
+  /// ```swift
+  /// let stream = try await client.createStream(clientID: "recording-\(id)-audio")
+  /// ```
   @discardableResult
   public func createStream(clientID: String) async throws -> InstantStreamMetadata {
     try await createStreamOperation(clientID)
@@ -1811,6 +1820,10 @@ public struct InstantSwiftDataClient: Sendable {
     try await streamMetadataByClientIDOperation(clientID)
   }
 
+  /// Appends `content` to a stream this device writes, by the id `createStream(clientID:)` returned.
+  ///
+  /// Success means the content is stored on this device. It reaches the server as soon as the stream is caught up
+  /// on a connection; it never waits for the server.
   @discardableResult
   public func appendStreamContent(
     streamID: String,
@@ -1824,6 +1837,10 @@ public struct InstantSwiftDataClient: Sendable {
     return try await appendStreamContentOperation(streamID, content, expectedOffset)
   }
 
+  /// Closes a stream this device writes.
+  ///
+  /// While the stream is caught up on a connection, this waits for the server to confirm the close. Otherwise the
+  /// close is stored on this device and reaches the server after the stream's content.
   @discardableResult
   public func closeStream(
     streamID: String,
@@ -1848,6 +1865,19 @@ public struct InstantSwiftDataClient: Sendable {
     return try await streamContentByClientIDOperation(clientID, byteOffset)
   }
 
+  /// Observes a stream's content from `byteOffset`.
+  ///
+  /// Every read holds the stream's content from `byteOffset` so far, not only the newest bytes, so a consumer that
+  /// falls behind loses nothing. The observation ends after the first read whose `done` is `true`.
+  ///
+  /// Read a stream another device wrote by its client id with ``observeStreamContent(clientID:byteOffset:)``: a
+  /// stream id names a stream across devices only when its writer was connected when it created the stream.
+  ///
+  /// ```swift
+  /// for await read in try await client.observeStreamContent(streamID: id) where read.done {
+  ///   return read.content
+  /// }
+  /// ```
   public func observeStreamContent(
     streamID: String,
     byteOffset: Int64 = 0
@@ -1856,6 +1886,10 @@ public struct InstantSwiftDataClient: Sendable {
     return try await observeStreamContentByStreamIDOperation(streamID, byteOffset)
   }
 
+  /// Observes the content of the stream `clientID` names, from `byteOffset`.
+  ///
+  /// The client id names a stream on every device, including a stream its writer created offline. Reads behave as in
+  /// ``observeStreamContent(streamID:byteOffset:)``.
   public func observeStreamContent(
     clientID: String,
     byteOffset: Int64 = 0
@@ -1956,12 +1990,18 @@ public struct InstantSwiftDataClient: Sendable {
           cancel: {}
         )
       }
-      return fetchSubscription(
+      let liveQueryError = FetchSubscriptionLiveQueryError()
+      var subscription = fetchSubscription(
         from: observation.stream,
         cancelSource: observation.cancel,
-        transform: transform,
+        transform: { emission in
+          liveQueryError.value = emission.error
+          return try transform(emission)
+        },
         cancellationOwner: cancellation
       )
+      subscription.liveQueryErrorStorage = liveQueryError
+      return subscription
     }
   }
 }
@@ -2004,6 +2044,27 @@ public struct FetchSubscription<Element: Sendable>: AsyncSequence, Sendable {
 
   fileprivate let streamStorage: FetchSubscriptionStreamStorage<Element>
   fileprivate let cancellation: FetchSubscriptionCancellation
+  fileprivate var liveQueryErrorStorage: FetchSubscriptionLiveQueryError?
+
+  /// The server's latest error for this subscription's live query, or `nil` while the server answers it.
+  ///
+  /// When the server fails a live query, the subscription keeps going and keeps its latest values. After a transient
+  /// error, such as a stalled server's `operation-timed-out`, the library sends the query again on the open socket,
+  /// and the error clears once the server answers. The subscription repeats its latest value each time the error
+  /// changes, so read it after each value:
+  ///
+  /// ```swift
+  /// let todos = await client.subscribe(Todo.all)
+  /// for try await rows in todos {
+  ///   render(rows, serverError: todos.liveQueryError)
+  /// }
+  /// ```
+  ///
+  /// Always `nil` for subscriptions that are not live queries and for local-only clients. Upstream Instant reports the
+  /// same error to the query's callback (`Reactor.js` `notifyQueryError`).
+  public var liveQueryError: InstantError? {
+    liveQueryErrorStorage?.value
+  }
 
   /// Adapts a caller-owned stream to a cancellation-driven subscription.
   ///
@@ -2098,7 +2159,7 @@ public struct FetchSubscription<Element: Sendable>: AsyncSequence, Sendable {
     let mapped = AsyncThrowingStream<Mapped, Error>.makeStream(
       bufferingPolicy: .bufferingNewest(1)
     )
-    return managedFetchSubscription(
+    var subscription = managedFetchSubscription(
       stream: mapped.stream,
       continuation: mapped.continuation,
       cancellationOwner: cancellationOwner,
@@ -2123,6 +2184,20 @@ public struct FetchSubscription<Element: Sendable>: AsyncSequence, Sendable {
         try? await self.task
       }
     )
+    subscription.liveQueryErrorStorage = liveQueryErrorStorage
+    return subscription
+  }
+}
+
+// SAFETY: `lock` protects `storedValue`.
+/// The latest server error of the live query behind a ``FetchSubscription`` (#360).
+final class FetchSubscriptionLiveQueryError: @unchecked Sendable {
+  private let lock = NSLock()
+  private var storedValue: InstantError?
+
+  var value: InstantError? {
+    get { lock.withLock { storedValue } }
+    set { lock.withLock { storedValue = newValue } }
   }
 }
 
@@ -2656,11 +2731,17 @@ private final class FetchStorage<Value: Sendable>: @unchecked Sendable {
     }
   }
 
-  func updateActiveSubscriptionValue(_ value: Value, id: Int) -> Bool {
+  /// - Parameter loadError: The live query's server error, which the subscription keeps reporting while the
+  ///   library sends the query again (#360); `nil` once the server answers.
+  func updateActiveSubscriptionValue(
+    _ value: Value,
+    loadError: InstantError? = nil,
+    id: Int
+  ) -> Bool {
     let didUpdate = withLock {
       guard _activeSubscription?.id == id else { return false }
       _wrappedValue = value
-      _loadError = nil
+      _loadError = loadError
       _isLoading = false
       return true
     }
@@ -2800,7 +2881,13 @@ private func runFetchStorageSubscriptionTask<Value: Sendable>(
       )
       for try await value in subscription {
         try Task.checkCancellation()
-        guard storage.updateActiveSubscriptionValue(value, id: subscriptionID) else {
+        guard
+          storage.updateActiveSubscriptionValue(
+            value,
+            loadError: subscription.liveQueryError,
+            id: subscriptionID
+          )
+        else {
           throw CancellationError()
         }
         emissionCount += 1
@@ -3513,7 +3600,13 @@ private func startAutomaticFetchObservation<Value: Sendable>(
         subscriptionID = id
         for try await value in subscription {
           try Task.checkCancellation()
-          guard storageReference.value?.updateActiveSubscriptionValue(value, id: id) == true else {
+          guard
+            storageReference.value?.updateActiveSubscriptionValue(
+              value,
+              loadError: subscription.liveQueryError,
+              id: id
+            ) == true
+          else {
             throw CancellationError()
           }
           emissionCount += 1

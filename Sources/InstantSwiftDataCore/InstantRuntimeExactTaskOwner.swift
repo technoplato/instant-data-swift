@@ -96,6 +96,7 @@ package struct InstantRuntimeExactCloseIdleState: Sendable {
   var receiver: Bool
   var mutationDeliveryPump: Bool
   var explicitMutationFlush: Bool
+  var streamWriterCatchUp: Bool
 
   var allIdle: Bool {
     automaticLiveConnection
@@ -104,6 +105,7 @@ package struct InstantRuntimeExactCloseIdleState: Sendable {
       && receiver
       && mutationDeliveryPump
       && explicitMutationFlush
+      && streamWriterCatchUp
   }
 
   var nonIdleOwnerNames: [String] {
@@ -114,6 +116,7 @@ package struct InstantRuntimeExactCloseIdleState: Sendable {
     if !receiver { names.append("live receiver") }
     if !mutationDeliveryPump { names.append("mutation delivery pump") }
     if !explicitMutationFlush { names.append("explicit mutation flush") }
+    if !streamWriterCatchUp { names.append("stream writer catch-up") }
     return names
   }
 }

@@ -710,6 +710,7 @@ private struct InstantLiveAttributeIdentity: Hashable, Sendable {
 /// built for. An attr-less refresh passes the session's same array, so the comparison is a buffer-identity check; a
 /// refresh that carries equal attrs is compared in memory, still far cheaper than parsing it. A merged attribute bumps
 /// the local revision, and changed attrs fail the comparison: either rebuilds the context.
+// SAFETY: `lock` (an NSLock) guards every read and write of the cached entry.
 final class InstantLiveRefreshAttributeContextCache: @unchecked Sendable {
   private struct Entry {
     var serverAttributes: [InstantLiveJSONValue]

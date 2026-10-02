@@ -210,6 +210,11 @@ public struct InstantLiveQueryResultPruningResult: Hashable, Codable, Sendable {
 struct InstantLiveQueryResultPruningApplication: Sendable {
   var result: InstantLiveQueryResultPruningResult
   var state: InstantPersistenceState
+  /// Rows the policy removes that a bounded batch left for the next one (#303, item 6).
+  var hasMoreToRemove = false
+  /// Facts a removed row released that the whole-entity rule kept, because their entity still had a fact no removed
+  /// row released. A later batch that releases the rest of the entity removes them together.
+  var retainedReleasedIdentities: Set<InstantLiveTripleIdentity> = []
 }
 
 private struct LiveQueryResultStorageRow: Sendable {
@@ -758,6 +763,36 @@ package struct InstantServerApplyMetrics: Equatable, Sendable {
   }
 }
 
+/// A stream this device writes, with what it needs to bring the server's copy up to date (#329, ADR 0017).
+struct InstantStreamWriterRecord: Hashable, Codable, Sendable {
+  /// The id `createStream` returned on this device.
+  var streamID: String
+  var clientID: String
+  /// Lets this device restart the server's copy; the server accepts no other (`session.clj` `handle-start-stream!`).
+  /// `nil` until the stream first starts on the server: a stream written offline gets its token then.
+  var reconnectToken: String?
+  /// The id the server assigned, once a `start-stream-ok` named it.
+  var serverStreamID: String?
+}
+
+/// Where the server's copy of a stream this device writes stands.
+enum InstantStreamWriterState: String, Sendable {
+  /// The server may lack some of the stream or its close; each connection's catch-up sends what it lacks.
+  case catchingUp = "catching-up"
+  /// The server confirmed the close (`stream-flushed` with `done`).
+  case delivered
+  /// The server refused to start the stream; asking again cannot succeed.
+  case refused
+}
+
+/// What reading stream content from SQLite cost: the reads, and the stored chunks and bytes they decoded. A stream
+/// append must not re-read the whole stream to tell its observers (upstream `Stream.ts` pushes only the new chunk).
+package struct InstantStreamContentReadMetrics: Equatable, Sendable {
+  package var readCount = 0
+  package var decodedChunkCount = 0
+  package var decodedByteCount = 0
+}
+
 enum InstantAutomaticFailedMutationRetryPolicy {
   static func isIndependentlyRetryableFailureMessage(_ rawMessage: String) -> Bool {
     let message = rawMessage.lowercased()
@@ -833,6 +868,7 @@ public actor SQLitePersistenceStore {
   private var terminalFailureMetadataMetrics = InstantTerminalFailureMetadataMetrics()
   private var failedMutationRetryMetrics = InstantFailedMutationRetryMetrics()
   private var serverApplyMetrics = InstantServerApplyMetrics()
+  private var streamContentReadMetrics = InstantStreamContentReadMetrics()
   /// The attributes a live-result save limits its rows with, reused while neither this connection nor another process
   /// has written `instant_attributes` (#303). Every server apply used to load and decode every attribute row once per
   /// query result it saved, inside the commit.
@@ -939,6 +975,14 @@ public actor SQLitePersistenceStore {
 
   package func serverApplyMetricsForTesting() -> InstantServerApplyMetrics {
     serverApplyMetrics
+  }
+
+  package func streamContentReadMetricsForTesting() -> InstantStreamContentReadMetrics {
+    streamContentReadMetrics
+  }
+
+  package func resetStreamContentReadMetricsForTesting() {
+    streamContentReadMetrics = InstantStreamContentReadMetrics()
   }
 
   package func setFailedMutationRetryWindowLoadedHookForTesting(
@@ -2136,6 +2180,33 @@ public actor SQLitePersistenceStore {
     try withSQLiteBusyRetry {
       try migrate(name: "0024_remove_entities_missing_their_id_fact") {
         try removeEntitiesMissingTheirIDFactWithoutTransaction()
+      }
+    }
+    try withSQLiteBusyRetry {
+      // The streams this device writes, and what the server has of them (#329, ADR 0017).
+      try migrate(name: "0025_stream_writers") {
+        try execute(
+          """
+          CREATE TABLE IF NOT EXISTS instant_stream_writers (
+            app_id TEXT NOT NULL,
+            stream_id TEXT NOT NULL,
+            client_id TEXT NOT NULL,
+            reconnect_token TEXT,
+            server_stream_id TEXT,
+            state TEXT NOT NULL,
+            refusal TEXT,
+            PRIMARY KEY (app_id, stream_id),
+            FOREIGN KEY (app_id, stream_id) REFERENCES instant_streams (app_id, stream_id)
+              ON DELETE CASCADE
+          )
+          """
+        )
+        try execute(
+          """
+          CREATE INDEX IF NOT EXISTS instant_stream_writers_state_idx
+          ON instant_stream_writers (app_id, state)
+          """
+        )
       }
     }
     // Test fixtures and app-owned restores can reconstruct `instant_outbox`
@@ -7314,6 +7385,382 @@ public actor SQLitePersistenceStore {
   /// throws, after releasing only the claims acquired by this request token.
   /// `delivery_started` means "ever offered to the encoder/delivery path" and
   /// deliberately remains true after a claim is released or expires.
+  /// Which later writes of this device cover every operation of a write, if any (library-78, item 3).
+  ///
+  /// A write offered again after its first offer may have been applied (a lost acknowledgment, a reconnect, a
+  /// transient error) is refused by an `updatedAtMs >= data.updatedAtMs`-style rule when a newer write of the same row
+  /// reached the server first, although the server holds a newer value for every slot it sets. Coverage is
+  /// conservative: the write may hold only inserts and merges (lookups, retractions, and deletes never count as
+  /// covered); a cardinality-one slot is covered by a later insert of the slot, any other value only by the same value
+  /// (`InstantAuthoritativeWriteCoverage`). Failed rows never cover. Candidates come from the stored write keys, so a
+  /// write no later row shares a slot with costs one indexed query and no body decode.
+  ///
+  /// - Parameters:
+  ///   - decoded: The write's body when the caller already decoded it.
+  ///   - acceptedOnly: Consider only later writes the server accepted.
+  ///   - pendingMustBeClaimed: Count a later write the server has not accepted only while it is in flight, so a write
+  ///     parked behind it waits for an answer that is coming.
+  /// - Returns: The coverage and the write's decoded body (`nil` when no later write shares a slot with it).
+  private func laterWriteCoverageWithoutTransaction(
+    ofMutationID mutationID: String,
+    createdAtMilliseconds: Int64,
+    decoded: PendingMutation?,
+    acceptedOnly: Bool,
+    pendingMustBeClaimed: Bool = false,
+    attributes: () throws -> AttributeStore
+  ) throws -> (coverage: InstantOutboxWriteCoverage, mutation: PendingMutation?) {
+    var candidates: [(id: String, createdAt: Int64, accepted: Bool, serverTransactionID: String?)] = []
+    var statement: OpaquePointer?
+    try prepare(
+      """
+      SELECT DISTINCT o.mutation_id, o.created_at_ms, o.status, o.confirmation_proven, o.server_transaction_id,
+             o.delivery_claim_state
+      FROM instant_outbox_write_keys own
+      JOIN instant_outbox_write_keys other
+        ON other.entity_id = own.entity_id AND other.attribute_id = own.attribute_id
+      JOIN instant_outbox o ON o.mutation_id = other.mutation_id
+      WHERE own.mutation_id = ? AND o.mutation_id != ? AND o.status != ?
+        AND (o.created_at_ms > ? OR (o.created_at_ms = ? AND o.mutation_id > ?))
+        AND (? = 0 OR (o.status = ? AND COALESCE(o.confirmation_proven, 0) = 1))
+      ORDER BY o.created_at_ms, o.mutation_id
+      LIMIT 64
+      """,
+      statement: &statement
+    )
+    defer { sqlite3_finalize(statement) }
+    try bind(
+      [
+        .text(mutationID),
+        .text(mutationID),
+        .text(InstantMutationStatus.failed.rawValue),
+        .int(createdAtMilliseconds),
+        .int(createdAtMilliseconds),
+        .text(mutationID),
+        .int(acceptedOnly ? 1 : 0),
+        .text(InstantMutationStatus.confirmed.rawValue),
+      ],
+      to: statement
+    )
+    while true {
+      let code = sqlite3_step(statement)
+      if code == SQLITE_DONE { break }
+      guard code == SQLITE_ROW, let idBytes = sqlite3_column_text(statement, 0) else {
+        throw persistenceError(operation: "find covering outbox writes", message: lastErrorMessage())
+      }
+      let status = sqlite3_column_text(statement, 2).map { String(cString: $0) }
+      let accepted = status == InstantMutationStatus.confirmed.rawValue && sqlite3_column_int64(statement, 3) == 1
+      let claimed = sqlite3_column_text(statement, 5).map { String(cString: $0) }
+        == InstantOutboxDeliveryClaimState.claimed.rawValue
+      guard accepted || !pendingMustBeClaimed || claimed else { continue }
+      candidates.append((
+        id: String(cString: idBytes),
+        createdAt: sqlite3_column_int64(statement, 1),
+        accepted: accepted,
+        serverTransactionID: sqlite3_column_text(statement, 4).map { String(cString: $0) }
+      ))
+    }
+    guard !candidates.isEmpty else { return (.none, decoded) }
+    let mutation: PendingMutation
+    if let decoded {
+      mutation = decoded
+    } else {
+      guard let row = try loadOutboxBodyRowWithoutTransaction(id: mutationID) else { return (.none, nil) }
+      mutation = try decodeOutboxBody(row.json)
+      decodedOutboxBodyCount += 1
+      decodedOutboxBodyByteCount += row.json.utf8.count
+    }
+    var hasWrite = false
+    for operation in mutation.transaction.operations {
+      switch operation {
+      case .insert, .merge:
+        hasWrite = true
+      case .requireEntityMissing, .requireEntityMissingByLookup,
+        .requireEntityExists, .requireEntityExistsByLookup,
+        .requireTripleExists, .ruleParams, .ruleParamsByLookup:
+        continue
+      case .retract, .retractByLookup, .insertByLookup, .mergeByLookup,
+        .deleteEntity, .deleteEntityInNamespace, .deleteEntityByLookup:
+        return (.none, mutation)
+      }
+    }
+    guard hasWrite else { return (.none, mutation) }
+    var acceptedOperations: [InstantTripleOperation] = []
+    var allOperations: [InstantTripleOperation] = []
+    var acceptedIDs: [String] = []
+    var allIDs: [String] = []
+    var newestAcceptedTransactionID: String?
+    for candidate in candidates {
+      guard let row = try loadOutboxBodyRowWithoutTransaction(id: candidate.id) else { continue }
+      let covering: PendingMutation = try decodeOutboxBody(row.json)
+      decodedOutboxBodyCount += 1
+      decodedOutboxBodyByteCount += row.json.utf8.count
+      allOperations.append(contentsOf: covering.transaction.operations)
+      allIDs.append(candidate.id)
+      guard candidate.accepted else { continue }
+      acceptedOperations.append(contentsOf: covering.transaction.operations)
+      acceptedIDs.append(candidate.id)
+      if let transactionID = candidate.serverTransactionID, !transactionID.isEmpty {
+        newestAcceptedTransactionID = Self.newerServerTransactionID(newestAcceptedTransactionID, transactionID)
+      }
+    }
+    let attributeStore = try attributes()
+    if !acceptedOperations.isEmpty,
+      let serverTransactionID = newestAcceptedTransactionID,
+      InstantAuthoritativeWriteCoverage(
+        operations: acceptedOperations,
+        attributes: attributeStore,
+        previousChangedEntityTriples: [:],
+        changedEntityTriples: [:]
+      ).covers(mutation.transaction.operations)
+    {
+      return (.acceptedWrites(serverTransactionID: serverTransactionID, mutationIDs: acceptedIDs), mutation)
+    }
+    if !acceptedOnly,
+      InstantAuthoritativeWriteCoverage(
+        operations: allOperations,
+        attributes: attributeStore,
+        previousChangedEntityTriples: [:],
+        changedEntityTriples: [:]
+      ).covers(mutation.transaction.operations)
+    {
+      return (.pendingWrites(mutationIDs: allIDs), mutation)
+    }
+    return (.none, mutation)
+  }
+
+  /// The newer of two server transaction ids: numeric when both are, otherwise the later one.
+  private static func newerServerTransactionID(_ current: String?, _ candidate: String) -> String {
+    guard let current else { return candidate }
+    if let lhs = Int64(current), let rhs = Int64(candidate) {
+      return rhs > lhs ? candidate : current
+    }
+    return candidate
+  }
+
+  /// Resolves a pending write as accepted because later accepted writes of this device cover it (item 3).
+  ///
+  /// The row becomes confirmed with `supersededByAcceptedWrite` and the newest covering server transaction id, so it
+  /// leaves the outbox with its covering writes when the watermark passes them; its optimistic overlay stays until
+  /// then, beneath the covering writes' values. It is not offered again.
+  private func supersedeOutboxMutationWithoutTransaction(
+    _ mutation: PendingMutation,
+    serverTransactionID: String
+  ) throws -> PendingMutation? {
+    var superseded = mutation
+    superseded.status = .confirmed
+    superseded.failureMessage = nil
+    superseded.failure = nil
+    superseded.serverTransactionID = serverTransactionID
+    superseded.confirmationSource = .supersededByAcceptedWrite
+    let encodedBody = try encode(superseded)
+    try execute(
+      """
+      UPDATE instant_outbox
+      SET status = ?, delivery_state = ?, delivery_metadata_version = ?,
+          transport_step_count = ?, encoded_body_bytes = ?, delivery_started = 1,
+          lifecycle_json = ?, failure_message = NULL, confirmation_proven = 1,
+          optimistic_overlay_active = ?, delivery_claim_state = ?,
+          server_transaction_id = ?, confirmation_source = ?,
+          mutation_revision = mutation_revision + 1,
+          delivery_claim_token = NULL, delivery_claimant_id = NULL,
+          delivery_claim_deadline_ms = NULL,
+          delivery_claim_projected_body_bytes = NULL,
+          delivery_claim_payload_fingerprint = NULL,
+          server_acceptance_payload_fingerprint = ?, json = ?
+      WHERE mutation_id = ? AND delivery_state = ? AND status IN (?, ?)
+        AND COALESCE(confirmation_proven, 0) = 0
+      """,
+      [
+        .text(superseded.status.rawValue),
+        .text(InstantOutboxDeliveryState.serverAccepted.rawValue),
+        .int(Int64(InstantOutboxDeliveryMetadata.currentVersion)),
+        .int(Int64(InstantOutboxDeliveryMetadata.stepCount(in: superseded))),
+        .int(Int64(encodedBody.utf8.count)),
+        .text(try encode(superseded.compactedForMemory)),
+        .int(superseded.optimisticOverlayState == .removed ? 0 : 1),
+        .text(InstantOutboxDeliveryClaimState.ready.rawValue),
+        .text(serverTransactionID),
+        .text(InstantMutationConfirmationSource.supersededByAcceptedWrite.rawValue),
+        .text(try mutation.mutationWireIntentFingerprint()),
+        .text(encodedBody),
+        .text(mutation.id),
+        .text(InstantOutboxDeliveryState.needsDelivery.rawValue),
+        .text(InstantMutationStatus.pending.rawValue),
+        .text(InstantMutationStatus.confirmed.rawValue),
+      ]
+    )
+    guard sqlite3_changes(connection.raw) == 1 else { return nil }
+    try replaceOutboxWriteKeysWithoutTransaction(for: superseded)
+    try saveMutationLifecycleWithoutTransaction(superseded)
+    InstantDiagnostics.shared.record(
+      .notice,
+      subsystem: "instant-swift-data-core",
+      category: "outbox",
+      event: "outbox.mutation.superseded",
+      message:
+        "Later writes of this device that the server accepted cover every operation of this write, so it is resolved as accepted and not offered again.",
+      metadata: [
+        "mutationID": mutation.id,
+        "serverTransactionID": serverTransactionID,
+      ],
+      correlationID: mutation.id
+    )
+    return superseded
+  }
+
+  /// Resolves a write the server refused, when later writes of this device cover all of it (item 3).
+  ///
+  /// The server holds a newer value for every slot the refused write sets, or will once the covering writes in flight
+  /// are answered. Covered by accepted writes: superseded now. Covered by writes not yet accepted: the write keeps its
+  /// claim, parked with a distant acknowledgement deadline, until they are answered (`resolveParkedRefusal`); delivery
+  /// stays an ordered prefix. Otherwise the refusal stands.
+  /// - Parameter holdsBehindPendingWrites: Hold the write behind covering writes not yet accepted. Only for a write
+  ///   whose earlier offer may have been applied (a replay): a refusal of a first offer is the server's verdict on
+  ///   the write itself, so only accepted covering writes make it moot.
+  ///   - parkedDeadlineMilliseconds: The acknowledgement deadline a parked write's claim takes, so the claim does not
+  ///     expire as an acknowledgement timeout while the covering writes are answered.
+  func resolveRefusedWriteIfCovered(
+    id: String,
+    claimantID: String,
+    claimToken: String,
+    holdsBehindPendingWrites: Bool,
+    parkedDeadlineMilliseconds: Int64
+  ) throws -> InstantRefusedWriteResolution {
+    let previousState = cachedState
+    let resolution: InstantRefusedWriteResolution = try transaction {
+      guard
+        try selectInt64(
+          """
+          SELECT EXISTS(
+            SELECT 1 FROM instant_outbox
+            WHERE mutation_id = ? AND delivery_claim_state = ?
+              AND delivery_claimant_id = ? AND delivery_claim_token = ?
+              AND status IN (?, ?) AND COALESCE(confirmation_proven, 0) = 0
+            LIMIT 1
+          )
+          """,
+          [
+            .text(id),
+            .text(InstantOutboxDeliveryClaimState.claimed.rawValue),
+            .text(claimantID),
+            .text(claimToken),
+            .text(InstantMutationStatus.pending.rawValue),
+            .text(InstantMutationStatus.confirmed.rawValue),
+          ]
+        ) != 0,
+        let position = try loadOutboxPositionWithoutTransaction(id: id)
+      else { return .notCovered }
+      let (coverage, mutation) = try laterWriteCoverageWithoutTransaction(
+        ofMutationID: id,
+        createdAtMilliseconds: position.createdAtMilliseconds,
+        decoded: nil,
+        acceptedOnly: !holdsBehindPendingWrites,
+        pendingMustBeClaimed: true,
+        attributes: {
+          AttributeStore(attributes: try loadAttributesWithoutTransaction(tracesStartupCollection: false))
+        }
+      )
+      switch coverage {
+      case let .acceptedWrites(serverTransactionID, coveringIDs):
+        guard let mutation,
+          let superseded = try supersedeOutboxMutationWithoutTransaction(
+            mutation,
+            serverTransactionID: serverTransactionID
+          )
+        else { return .notCovered }
+        _ = try bumpMetadataRevisionWithoutTransaction(Self.outboxRevisionKey)
+        return .superseded(superseded, coveringMutationIDs: coveringIDs)
+      case let .pendingWrites(coveringIDs):
+        guard holdsBehindPendingWrites else { return .notCovered }
+        try execute(
+          """
+          UPDATE instant_outbox
+          SET delivery_claim_deadline_ms = ?
+          WHERE mutation_id = ? AND delivery_claim_state = ? AND delivery_claim_token = ?
+          """,
+          [
+            .int(parkedDeadlineMilliseconds),
+            .text(id),
+            .text(InstantOutboxDeliveryClaimState.claimed.rawValue),
+            .text(claimToken),
+          ]
+        )
+        return sqlite3_changes(connection.raw) == 1
+          ? .heldBehindPendingWrites(coveringMutationIDs: coveringIDs)
+          : .notCovered
+      case .none:
+        return .notCovered
+      }
+    }
+    if case .superseded = resolution {
+      cachedState = nil
+      _ = previousState
+    }
+    return resolution
+  }
+
+  /// Resolves a refusal parked behind covering writes in flight (item 3), while this runtime still holds its claim:
+  /// superseded once the covering writes are accepted; `.notCovered` once they no longer cover it (one of them failed),
+  /// so the runtime records the original refusal; still parked otherwise.
+  func resolveParkedRefusal(
+    id: String,
+    claimantID: String,
+    claimToken: String
+  ) throws -> InstantRefusedWriteResolution {
+    let resolution: InstantRefusedWriteResolution = try transaction {
+      guard
+        try selectInt64(
+          """
+          SELECT EXISTS(
+            SELECT 1 FROM instant_outbox
+            WHERE mutation_id = ? AND delivery_claim_state = ?
+              AND delivery_claimant_id = ? AND delivery_claim_token = ?
+              AND status IN (?, ?) AND COALESCE(confirmation_proven, 0) = 0
+            LIMIT 1
+          )
+          """,
+          [
+            .text(id),
+            .text(InstantOutboxDeliveryClaimState.claimed.rawValue),
+            .text(claimantID),
+            .text(claimToken),
+            .text(InstantMutationStatus.pending.rawValue),
+            .text(InstantMutationStatus.confirmed.rawValue),
+          ]
+        ) != 0,
+        let position = try loadOutboxPositionWithoutTransaction(id: id)
+      else { return .stale }
+      let (coverage, mutation) = try laterWriteCoverageWithoutTransaction(
+        ofMutationID: id,
+        createdAtMilliseconds: position.createdAtMilliseconds,
+        decoded: nil,
+        acceptedOnly: false,
+        attributes: {
+          AttributeStore(attributes: try loadAttributesWithoutTransaction(tracesStartupCollection: false))
+        }
+      )
+      switch coverage {
+      case let .acceptedWrites(serverTransactionID, coveringIDs):
+        guard let mutation,
+          let superseded = try supersedeOutboxMutationWithoutTransaction(
+            mutation,
+            serverTransactionID: serverTransactionID
+          )
+        else { return .notCovered }
+        _ = try bumpMetadataRevisionWithoutTransaction(Self.outboxRevisionKey)
+        return .superseded(superseded, coveringMutationIDs: coveringIDs)
+      case let .pendingWrites(coveringIDs):
+        return .heldBehindPendingWrites(coveringMutationIDs: coveringIDs)
+      case .none:
+        return .notCovered
+      }
+    }
+    if case .superseded = resolution {
+      cachedState = nil
+    }
+    return resolution
+  }
+
   func claimAutomaticOutboxDeliveryWindow(
     _ request: InstantAutomaticOutboxClaimRequest
   ) throws -> InstantAutomaticOutboxClaimWindow {
@@ -7403,6 +7850,16 @@ public actor SQLitePersistenceStore {
       var bodyDecodeCount = 0
       var bodyByteCount = 0
       var failedMutations: [PendingMutation] = []
+      var supersededMutations: [PendingMutation] = []
+      var coverageAttributes: AttributeStore?
+      func coverageAttributeStore() throws -> AttributeStore {
+        if let coverageAttributes { return coverageAttributes }
+        let loaded = AttributeStore(
+          attributes: try loadAttributesWithoutTransaction(tracesStartupCollection: false)
+        )
+        coverageAttributes = loaded
+        return loaded
+      }
       var mutations: [PendingMutation] = []
       var admittedStepCount = 0
       var admittedBodyByteCount = 0
@@ -7523,6 +7980,29 @@ public actor SQLitePersistenceStore {
             if candidate.metadataVersion < InstantOutboxDeliveryMetadata.currentVersion {
               try saveOutboxDeliveryMetadataWithoutTransaction(mutation)
               didMakeNonSendingProgress = true
+            }
+            // Item 3 (library-78): a write offered before may already be applied. When later writes of this device
+            // that the server accepted cover all of it, the server holds a newer value for every slot it sets, and
+            // offering it again only earns a replay refusal; resolve it as accepted instead. Delivery stays an
+            // ordered prefix: a write covered only by writes not yet accepted is still offered, and its refusal is
+            // parked until they are answered (resolveRefusedWriteIfCovered).
+            if candidate.deliveryStarted, !request.requiresExclusiveLane,
+              case let .acceptedWrites(serverTransactionID, _) = try laterWriteCoverageWithoutTransaction(
+                ofMutationID: mutation.id,
+                createdAtMilliseconds: candidate.createdAtMilliseconds,
+                decoded: mutation,
+                acceptedOnly: true,
+                attributes: coverageAttributeStore
+              ).coverage,
+              let superseded = try supersedeOutboxMutationWithoutTransaction(
+                mutation,
+                serverTransactionID: serverTransactionID
+              )
+            {
+              supersededMutations.append(superseded)
+              didChangeLifecycle = true
+              didMakeNonSendingProgress = true
+              continue
             }
             let transportStepCount = InstantOutboxDeliveryMetadata.stepCount(in: mutation)
             if transportStepCount > InstantAutomaticOutboxClaimLimits.maximumStepCount {
@@ -7844,12 +8324,16 @@ public actor SQLitePersistenceStore {
         shouldContinueImmediately: shouldContinueImmediately,
         decodedBodyCount: bodyDecodeCount,
         decodedBodyByteCount: bodyByteCount,
-        synchronizationBlocker: synchronizationBlocker
+        synchronizationBlocker: synchronizationBlocker,
+        supersededMutations: supersededMutations
       )
     }
     if let blocker = window.synchronizationBlocker {
       cachedState = nil
       throw blocker.error(operation: operation)
+    }
+    if !window.supersededMutations.isEmpty {
+      cachedState = nil
     }
     return window
   }
@@ -7941,10 +8425,14 @@ public actor SQLitePersistenceStore {
   /// the durable claim. The claimant predicate prevents a late socket event
   /// from releasing a row another runtime reclaimed after the five-second
   /// deadline.
+  ///
+  /// - Parameter claimToken: When given, the claim is released only if it is still the claim the response answered;
+  ///   a late response must not release a newer claim of the same row (#376).
   @discardableResult
   func releaseAutomaticOutboxClaim(
     id: String,
-    claimantID: String
+    claimantID: String,
+    claimToken: String? = nil
   ) throws -> Bool {
     guard !id.isEmpty, !claimantID.isEmpty else { return false }
     return try transaction {
@@ -7957,12 +8445,15 @@ public actor SQLitePersistenceStore {
             delivery_claim_payload_fingerprint = NULL
         WHERE mutation_id = ? AND delivery_claim_state = ?
           AND delivery_claimant_id = ?
+          AND (? IS NULL OR delivery_claim_token = ?)
         """,
         [
           .text(InstantOutboxDeliveryClaimState.ready.rawValue),
           .text(id),
           .text(InstantOutboxDeliveryClaimState.claimed.rawValue),
           .text(claimantID),
+          claimToken.map(SQLiteBinding.text) ?? .null,
+          claimToken.map(SQLiteBinding.text) ?? .null,
         ]
       )
       return sqlite3_changes(connection.raw) == 1
@@ -9351,34 +9842,77 @@ public actor SQLitePersistenceStore {
     createdAt: InstantTimestamp
   ) throws -> InstantStreamMetadata {
     try transaction {
-      if let existing = try streamMetadataWithoutTransaction(appID: appID, clientID: clientID) {
-        throw streamValidationError(
-          operation: "create stream",
-          localID: clientID,
-          message:
-            "Stream client id '\(clientID)' already belongs to stream '\(existing.id)'.",
-          recovery: "Choose a unique client id before creating another stream."
-        )
-      }
-      if try streamMetadataWithoutTransaction(appID: appID, streamID: streamID) != nil {
-        throw streamValidationError(
-          operation: "create stream",
-          localID: streamID,
-          message: "Stream id '\(streamID)' already exists.",
-          recovery: "Retry stream creation with a freshly generated stream id."
-        )
-      }
-      let metadata = InstantStreamMetadata(
-        id: streamID,
+      try createStreamWithoutTransaction(
         appID: appID,
+        streamID: streamID,
         clientID: clientID,
         userID: userID,
-        createdAt: createdAt,
-        updatedAt: createdAt
+        createdAt: createdAt
       )
-      try insertStreamMetadataWithoutTransaction(metadata)
+    }
+  }
+
+  /// Creates a stream this device writes while the server cannot name it, and records it for the server (#329).
+  func createWrittenStream(
+    appID: String,
+    streamID: String,
+    clientID: String,
+    userID: String,
+    createdAt: InstantTimestamp
+  ) throws -> InstantStreamMetadata {
+    try transaction {
+      let metadata = try createStreamWithoutTransaction(
+        appID: appID,
+        streamID: streamID,
+        clientID: clientID,
+        userID: userID,
+        createdAt: createdAt
+      )
+      try insertStreamWriterWithoutTransaction(
+        appID: appID,
+        streamID: streamID,
+        clientID: clientID,
+        reconnectToken: nil,
+        serverStreamID: nil
+      )
       return metadata
     }
+  }
+
+  private func createStreamWithoutTransaction(
+    appID: String,
+    streamID: String,
+    clientID: String,
+    userID: String,
+    createdAt: InstantTimestamp
+  ) throws -> InstantStreamMetadata {
+    if let existing = try streamMetadataWithoutTransaction(appID: appID, clientID: clientID) {
+      throw streamValidationError(
+        operation: "create stream",
+        localID: clientID,
+        message:
+          "Stream client id '\(clientID)' already belongs to stream '\(existing.id)'.",
+        recovery: "Choose a unique client id before creating another stream."
+      )
+    }
+    if try streamMetadataWithoutTransaction(appID: appID, streamID: streamID) != nil {
+      throw streamValidationError(
+        operation: "create stream",
+        localID: streamID,
+        message: "Stream id '\(streamID)' already exists.",
+        recovery: "Retry stream creation with a freshly generated stream id."
+      )
+    }
+    let metadata = InstantStreamMetadata(
+      id: streamID,
+      appID: appID,
+      clientID: clientID,
+      userID: userID,
+      createdAt: createdAt,
+      updatedAt: createdAt
+    )
+    try insertStreamMetadataWithoutTransaction(metadata)
+    return metadata
   }
 
   public func loadStreamMetadata(
@@ -9420,38 +9954,179 @@ public actor SQLitePersistenceStore {
     createdAt: InstantTimestamp
   ) throws -> InstantStreamMetadata {
     try transaction {
-      if let existing = try streamMetadataWithoutTransaction(appID: appID, streamID: streamID) {
-        guard existing.clientID == clientID else {
-          throw streamValidationError(
-            operation: "bootstrap stream metadata",
-            localID: streamID,
-            message:
-              "Stream '\(streamID)' is already associated with client id '\(existing.clientID)', not '\(clientID)'.",
-            recovery: "Reconnect using the client id returned by the canonical stream append."
-          )
-        }
-        return existing
-      }
-      if let existing = try streamMetadataWithoutTransaction(appID: appID, clientID: clientID) {
-        throw streamValidationError(
-          operation: "bootstrap stream metadata",
-          localID: clientID,
-          message:
-            "Stream client id '\(clientID)' already belongs to stream '\(existing.id)', not '\(streamID)'.",
-          recovery: "Reconnect the client-id reader and inspect the canonical stream id."
-        )
-      }
-      let metadata = InstantStreamMetadata(
-        id: streamID,
+      try ensureStreamMetadataWithoutTransaction(
         appID: appID,
+        streamID: streamID,
         clientID: clientID,
         userID: userID,
-        createdAt: createdAt,
-        updatedAt: createdAt
+        createdAt: createdAt
       )
-      try insertStreamMetadataWithoutTransaction(metadata)
+    }
+  }
+
+  /// Stores a stream this device writes, which the server started under `streamID`, and records it for the server
+  /// so a reconnect or relaunch can restart it (#329).
+  func ensureWrittenStreamMetadata(
+    appID: String,
+    streamID: String,
+    clientID: String,
+    reconnectToken: String,
+    userID: String,
+    createdAt: InstantTimestamp
+  ) throws -> InstantStreamMetadata {
+    try transaction {
+      let metadata = try ensureStreamMetadataWithoutTransaction(
+        appID: appID,
+        streamID: streamID,
+        clientID: clientID,
+        userID: userID,
+        createdAt: createdAt
+      )
+      try insertStreamWriterWithoutTransaction(
+        appID: appID,
+        streamID: streamID,
+        clientID: clientID,
+        reconnectToken: reconnectToken,
+        serverStreamID: streamID
+      )
       return metadata
     }
+  }
+
+  private func ensureStreamMetadataWithoutTransaction(
+    appID: String,
+    streamID: String,
+    clientID: String,
+    userID: String,
+    createdAt: InstantTimestamp
+  ) throws -> InstantStreamMetadata {
+    if let existing = try streamMetadataWithoutTransaction(appID: appID, streamID: streamID) {
+      guard existing.clientID == clientID else {
+        throw streamValidationError(
+          operation: "bootstrap stream metadata",
+          localID: streamID,
+          message:
+            "Stream '\(streamID)' is already associated with client id '\(existing.clientID)', not '\(clientID)'.",
+          recovery: "Reconnect using the client id returned by the canonical stream append."
+        )
+      }
+      return existing
+    }
+    if let existing = try streamMetadataWithoutTransaction(appID: appID, clientID: clientID) {
+      throw streamValidationError(
+        operation: "bootstrap stream metadata",
+        localID: clientID,
+        message:
+          "Stream client id '\(clientID)' already belongs to stream '\(existing.id)', not '\(streamID)'.",
+        recovery: "Reconnect the client-id reader and inspect the canonical stream id."
+      )
+    }
+    let metadata = InstantStreamMetadata(
+      id: streamID,
+      appID: appID,
+      clientID: clientID,
+      userID: userID,
+      createdAt: createdAt,
+      updatedAt: createdAt
+    )
+    try insertStreamMetadataWithoutTransaction(metadata)
+    return metadata
+  }
+
+  /// The streams `userID` writes on this device whose server copy may lack content or the close, oldest first.
+  func loadStreamWritersAwaitingServer(appID: String, userID: String) throws -> [InstantStreamWriterRecord] {
+    try readTransaction {
+      try selectJSON(
+        """
+        SELECT json_object(
+          'streamID', writers.stream_id,
+          'clientID', writers.client_id,
+          'reconnectToken', writers.reconnect_token,
+          'serverStreamID', writers.server_stream_id
+        )
+        FROM instant_stream_writers AS writers
+        JOIN instant_streams AS streams
+          ON streams.app_id = writers.app_id AND streams.stream_id = writers.stream_id
+        WHERE writers.app_id = ? AND writers.state = ? AND streams.user_id = ?
+        ORDER BY writers.rowid
+        """,
+        [.text(appID), .text(InstantStreamWriterState.catchingUp.rawValue), .text(userID)]
+      )
+    }
+  }
+
+  /// Whether this device writes the stream, as opposed to reading one another device writes.
+  func isWrittenStream(appID: String, streamID: String) throws -> Bool {
+    try readTransaction {
+      let found: String? = try selectScalar(
+        "SELECT stream_id FROM instant_stream_writers WHERE app_id = ? AND stream_id = ? LIMIT 1",
+        [.text(appID), .text(streamID)]
+      )
+      return found != nil
+    }
+  }
+
+  /// Stores the reconnect token a stream written offline presents at its first start, before it is sent.
+  func recordStreamWriterReconnectToken(appID: String, streamID: String, reconnectToken: String) throws {
+    try transaction {
+      try execute(
+        "UPDATE instant_stream_writers SET reconnect_token = ? WHERE app_id = ? AND stream_id = ?",
+        [.text(reconnectToken), .text(appID), .text(streamID)]
+      )
+    }
+  }
+
+  func recordStreamWriterServerStreamID(appID: String, streamID: String, serverStreamID: String) throws {
+    try transaction {
+      try execute(
+        "UPDATE instant_stream_writers SET server_stream_id = ? WHERE app_id = ? AND stream_id = ?",
+        [.text(serverStreamID), .text(appID), .text(streamID)]
+      )
+    }
+  }
+
+  /// Records that the server confirmed the stream's close, so no later connection restarts it.
+  func recordStreamWriterDelivered(appID: String, streamID: String) throws {
+    try transaction {
+      try execute(
+        "UPDATE instant_stream_writers SET state = ? WHERE app_id = ? AND stream_id = ?",
+        [.text(InstantStreamWriterState.delivered.rawValue), .text(appID), .text(streamID)]
+      )
+    }
+  }
+
+  /// Records that the server refused the stream, so no later connection asks again.
+  func recordStreamWriterRefused(appID: String, streamID: String, message: String) throws {
+    try transaction {
+      try execute(
+        "UPDATE instant_stream_writers SET state = ?, refusal = ? WHERE app_id = ? AND stream_id = ?",
+        [.text(InstantStreamWriterState.refused.rawValue), .text(message), .text(appID), .text(streamID)]
+      )
+    }
+  }
+
+  private func insertStreamWriterWithoutTransaction(
+    appID: String,
+    streamID: String,
+    clientID: String,
+    reconnectToken: String?,
+    serverStreamID: String?
+  ) throws {
+    try execute(
+      """
+      INSERT OR IGNORE INTO instant_stream_writers
+        (app_id, stream_id, client_id, reconnect_token, server_stream_id, state)
+      VALUES (?, ?, ?, ?, ?, ?)
+      """,
+      [
+        .text(appID),
+        .text(streamID),
+        .text(clientID),
+        reconnectToken.map { .text($0) } ?? .null,
+        serverStreamID.map { .text($0) } ?? .null,
+        .text(InstantStreamWriterState.catchingUp.rawValue),
+      ]
+    )
   }
 
   public func appendStreamContent(
@@ -9562,6 +10237,35 @@ public actor SQLitePersistenceStore {
     }
   }
 
+  /// The stored byte count of a stream, without reading its content; `nil` when the stream is not stored here.
+  func loadStreamContentByteCount(appID: String, streamID: String) throws -> Int64? {
+    try readTransaction {
+      guard try streamMetadataWithoutTransaction(appID: appID, streamID: streamID) != nil else { return nil }
+      return try streamContentSizeWithoutTransaction(appID: appID, streamID: streamID)
+    }
+  }
+
+  /// Up to `limit` stored chunks of a stream that end after `offset`, in order: what a writer resends to a server
+  /// that holds `offset` bytes (#329).
+  func loadStreamContentChunks(
+    appID: String,
+    streamID: String,
+    endingAfter offset: Int64,
+    limit: Int
+  ) throws -> [InstantStreamContentChunk] {
+    try readTransaction {
+      try selectJSON(
+        """
+        SELECT json FROM instant_stream_content_chunks
+        WHERE app_id = ? AND stream_id = ? AND offset + byte_count > ?
+        ORDER BY offset, chunk_id
+        LIMIT ?
+        """,
+        [.text(appID), .text(streamID), .int(offset), .int(Int64(limit))]
+      )
+    }
+  }
+
   public func createShare(
     _ share: InstantShare,
     ownerMembership: InstantShareMembership
@@ -9633,11 +10337,18 @@ public actor SQLitePersistenceStore {
     }
   }
 
+  /// - Parameters:
+  ///   - maximumRemovedTripleCount: Remove at most this many result triples in this call (at least one row), and say
+  ///     whether rows the policy removes are left, so the caller can release the operation gate between bounded
+  ///     batches (#303, item 6). `nil` removes everything the policy selects at once.
+  ///   - carriedReleasedIdentities: The previous batch's `retainedReleasedIdentities`.
   func pruneLiveQueryResults(
     policy: InstantLiveQueryResultPruningPolicy,
     now: InstantTimestamp,
     preservingQueryKeys: Set<String> = [],
-    currentStoreSnapshot: InstantStoreSnapshot? = nil
+    currentStoreSnapshot: InstantStoreSnapshot? = nil,
+    maximumRemovedTripleCount: Int? = nil,
+    carriedReleasedIdentities: Set<InstantLiveTripleIdentity> = []
   ) throws -> InstantLiveQueryResultPruningApplication {
     let application = try transaction {
       let storeRevision = try loadMetadataRevisionWithoutTransaction(Self.storeRevisionKey)
@@ -9733,6 +10444,24 @@ public actor SQLitePersistenceStore {
         }
       }
 
+      // A bounded batch removes the selected rows in selection order until it holds about the budget's triples; the
+      // rest stay for the next batch, which selects them again.
+      var deferredRows: [LiveQueryResultStorageRow] = []
+      if let maximumRemovedTripleCount, removedRows.count > 1 {
+        var batch: [LiveQueryResultStorageRow] = []
+        var batchTripleCount = 0
+        for row in removedRows {
+          if !batch.isEmpty, batchTripleCount + row.tripleCount > maximumRemovedTripleCount {
+            deferredRows.append(row)
+            continue
+          }
+          batch.append(row)
+          batchTripleCount += row.tripleCount
+        }
+        removedRows = batch
+        rows.append(contentsOf: deferredRows)
+      }
+
       guard !removedRows.isEmpty else {
         return InstantLiveQueryResultPruningApplication(
           result: InstantLiveQueryResultPruningResult(
@@ -9747,7 +10476,7 @@ public actor SQLitePersistenceStore {
       }
 
       var snapshot = currentState.snapshot
-      var removedIdentities: Set<InstantLiveTripleIdentity> = []
+      var removedIdentities = carriedReleasedIdentities
       for row in removedRows {
         guard let result = try liveQueryResultWithoutTransaction(key: row.queryKey) else {
           continue
@@ -9793,6 +10522,9 @@ public actor SQLitePersistenceStore {
         !retainedEntityIDs.contains($0.entityID)
       }
       let removedEntityIDs = candidateEntityIDs.subtracting(retainedEntityIDs)
+      let retainedReleasedIdentities = Set(
+        removedIdentities.lazy.filter { retainedEntityIDs.contains($0.entityID) && currentTriples[$0] != nil }
+      )
       snapshot.store.triples.removeAll {
         orphanedIdentities.contains(InstantLiveTripleIdentity($0))
       }
@@ -9828,7 +10560,9 @@ public actor SQLitePersistenceStore {
           outboxRevision: outboxRevision,
           attributeRevision: attributeRevision,
           queryResultRevision: nextQueryResultRevision
-        )
+        ),
+        hasMoreToRemove: !deferredRows.isEmpty,
+        retainedReleasedIdentities: retainedReleasedIdentities
       )
     }
     adoptCachedState(application.state)
@@ -14942,13 +15676,18 @@ public actor SQLitePersistenceStore {
     )
   }
 
+  /// Where a stream's content ends. Chunks are stored back to back (each append starts at the previous end), so the
+  /// chunk with the greatest offset ends the stream; the index finds it without summing every chunk, which made each
+  /// append cost the stream's length.
   private func streamContentSizeWithoutTransaction(appID: String, streamID: String) throws -> Int64
   {
     let value: String? = try selectScalar(
       """
-      SELECT CAST(COALESCE(SUM(byte_count), 0) AS TEXT)
+      SELECT CAST(offset + byte_count AS TEXT)
       FROM instant_stream_content_chunks
       WHERE app_id = ? AND stream_id = ?
+      ORDER BY offset DESC, byte_count DESC
+      LIMIT 1
       """,
       [.text(appID), .text(streamID)]
     )
@@ -14986,6 +15725,9 @@ public actor SQLitePersistenceStore {
     for chunk in chunks {
       data.append(contentsOf: chunk.content.utf8)
     }
+    streamContentReadMetrics.readCount += 1
+    streamContentReadMetrics.decodedChunkCount += chunks.count
+    streamContentReadMetrics.decodedByteCount += data.count
     if let firstChunk = chunks.first {
       let droppedByteCount = byteOffset - firstChunk.offset
       if droppedByteCount > 0 {

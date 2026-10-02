@@ -13,4 +13,6 @@ claude-opus-5.5-fast-drain 2026-09-30T18:34:28-04:00 mower plan=2026-09-30-fast-
 claude-opus-5.5-auth-counters 2026-09-30T19:29:49-04:00 grower plan=2026-09-30-auth-counters #289
 claude-opus-5.5-infinite-leading-rows 2026-09-30T16:41:49-04:00 mower plan=2026-09-30-infinite-leading-rows #300
 claude-opus-5.5-fast-drain 2026-10-01T00:40:56-04:00 mower plan=2026-10-01-library-77 #303 #296
+claude-opus-5.5-library-78 2026-10-01T12:48:54-04:00 mower plan=2026-10-01-library-78 #376 #360 #303 #317 #329
+claude-opus-5.5-account-linking 2026-10-01T09:56:17-04:00 grower plan=2026-10-01-account-linking #361 (entries only)
 claude-opus-5.5-release 2026-10-01T17:04:28-04:00 mower plan=2026-10-01-release-1.8.0 #155 #303 #324 #329

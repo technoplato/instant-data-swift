@@ -324,30 +324,19 @@ struct InstantOutboxHydrationTests {
       )
     )
 
+    // #376: a 500 keeps the healthy socket; the write is offered again on the same session after a backoff.
     try await instantLiveWithTimeout(
-      operation: "wait for permission-service reconnect",
+      operation: "wait for permission-service mutation retry on the same session",
       timeoutMilliseconds: 5_000
     ) {
-      await transport.waitForConnectionCount(2)
+      await firstSession.waitForSentMessageCount(3)
     }
-    try await instantLiveWithTimeout(
-      operation: "wait for permission-service reconnect to finish opening",
-      timeoutMilliseconds: 5_000
-    ) {
-      while try await runtime.connectionStatus().state != .opened {
-        try await Task.sleep(for: .milliseconds(1))
-      }
-    }
-    try await instantLiveWithTimeout(
-      operation: "wait for permission-service mutation retry",
-      timeoutMilliseconds: 5_000
-    ) {
-      await secondSession.waitForSentMessageCount(2)
-    }
-    let retriedMessages = await secondSession.sentMessages()
+    let connectionCount = await transport.connectionRequests().count
+    expectNoDifference(connectionCount, 1, "a 500 must not reconnect a healthy socket (#376)")
+    let retriedMessages = await firstSession.sentMessages()
     expectNoDifference(
       retriedMessages.map(\.op),
-      ["init", "transact"],
+      ["init", "transact", "transact"],
       upstreamDeliverySource
     )
     let retriedSteps = try #require(retriedMessages.last?.fields["tx-steps"]?.arrayValue)
@@ -358,7 +347,7 @@ struct InstantOutboxHydrationTests {
     let failed = await runtime.failedMutations()
     expectNoDifference(failed, [], upstreamDeliverySource)
 
-    await secondSession.enqueue(
+    await firstSession.enqueue(
       InstantLiveMessage(
         op: "transact-ok",
         clientEventID: transaction.id,

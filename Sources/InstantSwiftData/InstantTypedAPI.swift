@@ -2289,20 +2289,7 @@ extension InstantSwiftDataClient {
       for await snapshot in subscription.snapshots {
         do {
           try Task.checkCancellation()
-          if let error = snapshot.error {
-            stream.continuation.yield(
-              InfiniteQuerySnapshot(
-                queryID: snapshot.queryID,
-                sequence: snapshot.sequence,
-                values: [],
-                pageInfo: snapshot.pageInfo,
-                canLoadNextPage: snapshot.canLoadNextPage,
-                canLoadPreviousPage: snapshot.canLoadPreviousPage,
-                error: error
-              )
-            )
-            continue
-          }
+          // A live query's server error keeps the rows it already shows (#360); a terminal failure has none.
           stream.continuation.yield(
             InfiniteQuerySnapshot(
               queryID: snapshot.queryID,
@@ -2316,7 +2303,7 @@ extension InstantSwiftDataClient {
               pageInfo: snapshot.pageInfo,
               canLoadNextPage: snapshot.canLoadNextPage,
               canLoadPreviousPage: snapshot.canLoadPreviousPage,
-              error: nil
+              error: snapshot.error
             )
           )
         } catch {

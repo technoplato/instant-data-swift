@@ -210,6 +210,61 @@ private struct InstantLiveInfiniteQueryChunkObservationLease<Element: Sendable>:
   var cancel: @Sendable () async -> Void
 }
 
+/// The stream an observation's consumer iterates (#394).
+///
+/// An observation's emissions reach its consumer through a forwarding task that holds the inner stream's continuation,
+/// so the inner stream's `onTermination` never runs when the consumer simply stops iterating. This stream's storage
+/// holds a release token instead: when the consumer drops the stream and its iterator, as returning out of `for await`
+/// does, the token ends the observation. A consumer that keeps the stream keeps the observation; cancelling the
+/// consuming task ends it through the inner stream, as before.
+private enum InstantObservationConsumerStream {
+  static func make<Element: Sendable>(
+    _ inner: AsyncStream<Element>,
+    onRelease: @escaping @Sendable () -> Void
+  ) -> AsyncStream<Element> {
+    let reader = Reader(inner.makeAsyncIterator(), release: Release(onRelease))
+    return AsyncStream(unfolding: { await reader.next() }, onCancel: { reader.release.fire() })
+  }
+
+  // SAFETY: `lock` guards `action`, which runs at most once.
+  final class Release: @unchecked Sendable {
+    private let lock = NSLock()
+    private var action: (@Sendable () -> Void)?
+
+    init(_ action: @escaping @Sendable () -> Void) {
+      self.action = action
+    }
+
+    func fire() {
+      let action = lock.withLock { () -> (@Sendable () -> Void)? in
+        defer { self.action = nil }
+        return self.action
+      }
+      action?()
+    }
+
+    deinit {
+      fire()
+    }
+  }
+
+  // SAFETY: the stream's one consuming task calls the unfolding closure one `next()` at a time on its executor, so
+  // `iterator` is never accessed concurrently.
+  final class Reader<Element: Sendable>: @unchecked Sendable {
+    private var iterator: AsyncStream<Element>.Iterator
+    let release: Release
+
+    init(_ iterator: AsyncStream<Element>.Iterator, release: Release) {
+      self.iterator = iterator
+      self.release = release
+    }
+
+    func next() async -> Element? {
+      await iterator.next()
+    }
+  }
+}
+
 private final class InstantLiveObservationTermination: Sendable {
   private let owner: InstantAsyncCancellationOwner
 
@@ -221,6 +276,12 @@ private final class InstantLiveObservationTermination: Sendable {
     owner.cancel()
     await owner.wait()
   }
+}
+
+/// The server refused a stream this device writes, or its stored content cannot be resent from the server's offset;
+/// asking again cannot succeed, so the stream stays on this device (#329).
+private struct InstantStreamWriterRefusal: Error {
+  var message: String
 }
 
 package struct InstantLocalPersistenceMigration: Sendable {
@@ -294,10 +355,24 @@ public struct InstantRuntimeConfiguration: Sendable {
     maxTripleCount: 1_000_000
   )
   var liveQueryResultPruningWriteInterval = 64
+  /// How many result triples one prune batch removes before it releases the operation gate (#303, item 6). The
+  /// experiment's large store held the gate 5.8-13.2 s to prune 24 results of about 2,500 triples each while a transact
+  /// waited; `nil` prunes everything at once.
+  var liveQueryResultPruneBatchTripleCount: Int? = 5_000
+  /// Runs after each prune batch, with the number of results it removed.
+  var onLiveQueryResultPruneBatchFinishedForTesting: (@Sendable (_ removedResultCount: Int) async -> Void)? = nil
   var liveReconnectSleep: @Sendable (UInt64) async throws -> Void =
     instantLiveDefaultTimeoutSleep
   var liveMutationDeadlineSleep: @Sendable (UInt64) async throws -> Void =
     instantLiveDefaultTimeoutSleep
+  /// The backoff for writes and add-queries the server answered with a transient error (#376, #360).
+  var liveServerErrorRetryPolicy = InstantServerErrorRetryPolicy()
+  /// Sleeps before a live query is sent again on the same socket after a transient server error (#360).
+  var liveQueryRetrySleep: @Sendable (UInt64) async throws -> Void = instantLiveDefaultTimeoutSleep
+  /// Runs each time a write or a live query is scheduled for another attempt after a transient server error.
+  package var onServerErrorRetryScheduledForTesting:
+    (@Sendable (_ owner: InstantServerErrorRetryOwner, _ attempt: Int, _ delayMilliseconds: UInt64) async -> Void)? =
+      nil
   /// How long the durable acknowledgement deadline keeps waiting behind one server frame that the receive loop is
   /// still applying (#296). This is not a network timeout: the frame proves the server answered, and the deadline
   /// keeps running every six seconds while the frame applies. The bound exists only to treat a stuck frame as stuck.
@@ -376,6 +451,14 @@ public struct InstantRuntimeConfiguration: Sendable {
     (@Sendable (_ transactionID: String) async -> Void)? = nil
   var onServerApplyPreparedBeforeCommitForTesting:
     (@Sendable (_ planID: String) async -> Void)? = nil
+  /// Runs after each server-apply attempt takes its seed and before it begins its plan; `operationGateHeld` is true
+  /// when the attempt holds the operation gate, so a local write started here waits for it.
+  var onServerApplySeedLoadedForTesting:
+    (@Sendable (_ operationGateHeld: Bool) async -> Void)? = nil
+  /// Runs after each attempt to record a refused write has loaded its component and before it commits;
+  /// `operationGateHeld` is true for the exclusive attempt, so a local write started here would wait for it.
+  package var onClaimedTerminalFailureLoadedForTesting:
+    (@Sendable (_ operationGateHeld: Bool) async -> Void)? = nil
   package var onServerApplyCatchUpReplayedOutsideOperationGateForTesting:
     (@Sendable (_ appendedBodyCount: Int) async -> Void)? = nil
   package var onServerApplyCatchUpReplayedForTesting:
@@ -1317,6 +1400,14 @@ private struct InstantServerApplySeed: Sendable {
   var preparedStore: PreparedStoreMutation
 }
 
+/// The outcome of one attempt to record a server refusal of a claimed write.
+private enum InstantClaimedTerminalFailureAttempt: Sendable {
+  /// Recorded, already terminal, or no longer this runtime's claim.
+  case finished(PendingMutation?)
+  /// The outbox or store moved under the attempt; try again.
+  case retry
+}
+
 private enum InstantServerApplyCatchUpLimits {
   /// One already-large tail may be copied to SQLite staging under the gate and
   /// replayed page-by-page after local admission resumes. One final pass keeps
@@ -1586,17 +1677,25 @@ public final class InstantRuntime: Sendable {
   /// The attribute context of the latest live refresh, reused across frames that share the session's attrs (#303).
   private let liveRefreshAttributeContexts = InstantLiveRefreshAttributeContextCache()
   private let liveQueryAcknowledgements = InstantLiveQueryAcknowledgementState()
+  /// Each live query's latest server error, delivered to its observers without ending them (#360).
+  private let liveQueryErrors = InstantLiveQueryErrors()
   private let liveRoomPresenceState = InstantRuntimeLiveRoomPresenceState()
   private let activeRoomPresenceState = InstantRuntimeActiveRoomPresenceState()
   private let automaticLiveConnectionTaskOwner = InstantRuntimeExactTaskOwner()
   private let startupCookieSyncTaskOwner = InstantRuntimeExactTaskOwner()
   private let reconnectController = InstantRuntimeReconnectController()
   private let mutationDeliveryPump = InstantRuntimeMutationDeliveryPump()
+  /// Brings the server's copy of each stream this device writes up to date after a connection opens (#329).
+  private let streamWriterCatchUpOwner = InstantRuntimeExactTaskOwner()
   private let explicitMutationFlushOwner = InstantExplicitMutationFlushOwner()
   private let mutationDeadlineWake = InstantRuntimeMutationDeadlineWake()
   private let automaticDeliveryClaimantID = UUID().uuidString.lowercased()
   private let acknowledgementDeferral = InstantRuntimeAcknowledgementDeferral()
   private let automaticMutationRetryReservations = InstantAutomaticMutationRetryReservations()
+  /// Writes the server answered with a transient error, and the delivery pause they started (#376).
+  private let mutationServerErrorBackoff = InstantMutationServerErrorBackoffState()
+  /// Refused writes parked behind later writes in flight that cover them (library-78, item 3).
+  private let parkedRefusals = InstantParkedRefusals()
   private let storeAdoptionMetrics = InstantRuntimeStoreAdoptionMetrics()
   private let installedStoreRevisions: InstantRuntimeInstalledStoreRevisions
 
@@ -2669,7 +2768,8 @@ public final class InstantRuntime: Sendable {
     mergingAttributes attributesToMerge: [InstantAttribute] = [],
     liveQueryResultReplacements: [InstantLiveQueryResultReplacement] = [],
     operationGateAlreadyHeld: Bool = false,
-    initialSeed: InstantServerApplySeed? = nil
+    initialSeed: InstantServerApplySeed? = nil,
+    maximumAttempts: Int = 5
   ) async throws -> InstantAppliedServerTransaction {
     let processedTransactionID = (processedTransactionID ?? transaction.id)
       .trimmingCharacters(in: .whitespacesAndNewlines)
@@ -2694,7 +2794,7 @@ public final class InstantRuntime: Sendable {
     }
 
     var initialSeed = initialSeed
-    applyAttempts: for _ in 0..<5 {
+    applyAttempts: for _ in 0..<maximumAttempts {
       let seed: InstantServerApplySeed
       if let firstSeed = initialSeed {
         seed = firstSeed
@@ -2704,6 +2804,7 @@ public final class InstantRuntime: Sendable {
           operationGateAlreadyHeld: operationGateAlreadyHeld
         )
       }
+      await configuration.onServerApplySeedLoadedForTesting?(operationGateAlreadyHeld)
       let compactState = seed.state
       var authoritativeTransaction = baseAuthoritativeTransaction
       if !liveQueryResultReplacements.isEmpty {
@@ -3439,7 +3540,72 @@ public final class InstantRuntime: Sendable {
       }
     }
 
+    if !operationGateAlreadyHeld {
+      // #303: each optimistic attempt prepares outside the operation gate, and this runtime's own local writes landed
+      // between its seed and its plan every time (dictation that keeps writing beneath a large frame). Throwing here
+      // ended the live receive loop: the reconnect re-sent in-flight writes, and the server refused them as replays.
+      // Apply once more holding the operation gate from seed to commit, so local writes wait and this transaction
+      // lands. A peer runtime writing the same file is not held by this gate; if it still moves the store, the single
+      // exclusive attempt is stale too and the apply throws, bounded as before.
+      let exclusiveStartedAt = ContinuousClock.now
+      try await enterOperationGateUnlessCancelled(operation: "apply server transaction exclusively")
+      InstantDiagnostics.shared.record(
+        .warning,
+        subsystem: "instant-swift-data-core",
+        category: "server-apply",
+        event: "server-apply.exclusive-fallback",
+        message:
+          "Local writes changed the store during every optimistic server-apply attempt, so this one applies while local writes wait.",
+        metadata: [
+          "processedTransactionID": processedTransactionID,
+          "optimisticAttemptCount": String(maximumAttempts),
+        ]
+      )
+      do {
+        let applied = try await performApplyServerTransaction(
+          transaction,
+          processedTransactionID: processedTransactionID,
+          receivedAt: receivedAt,
+          confirmingMutationID: confirmingMutationID,
+          mergingAttributes: attributesToMerge,
+          liveQueryResultReplacements: liveQueryResultReplacements,
+          operationGateAlreadyHeld: true,
+          maximumAttempts: 1
+        )
+        await leaveOperationGate()
+        recordExclusiveServerApply(processedTransactionID: processedTransactionID, startedAt: exclusiveStartedAt, error: nil)
+        return applied
+      } catch {
+        await leaveOperationGate()
+        recordExclusiveServerApply(processedTransactionID: processedTransactionID, startedAt: exclusiveStartedAt, error: error)
+        throw error
+      }
+    }
     throw serverTransactionChangedDuringPersistence(id: processedTransactionID)
+  }
+
+  /// How long the exclusive server-apply fallback held local writes, from its wait for the operation gate to release.
+  private func recordExclusiveServerApply(
+    processedTransactionID: String,
+    startedAt: ContinuousClock.Instant,
+    error: Error?
+  ) {
+    let elapsed = startedAt.duration(to: ContinuousClock.now)
+    let milliseconds = elapsed.components.seconds * 1_000 + elapsed.components.attoseconds / 1_000_000_000_000_000
+    InstantDiagnostics.shared.record(
+      error == nil ? .info : .warning,
+      subsystem: "instant-swift-data-core",
+      category: "server-apply",
+      event: "server-apply.exclusive-fallback-finished",
+      message: error == nil
+        ? "The exclusive server apply landed."
+        : "The exclusive server apply failed too.",
+      metadata: [
+        "processedTransactionID": processedTransactionID,
+        "elapsedMilliseconds": String(milliseconds),
+        "outcome": error == nil ? "applied" : "failed",
+      ]
+    )
   }
 
   private static func serverApplyFootprint(
@@ -5015,10 +5181,15 @@ public final class InstantRuntime: Sendable {
       plan: plan,
       attributes: attributes
     )
-    let observation = Self.liveObservationLease(hydration.stream) {
+    let reporting = await reportingLiveQueryErrors(
+      in: hydration.stream,
+      registrationKey: registrationKey
+    )
+    let observation = Self.liveObservationLease(reporting.stream) {
+      async let cancelReporting: Void = reporting.cancel()
       async let cancelHydration: Void = hydration.cancel()
       async let cancelLiveObservation: Void = liveObservation.cancel()
-      _ = await (cancelHydration, cancelLiveObservation)
+      _ = await (cancelReporting, cancelHydration, cancelLiveObservation)
     }
     let lease = Self.queryObservationLease(observation)
     if Task.isCancelled {
@@ -5179,15 +5350,90 @@ public final class InstantRuntime: Sendable {
       await leaveOperationGate()
       await recordConnectionError(error)
     }
+    let hydration = hydratingDeferredValues(
+      in: liveObservation.stream,
+      plan: plan,
+      attributes: attributes,
+      onFailure: onDeferredValueHydrationFailure
+    )
+    let reporting = await reportingLiveQueryErrors(
+      in: hydration.stream,
+      registrationKey: registrationKey
+    )
     return Self.liveInfiniteQueryChunkObservation(
-      hydratingDeferredValues(
-        in: liveObservation.stream,
-        plan: plan,
-        attributes: attributes,
-        onFailure: onDeferredValueHydrationFailure
+      InstantLiveInfiniteQueryChunkObservationLease(
+        stream: reporting.stream,
+        cancel: {
+          async let cancelReporting: Void = reporting.cancel()
+          async let cancelHydration: Void = hydration.cancel()
+          _ = await (cancelReporting, cancelHydration)
+        }
       ),
       cancelUnderlyingObservation: liveObservation.cancel
     )
+  }
+
+  /// Adds the live query's latest server error to each emission of `source`, and repeats the latest emission whenever
+  /// that error changes, so an observer sees an error, and its clearing, without waiting for new data (#360).
+  ///
+  /// Upstream `Reactor.js` `notifyQueryError` calls the query's callbacks with `{ error }`, and the next result
+  /// replaces it. Swift keeps the values in the same emission, because a local-first observer must not lose what it
+  /// shows when the server stalls.
+  private func reportingLiveQueryErrors(
+    in source: AsyncStream<InstantQueryEmission>,
+    registrationKey: String
+  ) async -> InstantLiveInfiniteQueryChunkObservationLease<InstantQueryEmission> {
+    let errorUpdates = await liveQueryErrors.updates(for: registrationKey)
+    let events = AsyncStream<InstantLiveQueryErrorReportingEvent>.makeStream()
+    let output = AsyncStream<InstantQueryEmission>.makeStream(bufferingPolicy: .bufferingNewest(1))
+    let emissionFeed = Task {
+      for await emission in source {
+        events.continuation.yield(.emission(emission))
+      }
+      events.continuation.yield(.sourceFinished)
+    }
+    let errorFeed = Task {
+      for await error in errorUpdates {
+        events.continuation.yield(.serverError(error))
+      }
+    }
+    let consumer = Task {
+      var latest: InstantQueryEmission?
+      var serverError: InstantError?
+      events: for await event in events.stream {
+        switch event {
+        case let .emission(emission):
+          let reported = emission.reportingServerError(serverError)
+          latest = reported
+          output.continuation.yield(reported)
+        case let .serverError(error):
+          serverError = error
+          guard let current = latest, current.error != error else { continue }
+          let reported = current.reportingServerError(error)
+          latest = reported
+          output.continuation.yield(reported)
+        case .sourceFinished:
+          break events
+        }
+      }
+      errorFeed.cancel()
+      output.continuation.finish()
+    }
+    let cancel: @Sendable () async -> Void = {
+      emissionFeed.cancel()
+      errorFeed.cancel()
+      consumer.cancel()
+      events.continuation.finish()
+      output.continuation.finish()
+      await emissionFeed.value
+      await errorFeed.value
+      await consumer.value
+    }
+    output.continuation.onTermination = { @Sendable termination in
+      guard case .cancelled = termination else { return }
+      Task { await cancel() }
+    }
+    return InstantLiveInfiniteQueryChunkObservationLease(stream: output.stream, cancel: cancel)
   }
 
   private func hydratingDeferredValues(
@@ -5513,6 +5759,33 @@ public final class InstantRuntime: Sendable {
   private func queryOnceThroughLive(_ plan: InstantQueryPlan) async throws -> InstantQueryEmission {
     let query = try InstantLiveQueryEncoder.encode(plan)
     let registrationKey = try InstantLiveQueryEncoder.registrationKey(for: query)
+    // Library-78, item 7: rows already on the device answer without waiting on the socket. When a subscription of this
+    // exact query (same where, order, limit, cursors, fields, and includes) was answered by the server on the open
+    // socket and has not failed since, the store holds the server's result for it and every refresh since, which is
+    // what upstream's add-query-exists answer resolves to, minus the round trip. That round trip waited behind
+    // Scribe's backlog of server frames for 5 s and more (#307's Copy Transcript failure). Every other query asks the
+    // server as before; a local-only read stays the injected local-only client's job (ADR 0001).
+    // Read before the answered check: the receive loop records an answer before its acknowledgement, so either this
+    // query is answered here, or any acknowledgement after this revision ends the wait below.
+    let observedRevision = await liveQueryAcknowledgements.revision(for: registrationKey)
+    recordActorHop(.liveSession)
+    if await liveSession.isAnsweredOnCurrentSocket(key: registrationKey) {
+      let pageInfo = await liveQueryPageInfo(for: registrationKey)
+      let emission = try await materializeLocalQueryOnce(
+        plan,
+        remotePageInfo: pageInfo.map(InstantQueryRemotePageInfo.ready)
+      )
+      InstantDiagnostics.shared.record(
+        .debug,
+        subsystem: "instant-swift-data-core",
+        category: "query",
+        event: "query-once.answered-from-subscription",
+        message: "Answered a one-shot query from the device: the server answered the same live query on this socket.",
+        metadata: ["registrationKey": registrationKey, "resultCount": String(emission.values.count)],
+        correlationID: plan.id
+      )
+      return emission
+    }
     await liveQueryResultState.retain(key: registrationKey)
     let cleanupOwner = InstantAsyncCancellationOwner(
       cancelAndWait: { [self] in
@@ -5526,7 +5799,6 @@ public final class InstantRuntime: Sendable {
     let emission: InstantQueryEmission
     do {
       try Task.checkCancellation()
-      let observedRevision = await liveQueryAcknowledgements.revision(for: registrationKey)
 
       // Match Reactor.queryOnce + _flushPendingMessages: record the query before
       // reconnecting so an opening session sends add-query ahead of its durable
@@ -5804,25 +6076,62 @@ public final class InstantRuntime: Sendable {
     }
   }
 
+  /// Removes the results the policy selects in bounded batches, releasing the operation gate between them, so a local
+  /// write waits for one batch rather than the whole prune (#303, item 6).
+  ///
+  /// In the experiment's large-store drop, the first prune after 24 detail queries ended held the gate 5.8-13.2 s
+  /// while the store fell from about 60,000 triples to 3,000, and the transact behind it was that lane's slowest local
+  /// write in 7 of 8 lanes. Each batch re-reads the active queries and checks ownership under the gate, so a query that
+  /// becomes active between batches keeps its result. Facts that a batch released but kept, because their entity had
+  /// facts a later batch releases, are carried into that batch, so whole-entity removal (#259) is the same as one
+  /// prune's. Upstream `Reactor.js` collects unused query results lazily (`PersistedObject`'s garbage collection at
+  /// idle); Swift prunes on its write cadence, so it bounds each hold instead.
   func pruneLiveQueryResults(
     policy: InstantLiveQueryResultPruningPolicy,
     now: InstantTimestamp
   ) async throws -> InstantLiveQueryResultPruningResult {
-    await enterOperationGate()
-    do {
-      let result = try await performPruneLiveQueryResults(policy: policy, now: now)
-      await leaveOperationGate()
-      return result
-    } catch {
-      await leaveOperationGate()
-      throw error
+    var carried: Set<InstantLiveTripleIdentity> = []
+    var removedQueryKeys: [String] = []
+    var removedOrphanedTripleCount = 0
+    var lastResult: InstantLiveQueryResultPruningResult?
+    while true {
+      await enterOperationGate()
+      let application: InstantLiveQueryResultPruningApplication
+      do {
+        application = try await performPruneLiveQueryResults(
+          policy: policy,
+          now: now,
+          carriedReleasedIdentities: carried
+        )
+        await leaveOperationGate()
+      } catch {
+        await leaveOperationGate()
+        throw error
+      }
+      removedQueryKeys.append(contentsOf: application.result.removedQueryKeys)
+      removedOrphanedTripleCount += application.result.removedOrphanedTripleCount
+      lastResult = application.result
+      carried = application.retainedReleasedIdentities
+      await configuration.onLiveQueryResultPruneBatchFinishedForTesting?(
+        application.result.removedQueryKeys.count
+      )
+      guard application.hasMoreToRemove, !application.result.removedQueryKeys.isEmpty else { break }
+      await Task.yield()
     }
+    return InstantLiveQueryResultPruningResult(
+      removedQueryKeys: removedQueryKeys,
+      remainingQueryKeys: lastResult?.remainingQueryKeys ?? [],
+      removedOrphanedTripleCount: removedOrphanedTripleCount,
+      remainingEntryCount: lastResult?.remainingEntryCount ?? 0,
+      remainingTripleCount: lastResult?.remainingTripleCount ?? 0
+    )
   }
 
   private func performPruneLiveQueryResults(
     policy: InstantLiveQueryResultPruningPolicy,
-    now: InstantTimestamp
-  ) async throws -> InstantLiveQueryResultPruningResult {
+    now: InstantTimestamp,
+    carriedReleasedIdentities: Set<InstantLiveTripleIdentity>
+  ) async throws -> InstantLiveQueryResultPruningApplication {
     let activeQueryKeys = await liveSession.activeQueryKeys()
     if let onActiveKeysCaptured =
       configuration.onLiveQueryResultPruneActiveKeysCapturedForTesting
@@ -5835,10 +6144,12 @@ public final class InstantRuntime: Sendable {
       policy: policy,
       now: now,
       preservingQueryKeys: activeQueryKeys,
-      currentStoreSnapshot: currentStoreSnapshot
+      currentStoreSnapshot: currentStoreSnapshot,
+      maximumRemovedTripleCount: configuration.liveQueryResultPruneBatchTripleCount,
+      carriedReleasedIdentities: carriedReleasedIdentities
     )
     guard !application.result.removedQueryKeys.isEmpty else {
-      return application.result
+      return application
     }
     if application.result.removedOrphanedTripleCount > 0 {
       recordActorHop(.store)
@@ -5868,9 +6179,10 @@ public final class InstantRuntime: Sendable {
         "removedOrphanedTripleCount": String(
           application.result.removedOrphanedTripleCount
         ),
+        "moreToRemove": String(application.hasMoreToRemove),
       ]
     )
-    return application.result
+    return application
   }
 
   private func freshCachedQueryForClosedQuery(
@@ -6065,7 +6377,8 @@ public final class InstantRuntime: Sendable {
       reconnect: reconnectIsIdle,
       receiver: receiverIsIdle,
       mutationDeliveryPump: mutationDeliveryIsIdle,
-      explicitMutationFlush: explicitMutationFlushOwner.isIdle
+      explicitMutationFlush: explicitMutationFlushOwner.isIdle,
+      streamWriterCatchUp: streamWriterCatchUpOwner.isIdle
     )
   }
 
@@ -6077,6 +6390,16 @@ public final class InstantRuntime: Sendable {
   @concurrent
   package func serverApplyGateWaiterCountForTesting() async -> Int {
     await serverApplyGate.waiterCount
+  }
+
+  /// Whether `queryOnce(plan)` answers from the device: the server answered this exact query on the open socket.
+  ///
+  /// Observers see the server's rows a moment before the answer is recorded, so a test that reacts to the rows waits
+  /// for this before it expects a local answer.
+  @concurrent
+  package func isAnsweredOnCurrentSocketForTesting(_ plan: InstantQueryPlan) async throws -> Bool {
+    let registrationKey = try InstantLiveQueryEncoder.registrationKey(for: InstantLiveQueryEncoder.encode(plan))
+    return await liveSession.isAnsweredOnCurrentSocket(key: registrationKey)
   }
 
   package func installedStoreRevisionsForTesting() -> (store: Int64, attributes: Int64) {
@@ -6388,26 +6711,15 @@ public final class InstantRuntime: Sendable {
       recordActorHop(.operationGate)
       await operationGate.leave()
       enteredOperationGate = false
-      var streamWriterReconnectError: Error?
       if configuration.liveTransport != nil {
-        do {
-          recordActorHop(.liveSession)
-          try await liveSession.reconnectStreamWriters()
-        } catch {
-          recordActorHop(.liveSession)
-          await liveSession.close()
-          streamWriterReconnectError = error
-        }
-        if streamWriterReconnectError == nil {
-          await mutationDeliveryPump.resume()
-          await startLiveMutationDeliveryIfNeeded()
-        }
+        await mutationDeliveryPump.resume()
+        await startLiveMutationDeliveryIfNeeded()
+        // The streams this device writes catch up beside the outbox rather than ahead of it, and one stream the
+        // server refuses or leaves unanswered does not end the connection (#329).
+        startStreamWriterCatchUp()
       }
       await connectionGate.leave()
       enteredConnectionGate = false
-      if let streamWriterReconnectError {
-        await handleLiveSessionFailure(streamWriterReconnectError)
-      }
       InstantDiagnostics.shared.record(
         .notice,
         subsystem: "instant-swift-data-core",
@@ -6471,6 +6783,7 @@ public final class InstantRuntime: Sendable {
     let reconnectTask = await reconnectController.requestStop()
     await mutationDeliveryPump.suspend()
     let explicitMutationFlushTask = explicitMutationFlushOwner.requestStop()
+    let streamWriterCatchUpTask = streamWriterCatchUpOwner.requestStop()
     await connectionGate.enter()
     // Explicit response disposition uses the operation gate. Keep it free
     // while synchronously aborted transport work, renewal, and exact-token
@@ -6502,9 +6815,11 @@ public final class InstantRuntime: Sendable {
         automaticLiveConnectionTask: automaticLiveConnectionTask,
         startupCookieSyncTask: startupCookieSyncTask,
         reconnectTask: reconnectTask,
-        receiverTask: receiverTask
+        receiverTask: receiverTask,
+        streamWriterCatchUpTask: streamWriterCatchUpTask
       )
       explicitMutationFlushOwner.resume()
+      streamWriterCatchUpOwner.resume()
       await connectionGate.leave()
       return status
     } catch {
@@ -6519,9 +6834,11 @@ public final class InstantRuntime: Sendable {
         automaticLiveConnectionTask: automaticLiveConnectionTask,
         startupCookieSyncTask: startupCookieSyncTask,
         reconnectTask: reconnectTask,
-        receiverTask: receiverTask
+        receiverTask: receiverTask,
+        streamWriterCatchUpTask: streamWriterCatchUpTask
       )
       explicitMutationFlushOwner.resume()
+      streamWriterCatchUpOwner.resume()
       await connectionGate.leave()
       throw error
     }
@@ -6531,7 +6848,8 @@ public final class InstantRuntime: Sendable {
     automaticLiveConnectionTask: InstantRuntimeExactTaskOwner.Handle,
     startupCookieSyncTask: InstantRuntimeExactTaskOwner.Handle,
     reconnectTask: InstantRuntimeExactTaskOwner.Handle,
-    receiverTask: InstantRuntimeExactTaskOwner.Handle
+    receiverTask: InstantRuntimeExactTaskOwner.Handle,
+    streamWriterCatchUpTask: InstantRuntimeExactTaskOwner.Handle
   ) async {
     let watchdogSleep = configuration.exactCloseWatchdogSleep
     let watchdog = Task { [weak self] in
@@ -6560,6 +6878,7 @@ public final class InstantRuntime: Sendable {
           "receiverIdle": String(state.receiver),
           "mutationDeliveryPumpIdle": String(state.mutationDeliveryPump),
           "explicitMutationFlushIdle": String(state.explicitMutationFlush),
+          "streamWriterCatchUpIdle": String(state.streamWriterCatchUp),
         ]
       )
     }
@@ -6568,12 +6887,14 @@ public final class InstantRuntime: Sendable {
     async let reconnect: Void = reconnectTask.wait()
     async let receiver: Void = receiverTask.wait()
     async let mutationDelivery: Void = mutationDeliveryPump.waitUntilStopped()
+    async let streamWriterCatchUp: Void = streamWriterCatchUpTask.wait()
     _ = await (
       automaticLiveConnection,
       startupCookieSync,
       reconnect,
       receiver,
-      mutationDelivery
+      mutationDelivery,
+      streamWriterCatchUp
     )
     watchdog.cancel()
     await watchdog.value
@@ -6818,6 +7139,8 @@ public final class InstantRuntime: Sendable {
     let release = try await persistence.releaseAutomaticOutboxClaims(
       claimantID: automaticDeliveryClaimantID
     )
+    // Parked refusals held claims of this socket; the next connection offers those writes again.
+    await parkedRefusals.removeAll()
     await scheduleLiveMutationDeadlineWake(
       at: release.nextClaimDeadlineMilliseconds
     )
@@ -6831,6 +7154,266 @@ public final class InstantRuntime: Sendable {
       await outbox.remove(id: mutationID)
     }
     return release.mutationIDs
+  }
+
+  /// Resolves the refusals parked behind covering writes once those are answered (library-78, item 3): superseded
+  /// when they were accepted, or recorded as the server's original refusal when one of them failed.
+  private func resolveParkedRefusalsIfNeeded() async {
+    guard await !parkedRefusals.isEmpty else { return }
+    for (mutationID, parked) in await parkedRefusals.snapshot.sorted(by: { $0.key < $1.key }) {
+      do {
+        try await enterOperationGateUnlessCancelled(operation: "resolve a parked refusal")
+        let resolution: InstantRefusedWriteResolution
+        do {
+          recordActorHop(.persistence)
+          resolution = try await persistence.resolveParkedRefusal(
+            id: mutationID,
+            claimantID: automaticDeliveryClaimantID,
+            claimToken: parked.claimToken
+          )
+          if case let .superseded(mutation, _) = resolution {
+            recordActorHop(.outbox)
+            await outbox.remove(id: mutation.id)
+            _ = try? await publishConnectionStatusWithGateHeld()
+            await publishMutationLifecycle(mutation)
+          }
+          await leaveOperationGate()
+        } catch {
+          await leaveOperationGate()
+          throw error
+        }
+        switch resolution {
+        case let .superseded(_, coveringIDs):
+          await parkedRefusals.remove(mutationID)
+          await liveSession.forgetEarlierOffers(of: mutationID)
+          InstantDiagnostics.shared.record(
+            .notice,
+            subsystem: "instant-swift-data-core",
+            category: "outbox",
+            event: "outbox.mutation.refusal-superseded",
+            message:
+              "A parked refusal resolved: the later writes that cover it were accepted, so it is accepted, not failed.",
+            metadata: [
+              "mutationID": mutationID,
+              "coveringMutationIDs": coveringIDs.prefix(12).joined(separator: ","),
+            ],
+            correlationID: mutationID
+          )
+        case .notCovered:
+          await parkedRefusals.remove(mutationID)
+          InstantDiagnostics.shared.record(
+            .error,
+            subsystem: "instant-swift-data-core",
+            category: "outbox",
+            event: "outbox.mutation.server-error-terminal",
+            message: "A parked refusal stands: a later write that covered it did not land.",
+            metadata: [
+              "mutationID": mutationID,
+              "errorMessage": parked.failure.message,
+              "refusalKind": "replay",
+            ],
+            correlationID: mutationID
+          )
+          _ = try await failClaimedMutation(
+            id: mutationID,
+            failure: parked.failure,
+            requiredClaimToken: parked.claimToken,
+            recordsConnectionFailure: false
+          )
+          await liveSession.forgetEarlierOffers(of: mutationID)
+        case .stale:
+          await parkedRefusals.remove(mutationID)
+        case .heldBehindPendingWrites:
+          continue
+        }
+      } catch {
+        InstantDiagnostics.shared.record(
+          error: error,
+          subsystem: "instant-swift-data-core",
+          category: "outbox",
+          event: "outbox.mutation.parked-refusal-resolution-failed",
+          message: "Could not resolve a parked refusal; it stays parked until the next answer.",
+          metadata: ["mutationID": mutationID],
+          correlationID: mutationID
+        )
+      }
+    }
+  }
+
+  /// A server refusal of a write that later writes of this device cover is not a failure (library-78, item 3).
+  ///
+  /// Michael, verbatim: "I want to know why rights are refused in the first place? I don't think they really should
+  /// be". A write offered again after its first offer was applied is refused by Scribe's `validUpdate` rule
+  /// (`newData.updatedAtMs >= data.updatedAtMs`) when a newer write of the same row reached the server first, yet the
+  /// server holds a newer value for every slot it sets. Covered by accepted writes: resolved as accepted now. Covered
+  /// by writes in flight: held, and resolved by their answers. Upstream `Reactor.js` drops every refused mutation as
+  /// an error (`_handleMutationError`); Swift keeps refusals it cannot explain as failures, as before.
+  private func resolveRefusedWriteIfCovered(
+    id mutationID: String,
+    claimToken: String,
+    error: InstantLiveErrorMessage
+  ) async throws -> Bool {
+    recordActorHop(.liveSession)
+    let isReplay = await liveSession.mayHaveAppliedAnEarlierOffer(of: mutationID)
+    try await enterOperationGateUnlessCancelled(operation: "resolve a refused write that later writes cover")
+    let resolution: InstantRefusedWriteResolution
+    do {
+      recordActorHop(.persistence)
+      resolution = try await persistence.resolveRefusedWriteIfCovered(
+        id: mutationID,
+        claimantID: automaticDeliveryClaimantID,
+        claimToken: claimToken,
+        holdsBehindPendingWrites: isReplay,
+        parkedDeadlineMilliseconds: configuration.now().milliseconds + Self.parkedRefusalDeadlineMilliseconds
+      )
+      switch resolution {
+      case let .superseded(mutation, _):
+        recordActorHop(.outbox)
+        await outbox.remove(id: mutation.id)
+        _ = try? await publishConnectionStatusWithGateHeld()
+        await publishMutationLifecycle(mutation)
+      case .heldBehindPendingWrites:
+        await parkedRefusals.park(
+          mutationID,
+          claimToken: claimToken,
+          failure: Self.mutationFailure(from: error)
+        )
+      case .notCovered, .stale:
+        break
+      }
+      await leaveOperationGate()
+    } catch {
+      await leaveOperationGate()
+      throw error
+    }
+    switch resolution {
+    case let .superseded(_, coveringIDs):
+      await liveSession.forgetEarlierOffers(of: mutationID)
+      await mutationServerErrorBackoff.forget(mutationID)
+      InstantDiagnostics.shared.record(
+        .notice,
+        subsystem: "instant-swift-data-core",
+        category: "outbox",
+        event: "outbox.mutation.refusal-superseded",
+        message:
+          "The server refused a write that later accepted writes of this device cover; it is resolved as accepted, not failed.",
+        metadata: [
+          "mutationID": mutationID,
+          "coveringMutationIDs": coveringIDs.prefix(12).joined(separator: ","),
+          "errorMessage": error.message,
+          "serverTraceID": error.traceID ?? "",
+        ],
+        correlationID: mutationID
+      )
+      await startLiveMutationDeliveryIfNeeded()
+      return true
+    case let .heldBehindPendingWrites(coveringIDs):
+      InstantDiagnostics.shared.record(
+        .info,
+        subsystem: "instant-swift-data-core",
+        category: "outbox",
+        event: "outbox.mutation.refusal-parked",
+        message:
+          "The server refused a re-sent write that later writes in flight cover; it keeps its claim, parked, until they are answered, and is not failed.",
+        metadata: [
+          "mutationID": mutationID,
+          "coveringMutationIDs": coveringIDs.prefix(12).joined(separator: ","),
+          "errorMessage": error.message,
+          "serverTraceID": error.traceID ?? "",
+        ],
+        correlationID: mutationID
+      )
+      await startLiveMutationDeliveryIfNeeded()
+      return true
+    case .notCovered, .stale:
+      return false
+    }
+  }
+
+  /// How long a parked refusal's claim waits for the covering writes' answers before it expires as an
+  /// acknowledgement timeout and the write is offered again.
+  private static let parkedRefusalDeadlineMilliseconds: Int64 = 10 * 60 * 1_000
+
+  /// Keeps the socket when the server answers a write with a transient error, and offers the write again on it
+  /// after a growing, jittered backoff (#376).
+  ///
+  /// A stalled server answers every write with 500 `operation-timed-out`. Swift used to release every claim and
+  /// close the socket for it, so each reconnect re-sent init, every query, and the same write, and got the same
+  /// 500: 36 reconnects and 324 add-queries in 12 s in the companion harness. The socket is healthy, so only this
+  /// write's claim is released. Delivery pauses for the backoff of the write's consecutive failures, then probes with
+  /// one write at a time until the server accepts one. The other writes in flight keep their claims and answers.
+  ///
+  /// Upstream `Reactor.js` `_handleMutationError` drops the mutation and keeps the socket. Swift keeps the socket too,
+  /// but retries the durable write rather than losing it. The server may have applied a timed-out write, so its later
+  /// refusal is classified as a replay.
+  private func retryMutationAfterTransientServerError(
+    id mutationID: String,
+    claimToken: String,
+    error: InstantLiveErrorMessage
+  ) async throws {
+    try await enterOperationGateUnlessCancelled(
+      operation: "retry a write after a transient server error"
+    )
+    let released: Bool
+    do {
+      recordActorHop(.persistence)
+      released = try await persistence.releaseAutomaticOutboxClaim(
+        id: mutationID,
+        claimantID: automaticDeliveryClaimantID,
+        claimToken: claimToken
+      )
+      if released {
+        recordActorHop(.outbox)
+        await outbox.remove(id: mutationID)
+      }
+      await leaveOperationGate()
+    } catch {
+      await leaveOperationGate()
+      throw error
+    }
+    recordActorHop(.liveSession)
+    await liveSession.recordInconclusiveAnswer(to: mutationID)
+    guard released else {
+      InstantDiagnostics.shared.record(
+        .debug,
+        subsystem: "instant-swift-data-core",
+        category: "outbox",
+        event: "outbox.mutation.server-error-stale-claim",
+        message: "Ignored a transient mutation error after this socket lost its durable delivery claim.",
+        metadata: ["mutationID": mutationID, "errorMessage": error.message],
+        correlationID: mutationID
+      )
+      return
+    }
+    let retry = await mutationServerErrorBackoff.recordFailure(
+      of: mutationID,
+      now: configuration.now().milliseconds,
+      policy: configuration.liveServerErrorRetryPolicy
+    )
+    InstantDiagnostics.shared.record(
+      .warning,
+      subsystem: "instant-swift-data-core",
+      category: "outbox",
+      event: "outbox.mutation.server-error-retry-scheduled",
+      message: "The server answered a write with a transient error; the socket stays open and the write is offered again after a backoff.",
+      metadata: [
+        "mutationID": mutationID,
+        "attempt": String(retry.attempt),
+        "delayMilliseconds": String(retry.delayMilliseconds),
+        "deliveryResumesAtMilliseconds": String(retry.resumesAtMilliseconds),
+        "errorMessage": error.message,
+        "serverStatus": error.status.map(String.init) ?? "",
+        "serverType": error.type ?? "",
+        "serverTraceID": error.traceID ?? "",
+      ],
+      correlationID: mutationID
+    )
+    await configuration.onServerErrorRetryScheduledForTesting?(
+      .mutation(mutationID),
+      retry.attempt,
+      retry.delayMilliseconds
+    )
+    await scheduleLiveMutationDeadlineWake(at: retry.resumesAtMilliseconds)
   }
 
   /// Schedules one reconnect after `error`, with the controller's backoff.
@@ -6941,6 +7524,7 @@ public final class InstantRuntime: Sendable {
       }
       let registrationKey = try InstantLiveQueryEncoder.registrationKey(for: query)
       guard !queryOK.result.isEmpty else {
+        await recordLiveQueryAnswered(key: registrationKey)
         await liveQueryAcknowledgements.record(key: registrationKey)
         return
       }
@@ -6965,6 +7549,9 @@ public final class InstantRuntime: Sendable {
           ]
         )
       )
+      // Answered before acknowledged: a queryOnce that sees this acknowledgement also sees the answer, and answers
+      // from the device instead of waiting on the socket (library-78 item 7).
+      await recordLiveQueryAnswered(key: registrationKey)
       await liveQueryAcknowledgements.record(key: registrationKey)
 
     case let .addQueryExists(queryOK):
@@ -6977,6 +7564,7 @@ public final class InstantRuntime: Sendable {
         )
       }
       let registrationKey = try InstantLiveQueryEncoder.registrationKey(for: query)
+      await recordLiveQueryAnswered(key: registrationKey)
       await liveQueryAcknowledgements.record(key: registrationKey)
 
     case let .refreshOK(refreshOK):
@@ -7028,6 +7616,9 @@ public final class InstantRuntime: Sendable {
         serverTransactionID: transactionID,
         claimToken: mutationClaimToken
       )
+      await mutationServerErrorBackoff.recordAcceptance(of: clientEventID)
+      await liveSession.forgetEarlierOffers(of: clientEventID)
+      await resolveParkedRefusalsIfNeeded()
       await startLiveMutationDeliveryIfNeeded()
 
     case let .refreshPresence(refresh):
@@ -7059,6 +7650,9 @@ public final class InstantRuntime: Sendable {
         }
       }
       await liveSession.recordDeliveredStreamAppend(delivery, seenOffset: seenOffset)
+      if delivery.done {
+        await retireFinishedStreamReader(delivery)
+      }
 
     case let .error(error):
       // Query and stream errors carry client event IDs too, but they are not
@@ -7071,6 +7665,36 @@ public final class InstantRuntime: Sendable {
       ) {
         await endStreamContentObservations(ofRefusedReader: refusedReaderKey, error: error)
         return
+      }
+      // Upstream `Stream.ts` `onRecieveError` routes stream errors by the original event: an `append-stream` error
+      // goes to the writer's `onAppendFailed`, and a `start-stream` error to the pending start, which
+      // `InstantRuntimeLiveSession.record` already ended with it for the writer's catch-up to record (ADR 0017).
+      switch error.originalEvent?.op {
+      case "append-stream"?:
+        if let serverStreamID = error.originalEvent?.fields["stream-id"]?.stringValue,
+          await restartStreamWriterAfterFailedAppend(serverStreamID: serverStreamID, reason: error.message)
+        {
+          return
+        }
+      case "start-stream"?:
+        InstantDiagnostics.shared.record(
+          .warning,
+          subsystem: "instant-swift-data-core",
+          category: "stream",
+          event: "stream.start-error",
+          message: "Instant refused to start a stream; the stream's writer records the refusal and the socket stays open.",
+          metadata: [
+            "clientEventID": error.clientEventID ?? "",
+            "clientID": error.originalEvent?.fields["client-id"]?.stringValue ?? "",
+            "errorMessage": error.message,
+            "serverStatus": error.status.map(String.init) ?? "",
+            "serverType": error.type ?? "",
+          ],
+          correlationID: error.clientEventID
+        )
+        return
+      default:
+        break
       }
       if let originalEvent = error.originalEvent,
         originalEvent.op == "add-query",
@@ -7097,12 +7721,30 @@ public final class InstantRuntime: Sendable {
           message: error.message,
           recovery: rejectionRepeats
             ? "Inspect the rejected query and its Instant permissions without reconnecting the healthy live session."
-            : "The query stays registered and is sent again on the next connection."
+            : "The query stays registered and is sent again on this socket after a backoff."
         )
         if rejectionRepeats, await liveSession.retireRejectedQuery(key: registrationKey) {
           await liveQueryResultState.unload(key: registrationKey)
         }
         await liveQueryAcknowledgements.reject(key: registrationKey, error: rejection)
+        recordActorHop(.liveSession)
+        await liveSession.recordQueryFailed(key: registrationKey)
+        // Upstream `notifyQueryError`: the query's observers see the error and keep their streams (#360).
+        await liveQueryErrors.publish(rejection, for: registrationKey)
+        // A healthy socket never reconnects, so a query that waited for the next `init-ok` waited forever (#360):
+        // send it again on this socket once the backoff of its consecutive failures has passed.
+        let retry: (attempt: Int, delayMilliseconds: UInt64)?
+        if rejectionRepeats {
+          retry = nil
+        } else {
+          let policy = configuration.liveServerErrorRetryPolicy
+          recordActorHop(.liveSession)
+          retry = await liveSession.scheduleQueryResend(
+            key: registrationKey,
+            delayMilliseconds: { policy.delayMilliseconds(afterFailure: $0) },
+            sleep: configuration.liveQueryRetrySleep
+          )
+        }
         InstantDiagnostics.shared.record(
           error: rejection,
           subsystem: "instant-swift-data-core",
@@ -7110,12 +7752,21 @@ public final class InstantRuntime: Sendable {
           event: rejectionRepeats ? "query.live-rejected" : "query.live-failed",
           message: rejectionRepeats
             ? "Instant rejected one live query without interrupting the shared socket."
-            : "One Instant live query failed on the server; it stays registered and is sent again on the next connection.",
+            : "One Instant live query failed on the server; it stays registered and is sent again on this socket after a backoff.",
           metadata: [
             "registrationKey": registrationKey,
             "retired": String(rejectionRepeats),
+            "attempt": retry.map { String($0.attempt) } ?? "",
+            "retryDelayMilliseconds": retry.map { String($0.delayMilliseconds) } ?? "",
           ]
         )
+        if let retry {
+          await configuration.onServerErrorRetryScheduledForTesting?(
+            .query(registrationKey),
+            retry.attempt,
+            retry.delayMilliseconds
+          )
+        }
         return
       }
       let clientEventID = error.clientEventID?.nilIfEmpty
@@ -7164,39 +7815,22 @@ public final class InstantRuntime: Sendable {
         case let .owned(claimToken) = mutationDisposition
       {
         if Self.isRetryableMutationError(error) {
-          _ = try await releaseAutomaticOutboxClaimsForDisconnectedSession()
-          InstantDiagnostics.shared.record(
-            .warning,
-            subsystem: "instant-swift-data-core",
-            category: "outbox",
-            event: "outbox.mutation.server-error-retryable",
-            message: "Server returned a retryable error for an outbox mutation.",
-            metadata: [
-              "mutationID": clientEventID,
-              "errorMessage": error.message,
-              "serverStatus": error.status.map(String.init) ?? "",
-              "serverType": error.type ?? "",
-              "serverTraceID": error.traceID ?? "",
-            ],
-            correlationID: clientEventID
+          try await retryMutationAfterTransientServerError(
+            id: clientEventID,
+            claimToken: claimToken,
+            error: error
           )
-          throw InstantError(
-            code: .networkFailed,
-            operation: "receive retryable Instant live mutation error",
-            serverEventID: clientEventID,
-            serverStatus: error.status,
-            serverType: error.type,
-            serverHint: error.hint,
-            serverTraceID: error.traceID,
-            serverOriginalEventTraceID: error.originalEventTraceID,
-            message: error.message,
-            recovery: "Reconnect and resend the durable pending mutation."
-          )
+          return
+        }
+        if Self.isPermissionError(error),
+          try await resolveRefusedWriteIfCovered(id: clientEventID, claimToken: claimToken, error: error)
+        {
+          return
         }
         // A refusal of a re-sent write that an earlier connection offered without an answer is a replay: the earlier
         // offer may have been applied, with a newer write of the same row after it (Recording 023, #296).
         recordActorHop(.liveSession)
-        let isReplay = await liveSession.wasOfferedWithoutAnswerOnAnEarlierConnection(clientEventID)
+        let isReplay = await liveSession.mayHaveAppliedAnEarlierOffer(of: clientEventID)
         let refusalKind = isReplay ? "replay" : "first-offer"
         InstantDiagnostics.shared.record(
           .error,
@@ -7243,26 +7877,79 @@ public final class InstantRuntime: Sendable {
           requiredClaimToken: claimToken,
           recordsConnectionFailure: false
         )
+        await mutationServerErrorBackoff.forget(clientEventID)
+        await liveSession.forgetEarlierOffers(of: clientEventID)
+        await resolveParkedRefusalsIfNeeded()
         await startLiveMutationDeliveryIfNeeded()
         return
       }
-      throw InstantError(
-        code: .networkFailed,
-        operation: "receive Instant live server event",
-        serverEventID: error.clientEventID,
-        serverStatus: error.status,
-        serverType: error.type,
-        serverHint: error.hint,
-        serverTraceID: error.traceID,
-        serverOriginalEventTraceID: error.originalEventTraceID,
-        message: error.message,
-        recovery: "Inspect the Instant runtime WebSocket event and reconnect."
+      // No write, query, or stream owns this error: an answer to a write this runtime no longer holds, a refusal
+      // for a stream reader whose observation already ended, or a server error without a request. Upstream
+      // `Reactor.js` `_handleReceiveError` logs such an error (`console.error`) and keeps the socket; closing a
+      // healthy socket for it would only re-add every query. Swift used to throw here, which reconnected.
+      InstantDiagnostics.shared.record(
+        .error,
+        subsystem: "instant-swift-data-core",
+        category: "transport",
+        event: "websocket.error-unrouted",
+        message: "Instant sent an error that no write, query, or stream owns; the socket stays open.",
+        metadata: [
+          "clientEventID": error.clientEventID ?? "",
+          "originalEventOp": error.originalEvent?.op ?? "",
+          "errorMessage": error.message,
+          "serverStatus": error.status.map(String.init) ?? "",
+          "serverType": error.type ?? "",
+          "serverTraceID": error.traceID ?? "",
+        ],
+        correlationID: error.clientEventID
+      )
+
+    case let .appendFailed(failed):
+      _ = await restartStreamWriterAfterFailedAppend(
+        serverStreamID: failed.streamID,
+        reason: "Instant could not flush the stream's appends (append-failed)."
       )
 
     case .initOK, .joinRoomOK, .leaveRoomOK, .startStreamOK,
-      .streamFlushed, .appendFailed, .other:
+      .streamFlushed, .other:
       break
     }
+  }
+
+  /// The server refused or could not flush an append of a stream this device writes (`append-failed`, or an `error`
+  /// for `append-stream`). Upstream `Stream.ts` `onAppendFailed` restarts that write stream on the same socket
+  /// (`onDisconnect`, then `onConnectionReconnect`). Swift takes the writer off the live path and runs its catch-up,
+  /// which restarts it with its stored reconnect token and resends from SQLite what the server lacks; the socket and
+  /// every query on it stay as they are (library-78).
+  ///
+  /// Returns whether a writer this device holds owns the stream.
+  private func restartStreamWriterAfterFailedAppend(serverStreamID: String, reason: String) async -> Bool {
+    recordActorHop(.liveSession)
+    guard await liveSession.markStreamWriterBehind(serverStreamID: serverStreamID, reason: reason) else {
+      return false
+    }
+    InstantDiagnostics.shared.record(
+      .warning,
+      subsystem: "instant-swift-data-core",
+      category: "stream",
+      event: "stream.writer-append-failed",
+      message:
+        "Instant did not take an append of a stream this device writes; the writer restarts on this connection and resends from the server's offset.",
+      metadata: [
+        "serverStreamID": serverStreamID,
+        "errorMessage": reason,
+      ]
+    )
+    startStreamWriterCatchUp()
+    return true
+  }
+
+  /// The server answered the live query `key`: its error clears for its observers and its backoff starts over
+  /// (#360).
+  private func recordLiveQueryAnswered(key: String) async {
+    recordActorHop(.liveSession)
+    await liveSession.recordQueryAnswered(key: key)
+    await liveQueryErrors.publish(nil, for: key)
   }
 
   private static func isRetryableMutationError(_ error: InstantLiveErrorMessage) -> Bool {
@@ -7393,12 +8080,13 @@ public final class InstantRuntime: Sendable {
   }
 
   private func applyLiveStreamAppend(_ append: InstantLiveStreamAppend) async throws -> Int64 {
-    var current = try await persistence.loadStreamContent(
+    // Only the stored byte count matters here, not the content: reading the whole stream for every append made each
+    // append cost the stream's length.
+    var storedByteCount = try await persistence.loadStreamContentByteCount(
       appID: configuration.appID,
-      streamID: append.streamID,
-      byteOffset: 0
+      streamID: append.streamID
     )
-    if current == nil {
+    if storedByteCount == nil {
       let userID = try await resolvedAuthenticatedUserID(
         operation: "bootstrap stream metadata",
         noun: "Stream"
@@ -7410,13 +8098,12 @@ public final class InstantRuntime: Sendable {
         userID: userID,
         createdAt: configuration.now()
       )
-      current = try await persistence.loadStreamContent(
+      storedByteCount = try await persistence.loadStreamContentByteCount(
         appID: configuration.appID,
-        streamID: append.streamID,
-        byteOffset: 0
+        streamID: append.streamID
       )
     }
-    guard let current else {
+    guard let seenOffset = storedByteCount else {
       throw InstantError(
         code: .persistenceFailed,
         operation: "bootstrap stream metadata",
@@ -7425,7 +8112,6 @@ public final class InstantRuntime: Sendable {
         recovery: "Inspect the local stream persistence transaction and retry the subscription."
       )
     }
-    let seenOffset = current.byteOffset + current.byteCount
     let materialization = try await InstantStreamFileAppendMaterializer.materialize(
       append,
       seenOffset: seenOffset,
@@ -7656,12 +8342,21 @@ public final class InstantRuntime: Sendable {
 
     await configuration.onAutomaticMutationPumpRetryWindowCompletedForTesting?()
 
+    // A write the server answered with a transient error pauses delivery for its backoff (#376); the wake set when
+    // it failed runs this pass again when the pause ends.
+    if let resumesAt = await mutationServerErrorBackoff.pauseDeadline(now: configuration.now().milliseconds) {
+      await scheduleLiveMutationDeadlineWake(at: resumesAt)
+      return retryNeedsBackoff ? .retryAfterFailure : .finished
+    }
+
     let outstanding: InstantAutomaticOutboxTransportSelection
     do {
       try Task.checkCancellation()
       // Claiming reclaims expired claims as acknowledgement timeouts; keep them while a frame is still applying.
       try await deferAcknowledgementDeadlinesWhileAFrameIsApplied()
-      outstanding = try await automaticOutboxTransportMutationsForDelivery()
+      outstanding = try await automaticOutboxTransportMutationsForDelivery(
+        probesOneWrite: await mutationServerErrorBackoff.probesOneWrite
+      )
     } catch is CancellationError {
       return .finished
     } catch {
@@ -7929,14 +8624,20 @@ public final class InstantRuntime: Sendable {
         await task.value
       }
     }
+    let cancel: @Sendable () async -> Void = {
+      task.cancel()
+      output.continuation.finish()
+      await termination.run()
+      await task.value
+    }
+    // The forwarding task holds `output`'s continuation, so `output` never learns that its consumer left. The consumer
+    // gets a stream whose storage holds a release token instead: returning out of `for await`, or dropping the stream,
+    // ends the observation as an explicit cancel does (#394).
     return InstantLiveInfiniteQueryChunkObservationLease(
-      stream: output.stream,
-      cancel: {
-        task.cancel()
-        output.continuation.finish()
-        await termination.run()
-        await task.value
-      }
+      stream: InstantObservationConsumerStream.make(output.stream) {
+        Task { await cancel() }
+      },
+      cancel: cancel
     )
   }
 
@@ -9801,11 +10502,15 @@ public final class InstantRuntime: Sendable {
     await operationGate.enter()
     do {
       let userID = try await resolvedAuthenticatedUserID(operation: "create stream", noun: "Stream")
+      // The reconnect token lets this device restart the server's copy after any reconnect or relaunch (#329): the
+      // server accepts a restart of an existing client id only with it (`session.clj` `handle-start-stream!`).
       let metadata: InstantStreamMetadata
+      let startsLater: Bool
       if configuration.liveTransport != nil, await liveSession.isOpen {
+        let reconnectToken = configuration.makeID()
         let started = try await liveSession.startStream(
           clientID: clientID,
-          reconnectToken: configuration.makeID(),
+          reconnectToken: reconnectToken,
           clientEventID: configuration.makeID()
         )
         guard started.clientID == clientID, started.offset == 0 else {
@@ -9819,23 +10524,32 @@ public final class InstantRuntime: Sendable {
             recovery: "Use a new client id, or reconnect the existing writer with its original token."
           )
         }
-        metadata = try await persistence.ensureStreamMetadata(
+        metadata = try await persistence.ensureWrittenStreamMetadata(
           appID: configuration.appID,
           streamID: started.streamID,
           clientID: clientID,
+          reconnectToken: reconnectToken,
           userID: userID,
           createdAt: configuration.now()
         )
+        startsLater = false
       } else {
-        metadata = try await persistence.createStream(
+        // Offline the stream has only its client id until the server assigns one, so this device names it by a local
+        // id, and the server's copy starts by the client id once a connection opens (ADR 0017).
+        metadata = try await persistence.createWrittenStream(
           appID: configuration.appID,
           streamID: configuration.makeID(),
           clientID: clientID,
           userID: userID,
           createdAt: configuration.now()
         )
+        startsLater = true
       }
       await operationGate.leave()
+      // A connection that opened while this ran may have looked for streams to start before this one existed.
+      if startsLater, configuration.liveTransport != nil, await liveSession.isOpen {
+        startStreamWriterCatchUp()
+      }
       return metadata
     } catch {
       await operationGate.leave()
@@ -9942,11 +10656,9 @@ public final class InstantRuntime: Sendable {
         streamID: streamID,
         chunks: [content],
         offset: append.offset,
-        done: false,
-        abortReason: nil,
         clientEventID: configuration.makeID()
       )
-      try await publishStreamContentUpdates(streamID: streamID)
+      try await publishStreamContent(.appended(append.chunk, metadata: append.metadata))
       await operationGate.leave()
       return append
     } catch {
@@ -9985,13 +10697,17 @@ public final class InstantRuntime: Sendable {
           recovery: "Create the stream before closing it."
         )
       }
-      try await liveSession.finishStream(
+      // Live, this waits for the server's terminal flush, as before. Otherwise the close is durable and the writer's
+      // catch-up sends it once the server has every byte (#329).
+      if try await liveSession.finishStream(
         streamID: streamID,
         offset: metadata.size ?? 0,
         abortReason: normalizedAbortReason,
         clientEventID: configuration.makeID()
-      )
-      try await publishStreamContentUpdates(streamID: streamID)
+      ) {
+        try await persistence.recordStreamWriterDelivered(appID: configuration.appID, streamID: streamID)
+      }
+      try await publishStreamContent(.closed(metadata))
       await operationGate.leave()
       return metadata
     } catch {
@@ -10108,6 +10824,7 @@ public final class InstantRuntime: Sendable {
         stream,
         key: Self.liveStreamReaderKey(.streamID(streamID), byteOffset: byteOffset),
         streamID: streamID,
+        initialRead: read,
         initialByteOffset: read.map { $0.byteOffset + $0.byteCount } ?? byteOffset
       )
     } catch {
@@ -10154,6 +10871,7 @@ public final class InstantRuntime: Sendable {
         stream,
         key: Self.liveStreamReaderKey(.clientID(clientID), byteOffset: byteOffset),
         clientID: clientID,
+        initialRead: read,
         initialByteOffset: read.map { $0.byteOffset + $0.byteCount } ?? byteOffset
       )
     } catch {
@@ -10196,17 +10914,214 @@ public final class InstantRuntime: Sendable {
     )
   }
 
+  /// Starts the catch-up of the streams this device writes, or runs it again once the current pass ends.
+  private func startStreamWriterCatchUp() {
+    guard configuration.liveTransport != nil else { return }
+    _ = streamWriterCatchUpOwner.start(restartIfRunning: true) { [weak self] in
+      await self?.catchUpStreamWriters()
+    }
+  }
+
+  /// Sends the server what it lacks of every stream this device writes, in the order the streams were created (#329).
+  ///
+  /// Upstream `Stream.ts` starts a write stream when the socket authenticates (`start`, through
+  /// `Reactor.js` `_trySendAuthed`) and restarts it after every reconnect (`onConnectionReconnect`): `start-stream`
+  /// with the writer's client id and reconnect token, then the chunks the server has not flushed, then the close.
+  /// Swift keeps the content and the token in SQLite, so this pass covers streams written offline, appends and closes
+  /// made while the socket was down, and a relaunch in between. It ends at the first transport failure; the next
+  /// connection runs it again.
+  private func catchUpStreamWriters() async {
+    let writers: [InstantStreamWriterRecord]
+    do {
+      // Only the signed-in user's streams: the connection authenticates as that user, and the server would make
+      // another user's stream theirs.
+      guard let userID = try await persistence.loadAuthSession(key: authSessionKey)?.userID else { return }
+      writers = try await persistence.loadStreamWritersAwaitingServer(appID: configuration.appID, userID: userID)
+    } catch {
+      InstantDiagnostics.shared.record(
+        error: error,
+        subsystem: "instant-swift-data-core",
+        category: "stream",
+        event: "stream.writer-catch-up-failed",
+        message: "Instant could not load the streams this device writes."
+      )
+      return
+    }
+    for writer in writers {
+      guard !Task.isCancelled else { return }
+      do {
+        try await catchUpStreamWriter(writer)
+      } catch let refusal as InstantStreamWriterRefusal {
+        // The server refuses a restart of a stream it holds closed (`session.clj` `handle-start-stream!`): its close
+        // was flushed before this device recorded that, and the server has the whole stream.
+        if refusal.message.contains("Stream is closed") {
+          try? await persistence.recordStreamWriterDelivered(appID: configuration.appID, streamID: writer.streamID)
+          continue
+        }
+        // Upstream errors the write stream for good (`onRecieveError`, start-stream); recording the refusal keeps
+        // every later connection from asking again.
+        try? await persistence.recordStreamWriterRefused(
+          appID: configuration.appID,
+          streamID: writer.streamID,
+          message: refusal.message
+        )
+        InstantDiagnostics.shared.record(
+          .warning,
+          subsystem: "instant-swift-data-core",
+          category: "stream",
+          event: "stream.writer-start-refused",
+          message: "Instant refused to start a stream this device wrote, so it stays on this device only.",
+          metadata: [
+            "streamID": writer.streamID,
+            "clientID": writer.clientID,
+            "errorMessage": refusal.message,
+          ]
+        )
+      } catch {
+        InstantDiagnostics.shared.record(
+          .debug,
+          subsystem: "instant-swift-data-core",
+          category: "stream",
+          event: "stream.writer-catch-up-interrupted",
+          message: "A stream this device writes stopped catching up with the connection; the next one resumes it.",
+          metadata: [
+            "streamID": writer.streamID,
+            "errorMessage": String(describing: error),
+          ]
+        )
+        return
+      }
+    }
+  }
+
+  private func catchUpStreamWriter(_ writer: InstantStreamWriterRecord) async throws {
+    let reconnectToken: String
+    if let stored = writer.reconnectToken {
+      reconnectToken = stored
+    } else {
+      // A stream written offline gets its token at its first start. It is stored before it is sent, so every later
+      // restart, after a reconnect or a relaunch, presents the same one.
+      reconnectToken = configuration.makeID()
+      try await persistence.recordStreamWriterReconnectToken(
+        appID: configuration.appID,
+        streamID: writer.streamID,
+        reconnectToken: reconnectToken
+      )
+    }
+    let startEventID = configuration.makeID()
+    let restart: InstantStreamWriterRestart
+    do {
+      guard let restarted = try await liveSession.restartStreamWriter(
+        localStreamID: writer.streamID,
+        clientID: writer.clientID,
+        reconnectToken: reconnectToken,
+        clientEventID: startEventID
+      ) else {
+        return
+      }
+      restart = restarted
+    } catch let error as InstantError
+      where error.operation == "start Instant live stream" && error.serverEventID == startEventID
+    {
+      throw InstantStreamWriterRefusal(message: error.message)
+    }
+    if writer.serverStreamID != restart.serverStreamID {
+      try await persistence.recordStreamWriterServerStreamID(
+        appID: configuration.appID,
+        streamID: writer.streamID,
+        serverStreamID: restart.serverStreamID
+      )
+    }
+    // Upstream `discardFlushed` drops what the server already flushed and resends the rest from there.
+    var sentEnd = restart.serverOffset
+    while true {
+      let chunks = try await persistence.loadStreamContentChunks(
+        appID: configuration.appID,
+        streamID: writer.streamID,
+        endingAfter: sentEnd,
+        limit: Self.streamWriterCatchUpPageSize
+      )
+      for chunk in chunks {
+        try await liveSession.sendStreamWriterCatchUp(
+          localStreamID: writer.streamID,
+          content: try Self.streamContent(of: chunk, from: sentEnd),
+          offset: sentEnd,
+          generation: restart.generation,
+          clientEventID: configuration.makeID()
+        )
+        sentEnd = chunk.offset + chunk.byteCount
+      }
+      guard chunks.count < Self.streamWriterCatchUpPageSize else { continue }
+      let metadata = try await persistence.loadStreamMetadata(appID: configuration.appID, streamID: writer.streamID)
+      switch try await liveSession.endStreamWriterCatchUp(
+        localStreamID: writer.streamID,
+        through: sentEnd,
+        closedLocally: metadata?.done == true,
+        abortReason: metadata?.abortReason,
+        generation: restart.generation,
+        clientEventID: configuration.makeID()
+      ) {
+      case .appendedMore:
+        continue
+      case .live:
+        return
+      case let .closing(flushes):
+        let flushed = try await instantLiveWithTimeout(
+          operation: "finish Instant live stream",
+          timeoutMilliseconds: instantLiveOperationTimeoutMilliseconds
+        ) {
+          var iterator = flushes.makeAsyncIterator()
+          return try await iterator.next()
+        }
+        if flushed?.done == true {
+          try await persistence.recordStreamWriterDelivered(appID: configuration.appID, streamID: writer.streamID)
+        }
+        return
+      }
+    }
+  }
+
+  private static let streamWriterCatchUpPageSize = 32
+
+  /// The part of `chunk` at and after `offset`. The server flushes whole chunks, so a restart's offset falls between
+  /// chunks; a chunk it splits must still split at a UTF-8 boundary.
+  private static func streamContent(of chunk: InstantStreamContentChunk, from offset: Int64) throws -> String {
+    guard offset > chunk.offset else { return chunk.content }
+    let remaining = Data(chunk.content.utf8).dropFirst(Int(offset - chunk.offset))
+    guard let content = String(data: remaining, encoding: .utf8) else {
+      throw InstantStreamWriterRefusal(
+        message: "The server's offset \(offset) splits a UTF-8 character in the stored chunk at \(chunk.offset)."
+      )
+    }
+    return content
+  }
+
   private func liveStreamContentObservation(
     _ stream: AsyncStream<InstantStreamContentRead>,
     key: String,
     clientID: String? = nil,
     streamID: String? = nil,
+    initialRead: InstantStreamContentRead?,
     initialByteOffset: Int64
   ) async -> AsyncStream<InstantStreamContentRead> {
     guard configuration.liveTransport != nil else { return stream }
+    if let initialRead {
+      // A done stream changes no more, so its observation ends after the stored read (upstream closes a reader at
+      // done). A stream this device writes holds every byte here and reaches the server through its writer (#329);
+      // a subscription would only echo it back, and a stream written offline is unknown to the server by this id.
+      if initialRead.done { return stream }
+      if (try? await persistence.isWrittenStream(
+        appID: configuration.appID,
+        streamID: initialRead.metadata.id
+      )) == true {
+        return stream
+      }
+    }
+    let observationID = UUID()
     do {
       try await liveSession.registerStreamReader(
         key: key,
+        observationID: observationID,
         clientID: clientID,
         streamID: streamID,
         initialByteOffset: initialByteOffset,
@@ -10220,11 +11135,23 @@ public final class InstantRuntime: Sendable {
       do {
         try await self.liveSession.unregisterStreamReader(
           key: key,
+          observationID: observationID,
           clientEventID: self.configuration.makeID()
         )
       } catch {
         await self.recordConnectionError(error)
       }
+    }
+  }
+
+  /// Deletes the reader whose subscription delivered the stream's end, as upstream `Stream.ts` `onStreamAppend` does
+  /// at done, so no reconnect subscribes it again and no unsubscribe follows. Its observations already ended with
+  /// the done read; this ends any that could not take it.
+  private func retireFinishedStreamReader(_ append: InstantLiveStreamAppend) async {
+    guard let readerKey = await liveSession.retireFinishedStreamReader(clientEventID: append.clientEventID)
+    else { return }
+    await streamContentObservers.finish { key, byteOffset in
+      Self.liveStreamReaderKey(key.selector, byteOffset: byteOffset) == readerKey
     }
   }
 
@@ -11025,6 +11952,14 @@ public final class InstantRuntime: Sendable {
     ) { [outbox] in await outbox.all().filter { $0.status != .confirmed } }
   }
 
+  /// Every durable outbox row with one of `statuses`, including accepted rows waiting for the watermark.
+  @concurrent
+  package func durableOutboxMutationsForTesting(
+    statuses: [InstantMutationStatus] = [.pending, .confirmed, .failed]
+  ) async -> [PendingMutation] {
+    await durableOutboxMutations(statuses: statuses) { [] }
+  }
+
   @concurrent
   package func mutationDeliveryBarrierMutations() async -> [PendingMutation] {
     await outbox.all()
@@ -11184,9 +12119,11 @@ public final class InstantRuntime: Sendable {
     }
   }
 
-  private func automaticOutboxTransportMutationsForDelivery() async throws
-    -> InstantAutomaticOutboxTransportSelection
-  {
+  /// - Parameter probesOneWrite: Claim at most one write in flight, while the server has answered a write with a
+  ///   transient error and has not accepted one since (#376).
+  private func automaticOutboxTransportMutationsForDelivery(
+    probesOneWrite: Bool = false
+  ) async throws -> InstantAutomaticOutboxTransportSelection {
     try await enterOperationGateUnlessCancelled(
       operation: "claim automatic outbox transport mutations for delivery"
     )
@@ -11196,10 +12133,18 @@ public final class InstantRuntime: Sendable {
         InstantAutomaticOutboxClaimRequest(
           claimantID: automaticDeliveryClaimantID,
           claimToken: UUID().uuidString.lowercased(),
-          now: configuration.now()
+          now: configuration.now(),
+          maximumMutationCount: probesOneWrite
+            ? 1
+            : InstantAutomaticOutboxClaimLimits.maximumMutationCount
         )
       )
       recordActorHop(.outbox)
+      for mutation in window.supersededMutations {
+        await publishMutationLifecycle(mutation)
+        await outbox.remove(id: mutation.id)
+        await liveSession.forgetEarlierOffers(of: mutation.id)
+      }
       for mutation in window.failedMutations {
         await publishMutationLifecycle(mutation)
         await outbox.remove(id: mutation.id)
@@ -11207,7 +12152,7 @@ public final class InstantRuntime: Sendable {
       for mutation in window.mutations {
         await outbox.replace(mutation)
       }
-      if !window.failedMutations.isEmpty {
+      if !window.failedMutations.isEmpty || !window.supersededMutations.isEmpty {
         _ = try? await publishConnectionStatusWithGateHeld()
       }
       let mutations = InstantBoundedOutboxDelivery.transportMutations(in: window)
@@ -11830,178 +12775,268 @@ public final class InstantRuntime: Sendable {
     recordsConnectionFailure: Bool
   ) async throws -> PendingMutation? {
     for _ in 0..<5 {
-      let state: InstantPersistenceState
-      let storeSnapshot: InstantStoreSnapshot
-      await operationGate.enter()
+      switch try await failClaimedMutationAttempt(
+        id: id,
+        failure: failure,
+        requiredClaimToken: requiredClaimToken,
+        recordsConnectionFailure: recordsConnectionFailure,
+        operationGateHeld: false
+      ) {
+      case let .finished(mutation):
+        return mutation
+      case .retry:
+        continue
+      }
+    }
+    // #303: each attempt loads its state under the operation gate, releases the gate to load and prepare the
+    // component, and takes it again to commit. This runtime's own local writes landed in that window every time while
+    // dictation kept writing, so all five attempts went stale, and the throw ended the live receive loop: the
+    // reconnect re-sent every write in flight, and the server refused them as replays. One more attempt holds the gate
+    // from load to commit, so local writes wait and the refusal is recorded, as the exclusive server apply does.
+    let exclusiveStartedAt = ContinuousClock.now
+    try await enterOperationGateUnlessCancelled(operation: "record a refused write exclusively")
+    InstantDiagnostics.shared.record(
+      .warning,
+      subsystem: "instant-swift-data-core",
+      category: "outbox",
+      event: "outbox.mutation.terminal-failure-exclusive-fallback",
+      message:
+        "Local writes changed the outbox during every attempt to record a refused write, so this one holds local writes until it lands.",
+      metadata: ["mutationID": id],
+      correlationID: id
+    )
+    let outcome: InstantClaimedTerminalFailureAttempt
+    do {
+      outcome = try await failClaimedMutationAttempt(
+        id: id,
+        failure: failure,
+        requiredClaimToken: requiredClaimToken,
+        recordsConnectionFailure: recordsConnectionFailure,
+        operationGateHeld: true
+      )
+      await leaveOperationGate()
+    } catch {
+      await leaveOperationGate()
+      recordExclusiveTerminalFailure(id: id, startedAt: exclusiveStartedAt, outcome: "failed")
+      throw error
+    }
+    switch outcome {
+    case let .finished(mutation):
+      recordExclusiveTerminalFailure(id: id, startedAt: exclusiveStartedAt, outcome: "recorded")
+      return mutation
+    case .retry:
+      recordExclusiveTerminalFailure(id: id, startedAt: exclusiveStartedAt, outcome: "stale")
+      throw outboxChangedDuringStatusUpdate(id: id)
+    }
+  }
+
+  private func recordExclusiveTerminalFailure(
+    id: String,
+    startedAt: ContinuousClock.Instant,
+    outcome: String
+  ) {
+    let elapsed = startedAt.duration(to: ContinuousClock.now)
+    let milliseconds = elapsed.components.seconds * 1_000
+      + elapsed.components.attoseconds / 1_000_000_000_000_000
+    InstantDiagnostics.shared.record(
+      outcome == "recorded" ? .info : .warning,
+      subsystem: "instant-swift-data-core",
+      category: "outbox",
+      event: "outbox.mutation.terminal-failure-exclusive-fallback-finished",
+      message: "The exclusive attempt to record a refused write finished.",
+      metadata: [
+        "mutationID": id,
+        "elapsedMilliseconds": String(milliseconds),
+        "outcome": outcome,
+      ],
+      correlationID: id
+    )
+  }
+
+  /// One attempt to record a server refusal of a claimed write. With `operationGateHeld`, the caller holds the
+  /// operation gate across the whole attempt, so no local write can make it stale.
+  private func failClaimedMutationAttempt(
+    id: String,
+    failure: InstantMutationFailure,
+    requiredClaimToken: String,
+    recordsConnectionFailure: Bool,
+    operationGateHeld: Bool
+  ) async throws -> InstantClaimedTerminalFailureAttempt {
+    let state: InstantPersistenceState
+    let storeSnapshot: InstantStoreSnapshot
+    if !operationGateHeld { await operationGate.enter() }
+    do {
+      state = try await loadCompactStateSynchronizingStore()
+      storeSnapshot = await authoritativeStoreSnapshot(from: state)
+      if !operationGateHeld { await operationGate.leave() }
+    } catch {
+      if !operationGateHeld { await operationGate.leave() }
+      throw error
+    }
+
+    recordActorHop(.persistence)
+    let load = try await persistence.loadClaimedTerminalFailureComponent(
+      id: id,
+      claimToken: requiredClaimToken,
+      expectedStoreRevision: state.storeRevision,
+      expectedAttributeRevision: state.attributeRevision
+    )
+    await configuration.onClaimedTerminalFailureLoadedForTesting?(operationGateHeld)
+    switch load {
+    case .alreadyTerminal:
+      return .finished(nil)
+
+    case .staleClaim:
+      recordActorHop(.persistence)
+      guard try await persistence.outboxClaimMatches(
+        id: id,
+        token: requiredClaimToken
+      ) else { return .finished(nil) }
+      return .retry
+
+    case let .normalizationRequired(firstMutationID):
+      recordActorHop(.persistence)
+      let normalization = try await persistence.normalizeOptimisticEffectMetadata(
+        startingAtMutationID: firstMutationID
+      )
+      if normalization.normalizedMutationIDs.isEmpty,
+        let blockedMutationID = normalization.blockedMutationID
+      {
+        throw InstantError(
+          code: .persistenceFailed,
+          operation: "normalize terminal failure component",
+          localID: blockedMutationID,
+          message:
+            "Mutation '\(blockedMutationID)' cannot prove its optimistic effect from the bounded durable body.",
+          recovery:
+            "Preserve the durable row and run an authoritative refresh before retrying its rejection."
+        )
+      }
+      return .retry
+
+    case let .componentLimitExceeded(mutationCountAtLeast, encodedBodyByteCountAtLeast):
+      if !operationGateHeld { await operationGate.enter() }
       do {
-        state = try await loadCompactStateSynchronizingStore()
-        storeSnapshot = await authoritativeStoreSnapshot(from: state)
-        await operationGate.leave()
+        // This branch records the failure without the component, so the outbox it saw before the gate was
+        // released does not matter; the row's claim token is the guard. The revision read before the gate let any
+        // local write in between make the commit stale, five times in a row while dictation kept writing (#303).
+        recordActorHop(.persistence)
+        let outboxRevision = try await persistence.currentOutboxRevision()
+        recordActorHop(.persistence)
+        guard let application = try await persistence.failOutboxMutationsForDelivery(
+          [id: failure],
+          failureAttributeRevision: nil,
+          claimToken: requiredClaimToken,
+          expectedOutboxRevision: outboxRevision,
+          metadataEntries: connectionFailureMetadataEntries(
+            for: failure,
+            recordsConnectionFailure: recordsConnectionFailure
+          )
+        ) else {
+          if !operationGateHeld { await operationGate.leave() }
+          return .retry
+        }
+        guard let failedMutation = application.mutations.first(where: { $0.id == id }) else {
+          recordActorHop(.persistence)
+          let stillOwnsClaim = try await persistence.outboxClaimMatches(
+            id: id,
+            token: requiredClaimToken
+          )
+          if !operationGateHeld { await operationGate.leave() }
+          guard stillOwnsClaim else { return .finished(nil) }
+          return .retry
+        }
+        InstantDiagnostics.shared.record(
+          .notice,
+          subsystem: "instant-swift-data-core",
+          category: "outbox",
+          event: "outbox.mutation.terminal-component-deferred",
+          message:
+            "Recorded a terminal mutation failure without loading its oversized optimistic component.",
+          metadata: [
+            "mutationID": id,
+            "componentMutationCountAtLeast": String(mutationCountAtLeast),
+            "componentEncodedBodyByteCountAtLeast": String(encodedBodyByteCountAtLeast),
+            "decodedBodyCount": String(application.decodedBodyCount),
+            "decodedBodyByteCount": String(application.decodedBodyByteCount),
+          ],
+          correlationID: id
+        )
+        recordActorHop(.outbox)
+        await outbox.remove(id: failedMutation.id)
+        _ = try? await publishConnectionStatusWithGateHeld()
+        await publishMutationLifecycle(failedMutation)
+        if !operationGateHeld { await operationGate.leave() }
+        return .finished(failedMutation)
       } catch {
-        await operationGate.leave()
+        if !operationGateHeld { await operationGate.leave() }
         throw error
       }
 
-      recordActorHop(.persistence)
-      let load = try await persistence.loadClaimedTerminalFailureComponent(
-        id: id,
-        claimToken: requiredClaimToken,
-        expectedStoreRevision: state.storeRevision,
-        expectedAttributeRevision: state.attributeRevision
+    case let .ready(component):
+      let removal = try await prepareClaimedTerminalFailureComponent(
+        component,
+        failure: failure,
+        snapshot: storeSnapshot
       )
-      switch load {
-      case .alreadyTerminal:
-        return nil
-
-      case .staleClaim:
+      if !operationGateHeld { await operationGate.enter() }
+      do {
         recordActorHop(.persistence)
-        guard try await persistence.outboxClaimMatches(
-          id: id,
-          token: requiredClaimToken
-        ) else { return nil }
-        continue
-
-      case let .normalizationRequired(firstMutationID):
-        recordActorHop(.persistence)
-        let normalization = try await persistence.normalizeOptimisticEffectMetadata(
-          startingAtMutationID: firstMutationID
-        )
-        if normalization.normalizedMutationIDs.isEmpty,
-          let blockedMutationID = normalization.blockedMutationID
-        {
-          throw InstantError(
-            code: .persistenceFailed,
-            operation: "normalize terminal failure component",
-            localID: blockedMutationID,
-            message:
-              "Mutation '\(blockedMutationID)' cannot prove its optimistic effect from the bounded durable body.",
-            recovery:
-              "Preserve the durable row and run an authoritative refresh before retrying its rejection."
+        let commit = try await persistence.commitClaimedTerminalFailure(
+          targetID: id,
+          claimToken: requiredClaimToken,
+          expectedStoreRevision: component.expectedStoreRevision,
+          expectedAttributeRevision: state.attributeRevision,
+          expectedComponentRowRevisions: component.rowRevisions,
+          expectedComponentIDs: component.ids,
+          failedMutation: removal.failedMutation,
+          rebasedSuccessors: removal.rebasedSuccessors,
+          changedEntityTriples: removal.prepared?.changedEntityTriples ?? [:],
+          changedFactScope: removal.prepared?.factScope ?? InstantFactScope(),
+          metadataEntries: connectionFailureMetadataEntries(
+            for: failure,
+            recordsConnectionFailure: recordsConnectionFailure
           )
-        }
-        continue
-
-      case let .componentLimitExceeded(mutationCountAtLeast, encodedBodyByteCountAtLeast):
-        await operationGate.enter()
-        do {
+        )
+        guard let commit else {
           recordActorHop(.persistence)
-          guard let application = try await persistence.failOutboxMutationsForDelivery(
-            [id: failure],
-            failureAttributeRevision: nil,
-            claimToken: requiredClaimToken,
-            expectedOutboxRevision: state.outboxRevision,
-            metadataEntries: connectionFailureMetadataEntries(
-              for: failure,
-              recordsConnectionFailure: recordsConnectionFailure
-            )
-          ) else {
-            await operationGate.leave()
-            continue
+          let stillOwnsClaim = try await persistence.outboxClaimMatches(
+            id: id,
+            token: requiredClaimToken
+          )
+          if !operationGateHeld { await operationGate.leave() }
+          guard stillOwnsClaim else { return .finished(nil) }
+          return .retry
+        }
+        if commit.didChange {
+          if let prepared = removal.prepared {
+            recordActorHop(.store)
+            _ = await store.commitAndPublish(prepared)
           }
-          guard let failedMutation = application.mutations.first(where: { $0.id == id }) else {
-            recordActorHop(.persistence)
-            let stillOwnsClaim = try await persistence.outboxClaimMatches(
-              id: id,
-              token: requiredClaimToken
-            )
-            await operationGate.leave()
-            guard stillOwnsClaim else { return nil }
-            continue
-          }
-          InstantDiagnostics.shared.record(
-            .notice,
-            subsystem: "instant-swift-data-core",
-            category: "outbox",
-            event: "outbox.mutation.terminal-component-deferred",
-            message:
-              "Recorded a terminal mutation failure without loading its oversized optimistic component.",
-            metadata: [
-              "mutationID": id,
-              "componentMutationCountAtLeast": String(mutationCountAtLeast),
-              "componentEncodedBodyByteCountAtLeast": String(encodedBodyByteCountAtLeast),
-              "decodedBodyCount": String(application.decodedBodyCount),
-              "decodedBodyByteCount": String(application.decodedBodyByteCount),
-            ],
-            correlationID: id
+          let installedRevisions = installedStoreRevisions.snapshot()
+          installedStoreRevisions.install(
+            storeRevision: component.expectedStoreRevision + 1,
+            attributeRevision: installedRevisions.attributes
           )
           recordActorHop(.outbox)
-          await outbox.remove(id: failedMutation.id)
+          if let failedMutation = commit.failedMutation {
+            await outbox.remove(id: failedMutation.id)
+          }
+          for successor in commit.rebasedSuccessors {
+            await outbox.replaceIfPresent(successor)
+          }
           _ = try? await publishConnectionStatusWithGateHeld()
-          await publishMutationLifecycle(failedMutation)
-          await operationGate.leave()
-          return failedMutation
-        } catch {
-          await operationGate.leave()
-          throw error
-        }
-
-      case let .ready(component):
-        let removal = try await prepareClaimedTerminalFailureComponent(
-          component,
-          failure: failure,
-          snapshot: storeSnapshot
-        )
-        await operationGate.enter()
-        do {
-          recordActorHop(.persistence)
-          let commit = try await persistence.commitClaimedTerminalFailure(
-            targetID: id,
-            claimToken: requiredClaimToken,
-            expectedStoreRevision: component.expectedStoreRevision,
-            expectedAttributeRevision: state.attributeRevision,
-            expectedComponentRowRevisions: component.rowRevisions,
-            expectedComponentIDs: component.ids,
-            failedMutation: removal.failedMutation,
-            rebasedSuccessors: removal.rebasedSuccessors,
-            changedEntityTriples: removal.prepared?.changedEntityTriples ?? [:],
-            changedFactScope: removal.prepared?.factScope ?? InstantFactScope(),
-            metadataEntries: connectionFailureMetadataEntries(
-              for: failure,
-              recordsConnectionFailure: recordsConnectionFailure
-            )
-          )
-          guard let commit else {
-            recordActorHop(.persistence)
-            let stillOwnsClaim = try await persistence.outboxClaimMatches(
-              id: id,
-              token: requiredClaimToken
-            )
-            await operationGate.leave()
-            guard stillOwnsClaim else { return nil }
-            continue
+          if let failedMutation = commit.failedMutation {
+            await publishMutationLifecycle(failedMutation)
           }
-          if commit.didChange {
-            if let prepared = removal.prepared {
-              recordActorHop(.store)
-              _ = await store.commitAndPublish(prepared)
-            }
-            let installedRevisions = installedStoreRevisions.snapshot()
-            installedStoreRevisions.install(
-              storeRevision: component.expectedStoreRevision + 1,
-              attributeRevision: installedRevisions.attributes
-            )
-            recordActorHop(.outbox)
-            if let failedMutation = commit.failedMutation {
-              await outbox.remove(id: failedMutation.id)
-            }
-            for successor in commit.rebasedSuccessors {
-              await outbox.replaceIfPresent(successor)
-            }
-            _ = try? await publishConnectionStatusWithGateHeld()
-            if let failedMutation = commit.failedMutation {
-              await publishMutationLifecycle(failedMutation)
-            }
-          }
-          await operationGate.leave()
-          return commit.failedMutation
-        } catch {
-          await operationGate.leave()
-          throw error
         }
+        if !operationGateHeld { await operationGate.leave() }
+        return .finished(commit.failedMutation)
+      } catch {
+        if !operationGateHeld { await operationGate.leave() }
+        throw error
       }
     }
-
-    throw outboxChangedDuringStatusUpdate(id: id)
   }
 
   /// Loads persistence metadata without allowing a newer SQLite revision to
@@ -13499,21 +14534,22 @@ public final class InstantRuntime: Sendable {
     InstantSharesObservationKey(appID: configuration.appID, userID: userID)
   }
 
-  private func publishStreamContentUpdates(streamID: String) async throws {
-    guard let metadata = try await persistence.loadStreamMetadata(
-      appID: configuration.appID,
-      streamID: streamID
-    ) else { return }
+  /// Tells the observations of a stream about one write. Each extends the read it last received with the change, as
+  /// upstream `Stream.ts` hands a reader only the new bytes, so an append costs its own bytes, not a read of the whole
+  /// stream. Only an observation with no read yet, or one whose read does not line up with the change, reads the
+  /// stored stream.
+  private func publishStreamContent(_ change: InstantStreamContentChange) async throws {
+    let metadata = change.metadata
     let keys = [
-      streamContentObservationKey(streamID: streamID),
+      streamContentObservationKey(streamID: metadata.id),
       streamContentObservationKey(clientID: metadata.clientID),
     ]
     for key in keys {
-      let byteOffsets = await streamContentObservers.byteOffsets(for: key)
-      for byteOffset in byteOffsets {
+      let unextended = await streamContentObservers.publish(change, for: key)
+      for byteOffset in unextended.sorted() {
         if let read = try await persistence.loadStreamContent(
           appID: configuration.appID,
-          streamID: streamID,
+          streamID: metadata.id,
           byteOffset: byteOffset
         ) {
           await streamContentObservers.publish(read, for: key, byteOffset: byteOffset)

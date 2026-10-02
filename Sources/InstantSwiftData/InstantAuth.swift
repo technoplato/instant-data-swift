@@ -17,6 +17,24 @@ public enum InstantAuthStatus: Hashable, Sendable {
   case failed(InstantError)
 }
 
+/// Where ``InstantAuthState``'s account linking is. Linking never changes the session.
+public enum InstantAccountLinkingStatus: Hashable, Sendable {
+  /// Nothing is in progress.
+  case idle
+  /// The other identity is signing in with this provider on a second sign-in.
+  case signingInSecond(InstantAuthProviderID)
+  /// A link code is on its way to `email`.
+  case sendingCode(email: String)
+  /// A link code was sent to `email`. Verifying it links that identity.
+  case codeSent(email: String)
+  /// The two identities are writing the link.
+  case linking
+  /// The identity `userID` is being removed from the link.
+  case unlinking(userID: String)
+  /// The last linking action failed.
+  case failed(InstantError)
+}
+
 public enum InstantAuthIdentityTransition: Hashable, Sendable {
   case signedIn
   case guestPromoted(InstantGuestPromotionResult)
@@ -62,7 +80,16 @@ public struct InstantAuthUser<Entity: InstantEntityModel>: Hashable, Sendable {
     @Published public var magicCode = ""
     @Published public private(set) var mode: InstantAuthMode = .enteringEmail
     @Published public private(set) var status: InstantAuthStatus = .signedOut
-    @Published public private(set) var session: InstantAuthSession?
+    @Published public private(set) var session: InstantAuthSession? {
+      didSet {
+        guard oldValue?.userID != session?.userID else { return }
+        // The link belongs to the previous user; a pending link code would link into the wrong account.
+        accountLink = nil
+        if oldValue != nil {
+          cancelLinking()
+        }
+      }
+    }
 
     public let providers: [AuthProvider]
 
@@ -392,6 +419,432 @@ public struct InstantAuthUser<Entity: InstantEntityModel>: Hashable, Sendable {
       }
       activeAction = task
       return task
+    }
+
+    // MARK: Account linking
+
+    /// The account link of this session's identity, as the last read, link, or unlink returned it.
+    ///
+    /// `nil` before ``refreshAccountLink(using:links:onFailure:)`` reads it, when the identity is in no link, and after
+    /// the session changes to another user.
+    @Published public private(set) var accountLink: InstantAccountLink?
+
+    /// Where account linking is. Linking never changes ``session``.
+    @Published public private(set) var linking: InstantAccountLinkingStatus = .idle
+
+    /// The email address a link code was sent to, while that code can still be entered.
+    ///
+    /// A wrong code keeps it, so the code can be entered again. Linking, ``cancelLinking()``, and a new link action
+    /// clear it.
+    @Published public private(set) var linkCodeEmail: String?
+
+    private var linkingGeneration = 0
+    private var linkingTask: Task<Void, Never>?
+    private var refreshTask: Task<Void, Never>?
+    /// The second sign-in a link code was sent from, held until the code is verified or linking is cancelled.
+    private var heldLinkSignIn: InstantSecondSignIn?
+
+    /// Reads ``accountLink`` from Instant through a temporary twin of the session.
+    @discardableResult
+    public func refreshAccountLink(
+      links: InstantAccountLinks = .default,
+      onFailure: @escaping @MainActor @Sendable (InstantError) -> Void = { _ in }
+    ) -> Task<Void, Never> {
+      @Dependency(\.defaultInstantSwiftData) var client
+      return refreshAccountLink(using: client, links: links, onFailure: onFailure)
+    }
+
+    /// Reads ``accountLink`` from Instant through a temporary twin of `client`'s session.
+    ///
+    /// A failure leaves ``accountLink`` as it was and, unless a linking action is in progress, sets ``linking`` to
+    /// ``InstantAccountLinkingStatus/failed(_:)``.
+    @discardableResult
+    public func refreshAccountLink(
+      using client: InstantSwiftDataClient,
+      links: InstantAccountLinks = .default,
+      onFailure: @escaping @MainActor @Sendable (InstantError) -> Void = { _ in }
+    ) -> Task<Void, Never> {
+      refreshTask?.cancel()
+      let task = Task { @MainActor [weak self] in
+        do {
+          guard try await client.authSession() != nil else {
+            self?.accountLink = nil
+            return
+          }
+          let link = try await links.accountLink(sharingSessionOf: client)
+          try Task.checkCancellation()
+          self?.accountLink = link
+        } catch is CancellationError {
+        } catch {
+          guard let self else { return }
+          let error = Self.authError(error, operation: "read the linked sign-ins")
+          if self.linking == .idle {
+            self.linking = .failed(error)
+          }
+          onFailure(error)
+        }
+      }
+      refreshTask = task
+      return task
+    }
+
+    /// Signs another identity in with `provider` and links it with this session's identity.
+    @discardableResult
+    public func linkAnotherSignIn(
+      _ provider: AuthProviderSelection,
+      links: InstantAccountLinks = .default,
+      deviceName: String? = nil,
+      onLinked: @escaping @MainActor @Sendable (InstantAccountLink) -> Void = { _ in },
+      onFailure: @escaping @MainActor @Sendable (InstantError) -> Void = { _ in }
+    ) -> Task<Void, Never> {
+      @Dependency(\.defaultInstantSwiftData) var client
+      @Dependency(\.instantAuthProviderAuthorizer) var authorizer
+      return linkAnotherSignIn(
+        provider,
+        using: client,
+        authorizer: authorizer,
+        links: links,
+        deviceName: deviceName,
+        onLinked: onLinked,
+        onFailure: onFailure
+      )
+    }
+
+    /// Signs another identity in with `provider` and links it with `client`'s identity.
+    ///
+    /// The other identity signs in on a second sign-in beside `client` (``InstantSecondSignIn``), so `client`'s session
+    /// never changes. ``InstantAccountLinks/link(primary:second:secondProvider:deviceName:now:)`` then links the two,
+    /// and the second sign-in closes on every path. ``linking`` moves from
+    /// ``InstantAccountLinkingStatus/signingInSecond(_:)`` to ``InstantAccountLinkingStatus/linking`` and back to
+    /// ``InstantAccountLinkingStatus/idle``, or to ``InstantAccountLinkingStatus/failed(_:)``. Cancelling the provider's
+    /// sign-in returns to ``InstantAccountLinkingStatus/idle`` without a failure.
+    @discardableResult
+    public func linkAnotherSignIn(
+      _ provider: AuthProviderSelection,
+      using client: InstantSwiftDataClient,
+      authorizer: InstantAuthProviderAuthorizer,
+      links: InstantAccountLinks = .default,
+      deviceName: String? = nil,
+      onLinked: @escaping @MainActor @Sendable (InstantAccountLink) -> Void = { _ in },
+      onFailure: @escaping @MainActor @Sendable (InstantError) -> Void = { _ in }
+    ) -> Task<Void, Never> {
+      let previous = takeHeldLinkSignIn()
+      let generation = beginLinking(.signingInSecond(provider.id))
+      let task = Task { @MainActor [weak self] in
+        await previous?.close()
+        var opened: InstantSecondSignIn?
+        do {
+          guard provider.kind != .magicCode else {
+            throw InstantError(
+              code: .validationFailed,
+              operation: "link another sign-in",
+              message: "Email codes link through sendLinkMagicCode and verifyLinkMagicCode.",
+              recovery: "Call the link-code actions for an email sign-in."
+            )
+          }
+          let second = try await InstantSecondSignIn.open(beside: client, registering: links.attributes)
+          opened = second
+          let credential = try await authorizer.authorize(provider)
+          try Task.checkCancellation()
+          _ = try await second.signIn(with: credential, provider: provider)
+          try Task.checkCancellation()
+          self?.continueLinking(.linking, generation: generation)
+          let link = try await links.link(
+            primary: client,
+            second: second,
+            secondProvider: InstantAccountLinkProvider(providerID: provider.id),
+            deviceName: deviceName
+          )
+          await second.close()
+          self?.finishLinking(link, generation: generation, onLinked: onLinked)
+        } catch {
+          await opened?.close()
+          self?.failLinking(
+            error,
+            operation: "link another sign-in with \(provider.id.rawValue)",
+            generation: generation,
+            onFailure: onFailure
+          )
+        }
+      }
+      linkingTask = task
+      return task
+    }
+
+    /// Sends a link code to `email` from a new second sign-in, and holds that sign-in for
+    /// ``verifyLinkMagicCode(email:code:links:deviceName:onLinked:onFailure:)``.
+    @discardableResult
+    public func sendLinkMagicCode(
+      email: String,
+      links: InstantAccountLinks = .default,
+      onCodeSent: @escaping @MainActor @Sendable (InstantMagicCodeChallenge) -> Void = { _ in },
+      onFailure: @escaping @MainActor @Sendable (InstantError) -> Void = { _ in }
+    ) -> Task<Void, Never> {
+      @Dependency(\.defaultInstantSwiftData) var client
+      return sendLinkMagicCode(
+        email: email,
+        using: client,
+        links: links,
+        onCodeSent: onCodeSent,
+        onFailure: onFailure
+      )
+    }
+
+    /// Sends a link code to `email` from a new second sign-in beside `client`, and holds that sign-in until the code is
+    /// verified or ``cancelLinking()`` closes it. A code sent earlier is discarded.
+    @discardableResult
+    public func sendLinkMagicCode(
+      email rawEmail: String,
+      using client: InstantSwiftDataClient,
+      links: InstantAccountLinks = .default,
+      onCodeSent: @escaping @MainActor @Sendable (InstantMagicCodeChallenge) -> Void = { _ in },
+      onFailure: @escaping @MainActor @Sendable (InstantError) -> Void = { _ in }
+    ) -> Task<Void, Never> {
+      let email = rawEmail.trimmingCharacters(in: .whitespacesAndNewlines)
+      let previous = takeHeldLinkSignIn()
+      let generation = beginLinking(.sendingCode(email: email))
+      let task = Task { @MainActor [weak self] in
+        await previous?.close()
+        var opened: InstantSecondSignIn?
+        do {
+          let second = try await InstantSecondSignIn.open(beside: client, registering: links.attributes)
+          opened = second
+          let challenge = try await second.sendMagicCode(email: email)
+          try Task.checkCancellation()
+          guard let self, self.linkingGeneration == generation else {
+            await second.close()
+            return
+          }
+          self.heldLinkSignIn = second
+          self.linkCodeEmail = challenge.email
+          self.linking = .codeSent(email: challenge.email)
+          self.linkingTask = nil
+          onCodeSent(challenge)
+        } catch {
+          await opened?.close()
+          self?.failLinking(
+            error,
+            operation: "send a link code",
+            generation: generation,
+            onFailure: onFailure
+          )
+        }
+      }
+      linkingTask = task
+      return task
+    }
+
+    /// Verifies a link code and links that identity with this session's identity.
+    @discardableResult
+    public func verifyLinkMagicCode(
+      email: String,
+      code: String,
+      links: InstantAccountLinks = .default,
+      deviceName: String? = nil,
+      onLinked: @escaping @MainActor @Sendable (InstantAccountLink) -> Void = { _ in },
+      onFailure: @escaping @MainActor @Sendable (InstantError) -> Void = { _ in }
+    ) -> Task<Void, Never> {
+      @Dependency(\.defaultInstantSwiftData) var client
+      return verifyLinkMagicCode(
+        email: email,
+        code: code,
+        using: client,
+        links: links,
+        deviceName: deviceName,
+        onLinked: onLinked,
+        onFailure: onFailure
+      )
+    }
+
+    /// Verifies the link code on the held second sign-in, then links that identity with `client`'s identity.
+    ///
+    /// A wrong code keeps the held sign-in, so the code can be entered again. Once the code signs in, the held sign-in
+    /// closes when linking ends, whether linking succeeds or fails.
+    @discardableResult
+    public func verifyLinkMagicCode(
+      email rawEmail: String,
+      code rawCode: String,
+      using client: InstantSwiftDataClient,
+      links: InstantAccountLinks = .default,
+      deviceName: String? = nil,
+      onLinked: @escaping @MainActor @Sendable (InstantAccountLink) -> Void = { _ in },
+      onFailure: @escaping @MainActor @Sendable (InstantError) -> Void = { _ in }
+    ) -> Task<Void, Never> {
+      let email = rawEmail.trimmingCharacters(in: .whitespacesAndNewlines)
+      let code = rawCode.trimmingCharacters(in: .whitespacesAndNewlines)
+      let held = heldLinkSignIn
+      let generation = beginLinking(.signingInSecond(.magicCode))
+      let task = Task { @MainActor [weak self] in
+        guard let held else {
+          self?.failLinking(
+            InstantError(
+              code: .validationFailed,
+              operation: "verify a link code",
+              message: "No link code is waiting to be verified.",
+              recovery: "Send a code to the other sign-in's email address first."
+            ),
+            operation: "verify a link code",
+            generation: generation,
+            onFailure: onFailure
+          )
+          return
+        }
+        do {
+          _ = try await held.signInWithMagicCode(email: email, code: code)
+          try Task.checkCancellation()
+        } catch {
+          self?.failLinking(
+            error,
+            operation: "verify a link code",
+            generation: generation,
+            onFailure: onFailure
+          )
+          return
+        }
+        self?.releaseHeldLinkSignIn(held)
+        self?.continueLinking(.linking, generation: generation)
+        do {
+          let link = try await links.link(
+            primary: client,
+            second: held,
+            secondProvider: .magicCode,
+            deviceName: deviceName
+          )
+          await held.close()
+          self?.finishLinking(link, generation: generation, onLinked: onLinked)
+        } catch {
+          await held.close()
+          self?.failLinking(
+            error,
+            operation: "link another sign-in by email code",
+            generation: generation,
+            onFailure: onFailure
+          )
+        }
+      }
+      linkingTask = task
+      return task
+    }
+
+    /// Stops any linking action and closes a held second sign-in. The returned task finishes once that sign-in is
+    /// closed.
+    @discardableResult
+    public func cancelLinking() -> Task<Void, Never> {
+      linkingGeneration += 1
+      linkingTask?.cancel()
+      linkingTask = nil
+      linking = .idle
+      let held = takeHeldLinkSignIn()
+      return Task { await held?.close() }
+    }
+
+    /// Removes `memberUserID` from this session's account link.
+    @discardableResult
+    public func unlink(
+      memberUserID: String,
+      links: InstantAccountLinks = .default,
+      onUnlinked: @escaping @MainActor @Sendable (InstantAccountLink?) -> Void = { _ in },
+      onFailure: @escaping @MainActor @Sendable (InstantError) -> Void = { _ in }
+    ) -> Task<Void, Never> {
+      @Dependency(\.defaultInstantSwiftData) var client
+      return unlink(
+        memberUserID: memberUserID,
+        using: client,
+        links: links,
+        onUnlinked: onUnlinked,
+        onFailure: onFailure
+      )
+    }
+
+    /// Removes `memberUserID` from `client`'s account link through a temporary twin of its session, and sets
+    /// ``accountLink`` to what remains (`nil` when the link is gone).
+    @discardableResult
+    public func unlink(
+      memberUserID: String,
+      using client: InstantSwiftDataClient,
+      links: InstantAccountLinks = .default,
+      onUnlinked: @escaping @MainActor @Sendable (InstantAccountLink?) -> Void = { _ in },
+      onFailure: @escaping @MainActor @Sendable (InstantError) -> Void = { _ in }
+    ) -> Task<Void, Never> {
+      let previous = takeHeldLinkSignIn()
+      let generation = beginLinking(.unlinking(userID: memberUserID))
+      let task = Task { @MainActor [weak self] in
+        await previous?.close()
+        do {
+          let remaining = try await links.unlink(memberUserID: memberUserID, primary: client)
+          guard let self else { return }
+          self.accountLink = remaining
+          guard self.linkingGeneration == generation else { return }
+          self.linking = .idle
+          self.linkingTask = nil
+          onUnlinked(remaining)
+        } catch {
+          self?.failLinking(
+            error,
+            operation: "unlink a sign-in",
+            generation: generation,
+            onFailure: onFailure
+          )
+        }
+      }
+      linkingTask = task
+      return task
+    }
+
+    private func beginLinking(_ status: InstantAccountLinkingStatus) -> Int {
+      linkingGeneration += 1
+      linkingTask?.cancel()
+      linkingTask = nil
+      linking = status
+      return linkingGeneration
+    }
+
+    private func continueLinking(_ status: InstantAccountLinkingStatus, generation: Int) {
+      guard linkingGeneration == generation else { return }
+      linking = status
+    }
+
+    private func finishLinking(
+      _ link: InstantAccountLink,
+      generation: Int,
+      onLinked: @MainActor @Sendable (InstantAccountLink) -> Void
+    ) {
+      // The link exists on the server whether or not this action was superseded.
+      accountLink = link
+      guard linkingGeneration == generation else { return }
+      linking = .idle
+      linkingTask = nil
+      onLinked(link)
+    }
+
+    private func failLinking(
+      _ rawError: Error,
+      operation: String,
+      generation: Int,
+      onFailure: @MainActor @Sendable (InstantError) -> Void
+    ) {
+      guard linkingGeneration == generation else { return }
+      linkingTask = nil
+      guard !(rawError is CancellationError) else {
+        linking = .idle
+        return
+      }
+      let error = Self.authError(rawError, operation: operation)
+      linking = .failed(error)
+      onFailure(error)
+    }
+
+    private func takeHeldLinkSignIn() -> InstantSecondSignIn? {
+      let held = heldLinkSignIn
+      heldLinkSignIn = nil
+      linkCodeEmail = nil
+      return held
+    }
+
+    private func releaseHeldLinkSignIn(_ signIn: InstantSecondSignIn) {
+      guard heldLinkSignIn === signIn else { return }
+      heldLinkSignIn = nil
+      linkCodeEmail = nil
     }
 
     public func cancelActiveAction() {
