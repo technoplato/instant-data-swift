@@ -69,13 +69,13 @@ extension InstantStoreTests {
     )
     expectNoDifference(
       result.metrics.first { $0.name == "triple-insert.seed" }?.samples.map(\.actorHopCount),
-      [20, 20]
+      [8, 8]
     )
     expectNoDifference(
       result.metrics.first { $0.name == "triple-insert.seed" }?.samples.map(\.actorHopBreakdown),
       [
-        ["live-session": 1, "observers": 1, "operation-gate": 2, "persistence": 12, "server-apply-gate": 1, "store": 3],
-        ["live-session": 1, "observers": 1, "operation-gate": 2, "persistence": 12, "server-apply-gate": 1, "store": 3],
+        ["observers": 1, "operation-gate": 2, "persistence": 2, "store": 3],
+        ["observers": 1, "operation-gate": 2, "persistence": 2, "store": 3],
       ]
     )
     expectNoDifference(
@@ -84,13 +84,13 @@ extension InstantStoreTests {
     )
     expectNoDifference(
       result.metrics.first { $0.name == "query-materialization.todos" }?.samples.map(\.actorHopCount),
-      [6, 6]
+      [5, 5]
     )
     expectNoDifference(
       result.metrics.first { $0.name == "query-materialization.todos" }?.samples.map(\.actorHopBreakdown),
       [
-        ["operation-gate": 2, "persistence": 3, "store": 1],
-        ["operation-gate": 2, "persistence": 3, "store": 1],
+        ["operation-gate": 2, "persistence": 2, "store": 1],
+        ["operation-gate": 2, "persistence": 2, "store": 1],
       ]
     )
     expectNoDifference(
@@ -99,13 +99,13 @@ extension InstantStoreTests {
     )
     expectNoDifference(
       result.metrics.first { $0.name == "high-bandwidth.scalar-updates" }?.samples.map(\.actorHopCount),
-      [950, 950]
+      [350, 350]
     )
     expectNoDifference(
       result.metrics.first { $0.name == "high-bandwidth.scalar-updates" }?.samples.map(\.actorHopBreakdown),
       [
-        ["live-session": 50, "observers": 50, "operation-gate": 100, "persistence": 600, "server-apply-gate": 50, "store": 100],
-        ["live-session": 50, "observers": 50, "operation-gate": 100, "persistence": 600, "server-apply-gate": 50, "store": 100],
+        ["observers": 50, "operation-gate": 100, "persistence": 100, "store": 100],
+        ["observers": 50, "operation-gate": 100, "persistence": 100, "store": 100],
       ]
     )
     expectNoDifference(
@@ -126,7 +126,7 @@ extension InstantStoreTests {
     )
     expectNoDifference(
       result.metrics.first { $0.name == "high-bandwidth.linked-writes" }?.samples.map(\.actorHopCount),
-      [19, 19]
+      [7, 7]
     )
     expectNoDifference(
       result.metrics.first { $0.name == "high-bandwidth.linked-writes" }?.samples.map(\.memoryDeltaBytes),
@@ -158,13 +158,13 @@ extension InstantStoreTests {
     )
     expectNoDifference(
       result.metrics.first { $0.name == "memory-growth.triples.1k" }?.samples.map(\.actorHopCount),
-      [76, 76]
+      [28, 28]
     )
     expectNoDifference(
       result.metrics.first { $0.name == "memory-growth.triples.1k" }?.samples.map(\.actorHopBreakdown),
       [
-        ["live-session": 4, "observers": 4, "operation-gate": 8, "persistence": 48, "server-apply-gate": 4, "store": 8],
-        ["live-session": 4, "observers": 4, "operation-gate": 8, "persistence": 48, "server-apply-gate": 4, "store": 8],
+        ["observers": 4, "operation-gate": 8, "persistence": 8, "store": 8],
+        ["observers": 4, "operation-gate": 8, "persistence": 8, "store": 8],
       ]
     )
     expectNoDifference(
@@ -189,13 +189,13 @@ extension InstantStoreTests {
     )
     expectNoDifference(
       result.metrics.first { $0.name == "memory-growth.triples.10k" }?.samples.map(\.actorHopCount),
-      [760, 760]
+      [280, 280]
     )
     expectNoDifference(
       result.metrics.first { $0.name == "memory-growth.triples.10k" }?.samples.map(\.actorHopBreakdown),
       [
-        ["live-session": 40, "observers": 40, "operation-gate": 80, "persistence": 480, "server-apply-gate": 40, "store": 80],
-        ["live-session": 40, "observers": 40, "operation-gate": 80, "persistence": 480, "server-apply-gate": 40, "store": 80],
+        ["observers": 40, "operation-gate": 80, "persistence": 80, "store": 80],
+        ["observers": 40, "operation-gate": 80, "persistence": 80, "store": 80],
       ]
     )
     expectNoDifference(
@@ -220,13 +220,13 @@ extension InstantStoreTests {
     )
     expectNoDifference(
       result.metrics.first { $0.name == "memory-growth.triples.50k" }?.samples.map(\.actorHopCount),
-      [3_724, 3_724]
+      [1_372, 1_372]
     )
     expectNoDifference(
       result.metrics.first { $0.name == "memory-growth.triples.50k" }?.samples.map(\.actorHopBreakdown),
       [
-        ["live-session": 196, "observers": 196, "operation-gate": 392, "persistence": 2352, "server-apply-gate": 196, "store": 392],
-        ["live-session": 196, "observers": 196, "operation-gate": 392, "persistence": 2352, "server-apply-gate": 196, "store": 392],
+        ["observers": 196, "operation-gate": 392, "persistence": 392, "store": 392],
+        ["observers": 196, "operation-gate": 392, "persistence": 392, "store": 392],
       ]
     )
     expectNoDifference(
@@ -270,13 +270,13 @@ extension InstantStoreTests {
     )
     expectNoDifference(
       result.metrics.first { $0.name == "offline-restore.relaunch" }?.samples.map(\.actorHopCount),
-      [16, 16]
+      [11, 11]
     )
     expectNoDifference(
       result.metrics.first { $0.name == "offline-restore.relaunch" }?.samples.map(\.actorHopBreakdown),
       [
-        ["operation-gate": 4, "persistence": 9, "store": 2, "task": 1],
-        ["operation-gate": 4, "persistence": 9, "store": 2, "task": 1],
+        ["operation-gate": 4, "persistence": 5, "store": 2],
+        ["operation-gate": 4, "persistence": 5, "store": 2],
       ]
     )
     // One automatic claim window is 50 mutations; residual pending stays behind
@@ -295,29 +295,27 @@ extension InstantStoreTests {
     )
     expectNoDifference(
       result.metrics.first { $0.name == "outbox-flush.local-transport" }?.samples.map(\.actorHopCount),
-      [49, 49]
+      [27, 27]
     )
     expectNoDifference(
       result.metrics.first { $0.name == "outbox-flush.local-transport" }?.samples.map(\.actorHopBreakdown),
       [
         [
-          "live-session": 3,
           "mutation-flush-gate": 4,
           "mutation-transport": 1,
           "observers": 1,
           "operation-gate": 8,
-          "outbox": 3,
-          "persistence": 23,
+          "outbox": 2,
+          "persistence": 5,
           "task": 6,
         ],
         [
-          "live-session": 3,
           "mutation-flush-gate": 4,
           "mutation-transport": 1,
           "observers": 1,
           "operation-gate": 8,
-          "outbox": 3,
-          "persistence": 23,
+          "outbox": 2,
+          "persistence": 5,
           "task": 6,
         ],
       ]

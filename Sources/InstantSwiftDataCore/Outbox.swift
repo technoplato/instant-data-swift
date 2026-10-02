@@ -57,6 +57,14 @@ actor InstantOutbox {
     mutations[index] = mutation.compactedForMemory
   }
 
+  /// ``replace(_:)`` for each mutation in order, in one actor turn: a claimed delivery window refreshes its rows with
+  /// one hop, not one per mutation (#403).
+  func replace(contentsOf batch: [PendingMutation]) {
+    for mutation in batch {
+      replace(mutation)
+    }
+  }
+
   func remove(id: String) {
     mutations.removeAll { $0.id == id }
   }

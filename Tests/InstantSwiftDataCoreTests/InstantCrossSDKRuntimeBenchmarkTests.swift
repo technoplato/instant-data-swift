@@ -66,29 +66,31 @@ struct InstantCrossSDKRuntimeBenchmarkTests {
       cacheDirectory: cacheURL
     )
 
+    // transact: the gate, one persistence turn of reads, the store's prepare, one turn for the save and the status
+    // it changed, the store's commit, the status publish, and the gate. The 12 persistence awaits were 2 turns.
     let enqueue: [String: Int] = [
       "operation-gate": 2,
-      "persistence": 12,
-      "server-apply-gate": 1,
+      "persistence": 2,
       "store": 2,
-      "live-session": 1,
       "observers": 1,
     ]
+    // Relaunch: one turn to open the store, the live-result prune, then a query (one turn of reads, the store, the
+    // query-cache save) and the pending mutations (one turn), each inside the gate.
     let relaunch: [String: Int] = [
       "operation-gate": 4,
-      "persistence": 9,
+      "persistence": 5,
       "store": 2,
-      "task": 1,
     ]
+    // Reconnect and drain: connect saves the opened state and reads the status in one turn; the explicit flush claims
+    // in one turn, confirms, then settles in one turn. Its five tasks are unchanged.
     let drain: [String: Int] = [
       "connection-gate": 2,
-      "live-session": 3,
       "mutation-flush-gate": 2,
       "mutation-transport": 1,
       "observers": 2,
       "operation-gate": 6,
       "outbox": 2,
-      "persistence": 26,
+      "persistence": 4,
       "reconnect-controller": 1,
       "task": 5,
     ]
@@ -98,7 +100,7 @@ struct InstantCrossSDKRuntimeBenchmarkTests {
     )
     expectNoDifference(
       result.metrics.map { metric in metric.samples.map(\.actorHopCount) },
-      [[19, 19], [16, 16], [50, 50]]
+      [[7, 7], [11, 11], [25, 25]]
     )
   }
 

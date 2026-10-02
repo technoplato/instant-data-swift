@@ -9,7 +9,6 @@ package enum InstantActorHopBoundary: String, CaseIterable, Sendable {
   case operationGate = "operation-gate"
   case mutationFlushGate = "mutation-flush-gate"
   case connectionGate = "connection-gate"
-  case serverApplyGate = "server-apply-gate"
   case persistence
   case store
   case outbox

@@ -280,6 +280,15 @@ struct InstantOutboxImmediateTailLoad: Sendable {
   var mutation: PendingMutation?
 }
 
+/// The one exact durable outbox tail, read inside `transact`'s ``SQLitePersistenceStore/run(_:)`` turn (#403).
+struct InstantOutboxImmediateTailRead: Sendable {
+  var load: InstantOutboxImmediateTailLoad
+  /// A tail the read found undecodable or oversized. Pass it to
+  /// ``SQLitePersistenceStore/quarantineInvalidImmediateSupersessionTail(_:expectedStoreRevision:expectedOutboxRevision:)``
+  /// before preparing the write; `load.matchesRevisions` is `false` until it has.
+  var invalidTail: InstantOutboxInvalidImmediateTail?
+}
+
 struct InstantOutboxAliasReplayLoad: Sendable {
   struct Alias: Sendable {
     var currentMutationID: String
@@ -295,7 +304,7 @@ struct InstantMutationLifecycleResolution: Sendable {
   var event: InstantMutationLifecycleEvent
 }
 
-private struct InstantOutboxBodyRow: Sendable {
+struct InstantOutboxBodyRow: Sendable {
   var mutationID: String
   var createdAtMilliseconds: Int64
   var json: String
@@ -310,7 +319,7 @@ private struct InstantTerminalLifecycleRecord: Sendable {
   var serverAcceptancePayloadFingerprint: String?
 }
 
-private enum InstantOutboxInvalidImmediateTail: Sendable {
+enum InstantOutboxInvalidImmediateTail: Sendable {
   case bounded(row: InstantOutboxBodyRow, reason: String)
   case oversized(
     mutationID: String,
@@ -1416,6 +1425,23 @@ public actor SQLitePersistenceStore {
     ] where fileManager.fileExists(atPath: url.path) {
       try securePersistenceFile(at: url)
     }
+  }
+
+  /// Runs `body` on this store in one actor turn and returns its result.
+  ///
+  /// Each `await` on a method of this actor is one hop onto its executor, and another caller's persistence work can
+  /// run between two of them. A runtime step that needs several of these synchronous methods calls them inside one
+  /// `run` instead: one hop, and nothing interleaves, because `body` cannot suspend. This is Point-Free's `run` (ep362
+  /// at 12:16; rule 2 of their isolation series: enter an actor once, then work synchronously). Each method keeps its
+  /// own SQLite transaction; `run` adds none.
+  ///
+  ///     let (state, pendingCount) = try await persistence.run { persistence in
+  ///       (try persistence.loadCompactState(), try persistence.countOutboxMutations(status: .pending))
+  ///     }
+  package func run<Result: Sendable>(
+    _ body: @Sendable (isolated SQLitePersistenceStore) throws -> Result
+  ) rethrows -> Result {
+    try body(self)
   }
 
   public func bootstrap() throws {
@@ -6622,11 +6648,15 @@ public actor SQLitePersistenceStore {
 
   /// Loads at most the one exact durable queue tail when it remains eligible
   /// for immediate supersession. Any other tail is an ordering barrier and is
-  /// returned as `nil` without decoding its body.
-  func loadImmediateSupersessionTail(
+  /// returned as `nil` without decoding its body. An undecodable or oversized
+  /// tail comes back as `invalidTail`, for
+  /// ``quarantineInvalidImmediateSupersessionTail(_:expectedStoreRevision:expectedOutboxRevision:)``
+  /// to repair before the caller prepares its write. Synchronous, so `transact`
+  /// reads it in the same persistence turn as its other reads (#403).
+  func readImmediateSupersessionTail(
     expectedStoreRevision: Int64,
     expectedOutboxRevision: Int64
-  ) async throws -> InstantOutboxImmediateTailLoad {
+  ) throws -> InstantOutboxImmediateTailRead {
     var invalidTail: InstantOutboxInvalidImmediateTail?
     let load = try readTransaction {
       guard
@@ -6751,8 +6781,16 @@ public actor SQLitePersistenceStore {
         return InstantOutboxImmediateTailLoad(matchesRevisions: false, mutation: nil)
       }
     }
-    guard let invalidTail else { return load }
+    return InstantOutboxImmediateTailRead(load: load, invalidTail: invalidTail)
+  }
 
+  /// Quarantines an invalid tail that ``readImmediateSupersessionTail(expectedStoreRevision:expectedOutboxRevision:)``
+  /// found, if it is still the exact tail at both revisions. Always reports a revision mismatch, so the caller reloads.
+  func quarantineInvalidImmediateSupersessionTail(
+    _ invalidTail: InstantOutboxInvalidImmediateTail,
+    expectedStoreRevision: Int64,
+    expectedOutboxRevision: Int64
+  ) async throws -> InstantOutboxImmediateTailLoad {
     await onInvalidImmediateSupersessionTailReadForTesting?(invalidTail.mutationID)
 
     let didQuarantine = try transaction {
