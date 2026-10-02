@@ -42,6 +42,9 @@ server answer per transaction (Instant's `combine-transact` merges same-shape qu
   `Sources/InstantSwiftDataCore/InstantTransportMutation.swift`, new
   `Tests/InstantSwiftDataCoreTests/InstantTransportDateFormatterTests.swift`, new
   `validation/fixtures/transport-date-encoding.json` and `validation/ts-runner/src/transport-date-encoding-fixture.ts`
+- A prepared-statement cache on the persistence actor, at main's request (2026-10-02 about 12:05 EDT), as its own
+  commit: `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` (already claimed) and new
+  `Tests/InstantSwiftDataCoreTests/SQLiteStatementCacheTests.swift`, added 2026-10-02 12:08 EDT
 - `Tests/InstantSwiftDataCoreTests/InstantCrossSDKRuntimeBenchmarkTests.swift`
 - `Tests/InstantSwiftDataCoreTests/BenchmarkTests.swift` and `CLITests.swift` (hop pins only; CLITests added
   2026-10-02 11:38 EDT)
