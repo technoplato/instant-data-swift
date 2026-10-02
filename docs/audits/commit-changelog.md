@@ -1,11 +1,62 @@
 ## 2026-10-02 14:56:38 EDT — instant-data-swift `d42dd9601416f277393515e31bc3e89d6e4cf3fc`
 Document the v1.9.0 release in docs/releases/v1.9.0.md: build 78's library and every change since v1.8.0, in plain words, with library-78's checks on 01175cff and the open items (#376 #360 #388 #394 #329 #361 #296 #402).
 
+## 2026-10-02 14:26:05 EDT — scribe `4efefa9f9af7dd9557b1a25e4ba9732c87626ce2`
+Release Scribe 0.1 (79).
+
+## 2026-10-02 14:25:37 EDT — scribe `cee929deba4c2519cb13320d9b4bbdc879443e40`
+Merge main's ADR 0034 schema commit and the capture-gap plan into the build 79 integration (#272 #346).
+
 ## 2026-10-02 13:41:26 EDT — instant-data-swift `d3c9a075e0354833351b27e72c9740916e3a84fa`
 Plan the v1.9.0 release (plan 2026-10-02-release-1.9.0) and claim the release document, CHANGELOG.md, PROGRESS.md, and this ledger; note the overlap with library-79's unmerged claims on the same logs.
 
 ## 2026-10-02 13:40:53 EDT — instant-data-swift `0b8f52f7e34fc2460db5c7b63cba790ffa40f7b9`
 Merge build 78's library (agent/claude-opus-5.5/library-78 at 7ecbd129, gated code head 01175cff) into main without fast-forward over eeea9b12, for v1.9.0 (#376 #360 #388 #394 #329 #303 #317 #361 #296).
+
+## 2026-10-02 13:39:08 EDT — scribe `b41557f919cde24fc82d737e55692ad721d1e6c9`
+Merge prod-data-drift-tests: the drift gate's route chunk tests check what each guard promises (#321 #361).
+
+## 2026-10-02 13:38:54 EDT — scribe `c65e23fe1da6168fb0157845145a677d411833c2`
+Merge scribe-mirror: the standing agent's permissions are a setting, and scribe reply --image attaches real images only (#385 #400).
+
+## 2026-10-02 13:38:41 EDT — scribe `3f0a240eccc7d4de39cfc4504477dd47095a13be`
+Merge main's recordingRuntimeEvents schema and the latest plans into the build 79 integration (#406 #321 #361).
+
+## 2026-10-02 13:38:24 EDT — scribe `7ca390b219b99b3cba88ed064338da6d1e269d5e`
+Record the threads panel coverage excuses in the change log (#161 #392).
+
+## 2026-10-02 13:38:24 EDT — scribe `5ee09151ab974adbf4be27a62dd648eb7c0cd60e`
+Excuse the threads panel and Comment on This Line in the voice-actions coverage test (#161 #392).
+
+## 2026-10-02 13:18:46 EDT — scribe `335cbe72955721d459b60ce6254bfbca5605b84c`
+scribe-mirror: scribe reply --image attaches real images only, never credentials, never through a symlink out of bounds (#385 #400).
+
+## 2026-10-02 13:11:19 EDT — scribe `7fa96d49f9a3bdd2dfa76c2706553fbb409ae335`
+scribe-mirror: the standing agent's permissions are a setting, bypass by default per Michael, restricted as an opt-in (#385 #400).
+
+## 2026-10-02 13:01:08 EDT — scribe `a192cfc263dab8db30fde9193b9f43e136ff05c6`
+Merge main's production schema commit and the startup-screen plan into the build 79 integration (#361 #392 #405).
+
+## 2026-10-02 12:50:00 EDT — scribe `86629dd9419f79b0d49f8d42bcfbace3a2d7a8de`
+Merge human-threads: anyone authorized starts a thread on a transcript line and comments in it, with quote replies (#392).
+
+## 2026-10-02 12:49:11 EDT — scribe `1ff8377eee0bd3855eded754771cb86aa62e939b`
+Record the production schema adoption in the change log (#361 #392).
+
+## 2026-10-02 12:48:59 EDT — scribe `37ce2b8a1bcc5ec62539d6392ed55e6855455206`
+Adopt production's schema and rules: main plus account-linking and human-threads, as prod-data pushed them (#361 #392).
+
+## 2026-10-02 12:35:33 EDT — scribe `fc961370aba1f7bc5bf72ef3648665bc14d3e0f1`
+Merge scribe-mirror: a standing Claude Code agent for each new recording, in a dedicated "Scribe" cmux workspace (#385 #400).
+
+## 2026-10-02 12:35:14 EDT — scribe `6c8987bd532f880925a6f391801306f13ad55483`
+Merge live-follow: following a live recording owns the transcript's position, so the newest line stays pinned (#401).
+
+## 2026-10-02 12:32:18 EDT — scribe `d941316fdc6bb872cf8ea5a705cfeaab265d92d4`
+scribe-mirror: the standing agent opens in a dedicated "Scribe" cmux workspace, never the one on screen (#385 #400).
+
+## 2026-10-02 12:26:49 EDT — scribe `6a2d8f5497c5ff85d482d0aa780737c93894ee50`
+scribe-mirror: the standing-agent trigger starts one Claude Code agent per new recording, in a cmux pane (#385 #400).
 
 ## 2026-10-02 11:38:26 EDT — scribe `d83e5958f321dcf1cc6ec9e8de945212b2bd5424`
 Record the installer's stale workspace Package.resolved fix in the change log (#404).
@@ -24,6 +75,12 @@ Merge mac-memory's follow-up: the media-retry test fakes keep their streams, as 
 
 ## 2026-10-02 10:34:09 EDT — scribe `cc908207ff741277973bcda255c66be727139821`
 Merge instant-1.8.0-pin: pin the published instant-data-swift 1.8.0, the build 77 library (#155 #303).
+
+## 2026-10-02 10:06:24 EDT — scribe `0e2bcc69b1009fb32c30c764de1240c19bb4f984`
+Record in ADR 0029 that the voice command exists, what it is called, and what the coverage test excuses (#342 #161).
+
+## 2026-10-02 10:05:44 EDT — scribe `cdc7cf155646c207d64ce2311f85540c5c2bace1`
+Say "tell me about the response that just came in" to hear the newest agent answer (#342 #161).
 
 ## 2026-10-02 10:02:50 EDT — scribe `14db800539baa43e86ebcfeeefa9d86aa818dfeb`
 Merge scribe-mirror-gaps: the mirror's image and clipboard times past capture gaps, and capture.gap events (#272 #346).
