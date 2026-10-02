@@ -1,3 +1,27 @@
+## 2026-10-02 07:35:19 EDT — scribe `ff6e0c56e77c683281ab93a6204c32cdda3ab31a`
+scribe-mirror: AGENTS.md, docs and ADR 0028 for connect, capture, route and triggers (#385 #400).
+
+## 2026-10-02 07:34:40 EDT — scribe `c302d36189e711e9fbdb84e471a4d34f7e25463b`
+scribe-mirror: the scribe CLI works like Tuple's (#385 #400).
+
+## 2026-10-02 07:34:22 EDT — scribe `c49b9db1c0056fd9d2e1102117182f7f4c768ddd`
+scribe-mirror: a router that says who a spoken line is for (#400 #385).
+
+## 2026-10-02 07:16:40 EDT — scribe `16dc3f50b7daed67c01dc8a546aa740b6fbc7f5f`
+Merge main's live-follow plan and claims into the build 79 integration (#401).
+
+## 2026-10-02 07:02:13 EDT — scribe `a05986775a7ed29a9de4a92740d7fd1d9d1c161c`
+scribe-mirror: rule 7 in AGENTS.md, check who an instruction is for before acting on it (#385 #400).
+
+## 2026-10-01 20:47:14 EDT — scribe `7de7b5e4cad5bbfd5d7348504168321f77b3a157`
+Record the orientation reader exemption in the change log (#381 #368).
+
+## 2026-10-01 20:47:00 EDT — scribe `07412875068210b8686e7d401f093ce6c948d8f3`
+Let the runtime context read the physical orientation for its timeline moment (#381 #368).
+
+## 2026-10-01 20:39:37 EDT — scribe `6d8daccca04997f7e97882bda42b78d5a2faf835`
+Merge iphone-duo: the recordings list follows size classes, not the device model (#381).
+
 ## 2026-10-01 20:22:23 EDT — instant-data-swift `01175cff5f84039d20007afee40e3195102da3d8`
 Name what protects the attribute context cache and the observation reader in their SAFETY comments.
 
