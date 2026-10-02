@@ -1,3 +1,9 @@
+## 2026-10-01 19:55:44 EDT — scribe `2b447245f90beb81275c737798e2649c5354c4c5`
+Record the library's live link test in ADR 0024's evidence (#361).
+
+## 2026-10-01 19:54:30 EDT — instant-data-swift `4d928d70f01397625f5cdd1906268acab32f6e89`
+Link and unlink through a second sign-in against a real Instant server's rules, in an environment-gated live test (#361).
+
 ## 2026-10-01 19:39:52 EDT — instant-data-swift `18e52df0adb9bec3a1d48b1992d115924ee8c656`
 End an observation when its consumer stops iterating: returning out of for-await leaked a store observer and the live query (#394).
 
@@ -37,14 +43,23 @@ Keep one row per id in the recording list's projection, the newest by updatedAtM
 ## 2026-10-01 17:56:48 EDT — scribe `68693778b3e55c2eaee0b099c1f39ac3e7382a78`
 Pin offline-written media reaching the same user's other device with a live two-device test on the throwaway app (#329), on agent/claude-opus-5.5/library-78-scribe.
 
+## 2026-10-01 17:30:56 EDT — scribe `07e51707b33c96dfe01eedc7a9cb2086c158ab79`
+Close accountLinks before the production schema push, and roll back with a deny block: Instant leaves a namespace without rules open (#361).
+
 ## 2026-10-01 17:20:19 EDT — instant-data-swift `bc6a0c818358307eaa93f19cbe4e05efca782622`
 Record a live query's answer before its acknowledgement and pin the local-first queryOnce in the querySubs parity test (library-78 item 7, #317).
 
 ## 2026-10-01 17:19:58 EDT — instant-data-swift `95fba702b64f1973b53475fe97cf496dbc987c54`
 Restart a stream writer on the same socket when the server refuses or cannot flush its append, instead of reconnecting (upstream onAppendFailed) (#329 #376).
 
+## 2026-10-01 17:03:01 EDT — scribe `44558453a9b0a5f954e3f2f2151f537e8f6aeaf6`
+Record account linking's soak, iPhone, and Mac evidence, and its progress entry (#361).
+
 ## 2026-10-01 16:41:11 EDT — instant-data-swift `0eb8f502cb4863132924a539cd3b40637d47e0f6`
 Start streams written offline on the server once connected, named by their client id, with a durable reconnect token (#329, ADR 0017), merged into build 78's library at 1f098e0c.
+
+## 2026-10-01 15:49:55 EDT — scribe `21f5e7cf10a055f02278867268f9f218ba8a5efe`
+Correct the account-link steps: the Mac signs in with Google since 10:38, so the Apple identity links from the Mac's card (#361).
 
 ## 2026-10-01 15:44:34 EDT — instant-data-swift `6dce825d80c3cdac96cf9e9ea11fc6dcc9b65cdf`
 Answer a one-shot query from the device when its exact subscription was answered on the open socket, instead of a 5 s round trip (library-78 item 7, #317 #307).
@@ -58,8 +73,20 @@ Resolve refused writes that are only duplicates: a re-send that accepted later w
 ## 2026-10-01 15:28:13 EDT — instant-data-swift `bc605468dcef5b0f5116429ddca0bbf903424097`
 Pin the same-session retry in the permission-service 500 test (#376).
 
+## 2026-10-01 15:07:48 EDT — instant-data-swift `c1b53e517427011a0cea8d42f6f86f9e336d7fb3`
+Link another sign-in from AuthV3 (Apple, Google, or an email code) without changing the session: InstantAuthState linking actions and a Linked sign-ins card behind authV3ShowsLinkedSignIns, off by default (#361).
+
+## 2026-10-01 15:07:01 EDT — instant-data-swift `4473db630827f86d3f1649964224b14dda5a7b38`
+Link one person's Instant identities, such as Apple and Google, through an app-level accountLinks row: the linked identity invites (or creates the row), the other joins and clears the invite, each write accepted before the next; refusals write nothing (#361).
+
+## 2026-10-01 15:06:16 EDT — instant-data-swift `ea6764c7189f4daa2a6f4bae1dcfcfd0f8c69832`
+Sign a second identity in beside the primary client on its own temporary store and connection, so a sign-in proves another identity without promoting, linking, or replacing the primary's session; close() revokes only the tokens it minted (#361).
+
 ## 2026-10-01 14:57:04 EDT — instant-data-swift `378598c8f0699d96a4ab8cf70eb51e8d27800dc7`
 Tell stream observations each append instead of re-reading the whole stream, and retire a stream's reader at done (#329), merged into build 78's library at 1f098e0c.
+
+## 2026-10-01 14:51:53 EDT — scribe `a7a317e157293b4236eddb8151208cfdad35eb1c`
+Show linked sign-ins on the Account screen (iPhone, iPad, Mac): Link another sign-in, the linked list, and Unlink, with every step logged (#361).
 
 ## 2026-10-01 14:08:14 EDT — instant-data-swift `af2928d5d9c40d7f817b5c1e3ddd683b53052c7a`
 Record a refused write under one exclusive attempt when local writes made every attempt stale, instead of ending the receive loop; the measured exhaustion was failClaimedMutation, not acceptMutation (#303).
@@ -70,6 +97,14 @@ Commit the phone-shaped replay as a reusable gate (PhoneReplayGateTests + script
 ## 2026-10-01 13:51:01 EDT — instant-data-swift `8dd3bf28a6bb2a25aed21980ff24c7bdc23382aa`
 Keep the socket on transient server errors: a write or live query the server answers with a 5xx or timeout is retried on the same socket with a growing, jittered backoff, and its subscribers see the error without their streams ending; unrouted errors keep the socket (#376 #360).
 
+## 2026-10-01 13:06:25 EDT — scribe `3c6d2717d37f139bc52e7e6007244d3f3aee05b9`
+Read every account path across linked sign-ins: the list, settings, companion listeners, sharing, and the session-health beat (#361).
+
+## 2026-10-01 10:38:32 EDT — scribe `ffc32f2bd8368c5849cda62c2f7db499c2579909`
+Add a two-credential account-link script for identities stored on this Mac, such as the agent CLI's old guest (#361).
+
+## 2026-10-01 10:14:56 EDT — scribe `799af89c2cefcbf7705d3c14e8359337cff51afd`
+Design account links (ADR draft 0024) and add their schema, rules, and rules regression harness: one person's sign-ins read, write, and share each other's recordings (#361).
 ## 2026-10-01 05:27:00 EDT — instant-data-swift `f9cb539640f7a847bc6af046408efd206c1b1933`
 Apply a server transaction under an exclusive operation-gate hold once local writes have made every optimistic attempt stale, instead of ending the receive loop (#303).
 

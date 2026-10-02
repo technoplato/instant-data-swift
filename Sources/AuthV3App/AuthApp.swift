@@ -32,12 +32,20 @@ public typealias AuthAppConfiguration = AuthV3AppConfiguration
 #if canImport(SwiftUI)
   import SwiftUI
 
+  #if canImport(UIKit)
+    import UIKit
+  #endif
+
   private struct AuthV3AllowsDiscardingGuestSessionKey: EnvironmentKey {
     static let defaultValue = true
   }
 
   private struct AuthV3ShowsDemoCountersKey: EnvironmentKey {
     static let defaultValue = true
+  }
+
+  private struct AuthV3ShowsLinkedSignInsKey: EnvironmentKey {
+    static let defaultValue = false
   }
 
   extension EnvironmentValues {
@@ -72,6 +80,34 @@ public typealias AuthAppConfiguration = AuthV3AppConfiguration
     public var authV3ShowsDemoCounters: Bool {
       get { self[AuthV3ShowsDemoCountersKey.self] }
       set { self[AuthV3ShowsDemoCountersKey.self] = newValue }
+    }
+
+    /// Whether ``AuthV3LoginScreen`` shows "Linked sign-ins" while an account is signed in.
+    ///
+    /// The card lists the sign-ins linked to this account in its `accountLinks` row, unlinks them, and links
+    /// another sign-in with Apple, Google, or an email code. Linking signs the other identity in on a temporary
+    /// second sign-in (``InstantSecondSignIn``), so this device's session never changes. Only apps whose Instant
+    /// schema and permissions declare account links (``InstantAccountLinks``) turn it on; every other app leaves it
+    /// off, or the card's reads and writes fail:
+    ///
+    /// ```swift
+    /// AuthV3LoginScreen()
+    ///   .environment(\.authV3ShowsLinkedSignIns, true)
+    /// ```
+    public var authV3ShowsLinkedSignIns: Bool {
+      get { self[AuthV3ShowsLinkedSignInsKey.self] }
+      set { self[AuthV3ShowsLinkedSignInsKey.self] = newValue }
+    }
+  }
+
+  extension Optional {
+    /// Whether a presentation driven by this optional is showing. Setting `false` clears it.
+    fileprivate var isPresented: Bool {
+      get { self != nil }
+      set {
+        guard !newValue else { return }
+        self = nil
+      }
     }
   }
 
@@ -147,8 +183,12 @@ public typealias AuthAppConfiguration = AuthV3AppConfiguration
     @StateObject private var auth: InstantAuthState<AuthV3User>
 
     @State private var message: String?
+    @State private var linkEmail = ""
+    @State private var linkCode = ""
+    @State private var memberPendingUnlink: InstantAccountLink.Member?
     @Environment(\.authV3AllowsDiscardingGuestSession) private var allowsDiscardingGuestSession
     @Environment(\.authV3ShowsDemoCounters) private var showsDemoCounters
+    @Environment(\.authV3ShowsLinkedSignIns) private var showsLinkedSignIns
     private let allowsProviderSignIn: Bool
 
     public init(
@@ -193,6 +233,9 @@ public typealias AuthAppConfiguration = AuthV3AppConfiguration
                 )
               } else {
                 signedInCard(session)
+              }
+              if showsLinkedSignIns {
+                linkedSignInsCard(session)
               }
             } else {
               emailCard
@@ -366,6 +409,322 @@ public typealias AuthAppConfiguration = AuthV3AppConfiguration
             .buttonStyle(.bordered)
         }
       }
+    }
+
+    private func linkedSignInsCard(_ session: InstantAuthSession) -> some View {
+      authCard {
+        VStack(alignment: .leading, spacing: 14) {
+          sectionHeader(
+            title: "Linked sign-ins",
+            detail: "Sign-ins linked here belong to one account. Linking never signs this device out."
+          )
+          if let link = auth.accountLink, !link.members.isEmpty {
+            ForEach(link.members, id: \.userID) { member in
+              linkedMemberRow(member, session: session)
+            }
+          } else {
+            Text("No other sign-in is linked to this account.")
+              .font(.subheadline)
+              .foregroundStyle(.secondary)
+          }
+          linkingStatusRow
+          Divider()
+          Text("Link another sign-in")
+            .font(.subheadline.weight(.semibold))
+          if allowsProviderSignIn {
+            ForEach(auth.credentialProviders) { provider in
+              Button {
+                linkProviderButtonTapped(provider)
+              } label: {
+                Label(linkTitle(provider), systemImage: provider.systemImage)
+                  .frame(maxWidth: .infinity)
+              }
+              .buttonStyle(.bordered)
+              .controlSize(.large)
+            }
+          }
+          linkEmailCodeControls
+        }
+      }
+      .disabled(isLinkingInProgress)
+      .confirmationDialog(
+        "Unlink this sign-in?",
+        isPresented: $memberPendingUnlink.isPresented,
+        titleVisibility: .visible,
+        presenting: memberPendingUnlink
+      ) { member in
+        Button("Unlink", role: .destructive) {
+          unlinkButtonConfirmed(member)
+        }
+      } message: { member in
+        Text(
+          "\(linkedMemberTitle(member)) stops sharing this account. You can link it again later."
+        )
+      }
+      .task(id: session.userID) {
+        await auth.refreshAccountLink().value
+      }
+    }
+
+    private func linkedMemberRow(
+      _ member: InstantAccountLink.Member,
+      session: InstantAuthSession
+    ) -> some View {
+      HStack(alignment: .center, spacing: 12) {
+        Image(systemName: member.isGuest ? "person.crop.circle.dashed" : "person.crop.circle")
+          .foregroundStyle(.secondary)
+          .accessibilityHidden(true)
+        VStack(alignment: .leading, spacing: 2) {
+          Text(linkedMemberTitle(member))
+            .font(.subheadline.weight(.medium))
+          let details = linkedMemberDetails(member, session: session)
+          if !details.isEmpty {
+            Text(details)
+              .font(.caption)
+              .foregroundStyle(.secondary)
+          }
+        }
+        Spacer(minLength: 8)
+        if member.userID != session.userID {
+          Button("Unlink", role: .destructive) {
+            memberPendingUnlink = member
+          }
+          .buttonStyle(.borderless)
+        }
+      }
+      .accessibilityElement(children: .combine)
+    }
+
+    @ViewBuilder
+    private var linkingStatusRow: some View {
+      switch auth.linking {
+      case .idle:
+        EmptyView()
+      case .signingInSecond(let providerID):
+        linkingProgress("Signing in with \(providerName(providerID))…")
+      case .sendingCode:
+        linkingProgress("Sending a code…")
+      case .codeSent(let email):
+        Label("Code sent to \(email).", systemImage: "envelope")
+          .font(.footnote)
+          .foregroundStyle(.secondary)
+      case .linking:
+        linkingProgress("Linking…")
+      case .unlinking:
+        linkingProgress("Unlinking…")
+      case .failed(let error):
+        VStack(alignment: .leading, spacing: 4) {
+          Label(error.message, systemImage: "exclamationmark.triangle.fill")
+            .font(.footnote)
+            .foregroundStyle(.red)
+          Text(error.recovery)
+            .font(.caption)
+            .foregroundStyle(.secondary)
+        }
+        .accessibilityElement(children: .combine)
+      }
+    }
+
+    private func linkingProgress(_ text: String) -> some View {
+      HStack(spacing: 8) {
+        ProgressView()
+          .controlSize(.small)
+        Text(text)
+          .font(.footnote)
+          .foregroundStyle(.secondary)
+      }
+      .accessibilityElement(children: .combine)
+    }
+
+    @ViewBuilder
+    private var linkEmailCodeControls: some View {
+      if let email = auth.linkCodeEmail {
+        TextField("Code sent to \(email)", text: $linkCode)
+          .textFieldStyle(.roundedBorder)
+          .textContentType(.oneTimeCode)
+          .onSubmit(linkCodeSubmitted)
+        HStack {
+          Button("Link", action: linkCodeSubmitted)
+            .buttonStyle(.borderedProminent)
+          Button("Use a different email") {
+            linkCode = ""
+            auth.cancelLinking()
+          }
+          .buttonStyle(.plain)
+          .foregroundStyle(Color.accentColor)
+        }
+      } else {
+        TextField("Email address", text: $linkEmail)
+          .textFieldStyle(.roundedBorder)
+          .textContentType(.emailAddress)
+          .onSubmit(sendLinkCodeButtonTapped)
+        Button(action: sendLinkCodeButtonTapped) {
+          Label("Send code", systemImage: "envelope")
+            .frame(maxWidth: .infinity)
+        }
+        .buttonStyle(.bordered)
+        .controlSize(.large)
+      }
+    }
+
+    private var isLinkingInProgress: Bool {
+      switch auth.linking {
+      case .signingInSecond, .sendingCode, .linking, .unlinking: true
+      case .idle, .codeSent, .failed: false
+      }
+    }
+
+    private func linkTitle(_ provider: AuthProvider) -> String {
+      "Link \(providerName(provider.id))"
+    }
+
+    private func providerName(_ providerID: InstantAuthProviderID) -> String {
+      switch InstantAccountLinkProvider(providerID: providerID) {
+      case .apple: "Apple"
+      case .google: "Google"
+      case .magicCode: "an email code"
+      case .guest: "a guest session"
+      case .refreshToken: "a stored sign-in"
+      case nil: providerID.rawValue
+      }
+    }
+
+    private func linkedMemberTitle(_ member: InstantAccountLink.Member) -> String {
+      member.email ?? "Guest \(member.userID.prefix(8))"
+    }
+
+    private func linkedMemberDetails(
+      _ member: InstantAccountLink.Member,
+      session: InstantAuthSession
+    ) -> String {
+      var details: [String] = []
+      switch member.provider {
+      case .apple: details.append("Apple")
+      case .google: details.append("Google")
+      case .magicCode: details.append("Email code")
+      case .guest: details.append("Guest")
+      case .refreshToken: details.append("Stored sign-in")
+      case nil: break
+      }
+      if member.userID == session.userID {
+        details.append("This device")
+      }
+      return details.joined(separator: " · ")
+    }
+
+    private func linkProviderButtonTapped(_ provider: AuthProvider) {
+      auth.linkAnotherSignIn(
+        provider,
+        deviceName: Self.linkingDeviceName,
+        onLinked: { link in
+          message = "\(providerName(provider.id)) is linked to this account."
+          postLinked(link, providerID: provider.id)
+        },
+        onFailure: { error in
+          postLinkFailed(error, providerID: provider.id)
+        }
+      )
+    }
+
+    private func sendLinkCodeButtonTapped() {
+      linkCode = ""
+      auth.sendLinkMagicCode(
+        email: linkEmail,
+        onFailure: { error in
+          postLinkFailed(error, providerID: .magicCode)
+        }
+      )
+    }
+
+    private func linkCodeSubmitted() {
+      guard let email = auth.linkCodeEmail else { return }
+      auth.verifyLinkMagicCode(
+        email: email,
+        code: linkCode,
+        deviceName: Self.linkingDeviceName,
+        onLinked: { link in
+          linkCode = ""
+          linkEmail = ""
+          message = "The email sign-in is linked to this account."
+          postLinked(link, providerID: .magicCode)
+        },
+        onFailure: { error in
+          postLinkFailed(error, providerID: .magicCode)
+        }
+      )
+    }
+
+    private func unlinkButtonConfirmed(_ member: InstantAccountLink.Member) {
+      let linkID = auth.accountLink?.id ?? ""
+      auth.unlink(
+        memberUserID: member.userID,
+        onUnlinked: { _ in
+          message = "\(linkedMemberTitle(member)) is no longer linked."
+          // Hosts log these; never put tokens or email addresses in them.
+          NotificationCenter.default.post(
+            name: Notification.Name("recipes.auth.link.unlinked"),
+            object: nil,
+            userInfo: [
+              "linkID": linkID,
+              "userID": auth.session?.userID ?? "",
+              "memberUserID": member.userID,
+            ]
+          )
+        },
+        onFailure: { error in
+          postLinkFailed(error, providerID: nil)
+        }
+      )
+    }
+
+    private func postLinked(_ link: InstantAccountLink, providerID: InstantAuthProviderID) {
+      // Hosts log these; never put tokens or email addresses in them.
+      NotificationCenter.default.post(
+        name: Notification.Name("recipes.auth.link.linked"),
+        object: nil,
+        userInfo: [
+          "linkID": link.id,
+          "userID": auth.session?.userID ?? "",
+          "memberUserIDs": link.members.map(\.userID).joined(separator: ","),
+          "providerID": providerID.rawValue,
+        ]
+      )
+    }
+
+    private func postLinkFailed(_ error: InstantError, providerID: InstantAuthProviderID?) {
+      NotificationCenter.default.post(
+        name: Notification.Name("recipes.auth.link.failed"),
+        object: nil,
+        userInfo: [
+          "providerID": providerID?.rawValue ?? "",
+          "userID": auth.session?.userID ?? "",
+          "linkID": auth.accountLink?.id ?? "",
+          "code": error.code.rawValue,
+          "operation": error.operation,
+          // An auth message can name the email address a sign-in used.
+          "error": Self.redactingEmailAddresses(error.message),
+        ]
+      )
+    }
+
+    /// `text` with every email address replaced by `<email>`, for notifications hosts log.
+    static func redactingEmailAddresses(_ text: String) -> String {
+      text.replacingOccurrences(
+        of: #"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}"#,
+        with: "<email>",
+        options: .regularExpression
+      )
+    }
+
+    /// The device kind written into the labels of the identities this device links.
+    private static var linkingDeviceName: String? {
+      #if os(macOS) || targetEnvironment(macCatalyst)
+        return "Mac"
+      #elseif canImport(UIKit) && !os(watchOS)
+        return UIDevice.current.model
+      #else
+        return nil
+      #endif
     }
 
     private func statusCard(_ text: String) -> some View {

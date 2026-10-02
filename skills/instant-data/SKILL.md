@@ -133,6 +133,27 @@ wrapper with an explicit `nil` key so it does not start a broad observation.
   identity's rows, drain the outbox (`waitForAllPendingMutations`) before an upgrade
   or an account switch.
 
+### Second sign-ins and account links (#361)
+
+- A client holds one auth session per store. Signing in replaces it, and the exchanges forward the current
+  token (a guest's for magic code and OAuth, any for ID tokens), so a sign-in on the primary client promotes or
+  links the primary identity. To prove a second identity, use `InstantSecondSignIn.open(beside:registering:)`:
+  a temporary client of the same app with its own store and connection and no session. It never touches the
+  primary's session, store, outbox, or `InstantClientID.current`.
+- `open(sharingSessionOf:)` adopts the primary's own refresh token (verified, never minted) so the primary
+  identity can write at once without queueing behind its outbox. `adoptRefreshToken(_:)` does the same for a
+  stored credential. `close()` revokes only a token the second sign-in minted, and deletes its store. Call it
+  on every path.
+- `transactAwaitingServer(_:operation:timeout:)` and `queryServer(_:timeout:)` are the explicitly named server
+  waits for these flows (5 seconds). Ordinary features still use `transact`, which never waits for the server.
+- Instant links only guests and joins provider sign-ins only on matching emails. `InstantAccountLinks` is the
+  app-level link: an `accountLinks` row whose `members` (has many `$users`, reverse `$users.accountLink` has
+  one) lists one person's identities. An identity links only itself: the inviter writes the invite (or creates
+  the row), then the invited identity joins and clears the invite, each write accepted before the next. Paste
+  `InstantAccountLinks.permissionRulesTemplate` into the app's rules and add the app's own member read clauses.
+- AuthV3: `InstantAuthState.linkAnotherSignIn`, `sendLinkMagicCode` / `verifyLinkMagicCode`, `unlink`,
+  `refreshAccountLink`; `AuthV3LoginScreen` shows them when `authV3ShowsLinkedSignIns` is on (off by default).
+
 ### Live speech write shape (Scribe product, library must make cheap)
 
 - **Recipe:** `docs/adr/0015-sqlite-data-parity-ergonomics/open-segment-write-recipe.md`

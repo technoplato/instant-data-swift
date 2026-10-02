@@ -10,6 +10,20 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## October 1st, 2026 at 7:55:15 p.m. EDT — `4d928d70f013` Link and unlink through a second sign-in against a real Instant server's rules, in an environment-gated live test (#361)
+
+- **Implementation commit:** `4d928d70f01397625f5cdd1906268acab32f6e89`
+- **Change:** Link and unlink through a second sign-in against a real Instant server's rules, in an environment-gated live test (#361)
+- **Details:**
+  - InstantAccountLinksLiveTests: a guest primary, InstantSecondSignIn with a magic code from the admin API (send only records the pending code; Instant's mail provider refuses example.com; verify is live), InstantAccountLinks link, reads from both sides, unlink, close; the primary's session never changes.
+  - Runs only with INSTANT_ACCOUNT_LINK_LIVE_APP_ID (never production), INSTANT_ACCOUNT_LINK_LIVE_EMAIL, and INSTANT_ACCOUNT_LINK_LIVE_CODE.
+  - Evidence on bd40c50a: passed in 5.0 s (guest acd8f353, member 3034496e, link 27aa1dce; no accountLinks row afterwards). A first run failed before any write because signInWithMagicCode needs the pending code a send records. Issue #361.
+- **Files:**
+  - `Tests/InstantSwiftDataTests/InstantAccountLinksLiveTests.swift` — new environment-gated live test of the link path against real rules
+- **User context (verbatim):**
+  > Let's add a functionality to link accounts then. If you have Apple, I want to be able to link it with Google as well so that we aggregate all these different recordings. So it's a library change and
+- **SpecStory:** unavailable — unavailable — Claude Code agent session (account-linking); no SpecStory capture configured for this session.
+
 ## October 1st, 2026 at 7:40:29 p.m. EDT — `18e52df0adb9` End an observation when its consumer stops iterating: returning out of for-await leaked a store observer and the live query (#394)
 
 - **Implementation commit:** `18e52df0adb9bec3a1d48b1992d115924ee8c656`
@@ -233,6 +247,53 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
   > fix this please so it works efficiently as as well as the typescript core library
 - **SpecStory:** unavailable — unavailable — Claude Code agent session (library-78); no SpecStory capture configured for this session.
 
+## October 1st, 2026 at 3:07:48 p.m. EDT — `c1b53e517427` Link another sign-in from AuthV3 without changing the session, behind authV3ShowsLinkedSignIns (#361)
+
+- **Implementation commit:** `c1b53e517427011a0cea8d42f6f86f9e336d7fb3`
+- **Change:** AuthV3 links another sign-in (Apple, Google, or an email code) without changing the session, behind the authV3ShowsLinkedSignIns switch, off by default (#361).
+- **Details:**
+  - InstantAuthState gains accountLink, linking (idle, signingInSecond, sendingCode, codeSent, linking, unlinking, failed), and linkCodeEmail, with refreshAccountLink, linkAnotherSignIn, sendLinkMagicCode and verifyLinkMagicCode (a held second sign-in; a wrong code keeps it), cancelLinking, and unlink, each with a using-client overload. Every second sign-in closes on success, failure, and cancel; a session change to another user clears the link and cancels a pending code.
+  - AuthV3LoginScreen shows a Linked sign-ins card only when authV3ShowsLinkedSignIns is on: members (email, or Guest and 8 characters of the id; provider; This device), Unlink behind a confirmation, Link Apple or Google, and an email code. It posts recipes.auth.link.linked {linkID, userID, memberUserIDs, providerID}, .unlinked {linkID, userID, memberUserID}, and .failed {providerID, userID, linkID, code, operation, error with email addresses redacted}. The instant-data skill documents second sign-ins and account links.
+  - Tests: InstantAuthStateLinkingTests 5 (red at no-op skeletons), AuthV3AppTests +2 (the switch default and the email redaction; not observed red separately). Final run, load ~800: 183 tests in 35 suites passed, including AuthV3AppTests, V3AuthLoginFixtureTests, RecipesV3AppTests, and the guest-promotion suites.
+- **Files:**
+  - `Sources/InstantSwiftData/InstantAuth.swift` — InstantAccountLinkingStatus and InstantAuthState's linking actions
+  - `Sources/AuthV3App/AuthApp.swift` — authV3ShowsLinkedSignIns and the Linked sign-ins card with its notifications
+  - `Tests/AuthV3AppTests/AuthV3AppTests.swift` — switch default and email redaction tests
+  - `Tests/InstantSwiftDataTests/InstantAccountLinksTests.swift` — InstantAuthStateLinkingTests against the fake server
+  - `skills/instant-data/SKILL.md` — second sign-ins and account links guidance
+- **User context (verbatim):**
+  > Let's add a functionality to link accounts then. If you have Apple, I want to be able to link it with Google as well so that we aggregate all these different recordings. So it's a library change and
+- **SpecStory:** unavailable — Claude Code agent session (account-linking-library); no SpecStory capture for this session
+
+## October 1st, 2026 at 3:07:01 p.m. EDT — `4473db630827` Link one person's Instant identities through an app-level accountLinks row (#361)
+
+- **Implementation commit:** `4473db630827f86d3f1649964224b14dda5a7b38`
+- **Change:** One person's identities link through an app-level accountLinks row, an invite from the linked identity and a join from the other, each accepted before the next (#361).
+- **Details:**
+  - Instant links only guests and joins two provider sign-ins only on matching emails. An accountLinks row's members link (has many $users; reverse $users.accountLink, has one) lists one person's identities, with provider, linkedAtMs, and deviceName labels in membersJSON. The rules let an identity link only itself, so the linked identity writes the invite (or creates the row) through a twin of the primary's session, and the invited identity joins and clears the invite through its second sign-in.
+  - link() reads both identities from Instant first: the same link returns unchanged with no writes; different links refuse with no writes; the same account refuses. unlink() removes a member and its label, or deletes the row when fewer than two members would remain. Every read first checks the store declares the account-link schema and names the fix. permissionRulesTemplate publishes the rules verbatim. Failures name their step (connecting, reading the account link, inviting, joining, unlinking).
+  - Tests (fake websockets per temporary client, frames attributed to the refresh token that opened each socket): 18, including exact tx-steps for the create, invite, and join cases, the join held until the invite is accepted, an unanswered invite that sends no join and closes the twin, and a primary that registers the attributes. Red at a skeleton that threw; final run, load ~800: 183 tests in 35 suites passed.
+- **Files:**
+  - `Sources/InstantSwiftData/InstantAccountLinks.swift` — account links: attributes, rules template, read, link, unlink, schema check
+  - `Tests/InstantSwiftDataTests/InstantAccountLinksTests.swift` — the five link cases, refusals, timeout, unlink, schema, attributes, and rules tests
+- **User context (verbatim):**
+  > Let's add a functionality to link accounts then. If you have Apple, I want to be able to link it with Google as well so that we aggregate all these different recordings. So it's a library change and
+- **SpecStory:** unavailable — Claude Code agent session (account-linking-library); no SpecStory capture for this session
+
+## October 1st, 2026 at 3:06:16 p.m. EDT — `ea6764c7189f` Sign a second identity in beside the primary client, on its own temporary store and connection (#361)
+
+- **Implementation commit:** `ea6764c7189f4daa2a6f4bae1dcfcfd0f8c69832`
+- **Change:** A second identity signs in beside the primary client on its own temporary store and connection, without changing the primary's session (#361).
+- **Details:**
+  - A client keeps one auth session per store, and its exchanges forward the current refresh token (a guest's for magic code and OAuth, any for ID tokens), so a sign-in on the primary promotes or links the primary identity. InstantSecondSignIn copies the primary's endpoints, exchanges, and live transport onto a temporary store under $TMPDIR/InstantSecondSignIn with no session; its sign-ins send no refresh token, and the primary's session, outbox, and InstantClientID.current never change.
+  - open(sharingSessionOf:) and adoptRefreshToken adopt a verified token and never revoke it. transactAwaitingServer and queryServer wait up to 5 seconds and name the write in a timeout. close() revokes every token this sign-in's own exchanges minted (recorded at the exchange, so a sign-in that finishes after close is revoked too), closes the connection, and deletes the store.
+  - Tests (fake auth endpoints and websockets): 15. Red at a skeleton that signed in on the primary: the guest's token went to verify_magic_code and the primary session became user-b. The first green run caught a leak (a sign-in finishing after close minted a token the deleted store refused, never revoked), fixed with the minted-token ledger. Final run, load ~800: 183 tests in 35 suites passed.
+- **Files:**
+  - `Sources/InstantSwiftData/InstantSecondSignIn.swift` — the second sign-in: temporary configuration, sign-ins, server waits, close, minted-token ledger
+  - `Tests/InstantSwiftDataTests/InstantSecondSignInTests.swift` — fake Instant server (auth endpoints, websockets, triples) and the second sign-in tests
+- **User context (verbatim):**
+  > Let's add a functionality to link accounts then. If you have Apple, I want to be able to link it with Google as well so that we aggregate all these different recordings. So it's a library change and
+- **SpecStory:** unavailable — Claude Code agent session (account-linking-library); no SpecStory capture for this session
 ## October 1st, 2026 at 1:51:46 p.m. EDT — `8dd3bf28a6bb` Keep the socket on transient server errors: retry the write or the live query on it with backoff, and tell subscribers (#376 #360)
 
 - **Implementation commit:** `8dd3bf28a6bb2a25aed21980ff24c7bdc23382aa`

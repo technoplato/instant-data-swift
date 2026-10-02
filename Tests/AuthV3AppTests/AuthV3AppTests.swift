@@ -62,6 +62,25 @@ import Testing
       #expect(EnvironmentValues().authV3ShowsDemoCounters)
     }
 
+    /// Linked sign-ins read and write `accountLinks`, which only apps that declare account links have (#361).
+    @Test @MainActor
+    func linkedSignInsStayHiddenUnlessTheAppTurnsThemOn() {
+      #expect(EnvironmentValues().authV3ShowsLinkedSignIns == false)
+      let screen: any View = AuthV3LoginScreen().environment(\.authV3ShowsLinkedSignIns, true)
+      _ = screen
+    }
+
+    /// Hosts log `recipes.auth.link.failed`, and an auth message can name the email address a sign-in used.
+    @Test @MainActor
+    func linkFailureNotificationsCarryNoEmailAddress() {
+      expectNoDifference(
+        AuthV3LoginScreen.redactingEmailAddresses(
+          "No pending magic code exists for 'b.person+scribe@example.co.uk'; retry b@x.io."
+        ),
+        "No pending magic code exists for '<email>'; retry <email>."
+      )
+    }
+
     #if os(macOS)
       /// The counters card creates the demo's public counter row when it appears.
       ///
