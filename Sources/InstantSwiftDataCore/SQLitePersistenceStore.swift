@@ -857,6 +857,14 @@ public actor SQLitePersistenceStore {
   private var didTraceInitialStateLoad = false
   private var cacheResidencyMetrics = InstantPersistenceCacheResidencyMetrics()
   private var statementCacheMetrics = SQLiteStatementCacheMetrics()
+  /// The SQLite transaction a `run(inOneTransaction:_:)` turn holds open; `nil` outside one.
+  private var turnTransaction: InstantPersistenceTurnTransaction?
+  /// Quarantine reports from a write turn's steps, issued once the turn commits, as each step's own commit did.
+  private var turnOutboxQuarantineIssueBatches: [InstantOutboxQuarantineIssueBatch] = []
+  private var transactionBeginCount = 0
+  private var statementsOutsideTransactionCount = 0
+  /// Tests turn this off to measure a runtime path as it ran before turns had transactions.
+  private var opensTurnTransactions = true
   /// Test-visible count of durable outbox JSON bodies decoded by this actor.
   /// This pins acknowledgement and delivery complexity to their selected rows.
   private var decodedOutboxBodyCount = 0
@@ -1443,6 +1451,85 @@ public actor SQLitePersistenceStore {
     _ body: @Sendable (isolated SQLitePersistenceStore) throws -> Result
   ) rethrows -> Result {
     try body(self)
+  }
+
+  /// ``run(_:)`` in one SQLite transaction (#403).
+  ///
+  /// Each method called in `body` opened its own transaction, and each statement outside one ran in its own implicit
+  /// transaction, so a turn of six reads took and released SQLite's locks six times or more. In a turn they all run in
+  /// one: `.read` begins `DEFERRED` and admits only reads, and `.write` begins `IMMEDIATE`, which any turn that may
+  /// write needs (reading the outbox can quarantine a row it cannot decode).
+  ///
+  /// A write turn keeps what each method's own transaction guaranteed. Each method's writes run in a savepoint, so a
+  /// method that throws leaves nothing behind. The turn commits even when a method throws, because the methods before it
+  /// had committed on their own; then it rethrows. Quarantine reports go out after the commit, one per method, as they
+  /// did. If the commit itself fails, every write in the turn is gone, so the turn drops the store's memory cache before
+  /// it throws.
+  ///
+  ///     let (state, pendingCount) = try await persistence.run(inOneTransaction: .read) { persistence in
+  ///       (try persistence.loadCompactState(), try persistence.countOutboxMutations(status: .pending))
+  ///     }
+  package func run<Value: Sendable>(
+    inOneTransaction kind: InstantPersistenceTurnTransaction,
+    _ body: @Sendable (isolated SQLitePersistenceStore) throws -> Value
+  ) throws -> Value {
+    precondition(
+      turnTransaction == nil && activeOutboxQuarantineIssueBatch == nil,
+      "SQLite persistence transactions must not be nested."
+    )
+    guard opensTurnTransactions else { return try body(self) }
+    transactionBeginCount += 1
+    try execute(kind == .write ? "BEGIN IMMEDIATE TRANSACTION" : "BEGIN DEFERRED TRANSACTION")
+    turnTransaction = kind
+    let outcome: Swift.Result<Value, any Error>
+    do {
+      outcome = .success(try body(self))
+    } catch {
+      outcome = .failure(error)
+    }
+    turnTransaction = nil
+    let issueBatches = turnOutboxQuarantineIssueBatches
+    turnOutboxQuarantineIssueBatches = []
+    do {
+      try execute("COMMIT")
+    } catch {
+      try? execute("ROLLBACK")
+      invalidateMemoryCache()
+      discardSpeculativeRelationStorageMarker()
+      if case let .failure(methodError) = outcome { throw methodError }
+      throw error
+    }
+    for issueBatch in issueBatches {
+      reportOutboxQuarantineIssueBatch(issueBatch)
+    }
+    return try outcome.get()
+  }
+
+  /// The SQLite transactions this store began since it opened, a turn counting once, and the statements it ran outside
+  /// any transaction, each of which SQLite wraps in its own (#403).
+  package func transactionCountsForTesting() -> SQLiteTransactionCounts {
+    SQLiteTransactionCounts(
+      began: transactionBeginCount,
+      statementsOutsideTransaction: statementsOutsideTransactionCount
+    )
+  }
+
+  /// With `false`, ``run(inOneTransaction:_:)`` runs its body as ``run(_:)`` does, as turns ran before #403.
+  package func setOpensTurnTransactionsForTesting(_ opens: Bool) {
+    opensTurnTransactions = opens
+  }
+
+  /// Runs `statements` in one ``transaction(_:)`` and then throws `error`, if any, for tests (#403).
+  package func executeInTransactionForTesting(
+    _ statements: [String],
+    thenThrowing error: (any Error)? = nil
+  ) throws {
+    try transaction {
+      for statement in statements {
+        try execute(statement)
+      }
+      if let error { throw error }
+    }
   }
 
   public func bootstrap() throws {
@@ -12150,6 +12237,15 @@ public actor SQLitePersistenceStore {
       activeOutboxQuarantineIssueBatch == nil,
       "SQLite persistence transactions must not be nested."
     )
+    switch turnTransaction {
+    case .some(.write):
+      return try turnStep(body)
+    case .some(.read):
+      preconditionFailure("A read turn cannot write; run the turn with .write.")
+    case .none:
+      break
+    }
+    transactionBeginCount += 1
     try execute("BEGIN IMMEDIATE TRANSACTION")
     activeOutboxQuarantineIssueBatch = InstantOutboxQuarantineIssueBatch()
     do {
@@ -12162,18 +12258,47 @@ public actor SQLitePersistenceStore {
     } catch {
       try? execute("ROLLBACK")
       activeOutboxQuarantineIssueBatch = nil
-      // Marker helpers participate in the same transaction but live on the actor. A rollback must
-      // discard their speculative cache so the next writer reloads the durable marker instead of
-      // trusting state that SQLite did not commit.
-      installedDeclaredRelationStorageMarker = nil
-      installedDeclaredRelationStorageObsoleteAttributeIDs = []
-      didLoadDeclaredRelationStorageMarker = false
+      discardSpeculativeRelationStorageMarker()
       throw error
     }
   }
 
+  /// One method's ``transaction(_:)`` inside a write turn (#403): a savepoint makes it as atomic as its own
+  /// transaction was, and the turn commits it.
+  private func turnStep<Value>(_ body: () throws -> Value) throws -> Value {
+    try execute("SAVEPOINT instant_turn_step")
+    activeOutboxQuarantineIssueBatch = InstantOutboxQuarantineIssueBatch()
+    do {
+      let value = try body()
+      try execute("RELEASE instant_turn_step")
+      if let issueBatch = activeOutboxQuarantineIssueBatch {
+        turnOutboxQuarantineIssueBatches.append(issueBatch)
+      }
+      activeOutboxQuarantineIssueBatch = nil
+      return value
+    } catch {
+      try? execute("ROLLBACK TO instant_turn_step")
+      try? execute("RELEASE instant_turn_step")
+      activeOutboxQuarantineIssueBatch = nil
+      discardSpeculativeRelationStorageMarker()
+      throw error
+    }
+  }
+
+  /// Marker helpers participate in the same transaction but live on the actor. A rollback must discard their
+  /// speculative cache so the next writer reloads the durable marker instead of trusting state that SQLite did not
+  /// commit.
+  private func discardSpeculativeRelationStorageMarker() {
+    installedDeclaredRelationStorageMarker = nil
+    installedDeclaredRelationStorageObsoleteAttributeIDs = []
+    didLoadDeclaredRelationStorageMarker = false
+  }
+
   @discardableResult
   private func readTransaction<Value>(_ body: () throws -> Value) throws -> Value {
+    // Inside a turn, a read runs in the turn's transaction.
+    if turnTransaction != nil { return try body() }
+    transactionBeginCount += 1
     try execute("BEGIN DEFERRED TRANSACTION")
     do {
       let value = try body()
@@ -16004,6 +16129,9 @@ public actor SQLitePersistenceStore {
   /// evicting the least recently used, and is finalized before the connection closes and after any schema change.
   private func prepare(_ sql: String, statement: inout OpaquePointer?) throws {
     try ensureOpenConnection()
+    if sqlite3_get_autocommit(connection.raw) != 0, !sql.hasPrefix("BEGIN") {
+      statementsOutsideTransactionCount += 1
+    }
     if var cached = connection.statements[sql], !cached.isInUse {
       connection.statementClock &+= 1
       cached.lastUse = connection.statementClock
@@ -16257,6 +16385,32 @@ private struct SQLiteCachedStatement {
   var handle: OpaquePointer
   var lastUse: UInt64
   var isInUse: Bool
+}
+
+/// The SQLite transaction a persistence turn runs in (#403); see ``SQLitePersistenceStore/run(inOneTransaction:_:)``.
+package enum InstantPersistenceTurnTransaction: Sendable {
+  /// `BEGIN DEFERRED`: reads only.
+  case read
+  /// `BEGIN IMMEDIATE`: the turn's methods may write.
+  case write
+}
+
+/// SQLite transactions a persistence store began, and statements it ran outside one (#403).
+package struct SQLiteTransactionCounts: Equatable, Sendable {
+  package var began: Int
+  package var statementsOutsideTransaction: Int
+
+  package init(began: Int, statementsOutsideTransaction: Int) {
+    self.began = began
+    self.statementsOutsideTransaction = statementsOutsideTransaction
+  }
+
+  package static func - (lhs: Self, rhs: Self) -> Self {
+    Self(
+      began: lhs.began - rhs.began,
+      statementsOutsideTransaction: lhs.statementsOutsideTransaction - rhs.statementsOutsideTransaction
+    )
+  }
 }
 
 /// What the persistence store's statement cache has done since it opened (#403).
