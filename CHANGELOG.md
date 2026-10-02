@@ -10,6 +10,20 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## October 1st, 2026 at 8:45:52 p.m. EDT — `01175cff5f84` Name what protects the attribute context cache and the observation reader in their SAFETY comments
+
+- **Implementation commit:** `01175cff5f84039d20007afee40e3195102da3d8`
+- **Change:** The attribute context cache and the observation reader name what protects them in their SAFETY comments.
+- **Details:**
+  - SwiftConcurrencyGuidanceTests.uncheckedSendableConformancesDocumentProtectionMechanism requires every production @unchecked Sendable to name its lock, actor, or executor. Library-77's InstantLiveRefreshAttributeContextCache (f5fed905) had no SAFETY comment, so the test failed on 956fce52 and every v1.8.0 gate run (the release agent's finding); its NSLock guards all its state.
+  - Library-78's observation reader (18e52df0) now names the consuming task's executor as what serializes it. The guidance test passes in library-78's gate.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantLiveRefreshApplication.swift` — SAFETY comment on the attribute context cache
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — SAFETY comment on the observation reader
+- **User context (verbatim):**
+  > fix this please so it works efficiently as as well as the typescript core library
+- **SpecStory:** unavailable — unavailable — Claude Code agent session (library-78); no SpecStory capture configured for this session.
+
 ## October 1st, 2026 at 7:55:15 p.m. EDT — `4d928d70f013` Link and unlink through a second sign-in against a real Instant server's rules, in an environment-gated live test (#361)
 
 - **Implementation commit:** `4d928d70f01397625f5cdd1906268acab32f6e89`

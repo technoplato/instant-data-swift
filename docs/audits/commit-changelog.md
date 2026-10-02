@@ -1,3 +1,6 @@
+## 2026-10-01 20:22:23 EDT — instant-data-swift `01175cff5f84039d20007afee40e3195102da3d8`
+Name what protects the attribute context cache and the observation reader in their SAFETY comments.
+
 ## 2026-10-01 19:55:44 EDT — scribe `2b447245f90beb81275c737798e2649c5354c4c5`
 Record the library's live link test in ADR 0024's evidence (#361).
 
