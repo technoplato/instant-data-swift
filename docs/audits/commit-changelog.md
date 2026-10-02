@@ -1,3 +1,12 @@
+## 2026-10-02 11:38:26 EDT — scribe `d83e5958f321dcf1cc6ec9e8de945212b2bd5424`
+Record the installer's stale workspace Package.resolved fix in the change log (#404).
+
+## 2026-10-02 11:38:16 EDT — scribe `5883bb93c339c48fcb60bb6c272866f78f5dec0a`
+Remove the stale generated workspace Package.resolved before every published build (#404).
+
+## 2026-10-02 11:36:51 EDT — scribe `60b3032cc3d656d9ad5229b92318905f52cb7f95`
+Plan the installer fix for the stale workspace Package.resolved and claim its paths (#404).
+
 ## 2026-10-02 11:32:55 EDT — scribe `ad729056a5dac0ee8cca219450c031bf385d7be8`
 Merge main's mac-memory handoff note into the build 79 integration (#394).
 
