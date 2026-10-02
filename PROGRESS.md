@@ -1,3 +1,86 @@
+## 2026-10-02 14:56:59 EDT — v1.9.0 on main: build 78's library merged and documented; this entry's commit is the release commit (#376 #360 #388 #394 #329 #361 #296)
+
+- **Owner:** library-78 (`claude-opus-5.5-library-78`, workLog agentId `claude-code/claude-opus-5.5/library-78`), plan
+  `2026-10-02-release-1.9.0` (`d3c9a075`), under Michael's maintainer authorization (to the coordinating session on
+  2026-10-02 at about 12:10 EDT): "Publish the library once it's checked fast. Yes."
+- **main:** `0b8f52f7` merges `agent/claude-opus-5.5/library-78` (`7ecbd129`: gated code head `01175cff` plus ledgers)
+  without fast-forward over `eeea9b12`; the merged tree equals `7ecbd129`'s. Release document `docs/releases/v1.9.0.md`
+  (`d42dd960`, passes `scripts/validate-release-version.sh 1.9.0`). This entry's commit is the release commit: the
+  annotated tag `v1.9.0` points at it, and `gh release create v1.9.0 --verify-tag --latest` publishes it.
+- **Checks:** the fast checks below (library-78's entry), as authorized. The release gate
+  (`validation/run-performance-gate.sh live`) did not run; the tag message and the release notes name it with the other
+  open items.
+- **Next:** Scribe pins `exact: "1.9.0"` together with `library-78-scribe` (`c2343b26`, media by `streamClientID`);
+  library-79 rebases onto v1.9.0; #402 is build 79's library work.
+
+## 2026-10-02 14:56:58 EDT — library-78: the socket stays open through server errors, failed live queries recover and say so, duplicate writes are not refused, and a list never repeats a row (#376 #360 #388 #394 #329 #303 #317 #361)
+
+- **Branch:** `agent/claude-opus-5.5/library-78` from build 77's `956fce52`, merged into main without fast-forward as
+  `0b8f52f7` for v1.9.0 (plan `agent-presence/claude-opus-5.5/plans/2026-10-01-library-78/PLAN.md`). Gated code head
+  **`01175cff5f84039d20007afee40e3195102da3d8`**. Later commits change no source, test, or package file: ledgers and
+  `6c036d5c`, a docs-only merge of library main (v1.8.0, `eeea9b12`).
+- **Goal** (Michael, verbatim): "fix this please so it works efficiently as as well as the typescript core library". On
+  refused writes: "I want to know why rights are refused in the first place? I don't think they really should be". On
+  reconnects: "Why couldn't it just reconnect? Yeah, why are the reconnects there in the first place?"
+- **Commits** (implementation; each has its change-log and ledger entry):
+  - `8dd3bf28` (#376 #360): a transient server error on a write or an add-query keeps the socket; the write or query is
+    retried on it after 250 ms doubling to 5 s, jittered 0.5-1x; subscribers see the query's error and keep their rows.
+  - `f9cb5396` (merged `84c2e22a`) and `af2928d5` (#303): a server apply or a refusal record whose optimistic attempts
+    went stale five times finishes under one exclusive hold instead of ending the receive loop.
+  - `c6076346`: a re-send that newer accepted writes cover is not sent; a replay refusal that later writes in flight
+    cover is parked and resolves as `supersededByAcceptedWrite`.
+  - `aa1cca45` (#303): inactive live-query results are pruned in batches of about 5,000 triples per gate hold.
+  - `6dce825d`, `bc6a0c81` (#317 #307): `queryOnce` of an exact subscription answered on the open socket reads the device.
+  - `378598c8`, `0eb8f502`, `95fba702` (merged `1f098e0c`; #329, ADR 0017): incremental stream snapshots, readers retired
+    at done, offline streams started by client id, and a refused or unflushed append restarts only its writer.
+  - `0adbe972`, `970d8db0` (merged `3196ad50`; #296): the phone-shaped replay as a reusable gate.
+  - `9a65aaeb`, `b465ae14` (#388, P0): an infinite query's snapshot lists each entity once; a kickstart keeps its rows.
+  - `8358090e` (#376): a write its caller cancels finishes instead of ending the socket.
+  - `18e52df0` (#394): an observation ends when its consumer stops iterating.
+  - Account linking (#361), merged `2245b28b`: `ea6764c7`, `4473db63`, `c1b53e51`, `4d928d70`.
+  - `01175cff`: SAFETY comments that `SwiftConcurrencyGuidanceTests` requires.
+- **Gates on `01175cff`** (library suites 2026-10-01 at load 115-925; the rest 2026-10-02 inside `safe-heavy/heavy.sh`):
+  - Differential and connection survival: 25 tests in 2 suites pass, 2 known issues.
+  - Ten suites: 697 tests in 11 suites; 2 unexpected failures, both 250 ms wall-clock bounds at load about 900
+    (`liveTimeoutDoesNotAwaitCancellationInsensitiveWork` 0.32 s, `connectTimeoutAbortsCancellationInsensitiveAttemptAndLateSession`
+    0.35 s); both pass 3 of 3 alone.
+  - The 211 infinite-query tests: only #304's `typedLookupUpdateCanResolveEntityCreatedEarlierInSameTransaction`, as on
+    library-77. Library-77 and library-78 suites: 106 tests in 20 suites pass.
+  - Phone-shaped replay (`scripts/phone-replay`, the 2026-09-30 store): every compared line matches the 956fce52-era
+    reference (17 of 119 frames rebased, 26,288 bodies, 2,384 accepted, 103 refused; after a full restatement only
+    `recordings/clipboardEntries` differs); drain 461.6 s at load about 890. `swift test` exited 1 although its one test passed and printed no error; the same filter without the store exits 0 (2026-10-02 13:38); the cause is not identified.
+  - Replay benchmark (release, CPU ms per frame, min of 3 rounds; TS core 1.0.49 is 1.1-1.3): 956fce52 12.26 ms with the advert and 23.59 ms without; `01175cff` 12.71 and 23.93 (best rounds, load 8-35). Three passes back to back (ABBA plus an interleaved ABAB at load 150-650): the head's per-message CPU was 0.93-1.04x 956fce52's with the advert and 0.95-1.10x without, so no regression shows above the noise. Pass 2's head arm overlapped another job starting in the guard's second slot (its rounds rose 26.7, 30.8, 36.4).
+  - Large-store drop A/B against 956fce52: not run. `run.py` drives the local Instant server in Docker, which these
+    rules forbid. The head's bench binary is built (`harness/swift/bin-01175cff-release`) for a later run.
+  - 30-minute calibrated-car soak (Scribe `library-78-scribe` `ed085b95` built against `01175cff`, throwaway
+    `bd40c50a`, iPhone 17 Pro iOS 27 simulator): two runs.
+    - Scribe `library-78-scribe` `ed085b95` (cut from main before the route seal fix `47f4f8b4`), 10:17-10:47 EDT,
+      load 300-800 (the guard paused the sampler several times; main paused the simulator for about a minute near
+      10:46): 2,760 writes, 2,678 accepted, at most 2 pending, 1 connection, no gate holds, no ack timeouts, CPU median
+      25%, RSS at most 418 MB. 4 refused writes: two route-chunk open-and-seal pairs (chunks 70577795 and 9a148e44),
+      each pair created 1 ms apart and refused under one server trace id (`dc86c05d`, `1f1f8bb1`). That is the
+      server's combine-transact, the #321 case Scribe's seal fix removes; build 78's own soak on 956fce52
+      (`build78-final`) shows the same pair.
+    - Scribe `c2343b26` (`library-78-scribe` merged with Scribe main `0709cf06`, which has the seal fix): 14:17-14:47 EDT, load 30-450: 2,746 writes, 2,682 accepted, at most 2 pending (0 at the end),
+      1 connection, no gate holds, no ack timeouts, no refusals and no warning or error events, CPU median 26%, RSS at
+      most 423 MB.
+  - Background probe (main's #402 question: reply-notifications saw 12 replay refusals on 956fce52 while Scribe
+    recorded behind Settings): two runs, each right after a soak: Scribe recording 120 s, Settings in front 180 s, Scribe
+    again 120 s. On `ed085b95` the socket broke behind Settings (4 failed opens, an ack timeout); one replay refusal
+    (62af0546, perms-pass?) was parked behind its covering write e3bf5036 and resolved as superseded 4 ms after that
+    write's acceptance, so nothing surfaced; its 3 other refusals were route-chunk writes under one trace id
+    (combine-transact, pre-seal-fix build). On `c2343b26` Scribe kept running behind Settings and the socket stayed up:
+    no refusals, no reconnects; server applies held the operation gate up to 3.1 s and one `acceptMutationIfPresent`
+    6.6 s at load 22-40 (#402).
+  - Companion fault scenarios (`scripts/companion-harness/run.py agent-side`, CLI on `01175cff`): not run before publication; queued after it, with results in the #376 and #360 work logs.
+  - Recording 023-shape backlog: not run (main: only if time allows; the release went first).
+- **Evidence:** `/Users/laptop/Sync/audit/library-78-2026-10-01/` (phone replay, `gates-2026-10-02/`).
+- **Open:** #402 (build 79): mac-memory's resident-store statistic, refresh-ok's whole-result memory and the 16 MiB
+  block; the ack-deadline abort and receive-loop failure, the two reconnect sources left; refusals from the server's
+  combine-transact; coverage of watermark-pruned writes; path f. #304 stays a known issue.
+- **Next:** Scribe pins `exact: "1.9.0"` (with `library-78-scribe`, which reads media by `streamClientID`; without it,
+  media written offline never reaches other devices). library-79 rebases onto v1.9.0. #402 is build 79's library work.
+
 ## 2026-10-01 19:55:28 EDT — Account linking verified live: the link path against Instant's real rules, the soak, and the apps (#361)
 
 - **Live test:** `4d928d70` adds `InstantAccountLinksLiveTests` (environment-gated). On the throwaway app `bd40c50a`

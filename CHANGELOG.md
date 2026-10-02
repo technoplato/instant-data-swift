@@ -10,6 +10,19 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## October 2nd, 2026 at 2:57:03 p.m. EDT — `d42dd9601416` Document the v1.9.0 release: build 78's library keeps the socket open through server errors, tells live-query subscribers about failures, stops refusing duplicate writes, and lists each row once (#376 #360 #388 #394 #329 #361 #296 #402)
+
+- **Implementation commit:** `d42dd9601416f277393515e31bc3e89d6e4cf3fc`
+- **Change:** Document the v1.9.0 release: build 78's library keeps the socket open through server errors, tells live-query subscribers about failures, stops refusing duplicate writes, and lists each row once
+- **Details:**
+  - Minor release from main: library-78 (gated code head 01175cff) merged without fast-forward as 0b8f52f7 over eeea9b12. Additive public API: InstantQueryEmission.error, FetchSubscription.liveQueryError, InstantMutationConfirmationSource.supersededByAcceptedWrite, the retry and prune configuration, InstantSecondSignIn, and InstantAccountLinks. One migration (0025_stream_writers).
+  - Plain-words notes for #376, #360, superseded duplicate writes, #388 at its source, the cancelled-send reconnect, #394's observation release, #329 streams by client id (ADR 0017), account linking (#361), and the phone-shaped replay gate (#296); the fast checks that ran on 01175cff (library suites, phone replay, replay benchmark, two 30-minute soaks, two background probes); and the open items (#402, #304, the timing flakes, the release gate not run).
+- **Files:**
+  - `docs/releases/v1.9.0.md` — release document; passes scripts/validate-release-version.sh 1.9.0
+- **User context (verbatim):**
+  > Publish the library once it's checked fast. Yes.
+- **SpecStory:** unavailable — Claude Code agent session (library-78); no SpecStory capture configured for this session.
+
 ## October 1st, 2026 at 8:45:52 p.m. EDT — `01175cff5f84` Name what protects the attribute context cache and the observation reader in their SAFETY comments
 
 - **Implementation commit:** `01175cff5f84039d20007afee40e3195102da3d8`

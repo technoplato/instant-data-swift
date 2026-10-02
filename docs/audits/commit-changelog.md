@@ -1,3 +1,12 @@
+## 2026-10-02 14:56:38 EDT — instant-data-swift `d42dd9601416f277393515e31bc3e89d6e4cf3fc`
+Document the v1.9.0 release in docs/releases/v1.9.0.md: build 78's library and every change since v1.8.0, in plain words, with library-78's checks on 01175cff and the open items (#376 #360 #388 #394 #329 #361 #296 #402).
+
+## 2026-10-02 13:41:26 EDT — instant-data-swift `d3c9a075e0354833351b27e72c9740916e3a84fa`
+Plan the v1.9.0 release (plan 2026-10-02-release-1.9.0) and claim the release document, CHANGELOG.md, PROGRESS.md, and this ledger; note the overlap with library-79's unmerged claims on the same logs.
+
+## 2026-10-02 13:40:53 EDT — instant-data-swift `0b8f52f7e34fc2460db5c7b63cba790ffa40f7b9`
+Merge build 78's library (agent/claude-opus-5.5/library-78 at 7ecbd129, gated code head 01175cff) into main without fast-forward over eeea9b12, for v1.9.0 (#376 #360 #388 #394 #329 #303 #317 #361 #296).
+
 ## 2026-10-02 11:38:26 EDT — scribe `d83e5958f321dcf1cc6ec9e8de945212b2bd5424`
 Record the installer's stale workspace Package.resolved fix in the change log (#404).
 
