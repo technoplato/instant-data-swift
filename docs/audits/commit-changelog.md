@@ -1,3 +1,12 @@
+## 2026-10-02 18:25:47 EDT — scribe `f79ba8a46b50c0aa2bcb0816836f745053da710d`
+Merge scribe-mirror: the standing-agent trigger reads cmux's real answers and names its pane (#385 #400).
+
+## 2026-10-02 18:25:46 EDT — scribe `ffcad99879081353592dbdeaac9bb49a56c2e508`
+Merge startup-screen: a fresh launch opens on the recordings list itself, not a startup list of its own (#405).
+
+## 2026-10-02 18:25:46 EDT — scribe `cb711adf6a2deae89c251d67622268da442e1c0d`
+Merge reply-notifications: an agent's answer notifies on every device, with status lines and read-aloud on demand (#340 #342 #387).
+
 ## 2026-10-02 17:32:16 EDT — scribe `0f42452a10746bed3ee532e5ed08a8af4690dd40`
 Merge rec032-mic-gap: restart capture only on iOS's signals, say who holds the microphone, and give every line its true time (#272 #346).
 
