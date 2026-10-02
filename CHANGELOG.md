@@ -10,6 +10,29 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## October 2nd, 2026 at 11:45:50 a.m. EDT — `158a45152b28` Run each step's persistence work in one actor turn: transact 19 to 7 actor calls, relaunch 16 to 11, drain 50 to 25 (#403)
+
+- **Implementation commit:** `158a45152b289102bfadf0024bf24fd899dab667`
+- **Change:** Each step's persistence work runs in one actor turn (Point-Free's run, ep362 at 12:16): one transact makes 7 actor calls instead of 19, relaunch 11 instead of 16, reconnect-drain 25 instead of 50, with the same SQLite statements in the same order (#403).
+- **Details:**
+  - transact: state, shares, the same-id check, the alias check, the cursor, and the supersession tail in one turn; the save and the status it changed in a second (the save's transaction commits first; a failed status read publishes nothing, as the try? did). The tail read splits from its rare repair.
+  - The connection status reads in one turn everywhere and skips the live session's open flag without a live transport. AsyncSerialGate.isHeldSnapshot reads the server-apply gate without a hop. Relaunch, the query, pendingMutations(), and the explicit flush batch their persistence calls; the cookie task starts only with a first-party URL.
+  - Evidence (deterministic local, debug build of this tree): runtimeWorkloadsPinEveryActorHop passes at 7, 11, 25; library-78's gate filters give fast-drain 25 tests passed (2 known), ten suites 697 tests with 22 known issues plus the BenchmarkTests and CLITests hop pins (updated here) and one 250 ms timing test under load, infinite suites 211 tests (10 known plus #304), library-77/78 suites 106 passed. The phone-shaped replay matches library-78's 01175cff reference in every count (2487 to 0, 119 frames, 17 rebases, 26288 bodies, 2384 accepted, 103 refused).
+- **Files:**
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — run, and the supersession tail's read split from its repair
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — one persistence turn per step on the three paths
+  - `Sources/InstantSwiftDataCore/AsyncSerialGate.swift` — isHeldSnapshot, the held flag without a hop
+  - `Sources/InstantSwiftDataCore/Outbox.swift` — replace(contentsOf:), one hop per claimed window
+  - `Sources/InstantSwiftDataCore/OutboxSameEntitySupersession.swift` — the eligibility check on a transaction
+  - `Sources/InstantSwiftDataCore/InstantActorHopInstrumentation.swift` — drops the server-apply-gate boundary, no longer a hop
+  - `Tests/InstantSwiftDataCoreTests/InstantCrossSDKRuntimeBenchmarkTests.swift` — pins 7, 11, and 25
+  - `Tests/InstantSwiftDataCoreTests/BenchmarkTests.swift` — local-todos pins after the cuts
+  - `Tests/InstantSwiftDataCoreTests/CLITests.swift` — the CLI benchmark's pins after the cuts
+  - `Tests/InstantSwiftDataCoreTests/AsyncSerialGateTests.swift` — the held snapshot follows acquire, handoff, and leave
+- **User context (verbatim):**
+  > fix this please so it works efficiently as as well as the typescript core library
+- **SpecStory:** unavailable — Claude Code agent session (library-79); no SpecStory capture configured for this session.
+
 ## October 2nd, 2026 at 11:37:16 a.m. EDT — `2e2a1c0759d1` Count every actor call on transact, relaunch, and reconnect drain, and pin the counts (#403)
 
 - **Implementation commit:** `2e2a1c0759d1e80a246e45e00d6ab8cbee06b64d`

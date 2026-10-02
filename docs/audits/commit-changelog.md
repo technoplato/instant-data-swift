@@ -1,3 +1,9 @@
+## 2026-10-02 11:45:33 EDT — instant-data-swift `158a45152b289102bfadf0024bf24fd899dab667`
+Run each step's persistence work in one actor turn: transact 19 to 7 actor calls, relaunch 16 to 11, reconnect-drain 50 to 25, same SQLite statements in the same order; the phone-shaped replay matches library-78's reference in every count (#403).
+
+## 2026-10-02 11:37:26 EDT — instant-data-swift `3f6b30ec69daeca940df565af40eae72fd4b3409`
+Claim the outbox, supersession, gate-test, CLI-test, and transport-date files for the hop and formatter cuts (#403).
+
 ## 2026-10-02 11:37:06 EDT — instant-data-swift `2e2a1c0759d1e80a246e45e00d6ab8cbee06b64d`
 Count every actor call on transact, relaunch, and reconnect drain, and pin the counts: 19, 16, and 50 actor calls where the recorder showed 9, 12, and 29 (#403).
 
