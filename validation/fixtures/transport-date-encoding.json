@@ -1,0 +1,322 @@
+{
+  "source": "@instantdb/core transform + JSON.stringify, as Connection.send writes a transact",
+  "coreVersion": "1.0.49",
+  "entries": [
+    {
+      "milliseconds": 0,
+      "encoded": "1970-01-01T00:00:00.000Z"
+    },
+    {
+      "milliseconds": 1,
+      "encoded": "1970-01-01T00:00:00.001Z"
+    },
+    {
+      "milliseconds": 10,
+      "encoded": "1970-01-01T00:00:00.010Z"
+    },
+    {
+      "milliseconds": 100,
+      "encoded": "1970-01-01T00:00:00.100Z"
+    },
+    {
+      "milliseconds": 999,
+      "encoded": "1970-01-01T00:00:00.999Z"
+    },
+    {
+      "milliseconds": -1,
+      "encoded": "1969-12-31T23:59:59.999Z"
+    },
+    {
+      "milliseconds": -1250,
+      "encoded": "1969-12-31T23:59:58.750Z"
+    },
+    {
+      "milliseconds": 951782400000,
+      "encoded": "2000-02-29T00:00:00.000Z"
+    },
+    {
+      "milliseconds": 1700000000000,
+      "encoded": "2023-11-14T22:13:20.000Z"
+    },
+    {
+      "milliseconds": 1700000000001,
+      "encoded": "2023-11-14T22:13:20.001Z"
+    },
+    {
+      "milliseconds": 1700000000123,
+      "encoded": "2023-11-14T22:13:20.123Z"
+    },
+    {
+      "milliseconds": 1700000000999,
+      "encoded": "2023-11-14T22:13:20.999Z"
+    },
+    {
+      "milliseconds": 1790897979124,
+      "encoded": "2026-10-01T23:39:39.124Z"
+    },
+    {
+      "milliseconds": 4102444800000,
+      "encoded": "2100-01-01T00:00:00.000Z"
+    },
+    {
+      "milliseconds": 253402300799999,
+      "encoded": "9999-12-31T23:59:59.999Z"
+    },
+    {
+      "milliseconds": 2778865406568,
+      "encoded": "2058-01-21T19:03:26.568Z"
+    },
+    {
+      "milliseconds": 36944375191,
+      "encoded": "1971-03-04T14:19:35.191Z"
+    },
+    {
+      "milliseconds": 2915185321434,
+      "encoded": "2062-05-18T13:42:01.434Z"
+    },
+    {
+      "milliseconds": 2773175856801,
+      "encoded": "2057-11-16T22:37:36.801Z"
+    },
+    {
+      "milliseconds": 2418869815964,
+      "encoded": "2046-08-26T04:16:55.964Z"
+    },
+    {
+      "milliseconds": 1744529343163,
+      "encoded": "2025-04-13T07:29:03.163Z"
+    },
+    {
+      "milliseconds": 429205397806,
+      "encoded": "1983-08-08T15:43:17.806Z"
+    },
+    {
+      "milliseconds": 592092364901,
+      "encoded": "1988-10-05T22:06:04.901Z"
+    },
+    {
+      "milliseconds": 3999988133392,
+      "encoded": "2096-10-02T03:48:53.392Z"
+    },
+    {
+      "milliseconds": 581553975839,
+      "encoded": "1988-06-05T22:46:15.839Z"
+    },
+    {
+      "milliseconds": 2320642271682,
+      "encoded": "2043-07-16T06:51:11.682Z"
+    },
+    {
+      "milliseconds": 151793235561,
+      "encoded": "1974-10-23T20:47:15.561Z"
+    },
+    {
+      "milliseconds": 3111926059204,
+      "encoded": "2068-08-11T15:54:19.204Z"
+    },
+    {
+      "milliseconds": 2580698951619,
+      "encoded": "2051-10-12T04:49:11.619Z"
+    },
+    {
+      "milliseconds": 1390246173590,
+      "encoded": "2014-01-20T19:29:33.590Z"
+    },
+    {
+      "milliseconds": 2857155419309,
+      "encoded": "2060-07-15T22:16:59.309Z"
+    },
+    {
+      "milliseconds": 3456298213048,
+      "encoded": "2079-07-11T10:50:13.048Z"
+    },
+    {
+      "milliseconds": 522776582055,
+      "encoded": "1986-07-26T15:43:02.055Z"
+    },
+    {
+      "milliseconds": 3270101054122,
+      "encoded": "2073-08-16T09:24:14.122Z"
+    },
+    {
+      "milliseconds": 664759346993,
+      "encoded": "1991-01-24T23:22:26.993Z"
+    },
+    {
+      "milliseconds": 1237631691756,
+      "encoded": "2009-03-21T10:34:51.756Z"
+    },
+    {
+      "milliseconds": 860192859595,
+      "encoded": "1997-04-04T22:27:39.595Z"
+    },
+    {
+      "milliseconds": 555567358718,
+      "encoded": "1987-08-10T04:15:58.718Z"
+    },
+    {
+      "milliseconds": 2224328950261,
+      "encoded": "2040-06-26T13:09:10.261Z"
+    },
+    {
+      "milliseconds": 17196727392,
+      "encoded": "1970-07-19T00:52:07.392Z"
+    },
+    {
+      "milliseconds": 591374857775,
+      "encoded": "1988-09-27T14:47:37.775Z"
+    },
+    {
+      "milliseconds": 504851153042,
+      "encoded": "1985-12-31T04:25:53.042Z"
+    },
+    {
+      "milliseconds": 3457938458873,
+      "encoded": "2079-07-30T10:27:38.873Z"
+    },
+    {
+      "milliseconds": 3283052637204,
+      "encoded": "2074-01-13T07:03:57.204Z"
+    },
+    {
+      "milliseconds": 3268693144787,
+      "encoded": "2073-07-31T02:19:04.787Z"
+    },
+    {
+      "milliseconds": 1265202181990,
+      "encoded": "2010-02-03T13:03:01.990Z"
+    },
+    {
+      "milliseconds": 2338793390141,
+      "encoded": "2044-02-11T08:49:50.141Z"
+    },
+    {
+      "milliseconds": 854600541960,
+      "encoded": "1997-01-30T05:02:21.960Z"
+    },
+    {
+      "milliseconds": 2083965414839,
+      "encoded": "2036-01-14T23:16:54.839Z"
+    },
+    {
+      "milliseconds": 1117444029306,
+      "encoded": "2005-05-30T09:07:09.306Z"
+    },
+    {
+      "milliseconds": 550030937025,
+      "encoded": "1987-06-07T02:22:17.025Z"
+    },
+    {
+      "milliseconds": 3386108635452,
+      "encoded": "2077-04-20T01:43:55.452Z"
+    },
+    {
+      "milliseconds": 2436546456795,
+      "encoded": "2047-03-18T18:27:36.795Z"
+    },
+    {
+      "milliseconds": 3357535635662,
+      "encoded": "2076-05-24T08:47:15.662Z"
+    },
+    {
+      "milliseconds": 815398489989,
+      "encoded": "1995-11-03T11:34:49.989Z"
+    },
+    {
+      "milliseconds": 3594764633776,
+      "encoded": "2083-11-30T01:43:53.776Z"
+    },
+    {
+      "milliseconds": 1568509765183,
+      "encoded": "2019-09-15T01:09:25.183Z"
+    },
+    {
+      "milliseconds": 721467126626,
+      "encoded": "1992-11-11T07:32:06.626Z"
+    },
+    {
+      "milliseconds": 1154084990857,
+      "encoded": "2006-07-28T11:09:50.857Z"
+    },
+    {
+      "milliseconds": 922985392996,
+      "encoded": "1999-04-01T16:49:52.996Z"
+    },
+    {
+      "milliseconds": 2050721132003,
+      "encoded": "2034-12-26T04:45:32.003Z"
+    },
+    {
+      "milliseconds": 3670162317110,
+      "encoded": "2086-04-20T17:31:57.110Z"
+    },
+    {
+      "milliseconds": 4009868068813,
+      "encoded": "2097-01-24T12:14:28.813Z"
+    },
+    {
+      "milliseconds": 288767099736,
+      "encoded": "1979-02-25T05:04:59.736Z"
+    },
+    {
+      "milliseconds": 1577897535431,
+      "encoded": "2020-01-01T16:52:15.431Z"
+    },
+    {
+      "milliseconds": 2316785315914,
+      "encoded": "2043-06-01T15:28:35.914Z"
+    },
+    {
+      "milliseconds": 4022754939985,
+      "encoded": "2097-06-22T15:55:39.985Z"
+    },
+    {
+      "milliseconds": 750074391180,
+      "encoded": "1993-10-08T09:59:51.180Z"
+    },
+    {
+      "milliseconds": 503272589291,
+      "encoded": "1985-12-12T21:56:29.291Z"
+    },
+    {
+      "milliseconds": 891845333662,
+      "encoded": "1998-04-06T06:48:53.662Z"
+    },
+    {
+      "milliseconds": 1437827821845,
+      "encoded": "2015-07-25T12:37:01.845Z"
+    },
+    {
+      "milliseconds": 1066521984256,
+      "encoded": "2003-10-19T00:06:24.256Z"
+    },
+    {
+      "milliseconds": 3876217842255,
+      "encoded": "2092-10-30T15:10:42.255Z"
+    },
+    {
+      "milliseconds": 2450730084914,
+      "encoded": "2047-08-29T22:21:24.914Z"
+    },
+    {
+      "milliseconds": 2553777361433,
+      "encoded": "2050-12-04T14:36:01.433Z"
+    },
+    {
+      "milliseconds": 2395394782900,
+      "encoded": "2045-11-27T11:26:22.900Z"
+    },
+    {
+      "milliseconds": 2802487003891,
+      "encoded": "2058-10-22T04:36:43.891Z"
+    },
+    {
+      "milliseconds": 3341636055814,
+      "encoded": "2075-11-22T08:14:15.814Z"
+    },
+    {
+      "milliseconds": 1616140692317,
+      "encoded": "2021-03-19T07:58:12.317Z"
+    }
+  ]
+}
