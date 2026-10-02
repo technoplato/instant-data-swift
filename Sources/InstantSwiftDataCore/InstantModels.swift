@@ -1086,7 +1086,15 @@ public struct PendingMutation: Hashable, Codable, Sendable, Identifiable {
   /// authoritative rebases. A changed transaction, id, or creation order gets
   /// a different digest and therefore cannot inherit an earlier claim or ACK.
   package func mutationWireIntentFingerprint() throws -> String {
-    var transportMutation = InstantTransportMutation(self)
+    try Self.mutationWireIntentFingerprint(of: InstantTransportMutation(self))
+  }
+
+  /// ``mutationWireIntentFingerprint()`` of a mutation already lowered for the wire, so a save that also counts its
+  /// transport steps lowers it once (#403).
+  package static func mutationWireIntentFingerprint(
+    of transportMutation: InstantTransportMutation
+  ) throws -> String {
+    var transportMutation = transportMutation
     transportMutation.status = .pending
     transportMutation.failureMessage = nil
     let encoder = JSONEncoder()

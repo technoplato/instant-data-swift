@@ -43,7 +43,11 @@ enum InstantAutomaticOutboxAdmission {
   /// and before either SQLite or the hot store commits it. Existing legacy rows
   /// are quarantined by the selector, but a new local write must fail without
   /// ever materializing an undeliverable optimistic value.
-  static func validateNewMutation(_ mutation: PendingMutation) throws {
+  ///
+  /// Returns the encodings it computed on the way, with the rest an outbox row needs, so saving the mutation computes
+  /// none of them again (#403).
+  @discardableResult
+  static func validateNewMutation(_ mutation: PendingMutation) throws -> InstantEncodedOutboxMutation {
     guard mutation.provesReplayableOptimisticEffectReceipt else {
       throw InstantError(
         code: .validationFailed,
@@ -55,7 +59,8 @@ enum InstantAutomaticOutboxAdmission {
           "Submit the transaction through InstantRuntime so local preparation and durable outbox admission commit together."
       )
     }
-    let stepCount = InstantOutboxDeliveryMetadata.stepCount(in: mutation)
+    let transportMutation = InstantTransportMutation(mutation)
+    let stepCount = transportMutation.txSteps.count
     guard stepCount <= InstantAutomaticOutboxClaimLimits.maximumStepCount else {
       throw InstantError(
         code: .validationFailed,
@@ -70,7 +75,8 @@ enum InstantAutomaticOutboxAdmission {
 
     let encoder = JSONEncoder()
     encoder.outputFormatting = [.sortedKeys]
-    let encodedBodyByteCount = try encoder.encode(mutation).count
+    let encodedBody = try encoder.encode(mutation)
+    let encodedBodyByteCount = encodedBody.count
     guard encodedBodyByteCount <= InstantAutomaticOutboxClaimLimits.maximumEncodedBodyBytes
     else {
       throw InstantError(
@@ -83,6 +89,57 @@ enum InstantAutomaticOutboxAdmission {
           "Split or reduce this write before retrying; no local triples or outbox row were committed."
       )
     }
+    return try InstantEncodedOutboxMutation(
+      mutation,
+      transportMutation: transportMutation,
+      encodedBody: encodedBody,
+      encoder: encoder
+    )
+  }
+}
+
+/// A pending mutation with everything its outbox row derives from it, each computed once (#403).
+///
+/// Saving a local write used to compute its receipt digest twice, lower it for the wire three times (its admission
+/// step count, its wire-intent digest, the row's step count), and encode its body twice (its admission size, the row).
+/// The values are the same bytes the row always stored: the same functions compute them, once.
+package struct InstantEncodedOutboxMutation: Sendable {
+  package let mutation: PendingMutation
+  /// ``PendingMutation/optimisticEffectReceiptFingerprint()``.
+  package let receiptFingerprint: String?
+  /// ``PendingMutation/mutationWireIntentFingerprint()``.
+  package let wireFingerprint: String
+  /// The transport steps the mutation lowers to.
+  package let stepCount: Int
+  /// The row's JSON body, keys sorted.
+  package let body: String
+  /// The row's lifecycle JSON: the body without operations (``PendingMutation/compactedForMemory``).
+  package let lifecycleBody: String
+
+  package init(_ mutation: PendingMutation) throws {
+    let encoder = JSONEncoder()
+    encoder.outputFormatting = [.sortedKeys]
+    try self.init(
+      mutation,
+      transportMutation: InstantTransportMutation(mutation),
+      encodedBody: nil,
+      encoder: encoder
+    )
+  }
+
+  /// `encoder` must sort keys and have no other options, as the outbox's own encoder.
+  init(
+    _ mutation: PendingMutation,
+    transportMutation: InstantTransportMutation,
+    encodedBody: Data?,
+    encoder: JSONEncoder
+  ) throws {
+    self.mutation = mutation
+    receiptFingerprint = try mutation.optimisticEffectReceiptFingerprint()
+    wireFingerprint = try PendingMutation.mutationWireIntentFingerprint(of: transportMutation)
+    stepCount = transportMutation.txSteps.count
+    body = String(decoding: try encodedBody ?? encoder.encode(mutation), as: UTF8.self)
+    lifecycleBody = String(decoding: try encoder.encode(mutation.compactedForMemory), as: UTF8.self)
   }
 }
 
