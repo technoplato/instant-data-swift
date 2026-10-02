@@ -34,8 +34,17 @@ server answer per transaction (Instant's `combine-transact` merges same-shape qu
 - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift`
 - `Sources/InstantSwiftDataCore/AsyncSerialGate.swift`
 - `Sources/InstantSwiftDataCore/InstantActorHopInstrumentation.swift`
+- `Sources/InstantSwiftDataCore/Outbox.swift` (a one-turn batch replace) and
+  `Sources/InstantSwiftDataCore/OutboxSameEntitySupersession.swift` (a transaction-level eligibility check), added
+  2026-10-02 09:38 EDT
+- `Tests/InstantSwiftDataCoreTests/AsyncSerialGateTests.swift` (the held-snapshot test), added 2026-10-02 10:20 EDT
+- The shared transport-date formatter, at main's request (2026-10-02 about 09:50 EDT), as its own commit:
+  `Sources/InstantSwiftDataCore/InstantTransportMutation.swift`, new
+  `Tests/InstantSwiftDataCoreTests/InstantTransportDateFormatterTests.swift`, new
+  `validation/fixtures/transport-date-encoding.json` and `validation/ts-runner/src/transport-date-encoding-fixture.ts`
 - `Tests/InstantSwiftDataCoreTests/InstantCrossSDKRuntimeBenchmarkTests.swift`
-- `Tests/InstantSwiftDataCoreTests/BenchmarkTests.swift` (hop pins only)
+- `Tests/InstantSwiftDataCoreTests/BenchmarkTests.swift` and `CLITests.swift` (hop pins only; CLITests added
+  2026-10-02 11:38 EDT)
 - `docs/adr/0018-one-actor-turn-per-step.md` (new)
 - `CHANGELOG.md`, `PROGRESS.md`, `docs/audits/commit-changelog.md` (prepend only)
 
