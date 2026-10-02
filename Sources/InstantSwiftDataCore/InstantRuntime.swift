@@ -1828,6 +1828,7 @@ public final class InstantRuntime: Sendable {
           ]
         )
       }
+      configuration.actorHopRecorder?.record(.persistence)
       let bootstrapSynchronizationBlocker = try await persistence.synchronizationBlocker()
       if let bootstrapPruningResult,
         !bootstrapPruningResult.removedCacheKeys.isEmpty
@@ -1965,6 +1966,7 @@ public final class InstantRuntime: Sendable {
       )
 
       if let bootstrapSynchronizationBlocker {
+        configuration.actorHopRecorder?.record(.deliveryPump)
         await runtime.mutationDeliveryPump.suspend()
         InstantDiagnostics.shared.record(
           .notice,
@@ -2264,6 +2266,7 @@ public final class InstantRuntime: Sendable {
       recordActorHop(.persistence)
       let state = try await loadCompactStateSynchronizingStore()
       if transaction.operations.isEmpty {
+        recordActorHop(.store)
         return InstantStoreMutationResult(
           transactionID: transaction.id,
           changedEntityIDs: [],
@@ -2273,6 +2276,7 @@ public final class InstantRuntime: Sendable {
       }
       // Resolving shared-root targets needs a full store snapshot, which materializes and sorts
       // every fact. Without an active share no target can be refused, so skip both.
+      recordActorHop(.persistence)
       if try await persistence.hasActiveShares(appID: configuration.appID) {
         let storeSnapshotForAuth = await authoritativeStoreSnapshot(from: state)
         try await authorizeSharedRootWrites(
@@ -2280,6 +2284,7 @@ public final class InstantRuntime: Sendable {
           snapshot: storeSnapshotForAuth
         )
       }
+      recordActorHop(.persistence)
       guard let hydrated = try await persistence.loadOutboxMutations(
         statuses: [.pending, .confirmed, .failed],
         ids: [transaction.id],
@@ -2322,6 +2327,7 @@ public final class InstantRuntime: Sendable {
         }
         recordActorHop(.outbox)
         await outbox.replace(existingMutation)
+        recordActorHop(.store)
         return InstantStoreMutationResult(
           transactionID: transaction.id,
           changedEntityIDs: [],
@@ -2329,6 +2335,7 @@ public final class InstantRuntime: Sendable {
           emissions: []
         )
       }
+      recordActorHop(.persistence)
       let aliasReplay = try await persistence.loadOutboxAliasReplay(
         id: transaction.id,
         expectedStoreRevision: state.storeRevision,
@@ -2345,6 +2352,7 @@ public final class InstantRuntime: Sendable {
             "Observe the existing transaction lifecycle, or use a new transaction id for a new write."
         )
       }
+      recordActorHop(.persistence)
       let creationCursor = try await persistence.latestOutboxCreationTimestamp(
         expectedOutboxRevision: state.outboxRevision
       )
@@ -2377,12 +2385,14 @@ public final class InstantRuntime: Sendable {
       // the operation gate. Keep each new mutation append-only until that
       // refresh has either caught it up or committed; replacing the old tail
       // would erase the durable delta needed to preserve both overlays.
+      recordActorHop(.serverApplyGate)
       let serverApplyIsActive = await serverApplyGate.isHeld
       if !serverApplyIsActive,
         OutboxSameEntitySupersession.isEligibleImmediateTailNewcomer(
         pendingMutation,
         attributes: state.snapshot.store.attributes
       ) {
+        recordActorHop(.persistence)
         immediateTail = try await persistence.loadImmediateSupersessionTail(
           expectedStoreRevision: state.storeRevision,
           expectedOutboxRevision: state.outboxRevision
@@ -2448,6 +2458,7 @@ public final class InstantRuntime: Sendable {
       ) {
         pendingMutation.transaction = winning
         mutation = pendingMutation
+        recordActorHop(.store)
         prepared = try await prepareLocalWrite(winning)
       }
       Self.installPreparedOptimisticEffect(
@@ -6275,6 +6286,7 @@ public final class InstantRuntime: Sendable {
 
   private func startLiveMutationDeliveryIfNeeded() async {
     guard configuration.liveTransport != nil else { return }
+    recordActorHop(.deliveryPump)
     await mutationDeliveryPump.request(
       sleep: configuration.liveReconnectSleep
     ) { [weak self] in
@@ -6419,6 +6431,7 @@ public final class InstantRuntime: Sendable {
   private func startAutomaticLiveConnectionIfNeeded() {
     guard configuration.liveTransport != nil else { return }
     guard configuration.autoConnectLiveTransport else { return }
+    recordActorHop(.task)
     _ = automaticLiveConnectionTaskOwner.start { [weak self] in
       guard let self else { return }
       await self.configuration.onAutomaticLiveConnectionTaskStartedForTesting?()
@@ -6442,6 +6455,7 @@ public final class InstantRuntime: Sendable {
   }
 
   private func startUserCookieSyncOnStartup() {
+    recordActorHop(.task)
     _ = startupCookieSyncTaskOwner.start(priority: .utility) { [weak self] in
       guard let self else { return }
       await self.configuration.onStartupCookieSyncTaskStartedForTesting?()
@@ -6535,6 +6549,7 @@ public final class InstantRuntime: Sendable {
   @discardableResult
   @concurrent
   public func connect() async throws -> InstantConnectionStatus {
+    recordActorHop(.reconnectController)
     await reconnectController.cancelAndWait()
     return try await connectLiveSession(reportsFailure: true)
   }
@@ -6547,6 +6562,7 @@ public final class InstantRuntime: Sendable {
     var enteredConnectionGate = false
     var enteredOperationGate = false
     do {
+      recordActorHop(.connectionGate)
       try await connectionGate.enterUnlessCancelled(operation: "connect live session")
       enteredConnectionGate = true
       recordActorHop(.operationGate)
@@ -6560,6 +6576,7 @@ public final class InstantRuntime: Sendable {
           recordActorHop(.operationGate)
           await operationGate.leave()
           enteredOperationGate = false
+          recordActorHop(.connectionGate)
           await connectionGate.leave()
           enteredConnectionGate = false
           InstantDiagnostics.shared.record(
@@ -6718,6 +6735,7 @@ public final class InstantRuntime: Sendable {
         // server refuses or leaves unanswered does not end the connection (#329).
         startStreamWriterCatchUp()
       }
+      recordActorHop(.connectionGate)
       await connectionGate.leave()
       enteredConnectionGate = false
       InstantDiagnostics.shared.record(
@@ -6910,14 +6928,18 @@ public final class InstantRuntime: Sendable {
       recordActorHop(.persistence)
       pendingMutationCount = try await persistence.countOutboxMutations(status: .pending)
     }
+    recordActorHop(.persistence)
     let session = try await persistence.loadAuthSession(key: authSessionKey)
+    recordActorHop(.persistence)
     let processedTransactionID = try await persistence.loadMetadataValue(
       key: processedTransactionIDMetadataKey
     )
     let storedState = try await persistedConnectionState()
+    recordActorHop(.persistence)
     let lastErrorMessage = try await persistence.loadMetadataValue(
       key: connectionLastErrorMetadataKey
     )
+    recordActorHop(.liveSession)
     let liveSessionIsOpen = await liveSession.isOpen
     recordActorHop(.persistence)
     let synchronizationBlocker = try await persistence.synchronizationBlocker()
@@ -6947,6 +6969,7 @@ public final class InstantRuntime: Sendable {
     let status = try await connectionStatusWithGateHeld(
       pendingMutationCount: pendingMutationCount
     )
+    recordActorHop(.observers)
     await connectionStatusObservers.publish(status, for: configuration.appID)
     return status
   }
@@ -6975,6 +6998,7 @@ public final class InstantRuntime: Sendable {
       return
     }
     guard let observationID else { return }
+    recordActorHop(.observers)
     await mutationLifecycleObservers.publish(event, for: observationID)
   }
 
@@ -11980,7 +12004,9 @@ public final class InstantRuntime: Sendable {
     await enterOperationGate()
     do {
       for _ in 0..<5 {
+        recordActorHop(.persistence)
         let state = try await loadCompactStateSynchronizingStore()
+        recordActorHop(.persistence)
         guard let mutations = try await persistence.loadOutboxMutations(
           statuses: statuses,
           expectedStoreRevision: state.storeRevision,
@@ -12188,6 +12214,7 @@ public final class InstantRuntime: Sendable {
     }
 
     try await enterMutationFlushGateUnlessCancelled()
+    recordActorHop(.task)
     guard let handle = explicitMutationFlushOwner.start({ [self] ownerToken in
       try await performBoundedExplicitMutationFlush(
         limit: limit,
@@ -12311,6 +12338,7 @@ public final class InstantRuntime: Sendable {
       }
       recordActorHop(.persistence)
       pendingCountAfterSelection = try await persistence.countOutboxMutations(status: .pending)
+      recordActorHop(.persistence)
       mutationCountAfterSelection = try await persistence.countOutboxMutations()
       await leaveOperationGate()
     } catch {
@@ -12380,6 +12408,7 @@ public final class InstantRuntime: Sendable {
     }
     operationCancellation.installTransportTask(transportTask)
     let deadlineSleep = configuration.explicitMutationTransportDeadlineSleep
+    recordActorHop(.task)
     let deadlineTask = Task {
       do {
         try await deadlineSleep(
@@ -12393,6 +12422,7 @@ public final class InstantRuntime: Sendable {
     }
     operationCancellation.installDeadlineTask(deadlineTask)
     let renewalSleep = configuration.explicitMutationClaimRenewalSleep
+    recordActorHop(.task)
     let renewalTask = Task { [self] in
       while true {
         do {
@@ -12468,6 +12498,7 @@ public final class InstantRuntime: Sendable {
 
     let cleanupWatchdog: Task<Void, Never>? = cleanupPhase.map { phase in
       let sleep = configuration.explicitMutationCleanupWatchdogSleep
+      recordActorHop(.task)
       return Task { [weak self] in
         do {
           try await sleep(5_000)
@@ -12495,6 +12526,7 @@ public final class InstantRuntime: Sendable {
     }
 
     let outcome = await transportTask.value
+    recordActorHop(.task)
     let disposition = Task { [self] () -> InstantExplicitMutationDisposition in
       switch outcome {
       case let .response(response):
@@ -12661,7 +12693,9 @@ public final class InstantRuntime: Sendable {
       _ = try? await publishConnectionStatusWithGateHeld()
       recordActorHop(.persistence)
       _ = try await persistence.releaseAutomaticOutboxClaim(token: claimToken)
+      recordActorHop(.persistence)
       let remainingPendingCount = try await persistence.countOutboxMutations(status: .pending)
+      recordActorHop(.persistence)
       let remainingMutationCount = try await persistence.countOutboxMutations()
       await leaveOperationGate()
       return InstantMutationTransportFlushResult(

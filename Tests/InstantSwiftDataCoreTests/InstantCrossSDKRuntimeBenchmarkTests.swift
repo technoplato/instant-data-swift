@@ -52,6 +52,56 @@ struct InstantCrossSDKRuntimeBenchmarkTests {
     )
   }
 
+  /// Every actor call and unstructured task on the three workloads, pinned (#403). An added await on any of these
+  /// paths changes a count here; ADR 0018 maps each hop to the line that makes it and what it protects.
+  @Test
+  func runtimeWorkloadsPinEveryActorHop() async throws {
+    let cacheURL = FileManager.default.temporaryDirectory
+      .appendingPathComponent("InstantCrossSDKRuntimeBenchmarkHopTests-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: cacheURL) }
+
+    let result = try await InstantSwiftDataCrossSDKRuntimeBenchmarks.run(
+      appID: "cross-sdk-runtime-hop-test",
+      iterations: 2,
+      cacheDirectory: cacheURL
+    )
+
+    let enqueue: [String: Int] = [
+      "operation-gate": 2,
+      "persistence": 12,
+      "server-apply-gate": 1,
+      "store": 2,
+      "live-session": 1,
+      "observers": 1,
+    ]
+    let relaunch: [String: Int] = [
+      "operation-gate": 4,
+      "persistence": 9,
+      "store": 2,
+      "task": 1,
+    ]
+    let drain: [String: Int] = [
+      "connection-gate": 2,
+      "live-session": 3,
+      "mutation-flush-gate": 2,
+      "mutation-transport": 1,
+      "observers": 2,
+      "operation-gate": 6,
+      "outbox": 2,
+      "persistence": 26,
+      "reconnect-controller": 1,
+      "task": 5,
+    ]
+    expectNoDifference(
+      result.metrics.map { metric in metric.samples.map(\.actorHopBreakdown) },
+      [[enqueue, enqueue], [relaunch, relaunch], [drain, drain]]
+    )
+    expectNoDifference(
+      result.metrics.map { metric in metric.samples.map(\.actorHopCount) },
+      [[19, 19], [16, 16], [50, 50]]
+    )
+  }
+
   @Test
   func contractPinsEquivalentRuntimeOperationCounts() {
     expectNoDifference(InstantCrossSDKRuntimeBenchmarkContract.version, 1)
