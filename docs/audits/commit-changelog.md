@@ -1,3 +1,12 @@
+## 2026-10-02 11:32:55 EDT — scribe `ad729056a5dac0ee8cca219450c031bf385d7be8`
+Merge main's mac-memory handoff note into the build 79 integration (#394).
+
+## 2026-10-02 10:34:36 EDT — scribe `db53a687f9f023e8a5dbc8955cc2b88f348ecf15`
+Merge mac-memory's follow-up: the media-retry test fakes keep their streams, as the library does (#394).
+
+## 2026-10-02 10:34:09 EDT — scribe `cc908207ff741277973bcda255c66be727139821`
+Merge instant-1.8.0-pin: pin the published instant-data-swift 1.8.0, the build 77 library (#155 #303).
+
 ## 2026-10-02 10:02:50 EDT — scribe `14db800539baa43e86ebcfeeefa9d86aa818dfeb`
 Merge scribe-mirror-gaps: the mirror's image and clipboard times past capture gaps, and capture.gap events (#272 #346).
 
