@@ -10,6 +10,21 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## October 2nd, 2026 at 3:42:18 p.m. EDT — `8f67a567c8b2` Document the v1.9.1 release: a local write and the outbox drain take a third less time, Swift/TypeScript 4.6, 6.5, 4.7 (#403)
+
+- **Implementation commit:** `8f67a567c8b2ce792757d2d948327337d8626808`
+- **Change:** Document the v1.9.1 release: library-79's hop cuts and shared transport-date formatter on v1.9.0's code; a local write and the outbox drain take a third less time (#403).
+- **Details:**
+  - Swift/TypeScript on the cross-SDK runtime benchmark (paired ABBA through heavy.sh, ten blocks): 4.6, 6.5, 4.7 for one write, relaunch, and reconnect drain, from 7.4, 6.9, 7.4 in v1.8.0; actor calls 7, 11, 25 from 19, 16, 50.
+  - Release-gate hold on the gated code commit 262378b2 (15:04-15:39 EDT): focused set 163 pass (3 known), fast-drain and survival 25 pass (2 known), ten suites 697 pass (22 known), infinite 211 with only #304, library-77/78 106 pass, the phone-shaped replay matches the 01175cff reference in every count, and a 10-minute calibrated-car soak had 0 refusals (873 local writes, 868 accepted, at most 2 queued).
+  - Published under Michael's authorization; the release gate (validation/run-performance-gate.sh live) did not run and is named with the known open items, as in v1.9.0.
+- **Files:**
+  - `docs/releases/v1.9.1.md` — the release document; passes scripts/validate-release-version.sh 1.9.1
+  - `PROGRESS.md` — the v1.9.1 release entry and library-79's continuation entry
+- **User context (verbatim):**
+  > Publish the library once it's checked fast. Yes.
+- **SpecStory:** unavailable — Claude Code agent session (library-79); no SpecStory capture configured for this session.
+
 ## October 2nd, 2026 at 2:57:03 p.m. EDT — `d42dd9601416` Document the v1.9.0 release: build 78's library keeps the socket open through server errors, tells live-query subscribers about failures, stops refusing duplicate writes, and lists each row once (#376 #360 #388 #394 #329 #361 #296 #402)
 
 - **Implementation commit:** `d42dd9601416f277393515e31bc3e89d6e4cf3fc`

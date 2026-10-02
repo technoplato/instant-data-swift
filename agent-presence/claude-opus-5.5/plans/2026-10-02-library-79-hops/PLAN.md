@@ -4,7 +4,9 @@
 - **agentId:** `claude-opus-5.5-library-79` (issue workLog agentId `claude-code/claude-opus-5.5/library-79`)
 - **Role:** mower. Fewer actor calls and SQLite transactions for the same durable result; no new public surface.
 - **Branch:** `agent/claude-opus-5.5/library-79-hops`, from library-78's head `d95c9625` (the v1.9.0 candidate).
-  Not merged to main and not published by this plan.
+  Main's release plan (2026-10-02) and Michael's authorization ("Publish the library once it's checked fast. Yes.")
+  extended it: merge v1.9.0, run the release-gate hold, and publish v1.9.1 from main, with
+  `docs/releases/v1.9.1.md` (new, claimed 2026-10-02 15:43 EDT).
 - **Goal (Michael, verbatim, 2026-10-01):** "fix this please so it works efficiently as as well as the typescript
   core library"
 - **Issue:** https://issues.knophy.com/issues/403 (related: #402, #155, #303)

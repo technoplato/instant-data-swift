@@ -1,3 +1,12 @@
+## 2026-10-02 15:42:00 EDT — instant-data-swift `8f67a567c8b2ce792757d2d948327337d8626808`
+Document the v1.9.1 release: Swift/TypeScript 4.6, 6.5, 4.7 on the cross-SDK runtime benchmark (from 7.4, 6.9, 7.4 in v1.8.0); the release-gate hold on 262378b2 passed with 0 soak refusals (#403).
+
+## 2026-10-02 15:40:34 EDT — instant-data-swift `bed0dc4f866ccdf2123beb623bf16843cff54a61`
+Merge library main's ledger-only 2f6a9ee3 into library-79-hops before v1.9.1, so main's merge of the branch has no conflicts (#403).
+
+## 2026-10-02 14:59:47 EDT — instant-data-swift `262378b2981fd5de3901e26399ba23b7988b0e0a`
+Merge v1.9.0 (24559bd4) into library-79-hops for v1.9.1; v1.9.0's code equals the branch's base d95c9625, so only its documents, plan, claims, and log entries came in (#403).
+
 ## 2026-10-02 14:56:38 EDT — instant-data-swift `d42dd9601416f277393515e31bc3e89d6e4cf3fc`
 Document the v1.9.0 release in docs/releases/v1.9.0.md: build 78's library and every change since v1.8.0, in plain words, with library-78's checks on 01175cff and the open items (#376 #360 #388 #394 #329 #361 #296 #402).
 
