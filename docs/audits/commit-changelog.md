@@ -1,8 +1,17 @@
+## 2026-10-02 09:37:46 EDT — scribe `619506b3cfcab68c7f0e7aa3b068d72c6fb482e0`
+Record the second simulator proof of agent reply notifications in ADR 0029 (#340 #342 #387).
+
+## 2026-10-02 09:29:44 EDT — scribe `dc54847bd395b1407317eb848baa726792d992ec`
+Let the notification offer's sentence wrap instead of ending in an ellipsis (#340).
+
 ## 2026-10-02 09:10:52 EDT — scribe `f607bb895669a80bc55a7867bf34bf984f5be2f4`
 Merge main's live-follow claim into the build 79 integration (#401).
 
 ## 2026-10-02 08:49:29 EDT — scribe `e09e6489d8ea644c99c9289658c04b69e2608448`
 Log the Instant 1.8.0 pin and Scribe 0.1 (78)'s GitHub release in PROGRESS: the pin's checks (installer tests, a clean resolve, ArchitectureTests 60/60 compiled against the published 1.8.0, an iPhone compile with no override that compiled instant-data-swift eeea9b12), the scribe-0.1-78 release, and what the pin means for override scripts and branches with their own pins (#155 #303).
+
+## 2026-10-02 08:44:05 EDT — scribe `0224599e5a0a4352284498052d52857ccdddbf1b`
+A late answer to the launch permission check still counts, so the offer shows and Settings recovers (#340).
 
 ## 2026-10-02 08:27:03 EDT — scribe `a812df75201a2709dc134b00ada93cfd6e80b1a3`
 Merge mac-live: a live mark, a clock that ticks every second, follow-live with Back to Live, and why audio cannot play yet (#393).
@@ -12,6 +21,18 @@ Merge list-design: two-line recording rows, a compact playback header, Show Rout
 
 ## 2026-10-02 08:25:47 EDT — scribe `35484454ad3ba181ed7b3c417d81f05af32988de`
 Merge mac-memory: stop the media-retry observer leak, stop two test-target crashes, and add memory fenceposts (#394).
+
+## 2026-10-02 08:20:29 EDT — scribe `5d1d5df4812b954bece832063f2a683e99c2d9e8`
+An answer notifies within five seconds even when Instant cannot read its thread and agent in time (#340).
+
+## 2026-10-02 08:14:55 EDT — scribe `753af2ab52579cfe491e39ad1e0f80793e443273`
+Show one status line per thread even when the room lists a thread twice (#387 #388).
+
+## 2026-10-02 08:10:15 EDT — scribe `e22446e6f614e68d6635353bada0ff686173d86a`
+Agent replies: dot-free app storage keys, and stub the notification taps and UUIDs the tests reach (#340 #342 #387).
+
+## 2026-10-02 07:50:14 EDT — scribe `280431fc05bb2e8a507aca15ce1ad9512f6560be`
+WIP checkpoint of the lost session's agent reply notifications: notify on every device when an answer lands, a quiet per-thread status line, and read-aloud that never touches capture (#340 #342 #387).
 
 ## 2026-10-02 07:47:25 EDT — scribe `f3e7e0b7d2745dc54d7330efe287217973a0627e`
 scribe-mirror: no client's name in the guide, the code, the tests, or the docs (#400 #385).
