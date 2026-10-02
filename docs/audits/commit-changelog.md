@@ -1,3 +1,9 @@
+## 2026-10-02 19:15:29 EDT — scribe `003cfd17c14a17eacd7c6504a4421dea179e9abb`
+Release Scribe 0.1 (80).
+
+## 2026-10-02 19:15:08 EDT — scribe `04a7f5fdc0f54503c763fb3f78989554d2f494c8`
+Merge prod-data: close every open transcript section, at every session end and after a continuation (#335 #363).
+
 ## 2026-10-02 18:25:47 EDT — scribe `f79ba8a46b50c0aa2bcb0816836f745053da710d`
 Merge scribe-mirror: the standing-agent trigger reads cmux's real answers and names its pane (#385 #400).
 
