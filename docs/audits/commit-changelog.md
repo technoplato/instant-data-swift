@@ -1,5 +1,23 @@
+## 2026-10-02 09:10:52 EDT — scribe `f607bb895669a80bc55a7867bf34bf984f5be2f4`
+Merge main's live-follow claim into the build 79 integration (#401).
+
 ## 2026-10-02 08:49:29 EDT — scribe `e09e6489d8ea644c99c9289658c04b69e2608448`
 Log the Instant 1.8.0 pin and Scribe 0.1 (78)'s GitHub release in PROGRESS: the pin's checks (installer tests, a clean resolve, ArchitectureTests 60/60 compiled against the published 1.8.0, an iPhone compile with no override that compiled instant-data-swift eeea9b12), the scribe-0.1-78 release, and what the pin means for override scripts and branches with their own pins (#155 #303).
+
+## 2026-10-02 08:27:03 EDT — scribe `a812df75201a2709dc134b00ada93cfd6e80b1a3`
+Merge mac-live: a live mark, a clock that ticks every second, follow-live with Back to Live, and why audio cannot play yet (#393).
+
+## 2026-10-02 08:26:00 EDT — scribe `66230bac1b6b679106c13da0660553430321fbba`
+Merge list-design: two-line recording rows, a compact playback header, Show Route in a More menu, and full-screen playback (#391).
+
+## 2026-10-02 08:25:47 EDT — scribe `35484454ad3ba181ed7b3c417d81f05af32988de`
+Merge mac-memory: stop the media-retry observer leak, stop two test-target crashes, and add memory fenceposts (#394).
+
+## 2026-10-02 07:47:25 EDT — scribe `f3e7e0b7d2745dc54d7330efe287217973a0627e`
+scribe-mirror: no client's name in the guide, the code, the tests, or the docs (#400 #385).
+
+## 2026-10-02 07:42:18 EDT — scribe `4633792214476bd7ab15620d14a4999a7c2fa6cb`
+scribe-mirror: scribe route prints only verdicts and owners (#400 #385).
 
 ## 2026-10-02 07:35:19 EDT — scribe `ff6e0c56e77c683281ab93a6204c32cdda3ab31a`
 scribe-mirror: AGENTS.md, docs and ADR 0028 for connect, capture, route and triggers (#385 #400).
