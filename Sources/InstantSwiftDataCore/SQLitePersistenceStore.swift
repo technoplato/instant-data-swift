@@ -857,6 +857,10 @@ public actor SQLitePersistenceStore {
   private var didTraceInitialStateLoad = false
   private var cacheResidencyMetrics = InstantPersistenceCacheResidencyMetrics()
   private var statementCacheMetrics = SQLiteStatementCacheMetrics()
+  /// The migrations `bootstrap()` found applied when it started; `nil` outside bootstrap.
+  private var appliedMigrationNamesAtBootstrap: Set<String>?
+  /// Write transactions `migrate(name:body:)` opened to check or apply a migration, for tests (#403).
+  private var migrationTransactionCount = 0
   /// The SQLite transaction a `run(inOneTransaction:_:)` turn holds open; `nil` outside one.
   private var turnTransaction: InstantPersistenceTurnTransaction?
   /// Quarantine reports from a write turn's steps, issued once the turn commits, as each step's own commit did.
@@ -1578,6 +1582,13 @@ public actor SQLitePersistenceStore {
         """
       )
     }
+    // One read of the applied migrations, instead of a write transaction per migration that only found it applied:
+    // 25 of them on every launch (#403). A migration missing from this read still checks inside its own transaction,
+    // so one that another process applies meanwhile still runs exactly once. Migrations are never unapplied.
+    appliedMigrationNamesAtBootstrap = try withSQLiteBusyRetry {
+      Set(try selectStrings("SELECT name FROM instant_schema_migrations"))
+    }
+    defer { appliedMigrationNamesAtBootstrap = nil }
     try withSQLiteBusyRetry {
       try migrate(name: "0001_initial_cache") {
         try execute(
@@ -3515,6 +3526,11 @@ public actor SQLitePersistenceStore {
   @discardableResult
   func simulateUnexpectedConnectionCloseForTesting() -> Int32 {
     connection.close()
+  }
+
+  /// Write transactions bootstrap opened to check or apply a migration since the store opened (#403).
+  package func migrationTransactionCountForTesting() -> Int {
+    migrationTransactionCount
   }
 
   /// The statement cache's counters since the store opened (#403).
@@ -11714,6 +11730,8 @@ public actor SQLitePersistenceStore {
   }
 
   private func migrate(name: String, body: () throws -> Void) throws {
+    if appliedMigrationNamesAtBootstrap?.contains(name) == true { return }
+    migrationTransactionCount += 1
     try transaction {
       let alreadyApplied: String? = try selectScalar(
         "SELECT name FROM instant_schema_migrations WHERE name = ? LIMIT 1",
