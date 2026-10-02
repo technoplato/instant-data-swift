@@ -1,3 +1,9 @@
+## 2026-10-02 16:00:13 EDT — scribe `ac48f34bbfa3a768bbef34753aed19fa639f29e3`
+Merge main's agentPushDevices schema, the remote-push plan, and live-follow's handoff after the 79 release (#340 #401).
+
+## 2026-10-02 15:59:30 EDT — scribe `3e88b254f281c3950b67f29ff0ca69aeeaca979f`
+Record Scribe 0.1 (79) in the change log and PROGRESS: installed on the iPhone, the iPad, and the Mac (#404).
+
 ## 2026-10-02 15:43:04 EDT — instant-data-swift `1d6aa1e1b6cfdbadf0bdf5a03a5a66e17ee0d24d`
 v1.9.1 on main: merge library-79-hops (40a09c9e) without fast-forward over 2f6a9ee3; the annotated tag v1.9.1 points here and gh release v1.9.1 is Latest (https://github.com/technoplato/instant-data-swift/releases/tag/v1.9.1); code equals the gated 262378b2 (#403).
 
@@ -6,6 +12,12 @@ Document the v1.9.1 release: Swift/TypeScript 4.6, 6.5, 4.7 on the cross-SDK run
 
 ## 2026-10-02 15:40:34 EDT — instant-data-swift `bed0dc4f866ccdf2123beb623bf16843cff54a61`
 Merge library main's ledger-only 2f6a9ee3 into library-79-hops before v1.9.1, so main's merge of the branch has no conflicts (#403).
+
+## 2026-10-02 15:10:38 EDT — scribe `a1be8595d8bc4806cff913a480b55a9036048cb9`
+scribe-mirror: the standing agent's pane gets its title: rename-tab names the Scribe workspace (#385 #400).
+
+## 2026-10-02 15:08:37 EDT — scribe `0b97d379274e2a8a534d41a6b02772699f88ed6f`
+scribe-mirror: the standing-agent trigger reads cmux's real answers and never throws on a surprise (#385 #400).
 
 ## 2026-10-02 14:59:47 EDT — instant-data-swift `262378b2981fd5de3901e26399ba23b7988b0e0a`
 Merge v1.9.0 (24559bd4) into library-79-hops for v1.9.1; v1.9.0's code equals the branch's base d95c9625, so only its documents, plan, claims, and log entries came in (#403).
