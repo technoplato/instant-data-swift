@@ -3,3 +3,4 @@ codex-desktop/019fe994-1250-7b42-825e-9b75836d9173/root/explicit_flush_productio
 codex-desktop/01a00071-f1c1-7193-adcd-3bc9f30b5f95/root/semantic_noop_v2 2026-08-15T02:35:00-0400 mower prepared-overlay-admission-only plan=2026-08-14-semantic-noop-insert-v2
 codex-desktop/01a00071-f1c1-7193-adcd-3bc9f30b5f95/root/blocker_index_test 2026-08-15T10:40:57-0400 mower quarantine-blocker-claim-result-contract plan=2026-08-14-semantic-noop-insert-v2
 claude-opus-5.5-library-78 2026-10-01T12:48:54-04:00 mower plan=2026-10-01-library-78 #376 #360 #303 #317 #329
+claude-opus-5.5-library-79 2026-10-02T14:32:22-04:00 mower plan=2026-10-02-library-79-hops #403

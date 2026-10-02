@@ -45,6 +45,12 @@ server answer per transaction (Instant's `combine-transact` merges same-shape qu
 - A prepared-statement cache on the persistence actor, at main's request (2026-10-02 about 12:05 EDT), as its own
   commit: `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` (already claimed) and new
   `Tests/InstantSwiftDataCoreTests/SQLiteStatementCacheTests.swift`, added 2026-10-02 12:08 EDT
+- The three next cuts main approved (2026-10-02 13:21 EDT, "do them after v1.9.1 ships, one commit and one ABBA arm
+  each"), prepared on the local branch `agent/claude-opus-5.5/library-79-next` and measured by heavy job 4; they land
+  here after v1.9.1 ships: `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` and `InstantRuntime.swift`
+  (already claimed), `Sources/InstantSwiftDataCore/InstantModels.swift` and `BoundedOutboxDelivery.swift` (one
+  encoding per save), and new `Tests/InstantSwiftDataCoreTests/SQLiteTurnTransactionTests.swift`,
+  `SQLiteBootstrapMigrationTests.swift`, and `InstantEncodedOutboxMutationTests.swift`, added 2026-10-02 14:32 EDT
 - `Tests/InstantSwiftDataCoreTests/InstantCrossSDKRuntimeBenchmarkTests.swift`
 - `Tests/InstantSwiftDataCoreTests/BenchmarkTests.swift` and `CLITests.swift` (hop pins only; CLITests added
   2026-10-02 11:38 EDT)
