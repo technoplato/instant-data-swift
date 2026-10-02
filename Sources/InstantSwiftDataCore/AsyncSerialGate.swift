@@ -1,5 +1,6 @@
 import Foundation
 import IssueReporting
+import os
 
 /// Serializes the multi-await critical sections of ``InstantRuntime``.
 ///
@@ -89,7 +90,17 @@ actor AsyncSerialGate {
   private let waitReport: @Sendable (WaitReport) -> Void
 
   private var waiters: [Waiter] = []
-  private var holderOperation: String?
+  private var holderOperation: String? {
+    didSet {
+      let isHeld = holderOperation != nil
+      heldFlag.withLock { $0 = isHeld }
+    }
+  }
+  /// Mirrors `holderOperation != nil` for ``isHeldSnapshot``. Written only on this actor, in the same turn as
+  /// `holderOperation`; the lock exists so a reader off the actor sees a whole value. It guards one Bool for one load
+  /// or store: the "tiny, local isolation domain" a lock is for (Point-Free ep358 at 4:01). Contention grows with the
+  /// work done under a lock (ep360 at 27:15), and there is none here.
+  private let heldFlag = OSAllocatedUnfairLock(initialState: false)
   private var holderPhase: String?
   private var holderAcquiredAt: Date?
   private var stallCount = 0
@@ -115,6 +126,12 @@ actor AsyncSerialGate {
 
   /// Whether some caller currently holds the gate.
   var isHeld: Bool { holderOperation != nil }
+
+  /// ``isHeld`` without a hop onto this actor (#403). It changes in the same actor turn as the holder, so a reader
+  /// sees a value the gate really had; like `await isHeld`, the answer can change right after it is read. Use it only
+  /// where that is fine, as `transact`'s supersession check is: the server apply it defers to revalidates under the
+  /// operation gate.
+  nonisolated var isHeldSnapshot: Bool { heldFlag.withLock { held in held } }
 
   /// How many callers are queued behind the holder.
   var waiterCount: Int { waiters.count }

@@ -3,3 +3,4 @@ codex-desktop/01a00071-f1c1-7193-adcd-3bc9f30b5f95/root/semantic_noop_v2 2026-08
 codex-desktop/01a00071-f1c1-7193-adcd-3bc9f30b5f95/root/legacy_head_contract_tests 2026-08-15T09:58:25-0400 mower typed-synchronization-blocker-model plan=2026-08-14-semantic-noop-insert-v2
 claude-opus-5.5-sharing-accounts 2026-09-29T00:28:10-0400 mower plan=2026-09-29-sharing-accounts-auth-parity #113
 claude-opus-5.5-library-78 2026-10-01T12:48:54-04:00 mower plan=2026-10-01-library-78 #376 #360 #303 #317 #329
+claude-opus-5.5-library-79 2026-10-02T14:32:22-04:00 mower plan=2026-10-02-library-79-hops #403

@@ -52,6 +52,58 @@ struct InstantCrossSDKRuntimeBenchmarkTests {
     )
   }
 
+  /// Every actor call and unstructured task on the three workloads, pinned (#403). An added await on any of these
+  /// paths changes a count here; ADR 0018 maps each hop to the line that makes it and what it protects.
+  @Test
+  func runtimeWorkloadsPinEveryActorHop() async throws {
+    let cacheURL = FileManager.default.temporaryDirectory
+      .appendingPathComponent("InstantCrossSDKRuntimeBenchmarkHopTests-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: cacheURL) }
+
+    let result = try await InstantSwiftDataCrossSDKRuntimeBenchmarks.run(
+      appID: "cross-sdk-runtime-hop-test",
+      iterations: 2,
+      cacheDirectory: cacheURL
+    )
+
+    // transact: the gate, one persistence turn of reads, the store's prepare, one turn for the save and the status
+    // it changed, the store's commit, the status publish, and the gate. The 12 persistence awaits were 2 turns.
+    let enqueue: [String: Int] = [
+      "operation-gate": 2,
+      "persistence": 2,
+      "store": 2,
+      "observers": 1,
+    ]
+    // Relaunch: one turn to open the store, the live-result prune, then a query (one turn of reads, the store, the
+    // query-cache save) and the pending mutations (one turn), each inside the gate.
+    let relaunch: [String: Int] = [
+      "operation-gate": 4,
+      "persistence": 5,
+      "store": 2,
+    ]
+    // Reconnect and drain: connect saves the opened state and reads the status in one turn; the explicit flush claims
+    // in one turn, confirms, then settles in one turn. Its five tasks are unchanged.
+    let drain: [String: Int] = [
+      "connection-gate": 2,
+      "mutation-flush-gate": 2,
+      "mutation-transport": 1,
+      "observers": 2,
+      "operation-gate": 6,
+      "outbox": 2,
+      "persistence": 4,
+      "reconnect-controller": 1,
+      "task": 5,
+    ]
+    expectNoDifference(
+      result.metrics.map { metric in metric.samples.map(\.actorHopBreakdown) },
+      [[enqueue, enqueue], [relaunch, relaunch], [drain, drain]]
+    )
+    expectNoDifference(
+      result.metrics.map { metric in metric.samples.map(\.actorHopCount) },
+      [[7, 7], [11, 11], [25, 25]]
+    )
+  }
+
   @Test
   func contractPinsEquivalentRuntimeOperationCounts() {
     expectNoDifference(InstantCrossSDKRuntimeBenchmarkContract.version, 1)

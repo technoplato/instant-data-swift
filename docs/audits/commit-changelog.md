@@ -1,5 +1,20 @@
+## 2026-10-02 15:42:00 EDT — instant-data-swift `8f67a567c8b2ce792757d2d948327337d8626808`
+Document the v1.9.1 release: Swift/TypeScript 4.6, 6.5, 4.7 on the cross-SDK runtime benchmark (from 7.4, 6.9, 7.4 in v1.8.0); the release-gate hold on 262378b2 passed with 0 soak refusals (#403).
+
+## 2026-10-02 15:40:34 EDT — instant-data-swift `bed0dc4f866ccdf2123beb623bf16843cff54a61`
+Merge library main's ledger-only 2f6a9ee3 into library-79-hops before v1.9.1, so main's merge of the branch has no conflicts (#403).
+
+## 2026-10-02 14:59:47 EDT — instant-data-swift `262378b2981fd5de3901e26399ba23b7988b0e0a`
+Merge v1.9.0 (24559bd4) into library-79-hops for v1.9.1; v1.9.0's code equals the branch's base d95c9625, so only its documents, plan, claims, and log entries came in (#403).
+
 ## 2026-10-02 14:56:38 EDT — instant-data-swift `d42dd9601416f277393515e31bc3e89d6e4cf3fc`
 Document the v1.9.0 release in docs/releases/v1.9.0.md: build 78's library and every change since v1.8.0, in plain words, with library-78's checks on 01175cff and the open items (#376 #360 #388 #394 #329 #361 #296 #402).
+
+## 2026-10-02 14:38:15 EDT — instant-data-swift `9dff3425fbd237b9751f0a1f6438029e4e901cf6`
+ADR 0018: the hop map of transact, relaunch, and reconnect drain, the ranked hop and CPU cuts, and the measurements (19/16/50 to 7/11/25 actor calls; Swift/TypeScript 7.4/6.9/7.4 to 4.6/6.5/4.7) (#403).
+
+## 2026-10-02 14:32:45 EDT — instant-data-swift `e623b2f211a7d8aba503b5496e95a00c0cdafe61`
+Claim the files of the three next cuts main approved for after v1.9.1: one SQLite transaction per persistence turn, one migration read at bootstrap, one encoding per save (#403).
 
 ## 2026-10-02 14:26:05 EDT — scribe `4efefa9f9af7dd9557b1a25e4ba9732c87626ce2`
 Release Scribe 0.1 (79).
@@ -58,11 +73,26 @@ scribe-mirror: the standing agent opens in a dedicated "Scribe" cmux workspace, 
 ## 2026-10-02 12:26:49 EDT — scribe `6a2d8f5497c5ff85d482d0aa780737c93894ee50`
 scribe-mirror: the standing-agent trigger starts one Claude Code agent per new recording, in a cmux pane (#385 #400).
 
+## 2026-10-02 12:08:31 EDT — instant-data-swift `57f4a8413ba67360b21c8d5657bfe21ca5fda5b8`
+Claim the statement-cache test for the prepared-statement cache main asked for as its own commit (#403).
+
+## 2026-10-02 11:57:16 EDT — instant-data-swift `55a15392f23f9d0a9db4c66f9abebecc5fe2b49c`
+Format every transport date through one shared ISO 8601 formatter, byte-identical to the TypeScript core's wire encoding (79 of 79 fixture dates); formatter setup was about a quarter of transact's profile (#403).
+
+## 2026-10-02 11:45:33 EDT — instant-data-swift `158a45152b289102bfadf0024bf24fd899dab667`
+Run each step's persistence work in one actor turn: transact 19 to 7 actor calls, relaunch 16 to 11, reconnect-drain 50 to 25, same SQLite statements in the same order; the phone-shaped replay matches library-78's reference in every count (#403).
+
 ## 2026-10-02 11:38:26 EDT — scribe `d83e5958f321dcf1cc6ec9e8de945212b2bd5424`
 Record the installer's stale workspace Package.resolved fix in the change log (#404).
 
 ## 2026-10-02 11:38:16 EDT — scribe `5883bb93c339c48fcb60bb6c272866f78f5dec0a`
 Remove the stale generated workspace Package.resolved before every published build (#404).
+
+## 2026-10-02 11:37:26 EDT — instant-data-swift `3f6b30ec69daeca940df565af40eae72fd4b3409`
+Claim the outbox, supersession, gate-test, CLI-test, and transport-date files for the hop and formatter cuts (#403).
+
+## 2026-10-02 11:37:06 EDT — instant-data-swift `2e2a1c0759d1e80a246e45e00d6ab8cbee06b64d`
+Count every actor call on transact, relaunch, and reconnect drain, and pin the counts: 19, 16, and 50 actor calls where the recorder showed 9, 12, and 29 (#403).
 
 ## 2026-10-02 11:36:51 EDT — scribe `60b3032cc3d656d9ad5229b92318905f52cb7f95`
 Plan the installer fix for the stale workspace Package.resolved and claim its paths (#404).
@@ -111,6 +141,9 @@ Merge voice-actions: speak to Scribe while it records, behind a setting that sta
 
 ## 2026-10-02 09:12:18 EDT — scribe `5fc4db9ee1b56f4f19519a0809a8eae9dba205b2`
 Merge visionos: the Vision Pro bar as an ornament, 60-point targets, windows side by side, and a compile check (#367).
+
+## 2026-10-02 09:11:40 EDT — instant-data-swift `c2f7490810a4192d9d8c660b72c5cb49b28ea6d2`
+Plan the actor-hop work on transact, relaunch, and outbox drain; claim its paths (#403).
 
 ## 2026-10-02 09:10:52 EDT — scribe `f607bb895669a80bc55a7867bf34bf984f5be2f4`
 Merge main's live-follow claim into the build 79 integration (#401).

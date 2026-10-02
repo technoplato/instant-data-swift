@@ -356,9 +356,31 @@ public indirect enum InstantTransportValue: Hashable, Encodable, Sendable {
   }
 
   private static func iso8601String(from date: Date) -> String {
+    InstantTransportDateFormatter.shared.string(from: date)
+  }
+}
+
+/// The one ISO 8601 formatter every transport date goes through (#403).
+///
+/// Lowering a mutation for the wire formats each date value. It used to create an `ISO8601DateFormatter` per value,
+/// and a transact lowers its mutation more than once (the delivery step count, the wire-intent fingerprint): in the
+/// v1.8.0 cross-SDK runtime benchmark's profile, formatter setup was about a quarter of `transact`'s samples and 30%
+/// of the explicit flush's. Formatting reuses one formatter with the same options, so every string is byte-identical.
+// SAFETY: `lock` serializes every use of `formatter`, which never leaves this type; callers get a `String` back.
+package final class InstantTransportDateFormatter: @unchecked Sendable {
+  package static let shared = InstantTransportDateFormatter()
+
+  private let lock = NSLock()
+  private let formatter: ISO8601DateFormatter
+
+  private init() {
     let formatter = ISO8601DateFormatter()
     formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-    return formatter.string(from: date)
+    self.formatter = formatter
+  }
+
+  package func string(from date: Date) -> String {
+    lock.withLock { formatter.string(from: date) }
   }
 }
 

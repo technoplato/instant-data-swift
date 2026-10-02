@@ -150,11 +150,20 @@ public enum OutboxSameEntitySupersession: Sendable {
     attributes: [InstantAttribute]
   ) -> Bool {
     guard newcomer.status == .pending else { return false }
+    return isEligibleImmediateTailNewcomer(newcomer.transaction, attributes: attributes)
+  }
+
+  /// The shape half of ``isEligibleImmediateTailNewcomer(_:attributes:)``, for a local write that is pending by
+  /// construction and whose outbox row does not exist yet.
+  static func isEligibleImmediateTailNewcomer(
+    _ transaction: InstantStoreTransaction,
+    attributes: [InstantAttribute]
+  ) -> Bool {
     let attributesByID = Dictionary(
       uniqueKeysWithValues: attributes.map { ($0.id, $0) }
     )
     return immediateTailShape(
-      newcomer.transaction,
+      transaction,
       attributesByID: attributesByID
     ) != nil
   }

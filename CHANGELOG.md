@@ -10,6 +10,21 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## October 2nd, 2026 at 3:42:18 p.m. EDT — `8f67a567c8b2` Document the v1.9.1 release: a local write and the outbox drain take a third less time, Swift/TypeScript 4.6, 6.5, 4.7 (#403)
+
+- **Implementation commit:** `8f67a567c8b2ce792757d2d948327337d8626808`
+- **Change:** Document the v1.9.1 release: library-79's hop cuts and shared transport-date formatter on v1.9.0's code; a local write and the outbox drain take a third less time (#403).
+- **Details:**
+  - Swift/TypeScript on the cross-SDK runtime benchmark (paired ABBA through heavy.sh, ten blocks): 4.6, 6.5, 4.7 for one write, relaunch, and reconnect drain, from 7.4, 6.9, 7.4 in v1.8.0; actor calls 7, 11, 25 from 19, 16, 50.
+  - Release-gate hold on the gated code commit 262378b2 (15:04-15:39 EDT): focused set 163 pass (3 known), fast-drain and survival 25 pass (2 known), ten suites 697 pass (22 known), infinite 211 with only #304, library-77/78 106 pass, the phone-shaped replay matches the 01175cff reference in every count, and a 10-minute calibrated-car soak had 0 refusals (873 local writes, 868 accepted, at most 2 queued).
+  - Published under Michael's authorization; the release gate (validation/run-performance-gate.sh live) did not run and is named with the known open items, as in v1.9.0.
+- **Files:**
+  - `docs/releases/v1.9.1.md` — the release document; passes scripts/validate-release-version.sh 1.9.1
+  - `PROGRESS.md` — the v1.9.1 release entry and library-79's continuation entry
+- **User context (verbatim):**
+  > Publish the library once it's checked fast. Yes.
+- **SpecStory:** unavailable — Claude Code agent session (library-79); no SpecStory capture configured for this session.
+
 ## October 2nd, 2026 at 2:57:03 p.m. EDT — `d42dd9601416` Document the v1.9.0 release: build 78's library keeps the socket open through server errors, tells live-query subscribers about failures, stops refusing duplicate writes, and lists each row once (#376 #360 #388 #394 #329 #361 #296 #402)
 
 - **Implementation commit:** `d42dd9601416f277393515e31bc3e89d6e4cf3fc`
@@ -22,6 +37,78 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 - **User context (verbatim):**
   > Publish the library once it's checked fast. Yes.
 - **SpecStory:** unavailable — Claude Code agent session (library-78); no SpecStory capture configured for this session.
+
+## October 2nd, 2026 at 2:38:36 p.m. EDT — `9dff3425fbd2` Record the design of the hop and CPU cuts in ADR 0018: the hop map, the ranked cuts, and the measurements (#403)
+
+- **Implementation commit:** `9dff3425fbd237b9751f0a1f6438029e4e901cf6`
+- **Change:** ADR 0018 records the design of the hop and CPU cuts: the hop map of transact, relaunch, and reconnect drain, the ranked cuts, and the measurements (#403).
+- **Details:**
+  - The hop map at library-78's head d95c9625: every actor call on the three paths with its line, the property it protects, and the Reactor.js step it matches (19, 16, and 50 calls).
+  - Decision: enter each actor once per step (Point-Free's run, ep362 at 12:16), then the CPU cuts the profile named: the shared transport-date formatter (v1.9.1), and the statement cache, one SQLite transaction per turn, one migration read at bootstrap, and one encoding per save on agent/claude-opus-5.5/library-79-next.
+  - Measured (paired ABBA through heavy.sh, ten blocks, load 200-350): Swift/TypeScript 7.4, 6.9, 7.4 at v1.8.0; 7.3, 6.8, 7.1 with the hop cuts; 4.6, 6.5, 4.7 with the formatter. An uncontended hop costs about 0.1 microseconds, so the hop cuts are structural; the time is CPU work.
+- **Files:**
+  - `docs/adr/0018-one-actor-turn-per-step.md` — the design note #403 asks for: hop map, ranked cuts, results, decisions
+- **User context (verbatim):**
+  > fix this please so it works efficiently as as well as the typescript core library
+- **SpecStory:** unavailable — Claude Code agent session (library-79); no SpecStory capture configured for this session.
+
+## October 2nd, 2026 at 11:57:26 a.m. EDT — `55a15392f23f` Format every transport date through one shared ISO 8601 formatter, byte-identical to the TypeScript core's wire encoding (#403)
+
+- **Implementation commit:** `55a15392f23f9d0a9db4c66f9abebecc5fe2b49c`
+- **Change:** Every transport date goes through one shared ISO 8601 formatter instead of a new ISO8601DateFormatter per value; the strings are byte-identical, and they match the TypeScript core's wire encoding (#403).
+- **Details:**
+  - The v1.8.0 cross-SDK runtime profile put formatter setup at about a quarter of transact's samples and 30% of the explicit flush's (base d95c9625: 30% and 34%). A transact lowers its mutation more than once: the delivery step count and the wire-intent fingerprint.
+  - InstantTransportDateFormatterTests: 79 dates from @instantdb/core 1.0.49's transform plus JSON.stringify (the fixture generator runs a real update and stringifies it as Connection.send does), 2,005 dates against a fresh formatter including sub-millisecond rounding, and 3,200 concurrent calls. Today's output matched the TS fixture before the change too (79 of 79).
+  - Evidence (debug build of the hops plus this change): the formatter suite and nine neighbors passed, 116 tests with 11 known issues (InstantBoundedOutboxDeliveryTests' existing known issues).
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantTransportMutation.swift` — InstantTransportDateFormatter, one locked formatter for every transport date
+  - `Tests/InstantSwiftDataCoreTests/InstantTransportDateFormatterTests.swift` — pins the TS encoding, byte-identity, and concurrent use
+  - `validation/fixtures/transport-date-encoding.json` — the TS core's own date encoding for 79 values
+  - `validation/ts-runner/src/transport-date-encoding-fixture.ts` — writes that fixture through the core's transform and JSON.stringify
+- **User context (verbatim):**
+  > fix this please so it works efficiently as as well as the typescript core library
+- **SpecStory:** unavailable — Claude Code agent session (library-79); no SpecStory capture configured for this session.
+
+## October 2nd, 2026 at 11:45:50 a.m. EDT — `158a45152b28` Run each step's persistence work in one actor turn: transact 19 to 7 actor calls, relaunch 16 to 11, drain 50 to 25 (#403)
+
+- **Implementation commit:** `158a45152b289102bfadf0024bf24fd899dab667`
+- **Change:** Each step's persistence work runs in one actor turn (Point-Free's run, ep362 at 12:16): one transact makes 7 actor calls instead of 19, relaunch 11 instead of 16, reconnect-drain 25 instead of 50, with the same SQLite statements in the same order (#403).
+- **Details:**
+  - transact: state, shares, the same-id check, the alias check, the cursor, and the supersession tail in one turn; the save and the status it changed in a second (the save's transaction commits first; a failed status read publishes nothing, as the try? did). The tail read splits from its rare repair.
+  - The connection status reads in one turn everywhere and skips the live session's open flag without a live transport. AsyncSerialGate.isHeldSnapshot reads the server-apply gate without a hop. Relaunch, the query, pendingMutations(), and the explicit flush batch their persistence calls; the cookie task starts only with a first-party URL.
+  - Evidence (deterministic local, debug build of this tree): runtimeWorkloadsPinEveryActorHop passes at 7, 11, 25; library-78's gate filters give fast-drain 25 tests passed (2 known), ten suites 697 tests with 22 known issues plus the BenchmarkTests and CLITests hop pins (updated here) and one 250 ms timing test under load, infinite suites 211 tests (10 known plus #304), library-77/78 suites 106 passed. The phone-shaped replay matches library-78's 01175cff reference in every count (2487 to 0, 119 frames, 17 rebases, 26288 bodies, 2384 accepted, 103 refused).
+- **Files:**
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — run, and the supersession tail's read split from its repair
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — one persistence turn per step on the three paths
+  - `Sources/InstantSwiftDataCore/AsyncSerialGate.swift` — isHeldSnapshot, the held flag without a hop
+  - `Sources/InstantSwiftDataCore/Outbox.swift` — replace(contentsOf:), one hop per claimed window
+  - `Sources/InstantSwiftDataCore/OutboxSameEntitySupersession.swift` — the eligibility check on a transaction
+  - `Sources/InstantSwiftDataCore/InstantActorHopInstrumentation.swift` — drops the server-apply-gate boundary, no longer a hop
+  - `Tests/InstantSwiftDataCoreTests/InstantCrossSDKRuntimeBenchmarkTests.swift` — pins 7, 11, and 25
+  - `Tests/InstantSwiftDataCoreTests/BenchmarkTests.swift` — local-todos pins after the cuts
+  - `Tests/InstantSwiftDataCoreTests/CLITests.swift` — the CLI benchmark's pins after the cuts
+  - `Tests/InstantSwiftDataCoreTests/AsyncSerialGateTests.swift` — the held snapshot follows acquire, handoff, and leave
+- **User context (verbatim):**
+  > fix this please so it works efficiently as as well as the typescript core library
+- **SpecStory:** unavailable — Claude Code agent session (library-79); no SpecStory capture configured for this session.
+
+## October 2nd, 2026 at 11:37:16 a.m. EDT — `2e2a1c0759d1` Count every actor call on transact, relaunch, and reconnect drain, and pin the counts (#403)
+
+- **Implementation commit:** `2e2a1c0759d1e80a246e45e00d6ab8cbee06b64d`
+- **Change:** Every actor call and unstructured task on the three cross-SDK runtime workloads is recorded and pinned, so the hop cuts that follow are measured, not inferred (#403).
+- **Details:**
+  - The recorder counted only some call sites. Measured with every call recorded (release build of this commit, the benchmark CLI): one transact makes 19 actor calls (it recorded 9), relaunch 16 (12), reconnect-drain 50 (29). The counts match the code-reading inventory exactly.
+  - New boundaries: connection-gate, server-apply-gate, observers, reconnect-controller, delivery-pump, task. No behavior change: the diff to InstantRuntime.swift only adds recordActorHop calls.
+  - InstantCrossSDKRuntimeBenchmarkTests.runtimeWorkloadsPinEveryActorHop pins the three breakdowns. The local-todos pins in BenchmarkTests and CLITests are the same CLI run's numbers; at the base commit the CLI's local-todos counts equal BenchmarkTests' pins for all nine pinned workloads, so the CLI stands in for the test there.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantActorHopInstrumentation.swift` — the boundaries the three paths cross
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — a hop record before every actor call and task on the three paths
+  - `Tests/InstantSwiftDataCoreTests/InstantCrossSDKRuntimeBenchmarkTests.swift` — pins every hop of the three workloads
+  - `Tests/InstantSwiftDataCoreTests/BenchmarkTests.swift` — local-todos hop pins at the complete counts
+  - `Tests/InstantSwiftDataCoreTests/CLITests.swift` — the CLI benchmark's local-todos hop pins at the complete counts
+- **User context (verbatim):**
+  > fix this please so it works efficiently as as well as the typescript core library
+- **SpecStory:** unavailable — Claude Code agent session (library-79); no SpecStory capture configured for this session.
 
 ## October 1st, 2026 at 8:45:52 p.m. EDT — `01175cff5f84` Name what protects the attribute context cache and the observation reader in their SAFETY comments
 

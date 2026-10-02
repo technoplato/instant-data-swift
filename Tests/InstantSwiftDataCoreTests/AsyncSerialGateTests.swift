@@ -144,6 +144,28 @@ struct AsyncSerialGateTests {
     )
   }
 
+  // `transact` reads the server-apply gate's held flag without a hop (#403). The snapshot must say what `isHeld` says
+  // at every step: acquire, a handoff to a queued caller, and the last leave.
+  @Test("the hop-free held snapshot follows the holder through acquire, handoff, and leave")
+  func heldSnapshotFollowsTheHolder() async throws {
+    let gate = AsyncSerialGate(label: "test")
+    #expect(gate.isHeldSnapshot == false)
+    await gate.enter()
+    #expect(gate.isHeldSnapshot == true)
+
+    let waiter = Task {
+      await gate.enter()
+      let heldWhileWaiterHolds = gate.isHeldSnapshot
+      await gate.leave()
+      return heldWhileWaiterHolds
+    }
+    try await gate.waitForWaiterCount(1)
+    await gate.leave()
+    #expect(await waiter.value == true)
+    #expect(gate.isHeldSnapshot == false)
+    #expect(await gate.isHeld == false)
+  }
+
   @Test("cancelling a middle waiter preserves first-in-first-out order for the rest")
   func cancellingAMiddleWaiterPreservesFIFOOrder() async throws {
     let gate = AsyncSerialGate(label: "test")

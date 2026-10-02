@@ -1,13 +1,25 @@
 import Foundation
 
+/// Where the runtime crosses into another isolation domain, as counted by ``InstantActorHopRecorder``.
+///
+/// Call sites record a boundary just before they await it, so a count is only as complete as its call sites. The three
+/// cross-SDK runtime workloads (transact, relaunch, reconnect drain) record every actor call and every unstructured
+/// task they start; their counts are pinned in `InstantCrossSDKRuntimeBenchmarkTests` (#403).
 package enum InstantActorHopBoundary: String, CaseIterable, Sendable {
   case operationGate = "operation-gate"
   case mutationFlushGate = "mutation-flush-gate"
+  case connectionGate = "connection-gate"
   case persistence
   case store
   case outbox
   case mutationTransport = "mutation-transport"
   case liveSession = "live-session"
+  /// A publish to an observer registry actor (connection status, mutation lifecycle).
+  case observers
+  case reconnectController = "reconnect-controller"
+  case deliveryPump = "delivery-pump"
+  /// An unstructured `Task` the operation starts; each one is a job the cooperative pool has to schedule.
+  case task
 }
 
 package struct InstantActorHopBaseline: Sendable {
