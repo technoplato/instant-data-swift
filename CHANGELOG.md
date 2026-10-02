@@ -10,6 +10,20 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## October 2nd, 2026 at 2:38:36 p.m. EDT — `9dff3425fbd2` Record the design of the hop and CPU cuts in ADR 0018: the hop map, the ranked cuts, and the measurements (#403)
+
+- **Implementation commit:** `9dff3425fbd237b9751f0a1f6438029e4e901cf6`
+- **Change:** ADR 0018 records the design of the hop and CPU cuts: the hop map of transact, relaunch, and reconnect drain, the ranked cuts, and the measurements (#403).
+- **Details:**
+  - The hop map at library-78's head d95c9625: every actor call on the three paths with its line, the property it protects, and the Reactor.js step it matches (19, 16, and 50 calls).
+  - Decision: enter each actor once per step (Point-Free's run, ep362 at 12:16), then the CPU cuts the profile named: the shared transport-date formatter (v1.9.1), and the statement cache, one SQLite transaction per turn, one migration read at bootstrap, and one encoding per save on agent/claude-opus-5.5/library-79-next.
+  - Measured (paired ABBA through heavy.sh, ten blocks, load 200-350): Swift/TypeScript 7.4, 6.9, 7.4 at v1.8.0; 7.3, 6.8, 7.1 with the hop cuts; 4.6, 6.5, 4.7 with the formatter. An uncontended hop costs about 0.1 microseconds, so the hop cuts are structural; the time is CPU work.
+- **Files:**
+  - `docs/adr/0018-one-actor-turn-per-step.md` — the design note #403 asks for: hop map, ranked cuts, results, decisions
+- **User context (verbatim):**
+  > fix this please so it works efficiently as as well as the typescript core library
+- **SpecStory:** unavailable — Claude Code agent session (library-79); no SpecStory capture configured for this session.
+
 ## October 2nd, 2026 at 11:57:26 a.m. EDT — `55a15392f23f` Format every transport date through one shared ISO 8601 formatter, byte-identical to the TypeScript core's wire encoding (#403)
 
 - **Implementation commit:** `55a15392f23f9d0a9db4c66f9abebecc5fe2b49c`

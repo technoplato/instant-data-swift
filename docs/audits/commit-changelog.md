@@ -1,3 +1,12 @@
+## 2026-10-02 14:38:15 EDT — instant-data-swift `9dff3425fbd237b9751f0a1f6438029e4e901cf6`
+ADR 0018: the hop map of transact, relaunch, and reconnect drain, the ranked hop and CPU cuts, and the measurements (19/16/50 to 7/11/25 actor calls; Swift/TypeScript 7.4/6.9/7.4 to 4.6/6.5/4.7) (#403).
+
+## 2026-10-02 14:32:45 EDT — instant-data-swift `e623b2f211a7d8aba503b5496e95a00c0cdafe61`
+Claim the files of the three next cuts main approved for after v1.9.1: one SQLite transaction per persistence turn, one migration read at bootstrap, one encoding per save (#403).
+
+## 2026-10-02 12:08:31 EDT — instant-data-swift `57f4a8413ba67360b21c8d5657bfe21ca5fda5b8`
+Claim the statement-cache test for the prepared-statement cache main asked for as its own commit (#403).
+
 ## 2026-10-02 11:57:16 EDT — instant-data-swift `55a15392f23f9d0a9db4c66f9abebecc5fe2b49c`
 Format every transport date through one shared ISO 8601 formatter, byte-identical to the TypeScript core's wire encoding (79 of 79 fixture dates); formatter setup was about a quarter of transact's profile (#403).
 
