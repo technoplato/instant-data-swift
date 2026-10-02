@@ -181,6 +181,19 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
   > fix this please so it works efficiently as as well as the typescript core library
 - **SpecStory:** unavailable — unavailable — Claude Code agent session (library-78); no SpecStory capture configured for this session.
 
+## October 1st, 2026 at 5:11:46 p.m. EDT — `194f75324aca` Document the v1.8.0 release: a device keeps up live, catches up a backlog in minutes, and no longer stalls behind the main thread (#155 #303 #324 #329 #296)
+
+- **Implementation commit:** `194f75324acadc3118b789a16489410681a96abc`
+- **Change:** Document the v1.8.0 release: a device keeps up live, catches up a backlog in minutes, and no longer stalls behind the main thread (#155 #303 #324 #329 #296).
+- **Details:**
+  - Minor release from main: build 77's library (library-77 66f49197, gated head 956fce52) merged without fast-forward as d9ac85f0 over 646c0ebc. Additive public API: InstantEntityModel.decodeQuarantiningFailures(_:operation:), InstantLiveMessage.defaultVersions, the AuthV3 environment values authV3AllowsDiscardingGuestSession and authV3ShowsDemoCounters, and InstantAuthSession's log-safe description conformances. Async InstantRuntime methods are now @concurrent, so code compiled against 1.7.0 must be rebuilt. One data migration (0024) removes local entities missing their id fact; no table schema change; dependencies unchanged.
+  - Plain-words notes for the @instantdb/core v0.22.75 advert (Scribe refreshes 173 KB to 44 KB), the attribute caches, @concurrent, the add-query retry (#324), refused stream subscriptions, and builds 62-76's fixes (#296 fast drain, refused-write restore, delivery deferral, connection survival; #277; #278; #300; #259 #274; #113; #289). Cites library-77's gate evidence in /Users/laptop/Sync/audit/recording-023-fixes/fast-drain/library-77/ and FAST-DRAIN.md section 15; lists the open items library-78 carries (#329, Pattern B, #304).
+- **Files:**
+  - `docs/releases/v1.8.0.md` — release document; passes scripts/validate-release-version.sh 1.8.0
+- **User context (verbatim):**
+  > make sure the the library is deployed and has a release triggered, etc., from uh GitHub with all these fixes and whatnot
+- **SpecStory:** unavailable — Claude Code agent session (release); no SpecStory capture configured for this session.
+
 ## October 1st, 2026 at 3:45:08 p.m. EDT — `6dce825d80c3` Answer a one-shot query from the device when its exact subscription was answered on the open socket (library-78 item 7, #317 #307)
 
 - **Implementation commit:** `6dce825d80c3cdac96cf9e9ea11fc6dcc9b65cdf`
@@ -308,6 +321,7 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 - **User context (verbatim):**
   > Let's add a functionality to link accounts then. If you have Apple, I want to be able to link it with Google as well so that we aggregate all these different recordings. So it's a library change and
 - **SpecStory:** unavailable — Claude Code agent session (account-linking-library); no SpecStory capture for this session
+
 ## October 1st, 2026 at 1:51:46 p.m. EDT — `8dd3bf28a6bb` Keep the socket on transient server errors: retry the write or the live query on it with backoff, and tell subscribers (#376 #360)
 
 - **Implementation commit:** `8dd3bf28a6bb2a25aed21980ff24c7bdc23382aa`
@@ -335,6 +349,7 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 - **User context (verbatim):**
   > I don't really understand why it would do that, reconnecting song and dance or why what was causing the problem. Why couldn't it just reconnect? Yeah, why are the reconnects there in the first place?
 - **SpecStory:** unavailable — unavailable — Claude Code agent session (library-78); no SpecStory capture configured for this session.
+
 ## October 1st, 2026 at 5:27:11 a.m. EDT — `f9cb539640f7` Apply a server transaction under an exclusive operation-gate hold once local writes have made every optimistic attempt stale, instead of ending the receive loop (#303)
 
 - **Implementation commit:** `f9cb539640f7a847bc6af046408efd206c1b1933`

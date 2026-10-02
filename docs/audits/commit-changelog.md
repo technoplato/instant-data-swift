@@ -55,6 +55,15 @@ Record a live query's answer before its acknowledgement and pin the local-first 
 ## 2026-10-01 17:19:58 EDT — instant-data-swift `95fba702b64f1973b53475fe97cf496dbc987c54`
 Restart a stream writer on the same socket when the server refuses or cannot flush its append, instead of reconnecting (upstream onAppendFailed) (#329 #376).
 
+## 2026-10-01 17:10:58 EDT — instant-data-swift `194f75324acadc3118b789a16489410681a96abc`
+Document the v1.8.0 release in docs/releases/v1.8.0.md: build 77's library and every fix builds 62-76 shipped since v1.7.0, in plain words, with library-77's gate evidence and the open items (#155 #303 #324 #329 #296).
+
+## 2026-10-01 17:04:48 EDT — instant-data-swift `38aaf747c228fe33df6101fd6e55a1cdf0305802`
+Plan the v1.8.0 release (plan 2026-10-01-release-1.8.0) and claim the release document, CHANGELOG.md, PROGRESS.md, and this ledger; note the overlap with library-78's unmerged claims on the same logs (#155 #303 #324 #329).
+
+## 2026-10-01 17:03:54 EDT — instant-data-swift `d9ac85f0c97848e99ac4b47c287fe750c415b390`
+Merge build 77's library (agent/claude-opus-5.5/library-77 at 66f49197, gated head 956fce52) into main without fast-forward over 646c0ebc: every library change Scribe builds 62-77 shipped since v1.7.0 (#303 #324 #329 #296 #300 #289 #278 #277 #259 #274 #113).
+
 ## 2026-10-01 17:03:01 EDT — scribe `44558453a9b0a5f954e3f2f2151f537e8f6aeaf6`
 Record account linking's soak, iPhone, and Mac evidence, and its progress entry (#361).
 
@@ -108,6 +117,7 @@ Add a two-credential account-link script for identities stored on this Mac, such
 
 ## 2026-10-01 10:14:56 EDT — scribe `799af89c2cefcbf7705d3c14e8359337cff51afd`
 Design account links (ADR draft 0024) and add their schema, rules, and rules regression harness: one person's sign-ins read, write, and share each other's recordings (#361).
+
 ## 2026-10-01 05:27:00 EDT — instant-data-swift `f9cb539640f7a847bc6af046408efd206c1b1933`
 Apply a server transaction under an exclusive operation-gate hold once local writes have made every optimistic attempt stale, instead of ending the receive loop (#303).
 

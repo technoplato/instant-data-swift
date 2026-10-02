@@ -13,6 +13,24 @@
   read; its email field and AuthV3's sign-in email field capitalize the first letter; sign-in HTTP exchanges have no
   5-second bound (as everywhere in the library).
 
+## 2026-10-01 17:14:00 EDT — v1.8.0 candidate on main: build 77's library merged and documented; the gate runs on this commit (#155 #303 #324 #329)
+
+- **Owner:** release agent (`claude-opus-5.5-release`, workLog agentId `claude-code/claude-opus-5.5/release`), plan
+  `2026-10-01-release-1.8.0` (`38aaf747`), under Michael's maintainer authorization (2026-10-01 about 16:46): "make
+  sure the the library is deployed and has a release triggered, etc., from uh GitHub with all these fixes and
+  whatnot".
+- **main:** `d9ac85f0` merges `agent/claude-opus-5.5/library-77` (`66f49197`: gated head `956fce52` plus its
+  PROGRESS entry) without fast-forward over `646c0ebc`; the merged tree equals `66f49197`'s. Pushed with the plan
+  (`38aaf747`). Release document `docs/releases/v1.8.0.md` (`194f7532`, passes `scripts/validate-release-version.sh
+  1.8.0`). This entry's commit is the release commit.
+- **Not in 1.8.0:** library-78 (`agent/claude-opus-5.5/library-78` and its sub-branches).
+- **Next:** on this commit, in `/Users/laptop/Sync/worktrees/instant-data-swift-release-1.8.0`, run
+  `INSTANT_SWIFT_DATA_LIVE_AUTH_SOAK=0 validation/run-performance-gate.sh live` with no Instant credentials in the
+  environment; run the stages it skips after a cross-SDK failure by hand (the cross-SDK runtime suite, then
+  `validation/run-scribe-shaped-20s-write-bench.sh` on a temporary app); ABBA any performance miss against v1.7.0;
+  then tag `v1.8.0` here, push, and `gh release create v1.8.0 --verify-tag --latest`. Scribe then pins
+  `exact: "1.8.0"`.
+
 ## 2026-10-01 15:33:32 EDT — Account linking: a second sign-in beside the session, account links, and AuthV3 linked sign-ins (#361)
 
 - **Branch:** `agent/claude-opus-5.5/account-linking` from build 77's `956fce52` (pushed; not merged). Plan
@@ -66,6 +84,94 @@
 - **Next:** the Scribe schema, rules, and Account screen are on the parent's Scribe branch (`799af89c` through
   `a7a317e1` in the ledger). Scribe registers `InstantAccountLinks.default.attributes` once this branch lands, then the
   parent runs a live link on `bd40c50a` and the soak before anything ships. Merging and tagging are the parent's.
+
+## 2026-10-01 05:55:20 EDT — library-77: frames without the attrs' cost, no gate across the caller's executor, add-query timeouts kept, refused stream reads end (#303 #324 #329)
+
+- **Branch:** `agent/claude-opus-5.5/library-77` from build 76's library `d487ee09`; pushed, not merged. Plan
+  `agent-presence/claude-opus-5.5/plans/2026-10-01-library-77/PLAN.md` (`ba087478`). Gated head
+  **`956fce521ed6f5fc1a374840bbe2f84c4191de6d`** (this PROGRESS entry is the only later commit).
+- **Goal** (Michael, via the coordinator): "fix this please so it works efficiently as as well as the typescript core
+  library".
+- **Commits:**
+  - `f5fed905`: the translator reuses its attribute context per session attrs and local schema.
+  - `7799d170`: live-result saves reuse the stored attributes. Each save inside every commit used to reload the whole
+    attribute table: 17% of the reader's CPU in the experiment's profile.
+  - `bde67df7`: all 111 async InstantRuntime entry points are `@concurrent`, so no gate-held await resumes on the
+    caller's executor. A main-actor `observeAuthSession` held the gate 23-101 s while the first render held main.
+  - `67bda26b`: an add-query timeout or server failure keeps the live query registered and re-sends it on the next
+    init-ok; only a repeating rejection retires it (#324, P1, filed this session).
+  - `778c793b`: init advertises `@instantdb/core` v0.22.75 (skip-attrs and presence patches; batched frames stay
+    off).
+  - `2c4cf84b`: two older test races the gates hit are closed (both fail alone on 23a80571's code too: the flush
+    timeout's idle check 2 of 12, the reclaim test's known-issue scope 4 of 12), and the idle check names a busy owner.
+  - `1ba00779`: a subscribe-stream the server refuses ("Stream is missing") ends every observation behind the reader.
+    Scribe's media fetch on reader devices waited forever behind one missing stream. The same commit pins #329 (a
+    stream written while the socket is closed never reaches the server) as a known issue; its fix is for 78.
+  - Change log and ledger: `6a81039a`, `956fce52`.
+- **Replay benchmark** (the experiment's fixed harness, release, min of 3 rounds, CPU ms per frame, back to back at
+  load 260-990):
+
+  | Build | advert | plain |
+  |---|---|---|
+  | d487ee09 | 20.96 | 32.19 |
+  | 6a81039a | 15.92 | 27.12 |
+  | TS core | 1.1-1.3 | — |
+
+  On the phone d487ee09 runs plain (no advert) and library-77 runs with the advert: 32.19 to 15.92, -51%.
+- **Gates on 6a81039a** (load 400-1,000; each wall-clock failure rerun alone):
+  - Differential and connection survival: pass (25 tests, 2 known issues).
+  - Ten suites (694 tests): 3 wall-clock 250 ms limits (pass alone) and the 2 test races fixed in `2c4cf84b`.
+  - The 211 infinite-query tests: only #304. The 11 library-77 tests: pass.
+  - Phone replay: pass; after a full restatement only clipboardEntries differs, as on d487ee09.
+  - 5-minute live soak: 0 pending, 0 refusals, 1 connection; 41 gate holds (median 458 ms, max 2,585 ms, 22.7 s), inside
+    build 76's interleaved A/B noise band (d487ee09: 49, 419 ms, 1,737 ms, 26.7 s).
+  - Recording 023-shape backlog: 2,505 pending drained in 2:35 (d487ee09: 2,522 in 3:03), 0 expired claims, 0 refusals.
+  - Calibrated-car 30-minute soaks (bd40c50a, the real app, Debug), d487ee09 vs 6a81039a: pending max 4 vs 2, accepts
+    3,574 vs 3,348, 0 refusals, 0 ack timeouts, 1 connection each, CPU median 29% vs 27%. d487ee09's observeAuthSession
+    held the operation gate 48 s at startup (9 serial-gate.stalled); 6a81039a had no stalls and a 2.4 s longest gate
+    wait. The store's WAL stayed at 0.1-3.8 MB over 6a81039a's last 12 minutes.
+- **Gates on 956fce52** (load 550-1,000; failures rerun alone ten times each):
+  - Differential and connection survival: pass (25 tests, 2 known issues).
+  - Ten suites (696 tests): four 250 ms wall-clock limits and transientMutationServerErrorReconnectsAndResendsDurableMutation
+    (a fixed 100 ms sleep); all pass 10 of 10 alone.
+  - The 211 infinite-query tests: #304 and retainedCanceledRawInfiniteHandleReleasesCoordinatorAndRuntime (a release
+    check), which passes 10 of 10 alone. The 11 library-77 tests: pass.
+  - Replay benchmark: 16.59 advert / 28.50 plain (6a81039a 15.92 / 27.12, within noise).
+  - Calibrated-car 10-minute soak: pending max 3, 1,187 of 1,197 writes accepted, 0 refusals, 0 stalls.
+  - Large-store drop A/B (the experiment's harness: a phone-sized store with 24 detail queries, a 120 s outage with
+    dictation at 6x during it; both -O; both lanes in one window). Logs:
+    `/Users/laptop/Sync/audit/instant-ts-vs-swift-2026-09-30/logs/ab-large-drop-76-vs-77-r{1,2,3}/summary.txt`.
+
+    | Pair (slot 1 first) | Shape, host load mean | d487ee09 restore to 0 | 956fce52 restore to 0 |
+    |---|---|---|---|
+    | r1: d487ee09, 956fce52 | outage during the 122 s warmup, 596 | never (2,061 pending at schedule end) | 173 s |
+    | r2: 956fce52, d487ee09 | outage about 168 s into dictation, 783 | 115 s (463 writes/min) | 108 s (494 writes/min) |
+    | r3: d487ee09, 956fce52 | the same as r2, 480 | 90 s (592 writes/min) | 82 s (648 writes/min) |
+
+    Apply commit p50: 1,054 vs 12 ms (r1), 20 vs 13 ms (r2), 18 vs 12 ms (r3). Writer frames: d487ee09's carry the attrs
+    (264-298 KB mean), 956fce52's do not (115-152 KB). In r1 d487ee09 fell into a stall: its flushes found nothing to
+    send while acks waited behind slow applies, and applies slowed as the backlog grew (the experiment agent's count;
+    the mechanism is inference). 956fce52 had one retry exhaustion in r1 (a reconnect and 9 replay refusals); r2 and r3
+    had none in either lane. 77 is never worse on this shape, so the exclusive-apply fallback goes to 78.
+- **Build 78 queue** (sizes):
+  - S, done: the exclusive server-apply fallback, `agent/claude-opus-5.5/library-78-apply-fallback` at `a8030bbe`
+    (on 956fce52). Its test reproduces the large-store drop's exhaustion with this runtime's own writes.
+  - S once its mover is named: acceptMutation's 5-attempt loop also runs out ("The local outbox changed repeatedly
+    while updating mutation") and ends the receive loop; it already holds the operation gate, so something outside it
+    moves the outbox revision.
+  - S-M: pruneLiveQueryResults holds the operation gate 5-13 s while transact waits (serial-gate.stalled).
+  - M: incremental stream snapshots; observers re-read the whole stream on every append (the experiment measured
+    about 15 ms per line and rising visibility). Keep each observer's last snapshot and append to it.
+  - M: #329, start streams written offline once the socket opens (client id versus server id first).
+  - L: resident previous results with write-behind persistence, the TS model (Codable round trips 25-30% and
+    retraction diffs 12.6% of the reader profile).
+  - S: a done stream's reader stays registered after its observation goes out of scope (a scratch test: the observer
+    count stays 1, and a reconnect subscribes it again); upstream deletes the reader at done.
+  - S: an unrouted stream-reader error (no reader owns it) is treated as a failed live session and reconnects; upstream
+    ignores it. Reachable when an observation is cancelled before its refusal arrives (inferred, not yet tested).
+  - Dropped: checkpoints outside the gate. The experiment measured wal_autocheckpoint 1000 vs 0 with no difference.
+  - Known issue: the frame that adds an attribute drops its own rows' values for it, already so at d487ee09.
+- **Next:** the coordinator integrates `956fce52` as build 77's library.
 
 ## 2026-09-30 14:50:00 EDT — Build 73's library: live-safe fast drain, refused-write removal, connection survival (#296)
 
