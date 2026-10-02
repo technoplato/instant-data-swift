@@ -248,7 +248,8 @@ private enum InstantObservationConsumerStream {
     }
   }
 
-  // SAFETY: an `AsyncStream` has one consumer, and its unfolding closure runs one `next()` at a time.
+  // SAFETY: the stream's one consuming task calls the unfolding closure one `next()` at a time on its executor, so
+  // `iterator` is never accessed concurrently.
   final class Reader<Element: Sendable>: @unchecked Sendable {
     private var iterator: AsyncStream<Element>.Iterator
     let release: Release
