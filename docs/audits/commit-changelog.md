@@ -1,8 +1,17 @@
+## 2026-10-02 14:56:38 EDT — instant-data-swift `d42dd9601416f277393515e31bc3e89d6e4cf3fc`
+Document the v1.9.0 release in docs/releases/v1.9.0.md: build 78's library and every change since v1.8.0, in plain words, with library-78's checks on 01175cff and the open items (#376 #360 #388 #394 #329 #361 #296 #402).
+
 ## 2026-10-02 14:38:15 EDT — instant-data-swift `9dff3425fbd237b9751f0a1f6438029e4e901cf6`
 ADR 0018: the hop map of transact, relaunch, and reconnect drain, the ranked hop and CPU cuts, and the measurements (19/16/50 to 7/11/25 actor calls; Swift/TypeScript 7.4/6.9/7.4 to 4.6/6.5/4.7) (#403).
 
 ## 2026-10-02 14:32:45 EDT — instant-data-swift `e623b2f211a7d8aba503b5496e95a00c0cdafe61`
 Claim the files of the three next cuts main approved for after v1.9.1: one SQLite transaction per persistence turn, one migration read at bootstrap, one encoding per save (#403).
+
+## 2026-10-02 13:41:26 EDT — instant-data-swift `d3c9a075e0354833351b27e72c9740916e3a84fa`
+Plan the v1.9.0 release (plan 2026-10-02-release-1.9.0) and claim the release document, CHANGELOG.md, PROGRESS.md, and this ledger; note the overlap with library-79's unmerged claims on the same logs.
+
+## 2026-10-02 13:40:53 EDT — instant-data-swift `0b8f52f7e34fc2460db5c7b63cba790ffa40f7b9`
+Merge build 78's library (agent/claude-opus-5.5/library-78 at 7ecbd129, gated code head 01175cff) into main without fast-forward over eeea9b12, for v1.9.0 (#376 #360 #388 #394 #329 #303 #317 #361 #296).
 
 ## 2026-10-02 12:08:31 EDT — instant-data-swift `57f4a8413ba67360b21c8d5657bfe21ca5fda5b8`
 Claim the statement-cache test for the prepared-statement cache main asked for as its own commit (#403).
@@ -13,14 +22,101 @@ Format every transport date through one shared ISO 8601 formatter, byte-identica
 ## 2026-10-02 11:45:33 EDT — instant-data-swift `158a45152b289102bfadf0024bf24fd899dab667`
 Run each step's persistence work in one actor turn: transact 19 to 7 actor calls, relaunch 16 to 11, reconnect-drain 50 to 25, same SQLite statements in the same order; the phone-shaped replay matches library-78's reference in every count (#403).
 
+## 2026-10-02 11:38:26 EDT — scribe `d83e5958f321dcf1cc6ec9e8de945212b2bd5424`
+Record the installer's stale workspace Package.resolved fix in the change log (#404).
+
+## 2026-10-02 11:38:16 EDT — scribe `5883bb93c339c48fcb60bb6c272866f78f5dec0a`
+Remove the stale generated workspace Package.resolved before every published build (#404).
+
 ## 2026-10-02 11:37:26 EDT — instant-data-swift `3f6b30ec69daeca940df565af40eae72fd4b3409`
 Claim the outbox, supersession, gate-test, CLI-test, and transport-date files for the hop and formatter cuts (#403).
 
 ## 2026-10-02 11:37:06 EDT — instant-data-swift `2e2a1c0759d1e80a246e45e00d6ab8cbee06b64d`
 Count every actor call on transact, relaunch, and reconnect drain, and pin the counts: 19, 16, and 50 actor calls where the recorder showed 9, 12, and 29 (#403).
 
+## 2026-10-02 11:36:51 EDT — scribe `60b3032cc3d656d9ad5229b92318905f52cb7f95`
+Plan the installer fix for the stale workspace Package.resolved and claim its paths (#404).
+
+## 2026-10-02 11:32:55 EDT — scribe `ad729056a5dac0ee8cca219450c031bf385d7be8`
+Merge main's mac-memory handoff note into the build 79 integration (#394).
+
+## 2026-10-02 10:34:36 EDT — scribe `db53a687f9f023e8a5dbc8955cc2b88f348ecf15`
+Merge mac-memory's follow-up: the media-retry test fakes keep their streams, as the library does (#394).
+
+## 2026-10-02 10:34:09 EDT — scribe `cc908207ff741277973bcda255c66be727139821`
+Merge instant-1.8.0-pin: pin the published instant-data-swift 1.8.0, the build 77 library (#155 #303).
+
+## 2026-10-02 10:02:50 EDT — scribe `14db800539baa43e86ebcfeeefa9d86aa818dfeb`
+Merge scribe-mirror-gaps: the mirror's image and clipboard times past capture gaps, and capture.gap events (#272 #346).
+
+## 2026-10-02 10:02:24 EDT — scribe `2b49058774c51967d8231bb4a56db27e1814a247`
+Merge scribe-mirror: every recording mirrored live into plain files, a scribe CLI like Tuple's, a router, and triggers (#385 #400).
+
+## 2026-10-02 09:46:03 EDT — scribe `4e6a879dc9d5009be2ab54eb6d51039d08367977`
+Record the voice-actions coverage excuses in the change log (#161 #391 #393).
+
+## 2026-10-02 09:45:56 EDT — scribe `65e03b6deb5bab2f87fb6a2c7dc3445eb30ab21e`
+Excuse playback's full screen and Back to Live in the voice-actions coverage test (#161 #391 #393).
+
+## 2026-10-02 09:37:46 EDT — scribe `619506b3cfcab68c7f0e7aa3b068d72c6fb482e0`
+Record the second simulator proof of agent reply notifications in ADR 0029 (#340 #342 #387).
+
+## 2026-10-02 09:29:44 EDT — scribe `dc54847bd395b1407317eb848baa726792d992ec`
+Let the notification offer's sentence wrap instead of ending in an ellipsis (#340).
+
+## 2026-10-02 09:13:51 EDT — scribe `74d4612b376aaa087f92bb528ba51d83f4222731`
+Record the voice-actions ADR renumbering in the change log (#161 #160).
+
+## 2026-10-02 09:13:31 EDT — scribe `1ed136b51aaca11c0bdc33abf950b7f72c522562`
+Renumber the voice-actions ADR to 0033: visionos merged first and keeps 0026 (#161 #160).
+
+## 2026-10-02 09:12:58 EDT — scribe `bc403f53723763db657fa02d0650ffe37490037a`
+Merge voice-actions: speak to Scribe while it records, behind a setting that stays off (#161 #160).
+
+## 2026-10-02 09:12:18 EDT — scribe `5fc4db9ee1b56f4f19519a0809a8eae9dba205b2`
+Merge visionos: the Vision Pro bar as an ornament, 60-point targets, windows side by side, and a compile check (#367).
+
 ## 2026-10-02 09:11:40 EDT — instant-data-swift `c2f7490810a4192d9d8c660b72c5cb49b28ea6d2`
 Plan the actor-hop work on transact, relaunch, and outbox drain; claim its paths (#403).
+
+## 2026-10-02 09:10:52 EDT — scribe `f607bb895669a80bc55a7867bf34bf984f5be2f4`
+Merge main's live-follow claim into the build 79 integration (#401).
+
+## 2026-10-02 08:49:29 EDT — scribe `e09e6489d8ea644c99c9289658c04b69e2608448`
+Log the Instant 1.8.0 pin and Scribe 0.1 (78)'s GitHub release in PROGRESS: the pin's checks (installer tests, a clean resolve, ArchitectureTests 60/60 compiled against the published 1.8.0, an iPhone compile with no override that compiled instant-data-swift eeea9b12), the scribe-0.1-78 release, and what the pin means for override scripts and branches with their own pins (#155 #303).
+
+## 2026-10-02 08:44:05 EDT — scribe `0224599e5a0a4352284498052d52857ccdddbf1b`
+A late answer to the launch permission check still counts, so the offer shows and Settings recovers (#340).
+
+## 2026-10-02 08:27:03 EDT — scribe `a812df75201a2709dc134b00ada93cfd6e80b1a3`
+Merge mac-live: a live mark, a clock that ticks every second, follow-live with Back to Live, and why audio cannot play yet (#393).
+
+## 2026-10-02 08:26:00 EDT — scribe `66230bac1b6b679106c13da0660553430321fbba`
+Merge list-design: two-line recording rows, a compact playback header, Show Route in a More menu, and full-screen playback (#391).
+
+## 2026-10-02 08:25:47 EDT — scribe `35484454ad3ba181ed7b3c417d81f05af32988de`
+Merge mac-memory: stop the media-retry observer leak, stop two test-target crashes, and add memory fenceposts (#394).
+
+## 2026-10-02 08:20:29 EDT — scribe `5d1d5df4812b954bece832063f2a683e99c2d9e8`
+An answer notifies within five seconds even when Instant cannot read its thread and agent in time (#340).
+
+## 2026-10-02 08:14:55 EDT — scribe `753af2ab52579cfe491e39ad1e0f80793e443273`
+Show one status line per thread even when the room lists a thread twice (#387 #388).
+
+## 2026-10-02 08:10:15 EDT — scribe `e22446e6f614e68d6635353bada0ff686173d86a`
+Agent replies: dot-free app storage keys, and stub the notification taps and UUIDs the tests reach (#340 #342 #387).
+
+## 2026-10-02 07:50:14 EDT — scribe `280431fc05bb2e8a507aca15ce1ad9512f6560be`
+WIP checkpoint of the lost session's agent reply notifications: notify on every device when an answer lands, a quiet per-thread status line, and read-aloud that never touches capture (#340 #342 #387).
+
+## 2026-10-02 07:49:15 EDT — scribe `660dd1a15fbfc1ecccf942ad854ef96a9cca9f14`
+scribe-mirror: map image and clipboard times past capture gaps, and write capture.gap events (#272 #346).
+
+## 2026-10-02 07:47:25 EDT — scribe `f3e7e0b7d2745dc54d7330efe287217973a0627e`
+scribe-mirror: no client's name in the guide, the code, the tests, or the docs (#400 #385).
+
+## 2026-10-02 07:42:18 EDT — scribe `4633792214476bd7ab15620d14a4999a7c2fa6cb`
+scribe-mirror: scribe route prints only verdicts and owners (#400 #385).
 
 ## 2026-10-02 07:35:19 EDT — scribe `ff6e0c56e77c683281ab93a6204c32cdda3ab31a`
 scribe-mirror: AGENTS.md, docs and ADR 0028 for connect, capture, route and triggers (#385 #400).
@@ -36,6 +132,15 @@ Merge main's live-follow plan and claims into the build 79 integration (#401).
 
 ## 2026-10-02 07:02:13 EDT — scribe `a05986775a7ed29a9de4a92740d7fd1d9d1c161c`
 scribe-mirror: rule 7 in AGENTS.md, check who an instruction is for before acting on it (#385 #400).
+
+## 2026-10-02 06:58:27 EDT — scribe `b421e3dae09647e9158a32f1aaa8980495f9e17c`
+Record the Instant 1.8.0 pin in the change log (#155 #303).
+
+## 2026-10-02 06:57:59 EDT — scribe `5235fc4f38cf7d4baab1db4e44f1900302cf2356`
+Pin instant-data-swift exactly 1.8.0 in Package.swift and Package.resolved. That is the published build 77 library: tag object 5cda4412 on library main eeea9b12, the code of library-77 956fce52. Also expect it in the installer's REQUIRED_PUBLISHED_DEPENDENCIES and its six test fixtures, and document GitHub releases for device builds in docs/versioning.md (scribe-<marketing>-<build>; the first is scribe-0.1-78 on 0d76686d). Scribe's device and Mac builds of this library no longer need the Xcode local-package override (#155 #303).
+
+## 2026-10-02 06:56:14 EDT — scribe `64336697abb62982483f27572ba8a9340e05a674`
+Amend plan 2026-10-01-instant-1-8-0-pin: the GitHub release is Scribe 0.1 (78) on 0d76686d, and the integrator agent merges the pin into Scribe main (#155 #303).
 
 ## 2026-10-01 20:47:14 EDT — scribe `7de7b5e4cad5bbfd5d7348504168321f77b3a157`
 Record the orientation reader exemption in the change log (#381 #368).
