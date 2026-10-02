@@ -1,3 +1,6 @@
+## 2026-10-02 15:43:04 EDT — instant-data-swift `1d6aa1e1b6cfdbadf0bdf5a03a5a66e17ee0d24d`
+v1.9.1 on main: merge library-79-hops (40a09c9e) without fast-forward over 2f6a9ee3; the annotated tag v1.9.1 points here and gh release v1.9.1 is Latest (https://github.com/technoplato/instant-data-swift/releases/tag/v1.9.1); code equals the gated 262378b2 (#403).
+
 ## 2026-10-02 15:42:00 EDT — instant-data-swift `8f67a567c8b2ce792757d2d948327337d8626808`
 Document the v1.9.1 release: Swift/TypeScript 4.6, 6.5, 4.7 on the cross-SDK runtime benchmark (from 7.4, 6.9, 7.4 in v1.8.0); the release-gate hold on 262378b2 passed with 0 soak refusals (#403).
 
