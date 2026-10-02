@@ -1,8 +1,29 @@
+## 2026-10-02 17:32:16 EDT — scribe `0f42452a10746bed3ee532e5ed08a8af4690dd40`
+Merge rec032-mic-gap: restart capture only on iOS's signals, say who holds the microphone, and give every line its true time (#272 #346).
+
+## 2026-10-02 17:31:51 EDT — scribe `175af093fd6cdbbebb3accb0399efedd98413fb5`
+Merge instant-1.9.0-pin: pin the published instant-data-swift 1.9.1, with library-78-scribe and account linking (#155 #329 #361).
+
+## 2026-10-02 17:29:44 EDT — scribe `65109126fb50dcfc3788d66b557356175a4e5ad7`
+Record the Instant 1.9.1 pin in Scribe's change log and PROGRESS: its merges, the resolve, and the checks (#155 #329 #361).
+
+## 2026-10-02 17:08:39 EDT — scribe `1931adf42eebea25162efed9e58824b76497b770`
+Merge Scribe main (ac48f34b: production's agentPushDevices schema) into the 1.9.1 pin, so the iPhone build's drift gate matches production (#340 #155).
+
+## 2026-10-02 16:57:42 EDT — scribe `bee8bf4e0eb338f8d4d419b19abdd85c2df726bc`
+Resolve Scribe's Package.resolved to instant-data-swift 1.9.1 (1d6aa1e1) with a plain swift package resolve (#155 #403).
+
 ## 2026-10-02 16:00:13 EDT — scribe `ac48f34bbfa3a768bbef34753aed19fa639f29e3`
 Merge main's agentPushDevices schema, the remote-push plan, and live-follow's handoff after the 79 release (#340 #401).
 
 ## 2026-10-02 15:59:30 EDT — scribe `3e88b254f281c3950b67f29ff0ca69aeeaca979f`
 Record Scribe 0.1 (79) in the change log and PROGRESS: installed on the iPhone, the iPad, and the Mac (#404).
+
+## 2026-10-02 15:53:36 EDT — scribe `3099618db133e0feafa25eaeb016bb3ae0bdc534`
+Pin instant-data-swift exactly 1.9.1 in Scribe instead of 1.9.0, in Package.swift, the installer, and its six fixtures (#155 #403 #329 #361).
+
+## 2026-10-02 15:53:36 EDT — scribe `3a8f4804280d2deefec7e019a55e905eece699a2`
+Amend plan 2026-10-02-instant-1-9-0-pin: pin the published 1.9.1 (v1.9.0 plus library-79's hop cuts) instead of 1.9.0 (#155 #403).
 
 ## 2026-10-02 15:43:04 EDT — instant-data-swift `1d6aa1e1b6cfdbadf0bdf5a03a5a66e17ee0d24d`
 v1.9.1 on main: merge library-79-hops (40a09c9e) without fast-forward over 2f6a9ee3; the annotated tag v1.9.1 points here and gh release v1.9.1 is Latest (https://github.com/technoplato/instant-data-swift/releases/tag/v1.9.1); code equals the gated 262378b2 (#403).
@@ -13,11 +34,26 @@ Document the v1.9.1 release: Swift/TypeScript 4.6, 6.5, 4.7 on the cross-SDK run
 ## 2026-10-02 15:40:34 EDT — instant-data-swift `bed0dc4f866ccdf2123beb623bf16843cff54a61`
 Merge library main's ledger-only 2f6a9ee3 into library-79-hops before v1.9.1, so main's merge of the branch has no conflicts (#403).
 
+## 2026-10-02 15:31:54 EDT — scribe `ae2649f4b5687f92c885d99f713cdb729e080072`
+Pin instant-data-swift exactly 1.9.0 in Scribe's Package.swift, installer, and fixtures (superseded on the branch by the 1.9.1 pin) (#155 #329 #361).
+
 ## 2026-10-02 15:10:38 EDT — scribe `a1be8595d8bc4806cff913a480b55a9036048cb9`
 scribe-mirror: the standing agent's pane gets its title: rename-tab names the Scribe workspace (#385 #400).
 
 ## 2026-10-02 15:08:37 EDT — scribe `0b97d379274e2a8a534d41a6b02772699f88ed6f`
 scribe-mirror: the standing-agent trigger reads cmux's real answers and never throws on a surprise (#385 #400).
+
+## 2026-10-02 15:04:53 EDT — scribe `b3154f37f63e920721700114362425f4b1298c90`
+Merge Scribe main (Scribe 0.1 (79), 4efefa9f) into the Instant pin branch for build 80.
+
+## 2026-10-02 15:04:32 EDT — scribe `365be7bf4c57d1f6a2bef9137e49d3347fdf4982`
+Merge account-linking (3a0d9c4f, ADR 0024) into the Instant pin branch; instant.schema.ts and instant.perms.ts stay byte for byte main's (#361).
+
+## 2026-10-02 15:02:55 EDT — scribe `8f0de1a6fa5ec01b06125b7dfad0d9c2a0f29e2b`
+Merge library-78-scribe (c2343b26: media read by the stream's client id) into the Instant pin branch (#329).
+
+## 2026-10-02 15:02:02 EDT — scribe `84a1cef96bf70fb2375d514cd2a589d27a462b65`
+Plan the Instant 1.9.0 pin for build 80 with library-78-scribe and account linking, and claim its paths (#155 #329 #361).
 
 ## 2026-10-02 14:59:47 EDT — instant-data-swift `262378b2981fd5de3901e26399ba23b7988b0e0a`
 Merge v1.9.0 (24559bd4) into library-79-hops for v1.9.1; v1.9.0's code equals the branch's base d95c9625, so only its documents, plan, claims, and log entries came in (#403).
@@ -114,6 +150,9 @@ Plan the installer fix for the stale workspace Package.resolved and claim its pa
 
 ## 2026-10-02 11:32:55 EDT — scribe `ad729056a5dac0ee8cca219450c031bf385d7be8`
 Merge main's mac-memory handoff note into the build 79 integration (#394).
+
+## 2026-10-02 10:59:17 EDT — scribe `c2343b26a0aaff4c72d3ea81caca4297d59a8d02`
+Merge Scribe main into library-78-scribe, so library-78's rerun soak has the route seal fix (#329 #321).
 
 ## 2026-10-02 10:34:36 EDT — scribe `db53a687f9f023e8a5dbc8955cc2b88f348ecf15`
 Merge mac-memory's follow-up: the media-retry test fakes keep their streams, as the library does (#394).
