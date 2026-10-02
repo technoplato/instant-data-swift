@@ -10,6 +10,24 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## October 2nd, 2026 at 11:37:16 a.m. EDT — `2e2a1c0759d1` Count every actor call on transact, relaunch, and reconnect drain, and pin the counts (#403)
+
+- **Implementation commit:** `2e2a1c0759d1e80a246e45e00d6ab8cbee06b64d`
+- **Change:** Every actor call and unstructured task on the three cross-SDK runtime workloads is recorded and pinned, so the hop cuts that follow are measured, not inferred (#403).
+- **Details:**
+  - The recorder counted only some call sites. Measured with every call recorded (release build of this commit, the benchmark CLI): one transact makes 19 actor calls (it recorded 9), relaunch 16 (12), reconnect-drain 50 (29). The counts match the code-reading inventory exactly.
+  - New boundaries: connection-gate, server-apply-gate, observers, reconnect-controller, delivery-pump, task. No behavior change: the diff to InstantRuntime.swift only adds recordActorHop calls.
+  - InstantCrossSDKRuntimeBenchmarkTests.runtimeWorkloadsPinEveryActorHop pins the three breakdowns. The local-todos pins in BenchmarkTests and CLITests are the same CLI run's numbers; at the base commit the CLI's local-todos counts equal BenchmarkTests' pins for all nine pinned workloads, so the CLI stands in for the test there.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantActorHopInstrumentation.swift` — the boundaries the three paths cross
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — a hop record before every actor call and task on the three paths
+  - `Tests/InstantSwiftDataCoreTests/InstantCrossSDKRuntimeBenchmarkTests.swift` — pins every hop of the three workloads
+  - `Tests/InstantSwiftDataCoreTests/BenchmarkTests.swift` — local-todos hop pins at the complete counts
+  - `Tests/InstantSwiftDataCoreTests/CLITests.swift` — the CLI benchmark's local-todos hop pins at the complete counts
+- **User context (verbatim):**
+  > fix this please so it works efficiently as as well as the typescript core library
+- **SpecStory:** unavailable — Claude Code agent session (library-79); no SpecStory capture configured for this session.
+
 ## October 1st, 2026 at 8:45:52 p.m. EDT — `01175cff5f84` Name what protects the attribute context cache and the observation reader in their SAFETY comments
 
 - **Implementation commit:** `01175cff5f84039d20007afee40e3195102da3d8`

@@ -1,3 +1,9 @@
+## 2026-10-02 11:37:06 EDT — instant-data-swift `2e2a1c0759d1e80a246e45e00d6ab8cbee06b64d`
+Count every actor call on transact, relaunch, and reconnect drain, and pin the counts: 19, 16, and 50 actor calls where the recorder showed 9, 12, and 29 (#403).
+
+## 2026-10-02 09:11:40 EDT — instant-data-swift `c2f7490810a4192d9d8c660b72c5cb49b28ea6d2`
+Plan the actor-hop work on transact, relaunch, and outbox drain; claim its paths (#403).
+
 ## 2026-10-02 07:35:19 EDT — scribe `ff6e0c56e77c683281ab93a6204c32cdda3ab31a`
 scribe-mirror: AGENTS.md, docs and ADR 0028 for connect, capture, route and triggers (#385 #400).
 
