@@ -1,3 +1,6 @@
+## 2026-10-02 08:49:29 EDT — scribe `e09e6489d8ea644c99c9289658c04b69e2608448`
+Log the Instant 1.8.0 pin and Scribe 0.1 (78)'s GitHub release in PROGRESS: the pin's checks (installer tests, a clean resolve, ArchitectureTests 60/60 compiled against the published 1.8.0, an iPhone compile with no override that compiled instant-data-swift eeea9b12), the scribe-0.1-78 release, and what the pin means for override scripts and branches with their own pins (#155 #303).
+
 ## 2026-10-02 07:35:19 EDT — scribe `ff6e0c56e77c683281ab93a6204c32cdda3ab31a`
 scribe-mirror: AGENTS.md, docs and ADR 0028 for connect, capture, route and triggers (#385 #400).
 
@@ -12,6 +15,15 @@ Merge main's live-follow plan and claims into the build 79 integration (#401).
 
 ## 2026-10-02 07:02:13 EDT — scribe `a05986775a7ed29a9de4a92740d7fd1d9d1c161c`
 scribe-mirror: rule 7 in AGENTS.md, check who an instruction is for before acting on it (#385 #400).
+
+## 2026-10-02 06:58:27 EDT — scribe `b421e3dae09647e9158a32f1aaa8980495f9e17c`
+Record the Instant 1.8.0 pin in the change log (#155 #303).
+
+## 2026-10-02 06:57:59 EDT — scribe `5235fc4f38cf7d4baab1db4e44f1900302cf2356`
+Pin instant-data-swift exactly 1.8.0 in Package.swift and Package.resolved. That is the published build 77 library: tag object 5cda4412 on library main eeea9b12, the code of library-77 956fce52. Also expect it in the installer's REQUIRED_PUBLISHED_DEPENDENCIES and its six test fixtures, and document GitHub releases for device builds in docs/versioning.md (scribe-<marketing>-<build>; the first is scribe-0.1-78 on 0d76686d). Scribe's device and Mac builds of this library no longer need the Xcode local-package override (#155 #303).
+
+## 2026-10-02 06:56:14 EDT — scribe `64336697abb62982483f27572ba8a9340e05a674`
+Amend plan 2026-10-01-instant-1-8-0-pin: the GitHub release is Scribe 0.1 (78) on 0d76686d, and the integrator agent merges the pin into Scribe main (#155 #303).
 
 ## 2026-10-01 20:47:14 EDT — scribe `7de7b5e4cad5bbfd5d7348504168321f77b3a157`
 Record the orientation reader exemption in the change log (#381 #368).
