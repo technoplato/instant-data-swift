@@ -10,6 +10,23 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## October 2nd, 2026 at 11:57:26 a.m. EDT — `55a15392f23f` Format every transport date through one shared ISO 8601 formatter, byte-identical to the TypeScript core's wire encoding (#403)
+
+- **Implementation commit:** `55a15392f23f9d0a9db4c66f9abebecc5fe2b49c`
+- **Change:** Every transport date goes through one shared ISO 8601 formatter instead of a new ISO8601DateFormatter per value; the strings are byte-identical, and they match the TypeScript core's wire encoding (#403).
+- **Details:**
+  - The v1.8.0 cross-SDK runtime profile put formatter setup at about a quarter of transact's samples and 30% of the explicit flush's (base d95c9625: 30% and 34%). A transact lowers its mutation more than once: the delivery step count and the wire-intent fingerprint.
+  - InstantTransportDateFormatterTests: 79 dates from @instantdb/core 1.0.49's transform plus JSON.stringify (the fixture generator runs a real update and stringifies it as Connection.send does), 2,005 dates against a fresh formatter including sub-millisecond rounding, and 3,200 concurrent calls. Today's output matched the TS fixture before the change too (79 of 79).
+  - Evidence (debug build of the hops plus this change): the formatter suite and nine neighbors passed, 116 tests with 11 known issues (InstantBoundedOutboxDeliveryTests' existing known issues).
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantTransportMutation.swift` — InstantTransportDateFormatter, one locked formatter for every transport date
+  - `Tests/InstantSwiftDataCoreTests/InstantTransportDateFormatterTests.swift` — pins the TS encoding, byte-identity, and concurrent use
+  - `validation/fixtures/transport-date-encoding.json` — the TS core's own date encoding for 79 values
+  - `validation/ts-runner/src/transport-date-encoding-fixture.ts` — writes that fixture through the core's transform and JSON.stringify
+- **User context (verbatim):**
+  > fix this please so it works efficiently as as well as the typescript core library
+- **SpecStory:** unavailable — Claude Code agent session (library-79); no SpecStory capture configured for this session.
+
 ## October 2nd, 2026 at 11:45:50 a.m. EDT — `158a45152b28` Run each step's persistence work in one actor turn: transact 19 to 7 actor calls, relaunch 16 to 11, drain 50 to 25 (#403)
 
 - **Implementation commit:** `158a45152b289102bfadf0024bf24fd899dab667`

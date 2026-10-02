@@ -1,3 +1,6 @@
+## 2026-10-02 11:57:16 EDT — instant-data-swift `55a15392f23f9d0a9db4c66f9abebecc5fe2b49c`
+Format every transport date through one shared ISO 8601 formatter, byte-identical to the TypeScript core's wire encoding (79 of 79 fixture dates); formatter setup was about a quarter of transact's profile (#403).
+
 ## 2026-10-02 11:45:33 EDT — instant-data-swift `158a45152b289102bfadf0024bf24fd899dab667`
 Run each step's persistence work in one actor turn: transact 19 to 7 actor calls, relaunch 16 to 11, reconnect-drain 50 to 25, same SQLite statements in the same order; the phone-shaped replay matches library-78's reference in every count (#403).
 
