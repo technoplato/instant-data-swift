@@ -1,3 +1,46 @@
+## 2026-10-02 15:41:48 EDT — v1.9.1: library-79's hop cuts and shared formatter on v1.9.0; main's merge of this commit is the release commit (#403)
+
+- **Owner:** library-79 (`claude-opus-5.5-library-79`, workLog agentId `claude-code/claude-opus-5.5/library-79`), plan
+  `2026-10-02-library-79-hops`, under Michael's maintainer authorization (to the coordinating session on 2026-10-02 at
+  about 12:10 EDT): "Publish the library once it's checked fast. Yes."
+- **Branch:** `agent/claude-opus-5.5/library-79-hops` merged v1.9.0 as `262378b2` (the gated code commit) and main's
+  ledger-only `2f6a9ee3` as `bed0dc4f`; release document `docs/releases/v1.9.1.md` (passes
+  `scripts/validate-release-version.sh 1.9.1`). Main merges this branch without fast-forward, the merged tree equals
+  the branch's, and the annotated tag `v1.9.1` points at that merge; `gh release create v1.9.1 --verify-tag --latest`
+  publishes it.
+- **Checks (release-gate hold on `262378b2`, 2026-10-02 15:04-15:39 EDT, load 7-340):** focused set 163 tests pass (3
+  known); fast-drain and survival 25 pass (2 known, Pattern B); ten suites 697 pass (22 known); infinite suites 211,
+  only #304; library-77/78 suites 106 pass; phone-shaped replay matches the `01175cff` reference in every count
+  (2,487 to 0 in 273 s); 10-minute calibrated-car soak (Scribe `c2343b26`, `bd40c50a`): 873 local writes, 868
+  accepted, at most 2 queued, 0 refusals, 1 connection, CPU median 23%, RSS at most 425 MB. The release gate
+  (`validation/run-performance-gate.sh live`) did not run; its cross-SDK comparisons still fail (Swift/TypeScript 4.6,
+  6.5, 4.7).
+- **Evidence:** `/tmp/library-79-hops/release/` (steps, suite logs, replay), `/tmp/library-79-hops/soak-out/l79-262378b2-calibrated-car-600s/`,
+  copied to `/Users/laptop/Sync/audit/library-79-hops-2026-10-02/evidence/release-gate/`.
+
+## 2026-10-02 15:41:48 EDT — library-79: one actor turn per step and one shared transport-date formatter (v1.9.1); the statement cache and three CPU cuts measured next (#403)
+
+- **Goal (Michael, 2026-10-01):** "fix this please so it works efficiently as as well as the typescript core library".
+- **Commits on `agent/claude-opus-5.5/library-79-hops`:** `2e2a1c07` counts every actor call on transact, relaunch,
+  and reconnect drain (19, 16, 50); `158a4515` runs each step's persistence work in one actor turn (7, 11, 25, pinned
+  by `runtimeWorkloadsPinEveryActorHop`); `55a15392` formats every transport date through one shared formatter,
+  byte-identical to `@instantdb/core` 1.0.49's wire encoding; `9dff3425` is ADR 0018 (hop map, ranked cuts, results).
+- **Measured (paired ABBA through `heavy.sh`, ten blocks, load 200-350):** Swift/TypeScript 7.4, 6.9, 7.4 at v1.8.0;
+  7.3, 6.8, 7.1 with the hop cuts (an uncontended hop costs about 0.1 µs, so the cuts are structural); 4.6, 6.5, 4.7
+  with the formatter (one write 0.62x v1.8.0's time, relaunch 0.94x, drain 0.66x).
+- **Next, on `agent/claude-opus-5.5/library-79-next` (pushed, `c4341a12`, on `57f4a841`):** `0f1f2a71` the
+  prepared-statement cache, `fe8c69f4` one SQLite transaction per persistence turn, `663cb647` one migration read at
+  bootstrap, `c4341a12` one encoding per save. Heavy job 4 (`/tmp/library-79-hops/jobs/cache-checks.sh`, queued 13:10
+  at normal priority) tests that tree and measures each as its own ABBA arm, results in `/tmp/library-79-hops/final2/`.
+  None of the four has compiled yet; job 4's test build is their first.
+- **Continue:** when job 4 is green, bring each commit onto `library-79-hops` in order (one commit and one ABBA arm each,
+  as main asked), add its change-log and ledger entries, report Swift/TypeScript after each to main, and release them
+  under the same authorization with this entry's gate set. If job 4's test build fails, fix on `library-79-next` and
+  re-queue job 4. Open questions for Michael are in ADR 0018 (a hop-free live-session flag; store and persistence on
+  one executor).
+- **Owned until handoff:** simulator `DC59CEA8` (library-79's, shut down; delete when the work ends), the worktree's
+  `.build`, and `/tmp/library-79-hops/`.
+
 ## 2026-10-02 14:56:59 EDT — v1.9.0 on main: build 78's library merged and documented; this entry's commit is the release commit (#376 #360 #388 #394 #329 #361 #296)
 
 - **Owner:** library-78 (`claude-opus-5.5-library-78`, workLog agentId `claude-code/claude-opus-5.5/library-78`), plan
