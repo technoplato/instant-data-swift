@@ -1,8 +1,32 @@
+## 2026-10-02 10:02:50 EDT — scribe `14db800539baa43e86ebcfeeefa9d86aa818dfeb`
+Merge scribe-mirror-gaps: the mirror's image and clipboard times past capture gaps, and capture.gap events (#272 #346).
+
+## 2026-10-02 10:02:24 EDT — scribe `2b49058774c51967d8231bb4a56db27e1814a247`
+Merge scribe-mirror: every recording mirrored live into plain files, a scribe CLI like Tuple's, a router, and triggers (#385 #400).
+
+## 2026-10-02 09:46:03 EDT — scribe `4e6a879dc9d5009be2ab54eb6d51039d08367977`
+Record the voice-actions coverage excuses in the change log (#161 #391 #393).
+
+## 2026-10-02 09:45:56 EDT — scribe `65e03b6deb5bab2f87fb6a2c7dc3445eb30ab21e`
+Excuse playback's full screen and Back to Live in the voice-actions coverage test (#161 #391 #393).
+
 ## 2026-10-02 09:37:46 EDT — scribe `619506b3cfcab68c7f0e7aa3b068d72c6fb482e0`
 Record the second simulator proof of agent reply notifications in ADR 0029 (#340 #342 #387).
 
 ## 2026-10-02 09:29:44 EDT — scribe `dc54847bd395b1407317eb848baa726792d992ec`
 Let the notification offer's sentence wrap instead of ending in an ellipsis (#340).
+
+## 2026-10-02 09:13:51 EDT — scribe `74d4612b376aaa087f92bb528ba51d83f4222731`
+Record the voice-actions ADR renumbering in the change log (#161 #160).
+
+## 2026-10-02 09:13:31 EDT — scribe `1ed136b51aaca11c0bdc33abf950b7f72c522562`
+Renumber the voice-actions ADR to 0033: visionos merged first and keeps 0026 (#161 #160).
+
+## 2026-10-02 09:12:58 EDT — scribe `bc403f53723763db657fa02d0650ffe37490037a`
+Merge voice-actions: speak to Scribe while it records, behind a setting that stays off (#161 #160).
+
+## 2026-10-02 09:12:18 EDT — scribe `5fc4db9ee1b56f4f19519a0809a8eae9dba205b2`
+Merge visionos: the Vision Pro bar as an ornament, 60-point targets, windows side by side, and a compile check (#367).
 
 ## 2026-10-02 09:10:52 EDT — scribe `f607bb895669a80bc55a7867bf34bf984f5be2f4`
 Merge main's live-follow claim into the build 79 integration (#401).
@@ -33,6 +57,9 @@ Agent replies: dot-free app storage keys, and stub the notification taps and UUI
 
 ## 2026-10-02 07:50:14 EDT — scribe `280431fc05bb2e8a507aca15ce1ad9512f6560be`
 WIP checkpoint of the lost session's agent reply notifications: notify on every device when an answer lands, a quiet per-thread status line, and read-aloud that never touches capture (#340 #342 #387).
+
+## 2026-10-02 07:49:15 EDT — scribe `660dd1a15fbfc1ecccf942ad854ef96a9cca9f14`
+scribe-mirror: map image and clipboard times past capture gaps, and write capture.gap events (#272 #346).
 
 ## 2026-10-02 07:47:25 EDT — scribe `f3e7e0b7d2745dc54d7330efe287217973a0627e`
 scribe-mirror: no client's name in the guide, the code, the tests, or the docs (#400 #385).
