@@ -1,3 +1,6 @@
+## 2026-10-03 05:49:22 EDT — instant-data-swift `a6d7929da28d035957aff31b151f0274f277f2bf`
+v1.9.2 on main: merge library-79-hops (2df30b0d) without fast-forward over 1d6aa1e1; the annotated tag v1.9.2 points here and gh release v1.9.2 is Latest (https://github.com/technoplato/instant-data-swift/releases/tag/v1.9.2); code equals the gated 995d530e (#431).
+
 ## 2026-10-03 05:48:29 EDT — instant-data-swift `278fefcfba5eb7114bdd48e4c575a62a9381aac5`
 Document the v1.9.2 release: #431, another device's later value of a single-value attribute and its clear reach a device that once wrote it; red on v1.9.1, green here, and the final gate hold on c867063d (#431).
 
