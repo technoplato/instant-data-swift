@@ -209,24 +209,24 @@ actor AsyncSerialGate {
       holderOperation = waiter.operation
       holderAcquiredAt = now
       let waitMilliseconds = Self.milliseconds(since: waiter.enqueuedAt, to: now)
-      // The next holder runs before its wait is reported (#473): the report writes a diagnostics line, and the
-      // handoff must never wait on log I/O.
-      continuation.resume()
+      // The report runs off this actor (#473): it records a diagnostics line and runs the app's handlers, and the
+      // next holder, which resumes on this actor, must never wait for them.
       if waitMilliseconds >= waitReportThresholdMilliseconds, let previousHolder {
-        waitReport(
-          WaitReport(
-            label: label,
-            waitingOperation: waiter.operation,
-            waitMilliseconds: waitMilliseconds,
-            previousHolder: previousHolder,
-            previousHolderPhase: previousHolderPhase,
-            previousHolderHeldMilliseconds: previousHolderAcquiredAt.map {
-              Self.milliseconds(since: $0, to: now)
-            } ?? 0,
-            remainingWaiterCount: waiters.count
-          )
+        let wait = WaitReport(
+          label: label,
+          waitingOperation: waiter.operation,
+          waitMilliseconds: waitMilliseconds,
+          previousHolder: previousHolder,
+          previousHolderPhase: previousHolderPhase,
+          previousHolderHeldMilliseconds: previousHolderAcquiredAt.map {
+            Self.milliseconds(since: $0, to: now)
+          } ?? 0,
+          remainingWaiterCount: waiters.count
         )
+        let waitReport = self.waitReport
+        Task.detached(priority: .utility) { waitReport(wait) }
       }
+      continuation.resume()
       return
     }
 
@@ -338,18 +338,20 @@ actor AsyncSerialGate {
     }
 
     stallCount += 1
-    report(
-      StallReport(
-        label: label,
-        holder: holderOperation,
-        holderHeldMilliseconds: Self.milliseconds(since: holderAcquiredAt, to: now),
-        longestWaitingOperation: longestWaiting.operation,
-        longestWaitMilliseconds: longestWaitMilliseconds,
-        waiterCount: waiters.count,
-        stallCount: stallCount,
-        holderPhase: currentHolderPhase
-      )
+    // Reported off this actor (#473): the stall line is a critical diagnostics entry plus `reportIssue`, and on the
+    // iPhone writing it held the gate's actor for seconds while the holder it reports waited to leave.
+    let stall = StallReport(
+      label: label,
+      holder: holderOperation,
+      holderHeldMilliseconds: Self.milliseconds(since: holderAcquiredAt, to: now),
+      longestWaitingOperation: longestWaiting.operation,
+      longestWaitMilliseconds: longestWaitMilliseconds,
+      waiterCount: waiters.count,
+      stallCount: stallCount,
+      holderPhase: currentHolderPhase
     )
+    let report = self.report
+    Task.detached(priority: .utility) { report(stall) }
     return true
   }
 
