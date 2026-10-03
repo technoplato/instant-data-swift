@@ -1,3 +1,6 @@
+## 2026-10-03 04:40:02 EDT — instant-data-swift `995d530eda6668a222d65cfa3af618ba20d5b5d1`
+#431 follow-up after an independent review and the first release-gate hold: query keys must vouch for their selection (no where through a link), the scan for slots no result held runs once per key, and only cleared slots lose the confirmed write's protection (the first gate's soak republished on every confirming refresh); round 4 red on v1.9.1, green here (#431).
+
 ## 2026-10-03 03:45:24 EDT — scribe `d2b115a01c33d11b3af2618ecf83e0bf566ee3de`
 Merge list-edit-mode's #430 schema and rule: recordings.deletedAtMs and the keepsDeletion update rule, as production has them (ADR 0038, #430).
 

@@ -10,6 +10,23 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## October 3rd, 2026 at 4:40:25 a.m. EDT — `995d530eda66` Narrow #431's cleared-slot rule after review and the first gate: keys must vouch, the scan runs once per key, and only cleared slots lose the confirmed write's protection (#431)
+
+- **Implementation commit:** `995d530eda6668a222d65cfa3af618ba20d5b5d1`
+- **Change:** Narrow #431's cleared-slot rule after an independent review and the first release-gate hold: a query key must vouch for its selection, the scan for slots no result held runs once per key, and only cleared slots lose the confirmed write's protection (#431).
+- **Details:**
+  - Review finding (high, latent): a where through a link makes the server send the triples it matched, which bring the linked entity into the result without its selected attributes; such keys no longer vouch, and for them a cleared slot keeps a value another stored result owns. Scribe's queries and the iPad's 36 stored keys filter only on their own attributes.
+  - Gate finding: 1976f8aa let every retraction through past the write its refresh confirms, so each confirming refresh retracted old values and republished their entities; the 10-minute Scribe soak published 1,274 store changes for 873 accepted writes (v1.9.1: 873 for 868). Only cleared slots lose that protection now.
+  - The scan for selected slots a result leaves empty runs on a key's first refresh in a process and again until it finds nothing, instead of on every refresh; held slots are collected only for the entities either rule looks at.
+  - Round 4 (heavy job library-79-red-431-4): v1.9.1 fails 8 of the 11 local-stamp cases and passes the three controls; this code passes 17 of 17 with the selection tests, the three iPad-store checks, and 25 of 25 fast-drain and survival tests with no rebase.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — keys vouch only without a where through a link; the scan runs once per key; entity-level protection as before for everything but cleared slots
+  - `Tests/InstantSwiftDataCoreTests/InstantLocalStampShadowsServerTests.swift` — the newest result's word through a vouching key, and the old rule for a key that does not vouch
+  - `Tests/InstantSwiftDataCoreTests/InstantLiveQuerySelectedAttributesTests.swift` — a where through a link does not vouch
+- **User context (verbatim):**
+  > Publish the library once it's checked fast. Yes.
+- **SpecStory:** unavailable — Claude Code agent session (library-79); no SpecStory capture configured for this session.
+
 ## October 3rd, 2026 at 3:23:15 a.m. EDT — `1976f8aaf588` Make the server's facts authoritative over this device's accepted writes, as Reactor.js does (#431)
 
 - **Implementation commit:** `1976f8aaf588e3c7b60501e0663dc366eadea940`
