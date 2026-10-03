@@ -10,3 +10,4 @@ claude-opus-5.5-library-78 2026-10-01T12:48:54-04:00 mower plan=2026-10-01-libra
 claude-opus-5.5-library-78-streams 2026-10-01T13:16:05-04:00 mower plan=2026-10-01-library-78 #329
 claude-opus-5.5-library-79 2026-10-03T12:48:24-04:00 mower plan=2026-10-02-library-79-hops #445 #441
 claude-opus-5.5-library-79 2026-10-03T14:20:54-04:00 mower plan=2026-10-02-library-79-hops #473 #445
+claude-opus-5.5-phone-perf 2026-10-03T13:32:47-04:00 grower plan=2026-10-03-file-download #454 (downloadStoredFile: stream a stored file to a destination)
