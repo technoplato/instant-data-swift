@@ -1660,7 +1660,6 @@ public struct InstantSwiftDataClient: Sendable {
     try await signOutOperation(invalidateToken)
   }
 
-  @discardableResult
   /// Whether the server has confirmed this device's join of `room` on the current connection; `Reactor.js` reports its
   /// opposite as `isLoading`. While it is false, an empty or stale presence says nothing about who is in the room
   /// (#461).
@@ -1668,6 +1667,7 @@ public struct InstantSwiftDataClient: Sendable {
     await isRoomJoinedOperation(room)
   }
 
+  @discardableResult
   public func joinRoom(_ room: InstantRoomHandle = .default) async throws -> InstantRoomHandle {
     try await joinRoomOperation(room)
   }
