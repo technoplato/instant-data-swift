@@ -2806,19 +2806,25 @@ struct InstantReactorParityTests {
     ) {
       try #require(await selfTopicTask.value)
     }
+    // The topic's recent messages, not only the newest: a reader that falls behind loses nothing (#461).
     expectNoDifference(
       selfTopicMessages.map(\.id),
-      ["event-self-reaction"],
+      ["event-peer-reaction", "event-self-reaction"],
       reactorRoomEventsSource
     )
     expectNoDifference(
       selfTopicMessages.map(\.userID),
-      ["user-self"],
+      ["user-peer", "user-self"],
+      reactorRoomEventsSource
+    )
+    expectNoDifference(
+      selfTopicMessages.map(\.peerID),
+      ["session-peer", "session-self"],
       reactorRoomEventsSource
     )
     expectNoDifference(
       selfTopicMessages.map(\.payload),
-      [.object(["emoji": .string("✅")])],
+      [.object(["emoji": .string("🔥")]), .object(["emoji": .string("✅")])],
       reactorRoomEventsSource
     )
     let durableMessages = try await runtime.roomTopicMessages(room: room, topic: "reaction")
@@ -3126,7 +3132,7 @@ private let typescriptStreamWriterSource =
   "upstream/instant/client/packages/core/src/Stream.ts createWriteStream, startWriteStream, and appendStream plus upstream/instant/server/src/instant/reactive/session.clj handle-start-stream! and handle-append-stream! [adapted: Swift awaits the server stream id, persists that canonical identity, sends ordered UTF-8 chunks at exact byte offsets, and closes with an empty done append.]"
 
 private let reactorRoomEventsSource =
-  "upstream/instant/client/packages/core/src/Reactor.js refresh-presence, patch-presence, and server-broadcast receive branches plus upstream/instant/server/test/instant/reactive/session_test.clj patch-presence-works and broadcast-works [adapted: Swift excludes its own live session from peer presence, applies canonical +/r/- edits in memory, publishes typed peer state, and emits remote broadcasts without adding them to durable topic history.]"
+  "upstream/instant/client/packages/core/src/Reactor.js refresh-presence, patch-presence, and server-broadcast receive branches plus upstream/instant/server/test/instant/reactive/session_test.clj patch-presence-works and broadcast-works [adapted: Swift excludes its own live session from peer presence, applies canonical +/r/- edits in memory, publishes typed peer state, and keeps broadcasts in memory only: a snapshot observer sees the topic's recent messages, each with its sender's peerID, and nothing is stored (#461).]"
 
 private let reactorRoomSessionsSource =
   "upstream/instant/client/packages/core/src/Reactor.js _setPresencePeers and _patchPresencePeers (peers keyed by session id, own session removed) plus presence.ts buildPresenceSlice (a peer's peerId is its session id) [adapted: Swift lists this runtime's own presence beside the peers instead of in a separate `user` slot.]"

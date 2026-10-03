@@ -77,12 +77,16 @@ extension InstantRoomPresenceMember {
   }
 }
 
+/// One message on a room topic: published by this runtime, or broadcast by a peer's session.
 public struct InstantRoomTopicMessage: Hashable, Codable, Sendable, Identifiable {
   public var id: String
   public var appID: String
   public var room: InstantRoomHandle
   public var topic: String
   public var userID: String
+  /// The server's session id of the peer that broadcast the message, as `Reactor.js` hands each topic subscriber the
+  /// sender's peer; `nil` for a message this runtime published.
+  public var peerID: String?
   public var payload: JSONValue
   public var createdAt: InstantTimestamp
 
@@ -92,6 +96,7 @@ public struct InstantRoomTopicMessage: Hashable, Codable, Sendable, Identifiable
     room: InstantRoomHandle,
     topic: String,
     userID: String,
+    peerID: String? = nil,
     payload: JSONValue,
     createdAt: InstantTimestamp
   ) {
@@ -100,7 +105,11 @@ public struct InstantRoomTopicMessage: Hashable, Codable, Sendable, Identifiable
     self.room = room
     self.topic = topic
     self.userID = userID
+    self.peerID = peerID
     self.payload = payload
     self.createdAt = createdAt
   }
+
+  /// Whether this runtime published the message, rather than a peer's session.
+  public var isLocal: Bool { peerID == nil }
 }

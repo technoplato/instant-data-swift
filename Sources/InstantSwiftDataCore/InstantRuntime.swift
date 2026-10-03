@@ -1518,6 +1518,9 @@ public final class InstantRuntime: Sendable {
   private let roomPresenceState = InstantRuntimeRoomPresence()
   /// The signed-in user id for room calls, so they never read the auth session from SQLite (#461).
   private let roomAuthUserID = InstantRoomAuthUserIDCache()
+  /// A live runtime's room topic messages, in memory and bounded (#461). A runtime without a live transport keeps them
+  /// in SQLite.
+  private let roomTopicsState = InstantRuntimeRoomTopics()
   private let automaticLiveConnectionTaskOwner = InstantRuntimeExactTaskOwner()
   private let startupCookieSyncTaskOwner = InstantRuntimeExactTaskOwner()
   private let reconnectController = InstantRuntimeReconnectController()
@@ -8464,24 +8467,19 @@ public final class InstantRuntime: Sendable {
     } else {
       userID = peerID
     }
-    let message = InstantRoomTopicMessage(
-      id: broadcast.clientEventID?.nilIfEmpty ?? configuration.makeID(),
-      appID: configuration.appID,
-      room: room,
-      topic: broadcast.topic,
-      userID: userID,
-      payload: rawPayload.jsonValue,
-      createdAt: configuration.now()
-    )
-    let durableMessages = try await persistence.loadRoomTopicMessages(
-      appID: configuration.appID,
-      room: room,
-      topic: broadcast.topic,
-      limit: nil
-    )
-    await roomTopicObservers.publish(
-      durableMessages + [message],
-      for: roomTopicObservationKey(room: room, topic: broadcast.topic)
+    // Recorded once, in memory: every event observer receives it, and snapshot observers see the topic's recent
+    // messages, as `Reactor.js` hands each broadcast to the subscribers without storing it (#461).
+    await roomTopicsState.record(
+      InstantRoomTopicMessage(
+        id: broadcast.clientEventID?.nilIfEmpty ?? configuration.makeID(),
+        appID: configuration.appID,
+        room: room,
+        topic: broadcast.topic,
+        userID: userID,
+        peerID: peerID,
+        payload: rawPayload.jsonValue,
+        createdAt: configuration.now()
+      )
     )
   }
 
@@ -9781,6 +9779,7 @@ public final class InstantRuntime: Sendable {
       // Another holder of the room still sees its presence until the last one leaves (#461).
       if try await liveSession.leaveRoom(room, clientEventID: configuration.makeID()) {
         await roomPresenceState.forget(room, appID: configuration.appID)
+        await roomTopicsState.forget(room)
       }
     }
     return room
@@ -9928,6 +9927,12 @@ public final class InstantRuntime: Sendable {
     return await roomPresenceObservers.activeCount(for: roomPresenceObservationKey(room))
   }
 
+  /// Publishes a message on a room topic.
+  ///
+  /// With a live transport the message is not stored, as in `Reactor.js`: it goes to this runtime's topic observers
+  /// and to the socket (queued until the room is joined), without the operation gate or SQLite, so the cost of a
+  /// message does not grow with the messages before it (#461). Without a live transport (the CLI's local cache) it is
+  /// stored in SQLite, so a later launch lists it.
   @discardableResult
   @concurrent
   public func publishTopicMessage(
@@ -9943,7 +9948,34 @@ public final class InstantRuntime: Sendable {
       operation: "publish room topic",
       recovery: "Pass the room topic name to publish."
     )
+    guard configuration.liveTransport != nil else {
+      return try await publishLocalCacheTopicMessage(room: room, topic: topic, userID: userID, payload: payload)
+    }
+    let message = InstantRoomTopicMessage(
+      id: configuration.makeID(),
+      appID: configuration.appID,
+      room: room,
+      topic: topic,
+      userID: try await resolvedRoomUserID(userID, operation: "publish room topic"),
+      payload: payload,
+      createdAt: configuration.now()
+    )
+    await roomTopicsState.record(message)
+    try await liveSession.publishTopic(
+      room: room,
+      topic: topic,
+      payload: payload,
+      clientEventID: configuration.makeID()
+    )
+    return message
+  }
 
+  private func publishLocalCacheTopicMessage(
+    room: InstantRoomHandle,
+    topic: String,
+    userID: String?,
+    payload: JSONValue
+  ) async throws -> InstantRoomTopicMessage {
     await operationGate.enter()
     do {
       let userID = try await resolvedRoomUserID(userID, operation: "publish room topic")
@@ -9967,14 +9999,6 @@ public final class InstantRuntime: Sendable {
         messages,
         for: roomTopicObservationKey(room: room, topic: topic)
       )
-      if configuration.liveTransport != nil {
-        try await liveSession.publishTopic(
-          room: room,
-          topic: topic,
-          payload: payload,
-          clientEventID: configuration.makeID()
-        )
-      }
       await operationGate.leave()
       return message
     } catch {
@@ -9983,6 +10007,9 @@ public final class InstantRuntime: Sendable {
     }
   }
 
+  /// The messages this device published on a room topic, oldest first: with a live transport its most recent
+  /// publications in this runtime (at most `InstantRuntimeRoomTopics.recentMessageLimit`); without one, every message
+  /// the local cache stored.
   @concurrent
   public func roomTopicMessages(
     room: InstantRoomHandle,
@@ -10003,14 +10030,22 @@ public final class InstantRuntime: Sendable {
       operation: "list room topic",
       recovery: "Pass the room topic name to list."
     )
-    return try await persistence.loadRoomTopicMessages(
-      appID: configuration.appID,
-      room: room,
-      topic: topic,
-      limit: limit
-    )
+    guard configuration.liveTransport != nil else {
+      return try await persistence.loadRoomTopicMessages(
+        appID: configuration.appID,
+        room: room,
+        topic: topic,
+        limit: limit
+      )
+    }
+    return await roomTopicsState.published(room: room, topic: topic, limit: limit)
   }
 
+  /// Observes a room topic's recent messages, published here or received, oldest first, starting with the current ones.
+  ///
+  /// With a live transport each emission holds the topic's most recent messages (at most
+  /// `InstantRuntimeRoomTopics.recentMessageLimit`), so a reader that falls behind by fewer loses nothing. To receive
+  /// every message exactly once, as a `Reactor.js` topic subscriber does, use `observeRoomTopicEvents(room:topic:)`.
   @concurrent
   public func observeRoomTopicMessages(
     room: InstantRoomHandle,
@@ -10023,7 +10058,16 @@ public final class InstantRuntime: Sendable {
       operation: "observe room topic",
       recovery: "Pass the room topic name to observe."
     )
+    guard configuration.liveTransport != nil else {
+      return try await observeLocalCacheTopicMessages(room: room, topic: topic)
+    }
+    return await roomTopicsState.observeSnapshots(room: room, topic: topic)
+  }
 
+  private func observeLocalCacheTopicMessages(
+    room: InstantRoomHandle,
+    topic: String
+  ) async throws -> AsyncStream<[InstantRoomTopicMessage]> {
     await operationGate.enter()
     do {
       let messages = try await persistence.loadRoomTopicMessages(
@@ -10044,6 +10088,25 @@ public final class InstantRuntime: Sendable {
     }
   }
 
+  /// Observes each message published here or received on a room topic after this call, once and in order, as a
+  /// `Reactor.js` topic subscriber receives each broadcast (`subscribeTopic`). A message this runtime published has a
+  /// nil `peerID`. Nothing is stored and nothing is dropped: an observation that stops reading holds every later
+  /// message until it ends (#461). Without a live transport no messages arrive.
+  @concurrent
+  public func observeRoomTopicEvents(
+    room: InstantRoomHandle,
+    topic rawTopic: String
+  ) async throws -> AsyncStream<InstantRoomTopicMessage> {
+    let room = try validatedRoom(room, operation: "observe room topic events")
+    let topic = try validatedNonEmpty(
+      rawTopic,
+      label: "Topic",
+      operation: "observe room topic events",
+      recovery: "Pass the room topic name to observe."
+    )
+    return await roomTopicsState.observeEvents(room: room, topic: topic)
+  }
+
   func activeRoomTopicObservationCount(
     room: InstantRoomHandle,
     topic rawTopic: String
@@ -10055,9 +10118,17 @@ public final class InstantRuntime: Sendable {
       operation: "inspect room topic observers",
       recovery: "Pass the room topic name to inspect."
     )
+    if configuration.liveTransport != nil {
+      return await roomTopicsState.observerCount(room: room, topic: topic)
+    }
     return await roomTopicObservers.activeCount(
       for: roomTopicObservationKey(room: room, topic: topic)
     )
+  }
+
+  /// How many messages the live runtime holds for a topic, for tests: bounded whatever the number of messages (#461).
+  func heldRoomTopicMessageCountForTesting(room: InstantRoomHandle, topic: String) async -> Int {
+    await roomTopicsState.heldMessageCountForTesting(room: room, topic: topic)
   }
 
   @concurrent

@@ -272,67 +272,139 @@ struct InstantRoomPresenceRuntimeTests {
   /// but the newest message.
   @Test
   func liveTopicMessagesAreNotStoredAndABurstIsNotLost() async throws {
-    await withKnownIssue("topics are stored forever and an observer sees only the newest received message (#461)") {
-      let room = InstantRoomHandle(type: "recording", id: "room-topics")
-      let persistenceURL = try temporaryRoomCacheURL()
-      let session = LiveReactorParitySession(messages: [
-        liveReactorInitOK(attrs: liveReactorTodoServerAttrs, sessionID: "session-self")
-      ])
-      var configuration = try roomConfiguration(appID: "room-topics", transport: session.transport)
-      configuration.persistenceURL = persistenceURL
-      let runtime = try await InstantRuntime.bootstrap(configuration: configuration)
-      _ = try await runtime.connect()
-      _ = try await runtime.joinRoom(room)
-      try await joinAndWaitForPeers(runtime: runtime, session: session, room: room)
+    let room = InstantRoomHandle(type: "recording", id: "room-topics")
+    let persistenceURL = try temporaryRoomCacheURL()
+    let session = LiveReactorParitySession(messages: [
+      liveReactorInitOK(attrs: liveReactorTodoServerAttrs, sessionID: "session-self")
+    ])
+    var configuration = try roomConfiguration(appID: "room-topics", transport: session.transport)
+    configuration.persistenceURL = persistenceURL
+    let runtime = try await InstantRuntime.bootstrap(configuration: configuration)
+    _ = try await runtime.connect()
+    _ = try await runtime.joinRoom(room)
+    try await joinAndWaitForPeers(runtime: runtime, session: session, room: room)
 
-      _ = try await runtime.publishTopicMessage(
-        room: room, topic: "reaction", userID: "user-self", payload: .object(["emoji": .string("wave")])
-      )
-      let stream = try await runtime.observeRoomTopicMessages(room: room, topic: "reaction")
-      for index in 0..<5 {
-        await session.enqueue(
-          InstantLiveMessage(
-            op: "server-broadcast",
-            clientEventID: "broadcast-\(index)",
-            fields: [
-              "data": .object([
-                "data": .object(["index": .number(Double(index))]),
-                "peer-id": .string("session-peer"),
-                "user": .object(["id": .string("user-peer")]),
-              ]),
-              "room-id": .string(room.id),
-              "topic": .string("reaction"),
-            ]
-          )
-        )
-      }
-      let received = RoomTopicRecorder()
-      let reader = Task {
-        for await messages in stream { await received.record(messages) }
-      }
-      defer { reader.cancel() }
-      try await waitForRoom("all five broadcasts to be readable after the burst", timeoutMilliseconds: 2_000) {
-        let indexes = await received.last?.compactMap { message -> Double? in
-          guard case let .object(payload) = message.payload, case let .number(index)? = payload["index"] else {
-            return nil
-          }
-          return index
-        }
-        return indexes == [0, 1, 2, 3, 4]
-      }
-      _ = try await runtime.closeConnection()
-
-      let relaunched = try await InstantRuntime.bootstrap(
-        configuration: InstantRuntimeConfiguration(
-          appID: "room-topics",
-          persistenceURL: persistenceURL,
-          initialAttributes: TodoExample.attributes,
-          now: { roomTestNow }
+    _ = try await runtime.publishTopicMessage(
+      room: room, topic: "reaction", userID: "user-self", payload: .object(["emoji": .string("wave")])
+    )
+    let stream = try await runtime.observeRoomTopicMessages(room: room, topic: "reaction")
+    for index in 0..<5 {
+      await session.enqueue(
+        InstantLiveMessage(
+          op: "server-broadcast",
+          clientEventID: "broadcast-\(index)",
+          fields: [
+            "data": .object([
+              "data": .object(["index": .number(Double(index))]),
+              "peer-id": .string("session-peer"),
+              "user": .object(["id": .string("user-peer")]),
+            ]),
+            "room-id": .string(room.id),
+            "topic": .string("reaction"),
+          ]
         )
       )
-      let stored = try await relaunched.roomTopicMessages(room: room, topic: "reaction")
-      expectNoDifference(stored, [], "A live publish left a topic message in SQLite.")
     }
+    let received = RoomTopicRecorder()
+    let reader = Task {
+      for await messages in stream { await received.record(messages) }
+    }
+    defer { reader.cancel() }
+    try await waitForRoom("all five broadcasts to be readable after the burst", timeoutMilliseconds: 2_000) {
+      let indexes = await received.last?.compactMap { message -> Double? in
+        guard case let .object(payload) = message.payload, case let .number(index)? = payload["index"] else {
+          return nil
+        }
+        return index
+      }
+      return indexes == [0, 1, 2, 3, 4]
+    }
+    _ = try await runtime.closeConnection()
+
+    let relaunched = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "room-topics",
+        persistenceURL: persistenceURL,
+        initialAttributes: TodoExample.attributes,
+        now: { roomTestNow }
+      )
+    )
+    let stored = try await relaunched.roomTopicMessages(room: room, topic: "reaction")
+    expectNoDifference(stored, [], "A live publish left a topic message in SQLite.")
+  }
+}
+
+extension InstantRoomPresenceRuntimeTests {
+  /// #461's acceptance run: 10,000 broadcasts reach an event observer exactly once each, in order, and the runtime holds
+  /// a bounded number of messages however many arrive, so the last message costs what the first did. `Reactor.js`
+  /// hands each broadcast to the subscribers once and stores none (`_notifyBroadcastSubs`).
+  @Test
+  func everyMessageOfATenThousandBroadcastRunReachesAnEventObserverOnce() async throws {
+    let room = InstantRoomHandle(type: "recording", id: "room-topic-run")
+    let session = LiveReactorParitySession(messages: [
+      liveReactorInitOK(attrs: liveReactorTodoServerAttrs, sessionID: "session-self")
+    ])
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: try roomConfiguration(appID: "room-topic-run", transport: session.transport)
+    )
+    _ = try await runtime.connect()
+    _ = try await runtime.joinRoom(room)
+    try await joinAndWaitForPeers(runtime: runtime, session: session, room: room)
+    let events = try await runtime.observeRoomTopicEvents(room: room, topic: "progress")
+    let messageCount = 10_000
+    let reader = Task { () -> (indexes: [Int], firstThousandMs: Double, lastThousandMs: Double) in
+      var indexes: [Int] = []
+      indexes.reserveCapacity(messageCount)
+      let clock = ContinuousClock()
+      var thousandStarted = clock.now
+      var firstThousand = Duration.zero
+      var lastThousand = Duration.zero
+      for await message in events {
+        guard case let .object(payload) = message.payload, case let .number(index)? = payload["index"] else { continue }
+        indexes.append(Int(index))
+        if indexes.count == 1_000 { firstThousand = clock.now - thousandStarted }
+        if indexes.count == messageCount - 1_000 { thousandStarted = clock.now }
+        if indexes.count == messageCount {
+          lastThousand = clock.now - thousandStarted
+          break
+        }
+      }
+      func milliseconds(_ duration: Duration) -> Double {
+        Double(duration.components.seconds) * 1_000 + Double(duration.components.attoseconds) / 1e15
+      }
+      return (indexes, milliseconds(firstThousand), milliseconds(lastThousand))
+    }
+    for index in 0..<messageCount {
+      await session.enqueue(
+        InstantLiveMessage(
+          op: "server-broadcast",
+          fields: [
+            "data": .object([
+              "data": .object(["index": .number(Double(index))]),
+              "peer-id": .string("session-peer"),
+              "user": .object(["id": .string("user-peer")]),
+            ]),
+            "room-id": .string(room.id),
+            "topic": .string("progress"),
+          ]
+        )
+      )
+    }
+    let run = try await instantLiveWithTimeout(operation: "read 10,000 broadcasts", timeoutMilliseconds: 60_000) {
+      await reader.value
+    }
+    expectNoDifference(run.indexes.count, messageCount, "A broadcast was dropped.")
+    #expect(run.indexes == Array(0..<messageCount), "Broadcasts arrived out of order or more than once.")
+    let held = await runtime.heldRoomTopicMessageCountForTesting(room: room, topic: "progress")
+    #expect(
+      held <= InstantRuntimeRoomTopics.recentMessageLimit,
+      "The runtime held \(held) messages after 10,000; it must hold a bounded window."
+    )
+    // A generous bound that only a cost growing with the messages before it would break (stored topics re-read every
+    // message on each one). The durations are in the test log for the issue's performance evidence.
+    print("room-topic-run: first 1,000 in \(run.firstThousandMs) ms, last 1,000 in \(run.lastThousandMs) ms, held \(held)")
+    #expect(run.lastThousandMs <= max(run.firstThousandMs * 10, 250))
+    _ = try await runtime.closeConnection()
   }
 }
 
