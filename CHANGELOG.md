@@ -10,6 +10,21 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## October 3rd, 2026 at 5:48:51 a.m. EDT — `278fefcfba5e` Document the v1.9.2 release: another device's later value of a single-value attribute, and its clear, reach a device that once wrote it (#431)
+
+- **Implementation commit:** `278fefcfba5eb7114bdd48e4c575a62a9381aac5`
+- **Change:** Document the v1.9.2 release: library-79's #431 fix (1976f8aa and 995d530e); another device's later value of a single-value attribute, and its clear, reach a device that once wrote it, and a store v1.9.1 left stuck heals without a reinstall (#431).
+- **Details:**
+  - Red on v1.9.1, green here: 7 of the 10 local-stamp cases and the flipped fast-drain case fail on v1.9.1 and pass here, the 3 controls pass on both; the iPad's pulled store's stuck shape stays stuck on v1.9.1 and heals here, and the store v1.9.1 left stuck heals when this code reopens it.
+  - Final gate hold on c867063d (04:48-05:47 EDT): focused 179 (3 known), fast-drain and survival 25 (2 known, no rebases), ten suites 697 (22 known, four timing misses), infinite 211 (only #304), library-77/78 106, iPad-store checks 3 of 3, phone replay matching or improving on the reference (clipboardEntries now matches the server), soak 872 accepted and 876 store publishes (v1.9.1: 868 and 873), CPU median 23%.
+  - Published under Michael's authorization; the release gate (validation/run-performance-gate.sh live) did not run and is named with the known open items, as in v1.9.1.
+- **Files:**
+  - `docs/releases/v1.9.2.md` — the release document; passes scripts/validate-release-version.sh 1.9.2
+  - `PROGRESS.md` — the v1.9.2 release entry, its evidence, and the continuation
+- **User context (verbatim):**
+  > Publish the library once it's checked fast. Yes.
+- **SpecStory:** unavailable — Claude Code agent session (library-79); no SpecStory capture configured for this session.
+
 ## October 3rd, 2026 at 4:40:25 a.m. EDT — `995d530eda66` Narrow #431's cleared-slot rule after review and the first gate: keys must vouch, the scan runs once per key, and only cleared slots lose the confirmed write's protection (#431)
 
 - **Implementation commit:** `995d530eda6668a222d65cfa3af618ba20d5b5d1`

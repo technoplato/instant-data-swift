@@ -1,3 +1,6 @@
+## 2026-10-03 05:48:29 EDT — instant-data-swift `278fefcfba5eb7114bdd48e4c575a62a9381aac5`
+Document the v1.9.2 release: #431, another device's later value of a single-value attribute and its clear reach a device that once wrote it; red on v1.9.1, green here, and the final gate hold on c867063d (#431).
+
 ## 2026-10-03 04:40:02 EDT — instant-data-swift `995d530eda6668a222d65cfa3af618ba20d5b5d1`
 #431 follow-up after an independent review and the first release-gate hold: query keys must vouch for their selection (no where through a link), the scan for slots no result held runs once per key, and only cleared slots lose the confirmed write's protection (the first gate's soak republished on every confirming refresh); round 4 red on v1.9.1, green here (#431).
 
