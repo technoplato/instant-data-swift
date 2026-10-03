@@ -1,5 +1,14 @@
+## 2026-10-03 03:22:37 EDT — instant-data-swift `1976f8aaf588e3c7b60501e0663dc366eadea940`
+#431: the server's facts are authoritative over this device's accepted writes, as in Reactor.js. Single-value slots take the server's value whatever the stamps, a slot the server cleared loses the store's values (slots a result held and slots its query selects), only a pending write of a cleared slot protects it, and a write pruned in the same apply protects nothing; red on v1.9.1, green here, including the iPad's pulled store and a store v1.9.1 left stuck (#431 #408).
+
+## 2026-10-03 02:15:54 EDT — instant-data-swift `c1292d88d54867af11d1d3b287f199c029d0232e`
+Claim the query-selection test for #431's cleared slots: a refreshed result vouches for the slots its query selects (#431).
+
 ## 2026-10-03 01:57:09 EDT — scribe `5c06626cb247d39f91717f15f3b502b33138719e`
 Merge main's list-edit-mode, ui-polish and clipboard-onboarding plans and claims after the 0.1 (81) release commit (#430 #412 #420).
+
+## 2026-10-03 01:41:34 EDT — instant-data-swift `ea2fc93439933a7bf496aacb7145685e39217f6c`
+Claim SQLitePersistenceStore.swift and the device-store check for #431's cleared slots, at main's request to match Reactor.js on a full refresh (#431).
 
 ## 2026-10-03 01:14:47 EDT — scribe `02fbb77cd9e80525b26a6b0ae9c25d8c55e8136e`
 Release Scribe 0.1 (81).
@@ -9,6 +18,9 @@ Record the restored rebuild-stop test in the change log (#272).
 
 ## 2026-10-03 01:14:34 EDT — scribe `081f2938f3e71972eaf660d0d65910f1670111c8`
 Restore main's rebuild-stop test for build 81: the event-driven rewrite blocks a cooperative thread (#272).
+
+## 2026-10-03 01:11:03 EDT — instant-data-swift `d8c4469b9b88af419a6c90be9c6e362a0f8da29c`
+Claim the files of the #431 fix (P0 at main's request): server facts are authoritative over a pruned local write (#431).
 
 ## 2026-10-03 01:10:16 EDT — scribe `76997da47a4b9bd70a16526c695f951ab7f4b39f`
 Merge voice-actions-on-device: the on-device hill climb's best configuration, and real voice commands for playback's full screen and Back to Live (#161 #160).

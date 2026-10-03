@@ -10,6 +10,28 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## October 3rd, 2026 at 3:23:15 a.m. EDT — `1976f8aaf588` Make the server's facts authoritative over this device's accepted writes, as Reactor.js does (#431)
+
+- **Implementation commit:** `1976f8aaf588e3c7b60501e0663dc366eadea940`
+- **Change:** The server's facts are authoritative over this device's accepted writes, as in Reactor.js: another device's later value of a single-value attribute, and its clear, reach a device that once wrote it (#431).
+- **Details:**
+  - Root cause: Instant updates a single-value triple in place and keeps its created_at, which a refresh delivers as the fact's time, so a device's accepted write, timed by its own clock, won last-write-wins against every later server value of the slot. Scribe's iPad kept its playback stamp and updatedAtMs on Recording 039 (Scribe #408).
+  - Server facts replace single-value slots whatever the stamps on both server-apply paths (TripleIndexes .preserveExactResident; residentFactWins removed from the reduced apply); local writes keep last-write-wins among themselves; only pending writes overlay the server, as _applyOptimisticUpdates does.
+  - A cleared single-value slot loses the store's values on an entity still in a refreshed result, for slots the result held and slots its query selects (fields) and leaves empty, whichever result stored earlier still lists the value; that heals values no result ever held, the shape 1.9.1 left once it stored a cleared result.
+  - Protection: a retraction in a cleared slot is protected only by a pending write of that slot; every other retraction keeps entity-level protection (#259 whole-entity rule); a write pruned at the watermark in the same apply protects nothing. Round 2 showed slot-level protection for every retraction rebasing four fast-drain cases (50 rebases in the Scribe-shaped drain), so it is limited to cleared slots.
+  - Red on v1.9.1's code, green here (heavy jobs library-79-red-431-2 and -3b): 8 of the 9 local-stamp cases fail on v1.9.1 (the two controls pass) and all pass here; the flipped fast-drain case; on the iPad's pulled store, the stuck shape stays stuck on v1.9.1 and heals here, and the store v1.9.1 left stuck heals when this code reopens it.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/TripleIndexes.swift` — server facts replace single-value slots whatever the stamps
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — the reduced apply stops keeping later-stamped resident facts; passes processed-tx-id and cleared slots to protection
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — cleared-slot retractions (held and query-selected slots), their slot-level protection, the query-key reader and its cache
+  - `Tests/InstantSwiftDataCoreTests/InstantLocalStampShadowsServerTests.swift` — nine #431 cases, each on both server-apply paths
+  - `Tests/InstantSwiftDataCoreTests/InstantLocalStampShadowsDeviceStoreTests.swift` — checks on the iPad's pulled store, skipped without INSTANT_431_DEVICE_STORE
+  - `Tests/InstantSwiftDataCoreTests/InstantLiveQuerySelectedAttributesTests.swift` — how a query key's fields are read
+  - `Tests/InstantSwiftDataCoreTests/InstantFastDrainTests.swift` — the old last-write-wins expectation flipped; a foreign clear and a relaunch for the fixture
+- **User context (verbatim):**
+  > Publish the library once it's checked fast. Yes.
+- **SpecStory:** unavailable — Claude Code agent session (library-79); no SpecStory capture configured for this session.
+
 ## October 2nd, 2026 at 3:42:18 p.m. EDT — `8f67a567c8b2` Document the v1.9.1 release: a local write and the outbox drain take a third less time, Swift/TypeScript 4.6, 6.5, 4.7 (#403)
 
 - **Implementation commit:** `8f67a567c8b2ce792757d2d948327337d8626808`
