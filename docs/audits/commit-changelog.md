@@ -1,3 +1,6 @@
+## 2026-10-03 08:47:37 EDT — scribe `a30e0409b8f4b3bd171191c3608e8d40b8c82cc6`
+Merge ui-polish's #413 pair: the pushed recording and playback screens take the floating bar's room themselves, and the bar's room is logged on change (#413).
+
 ## 2026-10-03 08:12:18 EDT — scribe `a14d9f64d50c64c2ffc77c1bea603bc5e7f0a92b`
 Record the instant-data-swift 1.9.2 pin and its Package.resolved in the change log (#431).
 
