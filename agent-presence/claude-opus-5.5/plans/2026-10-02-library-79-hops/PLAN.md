@@ -131,3 +131,21 @@ the gate (#473 items 3-4), then #474 (reconnect promptly after a socket reset). 
 `InstantDiagnosticsTests.swift` and `InstantInfiniteQueryParityTests.swift` (flushes before reading the log), new
 `InstantOperationGateHoldTests.swift` and `InstantPendingMutationsPageTests.swift`, and new `docs/releases/v1.9.5.md`,
 added 2026-10-03 14:25 EDT.
+
+## v1.9.7 (main approved 2026-10-03 about 18:05 EDT; #473 items 3-4, freeze-185 items 2, 3, 5 and 7, #482 part C)
+
+The operation gate gets priorities (a local write or an awaited read goes ahead of a server apply, a prune or an
+unbounded listing; a waiter moves up one priority every 2 s it waits), a holder past the stall threshold is reported
+once, and a snapshot of the gate reads without a hop. A deferred-value hydration reads SQLite without the gate and
+checks afterwards that its emission is still current. A local write or server apply commits the store under the gate
+and publishes to observers after leaving it, with commits made before a publication published together once; each
+commit keeps its info `store.mutation-published` line (Scribe's memory fenceposts and soak sampler read it) and a
+`store.publish-summary` line reports publications every 30 s. Apple's SQLite already commits a WAL connection with
+`synchronous` NORMAL; the store logs its settings at open. For #482 part C: `InstantWriteFailureKind`,
+`InstantWriteRejection`, `InstantWriteFailureClassifying`, `PendingMutation.failureKind`, and
+`connectionHealth()` from in-memory counters. Touching `AsyncSerialGate.swift`, `InstantRuntime.swift`,
+`InstantStore.swift`, `InstantDiagnostics.swift`, `InstantRuntimeLiveSession.swift`, `SQLitePersistenceStore.swift`,
+`InstantSwiftData.swift`, new `InstantWriteFailureKind.swift` and `InstantConnectionHealth.swift`, new
+`InstantWriteFailureKindTests.swift` and `InstantOperationGatePriorityTests.swift`, and new `docs/releases/v1.9.7.md`,
+added 2026-10-03 19:41 EDT. Rooms (agent/claude-opus-5.5/rooms, 681a0ba9) merges in once its red-green and bench
+pass.
