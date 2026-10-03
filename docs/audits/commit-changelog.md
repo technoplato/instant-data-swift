@@ -1,5 +1,14 @@
+## 2026-10-03 18:49:59 EDT — scribe `85e8e756c1ac6808333970bba15ea3602bb0a41e`
+The play span effect reads the clock only when a span can open or end, and the bar and fold tests hold the span their playback opens (#435)
+
+## 2026-10-03 18:49:51 EDT — scribe `1e9c43e552ebf8227a922d2425cd1a2be0ca9a42`
+The play span effect reads the clock only when a span can open or end, and the bar and fold tests hold the span their playback opens (#435)
+
 ## 2026-10-03 18:48:44 EDT — instant-data-swift `46eae09a2d6642365bb55c7c8c5b3bda790d0033`
 Merge phone-perf's file-download into library-79-hops for v1.9.6: download a stored file to a destination, streaming (#454).
+
+## 2026-10-03 18:44:17 EDT — scribe `06c354dc8eabf9d191044bd5828ab31a7554f2eb`
+Recovered transcript lines are kept in the journal and written, also for a stopped recording; only the open route chunk is latest-wins (#482 part C)
 
 ## 2026-10-03 18:40:03 EDT — instant-data-swift `860ed5387b8efd1855f0be3962fab1dace24c26f`
 Batch the diagnostics file's lines, one open and lock per batch, and fsync at most once a second (#473).
@@ -10,6 +19,12 @@ Merge library-79-hops into main for v1.9.5: a local write no longer holds the op
 ## 2026-10-03 18:37:39 EDT — instant-data-swift `3edae737bdacaa98b58787a97ce4a5b753474e04`
 Document the v1.9.5 release: a local write no longer holds the operation gate while it logs, and outbox listings never wait for it (#473).
 
+## 2026-10-03 18:09:34 EDT — scribe `1ad345c34c7aa7ab551a6cc105d262001d4d76fb`
+The playback row test controls the uuid the library's typed transaction reads (#435)
+
+## 2026-10-03 18:09:32 EDT — scribe `0d285183f61004f07d47a25f260df07f77d2dc1d`
+The playback row test controls the uuid the library's typed transaction reads (#435)
+
 ## 2026-10-03 18:06:07 EDT — scribe `d6f07ba5c8460da14a639e3c53407e5a71a76878`
 Pass the WAV writer's health and flush-interval closures at the three test call sites of AudioFileClient's memberwise init (#488)
 
@@ -18,6 +33,12 @@ Name the reducer RecordingFeature.Recording in the capture-isolation test's two 
 
 ## 2026-10-03 17:49:47 EDT — scribe `2e12deb32f423d08c96a8bca261cabe4319ca5a7`
 Log the WAV writer's events through a static function, so the microphone effect never captures the reducer (#488)
+
+## 2026-10-03 17:46:36 EDT — scribe `cb06c1fd83884521a23bca0800514adaa18cef0c`
+The recording and playback sync rows say "N saves set aside · Retry", and Retry offers them again (#482 part C)
+
+## 2026-10-03 17:46:15 EDT — scribe `29b5f313ea697caea437a8397a9d37fed0b99e01`
+Ledger: #480 and #482 parts A and B (3a3cf8a5 through 5a842f05)
 
 ## 2026-10-03 17:37:19 EDT — scribe `39e070aaca31333151ec24682eadc992993bc00b`
 Write the share-prototype settings through the queued file key too, as every shared file key now does (#488 #389)
@@ -31,6 +52,12 @@ Say in the device pull why a phone has no library diagnostics file, and how to g
 ## 2026-10-03 17:25:37 EDT — scribe `3b6eb08e4099a9f75129747d0da87589aa82ddcb`
 Refused audio waits in memory only as its length, and the WAV writer gets synchronizeSoon() for pause, interruption and background fsyncs (#488)
 
+## 2026-10-03 17:06:27 EDT — scribe `3d9f28819e17a665ed8f34b0fcad3fcaef23aa89`
+A durability journal keeps every must-keep write until local Instant has it, Record never waits for the previous stop, a write that keeps failing moves aside, and the speech mailbox is bounded (#482 part C)
+
+## 2026-10-03 17:06:11 EDT — scribe `30d753f87d45bd38f92cf74cf4412e174b3d48db`
+Red tests: a durability journal keeps every must-keep write, ten minutes of a stalled or failing Instant lose nothing, Record never waits for the previous stop, a write that keeps failing moves aside, and the speech mailbox is bounded (#482 part C)
+
 ## 2026-10-03 17:05:37 EDT — instant-data-swift `a6a59b565df2362a908899b601b73c7da4ddef5f`
 Run the operation gate's wait and stall reports off its actor, so a slow report never holds the next holder (#473).
 
@@ -39,6 +66,12 @@ The WAV writer's health and flush interval never wait for the writer's lock (#48
 
 ## 2026-10-03 16:43:34 EDT — scribe `62cbd5bff0719ef6232136f7fc91233cbee15dec`
 The app's log lanes stop fsyncing per batch and rewriting after every delivery, keep routine lines to a budget, and a hot phone writes less often; capture never stops (#488, ADR 0050)
+
+## 2026-10-03 16:43:14 EDT — scribe `1eb97e1e285cfc4fbc489728cf03e09f36990a29`
+The playback span test's date is nonisolated, so the test target builds (#435)
+
+## 2026-10-03 16:43:10 EDT — scribe `0dcff7d8ba606f6ce0284f9fc994c6ba6b5865da`
+The playback span test's date is nonisolated, so the test target builds (#435)
 
 ## 2026-10-03 16:40:05 EDT — instant-data-swift `bb598182c447f4b136257020b177ba0a113cd894`
 #473's blocked-log test waits for the write error, not the line: flock refuses a FIFO, so no line is written (#473).
@@ -49,6 +82,15 @@ The move to the background never waits on the disk, and capture never waits on a
 ## 2026-10-03 16:26:02 EDT — scribe `36683fbd9c63a6d6ed8b6909e9c29aa25f33ad2f`
 Merge main's plans and claims after the 0.1 (84) release commit (#430 #342 #485 #469 #470 #462 #340 #444)
 
+## 2026-10-03 16:19:30 EDT — scribe `35944632b7509e7ad601729ac33f973de16b8cb1`
+Plan transcript-journal: a local journal keeps every must-keep write until local Instant has it, Record never waits for the previous stop, and a write that keeps failing moves aside (#482 part C)
+
+## 2026-10-03 16:12:07 EDT — scribe `5a842f05b76b02a600e6d638ec0a0677ff295526`
+The save lane heals itself: no refusal latches, must-keep writes wait in a bounded hold, interims merge per stream, and saving behind never stops Record, Resume, Delete, or an edit (#482)
+
+## 2026-10-03 15:24:07 EDT — scribe `91ca2dfaf79837ace3f961d13f64e85c150d72b5`
+Red tests: the save lane heals itself, must-keep writes wait, interims merge per stream, and saving behind never stops capture (#482)
+
 ## 2026-10-03 15:19:23 EDT — scribe `ddf60c389013beebace6c502fb3cc309b05f9050`
 Plan read-aloud-voice, plan only: the best installed voice for answers, its Settings row, and the voice in the read's start event (#471)
 
@@ -58,14 +100,23 @@ Record the voice client in the change log (#471)
 ## 2026-10-03 15:18:29 EDT — scribe `0910c5638f74f2087cf1452b915007c219c790d9`
 A voice client names the reading voice for Settings and the read's start event (#471)
 
+## 2026-10-03 15:15:49 EDT — scribe `8b8fca79c4183b06833b023bb4e199535be86d20`
+One recording's pipeline objects are the same in every action: RecordingPipelineRegistry (#482)
+
 ## 2026-10-03 15:13:01 EDT — scribe `6c84f82e0fe0d38a2b56fd210692309e06b767e6`
 Record the per-device voice hint in the change log (#471)
 
 ## 2026-10-03 15:13:00 EDT — scribe `4b4038c22c0d35892104816eb5a6c318cd7fdcd6`
 The voice download hint names the exact Settings path of the device it shows on (#471)
 
+## 2026-10-03 15:12:26 EDT — scribe `ca819e48f84c1e30ab02a159baf0ef084b7d29c1`
+Red tests: no reducer stores an object, and a recognizer restart in a later action still hears the microphone (#482)
+
 ## 2026-10-03 15:10:49 EDT — scribe `5419279e410b0732b58d8f3df188656d49f4129c`
 Record the read-aloud voice commit in the change log (#471)
+
+## 2026-10-03 15:10:48 EDT — scribe `18a4f4fd8d9484ebcf987eeadd0ee3d552a10fad`
+Plan durability-unstick: the save lane heals itself, and per-recording objects leave the reducer (#482, P0)
 
 ## 2026-10-03 15:10:29 EDT — scribe `ffb2f70ded67b9203d1cc9769a57e0f34c5d007e`
 Read agent answers with the best system voice installed, and say where to get a better one (#471)
@@ -76,11 +127,17 @@ Import the durability lane where the shared continuation helper registers the re
 ## 2026-10-03 15:06:06 EDT — scribe `f60f29caa505178d3652d358dc2773ca484971ab`
 Give the #432 sweep flow tests' fake client the route lookup the client gained for #458
 
+## 2026-10-03 15:04:23 EDT — scribe `0d19a2b739d81904a6b2cb0f0be488c2e01cd1d4`
+The section handler's comment no longer says finals backpressure the provider (#480)
+
 ## 2026-10-03 15:01:21 EDT — scribe `02bbf0a5816e97289126743638f27e0522c1adc3`
 The Resume offer carries its row's title and ends with its row or its window; the notice stops reading the clock after its two minutes (#458)
 
 ## 2026-10-03 15:00:46 EDT — scribe `5c74c194b89ea32a499db4ed55a68c0e47ccda6e`
 Red tests: the Resume offer carries its row's title and ends with its row or its window, and the notice stops reading the clock after its two minutes (#458)
+
+## 2026-10-03 14:58:03 EDT — scribe `2a4bbfade89e9e9195259825f56f2d9b679d7289`
+Recognition never waits for the write lane: finals are acknowledged at once, Apple's results go to a mailbox, a blocked lane queues finals in their own reserve, and frames yield while saving is behind (#480)
 
 ## 2026-10-03 14:52:52 EDT — scribe `2dd124de3b918c9f74b1c873fce6f48438c7cd84`
 Resume tests receive the Record and Stop each assertion reads before it checks the state (#458)
@@ -100,6 +157,9 @@ Offer a cut-off take for Resume only at a route chunk index a route can continue
 ## 2026-10-03 14:40:39 EDT — scribe `a78cd3b503b29cc74f54fa4255d6889daa1b0a8b`
 Name the waiting Record's trigger binding apart from the value it initializes (#458)
 
+## 2026-10-03 14:39:54 EDT — scribe `ab542c334e138a1fbcb3864f75379dced44206b6`
+Red tests: recognition never waits for the write lane, finals queue in their own reserve, frames yield while saving is behind (#480)
+
 ## 2026-10-03 14:39:00 EDT — scribe `475cc511a406dcc9ed0b244532ec644c014bdce9`
 Open the resume-cut-off channel: the #458 split with ui-polish and list-edit-mode, and the names both draw against (#458)
 
@@ -108,6 +168,9 @@ Record after a cut-off continues the take, New Recording instead stops it for a 
 
 ## 2026-10-03 14:34:38 EDT — scribe `098001d92fabf84a950871333557f398705fd321`
 Red tests: Record after a cut-off continues the take, New Recording instead stops it for a new one, and a stranded take stays resumable for 30 minutes (#458)
+
+## 2026-10-03 14:34:23 EDT — scribe `3a3cf8a5d2a6931bbee0a575ffa98e5529b70399`
+Plan transcription-never-waits: recognition never waits for the write lane (ADR 0043, #480, P0)
 
 ## 2026-10-03 14:22:32 EDT — instant-data-swift `1c7ab096fd520e65fb46b8e89cd6c04e1ac83237`
 #473's blocked-log test reads its line back instead of flushing, so it also builds on v1.9.4 for the red run (#473).
@@ -127,6 +190,9 @@ Claim the files of #473's 1.9.5 part: log I/O off the operation gate, named tran
 ## 2026-10-03 14:20:43 EDT — scribe `d421bb221be9c61c5b68dc9241e194c734963aba`
 Voice actions can pause their model calls, for a hot phone, and fall back to the exact phrases (#161)
 
+## 2026-10-03 14:20:19 EDT — scribe `d59653b023e1052c57a8e2eb39e22230462e1d7d`
+A connected headset's microphone records by itself, and a headset that connects or leaves gets one planned capture restart (#449)
+
 ## 2026-10-03 14:19:19 EDT — scribe `a9c7b82927d2514bdb94be92860b61343f130e43`
 A cheaper voice gate: "go" and "put" no longer count alone, and sections over 20 words skip the model (#161)
 
@@ -135,6 +201,9 @@ Record the real-speech cost measurement in the change log (#161)
 
 ## 2026-10-03 14:14:30 EDT — scribe `af246721e375205d64351cee0f99bb6b0ad93bd8`
 Measure what default-on voice actions cost on real speech: 154 sections an hour reach the model (#161)
+
+## 2026-10-03 14:11:33 EDT — scribe `e66f23b7b39d1686026ecf742747cd5cb33c5fbc`
+Red tests: a connected headset's microphone records by itself, with one planned restart when it connects or leaves (#449)
 
 ## 2026-10-03 14:11:27 EDT — scribe `8774486a914327c254910f12c6e0b5b73af9afb3`
 ADR 0029 section 5a: an answer's card is where it landed, live and in playback, status has its own screen, and the Watch opens Scribe's links (#340)
@@ -151,6 +220,9 @@ Turn voice actions back on once where they crashed, and say so in the banner (#1
 ## 2026-10-03 14:07:59 EDT — scribe `4a8c0904c2ce6277a045fb2c5ca9f4e7a31e4ed2`
 Before an answer is read, a tone and the haptic say an agent answered; "stop" or "later" skips it, "read it" reads it (#342)
 
+## 2026-10-03 14:07:05 EDT — scribe `70b10bed7e2fe60bc2a5f5f65a054f45b6a8aa12`
+Plan amendment (a) for headphone-mic: the headset's microphone records by itself, no switch (ADR 0042, #449)
+
 ## 2026-10-03 14:01:34 EDT — scribe `2d55cc4d0f3f650e3ef251b33161c4285ad66b7c`
 Record the Pause-and-Stop name rule and the default flip in the change log (#161)
 
@@ -162,6 +234,9 @@ Pause and Stop by voice need "Scribe, ...": talk about pausing can never raise t
 
 ## 2026-10-03 13:58:17 EDT — scribe `9ae040322bb3b5456e541e65f6de45273fae4921`
 A playback answer card is the live screen's card: More shows the whole answer and a tap opens its thread (#340)
+
+## 2026-10-03 13:54:58 EDT — scribe `7119809116b7503ed17f6982c4093b1772a95883`
+Switch the headphone microphone during a recording, show which microphone records, and name every change on the timeline (#449)
 
 ## 2026-10-03 13:53:52 EDT — scribe `4d3631f0f120a5229ec01602e64ff6246c14bd26`
 An agent answer's notification is passive while this device records, so Siri never announces it over the capture (#340)
@@ -220,11 +295,17 @@ Merge share-ui: the new sharing flow behind an off-by-default flag, with the peo
 ## 2026-10-03 13:25:13 EDT — scribe `2c90b2d76afe61230d2543a69e00581b82a1e1f0`
 Merge ui-polish for 84: the build chip docks above the bar, and the full-screen stack holds Back to Live and the player inside the bar (#417 #414 #413)
 
+## 2026-10-03 13:25:05 EDT — scribe `8acbb33447704fea393c3b83fcaa9f83d803da78`
+Red tests: the headphone microphone switch during a recording, the microphone icon, and the relabeled moment (#449)
+
 ## 2026-10-03 13:15:02 EDT — scribe `7e4efa677739e9c35174bccc1a2521c65cac0d19`
 Playback shows the agents' answers as cards where they landed on the recording clock (#340)
 
 ## 2026-10-03 13:13:55 EDT — scribe `d57973ae2818b693c8235b130d3132eb54a605cc`
 Red: playback shows the agents' answers as cards where they landed on the recording clock (#340)
+
+## 2026-10-03 13:11:50 EDT — scribe `f23d4434fd7e56f03b6f2b493ee08d809a95a135`
+Plan headphone-mic: switch the headphone microphone during a recording, show which microphone records, and name every change on the timeline (ADR 0042, #449)
 
 ## 2026-10-03 13:04:51 EDT — scribe `d32a616f4b270424d37aaf6961e7f35b2ae5f303`
 The Watch registers Scribe's URL scheme, so a tap on the Live Activity in the Smart Stack opens the Watch app (#340)
@@ -235,11 +316,23 @@ Red: every target defines the $(SCRIBE_…) variables its Info.plist names, so t
 ## 2026-10-03 13:00:44 EDT — scribe `b656db63a4a67ead898180fabcdb9b9a5d631c33`
 An agent's answer card goes back to where it landed after a relaunch, and only a live one moves the transcript (#340)
 
+## 2026-10-03 13:00:42 EDT — scribe `3f980e9578e8b5f445f12f6f06b16a54b16021f3`
+The stable kinds list includes playback (#435)
+
 ## 2026-10-03 13:00:38 EDT — scribe `dcf63a96348686978d6a9b43bc02c543bac3a8e8`
 Red: an agent's answer card goes back to where it landed after a relaunch, and only a live one moves the transcript (#340)
 
+## 2026-10-03 12:59:42 EDT — scribe `80a204beaf64f19a0a674638cccf7939a90f807d`
+Every route change names the inputs, and a moved microphone is its own #122 line, so a report like Recording 185's is answered from the log (#122)
+
+## 2026-10-03 12:59:42 EDT — scribe `706bceb98620c92b045caaf98c84510374b71330`
+Amend plan playback-links (e): every move of the recording's microphone is its own #122 line (Recording 185) (#122)
+
 ## 2026-10-03 12:48:47 EDT — instant-data-swift `45a462908c27876ba2e31096c44f2cf39a48f214`
 #445: whether a failed mutation is superseded, slot by slot, as read-only public API for Scribe's Sync view (InstantSwiftDataClient.supersession(ofFailedMutation:) and failedMutationSupersessions()), by the #441 guard's rule (#445).
+
+## 2026-10-03 12:48:40 EDT — scribe `d805fe7bb839e0495364fea241c4be84edf94fa5`
+The stall test waits up to 5 s of real time for each line instead of reading the log once (#272)
 
 ## 2026-10-03 12:48:38 EDT — instant-data-swift `94938422b6d4723b5400b7723b0ec482f9571aba`
 Claim the files of #445's supersession API, which ships in v1.9.4 with the #441 guard (#445 #441).
@@ -258,6 +351,12 @@ Never ask Private Cloud Compute without its entitlement, on any version (#442 #3
 
 ## 2026-10-03 12:26:33 EDT — scribe `2d42936cdca8092168a16115c0ba91152809604e`
 Red: Private Cloud Compute must never be asked without its entitlement (#442 #364)
+
+## 2026-10-03 12:22:57 EDT — scribe `f6100e98e923c6c01d2fd6c1770ed7bb75e04973`
+After every microphone outage alert, log each Live Activity update with its count and time since the alert, and name a surface update that has not returned within 5 s (#272)
+
+## 2026-10-03 12:22:37 EDT — scribe `ce21de8ba962558c37bdad44df9492ab0d692048`
+Amend plan playback-links (d): a passive device check for the Live Activity after an outage alert (#272)
 
 ## 2026-10-03 12:16:27 EDT — scribe `2a5ab827115c689fb392f1b6bc592c37fe60ae72`
 Never cancel a voice-actions model call in flight; drop a late answer instead (#442)
@@ -304,8 +403,29 @@ Claim the files of the #441 fix: a re-sent write the server already holds is sho
 ## 2026-10-03 12:01:36 EDT — scribe `c06aff08aa76bf10ef7cd9206f03aca2cc034339`
 Merge origin/main into live-stamp-82: builds 81 to 83, capture-gaps-row, ui-polish, the 1.9.3 pin and list-edit-mode's schema (#432 #408)
 
+## 2026-10-03 11:47:32 EDT — scribe `a94c78f0228c5668b4073347b496238849ddf339`
+The span test waits for its saves instead of cancelling them (#435)
+
 ## 2026-10-03 11:32:20 EDT — scribe `1e95b90c8548524810478ca22029cea44bee0fc7`
 Merge main's SoundAnalysis plan and claims after the 0.1 (83) release commit (#440).
+
+## 2026-10-03 11:24:32 EDT — scribe `7f12cc09d910135c803e3941f1b265353045f5bb`
+The gained output plays its node only while its engine runs, as the live recording's player does (#122, ADR 0040)
+
+## 2026-10-03 11:23:37 EDT — scribe `86bfe49b55dacbe83959f10f8478f1bda876fb9f`
+A source rule that the gained output never configures the audio session the recording owns (#122, ADR 0040)
+
+## 2026-10-03 11:22:37 EDT — scribe `cd5141aaae210d3131571ddfe8968f8f4f8e7217`
+A paused gained playback pauses its engine too, so a playback left paused during a long recording keeps no audio output running (#122, ADR 0040)
+
+## 2026-10-03 11:21:15 EDT — scribe `924dd81f5841bc8f992e8414ca869e9a2c50e51b`
+The gained output ends like AVAudioPlayer: a seek to the end while playing is the end, and the playhead goes back to the start (#122, ADR 0040)
+
+## 2026-10-03 11:19:34 EDT — scribe `eb8b8e2bafc0ee069553e29f9690e981ccf19d8a`
+Play Scribe's own playback during a recording through a gain stage and a limiter: 12 dB louder on the loudspeaker in measurement mode, never clipping, the session untouched (#122, ADR 0040)
+
+## 2026-10-03 11:19:09 EDT — scribe `139d8d432bc9aece0e161824932e5ec0df82afc1`
+Amend plan playback-links (c): Scribe's own playback during a recording plays through a gain stage and a limiter (#122)
 
 ## 2026-10-03 10:55:05 EDT — scribe `b1d4739255c4df3bb227908192ee3a66e3aa7446`
 Review fixes for playback-links before its first hold: the play kind in two completeness tests, a guest's plays move with the merge, and the route line says the mode and volumes (#435 #122).
