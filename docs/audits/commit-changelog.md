@@ -1,3 +1,12 @@
+## 2026-10-03 14:01:34 EDT — scribe `2d55cc4d0f3f650e3ef251b33161c4285ad66b7c`
+Record the Pause-and-Stop name rule and the default flip in the change log (#161)
+
+## 2026-10-03 14:00:55 EDT — scribe `44495d4f4a199523c91610e4cbdad7eedc8a0f7c`
+Voice actions on by default; Settings turns them off (#161)
+
+## 2026-10-03 13:59:07 EDT — scribe `2f20f6b9a9a24371f0d6be1c9f67c0e24c74e62a`
+Pause and Stop by voice need "Scribe, ...": talk about pausing can never raise the question (#161)
+
 ## 2026-10-03 13:44:20 EDT — scribe `d9c8f657aa1b86a795e1a727c0dca362515f100b`
 Plan resume-cut-off: Record continues a recording that was cut off, Resume is a normal action, and no recording stays stamped live (#458)
 
