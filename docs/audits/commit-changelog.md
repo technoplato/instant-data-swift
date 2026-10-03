@@ -4,8 +4,26 @@ v1.9.2 on main: merge library-79-hops (2df30b0d) without fast-forward over 1d6aa
 ## 2026-10-03 05:48:29 EDT — instant-data-swift `278fefcfba5eb7114bdd48e4c575a62a9381aac5`
 Document the v1.9.2 release: #431, another device's later value of a single-value attribute and its clear reach a device that once wrote it; red on v1.9.1, green here, and the final gate hold on c867063d (#431).
 
+## 2026-10-03 04:49:27 EDT — scribe `813ef6f9630257b6c1512ba07f86dc8b2c30f31b`
+Record the Account screen schema test's suspension fix in the change log (#434).
+
+## 2026-10-03 04:48:41 EDT — scribe `092ac897182d4f6b60d27f7ab0bae9467e9a3505`
+Let the Account screen schema test suspend instead of spinning nested main run loops (test-only).
+
+## 2026-10-03 04:46:45 EDT — scribe `c0899406c5a76d5716e30b5fe5157571d83a74b2`
+Merge clipboard-onboarding: Recording Setup asks whether Scribe may always read copies from other apps, and opens the system setting for it (#420).
+
+## 2026-10-03 04:46:29 EDT — scribe `274f675cafb893d29ecc430dab112491fc5ca9f3`
+Merge startup-at-launch: the iPhone app starts opening the store at launch, not after the recordings list's first frame (#405).
+
 ## 2026-10-03 04:40:02 EDT — instant-data-swift `995d530eda6668a222d65cfa3af618ba20d5b5d1`
 #431 follow-up after an independent review and the first release-gate hold: query keys must vouch for their selection (no where through a link), the scan for slots no result held runs once per key, and only cleared slots lose the confirmed write's protection (the first gate's soak republished on every confirming refresh); round 4 red on v1.9.1, green here (#431).
+
+## 2026-10-03 03:47:14 EDT — scribe `371c19574c270897c5bb0516e16e118a41c45ed8`
+Merge capture-gaps-row: the recording row keeps its capture gaps, and every image keeps its own capture time (ADR 0034, #272 #346).
+
+## 2026-10-03 03:46:23 EDT — scribe `56a7929be216f41cd181c884f520fdfd73356f0e`
+Merge capture-alert-unblock's rebuild-stop test fix: the rebuild waits on a continuation, not a blocked thread, and the install path is covered on its own (#272).
 
 ## 2026-10-03 03:45:24 EDT — scribe `d2b115a01c33d11b3af2618ecf83e0bf566ee3de`
 Merge list-edit-mode's #430 schema and rule: recordings.deletedAtMs and the keepsDeletion update rule, as production has them (ADR 0038, #430).
