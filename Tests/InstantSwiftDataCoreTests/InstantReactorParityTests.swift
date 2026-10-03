@@ -2857,73 +2857,76 @@ struct InstantReactorParityTests {
   /// not this device (#461).
   @Test
   func runtimeKeepsEverySessionOfOneUserAsItsOwnPeer() async throws {
-    await withKnownIssue("room members are keyed by user id, so every session of one user merges into one (#461)") {
-      let room = InstantRoomHandle(type: "recording", id: "room-one-user")
-      let session = LiveReactorParitySession(messages: [
-        liveReactorInitOK(attrs: liveReactorTodoServerAttrs, sessionID: "session-iphone")
-      ])
-      let runtime = try await InstantRuntime.bootstrap(
-        configuration: InstantRuntimeConfiguration(
-          appID: "reactor-room-one-user-parity",
-          persistenceURL: try temporaryReactorParityCacheURL(),
-          initialAttributes: TodoExample.attributes,
-          now: { InstantTimestamp(milliseconds: 1_700_000_090_000) },
-          liveTransport: session.transport
-        )
+    let room = InstantRoomHandle(type: "recording", id: "room-one-user")
+    let session = LiveReactorParitySession(messages: [
+      liveReactorInitOK(attrs: liveReactorTodoServerAttrs, sessionID: "session-iphone")
+    ])
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "reactor-room-one-user-parity",
+        persistenceURL: try temporaryReactorParityCacheURL(),
+        initialAttributes: TodoExample.attributes,
+        now: { InstantTimestamp(milliseconds: 1_700_000_090_000) },
+        liveTransport: session.transport
       )
-      _ = try await runtime.connect()
-      _ = try await runtime.joinRoom(room)
-      await session.enqueue(
-        InstantLiveMessage(op: "join-room-ok", fields: ["room-id": .string(room.id)])
-      )
-      _ = try await runtime.setPresence(
-        room: room,
-        userID: "user-michael",
-        values: ["device": .string("iPhone")]
-      )
-      var presence = (try await runtime.observeRoomPresence(room: room)).makeAsyncIterator()
-      let ownPresence = try #require(await presence.next())
-      expectNoDifference(ownPresence.map(\.values), [["device": .string("iPhone")]], reactorRoomSessionsSource)
+    )
+    _ = try await runtime.connect()
+    _ = try await runtime.joinRoom(room)
+    await session.enqueue(
+      InstantLiveMessage(op: "join-room-ok", fields: ["room-id": .string(room.id)])
+    )
+    _ = try await runtime.setPresence(
+      room: room,
+      userID: "user-michael",
+      values: ["device": .string("iPhone")]
+    )
+    var presence = (try await runtime.observeRoomPresence(room: room)).makeAsyncIterator()
+    let ownPresence = try #require(await presence.next())
+    expectNoDifference(ownPresence.map(\.values), [["device": .string("iPhone")]], reactorRoomSessionsSource)
 
-      await session.enqueue(
-        InstantLiveMessage(
-          op: "refresh-presence",
-          fields: [
-            "data": .object([
-              "session-iphone": livePresenceSession(
-                peerID: "session-iphone",
-                userID: "user-michael",
-                values: ["device": .string("iPhone")]
-              ),
-              "session-agent-a": livePresenceSession(
-                peerID: "session-agent-a",
-                userID: "user-michael",
-                values: ["agent": .string("a")]
-              ),
-              "session-agent-b": livePresenceSession(
-                peerID: "session-agent-b",
-                userID: "user-michael",
-                values: ["agent": .string("b")]
-              ),
-            ]),
-            "room-id": .string(room.id),
-          ]
-        )
+    await session.enqueue(
+      InstantLiveMessage(
+        op: "refresh-presence",
+        fields: [
+          "data": .object([
+            "session-iphone": livePresenceSession(
+              peerID: "session-iphone",
+              userID: "user-michael",
+              values: ["device": .string("iPhone")]
+            ),
+            "session-agent-a": livePresenceSession(
+              peerID: "session-agent-a",
+              userID: "user-michael",
+              values: ["agent": .string("a")]
+            ),
+            "session-agent-b": livePresenceSession(
+              peerID: "session-agent-b",
+              userID: "user-michael",
+              values: ["agent": .string("b")]
+            ),
+          ]),
+          "room-id": .string(room.id),
+        ]
       )
-      let members = try #require(await presence.next())
-      let agents = members.compactMap { member -> String? in
-        guard case let .string(agent)? = member.values["agent"] else { return nil }
-        return agent
-      }
-      expectNoDifference(agents.sorted(), ["a", "b"], reactorRoomSessionsSource)
-      #expect(
-        members.contains { $0.values["device"] == .string("iPhone") },
-        "A session of this device's own user replaced this device's presence. \(reactorRoomSessionsSource)"
-      )
-      expectNoDifference(members.count, 3, reactorRoomSessionsSource)
-      #expect(members.allSatisfy { $0.userID == "user-michael" })
-      _ = try await runtime.closeConnection()
+    )
+    let members = try #require(await presence.next())
+    let agents = members.compactMap { member -> String? in
+      guard case let .string(agent)? = member.values["agent"] else { return nil }
+      return agent
     }
+    expectNoDifference(agents.sorted(), ["a", "b"], reactorRoomSessionsSource)
+    #expect(
+      members.contains { $0.values["device"] == .string("iPhone") },
+      "A session of this device's own user replaced this device's presence. \(reactorRoomSessionsSource)"
+    )
+    expectNoDifference(members.count, 3, reactorRoomSessionsSource)
+    #expect(members.allSatisfy { $0.userID == "user-michael" })
+    expectNoDifference(
+      members.map(\.peerID),
+      [nil, "session-agent-a", "session-agent-b"],
+      "This device's own presence has no peer id; each agent is its own session. \(reactorRoomSessionsSource)"
+    )
+    _ = try await runtime.closeConnection()
   }
 
   @Test

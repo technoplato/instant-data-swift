@@ -866,15 +866,18 @@ private actor InstantRuntimeLiveRoomPresenceState {
       } else {
         userID = peerID
       }
+      // A peer is its session, as Reactor.js keys `peers` by the server's session id (`buildPresenceSlice` sets
+      // `peerId` to that key), so two sessions of one user stay two members (#461).
       return InstantRoomPresenceMember(
         appID: appID,
         room: room,
         userID: userID,
+        peerID: sessionID,
         values: values,
         updatedAt: updatedAt
       )
     }
-    .sorted { $0.id < $1.id }
+    .sorted(by: InstantRoomPresenceMember.presenceOrder)
   }
 
   private func malformedPatch(index: Int) -> InstantError {
@@ -15022,7 +15025,7 @@ public final class InstantRuntime: Sendable {
     for member in remote {
       membersByID[member.id] = member
     }
-    return membersByID.values.sorted { $0.id < $1.id }
+    return membersByID.values.sorted(by: InstantRoomPresenceMember.presenceOrder)
   }
 
   private func roomTopicObservationKey(

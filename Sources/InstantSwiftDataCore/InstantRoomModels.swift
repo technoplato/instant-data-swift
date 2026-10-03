@@ -17,26 +17,63 @@ public struct InstantRoomHandle: Hashable, Codable, Sendable {
   }
 }
 
+/// One member of a room's presence: a peer's session, or presence this runtime published.
+///
+/// Peers are keyed by session, as `Reactor.js` keys them (`_setPresencePeers`; `peerId` in presence.ts), so two
+/// agents or devices signed in as one user are two members, and a session of this runtime's own user is a peer, not
+/// this runtime.
 public struct InstantRoomPresenceMember: Hashable, Codable, Sendable, Identifiable {
-  public var id: String { "\(appID):\(room.type):\(room.id):\(userID)" }
+  /// Unique within a room: a peer's session id, or for this runtime's own presence the user id it published under.
+  public var id: String {
+    if let peerID {
+      return "\(appID):\(room.type):\(room.id):peer:\(peerID)"
+    }
+    return "\(appID):\(room.type):\(room.id):\(userID)"
+  }
   public var appID: String
   public var room: InstantRoomHandle
+  /// The signed-in user of the session that published the values. A session without a user (an admin-token client)
+  /// reports its peer id here, as the server's envelope has no user.
   public var userID: String
+  /// The server's session id of the peer that published the values, `Reactor.js`'s `peerId`; `nil` for presence this
+  /// runtime published.
+  public var peerID: String?
   public var values: [String: JSONValue]
+  /// When these values last changed, as this runtime saw them: a peer's is when its frame arrived with new values.
   public var updatedAt: InstantTimestamp
 
+  /// Presence this runtime publishes is built with `peerID` nil; the runtime fills a peer's from the server.
   public init(
     appID: String,
     room: InstantRoomHandle,
     userID: String,
+    peerID: String? = nil,
     values: [String: JSONValue],
     updatedAt: InstantTimestamp
   ) {
     self.appID = appID
     self.room = room
     self.userID = userID
+    self.peerID = peerID
     self.values = values
     self.updatedAt = updatedAt
+  }
+
+  /// Whether this runtime published these values, rather than a peer's session.
+  public var isLocal: Bool { peerID == nil }
+}
+
+extension InstantRoomPresenceMember {
+  /// The order presence lists use: by user id; within one user, this runtime's own presence first, then each peer
+  /// by session id. Stable across frames, so an observer's rows keep their places.
+  static func presenceOrder(_ lhs: Self, _ rhs: Self) -> Bool {
+    if lhs.userID != rhs.userID { return lhs.userID < rhs.userID }
+    switch (lhs.peerID, rhs.peerID) {
+    case (nil, nil): return false
+    case (nil, _): return true
+    case (_, nil): return false
+    case let (left?, right?): return left < right
+    }
   }
 }
 
