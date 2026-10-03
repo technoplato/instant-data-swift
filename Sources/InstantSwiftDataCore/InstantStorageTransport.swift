@@ -99,6 +99,12 @@ public final class InstantStorageTransportClient: Sendable {
     @Sendable (InstantStorageDownloadRequest) async throws -> Data
   public let downloadFile:
     @Sendable (InstantStorageFileDownloadRequest) async throws -> Data
+  /// ``download``, to a temporary file the caller owns instead of memory.
+  public let downloadToFile:
+    @Sendable (InstantStorageDownloadRequest) async throws -> URL
+  /// ``downloadFile``, to a temporary file the caller owns instead of memory.
+  public let downloadFileToFile:
+    @Sendable (InstantStorageFileDownloadRequest) async throws -> URL
   let prepareUploadOperation:
     @Sendable (InstantStorageUploadRequest)
       -> InstantStorageTransportOperation<InstantStorageUploadResponse>
@@ -106,76 +112,55 @@ public final class InstantStorageTransportClient: Sendable {
     @Sendable (InstantStorageDeleteRequest)
       -> InstantStorageTransportOperation<InstantStorageDeleteResponse>
 
-  public init(
+  public convenience init(
     upload: @escaping @Sendable (InstantStorageUploadRequest) async throws
       -> InstantStorageUploadResponse,
     delete: @escaping @Sendable (InstantStorageDeleteRequest) async throws
       -> InstantStorageDeleteResponse
   ) {
-    self.upload = upload
-    self.delete = delete
-    self.prepareUploadOperation = Self.cooperativeOperation(upload)
-    self.prepareDeleteOperation = Self.cooperativeOperation(delete)
-    self.download = { _ in
-      throw InstantError(
-        code: .networkFailed,
-        operation: "download file",
-        message: "No remote storage download transport is configured.",
-        recovery: "Configure InstantStorageTransportClient.live() before downloading remote files."
-      )
-    }
-    self.downloadFile = { _ in
-      throw InstantError(
-        code: .networkFailed,
-        operation: "download file",
-        message: "No authenticated storage file download transport is configured.",
-        recovery: "Configure InstantStorageTransportClient.live() before downloading remote files."
-      )
-    }
+    self.init(
+      upload: upload,
+      delete: delete,
+      download: Self.unconfiguredDownload,
+      downloadFile: Self.unconfiguredFileDownload
+    )
   }
 
-  public init(
+  public convenience init(
     upload: @escaping @Sendable (InstantStorageUploadRequest) async throws
       -> InstantStorageUploadResponse,
     delete: @escaping @Sendable (InstantStorageDeleteRequest) async throws
       -> InstantStorageDeleteResponse,
     download: @escaping @Sendable (InstantStorageDownloadRequest) async throws -> Data
   ) {
-    self.upload = upload
-    self.delete = delete
-    self.prepareUploadOperation = Self.cooperativeOperation(upload)
-    self.prepareDeleteOperation = Self.cooperativeOperation(delete)
-    self.download = download
-    self.downloadFile = { _ in
-      throw InstantError(
-        code: .networkFailed,
-        operation: "download file",
-        message: "No authenticated storage file download transport is configured.",
-        recovery: "Configure InstantStorageTransportClient.live() before downloading remote files."
-      )
-    }
+    self.init(
+      upload: upload,
+      delete: delete,
+      download: download,
+      downloadFile: Self.unconfiguredFileDownload
+    )
   }
 
-  public init(
+  public convenience init(
     upload: @escaping @Sendable (InstantStorageUploadRequest) async throws
       -> InstantStorageUploadResponse,
     delete: @escaping @Sendable (InstantStorageDeleteRequest) async throws
       -> InstantStorageDeleteResponse,
     downloadFile: @escaping @Sendable (InstantStorageFileDownloadRequest) async throws -> Data
   ) {
-    self.upload = upload
-    self.delete = delete
-    self.prepareUploadOperation = Self.cooperativeOperation(upload)
-    self.prepareDeleteOperation = Self.cooperativeOperation(delete)
-    self.download = { _ in
-      throw InstantError(
-        code: .networkFailed,
-        operation: "download file",
-        message: "No remote storage URL download transport is configured.",
-        recovery: "Configure InstantStorageTransportClient.live() before downloading remote files."
-      )
-    }
-    self.downloadFile = downloadFile
+    self.init(
+      upload: upload,
+      delete: delete,
+      download: { _ in
+        throw InstantError(
+          code: .networkFailed,
+          operation: "download file",
+          message: "No remote storage URL download transport is configured.",
+          recovery: "Configure InstantStorageTransportClient.live() before downloading remote files."
+        )
+      },
+      downloadFile: downloadFile
+    )
   }
 
   public init(
@@ -192,6 +177,69 @@ public final class InstantStorageTransportClient: Sendable {
     self.prepareDeleteOperation = Self.cooperativeOperation(delete)
     self.download = download
     self.downloadFile = downloadFile
+    self.downloadToFile = Self.temporaryFile(from: download)
+    self.downloadFileToFile = Self.temporaryFile(from: downloadFile)
+  }
+
+  private static let unconfiguredDownload:
+    @Sendable (InstantStorageDownloadRequest) async throws -> Data = { _ in
+      throw InstantError(
+        code: .networkFailed,
+        operation: "download file",
+        message: "No remote storage download transport is configured.",
+        recovery: "Configure InstantStorageTransportClient.live() before downloading remote files."
+      )
+    }
+
+  private static let unconfiguredFileDownload:
+    @Sendable (InstantStorageFileDownloadRequest) async throws -> Data = { _ in
+      throw InstantError(
+        code: .networkFailed,
+        operation: "download file",
+        message: "No authenticated storage file download transport is configured.",
+        recovery: "Configure InstantStorageTransportClient.live() before downloading remote files."
+      )
+    }
+
+  /// A transport with every download given: the data downloads and the file downloads.
+  public init(
+    upload: @escaping @Sendable (InstantStorageUploadRequest) async throws
+      -> InstantStorageUploadResponse,
+    delete: @escaping @Sendable (InstantStorageDeleteRequest) async throws
+      -> InstantStorageDeleteResponse,
+    download: @escaping @Sendable (InstantStorageDownloadRequest) async throws -> Data,
+    downloadFile: @escaping @Sendable (InstantStorageFileDownloadRequest) async throws -> Data,
+    downloadToFile: @escaping @Sendable (InstantStorageDownloadRequest) async throws -> URL,
+    downloadFileToFile: @escaping @Sendable (InstantStorageFileDownloadRequest) async throws -> URL
+  ) {
+    self.upload = upload
+    self.delete = delete
+    self.prepareUploadOperation = Self.cooperativeOperation(upload)
+    self.prepareDeleteOperation = Self.cooperativeOperation(delete)
+    self.download = download
+    self.downloadFile = downloadFile
+    self.downloadToFile = downloadToFile
+    self.downloadFileToFile = downloadFileToFile
+  }
+
+  /// A transport whose downloads stream to files: ``downloadToFile`` and ``downloadFileToFile`` never hold a file in
+  /// memory. ``download`` and ``downloadFile`` read the file they wrote.
+  public init(
+    upload: @escaping @Sendable (InstantStorageUploadRequest) async throws
+      -> InstantStorageUploadResponse,
+    delete: @escaping @Sendable (InstantStorageDeleteRequest) async throws
+      -> InstantStorageDeleteResponse,
+    downloadToFile: @escaping @Sendable (InstantStorageDownloadRequest) async throws -> URL,
+    downloadFileToFile: @escaping @Sendable (InstantStorageFileDownloadRequest) async throws -> URL
+  ) {
+    self.upload = upload
+    self.delete = delete
+    self.prepareUploadOperation = Self.cooperativeOperation(upload)
+    self.prepareDeleteOperation = Self.cooperativeOperation(delete)
+    self.download = Self.data(from: downloadToFile)
+    self.downloadFile = Self.data(from: downloadFileToFile)
+    self.downloadToFile = downloadToFile
+    self.downloadFileToFile = downloadFileToFile
   }
 
   private init(
@@ -203,8 +251,12 @@ public final class InstantStorageTransportClient: Sendable {
         -> InstantStorageTransportOperation<InstantStorageDeleteResponse>,
     download: @escaping @Sendable (InstantStorageDownloadRequest) async throws -> Data,
     downloadFile:
-      @escaping @Sendable (InstantStorageFileDownloadRequest) async throws -> Data
+      @escaping @Sendable (InstantStorageFileDownloadRequest) async throws -> Data,
+    downloadToFile: (@Sendable (InstantStorageDownloadRequest) async throws -> URL)? = nil,
+    downloadFileToFile: (@Sendable (InstantStorageFileDownloadRequest) async throws -> URL)? = nil
   ) {
+    self.downloadToFile = downloadToFile ?? Self.temporaryFile(from: download)
+    self.downloadFileToFile = downloadFileToFile ?? Self.temporaryFile(from: downloadFile)
     self.prepareUploadOperation = prepareUploadOperation
     self.prepareDeleteOperation = prepareDeleteOperation
     self.upload = { request in
@@ -225,6 +277,29 @@ public final class InstantStorageTransportClient: Sendable {
     }
     self.download = download
     self.downloadFile = downloadFile
+  }
+
+  /// A file download built from a data download: the bytes arrive in memory, then go to a temporary file.
+  static func temporaryFile<Request: Sendable>(
+    from download: @escaping @Sendable (Request) async throws -> Data
+  ) -> @Sendable (Request) async throws -> URL {
+    { request in
+      let data = try await download(request)
+      let fileURL = instantStorageTemporaryDownloadURL()
+      try data.write(to: fileURL, options: .atomic)
+      return fileURL
+    }
+  }
+
+  /// A data download built from a file download, for the callers that want the bytes.
+  static func data<Request: Sendable>(
+    from downloadToFile: @escaping @Sendable (Request) async throws -> URL
+  ) -> @Sendable (Request) async throws -> Data {
+    { request in
+      let fileURL = try await downloadToFile(request)
+      defer { try? FileManager.default.removeItem(at: fileURL) }
+      return try Data(contentsOf: fileURL)
+    }
   }
 
   private static func cooperativeOperation<Request: Sendable, Response: Sendable>(
@@ -249,8 +324,26 @@ public struct InstantStorageHTTPResponse: Hashable, Codable, Sendable {
   }
 }
 
+/// A storage response whose body went to a file instead of memory.
+///
+/// `fileURL` is a temporary file the caller owns: move or delete it.
+public struct InstantStorageHTTPFileResponse: Hashable, Sendable {
+  public var statusCode: Int
+  public var fileURL: URL
+
+  public init(statusCode: Int, fileURL: URL) {
+    self.statusCode = statusCode
+    self.fileURL = fileURL
+  }
+}
+
 public struct InstantStorageHTTPClient: Sendable {
   public var send: @Sendable (URLRequest) async throws -> InstantStorageHTTPResponse
+  /// Sends `request` and writes the response body to a temporary file, never holding it in memory.
+  ///
+  /// The live client streams with a `URLSession` download task. A client built from `send` alone writes what `send`
+  /// returned, so a custom transport keeps working, in memory.
+  public var downloadToFile: @Sendable (URLRequest) async throws -> InstantStorageHTTPFileResponse
   public var uploadFile: @Sendable (URLRequest, URL) async throws -> InstantStorageHTTPResponse {
     didSet {
       let uploadFile = self.uploadFile
@@ -264,6 +357,7 @@ public struct InstantStorageHTTPClient: Sendable {
     send: @escaping @Sendable (URLRequest) async throws -> InstantStorageHTTPResponse
   ) {
     self.send = send
+    self.downloadToFile = Self.downloadToFile(through: send)
     let uploadFile: @Sendable (URLRequest, URL) async throws
       -> InstantStorageHTTPResponse = { _, _ in
       throw InstantError(
@@ -283,17 +377,32 @@ public struct InstantStorageHTTPClient: Sendable {
       -> InstantStorageHTTPResponse
   ) {
     self.send = send
+    self.downloadToFile = Self.downloadToFile(through: send)
+    self.uploadFile = uploadFile
+    self.prepareUploadFileOperation = Self.cooperativeUploadOperation(uploadFile)
+  }
+
+  public init(
+    send: @escaping @Sendable (URLRequest) async throws -> InstantStorageHTTPResponse,
+    uploadFile: @escaping @Sendable (URLRequest, URL) async throws
+      -> InstantStorageHTTPResponse,
+    downloadToFile: @escaping @Sendable (URLRequest) async throws -> InstantStorageHTTPFileResponse
+  ) {
+    self.send = send
+    self.downloadToFile = downloadToFile
     self.uploadFile = uploadFile
     self.prepareUploadFileOperation = Self.cooperativeUploadOperation(uploadFile)
   }
 
   fileprivate init(
     send: @escaping @Sendable (URLRequest) async throws -> InstantStorageHTTPResponse,
+    downloadToFile: (@Sendable (URLRequest) async throws -> InstantStorageHTTPFileResponse)? = nil,
     prepareUploadFileOperation:
       @escaping @Sendable (URLRequest, URL)
         -> InstantStorageTransportOperation<InstantStorageHTTPResponse>
   ) {
     self.send = send
+    self.downloadToFile = downloadToFile ?? Self.downloadToFile(through: send)
     self.prepareUploadFileOperation = prepareUploadFileOperation
     self.uploadFile = { request, sourceURL in
       let operation = prepareUploadFileOperation(request, sourceURL)
@@ -302,6 +411,18 @@ public struct InstantStorageHTTPClient: Sendable {
       } onCancel: {
         operation.abort()
       }
+    }
+  }
+
+  /// A file download built from `send`: the body arrives in memory and is then written to a temporary file.
+  static func downloadToFile(
+    through send: @escaping @Sendable (URLRequest) async throws -> InstantStorageHTTPResponse
+  ) -> @Sendable (URLRequest) async throws -> InstantStorageHTTPFileResponse {
+    { request in
+      let response = try await send(request)
+      let fileURL = instantStorageTemporaryDownloadURL()
+      try response.data.write(to: fileURL, options: .atomic)
+      return InstantStorageHTTPFileResponse(statusCode: response.statusCode, fileURL: fileURL)
     }
   }
 
@@ -402,6 +523,33 @@ extension InstantStorageHTTPClient {
     send: { request in
       let (data, response) = try await URLSession.shared.data(for: request)
       return try httpResponse(data: data, response: response)
+    },
+    downloadToFile: { request in
+      // A download task writes the body to disk as it arrives: a recording's 2 GB audio never sits in memory
+      // (Scribe #454). The system's file is moved at once, before the next suspension point.
+      let (location, response) = try await URLSession.shared.download(for: request)
+      let fileURL = instantStorageTemporaryDownloadURL()
+      do {
+        try FileManager.default.moveItem(at: location, to: fileURL)
+      } catch {
+        try? FileManager.default.removeItem(at: location)
+        throw InstantError(
+          code: .persistenceFailed,
+          operation: "download file",
+          message: "Could not keep the downloaded file: \(error.localizedDescription)",
+          recovery: "Check the free space in the temporary directory and retry the download."
+        )
+      }
+      guard let response = response as? HTTPURLResponse else {
+        try? FileManager.default.removeItem(at: fileURL)
+        throw InstantError(
+          code: .networkFailed,
+          operation: "perform Instant storage request",
+          message: "Instant storage returned a non-HTTP response.",
+          recovery: "Check the configured Instant API endpoint and network connection."
+        )
+      }
+      return InstantStorageHTTPFileResponse(statusCode: response.statusCode, fileURL: fileURL)
     },
     prepareUploadFileOperation: { request, sourceURL in
       // Upstream StorageAPI uploads a File/Blob directly. A suspended
@@ -567,63 +715,117 @@ extension InstantStorageTransportClient {
         return response.data
       },
       downloadFile: { request in
-        var components = URLComponents(
-          url: request.apiURI
-            .appendingPathComponent("storage")
-            .appendingPathComponent("signed-download-url"),
-          resolvingAgainstBaseURL: false
+        var downloadRequest = URLRequest(
+          url: try await signedStorageDownloadURL(for: request, httpClient: httpClient)
         )
-        components?.queryItems = [
-          URLQueryItem(name: "app_id", value: request.appID),
-          URLQueryItem(name: "filename", value: request.path),
-        ]
-        guard let signedURLRequestURL = components?.url else {
-          throw InstantError(
-            code: .validationFailed,
-            operation: "download file",
-            message: "Could not construct the Instant storage download URL.",
-            recovery: "Check the configured Instant API endpoint and file path."
-          )
-        }
-        var signedURLRequest = URLRequest(url: signedURLRequestURL)
-        signedURLRequest.httpMethod = "GET"
-        signedURLRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        signedURLRequest.setValue(
-          "Bearer \(request.refreshToken)",
-          forHTTPHeaderField: "Authorization"
-        )
-        let signedURLResponse = try await httpClient.send(signedURLRequest)
-        try validateStorageResponse(signedURLResponse, operation: "download file")
-        let envelope: InstantStorageSignedDownloadEnvelope
-        do {
-          envelope = try JSONDecoder().decode(
-            InstantStorageSignedDownloadEnvelope.self,
-            from: signedURLResponse.data
-          )
-        } catch {
-          throw InstantError(
-            code: .decodeFailed,
-            operation: "download file",
-            message: "Instant storage returned an invalid download URL response.",
-            recovery: "Retry the download and inspect the Instant storage response."
-          )
-        }
-        guard let downloadURL = URL(string: envelope.data) else {
-          throw InstantError(
-            code: .decodeFailed,
-            operation: "download file",
-            message: "Instant storage returned an invalid signed download URL.",
-            recovery: "Retry the download and inspect the Instant storage response."
-          )
-        }
-        var downloadRequest = URLRequest(url: downloadURL)
         downloadRequest.httpMethod = "GET"
         let downloadResponse = try await httpClient.send(downloadRequest)
         try validateStorageResponse(downloadResponse, operation: "download file")
         return downloadResponse.data
+      },
+      downloadToFile: { request in
+        var urlRequest = URLRequest(url: request.url)
+        urlRequest.httpMethod = "GET"
+        return try validatedStorageFile(
+          try await httpClient.downloadToFile(urlRequest),
+          operation: "download file"
+        )
+      },
+      downloadFileToFile: { request in
+        var downloadRequest = URLRequest(
+          url: try await signedStorageDownloadURL(for: request, httpClient: httpClient)
+        )
+        downloadRequest.httpMethod = "GET"
+        return try validatedStorageFile(
+          try await httpClient.downloadToFile(downloadRequest),
+          operation: "download file"
+        )
       }
     )
   }
+}
+
+/// The signed URL Instant storage gives an authenticated file path, the upstream
+/// `StorageAPI.getDownloadUrl` request.
+private func signedStorageDownloadURL(
+  for request: InstantStorageFileDownloadRequest,
+  httpClient: InstantStorageHTTPClient
+) async throws -> URL {
+  var components = URLComponents(
+    url: request.apiURI
+      .appendingPathComponent("storage")
+      .appendingPathComponent("signed-download-url"),
+    resolvingAgainstBaseURL: false
+  )
+  components?.queryItems = [
+    URLQueryItem(name: "app_id", value: request.appID),
+    URLQueryItem(name: "filename", value: request.path),
+  ]
+  guard let signedURLRequestURL = components?.url else {
+    throw InstantError(
+      code: .validationFailed,
+      operation: "download file",
+      message: "Could not construct the Instant storage download URL.",
+      recovery: "Check the configured Instant API endpoint and file path."
+    )
+  }
+  var signedURLRequest = URLRequest(url: signedURLRequestURL)
+  signedURLRequest.httpMethod = "GET"
+  signedURLRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
+  signedURLRequest.setValue(
+    "Bearer \(request.refreshToken)",
+    forHTTPHeaderField: "Authorization"
+  )
+  let signedURLResponse = try await httpClient.send(signedURLRequest)
+  try validateStorageResponse(signedURLResponse, operation: "download file")
+  let envelope: InstantStorageSignedDownloadEnvelope
+  do {
+    envelope = try JSONDecoder().decode(
+      InstantStorageSignedDownloadEnvelope.self,
+      from: signedURLResponse.data
+    )
+  } catch {
+    throw InstantError(
+      code: .decodeFailed,
+      operation: "download file",
+      message: "Instant storage returned an invalid download URL response.",
+      recovery: "Retry the download and inspect the Instant storage response."
+    )
+  }
+  guard let downloadURL = URL(string: envelope.data) else {
+    throw InstantError(
+      code: .decodeFailed,
+      operation: "download file",
+      message: "Instant storage returned an invalid signed download URL.",
+      recovery: "Retry the download and inspect the Instant storage response."
+    )
+  }
+  return downloadURL
+}
+
+/// The downloaded file of a successful response; a failed one's file is deleted.
+private func validatedStorageFile(
+  _ response: InstantStorageHTTPFileResponse,
+  operation: String
+) throws -> URL {
+  do {
+    try validateStorageResponse(
+      InstantStorageHTTPResponse(statusCode: response.statusCode, data: Data()),
+      operation: operation
+    )
+  } catch {
+    try? FileManager.default.removeItem(at: response.fileURL)
+    throw error
+  }
+  return response.fileURL
+}
+
+/// A new path for one downloaded file, in the temporary directory's `instant-downloads` folder.
+func instantStorageTemporaryDownloadURL() -> URL {
+  let directory = FileManager.default.temporaryDirectory
+    .appendingPathComponent("instant-downloads", isDirectory: true)
+  try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+  return directory.appendingPathComponent(UUID().uuidString, isDirectory: false)
 }
 
 private func httpResponse(

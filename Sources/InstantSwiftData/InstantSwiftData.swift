@@ -101,6 +101,8 @@ public struct InstantSwiftDataClient: Sendable {
     @Sendable () async throws -> AsyncStream<[InstantStoredFile]>
   private var storedFileContentsOperation:
     @Sendable (String, String?) async throws -> InstantStoredFileContents
+  private var downloadStoredFileOperation:
+    @Sendable (String, String?, URL) async throws -> InstantStoredFile
   private var deleteStoredFileOperation: @Sendable (String) async throws -> InstantStoredFile
   private var appendStreamChunkOperation:
     @Sendable (String, JSONValue) async throws -> InstantStreamChunk
@@ -288,6 +290,9 @@ public struct InstantSwiftDataClient: Sendable {
     }
     self.storedFileContentsOperation = { id, name in
       try await runtime.storedFileContents(id: id, name: name)
+    }
+    self.downloadStoredFileOperation = { id, name, destination in
+      try await runtime.downloadStoredFile(id: id, name: name, to: destination)
     }
     self.deleteStoredFileOperation = { id in
       try await runtime.deleteStoredFile(id: id)
@@ -483,6 +488,8 @@ public struct InstantSwiftDataClient: Sendable {
       (@Sendable () async throws -> AsyncStream<[InstantStoredFile]>)? = nil,
     storedFileContents:
       (@Sendable (String) async throws -> InstantStoredFileContents)? = nil,
+    downloadStoredFile:
+      (@Sendable (String, String?, URL) async throws -> InstantStoredFile)? = nil,
     deleteStoredFile:
       (@Sendable (String) async throws -> InstantStoredFile)? = nil,
     appendStreamChunk:
@@ -571,6 +578,7 @@ public struct InstantSwiftDataClient: Sendable {
       storageSnapshot: storageSnapshot,
       observeStoredFiles: observeStoredFiles,
       storedFileContents: storedFileContents,
+      downloadStoredFile: downloadStoredFile,
       deleteStoredFile: deleteStoredFile,
       appendStreamChunk: appendStreamChunk,
       streamChunks: streamChunks,
@@ -684,6 +692,8 @@ public struct InstantSwiftDataClient: Sendable {
       (@Sendable () async throws -> AsyncStream<[InstantStoredFile]>)? = nil,
     storedFileContents:
       (@Sendable (String) async throws -> InstantStoredFileContents)? = nil,
+    downloadStoredFile:
+      (@Sendable (String, String?, URL) async throws -> InstantStoredFile)? = nil,
     deleteStoredFile:
       (@Sendable (String) async throws -> InstantStoredFile)? = nil,
     appendStreamChunk:
@@ -893,6 +903,21 @@ public struct InstantSwiftDataClient: Sendable {
       guard let storedFileContents else { throw filesError }
       return try await storedFileContents(id)
     }
+    // A client built from closures without a download writes what `storedFileContents` returns, in memory; the
+    // runtime-backed client streams (Scribe #454).
+    self.downloadStoredFileOperation =
+      downloadStoredFile ?? { id, _, destination in
+        guard let storedFileContents else { throw filesError }
+        let contents = try await storedFileContents(id)
+        try FileManager.default.createDirectory(
+          at: destination.deletingLastPathComponent(),
+          withIntermediateDirectories: true
+        )
+        try contents.data.write(to: destination, options: .atomic)
+        var file = contents.file
+        file.localPath = destination.path
+        return file
+      }
     self.deleteStoredFileOperation = deleteStoredFile ?? { _ in throw filesError }
     self.appendStreamChunkOperation = appendStreamChunk ?? { _, _ in throw streamsError }
     if let streamChunksAfterIndex {
@@ -1096,6 +1121,9 @@ public struct InstantSwiftDataClient: Sendable {
         throw error
       },
       storedFileContents: { _ in
+        throw error
+      },
+      downloadStoredFile: { _, _, _ in
         throw error
       },
       deleteStoredFile: { _ in
@@ -1764,6 +1792,26 @@ public struct InstantSwiftDataClient: Sendable {
     name: String
   ) async throws -> InstantStoredFileContents {
     try await storedFileContentsOperation(id, name)
+  }
+
+  /// Downloads a stored file to `destination` without holding it in memory, and returns its record, whose
+  /// `localPath` is `destination`.
+  ///
+  /// The bytes stream to a temporary file that moves to `destination`; the client keeps no copy of its own. Use it
+  /// for media and anything that is not small: ``storedFileContents(id:)`` returns the whole file as `Data`.
+  ///
+  /// ```swift
+  /// try await db.downloadStoredFile(id: attachment.fileID, name: attachment.storagePath, to: audioURL)
+  /// ```
+  ///
+  /// Success waits for the download and the move (the network), unlike `transact`.
+  @discardableResult
+  public func downloadStoredFile(
+    id: String,
+    name: String? = nil,
+    to destination: URL
+  ) async throws -> InstantStoredFile {
+    try await downloadStoredFileOperation(id, name, destination)
   }
 
   @discardableResult

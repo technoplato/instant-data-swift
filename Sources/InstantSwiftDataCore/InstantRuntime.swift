@@ -10574,6 +10574,175 @@ public final class InstantRuntime: Sendable {
     return InstantStoredFileContents(file: saved, data: data)
   }
 
+  /// Downloads a stored file to `destination` without holding it in memory, and returns its record, whose `localPath`
+  /// is `destination`.
+  ///
+  /// The bytes stream from Instant storage to a temporary file, which then moves to `destination`, replacing a file
+  /// already there. The library keeps no copy of its own, so `destination` holds the only one. A file this library
+  /// already holds (one it uploaded or cached) is copied file to file, with no download.
+  ///
+  /// ``storedFileContents(id:name:)`` returns the file as `Data` and keeps a cached copy: a recording's 1.96 GB audio
+  /// took 4.4 GB of memory and two copies on disk on an iPad (Scribe #454). Use this for anything that is not small.
+  ///
+  /// ```swift
+  /// let file = try await runtime.downloadStoredFile(id: fileID, name: storagePath, to: audioURL)
+  /// ```
+  ///
+  /// Success waits for the download and the move: this reads from the network, unlike `transact`.
+  ///
+  /// - Parameters:
+  ///   - name: the storage path the file was uploaded under. With it, the download asks storage for a signed URL
+  ///     directly; without it, the file's remote URL comes from the live file list.
+  ///   - destination: a file URL; its directory is created if it does not exist.
+  @discardableResult
+  @concurrent
+  public func downloadStoredFile(
+    id rawID: String,
+    name rawName: String? = nil,
+    to destination: URL
+  ) async throws -> InstantStoredFile {
+    let id = try validatedNonEmpty(
+      rawID,
+      label: "File id",
+      operation: "download file",
+      recovery: "Pass the id returned by 'instant-swift-data files list'."
+    )
+    let name = try rawName.map {
+      try validatedNonEmpty(
+        $0,
+        label: "File name",
+        operation: "download file",
+        recovery: "Pass the storage path returned when the file was uploaded."
+      )
+    }
+    guard destination.isFileURL else {
+      throw validationFailed(
+        operation: "download file",
+        localID: id,
+        message: "The destination '\(destination.absoluteString)' is not a file URL.",
+        recovery: "Pass a file URL in a directory the app can write."
+      )
+    }
+
+    let userID = try await resolvedFileUserID(operation: "download file")
+    if var held = try await persistence.loadStoredFile(appID: configuration.appID, fileID: id) {
+      try Self.placeDownloadedFile(copying: URL(fileURLWithPath: held.localPath), at: destination)
+      held.localPath = destination.path
+      return held
+    }
+
+    guard let storageTransport else {
+      throw validationFailed(
+        operation: "download file",
+        localID: id,
+        message: "No downloaded file exists for id '\(id)'.",
+        recovery: "Run 'instant-swift-data files list' to inspect available file ids."
+      )
+    }
+    let temporaryURL: URL
+    var file: InstantStoredFile
+    if let name {
+      let refreshToken = try await storageRefreshToken(operation: "download file")
+      temporaryURL = try await storageTransport.downloadFileToFile(
+        InstantStorageFileDownloadRequest(
+          appID: configuration.appID,
+          apiURI: configuration.apiURI,
+          path: name,
+          refreshToken: refreshToken
+        )
+      )
+      let now = configuration.now()
+      file = InstantStoredFile(
+        id: id,
+        appID: configuration.appID,
+        name: name,
+        contentType: nil,
+        byteCount: 0,
+        localPath: "",
+        ownerUserID: userID,
+        createdAt: now,
+        updatedAt: now
+      )
+    } else {
+      guard configuration.liveTransport != nil else {
+        throw validationFailed(
+          operation: "download file",
+          localID: id,
+          message: "No downloaded file exists for id '\(id)'.",
+          recovery: "Run 'instant-swift-data files list' to inspect available file ids."
+        )
+      }
+      let remoteFiles = try await remoteStoredFiles()
+      guard let remote = remoteFiles.first(where: { $0.id == id }), let remoteURL = remote.remoteURL else {
+        throw validationFailed(
+          operation: "download file",
+          localID: id,
+          message: "No remote file exists for id '\(id)'.",
+          recovery: "Run 'instant-swift-data files list' to inspect remote file ids."
+        )
+      }
+      temporaryURL = try await storageTransport.downloadToFile(
+        InstantStorageDownloadRequest(url: remoteURL)
+      )
+      file = remote
+    }
+    do {
+      try Self.placeDownloadedFile(moving: temporaryURL, to: destination)
+      file.byteCount = try await persistence.regularFileByteCount(
+        at: destination,
+        operation: "download file"
+      )
+    } catch {
+      try? FileManager.default.removeItem(at: temporaryURL)
+      throw error
+    }
+    file.localPath = destination.path
+    return file
+  }
+
+  /// Puts a downloaded file at `destination`, replacing a file there, and creates the directory.
+  private static func placeDownloadedFile(moving source: URL, to destination: URL) throws {
+    do {
+      try FileManager.default.createDirectory(
+        at: destination.deletingLastPathComponent(),
+        withIntermediateDirectories: true
+      )
+      if FileManager.default.fileExists(atPath: destination.path) {
+        _ = try FileManager.default.replaceItemAt(destination, withItemAt: source)
+      } else {
+        try FileManager.default.moveItem(at: source, to: destination)
+      }
+    } catch {
+      throw InstantError(
+        code: .persistenceFailed,
+        operation: "download file",
+        message: "Could not move the downloaded file to '\(destination.path)': \(error.localizedDescription)",
+        recovery: "Check that the destination's directory is writable and has room for the file."
+      )
+    }
+  }
+
+  /// Copies a file this library holds to `destination`, file to file (a clone on APFS), replacing a file there.
+  private static func placeDownloadedFile(copying source: URL, at destination: URL) throws {
+    do {
+      try FileManager.default.createDirectory(
+        at: destination.deletingLastPathComponent(),
+        withIntermediateDirectories: true
+      )
+      if FileManager.default.fileExists(atPath: destination.path) {
+        try FileManager.default.removeItem(at: destination)
+      }
+      try FileManager.default.copyItem(at: source, to: destination)
+    } catch {
+      throw InstantError(
+        code: .persistenceFailed,
+        operation: "download file",
+        message: "Could not copy the stored file '\(source.path)' to '\(destination.path)': \(error.localizedDescription)",
+        recovery: "Check that the destination's directory is writable and has room for the file."
+      )
+    }
+  }
+
   @discardableResult
   @concurrent
   public func deleteStoredFile(id rawID: String) async throws -> InstantStoredFile {
