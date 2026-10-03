@@ -1741,6 +1741,12 @@ package actor InstantRuntimeLiveSession {
     try await send(.joinRoom(room, presence: early?.values, clientEventID: clientEventID), through: session)
   }
 
+  /// Whether the server confirmed the join of `room` on the current connection: `join-room-ok`, or a presence frame or
+  /// broadcast for it, since the socket opened. `Reactor.js` reports the same flag as `isLoading: !room.isConnected`.
+  func isRoomJoined(_ room: InstantRoomHandle) -> Bool {
+    isOpened && registeredRooms[room]?.isConnected == true
+  }
+
   /// Releases one holder of `room`. Returns whether that was the last holder, so the room was left: only then does the
   /// runtime forget the room's presence, as `Reactor.js` deletes `_presence[roomId]` only in `_cleanupRoom` (#461).
   @discardableResult

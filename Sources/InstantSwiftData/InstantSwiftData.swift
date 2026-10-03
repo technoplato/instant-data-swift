@@ -90,6 +90,7 @@ public struct InstantSwiftDataClient: Sendable {
     @Sendable (InstantRoomHandle, String, Int?) async throws -> [InstantRoomTopicMessage]
   private var observeRoomTopicMessagesOperation:
     @Sendable (InstantRoomHandle, String) async throws -> AsyncStream<[InstantRoomTopicMessage]>
+  private var isRoomJoinedOperation: @Sendable (InstantRoomHandle) async -> Bool
   private var uploadFileOperation:
     @Sendable (URL, String?, String?) async throws -> InstantStoredFile
   private var uploadFileProgressOperation:
@@ -270,6 +271,9 @@ public struct InstantSwiftDataClient: Sendable {
     }
     self.observeRoomTopicMessagesOperation = { room, topic in
       try await runtime.observeRoomTopicMessages(room: room, topic: topic)
+    }
+    self.isRoomJoinedOperation = { room in
+      await runtime.isRoomJoined(room)
     }
     self.uploadFileOperation = { sourceURL, name, contentType in
       try await runtime.uploadFile(from: sourceURL, name: name, contentType: contentType)
@@ -470,6 +474,7 @@ public struct InstantSwiftDataClient: Sendable {
         @Sendable (InstantRoomHandle, String) async throws
           -> AsyncStream<[InstantRoomTopicMessage]>
       )? = nil,
+    isRoomJoined: (@Sendable (InstantRoomHandle) async -> Bool)? = nil,
     uploadFile:
       (@Sendable (URL, String?, String?) async throws -> InstantStoredFile)? = nil,
     uploadFileProgress:
@@ -565,6 +570,7 @@ public struct InstantSwiftDataClient: Sendable {
       publishRoomTopicMessage: publishRoomTopicMessage,
       roomTopicMessages: roomTopicMessages,
       observeRoomTopicMessages: observeRoomTopicMessages,
+      isRoomJoined: isRoomJoined,
       uploadFile: uploadFile,
       uploadFileProgress: uploadFileProgress,
       storedFiles: storedFiles,
@@ -671,6 +677,7 @@ public struct InstantSwiftDataClient: Sendable {
         @Sendable (InstantRoomHandle, String) async throws
           -> AsyncStream<[InstantRoomTopicMessage]>
       )? = nil,
+    isRoomJoined: (@Sendable (InstantRoomHandle) async -> Bool)? = nil,
     uploadFile:
       (@Sendable (URL, String?, String?) async throws -> InstantStoredFile)? = nil,
     uploadFileProgress:
@@ -884,6 +891,7 @@ public struct InstantSwiftDataClient: Sendable {
     self.roomTopicMessagesOperation = roomTopicMessages ?? { _, _, _ in throw roomsError }
     self.observeRoomTopicMessagesOperation =
       observeRoomTopicMessages ?? { _, _ in throw roomsError }
+    self.isRoomJoinedOperation = isRoomJoined ?? { _ in false }
     self.uploadFileOperation = uploadFile ?? { _, _, _ in throw filesError }
     self.uploadFileProgressOperation = uploadFileProgress ?? { _, _, _ in throw filesError }
     self.storedFilesOperation = storedFiles ?? { throw filesError }
@@ -1653,6 +1661,13 @@ public struct InstantSwiftDataClient: Sendable {
   }
 
   @discardableResult
+  /// Whether the server has confirmed this device's join of `room` on the current connection; `Reactor.js` reports its
+  /// opposite as `isLoading`. While it is false, an empty or stale presence says nothing about who is in the room
+  /// (#461).
+  public func isRoomJoined(_ room: InstantRoomHandle) async -> Bool {
+    await isRoomJoinedOperation(room)
+  }
+
   public func joinRoom(_ room: InstantRoomHandle = .default) async throws -> InstantRoomHandle {
     try await joinRoomOperation(room)
   }

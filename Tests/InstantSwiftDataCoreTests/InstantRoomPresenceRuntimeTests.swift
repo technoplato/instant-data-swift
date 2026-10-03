@@ -335,6 +335,51 @@ struct InstantRoomPresenceRuntimeTests {
 }
 
 extension InstantRoomPresenceRuntimeTests {
+  /// `Reactor.js` reports `isLoading: !room.isConnected`: false until `join-room-ok`, and again from a dropped socket
+  /// until the rejoin is confirmed. While a room is not joined, its presence says nothing about who is there.
+  @Test
+  func aRoomIsJoinedOnlyOnceTheServerConfirmsItOnTheCurrentConnection() async throws {
+    let room = InstantRoomHandle(type: "recording", id: "room-joined")
+    let first = LiveReactorParitySession(messages: [
+      liveReactorInitOK(attrs: liveReactorTodoServerAttrs, sessionID: "session-before-drop")
+    ])
+    let second = LiveReactorParitySession(messages: [
+      liveReactorInitOK(attrs: liveReactorTodoServerAttrs, sessionID: "session-after-drop")
+    ])
+    let transport = LiveReactorParityTransport(sessions: [first, second])
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: try roomConfiguration(appID: "room-joined", transport: transport.transport)
+    )
+    _ = try await runtime.connect()
+    _ = try await runtime.joinRoom(room)
+    let joinedBeforeAnswer = await runtime.isRoomJoined(room)
+    #expect(!joinedBeforeAnswer, "The join was only sent.")
+    await first.enqueue(InstantLiveMessage(op: "join-room-ok", fields: ["room-id": .string(room.id)]))
+    try await waitForRoom("the server's join-room-ok to mark the room joined") { await runtime.isRoomJoined(room) }
+
+    await first.failReceive(
+      InstantError(
+        code: .networkFailed,
+        operation: "drop the joined-room session",
+        message: "transient drop",
+        recovery: "Rejoin and wait for the server to confirm it."
+      )
+    )
+    try await instantLiveWithTimeout(operation: "wait for the room reconnect", timeoutMilliseconds: 2_000) {
+      await transport.waitForConnectionCount(2)
+    }
+    await second.waitForSentMessageCount(2)
+    let joinedAfterDrop = await runtime.isRoomJoined(room)
+    #expect(!joinedAfterDrop, "The rejoin was only sent on the new socket.")
+    await second.enqueue(InstantLiveMessage(op: "join-room-ok", fields: ["room-id": .string(room.id)]))
+    try await waitForRoom("the rejoin's join-room-ok to mark the room joined again") { await runtime.isRoomJoined(room) }
+
+    _ = try await runtime.leaveRoom(room)
+    let joinedAfterLeave = await runtime.isRoomJoined(room)
+    #expect(!joinedAfterLeave)
+    _ = try await runtime.closeConnection()
+  }
+
   /// `Reactor.js`'s `subscribePresence` options pick keys and peers (`buildPresenceSlice`), and its handler wakes only
   /// when that slice changed (`hasPresenceResponseChanged`).
   @Test

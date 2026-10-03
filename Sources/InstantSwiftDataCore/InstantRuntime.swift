@@ -9794,6 +9794,17 @@ public final class InstantRuntime: Sendable {
     return room
   }
 
+  /// Whether the server has confirmed this runtime's join of `room` on the current connection.
+  ///
+  /// It turns true on `join-room-ok` (or the room's first presence frame or broadcast) and false when the socket drops
+  /// or the room is left, as `Reactor.js` reports `isLoading: !room.isConnected`. While it is false, an empty or
+  /// stale presence says nothing about who is in the room. Without a live transport it is always false.
+  @concurrent
+  public func isRoomJoined(_ room: InstantRoomHandle) async -> Bool {
+    guard configuration.liveTransport != nil else { return false }
+    return await liveSession.isRoomJoined(room)
+  }
+
   /// Publishes this device's presence in `room`, replacing what it published there before under `userID`.
   ///
   /// With a live transport the presence lives in memory, as `Reactor.js` keeps it: the call updates the room's
