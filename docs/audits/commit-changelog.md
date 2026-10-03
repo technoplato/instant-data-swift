@@ -1,3 +1,6 @@
+## 2026-10-03 13:37:46 EDT — instant-data-swift `0bc6ddc4127e0742eee732df18b0b45da69de775`
+Document the v1.9.4 release and its gate in docs/releases/v1.9.4.md and PROGRESS.md (#441 #445).
+
 ## 2026-10-03 12:48:47 EDT — instant-data-swift `45a462908c27876ba2e31096c44f2cf39a48f214`
 #445: whether a failed mutation is superseded, slot by slot, as read-only public API for Scribe's Sync view (InstantSwiftDataClient.supersession(ofFailedMutation:) and failedMutationSupersessions()), by the #441 guard's rule (#445).
 
