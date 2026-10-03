@@ -1,3 +1,6 @@
+## 2026-10-03 13:39:27 EDT — instant-data-swift `4da6f182240ea1a09e29df04eac059416980037f`
+Merge library-79-hops into main for v1.9.4: a refused re-send the server's results vouch for resolves as accepted (#441), and a failed mutation's supersession is read-only API (#445); tagged v1.9.4 (#441 #445).
+
 ## 2026-10-03 13:37:46 EDT — instant-data-swift `0bc6ddc4127e0742eee732df18b0b45da69de775`
 Document the v1.9.4 release and its gate in docs/releases/v1.9.4.md and PROGRESS.md (#441 #445).
 
