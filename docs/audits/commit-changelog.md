@@ -1,3 +1,33 @@
+## 2026-10-03 15:19:23 EDT — scribe `ddf60c389013beebace6c502fb3cc309b05f9050`
+Plan read-aloud-voice, plan only: the best installed voice for answers, its Settings row, and the voice in the read's start event (#471)
+
+## 2026-10-03 15:18:29 EDT — scribe `8459a55be3cf2c11e54f9cb0a1298caa59f6d172`
+Record the voice client in the change log (#471)
+
+## 2026-10-03 15:18:29 EDT — scribe `0910c5638f74f2087cf1452b915007c219c790d9`
+A voice client names the reading voice for Settings and the read's start event (#471)
+
+## 2026-10-03 15:13:01 EDT — scribe `6c84f82e0fe0d38a2b56fd210692309e06b767e6`
+Record the per-device voice hint in the change log (#471)
+
+## 2026-10-03 15:13:00 EDT — scribe `4b4038c22c0d35892104816eb5a6c318cd7fdcd6`
+The voice download hint names the exact Settings path of the device it shows on (#471)
+
+## 2026-10-03 15:10:49 EDT — scribe `5419279e410b0732b58d8f3df188656d49f4129c`
+Record the read-aloud voice commit in the change log (#471)
+
+## 2026-10-03 15:10:29 EDT — scribe `ffb2f70ded67b9203d1cc9769a57e0f34c5d007e`
+Read agent answers with the best system voice installed, and say where to get a better one (#471)
+
+## 2026-10-03 14:39:00 EDT — scribe `475cc511a406dcc9ed0b244532ec644c014bdce9`
+Open the resume-cut-off channel: the #458 split with ui-polish and list-edit-mode, and the names both draw against (#458)
+
+## 2026-10-03 14:34:56 EDT — scribe `8ab12635a157efc3d54188453f3f40717c57dbc4`
+Record after a cut-off continues the take, New Recording instead stops it for a new one, and a stranded take stays resumable for 30 minutes (#458)
+
+## 2026-10-03 14:34:38 EDT — scribe `098001d92fabf84a950871333557f398705fd321`
+Red tests: Record after a cut-off continues the take, New Recording instead stops it for a new one, and a stranded take stays resumable for 30 minutes (#458)
+
 ## 2026-10-03 14:22:32 EDT — instant-data-swift `1c7ab096fd520e65fb46b8e89cd6c04e1ac83237`
 #473's blocked-log test reads its line back instead of flushing, so it also builds on v1.9.4 for the red run (#473).
 
@@ -7,8 +37,17 @@
 ## 2026-10-03 14:21:08 EDT — instant-data-swift `a6a6ab1751574a836f53baf8d162852a189820d4`
 Keep log I/O and outbox listings off the operation gate, and name a local write's phases (#473 #445).
 
+## 2026-10-03 14:20:55 EDT — scribe `022b5a9ee8d379048cdd399456c1db686631c487`
+Record the cheaper gate and the model-call pause in the change log (#161)
+
 ## 2026-10-03 14:20:54 EDT — instant-data-swift `e2435d90e07c4ccac9070eb2ea08112a836dc4cf`
 Claim the files of #473's 1.9.5 part: log I/O off the operation gate, named transact phases, and bounded outbox reads (#473 #445).
+
+## 2026-10-03 14:20:43 EDT — scribe `d421bb221be9c61c5b68dc9241e194c734963aba`
+Voice actions can pause their model calls, for a hot phone, and fall back to the exact phrases (#161)
+
+## 2026-10-03 14:19:19 EDT — scribe `a9c7b82927d2514bdb94be92860b61343f130e43`
+A cheaper voice gate: "go" and "put" no longer count alone, and sections over 20 words skip the model (#161)
 
 ## 2026-10-03 14:14:39 EDT — scribe `4962f8e54b6215ed75d293a8ab625d267fcaef66`
 Record the real-speech cost measurement in the change log (#161)
@@ -51,6 +90,9 @@ Red: an agent answer's notification is passive while this device records, and so
 
 ## 2026-10-03 13:46:31 EDT — scribe `781df924cc325c1f26f7e7b7a3c14e212f2ea370`
 An answer read aloud waits for Michael to pause, pauses when he speaks, and stops on "stop" or its card's Stop (#342)
+
+## 2026-10-03 13:46:03 EDT — scribe `587b89d74da1584dc716957fd55f6e98179e8847`
+Amend plan resume-cut-off: the coordinator's answer, option 1 with a 30-minute resume window (#458)
 
 ## 2026-10-03 13:44:20 EDT — scribe `d9c8f657aa1b86a795e1a727c0dca362515f100b`
 Plan resume-cut-off: Record continues a recording that was cut off, Resume is a normal action, and no recording stays stamped live (#458)
