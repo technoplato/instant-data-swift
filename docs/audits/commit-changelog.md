@@ -1,8 +1,32 @@
+## 2026-10-03 14:22:32 EDT — instant-data-swift `1c7ab096fd520e65fb46b8e89cd6c04e1ac83237`
+#473's blocked-log test reads its line back instead of flushing, so it also builds on v1.9.4 for the red run (#473).
+
+## 2026-10-03 14:22:13 EDT — instant-data-swift `f0272d8cb35baa2da1c1cc2bc04c2806970eb466`
+#473's tests build without ConcurrencyExtras, and their offline-runtime fixture sits above the red-run marker (#473).
+
+## 2026-10-03 14:21:08 EDT — instant-data-swift `a6a6ab1751574a836f53baf8d162852a189820d4`
+Keep log I/O and outbox listings off the operation gate, and name a local write's phases (#473 #445).
+
+## 2026-10-03 14:20:54 EDT — instant-data-swift `e2435d90e07c4ccac9070eb2ea08112a836dc4cf`
+Claim the files of #473's 1.9.5 part: log I/O off the operation gate, named transact phases, and bounded outbox reads (#473 #445).
+
+## 2026-10-03 14:14:39 EDT — scribe `4962f8e54b6215ed75d293a8ab625d267fcaef66`
+Record the real-speech cost measurement in the change log (#161)
+
+## 2026-10-03 14:14:30 EDT — scribe `af246721e375205d64351cee0f99bb6b0ad93bd8`
+Measure what default-on voice actions cost on real speech: 154 sections an hour reach the model (#161)
+
 ## 2026-10-03 14:11:27 EDT — scribe `8774486a914327c254910f12c6e0b5b73af9afb3`
 ADR 0029 section 5a: an answer's card is where it landed, live and in playback, status has its own screen, and the Watch opens Scribe's links (#340)
 
 ## 2026-10-03 14:10:24 EDT — scribe `dca1a1ae20f28a0466c5e7554491e8895250db6c`
 An answer's notification carries Read It, Later, and Stop Reading, on the phone and the Watch (#342)
+
+## 2026-10-03 14:08:30 EDT — scribe `8c2a72f58032b0c7201c916beaa0d61682dcb5b5`
+Record the one-time voice actions reset in the change log (#161 #442)
+
+## 2026-10-03 14:08:16 EDT — scribe `1aed584c4a31c1617dc9cab29627fb411d4fa52a`
+Turn voice actions back on once where they crashed, and say so in the banner (#161 #442)
 
 ## 2026-10-03 14:07:59 EDT — scribe `4a8c0904c2ce6277a045fb2c5ca9f4e7a31e4ed2`
 Before an answer is read, a tone and the haptic say an agent answered; "stop" or "later" skips it, "read it" reads it (#342)
