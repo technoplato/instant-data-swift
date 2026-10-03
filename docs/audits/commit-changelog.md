@@ -1,3 +1,9 @@
+## 2026-10-03 18:48:44 EDT — instant-data-swift `46eae09a2d6642365bb55c7c8c5b3bda790d0033`
+Merge phone-perf's file-download into library-79-hops for v1.9.6: download a stored file to a destination, streaming (#454).
+
+## 2026-10-03 18:40:03 EDT — instant-data-swift `860ed5387b8efd1855f0be3962fab1dace24c26f`
+Batch the diagnostics file's lines, one open and lock per batch, and fsync at most once a second (#473).
+
 ## 2026-10-03 18:37:53 EDT — instant-data-swift `e7c6ffb30808235753eb5abe2064fe2d54adaf8d`
 Merge library-79-hops into main for v1.9.5: a local write no longer holds the operation gate while it logs, and outbox listings never wait for it; tagged v1.9.5 (#473).
 
@@ -184,6 +190,9 @@ Merge the P0 voice-actions guard for iOS 27: one gate keeps every Scribe caller 
 ## 2026-10-03 13:44:20 EDT — scribe `d9c8f657aa1b86a795e1a727c0dca362515f100b`
 Plan resume-cut-off: Record continues a recording that was cut off, Resume is a normal action, and no recording stays stamped live (#458)
 
+## 2026-10-03 13:40:04 EDT — instant-data-swift `0ea09b54b1ffffb11845ff52855ede51a9bd9eac`
+Merge tag 'v1.9.4' into agent/claude-opus-5.5/file-download.
+
 ## 2026-10-03 13:39:27 EDT — instant-data-swift `4da6f182240ea1a09e29df04eac059416980037f`
 Merge library-79-hops into main for v1.9.4: a refused re-send the server's results vouch for resolves as accepted (#441), and a failed mutation's supersession is read-only API (#445); tagged v1.9.4 (#441 #445).
 
@@ -195,6 +204,12 @@ Record live-stamp-82 in PROGRESS: the heartbeat tail, the #432 sweep, the list-p
 
 ## 2026-10-03 13:35:51 EDT — scribe `80a795e54e6a4b450c41a371196c80940a666cfc`
 Record live-stamp-82's commits in the change log: the follow-along heartbeat, the #432 sweep, the list-position rules, and #441's Scribe side (#408 #432 #441)
+
+## 2026-10-03 13:33:02 EDT — instant-data-swift `1330bed0193d3cd21548dc8258a959a7c8dfe1b3`
+Download a stored file to a destination, streaming, with no Data and no copy of the library's own (#454).
+
+## 2026-10-03 13:32:47 EDT — instant-data-swift `2b791e3a8cfd278207d6d29f0dd25d3c06c83e59`
+Plan file-download: stream a stored file to a destination instead of into memory, and claim its paths (#454).
 
 ## 2026-10-03 13:27:19 EDT — scribe `9bb6cd759eb31e37105756a59845041318c1453e`
 Red: a playback answer card opens with More and its tap opens the thread at that answer (#340)
