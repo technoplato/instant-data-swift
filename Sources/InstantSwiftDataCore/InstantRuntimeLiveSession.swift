@@ -368,6 +368,8 @@ package actor InstantRuntimeLiveSession {
     InstantAutomaticOutboxClaimLimits.maximumEncodedBodyBytes
   static let deepOutboxReportingThreshold = 100
   private var registeredRooms: [InstantRoomHandle: RegisteredRoom] = [:]
+  /// Presence the runtime published in a room it has not joined yet, for the join to carry (#461).
+  private var presenceBeforeJoin: [InstantRoomHandle: (values: [String: JSONValue]?, sequence: UInt64)] = [:]
   private var registeredStreamReaders: [String: RegisteredStreamReader] = [:]
   private var pendingStreamStarts:
     [String: AsyncThrowingStream<InstantLiveStartStreamOK, Error>.Continuation] = [:]
@@ -1717,6 +1719,8 @@ package actor InstantRuntimeLiveSession {
     )
   }
 
+  /// Registers one holder of `room`; the first sends `join-room`, carrying the presence the runtime published before
+  /// the join, as `Reactor.js` sends `initialPresence` with `join-room` and again on `join-room-ok` (#461).
   func joinRoom(
     _ room: InstantRoomHandle,
     clientEventID: String
@@ -1726,42 +1730,59 @@ package actor InstantRuntimeLiveSession {
       registeredRooms[room] = registration
       return
     }
-    registeredRooms[room] = RegisteredRoom(room: room, observerCount: 1)
+    let early = presenceBeforeJoin.removeValue(forKey: room)
+    registeredRooms[room] = RegisteredRoom(
+      room: room,
+      observerCount: 1,
+      presence: early?.values,
+      presenceSequence: early?.sequence ?? 0
+    )
     guard let session, isOpened else { return }
-    try await send(.joinRoom(room, clientEventID: clientEventID), through: session)
+    try await send(.joinRoom(room, presence: early?.values, clientEventID: clientEventID), through: session)
   }
 
+  /// Releases one holder of `room`. Returns whether that was the last holder, so the room was left: only then does the
+  /// runtime forget the room's presence, as `Reactor.js` deletes `_presence[roomId]` only in `_cleanupRoom` (#461).
+  @discardableResult
   func leaveRoom(
     _ room: InstantRoomHandle,
     clientEventID: String
-  ) async throws {
-    guard var registration = registeredRooms[room] else { return }
+  ) async throws -> Bool {
+    guard var registration = registeredRooms[room] else { return false }
     if registration.observerCount > 1 {
       registration.observerCount -= 1
       registeredRooms[room] = registration
-      return
+      return false
     }
     registeredRooms[room] = nil
-    guard let session, isOpened else { return }
+    guard let session, isOpened else { return true }
     try await send(.leaveRoom(room, clientEventID: clientEventID), through: session)
+    return true
   }
 
-  /// Records the presence the runtime published as publication `sequence` and sends it once the room is joined.
-  /// A publication older than the one already recorded is dropped: two publishes that race to this actor must leave
-  /// the newer on the wire, as the runtime's state has it.
+  /// Records the presence the runtime's session carries in `room` as publication `sequence`, `nil` once it published
+  /// none, and sends it once the room is joined: `nil` goes out as `{}`, so peers stop seeing what was withdrawn, and a
+  /// rejoin carries nothing. Before the room is joined it waits for `joinRoom`. A publication older than the one
+  /// already recorded is dropped: two publishes that race to this actor must leave the newer on the wire (#461).
   func setPresence(
     room: InstantRoomHandle,
-    values: [String: JSONValue],
+    values: [String: JSONValue]?,
     sequence: UInt64,
     clientEventID: String
   ) async throws {
-    guard var registration = registeredRooms[room], sequence > registration.presenceSequence else { return }
+    guard var registration = registeredRooms[room] else {
+      if sequence > presenceBeforeJoin[room]?.sequence ?? 0 {
+        presenceBeforeJoin[room] = (values, sequence)
+      }
+      return
+    }
+    guard sequence > registration.presenceSequence else { return }
     registration.presence = values
     registration.presenceSequence = sequence
     registeredRooms[room] = registration
     guard registration.isConnected, let session, isOpened else { return }
     try await send(
-      .setPresence(room: room, values: values, clientEventID: clientEventID),
+      .setPresence(room: room, values: values ?? [:], clientEventID: clientEventID),
       through: session
     )
   }

@@ -155,91 +155,87 @@ struct InstantRoomPresenceRuntimeTests {
   /// leaveRoom must keep the presence every other holder still sees, and later patches must apply to it.
   @Test
   func oneHoldersLeaveRoomKeepsThePresenceTheOtherHolderSees() async throws {
-    await withKnownIssue("leaveRoom wipes the room's presence while another holder remains (#461)") {
-      let room = InstantRoomHandle(type: "recording", id: "room-refcount")
-      let session = LiveReactorParitySession(messages: [
-        liveReactorInitOK(attrs: liveReactorTodoServerAttrs, sessionID: "session-self")
-      ])
-      let runtime = try await InstantRuntime.bootstrap(
-        configuration: try roomConfiguration(appID: "room-presence-refcount", transport: session.transport)
-      )
-      _ = try await runtime.connect()
-      _ = try await runtime.joinRoom(room)
-      _ = try await runtime.joinRoom(room)
-      let presence = try await RoomPresenceRecorder.start(runtime: runtime, room: room)
-      defer { presence.stop() }
-      try await joinAndWaitForPeers(runtime: runtime, session: session, room: room, recorder: presence)
+    let room = InstantRoomHandle(type: "recording", id: "room-refcount")
+    let session = LiveReactorParitySession(messages: [
+      liveReactorInitOK(attrs: liveReactorTodoServerAttrs, sessionID: "session-self")
+    ])
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: try roomConfiguration(appID: "room-presence-refcount", transport: session.transport)
+    )
+    _ = try await runtime.connect()
+    _ = try await runtime.joinRoom(room)
+    _ = try await runtime.joinRoom(room)
+    let presence = try await RoomPresenceRecorder.start(runtime: runtime, room: room)
+    defer { presence.stop() }
+    try await joinAndWaitForPeers(runtime: runtime, session: session, room: room, recorder: presence)
 
-      _ = try await runtime.leaveRoom(room)
-      let opsAfterOneLeave = await session.sentMessages().map(\.op)
-      #expect(!opsAfterOneLeave.contains("leave-room"), "One of two holders left, so the room stays joined.")
-      await session.enqueue(
-        InstantLiveMessage(
-          op: "patch-presence",
-          fields: [
-            "edits": .array([roomPresenceEdit(path: ["session-peer", "data", "status"], operation: "r", value: .string("away"))]),
-            "room-id": .string(room.id),
-          ]
-        )
+    _ = try await runtime.leaveRoom(room)
+    let opsAfterOneLeave = await session.sentMessages().map(\.op)
+    #expect(!opsAfterOneLeave.contains("leave-room"), "One of two holders left, so the room stays joined.")
+    await session.enqueue(
+      InstantLiveMessage(
+        op: "patch-presence",
+        fields: [
+          "edits": .array([roomPresenceEdit(path: ["session-peer", "data", "status"], operation: "r", value: .string("away"))]),
+          "room-id": .string(room.id),
+        ]
       )
-      try await waitForRoom("the patch to apply on top of the peer the other holder sees") {
-        await presence.last?.contains { $0.values["status"] == .string("away") } == true
-      }
-      let peer = try #require(await presence.last?.first { $0.values["status"] == .string("away") })
-      expectNoDifference(peer.userID, "user-peer")
-      expectNoDifference(peer.values, ["status": .string("away"), "name": .string("Ada")])
-      _ = try await runtime.closeConnection()
+    )
+    try await waitForRoom("the patch to apply on top of the peer the other holder sees") {
+      await presence.last?.contains { $0.values["status"] == .string("away") } == true
     }
+    let peer = try #require(await presence.last?.first { $0.values["status"] == .string("away") })
+    expectNoDifference(peer.userID, "user-peer")
+    expectNoDifference(peer.values, ["status": .string("away"), "name": .string("Ada")])
+    _ = try await runtime.closeConnection()
   }
 
   /// leavePresence stops publishing this device's presence. Peers must stop seeing it (the server only learns that
   /// through `set-presence`), and a rejoin after a dropped socket must not announce it again.
   @Test
   func leavePresenceClearsItForPeersAndForTheNextJoin() async throws {
-    await withKnownIssue("leavePresence only deletes a local row and a rejoin re-announces it (#461)") {
-      let room = InstantRoomHandle(type: "recording", id: "room-leave-presence")
-      let first = LiveReactorParitySession(messages: [
-        liveReactorInitOK(attrs: liveReactorTodoServerAttrs, sessionID: "session-before-drop")
-      ])
-      let second = LiveReactorParitySession(messages: [
-        liveReactorInitOK(attrs: liveReactorTodoServerAttrs, sessionID: "session-after-drop")
-      ])
-      let transport = LiveReactorParityTransport(sessions: [first, second])
-      let runtime = try await InstantRuntime.bootstrap(
-        configuration: try roomConfiguration(appID: "room-leave-presence", transport: transport.transport)
-      )
-      _ = try await runtime.connect()
-      _ = try await runtime.joinRoom(room)
-      try await joinAndWaitForPeers(runtime: runtime, session: first, room: room)
-      _ = try await runtime.setPresence(room: room, userID: "user-self", values: ["state": .string("working")])
-      try await waitForRoom("the presence to reach the socket") {
-        await first.sentMessages().contains { $0.op == "set-presence" }
-      }
-
-      _ = try await runtime.leavePresence(room: room, userID: "user-self")
-      try await waitForRoom("a set-presence that clears this device's presence for its peers") {
-        await first.sentMessages().contains { $0.op == "set-presence" && $0.fields["data"] == .object([:]) }
-      }
-
-      await first.failReceive(
-        InstantError(
-          code: .networkFailed,
-          operation: "drop the room presence session",
-          message: "transient drop",
-          recovery: "Rejoin without the presence this device stopped publishing."
-        )
-      )
-      try await instantLiveWithTimeout(operation: "wait for the room reconnect", timeoutMilliseconds: 2_000) {
-        await transport.waitForConnectionCount(2)
-      }
-      await second.waitForSentMessageCount(2)
-      let rejoin = try #require(await second.sentMessages().first { $0.op == "join-room" })
-      #expect(
-        rejoin.fields["data"] == nil || rejoin.fields["data"] == .object([:]),
-        "The rejoin announced the presence leavePresence had cleared: \(String(describing: rejoin.fields["data"]))"
-      )
-      _ = try await runtime.closeConnection()
+    let room = InstantRoomHandle(type: "recording", id: "room-leave-presence")
+    let first = LiveReactorParitySession(messages: [
+      liveReactorInitOK(attrs: liveReactorTodoServerAttrs, sessionID: "session-before-drop")
+    ])
+    let second = LiveReactorParitySession(messages: [
+      liveReactorInitOK(attrs: liveReactorTodoServerAttrs, sessionID: "session-after-drop")
+    ])
+    let transport = LiveReactorParityTransport(sessions: [first, second])
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: try roomConfiguration(appID: "room-leave-presence", transport: transport.transport)
+    )
+    _ = try await runtime.connect()
+    _ = try await runtime.joinRoom(room)
+    try await joinAndWaitForPeers(runtime: runtime, session: first, room: room)
+    _ = try await runtime.setPresence(room: room, userID: "user-self", values: ["state": .string("working")])
+    try await waitForRoom("the presence to reach the socket") {
+      await first.sentMessages().contains { $0.op == "set-presence" }
     }
+
+    _ = try await runtime.leavePresence(room: room, userID: "user-self")
+    try await waitForRoom("a set-presence that clears this device's presence for its peers") {
+      await first.sentMessages().contains { $0.op == "set-presence" && $0.fields["data"] == .object([:]) }
+    }
+
+    await first.failReceive(
+      InstantError(
+        code: .networkFailed,
+        operation: "drop the room presence session",
+        message: "transient drop",
+        recovery: "Rejoin without the presence this device stopped publishing."
+      )
+    )
+    try await instantLiveWithTimeout(operation: "wait for the room reconnect", timeoutMilliseconds: 2_000) {
+      await transport.waitForConnectionCount(2)
+    }
+    await second.waitForSentMessageCount(2)
+    let rejoin = try #require(await second.sentMessages().first { $0.op == "join-room" })
+    #expect(
+      rejoin.fields["data"] == nil || rejoin.fields["data"] == .object([:]),
+      "The rejoin announced the presence leavePresence had cleared: \(String(describing: rejoin.fields["data"]))"
+    )
+    _ = try await runtime.closeConnection()
   }
 
   /// A presence set before joinRoom must reach the room, as `Reactor.js` sends `initialPresence` with `join-room`
@@ -247,30 +243,28 @@ struct InstantRoomPresenceRuntimeTests {
   /// separate tasks, so either can go first.
   @Test
   func aPresenceSetBeforeJoinRoomReachesTheRoom() async throws {
-    await withKnownIssue("a presence published before joinRoom is dropped (#461)") {
-      let room = InstantRoomHandle(type: "recording", id: "room-early-presence")
-      let session = LiveReactorParitySession(messages: [
-        liveReactorInitOK(attrs: liveReactorTodoServerAttrs, sessionID: "session-self")
-      ])
-      let runtime = try await InstantRuntime.bootstrap(
-        configuration: try roomConfiguration(appID: "room-early-presence", transport: session.transport)
-      )
-      _ = try await runtime.connect()
-      _ = try await runtime.setPresence(room: room, userID: "user-self", values: ["state": .string("early")])
-      _ = try await runtime.joinRoom(room)
-      try await waitForRoom("the join to reach the socket") {
-        await session.sentMessages().contains { $0.op == "join-room" }
-      }
-      let join = try #require(await session.sentMessages().first { $0.op == "join-room" })
-      expectNoDifference(join.fields["data"], .object(["state": .string("early")]))
-      await session.enqueue(InstantLiveMessage(op: "join-room-ok", fields: ["room-id": .string(room.id)]))
-      try await waitForRoom("the presence to be sent again once the server confirms the join") {
-        await session.sentMessages().contains {
-          $0.op == "set-presence" && $0.fields["data"] == .object(["state": .string("early")])
-        }
-      }
-      _ = try await runtime.closeConnection()
+    let room = InstantRoomHandle(type: "recording", id: "room-early-presence")
+    let session = LiveReactorParitySession(messages: [
+      liveReactorInitOK(attrs: liveReactorTodoServerAttrs, sessionID: "session-self")
+    ])
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: try roomConfiguration(appID: "room-early-presence", transport: session.transport)
+    )
+    _ = try await runtime.connect()
+    _ = try await runtime.setPresence(room: room, userID: "user-self", values: ["state": .string("early")])
+    _ = try await runtime.joinRoom(room)
+    try await waitForRoom("the join to reach the socket") {
+      await session.sentMessages().contains { $0.op == "join-room" }
     }
+    let join = try #require(await session.sentMessages().first { $0.op == "join-room" })
+    expectNoDifference(join.fields["data"], .object(["state": .string("early")]))
+    await session.enqueue(InstantLiveMessage(op: "join-room-ok", fields: ["room-id": .string(room.id)]))
+    try await waitForRoom("the presence to be sent again once the server confirms the join") {
+      await session.sentMessages().contains {
+        $0.op == "set-presence" && $0.fields["data"] == .object(["state": .string("early")])
+      }
+    }
+    _ = try await runtime.closeConnection()
   }
 
   /// `Reactor.js` stores no topic messages; it hands each broadcast to the subscribers once (`_notifyBroadcastSubs`).

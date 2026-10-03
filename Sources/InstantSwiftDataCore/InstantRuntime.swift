@@ -9778,8 +9778,10 @@ public final class InstantRuntime: Sendable {
   public func leaveRoom(_ room: InstantRoomHandle = .default) async throws -> InstantRoomHandle {
     let room = try validatedRoom(room, operation: "leave room")
     if configuration.liveTransport != nil {
-      try await liveSession.leaveRoom(room, clientEventID: configuration.makeID())
-      await roomPresenceState.forget(room, appID: configuration.appID)
+      // Another holder of the room still sees its presence until the last one leaves (#461).
+      if try await liveSession.leaveRoom(room, clientEventID: configuration.makeID()) {
+        await roomPresenceState.forget(room, appID: configuration.appID)
+      }
     }
     return room
   }
@@ -9890,7 +9892,16 @@ public final class InstantRuntime: Sendable {
       return try await leaveLocalCachePresence(room: room, userID: userID)
     }
     let userID = try await resolvedRoomUserID(userID, operation: "leave room presence")
-    _ = await roomPresenceState.withdraw(userID: userID, in: room, appID: configuration.appID)
+    // The session now carries this device's newest remaining publication, or none: peers stop seeing what was
+    // withdrawn, and a rejoin after a dropped socket does not announce it again (#461).
+    if let withdrawal = await roomPresenceState.withdraw(userID: userID, in: room, appID: configuration.appID) {
+      try await liveSession.setPresence(
+        room: room,
+        values: withdrawal.remaining,
+        sequence: withdrawal.sequence,
+        clientEventID: configuration.makeID()
+      )
+    }
     return userID
   }
 
