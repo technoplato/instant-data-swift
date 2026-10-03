@@ -1,3 +1,6 @@
+## 2026-10-03 18:37:39 EDT — instant-data-swift `3edae737bdacaa98b58787a97ce4a5b753474e04`
+Document the v1.9.5 release: a local write no longer holds the operation gate while it logs, and outbox listings never wait for it (#473).
+
 ## 2026-10-03 18:06:07 EDT — scribe `d6f07ba5c8460da14a639e3c53407e5a71a76878`
 Pass the WAV writer's health and flush-interval closures at the three test call sites of AudioFileClient's memberwise init (#488)
 
@@ -19,11 +22,17 @@ Say in the device pull why a phone has no library diagnostics file, and how to g
 ## 2026-10-03 17:25:37 EDT — scribe `3b6eb08e4099a9f75129747d0da87589aa82ddcb`
 Refused audio waits in memory only as its length, and the WAV writer gets synchronizeSoon() for pause, interruption and background fsyncs (#488)
 
+## 2026-10-03 17:05:37 EDT — instant-data-swift `a6a59b565df2362a908899b601b73c7da4ddef5f`
+Run the operation gate's wait and stall reports off its actor, so a slow report never holds the next holder (#473).
+
 ## 2026-10-03 16:48:06 EDT — scribe `5aecb8f42fa8d6f37787e9035d7c9bb8cb255dbd`
 The WAV writer's health and flush interval never wait for the writer's lock (#488)
 
 ## 2026-10-03 16:43:34 EDT — scribe `62cbd5bff0719ef6232136f7fc91233cbee15dec`
 The app's log lanes stop fsyncing per batch and rewriting after every delivery, keep routine lines to a budget, and a hot phone writes less often; capture never stops (#488, ADR 0050)
+
+## 2026-10-03 16:40:05 EDT — instant-data-swift `bb598182c447f4b136257020b177ba0a113cd894`
+#473's blocked-log test waits for the write error, not the line: flock refuses a FIFO, so no line is written (#473).
 
 ## 2026-10-03 16:36:31 EDT — scribe `9933348dbdf3dc586065deab5ea08bde2c4e25d4`
 The move to the background never waits on the disk, and capture never waits on anything: queued settings files, a non-blocking telemetry flush, capture on its own executor with speech first, and the WAV on its own queue (#488, ADR 0050)
@@ -72,6 +81,9 @@ Settings' Continue Cut-Off Recordings switch, on by default, turns #458 off; eve
 
 ## 2026-10-03 14:46:05 EDT — scribe `efca870d6f2eeb0d3d1b296317e7e41985edf4f1`
 Red tests: Settings' Continue Cut-Off Recordings switch, on by default, turns #458 off (#458)
+
+## 2026-10-03 14:44:21 EDT — instant-data-swift `3d925396e651f9c0499886e657a1f00c82a68c78`
+#473's handoff test polls a flag, not DispatchSemaphore.wait, which Swift 6 forbids in async code (#473).
 
 ## 2026-10-03 14:42:56 EDT — scribe `c13488ccaf30c27911484c55b237ce8b3c82e2b5`
 Offer a cut-off take for Resume only at a route chunk index a route can continue after (#458)

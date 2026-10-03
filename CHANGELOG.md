@@ -10,6 +10,19 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## October 3rd, 2026 at 6:37:39 p.m. EDT — `3edae737bdac` Document the v1.9.5 release: a local write no longer holds the operation gate while it logs, and outbox listings never wait for it (#473)
+
+- **Implementation commit:** `3edae737bdacaa98b58787a97ce4a5b753474e04`
+- **Change:** Document the v1.9.5 release: a local write no longer holds the operation gate while it logs, and outbox listings never wait for it (#473).
+- **Details:**
+  - docs/releases/v1.9.5.md: Recordings 185 and 186, the four changes, red on v1.9.4 (the blocked log and the blocked report hold the caller there; the phase test crashed on a stale incremental build), gate-195b's catch of the report flaw, and gate-195c on a6a59b56.
+- **Files:**
+  - `docs/releases/v1.9.5.md` — the v1.9.5 release document
+  - `PROGRESS.md` — the v1.9.5 entry
+- **User context (verbatim):**
+  > Publish the library once it's checked fast. Yes.
+- **SpecStory:** unavailable — Claude Code agent session (library-79); no SpecStory capture configured for this session.
+
 ## October 3rd, 2026 at 2:23:01 p.m. EDT — `a6a6ab175157` Keep log I/O and outbox listings off the operation gate, and name a local write's phases (#473 #445)
 
 - **Implementation commit:** `a6a6ab1751574a836f53baf8d162852a189820d4`
