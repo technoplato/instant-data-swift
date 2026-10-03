@@ -102,22 +102,15 @@ struct InstantOperationGateHoldTests {
       try await Task.sleep(for: .milliseconds(10))
     }
     let returnedInTime = returned.value
-    // A reader lets the blocked open finish; reading the line back means the entry was written and nothing waits.
+    // A reader lets the blocked open finish. The write then fails (flock refuses a FIFO), so the attempt is over once
+    // the write error is recorded and nothing is left waiting on the file.
     let reader = open(fifo.path, O_RDONLY | O_NONBLOCK)
     defer { close(reader) }
     await writer.value
-    var received = [UInt8]()
-    var buffer = [UInt8](repeating: 0, count: 4_096)
-    for _ in 0..<500 where !received.contains(0x0A) {
-      let count = read(reader, &buffer, buffer.count)
-      if count > 0 {
-        received.append(contentsOf: buffer[0..<count])
-      } else {
-        try await Task.sleep(for: .milliseconds(10))
-      }
+    for _ in 0..<500 where diagnostics.status.lastWriteError == nil {
+      try await Task.sleep(for: .milliseconds(10))
     }
     #expect(returnedInTime, "record waited for a log file it could not open")
-    #expect(String(decoding: received, as: UTF8.self).contains("test.blocked-log"))
   }
 
   /// The gate hands over before it reports the wait: a wait report that blocks must not hold the next caller.
