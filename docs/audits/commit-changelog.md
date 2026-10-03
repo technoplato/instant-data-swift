@@ -1,3 +1,30 @@
+## 2026-10-02 23:03:08 EDT — scribe `aa87a0186b3220b7fe73a52ef85691bce7e38ec9`
+Record the telemetry commits in the change log (#411 #412).
+
+## 2026-10-02 23:01:34 EDT — scribe `21b46c253558ec73cb333b66f81e326c4f01cc16`
+Pin the product analytics boundary in ArchitectureTests, add a local PostHog-compatible endpoint, and record ADR 0037 (#411).
+
+## 2026-10-02 23:01:26 EDT — scribe `6361b8c659d338842ff7cd94f158056f9ea73c08`
+Give only Michael's own device and Mac builds the PostHog project token, from his private file, never printed (#411).
+
+## 2026-10-02 23:01:19 EDT — scribe `75523b2146b42494f4cf49a40286808da0b529c9`
+Start the product analytics lane on every platform, with Settings switches, crash summaries kept, and the route map masked (#411).
+
+## 2026-10-02 23:01:08 EDT — scribe `c03f51132a7698f28fadeec99a8cb65be618d859`
+Add ProductAnalyticsClient and its PostHog implementation, private by default (#411).
+
+## 2026-10-02 23:01:00 EDT — scribe `1c7b585742c5cc536bc95384b2f4687d5842572e`
+Notice a blank transcript on the recording screen and log what the check saw (#412 #411).
+
+## 2026-10-02 23:00:49 EDT — scribe `e9b5fe1c082719929f5f073f6577ab1525807665`
+Capture telemetry: a blank transcript and its end are lifecycle facts, and observers get the recording and the gap (#411 #412).
+
+## 2026-10-02 23:00:41 EDT — scribe `b60043c10f325bad201ec82bd4c349a9c2dad3ba`
+Amend plan telemetry: start the lane in both App initializers, and claim five more paths (#411).
+
+## 2026-10-02 22:18:57 EDT — scribe `79a4a87004feedabf1caa66b4810ef0008dd8844`
+Plan telemetry: analytics and masked session replays in PostHog for Michael's developer builds, blank-transcript detection, and claim its paths (#411 #412).
+
 ## 2026-10-02 21:20:51 EDT — scribe `6133038ef3ddacfe31d4e77277ccc52a3d24b69f`
 Merge main's build 81 plans and startup-screen's handoff after the 80 release (#272 #405).
 
