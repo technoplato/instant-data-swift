@@ -104,6 +104,47 @@ struct InstantCrossSDKRuntimeBenchmarkTests {
     )
   }
 
+  /// The warm suite runs every round on one runtime, as an app does: after the warm-up, one write and one delivery
+  /// per iteration, each round making the same actor calls, and a write the cold write's seven (#403).
+  @Test
+  func warmRuntimeWorkloadsRunEveryRoundOnOneRuntime() async throws {
+    let cacheURL = FileManager.default.temporaryDirectory
+      .appendingPathComponent("InstantCrossSDKWarmRuntimeBenchmarkTests-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: cacheURL) }
+    let clock = RuntimeBenchmarkNanosecondClock(step: 100)
+
+    let result = try await InstantSwiftDataCrossSDKWarmRuntimeBenchmarks.run(
+      appID: "cross-sdk-runtime-warm-test",
+      iterations: 3,
+      cacheDirectory: cacheURL,
+      clockNanoseconds: { clock.next() }
+    )
+
+    let hopCountsPerMetric = result.metrics.map { metric in Set(metric.samples.map(\.actorHopCount)) }
+    expectNoDifference(result.suite, "cross-sdk-runtime-warm")
+    expectNoDifference(result.ok, true)
+    expectNoDifference(
+      result.finalTodoCount,
+      InstantCrossSDKWarmRuntimeBenchmarkContract.warmUpOperationCount + 3
+    )
+    expectNoDifference(result.pendingMutationCount, 0)
+    expectNoDifference(
+      result.metrics.map(\.name),
+      InstantCrossSDKWarmRuntimeBenchmarkContract.metricNames
+    )
+    expectNoDifference(result.metrics.map { $0.samples.map(\.iteration) }, [[0, 1, 2], [0, 1, 2]])
+    expectNoDifference(
+      result.metrics.flatMap { metric in metric.samples.map(\.durationNanoseconds) },
+      Array(repeating: 100, count: 6)
+    )
+    expectNoDifference(
+      result.metrics.map { $0.samples.map(\.pendingMutationCount) },
+      [[1, 1, 1], [0, 0, 0]]
+    )
+    expectNoDifference(hopCountsPerMetric.map(\.count), [1, 1])
+    expectNoDifference(result.metrics.first?.samples.first?.actorHopCount, 7)
+  }
+
   @Test
   func contractPinsEquivalentRuntimeOperationCounts() {
     expectNoDifference(InstantCrossSDKRuntimeBenchmarkContract.version, 1)

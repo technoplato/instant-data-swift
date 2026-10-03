@@ -48,6 +48,11 @@ struct InstantSwiftDataBenchmarks {
         appID: options.appID,
         iterations: options.iterations
       )
+    case InstantSwiftDataCrossSDKWarmRuntimeBenchmarks.suite:
+      try await InstantSwiftDataCrossSDKWarmRuntimeBenchmarks.run(
+        appID: options.appID,
+        iterations: options.iterations
+      )
     default:
       preconditionFailure("Benchmark options reject unsupported suites.")
     }
@@ -118,6 +123,7 @@ private struct BenchmarkOptions: Sendable {
       InstantSwiftDataLocalBenchmarks.localTodosSuite,
       InstantSwiftDataCrossSDKBenchmarks.suite,
       InstantSwiftDataCrossSDKRuntimeBenchmarks.suite,
+      InstantSwiftDataCrossSDKWarmRuntimeBenchmarks.suite,
     ].contains(invocation.suite) else {
       throw BenchmarkCLIError("Unsupported benchmark suite: \(invocation.suite).\n\(usage)", exitCode: 64)
     }
@@ -132,7 +138,7 @@ private struct BenchmarkOptions: Sendable {
 
   private static var usage: String {
     """
-    Usage: instant-swift-data-benchmarks [--suite <local-todos|cross-sdk-core|cross-sdk-runtime>] [--iterations n] [--app-id id] [--json|--jsonl]
+    Usage: instant-swift-data-benchmarks [--suite <local-todos|cross-sdk-core|cross-sdk-runtime|cross-sdk-runtime-warm>] [--iterations n] [--app-id id] [--json|--jsonl]
     """
   }
 }
