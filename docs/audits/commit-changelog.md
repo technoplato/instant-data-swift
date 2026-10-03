@@ -1,11 +1,47 @@
+## 2026-10-03 01:57:09 EDT — scribe `5c06626cb247d39f91717f15f3b502b33138719e`
+Merge main's list-edit-mode, ui-polish and clipboard-onboarding plans and claims after the 0.1 (81) release commit (#430 #412 #420).
+
+## 2026-10-03 01:14:47 EDT — scribe `02fbb77cd9e80525b26a6b0ae9c25d8c55e8136e`
+Release Scribe 0.1 (81).
+
+## 2026-10-03 01:14:41 EDT — scribe `f42414bbfbae96aca237cbe6bff508fa49d694e8`
+Record the restored rebuild-stop test in the change log (#272).
+
+## 2026-10-03 01:14:34 EDT — scribe `081f2938f3e71972eaf660d0d65910f1670111c8`
+Restore main's rebuild-stop test for build 81: the event-driven rewrite blocks a cooperative thread (#272).
+
+## 2026-10-03 01:10:16 EDT — scribe `76997da47a4b9bd70a16526c695f951ab7f4b39f`
+Merge voice-actions-on-device: the on-device hill climb's best configuration, and real voice commands for playback's full screen and Back to Live (#161 #160).
+
+## 2026-10-03 01:09:53 EDT — scribe `e726c18800b90a3c3eca9fd216c353805ded7bfb`
+Merge scribe-mirror: ambiguous requests ask Michael once before anyone acts or hands them on, and a stricter scribe route (#385 #400).
+
+## 2026-10-03 01:09:45 EDT — scribe `7710a74b5bdef3398344ddd7cd8db00e6bda3943`
+Merge live-stamp: a watching device never stamps over a live recording, and only Stop's saved end stops a take (#408).
+
 ## 2026-10-03 00:06:03 EDT — scribe `32902faa686cd695e5ae74f4c7eebb065c09d567`
 Log the remote-push commits in CHANGELOG (#340)
 
 ## 2026-10-03 00:06:03 EDT — scribe `bd34556609ca8b8d08b3267cfcabd03f9f75bb83`
 remote-push: merge notes and the scribe notify handoff in the companion channel (#340)
 
+## 2026-10-02 23:56:08 EDT — scribe `39ce9954c97a790f3519bb632128ed449ef2ec34`
+Merge capture-alert-unblock's change-log entries for its three commits (#272).
+
+## 2026-10-02 23:55:53 EDT — scribe `98047f0af533838b636659df79f1fd579b434b8e`
+Merge capture-alert-unblock's compile fix: each outage-notifier test event is awaited into a constant first (#272).
+
+## 2026-10-02 23:46:15 EDT — scribe `3c30780eb23629c2c11bb960c5ce750629160c76`
+Merge recognitions: songs recognized with ShazamKit and the weather from WeatherKit as moments on the recording timeline (#406).
+
 ## 2026-10-02 23:36:53 EDT — scribe `09a9bbb73798b6b3ae06ed1248d2620563243c40`
 Real alerts for agent answers, the thread's title on every notification, and scribe notify for agents (#340)
+
+## 2026-10-02 22:35:27 EDT — scribe `e0c1c19915085b5e1ca9159270080cb6149c6423`
+Merge capture-alert-unblock's test fix: the outage notifier's tests and the rebuild-stop test wait on events (#272).
+
+## 2026-10-02 21:21:32 EDT — scribe `4f537588a2552e082bfa64864fff3866f53e86d0`
+Merge capture-alert-unblock: the outage notification never holds the Live Activity, and every notification-center call ends within 5 s (#272).
 
 ## 2026-10-02 21:20:51 EDT — scribe `6133038ef3ddacfe31d4e77277ccc52a3d24b69f`
 Merge main's build 81 plans and startup-screen's handoff after the 80 release (#272 #405).
