@@ -7568,15 +7568,19 @@ public actor SQLitePersistenceStore {
   ///   - acceptedOnly: Consider only later writes the server accepted.
   ///   - pendingMustBeClaimed: Count a later write the server has not accepted only while it is in flight, so a write
   ///     parked behind it waits for an answer that is coming.
-  /// - Returns: The coverage and the write's decoded body (`nil` when no later write shares a slot with it).
+  ///   - serverResults: For a refused re-send only (#441): an insert that a later write does not cover also counts
+  ///     when a result the server sent since the write was created shows its value (`InstantServerResultCheck`).
+  /// - Returns: The coverage, the write's decoded body (`nil` when no later write shares a slot with it and no server
+  ///   result is consulted), and how many of its slots the server's results showed.
   private func laterWriteCoverageWithoutTransaction(
     ofMutationID mutationID: String,
     createdAtMilliseconds: Int64,
     decoded: PendingMutation?,
     acceptedOnly: Bool,
     pendingMustBeClaimed: Bool = false,
+    serverResults: InstantServerResultCheck? = nil,
     attributes: () throws -> AttributeStore
-  ) throws -> (coverage: InstantOutboxWriteCoverage, mutation: PendingMutation?) {
+  ) throws -> (coverage: InstantOutboxWriteCoverage, mutation: PendingMutation?, serverResultSlotCount: Int) {
     var candidates: [(id: String, createdAt: Int64, accepted: Bool, serverTransactionID: String?)] = []
     var statement: OpaquePointer?
     try prepare(
@@ -7627,12 +7631,12 @@ public actor SQLitePersistenceStore {
         serverTransactionID: sqlite3_column_text(statement, 4).map { String(cString: $0) }
       ))
     }
-    guard !candidates.isEmpty else { return (.none, decoded) }
+    guard !candidates.isEmpty || serverResults != nil else { return (.none, decoded, 0) }
     let mutation: PendingMutation
     if let decoded {
       mutation = decoded
     } else {
-      guard let row = try loadOutboxBodyRowWithoutTransaction(id: mutationID) else { return (.none, nil) }
+      guard let row = try loadOutboxBodyRowWithoutTransaction(id: mutationID) else { return (.none, nil, 0) }
       mutation = try decodeOutboxBody(row.json)
       decodedOutboxBodyCount += 1
       decodedOutboxBodyByteCount += row.json.utf8.count
@@ -7648,10 +7652,10 @@ public actor SQLitePersistenceStore {
         continue
       case .retract, .retractByLookup, .insertByLookup, .mergeByLookup,
         .deleteEntity, .deleteEntityInNamespace, .deleteEntityByLookup:
-        return (.none, mutation)
+        return (.none, mutation, 0)
       }
     }
-    guard hasWrite else { return (.none, mutation) }
+    guard hasWrite else { return (.none, mutation, 0) }
     var acceptedOperations: [InstantTripleOperation] = []
     var allOperations: [InstantTripleOperation] = []
     var acceptedIDs: [String] = []
@@ -7672,28 +7676,139 @@ public actor SQLitePersistenceStore {
       }
     }
     let attributeStore = try attributes()
-    if !acceptedOperations.isEmpty,
-      let serverTransactionID = newestAcceptedTransactionID,
-      InstantAuthoritativeWriteCoverage(
+    let acceptedCoverage: InstantAuthoritativeWriteCoverage? =
+      acceptedOperations.isEmpty || newestAcceptedTransactionID == nil
+      ? nil
+      : InstantAuthoritativeWriteCoverage(
         operations: acceptedOperations,
         attributes: attributeStore,
         previousChangedEntityTriples: [:],
         changedEntityTriples: [:]
-      ).covers(mutation.transaction.operations)
+      )
+    if let acceptedCoverage,
+      let serverTransactionID = newestAcceptedTransactionID,
+      acceptedCoverage.covers(mutation.transaction.operations)
     {
-      return (.acceptedWrites(serverTransactionID: serverTransactionID, mutationIDs: acceptedIDs), mutation)
+      return (.acceptedWrites(serverTransactionID: serverTransactionID, mutationIDs: acceptedIDs), mutation, 0)
     }
-    if !acceptedOnly,
-      InstantAuthoritativeWriteCoverage(
+    let allCoverage: InstantAuthoritativeWriteCoverage? =
+      acceptedOnly
+      ? nil
+      : InstantAuthoritativeWriteCoverage(
         operations: allOperations,
         attributes: attributeStore,
         previousChangedEntityTriples: [:],
         changedEntityTriples: [:]
-      ).covers(mutation.transaction.operations)
-    {
-      return (.pendingWrites(mutationIDs: allIDs), mutation)
+      )
+    if let allCoverage, allCoverage.covers(mutation.transaction.operations) {
+      return (.pendingWrites(mutationIDs: allIDs), mutation, 0)
     }
-    return (.none, mutation)
+    guard let serverResults else { return (.none, mutation, 0) }
+    // A refused re-send (#441): each insert a later write does not cover may be held by the server's own results. The
+    // watermark is the server transaction id a write they resolve takes; without one, no result has been stored.
+    let serverResultTransactionID = try loadMetadataValue(key: serverResults.processedTransactionIDKey)
+      .flatMap { $0.isEmpty ? nil : $0 }
+    var serverResultSlotCount = 0
+    var coveredByAcceptedWritesOrResults = true
+    var coveredByAnyWriteOrResults = true
+    var uncoveredAreInsertsOnly = true
+    for operation in mutation.transaction.operations {
+      let triple: InstantTriple
+      let isInsert: Bool
+      switch operation {
+      case let .insert(inserted):
+        triple = inserted
+        isInsert = true
+      case let .merge(merged):
+        triple = merged
+        isInsert = false
+      default:
+        continue
+      }
+      let coveredByAccepted = acceptedCoverage?.covers([operation]) == true
+      var held = false
+      if !coveredByAccepted, isInsert, serverResultTransactionID != nil {
+        // An identity insert (`<namespace>/id` set to the entity's own id) only says the entity exists: any of its
+        // triples in a result shows that.
+        let attribute = attributeStore[triple.attributeID]
+        if attribute?.primaryKey == true || attribute?.name == "id", triple.value == .string(triple.entityID) {
+          held = try liveQueryResultShowsEntityWithoutTransaction(
+            triple.entityID,
+            storedAtOrAfter: createdAtMilliseconds
+          )
+        } else {
+          held = try liveQueryResultShowsWithoutTransaction(triple, storedAtOrAfter: createdAtMilliseconds)
+        }
+      }
+      if held { serverResultSlotCount += 1 }
+      if !coveredByAccepted && !held { coveredByAcceptedWritesOrResults = false }
+      if !coveredByAccepted && !held && allCoverage?.covers([operation]) != true {
+        coveredByAnyWriteOrResults = false
+        if !isInsert { uncoveredAreInsertsOnly = false }
+      }
+    }
+    if coveredByAcceptedWritesOrResults, serverResultSlotCount > 0, let serverResultTransactionID {
+      let serverTransactionID = newestAcceptedTransactionID.map {
+        Self.newerServerTransactionID(serverResultTransactionID, $0)
+      } ?? serverResultTransactionID
+      return (
+        .acceptedWrites(serverTransactionID: serverTransactionID, mutationIDs: acceptedIDs),
+        mutation,
+        serverResultSlotCount
+      )
+    }
+    if allCoverage != nil, coveredByAnyWriteOrResults {
+      return (.pendingWrites(mutationIDs: allIDs), mutation, serverResultSlotCount)
+    }
+    if serverResults.waitsForServerResult, uncoveredAreInsertsOnly {
+      return (.awaitingServerResult(mutationIDs: allIDs), mutation, serverResultSlotCount)
+    }
+    return (.none, mutation, serverResultSlotCount)
+  }
+
+  /// Whether a live-query result the server sent, stored at or after `storedAtOrAfter`, shows any triple of
+  /// `entityID` (#441).
+  private func liveQueryResultShowsEntityWithoutTransaction(
+    _ entityID: String,
+    storedAtOrAfter milliseconds: Int64
+  ) throws -> Bool {
+    try selectInt64(
+      """
+      SELECT EXISTS(
+        SELECT 1 FROM instant_live_query_triples AS owned
+        JOIN instant_live_query_results AS result ON result.query_key = owned.query_key
+        WHERE owned.entity_id = ? AND result.updated_at_ms >= ?
+        LIMIT 1
+      )
+      """,
+      [.text(entityID), .int(milliseconds)]
+    ) != 0
+  }
+
+  /// Whether a live-query result the server sent, stored at or after `storedAtOrAfter`, shows `triple`'s value for its
+  /// slot (#441). Stored results hold only the server's facts (`instant_live_query_triples`, the ownership of each
+  /// result's triples, indexed by entity, attribute, and value), and a result is stamped when it is received.
+  private func liveQueryResultShowsWithoutTransaction(
+    _ triple: InstantTriple,
+    storedAtOrAfter milliseconds: Int64
+  ) throws -> Bool {
+    try selectInt64(
+      """
+      SELECT EXISTS(
+        SELECT 1 FROM instant_live_query_triples AS owned
+        JOIN instant_live_query_results AS result ON result.query_key = owned.query_key
+        WHERE owned.entity_id = ? AND owned.attribute_id = ? AND owned.value_json = ?
+          AND result.updated_at_ms >= ?
+        LIMIT 1
+      )
+      """,
+      [
+        .text(triple.entityID),
+        .text(triple.attributeID),
+        .text(try encode(triple.value)),
+        .int(milliseconds),
+      ]
+    ) != 0
   }
 
   /// The newer of two server transaction ids: numeric when both are, otherwise the later one.
@@ -7766,7 +7881,7 @@ public actor SQLitePersistenceStore {
       category: "outbox",
       event: "outbox.mutation.superseded",
       message:
-        "Later writes of this device that the server accepted cover every operation of this write, so it is resolved as accepted and not offered again.",
+        "Later writes of this device that the server accepted, or the server's own results for a refused re-send, cover every operation of this write, so it is resolved as accepted and not offered again.",
       metadata: [
         "mutationID": mutation.id,
         "serverTransactionID": serverTransactionID,
@@ -7776,15 +7891,20 @@ public actor SQLitePersistenceStore {
     return superseded
   }
 
-  /// Resolves a write the server refused, when later writes of this device cover all of it (item 3).
+  /// Resolves a write the server refused, when later writes of this device cover all of it (item 3), or for a re-send
+  /// when the server's own results show the rest (#441).
   ///
   /// The server holds a newer value for every slot the refused write sets, or will once the covering writes in flight
   /// are answered. Covered by accepted writes: superseded now. Covered by writes not yet accepted: the write keeps its
   /// claim, parked with a distant acknowledgement deadline, until they are answered (`resolveParkedRefusal`); delivery
-  /// stays an ordered prefix. Otherwise the refusal stands.
-  /// - Parameter holdsBehindPendingWrites: Hold the write behind covering writes not yet accepted. Only for a write
-  ///   whose earlier offer may have been applied (a replay): a refusal of a first offer is the server's verdict on
-  ///   the write itself, so only accepted covering writes make it moot.
+  /// stays an ordered prefix. A re-send whose remaining slots a result from the server sent since the write was created
+  /// shows with the write's values counts as covered too; one whose remaining slots are inserts no result shows yet is
+  /// parked the same way, waiting for one. Otherwise the refusal stands.
+  /// - Parameters:
+  ///   - holdsBehindPendingWrites: Hold the write behind covering writes not yet accepted. Only for a write whose
+  ///     earlier offer may have been applied (a replay): a refusal of a first offer is the server's verdict on the
+  ///     write itself, so only accepted covering writes make it moot.
+  ///   - serverResults: For a replay only: also count the slots the server's results show (#441).
   ///   - parkedDeadlineMilliseconds: The acknowledgement deadline a parked write's claim takes, so the claim does not
   ///     expire as an acknowledgement timeout while the covering writes are answered.
   func resolveRefusedWriteIfCovered(
@@ -7792,6 +7912,7 @@ public actor SQLitePersistenceStore {
     claimantID: String,
     claimToken: String,
     holdsBehindPendingWrites: Bool,
+    serverResults: InstantServerResultCheck? = nil,
     parkedDeadlineMilliseconds: Int64
   ) throws -> InstantRefusedWriteResolution {
     let previousState = cachedState
@@ -7818,16 +7939,18 @@ public actor SQLitePersistenceStore {
         ) != 0,
         let position = try loadOutboxPositionWithoutTransaction(id: id)
       else { return .notCovered }
-      let (coverage, mutation) = try laterWriteCoverageWithoutTransaction(
+      let (coverage, mutation, serverResultSlotCount) = try laterWriteCoverageWithoutTransaction(
         ofMutationID: id,
         createdAtMilliseconds: position.createdAtMilliseconds,
         decoded: nil,
         acceptedOnly: !holdsBehindPendingWrites,
         pendingMustBeClaimed: true,
+        serverResults: holdsBehindPendingWrites ? serverResults : nil,
         attributes: {
           AttributeStore(attributes: try loadAttributesWithoutTransaction(tracesStartupCollection: false))
         }
       )
+      let parked: InstantRefusedWriteResolution
       switch coverage {
       case let .acceptedWrites(serverTransactionID, coveringIDs):
         guard let mutation,
@@ -7837,28 +7960,34 @@ public actor SQLitePersistenceStore {
           )
         else { return .notCovered }
         _ = try bumpMetadataRevisionWithoutTransaction(Self.outboxRevisionKey)
-        return .superseded(superseded, coveringMutationIDs: coveringIDs)
+        return .superseded(
+          superseded,
+          coveringMutationIDs: coveringIDs,
+          serverResultSlotCount: serverResultSlotCount
+        )
       case let .pendingWrites(coveringIDs):
         guard holdsBehindPendingWrites else { return .notCovered }
-        try execute(
-          """
-          UPDATE instant_outbox
-          SET delivery_claim_deadline_ms = ?
-          WHERE mutation_id = ? AND delivery_claim_state = ? AND delivery_claim_token = ?
-          """,
-          [
-            .int(parkedDeadlineMilliseconds),
-            .text(id),
-            .text(InstantOutboxDeliveryClaimState.claimed.rawValue),
-            .text(claimToken),
-          ]
-        )
-        return sqlite3_changes(connection.raw) == 1
-          ? .heldBehindPendingWrites(coveringMutationIDs: coveringIDs)
-          : .notCovered
+        parked = .heldBehindPendingWrites(coveringMutationIDs: coveringIDs)
+      case let .awaitingServerResult(coveringIDs):
+        guard holdsBehindPendingWrites else { return .notCovered }
+        parked = .awaitingServerResult(coveringMutationIDs: coveringIDs)
       case .none:
         return .notCovered
       }
+      try execute(
+        """
+        UPDATE instant_outbox
+        SET delivery_claim_deadline_ms = ?
+        WHERE mutation_id = ? AND delivery_claim_state = ? AND delivery_claim_token = ?
+        """,
+        [
+          .int(parkedDeadlineMilliseconds),
+          .text(id),
+          .text(InstantOutboxDeliveryClaimState.claimed.rawValue),
+          .text(claimToken),
+        ]
+      )
+      return sqlite3_changes(connection.raw) == 1 ? parked : .notCovered
     }
     if case .superseded = resolution {
       cachedState = nil
@@ -7867,13 +7996,15 @@ public actor SQLitePersistenceStore {
     return resolution
   }
 
-  /// Resolves a refusal parked behind covering writes in flight (item 3), while this runtime still holds its claim:
-  /// superseded once the covering writes are accepted; `.notCovered` once they no longer cover it (one of them failed),
-  /// so the runtime records the original refusal; still parked otherwise.
+  /// Resolves a refusal parked behind covering writes in flight (item 3) or waiting for a server result (#441), while
+  /// this runtime still holds its claim: superseded once the covering writes are accepted and the server's results
+  /// show the rest; `.notCovered` once neither can cover it any more (a covering write failed, or the wait for a
+  /// result ended), so the runtime records the original refusal; still parked otherwise.
   func resolveParkedRefusal(
     id: String,
     claimantID: String,
-    claimToken: String
+    claimToken: String,
+    serverResults: InstantServerResultCheck? = nil
   ) throws -> InstantRefusedWriteResolution {
     let resolution: InstantRefusedWriteResolution = try transaction {
       guard
@@ -7898,11 +8029,12 @@ public actor SQLitePersistenceStore {
         ) != 0,
         let position = try loadOutboxPositionWithoutTransaction(id: id)
       else { return .stale }
-      let (coverage, mutation) = try laterWriteCoverageWithoutTransaction(
+      let (coverage, mutation, serverResultSlotCount) = try laterWriteCoverageWithoutTransaction(
         ofMutationID: id,
         createdAtMilliseconds: position.createdAtMilliseconds,
         decoded: nil,
         acceptedOnly: false,
+        serverResults: serverResults,
         attributes: {
           AttributeStore(attributes: try loadAttributesWithoutTransaction(tracesStartupCollection: false))
         }
@@ -7916,9 +8048,15 @@ public actor SQLitePersistenceStore {
           )
         else { return .notCovered }
         _ = try bumpMetadataRevisionWithoutTransaction(Self.outboxRevisionKey)
-        return .superseded(superseded, coveringMutationIDs: coveringIDs)
+        return .superseded(
+          superseded,
+          coveringMutationIDs: coveringIDs,
+          serverResultSlotCount: serverResultSlotCount
+        )
       case let .pendingWrites(coveringIDs):
         return .heldBehindPendingWrites(coveringMutationIDs: coveringIDs)
+      case let .awaitingServerResult(coveringIDs):
+        return .awaitingServerResult(coveringMutationIDs: coveringIDs)
       case .none:
         return .notCovered
       }

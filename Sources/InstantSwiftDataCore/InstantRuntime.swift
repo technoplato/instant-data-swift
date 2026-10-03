@@ -367,6 +367,11 @@ public struct InstantRuntimeConfiguration: Sendable {
     instantLiveDefaultTimeoutSleep
   /// The backoff for writes and add-queries the server answered with a transient error (#376, #360).
   var liveServerErrorRetryPolicy = InstantServerErrorRetryPolicy()
+  /// The longest a refused re-send waits, parked, for a result from the server that shows the values it set (#441).
+  /// It waits only while the connection still owes the first answer to a registered live query, so the wait ends when
+  /// a result shows the values or the server has answered them all; this bounds a connection whose answers stall.
+  /// 0 never waits.
+  var refusedReSendServerResultWaitMilliseconds: Int64 = 30_000
   /// Sleeps before a live query is sent again on the same socket after a transient server error (#360).
   var liveQueryRetrySleep: @Sendable (UInt64) async throws -> Void = instantLiveDefaultTimeoutSleep
   /// Runs each time a write or a live query is scheduled for another attempt after a transient server error.
@@ -1696,6 +1701,8 @@ public final class InstantRuntime: Sendable {
   private let mutationServerErrorBackoff = InstantMutationServerErrorBackoffState()
   /// Refused writes parked behind later writes in flight that cover them (library-78, item 3).
   private let parkedRefusals = InstantParkedRefusals()
+  /// Ends the wait of refused re-sends parked for a server result (#441).
+  private let parkedRefusalServerResultWake = InstantRuntimeMutationDeadlineWake()
   private let storeAdoptionMetrics = InstantRuntimeStoreAdoptionMetrics()
   private let installedStoreRevisions: InstantRuntimeInstalledStoreRevisions
 
@@ -7372,7 +7379,9 @@ public final class InstantRuntime: Sendable {
       claimantID: automaticDeliveryClaimantID
     )
     // Parked refusals held claims of this socket; the next connection offers those writes again.
-    await parkedRefusals.removeAll()
+    if await parkedRefusals.removeAll() {
+      await scheduleParkedRefusalServerResultWake()
+    }
     await scheduleLiveMutationDeadlineWake(
       at: release.nextClaimDeadlineMilliseconds
     )
@@ -7388,11 +7397,24 @@ public final class InstantRuntime: Sendable {
     return release.mutationIDs
   }
 
-  /// Resolves the refusals parked behind covering writes once those are answered (library-78, item 3): superseded
-  /// when they were accepted, or recorded as the server's original refusal when one of them failed.
+  /// Resolves the refusals parked behind covering writes once those are answered (library-78, item 3), or waiting for a
+  /// server result once one arrives or the wait ends (#441): superseded when the covering writes were accepted and the
+  /// server's results show the rest, or recorded as the server's original refusal when a covering write failed or the
+  /// wait ended without a result that shows the write's values.
   private func resolveParkedRefusalsIfNeeded() async {
     guard await !parkedRefusals.isEmpty else { return }
+    let now = configuration.now().milliseconds
+    var queriesOweAnAnswer: Bool?
     for (mutationID, parked) in await parkedRefusals.snapshot.sorted(by: { $0.key < $1.key }) {
+      // A refusal waiting for a server result keeps waiting only while this socket still owes the first answer to a
+      // registered query and the wait has not ended (#441).
+      var waitsForServerResult = false
+      if let deadline = parked.serverResultDeadlineMilliseconds, now < deadline {
+        if queriesOweAnAnswer == nil {
+          queriesOweAnAnswer = await liveQueriesStillOweAnAnswerOnThisSocket()
+        }
+        waitsForServerResult = queriesOweAnAnswer == true
+      }
       do {
         try await enterOperationGateUnlessCancelled(operation: "resolve a parked refusal")
         let resolution: InstantRefusedWriteResolution
@@ -7401,9 +7423,13 @@ public final class InstantRuntime: Sendable {
           resolution = try await persistence.resolveParkedRefusal(
             id: mutationID,
             claimantID: automaticDeliveryClaimantID,
-            claimToken: parked.claimToken
+            claimToken: parked.claimToken,
+            serverResults: InstantServerResultCheck(
+              processedTransactionIDKey: processedTransactionIDMetadataKey,
+              waitsForServerResult: waitsForServerResult
+            )
           )
-          if case let .superseded(mutation, _) = resolution {
+          if case let .superseded(mutation, _, _) = resolution {
             recordActorHop(.outbox)
             await outbox.remove(id: mutation.id)
             _ = try? await publishConnectionStatusWithGateHeld()
@@ -7415,7 +7441,7 @@ public final class InstantRuntime: Sendable {
           throw error
         }
         switch resolution {
-        case let .superseded(_, coveringIDs):
+        case let .superseded(_, coveringIDs, serverResultSlotCount):
           await parkedRefusals.remove(mutationID)
           await liveSession.forgetEarlierOffers(of: mutationID)
           InstantDiagnostics.shared.record(
@@ -7423,11 +7449,13 @@ public final class InstantRuntime: Sendable {
             subsystem: "instant-swift-data-core",
             category: "outbox",
             event: "outbox.mutation.refusal-superseded",
-            message:
-              "A parked refusal resolved: the later writes that cover it were accepted, so it is accepted, not failed.",
+            message: serverResultSlotCount > 0
+              ? "A parked refusal resolved: the server's results show the values it set, and accepted later writes of this device cover the rest, so it is accepted, not failed."
+              : "A parked refusal resolved: the later writes that cover it were accepted, so it is accepted, not failed.",
             metadata: [
               "mutationID": mutationID,
               "coveringMutationIDs": coveringIDs.prefix(12).joined(separator: ","),
+              "serverResultSlotCount": String(serverResultSlotCount),
             ],
             correlationID: mutationID
           )
@@ -7438,14 +7466,18 @@ public final class InstantRuntime: Sendable {
             subsystem: "instant-swift-data-core",
             category: "outbox",
             event: "outbox.mutation.server-error-terminal",
-            message: "A parked refusal stands: a later write that covered it did not land.",
+            message: parked.serverResultDeadlineMilliseconds == nil
+              ? "A parked refusal stands: a later write that covered it did not land."
+              : "A parked refusal stands: no result from the server shows the values it set, though the server answered this connection's live queries or the wait ended, and no accepted later write of this device covers them.",
             metadata: [
               "mutationID": mutationID,
               "errorMessage": parked.failure.message,
+              "serverTraceID": parked.error.traceID ?? "",
               "refusalKind": "replay",
             ],
             correlationID: mutationID
           )
+          await recordRefusedWrite(mutationID: mutationID, error: parked.error, refusalKind: "replay")
           _ = try await failClaimedMutation(
             id: mutationID,
             failure: parked.failure,
@@ -7456,6 +7488,10 @@ public final class InstantRuntime: Sendable {
         case .stale:
           await parkedRefusals.remove(mutationID)
         case .heldBehindPendingWrites:
+          // Only covering writes in flight remain to answer; their answers resolve it, not the wait's end.
+          await parkedRefusals.stopWaitingForServerResult(mutationID, claimToken: parked.claimToken)
+          continue
+        case .awaitingServerResult:
           continue
         }
       } catch {
@@ -7470,9 +7506,62 @@ public final class InstantRuntime: Sendable {
         )
       }
     }
+    await scheduleParkedRefusalServerResultWake()
   }
 
-  /// A server refusal of a write that later writes of this device cover is not a failure (library-78, item 3).
+  /// Whether the open socket still owes the first answer to a registered live query (#441): until the server has
+  /// answered every one, a result that shows a refused re-send's values may still come. A refused re-send arrives
+  /// with the re-sent backlog, often before the connection's add-query answers.
+  private func liveQueriesStillOweAnAnswerOnThisSocket() async -> Bool {
+    recordActorHop(.liveSession)
+    for key in await liveSession.activeQueryKeys() {
+      recordActorHop(.liveSession)
+      if await !liveSession.isAnsweredOnCurrentSocket(key: key) { return true }
+    }
+    return false
+  }
+
+  /// Wakes at the earliest end of a parked refusal's wait for a server result (#441), or cancels the wake when none
+  /// waits.
+  private func scheduleParkedRefusalServerResultWake() async {
+    await parkedRefusalServerResultWake.request(
+      deadlineMilliseconds: await parkedRefusals.earliestServerResultDeadlineMilliseconds,
+      now: configuration.now,
+      sleep: configuration.liveMutationDeadlineSleep
+    ) { [weak self] in
+      await self?.resolveParkedRefusalsIfNeeded()
+    }
+  }
+
+  /// Logs the refused write's own values, read before the failure is recorded so the log never depends on how the
+  /// failure resolves (a stale claim or a concurrent resolution returns no mutation).
+  private func recordRefusedWrite(
+    mutationID: String,
+    error: InstantLiveErrorMessage,
+    refusalKind: String
+  ) async {
+    recordActorHop(.persistence)
+    let refusedMutation = try? await persistence.outboxMutationForDiagnostics(id: mutationID)
+    InstantDiagnostics.shared.record(
+      .error,
+      subsystem: "instant-swift-data-core",
+      category: "outbox",
+      event: "outbox.mutation.refused-write",
+      message:
+        "The write the server refused, by namespace, entity, attribute, and value. Compare its stamps with the row's current values to name the rule.",
+      metadata: InstantMutationRefusal(hint: error.hint, transaction: refusedMutation?.transaction)
+        .metadata
+        .merging([
+          "mutationID": mutationID,
+          "refusalKind": refusalKind,
+          "createdAtMilliseconds": refusedMutation.map { String($0.createdAt.milliseconds) } ?? "",
+        ]) { current, _ in current },
+      correlationID: mutationID
+    )
+  }
+
+  /// A server refusal of a write that later writes of this device cover is not a failure (library-78, item 3), nor is
+  /// the refusal of a re-send whose values the server's own results show (#441).
   ///
   /// Michael, verbatim: "I want to know why rights are refused in the first place? I don't think they really should
   /// be". A write offered again after its first offer was applied is refused by Scribe's `validUpdate` rule
@@ -7480,6 +7569,15 @@ public final class InstantRuntime: Sendable {
   /// server holds a newer value for every slot it sets. Covered by accepted writes: resolved as accepted now. Covered
   /// by writes in flight: held, and resolved by their answers. Upstream `Reactor.js` drops every refused mutation as
   /// an error (`_handleMutationError`); Swift keeps refusals it cannot explain as failures, as before.
+  ///
+  /// Recording 040 (#441), Michael verbatim: "And then I got a not synced, instant refused one change to this
+  /// recording". The re-sent capture gaps were refused although production holds them: the first offer was applied
+  /// and only its answer was lost with the socket, and no later write of the device set the gaps. So for a re-send,
+  /// a slot that a result the server sent since the write was created shows with the write's value counts as covered
+  /// too. When no result shows a slot yet and the connection still owes the first answer to a registered query, the
+  /// re-send waits, parked, for those answers; the refusal stands once the server has answered them all without one
+  /// that shows the value, or `refusedReSendServerResultWaitMilliseconds` ends. A first offer's refusal is the
+  /// server's verdict on the write itself and still fails.
   private func resolveRefusedWriteIfCovered(
     id mutationID: String,
     claimToken: String,
@@ -7487,8 +7585,13 @@ public final class InstantRuntime: Sendable {
   ) async throws -> Bool {
     recordActorHop(.liveSession)
     let isReplay = await liveSession.mayHaveAppliedAnEarlierOffer(of: mutationID)
+    var waitsForServerResult = false
+    if isReplay, configuration.refusedReSendServerResultWaitMilliseconds > 0 {
+      waitsForServerResult = await liveQueriesStillOweAnAnswerOnThisSocket()
+    }
     try await enterOperationGateUnlessCancelled(operation: "resolve a refused write that later writes cover")
     let resolution: InstantRefusedWriteResolution
+    let now = configuration.now().milliseconds
     do {
       recordActorHop(.persistence)
       resolution = try await persistence.resolveRefusedWriteIfCovered(
@@ -7496,10 +7599,16 @@ public final class InstantRuntime: Sendable {
         claimantID: automaticDeliveryClaimantID,
         claimToken: claimToken,
         holdsBehindPendingWrites: isReplay,
-        parkedDeadlineMilliseconds: configuration.now().milliseconds + Self.parkedRefusalDeadlineMilliseconds
+        serverResults: isReplay
+          ? InstantServerResultCheck(
+            processedTransactionIDKey: processedTransactionIDMetadataKey,
+            waitsForServerResult: waitsForServerResult
+          )
+          : nil,
+        parkedDeadlineMilliseconds: now + Self.parkedRefusalDeadlineMilliseconds
       )
       switch resolution {
-      case let .superseded(mutation, _):
+      case let .superseded(mutation, _, _):
         recordActorHop(.outbox)
         await outbox.remove(id: mutation.id)
         _ = try? await publishConnectionStatusWithGateHeld()
@@ -7508,7 +7617,17 @@ public final class InstantRuntime: Sendable {
         await parkedRefusals.park(
           mutationID,
           claimToken: claimToken,
-          failure: Self.mutationFailure(from: error)
+          failure: Self.mutationFailure(from: error),
+          error: error,
+          serverResultDeadlineMilliseconds: nil
+        )
+      case .awaitingServerResult:
+        await parkedRefusals.park(
+          mutationID,
+          claimToken: claimToken,
+          failure: Self.mutationFailure(from: error),
+          error: error,
+          serverResultDeadlineMilliseconds: now + configuration.refusedReSendServerResultWaitMilliseconds
         )
       case .notCovered, .stale:
         break
@@ -7519,7 +7638,7 @@ public final class InstantRuntime: Sendable {
       throw error
     }
     switch resolution {
-    case let .superseded(_, coveringIDs):
+    case let .superseded(_, coveringIDs, serverResultSlotCount):
       await liveSession.forgetEarlierOffers(of: mutationID)
       await mutationServerErrorBackoff.forget(mutationID)
       InstantDiagnostics.shared.record(
@@ -7527,11 +7646,13 @@ public final class InstantRuntime: Sendable {
         subsystem: "instant-swift-data-core",
         category: "outbox",
         event: "outbox.mutation.refusal-superseded",
-        message:
-          "The server refused a write that later accepted writes of this device cover; it is resolved as accepted, not failed.",
+        message: serverResultSlotCount > 0
+          ? "The server refused a re-sent write whose values its own results already show, with any other slot covered by accepted later writes of this device; it is resolved as accepted, not failed."
+          : "The server refused a write that later accepted writes of this device cover; it is resolved as accepted, not failed.",
         metadata: [
           "mutationID": mutationID,
           "coveringMutationIDs": coveringIDs.prefix(12).joined(separator: ","),
+          "serverResultSlotCount": String(serverResultSlotCount),
           "errorMessage": error.message,
           "serverTraceID": error.traceID ?? "",
         ],
@@ -7555,6 +7676,26 @@ public final class InstantRuntime: Sendable {
         ],
         correlationID: mutationID
       )
+      await startLiveMutationDeliveryIfNeeded()
+      return true
+    case let .awaitingServerResult(coveringIDs):
+      InstantDiagnostics.shared.record(
+        .info,
+        subsystem: "instant-swift-data-core",
+        category: "outbox",
+        event: "outbox.mutation.refusal-awaiting-server-result",
+        message:
+          "The server refused a re-sent write whose first offer may have been applied; it keeps its claim, parked, until a result from the server shows the values it set, and fails only if none does before the wait ends.",
+        metadata: [
+          "mutationID": mutationID,
+          "coveringMutationIDs": coveringIDs.prefix(12).joined(separator: ","),
+          "waitMilliseconds": String(configuration.refusedReSendServerResultWaitMilliseconds),
+          "errorMessage": error.message,
+          "serverTraceID": error.traceID ?? "",
+        ],
+        correlationID: mutationID
+      )
+      await scheduleParkedRefusalServerResultWake()
       await startLiveMutationDeliveryIfNeeded()
       return true
     case .notCovered, .stale:
@@ -7758,6 +7899,8 @@ public final class InstantRuntime: Sendable {
       guard !queryOK.result.isEmpty else {
         await recordLiveQueryAnswered(key: registrationKey)
         await liveQueryAcknowledgements.record(key: registrationKey)
+        // A refused re-send waiting for this connection's answers may resolve or stand now (#441).
+        await resolveParkedRefusalsIfNeeded()
         return
       }
       guard let processedTransactionID = queryOK.processedTransactionID?.nilIfEmpty else {
@@ -7785,6 +7928,8 @@ public final class InstantRuntime: Sendable {
       // from the device instead of waiting on the socket (library-78 item 7).
       await recordLiveQueryAnswered(key: registrationKey)
       await liveQueryAcknowledgements.record(key: registrationKey)
+      // A refused re-send waiting for this connection's answers may resolve or stand now (#441).
+      await resolveParkedRefusalsIfNeeded()
 
     case let .addQueryExists(queryOK):
       guard let query = queryOK.query else {
@@ -7798,6 +7943,8 @@ public final class InstantRuntime: Sendable {
       let registrationKey = try InstantLiveQueryEncoder.registrationKey(for: query)
       await recordLiveQueryAnswered(key: registrationKey)
       await liveQueryAcknowledgements.record(key: registrationKey)
+      // A refused re-send waiting for this connection's answers may resolve or stand now (#441).
+      await resolveParkedRefusalsIfNeeded()
 
     case let .refreshOK(refreshOK):
       try await applyLiveRefresh(
@@ -7808,6 +7955,8 @@ public final class InstantRuntime: Sendable {
           computations: refreshOK.computations
         )
       )
+      // A refused re-send waiting for a result that shows its values may resolve now (#441).
+      await resolveParkedRefusalsIfNeeded()
 
     case let .transactOK(transactOK):
       guard let clientEventID = transactOK.clientEventID?.nilIfEmpty,
@@ -8083,26 +8232,7 @@ public final class InstantRuntime: Sendable {
           ].merging(InstantMutationRefusal(hint: error.hint, transaction: nil).metadata) { current, _ in current },
           correlationID: clientEventID
         )
-        // The refused write's own values, read before the failure is recorded so the log never depends on how the
-        // failure resolves (a stale claim or a concurrent resolution returns no mutation).
-        recordActorHop(.persistence)
-        let refusedMutation = try? await persistence.outboxMutationForDiagnostics(id: clientEventID)
-        InstantDiagnostics.shared.record(
-          .error,
-          subsystem: "instant-swift-data-core",
-          category: "outbox",
-          event: "outbox.mutation.refused-write",
-          message:
-            "The write the server refused, by namespace, entity, attribute, and value. Compare its stamps with the row's current values to name the rule.",
-          metadata: InstantMutationRefusal(hint: error.hint, transaction: refusedMutation?.transaction)
-            .metadata
-            .merging([
-              "mutationID": clientEventID,
-              "refusalKind": refusalKind,
-              "createdAtMilliseconds": refusedMutation.map { String($0.createdAt.milliseconds) } ?? "",
-            ]) { current, _ in current },
-          correlationID: clientEventID
-        )
+        await recordRefusedWrite(mutationID: clientEventID, error: error, refusalKind: refusalKind)
         _ = try await failClaimedMutation(
           id: clientEventID,
           failure: Self.mutationFailure(from: error),

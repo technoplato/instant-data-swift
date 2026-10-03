@@ -869,7 +869,9 @@ public enum InstantMutationConfirmationSource: String, Hashable, Codable, Sendab
   case webSocketTransactOK
   /// Later writes of this device that the server accepted cover every operation of this one, so the server holds
   /// its effect or a newer one, and it is not offered again. A re-send of a write the server already applied, refused
-  /// because a newer write of the same row was applied after it, resolves this way instead of failing.
+  /// because a newer write of the same row was applied after it, resolves this way instead of failing. So does a
+  /// refused re-send whose remaining slots a result the server sent since the write was created shows with the
+  /// write's values: the server holds them (#441).
   case supersededByAcceptedWrite
 
   public var provesServerAcceptance: Bool {
