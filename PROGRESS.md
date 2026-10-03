@@ -1,3 +1,26 @@
+## 2026-10-03 10:31:25 EDT — v1.9.3: a store whose cache holds one live-query result over 8 MiB opens again; main's merge of this commit is the release commit (#436)
+
+- **Owner:** library-79 (`claude-opus-5.5-library-79`, workLog agentId `claude-code/claude-opus-5.5/library-79`), plan
+  `2026-10-02-library-79-hops`, at main's request (P0, 2026-10-03 about 09:40 EDT), under Michael's maintainer
+  authorization: "Publish the library once it's checked fast. Yes."
+- **Defect:** the relation reconciliation the store's open runs when an app's declared relations change read every
+  cached live-query result and threw on one over 8 MiB, so one large cached result failed every launch. Michael's iPad
+  could not open Scribe: its cached transcript of Recording 039 is 8,817,787 bytes. 1.9.1 and 1.9.2 have the same code.
+- **Commits on `agent/claude-opus-5.5/library-79-hops`:** claim `a3ec2b91`; `7d7790fd` the fix (the reconciliation and
+  application-migration passes drop a cached result over the bound with a warning, and its query refetches it);
+  `adfd9624` and `5e1c0222`, test-only follow-ups; ledger `50293afa`; release document `docs/releases/v1.9.3.md`.
+- **Checks:** red on v1.9.2 (both tests throw; the iPad's pulled store fails with the iPad's own error) and green here
+  (the store opens with 35 of 36 cached results and refetches the transcript); high-lane gate holds on `adfd9624` and
+  `5e1c0222`: identity-upgrade 5, focused 182 (3 known; one timing miss, 5 of 5 alone), store 379 (4 known), fast-drain
+  and survival 25 (2 known), #431's iPad checks 3 of 3. The soak follows after the tag, at main's direction.
+- **Evidence:** `/tmp/library-79-hops/hotfix-436/`, `/tmp/library-79-hops/hotfix-436-final/`, copied to
+  `/Users/laptop/Sync/audit/library-79-436-2026-10-03/`; the iPad pull, read only, at
+  `~/scribe-device-pulls/2026-10-03-ipad-live-stamp/`.
+- **Continue:** the soak on v1.9.3 (normal lane); requeue the six paused jobs with their original `HEAVY_QUEUED_AT`
+  places (`/tmp/library-79-hops/requeue-normal.txt`), with job 5a3's and 5b2's arms rebased onto v1.9.3; record the
+  pending ledger lines (`/tmp/library-79-hops/edits/scribe-batch-19-pending.md`). #436's last criterion is the iPad
+  opening Scribe with 1.9.3.
+
 ## 2026-10-03 05:48:20 EDT — v1.9.2: another device's later value of a single-value attribute, and its clear, reach a device that once wrote it; main's merge of this commit is the release commit (#431)
 
 - **Owner:** library-79 (`claude-opus-5.5-library-79`, workLog agentId `claude-code/claude-opus-5.5/library-79`), plan
