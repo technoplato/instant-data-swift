@@ -1,3 +1,6 @@
+## 2026-10-03 18:37:53 EDT — instant-data-swift `e7c6ffb30808235753eb5abe2064fe2d54adaf8d`
+Merge library-79-hops into main for v1.9.5: a local write no longer holds the operation gate while it logs, and outbox listings never wait for it; tagged v1.9.5 (#473).
+
 ## 2026-10-03 18:37:39 EDT — instant-data-swift `3edae737bdacaa98b58787a97ce4a5b753474e04`
 Document the v1.9.5 release: a local write no longer holds the operation gate while it logs, and outbox listings never wait for it (#473).
 
