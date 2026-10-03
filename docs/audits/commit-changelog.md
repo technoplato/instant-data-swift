@@ -1,3 +1,15 @@
+## 2026-10-03 10:16:54 EDT — instant-data-swift `5e1c0222036472746cf5c66577fa93a0ff4d2e18`
+#436 test isolation: each fixture names its own oversized result, so the two parallel tests never capture each other's warning (#436).
+
+## 2026-10-03 10:00:18 EDT — instant-data-swift `adfd9624da0fd25edaf97d258cd33ed158f4696f`
+#436's red test compiles against v1.9.2: it counts decoded results with the existing scan counter, and the unused drop counter is gone (#436).
+
+## 2026-10-03 09:54:59 EDT — instant-data-swift `7d7790fdd54bf79f291dc06f49e44f43fdfffc32`
+#436 (P0): the store opens even when one cached live-query result is over the 8 MiB open-time row bound; the reconciliation and application-migration passes drop it with a warning and its query refetches it (Michael's iPad could not open Scribe; Recording 039's transcript is 8,817,787 bytes) (#436).
+
+## 2026-10-03 09:48:57 EDT — instant-data-swift `a3ec2b91c4e087dd98f55039f71c9edea1f2e83e`
+Claim the files of the #436 hotfix: SQLitePersistenceStore.swift, the new oversized-result tests, and the v1.9.3 release document (#436).
+
 ## 2026-10-03 08:47:37 EDT — scribe `a30e0409b8f4b3bd171191c3608e8d40b8c82cc6`
 Merge ui-polish's #413 pair: the pushed recording and playback screens take the floating bar's room themselves, and the bar's room is logged on change (#413).
 
