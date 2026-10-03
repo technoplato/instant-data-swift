@@ -6,3 +6,4 @@ codex-desktop/019fe994-1250-7b42-825e-9b75836d9173/root/stream_snapshot_buffer 2
 claude-opus-5.5-fast-drain 2026-10-01T02:14:30-04:00 mower plan=2026-10-01-library-77 #303 add-query-transient-errors
 claude-opus-5.5-library-78 2026-10-01T12:48:54-04:00 mower plan=2026-10-01-library-78 #376 #360 #303 #317 #329
 claude-opus-5.5-library-78-streams 2026-10-01T13:16:05-04:00 mower plan=2026-10-01-library-78 #329
+claude-opus-5.5-rooms 2026-10-03T14:03:02-04:00 grower plan=2026-10-03-rooms #461
