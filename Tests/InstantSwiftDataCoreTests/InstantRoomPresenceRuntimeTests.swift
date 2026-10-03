@@ -82,40 +82,38 @@ struct InstantRoomPresenceRuntimeTests {
   /// frames one at a time, each in about 300 ms on a phone; a presence frame must not wait behind them.
   @Test
   func aPresencePatchAppliesWhileAnEarlierFrameIsStillApplying() async throws {
-    await withKnownIssue("room frames queue behind the query applier (#461)") {
-      let room = InstantRoomHandle(type: "recording", id: "room-applier")
-      let applier = RoomTestGate()
-      let session = LiveReactorParitySession(messages: [
-        liveReactorInitOK(attrs: liveReactorTodoServerAttrs, sessionID: "session-self")
-      ])
-      var configuration = try roomConfiguration(appID: "room-presence-applier", transport: session.transport)
-      configuration.onLiveReceiverEventAcquiredForTesting = { await applier.parkIfArmed() }
-      let runtime = try await InstantRuntime.bootstrap(configuration: configuration)
-      try await withRoomCleanup({ await applier.release() }) {
-        _ = try await runtime.connect()
-        _ = try await runtime.joinRoom(room)
-        let presence = try await RoomPresenceRecorder.start(runtime: runtime, room: room)
-        defer { presence.stop() }
-        try await joinAndWaitForPeers(runtime: runtime, session: session, room: room, recorder: presence)
+    let room = InstantRoomHandle(type: "recording", id: "room-applier")
+    let applier = RoomTestGate()
+    let session = LiveReactorParitySession(messages: [
+      liveReactorInitOK(attrs: liveReactorTodoServerAttrs, sessionID: "session-self")
+    ])
+    var configuration = try roomConfiguration(appID: "room-presence-applier", transport: session.transport)
+    configuration.onLiveReceiverEventAcquiredForTesting = { await applier.parkIfArmed() }
+    let runtime = try await InstantRuntime.bootstrap(configuration: configuration)
+    try await withRoomCleanup({ await applier.release() }) {
+      _ = try await runtime.connect()
+      _ = try await runtime.joinRoom(room)
+      let presence = try await RoomPresenceRecorder.start(runtime: runtime, room: room)
+      defer { presence.stop() }
+      try await joinAndWaitForPeers(runtime: runtime, session: session, room: room, recorder: presence)
 
-        await applier.arm()
-        await session.enqueue(roomTestLongFrame)
-        try await waitForRoom("the applier to hold the earlier frame") { await applier.parkedCount == 1 }
-        await session.enqueue(
-          InstantLiveMessage(
-            op: "patch-presence",
-            fields: [
-              "edits": .array([roomPresenceEdit(path: ["session-peer", "data", "status"], operation: "r", value: .string("away"))]),
-              "room-id": .string(room.id),
-            ]
-          )
+      await applier.arm()
+      await session.enqueue(roomTestLongFrame)
+      try await waitForRoom("the applier to hold the earlier frame") { await applier.parkedCount == 1 }
+      await session.enqueue(
+        InstantLiveMessage(
+          op: "patch-presence",
+          fields: [
+            "edits": .array([roomPresenceEdit(path: ["session-peer", "data", "status"], operation: "r", value: .string("away"))]),
+            "room-id": .string(room.id),
+          ]
         )
-        try await waitForRoom("the patch to reach observers while the earlier frame still applies") {
-          await presence.last?.first { $0.userID == "user-peer" }?.values["status"] == .string("away")
-        }
-        await applier.release()
-        _ = try await runtime.closeConnection()
+      )
+      try await waitForRoom("the patch to reach observers while the earlier frame still applies") {
+        await presence.last?.first { $0.userID == "user-peer" }?.values["status"] == .string("away")
       }
+      await applier.release()
+      _ = try await runtime.closeConnection()
     }
   }
 

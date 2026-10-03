@@ -6653,6 +6653,10 @@ public final class InstantRuntime: Sendable {
               )
             },
             onEventAcquired: configuration.onLiveReceiverEventAcquiredForTesting,
+            onRoomEvent: { [weak self] event, room, sessionID in
+              guard let self else { return }
+              await self.handleLiveRoomEvent(event, room: room, sessionID: sessionID)
+            },
             onFailure: { [weak self] error in
               guard let self else { return }
               await self.handleLiveSessionFailure(error)
@@ -7842,15 +7846,6 @@ public final class InstantRuntime: Sendable {
       await resolveParkedRefusalsIfNeeded()
       await startLiveMutationDeliveryIfNeeded()
 
-    case let .refreshPresence(refresh):
-      try await applyLivePresenceRefresh(refresh)
-
-    case let .patchPresence(patch):
-      try await applyLivePresencePatch(patch)
-
-    case let .serverBroadcast(broadcast):
-      try await applyLiveServerBroadcast(broadcast)
-
     case let .streamAppend(append):
       guard let delivery = await liveSession.takeDeliveredStreamAppend(
         clientEventID: append.clientEventID
@@ -8115,6 +8110,40 @@ public final class InstantRuntime: Sendable {
     case .initOK, .joinRoomOK, .leaveRoomOK, .startStreamOK,
       .streamFlushed, .other:
       break
+
+    case .refreshPresence, .patchPresence, .serverBroadcast:
+      // Room frames never reach the applier: the live session hands them to `handleLiveRoomEvent` (#461).
+      break
+    }
+  }
+
+  /// Applies a room frame beside the query applier, in arrival order (#461). A frame that cannot be applied is logged
+  /// and dropped; the next refresh-presence restates the room.
+  private func handleLiveRoomEvent(
+    _ event: InstantLiveServerEvent,
+    room: InstantRoomHandle,
+    sessionID: String?
+  ) async {
+    do {
+      switch event {
+      case let .refreshPresence(refresh):
+        await applyLivePresenceRefresh(refresh, in: room, sessionID: sessionID)
+      case let .patchPresence(patch):
+        try await applyLivePresencePatch(patch, in: room, sessionID: sessionID)
+      case let .serverBroadcast(broadcast):
+        try await applyLiveServerBroadcast(broadcast, in: room)
+      default:
+        break
+      }
+    } catch {
+      InstantDiagnostics.shared.record(
+        error: error,
+        subsystem: "instant-swift-data-core",
+        category: "presence",
+        event: "live-room.frame-failed",
+        message: "Dropped a room frame the runtime could not apply.",
+        metadata: ["op": event.op, "roomType": room.type]
+      )
     }
   }
 
@@ -8349,13 +8378,14 @@ public final class InstantRuntime: Sendable {
   /// A `refresh-presence` replaces the room's peers in memory, in one turn and without SQLite or the operation gate,
   /// as `Reactor.js` `_setPresencePeers` does (#461).
   private func applyLivePresenceRefresh(
-    _ refresh: InstantLivePresenceRefresh
-  ) async throws {
-    guard let room = await liveSession.roomHandle(id: refresh.roomID) else { return }
+    _ refresh: InstantLivePresenceRefresh,
+    in room: InstantRoomHandle,
+    sessionID: String?
+  ) async {
     let summary = await roomPresenceState.replacePeers(
       in: room,
       sessions: refresh.sessions,
-      excludingSessionID: await liveSession.currentSessionID,
+      excludingSessionID: sessionID,
       appID: configuration.appID,
       receivedAt: configuration.now()
     )
@@ -8378,13 +8408,14 @@ public final class InstantRuntime: Sendable {
   /// A `patch-presence` edits the room's peers in memory, in one turn and without SQLite or the operation gate, as
   /// `Reactor.js` `_patchPresencePeers` does (#461).
   private func applyLivePresencePatch(
-    _ patch: InstantLivePresencePatch
+    _ patch: InstantLivePresencePatch,
+    in room: InstantRoomHandle,
+    sessionID: String?
   ) async throws {
-    guard let room = await liveSession.roomHandle(id: patch.roomID) else { return }
     let summary = try await roomPresenceState.patchPeers(
       in: room,
       edits: patch.edits,
-      excludingSessionID: await liveSession.currentSessionID,
+      excludingSessionID: sessionID,
       appID: configuration.appID,
       receivedAt: configuration.now()
     )
@@ -8405,9 +8436,9 @@ public final class InstantRuntime: Sendable {
   }
 
   private func applyLiveServerBroadcast(
-    _ broadcast: InstantLiveServerBroadcast
+    _ broadcast: InstantLiveServerBroadcast,
+    in room: InstantRoomHandle
   ) async throws {
-    guard let room = await liveSession.roomHandle(id: broadcast.roomID) else { return }
     guard !broadcast.topic.isEmpty,
       case let .object(envelope)? = broadcast.envelope,
       let rawPayload = envelope["data"]

@@ -231,6 +231,17 @@ enum InstantStreamWriterCatchUpEnd: Sendable {
   case closing(AsyncThrowingStream<InstantLiveStreamFlushed, Error>)
 }
 
+extension InstantLiveMessage {
+  /// The server frames that belong to a room: join and leave answers, presence, and broadcasts. The receiver applies
+  /// them beside the query applier rather than behind it (#461).
+  static let roomFrameOps: Set<String> = [
+    "join-room-ok", "leave-room-ok", "join-room-error", "refresh-presence", "patch-presence", "server-broadcast",
+    "set-presence-ok", "client-broadcast-ok",
+  ]
+
+  var isRoomFrame: Bool { Self.roomFrameOps.contains(op) }
+}
+
 package actor InstantRuntimeLiveSession {
   private struct RegisteredQuery: Sendable {
     var query: InstantLiveJSONValue
@@ -827,6 +838,11 @@ package actor InstantRuntimeLiveSession {
       String?
     ) async throws -> Void,
     onEventAcquired: (@Sendable () async -> Void)? = nil,
+    onRoomEvent: @escaping @Sendable (
+      InstantLiveServerEvent,
+      InstantRoomHandle,
+      String?
+    ) async -> Void = { _, _, _ in },
     onFailure: @escaping @Sendable (Error) async -> Void
   ) async throws {
     guard receiverTaskOwner.isIdle else { return }
@@ -864,14 +880,38 @@ package actor InstantRuntimeLiveSession {
     // receiver has a reader, which keeps a `receive()` outstanding, and one applier, which applies the frames one at
     // a time in arrival order with the checks the single receive loop had (#296). Both belong to this generation's
     // task: replacement and close cancel and wait for both, and the buffer dies with them.
+    //
+    // Room frames (presence, broadcasts, join and leave answers) skip the applier's queue: the reader hands them to a
+    // third task that applies them in arrival order, so a presence patch never waits behind a query apply, as
+    // `Reactor.js` handles every frame in `_handleReceive` as it arrives (#461). The reader still awaits nothing but
+    // `receive()`.
     let frames = InstantLiveReceivedFrames(capacity: Self.maximumBufferedReceivedFrames)
     receivedFrames = frames
+    let (roomFrames, roomFrameInbox) = AsyncStream.makeStream(
+      of: InstantLiveMessage.self,
+      bufferingPolicy: .unbounded
+    )
     _ = receiverTaskOwner.start { [weak self] in
       await withTaskGroup(of: Void.self) { group in
+        group.addTask { [weak self] in
+          for await message in roomFrames {
+            guard !Task.isCancelled else { return }
+            await self?.applyRoomFrame(
+              message,
+              generation: generation,
+              session: session,
+              onRoomEvent: onRoomEvent
+            )
+          }
+        }
         group.addTask {
           do {
             while !Task.isCancelled {
               let message = try await session.receive()
+              if message.isRoomFrame {
+                roomFrameInbox.yield(message)
+                continue
+              }
               guard await frames.append(message) else { return }
             }
           } catch {
@@ -936,6 +976,7 @@ package actor InstantRuntimeLiveSession {
         // The reader stops with the applier. Every path that stops the applier has already closed or aborted this
         // socket, or is about to; aborting it here as well guarantees the reader's outstanding `receive()` returns.
         frames.close()
+        roomFrameInbox.finish()
         session.abort()
         group.cancelAll()
       }
@@ -1750,10 +1791,6 @@ package actor InstantRuntimeLiveSession {
     )
   }
 
-  func roomHandle(id: String) -> InstantRoomHandle? {
-    registeredRooms.keys.first { $0.id == id }
-  }
-
   private func record(
     _ event: InstantLiveServerEvent,
     generation: Int,
@@ -1828,16 +1865,6 @@ package actor InstantRuntimeLiveSession {
       // The runtime restarts the writer on this socket (`markStreamWriterBehind`); the socket stays open, as
       // upstream `Stream.ts` `onAppendFailed` restarts only the write stream (library-78).
       break
-    case let .joinRoomOK(room):
-      try await recordRoomEvent(op: room.op, roomID: room.roomID)
-    case let .leaveRoomOK(room):
-      try await recordRoomEvent(op: room.op, roomID: room.roomID)
-    case let .refreshPresence(refresh):
-      try await recordRoomEvent(op: "refresh-presence", roomID: refresh.roomID)
-    case let .patchPresence(patch):
-      try await recordRoomEvent(op: "patch-presence", roomID: patch.roomID)
-    case let .serverBroadcast(broadcast):
-      try await recordRoomEvent(op: "server-broadcast", roomID: broadcast.roomID)
     case let .streamAppend(append):
       for key in registeredStreamReaders.keys.sorted() {
         guard let registration = registeredStreamReaders[key] else { continue }
@@ -2249,6 +2276,53 @@ package actor InstantRuntimeLiveSession {
   /// for the next frame as soon as it buffers one, so a new `receive()` no longer proves a frame was applied (#296).
   func applierIsWaitingForAFrameForTesting() -> Bool {
     receivedFrames?.applierIsWaitingForTesting == true
+  }
+
+  /// Applies one room frame the reader handed over, in arrival order and beside the query applier (#461): the room's
+  /// connection state and the presence and broadcasts it flushes on `join-room-ok`, then the runtime's presence or
+  /// broadcast state. A send that fails here aborts the socket, and the applier ends the generation as for any other
+  /// failed send.
+  private func applyRoomFrame(
+    _ message: InstantLiveMessage,
+    generation: Int,
+    session: InstantLiveWebSocketSession,
+    onRoomEvent: @Sendable (InstantLiveServerEvent, InstantRoomHandle, String?) async -> Void
+  ) async {
+    guard canDeliverReceiverEvent(generation: generation, session: session) else { return }
+    let event = InstantLiveServerEvent(message: message)
+    let roomID: String
+    switch event {
+    case let .joinRoomOK(room), let .leaveRoomOK(room):
+      roomID = room.roomID
+    case let .refreshPresence(refresh):
+      roomID = refresh.roomID
+    case let .patchPresence(patch):
+      roomID = patch.roomID
+    case let .serverBroadcast(broadcast):
+      roomID = broadcast.roomID
+    default:
+      // set-presence-ok, client-broadcast-ok, and the legacy join-room-error carry nothing to apply.
+      return
+    }
+    do {
+      try await recordRoomEvent(op: event.op, roomID: roomID)
+    } catch {
+      InstantDiagnostics.shared.record(
+        error: error,
+        subsystem: "instant-swift-data-core",
+        category: "presence",
+        event: "live-room.flush-failed",
+        message: "A room frame's flush of presence or broadcasts failed; the connection reconnects.",
+        metadata: ["op": event.op]
+      )
+      return
+    }
+    guard canDeliverReceiverEvent(generation: generation, session: session),
+      let room = registeredRooms.keys.first(where: { $0.id == roomID })
+    else {
+      return
+    }
+    await onRoomEvent(event, room, sessionID)
   }
 
   private func recordRoomEvent(op: String, roomID: String) async throws {
