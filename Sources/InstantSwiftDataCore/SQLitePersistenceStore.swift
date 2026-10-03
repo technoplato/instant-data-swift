@@ -864,6 +864,8 @@ public actor SQLitePersistenceStore {
   private var didTraceInitialStateLoad = false
   private var cacheResidencyMetrics = InstantPersistenceCacheResidencyMetrics()
   private var statementCacheMetrics = SQLiteStatementCacheMetrics()
+  /// Outbox mutations this actor encoded itself; a runtime-prepared local write arrives encoded (#403).
+  private var encodedOutboxMutationCount = 0
   /// The migrations `bootstrap()` found applied when it started; `nil` outside bootstrap.
   private var appliedMigrationNamesAtBootstrap: Set<String>?
   /// Write transactions `migrate(name:body:)` opened to check or apply a migration, for tests (#403).
@@ -3544,6 +3546,11 @@ public actor SQLitePersistenceStore {
   /// Write transactions bootstrap opened to check or apply a migration since the store opened (#403).
   package func migrationTransactionCountForTesting() -> Int {
     migrationTransactionCount
+  }
+
+  /// Outbox mutations this store encoded itself since it opened (#403).
+  package func encodedOutboxMutationCountForTesting() -> Int {
+    encodedOutboxMutationCount
   }
 
   /// The statement cache's counters since the store opened (#403).
@@ -11470,7 +11477,36 @@ public actor SQLitePersistenceStore {
     expectedAttributeRevision: Int64,
     expectedOutboxRevision: Int64
   ) throws -> Bool {
-    guard try pendingMutation.optimisticEffectReceiptFingerprint() != nil else {
+    encodedOutboxMutationCount += 1
+    return try saveLocalMutation(
+      changedEntityTriples: changedEntityTriples,
+      changedFactScope: changedFactScope,
+      outbox: outbox,
+      encodedPendingMutation: InstantEncodedOutboxMutation(pendingMutation),
+      supersedingImmediateTail: supersedingImmediateTail,
+      metadataEntries: metadataEntries,
+      deletingMetadataKeys: deletingMetadataKeys,
+      expectedStoreRevision: expectedStoreRevision,
+      expectedAttributeRevision: expectedAttributeRevision,
+      expectedOutboxRevision: expectedOutboxRevision
+    )
+  }
+
+  /// `saveLocalMutation` for a mutation admission already encoded, so the save encodes nothing again (#403).
+  func saveLocalMutation(
+    changedEntityTriples: [String: [InstantTriple]],
+    changedFactScope: InstantFactScope = InstantFactScope(),
+    outbox: [PendingMutation]? = nil,
+    encodedPendingMutation: InstantEncodedOutboxMutation,
+    supersedingImmediateTail: PendingMutation? = nil,
+    metadataEntries: [InstantPersistenceMetadataEntry] = [],
+    deletingMetadataKeys: [String] = [],
+    expectedStoreRevision: Int64,
+    expectedAttributeRevision: Int64,
+    expectedOutboxRevision: Int64
+  ) throws -> Bool {
+    let pendingMutation = encodedPendingMutation.mutation
+    guard encodedPendingMutation.receiptFingerprint != nil else {
       throw persistenceError(
         operation: "persist local mutation",
         message:
@@ -11539,7 +11575,7 @@ public actor SQLitePersistenceStore {
         )
       }
       try saveOutboxMutationWithoutTransaction(
-        pendingMutation,
+        encodedPendingMutation,
         lifecycleID: supersessionLifecycleID,
         advancingFromMutationID: supersedingImmediateTail?.id,
         receiptWriteAuthority: .runtimePrepared
@@ -15456,8 +15492,26 @@ public actor SQLitePersistenceStore {
     failureAttributeRevision: Int64? = nil,
     receiptWriteAuthority: InstantOptimisticEffectReceiptWriteAuthority
   ) throws {
-    let candidateFingerprint = try mutation.optimisticEffectReceiptFingerprint()
-    let candidateWireFingerprint = try mutation.mutationWireIntentFingerprint()
+    encodedOutboxMutationCount += 1
+    try saveOutboxMutationWithoutTransaction(
+      InstantEncodedOutboxMutation(mutation),
+      lifecycleID: requestedLifecycleID,
+      advancingFromMutationID: advancingFromMutationID,
+      failureAttributeRevision: failureAttributeRevision,
+      receiptWriteAuthority: receiptWriteAuthority
+    )
+  }
+
+  private func saveOutboxMutationWithoutTransaction(
+    _ encodedMutation: InstantEncodedOutboxMutation,
+    lifecycleID requestedLifecycleID: String? = nil,
+    advancingFromMutationID: String? = nil,
+    failureAttributeRevision: Int64? = nil,
+    receiptWriteAuthority: InstantOptimisticEffectReceiptWriteAuthority
+  ) throws {
+    let mutation = encodedMutation.mutation
+    let candidateFingerprint = encodedMutation.receiptFingerprint
+    let candidateWireFingerprint = encodedMutation.wireFingerprint
     let durableMutation = mutation
     var statement: OpaquePointer?
     try prepare(
@@ -15570,7 +15624,7 @@ public actor SQLitePersistenceStore {
       for: durableMutation,
       hasServerAcceptance: acceptanceFingerprint != nil
     )
-    let encodedBody = try encode(durableMutation)
+    let encodedBody = encodedMutation.body
     let effectFootprint = receiptFingerprint == nil
       ? nil
       : InstantOptimisticEffectFootprint.normalized(for: durableMutation)
@@ -15636,9 +15690,9 @@ public actor SQLitePersistenceStore {
         .int(durableMutation.createdAt.milliseconds),
         .text(deliveryState.rawValue),
         .int(Int64(InstantOutboxDeliveryMetadata.currentVersion)),
-        .int(Int64(InstantOutboxDeliveryMetadata.stepCount(in: durableMutation))),
+        .int(Int64(encodedMutation.stepCount)),
         .int(Int64(encodedBody.utf8.count)),
-        .text(try encode(durableMutation.compactedForMemory)),
+        .text(encodedMutation.lifecycleBody),
         durableMutation.failureMessage.map(SQLiteBinding.text) ?? .null,
         failureAttributeRevision.map(SQLiteBinding.int) ?? .null,
         .int(acceptanceFingerprint == nil ? 0 : 1),
