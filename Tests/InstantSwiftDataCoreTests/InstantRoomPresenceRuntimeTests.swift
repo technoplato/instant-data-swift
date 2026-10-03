@@ -123,36 +123,34 @@ struct InstantRoomPresenceRuntimeTests {
   /// restates what an observer already has, and a `set-presence-ok`, must not wake it.
   @Test
   func aPresenceFrameThatChangesNothingDoesNotEmit() async throws {
-    await withKnownIssue("every presence frame emits, even an unchanged one (#461)") {
-      let room = InstantRoomHandle(type: "recording", id: "room-unchanged")
-      let session = LiveReactorParitySession(messages: [
-        liveReactorInitOK(attrs: liveReactorTodoServerAttrs, sessionID: "session-self")
-      ])
-      let runtime = try await InstantRuntime.bootstrap(
-        configuration: try roomConfiguration(appID: "room-presence-unchanged", transport: session.transport)
-      )
-      _ = try await runtime.connect()
-      _ = try await runtime.joinRoom(room)
-      let presence = try await RoomPresenceRecorder.start(runtime: runtime, room: room)
-      defer { presence.stop() }
-      try await joinAndWaitForPeers(runtime: runtime, session: session, room: room, recorder: presence)
-      let emissionsBefore = await presence.count
+    let room = InstantRoomHandle(type: "recording", id: "room-unchanged")
+    let session = LiveReactorParitySession(messages: [
+      liveReactorInitOK(attrs: liveReactorTodoServerAttrs, sessionID: "session-self")
+    ])
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: try roomConfiguration(appID: "room-presence-unchanged", transport: session.transport)
+    )
+    _ = try await runtime.connect()
+    _ = try await runtime.joinRoom(room)
+    let presence = try await RoomPresenceRecorder.start(runtime: runtime, room: room)
+    defer { presence.stop() }
+    try await joinAndWaitForPeers(runtime: runtime, session: session, room: room, recorder: presence)
+    let emissionsBefore = await presence.count
 
-      await session.enqueue(roomPeersRefresh(room: room, status: "online"))
-      await session.enqueue(InstantLiveMessage(op: "set-presence-ok", fields: ["room-id": .string(room.id)]))
-      try await Task.sleep(nanoseconds: 300_000_000)
-      let emissionsAfterRestatement = await presence.count
-      expectNoDifference(
-        emissionsAfterRestatement, emissionsBefore,
-        "A refresh-presence that restated the room and a set-presence-ok emitted again."
-      )
+    await session.enqueue(roomPeersRefresh(room: room, status: "online"))
+    await session.enqueue(InstantLiveMessage(op: "set-presence-ok", fields: ["room-id": .string(room.id)]))
+    try await Task.sleep(nanoseconds: 300_000_000)
+    let emissionsAfterRestatement = await presence.count
+    expectNoDifference(
+      emissionsAfterRestatement, emissionsBefore,
+      "A refresh-presence that restated the room and a set-presence-ok emitted again."
+    )
 
-      await session.enqueue(roomPeersRefresh(room: room, status: "away"))
-      try await waitForRoom("a real change to emit") {
-        await presence.last?.first { $0.userID == "user-peer" }?.values["status"] == .string("away")
-      }
-      _ = try await runtime.closeConnection()
+    await session.enqueue(roomPeersRefresh(room: room, status: "away"))
+    try await waitForRoom("a real change to emit") {
+      await presence.last?.first { $0.userID == "user-peer" }?.values["status"] == .string("away")
     }
+    _ = try await runtime.closeConnection()
   }
 
   /// `Reactor.js` drops a room's presence only in `_cleanupRoom`, when its last subscriber leaves. One holder's

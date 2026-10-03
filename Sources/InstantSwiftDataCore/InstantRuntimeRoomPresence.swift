@@ -39,6 +39,9 @@ actor InstantRuntimeRoomPresence {
 
   private var rooms: [InstantRoomHandle: RoomState] = [:]
   private var observers: [UUID: Observer] = [:]
+  /// What each room's observers last received, so a change that leaves the members as they were wakes nobody, as
+  /// `Reactor.js` skips a handler whose slice did not change (`hasPresenceResponseChanged`, presence.ts).
+  private var published: [InstantRoomHandle: [InstantRoomPresenceMember]] = [:]
   /// Counts this runtime's publications and withdrawals across every room and never restarts, so the live session can
   /// refuse a send older than one it already made.
   private var sequence: UInt64 = 0
@@ -194,10 +197,14 @@ actor InstantRuntimeRoomPresence {
   private func store(_ state: RoomState, in room: InstantRoomHandle, appID: String) -> FrameSummary {
     rooms[room] = state.isEmpty ? nil : state
     let members = Self.members(of: state, in: room, appID: appID)
+    let changed = published[room, default: []] != members
+    published[room] = members.isEmpty ? nil : members
     var observerCount = 0
     for observer in observers.values where observer.room == room {
       observerCount += 1
-      observer.continuation.yield(members)
+      if changed {
+        observer.continuation.yield(members)
+      }
     }
     return FrameSummary(
       peerCount: members.count - state.local.count,
