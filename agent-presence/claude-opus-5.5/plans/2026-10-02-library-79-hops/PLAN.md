@@ -80,3 +80,10 @@ first refresh that restates a shadowed slot. Published as v1.9.2 under the same 
 new `docs/releases/v1.9.2.md`, added 2026-10-03 01:11 EDT. The speed cuts on
 `agent/claude-opus-5.5/library-79-next3` wait and will be measured on the fixed code.
 
+Main, 01:12 EDT: cover slots the server cleared too ("Match Reactor.js here: on a full refresh, a local fact that
+isn't pending and that the server doesn't return goes away."), next to the overwritten one, and check the fix against
+the pulled iPad store. A cleared slot loses a value no other stored result owns, and only a pending write of a slot (or
+of the entity, for a link) protects a retraction, never a write pruned in the same apply. Touching
+`Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` for #431 and new
+`Tests/InstantSwiftDataCoreTests/InstantLocalStampShadowsDeviceStoreTests.swift` (skipped unless
+`INSTANT_431_DEVICE_STORE` names a pulled store), added 2026-10-03 01:40 EDT.
