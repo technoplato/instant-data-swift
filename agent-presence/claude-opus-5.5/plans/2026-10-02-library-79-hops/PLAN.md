@@ -112,3 +112,10 @@ was created; one refused before such a result waits briefly for it. Published as
 `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift`, `InstantRuntime.swift`, `BoundedOutboxDelivery.swift`,
 `InstantModels.swift` (a doc comment), new `Tests/InstantSwiftDataCoreTests/InstantRefusalHeldByServerTests.swift`, and
 new `docs/releases/v1.9.4.md`, added 2026-10-03 12:03 EDT.
+
+Main added #445 to v1.9.4 at about 12:35 EDT: the superseded rule as read-only public API for Scribe's Sync view
+(launch-recovery's "Clear Superseded Refusals"), shape agreed with launch-recovery:
+`InstantSwiftDataClient.supersession(ofFailedMutation:)` and `failedMutationSupersessions()`, returning
+`InstantMutationSupersession` with an `InstantSlotCoverage` per write operation. Also touching
+`Sources/InstantSwiftData/InstantSwiftData.swift` (the two client methods), `InstantModels.swift` (the new public types),
+and new `Tests/InstantSwiftDataCoreTests/InstantFailedMutationSupersessionTests.swift`, added 2026-10-03 13:00 EDT.
