@@ -10,6 +10,19 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## October 3rd, 2026 at 7:00:48 p.m. EDT — `27770ee90435` Keep the room tests' checks steady on a loaded Mac: the topic run compares median batches, and waits get 5 s (#461)
+
+- **Implementation commit:** `27770ee904352ed38c29021135755ef7cd32f4c8`
+- **Change:** The room tests' checks hold on a loaded Mac: the 10,000-message topic run compares median 100-message batches, and four waits that only detect a missing event get the codebase's 5 s (#461).
+- **Details:**
+  - A single stall of the test process (heavy.sh demotes a job to background QoS under saturation) could fail the old first-1,000 versus last-1,000 total; a per-message cost that grows with the messages before it still fails the median check.
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantRoomPresenceRuntimeTests.swift` — the topic run's batch medians and the 5 s waits
+- **User context (verbatim):**
+  > That sounds good to me for the, uh, rooms plan, so go ahead and knock that out with a subagent.
+  > Good plan. And let's get feature parody and performance parody with Swift and typescript, please.
+- **SpecStory:** unavailable — Claude Code agent session (rooms subagent under main); no SpecStory capture configured for this session.
+
 ## October 3rd, 2026 at 6:52:34 p.m. EDT — `06216ad5330a` Document rooms parity with Reactor.js: ADR 0019, the README's rooms rules, and the PROGRESS checkpoint (#461)
 
 - **Implementation commit:** `06216ad5330a5ccb397c02f5668e60a71544a1ee`

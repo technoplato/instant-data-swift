@@ -1,3 +1,6 @@
+## 2026-10-03 19:00:23 EDT — instant-data-swift `27770ee904352ed38c29021135755ef7cd32f4c8`
+Keep the room tests' checks steady on a loaded Mac: the topic run compares median batches, and waits get 5 s (#461)
+
 ## 2026-10-03 18:51:53 EDT — instant-data-swift `06216ad5330a5ccb397c02f5668e60a71544a1ee`
 Document rooms parity with Reactor.js: ADR 0019, the README's rooms rules, and the PROGRESS checkpoint (#461)
 
