@@ -1,8 +1,17 @@
+## 2026-10-03 13:44:20 EDT — scribe `d9c8f657aa1b86a795e1a727c0dca362515f100b`
+Plan resume-cut-off: Record continues a recording that was cut off, Resume is a normal action, and no recording stays stamped live (#458)
+
 ## 2026-10-03 13:39:27 EDT — instant-data-swift `4da6f182240ea1a09e29df04eac059416980037f`
 Merge library-79-hops into main for v1.9.4: a refused re-send the server's results vouch for resolves as accepted (#441), and a failed mutation's supersession is read-only API (#445); tagged v1.9.4 (#441 #445).
 
 ## 2026-10-03 13:37:46 EDT — instant-data-swift `0bc6ddc4127e0742eee732df18b0b45da69de775`
 Document the v1.9.4 release and its gate in docs/releases/v1.9.4.md and PROGRESS.md (#441 #445).
+
+## 2026-10-03 13:36:24 EDT — scribe `65ee2483a1426cb65a32215561ad6a0e057372cc`
+Record live-stamp-82 in PROGRESS: the heartbeat tail, the #432 sweep, the list-position rules, #441's Scribe side, and the verification (#408 #432 #441)
+
+## 2026-10-03 13:35:51 EDT — scribe `80a795e54e6a4b450c41a371196c80940a666cfc`
+Record live-stamp-82's commits in the change log: the follow-along heartbeat, the #432 sweep, the list-position rules, and #441's Scribe side (#408 #432 #441)
 
 ## 2026-10-03 12:48:47 EDT — instant-data-swift `45a462908c27876ba2e31096c44f2cf39a48f214`
 #445: whether a failed mutation is superseded, slot by slot, as read-only public API for Scribe's Sync view (InstantSwiftDataClient.supersession(ofFailedMutation:) and failedMutationSupersessions()), by the #441 guard's rule (#445).
@@ -31,6 +40,15 @@ Never cancel a voice-actions model call in flight; drop a late answer instead (#
 ## 2026-10-03 12:16:27 EDT — scribe `9e2d83273ddb3aa7bfcf585b0be6a267ccf5e245`
 P0: one gate keeps every Scribe caller off FoundationModels on version 27 (#442)
 
+## 2026-10-03 12:11:23 EDT — scribe `dc2aec188b98e77d60579e3284d75b0c36881497`
+The final segment's recording summary leaves updatedAtMs to the heartbeat, so a re-sent one passes the rule (#441)
+
+## 2026-10-03 12:11:10 EDT — scribe `0033c56b92b814fa9171667ddb8a4d7007445392`
+Red test: a final segment's recording summary leaves updatedAtMs to the heartbeat; Stop still stamps it (#441)
+
+## 2026-10-03 12:10:30 EDT — scribe `f5b6c794c917ddafefa483eb041cdc70ac19d58a`
+Amend plan live-stamp-82 (d): the final segment's recording summary leaves updatedAtMs to the heartbeat, and claim its tests (#441)
+
 ## 2026-10-03 12:08:34 EDT — scribe `e27b34ab1212f5793df5d6edccee6860eda0e219`
 P0: never ask Apple's models on version 27, where FoundationModels crashes the app (#442)
 
@@ -43,8 +61,17 @@ Capture-time writes leave updatedAtMs to the heartbeat, so a re-sent one passes 
 ## 2026-10-03 12:07:15 EDT — scribe `2c60e8c3a706f3dd3326b81f23f2bdf5521e1f21`
 Claim capture-gaps-row's write test and ADR 0018 for live-stamp-82 (d) (#441)
 
+## 2026-10-03 12:05:11 EDT — scribe `2338bbd15e7a8369c089e3ec2a19f6170ff35ded`
+Red test: capture-time writes leave updatedAtMs to the heartbeat, so a re-sent one passes the server's rule (#441)
+
+## 2026-10-03 12:04:26 EDT — scribe `f8781e6f384cd0cb0d5d935488112d3cab4359a0`
+Amend plan live-stamp-82 (d): capture-time writes leave updatedAtMs to the heartbeat, so a re-sent one is never refused (#441)
+
 ## 2026-10-03 12:03:55 EDT — instant-data-swift `d8208b334737129c87f91f4a646c9794471309b0`
 Claim the files of the #441 fix: a re-sent write the server already holds is shown as refused (#441).
+
+## 2026-10-03 12:01:36 EDT — scribe `c06aff08aa76bf10ef7cd9206f03aca2cc034339`
+Merge origin/main into live-stamp-82: builds 81 to 83, capture-gaps-row, ui-polish, the 1.9.3 pin and list-edit-mode's schema (#432 #408)
 
 ## 2026-10-03 11:32:20 EDT — scribe `1e95b90c8548524810478ca22029cea44bee0fc7`
 Merge main's SoundAnalysis plan and claims after the 0.1 (83) release commit (#440).
@@ -114,6 +141,9 @@ Claim the files of the #436 hotfix: SQLitePersistenceStore.swift, the new oversi
 
 ## 2026-10-03 09:45:59 EDT — scribe `412556037751aaf19aced7886aa924a2f6b3f61c`
 Plan playback-links: playback during a recording plays on the loudspeaker, and playing another recording links the two (ADR 0040, #122 #435).
+
+## 2026-10-03 09:37:37 EDT — scribe `99dc31d853df7d33aefc151965986a610304512d`
+Give the list-position tests their own inserted-triple helper: the other test files keep theirs fileprivate (#432)
 
 ## 2026-10-03 09:34:30 EDT — scribe `683efc6af7a0dce71e5f65f7b21e3cbcac1e3105`
 Release Scribe 0.1 (82).
