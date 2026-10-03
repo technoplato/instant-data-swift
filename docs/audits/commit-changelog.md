@@ -1,3 +1,15 @@
+## 2026-10-03 08:12:18 EDT — scribe `a14d9f64d50c64c2ffc77c1bea603bc5e7f0a92b`
+Record the instant-data-swift 1.9.2 pin and its Package.resolved in the change log (#431).
+
+## 2026-10-03 08:11:48 EDT — scribe `6edc47beb23d11cc145542a1307c458d0327c468`
+Resolve Package.resolved to instant-data-swift 1.9.2 (a6d7929d) with a plain swift package resolve (#431).
+
+## 2026-10-03 06:18:01 EDT — scribe `efbf090ca2d3708c90a03b8ce23673ceae32ba9e`
+Pin instant-data-swift exactly 1.9.2 instead of 1.9.1: the cross-device last-write-wins fix (#431).
+
+## 2026-10-03 06:17:00 EDT — scribe `b8e6b286d4e0d84e8aab91056e2fb497aca6cf6c`
+Merge ui-polish: Recording 039's UI batch, from the newest line under the bar to the blank full screen (#412 #413 #414 #415 #416 #417 #418 #419).
+
 ## 2026-10-03 05:49:22 EDT — instant-data-swift `a6d7929da28d035957aff31b151f0274f277f2bf`
 v1.9.2 on main: merge library-79-hops (2df30b0d) without fast-forward over 1d6aa1e1; the annotated tag v1.9.2 points here and gh release v1.9.2 is Latest (https://github.com/technoplato/instant-data-swift/releases/tag/v1.9.2); code equals the gated 995d530e (#431).
 
