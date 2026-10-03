@@ -1,3 +1,29 @@
+## 2026-10-03 18:51:28 EDT — rooms parity (#461) on `agent/claude-opus-5.5/rooms`, rebased onto v1.9.5: one peer per session, presence and topics in memory off the operation gate, room frames beside the query applier; the gate and the bench are queued
+
+- **Owner:** rooms (`claude-opus-5.5-rooms`, workLog agentId `claude-code/claude-opus-5.5/rooms`), plan
+  `2026-10-03-rooms`, on Michael's go-ahead through main: Recording 186 #32-33, "That sounds good to me for the, uh,
+  rooms plan, so go ahead and knock that out with a subagent." and #34-35, "Good plan. And let's get feature parody
+  and performance parody with Swift and typescript, please." Library-79 cuts the release that carries it.
+- **Defect (the study, `/Users/laptop/Sync/audit/instant-rooms-2026-10-03/report.md`):** members keyed by user id, so
+  one user's sessions merged; presence publishes held the operation gate and touched SQLite; presence frames queued
+  behind query applies; every frame emitted; topics were stored forever and observers missed messages; leaveRoom wiped
+  shared state and leavePresence was local only.
+- **Commits on `agent/claude-opus-5.5/rooms` (base v1.9.5 `e7c6ffb3`):** claims `0b2dd60c` and `2e513f1c`; red tests
+  `53df7ab1`, `186d2f74`; `b6b27666` session peers; `455a40ce` presence in memory off the gate; `a17a9cb5` change-only
+  emission; `55339967` room frames beside the applier; `5b2888f7` leave semantics; `68a99b2a` topics in memory, once
+  each; `f997440c` forget on a failed final leave; `4d83580d` selection; `52b99c19` client selection; `e452bfa8` and
+  `e31eadc7` isRoomJoined; test-only `fb8744bb`, `0bec8c35`. ADR 0019 and the README's rooms rules in this commit.
+- **Checks so far (compiler only, no test run yet):** every changed source and test file typechecks and lowers to SIL
+  (`swiftc -frontend -typecheck` and `-emit-sil` against emitted modules) on the rebased tree.
+- **Queued:** `rooms-red-green` (normal lane; red on `186d2f74`, then green on the branch head: the room suites,
+  the CLI and recipe room tests, fast-drain, connection survival, live transport); `room-bench-builds` and
+  `room-bench-rounds` (low lane, the rounds exclusive, main's Docker conditions in `scripts/round.sh`).
+- **Continue:** when the runs finish, put the P1-P4 table, the presence-replay CPU and the server spans in ADR 0019 and
+  #461, copy `/tmp/rooms-agent/runs/red-green/` to `/Users/laptop/Sync/audit/room-bench-2026-10-03/gate/`, and hand the
+  head to library-79 (1.9.6 or 1.9.7); its release gate should include the live-recording simulator soak, since the
+  receive loop changed. Scribe #462 follows plan `0834b4b6` on Scribe main. Open: a room error state; the typed
+  `InstantRoom.isJoined` still turns true when the join is sent; `observeRoomTopicEvents` is on the runtime only.
+
 ## 2026-10-03 18:37:38 EDT — v1.9.5: a local write no longer holds the operation gate while it logs, and outbox listings never wait for the gate; main's merge of this commit is the release commit (#473)
 
 - **Owner:** library-79 (`claude-opus-5.5-library-79`, workLog agentId `claude-code/claude-opus-5.5/library-79`), plan

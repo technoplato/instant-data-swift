@@ -354,6 +354,21 @@ struct SharedBoardView: View {
 }
 ```
 
+Rooms behave as they do in the TypeScript SDK (`Reactor.js`; ADR 0019):
+
+- **Each session is its own peer.** Two devices or agents signed in as one user are two `InstantRoomPresenceMember`s,
+  told apart by `peerID`; `isLocal` marks this device's own presence.
+- **Nothing is stored and nothing waits.** With a live connection, presence and topic messages live in memory only.
+  Publishing never waits behind a local write or a server apply, and presence frames apply beside query results, not
+  behind them.
+- **Observers wake only on change.** `observeRoomPresence(room:selection:)` picks keys, peers, and this device's own
+  presence, and emits only when that part changed. `isRoomJoined(_:)` says whether the server has confirmed the join on
+  the current connection; until then, an empty presence says nothing.
+- **Topics deliver every message once.** `InstantRuntime.observeRoomTopicEvents(room:topic:)` delivers each message
+  once, in order; `observeRoomTopicMessages(room:topic:)` gives the most recent 128.
+- **Leaving is explicit.** `leavePresence` clears this device's presence for its peers; only the last holder's
+  `leaveRoom` leaves the room.
+
 ### Authentication & User Management
 
 Instant Swift Data includes full auth workflow support, including Guest sign-in and Email Magic Code authentication:
