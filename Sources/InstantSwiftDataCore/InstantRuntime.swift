@@ -9776,8 +9776,17 @@ public final class InstantRuntime: Sendable {
   public func leaveRoom(_ room: InstantRoomHandle = .default) async throws -> InstantRoomHandle {
     let room = try validatedRoom(room, operation: "leave room")
     if configuration.liveTransport != nil {
-      // Another holder of the room still sees its presence until the last one leaves (#461).
-      if try await liveSession.leaveRoom(room, clientEventID: configuration.makeID()) {
+      // Another holder of the room still sees its presence until the last one leaves (#461). Only the last holder's
+      // leave sends anything, so a failed send still left the room on this device.
+      let left: Bool
+      do {
+        left = try await liveSession.leaveRoom(room, clientEventID: configuration.makeID())
+      } catch {
+        await roomPresenceState.forget(room, appID: configuration.appID)
+        await roomTopicsState.forget(room)
+        throw error
+      }
+      if left {
         await roomPresenceState.forget(room, appID: configuration.appID)
         await roomTopicsState.forget(room)
       }
