@@ -239,18 +239,25 @@ struct InstantLocalStampShadowsServerTests {
     }
   }
 
-  /// The newest result's word on a slot wins over a result stored earlier: with no write of this device involved,
-  /// the iPhone's Stop clears `active`, and only the list refreshes. The timeline, not refreshed (its query no longer
-  /// subscribed, say), still lists `active`, which 1.9.1 kept in the store for it.
+  /// The newest result's word on a slot wins over results stored earlier: with no write of this device involved, a
+  /// query that selects `activityKind` holds the iPhone's `active`, then the iPhone's Stop clears it and only that
+  /// query refreshes. The timeline and the list, not refreshed (their queries no longer subscribed, say), still list
+  /// `active`, which kept it in the store before.
   @Test
-  func aClearWinsOverAResultStoredBeforeIt() async throws {
+  func aClearWinsOverResultsStoredBeforeIt() async throws {
     var observations: [FastDrainObservation] = []
     for reduces in [true, false] {
       var fixture = try await Self.recordingTheOtherDeviceStampedActive(suffix: "cleared-stale", reduces: reduces)
+      let fields = ["activityKind", "title", "updatedAtMs"]
+      try await Self.refreshTheRecording(
+        &fixture,
+        selecting: fields,
+        processedTransactionID: String(fixture.server.lastTransactionNumber)
+      )
       let stop = fixture.server.acceptForeignRetraction(
         entityID: FastDrainSchema.recordingID, attributeID: "recordings/activityKind"
       )
-      _ = try await fixture.refresh(queries: [.list], processedTransactionID: stop)
+      try await Self.refreshTheRecording(&fixture, selecting: fields, processedTransactionID: stop)
       observations.append(try await FastDrainObservation.observe(fixture.runtime))
     }
     for observation in observations {
@@ -259,6 +266,23 @@ struct InstantLocalStampShadowsServerTests {
       }
     }
     expectNoDifference(observations[0].hotFacts, observations[1].hotFacts)
+  }
+
+  /// A key this store cannot read for its selection keeps the old rule: a cleared slot's value stays while another
+  /// stored result lists it. The fixture's own query keys are such keys; the timeline, not refreshed, lists `active`.
+  @Test
+  func aKeyThatDoesNotVouchForItsSelectionKeepsAValueAnotherResultHolds() async throws {
+    for reduces in [true, false] {
+      var fixture = try await Self.recordingTheOtherDeviceStampedActive(suffix: "cleared-unvouched", reduces: reduces)
+      let stop = fixture.server.acceptForeignRetraction(
+        entityID: FastDrainSchema.recordingID, attributeID: "recordings/activityKind"
+      )
+      _ = try await fixture.refresh(queries: [.list], processedTransactionID: stop)
+      let observation = try await FastDrainObservation.observe(fixture.runtime)
+      for facts in [observation.hotFacts, observation.persistedFacts] {
+        expectNoDifference(Self.shown("recordings/activityKind", in: facts), "\(InstantValue.string("active"))")
+      }
+    }
   }
 
   /// A write that is still pending keeps overlaying the server's value, as upstream's `_applyOptimisticUpdates` does,

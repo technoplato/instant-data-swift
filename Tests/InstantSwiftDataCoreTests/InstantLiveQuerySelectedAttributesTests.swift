@@ -54,6 +54,26 @@ struct InstantLiveQuerySelectedAttributesTests {
     )
   }
 
+  /// A `where` on a level's own attributes keeps its selection; one through a link does not vouch for it, because the
+  /// server sends the triples it matched, which bring the linked entities into the result without their attributes.
+  @Test
+  func aWhereThroughALinkDoesNotVouch() {
+    expectNoDifference(
+      Self.selected(#"{"transcriptionSegments":{"$":{"where":{"isFinal":true},"fields":["text"]}}}"#),
+      ["transcriptionSegments": ["transcriptionSegments/text"]]
+    )
+    #expect(Self.selected(#"{"transcriptionSegments":{"$":{"where":{"recording.id":"r"},"fields":["text"]}}}"#) == nil)
+    #expect(
+      Self.selected(#"{"recordings":{"$":{"where":{"or":[{"title":"a"},{"transcriptionSegments.isFinal":true}]}}}}"#)
+        == nil
+    )
+    #expect(
+      Self.selected(
+        #"{"recordings":{"$":{"fields":["title"]},"transcriptionSegments":{"$":{"where":{"recording.title":"a"}}}}}"#
+      ) == nil
+    )
+  }
+
   /// A key that is not an InstaQL query, or names a namespace or link this store does not know, selects nothing it can
   /// vouch for.
   @Test
