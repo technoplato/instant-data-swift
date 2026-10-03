@@ -2949,8 +2949,10 @@ public final class InstantRuntime: Sendable {
           expectedQueryResultRevision: compactState.queryResultRevision
         ) else { continue applyAttempts }
         guard let protectedRetractions = try await persistence.protectingServerRetractions(
-          retractions,
-          expectedOutboxRevision: compactState.outboxRevision
+          retractions.operations,
+          expectedOutboxRevision: compactState.outboxRevision,
+          processedTransactionID: processedTransactionID,
+          clearedSlots: retractions.clearedSlots
         ) else { continue applyAttempts }
         authoritativeTransaction.operations.insert(contentsOf: protectedRetractions, at: 0)
       }
@@ -4001,11 +4003,12 @@ public final class InstantRuntime: Sendable {
           }
         }
         guard let firstWriterID = context.firstWriterBySlot[slot] else {
-          // No surviving write inserts this slot, so the store's value here is the base's. A cardinality-one fact
-          // stamped earlier than it changes nothing: the whole-component rebase applies it under last-write-wins
-          // (`applyInsert`), where the later-stamped resident fact stays. Michael's iPhone restated such a fact
-          // (Recording 023's clipboardEntries) on every frame of build 73, and every frame rebased for nothing.
-          guard factHolds || Self.residentFactWins(over: triple, indexes: indexes, attributes: attributes) else {
+          // No surviving write inserts this slot, so the store's value here is the base's, and the server's fact
+          // replaces it whatever the stamps (#431): the whole-component rebase applies it authoritatively
+          // (`applyInsert` with `.preserveExactResident`). A resident fact a pruned local write left behind carries
+          // this device's clock, later than the slot's `created_at` that every later server value of the slot keeps,
+          // and last-write-wins kept it forever. The rebase runs once: the next frame's restatement holds.
+          guard factHolds else {
             return .declined(.changesShadowedFact, fact: triple)
           }
           continue
@@ -4030,11 +4033,9 @@ public final class InstantRuntime: Sendable {
         switch Self.beforeImageState(of: slot, in: firstWriter) {
         case let .present(fact) where fact.value == triple.value:
           continue
-        case let .present(fact) where fact.txTime > triple.txTime:
-          // The base value beneath the writers carries a later stamp than the server's fact, so applying it there
-          // changes nothing (cardinality-one facts are last-write-wins), as in the full rebase.
-          continue
         case .present:
+          // The server's fact replaces the base beneath the writers whatever the stamps, as the full rebase's
+          // authoritative apply does (#431).
           receiptPatches[firstWriterID, default: []].append(triple)
         case .entityCreated:
           // The first writer created the entity, and the server now has it (the create's answer is in flight, or it
@@ -4074,15 +4075,6 @@ public final class InstantRuntime: Sendable {
       }
     }
     return .reduced(kept, receiptPatches: receiptPatches)
-  }
-
-  /// Whether the store's cardinality-one fact in this slot has a strictly later stamp than `triple`, so applying
-  /// `triple` under last-write-wins leaves the slot unchanged.
-  static func residentFactWins(over triple: InstantTriple, indexes: TripleIndexes, attributes: AttributeStore) -> Bool {
-    guard attributes[triple.attributeID]?.cardinality == .one,
-      case let .one(_, stamp)? = visibleSlot(indexes, entityID: triple.entityID, attributeID: triple.attributeID)
-    else { return false }
-    return stamp.txTime > triple.txTime
   }
 
   /// The visible values of one slot, without materializing the entity's other facts: an entity can hold 20,000 links

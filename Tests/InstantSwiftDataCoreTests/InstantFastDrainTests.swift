@@ -318,6 +318,14 @@ struct FastDrainServer {
     return String(lastTransactionNumber)
   }
 
+  /// Another device clears a slot: the server retracts the fact, so no result carries the slot afterwards (#431).
+  mutating func acceptForeignRetraction(entityID: String, attributeID: String) -> String {
+    lastTransactionNumber += 1
+    serverMilliseconds += 1_000_000
+    facts[entityID]?[attributeID] = nil
+    return String(lastTransactionNumber)
+  }
+
   func entities(in query: FastDrainQuery) -> [String] {
     let recording = FastDrainSchema.recordingID
     switch query {
@@ -392,6 +400,8 @@ struct FastDrainFixture {
   var runtime: InstantRuntime
   var server: FastDrainServer
   var script: FastDrainWriteScript
+  /// The runtime's configuration, so `relaunch()` opens the same store.
+  var configuration: InstantRuntimeConfiguration
   var claimSequence = 0
   /// The delivery clock claims are stamped with. Advancing it past the 6 s claim deadline makes the next claim
   /// reclaim unanswered writes and send them again, the replays Recording 023's phone made after lost answers.
@@ -466,7 +476,13 @@ struct FastDrainFixture {
       let stop = script.stopWrite()
       _ = try await runtime.transact(stop, createdAt: InstantTimestamp(milliseconds: script.deviceMilliseconds))
     }
-    return Self(runtime: runtime, server: server, script: script)
+    return Self(runtime: runtime, server: server, script: script, configuration: configuration)
+  }
+
+  /// Closes this runtime and opens a new one on the same store, as an app's relaunch does.
+  mutating func relaunch() async throws {
+    _ = try? await runtime.closeConnection()
+    runtime = try await InstantRuntime.bootstrap(configuration: configuration)
   }
 
   /// Writes more local segments while the drain runs, as a still-recording phone does.
@@ -1352,14 +1368,16 @@ extension InstantFastDrainTests {
     expectNoDifference(reducedObservation.outbox, fullObservation.outbox)
   }
 
-  /// Michael's iPhone on build 73 rebased the whole component on every frame. Its store holds a value of
-  /// `recordings/clipboardEntries` for Recording 023 that is stamped later than the server's fact. The value came from a
-  /// local write that is no longer in the outbox, and no pending write writes that slot. Every refresh-ok restated the
-  /// server's older fact, which did not hold, so the reduction declined (changesShadowedFact) into a whole-component
-  /// rebase. The rebase's last-write-wins then kept the resident value anyway. Such a fact changes nothing, so it must
-  /// not rebase.
+  /// Michael's iPhone on build 73 rebased the whole component on every frame. Its store held a value of
+  /// `recordings/clipboardEntries` for Recording 023 stamped later than the server's fact: a local write, no longer in
+  /// the outbox, that no pending write overwrites. Every refresh-ok restated the server's value, which did not hold, so
+  /// the reduction declined (changesShadowedFact) into a whole-component rebase, and the rebase's last-write-wins kept
+  /// the resident value, so the next frame declined again. Build 74 skipped such a fact instead, which kept the stale
+  /// value for good (#431): Instant keeps a slot's `created_at` as every later value's stamp, so the server's value is
+  /// the newer one however it is stamped. The server's fact must replace the resident one on both paths, and the slot
+  /// must then hold, so the next frame rebases nothing.
   @Test
-  func aRestatedFactThatLosesToALaterStampedResidentFactDoesNotRebase() async throws {
+  func aRestatedFactReplacesALaterStampedResidentFactOnce() async throws {
     var fixtures: [FastDrainFixture] = []
     for reduces in [true, false] {
       var fixture = try await FastDrainFixture.make(
@@ -1404,16 +1422,28 @@ extension InstantFastDrainTests {
       frames.append(frame)
       declineCounts.append(declines)
     }
-    expectNoDifference(frames[0].plannedBodyCount, 0, "declines: \(declineCounts[0])")
     let reducedObservation = try await FastDrainObservation.observe(fixtures[0].runtime)
     let fullObservation = try await FastDrainObservation.observe(fixtures[1].runtime)
     expectNoDifference(reducedObservation.hotFacts, fullObservation.hotFacts)
     expectNoDifference(reducedObservation.persistedFacts, fullObservation.persistedFacts)
     expectNoDifference(reducedObservation.outbox, fullObservation.outbox)
-    let shownTitle = reducedObservation.hotFacts.first {
-      $0.entityID == FastDrainSchema.recordingID && $0.attributeID == "recordings/title"
+    for facts in [reducedObservation.hotFacts, reducedObservation.persistedFacts] {
+      let shownTitle = facts.first {
+        $0.entityID == FastDrainSchema.recordingID && $0.attributeID == "recordings/title"
+      }
+      expectNoDifference(shownTitle?.value, "\(InstantValue.string("another device's title"))")
     }
-    expectNoDifference(shownTitle?.value, #"string("local title")"#)
+    // The next frame restates the same title, which now holds: nothing rebases, unlike build 73's every frame.
+    let queries = fixtures[0].server.queries(touching: [FastDrainSchema.recordingID])
+    let fixture = fixtures[0]
+    let (repeated, repeatedDeclines) = try await FastDrainDeclineCounter.counting {
+      try await fixture.refresh(queries: queries)
+    }
+    expectNoDifference(
+      repeated.plannedBodyCount,
+      0,
+      "declines: \(repeatedDeclines); the first frame planned \(frames[0].plannedBodyCount) bodies (\(declineCounts[0]))"
+    )
   }
 
   /// The differential's seed 15 found this: a segment's open updates reached the server, but their answers were lost.
