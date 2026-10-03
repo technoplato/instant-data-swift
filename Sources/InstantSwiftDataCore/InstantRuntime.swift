@@ -2512,13 +2512,15 @@ public final class InstantRuntime: Sendable {
     throw transactionChangedDuringPersistence(id: transaction.id)
   }
 
-  /// One transact attempt's SQLite reads before it prepares the write, in one persistence turn (#403).
+  /// One transact attempt's SQLite reads before it prepares the write, in one persistence turn and one SQLite
+  /// transaction (#403).
   ///
   /// These were six awaits: the state and its revisions, active shares, the same-id replay check, the alias check, the
-  /// creation cursor, and the supersession tail. They run in that order, each with its own SQLite transaction and
-  /// revision check, and stop where the attempt stops: after the state when there is nothing to write, and after a
-  /// moved revision, a same-id row, or an alias. Nothing else runs on the store between them. Reactor.js reads the same
-  /// facts from memory in one synchronous pass (`pushOps`, Reactor.js:1509).
+  /// creation cursor, and the supersession tail. They run in that order, each with its own revision check, and stop
+  /// where the attempt stops: after the state when there is nothing to write, and after a moved revision, a same-id
+  /// row, or an alias. They read one snapshot, and nothing else runs on the store between them. The transaction is
+  /// `IMMEDIATE` because reading the outbox can quarantine a row it cannot decode. Reactor.js reads the same facts from
+  /// memory in one synchronous pass (`pushOps`, Reactor.js:1509).
   private func loadLocalWriteReads(
     _ transaction: InstantStoreTransaction,
     draft: PendingMutation?
@@ -2528,7 +2530,7 @@ public final class InstantRuntime: Sendable {
     let serverApplyGate = serverApplyGate
     let newcomerTransaction = draft?.transaction ?? transaction
     let newcomerIsPending = (draft?.status ?? .pending) == .pending
-    return try await withPersistence { persistence in
+    return try await withPersistence(inOneTransaction: .write) { persistence in
       let load = try persistence.loadStateWithSource(
         installedStoreRevision: installedRevisions.store,
         installedAttributeRevision: installedRevisions.attributes
@@ -2586,11 +2588,12 @@ public final class InstantRuntime: Sendable {
     }
   }
 
-  /// Saves one prepared local write, then reads the connection status it changed, in one persistence turn (#403).
+  /// Saves one prepared local write, then reads the connection status it changed, in one persistence turn and one
+  /// SQLite transaction (#403).
   ///
-  /// The save is the durability point of `transact`; its SQLite transaction commits before the status read starts.
-  /// A failed status read publishes nothing and never undoes the write, as the `try?` around the separate status
-  /// publish did.
+  /// The transaction's commit, before this returns, is the durability point of `transact`. A failed status read
+  /// publishes nothing and never undoes the write: the turn commits the save either way, as the save's own transaction
+  /// did before the separate status read.
   private func saveLocalMutationReadingConnectionStatus(
     prepared: PreparedStoreMutation,
     pendingMutation: PendingMutation,
@@ -2603,7 +2606,7 @@ public final class InstantRuntime: Sendable {
     let attributeRevision = state.attributeRevision
     let outboxRevision = state.outboxRevision
     let keys = connectionStatusKeys
-    return try await withPersistence { persistence in
+    return try await withPersistence(inOneTransaction: .write) { persistence in
       guard
         try persistence.saveLocalMutation(
           changedEntityTriples: changedEntityTriples,
@@ -6086,11 +6089,12 @@ public final class InstantRuntime: Sendable {
     do {
       for _ in 0..<5 {
         // The state and, when a closed connection must refuse this query, the stored connection state, in one
-        // persistence turn (#403).
+        // persistence turn and one read transaction (#403).
         let readsConnectionState = enforcesConnectionFreshness && !configuration.isLocalOnly
         let connectionStateKey = connectionStateMetadataKey
-        let (state, storedConnectionState) = try await loadCompactStateSynchronizingStore {
-          (persistence, _) -> InstantConnectionState? in
+        let (state, storedConnectionState) = try await loadCompactStateSynchronizingStore(
+          inOneTransaction: .read
+        ) { (persistence, _) -> InstantConnectionState? in
           guard readsConnectionState else { return nil }
           return try persistence.loadMetadataValue(key: connectionStateKey)
             .flatMap(InstantConnectionState.init(rawValue:))
@@ -7055,7 +7059,7 @@ public final class InstantRuntime: Sendable {
     pendingMutationCount knownPendingMutationCount: Int? = nil
   ) async throws -> InstantConnectionStatus {
     let keys = connectionStatusKeys
-    let inputs = try await withPersistence { persistence in
+    let inputs = try await withPersistence(inOneTransaction: .read) { persistence in
       try Self.connectionStatusInputs(
         in: persistence,
         keys: keys,
@@ -7208,14 +7212,15 @@ public final class InstantRuntime: Sendable {
     }
   }
 
-  /// ``saveOpenedConnectionMetadataWithGateHeld()`` and a read of the status it changed, in one persistence turn,
-  /// then the publish (#403). A failed read throws, as the separate publish did.
+  /// ``saveOpenedConnectionMetadataWithGateHeld()`` and a read of the status it changed, in one persistence turn and
+  /// one SQLite transaction, then the publish (#403). A failed read throws, as the separate publish did; the metadata
+  /// it wrote stays written, as it did.
   private func saveOpenedConnectionMetadataPublishingStatusWithGateHeld() async throws
     -> InstantConnectionStatus
   {
     let keys = connectionStatusKeys
     let now = configuration.now()
-    let inputs = try await withPersistence { persistence in
+    let inputs = try await withPersistence(inOneTransaction: .write) { persistence in
       try Self.saveConnectionMetadata(.opened, lastErrorMessage: nil, in: persistence, keys: keys, now: now)
       return try Self.connectionStatusInputs(
         in: persistence,
@@ -12220,8 +12225,11 @@ public final class InstantRuntime: Sendable {
     await enterOperationGate()
     do {
       for _ in 0..<5 {
-        // The state and the rows, checked against its revisions, in one persistence turn (#403).
-        let (_, loadedMutations) = try await loadCompactStateSynchronizingStore { persistence, state in
+        // The state and the rows, checked against its revisions, in one persistence turn and one SQLite transaction,
+        // `IMMEDIATE` because reading the rows can quarantine one (#403).
+        let (_, loadedMutations) = try await loadCompactStateSynchronizingStore(
+          inOneTransaction: .write
+        ) { persistence, state in
           try persistence.loadOutboxMutations(
             statuses: statuses,
             expectedStoreRevision: state.storeRevision,
@@ -12507,12 +12515,13 @@ public final class InstantRuntime: Sendable {
 
     try await enterOperationGateUnlessCancelled(operation: "select bounded explicit outbox flush")
     do {
-      // The claim, the stored connection state, and both counts in one persistence turn (#403). Nothing between them
-      // reads or writes SQLite. Each read after the claim keeps its outcome, so a failure still surfaces where its
-      // await did: after the reservations are released and the resident outbox is refreshed.
+      // The claim, the stored connection state, and both counts in one persistence turn and one SQLite transaction
+      // (#403). Nothing between them reads or writes SQLite. Each read after the claim keeps its outcome, so a failure
+      // still surfaces where its await did: after the reservations are released and the resident outbox is refreshed.
+      // The turn commits the claim even when a read after it fails, as the claim's own transaction did.
       let claimNow = configuration.now()
       let connectionStateKey = connectionStateMetadataKey
-      let selection = try await withPersistence { persistence in
+      let selection = try await withPersistence(inOneTransaction: .write) { persistence in
         let window = try persistence.claimExplicitOutboxDeliveryWindow(
           limit: limit,
           claimantID: flushClaimantID,
@@ -12927,13 +12936,14 @@ public final class InstantRuntime: Sendable {
         await publishMutationLifecycle(mutation)
       }
 
-      // What follows the confirmation, in one persistence turn and in the order of its former awaits (#403): the
-      // failed count, the opened state when nothing failed, the connection status, the claim's release, and the
-      // counts. The status publishes before a failed release or count throws, as it did one await at a time.
+      // What follows the confirmation, in one persistence turn and one SQLite transaction, in the order of its former
+      // awaits (#403): the failed count, the opened state when nothing failed, the connection status, the claim's
+      // release, and the counts. The status publishes before a failed release or count throws, as it did one await at a
+      // time, and a failed release leaves nothing half-done: it runs in its own savepoint.
       let keys = connectionStatusKeys
       let now = configuration.now()
       let hasTerminalFailures = !terminalFailures.isEmpty
-      let settled = try await withPersistence { persistence in
+      let settled = try await withPersistence(inOneTransaction: .write) { persistence in
         let remainingFailedMutationCount = try persistence.countOutboxMutations(status: .failed)
         if !hasTerminalFailures, remainingFailedMutationCount == 0 {
           let storedState = try persistence.loadMetadataValue(key: keys.connectionState)
@@ -13368,10 +13378,11 @@ public final class InstantRuntime: Sendable {
   /// runs on the store right after the state load, with the loaded state; the hot store adopts the load afterwards,
   /// which no SQLite read depends on. Records its one hop.
   private func loadCompactStateSynchronizingStore<Then: Sendable>(
+    inOneTransaction kind: InstantPersistenceTurnTransaction,
     then: @escaping @Sendable (isolated SQLitePersistenceStore, InstantPersistenceState) throws -> Then
   ) async throws -> (state: InstantPersistenceState, then: Then) {
     let installedRevisions = installedStoreRevisions.snapshot()
-    let loaded = try await withPersistence { persistence in
+    let loaded = try await withPersistence(inOneTransaction: kind) { persistence in
       let load = try persistence.loadStateWithSource(
         installedStoreRevision: installedRevisions.store,
         installedAttributeRevision: installedRevisions.attributes
@@ -14909,6 +14920,16 @@ public final class InstantRuntime: Sendable {
   ) async rethrows -> Result {
     recordActorHop(.persistence)
     return try await persistence.run(body)
+  }
+
+  /// ``withPersistence(_:)`` in one SQLite transaction (#403); see
+  /// ``SQLitePersistenceStore/run(inOneTransaction:_:)``.
+  private func withPersistence<Result: Sendable>(
+    inOneTransaction kind: InstantPersistenceTurnTransaction,
+    _ body: @Sendable (isolated SQLitePersistenceStore) throws -> Result
+  ) async throws -> Result {
+    recordActorHop(.persistence)
+    return try await persistence.run(inOneTransaction: kind, body)
   }
 
   /// `operation` defaults to the caller's own function so a stalled gate names
