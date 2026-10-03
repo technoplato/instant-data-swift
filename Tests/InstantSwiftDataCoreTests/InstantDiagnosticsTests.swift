@@ -354,6 +354,27 @@ struct InstantDiagnosticsTests {
     #expect(Set((current + previous).map(\.event)).count == current.count + previous.count)
   }
 
+  /// #473 (1.9.6): every line was fsynced, behind one process-wide file lock, so a burst of lines cost a burst of
+  /// fsyncs on a hot, busy device. Lines are batched, under one open and lock per batch, and fsynced at most once a
+  /// second, or at `flush()`.
+  @Test("a burst of lines costs a few fsyncs, not one per line")
+  func burstsAreBatched() throws {
+    let fileURL = temporaryLogURL()
+    let diagnostics = InstantDiagnostics(
+      configuration: InstantDiagnosticsConfiguration(fileURL: fileURL, maximumFileBytes: nil)
+    )
+    for index in 0..<200 {
+      diagnostics.record(
+        subsystem: "test", category: "batching", event: "row.\(index)",
+        message: String(repeating: "x", count: 100)
+      )
+    }
+    diagnostics.flush()
+    let counts = diagnostics.fileWriteCountsForTesting
+    #expect(try readEntries(at: fileURL).map(\.event) == (0..<200).map { "row.\($0)" })
+    #expect(counts.syncs <= 3, "\(counts.syncs) fsyncs for 200 lines")
+  }
+
   private func fileSize(_ url: URL) throws -> Int {
     try (FileManager.default.attributesOfItem(atPath: url.path)[.size] as? NSNumber)?.intValue ?? 0
   }
