@@ -1,3 +1,12 @@
+## 2026-10-03 14:11:27 EDT — scribe `8774486a914327c254910f12c6e0b5b73af9afb3`
+ADR 0029 section 5a: an answer's card is where it landed, live and in playback, status has its own screen, and the Watch opens Scribe's links (#340)
+
+## 2026-10-03 14:10:24 EDT — scribe `dca1a1ae20f28a0466c5e7554491e8895250db6c`
+An answer's notification carries Read It, Later, and Stop Reading, on the phone and the Watch (#342)
+
+## 2026-10-03 14:07:59 EDT — scribe `4a8c0904c2ce6277a045fb2c5ca9f4e7a31e4ed2`
+Before an answer is read, a tone and the haptic say an agent answered; "stop" or "later" skips it, "read it" reads it (#342)
+
 ## 2026-10-03 14:01:34 EDT — scribe `2d55cc4d0f3f650e3ef251b33161c4285ad66b7c`
 Record the Pause-and-Stop name rule and the default flip in the change log (#161)
 
@@ -6,6 +15,18 @@ Voice actions on by default; Settings turns them off (#161)
 
 ## 2026-10-03 13:59:07 EDT — scribe `2f20f6b9a9a24371f0d6be1c9f67c0e24c74e62a`
 Pause and Stop by voice need "Scribe, ...": talk about pausing can never raise the question (#161)
+
+## 2026-10-03 13:58:17 EDT — scribe `9ae040322bb3b5456e541e65f6de45273fae4921`
+A playback answer card is the live screen's card: More shows the whole answer and a tap opens its thread (#340)
+
+## 2026-10-03 13:53:52 EDT — scribe `4d3631f0f120a5229ec01602e64ff6246c14bd26`
+An agent answer's notification is passive while this device records, so Siri never announces it over the capture (#340)
+
+## 2026-10-03 13:52:19 EDT — scribe `b3245d24705d3a7bf37c4abd37e3d68d88aa9355`
+Red: an agent answer's notification is passive while this device records, and so is the push for a live recording (#340)
+
+## 2026-10-03 13:46:31 EDT — scribe `781df924cc325c1f26f7e7b7a3c14e212f2ea370`
+An answer read aloud waits for Michael to pause, pauses when he speaks, and stops on "stop" or its card's Stop (#342)
 
 ## 2026-10-03 13:44:20 EDT — scribe `d9c8f657aa1b86a795e1a727c0dca362515f100b`
 Plan resume-cut-off: Record continues a recording that was cut off, Resume is a normal action, and no recording stays stamped live (#458)
@@ -21,6 +42,27 @@ Record live-stamp-82 in PROGRESS: the heartbeat tail, the #432 sweep, the list-p
 
 ## 2026-10-03 13:35:51 EDT — scribe `80a795e54e6a4b450c41a371196c80940a666cfc`
 Record live-stamp-82's commits in the change log: the follow-along heartbeat, the #432 sweep, the list-position rules, and #441's Scribe side (#408 #432 #441)
+
+## 2026-10-03 13:27:19 EDT — scribe `9bb6cd759eb31e37105756a59845041318c1453e`
+Red: a playback answer card opens with More and its tap opens the thread at that answer (#340)
+
+## 2026-10-03 13:15:02 EDT — scribe `7e4efa677739e9c35174bccc1a2521c65cac0d19`
+Playback shows the agents' answers as cards where they landed on the recording clock (#340)
+
+## 2026-10-03 13:13:55 EDT — scribe `d57973ae2818b693c8235b130d3132eb54a605cc`
+Red: playback shows the agents' answers as cards where they landed on the recording clock (#340)
+
+## 2026-10-03 13:04:51 EDT — scribe `d32a616f4b270424d37aaf6961e7f35b2ae5f303`
+The Watch registers Scribe's URL scheme, so a tap on the Live Activity in the Smart Stack opens the Watch app (#340)
+
+## 2026-10-03 13:03:11 EDT — scribe `490a6d972d62967257eab5470f9aa32ef9ae54cb`
+Red: every target defines the $(SCRIBE_…) variables its Info.plist names, so the Watch registers its URL scheme (#340)
+
+## 2026-10-03 13:00:44 EDT — scribe `b656db63a4a67ead898180fabcdb9b9a5d631c33`
+An agent's answer card goes back to where it landed after a relaunch, and only a live one moves the transcript (#340)
+
+## 2026-10-03 13:00:38 EDT — scribe `dcf63a96348686978d6a9b43bc02c543bac3a8e8`
+Red: an agent's answer card goes back to where it landed after a relaunch, and only a live one moves the transcript (#340)
 
 ## 2026-10-03 12:48:47 EDT — instant-data-swift `45a462908c27876ba2e31096c44f2cf39a48f214`
 #445: whether a failed mutation is superseded, slot by slot, as read-only public API for Scribe's Sync view (InstantSwiftDataClient.supersession(ofFailedMutation:) and failedMutationSupersessions()), by the #441 guard's rule (#445).
