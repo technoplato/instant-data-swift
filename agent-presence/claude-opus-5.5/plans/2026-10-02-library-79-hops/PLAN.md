@@ -119,3 +119,15 @@ Main added #445 to v1.9.4 at about 12:35 EDT: the superseded rule as read-only p
 `InstantMutationSupersession` with an `InstantSlotCoverage` per write operation. Also touching
 `Sources/InstantSwiftData/InstantSwiftData.swift` (the two client methods), `InstantModels.swift` (the new public types),
 and new `Tests/InstantSwiftDataCoreTests/InstantFailedMutationSupersessionTests.swift`, added 2026-10-03 13:00 EDT.
+
+## #473 (P0 for 1.9.5, main, 2026-10-03 about 14:10 EDT)
+
+A local write held the iPhone's operation gate for 12 s at 13:17:46 and the recording died; transcription stalled
+behind gate backlogs twice. 1.9.5: the diagnostics log file written off the caller's thread, the gate's handoff before
+its wait report, named transact phases without a hop, and `pendingMutations(limit:)`/`failedMutations(limit:)` reading
+SQLite without the gate. 1.9.6: phone-perf's streaming file download, then hydration and observer materialization off
+the gate (#473 items 3-4), then #474 (reconnect promptly after a socket reset). Touching `AsyncSerialGate.swift`,
+`InstantDiagnostics.swift`, `InstantRuntime.swift`, `SQLitePersistenceStore.swift`, `InstantSwiftData.swift`,
+`InstantDiagnosticsTests.swift` and `InstantInfiniteQueryParityTests.swift` (flushes before reading the log), new
+`InstantOperationGateHoldTests.swift` and `InstantPendingMutationsPageTests.swift`, and new `docs/releases/v1.9.5.md`,
+added 2026-10-03 14:25 EDT.
