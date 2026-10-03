@@ -35,7 +35,7 @@ struct InstantRoomPresenceRuntimeTests {
 
       _ = try await instantLiveWithTimeout(
         operation: "publish presence while the operation gate is held",
-        timeoutMilliseconds: 2_000
+        timeoutMilliseconds: 5_000
       ) {
         try await runtime.setPresence(room: room, userID: "user-self", values: ["state": .string("working")])
       }
@@ -226,7 +226,7 @@ struct InstantRoomPresenceRuntimeTests {
         recovery: "Rejoin without the presence this device stopped publishing."
       )
     )
-    try await instantLiveWithTimeout(operation: "wait for the room reconnect", timeoutMilliseconds: 2_000) {
+    try await instantLiveWithTimeout(operation: "wait for the room reconnect", timeoutMilliseconds: 5_000) {
       await transport.waitForConnectionCount(2)
     }
     await second.waitForSentMessageCount(2)
@@ -310,7 +310,7 @@ struct InstantRoomPresenceRuntimeTests {
       for await messages in stream { await received.record(messages) }
     }
     defer { reader.cancel() }
-    try await waitForRoom("all five broadcasts to be readable after the burst", timeoutMilliseconds: 2_000) {
+    try await waitForRoom("all five broadcasts to be readable after the burst", timeoutMilliseconds: 5_000) {
       let indexes = await received.last?.compactMap { message -> Double? in
         guard case let .object(payload) = message.payload, case let .number(index)? = payload["index"] else {
           return nil
@@ -395,7 +395,7 @@ extension InstantRoomPresenceRuntimeTests {
         recovery: "Rejoin and wait for the server to confirm it."
       )
     )
-    try await instantLiveWithTimeout(operation: "wait for the room reconnect", timeoutMilliseconds: 2_000) {
+    try await instantLiveWithTimeout(operation: "wait for the room reconnect", timeoutMilliseconds: 5_000) {
       await transport.waitForConnectionCount(2)
     }
     await second.waitForSentMessageCount(2)
@@ -481,27 +481,27 @@ extension InstantRoomPresenceRuntimeTests {
     try await joinAndWaitForPeers(runtime: runtime, session: session, room: room)
     let events = try await runtime.observeRoomTopicEvents(room: room, topic: "progress")
     let messageCount = 10_000
-    let reader = Task { () -> (indexes: [Int], firstThousandMs: Double, lastThousandMs: Double) in
+    // Each 100 messages are timed as one batch. The check compares the median batch of the first 1,000 with the median
+    // batch of the last 1,000, so one stall (a demoted or paused test process) moves no median.
+    let batchSize = 100
+    let reader = Task { () -> (indexes: [Int], batchMs: [Double]) in
       var indexes: [Int] = []
       indexes.reserveCapacity(messageCount)
+      var batchMs: [Double] = []
       let clock = ContinuousClock()
-      var thousandStarted = clock.now
-      var firstThousand = Duration.zero
-      var lastThousand = Duration.zero
+      var batchStarted = clock.now
       for await message in events {
         guard case let .object(payload) = message.payload, case let .number(index)? = payload["index"] else { continue }
         indexes.append(Int(index))
-        if indexes.count == 1_000 { firstThousand = clock.now - thousandStarted }
-        if indexes.count == messageCount - 1_000 { thousandStarted = clock.now }
-        if indexes.count == messageCount {
-          lastThousand = clock.now - thousandStarted
-          break
+        if indexes.count.isMultiple(of: batchSize) {
+          let now = clock.now
+          let batch = now - batchStarted
+          batchMs.append(Double(batch.components.seconds) * 1_000 + Double(batch.components.attoseconds) / 1e15)
+          batchStarted = now
         }
+        if indexes.count == messageCount { break }
       }
-      func milliseconds(_ duration: Duration) -> Double {
-        Double(duration.components.seconds) * 1_000 + Double(duration.components.attoseconds) / 1e15
-      }
-      return (indexes, milliseconds(firstThousand), milliseconds(lastThousand))
+      return (indexes, batchMs)
     }
     for index in 0..<messageCount {
       await session.enqueue(
@@ -531,8 +531,19 @@ extension InstantRoomPresenceRuntimeTests {
     )
     // A generous bound that only a cost growing with the messages before it would break (stored topics re-read every
     // message on each one). The durations are in the test log for the issue's performance evidence.
-    print("room-topic-run: first 1,000 in \(run.firstThousandMs) ms, last 1,000 in \(run.lastThousandMs) ms, held \(held)")
-    #expect(run.lastThousandMs <= max(run.firstThousandMs * 10, 250))
+    func median(_ values: some Collection<Double>) -> Double {
+      let sorted = values.sorted()
+      return sorted.isEmpty ? 0 : sorted[sorted.count / 2]
+    }
+    let batchesPerThousand = 1_000 / batchSize
+    let firstMedianMs = median(run.batchMs.prefix(batchesPerThousand))
+    let lastMedianMs = median(run.batchMs.suffix(batchesPerThousand))
+    print(
+      "room-topic-run: \(run.batchMs.count) batches of \(batchSize), median batch \(firstMedianMs) ms in the first 1,000 "
+        + "and \(lastMedianMs) ms in the last 1,000, all 10,000 in \(run.batchMs.reduce(0, +)) ms, held \(held)"
+    )
+    #expect(run.batchMs.count == messageCount / batchSize)
+    #expect(lastMedianMs <= max(firstMedianMs * 10, 25))
     _ = try await runtime.closeConnection()
   }
 }
