@@ -92,3 +92,12 @@ Round 2 (02:08 EDT) showed slot-level protection for every retraction rebasing f
 alone gets it; and main's rule covers slots no result ever held, so a query's `fields` decide which slots a refreshed
 result vouches for. New `Tests/InstantSwiftDataCoreTests/InstantLiveQuerySelectedAttributesTests.swift` pins that
 reading of the query key, added 2026-10-03 02:15 EDT.
+
+## #436 (P0, main, 2026-10-03 about 09:40 EDT)
+
+Michael's iPad cannot open Scribe: the relation reconciliation at store open throws on a cached transcript result over
+8 MiB (8,817,787 bytes in the iPad's pulled store), so every launch fails. Fix: an open-time pass drops a cached result
+over its bound, with a warning, and the query refetches it; published as v1.9.3. Touching
+`Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift`, new
+`Tests/InstantSwiftDataCoreTests/InstantOversizedCachedResultOpenTests.swift`, and new `docs/releases/v1.9.3.md`,
+added 2026-10-03 09:48 EDT. The six queued speed and measurement jobs are paused until v1.9.3 is tagged.

@@ -10,6 +10,35 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## October 3rd, 2026 at 10:31:39 a.m. EDT — `1ea9f0763639` Document the v1.9.3 release: a store whose cache holds one live-query result over 8 MiB opens again (#436)
+
+- **Implementation commit:** `1ea9f0763639139c9d6c5c5a33fee88da2b9416d`
+- **Change:** Document the v1.9.3 release: library-79's #436 hotfix; a store whose cache holds one live-query result over 8 MiB opens again (#436).
+- **Details:**
+  - Red on v1.9.2 and green here, including the iPad's pulled store; two high-lane gate holds (adfd9624 and 5e1c0222): identity-upgrade 5, focused 182 (3 known), store 379 (4 known), fast-drain and survival 25 (2 known), #431's iPad checks 3 of 3; the soak follows after the tag at main's direction.
+- **Files:**
+  - `docs/releases/v1.9.3.md` — the release document; passes scripts/validate-release-version.sh 1.9.3
+  - `PROGRESS.md` — the v1.9.3 release entry and the continuation
+- **User context (verbatim):**
+  > Publish the library once it's checked fast.
+- **SpecStory:** unavailable — Claude Code agent session (library-79); no SpecStory capture configured for this session.
+
+## October 3rd, 2026 at 10:30:51 a.m. EDT — `7d7790fdd54b` Open the store even when one cached live-query result is over the open-time row bound: drop it so its query refetches (#436)
+
+- **Implementation commit:** `7d7790fdd54bf79f291dc06f49e44f43fdfffc32`
+- **Change:** Open the store even when one cached live-query result is over the open-time row bound: drop it, log a warning, and let its query refetch it (#436, P0: Michael's iPad could not open Scribe).
+- **Details:**
+  - Cause: the relation reconciliation the open runs when an app's declared relations change read every cached live-query result and threw on one over 8 MiB (the outbox body limit, reused as a row bound); the iPad's cached transcript of Recording 039 is 8,817,787 bytes, so every launch failed. 1.9.1 and 1.9.2 have the same code.
+  - Fix: the reconciliation and the application-migration pass drop a cached result over the bound (or one a migration grows past it), with its ownership rows, and log live-query-result.oversized-dropped after the pass commits; the facts stay in the store and the query's next refresh stores the result again. The other open-time readers still fail closed: the relation pass's triples are links, and a migration's outbox and triple rows are durable data.
+  - Follow-ups: adfd9624 keeps the red test compiling against v1.9.2 (it now uses the existing scan counter), and 5e1c0222 gives each fixture its own result key so the two parallel tests never capture each other's warning.
+  - Red on v1.9.2 (second worktree at a6d7929d): both tests throw, and the iPad's pulled store fails with the iPad's own error; green here: the store opens with 35 of 36 cached results, the marker is installed again, and the transcript's refresh stores its 38,992 triples again. Gate (two high-lane holds): identity-upgrade 5, focused 182 (3 known; one timing miss passing 5 of 5 alone), store 379 (4 known), fast-drain and survival 25 (2 known), #431's iPad checks 3 of 3.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — the two open-time readers return an oversized row instead of throwing; the passes drop it and log a warning after commit
+  - `Tests/InstantSwiftDataCoreTests/InstantOversizedCachedResultOpenTests.swift` — the reconciliation and the migration meeting a result over the bound, and the iPad's pulled store (skipped without INSTANT_436_DEVICE_STORE)
+- **User context (verbatim):**
+  > Publish the library once it's checked fast.
+- **SpecStory:** unavailable — Claude Code agent session (library-79); no SpecStory capture configured for this session.
+
 ## October 3rd, 2026 at 5:48:51 a.m. EDT — `278fefcfba5e` Document the v1.9.2 release: another device's later value of a single-value attribute, and its clear, reach a device that once wrote it (#431)
 
 - **Implementation commit:** `278fefcfba5eb7114bdd48e4c575a62a9381aac5`

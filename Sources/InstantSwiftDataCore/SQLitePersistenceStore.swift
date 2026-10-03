@@ -40,6 +40,13 @@ enum InstantPersistenceStateSource: Equatable, Sendable {
   case sqlite
 }
 
+/// A persisted live-query result as an open-time pass reads it (#436): decoded, or over the pass's row bound, which the
+/// pass drops so the store still opens and the query refetches the result.
+private enum InstantBoundedLiveQueryResultRow {
+  case decoded(InstantPersistedLiveQueryResult)
+  case oversized(queryKey: String, byteCount: Int64)
+}
+
 /// What a batch of live-query result replacements retracts (#431): the retractions, and the single-value slots among
 /// them the server cleared, which only a pending write of the slot itself protects.
 struct InstantLiveQueryReplacementRetractions: Sendable {
@@ -2302,7 +2309,9 @@ public actor SQLitePersistenceStore {
   /// intent; only materialized storage and persisted query ownership use the canonical direction.
   private func reconcileDeclaredRelationStorageIfNeeded() throws {
     guard !declaredAttributes.isEmpty else { return }
+    var droppedResults: [(queryKey: String, byteCount: Int64)] = []
     let didChange = try transaction {
+      droppedResults = []
       let durableAttributes = try loadAttributesWithoutTransaction(
         tracesStartupCollection: false
       )
@@ -2365,9 +2374,21 @@ public actor SQLitePersistenceStore {
 
       var liveQueryResultsChanged = false
       var liveQueryCursor: String?
-      while let result = try nextDeclaredRelationLiveQueryResultWithoutTransaction(
+      while let row = try nextDeclaredRelationLiveQueryResultWithoutTransaction(
         after: liveQueryCursor
       ) {
+        let result: InstantPersistedLiveQueryResult
+        switch row {
+        case let .oversized(queryKey, byteCount):
+          // One cached result over the bound must not fail every open (#436): drop it, so its query refetches it.
+          liveQueryCursor = queryKey
+          try dropLiveQueryResultWithoutTransaction(queryKey: queryKey)
+          droppedResults.append((queryKey, byteCount))
+          liveQueryResultsChanged = true
+          continue
+        case let .decoded(decoded):
+          result = decoded
+        }
         liveQueryCursor = result.key
         var canonicalByIdentity: [InstantLiveTripleIdentity: InstantTriple] = [:]
         canonicalByIdentity.reserveCapacity(result.triples.count)
@@ -2458,9 +2479,40 @@ public actor SQLitePersistenceStore {
       didLoadDeclaredRelationStorageMarker = true
       return didChange
     }
+    Self.recordDroppedOversizedLiveQueryResults(droppedResults, pass: "declared relation storage reconciliation")
     guard didChange else { return }
     cachedState = nil
     cachedMaterializedStore = nil
+  }
+
+  /// Deletes one cached live-query result and its ownership rows (#436). Its facts stay in the store; the next refresh of
+  /// its query stores the result again.
+  private func dropLiveQueryResultWithoutTransaction(queryKey: String) throws {
+    try execute("DELETE FROM instant_live_query_triples WHERE query_key = ?", [.text(queryKey)])
+    try execute("DELETE FROM instant_live_query_results WHERE query_key = ?", [.text(queryKey)])
+  }
+
+  /// Logs each cached result an open-time pass dropped, once the pass has committed.
+  private static func recordDroppedOversizedLiveQueryResults(
+    _ dropped: [(queryKey: String, byteCount: Int64)],
+    pass: String
+  ) {
+    for (queryKey, byteCount) in dropped {
+      InstantDiagnostics.shared.record(
+        .warning,
+        subsystem: "instant-swift-data-core",
+        category: "persistence",
+        event: "live-query-result.oversized-dropped",
+        message:
+          "Dropped a cached live-query result over the open-time row bound instead of failing the store's open; its query refetches it.",
+        metadata: [
+          "byteCount": String(byteCount),
+          "limitBytes": String(InstantAutomaticOutboxClaimLimits.maximumEncodedBodyBytes),
+          "pass": pass,
+          "queryKey": queryKey,
+        ]
+      )
+    }
   }
 
   /// Reads every persisted result through a one-row keyset cursor.
@@ -2468,10 +2520,10 @@ public actor SQLitePersistenceStore {
   /// Ownership is an index of the encoded result, but an interrupted older build or imported
   /// fixture can drift on either side. Scanning all bounded result bodies lets reconciliation heal
   /// both an obsolete triple that exists only in JSON and obsolete ownership whose JSON is already
-  /// canonical.
+  /// canonical. A result over the row bound comes back unread (`.oversized`), for the pass to drop (#436).
   private func nextDeclaredRelationLiveQueryResultWithoutTransaction(
     after queryKey: String?
-  ) throws -> InstantPersistedLiveQueryResult? {
+  ) throws -> InstantBoundedLiveQueryResultRow? {
     var statement: OpaquePointer?
     let sql: String
     let bindings: [SQLiteBinding]
@@ -2502,11 +2554,7 @@ public actor SQLitePersistenceStore {
     guard bodyByteCount >= 0,
       bodyByteCount <= Int64(InstantAutomaticOutboxClaimLimits.maximumEncodedBodyBytes)
     else {
-      throw persistenceError(
-        operation: "read declared relation live-query result",
-        message:
-          "Live-query result '\(rowQueryKey)' exceeds the bounded reconciliation row limit."
-      )
+      return .oversized(queryKey: rowQueryKey, byteCount: bodyByteCount)
     }
     guard let json: String = try selectScalar(
       "SELECT json FROM instant_live_query_results WHERE query_key = ? LIMIT 1",
@@ -2527,7 +2575,7 @@ public actor SQLitePersistenceStore {
       )
     }
     declaredRelationReconciliationLiveResultScanCount += 1
-    return result
+    return .decoded(result)
   }
 
   private func upsertCanonicalRelationTripleWithoutTransaction(
@@ -2727,7 +2775,9 @@ public actor SQLitePersistenceStore {
           "Application persistence migration '\(migration.name)' must declare at least one nonempty affected attribute id."
       )
     }
+    var droppedResults: [(queryKey: String, byteCount: Int64)] = []
     let didChange = try transaction {
+      droppedResults = []
       let alreadyApplied: String? = try selectScalar(
         """
         SELECT name FROM instant_application_persistence_migrations
@@ -2891,11 +2941,24 @@ public actor SQLitePersistenceStore {
       }
 
       var liveQueryResultsChanged = false
+      var liveQueryResultsDropped = false
       var liveQueryCursor: String?
-      while let result = try nextApplicationMigrationLiveQueryResultWithoutTransaction(
+      while let row = try nextApplicationMigrationLiveQueryResultWithoutTransaction(
         after: liveQueryCursor,
         affectedAttributeIDs: migration.affectedAttributeIDs
       ) {
+        let result: InstantPersistedLiveQueryResult
+        switch row {
+        case let .oversized(queryKey, byteCount):
+          // A cached result over the bound is refetched rather than migrated (#436).
+          liveQueryCursor = queryKey
+          try dropLiveQueryResultWithoutTransaction(queryKey: queryKey)
+          droppedResults.append((queryKey, byteCount))
+          liveQueryResultsDropped = true
+          continue
+        case let .decoded(decoded):
+          result = decoded
+        }
         liveQueryCursor = result.key
         var migrated = result
         var transformedTriples: [InstantLiveTripleIdentity: InstantTriple] = [:]
@@ -2933,11 +2996,11 @@ public actor SQLitePersistenceStore {
         guard encodedMigratedResult.utf8.count
           <= InstantAutomaticOutboxClaimLimits.maximumEncodedBodyBytes
         else {
-          throw persistenceError(
-            operation: "apply local persistence migration",
-            message:
-              "Application migration '\(migration.name)' expanded live-query result '\(result.key)' beyond the bounded migration row limit."
-          )
+          // The migration grew the cached result past the bound: refetch it rather than fail the open (#436).
+          try dropLiveQueryResultWithoutTransaction(queryKey: result.key)
+          droppedResults.append((result.key, Int64(encodedMigratedResult.utf8.count)))
+          liveQueryResultsDropped = true
+          continue
         }
         liveQueryResultsChanged = true
         try saveLiveQueryResultWithoutTransaction(migrated)
@@ -2957,10 +3020,10 @@ public actor SQLitePersistenceStore {
         )
       }
 
-      if triplesChanged || attributesChanged || liveQueryResultsChanged {
+      if triplesChanged || attributesChanged || liveQueryResultsChanged || liveQueryResultsDropped {
         try execute("DELETE FROM instant_query_cache")
       }
-      if triplesChanged || liveQueryResultsChanged {
+      if triplesChanged || liveQueryResultsChanged || liveQueryResultsDropped {
         _ = try bumpMetadataRevisionWithoutTransaction(Self.storeRevisionKey)
       }
       if attributesChanged {
@@ -2969,7 +3032,7 @@ public actor SQLitePersistenceStore {
       if outboxChanged {
         _ = try bumpMetadataRevisionWithoutTransaction(Self.outboxRevisionKey)
       }
-      if liveQueryResultsChanged {
+      if liveQueryResultsChanged || liveQueryResultsDropped {
         _ = try bumpMetadataRevisionWithoutTransaction(Self.queryResultRevisionKey)
       }
       try execute(
@@ -2979,8 +3042,9 @@ public actor SQLitePersistenceStore {
         """,
         [.text(migration.name), .int(Self.nowMilliseconds())]
       )
-      return didChangeAny
+      return didChangeAny || liveQueryResultsDropped
     }
+    Self.recordDroppedOversizedLiveQueryResults(droppedResults, pass: "application migration '\(migration.name)'")
     cachedState = nil
     cachedMaterializedStore = nil
     return didChange
@@ -3151,10 +3215,11 @@ public actor SQLitePersistenceStore {
     )
   }
 
+  /// A result over the row bound comes back unread (`.oversized`), for the migration to drop (#436).
   private func nextApplicationMigrationLiveQueryResultWithoutTransaction(
     after queryKey: String?,
     affectedAttributeIDs: Set<String>
-  ) throws -> InstantPersistedLiveQueryResult? {
+  ) throws -> InstantBoundedLiveQueryResultRow? {
     var statement: OpaquePointer?
     let sortedAttributeIDs = affectedAttributeIDs.sorted()
     let placeholders = Array(repeating: "?", count: sortedAttributeIDs.count).joined(
@@ -3196,11 +3261,7 @@ public actor SQLitePersistenceStore {
     guard bodyByteCount >= 0,
       bodyByteCount <= Int64(InstantAutomaticOutboxClaimLimits.maximumEncodedBodyBytes)
     else {
-      throw persistenceError(
-        operation: "read local persistence migration live-query result",
-        message:
-          "Live-query result '\(rowQueryKey)' exceeds the bounded migration row limit and cannot be migrated safely."
-      )
+      return .oversized(queryKey: rowQueryKey, byteCount: bodyByteCount)
     }
     guard let json: String = try selectScalar(
       "SELECT json FROM instant_live_query_results WHERE query_key = ? LIMIT 1",
@@ -3220,7 +3281,7 @@ public actor SQLitePersistenceStore {
         message: "The decoded live-query result did not match its SQLite identity."
       )
     }
-    return result
+    return .decoded(result)
   }
 
   private func validateApplicationMigrationIdentity(
