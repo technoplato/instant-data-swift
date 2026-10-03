@@ -1,3 +1,25 @@
+## 2026-10-03 18:37:38 EDT — v1.9.5: a local write no longer holds the operation gate while it logs, and outbox listings never wait for the gate; main's merge of this commit is the release commit (#473)
+
+- **Owner:** library-79 (`claude-opus-5.5-library-79`, workLog agentId `claude-code/claude-opus-5.5/library-79`), plan
+  `2026-10-02-library-79-hops`, at main's request (#473 P0, 2026-10-03 about 14:10 EDT), under Michael's maintainer
+  authorization: "Publish the library once it's checked fast. Yes."
+- **Defect (#473):** a local write held the iPhone's operation gate for 12 s at 13:17:46 and Recording 185 died;
+  transcription stalled behind gate backlogs twice. Each diagnostics line was opened, locked, written and fsynced on the
+  caller's thread inside the gate; the gate's wait and stall reports ran on its actor; transact phases had no names;
+  outbox listings decoded every row under the gate.
+- **Commits on `agent/claude-opus-5.5/library-79-hops`:** claim `e2435d90`; `a6a6ab17` the change (diagnostics file on its
+  own queue with flush; hop-free phase names for transact and server apply; `pendingMutations(limit:)` and
+  `failedMutations(limit:)` off the gate); `a6a59b56` the reports off the gate's actor; test-only `f0272d8c`, `1c7ab096`,
+  `3d925396`, `bb598182`; ledger `44b08ddc`; release document `docs/releases/v1.9.5.md`.
+- **Checks:** red on v1.9.4 (the blocked log and the blocked report both hold the caller there); gate-195c on
+  `a6a59b56` in main's lane: new suites 31 ×3, the five load misses 25/25 alone, library-77/78 118, ten suites 697,
+  focused 167 (one benchmark-CLI timing miss), fast-drain and survival 25, infinite 211 (pre-existing failure), #431
+  iPad store 3/3, phone replay matches or improves (1,797 s wall under disk contention).
+- **Evidence:** `/tmp/library-79-hops/gate-195*/`, copied to `/Users/laptop/Sync/audit/library-79-473-2026-10-03/`.
+- **Continue:** the benchmark CLI rerun and a quiet-host replay comparison; 1.9.6 (phone-perf's streaming download #454
+  and batched log fsync, `store.mutation-published` at debug); 1.9.7 (gate deadline and priority lanes, hydration and
+  publish off the gate, write-failure kinds and connection health for mic-gap); 1.9.8 (#474).
+
 ## 2026-10-03 13:37:46 EDT — v1.9.4: a refused re-send whose values the server's results already show resolves as accepted, and a failed mutation's supersession is read-only API; main's merge of this commit is the release commit (#441 #445)
 
 - **Owner:** library-79 (`claude-opus-5.5-library-79`, workLog agentId `claude-code/claude-opus-5.5/library-79`), plan

@@ -1,5 +1,224 @@
+## 2026-10-03 18:37:39 EDT — instant-data-swift `3edae737bdacaa98b58787a97ce4a5b753474e04`
+Document the v1.9.5 release: a local write no longer holds the operation gate while it logs, and outbox listings never wait for it (#473).
+
+## 2026-10-03 18:06:07 EDT — scribe `d6f07ba5c8460da14a639e3c53407e5a71a76878`
+Pass the WAV writer's health and flush-interval closures at the three test call sites of AudioFileClient's memberwise init (#488)
+
+## 2026-10-03 17:55:10 EDT — scribe `418655c1d841689ce3ca5469c75954667c155a87`
+Name the reducer RecordingFeature.Recording in the capture-isolation test's two signatures, where SharedModels' Recording made the type ambiguous (#488)
+
+## 2026-10-03 17:49:47 EDT — scribe `2e12deb32f423d08c96a8bca261cabe4319ca5a7`
+Log the WAV writer's events through a static function, so the microphone effect never captures the reducer (#488)
+
+## 2026-10-03 17:37:19 EDT — scribe `39e070aaca31333151ec24682eadc992993bc00b`
+Write the share-prototype settings through the queued file key too, as every shared file key now does (#488 #389)
+
+## 2026-10-03 17:28:31 EDT — scribe `e9386d59bc025ce4adde821ff49775eed0963ab0`
+Start iOS's expiring activity off the caller's thread too, so the background transition never waits on RunningBoard (#488)
+
+## 2026-10-03 17:26:57 EDT — scribe `b8ccf9ae02eab9647c350f5f424c7a55da7a7bdd`
+Say in the device pull why a phone has no library diagnostics file, and how to get one (#488)
+
+## 2026-10-03 17:25:37 EDT — scribe `3b6eb08e4099a9f75129747d0da87589aa82ddcb`
+Refused audio waits in memory only as its length, and the WAV writer gets synchronizeSoon() for pause, interruption and background fsyncs (#488)
+
+## 2026-10-03 17:05:37 EDT — instant-data-swift `a6a59b565df2362a908899b601b73c7da4ddef5f`
+Run the operation gate's wait and stall reports off its actor, so a slow report never holds the next holder (#473).
+
+## 2026-10-03 16:48:06 EDT — scribe `5aecb8f42fa8d6f37787e9035d7c9bb8cb255dbd`
+The WAV writer's health and flush interval never wait for the writer's lock (#488)
+
+## 2026-10-03 16:43:34 EDT — scribe `62cbd5bff0719ef6232136f7fc91233cbee15dec`
+The app's log lanes stop fsyncing per batch and rewriting after every delivery, keep routine lines to a budget, and a hot phone writes less often; capture never stops (#488, ADR 0050)
+
+## 2026-10-03 16:40:05 EDT — instant-data-swift `bb598182c447f4b136257020b177ba0a113cd894`
+#473's blocked-log test waits for the write error, not the line: flock refuses a FIFO, so no line is written (#473).
+
+## 2026-10-03 16:36:31 EDT — scribe `9933348dbdf3dc586065deab5ea08bde2c4e25d4`
+The move to the background never waits on the disk, and capture never waits on anything: queued settings files, a non-blocking telemetry flush, capture on its own executor with speech first, and the WAV on its own queue (#488, ADR 0050)
+
+## 2026-10-03 16:26:02 EDT — scribe `36683fbd9c63a6d6ed8b6909e9c29aa25f33ad2f`
+Merge main's plans and claims after the 0.1 (84) release commit (#430 #342 #485 #469 #470 #462 #340 #444)
+
+## 2026-10-03 15:19:23 EDT — scribe `ddf60c389013beebace6c502fb3cc309b05f9050`
+Plan read-aloud-voice, plan only: the best installed voice for answers, its Settings row, and the voice in the read's start event (#471)
+
+## 2026-10-03 15:18:29 EDT — scribe `8459a55be3cf2c11e54f9cb0a1298caa59f6d172`
+Record the voice client in the change log (#471)
+
+## 2026-10-03 15:18:29 EDT — scribe `0910c5638f74f2087cf1452b915007c219c790d9`
+A voice client names the reading voice for Settings and the read's start event (#471)
+
+## 2026-10-03 15:13:01 EDT — scribe `6c84f82e0fe0d38a2b56fd210692309e06b767e6`
+Record the per-device voice hint in the change log (#471)
+
+## 2026-10-03 15:13:00 EDT — scribe `4b4038c22c0d35892104816eb5a6c318cd7fdcd6`
+The voice download hint names the exact Settings path of the device it shows on (#471)
+
+## 2026-10-03 15:10:49 EDT — scribe `5419279e410b0732b58d8f3df188656d49f4129c`
+Record the read-aloud voice commit in the change log (#471)
+
+## 2026-10-03 15:10:29 EDT — scribe `ffb2f70ded67b9203d1cc9769a57e0f34c5d007e`
+Read agent answers with the best system voice installed, and say where to get a better one (#471)
+
+## 2026-10-03 15:07:50 EDT — scribe `632bd4286eaf6d15ef3100ffb32cbdf8f8b64619`
+Import the durability lane where the shared continuation helper registers the recording (#458)
+
+## 2026-10-03 15:06:06 EDT — scribe `f60f29caa505178d3652d358dc2773ca484971ab`
+Give the #432 sweep flow tests' fake client the route lookup the client gained for #458
+
+## 2026-10-03 15:01:21 EDT — scribe `02bbf0a5816e97289126743638f27e0522c1adc3`
+The Resume offer carries its row's title and ends with its row or its window; the notice stops reading the clock after its two minutes (#458)
+
+## 2026-10-03 15:00:46 EDT — scribe `5c74c194b89ea32a499db4ed55a68c0e47ccda6e`
+Red tests: the Resume offer carries its row's title and ends with its row or its window, and the notice stops reading the clock after its two minutes (#458)
+
+## 2026-10-03 14:52:52 EDT — scribe `2dd124de3b918c9f74b1c873fce6f48438c7cd84`
+Resume tests receive the Record and Stop each assertion reads before it checks the state (#458)
+
+## 2026-10-03 14:46:46 EDT — scribe `8a823c866256b62c9874696dbbf82fb983d34c77`
+Settings' Continue Cut-Off Recordings switch, on by default, turns #458 off; every continuation start stays loud (#458)
+
+## 2026-10-03 14:46:05 EDT — scribe `efca870d6f2eeb0d3d1b296317e7e41985edf4f1`
+Red tests: Settings' Continue Cut-Off Recordings switch, on by default, turns #458 off (#458)
+
+## 2026-10-03 14:44:21 EDT — instant-data-swift `3d925396e651f9c0499886e657a1f00c82a68c78`
+#473's handoff test polls a flag, not DispatchSemaphore.wait, which Swift 6 forbids in async code (#473).
+
+## 2026-10-03 14:42:56 EDT — scribe `c13488ccaf30c27911484c55b237ce8b3c82e2b5`
+Offer a cut-off take for Resume only at a route chunk index a route can continue after (#458)
+
+## 2026-10-03 14:40:39 EDT — scribe `a78cd3b503b29cc74f54fa4255d6889daa1b0a8b`
+Name the waiting Record's trigger binding apart from the value it initializes (#458)
+
+## 2026-10-03 14:39:00 EDT — scribe `475cc511a406dcc9ed0b244532ec644c014bdce9`
+Open the resume-cut-off channel: the #458 split with ui-polish and list-edit-mode, and the names both draw against (#458)
+
+## 2026-10-03 14:34:56 EDT — scribe `8ab12635a157efc3d54188453f3f40717c57dbc4`
+Record after a cut-off continues the take, New Recording instead stops it for a new one, and a stranded take stays resumable for 30 minutes (#458)
+
+## 2026-10-03 14:34:38 EDT — scribe `098001d92fabf84a950871333557f398705fd321`
+Red tests: Record after a cut-off continues the take, New Recording instead stops it for a new one, and a stranded take stays resumable for 30 minutes (#458)
+
+## 2026-10-03 14:22:32 EDT — instant-data-swift `1c7ab096fd520e65fb46b8e89cd6c04e1ac83237`
+#473's blocked-log test reads its line back instead of flushing, so it also builds on v1.9.4 for the red run (#473).
+
+## 2026-10-03 14:22:13 EDT — instant-data-swift `f0272d8cb35baa2da1c1cc2bc04c2806970eb466`
+#473's tests build without ConcurrencyExtras, and their offline-runtime fixture sits above the red-run marker (#473).
+
+## 2026-10-03 14:21:08 EDT — instant-data-swift `a6a6ab1751574a836f53baf8d162852a189820d4`
+Keep log I/O and outbox listings off the operation gate, and name a local write's phases (#473 #445).
+
+## 2026-10-03 14:20:55 EDT — scribe `022b5a9ee8d379048cdd399456c1db686631c487`
+Record the cheaper gate and the model-call pause in the change log (#161)
+
+## 2026-10-03 14:20:54 EDT — instant-data-swift `e2435d90e07c4ccac9070eb2ea08112a836dc4cf`
+Claim the files of #473's 1.9.5 part: log I/O off the operation gate, named transact phases, and bounded outbox reads (#473 #445).
+
+## 2026-10-03 14:20:43 EDT — scribe `d421bb221be9c61c5b68dc9241e194c734963aba`
+Voice actions can pause their model calls, for a hot phone, and fall back to the exact phrases (#161)
+
+## 2026-10-03 14:19:19 EDT — scribe `a9c7b82927d2514bdb94be92860b61343f130e43`
+A cheaper voice gate: "go" and "put" no longer count alone, and sections over 20 words skip the model (#161)
+
+## 2026-10-03 14:14:39 EDT — scribe `4962f8e54b6215ed75d293a8ab625d267fcaef66`
+Record the real-speech cost measurement in the change log (#161)
+
+## 2026-10-03 14:14:30 EDT — scribe `af246721e375205d64351cee0f99bb6b0ad93bd8`
+Measure what default-on voice actions cost on real speech: 154 sections an hour reach the model (#161)
+
+## 2026-10-03 14:11:27 EDT — scribe `8774486a914327c254910f12c6e0b5b73af9afb3`
+ADR 0029 section 5a: an answer's card is where it landed, live and in playback, status has its own screen, and the Watch opens Scribe's links (#340)
+
+## 2026-10-03 14:10:24 EDT — scribe `dca1a1ae20f28a0466c5e7554491e8895250db6c`
+An answer's notification carries Read It, Later, and Stop Reading, on the phone and the Watch (#342)
+
+## 2026-10-03 14:08:30 EDT — scribe `8c2a72f58032b0c7201c916beaa0d61682dcb5b5`
+Record the one-time voice actions reset in the change log (#161 #442)
+
+## 2026-10-03 14:08:16 EDT — scribe `1aed584c4a31c1617dc9cab29627fb411d4fa52a`
+Turn voice actions back on once where they crashed, and say so in the banner (#161 #442)
+
+## 2026-10-03 14:07:59 EDT — scribe `4a8c0904c2ce6277a045fb2c5ca9f4e7a31e4ed2`
+Before an answer is read, a tone and the haptic say an agent answered; "stop" or "later" skips it, "read it" reads it (#342)
+
+## 2026-10-03 14:01:34 EDT — scribe `2d55cc4d0f3f650e3ef251b33161c4285ad66b7c`
+Record the Pause-and-Stop name rule and the default flip in the change log (#161)
+
+## 2026-10-03 14:00:55 EDT — scribe `44495d4f4a199523c91610e4cbdad7eedc8a0f7c`
+Voice actions on by default; Settings turns them off (#161)
+
+## 2026-10-03 13:59:07 EDT — scribe `2f20f6b9a9a24371f0d6be1c9f67c0e24c74e62a`
+Pause and Stop by voice need "Scribe, ...": talk about pausing can never raise the question (#161)
+
+## 2026-10-03 13:58:17 EDT — scribe `9ae040322bb3b5456e541e65f6de45273fae4921`
+A playback answer card is the live screen's card: More shows the whole answer and a tap opens its thread (#340)
+
+## 2026-10-03 13:53:52 EDT — scribe `4d3631f0f120a5229ec01602e64ff6246c14bd26`
+An agent answer's notification is passive while this device records, so Siri never announces it over the capture (#340)
+
+## 2026-10-03 13:52:19 EDT — scribe `b3245d24705d3a7bf37c4abd37e3d68d88aa9355`
+Red: an agent answer's notification is passive while this device records, and so is the push for a live recording (#340)
+
+## 2026-10-03 13:46:48 EDT — scribe `3ca83ba7e8621064847e93790ec62ec6c21a7338`
+Release Scribe 0.1 (84)
+
+## 2026-10-03 13:46:40 EDT — scribe `ab66735893d7dce62d5af61bec441d5e99e9efec`
+Record the P0 voice-actions guard's four commits in the change log (#442)
+
+## 2026-10-03 13:46:31 EDT — scribe `781df924cc325c1f26f7e7b7a3c14e212f2ea370`
+An answer read aloud waits for Michael to pause, pauses when he speaks, and stops on "stop" or its card's Stop (#342)
+
+## 2026-10-03 13:46:03 EDT — scribe `c3c326cb198de72cd0af458a908750b01898a4e3`
+Merge remote-push: agent answers reach every device by APNs, with the push devices registered per account (#340)
+
+## 2026-10-03 13:46:03 EDT — scribe `587b89d74da1584dc716957fd55f6e98179e8847`
+Amend plan resume-cut-off: the coordinator's answer, option 1 with a 30-minute resume window (#458)
+
+## 2026-10-03 13:45:27 EDT — scribe `bacb621f182b8e0dc8c24e559b0f27b789febba3`
+Merge the P0 voice-actions guard for iOS 27: one gate keeps every Scribe caller off FoundationModels on version 27, and a model call in flight is never cancelled (#442)
+
+## 2026-10-03 13:44:20 EDT — scribe `d9c8f657aa1b86a795e1a727c0dca362515f100b`
+Plan resume-cut-off: Record continues a recording that was cut off, Resume is a normal action, and no recording stays stamped live (#458)
+
+## 2026-10-03 13:39:27 EDT — instant-data-swift `4da6f182240ea1a09e29df04eac059416980037f`
+Merge library-79-hops into main for v1.9.4: a refused re-send the server's results vouch for resolves as accepted (#441), and a failed mutation's supersession is read-only API (#445); tagged v1.9.4 (#441 #445).
+
 ## 2026-10-03 13:37:46 EDT — instant-data-swift `0bc6ddc4127e0742eee732df18b0b45da69de775`
 Document the v1.9.4 release and its gate in docs/releases/v1.9.4.md and PROGRESS.md (#441 #445).
+
+## 2026-10-03 13:36:24 EDT — scribe `65ee2483a1426cb65a32215561ad6a0e057372cc`
+Record live-stamp-82 in PROGRESS: the heartbeat tail, the #432 sweep, the list-position rules, #441's Scribe side, and the verification (#408 #432 #441)
+
+## 2026-10-03 13:35:51 EDT — scribe `80a795e54e6a4b450c41a371196c80940a666cfc`
+Record live-stamp-82's commits in the change log: the follow-along heartbeat, the #432 sweep, the list-position rules, and #441's Scribe side (#408 #432 #441)
+
+## 2026-10-03 13:27:19 EDT — scribe `9bb6cd759eb31e37105756a59845041318c1453e`
+Red: a playback answer card opens with More and its tap opens the thread at that answer (#340)
+
+## 2026-10-03 13:25:22 EDT — scribe `7ed2792f53f00624acd1a61c66f090d95091f49c`
+Merge share-ui: the new sharing flow behind an off-by-default flag, with the people field's burst-typing and duplicate-person fixes (#389)
+
+## 2026-10-03 13:25:13 EDT — scribe `2c90b2d76afe61230d2543a69e00581b82a1e1f0`
+Merge ui-polish for 84: the build chip docks above the bar, and the full-screen stack holds Back to Live and the player inside the bar (#417 #414 #413)
+
+## 2026-10-03 13:15:02 EDT — scribe `7e4efa677739e9c35174bccc1a2521c65cac0d19`
+Playback shows the agents' answers as cards where they landed on the recording clock (#340)
+
+## 2026-10-03 13:13:55 EDT — scribe `d57973ae2818b693c8235b130d3132eb54a605cc`
+Red: playback shows the agents' answers as cards where they landed on the recording clock (#340)
+
+## 2026-10-03 13:04:51 EDT — scribe `d32a616f4b270424d37aaf6961e7f35b2ae5f303`
+The Watch registers Scribe's URL scheme, so a tap on the Live Activity in the Smart Stack opens the Watch app (#340)
+
+## 2026-10-03 13:03:11 EDT — scribe `490a6d972d62967257eab5470f9aa32ef9ae54cb`
+Red: every target defines the $(SCRIBE_…) variables its Info.plist names, so the Watch registers its URL scheme (#340)
+
+## 2026-10-03 13:00:44 EDT — scribe `b656db63a4a67ead898180fabcdb9b9a5d631c33`
+An agent's answer card goes back to where it landed after a relaunch, and only a live one moves the transcript (#340)
+
+## 2026-10-03 13:00:38 EDT — scribe `dcf63a96348686978d6a9b43bc02c543bac3a8e8`
+Red: an agent's answer card goes back to where it landed after a relaunch, and only a live one moves the transcript (#340)
 
 ## 2026-10-03 12:48:47 EDT — instant-data-swift `45a462908c27876ba2e31096c44f2cf39a48f214`
 #445: whether a failed mutation is superseded, slot by slot, as read-only public API for Scribe's Sync view (InstantSwiftDataClient.supersession(ofFailedMutation:) and failedMutationSupersessions()), by the #441 guard's rule (#445).
@@ -28,6 +247,21 @@ Never cancel a voice-actions model call in flight; drop a late answer instead (#
 ## 2026-10-03 12:16:27 EDT — scribe `9e2d83273ddb3aa7bfcf585b0be6a267ccf5e245`
 P0: one gate keeps every Scribe caller off FoundationModels on version 27 (#442)
 
+## 2026-10-03 12:12:26 EDT — scribe `951e91f5f6a3e79d783bfaf3830f70cd9eefb146`
+Merge the launch-and-onboarding plans: store-opens-off-main-actor and the AX5 badges, with their claims (#405 #439)
+
+## 2026-10-03 12:12:06 EDT — scribe `25f6b24e987f3eed4eb9fcf70933a81fe1a83550`
+Record Scribe 0.1 (83) in the change log and PROGRESS: installed on the iPad and the Mac; the iPhone stays on 82 until 84 (#436)
+
+## 2026-10-03 12:11:23 EDT — scribe `dc2aec188b98e77d60579e3284d75b0c36881497`
+The final segment's recording summary leaves updatedAtMs to the heartbeat, so a re-sent one passes the rule (#441)
+
+## 2026-10-03 12:11:10 EDT — scribe `0033c56b92b814fa9171667ddb8a4d7007445392`
+Red test: a final segment's recording summary leaves updatedAtMs to the heartbeat; Stop still stamps it (#441)
+
+## 2026-10-03 12:10:30 EDT — scribe `f5b6c794c917ddafefa483eb041cdc70ac19d58a`
+Amend plan live-stamp-82 (d): the final segment's recording summary leaves updatedAtMs to the heartbeat, and claim its tests (#441)
+
 ## 2026-10-03 12:08:34 EDT — scribe `e27b34ab1212f5793df5d6edccee6860eda0e219`
 P0: never ask Apple's models on version 27, where FoundationModels crashes the app (#442)
 
@@ -40,8 +274,17 @@ Capture-time writes leave updatedAtMs to the heartbeat, so a re-sent one passes 
 ## 2026-10-03 12:07:15 EDT — scribe `2c60e8c3a706f3dd3326b81f23f2bdf5521e1f21`
 Claim capture-gaps-row's write test and ADR 0018 for live-stamp-82 (d) (#441)
 
+## 2026-10-03 12:05:11 EDT — scribe `2338bbd15e7a8369c089e3ec2a19f6170ff35ded`
+Red test: capture-time writes leave updatedAtMs to the heartbeat, so a re-sent one passes the server's rule (#441)
+
+## 2026-10-03 12:04:26 EDT — scribe `f8781e6f384cd0cb0d5d935488112d3cab4359a0`
+Amend plan live-stamp-82 (d): capture-time writes leave updatedAtMs to the heartbeat, so a re-sent one is never refused (#441)
+
 ## 2026-10-03 12:03:55 EDT — instant-data-swift `d8208b334737129c87f91f4a646c9794471309b0`
 Claim the files of the #441 fix: a re-sent write the server already holds is shown as refused (#441).
+
+## 2026-10-03 12:01:36 EDT — scribe `c06aff08aa76bf10ef7cd9206f03aca2cc034339`
+Merge origin/main into live-stamp-82: builds 81 to 83, capture-gaps-row, ui-polish, the 1.9.3 pin and list-edit-mode's schema (#432 #408)
 
 ## 2026-10-03 11:32:20 EDT — scribe `1e95b90c8548524810478ca22029cea44bee0fc7`
 Merge main's SoundAnalysis plan and claims after the 0.1 (83) release commit (#440).
@@ -111,6 +354,9 @@ Claim the files of the #436 hotfix: SQLitePersistenceStore.swift, the new oversi
 
 ## 2026-10-03 09:45:59 EDT — scribe `412556037751aaf19aced7886aa924a2f6b3f61c`
 Plan playback-links: playback during a recording plays on the loudspeaker, and playing another recording links the two (ADR 0040, #122 #435).
+
+## 2026-10-03 09:37:37 EDT — scribe `99dc31d853df7d33aefc151965986a610304512d`
+Give the list-position tests their own inserted-triple helper: the other test files keep theirs fileprivate (#432)
 
 ## 2026-10-03 09:34:30 EDT — scribe `683efc6af7a0dce71e5f65f7b21e3cbcac1e3105`
 Release Scribe 0.1 (82).

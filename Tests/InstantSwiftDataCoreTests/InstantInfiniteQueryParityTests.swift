@@ -1665,6 +1665,7 @@ struct InstantInfiniteQueryParityTests {
     subscription.unsubscribe()
     _ = try await runtime.closeConnection()
 
+    InstantDiagnostics.shared.flush()
     let text = try String(contentsOf: fileURL, encoding: .utf8)
     #expect(text.contains("infinite.starter.snapshot"))
     #expect(text.contains("shortPageClosed") || text.contains("\"canLoadNextPage\":\"false\""))

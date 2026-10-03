@@ -10,6 +10,41 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## October 3rd, 2026 at 6:37:39 p.m. EDT — `3edae737bdac` Document the v1.9.5 release: a local write no longer holds the operation gate while it logs, and outbox listings never wait for it (#473)
+
+- **Implementation commit:** `3edae737bdacaa98b58787a97ce4a5b753474e04`
+- **Change:** Document the v1.9.5 release: a local write no longer holds the operation gate while it logs, and outbox listings never wait for it (#473).
+- **Details:**
+  - docs/releases/v1.9.5.md: Recordings 185 and 186, the four changes, red on v1.9.4 (the blocked log and the blocked report hold the caller there; the phase test crashed on a stale incremental build), gate-195b's catch of the report flaw, and gate-195c on a6a59b56.
+- **Files:**
+  - `docs/releases/v1.9.5.md` — the v1.9.5 release document
+  - `PROGRESS.md` — the v1.9.5 entry
+- **User context (verbatim):**
+  > Publish the library once it's checked fast. Yes.
+- **SpecStory:** unavailable — Claude Code agent session (library-79); no SpecStory capture configured for this session.
+
+## October 3rd, 2026 at 2:23:01 p.m. EDT — `a6a6ab175157` Keep log I/O and outbox listings off the operation gate, and name a local write's phases (#473 #445)
+
+- **Implementation commit:** `a6a6ab1751574a836f53baf8d162852a189820d4`
+- **Change:** Keep log I/O and outbox listings off the operation gate, and name a local write's phases (#473, P0: a 12 s gate hold killed a recording; transcription stalled behind gate backlogs twice).
+- **Details:**
+  - Cause: a local write logs while it holds the operation gate, and every diagnostics line created the directory, opened, locked, wrote and fsynced the file; the gate wrote its wait report before resuming the next holder; transact phases had no names; pendingMutations()/failedMutations() decode every row under the gate (a 4.1 s hold after a relaunch).
+  - Fix: InstantDiagnostics writes its file on a serial queue (flush() waits; configure and exit flush; 8 MiB backlog drops with lastWriteError); AsyncSerialGate resumes the next holder before the wait report and markHolderPhase names a phase without a hop; transact names its seven phases and server apply marks its phases without hops; pendingMutations(limit:) and failedMutations(limit:) read SQLite without the gate (#445 asked for the pending one).
+  - Follow-ups: f0272d8c (the tests' own lock box and fixture above the red-run marker) and 1c7ab096 (the blocked-log test reads its line back, so it builds on v1.9.4).
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantDiagnostics.swift` — asynchronous ordered file writes, flush, bounded backlog
+  - `Sources/InstantSwiftDataCore/AsyncSerialGate.swift` — handoff before the wait report; hop-free phase names
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — named transact phases, hop-free server-apply phases, the two bounded listings
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — oldestOutboxMutations in one actor turn
+  - `Sources/InstantSwiftData/InstantSwiftData.swift` — the client's two bounded listings
+  - `Tests/InstantSwiftDataCoreTests/InstantOperationGateHoldTests.swift` — the blocked log, the handoff, the named phase, the stall phase, the listing under a held gate
+  - `Tests/InstantSwiftDataCoreTests/InstantPendingMutationsPageTests.swift` — the oldest pending writes in send order without a queue-wide read
+  - `Tests/InstantSwiftDataCoreTests/InstantDiagnosticsTests.swift` — flush before reading the log
+  - `Tests/InstantSwiftDataCoreTests/InstantInfiniteQueryParityTests.swift` — flush before reading the log
+- **User context (verbatim):**
+  > Publish the library once it's checked fast. Yes.
+- **SpecStory:** unavailable — Claude Code agent session (library-79); no SpecStory capture configured for this session.
+
 ## October 3rd, 2026 at 1:37:56 p.m. EDT — `0bc6ddc4127e` Document the v1.9.4 release: a refused re-send the server's results vouch for resolves as accepted, and a failed mutation's supersession is read-only API (#441 #445)
 
 - **Implementation commit:** `0bc6ddc4127e0742eee732df18b0b45da69de775`

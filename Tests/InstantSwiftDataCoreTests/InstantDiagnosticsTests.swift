@@ -28,6 +28,7 @@ struct InstantDiagnosticsTests {
       function: "test()"
     )
 
+    diagnostics.flush()
     let entries = try readEntries(at: fileURL)
     #expect(entries.count == 1)
     #expect(entries[0].schemaVersion == 1)
@@ -71,6 +72,7 @@ struct InstantDiagnosticsTests {
     snapshot("list", hasNextPage: true)
     snapshot("list", hasNextPage: false)
 
+    diagnostics.flush()
     let entries = try readEntries(at: fileURL)
     #expect(entries.map(\.metadata["hasNextPage"]) == ["false", "false", "true", "false"])
     #expect(entries.count == 4)
@@ -99,6 +101,7 @@ struct InstantDiagnosticsTests {
       correlationID: "instant-query:private-plan-do-not-write"
     )
 
+    diagnostics.flush()
     let entry = try #require(readEntries(at: fileURL).first)
     #expect(entry.metadata["refreshToken"] == "<redacted>")
     #expect(entry.metadata["Authorization"] == "<redacted>")
@@ -124,6 +127,7 @@ struct InstantDiagnosticsTests {
       event: "query.started",
       message: "Ignored"
     )
+    diagnostics.flush()
     #expect(FileManager.default.fileExists(atPath: fileURL.path) == false)
 
     diagnostics.record(
@@ -133,6 +137,7 @@ struct InstantDiagnosticsTests {
       event: "query.failed",
       message: "Written"
     )
+    diagnostics.flush()
     #expect(try readEntries(at: fileURL).map(\.message) == ["Written"])
 
     diagnostics.configure(InstantDiagnosticsConfiguration(fileURL: nil))
@@ -143,6 +148,7 @@ struct InstantDiagnosticsTests {
       event: "query.failed-again",
       message: "Ignored after disabling"
     )
+    diagnostics.flush()
     #expect(try readEntries(at: fileURL).map(\.message) == ["Written"])
   }
 
@@ -172,6 +178,8 @@ struct InstantDiagnosticsTests {
       }
     }
 
+    first.flush()
+    second.flush()
     let entries = try readEntries(at: fileURL)
     #expect(entries.count == 40)
     #expect(Set(entries.map(\.sessionID)) == ["first", "second"])
@@ -209,6 +217,7 @@ struct InstantDiagnosticsTests {
       message: "Private"
     )
 
+    diagnostics.flush()
     let attributes = try FileManager.default.attributesOfItem(atPath: fileURL.path)
     let permissions = try #require(attributes[.posixPermissions] as? NSNumber)
     #expect(permissions.intValue & 0o777 == 0o600)
@@ -253,6 +262,7 @@ struct InstantDiagnosticsTests {
       metadata: ["large": String(repeating: "v", count: 10_000)]
     )
 
+    diagnostics.flush()
     let entry = try #require(readEntries(at: fileURL).first)
     #expect(entry.subsystem.count == 129)
     #expect(entry.message.count == 4_097)
@@ -276,6 +286,7 @@ struct InstantDiagnosticsTests {
       )
     }
 
+    diagnostics.flush()
     let current = try readEntries(at: fileURL)
     let previous = try readEntries(at: previousURL)
     #expect(try fileSize(fileURL) <= 4_096)
@@ -300,6 +311,7 @@ struct InstantDiagnosticsTests {
         message: String(repeating: "x", count: 100)
       )
     }
+    diagnostics.flush()
     #expect(try readEntries(at: fileURL).count == 50)
     #expect(!FileManager.default.fileExists(atPath: InstantDiagnostics.previousLogFileURL(for: fileURL).path))
     #expect(InstantDiagnosticsConfiguration(fileURL: fileURL).maximumFileBytes == 16 * 1_024 * 1_024)
@@ -331,6 +343,7 @@ struct InstantDiagnosticsTests {
       }
     }
 
+    diagnostics.flush()
     let current = try readEntries(at: fileURL)
     let previous = try readEntries(at: InstantDiagnostics.previousLogFileURL(for: fileURL))
     #expect(try fileSize(fileURL) <= 64 * 1_024)
