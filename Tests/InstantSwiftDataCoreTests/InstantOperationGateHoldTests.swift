@@ -123,13 +123,13 @@ struct InstantOperationGateHoldTests {
   /// The gate hands over before it reports the wait: a wait report that blocks must not hold the next caller.
   @Test
   func theNextHolderRunsBeforeItsWaitIsReported() async throws {
-    let reportEntered = DispatchSemaphore(value: 0)
+    let reportEntered = GateHoldBox(false)
     let releaseReport = DispatchSemaphore(value: 0)
     let gate = AsyncSerialGate(
       label: "test",
       waitReportThresholdMilliseconds: 0,
       waitReport: { _ in
-        reportEntered.signal()
+        reportEntered.setValue(true)
         releaseReport.wait()
       }
     )
@@ -145,7 +145,7 @@ struct InstantOperationGateHoldTests {
     }
     let leaving = Task.detached { await gate.leave() }
     // The report blocks on the gate's actor now; the next holder must already be running.
-    for _ in 0..<200 where reportEntered.wait(timeout: .now()) == .timedOut {
+    for _ in 0..<200 where !reportEntered.value {
       try await Task.sleep(for: .milliseconds(5))
     }
     for _ in 0..<100 where !nextHolderRan.value {
