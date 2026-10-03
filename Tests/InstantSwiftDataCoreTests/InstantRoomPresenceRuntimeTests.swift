@@ -358,9 +358,9 @@ extension InstantRoomPresenceRuntimeTests {
       }
     }
     let local = try #require(try await runtime.roomPresence(room: room).first { $0.isLocal })
-    let expected = InstantLiveJSONValue.object(local.values.mapValues(InstantLiveJSONValue.init))
+    let expected = JSONValue.object(local.values)
     try await waitForRoom("the last set-presence on the wire to match the runtime's own presence") {
-      await session.sentMessages().last { $0.op == "set-presence" }?.fields["data"] == expected
+      await session.sentMessages().last { $0.op == "set-presence" }?.fields["data"]?.jsonValue == expected
     }
     _ = try await runtime.closeConnection()
   }
