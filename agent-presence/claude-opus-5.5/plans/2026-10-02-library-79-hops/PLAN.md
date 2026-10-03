@@ -101,3 +101,14 @@ over its bound, with a warning, and the query refetches it; published as v1.9.3.
 `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift`, new
 `Tests/InstantSwiftDataCoreTests/InstantOversizedCachedResultOpenTests.swift`, and new `docs/releases/v1.9.3.md`,
 added 2026-10-03 09:48 EDT. The six queued speed and measurement jobs are paused until v1.9.3 is tagged.
+
+## #441 (P1, main, 2026-10-03 about 12:00 EDT)
+
+Recording 040's iPhone showed "Not synced / Instant refused one change": a re-sent write the server had most likely
+already applied was refused by Scribe's monotonic updatedAtMs rule after a dropped connection. Production holds its
+capture gaps (read only). Fix: a refused re-send resolves as accepted when every slot it sets is covered by a later
+accepted write of this device or already holds the same value in a live-query result the server sent after the write
+was created; one refused before such a result waits briefly for it. Published as v1.9.4. Touching
+`Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift`, `InstantRuntime.swift`, `BoundedOutboxDelivery.swift`,
+`InstantModels.swift` (a doc comment), new `Tests/InstantSwiftDataCoreTests/InstantRefusalHeldByServerTests.swift`, and
+new `docs/releases/v1.9.4.md`, added 2026-10-03 12:03 EDT.
