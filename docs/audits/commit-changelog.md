@@ -1,3 +1,6 @@
+## 2026-10-03 10:31:25 EDT — instant-data-swift `1ea9f0763639139c9d6c5c5a33fee88da2b9416d`
+Document the v1.9.3 release: #436, a store whose cache holds one live-query result over 8 MiB opens again; red on v1.9.2, green here, and two high-lane gate holds (#436).
+
 ## 2026-10-03 10:16:54 EDT — instant-data-swift `5e1c0222036472746cf5c66577fa93a0ff4d2e18`
 #436 test isolation: each fixture names its own oversized result, so the two parallel tests never capture each other's warning (#436).
 
