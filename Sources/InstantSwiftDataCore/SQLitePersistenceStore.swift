@@ -906,8 +906,6 @@ public actor SQLitePersistenceStore {
   private var attributeWriteGeneration = 0
   private var liveResultAttributeLoads = 0
   private var declaredRelationReconciliationLiveResultScanCount = 0
-  /// Cached live-query results an open-time pass dropped because they were over its row bound (#436).
-  private var droppedOversizedLiveQueryResultCount = 0
   private var installedDeclaredRelationStorageMarker:
     DeclaredRelationStorageReconciliationMarker?
   private var installedDeclaredRelationStorageObsoleteAttributeIDs: Set<String> = []
@@ -921,10 +919,6 @@ public actor SQLitePersistenceStore {
 
   package func declaredRelationReconciliationLiveResultScanCountForTesting() -> Int {
     declaredRelationReconciliationLiveResultScanCount
-  }
-
-  package func droppedOversizedLiveQueryResultCountForTesting() -> Int {
-    droppedOversizedLiveQueryResultCount
   }
 
   package func resetCacheResidencyMetricsForTesting() {
@@ -2496,7 +2490,6 @@ public actor SQLitePersistenceStore {
   private func dropLiveQueryResultWithoutTransaction(queryKey: String) throws {
     try execute("DELETE FROM instant_live_query_triples WHERE query_key = ?", [.text(queryKey)])
     try execute("DELETE FROM instant_live_query_results WHERE query_key = ?", [.text(queryKey)])
-    droppedOversizedLiveQueryResultCount += 1
   }
 
   /// Logs each cached result an open-time pass dropped, once the pass has committed.
