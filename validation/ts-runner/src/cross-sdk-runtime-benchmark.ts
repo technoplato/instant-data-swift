@@ -13,7 +13,7 @@ export const crossSDKRuntimeBenchmarkContract = {
   ],
 } as const;
 
-interface BenchmarkSample {
+export interface BenchmarkSample {
   iteration: number;
   durationNanoseconds: number;
   operationCount?: number;
@@ -21,7 +21,7 @@ interface BenchmarkSample {
   pendingMutationCount?: number;
 }
 
-interface BenchmarkMetric {
+export interface BenchmarkMetric {
   name: string;
   unit: "nanoseconds";
   samples: BenchmarkSample[];
@@ -144,13 +144,13 @@ export async function runCrossSDKRuntimeBenchmark(
   };
 }
 
-function installBrowserEnvironment() {
+export function installBrowserEnvironment() {
   const globals = globalThis as any;
   globals.window ??= { location: { search: "" } };
   globals.BroadcastChannel = undefined;
 }
 
-class OfflineNetworkListener {
+export class OfflineNetworkListener {
   static getIsOnline(): Promise<boolean> {
     return new Promise(() => {});
   }
@@ -160,7 +160,7 @@ class OfflineNetworkListener {
   }
 }
 
-async function loadRuntimeInternals() {
+export async function loadRuntimeInternals() {
   const packageEntry = fileURLToPath(import.meta.resolve("@instantdb/core"));
   const dist = dirname(packageEntry);
   const module = async (path: string) => import(pathToFileURL(resolve(dist, path)).href);
@@ -178,7 +178,7 @@ async function loadRuntimeInternals() {
   };
 }
 
-function runtimeConfig(appId: string) {
+export function runtimeConfig(appId: string) {
   return {
     appId,
     apiURI: "https://api.instantdb.com",
@@ -188,7 +188,7 @@ function runtimeConfig(appId: string) {
   };
 }
 
-async function waitForLoaded(reactor: any) {
+export async function waitForLoaded(reactor: any) {
   await reactor.querySubs.waitForMetaToLoad();
   await reactor.kv.waitForMetaToLoad();
   await reactor.kv.waitForKeyToLoad("pendingMutations");
@@ -196,7 +196,7 @@ async function waitForLoaded(reactor: any) {
   await reactor.kv.flush();
 }
 
-function disposeReactor(reactor: any) {
+export function disposeReactor(reactor: any) {
   reactor.shutdown();
   for (const persisted of [reactor.querySubs, reactor.kv, reactor._syncTable?.subs]) {
     if (!persisted) continue;
@@ -207,7 +207,7 @@ function disposeReactor(reactor: any) {
   }
 }
 
-function record(
+export function record(
   samples: Map<string, BenchmarkSample[]>,
   name: string,
   sample: BenchmarkSample,
@@ -217,7 +217,7 @@ function record(
   samples.set(name, values);
 }
 
-function benchmarkMetric(name: string, samples: BenchmarkSample[]): BenchmarkMetric {
+export function benchmarkMetric(name: string, samples: BenchmarkSample[]): BenchmarkMetric {
   const durations = samples.map((sample) => sample.durationNanoseconds).sort((a, b) => a - b);
   return {
     name,
@@ -238,13 +238,13 @@ function percentile(sorted: number[], fraction: number): number {
   return sorted[Math.min(index, sorted.length - 1)];
 }
 
-async function measured(operation: () => Promise<void>): Promise<number> {
+export async function measured(operation: () => Promise<void>): Promise<number> {
   const start = process.hrtime.bigint();
   await operation();
   return Number(process.hrtime.bigint() - start);
 }
 
-function integerArgument(name: string, fallback: number): number {
+export function integerArgument(name: string, fallback: number): number {
   const index = process.argv.indexOf(name);
   if (index < 0) return fallback;
   const value = Number(process.argv[index + 1]);
@@ -252,7 +252,7 @@ function integerArgument(name: string, fallback: number): number {
   return value;
 }
 
-function benchmarkUUID(index: number): string {
+export function benchmarkUUID(index: number): string {
   return `00000000-0000-4000-8000-${String(index).padStart(12, "0")}`;
 }
 
