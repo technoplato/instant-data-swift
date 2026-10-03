@@ -1,5 +1,17 @@
+## 2026-10-03 03:45:24 EDT — scribe `d2b115a01c33d11b3af2618ecf83e0bf566ee3de`
+Merge list-edit-mode's #430 schema and rule: recordings.deletedAtMs and the keepsDeletion update rule, as production has them (ADR 0038, #430).
+
+## 2026-10-03 03:42:27 EDT — scribe `58756bd8f791bb9026945b173dd782b4ec2c6786`
+Record Scribe 0.1 (81) in the change log and PROGRESS: installed on the iPhone, the iPad, and the Mac (#272 #408 #406).
+
 ## 2026-10-03 03:22:37 EDT — instant-data-swift `1976f8aaf588e3c7b60501e0663dc366eadea940`
 #431: the server's facts are authoritative over this device's accepted writes, as in Reactor.js. Single-value slots take the server's value whatever the stamps, a slot the server cleared loses the store's values (slots a result held and slots its query selects), only a pending write of a cleared slot protects it, and a write pruned in the same apply protects nothing; red on v1.9.1, green here, including the iPad's pulled store and a store v1.9.1 left stuck (#431 #408).
+
+## 2026-10-03 02:34:58 EDT — scribe `383890151e7450063c16785f5a3406feab3e83d3`
+Record the sync-status test's loop fix in the change log (#308).
+
+## 2026-10-03 02:34:51 EDT — scribe `b02fefc43b497d268659cb68812bf19734c3668f`
+Fail and stop when the sync-status test's stream ends, instead of spinning on its nil (#308).
 
 ## 2026-10-03 02:15:54 EDT — instant-data-swift `c1292d88d54867af11d1d3b287f199c029d0232e`
 Claim the query-selection test for #431's cleared slots: a refreshed result vouches for the slots its query selects (#431).
