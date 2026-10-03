@@ -10,6 +10,41 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## October 3rd, 2026 at 12:49:19 p.m. EDT — `45a462908c27` Say whether a failed mutation is superseded, slot by slot, as read-only public API (#445)
+
+- **Implementation commit:** `45a462908c27876ba2e31096c44f2cf39a48f214`
+- **Change:** Say whether a failed mutation is superseded, slot by slot, as read-only public API (#445: Scribe's Sync view offers Clear Superseded Refusals).
+- **Details:**
+  - API: InstantSwiftDataClient.supersession(ofFailedMutation:) and failedMutationSupersessions() return InstantMutationSupersession (.superseded(by:) or .notSuperseded(slots:)) with an InstantSlotCoverage per write operation: entity, namespace, attribute name and id, the value set, and what covers it. Shape agreed with launch-recovery.
+  - Rule: the #441 guard's. Covered by the newest later accepted write of this device that sets the slot, or for an insert by a server result since the write was created that shows its value; a write in flight is named but does not count; otherwise what the newest stored result shows. Retractions, deletions and lookup steps are never covered. A failed row's write keys are deleted when it fails, so each slot looks up its later writes by its own key. Read only, in a deferred transaction on the persistence actor.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — the read-only supersession query, the per-slot later-write lookup, and the shared later-write and server-result helpers
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — the @concurrent package entry points
+  - `Sources/InstantSwiftDataCore/InstantModels.swift` — InstantMutationSupersession and InstantSlotCoverage
+  - `Sources/InstantSwiftData/InstantSwiftData.swift` — the two public client methods
+  - `Tests/InstantSwiftDataCoreTests/InstantFailedMutationSupersessionTests.swift` — each coverage case and the not-failed error
+- **User context (verbatim):**
+  > And then I got a not synced, instant refused one change to this recording, so I need to, um, diagnose and debug where that is probably around when I opened the iPad.
+- **SpecStory:** unavailable — Claude Code agent session (library-79); no SpecStory capture configured for this session.
+
+## October 3rd, 2026 at 12:49:19 p.m. EDT — `ec10cad263a4` Resolve a refused re-send as accepted when the server's own results already show the values it set (#441)
+
+- **Implementation commit:** `ec10cad263a44d3ec679b8916e5af275852266a0`
+- **Change:** Resolve a refused re-send as accepted when the server's own results already show the values it set (#441, P1: Recording 040's iPhone showed a re-sent write production holds as refused).
+- **Details:**
+  - Cause: the iPhone's capture-gaps write lost its answer with the socket; its re-send was refused by Scribe's newData.updatedAtMs >= data.updatedAtMs rule because a later heartbeat had advanced updatedAtMs, and production holds the gaps (read only). Instant's server applies every transact it receives (session.clj); library-78 resolved such a refusal only when later accepted writes of this device covered every slot, and nothing later wrote the gaps.
+  - Fix: for a re-send only, a slot also counts as covered when a live-query result the server sent since the write was created shows its value (an identity slot, when the result shows the entity); it resolves as supersededByAcceptedWrite with the newer of the processed watermark and the covering writes' transaction id. A re-send refused while the connection still owes the first answer to a registered query waits parked and is re-checked after each add-query-ok, add-query-exists and refresh-ok; it stands once every query is answered without such a result, or after 30 s. First-offer refusals still fail; a refusal that stands after waiting logs outbox.mutation.refused-write too.
+  - Red on v1.9.3 (second worktree at bb0e6265): the three resolving tests fail, the two still-failing guards pass. The first green run crashed (SIGBUS in InstantRuntimeConfiguration's outlined destroy): stale test objects from an incremental build linked the configuration's old layout; the gate builds clean.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — the per-slot server-result check for a refused re-send, its tx id, and the awaiting coverage
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — the server-result check and the wait for a replay's refusal, the parked re-checks after every query answer, and the wake that ends the wait
+  - `Sources/InstantSwiftDataCore/BoundedOutboxDelivery.swift` — the awaiting coverage and resolution, InstantServerResultCheck, and the parked refusal's error and deadline
+  - `Sources/InstantSwiftDataCore/InstantModels.swift` — supersededByAcceptedWrite's doc names the server-result case
+  - `Tests/InstantSwiftDataCoreTests/InstantRefusalHeldByServerTests.swift` — the refusals that resolve, the ones that still fail, and the wait's end
+- **User context (verbatim):**
+  > And then I got a not synced, instant refused one change to this recording, so I need to, um, diagnose and debug where that is probably around when I opened the iPad.
+- **SpecStory:** unavailable — Claude Code agent session (library-79); no SpecStory capture configured for this session.
+
 ## October 3rd, 2026 at 10:31:39 a.m. EDT — `1ea9f0763639` Document the v1.9.3 release: a store whose cache holds one live-query result over 8 MiB opens again (#436)
 
 - **Implementation commit:** `1ea9f0763639139c9d6c5c5a33fee88da2b9416d`

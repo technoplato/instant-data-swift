@@ -1,3 +1,45 @@
+## 2026-10-03 12:48:47 EDT — instant-data-swift `45a462908c27876ba2e31096c44f2cf39a48f214`
+#445: whether a failed mutation is superseded, slot by slot, as read-only public API for Scribe's Sync view (InstantSwiftDataClient.supersession(ofFailedMutation:) and failedMutationSupersessions()), by the #441 guard's rule (#445).
+
+## 2026-10-03 12:48:38 EDT — instant-data-swift `94938422b6d4723b5400b7723b0ec482f9571aba`
+Claim the files of #445's supersession API, which ships in v1.9.4 with the #441 guard (#445 #441).
+
+## 2026-10-03 12:33:31 EDT — instant-data-swift `ec10cad263a44d3ec679b8916e5af275852266a0`
+#441 (P1): a refused re-send resolves as accepted when the server's own results already show the values it set, with any other slot covered by accepted later writes; one refused before its connection's query answers waits for them (Recording 040's capture gaps, which production holds) (#441).
+
+## 2026-10-03 12:29:51 EDT — scribe `0f200d5c302edc2fa739008adaeba8d613540d8e`
+Record #442 in ADR 0033 and the design doc: Private Cloud Compute without its entitlement traps (#442 #364)
+
+## 2026-10-03 12:29:28 EDT — scribe `0b22c04b8360d5019f67d943605db3b5c1b00a1e`
+Let Apple's on-device model run on version 27 again: #442 was Private Cloud Compute without its entitlement (#442)
+
+## 2026-10-03 12:27:20 EDT — scribe `2b5fd4edea3015403b4d866b969ca24c8b2e8aa9`
+Never ask Private Cloud Compute without its entitlement, on any version (#442 #364)
+
+## 2026-10-03 12:26:33 EDT — scribe `2d42936cdca8092168a16115c0ba91152809604e`
+Red: Private Cloud Compute must never be asked without its entitlement (#442 #364)
+
+## 2026-10-03 12:16:27 EDT — scribe `2a5ab827115c689fb392f1b6bc592c37fe60ae72`
+Never cancel a voice-actions model call in flight; drop a late answer instead (#442)
+
+## 2026-10-03 12:16:27 EDT — scribe `9e2d83273ddb3aa7bfcf585b0be6a267ccf5e245`
+P0: one gate keeps every Scribe caller off FoundationModels on version 27 (#442)
+
+## 2026-10-03 12:08:34 EDT — scribe `e27b34ab1212f5793df5d6edccee6860eda0e219`
+P0: never ask Apple's models on version 27, where FoundationModels crashes the app (#442)
+
+## 2026-10-03 12:08:03 EDT — scribe `b277f8090279e327ae1f9adbe332d1544b875fcd`
+Red: Apple's models must never be asked on version 27, where FoundationModels crashes the app (#442)
+
+## 2026-10-03 12:07:15 EDT — scribe `66799a0612532a8203cc4de41e26cd1de00160c8`
+Capture-time writes leave updatedAtMs to the heartbeat, so a re-sent one passes the server's rule (#441)
+
+## 2026-10-03 12:07:15 EDT — scribe `2c60e8c3a706f3dd3326b81f23f2bdf5521e1f21`
+Claim capture-gaps-row's write test and ADR 0018 for live-stamp-82 (d) (#441)
+
+## 2026-10-03 12:03:55 EDT — instant-data-swift `d8208b334737129c87f91f4a646c9794471309b0`
+Claim the files of the #441 fix: a re-sent write the server already holds is shown as refused (#441).
+
 ## 2026-10-03 11:32:20 EDT — scribe `1e95b90c8548524810478ca22029cea44bee0fc7`
 Merge main's SoundAnalysis plan and claims after the 0.1 (83) release commit (#440).
 
