@@ -1,8 +1,17 @@
+## 2026-10-03 10:55:05 EDT — scribe `b1d4739255c4df3bb227908192ee3a66e3aa7446`
+Review fixes for playback-links before its first hold: the play kind in two completeness tests, a guest's plays move with the merge, and the route line says the mode and volumes (#435 #122).
+
+## 2026-10-03 10:54:43 EDT — scribe `307c50e1f74d784589a38772e3edb21c88a3d25e`
+Amend plan playback-links (b): the play kind joins two completeness tests, a guest's plays move with the merge, and the route line says the mode and volumes (#435 #122).
+
 ## 2026-10-03 10:31:55 EDT — instant-data-swift `bb0e62651ef881b392a95a12d42d8a7db5b51613`
 v1.9.3 on main: merge library-79-hops (eb086bb1) without fast-forward over a6d7929d; the annotated tag v1.9.3 points here and gh release v1.9.3 is Latest (https://github.com/technoplato/instant-data-swift/releases/tag/v1.9.3); code equals the gated 5e1c0222 (#436).
 
 ## 2026-10-03 10:31:25 EDT — instant-data-swift `1ea9f0763639139c9d6c5c5a33fee88da2b9416d`
 Document the v1.9.3 release: #436, a store whose cache holds one live-query result over 8 MiB opens again; red on v1.9.2, green here, and two high-lane gate holds (#436).
+
+## 2026-10-03 10:24:01 EDT — scribe `52ffa54bc335306c8f4494c87140e00078998464`
+Mark each play of another recording on the live recording's timeline, with a link to the range, and link the two in Instant (#435, ADR 0040).
 
 ## 2026-10-03 10:16:54 EDT — instant-data-swift `5e1c0222036472746cf5c66577fa93a0ff4d2e18`
 #436 test isolation: each fixture names its own oversized result, so the two parallel tests never capture each other's warning (#436).
@@ -22,6 +31,9 @@ ADR 0029: the push proof on the simulator, what it showed and what it could not 
 ## 2026-10-03 09:54:59 EDT — instant-data-swift `7d7790fdd54bf79f291dc06f49e44f43fdfffc32`
 #436 (P0): the store opens even when one cached live-query result is over the 8 MiB open-time row bound; the reconciliation and application-migration passes drop it with a warning and its query refetches it (Michael's iPad could not open Scribe; Recording 039's transcript is 8,817,787 bytes) (#436).
 
+## 2026-10-03 09:54:55 EDT — scribe `7b09b7eaf2c19663648bb5e68553a1680578a879`
+Play on the loudspeaker during every recording, and say where playback's sound goes (#122, ADR 0040).
+
 ## 2026-10-03 09:50:21 EDT — scribe `c2e6504fbc796c1fa7f8ab6db9afedeaa0f2d618`
 Log the heart-rate implementation in CHANGELOG (#290).
 
@@ -30,6 +42,9 @@ Read Apple Watch heart rate from Health while a recording captures, without a wo
 
 ## 2026-10-03 09:48:57 EDT — instant-data-swift `a3ec2b91c4e087dd98f55039f71c9edea1f2e83e`
 Claim the files of the #436 hotfix: SQLitePersistenceStore.swift, the new oversized-result tests, and the v1.9.3 release document (#436).
+
+## 2026-10-03 09:45:59 EDT — scribe `412556037751aaf19aced7886aa924a2f6b3f61c`
+Plan playback-links: playback during a recording plays on the loudspeaker, and playing another recording links the two (ADR 0040, #122 #435).
 
 ## 2026-10-03 09:34:30 EDT — scribe `683efc6af7a0dce71e5f65f7b21e3cbcac1e3105`
 Release Scribe 0.1 (82).
