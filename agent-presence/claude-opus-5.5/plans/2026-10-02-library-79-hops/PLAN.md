@@ -87,3 +87,8 @@ of the entity, for a link) protects a retraction, never a write pruned in the sa
 `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` for #431 and new
 `Tests/InstantSwiftDataCoreTests/InstantLocalStampShadowsDeviceStoreTests.swift` (skipped unless
 `INSTANT_431_DEVICE_STORE` names a pulled store), added 2026-10-03 01:40 EDT.
+
+Round 2 (02:08 EDT) showed slot-level protection for every retraction rebasing four fast-drain cases, so a cleared slot
+alone gets it; and main's rule covers slots no result ever held, so a query's `fields` decide which slots a refreshed
+result vouches for. New `Tests/InstantSwiftDataCoreTests/InstantLiveQuerySelectedAttributesTests.swift` pins that
+reading of the query key, added 2026-10-03 02:15 EDT.
