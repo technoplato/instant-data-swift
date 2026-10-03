@@ -1,3 +1,9 @@
+## 2026-10-02 20:56:11 EDT — scribe `2366fb1742479b6508381c24887213c247212150`
+Record the on-device held-out result: still short of the bar, so voice actions stay off by default (#161 #160)
+
+## 2026-10-02 20:56:11 EDT — scribe `8042de4e2ad319b22ed4fa501bbfbdb18e30b0e2`
+Read the voice-actions banner before it expires in the two copy tests (#161)
+
 ## 2026-10-02 19:15:29 EDT — scribe `003cfd17c14a17eacd7c6504a4421dea179e9abb`
 Release Scribe 0.1 (80).
 
@@ -21,6 +27,12 @@ Merge instant-1.9.0-pin: pin the published instant-data-swift 1.9.1, with librar
 
 ## 2026-10-02 17:29:44 EDT — scribe `65109126fb50dcfc3788d66b557356175a4e5ad7`
 Record the Instant 1.9.1 pin in Scribe's change log and PROGRESS: its merges, the resolve, and the checks (#155 #329 #361).
+
+## 2026-10-02 17:22:41 EDT — scribe `22ce1172304eae8c9ed3c9f233efd594cb03dbc3`
+Drive spoken formats and the copy rule through the real reducers in two store tests (#161)
+
+## 2026-10-02 17:21:45 EDT — scribe `dff725ed53cd00f8b90d3585fa69cc2d76a41bd7`
+Ship the dev set's best on-device configuration: spoken values, copying needs an object, recording.share, and a check that names the value (#161 #160)
 
 ## 2026-10-02 17:08:39 EDT — scribe `1931adf42eebea25162efed9e58824b76497b770`
 Merge Scribe main (ac48f34b: production's agentPushDevices schema) into the 1.9.1 pin, so the iPhone build's drift gate matches production (#340 #155).
@@ -118,6 +130,12 @@ scribe-mirror: the standing agent's permissions are a setting, bypass by default
 ## 2026-10-02 13:01:08 EDT — scribe `a192cfc263dab8db30fde9193b9f43e136ff05c6`
 Merge main's production schema commit and the startup-screen plan into the build 79 integration (#361 #392 #405).
 
+## 2026-10-02 12:52:00 EDT — scribe `3737115b1c02a2b5f91c3d68301fd0a7f1a9eeee`
+Keep whole benchmark answers, score stored runs again offline, and add the hill climb's next levers (#160 #161)
+
+## 2026-10-02 12:51:47 EDT — scribe `c9052fcea1606d58860aff478805e638605cca57`
+Give playback's full screen and Back to Live in playback real voice commands (#161 #391 #393)
+
 ## 2026-10-02 12:50:00 EDT — scribe `86629dd9419f79b0d49f8d42bcfbace3a2d7a8de`
 Merge human-threads: anyone authorized starts a thread on a transcript line and comments in it, with quote replies (#392).
 
@@ -132,6 +150,9 @@ Merge scribe-mirror: a standing Claude Code agent for each new recording, in a d
 
 ## 2026-10-02 12:35:14 EDT — scribe `6c8987bd532f880925a6f391801306f13ad55483`
 Merge live-follow: following a live recording owns the transcript's position, so the newest line stays pinned (#401).
+
+## 2026-10-02 12:34:28 EDT — scribe `a2c51f5606b4672546e9b80d61d444aefd444a20`
+Show in the README that voice actions wrap every Scope, as Scribe's first test run taught (#160)
 
 ## 2026-10-02 12:32:18 EDT — scribe `d941316fdc6bb872cf8ea5a705cfeaab265d92d4`
 scribe-mirror: the standing agent opens in a dedicated "Scribe" cmux workspace, never the one on screen (#385 #400).
