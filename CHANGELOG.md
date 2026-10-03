@@ -10,6 +10,60 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## October 3rd, 2026 at 5:48:51 a.m. EDT — `278fefcfba5e` Document the v1.9.2 release: another device's later value of a single-value attribute, and its clear, reach a device that once wrote it (#431)
+
+- **Implementation commit:** `278fefcfba5eb7114bdd48e4c575a62a9381aac5`
+- **Change:** Document the v1.9.2 release: library-79's #431 fix (1976f8aa and 995d530e); another device's later value of a single-value attribute, and its clear, reach a device that once wrote it, and a store v1.9.1 left stuck heals without a reinstall (#431).
+- **Details:**
+  - Red on v1.9.1, green here: 7 of the 10 local-stamp cases and the flipped fast-drain case fail on v1.9.1 and pass here, the 3 controls pass on both; the iPad's pulled store's stuck shape stays stuck on v1.9.1 and heals here, and the store v1.9.1 left stuck heals when this code reopens it.
+  - Final gate hold on c867063d (04:48-05:47 EDT): focused 179 (3 known), fast-drain and survival 25 (2 known, no rebases), ten suites 697 (22 known, four timing misses), infinite 211 (only #304), library-77/78 106, iPad-store checks 3 of 3, phone replay matching or improving on the reference (clipboardEntries now matches the server), soak 872 accepted and 876 store publishes (v1.9.1: 868 and 873), CPU median 23%.
+  - Published under Michael's authorization; the release gate (validation/run-performance-gate.sh live) did not run and is named with the known open items, as in v1.9.1.
+- **Files:**
+  - `docs/releases/v1.9.2.md` — the release document; passes scripts/validate-release-version.sh 1.9.2
+  - `PROGRESS.md` — the v1.9.2 release entry, its evidence, and the continuation
+- **User context (verbatim):**
+  > Publish the library once it's checked fast. Yes.
+- **SpecStory:** unavailable — Claude Code agent session (library-79); no SpecStory capture configured for this session.
+
+## October 3rd, 2026 at 4:40:25 a.m. EDT — `995d530eda66` Narrow #431's cleared-slot rule after review and the first gate: keys must vouch, the scan runs once per key, and only cleared slots lose the confirmed write's protection (#431)
+
+- **Implementation commit:** `995d530eda6668a222d65cfa3af618ba20d5b5d1`
+- **Change:** Narrow #431's cleared-slot rule after an independent review and the first release-gate hold: a query key must vouch for its selection, the scan for slots no result held runs once per key, and only cleared slots lose the confirmed write's protection (#431).
+- **Details:**
+  - Review finding (high, latent): a where through a link makes the server send the triples it matched, which bring the linked entity into the result without its selected attributes; such keys no longer vouch, and for them a cleared slot keeps a value another stored result owns. Scribe's queries and the iPad's 36 stored keys filter only on their own attributes.
+  - Gate finding: 1976f8aa let every retraction through past the write its refresh confirms, so each confirming refresh retracted old values and republished their entities; the 10-minute Scribe soak published 1,274 store changes for 873 accepted writes (v1.9.1: 873 for 868). Only cleared slots lose that protection now.
+  - The scan for selected slots a result leaves empty runs on a key's first refresh in a process and again until it finds nothing, instead of on every refresh; held slots are collected only for the entities either rule looks at.
+  - Round 4 (heavy job library-79-red-431-4): v1.9.1 fails 8 of the 11 local-stamp cases and passes the three controls; this code passes 17 of 17 with the selection tests, the three iPad-store checks, and 25 of 25 fast-drain and survival tests with no rebase.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — keys vouch only without a where through a link; the scan runs once per key; entity-level protection as before for everything but cleared slots
+  - `Tests/InstantSwiftDataCoreTests/InstantLocalStampShadowsServerTests.swift` — the newest result's word through a vouching key, and the old rule for a key that does not vouch
+  - `Tests/InstantSwiftDataCoreTests/InstantLiveQuerySelectedAttributesTests.swift` — a where through a link does not vouch
+- **User context (verbatim):**
+  > Publish the library once it's checked fast. Yes.
+- **SpecStory:** unavailable — Claude Code agent session (library-79); no SpecStory capture configured for this session.
+
+## October 3rd, 2026 at 3:23:15 a.m. EDT — `1976f8aaf588` Make the server's facts authoritative over this device's accepted writes, as Reactor.js does (#431)
+
+- **Implementation commit:** `1976f8aaf588e3c7b60501e0663dc366eadea940`
+- **Change:** The server's facts are authoritative over this device's accepted writes, as in Reactor.js: another device's later value of a single-value attribute, and its clear, reach a device that once wrote it (#431).
+- **Details:**
+  - Root cause: Instant updates a single-value triple in place and keeps its created_at, which a refresh delivers as the fact's time, so a device's accepted write, timed by its own clock, won last-write-wins against every later server value of the slot. Scribe's iPad kept its playback stamp and updatedAtMs on Recording 039 (Scribe #408).
+  - Server facts replace single-value slots whatever the stamps on both server-apply paths (TripleIndexes .preserveExactResident; residentFactWins removed from the reduced apply); local writes keep last-write-wins among themselves; only pending writes overlay the server, as _applyOptimisticUpdates does.
+  - A cleared single-value slot loses the store's values on an entity still in a refreshed result, for slots the result held and slots its query selects (fields) and leaves empty, whichever result stored earlier still lists the value; that heals values no result ever held, the shape 1.9.1 left once it stored a cleared result.
+  - Protection: a retraction in a cleared slot is protected only by a pending write of that slot; every other retraction keeps entity-level protection (#259 whole-entity rule); a write pruned at the watermark in the same apply protects nothing. Round 2 showed slot-level protection for every retraction rebasing four fast-drain cases (50 rebases in the Scribe-shaped drain), so it is limited to cleared slots.
+  - Red on v1.9.1's code, green here (heavy jobs library-79-red-431-2 and -3b): 8 of the 9 local-stamp cases fail on v1.9.1 (the two controls pass) and all pass here; the flipped fast-drain case; on the iPad's pulled store, the stuck shape stays stuck on v1.9.1 and heals here, and the store v1.9.1 left stuck heals when this code reopens it.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/TripleIndexes.swift` — server facts replace single-value slots whatever the stamps
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — the reduced apply stops keeping later-stamped resident facts; passes processed-tx-id and cleared slots to protection
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — cleared-slot retractions (held and query-selected slots), their slot-level protection, the query-key reader and its cache
+  - `Tests/InstantSwiftDataCoreTests/InstantLocalStampShadowsServerTests.swift` — nine #431 cases, each on both server-apply paths
+  - `Tests/InstantSwiftDataCoreTests/InstantLocalStampShadowsDeviceStoreTests.swift` — checks on the iPad's pulled store, skipped without INSTANT_431_DEVICE_STORE
+  - `Tests/InstantSwiftDataCoreTests/InstantLiveQuerySelectedAttributesTests.swift` — how a query key's fields are read
+  - `Tests/InstantSwiftDataCoreTests/InstantFastDrainTests.swift` — the old last-write-wins expectation flipped; a foreign clear and a relaunch for the fixture
+- **User context (verbatim):**
+  > Publish the library once it's checked fast. Yes.
+- **SpecStory:** unavailable — Claude Code agent session (library-79); no SpecStory capture configured for this session.
+
 ## October 2nd, 2026 at 3:42:18 p.m. EDT — `8f67a567c8b2` Document the v1.9.1 release: a local write and the outbox drain take a third less time, Swift/TypeScript 4.6, 6.5, 4.7 (#403)
 
 - **Implementation commit:** `8f67a567c8b2ce792757d2d948327337d8626808`

@@ -68,3 +68,27 @@ server answer per transaction (Instant's `combine-transact` merges same-shape qu
 - `AsyncSerialGate.swift`'s last claim is triage-l's finished plan `2026-09-27-triage-l-operation-gate`.
 - Library ADR 0017 is the highest number on every remote branch on 2026-10-02 at 09:05 EDT; Scribe's ADR 0018 is a
   different repository.
+
+## #431 (P0, main, 2026-10-03 about 01:00 EDT)
+
+A device that once wrote a single-value attribute never saw another device's later value of it: server facts carry the
+triple's created_at, and the store resolved single-value facts last-write-wins by stamp. Fix: the server's facts are
+authoritative and only surviving pending writes overlay them, as in Reactor.js; stores 1.9.1 persisted heal on the
+first refresh that restates a shadowed slot. Published as v1.9.2 under the same authorization. Touching
+`Sources/InstantSwiftDataCore/TripleIndexes.swift` and `InstantRuntime.swift` (already claimed),
+`Tests/InstantSwiftDataCoreTests/InstantFastDrainTests.swift`, new `InstantLocalStampShadowsServerTests.swift`, and
+new `docs/releases/v1.9.2.md`, added 2026-10-03 01:11 EDT. The speed cuts on
+`agent/claude-opus-5.5/library-79-next3` wait and will be measured on the fixed code.
+
+Main, 01:12 EDT: cover slots the server cleared too ("Match Reactor.js here: on a full refresh, a local fact that
+isn't pending and that the server doesn't return goes away."), next to the overwritten one, and check the fix against
+the pulled iPad store. A cleared slot loses a value no other stored result owns, and only a pending write of a slot (or
+of the entity, for a link) protects a retraction, never a write pruned in the same apply. Touching
+`Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` for #431 and new
+`Tests/InstantSwiftDataCoreTests/InstantLocalStampShadowsDeviceStoreTests.swift` (skipped unless
+`INSTANT_431_DEVICE_STORE` names a pulled store), added 2026-10-03 01:40 EDT.
+
+Round 2 (02:08 EDT) showed slot-level protection for every retraction rebasing four fast-drain cases, so a cleared slot
+alone gets it; and main's rule covers slots no result ever held, so a query's `fields` decide which slots a refreshed
+result vouches for. New `Tests/InstantSwiftDataCoreTests/InstantLiveQuerySelectedAttributesTests.swift` pins that
+reading of the query key, added 2026-10-03 02:15 EDT.

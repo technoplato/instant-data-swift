@@ -1,3 +1,36 @@
+## 2026-10-03 05:48:20 EDT — v1.9.2: another device's later value of a single-value attribute, and its clear, reach a device that once wrote it; main's merge of this commit is the release commit (#431)
+
+- **Owner:** library-79 (`claude-opus-5.5-library-79`, workLog agentId `claude-code/claude-opus-5.5/library-79`), plan
+  `2026-10-02-library-79-hops`, under Michael's maintainer authorization (to the coordinating session on 2026-10-02 at
+  about 12:10 EDT): "Publish the library once it's checked fast. Yes." Main made #431 (P0) library-79's top priority on
+  2026-10-03 at about 01:00 EDT.
+- **Defect:** Instant keeps a single-value triple's `created_at` when it updates the triple in place, and a refresh
+  delivers that time as the fact's stamp, so a device's accepted write, stamped by its own clock, won last-write-wins
+  against every later server value of the slot, and a slot another device cleared kept the device's value. Scribe's
+  iPad kept its playback stamp and `updatedAtMs` on Recording 039 (Scribe #408).
+- **Commits on `agent/claude-opus-5.5/library-79-hops`:** claims `d8c4469b`, `ea2fc934`, `c1292d88`; `1976f8aa` the
+  fix (server facts authoritative on both server-apply paths; cleared slots lose the store's values; slot-level
+  protection); `995d530e` the follow-up after an independent review and the first gate hold (keys must vouch for their
+  selection, the scan for slots no result held runs once per key, only cleared slots lose the confirmed write's
+  protection); release document `docs/releases/v1.9.2.md`.
+- **Checks:** red on v1.9.1 and green here in rounds 2-4 (`library-79-red-431-2`, `-3b`, `-4`): 7 of the 10 local-stamp
+  cases and the flipped fast-drain case fail on v1.9.1, the 3 controls pass on both, all pass here; the iPad's pulled
+  store's stuck shape stays stuck on v1.9.1 and heals here, and the store v1.9.1 left stuck heals when this code reopens
+  it. Final gate hold on `c867063d` (04:48-05:47 EDT): focused 179 (3 known), fast-drain and survival 25 (2 known, no
+  rebases; drain CPU 6,214 ms against v1.9.1's 6,079 at similar load), ten suites 697 (22 known; four timing misses not
+  rerun before publication, reruns queued), infinite 211 (only #304), library-77/78 106, iPad-store checks 3 of 3, phone
+  replay matching or improving on the reference, soak 872 accepted and 876 store publishes (v1.9.1: 868 and 873), CPU
+  median 23%, RSS at most 405 MB.
+- **Evidence:** `/Users/laptop/Sync/audit/library-79-431-2026-10-03/` (job scripts, each round's logs, both gate holds,
+  the soak analyses); the iPad pull, read only, at `~/scribe-device-pulls/2026-10-03-ipad-live-stamp/`.
+- **Continue:** report the queued reruns of the four timing misses (`/tmp/library-79-hops/release-192/gate2-reruns/`);
+  measure the receive path cleanly (the replay ABBA, v1.9.1 against this code, `HEAVY_EXCLUSIVE=1`); then bring the
+  next cuts (`agent/claude-opus-5.5/library-79-next3`) onto the fixed code and run job 5b on it, as main asked. The
+  review's lower findings (one whole-component rebase for a cleared slot under another pending write; a refused write's
+  rollback restoring a cleared value) are open on #431.
+- **Owned until handoff:** simulator `DC59CEA8` (library-79's, shut down; delete when the work ends), the two worktrees'
+  `.build` (`instant-data-swift-library-79-hops`, `instant-data-swift-library-79-v191`), and `/tmp/library-79-hops/`.
+
 ## 2026-10-02 15:41:48 EDT — v1.9.1: library-79's hop cuts and shared formatter on v1.9.0; main's merge of this commit is the release commit (#403)
 
 - **Owner:** library-79 (`claude-opus-5.5-library-79`, workLog agentId `claude-code/claude-opus-5.5/library-79`), plan

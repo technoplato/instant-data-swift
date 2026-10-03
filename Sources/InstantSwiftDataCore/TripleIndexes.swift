@@ -460,7 +460,10 @@ struct InstantTripleStamp: Hashable, Codable, Sendable {
 }
 
 enum InstantTripleInsertReplayPolicy: Equatable, Sendable {
+  /// Local and optimistic writes: a cardinality-one slot is last-write-wins by stamp.
   case replaceAndInvalidate
+  /// The server's facts, applied with every surviving pending write peeled: an exact resident fact stays without
+  /// invalidating its observers, and a cardinality-one fact replaces the slot whatever the stamps (#431).
   case preserveExactResident
 }
 
@@ -839,10 +842,16 @@ struct TripleIndexes: Codable, Sendable {
           }
           return
         }
-        // Last-write-wins arbitration, matching generic insert(): an incoming
-        // triple older than the resident fact mutates nothing. The endpoints
-        // are still reported as changed so observers refresh like HEAD did.
-        let residentIsNewer = existingStamp.txTime > triple.txTime
+        // A server fact is authoritative (#431). Instant updates a cardinality-one triple in place and keeps its
+        // `created_at`, which a refresh delivers as the fact's stamp, so another device's later value of a slot
+        // carries an earlier stamp than a write this device made after the slot was created. Upstream builds each
+        // result's store from the server's triples alone (`createStore`; `addTriple` sets an `ea` slot
+        // unconditionally) and overlays only the pending mutations; the server apply peels every surviving pending
+        // write before this and replays it after. Local and optimistic writes keep last-write-wins, matching generic
+        // insert(): an incoming triple older than the resident fact mutates nothing. The endpoints are still
+        // reported as changed so observers refresh like HEAD did.
+        let residentIsNewer = insertReplayPolicy == .replaceAndInvalidate
+          && existingStamp.txTime > triple.txTime
         if !residentIsNewer {
           if derivedIndexAttributeShapes[triple.attributeID]
             != attribute.map(DerivedIndexAttributeShape.init)
@@ -899,7 +908,11 @@ struct TripleIndexes: Codable, Sendable {
       attributes: attributes,
       into: &changed
     )
-    insert(triple, attribute: attribute)
+    insert(
+      triple,
+      attribute: attribute,
+      replacingWhateverTheStamps: insertReplayPolicy == .preserveExactResident
+    )
     rememberChangedEntity(triple.entityID, into: &changed)
     if attribute?.valueType == .ref, let targetID = triple.value.refValue {
       changed.insert(targetID)
@@ -3982,9 +3995,12 @@ private struct PreparedInclude {
     }
   }
 
+  /// `replacingWhateverTheStamps`: an authoritative server fact replaces a cardinality-one slot even when a resident
+  /// value carries a later stamp (#431); otherwise the slot is last-write-wins.
   private mutating func insert(
     _ triple: InstantTriple,
-    attribute: InstantAttribute?
+    attribute: InstantAttribute?,
+    replacingWhateverTheStamps: Bool = false
   ) {
     var triple = Self.normalizedTriple(triple, attribute: attribute)
     if let existing = eav[triple.entityID]?[triple.attributeID]?[triple.value] {
@@ -3995,7 +4011,8 @@ private struct PreparedInclude {
     if isCardinalityOne,
       let existingSlot = eav[triple.entityID]?[triple.attributeID]
     {
-      guard !existingSlot.values.contains(where: { $0.txTime > triple.txTime }) else { return }
+      guard replacingWhateverTheStamps || !existingSlot.values.contains(where: { $0.txTime > triple.txTime })
+      else { return }
       if case let .one(existingValue, _) = existingSlot {
         if existingValue == triple.value {
           let existingStamp = existingSlot.firstEntry?.value

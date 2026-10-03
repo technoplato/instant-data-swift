@@ -40,6 +40,13 @@ enum InstantPersistenceStateSource: Equatable, Sendable {
   case sqlite
 }
 
+/// What a batch of live-query result replacements retracts (#431): the retractions, and the single-value slots among
+/// them the server cleared, which only a pending write of the slot itself protects.
+struct InstantLiveQueryReplacementRetractions: Sendable {
+  var operations: [InstantTripleOperation]
+  var clearedSlots: Set<InstantVisibleWriteKey>
+}
+
 struct InstantPersistenceStateLoad: Sendable {
   var state: InstantPersistenceState
   var source: InstantPersistenceStateSource
@@ -882,6 +889,12 @@ public actor SQLitePersistenceStore {
   /// has written `instant_attributes` (#303). Every server apply used to load and decode every attribute row once per
   /// query result it saved, inside the commit.
   private var liveResultAttributes: (revision: Int64, generation: Int, attributes: [InstantAttribute])?
+  /// What a live refresh's retraction plan reads off `liveResultAttributes` (#431), kept while they are unchanged: the
+  /// attributes by id, and the attributes each query key selects.
+  private var liveQuerySelections = LiveQuerySelections()
+  /// Query keys whose refreshed result, scanned in this process, showed no value in a slot its query selects and leaves
+  /// empty, so their later refreshes skip that scan (#431).
+  private var liveQueryKeysWithNoClearedSlotLeft: Set<String> = []
   /// Bumped by every write to `instant_attributes` on this connection.
   private var attributeWriteGeneration = 0
   private var liveResultAttributeLoads = 0
@@ -3967,28 +3980,52 @@ public actor SQLitePersistenceStore {
   /// Filters live-query retractions using normalized optimistic-effect indexes.
   /// Upstream keeps server and optimistic stores separate; this is the Swift
   /// one-store equivalent of reapplying the overlay after `refresh-ok`.
+  ///
+  /// A pending write of an entity protects the retractions of its facts, so an entity that left a result is collected
+  /// whole or kept whole (#259). A retraction in a slot the server cleared (`clearedSlots`) is protected only by a
+  /// pending write of that slot, and not by a write the apply at `processedTransactionID` prunes at the watermark
+  /// (#431): a write of another slot of the entity, or the write this apply confirms, no longer keeps a value the
+  /// server cleared, as upstream drops a mutation's optimistic layer once `processed-tx-id` covers it. A protected
+  /// retraction is dropped for good, because the result it came from is stored without the fact. Every other
+  /// retraction keeps its protection, including by the write this apply confirms: those retract a value the batch
+  /// replaces or a fact of an entity that left a result, and letting them through made every confirming refresh
+  /// republish the entities its writes touched (Scribe's soak published 1,274 store changes for 873 writes).
   func protectingServerRetractions(
-    _ operations: [InstantTripleOperation]
+    _ operations: [InstantTripleOperation],
+    processedTransactionID: String? = nil,
+    clearedSlots: Set<InstantVisibleWriteKey> = []
   ) throws -> [InstantTripleOperation] {
     try readTransaction {
-      try protectingServerRetractionsWithoutTransaction(operations)
+      try protectingServerRetractionsWithoutTransaction(
+        operations,
+        processedTransactionID: processedTransactionID,
+        clearedSlots: clearedSlots
+      )
     }
   }
 
   func protectingServerRetractions(
     _ operations: [InstantTripleOperation],
-    expectedOutboxRevision: Int64
+    expectedOutboxRevision: Int64,
+    processedTransactionID: String? = nil,
+    clearedSlots: Set<InstantVisibleWriteKey> = []
   ) throws -> [InstantTripleOperation]? {
     try readTransaction {
       guard try loadMetadataRevisionWithoutTransaction(Self.outboxRevisionKey)
         == expectedOutboxRevision
       else { return nil }
-      return try protectingServerRetractionsWithoutTransaction(operations)
+      return try protectingServerRetractionsWithoutTransaction(
+        operations,
+        processedTransactionID: processedTransactionID,
+        clearedSlots: clearedSlots
+      )
     }
   }
 
   private func protectingServerRetractionsWithoutTransaction(
-    _ operations: [InstantTripleOperation]
+    _ operations: [InstantTripleOperation],
+    processedTransactionID: String?,
+    clearedSlots: Set<InstantVisibleWriteKey>
   ) throws -> [InstantTripleOperation] {
     guard operations.contains(where: {
       if case .retract = $0 { return true }
@@ -4028,6 +4065,13 @@ public actor SQLitePersistenceStore {
         return true
       }
     }
+    // The writes this apply prunes at the watermark, selected as the server-apply reduction selects them, which protect
+    // no cleared slot.
+    let pruned = processedTransactionID.map {
+      Self.serverApplyReductionPrunablePredicate(processedTransactionID: $0, alias: "outbox")
+    }
+    let survivorSQL = pruned.map { "AND NOT \($0.sql)" } ?? ""
+    let survivorBindings = pruned?.bindings ?? []
     var protected: [InstantTripleOperation] = []
     protected.reserveCapacity(operations.count)
     for operation in operations {
@@ -4035,22 +4079,47 @@ public actor SQLitePersistenceStore {
         protected.append(operation)
         continue
       }
-      let hasOwner = try selectInt64(
-        """
-        SELECT EXISTS(
-          SELECT 1
-          FROM instant_outbox_effect_entities AS effects
-            INDEXED BY instant_outbox_effect_entities_lookup_idx
-          JOIN instant_outbox AS outbox
-            ON outbox.mutation_id = effects.mutation_id
-          WHERE effects.entity_id = ?
-            AND outbox.optimistic_overlay_active = 1
-            AND outbox.status != ?
-          LIMIT 1
-        )
-        """,
-        [.text(triple.entityID), .text(InstantMutationStatus.failed.rawValue)]
-      ) != 0
+      let hasOwner: Bool
+      if clearedSlots.contains(InstantVisibleWriteKey(entityID: triple.entityID, attributeID: triple.attributeID)) {
+        hasOwner = try selectInt64(
+          """
+          SELECT EXISTS(
+            SELECT 1
+            FROM instant_outbox_write_keys AS write_keys
+            JOIN instant_outbox AS outbox
+              ON outbox.mutation_id = write_keys.mutation_id
+            WHERE write_keys.entity_id = ?
+              AND write_keys.attribute_id = ?
+              AND outbox.optimistic_overlay_active = 1
+              AND outbox.status != ?
+              \(survivorSQL)
+            LIMIT 1
+          )
+          """,
+          [
+            .text(triple.entityID),
+            .text(triple.attributeID),
+            .text(InstantMutationStatus.failed.rawValue),
+          ] + survivorBindings
+        ) != 0
+      } else {
+        hasOwner = try selectInt64(
+          """
+          SELECT EXISTS(
+            SELECT 1
+            FROM instant_outbox_effect_entities AS effects
+              INDEXED BY instant_outbox_effect_entities_lookup_idx
+            JOIN instant_outbox AS outbox
+              ON outbox.mutation_id = effects.mutation_id
+            WHERE effects.entity_id = ?
+              AND outbox.optimistic_overlay_active = 1
+              AND outbox.status != ?
+            LIMIT 1
+          )
+          """,
+          [.text(triple.entityID), .text(InstantMutationStatus.failed.rawValue)]
+        ) != 0
+      }
       if !hasOwner { protected.append(operation) }
     }
     return protected
@@ -9232,15 +9301,17 @@ public actor SQLitePersistenceStore {
   ) throws -> [InstantTripleOperation] {
     guard !replacements.isEmpty else { return [] }
     return try readTransaction {
-      try liveQueryReplacementRetractionsWithoutTransaction(for: replacements)
+      try liveQueryReplacementRetractionsWithoutTransaction(for: replacements).operations
     }
   }
 
   func liveQueryReplacementRetractions(
     for replacements: [InstantLiveQueryResultReplacement],
     expectedQueryResultRevision: Int64
-  ) throws -> [InstantTripleOperation]? {
-    guard !replacements.isEmpty else { return [] }
+  ) throws -> InstantLiveQueryReplacementRetractions? {
+    guard !replacements.isEmpty else {
+      return InstantLiveQueryReplacementRetractions(operations: [], clearedSlots: [])
+    }
     return try readTransaction {
       guard try loadMetadataRevisionWithoutTransaction(Self.queryResultRevisionKey)
         == expectedQueryResultRevision
@@ -9251,18 +9322,30 @@ public actor SQLitePersistenceStore {
 
   private func liveQueryReplacementRetractionsWithoutTransaction(
     for replacements: [InstantLiveQueryResultReplacement]
-  ) throws -> [InstantTripleOperation] {
+  ) throws -> InstantLiveQueryReplacementRetractions {
     let replacementKeys = Set(replacements.map(\.key))
     var prospective: [String: [InstantLiveTripleIdentity: InstantTriple]] = [:]
     for key in replacementKeys {
       let triples = try liveQueryResultWithoutTransaction(key: key)?.triples ?? []
       prospective[key] = Self.indexLiveTriples(triples)
     }
+    let selections = try liveQuerySelectionsWithoutTransaction()
+    let attributesByID = selections.attributesByID
+    // The single-value attributes each replacement's query selects, by namespace, for the keys that vouch for them
+    // (``liveQuerySelectedValueAttributeIDs(queryKey:attributes:)``).
+    var selectedByKey: [String: [String: Set<String>]] = [:]
+    for key in replacementKeys {
+      if let selected = liveQuerySelections.selected(byQueryKey: key) {
+        selectedByKey[key] = selected
+      }
+    }
 
     var removed: [InstantLiveTripleIdentity: InstantTriple] = [:]
     // Facts of entities that left a result entirely, rather than facts a server edit changed on an entity that is
     // still in the result.
     var departed: Set<InstantLiveTripleIdentity> = []
+    // Facts that a result whose key vouches for selecting their attribute no longer holds.
+    var removedFromVouchingResults: Set<InstantLiveTripleIdentity> = []
     for replacement in replacements {
       let next = Self.indexLiveTriples(replacement.triples)
       let previous = prospective[replacement.key] ?? [:]
@@ -9272,20 +9355,149 @@ public actor SQLitePersistenceStore {
         if !nextEntityIDs.contains(identity.entityID) {
           departed.insert(identity)
         }
+        if let namespace = attributesByID[identity.attributeID]?.namespace,
+          selectedByKey[replacement.key]?[namespace]?.contains(identity.attributeID) == true
+        {
+          removedFromVouchingResults.insert(identity)
+        }
       }
       prospective[replacement.key] = next
     }
 
     let retainedByReplacements = Set(prospective.values.flatMap(\.keys))
+    // A result whose key vouches for its selection is scanned for selected slots it leaves empty on the first refresh
+    // of that key in this process, and again until a scan finds no value there. Those values were left by 1.9.1, or
+    // by a pruned write whose slot another device cleared before any refresh restated it. The scan's work grows with
+    // the result, so later refreshes of the key skip it.
+    let scannedKeys = replacementKeys.filter {
+      selectedByKey[$0] != nil && !liveQueryKeysWithNoClearedSlotLeft.contains($0)
+    }
+    // The slots the batch holds, for the entities the two rules below look at.
+    var entityIDsOfInterest: Set<String> = []
+    for identity in removed.keys where !departed.contains(identity) {
+      entityIDsOfInterest.insert(identity.entityID)
+    }
+    for replacement in replacements where scannedKeys.contains(replacement.key) {
+      for triple in replacement.triples {
+        entityIDsOfInterest.insert(triple.entityID)
+      }
+    }
+    var heldAttributeIDsByEntityID: [String: Set<String>] = [:]
+    if !entityIDsOfInterest.isEmpty {
+      for identity in retainedByReplacements where entityIDsOfInterest.contains(identity.entityID) {
+        heldAttributeIDsByEntityID[identity.entityID, default: []].insert(identity.attributeID)
+      }
+    }
+    func isHeld(_ entityID: String, _ attributeID: String) -> Bool {
+      heldAttributeIDsByEntityID[entityID]?.contains(attributeID) ?? false
+    }
+
+    // Single-value slots the server cleared (#431), on entities still in a result of this batch, that no result of the
+    // batch holds a value of:
+    // - a slot a result held and no longer holds;
+    // - a slot a result's query selects (its `fields`, or every attribute without them) and holds no value of. This is
+    //   how a value no result ever held goes too.
+    // Upstream builds each result's store from the server's triples alone (`createStore`), so the slot is empty there
+    // and only a pending mutation overlays it. Links stay with the entity rules below. When the result's key vouches
+    // for its selection, the batch is the server's newest word on the slot, so every value the store shows there goes,
+    // whichever result stored earlier still lists it. Otherwise (a key this store cannot read, or a `where` across a
+    // link, whose matched triples bring other entities into the result) a value another stored result owns stays.
+    var newestWordSlots: Set<InstantVisibleWriteKey> = []
+    var ownerCheckedSlots: Set<InstantVisibleWriteKey> = []
+    for identity in removed.keys where !departed.contains(identity) {
+      if case .ref = identity.value { continue }
+      guard !isHeld(identity.entityID, identity.attributeID),
+        attributesByID[identity.attributeID]?.cardinality == .one
+      else { continue }
+      let slot = InstantVisibleWriteKey(entityID: identity.entityID, attributeID: identity.attributeID)
+      if removedFromVouchingResults.contains(identity) {
+        newestWordSlots.insert(slot)
+      } else {
+        ownerCheckedSlots.insert(slot)
+      }
+    }
+    var scannedSlotsByKey: [String: Set<InstantVisibleWriteKey>] = [:]
+    for replacement in replacements where scannedKeys.contains(replacement.key) {
+      guard let selected = selectedByKey[replacement.key] else { continue }
+      var namespaceByEntityID: [String: String] = [:]
+      var mixedEntityIDs: Set<String> = []
+      for triple in replacement.triples {
+        guard let namespace = attributesByID[triple.attributeID]?.namespace
+          ?? InstantLiveQueryNestedLimit.namespace(in: triple.attributeID)
+        else {
+          mixedEntityIDs.insert(triple.entityID)
+          continue
+        }
+        if let known = namespaceByEntityID[triple.entityID], known != namespace {
+          mixedEntityIDs.insert(triple.entityID)
+        }
+        namespaceByEntityID[triple.entityID] = namespace
+      }
+      var slots: Set<InstantVisibleWriteKey> = []
+      for (entityID, namespace) in namespaceByEntityID where !mixedEntityIDs.contains(entityID) {
+        for attributeID in selected[namespace] ?? [] where !isHeld(entityID, attributeID) {
+          slots.insert(InstantVisibleWriteKey(entityID: entityID, attributeID: attributeID))
+        }
+      }
+      scannedSlotsByKey[replacement.key, default: []].formUnion(slots)
+      newestWordSlots.formUnion(slots)
+    }
+    ownerCheckedSlots.subtract(newestWordSlots)
+    let candidateSlots = newestWordSlots.union(ownerCheckedSlots)
+
+    // A pending write of a cleared slot keeps its value (`protectingServerRetractions`).
+    var clearedSlots: Set<InstantVisibleWriteKey> = []
     var retractions: [InstantTriple] = []
+    var retracted: Set<InstantLiveTripleIdentity> = []
+    var slotsShowingAValue: Set<InstantVisibleWriteKey> = []
+    let orderedCandidates = candidateSlots.sorted {
+      ($0.entityID, $0.attributeID) < ($1.entityID, $1.attributeID)
+    }
+    // Stay well under SQLite's bound-parameter limit.
+    for start in stride(from: 0, to: orderedCandidates.count, by: 400) {
+      let batch = orderedCandidates[start..<min(start + 400, orderedCandidates.count)]
+      let resident: [InstantTriple] = try selectJSON(
+        "SELECT json FROM instant_triples WHERE (entity_id, attribute_id) IN (VALUES "
+          + Array(repeating: "(?, ?)", count: batch.count).joined(separator: ", ") + ")",
+        batch.flatMap { [SQLiteBinding.text($0.entityID), .text($0.attributeID)] }
+      )
+      for fact in resident {
+        let slot = InstantVisibleWriteKey(entityID: fact.entityID, attributeID: fact.attributeID)
+        slotsShowingAValue.insert(slot)
+        let identity = InstantLiveTripleIdentity(fact)
+        if !newestWordSlots.contains(slot),
+          try liveQueryTripleHasOwnerWithoutTransaction(identity, excludingQueryKeys: replacementKeys)
+        {
+          continue
+        }
+        guard retracted.insert(identity).inserted else { continue }
+        clearedSlots.insert(slot)
+        retractions.append(fact)
+      }
+    }
+    // A scanned key whose selected empty slots showed no value has nothing left to heal in this process.
+    for (key, slots) in scannedSlotsByKey where slots.isDisjoint(with: slotsShowingAValue) {
+      if liveQueryKeysWithNoClearedSlotLeft.count >= 4_096 {
+        liveQueryKeysWithNoClearedSlotLeft.removeAll(keepingCapacity: true)
+      }
+      liveQueryKeysWithNoClearedSlotLeft.insert(key)
+    }
+
+    // The other facts the results no longer hold: links, values of many-valued attributes, the facts of an entity
+    // that left a result, and the old value of a slot the batch holds a new value of. Each goes unless another stored
+    // result still owns it.
     for identity in removed.keys where !retainedByReplacements.contains(identity) {
+      // A cleared slot's values went above; a value the store no longer shows there needs no retraction.
+      if candidateSlots.contains(InstantVisibleWriteKey(entityID: identity.entityID, attributeID: identity.attributeID)) {
+        continue
+      }
       if try liveQueryTripleHasOwnerWithoutTransaction(
         identity,
         excludingQueryKeys: replacementKeys
       ) {
         continue
       }
-      if let triple = removed[identity] {
+      if let triple = removed[identity], retracted.insert(identity).inserted {
         retractions.append(triple)
       }
     }
@@ -9309,12 +9521,118 @@ public actor SQLitePersistenceStore {
     retractions.removeAll {
       keptEntityIDs.contains($0.entityID) && departed.contains(InstantLiveTripleIdentity($0))
     }
-    return retractions
-      .sorted {
-        ($0.entityID, $0.attributeID, $0.value.comparableKey)
-          < ($1.entityID, $1.attributeID, $1.value.comparableKey)
+    return InstantLiveQueryReplacementRetractions(
+      operations: retractions
+        .sorted {
+          ($0.entityID, $0.attributeID, $0.value.comparableKey)
+            < ($1.entityID, $1.attributeID, $1.value.comparableKey)
+        }
+        .map(InstantTripleOperation.retract),
+      clearedSlots: clearedSlots
+    )
+  }
+
+  /// The single-value, non-link attributes a live query selects, by the namespace of the entities that hold them, from
+  /// its registration key (the InstaQL query): each level's `fields`, or every attribute of its namespace without
+  /// them. A namespace at several levels keeps only what every one of them selects. Nil when the key does not vouch for
+  /// its selection, so no slot is taken for cleared on its word (#431): the key is not an InstaQL query, one of its
+  /// namespaces or links is unknown, or a level's `where` names a path through a link.
+  static func liveQuerySelectedValueAttributeIDs(
+    queryKey: String,
+    attributes: [InstantAttribute]
+  ) -> [String: Set<String>]? {
+    guard let object = try? JSONSerialization.jsonObject(with: Data(queryKey.utf8)) as? [String: Any],
+      !object.isEmpty
+    else { return nil }
+    var attributesByNamespace: [String: [InstantAttribute]] = [:]
+    for attribute in attributes {
+      attributesByNamespace[attribute.namespace, default: []].append(attribute)
+    }
+    func childNamespace(of parent: String, include: String) -> String? {
+      let identity = "\(parent)/\(include)"
+      if let reverseLink = attributes.first(where: { $0.reverseIdentity == identity }) {
+        return reverseLink.namespace
       }
-      .map(InstantTripleOperation.retract)
+      return attributes.first {
+        $0.namespace == parent && $0.name == include && $0.valueType == .ref
+      }?.linkNamespace
+    }
+    // A path through a link (`"parent.id"`): the server sends the triples it matched, which bring the linked entities
+    // into the result without their selected attributes.
+    func whereCrossesALink(_ filter: Any) -> Bool {
+      if let object = filter as? [String: Any] {
+        return object.contains { key, value in key.contains(".") || whereCrossesALink(value) }
+      }
+      if let array = filter as? [Any] {
+        return array.contains(where: whereCrossesALink)
+      }
+      return false
+    }
+    var selected: [String: Set<String>] = [:]
+    func visit(_ namespace: String, _ node: [String: Any]) -> Bool {
+      guard let namespaceAttributes = attributesByNamespace[namespace] else { return false }
+      if let filter = (node["$"] as? [String: Any])?["where"], whereCrossesALink(filter) { return false }
+      let fields = ((node["$"] as? [String: Any])?["fields"] as? [Any]).map {
+        Set($0.compactMap { $0 as? String })
+      }
+      let attributeIDs = Set(
+        namespaceAttributes
+          .filter { $0.cardinality == .one && $0.valueType != .ref && (fields?.contains($0.name) ?? true) }
+          .map(\.id)
+      )
+      selected[namespace] = selected[namespace].map { $0.intersection(attributeIDs) } ?? attributeIDs
+      for (include, value) in node where include != "$" {
+        guard let child = value as? [String: Any],
+          let childNamespace = childNamespace(of: namespace, include: include),
+          visit(childNamespace, child)
+        else { return false }
+      }
+      return true
+    }
+    for (namespace, value) in object {
+      guard let node = value as? [String: Any], visit(namespace, node) else { return nil }
+    }
+    return selected
+  }
+
+  /// ``liveQuerySelections`` for the stored attributes as they are now.
+  private func liveQuerySelectionsWithoutTransaction() throws -> LiveQuerySelections {
+    let attributes = try attributesForLiveResultSaveWithoutTransaction()
+    if let stamp = liveResultAttributes.map({ ($0.revision, $0.generation) }),
+      liveQuerySelections.stamp.map({ $0 == stamp }) != true
+    {
+      liveQuerySelections = LiveQuerySelections(stamp: stamp, attributes: attributes)
+    }
+    return liveQuerySelections
+  }
+
+  struct LiveQuerySelections {
+    /// The `liveResultAttributes` revision and generation these were read off.
+    var stamp: (Int64, Int)?
+    var attributes: [InstantAttribute] = []
+    var attributesByID: [String: InstantAttribute] = [:]
+    private var selectedByQueryKey: [String: [String: Set<String>]?] = [:]
+
+    init() {}
+
+    init(stamp: (Int64, Int), attributes: [InstantAttribute]) {
+      self.stamp = stamp
+      self.attributes = attributes
+      attributesByID = Dictionary(attributes.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+    }
+
+    /// ``SQLitePersistenceStore/liveQuerySelectedValueAttributeIDs(queryKey:attributes:)`` for `queryKey`, kept for the
+    /// next refresh of the same query. A paged query's key changes with its cursor, so at most 256 keys are kept.
+    mutating func selected(byQueryKey queryKey: String) -> [String: Set<String>]? {
+      if let selected = selectedByQueryKey[queryKey] { return selected }
+      let selected = SQLitePersistenceStore.liveQuerySelectedValueAttributeIDs(
+        queryKey: queryKey,
+        attributes: attributes
+      )
+      if selectedByQueryKey.count >= 256 { selectedByQueryKey.removeAll(keepingCapacity: true) }
+      selectedByQueryKey[queryKey] = .some(selected)
+      return selected
+    }
   }
 
   public func pruneQueryCache(

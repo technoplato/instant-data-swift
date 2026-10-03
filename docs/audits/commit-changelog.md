@@ -1,8 +1,170 @@
+## 2026-10-03 05:48:29 EDT — instant-data-swift `278fefcfba5eb7114bdd48e4c575a62a9381aac5`
+Document the v1.9.2 release: #431, another device's later value of a single-value attribute and its clear reach a device that once wrote it; red on v1.9.1, green here, and the final gate hold on c867063d (#431).
+
+## 2026-10-03 04:40:02 EDT — instant-data-swift `995d530eda6668a222d65cfa3af618ba20d5b5d1`
+#431 follow-up after an independent review and the first release-gate hold: query keys must vouch for their selection (no where through a link), the scan for slots no result held runs once per key, and only cleared slots lose the confirmed write's protection (the first gate's soak republished on every confirming refresh); round 4 red on v1.9.1, green here (#431).
+
+## 2026-10-03 03:45:24 EDT — scribe `d2b115a01c33d11b3af2618ecf83e0bf566ee3de`
+Merge list-edit-mode's #430 schema and rule: recordings.deletedAtMs and the keepsDeletion update rule, as production has them (ADR 0038, #430).
+
+## 2026-10-03 03:42:27 EDT — scribe `58756bd8f791bb9026945b173dd782b4ec2c6786`
+Record Scribe 0.1 (81) in the change log and PROGRESS: installed on the iPhone, the iPad, and the Mac (#272 #408 #406).
+
+## 2026-10-03 03:22:37 EDT — instant-data-swift `1976f8aaf588e3c7b60501e0663dc366eadea940`
+#431: the server's facts are authoritative over this device's accepted writes, as in Reactor.js. Single-value slots take the server's value whatever the stamps, a slot the server cleared loses the store's values (slots a result held and slots its query selects), only a pending write of a cleared slot protects it, and a write pruned in the same apply protects nothing; red on v1.9.1, green here, including the iPad's pulled store and a store v1.9.1 left stuck (#431 #408).
+
+## 2026-10-03 02:34:58 EDT — scribe `383890151e7450063c16785f5a3406feab3e83d3`
+Record the sync-status test's loop fix in the change log (#308).
+
+## 2026-10-03 02:34:51 EDT — scribe `b02fefc43b497d268659cb68812bf19734c3668f`
+Fail and stop when the sync-status test's stream ends, instead of spinning on its nil (#308).
+
+## 2026-10-03 02:15:54 EDT — instant-data-swift `c1292d88d54867af11d1d3b287f199c029d0232e`
+Claim the query-selection test for #431's cleared slots: a refreshed result vouches for the slots its query selects (#431).
+
+## 2026-10-03 01:57:09 EDT — scribe `5c06626cb247d39f91717f15f3b502b33138719e`
+Merge main's list-edit-mode, ui-polish and clipboard-onboarding plans and claims after the 0.1 (81) release commit (#430 #412 #420).
+
+## 2026-10-03 01:41:34 EDT — instant-data-swift `ea2fc93439933a7bf496aacb7145685e39217f6c`
+Claim SQLitePersistenceStore.swift and the device-store check for #431's cleared slots, at main's request to match Reactor.js on a full refresh (#431).
+
+## 2026-10-03 01:14:47 EDT — scribe `02fbb77cd9e80525b26a6b0ae9c25d8c55e8136e`
+Release Scribe 0.1 (81).
+
+## 2026-10-03 01:14:41 EDT — scribe `f42414bbfbae96aca237cbe6bff508fa49d694e8`
+Record the restored rebuild-stop test in the change log (#272).
+
+## 2026-10-03 01:14:34 EDT — scribe `081f2938f3e71972eaf660d0d65910f1670111c8`
+Restore main's rebuild-stop test for build 81: the event-driven rewrite blocks a cooperative thread (#272).
+
+## 2026-10-03 01:11:03 EDT — instant-data-swift `d8c4469b9b88af419a6c90be9c6e362a0f8da29c`
+Claim the files of the #431 fix (P0 at main's request): server facts are authoritative over a pruned local write (#431).
+
+## 2026-10-03 01:10:16 EDT — scribe `76997da47a4b9bd70a16526c695f951ab7f4b39f`
+Merge voice-actions-on-device: the on-device hill climb's best configuration, and real voice commands for playback's full screen and Back to Live (#161 #160).
+
+## 2026-10-03 01:09:53 EDT — scribe `e726c18800b90a3c3eca9fd216c353805ded7bfb`
+Merge scribe-mirror: ambiguous requests ask Michael once before anyone acts or hands them on, and a stricter scribe route (#385 #400).
+
+## 2026-10-03 01:09:45 EDT — scribe `7710a74b5bdef3398344ddd7cd8db00e6bda3943`
+Merge live-stamp: a watching device never stamps over a live recording, and only Stop's saved end stops a take (#408).
+
+## 2026-10-03 00:06:03 EDT — scribe `32902faa686cd695e5ae74f4c7eebb065c09d567`
+Log the remote-push commits in CHANGELOG (#340)
+
+## 2026-10-03 00:06:03 EDT — scribe `bd34556609ca8b8d08b3267cfcabd03f9f75bb83`
+remote-push: merge notes and the scribe notify handoff in the companion channel (#340)
+
+## 2026-10-02 23:56:08 EDT — scribe `39ce9954c97a790f3519bb632128ed449ef2ec34`
+Merge capture-alert-unblock's change-log entries for its three commits (#272).
+
+## 2026-10-02 23:55:53 EDT — scribe `98047f0af533838b636659df79f1fd579b434b8e`
+Merge capture-alert-unblock's compile fix: each outage-notifier test event is awaited into a constant first (#272).
+
+## 2026-10-02 23:46:15 EDT — scribe `3c30780eb23629c2c11bb960c5ce750629160c76`
+Merge recognitions: songs recognized with ShazamKit and the weather from WeatherKit as moments on the recording timeline (#406).
+
+## 2026-10-02 23:36:53 EDT — scribe `09a9bbb73798b6b3ae06ed1248d2620563243c40`
+Real alerts for agent answers, the thread's title on every notification, and scribe notify for agents (#340)
+
+## 2026-10-02 22:35:27 EDT — scribe `e0c1c19915085b5e1ca9159270080cb6149c6423`
+Merge capture-alert-unblock's test fix: the outage notifier's tests and the rebuild-stop test wait on events (#272).
+
+## 2026-10-02 21:21:32 EDT — scribe `4f537588a2552e082bfa64864fff3866f53e86d0`
+Merge capture-alert-unblock: the outage notification never holds the Live Activity, and every notification-center call ends within 5 s (#272).
+
+## 2026-10-02 21:20:51 EDT — scribe `6133038ef3ddacfe31d4e77277ccc52a3d24b69f`
+Merge main's build 81 plans and startup-screen's handoff after the 80 release (#272 #405).
+
+## 2026-10-02 21:20:25 EDT — scribe `3aa8ddb44506e66da8670676779c10aa5b254269`
+Record Scribe 0.1 (80) in the change log and PROGRESS: installed on the iPhone, the iPad, and the Mac (#361 #335).
+
+## 2026-10-02 20:56:11 EDT — scribe `2366fb1742479b6508381c24887213c247212150`
+Record the on-device held-out result: still short of the bar, so voice actions stay off by default (#161 #160)
+
+## 2026-10-02 20:56:11 EDT — scribe `8042de4e2ad319b22ed4fa501bbfbdb18e30b0e2`
+Read the voice-actions banner before it expires in the two copy tests (#161)
+
+## 2026-10-02 20:54:49 EDT — scribe `1f2bda1a2024a3d0814adf2f1f347ab79d35a2bd`
+Push an agent's answer to the devices where Scribe sleeps: the app registers its APNs token with a running mark, and scribe-mirror sends the alert (#340)
+
+## 2026-10-02 19:15:29 EDT — scribe `003cfd17c14a17eacd7c6504a4421dea179e9abb`
+Release Scribe 0.1 (80).
+
+## 2026-10-02 19:15:08 EDT — scribe `04a7f5fdc0f54503c763fb3f78989554d2f494c8`
+Merge prod-data: close every open transcript section, at every session end and after a continuation (#335 #363).
+
+## 2026-10-02 18:25:47 EDT — scribe `f79ba8a46b50c0aa2bcb0816836f745053da710d`
+Merge scribe-mirror: the standing-agent trigger reads cmux's real answers and names its pane (#385 #400).
+
+## 2026-10-02 18:25:46 EDT — scribe `ffcad99879081353592dbdeaac9bb49a56c2e508`
+Merge startup-screen: a fresh launch opens on the recordings list itself, not a startup list of its own (#405).
+
+## 2026-10-02 18:25:46 EDT — scribe `cb711adf6a2deae89c251d67622268da442e1c0d`
+Merge reply-notifications: an agent's answer notifies on every device, with status lines and read-aloud on demand (#340 #342 #387).
+
+## 2026-10-02 17:32:16 EDT — scribe `0f42452a10746bed3ee532e5ed08a8af4690dd40`
+Merge rec032-mic-gap: restart capture only on iOS's signals, say who holds the microphone, and give every line its true time (#272 #346).
+
+## 2026-10-02 17:31:51 EDT — scribe `175af093fd6cdbbebb3accb0399efedd98413fb5`
+Merge instant-1.9.0-pin: pin the published instant-data-swift 1.9.1, with library-78-scribe and account linking (#155 #329 #361).
+
+## 2026-10-02 17:29:44 EDT — scribe `65109126fb50dcfc3788d66b557356175a4e5ad7`
+Record the Instant 1.9.1 pin in Scribe's change log and PROGRESS: its merges, the resolve, and the checks (#155 #329 #361).
+
+## 2026-10-02 17:22:41 EDT — scribe `22ce1172304eae8c9ed3c9f233efd594cb03dbc3`
+Drive spoken formats and the copy rule through the real reducers in two store tests (#161)
+
+## 2026-10-02 17:21:45 EDT — scribe `dff725ed53cd00f8b90d3585fa69cc2d76a41bd7`
+Ship the dev set's best on-device configuration: spoken values, copying needs an object, recording.share, and a check that names the value (#161 #160)
+
+## 2026-10-02 17:08:39 EDT — scribe `1931adf42eebea25162efed9e58824b76497b770`
+Merge Scribe main (ac48f34b: production's agentPushDevices schema) into the 1.9.1 pin, so the iPhone build's drift gate matches production (#340 #155).
+
+## 2026-10-02 16:57:42 EDT — scribe `bee8bf4e0eb338f8d4d419b19abdd85c2df726bc`
+Resolve Scribe's Package.resolved to instant-data-swift 1.9.1 (1d6aa1e1) with a plain swift package resolve (#155 #403).
+
+## 2026-10-02 16:00:13 EDT — scribe `ac48f34bbfa3a768bbef34753aed19fa639f29e3`
+Merge main's agentPushDevices schema, the remote-push plan, and live-follow's handoff after the 79 release (#340 #401).
+
+## 2026-10-02 15:59:30 EDT — scribe `3e88b254f281c3950b67f29ff0ca69aeeaca979f`
+Record Scribe 0.1 (79) in the change log and PROGRESS: installed on the iPhone, the iPad, and the Mac (#404).
+
+## 2026-10-02 15:53:36 EDT — scribe `3099618db133e0feafa25eaeb016bb3ae0bdc534`
+Pin instant-data-swift exactly 1.9.1 in Scribe instead of 1.9.0, in Package.swift, the installer, and its six fixtures (#155 #403 #329 #361).
+
+## 2026-10-02 15:53:36 EDT — scribe `3a8f4804280d2deefec7e019a55e905eece699a2`
+Amend plan 2026-10-02-instant-1-9-0-pin: pin the published 1.9.1 (v1.9.0 plus library-79's hop cuts) instead of 1.9.0 (#155 #403).
+
+## 2026-10-02 15:43:04 EDT — instant-data-swift `1d6aa1e1b6cfdbadf0bdf5a03a5a66e17ee0d24d`
+v1.9.1 on main: merge library-79-hops (40a09c9e) without fast-forward over 2f6a9ee3; the annotated tag v1.9.1 points here and gh release v1.9.1 is Latest (https://github.com/technoplato/instant-data-swift/releases/tag/v1.9.1); code equals the gated 262378b2 (#403).
+
 ## 2026-10-02 15:42:00 EDT — instant-data-swift `8f67a567c8b2ce792757d2d948327337d8626808`
 Document the v1.9.1 release: Swift/TypeScript 4.6, 6.5, 4.7 on the cross-SDK runtime benchmark (from 7.4, 6.9, 7.4 in v1.8.0); the release-gate hold on 262378b2 passed with 0 soak refusals (#403).
 
 ## 2026-10-02 15:40:34 EDT — instant-data-swift `bed0dc4f866ccdf2123beb623bf16843cff54a61`
 Merge library main's ledger-only 2f6a9ee3 into library-79-hops before v1.9.1, so main's merge of the branch has no conflicts (#403).
+
+## 2026-10-02 15:31:54 EDT — scribe `ae2649f4b5687f92c885d99f713cdb729e080072`
+Pin instant-data-swift exactly 1.9.0 in Scribe's Package.swift, installer, and fixtures (superseded on the branch by the 1.9.1 pin) (#155 #329 #361).
+
+## 2026-10-02 15:10:38 EDT — scribe `a1be8595d8bc4806cff913a480b55a9036048cb9`
+scribe-mirror: the standing agent's pane gets its title: rename-tab names the Scribe workspace (#385 #400).
+
+## 2026-10-02 15:08:37 EDT — scribe `0b97d379274e2a8a534d41a6b02772699f88ed6f`
+scribe-mirror: the standing-agent trigger reads cmux's real answers and never throws on a surprise (#385 #400).
+
+## 2026-10-02 15:04:53 EDT — scribe `b3154f37f63e920721700114362425f4b1298c90`
+Merge Scribe main (Scribe 0.1 (79), 4efefa9f) into the Instant pin branch for build 80.
+
+## 2026-10-02 15:04:32 EDT — scribe `365be7bf4c57d1f6a2bef9137e49d3347fdf4982`
+Merge account-linking (3a0d9c4f, ADR 0024) into the Instant pin branch; instant.schema.ts and instant.perms.ts stay byte for byte main's (#361).
+
+## 2026-10-02 15:02:55 EDT — scribe `8f0de1a6fa5ec01b06125b7dfad0d9c2a0f29e2b`
+Merge library-78-scribe (c2343b26: media read by the stream's client id) into the Instant pin branch (#329).
+
+## 2026-10-02 15:02:02 EDT — scribe `84a1cef96bf70fb2375d514cd2a589d27a462b65`
+Plan the Instant 1.9.0 pin for build 80 with library-78-scribe and account linking, and claim its paths (#155 #329 #361).
 
 ## 2026-10-02 14:59:47 EDT — instant-data-swift `262378b2981fd5de3901e26399ba23b7988b0e0a`
 Merge v1.9.0 (24559bd4) into library-79-hops for v1.9.1; v1.9.0's code equals the branch's base d95c9625, so only its documents, plan, claims, and log entries came in (#403).
@@ -52,6 +214,12 @@ scribe-mirror: the standing agent's permissions are a setting, bypass by default
 ## 2026-10-02 13:01:08 EDT — scribe `a192cfc263dab8db30fde9193b9f43e136ff05c6`
 Merge main's production schema commit and the startup-screen plan into the build 79 integration (#361 #392 #405).
 
+## 2026-10-02 12:52:00 EDT — scribe `3737115b1c02a2b5f91c3d68301fd0a7f1a9eeee`
+Keep whole benchmark answers, score stored runs again offline, and add the hill climb's next levers (#160 #161)
+
+## 2026-10-02 12:51:47 EDT — scribe `c9052fcea1606d58860aff478805e638605cca57`
+Give playback's full screen and Back to Live in playback real voice commands (#161 #391 #393)
+
 ## 2026-10-02 12:50:00 EDT — scribe `86629dd9419f79b0d49f8d42bcfbace3a2d7a8de`
 Merge human-threads: anyone authorized starts a thread on a transcript line and comments in it, with quote replies (#392).
 
@@ -66,6 +234,9 @@ Merge scribe-mirror: a standing Claude Code agent for each new recording, in a d
 
 ## 2026-10-02 12:35:14 EDT — scribe `6c8987bd532f880925a6f391801306f13ad55483`
 Merge live-follow: following a live recording owns the transcript's position, so the newest line stays pinned (#401).
+
+## 2026-10-02 12:34:28 EDT — scribe `a2c51f5606b4672546e9b80d61d444aefd444a20`
+Show in the README that voice actions wrap every Scope, as Scribe's first test run taught (#160)
 
 ## 2026-10-02 12:32:18 EDT — scribe `d941316fdc6bb872cf8ea5a705cfeaab265d92d4`
 scribe-mirror: the standing agent opens in a dedicated "Scribe" cmux workspace, never the one on screen (#385 #400).
@@ -99,6 +270,9 @@ Plan the installer fix for the stale workspace Package.resolved and claim its pa
 
 ## 2026-10-02 11:32:55 EDT — scribe `ad729056a5dac0ee8cca219450c031bf385d7be8`
 Merge main's mac-memory handoff note into the build 79 integration (#394).
+
+## 2026-10-02 10:59:17 EDT — scribe `c2343b26a0aaff4c72d3ea81caca4297d59a8d02`
+Merge Scribe main into library-78-scribe, so library-78's rerun soak has the route seal fix (#329 #321).
 
 ## 2026-10-02 10:34:36 EDT — scribe `db53a687f9f023e8a5dbc8955cc2b88f348ecf15`
 Merge mac-memory's follow-up: the media-retry test fakes keep their streams, as the library does (#394).
