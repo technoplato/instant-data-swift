@@ -12255,6 +12255,32 @@ public final class InstantRuntime: Sendable {
     ) { [outbox] in await outbox.pending() }
   }
 
+  /// Whether a retained failed mutation is superseded (#445): every slot it set is covered by a later write of this
+  /// device that the server accepted, or holds its value in a live-query result the server sent since it was created;
+  /// the rule the runtime applies to a refused re-send itself (library-78 item 3, #441), reported slot by slot. Read
+  /// only, on the persistence actor.
+  @concurrent
+  package func failedMutationSupersession(id: String) async throws -> InstantMutationSupersession {
+    recordActorHop(.persistence)
+    guard let supersession = try await persistence.failedMutationSupersession(id: id) else {
+      throw InstantError(
+        code: .validationFailed,
+        operation: "check whether a failed outbox mutation is superseded",
+        localID: id,
+        message: "The outbox mutation '\(id)' is not a retained failed mutation.",
+        recovery: "List the failed mutations and check one of those."
+      )
+    }
+    return supersession
+  }
+
+  /// `failedMutationSupersession` for every retained failed mutation, keyed by mutation id (#445).
+  @concurrent
+  package func failedMutationSupersessions() async throws -> [String: InstantMutationSupersession] {
+    recordActorHop(.persistence)
+    return try await persistence.failedMutationSupersessions()
+  }
+
   @concurrent
   public func failedMutations() async -> [PendingMutation] {
     await durableOutboxMutations(

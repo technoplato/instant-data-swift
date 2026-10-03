@@ -884,6 +884,90 @@ public enum InstantMutationConfirmationSource: String, Hashable, Codable, Sendab
   }
 }
 
+/// Whether a failed write is superseded (#445), by the rule the library applies to refusals itself (library-78 item 3,
+/// #441): every slot it set is covered by a later write of this device that the server accepted, or holds the write's
+/// value in a live-query result the server sent since the write was created. Clearing a superseded write loses nothing
+/// the server does not hold.
+public enum InstantMutationSupersession: Hashable, Sendable {
+  /// Every slot is covered; each entry says what covers it.
+  case superseded(by: [InstantSlotCoverage])
+  /// Not every operation is covered; every write operation is listed, covered or not.
+  case notSuperseded(slots: [InstantSlotCoverage])
+
+  public var isSuperseded: Bool {
+    if case .superseded = self { true } else { false }
+  }
+
+  /// Every write operation of the failed write, with what covers it.
+  public var slots: [InstantSlotCoverage] {
+    switch self {
+    case let .superseded(slots), let .notSuperseded(slots): slots
+    }
+  }
+}
+
+/// One write operation of a failed write, and what covers it (#445).
+public struct InstantSlotCoverage: Hashable, Sendable {
+  public enum Operation: Hashable, Sendable {
+    case insert
+    case merge
+    /// A retraction, a deletion, or a step addressed by a lookup (named by its operation), which nothing vouches for.
+    case other(String)
+  }
+
+  public enum Coverage: Hashable, Sendable {
+    /// A later write of this device that the server accepted sets the slot.
+    case laterAcceptedWrite(mutationID: String, serverTransactionID: String?)
+    /// A live-query result the server sent since the write was created shows the write's value (for an identity slot,
+    /// the entity); `receivedAt` is when the newest such result arrived.
+    case serverResult(receivedAt: InstantTimestamp)
+    /// A later write of this device sets the slot, but the server has not accepted it yet.
+    case laterPendingWrite(mutationID: String)
+    /// Nothing covers the slot; `serverValues` are the values the newest stored result that holds the slot shows, if
+    /// any.
+    case notCovered(serverValues: [InstantValue])
+    /// A retraction, deletion, or lookup step: never superseded.
+    case notCheckable
+  }
+
+  /// The entity the operation addresses (a lookup's description for a lookup step).
+  public var entityID: String
+  public var namespace: String?
+  public var attributeName: String?
+  /// The attribute the operation sets; empty for a deletion.
+  public var attributeID: String
+  public var operation: Operation
+  /// The value the failed write set; `nil` for a deletion.
+  public var value: InstantValue?
+  public var coverage: Coverage
+
+  public init(
+    entityID: String,
+    namespace: String?,
+    attributeName: String?,
+    attributeID: String,
+    operation: Operation,
+    value: InstantValue?,
+    coverage: Coverage
+  ) {
+    self.entityID = entityID
+    self.namespace = namespace
+    self.attributeName = attributeName
+    self.attributeID = attributeID
+    self.operation = operation
+    self.value = value
+    self.coverage = coverage
+  }
+
+  /// Whether the slot counts as covered: by a later accepted write or by the server's results.
+  public var isCovered: Bool {
+    switch coverage {
+    case .laterAcceptedWrite, .serverResult: true
+    case .laterPendingWrite, .notCovered, .notCheckable: false
+    }
+  }
+}
+
 public enum InstantMutationLocalStateDisposition: String, Hashable, Codable, Sendable {
   case retainedForRetry
   case discarded
