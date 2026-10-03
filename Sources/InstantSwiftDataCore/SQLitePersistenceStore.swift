@@ -7144,6 +7144,16 @@ public actor SQLitePersistenceStore {
     }
   }
 
+  /// The oldest `limit` outbox mutations with one of `statuses`, in send order, in one actor turn and without a
+  /// queue-wide decode (#445).
+  func oldestOutboxMutations(statuses: [InstantMutationStatus], limit: Int) throws -> [PendingMutation] {
+    try loadOutboxMutations(
+      statuses: statuses,
+      limit: max(0, limit),
+      expectedOutboxRevision: try currentOutboxRevision()
+    ) ?? []
+  }
+
   func currentOutboxRevision() throws -> Int64 {
     try readTransaction {
       try loadMetadataRevisionWithoutTransaction(Self.outboxRevisionKey)

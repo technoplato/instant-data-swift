@@ -2296,9 +2296,12 @@ public final class InstantRuntime: Sendable {
     var mutation: PendingMutation?
 
     for _ in 0..<5 {
+      // Each phase is named, so a stall or a slow handoff says which one held the operation gate (#473).
+      operationGate.markHolderPhase("read state")
       // Every SQLite read this attempt makes before it prepares the write, in one persistence turn (#403).
       let reads = try await loadLocalWriteReads(transaction, draft: mutation)
       let state = reads.load.state
+      operationGate.markHolderPhase("adopt store")
       await adoptPersistedStoreIfNeeded(reads.load.storeAdoption)
       installedStoreRevisions.install(
         storeRevision: state.storeRevision,
@@ -2438,7 +2441,9 @@ public final class InstantRuntime: Sendable {
         else { return nil }
         return predecessor
       }
+      operationGate.markHolderPhase("load deferred values")
       let deferredTriples = try await deferredValuesForPreparing(transaction)
+      operationGate.markHolderPhase("prepare")
       func prepareLocalWrite(_ transaction: InstantStoreTransaction) async throws -> PreparedStoreMutation {
         if let supersededTail, let rollback = supersededTail.rollbackTransaction {
           // The current store includes the predecessor overlay. Peel exactly that
@@ -2493,6 +2498,7 @@ public final class InstantRuntime: Sendable {
           pendingMutation.id
         )
       }
+      operationGate.markHolderPhase("save")
       let saved = try await saveLocalMutationReadingConnectionStatus(
         prepared: prepared,
         pendingMutation: pendingMutation,
@@ -2503,6 +2509,7 @@ public final class InstantRuntime: Sendable {
         await configuration.onLocalMutationPersistedBeforeStorePublicationForTesting?(
           transaction.id
         )
+        operationGate.markHolderPhase("publish store")
         recordActorHop(.store)
         let committed = await store.commitAndPublish(prepared)
         installedStoreRevisions.install(
@@ -2510,6 +2517,7 @@ public final class InstantRuntime: Sendable {
           attributeRevision: state.attributeRevision
         )
         if let connectionStatus = saved.connectionStatus {
+          operationGate.markHolderPhase("publish status")
           await publishConnectionStatus(from: connectionStatus)
         }
         return committed.result
@@ -3382,7 +3390,7 @@ public final class InstantRuntime: Sendable {
             enteredOperationGateForCommit = true
             gateTimeline = InstantServerApplyGateTimeline(enteredAt: ContinuousClock.now)
           }
-          await operationGate.setHolderPhase("catch up local writes")
+          operationGate.markHolderPhase("catch up local writes")
           recordActorHop(.persistence)
           let catchUpLoad = try await persistence
             .extendServerApplyPlanWithAppendedLocalMutations(
@@ -3574,7 +3582,7 @@ public final class InstantRuntime: Sendable {
           !authoritativeTransaction.operations.isEmpty || mergedAttributeCount > 0
           || !failureSplice.storeOperations.isEmpty
         gateTimeline.catchUpEndedAt = ContinuousClock.now
-        await operationGate.setHolderPhase("commit plan")
+        operationGate.markHolderPhase("commit plan")
         recordActorHop(.persistence)
         guard let commit = try await persistence.commitServerApplyPlan(
           planID: plan.id,
@@ -3596,7 +3604,7 @@ public final class InstantRuntime: Sendable {
         }
 
         gateTimeline.commitEndedAt = ContinuousClock.now
-        await operationGate.setHolderPhase("publish store")
+        operationGate.markHolderPhase("publish store")
         recordActorHop(.store)
         let requiresPreparedStoreInstallation =
           changesMaterializedStore || didCatchUpLocalMutations
@@ -3622,7 +3630,7 @@ public final class InstantRuntime: Sendable {
         }
 
         gateTimeline.publishEndedAt = ContinuousClock.now
-        await operationGate.setHolderPhase("patch resident outbox")
+        operationGate.markHolderPhase("patch resident outbox")
         var patchPosition: InstantOutboxDeliveryPosition?
         while true {
           recordActorHop(.persistence)
@@ -3642,7 +3650,7 @@ public final class InstantRuntime: Sendable {
           patchPosition = patch.nextPosition
         }
         gateTimeline.patchEndedAt = ContinuousClock.now
-        await operationGate.setHolderPhase("finish plan")
+        operationGate.markHolderPhase("finish plan")
         try await persistence.finishServerApplyPlan(id: plan.id)
         _ = try? await publishConnectionStatusWithGateHeld(
           pendingMutationCount: commit.pendingMutationCount
@@ -12286,6 +12294,53 @@ public final class InstantRuntime: Sendable {
     await durableOutboxMutations(
       statuses: [.failed]
     ) { [outbox] in await outbox.all().filter { $0.status == .failed } }
+  }
+
+  /// The oldest `limit` retained failed mutations, read from SQLite without the operation gate and without decoding
+  /// the rest (#473). `failedMutations()` decodes every failed row under the operation gate. Scribe lists them at
+  /// launch; Michael's iPhone store held 309 failed rows, and after a relaunch that read held the gate for 4.1 s.
+  @concurrent
+  public func failedMutations(limit: Int) async -> [PendingMutation] {
+    guard limit > 0 else { return [] }
+    do {
+      recordActorHop(.persistence)
+      return try await persistence.oldestOutboxMutations(statuses: [.failed], limit: limit)
+    } catch {
+      InstantDiagnostics.shared.record(
+        error: error,
+        subsystem: "instant-swift-data-core",
+        category: "outbox",
+        event: "outbox.failed-page-failed",
+        message: "Could not read the oldest retained failed mutations; using the resident outbox."
+      )
+      reportIssue("Instant could not read the oldest retained failed mutations: \(error)")
+      recordActorHop(.outbox)
+      return Array(await outbox.all().filter { $0.status == .failed }.prefix(limit))
+    }
+  }
+
+  /// The oldest `limit` pending mutations, in send order, read from SQLite without the operation gate and without
+  /// decoding the rest of the queue (#445). Scribe's Sync view lists pending writes while a recording keeps writing;
+  /// `pendingMutations()` decodes every pending row under the operation gate, and on Michael's iPhone after a relaunch
+  /// that read held the gate for 4.1 s while the recording's writes waited.
+  @concurrent
+  public func pendingMutations(limit: Int) async -> [PendingMutation] {
+    guard limit > 0 else { return [] }
+    do {
+      recordActorHop(.persistence)
+      return try await persistence.oldestOutboxMutations(statuses: [.pending], limit: limit)
+    } catch {
+      InstantDiagnostics.shared.record(
+        error: error,
+        subsystem: "instant-swift-data-core",
+        category: "outbox",
+        event: "outbox.pending-page-failed",
+        message: "Could not read the oldest durable pending mutations; using the resident outbox."
+      )
+      reportIssue("Instant could not read the oldest durable pending mutations: \(error)")
+      recordActorHop(.outbox)
+      return Array(await outbox.pending().prefix(limit))
+    }
   }
 
   @concurrent

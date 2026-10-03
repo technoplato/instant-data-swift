@@ -102,6 +102,9 @@ actor AsyncSerialGate {
   /// work done under a lock (ep360 at 27:15), and there is none here.
   private let heldFlag = OSAllocatedUnfairLock(initialState: false)
   private var holderPhase: String?
+  /// The phase the holder named with ``markHolderPhase(_:)``, without a hop onto this actor (#473). Written by the
+  /// holder between its enter and its leave, read and cleared on this actor; the lock makes each read and write whole.
+  private let markedPhase = OSAllocatedUnfairLock<String?>(initialState: nil)
   private var holderAcquiredAt: Date?
   private var stallCount = 0
   private var stallWatchdog: Task<Void, Never>?
@@ -175,13 +178,26 @@ actor AsyncSerialGate {
     holderPhase = phase
   }
 
+  /// ``setHolderPhase(_:)`` without a hop onto this actor (#473), for a holder on a hot path: a local write names its
+  /// phases this way, so a stall says which one held the gate, at the cost of a lock instead of an actor turn. Call it
+  /// only while holding the gate. Cleared when the holder leaves.
+  nonisolated func markHolderPhase(_ phase: String?) {
+    markedPhase.withLock { $0 = phase }
+  }
+
+  /// The phase the holder named last, by either entry point.
+  private var currentHolderPhase: String? {
+    holderPhase ?? markedPhase.withLock { $0 }
+  }
+
   /// Releases the gate, handing it to the longest-queued caller if there is one.
   func leave() {
     stallCount = 0
     let previousHolder = holderOperation
-    let previousHolderPhase = holderPhase
+    let previousHolderPhase = currentHolderPhase
     let previousHolderAcquiredAt = holderAcquiredAt
     holderPhase = nil
+    markedPhase.withLock { $0 = nil }
     while let waiter = waiters.first {
       waiters.removeFirst()
       guard case .waiting(let continuation) = waiter.state else {
@@ -193,6 +209,9 @@ actor AsyncSerialGate {
       holderOperation = waiter.operation
       holderAcquiredAt = now
       let waitMilliseconds = Self.milliseconds(since: waiter.enqueuedAt, to: now)
+      // The next holder runs before its wait is reported (#473): the report writes a diagnostics line, and the
+      // handoff must never wait on log I/O.
+      continuation.resume()
       if waitMilliseconds >= waitReportThresholdMilliseconds, let previousHolder {
         waitReport(
           WaitReport(
@@ -208,7 +227,6 @@ actor AsyncSerialGate {
           )
         )
       }
-      continuation.resume()
       return
     }
 
@@ -220,6 +238,7 @@ actor AsyncSerialGate {
   private func acquire(operation: String) {
     holderOperation = operation
     holderPhase = nil
+    markedPhase.withLock { $0 = nil }
     holderAcquiredAt = Date()
     stallCount = 0
   }
@@ -328,7 +347,7 @@ actor AsyncSerialGate {
         longestWaitMilliseconds: longestWaitMilliseconds,
         waiterCount: waiters.count,
         stallCount: stallCount,
-        holderPhase: holderPhase
+        holderPhase: currentHolderPhase
       )
     )
     return true

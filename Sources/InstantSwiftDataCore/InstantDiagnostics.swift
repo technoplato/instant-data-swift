@@ -117,7 +117,12 @@ public typealias InstantDiagnosticHandler = @Sendable (InstantDiagnosticEntry) -
 
 // SAFETY: mutable configuration, sequence, handlers, and error state are protected by `lock`.
 public final class InstantDiagnostics: @unchecked Sendable {
-  public static let shared = InstantDiagnostics(configuration: .environment())
+  public static let shared: InstantDiagnostics = {
+    let diagnostics = InstantDiagnostics(configuration: .environment())
+    // A tool that logs and exits still gets its last entries into the file.
+    atexit { InstantDiagnostics.shared.flush() }
+    return diagnostics
+  }()
 
   private static let sensitiveMetadataKeys: Set<String> = [
     "accesstoken",
@@ -149,6 +154,25 @@ public final class InstantDiagnostics: @unchecked Sendable {
   private var lastMetadataByChangeKey: [String: [String: String]] = [:]
   private static let maximumChangeKeys = 512
 
+  /// The log file is written off the caller's thread, in order (#473). A local write logs while it holds the
+  /// runtime's operation gate, and each append created the directory, opened, locked, wrote and fsynced the file: on a
+  /// hot, busy device that held the gate for seconds, and a recording died behind a 12 s hold. ``flush()`` waits for
+  /// every entry recorded so far.
+  private let fileWriteQueue = DispatchQueue(label: "InstantDiagnostics.file", qos: .utility)
+  private let fileWriteQueueKey = DispatchSpecificKey<Void>()
+  private var pendingFileWrites: [PendingFileWrite] = []
+  private var pendingFileWriteBytes = 0
+  private var fileWriteScheduled = false
+  private var droppedFileWriteCount = 0
+  /// A log file that falls this far behind (a disk that stopped answering) drops new entries instead of holding them.
+  private static let maximumPendingFileWriteBytes = 8 * 1_024 * 1_024
+
+  private struct PendingFileWrite {
+    var data: Data
+    var fileURL: URL
+    var maximumFileBytes: Int?
+  }
+
   public init(
     configuration: InstantDiagnosticsConfiguration,
     sessionID: String = UUID().uuidString.lowercased(),
@@ -162,6 +186,7 @@ public final class InstantDiagnostics: @unchecked Sendable {
     self.encoder = JSONEncoder()
     self.encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
     self.hasActiveSink = configuration.fileURL != nil
+    fileWriteQueue.setSpecific(key: fileWriteQueueKey, value: ())
   }
 
   public static func defaultLogFileURL(processName: String) -> URL {
@@ -179,9 +204,12 @@ public final class InstantDiagnostics: @unchecked Sendable {
   }
 
   public func configure(_ configuration: InstantDiagnosticsConfiguration) {
+    // Entries recorded under the old configuration go to its file first.
+    flush()
     lock.withLock {
       self.configuration = configuration
       self.lastWriteError = nil
+      self.droppedFileWriteCount = 0
       refreshHasActiveSinkLocked()
     }
   }
@@ -211,6 +239,8 @@ public final class InstantDiagnostics: @unchecked Sendable {
 
   public var isEnabled: Bool { hasActiveSink }
 
+  /// The configuration's file and the last write error. Writes are asynchronous; call ``flush()`` first to see the
+  /// result of every entry recorded so far.
   public var status: InstantDiagnosticsStatus {
     lock.withLock {
       InstantDiagnosticsStatus(
@@ -330,8 +360,7 @@ public final class InstantDiagnostics: @unchecked Sendable {
       do {
         var data = try encoder.encode(entry)
         data.append(0x0A)
-        try Self.append(data, to: fileURL, maximumFileBytes: maximumFileBytes)
-        lock.withLock { lastWriteError = nil }
+        enqueueFileWrite(data, to: fileURL, maximumFileBytes: maximumFileBytes)
       } catch {
         lock.withLock { lastWriteError = String(describing: error) }
       }
@@ -412,6 +441,57 @@ public final class InstantDiagnostics: @unchecked Sendable {
       return value.prefix { $0 != ":" } + ":<redacted>"
     }
     return bounded(value, limit: 256)
+  }
+
+  /// Waits until every entry recorded so far is in the log file. Reading the file or its ``status``, rotating it from
+  /// outside, or exiting needs this first; ``configure(_:)`` calls it itself.
+  public func flush() {
+    if DispatchQueue.getSpecific(key: fileWriteQueueKey) != nil {
+      drainFileWrites()
+    } else {
+      fileWriteQueue.sync { drainFileWrites() }
+    }
+  }
+
+  private func enqueueFileWrite(_ data: Data, to fileURL: URL, maximumFileBytes: Int?) {
+    let schedules = lock.withLock { () -> Bool in
+      guard pendingFileWriteBytes + data.count <= Self.maximumPendingFileWriteBytes else {
+        droppedFileWriteCount += 1
+        lastWriteError =
+          "Dropped \(droppedFileWriteCount) entries: the log file fell more than \(Self.maximumPendingFileWriteBytes) bytes behind."
+        return false
+      }
+      pendingFileWrites.append(PendingFileWrite(data: data, fileURL: fileURL, maximumFileBytes: maximumFileBytes))
+      pendingFileWriteBytes += data.count
+      guard !fileWriteScheduled else { return false }
+      fileWriteScheduled = true
+      return true
+    }
+    if schedules {
+      fileWriteQueue.async { [self] in drainFileWrites() }
+    }
+  }
+
+  /// Writes the waiting entries in order. Runs on `fileWriteQueue`.
+  private func drainFileWrites() {
+    while true {
+      let batch = lock.withLock { () -> [PendingFileWrite] in
+        let batch = pendingFileWrites
+        pendingFileWrites.removeAll()
+        pendingFileWriteBytes = 0
+        if batch.isEmpty { fileWriteScheduled = false }
+        return batch
+      }
+      if batch.isEmpty { return }
+      for write in batch {
+        do {
+          try Self.append(write.data, to: write.fileURL, maximumFileBytes: write.maximumFileBytes)
+          lock.withLock { if droppedFileWriteCount == 0 { lastWriteError = nil } }
+        } catch {
+          lock.withLock { lastWriteError = String(describing: error) }
+        }
+      }
+    }
   }
 
   /// The file that holds the entries written before the last rotation.

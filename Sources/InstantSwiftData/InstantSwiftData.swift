@@ -1245,6 +1245,15 @@ public struct InstantSwiftDataClient: Sendable {
     return await pendingMutationsOperation().count
   }
 
+  /// The oldest `limit` pending mutations, in send order, without decoding the rest of the queue or waiting for
+  /// the runtime's operation gate (#445). Use it to list a long queue; `pendingMutationCount()` gives the total.
+  public func pendingMutations(limit: Int) async -> [PendingMutation] {
+    if let runtime {
+      return await runtime.pendingMutations(limit: limit)
+    }
+    return Array(await pendingMutationsOperation().prefix(max(0, limit)))
+  }
+
   public func failedMutations() async throws -> [PendingMutation] {
     guard let runtime else {
       throw InstantError(
@@ -1255,6 +1264,20 @@ public struct InstantSwiftDataClient: Sendable {
       )
     }
     return await runtime.failedMutations()
+  }
+
+  /// The oldest `limit` retained failed mutations, without decoding the rest or waiting for the runtime's operation
+  /// gate (#473).
+  public func failedMutations(limit: Int) async throws -> [PendingMutation] {
+    guard let runtime else {
+      throw InstantError(
+        code: .implementationFailed,
+        operation: "list failed Instant mutations",
+        message: "This Instant Swift Data client has no runtime outbox lifecycle.",
+        recovery: "Use a runtime-backed client to inspect retained failed mutations."
+      )
+    }
+    return await runtime.failedMutations(limit: limit)
   }
 
   @discardableResult
