@@ -1,17 +1,41 @@
+## 2026-10-03 10:31:55 EDT — instant-data-swift `bb0e62651ef881b392a95a12d42d8a7db5b51613`
+v1.9.3 on main: merge library-79-hops (eb086bb1) without fast-forward over a6d7929d; the annotated tag v1.9.3 points here and gh release v1.9.3 is Latest (https://github.com/technoplato/instant-data-swift/releases/tag/v1.9.3); code equals the gated 5e1c0222 (#436).
+
 ## 2026-10-03 10:31:25 EDT — instant-data-swift `1ea9f0763639139c9d6c5c5a33fee88da2b9416d`
 Document the v1.9.3 release: #436, a store whose cache holds one live-query result over 8 MiB opens again; red on v1.9.2, green here, and two high-lane gate holds (#436).
 
 ## 2026-10-03 10:16:54 EDT — instant-data-swift `5e1c0222036472746cf5c66577fa93a0ff4d2e18`
 #436 test isolation: each fixture names its own oversized result, so the two parallel tests never capture each other's warning (#436).
 
+## 2026-10-03 10:06:20 EDT — scribe `8cc6021763e434c94b03171e3773833eb50e2434`
+Merge main's playback-links plan and ADR 0040 after the 0.1 (82) release commit (#122 #435).
+
+## 2026-10-03 10:04:28 EDT — scribe `2ee74133e25f462f2d486aea6f78f8f2c809f0c5`
+Log the push proof's ADR commit in CHANGELOG (#340).
+
 ## 2026-10-03 10:00:18 EDT — instant-data-swift `adfd9624da0fd25edaf97d258cd33ed158f4696f`
 #436's red test compiles against v1.9.2: it counts decoded results with the existing scan counter, and the unused drop counter is gone (#436).
+
+## 2026-10-03 09:59:52 EDT — scribe `a1616d8b483be74c4590b2588d57ec1bb62f685d`
+ADR 0029: the push proof on the simulator, what it showed and what it could not (#340).
 
 ## 2026-10-03 09:54:59 EDT — instant-data-swift `7d7790fdd54bf79f291dc06f49e44f43fdfffc32`
 #436 (P0): the store opens even when one cached live-query result is over the 8 MiB open-time row bound; the reconciliation and application-migration passes drop it with a warning and its query refetches it (Michael's iPad could not open Scribe; Recording 039's transcript is 8,817,787 bytes) (#436).
 
+## 2026-10-03 09:50:21 EDT — scribe `c2e6504fbc796c1fa7f8ab6db9afedeaa0f2d618`
+Log the heart-rate implementation in CHANGELOG (#290).
+
+## 2026-10-03 09:49:51 EDT — scribe `3c57a43dfc379cb75c0bf5965aac92db172b0e94`
+Read Apple Watch heart rate from Health while a recording captures, without a workout, and put it on the timeline (#290).
+
 ## 2026-10-03 09:48:57 EDT — instant-data-swift `a3ec2b91c4e087dd98f55039f71c9edea1f2e83e`
 Claim the files of the #436 hotfix: SQLitePersistenceStore.swift, the new oversized-result tests, and the v1.9.3 release document (#436).
+
+## 2026-10-03 09:34:30 EDT — scribe `683efc6af7a0dce71e5f65f7b21e3cbcac1e3105`
+Release Scribe 0.1 (82).
+
+## 2026-10-03 09:02:34 EDT — scribe `bdb0a5d77f73faab7f1d7a005d2fa20061f16749`
+Claim Package.swift for heart-rate: HeartRateClientLive's leftover watchOS HealthKit link (#290).
 
 ## 2026-10-03 08:47:37 EDT — scribe `a30e0409b8f4b3bd171191c3608e8d40b8c82cc6`
 Merge ui-polish's #413 pair: the pushed recording and playback screens take the floating bar's room themselves, and the bar's room is logged on change (#413).
@@ -157,6 +181,9 @@ Red tests: the follow-along tail follows a recording by its heartbeat, and only 
 ## 2026-10-03 00:43:26 EDT — scribe `3774258b61de5c185bdf2d5ae56828ad6622dfa1`
 Plan live-stamp-82: the follow-along tail and scribe-stream-agent --active read the heartbeat, and the iPad's stuck write gets a repro, and claim the paths (#408).
 
+## 2026-10-03 00:38:25 EDT — scribe `ba12debed84a388e92777ca0b78217d67618f50a`
+Amend plan heart-rate: claim the two kind-list tests and the simulator proof's scripts (#290).
+
 ## 2026-10-03 00:30:19 EDT — scribe `e505cd444797c10a18402e1ad9b47244f2b70f89`
 Merge origin/main into live-stamp: main's ui-polish, clipboard-onboarding and list-edit-mode plans and claims (#408).
 
@@ -198,6 +225,9 @@ Read the list's live signal before writing it into the restored playback (#408).
 
 ## 2026-10-02 23:36:53 EDT — scribe `09a9bbb73798b6b3ae06ed1248d2620563243c40`
 Real alerts for agent answers, the thread's title on every notification, and scribe notify for agents (#340)
+
+## 2026-10-02 22:46:48 EDT — scribe `4f8490be43d1ea004f4744b04fca014345bacd8a`
+Plan heart-rate: Apple Watch heart rate from Health on the recording timeline, no workout, and claim its paths (#290).
 
 ## 2026-10-02 22:35:27 EDT — scribe `e0c1c19915085b5e1ca9159270080cb6149c6423`
 Merge capture-alert-unblock's test fix: the outage notifier's tests and the rebuild-stop test wait on events (#272).
