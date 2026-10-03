@@ -1,3 +1,12 @@
+## 2026-10-03 00:06:03 EDT — scribe `32902faa686cd695e5ae74f4c7eebb065c09d567`
+Log the remote-push commits in CHANGELOG (#340)
+
+## 2026-10-03 00:06:03 EDT — scribe `bd34556609ca8b8d08b3267cfcabd03f9f75bb83`
+remote-push: merge notes and the scribe notify handoff in the companion channel (#340)
+
+## 2026-10-02 23:36:53 EDT — scribe `09a9bbb73798b6b3ae06ed1248d2620563243c40`
+Real alerts for agent answers, the thread's title on every notification, and scribe notify for agents (#340)
+
 ## 2026-10-02 21:20:51 EDT — scribe `6133038ef3ddacfe31d4e77277ccc52a3d24b69f`
 Merge main's build 81 plans and startup-screen's handoff after the 80 release (#272 #405).
 
@@ -9,6 +18,9 @@ Record the on-device held-out result: still short of the bar, so voice actions s
 
 ## 2026-10-02 20:56:11 EDT — scribe `8042de4e2ad319b22ed4fa501bbfbdb18e30b0e2`
 Read the voice-actions banner before it expires in the two copy tests (#161)
+
+## 2026-10-02 20:54:49 EDT — scribe `1f2bda1a2024a3d0814adf2f1f347ab79d35a2bd`
+Push an agent's answer to the devices where Scribe sleeps: the app registers its APNs token with a running mark, and scribe-mirror sends the alert (#340)
 
 ## 2026-10-02 19:15:29 EDT — scribe `003cfd17c14a17eacd7c6504a4421dea179e9abb`
 Release Scribe 0.1 (80).
