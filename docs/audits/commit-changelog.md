@@ -1,3 +1,9 @@
+## 2026-10-02 21:20:51 EDT — scribe `6133038ef3ddacfe31d4e77277ccc52a3d24b69f`
+Merge main's build 81 plans and startup-screen's handoff after the 80 release (#272 #405).
+
+## 2026-10-02 21:20:25 EDT — scribe `3aa8ddb44506e66da8670676779c10aa5b254269`
+Record Scribe 0.1 (80) in the change log and PROGRESS: installed on the iPhone, the iPad, and the Mac (#361 #335).
+
 ## 2026-10-02 20:56:11 EDT — scribe `2366fb1742479b6508381c24887213c247212150`
 Record the on-device held-out result: still short of the bar, so voice actions stay off by default (#161 #160)
 
