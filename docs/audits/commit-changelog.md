@@ -1,3 +1,33 @@
+## 2026-10-03 18:06:07 EDT — scribe `d6f07ba5c8460da14a639e3c53407e5a71a76878`
+Pass the WAV writer's health and flush-interval closures at the three test call sites of AudioFileClient's memberwise init (#488)
+
+## 2026-10-03 17:55:10 EDT — scribe `418655c1d841689ce3ca5469c75954667c155a87`
+Name the reducer RecordingFeature.Recording in the capture-isolation test's two signatures, where SharedModels' Recording made the type ambiguous (#488)
+
+## 2026-10-03 17:49:47 EDT — scribe `2e12deb32f423d08c96a8bca261cabe4319ca5a7`
+Log the WAV writer's events through a static function, so the microphone effect never captures the reducer (#488)
+
+## 2026-10-03 17:37:19 EDT — scribe `39e070aaca31333151ec24682eadc992993bc00b`
+Write the share-prototype settings through the queued file key too, as every shared file key now does (#488 #389)
+
+## 2026-10-03 17:28:31 EDT — scribe `e9386d59bc025ce4adde821ff49775eed0963ab0`
+Start iOS's expiring activity off the caller's thread too, so the background transition never waits on RunningBoard (#488)
+
+## 2026-10-03 17:26:57 EDT — scribe `b8ccf9ae02eab9647c350f5f424c7a55da7a7bdd`
+Say in the device pull why a phone has no library diagnostics file, and how to get one (#488)
+
+## 2026-10-03 17:25:37 EDT — scribe `3b6eb08e4099a9f75129747d0da87589aa82ddcb`
+Refused audio waits in memory only as its length, and the WAV writer gets synchronizeSoon() for pause, interruption and background fsyncs (#488)
+
+## 2026-10-03 16:48:06 EDT — scribe `5aecb8f42fa8d6f37787e9035d7c9bb8cb255dbd`
+The WAV writer's health and flush interval never wait for the writer's lock (#488)
+
+## 2026-10-03 16:43:34 EDT — scribe `62cbd5bff0719ef6232136f7fc91233cbee15dec`
+The app's log lanes stop fsyncing per batch and rewriting after every delivery, keep routine lines to a budget, and a hot phone writes less often; capture never stops (#488, ADR 0050)
+
+## 2026-10-03 16:36:31 EDT — scribe `9933348dbdf3dc586065deab5ea08bde2c4e25d4`
+The move to the background never waits on the disk, and capture never waits on anything: queued settings files, a non-blocking telemetry flush, capture on its own executor with speech first, and the WAV on its own queue (#488, ADR 0050)
+
 ## 2026-10-03 16:26:02 EDT — scribe `36683fbd9c63a6d6ed8b6909e9c29aa25f33ad2f`
 Merge main's plans and claims after the 0.1 (84) release commit (#430 #342 #485 #469 #470 #462 #340 #444)
 
