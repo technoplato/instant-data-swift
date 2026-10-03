@@ -22,14 +22,62 @@ Record the sync-status test's loop fix in the change log (#308).
 ## 2026-10-03 02:34:51 EDT — scribe `b02fefc43b497d268659cb68812bf19734c3668f`
 Fail and stop when the sync-status test's stream ends, instead of spinning on its nil (#308).
 
+## 2026-10-03 02:16:11 EDT — scribe `edd7d2e8c52612950aa245317d913b8c1d71d675`
+A playback stamp and its clear leave updatedAtMs, so opening an old recording keeps its place in the list (#432).
+
 ## 2026-10-03 02:15:54 EDT — instant-data-swift `c1292d88d54867af11d1d3b287f199c029d0232e`
 Claim the query-selection test for #431's cleared slots: a refreshed result vouches for the slots its query selects (#431).
+
+## 2026-10-03 02:15:47 EDT — scribe `581de2951ebb45bd7f4d2738d966748fb2a3c564`
+Red test: a playback stamp and its clear keep a recording's place in the list; a capture's stamp and heartbeat do not (#432).
+
+## 2026-10-03 02:15:11 EDT — scribe `bba16097a066ff909a1f14ba81108d3667ed916b`
+Amend plan live-stamp-82 (c): a playback stamp or its clear keeps the recording's place in the list, and claim its paths (#432).
+
+## 2026-10-03 02:12:44 EDT — scribe `5e419c518a2e6de8edc4a9b828f8624a44758507`
+ADR 0025 section 8: a recording the sweep finishes keeps its place in the list (#432).
+
+## 2026-10-03 02:11:43 EDT — scribe `449dcfe74851d3710eb18771f58bfee4612f9c12`
+The sweep's finalize leaves the recording's updatedAtMs, so an old recording keeps its place in the list (#432).
+
+## 2026-10-03 02:10:56 EDT — scribe `f3216d60784f5671366fab62109d81ecb7ba1afe`
+Red test: a recording the sweep finishes keeps its place in the list, and a tapped Stop still moves it to the top (#432).
+
+## 2026-10-03 02:09:48 EDT — scribe `0b13e9423a044d4d80620f36f25d61e86dbfd738`
+Amend plan live-stamp-82 (c): a sweep finish keeps an old recording's place in the list, and claim the stop write's paths (#432).
+
+## 2026-10-03 02:05:51 EDT — scribe `012178b6f8d518c0fe642d10b24e2bb70f71677f`
+Build the planner test's expected decisions step by step, so the type checker never meets one long literal chain (#432).
+
+## 2026-10-03 02:01:43 EDT — scribe `1431df83e90e84aa3a3881d6d712ecde97cde874`
+A launch sweep gives a recording that closed without Stop Stop's saved end: its audio row and upload (#432).
+
+## 2026-10-03 01:59:54 EDT — scribe `3b5d98adba4667c6f965c9a4d31465297ab4be69`
+Red tests: a recording that closed without Stop gets Stop's saved end once the launch restore settles (#432).
 
 ## 2026-10-03 01:57:09 EDT — scribe `5c06626cb247d39f91717f15f3b502b33138719e`
 Merge main's list-edit-mode, ui-polish and clipboard-onboarding plans and claims after the 0.1 (81) release commit (#430 #412 #420).
 
 ## 2026-10-03 01:41:34 EDT — instant-data-swift `ea2fc93439933a7bf496aacb7145685e39217f6c`
 Claim SQLitePersistenceStore.swift and the device-store check for #431's cleared slots, at main's request to match Reactor.js on a full refresh (#431).
+
+## 2026-10-03 01:40:33 EDT — scribe `4b3bf1f6a1791e9ae415bea642a25aac9f73ce07`
+Record the change-log entry for capture-alert-unblock's 0fb4154e (#272).
+
+## 2026-10-03 01:40:20 EDT — scribe `1d121cadde44e07f66689726ae6fb2a85df083a6`
+Progress and channel: capture-gaps-row's first run, the rebuild-stop test fix, and the rerun queued (#272 #346).
+
+## 2026-10-03 01:39:57 EDT — scribe `f6eba27d5381b1e56a9900017d08e55823e259b1`
+Plan #432 on live-stamp-82: a launch sweep finishes a recording that closed without Stop, and claim its paths (#432).
+
+## 2026-10-03 01:39:55 EDT — scribe `bbbb0f4633431190753b2290682ae90b68f1049d`
+Record the change-log entries for capture-gaps-row's b0c289e4, 06d22739, 9fa9130f, a670c5b7 and cefa0098 (#272 #346).
+
+## 2026-10-03 01:15:53 EDT — scribe `cefa00984b9b5e9585a7d60eaa7b4a9481e7b1ec`
+Hold the rebuild-stop test's rebuild on a continuation, not a blocked thread, and cover the install path on its own (#272).
+
+## 2026-10-03 01:15:44 EDT — scribe `0fb4154e86d11afd5358aa0e08da644e4c7d018b`
+Hold the rebuild-stop test's rebuild on a continuation, not a blocked thread, and cover the install path on its own (#272).
 
 ## 2026-10-03 01:14:47 EDT — scribe `02fbb77cd9e80525b26a6b0ae9c25d8c55e8136e`
 Release Scribe 0.1 (81).
@@ -52,11 +100,29 @@ Merge scribe-mirror: ambiguous requests ask Michael once before anyone acts or h
 ## 2026-10-03 01:09:45 EDT — scribe `7710a74b5bdef3398344ddd7cd8db00e6bda3943`
 Merge live-stamp: a watching device never stamps over a live recording, and only Stop's saved end stops a take (#408).
 
+## 2026-10-03 00:53:12 EDT — scribe `5782f927cbf828dfd9837c95e0f238640e5a3233`
+The follow-along tail and scribe-stream-agent --active follow a recording by its heartbeat, and end it only at Stop's saved end (#408).
+
+## 2026-10-03 00:47:01 EDT — scribe `ebe4467a317db8de7a5e3886fb0d6c97c3fc23d3`
+Red tests: the follow-along tail follows a recording by its heartbeat, and only Stop's saved end ends it (#408).
+
+## 2026-10-03 00:43:26 EDT — scribe `3774258b61de5c185bdf2d5ae56828ad6622dfa1`
+Plan live-stamp-82: the follow-along tail and scribe-stream-agent --active read the heartbeat, and the iPad's stuck write gets a repro, and claim the paths (#408).
+
+## 2026-10-03 00:30:19 EDT — scribe `e505cd444797c10a18402e1ad9b47244f2b70f89`
+Merge origin/main into live-stamp: main's ui-polish, clipboard-onboarding and list-edit-mode plans and claims (#408).
+
+## 2026-10-03 00:29:25 EDT — scribe `f21145bc15076e4dec3e17046ac0021dc920c3e4`
+Record live-stamp in PROGRESS: the cause, the fix, the red and green runs, and what stays open (#408).
+
 ## 2026-10-03 00:06:03 EDT — scribe `32902faa686cd695e5ae74f4c7eebb065c09d567`
 Log the remote-push commits in CHANGELOG (#340)
 
 ## 2026-10-03 00:06:03 EDT — scribe `bd34556609ca8b8d08b3267cfcabd03f9f75bb83`
 remote-push: merge notes and the scribe notify handoff in the companion channel (#340)
+
+## 2026-10-03 00:02:28 EDT — scribe `a670c5b7227a82bb7209732f57ffccd02553ce86`
+Give the list gaps-row test a test clock and a fixed date, so the drain it starts reports nothing (#272 #346).
 
 ## 2026-10-02 23:56:08 EDT — scribe `39ce9954c97a790f3519bb632128ed449ef2ec34`
 Merge capture-alert-unblock's change-log entries for its three commits (#272).
@@ -64,14 +130,50 @@ Merge capture-alert-unblock's change-log entries for its three commits (#272).
 ## 2026-10-02 23:55:53 EDT — scribe `98047f0af533838b636659df79f1fd579b434b8e`
 Merge capture-alert-unblock's compile fix: each outage-notifier test event is awaited into a constant first (#272).
 
+## 2026-10-02 23:55:50 EDT — scribe `5d1597c241bfd11a1f44eae50988936898520167`
+Record the change-log entries for capture-alert-unblock's 9a1d1bfb, 5d3d8f6e and dc5d0dbf (#272).
+
+## 2026-10-02 23:55:18 EDT — scribe `0071fb4565b04c0ce0dd3cf256676d238b517591`
+Say what live means in the scribe-mirror doc: the active stamp, or a device still capturing (#408).
+
+## 2026-10-02 23:54:52 EDT — scribe `dc5d0dbf4dd33b776a0d602411417f0c7fb763d9`
+Await each outage-notifier test event into a constant before comparing it, so the tests compile (#272).
+
+## 2026-10-02 23:53:26 EDT — scribe `a336b98d6b6aa0776334358d5d4e11af9e2daddc`
+Stub the player's stop in the two clear-path tests, which close a playback (#408).
+
 ## 2026-10-02 23:46:15 EDT — scribe `3c30780eb23629c2c11bb960c5ce750629160c76`
 Merge recognitions: songs recognized with ShazamKit and the weather from WeatherKit as moments on the recording timeline (#406).
+
+## 2026-10-02 23:38:41 EDT — scribe `7e441f1888d899e09633adba1f307ebfd2675c6b`
+Read the list's live signal before writing it into the restored playback (#408).
 
 ## 2026-10-02 23:36:53 EDT — scribe `09a9bbb73798b6b3ae06ed1248d2620563243c40`
 Real alerts for agent answers, the thread's title on every notification, and scribe notify for agents (#340)
 
 ## 2026-10-02 22:35:27 EDT — scribe `e0c1c19915085b5e1ca9159270080cb6149c6423`
 Merge capture-alert-unblock's test fix: the outage notifier's tests and the rebuild-stop test wait on events (#272).
+
+## 2026-10-02 22:26:19 EDT — scribe `5d3d8f6eee4f284eaaec7174e64df840255c35b9`
+Make the outage notifier's tests and the rebuild-stop test wait on events, not on time (#272).
+
+## 2026-10-02 22:10:18 EDT — scribe `5c2263273320b47aed6b2392c5af3e9d6b91ef3a`
+Record live-stamp's red tests, fix, and consumer hardening in the change log (#408).
+
+## 2026-10-02 22:09:25 EDT — scribe `181481765a2946e9ec3f6540535559d2d71070cc`
+scribe-mirror and the open-sections planner read the heartbeat, not the stamp alone; ADRs 0025, 0028 and 0031 amended (#408).
+
+## 2026-10-02 22:02:22 EDT — scribe `86114ffb8417a2454f2f820cf8e266c6d64c9b7e`
+A watching device never stamps over a live recording, and only Stop's saved end stops a take (#408).
+
+## 2026-10-02 21:57:08 EDT — scribe `1c53db510f5b74f09abf6a581ae49526f9c0956a`
+Red tests: a restored playback leaves a live recording's stamp, and a replaced stamp never stops this device's take (#408).
+
+## 2026-10-02 21:49:41 EDT — scribe `a78e868907456b2b51f4878461990cbe621a4aae`
+Plan live-stamp: a watching device never stamps over a live recording, and a replaced stamp never stops one, and claim its paths (#408).
+
+## 2026-10-02 21:32:22 EDT — scribe `9fa9130fcc0f8d993749133c5a627c4356f73cda`
+Call the recording projection on ScribeRecordingDetailRequest in the gaps-row test (#272 #346).
 
 ## 2026-10-02 21:21:32 EDT — scribe `4f537588a2552e082bfa64864fff3866f53e86d0`
 Merge capture-alert-unblock: the outage notification never holds the Live Activity, and every notification-center call ends within 5 s (#272).
@@ -91,11 +193,26 @@ Read the voice-actions banner before it expires in the two copy tests (#161)
 ## 2026-10-02 20:54:49 EDT — scribe `1f2bda1a2024a3d0814adf2f1f347ab79d35a2bd`
 Push an agent's answer to the devices where Scribe sleeps: the app registers its APNs token with a running mark, and scribe-mirror sends the alert (#340)
 
+## 2026-10-02 20:44:16 EDT — scribe `9a1d1bfb39d06c8e608acafbf5d5a33588696b98`
+Keep the outage notification off the surface path, and bound every notification-center call at 5 s (#272).
+
+## 2026-10-02 20:40:11 EDT — scribe `785f6f96f0d5edb6a23deed1670213526655d85e`
+Plan the build 81 hotfix: the outage notification never holds the Live Activity, and claim its paths (#272).
+
 ## 2026-10-02 19:15:29 EDT — scribe `003cfd17c14a17eacd7c6504a4421dea179e9abb`
 Release Scribe 0.1 (80).
 
 ## 2026-10-02 19:15:08 EDT — scribe `04a7f5fdc0f54503c763fb3f78989554d2f494c8`
 Merge prod-data: close every open transcript section, at every session end and after a continuation (#335 #363).
+
+## 2026-10-02 18:51:56 EDT — scribe `06d22739a8d7a92df679609ceef51b910cf6c899`
+Read the durability queue through its testable module in the gaps-row list test (#272 #346).
+
+## 2026-10-02 18:49:58 EDT — scribe `b0c289e4c9593700823319ae882dae417fc0c285`
+Store the capture gaps on the recording row and images' own capture time (#272 #346).
+
+## 2026-10-02 18:25:49 EDT — scribe `2aa9b4d4a3f52d5985f7fb1a84fef871132b96c3`
+Merge origin/main into capture-gaps-row: rec032-mic-gap landed as 0f42452a (build 80, library 1.9.1) (#272 #346).
 
 ## 2026-10-02 18:25:47 EDT — scribe `f79ba8a46b50c0aa2bcb0816836f745053da710d`
 Merge scribe-mirror: the standing-agent trigger reads cmux's real answers and names its pane (#385 #400).
@@ -105,6 +222,9 @@ Merge startup-screen: a fresh launch opens on the recordings list itself, not a 
 
 ## 2026-10-02 18:25:46 EDT — scribe `cb711adf6a2deae89c251d67622268da442e1c0d`
 Merge reply-notifications: an agent's answer notifies on every device, with status lines and read-aloud on demand (#340 #342 #387).
+
+## 2026-10-02 18:24:35 EDT — scribe `d01ba922dc3d9a0281b7b484bff5fbf01cc7e198`
+Stack capture-gaps-row on rec032-mic-gap: merge 98436e37 into main ac48f34b (#272 #346).
 
 ## 2026-10-02 17:32:16 EDT — scribe `0f42452a10746bed3ee532e5ed08a8af4690dd40`
 Merge rec032-mic-gap: restart capture only on iOS's signals, say who holds the microphone, and give every line its true time (#272 #346).
@@ -187,6 +307,24 @@ Release Scribe 0.1 (79).
 ## 2026-10-02 14:25:37 EDT — scribe `cee929deba4c2519cb13320d9b4bbdc879443e40`
 Merge main's ADR 0034 schema commit and the capture-gap plan into the build 79 integration (#272 #346).
 
+## 2026-10-02 14:20:06 EDT — scribe `d52dee7b4e70cd834ca443e4e1fbdac78a1d9650`
+Plan the capture gaps on the recording row and images' own capture time, and claim their paths (#272 #346).
+
+## 2026-10-02 14:18:03 EDT — scribe `98436e37dcde2cf88df3a9024d59051e5c0e6382`
+Record main's answers to ADR 0034's three questions (#272 #346).
+
+## 2026-10-02 14:05:10 EDT — scribe `b26a85d9cfe62106813c418fc9df7ca1ac16fc4d`
+Merge origin/main into rec032-mic-gap: production's schema and rules commits and new plans (#272 #346).
+
+## 2026-10-02 14:04:26 EDT — scribe `0b64ad686ac9cfb6a9e8c57b3b6b72d5ee7ff214`
+Progress and channel: the mic-gap branch is ready for merge, the simulator proof is queued (#272 #346).
+
+## 2026-10-02 14:02:22 EDT — scribe `ccba5c0163e2fbb18227b37d4fb8a05f749aa3b2`
+Record the mic-gap commits in the change log (#272 #346).
+
+## 2026-10-02 13:58:17 EDT — scribe `ba45e670ac59c63ba37bdb16eb90d2d86265793f`
+Fix the two expectations the full run exposed: the notice's details and voice actions' coverage (#272).
+
 ## 2026-10-02 13:41:26 EDT — instant-data-swift `d3c9a075e0354833351b27e72c9740916e3a84fa`
 Plan the v1.9.0 release (plan 2026-10-02-release-1.9.0) and claim the release document, CHANGELOG.md, PROGRESS.md, and this ledger; note the overlap with library-79's unmerged claims on the same logs.
 
@@ -250,6 +388,9 @@ scribe-mirror: the standing-agent trigger starts one Claude Code agent per new r
 ## 2026-10-02 12:08:31 EDT — instant-data-swift `57f4a8413ba67360b21c8d5657bfe21ca5fda5b8`
 Claim the statement-cache test for the prepared-statement cache main asked for as its own commit (#403).
 
+## 2026-10-02 12:01:32 EDT — scribe `77ae4b8028a9d6ee79d13e5bcd86706c2b574dfe`
+Merge origin/main into rec032-mic-gap: the instant-data-swift 1.8.0 pin and mac-memory's follow-up (#272 #346).
+
 ## 2026-10-02 11:57:16 EDT — instant-data-swift `55a15392f23f9d0a9db4c66f9abebecc5fe2b49c`
 Format every transport date through one shared ISO 8601 formatter, byte-identical to the TypeScript core's wire encoding (79 of 79 fixture dates); formatter setup was about a quarter of transact's profile (#403).
 
@@ -277,6 +418,12 @@ Merge main's mac-memory handoff note into the build 79 integration (#394).
 ## 2026-10-02 10:59:17 EDT — scribe `c2343b26a0aaff4c72d3ea81caca4297d59a8d02`
 Merge Scribe main into library-78-scribe, so library-78's rerun soak has the route seal fix (#329 #321).
 
+## 2026-10-02 10:58:40 EDT — scribe `a1d09e21bbc1bc9a55bff6e4fa27f63f048eca30`
+Merge origin/main into rec032-mic-gap: voice-actions, visionos, scribe-mirror and its gap branch (#272 #346).
+
+## 2026-10-02 10:57:43 EDT — scribe `4b1dfbe5cbe1ec6864bc5b86565b818854282690`
+Claim this branch's test files and correct ADR 0034's consequences (#272 #346).
+
 ## 2026-10-02 10:34:36 EDT — scribe `db53a687f9f023e8a5dbc8955cc2b88f348ecf15`
 Merge mac-memory's follow-up: the media-retry test fakes keep their streams, as the library does (#394).
 
@@ -301,11 +448,20 @@ Record the voice-actions coverage excuses in the change log (#161 #391 #393).
 ## 2026-10-02 09:45:56 EDT — scribe `65e03b6deb5bab2f87fb6a2c7dc3445eb30ab21e`
 Excuse playback's full screen and Back to Live in the voice-actions coverage test (#161 #391 #393).
 
+## 2026-10-02 09:45:11 EDT — scribe `817fd726236d3bb36bf28b50f71d222dc7eb347d`
+Keep the perf soak's Scribe running out of the front during a scripted outage (#272).
+
 ## 2026-10-02 09:37:46 EDT — scribe `619506b3cfcab68c7f0e7aa3b068d72c6fb482e0`
 Record the second simulator proof of agent reply notifications in ADR 0029 (#340 #342 #387).
 
 ## 2026-10-02 09:29:44 EDT — scribe `dc54847bd395b1407317eb848baa726792d992ec`
 Let the notification offer's sentence wrap instead of ending in an ellipsis (#340).
+
+## 2026-10-02 09:25:56 EDT — scribe `7034cf9dcd8a9b558b0ff526c2459d4fac4eade9`
+Merge origin/main into rec032-mic-gap: mac-live's liveness, list-design's rows, mac-memory's fenceposts (#272 #346).
+
+## 2026-10-02 09:24:53 EDT — scribe `79b1273a2e3daaa3a3da725491cd650562d249b6`
+Restart capture only on iOS's signals, say who holds the microphone everywhere, and give every line its true time (#272 #346).
 
 ## 2026-10-02 09:13:51 EDT — scribe `74d4612b376aaa087f92bb528ba51d83f4222731`
 Record the voice-actions ADR renumbering in the change log (#161 #160).
@@ -361,6 +517,9 @@ scribe-mirror: no client's name in the guide, the code, the tests, or the docs (
 ## 2026-10-02 07:42:18 EDT — scribe `4633792214476bd7ab15620d14a4999a7c2fa6cb`
 scribe-mirror: scribe route prints only verdicts and owners (#400 #385).
 
+## 2026-10-02 07:36:49 EDT — scribe `6840152b53ff294a4e438f3ec752c9efb8aaa781`
+Merge origin/main into rec032-mic-gap: iphone-duo's size-class layout and live-follow's plan (#272 #346).
+
 ## 2026-10-02 07:35:19 EDT — scribe `ff6e0c56e77c683281ab93a6204c32cdda3ab31a`
 scribe-mirror: AGENTS.md, docs and ADR 0028 for connect, capture, route and triggers (#385 #400).
 
@@ -369,6 +528,9 @@ scribe-mirror: the scribe CLI works like Tuple's (#385 #400).
 
 ## 2026-10-02 07:34:22 EDT — scribe `c49b9db1c0056fd9d2e1102117182f7f4c768ddd`
 scribe-mirror: a router that says who a spoken line is for (#400 #385).
+
+## 2026-10-02 07:19:23 EDT — scribe `67588a0fd6cacd99a44f479f9a0d6a38707a10b2`
+WIP: renumber the capture-gap ADR to 0034 and build on main's gap marker and spans (#272 #346).
 
 ## 2026-10-02 07:16:40 EDT — scribe `16dc3f50b7daed67c01dc8a546aa740b6fbc7f5f`
 Merge main's live-follow plan and claims into the build 79 integration (#401).
@@ -384,6 +546,12 @@ Pin instant-data-swift exactly 1.8.0 in Package.swift and Package.resolved. That
 
 ## 2026-10-02 06:56:14 EDT — scribe `64336697abb62982483f27572ba8a9340e05a674`
 Amend plan 2026-10-01-instant-1-8-0-pin: the GitHub release is Scribe 0.1 (78) on 0d76686d, and the integrator agent merges the pin into Scribe main (#155 #303).
+
+## 2026-10-02 06:49:38 EDT — scribe `7bd81d9b30571d8ada353d823cfb8e56fc5e693e`
+Merge origin/main into rec032-mic-gap: timeline-events' paired spans and the route seal fix (#272 #346).
+
+## 2026-10-02 06:49:09 EDT — scribe `53e1119d4c7084ebeed5e886739baffbeb7b21b8`
+WIP: Recording 032 microphone-gap fix, mid-implementation checkpoint (#272 #346).
 
 ## 2026-10-01 20:47:14 EDT — scribe `7de7b5e4cad5bbfd5d7348504168321f77b3a157`
 Record the orientation reader exemption in the change log (#381 #368).
