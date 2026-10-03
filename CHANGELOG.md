@@ -10,6 +10,20 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## October 3rd, 2026 at 1:37:56 p.m. EDT — `0bc6ddc4127e` Document the v1.9.4 release: a refused re-send the server's results vouch for resolves as accepted, and a failed mutation's supersession is read-only API (#441 #445)
+
+- **Implementation commit:** `0bc6ddc4127e0742eee732df18b0b45da69de775`
+- **Change:** Document the v1.9.4 release: a refused re-send the server's results vouch for resolves as accepted, and a failed mutation's supersession is read-only API (#441 #445).
+- **Details:**
+  - docs/releases/v1.9.4.md: Recording 040's capture gaps, the guard and its wait, the #445 API and its shape, red on v1.9.3 (three resolving tests fail there; the guards pass), the first green's SIGBUS from stale test objects, and the gate on fe3ad82a after a clean build.
+  - Gate: new suites 12/12; library-77/78 106; ten suites 697 with 5 load-timing misses at load 150-170, each passing 5 of 5 alone on this build and on v1.9.3; focused 182; fast-drain and survival 25; infinite 211 with the same pre-existing failure as 1.9.1's gate; #431's iPad store 3/3; phone replay 2,487 to 0, matches or improves on the reference. The soak follows after the tag.
+- **Files:**
+  - `docs/releases/v1.9.4.md` — the v1.9.4 release document
+  - `PROGRESS.md` — the v1.9.4 entry
+- **User context (verbatim):**
+  > Publish the library once it's checked fast. Yes.
+- **SpecStory:** unavailable — Claude Code agent session (library-79); no SpecStory capture configured for this session.
+
 ## October 3rd, 2026 at 12:49:19 p.m. EDT — `45a462908c27` Say whether a failed mutation is superseded, slot by slot, as read-only public API (#445)
 
 - **Implementation commit:** `45a462908c27876ba2e31096c44f2cf39a48f214`

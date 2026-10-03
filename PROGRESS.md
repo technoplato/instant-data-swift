@@ -1,3 +1,28 @@
+## 2026-10-03 13:37:46 EDT — v1.9.4: a refused re-send whose values the server's results already show resolves as accepted, and a failed mutation's supersession is read-only API; main's merge of this commit is the release commit (#441 #445)
+
+- **Owner:** library-79 (`claude-opus-5.5-library-79`, workLog agentId `claude-code/claude-opus-5.5/library-79`), plan
+  `2026-10-02-library-79-hops`, at main's request (#441 P1, 2026-10-03 about 12:00 EDT; #445 added about 12:35), under
+  Michael's maintainer authorization: "Publish the library once it's checked fast. Yes."
+- **Defect (#441):** Recording 040's iPhone showed "Not synced" for a re-sent capture-gaps write that production holds:
+  the first offer was applied and only its answer was lost with the socket, and Scribe's `updatedAtMs` rule refused the
+  re-send because a later heartbeat had advanced the row. Library-78's supersession needed later accepted writes of the
+  device for every slot, and nothing later wrote the gaps.
+- **Commits on `agent/claude-opus-5.5/library-79-hops`:** claim `d8208b33`; `ec10cad2` the guard (a re-send's slot also
+  counts as covered when a server result since the write shows its value; a re-send refused before its connection's
+  query answers waits for them, up to 30 s); claim `94938422` and `45a46290` the #445 API
+  (`supersession(ofFailedMutation:)`, `failedMutationSupersessions()`, shape agreed with launch-recovery); ledger
+  `fe3ad82a`; release document `docs/releases/v1.9.4.md`.
+- **Checks:** red on v1.9.3 (the three resolving tests fail there; the guards pass); the gate on `fe3ad82a` after a clean
+  build: new suites 12/12, library-77/78 106, ten suites 697 (5 load-timing misses at load 150–170, each passing 5 of 5 alone on this build and on v1.9.3),
+  focused 182, fast-drain and survival 25, infinite 211 (one pre-existing failure), #431 iPad store 3/3, phone replay
+  matches or improves on the reference. The first green run crashed with SIGBUS from stale test objects (an
+  incremental build after the configuration gained a field); the gate builds clean.
+- **Evidence:** `/tmp/library-79-hops/red-441/`, `/tmp/library-79-hops/gate-441/`, `/tmp/library-79-hops/reruns-441/`,
+  copied to `/Users/laptop/Sync/audit/library-79-441-2026-10-03/`.
+- **Continue:** the soak on v1.9.4 (normal lane); 1.9.5 with phone-perf's streaming file download and
+  `pendingMutations(limit:)` for launch-recovery; main's P1 on the 12 s operation-gate hold (report first); #441's last
+  criterion is a dropped connection during a recording leaving no false "Not synced" with 1.9.4 in Scribe.
+
 ## 2026-10-03 10:31:25 EDT — v1.9.3: a store whose cache holds one live-query result over 8 MiB opens again; main's merge of this commit is the release commit (#436)
 
 - **Owner:** library-79 (`claude-opus-5.5-library-79`, workLog agentId `claude-code/claude-opus-5.5/library-79`), plan
