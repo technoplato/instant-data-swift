@@ -1,3 +1,6 @@
+## 2026-10-03 16:26:02 EDT — scribe `36683fbd9c63a6d6ed8b6909e9c29aa25f33ad2f`
+Merge main's plans and claims after the 0.1 (84) release commit (#430 #342 #485 #469 #470 #462 #340 #444)
+
 ## 2026-10-03 15:19:23 EDT — scribe `ddf60c389013beebace6c502fb3cc309b05f9050`
 Plan read-aloud-voice, plan only: the best installed voice for answers, its Settings row, and the voice in the read's start event (#471)
 
@@ -18,6 +21,33 @@ Record the read-aloud voice commit in the change log (#471)
 
 ## 2026-10-03 15:10:29 EDT — scribe `ffb2f70ded67b9203d1cc9769a57e0f34c5d007e`
 Read agent answers with the best system voice installed, and say where to get a better one (#471)
+
+## 2026-10-03 15:07:50 EDT — scribe `632bd4286eaf6d15ef3100ffb32cbdf8f8b64619`
+Import the durability lane where the shared continuation helper registers the recording (#458)
+
+## 2026-10-03 15:06:06 EDT — scribe `f60f29caa505178d3652d358dc2773ca484971ab`
+Give the #432 sweep flow tests' fake client the route lookup the client gained for #458
+
+## 2026-10-03 15:01:21 EDT — scribe `02bbf0a5816e97289126743638f27e0522c1adc3`
+The Resume offer carries its row's title and ends with its row or its window; the notice stops reading the clock after its two minutes (#458)
+
+## 2026-10-03 15:00:46 EDT — scribe `5c74c194b89ea32a499db4ed55a68c0e47ccda6e`
+Red tests: the Resume offer carries its row's title and ends with its row or its window, and the notice stops reading the clock after its two minutes (#458)
+
+## 2026-10-03 14:52:52 EDT — scribe `2dd124de3b918c9f74b1c873fce6f48438c7cd84`
+Resume tests receive the Record and Stop each assertion reads before it checks the state (#458)
+
+## 2026-10-03 14:46:46 EDT — scribe `8a823c866256b62c9874696dbbf82fb983d34c77`
+Settings' Continue Cut-Off Recordings switch, on by default, turns #458 off; every continuation start stays loud (#458)
+
+## 2026-10-03 14:46:05 EDT — scribe `efca870d6f2eeb0d3d1b296317e7e41985edf4f1`
+Red tests: Settings' Continue Cut-Off Recordings switch, on by default, turns #458 off (#458)
+
+## 2026-10-03 14:42:56 EDT — scribe `c13488ccaf30c27911484c55b237ce8b3c82e2b5`
+Offer a cut-off take for Resume only at a route chunk index a route can continue after (#458)
+
+## 2026-10-03 14:40:39 EDT — scribe `a78cd3b503b29cc74f54fa4255d6889daa1b0a8b`
+Name the waiting Record's trigger binding apart from the value it initializes (#458)
 
 ## 2026-10-03 14:39:00 EDT — scribe `475cc511a406dcc9ed0b244532ec644c014bdce9`
 Open the resume-cut-off channel: the #458 split with ui-polish and list-edit-mode, and the names both draw against (#458)
@@ -88,11 +118,23 @@ An agent answer's notification is passive while this device records, so Siri nev
 ## 2026-10-03 13:52:19 EDT — scribe `b3245d24705d3a7bf37c4abd37e3d68d88aa9355`
 Red: an agent answer's notification is passive while this device records, and so is the push for a live recording (#340)
 
+## 2026-10-03 13:46:48 EDT — scribe `3ca83ba7e8621064847e93790ec62ec6c21a7338`
+Release Scribe 0.1 (84)
+
+## 2026-10-03 13:46:40 EDT — scribe `ab66735893d7dce62d5af61bec441d5e99e9efec`
+Record the P0 voice-actions guard's four commits in the change log (#442)
+
 ## 2026-10-03 13:46:31 EDT — scribe `781df924cc325c1f26f7e7b7a3c14e212f2ea370`
 An answer read aloud waits for Michael to pause, pauses when he speaks, and stops on "stop" or its card's Stop (#342)
 
+## 2026-10-03 13:46:03 EDT — scribe `c3c326cb198de72cd0af458a908750b01898a4e3`
+Merge remote-push: agent answers reach every device by APNs, with the push devices registered per account (#340)
+
 ## 2026-10-03 13:46:03 EDT — scribe `587b89d74da1584dc716957fd55f6e98179e8847`
 Amend plan resume-cut-off: the coordinator's answer, option 1 with a 30-minute resume window (#458)
+
+## 2026-10-03 13:45:27 EDT — scribe `bacb621f182b8e0dc8c24e559b0f27b789febba3`
+Merge the P0 voice-actions guard for iOS 27: one gate keeps every Scribe caller off FoundationModels on version 27, and a model call in flight is never cancelled (#442)
 
 ## 2026-10-03 13:44:20 EDT — scribe `d9c8f657aa1b86a795e1a727c0dca362515f100b`
 Plan resume-cut-off: Record continues a recording that was cut off, Resume is a normal action, and no recording stays stamped live (#458)
@@ -111,6 +153,12 @@ Record live-stamp-82's commits in the change log: the follow-along heartbeat, th
 
 ## 2026-10-03 13:27:19 EDT — scribe `9bb6cd759eb31e37105756a59845041318c1453e`
 Red: a playback answer card opens with More and its tap opens the thread at that answer (#340)
+
+## 2026-10-03 13:25:22 EDT — scribe `7ed2792f53f00624acd1a61c66f090d95091f49c`
+Merge share-ui: the new sharing flow behind an off-by-default flag, with the people field's burst-typing and duplicate-person fixes (#389)
+
+## 2026-10-03 13:25:13 EDT — scribe `2c90b2d76afe61230d2543a69e00581b82a1e1f0`
+Merge ui-polish for 84: the build chip docks above the bar, and the full-screen stack holds Back to Live and the player inside the bar (#417 #414 #413)
 
 ## 2026-10-03 13:15:02 EDT — scribe `7e4efa677739e9c35174bccc1a2521c65cac0d19`
 Playback shows the agents' answers as cards where they landed on the recording clock (#340)
@@ -156,6 +204,12 @@ Never cancel a voice-actions model call in flight; drop a late answer instead (#
 
 ## 2026-10-03 12:16:27 EDT — scribe `9e2d83273ddb3aa7bfcf585b0be6a267ccf5e245`
 P0: one gate keeps every Scribe caller off FoundationModels on version 27 (#442)
+
+## 2026-10-03 12:12:26 EDT — scribe `951e91f5f6a3e79d783bfaf3830f70cd9eefb146`
+Merge the launch-and-onboarding plans: store-opens-off-main-actor and the AX5 badges, with their claims (#405 #439)
+
+## 2026-10-03 12:12:06 EDT — scribe `25f6b24e987f3eed4eb9fcf70933a81fe1a83550`
+Record Scribe 0.1 (83) in the change log and PROGRESS: installed on the iPad and the Mac; the iPhone stays on 82 until 84 (#436)
 
 ## 2026-10-03 12:11:23 EDT — scribe `dc2aec188b98e77d60579e3284d75b0c36881497`
 The final segment's recording summary leaves updatedAtMs to the heartbeat, so a re-sent one passes the rule (#441)
