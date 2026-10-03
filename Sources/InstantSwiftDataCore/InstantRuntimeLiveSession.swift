@@ -246,6 +246,9 @@ package actor InstantRuntimeLiveSession {
     var room: InstantRoomHandle
     var observerCount: Int
     var presence: [String: JSONValue]?
+    /// The runtime's sequence number of `presence`, so a publication that reaches this actor after a newer one never
+    /// replaces it here or on the wire (#461).
+    var presenceSequence: UInt64 = 0
     var queuedBroadcasts: [QueuedBroadcast] = []
     var isConnected = false
   }
@@ -1702,13 +1705,18 @@ package actor InstantRuntimeLiveSession {
     try await send(.leaveRoom(room, clientEventID: clientEventID), through: session)
   }
 
+  /// Records the presence the runtime published as publication `sequence` and sends it once the room is joined.
+  /// A publication older than the one already recorded is dropped: two publishes that race to this actor must leave
+  /// the newer on the wire, as the runtime's state has it.
   func setPresence(
     room: InstantRoomHandle,
     values: [String: JSONValue],
+    sequence: UInt64,
     clientEventID: String
   ) async throws {
-    guard var registration = registeredRooms[room] else { return }
+    guard var registration = registeredRooms[room], sequence > registration.presenceSequence else { return }
     registration.presence = values
+    registration.presenceSequence = sequence
     registeredRooms[room] = registration
     guard registration.isConnected, let session, isOpened else { return }
     try await send(

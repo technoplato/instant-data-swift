@@ -16,37 +16,35 @@ struct InstantRoomPresenceRuntimeTests {
   /// of milliseconds on a phone (perf-040: p50 295 ms while dictating). `Reactor.js` takes no lock at all.
   @Test
   func aPresencePublishReturnsWhileTheOperationGateIsHeld() async throws {
-    await withKnownIssue("setPresence waits for the operation gate (#461)") {
-      let room = InstantRoomHandle(type: "recording", id: "room-gate")
-      let gateHolder = RoomTestGate()
-      let session = LiveReactorParitySession(messages: [
-        liveReactorInitOK(attrs: liveReactorTodoServerAttrs, sessionID: "session-self")
-      ])
-      var configuration = try roomConfiguration(appID: "room-presence-gate", transport: session.transport)
-      configuration.onAuthSessionObservationHoldsOperationGateForTesting = { await gateHolder.parkIfArmed() }
-      let runtime = try await InstantRuntime.bootstrap(configuration: configuration)
-      try await withRoomCleanup({ await gateHolder.release() }) {
-        _ = try await runtime.connect()
-        _ = try await runtime.joinRoom(room)
-        try await joinAndWaitForPeers(runtime: runtime, session: session, room: room)
+    let room = InstantRoomHandle(type: "recording", id: "room-gate")
+    let gateHolder = RoomTestGate()
+    let session = LiveReactorParitySession(messages: [
+      liveReactorInitOK(attrs: liveReactorTodoServerAttrs, sessionID: "session-self")
+    ])
+    var configuration = try roomConfiguration(appID: "room-presence-gate", transport: session.transport)
+    configuration.onAuthSessionObservationHoldsOperationGateForTesting = { await gateHolder.parkIfArmed() }
+    let runtime = try await InstantRuntime.bootstrap(configuration: configuration)
+    try await withRoomCleanup({ await gateHolder.release() }) {
+      _ = try await runtime.connect()
+      _ = try await runtime.joinRoom(room)
+      try await joinAndWaitForPeers(runtime: runtime, session: session, room: room)
 
-        await gateHolder.arm()
-        let observation = Task { try await runtime.observeAuthSession() }
-        try await waitForRoom("observeAuthSession to hold the operation gate") { await gateHolder.parkedCount == 1 }
+      await gateHolder.arm()
+      let observation = Task { try await runtime.observeAuthSession() }
+      try await waitForRoom("observeAuthSession to hold the operation gate") { await gateHolder.parkedCount == 1 }
 
-        _ = try await instantLiveWithTimeout(
-          operation: "publish presence while the operation gate is held",
-          timeoutMilliseconds: 2_000
-        ) {
-          try await runtime.setPresence(room: room, userID: "user-self", values: ["state": .string("working")])
-        }
-        try await waitForRoom("the set-presence to reach the socket while the gate is held") {
-          await session.sentMessages().contains { $0.op == "set-presence" }
-        }
-        await gateHolder.release()
-        _ = try await observation.value
-        _ = try await runtime.closeConnection()
+      _ = try await instantLiveWithTimeout(
+        operation: "publish presence while the operation gate is held",
+        timeoutMilliseconds: 2_000
+      ) {
+        try await runtime.setPresence(room: room, userID: "user-self", values: ["state": .string("working")])
       }
+      try await waitForRoom("the set-presence to reach the socket while the gate is held") {
+        await session.sentMessages().contains { $0.op == "set-presence" }
+      }
+      await gateHolder.release()
+      _ = try await observation.value
+      _ = try await runtime.closeConnection()
     }
   }
 
@@ -54,32 +52,30 @@ struct InstantRoomPresenceRuntimeTests {
   /// SQLite, so a relaunched runtime holds no presence from an earlier connection.
   @Test
   func aLivePresencePublishWritesNothingToSQLite() async throws {
-    await withKnownIssue("setPresence saves the member to SQLite (#461)") {
-      let room = InstantRoomHandle(type: "recording", id: "room-sqlite")
-      let persistenceURL = try temporaryRoomCacheURL()
-      let session = LiveReactorParitySession(messages: [
-        liveReactorInitOK(attrs: liveReactorTodoServerAttrs, sessionID: "session-self")
-      ])
-      var configuration = try roomConfiguration(appID: "room-presence-sqlite", transport: session.transport)
-      configuration.persistenceURL = persistenceURL
-      let runtime = try await InstantRuntime.bootstrap(configuration: configuration)
-      _ = try await runtime.connect()
-      _ = try await runtime.joinRoom(room)
-      try await joinAndWaitForPeers(runtime: runtime, session: session, room: room)
-      _ = try await runtime.setPresence(room: room, userID: "user-self", values: ["state": .string("working")])
-      _ = try await runtime.closeConnection()
+    let room = InstantRoomHandle(type: "recording", id: "room-sqlite")
+    let persistenceURL = try temporaryRoomCacheURL()
+    let session = LiveReactorParitySession(messages: [
+      liveReactorInitOK(attrs: liveReactorTodoServerAttrs, sessionID: "session-self")
+    ])
+    var configuration = try roomConfiguration(appID: "room-presence-sqlite", transport: session.transport)
+    configuration.persistenceURL = persistenceURL
+    let runtime = try await InstantRuntime.bootstrap(configuration: configuration)
+    _ = try await runtime.connect()
+    _ = try await runtime.joinRoom(room)
+    try await joinAndWaitForPeers(runtime: runtime, session: session, room: room)
+    _ = try await runtime.setPresence(room: room, userID: "user-self", values: ["state": .string("working")])
+    _ = try await runtime.closeConnection()
 
-      let relaunched = try await InstantRuntime.bootstrap(
-        configuration: InstantRuntimeConfiguration(
-          appID: "room-presence-sqlite",
-          persistenceURL: persistenceURL,
-          initialAttributes: TodoExample.attributes,
-          now: { roomTestNow }
-        )
+    let relaunched = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "room-presence-sqlite",
+        persistenceURL: persistenceURL,
+        initialAttributes: TodoExample.attributes,
+        now: { roomTestNow }
       )
-      let stored = try await relaunched.roomPresence(room: room)
-      expectNoDifference(stored, [], "A live publish left a presence row in SQLite.")
-    }
+    )
+    let stored = try await relaunched.roomPresence(room: room)
+    expectNoDifference(stored, [], "A live publish left a presence row in SQLite.")
   }
 
   /// `Reactor.js` applies a `patch-presence` in `_handleReceive` as it arrives. The runtime's applier applies query
