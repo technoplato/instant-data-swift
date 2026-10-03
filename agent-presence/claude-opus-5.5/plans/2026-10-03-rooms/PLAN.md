@@ -3,8 +3,8 @@
 - **planId:** `2026-10-03-rooms`
 - **agentId:** `claude-opus-5.5-rooms` (issue workLog agentId `claude-code/claude-opus-5.5/rooms`)
 - **Role:** grower, on Michael's order and a public issue (#461); compress where the old paths go away.
-- **Branch:** `agent/claude-opus-5.5/rooms`, from v1.9.4 (`4da6f182`, the base library-79 named). Library-79 cuts the
-  release.
+- **Branch:** `agent/claude-opus-5.5/rooms`, from v1.9.4 (`4da6f182`, the base library-79 named), rebased onto v1.9.5
+  (`e7c6ffb3`) at library-79's request on 2026-10-03. Library-79 cuts the release.
 - **Goal (Michael, verbatim):**
   - Recording 186 #32-33: "That sounds good to me for the, uh, rooms plan, so go ahead and knock that out with a
     subagent. Um, that you fire off?"
@@ -45,12 +45,16 @@ semantics that match TypeScript. Measured before and after on a local self-hoste
   operation gate's take or release sites in transact, server apply, hydration or the outbox, which are library-79's)
 - `Sources/InstantSwiftDataCore/InstantRuntimeLiveSession.swift` (room registration and the reader's routing of room
   frames; coordinated with library-79, channel `agent-presence/_channels/2026-10-03-rooms.md`)
+- `Sources/InstantSwiftDataCore/InstantRuntimeRoomPresence.swift` and
+  `Sources/InstantSwiftDataCore/InstantRuntimeRoomTopics.swift` (new: presence and topics in memory)
 - `Sources/InstantSwiftDataCore/InstantSnapshotObservers.swift`
 - `Sources/InstantSwiftDataCore/InstantLiveTransport.swift`
 - `Sources/InstantSwiftData/InstantPresence.swift`, `Sources/InstantSwiftData/InstantTopic.swift`,
   `Sources/InstantSwiftData/InstantSwiftData.swift`
 - `Tests/InstantSwiftDataCoreTests/InstantReactorParityTests.swift`
 - `Tests/InstantSwiftDataCoreTests/InstantRoomPresenceRuntimeTests.swift` (new)
+- `Tests/InstantSwiftDataTests/InstantRoomPresenceSelectionClientTests.swift` (new)
+- `README.md` (the rooms section's rules)
 - `docs/adr/0019-rooms-and-presence-parity.md` (new; the number is the next free one, the integrator may move it)
 - `CHANGELOG.md`, `PROGRESS.md`, `docs/audits/commit-changelog.md` (prepend only)
 
