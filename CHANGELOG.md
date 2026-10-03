@@ -10,6 +10,252 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## October 3rd, 2026 at 6:52:34 p.m. EDT — `06216ad5330a` Document rooms parity with Reactor.js: ADR 0019, the README's rooms rules, and the PROGRESS checkpoint (#461)
+
+- **Implementation commit:** `06216ad5330a5ccb397c02f5668e60a71544a1ee`
+- **Change:** ADR 0019, the README's rooms rules and the PROGRESS checkpoint for rooms parity with Reactor.js (#461).
+- **Details:**
+  - ADR 0019: the eight decisions, the parity table against Reactor.js, consequences, and evidence; the measurement before and after and the red-then-green run are queued.
+  - PROGRESS: the branch on v1.9.5, its commits, the compiler checks so far, the queued runs, and how to continue.
+- **Files:**
+  - `docs/adr/0019-rooms-and-presence-parity.md` — the decision record
+  - `README.md` — the rooms section states the rules an app sees: session peers, nothing stored, change-only observers, topics once each, explicit leaving
+  - `PROGRESS.md` — the rooms checkpoint
+- **User context (verbatim):**
+  > That sounds good to me for the, uh, rooms plan, so go ahead and knock that out with a subagent.
+  > Good plan. And let's get feature parody and performance parody with Swift and typescript, please.
+- **SpecStory:** unavailable — Claude Code agent session (rooms subagent under main); no SpecStory capture configured for this session.
+
+## October 3rd, 2026 at 6:52:34 p.m. EDT — `2e513f1c41aa` Claim README.md for the rooms rules and record the rebase onto v1.9.5 in the rooms plan (#461)
+
+- **Implementation commit:** `2e513f1c41aa199c34212ba40fab6559d72035dd`
+- **Change:** Plan-only follow-up: claim README.md for the rooms rules, and record the rebase onto v1.9.5 (e7c6ffb3) and the files the work added in the rooms plan (#461).
+- **Files:**
+  - `_touching/README.md/README.md/.agents/agents.txt` — the README.md claim
+  - `agent-presence/claude-opus-5.5/plans/2026-10-03-rooms/PLAN.md` — the new base and the touching list
+- **User context (verbatim):**
+  > That sounds good to me for the, uh, rooms plan, so go ahead and knock that out with a subagent.
+- **SpecStory:** unavailable — Claude Code agent session (rooms subagent under main); no SpecStory capture configured for this session.
+
+## October 3rd, 2026 at 6:52:23 p.m. EDT — `0bec8c356add` Compare the racing-publish test's wire value through jsonValue: InstantLiveJSONValue's JSONValue init is fileprivate (#461)
+
+- **Implementation commit:** `0bec8c356adde45d87dee08f6bc8425952a40da6`
+- **Change:** The racing-publish test compares the wire value through jsonValue (#461).
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantRoomPresenceRuntimeTests.swift` — the comparison
+- **User context (verbatim):**
+  > That sounds good to me for the, uh, rooms plan, so go ahead and knock that out with a subagent.
+- **SpecStory:** unavailable — Claude Code agent session (rooms subagent under main); no SpecStory capture configured for this session.
+
+## October 3rd, 2026 at 6:52:23 p.m. EDT — `fb8744bbb6f2` Pin that racing presence publishes leave the newest on the wire (#461)
+
+- **Implementation commit:** `fb8744bbb6f20d059e97a90ab97a7c02cbba5990`
+- **Change:** Pin that racing presence publishes leave the newest on the wire (#461).
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantRoomPresenceRuntimeTests.swift` — racingPresencePublishesLeaveTheNewestOnTheWire
+- **User context (verbatim):**
+  > That sounds good to me for the, uh, rooms plan, so go ahead and knock that out with a subagent.
+- **SpecStory:** unavailable — Claude Code agent session (rooms subagent under main); no SpecStory capture configured for this session.
+
+## October 3rd, 2026 at 6:52:23 p.m. EDT — `e31eadc7f90a` Keep @discardableResult on the client's joinRoom, which the isRoomJoined insertion separated from it (#461)
+
+- **Implementation commit:** `e31eadc7f90a668580a335ba3cca9e0f99d1dd2a`
+- **Change:** Keep @discardableResult on the client's joinRoom (#461).
+- **Files:**
+  - `Sources/InstantSwiftData/InstantSwiftData.swift` — the attribute back on joinRoom
+- **User context (verbatim):**
+  > That sounds good to me for the, uh, rooms plan, so go ahead and knock that out with a subagent.
+- **SpecStory:** unavailable — Claude Code agent session (rooms subagent under main); no SpecStory capture configured for this session.
+
+## October 3rd, 2026 at 6:52:23 p.m. EDT — `e452bfa8ed86` Say whether the server confirmed a room's join on the current connection: isRoomJoined, as Reactor.js's isLoading (#461)
+
+- **Implementation commit:** `e452bfa8ed86a9b2c3111101071ab0d8b5f504a9`
+- **Change:** isRoomJoined on the runtime and the client: whether the server confirmed a room's join on the current connection, as Reactor.js's isLoading (#461).
+- **Details:**
+  - True from join-room-ok (or the room's first presence frame or broadcast) on the open connection; false before it, after a drop, after the last leave, and without a live transport.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantRuntimeLiveSession.swift` — isRoomJoined reads the room registration
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — InstantRuntime.isRoomJoined
+  - `Sources/InstantSwiftData/InstantSwiftData.swift` — InstantSwiftDataClient.isRoomJoined and its closure
+  - `Tests/InstantSwiftDataCoreTests/InstantRoomPresenceRuntimeTests.swift` — aRoomIsJoinedOnlyOnceTheServerConfirmsItOnTheCurrentConnection
+- **User context (verbatim):**
+  > That sounds good to me for the, uh, rooms plan, so go ahead and knock that out with a subagent.
+  > Good plan. And let's get feature parody and performance parody with Swift and typescript, please.
+- **SpecStory:** unavailable — Claude Code agent session (rooms subagent under main); no SpecStory capture configured for this session.
+
+## October 3rd, 2026 at 6:52:23 p.m. EDT — `52b99c19c0d7` Offer presence selection on the public client: observeRoomPresence(room:selection:) (#461)
+
+- **Implementation commit:** `52b99c19c0d705ea60a175a0cc4b0901e3b5ae90`
+- **Change:** Presence selection on the public client: observeRoomPresence(room:selection:) (#461).
+- **Details:**
+  - Applies an InstantRoomPresenceSelection to the client's presence stream and forwards a part only when it changed; InstantRoomPresenceSelection.changed(from:to:) is public.
+- **Files:**
+  - `Sources/InstantSwiftData/InstantSwiftData.swift` — the client overload
+  - `Sources/InstantSwiftDataCore/InstantRoomModels.swift` — changed(from:to:) made public
+  - `Tests/InstantSwiftDataTests/InstantRoomPresenceSelectionClientTests.swift` — the client test
+- **User context (verbatim):**
+  > That sounds good to me for the, uh, rooms plan, so go ahead and knock that out with a subagent.
+  > Good plan. And let's get feature parody and performance parody with Swift and typescript, please.
+- **SpecStory:** unavailable — Claude Code agent session (rooms subagent under main); no SpecStory capture configured for this session.
+
+## October 3rd, 2026 at 6:52:23 p.m. EDT — `4d83580dc91e` Let a presence observation select keys, peers, and its own presence, as Reactor.js's subscribePresence does (#461)
+
+- **Implementation commit:** `4d83580dc91e386274b85637eb3a5af950d579c2`
+- **Change:** A presence observation can select keys, peers and its own presence, and wakes only when its part changed (#461).
+- **Details:**
+  - observeRoomPresence(room:selection:) with InstantRoomPresenceSelection, as Reactor.js's subscribePresence keys/peers/user options.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantRoomModels.swift` — InstantRoomPresenceSelection
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — observeRoomPresence(room:selection:)
+  - `Sources/InstantSwiftDataCore/InstantRuntimeRoomPresence.swift` — per-observer selection and last emission
+  - `Tests/InstantSwiftDataCoreTests/InstantRoomPresenceRuntimeTests.swift` — the selection test
+- **User context (verbatim):**
+  > That sounds good to me for the, uh, rooms plan, so go ahead and knock that out with a subagent.
+  > Good plan. And let's get feature parody and performance parody with Swift and typescript, please.
+- **SpecStory:** unavailable — Claude Code agent session (rooms subagent under main); no SpecStory capture configured for this session.
+
+## October 3rd, 2026 at 6:52:22 p.m. EDT — `f997440c7c8d` Forget a room's presence and topics when the last holder's leave-room fails to send (#461)
+
+- **Implementation commit:** `f997440c7c8dfd08f86f2e1cf7025ac9b3f65ade`
+- **Change:** Forget a room's presence and topics when the last holder's leave-room fails to send (#461).
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — leaveRoom's failure path
+- **User context (verbatim):**
+  > That sounds good to me for the, uh, rooms plan, so go ahead and knock that out with a subagent.
+  > Good plan. And let's get feature parody and performance parody with Swift and typescript, please.
+- **SpecStory:** unavailable — Claude Code agent session (rooms subagent under main); no SpecStory capture configured for this session.
+
+## October 3rd, 2026 at 6:52:22 p.m. EDT — `68a99b2ace32` Keep live room topic messages in memory, once each, without storage or the operation gate, as Reactor.js does (#461)
+
+- **Implementation commit:** `68a99b2ace325e22bd38053aa1457cf8df18b40e`
+- **Change:** Live room topic messages in memory, once each, without storage or the operation gate; new observeRoomTopicEvents (#461).
+- **Details:**
+  - InstantRuntimeRoomTopics: events once each and in order (no drops), snapshots of the most recent 128, this runtime's own recent publications; messages carry the sender's peerID. The CLI's local cache keeps SQLite topics.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantRuntimeRoomTopics.swift` — the new topics actor
+  - `Sources/InstantSwiftDataCore/InstantRoomModels.swift` — InstantRoomTopicMessage.peerID and isLocal
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — the topic entry points in memory for live runtimes
+  - `Tests/InstantSwiftDataCoreTests/InstantRoomPresenceRuntimeTests.swift` — the topic test loses its wrapper; the 10,000-message run
+  - `Tests/InstantSwiftDataCoreTests/InstantReactorParityTests.swift` — the room-events test expects the recent messages with peer ids
+- **User context (verbatim):**
+  > That sounds good to me for the, uh, rooms plan, so go ahead and knock that out with a subagent.
+  > Good plan. And let's get feature parody and performance parody with Swift and typescript, please.
+- **SpecStory:** unavailable — Claude Code agent session (rooms subagent under main); no SpecStory capture configured for this session.
+
+## October 3rd, 2026 at 6:52:22 p.m. EDT — `5b2888f79e34` Leave rooms and presence as Reactor.js does: the last holder's leave forgets the room, leavePresence clears the wire (#461)
+
+- **Implementation commit:** `5b2888f79e34470be086f98764420bee5f59ff94`
+- **Change:** Leaving as Reactor.js does: only the last holder's leaveRoom forgets the room, leavePresence clears the wire, a presence set before joinRoom goes out with the join (#461).
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — leaveRoom forgets only on the last holder; leavePresence sends the remaining or empty presence
+  - `Sources/InstantSwiftDataCore/InstantRuntimeLiveSession.swift` — leaveRoom reports the last holder; presence before join; nil presence goes out as {}
+  - `Tests/InstantSwiftDataCoreTests/InstantRoomPresenceRuntimeTests.swift` — three tests lose their wrappers
+- **User context (verbatim):**
+  > That sounds good to me for the, uh, rooms plan, so go ahead and knock that out with a subagent.
+  > Good plan. And let's get feature parody and performance parody with Swift and typescript, please.
+- **SpecStory:** unavailable — Claude Code agent session (rooms subagent under main); no SpecStory capture configured for this session.
+
+## October 3rd, 2026 at 6:52:22 p.m. EDT — `5533996721b2` Apply room frames beside the query applier, not behind it, as Reactor.js handles each frame as it arrives (#461)
+
+- **Implementation commit:** `5533996721b2065a5ba865ce69a29711c59c100d`
+- **Change:** Room frames apply beside the query applier, in arrival order, so presence never waits behind a refresh-ok (#461).
+- **Details:**
+  - The reader hands room frames to a third task in the generation's group and still awaits nothing but receive() (#296); the room stream finishes beside frames.close(). Agreed with library-79, whose #474 change builds on it.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantRuntimeLiveSession.swift` — reader routing, the room-frame task, applyRoomFrame
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — handleLiveRoomEvent with the room and session id
+  - `Tests/InstantSwiftDataCoreTests/InstantRoomPresenceRuntimeTests.swift` — the applier test loses its wrapper
+- **User context (verbatim):**
+  > That sounds good to me for the, uh, rooms plan, so go ahead and knock that out with a subagent.
+  > Good plan. And let's get feature parody and performance parody with Swift and typescript, please.
+- **SpecStory:** unavailable — Claude Code agent session (rooms subagent under main); no SpecStory capture configured for this session.
+
+## October 3rd, 2026 at 6:52:22 p.m. EDT — `a17a9cb5cd15` Emit room presence only when what an observer sees changed, as Reactor.js does (#461)
+
+- **Implementation commit:** `a17a9cb5cd1547b4cb00025f3cfdf0e388033be3`
+- **Change:** Room presence emits only when what an observer sees changed (#461).
+- **Details:**
+  - Reactor.js hasPresenceResponseChanged; a restated refresh-presence or a set-presence-ok wakes nobody.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantRuntimeRoomPresence.swift` — change-only emission
+  - `Tests/InstantSwiftDataCoreTests/InstantRoomPresenceRuntimeTests.swift` — the emission test loses its wrapper
+- **User context (verbatim):**
+  > That sounds good to me for the, uh, rooms plan, so go ahead and knock that out with a subagent.
+  > Good plan. And let's get feature parody and performance parody with Swift and typescript, please.
+- **SpecStory:** unavailable — Claude Code agent session (rooms subagent under main); no SpecStory capture configured for this session.
+
+## October 3rd, 2026 at 6:52:21 p.m. EDT — `455a40ce31f3` Keep a live runtime's room presence in memory, off the operation gate and out of SQLite, as Reactor.js keeps it (#461)
+
+- **Implementation commit:** `455a40ce31f3cb4587ff05d9e9e4c59960a93fa7`
+- **Change:** A live runtime's room presence in memory, off the operation gate and out of SQLite (#461).
+- **Details:**
+  - New InstantRuntimeRoomPresence actor: peers, own presence and observers, one turn per publish or frame; the signed-in user id from memory (InstantRoomAuthUserIDCache); a publication sequence keeps the newer of two racing publishes on the wire; a peer's updatedAt is when its values last changed. The CLI's local cache keeps SQLite presence across launches.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantRuntimeRoomPresence.swift` — the new presence actor and the user id cache
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — room entry points off the gate in live mode; the two old presence actors removed
+  - `Sources/InstantSwiftDataCore/InstantRuntimeLiveSession.swift` — setPresence takes the publication sequence
+  - `Tests/InstantSwiftDataCoreTests/InstantRoomPresenceRuntimeTests.swift` — the gate and SQLite tests lose their wrappers
+- **User context (verbatim):**
+  > That sounds good to me for the, uh, rooms plan, so go ahead and knock that out with a subagent.
+  > Good plan. And let's get feature parody and performance parody with Swift and typescript, please.
+- **SpecStory:** unavailable — Claude Code agent session (rooms subagent under main); no SpecStory capture configured for this session.
+
+## October 3rd, 2026 at 6:52:21 p.m. EDT — `b6b276669d13` Key room peers by session, as Reactor.js does: two sessions of one user are two members (#461)
+
+- **Implementation commit:** `b6b276669d132294e8a1f902af23a746c23cece2`
+- **Change:** Room peers keyed by session: InstantRoomPresenceMember.peerID (nil for this runtime's own presence) and isLocal; a peer's id is its session (#461).
+- **Details:**
+  - Lists keep the old order (by user, own presence first); the typed @Presence wrapper leaves out only its own publication and passes peerID through.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantRoomModels.swift` — peerID, isLocal, presenceOrder
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — remote members carry their session as peerID
+  - `Sources/InstantSwiftData/InstantPresence.swift` — own-publication filter and peerID passthrough
+  - `Tests/InstantSwiftDataCoreTests/InstantReactorParityTests.swift` — the parity test loses its wrapper and checks peer ids
+- **User context (verbatim):**
+  > That sounds good to me for the, uh, rooms plan, so go ahead and knock that out with a subagent.
+  > Good plan. And let's get feature parody and performance parody with Swift and typescript, please.
+- **SpecStory:** unavailable — Claude Code agent session (rooms subagent under main); no SpecStory capture configured for this session.
+
+## October 3rd, 2026 at 6:52:21 p.m. EDT — `186d2f746cc7` Add red tests for room presence and topics against Reactor.js: the gate, SQLite, the applier, emissions, leaving (#461)
+
+- **Implementation commit:** `186d2f746cc7571b544dbf920ebb2fea6900516c`
+- **Change:** Red tests for room presence and topics against Reactor.js: the gate, SQLite, the applier, emissions, leaving, presence before join, topics (#461).
+- **Details:**
+  - Each in withKnownIssue until its fix removes it; helpers: a presence recorder, a gate that parks the operation gate or the applier, waitForRoom.
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantRoomPresenceRuntimeTests.swift` — the new suite
+- **User context (verbatim):**
+  > That sounds good to me for the, uh, rooms plan, so go ahead and knock that out with a subagent.
+  > Good plan. And let's get feature parody and performance parody with Swift and typescript, please.
+- **SpecStory:** unavailable — Claude Code agent session (rooms subagent under main); no SpecStory capture configured for this session.
+
+## October 3rd, 2026 at 6:52:21 p.m. EDT — `53df7ab107cb` Add a red parity test: two sessions of one user must be two room peers, not one (#461)
+
+- **Implementation commit:** `53df7ab107cbd4888ef290343185cff8e5f94b77`
+- **Change:** Red parity test: two sessions of one user must be two room peers, as Reactor.js keys peers by session (#461).
+- **Details:**
+  - runtimeKeepsEverySessionOfOneUserAsItsOwnPeer, wrapped in withKnownIssue until the fix: Swift keyed members appID:room:userID, so two agent sessions merged and a same-user session replaced this device's entry.
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantReactorParityTests.swift` — the red parity test and its Reactor.js source note
+- **User context (verbatim):**
+  > That sounds good to me for the, uh, rooms plan, so go ahead and knock that out with a subagent.
+  > Good plan. And let's get feature parody and performance parody with Swift and typescript, please.
+- **SpecStory:** unavailable — Claude Code agent session (rooms subagent under main); no SpecStory capture configured for this session.
+
+## October 3rd, 2026 at 6:52:20 p.m. EDT — `0b2dd60c5c47` Claim the files of the rooms parity work: session peers, presence in memory off the gate, room frames around the applier (#461)
+
+- **Implementation commit:** `0b2dd60c5c471c6dac6a52ca280ba37e17032489`
+- **Change:** Claim the files of the rooms parity work (#461), with plan 2026-10-03-rooms and the channel 2026-10-03-rooms beside library-79's operation-gate work.
+- **Details:**
+  - Split agreed with library-79 by message: the room entry points leave the operation gate entirely; room frames route around the applier; library-79 owns the gate and the reader/applier buffer.
+- **Files:**
+  - `agent-presence/claude-opus-5.5/plans/2026-10-03-rooms/PLAN.md` — the plan: outcome, steps, touching, conflict check
+  - `agent-presence/_channels/2026-10-03-rooms.md` — the shared-file split with library-79
+- **User context (verbatim):**
+  > That sounds good to me for the, uh, rooms plan, so go ahead and knock that out with a subagent.
+  > Good plan. And let's get feature parody and performance parody with Swift and typescript, please.
+- **SpecStory:** unavailable — Claude Code agent session (rooms subagent under main); no SpecStory capture configured for this session.
+
 ## October 3rd, 2026 at 6:37:39 p.m. EDT — `3edae737bdac` Document the v1.9.5 release: a local write no longer holds the operation gate while it logs, and outbox listings never wait for it (#473)
 
 - **Implementation commit:** `3edae737bdacaa98b58787a97ce4a5b753474e04`

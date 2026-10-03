@@ -1,3 +1,57 @@
+## 2026-10-03 18:51:53 EDT — instant-data-swift `06216ad5330a5ccb397c02f5668e60a71544a1ee`
+Document rooms parity with Reactor.js: ADR 0019, the README's rooms rules, and the PROGRESS checkpoint (#461)
+
+## 2026-10-03 18:51:00 EDT — instant-data-swift `2e513f1c41aa199c34212ba40fab6559d72035dd`
+Claim README.md for the rooms rules and record the rebase onto v1.9.5 in the rooms plan (#461)
+
+## 2026-10-03 18:41:13 EDT — instant-data-swift `0bec8c356adde45d87dee08f6bc8425952a40da6`
+Compare the racing-publish test's wire value through jsonValue: InstantLiveJSONValue's JSONValue init is fileprivate (#461)
+
+## 2026-10-03 18:41:13 EDT — instant-data-swift `fb8744bbb6f20d059e97a90ab97a7c02cbba5990`
+Pin that racing presence publishes leave the newest on the wire (#461)
+
+## 2026-10-03 18:41:13 EDT — instant-data-swift `e31eadc7f90a668580a335ba3cca9e0f99d1dd2a`
+Keep @discardableResult on the client's joinRoom, which the isRoomJoined insertion separated from it (#461)
+
+## 2026-10-03 18:41:13 EDT — instant-data-swift `e452bfa8ed86a9b2c3111101071ab0d8b5f504a9`
+Say whether the server confirmed a room's join on the current connection: isRoomJoined, as Reactor.js's isLoading (#461)
+
+## 2026-10-03 18:41:13 EDT — instant-data-swift `52b99c19c0d705ea60a175a0cc4b0901e3b5ae90`
+Offer presence selection on the public client: observeRoomPresence(room:selection:) (#461)
+
+## 2026-10-03 18:41:13 EDT — instant-data-swift `4d83580dc91e386274b85637eb3a5af950d579c2`
+Let a presence observation select keys, peers, and its own presence, as Reactor.js's subscribePresence does (#461)
+
+## 2026-10-03 18:41:13 EDT — instant-data-swift `f997440c7c8dfd08f86f2e1cf7025ac9b3f65ade`
+Forget a room's presence and topics when the last holder's leave-room fails to send (#461)
+
+## 2026-10-03 18:41:13 EDT — instant-data-swift `68a99b2ace325e22bd38053aa1457cf8df18b40e`
+Keep live room topic messages in memory, once each, without storage or the operation gate, as Reactor.js does (#461)
+
+## 2026-10-03 18:41:13 EDT — instant-data-swift `5b2888f79e34470be086f98764420bee5f59ff94`
+Leave rooms and presence as Reactor.js does: the last holder's leave forgets the room, leavePresence clears the wire (#461)
+
+## 2026-10-03 18:41:13 EDT — instant-data-swift `5533996721b2065a5ba865ce69a29711c59c100d`
+Apply room frames beside the query applier, not behind it, as Reactor.js handles each frame as it arrives (#461)
+
+## 2026-10-03 18:41:13 EDT — instant-data-swift `a17a9cb5cd1547b4cb00025f3cfdf0e388033be3`
+Emit room presence only when what an observer sees changed, as Reactor.js does (#461)
+
+## 2026-10-03 18:41:13 EDT — instant-data-swift `455a40ce31f3cb4587ff05d9e9e4c59960a93fa7`
+Keep a live runtime's room presence in memory, off the operation gate and out of SQLite, as Reactor.js keeps it (#461)
+
+## 2026-10-03 18:41:13 EDT — instant-data-swift `b6b276669d132294e8a1f902af23a746c23cece2`
+Key room peers by session, as Reactor.js does: two sessions of one user are two members (#461)
+
+## 2026-10-03 18:41:13 EDT — instant-data-swift `186d2f746cc7571b544dbf920ebb2fea6900516c`
+Add red tests for room presence and topics against Reactor.js: the gate, SQLite, the applier, emissions, leaving (#461)
+
+## 2026-10-03 18:41:13 EDT — instant-data-swift `53df7ab107cbd4888ef290343185cff8e5f94b77`
+Add a red parity test: two sessions of one user must be two room peers, not one (#461)
+
+## 2026-10-03 18:41:13 EDT — instant-data-swift `0b2dd60c5c471c6dac6a52ca280ba37e17032489`
+Claim the files of the rooms parity work: session peers, presence in memory off the gate, room frames around the applier (#461)
+
 ## 2026-10-03 18:37:39 EDT — instant-data-swift `3edae737bdacaa98b58787a97ce4a5b753474e04`
 Document the v1.9.5 release: a local write no longer holds the operation gate while it logs, and outbox listings never wait for it (#473).
 
