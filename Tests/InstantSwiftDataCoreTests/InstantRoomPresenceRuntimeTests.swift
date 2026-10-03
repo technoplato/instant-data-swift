@@ -335,6 +335,60 @@ struct InstantRoomPresenceRuntimeTests {
 }
 
 extension InstantRoomPresenceRuntimeTests {
+  /// `Reactor.js`'s `subscribePresence` options pick keys and peers (`buildPresenceSlice`), and its handler wakes only
+  /// when that slice changed (`hasPresenceResponseChanged`).
+  @Test
+  func aPresenceSelectionSeesOnlyItsKeysAndPeersAndWakesOnlyForThem() async throws {
+    let room = InstantRoomHandle(type: "recording", id: "room-selection")
+    let session = LiveReactorParitySession(messages: [
+      liveReactorInitOK(attrs: liveReactorTodoServerAttrs, sessionID: "session-self")
+    ])
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: try roomConfiguration(appID: "room-presence-selection", transport: session.transport)
+    )
+    _ = try await runtime.connect()
+    _ = try await runtime.joinRoom(room)
+    _ = try await runtime.setPresence(room: room, userID: "user-self", values: ["status": .string("here")])
+    let presence = try await RoomPresenceRecorder.start(
+      runtime: runtime,
+      room: room,
+      selection: InstantRoomPresenceSelection(keys: ["status"], peerIDs: ["session-peer"], includesLocal: false)
+    )
+    defer { presence.stop() }
+    try await joinAndWaitForPeers(runtime: runtime, session: session, room: room, recorder: presence)
+    let first = try #require(await presence.last)
+    expectNoDifference(first.map(\.peerID), ["session-peer"])
+    expectNoDifference(first.map(\.values), [["status": .string("online")]])
+    let emissionsBefore = await presence.count
+
+    await session.enqueue(
+      InstantLiveMessage(
+        op: "patch-presence",
+        fields: [
+          "edits": .array([roomPresenceEdit(path: ["session-peer", "data", "name"], operation: "r", value: .string("Grace"))]),
+          "room-id": .string(room.id),
+        ]
+      )
+    )
+    try await Task.sleep(nanoseconds: 300_000_000)
+    let emissionsAfterUnselectedChange = await presence.count
+    expectNoDifference(emissionsAfterUnselectedChange, emissionsBefore, "A change to an unselected key woke the observer.")
+
+    await session.enqueue(
+      InstantLiveMessage(
+        op: "patch-presence",
+        fields: [
+          "edits": .array([roomPresenceEdit(path: ["session-peer", "data", "status"], operation: "r", value: .string("away"))]),
+          "room-id": .string(room.id),
+        ]
+      )
+    )
+    try await waitForRoom("the selected key's change to emit") {
+      await presence.last?.first?.values == ["status": .string("away")]
+    }
+    _ = try await runtime.closeConnection()
+  }
+
   /// #461's acceptance run: 10,000 broadcasts reach an event observer exactly once each, in order, and the runtime holds
   /// a bounded number of messages however many arrive, so the last message costs what the first did. `Reactor.js`
   /// hands each broadcast to the subscribers once and stores none (`_notifyBroadcastSubs`).
@@ -527,8 +581,14 @@ struct RoomPresenceRecorder: Sendable {
     get async { await emissions.values.last }
   }
 
-  static func start(runtime: InstantRuntime, room: InstantRoomHandle) async throws -> RoomPresenceRecorder {
-    let recorder = RoomPresenceRecorder(stream: try await runtime.observeRoomPresence(room: room))
+  static func start(
+    runtime: InstantRuntime,
+    room: InstantRoomHandle,
+    selection: InstantRoomPresenceSelection = .all
+  ) async throws -> RoomPresenceRecorder {
+    let recorder = RoomPresenceRecorder(
+      stream: try await runtime.observeRoomPresence(room: room, selection: selection)
+    )
     try await waitForRoom("the observation's first emission") { await recorder.count > 0 }
     return recorder
   }

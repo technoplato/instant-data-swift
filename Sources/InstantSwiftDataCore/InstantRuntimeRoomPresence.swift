@@ -34,14 +34,15 @@ actor InstantRuntimeRoomPresence {
 
   private struct Observer {
     var room: InstantRoomHandle
+    var selection: InstantRoomPresenceSelection
     var continuation: AsyncStream<[InstantRoomPresenceMember]>.Continuation
+    /// What this observer last received. A change outside its selection, or one that leaves its part as it was, does
+    /// not wake it, as `Reactor.js` skips a handler whose slice did not change (`hasPresenceResponseChanged`).
+    var last: [InstantRoomPresenceMember]
   }
 
   private var rooms: [InstantRoomHandle: RoomState] = [:]
   private var observers: [UUID: Observer] = [:]
-  /// What each room's observers last received, so a change that leaves the members as they were wakes nobody, as
-  /// `Reactor.js` skips a handler whose slice did not change (`hasPresenceResponseChanged`, presence.ts).
-  private var published: [InstantRoomHandle: [InstantRoomPresenceMember]] = [:]
   /// Counts this runtime's publications and withdrawals across every room and never restarts, so the live session can
   /// refuse a send older than one it already made.
   private var sequence: UInt64 = 0
@@ -171,12 +172,17 @@ actor InstantRuntimeRoomPresence {
     rooms[room].map { Self.members(of: $0, in: room, appID: appID) } ?? []
   }
 
-  /// Observes `room`'s presence, starting with its current members.
-  func observe(_ room: InstantRoomHandle, appID: String) -> AsyncStream<[InstantRoomPresenceMember]> {
+  /// Observes the selected part of `room`'s presence, starting with its current members.
+  func observe(
+    _ room: InstantRoomHandle,
+    selection: InstantRoomPresenceSelection = .all,
+    appID: String
+  ) -> AsyncStream<[InstantRoomPresenceMember]> {
     let id = UUID()
     let stream = AsyncStream<[InstantRoomPresenceMember]>.makeStream(bufferingPolicy: .bufferingNewest(1))
-    observers[id] = Observer(room: room, continuation: stream.continuation)
-    stream.continuation.yield(members(in: room, appID: appID))
+    let current = selection.apply(to: members(in: room, appID: appID))
+    observers[id] = Observer(room: room, selection: selection, continuation: stream.continuation, last: current)
+    stream.continuation.yield(current)
     stream.continuation.onTermination = { @Sendable _ in
       Task { await self.removeObserver(id) }
     }
@@ -197,14 +203,13 @@ actor InstantRuntimeRoomPresence {
   private func store(_ state: RoomState, in room: InstantRoomHandle, appID: String) -> FrameSummary {
     rooms[room] = state.isEmpty ? nil : state
     let members = Self.members(of: state, in: room, appID: appID)
-    let changed = published[room, default: []] != members
-    published[room] = members.isEmpty ? nil : members
     var observerCount = 0
-    for observer in observers.values where observer.room == room {
+    for (id, observer) in observers where observer.room == room {
       observerCount += 1
-      if changed {
-        observer.continuation.yield(members)
-      }
+      let slice = observer.selection.apply(to: members)
+      guard observer.selection.changed(from: observer.last, to: slice) else { continue }
+      observers[id]?.last = slice
+      observer.continuation.yield(slice)
     }
     return FrameSummary(
       peerCount: members.count - state.local.count,

@@ -9865,16 +9865,29 @@ public final class InstantRuntime: Sendable {
 
   /// Observes `room`'s presence: this device's own and every peer session's, starting with the current members.
   ///
-  /// With a live transport this takes no operation gate and reads nothing from SQLite (#461).
+  /// It emits only when the selected part changed: `selection` picks keys, peers, and whether this device's own
+  /// presence is included, as `Reactor.js`'s `subscribePresence` options do. With a live transport this takes no
+  /// operation gate and reads nothing from SQLite (#461).
   @concurrent
-  public func observeRoomPresence(room: InstantRoomHandle) async throws
-    -> AsyncStream<[InstantRoomPresenceMember]>
-  {
+  public func observeRoomPresence(
+    room: InstantRoomHandle,
+    selection: InstantRoomPresenceSelection = .all
+  ) async throws -> AsyncStream<[InstantRoomPresenceMember]> {
     let room = try validatedRoom(room, operation: "observe room presence")
     guard configuration.liveTransport != nil else {
-      return try await observeLocalCachePresence(room: room)
+      let stream = try await observeLocalCachePresence(room: room)
+      guard selection != .all else { return stream }
+      return AsyncStream(bufferingPolicy: .bufferingNewest(1)) { continuation in
+        let forwarding = Task {
+          for await members in stream {
+            continuation.yield(selection.apply(to: members))
+          }
+          continuation.finish()
+        }
+        continuation.onTermination = { @Sendable _ in forwarding.cancel() }
+      }
     }
-    return await roomPresenceState.observe(room, appID: configuration.appID)
+    return await roomPresenceState.observe(room, selection: selection, appID: configuration.appID)
   }
 
   private func observeLocalCachePresence(

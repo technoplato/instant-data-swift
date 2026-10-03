@@ -77,6 +77,58 @@ extension InstantRoomPresenceMember {
   }
 }
 
+/// Which part of a room's presence an observation sees, as the options of `Reactor.js`'s `subscribePresence`
+/// (`keys`, `peers`, `user`; presence.ts `buildPresenceSlice`). An observation emits only when its part changed.
+///
+/// ```swift
+/// let agents = try await runtime.observeRoomPresence(
+///   room: room,
+///   selection: InstantRoomPresenceSelection(keys: ["agents"], includesLocal: false)
+/// )
+/// ```
+public struct InstantRoomPresenceSelection: Hashable, Sendable {
+  /// Only these keys of each member's values, `nil` for every key.
+  public var keys: Set<String>?
+  /// Only these peers, by session id, `nil` for every peer.
+  public var peerIDs: Set<String>?
+  /// Whether the presence this runtime published is included.
+  public var includesLocal: Bool
+
+  public init(keys: Set<String>? = nil, peerIDs: Set<String>? = nil, includesLocal: Bool = true) {
+    self.keys = keys
+    self.peerIDs = peerIDs
+    self.includesLocal = includesLocal
+  }
+
+  /// Every member with every key.
+  public static let all = Self()
+
+  /// The selected part of `members`, in their order.
+  public func apply(to members: [InstantRoomPresenceMember]) -> [InstantRoomPresenceMember] {
+    members.compactMap { member in
+      if member.isLocal {
+        guard includesLocal else { return nil }
+      } else if let peerIDs, let peerID = member.peerID, !peerIDs.contains(peerID) {
+        return nil
+      }
+      guard let keys else { return member }
+      var selected = member
+      selected.values = member.values.filter { keys.contains($0.key) }
+      return selected
+    }
+  }
+
+  /// Whether two selected parts differ for an observer. With `keys`, a member's `updatedAt` moves when any of its
+  /// values change, so it is left out: only the selected values count, as `hasPresenceResponseChanged` compares them.
+  func changed(from old: [InstantRoomPresenceMember], to new: [InstantRoomPresenceMember]) -> Bool {
+    guard keys != nil else { return old != new }
+    guard old.count == new.count else { return true }
+    return zip(old, new).contains { lhs, rhs in
+      lhs.id != rhs.id || lhs.userID != rhs.userID || lhs.peerID != rhs.peerID || lhs.values != rhs.values
+    }
+  }
+}
+
 /// One message on a room topic: published by this runtime, or broadcast by a peer's session.
 public struct InstantRoomTopicMessage: Hashable, Codable, Sendable, Identifiable {
   public var id: String
