@@ -2479,7 +2479,7 @@ public final class InstantRuntime: Sendable {
         )
       )
       mutation = pendingMutation
-      try InstantAutomaticOutboxAdmission.validateNewMutation(pendingMutation)
+      let encodedMutation = try InstantAutomaticOutboxAdmission.validateNewMutation(pendingMutation)
       if let supersededTail {
         await configuration.onLocalMutationSupersessionPreparedForTesting?(
           supersededTail.id,
@@ -2488,7 +2488,7 @@ public final class InstantRuntime: Sendable {
       }
       let saved = try await saveLocalMutationReadingConnectionStatus(
         prepared: prepared,
-        pendingMutation: pendingMutation,
+        encodedMutation: encodedMutation,
         supersededTail: supersededTail,
         state: state
       )
@@ -2596,7 +2596,7 @@ public final class InstantRuntime: Sendable {
   /// did before the separate status read.
   private func saveLocalMutationReadingConnectionStatus(
     prepared: PreparedStoreMutation,
-    pendingMutation: PendingMutation,
+    encodedMutation: InstantEncodedOutboxMutation,
     supersededTail: PendingMutation?,
     state: InstantPersistenceState
   ) async throws -> InstantLocalWriteSave {
@@ -2611,7 +2611,7 @@ public final class InstantRuntime: Sendable {
         try persistence.saveLocalMutation(
           changedEntityTriples: changedEntityTriples,
           changedFactScope: changedFactScope,
-          pendingMutation: pendingMutation,
+          encodedPendingMutation: encodedMutation,
           supersedingImmediateTail: supersededTail,
           expectedStoreRevision: storeRevision,
           expectedAttributeRevision: attributeRevision,
