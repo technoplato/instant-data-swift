@@ -1,3 +1,12 @@
+## 2026-10-03 19:26:28 EDT — scribe `e43ac5760bbfb497712924ccc66f6cfb1348d9eb`
+Merge durability-unstick's test fixes into transcript-journal: the lane's retry guard 55e5a98f, the #480 and #482 test fixes 7a6b934a, and B's ledger 29b5f313 (#482)
+
+## 2026-10-03 19:25:07 EDT — scribe `7a6b934aa7fd9a850fe4e0754f967e2bb84a344d`
+The #480 and #482 tests wait for what they check, read the state they receive, and give the lane a clock and the system audio a frame spool (#480 #482)
+
+## 2026-10-03 19:24:53 EDT — scribe `55e5a98fba7ab57fefac454aee15b096733b17d0`
+A retry that merges an owner while an attempt runs starts no second drain (#482)
+
 ## 2026-10-03 18:49:59 EDT — scribe `85e8e756c1ac6808333970bba15ea3602bb0a41e`
 The play span effect reads the clock only when a span can open or end, and the bar and fold tests hold the span their playback opens (#435)
 
