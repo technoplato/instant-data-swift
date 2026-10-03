@@ -335,6 +335,36 @@ struct InstantRoomPresenceRuntimeTests {
 }
 
 extension InstantRoomPresenceRuntimeTests {
+  /// Publishes that race from separate tasks leave the newest one on the wire, as this runtime's own state has it: off
+  /// the operation gate nothing orders them, so the live session refuses a publication older than one it already
+  /// recorded. `Reactor.js` publishes synchronously, so its newest publish is always its last send.
+  @Test
+  func racingPresencePublishesLeaveTheNewestOnTheWire() async throws {
+    let room = InstantRoomHandle(type: "recording", id: "room-race")
+    let session = LiveReactorParitySession(messages: [
+      liveReactorInitOK(attrs: liveReactorTodoServerAttrs, sessionID: "session-self")
+    ])
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: try roomConfiguration(appID: "room-presence-race", transport: session.transport)
+    )
+    _ = try await runtime.connect()
+    _ = try await runtime.joinRoom(room)
+    try await joinAndWaitForPeers(runtime: runtime, session: session, room: room)
+    await withTaskGroup(of: Void.self) { group in
+      for index in 0..<50 {
+        group.addTask {
+          _ = try? await runtime.setPresence(room: room, userID: "user-self", values: ["n": .number(Double(index))])
+        }
+      }
+    }
+    let local = try #require(try await runtime.roomPresence(room: room).first { $0.isLocal })
+    let expected = InstantLiveJSONValue.object(local.values.mapValues(InstantLiveJSONValue.init))
+    try await waitForRoom("the last set-presence on the wire to match the runtime's own presence") {
+      await session.sentMessages().last { $0.op == "set-presence" }?.fields["data"] == expected
+    }
+    _ = try await runtime.closeConnection()
+  }
+
   /// `Reactor.js` reports `isLoading: !room.isConnected`: false until `join-room-ok`, and again from a dropped socket
   /// until the rejoin is confirmed. While a room is not joined, its presence says nothing about who is there.
   @Test
