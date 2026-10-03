@@ -1,8 +1,26 @@
+## 2026-10-03 11:32:20 EDT — scribe `1e95b90c8548524810478ca22029cea44bee0fc7`
+Merge main's SoundAnalysis plan and claims after the 0.1 (83) release commit (#440).
+
 ## 2026-10-03 10:55:05 EDT — scribe `b1d4739255c4df3bb227908192ee3a66e3aa7446`
 Review fixes for playback-links before its first hold: the play kind in two completeness tests, a guest's plays move with the merge, and the route line says the mode and volumes (#435 #122).
 
 ## 2026-10-03 10:54:43 EDT — scribe `307c50e1f74d784589a38772e3edb21c88a3d25e`
 Amend plan playback-links (b): the play kind joins two completeness tests, a guest's plays move with the merge, and the route line says the mode and volumes (#435 #122).
+
+## 2026-10-03 10:42:15 EDT — scribe `d13c15befecec569810976ad0cc6b4ad2fc6bfe3`
+Release Scribe 0.1 (83).
+
+## 2026-10-03 10:41:53 EDT — scribe `56c4e9b23ceb89de08d299bdba15a975db44ff13`
+Merge scribe-mirror: a live recording's duration follows its list row, and an active stamp with no heartbeat reads "live, but not updating since" (#438 #408 #385).
+
+## 2026-10-03 10:41:33 EDT — scribe `974880e31fa32c4b7201365acb6f21d3ca19616e`
+Record the instant-data-swift 1.9.3 pin and its Package.resolved in the change log (#436).
+
+## 2026-10-03 10:41:32 EDT — scribe `6ee1b0a5517f0080874c023e63bfe9f878f986ac`
+Resolve Package.resolved to instant-data-swift 1.9.3 (bb0e6265) with a plain swift package resolve (#436).
+
+## 2026-10-03 10:32:35 EDT — scribe `1d76349a1fd105cd592e80831d5399787d33c461`
+Pin instant-data-swift exactly 1.9.3 instead of 1.9.2: a store whose cache holds one oversized live-query result opens again (#436).
 
 ## 2026-10-03 10:31:55 EDT — instant-data-swift `bb0e62651ef881b392a95a12d42d8a7db5b51613`
 v1.9.3 on main: merge library-79-hops (eb086bb1) without fast-forward over a6d7929d; the annotated tag v1.9.3 points here and gh release v1.9.3 is Latest (https://github.com/technoplato/instant-data-swift/releases/tag/v1.9.3); code equals the gated 5e1c0222 (#436).
@@ -12,6 +30,9 @@ Document the v1.9.3 release: #436, a store whose cache holds one live-query resu
 
 ## 2026-10-03 10:24:01 EDT — scribe `52ffa54bc335306c8f4494c87140e00078998464`
 Mark each play of another recording on the live recording's timeline, with a link to the range, and link the two in Instant (#435, ADR 0040).
+
+## 2026-10-03 10:18:35 EDT — scribe `530d857b58ab3d7842ec7b369020d85f3a4fa839`
+Record Scribe 0.1 (82) in the change log and PROGRESS: installed on the iPhone and the Mac; the iPad waits for 83 (#431 #412).
 
 ## 2026-10-03 10:16:54 EDT — instant-data-swift `5e1c0222036472746cf5c66577fa93a0ff4d2e18`
 #436 test isolation: each fixture names its own oversized result, so the two parallel tests never capture each other's warning (#436).
