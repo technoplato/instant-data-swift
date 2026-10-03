@@ -1,9 +1,73 @@
-import ConcurrencyExtras
 import CustomDump
 import Darwin
 import Foundation
 @testable import InstantSwiftDataCore
 import Testing
+
+/// A value shared between a test and the tasks it starts.
+// SAFETY: `lock` guards `storage` for every read and write.
+private final class GateHoldBox<Value>: @unchecked Sendable {
+  private let lock = NSLock()
+  private var storage: Value
+
+  init(_ value: Value) {
+    storage = value
+  }
+
+  var value: Value {
+    lock.withLock { storage }
+  }
+
+  func setValue(_ value: Value) {
+    lock.withLock { storage = value }
+  }
+
+  func withValue(_ body: (inout Value) -> Void) {
+    lock.withLock { body(&storage) }
+  }
+}
+
+/// A runtime whose live transport never connects, so every write stays pending (#473, #445).
+enum InstantOfflineRuntimeFixture {
+  static func offlineRuntime(
+    _ name: String,
+    configure: (inout InstantRuntimeConfiguration) -> Void = { _ in }
+  ) async throws -> InstantRuntime {
+    var configuration = InstantRuntimeConfiguration(
+      appID: "offline-\(name)",
+      persistenceURL: try InstantSupersededReplayTests.temporaryCacheURL(),
+      initialAttributes: TodoExample.attributes,
+      liveTransport: InstantLiveTransportClient.connectionAttempts { _ in
+        throw InstantError(
+          code: .networkFailed,
+          operation: "open offline test session",
+          message: "The test network is offline.",
+          recovery: "None; the test keeps every write pending."
+        )
+      }
+    )
+    configuration.autoConnectLiveTransport = false
+    configure(&configuration)
+    return try await InstantRuntime.bootstrap(configuration: configuration)
+  }
+
+  /// Creates `todo-<name>` as transaction `tx-<name>`.
+  static func createTodo(_ name: String, in runtime: InstantRuntime) async throws {
+    let createdAt = InstantTimestamp(milliseconds: 1_700_000_000_000)
+    _ = try await runtime.transact(
+      InstantStoreTransaction(
+        id: "tx-\(name)",
+        operations: TodoExample.createOperations(
+          id: "todo-\(name)",
+          text: name,
+          createdAt: createdAt,
+          transactionID: "tx-\(name)"
+        )
+      ),
+      createdAt: createdAt
+    )
+  }
+}
 
 /// #473 (P0 for 1.9.5): on Michael's iPhone a local write held the runtime's operation gate for 12 s at 13:17:46 and
 /// the recording died behind it; transcription stalled behind gate backlogs twice that day. A write logs while it holds
@@ -24,7 +88,7 @@ struct InstantOperationGateHoldTests {
     let diagnostics = InstantDiagnostics(
       configuration: InstantDiagnosticsConfiguration(fileURL: fifo, maximumFileBytes: nil)
     )
-    let returned = LockIsolated(false)
+    let returned = GateHoldBox(false)
     let writer = Task.detached {
       diagnostics.record(
         subsystem: "test",
@@ -60,7 +124,7 @@ struct InstantOperationGateHoldTests {
       }
     )
     await gate.enter(operation: "holder")
-    let nextHolderRan = LockIsolated(false)
+    let nextHolderRan = GateHoldBox(false)
     let waiter = Task.detached {
       await gate.enter(operation: "waiter")
       nextHolderRan.setValue(true)
@@ -89,7 +153,7 @@ struct InstantOperationGateHoldTests {
   func aLocalWriteNamesThePhaseThatHeldTheGate() async throws {
     let releaseFirst = AsyncStream<Void>.makeStream()
     let firstPaused = AsyncStream<Void>.makeStream()
-    let runtime = try await InstantPendingMutationsPageTests.offlineRuntime("gate-hold-phases") { configuration in
+    let runtime = try await InstantOfflineRuntimeFixture.offlineRuntime("gate-hold-phases") { configuration in
       configuration.onLocalMutationPersistedBeforeStorePublicationForTesting = { transactionID in
         guard transactionID == "tx-held" else { return }
         firstPaused.continuation.yield()
@@ -97,7 +161,7 @@ struct InstantOperationGateHoldTests {
         _ = await iterator.next()
       }
     }
-    let reports = LockIsolated<[InstantDiagnosticEntry]>([])
+    let reports = GateHoldBox<[InstantDiagnosticEntry]>([])
     let token = InstantDiagnostics.shared.addHandler { entry in
       guard entry.event == "serial-gate.waited", entry.metadata["gate"] == "operation" else { return }
       reports.withValue { $0.append(entry) }
@@ -105,12 +169,12 @@ struct InstantOperationGateHoldTests {
     defer { InstantDiagnostics.shared.removeHandler(token) }
 
     let held = Task {
-      try await InstantPendingMutationsPageTests.createTodo("held", in: runtime)
+      try await InstantOfflineRuntimeFixture.createTodo("held", in: runtime)
     }
     var paused = firstPaused.stream.makeAsyncIterator()
     _ = await paused.next()
     let waiting = Task {
-      try await InstantPendingMutationsPageTests.createTodo("waiting", in: runtime)
+      try await InstantOfflineRuntimeFixture.createTodo("waiting", in: runtime)
     }
     try await Task.sleep(for: .milliseconds(400))
     releaseFirst.continuation.yield()
@@ -133,7 +197,7 @@ extension InstantOperationGateHoldTests {
   /// A holder's phase, named without a hop onto the gate, reaches the stall report.
   @Test
   func aPhaseNamedWithoutAHopReachesTheStallReport() async throws {
-    let stalls = LockIsolated<[AsyncSerialGate.StallReport]>([])
+    let stalls = GateHoldBox<[AsyncSerialGate.StallReport]>([])
     let gate = AsyncSerialGate(
       label: "test",
       stallThresholdMilliseconds: 50,
@@ -158,7 +222,7 @@ extension InstantOperationGateHoldTests {
   func aBoundedOutboxListingDoesNotWaitForTheOperationGate() async throws {
     let releaseFirst = AsyncStream<Void>.makeStream()
     let firstPaused = AsyncStream<Void>.makeStream()
-    let runtime = try await InstantPendingMutationsPageTests.offlineRuntime("gate-hold-listing") { configuration in
+    let runtime = try await InstantOfflineRuntimeFixture.offlineRuntime("gate-hold-listing") { configuration in
       configuration.onLocalMutationPersistedBeforeStorePublicationForTesting = { transactionID in
         guard transactionID == "tx-held" else { return }
         firstPaused.continuation.yield()
@@ -166,17 +230,17 @@ extension InstantOperationGateHoldTests {
         _ = await iterator.next()
       }
     }
-    try await InstantPendingMutationsPageTests.createTodo("queued", in: runtime)
+    try await InstantOfflineRuntimeFixture.createTodo("queued", in: runtime)
 
     let held = Task {
-      try await InstantPendingMutationsPageTests.createTodo("held", in: runtime)
+      try await InstantOfflineRuntimeFixture.createTodo("held", in: runtime)
     }
     var paused = firstPaused.stream.makeAsyncIterator()
     _ = await paused.next()
     let listing = Task { await runtime.pendingMutations(limit: 10) }
     let failedListing = Task { await runtime.failedMutations(limit: 10) }
-    let listed = LockIsolated<[String]?>(nil)
-    let listedFailed = LockIsolated<[String]?>(nil)
+    let listed = GateHoldBox<[String]?>(nil)
+    let listedFailed = GateHoldBox<[String]?>(nil)
     Task {
       listed.setValue(await listing.value.map(\.id))
       listedFailed.setValue(await failedListing.value.map(\.id))
@@ -192,3 +256,4 @@ extension InstantOperationGateHoldTests {
     expectNoDifference(failedWhileHeld, [])
   }
 }
+
