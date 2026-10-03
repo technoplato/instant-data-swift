@@ -421,6 +421,10 @@ public struct InstantRuntimeConfiguration: Sendable {
   /// emission's sequence. Tests land a write here to make the emission stale.
   package var onDeferredQueryEmissionHydrationStartingForTesting:
     (@Sendable (_ sequence: Int64) async -> Void)? = nil
+  /// Runs after a hydration read deferred values without the operation gate and before it checks that the emission is
+  /// still current (#473), with the query's id. Tests hold the gate or land a write here.
+  package var onDeferredValuesReadWithoutOperationGateForTesting:
+    (@Sendable (_ queryID: String) async -> Void)? = nil
   package var liveInfiniteQueryRetirementWatchdogSleep:
     @Sendable (UInt64) async throws -> Void = instantLiveDefaultTimeoutSleep
   package var onLiveInfiniteQueryRetirementCleanupStartedForTesting:
@@ -1638,6 +1642,13 @@ private actor InstantAutomaticMutationRetryReservations {
   }
 }
 
+/// A local write committed under the operation gate, and the publication that refreshes its observers after the gate's
+/// release (#473).
+private struct InstantLocalWriteCommit: Sendable {
+  var result: InstantStoreMutationResult
+  var publication: InstantStorePublicationTicket?
+}
+
 public final class InstantRuntime: Sendable {
   public static let selectedAppIDMetadataKey = "cli.selected_app_id"
   public static let cookieSyncLastUpdatedMetadataKey = "lastSyncedUserCookie"
@@ -1678,6 +1689,8 @@ public final class InstantRuntime: Sendable {
   private let queryCachePruningCadence = InstantQueryCachePruningCadence()
   private let liveQueryResultPruningCadence = InstantQueryCachePruningCadence()
   private let liveSession = InstantRuntimeLiveSession()
+  /// The in-memory counters behind ``connectionHealth()`` (#482).
+  private let connectionHealthRecorder = InstantConnectionHealthRecorder()
   private let liveQueryResultState = InstantLiveQueryResultState()
   /// The attribute context of the latest live refresh, reused across frames that share the session's attrs (#303).
   private let liveRefreshAttributeContexts = InstantLiveRefreshAttributeContextCache()
@@ -2236,16 +2249,24 @@ public final class InstantRuntime: Sendable {
       // A cancelled caller must not keep a queue slot and then run the write
       // anyway. Cancellation is honored only before acquisition, so a
       // transaction that has already started still commits atomically.
-      try await enterOperationGateUnlessCancelled()
+      try await enterOperationGateUnlessCancelled(priority: .interactive)
       enteredOperationGate = true
-      let result = try await performTransact(transaction, createdAt: createdAt, source: source)
+      let committed = try await performTransact(transaction, createdAt: createdAt, source: source)
       await leaveOperationGate()
       enteredOperationGate = false
+      connectionHealthRecorder.recordLocalCommit(at: configuration.now().date)
       // Local-first (Instant JS pushOps): return after durable optimistic commit.
       // Do not await websocket delivery here — that couples every increment/send to
       // RTT and makes onOptimisticCommit fire only after the wire send. Admit the
       // work to the one owned delivery pump (the same helper used while connecting).
       await startLiveMutationDeliveryIfNeeded()
+      // Observers refresh after the gate's release (#473), as Reactor.js `pushOps` returns before the `notifyOne`
+      // calls its `notifyAll` schedules run. Writes committed before this publication are published with it.
+      var result = committed.result
+      if let publication = committed.publication {
+        recordActorHop(.store)
+        result.emissions = await store.publishCommittedChanges(publication)
+      }
       InstantDiagnostics.shared.record(
         .debug,
         subsystem: "instant-swift-data-core",
@@ -2292,7 +2313,7 @@ public final class InstantRuntime: Sendable {
     _ transaction: InstantStoreTransaction,
     createdAt: InstantTimestamp?,
     source: String
-  ) async throws -> InstantStoreMutationResult {
+  ) async throws -> InstantLocalWriteCommit {
     var mutation: PendingMutation?
 
     for _ in 0..<5 {
@@ -2309,11 +2330,14 @@ public final class InstantRuntime: Sendable {
       )
       guard let checks = reads.checks else {
         recordActorHop(.store)
-        return InstantStoreMutationResult(
-          transactionID: transaction.id,
-          changedEntityIDs: [],
-          tripleCount: await store.currentTripleCount(),
-          emissions: []
+        return InstantLocalWriteCommit(
+          result: InstantStoreMutationResult(
+            transactionID: transaction.id,
+            changedEntityIDs: [],
+            tripleCount: await store.currentTripleCount(),
+            emissions: []
+          ),
+          publication: nil
         )
       }
       // Resolving shared-root targets needs a full store snapshot, which materializes and sorts
@@ -2362,11 +2386,14 @@ public final class InstantRuntime: Sendable {
         recordActorHop(.outbox)
         await outbox.replace(existingMutation)
         recordActorHop(.store)
-        return InstantStoreMutationResult(
-          transactionID: transaction.id,
-          changedEntityIDs: [],
-          tripleCount: await store.currentTripleCount(),
-          emissions: []
+        return InstantLocalWriteCommit(
+          result: InstantStoreMutationResult(
+            transactionID: transaction.id,
+            changedEntityIDs: [],
+            tripleCount: await store.currentTripleCount(),
+            emissions: []
+          ),
+          publication: nil
         )
       }
       guard let aliasReplay = checks.aliasReplay, aliasReplay.matchesRevisions else { continue }
@@ -2509,9 +2536,10 @@ public final class InstantRuntime: Sendable {
         await configuration.onLocalMutationPersistedBeforeStorePublicationForTesting?(
           transaction.id
         )
-        operationGate.markHolderPhase("publish store")
+        // The store commits under the gate; its observers refresh after the gate's release (#473).
+        operationGate.markHolderPhase("commit store")
         recordActorHop(.store)
-        let committed = await store.commitAndPublish(prepared)
+        let committed = await store.commitDeferringPublication(prepared)
         installedStoreRevisions.install(
           storeRevision: state.storeRevision + 1,
           attributeRevision: state.attributeRevision
@@ -2520,7 +2548,7 @@ public final class InstantRuntime: Sendable {
           operationGate.markHolderPhase("publish status")
           await publishConnectionStatus(from: connectionStatus)
         }
-        return committed.result
+        return InstantLocalWriteCommit(result: committed.prepared.result, publication: committed.publication)
       }
     }
 
@@ -2885,7 +2913,7 @@ public final class InstantRuntime: Sendable {
     operationGateAlreadyHeld: Bool
   ) async throws -> InstantServerApplySeed {
     if !operationGateAlreadyHeld {
-      try await enterOperationGateUnlessCancelled(operation: "snapshot server apply")
+      try await enterOperationGateUnlessCancelled(operation: "snapshot server apply", priority: .background)
     }
     do {
       recordActorHop(.persistence)
@@ -3089,6 +3117,9 @@ public final class InstantRuntime: Sendable {
       }
 
       var enteredOperationGateForCommit = false
+      // Observers refresh after this apply leaves the operation gate (#473); a publication still owed when the apply
+      // throws is published on the way out, so observers never miss a committed change.
+      var deferredPublication: InstantStorePublicationTicket?
       do {
         // Upstream Reactor rebuilds a server store and then applies optimistic
         // mutations in creation order. Swift's one-store representation first
@@ -3386,7 +3417,7 @@ public final class InstantRuntime: Sendable {
         var gateTimeline = InstantServerApplyGateTimeline(enteredAt: ContinuousClock.now)
         catchUp: while true {
           if !operationGateAlreadyHeld, !enteredOperationGateForCommit {
-            await enterOperationGate(operation: "catch up server apply")
+            await enterOperationGate(operation: "catch up server apply", priority: .background)
             enteredOperationGateForCommit = true
             gateTimeline = InstantServerApplyGateTimeline(enteredAt: ContinuousClock.now)
           }
@@ -3604,21 +3635,36 @@ public final class InstantRuntime: Sendable {
         }
 
         gateTimeline.commitEndedAt = ContinuousClock.now
-        operationGate.markHolderPhase("publish store")
+        // When this apply took the gate itself, the store commits under it and its observers refresh after the
+        // release (#473); a caller that already holds the gate publishes at once, as before.
+        let publishesAfterLeavingGate = enteredOperationGateForCommit
+        operationGate.markHolderPhase(publishesAfterLeavingGate ? "commit store" : "publish store")
         recordActorHop(.store)
         let requiresPreparedStoreInstallation =
           changesMaterializedStore || didCatchUpLocalMutations
-        let committedResult: InstantStoreMutationResult
+        var committedResult: InstantStoreMutationResult
         if requiresPreparedStoreInstallation {
-          committedResult = await store.commitAndPublish(
-            preparedForCommit,
-            installingLiveQueryPageInfo: liveQueryResultReplacements
-          ).result
+          if publishesAfterLeavingGate {
+            let committed = await store.commitDeferringPublication(
+              preparedForCommit,
+              installingLiveQueryPageInfo: liveQueryResultReplacements
+            )
+            committedResult = committed.prepared.result
+            deferredPublication = committed.publication
+          } else {
+            committedResult = await store.commitAndPublish(
+              preparedForCommit,
+              installingLiveQueryPageInfo: liveQueryResultReplacements
+            ).result
+          }
           installedStoreRevisions.install(
             storeRevision: commit.expectedStoreRevision + (commit.didChangeStore ? 1 : 0),
             attributeRevision: commit.expectedAttributeRevision
               + (commit.didChangeAttributes ? 1 : 0)
           )
+        } else if publishesAfterLeavingGate {
+          deferredPublication = await store.deferLiveQueryPageInfoPublication(liveQueryResultReplacements)
+          committedResult = preparedForCommit.result
         } else {
           let emissions = await store.installLiveQueryPageInfo(
             liveQueryResultReplacements,
@@ -3655,20 +3701,9 @@ public final class InstantRuntime: Sendable {
         _ = try? await publishConnectionStatusWithGateHeld(
           pendingMutationCount: commit.pendingMutationCount
         )
-        if let confirmedMutation {
+        if !publishesAfterLeavingGate, let confirmedMutation {
           await publishMutationLifecycle(confirmedMutation)
         }
-        let application = InstantServerTransactionApplicationResult(
-          mutation: committedResult,
-          syncState: InstantSyncState(processedTransactionID: processedTransactionID),
-          pendingMutationCount: commit.pendingMutationCount
-        )
-        let applied = InstantAppliedServerTransaction(
-          transaction: reportedAuthoritativeTransaction,
-          application: application,
-          confirmedMutation: confirmedMutation,
-          mergedAttributeCount: mergedAttributeCount
-        )
         await recordServerApplyGateTimeline(
           gateTimeline,
           endedAt: ContinuousClock.now,
@@ -3682,10 +3717,33 @@ public final class InstantRuntime: Sendable {
           await leaveOperationGate()
           enteredOperationGateForCommit = false
         }
-        return applied
+        if let publication = deferredPublication {
+          deferredPublication = nil
+          recordActorHop(.store)
+          committedResult.emissions = await store.publishCommittedChanges(publication)
+        }
+        // The confirmed write's lifecycle follows the store's observers, as it did under the gate.
+        if publishesAfterLeavingGate, let confirmedMutation {
+          await publishMutationLifecycle(confirmedMutation)
+        }
+        let application = InstantServerTransactionApplicationResult(
+          mutation: committedResult,
+          syncState: InstantSyncState(processedTransactionID: processedTransactionID),
+          pendingMutationCount: commit.pendingMutationCount
+        )
+        return InstantAppliedServerTransaction(
+          transaction: reportedAuthoritativeTransaction,
+          application: application,
+          confirmedMutation: confirmedMutation,
+          mergedAttributeCount: mergedAttributeCount
+        )
       } catch {
         if enteredOperationGateForCommit {
           await leaveOperationGate()
+        }
+        if let publication = deferredPublication {
+          recordActorHop(.store)
+          _ = await store.publishCommittedChanges(publication)
         }
         try? await persistence.finishServerApplyPlan(id: plan.id)
         throw error
@@ -5136,7 +5194,8 @@ public final class InstantRuntime: Sendable {
     if liveRegistration != nil {
       do {
         try await enterOperationGateUnlessCancelled(
-          operation: "observe standard live query"
+          operation: "observe standard live query",
+          priority: .interactive
         )
       } catch {
         return Self.finishedQueryObservationLease()
@@ -5413,7 +5472,8 @@ public final class InstantRuntime: Sendable {
     }
 
     try await enterOperationGateUnlessCancelled(
-      operation: "observe live infinite query chunk"
+      operation: "observe live infinite query chunk",
+      priority: .interactive
     )
     await liveQueryResultState.retain(key: registrationKey)
     let existingPageInfo: InstantQueryPageInfo?
@@ -5736,8 +5796,8 @@ public final class InstantRuntime: Sendable {
     )
   }
 
-  /// Whether a query emission can be hydrated as the query's current result. Call inside the
-  /// operation gate, so no write can land between this check and the SQLite read.
+  /// Whether a query emission can be hydrated as the query's current result. A read made without the operation gate
+  /// checks it again afterwards with ``isStillCurrentAfterUngatedRead(queryID:emittedAt:)``.
   ///
   /// Checking the global sequence alone stranded observations: a write to an unrelated namespace
   /// advances it without refreshing this query, so the emission was dropped and no newer one ever
@@ -5749,6 +5809,13 @@ public final class InstantRuntime: Sendable {
     return await !store.wasRefreshed(queryID: queryID, after: sequence)
   }
 
+  /// Hydrates a query emission's deferred values if it is still the query's current result.
+  ///
+  /// The SQLite read runs without the operation gate (#473): on Michael's iPhone at 13:17:46 a hydrate took the gate
+  /// after a 12.3 s write and still held it at the kill, blocked in a SQLite `pread` that disk contention stalled, with
+  /// seven callers queued behind it (freeze-185, section 1). A write that lands while the values are read commits to the
+  /// store before it leaves the gate, so once no write holds the gate, whether the query was refreshed since the
+  /// emission says whether the values still pair with its metadata (``isStillCurrentAfterUngatedRead(queryID:emittedAt:)``).
   private func hydrateDeferredValuesIfCurrent(
     in emission: InstantQueryEmission,
     plan: InstantQueryPlan,
@@ -5758,27 +5825,39 @@ public final class InstantRuntime: Sendable {
       for: plan,
       attributes: attributes
     ) else { return emission }
-    try await enterOperationGateUnlessCancelled(
-      operation: "hydrate deferred query emission"
+    // A newer emission is already queued: skip the read.
+    guard await isStillCurrent(queryID: emission.queryID, emittedAt: emission.sequence) else { return nil }
+    let hydrated = try await hydrateDeferredValues(
+      in: emission,
+      plan: plan,
+      attributes: attributes
     )
-    do {
-      guard
-        await isStillCurrent(queryID: emission.queryID, emittedAt: emission.sequence)
-      else {
-        await leaveOperationGate()
-        return nil
-      }
-      let hydrated = try await hydrateDeferredValues(
-        in: emission,
-        plan: plan,
-        attributes: attributes
-      )
-      await leaveOperationGate()
-      return hydrated
-    } catch {
-      await leaveOperationGate()
-      throw error
+    guard try await isStillCurrentAfterUngatedRead(queryID: emission.queryID, emittedAt: emission.sequence)
+    else { return nil }
+    return hydrated
+  }
+
+  /// Whether an emission is still its query's current result after its deferred values were read without the
+  /// operation gate (#473).
+  ///
+  /// Every write commits to the store before it leaves the gate. So when no caller holds the gate, every write that
+  /// overlapped the read has committed, and ``isStillCurrent(queryID:emittedAt:)`` (which publishes any committed change
+  /// first) says whether one of them refreshed the query: if so, a newer emission is queued and this one is dropped;
+  /// if not, none of them touched the query's entities, and the values read pair with the emission. When the gate is
+  /// held, the check takes it, for a moment instead of for the read: under the gate, no write is between its SQLite save
+  /// and its store commit.
+  private func isStillCurrentAfterUngatedRead(queryID: String, emittedAt sequence: Int64) async throws -> Bool {
+    await configuration.onDeferredValuesReadWithoutOperationGateForTesting?(queryID)
+    if !operationGate.isHeldSnapshot {
+      return await isStillCurrent(queryID: queryID, emittedAt: sequence)
     }
+    try await enterOperationGateUnlessCancelled(
+      operation: "check hydrated deferred query emission",
+      priority: .interactive
+    )
+    let current = await isStillCurrent(queryID: queryID, emittedAt: sequence)
+    await leaveOperationGate()
+    return current
   }
 
   @concurrent
@@ -5792,37 +5871,25 @@ public final class InstantRuntime: Sendable {
       for: plan,
       attributes: attributes
     ) else { return snapshot }
-    try await enterOperationGateUnlessCancelled(
-      operation: "hydrate deferred infinite query snapshot"
+    guard await isStillCurrent(queryID: snapshot.queryID, emittedAt: snapshot.sequence) else { return nil }
+    guard !entityIDs.isEmpty else { return snapshot }
+    // Read without the operation gate, as `hydrateDeferredValuesIfCurrent` does (#473).
+    let emission = try await hydrateDeferredValues(
+      in: InstantQueryEmission(
+        queryID: snapshot.queryID,
+        sequence: snapshot.sequence,
+        values: snapshot.values,
+        pageInfo: snapshot.pageInfo
+      ),
+      plan: plan,
+      rootEntityIDs: entityIDs,
+      attributes: attributes
     )
-    do {
-      guard await isStillCurrent(queryID: snapshot.queryID, emittedAt: snapshot.sequence) else {
-        await leaveOperationGate()
-        return nil
-      }
-      guard !entityIDs.isEmpty else {
-        await leaveOperationGate()
-        return snapshot
-      }
-      let emission = try await hydrateDeferredValues(
-        in: InstantQueryEmission(
-          queryID: snapshot.queryID,
-          sequence: snapshot.sequence,
-          values: snapshot.values,
-          pageInfo: snapshot.pageInfo
-        ),
-        plan: plan,
-        rootEntityIDs: entityIDs,
-        attributes: attributes
-      )
-      var hydrated = snapshot
-      hydrated.values = emission.values
-      await leaveOperationGate()
-      return hydrated
-    } catch {
-      await leaveOperationGate()
-      throw error
-    }
+    guard try await isStillCurrentAfterUngatedRead(queryID: snapshot.queryID, emittedAt: snapshot.sequence)
+    else { return nil }
+    var hydrated = snapshot
+    hydrated.values = emission.values
+    return hydrated
   }
 
   @concurrent
@@ -5945,7 +6012,7 @@ public final class InstantRuntime: Sendable {
       // Match Reactor.queryOnce + _flushPendingMessages: record the query before
       // reconnecting so an opening session sends add-query ahead of its durable
       // mutation backlog.
-      await enterOperationGate()
+      await enterOperationGate(priority: .interactive)
       do {
         try await liveSession.registerQuery(
           query,
@@ -6032,7 +6099,8 @@ public final class InstantRuntime: Sendable {
     _ plan: InstantQueryPlan
   ) async throws -> InstantQueryEmission {
     try await enterOperationGateUnlessCancelled(
-      operation: "materialize local infinite query identity"
+      operation: "materialize local infinite query identity",
+      priority: .interactive
     )
     do {
       let state = try await loadCompactStateSynchronizingStore()
@@ -6089,7 +6157,7 @@ public final class InstantRuntime: Sendable {
   ) async throws
     -> InstantQueryEmission
   {
-    await enterOperationGate()
+    await enterOperationGate(priority: .interactive)
     do {
       for _ in 0..<5 {
         // The state and, when a closed connection must refuse this query, the stored connection state, in one
@@ -6243,7 +6311,7 @@ public final class InstantRuntime: Sendable {
     var removedOrphanedTripleCount = 0
     var lastResult: InstantLiveQueryResultPruningResult?
     while true {
-      await enterOperationGate()
+      await enterOperationGate(priority: .background)
       let application: InstantLiveQueryResultPruningApplication
       do {
         application = try await performPruneLiveQueryResults(
@@ -6652,6 +6720,31 @@ public final class InstantRuntime: Sendable {
       await operationGate.leave()
       throw error
     }
+  }
+
+  /// How the connection is doing, from counters kept in memory: no operation gate, no SQLite, no actor hop (#482).
+  ///
+  /// ``connectionStatus()`` waits for the operation gate and reads SQLite; a save lane deciding whether a failing
+  /// write may be set aside needs only whether the socket is open and whether writes and results get through. Each
+  /// date is from the configured clock (`InstantRuntimeConfiguration.now`) and is nil until its event first happens in
+  /// this process.
+  public func connectionHealth() -> InstantConnectionHealth {
+    connectionHealthRecorder.health(
+      isOpen: configuration.liveTransport != nil && liveSession.isOpenSnapshot
+    )
+  }
+
+  /// What holds the operation gate now, with no hop onto the gate (freeze-185 item 7): the holder, the phase it named
+  /// last, since when, and the queue behind it. Like any snapshot, it can change right after it is read.
+  public func operationGateSnapshot() -> InstantOperationGateSnapshot {
+    let snapshot = operationGate.snapshot
+    return InstantOperationGateSnapshot(
+      holder: snapshot.holder,
+      holderPhase: snapshot.holderPhase,
+      heldSince: snapshot.heldSince,
+      waiterCount: snapshot.waiterCount,
+      longestWaitingSince: snapshot.longestWaitingSince
+    )
   }
 
   @concurrent
@@ -7168,6 +7261,7 @@ public final class InstantRuntime: Sendable {
   }
 
   private func publishConnectionStatus(_ status: InstantConnectionStatus) async {
+    connectionHealthRecorder.recordPendingCount(status.pendingMutationCount)
     recordActorHop(.observers)
     await connectionStatusObservers.publish(status, for: configuration.appID)
   }
@@ -7895,6 +7989,7 @@ public final class InstantRuntime: Sendable {
     )
     switch event {
     case let .addQueryOK(queryOK):
+      connectionHealthRecorder.recordServerResult(at: configuration.now().date)
       guard let query = queryOK.query else {
         throw InstantError(
           code: .decodeFailed,
@@ -7955,6 +8050,7 @@ public final class InstantRuntime: Sendable {
       await resolveParkedRefusalsIfNeeded()
 
     case let .refreshOK(refreshOK):
+      connectionHealthRecorder.recordServerResult(at: configuration.now().date)
       try await applyLiveRefresh(
         InstantLiveRefreshOK(
           clientEventID: refreshOK.clientEventID,
@@ -8000,6 +8096,7 @@ public final class InstantRuntime: Sendable {
         ],
         correlationID: clientEventID
       )
+      connectionHealthRecorder.recordServerAcknowledgement(at: configuration.now().date)
       _ = try await acceptMutationIfPresent(
         id: clientEventID,
         serverTransactionID: transactionID,
@@ -8417,7 +8514,8 @@ public final class InstantRuntime: Sendable {
   /// eligible window remains.
   private func retryOnePersistedTransientMutationFailureWindow() async throws -> Bool? {
     try await enterOperationGateUnlessCancelled(
-      operation: "retry one persisted transient mutation failure window"
+      operation: "retry one persisted transient mutation failure window",
+      priority: .background
     )
     do {
       let reservedMutationIDs = await automaticMutationRetryReservations.snapshot()
@@ -12589,7 +12687,7 @@ public final class InstantRuntime: Sendable {
     statuses: [InstantMutationStatus],
     fallback: @Sendable () async -> [PendingMutation]
   ) async -> [PendingMutation] {
-    await enterOperationGate()
+    await enterOperationGate(priority: .background)
     do {
       for _ in 0..<5 {
         // The state and the rows, checked against its revisions, in one persistence turn (#403).
@@ -15283,18 +15381,27 @@ public final class InstantRuntime: Sendable {
     return try await persistence.run(body)
   }
 
+  /// Takes the operation gate. A local write or a read a caller awaits passes `.interactive`, and work no caller
+  /// waits on passes `.background`, so a transcript write goes ahead of a queued server catch-up (freeze-185 item 2).
+  ///
   /// `operation` defaults to the caller's own function so a stalled gate names
   /// the function that is actually holding it rather than this wrapper.
-  private func enterOperationGate(operation: String = #function) async {
+  private func enterOperationGate(
+    operation: String = #function,
+    priority: AsyncSerialGate.Priority = .standard
+  ) async {
     recordActorHop(.operationGate)
-    await operationGate.enter(operation: operation)
+    await operationGate.enter(operation: operation, priority: priority)
   }
 
   /// Cancellation-aware variant for callers that already throw. A caller that
   /// throws here never acquired the gate and must not leave it.
-  private func enterOperationGateUnlessCancelled(operation: String = #function) async throws {
+  private func enterOperationGateUnlessCancelled(
+    operation: String = #function,
+    priority: AsyncSerialGate.Priority = .standard
+  ) async throws {
     recordActorHop(.operationGate)
-    try await operationGate.enterUnlessCancelled(operation: operation)
+    try await operationGate.enterUnlessCancelled(operation: operation, priority: priority)
   }
 
   private func leaveOperationGate() async {

@@ -249,6 +249,13 @@ public final class InstantDiagnostics: @unchecked Sendable {
 
   public var isEnabled: Bool { hasActiveSink }
 
+  /// Whether an entry at `level` would be recorded (#473): a sink is configured and `level` reaches the configured
+  /// minimum level. A caller that builds costly metadata for a frequent line checks this first.
+  public func isEnabled(at level: InstantDiagnosticLevel) -> Bool {
+    guard hasActiveSink else { return false }
+    return lock.withLock { level.priority >= configuration.minimumLevel.priority }
+  }
+
   /// The configuration's file and the last write error. Writes are asynchronous; call ``flush()`` first to see the
   /// result of every entry recorded so far.
   public var status: InstantDiagnosticsStatus {

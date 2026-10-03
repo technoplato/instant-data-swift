@@ -15,9 +15,48 @@ import os
 /// concurrency shape (`withTaskCancellationHandler` around a throwing
 /// continuation) rather than inventing a local mechanism.
 ///
-/// Queueing is first-in-first-out. Cancelling a queued caller removes it from
-/// the middle of the queue without reordering the callers that remain.
+/// Queueing is first-in-first-out within a ``Priority``: when the gate is handed over, the waiter with the highest
+/// priority goes next, and a waiter moves up one priority for every ``agingMilliseconds`` it has queued, so background
+/// work is never starved (freeze-185 item 2). Cancelling a queued caller removes it from the middle of the queue
+/// without reordering the callers that remain.
 actor AsyncSerialGate {
+  /// Which queued caller takes the gate next. On Michael's iPhone a transcript write queued behind server catch-ups
+  /// and hydrations, first come first served (freeze-185, 13:17:34): a local write or a read a caller awaits now goes
+  /// ahead of background work.
+  enum Priority: Int, Comparable, Sendable, CustomStringConvertible {
+    /// Work no caller waits on: a server apply, a prune, a retry window, an unbounded listing.
+    case background = 0
+    /// Everything else.
+    case standard = 1
+    /// A local write, or a read a caller awaits.
+    case interactive = 2
+
+    static func < (lhs: Self, rhs: Self) -> Bool {
+      lhs.rawValue < rhs.rawValue
+    }
+
+    var description: String {
+      switch self {
+      case .background: "background"
+      case .standard: "standard"
+      case .interactive: "interactive"
+      }
+    }
+  }
+
+  /// The gate's state as of now, read without a hop onto the gate (freeze-185 item 7), for an app's watchdog.
+  struct Snapshot: Sendable, Equatable {
+    /// The function that holds the gate, or nil when it is free.
+    var holder: String?
+    /// What the holder said it is doing, when it names its phases.
+    var holderPhase: String?
+    /// When the holder took the gate.
+    var heldSince: Date?
+    /// How many callers are queued.
+    var waiterCount: Int
+    /// When the longest-queued caller started waiting.
+    var longestWaitingSince: Date?
+  }
   /// Emitted when the gate has been held long enough that a caller waiting on
   /// it can no longer be explained by ordinary contention.
   struct StallReport: Sendable, Equatable {
@@ -56,6 +95,8 @@ actor AsyncSerialGate {
     var previousHolderHeldMilliseconds: Int
     /// Callers still queued after this handoff.
     var remainingWaiterCount: Int
+    /// The priority the caller queued with.
+    var waitingPriority: Priority = .standard
   }
 
   // SAFETY: every stored property is read and written only on the enclosing
@@ -75,50 +116,95 @@ actor AsyncSerialGate {
 
     var state: State = .pending
     let operation: String
+    let priority: Priority
     let enqueuedAt: Date
 
-    init(operation: String, enqueuedAt: Date) {
+    init(operation: String, priority: Priority, enqueuedAt: Date) {
       self.operation = operation
+      self.priority = priority
       self.enqueuedAt = enqueuedAt
     }
+
+    var isWaiting: Bool {
+      if case .waiting = state { return true }
+      return false
+    }
+  }
+
+  /// The parts of ``Snapshot`` the actor writes, behind a lock so a reader off the actor sees a whole value.
+  private struct SnapshotState: Sendable {
+    var holder: String?
+    var holderPhase: String?
+    var heldSince: Date?
+    var waiterCount = 0
+    var longestWaitingSince: Date?
   }
 
   private let label: String
   private let stallThresholdMilliseconds: UInt64
   private let waitReportThresholdMilliseconds: Int
+  /// A queued caller moves up one ``Priority`` for every interval of this length it has waited.
+  private let agingMilliseconds: Int
   private let report: @Sendable (StallReport) -> Void
   private let waitReport: @Sendable (WaitReport) -> Void
 
-  private var waiters: [Waiter] = []
-  private var holderOperation: String? {
+  /// Queued callers in the order they arrived.
+  private var waiters: [Waiter] = [] {
     didSet {
-      let isHeld = holderOperation != nil
-      heldFlag.withLock { $0 = isHeld }
+      let count = waiters.count
+      let longestWaitingSince = waiters.first?.enqueuedAt
+      snapshotState.withLock {
+        $0.waiterCount = count
+        $0.longestWaitingSince = longestWaitingSince
+      }
     }
   }
-  /// Mirrors `holderOperation != nil` for ``isHeldSnapshot``. Written only on this actor, in the same turn as
-  /// `holderOperation`; the lock exists so a reader off the actor sees a whole value. It guards one Bool for one load
-  /// or store: the "tiny, local isolation domain" a lock is for (Point-Free ep358 at 4:01). Contention grows with the
-  /// work done under a lock (ep360 at 27:15), and there is none here.
-  private let heldFlag = OSAllocatedUnfairLock(initialState: false)
-  private var holderPhase: String?
+  private var holderOperation: String? {
+    didSet {
+      let holder = holderOperation
+      snapshotState.withLock { $0.holder = holder }
+    }
+  }
+  /// Mirrors the holder, its phase, its start and the queue for ``isHeldSnapshot`` and ``snapshot``. Written only on
+  /// this actor, in the same turn as the state it mirrors; the lock exists so a reader off the actor sees a whole
+  /// value. It guards one small value for one load or store: the "tiny, local isolation domain" a lock is for
+  /// (Point-Free ep358 at 4:01). Contention grows with the work done under a lock (ep360 at 27:15), and there is none
+  /// here.
+  private let snapshotState = OSAllocatedUnfairLock(initialState: SnapshotState())
+  private var holderPhase: String? {
+    didSet {
+      let phase = holderPhase
+      snapshotState.withLock { $0.holderPhase = phase }
+    }
+  }
   /// The phase the holder named with ``markHolderPhase(_:)``, without a hop onto this actor (#473). Written by the
   /// holder between its enter and its leave, read and cleared on this actor; the lock makes each read and write whole.
   private let markedPhase = OSAllocatedUnfairLock<String?>(initialState: nil)
-  private var holderAcquiredAt: Date?
+  private var holderAcquiredAt: Date? {
+    didSet {
+      let heldSince = holderAcquiredAt
+      snapshotState.withLock { $0.heldSince = heldSince }
+    }
+  }
   private var stallCount = 0
+  /// Whether the current holder's stall was reported. A holder is reported once, however long it holds the gate
+  /// (freeze-185 item 2): the Mac logged a critical stall line every 5 s through a 331 s server catch-up. The next
+  /// holder's wait report says how long the gate was held.
+  private var stallReportedForHolder = false
   private var stallWatchdog: Task<Void, Never>?
 
   init(
     label: String,
     stallThresholdMilliseconds: UInt64 = 5_000,
     waitReportThresholdMilliseconds: Int = 250,
+    agingMilliseconds: Int = 2_000,
     report: (@Sendable (StallReport) -> Void)? = nil,
     waitReport: (@Sendable (WaitReport) -> Void)? = nil
   ) {
     self.label = label
     self.stallThresholdMilliseconds = stallThresholdMilliseconds
     self.waitReportThresholdMilliseconds = waitReportThresholdMilliseconds
+    self.agingMilliseconds = agingMilliseconds
     self.report = report ?? { AsyncSerialGate.reportStallLoudly($0) }
     self.waitReport = waitReport ?? { AsyncSerialGate.reportWait($0) }
   }
@@ -134,7 +220,21 @@ actor AsyncSerialGate {
   /// sees a value the gate really had; like `await isHeld`, the answer can change right after it is read. Use it only
   /// where that is fine, as `transact`'s supersession check is: the server apply it defers to revalidates under the
   /// operation gate.
-  nonisolated var isHeldSnapshot: Bool { heldFlag.withLock { held in held } }
+  nonisolated var isHeldSnapshot: Bool { snapshotState.withLock { $0.holder != nil } }
+
+  /// The holder, its phase and start, and the queue, without a hop onto this actor (freeze-185 item 7). Like
+  /// ``isHeldSnapshot``, the answer can change right after it is read.
+  nonisolated var snapshot: Snapshot {
+    let state = snapshotState.withLock { $0 }
+    let markedPhase = markedPhase.withLock { $0 }
+    return Snapshot(
+      holder: state.holder,
+      holderPhase: state.holder == nil ? nil : state.holderPhase ?? markedPhase,
+      heldSince: state.heldSince,
+      waiterCount: state.waiterCount,
+      longestWaitingSince: state.longestWaitingSince
+    )
+  }
 
   /// How many callers are queued behind the holder.
   var waiterCount: Int { waiters.count }
@@ -145,14 +245,14 @@ actor AsyncSerialGate {
   /// without handing it ownership would let it run the critical section while
   /// another caller still holds the gate. Callers in a throwing context should
   /// prefer ``enterUnlessCancelled(operation:)``.
-  func enter(operation: String = #function) async {
+  func enter(operation: String = #function, priority: Priority = .standard) async {
     if holderOperation == nil {
       acquire(operation: operation)
       return
     }
     // Only `enterUnlessCancelled` installs a cancellation handler, so no waiter
     // reached from here can be resumed with an error.
-    try? await waitForBaton(operation: operation, honoringCancellation: false)
+    try? await waitForBaton(operation: operation, priority: priority, honoringCancellation: false)
   }
 
   /// Acquires the gate, waiting if another caller holds it, and throws
@@ -162,13 +262,13 @@ actor AsyncSerialGate {
   /// ``leave()``. Cancellation is only honored *before* acquisition, so a
   /// critical section that has already started still runs to completion and
   /// cannot leave half-applied optimistic state behind.
-  func enterUnlessCancelled(operation: String = #function) async throws {
+  func enterUnlessCancelled(operation: String = #function, priority: Priority = .standard) async throws {
     if Task.isCancelled { throw CancellationError() }
     if holderOperation == nil {
       acquire(operation: operation)
       return
     }
-    try await waitForBaton(operation: operation, honoringCancellation: true)
+    try await waitForBaton(operation: operation, priority: priority, honoringCancellation: true)
   }
 
   /// Names what the current holder is doing, so stall and wait reports can say which part of a
@@ -190,22 +290,30 @@ actor AsyncSerialGate {
     holderPhase ?? markedPhase.withLock { $0 }
   }
 
-  /// Releases the gate, handing it to the longest-queued caller if there is one.
+  /// Releases the gate, handing it to the queued caller that goes next (``nextWaiterIndex(at:)``), if there is one.
   func leave() {
     stallCount = 0
+    stallReportedForHolder = false
     let previousHolder = holderOperation
     let previousHolderPhase = currentHolderPhase
     let previousHolderAcquiredAt = holderAcquiredAt
     holderPhase = nil
     markedPhase.withLock { $0 = nil }
-    while let waiter = waiters.first {
-      waiters.removeFirst()
+    // Cancellation already resumed any waiter that is not waiting; it never took ownership.
+    if waiters.contains(where: { !$0.isWaiting }) {
+      waiters.removeAll { !$0.isWaiting }
+    }
+    let now = Date()
+    if let index = nextWaiterIndex(at: now) {
+      let waiter = waiters.remove(at: index)
       guard case .waiting(let continuation) = waiter.state else {
-        // Cancellation already resumed this waiter; it never took ownership.
-        continue
+        reportIssue("Instant's \(label) gate chose a waiter that was not waiting; AsyncSerialGate has a bug.")
+        holderOperation = nil
+        holderAcquiredAt = nil
+        stopStallWatchdog()
+        return
       }
       waiter.state = .resumed
-      let now = Date()
       holderOperation = waiter.operation
       holderAcquiredAt = now
       let waitMilliseconds = Self.milliseconds(since: waiter.enqueuedAt, to: now)
@@ -221,11 +329,13 @@ actor AsyncSerialGate {
           previousHolderHeldMilliseconds: previousHolderAcquiredAt.map {
             Self.milliseconds(since: $0, to: now)
           } ?? 0,
-          remainingWaiterCount: waiters.count
+          remainingWaiterCount: waiters.count,
+          waitingPriority: waiter.priority
         )
         let waitReport = self.waitReport
         Task.detached(priority: .utility) { waitReport(wait) }
       }
+      if waiters.isEmpty { stopStallWatchdog() }
       continuation.resume()
       return
     }
@@ -235,16 +345,36 @@ actor AsyncSerialGate {
     stopStallWatchdog()
   }
 
+  /// The queued caller that takes the gate next: the highest rank, where a caller's rank is its priority plus one for
+  /// every ``agingMilliseconds`` it has waited, and the longest-queued caller among equal ranks. So within a priority
+  /// the queue stays first in, first out, and a background caller that waited long enough goes ahead of newer
+  /// interactive ones.
+  private func nextWaiterIndex(at now: Date) -> Int? {
+    var best: (index: Int, rank: Int)?
+    for (index, waiter) in waiters.enumerated() where waiter.isWaiting {
+      let waited = max(0, Self.milliseconds(since: waiter.enqueuedAt, to: now))
+      let rank = waiter.priority.rawValue + (agingMilliseconds > 0 ? waited / agingMilliseconds : 0)
+      if let current = best, rank <= current.rank { continue }
+      best = (index, rank)
+    }
+    return best?.index
+  }
+
   private func acquire(operation: String) {
     holderOperation = operation
     holderPhase = nil
     markedPhase.withLock { $0 = nil }
     holderAcquiredAt = Date()
     stallCount = 0
+    stallReportedForHolder = false
   }
 
-  private func waitForBaton(operation: String, honoringCancellation: Bool) async throws {
-    let waiter = Waiter(operation: operation, enqueuedAt: Date())
+  private func waitForBaton(
+    operation: String,
+    priority: Priority,
+    honoringCancellation: Bool
+  ) async throws {
+    let waiter = Waiter(operation: operation, priority: priority, enqueuedAt: Date())
     guard honoringCancellation else {
       return try await withCheckedThrowingContinuation { continuation in
         attach(continuation, to: waiter)
@@ -336,6 +466,9 @@ actor AsyncSerialGate {
       // reporting a stall that has not happened yet.
       return true
     }
+    // One report per holder; keep watching, so the next holder's stall is reported too.
+    guard !stallReportedForHolder else { return true }
+    stallReportedForHolder = true
 
     stallCount += 1
     // Reported off this actor (#473): the stall line is a critical diagnostics entry plus `reportIssue`, and on the
@@ -380,6 +513,7 @@ actor AsyncSerialGate {
         "previousHolderPhase": wait.previousHolderPhase ?? "",
         "previousHolderHeldMilliseconds": String(wait.previousHolderHeldMilliseconds),
         "remainingWaiterCount": String(wait.remainingWaiterCount),
+        "waitingPriority": wait.waitingPriority.description,
       ]
     )
   }
