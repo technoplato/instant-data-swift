@@ -2853,6 +2853,79 @@ struct InstantReactorParityTests {
     expectNoDifference(relaunchedTopics, [], reactorRoomEventsSource)
   }
 
+  /// Two agents or devices signed in as one user are two peers, and a session of this device's own user is a peer,
+  /// not this device (#461).
+  @Test
+  func runtimeKeepsEverySessionOfOneUserAsItsOwnPeer() async throws {
+    await withKnownIssue("room members are keyed by user id, so every session of one user merges into one (#461)") {
+      let room = InstantRoomHandle(type: "recording", id: "room-one-user")
+      let session = LiveReactorParitySession(messages: [
+        liveReactorInitOK(attrs: liveReactorTodoServerAttrs, sessionID: "session-iphone")
+      ])
+      let runtime = try await InstantRuntime.bootstrap(
+        configuration: InstantRuntimeConfiguration(
+          appID: "reactor-room-one-user-parity",
+          persistenceURL: try temporaryReactorParityCacheURL(),
+          initialAttributes: TodoExample.attributes,
+          now: { InstantTimestamp(milliseconds: 1_700_000_090_000) },
+          liveTransport: session.transport
+        )
+      )
+      _ = try await runtime.connect()
+      _ = try await runtime.joinRoom(room)
+      await session.enqueue(
+        InstantLiveMessage(op: "join-room-ok", fields: ["room-id": .string(room.id)])
+      )
+      _ = try await runtime.setPresence(
+        room: room,
+        userID: "user-michael",
+        values: ["device": .string("iPhone")]
+      )
+      var presence = (try await runtime.observeRoomPresence(room: room)).makeAsyncIterator()
+      let ownPresence = try #require(await presence.next())
+      expectNoDifference(ownPresence.map(\.values), [["device": .string("iPhone")]], reactorRoomSessionsSource)
+
+      await session.enqueue(
+        InstantLiveMessage(
+          op: "refresh-presence",
+          fields: [
+            "data": .object([
+              "session-iphone": livePresenceSession(
+                peerID: "session-iphone",
+                userID: "user-michael",
+                values: ["device": .string("iPhone")]
+              ),
+              "session-agent-a": livePresenceSession(
+                peerID: "session-agent-a",
+                userID: "user-michael",
+                values: ["agent": .string("a")]
+              ),
+              "session-agent-b": livePresenceSession(
+                peerID: "session-agent-b",
+                userID: "user-michael",
+                values: ["agent": .string("b")]
+              ),
+            ]),
+            "room-id": .string(room.id),
+          ]
+        )
+      )
+      let members = try #require(await presence.next())
+      let agents = members.compactMap { member -> String? in
+        guard case let .string(agent)? = member.values["agent"] else { return nil }
+        return agent
+      }
+      expectNoDifference(agents.sorted(), ["a", "b"], reactorRoomSessionsSource)
+      #expect(
+        members.contains { $0.values["device"] == .string("iPhone") },
+        "A session of this device's own user replaced this device's presence. \(reactorRoomSessionsSource)"
+      )
+      expectNoDifference(members.count, 3, reactorRoomSessionsSource)
+      #expect(members.allSatisfy { $0.userID == "user-michael" })
+      _ = try await runtime.closeConnection()
+    }
+  }
+
   @Test
   func upstreamReactorRewriteMutationsKeepsPendingTransportStable() async throws {
     let cacheURL = try temporaryReactorParityCacheURL()
@@ -3051,6 +3124,9 @@ private let typescriptStreamWriterSource =
 
 private let reactorRoomEventsSource =
   "upstream/instant/client/packages/core/src/Reactor.js refresh-presence, patch-presence, and server-broadcast receive branches plus upstream/instant/server/test/instant/reactive/session_test.clj patch-presence-works and broadcast-works [adapted: Swift excludes its own live session from peer presence, applies canonical +/r/- edits in memory, publishes typed peer state, and emits remote broadcasts without adding them to durable topic history.]"
+
+private let reactorRoomSessionsSource =
+  "upstream/instant/client/packages/core/src/Reactor.js _setPresencePeers and _patchPresencePeers (peers keyed by session id, own session removed) plus presence.ts buildPresenceSlice (a peer's peerId is its session id) [adapted: Swift lists this runtime's own presence beside the peers instead of in a separate `user` slot.]"
 
 private let reactorRewriteSource =
   "upstream/instant/client/packages/core/__tests__/src/Reactor.test.ts rewrite mutations [adapted: Swift pending mutations store typed transactions and lower them to stable transport steps over declared server attributes instead of rewriting cached JavaScript tx-steps.]"
