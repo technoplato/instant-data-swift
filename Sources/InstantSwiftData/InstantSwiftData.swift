@@ -1683,6 +1683,36 @@ public struct InstantSwiftDataClient: Sendable {
     try await observeRoomPresenceOperation(room)
   }
 
+  /// Observes the selected part of a room's presence, emitting only when that part changed, as `Reactor.js`'s
+  /// `subscribePresence` options do (`keys`, `peers`, `user`; #461).
+  ///
+  /// ```swift
+  /// let agents = try await client.observeRoomPresence(
+  ///   room: room,
+  ///   selection: InstantRoomPresenceSelection(keys: ["agents"], includesLocal: false)
+  /// )
+  /// ```
+  public func observeRoomPresence(
+    room: InstantRoomHandle,
+    selection: InstantRoomPresenceSelection
+  ) async throws -> AsyncStream<[InstantRoomPresenceMember]> {
+    let members = try await observeRoomPresenceOperation(room)
+    guard selection != .all else { return members }
+    return AsyncStream(bufferingPolicy: .bufferingNewest(1)) { continuation in
+      let forwarding = Task {
+        var last: [InstantRoomPresenceMember]?
+        for await all in members {
+          let slice = selection.apply(to: all)
+          if let last, !selection.changed(from: last, to: slice) { continue }
+          last = slice
+          continuation.yield(slice)
+        }
+        continuation.finish()
+      }
+      continuation.onTermination = { @Sendable _ in forwarding.cancel() }
+    }
+  }
+
   public func subscribeRoomPresence(
     room: InstantRoomHandle
   ) async throws -> FetchSubscription<[InstantRoomPresenceMember]> {

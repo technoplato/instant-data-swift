@@ -120,7 +120,7 @@ public struct InstantRoomPresenceSelection: Hashable, Sendable {
 
   /// Whether two selected parts differ for an observer. With `keys`, a member's `updatedAt` moves when any of its
   /// values change, so it is left out: only the selected values count, as `hasPresenceResponseChanged` compares them.
-  func changed(from old: [InstantRoomPresenceMember], to new: [InstantRoomPresenceMember]) -> Bool {
+  public func changed(from old: [InstantRoomPresenceMember], to new: [InstantRoomPresenceMember]) -> Bool {
     guard keys != nil else { return old != new }
     guard old.count == new.count else { return true }
     return zip(old, new).contains { lhs, rhs in
