@@ -1,17 +1,122 @@
+## 2026-10-03 13:37:46 EDT — instant-data-swift `0bc6ddc4127e0742eee732df18b0b45da69de775`
+Document the v1.9.4 release and its gate in docs/releases/v1.9.4.md and PROGRESS.md (#441 #445).
+
+## 2026-10-03 12:48:47 EDT — instant-data-swift `45a462908c27876ba2e31096c44f2cf39a48f214`
+#445: whether a failed mutation is superseded, slot by slot, as read-only public API for Scribe's Sync view (InstantSwiftDataClient.supersession(ofFailedMutation:) and failedMutationSupersessions()), by the #441 guard's rule (#445).
+
+## 2026-10-03 12:48:38 EDT — instant-data-swift `94938422b6d4723b5400b7723b0ec482f9571aba`
+Claim the files of #445's supersession API, which ships in v1.9.4 with the #441 guard (#445 #441).
+
+## 2026-10-03 12:33:31 EDT — instant-data-swift `ec10cad263a44d3ec679b8916e5af275852266a0`
+#441 (P1): a refused re-send resolves as accepted when the server's own results already show the values it set, with any other slot covered by accepted later writes; one refused before its connection's query answers waits for them (Recording 040's capture gaps, which production holds) (#441).
+
+## 2026-10-03 12:29:51 EDT — scribe `0f200d5c302edc2fa739008adaeba8d613540d8e`
+Record #442 in ADR 0033 and the design doc: Private Cloud Compute without its entitlement traps (#442 #364)
+
+## 2026-10-03 12:29:28 EDT — scribe `0b22c04b8360d5019f67d943605db3b5c1b00a1e`
+Let Apple's on-device model run on version 27 again: #442 was Private Cloud Compute without its entitlement (#442)
+
+## 2026-10-03 12:27:20 EDT — scribe `2b5fd4edea3015403b4d866b969ca24c8b2e8aa9`
+Never ask Private Cloud Compute without its entitlement, on any version (#442 #364)
+
+## 2026-10-03 12:26:33 EDT — scribe `2d42936cdca8092168a16115c0ba91152809604e`
+Red: Private Cloud Compute must never be asked without its entitlement (#442 #364)
+
+## 2026-10-03 12:16:27 EDT — scribe `2a5ab827115c689fb392f1b6bc592c37fe60ae72`
+Never cancel a voice-actions model call in flight; drop a late answer instead (#442)
+
+## 2026-10-03 12:16:27 EDT — scribe `9e2d83273ddb3aa7bfcf585b0be6a267ccf5e245`
+P0: one gate keeps every Scribe caller off FoundationModels on version 27 (#442)
+
+## 2026-10-03 12:08:34 EDT — scribe `e27b34ab1212f5793df5d6edccee6860eda0e219`
+P0: never ask Apple's models on version 27, where FoundationModels crashes the app (#442)
+
+## 2026-10-03 12:08:03 EDT — scribe `b277f8090279e327ae1f9adbe332d1544b875fcd`
+Red: Apple's models must never be asked on version 27, where FoundationModels crashes the app (#442)
+
+## 2026-10-03 12:07:15 EDT — scribe `66799a0612532a8203cc4de41e26cd1de00160c8`
+Capture-time writes leave updatedAtMs to the heartbeat, so a re-sent one passes the server's rule (#441)
+
+## 2026-10-03 12:07:15 EDT — scribe `2c60e8c3a706f3dd3326b81f23f2bdf5521e1f21`
+Claim capture-gaps-row's write test and ADR 0018 for live-stamp-82 (d) (#441)
+
+## 2026-10-03 12:03:55 EDT — instant-data-swift `d8208b334737129c87f91f4a646c9794471309b0`
+Claim the files of the #441 fix: a re-sent write the server already holds is shown as refused (#441).
+
+## 2026-10-03 11:32:20 EDT — scribe `1e95b90c8548524810478ca22029cea44bee0fc7`
+Merge main's SoundAnalysis plan and claims after the 0.1 (83) release commit (#440).
+
+## 2026-10-03 10:55:05 EDT — scribe `b1d4739255c4df3bb227908192ee3a66e3aa7446`
+Review fixes for playback-links before its first hold: the play kind in two completeness tests, a guest's plays move with the merge, and the route line says the mode and volumes (#435 #122).
+
+## 2026-10-03 10:54:43 EDT — scribe `307c50e1f74d784589a38772e3edb21c88a3d25e`
+Amend plan playback-links (b): the play kind joins two completeness tests, a guest's plays move with the merge, and the route line says the mode and volumes (#435 #122).
+
+## 2026-10-03 10:42:15 EDT — scribe `d13c15befecec569810976ad0cc6b4ad2fc6bfe3`
+Release Scribe 0.1 (83).
+
+## 2026-10-03 10:41:53 EDT — scribe `56c4e9b23ceb89de08d299bdba15a975db44ff13`
+Merge scribe-mirror: a live recording's duration follows its list row, and an active stamp with no heartbeat reads "live, but not updating since" (#438 #408 #385).
+
+## 2026-10-03 10:41:33 EDT — scribe `974880e31fa32c4b7201365acb6f21d3ca19616e`
+Record the instant-data-swift 1.9.3 pin and its Package.resolved in the change log (#436).
+
+## 2026-10-03 10:41:32 EDT — scribe `6ee1b0a5517f0080874c023e63bfe9f878f986ac`
+Resolve Package.resolved to instant-data-swift 1.9.3 (bb0e6265) with a plain swift package resolve (#436).
+
+## 2026-10-03 10:32:35 EDT — scribe `1d76349a1fd105cd592e80831d5399787d33c461`
+Pin instant-data-swift exactly 1.9.3 instead of 1.9.2: a store whose cache holds one oversized live-query result opens again (#436).
+
+## 2026-10-03 10:31:55 EDT — instant-data-swift `bb0e62651ef881b392a95a12d42d8a7db5b51613`
+v1.9.3 on main: merge library-79-hops (eb086bb1) without fast-forward over a6d7929d; the annotated tag v1.9.3 points here and gh release v1.9.3 is Latest (https://github.com/technoplato/instant-data-swift/releases/tag/v1.9.3); code equals the gated 5e1c0222 (#436).
+
 ## 2026-10-03 10:31:25 EDT — instant-data-swift `1ea9f0763639139c9d6c5c5a33fee88da2b9416d`
 Document the v1.9.3 release: #436, a store whose cache holds one live-query result over 8 MiB opens again; red on v1.9.2, green here, and two high-lane gate holds (#436).
+
+## 2026-10-03 10:24:01 EDT — scribe `52ffa54bc335306c8f4494c87140e00078998464`
+Mark each play of another recording on the live recording's timeline, with a link to the range, and link the two in Instant (#435, ADR 0040).
+
+## 2026-10-03 10:18:35 EDT — scribe `530d857b58ab3d7842ec7b369020d85f3a4fa839`
+Record Scribe 0.1 (82) in the change log and PROGRESS: installed on the iPhone and the Mac; the iPad waits for 83 (#431 #412).
 
 ## 2026-10-03 10:16:54 EDT — instant-data-swift `5e1c0222036472746cf5c66577fa93a0ff4d2e18`
 #436 test isolation: each fixture names its own oversized result, so the two parallel tests never capture each other's warning (#436).
 
+## 2026-10-03 10:06:20 EDT — scribe `8cc6021763e434c94b03171e3773833eb50e2434`
+Merge main's playback-links plan and ADR 0040 after the 0.1 (82) release commit (#122 #435).
+
+## 2026-10-03 10:04:28 EDT — scribe `2ee74133e25f462f2d486aea6f78f8f2c809f0c5`
+Log the push proof's ADR commit in CHANGELOG (#340).
+
 ## 2026-10-03 10:00:18 EDT — instant-data-swift `adfd9624da0fd25edaf97d258cd33ed158f4696f`
 #436's red test compiles against v1.9.2: it counts decoded results with the existing scan counter, and the unused drop counter is gone (#436).
+
+## 2026-10-03 09:59:52 EDT — scribe `a1616d8b483be74c4590b2588d57ec1bb62f685d`
+ADR 0029: the push proof on the simulator, what it showed and what it could not (#340).
 
 ## 2026-10-03 09:54:59 EDT — instant-data-swift `7d7790fdd54bf79f291dc06f49e44f43fdfffc32`
 #436 (P0): the store opens even when one cached live-query result is over the 8 MiB open-time row bound; the reconciliation and application-migration passes drop it with a warning and its query refetches it (Michael's iPad could not open Scribe; Recording 039's transcript is 8,817,787 bytes) (#436).
 
+## 2026-10-03 09:54:55 EDT — scribe `7b09b7eaf2c19663648bb5e68553a1680578a879`
+Play on the loudspeaker during every recording, and say where playback's sound goes (#122, ADR 0040).
+
+## 2026-10-03 09:50:21 EDT — scribe `c2e6504fbc796c1fa7f8ab6db9afedeaa0f2d618`
+Log the heart-rate implementation in CHANGELOG (#290).
+
+## 2026-10-03 09:49:51 EDT — scribe `3c57a43dfc379cb75c0bf5965aac92db172b0e94`
+Read Apple Watch heart rate from Health while a recording captures, without a workout, and put it on the timeline (#290).
+
 ## 2026-10-03 09:48:57 EDT — instant-data-swift `a3ec2b91c4e087dd98f55039f71c9edea1f2e83e`
 Claim the files of the #436 hotfix: SQLitePersistenceStore.swift, the new oversized-result tests, and the v1.9.3 release document (#436).
+
+## 2026-10-03 09:45:59 EDT — scribe `412556037751aaf19aced7886aa924a2f6b3f61c`
+Plan playback-links: playback during a recording plays on the loudspeaker, and playing another recording links the two (ADR 0040, #122 #435).
+
+## 2026-10-03 09:34:30 EDT — scribe `683efc6af7a0dce71e5f65f7b21e3cbcac1e3105`
+Release Scribe 0.1 (82).
+
+## 2026-10-03 09:02:34 EDT — scribe `bdb0a5d77f73faab7f1d7a005d2fa20061f16749`
+Claim Package.swift for heart-rate: HeartRateClientLive's leftover watchOS HealthKit link (#290).
 
 ## 2026-10-03 08:47:37 EDT — scribe `a30e0409b8f4b3bd171191c3608e8d40b8c82cc6`
 Merge ui-polish's #413 pair: the pushed recording and playback screens take the floating bar's room themselves, and the bar's room is logged on change (#413).
@@ -157,6 +262,9 @@ Red tests: the follow-along tail follows a recording by its heartbeat, and only 
 ## 2026-10-03 00:43:26 EDT — scribe `3774258b61de5c185bdf2d5ae56828ad6622dfa1`
 Plan live-stamp-82: the follow-along tail and scribe-stream-agent --active read the heartbeat, and the iPad's stuck write gets a repro, and claim the paths (#408).
 
+## 2026-10-03 00:38:25 EDT — scribe `ba12debed84a388e92777ca0b78217d67618f50a`
+Amend plan heart-rate: claim the two kind-list tests and the simulator proof's scripts (#290).
+
 ## 2026-10-03 00:30:19 EDT — scribe `e505cd444797c10a18402e1ad9b47244f2b70f89`
 Merge origin/main into live-stamp: main's ui-polish, clipboard-onboarding and list-edit-mode plans and claims (#408).
 
@@ -198,6 +306,9 @@ Read the list's live signal before writing it into the restored playback (#408).
 
 ## 2026-10-02 23:36:53 EDT — scribe `09a9bbb73798b6b3ae06ed1248d2620563243c40`
 Real alerts for agent answers, the thread's title on every notification, and scribe notify for agents (#340)
+
+## 2026-10-02 22:46:48 EDT — scribe `4f8490be43d1ea004f4744b04fca014345bacd8a`
+Plan heart-rate: Apple Watch heart rate from Health on the recording timeline, no workout, and claim its paths (#290).
 
 ## 2026-10-02 22:35:27 EDT — scribe `e0c1c19915085b5e1ca9159270080cb6149c6423`
 Merge capture-alert-unblock's test fix: the outage notifier's tests and the rebuild-stop test wait on events (#272).

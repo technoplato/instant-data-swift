@@ -1300,6 +1300,36 @@ public struct InstantSwiftDataClient: Sendable {
     }
   }
 
+  /// Whether a retained failed mutation is superseded, slot by slot (#445): each slot it set is covered by a later
+  /// write of this device that the server accepted, or holds its value in a live-query result the server sent since it
+  /// was created. This is the rule the library applies to a refused re-send itself (#441); a superseded failed mutation
+  /// can be discarded without losing anything the server does not hold. Read only; the work runs off the main actor.
+  public func supersession(ofFailedMutation id: String) async throws -> InstantMutationSupersession {
+    guard let runtime else {
+      throw InstantError(
+        code: .implementationFailed,
+        operation: "check whether a failed Instant mutation is superseded",
+        localID: id,
+        message: "This Instant Swift Data client has no runtime outbox lifecycle.",
+        recovery: "Use a runtime-backed client to inspect retained failed mutations."
+      )
+    }
+    return try await runtime.failedMutationSupersession(id: id)
+  }
+
+  /// `supersession(ofFailedMutation:)` for every retained failed mutation, keyed by mutation id, in one read (#445).
+  public func failedMutationSupersessions() async throws -> [String: InstantMutationSupersession] {
+    guard let runtime else {
+      throw InstantError(
+        code: .implementationFailed,
+        operation: "check whether failed Instant mutations are superseded",
+        message: "This Instant Swift Data client has no runtime outbox lifecycle.",
+        recovery: "Use a runtime-backed client to inspect retained failed mutations."
+      )
+    }
+    return try await runtime.failedMutationSupersessions()
+  }
+
   /// Waits until every locally persisted mutation has been acknowledged by the live server.
   ///
   /// Transactions remain local-first: this method does not block `transact`. It is intended for

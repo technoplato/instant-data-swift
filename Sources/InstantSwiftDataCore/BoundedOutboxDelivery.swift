@@ -122,21 +122,47 @@ struct InstantAutomaticOutboxClaimRequest: Sendable {
   }
 }
 
-/// Later writes of this device that cover every operation of a write (library-78, item 3).
+/// Later writes of this device that cover every operation of a write (library-78, item 3), and for a refused re-send
+/// the server's own results (#441).
 enum InstantOutboxWriteCoverage: Sendable {
-  /// Accepted writes cover it; `serverTransactionID` is the newest of theirs.
+  /// Accepted writes cover it, or for a refused re-send the server's results show the rest; `serverTransactionID` is
+  /// the newest of theirs.
   case acceptedWrites(serverTransactionID: String, mutationIDs: [String])
   /// Writes not all accepted yet cover it.
   case pendingWrites(mutationIDs: [String])
+  /// A refused re-send that later writes and the server's results do not cover yet, whose uncovered operations are
+  /// all inserts a result from the server may still show (#441).
+  case awaitingServerResult(mutationIDs: [String])
   case none
 }
 
-/// How a server refusal of a write resolves when later writes of this device may cover it (item 3).
+/// What a refused re-send counts beyond later writes of this device (#441).
+///
+/// A slot counts as held when a live-query result the server sent, stored at or after the write was created, shows
+/// the write's value for it. Instant's server applies every transact it receives, without deduplicating a re-sent
+/// client-event-id (`session.clj`), so a re-send whose first offer was applied is refused by a rule like
+/// `newData.updatedAtMs >= data.updatedAtMs` once a later write advanced the row, while the server already holds the
+/// values it sets.
+struct InstantServerResultCheck: Sendable {
+  /// The metadata key of the processed-transaction watermark; a write resolved by the server's results takes the
+  /// watermark as its server transaction id, so it leaves the outbox at the next server apply.
+  var processedTransactionIDKey: String
+  /// Whether an insert no stored result shows yet may wait for a result that does: the runtime allows it while the
+  /// connection still owes the first answer to a registered live query and the wait has not ended.
+  var waitsForServerResult: Bool
+}
+
+/// How a server refusal of a write resolves when later writes of this device, or for a re-send the server's own
+/// results, may cover it (item 3, #441).
 enum InstantRefusedWriteResolution: Sendable {
-  /// Accepted writes cover it: resolved as accepted, not failed.
-  case superseded(PendingMutation, coveringMutationIDs: [String])
+  /// Accepted writes cover it, or for a re-send the server's results show the rest: resolved as accepted, not
+  /// failed. `serverResultSlotCount` counts the slots the server's results showed.
+  case superseded(PendingMutation, coveringMutationIDs: [String], serverResultSlotCount: Int)
   /// Writes still in flight cover it: it keeps its claim, parked, until they are answered.
   case heldBehindPendingWrites(coveringMutationIDs: [String])
+  /// A re-send whose remaining slots a result from the server may still show (#441): it keeps its claim, parked,
+  /// until one does or the wait ends.
+  case awaitingServerResult(coveringMutationIDs: [String])
   /// The refusal stands.
   case notCovered
   /// This runtime no longer holds the write's claim.
@@ -354,13 +380,17 @@ enum InstantBoundedOutboxDelivery {
   }
 }
 
-/// Refusals parked behind covering writes in flight (library-78, item 3), with the claim each still holds and the
-/// failure to record if the covering writes do not land. In memory only: a socket's death releases every claim, and
-/// the next connection offers the write again.
+/// Refusals parked behind covering writes in flight (library-78, item 3) or waiting for a result from the server that
+/// shows the values they set (#441), with the claim each still holds and the failure to record if neither comes. In
+/// memory only: a socket's death releases every claim, and the next connection offers the write again.
 actor InstantParkedRefusals {
   struct Parked: Sendable {
     var claimToken: String
     var failure: InstantMutationFailure
+    /// The server's refusal, for the log if the refusal stands.
+    var error: InstantLiveErrorMessage
+    /// Until when the refusal waits for a server result (#441); `nil` waits only for the covering writes' answers.
+    var serverResultDeadlineMilliseconds: Int64?
   }
 
   private var parked: [String: Parked] = [:]
@@ -369,15 +399,41 @@ actor InstantParkedRefusals {
 
   var snapshot: [String: Parked] { parked }
 
-  func park(_ mutationID: String, claimToken: String, failure: InstantMutationFailure) {
-    parked[mutationID] = Parked(claimToken: claimToken, failure: failure)
+  /// The earliest server-result deadline of a parked refusal, if any waits for one.
+  var earliestServerResultDeadlineMilliseconds: Int64? {
+    parked.values.compactMap(\.serverResultDeadlineMilliseconds).min()
+  }
+
+  func park(
+    _ mutationID: String,
+    claimToken: String,
+    failure: InstantMutationFailure,
+    error: InstantLiveErrorMessage,
+    serverResultDeadlineMilliseconds: Int64?
+  ) {
+    parked[mutationID] = Parked(
+      claimToken: claimToken,
+      failure: failure,
+      error: error,
+      serverResultDeadlineMilliseconds: serverResultDeadlineMilliseconds
+    )
+  }
+
+  /// Stops a parked refusal's wait for a server result once only covering writes in flight remain to answer.
+  func stopWaitingForServerResult(_ mutationID: String, claimToken: String) {
+    guard parked[mutationID]?.claimToken == claimToken else { return }
+    parked[mutationID]?.serverResultDeadlineMilliseconds = nil
   }
 
   func remove(_ mutationID: String) {
     parked[mutationID] = nil
   }
 
-  func removeAll() {
+  /// Forgets every parked refusal; returns whether one waited for a server result, so its wake can be cancelled.
+  @discardableResult
+  func removeAll() -> Bool {
+    let waited = parked.values.contains { $0.serverResultDeadlineMilliseconds != nil }
     parked.removeAll()
+    return waited
   }
 }

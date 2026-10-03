@@ -8,3 +8,4 @@ claude-opus-5.5 2026-09-26T18:02:58-0400 mower plan=2026-09-26-write-scope-relea
 claude-opus-5.5-triage-l 2026-09-27T21:32:08Z mower plan=2026-09-27-triage-l-operation-gate #278
 claude-opus-5.5-library-78 2026-10-01T12:48:54-04:00 mower plan=2026-10-01-library-78 #376 #360 #303 #317 #329
 claude-opus-5.5-library-78-streams 2026-10-01T13:16:05-04:00 mower plan=2026-10-01-library-78 #329
+claude-opus-5.5-library-79 2026-10-03T12:48:24-04:00 mower plan=2026-10-02-library-79-hops #445 #441
