@@ -245,3 +245,5 @@ comment), `TripleIndexes.swift`, `InstantStore.swift` (a test accessor),
 `Tests/InstantSwiftDataCoreTests/InstantRoomPresenceRuntimeTests.swift`, new
 `Tests/InstantSwiftDataCoreTests/InstantManyCardinalityOrderTests.swift` and
 `docs/adr/0019-rooms-and-presence-parity.md` (decision 9's open item), added 2026-10-04 19:01 EDT.
+Also `Sources/InstantDomainAEVBench/main.swift` and new `ManyRefsBench.swift` (`--many-refs`, #570's measurement at -O), added
+2026-10-04 19:40 EDT.
