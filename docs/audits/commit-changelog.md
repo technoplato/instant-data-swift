@@ -1,5 +1,17 @@
+## 2026-10-04 08:28:07 EDT — scribe `95b3cc9752aac172a9196fa73d80d7e1730d5176`
+Record the accessibility-size line limits in the change log (#497)
+
+## 2026-10-04 08:28:06 EDT — scribe `82a84bc8c8ed229951398874ecf6acf2c5688e6d`
+Shares rows: every line at accessibility text sizes (#497)
+
+## 2026-10-04 07:11:17 EDT — scribe `1f5d1ef97391e4ee3597757ba78b369c34085a5c`
+Record the Shares tests' #require and the Mac layout fixes in the change log (#497)
+
 ## 2026-10-04 06:30:51 EDT — scribe `a43e7c4d69dbcbee3e52a2ef7a93a0e6d3975c5b`
 Record Scribe 0.1 (87) in PROGRESS: on the iPhone, the iPad and the Mac, built from b3dd127c on the published instant-data-swift 1.9.6 (#483 #484 #482 #458 #430 #469 #340 #410 #475 #478 #492)
+
+## 2026-10-04 06:25:12 EDT — scribe `002aba6237a63d6253da9a1d90b2d4389aa0c429`
+Shares on the Mac: the actions menu is a plain button around its 28-point label (#497)
 
 ## 2026-10-04 06:19:52 EDT — scribe `cce94a9858905ab92b40aaae870b78627c0c436e`
 Merge main ac9ca658 into the 87 branch: looking-at's channel post and the signal-changes plan for 88
@@ -7,11 +19,17 @@ Merge main ac9ca658 into the 87 branch: looking-at's channel post and the signal
 ## 2026-10-04 06:07:34 EDT — scribe `6361c68c0af143d808aba2e4c34b7d78eb0a7c15`
 The results watchdog harness applies what the recording's effects sent before it reads state, and feeds one buffer at a time (#484)
 
+## 2026-10-04 06:03:10 EDT — scribe `9bd8c0b8cdf35d2dcaf16af2fa509da31590f324`
+Shares on the Mac: a grouped form like the other Settings tabs, and a full-size menu target (#497)
+
 ## 2026-10-04 05:41:01 EDT — scribe `da3a8d4aba23fb8d30d121e351c1eaffd729ce5a`
 Shares tests: require the share count before indexing, so a failure cannot end the test process (#497)
 
 ## 2026-10-04 05:41:01 EDT — scribe `3c28cff164a343b87dbd5c6169fab1e19582e140`
 The sync-row journal test waits for Retry's save to land and the lane to idle before it counts, and says whether anything stays set aside (#482 part C)
+
+## 2026-10-04 05:20:21 EDT — scribe `9db3625c67b1f66cd31a4cd27031bf859606dbc3`
+Shares tests: require the share count before indexing, so a failure cannot end the test process (#497)
 
 ## 2026-10-04 05:19:21 EDT — scribe `a1e8194ef71bc06affcd7779a72c6e58eaedfa67`
 The journal tests send each stream from its own session, as the phone does, and a microphone and a system-audio final at one moment stay two lines (#482 part C)
@@ -424,6 +442,15 @@ Record background-uploads' test-only gate-86b fixes in the change log (#481)
 ## 2026-10-03 23:17:48 EDT — scribe `81f629f16322399f0717f2fddabfc46c0bca5ad5`
 Test-only: the scan's link test sets date and uuid for transact, and the suspended-task test goes because URLSession lists only resumed tasks (#481)
 
+## 2026-10-03 22:56:05 EDT — scribe `c4fedb06fe03e51e6142f24e0f77197433642616`
+Change log: one 'unavailable' in the Shares entries' SpecStory lines (#497)
+
+## 2026-10-03 22:55:56 EDT — scribe `07cae3bcb7802f7a6655a15b9ee1bbf218b1e5be`
+Record the Shares screen's commits in the change log (#497)
+
+## 2026-10-03 22:42:54 EDT — scribe `31eb9012425132b83724d6a3e6417317796ca2fe`
+Shares: unsharing that leaves the list short loads older shares (#497)
+
 ## 2026-10-03 22:32:10 EDT — scribe `2dc182399b0cb8f07204661e6de694bfb024cb3f`
 Merge song-relisten's matcher queue, and set Scribe 0.1 (86): the song matcher's loop and its result tasks run on a serial queue of their own, so a blocked shared pool can't stop the windows after the first (#444)
 
@@ -490,14 +517,29 @@ Draft comments through the personal-information rewrite: the comment's words, th
 ## 2026-10-03 22:28:17 EDT — realtime-voice-sqlite-instant `8d80d15f30aac8d7453a6086a3e68bbc0ec9b4cf`
 Rewrite personal information before anything goes public: Michael's private mapping first, the drafting agent's list second, Presidio and the companion's patterns last (ADR 0044 section 8, #478)
 
+## 2026-10-03 22:26:47 EDT — scribe `742944062e6e3a9e26e2bc8190d186ade2d9f93e`
+Shares: fix the two compile errors a typecheck found, and swipe to copy a link (#497)
+
 ## 2026-10-03 22:13:18 EDT — scribe `4d2a909bc5bd4893eeb86ee292c6f043f2f9f493`
 Record Scribe 0.1 (84) and (85) in the change log and PROGRESS: 84 on the iPhone and the iPad, 85 on all three devices (#442 #340 #389 #417 #488 #459 #451)
 
 ## 2026-10-03 22:12:56 EDT — realtime-voice-sqlite-instant `7bd60c6e4a58d04444f031a2d2bf3a84d336ca12`
 Publish only the projection's own secret: a comment share's row keeps a private token, so an anonymous guest with the link reads nothing but the projection and its clip (#478)
 
+## 2026-10-03 22:11:54 EDT — scribe `b25b611e470382cf789146e86d5be8c1b45fa12b`
+Shares tests: build the repeated share before the sendable client closure (#497)
+
+## 2026-10-03 22:10:03 EDT — scribe `879fa93a3b78e91cb93e13176ada9449e4a86f4d`
+Shares screen: every share you made, newest first, to open, copy, or unshare (green) (#497)
+
+## 2026-10-03 22:09:52 EDT — scribe `c8a093bbdc97dcaeffde5d2307c370ec16d58cf5`
+Shares screen tests, with stub bodies of the same API (red) (#497)
+
 ## 2026-10-03 22:06:55 EDT — realtime-voice-sqlite-instant `454fe2ff7b615a8d7cfd7a77d1173f7e127d92a7`
 Plan the PII rewrite layer for every public output, and the published-token hole to close first (proposed, awaiting main; #478)
+
+## 2026-10-03 22:05:43 EDT — scribe `16ddd2080663254e09d3b851b56b52ab9c1de250`
+Amend the Shares screen plan: one transaction unshares, and claim the Mac shell test (#497)
 
 ## 2026-10-03 22:00:49 EDT — scribe `5c8241caf45a244239e2bd400266a5b07c39025c`
 Two markers switch on a non-optional value (#492)
@@ -547,6 +589,15 @@ Merge capture-isolation's test fix: a live speech session, a lenient effect skip
 ## 2026-10-03 20:02:27 EDT — scribe `47fd2250717e543fb106a48a0f98ec07e585a4a0`
 Plan mic-mode: Settings chooses the recording's microphone mode, Clean (measurement) or Standard (default), for Michael's A/B (#122, ADR 0040 question 3)
 
+## 2026-10-03 19:59:44 EDT — scribe `ce97d11c91edb6e8d1c893ab9a3bf0694630dce9`
+Record the watchOS compile fix and the default-on switch in the change log (#389)
+
+## 2026-10-03 19:59:44 EDT — scribe `0f6506553202727957c51d815d399a0531b5523a`
+Select Sections is on by default; Settings turns it off (#389)
+
+## 2026-10-03 19:56:24 EDT — scribe `3ef77542700dc4f860742aefe1f4e8536ebb387f`
+Select Sections' reducer checks the Shared phase with a pattern, so the watchOS build compiles (#389)
+
 ## 2026-10-03 19:54:02 EDT — realtime-voice-sqlite-instant `266328cc270f4ce01c7034f8c9920cdb5a07bf70`
 Describe the share page fixture by the projection, and delete projections with its shares (#478)
 
@@ -574,11 +625,23 @@ Merge durability-unstick's fixes for the #480 and #482 failures: a retry that me
 ## 2026-10-03 19:26:28 EDT — scribe `e43ac5760bbfb497712924ccc66f6cfb1348d9eb`
 Merge durability-unstick's test fixes into transcript-journal: the lane's retry guard 55e5a98f, the #480 and #482 test fixes 7a6b934a, and B's ledger 29b5f313 (#482)
 
+## 2026-10-03 19:26:16 EDT — scribe `33eeae557805169cb59671e1fc616ad32485ee9f`
+Record the Mac people field's alignment in the change log (#389)
+
+## 2026-10-03 19:25:58 EDT — scribe `33c9e0ae100af3431a2118859cdfce64211c8aa8`
+On the Mac, the people field is left-aligned, so a cleared field scrolls back and shows its whole placeholder (#389)
+
 ## 2026-10-03 19:25:07 EDT — scribe `7a6b934aa7fd9a850fe4e0754f967e2bb84a344d`
 The #480 and #482 tests wait for what they check, read the state they receive, and give the lane a clock and the system audio a frame spool (#480 #482)
 
 ## 2026-10-03 19:24:53 EDT — scribe `55e5a98fba7ab57fefac454aee15b096733b17d0`
 A retry that merges an owner while an attempt runs starts no second drain (#482)
+
+## 2026-10-03 19:09:01 EDT — scribe `10d1ac5c6d44977fe2dc2d10581d1fe4a3f9c48c`
+Record the Mac placeholder fix in the change log (#389)
+
+## 2026-10-03 19:08:48 EDT — scribe `643fa01283943e920f800b8a013f9819320bc16e`
+On the Mac, the people field replaces its text through the field editor, so a cleared field shows its whole placeholder (#389)
 
 ## 2026-10-03 19:00:23 EDT — realtime-voice-sqlite-instant `a55b20cd931c287a66eeb9b6504881bf4416103e`
 Clear a comment's old failure when Try Again posts it with a fresh attempt (#478)
@@ -588,6 +651,12 @@ Merge headphone-mic's play-span fix: the play span effect reads the clock only w
 
 ## 2026-10-03 18:59:34 EDT — scribe `fafb9f23112c7e89b3d7c761ef3884259cf40658`
 Merge ui-polish's compile fix: full screen's Back to Live gets its own case, since a case's patterns must all bind the same names (#451)
+
+## 2026-10-03 18:57:25 EDT — scribe `d95d605fa64cfcdd788b8e95bb689d6e420cbeff`
+Record the Close test fixes and r7's suites in the change log (#389)
+
+## 2026-10-03 18:57:24 EDT — scribe `786dc0f0f449a6bcfa07a610516cdac8958a803c`
+Test Close's discard question the way the sheet runs it: one store per close (#389)
 
 ## 2026-10-03 18:49:59 EDT — scribe `85e8e756c1ac6808333970bba15ea3602bb0a41e`
 The play span effect reads the clock only when a span can open or end, and the bar and fold tests hold the span their playback opens (#435)
@@ -1096,6 +1165,12 @@ Open the resume-cut-off channel: the #458 split with ui-polish and list-edit-mod
 ## 2026-10-03 14:37:50 EDT — scribe `0850130ce4d02ea5ea7ecce4c4d14da82b03a870`
 Renumber the looking-at ADR from 0042 to 0046: 0042 is mic-gap's headset microphone (#469)
 
+## 2026-10-03 14:35:45 EDT — scribe `071107f3a41dac55a39a12436714a8c1449664d1`
+Record the ADR 0014 Q1 and Q2 answers in the change log (#389 #478)
+
+## 2026-10-03 14:35:45 EDT — scribe `80757997f25a80213a17e7b90ea5160e214ead33`
+ADR 0014 Q1 and Q2 answered: Michael's Recording 186 words, verified in the mirror (#389)
+
 ## 2026-10-03 14:35:19 EDT — realtime-voice-sqlite-instant `c9714a73d9fac365145b41e88bb3ca276886b3a8`
 Record Michael's verbatim answer to ADR 0044 Q1: "Yes, that channel" (#478)
 
@@ -1369,6 +1444,21 @@ The span test waits for its saves instead of cancelling them (#435)
 ## 2026-10-03 11:32:20 EDT — scribe `1e95b90c8548524810478ca22029cea44bee0fc7`
 Merge main's SoundAnalysis plan and claims after the 0.1 (83) release commit (#440).
 
+## 2026-10-03 11:31:51 EDT — scribe `69efb689c72d525590faf2450eaccf73f5e9780c`
+Record the finished-share swipe fix in the change log (#389)
+
+## 2026-10-03 11:31:51 EDT — scribe `580d9b68eb3446cf50ba5f9618c5a4f60c483050`
+A finished share can be swiped away: only unfinished work holds the Select Sections sheet (#389)
+
+## 2026-10-03 11:30:01 EDT — scribe `8d7258df986d17fb97a1dea587242ceafc9bbb74`
+Record the discard question, the iPad page size at AX5, Join Parts, and the wrapping chips in the change log (#389)
+
+## 2026-10-03 11:29:14 EDT — scribe `13691443c65a361654bdc6ab312db839205afdec`
+The people's chips wrap from row to row, with 44-point hit regions, and the people field stays in view (#389)
+
+## 2026-10-03 11:29:14 EDT — scribe `6150ee07d776cc681cd7a59b13bb0e975e8896ad`
+Select Sections asks before discarding picks, takes the page size at AX5 on iPad, and gives Join Parts readable text (#389)
+
 ## 2026-10-03 11:24:32 EDT — scribe `7f12cc09d910135c803e3941f1b265353045f5bb`
 The gained output plays its node only while its engine runs, as the live recording's player does (#122, ADR 0040)
 
@@ -1386,6 +1476,21 @@ Play Scribe's own playback during a recording through a gain stage and a limiter
 
 ## 2026-10-03 11:19:09 EDT — scribe `139d8d432bc9aece0e161824932e5ec0df82afc1`
 Amend plan playback-links (c): Scribe's own playback during a recording plays through a gain stage and a limiter (#122)
+
+## 2026-10-03 11:14:46 EDT — scribe `f04fd7f6c07aa540cab29ef4fb4341406a350290`
+Record the Mac people field and the Mac empty-state wording in the change log (#389)
+
+## 2026-10-03 11:14:32 EDT — scribe `97a445fed7f1831de7dc6310865fa44a07914fbb`
+On the Mac, the picker's empty footer says "Click a line to start" (#389)
+
+## 2026-10-03 11:11:05 EDT — scribe `199d71a18dd6397c7b3e44e36c2a3bdc996c5498`
+On the Mac, make the people field an AppKit text field that shows exactly the text the reducer kept (#389)
+
+## 2026-10-03 10:56:04 EDT — scribe `301926dfa15e747c53c8a7fbfe05a62de09ef3ee`
+Record the duplicate-person test fix and the r6 results in the change log (#389)
+
+## 2026-10-03 10:55:52 EDT — scribe `5c468dfdecd92316e01ec8983fdc6ae51d3575f4`
+Type the duplicate person the way keystrokes arrive in separatorsTurnFinishedEmailsIntoPeopleAtOnce (#389)
 
 ## 2026-10-03 10:55:05 EDT — scribe `b1d4739255c4df3bb227908192ee3a66e3aa7446`
 Review fixes for playback-links before its first hold: the play kind in two completeness tests, a guest's plays move with the merge, and the route line says the mode and volumes (#435 #122).
@@ -1518,6 +1623,9 @@ Record Scribe 0.1 (81) in the change log and PROGRESS: installed on the iPhone, 
 
 ## 2026-10-03 03:22:37 EDT — instant-data-swift `1976f8aaf588e3c7b60501e0663dc366eadea940`
 #431: the server's facts are authoritative over this device's accepted writes, as in Reactor.js. Single-value slots take the server's value whatever the stamps, a slot the server cleared loses the store's values (slots a result held and slots its query selects), only a pending write of a cleared slot protects it, and a write pruned in the same apply protects nothing; red on v1.9.1, green here, including the iPad's pulled store and a store v1.9.1 left stuck (#431 #408).
+
+## 2026-10-03 03:05:49 EDT — scribe `7b63d1bbc657b9bdedd586806ab0fd82b59d055c`
+Record the people field's burst-typing fix in the change log (#389)
 
 ## 2026-10-03 02:34:58 EDT — scribe `383890151e7450063c16785f5a3406feab3e83d3`
 Record the sync-status test's loop fix in the change log (#308).
