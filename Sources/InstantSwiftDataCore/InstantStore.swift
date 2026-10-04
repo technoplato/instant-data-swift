@@ -3013,6 +3013,11 @@ public actor InstantStore {
     indexes.tripleCount
   }
 
+  /// How many many-cardinality slots the store's materializations sorted (#570).
+  func manyCardinalitySortCountForTesting() -> Int {
+    indexes.manyCardinalitySortCount
+  }
+
   /// How many transaction IDs the store's interner holds, live or not (#541).
   package func internedTransactionIDCount() -> Int {
     indexes.internedTransactionIDCount

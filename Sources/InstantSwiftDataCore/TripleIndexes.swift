@@ -1,4 +1,5 @@
 import Foundation
+import os
 
 struct AttributeStore: Hashable, Codable, Sendable {
   private var attributesByID: [String: InstantAttribute] = [:]
@@ -618,6 +619,20 @@ private final class TxIDInterner: @unchecked Sendable {
   }
 }
 
+/// How many many-cardinality slots the copies of one `TripleIndexes` sorted while materializing (#570), for tests. The
+/// lock keeps the count right however many tasks materialize copies at once.
+final class ManyCardinalityOrders: Sendable {
+  private let sorts = OSAllocatedUnfairLock(initialState: 0)
+
+  var sortCount: Int {
+    sorts.withLock { $0 }
+  }
+
+  func recordSort() {
+    sorts.withLock { $0 += 1 }
+  }
+}
+
 struct TripleIndexes: Codable, Sendable {
   private struct DerivedIndexAttributeShape: Hashable, Sendable {
     var namespace: String
@@ -708,6 +723,8 @@ struct TripleIndexes: Codable, Sendable {
     }
   }
   private var internCaches = InternCaches()
+  /// Not encoded, compared or hashed: a count for tests (#570).
+  private let manyCardinalityOrders = ManyCardinalityOrders()
   private var pendingInternEntityID: String?
   private var pendingInternNamespace: String?
   private var pendingInternValues: [String: InstantMaterializedValue] = [:]
@@ -3870,6 +3887,7 @@ private struct PreparedInclude {
       return .one(value)
 
     case .many:
+      manyCardinalityOrders.recordSort()
       return .many(
         slot.keys.sorted { $0.comparableKey < $1.comparableKey }
       )
@@ -4678,6 +4696,11 @@ private struct PreparedInclude {
 
   var internedCardinalityOneEntityCount: Int {
     internCaches.internedEntityCount
+  }
+
+  /// How many many-cardinality slots these indexes and their copies sorted while materializing (#570).
+  var manyCardinalitySortCount: Int {
+    manyCardinalityOrders.sortCount
   }
 
   mutating func internChangedEntities(

@@ -38,6 +38,10 @@ struct InstantDomainAEVBench {
 
   private static func run() async throws {
     _ = pthread_set_qos_class_self_np(QOS_CLASS_USER_INTERACTIVE, 0)
+    if CommandLine.arguments.contains("--many-refs") {
+      await ManyRefsBench.run()
+      return
+    }
     let quietWait = await waitForQuietHost()
     let baseline = InstantProcessMemory.sample()
     let triples = productSeedTriples()
