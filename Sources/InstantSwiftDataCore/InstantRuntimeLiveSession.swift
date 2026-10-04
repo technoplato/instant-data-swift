@@ -407,15 +407,17 @@ package actor InstantRuntimeLiveSession {
   private var registeredRooms: [InstantRoomHandle: RegisteredRoom] = [:]
   /// Presence the runtime published in a room it has not joined yet, for the join to carry (#461).
   private var presenceBeforeJoin: [InstantRoomHandle: (values: [String: JSONValue]?, sequence: UInt64)] = [:]
-  /// Each room's lane (#461): one presence or broadcast write at a time, in the order this actor recorded them, as
-  /// upstream `Reactor.js` writes with a synchronous `ws.send` in call order. `send(_:through:)` writes from its own
-  /// task, so two sends that overlapped could reach the socket in either order: an older set-presence could land after a
-  /// newer one (`racingPresencePublishesLeaveTheNewestOnTheWire` failed 1 of 3 runs under load), and two topic
-  /// publishes could invert (v1.9.5 held the operation gate across each publish). The lane is held from a write's start
-  /// until it returns; the writes waiting for it queue first in, first out. Its holder and waiters are kept here, off
-  /// `RegisteredRoom`, so leaving the room while writes wait still hands the lane on and every waiter returns. A waiter
-  /// cannot leave early on cancellation (a checked continuation ignores it), but each wait is bounded by the holder's
-  /// send timeout, and after the socket closes the waiters return without writing.
+  /// Each room's lane (#461, #563): one room write at a time on an open socket (join-room, leave-room, set-presence,
+  /// client-broadcast), in the order this actor recorded them, as upstream `Reactor.js` writes with a synchronous
+  /// `ws.send` in call order. `send(_:through:)` writes from its own task, so two sends that overlapped could reach the
+  /// socket in either order: an older set-presence could land after a newer one
+  /// (`racingPresencePublishesLeaveTheNewestOnTheWire` failed 1 of 3 runs under load), two topic publishes could
+  /// invert (v1.9.5 held the operation gate across each publish), and a rejoin could pass the leave before it, so the
+  /// server kept the room left (#563). The lane is held from a write's start until it returns; the writes waiting for
+  /// it queue first in, first out. Its holder and waiters are kept here, off `RegisteredRoom`, so leaving the room
+  /// while writes wait still hands the lane on and every waiter returns. A waiter cannot leave early on cancellation (a
+  /// checked continuation ignores it), but each wait is bounded by the holder's send timeout, and after the socket
+  /// closes the waiters return without writing.
   private var roomLanesInUse: Set<InstantRoomHandle> = []
   private var roomLaneWaiters: [InstantRoomHandle: [CheckedContinuation<Void, Never>]] = [:]
   private var nextBroadcastSequence: UInt64 = 0
@@ -423,6 +425,11 @@ package actor InstantRuntimeLiveSession {
   /// newest presence, so a write queued behind it with an older publication is skipped: the wire never reads 6, 5, 6.
   private var writtenPresence: [InstantRoomHandle: (session: UUID, sequence: UInt64)] = [:]
   private var nextRoomIncarnation: UInt64 = 0
+  /// The rooms whose rejoin `open` is writing to the socket it installed, and the joins and leaves of each room waiting
+  /// for it (#563). The rejoin stays outside the room's lane, so a write the dropped socket never finished cannot hold
+  /// up the new one; a leave made while the rejoin is written waits here, in the lane, and follows it.
+  private var rejoinsBeingWritten: [InstantRoomHandle: (session: UUID, waiters: [CheckedContinuation<Void, Never>])] =
+    [:]
   private var registeredStreamReaders: [String: RegisteredStreamReader] = [:]
   private var pendingStreamStarts:
     [String: AsyncThrowingStream<InstantLiveStartStreamOK, Error>.Continuation] = [:]
@@ -855,8 +862,15 @@ package actor InstantRuntimeLiveSession {
           recovery: "Inspect the Instant runtime WebSocket protocol handling."
         )
       }
-      for room in registeredRooms.keys.sorted(by: Self.roomOrder) {
-        guard let registration = registeredRooms[room] else { continue }
+      let rejoins = registeredRooms.keys.sorted(by: Self.roomOrder).compactMap { room in
+        registeredRooms[room].map { (room: room, incarnation: $0.incarnation) }
+      }
+      for (room, incarnation) in rejoins {
+        // A room joined again since the socket opened wrote its own join-room; one left meanwhile is not rejoined.
+        guard let registration = registeredRooms[room], registration.incarnation == incarnation else { continue }
+        // A leave or join of the room made while this is written waits for it (#563).
+        beginRejoin(of: room, on: opened)
+        defer { finishRejoin(of: room, on: opened) }
         try await send(
           .joinRoom(
             registration.room,
@@ -1816,7 +1830,15 @@ package actor InstantRuntimeLiveSession {
       incarnation: nextRoomIncarnation
     )
     guard let session, isOpened else { return }
-    try await send(.joinRoom(room, presence: early?.values, clientEventID: clientEventID), through: session)
+    // The join takes the room's lane in this actor turn (#563): a leave of the room's previous join, and any presence
+    // or broadcast still being written to it, go out first. It is never skipped on the same socket, as `Reactor.js`'s
+    // `_tryJoinRoom` always writes.
+    try await inRoomLane(of: room) {
+      guard await joinOrLeaveCanBeWritten(room, to: session) else { return }
+      // Nothing the lane wrote before this belongs to the join written now.
+      writtenPresence[room] = nil
+      try await send(.joinRoom(room, presence: early?.values, clientEventID: clientEventID), through: session)
+    }
   }
 
   /// Whether the server confirmed the join of `room` on the current connection: `join-room-ok`, or a presence frame or
@@ -1841,7 +1863,13 @@ package actor InstantRuntimeLiveSession {
     registeredRooms[room] = nil
     writtenPresence[room] = nil
     guard let session, isOpened else { return true }
-    try await send(.leaveRoom(room, clientEventID: clientEventID), through: session)
+    // The leave takes the room's lane in this actor turn (#563): presence and broadcasts still being written to this
+    // join go out first, and a rejoin made after it waits for it.
+    try await inRoomLane(of: room) {
+      guard await joinOrLeaveCanBeWritten(room, to: session) else { return }
+      writtenPresence[room] = nil
+      try await send(.leaveRoom(room, clientEventID: clientEventID), through: session)
+    }
     return true
   }
 
@@ -1880,8 +1908,8 @@ package actor InstantRuntimeLiveSession {
     }
   }
 
-  /// Runs `body` holding `room`'s lane, after every presence and broadcast write of the room that took the lane before
-  /// it. The lane is released when `body` returns or throws.
+  /// Runs `body` holding `room`'s lane, after every room write of the room that took the lane before it. The lane is
+  /// released when `body` returns or throws.
   private func inRoomLane(
     of room: InstantRoomHandle,
     _ body: () async throws -> Void
@@ -1907,6 +1935,43 @@ package actor InstantRuntimeLiveSession {
     next.resume()
   }
 
+  /// Whether a join or leave that waited in the room's lane still goes to `session` (#563): the socket is still the open
+  /// one, once the reconnect's rejoin of the room, if one is being written, has been written. On the same socket a
+  /// join or leave is never skipped; on another one the rejoin, or the room's absence from it, already says the same.
+  private func joinOrLeaveCanBeWritten(
+    _ room: InstantRoomHandle,
+    to session: InstantLiveWebSocketSession
+  ) async -> Bool {
+    guard self.session?.identity == session.identity, isOpened else { return false }
+    await waitForRejoin(of: room, on: session)
+    return self.session?.identity == session.identity && isOpened
+  }
+
+  private func beginRejoin(of room: InstantRoomHandle, on session: InstantLiveWebSocketSession) {
+    if let earlier = rejoinsBeingWritten.removeValue(forKey: room) {
+      for waiter in earlier.waiters { waiter.resume() }
+    }
+    rejoinsBeingWritten[room] = (session.identity, [])
+  }
+
+  private func finishRejoin(of room: InstantRoomHandle, on session: InstantLiveWebSocketSession) {
+    guard let rejoin = rejoinsBeingWritten[room], rejoin.session == session.identity else { return }
+    rejoinsBeingWritten[room] = nil
+    for waiter in rejoin.waiters { waiter.resume() }
+  }
+
+  /// Waits until the reconnect's rejoin of `room` on `session`, if one is being written, has been written.
+  private func waitForRejoin(of room: InstantRoomHandle, on session: InstantLiveWebSocketSession) async {
+    guard rejoinsBeingWritten[room]?.session == session.identity else { return }
+    await withCheckedContinuation { continuation in
+      if rejoinsBeingWritten[room]?.session == session.identity {
+        rejoinsBeingWritten[room]?.waiters.append(continuation)
+      } else {
+        continuation.resume()
+      }
+    }
+  }
+
   /// Whether a write that waited in the room's lane still has somewhere to go: the same socket, open, and the same join
   /// of the room, confirmed by the server. Otherwise the next join carries the room's newest presence, and a broadcast
   /// goes back among the queued ones.
@@ -1930,9 +1995,9 @@ package actor InstantRuntimeLiveSession {
     return written.sequence >= sequence
   }
 
-  /// How many presence and broadcast writes wait for `room`'s lane, for tests.
+  /// How many room writes wait for `room`'s lane, or for its rejoin being written, for tests.
   func roomLaneWaiterCount(_ room: InstantRoomHandle) -> Int {
-    roomLaneWaiters[room]?.count ?? 0
+    (roomLaneWaiters[room]?.count ?? 0) + (rejoinsBeingWritten[room]?.waiters.count ?? 0)
   }
 
   func publishTopic(

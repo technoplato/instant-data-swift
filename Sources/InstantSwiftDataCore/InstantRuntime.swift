@@ -6524,7 +6524,7 @@ public final class InstantRuntime: Sendable {
     (try? await persistence.sqlitePagesWrittenForTesting()) ?? (0, 0)
   }
 
-  /// How many presence and broadcast writes wait for `room`'s lane in the live session (#461).
+  /// How many room writes wait for `room`'s lane in the live session, or for its rejoin being written (#461, #563).
   package func roomPresenceLaneWaiterCountForTesting(_ room: InstantRoomHandle) async -> Int {
     await liveSession.roomLaneWaiterCount(room)
   }

@@ -81,9 +81,13 @@ the rooms code in `Reactor.js` is identical to the library's pin `e7101761`) fou
    presence; `Reactor.js` has no such queue (its writes are synchronous), so it never needs the rule. Broadcasts are
    never skipped: one that waited for a socket that closed goes back among the queued broadcasts in publication order,
    and only a broadcast whose room was left is dropped, as `Reactor.js`'s `publishTopic` returns for a room it no longer
-   has. Open: `join-room` and `leave-room` still go outside the lane (#563, planned for 1.9.9), and after a rejoin with
-   queued broadcasts the room-frame task waits for the flush. Library-79 implemented it on the 1.9.8 branch: red tests
-   `410b28ca` and `0998556f`, the lane `8dc4321d` and `1b4dcf0a`; the rooms agent reviewed both.
+   has. Library-79 implemented it on the 1.9.8 branch: red tests `410b28ca` and `0998556f`, the lane `8dc4321d` and
+   `1b4dcf0a`; the rooms agent reviewed both. In 1.9.9 (#563) `join-room` and `leave-room` on an open socket take the
+   lane too and are never skipped on it, so a leave and a rejoin, or a write still in flight and a leave, reach the
+   wire in call order. The reconnect's rejoin on a new socket stays outside the lane, so a write the dropped socket
+   never finished cannot hold up the new one; a join or leave made while the rejoin is written waits for it in the
+   lane. Red tests `2d3b6ae1`; the fix follows them. Open: after a rejoin with queued broadcasts the room-frame task
+   waits for the flush.
 
 ## Parity with Reactor.js after this ADR (the study's section 1)
 
@@ -91,7 +95,7 @@ the rooms code in `Reactor.js` is identical to the library's pin `e7101761`) fou
 |---|---|
 | Join | Parity: a presence set before the join goes in `join-room`, and again on `join-room-ok`. |
 | Refcount, leave on last | Parity, with Swift's explicit refcount; only the last holder's leave forgets the room. |
-| Leave while join pending | Swift sends `leave-room` at once; `Reactor.js` waits for `join-room-ok`. Same result (the server keeps order). |
+| Leave while join pending | Swift sends `leave-room` at once, after the `join-room` in the room's lane (#563); `Reactor.js` waits for `join-room-ok`. Same result: the server applies one socket's frames in order. |
 | Publish presence | Swift replaces the values (`setPresence`); `Reactor.js` merges partial data. Kept: Swift's typed values are whole objects. Writes keep call order (decision 9). |
 | Presence before join | Parity (decision 5). |
 | Subscribe joins implicitly | Not adopted: Swift joins explicitly (`joinRoom`), as before. |
