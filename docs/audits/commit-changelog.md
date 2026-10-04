@@ -1,11 +1,56 @@
+## 2026-10-04 00:41:42 EDT — instant-data-swift `6883dbeaeec168ed3ebefefeadd4952e2bb38a60`
+Merge library-79-hops into main for v1.9.6 (#454 #473).
+
+## 2026-10-04 00:40:53 EDT — instant-data-swift `226ab93b2a028b01f54ca7a186e90446744197a1`
+Document the v1.9.6 release: a stored file downloads to a destination file, streaming, and the log file is written in batches (#454 #473).
+
+## 2026-10-04 00:36:29 EDT — realtime-voice-sqlite-instant `10f7444484a0d1169a62ab8f6e1612fcfb22ee6d`
+Tell reply-notifications and the integrator about the router's category registry and the foreground comment actions (#478)
+
+## 2026-10-04 00:35:10 EDT — realtime-voice-sqlite-instant `342f0381db4a80fcadc33fe2674f05ae9b452728`
+Record the notification category registry and the foreground public actions in the change log (#478)
+
+## 2026-10-04 00:34:08 EDT — realtime-voice-sqlite-instant `b1496cc586c88c68eb08dc159cd440510eae65cc`
+One notification category registry in the router, and Post Comment, Try Again, and Delete Comment open Scribe (#478)
+
+## 2026-10-04 00:28:53 EDT — realtime-voice-sqlite-instant `4b8687f34c2104861fcaf95705600167917cb726`
+Red: one notification category registry in the router, and Post Comment, Try Again, and Delete Comment open Scribe (#478)
+
+## 2026-10-04 00:23:40 EDT — scribe `f5a59a77d456e94311ac916f767d8be24b07ec91`
+Record the Recording 189 run in the change log (#161)
+
+## 2026-10-04 00:23:40 EDT — scribe `1bbe772dfe5b37e254d12a2eaa0583a495b832ce`
+Record the exact Recording 189 run in the benchmark results (#161)
+
+## 2026-10-04 00:23:28 EDT — scribe `c8bd402be2aa43f8fcb96dbcfa1f1ca5b90c9823`
+Record the removed one-time reset in the change log (#161 #442)
+
+## 2026-10-04 00:23:28 EDT — scribe `b84a2d0794e97a183325e9f9bbe4ad6925d4419a`
+A saved off stays off: no one-time reset, since every saved off is the person's own toggle (#161 #442)
+
+## 2026-10-04 00:19:22 EDT — scribe `b37e25eedbfbf484412dde15c58da0645462046d`
+Merge origin/main into voice-command-markers for 87 (#492 #161)
+
+## 2026-10-04 00:04:36 EDT — scribe `57b685fef575653a47335646f94103df4d166cf6`
+Record the markers' verification fixes in the change log (#492)
+
 ## 2026-10-03 23:59:07 EDT — scribe `705b80f85e4c12e807a9c9dad834c62d633950a0`
 Merge issue-create-only for 86: upsert-issue creates new issues only; an existing number is refused and nothing is written, unless --update (#502)
 
 ## 2026-10-03 23:59:00 EDT — scribe `c0253b1305886581057b368cd3b26504cbaf1558`
 Merge main's plans into 86: threads-rows, architecture-paths and issue-create-only (#499 #502)
 
+## 2026-10-03 23:44:25 EDT — instant-data-swift `f7b91bff046c9ea6e6c26f263346a02f8f58e2f9`
+Read the download tests' recorder and stored files before expectNoDifference, which cannot await in its autoclosures (#454).
+
 ## 2026-10-03 23:39:43 EDT — scribe `9de4bb5dc811a3b43c812683416aca398e547509`
 Merge background-uploads' test fixes for 86: the scan's link test sets date and uuid for transact, and the suspended-task test goes, since URLSession lists only resumed tasks (#481)
+
+## 2026-10-03 23:17:48 EDT — scribe `ec599ffc61f81644ecb25fd8c578487662a83197`
+Record background-uploads' test-only gate-86b fixes in the change log (#481)
+
+## 2026-10-03 23:17:48 EDT — scribe `81f629f16322399f0717f2fddabfc46c0bca5ad5`
+Test-only: the scan's link test sets date and uuid for transact, and the suspended-task test goes because URLSession lists only resumed tasks (#481)
 
 ## 2026-10-03 22:32:10 EDT — scribe `2dc182399b0cb8f07204661e6de694bfb024cb3f`
 Merge song-relisten's matcher queue, and set Scribe 0.1 (86): the song matcher's loop and its result tasks run on a serial queue of their own, so a blocked shared pool can't stop the windows after the first (#444)
@@ -55,8 +100,47 @@ Resolve Package.resolved to instant-data-swift 1.9.5 (e7c6ffb3) with a plain swi
 ## 2026-10-03 22:30:59 EDT — scribe `027a21dee0d006cd9270b2ab5d3bffcf34767235`
 Merge song-relisten: the song matcher logs its windows and restarts when it stalls (#444), the weather row says when its reading is for (#446), and its Apple Weather attribution is one quiet line (#453)
 
+## 2026-10-03 22:29:46 EDT — realtime-voice-sqlite-instant `1680783097ff68d15f272a7050991d32120d5517`
+Record b3b5e295 through 4a29df51 in the change log: the share-page fixture, the separate secrets, and the personal-information rewrite (#478)
+
+## 2026-10-03 22:29:25 EDT — realtime-voice-sqlite-instant `4a29df51ae33073119a703ccb0c312e73a11cb25`
+Write the personal-information rewrite into ADR 0044 section 8, the design doc, the plan, and the standing agent's instructions (#478)
+
+## 2026-10-03 22:28:38 EDT — realtime-voice-sqlite-instant `7f28f594e2066016b9e6d9259a7f759dabad3844`
+Install Presidio's private venv with the companion, queue the transcriber's build through heavy.sh, and prove the rewrite end to end on bd40c50a (#478)
+
+## 2026-10-03 22:28:30 EDT — realtime-voice-sqlite-instant `33636900cae8aba1b7491a7496e4a3e538bc6003`
+Mute the clip's rewritten words, and run a second transcription of the clip so a name the recording's recognizer misheard is muted too (#478)
+
+## 2026-10-03 22:28:30 EDT — realtime-voice-sqlite-instant `bd9c6f6a13f08200a437f31d9a958f2c25c4f089`
+Draft comments through the personal-information rewrite: the comment's words, the page's words, and the clip's mute ranges, failing closed; and `comment check` for the drafting agent (#478)
+
+## 2026-10-03 22:28:17 EDT — realtime-voice-sqlite-instant `8d80d15f30aac8d7453a6086a3e68bbc0ec9b4cf`
+Rewrite personal information before anything goes public: Michael's private mapping first, the drafting agent's list second, Presidio and the companion's patterns last (ADR 0044 section 8, #478)
+
 ## 2026-10-03 22:13:18 EDT — scribe `4d2a909bc5bd4893eeb86ee292c6f043f2f9f493`
 Record Scribe 0.1 (84) and (85) in the change log and PROGRESS: 84 on the iPhone and the iPad, 85 on all three devices (#442 #340 #389 #417 #488 #459 #451)
+
+## 2026-10-03 22:12:56 EDT — realtime-voice-sqlite-instant `7bd60c6e4a58d04444f031a2d2bf3a84d336ca12`
+Publish only the projection's own secret: a comment share's row keeps a private token, so an anonymous guest with the link reads nothing but the projection and its clip (#478)
+
+## 2026-10-03 22:06:55 EDT — realtime-voice-sqlite-instant `454fe2ff7b615a8d7cfd7a77d1173f7e127d92a7`
+Plan the PII rewrite layer for every public output, and the published-token hole to close first (proposed, awaiting main; #478)
+
+## 2026-10-03 22:00:49 EDT — scribe `5c8241caf45a244239e2bd400266a5b07c39025c`
+Two markers switch on a non-optional value (#492)
+
+## 2026-10-03 21:59:54 EDT — scribe `44db3657e1dc457a98fd2789b1cc7c509638e47c`
+The recording's core switch lists voiceCommandRan, so RecordingFeature compiles (#492)
+
+## 2026-10-03 21:48:01 EDT — scribe `1b0f59171b0557281d0e281d22b974ffd0146acc`
+The one-time reset tests call the mutating reset before #expect, so they compile (#161 #442)
+
+## 2026-10-03 21:37:34 EDT — realtime-voice-sqlite-instant `6a75cb264fa20f25b16683593dcb3999444c7c65`
+Record the settings query rename in the change log (#478)
+
+## 2026-10-03 21:37:34 EDT — realtime-voice-sqlite-instant `a6c0aaccd352cf259b71028d6db0177fa1818581`
+Name the YouTube settings query newestRowQuery, so it never shares a name with the entity's inherited query (#478)
 
 ## 2026-10-03 21:26:41 EDT — scribe `6c603407341456c7ac6e32d1bb2311b0eeb261e3`
 Merge ui-polish's bar test fix: the browsing screens' bar test expects the live piece's Back to Live while the recording captures, as #451 made it (#451)
@@ -91,6 +175,12 @@ Merge capture-isolation's test fix: a live speech session, a lenient effect skip
 ## 2026-10-03 20:02:27 EDT — scribe `47fd2250717e543fb106a48a0f98ec07e585a4a0`
 Plan mic-mode: Settings chooses the recording's microphone mode, Clean (measurement) or Standard (default), for Michael's A/B (#122, ADR 0040 question 3)
 
+## 2026-10-03 19:54:02 EDT — realtime-voice-sqlite-instant `266328cc270f4ce01c7034f8c9920cdb5a07bf70`
+Describe the share page fixture by the projection, and delete projections with its shares (#478)
+
+## 2026-10-03 19:53:47 EDT — realtime-voice-sqlite-instant `b3b5e295703a01edbca8d2dd23a66c180a55fc55`
+Use a neutral sample video in the share page's fixture, not one from Michael's watch history (#478)
+
 ## 2026-10-03 19:42:04 EDT — instant-data-swift `425269bcb50318ecc2cfa1ecd21d1ea01acf6555`
 Give the operation gate priorities, hydrate and publish off it, and classify write failures (#473 #482).
 
@@ -117,6 +207,9 @@ The #480 and #482 tests wait for what they check, read the state they receive, a
 
 ## 2026-10-03 19:24:53 EDT — scribe `55e5a98fba7ab57fefac454aee15b096733b17d0`
 A retry that merges an owner while an attempt runs starts no second drain (#482)
+
+## 2026-10-03 19:00:23 EDT — realtime-voice-sqlite-instant `a55b20cd931c287a66eeb9b6504881bf4416103e`
+Clear a comment's old failure when Try Again posts it with a fresh attempt (#478)
 
 ## 2026-10-03 18:59:39 EDT — scribe `d96db1d7e883d44d8add989361398354eca1b265`
 Merge headphone-mic's play-span fix: the play span effect reads the clock only when a span can open or end, and the bar and fold tests hold the span their plays open (#435)
@@ -148,11 +241,35 @@ Document the v1.9.5 release: a local write no longer holds the operation gate wh
 ## 2026-10-03 18:30:41 EDT — scribe `3dd786e1598c5e9d0976a490b427f95d38aaf11a`
 Merge security phase 1: only Michael's identities reach the agent tables, screen sessions, legacy rows and stream chunks, and the instantTools namespaces close (#496)
 
+## 2026-10-03 18:27:23 EDT — realtime-voice-sqlite-instant `641e3c2068919a147ed598ac57098268d7539950`
+Record 2f616edb, 0f16c159, 20048c53, 96fc3086, and a32d38db in the change log (#478)
+
+## 2026-10-03 18:26:52 EDT — realtime-voice-sqlite-instant `196a5a7af85f3370a2fb54cab8d3be1718fc52b4`
+Record a31ab358 and 304194e1 in the change log: the agent's scheduling and the installer's load fix (#478)
+
+## 2026-10-03 18:24:57 EDT — realtime-voice-sqlite-instant `a32d38dba73e8d654da443b16498621760e9f7c9`
+Write the public projection into ADR 0044 section 8 and the plan, with the scheduling and the July plugin's deletion (#478)
+
+## 2026-10-03 18:23:31 EDT — realtime-voice-sqlite-instant `96fc3086bb36e311d73e207dc8a37800dc041f35`
+Delete the July YouTube comment plugin: the companion of ADR 0044 replaces it and keeps its safety ideas (#045, #478)
+
+## 2026-10-03 18:22:20 EDT — realtime-voice-sqlite-instant `0f16c159e7194ef1f5a3115a0d463749077a78b3`
+Give the public page its own entity: publicShares holds only the allowlisted fields, readable with the link's secret, while the share row, its sections, and its clip stay closed to signed-out readers (ADR 0044 section 8, #478)
+
+## 2026-10-03 18:22:20 EDT — realtime-voice-sqlite-instant `20048c53c68c02f9c84d4e363fceb7b0541df93f`
+Write each cleared share's public projection with it, keep its clip in step, and take it down with the share (#478)
+
 ## 2026-10-03 18:15:25 EDT — scribe `dde837114a3a074967f188d0c69b1cc649ee3079`
 Record the share schema contract test's clip fields in the change log (#478)
 
 ## 2026-10-03 18:15:25 EDT — scribe `17ff7b692b888cb8d5374a14c19b763d28959973`
 Pin the share schema contract test to production's clip fields: audioClipDurationSeconds, audioClipStatus, validAudioClip and validNewAudioClip (#478)
+
+## 2026-10-03 18:14:40 EDT — realtime-voice-sqlite-instant `304194e14a54ed93b7765877be930605053c19c3`
+Wait for launchd to remove the old companion service before loading the new one, and retry once (#478)
+
+## 2026-10-03 18:13:57 EDT — realtime-voice-sqlite-instant `a31ab3586252697c4d1612d07d40239b50082688`
+Run the YouTube companion's LaunchAgent at utility QoS under ProcessType Standard, so it gets CPU while builds fill the cores (#478)
 
 ## 2026-10-03 18:13:57 EDT — scribe `1abcc63fb51a5bb2e96f4b3c9e9f0d08e287c601`
 Merge headphone-mic with playback-links: the microphone follows a headphone switch, and playing another recording during a recording plays on the loudspeaker and links the two (#122 #435)
@@ -172,6 +289,9 @@ Pass the WAV writer's health and flush-interval closures at the three test call 
 ## 2026-10-03 17:58:35 EDT — scribe `5459c7c645e4faf1fd953a9b32341fd14287c5dc`
 Merge capture-isolation's compile fixes: the WAV writer's events log through a static function, so the microphone effect never captures the reducer, and the isolation test names RecordingFeature.Recording (#488)
 
+## 2026-10-03 17:57:37 EDT — realtime-voice-sqlite-instant `2f616edbb9cc573875021ca023100ba25c49cc78`
+Check every throwaway-app query and write against the schema as production does, so the end-to-end run refuses what production refuses (#478)
+
 ## 2026-10-03 17:55:40 EDT — scribe `66f1d131cf4942feb90b8e3d29211b06da4a4f11`
 Merge ui-polish's ADR 0015 note: the collapsed build chip docks with the bar as an overlay under its glass (#417, build 84 P0)
 
@@ -181,8 +301,20 @@ Merge durability-unstick's change-log entries for #480 and #482 parts A and B (3
 ## 2026-10-03 17:55:10 EDT — scribe `418655c1d841689ce3ca5469c75954667c155a87`
 Name the reducer RecordingFeature.Recording in the capture-isolation test's two signatures, where SharedModels' Recording made the type ambiguous (#488)
 
+## 2026-10-03 17:53:35 EDT — realtime-voice-sqlite-instant `c3f5a2561b026bb51cbebec04c9b9f30c6b1f066`
+Record f9ecfafd in the change log: settings without the refused $users query (#478)
+
+## 2026-10-03 17:51:54 EDT — realtime-voice-sqlite-instant `f9ecfafdcb7b5dac0d28cbde316a5ade35b387fe`
+Read the account's YouTube settings without the $users query production refuses, and never let a settings failure stop the writer (#478)
+
+## 2026-10-03 17:50:22 EDT — realtime-voice-sqlite-instant `2d28a78da52c64e6cd040e60cebc5703133f39fb`
+Record ad9ce1d0 in the change log: the bundled Instant side (#478)
+
 ## 2026-10-03 17:49:47 EDT — scribe `2e12deb32f423d08c96a8bca261cabe4319ca5a7`
 Log the WAV writer's events through a static function, so the microphone effect never captures the reducer (#488)
+
+## 2026-10-03 17:49:41 EDT — realtime-voice-sqlite-instant `ad9ce1d0169d986c5405496e510b032cfa9f61d2`
+Start the YouTube companion's Instant side from one bundled file, beside the watcher, and retry it when it cannot start (#478)
 
 ## 2026-10-03 17:46:36 EDT — scribe `cb06c1fd83884521a23bca0800514adaa18cef0c`
 The recording and playback sync rows say "N saves set aside · Retry", and Retry offers them again (#482 part C)
@@ -202,8 +334,14 @@ Merge Plan read-aloud-voice, plan only: the best installed voice for answers, it
 ## 2026-10-03 17:42:19 EDT — scribe `3a9cad263e2199fa2d5b91ca7f6e883935ee90b0`
 Merge capture-isolation with durability-unstick: the move to the background never waits on the disk, capture never waits on anything, and the save lane heals itself (ADR 0050, #488 #482 #480)
 
+## 2026-10-03 17:42:01 EDT — scribe `47a9005ab0e61515f6085a1a843eb585be7084b8`
+The marker test does not depend on which log append runs first (#492)
+
 ## 2026-10-03 17:41:34 EDT — scribe `5530ae0392335eeb0fb1626903c01f07b76d1197`
 Merge mirror-push-install: the mirror installs with --push, books read aloud (scribe book, ADR 0048), Michael's daily timeline and scribe day, the router fix, and notifyOnce ending with why (#447 #455 #456 #464 #469)
+
+## 2026-10-03 17:40:16 EDT — scribe `12d2286eaf24deba4dc25fb20af7456f6b09b136`
+Voice command markers need moments on, like every in-app moment (#492)
 
 ## 2026-10-03 17:40:15 EDT — scribe `8093fa0c721ad0e5c0b54e302a463408a36ca650`
 Merge live-stamp-82: the follow-along heartbeat, the #432 orphaned-audio sweep, list positions that a sweep's finalize or a playback stamp never move, and no updatedAtMs on capture-time writes (#408 #432 #441)
@@ -223,14 +361,98 @@ Merge youtube-companion: the shared things and YouTube companion schema, rules a
 ## 2026-10-03 17:37:19 EDT — scribe `39e070aaca31333151ec24682eadc992993bc00b`
 Write the share-prototype settings through the queued file key too, as every shared file key now does (#488 #389)
 
+## 2026-10-03 17:32:21 EDT — scribe `b6f99c359edba06e728ef230ee81d2888dc75711`
+Record the voice command markers in the change log (#492)
+
+## 2026-10-03 17:31:56 EDT — scribe `695d0b99f21063ececd2d3c83db096a45a09ce83`
+Mark where a voice command changed something, at the line that asked (#492)
+
+## 2026-10-03 17:29:00 EDT — realtime-voice-sqlite-instant `3b8449893e4cb912ee8b5bb01d80eca6aba4cd41`
+Record 9146d7f5, cb7fff98, 54518163, 7fff38ec, 11bf8c27, 290e1855, c4184864, 65b09d98, 74259a59, 27be797e, and f7acb55f in the change log (#478)
+
 ## 2026-10-03 17:28:31 EDT — scribe `e9386d59bc025ce4adde821ff49775eed0963ab0`
 Start iOS's expiring activity off the caller's thread too, so the background transition never waits on RunningBoard (#488)
+
+## 2026-10-03 17:27:26 EDT — realtime-voice-sqlite-instant `f7acb55f83f83273c46d0efc18905754c85c65f9`
+Write ADR 0044 section 8 as phase 4 is built: the layered personal-information gate, the clip, the page, and the order to production (#478)
 
 ## 2026-10-03 17:26:57 EDT — scribe `b8ccf9ae02eab9647c350f5f424c7a55da7a7bdd`
 Say in the device pull why a phone has no library diagnostics file, and how to get one (#488)
 
+## 2026-10-03 17:26:32 EDT — realtime-voice-sqlite-instant `27be797ed889ee496f837202ba76fc6db14df45f`
+Cut each comment's clip from the recording's audio, clear its share for the public page, hold clips with other voices, and take links down on request (ADR 0044 phase 4, #478)
+
 ## 2026-10-03 17:25:37 EDT — scribe `3b6eb08e4099a9f75129747d0da87589aa82ddcb`
 Refused audio waits in memory only as its length, and the WAV writer gets synchronizeSoon() for pause, interruption and background fsyncs (#488)
+
+## 2026-10-03 17:25:17 EDT — scribe `c3b15c7990cc11b0bec1bd22ef59dd4bc75e39a8`
+Record background-uploads' suspended-task test in the change log (#481)
+
+## 2026-10-03 17:25:16 EDT — scribe `8ed3813298f20277726bf81212593d545c37bdd8`
+Test: a background upload task left suspended resumes when the live session lists its tasks, through a real URLSession and the loopback server (#481)
+
+## 2026-10-03 17:24:16 EDT — scribe `1b60ecfb0b85fc4e8a4b45e353b1752ad90f4a54`
+Record background-uploads' suspended-task fix in the change log (#481)
+
+## 2026-10-03 17:24:16 EDT — scribe `77de31fa244047cb1e2b0a70861e629d2505e635`
+A background upload task left suspended by a process that ended before resuming it resumes at the next launch (#481)
+
+## 2026-10-03 17:23:35 EDT — scribe `1a3bf5642ad0e0ad111769b24c20d449a3d6b295`
+Record background-uploads' completion-wait and unreadable-response fixes in the change log (#481)
+
+## 2026-10-03 17:23:35 EDT — scribe `007490484add595c3a4c8f66ad092b87fb1a87a3`
+iOS's completion handler comes back once every finished upload links, and a finished response the library cannot read uploads again instead of replaying forever (#481)
+
+## 2026-10-03 17:22:29 EDT — scribe `107b26844af200de7490f55a00a1131e3a9b4570`
+Plan voice-command-markers: five more claims found while designing (#492)
+
+## 2026-10-03 17:21:15 EDT — scribe `50e467e12a3de862f6b2f5e4a1b5c0119483aed0`
+Channel: background-uploads' lines in ScribeInstantStore.bootstrap and didFinishLaunching, for startup-screen (#481 #405 #479)
+
+## 2026-10-03 17:20:39 EDT — scribe `8940baa5acd05d1fd0d12821f82d79e4283bb214`
+Merge origin/main into background-uploads: 0.1 (84), the P0 voice-actions guard, remote-push, share-ui, ui-polish for 84, and main's plans (#481)
+
+## 2026-10-03 17:18:56 EDT — scribe `9ff184ab55852ce81b311ae5903cc156441d798f`
+Record background-uploads' switch fix in the change log (#481)
+
+## 2026-10-03 17:18:56 EDT — scribe `acb6c527df04567c1350c19847b1ced781a829fc`
+Turning Upload in the Background off never sends a file the system already uploads a second time; the switch governs new uploads (#481)
+
+## 2026-10-03 17:17:42 EDT — realtime-voice-sqlite-instant `65b09d98a08af26366caef1351f248d18c223843`
+Propose the public page's personal-information gate for link shares: signed out, a link opens only a cleared share, its sections, and its clip, never the recording's row (ADR 0044 section 8, #478)
+
+## 2026-10-03 17:17:42 EDT — realtime-voice-sqlite-instant `74259a59a28627f277646b6339a1dfbafd957cc1`
+Plan phase 4 as approved: the shares.pisspoursoftware.xyz page, the layered PII gate, the clip, and the server-enforced proposal for ADR 0014 section 13 (#478)
+
+## 2026-10-03 17:17:14 EDT — scribe `855f90c80262019368cbf180446abc44b5b039a1`
+Record background-uploads' upload line and ADR 0051 in the change log (#481)
+
+## 2026-10-03 17:16:57 EDT — scribe `ad2f808d2602c856bf0242025af43467cb1bfb8e`
+ADR 0051: large media uploads continue while Scribe is suspended or closed, through the library's own request on a background URLSession (#481 #432 #491)
+
+## 2026-10-03 17:16:38 EDT — realtime-voice-sqlite-instant `9b4c2c45b045234639bb96716763c4631beec58b`
+Record the comment share host change in the change log (#478)
+
+## 2026-10-03 17:16:38 EDT — realtime-voice-sqlite-instant `beba1deb52b489b455602046e0b42c10f48ac50e`
+Link a comment's clip to its page on shares.pisspoursoftware.xyz, as the companion and the fixture now do (ADR 0044 Q8, #478)
+
+## 2026-10-03 17:15:53 EDT — scribe `3739983378d5c0a5f360fc71c2aede15a00dfff8`
+The recording and playback screens say when audio still uploads and whether it continues in the background, and Settings can turn background uploads off (#481)
+
+## 2026-10-03 17:12:52 EDT — scribe `3422894ef4a7cb5740c895a5e17e6bdeae25c004`
+Amend plan background-uploads: the upload line goes in the playback and recording sync rows, and claim one line in each (#481)
+
+## 2026-10-03 17:12:31 EDT — scribe `83fca82ee93910fb35da53d5e0ee35a6eddf21da`
+Restore the voice-actions channel's earlier notes, dropped by the plan commit (#492)
+
+## 2026-10-03 17:12:01 EDT — scribe `a6cf5d0418fc69fc072baa6a89e754b228fd439c`
+Plan voice-command-markers, plan only: mark in the transcript where a voice command changed something (#492)
+
+## 2026-10-03 17:10:40 EDT — scribe `d2001b5ac1090bc713b7939bc5c25bf6fba03365`
+Record background-uploads' red tests and implementation in the change log (#481 #432)
+
+## 2026-10-03 17:09:23 EDT — scribe `9d03041cb79179db18f4dd69fe27d41767e2e1b4`
+Large media uploads continue through a background URLSession while Scribe is suspended or closed, and a launch step links what the system finished (#481 #432)
 
 ## 2026-10-03 17:06:27 EDT — scribe `3d9f28819e17a665ed8f34b0fcad3fcaef23aa89`
 A durability journal keeps every must-keep write until local Instant has it, Record never waits for the previous stop, a write that keeps failing moves aside, and the speech mailbox is bounded (#482 part C)
@@ -238,11 +460,80 @@ A durability journal keeps every must-keep write until local Instant has it, Rec
 ## 2026-10-03 17:06:11 EDT — scribe `30d753f87d45bd38f92cf74cf4412e174b3d48db`
 Red tests: a durability journal keeps every must-keep write, ten minutes of a stalled or failing Instant lose nothing, Record never waits for the previous stop, a write that keeps failing moves aside, and the speech mailbox is bounded (#482 part C)
 
+## 2026-10-03 17:05:55 EDT — realtime-voice-sqlite-instant `c41848647018a16b743a0d057a65a636fa59bca6`
+Name shares.pisspoursoftware.xyz as the comment link's host in ADR 0044 and the design doc (#478)
+
+## 2026-10-03 17:05:44 EDT — scribe `95a356d30f253c2baf12e67bdf89747cdd6e7490`
+Red tests: a large media upload continues through a background URLSession, survives a relaunch, resumes at launch without a second upload, and keeps memory flat for 321 MB (#481 #432)
+
 ## 2026-10-03 17:05:37 EDT — instant-data-swift `a6a59b565df2362a908899b601b73c7da4ddef5f`
 Run the operation gate's wait and stall reports off its actor, so a slow report never holds the next holder (#473).
 
+## 2026-10-03 17:05:35 EDT — realtime-voice-sqlite-instant `290e185524f0359e3cd4fc98643307d84111bc5a`
+Link a comment's share to its page on shares.pisspoursoftware.xyz, Michael's choice for the public host, in the companion and the shared fixture (#478)
+
+## 2026-10-03 17:05:01 EDT — scribe `5afa942452611a34dffb282e40b0ce91ce395e03`
+Record the Recording 189 cases in the change log (#161)
+
+## 2026-10-03 17:04:58 EDT — scribe `f657774a6bcbc87faa4fe72e80e784d0115bca00`
+Benchmark the voice commands build 84 missed in Recording 189 (#161)
+
+## 2026-10-03 17:02:20 EDT — realtime-voice-sqlite-instant `11bf8c27e9de5617f72b0d9854d73cbac91cb918`
+Record ADR 0044 Q7 and Q8 as relayed: audio after the PII check passes on the clip's words, and shares.pisspoursoftware.xyz for the public page (#478)
+
+## 2026-10-03 17:01:23 EDT — realtime-voice-sqlite-instant `7fff38ec0e5effbde04e3dc5a9665471ded1a919`
+Read Michael's YouTube settings from any of his sign-ins, and stop following YouTube when he turns it off (#478)
+
+## 2026-10-03 16:55:32 EDT — realtime-voice-sqlite-instant `b775cbbdf6bbb12c6e0997a7ed5dfe05ecc35881`
+Record the span ledger test change in the change log (#478)
+
+## 2026-10-03 16:55:30 EDT — realtime-voice-sqlite-instant `12a664ae60b7e2082666226d24866575bac2009a`
+Give the span ledger's every-kind test a YouTube listening span and a YouTube comment: a start with its natural end, and a moment (#478)
+
+## 2026-10-03 16:53:05 EDT — realtime-voice-sqlite-instant `54518163055fcf9b0a42c4cf732fe74f0c42e958`
+Write a thing's first recognition earlier when a span began before it, and keep titles within the rules' 300 characters (#478)
+
+## 2026-10-03 16:53:01 EDT — realtime-voice-sqlite-instant `cb7fff98f26fdf2dc6c6e5c1263d9fa54cc1fe7c`
+One shared definition of ADR 0048's things, as the books agent reviewed it: closed kinds and key shapes, forward-only status, field bounds, an earlier first recognition, and no adoption (#478)
+
+## 2026-10-03 16:52:47 EDT — realtime-voice-sqlite-instant `aee1760c905a63c45e024cb61d36e317867c2087`
+Channel: the YouTube companion's app side, its router field and category note to reply-notifications, and the merge notes (#478)
+
+## 2026-10-03 16:52:14 EDT — realtime-voice-sqlite-instant `8f94fba7944d7d8ffd1c8833e7a814695e0591e8`
+Record the YouTube test waits in the change log (#478)
+
+## 2026-10-03 16:52:12 EDT — realtime-voice-sqlite-instant `9b22b7265679953460be2a3f5642a891654c5a06`
+Let the YouTube comment tests wait the repository's five seconds and keep the saves in tap order (#478)
+
+## 2026-10-03 16:50:33 EDT — realtime-voice-sqlite-instant `bcb95c98c08695b9049284b6cf64ce0b2a5eb61f`
+Record the Settings clip line fix in the change log (#478)
+
+## 2026-10-03 16:50:32 EDT — realtime-voice-sqlite-instant `079e54512b83d075d3e4b69c4e942f39c3a7eba9`
+Say the shared clip opens for anyone with its link, not that it plays: the share carries no audio until the companion's phase 4 (#478)
+
+## 2026-10-03 16:49:26 EDT — realtime-voice-sqlite-instant `2cd2f346deeba26f4c315bf619de2e7814b035b6`
+Record 1e90a711 in the change log: YouTube comments wait for a tap on every device (#478)
+
+## 2026-10-03 16:49:11 EDT — realtime-voice-sqlite-instant `1e90a711acf39b480e99559684c9a43698045e51`
+Ask before each YouTube comment posts: a notification with the exact text and the time code, Post Comment, Edit, and Cancel on iPhone, iPad, and Mac, and a YouTube section in Settings (ADR 0044, #478)
+
+## 2026-10-03 16:48:55 EDT — realtime-voice-sqlite-instant `66b21512c9a8a7879bbe4bea61c3c57e77e4212d`
+Record 4522dad7 in the change log: YouTube comments read and decided through Instant (#478)
+
+## 2026-10-03 16:48:44 EDT — realtime-voice-sqlite-instant `4522dad7352e58182e6de033fce335a9b587e1f3`
+Read and decide YouTube comments through Instant: the comment and settings rows, the steps the rules allow a device, and the text an Edit action carries (ADR 0044, #478)
+
+## 2026-10-03 16:48:29 EDT — realtime-voice-sqlite-instant `04426b0fd8f9df134c080434b6c781eaa0cb8818`
+Record 308d22a7 in the change log: YouTube listening spans and comments on the timeline (#478)
+
 ## 2026-10-03 16:48:06 EDT — scribe `5aecb8f42fa8d6f37787e9035d7c9bb8cb255dbd`
 The WAV writer's health and flush interval never wait for the writer's lock (#488)
+
+## 2026-10-03 16:48:04 EDT — realtime-voice-sqlite-instant `308d22a753833067abcf401bcc74eca43e05020e`
+Show what Michael watched on YouTube on the recording's timeline: listening spans and posted comments, with links to the video and the comment (ADR 0044, #478)
+
+## 2026-10-03 16:44:56 EDT — realtime-voice-sqlite-instant `9146d7f55252ba7af992766feddc7bb8aaa5fa6b`
+Tell the standing agent how to draft Michael's YouTube comments: one insert-only section in scribe-mirror's AGENTS.template.md, and the scribe-youtube command it runs (#478)
 
 ## 2026-10-03 16:43:34 EDT — scribe `62cbd5bff0719ef6232136f7fc91233cbee15dec`
 The app's log lanes stop fsyncing per batch and rewriting after every delivery, keep routine lines to a budget, and a hot phone writes less often; capture never stops (#488, ADR 0050)
@@ -259,6 +550,24 @@ The playback span test's date is nonisolated, so the test target builds (#435)
 ## 2026-10-03 16:36:31 EDT — scribe `9933348dbdf3dc586065deab5ea08bde2c4e25d4`
 The move to the background never waits on the disk, and capture never waits on anything: queued settings files, a non-blocking telemetry flush, capture on its own executor with speech first, and the WAV on its own queue (#488, ADR 0050)
 
+## 2026-10-03 16:35:15 EDT — realtime-voice-sqlite-instant `d838db6727b4abde8a340ecb793724ed0d94284e`
+Record 2b290c30, 5dd8a26f, ed603bf6, abbef824, b82befce, dc24e569, and 959a2ce4 in the change log: Delete Comment, the payload fixture, the Instant writer, and the comment flow (#478)
+
+## 2026-10-03 16:34:13 EDT — realtime-voice-sqlite-instant `959a2ce498ad988d5b560076e7b061fe216721d7`
+Post Michael's spoken YouTube comments after his one tap: drafts from his own sections, an unlisted share without personal information, and a poster that never sends twice (#478)
+
+## 2026-10-03 16:33:58 EDT — realtime-voice-sqlite-instant `dc24e56979fca62b296a7d3736bdc857f9ac0091`
+Write what the YouTube companion saw into Instant as Michael: the video's thing, a listen per recording, and the span's start and end on each timeline, once (#478)
+
+## 2026-10-03 16:33:46 EDT — realtime-voice-sqlite-instant `b82befceb8f87a63d26af13689eec75d19d4c42d`
+The words a YouTube comment carries and the client that posts it: the time code, the deep link, the share link, the personal-information check, and the YouTube Data API through OAuth (#478)
+
+## 2026-10-03 16:33:35 EDT — realtime-voice-sqlite-instant `abbef82424d18def488c81a826c36a3d11a61a14`
+Record what the Instant writer needs: each span placement's wall-clock stretch, each recording's owner, and each aligned span's player and wall-clock ends (#478)
+
+## 2026-10-03 16:32:42 EDT — scribe `e00c91fa4ddf86a75a1b723868c0652c533089c1`
+Plan background-uploads: audio uploads continue through a background URLSession while Scribe is suspended, and a launch step resumes them, and claim its paths (#481 #432)
+
 ## 2026-10-03 16:26:02 EDT — scribe `36683fbd9c63a6d6ed8b6909e9c29aa25f33ad2f`
 Merge main's plans and claims after the 0.1 (84) release commit (#430 #342 #485 #469 #470 #462 #340 #444)
 
@@ -268,8 +577,38 @@ Plan transcript-journal: a local journal keeps every must-keep write until local
 ## 2026-10-03 16:12:07 EDT — scribe `5a842f05b76b02a600e6d638ec0a0677ff295526`
 The save lane heals itself: no refusal latches, must-keep writes wait in a bounded hold, interims merge per stream, and saving behind never stops Record, Resume, Delete, or an edit (#482)
 
+## 2026-10-03 15:51:38 EDT — realtime-voice-sqlite-instant `ed603bf66a978a0b8c21085254a664a7c58b93e4`
+Write the share link in the posted-comment payload fixture with lowercase ids, as Scribe's links are (#478)
+
+## 2026-10-03 15:51:25 EDT — realtime-voice-sqlite-instant `5dd8a26f1948a3948e16479b0d0c75842d0a741a`
+Fix the YouTube runtime event payloads and the comment text in one fixture, for the companion and the apps to test against (#478)
+
+## 2026-10-03 15:50:30 EDT — realtime-voice-sqlite-instant `2b290c30da4e705cfc62694224eca9cafa1f5769`
+Add a deleteRequested step for Delete Comment: a device asks, and the Mac marks a YouTube comment deleted once YouTube deleted it (#478)
+
+## 2026-10-03 15:48:03 EDT — realtime-voice-sqlite-instant `3cc12cc842fe26a5093c513ad1590003d69f1213`
+Record 2daebdc9 and 69483414 in the change log: the YouTube companion's schema, rules, and matrix (#478)
+
+## 2026-10-03 15:47:53 EDT — realtime-voice-sqlite-instant `69483414a21d6f1eee1c6d224af927ba8d1c89ef`
+Pin a decided YouTube comment's share, channel, and times, and prove the rules on bd40c50a: 60 checks, nothing pushed (#478)
+
+## 2026-10-03 15:43:26 EDT — realtime-voice-sqlite-instant `2daebdc9cca8c724655c588cc7322ee4b5ad3837`
+Schema and rules for the YouTube companion: things, listening spans, comments, settings, two runtime event kinds, and a share's audio clip (ADR 0044, #478)
+
+## 2026-10-03 15:34:33 EDT — realtime-voice-sqlite-instant `38cfb29e01d0cd75687a1d6cbea697b39f2b1a3d`
+Record 0f3e0cc1 in the change log: alignment for the YouTube app (#478)
+
+## 2026-10-03 15:34:20 EDT — realtime-voice-sqlite-instant `0f3e0cc1c8c37f748aed3781071e3bfa6475fcf3`
+Find where a recording heard a YouTube video from the YouTube app: captions first, yt-dlp audio and SpeechTranscriber when they cannot settle it, and a match of unique three-word runs (#478)
+
 ## 2026-10-03 15:24:07 EDT — scribe `91ca2dfaf79837ace3f961d13f64e85c150d72b5`
 Red tests: the save lane heals itself, must-keep writes wait, interims merge per stream, and saving behind never stops capture (#482)
+
+## 2026-10-03 15:20:24 EDT — realtime-voice-sqlite-instant `0996f42b4568814ab1ef96b189c5d1103998e2aa`
+Record d8f7aeb0 in the change log: the Safari history header probe (#478)
+
+## 2026-10-03 15:19:36 EDT — realtime-voice-sqlite-instant `d8f7aeb0b444971aa9c667c4adaba0a1a4792134`
+Probe Safari cookie access by Safari's own history header, and report the agent's identity and access in status (#478)
 
 ## 2026-10-03 15:19:23 EDT — scribe `ddf60c389013beebace6c502fb3cc309b05f9050`
 Plan read-aloud-voice, plan only: the best installed voice for answers, its Settings row, and the voice in the read's start event (#471)
@@ -288,6 +627,12 @@ Record the per-device voice hint in the change log (#471)
 
 ## 2026-10-03 15:13:00 EDT — scribe `4b4038c22c0d35892104816eb5a6c318cd7fdcd6`
 The voice download hint names the exact Settings path of the device it shows on (#471)
+
+## 2026-10-03 15:12:46 EDT — realtime-voice-sqlite-instant `ab112084cc12663cbbb9eb57bf55f1e8a0587768`
+Record 29384ad7 in the change log: the YouTube companion's no-dialog Safari permission gate (#478)
+
+## 2026-10-03 15:12:36 EDT — realtime-voice-sqlite-instant `29384ad7dab90273c183f36b0d2a56a39aab779c`
+Never put a permission dialog on Michael's screen: the YouTube companion's LaunchAgent checks Safari access without one, and asks only on request (#478)
 
 ## 2026-10-03 15:12:26 EDT — scribe `ca819e48f84c1e30ab02a159baf0ef084b7d29c1`
 Red tests: no reducer stores an object, and a recognizer restart in a later action still hears the microphone (#482)
@@ -310,17 +655,38 @@ Give the #432 sweep flow tests' fake client the route lookup the client gained f
 ## 2026-10-03 15:04:23 EDT — scribe `0d19a2b739d81904a6b2cb0f0be488c2e01cd1d4`
 The section handler's comment no longer says finals backpressure the provider (#480)
 
+## 2026-10-03 15:01:58 EDT — scribe `d045f10e4ea48f3150203fa143e7734166faf4ba`
+A clock set back no longer holds lookingAt reports back (#469)
+
 ## 2026-10-03 15:01:21 EDT — scribe `02bbf0a5816e97289126743638f27e0522c1adc3`
 The Resume offer carries its row's title and ends with its row or its window; the notice stops reading the clock after its two minutes (#458)
 
 ## 2026-10-03 15:00:46 EDT — scribe `5c74c194b89ea32a499db4ed55a68c0e47ccda6e`
 Red tests: the Resume offer carries its row's title and ends with its row or its window, and the notice stops reading the clock after its two minutes (#458)
 
+## 2026-10-03 15:00:15 EDT — scribe `25ea55302e0e527fc727c4c9085b13f0b145c51a`
+@RemoteControl reads a @Reducer enum: a destination's features stay in the agents' catalog (#470)
+
+## 2026-10-03 14:59:59 EDT — scribe `4ee3e06f63e61ffc3cdf4d445c9343e8a8b4378f`
+Tests first: @RemoteControl derives a @Reducer enum's catalog from its cases, by TCA's rules (#470)
+
 ## 2026-10-03 14:58:03 EDT — scribe `2a4bbfade89e9e9195259825f56f2d9b679d7289`
 Recognition never waits for the write lane: finals are acknowledged at once, Apple's results go to a mailbox, a blocked lane queues finals in their own reserve, and frames yield while saving is behind (#480)
 
+## 2026-10-03 14:55:29 EDT — realtime-voice-sqlite-instant `851b64686bd6ac7cde052a94228ddd64fff9107a`
+Record f9e85fb2 in the change log: the YouTube companion's Mac tool, phase 1 (#478)
+
+## 2026-10-03 14:54:37 EDT — realtime-voice-sqlite-instant `f9e85fb2cf532472cc58acb5c4c2810d4fe98cb5`
+Follow YouTube in Michael's Safari while a recording is live: the playing tab, his history, and listening spans on each recording's clock (#478)
+
 ## 2026-10-03 14:52:52 EDT — scribe `2dd124de3b918c9f74b1c873fce6f48438c7cd84`
 Resume tests receive the Record and Stop each assertion reads before it checks the state (#458)
+
+## 2026-10-03 14:51:58 EDT — scribe `9ab5f7a4b8a9a748141efc2d0b32cd4bcf44109c`
+FollowAlong's lookingAt line says landscape after the device, as the mirror's summary does (#469)
+
+## 2026-10-03 14:51:24 EDT — scribe `bda02ef82c2a4096f5514efddb3a085561e2e4a0`
+Keep the long-transcript tests inside the live window's 96 lines, and spell out deviceViews' schema and rules for prod-data (#469)
 
 ## 2026-10-03 14:46:46 EDT — scribe `8a823c866256b62c9874696dbbf82fb983d34c77`
 Settings' Continue Cut-Off Recordings switch, on by default, turns #458 off; every continuation start stays loud (#458)
@@ -334,6 +700,9 @@ Red tests: Settings' Continue Cut-Off Recordings switch, on by default, turns #4
 ## 2026-10-03 14:42:56 EDT — scribe `c13488ccaf30c27911484c55b237ce8b3c82e2b5`
 Offer a cut-off take for Resume only at a route chunk index a route can continue after (#458)
 
+## 2026-10-03 14:42:52 EDT — scribe `5d84662384e7c94de996e1c7b3ca76a4a9a4e181`
+The snapshot says the window's orientation: portrait or landscape, reported by the root view when it flips (#469)
+
 ## 2026-10-03 14:40:39 EDT — scribe `a78cd3b503b29cc74f54fa4255d6889daa1b0a8b`
 Name the waiting Record's trigger binding apart from the value it initializes (#458)
 
@@ -343,6 +712,12 @@ Red tests: recognition never waits for the write lane, finals queue in their own
 ## 2026-10-03 14:39:00 EDT — scribe `475cc511a406dcc9ed0b244532ec644c014bdce9`
 Open the resume-cut-off channel: the #458 split with ui-polish and list-edit-mode, and the names both draw against (#458)
 
+## 2026-10-03 14:37:50 EDT — scribe `0850130ce4d02ea5ea7ecce4c4d14da82b03a870`
+Renumber the looking-at ADR from 0042 to 0046: 0042 is mic-gap's headset microphone (#469)
+
+## 2026-10-03 14:35:19 EDT — realtime-voice-sqlite-instant `c9714a73d9fac365145b41e88bb3ca276886b3a8`
+Record Michael's verbatim answer to ADR 0044 Q1: "Yes, that channel" (#478)
+
 ## 2026-10-03 14:34:56 EDT — scribe `8ab12635a157efc3d54188453f3f40717c57dbc4`
 Record after a cut-off continues the take, New Recording instead stops it for a new one, and a stranded take stays resumable for 30 minutes (#458)
 
@@ -351,6 +726,21 @@ Red tests: Record after a cut-off continues the take, New Recording instead stop
 
 ## 2026-10-03 14:34:23 EDT — scribe `3a3cf8a5d2a6931bbee0a575ffa98e5529b70399`
 Plan transcription-never-waits: recognition never waits for the write lane (ADR 0043, #480, P0)
+
+## 2026-10-03 14:33:24 EDT — realtime-voice-sqlite-instant `bdd56afcc2fa162b0b8a1be284f9e0cfa67e3b05`
+Record Michael's answer to ADR 0044 Q1: comments post as "Piss Poor Software", after his one-tap Post (#478)
+
+## 2026-10-03 14:30:43 EDT — scribe `e9b5ac179254b891210acee7296f7303bca0f7bb`
+Agents see what each device shows: one ScribeLookingAt snapshot, bounded transitions, and a per-device lookingAt fencepost (#469 #470)
+
+## 2026-10-03 14:30:31 EDT — realtime-voice-sqlite-instant `bc5d2b2ff98603ca95dfbd55cf3882d2121e125d`
+Renumber the YouTube companion's ADR from 0041 to 0044: 0041 is launch-recovery's (#478)
+
+## 2026-10-03 14:29:32 EDT — scribe `b0403b7795e4d1ab2689fcc6dbcebff0c816b7e8`
+Tests first: the visible thread comes from what the screen shows (N8), and the recording screen writes no viewing fencepost (#469 #470)
+
+## 2026-10-03 14:28:07 EDT — realtime-voice-sqlite-instant `36ea5794bfa21ec91381911a158c48b1885fe1b9`
+Plan youtube-companion: the YouTube video Michael listens to goes on the recording timeline, from Safari or by aligning yt-dlp audio, and his spoken comments post after one tap with the time code and an unlisted clip (ADR 0041, #478)
 
 ## 2026-10-03 14:22:32 EDT — instant-data-swift `1c7ab096fd520e65fb46b8e89cd6c04e1ac83237`
 #473's blocked-log test reads its line back instead of flushing, so it also builds on v1.9.4 for the red run (#473).
@@ -519,6 +909,9 @@ Claim the files of #445's supersession API, which ships in v1.9.4 with the #441 
 
 ## 2026-10-03 12:33:31 EDT — instant-data-swift `ec10cad263a44d3ec679b8916e5af275852266a0`
 #441 (P1): a refused re-send resolves as accepted when the server's own results already show the values it set, with any other slot covered by accepted later writes; one refused before its connection's query answers waits for them (Recording 040's capture gaps, which production holds) (#441).
+
+## 2026-10-03 12:32:52 EDT — scribe `5727f618ce944d444bc10445f68294e9b53305cc`
+Record the #442 guard and fix commits in the change log (#442 #364)
 
 ## 2026-10-03 12:29:51 EDT — scribe `0f200d5c302edc2fa739008adaeba8d613540d8e`
 Record #442 in ADR 0033 and the design doc: Private Cloud Compute without its entitlement traps (#442 #364)
