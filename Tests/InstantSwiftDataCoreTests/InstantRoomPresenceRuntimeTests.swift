@@ -531,6 +531,122 @@ extension InstantRoomPresenceRuntimeTests {
     _ = try await runtime.closeConnection()
   }
 
+  /// Two topic publishes in a row reach the socket in the order they were published, as `Reactor.js`'s `publishTopic`
+  /// writes synchronously. v1.9.5 held the operation gate across each publish; off the gate each write runs on its own
+  /// task, so a slow first write let the second pass it (the rooms agent's review of 8dc4321d).
+  @Test
+  func topicPublishesReachTheSocketInPublicationOrderWhenTheFirstWriteIsSlow() async throws {
+    let room = InstantRoomHandle(type: "recording", id: "room-slow-broadcast")
+    let session = LiveReactorParitySession(messages: [
+      liveReactorInitOK(attrs: liveReactorTodoServerAttrs, sessionID: "session-self")
+    ])
+    let writes = SlowFirstPresenceWrite()
+    let inner = session.webSocketSession
+    let slowFirstBroadcast = InstantLiveWebSocketSession(
+      send: { message in
+        guard message.op == "client-broadcast" else {
+          try await inner.send(message)
+          return
+        }
+        let order = await writes.arrive()
+        if order == 1 {
+          await writes.holdTheFirstWrite()
+        }
+        try await inner.send(message)
+        if order == 2 {
+          await writes.secondWriteReturned()
+        }
+      },
+      receive: { try await inner.receive() },
+      close: { await inner.close() },
+      abort: { inner.abort() }
+    )
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: try roomConfiguration(
+        appID: "room-slow-broadcast",
+        transport: .immediate { _ in slowFirstBroadcast }
+      )
+    )
+    _ = try await runtime.connect()
+    _ = try await runtime.joinRoom(room)
+    try await joinAndWaitForPeers(runtime: runtime, session: session, room: room)
+
+    let first = Task {
+      _ = try await runtime.publishTopicMessage(room: room, topic: "reaction", userID: "user-self", payload: .string("first"))
+    }
+    try await waitForRoom("the first broadcast to reach the socket") { await writes.arrivals >= 1 }
+    _ = try await runtime.publishTopicMessage(room: room, topic: "reaction", userID: "user-self", payload: .string("second"))
+    try await first.value
+    let broadcasts = await session.sentMessages()
+      .filter { $0.op == "client-broadcast" }
+      .compactMap { $0.fields["data"]?.jsonValue }
+    expectNoDifference(broadcasts, [.string("first"), .string("second")], "client-broadcast in publication order")
+    _ = try await runtime.closeConnection()
+  }
+
+  /// The broadcasts queued before `join-room-ok` go out before any published after it. The flush waits behind a write
+  /// the dropped socket never finished; a publish made while it waits must not pass the queued broadcast.
+  @Test
+  func aBroadcastPublishedWhileTheJoinFlushWaitsFollowsTheQueuedOnes() async throws {
+    let room = InstantRoomHandle(type: "recording", id: "room-flush-broadcasts")
+    let first = LiveReactorParitySession(messages: [
+      liveReactorInitOK(attrs: liveReactorTodoServerAttrs, sessionID: "session-before-drop")
+    ])
+    let second = LiveReactorParitySession(messages: [
+      liveReactorInitOK(attrs: liveReactorTodoServerAttrs, sessionID: "session-after-drop")
+    ])
+    let held = HeldPresenceWrite()
+    let sessions = ScriptedRoomSessions([held.wrapping(first.webSocketSession), second.webSocketSession])
+    var configuration = try roomConfiguration(
+      appID: "room-flush-broadcasts",
+      transport: .immediate { _ in try sessions.next() }
+    )
+    configuration.liveReconnectSleep = { _ in }
+    let runtime = try await InstantRuntime.bootstrap(configuration: configuration)
+    _ = try await runtime.connect()
+    _ = try await runtime.joinRoom(room)
+    try await joinAndWaitForPeers(runtime: runtime, session: first, room: room)
+
+    // A presence write to the first socket that never finishes, holding the room's lane.
+    let stuck = Task { _ = try? await runtime.setPresence(room: room, userID: "user-self", values: ["n": .number(1)]) }
+    try await waitForRoom("the presence write to reach the first socket") { await held.arrivals >= 1 }
+    await first.failReceive(
+      InstantError(
+        code: .networkFailed,
+        operation: "drop the room's socket",
+        message: "transient drop",
+        recovery: "Rejoin on the next socket."
+      )
+    )
+    try await waitForRoom("the room's rejoin on the second socket") {
+      await second.sentMessages().contains { $0.op == "join-room" }
+    }
+    // Published while the room waits for the server's join-room-ok: queued for the flush.
+    _ = try await runtime.publishTopicMessage(room: room, topic: "reaction", userID: "user-self", payload: .string("queued"))
+    await second.enqueue(InstantLiveMessage(op: "join-room-ok", fields: ["room-id": .string(room.id)]))
+    try await waitForRoom("the join to be confirmed") { await runtime.isRoomJoined(room) }
+    // Published after the join is confirmed, while the flush waits behind the stuck write.
+    let later = Task {
+      _ = try? await runtime.publishTopicMessage(room: room, topic: "reaction", userID: "user-self", payload: .string("later"))
+    }
+    try await waitForRoom("the later broadcast to queue behind the flush, or to be written") {
+      let waiting = await runtime.roomPresenceLaneWaiterCountForTesting(room)
+      let written = await second.sentMessages().contains { $0.op == "client-broadcast" }
+      return waiting >= 2 || written
+    }
+
+    await held.release()
+    _ = await (stuck.value, later.value)
+    try await waitForRoom("both broadcasts on the second socket") {
+      await second.sentMessages().filter { $0.op == "client-broadcast" }.count >= 2
+    }
+    let broadcasts = await second.sentMessages()
+      .filter { $0.op == "client-broadcast" }
+      .compactMap { $0.fields["data"]?.jsonValue }
+    expectNoDifference(broadcasts, [.string("queued"), .string("later")], "the queued broadcast first")
+    _ = try await runtime.closeConnection()
+  }
+
   /// `Reactor.js` reports `isLoading: !room.isConnected`: false until `join-room-ok`, and again from a dropped socket
   /// until the rejoin is confirmed. While a room is not joined, its presence says nothing about who is there.
   @Test
