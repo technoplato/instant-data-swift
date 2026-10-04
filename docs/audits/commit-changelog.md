@@ -1,3 +1,15 @@
+## 2026-10-04 09:04:09 EDT — scribe `c88b63784924fd5ef6b85e3eb06f69b2dda4975e`
+Record the phase 4 install's device gate in the change log (#478)
+
+## 2026-10-04 09:03:57 EDT — scribe `08d9691fa84347c5ee2b119730358bc52ba6500c`
+The phase 4 install refuses while any device that shows comment notifications runs a build older than 89 (#478)
+
+## 2026-10-04 09:02:27 EDT — scribe `64e3d558adf8051001a14f4840389cf43bd04fde`
+Red: the phase 4 install refuses while any device that shows comment notifications runs a build older than 89 (#478)
+
+## 2026-10-04 09:01:34 EDT — scribe `93634ed705c9416cf42f1618258aeb421203961e`
+Merge the installed companion's draft pause and clip switch (bundle 8832a03e) into the phase 4 companion on main (#478)
+
 ## 2026-10-04 08:58:47 EDT — scribe `ae117d6b0c2cf372a59070360afda77adad62577`
 Merge transcribe-gap into main: the gap tool, Recording 186's be0e793d and 46dd4eea, today's overlap and preview fixes, and --from-plan and --holes (#483)
 
@@ -27,6 +39,15 @@ transcribe-gap: drop fresh words that overlap a saved word, keep the preview and
 
 ## 2026-10-04 08:48:43 EDT — scribe `9ee58796a40247a534a6536f04854079cc33aab7`
 Red tests: transcribe-gap keeps a fresh word that overlaps a saved one, and moves the list preview to lines from an inner hole (#483)
+
+## 2026-10-04 08:47:48 EDT — scribe `8832a03ebe2f3b8d9734445ee223202c18174090`
+Record the installed companion's draft pause and clip switch in the change log (#478)
+
+## 2026-10-04 08:47:36 EDT — scribe `348b3bbdfe36ae537da8a2bfc5366b6226933dbc`
+The installed companion pauses drafts in plain words and makes no clip share until every device shows the public link (#478)
+
+## 2026-10-04 08:45:09 EDT — scribe `0b00d1850020f09d99ac6475a5b589a0e923a825`
+Red: the installed companion pauses drafts in plain words and makes no clip share until every device shows the public link (#478)
 
 ## 2026-10-04 08:42:03 EDT — instant-data-swift `2a977a3f6222fedc5324e01a0c8660dbd4b0ac76`
 Merge library-79-197 into main for v1.9.7 (#473 #482)
