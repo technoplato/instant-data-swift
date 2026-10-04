@@ -90,7 +90,7 @@ struct InstantInfiniteQueryLeadingRowsTests {
     expectNoDifference(local.values, [1, 2, 3, 4])
 
     try await harness.connect()
-    let window = try await harness.settledWindow("kickstart when the server answers")
+    let window = try await harness.liveWindow("kickstart when the server answers")
     expectNoDifference(window, InfiniteWindow(values: [1, 2, 3, 4], canLoadPreviousPage: false, canLoadNextPage: true))
     // Later pages load as before.
     let next = try await harness.loadNextPage()
@@ -890,6 +890,29 @@ final class InfiniteWindowHarness: Sendable {
   func requestNextPage() async {
     await server.note("-- loadNextPage (offline)")
     subscription.loadNextPage()
+  }
+
+  /// The window once it shows the server's live pages, settled. A window loaded from the local store before the
+  /// kickstart has no cursor from the server, and the model server is idle until the kickstart's add-query arrives, so a
+  /// window that is quiet just after `connect()` can still be the local one: 1.9.8's red run on v1.9.7 read it there and
+  /// passed (#516).
+  func liveWindow(
+    _ operation: String,
+    sourceLocation: SourceLocation = #_sourceLocation
+  ) async throws -> InfiniteWindow {
+    let deadline = ContinuousClock.now + .seconds(10)
+    while ContinuousClock.now < deadline {
+      if let latest = await recorder.latest, latest.pageInfo?.startCursor?.liveTuple != nil {
+        return try await settledWindow(operation, sourceLocation: sourceLocation)
+      }
+      try await Task.sleep(for: .milliseconds(10))
+    }
+    let latest = await recorder.latest.map(infiniteWindow)
+    Issue.record(
+      "Waiting to \(operation): the window never showed the server's pages (latest \(String(describing: latest))).",
+      sourceLocation: sourceLocation
+    )
+    throw InfiniteWindowDidNotSettle(operation: operation)
   }
 
   /// The latest window once it shows `rowCount` rows, within 5 s: an offline window's pages come from the local store.
