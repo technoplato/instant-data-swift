@@ -3698,6 +3698,17 @@ struct InstantBoundedOutboxDeliveryTests {
       cacheURL: cacheURL,
       liveSession: liveSession
     )
+    // As in fiftyEncodingFailuresUseBoundedRowAddressedQuarantineAndDoNotStarveTail: the connect's own delivery pass
+    // must finish before the rows go in, or it quarantines them outside the known-issue scope (1.9.7's release gate:
+    // 4 of 5 runs alone).
+    try await instantLiveWithTimeout(
+      operation: "wait for the connect's delivery pass to finish",
+      timeoutMilliseconds: 5_000
+    ) {
+      while !(await runtime.automaticMutationPumpIsIdleForTesting()) {
+        await Task.yield()
+      }
+    }
     let mutations = (0..<49).map {
       boundedEncodingFailureMutation(index: $0, prefix: "mixed-encoding-window")
     } + [
