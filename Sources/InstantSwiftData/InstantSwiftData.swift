@@ -95,6 +95,10 @@ public struct InstantSwiftDataClient: Sendable {
   private var uploadFileProgressOperation:
     @Sendable (URL, String?, String?) async throws
       -> AsyncThrowingStream<InstantFileUploadProgress, Error>
+  private var prepareFileUploadOperation:
+    @Sendable (URL, String?, String?) async throws -> InstantPreparedFileUpload
+  private var completeFileUploadOperation:
+    @Sendable (String, Int, Data, URL?, String?) async throws -> InstantStoredFile
   private var storedFilesOperation: @Sendable () async throws -> [InstantStoredFile]
   private var storageSnapshotOperation: @Sendable () async throws -> InstantStorageSnapshot
   private var observeStoredFilesOperation:
@@ -278,6 +282,18 @@ public struct InstantSwiftDataClient: Sendable {
     }
     self.uploadFileProgressOperation = { sourceURL, name, contentType in
       try await runtime.uploadFileProgress(from: sourceURL, name: name, contentType: contentType)
+    }
+    self.prepareFileUploadOperation = { sourceURL, name, contentType in
+      try await runtime.prepareFileUpload(from: sourceURL, name: name, contentType: contentType)
+    }
+    self.completeFileUploadOperation = { path, statusCode, responseBody, sourceURL, contentType in
+      try await runtime.completeFileUpload(
+        path: path,
+        statusCode: statusCode,
+        responseBody: responseBody,
+        sourceURL: sourceURL,
+        contentType: contentType
+      )
     }
     self.storedFilesOperation = {
       try await runtime.storedFiles()
@@ -482,6 +498,10 @@ public struct InstantSwiftDataClient: Sendable {
         @Sendable (URL, String?, String?) async throws
           -> AsyncThrowingStream<InstantFileUploadProgress, Error>
       )? = nil,
+    prepareFileUpload:
+      (@Sendable (URL, String?, String?) async throws -> InstantPreparedFileUpload)? = nil,
+    completeFileUpload:
+      (@Sendable (String, Int, Data, URL?, String?) async throws -> InstantStoredFile)? = nil,
     storedFiles: (@Sendable () async throws -> [InstantStoredFile])? = nil,
     storageSnapshot: (@Sendable () async throws -> InstantStorageSnapshot)? = nil,
     observeStoredFiles:
@@ -574,6 +594,8 @@ public struct InstantSwiftDataClient: Sendable {
       observeRoomTopicMessages: observeRoomTopicMessages,
       uploadFile: uploadFile,
       uploadFileProgress: uploadFileProgress,
+      prepareFileUpload: prepareFileUpload,
+      completeFileUpload: completeFileUpload,
       storedFiles: storedFiles,
       storageSnapshot: storageSnapshot,
       observeStoredFiles: observeStoredFiles,
@@ -686,6 +708,10 @@ public struct InstantSwiftDataClient: Sendable {
         @Sendable (URL, String?, String?) async throws
           -> AsyncThrowingStream<InstantFileUploadProgress, Error>
       )? = nil,
+    prepareFileUpload:
+      (@Sendable (URL, String?, String?) async throws -> InstantPreparedFileUpload)? = nil,
+    completeFileUpload:
+      (@Sendable (String, Int, Data, URL?, String?) async throws -> InstantStoredFile)? = nil,
     storedFiles: (@Sendable () async throws -> [InstantStoredFile])? = nil,
     storageSnapshot: (@Sendable () async throws -> InstantStorageSnapshot)? = nil,
     observeStoredFiles:
@@ -896,6 +922,8 @@ public struct InstantSwiftDataClient: Sendable {
       observeRoomTopicMessages ?? { _, _ in throw roomsError }
     self.uploadFileOperation = uploadFile ?? { _, _, _ in throw filesError }
     self.uploadFileProgressOperation = uploadFileProgress ?? { _, _, _ in throw filesError }
+    self.prepareFileUploadOperation = prepareFileUpload ?? { _, _, _ in throw filesError }
+    self.completeFileUploadOperation = completeFileUpload ?? { _, _, _, _, _ in throw filesError }
     self.storedFilesOperation = storedFiles ?? { throw filesError }
     self.storageSnapshotOperation = storageSnapshot ?? { throw filesError }
     self.observeStoredFilesOperation = observeStoredFiles ?? { throw filesError }
@@ -1112,6 +1140,12 @@ public struct InstantSwiftDataClient: Sendable {
         throw error
       },
       uploadFileProgress: { _, _, _ in
+        throw error
+      },
+      prepareFileUpload: { _, _, _ in
+        throw error
+      },
+      completeFileUpload: { _, _, _, _, _ in
         throw error
       },
       storedFiles: {
@@ -1799,6 +1833,42 @@ public struct InstantSwiftDataClient: Sendable {
     contentType: String? = nil
   ) async throws -> AsyncThrowingStream<InstantFileUploadProgress, Error> {
     try await uploadFileProgressOperation(sourceURL, name, contentType)
+  }
+
+  /// The storage upload for a file, prepared and not sent, for the app to run on its own `URLSession`, a background
+  /// one included (#491). The library reads the file's size and nothing else.
+  ///
+  /// ```swift
+  /// let upload = try await db.prepareFileUpload(from: audioURL, name: "recordings/\(id)/audio.wav")
+  /// backgroundSession.uploadTask(with: upload.request, fromFile: audioURL).resume()
+  /// ```
+  ///
+  /// Success waits for the file's size and the refresh token, not the network.
+  public func prepareFileUpload(
+    from sourceURL: URL,
+    name: String? = nil,
+    contentType: String? = nil
+  ) async throws -> InstantPreparedFileUpload {
+    try await prepareFileUploadOperation(sourceURL, name, contentType)
+  }
+
+  /// Records an upload the app ran, from its storage path and storage's answer, with `uploadFile`'s error mapping
+  /// (#491). The record has no `localPath`: the client keeps no copy and never touches the source, so a later
+  /// download fetches from storage. It works in a process that never prepared the upload, and completing the same
+  /// upload again changes nothing.
+  ///
+  /// ```swift
+  /// try await db.completeFileUpload(path: upload.path, statusCode: status, responseBody: body, sourceURL: audioURL)
+  /// ```
+  @discardableResult
+  public func completeFileUpload(
+    path: String,
+    statusCode: Int,
+    responseBody: Data,
+    sourceURL: URL? = nil,
+    contentType: String? = nil
+  ) async throws -> InstantStoredFile {
+    try await completeFileUploadOperation(path, statusCode, responseBody, sourceURL, contentType)
   }
 
   public func storedFiles() async throws -> [InstantStoredFile] {

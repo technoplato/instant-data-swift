@@ -35,6 +35,40 @@ public struct InstantStorageUploadRequest: Hashable, Sendable {
   }
 }
 
+extension InstantStorageUploadRequest {
+  /// The authenticated `PUT {apiURI}/storage/upload` for this file, with the headers `StorageAPI.ts` `uploadFile`
+  /// sends: the app, the storage path, the bearer token and the content type. The file is the body.
+  ///
+  /// The live transport sends it with an upload task. ``InstantRuntime/prepareFileUpload(from:name:contentType:)``
+  /// returns it unsent, so an app can run it on its own `URLSession`, a background one included (#491).
+  public var urlRequest: URLRequest {
+    var urlRequest = URLRequest(
+      url: apiURI
+        .appendingPathComponent("storage")
+        .appendingPathComponent("upload")
+    )
+    urlRequest.httpMethod = "PUT"
+    urlRequest.timeoutInterval = Self.timeoutInterval(byteCount: byteCount)
+    urlRequest.setValue(appID, forHTTPHeaderField: "app_id")
+    urlRequest.setValue(path, forHTTPHeaderField: "path")
+    urlRequest.setValue("Bearer \(refreshToken)", forHTTPHeaderField: "Authorization")
+    urlRequest.setValue(contentType ?? "application/octet-stream", forHTTPHeaderField: "Content-Type")
+    urlRequest.setValue(String(byteCount), forHTTPHeaderField: "Content-Length")
+    if let contentDisposition {
+      urlRequest.setValue(contentDisposition, forHTTPHeaderField: "Content-Disposition")
+    }
+    return urlRequest
+  }
+
+  /// How long an upload may go without an answer: `URLRequest`'s 60 s default, plus 4 s for every MiB it sends (an
+  /// uplink of 2 Mbit/s), since storage answers only once it has the whole body. A recording's 321 MB audio timed out
+  /// at the 60 s default on 2026-10-03 (`NSURLErrorDomain` -1001, Scribe #481); it gets about 21 minutes. A caller
+  /// that knows better sets the request's `timeoutInterval` itself.
+  static func timeoutInterval(byteCount: Int64) -> TimeInterval {
+    60 + 4 * TimeInterval(max(byteCount, 0)) / 1_048_576
+  }
+}
+
 public struct InstantStorageUploadResponse: Hashable, Codable, Sendable {
   public var id: String
 
@@ -609,48 +643,12 @@ extension InstantStorageTransportClient {
             abort: {}
           )
         }
-        var urlRequest = URLRequest(
-          url: request.apiURI
-            .appendingPathComponent("storage")
-            .appendingPathComponent("upload")
-        )
-        urlRequest.httpMethod = "PUT"
-        urlRequest.setValue(request.appID, forHTTPHeaderField: "app_id")
-        urlRequest.setValue(request.path, forHTTPHeaderField: "path")
-        urlRequest.setValue(
-          "Bearer \(request.refreshToken)",
-          forHTTPHeaderField: "Authorization"
-        )
-        urlRequest.setValue(
-          request.contentType ?? "application/octet-stream",
-          forHTTPHeaderField: "Content-Type"
-        )
-        urlRequest.setValue(
-          String(request.byteCount),
-          forHTTPHeaderField: "Content-Length"
-        )
-        if let contentDisposition = request.contentDisposition {
-          urlRequest.setValue(contentDisposition, forHTTPHeaderField: "Content-Disposition")
-        }
-
+        let urlRequest = request.urlRequest
         let upload = httpClient.prepareUploadFileOperation(urlRequest, request.sourceURL)
         return InstantStorageTransportOperation(
           run: {
             let response = try await upload.run()
-            try validateStorageResponse(response, operation: "upload file")
-            do {
-              return try JSONDecoder().decode(
-                InstantStorageUploadEnvelope.self,
-                from: response.data
-              ).data
-            } catch {
-              throw InstantError(
-                code: .decodeFailed,
-                operation: "upload file",
-                message: "Instant storage returned an invalid upload response.",
-                recovery: "Retry the upload and inspect the Instant storage response."
-              )
-            }
+            return try decodedStorageUploadResponse(response, operation: "upload file")
           },
           abort: {
             upload.abort()
@@ -853,6 +851,25 @@ private struct InstantStorageDeleteEnvelope: Decodable {
 
 private struct InstantStorageSignedDownloadEnvelope: Decodable {
   var data: String
+}
+
+/// The file id in storage's answer to an upload, with the live upload's mapping: 401 and 403 are a permission
+/// rejection, any other status outside 2xx a network failure, and a body without `data.id` a decode failure.
+func decodedStorageUploadResponse(
+  _ response: InstantStorageHTTPResponse,
+  operation: String
+) throws -> InstantStorageUploadResponse {
+  try validateStorageResponse(response, operation: operation)
+  do {
+    return try JSONDecoder().decode(InstantStorageUploadEnvelope.self, from: response.data).data
+  } catch {
+    throw InstantError(
+      code: .decodeFailed,
+      operation: operation,
+      message: "Instant storage returned an invalid upload response.",
+      recovery: "Retry the upload and inspect the Instant storage response."
+    )
+  }
 }
 
 private func validateStorageResponse(

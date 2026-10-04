@@ -10313,6 +10313,147 @@ public final class InstantRuntime: Sendable {
     return try await savePreparedStoredFile(file, contentsOf: sourceURL)
   }
 
+  /// The storage upload for a file, prepared and not sent, for an app to run on its own `URLSession`, a background one
+  /// included, which the system can finish while the app is suspended or relaunched (#491). `uploadFile` sends the same
+  /// request through the storage transport.
+  ///
+  /// It reads the file's size and nothing else: the library never reads or copies the source. When the upload
+  /// finishes, ``completeFileUpload(path:statusCode:responseBody:sourceURL:contentType:)`` records it.
+  ///
+  /// ```swift
+  /// let upload = try await runtime.prepareFileUpload(from: audioURL, name: "recordings/\(id)/audio.wav")
+  /// backgroundSession.uploadTask(with: upload.request, fromFile: audioURL).resume()
+  /// ```
+  ///
+  /// - Parameters:
+  ///   - name: the storage path; the file's last path component when nil, as for `uploadFile`.
+  @concurrent
+  public func prepareFileUpload(
+    from sourceURL: URL,
+    name rawName: String? = nil,
+    contentType rawContentType: String? = nil
+  ) async throws -> InstantPreparedFileUpload {
+    let operation = "prepare file upload"
+    guard sourceURL.isFileURL else {
+      throw validationFailed(
+        operation: operation,
+        message: "The source '\(sourceURL.absoluteString)' is not a file URL.",
+        recovery: "Write the upload to a regular local file and pass its file URL."
+      )
+    }
+    let name = try resolvedFileName(rawName, sourceURL: sourceURL, operation: operation)
+    let contentType = rawContentType?
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+      .nilIfEmpty
+    _ = try await resolvedFileUserID(operation: operation)
+    guard storageTransport != nil else {
+      throw validationFailed(
+        operation: operation,
+        message: "This runtime has no storage transport, so there is no Instant storage to upload to.",
+        recovery: "Bootstrap the runtime with a storage transport, such as InstantStorageTransportClient.live()."
+      )
+    }
+    let byteCount = try await persistence.regularFileByteCount(at: sourceURL, operation: operation)
+    let refreshToken = try await storageRefreshToken(operation: operation)
+    let request = InstantStorageUploadRequest(
+      appID: configuration.appID,
+      apiURI: configuration.apiURI,
+      path: name,
+      sourceURL: sourceURL,
+      byteCount: byteCount,
+      refreshToken: refreshToken,
+      contentType: contentType
+    )
+    return InstantPreparedFileUpload(
+      request: request.urlRequest,
+      path: name,
+      byteCount: byteCount,
+      contentType: contentType,
+      sourceURL: sourceURL
+    )
+  }
+
+  /// Records an upload that ran outside the library, from its storage path and storage's answer (#491), with
+  /// `uploadFile`'s mapping: 401 and 403 throw a permission rejection, any other status outside 2xx a network failure,
+  /// and a body without the file's id a decode failure.
+  ///
+  /// The record has no `localPath`: the library keeps no copy and never reads, moves or deletes the source, which is
+  /// read only for its size. A later `downloadStoredFile` or `storedFileContents` fetches the file from storage. The
+  /// path is all it needs, so a process that never prepared the upload completes it, and completing the same upload
+  /// again changes nothing.
+  ///
+  /// ```swift
+  /// // In the background session's delegate, in this process or a relaunched one:
+  /// let file = try await runtime.completeFileUpload(
+  ///   path: upload.path, statusCode: response.statusCode, responseBody: body, sourceURL: audioURL
+  /// )
+  /// ```
+  @discardableResult
+  @concurrent
+  public func completeFileUpload(
+    path rawPath: String,
+    statusCode: Int,
+    responseBody: Data,
+    sourceURL: URL? = nil,
+    contentType rawContentType: String? = nil
+  ) async throws -> InstantStoredFile {
+    let operation = "complete file upload"
+    let path = try validatedNonEmpty(
+      rawPath,
+      label: "File path",
+      operation: operation,
+      recovery: "Pass the path of the prepared upload."
+    )
+    let response = try decodedStorageUploadResponse(
+      InstantStorageHTTPResponse(statusCode: statusCode, data: responseBody),
+      operation: operation
+    )
+    let userID = try await resolvedFileUserID(operation: operation)
+    let requestedContentType = rawContentType?
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+      .nilIfEmpty
+    // The upload already succeeded: a source that has gone since only leaves the size unknown.
+    var measuredByteCount: Int64?
+    if let sourceURL {
+      measuredByteCount = try? await persistence.regularFileByteCount(at: sourceURL, operation: operation)
+    }
+    await operationGate.enter()
+    do {
+      let existing = try await persistence.loadStoredFile(appID: configuration.appID, fileID: response.id)
+      // Completing the same upload again keeps what an earlier completion knew and the call does not.
+      let sameUpload = existing.flatMap { $0.name == path ? $0 : nil }
+      let byteCount = measuredByteCount ?? sameUpload?.byteCount ?? 0
+      let contentType = requestedContentType ?? sameUpload?.contentType
+      if let sameUpload, sameUpload.localPath.isEmpty, sameUpload.byteCount == byteCount,
+        sameUpload.contentType == contentType
+      {
+        await operationGate.leave()
+        return sameUpload
+      }
+      let now = configuration.now()
+      let file = try await persistence.recordUploadedFile(
+        InstantStoredFile(
+          id: response.id,
+          appID: configuration.appID,
+          name: path,
+          contentType: contentType,
+          byteCount: byteCount,
+          localPath: "",
+          ownerUserID: userID,
+          createdAt: now,
+          updatedAt: now
+        )
+      )
+      let files = try await persistence.loadStoredFiles(appID: configuration.appID)
+      await storedFilesObservers.publish(files, for: storedFilesObservationKey)
+      await operationGate.leave()
+      return file
+    } catch {
+      await operationGate.leave()
+      throw error
+    }
+  }
+
   @concurrent
   public func uploadFileProgress(
     from sourceURL: URL,

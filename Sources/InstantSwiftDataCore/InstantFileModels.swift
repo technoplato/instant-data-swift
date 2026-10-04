@@ -104,6 +104,38 @@ public struct InstantStoredFile: Hashable, Codable, Sendable, Identifiable {
   }
 }
 
+/// A storage upload the library prepared and did not send (#491): the request for an app to run on its own
+/// `URLSession`, a background one included, which the system can finish while the app is suspended or relaunched.
+///
+/// ```swift
+/// let upload = try await db.prepareFileUpload(from: audioURL, name: "recordings/\(id)/audio.wav")
+/// backgroundSession.uploadTask(with: upload.request, fromFile: audioURL).resume()
+/// ```
+///
+/// When the task finishes, ``InstantRuntime/completeFileUpload(path:statusCode:responseBody:sourceURL:contentType:)``
+/// records the file from `path` and storage's answer, in this process or a later one.
+public struct InstantPreparedFileUpload: Hashable, Sendable {
+  /// The authenticated `PUT` to Instant storage, the request the live transport sends for `uploadFile`. Run it with
+  /// `URLSession.uploadTask(with:fromFile:)` and `sourceURL`. It carries the refresh token current when it was
+  /// prepared, so prepare it just before the upload starts.
+  public var request: URLRequest
+  /// The storage path the file uploads to, which completing the upload takes.
+  public var path: String
+  /// The file's size when the upload was prepared: the request's `Content-Length`.
+  public var byteCount: Int64
+  public var contentType: String?
+  /// The file the request sends. The library never reads or copies it.
+  public var sourceURL: URL
+
+  public init(request: URLRequest, path: String, byteCount: Int64, contentType: String?, sourceURL: URL) {
+    self.request = request
+    self.path = path
+    self.byteCount = byteCount
+    self.contentType = contentType
+    self.sourceURL = sourceURL
+  }
+}
+
 public struct InstantStoredFileContents: Hashable, Codable, Sendable {
   public var file: InstantStoredFile
   public var byteCount: Int64

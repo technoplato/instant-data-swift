@@ -10467,6 +10467,37 @@ public actor SQLitePersistenceStore {
     return savedFile
   }
 
+  /// Records a file another session uploaded (#491), with no copy: the record's `localPath` is empty, so the library
+  /// never reads or deletes the caller's source. A copy this store held of an earlier file under the same id is
+  /// removed, since storage now has this one. The record keeps its first `createdAt`.
+  public func recordUploadedFile(_ file: InstantStoredFile) throws -> InstantStoredFile {
+    var recorded = file
+    recorded.localPath = ""
+    let existing = try loadStoredFile(appID: file.appID, fileID: file.id)
+    if let existing {
+      recorded.createdAt = existing.createdAt
+    }
+    try execute(
+      """
+      INSERT OR REPLACE INTO instant_files
+        (app_id, file_id, name, created_at_ms, updated_at_ms, json)
+      VALUES (?, ?, ?, ?, ?, ?)
+      """,
+      [
+        .text(recorded.appID),
+        .text(recorded.id),
+        .text(recorded.name),
+        .int(recorded.createdAt.milliseconds),
+        .int(recorded.updatedAt.milliseconds),
+        .text(try encode(recorded)),
+      ]
+    )
+    if let heldCopyURL = existing?.heldCopyURL {
+      try? FileManager.default.removeItem(at: heldCopyURL)
+    }
+    return recorded
+  }
+
   public func saveDownloadedFile(
     _ file: InstantStoredFile,
     data: Data
