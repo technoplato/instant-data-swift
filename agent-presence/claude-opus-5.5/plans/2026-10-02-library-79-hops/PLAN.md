@@ -178,3 +178,18 @@ leave and a rejoin does not write. Red tests first. Touching
 `Sources/InstantSwiftDataCore/InstantRuntimeLiveSession.swift`, `InstantRuntime.swift` (a test accessor),
 `Tests/InstantSwiftDataCoreTests/InstantRoomPresenceRuntimeTests.swift` and
 `InstantInfiniteQueryLeadingRowsTests.swift`, added 2026-10-04 15:00 EDT, the lane at 15:25 EDT.
+
+## v1.9.8: #566, the live result JSON written once per 30 s (top library priority; main, 2026-10-04 16:10 EDT)
+
+phone-perf's disk-writes report from Michael's iPhone on build 90 (1.9.7): 1,073.74 MB dirtied in 185 s after launch,
+92 of 99 samples in commitServerApplyPlan, which upserts each refreshed query's whole result JSON. Main, verbatim:
+"Ship the fix in whichever release can publish first. If adding it to 1.9.8 now (before dev-198b starts) delays 1.9.8
+by less than cutting a separate 1.9.9 would, put it in 1.9.8." and "Yes, point 3 is required. Correctness first: a
+crash must never leave a fact the server deleted." A refresh whose result did not change writes no JSON; a changed
+result's JSON is written at most once per query per 30 s, the newest in memory for every in-session reader; pending
+results are written when due, on unsubscribe and close, and through a public flush the app calls on background and
+terminate; a result whose JSON waited is marked, and the next bootstrap rebuilds a marked result from its ownership
+rows. Red tests first, with a kill between throttled writes. #567 files Reactor's per-key persistence for later.
+Touching `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift`, `InstantRuntime.swift`,
+`Sources/InstantSwiftData/InstantSwiftData.swift` (the client's flush) and new
+`Tests/InstantSwiftDataCoreTests/InstantLiveQueryResultWriteTests.swift`, added 2026-10-04 16:45 EDT.
