@@ -644,7 +644,8 @@ extension InstantOperationGatePriorityTests {
     defer { InstantDiagnostics.shared.removeHandler(token) }
 
     let first = try await Self.todoPrepared(store, id: "todo-1", text: "one", transactionID: ids.0)
-    let firstTicket = try #require(await store.commitDeferringPublication(first).publication)
+    let firstCommitted = await store.commitDeferringPublication(first)
+    let firstTicket = try #require(firstCommitted.publication)
     let second = try await Self.todoPrepared(store, id: "todo-2", text: "two", transactionID: ids.1)
     _ = await store.commitDeferringPublication(second)
     _ = await store.publishCommittedChanges(firstTicket)
@@ -699,7 +700,9 @@ extension InstantOperationGatePriorityTests {
     let start = ContinuousClock.now
     summary.record(commitCount: 2, metrics: InstantStorePublishMetrics(splicedObserverCount: 1), duration: .milliseconds(20))
     summary.record(commitCount: 1, metrics: InstantStorePublishMetrics(rematerializedObserverCount: 3), duration: .milliseconds(150))
-    #expect(summary.takeIfDue(now: start + .seconds(5), interval: .seconds(30)) == nil)
+    // takeIfDue mutates, and #expect evaluates its argument on a copy, so each call comes first.
+    let early = summary.takeIfDue(now: start + .seconds(5), interval: .seconds(30))
+    #expect(early == nil)
     let window = summary.takeIfDue(now: start + .seconds(31), interval: .seconds(30))
     expectNoDifference(window?.publicationCount, 2)
     expectNoDifference(window?.commitCount, 3)
@@ -707,6 +710,7 @@ extension InstantOperationGatePriorityTests {
     expectNoDifference(window?.metrics.splicedObserverCount, 1)
     expectNoDifference(window?.metrics.rematerializedObserverCount, 3)
     expectNoDifference(window?.maximumDuration, .milliseconds(150))
-    #expect(summary.takeIfDue(now: start + .seconds(70), interval: .seconds(30)) == nil, "an empty window is not reported")
+    let empty = summary.takeIfDue(now: start + .seconds(70), interval: .seconds(30))
+    #expect(empty == nil, "an empty window is not reported")
   }
 }
