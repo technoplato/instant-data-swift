@@ -262,6 +262,17 @@ enum InstantStreamWriterCatchUpEnd: Sendable {
   case closing(AsyncThrowingStream<InstantLiveStreamFlushed, Error>)
 }
 
+extension InstantLiveMessage {
+  /// The server frames that belong to a room: join and leave answers, presence, and broadcasts. The receiver applies
+  /// them beside the query applier rather than behind it (#461).
+  static let roomFrameOps: Set<String> = [
+    "join-room-ok", "leave-room-ok", "join-room-error", "refresh-presence", "patch-presence", "server-broadcast",
+    "set-presence-ok", "client-broadcast-ok",
+  ]
+
+  var isRoomFrame: Bool { Self.roomFrameOps.contains(op) }
+}
+
 package actor InstantRuntimeLiveSession {
   private struct RegisteredQuery: Sendable {
     var query: InstantLiveJSONValue
@@ -277,6 +288,9 @@ package actor InstantRuntimeLiveSession {
     var room: InstantRoomHandle
     var observerCount: Int
     var presence: [String: JSONValue]?
+    /// The runtime's sequence number of `presence`, so a publication that reaches this actor after a newer one never
+    /// replaces it here or on the wire (#461).
+    var presenceSequence: UInt64 = 0
     var queuedBroadcasts: [QueuedBroadcast] = []
     var isConnected = false
   }
@@ -385,6 +399,8 @@ package actor InstantRuntimeLiveSession {
     InstantAutomaticOutboxClaimLimits.maximumEncodedBodyBytes
   static let deepOutboxReportingThreshold = 100
   private var registeredRooms: [InstantRoomHandle: RegisteredRoom] = [:]
+  /// Presence the runtime published in a room it has not joined yet, for the join to carry (#461).
+  private var presenceBeforeJoin: [InstantRoomHandle: (values: [String: JSONValue]?, sequence: UInt64)] = [:]
   private var registeredStreamReaders: [String: RegisteredStreamReader] = [:]
   private var pendingStreamStarts:
     [String: AsyncThrowingStream<InstantLiveStartStreamOK, Error>.Continuation] = [:]
@@ -869,6 +885,11 @@ package actor InstantRuntimeLiveSession {
       String?
     ) async throws -> Void,
     onEventAcquired: (@Sendable () async -> Void)? = nil,
+    onRoomEvent: @escaping @Sendable (
+      InstantLiveServerEvent,
+      InstantRoomHandle,
+      String?
+    ) async -> Void = { _, _, _ in },
     onFailure: @escaping @Sendable (Error) async -> Void
   ) async throws {
     guard receiverTaskOwner.isIdle else { return }
@@ -906,14 +927,38 @@ package actor InstantRuntimeLiveSession {
     // receiver has a reader, which keeps a `receive()` outstanding, and one applier, which applies the frames one at
     // a time in arrival order with the checks the single receive loop had (#296). Both belong to this generation's
     // task: replacement and close cancel and wait for both, and the buffer dies with them.
+    //
+    // Room frames (presence, broadcasts, join and leave answers) skip the applier's queue: the reader hands them to a
+    // third task that applies them in arrival order, so a presence patch never waits behind a query apply, as
+    // `Reactor.js` handles every frame in `_handleReceive` as it arrives (#461). The reader still awaits nothing but
+    // `receive()`.
     let frames = InstantLiveReceivedFrames(capacity: Self.maximumBufferedReceivedFrames)
     receivedFrames = frames
+    let (roomFrames, roomFrameInbox) = AsyncStream.makeStream(
+      of: InstantLiveMessage.self,
+      bufferingPolicy: .unbounded
+    )
     _ = receiverTaskOwner.start { [weak self] in
       await withTaskGroup(of: Void.self) { group in
+        group.addTask { [weak self] in
+          for await message in roomFrames {
+            guard !Task.isCancelled else { return }
+            await self?.applyRoomFrame(
+              message,
+              generation: generation,
+              session: session,
+              onRoomEvent: onRoomEvent
+            )
+          }
+        }
         group.addTask {
           do {
             while !Task.isCancelled {
               let message = try await session.receive()
+              if message.isRoomFrame {
+                roomFrameInbox.yield(message)
+                continue
+              }
               guard await frames.append(message) else { return }
             }
           } catch {
@@ -978,6 +1023,7 @@ package actor InstantRuntimeLiveSession {
         // The reader stops with the applier. Every path that stops the applier has already closed or aborted this
         // socket, or is about to; aborting it here as well guarantees the reader's outstanding `receive()` returns.
         frames.close()
+        roomFrameInbox.finish()
         session.abort()
         group.cancelAll()
       }
@@ -1718,6 +1764,8 @@ package actor InstantRuntimeLiveSession {
     )
   }
 
+  /// Registers one holder of `room`; the first sends `join-room`, carrying the presence the runtime published before
+  /// the join, as `Reactor.js` sends `initialPresence` with `join-room` and again on `join-room-ok` (#461).
   func joinRoom(
     _ room: InstantRoomHandle,
     clientEventID: String
@@ -1727,37 +1775,65 @@ package actor InstantRuntimeLiveSession {
       registeredRooms[room] = registration
       return
     }
-    registeredRooms[room] = RegisteredRoom(room: room, observerCount: 1)
+    let early = presenceBeforeJoin.removeValue(forKey: room)
+    registeredRooms[room] = RegisteredRoom(
+      room: room,
+      observerCount: 1,
+      presence: early?.values,
+      presenceSequence: early?.sequence ?? 0
+    )
     guard let session, isOpened else { return }
-    try await send(.joinRoom(room, clientEventID: clientEventID), through: session)
+    try await send(.joinRoom(room, presence: early?.values, clientEventID: clientEventID), through: session)
   }
 
+  /// Whether the server confirmed the join of `room` on the current connection: `join-room-ok`, or a presence frame or
+  /// broadcast for it, since the socket opened. `Reactor.js` reports the same flag as `isLoading: !room.isConnected`.
+  func isRoomJoined(_ room: InstantRoomHandle) -> Bool {
+    isOpened && registeredRooms[room]?.isConnected == true
+  }
+
+  /// Releases one holder of `room`. Returns whether that was the last holder, so the room was left: only then does the
+  /// runtime forget the room's presence, as `Reactor.js` deletes `_presence[roomId]` only in `_cleanupRoom` (#461).
+  @discardableResult
   func leaveRoom(
     _ room: InstantRoomHandle,
     clientEventID: String
-  ) async throws {
-    guard var registration = registeredRooms[room] else { return }
+  ) async throws -> Bool {
+    guard var registration = registeredRooms[room] else { return false }
     if registration.observerCount > 1 {
       registration.observerCount -= 1
       registeredRooms[room] = registration
-      return
+      return false
     }
     registeredRooms[room] = nil
-    guard let session, isOpened else { return }
+    guard let session, isOpened else { return true }
     try await send(.leaveRoom(room, clientEventID: clientEventID), through: session)
+    return true
   }
 
+  /// Records the presence the runtime's session carries in `room` as publication `sequence`, `nil` once it published
+  /// none, and sends it once the room is joined: `nil` goes out as `{}`, so peers stop seeing what was withdrawn, and a
+  /// rejoin carries nothing. Before the room is joined it waits for `joinRoom`. A publication older than the one
+  /// already recorded is dropped: two publishes that race to this actor must leave the newer on the wire (#461).
   func setPresence(
     room: InstantRoomHandle,
-    values: [String: JSONValue],
+    values: [String: JSONValue]?,
+    sequence: UInt64,
     clientEventID: String
   ) async throws {
-    guard var registration = registeredRooms[room] else { return }
+    guard var registration = registeredRooms[room] else {
+      if sequence > presenceBeforeJoin[room]?.sequence ?? 0 {
+        presenceBeforeJoin[room] = (values, sequence)
+      }
+      return
+    }
+    guard sequence > registration.presenceSequence else { return }
     registration.presence = values
+    registration.presenceSequence = sequence
     registeredRooms[room] = registration
     guard registration.isConnected, let session, isOpened else { return }
     try await send(
-      .setPresence(room: room, values: values, clientEventID: clientEventID),
+      .setPresence(room: room, values: values ?? [:], clientEventID: clientEventID),
       through: session
     )
   }
@@ -1785,10 +1861,6 @@ package actor InstantRuntimeLiveSession {
       ),
       through: session
     )
-  }
-
-  func roomHandle(id: String) -> InstantRoomHandle? {
-    registeredRooms.keys.first { $0.id == id }
   }
 
   private func record(
@@ -1865,16 +1937,6 @@ package actor InstantRuntimeLiveSession {
       // The runtime restarts the writer on this socket (`markStreamWriterBehind`); the socket stays open, as
       // upstream `Stream.ts` `onAppendFailed` restarts only the write stream (library-78).
       break
-    case let .joinRoomOK(room):
-      try await recordRoomEvent(op: room.op, roomID: room.roomID)
-    case let .leaveRoomOK(room):
-      try await recordRoomEvent(op: room.op, roomID: room.roomID)
-    case let .refreshPresence(refresh):
-      try await recordRoomEvent(op: "refresh-presence", roomID: refresh.roomID)
-    case let .patchPresence(patch):
-      try await recordRoomEvent(op: "patch-presence", roomID: patch.roomID)
-    case let .serverBroadcast(broadcast):
-      try await recordRoomEvent(op: "server-broadcast", roomID: broadcast.roomID)
     case let .streamAppend(append):
       for key in registeredStreamReaders.keys.sorted() {
         guard let registration = registeredStreamReaders[key] else { continue }
@@ -2286,6 +2348,53 @@ package actor InstantRuntimeLiveSession {
   /// for the next frame as soon as it buffers one, so a new `receive()` no longer proves a frame was applied (#296).
   func applierIsWaitingForAFrameForTesting() -> Bool {
     receivedFrames?.applierIsWaitingForTesting == true
+  }
+
+  /// Applies one room frame the reader handed over, in arrival order and beside the query applier (#461): the room's
+  /// connection state and the presence and broadcasts it flushes on `join-room-ok`, then the runtime's presence or
+  /// broadcast state. A send that fails here aborts the socket, and the applier ends the generation as for any other
+  /// failed send.
+  private func applyRoomFrame(
+    _ message: InstantLiveMessage,
+    generation: Int,
+    session: InstantLiveWebSocketSession,
+    onRoomEvent: @Sendable (InstantLiveServerEvent, InstantRoomHandle, String?) async -> Void
+  ) async {
+    guard canDeliverReceiverEvent(generation: generation, session: session) else { return }
+    let event = InstantLiveServerEvent(message: message)
+    let roomID: String
+    switch event {
+    case let .joinRoomOK(room), let .leaveRoomOK(room):
+      roomID = room.roomID
+    case let .refreshPresence(refresh):
+      roomID = refresh.roomID
+    case let .patchPresence(patch):
+      roomID = patch.roomID
+    case let .serverBroadcast(broadcast):
+      roomID = broadcast.roomID
+    default:
+      // set-presence-ok, client-broadcast-ok, and the legacy join-room-error carry nothing to apply.
+      return
+    }
+    do {
+      try await recordRoomEvent(op: event.op, roomID: roomID)
+    } catch {
+      InstantDiagnostics.shared.record(
+        error: error,
+        subsystem: "instant-swift-data-core",
+        category: "presence",
+        event: "live-room.flush-failed",
+        message: "A room frame's flush of presence or broadcasts failed; the connection reconnects.",
+        metadata: ["op": event.op]
+      )
+      return
+    }
+    guard canDeliverReceiverEvent(generation: generation, session: session),
+      let room = registeredRooms.keys.first(where: { $0.id == roomID })
+    else {
+      return
+    }
+    await onRoomEvent(event, room, sessionID)
   }
 
   private func recordRoomEvent(op: String, roomID: String) async throws {

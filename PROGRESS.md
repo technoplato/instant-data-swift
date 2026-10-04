@@ -1,3 +1,29 @@
+## 2026-10-04 09:21:02 EDT — rooms parity (#461): the red-then-green gate passed on `681a0ba9`; library-79 folds the branch into its next release; the bench is queued
+
+- **Owner:** rooms (`claude-opus-5.5-rooms`, workLog agentId `claude-code/claude-opus-5.5/rooms`), plan
+  `2026-10-03-rooms`, on Michael's go-ahead through main (Recording 186 #32-35, quoted in the entry below).
+- **Commits since the last entry:** `27770ee9`, test-only (the 10,000-message run compares median 100-message
+  batches, so one stall of the test process cannot fail it; four waits get the codebase's 5 s), its ledger `681a0ba9`,
+  and this documentation commit.
+- **Checks (heavy.sh normal lane, 2026-10-04 01:19-02:12):** red on `186d2f74`, v1.9.5 plus the red tests: all 9 red
+  tests recorded their known issues (13), the three existing room tests passed. Green on `681a0ba9`: room suites 51/51
+  (one known issue v1.9.5 has too), CLI, recipe and wrapper room tests 67/67, fast drain, survival and live transport
+  139/140; the miss, `liveTimeoutDoesNotAwaitCancellationInsensitiveWork` (0.314 s against 0.25 s), also missed under
+  load in library-79's v1.9.5 and v1.9.6 gates; alone, five times on this build at load 250-330 (2026-10-04 09:20), it
+  passed 5 of 5. The 10,000-broadcast run: every message once and in order in 182 ms, median batch 2.35 ms first and
+  1.40 ms last, 128 held. Main accepted the gate on 2026-10-04.
+- **Evidence:** `/Users/laptop/Sync/audit/room-bench-2026-10-03/gate/` (steps, logs, the job scripts); ADR 0019's
+  Evidence section; #461's work log.
+- **Release:** library-79 merges the branch with `--no-ff` into its next release branch (1.9.7, on v1.9.6 `6883dbea`,
+  or 1.9.8), behind its own gate and the live-recording simulator soak. A trial merge into v1.9.6 (`git merge-tree`)
+  conflicts only in CHANGELOG.md, PROGRESS.md, the commit ledger and two `_touching` claims; the merged
+  InstantRuntime.swift, InstantRuntimeLiveSession.swift, InstantRuntimeRoomPresence.swift and
+  InstantStorageTransport.swift typecheck (compiler only).
+- **Continue:** the bench (`room-bench-builds`, then `room-bench-rounds`, low lane, the rounds exclusive under main's
+  Docker conditions); its P1-P4 table, presence-replay CPU and server spans go in ADR 0019 and #461, in a
+  documentation-only commit. Open: a room error state; the typed `InstantRoom.isJoined` still turns true when the join
+  is sent; `observeRoomTopicEvents` is on the runtime only; Scribe #462 follows plan `0834b4b6` on Scribe main.
+
 ## 2026-10-04 08:40:53 EDT — v1.9.7: the operation gate's priority lanes and one stall report per holder, hydration and publication off the gate, write-failure kinds and connection health; main's merge of this commit is the release commit (#473 #482)
 
 - **Owner:** library-79 (`claude-opus-5.5-library-79`, workLog agentId `claude-code/claude-opus-5.5/library-79`), plan
@@ -48,6 +74,32 @@
 - **Continue:** 1.9.7 on `agent/claude-opus-5.5/library-79-197` (gate priority lanes, hydration and publication off the
   gate, write-failure kinds and connection health; its dev job is queued); 1.9.8 on
   `agent/claude-opus-5.5/library-79-198` (#474); then #491's upload API.
+
+## 2026-10-03 18:51:28 EDT — rooms parity (#461) on `agent/claude-opus-5.5/rooms`, rebased onto v1.9.5: one peer per session, presence and topics in memory off the operation gate, room frames beside the query applier; the gate and the bench are queued
+
+- **Owner:** rooms (`claude-opus-5.5-rooms`, workLog agentId `claude-code/claude-opus-5.5/rooms`), plan
+  `2026-10-03-rooms`, on Michael's go-ahead through main: Recording 186 #32-33, "That sounds good to me for the, uh,
+  rooms plan, so go ahead and knock that out with a subagent." and #34-35, "Good plan. And let's get feature parody
+  and performance parody with Swift and typescript, please." Library-79 cuts the release that carries it.
+- **Defect (the study, `/Users/laptop/Sync/audit/instant-rooms-2026-10-03/report.md`):** members keyed by user id, so
+  one user's sessions merged; presence publishes held the operation gate and touched SQLite; presence frames queued
+  behind query applies; every frame emitted; topics were stored forever and observers missed messages; leaveRoom wiped
+  shared state and leavePresence was local only.
+- **Commits on `agent/claude-opus-5.5/rooms` (base v1.9.5 `e7c6ffb3`):** claims `0b2dd60c` and `2e513f1c`; red tests
+  `53df7ab1`, `186d2f74`; `b6b27666` session peers; `455a40ce` presence in memory off the gate; `a17a9cb5` change-only
+  emission; `55339967` room frames beside the applier; `5b2888f7` leave semantics; `68a99b2a` topics in memory, once
+  each; `f997440c` forget on a failed final leave; `4d83580d` selection; `52b99c19` client selection; `e452bfa8` and
+  `e31eadc7` isRoomJoined; test-only `fb8744bb`, `0bec8c35`. ADR 0019 and the README's rooms rules in this commit.
+- **Checks so far (compiler only, no test run yet):** every changed source and test file typechecks and lowers to SIL
+  (`swiftc -frontend -typecheck` and `-emit-sil` against emitted modules) on the rebased tree.
+- **Queued:** `rooms-red-green` (normal lane; red on `186d2f74`, then green on the branch head: the room suites,
+  the CLI and recipe room tests, fast-drain, connection survival, live transport); `room-bench-builds` and
+  `room-bench-rounds` (low lane, the rounds exclusive, main's Docker conditions in `scripts/round.sh`).
+- **Continue:** when the runs finish, put the P1-P4 table, the presence-replay CPU and the server spans in ADR 0019 and
+  #461, copy `/tmp/rooms-agent/runs/red-green/` to `/Users/laptop/Sync/audit/room-bench-2026-10-03/gate/`, and hand the
+  head to library-79 (1.9.6 or 1.9.7); its release gate should include the live-recording simulator soak, since the
+  receive loop changed. Scribe #462 follows plan `0834b4b6` on Scribe main. Open: a room error state; the typed
+  `InstantRoom.isJoined` still turns true when the join is sent; `observeRoomTopicEvents` is on the runtime only.
 
 ## 2026-10-03 18:37:38 EDT — v1.9.5: a local write no longer holds the operation gate while it logs, and outbox listings never wait for the gate; main's merge of this commit is the release commit (#473)
 
@@ -486,6 +538,7 @@
   - Pattern B known issue unchanged.
 - **Next:** the coordinator builds and installs Scribe build 73 with `506089b2`, then watches Recording 023 drain on the
   phone.
+
 ## 2026-09-30 22:06:32 EDT — #300 follow-up: live cursor check, the Mac's on-screen detail, and Scribe main measured again (#300 #303 #305)
 
 - **Branch:** the code is unchanged (`0d66e6bb`). This commit adds bookkeeping only: this entry, the plan's status, and
@@ -1079,14 +1132,12 @@ the narrative of what the library must prove and why.
 - **Device:** clean wipe + 1.5.4 install: **~205→432 MB** in 1 min (not multi-GB); `hol_oversize=0`. Poison outbox survives reinstall without uninstall.
 - **Next:** rate-limit HOL diagnostics; companion status spam; absolute idle budget soak; remaining failMutation gate work.
 
-
 ## 2026-08-05 13:31:04 EDT — Production performance readiness plan (research quorum)
 
 - **Evidence (iPad Tailnet):** physical footprint climbed ~88 MB → 880–945 MB (later ~1.3 GB) under 1.5.3; `failMutation` held operation gate 160+ s; permission-denied + missing required-attr storms; ack-timeout reclaim + receive-loop-failed.
 - **Plan:** `docs/plans/2026-08-05-production-performance-readiness-plan.md` — Phase 0 thrash stop (error isolation, short gates, poison outbox); Phase 1 absolute budgets; Phase 2 structural efficiency under ADR.
 - **Verdict:** not production-ready (~2.5/10 independent eval). Keep SQLite offline; do not re-open 1.5.1 Jetsam thrash.
 - **Next:** implement Phase 0.1–0.4 tests-first; pin after 1.5.4/1.6; Scribe stop poison writers + photo coalesce.
-
 
 ## 2026-08-04 — Linked infinite + includes recipe (join-shaped paging)
 

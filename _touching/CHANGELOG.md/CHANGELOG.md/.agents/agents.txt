@@ -18,3 +18,4 @@ claude-opus-5.5-account-linking 2026-10-01T09:56:17-04:00 grower plan=2026-10-01
 claude-opus-5.5-release 2026-10-01T17:04:28-04:00 mower plan=2026-10-01-release-1.8.0 #155 #303 #324 #329
 claude-opus-5.5-library-79 2026-10-02T09:11:29-04:00 mower plan=2026-10-02-library-79-hops #403
 claude-opus-5.5-library-78 2026-10-02T13:41:21-04:00 mower plan=2026-10-02-release-1.9.0 (release entries) #376 #360
+claude-opus-5.5-rooms 2026-10-03T14:03:02-04:00 grower plan=2026-10-03-rooms #461

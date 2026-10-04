@@ -749,176 +749,6 @@ private final class InstantFileUploadProgressCancellation: @unchecked Sendable {
   }
 }
 
-private actor InstantRuntimeLiveRoomPresenceState {
-  private var sessionsByRoom: [InstantRoomHandle: JSONValue] = [:]
-
-  func replace(
-    room: InstantRoomHandle,
-    sessions: [String: InstantLiveJSONValue],
-    excludingSessionID: String?,
-    appID: String,
-    updatedAt: InstantTimestamp
-  ) -> [InstantRoomPresenceMember] {
-    var value = JSONValue.object(sessions.mapValues(\.jsonValue))
-    if let excludingSessionID {
-      value.dissocIn([.key(excludingSessionID)])
-    }
-    sessionsByRoom[room] = value
-    return members(
-      room: room,
-      sessions: value,
-      excludingSessionID: excludingSessionID,
-      appID: appID,
-      updatedAt: updatedAt
-    )
-  }
-
-  func patch(
-    room: InstantRoomHandle,
-    edits: [InstantLiveJSONValue],
-    excludingSessionID: String?,
-    appID: String,
-    updatedAt: InstantTimestamp
-  ) throws -> [InstantRoomPresenceMember] {
-    var sessions = sessionsByRoom[room] ?? .object([:])
-    for (index, edit) in edits.enumerated() {
-      guard case let .array(parts) = edit,
-        parts.count >= 2,
-        case let .array(rawPath) = parts[0],
-        let operation = parts[1].stringValue
-      else {
-        throw malformedPatch(index: index)
-      }
-      let path = try rawPath.map { component -> JSONValuePathComponent in
-        guard let key = component.stringValue else {
-          throw malformedPatch(index: index)
-        }
-        return .key(key)
-      }
-      switch operation {
-      case "+":
-        guard parts.count == 3 else { throw malformedPatch(index: index) }
-        sessions.insertIn(path, parts[2].jsonValue)
-      case "r":
-        guard parts.count == 3 else { throw malformedPatch(index: index) }
-        sessions.assocIn(path, parts[2].jsonValue)
-      case "-":
-        guard parts.count == 2 else { throw malformedPatch(index: index) }
-        sessions.dissocIn(path)
-      default:
-        throw malformedPatch(index: index)
-      }
-    }
-    if let excludingSessionID {
-      sessions.dissocIn([.key(excludingSessionID)])
-    }
-    sessionsByRoom[room] = sessions
-    return members(
-      room: room,
-      sessions: sessions,
-      excludingSessionID: excludingSessionID,
-      appID: appID,
-      updatedAt: updatedAt
-    )
-  }
-
-  func current(
-    room: InstantRoomHandle,
-    excludingSessionID: String?,
-    appID: String,
-    updatedAt: InstantTimestamp
-  ) -> [InstantRoomPresenceMember] {
-    members(
-      room: room,
-      sessions: sessionsByRoom[room] ?? .object([:]),
-      excludingSessionID: excludingSessionID,
-      appID: appID,
-      updatedAt: updatedAt
-    )
-  }
-
-  func remove(room: InstantRoomHandle) {
-    sessionsByRoom[room] = nil
-  }
-
-  private func members(
-    room: InstantRoomHandle,
-    sessions: JSONValue,
-    excludingSessionID: String?,
-    appID: String,
-    updatedAt: InstantTimestamp
-  ) -> [InstantRoomPresenceMember] {
-    guard case let .object(sessionValues) = sessions else { return [] }
-    return sessionValues.compactMap { sessionID, rawEnvelope in
-      guard sessionID != excludingSessionID,
-        case let .object(envelope) = rawEnvelope,
-        case let .object(values)? = envelope["data"]
-      else {
-        return nil
-      }
-      let peerID: String
-      if case let .string(value)? = envelope["peer-id"] {
-        peerID = value
-      } else {
-        peerID = sessionID
-      }
-      let userID: String
-      if case let .object(user)? = envelope["user"],
-        case let .string(value)? = user["id"]
-      {
-        userID = value
-      } else {
-        userID = peerID
-      }
-      return InstantRoomPresenceMember(
-        appID: appID,
-        room: room,
-        userID: userID,
-        values: values,
-        updatedAt: updatedAt
-      )
-    }
-    .sorted { $0.id < $1.id }
-  }
-
-  private func malformedPatch(index: Int) -> InstantError {
-    InstantError(
-      code: .decodeFailed,
-      operation: "apply Instant live presence patch",
-      path: "edits[\(index)]",
-      message: "Instant patch-presence contained a malformed edit.",
-      recovery: "Inspect the canonical Instant patch-presence payload."
-    )
-  }
-}
-
-private actor InstantRuntimeActiveRoomPresenceState {
-  private var userIDsByRoom: [InstantRoomHandle: Set<String>] = [:]
-
-  func activate(userID: String, in room: InstantRoomHandle) {
-    userIDsByRoom[room, default: []].insert(userID)
-  }
-
-  func deactivate(userID: String, in room: InstantRoomHandle) {
-    userIDsByRoom[room]?.remove(userID)
-    if userIDsByRoom[room]?.isEmpty == true {
-      userIDsByRoom[room] = nil
-    }
-  }
-
-  func removeAll(in room: InstantRoomHandle) {
-    userIDsByRoom[room] = nil
-  }
-
-  func activeMembers(
-    _ members: [InstantRoomPresenceMember],
-    in room: InstantRoomHandle
-  ) -> [InstantRoomPresenceMember] {
-    guard let activeUserIDs = userIDsByRoom[room] else { return [] }
-    return members.filter { activeUserIDs.contains($0.userID) }
-  }
-}
-
 private actor InstantRuntimeReconnectController {
   private let taskOwner = InstantRuntimeExactTaskOwner()
   private var lifecycleGeneration = 0
@@ -1698,8 +1528,13 @@ public final class InstantRuntime: Sendable {
   private let liveQueryAcknowledgements = InstantLiveQueryAcknowledgementState()
   /// Each live query's latest server error, delivered to its observers without ending them (#360).
   private let liveQueryErrors = InstantLiveQueryErrors()
-  private let liveRoomPresenceState = InstantRuntimeLiveRoomPresenceState()
-  private let activeRoomPresenceState = InstantRuntimeActiveRoomPresenceState()
+  /// A live runtime's room presence, in memory (#461). A runtime without a live transport keeps it in SQLite.
+  private let roomPresenceState = InstantRuntimeRoomPresence()
+  /// The signed-in user id for room calls, so they never read the auth session from SQLite (#461).
+  private let roomAuthUserID = InstantRoomAuthUserIDCache()
+  /// A live runtime's room topic messages, in memory and bounded (#461). A runtime without a live transport keeps them
+  /// in SQLite.
+  private let roomTopicsState = InstantRuntimeRoomTopics()
   private let automaticLiveConnectionTaskOwner = InstantRuntimeExactTaskOwner()
   private let startupCookieSyncTaskOwner = InstantRuntimeExactTaskOwner()
   private let reconnectController = InstantRuntimeReconnectController()
@@ -6923,6 +6758,10 @@ public final class InstantRuntime: Sendable {
               )
             },
             onEventAcquired: configuration.onLiveReceiverEventAcquiredForTesting,
+            onRoomEvent: { [weak self] event, room, sessionID in
+              guard let self else { return }
+              await self.handleLiveRoomEvent(event, room: room, sessionID: sessionID)
+            },
             onFailure: { [weak self] error in
               guard let self else { return }
               await self.handleLiveSessionFailure(error)
@@ -8116,15 +7955,6 @@ public final class InstantRuntime: Sendable {
       await resolveParkedRefusalsIfNeeded()
       await startLiveMutationDeliveryIfNeeded()
 
-    case let .refreshPresence(refresh):
-      try await applyLivePresenceRefresh(refresh)
-
-    case let .patchPresence(patch):
-      try await applyLivePresencePatch(patch)
-
-    case let .serverBroadcast(broadcast):
-      try await applyLiveServerBroadcast(broadcast)
-
     case let .streamAppend(append):
       guard let delivery = await liveSession.takeDeliveredStreamAppend(
         clientEventID: append.clientEventID
@@ -8389,6 +8219,40 @@ public final class InstantRuntime: Sendable {
     case .initOK, .joinRoomOK, .leaveRoomOK, .startStreamOK,
       .streamFlushed, .other:
       break
+
+    case .refreshPresence, .patchPresence, .serverBroadcast:
+      // Room frames never reach the applier: the live session hands them to `handleLiveRoomEvent` (#461).
+      break
+    }
+  }
+
+  /// Applies a room frame beside the query applier, in arrival order (#461). A frame that cannot be applied is logged
+  /// and dropped; the next refresh-presence restates the room.
+  private func handleLiveRoomEvent(
+    _ event: InstantLiveServerEvent,
+    room: InstantRoomHandle,
+    sessionID: String?
+  ) async {
+    do {
+      switch event {
+      case let .refreshPresence(refresh):
+        await applyLivePresenceRefresh(refresh, in: room, sessionID: sessionID)
+      case let .patchPresence(patch):
+        try await applyLivePresencePatch(patch, in: room, sessionID: sessionID)
+      case let .serverBroadcast(broadcast):
+        try await applyLiveServerBroadcast(broadcast, in: room)
+      default:
+        break
+      }
+    } catch {
+      InstantDiagnostics.shared.record(
+        error: error,
+        subsystem: "instant-swift-data-core",
+        category: "presence",
+        event: "live-room.frame-failed",
+        message: "Dropped a room frame the runtime could not apply.",
+        metadata: ["op": event.op, "roomType": room.type]
+      )
     }
   }
 
@@ -8621,27 +8485,19 @@ public final class InstantRuntime: Sendable {
     return materialization.nextSeenOffset
   }
 
+  /// A `refresh-presence` replaces the room's peers in memory, in one turn and without SQLite or the operation gate,
+  /// as `Reactor.js` `_setPresencePeers` does (#461).
   private func applyLivePresenceRefresh(
-    _ refresh: InstantLivePresenceRefresh
-  ) async throws {
-    guard let room = await liveSession.roomHandle(id: refresh.roomID) else { return }
-    let remoteMembers = await liveRoomPresenceState.replace(
-      room: room,
+    _ refresh: InstantLivePresenceRefresh,
+    in room: InstantRoomHandle,
+    sessionID: String?
+  ) async {
+    let summary = await roomPresenceState.replacePeers(
+      in: room,
       sessions: refresh.sessions,
-      excludingSessionID: await liveSession.currentSessionID,
+      excludingSessionID: sessionID,
       appID: configuration.appID,
-      updatedAt: configuration.now()
-    )
-    let localMembers = try await persistence.loadRoomPresence(
-      appID: configuration.appID,
-      room: room
-    )
-    let activeLocalMembers = await activeRoomPresenceState.activeMembers(
-      localMembers,
-      in: room
-    )
-    let observerCount = await roomPresenceObservers.activeCount(
-      for: roomPresenceObservationKey(room)
+      receivedAt: configuration.now()
     )
     InstantDiagnostics.shared.record(
       .trace,
@@ -8652,39 +8508,26 @@ public final class InstantRuntime: Sendable {
       metadata: [
         "roomType": room.type,
         "sessionCount": String(refresh.sessions.count),
-        "remoteMemberCount": String(remoteMembers.count),
-        "localMemberCount": String(localMembers.count),
-        "activeLocalMemberCount": String(activeLocalMembers.count),
-        "observerCount": String(observerCount),
+        "remoteMemberCount": String(summary.peerCount),
+        "localMemberCount": String(summary.localCount),
+        "observerCount": String(summary.observerCount),
       ]
-    )
-    await roomPresenceObservers.publish(
-      mergedRoomPresence(local: activeLocalMembers, remote: remoteMembers),
-      for: roomPresenceObservationKey(room)
     )
   }
 
+  /// A `patch-presence` edits the room's peers in memory, in one turn and without SQLite or the operation gate, as
+  /// `Reactor.js` `_patchPresencePeers` does (#461).
   private func applyLivePresencePatch(
-    _ patch: InstantLivePresencePatch
+    _ patch: InstantLivePresencePatch,
+    in room: InstantRoomHandle,
+    sessionID: String?
   ) async throws {
-    guard let room = await liveSession.roomHandle(id: patch.roomID) else { return }
-    let remoteMembers = try await liveRoomPresenceState.patch(
-      room: room,
+    let summary = try await roomPresenceState.patchPeers(
+      in: room,
       edits: patch.edits,
-      excludingSessionID: await liveSession.currentSessionID,
+      excludingSessionID: sessionID,
       appID: configuration.appID,
-      updatedAt: configuration.now()
-    )
-    let localMembers = try await persistence.loadRoomPresence(
-      appID: configuration.appID,
-      room: room
-    )
-    let activeLocalMembers = await activeRoomPresenceState.activeMembers(
-      localMembers,
-      in: room
-    )
-    let observerCount = await roomPresenceObservers.activeCount(
-      for: roomPresenceObservationKey(room)
+      receivedAt: configuration.now()
     )
     InstantDiagnostics.shared.record(
       .trace,
@@ -8695,22 +8538,17 @@ public final class InstantRuntime: Sendable {
       metadata: [
         "roomType": room.type,
         "editCount": String(patch.edits.count),
-        "remoteMemberCount": String(remoteMembers.count),
-        "localMemberCount": String(localMembers.count),
-        "activeLocalMemberCount": String(activeLocalMembers.count),
-        "observerCount": String(observerCount),
+        "remoteMemberCount": String(summary.peerCount),
+        "localMemberCount": String(summary.localCount),
+        "observerCount": String(summary.observerCount),
       ]
-    )
-    await roomPresenceObservers.publish(
-      mergedRoomPresence(local: activeLocalMembers, remote: remoteMembers),
-      for: roomPresenceObservationKey(room)
     )
   }
 
   private func applyLiveServerBroadcast(
-    _ broadcast: InstantLiveServerBroadcast
+    _ broadcast: InstantLiveServerBroadcast,
+    in room: InstantRoomHandle
   ) async throws {
-    guard let room = await liveSession.roomHandle(id: broadcast.roomID) else { return }
     guard !broadcast.topic.isEmpty,
       case let .object(envelope)? = broadcast.envelope,
       let rawPayload = envelope["data"]
@@ -8736,24 +8574,19 @@ public final class InstantRuntime: Sendable {
     } else {
       userID = peerID
     }
-    let message = InstantRoomTopicMessage(
-      id: broadcast.clientEventID?.nilIfEmpty ?? configuration.makeID(),
-      appID: configuration.appID,
-      room: room,
-      topic: broadcast.topic,
-      userID: userID,
-      payload: rawPayload.jsonValue,
-      createdAt: configuration.now()
-    )
-    let durableMessages = try await persistence.loadRoomTopicMessages(
-      appID: configuration.appID,
-      room: room,
-      topic: broadcast.topic,
-      limit: nil
-    )
-    await roomTopicObservers.publish(
-      durableMessages + [message],
-      for: roomTopicObservationKey(room: room, topic: broadcast.topic)
+    // Recorded once, in memory: every event observer receives it, and snapshot observers see the topic's recent
+    // messages, as `Reactor.js` hands each broadcast to the subscribers without storing it (#461).
+    await roomTopicsState.record(
+      InstantRoomTopicMessage(
+        id: broadcast.clientEventID?.nilIfEmpty ?? configuration.makeID(),
+        appID: configuration.appID,
+        room: room,
+        topic: broadcast.topic,
+        userID: userID,
+        peerID: peerID,
+        payload: rawPayload.jsonValue,
+        createdAt: configuration.now()
+      )
     )
   }
 
@@ -9387,6 +9220,7 @@ public final class InstantRuntime: Sendable {
       )
       try await persistence.saveAuthSession(session, key: authSessionKey)
       try await persistence.deleteMagicCodeChallenge(key: key)
+      roomAuthUserID.set(session.userID)
       await authSessionObservers.yield(session)
       _ = try? await publishConnectionStatusWithGateHeld()
       await operationGate.leave()
@@ -10015,6 +9849,7 @@ public final class InstantRuntime: Sendable {
         )
       }
       try await persistence.deleteAuthSession(key: authSessionKey)
+      roomAuthUserID.set(nil)
       await authSessionObservers.yield(nil)
       _ = try? await publishConnectionStatusWithGateHeld()
       await operationGate.leave()
@@ -10048,13 +9883,41 @@ public final class InstantRuntime: Sendable {
   public func leaveRoom(_ room: InstantRoomHandle = .default) async throws -> InstantRoomHandle {
     let room = try validatedRoom(room, operation: "leave room")
     if configuration.liveTransport != nil {
-      try await liveSession.leaveRoom(room, clientEventID: configuration.makeID())
-      await liveRoomPresenceState.remove(room: room)
-      await activeRoomPresenceState.removeAll(in: room)
+      // Another holder of the room still sees its presence until the last one leaves (#461). Only the last holder's
+      // leave sends anything, so a failed send still left the room on this device.
+      let left: Bool
+      do {
+        left = try await liveSession.leaveRoom(room, clientEventID: configuration.makeID())
+      } catch {
+        await roomPresenceState.forget(room, appID: configuration.appID)
+        await roomTopicsState.forget(room)
+        throw error
+      }
+      if left {
+        await roomPresenceState.forget(room, appID: configuration.appID)
+        await roomTopicsState.forget(room)
+      }
     }
     return room
   }
 
+  /// Whether the server has confirmed this runtime's join of `room` on the current connection.
+  ///
+  /// It turns true on `join-room-ok` (or the room's first presence frame or broadcast) and false when the socket drops
+  /// or the room is left, as `Reactor.js` reports `isLoading: !room.isConnected`. While it is false, an empty or
+  /// stale presence says nothing about who is in the room. Without a live transport it is always false.
+  @concurrent
+  public func isRoomJoined(_ room: InstantRoomHandle) async -> Bool {
+    guard configuration.liveTransport != nil else { return false }
+    return await liveSession.isRoomJoined(room)
+  }
+
+  /// Publishes this device's presence in `room`, replacing what it published there before under `userID`.
+  ///
+  /// With a live transport the presence lives in memory, as `Reactor.js` keeps it: the call updates the room's
+  /// observers and hands the values to the socket, without the operation gate or SQLite, so it never waits behind a
+  /// local write or a server apply (#461). Without a live transport (the CLI's local cache) it is stored in SQLite, so
+  /// a later launch lists it.
   @discardableResult
   @concurrent
   public func setPresence(
@@ -10063,38 +9926,44 @@ public final class InstantRuntime: Sendable {
     values: [String: JSONValue]
   ) async throws -> InstantRoomPresenceMember {
     let room = try validatedRoom(room, operation: "set room presence")
+    guard configuration.liveTransport != nil else {
+      return try await setLocalCachePresence(room: room, userID: userID, values: values)
+    }
+    let member = InstantRoomPresenceMember(
+      appID: configuration.appID,
+      room: room,
+      userID: try await resolvedRoomUserID(userID, operation: "set room presence"),
+      values: values,
+      updatedAt: configuration.now()
+    )
+    let sequence = await roomPresenceState.publish(member)
+    try await liveSession.setPresence(
+      room: room,
+      values: values,
+      sequence: sequence,
+      clientEventID: configuration.makeID()
+    )
+    return member
+  }
 
+  private func setLocalCachePresence(
+    room: InstantRoomHandle,
+    userID: String?,
+    values: [String: JSONValue]
+  ) async throws -> InstantRoomPresenceMember {
     await operationGate.enter()
     do {
       let userID = try await resolvedRoomUserID(userID, operation: "set room presence")
-      let now = configuration.now()
       let member = InstantRoomPresenceMember(
         appID: configuration.appID,
         room: room,
         userID: userID,
         values: values,
-        updatedAt: now
+        updatedAt: configuration.now()
       )
       try await persistence.saveRoomPresence(member)
-      if configuration.liveTransport != nil {
-        await activeRoomPresenceState.activate(userID: userID, in: room)
-      }
-      let localMembers = try await persistence.loadRoomPresence(
-        appID: configuration.appID,
-        room: room
-      )
-      let members = await combinedRoomPresence(localMembers, room: room)
-      await roomPresenceObservers.publish(
-        members,
-        for: roomPresenceObservationKey(room)
-      )
-      if configuration.liveTransport != nil {
-        try await liveSession.setPresence(
-          room: room,
-          values: values,
-          clientEventID: configuration.makeID()
-        )
-      }
+      let members = try await persistence.loadRoomPresence(appID: configuration.appID, room: room)
+      await roomPresenceObservers.publish(members, for: roomPresenceObservationKey(room))
       await operationGate.leave()
       return member
     } catch {
@@ -10106,30 +9975,46 @@ public final class InstantRuntime: Sendable {
   @concurrent
   public func roomPresence(room: InstantRoomHandle) async throws -> [InstantRoomPresenceMember] {
     let room = try validatedRoom(room, operation: "list room presence")
-    let localMembers = try await persistence.loadRoomPresence(
-      appID: configuration.appID,
-      room: room
-    )
-    return await combinedRoomPresence(localMembers, room: room)
+    guard configuration.liveTransport != nil else {
+      return try await persistence.loadRoomPresence(appID: configuration.appID, room: room)
+    }
+    return await roomPresenceState.members(in: room, appID: configuration.appID)
   }
 
+  /// Observes `room`'s presence: this device's own and every peer session's, starting with the current members.
+  ///
+  /// It emits only when the selected part changed: `selection` picks keys, peers, and whether this device's own
+  /// presence is included, as `Reactor.js`'s `subscribePresence` options do. With a live transport this takes no
+  /// operation gate and reads nothing from SQLite (#461).
   @concurrent
-  public func observeRoomPresence(room: InstantRoomHandle) async throws
-    -> AsyncStream<[InstantRoomPresenceMember]>
-  {
+  public func observeRoomPresence(
+    room: InstantRoomHandle,
+    selection: InstantRoomPresenceSelection = .all
+  ) async throws -> AsyncStream<[InstantRoomPresenceMember]> {
     let room = try validatedRoom(room, operation: "observe room presence")
+    guard configuration.liveTransport != nil else {
+      let stream = try await observeLocalCachePresence(room: room)
+      guard selection != .all else { return stream }
+      return AsyncStream(bufferingPolicy: .bufferingNewest(1)) { continuation in
+        let forwarding = Task {
+          for await members in stream {
+            continuation.yield(selection.apply(to: members))
+          }
+          continuation.finish()
+        }
+        continuation.onTermination = { @Sendable _ in forwarding.cancel() }
+      }
+    }
+    return await roomPresenceState.observe(room, selection: selection, appID: configuration.appID)
+  }
 
+  private func observeLocalCachePresence(
+    room: InstantRoomHandle
+  ) async throws -> AsyncStream<[InstantRoomPresenceMember]> {
     await operationGate.enter()
     do {
-      let localMembers = try await persistence.loadRoomPresence(
-        appID: configuration.appID,
-        room: room
-      )
-      let members = await combinedRoomPresence(localMembers, room: room)
-      let stream = await roomPresenceObservers.observe(
-        key: roomPresenceObservationKey(room),
-        current: members
-      )
+      let members = try await persistence.loadRoomPresence(appID: configuration.appID, room: room)
+      let stream = await roomPresenceObservers.observe(key: roomPresenceObservationKey(room), current: members)
       await operationGate.leave()
       return stream
     } catch {
@@ -10138,30 +10023,34 @@ public final class InstantRuntime: Sendable {
     }
   }
 
+  /// Stops publishing the presence this device published in `room` under `userID`.
   @concurrent
   public func leavePresence(room: InstantRoomHandle, userID: String? = nil) async throws -> String {
     let room = try validatedRoom(room, operation: "leave room presence")
+    guard configuration.liveTransport != nil else {
+      return try await leaveLocalCachePresence(room: room, userID: userID)
+    }
+    let userID = try await resolvedRoomUserID(userID, operation: "leave room presence")
+    // The session now carries this device's newest remaining publication, or none: peers stop seeing what was
+    // withdrawn, and a rejoin after a dropped socket does not announce it again (#461).
+    if let withdrawal = await roomPresenceState.withdraw(userID: userID, in: room, appID: configuration.appID) {
+      try await liveSession.setPresence(
+        room: room,
+        values: withdrawal.remaining,
+        sequence: withdrawal.sequence,
+        clientEventID: configuration.makeID()
+      )
+    }
+    return userID
+  }
 
+  private func leaveLocalCachePresence(room: InstantRoomHandle, userID: String?) async throws -> String {
     await operationGate.enter()
     do {
       let userID = try await resolvedRoomUserID(userID, operation: "leave room presence")
-      try await persistence.deleteRoomPresence(
-        appID: configuration.appID,
-        room: room,
-        userID: userID
-      )
-      if configuration.liveTransport != nil {
-        await activeRoomPresenceState.deactivate(userID: userID, in: room)
-      }
-      let localMembers = try await persistence.loadRoomPresence(
-        appID: configuration.appID,
-        room: room
-      )
-      let members = await combinedRoomPresence(localMembers, room: room)
-      await roomPresenceObservers.publish(
-        members,
-        for: roomPresenceObservationKey(room)
-      )
+      try await persistence.deleteRoomPresence(appID: configuration.appID, room: room, userID: userID)
+      let members = try await persistence.loadRoomPresence(appID: configuration.appID, room: room)
+      await roomPresenceObservers.publish(members, for: roomPresenceObservationKey(room))
       await operationGate.leave()
       return userID
     } catch {
@@ -10172,9 +10061,18 @@ public final class InstantRuntime: Sendable {
 
   func activeRoomPresenceObservationCount(room: InstantRoomHandle) async throws -> Int {
     let room = try validatedRoom(room, operation: "inspect room presence observers")
+    if configuration.liveTransport != nil {
+      return await roomPresenceState.observerCount(in: room)
+    }
     return await roomPresenceObservers.activeCount(for: roomPresenceObservationKey(room))
   }
 
+  /// Publishes a message on a room topic.
+  ///
+  /// With a live transport the message is not stored, as in `Reactor.js`: it goes to this runtime's topic observers
+  /// and to the socket (queued until the room is joined), without the operation gate or SQLite, so the cost of a
+  /// message does not grow with the messages before it (#461). Without a live transport (the CLI's local cache) it is
+  /// stored in SQLite, so a later launch lists it.
   @discardableResult
   @concurrent
   public func publishTopicMessage(
@@ -10190,7 +10088,34 @@ public final class InstantRuntime: Sendable {
       operation: "publish room topic",
       recovery: "Pass the room topic name to publish."
     )
+    guard configuration.liveTransport != nil else {
+      return try await publishLocalCacheTopicMessage(room: room, topic: topic, userID: userID, payload: payload)
+    }
+    let message = InstantRoomTopicMessage(
+      id: configuration.makeID(),
+      appID: configuration.appID,
+      room: room,
+      topic: topic,
+      userID: try await resolvedRoomUserID(userID, operation: "publish room topic"),
+      payload: payload,
+      createdAt: configuration.now()
+    )
+    await roomTopicsState.record(message)
+    try await liveSession.publishTopic(
+      room: room,
+      topic: topic,
+      payload: payload,
+      clientEventID: configuration.makeID()
+    )
+    return message
+  }
 
+  private func publishLocalCacheTopicMessage(
+    room: InstantRoomHandle,
+    topic: String,
+    userID: String?,
+    payload: JSONValue
+  ) async throws -> InstantRoomTopicMessage {
     await operationGate.enter()
     do {
       let userID = try await resolvedRoomUserID(userID, operation: "publish room topic")
@@ -10214,14 +10139,6 @@ public final class InstantRuntime: Sendable {
         messages,
         for: roomTopicObservationKey(room: room, topic: topic)
       )
-      if configuration.liveTransport != nil {
-        try await liveSession.publishTopic(
-          room: room,
-          topic: topic,
-          payload: payload,
-          clientEventID: configuration.makeID()
-        )
-      }
       await operationGate.leave()
       return message
     } catch {
@@ -10230,6 +10147,9 @@ public final class InstantRuntime: Sendable {
     }
   }
 
+  /// The messages this device published on a room topic, oldest first: with a live transport its most recent
+  /// publications in this runtime (at most `InstantRuntimeRoomTopics.recentMessageLimit`); without one, every message
+  /// the local cache stored.
   @concurrent
   public func roomTopicMessages(
     room: InstantRoomHandle,
@@ -10250,14 +10170,22 @@ public final class InstantRuntime: Sendable {
       operation: "list room topic",
       recovery: "Pass the room topic name to list."
     )
-    return try await persistence.loadRoomTopicMessages(
-      appID: configuration.appID,
-      room: room,
-      topic: topic,
-      limit: limit
-    )
+    guard configuration.liveTransport != nil else {
+      return try await persistence.loadRoomTopicMessages(
+        appID: configuration.appID,
+        room: room,
+        topic: topic,
+        limit: limit
+      )
+    }
+    return await roomTopicsState.published(room: room, topic: topic, limit: limit)
   }
 
+  /// Observes a room topic's recent messages, published here or received, oldest first, starting with the current ones.
+  ///
+  /// With a live transport each emission holds the topic's most recent messages (at most
+  /// `InstantRuntimeRoomTopics.recentMessageLimit`), so a reader that falls behind by fewer loses nothing. To receive
+  /// every message exactly once, as a `Reactor.js` topic subscriber does, use `observeRoomTopicEvents(room:topic:)`.
   @concurrent
   public func observeRoomTopicMessages(
     room: InstantRoomHandle,
@@ -10270,7 +10198,16 @@ public final class InstantRuntime: Sendable {
       operation: "observe room topic",
       recovery: "Pass the room topic name to observe."
     )
+    guard configuration.liveTransport != nil else {
+      return try await observeLocalCacheTopicMessages(room: room, topic: topic)
+    }
+    return await roomTopicsState.observeSnapshots(room: room, topic: topic)
+  }
 
+  private func observeLocalCacheTopicMessages(
+    room: InstantRoomHandle,
+    topic: String
+  ) async throws -> AsyncStream<[InstantRoomTopicMessage]> {
     await operationGate.enter()
     do {
       let messages = try await persistence.loadRoomTopicMessages(
@@ -10291,6 +10228,25 @@ public final class InstantRuntime: Sendable {
     }
   }
 
+  /// Observes each message published here or received on a room topic after this call, once and in order, as a
+  /// `Reactor.js` topic subscriber receives each broadcast (`subscribeTopic`). A message this runtime published has a
+  /// nil `peerID`. Nothing is stored and nothing is dropped: an observation that stops reading holds every later
+  /// message until it ends (#461). Without a live transport no messages arrive.
+  @concurrent
+  public func observeRoomTopicEvents(
+    room: InstantRoomHandle,
+    topic rawTopic: String
+  ) async throws -> AsyncStream<InstantRoomTopicMessage> {
+    let room = try validatedRoom(room, operation: "observe room topic events")
+    let topic = try validatedNonEmpty(
+      rawTopic,
+      label: "Topic",
+      operation: "observe room topic events",
+      recovery: "Pass the room topic name to observe."
+    )
+    return await roomTopicsState.observeEvents(room: room, topic: topic)
+  }
+
   func activeRoomTopicObservationCount(
     room: InstantRoomHandle,
     topic rawTopic: String
@@ -10302,9 +10258,17 @@ public final class InstantRuntime: Sendable {
       operation: "inspect room topic observers",
       recovery: "Pass the room topic name to inspect."
     )
+    if configuration.liveTransport != nil {
+      return await roomTopicsState.observerCount(room: room, topic: topic)
+    }
     return await roomTopicObservers.activeCount(
       for: roomTopicObservationKey(room: room, topic: topic)
     )
+  }
+
+  /// How many messages the live runtime holds for a topic, for tests: bounded whatever the number of messages (#461).
+  func heldRoomTopicMessageCountForTesting(room: InstantRoomHandle, topic: String) async -> Int {
+    await roomTopicsState.heldMessageCountForTesting(room: room, topic: topic)
   }
 
   @concurrent
@@ -14832,6 +14796,7 @@ public final class InstantRuntime: Sendable {
 
   private func persistAuthSessionWithGateHeld(_ session: InstantAuthSession) async throws {
     try await persistence.saveAuthSession(session, key: authSessionKey)
+    roomAuthUserID.set(session.userID)
     await authSessionObservers.yield(session)
     _ = try? await publishConnectionStatusWithGateHeld()
   }
@@ -15155,8 +15120,17 @@ public final class InstantRuntime: Sendable {
     if let userID = userID?.trimmingCharacters(in: .whitespacesAndNewlines), !userID.isEmpty {
       return userID
     }
-    if let session = try await persistence.loadAuthSession(key: authSessionKey) {
-      return session.userID
+    // The signed-in user from memory: a presence publish must not wait for the persistence actor, which commits and
+    // server applies keep busy (#461). The first call after launch reads the stored session once.
+    let signedInUserID: String?
+    if let known = roomAuthUserID.known {
+      signedInUserID = known
+    } else {
+      signedInUserID = try await persistence.loadAuthSession(key: authSessionKey)?.userID
+      roomAuthUserID.setIfUnknown(signedInUserID)
+    }
+    if let signedInUserID {
+      return signedInUserID
     }
     throw authValidationFailed(
       operation: operation,
@@ -15269,36 +15243,6 @@ public final class InstantRuntime: Sendable {
 
   private func roomPresenceObservationKey(_ room: InstantRoomHandle) -> InstantRoomPresenceObservationKey {
     InstantRoomPresenceObservationKey(appID: configuration.appID, room: room)
-  }
-
-  private func combinedRoomPresence(
-    _ localMembers: [InstantRoomPresenceMember],
-    room: InstantRoomHandle
-  ) async -> [InstantRoomPresenceMember] {
-    guard configuration.liveTransport != nil else { return localMembers }
-    let activeLocalMembers = await activeRoomPresenceState.activeMembers(
-      localMembers,
-      in: room
-    )
-    let currentSessionID = await liveSession.currentSessionID
-    let remoteMembers = await liveRoomPresenceState.current(
-      room: room,
-      excludingSessionID: currentSessionID,
-      appID: configuration.appID,
-      updatedAt: configuration.now()
-    )
-    return mergedRoomPresence(local: activeLocalMembers, remote: remoteMembers)
-  }
-
-  private func mergedRoomPresence(
-    local: [InstantRoomPresenceMember],
-    remote: [InstantRoomPresenceMember]
-  ) -> [InstantRoomPresenceMember] {
-    var membersByID = Dictionary(uniqueKeysWithValues: local.map { ($0.id, $0) })
-    for member in remote {
-      membersByID[member.id] = member
-    }
-    return membersByID.values.sorted { $0.id < $1.id }
   }
 
   private func roomTopicObservationKey(

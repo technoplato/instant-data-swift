@@ -1,3 +1,6 @@
+## 2026-10-04 09:21:37 EDT — instant-data-swift `85ffb88815a7bdb849af95fd7441b9bd8e1cdf23`
+Record the rooms red-then-green gate in ADR 0019 and PROGRESS: red on v1.9.5, green on 681a0ba9 (#461)
+
 ## 2026-10-04 08:42:03 EDT — instant-data-swift `2a977a3f6222fedc5324e01a0c8660dbd4b0ac76`
 Merge library-79-197 into main for v1.9.7 (#473 #482)
 
@@ -667,6 +670,9 @@ Record the Mac placeholder fix in the change log (#389)
 ## 2026-10-03 19:08:48 EDT — scribe `643fa01283943e920f800b8a013f9819320bc16e`
 On the Mac, the people field replaces its text through the field editor, so a cleared field shows its whole placeholder (#389)
 
+## 2026-10-03 19:00:23 EDT — instant-data-swift `27770ee904352ed38c29021135755ef7cd32f4c8`
+Keep the room tests' checks steady on a loaded Mac: the topic run compares median batches, and waits get 5 s (#461)
+
 ## 2026-10-03 19:00:23 EDT — realtime-voice-sqlite-instant `a55b20cd931c287a66eeb9b6504881bf4416103e`
 Clear a comment's old failure when Try Again posts it with a fresh attempt (#478)
 
@@ -682,6 +688,12 @@ Record the Close test fixes and r7's suites in the change log (#389)
 ## 2026-10-03 18:57:24 EDT — scribe `786dc0f0f449a6bcfa07a610516cdac8958a803c`
 Test Close's discard question the way the sheet runs it: one store per close (#389)
 
+## 2026-10-03 18:51:53 EDT — instant-data-swift `06216ad5330a5ccb397c02f5668e60a71544a1ee`
+Document rooms parity with Reactor.js: ADR 0019, the README's rooms rules, and the PROGRESS checkpoint (#461)
+
+## 2026-10-03 18:51:00 EDT — instant-data-swift `2e513f1c41aa199c34212ba40fab6559d72035dd`
+Claim README.md for the rooms rules and record the rebase onto v1.9.5 in the rooms plan (#461)
+
 ## 2026-10-03 18:49:59 EDT — scribe `85e8e756c1ac6808333970bba15ea3602bb0a41e`
 The play span effect reads the clock only when a span can open or end, and the bar and fold tests hold the span their playback opens (#435)
 
@@ -693,6 +705,54 @@ Merge phone-perf's file-download into library-79-hops for v1.9.6: download a sto
 
 ## 2026-10-03 18:44:17 EDT — scribe `06c354dc8eabf9d191044bd5828ab31a7554f2eb`
 Recovered transcript lines are kept in the journal and written, also for a stopped recording; only the open route chunk is latest-wins (#482 part C)
+
+## 2026-10-03 18:41:13 EDT — instant-data-swift `0b2dd60c5c471c6dac6a52ca280ba37e17032489`
+Claim the files of the rooms parity work: session peers, presence in memory off the gate, room frames around the applier (#461)
+
+## 2026-10-03 18:41:13 EDT — instant-data-swift `53df7ab107cbd4888ef290343185cff8e5f94b77`
+Add a red parity test: two sessions of one user must be two room peers, not one (#461)
+
+## 2026-10-03 18:41:13 EDT — instant-data-swift `186d2f746cc7571b544dbf920ebb2fea6900516c`
+Add red tests for room presence and topics against Reactor.js: the gate, SQLite, the applier, emissions, leaving (#461)
+
+## 2026-10-03 18:41:13 EDT — instant-data-swift `b6b276669d132294e8a1f902af23a746c23cece2`
+Key room peers by session, as Reactor.js does: two sessions of one user are two members (#461)
+
+## 2026-10-03 18:41:13 EDT — instant-data-swift `455a40ce31f3cb4587ff05d9e9e4c59960a93fa7`
+Keep a live runtime's room presence in memory, off the operation gate and out of SQLite, as Reactor.js keeps it (#461)
+
+## 2026-10-03 18:41:13 EDT — instant-data-swift `a17a9cb5cd1547b4cb00025f3cfdf0e388033be3`
+Emit room presence only when what an observer sees changed, as Reactor.js does (#461)
+
+## 2026-10-03 18:41:13 EDT — instant-data-swift `5533996721b2065a5ba865ce69a29711c59c100d`
+Apply room frames beside the query applier, not behind it, as Reactor.js handles each frame as it arrives (#461)
+
+## 2026-10-03 18:41:13 EDT — instant-data-swift `5b2888f79e34470be086f98764420bee5f59ff94`
+Leave rooms and presence as Reactor.js does: the last holder's leave forgets the room, leavePresence clears the wire (#461)
+
+## 2026-10-03 18:41:13 EDT — instant-data-swift `68a99b2ace325e22bd38053aa1457cf8df18b40e`
+Keep live room topic messages in memory, once each, without storage or the operation gate, as Reactor.js does (#461)
+
+## 2026-10-03 18:41:13 EDT — instant-data-swift `f997440c7c8dfd08f86f2e1cf7025ac9b3f65ade`
+Forget a room's presence and topics when the last holder's leave-room fails to send (#461)
+
+## 2026-10-03 18:41:13 EDT — instant-data-swift `4d83580dc91e386274b85637eb3a5af950d579c2`
+Let a presence observation select keys, peers, and its own presence, as Reactor.js's subscribePresence does (#461)
+
+## 2026-10-03 18:41:13 EDT — instant-data-swift `52b99c19c0d705ea60a175a0cc4b0901e3b5ae90`
+Offer presence selection on the public client: observeRoomPresence(room:selection:) (#461)
+
+## 2026-10-03 18:41:13 EDT — instant-data-swift `e452bfa8ed86a9b2c3111101071ab0d8b5f504a9`
+Say whether the server confirmed a room's join on the current connection: isRoomJoined, as Reactor.js's isLoading (#461)
+
+## 2026-10-03 18:41:13 EDT — instant-data-swift `e31eadc7f90a668580a335ba3cca9e0f99d1dd2a`
+Keep @discardableResult on the client's joinRoom, which the isRoomJoined insertion separated from it (#461)
+
+## 2026-10-03 18:41:13 EDT — instant-data-swift `fb8744bbb6f20d059e97a90ab97a7c02cbba5990`
+Pin that racing presence publishes leave the newest on the wire (#461)
+
+## 2026-10-03 18:41:13 EDT — instant-data-swift `0bec8c356adde45d87dee08f6bc8425952a40da6`
+Compare the racing-publish test's wire value through jsonValue: InstantLiveJSONValue's JSONValue init is fileprivate (#461)
 
 ## 2026-10-03 18:40:03 EDT — instant-data-swift `860ed5387b8efd1855f0be3962fab1dace24c26f`
 Batch the diagnostics file's lines, one open and lock per batch, and fsync at most once a second (#473).
@@ -2388,6 +2448,7 @@ Plan the Account screen without the library's demo counters and claim its paths,
 
 ## 2026-09-30 19:29:59 EDT — instant-data-swift `54c8a963267a9843b9f8522e94d0f1fc3545ab08`
 Claim the AuthV3 login screen and its tests for plan 2026-09-30-auth-counters (#289).
+
 ## 2026-09-30 21:53:30 EDT — instant-data-swift `1907c0b49859612372531a9ab36aa8044e461d73`
 Restore a refused write's receipt as written, then restamp what it restored to txTime 0, so an insert-only receipt still removes the overlay (the ten suites' failedActiveOverlayIsARootEvenWhenTheServerWriteIsDisjoint on df0a711a) (#296).
 
@@ -2411,6 +2472,7 @@ Claim PROGRESS.md for plan 2026-09-30-fast-drain-2 (#296).
 
 ## 2026-09-30 14:10:53 EDT — instant-data-swift `506089b22043c2f5bcb02712f5b7df698e31b6d3`
 Record build 73's library commits in the audit ledger (#296); this is build 73's library head.
+
 ## 2026-09-30 19:42:44 EDT — instant-data-swift `9d5e185cd1a80eddbaf0f83a93e3d8ece8aee897`
 Record the backward-navigation seed fix in the change log (#300).
 
@@ -3788,6 +3850,7 @@ Stream dest CKAsset apply onto disk and restore process.memory.sample on the SQL
 - **Repo:** realtime-voice-sqlite-instant
 - **SHA:** 8c380cd79e0760407b134c76d977cbab178d345d
 - **Reason:** Bind Onboarding @Doc surface to #041 for fail-closed consolidator (no --allow-unbound).
+
 ## 2026-08-11 17:33:15 EDT — instant-data-swift c58253d5162fdd998bcb136ee1effcd7e302a8c5
 
 - **Repo:** instant-data-swift
@@ -3823,6 +3886,7 @@ Stream dest CKAsset apply onto disk and restore process.memory.sample on the SQL
 - **Repo:** realtime-voice-sqlite-instant
 - **SHA:** 10d82164c9f8d95d8785addd3960f4916ec0a927
 - **Reason:** Message–issue consolidator opt-in Instant product edge write (#041): append-log issue.message-path + issue.derivedMessageEdges; Onboarding 6 edges live.
+
 ## 2026-08-11 16:28:39 EDT
 
 - **repo:** realtime-voice-sqlite-instant
@@ -3964,7 +4028,6 @@ Stream dest CKAsset apply onto disk and restore process.memory.sample on the SQL
 - **commit:** `ca27941efc55c9ddb52e6b9eb99ea926f111f631`
 - **reason:** Align InstantCodableJSON with structured-queries shared encoder (sortedKeys, ISO-8601), Optional typealiases; loud InstantError encode/decode for wordsJSON parity.
 
-
 ## 2026-08-09 09:53:10 EDT
 - **repository:** instant-data-swift
 - **commit:** 5d903c86f595baac8a6581223b07c8426e7639e8
@@ -3979,6 +4042,7 @@ Stream dest CKAsset apply onto disk and restore process.memory.sample on the SQL
 - **repo:** realtime-voice-sqlite-instant
 - **sha:** 45c0022409b580f0b78378a6687a597d2eddd193
 - **reason:** #167 agent-addressable ScribePressPadSanity CLI (reduce/self-test/events) + Rec 018 mailbox; Core/Client already on main
+
 ## August 07, 2026 at 00:45:33 EDT
 
 - **repository:** instant-data-swift
@@ -4008,7 +4072,6 @@ Stream dest CKAsset apply onto disk and restore process.memory.sample on the SQL
 - **Repo:** realtime-voice-sqlite-instant
 - **SHA:** be56ed1de0535a37ca13710c4a705425897f542d
 - **Reason:** #163 minuscule attachment image titles (watched-folder Screen Shot names); docs for #164 feature mini-apps and #165 Mow/Grow.
-
 
 ## 2026-08-06 21:33:10 EDT
 
@@ -4066,7 +4129,6 @@ Todos composer keeps focus after send, but swipe/scroll down can dismiss the key
 - **Commit:** `24520678695b530f1dc2ca5462094e93228830be`
 - **High-level reason:** Auth recipe page public + account counters reacting to login/logout (#152)
 
-
 ## 2026-08-06 13:49:55 EDT
 
 - **Repository:** instant-data-swift
@@ -4092,7 +4154,6 @@ Todos composer keeps focus after send, but swipe/scroll down can dismiss the key
 - **realtime-voice-sqlite-instant** `39ebb186136d` — Pin Package.swift exact 1.5.6.
 - **realtime-voice-sqlite-instant** `204e6582af9efb66410c6e39703de6b25c37e5f2` — Instant-lane library chatter filter.
 
-
 ## 2026-08-05 20:03:36 EDT
 
 - **instant-data-swift** `60df101efae42243b139eb4d5b2260934e1b1a99` — Production Scribe namespaces + dual Instant debugLogs thrash soak (#150).
@@ -4106,13 +4167,11 @@ Todos composer keeps focus after send, but swipe/scroll down can dismiss the key
 - **Commit:** `a3d415fdd4500c3b6edb1232d74eaa1473bc36ef`
 - **Reason:** App-side bridge filter + smaller debug log batches to stop Instant dual-write memory thrash on idle iPad.
 
-
 ## 2026-08-05 17:37:14 EDT — instant-data-swift diagnostic dual-write thrash fix
 
 - **Repository:** instant-data-swift
 - **Commit:** `759c899a8a4f76ccaa2d473e5f15c33fe86946fc`
 - **Reason:** Break InstantDiagnostics dual-write feedback that drove multi-GB idle memory via continuous debug-log-batch mutations.
-
 
 ## 2026-08-05 13:31:35 EDT — realtime-voice-sqlite-instant performance plan pointer
 
@@ -4168,12 +4227,12 @@ Todos composer keeps focus after send, but swipe/scroll down can dismiss the key
 - **Commit:** 77b39de584456e7e47bd09d7ef44b2d87e218c83
 - **Reason:** issue-triage skill covers features/ideas; claim only when executing.
 
-
 ## 2026-08-05 12:27:03 EDT
 
 - **Repository:** realtime-voice-sqlite-instant
 - **Commit:** `35afbcc9f144180f16bb889e584c56f950b47eba`
 - **Reason:** Remove 640pt readable-column cap so recording transcript uses full width on iPad/Mac.
+
 ## 2026-08-05 12:24:10 EDT
 
 - **Repository:** realtime-voice-sqlite-instant
@@ -4252,7 +4311,6 @@ Todos composer keeps focus after send, but swipe/scroll down can dismiss the key
 - **commit:** `b63973acac674e1fd9a51c2f3629c57af3d8f073`
 - **reason:** Stamp and show auto-detected device icons on recordings (list UI, settings auto-detect, device-local preference).
 
-
 ## 2026-08-04 22:42:05 EDT
 
 - **repository:** instant-data-swift
@@ -4262,12 +4320,12 @@ Todos composer keeps focus after send, but swipe/scroll down can dismiss the key
 - **repository:** realtime-voice-sqlite-instant
 - **commit:** c3423e09e31460c85072962dbc196c04a644b310
 - **reason:** Pin instant-data-swift exact 1.5.0 for blank-detail library fix.
+
 ## 2026-08-04 22:38:35 EDT
 
 - **repo:** realtime-voice-sqlite-instant
 - **commit:** 9e21a429821bf10b5d3bfd7dfd2d94d0b3317861
 - **reason:** Stream Companion Instant owner perms + TS auth daemon skeleton
-
 
 ## 2026-08-04 22:30:42 EDT
 
@@ -4278,11 +4336,13 @@ Todos composer keeps focus after send, but swipe/scroll down can dismiss the key
 - **repository:** instant-data-swift
 - **commit:** a3b63e73af0f32921506132a5c40e71621064962
 - **reason:** Do not retract pending-optimistic entity triples on empty live-query replacements (Scribe blank-detail).
+
 ## 2026-08-04 22:11:33 EDT
 
 - **repo:** realtime-voice-sqlite-instant
 - **commit:** ff7835d2642875a9b83ad1ed6b8f8781efa1606d
 - **reason:** Tuple-inspired Stream Companion: scribe-stream-agent connect (Grok/Claude/Codex) + design/prompt docs
+
 ## 2026-08-04 17:31:40 EDT
 
 - **repo**: realtime-voice-sqlite-instant
@@ -5101,7 +5161,6 @@ contain its own final SHA.
 - Commit: `6ec3cb6ac70f135e9d8c68ceac7985795607b70d`
 - High-level reason: Create Point-Free style README with comprehensive feature list,
   quick start guide, code comparisons, and pre-release disclaimer.
-
 
 ## August 1, 2026 at 1:14:47 AM EDT
 
