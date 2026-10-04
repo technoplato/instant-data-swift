@@ -6458,6 +6458,11 @@ public final class InstantRuntime: Sendable {
   /// Observers see the server's rows a moment before the answer is recorded, so a test that reacts to the rows waits
   /// for this before it expects a local answer.
   @concurrent
+  /// How many presence writes wait for `room`'s presence lane in the live session (#461).
+  package func roomPresenceLaneWaiterCountForTesting(_ room: InstantRoomHandle) async -> Int {
+    await liveSession.presenceLaneWaiterCount(room)
+  }
+
   package func isAnsweredOnCurrentSocketForTesting(_ plan: InstantQueryPlan) async throws -> Bool {
     let registrationKey = try InstantLiveQueryEncoder.registrationKey(for: InstantLiveQueryEncoder.encode(plan))
     return await liveSession.isAnsweredOnCurrentSocket(key: registrationKey)

@@ -1811,6 +1811,12 @@ package actor InstantRuntimeLiveSession {
     return true
   }
 
+  /// How many presence writes wait for `room`'s presence lane, for tests (#461). There is no lane yet: each write goes
+  /// out from its own task.
+  func presenceLaneWaiterCount(_ room: InstantRoomHandle) -> Int {
+    0
+  }
+
   /// Records the presence the runtime's session carries in `room` as publication `sequence`, `nil` once it published
   /// none, and sends it once the room is joined: `nil` goes out as `{}`, so peers stop seeing what was withdrawn, and a
   /// rejoin carries nothing. Before the room is joined it waits for `joinRoom`. A publication older than the one
