@@ -10,6 +10,44 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## October 4th, 2026 at 12:41:09 a.m. EDT — `226ab93b2a02` Document the v1.9.6 release: a stored file downloads to a destination file, streaming, and the log file is written in batches (#454 #473)
+
+- **Implementation commit:** `226ab93b2a028b01f54ca7a186e90446744197a1`
+- **Change:** Document the v1.9.6 release: a stored file downloads to a destination file, streaming, and the log file is written in batches (#454 #473)
+- **Details:**
+  - docs/releases/v1.9.6.md and a PROGRESS entry: phone-perf's downloadStoredFile(id:name:to:) streams a stored file to a destination with no Data in memory and no copy kept (#454, the iPad's 1.96 GB WAV); the diagnostics file is written in batches under one open and lock with an fsync at most once a second (#473). The gate on f7b91bff in main's lane passed, with two 250 ms timing misses under load that passed alone five times each and the one pre-existing infinite-suite failure; the phone-shaped replay matched or improved on the reference in 822 s.
+- **Files:**
+  - `docs/releases/v1.9.6.md` — the release document
+  - `PROGRESS.md` — the v1.9.6 entry
+- **User context (verbatim):**
+  > Publish the library once it's checked fast. Yes.
+- **SpecStory:** unavailable — Claude Code agent session (library-79); no SpecStory capture configured for this session.
+
+## October 4th, 2026 at 12:41:08 a.m. EDT — `f7b91bff046c` Read the download tests' recorder and stored files before expectNoDifference, which cannot await in its autoclosures (#454)
+
+- **Implementation commit:** `f7b91bff046c9ea6e6c26f263346a02f8f58e2f9`
+- **Change:** Read the download tests' recorder and stored files before expectNoDifference, which cannot await in its autoclosures (#454)
+- **Details:**
+  - The 1.9.6 gate's clean test build stopped on InstantStoredFileDownloadTests: expectNoDifference takes autoclosures that do not support concurrency, so awaiting the recorder's counts and the stored files inside them did not compile (216 error lines, all in that file). Each awaited value is read into a constant first; the assertions are unchanged.
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantStoredFileDownloadTests.swift` — awaited values read before the assertions
+- **User context (verbatim):**
+  > Publish the library once it's checked fast. Yes.
+- **SpecStory:** unavailable — Claude Code agent session (library-79); no SpecStory capture configured for this session.
+
+## October 3rd, 2026 at 6:48:59 p.m. EDT — `860ed5387b8e` Batch the diagnostics file's lines, one open and lock per batch, and fsync at most once a second (#473)
+
+- **Implementation commit:** `860ed5387b8efd1855f0be3962fab1dace24c26f`
+- **Change:** Batch the diagnostics file's lines, one open and lock per batch, and fsync at most once a second (#473, the freeze report on Recording 185).
+- **Details:**
+  - 1.9.5 still fsynced every Instant log line, only on another queue, behind one process-wide file lock. Now each run of waiting lines for one file is written under one open and one flock, rotating before a line that would pass the bound (the retired file fsynced first), and a written file is fsynced at most once a second or at flush().
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantDiagnostics.swift` — batched appends and the periodic fsync
+  - `Tests/InstantSwiftDataCoreTests/InstantDiagnosticsTests.swift` — a burst of lines costs a few fsyncs, not one per line
+- **User context (verbatim):**
+  > Publish the library once it's checked fast. Yes.
+- **SpecStory:** unavailable — Claude Code agent session (library-79); no SpecStory capture configured for this session.
+
 ## October 3rd, 2026 at 6:37:39 p.m. EDT — `3edae737bdac` Document the v1.9.5 release: a local write no longer holds the operation gate while it logs, and outbox listings never wait for it (#473)
 
 - **Implementation commit:** `3edae737bdacaa98b58787a97ce4a5b753474e04`

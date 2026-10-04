@@ -173,6 +173,16 @@ public final class InstantDiagnostics: @unchecked Sendable {
     var maximumFileBytes: Int?
   }
 
+  /// A file is fsynced at most this often, not after every line (#473): a write survives an app crash once it is in
+  /// the kernel's cache, and only a power loss in between can lose it. ``flush()`` syncs at once.
+  private static let fileSyncIntervalSeconds: TimeInterval = 1
+  // Read and written only on `fileWriteQueue`.
+  private var unsyncedFileURLs: Set<URL> = []
+  private var lastFileSyncAt: [URL: Date] = [:]
+  private var fileSyncScheduled = false
+  private var fileSyncCount = 0
+  private var fileAppendCount = 0
+
   public init(
     configuration: InstantDiagnosticsConfiguration,
     sessionID: String = UUID().uuidString.lowercased(),
@@ -448,9 +458,18 @@ public final class InstantDiagnostics: @unchecked Sendable {
   public func flush() {
     if DispatchQueue.getSpecific(key: fileWriteQueueKey) != nil {
       drainFileWrites()
+      syncWrittenFiles(force: true)
     } else {
-      fileWriteQueue.sync { drainFileWrites() }
+      fileWriteQueue.sync {
+        drainFileWrites()
+        syncWrittenFiles(force: true)
+      }
     }
+  }
+
+  /// How many times the log file was fsynced and appended to, for tests (#473).
+  package var fileWriteCountsForTesting: (syncs: Int, appends: Int) {
+    fileWriteQueue.sync { (fileSyncCount, fileAppendCount) }
   }
 
   private func enqueueFileWrite(_ data: Data, to fileURL: URL, maximumFileBytes: Int?) {
@@ -472,7 +491,8 @@ public final class InstantDiagnostics: @unchecked Sendable {
     }
   }
 
-  /// Writes the waiting entries in order. Runs on `fileWriteQueue`.
+  /// Writes the waiting entries in order, each run of entries for one file under one open and one lock. Runs on
+  /// `fileWriteQueue`.
   private func drainFileWrites() {
     while true {
       let batch = lock.withLock { () -> [PendingFileWrite] in
@@ -482,10 +502,26 @@ public final class InstantDiagnostics: @unchecked Sendable {
         if batch.isEmpty { fileWriteScheduled = false }
         return batch
       }
-      if batch.isEmpty { return }
-      for write in batch {
+      if batch.isEmpty {
+        syncWrittenFiles(force: false)
+        return
+      }
+      var index = batch.startIndex
+      while index < batch.endIndex {
+        let fileURL = batch[index].fileURL
+        let maximumFileBytes = batch[index].maximumFileBytes
+        var run: [Data] = []
+        while index < batch.endIndex,
+          batch[index].fileURL == fileURL,
+          batch[index].maximumFileBytes == maximumFileBytes
+        {
+          run.append(batch[index].data)
+          index += 1
+        }
         do {
-          try Self.append(write.data, to: write.fileURL, maximumFileBytes: write.maximumFileBytes)
+          try Self.append(run, to: fileURL, maximumFileBytes: maximumFileBytes)
+          fileAppendCount += 1
+          unsyncedFileURLs.insert(fileURL)
           lock.withLock { if droppedFileWriteCount == 0 { lastWriteError = nil } }
         } catch {
           lock.withLock { lastWriteError = String(describing: error) }
@@ -494,12 +530,39 @@ public final class InstantDiagnostics: @unchecked Sendable {
     }
   }
 
+  /// Fsyncs each written file whose last sync is a second old, or every one when `force`; schedules the rest. Runs
+  /// on `fileWriteQueue`.
+  private func syncWrittenFiles(force: Bool) {
+    let now = Date()
+    for fileURL in unsyncedFileURLs {
+      let lastSync = lastFileSyncAt[fileURL] ?? .distantPast
+      guard force || now.timeIntervalSince(lastSync) >= Self.fileSyncIntervalSeconds else { continue }
+      let descriptor = open(fileURL.path, O_WRONLY)
+      if descriptor >= 0 {
+        _ = fsync(descriptor)
+        _ = close(descriptor)
+        fileSyncCount += 1
+      }
+      lastFileSyncAt[fileURL] = now
+      unsyncedFileURLs.remove(fileURL)
+    }
+    guard !unsyncedFileURLs.isEmpty, !fileSyncScheduled else { return }
+    fileSyncScheduled = true
+    fileWriteQueue.asyncAfter(deadline: .now() + Self.fileSyncIntervalSeconds) { [self] in
+      fileSyncScheduled = false
+      syncWrittenFiles(force: true)
+    }
+  }
+
   /// The file that holds the entries written before the last rotation.
   public static func previousLogFileURL(for fileURL: URL) -> URL {
     fileURL.deletingPathExtension().appendingPathExtension("previous.jsonl")
   }
 
-  private static func append(_ data: Data, to fileURL: URL, maximumFileBytes: Int?) throws {
+  /// Appends `entries` in order under one open and one lock, rotating before an entry that would take the file past
+  /// `maximumFileBytes`; the file being retired is fsynced first. The caller syncs the rest (`syncWrittenFiles`).
+  private static func append(_ entries: [Data], to fileURL: URL, maximumFileBytes: Int?) throws {
+    guard !entries.isEmpty else { return }
     let directory = fileURL.deletingLastPathComponent()
     try FileManager.default.createDirectory(
       at: directory,
@@ -507,10 +570,14 @@ public final class InstantDiagnostics: @unchecked Sendable {
       attributes: [.posixPermissions: 0o700]
     )
 
+    var remaining = entries[...]
+    var attempts = 0
     // A writer that opened the file just before another rotated it holds the renamed file, so it
     // checks the path still names its file and reopens if not. Rotating from a stale descriptor
     // would move the new file over the previous one and lose a whole file of entries.
-    for _ in 0..<4 {
+    while !remaining.isEmpty {
+      attempts += 1
+      guard attempts <= 4 + entries.count else { throw POSIXError(.EAGAIN) }
       let descriptor = open(fileURL.path, O_WRONLY | O_CREAT | O_APPEND, 0o600)
       guard descriptor >= 0 else {
         throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
@@ -533,30 +600,31 @@ public final class InstantDiagnostics: @unchecked Sendable {
         current.st_ino == opened.st_ino,
         current.st_dev == opened.st_dev
       else { continue }
-      if let maximumFileBytes, opened.st_size > 0,
-        Int(opened.st_size) + data.count > maximumFileBytes
-      {
-        guard rename(fileURL.path, previousLogFileURL(for: fileURL).path) == 0 else {
-          throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
-        }
-        continue
-      }
 
-      try data.withUnsafeBytes { rawBuffer in
-        guard let baseAddress = rawBuffer.baseAddress else { return }
-        var offset = 0
-        while offset < rawBuffer.count {
-          let result = write(descriptor, baseAddress.advanced(by: offset), rawBuffer.count - offset)
-          if result < 0 {
-            if errno == EINTR { continue }
+      var size = Int(opened.st_size)
+      while let data = remaining.first {
+        if let maximumFileBytes, size > 0, size + data.count > maximumFileBytes {
+          _ = fsync(descriptor)
+          guard rename(fileURL.path, previousLogFileURL(for: fileURL).path) == 0 else {
             throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
           }
-          offset += result
+          break
         }
+        try data.withUnsafeBytes { rawBuffer in
+          guard let baseAddress = rawBuffer.baseAddress else { return }
+          var offset = 0
+          while offset < rawBuffer.count {
+            let result = write(descriptor, baseAddress.advanced(by: offset), rawBuffer.count - offset)
+            if result < 0 {
+              if errno == EINTR { continue }
+              throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
+            }
+            offset += result
+          }
+        }
+        size += data.count
+        remaining.removeFirst()
       }
-      _ = fsync(descriptor)
-      return
     }
-    throw POSIXError(.EAGAIN)
   }
 }
