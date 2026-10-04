@@ -573,7 +573,7 @@ struct InstantStorePageSkipTests {
     func newEntityID(_ rng: inout SplitMix64) -> String {
       nextEntity += 1
       // Random hex prefixes, so the entity ID tie-break does not follow creation order.
-      return String(format: "%04x-%03d", Int.random(in: 0..<0xFFFF, using: &rng), nextEntity)
+      return String(format: "%04lx-%03ld", Int.random(in: 0..<0xFFFF, using: &rng), nextEntity)
     }
 
     var seedTriples: [InstantTriple] = []
