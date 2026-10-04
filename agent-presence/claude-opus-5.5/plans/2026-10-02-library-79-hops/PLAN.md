@@ -149,3 +149,14 @@ commit keeps its info `store.mutation-published` line (Scribe's memory fencepost
 `InstantWriteFailureKindTests.swift` and `InstantOperationGatePriorityTests.swift`, and new `docs/releases/v1.9.7.md`,
 added 2026-10-03 19:41 EDT. Rooms (agent/claude-opus-5.5/rooms, 681a0ba9) merges in once its red-green and bench
 pass.
+
+## v1.9.8: #474 (P1, main, 2026-10-03; after 1.9.7)
+
+After a socket reset the live session applied every buffered frame of the dead connection before it reconnected (the
+Mac applied 125 frames over 18.5 minutes, offline). Fix: when the reader's error arrives, the receive buffer drops the
+dead connection's query results (`add-query-ok`, `add-query-exists`, `refresh-ok`), which the next connection's
+`add-query` answers replace, as `Reactor.js` drops a replaced transport's messages; the answers to this device's writes
+and every other frame are still applied in order. Red test first. Touching
+`Sources/InstantSwiftDataCore/InstantRuntimeLiveSession.swift`,
+`Tests/InstantSwiftDataCoreTests/InstantLiveConnectionSurvivalTests.swift`, and new `docs/releases/v1.9.8.md`, added
+2026-10-03 20:25 EDT.
