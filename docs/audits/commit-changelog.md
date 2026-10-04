@@ -1,3 +1,6 @@
+## 2026-10-04 08:42:03 EDT — instant-data-swift `2a977a3f6222fedc5324e01a0c8660dbd4b0ac76`
+Merge library-79-197 into main for v1.9.7 (#473 #482)
+
 ## 2026-10-04 08:41:00 EDT — instant-data-swift `5ff6cb84f9b547c96602f186efa73d7cb7dae2d2`
 Document the v1.9.7 release: the operation gate's priority lanes, hydration and publication off the gate, write-failure kinds and connection health, with the regression found before release (#473 #482)
 
