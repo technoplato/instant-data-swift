@@ -110,12 +110,12 @@ extension InstantError: InstantWriteFailureClassifying {
   }
 
   private var validationFailureKind: InstantWriteFailureKind {
-    let message = message.lowercased()
+    let text = self.message.lowercased()
     // The row or fact may still arrive by sync from another device, so these are not permanent.
     if operation == "strict update entity" || operation == "require triple" {
       return .unknown
     }
-    if message.contains("matched more than one local entity") {
+    if text.contains("matched more than one local entity") {
       return .unknown
     }
     if let serverKind = InstantWriteFailureKind.serverFailureKind(
@@ -125,18 +125,18 @@ extension InstantError: InstantWriteFailureClassifying {
     ) {
       return serverKind
     }
-    if message.contains("does not exist in the local schema")
-      || message.contains("no attribute named")
-      || message.contains("no ref attribute named")
-      || message.contains("require a declared destination attribute")
+    if text.contains("does not exist in the local schema")
+      || text.contains("no attribute named")
+      || text.contains("no ref attribute named")
+      || text.contains("require a declared destination attribute")
     {
       return .rejected(.unknownAttribute)
     }
-    if message.contains("invalid value for attribute")
-      || message.contains("non-finite number")
-      || message.contains("does not match the declared type")
-      || message.contains("cannot be set to null")
-      || message.contains("requires a reference value")
+    if text.contains("invalid value for attribute")
+      || text.contains("non-finite number")
+      || text.contains("does not match the declared type")
+      || text.contains("cannot be set to null")
+      || text.contains("requires a reference value")
     {
       return .rejected(.invalidValue)
     }
@@ -144,15 +144,15 @@ extension InstantError: InstantWriteFailureClassifying {
   }
 
   private var persistenceFailureKind: InstantWriteFailureKind {
-    let message = message.lowercased()
+    let text = self.message.lowercased()
     // SQLite's own messages for a busy or failing disk (`sqlite3ErrStr`): SQLITE_BUSY, SQLITE_LOCKED, SQLITE_IOERR,
     // SQLITE_FULL and SQLITE_NOMEM. A write that kept losing revision races to other writers gave up after five tries.
-    if message.contains("database is locked")
-      || message.contains("database table is locked")
-      || message.contains("disk i/o error")
-      || message.contains("database or disk is full")
-      || message.contains("out of memory")
-      || message.contains("changed repeatedly")
+    if text.contains("database is locked")
+      || text.contains("database table is locked")
+      || text.contains("disk i/o error")
+      || text.contains("database or disk is full")
+      || text.contains("out of memory")
+      || text.contains("changed repeatedly")
     {
       return .transient
     }

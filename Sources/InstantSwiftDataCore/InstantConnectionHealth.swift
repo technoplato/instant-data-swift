@@ -67,13 +67,13 @@ package final class InstantConnectionHealthRecorder: Sendable {
   }
 
   package func health(isOpen: Bool) -> InstantConnectionHealth {
-    let counters = counters.withLock { $0 }
+    let current = counters.withLock { $0 }
     return InstantConnectionHealth(
       isOpen: isOpen,
-      lastLocalCommitAt: counters.lastLocalCommitAt,
-      lastServerAcknowledgementAt: counters.lastServerAcknowledgementAt,
-      lastServerResultAt: counters.lastServerResultAt,
-      pendingCount: counters.pendingCount
+      lastLocalCommitAt: current.lastLocalCommitAt,
+      lastServerAcknowledgementAt: current.lastServerAcknowledgementAt,
+      lastServerResultAt: current.lastServerResultAt,
+      pendingCount: current.pendingCount
     )
   }
 }

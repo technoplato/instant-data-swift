@@ -226,10 +226,10 @@ actor AsyncSerialGate {
   /// ``isHeldSnapshot``, the answer can change right after it is read.
   nonisolated var snapshot: Snapshot {
     let state = snapshotState.withLock { $0 }
-    let markedPhase = markedPhase.withLock { $0 }
+    let phase = markedPhase.withLock { $0 }
     return Snapshot(
       holder: state.holder,
-      holderPhase: state.holder == nil ? nil : state.holderPhase ?? markedPhase,
+      holderPhase: state.holder == nil ? nil : state.holderPhase ?? phase,
       heldSince: state.heldSince,
       waiterCount: state.waiterCount,
       longestWaitingSince: state.longestWaitingSince

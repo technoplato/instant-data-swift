@@ -365,8 +365,8 @@ package actor InstantRuntimeLiveSession {
   private var sessionID: String?
   private var isOpened = false {
     didSet {
-      let isOpened = isOpened
-      openFlag.withLock { $0 = isOpened }
+      let opened = isOpened
+      openFlag.withLock { $0 = opened }
     }
   }
   /// Mirrors `isOpened` for ``isOpenSnapshot``, written in the same actor turn (#482). The lock guards one Bool for
