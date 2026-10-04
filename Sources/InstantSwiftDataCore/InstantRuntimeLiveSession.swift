@@ -1242,6 +1242,11 @@ package actor InstantRuntimeLiveSession {
     Set(registeredQueries.keys)
   }
 
+  /// Whether a query holds `key` (#541).
+  func isRegistered(key: String) -> Bool {
+    registeredQueries[key] != nil
+  }
+
   /// The server frame the current generation's applier is still applying, if any (#296).
   ///
   /// A frame counts from the moment the applier took it until the runtime finished handling it. Upstream

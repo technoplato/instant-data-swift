@@ -144,8 +144,12 @@ struct InstantSessionMapBoundsTests {
           )
         )
       )
+      // The answer is recorded as answered, then acknowledged: wait for both before the query is given up.
       let deadline = ContinuousClock.now + .seconds(10)
-      while try await !runtime.isAnsweredOnCurrentSocketForTesting(plan) {
+      while true {
+        let answered = try await runtime.isAnsweredOnCurrentSocketForTesting(plan)
+        let acknowledged = await runtime.liveQueryAcknowledgementKeyCountForTesting() > 0
+        if answered && acknowledged { break }
         guard ContinuousClock.now < deadline else {
           Issue.record("The server's answer to query \(index) was never recorded.")
           break

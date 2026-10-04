@@ -7893,8 +7893,7 @@ public final class InstantRuntime: Sendable {
       }
       let registrationKey = try InstantLiveQueryEncoder.registrationKey(for: query)
       guard !queryOK.result.isEmpty else {
-        let isRegistered = await recordLiveQueryAnswered(key: registrationKey)
-        await liveQueryAcknowledgements.record(key: registrationKey, remembering: isRegistered)
+        await acknowledgeLiveQueryAnswer(key: registrationKey)
         // A refused re-send waiting for this connection's answers may resolve or stand now (#441).
         await resolveParkedRefusalsIfNeeded()
         return
@@ -7922,8 +7921,7 @@ public final class InstantRuntime: Sendable {
       )
       // Answered before acknowledged: a queryOnce that sees this acknowledgement also sees the answer, and answers
       // from the device instead of waiting on the socket (library-78 item 7).
-      let isRegistered = await recordLiveQueryAnswered(key: registrationKey)
-      await liveQueryAcknowledgements.record(key: registrationKey, remembering: isRegistered)
+      await acknowledgeLiveQueryAnswer(key: registrationKey)
       // A refused re-send waiting for this connection's answers may resolve or stand now (#441).
       await resolveParkedRefusalsIfNeeded()
 
@@ -7937,8 +7935,7 @@ public final class InstantRuntime: Sendable {
         )
       }
       let registrationKey = try InstantLiveQueryEncoder.registrationKey(for: query)
-      let isRegistered = await recordLiveQueryAnswered(key: registrationKey)
-      await liveQueryAcknowledgements.record(key: registrationKey, remembering: isRegistered)
+      await acknowledgeLiveQueryAnswer(key: registrationKey)
       // A refused re-send waiting for this connection's answers may resolve or stand now (#441).
       await resolveParkedRefusalsIfNeeded()
 
@@ -8327,6 +8324,20 @@ public final class InstantRuntime: Sendable {
     )
     startStreamWriterCatchUp()
     return true
+  }
+
+  /// Records the server's answer to `key`: first as answered, then for the queryOnce calls waiting on it. The
+  /// acknowledgement is kept only while a query holds the key (#541): an answer that arrives after its query
+  /// unregistered is not kept, and when the query unregisters between the two, its forget ran first, so it is
+  /// forgotten here.
+  private func acknowledgeLiveQueryAnswer(key: String) async {
+    let isRegistered = await recordLiveQueryAnswered(key: key)
+    await liveQueryAcknowledgements.record(key: key, remembering: isRegistered)
+    guard isRegistered else { return }
+    recordActorHop(.liveSession)
+    if await !liveSession.isRegistered(key: key) {
+      await liveQueryAcknowledgements.forget(key: key)
+    }
   }
 
   /// The server answered the live query `key`: its error clears for its observers and its backoff starts over
