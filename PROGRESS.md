@@ -1,3 +1,54 @@
+## 2026-10-04 08:40:53 EDT — v1.9.7: the operation gate's priority lanes and one stall report per holder, hydration and publication off the gate, write-failure kinds and connection health; main's merge of this commit is the release commit (#473 #482)
+
+- **Owner:** library-79 (`claude-opus-5.5-library-79`, workLog agentId `claude-code/claude-opus-5.5/library-79`), plan
+  `2026-10-02-library-79-hops`, at main's request ("1.9.7 carries the gate deadline, priority lanes and #473's remaining
+  two parts, with one before-and-after soak"), under Michael's maintainer authorization: "Publish the library once it's
+  checked fast. Yes."
+- **Defects:** #473 (freeze-185): a transcript write queued first come, first served behind server catch-ups,
+  hydrations and listings; a hydrate held the gate through a SQLite `pread`; publication was about three quarters of
+  every write's hold; a 331 s catch-up logged a critical stall line every 5 s. #482 part C: Scribe's save lane needed a
+  machine-readable kind for every write failure and a cheap read of the connection's health.
+- **Commits on `agent/claude-opus-5.5/library-79-197`:** `c1332f76` claims; `425269bc` gate priorities, hydration
+  and publication off the gate, write-failure kinds, connection health, publish summaries; `6d7cae69`, `d3719803`,
+  `1f74a6d4`, `87ec88dd` review and test fixes; the v1.9.6 merges `4cf36e6c` and `3704cfdf`; dev-run fixes
+  `7b67b843` (test-only), `3c813be9` (gate reports name their owner), `e83619d9` and `44a1544a` (test-only races),
+  and `c434e244` (a server apply queues interactive: the background lane held the hub-component test's gate 4,816 ms
+  against 983 ms in 1.9.6); change log `892ccde7`; release document `docs/releases/v1.9.7.md`.
+- **Checks:** dev-197 (normal lane, red 4 of 5 on v1.9.6 for their reasons, green on `7b67b843`); library-79-gate-197
+  on `c434e244` (high lane, 04:55-06:00: new suites 68 x3, store publication 62, library-77/78 118, ten suites 697 with
+  two load misses and the mixed encoding-window race, focused 167, fast drain and survival 25, infinite 211 with the
+  pre-existing failure, #431 iPad store 3/3, phone replay matches or improves); library-79-ab-197 (high lane, 07:17-07:25:
+  the hub-component server apply alone, eight interleaved rounds, v1.9.6 median 352 ms and max 1,316 against 1.9.7 median
+  322 ms and max 683, none at 2,000 ms); library-79-soak-197 (high lane with the simulator, 07:42-08:29: 600 s
+  calibrated-car recordings, 876/872 and 880/875 writes and accepts, pending at most 2 in both, no refusals, ack
+  timeouts or gate stalls, CPU median 23 % and RSS 409/407 MB).
+- **Evidence:** `/Users/laptop/Sync/audit/library-79-197-gate-2026-10-04/` and `/tmp/library-79-hops/dev-197/`.
+- **Continue:** 1.9.8 on `agent/claude-opus-5.5/library-79-198` (#474) takes v1.9.7, then its red on v1.9.7 and green;
+  then #491 on `agent/claude-opus-5.5/library-79-491` (written, its dev run queued in the low lane); job 5's hop numbers
+  for 1.9.7 in the low lane (`job5c-197.sh`, `job5d-197.sh`).
+
+## 2026-10-04 00:40:39 EDT — v1.9.6: a stored file downloads to a destination file, streaming, and the diagnostics file is written in batches with an fsync at most once a second; main's merge of this commit is the release commit (#454 #473)
+
+- **Owner:** library-79 (`claude-opus-5.5-library-79`, workLog agentId `claude-code/claude-opus-5.5/library-79`), plan
+  `2026-10-02-library-79-hops`, at main's request ("1.9.6 carries the streaming file download (#454, a P0: the 1.96 GB
+  WAV loaded into memory) plus batched log fsync"), under Michael's maintainer authorization: "Publish the library once
+  it's checked fast. Yes."
+- **Defects:** #454: an iPad on Scribe 0.1 (83) loaded Recording 039's 1,964,275,244-byte WAV into memory, cached a copy
+  and wrote it again (a 4,384 MB footprint). #473 (freeze-185 item 1): 1.9.5 still fsynced every log line, on the writer
+  queue, behind one process-wide file lock.
+- **Commits on `agent/claude-opus-5.5/library-79-hops`:** `860ed538` batched log writes with a periodic fsync;
+  `46eae09a` the merge of phone-perf's `agent/claude-opus-5.5/file-download` (`2b791e3a` plan, `1330bed0`
+  `downloadStoredFile(id:name:to:)`, `0ea09b54` a merge of v1.9.4); ledger `2d0c84fc`; test-only `f7b91bff` (the
+  download tests awaited inside `expectNoDifference`); release document `docs/releases/v1.9.6.md`.
+- **Checks:** library-79-gate-196 on `f7b91bff` in main's lane from a deleted debug build: new suites 38 ×3,
+  library-77/78 118, ten suites 697 (two 250 ms timing misses at load 120-160, each 5/5 alone), focused 167, fast-drain
+  and survival 25, infinite 211 (pre-existing failure), #431 iPad store 3/3, phone replay matches or improves (822 s
+  wall, against 1,797 s for 1.9.5 under load).
+- **Evidence:** `/tmp/library-79-hops/gate-196*/`, copied to `/Users/laptop/Sync/audit/library-79-196-2026-10-04/`.
+- **Continue:** 1.9.7 on `agent/claude-opus-5.5/library-79-197` (gate priority lanes, hydration and publication off the
+  gate, write-failure kinds and connection health; its dev job is queued); 1.9.8 on
+  `agent/claude-opus-5.5/library-79-198` (#474); then #491's upload API.
+
 ## 2026-10-03 18:37:38 EDT — v1.9.5: a local write no longer holds the operation gate while it logs, and outbox listings never wait for the gate; main's merge of this commit is the release commit (#473)
 
 - **Owner:** library-79 (`claude-opus-5.5-library-79`, workLog agentId `claude-code/claude-opus-5.5/library-79`), plan

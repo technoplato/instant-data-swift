@@ -23,7 +23,8 @@ struct InstantStoredFileDownloadTests {
     // And a second copy in the library's own file store.
     let cached = try #require(try await fixture.runtime.storedFiles().only)
     expectNoDifference(try Data(contentsOf: URL(fileURLWithPath: cached.localPath)), payload)
-    expectNoDifference(await fixture.recorder.dataDownloads, 1)
+    let dataDownloads = await fixture.recorder.dataDownloads
+    expectNoDifference(dataDownloads, 1)
   }
 
   @Test("A named file streams to its destination, with no data download and no copy of the library's own")
@@ -43,10 +44,13 @@ struct InstantStoredFileDownloadTests {
     expectNoDifference(file.localPath, destination.path)
     expectNoDifference(file.name, "recordings/audio.wav")
     // Only the file download ran: nothing returned the file as data.
-    expectNoDifference(await fixture.recorder.dataDownloads, 0)
-    expectNoDifference(await fixture.recorder.fileDownloads.map(\.path), ["recordings/audio.wav"])
+    let dataDownloads = await fixture.recorder.dataDownloads
+    let fileDownloadPaths = await fixture.recorder.fileDownloads.map(\.path)
+    expectNoDifference(dataDownloads, 0)
+    expectNoDifference(fileDownloadPaths, ["recordings/audio.wav"])
     // The destination holds the only copy, and the temporary file moved there.
-    expectNoDifference(try await fixture.runtime.storedFiles(), [])
+    let storedFiles = try await fixture.runtime.storedFiles()
+    expectNoDifference(storedFiles, [])
     let temporaryURL = try #require(await fixture.recorder.temporaryURLs.only)
     expectNoDifference(FileManager.default.fileExists(atPath: temporaryURL.path), false)
   }
@@ -76,8 +80,10 @@ struct InstantStoredFileDownloadTests {
 
     expectNoDifference(try Data(contentsOf: destination), payload)
     expectNoDifference(file.localPath, destination.path)
-    expectNoDifference(await fixture.recorder.dataDownloads, 0)
-    expectNoDifference(await fixture.recorder.fileDownloads, [])
+    let dataDownloads = await fixture.recorder.dataDownloads
+    let fileDownloads = await fixture.recorder.fileDownloads
+    expectNoDifference(dataDownloads, 0)
+    expectNoDifference(fileDownloads, [])
   }
 
   @Test("A failed download leaves the destination as it was and no temporary file")
@@ -123,7 +129,8 @@ struct InstantStoredFileDownloadTests {
     try await runtime.downloadStoredFile(id: "file-1", name: "recordings/audio.wav", to: destination)
 
     expectNoDifference(try Data(contentsOf: destination), payload)
-    expectNoDifference(try await runtime.storedFiles(), [])
+    let storedFiles = try await runtime.storedFiles()
+    expectNoDifference(storedFiles, [])
   }
 }
 

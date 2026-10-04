@@ -98,8 +98,11 @@ extension InstantOperationGatePriorityTests {
       }
     }
     let waits = PriorityTestBox<[InstantDiagnosticEntry]>([])
+    // Other suites' runtimes report their own operation gates at the same time, so only this runtime's count.
     let token = InstantDiagnostics.shared.addHandler { entry in
-      guard entry.event == "serial-gate.waited", entry.metadata["gate"] == "operation" else { return }
+      guard entry.event == "serial-gate.waited", entry.metadata["gate"] == "operation",
+        entry.metadata["owner"] == "offline-priority-listing"
+      else { return }
       waits.withValue { $0.append(entry) }
     }
     defer { InstantDiagnostics.shared.removeHandler(token) }
@@ -262,6 +265,94 @@ extension InstantOperationGatePriorityTests {
   }
 }
 
+extension InstantOperationGatePriorityTests {
+  fileprivate static func renameChunk(
+    _ fixture: GateHydrationFixture,
+    title: String,
+    payload: JSONValue,
+    transactionID: String
+  ) -> InstantStoreTransaction {
+    let createdAt = InstantTimestamp(milliseconds: 1_700_000_000_200)
+    func insert(_ attributeID: String, _ value: InstantValue) -> InstantTripleOperation {
+      .insert(InstantTriple(entityID: "chunk-a", attributeID: attributeID, value: value, txID: transactionID, txTime: createdAt))
+    }
+    return InstantStoreTransaction(
+      id: transactionID,
+      operations: [
+        .requireEntityExists(entityID: "chunk-a", namespace: fixture.namespace),
+        insert(fixture.titleAttribute.id, .string(title)),
+        insert(fixture.samplesAttribute.id, .json(payload)),
+      ]
+    )
+  }
+
+  /// A write saved to SQLite but not yet committed to the store when a hydration reads: the read sees the new samples
+  /// while the emission still has the old title, so the emission must not be delivered with them (#473). Every
+  /// delivered row pairs a title with its own samples, and the last one is the write's.
+  @Test
+  func aHydrationNeverPairsAnEmissionWithAWriteSavedDuringItsRead() async throws {
+    let fixture = GateHydrationFixture()
+    let cacheURL = try fixture.temporaryCacheURL("hydration-pairing")
+    defer { try? FileManager.default.removeItem(at: cacheURL.deletingLastPathComponent()) }
+    try await fixture.seed(cacheURL, rows: [(id: "chunk-a", title: "A", payload: fixture.payload("a"))])
+    let runtimeBox = PriorityTestBox<InstantRuntime?>(nil)
+    let claimed = PriorityTestBox(false)
+    let writePaused = PriorityTestBox(false)
+    let releaseWrite = AsyncStream<Void>.makeStream()
+    let write = PriorityTestBox<Task<Void, any Error>?>(nil)
+    var configuration = fixture.configuration(appID: "gate-hydration-pairing", cacheURL: cacheURL)
+    configuration.onLocalMutationPersistedBeforeStorePublicationForTesting = { transactionID in
+      guard transactionID == "tx-rename" else { return }
+      writePaused.setValue(true)
+      var iterator = releaseWrite.stream.makeAsyncIterator()
+      _ = await iterator.next()
+    }
+    configuration.onDeferredQueryEmissionHydrationStartingForTesting = { _ in
+      guard let runtime = runtimeBox.value, claimed.withValue({ wasClaimed in
+        defer { wasClaimed = true }
+        return !wasClaimed
+      }) else { return }
+      // The write saves its new title and samples, then pauses before the store commits them.
+      write.setValue(
+        Task {
+          _ = try await runtime.transact(
+            Self.renameChunk(fixture, title: "A2", payload: fixture.payload("a2"), transactionID: "tx-rename")
+          )
+        }
+      )
+      for _ in 0..<1_000 where !writePaused.value {
+        try? await Task.sleep(for: .milliseconds(5))
+      }
+    }
+    let runtime = try await InstantRuntime.bootstrap(configuration: configuration)
+    runtimeBox.setValue(runtime)
+    let stream = await runtime.observe(
+      fixture.pageQuery(id: "gate-hydration-pairing", selectedFields: [fixture.titleAttribute.name, fixture.samplesAttribute.name])
+    )
+    let rows = PriorityTestBox<[(title: InstantMaterializedValue?, samples: InstantMaterializedValue?)]>([])
+    let consumer = Task {
+      for await emission in stream {
+        guard let row = emission.values.first else { continue }
+        rows.withValue {
+          $0.append((row.values[fixture.titleAttribute.name], row.values[fixture.samplesAttribute.name]))
+        }
+      }
+    }
+    try await waitFor("the write to pause after its save") { writePaused.value }
+    // The hydration has read the saved samples; let the write commit.
+    try await Task.sleep(for: .milliseconds(200))
+    releaseWrite.continuation.yield()
+    try await write.value?.value
+    try await waitFor("the write's row") { rows.value.last?.title == .one(.string("A2")) }
+    consumer.cancel()
+    let oldTitle = InstantMaterializedValue.one(.string("A"))
+    let newSamples = InstantMaterializedValue.one(.json(fixture.payload("a2")))
+    let mismatched = rows.value.filter { $0.title == oldTitle && $0.samples == newSamples }.count
+    expectNoDifference(mismatched, 0, "an emission paired the old title with the write's samples")
+    expectNoDifference(rows.value.last?.samples, newSamples)
+  }
+}
+
 /// A route-chunk store whose samples are deferred values, as Scribe's are.
 private struct GateHydrationFixture {
   let namespace = "routeChunks"
@@ -343,11 +434,11 @@ extension InstantOperationGatePriorityTests {
     let order = PriorityTestBox<[String]>([])
     await gate.enter(operation: "holder")
     let background = Task.detached {
-      await gate.enter(operation: "server apply", priority: .background)
-      order.withValue { $0.append("server apply") }
+      await gate.enter(operation: "outbox listing", priority: .background)
+      order.withValue { $0.append("outbox listing") }
       await gate.leave()
     }
-    try await waitFor("the server apply to queue") { await gate.waiterCount == 1 }
+    try await waitFor("the listing to queue") { await gate.waiterCount == 1 }
     let interactive = Task.detached {
       await gate.enter(operation: "transcript write", priority: .interactive)
       order.withValue { $0.append("transcript write") }
@@ -357,7 +448,7 @@ extension InstantOperationGatePriorityTests {
     await gate.leave()
     await background.value
     await interactive.value
-    expectNoDifference(order.value, ["transcript write", "server apply"])
+    expectNoDifference(order.value, ["transcript write", "outbox listing"])
   }
 
   @Test
@@ -366,11 +457,11 @@ extension InstantOperationGatePriorityTests {
     let order = PriorityTestBox<[String]>([])
     await gate.enter(operation: "holder")
     let background = Task.detached {
-      await gate.enter(operation: "server apply", priority: .background)
-      order.withValue { $0.append("server apply") }
+      await gate.enter(operation: "outbox listing", priority: .background)
+      order.withValue { $0.append("outbox listing") }
       await gate.leave()
     }
-    try await waitFor("the server apply to queue") { await gate.waiterCount == 1 }
+    try await waitFor("the listing to queue") { await gate.waiterCount == 1 }
     // Two aging intervals: the background waiter now ranks with an interactive one, and it is older.
     try await Task.sleep(for: .milliseconds(250))
     let interactive = Task.detached {
@@ -382,7 +473,7 @@ extension InstantOperationGatePriorityTests {
     await gate.leave()
     await background.value
     await interactive.value
-    expectNoDifference(order.value, ["server apply", "transcript write"])
+    expectNoDifference(order.value, ["outbox listing", "transcript write"])
   }
 
   @Test
@@ -427,6 +518,52 @@ extension InstantOperationGatePriorityTests {
     await waiter.value
     try await waitFor("the gate to be free") { gate.snapshot.holder == nil }
     expectNoDifference(gate.snapshot.waiterCount, 0)
+  }
+
+  /// A write that lands after a hydration's read and before its check: the emission it read for is stale, so it is
+  /// dropped, and the write's emission is hydrated instead (#473).
+  @Test
+  func aWriteBetweenAnUngatedReadAndItsCheckDropsTheStaleEmission() async throws {
+    let fixture = GateHydrationFixture()
+    let cacheURL = try fixture.temporaryCacheURL("hydration-recheck")
+    defer { try? FileManager.default.removeItem(at: cacheURL.deletingLastPathComponent()) }
+    try await fixture.seed(cacheURL, rows: [(id: "chunk-a", title: "A", payload: fixture.payload("a"))])
+    let runtimeBox = PriorityTestBox<InstantRuntime?>(nil)
+    let claimed = PriorityTestBox(false)
+    var configuration = fixture.configuration(appID: "gate-hydration-recheck", cacheURL: cacheURL)
+    configuration.onDeferredValuesReadWithoutOperationGateForTesting = { _ in
+      guard let runtime = runtimeBox.value, claimed.withValue({ wasClaimed in
+        defer { wasClaimed = true }
+        return !wasClaimed
+      }) else { return }
+      _ = try? await runtime.transact(
+        Self.renameChunk(fixture, title: "A2", payload: fixture.payload("a2"), transactionID: "tx-recheck")
+      )
+    }
+    let runtime = try await InstantRuntime.bootstrap(configuration: configuration)
+    runtimeBox.setValue(runtime)
+    let stream = await runtime.observe(
+      fixture.pageQuery(id: "gate-hydration-recheck", selectedFields: [fixture.titleAttribute.name, fixture.samplesAttribute.name])
+    )
+    let first = await withTaskGroup(of: InstantQueryEmission?.self) { group in
+      group.addTask {
+        for await emission in stream where emission.values.first?.values[fixture.samplesAttribute.name] != nil {
+          return emission
+        }
+        return nil
+      }
+      group.addTask {
+        try? await Task.sleep(for: .seconds(10))
+        return nil
+      }
+      let first = await group.next() ?? nil
+      group.cancelAll()
+      return first
+    }
+    #expect(claimed.value, "the write landed between the read and the check")
+    let row = try #require(first?.values.first)
+    expectNoDifference(row.values[fixture.titleAttribute.name], .one(.string("A2")))
+    expectNoDifference(row.values[fixture.samplesAttribute.name], .one(.json(fixture.payload("a2"))))
   }
 
   // MARK: - The store's publications
@@ -510,7 +647,8 @@ extension InstantOperationGatePriorityTests {
     defer { InstantDiagnostics.shared.removeHandler(token) }
 
     let first = try await Self.todoPrepared(store, id: "todo-1", text: "one", transactionID: ids.0)
-    let firstTicket = try #require(await store.commitDeferringPublication(first).publication)
+    let firstCommitted = await store.commitDeferringPublication(first)
+    let firstTicket = try #require(firstCommitted.publication)
     let second = try await Self.todoPrepared(store, id: "todo-2", text: "two", transactionID: ids.1)
     _ = await store.commitDeferringPublication(second)
     _ = await store.publishCommittedChanges(firstTicket)
@@ -565,7 +703,9 @@ extension InstantOperationGatePriorityTests {
     let start = ContinuousClock.now
     summary.record(commitCount: 2, metrics: InstantStorePublishMetrics(splicedObserverCount: 1), duration: .milliseconds(20))
     summary.record(commitCount: 1, metrics: InstantStorePublishMetrics(rematerializedObserverCount: 3), duration: .milliseconds(150))
-    #expect(summary.takeIfDue(now: start + .seconds(5), interval: .seconds(30)) == nil)
+    // takeIfDue mutates, and #expect evaluates its argument on a copy, so each call comes first.
+    let early = summary.takeIfDue(now: start + .seconds(5), interval: .seconds(30))
+    #expect(early == nil)
     let window = summary.takeIfDue(now: start + .seconds(31), interval: .seconds(30))
     expectNoDifference(window?.publicationCount, 2)
     expectNoDifference(window?.commitCount, 3)
@@ -573,6 +713,7 @@ extension InstantOperationGatePriorityTests {
     expectNoDifference(window?.metrics.splicedObserverCount, 1)
     expectNoDifference(window?.metrics.rematerializedObserverCount, 3)
     expectNoDifference(window?.maximumDuration, .milliseconds(150))
-    #expect(summary.takeIfDue(now: start + .seconds(70), interval: .seconds(30)) == nil, "an empty window is not reported")
+    let empty = summary.takeIfDue(now: start + .seconds(70), interval: .seconds(30))
+    #expect(empty == nil, "an empty window is not reported")
   }
 }

@@ -1676,7 +1676,8 @@ public final class InstantRuntime: Sendable {
   private let streamContentObservers = InstantStreamContentObservers()
   private let sharesObservers =
     InstantSnapshotObservers<InstantSharesObservationKey, [InstantShareSnapshot]>()
-  private let operationGate = AsyncSerialGate(label: "operation")
+  /// Named for the runtime's app, so a report says whose gate waited when two runtimes share a process.
+  private let operationGate: AsyncSerialGate
   // Server refresh preparation can page through a large query result. Keep
   // those preparations serial without holding the operation gate that protects
   // local writes. The final revision-checked transition acquires
@@ -1730,6 +1731,7 @@ public final class InstantRuntime: Sendable {
     attributeRevision: Int64
   ) {
     self.configuration = configuration
+    self.operationGate = AsyncSerialGate(label: "operation", owner: configuration.appID)
     self.store = store
     self.outbox = outbox
     self.persistence = persistence
@@ -2909,11 +2911,17 @@ public final class InstantRuntime: Sendable {
   /// Captures persistence revisions and the matching hot-store contents as one
   /// short operation-gated transition. Long body paging and optimistic rebase
   /// work happens only after this gate is released.
+  ///
+  /// A server apply queues with local writes, not behind them: the receiver applies frames in order, so every later
+  /// frame, the writes' acknowledgements among them, waits for it, and its commit replays each local write admitted
+  /// meanwhile under the gate. In the background lane, under a section written every 25 ms, one apply held the gate
+  /// 4,816 ms and a write waited 4,702 ms (`InstantServerApplyOperationGateTests`, 1.9.7's dev run); first come, first
+  /// served, it held 196-984 ms.
   private func loadServerApplySeed(
     operationGateAlreadyHeld: Bool
   ) async throws -> InstantServerApplySeed {
     if !operationGateAlreadyHeld {
-      try await enterOperationGateUnlessCancelled(operation: "snapshot server apply", priority: .background)
+      try await enterOperationGateUnlessCancelled(operation: "snapshot server apply", priority: .interactive)
     }
     do {
       recordActorHop(.persistence)
@@ -3417,7 +3425,8 @@ public final class InstantRuntime: Sendable {
         var gateTimeline = InstantServerApplyGateTimeline(enteredAt: ContinuousClock.now)
         catchUp: while true {
           if !operationGateAlreadyHeld, !enteredOperationGateForCommit {
-            await enterOperationGate(operation: "catch up server apply", priority: .background)
+            // With local writes, not behind them: each write admitted while it waits is one more to replay here.
+            await enterOperationGate(operation: "catch up server apply", priority: .interactive)
             enteredOperationGateForCommit = true
             gateTimeline = InstantServerApplyGateTimeline(enteredAt: ContinuousClock.now)
           }
