@@ -1,7 +1,8 @@
 # ADR 0019: Rooms and Presence Match Reactor.js: One Peer per Session, in Memory, Beside the Query Applier
 
-- Status: Accepted (Michael's go-ahead through main, 2026-10-03); the measurement before and after on a local
-  self-hosted server (`/Users/laptop/Sync/audit/room-bench-2026-10-03`) is queued
+- Status: Accepted (Michael's go-ahead through main, 2026-10-03); red then green on 2026-10-04 (see Evidence). The
+  measurement before and after on a local self-hosted server (`/Users/laptop/Sync/audit/room-bench-2026-10-03`) is
+  queued in the low lane and does not hold up the release (main, 2026-10-04).
 - Date: 2026-10-03
 - Issue: #461 (Scribe side: #462)
 - Scope: `InstantRuntime`'s room entry points (`joinRoom`, `leaveRoom`, `setPresence`, `leavePresence`,
@@ -104,7 +105,18 @@ the rooms code in `Reactor.js` is identical to the library's pin `e7101761`) fou
 
 - Red tests first, each in `withKnownIssue` until its fix removed it: `runtimeKeepsEverySessionOfOneUserAsItsOwnPeer`
   (InstantReactorParityTests) and `InstantRoomPresenceRuntimeTests` (the gate, SQLite, the applier, emissions,
-  leaving, presence before join, topics), plus the 10,000-message topic run. The red-then-green run on the branch,
-  based on v1.9.5, is queued; its records go to `/Users/laptop/Sync/audit/room-bench-2026-10-03/gate/`.
+  leaving, presence before join, topics), plus the 10,000-message topic run.
+- The red-then-green run, 2026-10-04 01:19-02:12 in the heavy.sh normal lane (records:
+  `/Users/laptop/Sync/audit/room-bench-2026-10-03/gate/`):
+  - Red, on `186d2f74` (v1.9.5 plus the red tests): all 9 red tests recorded their known issues (13 in all), so each
+    fails on v1.9.5 as intended; the three existing room tests passed.
+  - Green, on `681a0ba9`: the room suites 51 of 51 (one known issue,
+    `anAttributeARefreshAddsIsUsedByTheNextAttrLessFrame`, which v1.9.5 has too); the CLI, recipe, wrapper and
+    playback-room tests 67 of 67; fast drain, connection survival and live transport 139 of 140. The one miss,
+    `liveTimeoutDoesNotAwaitCancellationInsensitiveWork` (0.314 s against its 0.25 s bound), is a wall-clock check that
+    also missed under load in library-79's v1.9.5 and v1.9.6 gates; alone, five times on this build at load 250-330
+    (2026-10-04 09:20), it passed 5 of 5.
+  - The 10,000-broadcast run delivered every message once and in order in 182 ms: the median 100-message batch took
+    2.35 ms in the first 1,000 and 1.40 ms in the last 1,000, and the runtime held 128 messages.
 - The room-bench, before (v1.9.5) and after, on a local self-hosted server with spans on: queued; its numbers go here
   and in #461's work log.

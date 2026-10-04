@@ -1,3 +1,29 @@
+## 2026-10-04 09:21:02 EDT — rooms parity (#461): the red-then-green gate passed on `681a0ba9`; library-79 folds the branch into its next release; the bench is queued
+
+- **Owner:** rooms (`claude-opus-5.5-rooms`, workLog agentId `claude-code/claude-opus-5.5/rooms`), plan
+  `2026-10-03-rooms`, on Michael's go-ahead through main (Recording 186 #32-35, quoted in the entry below).
+- **Commits since the last entry:** `27770ee9`, test-only (the 10,000-message run compares median 100-message
+  batches, so one stall of the test process cannot fail it; four waits get the codebase's 5 s), its ledger `681a0ba9`,
+  and this documentation commit.
+- **Checks (heavy.sh normal lane, 2026-10-04 01:19-02:12):** red on `186d2f74`, v1.9.5 plus the red tests: all 9 red
+  tests recorded their known issues (13), the three existing room tests passed. Green on `681a0ba9`: room suites 51/51
+  (one known issue v1.9.5 has too), CLI, recipe and wrapper room tests 67/67, fast drain, survival and live transport
+  139/140; the miss, `liveTimeoutDoesNotAwaitCancellationInsensitiveWork` (0.314 s against 0.25 s), also missed under
+  load in library-79's v1.9.5 and v1.9.6 gates; alone, five times on this build at load 250-330 (2026-10-04 09:20), it
+  passed 5 of 5. The 10,000-broadcast run: every message once and in order in 182 ms, median batch 2.35 ms first and
+  1.40 ms last, 128 held. Main accepted the gate on 2026-10-04.
+- **Evidence:** `/Users/laptop/Sync/audit/room-bench-2026-10-03/gate/` (steps, logs, the job scripts); ADR 0019's
+  Evidence section; #461's work log.
+- **Release:** library-79 merges the branch with `--no-ff` into its next release branch (1.9.7, on v1.9.6 `6883dbea`,
+  or 1.9.8), behind its own gate and the live-recording simulator soak. A trial merge into v1.9.6 (`git merge-tree`)
+  conflicts only in CHANGELOG.md, PROGRESS.md, the commit ledger and two `_touching` claims; the merged
+  InstantRuntime.swift, InstantRuntimeLiveSession.swift, InstantRuntimeRoomPresence.swift and
+  InstantStorageTransport.swift typecheck (compiler only).
+- **Continue:** the bench (`room-bench-builds`, then `room-bench-rounds`, low lane, the rounds exclusive under main's
+  Docker conditions); its P1-P4 table, presence-replay CPU and server spans go in ADR 0019 and #461, in a
+  documentation-only commit. Open: a room error state; the typed `InstantRoom.isJoined` still turns true when the join
+  is sent; `observeRoomTopicEvents` is on the runtime only; Scribe #462 follows plan `0834b4b6` on Scribe main.
+
 ## 2026-10-03 18:51:28 EDT — rooms parity (#461) on `agent/claude-opus-5.5/rooms`, rebased onto v1.9.5: one peer per session, presence and topics in memory off the operation gate, room frames beside the query applier; the gate and the bench are queued
 
 - **Owner:** rooms (`claude-opus-5.5-rooms`, workLog agentId `claude-code/claude-opus-5.5/rooms`), plan
