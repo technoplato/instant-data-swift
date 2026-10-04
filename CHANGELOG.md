@@ -10,6 +10,19 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## October 4th, 2026 at 9:13:05 a.m. EDT — `61976aec9dec` Add scripts/audit/backfill_commit_ledger.py: it lists a ref's non-merge commits the audit ledger lacks and writes their lines from git
+
+- **Implementation commit:** `61976aec9decef72f6639bfac5c19f8046809c33`
+- **Change:** Add scripts/audit/backfill_commit_ledger.py: it lists a ref's non-merge commits the audit ledger lacks and writes their lines from git
+- **Details:**
+  - --check reports the commits the ledger lacks and exits 1 when any; --write inserts one line per commit with git's subject and committer time in America/New_York, before the first older entry, leaving existing entries byte for byte.
+  - Its first run, 54591f4d, added Scribe main's 2,176 unrecorded commits at c88b6378 (3,259 non-merge commits, 1,083 already named).
+- **Files:**
+  - `scripts/audit/backfill_commit_ledger.py` — the ledger's backfill and check
+- **User context (verbatim):**
+  > backfill everything, all 2,237 lines, as one mechanical docs-only commit generated from git
+- **SpecStory:** unavailable — Claude Code agent session (library-79); no SpecStory capture configured for this session. The quote is the coordinating session's instruction, not Michael's.
+
 ## October 4th, 2026 at 8:41:09 a.m. EDT — `5ff6cb84f9b5` Document the v1.9.7 release: the operation gate's priority lanes, hydration and publication off the gate, write-failure kinds and connection health, with the regression found before release (#473 #482)
 
 - **Implementation commit:** `5ff6cb84f9b547c96602f186efa73d7cb7dae2d2`

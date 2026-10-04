@@ -1,3 +1,6 @@
+## 2026-10-04 09:12:39 EDT — instant-data-swift `61976aec9decef72f6639bfac5c19f8046809c33`
+Add scripts/audit/backfill_commit_ledger.py: it lists a ref's non-merge commits the audit ledger lacks and writes their lines from git
+
 ## 2026-10-04 09:04:09 EDT — scribe `c88b63784924fd5ef6b85e3eb06f69b2dda4975e`
 Record the phase 4 install's device gate in the change log (#478)
 
