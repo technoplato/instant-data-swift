@@ -1558,6 +1558,13 @@ public struct InstantSwiftDataClient: Sendable {
     runtime?.connectionHealth() ?? InstantConnectionHealth(isOpen: false)
   }
 
+  /// Writes the stored results of the live queries whose result write waited (#566); see
+  /// ``InstantRuntime/flushPendingLiveQueryResults()``. Call it when the app moves to the background or is about to
+  /// terminate. A client without a runtime has nothing to write.
+  public func flushPendingLiveQueryResults() async throws {
+    try await runtime?.flushPendingLiveQueryResults()
+  }
+
   /// What holds the runtime's operation gate now, with no hop onto the gate (freeze-185 item 7). A client without a
   /// runtime has no gate, so it reports a free one.
   public func operationGateSnapshot() -> InstantOperationGateSnapshot {

@@ -907,6 +907,30 @@ public actor SQLitePersistenceStore {
   private var liveResultAttributeLoads = 0
   /// Live-query result saves, and the result JSON they wrote (#566): for tests and the release's measurements.
   private var liveQueryResultJSONWriteStats = (saves: 0, writes: 0, bytes: 0)
+  /// What this process knows about each live query's stored result JSON (#566). A server apply used to rewrite a
+  /// refreshed query's whole result as one JSON blob, every time: Michael's iPhone dirtied 1,074 MB in 185 s after
+  /// launch on build 90. Now a result that did not change writes no JSON, and a changed result's JSON is written at most
+  /// once per query per `liveQueryResultJSONWriteIntervalMilliseconds`; meanwhile the newest result is here, and every
+  /// reader in this process reads it from here. The ownership rows stay exact on every refresh. A result whose JSON
+  /// waits is marked in `instant_sync_metadata`, so if the process ends before the write, the next bootstrap rebuilds
+  /// it from its ownership rows (`repairDeferredLiveQueryResultJSON()`). Restored when a write transaction rolls back.
+  private struct LiveQueryResultJSONState {
+    /// The newest result of each query whose stored JSON is older.
+    var deferred: [String: InstantPersistedLiveQueryResult] = [:]
+    /// When this process last wrote each query's JSON: that result's `updatedAt`, in milliseconds.
+    var writtenAt: [String: Int64] = [:]
+    /// The page info each query's stored JSON holds, for the queries this process wrote.
+    var writtenPageInfo: [String: InstantQueryPageInfo?] = [:]
+    /// The queries whose stale marker this process wrote and has not deleted.
+    var marked: Set<String> = []
+  }
+  private var liveQueryResultJSON = LiveQueryResultJSONState()
+  private var liveQueryResultJSONWriteIntervalMilliseconds: Int64 = 30_000
+  private var liveQueryResultJSONFlushSleep: @Sendable (_ milliseconds: UInt64) async throws -> Void = { milliseconds in
+    try await Task.sleep(nanoseconds: milliseconds * 1_000_000)
+  }
+  private var liveQueryResultJSONFlushTask: Task<Void, Never>?
+  private static let deferredLiveQueryResultJSONMarkerPrefix = "live-query-result-json-waiting:"
   private var declaredRelationReconciliationLiveResultScanCount = 0
   private var installedDeclaredRelationStorageMarker:
     DeclaredRelationStorageReconciliationMarker?
@@ -997,6 +1021,216 @@ public actor SQLitePersistenceStore {
   /// How many live-query results were saved, and how many writes and bytes of result JSON they made (#566).
   package func liveQueryResultJSONWriteStatsForTesting() -> (saves: Int, writes: Int, bytes: Int) {
     liveQueryResultJSONWriteStats
+  }
+
+  /// Sets how often a live query's result JSON may be written while it changes, and how the scheduled write waits
+  /// (#566). An interval of 0 writes every changed result at once.
+  package func configureLiveQueryResultJSONWrites(
+    intervalMilliseconds: Int64,
+    flushSleep: @escaping @Sendable (_ milliseconds: UInt64) async throws -> Void
+  ) {
+    liveQueryResultJSONWriteIntervalMilliseconds = max(0, intervalMilliseconds)
+    liveQueryResultJSONFlushSleep = flushSleep
+  }
+
+  /// Writes the stored JSON of every live-query result whose write waited, or of the ones in `keys` (#566). The app
+  /// calls this when it goes to the background or terminates; the runtime calls it when a query unsubscribes and when
+  /// the connection closes. Returns how many results it wrote.
+  @discardableResult
+  package func flushDeferredLiveQueryResults(keys: Set<String>? = nil) throws -> Int {
+    let waiting = keys.map { !Set(liveQueryResultJSON.deferred.keys).isDisjoint(with: $0) }
+      ?? !liveQueryResultJSON.deferred.isEmpty
+    guard waiting else { return 0 }
+    return try transaction { try flushDeferredLiveQueryResultsWithoutTransaction(keys: keys) }
+  }
+
+  /// How many live-query results wait for their JSON write (#566), for tests.
+  package func deferredLiveQueryResultCountForTesting() -> Int {
+    liveQueryResultJSON.deferred.count
+  }
+
+  /// Writes, within one interval, the results whose JSON waited, if any are left (#566).
+  private func scheduleDeferredLiveQueryResultFlushIfNeeded() {
+    guard !liveQueryResultJSON.deferred.isEmpty, liveQueryResultJSONFlushTask == nil else { return }
+    let sleep = liveQueryResultJSONFlushSleep
+    let interval = UInt64(liveQueryResultJSONWriteIntervalMilliseconds)
+    liveQueryResultJSONFlushTask = Task { [weak self] in
+      try? await sleep(interval)
+      await self?.runScheduledDeferredLiveQueryResultFlush()
+    }
+  }
+
+  private func runScheduledDeferredLiveQueryResultFlush() {
+    liveQueryResultJSONFlushTask = nil
+    do {
+      try flushDeferredLiveQueryResults()
+    } catch {
+      InstantDiagnostics.shared.record(
+        error: error,
+        subsystem: "instant-swift-data-core",
+        category: "persistence",
+        event: "live-query-results.deferred-json-flush-failed",
+        message: "Could not write the live-query results whose JSON waited; the next flush or bootstrap writes them."
+      )
+    }
+    scheduleDeferredLiveQueryResultFlushIfNeeded()
+  }
+
+  /// Writes the stored JSON of the results whose write waited (#566): all of them, the ones in `keys`, or, with
+  /// `dueAt`, the ones whose last write is at least one interval older than it.
+  @discardableResult
+  private func flushDeferredLiveQueryResultsWithoutTransaction(
+    keys: Set<String>? = nil,
+    dueAt now: Int64? = nil
+  ) throws -> Int {
+    var written = 0
+    for (key, result) in liveQueryResultJSON.deferred.sorted(by: { $0.key < $1.key }) {
+      if let keys, !keys.contains(key) { continue }
+      if let now, let writtenAt = liveQueryResultJSON.writtenAt[key],
+        now - writtenAt < liveQueryResultJSONWriteIntervalMilliseconds
+      {
+        continue
+      }
+      let json = try encode(result)
+      try execute(
+        """
+        UPDATE instant_live_query_results
+        SET triple_count = ?, updated_at_ms = MAX(updated_at_ms, ?), json = ?
+        WHERE query_key = ?
+        """,
+        [
+          .int(Int64(result.triples.count)),
+          .int(result.updatedAt.milliseconds),
+          .text(json),
+          .text(key),
+        ]
+      )
+      if sqlite3_changes(connection.raw) == 1 {
+        liveQueryResultJSONWriteStats.writes += 1
+        liveQueryResultJSONWriteStats.bytes += json.utf8.count
+        written += 1
+      }
+      liveQueryResultJSON.deferred[key] = nil
+      liveQueryResultJSON.writtenAt[key] = result.updatedAt.milliseconds
+      liveQueryResultJSON.writtenPageInfo[key] = result.pageInfo
+      try clearDeferredLiveQueryResultJSONMarkerWithoutTransaction(key)
+    }
+    return written
+  }
+
+  private func markDeferredLiveQueryResultJSONWithoutTransaction(_ key: String, at milliseconds: Int64) throws {
+    guard liveQueryResultJSON.marked.insert(key).inserted else { return }
+    try execute(
+      "INSERT OR REPLACE INTO instant_sync_metadata (key, value, updated_at_ms) VALUES (?, ?, ?)",
+      [.text(Self.deferredLiveQueryResultJSONMarkerPrefix + key), .text("1"), .int(milliseconds)]
+    )
+  }
+
+  private func clearDeferredLiveQueryResultJSONMarkerWithoutTransaction(_ key: String) throws {
+    guard liveQueryResultJSON.marked.remove(key) != nil else { return }
+    try execute(
+      "DELETE FROM instant_sync_metadata WHERE key = ?",
+      [.text(Self.deferredLiveQueryResultJSONMarkerPrefix + key)]
+    )
+  }
+
+  /// Forgets a dropped or pruned result's deferred JSON and marker (#566).
+  private func forgetLiveQueryResultJSONStateWithoutTransaction(_ key: String) throws {
+    liveQueryResultJSON.deferred[key] = nil
+    liveQueryResultJSON.writtenAt[key] = nil
+    liveQueryResultJSON.writtenPageInfo[key] = nil
+    liveQueryResultJSON.marked.remove(key)
+    try execute(
+      "DELETE FROM instant_sync_metadata WHERE key = ?",
+      [.text(Self.deferredLiveQueryResultJSONMarkerPrefix + key)]
+    )
+  }
+
+  /// Rebuilds the stored JSON of each live-query result whose JSON write waited when the last process ended (#566),
+  /// before anything reads it: its facts are its ownership rows (exact on every refresh), each with the stamp the stale
+  /// JSON or the store holds for it, and its page info is the stale JSON's. A later server result is diffed against
+  /// this one to retract what left it, so a crash between throttled writes cannot keep a fact the server deleted.
+  private func repairDeferredLiveQueryResultJSON() throws {
+    let prefix = Self.deferredLiveQueryResultJSONMarkerPrefix
+    var markerKeys: [String] = []
+    var statement: OpaquePointer?
+    try prepare(
+      "SELECT key FROM instant_sync_metadata WHERE key >= ? AND key < ? ORDER BY key",
+      statement: &statement
+    )
+    defer { sqlite3_finalize(statement) }
+    try bind([.text(prefix), .text(prefix + "\u{10FFFF}")], to: statement)
+    while sqlite3_step(statement) == SQLITE_ROW {
+      if let key = sqlite3_column_text(statement, 0) {
+        markerKeys.append(String(cString: key))
+      }
+    }
+    guard !markerKeys.isEmpty else { return }
+    var repaired = 0
+    try transaction {
+      for marker in markerKeys {
+        let queryKey = String(marker.dropFirst(prefix.count))
+        defer { _ = try? execute("DELETE FROM instant_sync_metadata WHERE key = ?", [.text(marker)]) }
+        guard
+          let updatedAtText: String = try selectScalar(
+            "SELECT updated_at_ms FROM instant_live_query_results WHERE query_key = ? LIMIT 1",
+            [.text(queryKey)]
+          ),
+          let updatedAt = Int64(updatedAtText),
+          var result = try liveQueryResultWithoutTransaction(key: queryKey)
+        else { continue }
+        var staleByIdentity: [LiveQueryOwnershipIdentity: InstantTriple] = [:]
+        for triple in result.triples {
+          staleByIdentity[
+            LiveQueryOwnershipIdentity(
+              entityID: triple.entityID,
+              attributeID: triple.attributeID,
+              valueJSON: try encode(triple.value)
+            )
+          ] = triple
+        }
+        var triples: [InstantTriple] = []
+        for identity in try liveQueryOwnershipWithoutTransaction(queryKey: queryKey) {
+          if let triple = staleByIdentity[identity] {
+            triples.append(triple)
+          } else if let stored: InstantTriple = try selectJSON(
+            """
+            SELECT json FROM instant_triples
+            WHERE entity_id = ? AND attribute_id = ? AND value_json = ?
+            LIMIT 1
+            """,
+            [.text(identity.entityID), .text(identity.attributeID), .text(identity.valueJSON)]
+          ).first {
+            triples.append(stored)
+          } else {
+            triples.append(
+              InstantTriple(
+                entityID: identity.entityID,
+                attributeID: identity.attributeID,
+                value: try decoder.decode(InstantValue.self, from: Data(identity.valueJSON.utf8)),
+                txID: "live-query-result-repair",
+                txTime: InstantTimestamp(milliseconds: updatedAt)
+              )
+            )
+          }
+        }
+        result.triples = triples.sorted(by: InstantPersistedLiveQueryResult.storedOrder)
+        result.updatedAt = InstantTimestamp(milliseconds: updatedAt)
+        try execute(
+          "UPDATE instant_live_query_results SET triple_count = ?, json = ? WHERE query_key = ?",
+          [.int(Int64(result.triples.count)), .text(try encode(result)), .text(queryKey)]
+        )
+        repaired += 1
+      }
+    }
+    InstantDiagnostics.shared.record(
+      .info,
+      subsystem: "instant-swift-data-core",
+      category: "persistence",
+      event: "live-query-results.deferred-json-repaired",
+      message: "Rebuilt the stored JSON of live-query results whose write waited when the last process ended.",
+      metadata: ["markerCount": String(markerKeys.count), "repairedCount": String(repaired)]
+    )
   }
 
   /// How many pages this connection has written to the database or its WAL since it opened, and the page size (#566).
@@ -2303,6 +2537,7 @@ public actor SQLitePersistenceStore {
     now: InstantTimestamp
   ) throws -> InstantQueryCachePruningResult? {
     try bootstrap()
+    try repairDeferredLiveQueryResultJSON()
     try reconcileDeclaredRelationStorageIfNeeded()
     do {
       return try pruneQueryCache(policy: queryCachePruningPolicy, now: now)
@@ -2507,6 +2742,7 @@ public actor SQLitePersistenceStore {
   private func dropLiveQueryResultWithoutTransaction(queryKey: String) throws {
     try execute("DELETE FROM instant_live_query_triples WHERE query_key = ?", [.text(queryKey)])
     try execute("DELETE FROM instant_live_query_results WHERE query_key = ?", [.text(queryKey)])
+    try forgetLiveQueryResultJSONStateWithoutTransaction(queryKey)
   }
 
   /// Logs each cached result an open-time pass dropped, once the pass has committed.
@@ -5226,8 +5462,10 @@ public actor SQLitePersistenceStore {
       }
 
       for result in queryResults {
-        try saveLiveQueryResultWithoutTransaction(result)
+        try saveLiveQueryResultWithoutTransaction(result, deferringJSON: true)
       }
+      // A query that keeps refreshing writes its newest result once per interval (#566).
+      try flushDeferredLiveQueryResultsWithoutTransaction(dueAt: metadataUpdatedAt.milliseconds)
       try saveMetadataValueWithoutTransaction(
         metadataValue,
         key: metadataKey,
@@ -5260,6 +5498,8 @@ public actor SQLitePersistenceStore {
         didChangeQueryResults: didChangeQueryResults
       )
     }
+    // A result whose JSON write waited is written within one interval, if no later refresh writes it first (#566).
+    scheduleDeferredLiveQueryResultFlushIfNeeded()
     if commit == nil {
       serverApplyMetrics.staleCommitCount += 1
     } else if let commit {
@@ -11348,6 +11588,7 @@ public actor SQLitePersistenceStore {
           "DELETE FROM instant_live_query_results WHERE query_key = ?",
           [.text(row.queryKey)]
         )
+        try forgetLiveQueryResultJSONStateWithoutTransaction(row.queryKey)
       }
 
       let previousStore = snapshot.store
@@ -12937,6 +13178,7 @@ public actor SQLitePersistenceStore {
     )
     try execute("BEGIN IMMEDIATE TRANSACTION")
     activeOutboxQuarantineIssueBatch = InstantOutboxQuarantineIssueBatch()
+    let liveQueryResultJSONBeforeTransaction = liveQueryResultJSON
     do {
       let value = try body()
       try execute("COMMIT")
@@ -12947,6 +13189,7 @@ public actor SQLitePersistenceStore {
     } catch {
       try? execute("ROLLBACK")
       activeOutboxQuarantineIssueBatch = nil
+      liveQueryResultJSON = liveQueryResultJSONBeforeTransaction
       // Marker helpers participate in the same transaction but live on the actor. A rollback must
       // discard their speculative cache so the next writer reloads the durable marker instead of
       // trusting state that SQLite did not commit.
@@ -15420,6 +15663,10 @@ public actor SQLitePersistenceStore {
   private func liveQueryResultWithoutTransaction(
     key: String
   ) throws -> InstantPersistedLiveQueryResult? {
+    // A result whose JSON write waits is newer than its stored JSON (#566).
+    if let deferred = liveQueryResultJSON.deferred[key] {
+      return deferred
+    }
     let results: [InstantPersistedLiveQueryResult] = try selectJSON(
       "SELECT json FROM instant_live_query_results WHERE query_key = ? LIMIT 1",
       [.text(key)]
@@ -16256,7 +16503,8 @@ public actor SQLitePersistenceStore {
   }
 
   private func saveLiveQueryResultWithoutTransaction(
-    _ result: InstantPersistedLiveQueryResult
+    _ result: InstantPersistedLiveQueryResult,
+    deferringJSON: Bool = false
   ) throws {
     try invalidateDeclaredRelationStorageMarkerIfNeeded(
       forAttributeIDs: Set(result.triples.map(\.attributeID))
@@ -16279,26 +16527,55 @@ public actor SQLitePersistenceStore {
     )
     let previousOwnership = try liveQueryOwnershipWithoutTransaction(queryKey: result.key)
     liveQueryResultJSONWriteStats.saves += 1
-    let json = try encode(result)
-    try execute(
-      """
-      INSERT INTO instant_live_query_results
-        (query_key, triple_count, updated_at_ms, json)
-      VALUES (?, ?, ?, ?)
-      ON CONFLICT(query_key) DO UPDATE SET
-        triple_count = excluded.triple_count,
-        updated_at_ms = excluded.updated_at_ms,
-        json = excluded.json
-      """,
-      [
-        .text(result.key),
-        .int(Int64(result.triples.count)),
-        .int(result.updatedAt.milliseconds),
-        .text(json),
-      ]
-    )
-    liveQueryResultJSONWriteStats.writes += 1
-    liveQueryResultJSONWriteStats.bytes += json.utf8.count
+    let key = result.key
+    let rowExists = try selectScalar(
+      "SELECT 1 FROM instant_live_query_results WHERE query_key = ? LIMIT 1",
+      [.text(key)]
+    ) != nil
+    // The stored JSON already holds this result: the same facts and page info, and no newer result waits (#566).
+    let storedJSONIsCurrent = rowExists
+      && liveQueryResultJSON.deferred[key] == nil
+      && previousOwnership == nextOwnership
+      && liveQueryResultJSON.writtenPageInfo[key].map { $0 == result.pageInfo } == true
+    let writeIsDue = liveQueryResultJSON.writtenAt[key].map {
+      result.updatedAt.milliseconds - $0 >= liveQueryResultJSONWriteIntervalMilliseconds
+    } ?? true
+    if rowExists, storedJSONIsCurrent || (deferringJSON && !writeIsDue) {
+      // The row's count and time stay exact: #441's refusal resolution reads when the server last showed a fact.
+      try execute(
+        "UPDATE instant_live_query_results SET triple_count = ?, updated_at_ms = ? WHERE query_key = ?",
+        [.int(Int64(result.triples.count)), .int(result.updatedAt.milliseconds), .text(key)]
+      )
+      if !storedJSONIsCurrent {
+        liveQueryResultJSON.deferred[key] = result
+        try markDeferredLiveQueryResultJSONWithoutTransaction(key, at: result.updatedAt.milliseconds)
+      }
+    } else {
+      let json = try encode(result)
+      try execute(
+        """
+        INSERT INTO instant_live_query_results
+          (query_key, triple_count, updated_at_ms, json)
+        VALUES (?, ?, ?, ?)
+        ON CONFLICT(query_key) DO UPDATE SET
+          triple_count = excluded.triple_count,
+          updated_at_ms = excluded.updated_at_ms,
+          json = excluded.json
+        """,
+        [
+          .text(key),
+          .int(Int64(result.triples.count)),
+          .int(result.updatedAt.milliseconds),
+          .text(json),
+        ]
+      )
+      liveQueryResultJSONWriteStats.writes += 1
+      liveQueryResultJSONWriteStats.bytes += json.utf8.count
+      liveQueryResultJSON.deferred[key] = nil
+      liveQueryResultJSON.writtenAt[key] = result.updatedAt.milliseconds
+      liveQueryResultJSON.writtenPageInfo[key] = result.pageInfo
+      try clearDeferredLiveQueryResultJSONMarkerWithoutTransaction(key)
+    }
     let removedOwnership = previousOwnership.subtracting(nextOwnership).sorted(
       by: Self.liveQueryOwnershipOrder
     )

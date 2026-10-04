@@ -254,6 +254,46 @@ struct InstantLiveQueryResultWriteTests {
     _ = try await fixture.runtime.closeConnection()
   }
 
+  // MARK: - Writing what waited
+
+  /// The app's flush on background or terminate writes every result whose write waited, and a new process opens the
+  /// newest result without rebuilding it.
+  @Test
+  func theAppsFlushWritesTheResultsWhoseWriteWaited() async throws {
+    let url = try Self.temporaryCacheURL()
+    var texts = (0..<5).map { Self.longText($0, revision: 0) }
+    let fixture = try await Self.answeredTodos(texts, appID: "live-result-writes-flush", url: url)
+    fixture.clock.advance(by: 1_000)
+    texts[2] = Self.longText(2, revision: 1)
+    try await Self.refresh(texts, in: fixture)
+    let waited = await fixture.runtime.liveQueryResultJSONWriteStatsForTesting()
+
+    try await fixture.runtime.flushPendingLiveQueryResults()
+    let flushed = await fixture.runtime.liveQueryResultJSONWriteStatsForTesting()
+    expectNoDifference(flushed.writes - waited.writes, 1, "the flush wrote the result whose write waited")
+    try await fixture.runtime.flushPendingLiveQueryResults()
+    let again = await fixture.runtime.liveQueryResultJSONWriteStatsForTesting()
+    expectNoDifference(again.writes, flushed.writes, "nothing waits after a flush")
+    await fixture.observation.cancel()
+    _ = try await fixture.runtime.closeConnection()
+  }
+
+  /// A query that unsubscribes is not refreshed again, so its result is written when it leaves.
+  @Test
+  func unsubscribingWritesTheQuerysResultIfItsWriteWaited() async throws {
+    var texts = (0..<5).map { Self.longText($0, revision: 0) }
+    let fixture = try await Self.answeredTodos(texts, appID: "live-result-writes-unsubscribe")
+    fixture.clock.advance(by: 1_000)
+    texts[1] = Self.longText(1, revision: 1)
+    try await Self.refresh(texts, in: fixture)
+    let waited = await fixture.runtime.liveQueryResultJSONWriteStatsForTesting()
+    await fixture.observation.cancel()
+    try await Self.waitFor("the unsubscribed query's result to be written") {
+      await fixture.runtime.liveQueryResultJSONWriteStatsForTesting().writes > waited.writes
+    }
+    _ = try await fixture.runtime.closeConnection()
+  }
+
   // MARK: - A crash between throttled writes
 
   /// A refresh whose JSON write waits leaves the stored JSON older than the facts. If the app is killed before the
