@@ -262,6 +262,94 @@ extension InstantOperationGatePriorityTests {
   }
 }
 
+extension InstantOperationGatePriorityTests {
+  static func renameChunk(
+    _ fixture: GateHydrationFixture,
+    title: String,
+    payload: JSONValue,
+    transactionID: String
+  ) -> InstantStoreTransaction {
+    let createdAt = InstantTimestamp(milliseconds: 1_700_000_000_200)
+    func insert(_ attributeID: String, _ value: InstantValue) -> InstantTripleOperation {
+      .insert(InstantTriple(entityID: "chunk-a", attributeID: attributeID, value: value, txID: transactionID, txTime: createdAt))
+    }
+    return InstantStoreTransaction(
+      id: transactionID,
+      operations: [
+        .requireEntityExists(entityID: "chunk-a", namespace: fixture.namespace),
+        insert(fixture.titleAttribute.id, .string(title)),
+        insert(fixture.samplesAttribute.id, .json(payload)),
+      ]
+    )
+  }
+
+  /// A write saved to SQLite but not yet committed to the store when a hydration reads: the read sees the new samples
+  /// while the emission still has the old title, so the emission must not be delivered with them (#473). Every
+  /// delivered row pairs a title with its own samples, and the last one is the write's.
+  @Test
+  func aHydrationNeverPairsAnEmissionWithAWriteSavedDuringItsRead() async throws {
+    let fixture = GateHydrationFixture()
+    let cacheURL = try fixture.temporaryCacheURL("hydration-pairing")
+    defer { try? FileManager.default.removeItem(at: cacheURL.deletingLastPathComponent()) }
+    try await fixture.seed(cacheURL, rows: [(id: "chunk-a", title: "A", payload: fixture.payload("a"))])
+    let runtimeBox = PriorityTestBox<InstantRuntime?>(nil)
+    let claimed = PriorityTestBox(false)
+    let writePaused = PriorityTestBox(false)
+    let releaseWrite = AsyncStream<Void>.makeStream()
+    let write = PriorityTestBox<Task<Void, any Error>?>(nil)
+    var configuration = fixture.configuration(appID: "gate-hydration-pairing", cacheURL: cacheURL)
+    configuration.onLocalMutationPersistedBeforeStorePublicationForTesting = { transactionID in
+      guard transactionID == "tx-rename" else { return }
+      writePaused.setValue(true)
+      var iterator = releaseWrite.stream.makeAsyncIterator()
+      _ = await iterator.next()
+    }
+    configuration.onDeferredQueryEmissionHydrationStartingForTesting = { _ in
+      guard let runtime = runtimeBox.value, claimed.withValue({ wasClaimed in
+        defer { wasClaimed = true }
+        return !wasClaimed
+      }) else { return }
+      // The write saves its new title and samples, then pauses before the store commits them.
+      write.setValue(
+        Task {
+          _ = try await runtime.transact(
+            Self.renameChunk(fixture, title: "A2", payload: fixture.payload("a2"), transactionID: "tx-rename")
+          )
+        }
+      )
+      for _ in 0..<1_000 where !writePaused.value {
+        try? await Task.sleep(for: .milliseconds(5))
+      }
+    }
+    let runtime = try await InstantRuntime.bootstrap(configuration: configuration)
+    runtimeBox.setValue(runtime)
+    let stream = await runtime.observe(
+      fixture.pageQuery(id: "gate-hydration-pairing", selectedFields: [fixture.titleAttribute.name, fixture.samplesAttribute.name])
+    )
+    let rows = PriorityTestBox<[(title: InstantMaterializedValue?, samples: InstantMaterializedValue?)]>([])
+    let consumer = Task {
+      for await emission in stream {
+        guard let row = emission.values.first else { continue }
+        rows.withValue {
+          $0.append((row.values[fixture.titleAttribute.name], row.values[fixture.samplesAttribute.name]))
+        }
+      }
+    }
+    try await waitFor("the write to pause after its save") { writePaused.value }
+    // The hydration has read the saved samples; let the write commit.
+    try await Task.sleep(for: .milliseconds(200))
+    releaseWrite.continuation.yield()
+    try await write.value?.value
+    try await waitFor("the write's row") { rows.value.last?.title == .one(.string("A2")) }
+    consumer.cancel()
+    let oldTitle = InstantMaterializedValue.one(.string("A"))
+    let newSamples = InstantMaterializedValue.one(.json(fixture.payload("a2")))
+    let mismatched = rows.value.filter { $0.title == oldTitle && $0.samples == newSamples }.count
+    expectNoDifference(mismatched, 0, "an emission paired the old title with the write's samples")
+    expectNoDifference(rows.value.last?.samples, newSamples)
+  }
+}
+
 /// A route-chunk store whose samples are deferred values, as Scribe's are.
 private struct GateHydrationFixture {
   let namespace = "routeChunks"
@@ -427,6 +515,52 @@ extension InstantOperationGatePriorityTests {
     await waiter.value
     try await waitFor("the gate to be free") { gate.snapshot.holder == nil }
     expectNoDifference(gate.snapshot.waiterCount, 0)
+  }
+
+  /// A write that lands after a hydration's read and before its check: the emission it read for is stale, so it is
+  /// dropped, and the write's emission is hydrated instead (#473).
+  @Test
+  func aWriteBetweenAnUngatedReadAndItsCheckDropsTheStaleEmission() async throws {
+    let fixture = GateHydrationFixture()
+    let cacheURL = try fixture.temporaryCacheURL("hydration-recheck")
+    defer { try? FileManager.default.removeItem(at: cacheURL.deletingLastPathComponent()) }
+    try await fixture.seed(cacheURL, rows: [(id: "chunk-a", title: "A", payload: fixture.payload("a"))])
+    let runtimeBox = PriorityTestBox<InstantRuntime?>(nil)
+    let claimed = PriorityTestBox(false)
+    var configuration = fixture.configuration(appID: "gate-hydration-recheck", cacheURL: cacheURL)
+    configuration.onDeferredValuesReadWithoutOperationGateForTesting = { _ in
+      guard let runtime = runtimeBox.value, claimed.withValue({ wasClaimed in
+        defer { wasClaimed = true }
+        return !wasClaimed
+      }) else { return }
+      _ = try? await runtime.transact(
+        Self.renameChunk(fixture, title: "A2", payload: fixture.payload("a2"), transactionID: "tx-recheck")
+      )
+    }
+    let runtime = try await InstantRuntime.bootstrap(configuration: configuration)
+    runtimeBox.setValue(runtime)
+    let stream = await runtime.observe(
+      fixture.pageQuery(id: "gate-hydration-recheck", selectedFields: [fixture.titleAttribute.name, fixture.samplesAttribute.name])
+    )
+    let first = await withTaskGroup(of: InstantQueryEmission?.self) { group in
+      group.addTask {
+        for await emission in stream where emission.values.first?.values[fixture.samplesAttribute.name] != nil {
+          return emission
+        }
+        return nil
+      }
+      group.addTask {
+        try? await Task.sleep(for: .seconds(10))
+        return nil
+      }
+      let first = await group.next() ?? nil
+      group.cancelAll()
+      return first
+    }
+    #expect(claimed.value, "the write landed between the read and the check")
+    let row = try #require(first?.values.first)
+    expectNoDifference(row.values[fixture.titleAttribute.name], .one(.string("A2")))
+    expectNoDifference(row.values[fixture.samplesAttribute.name], .one(.json(fixture.payload("a2"))))
   }
 
   // MARK: - The store's publications
