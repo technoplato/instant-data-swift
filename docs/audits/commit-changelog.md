@@ -1,3 +1,63 @@
+## 2026-10-03 23:59:07 EDT — scribe `705b80f85e4c12e807a9c9dad834c62d633950a0`
+Merge issue-create-only for 86: upsert-issue creates new issues only; an existing number is refused and nothing is written, unless --update (#502)
+
+## 2026-10-03 23:59:00 EDT — scribe `c0253b1305886581057b368cd3b26504cbaf1558`
+Merge main's plans into 86: threads-rows, architecture-paths and issue-create-only (#499 #502)
+
+## 2026-10-03 23:39:43 EDT — scribe `9de4bb5dc811a3b43c812683416aca398e547509`
+Merge background-uploads' test fixes for 86: the scan's link test sets date and uuid for transact, and the suspended-task test goes, since URLSession lists only resumed tasks (#481)
+
+## 2026-10-03 22:32:10 EDT — scribe `2dc182399b0cb8f07204661e6de694bfb024cb3f`
+Merge song-relisten's matcher queue, and set Scribe 0.1 (86): the song matcher's loop and its result tasks run on a serial queue of their own, so a blocked shared pool can't stop the windows after the first (#444)
+
+## 2026-10-03 22:32:10 EDT — scribe `2be79f0cdc555ca250340a6c05aa1a71a0467f7c`
+Merge readout-stop's test fixes for 86: the readout tests expect the card's Stop while Listen reads, and check it before the read can end (#342)
+
+## 2026-10-03 22:31:56 EDT — scribe `4cd44bb84620033e1d9a9221f7a004c807a2f621`
+Merge #459's notice test: an owner wait past five seconds shows the saving-delay notice, and it ends when the write saves (#459)
+
+## 2026-10-03 22:31:55 EDT — scribe `a5835704410b9668a76c5fe4d7faabe1b8555470`
+Merge the P0 readout-stop for 86: an answer read aloud waits for Michael to pause, pauses when he speaks, and stops on "stop" or its card's Stop (#342)
+
+## 2026-10-03 22:31:54 EDT — scribe `7882a608c5e957550cda065553086aaab75a8d3a`
+Merge the P0 passive-while-recording for 86: an agent answer's notification is passive while this device records, and so is the push for a live recording, so Siri never announces an answer over the capture (#340)
+
+## 2026-10-03 22:31:40 EDT — scribe `14a889b6243eb46a6f69c3dc43f5f1cb9f0548f8`
+Merge the books library slice for 86: the Books reader's slice of the universal schema (ADR 0052), library shares, comments, Foldkit's program log and library files, with ADR 0048's recordingRecognitions and the libraryBooks.thing link
+
+## 2026-10-03 22:31:32 EDT — scribe `94c2f6bab0971ed0477a835091c36f8a730e4eda`
+Merge prod-data's $stream/ closure for 86: the legacy stream chunk clause closes, since the stream-era media is stored under scribe/<id>/ (#496)
+
+## 2026-10-03 22:31:31 EDT — scribe `1e509784a40b8262ccacee17949c42e192ab2d25`
+Merge pisspour-domain for 86: Scribe opens links on both web hosts, words.knophy.com and its twin words.pisspoursoftware.xyz, and each iPhone lane claims both; links still go out on words.knophy.com (#493)
+
+## 2026-10-03 22:31:24 EDT — scribe `840c1a3dae2a9e24b41638931444221c7cf5d371`
+Merge ui-polish's PROGRESS for 86: ui-polish for 85, the build 84 band's cause and fix, what gate-85 found, and what stays queued (#495 #448 #451 #452 #476)
+
+## 2026-10-03 22:31:23 EDT — scribe `79adc2c63610a3fa391dfd1ffb64282cd771ac7c`
+Merge read-aloud-voice for 86: agent answers are read in the best system voice installed, the download hint names the exact Settings path of the device it shows on, and a voice client names the voice for Settings and the read's start event (#471)
+
+## 2026-10-03 22:31:23 EDT — scribe `502e7f251454327469bfd37d650227c4fafdac71`
+Merge capture-isolation for 86: each transition test's 2 s hold starts on the main thread just before the post, and ADR 0050 records the 85 ship and how to test the capture loop with TestStore (#488)
+
+## 2026-10-03 22:31:22 EDT — scribe `d4abf8eb925679baf468e3265d29d9fbf25b221e`
+Merge main 4d2a909b into the 86 branch: Scribe 0.1 (85) with its two test-only folds, and the 84 and 85 records (#488 #451)
+
+## 2026-10-03 22:31:14 EDT — scribe `e6dea95c954e179de82e49da8b230ce751da9637`
+Record the instant-data-swift 1.9.5 pin, its Package.resolved, and the bounded refusal read in the change log (#473)
+
+## 2026-10-03 22:30:59 EDT — scribe `bfecc0b69e057bfd4bffbaf5a095b5b3166845ca`
+The sync status reads the refused writes with failedMutations(limit: 500), which skips the library's operation gate, instead of failedMutations(), which decoded every failed row under it (#473)
+
+## 2026-10-03 22:30:59 EDT — scribe `a54ed4e43ac7ea9403ea8312a908c4dcc9f376c2`
+Resolve Package.resolved to instant-data-swift 1.9.5 (e7c6ffb3) with a plain swift package resolve (#473)
+
+## 2026-10-03 22:30:59 EDT — scribe `027a21dee0d006cd9270b2ab5d3bffcf34767235`
+Merge song-relisten: the song matcher logs its windows and restarts when it stalls (#444), the weather row says when its reading is for (#446), and its Apple Weather attribution is one quiet line (#453)
+
+## 2026-10-03 22:13:18 EDT — scribe `4d2a909bc5bd4893eeb86ee292c6f043f2f9f493`
+Record Scribe 0.1 (84) and (85) in the change log and PROGRESS: 84 on the iPhone and the iPad, 85 on all three devices (#442 #340 #389 #417 #488 #459 #451)
+
 ## 2026-10-03 21:26:41 EDT — scribe `6c603407341456c7ac6e32d1bb2311b0eeb261e3`
 Merge ui-polish's bar test fix: the browsing screens' bar test expects the live piece's Back to Live while the recording captures, as #451 made it (#451)
 
@@ -6,6 +66,12 @@ Merge capture-isolation's speech-first test fix: the test runs on the app's dedi
 
 ## 2026-10-03 20:49:49 EDT — instant-data-swift `1f74a6d4b91cd0dc501a8d3383bf0471643f13b6`
 Check each write-failure case in its own call instead of one array literal of tuples (#482).
+
+## 2026-10-03 20:46:54 EDT — scribe `80b6336d3e26e0fe476db023809d353606d4cf68`
+Pin instant-data-swift exactly 1.9.5 instead of 1.9.3: a log line or a gate report no longer holds the operation gate, and failed and pending writes read without it (#473 #441 #445)
+
+## 2026-10-03 20:44:07 EDT — scribe `3f85830e9c1605e6d18bc22f8741cd96e8fc80a2`
+Merge background-uploads (P0): a long recording's audio uploads in a background URLSession that survives the app leaving, with its progress under the sync status (#481)
 
 ## 2026-10-03 20:30:26 EDT — scribe `99d48fa4bba3960e2d70cb7e87afdc412a27ab68`
 Settings > Audio > Recording Mic Mode picks Clean (measurement) or Standard (default) for the next recording, each recording names its mode, and a Mac-side script compares the A/B (#122, ADR 0040 Decision 6)
