@@ -1,11 +1,242 @@
+## 2026-10-04 11:35:09 EDT — scribe `6513b995d0ffe80f58d008efe216f18da91530c4`
+Record Scribe 0.1 (89) in PROGRESS: on the iPhone and the iPad, built from 201ede6f on the published instant-data-swift 1.9.7, with the resume fix and its crash-loop guard (#535 #536 #473 #482 #532 #531 #526 #519 #522)
+
+## 2026-10-04 11:33:06 EDT — scribe `f210d2d20bbddf3b3394c0cf01cff6c9d4b661e8`
+Merge phone-perf's 89 change-log entries into main: #522's f6ff4e9a, 7b8a1df7 and 1e57ad3b, and #531's 9a5b8cd8 and bb4fb89b (#522 #531)
+
+## 2026-10-04 11:33:05 EDT — scribe `365e4f18d4e1a67a41e1f0ee70916067bdf45be7`
+Merge mirror-audio-chunks into main: the Mac's mirror assembles a live recording's audio from its uploaded chunks (#533, mirror side)
+
+## 2026-10-04 11:33:03 EDT — scribe `13ac732450f61c2d6bd80a0faa5afb0b5c08d520`
+Merge page-word-index into main: find the book and the page Michael reads aloud from each page's sorted words (#544)
+
+## 2026-10-04 11:31:26 EDT — scribe `340b3a35c8d0e67be5a9e6b9aa45005c76704afa`
+Claim threads-chat P2 (#537): while a thread is open in front on the recording device, his spoken lines join it
+
+## 2026-10-04 11:26:38 EDT — scribe `2f78c277338530ec6a2895db4623ae43415df4a2`
+Record phone-perf's five commits in build 89 in the change log (#522 #531 #410)
+
+## 2026-10-04 11:25:38 EDT — scribe `55b5907f3d28bcd9ff3d513df53df81e1c0d48bf`
+Record the page word index's two commits in the changelog (#544)
+
+## 2026-10-04 11:25:03 EDT — scribe `548bf0c93993a8c7c40e136d7c5504c1f536639d`
+Record 8f556444 and dbe02551 (#522 #497 #361) in the change log
+
+## 2026-10-04 11:25:00 EDT — scribe `c20304126e85230b0674475f767081100cb1d456`
+ADR 0048 Amendment 1: a sorted page index, for reference, not reproduction; and the brief's pages rules (#544)
+
+## 2026-10-04 11:24:50 EDT — scribe `93f4946bc19417e47e121dc3b3e3c456bf8026b9`
+Build the page word index: scribe book index, where, and where --replay, and page --read and --method aligned (#544)
+
+## 2026-10-04 11:24:07 EDT — scribe `dbe025515e03af730ced0e4e30f0e85b07aa5341`
+The Shares screen's reads and the share owner checks select whole rows, so none leaves a partial row in the store (#522 #497 #361)
+
+## 2026-10-04 11:23:14 EDT — scribe `44d229ac90d5518725fe3929595cec5b8ef50122`
+Merge main 35a60cef into the 89 branch: agents' plans and claims (threads-chat, voice-model-pause, page-word-index, reply-restarts, agent-feed-full-rows, list-edit's live-take row, mirror-audio-chunks)
+
+## 2026-10-04 11:21:28 EDT — scribe `9cd663e84534e8b3bd7b8815d046bf06a65815b2`
+Record 0a69a493 and 202bc9bf (#533) in the change log
+
+## 2026-10-04 11:21:27 EDT — scribe `202bc9bfb2d467ff7bc4d82a41ce67c0bcce55cd`
+The mirror assembles a live recording's audio from its uploaded chunks into audio/live.wav (#533, mirror side)
+
+## 2026-10-04 11:20:16 EDT — scribe `de74637e40187534596378bd7bda1a69c374f47c`
+Claims and channel post: share-ui widens the Shares screen's reads and the share owner checks for 91 (#497 #361 #522)
+
+## 2026-10-04 11:19:32 EDT — scribe `8f556444d0de930802fc6de560250942b05680b9`
+Red tests: the Shares screen's reads and the share owner checks leave partial rows in this device's store (#522 #497 #361)
+
+## 2026-10-04 11:17:58 EDT — scribe `0a69a49351feb3c35e02cf6ce07ae6ce6f45668e`
+Red: the mirror assembles a live recording's audio from its uploaded chunks into audio/live.wav (#533, mirror side)
+
+## 2026-10-04 11:13:47 EDT — scribe `35a60ceff04519a1fb2d6b947b1f81c31815638f`
+Plan and claim mirror-audio-chunks (#533, mirror side): the Mac's mirror assembles a live recording's audio from its uploaded chunks
+
+## 2026-10-04 11:11:34 EDT — scribe `9feb697ed5e4a2969634da3b3a5364991202fe2f`
+Claim the live take's row for list-edit-mode: it keeps its place when the list's top page leaves it out (#542)
+
+## 2026-10-04 11:02:22 EDT — scribe `d41a200fe330187b36afcdd0100a2e6bfcf8c4d1`
+Claim agent-feed-full-rows for 91: the agent watcher's three feed queries select whole lines (#256 #522)
+
+## 2026-10-04 11:01:15 EDT — scribe `594f1a2e02f2ca895f999b02527de1b440baac45`
+Merge page-word-index's plan into main: find the book and the page Michael reads aloud from each page's sorted words (#544)
+
+## 2026-10-04 10:58:32 EDT — scribe `3b8859982744d8626cb609fb45a178ab20ced726`
+Plan page-word-index: v3's result, so the match stays a hint and nothing is built (#544)
+
+## 2026-10-04 10:50:39 EDT — scribe `6a9726940a219d9d866ca9a186a116a9884c32f1`
+Plan and claim reply-restarts for 91: the reply observer stops restarting on the live recording's heartbeat (memory audit fix 6)
+
+## 2026-10-04 10:49:15 EDT — scribe `76952a6537c5d0016f28c31bda5a53dd1b991a70`
+Merge voice-model-pause's plan into main: no voice-action model calls in the background, when hot, or in Low Power Mode, and a tighter gate (#543)
+
+## 2026-10-04 10:47:58 EDT — scribe `51f613a4218a62c499ac16065d36dfe624de4eb8`
+Plan voice-model-pause, plan only: no model calls in the background, when hot, or in Low Power Mode, and a tighter gate (#543)
+
+## 2026-10-04 10:47:44 EDT — scribe `b1aedcdcffcc0fe4f5a68bddbd3195e3a1dbac87`
+Plan page-word-index, plan only: find the book and the page Michael reads aloud from each page's sorted words (#544)
+
+## 2026-10-04 10:20:58 EDT — scribe `201ede6f6ed100cf4900aa4d5cfbc8f270904dd2`
+Merge restore-row-by-id's probe fix for 89: the stack probe takes AppFeature's reducer as a value, so its base type is inferred (#536)
+
+## 2026-10-04 10:19:50 EDT — scribe `4df965a3a628c24767d93064641282ae55b32bbf`
+The stack probe takes AppFeature's reducer as a value, so its base type is inferred (#536)
+
+## 2026-10-04 10:16:30 EDT — scribe `15a2823f83129968a080b57e0cdc0e25677701ee`
+Merge restore-row-by-id's crash-loop guard for 89: a launch after a resume that never settled continues the take on the list, judged from the last two flight-recorder rings (#535 #536)
+
+## 2026-10-04 10:14:49 EDT — scribe `63cd357fb3f47ee383176e9afc692265f4dd4a18`
+Claim threads-chat P1 (#537): the thread as chat rows and the conversation view that draws them
+
+## 2026-10-04 10:12:54 EDT — scribe `c968c069501c766355e29851a73e411dc4259dea`
+The resume crash guard reads the two latest previous rings, oldest first (#536)
+
+## 2026-10-04 10:12:01 EDT — scribe `c01d5a1af761386b4b0db448fb79cb54f530efad`
+Plan threads-chat (#537): a thread reads like a chat, his spoken lines join the open thread, and images go both ways (Recording 194)
+
+## 2026-10-04 10:11:43 EDT — scribe `97b981982a9188a1a8ed8d6f69de2850999ea780`
+A launch after a resume that never settled continues the take on the list (resume.crash-guard, #536)
+
+## 2026-10-04 10:10:48 EDT — scribe `84f9c8b89d6a42daadd2c5d57bc49d45910633c0`
+Red tests: a launch after a resume that crashed opens the recording screen again (#536)
+
+## 2026-10-04 10:07:15 EDT — scribe `1b3c1c744f33a15f51ab9771c74b48036795eed6`
+Merge ui-polish's floating pill and appearance moments for 89: the collapsed build pill floats where it is dragged and keeps its place, and a trip to the background adds no Dark and Light pair (#532 #531)
+
+## 2026-10-04 10:07:14 EDT — scribe `30556d4cb8462d09e9d6a29cfa737d24b7e3fede`
+Merge restore-row-by-id for 89 (P0): the launch restore reads the take's row by id from this device's store when the first page leaves it out, and debug builds log the main thread's deepest stack (#535 #536)
+
+## 2026-10-04 10:04:26 EDT — scribe `23902b5c557b4fae8ee450370412aec9a8144ae7`
+Debug builds log the main thread's deepest stack at the store's root and in RecordingList.core (#536)
+
+## 2026-10-04 10:03:02 EDT — scribe `2f8938a0a5c51f17091145f5e1456c2e437f6f9a`
+Record d4e2affd, bd1edd7f, 54e28cb7 (#518), 4b15e089, 11f28ee1 (#531), 4af7b470 and 013ea23d (#532) in the change log
+
+## 2026-10-04 09:58:25 EDT — scribe `013ea23df114a4619399a73d7c5ad24538e3c485`
+The collapsed build pill floats where it is dragged and keeps its place again, on iPhone and iPad: nothing docks it in the bar (#532)
+
+## 2026-10-04 09:55:44 EDT — scribe `16dd5a1a54402a9e197f33462577591bb01735ac`
+The launch restore reads the take's row by id from this device's store when the first page leaves it out (#535)
+
+## 2026-10-04 09:55:35 EDT — scribe `97a995ab00c4a9706cc88bb3fe1c1759729ead09`
+Red tests: a relaunch whose first page leaves out the take the session continues skips it as missing (#535)
+
+## 2026-10-04 09:54:21 EDT — scribe `6045f3b591a89e95436a16a462db1325dd84e9b8`
+Merge transcript-lazy-531 for 89: a speaker run's transcript lines are the lazy stack's own children again, made only on screen and flush left (#531 #410)
+
+## 2026-10-04 09:52:12 EDT — scribe `bb4fb89b87eee89b258d05ef77c0a70987d98ff2`
+A speaker run's transcript lines are the lazy stack's own children again: made on screen, flush left (#531 #410)
+
+## 2026-10-04 09:51:43 EDT — scribe `4af7b47029b0897357dd96157337097fcf7fd51d`
+Red test: the collapsed build pill floats where it can be dragged, and nothing docks it in the bar (#532)
+
+## 2026-10-04 09:51:32 EDT — scribe `9a5b8cd8df9a2fc65ac4cbdf8635b8e4815b3199`
+Red: a speaker run must make only the transcript lines on screen (#531 #410)
+
+## 2026-10-04 09:51:32 EDT — scribe `75f79d7fdb12aa89313ab3dc3f4305dc2c5f67e3`
+Correct plan sounds (f) claims: the sounds request is #534, not #527 (#534)
+
+## 2026-10-04 09:51:09 EDT — scribe `6ee72aec9c3dafa0cf45317d6d35925ad6feea83`
+Record the partial-row test's compile fix in the change log (#522)
+
+## 2026-10-04 09:51:09 EDT — scribe `ced1aaa3cbeed0880a2791b8e666a851fc4dd957`
+The media retry scan's partial-row test reads the uploads into a let before expectNoDifference, whose autoclosure can't await, so ScribeSharedSupportTests compiles (#522)
+
+## 2026-10-04 09:50:49 EDT — scribe `11f28ee1b07bb34fce719ec5973e9b02d1e10c10`
+An appearance moment comes only while the scene is active and only when it differs from the last one heard, so a trip to the background adds no Dark and Light pair (#531)
+
+## 2026-10-04 09:50:19 EDT — scribe `59ad9caf29b43af475a47dd68510f31a55c40af3`
+Claim the paths for plan sounds (f): every sound but talking, Settings Sounds picker, long-press to stop showing one, and the songs mode picker (#527 #457 #440)
+
+## 2026-10-04 09:50:12 EDT — scribe `4b15e089e13f5984760f5a897b4532eca7beff6f`
+Red tests: an appearance moment comes only while the scene is active and only when it differs from the last one heard (#531)
+
+## 2026-10-04 09:48:35 EDT — scribe `7a3d00bd3fe5faa97bc1a97d8027b69b7ea522f0`
+Merge sounds' classifier restart for 89: a failed sound classifier starts again on the foreground and after 30 s, 2 min and 10 min, and songs fall back to 12 s every 5 minutes while it is down (#526 #457 #440)
+
+## 2026-10-04 09:46:01 EDT — scribe `4da84b9f325c16673f489540994bc6b725aeecb2`
+Plan reading-place for 90: the live recording keeps its reading place across a trip to the list and back (Recording 194)
+
+## 2026-10-04 09:45:47 EDT — scribe `138fc94d761008c179d6a7c235182f43c8974423`
+Channel looking-at and plan signal-changes: correct the 88 cost-lines note, and the follow-up's new head ebe8027f (#469)
+
+## 2026-10-04 09:43:17 EDT — scribe `d2951bbe3e96ccbc23ab4fe920c8ac17dec45bbf`
+A failed sound classifier starts again on the foreground and after 30 s, 2 min, and 10 min, and songs fall back to 12 s every 5 minutes while it is down (#457 #440)
+
+## 2026-10-04 09:42:42 EDT — scribe `d4baa045d092eee7703a62d9dfd3788086c47d31`
+Claim the no-scroll top rule's paging state for list-edit-mode in RecordingList.swift and one list test (#430 #299)
+
+## 2026-10-04 09:41:28 EDT — scribe `223c6b2d443808c71608621c35ba812b214f414f`
+Channel looking-at and plan signal-changes: 88's cost lines read, and the thread-CPU benchmarks follow-up (#469)
+
+## 2026-10-04 09:39:46 EDT — scribe `c550141fedd8da1046240944c7d453bfe08ff1f1`
+Red: a classifier that fails starts again on the foreground and after 30 s, 2 min, and 10 min, and the matcher listens 12 s every 5 minutes while it is down (#457 #440)
+
 ## 2026-10-04 09:38:05 EDT — scribe `054687a06ca09e3a295e719cfbe5529b243976bc`
 Claim the lookups' stored rows for list-edit-mode: every field a full decode requires (#522 #430)
 
 ## 2026-10-04 09:37:45 EDT — scribe `255f97448a7a176ed03d05ef1e9c59e9ff38b6c8`
 Record Scribe 0.1 (88) in PROGRESS: on the iPhone and the iPad, built from 29390df9 on the published instant-data-swift 1.9.6, with the resume P0 its first launch hit (#405 #512 #513 #454 #503 #504 #514 #340 #521)
 
+## 2026-10-04 09:33:31 EDT — scribe `ebac45537cd125415007525b747e7e51f1074154`
+Merge media-scan-522 for 89: the media retry scan leaves out a local row that does not decode, through the library's quarantine, instead of failing the whole scan (#522)
+
+## 2026-10-04 09:32:10 EDT — scribe `1e57ad3bf89c329196552bdc88b921f4b45fc949`
+The media retry scan leaves out undecodable rows through the library's quarantine, not its own loop (#522)
+
 ## 2026-10-04 09:31:33 EDT — scribe `8f2cf9365ab73f8c4a57ca4eb7f89108d79d784b`
 Plan notify-by-route: answer notifications while recording sound on the device's own speaker and stay quiet where Siri would announce them (Recording 194, #340)
+
+## 2026-10-04 09:29:08 EDT — scribe `01430bbeff55809cf67b26b66f761b8bd63c5b29`
+Record Scribe 0.1 (89)'s build number in the change log
+
+## 2026-10-04 09:29:07 EDT — scribe `25fcbfd5055ce6c235d9c42a333915a3b9f96b21`
+Set Scribe 0.1 (89): CURRENT_PROJECT_VERSION 89 on the 12 lines that carried 88
+
+## 2026-10-04 09:27:33 EDT — scribe `7b8a1df7ffe3235bff6c78e9a691165e564d8d2a`
+The media retry scan decodes its rows one at a time and skips a row that does not decode (#522)
+
+## 2026-10-04 09:26:55 EDT — scribe `531b7deb6acbb329ca3875646a34e8d8b8550f5c`
+Merge status-bar-release for 89: a tap on the status bar releases following, as a drag does (#519, Recording 193)
+
+## 2026-10-04 09:26:54 EDT — scribe `f161b03c15752545390c1389f562addf3ee073b3`
+Merge failure-kind for 89: the save lane takes instant-data-swift 1.9.7's word on which write failures can never succeed, and on whether the connection is healthy (#482 part C)
+
+## 2026-10-04 09:26:53 EDT — scribe `4013c6d29e35fe225248c2e80783b984b807918a`
+Merge sounds' ShazamKit silence warning for 89: three windows of music with no answer log one warning that names the App Service, the provisioning profile and the network (#444 #457)
+
+## 2026-10-04 09:26:53 EDT — scribe `344e95bbef3984e569e0b47e1ef499bc6e24874e`
+Merge youtube-companion's public link for 89: a draft's link carries the share's public copy's token, never the share row's own (#478)
+
+## 2026-10-04 09:26:52 EDT — scribe `f6ff4e9ab18ea6b8eae0a48c06c4494386492e83`
+Red: one local row that does not decode must not fail a media retry scan (#522)
+
+## 2026-10-04 09:26:52 EDT — scribe `ba777a57550cf8769c1f7957ede5799541ba7bb2`
+Merge share-ui's accessibility sizes for 89: Shares rows show every line at accessibility text sizes (#497)
+
+## 2026-10-04 09:26:51 EDT — scribe `11a09fd2031726e96cedff1109c026b82782b349`
+Merge agent-name-surfaces for 89: the answer notification, playback's answer cards and scribe-mirror's pushes name the agent "Claude", not "claude-code" (#499 #340)
+
+## 2026-10-04 09:26:51 EDT — scribe `751780a0326186a316041447d70155b0ecd41762`
+Merge ui-polish's bar chip for 89: the docked build chip hangs under the floating bar's glass again, not over its clock and controls (#518)
+
+## 2026-10-04 09:26:46 EDT — scribe `54e28cb7fd5b82491950e649d8dcd50b795be5fd`
+ScribeHangingBelowTests unwraps the image and its rows in two #require statements, since a #require inside another does not expand (#518)
+
+## 2026-10-04 09:26:01 EDT — scribe `5be28a16cb8e01132498df9201884a6d559dc0ca`
+Record the instant-data-swift 1.9.7 pin and its Package.resolved in the change log (#473 #482)
+
+## 2026-10-04 09:25:32 EDT — scribe `08a0541516bde7dee30651c9d29a06b6b8b96b0d`
+Resolve Package.resolved to instant-data-swift 1.9.7 with a plain swift package resolve
+
+## 2026-10-04 09:24:38 EDT — scribe `2258d477555365d3002e22d591fc47854aec9ec9`
+Log the status bar's release in CHANGELOG (#519)
+
+## 2026-10-04 09:24:27 EDT — scribe `1ba1bdffa4b3c7f2ee12033bc6eaa184458e2241`
+A tap on the status bar releases following, as a drag does: a move that lands at the very top releases whatever the phase says (#519)
+
+## 2026-10-04 09:23:19 EDT — scribe `cae11515cbce9777e9b2f758e2797d49914ce81b`
+Pin instant-data-swift exactly 1.9.7 instead of 1.9.6: the operation gate lets local writes go first, hydrates and publishes off the gate, and classifies write failures (#473 #482)
 
 ## 2026-10-04 09:21:17 EDT — scribe `c1d5e8972141e82502391b079339bf0a0c0ef8c6`
 Merge voice-commands' plan into main: a list of every voice command, paraphrases, and a spoken value that verifies (#520)
@@ -19,11 +250,20 @@ Merge main 48af836c into the 88 branch: the mirror install, transcribe-gap, yout
 ## 2026-10-04 09:15:00 EDT — scribe `48af836c417f83bcb28743c0cc4e0ca6b3c96566`
 Merge youtube-companion-install-gate into main: the phase 4 install gate and the orphaned-clip sweep (#478)
 
+## 2026-10-04 09:14:48 EDT — scribe `70efedd01fdc482fe42a81152e51e4611cc27837`
+Red: a tap on the status bar releases following: a move that lands at the very top releases whatever the phase says (#519)
+
 ## 2026-10-04 09:13:36 EDT — scribe `febb44b00bc2e0ad32992a815bb71a78d0a2eb47`
 Plan status-bar-release for 89: a tap on the status bar releases following, as a drag does (#519, Recording 193)
 
 ## 2026-10-04 09:12:39 EDT — instant-data-swift `61976aec9decef72f6639bfac5c19f8046809c33`
 Add scripts/audit/backfill_commit_ledger.py: it lists a ref's non-merge commits the audit ledger lacks and writes their lines from git
+
+## 2026-10-04 09:12:17 EDT — scribe `bd1edd7f75122905a2f01cab3b483287237371a5`
+The docked build chip hangs under the floating bar's glass again, not over its clock and controls (#518)
+
+## 2026-10-04 09:11:43 EDT — scribe `d4e2affdfc9533a5b07c4d9bff433c951779a89e`
+Red tests: the docked build chip hangs under the floating bar's glass through scribeHangingBelow, and no guide of the bar's sits inside the chip's conditional (#518)
 
 ## 2026-10-04 09:09:32 EDT — scribe `02ac5addab19e6d889caea329f95a69aa26405bc`
 Record the orphaned clip sweep in the change log (#478)
@@ -46,6 +286,12 @@ Red: the phase 4 install refuses while any device that shows comment notificatio
 ## 2026-10-04 09:01:34 EDT — scribe `93634ed705c9416cf42f1618258aeb421203961e`
 Merge the installed companion's draft pause and clip switch (bundle 8832a03e) into the phase 4 companion on main (#478)
 
+## 2026-10-04 09:00:38 EDT — scribe `5c6587c0a68073a3707538198990f1b618556118`
+The save lane takes instant-data-swift 1.9.7's word on which write failures can never succeed, and on whether the connection is healthy (#482 part C)
+
+## 2026-10-04 09:00:27 EDT — scribe `e328be347baaf75e41a956bd33f34cb31a44498f`
+Red tests: the save lane asks instant-data-swift 1.9.7 which write failures can never succeed and whether the connection is healthy, instead of matching words (#482 part C)
+
 ## 2026-10-04 08:58:47 EDT — scribe `ae117d6b0c2cf372a59070360afda77adad62577`
 Merge transcribe-gap into main: the gap tool, Recording 186's be0e793d and 46dd4eea, today's overlap and preview fixes, and --from-plan and --holes (#483)
 
@@ -54,6 +300,15 @@ Change log: transcribe-gap's overlap fix and owner writes (b84fc0f4), and Record
 
 ## 2026-10-04 08:55:59 EDT — scribe `7a8ea72b6b60c43e4fdd73ab695bb9104aa2baeb`
 Log the mirror install's three cherry-picks in CHANGELOG (#499 #340, Recording 191)
+
+## 2026-10-04 08:55:40 EDT — scribe `21c28c0a000697feb8a6f80e2258e2b38ee269da`
+Record the draft link's public copy token in the change log (#478)
+
+## 2026-10-04 08:55:20 EDT — scribe `9fdb124488c5f8956db545af2a31032b164389e6`
+A draft's link carries the share's public copy's token, never the share row's own (#478)
+
+## 2026-10-04 08:55:09 EDT — scribe `54771043a6a9f2597286b028845879c164ba5781`
+Red: a draft's link carries the share's public copy's token, never the share row's own (#478)
 
 ## 2026-10-04 08:55:03 EDT — scribe `b73ee61b21a8abbf34de2debe8360d7de15dfcab`
 A recording's folder follows its title's number: Recording 030 renamed Recording 191 is 191, with a link from the old name (Recording 191)
@@ -88,11 +343,17 @@ Red: the installed companion pauses drafts in plain words and makes no clip shar
 ## 2026-10-04 08:42:03 EDT — instant-data-swift `2a977a3f6222fedc5324e01a0c8660dbd4b0ac76`
 Merge library-79-197 into main for v1.9.7 (#473 #482)
 
+## 2026-10-04 08:41:22 EDT — scribe `3cecd03ed0ec87a6e3b7ed91187c03d4aa056550`
+Log one warning when ShazamKit gives no answer in three windows of music in a row, naming the App Service, the provisioning profile, and the network (#444 #457)
+
 ## 2026-10-04 08:41:21 EDT — scribe `9e532d0a03d7884e44e6056ea716579b0a53bb23`
 Claim the list's no-scroll top rule for list-edit-mode: a slid window's top loads the newer page (#430 #299)
 
 ## 2026-10-04 08:41:00 EDT — instant-data-swift `5ff6cb84f9b547c96602f186efa73d7cb7dae2d2`
 Document the v1.9.7 release: the operation gate's priority lanes, hydration and publication off the gate, write-failure kinds and connection health, with the regression found before release (#473 #482)
+
+## 2026-10-04 08:39:58 EDT — scribe `f9f0e91672f945a27df8c2dc5262e111a2968404`
+Red: three windows of music with no answer from ShazamKit log one warning that names the likely cause (#444 #457)
 
 ## 2026-10-04 08:29:44 EDT — scribe `f53678ef4118e4884e173345f2f40a6d7c04724b`
 Amend plan 2026-10-02-list-edit-mode on main: recording numbers from every numbered title, not the list's window (#430)
@@ -105,6 +366,18 @@ Record the accessibility-size line limits in the change log (#497)
 
 ## 2026-10-04 08:28:06 EDT — scribe `82a84bc8c8ed229951398874ecf6acf2c5688e6d`
 Shares rows: every line at accessibility text sizes (#497)
+
+## 2026-10-04 07:42:43 EDT — scribe `f1f788b79b85e4655a4e03bb668de05bc12cf150`
+Log the agent's name on the pushes, the notification and playback cards in CHANGELOG (#499 #340)
+
+## 2026-10-04 07:42:33 EDT — scribe `a74d1a3a5363149cf2ddd6dfc44c858caa476c4a`
+The app's answer notification and playback's answer cards name the agent "Claude", not "claude-code" (#499 #340)
+
+## 2026-10-04 07:42:33 EDT — scribe `dc242cfe85a95906cf2e06b01fab79a0f1161cef`
+Red: the app's answer notification and playback's answer cards name the agent "Claude", not "claude-code" (#499 #340)
+
+## 2026-10-04 07:42:24 EDT — scribe `d1b42b08a3390f1bc84997cbb28a9c48485c4550`
+scribe-mirror's answer and notice pushes name the agent "Claude", not "claude-code" (#499 #340)
 
 ## 2026-10-04 07:35:31 EDT — scribe `92a67c06b01e1a30187cf91d5707015e130c6cc3`
 Plan agent-name-surfaces: the phone's notifications and playback cards name the agent "Claude", not "claude-code" (#499 #340)
@@ -519,6 +792,9 @@ Two new recording tests import the modules whose types they name, so the test ta
 
 ## 2026-10-04 01:32:28 EDT — scribe `8bf7b150f8c50b5eb845b53a6890fe1f4ee5285e`
 The bar's content-column check counts Recently Deleted as a screen without threads, so its switch is exhaustive and RecordingListFeature compiles (#415 #430)
+
+## 2026-10-04 01:32:05 EDT — scribe `61e34ff18df27ac79e22eb3327b494ae4c13aaf5`
+Fix gate-87's non-exhaustive switch: the bar's content-column rule compares the two screens with threads instead of switching over every screen (#415 #430)
 
 ## 2026-10-04 01:25:12 EDT — scribe `ff6ca531108f70c1124979a422c7ae8a2d3008df`
 Merge ui-polish's #510 fix for 87: both transcripts' scroll anchors sit at the leading edge, and the live transcript takes its width from its scroll view, so it isn't off-center after the lock screen and a turn to portrait (#510)
