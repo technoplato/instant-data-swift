@@ -1376,6 +1376,11 @@ private actor InstantLiveQueryAcknowledgementState {
       waiters[key] = nil
     }
   }
+
+  /// How many live-query keys hold a revision or an outcome (#541).
+  func keyCount() -> Int {
+    Set(revisions.keys).union(outcomes.keys).count
+  }
 }
 
 // SAFETY: `lock` protects every read and write of the cadence counter.
@@ -6458,6 +6463,11 @@ public final class InstantRuntime: Sendable {
   /// Observers see the server's rows a moment before the answer is recorded, so a test that reacts to the rows waits
   /// for this before it expects a local answer.
   @concurrent
+  /// How many live-query keys the acknowledgement state remembers (#541).
+  package func liveQueryAcknowledgementKeyCountForTesting() async -> Int {
+    await liveQueryAcknowledgements.keyCount()
+  }
+
   package func isAnsweredOnCurrentSocketForTesting(_ plan: InstantQueryPlan) async throws -> Bool {
     let registrationKey = try InstantLiveQueryEncoder.registrationKey(for: InstantLiveQueryEncoder.encode(plan))
     return await liveSession.isAnsweredOnCurrentSocket(key: registrationKey)

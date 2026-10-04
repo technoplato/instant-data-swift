@@ -2928,6 +2928,11 @@ public actor InstantStore {
     indexes.tripleCount
   }
 
+  /// How many transaction IDs the store's interner holds, live or not (#541).
+  package func internedTransactionIDCount() -> Int {
+    indexes.internedTransactionIDCount
+  }
+
   func activeQueryCacheKeys() -> Set<String> {
     Set(observers.values.map(\.plan.cacheKey))
   }

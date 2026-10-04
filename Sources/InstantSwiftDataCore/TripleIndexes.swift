@@ -1545,6 +1545,11 @@ struct TripleIndexes: Codable, Sendable {
     storedTripleCount
   }
 
+  /// How many transaction IDs the interner holds, including the empty one at index 0 and IDs no triple uses any more.
+  var internedTransactionIDCount: Int {
+    internedTxIDsBox.internedTxIDs.count
+  }
+
   var newestTransactionTimeMilliseconds: Int64? {
     var newest: Int64?
     for attributesByID in eav.values {
