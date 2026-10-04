@@ -1,8 +1,47 @@
+## 2026-10-04 08:58:47 EDT — scribe `ae117d6b0c2cf372a59070360afda77adad62577`
+Merge transcribe-gap into main: the gap tool, Recording 186's be0e793d and 46dd4eea, today's overlap and preview fixes, and --from-plan and --holes (#483)
+
+## 2026-10-04 08:56:27 EDT — scribe `cca51fb188f93531e82ca507b68f67d77f9f7eb4`
+Change log: transcribe-gap's overlap fix and owner writes (b84fc0f4), and Recording 039's 2 recovered lines (#483)
+
+## 2026-10-04 08:55:59 EDT — scribe `7a8ea72b6b60c43e4fdd73ab695bb9104aa2baeb`
+Log the mirror install's three cherry-picks in CHANGELOG (#499 #340, Recording 191)
+
+## 2026-10-04 08:55:03 EDT — scribe `b73ee61b21a8abbf34de2debe8360d7de15dfcab`
+A recording's folder follows its title's number: Recording 030 renamed Recording 191 is 191, with a link from the old name (Recording 191)
+
+## 2026-10-04 08:54:51 EDT — scribe `15b96dbe52831e24d12c910488786dbd509f21df`
+transcribe-gap --from-plan --holes: plan again from only the earlier holes the ranges touch (#483)
+
+## 2026-10-04 08:54:34 EDT — scribe `f73543ad25552b97bc63bb925c42be804400c451`
+The standing agent starts from Michael's day: today's timeline, today's earlier threads, and today's requests (Recording 191)
+
+## 2026-10-04 08:54:34 EDT — scribe `cf26772afd1318c414c05c5b61f03872383c74e6`
+scribe-mirror's answer and notice pushes name the agent "Claude", not "claude-code" (#499 #340)
+
+## 2026-10-04 08:54:34 EDT — scribe `0e2ee0ee625f6c9a386ab8216ae8f2567e529e0b`
+Merge mirror-rebuild c9ccf61c into the mirror install: the installed mirror's download retries, transcript time order, scribe book where to buy and page recognition, and scribe rebuild (#494 #432)
+
+## 2026-10-04 08:54:06 EDT — scribe `b84fc0f46840662c291f81903cade71aafc72d46`
+transcribe-gap: drop fresh words that overlap a saved word, keep the preview and list position for inner holes, and write as the owner (#483)
+
+## 2026-10-04 08:48:43 EDT — scribe `9ee58796a40247a534a6536f04854079cc33aab7`
+Red tests: transcribe-gap keeps a fresh word that overlaps a saved one, and moves the list preview to lines from an inner hole (#483)
+
 ## 2026-10-04 08:42:03 EDT — instant-data-swift `2a977a3f6222fedc5324e01a0c8660dbd4b0ac76`
 Merge library-79-197 into main for v1.9.7 (#473 #482)
 
+## 2026-10-04 08:41:21 EDT — scribe `9e532d0a03d7884e44e6056ea716579b0a53bb23`
+Claim the list's no-scroll top rule for list-edit-mode: a slid window's top loads the newer page (#430 #299)
+
 ## 2026-10-04 08:41:00 EDT — instant-data-swift `5ff6cb84f9b547c96602f186efa73d7cb7dae2d2`
 Document the v1.9.7 release: the operation gate's priority lanes, hydration and publication off the gate, write-failure kinds and connection health, with the regression found before release (#473 #482)
+
+## 2026-10-04 08:29:44 EDT — scribe `f53678ef4118e4884e173345f2f40a6d7c04724b`
+Amend plan 2026-10-02-list-edit-mode on main: recording numbers from every numbered title, not the list's window (#430)
+
+## 2026-10-04 08:28:51 EDT — scribe `8e0fda382c32163c6c7fca0670f8a37018a2db6c`
+Plan mirror-day-and-renames: the standing agent starts from Michael's day, and a recording's folder follows its number (Recording 191)
 
 ## 2026-10-04 08:28:07 EDT — scribe `95b3cc9752aac172a9196fa73d80d7e1730d5176`
 Record the accessibility-size line limits in the change log (#497)
@@ -10,8 +49,14 @@ Record the accessibility-size line limits in the change log (#497)
 ## 2026-10-04 08:28:06 EDT — scribe `82a84bc8c8ed229951398874ecf6acf2c5688e6d`
 Shares rows: every line at accessibility text sizes (#497)
 
+## 2026-10-04 07:35:31 EDT — scribe `92a67c06b01e1a30187cf91d5707015e130c6cc3`
+Plan agent-name-surfaces: the phone's notifications and playback cards name the agent "Claude", not "claude-code" (#499 #340)
+
 ## 2026-10-04 07:11:17 EDT — scribe `1f5d1ef97391e4ee3597757ba78b369c34085a5c`
 Record the Shares tests' #require and the Mac layout fixes in the change log (#497)
+
+## 2026-10-04 06:42:54 EDT — scribe `32fc8fc1659c36d3cb53e4c5f72ee6defafbcc5e`
+Plan card-follow-targets for 88: a live answer card keeps live-follow, and its Reply and More get 44 pt hit regions (#340 #410 #499)
 
 ## 2026-10-04 06:34:09 EDT — instant-data-swift `44a1544a859f612a821667e28503e1aa1bdc8169`
 Test-only: the mixed encoding-window test lets the connect's delivery pass finish before it adds rows, as its sibling does (#473)
@@ -1036,6 +1081,9 @@ Record what the Instant writer needs: each span placement's wall-clock stretch, 
 ## 2026-10-03 16:32:42 EDT — scribe `e00c91fa4ddf86a75a1b723868c0652c533089c1`
 Plan background-uploads: audio uploads continue through a background URLSession while Scribe is suspended, and a launch step resumes them, and claim its paths (#481 #432)
 
+## 2026-10-03 16:29:10 EDT — scribe `bb9931b544484e665f28b167a29f8393e4103cf2`
+Change log: transcribe-gap (be0e793d) and Recording 186's recovered transcript (#483)
+
 ## 2026-10-03 16:26:02 EDT — scribe `36683fbd9c63a6d6ed8b6909e9c29aa25f33ad2f`
 Merge main's plans and claims after the 0.1 (84) release commit (#430 #342 #485 #469 #470 #462 #340 #444)
 
@@ -1053,6 +1101,9 @@ Red test: two devices gave a recording the same number, and nothing moves the la
 
 ## 2026-10-03 16:12:07 EDT — scribe `5a842f05b76b02a600e6d638ec0a0677ff295526`
 The save lane heals itself: no refusal latches, must-keep writes wait in a bounded hold, interims merge per stream, and saving behind never stops Record, Resume, Delete, or an edit (#482)
+
+## 2026-10-03 15:57:52 EDT — scribe `46dd4eea340b716a701a44bf06aa21058c9f77cb`
+transcribe-gap repair --list-only: list a recording's transcript holes without transcribing them (#483)
 
 ## 2026-10-03 15:51:38 EDT — realtime-voice-sqlite-instant `ed603bf66a978a0b8c21085254a664a7c58b93e4`
 Write the share link in the posted-comment payload fixture with lowercase ids, as Scribe's links are (#478)
@@ -1077,6 +1128,12 @@ Record 0f3e0cc1 in the change log: alignment for the YouTube app (#478)
 
 ## 2026-10-03 15:34:20 EDT — realtime-voice-sqlite-instant `0f3e0cc1c8c37f748aed3781071e3bfa6475fcf3`
 Find where a recording heard a YouTube video from the YouTube app: captions first, yt-dlp audio and SpeechTranscriber when they cannot settle it, and a match of unique three-word runs (#478)
+
+## 2026-10-03 15:25:23 EDT — scribe `be0e793d6063663b7f2865e0581c917792e9b6b7`
+transcribe-gap: find the holes a stalled recognizer left in a recording's transcript and fill them from audio.wav (#483)
+
+## 2026-10-03 15:24:53 EDT — scribe `5b4ff3d12f5f620e0f462992696958d96e79663d`
+Plan transcribe-gap: put back the transcript a recording lost while audio.wav kept recording (#483, P0)
 
 ## 2026-10-03 15:24:07 EDT — scribe `91ca2dfaf79837ace3f961d13f64e85c150d72b5`
 Red tests: the save lane heals itself, must-keep writes wait, interims merge per stream, and saving behind never stops capture (#482)
