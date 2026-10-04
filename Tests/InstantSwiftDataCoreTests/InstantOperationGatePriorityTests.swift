@@ -263,7 +263,7 @@ extension InstantOperationGatePriorityTests {
 }
 
 extension InstantOperationGatePriorityTests {
-  static func renameChunk(
+  fileprivate static func renameChunk(
     _ fixture: GateHydrationFixture,
     title: String,
     payload: JSONValue,
