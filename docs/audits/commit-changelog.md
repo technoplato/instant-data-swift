@@ -1,3 +1,15 @@
+## 2026-10-04 02:40:38 EDT — scribe `9307861ce0404fd384a2ba2d9d42b0886d97f576`
+Log the day triage script's and fix and its red test in CHANGELOG (#511)
+
+## 2026-10-04 02:40:05 EDT — scribe `9484cd76aebbad6e9210c5c5a8e777e14fc474e5`
+The day triage script writes the day's two bounds as an and of two single-operator objects, so its list ends at the next midnight (#511)
+
+## 2026-10-04 02:39:28 EDT — scribe `5d320b3c181a8def291ae0b1879d526dbb18cdd0`
+Red: the day triage script's list holds only that day's recordings, against a fake Instant that applies only the first operator in a field's where object, as production does (#511)
+
+## 2026-10-04 02:37:22 EDT — scribe `bfeb31196eec9805714dcac2634094a5b4fbdfed`
+Plan triage-day-range: the day triage script's recordings query writes its two bounds as an and, since production applies only the first operator in one where object (#511)
+
 ## 2026-10-04 01:39:56 EDT — scribe `92d1f2fb0da48290031b9ecd05f359c9ed26585e`
 Record list-edit-mode in PROGRESS: what it does, the commits, and the verification (#430)
 
