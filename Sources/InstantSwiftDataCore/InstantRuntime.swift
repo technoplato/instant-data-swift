@@ -359,6 +359,13 @@ public struct InstantRuntimeConfiguration: Sendable {
   /// experiment's large store held the gate 5.8-13.2 s to prune 24 results of about 2,500 triples each while a transact
   /// waited; `nil` prunes everything at once.
   var liveQueryResultPruneBatchTripleCount: Int? = 5_000
+  /// How long a live query's stored result JSON may lag its newest result while the runtime runs (#566): one write
+  /// per query per interval, the newest kept in memory meanwhile.
+  var liveQueryResultJSONWriteIntervalMilliseconds: Int64 = 30_000
+  /// How the runtime waits before writing the results whose JSON waited; tests make it wait longer than they run.
+  var liveQueryResultJSONFlushSleep: @Sendable (_ milliseconds: UInt64) async throws -> Void = { milliseconds in
+    try await Task.sleep(nanoseconds: milliseconds * 1_000_000)
+  }
   /// Runs after each prune batch, with the number of results it removed.
   var onLiveQueryResultPruneBatchFinishedForTesting: (@Sendable (_ removedResultCount: Int) async -> Void)? = nil
   var liveReconnectSleep: @Sendable (UInt64) async throws -> Void =
@@ -1688,6 +1695,10 @@ public final class InstantRuntime: Sendable {
         startupTrace: startupTrace,
         deferredValueResidency: configuration.deferredValueResidency,
         declaredAttributes: configuration.initialAttributes
+      )
+      await persistence.configureLiveQueryResultJSONWrites(
+        intervalMilliseconds: configuration.liveQueryResultJSONWriteIntervalMilliseconds,
+        flushSleep: configuration.liveQueryResultJSONFlushSleep
       )
       let bootstrapPruningResult: InstantQueryCachePruningResult?
       let bootstrapSynchronizationBlocker: InstantSynchronizationBlocker?
@@ -5161,6 +5172,8 @@ public final class InstantRuntime: Sendable {
       await storeObservation.cancel()
       guard let self else { return }
       await self.liveQueryResultState.release(key: registrationKey)
+      // Its result is not refreshed again: write it if its write waited (#566).
+      _ = try? await self.persistence.flushDeferredLiveQueryResults(keys: [registrationKey])
       do {
         if try await self.liveSession.unregisterQuery(
           key: registrationKey,
@@ -5379,6 +5392,8 @@ public final class InstantRuntime: Sendable {
       await storeObservation.cancel()
       guard let self else { return }
       await self.liveQueryResultState.release(key: registrationKey)
+      // Its result is not refreshed again: write it if its write waited (#566).
+      _ = try? await self.persistence.flushDeferredLiveQueryResults(keys: [registrationKey])
       do {
         if try await self.liveSession.unregisterQuery(
           key: registrationKey,
@@ -5875,6 +5890,7 @@ public final class InstantRuntime: Sendable {
     let cleanupOwner = InstantAsyncCancellationOwner(
       cancelAndWait: { [self] in
         await liveQueryResultState.release(key: registrationKey)
+        _ = try? await persistence.flushDeferredLiveQueryResults(keys: [registrationKey])
         // A throw comes after the session dropped the key (`reconcileQueryMembership`), so it counts as unregistered.
         if (try? await liveSession.unregisterQuery(
           key: registrationKey,
@@ -6498,6 +6514,16 @@ public final class InstantRuntime: Sendable {
     await liveQueryAcknowledgements.keyCount()
   }
 
+  /// How many live-query results the persistence saved, and the writes and bytes of result JSON it made (#566).
+  package func liveQueryResultJSONWriteStatsForTesting() async -> (saves: Int, writes: Int, bytes: Int) {
+    await persistence.liveQueryResultJSONWriteStatsForTesting()
+  }
+
+  /// How many SQLite pages the persistence's connection has written, and the page size (#566).
+  package func sqlitePagesWrittenForTesting() async -> (pages: Int, pageSize: Int) {
+    (try? await persistence.sqlitePagesWrittenForTesting()) ?? (0, 0)
+  }
+
   /// How many presence and broadcast writes wait for `room`'s lane in the live session (#461).
   package func roomPresenceLaneWaiterCountForTesting(_ room: InstantRoomHandle) async -> Int {
     await liveSession.roomLaneWaiterCount(room)
@@ -6626,6 +6652,16 @@ public final class InstantRuntime: Sendable {
     connectionHealthRecorder.health(
       isOpen: configuration.liveTransport != nil && liveSession.isOpenSnapshot
     )
+  }
+
+  /// Writes the stored results of the live queries whose result write waited (#566). The runtime writes a refreshed
+  /// query's result to SQLite at most once every 30 s and keeps the newest in memory meanwhile; it writes the rest when
+  /// a query unsubscribes and when the connection closes. Call this when the app moves to the background or is about
+  /// to terminate, so the next launch starts from the newest results. A launch after a kill without it rebuilds the
+  /// waiting results from their facts, so nothing the server deleted comes back.
+  public func flushPendingLiveQueryResults() async throws {
+    recordActorHop(.persistence)
+    try await persistence.flushDeferredLiveQueryResults()
   }
 
   /// What holds the operation gate now, with no hop onto the gate (freeze-185 item 7): the holder, the phase it named
@@ -6946,6 +6982,9 @@ public final class InstantRuntime: Sendable {
     recordActorHop(.operationGate)
     await operationGate.enter()
     var enteredOperationGate = true
+    // No refresh can be applied now: write the results whose write waited (#566).
+    recordActorHop(.persistence)
+    _ = try? await persistence.flushDeferredLiveQueryResults()
     // Invalidate the receiver generation and close its wire now, but retain
     // the exact task handle. Receiver event/failure callbacks can be waiting on
     // the operation gate, so their join belongs strictly after this gate.
