@@ -27,6 +27,14 @@ package struct InstantLiveMutationEncodingFailure: Sendable {
   var mutationID: String
 }
 
+extension InstantLiveMessage {
+  /// The ops that carry a query's result: the answer to `add-query` and the server's later refreshes (#474).
+  static let queryResultOps: Set<String> = ["add-query-ok", "add-query-exists", "refresh-ok"]
+
+  /// Whether this frame is a query's result, which the next connection's answer to `add-query` replaces.
+  var isQueryResult: Bool { Self.queryResultOps.contains(op) }
+}
+
 /// The frames one live generation's reader has received and its applier has not taken yet (#296).
 ///
 /// URLSession answers the server's pings only while a `receive()` is outstanding, and the server closes a client
@@ -39,14 +47,6 @@ package struct InstantLiveMutationEncodingFailure: Sendable {
 /// When `capacity` frames are waiting, the reader waits for the applier, as the single receive loop always did. That
 /// bounds memory when an applier is stuck, and only then can the socket stop answering pings.
 // SAFETY: `lock` protects every mutable field. Continuations are taken under the lock and resumed after it.
-extension InstantLiveMessage {
-  /// The ops that carry a query's result: the answer to `add-query` and the server's later refreshes (#474).
-  static let queryResultOps: Set<String> = ["add-query-ok", "add-query-exists", "refresh-ok"]
-
-  /// Whether this frame is a query's result, which the next connection's answer to `add-query` replaces.
-  var isQueryResult: Bool { Self.queryResultOps.contains(op) }
-}
-
 final class InstantLiveReceivedFrames: @unchecked Sendable {
   private typealias Applier = CheckedContinuation<InstantLiveMessage, any Error>
   private typealias Reader = CheckedContinuation<Bool, Never>
