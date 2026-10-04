@@ -29,9 +29,10 @@ struct InstantSessionMapBoundsTests {
     )
     configuration.autoConnectLiveTransport = false
     let runtime = try await InstantRuntime.bootstrap(configuration: configuration)
-    // One todo saved 300 times, each save its own transaction, as a live recording saves its newest section.
+    // One todo saved 1,200 times, each save its own transaction, as a live recording saves its newest section. The
+    // interner is counted only past 1,024 IDs.
     let createdAt = InstantTimestamp(milliseconds: 1_700_000_541_000)
-    for save in 0..<300 {
+    for save in 0..<1_200 {
       let transactionID = "save-\(save)"
       _ = try await runtime.transact(
         InstantStoreTransaction(
@@ -49,7 +50,7 @@ struct InstantSessionMapBoundsTests {
     let before = await runtime.store.internedTransactionIDCount()
     let triplesBefore = await runtime.store.snapshot().triples
     let liveTransactionIDs = Set(triplesBefore.map(\.txID))
-    #expect(before > 300, "every save interned its transaction: \(before)")
+    #expect(before > 1_200, "every save interned its transaction: \(before)")
     #expect(liveTransactionIDs.count < 10, "the saves replaced each other: \(liveTransactionIDs.count) live")
 
     _ = try await runtime.pruneLiveQueryResults(
