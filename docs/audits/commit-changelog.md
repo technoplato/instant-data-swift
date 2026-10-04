@@ -1,8 +1,20 @@
+## 2026-10-04 01:39:56 EDT — scribe `92d1f2fb0da48290031b9ecd05f359c9ed26585e`
+Record list-edit-mode in PROGRESS: what it does, the commits, and the verification (#430)
+
+## 2026-10-04 01:39:42 EDT — scribe `ae80bb0c751c62c338289492c8db74de8b295374`
+Log list-edit-mode's six commits in CHANGELOG: select mode, Recently Deleted, Without Audio, and recording numbers (#430)
+
 ## 2026-10-04 00:41:42 EDT — instant-data-swift `6883dbeaeec168ed3ebefefeadd4952e2bb38a60`
 Merge library-79-hops into main for v1.9.6 (#454 #473).
 
+## 2026-10-04 00:41:03 EDT — scribe `763fb7c5ac4e3e565e312c844be063edaef7dddc`
+Expect the list's deletedAtMs filter in the remaining plan tests, and link the fixture's audio row on the recording's side (#430)
+
 ## 2026-10-04 00:40:53 EDT — instant-data-swift `226ab93b2a028b01f54ca7a186e90446744197a1`
 Document the v1.9.6 release: a stored file downloads to a destination file, streaming, and the log file is written in batches (#454 #473).
+
+## 2026-10-04 00:40:35 EDT — scribe `12b90e15b1dd0af047fb3c2a0fa07653dd1a1810`
+Claim one assertion in ScribeInstantStoreTests for list-edit-mode: the list plan's deletedAtMs filter (#430)
 
 ## 2026-10-04 00:36:29 EDT — realtime-voice-sqlite-instant `10f7444484a0d1169a62ab8f6e1612fcfb22ee6d`
 Tell reply-notifications and the integrator about the router's category registry and the foreground comment actions (#478)
@@ -571,8 +583,17 @@ Plan background-uploads: audio uploads continue through a background URLSession 
 ## 2026-10-03 16:26:02 EDT — scribe `36683fbd9c63a6d6ed8b6909e9c29aa25f33ad2f`
 Merge main's plans and claims after the 0.1 (84) release commit (#430 #342 #485 #469 #470 #462 #340 #444)
 
+## 2026-10-03 16:20:38 EDT — scribe `da1513aa7fd286081f901bd414f0d0c027b018c2`
+Move a recording this device numbered to the next free number when an earlier one of the owner holds it (#430)
+
+## 2026-10-03 16:20:02 EDT — scribe `534451b212d3e6b6f23d312c6da2fcc1062ad8c8`
+Amend plan 2026-10-02-list-edit-mode on main: recording numbers follow the owner's newest, and a duplicate moves (#430)
+
 ## 2026-10-03 16:19:30 EDT — scribe `35944632b7509e7ad601729ac33f973de16b8cb1`
 Plan transcript-journal: a local journal keeps every must-keep write until local Instant has it, Record never waits for the previous stop, and a write that keeps failing moves aside (#482 part C)
+
+## 2026-10-03 16:16:44 EDT — scribe `20883f0cb649e401fd760cb096c94d52f356d83f`
+Red test: two devices gave a recording the same number, and nothing moves the later one (#430)
 
 ## 2026-10-03 16:12:07 EDT — scribe `5a842f05b76b02a600e6d638ec0a0677ff295526`
 The save lane heals itself: no refusal latches, must-keep writes wait in a bounded hold, interims merge per stream, and saving behind never stops Record, Resume, Delete, or an edit (#482)
@@ -898,6 +919,9 @@ Every route change names the inputs, and a moved microphone is its own #122 line
 ## 2026-10-03 12:59:42 EDT — scribe `706bceb98620c92b045caaf98c84510374b71330`
 Amend plan playback-links (e): every move of the recording's microphone is its own #122 line (Recording 185) (#122)
 
+## 2026-10-03 12:55:24 EDT — scribe `f3a72ceda093222b6c796dd237d752370dd7a7b7`
+Number a new recording after the owner's newest numbered recordings, not the highest loaded one (#430)
+
 ## 2026-10-03 12:48:47 EDT — instant-data-swift `45a462908c27876ba2e31096c44f2cf39a48f214`
 #445: whether a failed mutation is superseded, slot by slot, as read-only public API for Scribe's Sync view (InstantSwiftDataClient.supersession(ofFailedMutation:) and failedMutationSupersessions()), by the #441 guard's rule (#445).
 
@@ -915,6 +939,9 @@ Record the #442 guard and fix commits in the change log (#442 #364)
 
 ## 2026-10-03 12:29:51 EDT — scribe `0f200d5c302edc2fa739008adaeba8d613540d8e`
 Record #442 in ADR 0033 and the design doc: Private Cloud Compute without its entitlement traps (#442 #364)
+
+## 2026-10-03 12:29:29 EDT — scribe `beba79f30b1a4e4301d1fd8f0fb8c22e8c023d0e`
+Run the list's editing reducer outside its long reducer chain, which the type checker could not finish (#430)
 
 ## 2026-10-03 12:29:28 EDT — scribe `0b22c04b8360d5019f67d943605db3b5c1b00a1e`
 Let Apple's on-device model run on version 27 again: #442 was Private Cloud Compute without its entitlement (#442)
@@ -1111,6 +1138,12 @@ Merge startup-at-launch: the iPhone app starts opening the store at launch, not 
 ## 2026-10-03 04:40:02 EDT — instant-data-swift `995d530eda6668a222d65cfa3af618ba20d5b5d1`
 #431 follow-up after an independent review and the first release-gate hold: query keys must vouch for their selection (no where through a link), the scan for slots no result held runs once per key, and only cleared slots lose the confirmed write's protection (the first gate's soak republished on every confirming refresh); round 4 red on v1.9.1, green here (#431).
 
+## 2026-10-03 04:06:09 EDT — scribe `1dadcdc042bdaf26e539c2389be8bbe55495869e`
+Merge remote-tracking branch 'origin/main' into agent/claude-opus-5.5/list-edit-mode
+
+## 2026-10-03 04:05:41 EDT — scribe `99493a3610073b43fb707d593a3c58a8242408d0`
+Select mode, Delete into Recently Deleted with Undo and Recover, and the Without Audio filter on the recordings list (ADR 0038, #430)
+
 ## 2026-10-03 03:47:14 EDT — scribe `371c19574c270897c5bb0516e16e118a41c45ed8`
 Merge capture-gaps-row: the recording row keeps its capture gaps, and every image keeps its own capture time (ADR 0034, #272 #346).
 
@@ -1183,6 +1216,18 @@ Plan #432 on live-stamp-82: a launch sweep finishes a recording that closed with
 ## 2026-10-03 01:39:55 EDT — scribe `bbbb0f4633431190753b2290682ae90b68f1049d`
 Record the change-log entries for capture-gaps-row's b0c289e4, 06d22739, 9fa9130f, a670c5b7 and cefa0098 (#272 #346).
 
+## 2026-10-03 01:28:58 EDT — scribe `84e773fc4e820db5dd3877d59d2ba0a53d15179d`
+Log the Recently Deleted update rule commit in CHANGELOG (#430)
+
+## 2026-10-03 01:28:08 EDT — scribe `276b87a1b7df6d89b4c132641c3f6462f2904494`
+Only a recording's manager moves it to Recently Deleted or back: the recordings update rule (ADR 0038, #430)
+
+## 2026-10-03 01:27:50 EDT — scribe `7751ae7717f743198cbb40aac343cb6bdfbb66fb`
+Log the deletedAtMs schema commit in CHANGELOG (#430)
+
+## 2026-10-03 01:27:12 EDT — scribe `9c6c47bb3db8d0747e8514d11b1e4a74c5c7fd36`
+Add recordings.deletedAtMs to the schema for Recently Deleted (ADR 0038, #430)
+
 ## 2026-10-03 01:15:53 EDT — scribe `cefa00984b9b5e9585a7d60eaa7b4a9481e7b1ec`
 Hold the rebuild-stop test's rebuild on a continuation, not a blocked thread, and cover the install path on its own (#272).
 
@@ -1200,6 +1245,9 @@ Restore main's rebuild-stop test for build 81: the event-driven rewrite blocks a
 
 ## 2026-10-03 01:11:03 EDT — instant-data-swift `d8c4469b9b88af419a6c90be9c6e362a0f8da29c`
 Claim the files of the #431 fix (P0 at main's request): server facts are authoritative over a pruned local write (#431).
+
+## 2026-10-03 01:10:47 EDT — scribe `e1154958ff56f5f4872683a5b7b202f9c2a18ef4`
+Amend plan 2026-10-02-list-edit-mode on main: the Without Audio filter and an audio lookup by recordingID (#430)
 
 ## 2026-10-03 01:10:16 EDT — scribe `76997da47a4b9bd70a16526c695f951ab7f4b39f`
 Merge voice-actions-on-device: the on-device hill climb's best configuration, and real voice commands for playback's full screen and Back to Live (#161 #160).
@@ -1228,6 +1276,9 @@ Merge origin/main into live-stamp: main's ui-polish, clipboard-onboarding and li
 ## 2026-10-03 00:29:25 EDT — scribe `f21145bc15076e4dec3e17046ac0021dc920c3e4`
 Record live-stamp in PROGRESS: the cause, the fix, the red and green runs, and what stays open (#408).
 
+## 2026-10-03 00:15:28 EDT — scribe `2dbd362516028bdbbf9de8117bd32164536a0990`
+Claim two ArchitectureTests paths for list-edit-mode: the compact list's List literal and a new boundary test (#430)
+
 ## 2026-10-03 00:06:03 EDT — scribe `32902faa686cd695e5ae74f4c7eebb065c09d567`
 Log the remote-push commits in CHANGELOG (#340)
 
@@ -1236,6 +1287,9 @@ remote-push: merge notes and the scribe notify handoff in the companion channel 
 
 ## 2026-10-03 00:02:28 EDT — scribe `a670c5b7227a82bb7209732f57ffccd02553ce86`
 Give the list gaps-row test a test clock and a fixed date, so the drain it starts reports nothing (#272 #346).
+
+## 2026-10-03 00:00:26 EDT — scribe `6a90a89fce1a127810a2a82992fbbbcad232909e`
+Amend plan 2026-10-02-list-edit-mode on main: claim the DetailMode switches and two query-shape tests (#430)
 
 ## 2026-10-02 23:56:08 EDT — scribe `39ce9954c97a790f3519bb632128ed449ef2ec34`
 Merge capture-alert-unblock's change-log entries for its three commits (#272).
@@ -1254,6 +1308,9 @@ Await each outage-notifier test event into a constant before comparing it, so th
 
 ## 2026-10-02 23:53:26 EDT — scribe `a336b98d6b6aa0776334358d5d4e11af9e2daddc`
 Stub the player's stop in the two clear-path tests, which close a playback (#408).
+
+## 2026-10-02 23:49:19 EDT — scribe `8844054b67aee9ff0f293eb38d3c096a66c034ee`
+Plan list-edit-mode: select mode, bulk delete into Recently Deleted, and no older recordings without audio, and claim its paths (#430)
 
 ## 2026-10-02 23:46:15 EDT — scribe `3c30780eb23629c2c11bb960c5ce750629160c76`
 Merge recognitions: songs recognized with ShazamKit and the weather from WeatherKit as moments on the recording timeline (#406).
