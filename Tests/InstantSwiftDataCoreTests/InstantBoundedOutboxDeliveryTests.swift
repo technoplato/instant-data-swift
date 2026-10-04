@@ -3617,6 +3617,17 @@ struct InstantBoundedOutboxDeliveryTests {
       cacheURL: cacheURL,
       liveSession: liveSession
     )
+    // The connect requests a delivery pass of its own. Let it finish before the rows go in: a pass still running
+    // claims them and reports the quarantine outside the known-issue scope below (1.9.7's dev run, under load, where a
+    // background-lane claim can wait behind other callers of the gate).
+    try await instantLiveWithTimeout(
+      operation: "wait for the connect's delivery pass to finish",
+      timeoutMilliseconds: 5_000
+    ) {
+      while !(await runtime.automaticMutationPumpIsIdleForTesting()) {
+        await Task.yield()
+      }
+    }
     let invalid = (0..<50).map {
       boundedEncodingFailureMutation(index: $0, prefix: "encoding-head-window")
     }
@@ -3967,6 +3978,17 @@ struct InstantBoundedOutboxDeliveryTests {
       }
       let firstDelay = await deadlineSleep.firstDelay()
       expectNoDifference(firstDelay, 6_000)
+      // The successor's answer requested a pass. Let it finish before counting: a pass still claiming when the clock
+      // moves finds the expired deadline itself, and its count landed before the one below (1.9.7's dev run, under
+      // load, where a background-lane claim can wait behind other callers of the gate).
+      try await instantLiveWithTimeout(
+        operation: "wait for the successor's delivery pass to finish",
+        timeoutMilliseconds: 5_000
+      ) {
+        while !(await runtime.automaticMutationPumpIsIdleForTesting()) {
+          await Task.yield()
+        }
+      }
       let completedPumpPasses = pumpPasses.value
       clock.advance(by: 6_000)
       await deadlineSleep.resumeFirstDelay()
