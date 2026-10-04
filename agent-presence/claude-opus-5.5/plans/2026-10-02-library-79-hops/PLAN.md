@@ -222,3 +222,26 @@ rows. Red tests first, with a kill between throttled writes. #567 files Reactor'
 Touching `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift`, `InstantRuntime.swift`,
 `Sources/InstantSwiftData/InstantSwiftData.swift` (the client's flush) and new
 `Tests/InstantSwiftDataCoreTests/InstantLiveQueryResultWriteTests.swift`, added 2026-10-04 16:45 EDT.
+
+## v1.9.9: #563 and #570 (main, 2026-10-04 about 19:05 EDT)
+
+Main, verbatim: "Put the sort fix in 1.9.9; it's the biggest CPU item from the phone. Do both (a) and (b): reuse the
+interned many-value when the slot is unchanged, and an allocation-free comparator for when it isn't." and "#563, with
+the rejoin case, is fine for 1.9.9 too. If 1.9.9 grows too big to gate tonight, tell me and we'll split it."
+
+- #563: on an open socket, `join-room`, `leave-room` and the reconnect's rejoin take the room's lane, so a leave and a
+  rejoin, or a write still in flight and a leave, reach the wire in call order, as `Reactor.js`'s synchronous
+  `ws.send` writes them. The rejoin on a new socket went outside the lane too, so a leave made while it was written
+  could pass it. Red tests first: a held leave-room and a rejoin, a held set-presence then a leave and a rejoin, and a
+  held rejoin on a new socket then a leave.
+- #570: a many-cardinality slot's sorted values are kept per entity and attribute and reused while the slot holds
+  exactly those values, and a slot that must be sorted is sorted with a comparator that orders exactly as
+  `comparableKey` without building strings. Build 88's CPU kill on Michael's iPhone (48 s of CPU in 55 s) spent 26%
+  of its samples in this sort: every snapshot of a recording re-sorted all its segment refs. Red tests first: an
+  order-equivalence property test and a timed re-materialization of 73 recordings with 1,190 refs each.
+
+Touching `Sources/InstantSwiftDataCore/InstantRuntimeLiveSession.swift`, `InstantRuntime.swift` (a test accessor's
+comment), `TripleIndexes.swift`, `InstantStore.swift` (a test accessor),
+`Tests/InstantSwiftDataCoreTests/InstantRoomPresenceRuntimeTests.swift`, new
+`Tests/InstantSwiftDataCoreTests/InstantManyCardinalityOrderTests.swift` and
+`docs/adr/0019-rooms-and-presence-parity.md` (decision 9's open item), added 2026-10-04 19:01 EDT.
