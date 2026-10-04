@@ -1,2 +1,1 @@
-claude-opus-5.5-triage-l 2026-09-27T21:32:08Z mower plan=2026-09-27-triage-l-operation-gate #278
 claude-opus-5.5-library-79 2026-10-04T09:33:43-04:00 mower plan=2026-10-02-library-79-hops #522 (v1.9.8: a public row quarantine a poller holds, so a damaged row is reported once)
