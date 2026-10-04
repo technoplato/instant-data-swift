@@ -1,3 +1,9 @@
+## 2026-10-03 21:26:41 EDT — scribe `6c603407341456c7ac6e32d1bb2311b0eeb261e3`
+Merge ui-polish's bar test fix: the browsing screens' bar test expects the live piece's Back to Live while the recording captures, as #451 made it (#451)
+
+## 2026-10-03 21:26:30 EDT — scribe `69e8b43e29636537c9fcd5eb551a3c09f255f338`
+Merge capture-isolation's speech-first test fix: the test runs on the app's dedicated capture executors, so TestStore's main serial executor no longer starves the speech feeder (#488)
+
 ## 2026-10-03 20:49:49 EDT — instant-data-swift `1f74a6d4b91cd0dc501a8d3383bf0471643f13b6`
 Check each write-failure case in its own call instead of one array literal of tuples (#482).
 
@@ -13,6 +19,9 @@ Name the locals that copied a property under their own names, so no initializer 
 ## 2026-10-03 20:10:01 EDT — scribe `7b81d443b4d0dcbe78db20e3ad3f242e60aec396`
 Red tests: Settings chooses the recording's mic mode, a recording keeps the mode it took at Record, names it in its runtime events and diagnostics, and the A/B compares two recordings (#122, ADR 0040 Decision 6)
 
+## 2026-10-03 20:03:19 EDT — scribe `08ad7992e0920e3cbbf2e92b18d23c0b8e70a6c3`
+Merge capture-isolation's test fix: a live speech session, a lenient effect skip, and load-proof transition checks (#488)
+
 ## 2026-10-03 20:02:27 EDT — scribe `47fd2250717e543fb106a48a0f98ec07e585a4a0`
 Plan mic-mode: Settings chooses the recording's microphone mode, Clean (measurement) or Standard (default), for Michael's A/B (#122, ADR 0040 question 3)
 
@@ -22,6 +31,18 @@ Give the operation gate priorities, hydrate and publish off it, and classify wri
 ## 2026-10-03 19:41:49 EDT — instant-data-swift `c1332f76a18595c4a1055462ef755cb166772078`
 Claim the files of v1.9.7: gate priorities, hydration and publication off the operation gate, write-failure kinds and connection health (#473 #482).
 
+## 2026-10-03 19:40:56 EDT — scribe `d4ddb923e2ab36b5e59b01ce27e106ffc94b8a05`
+Merge the P0 launch record tap: a record tap during launch never fails; the first write waits for its owner, and the opening list keeps the tap (#459)
+
+## 2026-10-03 19:40:17 EDT — scribe `f946cb0577ad952c7012bfc4118b8e6ac8c31644`
+Merge ui-polish's integrated-tree test fixes: the tap guard reads a tap's whole modifier chain, the header test sets uuid, the full-screen Back to Live test pauses its playback, and the Back to Live rule compares two phases (#476 #448 #414 #451)
+
+## 2026-10-03 19:40:17 EDT — scribe `0bd983787cf0d4d7ff22cda9335a2c03fa71a280`
+Merge headphone-mic's test fixes: the playback row's schema test finds 'playback' anywhere in the runtime-event kinds, with the branch's ledger and progress (#435 #122)
+
+## 2026-10-03 19:40:16 EDT — scribe `9ae262fc53fc27e542c196bdd39c935c5d79ffec`
+Merge durability-unstick's fixes for the #480 and #482 failures: a retry that merges an owner while an attempt runs starts no second drain, and the tests wait for what they check (#480 #482)
+
 ## 2026-10-03 19:26:28 EDT — scribe `e43ac5760bbfb497712924ccc66f6cfb1348d9eb`
 Merge durability-unstick's test fixes into transcript-journal: the lane's retry guard 55e5a98f, the #480 and #482 test fixes 7a6b934a, and B's ledger 29b5f313 (#482)
 
@@ -30,6 +51,12 @@ The #480 and #482 tests wait for what they check, read the state they receive, a
 
 ## 2026-10-03 19:24:53 EDT — scribe `55e5a98fba7ab57fefac454aee15b096733b17d0`
 A retry that merges an owner while an attempt runs starts no second drain (#482)
+
+## 2026-10-03 18:59:39 EDT — scribe `d96db1d7e883d44d8add989361398354eca1b265`
+Merge headphone-mic's play-span fix: the play span effect reads the clock only when a span can open or end, and the bar and fold tests hold the span their plays open (#435)
+
+## 2026-10-03 18:59:34 EDT — scribe `fafb9f23112c7e89b3d7c761ef3884259cf40658`
+Merge ui-polish's compile fix: full screen's Back to Live gets its own case, since a case's patterns must all bind the same names (#451)
 
 ## 2026-10-03 18:49:59 EDT — scribe `85e8e756c1ac6808333970bba15ea3602bb0a41e`
 The play span effect reads the clock only when a span can open or end, and the bar and fold tests hold the span their playback opens (#435)
@@ -52,6 +79,21 @@ Merge library-79-hops into main for v1.9.5: a local write no longer holds the op
 ## 2026-10-03 18:37:39 EDT — instant-data-swift `3edae737bdacaa98b58787a97ce4a5b753474e04`
 Document the v1.9.5 release: a local write no longer holds the operation gate while it logs, and outbox listings never wait for it (#473).
 
+## 2026-10-03 18:30:41 EDT — scribe `3dd786e1598c5e9d0976a490b427f95d38aaf11a`
+Merge security phase 1: only Michael's identities reach the agent tables, screen sessions, legacy rows and stream chunks, and the instantTools namespaces close (#496)
+
+## 2026-10-03 18:15:25 EDT — scribe `dde837114a3a074967f188d0c69b1cc649ee3079`
+Record the share schema contract test's clip fields in the change log (#478)
+
+## 2026-10-03 18:15:25 EDT — scribe `17ff7b692b888cb8d5374a14c19b763d28959973`
+Pin the share schema contract test to production's clip fields: audioClipDurationSeconds, audioClipStatus, validAudioClip and validNewAudioClip (#478)
+
+## 2026-10-03 18:13:57 EDT — scribe `1abcc63fb51a5bb2e96f4b3c9e9f0d08e287c601`
+Merge headphone-mic with playback-links: the microphone follows a headphone switch, and playing another recording during a recording plays on the loudspeaker and links the two (#122 #435)
+
+## 2026-10-03 18:11:14 EDT — scribe `dfb401395c2c7647315d1f02d491b055983aa39e`
+Merge capture-isolation's test-build fix: the WAV writer's health and flush-interval closures at the three test call sites of AudioFileClient's memberwise init (#488)
+
 ## 2026-10-03 18:09:34 EDT — scribe `1ad345c34c7aa7ab551a6cc105d262001d4d76fb`
 The playback row test controls the uuid the library's typed transaction reads (#435)
 
@@ -60,6 +102,15 @@ The playback row test controls the uuid the library's typed transaction reads (#
 
 ## 2026-10-03 18:06:07 EDT — scribe `d6f07ba5c8460da14a639e3c53407e5a71a76878`
 Pass the WAV writer's health and flush-interval closures at the three test call sites of AudioFileClient's memberwise init (#488)
+
+## 2026-10-03 17:58:35 EDT — scribe `5459c7c645e4faf1fd953a9b32341fd14287c5dc`
+Merge capture-isolation's compile fixes: the WAV writer's events log through a static function, so the microphone effect never captures the reducer, and the isolation test names RecordingFeature.Recording (#488)
+
+## 2026-10-03 17:55:40 EDT — scribe `66f1d131cf4942feb90b8e3d29211b06da4a4f11`
+Merge ui-polish's ADR 0015 note: the collapsed build chip docks with the bar as an overlay under its glass (#417, build 84 P0)
+
+## 2026-10-03 17:55:12 EDT — scribe `03e3cfa0964233dc5fe83fa8feb05e5b02c31a5e`
+Merge durability-unstick's change-log entries for #480 and #482 parts A and B (3a3cf8a5 through 5a842f05)
 
 ## 2026-10-03 17:55:10 EDT — scribe `418655c1d841689ce3ca5469c75954667c155a87`
 Name the reducer RecordingFeature.Recording in the capture-isolation test's two signatures, where SharedModels' Recording made the type ambiguous (#488)
@@ -72,6 +123,36 @@ The recording and playback sync rows say "N saves set aside · Retry", and Retry
 
 ## 2026-10-03 17:46:15 EDT — scribe `29b5f313ea697caea437a8397a9d37fed0b99e01`
 Ledger: #480 and #482 parts A and B (3a3cf8a5 through 5a842f05)
+
+## 2026-10-03 17:42:58 EDT — scribe `a4d965fa8ee11d4a9791f8a9537581dca369e835`
+Merge hig-skills, and set Scribe 0.1 (85): phone-perf's standing rule that only the line that changed redraws, the scribe-hig skills and install-agent-skills.sh (#409 #366)
+
+## 2026-10-03 17:42:34 EDT — scribe `43504a9aafeefaf96090d25d4d845c4e75c3cad2`
+Merge Plan voice-command-markers: five more claims found while designing (#492)
+
+## 2026-10-03 17:42:34 EDT — scribe `5b052c39287edaa7a06102835546e52e3d07d20a`
+Merge Plan read-aloud-voice, plan only: the best installed voice for answers, its Settings row,
+
+## 2026-10-03 17:42:19 EDT — scribe `3a9cad263e2199fa2d5b91ca7f6e883935ee90b0`
+Merge capture-isolation with durability-unstick: the move to the background never waits on the disk, capture never waits on anything, and the save lane heals itself (ADR 0050, #488 #482 #480)
+
+## 2026-10-03 17:41:34 EDT — scribe `5530ae0392335eeb0fb1626903c01f07b76d1197`
+Merge mirror-push-install: the mirror installs with --push, books read aloud (scribe book, ADR 0048), Michael's daily timeline and scribe day, the router fix, and notifyOnce ending with why (#447 #455 #456 #464 #469)
+
+## 2026-10-03 17:40:15 EDT — scribe `8093fa0c721ad0e5c0b54e302a463408a36ca650`
+Merge live-stamp-82: the follow-along heartbeat, the #432 orphaned-audio sweep, list positions that a sweep's finalize or a playback stamp never move, and no updatedAtMs on capture-time writes (#408 #432 #441)
+
+## 2026-10-03 17:39:53 EDT — scribe `79d593bcecfaea0bf449cd36502c2354c9a12618`
+Merge launch-recovery: a paged playback detail query ends the 8 MiB cached results, bounded share reads, Reset Local Cache on "Could Not Open Scribe", and a background integrity check (ADR 0041, #437)
+
+## 2026-10-03 17:39:42 EDT — scribe `75f4ad824091e889b0270e48e57435ad010d0d3f`
+Merge the voice-actions fix for #442: the crash was Private Cloud Compute asked without its entitlement, so Apple's on-device model runs on version 27 again (#442 #364)
+
+## 2026-10-03 17:38:11 EDT — scribe `5d24f3597e893c0a22bfe25040a18c227c5c4f82`
+Merge ui-polish for 85: the build chip is an overlay under the bar's glass, so the bar keeps its height and the list's bottom edge loses 84's band (build 84 P0), plus the header pass, the list's Back to Live, the iPad split-view bar room and VoiceOver on the cards (#417 #448 #451 #443 #452 #413 #476)
+
+## 2026-10-03 17:37:42 EDT — scribe `52ae7e975b20479b25b9f591b5b75c5461ecc177`
+Merge youtube-companion: the shared things and YouTube companion schema, rules and node scripts, as production has them (ADR 0044)
 
 ## 2026-10-03 17:37:19 EDT — scribe `39e070aaca31333151ec24682eadc992993bc00b`
 Write the share-prototype settings through the queued file key too, as every shared file key now does (#488 #389)
