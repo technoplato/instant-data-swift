@@ -381,6 +381,96 @@ struct InstantLiveConnectionSurvivalTests {
   }
 }
 
+// MARK: - #474: a dead connection's results
+
+extension InstantLiveConnectionSurvivalTests {
+  /// The buffer drops a dead connection's query results when the reader's error arrives, and keeps every other frame
+  /// in arrival order ahead of the error (#474).
+  @Test
+  func aDeadConnectionsWaitingQueryResultsAreDroppedAndItsOtherFramesKept() async throws {
+    let frames = InstantLiveReceivedFrames(capacity: 8)
+    for op in ["refresh-ok", "transact-ok", "add-query-ok", "error", "add-query-exists", "stream-flushed"] {
+      _ = await frames.append(InstantLiveMessage(op: op))
+    }
+    frames.finish(throwing: survivalSocketNotConnected)
+    var applied: [String] = []
+    do {
+      while true {
+        applied.append(try await frames.next().op)
+      }
+    } catch {
+      expectNoDifference((error as NSError).code, 57)
+    }
+    expectNoDifference(applied, ["transact-ok", "error", "stream-flushed"])
+  }
+
+  /// #474: the Mac's socket was reset at 11:52:48 with frames buffered, and the app, throttled in the background,
+  /// applied 125 more over 18.5 minutes before it reconnected. Here the socket dies while the applier holds a long frame
+  /// with twenty query results and a write's answer waiting: the runtime applies the answer and reconnects, and the
+  /// next connection's `add-query` replaces the results.
+  @Test
+  func aConnectionThatDiesWithResultsWaitingReconnectsWithoutApplyingThem() async throws {
+    let transport = SurvivalTransport()
+    let gate = SurvivalApplyGate()
+    var configuration = try survivalConfiguration(appID: "survival-dead-results", transport: transport)
+    configuration.onLiveReceiverEventAcquiredForTesting = { await gate.enter() }
+    let runtime = try await InstantRuntime.bootstrap(configuration: configuration)
+    let observation = await runtime.observe(TodoExample.query)
+    var observed = observation.makeAsyncIterator()
+    _ = await observed.next()
+    let query = try InstantLiveQueryEncoder.encode(TodoExample.query)
+    let write = "tx-dead-results"
+    let dropped = SurvivalRecorder<Int>()
+    let token = InstantDiagnostics.shared.addHandler { entry in
+      guard entry.event == "websocket.dead-connection-results-dropped" else { return }
+      let count = Int(entry.metadata["droppedResultCount"] ?? "") ?? -1
+      Task { await dropped.append(count) }
+    }
+    defer { InstantDiagnostics.shared.removeHandler(token) }
+
+    try await withSurvivalCleanup({ await gate.release() }) {
+      _ = try await runtime.connect()
+      let socket = try #require(await transport.socket(0))
+      try await transactSurvivalTodo(id: write, index: 0, on: runtime)
+      try await waitUntil("the pump to offer the write") { await socket.sentTransactIDs == [write] }
+
+      await socket.push(survivalLongFrame)
+      try await waitUntil("the runtime to start applying the long frame") { await gate.enteredCount == 1 }
+      for index in 0..<20 {
+        await socket.push(
+          liveReactorAddQueryOK(query: query, processedTransactionID: String(100 + index), result: [])
+        )
+      }
+      await socket.push(survivalTransactOK(write))
+      try await waitUntil("the reader to buffer every frame") { await socket.isCaughtUp }
+      await socket.die(with: survivalSocketNotConnected)
+      // The reader drops the dead connection's results as soon as it sees the socket die; wait for that, at most 2 s
+      // (v1.9.7 drops none), before the applier moves on.
+      let deadline = ContinuousClock.now + .seconds(2)
+      while await dropped.values.isEmpty, ContinuousClock.now < deadline {
+        try await Task.sleep(nanoseconds: 2_000_000)
+      }
+      await gate.release()
+
+      try await waitUntil("the next connection to send add-query") {
+        await transport.socket(1)?.sentOps.contains("add-query") == true
+      }
+      let appliedFrameCount = await gate.enteredCount
+      expectNoDifference(appliedFrameCount, 2, "The long frame and the write's answer; none of the twenty results.")
+      let droppedCounts = await dropped.values
+      expectNoDifference(droppedCounts, [20])
+      try await waitUntil("the write's answer to confirm it") {
+        await runtime.durableOutboxMutationsForTesting().first { $0.id == write }?.status == .confirmed
+      }
+      let offeredAgain = await transport.socket(1)?.sentTransactIDs
+      expectNoDifference(offeredAgain, [], "The answered write is not offered again.")
+      let attempts = await transport.attemptCount
+      expectNoDifference(attempts, 2, "One replacement connection.")
+      _ = try await runtime.closeConnection()
+    }
+  }
+}
+
 // MARK: - Scripted sockets
 
 private let survivalSocketNotConnected = NSError(
@@ -444,6 +534,10 @@ private actor SurvivalSocket {
 
   var sentTransactIDs: [String] {
     sent.filter { $0.op == "transact" }.compactMap(\.clientEventID)
+  }
+
+  var sentOps: [String] {
+    sent.map(\.op)
   }
 
   /// A server ping gets its pong only while a `receive()` is outstanding (URLSession, measured for #296).

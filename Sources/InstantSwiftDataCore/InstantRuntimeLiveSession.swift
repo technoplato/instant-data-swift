@@ -39,6 +39,14 @@ package struct InstantLiveMutationEncodingFailure: Sendable {
 /// When `capacity` frames are waiting, the reader waits for the applier, as the single receive loop always did. That
 /// bounds memory when an applier is stuck, and only then can the socket stop answering pings.
 // SAFETY: `lock` protects every mutable field. Continuations are taken under the lock and resumed after it.
+extension InstantLiveMessage {
+  /// The ops that carry a query's result: the answer to `add-query` and the server's later refreshes (#474).
+  static let queryResultOps: Set<String> = ["add-query-ok", "add-query-exists", "refresh-ok"]
+
+  /// Whether this frame is a query's result, which the next connection's answer to `add-query` replaces.
+  var isQueryResult: Bool { Self.queryResultOps.contains(op) }
+}
+
 final class InstantLiveReceivedFrames: @unchecked Sendable {
   private typealias Applier = CheckedContinuation<InstantLiveMessage, any Error>
   private typealias Reader = CheckedContinuation<Bool, Never>
@@ -126,16 +134,38 @@ final class InstantLiveReceivedFrames: @unchecked Sendable {
     }
   }
 
-  /// Records the reader's terminal error. The applier receives it after every frame received before it.
+  /// Records the reader's terminal error. The applier receives it after the frames received before it, except the
+  /// dead connection's query results (#474).
+  ///
+  /// On the Mac on 2026-10-03 the socket was reset at 11:52:48 with frames still waiting here, and the app, throttled in
+  /// the background, applied 125 more of them over 18.5 minutes before it reconnected; the frame it applied at 12:04 was
+  /// at least 11 minutes old, and the app stayed offline the whole time. The next connection sends `add-query` for
+  /// every registered query and its answers replace these results, as `Reactor.js` drops the messages of a transport
+  /// it has replaced (`_transportOnMessage`), so the applier skips them and the runtime reconnects as soon as the frame
+  /// it is applying ends. The answers to this device's writes (`transact-ok`, refusals) and every other frame are still
+  /// applied, in order: a write whose answer was dropped would be offered again, and a server that already applied it
+  /// can refuse the replay (#441).
   func finish(throwing error: any Error) {
-    let applier = lock.withLock { () -> Applier? in
-      guard !isClosed, terminalError == nil else { return nil }
+    let outcome = lock.withLock { () -> (applier: Applier?, droppedResults: Int) in
+      guard !isClosed, terminalError == nil else { return (nil, 0) }
       terminalError = error
+      let waitingCount = frames.count
+      frames.removeAll(where: \.isQueryResult)
       // An applier waits only when no frame is waiting, so nothing is skipped.
       defer { waitingApplier = nil }
-      return waitingApplier
+      return (waitingApplier, waitingCount - frames.count)
     }
-    applier?.resume(throwing: error)
+    if outcome.droppedResults > 0 {
+      InstantDiagnostics.shared.record(
+        .notice,
+        subsystem: "instant-swift-data-core",
+        category: "transport",
+        event: "websocket.dead-connection-results-dropped",
+        message: "The connection died with \(outcome.droppedResults) query results waiting; the next connection's answers replace them.",
+        metadata: ["droppedResultCount": String(outcome.droppedResults)]
+      )
+    }
+    outcome.applier?.resume(throwing: error)
   }
 
   /// The next frame in arrival order. After the last frame it throws the reader's terminal error. After `close()`
