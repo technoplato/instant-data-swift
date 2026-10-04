@@ -10,6 +10,73 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## October 4th, 2026 at 8:39:10 a.m. EDT — `44a1544a859f` Test-only: the mixed encoding-window test lets the connect's delivery pass finish before it adds rows, as its sibling does (#473)
+
+- **Implementation commit:** `44a1544a859f612a821667e28503e1aa1bdc8169`
+- **Change:** Test-only: the mixed encoding-window test lets the connect's delivery pass finish before it adds rows, as its sibling does (#473)
+- **Details:**
+  - 1.9.7's release gate failed mixedEncodingFailureWindowRefillsWithoutAnAcknowledgement in the ten suites and 4 of 5 times alone, with the race e83619d9 fixed in its sibling; with the same wait it passed 5 of 5 alone (ab-197).
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantBoundedOutboxDeliveryTests.swift` — wait for the connect's pass before adding rows
+- **User context (verbatim):**
+  > 1.9.7 carries the gate deadline, priority lanes and #473's remaining two parts, with one before-and-after soak.
+- **SpecStory:** unavailable — Claude Code agent session (library-79); no SpecStory capture configured for this session. The quote is the coordinating session's instruction, not Michael's.
+
+## October 4th, 2026 at 8:39:10 a.m. EDT — `c434e2443380` A server apply queues with local writes on the operation gate, not behind them, since its commit's work grows with every write it waits for (#473)
+
+- **Implementation commit:** `c434e24433804e988fd776061172fd276283e06f`
+- **Change:** A server apply queues with local writes on the operation gate, not behind them, since its commit's work grows with every write it waits for (#473)
+- **Details:**
+  - dev-197's focused suite failed localTransactsDoNotWaitBehindAServerApplyOverAHubComponent: a server apply held the gate 4,816 ms (catch up 2,431, commit 1,676, patch 691) and a local write waited 4,702 ms, over 375 writes; 1.9.6's gate held 983 ms with the longest write at 866 ms.
+  - Both of a server apply's gate entries, 'snapshot server apply' and 'catch up server apply', now queue interactive, first come, first served with local writes, as in 1.9.6. Prunes, retry windows and unbounded outbox listings stay in the background lane.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — the server apply's two gate entries queue interactive
+  - `Sources/InstantSwiftDataCore/AsyncSerialGate.swift` — the background lane's description
+  - `Tests/InstantSwiftDataCoreTests/InstantOperationGatePriorityTests.swift` — the gate tests' background waiter is an outbox listing
+- **User context (verbatim):**
+  > Put the server-apply regression and its numbers (4,816 ms held vs 983 ms in 1.9.6) in 1.9.7's release doc.
+- **SpecStory:** unavailable — Claude Code agent session (library-79); no SpecStory capture configured for this session. The quote is the coordinating session's instruction, not Michael's.
+
+## October 4th, 2026 at 8:39:10 a.m. EDT — `e83619d92711` Test-only: two bounded-outbox tests let the delivery pass already requested finish before they add rows or count passes (#473)
+
+- **Implementation commit:** `e83619d92711025bc915646b254b0f0bccdaae36`
+- **Change:** Test-only: two bounded-outbox tests let the delivery pass already requested finish before they add rows or count passes (#473)
+- **Details:**
+  - dev-197's ten suites failed fiftyEncodingFailuresUseBoundedRowAddressedQuarantineAndDoNotStarveTail (the connect's own pass quarantined the appended rows outside the known-issue scope) and acknowledgementTimeoutRetriesOnlyAfterReplacingTheLiveGeneration (the successor's pass, still claiming when the clock moved, found the expired deadline itself), each once. Each test now waits up to 5 s for the pump to be idle at that point; the product's behavior in both runs was correct.
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantBoundedOutboxDeliveryTests.swift` — wait for the requested pass before adding rows or counting
+- **User context (verbatim):**
+  > 1.9.7 carries the gate deadline, priority lanes and #473's remaining two parts, with one before-and-after soak.
+- **SpecStory:** unavailable — Claude Code agent session (library-79); no SpecStory capture configured for this session. The quote is the coordinating session's instruction, not Michael's.
+
+## October 4th, 2026 at 8:39:10 a.m. EDT — `3c813be96931` The operation gate's wait and stall reports name the runtime's app, and the two tests that read them count only their own runtime's (#473)
+
+- **Implementation commit:** `3c813be96931371b6771d5db0e05a284aa167a2f`
+- **Change:** The operation gate's wait and stall reports name the runtime's app, and the two tests that read them count only their own runtime's (#473)
+- **Details:**
+  - dev-197 failed aLocalWriteGoesAheadOfAnOutboxListingQueuedBeforeIt and aLocalWriteNamesThePhaseThatHeldTheGate in all three new-suite runs: each read InstantDiagnostics.shared, which every runtime in the process writes, and the suites run in parallel.
+  - AsyncSerialGate takes an owner; InstantRuntime names its operation gate after its app ID, carried as 'owner' on serial-gate.waited and serial-gate.stalled. The tests count only their runtime's lines, and the hold test waits up to 5 s for its line and expects 'commit store' or 'publish status'.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/AsyncSerialGate.swift` — owner on the gate and its reports
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — the operation gate is named for the app
+  - `Tests/InstantSwiftDataCoreTests/InstantOperationGatePriorityTests.swift` — counts only its runtime's waits
+  - `Tests/InstantSwiftDataCoreTests/InstantOperationGateHoldTests.swift` — counts only its runtime's waits and waits for the line
+- **User context (verbatim):**
+  > 1.9.7 carries the gate deadline, priority lanes and #473's remaining two parts, with one before-and-after soak.
+- **SpecStory:** unavailable — Claude Code agent session (library-79); no SpecStory capture configured for this session. The quote is the coordinating session's instruction, not Michael's.
+
+## October 4th, 2026 at 8:39:09 a.m. EDT — `7b67b843b484` Test-only: renameChunk is fileprivate, since its fixture parameter is a private type (#473)
+
+- **Implementation commit:** `7b67b843b484760ec5940087d4a4e16129b33273`
+- **Change:** Test-only: renameChunk is fileprivate, since its fixture parameter is a private type (#473)
+- **Details:**
+  - dev-197's red build on v1.9.6 stopped at InstantOperationGatePriorityTests.swift:266, 'method must be declared fileprivate because its parameter uses a private type'. No test changes.
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantOperationGatePriorityTests.swift` — renameChunk is fileprivate
+- **User context (verbatim):**
+  > 1.9.7 carries the gate deadline, priority lanes and #473's remaining two parts, with one before-and-after soak.
+- **SpecStory:** unavailable — Claude Code agent session (library-79); no SpecStory capture configured for this session. The quote is the coordinating session's instruction, not Michael's.
+
 ## October 4th, 2026 at 12:41:09 a.m. EDT — `226ab93b2a02` Document the v1.9.6 release: a stored file downloads to a destination file, streaming, and the log file is written in batches (#454 #473)
 
 - **Implementation commit:** `226ab93b2a028b01f54ca7a186e90446744197a1`
