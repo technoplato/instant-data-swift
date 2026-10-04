@@ -1,3 +1,6 @@
+## 2026-10-04 00:41:42 EDT — instant-data-swift `6883dbeaeec168ed3ebefefeadd4952e2bb38a60`
+Merge library-79-hops into main for v1.9.6 (#454 #473).
+
 ## 2026-10-04 00:40:53 EDT — instant-data-swift `226ab93b2a028b01f54ca7a186e90446744197a1`
 Document the v1.9.6 release: a stored file downloads to a destination file, streaming, and the log file is written in batches (#454 #473).
 
