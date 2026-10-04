@@ -773,7 +773,7 @@ struct InstantStorePageSkipTests {
     var last: Int?
     var after: InstantQueryCursor?
     var before: InstantQueryCursor?
-    switch Int.random(in: 0..<14, using: &rng) {
+    switch Int.random(in: 0..<17, using: &rng) {
     case 0: break
     case 1: limit = count()
     case 2: first = count()
@@ -787,6 +787,10 @@ struct InstantStorePageSkipTests {
     case 10: before = cursor(); last = count()
     case 11: after = cursor(); before = cursor()
     case 12: after = cursor(); before = cursor(); limit = count()
+    // Both ends kept from a cut: the server's cursors do not settle these.
+    case 13: after = cursor(); first = count(); last = count()
+    case 14: before = cursor(); limit = count(); last = count()
+    case 15: offset = Int.random(in: 1...4, using: &rng); first = count(); last = count()
     default: offset = Int.random(in: 1...4, using: &rng)
     }
     let selectedFields: [String]? = Double.random(in: 0..<1, using: &rng) < 0.2
