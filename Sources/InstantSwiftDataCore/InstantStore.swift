@@ -354,6 +354,8 @@ private struct PendingPublication {
   var changedNamespaces: Set<String>? = []
   /// Whether a commit changed the store; a publication of page info alone refreshes only the observers it names.
   var storeChanged = false
+  /// The store before the first commit this publication covers: what its observers last saw (#540).
+  var previousIndexes: TripleIndexes?
   var pageInfoByKey: [String: InstantQueryRemotePageInfo] = [:]
   /// The commits this publication covers, oldest first.
   var commits: [PendingCommit] = []
@@ -1588,7 +1590,7 @@ public actor InstantStore {
     // A change committed earlier and not yet published goes out first, so observers see commits in order.
     publishPendingChanges()
     var prepared = prepared
-    let changedNamespaces = install(&prepared)
+    let installed = install(&prepared)
     if observers.isEmpty {
       lastPublishMetrics = InstantStorePublishMetrics()
       recordMutation(
@@ -1602,7 +1604,8 @@ public actor InstantStore {
     }
     let refreshed = refreshObservers(
       changedEntityIDs: prepared.result.changedEntityIDs,
-      changedNamespaces: changedNamespaces,
+      changedNamespaces: installed.changedNamespaces,
+      previousIndexes: installed.previousIndexes,
       pageInfoByKey: Self.liveQueryPageInfoByKey(replacements),
       storeChanged: true,
       publishing: shouldPublish
@@ -1640,7 +1643,8 @@ public actor InstantStore {
     installingLiveQueryPageInfo replacements: [InstantLiveQueryResultReplacement] = []
   ) -> (prepared: PreparedStoreMutation, publication: InstantStorePublicationTicket?) {
     var prepared = prepared
-    let changedNamespaces = install(&prepared)
+    let installed = install(&prepared)
+    let changedNamespaces = installed.changedNamespaces
     guard !observers.isEmpty else {
       lastPublishMetrics = InstantStorePublishMetrics()
       recordMutation(
@@ -1668,6 +1672,9 @@ public actor InstantStore {
         pending.changedNamespaces = nil
       }
       pending.storeChanged = true
+      if pending.previousIndexes == nil {
+        pending.previousIndexes = installed.previousIndexes
+      }
       pending.pageInfoByKey.merge(Self.liveQueryPageInfoByKey(replacements)) { _, latest in latest }
     }
     return (prepared, ticket)
@@ -1712,6 +1719,7 @@ public actor InstantStore {
     let refreshed = refreshObservers(
       changedEntityIDs: pending.changedEntityIDs,
       changedNamespaces: pending.changedNamespaces,
+      previousIndexes: pending.previousIndexes,
       pageInfoByKey: pending.pageInfoByKey,
       storeChanged: pending.storeChanged,
       publishing: true
@@ -1780,8 +1788,11 @@ public actor InstantStore {
   }
 
   /// Installs a prepared mutation's state and returns the namespaces its changed entities belong to before and after,
-  /// or nil when its attributes changed or an entity's namespace could not be resolved, so every observer refreshes.
-  private func install(_ prepared: inout PreparedStoreMutation) -> Set<String>? {
+  /// or nil when its attributes changed or an entity's namespace could not be resolved, so every observer refreshes,
+  /// and the store it replaced.
+  private func install(
+    _ prepared: inout PreparedStoreMutation
+  ) -> (changedNamespaces: Set<String>?, previousIndexes: TripleIndexes) {
     prepared.deferredValueRemovalMetrics = prepared.indexes.removeMarkedDeferredValues(
       attributes: prepared.attributes
     )
@@ -1790,20 +1801,39 @@ public actor InstantStore {
     self.attributes = prepared.attributes
     self.indexes = prepared.indexes
     self.sequence = prepared.sequence
-    guard !observers.isEmpty || pendingPublication != nil else { return nil }
-    if previousAttributes != prepared.attributes {
+    guard !observers.isEmpty || pendingPublication != nil else { return (nil, previousIndexes) }
+    return (
+      Self.changedNamespaces(
+        changedEntityIDs: prepared.result.changedEntityIDs,
+        indexes: prepared.indexes,
+        attributes: prepared.attributes,
+        previousIndexes: previousIndexes,
+        previousAttributes: previousAttributes
+      ),
+      previousIndexes
+    )
+  }
+
+  private static func changedNamespaces(
+    changedEntityIDs: Set<String>,
+    indexes: TripleIndexes,
+    attributes: AttributeStore,
+    previousIndexes: TripleIndexes,
+    previousAttributes: AttributeStore
+  ) -> Set<String>? {
+    if previousAttributes != attributes {
       return nil
     }
     var resolvedNamespaces: Set<String> = []
-    for entityID in prepared.result.changedEntityIDs {
+    for entityID in changedEntityIDs {
       let entityNamespaces = previousIndexes.namespaces(
         entityID: entityID,
         attributes: previousAttributes
       )
       .union(
-        prepared.indexes.namespaces(
+        indexes.namespaces(
           entityID: entityID,
-          attributes: prepared.attributes
+          attributes: attributes
         )
       )
       if entityNamespaces.isEmpty {
@@ -1820,6 +1850,7 @@ public actor InstantStore {
   private func refreshObservers(
     changedEntityIDs: Set<String>,
     changedNamespaces: Set<String>?,
+    previousIndexes: TripleIndexes?,
     pageInfoByKey: [String: InstantQueryRemotePageInfo],
     storeChanged: Bool,
     publishing: Bool
@@ -1847,6 +1878,7 @@ public actor InstantStore {
               changedNamespaces: changedNamespaces,
               changedEntityIDs: changedEntityIDs,
               indexes: indexes,
+              previousIndexes: previousIndexes,
               attributes: attributes
             ))
       else {
@@ -1865,6 +1897,7 @@ public actor InstantStore {
           observer,
           changedEntityIDs: changedEntityIDs,
           indexes: indexes,
+          previousIndexes: previousIndexes,
           attributes: attributes,
           sequence: sequence
         ) {
@@ -1973,6 +2006,7 @@ public actor InstantStore {
     changedNamespaces: Set<String>?,
     changedEntityIDs: Set<String>,
     indexes: TripleIndexes,
+    previousIndexes: TripleIndexes?,
     attributes: AttributeStore
   ) -> Bool {
     guard let changedNamespaces else { return true }
@@ -1985,7 +2019,11 @@ public actor InstantStore {
     } else {
       return true
     }
-    if observer.plan.filters.isEmpty && (observer.plan.includes?.isEmpty ?? true) {
+    // Every change in the namespace can change a page with neither filters nor includes, unless the server's cursors
+    // cut the page (#540).
+    if observer.plan.filters.isEmpty && (observer.plan.includes?.isEmpty ?? true)
+      && !indexes.pageIsCutByServerCursors(observer.plan, remotePageInfo: observer.remotePageInfo)
+    {
       return true
     }
     if observer.lastValues.contains(anyEntityID: changedEntityIDs) {
@@ -1993,7 +2031,13 @@ public actor InstantStore {
     }
     if observer.plan.hasOnlyNamespaceLocalDependencies {
       for entityID in changedEntityIDs {
-        if indexes.entityMatches(entityID, plan: observer.plan, attributes: attributes) {
+        if Self.unheldEntity(
+          entityID,
+          canChange: observer,
+          indexes: indexes,
+          previousIndexes: previousIndexes,
+          attributes: attributes
+        ) {
           return true
         }
       }
@@ -2002,15 +2046,56 @@ public actor InstantStore {
     return true
   }
 
+  /// Whether a write to `entityID`, which the observer's page does not show, can change the page (#540). A page the
+  /// server's cursors cut changes only when the entity now sorts inside the cut. Any other page changes when the entity
+  /// matches its filters now or matched them before the write: one that stops matching leaves the rows an offset
+  /// skips, `last` keeps, or the page info counts (1.9.8 asked only whether it matches now).
+  private static func unheldEntity(
+    _ entityID: String,
+    canChange observer: StoreObserver,
+    indexes: TripleIndexes,
+    previousIndexes: TripleIndexes?,
+    attributes: AttributeStore
+  ) -> Bool {
+    if let canEnter = indexes.unheldEntityCanEnterPage(
+      entityID,
+      plan: observer.plan,
+      attributes: attributes,
+      remotePageInfo: observer.remotePageInfo
+    ) {
+      return canEnter
+    }
+    if indexes.entityMatches(entityID, plan: observer.plan, attributes: attributes) {
+      return true
+    }
+    guard let previousIndexes else { return true }
+    return previousIndexes.entityMatches(entityID, plan: observer.plan, attributes: attributes)
+  }
+
   private static func splicedEmission(
     _ observer: StoreObserver,
     changedEntityIDs: Set<String>,
     indexes: TripleIndexes,
+    previousIndexes: TripleIndexes?,
     attributes: AttributeStore,
     sequence: Int64
   ) -> InstantQueryEmission? {
     let representedIDs = observer.lastValues.allEntityIDs()
-    guard changedEntityIDs.isSubset(of: representedIDs) else { return nil }
+    if !changedEntityIDs.isSubset(of: representedIDs) {
+      // A row the page does not show stays out of the splice when it cannot change the page (#540): a save that also
+      // writes another namespace, or adds a row past the server's end cursor, still splices the rows the page shows.
+      guard observer.plan.hasOnlyNamespaceLocalDependencies,
+        !changedEntityIDs.subtracting(representedIDs).contains(where: { entityID in
+          Self.unheldEntity(
+            entityID,
+            canChange: observer,
+            indexes: indexes,
+            previousIndexes: previousIndexes,
+            attributes: attributes
+          )
+        })
+      else { return nil }
+    }
     var parentIDsToReplace = Set<String>()
     for snapshot in observer.lastValues {
       if changedEntityIDs.contains(snapshot.id)

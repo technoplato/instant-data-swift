@@ -2169,6 +2169,64 @@ struct TripleIndexes: Codable, Sendable {
     entitySnapshot(entityID, plan: plan, attributes: attributes, projecting: false) != nil
   }
 
+  /// Whether the server's page info cuts the page of `plan`, or keeps it empty until the server answers, as upstream
+  /// `instaql.ts` does for every query with an offset, `after` or `before` (#540).
+  func pageIsCutByServerCursors(
+    _ plan: InstantQueryPlan,
+    remotePageInfo: InstantQueryRemotePageInfo?
+  ) -> Bool {
+    remotePageInfo != nil && requiresRemotePageInfo(plan)
+  }
+
+  /// Whether `entityID`, after a write, can be on the page of `plan` with `remotePageInfo`, for a plan whose rows
+  /// depend only on their own fields and a page that does not hold the entity (#540). `nil` when the page depends on
+  /// rows outside it as well, so the entity's state before the write decides.
+  ///
+  /// A page the server's cursors cut (upstream `instaql.ts` cuts every query with an offset, `after` or `before` at the
+  /// server's `start-cursor` and `end-cursor`) keeps only the rows between them, then its `first`, `last` or `limit`,
+  /// and its page info is the server's. A row outside the cut cannot change it, however the write moved the row, so
+  /// a live timeline's frozen pages skip a save to its newest section. A page still waiting for the server's cursors,
+  /// or one the server answered empty, is empty whatever the store holds. `first` or `limit` together with `last`
+  /// keeps a run from the middle of the cut, which a row leaving the cut shifts, and a cursor without a sort value
+  /// compares by entity ID alone, which does not follow the rows' order, so those pages answer `nil`.
+  func unheldEntityCanEnterPage(
+    _ entityID: String,
+    plan: InstantQueryPlan,
+    attributes: AttributeStore,
+    remotePageInfo: InstantQueryRemotePageInfo?
+  ) -> Bool? {
+    guard requiresRemotePageInfo(plan), let remotePageInfo else { return nil }
+    guard case let .ready(pageInfo) = remotePageInfo, let startCursor = pageInfo.startCursor else {
+      return false
+    }
+    guard isValidPagination(plan) else { return false }
+    guard plan.last == nil || (plan.first == nil && plan.limit == nil),
+      startCursor.sortValue != nil,
+      pageInfo.endCursor.map({ $0.sortValue != nil }) ?? true
+    else { return nil }
+    let order = Self.effectiveOrder(plan.order)
+    var metrics = QueryMaterializationMetrics()
+    // The bounded page's own candidate: its filters, and its sort value from the index or the row.
+    guard
+      let candidate = boundedQuerySnapshot(
+        entityID: entityID,
+        plan: plan,
+        order: order,
+        filtersFullyCoveredByIndex: false,
+        candidateNamespaceIsKnown: false,
+        attributes: attributes,
+        metrics: &metrics
+      )
+    else { return false }
+    return boundedRangePosition(
+      candidate,
+      plan: plan,
+      order: order,
+      attributes: attributes,
+      remotePageInfo: remotePageInfo
+    ) == .inside
+  }
+
   /// Materializes one entity against `plan` filters, includes, and selected fields.
   /// Returns nil when the entity is missing or no longer matches the plan.
   func entitySnapshot(
