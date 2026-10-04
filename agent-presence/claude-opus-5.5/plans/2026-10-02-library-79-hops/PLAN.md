@@ -168,8 +168,13 @@ the model server was idle just after `connect()`, before the kickstart's add-que
 test now waits for the window to show the server's pages. The green run failed `SwiftConcurrencyGuidanceTests`: #474's
 `InstantLiveMessage` extension sat between `InstantLiveReceivedFrames`'s SAFETY comment and its `@unchecked Sendable`
 declaration; it moves above the documentation. `racingPresencePublishesLeaveTheNewestOnTheWire` failed 1 of 3 runs:
-each send writes from its own task, so an older set-presence could pass a newer one. The rooms agent owns that fix
-(main, 2026-10-04: "the rooms agent ... owns the presence race fix, so don't build your own"); 1.9.8's gate waits for
-its commits, merged into this branch, and dev-198b runs with them. Touching
-`Sources/InstantSwiftDataCore/InstantRuntimeLiveSession.swift` (the extension's place only) and
-`Tests/InstantSwiftDataCoreTests/InstantInfiniteQueryLeadingRowsTests.swift`, added 2026-10-04 15:00 EDT.
+each send writes from its own task, so an older set-presence could pass a newer one. Main's final call (2026-10-04,
+after messages crossed): "your ordered send lane is the fix (it matches Reactor.js) ... The rooms agent has paused its
+version and will review yours for two holes": no older write may follow the join-room-ok flush (never 6, 5, 6), and
+writes still waiting when the room is left must return. Each room's presence writes take one lane in the order the live
+session recorded them; the lane and its waiters live off `RegisteredRoom`; a write skips when a presence at least as
+new was already written to the same socket; a registration carries an incarnation, so a write that waited across a
+leave and a rejoin does not write. Red tests first. Touching
+`Sources/InstantSwiftDataCore/InstantRuntimeLiveSession.swift`, `InstantRuntime.swift` (a test accessor),
+`Tests/InstantSwiftDataCoreTests/InstantRoomPresenceRuntimeTests.swift` and
+`InstantInfiniteQueryLeadingRowsTests.swift`, added 2026-10-04 15:00 EDT, the lane at 15:25 EDT.
