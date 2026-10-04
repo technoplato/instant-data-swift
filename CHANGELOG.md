@@ -10,6 +10,21 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## October 4th, 2026 at 9:21:51 a.m. EDT — `85ffb88815a7` Record the rooms red-then-green gate in ADR 0019 and PROGRESS: red on v1.9.5, green on 681a0ba9 (#461)
+
+- **Implementation commit:** `85ffb88815a7bdb849af95fd7441b9bd8e1cdf23`
+- **Change:** ADR 0019 and PROGRESS record the rooms red-then-green gate: red on 186d2f74 (v1.9.5 plus the red tests), green on 681a0ba9, and the hand-off of the branch to library-79's next release (#461).
+- **Details:**
+  - Red: all 9 red tests recorded their known issues (13); the three existing room tests passed. Green: room suites 51/51, CLI, recipe and wrapper room tests 67/67, fast drain, survival and live transport 139/140; the one miss, liveTimeoutDoesNotAwaitCancellationInsensitiveWork (0.314 s against 0.25 s), also misses under load in library-79's v1.9.5 and v1.9.6 gates and passed 5 of 5 alone on this build.
+  - The 10,000-broadcast run: every message once and in order in 182 ms, median 100-message batch 2.35 ms first and 1.40 ms last, 128 held. Records: /Users/laptop/Sync/audit/room-bench-2026-10-03/gate/.
+- **Files:**
+  - `docs/adr/0019-rooms-and-presence-parity.md` — the status and the gate's evidence
+  - `PROGRESS.md` — the gate checkpoint, the release hand-off and how to continue
+- **User context (verbatim):**
+  > That sounds good to me for the, uh, rooms plan, so go ahead and knock that out with a subagent.
+  > Good plan. And let's get feature parody and performance parody with Swift and typescript, please.
+- **SpecStory:** unavailable — Claude Code agent session (rooms subagent under main); no SpecStory capture configured for this session.
+
 ## October 3rd, 2026 at 7:00:48 p.m. EDT — `27770ee90435` Keep the room tests' checks steady on a loaded Mac: the topic run compares median batches, and waits get 5 s (#461)
 
 - **Implementation commit:** `27770ee904352ed38c29021135755ef7cd32f4c8`

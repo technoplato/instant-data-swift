@@ -1,3 +1,6 @@
+## 2026-10-04 09:21:37 EDT — instant-data-swift `85ffb88815a7bdb849af95fd7441b9bd8e1cdf23`
+Record the rooms red-then-green gate in ADR 0019 and PROGRESS: red on v1.9.5, green on 681a0ba9 (#461)
+
 ## 2026-10-03 19:00:23 EDT — instant-data-swift `27770ee904352ed38c29021135755ef7cd32f4c8`
 Keep the room tests' checks steady on a loaded Mac: the topic run compares median batches, and waits get 5 s (#461)
 
