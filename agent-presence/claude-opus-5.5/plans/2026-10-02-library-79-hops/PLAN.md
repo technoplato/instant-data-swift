@@ -160,3 +160,16 @@ and every other frame are still applied in order. Red test first. Touching
 `Sources/InstantSwiftDataCore/InstantRuntimeLiveSession.swift`,
 `Tests/InstantSwiftDataCoreTests/InstantLiveConnectionSurvivalTests.swift`, and new `docs/releases/v1.9.8.md`, added
 2026-10-03 20:25 EDT.
+
+## v1.9.8 after dev-198 (2026-10-04 14:46 EDT)
+
+dev-198's red run on v1.9.7 failed #474's two tests and #522's as intended, but #516's passed: it read the window when
+the model server was idle just after `connect()`, before the kickstart's add-query, so it saw the local window. The
+test now waits for the window to show the server's pages. The green run failed `SwiftConcurrencyGuidanceTests`: #474's
+`InstantLiveMessage` extension sat between `InstantLiveReceivedFrames`'s SAFETY comment and its `@unchecked Sendable`
+declaration; it moves above the documentation. `racingPresencePublishesLeaveTheNewestOnTheWire` failed 1 of 3 runs:
+each send writes from its own task, so an older set-presence could pass a newer one. The rooms agent owns that fix
+(main, 2026-10-04: "the rooms agent ... owns the presence race fix, so don't build your own"); 1.9.8's gate waits for
+its commits, merged into this branch, and dev-198b runs with them. Touching
+`Sources/InstantSwiftDataCore/InstantRuntimeLiveSession.swift` (the extension's place only) and
+`Tests/InstantSwiftDataCoreTests/InstantInfiniteQueryLeadingRowsTests.swift`, added 2026-10-04 15:00 EDT.
