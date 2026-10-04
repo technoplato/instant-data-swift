@@ -176,68 +176,66 @@ struct InstantWriteFailureKindTests {
         recovery: "None."
       )
     }
-    let cases: [(String, any Error, InstantWriteFailureKind)] = [
-      ("offline", error(.networkFailed, message: "The Instant live session is not open."), .transient),
-      ("a local permission rule", error(.permissionRejected, message: "Not allowed."), .rejected(.permissionDenied)),
-      ("SQLite busy", error(.persistenceFailed, message: "database is locked"), .transient),
-      ("SQLite locked table", error(.persistenceFailed, message: "database table is locked"), .transient),
-      ("SQLite I/O", error(.persistenceFailed, message: "disk I/O error"), .transient),
-      ("SQLite full", error(.persistenceFailed, message: "database or disk is full"), .transient),
-      ("SQLite memory", error(.persistenceFailed, message: "out of memory"), .transient),
-      (
-        "the store changed under the write",
-        error(
-          .persistenceFailed,
-          operation: "persist transaction",
-          message: "The local store changed repeatedly while persisting transaction 'tx'."
-        ),
-        .transient
-      ),
-      ("a corrupt store", error(.persistenceFailed, message: "database disk image is malformed"), .unknown),
-      ("auth", error(.authFailed, message: "No session."), .unknown),
-      ("decode", error(.decodeFailed, message: "Bad row."), .unknown),
-      ("implementation", error(.implementationFailed, message: "Bug."), .unknown),
-      (
-        "a lookup that matched two entities",
-        error(.validationFailed, operation: "lookup entity", message: "Lookup ref 'x' matched more than one local entity."),
-        .unknown
-      ),
-      (
-        "a required fact that is not here",
-        error(.validationFailed, operation: "require triple", message: "No existing triple was found."),
-        .unknown
-      ),
-      (
-        "a server refusal",
-        error(.validationFailed, message: "Record not unique.", serverStatus: 400, serverType: "record-not-unique"),
-        .rejected(.refusedByServer)
-      ),
-      (
-        "a server timeout",
-        error(.validationFailed, message: "Operation timed out.", serverStatus: 500, serverType: "timeout"),
-        .transient
-      ),
-      ("a rate limit", error(.validationFailed, message: "Slow down.", serverStatus: 429), .transient),
-      ("a merge on a link", error(.validationFailed, message: "Merge is not supported for ref attributes."), .rejected(.invalidWrite)),
-      (
-        "a required attribute set to null",
-        error(.validationFailed, message: "Required attribute 'todos/text' cannot be set to null."),
-        .rejected(.invalidValue)
-      ),
-      ("an undeclared link", error(.validationFailed, message: "No ref attribute named 'todos/owner' is declared."), .rejected(.unknownAttribute)),
-      ("a cancelled call", CancellationError(), .transient),
-      (
-        "a value that cannot be encoded",
-        EncodingError.invalidValue(Double.nan, .init(codingPath: [], debugDescription: "NaN")),
-        .rejected(.invalidValue)
-      ),
-      ("no network", URLError(.notConnectedToInternet), .transient),
-      ("a bad URL", URLError(.badURL), .unknown),
-      ("another error", NSError(domain: "Other", code: 1), .unknown),
-    ]
-    for (label, failure, expected) in cases {
+    func check(_ label: String, _ failure: any Error, _ expected: InstantWriteFailureKind) {
       expectNoDifference(InstantWriteFailureKind(classifying: failure), expected, "\(label)")
     }
+    check("offline", error(.networkFailed, message: "The Instant live session is not open."), .transient)
+    check("a local permission rule", error(.permissionRejected, message: "Not allowed."), .rejected(.permissionDenied))
+    check("SQLite busy", error(.persistenceFailed, message: "database is locked"), .transient)
+    check("SQLite locked table", error(.persistenceFailed, message: "database table is locked"), .transient)
+    check("SQLite I/O", error(.persistenceFailed, message: "disk I/O error"), .transient)
+    check("SQLite full", error(.persistenceFailed, message: "database or disk is full"), .transient)
+    check("SQLite memory", error(.persistenceFailed, message: "out of memory"), .transient)
+    check(
+      "the store changed under the write",
+      error(
+        .persistenceFailed,
+        operation: "persist transaction",
+        message: "The local store changed repeatedly while persisting transaction 'tx'."
+      ),
+      .transient
+    )
+    check("a corrupt store", error(.persistenceFailed, message: "database disk image is malformed"), .unknown)
+    check("auth", error(.authFailed, message: "No session."), .unknown)
+    check("decode", error(.decodeFailed, message: "Bad row."), .unknown)
+    check("implementation", error(.implementationFailed, message: "Bug."), .unknown)
+    check(
+      "a lookup that matched two entities",
+      error(.validationFailed, operation: "lookup entity", message: "Lookup ref 'x' matched more than one local entity."),
+      .unknown
+    )
+    check(
+      "a required fact that is not here",
+      error(.validationFailed, operation: "require triple", message: "No existing triple was found."),
+      .unknown
+    )
+    check(
+      "a server refusal",
+      error(.validationFailed, message: "Record not unique.", serverStatus: 400, serverType: "record-not-unique"),
+      .rejected(.refusedByServer)
+    )
+    check(
+      "a server timeout",
+      error(.validationFailed, message: "Operation timed out.", serverStatus: 500, serverType: "timeout"),
+      .transient
+    )
+    check("a rate limit", error(.validationFailed, message: "Slow down.", serverStatus: 429), .transient)
+    check("a merge on a link", error(.validationFailed, message: "Merge is not supported for ref attributes."), .rejected(.invalidWrite))
+    check(
+      "a required attribute set to null",
+      error(.validationFailed, message: "Required attribute 'todos/text' cannot be set to null."),
+      .rejected(.invalidValue)
+    )
+    check("an undeclared link", error(.validationFailed, message: "No ref attribute named 'todos/owner' is declared."), .rejected(.unknownAttribute))
+    check("a cancelled call", CancellationError(), .transient)
+    check(
+      "a value that cannot be encoded",
+      EncodingError.invalidValue(Double.nan, .init(codingPath: [], debugDescription: "NaN")),
+      .rejected(.invalidValue)
+    )
+    check("no network", URLError(.notConnectedToInternet), .transient)
+    check("a bad URL", URLError(.badURL), .unknown)
+    check("another error", NSError(domain: "Other", code: 1), .unknown)
   }
 
   @Test
@@ -253,43 +251,41 @@ struct InstantWriteFailureKindTests {
       mutation.failure = failure
       return mutation
     }
-    let cases: [(String, PendingMutation, InstantWriteFailureKind?)] = [
-      (
-        "a permission refusal",
-        failed(InstantMutationFailure(code: .permissionRejected, message: "Permission denied", status: 400, type: "permission-denied")),
-        .rejected(.permissionDenied)
-      ),
-      (
-        "a server validation refusal",
-        failed(InstantMutationFailure(code: .validationFailed, message: "Invalid value", status: 400, type: "validation-failed")),
-        .rejected(.refusedByServer)
-      ),
-      (
-        "a server timeout the library retries",
-        failed(InstantMutationFailure(code: .validationFailed, message: "Operation timed out", status: 500)),
-        .transient
-      ),
-      (
-        "an attribute the library could not resolve yet",
-        failed(InstantMutationFailure(code: .validationFailed, message: "Could not resolve 'todos/text' from the attrs.")),
-        .transient
-      ),
-      (
-        "the library's own size quarantine",
-        failed(
-          InstantMutationFailure(
-            code: .validationFailed,
-            message: "Instant quarantined durable mutation 'tx' because its 9-byte body exceeds the 8-byte automatic-delivery limit."
-          )
-        ),
-        .rejected(.invalidWrite)
-      ),
-      ("an older row with only a permission message", failed(nil, message: "Permission denied: not perms-pass?"), .rejected(.permissionDenied)),
-      ("an older row with another message", failed(nil, message: "Something went wrong."), .unknown),
-    ]
-    for (label, mutation, expected) in cases {
+    func check(_ label: String, _ mutation: PendingMutation, _ expected: InstantWriteFailureKind?) {
       expectNoDifference(mutation.failureKind, expected, "\(label)")
     }
+    check(
+      "a permission refusal",
+      failed(InstantMutationFailure(code: .permissionRejected, message: "Permission denied", status: 400, type: "permission-denied")),
+      .rejected(.permissionDenied)
+    )
+    check(
+      "a server validation refusal",
+      failed(InstantMutationFailure(code: .validationFailed, message: "Invalid value", status: 400, type: "validation-failed")),
+      .rejected(.refusedByServer)
+    )
+    check(
+      "a server timeout the library retries",
+      failed(InstantMutationFailure(code: .validationFailed, message: "Operation timed out", status: 500)),
+      .transient
+    )
+    check(
+      "an attribute the library could not resolve yet",
+      failed(InstantMutationFailure(code: .validationFailed, message: "Could not resolve 'todos/text' from the attrs.")),
+      .transient
+    )
+    check(
+      "the library's own size quarantine",
+      failed(
+        InstantMutationFailure(
+          code: .validationFailed,
+          message: "Instant quarantined durable mutation 'tx' because its 9-byte body exceeds the 8-byte automatic-delivery limit."
+        )
+      ),
+      .rejected(.invalidWrite)
+    )
+    check("an older row with only a permission message", failed(nil, message: "Permission denied: not perms-pass?"), .rejected(.permissionDenied))
+    check("an older row with another message", failed(nil, message: "Something went wrong."), .unknown)
     var pending = failed(nil, message: "Permission denied")
     pending.status = .pending
     expectNoDifference(pending.failureKind, nil, "only a failed mutation has a failure kind")
