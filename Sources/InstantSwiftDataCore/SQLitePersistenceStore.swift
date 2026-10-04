@@ -10573,15 +10573,17 @@ public actor SQLitePersistenceStore {
     return rows.first
   }
 
+  /// The file's bytes from the library's own copy, or nil when it has none: no record, a record of an upload another
+  /// session ran (#491), or a cached copy the system purged. The caller downloads it then.
   public func readStoredFileContents(
     appID: String,
     fileID: String
   ) throws -> InstantStoredFileContents? {
-    guard let file = try loadStoredFile(appID: appID, fileID: fileID) else {
+    guard let file = try loadStoredFile(appID: appID, fileID: fileID), let heldCopyURL = file.heldCopyURL else {
       return nil
     }
     do {
-      let data = try Data(contentsOf: URL(fileURLWithPath: file.localPath))
+      let data = try Data(contentsOf: heldCopyURL)
       return InstantStoredFileContents(file: file, data: data)
     } catch {
       throw persistenceError(

@@ -10602,7 +10602,7 @@ public final class InstantRuntime: Sendable {
       operation: "read file",
       recovery: "Pass the id returned by 'instant-swift-data files list'."
     )
-    let name = try rawName.map {
+    let requestedName = try rawName.map {
       try validatedNonEmpty(
         $0,
         label: "File name",
@@ -10618,6 +10618,10 @@ public final class InstantRuntime: Sendable {
     ) {
       return contents
     }
+    // No copy of the library's own: a record of an upload another session ran (#491), or a cached copy the system
+    // purged. The record still names the storage path, so storage is asked for it directly.
+    let record = try await persistence.loadStoredFile(appID: configuration.appID, fileID: id)
+    let name = requestedName ?? record?.name
 
     guard let storageTransport else {
       throw validationFailed(
@@ -10638,17 +10642,19 @@ public final class InstantRuntime: Sendable {
         )
       )
       let now = configuration.now()
-      let file = InstantStoredFile(
-        id: id,
-        appID: configuration.appID,
-        name: name,
-        contentType: nil,
-        byteCount: Int64(data.count),
-        localPath: "",
-        ownerUserID: userID,
-        createdAt: now,
-        updatedAt: now
-      )
+      let file =
+        record
+        ?? InstantStoredFile(
+          id: id,
+          appID: configuration.appID,
+          name: name,
+          contentType: nil,
+          byteCount: Int64(data.count),
+          localPath: "",
+          ownerUserID: userID,
+          createdAt: now,
+          updatedAt: now
+        )
       let saved = try await persistence.saveDownloadedFile(file, data: data)
       let localFiles = try await persistence.loadStoredFiles(appID: configuration.appID)
       await storedFilesObservers.publish(localFiles, for: storedFilesObservationKey)
@@ -10713,7 +10719,7 @@ public final class InstantRuntime: Sendable {
       operation: "download file",
       recovery: "Pass the id returned by 'instant-swift-data files list'."
     )
-    let name = try rawName.map {
+    let requestedName = try rawName.map {
       try validatedNonEmpty(
         $0,
         label: "File name",
@@ -10731,11 +10737,15 @@ public final class InstantRuntime: Sendable {
     }
 
     let userID = try await resolvedFileUserID(operation: "download file")
-    if var held = try await persistence.loadStoredFile(appID: configuration.appID, fileID: id) {
-      try Self.placeDownloadedFile(copying: URL(fileURLWithPath: held.localPath), at: destination)
+    let record = try await persistence.loadStoredFile(appID: configuration.appID, fileID: id)
+    if var held = record, let heldCopyURL = held.heldCopyURL {
+      try Self.placeDownloadedFile(copying: heldCopyURL, at: destination)
       held.localPath = destination.path
       return held
     }
+    // No copy of the library's own (an upload another session ran, #491, or a purged cache): the record still names
+    // the storage path.
+    let name = requestedName ?? record?.name
 
     guard let storageTransport else {
       throw validationFailed(
@@ -10758,17 +10768,19 @@ public final class InstantRuntime: Sendable {
         )
       )
       let now = configuration.now()
-      file = InstantStoredFile(
-        id: id,
-        appID: configuration.appID,
-        name: name,
-        contentType: nil,
-        byteCount: 0,
-        localPath: "",
-        ownerUserID: userID,
-        createdAt: now,
-        updatedAt: now
-      )
+      file =
+        record
+        ?? InstantStoredFile(
+          id: id,
+          appID: configuration.appID,
+          name: name,
+          contentType: nil,
+          byteCount: 0,
+          localPath: "",
+          ownerUserID: userID,
+          createdAt: now,
+          updatedAt: now
+        )
     } else {
       guard configuration.liveTransport != nil else {
         throw validationFailed(

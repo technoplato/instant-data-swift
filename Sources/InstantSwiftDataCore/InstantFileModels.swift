@@ -95,6 +95,13 @@ public struct InstantStoredFile: Hashable, Codable, Sendable, Identifiable {
   }
 
   public var isDownloaded: Bool { !localPath.isEmpty }
+
+  /// The library's own copy of the file, if it still has one. A record of an upload another session ran has no
+  /// `localPath` (#491), and the system may have purged a cached copy: then a read downloads from storage.
+  var heldCopyURL: URL? {
+    guard !localPath.isEmpty, FileManager.default.fileExists(atPath: localPath) else { return nil }
+    return URL(fileURLWithPath: localPath)
+  }
 }
 
 public struct InstantStoredFileContents: Hashable, Codable, Sendable {
