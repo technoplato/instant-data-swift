@@ -365,6 +365,172 @@ extension InstantRoomPresenceRuntimeTests {
     _ = try await runtime.closeConnection()
   }
 
+  /// An older presence whose write is slow must not land after a newer one. Each send writes from its own task, so
+  /// without one ordered lane per room the newer set-presence passed the slow one and the wire ended on the older
+  /// presence: `racingPresencePublishesLeaveTheNewestOnTheWire` failed 1 of 3 runs under load in library-79's 1.9.8
+  /// dev run. `Reactor.js` writes with a synchronous `ws.send`, in call order.
+  @Test
+  func anOlderPresenceWhoseWriteIsSlowNeverLandsAfterANewerOne() async throws {
+    let room = InstantRoomHandle(type: "recording", id: "room-slow-write")
+    let session = LiveReactorParitySession(messages: [
+      liveReactorInitOK(attrs: liveReactorTodoServerAttrs, sessionID: "session-self")
+    ])
+    let writes = SlowFirstPresenceWrite()
+    let inner = session.webSocketSession
+    let slowFirstWrite = InstantLiveWebSocketSession(
+      send: { message in
+        guard message.op == "set-presence" else {
+          try await inner.send(message)
+          return
+        }
+        let order = await writes.arrive()
+        if order == 1 {
+          await writes.holdTheFirstWrite()
+        }
+        try await inner.send(message)
+        if order == 2 {
+          await writes.secondWriteReturned()
+        }
+      },
+      receive: { try await inner.receive() },
+      close: { await inner.close() },
+      abort: { inner.abort() }
+    )
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: try roomConfiguration(
+        appID: "room-presence-slow-write",
+        transport: .immediate { _ in slowFirstWrite }
+      )
+    )
+    _ = try await runtime.connect()
+    _ = try await runtime.joinRoom(room)
+    try await joinAndWaitForPeers(runtime: runtime, session: session, room: room)
+
+    let first = Task {
+      _ = try await runtime.setPresence(room: room, userID: "user-self", values: ["n": .number(1)])
+    }
+    try await waitForRoom("the first set-presence to reach the socket") { await writes.arrivals >= 1 }
+    _ = try await runtime.setPresence(room: room, userID: "user-self", values: ["n": .number(2)])
+    try await first.value
+    let presenceOnTheWire = await session.sentMessages()
+      .filter { $0.op == "set-presence" }
+      .compactMap { $0.fields["data"]?.jsonValue }
+    expectNoDifference(
+      presenceOnTheWire,
+      [.object(["n": .number(1)]), .object(["n": .number(2)])],
+      "set-presence in the order the runtime published it"
+    )
+    _ = try await runtime.closeConnection()
+  }
+
+  /// The `join-room-ok` flush writes the room's newest presence. A write queued behind it with an older publication
+  /// must not follow it, or peers see 3, 2, 3. Here the flush waits behind a write the dropped socket never finished,
+  /// and two newer publications queue behind the flush.
+  @Test
+  func noOlderPresenceFollowsTheJoinFlushOnANewSocket() async throws {
+    let room = InstantRoomHandle(type: "recording", id: "room-join-flush")
+    let first = LiveReactorParitySession(messages: [
+      liveReactorInitOK(attrs: liveReactorTodoServerAttrs, sessionID: "session-before-drop")
+    ])
+    let second = LiveReactorParitySession(messages: [
+      liveReactorInitOK(attrs: liveReactorTodoServerAttrs, sessionID: "session-after-drop")
+    ])
+    let held = HeldPresenceWrite()
+    let sessions = ScriptedRoomSessions([held.wrapping(first.webSocketSession), second.webSocketSession])
+    var configuration = try roomConfiguration(appID: "room-join-flush", transport: .immediate { _ in try sessions.next() })
+    configuration.liveReconnectSleep = { _ in }
+    let runtime = try await InstantRuntime.bootstrap(configuration: configuration)
+    _ = try await runtime.connect()
+    _ = try await runtime.joinRoom(room)
+    try await joinAndWaitForPeers(runtime: runtime, session: first, room: room)
+
+    // A write to the first socket that never finishes, holding the room's lane.
+    let stuck = Task { _ = try? await runtime.setPresence(room: room, userID: "user-self", values: ["n": .number(1)]) }
+    try await waitForRoom("the first write to reach the first socket") { await held.arrivals >= 1 }
+    await first.failReceive(
+      InstantError(
+        code: .networkFailed,
+        operation: "drop the room's socket",
+        message: "transient drop",
+        recovery: "Rejoin on the next socket."
+      )
+    )
+    try await waitForRoom("the room's rejoin on the second socket") {
+      await second.sentMessages().contains { $0.op == "join-room" }
+    }
+    await second.enqueue(InstantLiveMessage(op: "join-room-ok", fields: ["room-id": .string(room.id)]))
+    try await waitForRoom("the join flush to queue behind the stuck write") {
+      await runtime.roomPresenceLaneWaiterCountForTesting(room) == 1
+    }
+    let older = Task { _ = try? await runtime.setPresence(room: room, userID: "user-self", values: ["n": .number(2)]) }
+    try await waitForRoom("the second publication to queue") {
+      await runtime.roomPresenceLaneWaiterCountForTesting(room) == 2
+    }
+    let newest = Task { _ = try? await runtime.setPresence(room: room, userID: "user-self", values: ["n": .number(3)]) }
+    try await waitForRoom("the third publication to queue") {
+      await runtime.roomPresenceLaneWaiterCountForTesting(room) == 3
+    }
+
+    await held.release()
+    _ = await (stuck.value, older.value, newest.value)
+    let presenceOnTheSecondSocket = await second.sentMessages()
+      .filter { $0.op == "set-presence" }
+      .compactMap { $0.fields["data"]?.jsonValue }
+    expectNoDifference(
+      presenceOnTheSecondSocket,
+      [.object(["n": .number(3)])],
+      "the flush writes the newest presence and the older writes behind it are skipped"
+    )
+    _ = try await runtime.closeConnection()
+  }
+
+  /// Writes waiting in a room's presence lane when the room is left must return, not wait forever, and must not
+  /// write: the lane is handed on whether or not the room is still registered.
+  @Test
+  func presenceWritesWaitingWhenTheRoomIsLeftReturnWithoutWriting() async throws {
+    let room = InstantRoomHandle(type: "recording", id: "room-left-while-waiting")
+    let session = LiveReactorParitySession(messages: [
+      liveReactorInitOK(attrs: liveReactorTodoServerAttrs, sessionID: "session-self")
+    ])
+    let held = HeldPresenceWrite()
+    let heldSession = held.wrapping(session.webSocketSession)
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: try roomConfiguration(
+        appID: "room-left-while-waiting",
+        transport: .immediate { _ in heldSession }
+      )
+    )
+    _ = try await runtime.connect()
+    _ = try await runtime.joinRoom(room)
+    try await joinAndWaitForPeers(runtime: runtime, session: session, room: room)
+
+    let writing = Task { _ = try? await runtime.setPresence(room: room, userID: "user-self", values: ["n": .number(1)]) }
+    try await waitForRoom("the first write to reach the socket") { await held.arrivals >= 1 }
+    let second = Task { _ = try? await runtime.setPresence(room: room, userID: "user-self", values: ["n": .number(2)]) }
+    try await waitForRoom("the second write to queue") { await runtime.roomPresenceLaneWaiterCountForTesting(room) == 1 }
+    let third = Task { _ = try? await runtime.setPresence(room: room, userID: "user-self", values: ["n": .number(3)]) }
+    try await waitForRoom("the third write to queue") { await runtime.roomPresenceLaneWaiterCountForTesting(room) == 2 }
+
+    _ = try await runtime.leaveRoom(room)
+    await held.release()
+    let finished = RoomTaskCompletion()
+    let waiters = Task {
+      _ = await (writing.value, second.value, third.value)
+      await finished.mark()
+    }
+    try await waitForRoom("every presence write to return after the room was left") { await finished.isDone }
+    waiters.cancel()
+    let written = await session.sentMessages()
+      .filter { $0.op == "set-presence" }
+      .compactMap { $0.fields["data"]?.jsonValue }
+    #expect(
+      !written.contains(.object(["n": .number(2)])) && !written.contains(.object(["n": .number(3)])),
+      "writes that waited past the leave did not write: \(written)"
+    )
+    #expect(await runtime.roomPresenceLaneWaiterCountForTesting(room) == 0)
+    _ = try await runtime.closeConnection()
+  }
+
   /// `Reactor.js` reports `isLoading: !room.isConnected`: false until `join-room-ok`, and again from a dropped socket
   /// until the rejoin is confirmed. While a room is not joined, its presence says nothing about who is there.
   @Test
@@ -637,6 +803,117 @@ func joinAndWaitForPeers(
 }
 
 // MARK: - Helpers
+
+/// A socket whose first set-presence write is slow: it waits until a second set-presence has been written, or 300 ms.
+/// Through one ordered lane the second waits for the first, so the first's wait ends by time and the writes keep their
+/// order; with each send on its own task, the second is written first.
+actor SlowFirstPresenceWrite {
+  private(set) var arrivals = 0
+  private var heldFirstWrite: CheckedContinuation<Void, Never>?
+  private var secondWriteDone = false
+
+  /// Counts a set-presence reaching the socket and returns its place: 1 for the first.
+  func arrive() -> Int {
+    arrivals += 1
+    return arrivals
+  }
+
+  func holdTheFirstWrite() async {
+    guard !secondWriteDone else { return }
+    await withCheckedContinuation { continuation in
+      heldFirstWrite = continuation
+      Task {
+        try? await Task.sleep(for: .milliseconds(300))
+        self.releaseTheFirstWrite()
+      }
+    }
+  }
+
+  func secondWriteReturned() {
+    secondWriteDone = true
+    releaseTheFirstWrite()
+  }
+
+  private func releaseTheFirstWrite() {
+    heldFirstWrite?.resume()
+    heldFirstWrite = nil
+  }
+}
+
+
+/// A socket whose first set-presence write waits until the test releases it: a write the socket never finished.
+actor HeldPresenceWrite {
+  private(set) var arrivals = 0
+  private var heldWrite: CheckedContinuation<Void, Never>?
+  private var isReleased = false
+
+  /// The session that holds its first set-presence write, then writes through `inner`.
+  nonisolated func wrapping(_ inner: InstantLiveWebSocketSession) -> InstantLiveWebSocketSession {
+    InstantLiveWebSocketSession(
+      send: { message in
+        if message.op == "set-presence", await self.arrive() == 1 {
+          await self.hold()
+        }
+        try await inner.send(message)
+      },
+      receive: { try await inner.receive() },
+      close: { await inner.close() },
+      abort: { inner.abort() }
+    )
+  }
+
+  private func arrive() -> Int {
+    arrivals += 1
+    return arrivals
+  }
+
+  private func hold() async {
+    guard !isReleased else { return }
+    await withCheckedContinuation { continuation in
+      heldWrite = continuation
+    }
+  }
+
+  func release() {
+    isReleased = true
+    heldWrite?.resume()
+    heldWrite = nil
+  }
+}
+
+/// Live sessions handed out one per connection attempt, in order.
+// SAFETY: `lock` protects `remaining`, the only mutable state.
+final class ScriptedRoomSessions: @unchecked Sendable {
+  private let lock = NSLock()
+  private var remaining: [InstantLiveWebSocketSession]
+
+  init(_ sessions: [InstantLiveWebSocketSession]) {
+    remaining = sessions
+  }
+
+  func next() throws -> InstantLiveWebSocketSession {
+    lock.lock()
+    defer { lock.unlock() }
+    guard !remaining.isEmpty else {
+      throw InstantError(
+        code: .networkFailed,
+        operation: "connect the scripted room sessions",
+        message: "No scripted live session remains.",
+        recovery: "Add one scripted session for every expected connection."
+      )
+    }
+    return remaining.removeFirst()
+  }
+}
+
+/// Whether a group of tasks has finished.
+actor RoomTaskCompletion {
+  private(set) var isDone = false
+
+  func mark() {
+    isDone = true
+  }
+}
 
 /// Every emission of one room's presence observation, read as soon as it is published.
 struct RoomPresenceRecorder: Sendable {

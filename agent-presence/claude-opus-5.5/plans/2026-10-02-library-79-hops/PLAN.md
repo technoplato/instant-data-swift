@@ -161,6 +161,24 @@ and every other frame are still applied in order. Red test first. Touching
 `Tests/InstantSwiftDataCoreTests/InstantLiveConnectionSurvivalTests.swift`, and new `docs/releases/v1.9.8.md`, added
 2026-10-03 20:25 EDT.
 
+## v1.9.8 after dev-198 (2026-10-04 14:46 EDT)
+
+dev-198's red run on v1.9.7 failed #474's two tests and #522's as intended, but #516's passed: it read the window when
+the model server was idle just after `connect()`, before the kickstart's add-query, so it saw the local window. The
+test now waits for the window to show the server's pages. The green run failed `SwiftConcurrencyGuidanceTests`: #474's
+`InstantLiveMessage` extension sat between `InstantLiveReceivedFrames`'s SAFETY comment and its `@unchecked Sendable`
+declaration; it moves above the documentation. `racingPresencePublishesLeaveTheNewestOnTheWire` failed 1 of 3 runs:
+each send writes from its own task, so an older set-presence could pass a newer one. Main's final call (2026-10-04,
+after messages crossed): "your ordered send lane is the fix (it matches Reactor.js) ... The rooms agent has paused its
+version and will review yours for two holes": no older write may follow the join-room-ok flush (never 6, 5, 6), and
+writes still waiting when the room is left must return. Each room's presence writes take one lane in the order the live
+session recorded them; the lane and its waiters live off `RegisteredRoom`; a write skips when a presence at least as
+new was already written to the same socket; a registration carries an incarnation, so a write that waited across a
+leave and a rejoin does not write. Red tests first. Touching
+`Sources/InstantSwiftDataCore/InstantRuntimeLiveSession.swift`, `InstantRuntime.swift` (a test accessor),
+`Tests/InstantSwiftDataCoreTests/InstantRoomPresenceRuntimeTests.swift` and
+`InstantInfiniteQueryLeadingRowsTests.swift`, added 2026-10-04 15:00 EDT, the lane at 15:25 EDT.
+
 ## v1.9.9: #540 and #541 (build 91's performance release; main, 2026-10-04)
 
 Main, verbatim: "1.9.9 carries skipping pages a write can't change (with the differential property test), the two map

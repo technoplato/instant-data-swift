@@ -27,6 +27,14 @@ package struct InstantLiveMutationEncodingFailure: Sendable {
   var mutationID: String
 }
 
+extension InstantLiveMessage {
+  /// The ops that carry a query's result: the answer to `add-query` and the server's later refreshes (#474).
+  static let queryResultOps: Set<String> = ["add-query-ok", "add-query-exists", "refresh-ok"]
+
+  /// Whether this frame is a query's result, which the next connection's answer to `add-query` replaces.
+  var isQueryResult: Bool { Self.queryResultOps.contains(op) }
+}
+
 /// The frames one live generation's reader has received and its applier has not taken yet (#296).
 ///
 /// URLSession answers the server's pings only while a `receive()` is outstanding, and the server closes a client
@@ -39,14 +47,6 @@ package struct InstantLiveMutationEncodingFailure: Sendable {
 /// When `capacity` frames are waiting, the reader waits for the applier, as the single receive loop always did. That
 /// bounds memory when an applier is stuck, and only then can the socket stop answering pings.
 // SAFETY: `lock` protects every mutable field. Continuations are taken under the lock and resumed after it.
-extension InstantLiveMessage {
-  /// The ops that carry a query's result: the answer to `add-query` and the server's later refreshes (#474).
-  static let queryResultOps: Set<String> = ["add-query-ok", "add-query-exists", "refresh-ok"]
-
-  /// Whether this frame is a query's result, which the next connection's answer to `add-query` replaces.
-  var isQueryResult: Bool { Self.queryResultOps.contains(op) }
-}
-
 final class InstantLiveReceivedFrames: @unchecked Sendable {
   private typealias Applier = CheckedContinuation<InstantLiveMessage, any Error>
   private typealias Reader = CheckedContinuation<Bool, Never>
@@ -293,6 +293,9 @@ package actor InstantRuntimeLiveSession {
     var presenceSequence: UInt64 = 0
     var queuedBroadcasts: [QueuedBroadcast] = []
     var isConnected = false
+    /// Which join this registration is: a presence send that waited in the room's lane while the room was left and
+    /// joined again finds a new incarnation and does not write (#461).
+    var incarnation: UInt64 = 0
   }
 
   private struct RegisteredStreamReader: Sendable {
@@ -401,6 +404,21 @@ package actor InstantRuntimeLiveSession {
   private var registeredRooms: [InstantRoomHandle: RegisteredRoom] = [:]
   /// Presence the runtime published in a room it has not joined yet, for the join to carry (#461).
   private var presenceBeforeJoin: [InstantRoomHandle: (values: [String: JSONValue]?, sequence: UInt64)] = [:]
+  /// Each room's presence lane (#461): one set-presence write at a time, in the order this actor recorded them, as
+  /// upstream `Reactor.js` writes with a synchronous `ws.send` in call order. `send(_:through:)` writes from its own
+  /// task, so two presence sends that overlapped could reach the socket in either order, and an older set-presence
+  /// could land after a newer one (`racingPresencePublishesLeaveTheNewestOnTheWire` failed 1 of 3 runs under load).
+  /// The lane is held from a write's start until it returns; the writes waiting for it queue first in, first out. Its
+  /// holder and waiters are kept here, off `RegisteredRoom`, so leaving the room while writes wait still hands the
+  /// lane on and every waiter returns. A waiter cannot leave early on cancellation (a checked continuation ignores it),
+  /// but each wait is bounded by the holder's send timeout, and after the socket closes the waiters return without
+  /// writing.
+  private var presenceLanesInUse: Set<InstantRoomHandle> = []
+  private var presenceLaneWaiters: [InstantRoomHandle: [CheckedContinuation<Void, Never>]] = [:]
+  /// The newest presence each room's lane wrote, and the socket it went to (#461). `join-room-ok` writes the room's
+  /// newest presence, so a write queued behind it with an older publication is skipped: the wire never reads 6, 5, 6.
+  private var writtenPresence: [InstantRoomHandle: (session: UUID, sequence: UInt64)] = [:]
+  private var nextRoomIncarnation: UInt64 = 0
   private var registeredStreamReaders: [String: RegisteredStreamReader] = [:]
   private var pendingStreamStarts:
     [String: AsyncThrowingStream<InstantLiveStartStreamOK, Error>.Continuation] = [:]
@@ -1784,11 +1802,14 @@ package actor InstantRuntimeLiveSession {
       return
     }
     let early = presenceBeforeJoin.removeValue(forKey: room)
+    nextRoomIncarnation &+= 1
+    writtenPresence[room] = nil
     registeredRooms[room] = RegisteredRoom(
       room: room,
       observerCount: 1,
       presence: early?.values,
-      presenceSequence: early?.sequence ?? 0
+      presenceSequence: early?.sequence ?? 0,
+      incarnation: nextRoomIncarnation
     )
     guard let session, isOpened else { return }
     try await send(.joinRoom(room, presence: early?.values, clientEventID: clientEventID), through: session)
@@ -1814,6 +1835,7 @@ package actor InstantRuntimeLiveSession {
       return false
     }
     registeredRooms[room] = nil
+    writtenPresence[room] = nil
     guard let session, isOpened else { return true }
     try await send(.leaveRoom(room, clientEventID: clientEventID), through: session)
     return true
@@ -1840,10 +1862,72 @@ package actor InstantRuntimeLiveSession {
     registration.presenceSequence = sequence
     registeredRooms[room] = registration
     guard registration.isConnected, let session, isOpened else { return }
-    try await send(
-      .setPresence(room: room, values: values ?? [:], clientEventID: clientEventID),
-      through: session
-    )
+    let incarnation = registration.incarnation
+    // The lane is taken in this actor turn, after the sequence check above, so writes queue in sequence order.
+    try await inPresenceLane(of: room) {
+      guard isCurrentPresenceTarget(room, incarnation: incarnation, session: session),
+        !hasWrittenPresence(atLeast: sequence, in: room, to: session)
+      else { return }
+      try await send(
+        .setPresence(room: room, values: values ?? [:], clientEventID: clientEventID),
+        through: session
+      )
+      writtenPresence[room] = (session.identity, sequence)
+    }
+  }
+
+  /// Runs `body` holding `room`'s presence lane, after every presence write of the room that took the lane before it.
+  /// The lane is released when `body` returns or throws.
+  private func inPresenceLane(
+    of room: InstantRoomHandle,
+    _ body: () async throws -> Void
+  ) async throws {
+    if presenceLanesInUse.insert(room).inserted == false {
+      // The holder hands the lane over in `leavePresenceLane`; the room's lane stays in use.
+      await withCheckedContinuation { continuation in
+        presenceLaneWaiters[room, default: []].append(continuation)
+      }
+    }
+    defer { leavePresenceLane(of: room) }
+    try await body()
+  }
+
+  private func leavePresenceLane(of room: InstantRoomHandle) {
+    guard var waiters = presenceLaneWaiters[room], !waiters.isEmpty else {
+      presenceLaneWaiters[room] = nil
+      presenceLanesInUse.remove(room)
+      return
+    }
+    let next = waiters.removeFirst()
+    presenceLaneWaiters[room] = waiters.isEmpty ? nil : waiters
+    next.resume()
+  }
+
+  /// Whether a presence write that waited in the lane still has somewhere to go: the same socket, open, and the same
+  /// join of the room, confirmed by the server. Otherwise the next join carries the room's newest presence.
+  private func isCurrentPresenceTarget(
+    _ room: InstantRoomHandle,
+    incarnation: UInt64,
+    session: InstantLiveWebSocketSession
+  ) -> Bool {
+    guard self.session?.identity == session.identity, isOpened,
+      let registration = registeredRooms[room]
+    else { return false }
+    return registration.incarnation == incarnation && registration.isConnected
+  }
+
+  private func hasWrittenPresence(
+    atLeast sequence: UInt64,
+    in room: InstantRoomHandle,
+    to session: InstantLiveWebSocketSession
+  ) -> Bool {
+    guard let written = writtenPresence[room], written.session == session.identity else { return false }
+    return written.sequence >= sequence
+  }
+
+  /// How many presence writes wait for `room`'s lane, for tests.
+  func presenceLaneWaiterCount(_ room: InstantRoomHandle) -> Int {
+    presenceLaneWaiters[room]?.count ?? 0
   }
 
   func publishTopic(
@@ -2418,11 +2502,21 @@ package actor InstantRuntimeLiveSession {
       registration.queuedBroadcasts = []
       registeredRooms[room] = registration
       guard let session, isOpened, let makeID else { return }
-      if let presence = registration.presence {
-        try await send(
-          .setPresence(room: room, values: presence, clientEventID: makeID()),
-          through: session
-        )
+      if registration.presence != nil {
+        // Through the room's presence lane, after any presence write already in it, with the room's newest presence;
+        // the writes queued behind it with older publications are skipped.
+        let incarnation = registration.incarnation
+        try await inPresenceLane(of: room) {
+          guard isCurrentPresenceTarget(room, incarnation: incarnation, session: session),
+            let current = registeredRooms[room], let presence = current.presence,
+            !hasWrittenPresence(atLeast: current.presenceSequence, in: room, to: session)
+          else { return }
+          try await send(
+            .setPresence(room: room, values: presence, clientEventID: makeID()),
+            through: session
+          )
+          writtenPresence[room] = (session.identity, current.presenceSequence)
+        }
       }
       for broadcast in queuedBroadcasts {
         try await send(
