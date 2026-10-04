@@ -6453,9 +6453,9 @@ public final class InstantRuntime: Sendable {
     await serverApplyGate.waiterCount
   }
 
-  /// How many presence writes wait for `room`'s presence lane in the live session (#461).
+  /// How many presence and broadcast writes wait for `room`'s lane in the live session (#461).
   package func roomPresenceLaneWaiterCountForTesting(_ room: InstantRoomHandle) async -> Int {
-    await liveSession.presenceLaneWaiterCount(room)
+    await liveSession.roomLaneWaiterCount(room)
   }
 
   /// Whether `queryOnce(plan)` answers from the device: the server answered this exact query on the open socket.

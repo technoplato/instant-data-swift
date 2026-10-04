@@ -282,6 +282,9 @@ package actor InstantRuntimeLiveSession {
   private struct QueuedBroadcast: Sendable {
     var topic: String
     var payload: JSONValue
+    /// Publication order (#461): a broadcast that waited in the room's lane for a socket that has since closed goes
+    /// back among the queued ones in this order.
+    var sequence: UInt64
   }
 
   private struct RegisteredRoom: Sendable {
@@ -404,17 +407,18 @@ package actor InstantRuntimeLiveSession {
   private var registeredRooms: [InstantRoomHandle: RegisteredRoom] = [:]
   /// Presence the runtime published in a room it has not joined yet, for the join to carry (#461).
   private var presenceBeforeJoin: [InstantRoomHandle: (values: [String: JSONValue]?, sequence: UInt64)] = [:]
-  /// Each room's presence lane (#461): one set-presence write at a time, in the order this actor recorded them, as
+  /// Each room's lane (#461): one presence or broadcast write at a time, in the order this actor recorded them, as
   /// upstream `Reactor.js` writes with a synchronous `ws.send` in call order. `send(_:through:)` writes from its own
-  /// task, so two presence sends that overlapped could reach the socket in either order, and an older set-presence
-  /// could land after a newer one (`racingPresencePublishesLeaveTheNewestOnTheWire` failed 1 of 3 runs under load).
-  /// The lane is held from a write's start until it returns; the writes waiting for it queue first in, first out. Its
-  /// holder and waiters are kept here, off `RegisteredRoom`, so leaving the room while writes wait still hands the
-  /// lane on and every waiter returns. A waiter cannot leave early on cancellation (a checked continuation ignores it),
-  /// but each wait is bounded by the holder's send timeout, and after the socket closes the waiters return without
-  /// writing.
-  private var presenceLanesInUse: Set<InstantRoomHandle> = []
-  private var presenceLaneWaiters: [InstantRoomHandle: [CheckedContinuation<Void, Never>]] = [:]
+  /// task, so two sends that overlapped could reach the socket in either order: an older set-presence could land after a
+  /// newer one (`racingPresencePublishesLeaveTheNewestOnTheWire` failed 1 of 3 runs under load), and two topic
+  /// publishes could invert (v1.9.5 held the operation gate across each publish). The lane is held from a write's start
+  /// until it returns; the writes waiting for it queue first in, first out. Its holder and waiters are kept here, off
+  /// `RegisteredRoom`, so leaving the room while writes wait still hands the lane on and every waiter returns. A waiter
+  /// cannot leave early on cancellation (a checked continuation ignores it), but each wait is bounded by the holder's
+  /// send timeout, and after the socket closes the waiters return without writing.
+  private var roomLanesInUse: Set<InstantRoomHandle> = []
+  private var roomLaneWaiters: [InstantRoomHandle: [CheckedContinuation<Void, Never>]] = [:]
+  private var nextBroadcastSequence: UInt64 = 0
   /// The newest presence each room's lane wrote, and the socket it went to (#461). `join-room-ok` writes the room's
   /// newest presence, so a write queued behind it with an older publication is skipped: the wire never reads 6, 5, 6.
   private var writtenPresence: [InstantRoomHandle: (session: UUID, sequence: UInt64)] = [:]
@@ -1856,8 +1860,8 @@ package actor InstantRuntimeLiveSession {
     guard registration.isConnected, let session, isOpened else { return }
     let incarnation = registration.incarnation
     // The lane is taken in this actor turn, after the sequence check above, so writes queue in sequence order.
-    try await inPresenceLane(of: room) {
-      guard isCurrentPresenceTarget(room, incarnation: incarnation, session: session),
+    try await inRoomLane(of: room) {
+      guard isCurrentRoomTarget(room, incarnation: incarnation, session: session),
         !hasWrittenPresence(atLeast: sequence, in: room, to: session)
       else { return }
       try await send(
@@ -1868,36 +1872,37 @@ package actor InstantRuntimeLiveSession {
     }
   }
 
-  /// Runs `body` holding `room`'s presence lane, after every presence write of the room that took the lane before it.
-  /// The lane is released when `body` returns or throws.
-  private func inPresenceLane(
+  /// Runs `body` holding `room`'s lane, after every presence and broadcast write of the room that took the lane before
+  /// it. The lane is released when `body` returns or throws.
+  private func inRoomLane(
     of room: InstantRoomHandle,
     _ body: () async throws -> Void
   ) async throws {
-    if presenceLanesInUse.insert(room).inserted == false {
-      // The holder hands the lane over in `leavePresenceLane`; the room's lane stays in use.
+    if roomLanesInUse.insert(room).inserted == false {
+      // The holder hands the lane over in `leaveRoomLane`; the room's lane stays in use.
       await withCheckedContinuation { continuation in
-        presenceLaneWaiters[room, default: []].append(continuation)
+        roomLaneWaiters[room, default: []].append(continuation)
       }
     }
-    defer { leavePresenceLane(of: room) }
+    defer { leaveRoomLane(of: room) }
     try await body()
   }
 
-  private func leavePresenceLane(of room: InstantRoomHandle) {
-    guard var waiters = presenceLaneWaiters[room], !waiters.isEmpty else {
-      presenceLaneWaiters[room] = nil
-      presenceLanesInUse.remove(room)
+  private func leaveRoomLane(of room: InstantRoomHandle) {
+    guard var waiters = roomLaneWaiters[room], !waiters.isEmpty else {
+      roomLaneWaiters[room] = nil
+      roomLanesInUse.remove(room)
       return
     }
     let next = waiters.removeFirst()
-    presenceLaneWaiters[room] = waiters.isEmpty ? nil : waiters
+    roomLaneWaiters[room] = waiters.isEmpty ? nil : waiters
     next.resume()
   }
 
-  /// Whether a presence write that waited in the lane still has somewhere to go: the same socket, open, and the same
-  /// join of the room, confirmed by the server. Otherwise the next join carries the room's newest presence.
-  private func isCurrentPresenceTarget(
+  /// Whether a write that waited in the room's lane still has somewhere to go: the same socket, open, and the same join
+  /// of the room, confirmed by the server. Otherwise the next join carries the room's newest presence, and a broadcast
+  /// goes back among the queued ones.
+  private func isCurrentRoomTarget(
     _ room: InstantRoomHandle,
     incarnation: UInt64,
     session: InstantLiveWebSocketSession
@@ -1917,9 +1922,9 @@ package actor InstantRuntimeLiveSession {
     return written.sequence >= sequence
   }
 
-  /// How many presence writes wait for `room`'s lane, for tests.
-  func presenceLaneWaiterCount(_ room: InstantRoomHandle) -> Int {
-    presenceLaneWaiters[room]?.count ?? 0
+  /// How many presence and broadcast writes wait for `room`'s lane, for tests.
+  func roomLaneWaiterCount(_ room: InstantRoomHandle) -> Int {
+    roomLaneWaiters[room]?.count ?? 0
   }
 
   func publishTopic(
@@ -1929,22 +1934,43 @@ package actor InstantRuntimeLiveSession {
     clientEventID: String
   ) async throws {
     guard var registration = registeredRooms[room] else { return }
+    nextBroadcastSequence &+= 1
+    let broadcast = QueuedBroadcast(topic: topic, payload: payload, sequence: nextBroadcastSequence)
     guard registration.isConnected, let session, isOpened else {
-      registration.queuedBroadcasts.append(
-        QueuedBroadcast(topic: topic, payload: payload)
-      )
+      registration.queuedBroadcasts.append(broadcast)
       registeredRooms[room] = registration
       return
     }
-    try await send(
-      .clientBroadcast(
-        room: room,
-        topic: topic,
-        payload: payload,
-        clientEventID: clientEventID
-      ),
-      through: session
-    )
+    let incarnation = registration.incarnation
+    // The lane is taken in this actor turn, so broadcasts go out in publication order, and after a join-room-ok flush
+    // that is still writing the broadcasts queued before the join.
+    try await inRoomLane(of: room) {
+      guard isCurrentRoomTarget(room, incarnation: incarnation, session: session) else {
+        // The socket closed while this broadcast waited: the next join-room-ok of this join writes it, in order. A
+        // room left meanwhile drops it, as `Reactor.js`'s `publishTopic` returns for a room it no longer has.
+        requeue(broadcast, in: room, incarnation: incarnation)
+        return
+      }
+      try await send(
+        .clientBroadcast(
+          room: room,
+          topic: topic,
+          payload: payload,
+          clientEventID: clientEventID
+        ),
+        through: session
+      )
+    }
+  }
+
+  /// Puts `broadcast` back among `room`'s queued broadcasts in publication order, when the room is still the join it
+  /// was published to.
+  private func requeue(_ broadcast: QueuedBroadcast, in room: InstantRoomHandle, incarnation: UInt64) {
+    guard var registration = registeredRooms[room], registration.incarnation == incarnation else { return }
+    let index = registration.queuedBroadcasts.firstIndex { $0.sequence > broadcast.sequence }
+      ?? registration.queuedBroadcasts.endIndex
+    registration.queuedBroadcasts.insert(broadcast, at: index)
+    registeredRooms[room] = registration
   }
 
   private func record(
@@ -2490,36 +2516,44 @@ package actor InstantRuntimeLiveSession {
     switch op {
     case "join-room-ok":
       registration.isConnected = true
-      let queuedBroadcasts = registration.queuedBroadcasts
-      registration.queuedBroadcasts = []
       registeredRooms[room] = registration
       guard let session, isOpened, let makeID else { return }
-      if registration.presence != nil {
-        // Through the room's presence lane, after any presence write already in it, with the room's newest presence;
-        // the writes queued behind it with older publications are skipped.
-        let incarnation = registration.incarnation
-        try await inPresenceLane(of: room) {
-          guard isCurrentPresenceTarget(room, incarnation: incarnation, session: session),
-            let current = registeredRooms[room], let presence = current.presence,
-            !hasWrittenPresence(atLeast: current.presenceSequence, in: room, to: session)
-          else { return }
+      let incarnation = registration.incarnation
+      // The flush takes the room's lane in this actor turn and holds it across the room's newest presence and the
+      // broadcasts queued before the join, so a write published while it waits goes out after them. A presence write
+      // queued behind it with an older publication is skipped.
+      try await inRoomLane(of: room) {
+        guard isCurrentRoomTarget(room, incarnation: incarnation, session: session) else { return }
+        if let current = registeredRooms[room], let presence = current.presence,
+          !hasWrittenPresence(atLeast: current.presenceSequence, in: room, to: session)
+        {
           try await send(
             .setPresence(room: room, values: presence, clientEventID: makeID()),
             through: session
           )
           writtenPresence[room] = (session.identity, current.presenceSequence)
         }
-      }
-      for broadcast in queuedBroadcasts {
-        try await send(
-          .clientBroadcast(
-            room: room,
-            topic: broadcast.topic,
-            payload: broadcast.payload,
-            clientEventID: makeID()
-          ),
-          through: session
-        )
+        while isCurrentRoomTarget(room, incarnation: incarnation, session: session),
+          var current = registeredRooms[room], !current.queuedBroadcasts.isEmpty
+        {
+          let broadcast = current.queuedBroadcasts.removeFirst()
+          registeredRooms[room] = current
+          do {
+            try await send(
+              .clientBroadcast(
+                room: room,
+                topic: broadcast.topic,
+                payload: broadcast.payload,
+                clientEventID: makeID()
+              ),
+              through: session
+            )
+          } catch {
+            // The next join-room-ok of this join writes it again, before the rest.
+            requeue(broadcast, in: room, incarnation: incarnation)
+            throw error
+          }
+        }
       }
 
     case "refresh-presence", "patch-presence", "server-broadcast":
