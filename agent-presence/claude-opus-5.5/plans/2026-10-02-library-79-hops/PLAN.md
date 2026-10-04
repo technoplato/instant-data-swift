@@ -183,4 +183,9 @@ said: "leave #542 at parity with upstream", so #542 is an upstream candidate, no
 Touching `Sources/InstantSwiftDataCore/InstantStore.swift`, `TripleIndexes.swift`, `InstantRuntime.swift`, new
 `Tests/InstantSwiftDataCoreTests/InstantStorePageSkipTests.swift` and `InstantSessionMapBoundsTests.swift`, new
 `docs/releases/v1.9.9.md`, `CHANGELOG.md` and `docs/audits/commit-changelog.md`, added 2026-10-04 11:13 EDT. Red
-tests first; branch agent/claude-opus-5.5/library-79-199 from library-79-198 at 07ce2e5d.
+tests first; branch agent/claude-opus-5.5/library-79-199 from library-79-198 at 07ce2e5d. Also
+`InstantRuntimeLiveSession.swift` (an answer says whether a query still holds its key) and new
+`InstantLiveQueryAcknowledgementStateTests.swift`, added 2026-10-04 12:05 EDT. Reading paginate, 1.9.8's skip also
+misses rows that stop matching (an offset page's window, a limited page's next page), so a page not cut by the
+server's cursors now refreshes when a changed row matched before the write or matches after it; the red run on
+library-79-199's red commits is to confirm it.
