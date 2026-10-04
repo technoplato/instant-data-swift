@@ -621,21 +621,66 @@ struct InstantStorePageSkipTests {
       try await pages.observe(page.plan, remotePageInfo: page.remotePageInfo, in: store)
     }
 
+    // The runtime commits a write under its gate and publishes after it (#473): commits made before a publication are
+    // published together. About half the steps commit that way, published after one to three commits.
+    var tickets: [InstantStorePublicationTicket] = []
+    var deferredChangedEntityIDs: Set<String> = []
+    var deferredOperations: [InstantTripleOperation] = []
+    var publishAfter = 1
+    var previous = await pages.lastEmissionByQueryID
+    var previousModel = model
     for step in 0..<steps {
       txTime += 1
       let operations = randomOperations(model: model, txTime: txTime, step: step, newEntityID: newEntityID, using: &rng)
       let transactionID = "step-\(seed)-\(step)"
-      let previous = await pages.lastEmissionByQueryID
-      let previousModel = model
+      if tickets.isEmpty {
+        previous = await pages.lastEmissionByQueryID
+        previousModel = model
+      }
       let prepared = try await store.prepareCurrent(
         InstantStoreTransaction(id: transactionID, operations: operations)
       )
-      let changedEntityIDs = prepared.result.changedEntityIDs
-      let committed = await store.commitAndPublish(prepared)
-      await pages.record(committed.result.emissions)
-      let refreshedQueryIDs = Set(committed.result.emissions.map(\.queryID))
+      var changedEntityIDs = prepared.result.changedEntityIDs
+      let refreshedQueryIDs: Set<String>
+      if Bool.random(using: &rng) {
+        let committed = await store.commitDeferringPublication(prepared)
+        if let ticket = committed.publication { tickets.append(ticket) }
+        deferredChangedEntityIDs.formUnion(changedEntityIDs)
+        deferredOperations += operations
+        if tickets.count == 1 { publishAfter = Int.random(in: 1...3, using: &rng) }
+        model = await currentModel(of: store)
+        guard tickets.count >= publishAfter || step == steps - 1 else { continue }
+        var emissions: [InstantQueryEmission] = []
+        for ticket in tickets {
+          emissions = await store.publishCommittedChanges(ticket)
+        }
+        await pages.record(emissions)
+        refreshedQueryIDs = Set(emissions.map(\.queryID))
+        changedEntityIDs = deferredChangedEntityIDs
+        tickets = []
+        deferredChangedEntityIDs = []
+      } else {
+        if !tickets.isEmpty {
+          // An immediate commit publishes the pending ones first; take their emissions as the runtime would.
+          var emissions: [InstantQueryEmission] = []
+          for ticket in tickets {
+            emissions = await store.publishCommittedChanges(ticket)
+          }
+          await pages.record(emissions)
+          tickets = []
+          deferredChangedEntityIDs = []
+          deferredOperations = []
+          previous = await pages.lastEmissionByQueryID
+          previousModel = await currentModel(of: store)
+        }
+        let committed = await store.commitAndPublish(prepared)
+        await pages.record(committed.result.emissions)
+        refreshedQueryIDs = Set(committed.result.emissions.map(\.queryID))
+        model = await currentModel(of: store)
+      }
+      let publishedOperations = deferredOperations.isEmpty ? operations : deferredOperations
+      deferredOperations = []
       outcome.refreshes += refreshedQueryIDs.count
-      model = await currentModel(of: store)
       // 1.9.8 skipped a namespace-local page only when no changed row is an item, or none matched its filters.
       let itemsChanged = changedEntityIDs.contains { model.rows[$0] != nil || previousModel.rows[$0] != nil }
 
@@ -650,7 +695,7 @@ struct InstantStorePageSkipTests {
             (\(String(describing: actual?.pageInfo))) but rematerializes to \(expected.values.map(\.id)) \
             (\(String(describing: expected.pageInfo))). Refreshed: \(refreshedQueryIDs.contains(queryID)). \
             Plan: \(page.plan). Remote page info: \(String(describing: page.remotePageInfo)). \
-            Operations: \(operations).
+            Operations: \(publishedOperations).
             """
           )
           outcome.failed = true
