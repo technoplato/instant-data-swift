@@ -16,6 +16,9 @@ Record the Shares tests' #require and the Mac layout fixes in the change log (#4
 ## 2026-10-04 06:34:09 EDT — instant-data-swift `44a1544a859f612a821667e28503e1aa1bdc8169`
 Test-only: the mixed encoding-window test lets the connect's delivery pass finish before it adds rows, as its sibling does (#473)
 
+## 2026-10-04 06:32:44 EDT — scribe `fff78c2154dd3549af106d096c3d2999439b8fa4`
+Merge triage-day-range-511 for 88: the day triage reads only that day's recordings, startedAtMs from the day's start to the next (#511)
+
 ## 2026-10-04 06:30:51 EDT — scribe `a43e7c4d69dbcbee3e52a2ef7a93a0e6d3975c5b`
 Record Scribe 0.1 (87) in PROGRESS: on the iPhone, the iPad and the Mac, built from b3dd127c on the published instant-data-swift 1.9.6 (#483 #484 #482 #458 #430 #469 #340 #410 #475 #478 #492)
 
