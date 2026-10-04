@@ -156,7 +156,13 @@ struct InstantSessionMapBoundsTests {
       try #require(removed.count == index + 1, "remove-query \(index) was sent")
     }
 
-    let remembered = await runtime.liveQueryAcknowledgementKeyCountForTesting()
+    // The key is forgotten just after its remove-query is sent.
+    let deadline = ContinuousClock.now + .seconds(5)
+    var remembered = await runtime.liveQueryAcknowledgementKeyCountForTesting()
+    while remembered > 0, ContinuousClock.now < deadline {
+      try await Task.sleep(for: .milliseconds(10))
+      remembered = await runtime.liveQueryAcknowledgementKeyCountForTesting()
+    }
     expectNoDifference(remembered, 0, "keys remembered after every query unregistered")
     _ = try await runtime.closeConnection()
   }

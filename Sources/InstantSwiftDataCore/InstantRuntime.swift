@@ -1295,7 +1295,7 @@ struct InstantServerApplyGateTimeline: Sendable {
   }
 }
 
-private actor InstantLiveQueryAcknowledgementState {
+actor InstantLiveQueryAcknowledgementState {
   private enum Outcome: Sendable {
     case acknowledged
     case rejected(InstantError)
@@ -1304,14 +1304,25 @@ private actor InstantLiveQueryAcknowledgementState {
   private var revisions: [String: Int] = [:]
   private var outcomes: [String: (revision: Int, outcome: Outcome)] = [:]
   private var waiters: [String: [UUID: AsyncThrowingStream<Void, Error>.Continuation]] = [:]
+  /// One counter for every key (#541): a key's revision after it is forgotten is still above any revision a waiter
+  /// read before, so forgetting a key never strands a wait.
+  private var latestRevision = 0
 
   func revision(for key: String) -> Int {
     revisions[key, default: 0]
   }
 
-  func record(key: String) {
-    revisions[key, default: 0] += 1
-    outcomes[key] = (revisions[key, default: 0], .acknowledged)
+  /// Records the server's answer to `key`. A key no query holds any more (an answer that arrived after its query
+  /// unregistered) is not remembered (#541); its waiters, if any, still resume.
+  func record(key: String, remembering: Bool = true) {
+    latestRevision += 1
+    if remembering {
+      revisions[key] = latestRevision
+      outcomes[key] = (latestRevision, .acknowledged)
+    } else {
+      revisions[key] = nil
+      outcomes[key] = nil
+    }
     let continuations = waiters.removeValue(forKey: key).map { Array($0.values) } ?? []
     for continuation in continuations {
       continuation.yield(())
@@ -1320,12 +1331,20 @@ private actor InstantLiveQueryAcknowledgementState {
   }
 
   func reject(key: String, error: InstantError) {
-    revisions[key, default: 0] += 1
-    outcomes[key] = (revisions[key, default: 0], .rejected(error))
+    latestRevision += 1
+    revisions[key] = latestRevision
+    outcomes[key] = (latestRevision, .rejected(error))
     let continuations = waiters.removeValue(forKey: key).map { Array($0.values) } ?? []
     for continuation in continuations {
       continuation.finish(throwing: error)
     }
+  }
+
+  /// Forgets `key`'s revision and outcome once no query holds it (#541). Waiters stay until an answer or their
+  /// cancellation ends them.
+  func forget(key: String) {
+    revisions[key] = nil
+    outcomes[key] = nil
   }
 
   func wait(for key: String, after observedRevision: Int) async throws {
@@ -5143,10 +5162,12 @@ public final class InstantRuntime: Sendable {
       guard let self else { return }
       await self.liveQueryResultState.release(key: registrationKey)
       do {
-        _ = try await self.liveSession.unregisterQuery(
+        if try await self.liveSession.unregisterQuery(
           key: registrationKey,
           clientEventID: self.configuration.makeID()
-        )
+        ) {
+          await self.liveQueryAcknowledgements.forget(key: registrationKey)
+        }
         InstantDiagnostics.shared.record(
           .debug,
           subsystem: "instant-swift-data-core",
@@ -5157,6 +5178,8 @@ public final class InstantRuntime: Sendable {
           correlationID: plan.id
         )
       } catch {
+        // The session dropped the key before the send failed.
+        await self.liveQueryAcknowledgements.forget(key: registrationKey)
         await self.configuration
           .onLiveQueryUnregisterFailureBeforeConnectionErrorForTesting?()
         await self.recordConnectionError(error)
@@ -5357,11 +5380,15 @@ public final class InstantRuntime: Sendable {
       guard let self else { return }
       await self.liveQueryResultState.release(key: registrationKey)
       do {
-        _ = try await self.liveSession.unregisterQuery(
+        if try await self.liveSession.unregisterQuery(
           key: registrationKey,
           clientEventID: self.configuration.makeID()
-        )
+        ) {
+          await self.liveQueryAcknowledgements.forget(key: registrationKey)
+        }
       } catch {
+        // The session dropped the key before the send failed.
+        await self.liveQueryAcknowledgements.forget(key: registrationKey)
         await self.recordConnectionError(error)
       }
     }
@@ -5848,10 +5875,13 @@ public final class InstantRuntime: Sendable {
     let cleanupOwner = InstantAsyncCancellationOwner(
       cancelAndWait: { [self] in
         await liveQueryResultState.release(key: registrationKey)
-        _ = try? await liveSession.unregisterQuery(
+        // A throw comes after the session dropped the key (`reconcileQueryMembership`), so it counts as unregistered.
+        if (try? await liveSession.unregisterQuery(
           key: registrationKey,
           clientEventID: configuration.makeID()
-        )
+        )) ?? true {
+          await liveQueryAcknowledgements.forget(key: registrationKey)
+        }
       }
     )
     let emission: InstantQueryEmission
@@ -6168,6 +6198,11 @@ public final class InstantRuntime: Sendable {
           now: now,
           carriedReleasedIdentities: carried
         )
+        if !application.hasMoreToRemove || application.result.removedQueryKeys.isEmpty {
+          // The last batch, still under the gate (#541).
+          recordActorHop(.store)
+          await store.compactInternedTransactionIDsIfNeeded()
+        }
         await leaveOperationGate()
       } catch {
         await leaveOperationGate()
@@ -7858,8 +7893,8 @@ public final class InstantRuntime: Sendable {
       }
       let registrationKey = try InstantLiveQueryEncoder.registrationKey(for: query)
       guard !queryOK.result.isEmpty else {
-        await recordLiveQueryAnswered(key: registrationKey)
-        await liveQueryAcknowledgements.record(key: registrationKey)
+        let isRegistered = await recordLiveQueryAnswered(key: registrationKey)
+        await liveQueryAcknowledgements.record(key: registrationKey, remembering: isRegistered)
         // A refused re-send waiting for this connection's answers may resolve or stand now (#441).
         await resolveParkedRefusalsIfNeeded()
         return
@@ -7887,8 +7922,8 @@ public final class InstantRuntime: Sendable {
       )
       // Answered before acknowledged: a queryOnce that sees this acknowledgement also sees the answer, and answers
       // from the device instead of waiting on the socket (library-78 item 7).
-      await recordLiveQueryAnswered(key: registrationKey)
-      await liveQueryAcknowledgements.record(key: registrationKey)
+      let isRegistered = await recordLiveQueryAnswered(key: registrationKey)
+      await liveQueryAcknowledgements.record(key: registrationKey, remembering: isRegistered)
       // A refused re-send waiting for this connection's answers may resolve or stand now (#441).
       await resolveParkedRefusalsIfNeeded()
 
@@ -7902,8 +7937,8 @@ public final class InstantRuntime: Sendable {
         )
       }
       let registrationKey = try InstantLiveQueryEncoder.registrationKey(for: query)
-      await recordLiveQueryAnswered(key: registrationKey)
-      await liveQueryAcknowledgements.record(key: registrationKey)
+      let isRegistered = await recordLiveQueryAnswered(key: registrationKey)
+      await liveQueryAcknowledgements.record(key: registrationKey, remembering: isRegistered)
       // A refused re-send waiting for this connection's answers may resolve or stand now (#441).
       await resolveParkedRefusalsIfNeeded()
 
@@ -8295,11 +8330,14 @@ public final class InstantRuntime: Sendable {
   }
 
   /// The server answered the live query `key`: its error clears for its observers and its backoff starts over
-  /// (#360).
-  private func recordLiveQueryAnswered(key: String) async {
+  /// (#360). Returns whether a query still holds the key, since an answer can arrive after its query unregistered
+  /// (#541).
+  @discardableResult
+  private func recordLiveQueryAnswered(key: String) async -> Bool {
     recordActorHop(.liveSession)
-    await liveSession.recordQueryAnswered(key: key)
+    let isRegistered = await liveSession.recordQueryAnswered(key: key)
     await liveQueryErrors.publish(nil, for: key)
+    return isRegistered
   }
 
   private static func isRetryableMutationError(_ error: InstantLiveErrorMessage) -> Bool {

@@ -726,6 +726,8 @@ struct TripleIndexes: Codable, Sendable {
   private var derivedIndexAttributeShapes: [String: DerivedIndexAttributeShape] = [:]
   private var storedTripleCount = 0
   private var internedTxIDsBox = TxIDInterner()
+  /// The interner's size past which a prune counts its live IDs again (#541). Not encoded.
+  private var transactionIDCompactionThreshold = TripleIndexes.transactionIDCompactionFloor
   /// Exact transient keys hydrated or written only for preparing a mutation.
   /// Consumed before prepared indexes become the next hot store.
   private var deferredValueKeysToRemove: Set<EntityAttributeKey> = []
@@ -1548,6 +1550,80 @@ struct TripleIndexes: Codable, Sendable {
   /// How many transaction IDs the interner holds, including the empty one at index 0 and IDs no triple uses any more.
   var internedTransactionIDCount: Int {
     internedTxIDsBox.internedTxIDs.count
+  }
+
+  /// Interners of at most this many IDs are not counted or rebuilt (#541).
+  static let transactionIDCompactionFloor = 1_024
+
+  /// Rebuilds the transaction ID interner from the live triples when it holds over twice the IDs they use (#541).
+  ///
+  /// The interner kept every transaction ID it met, so a recording that saves its newest section 45-120 times a minute
+  /// grew it for the whole session while its triples kept a handful of IDs. A rebuild numbers the live IDs again from
+  /// zero, rewrites every stamp, and gives this value a new interner; a copy made before it, such as a prepared
+  /// mutation, keeps the old interner with the stamps that match it. Counting the live IDs walks every triple, so the
+  /// next count waits until the interner passes twice the live IDs this one found. Returns the interner's size before
+  /// and after a rebuild, or nil when it was not rebuilt.
+  mutating func compactInternedTransactionIDsIfOverTwiceTheLiveOnes() -> (before: Int, after: Int)? {
+    let interned = internedTxIDsBox.internedTxIDs
+    guard interned.count > Self.transactionIDCompactionFloor,
+      interned.count > transactionIDCompactionThreshold
+    else { return nil }
+    // Index 0 is the empty ID that unknown indexes resolve to; it stays first.
+    var isLive = [Bool](repeating: false, count: interned.count)
+    isLive[0] = true
+    var liveCount = 1
+    func markLive(_ stamp: InstantTripleStamp) {
+      let index = Int(stamp.txIDIndex)
+      guard index < isLive.count, !isLive[index] else { return }
+      isLive[index] = true
+      liveCount += 1
+    }
+    for attributesByID in eav.values {
+      for slot in attributesByID.values {
+        slot.forEachPair { _, stamp in markLive(stamp) }
+      }
+    }
+    for attributesByID in vae.values {
+      for stampsByEntity in attributesByID.values {
+        for stamp in stampsByEntity.values {
+          markLive(stamp)
+        }
+      }
+    }
+    guard interned.count > 2 * liveCount else {
+      transactionIDCompactionThreshold = max(Self.transactionIDCompactionFloor, 2 * liveCount)
+      return nil
+    }
+    var renumbering = [UInt32](repeating: 0, count: interned.count)
+    var live: [String] = []
+    live.reserveCapacity(liveCount)
+    for (index, transactionID) in interned.enumerated() where isLive[index] {
+      renumbering[index] = UInt32(live.count)
+      live.append(transactionID)
+    }
+    func renumbered(_ stamp: InstantTripleStamp) -> InstantTripleStamp {
+      let index = Int(stamp.txIDIndex)
+      return InstantTripleStamp(
+        txIDIndex: index < renumbering.count ? renumbering[index] : 0,
+        txTimeMilliseconds: stamp.txTimeMilliseconds
+      )
+    }
+    eav = eav.mapValues { attributesByID in
+      attributesByID.mapValues { slot in
+        switch slot {
+        case let .one(value, stamp):
+          return .one(value: value, stamp: renumbered(stamp))
+        case let .many(stamps):
+          return .many(stamps.mapValues(renumbered))
+        }
+      }
+    }
+    vae = vae.mapValues { attributesByID in
+      attributesByID.mapValues { stampsByEntity in stampsByEntity.mapValues(renumbered) }
+    }
+    internedTxIDsBox = TxIDInterner(internedTxIDs: live)
+    transactionIDCompactionThreshold = max(Self.transactionIDCompactionFloor, 2 * live.count)
+    return (interned.count, live.count)
   }
 
   var newestTransactionTimeMilliseconds: Int64? {

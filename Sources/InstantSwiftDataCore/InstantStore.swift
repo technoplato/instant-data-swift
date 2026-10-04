@@ -3018,6 +3018,26 @@ public actor InstantStore {
     indexes.internedTransactionIDCount
   }
 
+  /// Rebuilds the store's transaction ID interner when it holds over twice the IDs its triples use (#541). The
+  /// runtime asks at each prune; a store replace already builds a new interner from the triples it installs.
+  @discardableResult
+  func compactInternedTransactionIDsIfNeeded() -> (before: Int, after: Int)? {
+    guard let compacted = indexes.compactInternedTransactionIDsIfOverTwiceTheLiveOnes() else { return nil }
+    InstantDiagnostics.shared.record(
+      .info,
+      subsystem: "instant-swift-data-core",
+      category: "store",
+      event: "store.transaction-ids-compacted",
+      message: "Rebuilt the transaction ID interner from the live triples.",
+      metadata: [
+        "internedBefore": String(compacted.before),
+        "internedAfter": String(compacted.after),
+        "tripleCount": String(indexes.tripleCount),
+      ]
+    )
+    return compacted
+  }
+
   func activeQueryCacheKeys() -> Set<String> {
     Set(observers.values.map(\.plan.cacheKey))
   }

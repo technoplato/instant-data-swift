@@ -1161,13 +1161,16 @@ package actor InstantRuntimeLiveSession {
     return (attempt, delay)
   }
 
-  /// The server answered the live query `key`, so its backoff starts over.
-  func recordQueryAnswered(key: String) {
+  /// The server answered the live query `key`, so its backoff starts over. Returns whether a query still holds the
+  /// key: an answer can arrive after its query unregistered (#541).
+  @discardableResult
+  func recordQueryAnswered(key: String) -> Bool {
     queryResendAttempts[key] = nil
     queryResends.removeValue(forKey: key)?.task.cancel()
     if registeredQueries[key] != nil, isOpened {
       answeredQueryGenerations[key] = generation
     }
+    return registeredQueries[key] != nil
   }
 
   /// The server failed the live query `key`: until it answers again, its result on the device may be behind.
