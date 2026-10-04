@@ -359,6 +359,13 @@ public struct InstantRuntimeConfiguration: Sendable {
   /// experiment's large store held the gate 5.8-13.2 s to prune 24 results of about 2,500 triples each while a transact
   /// waited; `nil` prunes everything at once.
   var liveQueryResultPruneBatchTripleCount: Int? = 5_000
+  /// How long a live query's stored result JSON may lag its newest result while the runtime runs (#566): one write
+  /// per query per interval, the newest kept in memory meanwhile.
+  var liveQueryResultJSONWriteIntervalMilliseconds: Int64 = 30_000
+  /// How the runtime waits before writing the results whose JSON waited; tests make it wait longer than they run.
+  var liveQueryResultJSONFlushSleep: @Sendable (_ milliseconds: UInt64) async throws -> Void = { milliseconds in
+    try await Task.sleep(nanoseconds: milliseconds * 1_000_000)
+  }
   /// Runs after each prune batch, with the number of results it removed.
   var onLiveQueryResultPruneBatchFinishedForTesting: (@Sendable (_ removedResultCount: Int) async -> Void)? = nil
   var liveReconnectSleep: @Sendable (UInt64) async throws -> Void =
@@ -6451,6 +6458,16 @@ public final class InstantRuntime: Sendable {
   @concurrent
   package func serverApplyGateWaiterCountForTesting() async -> Int {
     await serverApplyGate.waiterCount
+  }
+
+  /// How many live-query results the persistence saved, and the writes and bytes of result JSON it made (#566).
+  package func liveQueryResultJSONWriteStatsForTesting() async -> (saves: Int, writes: Int, bytes: Int) {
+    await persistence.liveQueryResultJSONWriteStatsForTesting()
+  }
+
+  /// How many SQLite pages the persistence's connection has written, and the page size (#566).
+  package func sqlitePagesWrittenForTesting() async -> (pages: Int, pageSize: Int) {
+    (try? await persistence.sqlitePagesWrittenForTesting()) ?? (0, 0)
   }
 
   /// How many presence and broadcast writes wait for `room`'s lane in the live session (#461).

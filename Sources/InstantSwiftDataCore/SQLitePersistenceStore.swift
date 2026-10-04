@@ -905,6 +905,8 @@ public actor SQLitePersistenceStore {
   /// Bumped by every write to `instant_attributes` on this connection.
   private var attributeWriteGeneration = 0
   private var liveResultAttributeLoads = 0
+  /// Live-query result saves, and the result JSON they wrote (#566): for tests and the release's measurements.
+  private var liveQueryResultJSONWriteStats = (saves: 0, writes: 0, bytes: 0)
   private var declaredRelationReconciliationLiveResultScanCount = 0
   private var installedDeclaredRelationStorageMarker:
     DeclaredRelationStorageReconciliationMarker?
@@ -990,6 +992,20 @@ public actor SQLitePersistenceStore {
   /// How many live-result saves loaded the attributes from SQLite instead of reusing them (#303).
   package func liveResultAttributeLoadCountForTesting() -> Int {
     liveResultAttributeLoads
+  }
+
+  /// How many live-query results were saved, and how many writes and bytes of result JSON they made (#566).
+  package func liveQueryResultJSONWriteStatsForTesting() -> (saves: Int, writes: Int, bytes: Int) {
+    liveQueryResultJSONWriteStats
+  }
+
+  /// How many pages this connection has written to the database or its WAL since it opened, and the page size (#566).
+  package func sqlitePagesWrittenForTesting() throws -> (pages: Int, pageSize: Int) {
+    var current: Int32 = 0
+    var highwater: Int32 = 0
+    sqlite3_db_status(connection.raw, SQLITE_DBSTATUS_CACHE_WRITE, &current, &highwater, 0)
+    let pageSize: Int64 = try selectInt64("PRAGMA page_size", [])
+    return (Int(current), Int(pageSize))
   }
 
   /// One full attribute load, as each live-result save did before it reused them; for cost tests.
@@ -16262,6 +16278,8 @@ public actor SQLitePersistenceStore {
       }
     )
     let previousOwnership = try liveQueryOwnershipWithoutTransaction(queryKey: result.key)
+    liveQueryResultJSONWriteStats.saves += 1
+    let json = try encode(result)
     try execute(
       """
       INSERT INTO instant_live_query_results
@@ -16276,9 +16294,11 @@ public actor SQLitePersistenceStore {
         .text(result.key),
         .int(Int64(result.triples.count)),
         .int(result.updatedAt.milliseconds),
-        .text(try encode(result)),
+        .text(json),
       ]
     )
+    liveQueryResultJSONWriteStats.writes += 1
+    liveQueryResultJSONWriteStats.bytes += json.utf8.count
     let removedOwnership = previousOwnership.subtracting(nextOwnership).sorted(
       by: Self.liveQueryOwnershipOrder
     )
