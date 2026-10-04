@@ -10,6 +10,20 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## October 4th, 2026 at 3:17:04 p.m. EDT — `c5e1183fd031` Record the room write lane in ADR 0019 decision 9 and PROGRESS: presence and broadcasts keep call order (#461)
+
+- **Implementation commit:** `c5e1183fd03104596d375f921fd7070e2896466d`
+- **Change:** ADR 0019 decision 9 and a PROGRESS entry record the room write lane library-79 added in 1.9.8: presence and broadcast writes keep call order, as Reactor.js's synchronous ws.send does (#461).
+- **Details:**
+  - The 1.9.8 dev run failed racingPresencePublishesLeaveTheNewestOnTheWire 1 of 3 times: off the operation gate each send writes from its own task. Library-79's fix (red 410b28ca and 0998556f, lane 8dc4321d and 1b4dcf0a), reviewed by the rooms agent; join-room and leave-room in the lane are #563 (1.9.9).
+- **Files:**
+  - `docs/adr/0019-rooms-and-presence-parity.md` — decision 9 and the presence and topic parity rows
+  - `PROGRESS.md` — the race, the fix, the review, and the bench's new commits
+- **User context (verbatim):**
+  > That sounds good to me for the, uh, rooms plan, so go ahead and knock that out with a subagent.
+  > Good plan. And let's get feature parody and performance parody with Swift and typescript, please.
+- **SpecStory:** unavailable — Claude Code agent session (rooms subagent under main); no SpecStory capture configured for this session.
+
 ## October 4th, 2026 at 9:21:51 a.m. EDT — `85ffb88815a7` Record the rooms red-then-green gate in ADR 0019 and PROGRESS: red on v1.9.5, green on 681a0ba9 (#461)
 
 - **Implementation commit:** `85ffb88815a7bdb849af95fd7441b9bd8e1cdf23`

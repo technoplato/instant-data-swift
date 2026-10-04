@@ -1,3 +1,6 @@
+## 2026-10-04 15:16:52 EDT — instant-data-swift `c5e1183fd03104596d375f921fd7070e2896466d`
+Record the room write lane in ADR 0019 decision 9 and PROGRESS: presence and broadcasts keep call order (#461)
+
 ## 2026-10-04 09:21:37 EDT — instant-data-swift `85ffb88815a7bdb849af95fd7441b9bd8e1cdf23`
 Record the rooms red-then-green gate in ADR 0019 and PROGRESS: red on v1.9.5, green on 681a0ba9 (#461)
 
