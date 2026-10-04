@@ -1,3 +1,42 @@
+## 2026-10-04 06:30:51 EDT — scribe `a43e7c4d69dbcbee3e52a2ef7a93a0e6d3975c5b`
+Record Scribe 0.1 (87) in PROGRESS: on the iPhone, the iPad and the Mac, built from b3dd127c on the published instant-data-swift 1.9.6 (#483 #484 #482 #458 #430 #469 #340 #410 #475 #478 #492)
+
+## 2026-10-04 06:19:52 EDT — scribe `cce94a9858905ab92b40aaae870b78627c0c436e`
+Merge main ac9ca658 into the 87 branch: looking-at's channel post and the signal-changes plan for 88
+
+## 2026-10-04 06:07:34 EDT — scribe `6361c68c0af143d808aba2e4c34b7d78eb0a7c15`
+The results watchdog harness applies what the recording's effects sent before it reads state, and feeds one buffer at a time (#484)
+
+## 2026-10-04 05:41:01 EDT — scribe `da3a8d4aba23fb8d30d121e351c1eaffd729ce5a`
+Shares tests: require the share count before indexing, so a failure cannot end the test process (#497)
+
+## 2026-10-04 05:41:01 EDT — scribe `3c28cff164a343b87dbd5c6169fab1e19582e140`
+The sync-row journal test waits for Retry's save to land and the lane to idle before it counts, and says whether anything stays set aside (#482 part C)
+
+## 2026-10-04 05:19:21 EDT — scribe `a1e8194ef71bc06affcd7779a72c6e58eaedfa67`
+The journal tests send each stream from its own session, as the phone does, and a microphone and a system-audio final at one moment stay two lines (#482 part C)
+
+## 2026-10-04 04:57:06 EDT — scribe `7a11f2e8ed02ffe8269eaf79a90db928e19827ea`
+Record the share contract test's v15 pin in the change log (#478)
+
+## 2026-10-04 04:57:05 EDT — scribe `822824bd4780e6d13c3cb309f07eebc18d4c2c32`
+Pin the share schema contract test to production's v15: the gate's record on a link share, and link reads that need a session (#478)
+
+## 2026-10-04 04:50:11 EDT — scribe `9a5682301c0b16dcafbfbc490f8ee742dc934f52`
+The results watchdog tests wait five seconds of real time, not 20,000 yields, for each step (#484)
+
+## 2026-10-04 04:50:11 EDT — scribe `b8c7b7b11fc3ee975e68ad3590063b2f393e1e21`
+The telemetry test of a recording that waits for a stop receives the stop's release, then the start (#482)
+
+## 2026-10-04 04:50:11 EDT — scribe `cc67f0df03e82ab50d8f172af722aa16fcd086a3`
+The sweep flow tests' fake answers this device's open parts and no pending gap transcription (#483)
+
+## 2026-10-04 04:50:10 EDT — scribe `ecc0ee374901a98ab48890b9b08a55efda906e56`
+Plan 2026-10-04-gate-87c-fixes: the gate-87c red step's test fakes and a stale order (#482 #483)
+
+## 2026-10-04 04:26:46 EDT — scribe `ac9ca65823f3b56ea177082fc33ff7a47fcc4194`
+Channel looking-at and plan signal-changes: head f5bf8ed8 for 88, measured and gated, and claim its two new paths (#469 #394)
+
 ## 2026-10-04 04:25:08 EDT — scribe `84c15d5a069c2dfcec8a1ea19431047805117e2f`
 Merge main 795ca2b7 into the 87 branch: main's signal-changes plan for 88 and the memory fenceposts' claim (#394 #469)
 
