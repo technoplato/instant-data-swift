@@ -314,6 +314,37 @@ struct InstantManyCardinalityOrderTests {
     }
   }
 
+  /// The comparator orders every pair of values as their `comparableKey`s do, across all eight cases, so the order a
+  /// slot materializes in is the one 1.9.8 produced (#570).
+  @Test
+  func theComparatorOrdersEveryPairAsTheirComparableKeysDo() {
+    var rng = SplitMix64(state: 0x570B)
+    var values: [InstantValue] = [.null, .bool(false), .bool(true), .number(-1), .number(9), .number(10), .number(0.25)]
+    values += Things.strings.map(InstantValue.string)
+    values += Things.strings.map(InstantValue.ref)
+    values += [
+      .date(Date(timeIntervalSince1970: 0)),
+      .date(Date(timeIntervalSince1970: 1_700_000_000.5)),
+      .json(.null),
+      .json(.object(["k": .string("v")])),
+      .lookupRef(InstantLookupRef(attributeID: "a", value: .string("x"))),
+      .lookupRef(InstantLookupRef(attributeID: "b", value: .number(1))),
+    ]
+    for _ in 0..<60 {
+      values.append(Things.value(using: &rng))
+    }
+    var mismatches: [String] = []
+    for lhs in values {
+      for rhs in values {
+        let expected = lhs.comparableKey < rhs.comparableKey
+        if InstantValue.precedesInComparableKeyOrder(lhs, rhs) != expected {
+          mismatches.append("\(lhs.comparableKey) < \(rhs.comparableKey) should be \(expected)")
+        }
+      }
+    }
+    #expect(mismatches.isEmpty, "\(mismatches.count) pairs differ: \(mismatches.prefix(8))")
+  }
+
   // MARK: - Helpers
 
   /// Keeps the list observed, as `InstantStorePageSkipTests.ObservedPages` does, and its newest emission.

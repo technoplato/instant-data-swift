@@ -619,17 +619,103 @@ private final class TxIDInterner: @unchecked Sendable {
   }
 }
 
-/// How many many-cardinality slots the copies of one `TripleIndexes` sorted while materializing (#570), for tests. The
-/// lock keeps the count right however many tasks materialize copies at once.
+/// The sorted values of large many-cardinality slots, kept across materializations by the copies of one
+/// `TripleIndexes` (#570).
+///
+/// Every snapshot of an entity with a many-cardinality attribute sorted that attribute's values, so each snapshot of a
+/// Scribe recording, which holds its segments forward, sorted all of its segment refs: 26% of build 88's CPU kill on
+/// Michael's iPhone. A kept order is used only while the slot holds exactly its values (the same count, each one
+/// present), so no write has to forget it, and copies of the indexes that share it each check it against their own
+/// slots. The lock keeps it right however many tasks materialize copies at once.
 final class ManyCardinalityOrders: Sendable {
-  private let sorts = OSAllocatedUnfairLock(initialState: 0)
+  /// Smaller slots are sorted each time: the comparator makes that cheap, and keeping them costs memory.
+  static let minimumKeptCount = 16
+  /// Values kept at most. Past it the kept orders are dropped and kept again as materializations sort them.
+  static let maximumKeptValueCount = 1 << 18
 
-  var sortCount: Int {
-    sorts.withLock { $0 }
+  private struct Key: Hashable, Sendable {
+    var entityID: String
+    var attributeID: String
   }
 
-  func recordSort() {
-    sorts.withLock { $0 += 1 }
+  private struct State: Sendable {
+    var orders: [Key: [InstantValue]] = [:]
+    var keptValueCount = 0
+    var sortCount = 0
+  }
+
+  private let state = OSAllocatedUnfairLock(initialState: State())
+
+  /// How many slots were sorted, for tests.
+  var sortCount: Int {
+    state.withLock { $0.sortCount }
+  }
+
+  /// The slot's values in `comparableKey` order: the order kept for the slot while it still holds exactly these values,
+  /// otherwise sorted now and kept.
+  func sortedValues(
+    _ values: [InstantValue: InstantTripleStamp],
+    entityID: String,
+    attributeID: String
+  ) -> [InstantValue] {
+    guard values.count >= Self.minimumKeptCount else {
+      state.withLock { $0.sortCount += 1 }
+      return values.keys.sorted(by: InstantValue.precedesInComparableKeyOrder)
+    }
+    let key = Key(entityID: entityID, attributeID: attributeID)
+    if let kept = state.withLock({ $0.orders[key] }), kept.count == values.count,
+      kept.allSatisfy({ values[$0] != nil })
+    {
+      return kept
+    }
+    let sorted = values.keys.sorted(by: InstantValue.precedesInComparableKeyOrder)
+    state.withLock { current in
+      current.sortCount += 1
+      let replaced = current.orders[key]?.count ?? 0
+      if current.keptValueCount - replaced + sorted.count > Self.maximumKeptValueCount {
+        current.orders.removeAll()
+        current.keptValueCount = 0
+      } else {
+        current.keptValueCount -= replaced
+      }
+      guard sorted.count <= Self.maximumKeptValueCount else { return }
+      current.orders[key] = sorted
+      current.keptValueCount += sorted.count
+    }
+    return sorted
+  }
+}
+
+extension InstantValue {
+  /// `lhs.comparableKey < rhs.comparableKey`, without building either key for refs, strings and booleans (#570). Every
+  /// key begins with its case's digit and a colon, so values of different cases order by that digit, and two refs, two
+  /// strings or two booleans order by what follows the colon. Other pairs of the same case compare their keys.
+  static func precedesInComparableKeyOrder(_ lhs: InstantValue, _ rhs: InstantValue) -> Bool {
+    switch (lhs, rhs) {
+    case let (.ref(left), .ref(right)), let (.string(left), .string(right)):
+      return left < right
+    case let (.bool(left), .bool(right)):
+      return !left && right
+    default:
+      let leftRank = lhs.comparableKeyRank
+      let rightRank = rhs.comparableKeyRank
+      guard leftRank == rightRank else { return leftRank < rightRank }
+      return lhs.comparableKey < rhs.comparableKey
+    }
+  }
+
+  /// The digit `comparableKey` begins with.
+  private var comparableKeyRank: Int {
+    switch self {
+    case .null: return 0
+    case .bool: return 1
+    case .number: return 2
+    case .string: return 3
+    case .date: return 4
+    case .ref: return 5
+    case .json: return 6
+    case .lookupRef: return 7
+    }
   }
 }
 
@@ -723,7 +809,7 @@ struct TripleIndexes: Codable, Sendable {
     }
   }
   private var internCaches = InternCaches()
-  /// Not encoded, compared or hashed: a count for tests (#570).
+  /// Not encoded, compared or hashed: kept orders only spare sorts (#570).
   private let manyCardinalityOrders = ManyCardinalityOrders()
   private var pendingInternEntityID: String?
   private var pendingInternNamespace: String?
@@ -3802,7 +3888,7 @@ private struct PreparedInclude {
         }
         continue
       }
-      if let value = materializedValue(slot, attribute: attribute) {
+      if let value = materializedValue(slot, attribute: attribute, entityID: entityID, attributeID: attribute.id) {
         if values[attribute.name] != value {
           values[attribute.name] = value
           didChange = true
@@ -3830,6 +3916,7 @@ private struct PreparedInclude {
     let namespaceAttributes = attributes.attributes(namespace: namespace)
     if namespaceAttributes.isEmpty {
       return materializedValuesByScanningEntityAttributes(
+        entityID: entityID,
         namespace: namespace,
         attributesByID: attributesByID,
         attributes: attributes
@@ -3850,7 +3937,12 @@ private struct PreparedInclude {
       guard let valuesByValue = attributesByID[attribute.id] else { continue }
       hasNamespaceData = true
 
-      if let value = materializedValue(valuesByValue, attribute: attribute) {
+      if let value = materializedValue(
+        valuesByValue,
+        attribute: attribute,
+        entityID: entityID,
+        attributeID: attribute.id
+      ) {
         values[attribute.name] = value
       }
     }
@@ -3859,6 +3951,7 @@ private struct PreparedInclude {
   }
 
   private func materializedValuesByScanningEntityAttributes(
+    entityID: String,
     namespace: String,
     attributesByID: [String: AttrSlot],
     attributes: AttributeStore
@@ -3869,7 +3962,12 @@ private struct PreparedInclude {
       guard let attribute = attributes[attributeID], attribute.namespace == namespace
       else { continue }
 
-      if let value = materializedValue(valuesByValue, attribute: attribute) {
+      if let value = materializedValue(
+        valuesByValue,
+        attribute: attribute,
+        entityID: entityID,
+        attributeID: attributeID
+      ) {
         values[attribute.name] = value
       }
     }
@@ -3879,7 +3977,9 @@ private struct PreparedInclude {
 
   private func materializedValue(
     _ slot: AttrSlot,
-    attribute: InstantAttribute
+    attribute: InstantAttribute,
+    entityID: String,
+    attributeID: String
   ) -> InstantMaterializedValue? {
     switch attribute.cardinality {
     case .one:
@@ -3887,10 +3987,12 @@ private struct PreparedInclude {
       return .one(value)
 
     case .many:
-      manyCardinalityOrders.recordSort()
-      return .many(
-        slot.keys.sorted { $0.comparableKey < $1.comparableKey }
-      )
+      switch slot {
+      case let .one(value, _):
+        return .many([value])
+      case let .many(values):
+        return .many(manyCardinalityOrders.sortedValues(values, entityID: entityID, attributeID: attributeID))
+      }
     }
   }
 
@@ -4721,7 +4823,9 @@ private struct PreparedInclude {
       for (attributeID, slot) in attributesByID {
         guard let attribute = attributes[attributeID] else { continue }
         guard attribute.cardinality == .one, !attribute.primaryKey else { continue }
-        guard let materialized = materializedValue(slot, attribute: attribute) else { continue }
+        guard
+          let materialized = materializedValue(slot, attribute: attribute, entityID: entityID, attributeID: attributeID)
+        else { continue }
         if snapshotNamespace == nil || snapshotNamespace == attribute.namespace {
           snapshotNamespace = attribute.namespace
           values[attribute.name] = materialized
