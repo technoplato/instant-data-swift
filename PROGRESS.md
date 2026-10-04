@@ -1,3 +1,22 @@
+## 2026-10-04 15:16:51 EDT — rooms parity (#461): the 1.9.8 dev run found a presence-order race; library-79's room lane fixes it in 1.9.8 and the rooms agent reviewed it; ADR 0019 decision 9
+
+- **Owner:** rooms (`claude-opus-5.5-rooms`), plan `2026-10-03-rooms`, under main's calls on 2026-10-04.
+- **Defect:** library-79's 1.9.8 dev run (`/tmp/library-79-hops/dev-198/rooms-2.log`) failed
+  `racingPresencePublishesLeaveTheNewestOnTheWire` 1 of 3 times: `send(_:through:)` writes each message from its own
+  task, so off the operation gate an older `set-presence` could land after a newer one; topic publishes could invert the
+  same way (v1.9.5 held the gate across each publish).
+- **Fix (library-79, on `agent/claude-opus-5.5/library-79-198`, after the rooms merge `49b280a2`):** red tests `410b28ca`
+  and `0998556f`; one lane per room for presence and broadcast writes, `8dc4321d` and `1b4dcf0a` (ADR 0019 decision 9).
+  The rooms agent reviewed both (the join flush can't be followed by an older presence; writes waiting when a room is
+  left all return; broadcasts keep publication order and are re-queued, never dropped, while their join lives; release
+  is deferred); the two changed files typecheck at `1b4dcf0a` (compiler only). Library-79's dev-198b runs the red tests
+  and the room suites; its result goes in the next entry.
+- **Bench:** `/Users/laptop/Sync/audit/room-bench-2026-10-03/BENCH-COMMITS` now names `3fd98ded` (the 1.9.8 branch just
+  before the rooms merge) before and `1b4dcf0a` after, so the difference is exactly rooms and the lane; the after round
+  runs only once that commit's gate is recorded there. The Docker VM is capped at 4 GB (main, 2026-10-04).
+- **Continue:** dev-198b's result; the bench rounds (low lane, exclusive); `join-room` and `leave-room` through the lane
+  in 1.9.9 (#563).
+
 ## 2026-10-04 09:21:02 EDT — rooms parity (#461): the red-then-green gate passed on `681a0ba9`; library-79 folds the branch into its next release; the bench is queued
 
 - **Owner:** rooms (`claude-opus-5.5-rooms`, workLog agentId `claude-code/claude-opus-5.5/rooms`), plan

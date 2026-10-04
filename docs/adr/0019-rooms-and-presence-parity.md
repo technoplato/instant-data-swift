@@ -68,6 +68,22 @@ the rooms code in `Reactor.js` is identical to the library's pin `e7101761`) fou
    options; each observer keeps what it last received and wakes only when its part changed.
 8. **Whether a join is confirmed.** `isRoomJoined(_:)` (runtime and client) is true from `join-room-ok` on the current
    connection, as `Reactor.js` reports `isLoading: !room.isConnected`; until then an empty presence says nothing.
+9. **Room writes keep their order** (added 2026-10-04, in 1.9.8). Off the operation gate, two room writes that overlap
+   could reach the socket in either order, because `send(_:through:)` writes each message from its own task:
+   library-79's 1.9.8 dev run caught an older `set-presence` landing after a newer one
+   (`racingPresencePublishesLeaveTheNewestOnTheWire`, 1 of 3 runs), and two topic publishes could invert the same way
+   (v1.9.5 had held the operation gate across each publish). Each room now has one lane in the live session: a
+   presence or broadcast write takes it in the actor turn that records the publication and holds it until its write
+   returns, and the writes waiting for it go first in, first out, as `Reactor.js` writes with a synchronous `ws.send`
+   in call order. The `join-room-ok` flush takes the lane in the turn that marks the room joined and holds it across
+   the room's newest presence and the broadcasts queued before the join. Adapted: a presence write queued behind that
+   flush whose publication is no newer than what the flush wrote is skipped, so the wire never goes back to an older
+   presence; `Reactor.js` has no such queue (its writes are synchronous), so it never needs the rule. Broadcasts are
+   never skipped: one that waited for a socket that closed goes back among the queued broadcasts in publication order,
+   and only a broadcast whose room was left is dropped, as `Reactor.js`'s `publishTopic` returns for a room it no longer
+   has. Open: `join-room` and `leave-room` still go outside the lane (#563, planned for 1.9.9), and after a rejoin with
+   queued broadcasts the room-frame task waits for the flush. Library-79 implemented it on the 1.9.8 branch: red tests
+   `410b28ca` and `0998556f`, the lane `8dc4321d` and `1b4dcf0a`; the rooms agent reviewed both.
 
 ## Parity with Reactor.js after this ADR (the study's section 1)
 
@@ -76,7 +92,7 @@ the rooms code in `Reactor.js` is identical to the library's pin `e7101761`) fou
 | Join | Parity: a presence set before the join goes in `join-room`, and again on `join-room-ok`. |
 | Refcount, leave on last | Parity, with Swift's explicit refcount; only the last holder's leave forgets the room. |
 | Leave while join pending | Swift sends `leave-room` at once; `Reactor.js` waits for `join-room-ok`. Same result (the server keeps order). |
-| Publish presence | Swift replaces the values (`setPresence`); `Reactor.js` merges partial data. Kept: Swift's typed values are whole objects. |
+| Publish presence | Swift replaces the values (`setPresence`); `Reactor.js` merges partial data. Kept: Swift's typed values are whole objects. Writes keep call order (decision 9). |
 | Presence before join | Parity (decision 5). |
 | Subscribe joins implicitly | Not adopted: Swift joins explicitly (`joinRoom`), as before. |
 | Peer identity | Parity (decision 1). |
@@ -87,7 +103,7 @@ the rooms code in `Reactor.js` is identical to the library's pin `e7101761`) fou
 | patch-presence / refresh-presence in | Parity in cost shape: one actor turn, no SQLite. |
 | Reconnect, socket close | Parity, as before. |
 | Leave presence | Adapted (decision 5); `Reactor.js` has none. |
-| Topic publish, delivery | Parity (decision 6); the sender's presence is reachable through `peerID`. |
+| Topic publish, delivery | Parity (decisions 6 and 9): in publication order, once each; the sender's presence is reachable through `peerID`. |
 | Own broadcasts | Adapted: delivered locally with `peerID` nil; the server never echoes them. |
 | Version advert | Unchanged: `v0.22.75`, so no batched `server-broadcast`s. |
 | Server-side presence read | Not in a client SDK (admin `rooms.getPresence`). |
