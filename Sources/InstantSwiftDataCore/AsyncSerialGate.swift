@@ -24,7 +24,8 @@ actor AsyncSerialGate {
   /// and hydrations, first come first served (freeze-185, 13:17:34): a local write or a read a caller awaits now goes
   /// ahead of background work.
   enum Priority: Int, Comparable, Sendable, CustomStringConvertible {
-    /// Work no caller waits on: a server apply, a prune, a retry window, an unbounded listing.
+    /// Work no caller waits on: a prune, a retry window, an unbounded listing. A server apply is not: later frames,
+    /// the writes' acknowledgements among them, wait for it, and its commit's work grows with every write it waits for.
     case background = 0
     /// Everything else.
     case standard = 1

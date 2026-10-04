@@ -2911,11 +2911,17 @@ public final class InstantRuntime: Sendable {
   /// Captures persistence revisions and the matching hot-store contents as one
   /// short operation-gated transition. Long body paging and optimistic rebase
   /// work happens only after this gate is released.
+  ///
+  /// A server apply queues with local writes, not behind them: the receiver applies frames in order, so every later
+  /// frame, the writes' acknowledgements among them, waits for it, and its commit replays each local write admitted
+  /// meanwhile under the gate. In the background lane, under a section written every 25 ms, one apply held the gate
+  /// 4,816 ms and a write waited 4,702 ms (`InstantServerApplyOperationGateTests`, 1.9.7's dev run); first come, first
+  /// served, it held 196-984 ms.
   private func loadServerApplySeed(
     operationGateAlreadyHeld: Bool
   ) async throws -> InstantServerApplySeed {
     if !operationGateAlreadyHeld {
-      try await enterOperationGateUnlessCancelled(operation: "snapshot server apply", priority: .background)
+      try await enterOperationGateUnlessCancelled(operation: "snapshot server apply", priority: .interactive)
     }
     do {
       recordActorHop(.persistence)
@@ -3419,7 +3425,8 @@ public final class InstantRuntime: Sendable {
         var gateTimeline = InstantServerApplyGateTimeline(enteredAt: ContinuousClock.now)
         catchUp: while true {
           if !operationGateAlreadyHeld, !enteredOperationGateForCommit {
-            await enterOperationGate(operation: "catch up server apply", priority: .background)
+            // With local writes, not behind them: each write admitted while it waits is one more to replay here.
+            await enterOperationGate(operation: "catch up server apply", priority: .interactive)
             enteredOperationGateForCommit = true
             gateTimeline = InstantServerApplyGateTimeline(enteredAt: ContinuousClock.now)
           }
