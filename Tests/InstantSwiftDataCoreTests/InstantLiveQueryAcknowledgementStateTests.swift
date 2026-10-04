@@ -38,7 +38,8 @@ struct InstantLiveQueryAcknowledgementStateTests {
     // A queryOnce reads the revision, then the subscription that held the key unregisters before it registers.
     let observed = await state.revision(for: "agent-replies")
     await state.forget(key: "agent-replies")
-    expectNoDifference(await state.keyCount(), 0)
+    let keysAfterForget = await state.keyCount()
+    expectNoDifference(keysAfterForget, 0)
     // The server's answer arrives before the queryOnce waits. A counter per key would start over at 1, below the
     // revision the queryOnce read, and the wait would last until its 5 s timeout.
     await state.record(key: "agent-replies")
@@ -61,7 +62,8 @@ struct InstantLiveQueryAcknowledgementStateTests {
       try await Task.sleep(for: .milliseconds(5))
     }
     #expect(await flag.isSet, "the waiter resumed")
-    expectNoDifference(await state.keyCount(), 0, "the answer was not remembered")
+    let keysAfterAnswer = await state.keyCount()
+    expectNoDifference(keysAfterAnswer, 0, "the answer was not remembered")
     waiter.cancel()
   }
 
@@ -82,6 +84,7 @@ struct InstantLiveQueryAcknowledgementStateTests {
       try await state.wait(for: "rejected", after: observed)
     }
     await state.forget(key: "rejected")
-    expectNoDifference(await state.keyCount(), 0)
+    let keysAfterRejection = await state.keyCount()
+    expectNoDifference(keysAfterRejection, 0)
   }
 }

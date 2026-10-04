@@ -339,8 +339,10 @@ struct InstantStorePageSkipTests {
       ),
       in: store
     )
-    expectNoDifference(await pages.emission("timeline.waiting")?.values, [])
-    expectNoDifference(await pages.emission("timeline.answered-empty")?.values, [])
+    let waitingValues = await pages.emission("timeline.waiting")?.values
+    let answeredEmptyValues = await pages.emission("timeline.answered-empty")?.values
+    expectNoDifference(waitingValues, [])
+    expectNoDifference(answeredEmptyValues, [])
     let saved = try await Self.commit(
       [
         .insert(
@@ -407,9 +409,11 @@ struct InstantStorePageSkipTests {
     let pages = ObservedPages()
     try await pages.observe(limited, remotePageInfo: nil, in: store)
     try await pages.observe(offset, remotePageInfo: nil, in: store)
-    expectNoDifference(await pages.emission(limited.id)?.values.map(\.id), ["a1", "a2"])
-    expectNoDifference(await pages.emission(limited.id)?.pageInfo?.hasNextPage, true)
-    expectNoDifference(await pages.emission(offset.id)?.values.map(\.id), ["a2"])
+    var limitedEmission = await pages.emission(limited.id)
+    var offsetEmission = await pages.emission(offset.id)
+    expectNoDifference(limitedEmission?.values.map(\.id), ["a1", "a2"])
+    expectNoDifference(limitedEmission?.pageInfo?.hasNextPage, true)
+    expectNoDifference(offsetEmission?.values.map(\.id), ["a2"])
 
     // a3 leaves group a: neither page shows it, and neither has a next page any more.
     _ = try await Self.commit(
@@ -428,9 +432,11 @@ struct InstantStorePageSkipTests {
       to: store,
       pages: pages
     )
-    expectNoDifference(await pages.emission(limited.id)?.values.map(\.id), ["a1", "a2"])
-    expectNoDifference(await pages.emission(limited.id)?.pageInfo?.hasNextPage, false)
-    expectNoDifference(await pages.emission(offset.id)?.pageInfo?.hasNextPage, false)
+    limitedEmission = await pages.emission(limited.id)
+    offsetEmission = await pages.emission(offset.id)
+    expectNoDifference(limitedEmission?.values.map(\.id), ["a1", "a2"])
+    expectNoDifference(limitedEmission?.pageInfo?.hasNextPage, false)
+    expectNoDifference(offsetEmission?.pageInfo?.hasNextPage, false)
 
     // a1 leaves group a: only a2 is left, so the offset page, which skips the first row, is empty.
     _ = try await Self.commit(
@@ -455,7 +461,8 @@ struct InstantStorePageSkipTests {
       expectNoDifference(emission?.values, expected.values, "\(plan.id)")
       expectNoDifference(emission?.pageInfo, expected.pageInfo, "\(plan.id)")
     }
-    expectNoDifference(await pages.emission(offset.id)?.values.map(\.id), [])
+    offsetEmission = await pages.emission(offset.id)
+    expectNoDifference(offsetEmission?.values.map(\.id), [])
   }
 
   // MARK: - Differential property test

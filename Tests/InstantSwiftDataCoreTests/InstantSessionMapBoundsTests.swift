@@ -64,7 +64,8 @@ struct InstantSessionMapBoundsTests {
       "after the prune the interner holds \(after) IDs for \(liveTransactionIDs.count) live ones"
     )
     // The rebuild renumbers transaction IDs; every triple still reads its own.
-    expectNoDifference(await runtime.store.snapshot().triples, triplesBefore)
+    let triplesAfter = await runtime.store.snapshot().triples
+    expectNoDifference(triplesAfter, triplesBefore)
     // Writes after the rebuild still intern and read their transaction IDs.
     _ = try await runtime.transact(
       InstantStoreTransaction(
