@@ -511,8 +511,15 @@ extension InstantRoomPresenceRuntimeTests {
     let third = Task { _ = try? await runtime.setPresence(room: room, userID: "user-self", values: ["n": .number(3)]) }
     try await waitForRoom("the third write to queue") { await runtime.roomPresenceLaneWaiterCountForTesting(room) == 2 }
 
-    _ = try await runtime.leaveRoom(room)
+    // The leave waits in the room's lane behind the three writes from #563, so it runs on its own task.
+    let leaving = Task { _ = try await runtime.leaveRoom(room) }
+    try await waitForRoom("the leave to queue behind the writes, or to be written") {
+      let waiting = await runtime.roomPresenceLaneWaiterCountForTesting(room)
+      let left = await session.sentMessages().contains { $0.op == "leave-room" }
+      return waiting == 3 || left
+    }
     await held.release()
+    try await leaving.value
     let finished = RoomTaskCompletion()
     let waiters = Task {
       _ = await (writing.value, second.value, third.value)
@@ -644,6 +651,138 @@ extension InstantRoomPresenceRuntimeTests {
       .filter { $0.op == "client-broadcast" }
       .compactMap { $0.fields["data"]?.jsonValue }
     expectNoDifference(broadcasts, [.string("queued"), .string("later")], "the queued broadcast first")
+    _ = try await runtime.closeConnection()
+  }
+
+  /// A leave and a rejoin of a room on one socket reach the wire in call order (#563). Each went out from its own send
+  /// task, outside the room's lane, so a rejoin made while the leave-room was still being written passed it: the
+  /// server applied the join, then the leave, and kept the room left while the runtime counted it joined. `Reactor.js`
+  /// writes both with a synchronous `ws.send`, in call order. Here the test holds the leave-room write until the
+  /// rejoin's join-room has been written or the rejoin waits behind it.
+  @Test
+  func aLeaveAndARejoinOnOneSocketReachTheWireInCallOrder() async throws {
+    let room = InstantRoomHandle(type: "recording", id: "room-leave-rejoin")
+    let session = LiveReactorParitySession(messages: [
+      liveReactorInitOK(attrs: liveReactorTodoServerAttrs, sessionID: "session-self")
+    ])
+    let held = HeldRoomWrite(op: "leave-room")
+    let heldSession = held.wrapping(session.webSocketSession)
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: try roomConfiguration(appID: "room-leave-rejoin", transport: .immediate { _ in heldSession })
+    )
+    _ = try await runtime.connect()
+    _ = try await runtime.joinRoom(room)
+    try await joinAndWaitForPeers(runtime: runtime, session: session, room: room)
+
+    let leaving = Task { _ = try await runtime.leaveRoom(room) }
+    try await waitForRoom("the leave-room to reach the socket") { await held.arrivals >= 1 }
+    let rejoining = Task { _ = try await runtime.joinRoom(room) }
+    try await waitForRoom("the rejoin to queue behind the leave, or to be written") {
+      let waiting = await runtime.roomPresenceLaneWaiterCountForTesting(room)
+      let joins = await session.sentMessages().filter { $0.op == "join-room" }.count
+      return waiting >= 1 || joins >= 2
+    }
+    await held.release()
+    try await leaving.value
+    try await rejoining.value
+    let roomFrames = await session.sentMessages().map(\.op).filter { $0 == "join-room" || $0 == "leave-room" }
+    expectNoDifference(roomFrames, ["join-room", "leave-room", "join-room"], "the join, the leave, then the rejoin")
+    _ = try await runtime.closeConnection()
+  }
+
+  /// A presence write still being written when the room is left and rejoined lands before the leave, not after the
+  /// rejoin (#563). With the leave and the rejoin outside the room's lane, the wire read leave-room, join-room, then the
+  /// old join's set-presence, and the server gave the new join the presence of the old one.
+  @Test
+  func aPresenceWriteInFlightLandsBeforeALeaveAndARejoin() async throws {
+    let room = InstantRoomHandle(type: "recording", id: "room-presence-before-leave")
+    let session = LiveReactorParitySession(messages: [
+      liveReactorInitOK(attrs: liveReactorTodoServerAttrs, sessionID: "session-self")
+    ])
+    let held = HeldRoomWrite(op: "set-presence")
+    let heldSession = held.wrapping(session.webSocketSession)
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: try roomConfiguration(
+        appID: "room-presence-before-leave",
+        transport: .immediate { _ in heldSession }
+      )
+    )
+    _ = try await runtime.connect()
+    _ = try await runtime.joinRoom(room)
+    try await joinAndWaitForPeers(runtime: runtime, session: session, room: room)
+
+    let writing = Task { _ = try? await runtime.setPresence(room: room, userID: "user-self", values: ["n": .number(1)]) }
+    try await waitForRoom("the set-presence to reach the socket") { await held.arrivals >= 1 }
+    let leaving = Task { _ = try await runtime.leaveRoom(room) }
+    try await waitForRoom("the leave to queue behind the presence write, or to be written") {
+      let waiting = await runtime.roomPresenceLaneWaiterCountForTesting(room)
+      let left = await session.sentMessages().contains { $0.op == "leave-room" }
+      return waiting >= 1 || left
+    }
+    let rejoining = Task { _ = try await runtime.joinRoom(room) }
+    try await waitForRoom("the rejoin to queue behind the leave, or to be written") {
+      let waiting = await runtime.roomPresenceLaneWaiterCountForTesting(room)
+      let joins = await session.sentMessages().filter { $0.op == "join-room" }.count
+      return waiting >= 2 || joins >= 2
+    }
+    await held.release()
+    _ = await writing.value
+    try await leaving.value
+    try await rejoining.value
+    let roomFrames = await session.sentMessages().map(\.op).filter {
+      $0 == "join-room" || $0 == "leave-room" || $0 == "set-presence"
+    }
+    expectNoDifference(
+      roomFrames,
+      ["join-room", "set-presence", "leave-room", "join-room"],
+      "the old join's presence, then the leave and the rejoin"
+    )
+    _ = try await runtime.closeConnection()
+  }
+
+  /// A leave made while a reconnect's rejoin is still being written follows the rejoin on the new socket (#563). The
+  /// rejoin went out from its own send task, so a leave-room made meanwhile could reach the new socket first: the
+  /// server applied the leave, then the join, and kept the room joined after the runtime had left it.
+  @Test
+  func aLeaveMadeWhileTheRejoinIsWrittenFollowsItOnTheNewSocket() async throws {
+    let room = InstantRoomHandle(type: "recording", id: "room-rejoin-then-leave")
+    let first = LiveReactorParitySession(messages: [
+      liveReactorInitOK(attrs: liveReactorTodoServerAttrs, sessionID: "session-before-drop")
+    ])
+    let second = LiveReactorParitySession(messages: [
+      liveReactorInitOK(attrs: liveReactorTodoServerAttrs, sessionID: "session-after-drop")
+    ])
+    let held = HeldRoomWrite(op: "join-room")
+    let sessions = ScriptedRoomSessions([first.webSocketSession, held.wrapping(second.webSocketSession)])
+    var configuration = try roomConfiguration(
+      appID: "room-rejoin-then-leave",
+      transport: .immediate { _ in try sessions.next() }
+    )
+    configuration.liveReconnectSleep = { _ in }
+    let runtime = try await InstantRuntime.bootstrap(configuration: configuration)
+    _ = try await runtime.connect()
+    _ = try await runtime.joinRoom(room)
+    try await joinAndWaitForPeers(runtime: runtime, session: first, room: room)
+
+    await first.failReceive(
+      InstantError(
+        code: .networkFailed,
+        operation: "drop the room's socket",
+        message: "transient drop",
+        recovery: "Rejoin on the next socket."
+      )
+    )
+    try await waitForRoom("the rejoin to reach the second socket") { await held.arrivals >= 1 }
+    let leaving = Task { _ = try await runtime.leaveRoom(room) }
+    try await waitForRoom("the leave to wait for the rejoin, or to be written") {
+      let waiting = await runtime.roomPresenceLaneWaiterCountForTesting(room)
+      let left = await second.sentMessages().contains { $0.op == "leave-room" }
+      return waiting >= 1 || left
+    }
+    await held.release()
+    try await leaving.value
+    let roomFrames = await second.sentMessages().map(\.op).filter { $0 == "join-room" || $0 == "leave-room" }
+    expectNoDifference(roomFrames, ["join-room", "leave-room"], "the rejoin, then the leave")
     _ = try await runtime.closeConnection()
   }
 
@@ -968,6 +1107,52 @@ actor HeldPresenceWrite {
     InstantLiveWebSocketSession(
       send: { message in
         if message.op == "set-presence", await self.arrive() == 1 {
+          await self.hold()
+        }
+        try await inner.send(message)
+      },
+      receive: { try await inner.receive() },
+      close: { await inner.close() },
+      abort: { inner.abort() }
+    )
+  }
+
+  private func arrive() -> Int {
+    arrivals += 1
+    return arrivals
+  }
+
+  private func hold() async {
+    guard !isReleased else { return }
+    await withCheckedContinuation { continuation in
+      heldWrite = continuation
+    }
+  }
+
+  func release() {
+    isReleased = true
+    heldWrite?.resume()
+    heldWrite = nil
+  }
+}
+
+/// A socket whose first write of one op waits until the test releases it: a room write the socket has not finished
+/// (#563). `HeldPresenceWrite` for any op.
+actor HeldRoomWrite {
+  let op: String
+  private(set) var arrivals = 0
+  private var heldWrite: CheckedContinuation<Void, Never>?
+  private var isReleased = false
+
+  init(op: String) {
+    self.op = op
+  }
+
+  /// The session that holds its first write of `op`, then writes through `inner`.
+  nonisolated func wrapping(_ inner: InstantLiveWebSocketSession) -> InstantLiveWebSocketSession {
+    InstantLiveWebSocketSession(
+      send: { message in
+        if message.op == self.op, await self.arrive() == 1 {
           await self.hold()
         }
         try await inner.send(message)
