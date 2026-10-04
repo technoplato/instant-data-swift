@@ -362,6 +362,102 @@ struct InstantStorePageSkipTests {
     try await Self.expectEveryPageEqualsItsRematerialization(store: store, pages: pages)
   }
 
+  // MARK: - Rows that stop matching
+
+  /// A row the page does not show can still change it by leaving the rows its filters match: an offset page's window
+  /// moves up, and a limited page loses its next page. 1.9.8 asked only whether the row matches after the write.
+  @Test
+  func aRowThatStopsMatchingRefreshesTheLocalPagesItShifts() async throws {
+    var triples: [InstantTriple] = []
+    for (index, id) in ["a1", "a2", "a3"].enumerated() {
+      triples += [
+        InstantTriple(
+          entityID: id,
+          attributeID: Items.group.id,
+          value: .string("a"),
+          txID: "seed-\(id)",
+          txTime: InstantTimestamp(milliseconds: 1_000 + Int64(index))
+        ),
+        InstantTriple(
+          entityID: id,
+          attributeID: Items.rank.id,
+          value: .number(Double(index + 1)),
+          txID: "seed-\(id)",
+          txTime: InstantTimestamp(milliseconds: 1_000 + Int64(index))
+        ),
+      ]
+    }
+    let store = InstantStore(snapshot: InstantStoreSnapshot(attributes: Items.fields, triples: triples))
+    let groupA = InstantQueryFilter.equals(field: Items.group.name, value: .string("a"))
+    let limited = InstantQueryPlan(
+      id: "items.limited",
+      namespace: Items.namespace,
+      filters: [groupA],
+      order: InstantQueryOrder(Items.rank.name),
+      limit: 2
+    )
+    let offset = InstantQueryPlan(
+      id: "items.offset",
+      namespace: Items.namespace,
+      filters: [groupA],
+      order: InstantQueryOrder(Items.rank.name),
+      offset: 1,
+      limit: 1
+    )
+    let pages = ObservedPages()
+    try await pages.observe(limited, remotePageInfo: nil, in: store)
+    try await pages.observe(offset, remotePageInfo: nil, in: store)
+    expectNoDifference(await pages.emission(limited.id)?.values.map(\.id), ["a1", "a2"])
+    expectNoDifference(await pages.emission(limited.id)?.pageInfo?.hasNextPage, true)
+    expectNoDifference(await pages.emission(offset.id)?.values.map(\.id), ["a2"])
+
+    // a3 leaves group a: neither page shows it, and neither has a next page any more.
+    _ = try await Self.commit(
+      [
+        .insert(
+          InstantTriple(
+            entityID: "a3",
+            attributeID: Items.group.id,
+            value: .string("b"),
+            txID: "move-a3",
+            txTime: InstantTimestamp(milliseconds: 2_000)
+          )
+        )
+      ],
+      id: "move-a3",
+      to: store,
+      pages: pages
+    )
+    expectNoDifference(await pages.emission(limited.id)?.values.map(\.id), ["a1", "a2"])
+    expectNoDifference(await pages.emission(limited.id)?.pageInfo?.hasNextPage, false)
+    expectNoDifference(await pages.emission(offset.id)?.pageInfo?.hasNextPage, false)
+
+    // a1 leaves group a: only a2 is left, so the offset page, which skips the first row, is empty.
+    _ = try await Self.commit(
+      [
+        .insert(
+          InstantTriple(
+            entityID: "a1",
+            attributeID: Items.group.id,
+            value: .string("b"),
+            txID: "move-a1",
+            txTime: InstantTimestamp(milliseconds: 2_001)
+          )
+        )
+      ],
+      id: "move-a1",
+      to: store,
+      pages: pages
+    )
+    for plan in [limited, offset] {
+      let expected = await store.materializePage(plan)
+      let emission = await pages.emission(plan.id)
+      expectNoDifference(emission?.values, expected.values, "\(plan.id)")
+      expectNoDifference(emission?.pageInfo, expected.pageInfo, "\(plan.id)")
+    }
+    expectNoDifference(await pages.emission(offset.id)?.values.map(\.id), [])
+  }
+
   // MARK: - Differential property test
 
   /// Every page equals a full rematerialization after every random write, so a page the store skipped still shows
