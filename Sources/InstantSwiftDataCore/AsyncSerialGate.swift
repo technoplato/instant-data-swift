@@ -76,6 +76,8 @@ actor AsyncSerialGate {
     var stallCount: Int
     /// What the holder was doing, when it names its phases (``setHolderPhase(_:)``).
     var holderPhase: String? = nil
+    /// Whose gate it is, when the gate was given an owner: the runtime's app ID for its operation gate.
+    var owner: String? = nil
   }
 
   /// Emitted when a caller acquires the gate after queuing past the wait threshold, so a slow
@@ -97,6 +99,8 @@ actor AsyncSerialGate {
     var remainingWaiterCount: Int
     /// The priority the caller queued with.
     var waitingPriority: Priority = .standard
+    /// Whose gate it is, when the gate was given an owner: the runtime's app ID for its operation gate.
+    var owner: String? = nil
   }
 
   // SAFETY: every stored property is read and written only on the enclosing
@@ -141,6 +145,8 @@ actor AsyncSerialGate {
   }
 
   private let label: String
+  /// Whose gate this is, for its reports: two runtimes in one process each log an `operation` gate.
+  private let owner: String?
   private let stallThresholdMilliseconds: UInt64
   private let waitReportThresholdMilliseconds: Int
   /// A queued caller moves up one ``Priority`` for every interval of this length it has waited.
@@ -195,6 +201,7 @@ actor AsyncSerialGate {
 
   init(
     label: String,
+    owner: String? = nil,
     stallThresholdMilliseconds: UInt64 = 5_000,
     waitReportThresholdMilliseconds: Int = 250,
     agingMilliseconds: Int = 2_000,
@@ -202,6 +209,7 @@ actor AsyncSerialGate {
     waitReport: (@Sendable (WaitReport) -> Void)? = nil
   ) {
     self.label = label
+    self.owner = owner
     self.stallThresholdMilliseconds = stallThresholdMilliseconds
     self.waitReportThresholdMilliseconds = waitReportThresholdMilliseconds
     self.agingMilliseconds = agingMilliseconds
@@ -330,7 +338,8 @@ actor AsyncSerialGate {
             Self.milliseconds(since: $0, to: now)
           } ?? 0,
           remainingWaiterCount: waiters.count,
-          waitingPriority: waiter.priority
+          waitingPriority: waiter.priority,
+          owner: owner
         )
         let waitReport = self.waitReport
         Task.detached(priority: .utility) { waitReport(wait) }
@@ -481,7 +490,8 @@ actor AsyncSerialGate {
       longestWaitMilliseconds: longestWaitMilliseconds,
       waiterCount: waiters.count,
       stallCount: stallCount,
-      holderPhase: currentHolderPhase
+      holderPhase: currentHolderPhase,
+      owner: owner
     )
     let report = self.report
     Task.detached(priority: .utility) { report(stall) }
@@ -495,6 +505,19 @@ actor AsyncSerialGate {
   /// A slow handoff is evidence, not a library bug: logged, never `reportIssue`d.
   private static func reportWait(_ wait: WaitReport) {
     let phase = wait.previousHolderPhase.map { " (phase: \($0))" } ?? ""
+    var metadata: [String: String] = [
+      "gate": wait.label,
+      "waitingOperation": wait.waitingOperation,
+      "waitMilliseconds": String(wait.waitMilliseconds),
+      "previousHolder": wait.previousHolder,
+      "previousHolderPhase": wait.previousHolderPhase ?? "",
+      "previousHolderHeldMilliseconds": String(wait.previousHolderHeldMilliseconds),
+      "remainingWaiterCount": String(wait.remainingWaiterCount),
+      "waitingPriority": wait.waitingPriority.description,
+    ]
+    if let owner = wait.owner {
+      metadata["owner"] = owner
+    }
     InstantDiagnostics.shared.record(
       wait.waitMilliseconds >= 1_000 ? .warning : .info,
       subsystem: "instant-swift-data-core",
@@ -505,16 +528,7 @@ actor AsyncSerialGate {
         gate behind \(wait.previousHolder)\(phase), which held it \
         \(wait.previousHolderHeldMilliseconds) ms.
         """,
-      metadata: [
-        "gate": wait.label,
-        "waitingOperation": wait.waitingOperation,
-        "waitMilliseconds": String(wait.waitMilliseconds),
-        "previousHolder": wait.previousHolder,
-        "previousHolderPhase": wait.previousHolderPhase ?? "",
-        "previousHolderHeldMilliseconds": String(wait.previousHolderHeldMilliseconds),
-        "remainingWaiterCount": String(wait.remainingWaiterCount),
-        "waitingPriority": wait.waitingPriority.description,
-      ]
+      metadata: metadata
     )
   }
 
@@ -530,22 +544,26 @@ actor AsyncSerialGate {
       Sources/InstantSwiftDataCore/InstantRuntime.swift for an await that never \
       returns or an early return that skips its leave().
       """
+    var metadata: [String: String] = [
+      "gate": stall.label,
+      "holder": stall.holder,
+      "holderPhase": stall.holderPhase ?? "",
+      "holderHeldMilliseconds": String(stall.holderHeldMilliseconds),
+      "longestWaitingOperation": stall.longestWaitingOperation,
+      "longestWaitMilliseconds": String(stall.longestWaitMilliseconds),
+      "waiterCount": String(stall.waiterCount),
+      "stallCount": String(stall.stallCount),
+    ]
+    if let owner = stall.owner {
+      metadata["owner"] = owner
+    }
     InstantDiagnostics.shared.record(
       .critical,
       subsystem: "instant-swift-data-core",
       category: "concurrency",
       event: "serial-gate.stalled",
       message: message,
-      metadata: [
-        "gate": stall.label,
-        "holder": stall.holder,
-        "holderPhase": stall.holderPhase ?? "",
-        "holderHeldMilliseconds": String(stall.holderHeldMilliseconds),
-        "longestWaitingOperation": stall.longestWaitingOperation,
-        "longestWaitMilliseconds": String(stall.longestWaitMilliseconds),
-        "waiterCount": String(stall.waiterCount),
-        "stallCount": String(stall.stallCount),
-      ]
+      metadata: metadata
     )
     reportIssue(message)
   }

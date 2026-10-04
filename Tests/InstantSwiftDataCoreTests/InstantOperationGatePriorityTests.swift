@@ -98,8 +98,11 @@ extension InstantOperationGatePriorityTests {
       }
     }
     let waits = PriorityTestBox<[InstantDiagnosticEntry]>([])
+    // Other suites' runtimes report their own operation gates at the same time, so only this runtime's count.
     let token = InstantDiagnostics.shared.addHandler { entry in
-      guard entry.event == "serial-gate.waited", entry.metadata["gate"] == "operation" else { return }
+      guard entry.event == "serial-gate.waited", entry.metadata["gate"] == "operation",
+        entry.metadata["owner"] == "offline-priority-listing"
+      else { return }
       waits.withValue { $0.append(entry) }
     }
     defer { InstantDiagnostics.shared.removeHandler(token) }

@@ -1676,7 +1676,8 @@ public final class InstantRuntime: Sendable {
   private let streamContentObservers = InstantStreamContentObservers()
   private let sharesObservers =
     InstantSnapshotObservers<InstantSharesObservationKey, [InstantShareSnapshot]>()
-  private let operationGate = AsyncSerialGate(label: "operation")
+  /// Named for the runtime's app, so a report says whose gate waited when two runtimes share a process.
+  private let operationGate: AsyncSerialGate
   // Server refresh preparation can page through a large query result. Keep
   // those preparations serial without holding the operation gate that protects
   // local writes. The final revision-checked transition acquires
@@ -1730,6 +1731,7 @@ public final class InstantRuntime: Sendable {
     attributeRevision: Int64
   ) {
     self.configuration = configuration
+    self.operationGate = AsyncSerialGate(label: "operation", owner: configuration.appID)
     self.store = store
     self.outbox = outbox
     self.persistence = persistence
