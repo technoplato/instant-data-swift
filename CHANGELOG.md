@@ -10,6 +10,19 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## October 4th, 2026 at 8:41:09 a.m. EDT — `5ff6cb84f9b5` Document the v1.9.7 release: the operation gate's priority lanes, hydration and publication off the gate, write-failure kinds and connection health, with the regression found before release (#473 #482)
+
+- **Implementation commit:** `5ff6cb84f9b547c96602f186efa73d7cb7dae2d2`
+- **Change:** Document the v1.9.7 release: the operation gate's priority lanes, hydration and publication off the gate, write-failure kinds and connection health, with the regression found before release (#473 #482)
+- **Details:**
+  - The release document records the server-apply regression dev-197 found (4,816 ms held against 983 ms in 1.9.6) and its fix, the red run on v1.9.6, the release gate on c434e244, the A/B of the hub-component test, and the before-and-after soak.
+- **Files:**
+  - `docs/releases/v1.9.7.md` — the release document
+  - `PROGRESS.md` — the release's entry
+- **User context (verbatim):**
+  > 1.9.7 carries the gate deadline, priority lanes and #473's remaining two parts, with one before-and-after soak.
+- **SpecStory:** unavailable — Claude Code agent session (library-79); no SpecStory capture configured for this session. The quote is the coordinating session's instruction, not Michael's.
+
 ## October 4th, 2026 at 8:39:10 a.m. EDT — `44a1544a859f` Test-only: the mixed encoding-window test lets the connect's delivery pass finish before it adds rows, as its sibling does (#473)
 
 - **Implementation commit:** `44a1544a859f612a821667e28503e1aa1bdc8169`

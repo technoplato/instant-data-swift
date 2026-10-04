@@ -1,3 +1,6 @@
+## 2026-10-04 08:41:00 EDT — instant-data-swift `5ff6cb84f9b547c96602f186efa73d7cb7dae2d2`
+Document the v1.9.7 release: the operation gate's priority lanes, hydration and publication off the gate, write-failure kinds and connection health, with the regression found before release (#473 #482)
+
 ## 2026-10-04 08:28:07 EDT — scribe `95b3cc9752aac172a9196fa73d80d7e1730d5176`
 Record the accessibility-size line limits in the change log (#497)
 
@@ -6,6 +9,9 @@ Shares rows: every line at accessibility text sizes (#497)
 
 ## 2026-10-04 07:11:17 EDT — scribe `1f5d1ef97391e4ee3597757ba78b369c34085a5c`
 Record the Shares tests' #require and the Mac layout fixes in the change log (#497)
+
+## 2026-10-04 06:34:09 EDT — instant-data-swift `44a1544a859f612a821667e28503e1aa1bdc8169`
+Test-only: the mixed encoding-window test lets the connect's delivery pass finish before it adds rows, as its sibling does (#473)
 
 ## 2026-10-04 06:30:51 EDT — scribe `a43e7c4d69dbcbee3e52a2ef7a93a0e6d3975c5b`
 Record Scribe 0.1 (87) in PROGRESS: on the iPhone, the iPad and the Mac, built from b3dd127c on the published instant-data-swift 1.9.6 (#483 #484 #482 #458 #430 #469 #340 #410 #475 #478 #492)
@@ -145,11 +151,17 @@ Expect the catalog's names in alphabetical order in the reducer-enum tests: Agen
 ## 2026-10-04 03:48:49 EDT — scribe `9a25bef8f8785dc95e0f142b993464bf0502e635`
 Red test: a route rollover in the journal settles at Stop and replays at launch without trapping (#482 #483 #512)
 
+## 2026-10-04 03:46:22 EDT — instant-data-swift `c434e24433804e988fd776061172fd276283e06f`
+A server apply queues with local writes on the operation gate, not behind them, since its commit's work grows with every write it waits for (#473)
+
 ## 2026-10-04 03:43:06 EDT — scribe `e06629b16562a7b6f207d319559f8eab2a9a674e`
 Record the journal's route-chunk key fix in the change log (#482 #483)
 
 ## 2026-10-04 03:43:06 EDT — scribe `8afb292035a1ac00671544bc18b28bf56a36b2b1`
 The durability journal names an ended route chunk's open key without building a write, so a rollover's sealed draft no longer fails the write's precondition at Stop and at launch (#482 #483)
+
+## 2026-10-04 03:39:18 EDT — instant-data-swift `e83619d92711025bc915646b254b0f0bccdaae36`
+Test-only: two bounded-outbox tests let the delivery pass already requested finish before they add rows or count passes (#473)
 
 ## 2026-10-04 03:29:25 EDT — scribe `8801bfad1c1e2d80d546ea4cf5018b044c00651c`
 Record the journal test's lowercased chunk ID in the change log (#482 #483)
@@ -157,11 +169,17 @@ Record the journal test's lowercased chunk ID in the change log (#482 #483)
 ## 2026-10-04 03:29:25 EDT — scribe `82aa3d1ccfef845b1a3f6b5676c6ba0adcfee8be`
 The journal test's route chunks carry the lowercased recording ID the write's precondition checks, so the test runs instead of stopping the test process (#482 #483)
 
+## 2026-10-04 03:25:21 EDT — instant-data-swift `3c813be96931371b6771d5db0e05a284aa167a2f`
+The operation gate's wait and stall reports name the runtime's app, and the two tests that read them count only their own runtime's (#473)
+
 ## 2026-10-04 03:18:16 EDT — scribe `6291bb78d4e4965d5ce17df513fb2f5dfebd0c3e`
 Record the continuation notice's watchOS guard in the change log (#458)
 
 ## 2026-10-04 03:18:15 EDT — scribe `2199daffefeeaed7428a42072cd302a22bfa0887`
 The continued recording's notice is built only where the recording screen is, off watchOS and tvOS, so the Watch app builds (#458)
+
+## 2026-10-04 02:54:58 EDT — instant-data-swift `7b67b843b484760ec5940087d4a4e16129b33273`
+Test-only: renameChunk is fileprivate, since its fixture parameter is a private type (#473)
 
 ## 2026-10-04 02:40:38 EDT — scribe `9307861ce0404fd384a2ba2d9d42b0886d97f576`
 Log the day triage script's and fix and its red test in CHANGELOG (#511)
@@ -546,6 +564,9 @@ Two markers switch on a non-optional value (#492)
 
 ## 2026-10-03 21:59:54 EDT — scribe `44db3657e1dc457a98fd2789b1cc7c509638e47c`
 The recording's core switch lists voiceCommandRan, so RecordingFeature compiles (#492)
+
+## 2026-10-03 21:49:20 EDT — instant-data-swift `87ec88ddf8188663d8d96d0ff9379a76eccf89c3`
+Call the summary's mutating takeIfDue and the deferred commit before #expect and #require read their results (#473)
 
 ## 2026-10-03 21:48:01 EDT — scribe `1b0f59171b0557281d0e281d22b974ffd0146acc`
 The one-time reset tests call the mutating reset before #expect, so they compile (#161 #442)
