@@ -1,11 +1,26 @@
+## 2026-10-03 20:49:49 EDT — instant-data-swift `1f74a6d4b91cd0dc501a8d3383bf0471643f13b6`
+Check each write-failure case in its own call instead of one array literal of tuples (#482).
+
 ## 2026-10-03 20:30:26 EDT — scribe `99d48fa4bba3960e2d70cb7e87afdc412a27ab68`
 Settings > Audio > Recording Mic Mode picks Clean (measurement) or Standard (default) for the next recording, each recording names its mode, and a Mac-side script compares the A/B (#122, ADR 0040 Decision 6)
+
+## 2026-10-03 20:27:04 EDT — instant-data-swift `d371980368a3b53c775ed95f1ce243b0582cf7e7`
+Test that a hydration read without the gate never pairs an emission with a write saved during the read (#473).
+
+## 2026-10-03 20:20:29 EDT — instant-data-swift `6d7cae69477e5ed0fb7f5520c57cf51bab9fa920`
+Name the locals that copied a property under their own names, so no initializer reads the local it declares (#473 #482).
 
 ## 2026-10-03 20:10:01 EDT — scribe `7b81d443b4d0dcbe78db20e3ad3f242e60aec396`
 Red tests: Settings chooses the recording's mic mode, a recording keeps the mode it took at Record, names it in its runtime events and diagnostics, and the A/B compares two recordings (#122, ADR 0040 Decision 6)
 
 ## 2026-10-03 20:02:27 EDT — scribe `47fd2250717e543fb106a48a0f98ec07e585a4a0`
 Plan mic-mode: Settings chooses the recording's microphone mode, Clean (measurement) or Standard (default), for Michael's A/B (#122, ADR 0040 question 3)
+
+## 2026-10-03 19:42:04 EDT — instant-data-swift `425269bcb50318ecc2cfa1ecd21d1ea01acf6555`
+Give the operation gate priorities, hydrate and publish off it, and classify write failures (#473 #482).
+
+## 2026-10-03 19:41:49 EDT — instant-data-swift `c1332f76a18595c4a1055462ef755cb166772078`
+Claim the files of v1.9.7: gate priorities, hydration and publication off the operation gate, write-failure kinds and connection health (#473 #482).
 
 ## 2026-10-03 19:26:28 EDT — scribe `e43ac5760bbfb497712924ccc66f6cfb1348d9eb`
 Merge durability-unstick's test fixes into transcript-journal: the lane's retry guard 55e5a98f, the #480 and #482 test fixes 7a6b934a, and B's ledger 29b5f313 (#482)

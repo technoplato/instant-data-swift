@@ -10,6 +10,69 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## October 3rd, 2026 at 9:07:43 p.m. EDT — `1f74a6d4b91c` Check each write-failure case in its own call instead of one array literal of tuples (#482)
+
+- **Implementation commit:** `1f74a6d4b91cd0dc501a8d3383bf0471643f13b6`
+- **Change:** Check each write-failure case in its own call instead of one array literal of tuples (#482)
+- **Details:**
+  - Two tables of 26 and 7 tuples mixing calls, implicit members and any Error became one check call per case, so the type checker handles one call at a time.
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantWriteFailureKindTests.swift` — one check per case
+- **User context (verbatim):**
+  > fix this please so it works efficiently as as well as the typescript core library
+- **SpecStory:** unavailable — Claude Code agent session (library-79); no SpecStory capture configured for this session.
+
+## October 3rd, 2026 at 9:07:43 p.m. EDT — `d371980368a3` Test that a hydration read without the gate never pairs an emission with a write saved during the read (#473)
+
+- **Implementation commit:** `d371980368a3b53c775ed95f1ce243b0582cf7e7`
+- **Change:** Test that a hydration read without the gate never pairs an emission with a write saved during the read (#473)
+- **Details:**
+  - A write saved to SQLite and paused before its store commit while a hydration reads, and a write landing between the read and the check: no delivered row pairs the old title with the write's samples.
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantOperationGatePriorityTests.swift` — two hydration pairing tests
+- **User context (verbatim):**
+  > fix this please so it works efficiently as as well as the typescript core library
+- **SpecStory:** unavailable — Claude Code agent session (library-79); no SpecStory capture configured for this session.
+
+## October 3rd, 2026 at 9:07:43 p.m. EDT — `6d7cae69477e` Name the locals that copied a property under their own names, so no initializer reads the local it declares (#473 #482)
+
+- **Implementation commit:** `6d7cae69477e5ed0fb7f5520c57cf51bab9fa920`
+- **Change:** Name the locals that copied a property under their own names, so no initializer reads the local it declares (#473 #482)
+- **Details:**
+  - Four new locals took the name of the property they copied (the gate's marked phase, the health counters, the live session's open flag, the failure kind's message); each now has its own name.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantWriteFailureKind.swift` — the message local renamed
+  - `Sources/InstantSwiftDataCore/AsyncSerialGate.swift` — the phase local renamed
+  - `Sources/InstantSwiftDataCore/InstantConnectionHealth.swift` — the counters local renamed
+  - `Sources/InstantSwiftDataCore/InstantRuntimeLiveSession.swift` — the open flag local renamed
+- **User context (verbatim):**
+  > fix this please so it works efficiently as as well as the typescript core library
+- **SpecStory:** unavailable — Claude Code agent session (library-79); no SpecStory capture configured for this session.
+
+## October 3rd, 2026 at 9:07:42 p.m. EDT — `425269bcb503` Give the operation gate priorities, hydrate and publish off it, and classify write failures (#473 #482)
+
+- **Implementation commit:** `425269bcb50318ecc2cfa1ecd21d1ea01acf6555`
+- **Change:** Give the operation gate priorities, hydrate and publish off it, and classify write failures (#473 #482)
+- **Details:**
+  - On Michael's iPhone at 13:17:34 a write held the operation gate 12.3 s while eight callers queued first come, first served; the hydrate that took it next held it through a SQLite pread with seven callers behind it; publishing was about three quarters of every write's hold (freeze-185, #473). Callers now queue by priority (interactive local writes and awaited reads, standard, background server applies, prunes, retry windows and unbounded listings), first in first out within a priority, and a waiter moves up one priority every 2 s; a holder past the stall threshold is reported once; operationGateSnapshot() reads the holder, phase, start and queue without a hop.
+  - A deferred-value emission reads SQLite without the gate and checks afterwards that it is still current, taking the gate only for the check while a write holds it. A local write, or a server apply that took the gate itself, commits the store under the gate and publishes to observers after leaving it, as Reactor.js pushOps returns before notifyAll's notifyOne calls run; commits before a publication are published together once, and each commit keeps its info store.mutation-published line beside a store.publish-summary line every 30 s.
+  - Apple's SQLite already commits WAL connections with synchronous NORMAL (DEFAULT_WAL_SYNCHRONOUS=1 on macOS 26.5 and the iOS 27 simulator), so no PRAGMA change; the store logs its settings at open. For #482 part C, InstantWriteFailureKind classifies any error (rejected with an InstantWriteRejection, transient, unknown), PendingMutation.failureKind classifies a failed mutation, and connectionHealth() reads isOpen, the last local commit, server acknowledgement and result, and the pending count from counters in memory.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/AsyncSerialGate.swift` — priority lanes with aging, one stall report per holder, the hop-free snapshot
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — gate priorities per caller, hydration off the gate, publication after the gate for writes and server applies, connectionHealth() and operationGateSnapshot()
+  - `Sources/InstantSwiftDataCore/InstantStore.swift` — deferred, coalescing publication with tickets; per-commit lines and the publication summary
+  - `Sources/InstantSwiftDataCore/InstantWriteFailureKind.swift` — the write-failure kinds (new)
+  - `Sources/InstantSwiftDataCore/InstantConnectionHealth.swift` — connection health and the gate snapshot types (new)
+  - `Sources/InstantSwiftDataCore/InstantRuntimeLiveSession.swift` — the open flag readable without a hop
+  - `Sources/InstantSwiftDataCore/InstantDiagnostics.swift` — isEnabled(at:) so frequent lines skip building metadata
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — logs synchronous and journal mode at open
+  - `Sources/InstantSwiftData/InstantSwiftData.swift` — connectionHealth() and operationGateSnapshot() on the client
+  - `Tests/InstantSwiftDataCoreTests/InstantOperationGatePriorityTests.swift` — priority, aging, one stall report, publication after the gate, hydration off the gate (new)
+  - `Tests/InstantSwiftDataCoreTests/InstantWriteFailureKindTests.swift` — failure kinds and connection health (new)
+- **User context (verbatim):**
+  > fix this please so it works efficiently as as well as the typescript core library
+- **SpecStory:** unavailable — Claude Code agent session (library-79); no SpecStory capture configured for this session.
+
 ## October 3rd, 2026 at 6:48:59 p.m. EDT — `860ed5387b8e` Batch the diagnostics file's lines, one open and lock per batch, and fsync at most once a second (#473)
 
 - **Implementation commit:** `860ed5387b8efd1855f0be3962fab1dace24c26f`
