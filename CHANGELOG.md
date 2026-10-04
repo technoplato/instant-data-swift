@@ -10,6 +10,86 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## October 4th, 2026 at 8:41:09 a.m. EDT — `5ff6cb84f9b5` Document the v1.9.7 release: the operation gate's priority lanes, hydration and publication off the gate, write-failure kinds and connection health, with the regression found before release (#473 #482)
+
+- **Implementation commit:** `5ff6cb84f9b547c96602f186efa73d7cb7dae2d2`
+- **Change:** Document the v1.9.7 release: the operation gate's priority lanes, hydration and publication off the gate, write-failure kinds and connection health, with the regression found before release (#473 #482)
+- **Details:**
+  - The release document records the server-apply regression dev-197 found (4,816 ms held against 983 ms in 1.9.6) and its fix, the red run on v1.9.6, the release gate on c434e244, the A/B of the hub-component test, and the before-and-after soak.
+- **Files:**
+  - `docs/releases/v1.9.7.md` — the release document
+  - `PROGRESS.md` — the release's entry
+- **User context (verbatim):**
+  > 1.9.7 carries the gate deadline, priority lanes and #473's remaining two parts, with one before-and-after soak.
+- **SpecStory:** unavailable — Claude Code agent session (library-79); no SpecStory capture configured for this session. The quote is the coordinating session's instruction, not Michael's.
+
+## October 4th, 2026 at 8:39:10 a.m. EDT — `44a1544a859f` Test-only: the mixed encoding-window test lets the connect's delivery pass finish before it adds rows, as its sibling does (#473)
+
+- **Implementation commit:** `44a1544a859f612a821667e28503e1aa1bdc8169`
+- **Change:** Test-only: the mixed encoding-window test lets the connect's delivery pass finish before it adds rows, as its sibling does (#473)
+- **Details:**
+  - 1.9.7's release gate failed mixedEncodingFailureWindowRefillsWithoutAnAcknowledgement in the ten suites and 4 of 5 times alone, with the race e83619d9 fixed in its sibling; with the same wait it passed 5 of 5 alone (ab-197).
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantBoundedOutboxDeliveryTests.swift` — wait for the connect's pass before adding rows
+- **User context (verbatim):**
+  > 1.9.7 carries the gate deadline, priority lanes and #473's remaining two parts, with one before-and-after soak.
+- **SpecStory:** unavailable — Claude Code agent session (library-79); no SpecStory capture configured for this session. The quote is the coordinating session's instruction, not Michael's.
+
+## October 4th, 2026 at 8:39:10 a.m. EDT — `c434e2443380` A server apply queues with local writes on the operation gate, not behind them, since its commit's work grows with every write it waits for (#473)
+
+- **Implementation commit:** `c434e24433804e988fd776061172fd276283e06f`
+- **Change:** A server apply queues with local writes on the operation gate, not behind them, since its commit's work grows with every write it waits for (#473)
+- **Details:**
+  - dev-197's focused suite failed localTransactsDoNotWaitBehindAServerApplyOverAHubComponent: a server apply held the gate 4,816 ms (catch up 2,431, commit 1,676, patch 691) and a local write waited 4,702 ms, over 375 writes; 1.9.6's gate held 983 ms with the longest write at 866 ms.
+  - Both of a server apply's gate entries, 'snapshot server apply' and 'catch up server apply', now queue interactive, first come, first served with local writes, as in 1.9.6. Prunes, retry windows and unbounded outbox listings stay in the background lane.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — the server apply's two gate entries queue interactive
+  - `Sources/InstantSwiftDataCore/AsyncSerialGate.swift` — the background lane's description
+  - `Tests/InstantSwiftDataCoreTests/InstantOperationGatePriorityTests.swift` — the gate tests' background waiter is an outbox listing
+- **User context (verbatim):**
+  > Put the server-apply regression and its numbers (4,816 ms held vs 983 ms in 1.9.6) in 1.9.7's release doc.
+- **SpecStory:** unavailable — Claude Code agent session (library-79); no SpecStory capture configured for this session. The quote is the coordinating session's instruction, not Michael's.
+
+## October 4th, 2026 at 8:39:10 a.m. EDT — `e83619d92711` Test-only: two bounded-outbox tests let the delivery pass already requested finish before they add rows or count passes (#473)
+
+- **Implementation commit:** `e83619d92711025bc915646b254b0f0bccdaae36`
+- **Change:** Test-only: two bounded-outbox tests let the delivery pass already requested finish before they add rows or count passes (#473)
+- **Details:**
+  - dev-197's ten suites failed fiftyEncodingFailuresUseBoundedRowAddressedQuarantineAndDoNotStarveTail (the connect's own pass quarantined the appended rows outside the known-issue scope) and acknowledgementTimeoutRetriesOnlyAfterReplacingTheLiveGeneration (the successor's pass, still claiming when the clock moved, found the expired deadline itself), each once. Each test now waits up to 5 s for the pump to be idle at that point; the product's behavior in both runs was correct.
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantBoundedOutboxDeliveryTests.swift` — wait for the requested pass before adding rows or counting
+- **User context (verbatim):**
+  > 1.9.7 carries the gate deadline, priority lanes and #473's remaining two parts, with one before-and-after soak.
+- **SpecStory:** unavailable — Claude Code agent session (library-79); no SpecStory capture configured for this session. The quote is the coordinating session's instruction, not Michael's.
+
+## October 4th, 2026 at 8:39:10 a.m. EDT — `3c813be96931` The operation gate's wait and stall reports name the runtime's app, and the two tests that read them count only their own runtime's (#473)
+
+- **Implementation commit:** `3c813be96931371b6771d5db0e05a284aa167a2f`
+- **Change:** The operation gate's wait and stall reports name the runtime's app, and the two tests that read them count only their own runtime's (#473)
+- **Details:**
+  - dev-197 failed aLocalWriteGoesAheadOfAnOutboxListingQueuedBeforeIt and aLocalWriteNamesThePhaseThatHeldTheGate in all three new-suite runs: each read InstantDiagnostics.shared, which every runtime in the process writes, and the suites run in parallel.
+  - AsyncSerialGate takes an owner; InstantRuntime names its operation gate after its app ID, carried as 'owner' on serial-gate.waited and serial-gate.stalled. The tests count only their runtime's lines, and the hold test waits up to 5 s for its line and expects 'commit store' or 'publish status'.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/AsyncSerialGate.swift` — owner on the gate and its reports
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — the operation gate is named for the app
+  - `Tests/InstantSwiftDataCoreTests/InstantOperationGatePriorityTests.swift` — counts only its runtime's waits
+  - `Tests/InstantSwiftDataCoreTests/InstantOperationGateHoldTests.swift` — counts only its runtime's waits and waits for the line
+- **User context (verbatim):**
+  > 1.9.7 carries the gate deadline, priority lanes and #473's remaining two parts, with one before-and-after soak.
+- **SpecStory:** unavailable — Claude Code agent session (library-79); no SpecStory capture configured for this session. The quote is the coordinating session's instruction, not Michael's.
+
+## October 4th, 2026 at 8:39:09 a.m. EDT — `7b67b843b484` Test-only: renameChunk is fileprivate, since its fixture parameter is a private type (#473)
+
+- **Implementation commit:** `7b67b843b484760ec5940087d4a4e16129b33273`
+- **Change:** Test-only: renameChunk is fileprivate, since its fixture parameter is a private type (#473)
+- **Details:**
+  - dev-197's red build on v1.9.6 stopped at InstantOperationGatePriorityTests.swift:266, 'method must be declared fileprivate because its parameter uses a private type'. No test changes.
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantOperationGatePriorityTests.swift` — renameChunk is fileprivate
+- **User context (verbatim):**
+  > 1.9.7 carries the gate deadline, priority lanes and #473's remaining two parts, with one before-and-after soak.
+- **SpecStory:** unavailable — Claude Code agent session (library-79); no SpecStory capture configured for this session. The quote is the coordinating session's instruction, not Michael's.
+
 ## October 4th, 2026 at 12:41:09 a.m. EDT — `226ab93b2a02` Document the v1.9.6 release: a stored file downloads to a destination file, streaming, and the log file is written in batches (#454 #473)
 
 - **Implementation commit:** `226ab93b2a028b01f54ca7a186e90446744197a1`
@@ -33,6 +113,69 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
   - `Tests/InstantSwiftDataCoreTests/InstantStoredFileDownloadTests.swift` — awaited values read before the assertions
 - **User context (verbatim):**
   > Publish the library once it's checked fast. Yes.
+- **SpecStory:** unavailable — Claude Code agent session (library-79); no SpecStory capture configured for this session.
+
+## October 3rd, 2026 at 9:07:43 p.m. EDT — `1f74a6d4b91c` Check each write-failure case in its own call instead of one array literal of tuples (#482)
+
+- **Implementation commit:** `1f74a6d4b91cd0dc501a8d3383bf0471643f13b6`
+- **Change:** Check each write-failure case in its own call instead of one array literal of tuples (#482)
+- **Details:**
+  - Two tables of 26 and 7 tuples mixing calls, implicit members and any Error became one check call per case, so the type checker handles one call at a time.
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantWriteFailureKindTests.swift` — one check per case
+- **User context (verbatim):**
+  > fix this please so it works efficiently as as well as the typescript core library
+- **SpecStory:** unavailable — Claude Code agent session (library-79); no SpecStory capture configured for this session.
+
+## October 3rd, 2026 at 9:07:43 p.m. EDT — `d371980368a3` Test that a hydration read without the gate never pairs an emission with a write saved during the read (#473)
+
+- **Implementation commit:** `d371980368a3b53c775ed95f1ce243b0582cf7e7`
+- **Change:** Test that a hydration read without the gate never pairs an emission with a write saved during the read (#473)
+- **Details:**
+  - A write saved to SQLite and paused before its store commit while a hydration reads, and a write landing between the read and the check: no delivered row pairs the old title with the write's samples.
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantOperationGatePriorityTests.swift` — two hydration pairing tests
+- **User context (verbatim):**
+  > fix this please so it works efficiently as as well as the typescript core library
+- **SpecStory:** unavailable — Claude Code agent session (library-79); no SpecStory capture configured for this session.
+
+## October 3rd, 2026 at 9:07:43 p.m. EDT — `6d7cae69477e` Name the locals that copied a property under their own names, so no initializer reads the local it declares (#473 #482)
+
+- **Implementation commit:** `6d7cae69477e5ed0fb7f5520c57cf51bab9fa920`
+- **Change:** Name the locals that copied a property under their own names, so no initializer reads the local it declares (#473 #482)
+- **Details:**
+  - Four new locals took the name of the property they copied (the gate's marked phase, the health counters, the live session's open flag, the failure kind's message); each now has its own name.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantWriteFailureKind.swift` — the message local renamed
+  - `Sources/InstantSwiftDataCore/AsyncSerialGate.swift` — the phase local renamed
+  - `Sources/InstantSwiftDataCore/InstantConnectionHealth.swift` — the counters local renamed
+  - `Sources/InstantSwiftDataCore/InstantRuntimeLiveSession.swift` — the open flag local renamed
+- **User context (verbatim):**
+  > fix this please so it works efficiently as as well as the typescript core library
+- **SpecStory:** unavailable — Claude Code agent session (library-79); no SpecStory capture configured for this session.
+
+## October 3rd, 2026 at 9:07:42 p.m. EDT — `425269bcb503` Give the operation gate priorities, hydrate and publish off it, and classify write failures (#473 #482)
+
+- **Implementation commit:** `425269bcb50318ecc2cfa1ecd21d1ea01acf6555`
+- **Change:** Give the operation gate priorities, hydrate and publish off it, and classify write failures (#473 #482)
+- **Details:**
+  - On Michael's iPhone at 13:17:34 a write held the operation gate 12.3 s while eight callers queued first come, first served; the hydrate that took it next held it through a SQLite pread with seven callers behind it; publishing was about three quarters of every write's hold (freeze-185, #473). Callers now queue by priority (interactive local writes and awaited reads, standard, background server applies, prunes, retry windows and unbounded listings), first in first out within a priority, and a waiter moves up one priority every 2 s; a holder past the stall threshold is reported once; operationGateSnapshot() reads the holder, phase, start and queue without a hop.
+  - A deferred-value emission reads SQLite without the gate and checks afterwards that it is still current, taking the gate only for the check while a write holds it. A local write, or a server apply that took the gate itself, commits the store under the gate and publishes to observers after leaving it, as Reactor.js pushOps returns before notifyAll's notifyOne calls run; commits before a publication are published together once, and each commit keeps its info store.mutation-published line beside a store.publish-summary line every 30 s.
+  - Apple's SQLite already commits WAL connections with synchronous NORMAL (DEFAULT_WAL_SYNCHRONOUS=1 on macOS 26.5 and the iOS 27 simulator), so no PRAGMA change; the store logs its settings at open. For #482 part C, InstantWriteFailureKind classifies any error (rejected with an InstantWriteRejection, transient, unknown), PendingMutation.failureKind classifies a failed mutation, and connectionHealth() reads isOpen, the last local commit, server acknowledgement and result, and the pending count from counters in memory.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/AsyncSerialGate.swift` — priority lanes with aging, one stall report per holder, the hop-free snapshot
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — gate priorities per caller, hydration off the gate, publication after the gate for writes and server applies, connectionHealth() and operationGateSnapshot()
+  - `Sources/InstantSwiftDataCore/InstantStore.swift` — deferred, coalescing publication with tickets; per-commit lines and the publication summary
+  - `Sources/InstantSwiftDataCore/InstantWriteFailureKind.swift` — the write-failure kinds (new)
+  - `Sources/InstantSwiftDataCore/InstantConnectionHealth.swift` — connection health and the gate snapshot types (new)
+  - `Sources/InstantSwiftDataCore/InstantRuntimeLiveSession.swift` — the open flag readable without a hop
+  - `Sources/InstantSwiftDataCore/InstantDiagnostics.swift` — isEnabled(at:) so frequent lines skip building metadata
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — logs synchronous and journal mode at open
+  - `Sources/InstantSwiftData/InstantSwiftData.swift` — connectionHealth() and operationGateSnapshot() on the client
+  - `Tests/InstantSwiftDataCoreTests/InstantOperationGatePriorityTests.swift` — priority, aging, one stall report, publication after the gate, hydration off the gate (new)
+  - `Tests/InstantSwiftDataCoreTests/InstantWriteFailureKindTests.swift` — failure kinds and connection health (new)
+- **User context (verbatim):**
+  > fix this please so it works efficiently as as well as the typescript core library
 - **SpecStory:** unavailable — Claude Code agent session (library-79); no SpecStory capture configured for this session.
 
 ## October 3rd, 2026 at 6:48:59 p.m. EDT — `860ed5387b8e` Batch the diagnostics file's lines, one open and lock per batch, and fsync at most once a second (#473)

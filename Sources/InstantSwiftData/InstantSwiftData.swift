@@ -1543,6 +1543,19 @@ public struct InstantSwiftDataClient: Sendable {
     try await connectionStatusOperation()
   }
 
+  /// How the connection is doing, from the runtime's in-memory counters: no operation gate, no SQLite, no await
+  /// (#482). A client without a runtime has no connection, so it reports a closed one with no events and nothing
+  /// pending.
+  public func connectionHealth() -> InstantConnectionHealth {
+    runtime?.connectionHealth() ?? InstantConnectionHealth(isOpen: false)
+  }
+
+  /// What holds the runtime's operation gate now, with no hop onto the gate (freeze-185 item 7). A client without a
+  /// runtime has no gate, so it reports a free one.
+  public func operationGateSnapshot() -> InstantOperationGateSnapshot {
+    runtime?.operationGateSnapshot() ?? InstantOperationGateSnapshot(holder: nil)
+  }
+
   public func observeConnectionStatus() async throws -> AsyncStream<InstantConnectionStatus> {
     try await observeConnectionStatusOperation()
   }

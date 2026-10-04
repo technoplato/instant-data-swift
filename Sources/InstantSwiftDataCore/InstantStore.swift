@@ -332,6 +332,86 @@ package struct InstantStorePublishMetrics: Equatable, Sendable {
   package var splicedObserverCount = 0
   package var rematerializedObserverCount = 0
   package var materializedSnapshotCount = 0
+
+  mutating func add(_ other: Self) {
+    skippedObserverCount += other.skippedObserverCount
+    splicedObserverCount += other.splicedObserverCount
+    rematerializedObserverCount += other.rematerializedObserverCount
+    materializedSnapshotCount += other.materializedSnapshotCount
+  }
+}
+
+/// A commit's claim on the publication that refreshes observers for it (#473).
+struct InstantStorePublicationTicket: Hashable, Sendable {
+  var id: Int64
+}
+
+/// Changes committed without publication, published together by the next publication (#473).
+private struct PendingPublication {
+  var id: Int64
+  var changedEntityIDs: Set<String> = []
+  /// The namespaces the changed entities belong to, or nil when every observer must refresh.
+  var changedNamespaces: Set<String>? = []
+  /// Whether a commit changed the store; a publication of page info alone refreshes only the observers it names.
+  var storeChanged = false
+  var pageInfoByKey: [String: InstantQueryRemotePageInfo] = [:]
+  /// The commits this publication covers, oldest first.
+  var commits: [PendingCommit] = []
+  /// Commits waiting for this publication's emissions.
+  var ticketCount = 0
+
+  var commitCount: Int { commits.count }
+}
+
+/// A commit waiting for its publication (#473), for its `store.mutation-published` line.
+private struct PendingCommit {
+  var transactionID: String
+  var changedEntityCount: Int
+  var tripleCount: Int
+  var sequence: Int64
+}
+
+/// What publishing cost since the last `store.publish-summary` line (#473).
+struct InstantStorePublicationSummary {
+  /// A publication at least this long counts as slow.
+  static let slowPublication = Duration.milliseconds(100)
+
+  struct Window {
+    var publicationCount = 0
+    var commitCount = 0
+    var slowPublicationCount = 0
+    var metrics = InstantStorePublishMetrics()
+    var totalDuration = Duration.zero
+    var maximumDuration = Duration.zero
+    var window = Duration.zero
+  }
+
+  private var current = Window()
+  private var windowStartedAt: ContinuousClock.Instant?
+
+  mutating func record(commitCount: Int, metrics: InstantStorePublishMetrics, duration: Duration) {
+    if windowStartedAt == nil { windowStartedAt = .now }
+    current.publicationCount += 1
+    current.commitCount += commitCount
+    current.metrics.add(metrics)
+    current.totalDuration += duration
+    current.maximumDuration = max(current.maximumDuration, duration)
+    if duration >= Self.slowPublication {
+      current.slowPublicationCount += 1
+    }
+  }
+
+  /// The window's totals once `interval` has passed since it started, and a new window; nil before then.
+  mutating func takeIfDue(now: ContinuousClock.Instant, interval: Duration) -> Window? {
+    guard let startedAt = windowStartedAt, now - startedAt >= interval, current.publicationCount > 0 else {
+      return nil
+    }
+    var window = current
+    window.window = now - startedAt
+    current = Window()
+    windowStartedAt = now
+    return window
+  }
 }
 
 private struct StoreObserver: Sendable {
@@ -378,6 +458,12 @@ public actor InstantStore {
   /// emission does not mean that query has a newer result. See `wasRefreshed(queryID:after:)`.
   private var lastRefreshSequenceByQueryID: [String: Int64] = [:]
   package private(set) var lastPublishMetrics = InstantStorePublishMetrics()
+  /// Changes committed with ``commitDeferringPublication(_:installingLiveQueryPageInfo:)`` and not yet published.
+  private var pendingPublication: PendingPublication?
+  private var nextPublicationID: Int64 = 1
+  /// The emissions of recent publications, until every commit they covered has redeemed its ticket.
+  private var publishedEmissions: [Int64: (emissions: [InstantQueryEmission], remainingTickets: Int)] = [:]
+  private var publicationSummary = InstantStorePublicationSummary()
 
   public init(
     snapshot: InstantStoreSnapshot = InstantStoreSnapshot(),
@@ -393,12 +479,14 @@ public actor InstantStore {
   }
 
   public func replaceAttributes(_ attributes: [InstantAttribute]) -> InstantStoreSnapshot {
+    publishPendingChanges()
     self.attributes.replaceAll(attributes)
     self.indexes = TripleIndexes(triples: self.indexes.triples, attributes: self.attributes)
     return snapshot()
   }
 
   public func replaceSnapshot(_ snapshot: InstantStoreSnapshot) {
+    publishPendingChanges()
     let changed = snapshot != self.snapshot()
     self.attributes = AttributeStore(attributes: snapshot.attributes)
     self.indexes = TripleIndexes(
@@ -421,6 +509,7 @@ public actor InstantStore {
     var mergedAttributes = self.attributes
     mergedAttributes.merge(attributes)
     guard mergedAttributes != self.attributes else { return nil }
+    publishPendingChanges()
     _ = indexes.reconcileRelationStorage(
       previousAttributes: self.attributes,
       mergedAttributes: mergedAttributes
@@ -443,6 +532,8 @@ public actor InstantStore {
   /// when the query was refreshed, a newer emission is already queued; when it was not, the
   /// intervening writes did not touch it and the stale emission is still its current result.
   func wasRefreshed(queryID: String, after sequence: Int64) -> Bool {
+    // A change committed and not yet published (#473) refreshes the query when it is published; publish it now.
+    publishPendingChanges()
     guard let refreshed = lastRefreshSequenceByQueryID[queryID] else { return false }
     return refreshed > sequence
   }
@@ -682,6 +773,7 @@ public actor InstantStore {
     _ replacements: [InstantLiveQueryResultReplacement],
     publishing: Bool
   ) -> [InstantQueryEmission] {
+    publishPendingChanges()
     let pageInfoByKey = Self.liveQueryPageInfoByKey(replacements)
     guard !pageInfoByKey.isEmpty else { return [] }
     var metrics = InstantStorePublishMetrics()
@@ -1493,73 +1585,246 @@ public actor InstantStore {
     shouldPublish: Bool,
     installingLiveQueryPageInfo replacements: [InstantLiveQueryResultReplacement]
   ) -> PreparedStoreMutation {
+    // A change committed earlier and not yet published goes out first, so observers see commits in order.
+    publishPendingChanges()
     var prepared = prepared
-    prepared.deferredValueRemovalMetrics = prepared.indexes.removeMarkedDeferredValues(
-      attributes: prepared.attributes
-    )
+    let changedNamespaces = install(&prepared)
     if observers.isEmpty {
-      self.attributes = prepared.attributes
-      self.indexes = prepared.indexes
-      self.sequence = prepared.sequence
       lastPublishMetrics = InstantStorePublishMetrics()
-      if InstantDiagnostics.shared.isEnabled {
+      recordMutation(
+        prepared.result,
+        published: shouldPublish,
+        metrics: InstantStorePublishMetrics(),
+        observerCount: 0,
+        emissionCount: 0
+      )
+      return prepared
+    }
+    let refreshed = refreshObservers(
+      changedEntityIDs: prepared.result.changedEntityIDs,
+      changedNamespaces: changedNamespaces,
+      pageInfoByKey: Self.liveQueryPageInfoByKey(replacements),
+      storeChanged: true,
+      publishing: shouldPublish
+    )
+    lastPublishMetrics = refreshed.metrics
+    var result = prepared.result
+    result.emissions = refreshed.emissions
+    recordMutation(
+      result,
+      published: shouldPublish,
+      metrics: refreshed.metrics,
+      observerCount: observers.count,
+      emissionCount: result.emissions.count
+    )
+    if shouldPublish {
+      publicationSummary.record(
+        commitCount: 1,
+        metrics: refreshed.metrics,
+        duration: refreshed.duration
+      )
+      reportPublicationSummaryIfDue()
+    }
+    prepared.result = result
+    return prepared
+  }
+
+  /// Commits `prepared` without refreshing observers (#473); ``publishCommittedChanges(_:)`` publishes it.
+  ///
+  /// The runtime commits under its operation gate and publishes after it leaves the gate, as Reactor.js `pushOps`
+  /// returns before the `notifyOne` calls `notifyAll` schedules run. On Michael's iPhone publishing was about three
+  /// quarters of a write's hold of the gate (p50 337 ms to published over 633 slow holds, #473). Changes committed
+  /// before the next publication are published together, once. Returns nil when no observer can see the change.
+  func commitDeferringPublication(
+    _ prepared: consuming PreparedStoreMutation,
+    installingLiveQueryPageInfo replacements: [InstantLiveQueryResultReplacement] = []
+  ) -> (prepared: PreparedStoreMutation, publication: InstantStorePublicationTicket?) {
+    var prepared = prepared
+    let changedNamespaces = install(&prepared)
+    guard !observers.isEmpty else {
+      lastPublishMetrics = InstantStorePublishMetrics()
+      recordMutation(
+        prepared.result,
+        published: false,
+        metrics: InstantStorePublishMetrics(),
+        observerCount: 0,
+        emissionCount: 0
+      )
+      return (prepared, nil)
+    }
+    let commit = PendingCommit(
+      transactionID: prepared.result.transactionID,
+      changedEntityCount: prepared.result.changedEntityIDs.count,
+      tripleCount: prepared.result.tripleCount,
+      sequence: sequence
+    )
+    let changedEntityIDs = prepared.result.changedEntityIDs
+    let ticket = joinPendingPublication { pending in
+      pending.commits.append(commit)
+      pending.changedEntityIDs.formUnion(changedEntityIDs)
+      if let changed = changedNamespaces, let pendingNamespaces = pending.changedNamespaces {
+        pending.changedNamespaces = pendingNamespaces.union(changed)
+      } else {
+        pending.changedNamespaces = nil
+      }
+      pending.storeChanged = true
+      pending.pageInfoByKey.merge(Self.liveQueryPageInfoByKey(replacements)) { _, latest in latest }
+    }
+    return (prepared, ticket)
+  }
+
+  /// Queues the live queries' new page info for the next publication, as ``installLiveQueryPageInfo(_:publishing:)``
+  /// does at once (#473). Returns nil when there is nothing to publish.
+  func deferLiveQueryPageInfoPublication(
+    _ replacements: [InstantLiveQueryResultReplacement]
+  ) -> InstantStorePublicationTicket? {
+    let pageInfoByKey = Self.liveQueryPageInfoByKey(replacements)
+    guard !pageInfoByKey.isEmpty, !observers.isEmpty else { return nil }
+    return joinPendingPublication { pending in
+      pending.pageInfoByKey.merge(pageInfoByKey) { _, latest in latest }
+    }
+  }
+
+  /// Publishes every change committed without publication, once however many callers ask, and returns the emissions
+  /// of the publication that covered `ticket`.
+  func publishCommittedChanges(_ ticket: InstantStorePublicationTicket) -> [InstantQueryEmission] {
+    if pendingPublication?.id == ticket.id {
+      publishPendingChanges()
+    }
+    guard var published = publishedEmissions[ticket.id] else { return [] }
+    published.remainingTickets -= 1
+    publishedEmissions[ticket.id] = published.remainingTickets > 0 ? published : nil
+    return published.emissions
+  }
+
+  /// Publishes the changes committed without publication, if any (#473). Anything that reads observers' state, or
+  /// publishes on its own, calls this first, so observers see every commit in order.
+  func publishPendingChanges() {
+    guard let pending = pendingPublication else { return }
+    pendingPublication = nil
+    guard !observers.isEmpty else {
+      lastPublishMetrics = InstantStorePublishMetrics()
+      if pending.ticketCount > 0 {
+        storePublishedEmissions([], for: pending)
+      }
+      return
+    }
+    let refreshed = refreshObservers(
+      changedEntityIDs: pending.changedEntityIDs,
+      changedNamespaces: pending.changedNamespaces,
+      pageInfoByKey: pending.pageInfoByKey,
+      storeChanged: pending.storeChanged,
+      publishing: true
+    )
+    lastPublishMetrics = refreshed.metrics
+    if pending.ticketCount > 0 {
+      storePublishedEmissions(refreshed.emissions, for: pending)
+    }
+    // One line per commit, as before (Scribe's memory fenceposts and soak sampler read it), with the metrics of the
+    // publication that covered it.
+    if InstantDiagnostics.shared.isEnabled(at: .info) {
+      for commit in pending.commits {
         InstantDiagnostics.shared.record(
           .info,
           subsystem: "instant-swift-data-core",
           category: "store",
-          event: shouldPublish ? "store.mutation-published" : "store.mutation-committed",
-          message: shouldPublish
-            ? "Committed a store mutation and published query emissions."
-            : "Committed a store mutation without publishing query emissions.",
+          event: "store.mutation-published",
+          message: "Committed a store mutation and published query emissions.",
           metadata: [
-            "changedEntityCount": String(prepared.result.changedEntityIDs.count),
-            "emissionCount": "0",
-            "observerCount": "0",
-            "skippedObserverCount": "0",
-            "splicedObserverCount": "0",
-            "rematerializedObserverCount": "0",
-            "materializedSnapshotCount": "0",
-            "sequence": String(sequence),
-            "tripleCount": String(prepared.result.tripleCount),
+            "changedEntityCount": String(commit.changedEntityCount),
+            "emissionCount": String(refreshed.emissions.count),
+            "observerCount": String(observers.count),
+            "skippedObserverCount": String(refreshed.metrics.skippedObserverCount),
+            "splicedObserverCount": String(refreshed.metrics.splicedObserverCount),
+            "rematerializedObserverCount": String(refreshed.metrics.rematerializedObserverCount),
+            "materializedSnapshotCount": String(refreshed.metrics.materializedSnapshotCount),
+            "sequence": String(commit.sequence),
+            "tripleCount": String(commit.tripleCount),
+            "publicationCommitCount": String(pending.commitCount),
+            "publishMilliseconds": String(Self.milliseconds(refreshed.duration)),
           ],
-          correlationID: prepared.result.transactionID
+          correlationID: commit.transactionID
         )
       }
-      return prepared
     }
+    publicationSummary.record(
+      commitCount: pending.commitCount,
+      metrics: refreshed.metrics,
+      duration: refreshed.duration
+    )
+    reportPublicationSummaryIfDue()
+  }
 
+  private func joinPendingPublication(
+    _ update: (inout PendingPublication) -> Void
+  ) -> InstantStorePublicationTicket {
+    var pending: PendingPublication
+    if let existing = pendingPublication {
+      pending = existing
+    } else {
+      pending = PendingPublication(id: nextPublicationID)
+      nextPublicationID += 1
+    }
+    update(&pending)
+    pending.ticketCount += 1
+    pendingPublication = pending
+    return InstantStorePublicationTicket(id: pending.id)
+  }
+
+  private func storePublishedEmissions(_ emissions: [InstantQueryEmission], for pending: PendingPublication) {
+    publishedEmissions[pending.id] = (emissions, pending.ticketCount)
+    // A ticket its holder never redeemed must not keep emissions alive.
+    if publishedEmissions.count > 32, let oldest = publishedEmissions.keys.min() {
+      publishedEmissions[oldest] = nil
+    }
+  }
+
+  /// Installs a prepared mutation's state and returns the namespaces its changed entities belong to before and after,
+  /// or nil when its attributes changed or an entity's namespace could not be resolved, so every observer refreshes.
+  private func install(_ prepared: inout PreparedStoreMutation) -> Set<String>? {
+    prepared.deferredValueRemovalMetrics = prepared.indexes.removeMarkedDeferredValues(
+      attributes: prepared.attributes
+    )
     let previousIndexes = indexes
     let previousAttributes = attributes
     self.attributes = prepared.attributes
     self.indexes = prepared.indexes
     self.sequence = prepared.sequence
-
-    let pageInfoByKey = Self.liveQueryPageInfoByKey(replacements)
-    let changedNamespaces: Set<String>?
+    guard !observers.isEmpty || pendingPublication != nil else { return nil }
     if previousAttributes != prepared.attributes {
-      changedNamespaces = nil
-    } else {
-      var resolvedNamespaces: Set<String> = []
-      var resolvedEveryEntity = true
-      for entityID in prepared.result.changedEntityIDs {
-        let entityNamespaces = previousIndexes.namespaces(
-          entityID: entityID,
-          attributes: previousAttributes
-        )
-        .union(
-          prepared.indexes.namespaces(
-            entityID: entityID,
-            attributes: prepared.attributes
-          )
-        )
-        if entityNamespaces.isEmpty {
-          resolvedEveryEntity = false
-        }
-        resolvedNamespaces.formUnion(entityNamespaces)
-      }
-      changedNamespaces = resolvedEveryEntity ? resolvedNamespaces : nil
+      return nil
     }
+    var resolvedNamespaces: Set<String> = []
+    for entityID in prepared.result.changedEntityIDs {
+      let entityNamespaces = previousIndexes.namespaces(
+        entityID: entityID,
+        attributes: previousAttributes
+      )
+      .union(
+        prepared.indexes.namespaces(
+          entityID: entityID,
+          attributes: prepared.attributes
+        )
+      )
+      if entityNamespaces.isEmpty {
+        return nil
+      }
+      resolvedNamespaces.formUnion(entityNamespaces)
+    }
+    return resolvedNamespaces
+  }
 
+  /// Refreshes each observer the changes can affect from the current store, and yields its emission when
+  /// `publishing`. A publication that only carries live queries' page info (`storeChanged` false) refreshes only the
+  /// observers whose page info changed.
+  private func refreshObservers(
+    changedEntityIDs: Set<String>,
+    changedNamespaces: Set<String>?,
+    pageInfoByKey: [String: InstantQueryRemotePageInfo],
+    storeChanged: Bool,
+    publishing: Bool
+  ) -> (emissions: [InstantQueryEmission], metrics: InstantStorePublishMetrics, duration: Duration) {
+    let startedAt = ContinuousClock.now
     var metrics = InstantStorePublishMetrics()
     var emissionsByObservation: [StoreObservationKey: InstantQueryEmission] = [:]
     for observerID in Array(observers.keys) {
@@ -1576,13 +1841,14 @@ public actor InstantStore {
       }
       guard
         pageInfoChanged
-          || Self.shouldRefresh(
-            observer,
-            changedNamespaces: changedNamespaces,
-            changedEntityIDs: prepared.result.changedEntityIDs,
-            indexes: indexes,
-            attributes: attributes
-          )
+          || (storeChanged
+            && Self.shouldRefresh(
+              observer,
+              changedNamespaces: changedNamespaces,
+              changedEntityIDs: changedEntityIDs,
+              indexes: indexes,
+              attributes: attributes
+            ))
       else {
         metrics.skippedObserverCount += 1
         continue
@@ -1597,13 +1863,13 @@ public actor InstantStore {
       } else if !pageInfoChanged,
         let spliced = Self.splicedEmission(
           observer,
-          changedEntityIDs: prepared.result.changedEntityIDs,
+          changedEntityIDs: changedEntityIDs,
           indexes: indexes,
           attributes: attributes,
           sequence: sequence
         ) {
         metrics.splicedObserverCount += 1
-        metrics.materializedSnapshotCount += prepared.result.changedEntityIDs.count
+        metrics.materializedSnapshotCount += changedEntityIDs.count
         emission = spliced
         emissionsByObservation[key] = emission
       } else {
@@ -1624,42 +1890,82 @@ public actor InstantStore {
       }
       observer.apply(emission)
       observers[observerID] = observer
-      if shouldPublish {
+      if publishing {
         lastRefreshSequenceByQueryID[observer.plan.id] = sequence
         observer.continuation.yield(emission)
       }
     }
-    lastPublishMetrics = metrics
-    var result = prepared.result
-    result.emissions =
+    let emissions =
       emissionsByObservation
       .sorted { lhs, rhs in Self.emissionSortKey(lhs.key) < Self.emissionSortKey(rhs.key) }
       .map(\.value)
-    if InstantDiagnostics.shared.isEnabled {
-      InstantDiagnostics.shared.record(
-        .info,
-        subsystem: "instant-swift-data-core",
-        category: "store",
-        event: shouldPublish ? "store.mutation-published" : "store.mutation-committed",
-        message: shouldPublish
-          ? "Committed a store mutation and published query emissions."
-          : "Committed a store mutation without publishing query emissions.",
-        metadata: [
-          "changedEntityCount": String(result.changedEntityIDs.count),
-          "emissionCount": String(result.emissions.count),
-          "observerCount": String(observers.count),
-          "skippedObserverCount": String(metrics.skippedObserverCount),
-          "splicedObserverCount": String(metrics.splicedObserverCount),
-          "rematerializedObserverCount": String(metrics.rematerializedObserverCount),
-          "materializedSnapshotCount": String(metrics.materializedSnapshotCount),
-          "sequence": String(sequence),
-          "tripleCount": String(result.tripleCount),
-        ],
-        correlationID: result.transactionID
-      )
-    }
-    prepared.result = result
-    return prepared
+    return (emissions, metrics, ContinuousClock.now - startedAt)
+  }
+
+  /// One line per commit published or committed at once. Scribe's memory fenceposts and soak sampler read it, so it
+  /// stays at info until they read `store.publish-summary` (#473).
+  private func recordMutation(
+    _ result: InstantStoreMutationResult,
+    published: Bool,
+    metrics: InstantStorePublishMetrics,
+    observerCount: Int,
+    emissionCount: Int
+  ) {
+    guard InstantDiagnostics.shared.isEnabled(at: .info) else { return }
+    InstantDiagnostics.shared.record(
+      .info,
+      subsystem: "instant-swift-data-core",
+      category: "store",
+      event: published ? "store.mutation-published" : "store.mutation-committed",
+      message: published
+        ? "Committed a store mutation and published query emissions."
+        : "Committed a store mutation without publishing query emissions.",
+      metadata: [
+        "changedEntityCount": String(result.changedEntityIDs.count),
+        "emissionCount": String(emissionCount),
+        "observerCount": String(observerCount),
+        "skippedObserverCount": String(metrics.skippedObserverCount),
+        "splicedObserverCount": String(metrics.splicedObserverCount),
+        "rematerializedObserverCount": String(metrics.rematerializedObserverCount),
+        "materializedSnapshotCount": String(metrics.materializedSnapshotCount),
+        "sequence": String(sequence),
+        "tripleCount": String(result.tripleCount),
+      ],
+      correlationID: result.transactionID
+    )
+  }
+
+  /// Reports what publishing cost since the last summary, at most every 30 s, at info (#473): how many publications
+  /// covered how many commits, the observers they refreshed, and the slow ones.
+  private func reportPublicationSummaryIfDue(now: ContinuousClock.Instant = .now) {
+    guard let summary = publicationSummary.takeIfDue(now: now, interval: .seconds(30)) else { return }
+    guard InstantDiagnostics.shared.isEnabled(at: .info) else { return }
+    InstantDiagnostics.shared.record(
+      .info,
+      subsystem: "instant-swift-data-core",
+      category: "store",
+      event: "store.publish-summary",
+      message: "Published \(summary.publicationCount) store publications for \(summary.commitCount) commits in the last \(Self.milliseconds(summary.window) / 1_000) s.",
+      metadata: [
+        "publicationCount": String(summary.publicationCount),
+        "commitCount": String(summary.commitCount),
+        "skippedObserverCount": String(summary.metrics.skippedObserverCount),
+        "splicedObserverCount": String(summary.metrics.splicedObserverCount),
+        "rematerializedObserverCount": String(summary.metrics.rematerializedObserverCount),
+        "materializedSnapshotCount": String(summary.metrics.materializedSnapshotCount),
+        "publishMilliseconds": String(Self.milliseconds(summary.totalDuration)),
+        "maximumPublishMilliseconds": String(Self.milliseconds(summary.maximumDuration)),
+        "slowPublicationCount": String(summary.slowPublicationCount),
+        "windowMilliseconds": String(Self.milliseconds(summary.window)),
+        "observerCount": String(observers.count),
+        "tripleCount": String(indexes.tripleCount),
+      ]
+    )
+  }
+
+  private static func milliseconds(_ duration: Duration) -> Int64 {
+    let components = duration.components
+    return components.seconds * 1_000 + components.attoseconds / 1_000_000_000_000_000
   }
 
   private static func shouldRefresh(
@@ -2565,6 +2871,8 @@ public actor InstantStore {
     liveQueryKey: String? = nil,
     continuation: AsyncStream<InstantQueryEmission>.Continuation
   ) {
+    // Existing observers see committed changes before a new one starts from the current store (#473).
+    publishPendingChanges()
     let initialEmission = materializeEmission(plan, remotePageInfo: remotePageInfo)
     observers[id] = StoreObserver(
       plan: plan,

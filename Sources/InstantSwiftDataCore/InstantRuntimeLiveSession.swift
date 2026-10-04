@@ -1,5 +1,6 @@
 import Foundation
 import IssueReporting
+import os
 
 package struct InstantSupersededLiveSessionSend: Error, Sendable {}
 
@@ -362,7 +363,15 @@ package actor InstantRuntimeLiveSession {
   private var registeredStreamWriters: [String: RegisteredStreamWriter] = [:]
   private var makeID: (@Sendable () -> String)?
   private var sessionID: String?
-  private var isOpened = false
+  private var isOpened = false {
+    didSet {
+      let opened = isOpened
+      openFlag.withLock { $0 = opened }
+    }
+  }
+  /// Mirrors `isOpened` for ``isOpenSnapshot``, written in the same actor turn (#482). The lock guards one Bool for
+  /// one load or store, as `AsyncSerialGate`'s held flag does.
+  private let openFlag = OSAllocatedUnfairLock(initialState: false)
   private var generation = 0
   private var receiverFailure: ReceiverFailure?
   private var inFlightSendCounts: [SendGeneration: Int] = [:]
@@ -371,6 +380,12 @@ package actor InstantRuntimeLiveSession {
 
   var isOpen: Bool {
     isOpened
+  }
+
+  /// ``isOpen`` without a hop onto this actor, for ``InstantRuntime/connectionHealth()`` (#482). Like `await isOpen`,
+  /// the answer can change right after it is read.
+  nonisolated var isOpenSnapshot: Bool {
+    openFlag.withLock { $0 }
   }
 
   var currentSessionID: String? {

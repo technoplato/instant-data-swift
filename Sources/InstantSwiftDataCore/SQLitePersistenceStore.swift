@@ -1500,6 +1500,7 @@ public actor SQLitePersistenceStore {
 
     }
     try execute("PRAGMA foreign_keys = ON")
+    recordDurabilitySettings()
     try withSQLiteBusyRetry {
       try execute(
         """
@@ -16809,6 +16810,36 @@ public actor SQLitePersistenceStore {
       message: message,
       recovery: recovery
     )
+  }
+
+  /// Records how SQLite makes commits durable on this connection, once per open (#473, freeze-185 item 3).
+  ///
+  /// The freeze report asked for `PRAGMA synchronous = NORMAL` so a commit under the operation gate costs no fsync.
+  /// Apple's SQLite already defaults a WAL connection to NORMAL: macOS 26.5's SQLite 3.51.0 and the iOS 27.0
+  /// simulator's 3.54.0 are built with `SQLITE_DEFAULT_WAL_SYNCHRONOUS=1` (and `DEFAULT_CKPTFULLFSYNC`), so a commit
+  /// appends to the WAL without an fsync and only a checkpoint syncs. This line shows what the device's SQLite does.
+  private func recordDurabilitySettings() {
+    let synchronous = try? selectScalar("PRAGMA synchronous")
+    let journalMode = try? selectScalar("PRAGMA journal_mode")
+    let walAutocheckpoint = try? selectScalar("PRAGMA wal_autocheckpoint")
+    InstantDiagnostics.shared.record(
+      .info,
+      subsystem: "instant-swift-data-core",
+      category: "persistence",
+      event: "sqlite.durability",
+      message: "SQLite commits with synchronous=\(synchronous ?? "unknown") in \(journalMode ?? "unknown") mode.",
+      metadata: [
+        "synchronous": synchronous ?? "",
+        "journalMode": journalMode ?? "",
+        "walAutocheckpoint": walAutocheckpoint ?? "",
+        "sqliteVersion": String(cString: sqlite3_libversion()),
+      ]
+    )
+  }
+
+  /// `PRAGMA synchronous` on this connection: 0 off, 1 normal, 2 full, 3 extra.
+  package func synchronousSettingForTesting() throws -> String? {
+    try selectScalar("PRAGMA synchronous")
   }
 
   private func persistenceError(operation: String, message: String) -> InstantError {
