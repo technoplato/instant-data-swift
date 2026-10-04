@@ -294,6 +294,24 @@ struct InstantLiveQueryResultWriteTests {
     _ = try await fixture.runtime.closeConnection()
   }
 
+  /// While a result's JSON write waits, the next server result is still compared with the newest result: a row that
+  /// arrived and then left within 30 s is retracted, not kept because the stored JSON never held it.
+  @Test
+  func aRowThatArrivesAndLeavesWhileTheWriteWaitsIsRetracted() async throws {
+    let first = (0..<3).map { Self.longText($0, revision: 0) }
+    let fixture = try await Self.answeredTodos(first, appID: "live-result-writes-in-session")
+    fixture.clock.advance(by: 1_000)
+    try await Self.refresh(first + [Self.longText(3, revision: 0)], in: fixture)
+    try await Self.waitForStoredTexts(first + [Self.longText(3, revision: 0)], in: fixture)
+    fixture.clock.advance(by: 1_000)
+    try await Self.refresh(first, in: fixture)
+    try await Self.waitForStoredTexts(first, in: fixture)
+    let waiting = await fixture.runtime.liveQueryResultJSONWriteStatsForTesting()
+    #expect(waiting.writes == 1, "both refreshes came within 30 s of the stored answer: \(waiting)")
+    await fixture.observation.cancel()
+    _ = try await fixture.runtime.closeConnection()
+  }
+
   // MARK: - A crash between throttled writes
 
   /// A refresh whose JSON write waits leaves the stored JSON older than the facts. If the app is killed before the
