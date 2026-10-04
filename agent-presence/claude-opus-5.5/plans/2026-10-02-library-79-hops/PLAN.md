@@ -160,3 +160,27 @@ and every other frame are still applied in order. Red test first. Touching
 `Sources/InstantSwiftDataCore/InstantRuntimeLiveSession.swift`,
 `Tests/InstantSwiftDataCoreTests/InstantLiveConnectionSurvivalTests.swift`, and new `docs/releases/v1.9.8.md`, added
 2026-10-03 20:25 EDT.
+
+## v1.9.9: #540 and #541 (build 91's performance release; main, 2026-10-04)
+
+Main, verbatim: "1.9.9 carries skipping pages a write can't change (with the differential property test), the two map
+bounds, and keeping the top row (check upstream first). #491 moves to 1.9.10. No coalescing without an ADR. Aim 1.9.9
+at build 91, the performance build, with the soak's publish-summary comparison as its evidence." Upstream cuts every
+non-leading page at both server cursors (instaql.ts 752-765; only leading queries are exempt, #2535), and main then
+said: "leave #542 at parity with upstream", so #542 is an upstream candidate, not part of 1.9.9.
+
+- #540: a write skips a page it cannot change. For a page whose rows depend only on their own fields, cut by the
+  server's cursors (`.ready` page info on a plan with after, before or an offset), a changed row the page does not hold
+  is checked against that cut with `boundedRangePosition`; a row outside it, or one that no longer exists or matches,
+  cannot enter. A page waiting for the server's cursors, or one the server answered empty, is empty whatever the store
+  holds. Pages that keep both ends (`first` or `limit` with `last`) still refresh. A differential property test
+  rematerializes every page after each random write and requires each page to equal its last emission.
+- #541: the TxIDInterner is rebuilt from the live triples when a prune finds it over twice the live count (a store
+  replace already builds a new one), and a live query's acknowledgement revision and outcome are forgotten when the
+  query unregisters; revisions come from one counter, so a wait that read a revision before the key was forgotten
+  still ends at the next answer.
+
+Touching `Sources/InstantSwiftDataCore/InstantStore.swift`, `TripleIndexes.swift`, `InstantRuntime.swift`, new
+`Tests/InstantSwiftDataCoreTests/InstantStorePageSkipTests.swift` and `InstantSessionMapBoundsTests.swift`, new
+`docs/releases/v1.9.9.md`, `CHANGELOG.md` and `docs/audits/commit-changelog.md`, added 2026-10-04 11:13 EDT. Red
+tests first; branch agent/claude-opus-5.5/library-79-199 from library-79-198 at 07ce2e5d.
