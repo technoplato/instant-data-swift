@@ -3302,6 +3302,75 @@ Pace the preview-slot backfill and retry admin rate limits; applied to productio
 ## 2026-09-24 23:49:13 EDT — realtime-voice-sqlite-instant `7fb9ea4a8124165b12b9b9900f5e943d99286f24`
 Bound list previews with two has-one slots instead of an unbounded nested include; the two links were pushed to the production schema on 2026-09-26. Merged into local branch `agent/claude-opus-5.5/combine-instant-2026-09-24`, not pushed (#044 #155).
 
+## 2026-08-21 11:47:33 EDT — scribe-sqlite-data `1557a7bb48438cf11d2f907af94fee56245426ff`
+Document the fullscreen tap gesture(_) attach in the change log (#228).
+
+## 2026-08-21 11:47:32 EDT — scribe-sqlite-data `53979439bef27f51b34064921270cec94e0acc5e`
+Attach fullscreen taps with gesture(_:) so iPhone Debug builds (#228).
+
+## 2026-08-21 11:43:07 EDT — scribe-sqlite-data `56e28df7ac505c3d6f1d77b72e88e3d119f6553e`
+Document the recordingSheets split in the change log (#228).
+
+## 2026-08-21 11:43:07 EDT — scribe-sqlite-data `28ec02b4795d2e15fdadb090265a5660a6741ce3`
+Split recording sheets from gestures for iPhone Debug (#228).
+
+## 2026-08-21 11:39:11 EDT — scribe-sqlite-data `3ba8de93e8a20d55fb43a46c4ba2efe19dcd04fd`
+Document the RecordingView type-check split in the change log (#228).
+
+## 2026-08-21 11:39:10 EDT — scribe-sqlite-data `6f1a0688daac335e38b2ed835125fb1aae84d7f6`
+Split RecordingView so iPhone Debug can type-check PiP (#228).
+
+## 2026-08-21 11:26:18 EDT — scribe-sqlite-data `c1e3486fcc7d3e998cb8221712995bf792c73f6d`
+Document the PiP ZStack host in the change log (#228).
+
+## 2026-08-21 11:26:18 EDT — scribe-sqlite-data `1fc53b9aea49fc99f0aada103dee070e4adc1027`
+Host transcript PiP from a ZStack child, not the body chain (#228).
+
+## 2026-08-21 11:17:59 EDT — scribe-sqlite-data `8f54dc02f08ef9bf60262ea806848b3b530e08ad`
+Document the 55 PiP wire restore in the change log (#228).
+
+## 2026-08-21 11:17:59 EDT — scribe-sqlite-data `6774fc23fe5d13a12d574928fd3a69cb6768077e`
+Keep the 55 PiP view wire and drop the titled chip (#228).
+
+## 2026-08-21 11:13:42 EDT — scribe-sqlite-data `2506336e50c77353e0ad446f241699a35cf8fee5`
+Document the recordingChrome PiP split in the change log (#228).
+
+## 2026-08-21 11:13:42 EDT — scribe-sqlite-data `bacf4c0ac5016fb7151f8208b43ca31a14f97390`
+Split recording chrome so device PiP host type-checks (#228).
+
+## 2026-08-21 11:08:09 EDT — scribe-sqlite-data `fc52be6a3c4af571a781115e9b7553b98099a915`
+Document 4d09712 in the change log (#228).
+
+## 2026-08-21 11:08:05 EDT — scribe-sqlite-data `4d09712a0d82ef00b4874fb07c8e56827faeab9d`
+Move transcript PiP host off the recording view body (#228).
+
+## 2026-08-21 10:54:10 EDT — scribe-sqlite-data `e90c579dda877b8982055a36639296dc6cf7a13c`
+Document 543d63a in the change log (#228).
+
+## 2026-08-21 10:53:40 EDT — scribe-sqlite-data `543d63a4b4f6ab8a379d56701a0260cc6cef451d`
+Stop foreground transcript PiP chrome and add timestamps (#228).
+
+## 2026-08-20 21:00:22 EDT — scribe-sqlite-data `f18e62ab28ff4bb0980fb34d2684d8c4dfdc1221`
+Document 15968b3 in the change log (#231 #233).
+
+## 2026-08-20 21:00:03 EDT — scribe-sqlite-data `15968b3b2f9088f269f9290443f6664865377725`
+Pin screenshots at capture time and add a walking one-finger fullscreen tap (#231 #233).
+
+## 2026-08-20 20:56:44 EDT — scribe-sqlite-data `50934813745b411a55ea689f733bcf180bdaf043`
+Document baed645 in the change log (#232).
+
+## 2026-08-20 20:56:25 EDT — scribe-sqlite-data `baed645578bbf912bc99f7f622511c4a1c38f5dd`
+Stop the recording overlay header from duplicating elapsed time (#232).
+
+## 2026-08-20 20:54:24 EDT — scribe-sqlite-data `56b9836685ea6c34e1db400ec244af9c0611c6d2`
+Document 2e2a2ed in the change log (#234).
+
+## 2026-08-20 20:54:08 EDT — scribe-sqlite-data `2e2a2edc7cc934e4ad1010635b79a0fa2d6b3518`
+Stop live transcript catch-up from flying a backlog of rows in (#234).
+
+## 2026-08-20 14:37:21 EDT — scribe-sqlite-data `b08d2c29c1ecb22787a0eebc4c359d8c42154235`
+Let the Mac Scribe window shrink to a skinny chrome floor (#230).
+
 ## 2026-08-20 14:32:00 EDT — scribe-sqlite-data `a6ed0a8b8f9cdd7f2451bfddd3f091de88769153`
 Document fb7a7c6 in the change log (#228).
 
