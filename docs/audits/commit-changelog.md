@@ -1,3 +1,6 @@
+## 2026-10-05 08:00:07 EDT — instant-data-swift `4d5e14f0ce4d081067ed4b11a7a4ce28f00cf4b3`
+1.10.0's new comments in neutral wording: issue numbers instead of people, devices, recordings and app names
+
 ## 2026-10-05 07:25:26 EDT — instant-data-swift `dbabd11e21a93de4b706408dfdc693aaf9b5bec4`
 Decode batches run at the persistence's decode QoS, utility by default, and steady-state sync tasks at liveSyncTaskPriority (#590)
 

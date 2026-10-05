@@ -10,6 +10,22 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## October 5th, 2026 at 8:00:08 a.m. EDT — `4d5e14f0ce4d` 1.10.0's new comments in neutral wording: issue numbers instead of people, devices, recordings and app names
+
+- **Implementation commit:** `4d5e14f0ce4d081067ed4b11a7a4ce28f00cf4b3`
+- **Change:** 1.10.0's new comments in neutral wording: issue numbers instead of people, devices, recordings and app names
+- **Details:**
+  - Under the AGENTS.md rule on decision comments; comments and one fixture string only.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — persistenceDecodeQoS's comment cites #590
+  - `Sources/InstantSwiftDataCore/InstantStore.swift` — install's comment
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — the decode queue's comment cites #590
+  - `Sources/InstantSwiftDataCore/TripleIndexes.swift` — the byte model's calibration note
+  - `Tests/InstantSwiftDataCoreTests/InstantValueEqualWriteTests.swift` — the suite's comment and a fixture name
+- **User context (verbatim):**
+  > code comments ... a living, breathing document of our decisions
+- **SpecStory:** unavailable — unavailable — Claude Code agent session (library-79 subagent under main); no SpecStory capture configured for this session.
+
 ## October 5th, 2026 at 7:26:16 a.m. EDT — `dbabd11e21a9` Decode batches run at the persistence's decode QoS, utility by default, and steady-state sync tasks at liveSyncTaskPriority (#590)
 
 - **Implementation commit:** `dbabd11e21a93de4b706408dfdc693aaf9b5bec4`
