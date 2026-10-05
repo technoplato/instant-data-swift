@@ -1,8 +1,95 @@
+## 2026-10-05 06:01:18 EDT — scribe `5c1273dc64d105c989ad3a1f120cd549a5355256`
+Record Scribe 0.1 (94) in PROGRESS: on the iPhone, the iPad and the Mac, the performance batch built from 08b12577 on instant-data-swift 1.9.8 with production's v20g schema (#566 #488 #533 #409 #297)
+
+## 2026-10-05 04:25:49 EDT — scribe `08b125779a460ec9a58ecafe6c3ad90f4f23c6d3`
+Change log: Scribe 0.1 (94)'s build number (d9531232)
+
+## 2026-10-05 04:25:48 EDT — scribe `d9531232ea3be1d2567fd17fc88b491a98fc6611`
+Set Scribe 0.1 (94): CURRENT_PROJECT_VERSION 94 on the 12 lines that carried 93
+
+## 2026-10-05 04:25:29 EDT — scribe `000353c11816a59cc8bc191b61337a0a7c2486d5`
+Merge transcript-blocks-93 into integration-94 (#409): a speaker run holds its lines in blocks of about 128, so a final and a load cost what the visible lines cost
+
+## 2026-10-05 04:22:21 EDT — scribe `0bc7950d9e844d05afe1b4147de0a6c149d11bbb`
+The final-cost test bounds a final's work on the lines by half its own row check, not by the 256-line run's cost (#409)
+
+## 2026-10-05 04:09:35 EDT — scribe `0c8363dae1200292d02d1b2f88b06e0f4281672f`
+Merge memory-ledger-92 into integration-94 (#409 #297): the session-health beat carries the memory and thread-CPU ledgers, within the beat's 2 KB
+
+## 2026-10-05 04:00:31 EDT — scribe `5f76cec4071782691dfe9024f8c060990231aa0d`
+Record the ledgers' fit in the beat's 2 KB in the change log (#409 #297)
+
+## 2026-10-05 03:57:24 EDT — scribe `283a0e0b74e4fab571fb99abb376cdd2be3ecfc9`
+The incremental lines test evaluates the blocks check before #expect, which makes a key-path call throwing (#409)
+
+## 2026-10-05 03:26:50 EDT — scribe `6e18a8cbb83c9efc9f3b3dab4f8a73bfe440c4fc`
+Merge main (6e24b1030) into integration-94: shared-fence-94 part 2's claim on SessionHealthCadenceAndBeatTests (#569)
+
+## 2026-10-05 03:22:37 EDT — scribe `6e24b10303b8e8b2be3c001ff301e15787001792`
+Claim SessionHealthCadenceAndBeatTests for shared-fence-94 part 2 (#569): the largest beat also carries the shared queue's drops at their largest
+
+## 2026-10-05 03:11:36 EDT — scribe `bdc9776147a5fb85170e1b50a2cbac3864735656`
+Merge main (54e1ad17a) into integration-94: the shared-fence-94 plan and claims (#569)
+
 ## 2026-10-05 03:07:33 EDT — scribe `54e1ad17a3e356e7efc34d0eeb8c3d238d8bc007`
 Plan and claim shared-fence-94 (#569): the tests that wait on the shared enqueue fence get queues of their own, and the session-health beat counts the shared queue's drops
 
+## 2026-10-05 02:42:03 EDT — scribe `414954458c58681e1762bdbe58fa8466b7f300c7`
+The ledgers take what a beat's other fields leave of its 2 KB, the memory ledger first, each cut after a whole pair (#409 #297)
+
+## 2026-10-05 02:40:04 EDT — scribe `578b5e4450ca9701e9329b6b75e7853b4232ad14`
+Red: the ledgers fit what a largest beat leaves under 2 KB, each cut after a whole pair (#409 #297)
+
+## 2026-10-05 02:07:14 EDT — scribe `696a373047c8de0aca2a416ab3f074199394486a`
+Merge main (ee73b2c5c) into integration-94: threads-chat P2's settings catalog claims
+
+## 2026-10-05 02:06:44 EDT — scribe `2fbbaf8b06a902a04725b19a20b6e20f5c562dc3`
+Change log: the flush tests post and wait on threads of their own (97bbd67c) (#566)
+
+## 2026-10-05 02:02:10 EDT — scribe `97bbd67c46e62d1a4a8dcf27e8516246b6d3ce38`
+The flush tests post and wait on threads of their own, so a loaded parallel run can't starve the flush's task (#566)
+
 ## 2026-10-05 01:58:26 EDT — scribe `ee73b2c5c03a04a5f94181c5b48958f72a8e3c1e`
 Claim threads-chat P2's settings catalog entry (#537 P2): Spoken Lines Join the Open Thread joins the catalog and the row round-trip list
+
+## 2026-10-05 01:48:58 EDT — scribe `26a42f53b0a42e20135054ff402f955d2901a727`
+Merge live-audio-upload phase 1 and follow-up B into integration-94 (#533): the live take's audio uploads while it records, and shares made after Stop
+
+## 2026-10-05 01:48:51 EDT — scribe `27e92cf59bca5e1ceb68229b9770853c4d3d2f5f`
+Change log: write the live queries' waiting results on background and terminate (099acda4) (#566 #488)
+
+## 2026-10-05 01:48:39 EDT — scribe `099acda473e3c9404fe96deefce3913136ee5eec`
+Write the live queries' waiting results when Scribe moves to the background or is about to terminate, with instant-data-swift 1.9.8's flushPendingLiveQueryResults() (#566 #488)
+
+## 2026-10-05 01:46:16 EDT — scribe `f7853467ad937c3a2b335760f7bb82046b13533d`
+Change log: pin instant-data-swift exactly 1.9.8 (5680148a) (#566 #474 #516 #522 #461)
+
+## 2026-10-05 01:45:37 EDT — scribe `5680148abe97c3cd523d5208b558fe45c2e3070d`
+Pin instant-data-swift exactly 1.9.8 instead of 1.9.7: a live result's JSON is written at most once per 30 s, a dead connection's results are skipped, the kickstart keeps its pages, and rooms get one ordered lane (#566 #474 #516 #522 #461)
+
+## 2026-10-05 01:45:16 EDT — scribe `a49e9ef7607833c8718bf8a362917429f59587d7`
+Merge main 93 (7e9bfa6be) into transcript-blocks-93 for build 94: CHANGELOG.md's entries from both sides, newest first
+
+## 2026-10-05 01:44:50 EDT — scribe `ef44338e59af81533d53c7722e6decd46e56fadd`
+Merge main 93 (7e9bfa6be) into memory-ledger-92 for build 94: CHANGELOG.md's entries from both sides, newest first
+
+## 2026-10-05 01:28:10 EDT — scribe `84cfadd15206fd8202baa8cb975472aeb1fbf71b`
+Record ece43872 (#533) in the change log
+
+## 2026-10-05 01:28:09 EDT — scribe `ece438723bd19d2cb4fc7676ca186447f4a20218`
+A share made after Stop uploads its stretch at once while the full audio still uploads (#533 follow-up B)
+
+## 2026-10-05 00:29:47 EDT — scribe `7f422ddbd62141cafe2a6b684f131918a0c1072b`
+Red: the relaunch test hands the stored chunks to the harness as a constant, so it compiles in Swift 6 (#533)
+
+## 2026-10-05 00:25:50 EDT — scribe `7a62c2a39934ad252174e0ca28a3798b4072d60d`
+Red: a share made after Stop marks the chunks Stop already cut, while the full audio still uploads (#533 follow-up B)
+
+## 2026-10-05 00:25:05 EDT — scribe `079e6b9fd7aa0b5c90c114d0ded9ae212da4d1e5`
+Record 793629e7 (#533) in the change log
+
+## 2026-10-05 00:25:05 EDT — scribe `793629e7194fdbcf739f5b06e2e86df9ca9cb9ef`
+Upload Audio While Recording is a device-only setting in the catalog, as Upload in the Background is (#533)
 
 ## 2026-10-05 00:17:01 EDT — scribe `c6e4e853aea16484d92f1b44b8bfdf0bcf4eda4e`
 Record diagnostics-export's 94 head in PROGRESS: the collector installer never leaves the collector down, and the collector exits on SIGTERM (#571)
@@ -52,8 +139,17 @@ Red: the collector installer, run against a fake launchd, leaves the collector d
 ## 2026-10-04 23:53:51 EDT — scribe `75026fcd982c061fc1c40043d3cfe9b5f0f39631`
 Plan and claim mirror-share-audio (#533 follow-up A): a share's own audio file from its marked chunks, so a share is cut without waiting for the gap
 
+## 2026-10-04 23:53:48 EDT — scribe `9094a90af30261b6bc64651034d2c9e3aeca9589`
+Merge origin/main (bf940f2b5) into live-audio-upload for build 94 (#533)
+
 ## 2026-10-04 23:51:40 EDT — scribe `4a57cdc09a600cd1e764026c0afe482a5db7ac0f`
 Plan the collector installer's safe restart for 94 (#571): wait, retry once, restore on failure
+
+## 2026-10-04 23:51:07 EDT — scribe `06b42add92f3bdcb758fe189d2292b75d3d5d78f`
+Record 0a7e5184 (#533) in the change log
+
+## 2026-10-04 23:50:55 EDT — scribe `0a7e5184fe3b0937649147bd4d2285d9a05b63de`
+Live audio upload phase 1: the recording's audio uploads a minute at a time while it records, and a share's stretch at once (#533)
 
 ## 2026-10-04 23:49:29 EDT — scribe `bf940f2b5cbe325eb9816ac2f2015ec35861658f`
 Record Scribe 0.1 (93) in PROGRESS: on the iPhone, the iPad and the Mac, the stability batch built from 1870909c on instant-data-swift 1.9.7 with production's v20g schema (#551 #549 #571 #525 #478 #564 #512 #546 #445 #553 #543 #574 #569 #547 #517)
@@ -67,6 +163,18 @@ The mirror's install copies the youtube-companion files the mirror imports, and 
 ## 2026-10-04 23:40:49 EDT — scribe `0f3a51b684e4064290fad0070447b5b8d04e92a2`
 Merge main dc0a9972 into the 93 branch: store-logger-fence's claim on RecordingListSizeChangeTests
 
+## 2026-10-04 23:37:25 EDT — scribe `e3e674ed865116a8535cdba6ddef873977359158`
+Record the memory and CPU ledgers, the soak transcript, the region walk's limits and the quarter-hour CPU table in the change log (#409 #540)
+
+## 2026-10-04 23:36:59 EDT — scribe `e430f0122e807665827c8d8c2b030713845a5fac`
+device-acceptance.py splits a recording's CPU by quarter hour: process, main, off main, and store triples (#409 #540)
+
+## 2026-10-04 23:11:57 EDT — scribe `d7a871897394b9d15de7b5310ce47238327e378d`
+ADR 0047's blocks amendment says the cost test leaves out the final's linear row check, and why (#409)
+
+## 2026-10-04 23:11:03 EDT — scribe `3fb8b8d7340fc026ba748a7af3f7c44ce95f9f57`
+The block cost test times a final's work on the lines without its linear check of the earlier rows (#409)
+
 ## 2026-10-04 22:53:03 EDT — scribe `37cc7bde1d5625a5b8b288f29cbf111a2e0eecdf`
 Merge store-logger-fence's size-change test fix for 93 (#569): the two layout-log tests use their own enqueue buffer
 
@@ -78,6 +186,9 @@ The two size-change tests deliver their layout logs through an enqueue buffer of
 
 ## 2026-10-04 22:51:01 EDT — scribe `dc0a99729929abdb67e91cc24264efcebe421dc1`
 Claim RecordingListSizeChangeTests for store-logger-fence (#569): two tests get a private enqueue buffer, since 93's red run lost their ordinary layout event to the shared one
+
+## 2026-10-04 22:39:36 EDT — scribe `5edaf5471de5c3b07c3d49442a3eedb2d97ed53c`
+Merge main 92 (ed2dc429f) into memory-ledger-92 for build 94: no conflicts
 
 ## 2026-10-04 22:35:43 EDT — scribe `1870909cd6f9e379c20208f29580f284a1e16564`
 Merge youtube-comments' fix for 93's gate (#478): a written decision shows on its row at once, so a second tap writes nothing
@@ -127,6 +238,9 @@ Merge read-aloud-v2's test value fix for 93 (#549): the speech client's test val
 ## 2026-10-04 22:27:23 EDT — scribe `a8d3bc7b1fb621375ec3d9f12d86d3f96d372788`
 Merge diagnostics-export's fixes for 93's two gate failures (#571): the store snapshot is a rollback-journal copy any reader can open, and the bundle names the device without reading the idiom
 
+## 2026-10-04 22:27:17 EDT — scribe `ea0ada664d7a0780060f4a27dc2a3d362c73f3ad`
+Record the transcript blocks and their Sendable lines in the change log (#409 #410)
+
 ## 2026-10-04 22:27:15 EDT — scribe `51080af5fb617bb44e5d472ec3a417bfe30bea73`
 Change log: a YouTube comment's row shows a written decision at once, and the double-tap test waits for the write to land (02a82b19) (#478)
 
@@ -135,6 +249,12 @@ Merge phone-perf-88's stable preview-bag order for 93 (#517): truncateListPrevie
 
 ## 2026-10-04 22:27:06 EDT — scribe `a478f6f803619a52ec5e693c7d69c43c0061b72b`
 The speech client's test value answers position, warmUp and voice quietly, so read-aloud tests need not stub them (#549 #471)
+
+## 2026-10-04 22:27:03 EDT — scribe `f012003222cdcf294c78e414d42d1d4b70a75d14`
+ADR 0047's blocks amendment says which changes move lines between blocks and what a move costs (#409)
+
+## 2026-10-04 22:26:55 EDT — scribe `819340bc00efaf88c5317a10cc0574bd95e6cb1d`
+The blocks test says what two hundred lines into a block's middle do: they fill it and new blocks, and its later lines move (#409)
 
 ## 2026-10-04 22:26:39 EDT — scribe `9b2f838aa25a6884ba05826bebe6c26c3c79b3f5`
 Record a58183826 (#571) in the change log
@@ -168,6 +288,21 @@ Record the Sync view title read's required-field selection in the change log (#4
 
 ## 2026-10-04 22:24:14 EDT — scribe `0e2530fd2bdbbcd6c3e90c6c062224f1580acf6a`
 The Sync view's recording title read selects every field a recordings decode requires, so it leaves no partial row (#445 #522)
+
+## 2026-10-04 22:06:40 EDT — scribe `333a6a0f4024bf5361ee20654c0bdd052923a3e0`
+The long-run draw harness makes its counter before it reads self (#409)
+
+## 2026-10-04 22:04:39 EDT — scribe `b03967120826b9394a373fbe86e4383116fb254f`
+The long-run draw test asserts the rows that drew are only the changed ones, of those the screen made (#409)
+
+## 2026-10-04 22:04:01 EDT — scribe `7f5751c6c4421fd2952914f41be045b05bba0afb`
+A transcript line and a timeline row are Sendable, so a block's view compares its lines in its nonisolated == (#409)
+
+## 2026-10-04 21:53:56 EDT — scribe `e902735d8f1319fe641e8175cf08dee630842395`
+A speaker run holds its lines in blocks of about 128: a final writes and walks one block, and a load costs its lines, not their square (#409 #410)
+
+## 2026-10-04 21:52:45 EDT — scribe `4e76203d4205b8b4860770bd8e48b9bee1e19800`
+Red: a final in a 4,096-line run and a 4,096-line load cost what the line count says they should (#409 #410)
 
 ## 2026-10-04 21:43:11 EDT — scribe `f71b75fb94f68c43501db5a0185c3963950ff134`
 Record Scribe 0.1 (93)'s build number in the change log
@@ -567,6 +702,18 @@ Plan and claim test-yields (#569): the slow TestStore tests keep TCA's main seri
 
 ## 2026-10-04 18:33:07 EDT — scribe `51b58688a502496f189ef514692f93ab1e328c04`
 Red test for #557 (92): a refused route chunk the pass leaves alone does not say why
+
+## 2026-10-04 18:27:10 EDT — scribe `5b643cae150a8d8d80d4b9d7b08d61f9be43d86c`
+The ledger's region walk runs only at beats and waits while the phone is hot (main, 2026-10-04)
+
+## 2026-10-04 18:23:39 EDT — scribe `c4f2645967dc2ba67e8f426997f307ba00106a1f`
+The queue label reader takes the page size from getpagesize(), not the global vm_page_size
+
+## 2026-10-04 18:19:46 EDT — scribe `8a961a01664fa285847d86e6fd49bffc2225bae7`
+Every memory sample and health beat says where the memory is, and every beat where the CPU went (build 92)
+
+## 2026-10-04 17:55:31 EDT — scribe `9b9f565a4711927e203f3e145ae5ba35cf76a8e6`
+The perf soak can replay a transcript Michael's size: 1,200 lines over two logical hours (memory runs)
 
 ## 2026-10-04 17:06:57 EDT — scribe `50ea5c9df999f32288ac1e883071d70e5402eaaa`
 Log c3e42c376 in CHANGELOG: each refused attachment write that stays says why (#557, for 92)
@@ -1972,6 +2119,9 @@ Ledger: the sounds branch's fourteen commits since a4acaaff in CHANGELOG.md (#44
 ## 2026-10-04 10:30:26 EDT — scribe `47bd24d478cf8ba64b007c9dd812a1d6f3bad35f`
 Every sound but human talking shows on the timeline at looser thresholds; Settings lists all 303 classes with a switch each, a sound's long-press stops showing its class, and each row shows Apple's label (#534)
 
+## 2026-10-04 10:26:12 EDT — scribe `ffbe785b0e7749f5ea04269c412793c30db5ca9d`
+Red: live audio chunks, their planner, the upload rule, the chunker, and the chunk uploads (#533)
+
 ## 2026-10-04 10:26:07 EDT — scribe `c90f5130eff459b81f04afd2f6ed36eb247140b2`
 Move the transcript's section row out of RecordingView into TranscriptSectionRow, unchanged, so a test can host it (#538)
 
@@ -1995,6 +2145,9 @@ Merge transcript-lazy-531 into the transcript accessibility work: the elements a
 
 ## 2026-10-04 10:19:50 EDT — scribe `4df965a3a628c24767d93064641282ae55b32bbf`
 The stack probe takes AppFeature's reducer as a value, so its base type is inferred (#536)
+
+## 2026-10-04 10:17:19 EDT — scribe `f0e1cd7cd0b6d025933788baced7bece9fe151da`
+Plan live-audio-upload: main's answers, the cadence main set, and what the code showed, and claim the row's files (#533)
 
 ## 2026-10-04 10:16:30 EDT — scribe `15a2823f83129968a080b57e0cdc0e25677701ee`
 Merge restore-row-by-id's crash-loop guard for 89: a launch after a resume that never settled continues the take on the list, judged from the last two flight-recorder rings (#535 #536)
@@ -2056,6 +2209,9 @@ A script reads MetricKit's CPU exception reports: each report's sampled call tre
 ## 2026-10-04 10:05:20 EDT — scribe `75c92f1350e6d0dc4f9c9af5a2c377067073595f`
 The device diagnostics skill gives atos the executable's segment address plus the offset, which -O builds need (#517 #409)
 
+## 2026-10-04 10:04:28 EDT — scribe `ea6cd25c73b69369ce25fe2ff0af30cbe0cd70c8`
+Schema slice for live audio upload: recordingAudioChunks, owner-only, and chunk files only for the recording's owners (#533)
+
 ## 2026-10-04 10:04:26 EDT — scribe `23902b5c557b4fae8ee450370412aec9a8144ae7`
 Debug builds log the main thread's deepest stack at the store's root and in RecordingList.core (#536)
 
@@ -2100,6 +2256,9 @@ Record the partial-row test's compile fix in the change log (#522)
 
 ## 2026-10-04 09:51:09 EDT — scribe `ced1aaa3cbeed0880a2791b8e666a851fc4dd957`
 The media retry scan's partial-row test reads the uploads into a let before expectNoDifference, whose autoclosure can't await, so ScribeSharedSupportTests compiles (#522)
+
+## 2026-10-04 09:50:56 EDT — scribe `c0d78faf04b04ab91a5975e3bf3cce15db7edfa4`
+Plan live-audio-upload: audio uploads in chunks during the recording and at once for a share link, and the Mac's existing cutter and Presidio gate do the audio work, and claim its paths (#533)
 
 ## 2026-10-04 09:50:49 EDT — scribe `11f28ee1b07bb34fce719ec5973e9b02d1e10c10`
 An appearance moment comes only while the scene is active and only when it differs from the last one heard, so a trip to the background adds no Dark and Light pair (#531)
