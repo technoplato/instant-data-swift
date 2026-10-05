@@ -1,3 +1,6 @@
+## 2026-10-05 01:34:33 EDT — instant-data-swift `cfd32f7edb96a79d063d7d69a5422f3fed203b01`
+The 10,000-broadcast run's slowdown check allows 250 ms per 100 messages, not 25: it missed at load 196 (#461)
+
 ## 2026-10-04 15:16:52 EDT — instant-data-swift `c5e1183fd03104596d375f921fd7070e2896466d`
 Record the room write lane in ADR 0019 decision 9 and PROGRESS: presence and broadcasts keep call order (#461)
 
