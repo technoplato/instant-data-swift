@@ -10,6 +10,159 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## October 5th, 2026 at 3:42:37 a.m. EDT — `841fb0146a6b` A row's interned snapshot keeps every stored field when the write leaves one slot unset: an id slot, or a field (#577)
+
+- **Implementation commit:** `841fb0146a6b0ad07c2cfd83c401a462430583d9`
+- **Change:** A row's interned snapshot keeps every stored field when the write leaves one slot unset: an id slot, or a field (#577)
+- **Details:**
+  - The completeness check counted one id slot for every row, so a row stored without one, with a single field the write did not set, was interned without that field and dropped from pages filtered on it. #540's differential test found it (seed 15, step 29 in dev-199); its rows store no id slot. The client's writes and the server's results carry an id triple, so no known production row hits it.
+  - With one slot left over, the write keeps the snapshot and completes it from the row's slots when it finishes. Red tests 06bb5a9c.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/TripleIndexes.swift` — pendingInternCoverage and flushPendingIntern
+- **User context (verbatim):**
+  > fix this please so it works efficiently as as well as the typescript core library
+- **SpecStory:** unavailable — unavailable — Claude Code agent session (library-79 subagent under main); no SpecStory capture configured for this session.
+
+## October 5th, 2026 at 3:42:37 a.m. EDT — `ceba8e4c8ec4` The ten suites fail a test that runs past three minutes instead of idling, so a test stuck on a continuation is named (#569)
+
+- **Implementation commit:** `ceba8e4c8ec40957571e1a37291f0c0cfd223105`
+- **Change:** The ten suites fail a test that runs past three minutes instead of idling, so a test stuck on a continuation is named (#569)
+- **Details:**
+  - dev-199's ten-suites run sat idle 23 minutes with every thread waiting and no test named; three minutes because one loaded run of sameProcessOfflineTenThousandEnqueuesKeepResidentBarrierCacheBounded took 114.6 s.
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantStoreTests.swift` — .timeLimit(.minutes(3)), as in the nine other suites
+- **User context (verbatim):**
+  > fix this please so it works efficiently as as well as the typescript core library
+- **SpecStory:** unavailable — unavailable — Claude Code agent session (library-79 subagent under main); no SpecStory capture configured for this session.
+
+## October 5th, 2026 at 3:42:37 a.m. EDT — `fc1ee27eada4` The many-value property test keeps refs in a ref attribute: an any attribute refuses a ref in a write, which failed every run in dev-199 (#570)
+
+- **Implementation commit:** `fc1ee27eada49ff1448b6b2e010a6ca922308bc9`
+- **Change:** The many-value property test keeps refs in a ref attribute: an any attribute refuses a ref in a write, which failed every run in dev-199 (#570)
+- **Details:**
+  - prepareCurrent refused the test's writes (Expected any, but received ref); each thing now has an .any slot and a .ref slot.
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantManyCardinalityOrderTests.swift` — manyValuesKeepTheComparableKeyOrderAcrossWrites
+- **User context (verbatim):**
+  > fix this please so it works efficiently as as well as the typescript core library
+- **SpecStory:** unavailable — unavailable — Claude Code agent session (library-79 subagent under main); no SpecStory capture configured for this session.
+
+## October 5th, 2026 at 3:42:37 a.m. EDT — `8f77ad7195b0` The AEV bench's many-refs mode lives in its main.swift: a second file made SwiftPM compile main.swift as top-level code, which @main refuses (#570)
+
+- **Implementation commit:** `8f77ad7195b02d7e8c8f617c18914a0bcf71f7ac`
+- **Change:** The AEV bench's many-refs mode lives in its main.swift: a second file made SwiftPM compile main.swift as top-level code, which @main refuses (#570)
+- **Details:**
+  - dev-199's green build stopped at InstantDomainAEVBench/main.swift:14; no behavior change.
+- **Files:**
+  - `Sources/InstantDomainAEVBench/main.swift` — ManyRefsBench, moved unchanged
+- **User context (verbatim):**
+  > fix this please so it works efficiently as as well as the typescript core library
+- **SpecStory:** unavailable — unavailable — Claude Code agent session (library-79 subagent under main); no SpecStory capture configured for this session.
+
+## October 5th, 2026 at 3:42:36 a.m. EDT — `65932af224e9` A many-value's sorted order is kept and reused while its slot is unchanged, and a slot that must be sorted is sorted without building strings (#570)
+
+- **Implementation commit:** `65932af224e985ec158020d519e85f4fae1b4fb1`
+- **Change:** A many-value's sorted order is kept and reused while its slot is unchanged, and a slot that must be sorted is sorted without building strings (#570)
+- **Details:**
+  - Build 88's CPU-resource kill on Michael's iPhone (48 s of CPU in 55 s) spent 26% of its samples sorting many-values: every snapshot of a recording sorted all its segment refs through comparableKey strings. Upstream Reactor.js never sorts link sets.
+  - At -O, 73 recordings with 1,190 refs each: re-materializing the page went from a median 575-624 ms to 46-50 ms; in a debug build a final line went from 74 sorts and 6.3 s to 1 sort and 77 ms. Red tests 28ba22a0.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/TripleIndexes.swift` — ManyCardinalityOrders and InstantValue.precedesInComparableKeyOrder
+  - `Tests/InstantSwiftDataCoreTests/InstantManyCardinalityOrderTests.swift` — theComparatorOrdersEveryPairAsTheirComparableKeysDo
+- **User context (verbatim):**
+  > fix this please so it works efficiently as as well as the typescript core library
+- **SpecStory:** unavailable — unavailable — Claude Code agent session (library-79 subagent under main); no SpecStory capture configured for this session.
+
+## October 5th, 2026 at 3:42:36 a.m. EDT — `312fbbf630e6` Room joins and leaves on an open socket take the room's lane, and one made while a reconnect's rejoin is written follows it (#563)
+
+- **Implementation commit:** `312fbbf630e6e6480ee5ce140fb89ff40231fd6c`
+- **Change:** Room joins and leaves on an open socket take the room's lane, and one made while a reconnect's rejoin is written follows it (#563)
+- **Details:**
+  - A rejoin made while a leave-room was still being written could pass it, so the server kept the room left while the runtime counted it joined; Reactor.js writes every room frame with a synchronous ws.send, in call order. Red tests 2d3b6ae1.
+  - The reconnect's rejoin stays outside the lane, so a write the dropped socket never finished cannot hold up the new one; a join or leave of a room whose rejoin is being written waits for it.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantRuntimeLiveSession.swift` — joinRoom, leaveRoom, the rejoin marks
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — the lane waiter count's description
+  - `docs/adr/0019-rooms-and-presence-parity.md` — decision 9 and its parity row
+- **User context (verbatim):**
+  > fix this please so it works efficiently as as well as the typescript core library
+- **SpecStory:** unavailable — unavailable — Claude Code agent session (library-79 subagent under main); no SpecStory capture configured for this session.
+
+## October 5th, 2026 at 3:42:36 a.m. EDT — `28ba22a02e57` Red tests for #570: a final line on one of 73 recordings with 1,190 segment refs each sorts only that recording's refs, and many-values keep the comparableKey order across writes; with a sort count and the AEV bench's --many-refs mode
+
+- **Implementation commit:** `28ba22a02e57195986d59f455c2c5d46c9bb3a05`
+- **Change:** A count of many-value sorts for tests, and instant-domain-aev-bench --many-refs, for #570's red tests and its measurement at -O (#570)
+- **Details:**
+  - aFinalLineOnOneRecordingSortsOnlyThatRecordingsSegments commits ten finals on 73 recordings with 1,190 segment refs each and expects at most two sorts per final; on 1.9.8 each final sorted 74 slots.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/TripleIndexes.swift` — manyCardinalitySortCount
+  - `Sources/InstantSwiftDataCore/InstantStore.swift` — manyCardinalitySortCountForTesting()
+  - `Sources/InstantDomainAEVBench/main.swift` — the --many-refs dispatch
+  - `Tests/InstantSwiftDataCoreTests/InstantManyCardinalityOrderTests.swift` — the red tests
+- **User context (verbatim):**
+  > fix this please so it works efficiently as as well as the typescript core library
+- **SpecStory:** unavailable — unavailable — Claude Code agent session (library-79 subagent under main); no SpecStory capture configured for this session.
+
+## October 5th, 2026 at 3:42:36 a.m. EDT — `0961235bcd3b` An answer whose query unregisters while it is recorded is forgotten afterwards, and the acknowledgement test waits for each answer's acknowledgement (#541)
+
+- **Implementation commit:** `0961235bcd3b6ee6c20d6ed4543ad2f2f1c58837`
+- **Change:** An answer whose query unregisters while it is recorded is forgotten afterwards (#541)
+- **Details:**
+  - The runtime records an answer and then acknowledges it; a query that unregistered between the two kept its key. The acknowledgement now asks the live session whether a query still holds the key.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — the acknowledgement's second check
+  - `Sources/InstantSwiftDataCore/InstantRuntimeLiveSession.swift` — isRegistered(key:)
+  - `Tests/InstantSwiftDataCoreTests/InstantSessionMapBoundsTests.swift` — waits for each answer's acknowledgement
+- **User context (verbatim):**
+  > fix this please so it works efficiently as as well as the typescript core library
+- **SpecStory:** unavailable — unavailable — Claude Code agent session (library-79 subagent under main); no SpecStory capture configured for this session.
+
+## October 5th, 2026 at 3:42:36 a.m. EDT — `36c4dc4d4449` A prune rebuilds the transaction ID interner when it holds over twice the live IDs, and a live query's acknowledgement is forgotten when it unregisters (#541)
+
+- **Implementation commit:** `36c4dc4d44492fa968897476dc3a458de148c26d`
+- **Change:** A prune rebuilds the transaction ID interner when it holds over twice the live IDs, and a live query's acknowledgement is forgotten when it unregisters (#541)
+- **Details:**
+  - At a prune's last batch, under the operation gate, the store counts the live IDs once the interner passes 1,024 and twice the last count, and renumbers them when the interner holds over twice that; copies made before keep the old interner with their stamps. Logged as store.transaction-ids-compacted.
+  - Scribe's agent replies restarted about 380 times between 09:19 and 09:35 on 2026-10-04, each with a new key; a key's revision and outcome are now forgotten when its observation, infinite query page or queryOnce unregisters it. Red tests 60770190.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/TripleIndexes.swift` — the interner rebuild and its stamp rewrite
+  - `Sources/InstantSwiftDataCore/InstantStore.swift` — the count at a prune's last batch
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — forgetting a key's acknowledgement
+  - `Sources/InstantSwiftDataCore/InstantRuntimeLiveSession.swift` — recordQueryAnswered says whether a query still holds the key
+  - `Tests/InstantSwiftDataCoreTests/InstantLiveQueryAcknowledgementStateTests.swift` — the forgotten key and the shared revision counter
+- **User context (verbatim):**
+  > fix this please so it works efficiently as as well as the typescript core library
+- **SpecStory:** unavailable — unavailable — Claude Code agent session (library-79 subagent under main); no SpecStory capture configured for this session.
+
+## October 5th, 2026 at 3:42:36 a.m. EDT — `401db3851d99` A write skips a page it cannot change: a row outside the server's cursors does not rebuild the page, and a row that stops matching refreshes it (#540)
+
+- **Implementation commit:** `401db3851d99f22a841d70b9a4b410a118c8af85`
+- **Change:** A write skips a page it cannot change: a row outside the server's cursors does not rebuild the page, and a row that stops matching refreshes it (#540)
+- **Details:**
+  - Each partial-word save rebuilt every page of Scribe's live timeline whose filter matched the row, from SQLite: about 26 at 800 rows, 45-120 saves a minute while Michael talks (phone-perf, build 88). A page the server's cursors cut keeps only the rows between them, as upstream instaql.ts does, so a row outside them cannot change it.
+  - Any other page refreshes when a changed row it does not hold matched its filters before the write or matches after it; the store keeps the state before a publication's first commit to ask. Red tests 367d64d8 and 2422d777, with the differential property test.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantStore.swift` — shouldRefresh, the state before a publication's first commit, the splice
+  - `Sources/InstantSwiftDataCore/TripleIndexes.swift` — unheldEntityCanEnterPage and pageIsCutByServerCursors
+- **User context (verbatim):**
+  > fix this please so it works efficiently as as well as the typescript core library
+- **SpecStory:** unavailable — unavailable — Claude Code agent session (library-79 subagent under main); no SpecStory capture configured for this session.
+
+## October 5th, 2026 at 3:42:36 a.m. EDT — `60770190cc5b` Red test for #541: a prune leaves the transaction ID interner within twice the live IDs, and unregistered live queries leave no acknowledgement entries
+
+- **Implementation commit:** `60770190cc5bbd07b55623c0b34974a97bd375ac`
+- **Change:** Two package accessors for #541's red tests: the transaction ID interner's size and the live-query acknowledgement keys (#541)
+- **Details:**
+  - phone-perf's memory audit (2026-10-04) found the interner and the acknowledgement state growing for a session's whole life; the red tests (InstantSessionMapBoundsTests) read them. Neither accessor changes behavior.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — the acknowledgement keys accessor
+  - `Sources/InstantSwiftDataCore/InstantStore.swift` — internedTransactionIDCount()
+  - `Sources/InstantSwiftDataCore/TripleIndexes.swift` — internedTransactionIDCount
+  - `Tests/InstantSwiftDataCoreTests/InstantSessionMapBoundsTests.swift` — a prune within twice the live IDs, and unregistered queries leave no entries
+- **User context (verbatim):**
+  > fix this please so it works efficiently as as well as the typescript core library
+- **SpecStory:** unavailable — unavailable — Claude Code agent session (library-79 subagent under main); no SpecStory capture configured for this session.
+
 ## October 5th, 2026 at 1:34:45 a.m. EDT — `cfd32f7edb96` The 10,000-broadcast run's slowdown check allows 250 ms per 100 messages, not 25: it missed at load 196 (#461)
 
 - **Implementation commit:** `cfd32f7edb96a79d063d7d69a5422f3fed203b01`

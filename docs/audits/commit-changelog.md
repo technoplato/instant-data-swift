@@ -1,8 +1,23 @@
+## 2026-10-05 03:34:29 EDT — instant-data-swift `841fb0146a6b0ad07c2cfd83c401a462430583d9`
+A row's interned snapshot keeps every stored field when the write leaves one slot unset: an id slot, or a field (#577)
+
+## 2026-10-05 03:34:16 EDT — instant-data-swift `06bb5a9c0db91ca629bcf38c5811599eb20aeb47`
+Red: a write to all but one field of a row stored without an id slot leaves that field out of the row's reads (#577)
+
+## 2026-10-05 02:13:20 EDT — instant-data-swift `ceba8e4c8ec40957571e1a37291f0c0cfd223105`
+The ten suites fail a test that runs past three minutes instead of idling, so a test stuck on a continuation is named (#569)
+
+## 2026-10-05 01:39:34 EDT — instant-data-swift `fc1ee27eada49ff1448b6b2e010a6ca922308bc9`
+The many-value property test keeps refs in a ref attribute: an any attribute refuses a ref in a write, which failed every run in dev-199 (#570)
+
 ## 2026-10-05 01:34:33 EDT — instant-data-swift `cfd32f7edb96a79d063d7d69a5422f3fed203b01`
 The 10,000-broadcast run's slowdown check allows 250 ms per 100 messages, not 25: it missed at load 196 (#461)
 
 ## 2026-10-05 01:29:53 EDT — instant-data-swift `6c28904ab7ebc6331ac0b45fe54c5625472e423e`
 Document the v1.9.8 release: a live result's JSON written at most once per 30 s, a dead connection's results skipped, the kickstart's pages kept, the missing field named, and rooms with one ordered lane per room (#566 #474 #516 #522 #461)
+
+## 2026-10-05 00:15:36 EDT — instant-data-swift `8f77ad7195b02d7e8c8f617c18914a0bcf71f7ac`
+The AEV bench's many-refs mode lives in its main.swift: a second file made SwiftPM compile main.swift as top-level code, which @main refuses (#570)
 
 ## 2026-10-04 23:58:58 EDT — instant-data-swift `ded9a267a1536853f0458a1a17c19a5a573e796f`
 The ownership test reads the replayed result's time from its row: the stored JSON keeps the time it was written with (#566)
@@ -13,8 +28,23 @@ The kill test also checks SQLite: the todo the server deleted after a kill betwe
 ## 2026-10-04 23:11:30 EDT — instant-data-swift `3b22e326f30069aa310b4f449db5bfdc10d88517`
 Two tests for #566's throttled result writes: a replayed result keeps its stored stamps, and the 1,100-row measurement waits up to 60 s per refresh
 
+## 2026-10-04 22:04:29 EDT — instant-data-swift `4b889f652517349217d9dfcfdb89a5b8ce064bc6`
+The many-value test names its first emission's type, so #require unwraps it instead of warning that it is redundant (#570)
+
 ## 2026-10-04 21:50:07 EDT — instant-data-swift `0bc01dfed60e688eb7de8c0f78fa43af77b758d6`
 Name the stored triple's type in the bootstrap repair's lookup, which 0d5ccaa5 left for the compiler to infer through .first (#566)
+
+## 2026-10-04 19:20:25 EDT — instant-data-swift `65932af224e985ec158020d519e85f4fae1b4fb1`
+A many-value's sorted order is kept and reused while its slot is unchanged, and a slot that must be sorted is sorted without building strings (#570)
+
+## 2026-10-04 19:16:04 EDT — instant-data-swift `312fbbf630e6e6480ee5ce140fb89ff40231fd6c`
+Room joins and leaves on an open socket take the room's lane, and one made while a reconnect's rejoin is written follows it (#563)
+
+## 2026-10-04 19:14:26 EDT — instant-data-swift `28ba22a02e57195986d59f455c2c5d46c9bb3a05`
+Red tests for #570: a final line on one of 73 recordings with 1,190 segment refs each sorts only that recording's refs, and many-values keep the comparableKey order across writes; with a sort count and the AEV bench's --many-refs mode
+
+## 2026-10-04 19:10:58 EDT — instant-data-swift `2d3b6ae180e7174259730b0eaf83e354dcee6744`
+Red tests for #563: a leave and a rejoin on one socket, a presence write in flight before a leave and a rejoin, and a leave made while a reconnect's rejoin is written reach the wire in call order
 
 ## 2026-10-04 16:28:09 EDT — instant-data-swift `29ccaab3f782fcc23733f9f447a64e28f934d3cf`
 Test that a row that arrives and leaves while a result's write waits is retracted in the same process (#566)
@@ -36,6 +66,9 @@ Red tests for #461's broadcast order: two topic publishes reach the socket in pu
 
 ## 2026-10-04 15:08:47 EDT — instant-data-swift `42294f2b14909f26a8efffe733fcfa04adc894bc`
 Keep isAnsweredOnCurrentSocketForTesting's documentation and @concurrent on it: the presence lane's test accessor moves above them (#461)
+
+## 2026-10-04 15:07:24 EDT — instant-data-swift `4f7da3c7ea4b6d34db82b0021000263788557f7f`
+1.9.9's new tests read actor state before expectNoDifference, whose autoclosures cannot await (#540 #541)
 
 ## 2026-10-04 15:04:32 EDT — instant-data-swift `8dc4321dd412675915961e45269a74b3e0104118`
 Each room's presence writes take one ordered lane, so an older set-presence never passes a newer one, as Reactor.js writes in call order (#461)
@@ -82,8 +115,14 @@ Claim read-aloud-v2's files and record the go (#471 #549)
 ## 2026-10-04 12:22:00 EDT — scribe `3382a7dee6ad4831b501b9536accf84189271019`
 Plan read-aloud-v2, plan only: a voice chosen in Settings, play and pause, and an exact record of an interruption (#471 #549)
 
+## 2026-10-04 12:21:15 EDT — instant-data-swift `0961235bcd3b6ee6c20d6ed4543ad2f2f1c58837`
+An answer whose query unregisters while it is recorded is forgotten afterwards, and the acknowledgement test waits for each answer's acknowledgement (#541)
+
 ## 2026-10-04 12:20:28 EDT — scribe `c434ae040e7ee0e653a7c42952c186e9a401de63`
 Change log: the save lane takes instant-data-swift 1.9.7's word on write failures and connection health (e328be34, 5c6587c0) (#482)
+
+## 2026-10-04 12:09:38 EDT — instant-data-swift `16680ca1f48ec111322e6cc451c7a52d0d78a0bf`
+The property test formats its random entity IDs with long conversions, as String(format:) reads Int arguments (#540)
 
 ## 2026-10-04 12:07:33 EDT — scribe `4aa1af2b9842596f4fc6084857c710a36f786f92`
 Record 40d2ed2d and 2a5670f4 (#537 P3) in the change log
@@ -145,11 +184,17 @@ The classifier failure test takes each failure from its own run, as the restart 
 ## 2026-10-04 11:42:41 EDT — scribe `c8059ad3f7d759af2cd1c068532ee4fda0b75175`
 Ledger: the classifier failure test's fix in CHANGELOG.md (#457 #440)
 
+## 2026-10-04 11:41:56 EDT — instant-data-swift `9f4fbd6af081d9d87b68bccae923934243921847`
+The interner test saves its todo 1,200 times, past the 1,024 IDs below which a prune does not count the interner (#541)
+
 ## 2026-10-04 11:40:55 EDT — scribe `c7b685be2a676ea7187ab694023db4d7b06e1fae`
 Set Scribe 0.1 (90): CURRENT_PROJECT_VERSION 90 on the 12 lines that carried 89
 
 ## 2026-10-04 11:40:55 EDT — scribe `56abec000c66b1c3660ceea18a4e1de629652ba9`
 Record Scribe 0.1 (90)'s build number in the change log
+
+## 2026-10-04 11:40:17 EDT — instant-data-swift `910dc2e8666fad50d7712a47110d4eba5d90520d`
+The differential property test also publishes as the runtime does: about half its writes commit under deferred publication, published after one to three commits (#540)
 
 ## 2026-10-04 11:38:26 EDT — scribe `7b253a3b9afdb37ee3279d92c780a4cf8e07161d`
 Merge mirror-chunks-urls into main: the mirror's chunk URL lookup names every waiting chunk row, so concurrent chunks no longer fail with 'no $files row or url' (#533)
@@ -199,6 +244,18 @@ Red: chunks that start downloading together share one $files lookup, and none fa
 ## 2026-10-04 11:35:09 EDT — scribe `6513b995d0ffe80f58d008efe216f18da91530c4`
 Record Scribe 0.1 (89) in PROGRESS: on the iPhone and the iPad, built from 201ede6f on the published instant-data-swift 1.9.7, with the resume fix and its crash-loop guard (#535 #536 #473 #482 #532 #531 #526 #519 #522)
 
+## 2026-10-04 11:34:55 EDT — instant-data-swift `243f7003190f0bc987715ce34ea9fa73388830d1`
+The differential property test also draws cut pages that keep both ends: after with first and last, before with limit and last, an offset with first and last (#540)
+
+## 2026-10-04 11:34:55 EDT — instant-data-swift `36c4dc4d44492fa968897476dc3a458de148c26d`
+A prune rebuilds the transaction ID interner when it holds over twice the live IDs, and a live query's acknowledgement is forgotten when it unregisters (#541)
+
+## 2026-10-04 11:34:55 EDT — instant-data-swift `2422d7771854da40456c3cbfa6d1e9cde8adf9e5`
+Red test for #540: a row that stops matching refreshes the local pages it shifts, an offset page's window and a limited page's next page
+
+## 2026-10-04 11:34:48 EDT — instant-data-swift `401db3851d99f22a841d70b9a4b410a118c8af85`
+A write skips a page it cannot change: a row outside the server's cursors does not rebuild the page, and a row that stops matching refreshes it (#540)
+
 ## 2026-10-04 11:33:06 EDT — scribe `f210d2d20bbddf3b3394c0cf01cff6c9d4b661e8`
 Merge phone-perf's 89 change-log entries into main: #522's f6ff4e9a, 7b8a1df7 and 1e57ad3b, and #531's 9a5b8cd8 and bb4fb89b (#522 #531)
 
@@ -216,6 +273,12 @@ The songs footer and the budget give a window's fingerprint, about 2.5 KB; the m
 
 ## 2026-10-04 11:31:26 EDT — scribe `340b3a35c8d0e67be5a9e6b9aa45005c76704afa`
 Claim threads-chat P2 (#537): while a thread is open in front on the recording device, his spoken lines join it
+
+## 2026-10-04 11:29:07 EDT — instant-data-swift `60770190cc5bbd07b55623c0b34974a97bd375ac`
+Red test for #541: a prune leaves the transaction ID interner within twice the live IDs, and unregistered live queries leave no acknowledgement entries
+
+## 2026-10-04 11:28:54 EDT — instant-data-swift `367d64d860421d572343fc2ebbc966e2f47684e0`
+Red test for #540: a write refreshes only the timeline pages it can change, and every page equals its rematerialization after random writes
 
 ## 2026-10-04 11:26:38 EDT — scribe `2f78c277338530ec6a2895db4623ae43415df4a2`
 Record phone-perf's five commits in build 89 in the change log (#522 #531 #410)
