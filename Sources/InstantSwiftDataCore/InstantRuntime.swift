@@ -368,6 +368,16 @@ public struct InstantRuntimeConfiguration: Sendable {
   }
   /// Runs after each prune batch, with the number of results it removed.
   var onLiveQueryResultPruneBatchFinishedForTesting: (@Sendable (_ removedResultCount: Int) async -> Void)? = nil
+  /// How long a live query's rows stay in memory after the query unsubscribes, so a query that subscribes again soon
+  /// finds them; then the rows no active query, pending write or observer holds leave memory, and SQLite keeps them
+  /// (1.10.0). nil keeps every row in memory until relaunch, as before 1.10.0.
+  public var liveQueryEvictionGraceMilliseconds: Int64? = 60_000
+  /// How the runtime waits out the eviction grace; tests make it return at once, or never.
+  var liveQueryEvictionSleep: @Sendable (_ milliseconds: UInt64) async throws -> Void = { milliseconds in
+    try await Task.sleep(nanoseconds: milliseconds * 1_000_000)
+  }
+  /// Runs after each eviction batch, with how many entities it evicted.
+  var onLiveQueryEvictionFinishedForTesting: (@Sendable (_ evictedEntityCount: Int) async -> Void)? = nil
   var liveReconnectSleep: @Sendable (UInt64) async throws -> Void =
     instantLiveDefaultTimeoutSleep
   var liveMutationDeadlineSleep: @Sendable (UInt64) async throws -> Void =
@@ -6659,6 +6669,12 @@ public final class InstantRuntime: Sendable {
   /// a query unsubscribes and when the connection closes. Call this when the app moves to the background or is about
   /// to terminate, so the next launch starts from the newest results. A launch after a kill without it rebuilds the
   /// waiting results from their facts, so nothing the server deleted comes back.
+  /// Evicts from memory at once every entity no active live query, pending write or observer holds; SQLite keeps them
+  /// (1.10.0). Call it on a memory warning and when the app enters the background. Not yet built: the red tests' stub.
+  public func trimMemory() async throws -> InstantMemoryTrim {
+    InstantMemoryTrim(evictedEntityCount: 0, removedTripleCount: 0, remainingTripleCount: await store.currentTripleCount())
+  }
+
   public func flushPendingLiveQueryResults() async throws {
     recordActorHop(.persistence)
     try await persistence.flushDeferredLiveQueryResults()

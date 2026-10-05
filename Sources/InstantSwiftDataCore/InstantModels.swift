@@ -2274,6 +2274,22 @@ public struct InstantCachedQuery: Hashable, Codable, Sendable, Identifiable {
   }
 }
 
+/// What ``InstantRuntime/trimMemory()`` evicted from memory (1.10.0).
+public struct InstantMemoryTrim: Hashable, Sendable {
+  /// The entities whose facts left memory.
+  public var evictedEntityCount: Int
+  /// The facts that left memory.
+  public var removedTripleCount: Int
+  /// The facts still in memory.
+  public var remainingTripleCount: Int
+
+  public init(evictedEntityCount: Int, removedTripleCount: Int, remainingTripleCount: Int) {
+    self.evictedEntityCount = evictedEntityCount
+    self.removedTripleCount = removedTripleCount
+    self.remainingTripleCount = remainingTripleCount
+  }
+}
+
 public struct InstantStoreSnapshot: Hashable, Codable, Sendable {
   public var attributes: [InstantAttribute]
   public var triples: [InstantTriple]
