@@ -1,3 +1,12 @@
+## 2026-10-05 07:44:59 EDT — instant-data-swift `aa643443634e6bf64886553a247b602d320f154d`
+1.9.9's new comments in neutral wording: issue numbers instead of people, devices, recordings and app names
+
+## 2026-10-05 07:39:55 EDT — instant-data-swift `69119ed1c61cb5e67bb83c5a46e1322670695e89`
+Log ca74c586 in CHANGELOG
+
+## 2026-10-05 07:39:55 EDT — instant-data-swift `ca74c5863964285121c9bf2cb8b11e8481d54c21`
+Record decisions in code comments (AGENTS.md)
+
 ## 2026-10-05 06:50:10 EDT — instant-data-swift `b581aaff1a9e90596db13cccbfb5e8f092487882`
 storeObservationsHonorRemotePageInfoWindows expects #540's behavior: a row created before both windows publishes neither page (#540)
 

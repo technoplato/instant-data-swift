@@ -10,6 +10,22 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## October 5th, 2026 at 7:45:25 a.m. EDT — `aa643443634e` 1.9.9's new comments in neutral wording: issue numbers instead of people, devices, recordings and app names
+
+- **Implementation commit:** `aa643443634e6bf64886553a247b602d320f154d`
+- **Change:** 1.9.9's new comments in neutral wording: issue numbers instead of people, devices, recordings and app names
+- **Details:**
+  - Under the AGENTS.md rule on decision comments (ca74c586); comments only.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/TripleIndexes.swift` — ManyCardinalityOrders' comment cites #570
+  - `Sources/InstantDomainAEVBench/main.swift` — the many-refs mode's comment
+  - `Tests/InstantSwiftDataCoreTests/InstantManyCardinalityOrderTests.swift` — the suite's comments cite #570 and #573
+  - `Tests/InstantSwiftDataCoreTests/InstantSessionMapBoundsTests.swift` — the suite's comment cites #541
+  - `Tests/InstantSwiftDataCoreTests/InstantStorePageSkipTests.swift` — the suite's comment cites #540
+- **User context (verbatim):**
+  > code comments ... a living, breathing document of our decisions
+- **SpecStory:** unavailable — unavailable — Claude Code agent session (library-79 subagent under main); no SpecStory capture configured for this session.
+
 ## October 5th, 2026 at 7:39:55 a.m. EDT — `ca74c5863964` Record decisions in code comments (AGENTS.md)
 
 - **Implementation commit:** `ca74c5863964285121c9bf2cb8b11e8481d54c21`
