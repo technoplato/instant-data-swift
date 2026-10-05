@@ -355,7 +355,8 @@ struct InstantManyCardinalityOrderTests {
     func observe(_ plan: InstantQueryPlan, in store: InstantStore) async throws {
       let stream = await store.observe(plan)
       var iterator = stream.makeAsyncIterator()
-      last = try #require(await iterator.next())
+      let initial: InstantQueryEmission = try #require(await iterator.next())
+      last = initial
       streams.append(stream)
     }
 
