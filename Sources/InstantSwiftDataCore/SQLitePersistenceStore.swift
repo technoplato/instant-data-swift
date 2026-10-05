@@ -1193,14 +1193,17 @@ public actor SQLitePersistenceStore {
         for identity in try liveQueryOwnershipWithoutTransaction(queryKey: queryKey) {
           if let triple = staleByIdentity[identity] {
             triples.append(triple)
-          } else if let stored: InstantTriple = try selectJSON(
+            continue
+          }
+          let stored: [InstantTriple] = try selectJSON(
             """
             SELECT json FROM instant_triples
             WHERE entity_id = ? AND attribute_id = ? AND value_json = ?
             LIMIT 1
             """,
             [.text(identity.entityID), .text(identity.attributeID), .text(identity.valueJSON)]
-          ).first {
+          )
+          if let stored = stored.first {
             triples.append(stored)
           } else {
             triples.append(
