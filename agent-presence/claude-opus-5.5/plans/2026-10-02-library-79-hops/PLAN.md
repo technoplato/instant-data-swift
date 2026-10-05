@@ -253,3 +253,10 @@ on the ten suites ... A test stuck on a continuation then fails by name instead 
 `sameProcessOfflineTenThousandEnqueuesKeepResidentBarrierCacheBounded` took 114.6 s in one loaded run. Touching the ten
 suites' files (nine in `Tests/InstantSwiftDataCoreTests`, `Tests/InstantSwiftDataTests/MutationDeliveryTests.swift`),
 added 2026-10-05 02:15 EDT.
+
+#577, found by #540's differential test in dev-199 (seed 15, step 29, all three green runs): a write that sets every
+stored field of a row but one interned a snapshot without that field when the row stores no `id` slot, because the
+completeness check counted one `id` slot for every row. Main, 2026-10-05: "Agreed: 1.9.9 waits on #540". The fix keeps
+such a snapshot and completes it from the row's slots when the write finishes. Red tests first, in new
+`Tests/InstantSwiftDataCoreTests/InstantInternedSnapshotCompletenessTests.swift`. Touching
+`Sources/InstantSwiftDataCore/TripleIndexes.swift` (already claimed for #540 and #570), added 2026-10-05 03:40 EDT.
