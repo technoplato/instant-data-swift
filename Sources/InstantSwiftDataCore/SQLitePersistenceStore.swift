@@ -9973,6 +9973,67 @@ public actor SQLitePersistenceStore {
     return selection.values
   }
 
+  /// The entities the stored results of `keys` hold, from their ownership rows (1.10.0's eviction). The rows stay
+  /// exact on every refresh, even while a result's JSON write waits (#566).
+  func liveQueryOwnedEntityIDs(keys: Set<String>) throws -> Set<String> {
+    guard !keys.isEmpty else { return [] }
+    return try readTransaction {
+      var owned: Set<String> = []
+      let sortedKeys = keys.sorted()
+      for start in stride(from: 0, to: sortedKeys.count, by: Self.evictionBindingBatchSize) {
+        let chunk = sortedKeys[start..<min(start + Self.evictionBindingBatchSize, sortedKeys.count)]
+        let placeholders = Array(repeating: "?", count: chunk.count).joined(separator: ", ")
+        owned.formUnion(
+          try selectStrings(
+            "SELECT DISTINCT entity_id FROM instant_live_query_triples WHERE query_key IN (\(placeholders))",
+            chunk.map(SQLiteBinding.text)
+          )
+        )
+      }
+      return owned
+    }
+  }
+
+  /// The entities pending outbox mutations write, which the bootstrap also loads (1.10.0's eviction).
+  func outboxEffectEntityIDs() throws -> Set<String> {
+    Set(try selectStrings("SELECT DISTINCT entity_id FROM instant_outbox_effect_entities"))
+  }
+
+  /// The stored facts of `entityIDs`, less deferred attributes, as the bootstrap loads them (1.10.0's eviction).
+  func storedTriples(entityIDs: Set<String>) throws -> [InstantTriple] {
+    guard !entityIDs.isEmpty else { return [] }
+    return try readTransaction {
+      var triples: [InstantTriple] = []
+      let sortedIDs = entityIDs.sorted()
+      let deferredIDs = deferredValueResidency.isEnabled ? deferredValueResidency.attributeIDs.sorted() : []
+      for start in stride(from: 0, to: sortedIDs.count, by: Self.evictionBindingBatchSize) {
+        let chunk = sortedIDs[start..<min(start + Self.evictionBindingBatchSize, sortedIDs.count)]
+        var sql = "SELECT json FROM instant_triples WHERE entity_id IN ("
+          + Array(repeating: "?", count: chunk.count).joined(separator: ", ") + ")"
+        var bindings = chunk.map(SQLiteBinding.text)
+        if !deferredIDs.isEmpty {
+          sql += " AND attribute_id NOT IN (" + Array(repeating: "?", count: deferredIDs.count).joined(separator: ", ") + ")"
+          bindings += deferredIDs.map(SQLiteBinding.text)
+        }
+        sql += " ORDER BY entity_id, attribute_id, value_json"
+        let chunkTriples: [InstantTriple] = try selectJSON(sql, bindings)
+        triples += chunkTriples
+      }
+      return triples
+    }
+  }
+
+  /// The entities whose stored `attributeID` holds `value`: a lookup's target that may have left memory (1.10.0).
+  func storedEntityIDs(attributeID: String, value: InstantValue) throws -> [String] {
+    try selectStrings(
+      "SELECT entity_id FROM instant_triples WHERE attribute_id = ? AND value_json = ?",
+      [.text(attributeID), .text(try encode(value))]
+    )
+  }
+
+  /// SQLite allows 32,766 bindings; eviction's reads stay well under it.
+  private static let evictionBindingBatchSize = 2_000
+
   private func loadOutboxWithoutTransaction(
     tracesStartupCollections: Bool = true
   ) throws -> [PendingMutation] {
