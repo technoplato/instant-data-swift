@@ -420,6 +420,9 @@ private struct StoreObserver: Sendable {
   var plan: InstantQueryPlan
   var remotePageInfo: InstantQueryRemotePageInfo?
   var liveQueryKey: String?
+  /// Whether the observation reads the store alone, with no live query behind it, so a row it does not show yet may
+  /// enter its page from the store (1.10.0): its namespaces' entities are held in memory.
+  var readsStoreAlone: Bool
   var lastValues: [InstantEntitySnapshot]
   var lastPageInfo: InstantQueryPageInfo?
   var continuation: AsyncStream<InstantQueryEmission>.Continuation
@@ -695,15 +698,18 @@ public actor InstantStore {
     ).stream
   }
 
+  /// `readsStoreAlone` is false only for an observation a live query stands behind (1.10.0).
   func observeQueryLease(
     _ plan: InstantQueryPlan,
     remotePageInfo: InstantQueryRemotePageInfo? = nil,
+    readsStoreAlone: Bool = true,
     onCancellationStarted: (@Sendable () async -> Void)? = nil
   ) -> InstantStoreQueryObservationLease {
     observeLease(
       plan,
       remotePageInfo: remotePageInfo,
       liveQueryKey: nil,
+      readsStoreAlone: readsStoreAlone,
       onCancellationStarted: onCancellationStarted
     )
   }
@@ -716,6 +722,7 @@ public actor InstantStore {
       plan,
       remotePageInfo: nil,
       liveQueryKey: nil,
+      readsStoreAlone: true,
       onCancellationStarted: onCancellationStarted
     )
   }
@@ -730,6 +737,7 @@ public actor InstantStore {
       plan,
       remotePageInfo: remotePageInfo,
       liveQueryKey: registrationKey,
+      readsStoreAlone: false,
       onCancellationStarted: onCancellationStarted
     )
   }
@@ -738,6 +746,7 @@ public actor InstantStore {
     _ plan: InstantQueryPlan,
     remotePageInfo: InstantQueryRemotePageInfo?,
     liveQueryKey: String?,
+    readsStoreAlone: Bool,
     onCancellationStarted: (@Sendable () async -> Void)? = nil
   ) -> InstantStoreQueryObservationLease {
     let observerID = UUID()
@@ -749,6 +758,7 @@ public actor InstantStore {
       plan: plan,
       remotePageInfo: remotePageInfo,
       liveQueryKey: liveQueryKey,
+      readsStoreAlone: readsStoreAlone,
       continuation: stream.continuation
     )
     let termination = InstantStoreObservationTermination { [weak self] in
@@ -2996,6 +3006,7 @@ public actor InstantStore {
     plan: InstantQueryPlan,
     remotePageInfo: InstantQueryRemotePageInfo? = nil,
     liveQueryKey: String? = nil,
+    readsStoreAlone: Bool,
     continuation: AsyncStream<InstantQueryEmission>.Continuation
   ) {
     // Existing observers see committed changes before a new one starts from the current store (#473).
@@ -3005,6 +3016,7 @@ public actor InstantStore {
       plan: plan,
       remotePageInfo: remotePageInfo,
       liveQueryKey: liveQueryKey,
+      readsStoreAlone: readsStoreAlone,
       lastValues: initialEmission.values,
       lastPageInfo: initialEmission.pageInfo,
       continuation: continuation
@@ -3055,9 +3067,66 @@ public actor InstantStore {
     indexes.tripleCount
   }
 
-  /// What the store holds in memory, for the session-health beat (1.10.0). Not yet built: the red tests' stub.
+  /// What the store holds in memory, for the session-health beat (1.10.0). The counts are kept as the store changes;
+  /// the byte estimate walks the facts (TripleIndexes.estimatedBytes).
   public func memoryStats() -> InstantStoreMemoryStats {
-    InstantStoreMemoryStats(entityCount: 0, factCount: 0, estimatedBytes: 0, observerCount: 0)
+    InstantStoreMemoryStats(
+      entityCount: indexes.entityCount,
+      factCount: indexes.tripleCount,
+      estimatedBytes: indexes.estimatedBytes(attributes: attributes),
+      observerCount: observers.count
+    )
+  }
+
+  /// What eviction could drop from memory now, given the entities the caller holds: the active live queries' stored
+  /// results and the pending writes and outbox entries (1.10.0). Drops nothing. Of the rest, an entity an observer
+  /// shows is held, and so is one in a namespace an observer that reads the store alone reads, since a row it does not
+  /// show yet may enter its page.
+  func evictableEstimate(
+    heldByPendingWrites: Set<String>,
+    heldByActiveQueries: Set<String>
+  ) -> InstantEvictableMemoryEstimate {
+    publishPendingChanges()
+    var shown: Set<String> = []
+    var localNamespaces: Set<String> = []
+    var everyNamespaceIsLocal = false
+    for observer in observers.values {
+      for snapshot in observer.lastValues {
+        snapshot.collectEntityIDs(into: &shown)
+      }
+      guard observer.readsStoreAlone else { continue }
+      if let namespaces = observer.plan.dependentNamespaces {
+        localNamespaces.formUnion(namespaces)
+      } else if observer.plan.hasOnlyNamespaceLocalDependencies {
+        localNamespaces.insert(observer.plan.namespace)
+      } else {
+        everyNamespaceIsLocal = true
+      }
+    }
+    var estimate = InstantEvictableMemoryEstimate()
+    var evictable: Set<String> = []
+    for entityID in indexes.residentEntityIDs {
+      if heldByPendingWrites.contains(entityID) {
+        estimate.heldByPendingWritesCount += 1
+      } else if heldByActiveQueries.contains(entityID) {
+        estimate.heldByActiveQueriesCount += 1
+      } else if shown.contains(entityID) {
+        estimate.shownByObserversCount += 1
+      } else if everyNamespaceIsLocal
+        || (!localNamespaces.isEmpty
+          && !indexes.namespaces(entityID: entityID, attributes: attributes).isDisjoint(with: localNamespaces))
+      {
+        estimate.inLocalObserverNamespacesCount += 1
+      } else {
+        evictable.insert(entityID)
+      }
+    }
+    estimate.entityCount = evictable.count
+    for entityID in evictable {
+      estimate.factCount += indexes.copiedAttributeSlots(entityID: entityID)?.values.reduce(0) { $0 + $1.count } ?? 0
+    }
+    estimate.estimatedBytes = indexes.estimatedBytes(ofEntities: evictable, attributes: attributes)
+    return estimate
   }
 
   /// How many many-cardinality slots the store's materializations sorted (#570).

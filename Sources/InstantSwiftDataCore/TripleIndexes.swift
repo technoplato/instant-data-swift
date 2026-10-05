@@ -1675,6 +1675,93 @@ struct TripleIndexes: Codable, Sendable {
     storedTripleCount
   }
 
+  /// The entities with at least one fact in memory.
+  var entityCount: Int {
+    eav.count
+  }
+
+  /// The resident entities, for 1.10.0's evictable estimate.
+  var residentEntityIDs: Dictionary<String, [String: AttrSlot]>.Keys {
+    eav.keys
+  }
+
+  /// The estimated heap bytes of `entityIDs`' facts, or of every fact (1.10.0's store stats), walked on demand.
+  ///
+  /// A model of the maps, not a measurement: Swift does not report a value's heap size, and phone memgraphs calibrate
+  /// it. Per entity, its row in the entity map and its ID's heap bytes; per fact, its slot and attribute key, an index
+  /// entry when the attribute is indexed, a reverse-link entry when it is a ref, and its value's heap bytes.
+  func estimatedBytes(ofEntities entityIDs: Set<String>? = nil, attributes: AttributeStore) -> Int {
+    var bytes = 0
+    func add(_ entityID: String, _ slots: [String: AttrSlot]) {
+      bytes += Self.estimatedEntityRowBytes + Self.estimatedHeapBytes(of: entityID)
+      for (attributeID, slot) in slots {
+        let attribute = attributes[attributeID]
+        var perFact = Self.estimatedFactBytes
+        if attribute?.isIndexed == true { perFact += Self.estimatedIndexEntryBytes }
+        if attribute?.valueType == .ref { perFact += Self.estimatedReverseLinkBytes }
+        switch slot {
+        case let .one(value, _):
+          bytes += perFact + Self.estimatedHeapBytes(of: value)
+        case let .many(stamps):
+          for value in stamps.keys {
+            bytes += perFact + Self.estimatedHeapBytes(of: value)
+          }
+        }
+      }
+    }
+    if let entityIDs {
+      for entityID in entityIDs {
+        if let slots = eav[entityID] { add(entityID, slots) }
+      }
+    } else {
+      for (entityID, slots) in eav {
+        add(entityID, slots)
+      }
+    }
+    return bytes
+  }
+
+  /// An entity's row in the entity map: the key, the bucket and the attribute map's header and buckets.
+  static let estimatedEntityRowBytes = 160
+  /// A fact's slot in its entity's attribute map: the attribute key, the bucket, the value and its stamp.
+  static let estimatedFactBytes = 112
+  /// An indexed attribute's entry for the fact in the value-to-entity and entity-to-value maps.
+  static let estimatedIndexEntryBytes = 96
+  /// A ref's entry in the reverse-link map.
+  static let estimatedReverseLinkBytes = 80
+
+  /// The heap bytes of a string: Swift stores up to 15 UTF-8 bytes inline, and allocates longer ones with a header.
+  static func estimatedHeapBytes(of string: String) -> Int {
+    let count = string.utf8.count
+    return count > 15 ? count + 32 : 0
+  }
+
+  static func estimatedHeapBytes(of value: InstantValue) -> Int {
+    switch value {
+    case let .string(string), let .ref(string):
+      return estimatedHeapBytes(of: string)
+    case let .json(json):
+      return estimatedHeapBytes(of: json)
+    case let .lookupRef(lookup):
+      return estimatedHeapBytes(of: lookup.description) + 48
+    case .null, .number, .bool, .date:
+      return 0
+    }
+  }
+
+  static func estimatedHeapBytes(of json: JSONValue) -> Int {
+    switch json {
+    case let .string(string):
+      return estimatedHeapBytes(of: string)
+    case let .array(values):
+      return 48 + values.reduce(0) { $0 + 16 + estimatedHeapBytes(of: $1) }
+    case let .object(fields):
+      return 64 + fields.reduce(0) { $0 + 48 + estimatedHeapBytes(of: $1.key) + estimatedHeapBytes(of: $1.value) }
+    case .null, .bool, .number:
+      return 0
+    }
+  }
+
   /// How many transaction IDs the interner holds, including the empty one at index 0 and IDs no triple uses any more.
   var internedTransactionIDCount: Int {
     internedTxIDsBox.internedTxIDs.count

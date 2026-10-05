@@ -118,6 +118,11 @@ actor InstantLiveQueryResultState {
     pageInfoByQuery[key] = nil
   }
 
+  /// The keys an observation holds (1.10.0's evictable estimate).
+  func retainedKeys() -> Set<String> {
+    Set(observerCountByQuery.keys)
+  }
+
   func activeKeysForTesting() -> Set<String> {
     Set(observerCountByQuery.keys)
   }

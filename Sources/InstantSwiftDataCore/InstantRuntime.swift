@@ -5089,6 +5089,7 @@ public final class InstantRuntime: Sendable {
     let storeObservation = await store.observeQueryLease(
       plan,
       remotePageInfo: remotePageInfo,
+      readsStoreAlone: liveRegistration == nil,
       onCancellationStarted:
         configuration.onStandardQueryObservationCleanupStartedForTesting
     )
@@ -6665,10 +6666,24 @@ public final class InstantRuntime: Sendable {
     return await store.memoryStats()
   }
 
-  /// What eviction could drop from memory now, read without dropping anything (1.10.0). Not yet built: the red tests'
-  /// stub.
+  /// What eviction could drop from memory now, read without dropping anything, to size 1.10.1's eviction from the
+  /// phone's own numbers (1.10.0). Held, and not counted: entities an active live query's stored result holds (its
+  /// ownership rows), entities pending writes or outbox entries hold, entities an observer shows, and entities in a
+  /// namespace an observer that reads the store alone reads. Reads SQLite, then the store; it takes no gate, as an
+  /// estimate.
   public func evictableMemoryEstimate() async throws -> InstantEvictableMemoryEstimate {
-    InstantEvictableMemoryEstimate()
+    let activeKeys = await liveSession.activeQueryKeys().union(await liveQueryResultState.retainedKeys())
+    let held = try await withPersistence { persistence in
+      (
+        pendingWrites: try persistence.outboxEffectEntityIDs(),
+        activeQueries: try persistence.liveQueryOwnedEntityIDs(keys: activeKeys)
+      )
+    }
+    recordActorHop(.store)
+    return await store.evictableEstimate(
+      heldByPendingWrites: held.pendingWrites,
+      heldByActiveQueries: held.activeQueries
+    )
   }
 
   public func flushPendingLiveQueryResults() async throws {
