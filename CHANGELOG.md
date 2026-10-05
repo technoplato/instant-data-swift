@@ -10,6 +10,34 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## October 5th, 2026 at 7:26:16 a.m. EDT — `dbabd11e21a9` Decode batches run at the persistence's decode QoS, utility by default, and steady-state sync tasks at liveSyncTaskPriority (#590)
+
+- **Implementation commit:** `dbabd11e21a93de4b706408dfdc693aaf9b5bec4`
+- **Change:** Decode batches run at the persistence's decode QoS, utility by default, and steady-state sync tasks at liveSyncTaskPriority (#590)
+- **Details:**
+  - Main, 2026-10-05 (through phone-perf): "a configurable decode QoS, default utility." liveSyncTaskPriority defaults to nil, which inherits as before, until phone-perf measures what utility costs the first load and local writes.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — the decode queue without a QoS, batches at the decode QoS
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — the settings applied to the connection, receiver, reconnect, delivery and catch-up tasks
+- **User context (verbatim):**
+  > fix this please so it works efficiently as as well as the typescript core library
+- **SpecStory:** unavailable — unavailable — Claude Code agent session (library-79 subagent under main); no SpecStory capture configured for this session.
+
+## October 5th, 2026 at 7:26:16 a.m. EDT — `fbc4df474717` Red tests for #590: decode batches run at utility by default, and steady-state sync tasks at the configured priority
+
+- **Implementation commit:** `fbc4df474717a6d3db31162b4e75a790f4b834de`
+- **Change:** Red tests for #590 and its settings, unused: persistenceDecodeQoS, liveSyncTaskPriority and SQLitePersistenceStore.configureDecode(qos:) (#590)
+- **Details:**
+  - On build 94, while Michael recorded Recording 199, unnamed user-initiated workers averaged 10.7% of an iPhone core (phone-perf).
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantSyncQualityOfServiceTests.swift` — the red tests
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — configureDecode(qos:) and the decode-batch observer
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — persistenceDecodeQoS and liveSyncTaskPriority
+  - `Sources/InstantSwiftDataCore/InstantRuntimeLiveSession.swift` — the receiver's priority parameter
+- **User context (verbatim):**
+  > fix this please so it works efficiently as as well as the typescript core library
+- **SpecStory:** unavailable — unavailable — Claude Code agent session (library-79 subagent under main); no SpecStory capture configured for this session.
+
 ## October 5th, 2026 at 4:53:14 a.m. EDT — `c8c2a4c56364` Calibrate the store's byte model: 80-byte attribute buckets at Swift's average load, from a layout measurement and a memgraph (1.10.0)
 
 - **Implementation commit:** `c8c2a4c563643b15b28bdbf621aeef524e07176d`

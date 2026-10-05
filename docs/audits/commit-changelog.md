@@ -1,3 +1,9 @@
+## 2026-10-05 07:25:26 EDT — instant-data-swift `dbabd11e21a93de4b706408dfdc693aaf9b5bec4`
+Decode batches run at the persistence's decode QoS, utility by default, and steady-state sync tasks at liveSyncTaskPriority (#590)
+
+## 2026-10-05 07:23:13 EDT — instant-data-swift `fbc4df474717a6d3db31162b4e75a790f4b834de`
+Red tests for #590: decode batches run at utility by default, and steady-state sync tasks at the configured priority
+
 ## 2026-10-05 04:53:05 EDT — instant-data-swift `c8c2a4c563643b15b28bdbf621aeef524e07176d`
 Calibrate the store's byte model: 80-byte attribute buckets at Swift's average load, from a layout measurement and a memgraph (1.10.0)
 
