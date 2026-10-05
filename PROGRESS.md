@@ -1,3 +1,27 @@
+## 2026-10-05 01:29:53 EDT — v1.9.8: a live result's JSON written at most once per 30 s, a dead connection's buffered results skipped, the kickstart's pages kept, the missing field named, and rooms as Reactor.js keeps them with one ordered lane per room; main's merge of this commit is the release commit (#566 #474 #516 #522 #461)
+
+- **Owner:** library-79 (`claude-opus-5.5-library-79`, workLog agentId `claude-code/claude-opus-5.5/library-79`), plan
+  `2026-10-02-library-79-hops`, under Michael's maintainer authorization: "Publish the library once it's checked
+  fast. Yes." Scope by the coordinating session: "1.9.8 as is" (#474, #516, #522, rooms #461), then #566 first:
+  "Ship the fix in whichever release can publish first."
+- **Defects:** #566: every live refresh rewrote each refreshed query's whole result JSON (Michael's iPhone, build 90,
+  1,074 MB dirtied in 185 s after launch). #474: a dead socket's buffered frames were applied for 18.5 minutes before a
+  reconnect. #516: the kickstart dropped the pages a window loaded from the local store (24 rows to 12). #522: a missing
+  field read as "Expected string". #461: rooms and presence off the operation gate, with write order kept per room.
+- **Commits on `agent/claude-opus-5.5/library-79-198`:** #474 `fb4b6b0c`; #516 `3fd98ded` (test wait `2b293a7e`); #522
+  `5797457f`, `07ce2e5d`; the rooms merge `49b280a2` and its docs; the room lane `8dc4321d` and `1b4dcf0a` (red
+  `410b28ca`, `0998556f`); #566 `0d5ccaa5` (red `fcc8d2e6`) with `29ccaab3`, the compile fix `0bc01dfe`, and test fixes
+  `3b22e326`, `a7f297cb`, `ded9a267`; change log `ef3c0249`; release document `docs/releases/v1.9.8.md`.
+- **Checks:** dev-198, dev-198b, dev-198c, dev-198d and dev-198e (high lane, red then green, mutations of #566's fix);
+  library-79-gate-198 on `ded9a267` (00:37-01:27 on 2026-10-05: new suites 72 x3, store publication 62, library-77/78
+  118, ten suites 698 with one load miss passing 5 of 5 alone, focused 167, fast drain and survival 27, infinite 212
+  with the one failure 1.9.7 has too, #431 iPad store 3/3, phone replay matches or improves); library-79-soak-198
+  (00:29-01:15: no regression; pending at most 2 in both arms).
+- **Measured:** a 1,100-row query refreshed 100 times wrote 100 result JSONs (2.03 MB each refresh, 515 SQLite pages)
+  on v1.9.7's code and 3 (61 KB per refresh, 33 pages) on 1.9.8.
+- **Open:** #516's test does not fail on v1.9.7 (#575); Scribe's next build calls `flushPendingLiveQueryResults()` on
+  background and terminate; 1.9.9 (#540 #541 #563 #570) follows.
+
 ## 2026-10-04 15:16:51 EDT — rooms parity (#461): the 1.9.8 dev run found a presence-order race; library-79's room lane fixes it in 1.9.8 and the rooms agent reviewed it; ADR 0019 decision 9
 
 - **Owner:** rooms (`claude-opus-5.5-rooms`), plan `2026-10-03-rooms`, under main's calls on 2026-10-04.
