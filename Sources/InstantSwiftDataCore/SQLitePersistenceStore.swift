@@ -241,7 +241,6 @@ private struct LiveQueryResultStorageRow: Sendable {
 /// user-initiated, which ran steady-state sync's decoding on the performance cores while Michael records.
 private let instantPersistenceDecodeQueue = DispatchQueue(
   label: "com.instantdb.swift.persistence-decode",
-  qos: .userInitiated,
   attributes: .concurrent
 )
 
@@ -15532,8 +15531,16 @@ public actor SQLitePersistenceStore {
           )
         }
       }
-      _ = decodeQoS
-      instantPersistenceDecodeQueue.async(execute: decodeBatch)
+      if let decodeQoS {
+        instantPersistenceDecodeQueue.async(
+          qos: DispatchQoS(qosClass: decodeQoS, relativePriority: 0),
+          flags: .enforceQoS,
+          execute: decodeBatch
+        )
+      } else {
+        // The block keeps the reader's quality of service: the queue has none of its own.
+        instantPersistenceDecodeQueue.async(execute: decodeBatch)
+      }
       batchCount += 1
       batchData = Data()
       batchData.reserveCapacity(maxEncodedBytesPerBatch + 1)

@@ -6406,6 +6406,7 @@ public final class InstantRuntime: Sendable {
     guard configuration.liveTransport != nil else { return }
     recordActorHop(.deliveryPump)
     await mutationDeliveryPump.request(
+      priority: configuration.liveSyncTaskPriority,
       sleep: configuration.liveReconnectSleep
     ) { [weak self] in
       guard let self else { return .finished }
@@ -6570,7 +6571,7 @@ public final class InstantRuntime: Sendable {
     guard configuration.liveTransport != nil else { return }
     guard configuration.autoConnectLiveTransport else { return }
     recordActorHop(.task)
-    _ = automaticLiveConnectionTaskOwner.start { [weak self] in
+    _ = automaticLiveConnectionTaskOwner.start(priority: configuration.liveSyncTaskPriority) { [weak self] in
       guard let self else { return }
       await self.configuration.onAutomaticLiveConnectionTaskStartedForTesting?()
       do {
@@ -6883,6 +6884,7 @@ public final class InstantRuntime: Sendable {
               )
             },
             onEventAcquired: configuration.onLiveReceiverEventAcquiredForTesting,
+            priority: configuration.liveSyncTaskPriority,
             onRoomEvent: { [weak self] event, room, sessionID in
               guard let self else { return }
               await self.handleLiveRoomEvent(event, room: room, sessionID: sessionID)
@@ -7933,6 +7935,7 @@ public final class InstantRuntime: Sendable {
     }
     if shouldReconnect {
       await reconnectController.start(
+        priority: configuration.liveSyncTaskPriority,
         sleep: configuration.liveReconnectSleep,
         reconnect: { [weak self] in
           guard let self else { throw CancellationError() }
@@ -11669,7 +11672,10 @@ public final class InstantRuntime: Sendable {
   /// Starts the catch-up of the streams this device writes, or runs it again once the current pass ends.
   private func startStreamWriterCatchUp() {
     guard configuration.liveTransport != nil else { return }
-    _ = streamWriterCatchUpOwner.start(restartIfRunning: true) { [weak self] in
+    _ = streamWriterCatchUpOwner.start(
+      priority: configuration.liveSyncTaskPriority,
+      restartIfRunning: true
+    ) { [weak self] in
       await self?.catchUpStreamWriters()
     }
   }
