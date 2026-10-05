@@ -160,6 +160,21 @@ when Instant attributes are string-typed. Library helpers: `InstantMediaKind`,
   related work uncommitted. Keep this repository and
   `../tools/realtime-voice-sqlite-instant` clean at handoff.
 
+## Code comments record decisions
+
+This library is published as open source under PissPour Software, a
+pseudonymous publisher. Comments are the living record of why the code is the
+way it is.
+
+- When code changes for a reason (an issue, a measured regression, a reported
+  failure), put the why beside the code and cite the issue number, e.g. `#577`.
+  Skip comments that only restate what the code does.
+- Keep a short, dated history block in the header of any file you substantially
+  change: one line per major turn, with the issue that drove it.
+- Use neutral wording only. No personal names, emails, home paths, recording
+  quotes, device names, app identifiers or other personal details in code,
+  comments, commit messages or release notes.
+
 <!-- change-log-skill:start -->
 ## Change log, commits, and build provenance
 

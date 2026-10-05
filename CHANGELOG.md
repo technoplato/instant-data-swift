@@ -10,6 +10,18 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## October 5th, 2026 at 7:39:55 a.m. EDT — `ca74c5863964` Record decisions in code comments (AGENTS.md)
+
+- **Implementation commit:** `ca74c5863964285121c9bf2cb8b11e8481d54c21`
+- **Change:** Code comments record decisions (AGENTS.md rule)
+- **Details:**
+  - New AGENTS.md section: why-comments cite issue numbers; file headers carry a dated history; neutral wording with no personal details, as the library publishes under PissPour Software.
+- **Files:**
+  - `AGENTS.md` — new 'Code comments record decisions' section (CLAUDE.md is a symlink to it)
+- **User context (verbatim):**
+  > code comments ... a living, breathing document of our decisions
+- **SpecStory:** unavailable — Claude Code main coordinator session; no SpecStory capture
+
 ## October 5th, 2026 at 6:52:45 a.m. EDT — `b581aaff1a9e` storeObservationsHonorRemotePageInfoWindows expects #540's behavior: a row created before both windows publishes neither page (#540)
 
 - **Implementation commit:** `b581aaff1a9e90596db13cccbfb5e8f092487882`
@@ -213,6 +225,7 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
   > That sounds good to me for the, uh, rooms plan, so go ahead and knock that out with a subagent.
   > Good plan. And let's get feature parody and performance parody with Swift and typescript, please.
 - **SpecStory:** unavailable — Claude Code agent session (rooms subagent under main); no SpecStory capture configured for this session.
+
 
 ## October 5th, 2026 at 1:30:28 a.m. EDT — `6c28904ab7eb` Document the v1.9.8 release: a live result's JSON written at most once per 30 s, a dead connection's results skipped, the kickstart's pages kept, the missing field named, and rooms with one ordered lane per room (#566 #474 #516 #522 #461)
 
