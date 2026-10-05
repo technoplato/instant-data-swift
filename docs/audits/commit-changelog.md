@@ -1,11 +1,362 @@
+## 2026-10-04 23:49:29 EDT — scribe `bf940f2b5cbe325eb9816ac2f2015ec35861658f`
+Record Scribe 0.1 (93) in PROGRESS: on the iPhone, the iPad and the Mac, the stability batch built from 1870909c on instant-data-swift 1.9.7 with production's v20g schema (#551 #549 #571 #525 #478 #564 #512 #546 #445 #553 #543 #574 #569 #547 #517)
+
+## 2026-10-04 23:47:24 EDT — scribe `f3e9b57fdfe79400cb20cfdb79b14e09d7e85cbe`
+Record the mirror install fix in the change log (#551)
+
+## 2026-10-04 23:47:24 EDT — scribe `d2f7904ef23cfea1ed9f8fd27109dbbd2df1687c`
+The mirror's install copies the youtube-companion files the mirror imports, and checks the scribe command runs (#551 #544)
+
+## 2026-10-04 23:40:49 EDT — scribe `0f3a51b684e4064290fad0070447b5b8d04e92a2`
+Merge main dc0a9972 into the 93 branch: store-logger-fence's claim on RecordingListSizeChangeTests
+
+## 2026-10-04 22:53:03 EDT — scribe `37cc7bde1d5625a5b8b288f29cbf111a2e0eecdf`
+Merge store-logger-fence's size-change test fix for 93 (#569): the two layout-log tests use their own enqueue buffer
+
+## 2026-10-04 22:52:23 EDT — scribe `7f6ec5fc872b89680c0409ceb00aa9327bb2e8ce`
+Change log: the two size-change tests deliver their layout logs through their own enqueue buffer (03c702eb) (#569)
+
+## 2026-10-04 22:52:23 EDT — scribe `03c702eb37c2f2a5f3e513311c7fb72847a22aa1`
+The two size-change tests deliver their layout logs through an enqueue buffer of their own, so other tests' tagged lines cannot drop them (#569)
+
+## 2026-10-04 22:51:01 EDT — scribe `dc0a99729929abdb67e91cc24264efcebe421dc1`
+Claim RecordingListSizeChangeTests for store-logger-fence (#569): two tests get a private enqueue buffer, since 93's red run lost their ordinary layout event to the shared one
+
+## 2026-10-04 22:35:43 EDT — scribe `1870909cd6f9e379c20208f29580f284a1e16564`
+Merge youtube-comments' fix for 93's gate (#478): a written decision shows on its row at once, so a second tap writes nothing
+
+## 2026-10-04 22:33:42 EDT — scribe `2c56a17549c02ef3f57f82d11ff7668dc928e70e`
+Merge settings-sync's device-only catalog entry for 93 (#551 #525): Show Reminders in Recordings is device-only, as ADR 0054 says
+
+## 2026-10-04 22:33:21 EDT — scribe `9d747baef4a5d185702dd072fbe53569b7ce8b79`
+Record the reminders entry's scope in the change log (#551)
+
+## 2026-10-04 22:33:21 EDT — scribe `eefc8861ffd79174d5e63a7785218e84329b69c4`
+Show Reminders in Recordings is device-only in the settings catalog, as ADR 0054 says "this device" (#551 #525)
+
+## 2026-10-04 22:33:11 EDT — scribe `d56f89261e7e585418fe6aaa5928aac0f71ce084`
+Merge settings-sync's fixes for 93's gate (#551 #445 #525 #539): test-only fixes for the 19 failures, the reminders setting's catalog entry, and the Sync view's words for v20g's settings and segment fields
+
+## 2026-10-04 22:32:46 EDT — scribe `16d029b39c25aaba29b7baf587440d5e8bfd9a29`
+Merge reminders' test fix for 93 (#525): the reminder tests set the calendar and receive the placements delegate before reading the timeline
+
+## 2026-10-04 22:32:37 EDT — scribe `b6aba50ee6ca56d7410a14d353b2fbed77d5a626`
+Record the 93 gate fixes in the change log (#551)
+
+## 2026-10-04 22:32:37 EDT — scribe `6989f98d97a5aea505daf762865dd3dfcdd0c03b`
+Fix settings-sync's failures in 93's gate: test helpers, the live writes' dependencies, the log wait, the reminders switch, and the Sync view's words (#551)
+
+## 2026-10-04 22:32:13 EDT — scribe `aa346f0fee1db3b5397f63345403e21a0a4bea4e`
+Log fc1ec4ff9 in CHANGELOG: reminders' live-screen tests set a calendar and receive each placement (#525, for 93)
+
+## 2026-10-04 22:32:00 EDT — scribe `fc1ec4ff9ec2324cc24e536db26e63ab3d5f45b1`
+Reminders' live-screen tests read the timeline after each card placement, with a fixed calendar (#525)
+
+## 2026-10-04 22:28:10 EDT — scribe `c23ee1f008d5669136058b14aeb6dd315b1c9a3d`
+Merge journal-tests-yields' revert of the ten-minute schedule for 93 (#569): the two ten-minute journal tests keep their original half-second steps and drain
+
+## 2026-10-04 22:27:43 EDT — scribe `f39f9ca37666256a31f9c5c278ebe63f0fe93c27`
+Record a478f6f8 (the speech client's test value) in the change log (#549)
+
+## 2026-10-04 22:27:36 EDT — scribe `a5c540f15536673ab2873993f5fd044fcb2d9b19`
+Change log: the ten-minute journal tests keep their original steps (2002b3ca) (#569)
+
+## 2026-10-04 22:27:36 EDT — scribe `2002b3ca91cd7483e4b675357c792a9dc34ae158`
+The ten-minute journal tests keep their original half-second steps and drain, since the coarser schedule left the lane undrained even alone (#569)
+
+## 2026-10-04 22:27:34 EDT — scribe `da29a720b6e741bef31b76760386b10b025bc1d8`
+Merge read-aloud-v2's test value fix for 93 (#549): the speech client's test value answers warmUp, voice and position, so the read tests stop failing on Unimplemented
+
+## 2026-10-04 22:27:23 EDT — scribe `a8d3bc7b1fb621375ec3d9f12d86d3f96d372788`
+Merge diagnostics-export's fixes for 93's two gate failures (#571): the store snapshot is a rollback-journal copy any reader can open, and the bundle names the device without reading the idiom
+
+## 2026-10-04 22:27:15 EDT — scribe `51080af5fb617bb44e5d472ec3a417bfe30bea73`
+Change log: a YouTube comment's row shows a written decision at once, and the double-tap test waits for the write to land (02a82b19) (#478)
+
+## 2026-10-04 22:27:12 EDT — scribe `dd1fd6382161093b0af4e0d30bc5c799ed4b392c`
+Merge phone-perf-88's stable preview-bag order for 93 (#517): truncateListPreviewBags walks the page's recordings in order, not a Set
+
+## 2026-10-04 22:27:06 EDT — scribe `a478f6f803619a52ec5e693c7d69c43c0061b72b`
+The speech client's test value answers position, warmUp and voice quietly, so read-aloud tests need not stub them (#549 #471)
+
+## 2026-10-04 22:26:39 EDT — scribe `9b2f838aa25a6884ba05826bebe6c26c3c79b3f5`
+Record a58183826 (#571) in the change log
+
+## 2026-10-04 22:26:38 EDT — scribe `a58183826a98428dbaae157d191f06dc17dd2e19`
+The store snapshot opens read-only, and the device kind comes from ScribeDeviceIcon: gate-93's two diagnostics-export failures (#571)
+
+## 2026-10-04 22:26:27 EDT — scribe `d5aa60dae28c0d63c57b2795732a2d8c179f34ac`
+Record the list preview bags' page order fix in the change log (#517)
+
+## 2026-10-04 22:26:22 EDT — scribe `93988d5f93359bc1d17fd52beb7da497d0b0fbe0`
+Merge journal-tests-yields' fix for the two ten-minute journal tests (93's gate)
+
+## 2026-10-04 22:26:17 EDT — scribe `e191bed7ec9093d3ffce5f337da7fe093184aaa5`
+The list's preview bags follow the page's order of recordings, so two deliveries of the same rows are the same rows in the same order (#517)
+
+## 2026-10-04 22:26:15 EDT — scribe `02a82b19b02e19127f4dfdac5be314d00c076617`
+A YouTube comment's row shows a written decision at once, so a tap after the write writes nothing; the double-tap test waits for the write to land (#478, 93 gate)
+
+## 2026-10-04 22:25:53 EDT — scribe `b904f7c9f4b0479b92bbee17238c67155df05c4c`
+Change log: the ten-minute journal tests wait for system-audio finals on screen and drain on progress (4f56e2c7) (#569)
+
+## 2026-10-04 22:25:52 EDT — scribe `4f56e2c7dee9bd3b899491ef21725d90453984c7`
+The ten-minute journal tests wait for a system-audio final to reach the screen, and drain until the lane stops making progress instead of for 30 s at most (#569)
+
+## 2026-10-04 22:25:51 EDT — scribe `1f4f6bf85d2113abd11021771f34759904f3a08a`
+Red: the list's preview bags follow the page's order of recordings (#517)
+
+## 2026-10-04 22:24:14 EDT — scribe `f6d480b603a02e1b05e0b9df78a10d011fb6601f`
+Record the Sync view title read's required-field selection in the change log (#445 #522)
+
+## 2026-10-04 22:24:14 EDT — scribe `0e2530fd2bdbbcd6c3e90c6c062224f1580acf6a`
+The Sync view's recording title read selects every field a recordings decode requires, so it leaves no partial row (#445 #522)
+
+## 2026-10-04 21:43:11 EDT — scribe `f71b75fb94f68c43501db5a0185c3963950ff134`
+Record Scribe 0.1 (93)'s build number in the change log
+
+## 2026-10-04 21:43:10 EDT — scribe `98622ea4e0cfd6333bae41a47990cf3c2d88a263`
+Set Scribe 0.1 (93): CURRENT_PROJECT_VERSION 93 on the 12 lines that carried 92
+
+## 2026-10-04 21:41:22 EDT — scribe `b8bc6ef96ac499957381962f9be9897aa401fee3`
+Ledger: 7c776190 in CHANGELOG.md (#574)
+
+## 2026-10-04 21:22:43 EDT — scribe `b49e32ee2730fc37a29a3b50ce9111f52e3c1319`
+Record b82eaec2, d051a4b2 and fe39c74c (read-aloud-v2's fold and scribe-tts fixes) in the change log (#549 #471)
+
+## 2026-10-04 21:22:23 EDT — scribe `5e3c7e97e8dc372cfed934f85e8e2b3401f9d5a2`
+Merge read-aloud-v2's fold for 93 (#549): the read-aloud pause rides in the answerReadAloud Shared, so PassiveWatcher.State holds one Shared for the read again
+
+## 2026-10-04 21:22:11 EDT — scribe `e8be3e091466d02df278f90c5d4c01c81624f023`
+Merge reminders for 93 (#525, ADR 0054): Scribe makes reminders from what is said, as cards at the lines that made them, with details, in the recording, playback and a Reminders section, mirrored for agents
+
+## 2026-10-04 21:21:41 EDT — scribe `b82eaec29508675c08f89f528473a8d43b004586`
+One shared read-aloud value holds the response and whether it is paused, so Recording.State does not grow (#549)
+
+## 2026-10-04 21:19:53 EDT — scribe `03dda68c60ad936d7a8c0a45857eda67d1d58549`
+Merge journal-tests-yields' let-first follow-up for 93 (#569): the two other journal tests with an awaiting #expect beside an interpolated message read their values into lets first
+
+## 2026-10-04 21:13:34 EDT — scribe `3beab087ad123443c0ea51c160337675e2102a36`
+Change log: the slow journal tests read awaited counts into lets before asserting (0657cd4f, 133e3cf9) (#569)
+
+## 2026-10-04 21:13:34 EDT — scribe `133e3cf99527d5e1a5b2aac92fb9bb08e1708747`
+The two other slow journal tests read their awaited counts into lets before asserting, as the health test does, so no two closures share a SIL name (#569)
+
+## 2026-10-04 21:12:31 EDT — scribe `0657cd4f250a017bcb44cb738b29f7af7654c6ad`
+The journal health test reads its count and message into lets first, so the compiler gives the two closures distinct names (#569)
+
+## 2026-10-04 21:11:18 EDT — scribe `a861fc94aa48c361b06d92562267841c57c5d796`
+Record the journal health test's hoisted values in the change log (#569)
+
+## 2026-10-04 21:10:40 EDT — scribe `165cf70a4c4992abb8e77ce3dd316468c69e0e6e`
+The journal health test reads its count and message into lets first, so the compiler gives the two closures distinct names (#569)
+
+## 2026-10-04 21:09:02 EDT — scribe `ffb5153fd68973b12ec8038a4529a1f7458ec069`
+Record the continuation notice tests' module-qualified Recording in the change log (#553)
+
+## 2026-10-04 21:09:01 EDT — scribe `1af9c8b0e3abcce9cf33d1dd324d845da7ed80be`
+The continuation notice tests name RecordingFeature.Recording, so the reducer is not ambiguous with SharedModels' Recording (#553)
+
+## 2026-10-04 21:08:43 EDT — scribe `fe39c74c2771623241b2d448373435152e70bbc5`
+scribe-tts holds no MLX buffer cache, and warm-up prepares the whole first read (#471)
+
+## 2026-10-04 21:06:13 EDT — scribe `5f763f081f8fd2eb2dae5ae54d4952671b3aed6c`
+The readout play-pause tests' cacheWord is nonisolated, so LockIsolated's Sendable setter can read it (#549)
+
+## 2026-10-04 21:06:13 EDT — scribe `f0ad7f63c1023037d772c85c361988fd902b4166`
+Two read-aloud effects capture the readout by value, so PassiveWatcherFeature compiles under strict concurrency (#549)
+
+## 2026-10-04 21:05:32 EDT — scribe `41b70f250edd442dca3731de2c926e5d5cfddbf3`
+Record the play-pause tests' nonisolated cacheWord in the change log (#549)
+
+## 2026-10-04 21:05:31 EDT — scribe `a35dc07135a269765f944eb87fc8512c62b8e380`
+The readout play-pause tests' cacheWord is nonisolated, so LockIsolated's Sendable setter can read it (#549)
+
+## 2026-10-04 21:05:19 EDT — scribe `d051a4b2d43b68c0b178ee164b4d1271d39dd5ac`
+scribe-tts loads its voices from the weights' own snapshot, so the offline first run finds af_heart (#471)
+
+## 2026-10-04 21:01:49 EDT — scribe `2375c270e819dbc310616b963d58b9b052be958a`
+Merge diagnostics-export's streaming fix for 93 (#571): packing and uploading a bundle stream from disk instead of holding it in memory
+
+## 2026-10-04 21:01:34 EDT — scribe `586726286212462d7f257a234c516e523ec299af`
+Record the read-aloud effects' capture-list fix in the change log (#549)
+
+## 2026-10-04 21:01:34 EDT — scribe `bbd9dc16fe9e29f8f2471ac6a950bcfa3a4aab93`
+Two read-aloud effects capture the readout by value, so PassiveWatcherFeature compiles under strict concurrency (#549)
+
+## 2026-10-04 21:01:10 EDT — scribe `0b5ad604483a0b31d2a888bbadeb27749caca92a`
+Record f658dbaa3 (#571) in the change log
+
+## 2026-10-04 21:01:09 EDT — scribe `f658dbaa3d70c1f1426a94c31faeae6bc2716e0d`
+The diagnostics bundle package streams: a 256 MiB archive costs 4 MiB to pack and 12 MiB to upload, not 258 and 98 (#571)
+
+## 2026-10-04 21:00:32 EDT — scribe `bfae8249ed38a48a1ac4f87f940f3c139597a850`
+Record 7c776190 (the sounds failure message's syntax fix) in the change log (#574)
+
+## 2026-10-04 21:00:24 EDT — scribe `15c610d6ae66efc8a72a3a4e6242bff39b066a62`
+Merge sounds' syntax fix for 93 (#574): the classifier failure's log message computes its place before the call
+
+## 2026-10-04 21:00:04 EDT — scribe `7c776190e2a309ce5aa6a362ae78c36010efc521`
+Build the classifier failure's log message from a plain value, not an interpolation that crossed a line (#574)
+
+## 2026-10-04 20:59:29 EDT — scribe `9a64b21544d0c27ca51a16e1c686d6a62ff179ea`
+Merge sounds' background fix for 93 (#574, Recording 198 #303-305): on the iPhone and iPad the sound classifier stops in the background, a failed analyzer gets no more audio, and every failure says why
+
+## 2026-10-04 20:59:18 EDT — scribe `f88945d18da9e25c02aa08f02a52c90836ff599b`
+AgentReplies imports SharedModels for RuntimeReadout, so PassiveWatcherFeature compiles (#549)
+
+## 2026-10-04 20:58:53 EDT — scribe `599471adc5910298d3f6c1d26633dc0f6e949e82`
+Ledger: 30a63a34, 54252495, and f2fcc328 in CHANGELOG.md (#574)
+
+## 2026-10-04 20:58:17 EDT — scribe `176627feb51aefe3990a070fe0f8e1c2d784478a`
+Record AgentReplies' SharedModels import fix in the change log (#549)
+
+## 2026-10-04 20:58:17 EDT — scribe `4a7ad00bf862c82e75fd4c7b4618a14c206d9420`
+AgentReplies imports SharedModels for RuntimeReadout, so PassiveWatcherFeature compiles (#549)
+
+## 2026-10-04 20:57:56 EDT — scribe `f2fcc328c2eca87a24b989513e2ac9c12f704d4f`
+The song matcher's fallback follows the background while the classifier is stopped, so a recording that ends in the background puts the gate back (#574)
+
+## 2026-10-04 20:57:01 EDT — scribe `542524952f53792d0943f1eb72772caa84a07a5e`
+On the iPhone the sound classifier stops when Scribe enters the background and songs listen on the fallback, with no retries there; a failed analyzer is fed no more audio; every failure is logged with its cause (#574)
+
+## 2026-10-04 20:55:32 EDT — scribe `53b3de0b36c28f8eb630ca961a328865f95b730f`
+Merge integration-93 into reminders for 93: main 92 with production's v20g instant files, youtube-comments, settings-sync, camera-feed, and 93's other merges under the reminders package and cards (#525)
+
+## 2026-10-04 20:54:08 EDT — scribe `30a63a34a1067bc6ae41393f35c576ad9db74c46`
+Red: on the iPhone the sound classifier stops in the background and songs listen on the fallback, a failed analyzer is fed no more audio, and every failure is logged with its cause (#574)
+
+## 2026-10-04 20:47:51 EDT — scribe `0980e387df424868e0d617c4de550d9b09c71212`
+Merge stale-refused-attachment's 93 head: the refused-route pass says when it waits for a take, and a saved Stop starts the unfinished-recording sweep
+
+## 2026-10-04 20:46:58 EDT — scribe `515f9e668f31ef2be183ea1f88521a5c5c62f36e`
+Merge ui-polish-196 for 93 (#553 #554 #555 #548): notices float over the transcript as cards, and iPhone landscape always splits the metadata column beside a full-height transcript
+
+## 2026-10-04 20:46:41 EDT — scribe `477882ba90b1524e5e91bc6201593b6e72464490`
+Log 5d9fc4865 in CHANGELOG: the pass's wait is logged and a saved Stop starts the sweep (#557, for 93)
+
+## 2026-10-04 20:46:40 EDT — scribe `5d9fc486506733f356c901034866d9c926a1a03f`
+A recovery pass that waits for a take says so, and a saved Stop starts the sweep that runs it (#557, for 93)
+
+## 2026-10-04 20:46:12 EDT — scribe `133e3e4f36f23d22b37b8889b117cf70d190531f`
+Merge sync-view for 93 (#445): the Sync view shows what synchronizes, in words, including 90's v17 entities
+
+## 2026-10-04 20:45:51 EDT — scribe `600957e98fa7d75174ed6432b3b87f30f5cb4e1b`
+Red tests for #557 (93): a recovery pass that waits for a take says nothing, and a saved Stop does not start the sweep
+
+## 2026-10-04 20:44:55 EDT — scribe `ba35b9edc545074f475d88e1d86cb510ba173c71`
+Merge threads-entry for 93 (#546): on iPhone the recording's threads are always one tap away, and "Scribe, show threads" opens them
+
+## 2026-10-04 20:44:54 EDT — scribe `1ec023cfcb154ad11fed5835cc2489b31c57b8d6`
+Merge journal-discard for 93 (#512): a journal record that can never be saved is discarded only by a person's tap, with its copy kept first
+
+## 2026-10-04 20:44:40 EDT — scribe `137fb81dc5f5ef61348be4d2d5d2399cda609e08`
+Merge camera-feed for 93 (#564, ADR 0057): a collapsible camera feed on the recording screen
+
+## 2026-10-04 20:44:38 EDT — scribe `d53d7c1930b00031374b9e14d288c4e3cc80c192`
+Merge youtube-comments-in-app for 93 (#478): a YouTube comment made during a recording or playback shows in the app, and goes out through an outbox
+
+## 2026-10-04 20:43:45 EDT — scribe `92b4e8356bf1644bb7a8e5cc2ff7cfda523ae5f8`
+Merge voice-model-pause for 93 (#543): the voice model pauses in Low Power Mode and a tighter gate sends it fewer lines
+
+## 2026-10-04 20:43:35 EDT — scribe `30923fdd57061858955361f4b08de85dad571c33`
+PROGRESS keeps newest first: diagnostics-export's 20:37 entry above 92's 20:35 record
+
+## 2026-10-04 20:43:26 EDT — scribe `b62ac1df18827d621f9136f14923b75ac283719b`
+Merge diagnostics-export for 93 (#571, ADR 0058): a device sends a diagnostics bundle to the Mac over the tailnet, from agent control, Settings or a crash-loop verdict
+
+## 2026-10-04 20:43:05 EDT — scribe `9be37ab2c915a2c7f538f4fd7cf0467ebe6b008a`
+Merge 92 (a65a893a8) into stale-refused-attachment for 93: the route chunk link fix, the v20g files and 92's heads
+
+## 2026-10-04 20:42:58 EDT — scribe `a7fce7cad42be18ba0c96ce880f0e55227186b92`
+Merge read-aloud-v2 for 93 (#549): a readout is a runtime moment that reaches Instant, and playback asks for it
+
+## 2026-10-04 20:42:52 EDT — scribe `b3f1586ca84a3aa5b162f7ebe506b4f349e86e87`
+Merge main (ed2dc429, Scribe 0.1 (92)) into read-aloud-v2
+
+## 2026-10-04 20:42:09 EDT — scribe `4d1f9b55dda8a6015dda15acfb80b6eb5a72213e`
+Merge settings-sync for 93 (#551, ADR 0055): Scribe's settings live in Instant, with an account row, a row per device and an append-only change log, and devices follow them
+
+## 2026-10-04 20:42:05 EDT — scribe `38f328f5959fe46878b5cf037dae9698977545ec`
+Merge main (ed2dc429, Scribe 0.1 (92)) into voice-model-pause-91 for 93
+
+## 2026-10-04 20:41:23 EDT — scribe `93778cb3edef514676fc9ce91f79a3f301d7aa41`
+Record ca6773bd (the #517 fixture's sorted keys) in the change log
+
+## 2026-10-04 20:41:12 EDT — scribe `03bbf1dda01805a888c2eb3b13037bdecbfb0ee8`
+Merge stale-refused-attachment for 93: a refused attachment write that production already holds newer goes, a near miss stays, and every write or chunk the pass keeps says why
+
+## 2026-10-04 20:41:12 EDT — scribe `d3198518622bfcf2439dd8f724281a6f777507cd`
+Merge phone-perf-88's #517 fixture fix for 93: the list projection tests' fixture encodes words JSON with sorted keys, so unchanged rows stay unchanged
+
+## 2026-10-04 20:41:03 EDT — scribe `bfeea2f3e76ae52d256e69c15f8265c49ac83dd1`
+Merge writer-wedge for 93 (#547): the fallback cancel test asserts what the fallback can promise, and a heat guard pins that the production path leaves no format writer thread
+
+## 2026-10-04 20:41:02 EDT — scribe `80e4a19942326b6ed3cae90b96e24e88d3429b72`
+Merge store-logger-fence for 93 (#569 step 2): the store's debug logger flush fences on its own enqueue buffer, and its observability test fails loud
+
+## 2026-10-04 20:41:02 EDT — scribe `beed257815c45180e61ecab85716a799c54cc96b`
+Merge logger-enqueue-buffer for 93 (#569): each logger can use its own enqueue buffer, so the two logger tests stop sharing one with every other test
+
+## 2026-10-04 20:41:01 EDT — scribe `22c0886d1da276b06a15447b8da91dad7ff4e646`
+Merge journal-tests-yields for 93 (#569): the slow TestStore tests keep TCA's main serial executor on, so a busy Mac cannot stall them at 0% CPU
+
+## 2026-10-04 20:37:22 EDT — scribe `22cbaa83d94867867780bde33f03183737e7b3e0`
+Record diagnostics-export's 93 head in PROGRESS: devices send their diagnostics to the Mac over the tailnet (#571)
+
 ## 2026-10-04 20:36:28 EDT — scribe `ed2dc429f9febee55994d4c498e9f93dec91419d`
 Record Scribe 0.1 (92) in PROGRESS: on the iPhone, the iPad and the Mac, a small build of 91 with production's v20g files and the route chunk queries' fix (#557 #549 #551 #539 #569)
+
+## 2026-10-04 20:16:31 EDT — scribe `c0f0e5eb80c14c38b6139dfa36fd37abf51edf7a`
+Record 8d8b6195e (#571) in the change log
+
+## 2026-10-04 20:16:30 EDT — scribe `8d8b6195e5e74c29003dfbde1cef5156838f7c1e`
+The collector records a finished bundle before it deletes the parts, so a status request always finds it (#571)
+
+## 2026-10-04 20:15:00 EDT — scribe `9204b09f1c0d7888b478ff3176961bce78c7716d`
+Merge origin/main into diagnostics-export before 93 (#571)
+
+## 2026-10-04 20:14:07 EDT — scribe `4798eab9e3bcdd8ac8fd190d4c0b62e01b52ddc5`
+Record 0719e07b4 (#571) in the change log
+
+## 2026-10-04 20:14:06 EDT — scribe `0719e07b4e6d0c818fb42850d6cd6a557511cd22`
+A diagnostics bundle requested while the exporter sends leftovers is no longer stranded (#571)
+
+## 2026-10-04 20:11:09 EDT — scribe `367a45d4e48badb646277f64451f7eadd876d04d`
+Record 647f69c2e, e36fd0d9c, a219fb613, 8bab8a1fd, 5308f29bf, 3dd45f3a2, b0fad0311, fc12e7531 and e078babb5 (#571) in the change log
+
+## 2026-10-04 20:09:54 EDT — scribe `e078babb5c3f7bd719c259a384f7ff7a7a4faed7`
+ADR 0058 and the docs: how a device sends its diagnostics to the Mac over the tailnet (#571)
+
+## 2026-10-04 20:08:23 EDT — scribe `fc12e7531c093dd6e619a9246b4583d527c4387f`
+scribe-agent-control diagnostics-export asks a device for a bundle and follows it into ~/scribe-device-pulls (#571)
+
+## 2026-10-04 20:06:01 EDT — scribe `b0fad03113eb7fa0f5f9eef5d677afb3c1897003`
+Red: scribe-agent-control diagnostics-export, tested over a stub that asks nothing (#571)
+
+## 2026-10-04 20:01:07 EDT — scribe `3dd45f3a2d68729396d58ecd3544f0b131fc3cc1`
+Scribe sends diagnostics bundles to the Mac: agent control, Settings' button, and a small upload after a crash loop or a MetricKit crash or hang (#571)
+
+## 2026-10-04 19:59:57 EDT — scribe `5308f29bf03d0a1cfd7dc86d8738f827145b8e39`
+Red: Scribe's diagnostics export, tested over a skeleton that exports nothing (#571)
+
+## 2026-10-04 19:59:45 EDT — scribe `8bab8a1fd94d3bdf68ee6741a1b727798efa3ada`
+The diagnostics bundle package packs, cuts, uploads and queues bundles: the parts resume from what the receiver holds (#571)
+
+## 2026-10-04 19:31:52 EDT — scribe `f2b4940ab6f9837088bd74ac321f2c97d3869221`
+Record the build 93 wording in the change log (#551)
+
+## 2026-10-04 19:31:51 EDT — scribe `45c34be8fbcd01f39ef8f981190ebc98bb70a9f6`
+Settings ship in build 93: the comments, the ADR and the mirror's note name 93, not 92 (#551)
 
 ## 2026-10-04 19:31:42 EDT — scribe `a65a893a820d3a2ba07536b1ae8943b1873386d2`
 Record the production-orientation route test's compile fix in the change log (#557)
 
 ## 2026-10-04 19:31:42 EDT — scribe `b78ff0a40e1622e4fd9b3bdaa1d92239405445d7`
 The production-orientation route test asserts with #expect and its caller's source location, so ScribeSharedSupportTests compiles (#557)
+
+## 2026-10-04 19:30:08 EDT — scribe `aaf63ead84a07ad5004e761378e2a2d32082df45`
+Merge origin/main (ebc63647) into settings-sync-92: production's v20g instant files and 25d5ecdc's keepsOriginalWords fix (#551)
 
 ## 2026-10-04 19:29:43 EDT — scribe `347c9f44dec9bbd435516b97592f7c40a7581520`
 Merge main ebc63647d into the 92 branch: route-chunk-link-selection's plan merge on main
@@ -16,11 +367,32 @@ Record Scribe 0.1 (92)'s build number in the change log
 ## 2026-10-04 19:29:32 EDT — scribe `2a4aaca8a4f803e66a793fb88db3f23804258b65`
 Set Scribe 0.1 (92): CURRENT_PROJECT_VERSION 92 on the 12 lines that carried 91
 
+## 2026-10-04 19:29:17 EDT — scribe `a219fb6138d5f23eebeb3409b868ee4e457b5759`
+The collector receives diagnostics bundles over the tailnet and unpacks them into ~/scribe-device-pulls (#571)
+
 ## 2026-10-04 19:28:34 EDT — scribe `ebc63647d53389b705457a5ce3f64303134d6cfd`
 Merge route-chunk-link-selection's plan and claims into main (#557): route chunk queries stop selecting the recording link, which a synced store refuses
 
+## 2026-10-04 19:24:08 EDT — scribe `85d4f7b43cc1775c88f0b2c5ffefcf07d072aa04`
+Change log: the store's debug logger fences its flushes on the enqueue buffer it is given (3fc520e2, 57f2d6e0) (#569)
+
+## 2026-10-04 19:24:07 EDT — scribe `57f2d6e0c440ac7ae0637648139694aee39ad432`
+The store's debug logger and its dedicated Instant logger fence their flushes on the enqueue buffer they are given, .shared by default (#569)
+
+## 2026-10-04 19:23:26 EDT — scribe `3fc520e26c975152201f477e8a27719786ae2a21`
+Red tests: the store's debug logger enqueues and fences on the queue it is given, and its observability test fails loudly instead of try? (#569)
+
+## 2026-10-04 19:20:24 EDT — scribe `e36fd0d9c326d5d0594cdf818f901e3379dae89b`
+Red: the collector's diagnostics bundle receiver, tested over a skeleton that takes nothing (#571)
+
+## 2026-10-04 19:20:14 EDT — scribe `cba8510408634e645299637b5556fcacbb86d1a3`
+Record the indirect readout cases in the change log (#549 #536)
+
 ## 2026-10-04 19:20:14 EDT — scribe `9a41a48f6a0e097b626998054fbd22f8450f2968`
 Merge route-chunk-link-selection (#557): route chunk queries select the chunk's attributes only, so a synced store reads them, and the recovery decodes a chunk without the recording link
+
+## 2026-10-04 19:20:01 EDT — scribe `1f149eeb05c74bee875979cc5ef19048e25cbc2d`
+The readout's enum cases are indirect, so a RuntimeReadout widens no Action or event (#549 #536)
 
 ## 2026-10-04 19:16:56 EDT — scribe `fe1b8610d1692b8790970383121e92fa6e53afeb`
 Log 41b9ab43b in CHANGELOG: route chunk queries select attributes only (#557)
@@ -31,14 +403,47 @@ Route chunk queries select the chunk's attributes only, so a synced store reads 
 ## 2026-10-04 19:16:37 EDT — scribe `15e23babd4d7a86a4dbe81813b76cfdd1b82ab07`
 Red test for #557: the recovery decodes a chunk only with the recording link a synced store never gives it
 
+## 2026-10-04 19:16:27 EDT — scribe `b51a12868d8a30e89dfc5cae1733866eda7d6a91`
+Record production's v20g files and the readout sync in the change log (#549 #551 #539)
+
+## 2026-10-04 19:16:13 EDT — scribe `59fa7fe570ea76d5f73b66818a772f2ce69c76be`
+A readout moment syncs: readout joins syncedKinds now that production accepts it (#549)
+
 ## 2026-10-04 19:15:59 EDT — scribe `13b81201d307139d57f89488347b1a819516dfba`
 Red tests for #557: route chunk queries select the recording link, which a synced store refuses
+
+## 2026-10-04 19:15:47 EDT — scribe `f112c2fb9ee9999301c77beec39c9891f58958a6`
+Red tests: a readout moment syncs, and playback asks for readouts with the other synced kinds (#549)
 
 ## 2026-10-04 19:15:38 EDT — scribe `8929297c1bb17a1a234af956e2b845cbc671af65`
 Record 25d5ecdc (the ownership schema test's v20g segment rule) in the change log
 
 ## 2026-10-04 19:15:31 EDT — scribe `25d5ecdc92c9328c9fe9009d987e9dda78091c0a`
 The ownership schema test expects v20g's segment update rule, with keepsOriginalWords (#539)
+
+## 2026-10-04 19:15:23 EDT — scribe `c5ab3c052406995549f86b5e61e737c8d50e1625`
+Change log: a quiet broadcast's writer leaves no format writer thread running, and the fallback's spin is a known issue (51a3b964, e5f93a66) (#547)
+
+## 2026-10-04 19:15:22 EDT — scribe `e5f93a664cbb4adf9eb6b59655f1d8980a00221b`
+A quiet broadcast's writer fallback records AVAssetWriter's format writer spin as a known issue, and cancelUnfinishedWriter says what cancelling can and cannot do (#547)
+
+## 2026-10-04 19:15:16 EDT — scribe `f45f491d7e3e8930fbd3e3eb5a74690fb38e940f`
+Take production's v20g instant schema and rules byte for byte: v17 plus readout (v18), Scribe's settings (v19), and kept original words (v20g) (#549 #551 #539)
+
+## 2026-10-04 19:14:48 EDT — scribe `647f69c2e7c157f429623fdf1369c42a0810cf37`
+Red: the diagnostics bundle package's tests over a skeleton that packs and sends nothing (#571)
+
+## 2026-10-04 19:14:15 EDT — scribe `51a3b9640be7613056f212ed0ec0ecdd4cb717a1`
+Red tests: a quiet broadcast's writer with silence leaves no format writer thread running, and the fallback test reads the thread three seconds after finish (#547)
+
+## 2026-10-04 19:14:11 EDT — scribe `873830561337cfd378e250616cf6a145817b1869`
+Merge main (0792c68d, Scribe 0.1 (91)) into read-aloud-v2 for 92
+
+## 2026-10-04 19:12:11 EDT — scribe `806f4295f777a37c77d46f5ee80bd8d97233c8be`
+Record the live settings check in the change log (#551)
+
+## 2026-10-04 19:12:11 EDT — scribe `3df1e418d755198effa91e494d0f86fb2b3090b1`
+settings-mirror-writes.mjs --live: the mirror's own path under bd40c50a's pushed v20g rules passes, 11 of 11 (ADR 0055 S7, #551)
 
 ## 2026-10-04 19:12:11 EDT — scribe `5e89686208add06f20b23cb66ad7673e1ae78364`
 Record 17fc243b (the instant files are production's v20g) in the change log
@@ -61,8 +466,17 @@ Plan diagnostics-export: ADR 0058, main's approvals, and the thermal pause (#571
 ## 2026-10-04 19:02:11 EDT — scribe `9d59898a29d62cb99a1735363f8819cb4409fda8`
 Merge diagnostics-export's plan and claims into main (#571, for 92): devices send diagnostics bundles to the Mac over the tailnet
 
+## 2026-10-04 19:01:48 EDT — scribe `050410bff2b4c0fa99e594fd8fa7bcb52b5e3b37`
+Change log: a logger's enqueue goes through its own enqueue buffer, .shared by default (d7d2fcf3, ba4ff96d) (#569)
+
+## 2026-10-04 19:01:48 EDT — scribe `ba4ff96dc7bad9d0770b278f462e85a9e2bc61dd`
+A logger's enqueue goes through its own enqueue buffer, .shared by default, and the WebSocket flush fences on that buffer (#569)
+
 ## 2026-10-04 19:01:48 EDT — scribe `5b134a87b996577c346c117f272c19f615db4388`
 Merge main a3b769ef into the 91 branch: agents' plans and claims (journal-discard, threads-chat P4, restored-images' stored name, test-yields, logger-enqueue-buffer, writer-wedge) and the 90 iPhone record
+
+## 2026-10-04 19:01:10 EDT — scribe `d7d2fcf3d40a060fdc49077f604e2b5a16bcbaba`
+Red tests: a logger given its own enqueue buffer hands its events to it, and the two logger tests that waited forever in parallel runs use one, with 5 s bounds (#569)
 
 ## 2026-10-04 18:59:30 EDT — scribe `a3b769ef0a97f069518cb2c15624cee44746c122`
 Plan and claim writer-wedge (#547): a quiet broadcast's writer leaves no format writer thread spinning, and the fallback test says what the fallback can promise
@@ -70,11 +484,38 @@ Plan and claim writer-wedge (#547): a quiet broadcast's writer leaves no format 
 ## 2026-10-04 18:58:35 EDT — scribe `43e635f08f18f31eec97e43ceb6e54a2f62593fe`
 Plan and claim diagnostics-export for 92 (#571): devices send diagnostics bundles to the Mac over the tailnet
 
+## 2026-10-04 18:58:14 EDT — scribe `ca6773bdcb557a918963415f4f9a2c80aadb6e44`
+The list projection tests' fixture encodes words JSON with sorted keys, so its rows are the same every time (#517)
+
 ## 2026-10-04 18:46:32 EDT — scribe `569e088a1aee774796bb05fe05fdfab87085822a`
 Plan and claim logger-enqueue-buffer (#569): a logger can use its own enqueue buffer, so two logger tests stop sharing one with every other test
 
+## 2026-10-04 18:38:09 EDT — scribe `70f796511cf821a875521df78514c0692befdc9e`
+Change log: the slow TestStore tests keep TCA's main serial executor on (27ed8294, 49b4df17) (#569)
+
+## 2026-10-04 18:38:08 EDT — scribe `49b4df170322c3c5a383037b27125650e1239b3a`
+The slow TestStore tests keep TCA's main serial executor on: scoped with withMainSerialExecutor, and turned back on before each store call (#569)
+
+## 2026-10-04 18:36:30 EDT — scribe `218faf12c16d13c52f697fc8b5199f68d54372a0`
+Log aeec9cdab in CHANGELOG: each refused route chunk the pass leaves alone says why (#557, for 92)
+
+## 2026-10-04 18:36:30 EDT — scribe `aeec9cdab3ecb94fb2c40f6dfdc47cf80656d147`
+Each refused route chunk the pass leaves alone says why in the device's log (#557, for 92)
+
+## 2026-10-04 18:36:21 EDT — scribe `27ed82947d514b736fc39f925e8d7ab084e9fdd7`
+Red tests: the slow TestStore tests turn TCA's main serial executor back on before each store call, since another suite's store turns it off (#569)
+
 ## 2026-10-04 18:33:47 EDT — scribe `c36b7df634259909497d031a38622b9dd6871efa`
 Plan and claim test-yields (#569): the slow TestStore tests keep TCA's main serial executor on across their sends, so a busy Mac cannot stall them
+
+## 2026-10-04 18:33:07 EDT — scribe `51b58688a502496f189ef514692f93ab1e328c04`
+Red test for #557 (92): a refused route chunk the pass leaves alone does not say why
+
+## 2026-10-04 17:06:57 EDT — scribe `50ea5c9df999f32288ac1e883071d70e5402eaaa`
+Log c3e42c376 in CHANGELOG: each refused attachment write that stays says why (#557, for 92)
+
+## 2026-10-04 17:06:51 EDT — scribe `c3e42c37658bf71f94bb2a7da225a47295ff8de7`
+Each refused attachment write that stays says why in the device's log (#557, for 92)
 
 ## 2026-10-04 17:06:31 EDT — scribe `b1a31a35bed8d09694692a5544909285d1071b2a`
 Merge resume-session-offset for 91 (#371): a new speech session after Resume or capture recovery counts from the relay clock, not 0 s
@@ -91,8 +532,14 @@ Record cbd336d0 (#371) in the change log
 ## 2026-10-04 17:04:40 EDT — scribe `cbd336d092747148f9871c8ddab88927532dadc3`
 A new speech session after Resume or capture recovery counts from the relay clock, not 0 s (#371)
 
+## 2026-10-04 17:03:55 EDT — scribe `76cfebfdf9cb9a7dcdbe6e4f83274e3bb5b08f9a`
+Red test for #557 (92): a refused attachment write that stays does not say why
+
 ## 2026-10-04 17:01:45 EDT — scribe `91155d96e1c40ed2af2486176104997b4e117574`
 Merge stack-hoisting-off's installer fix for 91 (#536): the installer's -O device builds pass the hoisting flag to every target and the #330 IssueReporting exemption to IssueReporting only, and entry-frames budgets bytes
+
+## 2026-10-04 17:01:13 EDT — scribe `ee0710a7c1382c0de92ba3e4d5ad415ad211f76b`
+RefusedAttachmentRecoveryTests: each near-miss differs from its production row in one way only (#557, for 92)
 
 ## 2026-10-04 16:57:51 EDT — scribe `bc78cb1d7aeedf877748f2c9a5e6eef067293f97`
 Record c7a4cb15 and b13b01ec (#536 #330) in the change log
@@ -102,6 +549,42 @@ Device builds at -O turn AllocStackHoisting off; the #330 exemption reaches Issu
 
 ## 2026-10-04 16:57:28 EDT — scribe `c7a4cb152ead9d8be359d897ea38667e5cefd679`
 entry-frames.py budgets bytes at entry, not buffer counts (#536)
+
+## 2026-10-04 16:56:25 EDT — scribe `f48ddb562274b46980bab8e30ecd840f47f1d298`
+Log 3f81f75ec in CHANGELOG: stale refused attachment writes leave this device, and an attachment's metadata is on the journal's disk at once (#557, for 92)
+
+## 2026-10-04 16:55:57 EDT — scribe `3f81f75ec99e3e1c3a19f02c3df9dec5d7e7dd2b`
+A refused attachment write production holds newer leaves this device, and a write of an attachment's metadata is on the journal's disk at once (#557, for 92)
+
+## 2026-10-04 16:52:36 EDT — scribe `158d6a418ffb0227a79418ffdad186ea5032f0c9`
+Red test for #557 (92): a launch writes a delivered Stop again, and so re-stamps the audio attachment its delivery carries the stamp of
+
+## 2026-10-04 16:51:08 EDT — scribe `fad24ae431e3a7d0fa2b78c5c4166d759fc2ff21`
+Change log: the slow journal tests stop waiting for background-priority tasks between sends (214e35c0, 7b297613) (#569)
+
+## 2026-10-04 16:51:07 EDT — scribe `7b2976139ec4af02a00ba2ffcfe8e2ce6b9a7d77`
+The four slow journal tests stop waiting for background-priority tasks between sends: one interim per line, the clock in 5 s steps, skips once a minute (#569)
+
+## 2026-10-04 16:49:50 EDT — scribe `5bf69d752d805b82096ff72ae07d00170b6e5253`
+Red tests for #557 (92): a refused attachment write production holds newer stays on this device, and a launch writes a delivered .media write again
+
+## 2026-10-04 16:49:37 EDT — scribe `214e35c028651a08dc97445d9bcb8b8a8e62d17c`
+Red tests: the four slow journal tests keep to a budget of calls that wait for background-priority tasks, which a busy Mac starves (#569)
+
+## 2026-10-04 16:42:05 EDT — scribe `b2297d9ce6d6a94efaaf66768123ed33e6041660`
+Plan and claim stale-refused-attachment for 92 (#557): a refused attachment write production holds newer leaves this device, and a .media write's durable mark flushes at once
+
+## 2026-10-04 16:34:15 EDT — scribe `48c0315de2ef0000fb9b28cbc070b8aa437934e0`
+Log 19fab239b in CHANGELOG: the camera feed tests' app storage (#564)
+
+## 2026-10-04 16:34:15 EDT — scribe `19fab239b8ddb5420101d8182e4b978b11cbf7a6`
+The camera feed tests keep their app storage in the temporary folder, not the Mac's preferences (#564)
+
+## 2026-10-04 16:26:52 EDT — scribe `f39424c7873109700782f6d157dd98fd703fcf22`
+Log 9d791c472 in CHANGELOG: ADR 0057's landscape rule, cost follow-up and #568 (#564 #568)
+
+## 2026-10-04 16:26:40 EDT — scribe `9d791c472e37080b9c88e95b884b3cdff831120b`
+ADR 0057: the landscape rule at any compact height, the cost to measure on the iPhone, and #568 for change detection (#564 #568)
 
 ## 2026-10-04 16:26:26 EDT — scribe `62e9cffe544bdf96abab63a938b273b48fb1b16f`
 Merge speaker-merge-local-read's test fix for 91 (#477): every store the merge tests open shares one id sequence
@@ -124,6 +607,12 @@ Record 581c357e (#536 #136) in the change log
 ## 2026-10-04 16:25:29 EDT — scribe `564d824c2ae7a45fedde5d3b069a7a495dfa7b60`
 Fix four 91 gate failures in my tests: the open-parts answers carry transcriptEnd, the launch guard stubs the session policy, and the stack budget is measured (#536 #483)
 
+## 2026-10-04 16:24:37 EDT — scribe `7e06a42cbb7a6895f7c76f1f15426468db6695f3`
+Log 04350793c in CHANGELOG: the camera feed's failure words and the short landscape panel (#564)
+
+## 2026-10-04 16:24:36 EDT — scribe `04350793c0b8d7487b9dd1f258df4488439680a2`
+The camera feed's failures name the error's domain and code, and iPhone landscape without the split keeps the panel short (#564)
+
 ## 2026-10-04 16:23:52 EDT — scribe `581c357e5087c68d7405c87ae7008e71d4a6f088`
 The debug stack reporter reads the logger only after Instant bootstrap, so launch code never locks in the silent logger (#536 #136)
 
@@ -139,6 +628,24 @@ Record 1736fd168 in the change log
 ## 2026-10-04 16:19:08 EDT — scribe `1736fd16801a1cff4768caa63e84687156b45138`
 Test only: the minute of heartbeats skips in-flight effects without strictness, since a kept observation starts none (memory audit fix 6)
 
+## 2026-10-04 16:14:15 EDT — scribe `0945c595338f3802e56dfb175d77063c4fdd3e78`
+Merge integration-91 (4ab9281fc) into camera-feed: the reducer modules build without AllocStackHoisting (#536), and route-chunks' and transcript-ax's fixes
+
+## 2026-10-04 16:13:26 EDT — scribe `4590bbd4047eb2bc962c721367580f64b02b3bd3`
+Record the live settings write check in the change log (#551)
+
+## 2026-10-04 16:13:26 EDT — scribe `bd0c40e30382c7382fd5d9501857558c01e44355`
+The mirror's settings writes pass against the throwaway app: set, --device, undo --last, undo by id, and Undo's rule (ADR 0055 S7, #551)
+
+## 2026-10-04 16:13:17 EDT — scribe `640c501cf33c59a1855830a73511bc420f164512`
+Log 69cebc2ac, add8f500d and 25bb001d3 in CHANGELOG: the camera feed's red tests, its reducer, and the panel on the live recording screen (#564)
+
+## 2026-10-04 16:11:13 EDT — scribe `25bb001d35760081c7333a3e694a3ab86e419be7`
+A collapsible camera feed on the live recording screen: the panel under the header, its toggle, the camera's own pinch, Settings > Camera Feed, and ADR 0057 (#564)
+
+## 2026-10-04 16:10:56 EDT — scribe `add8f500d6007c5bff686e01e3e60db4faaa6016`
+The camera feed reducer runs the camera only while its panel shows, flips, zooms inside the camera's range, drops to 15 fps when hot, and asks for the permission on first open (#564)
+
 ## 2026-10-04 16:03:27 EDT — scribe `4ab9281fc511344335fe2671dd5d2710c51608b3`
 Merge stack-hoisting-off's change log for 91 (#536)
 
@@ -153,6 +660,9 @@ Merge stack-hoisting-off for 91 (bug A, #536): the list, recording, playback, ap
 
 ## 2026-10-04 16:02:23 EDT — scribe `b98d4674e4b4a9d1397744db9457da927dba7df4`
 entry-frames.py removes its -O objects when it finishes (#536)
+
+## 2026-10-04 15:57:36 EDT — scribe `69cebc2acb65a8f2464c0b0006382cb251169d69`
+Red tests for the camera feed (#564): the camera runs only while the panel shows, flip, zoom inside the device's range, 15 fps when hot, and no audio
 
 ## 2026-10-04 15:55:40 EDT — scribe `89524e9ff12023655246231d77d98f4412bc551f`
 Record fd54c73e and 0b0c0edc (#536) in the change log
@@ -175,6 +685,72 @@ Log 7ac4fbf87 in CHANGELOG: the SyncBoundaryTests comment fix (#557)
 ## 2026-10-04 15:48:56 EDT — scribe `7ac4fbf8743425b0bf66b9e9ef49f2b770ec80cd`
 RefusedRouteRecovery+List's doc comment no longer names the library's write queue by the word SyncBoundaryTests keeps out of product targets (#557)
 
+## 2026-10-04 15:47:18 EDT — scribe `789f24a68d3c24c5c1bf482d54be33b1f1999aec`
+Record the size lines in the change log (#525 #536)
+
+## 2026-10-04 15:47:17 EDT — scribe `ce8486a163f29267038a72894b0102d6d0a49fb4`
+The reminders' box tests print Recording's and Playback's State and Action sizes, for the gates' base comparison (#525 #536)
+
+## 2026-10-04 15:43:05 EDT — scribe `f07902c9eb7b10495b1c4d4be3b21bb17cc4b9da`
+Plan and claim the camera feed on the live recording screen (#564, Recording 197)
+
+## 2026-10-04 15:37:12 EDT — scribe `c644f90c823f787042713b5b4d9fc7d41e1d0553`
+Change log: the live screen's waiting YouTube comment rows move only on the comment feature's own actions (54151a24) (#478 #536)
+
+## 2026-10-04 15:36:22 EDT — scribe `6c5ca6af389d1393bd5a5eb13533f99dc31b351d`
+Record the thread provenance fix in the change log (#551)
+
+## 2026-10-04 15:36:21 EDT — scribe `ec061709d2da5930499b4afdc454a465f55f7967`
+scribe settings: a change asked in a thread names the thread, not the current recording (ADR 0055 S7, #551)
+
+## 2026-10-04 15:33:58 EDT — scribe `c75933d1961ab60825b75bedb44db5f9a425754e`
+Record the plan update in the change log (#551)
+
+## 2026-10-04 15:33:46 EDT — scribe `d30057f5e707f74a189de3f2db4d97628b2cbf64`
+ADR 0055 plan: S8 (voice) deferred by main; P1's argument from the code, its measurement after a 92 build (#551)
+
+## 2026-10-04 15:32:54 EDT — scribe `629e9524cf52d5f2e2818392fde83670cb928202`
+Record the debug token's move to the Keychain in the change log (#551)
+
+## 2026-10-04 15:32:54 EDT — scribe `1a3a41de87bc5db5a11bc8388dcd839b23f97399`
+The debug sign-in token lives in the device's Keychain; a file in Documents moves there and is deleted (ADR 0055 step K1, #551)
+
+## 2026-10-04 15:29:43 EDT — scribe `54151a248bfbaf963314d71d333760cb7fd02822`
+Move the live screen's waiting YouTube comment rows only on the comment feature's own actions, not after every recording action (#478 92, #536)
+
+## 2026-10-04 15:29:40 EDT — scribe `bc0b2acc17b224686a59bead59a0856bd4c632f5`
+Record the watched folders change in the change log (#551)
+
+## 2026-10-04 15:29:31 EDT — scribe `5d96eb17ff2825c87d5f277619844969fad3f44d`
+Watched folders stop syncing to every device: 92 neither applies the row's folders nor writes over them (ADR 0055 step W1, #551)
+
+## 2026-10-04 15:29:01 EDT — scribe `ee95389349a8d79b85d6a9cb25b4bfcf1f86507d`
+The list projection imports InstantSwiftData for the snapshot and error types it names (#517)
+
+## 2026-10-04 15:28:49 EDT — scribe `0886d2936ef4b7fc33c98d4be1b604649cccda3a`
+Change log: the waiting YouTube comments stay out of line in Recording's and Playback's State and Actions, and their layout guard (7c7990e1, 434aab08) (#478 #536)
+
+## 2026-10-04 15:25:58 EDT — scribe `12743b3512229e384ffc04304e80e05437e81910`
+Merge integration-91 158d5985c into youtube-comments-in-app, as the integrator asked for 92 (#478)
+
+## 2026-10-04 15:25:10 EDT — scribe `59367213df9dc44f14520c717f93de21f2bfb792`
+Record the boxed reminders in the change log (#525 #536)
+
+## 2026-10-04 15:25:09 EDT — scribe `434aab08494b363aed9b6d4243e411d71dece282`
+Guard the YouTube comment notification's boxed place: a response stays at most 40 B and the app's YouTube action at most 104 B (#478 92, #536)
+
+## 2026-10-04 15:25:09 EDT — scribe `195798540019fd9fa7c579ec502b0b0cdb27fa5b`
+The reminders cost Recording.State and Playback.State one pointer each, and their action cases are indirect (#525 #536)
+
+## 2026-10-04 15:24:49 EDT — scribe `7c7990e1d9848278c965f926963478b4aebc4ff6`
+Keep the waiting YouTube comments out of line in Recording's and Playback's State and Actions, and box the notification's place (#478 92, #536)
+
+## 2026-10-04 15:22:38 EDT — scribe `99ff0edf8e310e106fd00840fc010fd8aa0688d2`
+Record scribe settings set and undo in the change log (#551)
+
+## 2026-10-04 15:22:28 EDT — scribe `7c9997050ebee11eac6a3220b328ed158e1a0715`
+scribe settings set and undo change Recognize Songs through the mirror, within the tiers (ADR 0055 step S7, #551)
+
 ## 2026-10-04 15:22:08 EDT — scribe `76c4498e38f6cecf721f604fdd75c2ffc25e5ce2`
 Red test: a speech session Resume starts after the pause ended recognition stamps its lines from 0 s (#371)
 
@@ -189,6 +765,9 @@ Record the list projection's import fix in the change log (#517)
 
 ## 2026-10-04 15:18:11 EDT — scribe `62e27b6098abdfab0574ebe94f11ab78850fef81`
 The list projection imports InstantSwiftData for the snapshot and error types it names, so ScribeSharedSupport compiles (#517)
+
+## 2026-10-04 15:17:02 EDT — scribe `2ef5bdaa1457952a4029e7d0afcb1a59f25fd57c`
+Channel: the waiting YouTube comments' threads-list slot, for threads-chat P4's all-threads sheet (#478, 92)
 
 ## 2026-10-04 15:16:34 EDT — scribe `8e77b402536ea874a967ce39d3da1b2c7a25ee6e`
 Record the fencepost switch's compile fix in the change log
@@ -208,11 +787,23 @@ The lane flushes the journal when a journaled route chunk end becomes durable, s
 ## 2026-10-04 15:09:58 EDT — scribe `e4ce3d69389a125220986a7c5dfee275315dd8be`
 Red test for #557: a route chunk's end is on the journal's disk as soon as local Instant has it
 
+## 2026-10-04 15:07:26 EDT — scribe `e6264b4127654cda3b8b37d0fe17b17ed1986b32`
+Record the recognitions' Low Power field in the change log (#543)
+
+## 2026-10-04 15:07:15 EDT — scribe `3c757122708c051fab5da4f37ac2cf2005e8424f`
+The voice pause reads Low Power Mode from the recognitions' field, so Recording.State does not grow (#543)
+
 ## 2026-10-04 15:06:09 EDT — scribe `8df6e919254ccb1c0049b526836a39189cecd87c`
 Log 150acc82a in CHANGELOG: the recovery read's cost filter (#557)
 
 ## 2026-10-04 15:05:57 EDT — scribe `150acc82a6ac6bb2fc82c565176c5bc5771d3581`
 A recovery pass reads a recording's newest chunks only when a refused write adds points to a chunk production ended (#557)
+
+## 2026-10-04 15:03:40 EDT — scribe `7a8efcd65321593815ea9f1727eb6647b8c4ea1d`
+Record the Recognize Songs line and Undo in the change log (#551)
+
+## 2026-10-04 15:03:31 EDT — scribe `db35a2f65c5456a7d9890c2d5c31d9d97c87fcdc`
+Settings shows who changed Recognize Songs and when, with Undo and Use the Account Setting (ADR 0055 step S6, #551)
 
 ## 2026-10-04 15:02:51 EDT — scribe `8fa00162ecaa24dfa60c1eedeb6e990029560b2e`
 Record the field-limited test's knownPartial update in the change log (#522 #430)
@@ -244,6 +835,18 @@ Merge restored-images' stored-path download for 91 (#552): each restored image a
 ## 2026-10-04 15:01:25 EDT — scribe `9284944eb54488bc325c1a22200458cafb093dbb`
 Merge reply-restarts for 91 (memory audit fix 6, #545): the reply observer stops reopening its observation on the live take's heartbeat
 
+## 2026-10-04 14:59:24 EDT — scribe `2627d8691a6a10a1c72cc9c83dfc5ab6d719c67f`
+Record build 91's voice model pause, the tighter gate, and the three stop word in the change log (#543 #546)
+
+## 2026-10-04 14:58:43 EDT — scribe `ab8249b5f5d257183b2e4265f9c992d8c9ff6b41`
+"three" is a gate stop word, so it never admits speech through the stem of "threads" (#543 #546)
+
+## 2026-10-04 14:58:43 EDT — scribe `b0b7876af4bdc8de25c71630729564becc3c1537`
+Red test: "three" never admits speech through the stem of "threads" (#543 #546)
+
+## 2026-10-04 14:58:43 EDT — scribe `409acd25455b137a0556f2b48a0887a153617a44`
+No voice model calls in the background, when hot, or in Low Power Mode, and a gate that stops letting talk through (#543)
+
 ## 2026-10-04 14:56:21 EDT — scribe `a44807a24b546d77a1db1d69b1aa953a020c14e0`
 The list's frame sample action is boxed, so it grows neither Action enum while the main thread's stack is short (#517 #536)
 
@@ -252,6 +855,9 @@ Plan threads-chat P4 (#537 #546 #465): Michael picked mockup D, the all-threads 
 
 ## 2026-10-04 14:55:33 EDT — scribe `bcd4a7da499ea97d6496d721f910d909762e4c98`
 Record list-edit-mode's 90 batch in PROGRESS: recording numbers, the no-scroll top rule, decodable stored rows, and the live take's row (#430 #299 #522 #542)
+
+## 2026-10-04 14:55:26 EDT — scribe `ad6eb420563ab3ce23ecacbc29ee981a1d3cc6e1`
+Red tests: no model calls in the background, when hot, or in Low Power Mode, and a gate that stops letting talk through (#543)
 
 ## 2026-10-04 14:55:09 EDT — scribe `7897d07eda89ab1c754932945465f48e78b52433`
 Log list-edit-mode's nine commits for 90 in CHANGELOG: recording numbers, the no-scroll top rule, decodable stored rows, and the live take's row (#430 #299 #522 #542)
@@ -262,14 +868,29 @@ Record 03200807 and 63f848985 (#552) in the change log
 ## 2026-10-04 14:54:51 EDT — scribe `63f8489853e75196845804f6b18ec1c941ac2666`
 Each restored image downloads by the row's stored path, so a launch no longer pulls the whole file list per image (#552)
 
+## 2026-10-04 14:54:03 EDT — scribe `c9b179dbaac2e79614b0ac81a9189eebe08782a1`
+Merge remote-tracking branch 'origin/main' into agent/claude-opus-5.5/youtube-comments-in-app
+
+## 2026-10-04 14:53:47 EDT — scribe `a233fbeaf07b3ae0755293d58f01648ef5d87f68`
+Change log: a YouTube comment row's buttons wrap when they do not fit, and the live rows compare only when the comments change (4a164d20) (#478)
+
+## 2026-10-04 14:53:36 EDT — scribe `52601dc506f9968a05e41acb5b17a6e9bb7e29d6`
+Change log: a journal record that can never be saved is discarded only by a person's tap, copy first (718a6e16, f6514fca) (#512)
+
 ## 2026-10-04 14:53:36 EDT — scribe `7fad4ad8103b1170cd79f748d6d2a24bc849c919`
 Ledger: the classifier cost at #534's default in CHANGELOG.md (#534)
 
 ## 2026-10-04 14:53:35 EDT — scribe `314c632e8b430a98f17295ce1511d0440278c4de`
 Record the classifier's cost at #534's default: 0.399 % of one core and +33.6 MB, against 0.432 % at build 88's thresholds (#534)
 
+## 2026-10-04 14:53:34 EDT — scribe `4a164d20532a9fac6157ee10ca2713b0d8a23bdd`
+Wrap a YouTube comment row's buttons when they do not fit, and compare the live rows only when the comments change (#478, 92)
+
 ## 2026-10-04 14:53:28 EDT — scribe `032008078a0e0e55c9018ae67061f5c9002e73c1`
 Red: each restored image's download asks storage for the row's stored path, not the whole file list (#552)
+
+## 2026-10-04 14:53:13 EDT — scribe `f6514fca4f8959632b099b9ffb92667cb7ed8c3b`
+A journal record that can never be saved is discarded only by a person's tap, with its copy kept first, then the line, then the mark (#512 c6-c10)
 
 ## 2026-10-04 14:52:09 EDT — scribe `e89ac1ccc9d466ec513bd76b86fe59d7c490e060`
 TRANSCRIPT_STORE_COST names its presented recording store's type, so the test compiles (build 91 #409)
@@ -283,8 +904,14 @@ Merge route-chunks-91 for 91 (P1, #557): a continued take never ends its own rou
 ## 2026-10-04 14:13:13 EDT — scribe `0b8433324b211a166b0d3c0eb7a1e392990909a8`
 Record the iPhone's 90 install in PROGRESS: 0.1 (90) on all three devices, the iPhone at 14:11:12 (#536)
 
+## 2026-10-04 14:12:40 EDT — scribe `bd1d537657ef8b3e24987dc50c73bc4f52c99b09`
+Record the Recognize Songs sync in the change log (#551)
+
 ## 2026-10-04 14:12:12 EDT — scribe `bf309d73a19e6122cf91dc1631b7704031cd4563`
 Log 7a30b0002 and 62439e751 in CHANGELOG: route-chunks-91's red tests and fix (#557)
+
+## 2026-10-04 14:11:09 EDT — scribe `cf2625a46bf0349e891d301f1e8e0523332cc3fc`
+Recognize Songs in the person's settings rows (ADR 0055 steps S3 and S5, #551): one follower, one action, a report per device
 
 ## 2026-10-04 14:11:03 EDT — scribe `4a1f1bccf8cea3d6d6bc3d601e658140e75c6432`
 The recordings list's frame sampler is declared wherever the list starts it, the Mac and Vision Pro included (#517)
@@ -298,6 +925,9 @@ Merge journal-discard's voice-actions claim into main: AppFeatureVoiceActionsTes
 ## 2026-10-04 14:10:49 EDT — scribe `b67298ad8bad9a5f06e3d9f06de21fbdb627d4f7`
 Merge capture-stall-note's lock-free beats for 91 (#536 #488): the engine's tap and the WAV writer keep their watchdog beats in relaxed atomics, without a lock
 
+## 2026-10-04 14:09:54 EDT — scribe `718a6e16ee44838349ac914c9af4b47d0eda65f6`
+Red tests: a journal record that can never be saved is discarded only by a person's tap, with its copy first, then the line, then the mark (#512 c6-c10)
+
 ## 2026-10-04 14:07:22 EDT — scribe `7a30b0002a4f41af71913f2385cd17fc7b724397`
 Red tests for #557: a continued take's own route chunk is never ended as the dead process's, refused route points come back in new chunks, and superseded refusals leave the Not synced count
 
@@ -307,8 +937,32 @@ Claim AppFeatureVoiceActionsTests' excusedControls for journal-discard (#512): P
 ## 2026-10-04 14:05:48 EDT — scribe `35cfbeeb915b0cff2236bdf6c8dda2e7af0eb631`
 Record 4f82c053 (#536 #488) in the change log
 
+## 2026-10-04 14:05:24 EDT — scribe `72d547b7af0546f7a01d6e516c2e3a754f9b71d0`
+Change log: waiting YouTube comments in the app for 92: the red tests, the on-device check, the rows on both screens and the threads list, the tapped notification's route, and ADR 0044 section 7 (49b0e9b1, 9fe09826, d7ab5864, e1bac450, 59f801a3) (#478)
+
 ## 2026-10-04 14:05:18 EDT — scribe `4f82c0534483e2acf5765f1807d69ca388a57844`
 The engine's tap and the WAV writer store their stall-watchdog beats in atomics, with no lock (#536 #488)
+
+## 2026-10-04 14:04:56 EDT — scribe `59f801a3f85c44d9c2f1ee31cd7c6898ee68e1cd`
+ADR 0044 section 7: a waiting comment shows in the app, a tapped notification opens it there, and decisions are kept offline (#478, 92)
+
+## 2026-10-04 14:04:56 EDT — scribe `e1bac450746abf312cecf6331f1c5cc62c80f7f5`
+A tapped YouTube comment notification opens its recording at the comment, with its row in view (#478, 92)
+
+## 2026-10-04 14:04:56 EDT — scribe `d7ab5864f1aec304d203997e57d73fad5241ad94`
+Show a waiting YouTube comment where Michael said it, on the live screen, in playback, and above the threads, with Post Comment, Edit, and Cancel (#478, 92)
+
+## 2026-10-04 14:04:56 EDT — scribe `9fe098269eeec615f0336a4a43691340af6d4904`
+Check a YouTube comment decision against this device's row, so one made offline is kept and sent; give each comment its place and status line (#478, 92)
+
+## 2026-10-04 14:04:56 EDT — scribe `76f3ca26c6e2b66e261798a97f0f6dc660367c28`
+Claim RecordingTimelineEvents.swift for the live window's waiting YouTube comment rows (#478, 92)
+
+## 2026-10-04 14:04:56 EDT — scribe `49b0e9b138671f131ca9da0bcefa91e04b94dcc2`
+Red: a waiting YouTube comment's row and its buttons, the tapped notification's route, and an offline decision kept and sent (#478, 92)
+
+## 2026-10-04 14:04:56 EDT — scribe `8096e6de488e6771f068a300a7c1a89c858f1028`
+Plan and claim waiting YouTube comments in the app for 92 (#478): on the recording's timeline and threads list, with Post Comment, Edit, Cancel, and Try Again
 
 ## 2026-10-04 14:00:20 EDT — scribe `3f657bbb5b464a44af99a264e7572641098be489`
 Merge journal-discard's plan into main: Discard for #512's dead letters, in the save lane and the set-aside saves row (#512, for 92)
@@ -334,8 +988,17 @@ Plan and claim journal-discard (#512 c6-c10): a journal record that can never be
 ## 2026-10-04 13:54:17 EDT — scribe `8fc6d6eb7ffcaa0611b90d2fa9936993217843b7`
 Record my 91 commits in the change log: shallow-stack, launch-crash-guard, playback-clear-off-stack, continuation-gap-fill and capture-stall-note (#536 #483 #488)
 
+## 2026-10-04 13:53:40 EDT — scribe `72237e8b84aac217fe431a5ed209af957e4e32a5`
+Record the settings catalog and scribe settings list in the change log (#551)
+
 ## 2026-10-04 13:53:01 EDT — scribe `a525516b110ec29cdec4bf8cacb2ae8345d191d8`
 Each main-thread or shared-pool stall, and each resume, is followed in the ring by where capture stood (#536 #488)
+
+## 2026-10-04 13:52:09 EDT — scribe `d902438c37c48fcd773e0f21d8dad6129ee0c814`
+scribe settings list, get and history (ADR 0055 step S4, #551): what each of Michael's devices uses, read only
+
+## 2026-10-04 13:52:09 EDT — scribe `10ec77038269aaa15bf00addabb2cbff64c7cf06`
+The settings catalog (ADR 0055 step S2, #551): one Swift list of every setting, and the mirror's generated copy
 
 ## 2026-10-04 13:50:54 EDT — scribe `5bac968cae0f3d6d0f9c446f2cb349bf1d1589f1`
 Merge continuation-gap-fill for 91 (#536 #483): a continued take fills the closed process's audio after its newest line from audio.wav
@@ -382,6 +1045,9 @@ Plan and claim route-chunks-91 (#557): a continued take never ends its own route
 ## 2026-10-04 13:45:22 EDT — scribe `a44a7fe4f433467846551bcbd3dd33698a642a79`
 Red: rows made while the live transcript scrolls must draw without their controls, and get them when it rests (build 91 #409)
 
+## 2026-10-04 13:43:58 EDT — scribe `bd27e67b0d8ac3949cffdbc459c6a525df36b7e6`
+The transcript's @ViewBuilder attribute sits on timelineSection again, not on the pinch's text size property, so RecordingView compiles (#548)
+
 ## 2026-10-04 13:43:23 EDT — scribe `37d615410de4e07333c5bb3d36ac2c17aa119e62`
 Change log: a broadcast that starts on a hot phone asks for one frame every 30 s (21f59697, 971173ca) (#558)
 
@@ -417,6 +1083,15 @@ Merge main (90, d1a22355) into interim-max-wait-91 for build 91: no conflicts
 
 ## 2026-10-04 13:36:07 EDT — scribe `09be5ee5a3d39e6a4ac79ad3d79181a6f3c3e190`
 Merge main (90, d1a22355) into phone-perf-88 for build 91: no conflicts
+
+## 2026-10-04 13:36:03 EDT — scribe `fc508ce82c09a2cc98ff2dd8f1a7a4ff9ae55fd0`
+Record ADR 0055, its acceptance, and the settings schema slice in the change log (#551)
+
+## 2026-10-04 13:35:45 EDT — scribe `cf7d3936c81265e0ad0c89af674cb673befd57db`
+Schema slice for ADR 0055 (#551): settingsAccounts, settingsDevices and settingsChanges, owner-set rules, and their shapes matrix
+
+## 2026-10-04 13:35:30 EDT — scribe `522035729bed017b46368114cfa194881b3710ad`
+ADR 0055 accepted by main, with the owner rule refined: the smallest id is chosen once and the rows are found by membership (#551)
 
 ## 2026-10-04 13:35:20 EDT — scribe `2b87b94683beb078c8ae4718fd4609accd38147f`
 The whole-timeline tests wait for the controller's states themselves, not a five-second budget of polls (#410)
@@ -493,8 +1168,14 @@ Merge the audio lookup's whole-row fix for 91 (first, main's call): audioRowsQue
 ## 2026-10-04 13:31:13 EDT — scribe `64bbe354f4ee9b7400559f8a9f1ae6aaac1f842f`
 Record 8b774741 and 39fa8a47 (#552) in the change log
 
+## 2026-10-04 13:31:06 EDT — scribe `453aa959026f25b51286a8efaadca2881d206307`
+Record 2e70cd19, 8b96ad1f (#553), 03e99765, a9d5824e (#554), d5c90bcc (#555) and c9f837df in the change log
+
 ## 2026-10-04 13:31:00 EDT — scribe `b0d3a800f4fa96c943cc2087c96b9b25dce13ef6`
 Red tests: on a hot phone the broadcast keeps one frame every 30 s instead of none, a critical phone or a lane that is behind stops them, and the screen says which (#558)
+
+## 2026-10-04 13:30:59 EDT — scribe `ed2a4db898faaa8c7e59a1f926025953ee666e58`
+ADR 0055 and plan settings-sync-92 (#551): Scribe's settings in Instant, readable and changeable by the listener
 
 ## 2026-10-04 13:30:49 EDT — scribe `39fa8a47c67351a670d2aaedb60ffe94c54fba38`
 A continued take downloads its missing images once, at most two at a time, and a failed one says it couldn't load (#552)
@@ -502,14 +1183,32 @@ A continued take downloads its missing images once, at most two at a time, and a
 ## 2026-10-04 13:30:25 EDT — scribe `d1a2235534994d89d1d3cfb59cf3fd0db48d46af`
 Merge main 1fb02a25 into the 90 branch: agents' plans and claims, the scripts batches (page-word-index, mirror-audio-chunks, mirror-chunks-urls, mirror-thread-images) and the 89 records
 
+## 2026-10-04 13:30:19 EDT — scribe `c9f837df260a26a7743ef160e24b2ccf4d4deac9`
+ADR 0015 section 20: landscape splits, the Dynamic Island's side stays clear, and notices float (Recording 196)
+
 ## 2026-10-04 13:30:18 EDT — scribe `ac1a419367801ce1ae499c29d23a84d7e9699b69`
 TRANSCRIPT_STORE_COST measures a final too, with and without the screen's composition, and at 10,000 lines (build 91 #409 #410)
+
+## 2026-10-04 13:29:50 EDT — scribe `d5c90bccc94ff3a20c6c4b260f78d537071c64fb`
+Guard the Dynamic Island's side in landscape, and let the debug orientation name either landscape side for the shots (#555)
+
+## 2026-10-04 13:29:12 EDT — scribe `a9d5824ecb4e72f2e030ab29297063d0b83818c4`
+iPhone landscape always splits: the metadata column with the bars docked under it on the left, the transcript full height on the right (#554)
 
 ## 2026-10-04 13:28:46 EDT — scribe `85aecf56f4bf3f3448cbe3a0c651075c4d8a3cf3`
 An interim changes no line: the open row reads the open segment's words in a leaf of its own (build 91 #409 #410)
 
+## 2026-10-04 13:27:33 EDT — scribe `03e997656f1efa01ecb24fa39f35f68a31c69660`
+Red tests: iPhone landscape always splits the metadata column beside a full-height transcript, with the bars docked under the column (#554)
+
 ## 2026-10-04 13:26:48 EDT — scribe `8e55d3784325a146c2ead168c3167386126054eb`
 Red: an interim must change no line and no run's list of lines, only the open row (build 91 #409 #410)
+
+## 2026-10-04 13:26:02 EDT — scribe `8b96ad1f4457b5ab9136e9347eee3e8a8cbd68a6`
+The continuation notice floats over the transcript as a card, the presentation every notice shares, and is no longer a row in it (#553)
+
+## 2026-10-04 13:24:47 EDT — scribe `2a29c58c2f99353732c585c346d669b5e2097eea`
+Claim ui-polish's files for #548, #553, #554, #555 and #556, and amend the plan (Recordings 195 and 196)
 
 ## 2026-10-04 13:24:08 EDT — scribe `486fac5ee0de2f9b7fe6e951ea120a5203d2d8f0`
 A transcript row and a run header are always one view, and a row's only id is its ForEach identity (build 91 #409 #531)
@@ -522,6 +1221,9 @@ Red: a continued take downloads its missing images once, and a failed one says s
 
 ## 2026-10-04 13:20:26 EDT — scribe `002f0de1eb1971d65f8f348235ea34d86e92e0fa`
 Red test: closing a playback clears its stamp on the stack of the tap that closed it (#536)
+
+## 2026-10-04 13:19:49 EDT — scribe `2e70cd190424d663a0d05fe7901312159500c0ec`
+Red tests: the continuation notice is a notice over the screen, never a row in the transcript, through one presentation (#553)
 
 ## 2026-10-04 13:16:38 EDT — scribe `c93815e3bdcfabf83f80dc94efad823fb2a12b94`
 Record 26cdc610 and 90ae25f8 (#556) in the change log
@@ -550,6 +1252,12 @@ Fix 90's two test-only failures: the Deepgram handoff stores get an id generator
 ## 2026-10-04 13:13:23 EDT — scribe `e6e9e595abc3c1deab2175bb798ab468b82f0d06`
 Plan amendments for 91: the Deepgram handoff tests' id generator and the focus test's reading place (#523 #528 #530)
 
+## 2026-10-04 13:12:28 EDT — scribe `528e53f0fa77c0409ae984d7ce54a006ea772f6e`
+Record the scribe-tts logging and memory changes in the change log (#471 #549)
+
+## 2026-10-04 13:12:15 EDT — scribe `9f08ce80cdb0fdab01500d11abfbf6d17d5889db`
+scribe-tts: logs that cannot quote the text, the footprint in health, and the shared pattern with live transcription (#471 #549)
+
 ## 2026-10-04 13:11:24 EDT — scribe `998b7e72b73e1bac13866bfd9a87cfe396c272fa`
 Record the audio lookup's whole-row fix in the change log (#522)
 
@@ -561,6 +1269,12 @@ The live transcript's visible rows come from one scroll-view callback, so a row 
 
 ## 2026-10-04 13:10:15 EDT — scribe `175958abfc25c8f5227c338e093fdd097dcc3ba3`
 Red tests: a launch after one that died at 5 s restores the playback that crashed it again (#536)
+
+## 2026-10-04 13:07:30 EDT — scribe `ea8dc31ce2b28764c4fde2be9881114b611bae34`
+Record the placement debug lines in the change log (#525)
+
+## 2026-10-04 13:07:30 EDT — scribe `71be1aadfbb909dcb0bd7d4033f8b3fb17411a75`
+Reminder cards say where they went: a debug line each time a recording's cards change, with how many lines were not loaded yet (#525)
 
 ## 2026-10-04 13:06:37 EDT — scribe `1fb02a25fc5f38b56ff3f8b82d752594a3d08dcc`
 Plan and claim restored-images for 91 (#552): a continued take downloads its missing images once, and a failed one says so
@@ -574,6 +1288,12 @@ Record settings-sync-91's plan, red and fix commits in the change log (#550)
 ## 2026-10-04 13:00:11 EDT — scribe `b5a39da7382c518f75a97d5516cbd92b98478785`
 A settings row from Instant changes only the fields it syncs, and its failures say why (#550)
 
+## 2026-10-04 12:58:21 EDT — scribe `b30dd0af180dcf97cf5d490145918a12b301217a`
+Record the reminders PROGRESS entry in the change log (#525)
+
+## 2026-10-04 12:58:21 EDT — scribe `aca56439d614e207cf2c88a275fca0a3968a10c2`
+PROGRESS: reminders phases 1 and 2 on their branch for 92, what is verified, and what waits for the first run (#525)
+
 ## 2026-10-04 12:54:22 EDT — scribe `a2496a8aa0b9a2333523a8c87e1a57e79aadb399`
 Red: a settings row from another device turns this device's Recognize Songs back on (#550)
 
@@ -582,6 +1302,18 @@ Plan threads-chat P3 (#537 #552): the recording phone downloads the images other
 
 ## 2026-10-04 12:51:26 EDT — scribe `daf5c1355114a35606b12569d77e44fe3fa89f84`
 Plan and claim settings-sync-91 (#550): a settings row from Instant changes only the fields it syncs
+
+## 2026-10-04 12:50:35 EDT — scribe `aea9d85b9a89e5ff36f544b00fe7189e8ed32d96`
+Record the read-aloud voice choice in the change log (#471)
+
+## 2026-10-04 12:50:35 EDT — scribe `d86cf6e17d902f5c8b261bd7dfc4ce6b204283da`
+Read aloud chooses its voice: the system's, or this Mac's Kokoro over the tailnet, with a 5-second fallback (#471)
+
+## 2026-10-04 12:46:45 EDT — scribe `2ffc41a4de77fb388d4ca625784e474ccf41ddf9`
+Record scribe-tts in the change log (#471 #549)
+
+## 2026-10-04 12:46:45 EDT — scribe `26d7f0ce5af5cda0d5a80b4da708dce2e6eedc83`
+scribe-tts: a voice this Mac serves for read-aloud, tailnet only, loaded on demand (#471 #549)
 
 ## 2026-10-04 12:41:11 EDT — scribe `2941269fee56d06f7ce1e66c46d4bfa55f740475`
 Record the header preference key's watchOS compile fix in the change log (#527)
@@ -595,6 +1327,12 @@ Record c1f20c4b, 9899762b, ed6d9a31 and 3503d88e (#548) in the change log
 ## 2026-10-04 12:40:06 EDT — scribe `3503d88ec7ca513e6a7d1d0a699fe5c8b6d840de`
 One transcript text size for the live and the playback screens, kept in this device's app storage across launches (#548)
 
+## 2026-10-04 12:39:42 EDT — scribe `e42904553e465f9242598b26078d3d0d419e8094`
+Record read aloud v2's play, pause, and readout record in the change log (#549)
+
+## 2026-10-04 12:39:41 EDT — scribe `b1581bfcdc1dd54148eaafaf3c0b58020b62768a`
+A readout pauses and plays from its card, and the recording marks where it stopped, what he heard, and what he had not (#549)
+
 ## 2026-10-04 12:38:22 EDT — scribe `ed6d9a3161b4b11d8b24140d8998b945778e9a7b`
 Red tests: one transcript text size for the live and the playback screens, kept in app storage across launches (#548)
 
@@ -603,6 +1341,9 @@ A pinch sends one action when it ends: each screen previews the pinch in its own
 
 ## 2026-10-04 12:33:57 EDT — scribe `c1f20c4b5f69df065e9113483697da47de52bf68`
 Red test: a pinch sends one action when it ends and none per frame, on the live and the playback screens (#548)
+
+## 2026-10-04 12:33:17 EDT — scribe `f74ed4f48fb7c8aef6d00260ec271ecbfc127bea`
+Red tests: a readout pauses and plays from its card, and says where it stopped, what he heard, and what he had not (#549)
 
 ## 2026-10-04 12:30:14 EDT — scribe `798cd8cf4fae3f80813b06ca772a7daa90cf953f`
 Merge mirror-thread-images into main: a thread's file lists each message's images, and is rewritten when an image lands (#537 P3, mirror side)
@@ -613,6 +1354,12 @@ Merge read-aloud v2's plan into main: a voice chosen in Settings, play and pause
 ## 2026-10-04 12:30:12 EDT — scribe `ae9a35a32c9c26d5d122504e4ad1fae20216efd2`
 Merge failure-kind's change-log entry into main: the save lane on instant-data-swift 1.9.7's failure kinds, shipped in 89 (#482 part C)
 
+## 2026-10-04 12:27:30 EDT — scribe `09e87778b57ed87210ae84c75a852c4aadaf6e07`
+Merge notify-by-route (255e6c44, for 90) under read-aloud v2, which changes the same speech file (#549 #524)
+
+## 2026-10-04 12:27:30 EDT — scribe `c2e9885bc40ae21a204d48f03cd0355a23491a1e`
+Merge reply-restarts (96c2f701, for 91) under read-aloud v2, which builds on its reply observer (#549 #545)
+
 ## 2026-10-04 12:26:10 EDT — scribe `a34398829cde173b7b29b25dfe4cd9c6b17f34db`
 Claim read-aloud-v2's files and record the go (#471 #549)
 
@@ -621,6 +1368,12 @@ Record 6c869b4f and cce21729 (#548) in the change log
 
 ## 2026-10-04 12:25:20 EDT — scribe `cce2172956909cbbfa2c79ea136089019ee4e2b7`
 A pinch on the playback screen sizes its transcript as the live screen's does, through one shared pinch and one rule (#548)
+
+## 2026-10-04 12:25:10 EDT — scribe `8775730181cc6790b1a08867226e9f63eabadc2a`
+Record the moment link in the change log (#525 #536)
+
+## 2026-10-04 12:25:09 EDT — scribe `f9fd33710fd634aa4f5d36864851408801958f6b`
+A reminder's moment travels in actions as a 41-byte link, not its 200-byte row, so no Scribe action grows with it (#525 #536)
 
 ## 2026-10-04 12:24:35 EDT — scribe `98c608f7ee3bd640c14ad210307a201184eedbbe`
 Record bafb8826 and c8109d4a (#522) in the change log
@@ -636,6 +1389,9 @@ A broadcast with no audio gets a short silence at finish, so its movie finishes 
 
 ## 2026-10-04 12:23:29 EDT — scribe `ca1280d29ccf4e27b0e5747d53959d139fac4680`
 Red test: a broadcast with no audio at all finishes its movie normally instead of failing and waiting to be recovered from its fragments (#547)
+
+## 2026-10-04 12:22:08 EDT — scribe `ab2558887c38350ae11aa61de9891dd8ef5758fa`
+Log a4661636 in CHANGELOG: words for 90's v17 schema (#445)
 
 ## 2026-10-04 12:22:00 EDT — scribe `3382a7dee6ad4831b501b9536accf84189271019`
 Plan read-aloud-v2, plan only: a voice chosen in Settings, play and pause, and an exact record of an interruption (#471 #549)
@@ -655,8 +1411,29 @@ Change log: the save lane takes instant-data-swift 1.9.7's word on write failure
 ## 2026-10-04 12:18:24 EDT — scribe `73a3d3cffc2f6975eb867f0a270582bc3d55e223`
 A movie writer that cannot finish cancels its AVAssetWriter and lets it go, and a movie file keeps the fragments it wrote (#224 #003)
 
+## 2026-10-04 12:18:15 EDT — scribe `fe56740e519d4e044031252acdb00b1facd06d36`
+Record the card placement fix in the change log (#525)
+
+## 2026-10-04 12:18:15 EDT — scribe `8c1f801147ddb135f92539a316df17a1bde4d357`
+A reminder card sits just after its line even before the line loads: the moment's own time stands in for the line's start (#525)
+
 ## 2026-10-04 12:17:45 EDT — scribe `ebb47b1264ee09c771af7605687aa2d18527a473`
 Red tests: a quiet broadcast's writer that cannot finish cancels its AVAssetWriter, so no format writer thread keeps spinning, and a quiet movie keeps its fragments (#224 #003)
+
+## 2026-10-04 12:17:12 EDT — scribe `59b34eb48ce68bea9ea9979eac2282a05c682236`
+Record the backfill plan in the change log (#525)
+
+## 2026-10-04 12:17:04 EDT — scribe `e50406b636b5b79ae78f9db15a9c1b236d5e7cc4`
+Plan the reminders backfill: today's to-dos proposed per recording, written only for the numbers Michael keeps, after 92 (#525)
+
+## 2026-10-04 12:15:32 EDT — scribe `a7f58fdbd8e1401167b358fb561b4c3b79a69218`
+Record the ADR 0054 status change in the change log (#525)
+
+## 2026-10-04 12:15:23 EDT — scribe `77df25da0db5f3043edb54c03b7bb2850fc8d115`
+ADR 0054: the app half goes into the next build main picks, and scribe reminder goes to main on its own branch (#525)
+
+## 2026-10-04 12:12:56 EDT — scribe `d0f33beb4ef51dc0ed1595ea98137752e1fd01cd`
+Merge integration-90 into reminders: v17's instant files, and 90's heart-rate graph, sounds, reading place, and stack boxes under the reminders package and cards (#525)
 
 ## 2026-10-04 12:07:33 EDT — scribe `4aa1af2b9842596f4fc6084857c710a36f786f92`
 Record 40d2ed2d and 2a5670f4 (#537 P3) in the change log
@@ -664,11 +1441,26 @@ Record 40d2ed2d and 2a5670f4 (#537 P3) in the change log
 ## 2026-10-04 12:07:32 EDT — scribe `2a5670f400356de67d14264c385a000faa4d892b`
 A thread's file lists each message's images: the file in images/, or its id while it downloads (#537 P3, mirror side)
 
+## 2026-10-04 12:07:31 EDT — scribe `bec4268f6e4b5aee083911d29cc5aa1109827b13`
+Merge main into reminders for 90: build 89's merges and the instant-data-swift 1.9.7 pin under the reminders package and cards (#525)
+
 ## 2026-10-04 12:06:30 EDT — scribe `c2eef729b76ba45b6070fe6124b536efd078d3c3`
 Merge origin/agent/claude-opus-5.5/integration-90 (b8d23ea5) into sync-view: 90's urgent stack-box merge, with no conflict (#445)
 
+## 2026-10-04 12:06:20 EDT — scribe `583b39988b697e10e9d95e716fd1d8a2945ea8bb`
+Record the listener's scribe reminder in the change log (#525)
+
 ## 2026-10-04 12:06:14 EDT — scribe `40d2ed2db137c7a606eff4d43390bf971df76f75`
 Red: a thread's file lists each message's images (#537 P3, mirror side)
+
+## 2026-10-04 12:06:05 EDT — scribe `b07771adb6d52374d81eddde2406304a1923dff2`
+The listener's scribe reminder: Michael's to-dos as reminders at the lines that made them, tagged by facet, through the mirror (#525)
+
+## 2026-10-04 12:05:51 EDT — scribe `64fdb1aebfd0f448d8466b496f6490dd2d4180d9`
+Record the reminders package and the cards inside recordings in the change log (#525)
+
+## 2026-10-04 12:04:59 EDT — scribe `309b2599ab81e8d9ea4fa1d31615b6c32d436c06`
+Reminders in Scribe: the reminders package, the Reminders row inside recordings and playback, the Reminders screen, and Settings > Reminders (#525)
 
 ## 2026-10-04 12:04:34 EDT — scribe `9516c02132b3f7cb10a439475c23df45c11524fb`
 Record d443c29b, 2f91bdee, 660f9098 and dabefaa8 (#536, 90's stack stopgap) in the change log
@@ -678,6 +1470,12 @@ Plan threads-chat P4 (#537 #465): all threads across recordings, with filters an
 
 ## 2026-10-04 12:02:34 EDT — scribe `8fb85a4ca6867f0d42876e963cbce6a67c6aed89`
 Plan shallow-stack: 89's probe numbers from Michael's devices, and 90's stopgap (#536)
+
+## 2026-10-04 12:02:15 EDT — scribe `8da52e366ea648351a8bc85adaba88943dfbe3f8`
+Record 33d3bdbc and ac7fce73 (#546) in the change log
+
+## 2026-10-04 12:02:15 EDT — scribe `ac7fce7372a7a7f62948694ca92ce5283317a869`
+On iPhone the recording's threads are always one tap away, and "Scribe, show threads" opens them (#546)
 
 ## 2026-10-04 12:01:35 EDT — scribe `4b63f919d36a966c1eab37caa052b94e04cca596`
 The timeline query state keeps its InstantError out of line, and the row read action is indirect (#536)
@@ -693,6 +1491,9 @@ Debug builds can report the stack from SwiftUI bodies, and a run can lower the s
 
 ## 2026-10-04 11:59:47 EDT — scribe `af5c076b9e4aaa3d7496fbcd6c4f9d696f9e3585`
 Plan shallow-stack, plan only: the reducers leave the main thread's stack room for SwiftUI's render (#536)
+
+## 2026-10-04 11:59:36 EDT — scribe `33d3bdbc0c71a9c05d954883f3131e7a3620c71e`
+Red: on iPhone the recording's threads are always one tap away, and "Scribe, show threads" opens them (#546)
 
 ## 2026-10-04 11:58:36 EDT — scribe `a46616369f21125f21a6700eb7d9898c5e44c03c`
 The Sync view has words for 90's v17 schema: sounds, live audio chunks, public share pages, reminders, and a shared range's personal-information check (#445)
@@ -976,8 +1777,14 @@ Plan amendment for 91: the speaker merge reads this device's store only, with wh
 ## 2026-10-04 11:02:22 EDT — scribe `d41a200fe330187b36afcdd0100a2e6bfcf8c4d1`
 Claim agent-feed-full-rows for 91: the agent watcher's three feed queries select whole lines (#256 #522)
 
+## 2026-10-04 11:01:41 EDT — scribe `1d6677288fb7d75a162ead52d7bec1859fd982e8`
+Record the Sync view in PROGRESS: what it lists and where it opens, its 1.9.5 reads, verify-1 and verify-2, and what is open (#445)
+
 ## 2026-10-04 11:01:36 EDT — scribe `44598d294dbbaed98a03638d3ddf8358e7d299bf`
 Record the recording title read's whole-row selection in the change log (#478, #522)
+
+## 2026-10-04 11:01:23 EDT — scribe `e587cba2b4a00b678f70025972b1a2117dcfbd64`
+Log the Sync view's thirteen implementation commits in CHANGELOG, from a5422503 to 2f684fb0, with verify-1 and verify-2 (#445)
 
 ## 2026-10-04 11:01:20 EDT — scribe `fd03d18c3009ae6c7a6f6927a77cecc4a48c7493`
 A comment's recording title read selects every field the schema requires of a recording (#478, #522)
@@ -1189,6 +1996,12 @@ Red tests: a relaunch whose first page leaves out the take the session continues
 ## 2026-10-04 09:54:21 EDT — scribe `6045f3b591a89e95436a16a462db1325dd84e9b8`
 Merge transcript-lazy-531 for 89: a speaker run's transcript lines are the lazy stack's own children again, made only on screen and flush left (#531 #410)
 
+## 2026-10-04 09:54:06 EDT — scribe `d983b21f210f126e3521ff26eb6e7feccc2d026e`
+Record the reminders slice and its rules matrix in the change log (#525)
+
+## 2026-10-04 09:53:49 EDT — scribe `70c8cc6b343e32ccdd7052c9444ee9dd785e8b9e`
+The reminders slice: five reminders* entities with owner-set rules, read-only access for readers of a shared recording, and its rules matrix (#525)
+
 ## 2026-10-04 09:52:12 EDT — scribe `bb4fb89b87eee89b258d05ef77c0a70987d98ff2`
 A speaker run's transcript lines are the lazy stack's own children again: made on screen, flush left (#531 #410)
 
@@ -1258,6 +2071,9 @@ A slid window's top loads the newer page without a scroll, and the two ends neve
 ## 2026-10-04 09:43:17 EDT — scribe `d2951bbe3e96ccbc23ab4fe920c8ac17dec45bbf`
 A failed sound classifier starts again on the foreground and after 30 s, 2 min, and 10 min, and songs fall back to 12 s every 5 minutes while it is down (#457 #440)
 
+## 2026-10-04 09:43:04 EDT — scribe `27a1accbacbba755c6311dd445da9f5e6d1a7646`
+Plan reminders-in-scribe: main's go for phases 1 and 2 (build 90), its answers M1-M6 and Michael's defaults Q1-Q5, and ADR 0054 since 0053 went to #523 (#525)
+
 ## 2026-10-04 09:42:42 EDT — scribe `d4baa045d092eee7703a62d9dfd3788086c47d31`
 Claim the no-scroll top rule's paging state for list-edit-mode in RecordingList.swift and one list test (#430 #299)
 
@@ -1288,6 +2104,9 @@ Red: a classifier that fails starts again on the foreground and after 30 s, 2 mi
 ## 2026-10-04 09:39:40 EDT — scribe `124a81813e0bfb4ee14ab852a076f814b935cd51`
 Log the Watch Deepgram key handoff's red tests and implementation in CHANGELOG (#523)
 
+## 2026-10-04 09:39:27 EDT — scribe `c652f4869a1106ad9e4b1dc37cefb47e80682289`
+Plan reminders-in-scribe: Scribe's reminder rows and live client live in ScribeSharedSupport, beside the YouTube companion's, and the package gets a RemindersClient interface target (#525)
+
 ## 2026-10-04 09:39:22 EDT — scribe `0bc4f78ba50cf65c54a2e7e03c6d9100e429dce1`
 Hand the iPhone's Deepgram key to the Watch in the companion application context, and store it there in the Keychain (#523)
 
@@ -1302,6 +2121,12 @@ Record Scribe 0.1 (88) in PROGRESS: on the iPhone and the iPad, built from 29390
 
 ## 2026-10-04 09:37:19 EDT — scribe `6c5f19f2b352b209f032fab45f9dafd33cd2cf95`
 Red: the recordings list must decode and project each delivery off the main actor (#517)
+
+## 2026-10-04 09:37:15 EDT — scribe `2fe1d02a3d626daa3f3d6156fd192dff23eae46c`
+Merge main 8f2cf936 into the reminders plan: voice-commands' and notify-by-route's plans (#525)
+
+## 2026-10-04 09:36:19 EDT — scribe `ee0ccb0319822237047756c200d91dbce6a59f8d`
+Plan reminders-in-scribe: Reminders V3 inside Scribe as a shared Swift package, an interactive reminder at the line that made it, the listener's to-dos, and a pluggable Apple Reminders sync (#525, Recording 193)
 
 ## 2026-10-04 09:35:01 EDT — scribe `db788d122ee10acf3417bc16cd2bd6e7e2f4e802`
 The recordings list logs one second of its frames every five while it shows, with its rows and the live recording (#517)
@@ -1908,6 +2733,9 @@ Merge origin/main 4bf59a4c into query-model-harness: builds 85 and 86, among the
 
 ## 2026-10-04 02:39:28 EDT — scribe `5d320b3c181a8def291ae0b1879d526dbb18cdd0`
 Red: the day triage script's list holds only that day's recordings, against a fake Instant that applies only the first operator in a field's where object, as production does (#511)
+
+## 2026-10-04 02:38:58 EDT — scribe `177cb3061d232e31f4f692ca751cff1b7c694bf9`
+Channel: the header's sync icon opens the Sync view, and the Sync view reads through 1.9.5 (#445 #448)
 
 ## 2026-10-04 02:38:46 EDT — scribe `45412b6d4b403870378465c9d20c65c29ddebef8`
 The recording header's sync icon opens the Sync view at its recording, instead of a popover with the status in words (#445 #448)
