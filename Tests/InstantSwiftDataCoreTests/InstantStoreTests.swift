@@ -20474,16 +20474,33 @@ struct InstantStoreTests {
     )
     let committed = await store.commitAndPublish(prepared)
 
-    let publishedWindows = committed.result.emissions
-      .map { $0.values.map(\.id) }
-      .sorted { $0.joined(separator: "|") < $1.joined(separator: "|") }
-    expectNoDifference(publishedWindows, [[], ["todo-2"]])
+    // A row created before the window changes neither page, so neither is published (#540): the ready page keeps only
+    // the rows between the server's cursors, and the waiting page is empty until the server answers.
+    expectNoDifference(committed.result.emissions.map(\.queryID), [])
+    let readyAfterOutside = await store.materializePage(plan, remotePageInfo: .ready(pageInfo))
+    expectNoDifference(readyAfterOutside.values.map(\.id), ["todo-2"])
+    expectNoDifference(readyAfterOutside.pageInfo, pageInfo)
+    let waitingAfterOutside = await store.materializePage(plan, remotePageInfo: .waiting)
+    expectNoDifference(waitingAfterOutside.values.map(\.id), [])
+    expectNoDifference(waitingAfterOutside.pageInfo, nil)
 
-    let waitingUpdate = await waitingIterator.next()
-    expectNoDifference(waitingUpdate?.values.map(\.id), [])
-    expectNoDifference(waitingUpdate?.pageInfo, nil)
+    // A write to the row inside the window refreshes the ready page only.
+    let edited = try await store.prepareCurrent(
+      InstantStoreTransaction(
+        id: "tx-remote-page-info-edit",
+        operations: TodoExample.updateTextOperations(
+          id: "todo-2",
+          text: "second, edited",
+          updatedAt: InstantTimestamp(milliseconds: 1_700_000_000_300),
+          transactionID: "tx-remote-page-info-edit"
+        )
+      )
+    )
+    let editCommitted = await store.commitAndPublish(edited)
+    expectNoDifference(editCommitted.result.emissions.map { $0.values.map(\.id) }, [["todo-2"]])
     let readyUpdate = await readyIterator.next()
     expectNoDifference(readyUpdate?.values.map(\.id), ["todo-2"])
+    expectNoDifference(readyUpdate?.values.first?.values["text"], .one(.string("second, edited")))
     expectNoDifference(readyUpdate?.pageInfo, pageInfo)
   }
 
