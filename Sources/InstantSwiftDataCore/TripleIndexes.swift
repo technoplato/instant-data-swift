@@ -1721,14 +1721,17 @@ struct TripleIndexes: Codable, Sendable {
     return bytes
   }
 
-  /// An entity's row in the entity map: the key, the bucket and the attribute map's header and buckets.
-  static let estimatedEntityRowBytes = 160
-  /// A fact's slot in its entity's attribute map: the attribute key, the bucket, the value and its stamp.
-  static let estimatedFactBytes = 112
-  /// An indexed attribute's entry for the fact in the value-to-entity and entity-to-value maps.
-  static let estimatedIndexEntryBytes = 96
+  // Measured 2026-10-05 on arm64: a String key is 16 bytes and an AttrSlot 64 (stride), so an attribute map spends 80
+  // bytes per bucket, and Swift's dictionaries hold 3/8 to 3/4 of their buckets, about 0.56 on average. In build 90's
+  // Mac memgraph (library 1.9.7, the idle list), 2,645 attribute maps averaged 2,373 bytes.
+  /// An entity's row: the entity map's bucket for it and its attribute map's header.
+  static let estimatedEntityRowBytes = 112
+  /// A fact's bucket in its entity's attribute map: the attribute key, the value and its stamp, at the average load.
+  static let estimatedFactBytes = 144
+  /// An indexed attribute's entries for the fact in the entity-to-value and value-to-entities maps.
+  static let estimatedIndexEntryBytes = 160
   /// A ref's entry in the reverse-link map.
-  static let estimatedReverseLinkBytes = 80
+  static let estimatedReverseLinkBytes = 96
 
   /// The heap bytes of a string: Swift stores up to 15 UTF-8 bytes inline, and allocates longer ones with a header.
   static func estimatedHeapBytes(of string: String) -> Int {
