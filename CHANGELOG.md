@@ -10,6 +10,19 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## October 5th, 2026 at 1:30:28 a.m. EDT — `6c28904ab7eb` Document the v1.9.8 release: a live result's JSON written at most once per 30 s, a dead connection's results skipped, the kickstart's pages kept, the missing field named, and rooms with one ordered lane per room (#566 #474 #516 #522 #461)
+
+- **Implementation commit:** `6c28904ab7ebc6331ac0b45fe54c5625472e423e`
+- **Change:** Document the v1.9.8 release: a live result's JSON written at most once per 30 s, a dead connection's results skipped, the kickstart's pages kept, the missing field named, and rooms with one ordered lane per room (#566 #474 #516 #522 #461)
+- **Details:**
+  - The release document records the red runs, the one that is not red (#516's test passes on v1.9.7; #575 tracks a reproducing test), #566's before-and-after on a 1,100-row query (100 result JSON writes and 2.03 MB per refresh on v1.9.7's code against 3 and 61 KB), the gate on ded9a267 and the before-and-after soak.
+- **Files:**
+  - `docs/releases/v1.9.8.md` — the release document
+  - `PROGRESS.md` — the release's entry
+- **User context (verbatim):**
+  > fix this please so it works efficiently as as well as the typescript core library
+- **SpecStory:** unavailable — unavailable — Claude Code agent session (library-79 subagent under main); no SpecStory capture configured for this session.
+
 ## October 5th, 2026 at 1:28:47 a.m. EDT — `ded9a267a153` The ownership test reads the replayed result's time from its row: the stored JSON keeps the time it was written with (#566)
 
 - **Implementation commit:** `ded9a267a1536853f0458a1a17c19a5a573e796f`

@@ -1,5 +1,50 @@
+## 2026-10-05 01:29:53 EDT — instant-data-swift `6c28904ab7ebc6331ac0b45fe54c5625472e423e`
+Document the v1.9.8 release: a live result's JSON written at most once per 30 s, a dead connection's results skipped, the kickstart's pages kept, the missing field named, and rooms with one ordered lane per room (#566 #474 #516 #522 #461)
+
+## 2026-10-04 23:58:58 EDT — instant-data-swift `ded9a267a1536853f0458a1a17c19a5a573e796f`
+The ownership test reads the replayed result's time from its row: the stored JSON keeps the time it was written with (#566)
+
+## 2026-10-04 23:27:38 EDT — instant-data-swift `a7f297cb078fbc2a5da1ea0f6058f9cc77aead23`
+The kill test also checks SQLite: the todo the server deleted after a kill between throttled writes leaves the stored facts, not only the reopened store (#566)
+
+## 2026-10-04 23:11:30 EDT — instant-data-swift `3b22e326f30069aa310b4f449db5bfdc10d88517`
+Two tests for #566's throttled result writes: a replayed result keeps its stored stamps, and the 1,100-row measurement waits up to 60 s per refresh
+
+## 2026-10-04 21:50:07 EDT — instant-data-swift `0bc01dfed60e688eb7de8c0f78fa43af77b758d6`
+Name the stored triple's type in the bootstrap repair's lookup, which 0d5ccaa5 left for the compiler to infer through .first (#566)
+
+## 2026-10-04 16:28:09 EDT — instant-data-swift `29ccaab3f782fcc23733f9f447a64e28f934d3cf`
+Test that a row that arrives and leaves while a result's write waits is retracted in the same process (#566)
+
+## 2026-10-04 16:27:51 EDT — instant-data-swift `0d5ccaa526467e207b9d75023d875eb852422226`
+A live query's result JSON is written at most once per query per 30 s, not on every refresh, and a result that did not change writes none (#566)
+
+## 2026-10-04 16:23:54 EDT — instant-data-swift `fcc8d2e6290bc23c6ce1ac8cf9b7af78668695f1`
+Red tests for #566: an unchanged refresh writes no result JSON, changed refreshes within 30 s write it once, a kill between writes still retracts, and a 1,100-row query's writes are measured
+
 ## 2026-10-04 15:16:52 EDT — instant-data-swift `c5e1183fd03104596d375f921fd7070e2896466d`
 Record the room write lane in ADR 0019 decision 9 and PROGRESS: presence and broadcasts keep call order (#461)
+
+## 2026-10-04 15:13:31 EDT — instant-data-swift `1b4dcf0a2f69f8c4e0a0a3499b71d2bfc9679dfe`
+Room broadcasts take the room's lane too: publications go out in order, and the join-room-ok flush holds it across the presence and the broadcasts queued before the join (#461)
+
+## 2026-10-04 15:12:21 EDT — instant-data-swift `0998556f89caa8ec4994b3b4f2ed228ddea06b1a`
+Red tests for #461's broadcast order: two topic publishes reach the socket in publication order, and a publish made while the join flush waits follows the broadcasts queued before the join
+
+## 2026-10-04 15:08:47 EDT — instant-data-swift `42294f2b14909f26a8efffe733fcfa04adc894bc`
+Keep isAnsweredOnCurrentSocketForTesting's documentation and @concurrent on it: the presence lane's test accessor moves above them (#461)
+
+## 2026-10-04 15:04:32 EDT — instant-data-swift `8dc4321dd412675915961e45269a74b3e0104118`
+Each room's presence writes take one ordered lane, so an older set-presence never passes a newer one, as Reactor.js writes in call order (#461)
+
+## 2026-10-04 15:03:42 EDT — instant-data-swift `410b28cabb41bd49121e85abb4183cbbde637a82`
+Red tests for #461's presence race: an older presence whose write is slow must not land after a newer one, no older presence may follow the join flush, and writes waiting when a room is left must return
+
+## 2026-10-04 14:57:37 EDT — instant-data-swift `2b293a7ef20a6e5c1c4eebcc7093a8ec83a76cbb`
+Red test for #516: the kickstart test waits for the window to show the server's pages before it reads the window
+
+## 2026-10-04 14:57:37 EDT — instant-data-swift `91183ee8efa08e669abca2ebcfeb143b4ecb1f23`
+Keep InstantLiveReceivedFrames's SAFETY comment on its @unchecked Sendable declaration: #474's extension moves above the documentation (#474)
 
 ## 2026-10-04 13:36:48 EDT — scribe `d8e0a3cb6ca309fb78a7c02bf589879966871e82`
 Record Scribe 0.1 (90) in PROGRESS: on the iPad and the Mac, the iPhone pending, built from 2941269f with production's v17 schema and the #536 stack stopgap (#536 #535 #522 #483 #457 #534 #528 #530 #524 #523 #525 #533)
@@ -484,6 +529,9 @@ Claim the lookups' stored rows for list-edit-mode: every field a full decode req
 ## 2026-10-04 09:37:45 EDT — scribe `255f97448a7a176ed03d05ef1e9c59e9ff38b6c8`
 Record Scribe 0.1 (88) in PROGRESS: on the iPhone and the iPad, built from 29390df9 on the published instant-data-swift 1.9.6, with the resume P0 its first launch hit (#405 #512 #513 #454 #503 #504 #514 #340 #521)
 
+## 2026-10-04 09:33:43 EDT — instant-data-swift `07ce2e5d847214e15801090ce8a6791b4cef0192`
+InstantRowQuarantine is public, so a caller that decodes the same rows again and again reports a damaged row once (#522)
+
 ## 2026-10-04 09:33:31 EDT — scribe `ebac45537cd125415007525b747e7e51f1074154`
 Merge media-scan-522 for 89: the media retry scan leaves out a local row that does not decode, through the library's quarantine, instead of failing the whole scan (#522)
 
@@ -499,8 +547,14 @@ The media retry scan leaves out undecodable rows through the library's quarantin
 ## 2026-10-04 09:31:33 EDT — scribe `8f2cf9365ab73f8c4a57ca4eb7f89108d79d784b`
 Plan notify-by-route: answer notifications while recording sound on the device's own speaker and stay quiet where Siri would announce them (Recording 194, #340)
 
+## 2026-10-04 09:30:00 EDT — instant-data-swift `5797457fbeb8e884e127a5af48a2fc82c9fee653`
+A typed decode that meets a field the local store lacks says so, and points at decodeQuarantiningFailures, instead of "Expected string" (#522)
+
 ## 2026-10-04 09:29:45 EDT — scribe `cd1c26a98fb4400d4a02bfa17fc0101f27645db4`
 Plan watch-deepgram-key: the iPhone hands its Deepgram key to the Watch in the companion application context; ADR 0053 and claims (#523)
+
+## 2026-10-04 09:29:24 EDT — instant-data-swift `2d5b53c82bb82c7cda09b182000da2dffacb6824`
+Red test for #522: a typed decode that meets a field the local store lacks says the field is missing, not that it has the wrong type
 
 ## 2026-10-04 09:29:08 EDT — scribe `01430bbeff55809cf67b26b66f761b8bd63c5b29`
 Record Scribe 0.1 (89)'s build number in the change log
@@ -645,6 +699,12 @@ The standing agent starts from Michael's day: today's timeline, today's earlier 
 
 ## 2026-10-04 08:54:06 EDT — scribe `b84fc0f46840662c291f81903cade71aafc72d46`
 transcribe-gap: drop fresh words that overlap a saved word, keep the preview and list position for inner holes, and write as the owner (#483)
+
+## 2026-10-04 08:52:43 EDT — instant-data-swift `276be3aecc25023dc42ac3594b514cd7ea80b11a`
+Red test for #516: a window loaded to two pages from the local store before the server answers keeps both at the kickstart
+
+## 2026-10-04 08:52:43 EDT — instant-data-swift `3fd98ded6ebbc97684b8c3db97ca16456366ec97`
+At its kickstart an infinite query loads as many live pages as its pre-bootstrap window held, and keeps the window's rows until they answer (#516)
 
 ## 2026-10-04 08:48:43 EDT — scribe `9ee58796a40247a534a6536f04854079cc33aab7`
 Red tests: transcribe-gap keeps a fresh word that overlaps a saved one, and moves the list preview to lines from an inner hole (#483)
@@ -1935,6 +1995,9 @@ Settings > Audio > Recording Mic Mode picks Clean (measurement) or Standard (def
 
 ## 2026-10-03 20:27:04 EDT — instant-data-swift `d371980368a3b53c775ed95f1ce243b0582cf7e7`
 Test that a hydration read without the gate never pairs an emission with a write saved during the read (#473).
+
+## 2026-10-03 20:25:04 EDT — instant-data-swift `fb4b6b0c21283c03f37bab44ce404d267253a335`
+When the socket dies, skip its buffered query results and reconnect once the frame being applied ends (#474)
 
 ## 2026-10-03 20:20:29 EDT — instant-data-swift `6d7cae69477e5ed0fb7f5520c57cf51bab9fa920`
 Name the locals that copied a property under their own names, so no initializer reads the local it declares (#473 #482).
