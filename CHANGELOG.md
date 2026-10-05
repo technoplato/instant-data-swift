@@ -10,6 +10,75 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## October 5th, 2026 at 4:50:36 a.m. EDT — `68da51abeef1` Time the byte estimate's walk over 32,800 facts, the size phone-perf found after a long recording (1.10.0)
+
+- **Implementation commit:** `68da51abeef17025105ad4dc14c11c5103698995`
+- **Change:** Time the byte estimate's walk over 32,800 facts, the size phone-perf found after a long recording (1.10.0)
+- **Details:**
+  - The session-health beat pays for the walk; the test prints the median of five walks and fails at 2 s.
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantMemoryStatsTests.swift` — theByteEstimateWalksAStoreOfThirtyThousandFactsQuickly
+- **User context (verbatim):**
+  > fix this please so it works efficiently as as well as the typescript core library
+- **SpecStory:** unavailable — unavailable — Claude Code agent session (library-79 subagent under main); no SpecStory capture configured for this session.
+
+## October 5th, 2026 at 4:50:36 a.m. EDT — `dbf6cb115703` The store reports its entities, facts and estimated bytes, and the runtime estimates what eviction could drop now (1.10.0)
+
+- **Implementation commit:** `dbf6cb115703170f681953e5f2226b3cf3020ba6`
+- **Change:** The store reports its entities, facts and estimated bytes, and the runtime estimates what eviction could drop now (1.10.0)
+- **Details:**
+  - Main, 2026-10-05: "1.10.0 ships #572 plus the store stats: entity count, fact count and estimated bytes, cheap enough for the ledger beat. Add a read-only 'evictable now' estimate as well, so we size eviction from real phone numbers before risking data." Red tests cc0ebf50.
+  - The byte estimate is a model of the store's maps walked on demand; phone memgraphs calibrate it. Held from the estimate: active live queries' results, pending writes and outbox entries, shown rows, and the namespaces of observers that read the store alone.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantStore.swift` — memoryStats, evictableEstimate, the observers' readsStoreAlone flag
+  - `Sources/InstantSwiftDataCore/TripleIndexes.swift` — entityCount, estimatedBytes
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — evictableMemoryEstimate and the standard observation's flag
+  - `Sources/InstantSwiftDataCore/InstantLiveRefreshApplication.swift` — retainedKeys
+- **User context (verbatim):**
+  > fix this please so it works efficiently as as well as the typescript core library
+- **SpecStory:** unavailable — unavailable — Claude Code agent session (library-79 subagent under main); no SpecStory capture configured for this session.
+
+## October 5th, 2026 at 4:50:36 a.m. EDT — `cc0ebf50190c` Red tests for 1.10.0's store stats and its read-only evictable estimate, with the public types and stubs
+
+- **Implementation commit:** `cc0ebf50190c67f3860bcb51b91978af9c04c846`
+- **Change:** Red tests for the store stats and the evictable estimate, with the public types, InstantRuntime.memoryStats() and stubs (1.10.0)
+- **Details:**
+  - InstantStoreMemoryStats and InstantEvictableMemoryEstimate are the public types; InstantRuntime.memoryStats() forwards to the store.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantModels.swift` — InstantStoreMemoryStats, InstantEvictableMemoryEstimate
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — memoryStats() and the estimate's stub
+  - `Sources/InstantSwiftDataCore/InstantStore.swift` — the memoryStats() stub
+  - `Tests/InstantSwiftDataCoreTests/InstantMemoryStatsTests.swift` — the red tests
+- **User context (verbatim):**
+  > fix this please so it works efficiently as as well as the typescript core library
+- **SpecStory:** unavailable — unavailable — Claude Code agent session (library-79 subagent under main); no SpecStory capture configured for this session.
+
+## October 5th, 2026 at 4:50:36 a.m. EDT — `ba64a1fc6187` SQLite reads for 1.10.0's eviction: the entities live-query results hold, the outbox's entities, stored facts, lookup targets
+
+- **Implementation commit:** `ba64a1fc6187ec3ab43cdd1819af25ffc708cc37`
+- **Change:** SQLite reads for the evictable estimate: the entities live-query results and the outbox hold, stored facts, lookup targets (1.10.0)
+- **Details:**
+  - Main moved eviction to 1.10.1 and kept a read-only estimate in 1.10.0, which reads the ownership rows and the outbox's entities.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — liveQueryOwnedEntityIDs, outboxEffectEntityIDs, storedTriples, storedEntityIDs
+- **User context (verbatim):**
+  > fix this please so it works efficiently as as well as the typescript core library
+- **SpecStory:** unavailable — unavailable — Claude Code agent session (library-79 subagent under main); no SpecStory capture configured for this session.
+
+## October 5th, 2026 at 4:50:36 a.m. EDT — `0f16ee9683e4` A write that sets an observed row's fields to the values they hold publishes nothing: the row stays changed for rollback and persistence only (#572)
+
+- **Implementation commit:** `0f16ee9683e42974a6ca9d4b15a89ee2d623712b`
+- **Change:** A write that sets an observed row's fields to the values they hold publishes nothing: the row stays changed for rollback and persistence only (#572)
+- **Details:**
+  - Scribe's attachment metadata mutation sets every field on each update, and the store counted the row as changed, so every page that reads it was spliced or materialized again and yielded the same values. Upstream Reactor.js does not notify a query whose result is deep-equal.
+  - At install the store checks each row a write touched only with values it held against the state before it (values with their times, and incoming links, not transaction IDs) and leaves matches out of the publication. Red tests c575ea23.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/TripleIndexes.swift` — valueEqualWriteEntityIDs, holdsTheSameObservableFacts, AttrSlot.holdsTheSameValuesAndTimes
+  - `Sources/InstantSwiftDataCore/InstantStore.swift` — install's published set, storeChanged, the deferred publication
+- **User context (verbatim):**
+  > fix this please so it works efficiently as as well as the typescript core library
+- **SpecStory:** unavailable — unavailable — Claude Code agent session (library-79 subagent under main); no SpecStory capture configured for this session.
+
 ## October 5th, 2026 at 3:42:37 a.m. EDT — `841fb0146a6b` A row's interned snapshot keeps every stored field when the write leaves one slot unset: an id slot, or a field (#577)
 
 - **Implementation commit:** `841fb0146a6b0ad07c2cfd83c401a462430583d9`
