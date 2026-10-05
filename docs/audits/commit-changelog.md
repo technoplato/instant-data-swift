@@ -1,3 +1,6 @@
+## 2026-10-05 08:18:29 EDT — instant-data-swift `2526d03db6efc7eac2e15bc43212fc0c9161e9a2`
+The eviction suites' comments and fixtures in neutral wording
+
 ## 2026-10-05 04:19:38 EDT — instant-data-swift `cee6752327a116dc58f2b0f209289390bc3cb2aa`
 SQLite reads for 1.10.0's eviction: the entities live-query results hold, the outbox's entities, stored facts, lookup targets
 
