@@ -1,3 +1,15 @@
+## 2026-10-05 07:07:51 EDT — scribe `30a034f9f4fec2f66e7896d525212034e9425667`
+Change log: the time namespace slice (ad3d0b33, #580)
+
+## 2026-10-05 07:07:29 EDT — scribe `ad3d0b332005eef9c30e295defd6f9e967cc84bb`
+Add the time namespace: timeTimers, timeClocks, and timeEvents with owner-set rules, and their bd40c50a matrix (#580)
+
+## 2026-10-05 06:58:55 EDT — scribe `c6b39c7a62d86b2b8cdef1b62ff3d3bba4da7be5`
+Pin the time namespace's contract in a red test: timeTimers, timeClocks, and timeEvents (#580)
+
+## 2026-10-05 06:58:01 EDT — scribe `11496529378576c57c531d823310f6972629d531`
+Plan the time namespace for Michael's timers, clock, and clocks (plan 2026-10-05-time, #580)
+
 ## 2026-10-05 06:01:18 EDT — scribe `5c1273dc64d105c989ad3a1f120cd549a5355256`
 Record Scribe 0.1 (94) in PROGRESS: on the iPhone, the iPad and the Mac, the performance batch built from 08b12577 on instant-data-swift 1.9.8 with production's v20g schema (#566 #488 #533 #409 #297)
 
