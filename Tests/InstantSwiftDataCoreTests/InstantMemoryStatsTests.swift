@@ -3,10 +3,9 @@ import Foundation
 @testable import InstantSwiftDataCore
 import Testing
 
-/// The store's size for the session-health beat, and how much of it no query, pending write or observer holds
-/// (1.10.0). Main, 2026-10-05: "1.10.0 ships #572 plus the store stats: entity count, fact count and estimated bytes,
-/// cheap enough for the ledger beat. Add a read-only 'evictable now' estimate as well, so we size eviction from real
-/// phone numbers before risking data."
+/// The store's size for a periodic health report, and how much of it no query, pending write or observer holds
+/// (1.10.0): the entity count, fact count and estimated bytes, cheap enough to report often, and a read-only estimate
+/// of what eviction could drop, so eviction is sized from device numbers before it risks data.
 @Suite(.serialized)
 struct InstantMemoryStatsTests {
   typealias Writes = InstantLiveQueryResultWriteTests
@@ -53,7 +52,7 @@ struct InstantMemoryStatsTests {
   }
 
   /// The counts are kept as the store changes; the byte estimate walks every fact. This prints the walk's time on a
-  /// store the size phone-perf found after a long recording (about 32,700 facts) for the release notes, and bounds it
+  /// store the size a memory audit found after a long recording (about 32,700 facts) for the release notes, and bounds it
   /// loosely so a much slower walk fails.
   @Test
   func theByteEstimateWalksAStoreOfThirtyThousandFactsQuickly() async throws {

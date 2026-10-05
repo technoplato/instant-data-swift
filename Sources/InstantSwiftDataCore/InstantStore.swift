@@ -1815,9 +1815,8 @@ public actor InstantStore {
   /// be resolved, so every observer refreshes, and the store it replaced.
   ///
   /// An entity the write touched only with values its slots already held, with the same times and incoming links as
-  /// before, stays changed for rollback and persistence but is not published (#572): Scribe's attachment metadata
-  /// mutation sets every field on each update. Upstream `Reactor.js` does not notify a query whose result is
-  /// deep-equal.
+  /// before, stays changed for rollback and persistence but is not published (#572): a client's metadata update can set
+  /// every field on each update. Upstream `Reactor.js` does not notify a query whose result is deep-equal.
   private func install(
     _ prepared: inout PreparedStoreMutation
   ) -> (changedNamespaces: Set<String>?, previousIndexes: TripleIndexes, publishedEntityIDs: Set<String>) {

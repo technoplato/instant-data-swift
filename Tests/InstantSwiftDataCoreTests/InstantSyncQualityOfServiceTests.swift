@@ -5,11 +5,11 @@ import Testing
 
 /// The quality of service of the runtime's steady-state sync work (1.10.0).
 ///
-/// On build 94 (library 1.9.8), while Michael recorded Recording 199, unnamed workers at priority 37 (user-initiated)
-/// averaged 10.7% of an iPhone core and peaked at 29.5%, and the process used 39% of a core against a 25% budget
-/// (phone-perf, 2026-10-05). The persistence's decode queue ran at user-initiated, and the runtime's long-lived tasks
-/// inherited the priority of the task that opened the runtime, which Scribe opens at user-initiated. Main, 2026-10-05:
-/// "a configurable decode QoS, default utility."
+/// During a 30-minute recording on library 1.9.8 (#590), unnamed workers at priority 37 (user-initiated) averaged
+/// 10.7% of a phone core and peaked at 29.5%, and the process used 39% of a core against a 25% budget. The
+/// persistence's decode queue ran at user-initiated, and the runtime's long-lived tasks inherited the priority of the
+/// task that opened the runtime, which a client may open at user-initiated. #590 asks for a configurable decode QoS,
+/// utility by default.
 @Suite(.serialized)
 struct InstantSyncQualityOfServiceTests {
   actor Recorded<Value: Sendable> {
@@ -86,7 +86,7 @@ struct InstantSyncQualityOfServiceTests {
     configuration.onLiveReceiverEventAcquiredForTesting = { await applier.append(Task.currentPriority) }
     let finalConfiguration = configuration
 
-    // Scribe opens its store from a user-initiated detached task.
+    // A client may open its store from a user-initiated detached task.
     let runtime = try await Task.detached(priority: .userInitiated) {
       try await InstantRuntime.bootstrap(configuration: finalConfiguration)
     }.value

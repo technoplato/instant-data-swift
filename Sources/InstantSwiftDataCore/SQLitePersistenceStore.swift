@@ -238,7 +238,7 @@ private struct LiveQueryResultStorageRow: Sendable {
 }
 
 /// No quality of service of its own: each batch runs at the store's decode QoS, or at its reader's (1.10.0). It was
-/// user-initiated, which ran steady-state sync's decoding on the performance cores while Michael records.
+/// user-initiated, which ran steady-state sync's decoding on the performance cores during a recording (#590).
 private let instantPersistenceDecodeQueue = DispatchQueue(
   label: "com.instantdb.swift.persistence-decode",
   attributes: .concurrent

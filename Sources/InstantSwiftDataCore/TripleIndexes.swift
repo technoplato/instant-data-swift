@@ -1722,8 +1722,8 @@ struct TripleIndexes: Codable, Sendable {
   }
 
   // Measured 2026-10-05 on arm64: a String key is 16 bytes and an AttrSlot 64 (stride), so an attribute map spends 80
-  // bytes per bucket, and Swift's dictionaries hold 3/8 to 3/4 of their buckets, about 0.56 on average. In build 90's
-  // Mac memgraph (library 1.9.7, the idle list), 2,645 attribute maps averaged 2,373 bytes.
+  // bytes per bucket, and Swift's dictionaries hold 3/8 to 3/4 of their buckets, about 0.56 on average. In a desktop
+  // memgraph of an idle list (library 1.9.7), 2,645 attribute maps averaged 2,373 bytes.
   /// An entity's row: the entity map's bucket for it and its attribute map's header.
   static let estimatedEntityRowBytes = 112
   /// A fact's bucket in its entity's attribute map: the attribute key, the value and its stamp, at the average load.

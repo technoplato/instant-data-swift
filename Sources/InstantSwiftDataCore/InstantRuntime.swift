@@ -370,7 +370,7 @@ public struct InstantRuntimeConfiguration: Sendable {
   var onLiveQueryResultPruneBatchFinishedForTesting: (@Sendable (_ removedResultCount: Int) async -> Void)? = nil
   /// The quality of service of the persistence's JSON decode batches (1.10.0): `.utility` by default, nil to run each
   /// at its reader's. They decode stored rows, segment text and words among them, for writes, applies and refreshes;
-  /// before 1.10.0 they ran at user-initiated, on the performance cores while Michael records.
+  /// before 1.10.0 they ran at user-initiated, on the performance cores during a recording (#590).
   public var persistenceDecodeQoS: DispatchQoS.QoSClass? = .utility
   /// The priority of the runtime's steady-state sync tasks (1.10.0): the live session's reader and appliers (server
   /// applies, query refreshes, room frames), reconnects, the mutation delivery pump and the stream writers' catch-up.

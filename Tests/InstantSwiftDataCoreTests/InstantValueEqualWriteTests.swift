@@ -4,8 +4,7 @@ import Testing
 
 /// A local write that sets a stored field to the value it already holds changes nothing an observer can see (#572).
 ///
-/// Scribe's attachment metadata mutation sets every field on each update, and the recording's row is saved again
-/// often. The store keeps the value and its time, takes the write's transaction ID, and still counted the row as
+/// A client's metadata update can set every field on each update, and a recording's row is saved again often. The store keeps the value and its time, takes the write's transaction ID, and still counted the row as
 /// changed, so every page that reads it was spliced or materialized again, and yielded the same values. Upstream
 /// `Reactor.js` runs every query again on a local transaction but does not notify a query whose result is deep-equal.
 /// The row stays among the entities the write touched, for persistence and for the before-image a rejected
@@ -74,7 +73,7 @@ struct InstantValueEqualWriteTests {
           triple("row-2", Rows.title, .string("b"), tx: 1),
           triple("row-2", Rows.count, .number(2), tx: 1),
           triple("user-1", Rows.userPrimaryKey, .string("user-1"), tx: 1),
-          triple("user-1", Rows.userName, .string("Michael"), tx: 1),
+          triple("user-1", Rows.userName, .string("Ada"), tx: 1),
         ]
       )
     )
