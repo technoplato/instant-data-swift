@@ -52,6 +52,30 @@ struct InstantMemoryStatsTests {
     #expect(longStats.estimatedBytes - shortStats.estimatedBytes >= 1_300)
   }
 
+  /// The counts are kept as the store changes; the byte estimate walks every fact. This prints the walk's time on a
+  /// store the size phone-perf found after a long recording (about 32,700 facts) for the release notes, and bounds it
+  /// loosely so a much slower walk fails.
+  @Test
+  func theByteEstimateWalksAStoreOfThirtyThousandFactsQuickly() async throws {
+    var triples: [InstantTriple] = []
+    for index in 0..<16_400 {
+      triples += Self.row(String(format: "00000000-0000-4000-8000-%012ld", index), title: "segment \(index) words spoken")
+    }
+    let store = InstantStore(snapshot: InstantStoreSnapshot(attributes: Rows.attributes, triples: triples))
+    let clock = ContinuousClock()
+    var stats = await store.memoryStats()
+    var durations: [Duration] = []
+    for _ in 0..<5 {
+      let started = clock.now
+      stats = await store.memoryStats()
+      durations.append(started.duration(to: clock.now))
+    }
+    let median = durations.sorted()[2]
+    print("memory-stats: \(stats.factCount) facts, \(stats.entityCount) entities, \(stats.estimatedBytes) estimated bytes; median of 5 walks \(median)")
+    #expect(stats.factCount == 32_800)
+    #expect(median < .seconds(2))
+  }
+
   @Test
   func theCountsFollowWritesAndDeletes() async throws {
     let store = InstantStore(
