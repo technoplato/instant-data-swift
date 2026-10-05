@@ -2115,7 +2115,14 @@ public actor InstantStore {
           attributes: attributes
         )
       else { return nil }
-      if Self.orderKeyChanged(from: previous, to: replacement, plan: observer.plan) {
+      if Self.orderKeyChanged(
+        from: previous,
+        to: replacement,
+        plan: observer.plan,
+        indexes: indexes,
+        previousIndexes: previousIndexes,
+        attributes: attributes
+      ) {
         return nil
       }
       values[index] = replacement
@@ -2131,9 +2138,18 @@ public actor InstantStore {
   private static func orderKeyChanged(
     from previous: InstantEntitySnapshot,
     to replacement: InstantEntitySnapshot,
-    plan: InstantQueryPlan
+    plan: InstantQueryPlan,
+    indexes: TripleIndexes,
+    previousIndexes: TripleIndexes?,
+    attributes: AttributeStore
   ) -> Bool {
-    guard let field = plan.order?.field else { return false }
+    guard let field = plan.order?.field else {
+      // No order is the server's creation order, which no snapshot holds: a row deleted and written again since the
+      // observer's last emission sorts by its new creation time (#579). Without the state before, rematerialize.
+      guard let previousIndexes else { return true }
+      return indexes.serverCreatedAt(of: replacement.id, namespace: plan.namespace, attributes: attributes)
+        != previousIndexes.serverCreatedAt(of: previous.id, namespace: plan.namespace, attributes: attributes)
+    }
     guard
       let previousValue = previous.values[field],
       let replacementValue = replacement.values[field]

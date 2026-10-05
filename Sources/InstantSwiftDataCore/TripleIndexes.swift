@@ -4000,6 +4000,16 @@ private struct PreparedInclude {
     order.isServerCreatedAt
   }
 
+  /// The value a page with no order, or one ordered by `serverCreatedAt`, sorts `entityID` by in `namespace`: its id
+  /// fact's time, or its earliest fact's time in the namespace (#579).
+  func serverCreatedAt(
+    of entityID: String,
+    namespace: String,
+    attributes: AttributeStore
+  ) -> InstantValue? {
+    serverCreatedAtValue(entityID: entityID, namespace: namespace, attributes: attributes)
+  }
+
   private func serverCreatedAtValue(
     entityID: String,
     namespace: String,
