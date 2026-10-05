@@ -178,6 +178,7 @@ struct InstantManyCardinalityOrderTests {
 
   enum Things {
     static let namespace = "things"
+    /// Values of every case but refs: an `.any` attribute refuses a ref in a write.
     static let tags = InstantAttribute(
       id: "things/tags",
       namespace: namespace,
@@ -186,38 +187,59 @@ struct InstantManyCardinalityOrderTests {
       isRequired: false,
       cardinality: .many
     )
+    /// Refs, as a recording holds its segments.
+    static let links = InstantAttribute(
+      id: "things/links",
+      namespace: namespace,
+      name: "links",
+      valueType: .ref,
+      isRequired: false,
+      cardinality: .many,
+      isIndexed: true,
+      forwardIdentity: "things/links",
+      reverseIdentity: "linked/things",
+      linkNamespace: "linked"
+    )
+    static let attributes = [tags, links]
     static let plan = InstantQueryPlan(id: "things.all", namespace: namespace)
     static let strings = [
       "", " ", "a", "A", "b", "B", "Z", "zz", "é", "e\u{301}x", "\u{301}a", "😀", "10", "9", "ß", "ss", "ﬁ", "İ", "\u{0}",
     ]
 
-    static func value(using rng: inout SplitMix64) -> InstantValue {
-      switch Int.random(in: 0..<7, using: &rng) {
+    static func value(for attribute: InstantAttribute, using rng: inout SplitMix64) -> InstantValue {
+      if attribute.id == links.id {
+        return .ref(Recordings.uuid(using: &rng))
+      }
+      switch Int.random(in: 0..<6, using: &rng) {
       case 0:
         return .bool(Bool.random(using: &rng))
       case 1:
         return .number(Double(Int.random(in: -40...40, using: &rng)) / 4)
       case 2:
-        let base = strings.randomElement(using: &rng) ?? ""
-        return .string(Bool.random(using: &rng) ? base : base + String(Int.random(in: 0...99, using: &rng)))
-      case 3:
         return .date(Date(timeIntervalSince1970: Double(Int.random(in: 0...2_000_000_000, using: &rng)) / 1_000))
-      case 4:
+      case 3:
         if Bool.random(using: &rng) {
           return .json(.object(["k": .number(Double(Int.random(in: 0...9, using: &rng)))]))
         }
         return .json(.array([.string(strings.randomElement(using: &rng) ?? "")]))
+      case 4:
+        return .string(Recordings.uuid(using: &rng))
       default:
-        return .ref(Recordings.uuid(using: &rng))
+        let base = strings.randomElement(using: &rng) ?? ""
+        return .string(Bool.random(using: &rng) ? base : base + String(Int.random(in: 0...99, using: &rng)))
       }
     }
 
     /// Values whose `comparableKey`s differ, so the order before #570 is the only order.
-    static func distinctValues(count: Int, using rng: inout SplitMix64) -> [InstantValue] {
+    static func distinctValues(
+      for attribute: InstantAttribute,
+      count: Int,
+      using rng: inout SplitMix64
+    ) -> [InstantValue] {
       var keys = Set<String>()
       var values: [InstantValue] = []
       while values.count < count {
-        let candidate = value(using: &rng)
+        let candidate = value(for: attribute, using: &rng)
         if keys.insert(candidate.comparableKey).inserted {
           values.append(candidate)
         }
@@ -227,48 +249,55 @@ struct InstantManyCardinalityOrderTests {
   }
 
   /// Every materialized many-value lists its slot's values in `comparableKey` order, as before #570: values of every
-  /// case, slots small and large, unchanged since the last materialization or after gaining, losing or swapping a value
-  /// (a swap keeps the slot's count).
+  /// case and refs, slots small and large, unchanged since the last materialization or after gaining, losing or
+  /// swapping a value (a swap keeps the slot's count).
   @Test
   func manyValuesKeepTheComparableKeyOrderAcrossWrites() async throws {
     for seed in UInt64(0)..<UInt64(6) {
       var rng = SplitMix64(state: seed &* 0x2545_F491_4F6C_DD1D &+ 570)
-      var model: [String: [InstantValue]] = [:]
+      var model: [String: [String: [InstantValue]]] = [:]
       var triples: [InstantTriple] = []
       for index in 0..<24 {
         let id = "thing-\(seed)-\(index)"
-        let count = index % 3 == 0 ? Int.random(in: 1...6, using: &rng) : Int.random(in: 16...80, using: &rng)
-        let values = Things.distinctValues(count: count, using: &rng)
-        model[id] = values
-        for value in values {
-          triples.append(
-            InstantTriple(
-              entityID: id,
-              attributeID: Things.tags.id,
-              value: value,
-              txID: "seed-\(seed)",
-              txTime: InstantTimestamp(milliseconds: 1_000)
+        for attribute in Things.attributes {
+          let count = index % 3 == 0 ? Int.random(in: 1...6, using: &rng) : Int.random(in: 16...80, using: &rng)
+          let values = Things.distinctValues(for: attribute, count: count, using: &rng)
+          model[id, default: [:]][attribute.id] = values
+          for value in values {
+            triples.append(
+              InstantTriple(
+                entityID: id,
+                attributeID: attribute.id,
+                value: value,
+                txID: "seed-\(seed)",
+                txTime: InstantTimestamp(milliseconds: 1_000)
+              )
             )
-          )
+          }
         }
       }
-      let store = InstantStore(snapshot: InstantStoreSnapshot(attributes: [Things.tags], triples: triples))
+      let store = InstantStore(snapshot: InstantStoreSnapshot(attributes: Things.attributes, triples: triples))
       for step in 0..<10 {
         // Twice: the second read finds every slot as the first left it.
         for read in 0..<2 {
           let page = await store.materializePage(Things.plan)
+          #expect(page.values.count == model.count, "Seed \(seed), step \(step): every thing is on the page.")
           for snapshot in page.values {
-            let expected = model[snapshot.id].map { values in values.sorted { $0.comparableKey < $1.comparableKey } } ?? []
-            let actual: [InstantValue]
-            switch snapshot.values[Things.tags.name] {
-            case let .many(values)?: actual = values
-            case nil: actual = []
-            case let .one(value)?: actual = [value]
-            }
-            if actual != expected {
-              Issue.record(
-                "Seed \(seed), step \(step), read \(read): \(snapshot.id)'s tags are out of comparableKey order.\n\(actual.map(\.comparableKey))\nexpected\n\(expected.map(\.comparableKey))"
-              )
+            for attribute in Things.attributes {
+              let expected = model[snapshot.id]?[attribute.id].map { values in
+                values.sorted { $0.comparableKey < $1.comparableKey }
+              } ?? []
+              let actual: [InstantValue]
+              switch snapshot.values[attribute.name] {
+              case let .many(values)?: actual = values
+              case nil: actual = []
+              case let .one(value)?: actual = [value]
+              }
+              if actual != expected {
+                Issue.record(
+                  "Seed \(seed), step \(step), read \(read): \(snapshot.id)'s \(attribute.name) are out of comparableKey order.\n\(actual.map(\.comparableKey))\nexpected\n\(expected.map(\.comparableKey))"
+                )
+              }
             }
           }
         }
@@ -277,35 +306,31 @@ struct InstantManyCardinalityOrderTests {
         let txID = "step-\(seed)-\(step)"
         for id in model.keys.sorted() {
           guard Int.random(in: 0..<3, using: &rng) == 0 else { continue }
-          var values = model[id] ?? []
+          let attribute = Bool.random(using: &rng) ? Things.tags : Things.links
+          var values = model[id]?[attribute.id] ?? []
           let keys = Set(values.map(\.comparableKey))
-          var fresh = Things.value(using: &rng)
+          var fresh = Things.value(for: attribute, using: &rng)
           while keys.contains(fresh.comparableKey) {
-            fresh = Things.value(using: &rng)
+            fresh = Things.value(for: attribute, using: &rng)
+          }
+          func triple(_ value: InstantValue) -> InstantTriple {
+            InstantTriple(entityID: id, attributeID: attribute.id, value: value, txID: txID, txTime: txTime)
           }
           switch Int.random(in: 0..<3, using: &rng) {
           case 0 where !values.isEmpty:
             // A swap: the count stays the same.
             let removed = values.remove(at: Int.random(in: 0..<values.count, using: &rng))
-            operations.append(
-              .retract(InstantTriple(entityID: id, attributeID: Things.tags.id, value: removed, txID: txID, txTime: txTime))
-            )
+            operations.append(.retract(triple(removed)))
             values.append(fresh)
-            operations.append(
-              .insert(InstantTriple(entityID: id, attributeID: Things.tags.id, value: fresh, txID: txID, txTime: txTime))
-            )
+            operations.append(.insert(triple(fresh)))
           case 1 where values.count > 1:
             let removed = values.remove(at: Int.random(in: 0..<values.count, using: &rng))
-            operations.append(
-              .retract(InstantTriple(entityID: id, attributeID: Things.tags.id, value: removed, txID: txID, txTime: txTime))
-            )
+            operations.append(.retract(triple(removed)))
           default:
             values.append(fresh)
-            operations.append(
-              .insert(InstantTriple(entityID: id, attributeID: Things.tags.id, value: fresh, txID: txID, txTime: txTime))
-            )
+            operations.append(.insert(triple(fresh)))
           }
-          model[id] = values
+          model[id, default: [:]][attribute.id] = values
         }
         guard !operations.isEmpty else { continue }
         let prepared = try await store.prepareCurrent(InstantStoreTransaction(id: txID, operations: operations))
@@ -331,7 +356,7 @@ struct InstantManyCardinalityOrderTests {
       .lookupRef(InstantLookupRef(attributeID: "b", value: .number(1))),
     ]
     for _ in 0..<60 {
-      values.append(Things.value(using: &rng))
+      values.append(Things.value(for: Bool.random(using: &rng) ? Things.tags : Things.links, using: &rng))
     }
     var mismatches: [String] = []
     for lhs in values {
