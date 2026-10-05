@@ -490,6 +490,24 @@ enum AttrSlot: Hashable, Codable, Sendable {
     }
   }
 
+  /// The same values with the same times, whatever transaction IDs their stamps hold (#572).
+  func holdsTheSameValuesAndTimes(as other: AttrSlot) -> Bool {
+    switch (self, other) {
+    case let (.one(value, stamp), .one(otherValue, otherStamp)):
+      return value == otherValue && stamp.txTimeMilliseconds == otherStamp.txTimeMilliseconds
+    case let (.many(stamps), .many(otherStamps)):
+      guard stamps.count == otherStamps.count else { return false }
+      for (value, stamp) in stamps {
+        guard let otherStamp = otherStamps[value], stamp.txTimeMilliseconds == otherStamp.txTimeMilliseconds else {
+          return false
+        }
+      }
+      return true
+    default:
+      return false
+    }
+  }
+
   subscript(value: InstantValue) -> InstantTripleStamp? {
     get {
       switch self {
@@ -819,6 +837,10 @@ struct TripleIndexes: Codable, Sendable {
   private var internInvalidationIDs: Set<String> = []
   private var internedQueryResultsNeedInvalidation = false
   private var pendingInternNeedsEAVCompletion = false
+  /// Entities that writes since the store last installed these indexes touched with values their slots already held,
+  /// and the targets of such links (#572). The store checks each against the indexes before the write when it
+  /// installs it, and publishes it only when a fact an observer reads changed. Not encoded, compared or hashed.
+  private(set) var valueEqualWriteEntityIDs: Set<String> = []
   private var shouldInternOnWrite = true
   /// namespace → entityIDs that hold at least one attr in that namespace (avoids scanning segments for recordings queries).
   private var entitiesByNamespace: [String: Set<String>] = [:]
@@ -941,9 +963,12 @@ struct TripleIndexes: Codable, Sendable {
               )
             )
           }
+          // Still changed for rollback, persistence and the outbox overlay: the slot took the write's transaction ID.
           rememberChangedEntity(triple.entityID, into: &changed)
+          valueEqualWriteEntityIDs.insert(triple.entityID)
           if attribute?.valueType == .ref, let targetID = value.refValue {
             changed.insert(targetID)
+            valueEqualWriteEntityIDs.insert(targetID)
           }
           return
         }
@@ -2338,6 +2363,44 @@ struct TripleIndexes: Codable, Sendable {
     }
     internCaches.internedIndexedEqualsResults[resultKey] = snapshots
     return snapshots
+  }
+
+  mutating func forgetValueEqualWrites() {
+    valueEqualWriteEntityIDs = []
+  }
+
+  /// Whether `entityID` holds the same values with the same times here as in `other`, and the same incoming links:
+  /// what a write that set its fields to the values they held leaves unchanged for every observer (#572). Transaction
+  /// IDs are not compared, as no query result reads them; `serverCreatedAt` reads the times.
+  func holdsTheSameObservableFacts(of entityID: String, as other: TripleIndexes) -> Bool {
+    switch (eav[entityID], other.eav[entityID]) {
+    case (nil, nil):
+      break
+    case let (slots?, otherSlots?):
+      guard slots.count == otherSlots.count else { return false }
+      for (attributeID, slot) in slots {
+        guard let otherSlot = otherSlots[attributeID], slot.holdsTheSameValuesAndTimes(as: otherSlot) else {
+          return false
+        }
+      }
+    default:
+      return false
+    }
+    let target = InstantValue.ref(entityID)
+    switch (vae[target], other.vae[target]) {
+    case (nil, nil):
+      return true
+    case let (links?, otherLinks?):
+      guard links.count == otherLinks.count else { return false }
+      for (attributeID, sources) in links {
+        guard let otherSources = otherLinks[attributeID], sources.count == otherSources.count,
+          sources.keys.allSatisfy({ otherSources[$0] != nil })
+        else { return false }
+      }
+      return true
+    default:
+      return false
+    }
   }
 
   func entityMatches(

@@ -1142,6 +1142,8 @@ public actor InstantStore {
     insertReplayPolicy: InstantTripleInsertReplayPolicy = .replaceAndInvalidate
   ) throws -> PreparedStoreMutation {
     indexes.discardInternedQueryResultsBeforeWrite()
+    // Each prepare checks its own value-equal writes; a chain's earlier ones publish as changed (#572).
+    indexes.forgetValueEqualWrites()
     indexes.reserveCapacity(
       entityCapacity: transaction.operations.count,
       attributeCapacity: attributes.count
@@ -1603,11 +1605,15 @@ public actor InstantStore {
       return prepared
     }
     let refreshed = refreshObservers(
-      changedEntityIDs: prepared.result.changedEntityIDs,
+      changedEntityIDs: installed.publishedEntityIDs,
       changedNamespaces: installed.changedNamespaces,
       previousIndexes: installed.previousIndexes,
       pageInfoByKey: Self.liveQueryPageInfoByKey(replacements),
-      storeChanged: true,
+      storeChanged: Self.storeChanged(
+        touched: prepared.result.changedEntityIDs,
+        published: installed.publishedEntityIDs,
+        changedNamespaces: installed.changedNamespaces
+      ),
       publishing: shouldPublish
     )
     lastPublishMetrics = refreshed.metrics
@@ -1662,16 +1668,23 @@ public actor InstantStore {
       tripleCount: prepared.result.tripleCount,
       sequence: sequence
     )
-    let changedEntityIDs = prepared.result.changedEntityIDs
+    let changedEntityIDs = installed.publishedEntityIDs
+    let storeChanged = Self.storeChanged(
+      touched: prepared.result.changedEntityIDs,
+      published: changedEntityIDs,
+      changedNamespaces: changedNamespaces
+    )
     let ticket = joinPendingPublication { pending in
       pending.commits.append(commit)
-      pending.changedEntityIDs.formUnion(changedEntityIDs)
-      if let changed = changedNamespaces, let pendingNamespaces = pending.changedNamespaces {
-        pending.changedNamespaces = pendingNamespaces.union(changed)
-      } else {
-        pending.changedNamespaces = nil
+      if storeChanged {
+        pending.changedEntityIDs.formUnion(changedEntityIDs)
+        if let changed = changedNamespaces, let pendingNamespaces = pending.changedNamespaces {
+          pending.changedNamespaces = pendingNamespaces.union(changed)
+        } else {
+          pending.changedNamespaces = nil
+        }
+        pending.storeChanged = true
       }
-      pending.storeChanged = true
       if pending.previousIndexes == nil {
         pending.previousIndexes = installed.previousIndexes
       }
@@ -1787,31 +1800,60 @@ public actor InstantStore {
     }
   }
 
-  /// Installs a prepared mutation's state and returns the namespaces its changed entities belong to before and after,
-  /// or nil when its attributes changed or an entity's namespace could not be resolved, so every observer refreshes,
-  /// and the store it replaced.
+  /// Installs a prepared mutation's state and returns the entities whose facts an observer can see changed, the
+  /// namespaces they belong to before and after, or nil when its attributes changed or an entity's namespace could not
+  /// be resolved, so every observer refreshes, and the store it replaced.
+  ///
+  /// An entity the write touched only with values its slots already held, with the same times and incoming links as
+  /// before, stays changed for rollback and persistence but is not published (#572): Scribe's attachment metadata
+  /// mutation sets every field on each update. Upstream `Reactor.js` does not notify a query whose result is
+  /// deep-equal.
   private func install(
     _ prepared: inout PreparedStoreMutation
-  ) -> (changedNamespaces: Set<String>?, previousIndexes: TripleIndexes) {
+  ) -> (changedNamespaces: Set<String>?, previousIndexes: TripleIndexes, publishedEntityIDs: Set<String>) {
     prepared.deferredValueRemovalMetrics = prepared.indexes.removeMarkedDeferredValues(
       attributes: prepared.attributes
     )
+    let valueEqualWrites = prepared.indexes.valueEqualWriteEntityIDs
+    if !valueEqualWrites.isEmpty {
+      prepared.indexes.forgetValueEqualWrites()
+    }
     let previousIndexes = indexes
     let previousAttributes = attributes
     self.attributes = prepared.attributes
     self.indexes = prepared.indexes
     self.sequence = prepared.sequence
-    guard !observers.isEmpty || pendingPublication != nil else { return (nil, previousIndexes) }
+    var published = prepared.result.changedEntityIDs
+    guard !observers.isEmpty || pendingPublication != nil else { return (nil, previousIndexes, published) }
+    if !valueEqualWrites.isEmpty, previousAttributes == attributes {
+      for entityID in valueEqualWrites
+      where published.contains(entityID)
+        && indexes.holdsTheSameObservableFacts(of: entityID, as: previousIndexes)
+      {
+        published.remove(entityID)
+      }
+    }
     return (
       Self.changedNamespaces(
-        changedEntityIDs: prepared.result.changedEntityIDs,
+        changedEntityIDs: published,
         indexes: prepared.indexes,
         attributes: prepared.attributes,
         previousIndexes: previousIndexes,
         previousAttributes: previousAttributes
       ),
-      previousIndexes
+      previousIndexes,
+      published
     )
+  }
+
+  /// Whether a commit changed anything an observer reads: false only when it touched entities and every one of them
+  /// was left out of the publication (#572).
+  private static func storeChanged(
+    touched: Set<String>,
+    published: Set<String>,
+    changedNamespaces: Set<String>?
+  ) -> Bool {
+    changedNamespaces == nil || !published.isEmpty || touched.isEmpty
   }
 
   private static func changedNamespaces(
