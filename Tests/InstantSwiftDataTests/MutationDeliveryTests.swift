@@ -3,7 +3,7 @@ import Foundation
 import InstantSwiftData
 import Testing
 
-@Suite(.serialized)
+@Suite(.serialized, .timeLimit(.minutes(3)))
 struct MutationDeliveryTests {
   @Test
   func synchronizationBlockerRoundTripsAndLegacyConnectionStatusDecodesWithoutIt()

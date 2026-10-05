@@ -6,7 +6,7 @@ import Testing
 
 @testable import InstantSwiftDataCore
 
-@Suite(.serialized)
+@Suite(.serialized, .timeLimit(.minutes(3)))
 struct InstantFailedMutationDiscardTests {
   private let upstreamProvenance = [
     "upstream/instant/client/packages/core/src/Reactor.js:_handleMutationError",

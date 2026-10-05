@@ -13,7 +13,7 @@ import Testing
 /// visits that map in mutation order. Swift adapts the same ordering and
 /// acknowledgement rules to a durable SQLite queue, so automatic delivery must
 /// first admit a fixed row window instead of rebuilding the complete map.
-@Suite(.serialized)
+@Suite(.serialized, .timeLimit(.minutes(3)))
 struct InstantBoundedOutboxDeliveryTests {
   @Test
   func explicitClaimThrowsSynchronizationBlockerBeforeUnknownHeadDecodeOrSuccessorClaim()

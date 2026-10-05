@@ -41,7 +41,7 @@ private struct OutboxEffectMetadata: Equatable {
   var entityCount: Int64
 }
 
-@Suite(.serialized)
+@Suite(.serialized, .timeLimit(.minutes(3)))
 struct InstantStoreTests {
   @Test
   func reminderPriorityMigrationRewritesStoreForwardIntentAndRollbackTogether() throws {

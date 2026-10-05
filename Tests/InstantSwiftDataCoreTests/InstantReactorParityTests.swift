@@ -3,7 +3,7 @@ import Foundation
 @testable import InstantSwiftDataCore
 import Testing
 
-@Suite(.serialized)
+@Suite(.serialized, .timeLimit(.minutes(3)))
 struct InstantReactorParityTests {
   @Test
   func upstreamReactorQuerySubsRoundTripsCachedResultsAcrossRelaunch() async throws {

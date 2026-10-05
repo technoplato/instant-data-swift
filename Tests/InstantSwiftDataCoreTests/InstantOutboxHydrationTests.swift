@@ -4,7 +4,7 @@ import SQLite3
 import Testing
 @testable import InstantSwiftDataCore
 
-@Suite(.serialized)
+@Suite(.serialized, .timeLimit(.minutes(3)))
 struct InstantOutboxHydrationTests {
   @Test
   func freshRuntimePersistsInitialAttributesBeforeFirstWrite() async throws {
