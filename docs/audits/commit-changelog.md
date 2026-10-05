@@ -1,3 +1,21 @@
+## 2026-10-05 04:33:21 EDT — instant-data-swift `68da51abeef17025105ad4dc14c11c5103698995`
+Time the byte estimate's walk over 32,800 facts, the size phone-perf found after a long recording (1.10.0)
+
+## 2026-10-05 04:29:43 EDT — instant-data-swift `dbf6cb115703170f681953e5f2226b3cf3020ba6`
+The store reports its entities, facts and estimated bytes, and the runtime estimates what eviction could drop now (1.10.0)
+
+## 2026-10-05 04:24:38 EDT — instant-data-swift `cc0ebf50190c67f3860bcb51b91978af9c04c846`
+Red tests for 1.10.0's store stats and its read-only evictable estimate, with the public types and stubs
+
+## 2026-10-05 04:22:58 EDT — instant-data-swift `ba64a1fc6187ec3ab43cdd1819af25ffc708cc37`
+SQLite reads for 1.10.0's eviction: the entities live-query results hold, the outbox's entities, stored facts, lookup targets
+
+## 2026-10-05 03:55:44 EDT — instant-data-swift `0f16ee9683e42974a6ca9d4b15a89ee2d623712b`
+A write that sets an observed row's fields to the values they hold publishes nothing: the row stays changed for rollback and persistence only (#572)
+
+## 2026-10-05 03:53:00 EDT — instant-data-swift `c575ea2353fedfcd25c0fe5f3dff929c17110efe`
+Red tests for #572: a write that sets an observed row's fields to the values they hold refreshes no observer
+
 ## 2026-10-05 03:34:29 EDT — instant-data-swift `841fb0146a6b0ad07c2cfd83c401a462430583d9`
 A row's interned snapshot keeps every stored field when the write leaves one slot unset: an id slot, or a field (#577)
 
