@@ -1,3 +1,60 @@
+## 2026-10-05 03:07:33 EDT — scribe `54e1ad17a3e356e7efc34d0eeb8c3d238d8bc007`
+Plan and claim shared-fence-94 (#569): the tests that wait on the shared enqueue fence get queues of their own, and the session-health beat counts the shared queue's drops
+
+## 2026-10-05 01:58:26 EDT — scribe `ee73b2c5c03a04a5f94181c5b48958f72a8e3c1e`
+Claim threads-chat P2's settings catalog entry (#537 P2): Spoken Lines Join the Open Thread joins the catalog and the row round-trip list
+
+## 2026-10-05 00:17:01 EDT — scribe `c6e4e853aea16484d92f1b44b8bfdf0bcf4eda4e`
+Record diagnostics-export's 94 head in PROGRESS: the collector installer never leaves the collector down, and the collector exits on SIGTERM (#571)
+
+## 2026-10-05 00:16:41 EDT — scribe `20b6a3e85ea66a4c5f36698c9305f83cc40ed41a`
+Merge main into diagnostics-export for 94 (#571): main's youtube-companion and mirror-share-audio work under the collector's safe restart
+
+## 2026-10-05 00:15:40 EDT — scribe `3b31cefdf621b0af18300b49369c1d47b6fc1c10`
+Change log: the collector installer never leaves the collector down, and the collector exits on SIGTERM (65dca822) (#571)
+
+## 2026-10-05 00:15:15 EDT — scribe `65dca82286f8354efeaa9d4afd5dd1ddf8116c61`
+The collector installer never leaves the collector down, and the collector exits on SIGTERM (#571)
+
+## 2026-10-05 00:14:21 EDT — scribe `5dd65f9ade2d208653c399b3f5d29b215eab9476`
+Claim ADR 0058's reinstall note and the 94 ledger entries for the collector's safe restart (#571)
+
+## 2026-10-05 00:05:20 EDT — scribe `3f8a0485631c7a69a74d7782dafb35e66fc036ff`
+Red: a serving collector outlives SIGTERM while a device WebSocket is open, so launchd holds its label until SIGKILL (#571)
+
+## 2026-10-05 00:05:20 EDT — scribe `6f69d0a09b3d7e968b3318009fbb976aaa823a08`
+Plan the collector's prompt SIGTERM stop for 94 (#571): launchd's log shows the 93 collector outlived SIGTERM until SIGKILL
+
+## 2026-10-05 00:03:39 EDT — scribe `7e9bfa6be7efe9e13fd9b6dcb59b4c2d9f4e73f9`
+Merge youtube-companion-install-gate into main (#478 #533): the companion as installed on the Mac since 2026-10-04 13:03, plus clips cut from a share's own audio file
+
+## 2026-10-05 00:02:37 EDT — scribe `1bcdc0c4540845e7d958620261449c87011421a8`
+Record the cutter's share range file in the change log (#478, #533)
+
+## 2026-10-05 00:02:28 EDT — scribe `79e0550cec821369f26621e1baf821e03904aff4`
+The cutter reads a share's own range file from the mirror, at the share's start minus the file's start (#478, #533)
+
+## 2026-10-05 00:01:49 EDT — scribe `318e9dc918fd063e0e4608d218be36d9cee9c9e7`
+Red: the cutter reads a share's own range file from the mirror, at the share's start minus the file's start (#478, #533)
+
+## 2026-10-04 23:59:19 EDT — scribe `943b7026f7955ede8f22c52403a87d8ffeb62e6e`
+Record 6aa1b0d7 and 366ecee0a (#533) in the change log
+
+## 2026-10-04 23:59:19 EDT — scribe `366ecee0a2725a111fe4704b5cd68195f7260d18`
+A share gets its own audio file from the chunks its range touches, before live.wav reaches it (#533 follow-up A)
+
+## 2026-10-04 23:56:48 EDT — scribe `6aa1b0d72fbf5db7cdda38d73f3fcdc033f88509`
+Red: a share's own audio file from the chunks its range touches, before live.wav reaches it (#533 follow-up A)
+
+## 2026-10-04 23:55:37 EDT — scribe `89b3a60d35c0c714f157ab056d4b62d17da59791`
+Red: the collector installer, run against a fake launchd, leaves the collector down when bootout lags or bootstrap fails (#571)
+
+## 2026-10-04 23:53:51 EDT — scribe `75026fcd982c061fc1c40043d3cfe9b5f0f39631`
+Plan and claim mirror-share-audio (#533 follow-up A): a share's own audio file from its marked chunks, so a share is cut without waiting for the gap
+
+## 2026-10-04 23:51:40 EDT — scribe `4a57cdc09a600cd1e764026c0afe482a5db7ac0f`
+Plan the collector installer's safe restart for 94 (#571): wait, retry once, restore on failure
+
 ## 2026-10-04 23:49:29 EDT — scribe `bf940f2b5cbe325eb9816ac2f2015ec35861658f`
 Record Scribe 0.1 (93) in PROGRESS: on the iPhone, the iPad and the Mac, the stability batch built from 1870909c on instant-data-swift 1.9.7 with production's v20g schema (#551 #549 #571 #525 #478 #564 #512 #546 #445 #553 #543 #574 #569 #547 #517)
 
@@ -1279,6 +1336,15 @@ Reminder cards say where they went: a debug line each time a recording's cards c
 ## 2026-10-04 13:06:37 EDT — scribe `1fb02a25fc5f38b56ff3f8b82d752594a3d08dcc`
 Plan and claim restored-images for 91 (#552): a continued take downloads its missing images once, and a failed one says so
 
+## 2026-10-04 13:03:22 EDT — scribe `70ed7c32087c7d73b94ba07168b7ca61ead1d6a3`
+Record the poster's own timer and the Automation check back-off in the change log (#478)
+
+## 2026-10-04 13:03:22 EDT — scribe `6b43ab07dc254374141aafa992e037d39e4eb518`
+The poster runs on its own timer, and Automation checks that keep timing out back off until a scan answers (#478)
+
+## 2026-10-04 13:02:35 EDT — scribe `de3245c3b9689982ae04936c645b0f6d9ba9d1e4`
+Red: the poster runs on its own timer, and Automation checks that keep timing out back off until a scan answers (#478)
+
 ## 2026-10-04 13:02:07 EDT — scribe `902d29c587e5d0992988ffb1c014147559b9b66c`
 Red: the live transcript's visible rows must be the rows on screen after a jump, not every row seen since (build 91 #469 #530)
 
@@ -1300,6 +1366,9 @@ Red: a settings row from another device turns this device's Recognize Songs back
 ## 2026-10-04 12:54:19 EDT — scribe `9a563ecfc2fe042cc652b5c6dd05d1759149f765`
 Plan threads-chat P3 (#537 #552): the recording phone downloads the images others upload to its live take
 
+## 2026-10-04 12:51:36 EDT — scribe `8065c78cd536d2536f23664cb5e37dac088b793b`
+Record the draft refusal and the warm Presidio checker in the change log (#478)
+
 ## 2026-10-04 12:51:26 EDT — scribe `daf5c1355114a35606b12569d77e44fe3fa89f84`
 Plan and claim settings-sync-91 (#550): a settings row from Instant changes only the fields it syncs
 
@@ -1309,11 +1378,23 @@ Record the read-aloud voice choice in the change log (#471)
 ## 2026-10-04 12:50:35 EDT — scribe `d86cf6e17d902f5c8b261bd7dfc4ce6b204283da`
 Read aloud chooses its voice: the system's, or this Mac's Kokoro over the tailnet, with a 5-second fallback (#471)
 
+## 2026-10-04 12:50:27 EDT — scribe `5cf97a7c64cc2aa6dad5529f20e95a37c6336beb`
+One warm Presidio answers every check over a private socket, started on demand, gone after ten idle minutes (#478)
+
+## 2026-10-04 12:47:22 EDT — scribe `1295a57fe47130f7ce28830b2c1df5e758fd5723`
+Red: one warm Presidio answers every check over a private socket, started on demand (#478)
+
 ## 2026-10-04 12:46:45 EDT — scribe `2ffc41a4de77fb388d4ca625784e474ccf41ddf9`
 Record scribe-tts in the change log (#471 #549)
 
 ## 2026-10-04 12:46:45 EDT — scribe `26d7f0ce5af5cda0d5a80b4da708dce2e6eedc83`
 scribe-tts: a voice this Mac serves for read-aloud, tailnet only, loaded on demand (#471 #549)
+
+## 2026-10-04 12:44:59 EDT — scribe `b8aa4475aff920d79cb587da3802c4e87da18627`
+A draft is offered only once the mapping and the model's list are applied; a layer that cannot run refuses it (#478)
+
+## 2026-10-04 12:44:26 EDT — scribe `b6f999469e694106b9dd982250476e15752ae8b4`
+Red: a draft is offered only once the mapping and the model's list are applied; a layer that cannot run refuses it (#478)
 
 ## 2026-10-04 12:41:11 EDT — scribe `2941269fee56d06f7ce1e66c46d4bfa55f740475`
 Record the header preference key's watchOS compile fix in the change log (#527)
@@ -2034,6 +2115,9 @@ A live line's opening and final join the end of the window and of the lines, wit
 
 ## 2026-10-04 09:49:31 EDT — scribe `2628674002fb9eabe2cb3e40baf2cc132b1c318d`
 Red: a live line's opening and final must join the end of the window without a settle, equal to one (#410 #409)
+
+## 2026-10-04 09:49:11 EDT — scribe `3569510af8155ea3f29bb8aca006351a2dc7cdc5`
+Say what a clip waits for: audio that reaches the stretch's end, not the recording's Stop (#478)
 
 ## 2026-10-04 09:48:35 EDT — scribe `7a3d00bd3fe5faa97bc1a97d8027b69b7ea522f0`
 Merge sounds' classifier restart for 89: a failed sound classifier starts again on the foreground and after 30 s, 2 min and 10 min, and songs fall back to 12 s every 5 minutes while it is down (#526 #457 #440)
