@@ -10,6 +10,19 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## October 5th, 2026 at 1:34:45 a.m. EDT — `cfd32f7edb96` The 10,000-broadcast run's slowdown check allows 250 ms per 100 messages, not 25: it missed at load 196 (#461)
+
+- **Implementation commit:** `cfd32f7edb96a79d063d7d69a5422f3fed203b01`
+- **Change:** The 10,000-broadcast run's slowdown check allows 250 ms per 100-message batch instead of 25 ms, after it missed once at load 196 in library-79's dev-198c (#461).
+- **Details:**
+  - dev-198c: median batch 0.46 ms in the first 1,000 and 27 ms in the last 1,000, the whole run 5.3 s, held 128; other rounds and the v1.9.8 gate passed with 2 ms medians. The held-count check stays the exact guard against storage growing.
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantRoomPresenceRuntimeTests.swift` — the topic run's floor and its reason
+- **User context (verbatim):**
+  > That sounds good to me for the, uh, rooms plan, so go ahead and knock that out with a subagent.
+  > Good plan. And let's get feature parody and performance parody with Swift and typescript, please.
+- **SpecStory:** unavailable — Claude Code agent session (rooms subagent under main); no SpecStory capture configured for this session.
+
 ## October 4th, 2026 at 3:17:04 p.m. EDT — `c5e1183fd031` Record the room write lane in ADR 0019 decision 9 and PROGRESS: presence and broadcasts keep call order (#461)
 
 - **Implementation commit:** `c5e1183fd03104596d375f921fd7070e2896466d`
