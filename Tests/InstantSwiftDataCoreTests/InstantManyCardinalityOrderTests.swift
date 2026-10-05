@@ -5,10 +5,10 @@ import Testing
 
 /// #570: a many-cardinality value is sorted once, not on every snapshot of its entity.
 ///
-/// Build 88's CPU kill on Michael's iPhone (48 s of CPU in 55 s, against a limit of 80% over 60 s) spent 26% of its
+/// The CPU-resource kill reported in #570 (48 s of CPU in 55 s, against a limit of 80% over 60 s) spent 26% of its
 /// samples in one sort: `materializedValue` ordered every many-cardinality slot with
 /// `slot.keys.sorted { $0.comparableKey < $1.comparableKey }`, and `comparableKey` builds a new string on each call.
-/// Scribe's recordings hold `segments` forward, so every snapshot of a recording sorted all its segment refs, and each
+/// A recording holds its `segments` forward, so every snapshot of a recording sorted all its segment refs, and each
 /// final line, which changes the recording, re-sorted the refs of every recording on the list's page. Upstream
 /// `Reactor.js` (`getAsObject`) reads only blob attributes and never sorts link sets.
 @Suite(.serialized)
@@ -32,7 +32,7 @@ struct InstantManyCardinalityOrderTests {
       isRequired: false,
       isIndexed: true
     )
-    /// Held forward on the recording, as Scribe's schema holds `recordings.segments` (has many).
+    /// Held forward on the recording, as a schema holds `recordings.segments` (has many).
     static let segments = InstantAttribute(
       id: "recordings/segments",
       namespace: namespace,
@@ -46,11 +46,11 @@ struct InstantManyCardinalityOrderTests {
       linkNamespace: "transcriptionSegments"
     )
     static let attributes = [title, updatedAtMs, segments]
-    /// The list's largest page in phone-perf's device numbers, with Recording 194's segment count on every recording.
+    /// The largest list page measured for #570, with its longest recording's segment count on every recording.
     static let recordingCount = 73
     static let refsPerRecording = 1_190
 
-    /// The list as Scribe orders it: newest update first.
+    /// The list ordered by newest update first.
     static let plan = InstantQueryPlan(
       id: "recordings.list",
       namespace: namespace,
@@ -99,9 +99,9 @@ struct InstantManyCardinalityOrderTests {
     }
   }
 
-  /// A final line on one recording, as Scribe saves it: a new segment linked to the recording and the recording's
+  /// A final line on one recording, as a client saves it: a new segment linked to the recording and the recording's
   /// `updatedAtMs` moved to now, so the list's sort key changes and its page is materialized again, not spliced
-  /// (phone-perf's device log: 586 publishes, spliced 0 at the median). Only that recording's segment refs changed, so
+  /// (#573: 586 publishes in a device log, spliced 0 at the median). Only that recording's segment refs changed, so
   /// only they need sorting; 1.9.8 sorted the refs of every recording on the page, twice for the written one.
   @Test
   func aFinalLineOnOneRecordingSortsOnlyThatRecordingsSegments() async throws {

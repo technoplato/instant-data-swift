@@ -418,10 +418,10 @@ private enum ScoredLatencyMetric: String {
 }
 
 /// `instant-domain-aev-bench --many-refs`: the list page of #570 at -O, 73 recordings that each hold 1,190 segment
-/// refs forward, as Scribe's recordings hold `segments`. Prints the first materialization (every slot sorted) and the
-/// median and minimum of later ones (every slot as the last one left it), in wall time and in the process's CPU time,
-/// which host load inflates less. Nothing is gated: library-79's 1.9.9 dev run builds it before and after #570 and
-/// reads the numbers for the release notes.
+/// refs forward in `segments`. Prints the first materialization (every slot sorted) and the median and minimum of later
+/// ones (every slot as the last one left it), in wall time and in the process's CPU time, which host load inflates
+/// less. Nothing is gated: the 1.9.9 dev run builds it before and after #570 and reads the numbers for the release
+/// notes.
 enum ManyRefsBench {
   static let recordingCount = 73
   static let refsPerRecording = 1_190

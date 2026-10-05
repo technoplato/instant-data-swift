@@ -5,10 +5,10 @@ import Testing
 
 /// #541: two maps that grew for a session's whole life are bounded by what is live.
 ///
-/// phone-perf's memory audit (2026-10-04) found that the store's TxIDInterner keeps every transaction ID it ever met,
-/// and the live-query acknowledgement state keeps a revision and an outcome for every live-query key a session ever
-/// registered. Scribe's agent replies restarted about 380 times between 09:19 and 09:35, each with a new key, and a
-/// recording interns a new transaction for each of its 45-120 saves a minute.
+/// A memory audit (#541) found that the store's TxIDInterner keeps every transaction ID it ever met, and the
+/// live-query acknowledgement state keeps a revision and an outcome for every live-query key a session ever
+/// registered. A client's agent replies restarted about 380 times in 16 minutes, each with a new key, and a recording
+/// interns a new transaction for each of its 45-120 saves a minute.
 @Suite(.serialized)
 struct InstantSessionMapBoundsTests {
   static func temporaryCacheURL() throws -> URL {

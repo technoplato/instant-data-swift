@@ -7,9 +7,9 @@ import Testing
 ///
 /// A live timeline's infinite query keeps a page for every 32 rows, and every page has the same filter (the
 /// recording). Before 1.9.9 a write to any row that filter matched rebuilt every page that did not already hold the
-/// row, so one partial-word save cost 1 + rows/32 page rebuilds: 26 at 800 rows, 45-120 saves a minute while Michael
-/// talks (phone-perf's memory audit, 2026-10-04; build 88's MetricKit CPU report from Recording 194 had 8 of 35 samples
-/// in `materializePageWithMetrics`). A page that the server's cursors cut cannot take a row that sorts outside them,
+/// row, so one partial-word save cost 1 + rows/32 page rebuilds: 26 at 800 rows, 45-120 saves a minute during a
+/// recording (a memory audit and a MetricKit CPU report in #540, the report with 8 of 35 samples in
+/// `materializePageWithMetrics`). A page that the server's cursors cut cannot take a row that sorts outside them,
 /// and a page still waiting for those cursors, or one the server answered empty, is empty whatever the store holds.
 @Suite(.serialized)
 struct InstantStorePageSkipTests {

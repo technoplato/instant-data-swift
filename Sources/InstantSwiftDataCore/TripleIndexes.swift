@@ -623,8 +623,8 @@ private final class TxIDInterner: @unchecked Sendable {
 /// `TripleIndexes` (#570).
 ///
 /// Every snapshot of an entity with a many-cardinality attribute sorted that attribute's values, so each snapshot of a
-/// Scribe recording, which holds its segments forward, sorted all of its segment refs: 26% of build 88's CPU kill on
-/// Michael's iPhone. A kept order is used only while the slot holds exactly its values (the same count, each one
+/// recording that holds its segments forward sorted all of its segment refs: 26% of the samples in the CPU-resource
+/// kill reported in #570. A kept order is used only while the slot holds exactly its values (the same count, each one
 /// present), so no write has to forget it, and copies of the indexes that share it each check it against their own
 /// slots. The lock keeps it right however many tasks materialize copies at once.
 final class ManyCardinalityOrders: Sendable {
