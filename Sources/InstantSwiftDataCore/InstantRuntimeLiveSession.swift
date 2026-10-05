@@ -921,6 +921,7 @@ package actor InstantRuntimeLiveSession {
       String?
     ) async throws -> Void,
     onEventAcquired: (@Sendable () async -> Void)? = nil,
+    priority: TaskPriority? = nil,
     onRoomEvent: @escaping @Sendable (
       InstantLiveServerEvent,
       InstantRoomHandle,
@@ -974,7 +975,9 @@ package actor InstantRuntimeLiveSession {
       of: InstantLiveMessage.self,
       bufferingPolicy: .unbounded
     )
-    _ = receiverTaskOwner.start { [weak self] in
+    // The reader, the room applier and the frame applier share this task's priority: the runtime's steady-state sync
+    // priority when it sets one (1.10.0), else the caller's.
+    _ = receiverTaskOwner.start(priority: priority) { [weak self] in
       await withTaskGroup(of: Void.self) { group in
         group.addTask { [weak self] in
           for await message in roomFrames {

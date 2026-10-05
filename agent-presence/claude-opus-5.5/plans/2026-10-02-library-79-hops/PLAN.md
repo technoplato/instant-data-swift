@@ -284,3 +284,11 @@ live query behind it), the flag 1.10.1's eviction also needs. Red tests first, i
 `Tests/InstantSwiftDataCoreTests/InstantMemoryStatsTests.swift`. Touching `InstantStore.swift`, `InstantRuntime.swift`,
 `InstantModels.swift`, `TripleIndexes.swift` and `SQLitePersistenceStore.swift` (the ownership and outbox reads), added
 2026-10-05 04:24 EDT. Eviction itself is on library-79-1101 for 1.10.1.
+
+#590 for 1.10.0 (main, 2026-10-05, through phone-perf: "Send the library side to library-79 as a 1.10.0 option: a
+configurable decode QoS, default utility."): the persistence's decode batches run at `persistenceDecodeQoS`
+(`.utility` by default, nil for the reader's QoS) instead of user-initiated, and `liveSyncTaskPriority` (default nil,
+which inherits as before) sets the priority of the live session's reader and appliers, the automatic connection,
+reconnects, the mutation delivery pump and the stream writers' catch-up. Red tests first, in new
+`Tests/InstantSwiftDataCoreTests/InstantSyncQualityOfServiceTests.swift`. Touching `SQLitePersistenceStore.swift`,
+`InstantRuntime.swift` and `InstantRuntimeLiveSession.swift`, added 2026-10-05 07:30 EDT.

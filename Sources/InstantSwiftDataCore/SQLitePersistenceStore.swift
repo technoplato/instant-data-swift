@@ -237,6 +237,8 @@ private struct LiveQueryResultStorageRow: Sendable {
   var tripleCount: Int
 }
 
+/// No quality of service of its own: each batch runs at the store's decode QoS, or at its reader's (1.10.0). It was
+/// user-initiated, which ran steady-state sync's decoding on the performance cores while Michael records.
 private let instantPersistenceDecodeQueue = DispatchQueue(
   label: "com.instantdb.swift.persistence-decode",
   qos: .userInitiated,
@@ -926,6 +928,9 @@ public actor SQLitePersistenceStore {
   }
   private var liveQueryResultJSON = LiveQueryResultJSONState()
   private var liveQueryResultJSONWriteIntervalMilliseconds: Int64 = 30_000
+  /// The quality of service JSON decode batches run at, or nil for each batch's reader's (1.10.0).
+  private var decodeQoS: DispatchQoS.QoSClass? = .utility
+  private var decodeBatchObserverForTesting: (@Sendable (DispatchQoS.QoSClass) -> Void)?
   private var liveQueryResultJSONFlushSleep: @Sendable (_ milliseconds: UInt64) async throws -> Void = { milliseconds in
     try await Task.sleep(nanoseconds: milliseconds * 1_000_000)
   }
@@ -1031,6 +1036,16 @@ public actor SQLitePersistenceStore {
   ) {
     liveQueryResultJSONWriteIntervalMilliseconds = max(0, intervalMilliseconds)
     liveQueryResultJSONFlushSleep = flushSleep
+  }
+
+  /// The quality of service the JSON decode batches run at; nil runs each at its reader's (1.10.0).
+  public func configureDecode(qos: DispatchQoS.QoSClass?) {
+    decodeQoS = qos
+  }
+
+  /// Runs in each decode batch with the quality of service it ran at.
+  package func observeDecodeBatchesForTesting(_ observer: (@Sendable (DispatchQoS.QoSClass) -> Void)?) {
+    decodeBatchObserverForTesting = observer
   }
 
   /// Writes the stored JSON of every live-query result whose write waited, or of the ones in `keys` (#566). The app
@@ -15471,6 +15486,8 @@ public actor SQLitePersistenceStore {
     let decodeGroup = DispatchGroup()
     let decodeSlots = DispatchSemaphore(value: 2)
     let persistencePath = fileURL.path
+    let decodeQoS = decodeQoS
+    let decodeBatchObserver = decodeBatchObserverForTesting
     var batchData = Data()
     batchData.reserveCapacity(maxEncodedBytesPerBatch + 1)
     batchData.append(0x5B)
@@ -15488,11 +15505,12 @@ public actor SQLitePersistenceStore {
       let lastRowNumber = totalRowCount
       decodeSlots.wait()
       decodeGroup.enter()
-      instantPersistenceDecodeQueue.async {
+      let decodeBatch: @Sendable () -> Void = {
         defer {
           decodeSlots.signal()
           decodeGroup.leave()
         }
+        decodeBatchObserver?(DispatchQoS.QoSClass(rawValue: qos_class_self()) ?? .unspecified)
         do {
           decodeResults.store(
             .success(try JSONDecoder().decode([Value].self, from: data)),
@@ -15514,6 +15532,8 @@ public actor SQLitePersistenceStore {
           )
         }
       }
+      _ = decodeQoS
+      instantPersistenceDecodeQueue.async(execute: decodeBatch)
       batchCount += 1
       batchData = Data()
       batchData.reserveCapacity(maxEncodedBytesPerBatch + 1)

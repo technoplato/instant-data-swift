@@ -368,6 +368,15 @@ public struct InstantRuntimeConfiguration: Sendable {
   }
   /// Runs after each prune batch, with the number of results it removed.
   var onLiveQueryResultPruneBatchFinishedForTesting: (@Sendable (_ removedResultCount: Int) async -> Void)? = nil
+  /// The quality of service of the persistence's JSON decode batches (1.10.0): `.utility` by default, nil to run each
+  /// at its reader's. They decode stored rows, segment text and words among them, for writes, applies and refreshes;
+  /// before 1.10.0 they ran at user-initiated, on the performance cores while Michael records.
+  public var persistenceDecodeQoS: DispatchQoS.QoSClass? = .utility
+  /// The priority of the runtime's steady-state sync tasks (1.10.0): the live session's reader and appliers (server
+  /// applies, query refreshes, room frames), reconnects, the mutation delivery pump and the stream writers' catch-up.
+  /// nil, the default, lets each inherit the task that starts it, often whatever opened the runtime, as before 1.10.0.
+  /// A local write or read keeps its caller's priority.
+  public var liveSyncTaskPriority: TaskPriority? = nil
   var liveReconnectSleep: @Sendable (UInt64) async throws -> Void =
     instantLiveDefaultTimeoutSleep
   var liveMutationDeadlineSleep: @Sendable (UInt64) async throws -> Void =
@@ -762,11 +771,12 @@ private actor InstantRuntimeReconnectController {
   private var acceptsStarts = true
 
   func start(
+    priority: TaskPriority? = nil,
     sleep: @escaping @Sendable (UInt64) async throws -> Void,
     reconnect: @escaping @Sendable () async throws -> Void
   ) {
     guard acceptsStarts else { return }
-    _ = taskOwner.start(restartIfRunning: true) { [weak self] in
+    _ = taskOwner.start(priority: priority, restartIfRunning: true) { [weak self] in
       await self?.run(sleep: sleep, reconnect: reconnect)
     }
   }
@@ -851,6 +861,7 @@ private actor InstantRuntimeMutationDeliveryPump {
   }
 
   func request(
+    priority: TaskPriority? = nil,
     sleep: @escaping @Sendable (UInt64) async throws -> Void,
     _ deliver: @escaping @Sendable () async -> InstantRuntimeMutationDeliveryPumpPassResult
   ) {
@@ -858,7 +869,7 @@ private actor InstantRuntimeMutationDeliveryPump {
     needsAnotherPass = true
     guard task == nil else { return }
 
-    task = Task { [weak self] in
+    task = Task(priority: priority) { [weak self] in
       await self?.run(sleep: sleep, deliver)
     }
   }
@@ -1700,6 +1711,7 @@ public final class InstantRuntime: Sendable {
         intervalMilliseconds: configuration.liveQueryResultJSONWriteIntervalMilliseconds,
         flushSleep: configuration.liveQueryResultJSONFlushSleep
       )
+      await persistence.configureDecode(qos: configuration.persistenceDecodeQoS)
       let bootstrapPruningResult: InstantQueryCachePruningResult?
       let bootstrapSynchronizationBlocker: InstantSynchronizationBlocker?
       var state: InstantPersistenceState
