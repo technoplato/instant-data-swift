@@ -1,3 +1,6 @@
+## 2026-10-05 04:53:05 EDT — instant-data-swift `c8c2a4c563643b15b28bdbf621aeef524e07176d`
+Calibrate the store's byte model: 80-byte attribute buckets at Swift's average load, from a layout measurement and a memgraph (1.10.0)
+
 ## 2026-10-05 04:33:21 EDT — instant-data-swift `68da51abeef17025105ad4dc14c11c5103698995`
 Time the byte estimate's walk over 32,800 facts, the size phone-perf found after a long recording (1.10.0)
 

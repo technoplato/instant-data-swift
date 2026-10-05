@@ -10,6 +10,18 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## October 5th, 2026 at 4:53:14 a.m. EDT — `c8c2a4c56364` Calibrate the store's byte model: 80-byte attribute buckets at Swift's average load, from a layout measurement and a memgraph (1.10.0)
+
+- **Implementation commit:** `c8c2a4c563643b15b28bdbf621aeef524e07176d`
+- **Change:** Calibrate the store's byte model: 80-byte attribute buckets at Swift's average load, from a layout measurement and a memgraph (1.10.0)
+- **Details:**
+  - On arm64 a String key is 16 bytes and an AttrSlot 64; in build 90's Mac memgraph 2,645 attribute maps averaged 2,373 bytes.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/TripleIndexes.swift` — the estimated byte constants
+- **User context (verbatim):**
+  > fix this please so it works efficiently as as well as the typescript core library
+- **SpecStory:** unavailable — unavailable — Claude Code agent session (library-79 subagent under main); no SpecStory capture configured for this session.
+
 ## October 5th, 2026 at 4:50:36 a.m. EDT — `68da51abeef1` Time the byte estimate's walk over 32,800 facts, the size phone-perf found after a long recording (1.10.0)
 
 - **Implementation commit:** `68da51abeef17025105ad4dc14c11c5103698995`
