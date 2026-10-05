@@ -10,6 +10,149 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## October 5th, 2026 at 1:28:47 a.m. EDT — `ded9a267a153` The ownership test reads the replayed result's time from its row: the stored JSON keeps the time it was written with (#566)
+
+- **Implementation commit:** `ded9a267a1536853f0458a1a17c19a5a573e796f`
+- **Change:** The ownership test expects a replayed result's stored JSON as written, with the row's time the replay's (#566)
+- **Details:**
+  - From #566 a result whose facts and page info match the stored JSON writes only its row's count and time; 3b22e326 also gave the 1,100-row measurement 60 s per refresh.
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantLiveQueryNestedLimitMemoryTests.swift` — repeatedLargeReplacementMutatesOnlyChangedOwnershipIdentities
+- **User context (verbatim):**
+  > fix this please so it works efficiently as as well as the typescript core library
+- **SpecStory:** unavailable — unavailable — Claude Code agent session (library-79 subagent under main); no SpecStory capture configured for this session.
+
+## October 5th, 2026 at 1:28:47 a.m. EDT — `a7f297cb078f` The kill test also checks SQLite: the todo the server deleted after a kill between throttled writes leaves the stored facts, not only the reopened store (#566)
+
+- **Implementation commit:** `a7f297cb078fbc2a5da1ea0f6058f9cc77aead23`
+- **Change:** The kill test also counts the deleted todo's facts in SQLite, so a missing bootstrap repair fails it (#566)
+- **Details:**
+  - With the repair removed every test passed in dev-198c: the reopened store holds only the entities its stored results name, so the deleted todo was missing from it either way, while its facts stayed in SQLite.
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantLiveQueryResultWriteTests.swift` — storedFactCount and the kill test
+- **User context (verbatim):**
+  > fix this please so it works efficiently as as well as the typescript core library
+- **SpecStory:** unavailable — unavailable — Claude Code agent session (library-79 subagent under main); no SpecStory capture configured for this session.
+
+## October 5th, 2026 at 1:28:47 a.m. EDT — `0bc01dfed60e` Name the stored triple's type in the bootstrap repair's lookup, which 0d5ccaa5 left for the compiler to infer through .first (#566)
+
+- **Implementation commit:** `0bc01dfed60e688eb7de8c0f78fa43af77b758d6`
+- **Change:** The bootstrap repair names the stored triple's type in its lookup, which 0d5ccaa5 left for the compiler to infer through .first (#566)
+- **Details:**
+  - dev-198b's green build stopped there; no behavior change.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — repairDeferredLiveQueryResultJSON
+- **User context (verbatim):**
+  > fix this please so it works efficiently as as well as the typescript core library
+- **SpecStory:** unavailable — unavailable — Claude Code agent session (library-79 subagent under main); no SpecStory capture configured for this session.
+
+## October 5th, 2026 at 1:28:47 a.m. EDT — `0d5ccaa52646` A live query's result JSON is written at most once per query per 30 s, not on every refresh, and a result that did not change writes none (#566)
+
+- **Implementation commit:** `0d5ccaa526467e207b9d75023d875eb852422226`
+- **Change:** A live query's result JSON is written at most once per query per 30 s, not on every refresh, and a result that did not change writes none (#566)
+- **Details:**
+  - Michael's iPhone dirtied 1,074 MB in 185 s after launch on build 90 (library 1.9.7): every server apply upserted each refreshed query's whole result as one JSON blob. Reactor.js writes only changed query subscriptions, throttled, and flushes before unload.
+  - The newest result waits in the persistence actor for every in-session reader; waiting results are written when due, on unsubscribe, on close, and by flushPendingLiveQueryResults(); a waiting result is marked and the next bootstrap rebuilds it from its ownership rows. Red tests fcc8d2e6; #567 tracks per-fact persistence.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — the throttled result write, the in-memory newest result, the marker and the bootstrap repair
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — the flush on unsubscribe and close, the public flush, the configuration
+  - `Sources/InstantSwiftData/InstantSwiftData.swift` — the client's flushPendingLiveQueryResults()
+  - `Tests/InstantSwiftDataCoreTests/InstantLiveQueryResultWriteTests.swift` — unchanged, throttled, flushed, unsubscribed, in-session and killed results, and the 1,100-row measurement
+- **User context (verbatim):**
+  > fix this please so it works efficiently as as well as the typescript core library
+- **SpecStory:** unavailable — unavailable — Claude Code agent session (library-79 subagent under main); no SpecStory capture configured for this session.
+
+## October 5th, 2026 at 1:28:46 a.m. EDT — `1b4dcf0a2f69` Room broadcasts take the room's lane too: publications go out in order, and the join-room-ok flush holds it across the presence and the broadcasts queued before the join (#461)
+
+- **Implementation commit:** `1b4dcf0a2f69f8c4e0a0a3499b71d2bfc9679dfe`
+- **Change:** Room broadcasts take the room's lane too: publications go out in order, and the join-room-ok flush holds it across the presence and the queued broadcasts (#461)
+- **Details:**
+  - v1.9.5 held the operation gate across each topic publish; rooms took topics off the gate. Red tests 0998556f.
+  - A broadcast that wakes to a closed socket goes back among the queued ones in publication order; one whose room was left is dropped, as Reactor.js's publishTopic returns. #563 (1.9.9) moves join-room and leave-room into the lane.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantRuntimeLiveSession.swift` — publishTopic and the join-room-ok flush in the room lane
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — the lane's test accessor's description
+- **User context (verbatim):**
+  > fix this please so it works efficiently as as well as the typescript core library
+- **SpecStory:** unavailable — unavailable — Claude Code agent session (library-79 subagent under main); no SpecStory capture configured for this session.
+
+## October 5th, 2026 at 1:28:46 a.m. EDT — `8dc4321dd412` Each room's presence writes take one ordered lane, so an older set-presence never passes a newer one, as Reactor.js writes in call order (#461)
+
+- **Implementation commit:** `8dc4321dd412675915961e45269a74b3e0104118`
+- **Change:** Each room's presence writes take one ordered lane, so an older set-presence never passes a newer one, as Reactor.js writes in call order (#461)
+- **Details:**
+  - racingPresencePublishesLeaveTheNewestOnTheWire failed 1 of 3 runs in dev-198: off the operation gate each send writes from its own task. Red tests 410b28ca.
+  - The join-room-ok flush writes the newest presence and older writes queued behind it are skipped; waiters drain when a room is left; a registration's incarnation stops writes across a leave and a rejoin.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantRuntimeLiveSession.swift` — the room lane, writtenPresence, incarnations
+- **User context (verbatim):**
+  > fix this please so it works efficiently as as well as the typescript core library
+- **SpecStory:** unavailable — unavailable — Claude Code agent session (library-79 subagent under main); no SpecStory capture configured for this session.
+
+## October 5th, 2026 at 1:28:46 a.m. EDT — `91183ee8efa0` Keep InstantLiveReceivedFrames's SAFETY comment on its @unchecked Sendable declaration: #474's extension moves above the documentation (#474)
+
+- **Implementation commit:** `91183ee8efa08e669abca2ebcfeb143b4ecb1f23`
+- **Change:** InstantLiveReceivedFrames's SAFETY comment stays on its @unchecked Sendable declaration: #474's extension moves above the documentation (#474)
+- **Details:**
+  - SwiftConcurrencyGuidanceTests failed in dev-198's green run; no behavior change.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantRuntimeLiveSession.swift` — the extension's place
+- **User context (verbatim):**
+  > fix this please so it works efficiently as as well as the typescript core library
+- **SpecStory:** unavailable — unavailable — Claude Code agent session (library-79 subagent under main); no SpecStory capture configured for this session.
+
+## October 5th, 2026 at 1:28:46 a.m. EDT — `07ce2e5d8472` InstantRowQuarantine is public, so a caller that decodes the same rows again and again reports a damaged row once (#522)
+
+- **Implementation commit:** `07ce2e5d847214e15801090ce8a6791b4cef0192`
+- **Change:** InstantRowQuarantine is public, so a caller that decodes the same rows again and again reports a damaged row once (#522)
+- **Details:**
+  - Scribe's media retry scan decoded its rows every 5-7 s with the static decodeQuarantiningFailures and reported a partial row on every pass.
+- **Files:**
+  - `Sources/InstantSwiftData/InstantRowQuarantine.swift` — public init and decode(_:as:operation:)
+  - `Tests/InstantSwiftDataTests/InstantRowQuarantineHeldTests.swift` — once over three decodes
+- **User context (verbatim):**
+  > fix this please so it works efficiently as as well as the typescript core library
+- **SpecStory:** unavailable — unavailable — Claude Code agent session (library-79 subagent under main); no SpecStory capture configured for this session.
+
+## October 5th, 2026 at 1:28:46 a.m. EDT — `5797457fbeb8` A typed decode that meets a field the local store lacks says so, and points at decodeQuarantiningFailures, instead of "Expected string" (#522)
+
+- **Implementation commit:** `5797457fbeb8e884e127a5af48a2fc82c9fee653`
+- **Change:** A typed decode that meets a field the local store lacks says so, and points at decodeQuarantiningFailures, instead of Expected string (#522)
+- **Details:**
+  - A query that selects some fields stores only those facts, so another query decoding the whole entity can meet it without one.
+- **Files:**
+  - `Sources/InstantSwiftData/InstantTypedAPI.swift` — the missing-field message and recovery
+- **User context (verbatim):**
+  > fix this please so it works efficiently as as well as the typescript core library
+- **SpecStory:** unavailable — unavailable — Claude Code agent session (library-79 subagent under main); no SpecStory capture configured for this session.
+
+## October 5th, 2026 at 1:28:46 a.m. EDT — `3fd98ded6ebb` At its kickstart an infinite query loads as many live pages as its pre-bootstrap window held, and keeps the window's rows until they answer (#516)
+
+- **Implementation commit:** `3fd98ded6ebbc97684b8c3db97ca16456366ec97`
+- **Change:** At its kickstart an infinite query loads as many live pages as its pre-bootstrap window held, and keeps the window's rows until they answer (#516)
+- **Details:**
+  - Michael's list on Scribe 0.1 (87) went from 24 rows to 12 at the kickstart (live-stamp's trace, session 5216df8d); logged as infinite.kickstart.restore-page.
+  - Its test does not fail on v1.9.7 (dev-198 and dev-198c, even after 2b293a7e made it wait for the server's pages), so the fix ships without red evidence; #575 tracks a reproducing test, and infinite.kickstart.restore-page (info) confirms it on a device.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantInfiniteQuery.swift` — restoreKickstartPagesIfNeeded
+- **User context (verbatim):**
+  > fix this please so it works efficiently as as well as the typescript core library
+- **SpecStory:** unavailable — unavailable — Claude Code agent session (library-79 subagent under main); no SpecStory capture configured for this session.
+
+## October 5th, 2026 at 1:28:18 a.m. EDT — `fb4b6b0c2128` When the socket dies, skip its buffered query results and reconnect once the frame being applied ends (#474)
+
+- **Implementation commit:** `fb4b6b0c21283c03f37bab44ce404d267253a335`
+- **Change:** When the socket dies, its buffered query results are skipped and the runtime reconnects once the frame being applied ends (#474)
+- **Details:**
+  - The Mac (Scribe 0.1 (82), library 1.9.2) applied 125 frames of a dead connection over 18.5 minutes before reconnecting, offline throughout; Reactor.js drops a replaced transport's messages.
+  - The answers to this device's writes and every other frame are still applied in order; the drop is logged as websocket.dead-connection-results-dropped.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantRuntimeLiveSession.swift` — InstantLiveReceivedFrames drops query results when the reader fails
+  - `Tests/InstantSwiftDataCoreTests/InstantLiveConnectionSurvivalTests.swift` — the drop and the reconnect
+- **User context (verbatim):**
+  > fix this please so it works efficiently as as well as the typescript core library
+- **SpecStory:** unavailable — unavailable — Claude Code agent session (library-79 subagent under main); no SpecStory capture configured for this session.
+
 ## October 4th, 2026 at 3:17:04 p.m. EDT — `c5e1183fd031` Record the room write lane in ADR 0019 decision 9 and PROGRESS: presence and broadcasts keep call order (#461)
 
 - **Implementation commit:** `c5e1183fd03104596d375f921fd7070e2896466d`
