@@ -290,3 +290,21 @@ stats, red tests first), built in steps:
 Touching `Sources/InstantSwiftDataCore/InstantStore.swift`, `TripleIndexes.swift`, `SQLitePersistenceStore.swift`,
 `InstantRuntime.swift`, new `Tests/InstantSwiftDataCoreTests/InstantStoreEvictionTests.swift` and a runtime eviction
 suite, added 2026-10-05 04:10 EDT.
+
+## v1.10.1: eviction (main, 2026-10-05 about 04:20 EDT)
+
+Main moved eviction here from 1.10.0 after the persistence finding (a whole-entity write diffs against SQLite's rows,
+so a write to an entity only partly in memory deletes its other stored facts; a memory capture leaves a second value
+for a one-value field). Main, verbatim: "Your central rule is the right design: the store owns the evicted set, any
+prepare that touches it throws needs-hydration, and the runtime hydrates under the gate and retries. Server apply
+restarts its preparation, and evict runs under the gate. Add three things: (1) A differential test, the acceptance
+bar. Run random interleavings of evict, hydrate, local write, server apply, replay, rebase and lookup against a
+reference store that never evicts. After every step, SQLite rows and query results must match the reference exactly.
+Run thousands of seeds and keep failing seeds as fixtures. (2) Conservative eligibility in v1. Never evict an entity
+with pending mutations, outbox entries or a live observer, local-only observers included, through your explicit flag.
+(3) Trigger only from trimMemory: memory warning and background. No timers yet." and "No data loss is the bar; 'It
+must work' outranks the memory win. Finish 1.9.9 first."
+
+The commits here before this entry (f65052eb through cee67523) predate the rescope: the store's evict and hydrate, the
+runtime's red tests with a 60 s grace, and the SQLite reads. The grace and its tests go, as eviction runs only from
+trimMemory; 1.10.0's store-observer flag and evictable estimate come in when 1.10.0 merges here.

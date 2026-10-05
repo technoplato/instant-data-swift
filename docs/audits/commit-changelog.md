@@ -1,3 +1,15 @@
+## 2026-10-05 04:19:38 EDT — instant-data-swift `cee6752327a116dc58f2b0f209289390bc3cb2aa`
+SQLite reads for 1.10.0's eviction: the entities live-query results hold, the outbox's entities, stored facts, lookup targets
+
+## 2026-10-05 04:14:37 EDT — instant-data-swift `a40d8e0e9547b129140fb97383cede7d8fd100b1`
+Red tests for 1.10.0's eviction in the runtime: a query's rows leave memory after it unsubscribes and come back from SQLite
+
+## 2026-10-05 04:07:26 EDT — instant-data-swift `9ae077acaae1964e291917a85c26fbb904052667`
+The store evicts the facts of entities no observer shows or could show, and puts back facts read from SQLite (1.10.0)
+
+## 2026-10-05 04:05:22 EDT — instant-data-swift `f65052eb17e0e18e175090d05f13548a87a6702e`
+Red tests for 1.10.0's eviction in the store: dropped facts, entities observers show or may show kept, and facts put back
+
 ## 2026-10-05 03:34:29 EDT — instant-data-swift `841fb0146a6b0ad07c2cfd83c401a462430583d9`
 A row's interned snapshot keeps every stored field when the write leaves one slot unset: an id slot, or a field (#577)
 
