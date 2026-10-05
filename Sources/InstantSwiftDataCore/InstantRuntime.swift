@@ -6659,6 +6659,18 @@ public final class InstantRuntime: Sendable {
   /// a query unsubscribes and when the connection closes. Call this when the app moves to the background or is about
   /// to terminate, so the next launch starts from the newest results. A launch after a kill without it rebuilds the
   /// waiting results from their facts, so nothing the server deleted comes back.
+  /// What the store holds in memory, for the session-health beat (1.10.0).
+  public func memoryStats() async -> InstantStoreMemoryStats {
+    recordActorHop(.store)
+    return await store.memoryStats()
+  }
+
+  /// What eviction could drop from memory now, read without dropping anything (1.10.0). Not yet built: the red tests'
+  /// stub.
+  public func evictableMemoryEstimate() async throws -> InstantEvictableMemoryEstimate {
+    InstantEvictableMemoryEstimate()
+  }
+
   public func flushPendingLiveQueryResults() async throws {
     recordActorHop(.persistence)
     try await persistence.flushDeferredLiveQueryResults()

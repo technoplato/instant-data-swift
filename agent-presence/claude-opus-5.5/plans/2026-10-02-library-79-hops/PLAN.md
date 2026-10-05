@@ -272,3 +272,15 @@ against the state before it (values, times and incoming links), and left out of 
 tests first, in new `Tests/InstantSwiftDataCoreTests/InstantValueEqualWriteTests.swift`. Touching
 `Sources/InstantSwiftDataCore/TripleIndexes.swift` and `InstantStore.swift`, added 2026-10-05 03:48 EDT, on
 library-79-110 (from 1.9.9's tip fe75550e).
+
+1.10.0's store stats and evictable estimate (main, 2026-10-05 about 04:20 EDT: "Rescope it. 1.10.0 ships #572 plus the
+store stats: entity count, fact count and estimated bytes, cheap enough for the ledger beat. Add a read-only 'evictable
+now' estimate as well, so we size eviction from real phone numbers before risking data. Eviction moves to 1.10.1."):
+`InstantStore.memoryStats()` and `InstantRuntime.memoryStats()` (entities, facts, a modelled byte estimate,
+observers), and `InstantRuntime.evictableMemoryEstimate()`, which counts the entities in memory that no active live
+query's stored result, pending write or outbox entry, shown row or local observer's namespace holds, and drops
+nothing. Store observers record whether they read the store alone (local observations, and any observation with no
+live query behind it), the flag 1.10.1's eviction also needs. Red tests first, in new
+`Tests/InstantSwiftDataCoreTests/InstantMemoryStatsTests.swift`. Touching `InstantStore.swift`, `InstantRuntime.swift`,
+`InstantModels.swift`, `TripleIndexes.swift` and `SQLitePersistenceStore.swift` (the ownership and outbox reads), added
+2026-10-05 04:24 EDT. Eviction itself is on library-79-1101 for 1.10.1.

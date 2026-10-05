@@ -2274,6 +2274,61 @@ public struct InstantCachedQuery: Hashable, Codable, Sendable, Identifiable {
   }
 }
 
+/// What the store holds in memory, for the session-health beat (1.10.0).
+public struct InstantStoreMemoryStats: Hashable, Sendable {
+  /// The entities with at least one fact in memory.
+  public var entityCount: Int
+  /// The facts in memory.
+  public var factCount: Int
+  /// The facts' heap bytes, from a model of the store's maps rather than a measurement: Swift does not report a
+  /// value's heap size. Phone memgraphs calibrate it.
+  public var estimatedBytes: Int
+  /// The store observations open.
+  public var observerCount: Int
+
+  public init(entityCount: Int, factCount: Int, estimatedBytes: Int, observerCount: Int) {
+    self.entityCount = entityCount
+    self.factCount = factCount
+    self.estimatedBytes = estimatedBytes
+    self.observerCount = observerCount
+  }
+}
+
+/// What eviction could drop from memory now, read without dropping anything (1.10.0), to size 1.10.1's eviction from
+/// the phone's own numbers. An entity is held, and not counted as evictable, when an active live query's stored result
+/// holds it, a pending write or an outbox entry does, an observer shows it, or an observer that reads the store alone
+/// reads its namespace; each held entity is counted under the first of those that holds it.
+public struct InstantEvictableMemoryEstimate: Hashable, Sendable {
+  /// The entities in memory nothing holds.
+  public var entityCount: Int
+  /// Their facts.
+  public var factCount: Int
+  /// Their facts' estimated heap bytes, by ``InstantStoreMemoryStats/estimatedBytes``'s model.
+  public var estimatedBytes: Int
+  public var heldByPendingWritesCount: Int
+  public var heldByActiveQueriesCount: Int
+  public var shownByObserversCount: Int
+  public var inLocalObserverNamespacesCount: Int
+
+  public init(
+    entityCount: Int = 0,
+    factCount: Int = 0,
+    estimatedBytes: Int = 0,
+    heldByPendingWritesCount: Int = 0,
+    heldByActiveQueriesCount: Int = 0,
+    shownByObserversCount: Int = 0,
+    inLocalObserverNamespacesCount: Int = 0
+  ) {
+    self.entityCount = entityCount
+    self.factCount = factCount
+    self.estimatedBytes = estimatedBytes
+    self.heldByPendingWritesCount = heldByPendingWritesCount
+    self.heldByActiveQueriesCount = heldByActiveQueriesCount
+    self.shownByObserversCount = shownByObserversCount
+    self.inLocalObserverNamespacesCount = inLocalObserverNamespacesCount
+  }
+}
+
 public struct InstantStoreSnapshot: Hashable, Codable, Sendable {
   public var attributes: [InstantAttribute]
   public var triples: [InstantTriple]

@@ -3055,6 +3055,11 @@ public actor InstantStore {
     indexes.tripleCount
   }
 
+  /// What the store holds in memory, for the session-health beat (1.10.0). Not yet built: the red tests' stub.
+  public func memoryStats() -> InstantStoreMemoryStats {
+    InstantStoreMemoryStats(entityCount: 0, factCount: 0, estimatedBytes: 0, observerCount: 0)
+  }
+
   /// How many many-cardinality slots the store's materializations sorted (#570).
   func manyCardinalitySortCountForTesting() -> Int {
     indexes.manyCardinalitySortCount
