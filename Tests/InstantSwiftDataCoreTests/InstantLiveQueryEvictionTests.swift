@@ -8,8 +8,8 @@ import Testing
 ///
 /// Reactor.js keeps one store per query subscription: unsubscribing drops it from memory, the stored copy stays in
 /// IndexedDB, and it loads again when the query subscribes again. Swift's one hot store kept every entity a session's
-/// queries loaded until relaunch: phone-perf's memory audit of Michael's iPhone (2026-10-04) found 32.7k triples after a
-/// long recording's queries ended, where the queries still on screen held about 13.4k.
+/// queries loaded until relaunch: a memory audit found 32.7k triples after a long recording's queries ended, where the
+/// queries still on screen held about 13.4k.
 @Suite(.serialized)
 struct InstantLiveQueryEvictionTests {
   typealias Writes = InstantLiveQueryResultWriteTests

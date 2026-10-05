@@ -59,7 +59,7 @@ struct InstantStoreEvictionTests {
   ]
   static let userOne = [
     triple("user-1", Rows.userPrimaryKey, .string("user-1"), tx: 1),
-    triple("user-1", Rows.userName, .string("Michael"), tx: 1),
+    triple("user-1", Rows.userName, .string("Ada"), tx: 1),
   ]
 
   static func store() -> InstantStore {
