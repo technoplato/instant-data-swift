@@ -2369,6 +2369,23 @@ struct TripleIndexes: Codable, Sendable {
     valueEqualWriteEntityIDs = []
   }
 
+  /// Drops `entityIDs`' own facts from memory, as retracting each of them would, and leaves other entities' links to
+  /// them in place, since those are the other entities' facts (1.10.0's eviction). Not a write: nothing changes for
+  /// rollback or persistence, as SQLite keeps the facts. Returns how many facts it dropped.
+  mutating func evictEntities(_ entityIDs: Set<String>, attributes: AttributeStore) -> Int {
+    guard !entityIDs.isEmpty else { return 0 }
+    discardInternedQueryResultsBeforeWrite()
+    var removed = 0
+    for entityID in entityIDs {
+      for triple in triples(entityID: entityID) {
+        removeNormalized(triple, attribute: attributes[triple.attributeID])
+        removed += 1
+      }
+    }
+    finishInternCachesAfterWrite(invalidating: entityIDs, attributes: attributes)
+    return removed
+  }
+
   /// Whether `entityID` holds the same values with the same times here as in `other`, and the same incoming links:
   /// what a write that set its fields to the values they held leaves unchanged for every observer (#572). Transaction
   /// IDs are not compared, as no query result reads them; `serverCreatedAt` reads the times.

@@ -3065,15 +3065,89 @@ public actor InstantStore {
     indexes.tripleCount
   }
 
-  /// Drops from memory the facts of the `candidates` that no observer shows or could show (1.10.0). Not yet built:
-  /// the red tests' stub.
+  /// Drops from memory the facts of the `candidates` that no observer shows or could show (1.10.0). SQLite keeps
+  /// them; the runtime loads them again before a query or a write needs them, as Reactor.js loads a query
+  /// subscription's store from IndexedDB when it subscribes again.
+  ///
+  /// An entity an observer shows stays, and so does one in a namespace that a local observer reads (one with no live
+  /// query behind it), since such an observer reads the store alone and a row it does not show yet may enter its page.
+  /// Other entities' links to an evicted entity stay: they are the other entities' facts. Nothing is published, as no
+  /// observer shows an evicted entity.
   func evict(_ candidates: Set<String>) -> InstantStoreEviction {
-    InstantStoreEviction()
+    publishPendingChanges()
+    var eviction = InstantStoreEviction()
+    guard !candidates.isEmpty else { return eviction }
+    var shown: Set<String> = []
+    var localNamespaces: Set<String> = []
+    var everyNamespaceIsLocal = false
+    for observer in observers.values {
+      for snapshot in observer.lastValues {
+        snapshot.collectEntityIDs(into: &shown)
+      }
+      guard observer.liveQueryKey == nil else { continue }
+      if let namespaces = observer.plan.dependentNamespaces {
+        localNamespaces.formUnion(namespaces)
+      } else if observer.plan.hasOnlyNamespaceLocalDependencies {
+        localNamespaces.insert(observer.plan.namespace)
+      } else {
+        everyNamespaceIsLocal = true
+      }
+    }
+    var evicted: Set<String> = []
+    for entityID in candidates where indexes.copiedAttributeSlots(entityID: entityID) != nil {
+      if shown.contains(entityID) {
+        eviction.keptShownCount += 1
+        continue
+      }
+      if everyNamespaceIsLocal
+        || (!localNamespaces.isEmpty
+          && !indexes.namespaces(entityID: entityID, attributes: attributes).isDisjoint(with: localNamespaces))
+      {
+        eviction.keptForLocalObserversCount += 1
+        continue
+      }
+      evicted.insert(entityID)
+    }
+    eviction.removedTripleCount = indexes.evictEntities(evicted, attributes: attributes)
+    eviction.evictedEntityIDs = evicted
+    return eviction
   }
 
-  /// Puts back facts read from SQLite for entities ``evict(_:)`` dropped (1.10.0). Not yet built: the red tests' stub.
+  /// Puts back facts read from SQLite for entities ``evict(_:)`` dropped (1.10.0), as the bootstrap loads them, and
+  /// refreshes the observers that can see them. Last write wins by stamp, so a newer fact a write made after the
+  /// eviction stays. Not a write: nothing to persist or roll back. Returns the entities it touched.
   func hydrate(_ triples: [InstantTriple]) -> Set<String> {
-    []
+    publishPendingChanges()
+    guard !triples.isEmpty else { return [] }
+    var next = indexes
+    next.discardInternedQueryResultsBeforeWrite()
+    var changed: Set<String> = []
+    for triple in triples {
+      next.applyInsert(triple, attributes: attributes, insertReplayPolicy: .replaceAndInvalidate, into: &changed)
+    }
+    next.finishInternCachesAfterWrite(invalidating: changed, attributes: attributes)
+    next.forgetValueEqualWrites()
+    let previousIndexes = indexes
+    indexes = next
+    sequence += 1
+    guard !observers.isEmpty else { return changed }
+    let changedNamespaces = Self.changedNamespaces(
+      changedEntityIDs: changed,
+      indexes: indexes,
+      attributes: attributes,
+      previousIndexes: previousIndexes,
+      previousAttributes: attributes
+    )
+    let refreshed = refreshObservers(
+      changedEntityIDs: changed,
+      changedNamespaces: changedNamespaces,
+      previousIndexes: previousIndexes,
+      pageInfoByKey: [:],
+      storeChanged: true,
+      publishing: true
+    )
+    lastPublishMetrics = refreshed.metrics
+    return changed
   }
 
   /// How many many-cardinality slots the store's materializations sorted (#570).
