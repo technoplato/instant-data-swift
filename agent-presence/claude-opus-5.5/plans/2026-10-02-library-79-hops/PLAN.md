@@ -247,3 +247,9 @@ comment), `TripleIndexes.swift`, `InstantStore.swift` (a test accessor),
 `docs/adr/0019-rooms-and-presence-parity.md` (decision 9's open item), added 2026-10-04 19:01 EDT.
 Also `Sources/InstantDomainAEVBench/main.swift` and new `ManyRefsBench.swift` (`--many-refs`, #570's measurement at -O), added
 2026-10-04 19:40 EDT.
+
+A three-minute time limit on the ten suites (main, 2026-10-05 about 02:10 EDT: "Put a suite-level .timeLimit(.minutes(1))
+on the ten suites ... A test stuck on a continuation then fails by name instead of idling."): three minutes, because
+`sameProcessOfflineTenThousandEnqueuesKeepResidentBarrierCacheBounded` took 114.6 s in one loaded run. Touching the ten
+suites' files (nine in `Tests/InstantSwiftDataCoreTests`, `Tests/InstantSwiftDataTests/MutationDeliveryTests.swift`),
+added 2026-10-05 02:15 EDT.
