@@ -10,6 +10,18 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## October 5th, 2026 at 7:39:55 a.m. EDT — `ca74c5863964` Record decisions in code comments (AGENTS.md)
+
+- **Implementation commit:** `ca74c5863964285121c9bf2cb8b11e8481d54c21`
+- **Change:** Code comments record decisions (AGENTS.md rule)
+- **Details:**
+  - New AGENTS.md section: why-comments cite issue numbers; file headers carry a dated history; neutral wording with no personal details, as the library publishes under PissPour Software.
+- **Files:**
+  - `AGENTS.md` — new 'Code comments record decisions' section (CLAUDE.md is a symlink to it)
+- **User context (verbatim):**
+  > code comments ... a living, breathing document of our decisions
+- **SpecStory:** unavailable — Claude Code main coordinator session; no SpecStory capture
+
 ## October 5th, 2026 at 1:30:28 a.m. EDT — `6c28904ab7eb` Document the v1.9.8 release: a live result's JSON written at most once per 30 s, a dead connection's results skipped, the kickstart's pages kept, the missing field named, and rooms with one ordered lane per room (#566 #474 #516 #522 #461)
 
 - **Implementation commit:** `6c28904ab7ebc6331ac0b45fe54c5625472e423e`
