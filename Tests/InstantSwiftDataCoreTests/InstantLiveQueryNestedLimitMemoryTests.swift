@@ -308,9 +308,12 @@ struct InstantLiveQueryNestedLimitMemoryTests {
     )
     let replayPersistedValue = try await persistence.liveQueryResult(key: queryKey)
     let replayPersisted = try #require(replayPersistedValue)
-    // From #566 a result whose facts and page info match the stored JSON writes only its count and time: the stored
-    // triples keep the stamps they were written with, and the result's time is the replay's.
-    expectNoDifference(replayPersisted, result(initialTriples, milliseconds: 2))
+    // From #566 a result whose facts and page info match the stored JSON writes only its row's count and time: the
+    // stored JSON keeps the triples and the time it was written with, and the row's time, which #441's refusal
+    // resolution reads, is the replay's.
+    expectNoDifference(replayPersisted, result(initialTriples, milliseconds: 1))
+    let replayRowTime = try liveQueryResultRowTime(at: cacheURL, queryKey: queryKey)
+    expectNoDifference(replayRowTime, 2)
 
     try resetLiveQueryOwnershipMutationCounter(at: cacheURL)
     state = try await persistence.loadCompactState()
@@ -1437,6 +1440,34 @@ private func liveQueryOwnership(
           valueJSON: String(cString: valueJSON)
         )
       )
+    }
+  }
+}
+
+/// The stored row's `updated_at_ms` for `queryKey`: the time a result last showed its facts (#566).
+private func liveQueryResultRowTime(at url: URL, queryKey: String) throws -> Int64? {
+  try withNestedLimitSQLite(at: url) { connection in
+    var statement: OpaquePointer?
+    guard sqlite3_prepare_v2(
+      connection,
+      "SELECT updated_at_ms FROM instant_live_query_results WHERE query_key = ?",
+      -1,
+      &statement,
+      nil
+    ) == SQLITE_OK
+    else {
+      defer { sqlite3_finalize(statement) }
+      throw nestedLimitSQLiteError(operation: "prepare live-query result time read", connection: connection)
+    }
+    defer { sqlite3_finalize(statement) }
+    sqlite3_bind_text(statement, 1, queryKey, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+    switch sqlite3_step(statement) {
+    case SQLITE_ROW:
+      return sqlite3_column_int64(statement, 0)
+    case SQLITE_DONE:
+      return nil
+    default:
+      throw nestedLimitSQLiteError(operation: "read live-query result time", connection: connection)
     }
   }
 }
