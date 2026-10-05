@@ -465,6 +465,45 @@ struct InstantStorePageSkipTests {
     expectNoDifference(offsetEmission?.values.map(\.id), [])
   }
 
+  /// A page that keeps both ends of the server's cut (`first` with `last`) shows a run from its middle, so a row the
+  /// page does not show still moves the run when it leaves the cut: such a page is not skipped by range.
+  @Test
+  func aRowThatLeavesTheCutOfAPageThatKeepsBothEndsRefreshesIt() async throws {
+    let store = Timeline.store()
+    let pages = ObservedPages()
+    // The server's cut is rows 32-63; the first five are 32-36, and the last three of those are 34-36.
+    let plan = InstantQueryPlan(
+      id: "timeline.both-ends",
+      namespace: Timeline.namespace,
+      filters: [Timeline.filter],
+      order: InstantQueryOrder(Timeline.segmentIndex.name),
+      first: 5,
+      after: Timeline.cursor(31),
+      last: 3,
+      before: Timeline.cursor(63, inclusive: true)
+    )
+    let remotePageInfo = InstantQueryRemotePageInfo.ready(
+      InstantQueryPageInfo(
+        startCursor: Timeline.cursor(32),
+        endCursor: Timeline.cursor(63),
+        hasPreviousPage: true,
+        hasNextPage: true
+      )
+    )
+    try await pages.observe(plan, remotePageInfo: remotePageInfo, in: store)
+    let before = await pages.emission(plan.id)
+    expectNoDifference(before?.values.map(\.id), [34, 35, 36].map(Timeline.id))
+
+    // Row 33 is not on the page; deleting it brings row 37 into the first five.
+    let deleted = try await Self.commit([.deleteEntity(Timeline.id(33))], id: "delete-33", to: store, pages: pages)
+
+    expectNoDifference(deleted.emissions.map(\.queryID), [plan.id])
+    let expected = await store.materializePage(plan, remotePageInfo: remotePageInfo)
+    expectNoDifference(expected.values.map(\.id), [35, 36, 37].map(Timeline.id))
+    let after = await pages.emission(plan.id)
+    expectNoDifference(after?.values.map(\.id), expected.values.map(\.id))
+  }
+
   // MARK: - Differential property test
 
   /// Every page equals a full rematerialization after every random write, so a page the store skipped still shows
