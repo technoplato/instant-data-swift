@@ -13,6 +13,9 @@ extension InstantEntityModel {
   /// reported with `reportIssue` and recorded as a `query.row-decode-quarantined` diagnostic.
   /// `FetchOne` of a single selected field still fails with the decode error.
   ///
+  /// Each call reports its own damaged rows. A caller that decodes the same rows again and again, such as a poller,
+  /// holds an ``InstantRowQuarantine`` instead, so a row that stays damaged is reported once (#522).
+  ///
   /// ``decode(_:)`` still throws on the first failure, for callers that need every row or none.
   /// SQLiteData fails the whole fetch on a bad row (`QueryCursor._element`); SQLite's column
   /// constraints keep partial rows from existing there.
@@ -37,9 +40,15 @@ extension InstantEntityModel {
 ///
 /// One instance lives as long as the read it serves (a query, a live subscription, a fetch
 /// wrapper), so a live query that re-emits the same damaged row reports it once, not on every
-/// emission.
+/// emission. Hold one for a read of your own that repeats: Scribe's media retry scan decoded the
+/// same partial row every 5-7 s and reported it each time (#522).
+///
+/// ```swift
+/// let quarantine = InstantRowQuarantine()  // one per poller
+/// let attachments = quarantine.decode(rows, as: Attachment.self, operation: "media retry scan")
+/// ```
 // SAFETY: `lock` protects `reportedKeys`, the only mutable state.
-final class InstantRowQuarantine: @unchecked Sendable {
+public final class InstantRowQuarantine: @unchecked Sendable {
   private struct Failure {
     var entityID: String
     var path: String?
@@ -60,6 +69,19 @@ final class InstantRowQuarantine: @unchecked Sendable {
   private static let maximumReportedKeys = 4_096
   private let lock = NSLock()
   private var reportedKeys: Set<String> = []
+
+  public init() {}
+
+  /// Decodes rows one at a time and leaves out any that fail, as
+  /// ``InstantEntityModel/decodeQuarantiningFailures(_:operation:)`` does, but reports a damaged row only the first
+  /// time this quarantine meets it (by namespace, entity id, and the failing field).
+  public func decode<Entity: InstantEntityModel>(
+    _ snapshots: [InstantEntitySnapshot],
+    as _: Entity.Type = Entity.self,
+    operation: String = "decode rows"
+  ) -> [Entity] {
+    decode(snapshots, namespace: Entity.instantNamespace, operation: operation, Entity.init(snapshot:))
+  }
 
   func decode<Row>(
     _ snapshots: [InstantEntitySnapshot],

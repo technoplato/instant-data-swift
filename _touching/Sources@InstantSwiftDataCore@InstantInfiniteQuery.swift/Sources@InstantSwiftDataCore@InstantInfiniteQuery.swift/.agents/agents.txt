@@ -12,3 +12,4 @@ claude-opus-5.5 2026-09-26T23:18:54-0400 mower plan=2026-09-26-perf-concurrency-
 claude-opus-5.5-infinite-leading-rows 2026-09-30T16:41:49-04:00 mower plan=2026-09-30-infinite-leading-rows #300
 claude-opus-5.5-library-78 2026-10-01T12:48:54-04:00 mower plan=2026-10-01-library-78 #376 #360 #303 #317 #329
 claude-opus-5.5-library-78 2026-10-01T19:22:44-04:00 mower plan=2026-10-01-library-78 #388 (pushSnapshot: each entity once; the kickstart keeps shown rows)
+claude-opus-5.5-library-79 2026-10-04T08:52:29-04:00 mower plan=2026-10-02-library-79-hops #516 (v1.9.8: an infinite query keeps the pages it loaded before the server answered)

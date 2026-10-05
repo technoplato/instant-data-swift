@@ -54,6 +54,50 @@ struct InstantInfiniteQueryLeadingRowsTests {
     await harness.finish()
   }
 
+  /// #516: Michael's list on Scribe 0.1 (87) loaded its second page from the local store before the server answered;
+  /// at the kickstart the window kept one page of live rows, and the second page's rows went (24 rows to 12, live-stamp's
+  /// trace, session 5216df8d). A window keeps every page it loaded before the kickstart.
+  @Test
+  func aWindowLoadedPastOnePageBeforeTheServerAnswersKeepsItsPagesAtTheKickstart() async throws {
+    let directory = try InfiniteWindowHarness.temporaryDirectory()
+    // An earlier session leaves the first three pages in the local store.
+    do {
+      let earlier = try await InfiniteWindowHarness(
+        values: Array(1...10),
+        order: .ascending,
+        pageSize: 2,
+        maximumPageCount: 6,
+        directory: directory
+      )
+      _ = try await earlier.settledWindow("open the list in an earlier session")
+      _ = try await earlier.loadNextPage()
+      _ = try await earlier.loadNextPage()
+      await earlier.finish()
+    }
+
+    // The next launch opens offline, so the list pages from the local store until the server answers.
+    let harness = try await InfiniteWindowHarness(
+      values: Array(1...10),
+      order: .ascending,
+      pageSize: 2,
+      maximumPageCount: 6,
+      directory: directory,
+      connectsAtOnce: false
+    )
+    _ = try await harness.localWindow(withRowCount: 2, "open the list from the local store")
+    await harness.requestNextPage()
+    let local = try await harness.localWindow(withRowCount: 4, "load the second page from the local store")
+    expectNoDifference(local.values, [1, 2, 3, 4])
+
+    try await harness.connect()
+    let window = try await harness.liveWindow("kickstart when the server answers")
+    expectNoDifference(window, InfiniteWindow(values: [1, 2, 3, 4], canLoadPreviousPage: false, canLoadNextPage: true))
+    // Later pages load as before.
+    let next = try await harness.loadNextPage()
+    expectNoDifference(next, InfiniteWindow(values: [1, 2, 3, 4, 5, 6], canLoadPreviousPage: false, canLoadNextPage: true))
+    await harness.finish()
+  }
+
   /// Scribe's list after the window slid down: a recording updated elsewhere moves above the list's first row. It must
   /// not be shown above the gap the window left, and it must not cost the window its bottom page.
   @Test
@@ -783,16 +827,19 @@ final class InfiniteWindowHarness: Sendable {
   private let recorder: InfiniteSnapshotRecorder
   private let recording: Task<Void, Never>
 
+  /// - Parameters:
+  ///   - directory: the store's directory; a new one when nil. Pass an earlier harness's to open the store it left.
+  ///   - connectsAtOnce: false opens the runtime offline, so the list pages from the local store until `connect()`.
   init(
     values: [Int],
     order: InfiniteListOrder,
     pageSize: Int,
-    maximumPageCount: Int
+    maximumPageCount: Int,
+    directory: URL? = nil,
+    connectsAtOnce: Bool = true
   ) async throws {
     let server = InfiniteListModelServer(values: values, order: order)
-    let directory = FileManager.default.temporaryDirectory
-      .appendingPathComponent("InstantInfiniteQueryLeadingRowsTests-\(UUID().uuidString)")
-    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    let directory = try directory ?? Self.temporaryDirectory()
     var configuration = InstantRuntimeConfiguration(
       appID: "infinite-leading-rows",
       persistenceURL: directory.appendingPathComponent("state.sqlite"),
@@ -800,7 +847,7 @@ final class InfiniteWindowHarness: Sendable {
       makeID: { UUID().uuidString.lowercased() },
       liveTransport: server.transport
     )
-    configuration.autoConnectLiveTransport = true
+    configuration.autoConnectLiveTransport = connectsAtOnce
     let runtime = try await InstantRuntime.bootstrap(configuration: configuration)
     let subscription = await runtime.subscribeInfiniteQuery(
       InstantQueryPlan(
@@ -823,6 +870,67 @@ final class InfiniteWindowHarness: Sendable {
         await recorder.record(snapshot)
       }
     }
+  }
+
+  static func temporaryDirectory() throws -> URL {
+    let directory = FileManager.default.temporaryDirectory
+      .appendingPathComponent("InstantInfiniteQueryLeadingRowsTests-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    return directory
+  }
+
+  /// Opens the live connection of a harness that opened offline.
+  func connect() async throws {
+    await server.note("-- connect")
+    _ = try await runtime.connect()
+  }
+
+  /// Asks for the next page without waiting for the query to settle, which an offline window never does: its server
+  /// has no connection to drain.
+  func requestNextPage() async {
+    await server.note("-- loadNextPage (offline)")
+    subscription.loadNextPage()
+  }
+
+  /// The window once it shows the server's live pages, settled. A window loaded from the local store before the
+  /// kickstart has no cursor from the server, and the model server is idle until the kickstart's add-query arrives, so a
+  /// window that is quiet just after `connect()` can still be the local one: 1.9.8's red run on v1.9.7 read it there and
+  /// passed (#516).
+  func liveWindow(
+    _ operation: String,
+    sourceLocation: SourceLocation = #_sourceLocation
+  ) async throws -> InfiniteWindow {
+    let deadline = ContinuousClock.now + .seconds(10)
+    while ContinuousClock.now < deadline {
+      if let latest = await recorder.latest, latest.pageInfo?.startCursor?.liveTuple != nil {
+        return try await settledWindow(operation, sourceLocation: sourceLocation)
+      }
+      try await Task.sleep(for: .milliseconds(10))
+    }
+    let latest = await recorder.latest.map(infiniteWindow)
+    Issue.record(
+      "Waiting to \(operation): the window never showed the server's pages (latest \(String(describing: latest))).",
+      sourceLocation: sourceLocation
+    )
+    throw InfiniteWindowDidNotSettle(operation: operation)
+  }
+
+  /// The latest window once it shows `rowCount` rows, within 5 s: an offline window's pages come from the local store.
+  func localWindow(
+    withRowCount rowCount: Int,
+    _ operation: String,
+    sourceLocation: SourceLocation = #_sourceLocation
+  ) async throws -> InfiniteWindow {
+    let deadline = ContinuousClock.now + .seconds(5)
+    while ContinuousClock.now < deadline {
+      if let latest = await recorder.latest, latest.values.count == rowCount {
+        return infiniteWindow(latest)
+      }
+      try await Task.sleep(for: .milliseconds(10))
+    }
+    let latest = await recorder.latest.map(infiniteWindow)
+    Issue.record("Waiting to \(operation): the window never showed \(rowCount) rows (latest \(String(describing: latest))).", sourceLocation: sourceLocation)
+    throw InfiniteWindowDidNotSettle(operation: operation)
   }
 
   func insertAtTop() async throws {
