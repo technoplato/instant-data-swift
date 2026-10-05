@@ -1,5 +1,6 @@
 import CustomDump
 import Foundation
+import SQLite3
 @testable import InstantSwiftDataCore
 import Testing
 
@@ -354,9 +355,42 @@ struct InstantLiveQueryResultWriteTests {
       (0..<3).map(Self.todoID),
       "the todo the server deleted is retracted, not kept from the older stored JSON"
     )
+    // The reopened store shows only the entities its stored results name, so the deleted todo can be missing from it
+    // and still left in SQLite, where a later read of the entity would find it. The server's answer is compared with
+    // the result the killed process last saw, rebuilt at bootstrap, so the deleted todo's facts leave SQLite too.
+    let storedFourth = try Self.storedFactCount(url, entityID: Self.todoID(3))
+    expectNoDifference(storedFourth, 0, "the deleted todo's facts are retracted from SQLite")
     await observation.cancel()
     _ = try await reopened.closeConnection()
     _ = fixture
+  }
+
+  /// How many facts of `entityID` the SQLite store at `url` holds.
+  static func storedFactCount(_ url: URL, entityID: String) throws -> Int {
+    var database: OpaquePointer?
+    guard sqlite3_open_v2(url.path, &database, SQLITE_OPEN_READONLY, nil) == SQLITE_OK else {
+      sqlite3_close(database)
+      throw StoredFactCountFailure(message: "could not open \(url.path)")
+    }
+    defer { sqlite3_close(database) }
+    var statement: OpaquePointer?
+    guard
+      sqlite3_prepare_v2(database, "SELECT COUNT(*) FROM instant_triples WHERE entity_id = ?", -1, &statement, nil)
+        == SQLITE_OK
+    else {
+      throw StoredFactCountFailure(message: String(cString: sqlite3_errmsg(database)))
+    }
+    defer { sqlite3_finalize(statement) }
+    sqlite3_bind_text(statement, 1, entityID, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+    guard sqlite3_step(statement) == SQLITE_ROW else {
+      throw StoredFactCountFailure(message: String(cString: sqlite3_errmsg(database)))
+    }
+    return Int(sqlite3_column_int64(statement, 0))
+  }
+
+  struct StoredFactCountFailure: Error, CustomStringConvertible {
+    var message: String
+    var description: String { message }
   }
 
   // MARK: - Measurement
