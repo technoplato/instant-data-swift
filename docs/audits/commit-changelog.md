@@ -1168,6 +1168,12 @@ Record the continuation notice's watchOS guard in the change log (#458)
 ## 2026-10-04 03:18:15 EDT — scribe `2199daffefeeaed7428a42072cd302a22bfa0887`
 The continued recording's notice is built only where the recording screen is, off watchOS and tvOS, so the Watch app builds (#458)
 
+## 2026-10-04 03:08:37 EDT — instant-data-swift `c8648e126cbb0127c7339652450ce6f38440f402`
+prepareFileUpload returns the storage upload for a file without sending it, and completeFileUpload records one that ran outside the library, with no copy (#491)
+
+## 2026-10-04 03:07:37 EDT — instant-data-swift `08f3bc16eb5c856217d72e0d5dab447e284710a6`
+A stored file the library has no copy of reads from storage under its record's path, instead of the working directory (#491)
+
 ## 2026-10-04 02:54:58 EDT — instant-data-swift `7b67b843b484760ec5940087d4a4e16129b33273`
 Test-only: renameChunk is fileprivate, since its fixture parameter is a private type (#473)
 
