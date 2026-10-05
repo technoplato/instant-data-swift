@@ -260,3 +260,11 @@ completeness check counted one `id` slot for every row. Main, 2026-10-05: "Agree
 such a snapshot and completes it from the row's slots when the write finishes. Red tests first, in new
 `Tests/InstantSwiftDataCoreTests/InstantInternedSnapshotCompletenessTests.swift`. Touching
 `Sources/InstantSwiftDataCore/TripleIndexes.swift` (already claimed for #540 and #570), added 2026-10-05 03:40 EDT.
+
+#579, found by #540's differential test in dev-199b (seed 22, step 29, all three green runs, after #577's fix let seeds
+0-21 pass): a page with no order sorts by the server's creation order, which no snapshot holds, and the splice's
+order check returned false for a plan with no order, so a row deleted and written again in one transaction kept its
+old place. #540 splices pages a write's other rows cannot enter, which exposed it. The fix compares the row's creation
+time before the publication and after it. Red test first, in `InstantStorePageSkipTests.swift`. Touching
+`Sources/InstantSwiftDataCore/InstantStore.swift` (the splice) and `TripleIndexes.swift` (a creation-time accessor),
+added 2026-10-05 06:50 EDT.

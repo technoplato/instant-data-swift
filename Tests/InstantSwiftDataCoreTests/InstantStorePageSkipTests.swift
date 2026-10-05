@@ -504,6 +504,52 @@ struct InstantStorePageSkipTests {
     expectNoDifference(after?.values.map(\.id), expected.values.map(\.id))
   }
 
+  /// A page with no order shows its rows in the server's creation order, which no snapshot holds, so a row deleted and
+  /// written again in one transaction moves to its new creation time: the page is not spliced with the row at its old
+  /// place (#579). The write also adds a row the page cannot take, as #540's differential test found it (seed 22).
+  @Test
+  func aRowDeletedAndWrittenAgainMovesToItsNewPlaceInAPageWithNoOrder() async throws {
+    func triple(_ id: String, _ attribute: InstantAttribute, _ value: InstantValue, at time: Int64) -> InstantTriple {
+      InstantTriple(entityID: id, attributeID: attribute.id, value: value, txID: "tx-\(time)", txTime: InstantTimestamp(milliseconds: time))
+    }
+    let store = InstantStore(
+      snapshot: InstantStoreSnapshot(
+        attributes: Items.fields,
+        triples: [
+          triple("row-1", Items.rank, .number(1), at: 1_001),
+          triple("row-2", Items.rank, .number(2), at: 1_002),
+          triple("row-3", Items.rank, .number(3), at: 1_003),
+        ]
+      )
+    )
+    let pages = ObservedPages()
+    let plan = InstantQueryPlan(
+      id: "no-order",
+      namespace: Items.namespace,
+      filters: [.isNull(field: Items.label.name)],
+      limit: 6
+    )
+    try await pages.observe(plan, remotePageInfo: nil, in: store)
+    let before = await pages.emission(plan.id)
+    expectNoDifference(before?.values.map(\.id), ["row-1", "row-2", "row-3"])
+
+    _ = try await Self.commit(
+      [
+        .deleteEntity("row-1"),
+        .insert(triple("row-1", Items.rank, .number(1), at: 1_010)),
+        .insert(triple("row-4", Items.label, .string("a"), at: 1_010)),
+      ],
+      id: "row-1-again",
+      to: store,
+      pages: pages
+    )
+
+    let expected = await store.materializePage(plan)
+    expectNoDifference(expected.values.map(\.id), ["row-2", "row-3", "row-1"])
+    let after = await pages.emission(plan.id)
+    expectNoDifference(after?.values.map(\.id), expected.values.map(\.id))
+  }
+
   // MARK: - Differential property test
 
   /// Every page equals a full rematerialization after every random write, so a page the store skipped still shows
