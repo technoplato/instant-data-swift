@@ -1,3 +1,12 @@
+## 2026-10-05 06:50:10 EDT — instant-data-swift `b581aaff1a9e90596db13cccbfb5e8f092487882`
+storeObservationsHonorRemotePageInfoWindows expects #540's behavior: a row created before both windows publishes neither page (#540)
+
+## 2026-10-05 06:46:38 EDT — instant-data-swift `6fb674adec68b1f2495392d704ea03aab25a71b9`
+A page with no order is spliced only when its rows keep their creation times: a row deleted and written again moves (#579)
+
+## 2026-10-05 06:44:57 EDT — instant-data-swift `805974e141ea4f0d844676128d390da8e04fd1a2`
+Red: a row deleted and written again in one transaction keeps its old place in a page with no order (#579)
+
 ## 2026-10-05 04:49:22 EDT — instant-data-swift `fb022ceee757e15970e10f39547de06852bd2d23`
 A focused test for #540's pages that keep both ends of the server's cut: a row they do not show that leaves the cut refreshes them
 

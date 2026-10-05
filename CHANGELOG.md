@@ -10,6 +10,32 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## October 5th, 2026 at 6:52:45 a.m. EDT — `b581aaff1a9e` storeObservationsHonorRemotePageInfoWindows expects #540's behavior: a row created before both windows publishes neither page (#540)
+
+- **Implementation commit:** `b581aaff1a9e90596db13cccbfb5e8f092487882`
+- **Change:** storeObservationsHonorRemotePageInfoWindows expects #540's behavior: a row created before both windows publishes neither page (#540)
+- **Details:**
+  - It waited forever for emissions #540 no longer sends: dev-199's 23-minute ten-suites idle, which #569's 3-minute limit named in dev-199b.
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantStoreTests.swift` — storeObservationsHonorRemotePageInfoWindows
+- **User context (verbatim):**
+  > fix this please so it works efficiently as as well as the typescript core library
+- **SpecStory:** unavailable — unavailable — Claude Code agent session (library-79 subagent under main); no SpecStory capture configured for this session.
+
+## October 5th, 2026 at 6:52:45 a.m. EDT — `6fb674adec68` A page with no order is spliced only when its rows keep their creation times: a row deleted and written again moves (#579)
+
+- **Implementation commit:** `6fb674adec68b1f2495392d704ea03aab25a71b9`
+- **Change:** A page with no order is spliced only when its rows keep their creation times: a row deleted and written again moves (#579)
+- **Details:**
+  - #540's differential test failed at seed 22, step 29 in dev-199b: the splice's order check returned false for a plan with no order, so a row deleted and written again in one transaction kept its old place. Red test 805974e1.
+  - Main, 2026-10-05: "Put #579 in 1.9.9's release notes too: a row deleted and rewritten in one transaction kept its old place in unordered pages."
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantStore.swift` — orderKeyChanged compares creation times for a plan with no order
+  - `Sources/InstantSwiftDataCore/TripleIndexes.swift` — serverCreatedAt(of:namespace:attributes:)
+- **User context (verbatim):**
+  > fix this please so it works efficiently as as well as the typescript core library
+- **SpecStory:** unavailable — unavailable — Claude Code agent session (library-79 subagent under main); no SpecStory capture configured for this session.
+
 ## October 5th, 2026 at 4:49:36 a.m. EDT — `fb022ceee757` A focused test for #540's pages that keep both ends of the server's cut: a row they do not show that leaves the cut refreshes them
 
 - **Implementation commit:** `fb022ceee757e15970e10f39547de06852bd2d23`
