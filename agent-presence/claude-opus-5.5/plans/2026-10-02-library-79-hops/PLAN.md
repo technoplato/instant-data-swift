@@ -260,3 +260,15 @@ completeness check counted one `id` slot for every row. Main, 2026-10-05: "Agree
 such a snapshot and completes it from the row's slots when the write finishes. Red tests first, in new
 `Tests/InstantSwiftDataCoreTests/InstantInternedSnapshotCompletenessTests.swift`. Touching
 `Sources/InstantSwiftDataCore/TripleIndexes.swift` (already claimed for #540 and #570), added 2026-10-05 03:40 EDT.
+
+## v1.10.0: #572 first, then eviction (main, 2026-10-04 about 18:10 and 21:15 EDT)
+
+Main, on #572: it "goes into 1.9.9 if it's a small, contained change... Otherwise it's first in 1.10.0, with
+eviction." It is not small: the changed set is also the rollback, persistence and replay set. A local write that sets
+a field to the value it holds marks the row changed, so every page that reads it is spliced or materialized again. The
+fix keeps every touched row in the changed set (rollback, the outbox overlay, persistence) and publishes only rows whose
+facts an observer can see changed: a row the write touched only with values it already held is checked at commit
+against the state before it (values, times and incoming links), and left out of the publication when they match. Red
+tests first, in new `Tests/InstantSwiftDataCoreTests/InstantValueEqualWriteTests.swift`. Touching
+`Sources/InstantSwiftDataCore/TripleIndexes.swift` and `InstantStore.swift`, added 2026-10-05 03:48 EDT, on
+library-79-110 (from 1.9.9's tip fe75550e).
