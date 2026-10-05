@@ -1,3 +1,60 @@
+## 2026-10-04 20:36:28 EDT — scribe `ed2dc429f9febee55994d4c498e9f93dec91419d`
+Record Scribe 0.1 (92) in PROGRESS: on the iPhone, the iPad and the Mac, a small build of 91 with production's v20g files and the route chunk queries' fix (#557 #549 #551 #539 #569)
+
+## 2026-10-04 19:31:42 EDT — scribe `a65a893a820d3a2ba07536b1ae8943b1873386d2`
+Record the production-orientation route test's compile fix in the change log (#557)
+
+## 2026-10-04 19:31:42 EDT — scribe `b78ff0a40e1622e4fd9b3bdaa1d92239405445d7`
+The production-orientation route test asserts with #expect and its caller's source location, so ScribeSharedSupportTests compiles (#557)
+
+## 2026-10-04 19:29:43 EDT — scribe `347c9f44dec9bbd435516b97592f7c40a7581520`
+Merge main ebc63647d into the 92 branch: route-chunk-link-selection's plan merge on main
+
+## 2026-10-04 19:29:33 EDT — scribe `71b0576352c662b27b7c8ce198c9408e4cc9c76d`
+Record Scribe 0.1 (92)'s build number in the change log
+
+## 2026-10-04 19:29:32 EDT — scribe `2a4aaca8a4f803e66a793fb88db3f23804258b65`
+Set Scribe 0.1 (92): CURRENT_PROJECT_VERSION 92 on the 12 lines that carried 91
+
+## 2026-10-04 19:28:34 EDT — scribe `ebc63647d53389b705457a5ce3f64303134d6cfd`
+Merge route-chunk-link-selection's plan and claims into main (#557): route chunk queries stop selecting the recording link, which a synced store refuses
+
+## 2026-10-04 19:20:14 EDT — scribe `9a41a48f6a0e097b626998054fbd22f8450f2968`
+Merge route-chunk-link-selection (#557): route chunk queries select the chunk's attributes only, so a synced store reads them, and the recovery decodes a chunk without the recording link
+
+## 2026-10-04 19:16:56 EDT — scribe `fe1b8610d1692b8790970383121e92fa6e53afeb`
+Log 41b9ab43b in CHANGELOG: route chunk queries select attributes only (#557)
+
+## 2026-10-04 19:16:55 EDT — scribe `41b9ab43b1dab22e336c219ca1d95f4017d449ec`
+Route chunk queries select the chunk's attributes only, so a synced store reads them, and the recovery decodes a chunk without its link (#557)
+
+## 2026-10-04 19:16:37 EDT — scribe `15e23babd4d7a86a4dbe81813b76cfdd1b82ab07`
+Red test for #557: the recovery decodes a chunk only with the recording link a synced store never gives it
+
+## 2026-10-04 19:15:59 EDT — scribe `13b81201d307139d57f89488347b1a819516dfba`
+Red tests for #557: route chunk queries select the recording link, which a synced store refuses
+
+## 2026-10-04 19:15:38 EDT — scribe `8929297c1bb17a1a234af956e2b845cbc671af65`
+Record 25d5ecdc (the ownership schema test's v20g segment rule) in the change log
+
+## 2026-10-04 19:15:31 EDT — scribe `25d5ecdc92c9328c9fe9009d987e9dda78091c0a`
+The ownership schema test expects v20g's segment update rule, with keepsOriginalWords (#539)
+
+## 2026-10-04 19:12:11 EDT — scribe `5e89686208add06f20b23cb66ad7673e1ae78364`
+Record 17fc243b (the instant files are production's v20g) in the change log
+
+## 2026-10-04 19:12:03 EDT — scribe `978ea82afd7390f0e4915028906a641519751744`
+Plan and claim route-chunk-link-selection (#557): route chunk queries stop selecting the recording link, which a synced store refuses
+
+## 2026-10-04 19:12:02 EDT — scribe `17fc243ba2fa3d8eccb84fac5c3192e929c69e68`
+The instant files are production's v20g, byte for byte: v17 plus readout's runtime kind, the settings entities and the segments' original words (#549 #551 #539)
+
+## 2026-10-04 19:09:05 EDT — scribe `0792c68d6f79c6f0b59762d111bfb6d2f5ac6120`
+Record Scribe 0.1 (91) in PROGRESS: on the iPhone, the iPad and the Mac, built from b1a31a35 on instant-data-swift 1.9.7 with production's v17 schema, the performance build with alloc-stack hoisting off (#536 #517 #371 #569 #557 #552 #558 #522)
+
+## 2026-10-04 19:06:18 EDT — scribe `0ea7a94f90c48759607967a6270708899dc0e35f`
+Plan and claim store-logger-fence (#569): the store's debug logger flush fences on its own enqueue buffer, and its observability test gets a private one
+
 ## 2026-10-04 19:02:57 EDT — scribe `9ac6ba1d3694f4b977f571be8a8a1537daadac71`
 Plan diagnostics-export: ADR 0058, main's approvals, and the thermal pause (#571)
 
