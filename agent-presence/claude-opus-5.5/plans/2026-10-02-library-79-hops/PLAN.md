@@ -272,3 +272,21 @@ against the state before it (values, times and incoming links), and left out of 
 tests first, in new `Tests/InstantSwiftDataCoreTests/InstantValueEqualWriteTests.swift`. Touching
 `Sources/InstantSwiftDataCore/TripleIndexes.swift` and `InstantStore.swift`, added 2026-10-05 03:48 EDT, on
 library-79-110 (from 1.9.9's tip fe75550e).
+
+1.10.0's eviction (main approved the design 2026-10-04 about 18:10 EDT: retained set, 60 s grace, re-hydration,
+stats, red tests first), built in steps:
+1. The store: `evict(_:)` drops the own facts of candidates no observer shows, and of none in a namespace a local
+   observer (no live query behind it) reads, since a row it does not show yet may enter its page; other entities'
+   links to them stay. `hydrate(_:)` puts back facts read from SQLite, last-write-wins by stamp, and refreshes the
+   observers that can see them.
+2. SQLite: the entities live-query ownership rows hold for given keys, the outbox's effect entities, an entity's
+   facts, and the entities a lookup names.
+3. The runtime: a live query's unregister starts a 60 s grace; then the entities its result held, less those active
+   keys' results or the outbox hold, are evicted in one batch under the operation gate (background), logged as
+   `store.entities-evicted`. Public `trimMemory()` evicts every entity not retained at once. A query whose result holds
+   evicted entities loads them before its first emission; a local write loads the evicted entities it names, by ID or
+   lookup, before it is prepared. A store replaced from SQLite forgets the evicted set.
+4. Stats: O(1) counts of triples, entities, observers and evicted entities.
+Touching `Sources/InstantSwiftDataCore/InstantStore.swift`, `TripleIndexes.swift`, `SQLitePersistenceStore.swift`,
+`InstantRuntime.swift`, new `Tests/InstantSwiftDataCoreTests/InstantStoreEvictionTests.swift` and a runtime eviction
+suite, added 2026-10-05 04:10 EDT.

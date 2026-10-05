@@ -341,6 +341,16 @@ package struct InstantStorePublishMetrics: Equatable, Sendable {
   }
 }
 
+/// What ``InstantStore/evict(_:)`` dropped from memory (1.10.0).
+struct InstantStoreEviction: Equatable, Sendable {
+  var evictedEntityIDs: Set<String> = []
+  var removedTripleCount = 0
+  /// Candidates an observer shows.
+  var keptShownCount = 0
+  /// Candidates in a namespace a local observer, one with no live query behind it, reads.
+  var keptForLocalObserversCount = 0
+}
+
 /// A commit's claim on the publication that refreshes observers for it (#473).
 struct InstantStorePublicationTicket: Hashable, Sendable {
   var id: Int64
@@ -3053,6 +3063,17 @@ public actor InstantStore {
 
   func currentTripleCount() -> Int {
     indexes.tripleCount
+  }
+
+  /// Drops from memory the facts of the `candidates` that no observer shows or could show (1.10.0). Not yet built:
+  /// the red tests' stub.
+  func evict(_ candidates: Set<String>) -> InstantStoreEviction {
+    InstantStoreEviction()
+  }
+
+  /// Puts back facts read from SQLite for entities ``evict(_:)`` dropped (1.10.0). Not yet built: the red tests' stub.
+  func hydrate(_ triples: [InstantTriple]) -> Set<String> {
+    []
   }
 
   /// How many many-cardinality slots the store's materializations sorted (#570).
