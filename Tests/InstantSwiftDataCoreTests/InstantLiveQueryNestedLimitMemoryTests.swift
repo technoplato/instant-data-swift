@@ -308,7 +308,9 @@ struct InstantLiveQueryNestedLimitMemoryTests {
     )
     let replayPersistedValue = try await persistence.liveQueryResult(key: queryKey)
     let replayPersisted = try #require(replayPersistedValue)
-    expectNoDifference(replayPersisted, result(replayTriples, milliseconds: 2))
+    // From #566 a result whose facts and page info match the stored JSON writes only its count and time: the stored
+    // triples keep the stamps they were written with, and the result's time is the replay's.
+    expectNoDifference(replayPersisted, result(initialTriples, milliseconds: 2))
 
     try resetLiveQueryOwnershipMutationCounter(at: cacheURL)
     state = try await persistence.loadCompactState()
