@@ -4475,18 +4475,30 @@ private struct PreparedInclude {
     pendingInternValues[attribute.name] = materialized
   }
 
-  private func pendingInternOmitsExistingCardinalityOneFields(
-    entityID: String,
-    namespace: String
-  ) -> Bool {
+  /// How the pending snapshot's fields cover the entity's stored slots.
+  private enum PendingInternCoverage {
+    /// Every stored slot is a field the write set.
+    case everySlot
+    /// One stored slot is not: the entity's id slot, or a field of an entity that stores no id slot (#577).
+    case allButOneSlot
+    /// Two or more stored slots are not, so at least one is not the id slot and may be a field.
+    case missingFields
+  }
+
+  private func pendingInternCoverage(entityID: String) -> PendingInternCoverage {
     // Attribute IDs may be canonical UUIDs instead of "namespace/name" strings,
     // so completeness cannot be derived from id prefixes. Compare the pending
-    // snapshot's field count (written fields plus the synthesized id) against
-    // every stored slot of the entity. Any leftover slot may hold an
-    // uninterned cardinality-one field, so treat it as omitting and skip
-    // interning rather than serve a partial snapshot later.
-    guard let existingCount = eavStorage.rows[entityID]?.count else { return false }
-    return existingCount > pendingInternValues.count + 1
+    // snapshot's written fields against every stored slot of the entity. Of
+    // two leftover slots at least one may hold an uninterned cardinality-one
+    // field, so skip interning rather than serve a partial snapshot later. One
+    // leftover slot is the id slot of an entity that stores one, or a field of
+    // an entity that stores none, and only the attribute store tells them apart.
+    guard let existingCount = eavStorage.rows[entityID]?.count else { return .everySlot }
+    switch existingCount - pendingInternValues.count {
+    case ...0: return .everySlot
+    case 1: return .allButOneSlot
+    default: return .missingFields
+    }
   }
 
   private mutating func flushPendingIntern() {
@@ -4494,10 +4506,8 @@ private struct PreparedInclude {
       let entityID = pendingInternEntityID,
       let namespace = pendingInternNamespace
     else { return }
-    if pendingInternOmitsExistingCardinalityOneFields(
-      entityID: entityID,
-      namespace: namespace
-    ) {
+    switch pendingInternCoverage(entityID: entityID) {
+    case .missingFields:
       pendingInternEntityID = nil
       pendingInternNamespace = nil
       pendingInternValues = [:]
@@ -4508,6 +4518,12 @@ private struct PreparedInclude {
         internInvalidationIDs.insert(entityID)
       }
       return
+    case .allButOneSlot:
+      // Kept, and completed from the entity's slots when the write finishes, where a
+      // leftover field is filled in and a leftover id slot changes nothing (#577).
+      pendingInternNeedsEAVCompletion = true
+    case .everySlot:
+      break
     }
     pendingInternValues["id"] = .one(.string(entityID))
     let snapshot = InstantEntitySnapshot(
