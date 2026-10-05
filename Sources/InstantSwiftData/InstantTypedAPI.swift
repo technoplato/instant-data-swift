@@ -503,7 +503,22 @@ private func instantValueDecodeError(
   localID: String?,
   operation: String
 ) -> InstantError {
-  InstantError(
+  // No fact at all, not a fact of the wrong type (#522): a query that selected other fields stores only those, so a
+  // later query that decodes the whole entity meets it without this one until a query that selects it is answered.
+  guard value != nil else {
+    return InstantError(
+      code: .decodeFailed,
+      operation: operation,
+      namespace: namespace,
+      path: path,
+      localID: localID,
+      message:
+        "The local store has no value for selected Instant field '\(path)' on this \(namespace) entity: a query that selected other fields, or a pruned result, can leave an entity without one.",
+      recovery:
+        "Read the rows with decodeQuarantiningFailures(_:) or a typed query, which leave such a row out until its facts arrive, or select '\(path)' in every query of '\(namespace)' whose rows this model decodes."
+    )
+  }
+  return InstantError(
     code: .decodeFailed,
     operation: operation,
     namespace: namespace,

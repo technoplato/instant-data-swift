@@ -165,8 +165,11 @@ struct InstantOperationGateHoldTests {
       }
     }
     let reports = GateHoldBox<[InstantDiagnosticEntry]>([])
+    // Other suites' runtimes report their own operation gates at the same time, so only this runtime's count.
     let token = InstantDiagnostics.shared.addHandler { entry in
-      guard entry.event == "serial-gate.waited", entry.metadata["gate"] == "operation" else { return }
+      guard entry.event == "serial-gate.waited", entry.metadata["gate"] == "operation",
+        entry.metadata["owner"] == "offline-gate-hold-phases"
+      else { return }
       reports.withValue { $0.append(entry) }
     }
     defer { InstantDiagnostics.shared.removeHandler(token) }
@@ -183,11 +186,17 @@ struct InstantOperationGateHoldTests {
     releaseFirst.continuation.yield()
     try await held.value
     try await waiting.value
+    // The report is logged off the gate's actor (#473), so it can arrive after the waiting write returns.
+    let deadline = ContinuousClock.now + .seconds(5)
+    while reports.value.isEmpty, ContinuousClock.now < deadline {
+      try await Task.sleep(for: .milliseconds(10))
+    }
 
-    // The handoff names the phase the held write was in when it left: the publish that follows its save.
+    // The handoff names the phase the held write was in when it left: the store commit that follows its save, or the
+    // status it publishes after. Its observers refresh after it leaves the gate (#473).
     let phases = reports.value.map { $0.metadata["previousHolderPhase"] ?? "" }
     #expect(
-      phases.contains { ["publish store", "publish status"].contains($0) },
+      phases.contains { ["commit store", "publish status"].contains($0) },
       "the wait names the held write's phase, not \(phases)"
     )
   }

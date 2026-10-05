@@ -43,7 +43,7 @@ private let pythonStreamFileRetryBudgetSource =
   + "[adapted: Swift requests reconnect for the first ten signed-file failures and stores "
   + "a terminal reader failure on the eleventh attempt]"
 
-@Suite
+@Suite(.timeLimit(.minutes(3)))
 struct InstantLiveTransportTests {
   @Test
   func abortIsIdempotentAcrossSessionCopies() {

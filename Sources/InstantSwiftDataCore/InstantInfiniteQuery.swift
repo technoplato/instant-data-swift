@@ -1027,6 +1027,10 @@ private actor InstantLiveInfiniteQueryCoordinator {
   /// the Mac's recording list showed no rows for about 0.6 s at every kickstart when the leading watcher answered
   /// first (#388). Until then the coordinator keeps the last published snapshot when it showed rows.
   private var kickstartForwardKeyAwaitingAnswer: InstantLiveInfiniteForwardChunkKey?
+  /// Pages the pre-bootstrap window held beyond the kickstart's first forward chunk, still to load (#516). The window
+  /// pages from the local store until the server answers; at the kickstart it starts one live page, so without these the
+  /// pages loaded before the answer left the window (Michael's list on Scribe 0.1 (87): 24 rows went to 12).
+  private var kickstartPagesToRestore = 0
 
   init(
     runtime: InstantRuntime,
@@ -1286,6 +1290,7 @@ private actor InstantLiveInfiniteQueryCoordinator {
     latestCanLoadPreviousPage = false
     hasKickstarted = false
     kickstartForwardKeyAwaitingAnswer = nil
+    kickstartPagesToRestore = 0
     lastPublishedSnapshot = nil
     preBootstrapLoadedPages = 1
     preBootstrapWindowOffsetPages = 0
@@ -1342,6 +1347,9 @@ private actor InstantLiveInfiniteQueryCoordinator {
       let startCursor = emission.pageInfo?.startCursor,
       startCursor.liveTuple != nil
     {
+      // The pages the pre-bootstrap window showed, counted from the top: the live chunks start at the top, and a
+      // window that slid down evicts the top again as they load (#516).
+      let preBootstrapPageCount = preBootstrapLoadedPages + preBootstrapWindowOffsetPages
       forwardKeys.removeAll { $0 == .preBootstrap }
       forwardChunks[.preBootstrap] = nil
       hasKickstarted = true
@@ -1349,6 +1357,7 @@ private actor InstantLiveInfiniteQueryCoordinator {
         retireSubscription(.starter)
       }
       cancelPreBootstrapExpansion()
+      kickstartPagesToRestore = max(0, preBootstrapPageCount - 1)
       preBootstrapWindowOffsetPages = 0
       preBootstrapPendingNavigation = nil
       preBootstrapHydratedSequence = nil
@@ -1359,6 +1368,7 @@ private actor InstantLiveInfiniteQueryCoordinator {
         "resultCount": emission.values.count.description,
         "phase": "kickstart",
         "hasMoreSource": "liveTupleKickstart",
+        "preBootstrapPageCount": preBootstrapPageCount.description,
       ]
       kickMeta.merge(InstantInfiniteQueryDiagnostics.cursorMetadata(emission.pageInfo)) {
         _, new in new
@@ -1865,8 +1875,45 @@ private actor InstantLiveInfiniteQueryCoordinator {
       forwardKeys.append(key)
     }
     forwardChunks[key] = stamped(chunk)
+    restoreKickstartPagesIfNeeded(after: key)
     trimRetainedChunks(evicting: .previous)
     pushSnapshot()
+  }
+
+  /// When the kickstart's forward chunk answers and the pre-bootstrap window held more pages, loads the next one, as
+  /// `loadNextPage` would, and keeps the window's last snapshot until the last of them answers (#516). Upstream
+  /// `Reactor.js` has no pre-bootstrap window: it shows nothing until the server answers, so it has nothing to keep.
+  private func restoreKickstartPagesIfNeeded(after key: InstantLiveInfiniteForwardChunkKey) {
+    guard kickstartPagesToRestore > 0,
+      key == kickstartForwardKeyAwaitingAnswer,
+      let chunk = forwardChunks[key],
+      chunk.pageInfo != nil
+    else { return }
+    guard chunk.hasMore,
+      let endCursor = chunk.endCursor,
+      key == forwardKeys.last,
+      advancedForwardChunks.insert(key).inserted
+    else {
+      // The list ends before the pages the window held: show what there is.
+      kickstartPagesToRestore = 0
+      return
+    }
+    kickstartPagesToRestore -= 1
+    InstantInfiniteQueryDiagnostics.record(
+      event: "infinite.kickstart.restore-page",
+      message: "Kickstart loading another live page to cover the window loaded before the server answered.",
+      metadata: [
+        "namespace": plan.namespace,
+        "pageSize": pageSize.description,
+        "chunkResultCount": chunk.data.count.description,
+        "pagesStillToRestore": kickstartPagesToRestore.description,
+        "phase": "kickstart",
+      ],
+      correlationID: plan.id
+    )
+    freezeForward(key: key, chunk: chunk)
+    pushNewForward(startCursor: endCursor)
+    kickstartForwardKeyAwaitingAnswer = .cursor(endCursor, afterInclusive: false)
   }
 
   private func setReverseChunk(

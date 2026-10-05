@@ -10,6 +10,450 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## October 5th, 2026 at 3:42:37 a.m. EDT — `841fb0146a6b` A row's interned snapshot keeps every stored field when the write leaves one slot unset: an id slot, or a field (#577)
+
+- **Implementation commit:** `841fb0146a6b0ad07c2cfd83c401a462430583d9`
+- **Change:** A row's interned snapshot keeps every stored field when the write leaves one slot unset: an id slot, or a field (#577)
+- **Details:**
+  - The completeness check counted one id slot for every row, so a row stored without one, with a single field the write did not set, was interned without that field and dropped from pages filtered on it. #540's differential test found it (seed 15, step 29 in dev-199); its rows store no id slot. The client's writes and the server's results carry an id triple, so no known production row hits it.
+  - With one slot left over, the write keeps the snapshot and completes it from the row's slots when it finishes. Red tests 06bb5a9c.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/TripleIndexes.swift` — pendingInternCoverage and flushPendingIntern
+- **User context (verbatim):**
+  > fix this please so it works efficiently as as well as the typescript core library
+- **SpecStory:** unavailable — unavailable — Claude Code agent session (library-79 subagent under main); no SpecStory capture configured for this session.
+
+## October 5th, 2026 at 3:42:37 a.m. EDT — `ceba8e4c8ec4` The ten suites fail a test that runs past three minutes instead of idling, so a test stuck on a continuation is named (#569)
+
+- **Implementation commit:** `ceba8e4c8ec40957571e1a37291f0c0cfd223105`
+- **Change:** The ten suites fail a test that runs past three minutes instead of idling, so a test stuck on a continuation is named (#569)
+- **Details:**
+  - dev-199's ten-suites run sat idle 23 minutes with every thread waiting and no test named; three minutes because one loaded run of sameProcessOfflineTenThousandEnqueuesKeepResidentBarrierCacheBounded took 114.6 s.
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantStoreTests.swift` — .timeLimit(.minutes(3)), as in the nine other suites
+- **User context (verbatim):**
+  > fix this please so it works efficiently as as well as the typescript core library
+- **SpecStory:** unavailable — unavailable — Claude Code agent session (library-79 subagent under main); no SpecStory capture configured for this session.
+
+## October 5th, 2026 at 3:42:37 a.m. EDT — `fc1ee27eada4` The many-value property test keeps refs in a ref attribute: an any attribute refuses a ref in a write, which failed every run in dev-199 (#570)
+
+- **Implementation commit:** `fc1ee27eada49ff1448b6b2e010a6ca922308bc9`
+- **Change:** The many-value property test keeps refs in a ref attribute: an any attribute refuses a ref in a write, which failed every run in dev-199 (#570)
+- **Details:**
+  - prepareCurrent refused the test's writes (Expected any, but received ref); each thing now has an .any slot and a .ref slot.
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantManyCardinalityOrderTests.swift` — manyValuesKeepTheComparableKeyOrderAcrossWrites
+- **User context (verbatim):**
+  > fix this please so it works efficiently as as well as the typescript core library
+- **SpecStory:** unavailable — unavailable — Claude Code agent session (library-79 subagent under main); no SpecStory capture configured for this session.
+
+## October 5th, 2026 at 3:42:37 a.m. EDT — `8f77ad7195b0` The AEV bench's many-refs mode lives in its main.swift: a second file made SwiftPM compile main.swift as top-level code, which @main refuses (#570)
+
+- **Implementation commit:** `8f77ad7195b02d7e8c8f617c18914a0bcf71f7ac`
+- **Change:** The AEV bench's many-refs mode lives in its main.swift: a second file made SwiftPM compile main.swift as top-level code, which @main refuses (#570)
+- **Details:**
+  - dev-199's green build stopped at InstantDomainAEVBench/main.swift:14; no behavior change.
+- **Files:**
+  - `Sources/InstantDomainAEVBench/main.swift` — ManyRefsBench, moved unchanged
+- **User context (verbatim):**
+  > fix this please so it works efficiently as as well as the typescript core library
+- **SpecStory:** unavailable — unavailable — Claude Code agent session (library-79 subagent under main); no SpecStory capture configured for this session.
+
+## October 5th, 2026 at 3:42:36 a.m. EDT — `65932af224e9` A many-value's sorted order is kept and reused while its slot is unchanged, and a slot that must be sorted is sorted without building strings (#570)
+
+- **Implementation commit:** `65932af224e985ec158020d519e85f4fae1b4fb1`
+- **Change:** A many-value's sorted order is kept and reused while its slot is unchanged, and a slot that must be sorted is sorted without building strings (#570)
+- **Details:**
+  - Build 88's CPU-resource kill on Michael's iPhone (48 s of CPU in 55 s) spent 26% of its samples sorting many-values: every snapshot of a recording sorted all its segment refs through comparableKey strings. Upstream Reactor.js never sorts link sets.
+  - At -O, 73 recordings with 1,190 refs each: re-materializing the page went from a median 575-624 ms to 46-50 ms; in a debug build a final line went from 74 sorts and 6.3 s to 1 sort and 77 ms. Red tests 28ba22a0.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/TripleIndexes.swift` — ManyCardinalityOrders and InstantValue.precedesInComparableKeyOrder
+  - `Tests/InstantSwiftDataCoreTests/InstantManyCardinalityOrderTests.swift` — theComparatorOrdersEveryPairAsTheirComparableKeysDo
+- **User context (verbatim):**
+  > fix this please so it works efficiently as as well as the typescript core library
+- **SpecStory:** unavailable — unavailable — Claude Code agent session (library-79 subagent under main); no SpecStory capture configured for this session.
+
+## October 5th, 2026 at 3:42:36 a.m. EDT — `312fbbf630e6` Room joins and leaves on an open socket take the room's lane, and one made while a reconnect's rejoin is written follows it (#563)
+
+- **Implementation commit:** `312fbbf630e6e6480ee5ce140fb89ff40231fd6c`
+- **Change:** Room joins and leaves on an open socket take the room's lane, and one made while a reconnect's rejoin is written follows it (#563)
+- **Details:**
+  - A rejoin made while a leave-room was still being written could pass it, so the server kept the room left while the runtime counted it joined; Reactor.js writes every room frame with a synchronous ws.send, in call order. Red tests 2d3b6ae1.
+  - The reconnect's rejoin stays outside the lane, so a write the dropped socket never finished cannot hold up the new one; a join or leave of a room whose rejoin is being written waits for it.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantRuntimeLiveSession.swift` — joinRoom, leaveRoom, the rejoin marks
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — the lane waiter count's description
+  - `docs/adr/0019-rooms-and-presence-parity.md` — decision 9 and its parity row
+- **User context (verbatim):**
+  > fix this please so it works efficiently as as well as the typescript core library
+- **SpecStory:** unavailable — unavailable — Claude Code agent session (library-79 subagent under main); no SpecStory capture configured for this session.
+
+## October 5th, 2026 at 3:42:36 a.m. EDT — `28ba22a02e57` Red tests for #570: a final line on one of 73 recordings with 1,190 segment refs each sorts only that recording's refs, and many-values keep the comparableKey order across writes; with a sort count and the AEV bench's --many-refs mode
+
+- **Implementation commit:** `28ba22a02e57195986d59f455c2c5d46c9bb3a05`
+- **Change:** A count of many-value sorts for tests, and instant-domain-aev-bench --many-refs, for #570's red tests and its measurement at -O (#570)
+- **Details:**
+  - aFinalLineOnOneRecordingSortsOnlyThatRecordingsSegments commits ten finals on 73 recordings with 1,190 segment refs each and expects at most two sorts per final; on 1.9.8 each final sorted 74 slots.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/TripleIndexes.swift` — manyCardinalitySortCount
+  - `Sources/InstantSwiftDataCore/InstantStore.swift` — manyCardinalitySortCountForTesting()
+  - `Sources/InstantDomainAEVBench/main.swift` — the --many-refs dispatch
+  - `Tests/InstantSwiftDataCoreTests/InstantManyCardinalityOrderTests.swift` — the red tests
+- **User context (verbatim):**
+  > fix this please so it works efficiently as as well as the typescript core library
+- **SpecStory:** unavailable — unavailable — Claude Code agent session (library-79 subagent under main); no SpecStory capture configured for this session.
+
+## October 5th, 2026 at 3:42:36 a.m. EDT — `0961235bcd3b` An answer whose query unregisters while it is recorded is forgotten afterwards, and the acknowledgement test waits for each answer's acknowledgement (#541)
+
+- **Implementation commit:** `0961235bcd3b6ee6c20d6ed4543ad2f2f1c58837`
+- **Change:** An answer whose query unregisters while it is recorded is forgotten afterwards (#541)
+- **Details:**
+  - The runtime records an answer and then acknowledges it; a query that unregistered between the two kept its key. The acknowledgement now asks the live session whether a query still holds the key.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — the acknowledgement's second check
+  - `Sources/InstantSwiftDataCore/InstantRuntimeLiveSession.swift` — isRegistered(key:)
+  - `Tests/InstantSwiftDataCoreTests/InstantSessionMapBoundsTests.swift` — waits for each answer's acknowledgement
+- **User context (verbatim):**
+  > fix this please so it works efficiently as as well as the typescript core library
+- **SpecStory:** unavailable — unavailable — Claude Code agent session (library-79 subagent under main); no SpecStory capture configured for this session.
+
+## October 5th, 2026 at 3:42:36 a.m. EDT — `36c4dc4d4449` A prune rebuilds the transaction ID interner when it holds over twice the live IDs, and a live query's acknowledgement is forgotten when it unregisters (#541)
+
+- **Implementation commit:** `36c4dc4d44492fa968897476dc3a458de148c26d`
+- **Change:** A prune rebuilds the transaction ID interner when it holds over twice the live IDs, and a live query's acknowledgement is forgotten when it unregisters (#541)
+- **Details:**
+  - At a prune's last batch, under the operation gate, the store counts the live IDs once the interner passes 1,024 and twice the last count, and renumbers them when the interner holds over twice that; copies made before keep the old interner with their stamps. Logged as store.transaction-ids-compacted.
+  - Scribe's agent replies restarted about 380 times between 09:19 and 09:35 on 2026-10-04, each with a new key; a key's revision and outcome are now forgotten when its observation, infinite query page or queryOnce unregisters it. Red tests 60770190.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/TripleIndexes.swift` — the interner rebuild and its stamp rewrite
+  - `Sources/InstantSwiftDataCore/InstantStore.swift` — the count at a prune's last batch
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — forgetting a key's acknowledgement
+  - `Sources/InstantSwiftDataCore/InstantRuntimeLiveSession.swift` — recordQueryAnswered says whether a query still holds the key
+  - `Tests/InstantSwiftDataCoreTests/InstantLiveQueryAcknowledgementStateTests.swift` — the forgotten key and the shared revision counter
+- **User context (verbatim):**
+  > fix this please so it works efficiently as as well as the typescript core library
+- **SpecStory:** unavailable — unavailable — Claude Code agent session (library-79 subagent under main); no SpecStory capture configured for this session.
+
+## October 5th, 2026 at 3:42:36 a.m. EDT — `401db3851d99` A write skips a page it cannot change: a row outside the server's cursors does not rebuild the page, and a row that stops matching refreshes it (#540)
+
+- **Implementation commit:** `401db3851d99f22a841d70b9a4b410a118c8af85`
+- **Change:** A write skips a page it cannot change: a row outside the server's cursors does not rebuild the page, and a row that stops matching refreshes it (#540)
+- **Details:**
+  - Each partial-word save rebuilt every page of Scribe's live timeline whose filter matched the row, from SQLite: about 26 at 800 rows, 45-120 saves a minute while Michael talks (phone-perf, build 88). A page the server's cursors cut keeps only the rows between them, as upstream instaql.ts does, so a row outside them cannot change it.
+  - Any other page refreshes when a changed row it does not hold matched its filters before the write or matches after it; the store keeps the state before a publication's first commit to ask. Red tests 367d64d8 and 2422d777, with the differential property test.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantStore.swift` — shouldRefresh, the state before a publication's first commit, the splice
+  - `Sources/InstantSwiftDataCore/TripleIndexes.swift` — unheldEntityCanEnterPage and pageIsCutByServerCursors
+- **User context (verbatim):**
+  > fix this please so it works efficiently as as well as the typescript core library
+- **SpecStory:** unavailable — unavailable — Claude Code agent session (library-79 subagent under main); no SpecStory capture configured for this session.
+
+## October 5th, 2026 at 3:42:36 a.m. EDT — `60770190cc5b` Red test for #541: a prune leaves the transaction ID interner within twice the live IDs, and unregistered live queries leave no acknowledgement entries
+
+- **Implementation commit:** `60770190cc5bbd07b55623c0b34974a97bd375ac`
+- **Change:** Two package accessors for #541's red tests: the transaction ID interner's size and the live-query acknowledgement keys (#541)
+- **Details:**
+  - phone-perf's memory audit (2026-10-04) found the interner and the acknowledgement state growing for a session's whole life; the red tests (InstantSessionMapBoundsTests) read them. Neither accessor changes behavior.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — the acknowledgement keys accessor
+  - `Sources/InstantSwiftDataCore/InstantStore.swift` — internedTransactionIDCount()
+  - `Sources/InstantSwiftDataCore/TripleIndexes.swift` — internedTransactionIDCount
+  - `Tests/InstantSwiftDataCoreTests/InstantSessionMapBoundsTests.swift` — a prune within twice the live IDs, and unregistered queries leave no entries
+- **User context (verbatim):**
+  > fix this please so it works efficiently as as well as the typescript core library
+- **SpecStory:** unavailable — unavailable — Claude Code agent session (library-79 subagent under main); no SpecStory capture configured for this session.
+
+## October 5th, 2026 at 1:34:45 a.m. EDT — `cfd32f7edb96` The 10,000-broadcast run's slowdown check allows 250 ms per 100 messages, not 25: it missed at load 196 (#461)
+
+- **Implementation commit:** `cfd32f7edb96a79d063d7d69a5422f3fed203b01`
+- **Change:** The 10,000-broadcast run's slowdown check allows 250 ms per 100-message batch instead of 25 ms, after it missed once at load 196 in library-79's dev-198c (#461).
+- **Details:**
+  - dev-198c: median batch 0.46 ms in the first 1,000 and 27 ms in the last 1,000, the whole run 5.3 s, held 128; other rounds and the v1.9.8 gate passed with 2 ms medians. The held-count check stays the exact guard against storage growing.
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantRoomPresenceRuntimeTests.swift` — the topic run's floor and its reason
+- **User context (verbatim):**
+  > That sounds good to me for the, uh, rooms plan, so go ahead and knock that out with a subagent.
+  > Good plan. And let's get feature parody and performance parody with Swift and typescript, please.
+- **SpecStory:** unavailable — Claude Code agent session (rooms subagent under main); no SpecStory capture configured for this session.
+
+## October 5th, 2026 at 1:30:28 a.m. EDT — `6c28904ab7eb` Document the v1.9.8 release: a live result's JSON written at most once per 30 s, a dead connection's results skipped, the kickstart's pages kept, the missing field named, and rooms with one ordered lane per room (#566 #474 #516 #522 #461)
+
+- **Implementation commit:** `6c28904ab7ebc6331ac0b45fe54c5625472e423e`
+- **Change:** Document the v1.9.8 release: a live result's JSON written at most once per 30 s, a dead connection's results skipped, the kickstart's pages kept, the missing field named, and rooms with one ordered lane per room (#566 #474 #516 #522 #461)
+- **Details:**
+  - The release document records the red runs, the one that is not red (#516's test passes on v1.9.7; #575 tracks a reproducing test), #566's before-and-after on a 1,100-row query (100 result JSON writes and 2.03 MB per refresh on v1.9.7's code against 3 and 61 KB), the gate on ded9a267 and the before-and-after soak.
+- **Files:**
+  - `docs/releases/v1.9.8.md` — the release document
+  - `PROGRESS.md` — the release's entry
+- **User context (verbatim):**
+  > fix this please so it works efficiently as as well as the typescript core library
+- **SpecStory:** unavailable — unavailable — Claude Code agent session (library-79 subagent under main); no SpecStory capture configured for this session.
+
+## October 5th, 2026 at 1:28:47 a.m. EDT — `ded9a267a153` The ownership test reads the replayed result's time from its row: the stored JSON keeps the time it was written with (#566)
+
+- **Implementation commit:** `ded9a267a1536853f0458a1a17c19a5a573e796f`
+- **Change:** The ownership test expects a replayed result's stored JSON as written, with the row's time the replay's (#566)
+- **Details:**
+  - From #566 a result whose facts and page info match the stored JSON writes only its row's count and time; 3b22e326 also gave the 1,100-row measurement 60 s per refresh.
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantLiveQueryNestedLimitMemoryTests.swift` — repeatedLargeReplacementMutatesOnlyChangedOwnershipIdentities
+- **User context (verbatim):**
+  > fix this please so it works efficiently as as well as the typescript core library
+- **SpecStory:** unavailable — unavailable — Claude Code agent session (library-79 subagent under main); no SpecStory capture configured for this session.
+
+## October 5th, 2026 at 1:28:47 a.m. EDT — `a7f297cb078f` The kill test also checks SQLite: the todo the server deleted after a kill between throttled writes leaves the stored facts, not only the reopened store (#566)
+
+- **Implementation commit:** `a7f297cb078fbc2a5da1ea0f6058f9cc77aead23`
+- **Change:** The kill test also counts the deleted todo's facts in SQLite, so a missing bootstrap repair fails it (#566)
+- **Details:**
+  - With the repair removed every test passed in dev-198c: the reopened store holds only the entities its stored results name, so the deleted todo was missing from it either way, while its facts stayed in SQLite.
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantLiveQueryResultWriteTests.swift` — storedFactCount and the kill test
+- **User context (verbatim):**
+  > fix this please so it works efficiently as as well as the typescript core library
+- **SpecStory:** unavailable — unavailable — Claude Code agent session (library-79 subagent under main); no SpecStory capture configured for this session.
+
+## October 5th, 2026 at 1:28:47 a.m. EDT — `0bc01dfed60e` Name the stored triple's type in the bootstrap repair's lookup, which 0d5ccaa5 left for the compiler to infer through .first (#566)
+
+- **Implementation commit:** `0bc01dfed60e688eb7de8c0f78fa43af77b758d6`
+- **Change:** The bootstrap repair names the stored triple's type in its lookup, which 0d5ccaa5 left for the compiler to infer through .first (#566)
+- **Details:**
+  - dev-198b's green build stopped there; no behavior change.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — repairDeferredLiveQueryResultJSON
+- **User context (verbatim):**
+  > fix this please so it works efficiently as as well as the typescript core library
+- **SpecStory:** unavailable — unavailable — Claude Code agent session (library-79 subagent under main); no SpecStory capture configured for this session.
+
+## October 5th, 2026 at 1:28:47 a.m. EDT — `0d5ccaa52646` A live query's result JSON is written at most once per query per 30 s, not on every refresh, and a result that did not change writes none (#566)
+
+- **Implementation commit:** `0d5ccaa526467e207b9d75023d875eb852422226`
+- **Change:** A live query's result JSON is written at most once per query per 30 s, not on every refresh, and a result that did not change writes none (#566)
+- **Details:**
+  - Michael's iPhone dirtied 1,074 MB in 185 s after launch on build 90 (library 1.9.7): every server apply upserted each refreshed query's whole result as one JSON blob. Reactor.js writes only changed query subscriptions, throttled, and flushes before unload.
+  - The newest result waits in the persistence actor for every in-session reader; waiting results are written when due, on unsubscribe, on close, and by flushPendingLiveQueryResults(); a waiting result is marked and the next bootstrap rebuilds it from its ownership rows. Red tests fcc8d2e6; #567 tracks per-fact persistence.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — the throttled result write, the in-memory newest result, the marker and the bootstrap repair
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — the flush on unsubscribe and close, the public flush, the configuration
+  - `Sources/InstantSwiftData/InstantSwiftData.swift` — the client's flushPendingLiveQueryResults()
+  - `Tests/InstantSwiftDataCoreTests/InstantLiveQueryResultWriteTests.swift` — unchanged, throttled, flushed, unsubscribed, in-session and killed results, and the 1,100-row measurement
+- **User context (verbatim):**
+  > fix this please so it works efficiently as as well as the typescript core library
+- **SpecStory:** unavailable — unavailable — Claude Code agent session (library-79 subagent under main); no SpecStory capture configured for this session.
+
+## October 5th, 2026 at 1:28:46 a.m. EDT — `1b4dcf0a2f69` Room broadcasts take the room's lane too: publications go out in order, and the join-room-ok flush holds it across the presence and the broadcasts queued before the join (#461)
+
+- **Implementation commit:** `1b4dcf0a2f69f8c4e0a0a3499b71d2bfc9679dfe`
+- **Change:** Room broadcasts take the room's lane too: publications go out in order, and the join-room-ok flush holds it across the presence and the queued broadcasts (#461)
+- **Details:**
+  - v1.9.5 held the operation gate across each topic publish; rooms took topics off the gate. Red tests 0998556f.
+  - A broadcast that wakes to a closed socket goes back among the queued ones in publication order; one whose room was left is dropped, as Reactor.js's publishTopic returns. #563 (1.9.9) moves join-room and leave-room into the lane.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantRuntimeLiveSession.swift` — publishTopic and the join-room-ok flush in the room lane
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — the lane's test accessor's description
+- **User context (verbatim):**
+  > fix this please so it works efficiently as as well as the typescript core library
+- **SpecStory:** unavailable — unavailable — Claude Code agent session (library-79 subagent under main); no SpecStory capture configured for this session.
+
+## October 5th, 2026 at 1:28:46 a.m. EDT — `8dc4321dd412` Each room's presence writes take one ordered lane, so an older set-presence never passes a newer one, as Reactor.js writes in call order (#461)
+
+- **Implementation commit:** `8dc4321dd412675915961e45269a74b3e0104118`
+- **Change:** Each room's presence writes take one ordered lane, so an older set-presence never passes a newer one, as Reactor.js writes in call order (#461)
+- **Details:**
+  - racingPresencePublishesLeaveTheNewestOnTheWire failed 1 of 3 runs in dev-198: off the operation gate each send writes from its own task. Red tests 410b28ca.
+  - The join-room-ok flush writes the newest presence and older writes queued behind it are skipped; waiters drain when a room is left; a registration's incarnation stops writes across a leave and a rejoin.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantRuntimeLiveSession.swift` — the room lane, writtenPresence, incarnations
+- **User context (verbatim):**
+  > fix this please so it works efficiently as as well as the typescript core library
+- **SpecStory:** unavailable — unavailable — Claude Code agent session (library-79 subagent under main); no SpecStory capture configured for this session.
+
+## October 5th, 2026 at 1:28:46 a.m. EDT — `91183ee8efa0` Keep InstantLiveReceivedFrames's SAFETY comment on its @unchecked Sendable declaration: #474's extension moves above the documentation (#474)
+
+- **Implementation commit:** `91183ee8efa08e669abca2ebcfeb143b4ecb1f23`
+- **Change:** InstantLiveReceivedFrames's SAFETY comment stays on its @unchecked Sendable declaration: #474's extension moves above the documentation (#474)
+- **Details:**
+  - SwiftConcurrencyGuidanceTests failed in dev-198's green run; no behavior change.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantRuntimeLiveSession.swift` — the extension's place
+- **User context (verbatim):**
+  > fix this please so it works efficiently as as well as the typescript core library
+- **SpecStory:** unavailable — unavailable — Claude Code agent session (library-79 subagent under main); no SpecStory capture configured for this session.
+
+## October 5th, 2026 at 1:28:46 a.m. EDT — `07ce2e5d8472` InstantRowQuarantine is public, so a caller that decodes the same rows again and again reports a damaged row once (#522)
+
+- **Implementation commit:** `07ce2e5d847214e15801090ce8a6791b4cef0192`
+- **Change:** InstantRowQuarantine is public, so a caller that decodes the same rows again and again reports a damaged row once (#522)
+- **Details:**
+  - Scribe's media retry scan decoded its rows every 5-7 s with the static decodeQuarantiningFailures and reported a partial row on every pass.
+- **Files:**
+  - `Sources/InstantSwiftData/InstantRowQuarantine.swift` — public init and decode(_:as:operation:)
+  - `Tests/InstantSwiftDataTests/InstantRowQuarantineHeldTests.swift` — once over three decodes
+- **User context (verbatim):**
+  > fix this please so it works efficiently as as well as the typescript core library
+- **SpecStory:** unavailable — unavailable — Claude Code agent session (library-79 subagent under main); no SpecStory capture configured for this session.
+
+## October 5th, 2026 at 1:28:46 a.m. EDT — `5797457fbeb8` A typed decode that meets a field the local store lacks says so, and points at decodeQuarantiningFailures, instead of "Expected string" (#522)
+
+- **Implementation commit:** `5797457fbeb8e884e127a5af48a2fc82c9fee653`
+- **Change:** A typed decode that meets a field the local store lacks says so, and points at decodeQuarantiningFailures, instead of Expected string (#522)
+- **Details:**
+  - A query that selects some fields stores only those facts, so another query decoding the whole entity can meet it without one.
+- **Files:**
+  - `Sources/InstantSwiftData/InstantTypedAPI.swift` — the missing-field message and recovery
+- **User context (verbatim):**
+  > fix this please so it works efficiently as as well as the typescript core library
+- **SpecStory:** unavailable — unavailable — Claude Code agent session (library-79 subagent under main); no SpecStory capture configured for this session.
+
+## October 5th, 2026 at 1:28:46 a.m. EDT — `3fd98ded6ebb` At its kickstart an infinite query loads as many live pages as its pre-bootstrap window held, and keeps the window's rows until they answer (#516)
+
+- **Implementation commit:** `3fd98ded6ebbc97684b8c3db97ca16456366ec97`
+- **Change:** At its kickstart an infinite query loads as many live pages as its pre-bootstrap window held, and keeps the window's rows until they answer (#516)
+- **Details:**
+  - Michael's list on Scribe 0.1 (87) went from 24 rows to 12 at the kickstart (live-stamp's trace, session 5216df8d); logged as infinite.kickstart.restore-page.
+  - Its test does not fail on v1.9.7 (dev-198 and dev-198c, even after 2b293a7e made it wait for the server's pages), so the fix ships without red evidence; #575 tracks a reproducing test, and infinite.kickstart.restore-page (info) confirms it on a device.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantInfiniteQuery.swift` — restoreKickstartPagesIfNeeded
+- **User context (verbatim):**
+  > fix this please so it works efficiently as as well as the typescript core library
+- **SpecStory:** unavailable — unavailable — Claude Code agent session (library-79 subagent under main); no SpecStory capture configured for this session.
+
+## October 5th, 2026 at 1:28:18 a.m. EDT — `fb4b6b0c2128` When the socket dies, skip its buffered query results and reconnect once the frame being applied ends (#474)
+
+- **Implementation commit:** `fb4b6b0c21283c03f37bab44ce404d267253a335`
+- **Change:** When the socket dies, its buffered query results are skipped and the runtime reconnects once the frame being applied ends (#474)
+- **Details:**
+  - The Mac (Scribe 0.1 (82), library 1.9.2) applied 125 frames of a dead connection over 18.5 minutes before reconnecting, offline throughout; Reactor.js drops a replaced transport's messages.
+  - The answers to this device's writes and every other frame are still applied in order; the drop is logged as websocket.dead-connection-results-dropped.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantRuntimeLiveSession.swift` — InstantLiveReceivedFrames drops query results when the reader fails
+  - `Tests/InstantSwiftDataCoreTests/InstantLiveConnectionSurvivalTests.swift` — the drop and the reconnect
+- **User context (verbatim):**
+  > fix this please so it works efficiently as as well as the typescript core library
+- **SpecStory:** unavailable — unavailable — Claude Code agent session (library-79 subagent under main); no SpecStory capture configured for this session.
+
+## October 4th, 2026 at 3:17:04 p.m. EDT — `c5e1183fd031` Record the room write lane in ADR 0019 decision 9 and PROGRESS: presence and broadcasts keep call order (#461)
+
+- **Implementation commit:** `c5e1183fd03104596d375f921fd7070e2896466d`
+- **Change:** ADR 0019 decision 9 and a PROGRESS entry record the room write lane library-79 added in 1.9.8: presence and broadcast writes keep call order, as Reactor.js's synchronous ws.send does (#461).
+- **Details:**
+  - The 1.9.8 dev run failed racingPresencePublishesLeaveTheNewestOnTheWire 1 of 3 times: off the operation gate each send writes from its own task. Library-79's fix (red 410b28ca and 0998556f, lane 8dc4321d and 1b4dcf0a), reviewed by the rooms agent; join-room and leave-room in the lane are #563 (1.9.9).
+- **Files:**
+  - `docs/adr/0019-rooms-and-presence-parity.md` — decision 9 and the presence and topic parity rows
+  - `PROGRESS.md` — the race, the fix, the review, and the bench's new commits
+- **User context (verbatim):**
+  > That sounds good to me for the, uh, rooms plan, so go ahead and knock that out with a subagent.
+  > Good plan. And let's get feature parody and performance parody with Swift and typescript, please.
+- **SpecStory:** unavailable — Claude Code agent session (rooms subagent under main); no SpecStory capture configured for this session.
+
+## October 4th, 2026 at 9:21:51 a.m. EDT — `85ffb88815a7` Record the rooms red-then-green gate in ADR 0019 and PROGRESS: red on v1.9.5, green on 681a0ba9 (#461)
+
+- **Implementation commit:** `85ffb88815a7bdb849af95fd7441b9bd8e1cdf23`
+- **Change:** ADR 0019 and PROGRESS record the rooms red-then-green gate: red on 186d2f74 (v1.9.5 plus the red tests), green on 681a0ba9, and the hand-off of the branch to library-79's next release (#461).
+- **Details:**
+  - Red: all 9 red tests recorded their known issues (13); the three existing room tests passed. Green: room suites 51/51, CLI, recipe and wrapper room tests 67/67, fast drain, survival and live transport 139/140; the one miss, liveTimeoutDoesNotAwaitCancellationInsensitiveWork (0.314 s against 0.25 s), also misses under load in library-79's v1.9.5 and v1.9.6 gates and passed 5 of 5 alone on this build.
+  - The 10,000-broadcast run: every message once and in order in 182 ms, median 100-message batch 2.35 ms first and 1.40 ms last, 128 held. Records: /Users/laptop/Sync/audit/room-bench-2026-10-03/gate/.
+- **Files:**
+  - `docs/adr/0019-rooms-and-presence-parity.md` — the status and the gate's evidence
+  - `PROGRESS.md` — the gate checkpoint, the release hand-off and how to continue
+- **User context (verbatim):**
+  > That sounds good to me for the, uh, rooms plan, so go ahead and knock that out with a subagent.
+  > Good plan. And let's get feature parody and performance parody with Swift and typescript, please.
+- **SpecStory:** unavailable — Claude Code agent session (rooms subagent under main); no SpecStory capture configured for this session.
+
+## October 4th, 2026 at 9:13:05 a.m. EDT — `61976aec9dec` Add scripts/audit/backfill_commit_ledger.py: it lists a ref's non-merge commits the audit ledger lacks and writes their lines from git
+
+- **Implementation commit:** `61976aec9decef72f6639bfac5c19f8046809c33`
+- **Change:** Add scripts/audit/backfill_commit_ledger.py: it lists a ref's non-merge commits the audit ledger lacks and writes their lines from git
+- **Details:**
+  - --check reports the commits the ledger lacks and exits 1 when any; --write inserts one line per commit with git's subject and committer time in America/New_York, before the first older entry, leaving existing entries byte for byte.
+  - Its first run, 54591f4d, added Scribe main's 2,176 unrecorded commits at c88b6378 (3,259 non-merge commits, 1,083 already named).
+- **Files:**
+  - `scripts/audit/backfill_commit_ledger.py` — the ledger's backfill and check
+- **User context (verbatim):**
+  > backfill everything, all 2,237 lines, as one mechanical docs-only commit generated from git
+- **SpecStory:** unavailable — Claude Code agent session (library-79); no SpecStory capture configured for this session. The quote is the coordinating session's instruction, not Michael's.
+
+## October 4th, 2026 at 8:41:09 a.m. EDT — `5ff6cb84f9b5` Document the v1.9.7 release: the operation gate's priority lanes, hydration and publication off the gate, write-failure kinds and connection health, with the regression found before release (#473 #482)
+
+- **Implementation commit:** `5ff6cb84f9b547c96602f186efa73d7cb7dae2d2`
+- **Change:** Document the v1.9.7 release: the operation gate's priority lanes, hydration and publication off the gate, write-failure kinds and connection health, with the regression found before release (#473 #482)
+- **Details:**
+  - The release document records the server-apply regression dev-197 found (4,816 ms held against 983 ms in 1.9.6) and its fix, the red run on v1.9.6, the release gate on c434e244, the A/B of the hub-component test, and the before-and-after soak.
+- **Files:**
+  - `docs/releases/v1.9.7.md` — the release document
+  - `PROGRESS.md` — the release's entry
+- **User context (verbatim):**
+  > 1.9.7 carries the gate deadline, priority lanes and #473's remaining two parts, with one before-and-after soak.
+- **SpecStory:** unavailable — Claude Code agent session (library-79); no SpecStory capture configured for this session. The quote is the coordinating session's instruction, not Michael's.
+
+## October 4th, 2026 at 8:39:10 a.m. EDT — `44a1544a859f` Test-only: the mixed encoding-window test lets the connect's delivery pass finish before it adds rows, as its sibling does (#473)
+
+- **Implementation commit:** `44a1544a859f612a821667e28503e1aa1bdc8169`
+- **Change:** Test-only: the mixed encoding-window test lets the connect's delivery pass finish before it adds rows, as its sibling does (#473)
+- **Details:**
+  - 1.9.7's release gate failed mixedEncodingFailureWindowRefillsWithoutAnAcknowledgement in the ten suites and 4 of 5 times alone, with the race e83619d9 fixed in its sibling; with the same wait it passed 5 of 5 alone (ab-197).
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantBoundedOutboxDeliveryTests.swift` — wait for the connect's pass before adding rows
+- **User context (verbatim):**
+  > 1.9.7 carries the gate deadline, priority lanes and #473's remaining two parts, with one before-and-after soak.
+- **SpecStory:** unavailable — Claude Code agent session (library-79); no SpecStory capture configured for this session. The quote is the coordinating session's instruction, not Michael's.
+
+## October 4th, 2026 at 8:39:10 a.m. EDT — `c434e2443380` A server apply queues with local writes on the operation gate, not behind them, since its commit's work grows with every write it waits for (#473)
+
+- **Implementation commit:** `c434e24433804e988fd776061172fd276283e06f`
+- **Change:** A server apply queues with local writes on the operation gate, not behind them, since its commit's work grows with every write it waits for (#473)
+- **Details:**
+  - dev-197's focused suite failed localTransactsDoNotWaitBehindAServerApplyOverAHubComponent: a server apply held the gate 4,816 ms (catch up 2,431, commit 1,676, patch 691) and a local write waited 4,702 ms, over 375 writes; 1.9.6's gate held 983 ms with the longest write at 866 ms.
+  - Both of a server apply's gate entries, 'snapshot server apply' and 'catch up server apply', now queue interactive, first come, first served with local writes, as in 1.9.6. Prunes, retry windows and unbounded outbox listings stay in the background lane.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — the server apply's two gate entries queue interactive
+  - `Sources/InstantSwiftDataCore/AsyncSerialGate.swift` — the background lane's description
+  - `Tests/InstantSwiftDataCoreTests/InstantOperationGatePriorityTests.swift` — the gate tests' background waiter is an outbox listing
+- **User context (verbatim):**
+  > Put the server-apply regression and its numbers (4,816 ms held vs 983 ms in 1.9.6) in 1.9.7's release doc.
+- **SpecStory:** unavailable — Claude Code agent session (library-79); no SpecStory capture configured for this session. The quote is the coordinating session's instruction, not Michael's.
+
+## October 4th, 2026 at 8:39:10 a.m. EDT — `e83619d92711` Test-only: two bounded-outbox tests let the delivery pass already requested finish before they add rows or count passes (#473)
+
+- **Implementation commit:** `e83619d92711025bc915646b254b0f0bccdaae36`
+- **Change:** Test-only: two bounded-outbox tests let the delivery pass already requested finish before they add rows or count passes (#473)
+- **Details:**
+  - dev-197's ten suites failed fiftyEncodingFailuresUseBoundedRowAddressedQuarantineAndDoNotStarveTail (the connect's own pass quarantined the appended rows outside the known-issue scope) and acknowledgementTimeoutRetriesOnlyAfterReplacingTheLiveGeneration (the successor's pass, still claiming when the clock moved, found the expired deadline itself), each once. Each test now waits up to 5 s for the pump to be idle at that point; the product's behavior in both runs was correct.
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantBoundedOutboxDeliveryTests.swift` — wait for the requested pass before adding rows or counting
+- **User context (verbatim):**
+  > 1.9.7 carries the gate deadline, priority lanes and #473's remaining two parts, with one before-and-after soak.
+- **SpecStory:** unavailable — Claude Code agent session (library-79); no SpecStory capture configured for this session. The quote is the coordinating session's instruction, not Michael's.
+
+## October 4th, 2026 at 8:39:10 a.m. EDT — `3c813be96931` The operation gate's wait and stall reports name the runtime's app, and the two tests that read them count only their own runtime's (#473)
+
+- **Implementation commit:** `3c813be96931371b6771d5db0e05a284aa167a2f`
+- **Change:** The operation gate's wait and stall reports name the runtime's app, and the two tests that read them count only their own runtime's (#473)
+- **Details:**
+  - dev-197 failed aLocalWriteGoesAheadOfAnOutboxListingQueuedBeforeIt and aLocalWriteNamesThePhaseThatHeldTheGate in all three new-suite runs: each read InstantDiagnostics.shared, which every runtime in the process writes, and the suites run in parallel.
+  - AsyncSerialGate takes an owner; InstantRuntime names its operation gate after its app ID, carried as 'owner' on serial-gate.waited and serial-gate.stalled. The tests count only their runtime's lines, and the hold test waits up to 5 s for its line and expects 'commit store' or 'publish status'.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/AsyncSerialGate.swift` — owner on the gate and its reports
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — the operation gate is named for the app
+  - `Tests/InstantSwiftDataCoreTests/InstantOperationGatePriorityTests.swift` — counts only its runtime's waits
+  - `Tests/InstantSwiftDataCoreTests/InstantOperationGateHoldTests.swift` — counts only its runtime's waits and waits for the line
+- **User context (verbatim):**
+  > 1.9.7 carries the gate deadline, priority lanes and #473's remaining two parts, with one before-and-after soak.
+- **SpecStory:** unavailable — Claude Code agent session (library-79); no SpecStory capture configured for this session. The quote is the coordinating session's instruction, not Michael's.
+
+## October 4th, 2026 at 8:39:09 a.m. EDT — `7b67b843b484` Test-only: renameChunk is fileprivate, since its fixture parameter is a private type (#473)
+
+- **Implementation commit:** `7b67b843b484760ec5940087d4a4e16129b33273`
+- **Change:** Test-only: renameChunk is fileprivate, since its fixture parameter is a private type (#473)
+- **Details:**
+  - dev-197's red build on v1.9.6 stopped at InstantOperationGatePriorityTests.swift:266, 'method must be declared fileprivate because its parameter uses a private type'. No test changes.
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantOperationGatePriorityTests.swift` — renameChunk is fileprivate
+- **User context (verbatim):**
+  > 1.9.7 carries the gate deadline, priority lanes and #473's remaining two parts, with one before-and-after soak.
+- **SpecStory:** unavailable — Claude Code agent session (library-79); no SpecStory capture configured for this session. The quote is the coordinating session's instruction, not Michael's.
+
 ## October 4th, 2026 at 12:41:09 a.m. EDT — `226ab93b2a02` Document the v1.9.6 release: a stored file downloads to a destination file, streaming, and the log file is written in batches (#454 #473)
 
 - **Implementation commit:** `226ab93b2a028b01f54ca7a186e90446744197a1`
@@ -97,6 +541,265 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 - **User context (verbatim):**
   > fix this please so it works efficiently as as well as the typescript core library
 - **SpecStory:** unavailable — Claude Code agent session (library-79); no SpecStory capture configured for this session.
+
+## October 3rd, 2026 at 7:00:48 p.m. EDT — `27770ee90435` Keep the room tests' checks steady on a loaded Mac: the topic run compares median batches, and waits get 5 s (#461)
+
+- **Implementation commit:** `27770ee904352ed38c29021135755ef7cd32f4c8`
+- **Change:** The room tests' checks hold on a loaded Mac: the 10,000-message topic run compares median 100-message batches, and four waits that only detect a missing event get the codebase's 5 s (#461).
+- **Details:**
+  - A single stall of the test process (heavy.sh demotes a job to background QoS under saturation) could fail the old first-1,000 versus last-1,000 total; a per-message cost that grows with the messages before it still fails the median check.
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantRoomPresenceRuntimeTests.swift` — the topic run's batch medians and the 5 s waits
+- **User context (verbatim):**
+  > That sounds good to me for the, uh, rooms plan, so go ahead and knock that out with a subagent.
+  > Good plan. And let's get feature parody and performance parody with Swift and typescript, please.
+- **SpecStory:** unavailable — Claude Code agent session (rooms subagent under main); no SpecStory capture configured for this session.
+
+## October 3rd, 2026 at 6:52:34 p.m. EDT — `2e513f1c41aa` Claim README.md for the rooms rules and record the rebase onto v1.9.5 in the rooms plan (#461)
+
+- **Implementation commit:** `2e513f1c41aa199c34212ba40fab6559d72035dd`
+- **Change:** Plan-only follow-up: claim README.md for the rooms rules, and record the rebase onto v1.9.5 (e7c6ffb3) and the files the work added in the rooms plan (#461).
+- **Files:**
+  - `_touching/README.md/README.md/.agents/agents.txt` — the README.md claim
+  - `agent-presence/claude-opus-5.5/plans/2026-10-03-rooms/PLAN.md` — the new base and the touching list
+- **User context (verbatim):**
+  > That sounds good to me for the, uh, rooms plan, so go ahead and knock that out with a subagent.
+- **SpecStory:** unavailable — Claude Code agent session (rooms subagent under main); no SpecStory capture configured for this session.
+
+## October 3rd, 2026 at 6:52:34 p.m. EDT — `06216ad5330a` Document rooms parity with Reactor.js: ADR 0019, the README's rooms rules, and the PROGRESS checkpoint (#461)
+
+- **Implementation commit:** `06216ad5330a5ccb397c02f5668e60a71544a1ee`
+- **Change:** ADR 0019, the README's rooms rules and the PROGRESS checkpoint for rooms parity with Reactor.js (#461).
+- **Details:**
+  - ADR 0019: the eight decisions, the parity table against Reactor.js, consequences, and evidence; the measurement before and after and the red-then-green run are queued.
+  - PROGRESS: the branch on v1.9.5, its commits, the compiler checks so far, the queued runs, and how to continue.
+- **Files:**
+  - `docs/adr/0019-rooms-and-presence-parity.md` — the decision record
+  - `README.md` — the rooms section states the rules an app sees: session peers, nothing stored, change-only observers, topics once each, explicit leaving
+  - `PROGRESS.md` — the rooms checkpoint
+- **User context (verbatim):**
+  > That sounds good to me for the, uh, rooms plan, so go ahead and knock that out with a subagent.
+  > Good plan. And let's get feature parody and performance parody with Swift and typescript, please.
+- **SpecStory:** unavailable — Claude Code agent session (rooms subagent under main); no SpecStory capture configured for this session.
+
+## October 3rd, 2026 at 6:52:23 p.m. EDT — `4d83580dc91e` Let a presence observation select keys, peers, and its own presence, as Reactor.js's subscribePresence does (#461)
+
+- **Implementation commit:** `4d83580dc91e386274b85637eb3a5af950d579c2`
+- **Change:** A presence observation can select keys, peers and its own presence, and wakes only when its part changed (#461).
+- **Details:**
+  - observeRoomPresence(room:selection:) with InstantRoomPresenceSelection, as Reactor.js's subscribePresence keys/peers/user options.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantRoomModels.swift` — InstantRoomPresenceSelection
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — observeRoomPresence(room:selection:)
+  - `Sources/InstantSwiftDataCore/InstantRuntimeRoomPresence.swift` — per-observer selection and last emission
+  - `Tests/InstantSwiftDataCoreTests/InstantRoomPresenceRuntimeTests.swift` — the selection test
+- **User context (verbatim):**
+  > That sounds good to me for the, uh, rooms plan, so go ahead and knock that out with a subagent.
+  > Good plan. And let's get feature parody and performance parody with Swift and typescript, please.
+- **SpecStory:** unavailable — Claude Code agent session (rooms subagent under main); no SpecStory capture configured for this session.
+
+## October 3rd, 2026 at 6:52:23 p.m. EDT — `52b99c19c0d7` Offer presence selection on the public client: observeRoomPresence(room:selection:) (#461)
+
+- **Implementation commit:** `52b99c19c0d705ea60a175a0cc4b0901e3b5ae90`
+- **Change:** Presence selection on the public client: observeRoomPresence(room:selection:) (#461).
+- **Details:**
+  - Applies an InstantRoomPresenceSelection to the client's presence stream and forwards a part only when it changed; InstantRoomPresenceSelection.changed(from:to:) is public.
+- **Files:**
+  - `Sources/InstantSwiftData/InstantSwiftData.swift` — the client overload
+  - `Sources/InstantSwiftDataCore/InstantRoomModels.swift` — changed(from:to:) made public
+  - `Tests/InstantSwiftDataTests/InstantRoomPresenceSelectionClientTests.swift` — the client test
+- **User context (verbatim):**
+  > That sounds good to me for the, uh, rooms plan, so go ahead and knock that out with a subagent.
+  > Good plan. And let's get feature parody and performance parody with Swift and typescript, please.
+- **SpecStory:** unavailable — Claude Code agent session (rooms subagent under main); no SpecStory capture configured for this session.
+
+## October 3rd, 2026 at 6:52:23 p.m. EDT — `e452bfa8ed86` Say whether the server confirmed a room's join on the current connection: isRoomJoined, as Reactor.js's isLoading (#461)
+
+- **Implementation commit:** `e452bfa8ed86a9b2c3111101071ab0d8b5f504a9`
+- **Change:** isRoomJoined on the runtime and the client: whether the server confirmed a room's join on the current connection, as Reactor.js's isLoading (#461).
+- **Details:**
+  - True from join-room-ok (or the room's first presence frame or broadcast) on the open connection; false before it, after a drop, after the last leave, and without a live transport.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantRuntimeLiveSession.swift` — isRoomJoined reads the room registration
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — InstantRuntime.isRoomJoined
+  - `Sources/InstantSwiftData/InstantSwiftData.swift` — InstantSwiftDataClient.isRoomJoined and its closure
+  - `Tests/InstantSwiftDataCoreTests/InstantRoomPresenceRuntimeTests.swift` — aRoomIsJoinedOnlyOnceTheServerConfirmsItOnTheCurrentConnection
+- **User context (verbatim):**
+  > That sounds good to me for the, uh, rooms plan, so go ahead and knock that out with a subagent.
+  > Good plan. And let's get feature parody and performance parody with Swift and typescript, please.
+- **SpecStory:** unavailable — Claude Code agent session (rooms subagent under main); no SpecStory capture configured for this session.
+
+## October 3rd, 2026 at 6:52:23 p.m. EDT — `e31eadc7f90a` Keep @discardableResult on the client's joinRoom, which the isRoomJoined insertion separated from it (#461)
+
+- **Implementation commit:** `e31eadc7f90a668580a335ba3cca9e0f99d1dd2a`
+- **Change:** Keep @discardableResult on the client's joinRoom (#461).
+- **Files:**
+  - `Sources/InstantSwiftData/InstantSwiftData.swift` — the attribute back on joinRoom
+- **User context (verbatim):**
+  > That sounds good to me for the, uh, rooms plan, so go ahead and knock that out with a subagent.
+- **SpecStory:** unavailable — Claude Code agent session (rooms subagent under main); no SpecStory capture configured for this session.
+
+## October 3rd, 2026 at 6:52:23 p.m. EDT — `fb8744bbb6f2` Pin that racing presence publishes leave the newest on the wire (#461)
+
+- **Implementation commit:** `fb8744bbb6f20d059e97a90ab97a7c02cbba5990`
+- **Change:** Pin that racing presence publishes leave the newest on the wire (#461).
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantRoomPresenceRuntimeTests.swift` — racingPresencePublishesLeaveTheNewestOnTheWire
+- **User context (verbatim):**
+  > That sounds good to me for the, uh, rooms plan, so go ahead and knock that out with a subagent.
+- **SpecStory:** unavailable — Claude Code agent session (rooms subagent under main); no SpecStory capture configured for this session.
+
+## October 3rd, 2026 at 6:52:23 p.m. EDT — `0bec8c356add` Compare the racing-publish test's wire value through jsonValue: InstantLiveJSONValue's JSONValue init is fileprivate (#461)
+
+- **Implementation commit:** `0bec8c356adde45d87dee08f6bc8425952a40da6`
+- **Change:** The racing-publish test compares the wire value through jsonValue (#461).
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantRoomPresenceRuntimeTests.swift` — the comparison
+- **User context (verbatim):**
+  > That sounds good to me for the, uh, rooms plan, so go ahead and knock that out with a subagent.
+- **SpecStory:** unavailable — Claude Code agent session (rooms subagent under main); no SpecStory capture configured for this session.
+
+## October 3rd, 2026 at 6:52:22 p.m. EDT — `a17a9cb5cd15` Emit room presence only when what an observer sees changed, as Reactor.js does (#461)
+
+- **Implementation commit:** `a17a9cb5cd1547b4cb00025f3cfdf0e388033be3`
+- **Change:** Room presence emits only when what an observer sees changed (#461).
+- **Details:**
+  - Reactor.js hasPresenceResponseChanged; a restated refresh-presence or a set-presence-ok wakes nobody.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantRuntimeRoomPresence.swift` — change-only emission
+  - `Tests/InstantSwiftDataCoreTests/InstantRoomPresenceRuntimeTests.swift` — the emission test loses its wrapper
+- **User context (verbatim):**
+  > That sounds good to me for the, uh, rooms plan, so go ahead and knock that out with a subagent.
+  > Good plan. And let's get feature parody and performance parody with Swift and typescript, please.
+- **SpecStory:** unavailable — Claude Code agent session (rooms subagent under main); no SpecStory capture configured for this session.
+
+## October 3rd, 2026 at 6:52:22 p.m. EDT — `5533996721b2` Apply room frames beside the query applier, not behind it, as Reactor.js handles each frame as it arrives (#461)
+
+- **Implementation commit:** `5533996721b2065a5ba865ce69a29711c59c100d`
+- **Change:** Room frames apply beside the query applier, in arrival order, so presence never waits behind a refresh-ok (#461).
+- **Details:**
+  - The reader hands room frames to a third task in the generation's group and still awaits nothing but receive() (#296); the room stream finishes beside frames.close(). Agreed with library-79, whose #474 change builds on it.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantRuntimeLiveSession.swift` — reader routing, the room-frame task, applyRoomFrame
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — handleLiveRoomEvent with the room and session id
+  - `Tests/InstantSwiftDataCoreTests/InstantRoomPresenceRuntimeTests.swift` — the applier test loses its wrapper
+- **User context (verbatim):**
+  > That sounds good to me for the, uh, rooms plan, so go ahead and knock that out with a subagent.
+  > Good plan. And let's get feature parody and performance parody with Swift and typescript, please.
+- **SpecStory:** unavailable — Claude Code agent session (rooms subagent under main); no SpecStory capture configured for this session.
+
+## October 3rd, 2026 at 6:52:22 p.m. EDT — `5b2888f79e34` Leave rooms and presence as Reactor.js does: the last holder's leave forgets the room, leavePresence clears the wire (#461)
+
+- **Implementation commit:** `5b2888f79e34470be086f98764420bee5f59ff94`
+- **Change:** Leaving as Reactor.js does: only the last holder's leaveRoom forgets the room, leavePresence clears the wire, a presence set before joinRoom goes out with the join (#461).
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — leaveRoom forgets only on the last holder; leavePresence sends the remaining or empty presence
+  - `Sources/InstantSwiftDataCore/InstantRuntimeLiveSession.swift` — leaveRoom reports the last holder; presence before join; nil presence goes out as {}
+  - `Tests/InstantSwiftDataCoreTests/InstantRoomPresenceRuntimeTests.swift` — three tests lose their wrappers
+- **User context (verbatim):**
+  > That sounds good to me for the, uh, rooms plan, so go ahead and knock that out with a subagent.
+  > Good plan. And let's get feature parody and performance parody with Swift and typescript, please.
+- **SpecStory:** unavailable — Claude Code agent session (rooms subagent under main); no SpecStory capture configured for this session.
+
+## October 3rd, 2026 at 6:52:22 p.m. EDT — `68a99b2ace32` Keep live room topic messages in memory, once each, without storage or the operation gate, as Reactor.js does (#461)
+
+- **Implementation commit:** `68a99b2ace325e22bd38053aa1457cf8df18b40e`
+- **Change:** Live room topic messages in memory, once each, without storage or the operation gate; new observeRoomTopicEvents (#461).
+- **Details:**
+  - InstantRuntimeRoomTopics: events once each and in order (no drops), snapshots of the most recent 128, this runtime's own recent publications; messages carry the sender's peerID. The CLI's local cache keeps SQLite topics.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantRuntimeRoomTopics.swift` — the new topics actor
+  - `Sources/InstantSwiftDataCore/InstantRoomModels.swift` — InstantRoomTopicMessage.peerID and isLocal
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — the topic entry points in memory for live runtimes
+  - `Tests/InstantSwiftDataCoreTests/InstantRoomPresenceRuntimeTests.swift` — the topic test loses its wrapper; the 10,000-message run
+  - `Tests/InstantSwiftDataCoreTests/InstantReactorParityTests.swift` — the room-events test expects the recent messages with peer ids
+- **User context (verbatim):**
+  > That sounds good to me for the, uh, rooms plan, so go ahead and knock that out with a subagent.
+  > Good plan. And let's get feature parody and performance parody with Swift and typescript, please.
+- **SpecStory:** unavailable — Claude Code agent session (rooms subagent under main); no SpecStory capture configured for this session.
+
+## October 3rd, 2026 at 6:52:22 p.m. EDT — `f997440c7c8d` Forget a room's presence and topics when the last holder's leave-room fails to send (#461)
+
+- **Implementation commit:** `f997440c7c8dfd08f86f2e1cf7025ac9b3f65ade`
+- **Change:** Forget a room's presence and topics when the last holder's leave-room fails to send (#461).
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — leaveRoom's failure path
+- **User context (verbatim):**
+  > That sounds good to me for the, uh, rooms plan, so go ahead and knock that out with a subagent.
+  > Good plan. And let's get feature parody and performance parody with Swift and typescript, please.
+- **SpecStory:** unavailable — Claude Code agent session (rooms subagent under main); no SpecStory capture configured for this session.
+
+## October 3rd, 2026 at 6:52:21 p.m. EDT — `53df7ab107cb` Add a red parity test: two sessions of one user must be two room peers, not one (#461)
+
+- **Implementation commit:** `53df7ab107cbd4888ef290343185cff8e5f94b77`
+- **Change:** Red parity test: two sessions of one user must be two room peers, as Reactor.js keys peers by session (#461).
+- **Details:**
+  - runtimeKeepsEverySessionOfOneUserAsItsOwnPeer, wrapped in withKnownIssue until the fix: Swift keyed members appID:room:userID, so two agent sessions merged and a same-user session replaced this device's entry.
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantReactorParityTests.swift` — the red parity test and its Reactor.js source note
+- **User context (verbatim):**
+  > That sounds good to me for the, uh, rooms plan, so go ahead and knock that out with a subagent.
+  > Good plan. And let's get feature parody and performance parody with Swift and typescript, please.
+- **SpecStory:** unavailable — Claude Code agent session (rooms subagent under main); no SpecStory capture configured for this session.
+
+## October 3rd, 2026 at 6:52:21 p.m. EDT — `186d2f746cc7` Add red tests for room presence and topics against Reactor.js: the gate, SQLite, the applier, emissions, leaving (#461)
+
+- **Implementation commit:** `186d2f746cc7571b544dbf920ebb2fea6900516c`
+- **Change:** Red tests for room presence and topics against Reactor.js: the gate, SQLite, the applier, emissions, leaving, presence before join, topics (#461).
+- **Details:**
+  - Each in withKnownIssue until its fix removes it; helpers: a presence recorder, a gate that parks the operation gate or the applier, waitForRoom.
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantRoomPresenceRuntimeTests.swift` — the new suite
+- **User context (verbatim):**
+  > That sounds good to me for the, uh, rooms plan, so go ahead and knock that out with a subagent.
+  > Good plan. And let's get feature parody and performance parody with Swift and typescript, please.
+- **SpecStory:** unavailable — Claude Code agent session (rooms subagent under main); no SpecStory capture configured for this session.
+
+## October 3rd, 2026 at 6:52:21 p.m. EDT — `b6b276669d13` Key room peers by session, as Reactor.js does: two sessions of one user are two members (#461)
+
+- **Implementation commit:** `b6b276669d132294e8a1f902af23a746c23cece2`
+- **Change:** Room peers keyed by session: InstantRoomPresenceMember.peerID (nil for this runtime's own presence) and isLocal; a peer's id is its session (#461).
+- **Details:**
+  - Lists keep the old order (by user, own presence first); the typed @Presence wrapper leaves out only its own publication and passes peerID through.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantRoomModels.swift` — peerID, isLocal, presenceOrder
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — remote members carry their session as peerID
+  - `Sources/InstantSwiftData/InstantPresence.swift` — own-publication filter and peerID passthrough
+  - `Tests/InstantSwiftDataCoreTests/InstantReactorParityTests.swift` — the parity test loses its wrapper and checks peer ids
+- **User context (verbatim):**
+  > That sounds good to me for the, uh, rooms plan, so go ahead and knock that out with a subagent.
+  > Good plan. And let's get feature parody and performance parody with Swift and typescript, please.
+- **SpecStory:** unavailable — Claude Code agent session (rooms subagent under main); no SpecStory capture configured for this session.
+
+## October 3rd, 2026 at 6:52:21 p.m. EDT — `455a40ce31f3` Keep a live runtime's room presence in memory, off the operation gate and out of SQLite, as Reactor.js keeps it (#461)
+
+- **Implementation commit:** `455a40ce31f3cb4587ff05d9e9e4c59960a93fa7`
+- **Change:** A live runtime's room presence in memory, off the operation gate and out of SQLite (#461).
+- **Details:**
+  - New InstantRuntimeRoomPresence actor: peers, own presence and observers, one turn per publish or frame; the signed-in user id from memory (InstantRoomAuthUserIDCache); a publication sequence keeps the newer of two racing publishes on the wire; a peer's updatedAt is when its values last changed. The CLI's local cache keeps SQLite presence across launches.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantRuntimeRoomPresence.swift` — the new presence actor and the user id cache
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — room entry points off the gate in live mode; the two old presence actors removed
+  - `Sources/InstantSwiftDataCore/InstantRuntimeLiveSession.swift` — setPresence takes the publication sequence
+  - `Tests/InstantSwiftDataCoreTests/InstantRoomPresenceRuntimeTests.swift` — the gate and SQLite tests lose their wrappers
+- **User context (verbatim):**
+  > That sounds good to me for the, uh, rooms plan, so go ahead and knock that out with a subagent.
+  > Good plan. And let's get feature parody and performance parody with Swift and typescript, please.
+- **SpecStory:** unavailable — Claude Code agent session (rooms subagent under main); no SpecStory capture configured for this session.
+
+## October 3rd, 2026 at 6:52:20 p.m. EDT — `0b2dd60c5c47` Claim the files of the rooms parity work: session peers, presence in memory off the gate, room frames around the applier (#461)
+
+- **Implementation commit:** `0b2dd60c5c471c6dac6a52ca280ba37e17032489`
+- **Change:** Claim the files of the rooms parity work (#461), with plan 2026-10-03-rooms and the channel 2026-10-03-rooms beside library-79's operation-gate work.
+- **Details:**
+  - Split agreed with library-79 by message: the room entry points leave the operation gate entirely; room frames route around the applier; library-79 owns the gate and the reader/applier buffer.
+- **Files:**
+  - `agent-presence/claude-opus-5.5/plans/2026-10-03-rooms/PLAN.md` — the plan: outcome, steps, touching, conflict check
+  - `agent-presence/_channels/2026-10-03-rooms.md` — the shared-file split with library-79
+- **User context (verbatim):**
+  > That sounds good to me for the, uh, rooms plan, so go ahead and knock that out with a subagent.
+  > Good plan. And let's get feature parody and performance parody with Swift and typescript, please.
+- **SpecStory:** unavailable — Claude Code agent session (rooms subagent under main); no SpecStory capture configured for this session.
 
 ## October 3rd, 2026 at 6:48:59 p.m. EDT — `860ed5387b8e` Batch the diagnostics file's lines, one open and lock per batch, and fsync at most once a second (#473)
 
@@ -850,6 +1553,7 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 - **User context (verbatim):**
   > Remove the "Increment public / Increment mine" demo counters from Scribe's Account screen on every platform, so tapping them can't write a namespace Scribe's schema doesn't have.
 - **SpecStory:** unavailable — Claude Code CLI session; no SpecStory capture configured for this session.
+
 ## September 30th, 2026 at 9:53:48 p.m. EDT — `1907c0b49859` Restore a refused write's receipt as written, then restamp what it restored to txTime 0 (#296)
 
 - **Implementation commit:** `1907c0b49859612372531a9ab36aa8044e461d73`
@@ -896,6 +1600,7 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 - **User context (verbatim):**
   > Name the persisting decline, then fix both it and the splice cases
 - **SpecStory:** unavailable — Claude Code agent session (fast-drain-3); no SpecStory capture configured for this session.
+
 ## September 30th, 2026 at 7:42:44 p.m. EDT — `0d66e6bb5d7c` Start a backward-navigation page from the server's answer, not an earlier query's stored result (#300)
 
 - **Implementation commit:** `0d66e6bb5d7ce8d3283dca446ef7f389bfa26704`
@@ -1051,6 +1756,7 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 - **User context (verbatim):**
   > Prove the cause with URLSession specifically (red evidence).
 - **SpecStory:** unavailable — Claude Code agent session (connection-survival); no SpecStory capture configured for this session.
+
 ## September 30th, 2026 at 10:05:34 a.m. EDT — `2666d34396f4` Re-receipt the first pending writer when the server changes a slot beneath it, instead of rebasing the component (#296)
 
 - **Implementation commit:** `2666d34396f43800a94692cfd7b8925afa5d890b`

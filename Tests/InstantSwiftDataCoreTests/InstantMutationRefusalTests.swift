@@ -6,7 +6,7 @@ import Testing
 
 /// #296: a refusal names the namespace whose rule refused, the check, and the refused entity, attributes, and values,
 /// so a device log alone can say what was refused. Shapes mirror Recording 023's refused recordings write.
-@Suite
+@Suite(.timeLimit(.minutes(3)))
 struct InstantMutationRefusalTests {
   @Test
   func namesTheNamespaceCheckEntityAttributesAndShortValuesOfTheRefusedWrite() {

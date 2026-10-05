@@ -38,6 +38,29 @@ struct InstantRowQuarantineTests {
     }
   }
 
+  /// #522: Scribe's Without Audio lookup selected four fields of recordingAttachments, and another query's full decode
+  /// then met those entities without 'fileExtension' and said "Expected string". A field the local store lacks says so.
+  @Test
+  func aFieldTheLocalStoreLacksIsReportedAsMissingNotAsTheWrongType() throws {
+    let partial = InstantEntitySnapshot(
+      id: "section-9",
+      namespace: QuarantineSection.instantNamespace,
+      values: [
+        "recordingID": .one(.string(quarantineRecordingID)),
+        "segmentIndex": .one(.number(9)),
+        "text": .one(.string("section 9")),
+      ]
+    )
+    let missing = try #require(throws: InstantError.self) { try QuarantineSection(snapshot: partial) }
+    expectNoDifference(missing.path, "wallClockStartedAtMs")
+    #expect(missing.message.hasPrefix("The local store has no value for selected Instant field 'wallClockStartedAtMs'"))
+
+    var wrongType = partial
+    wrongType.values["wallClockStartedAtMs"] = .one(.string("soon"))
+    let mistyped = try #require(throws: InstantError.self) { try QuarantineSection(snapshot: wrongType) }
+    expectNoDifference(mistyped.message, "Expected number for selected Instant field 'wallClockStartedAtMs'.")
+  }
+
   @Test
   func aLiveQueryReportsADamagedRowOnceAndKeepsDeliveringGoodRows() async throws {
     try await withQuarantineDatabase { db in

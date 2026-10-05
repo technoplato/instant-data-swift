@@ -98,8 +98,11 @@ extension InstantOperationGatePriorityTests {
       }
     }
     let waits = PriorityTestBox<[InstantDiagnosticEntry]>([])
+    // Other suites' runtimes report their own operation gates at the same time, so only this runtime's count.
     let token = InstantDiagnostics.shared.addHandler { entry in
-      guard entry.event == "serial-gate.waited", entry.metadata["gate"] == "operation" else { return }
+      guard entry.event == "serial-gate.waited", entry.metadata["gate"] == "operation",
+        entry.metadata["owner"] == "offline-priority-listing"
+      else { return }
       waits.withValue { $0.append(entry) }
     }
     defer { InstantDiagnostics.shared.removeHandler(token) }
@@ -431,11 +434,11 @@ extension InstantOperationGatePriorityTests {
     let order = PriorityTestBox<[String]>([])
     await gate.enter(operation: "holder")
     let background = Task.detached {
-      await gate.enter(operation: "server apply", priority: .background)
-      order.withValue { $0.append("server apply") }
+      await gate.enter(operation: "outbox listing", priority: .background)
+      order.withValue { $0.append("outbox listing") }
       await gate.leave()
     }
-    try await waitFor("the server apply to queue") { await gate.waiterCount == 1 }
+    try await waitFor("the listing to queue") { await gate.waiterCount == 1 }
     let interactive = Task.detached {
       await gate.enter(operation: "transcript write", priority: .interactive)
       order.withValue { $0.append("transcript write") }
@@ -445,7 +448,7 @@ extension InstantOperationGatePriorityTests {
     await gate.leave()
     await background.value
     await interactive.value
-    expectNoDifference(order.value, ["transcript write", "server apply"])
+    expectNoDifference(order.value, ["transcript write", "outbox listing"])
   }
 
   @Test
@@ -454,11 +457,11 @@ extension InstantOperationGatePriorityTests {
     let order = PriorityTestBox<[String]>([])
     await gate.enter(operation: "holder")
     let background = Task.detached {
-      await gate.enter(operation: "server apply", priority: .background)
-      order.withValue { $0.append("server apply") }
+      await gate.enter(operation: "outbox listing", priority: .background)
+      order.withValue { $0.append("outbox listing") }
       await gate.leave()
     }
-    try await waitFor("the server apply to queue") { await gate.waiterCount == 1 }
+    try await waitFor("the listing to queue") { await gate.waiterCount == 1 }
     // Two aging intervals: the background waiter now ranks with an interactive one, and it is older.
     try await Task.sleep(for: .milliseconds(250))
     let interactive = Task.detached {
@@ -470,7 +473,7 @@ extension InstantOperationGatePriorityTests {
     await gate.leave()
     await background.value
     await interactive.value
-    expectNoDifference(order.value, ["server apply", "transcript write"])
+    expectNoDifference(order.value, ["outbox listing", "transcript write"])
   }
 
   @Test

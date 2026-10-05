@@ -45,11 +45,16 @@
           guard observationGeneration == generation else {
             throw CancellationError()
           }
-          let remoteMembers = members.filter { $0.userID != self.localUserID }
+          // Only this wrapper's own publication is left out: another session of the same user is a peer, as in
+          // Reactor.js, where `peers` holds every session but your own (#461).
+          let remoteMembers = members.filter { !($0.isLocal && $0.userID == self.localUserID) }
           values = remoteMembers.compactMap { member in
             var object = member.values
             if object["userID"] == nil {
               object["userID"] = .string(member.userID)
+            }
+            if object["peerID"] == nil, let peerID = member.peerID {
+              object["peerID"] = .string(peerID)
             }
             do {
               return try InstantRoomCodableJSON.decode(Value.self, from: object)

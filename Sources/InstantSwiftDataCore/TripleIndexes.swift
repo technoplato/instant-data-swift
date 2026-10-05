@@ -1,4 +1,5 @@
 import Foundation
+import os
 
 struct AttributeStore: Hashable, Codable, Sendable {
   private var attributesByID: [String: InstantAttribute] = [:]
@@ -618,6 +619,106 @@ private final class TxIDInterner: @unchecked Sendable {
   }
 }
 
+/// The sorted values of large many-cardinality slots, kept across materializations by the copies of one
+/// `TripleIndexes` (#570).
+///
+/// Every snapshot of an entity with a many-cardinality attribute sorted that attribute's values, so each snapshot of a
+/// Scribe recording, which holds its segments forward, sorted all of its segment refs: 26% of build 88's CPU kill on
+/// Michael's iPhone. A kept order is used only while the slot holds exactly its values (the same count, each one
+/// present), so no write has to forget it, and copies of the indexes that share it each check it against their own
+/// slots. The lock keeps it right however many tasks materialize copies at once.
+final class ManyCardinalityOrders: Sendable {
+  /// Smaller slots are sorted each time: the comparator makes that cheap, and keeping them costs memory.
+  static let minimumKeptCount = 16
+  /// Values kept at most. Past it the kept orders are dropped and kept again as materializations sort them.
+  static let maximumKeptValueCount = 1 << 18
+
+  private struct Key: Hashable, Sendable {
+    var entityID: String
+    var attributeID: String
+  }
+
+  private struct State: Sendable {
+    var orders: [Key: [InstantValue]] = [:]
+    var keptValueCount = 0
+    var sortCount = 0
+  }
+
+  private let state = OSAllocatedUnfairLock(initialState: State())
+
+  /// How many slots were sorted, for tests.
+  var sortCount: Int {
+    state.withLock { $0.sortCount }
+  }
+
+  /// The slot's values in `comparableKey` order: the order kept for the slot while it still holds exactly these values,
+  /// otherwise sorted now and kept.
+  func sortedValues(
+    _ values: [InstantValue: InstantTripleStamp],
+    entityID: String,
+    attributeID: String
+  ) -> [InstantValue] {
+    guard values.count >= Self.minimumKeptCount else {
+      state.withLock { $0.sortCount += 1 }
+      return values.keys.sorted(by: InstantValue.precedesInComparableKeyOrder)
+    }
+    let key = Key(entityID: entityID, attributeID: attributeID)
+    if let kept = state.withLock({ $0.orders[key] }), kept.count == values.count,
+      kept.allSatisfy({ values[$0] != nil })
+    {
+      return kept
+    }
+    let sorted = values.keys.sorted(by: InstantValue.precedesInComparableKeyOrder)
+    state.withLock { current in
+      current.sortCount += 1
+      let replaced = current.orders[key]?.count ?? 0
+      if current.keptValueCount - replaced + sorted.count > Self.maximumKeptValueCount {
+        current.orders.removeAll()
+        current.keptValueCount = 0
+      } else {
+        current.keptValueCount -= replaced
+      }
+      guard sorted.count <= Self.maximumKeptValueCount else { return }
+      current.orders[key] = sorted
+      current.keptValueCount += sorted.count
+    }
+    return sorted
+  }
+}
+
+extension InstantValue {
+  /// `lhs.comparableKey < rhs.comparableKey`, without building either key for refs, strings and booleans (#570). Every
+  /// key begins with its case's digit and a colon, so values of different cases order by that digit, and two refs, two
+  /// strings or two booleans order by what follows the colon. Other pairs of the same case compare their keys.
+  static func precedesInComparableKeyOrder(_ lhs: InstantValue, _ rhs: InstantValue) -> Bool {
+    switch (lhs, rhs) {
+    case let (.ref(left), .ref(right)), let (.string(left), .string(right)):
+      return left < right
+    case let (.bool(left), .bool(right)):
+      return !left && right
+    default:
+      let leftRank = lhs.comparableKeyRank
+      let rightRank = rhs.comparableKeyRank
+      guard leftRank == rightRank else { return leftRank < rightRank }
+      return lhs.comparableKey < rhs.comparableKey
+    }
+  }
+
+  /// The digit `comparableKey` begins with.
+  private var comparableKeyRank: Int {
+    switch self {
+    case .null: return 0
+    case .bool: return 1
+    case .number: return 2
+    case .string: return 3
+    case .date: return 4
+    case .ref: return 5
+    case .json: return 6
+    case .lookupRef: return 7
+    }
+  }
+}
+
 struct TripleIndexes: Codable, Sendable {
   private struct DerivedIndexAttributeShape: Hashable, Sendable {
     var namespace: String
@@ -708,6 +809,8 @@ struct TripleIndexes: Codable, Sendable {
     }
   }
   private var internCaches = InternCaches()
+  /// Not encoded, compared or hashed: kept orders only spare sorts (#570).
+  private let manyCardinalityOrders = ManyCardinalityOrders()
   private var pendingInternEntityID: String?
   private var pendingInternNamespace: String?
   private var pendingInternValues: [String: InstantMaterializedValue] = [:]
@@ -726,6 +829,8 @@ struct TripleIndexes: Codable, Sendable {
   private var derivedIndexAttributeShapes: [String: DerivedIndexAttributeShape] = [:]
   private var storedTripleCount = 0
   private var internedTxIDsBox = TxIDInterner()
+  /// The interner's size past which a prune counts its live IDs again (#541). Not encoded.
+  private var transactionIDCompactionThreshold = TripleIndexes.transactionIDCompactionFloor
   /// Exact transient keys hydrated or written only for preparing a mutation.
   /// Consumed before prepared indexes become the next hot store.
   private var deferredValueKeysToRemove: Set<EntityAttributeKey> = []
@@ -1545,6 +1650,85 @@ struct TripleIndexes: Codable, Sendable {
     storedTripleCount
   }
 
+  /// How many transaction IDs the interner holds, including the empty one at index 0 and IDs no triple uses any more.
+  var internedTransactionIDCount: Int {
+    internedTxIDsBox.internedTxIDs.count
+  }
+
+  /// Interners of at most this many IDs are not counted or rebuilt (#541).
+  static let transactionIDCompactionFloor = 1_024
+
+  /// Rebuilds the transaction ID interner from the live triples when it holds over twice the IDs they use (#541).
+  ///
+  /// The interner kept every transaction ID it met, so a recording that saves its newest section 45-120 times a minute
+  /// grew it for the whole session while its triples kept a handful of IDs. A rebuild numbers the live IDs again from
+  /// zero, rewrites every stamp, and gives this value a new interner; a copy made before it, such as a prepared
+  /// mutation, keeps the old interner with the stamps that match it. Counting the live IDs walks every triple, so the
+  /// next count waits until the interner passes twice the live IDs this one found. Returns the interner's size before
+  /// and after a rebuild, or nil when it was not rebuilt.
+  mutating func compactInternedTransactionIDsIfOverTwiceTheLiveOnes() -> (before: Int, after: Int)? {
+    let interned = internedTxIDsBox.internedTxIDs
+    guard interned.count > Self.transactionIDCompactionFloor,
+      interned.count > transactionIDCompactionThreshold
+    else { return nil }
+    // Index 0 is the empty ID that unknown indexes resolve to; it stays first.
+    var isLive = [Bool](repeating: false, count: interned.count)
+    isLive[0] = true
+    var liveCount = 1
+    func markLive(_ stamp: InstantTripleStamp) {
+      let index = Int(stamp.txIDIndex)
+      guard index < isLive.count, !isLive[index] else { return }
+      isLive[index] = true
+      liveCount += 1
+    }
+    for attributesByID in eav.values {
+      for slot in attributesByID.values {
+        slot.forEachPair { _, stamp in markLive(stamp) }
+      }
+    }
+    for attributesByID in vae.values {
+      for stampsByEntity in attributesByID.values {
+        for stamp in stampsByEntity.values {
+          markLive(stamp)
+        }
+      }
+    }
+    guard interned.count > 2 * liveCount else {
+      transactionIDCompactionThreshold = max(Self.transactionIDCompactionFloor, 2 * liveCount)
+      return nil
+    }
+    var renumbering = [UInt32](repeating: 0, count: interned.count)
+    var live: [String] = []
+    live.reserveCapacity(liveCount)
+    for (index, transactionID) in interned.enumerated() where isLive[index] {
+      renumbering[index] = UInt32(live.count)
+      live.append(transactionID)
+    }
+    func renumbered(_ stamp: InstantTripleStamp) -> InstantTripleStamp {
+      let index = Int(stamp.txIDIndex)
+      return InstantTripleStamp(
+        txIDIndex: index < renumbering.count ? renumbering[index] : 0,
+        txTimeMilliseconds: stamp.txTimeMilliseconds
+      )
+    }
+    eav = eav.mapValues { attributesByID in
+      attributesByID.mapValues { slot in
+        switch slot {
+        case let .one(value, stamp):
+          return .one(value: value, stamp: renumbered(stamp))
+        case let .many(stamps):
+          return .many(stamps.mapValues(renumbered))
+        }
+      }
+    }
+    vae = vae.mapValues { attributesByID in
+      attributesByID.mapValues { stampsByEntity in stampsByEntity.mapValues(renumbered) }
+    }
+    internedTxIDsBox = TxIDInterner(internedTxIDs: live)
+    transactionIDCompactionThreshold = max(Self.transactionIDCompactionFloor, 2 * live.count)
+    return (interned.count, live.count)
+  }
+
   var newestTransactionTimeMilliseconds: Int64? {
     var newest: Int64?
     for attributesByID in eav.values {
@@ -2162,6 +2346,64 @@ struct TripleIndexes: Codable, Sendable {
     attributes: AttributeStore
   ) -> Bool {
     entitySnapshot(entityID, plan: plan, attributes: attributes, projecting: false) != nil
+  }
+
+  /// Whether the server's page info cuts the page of `plan`, or keeps it empty until the server answers, as upstream
+  /// `instaql.ts` does for every query with an offset, `after` or `before` (#540).
+  func pageIsCutByServerCursors(
+    _ plan: InstantQueryPlan,
+    remotePageInfo: InstantQueryRemotePageInfo?
+  ) -> Bool {
+    remotePageInfo != nil && requiresRemotePageInfo(plan)
+  }
+
+  /// Whether `entityID`, after a write, can be on the page of `plan` with `remotePageInfo`, for a plan whose rows
+  /// depend only on their own fields and a page that does not hold the entity (#540). `nil` when the page depends on
+  /// rows outside it as well, so the entity's state before the write decides.
+  ///
+  /// A page the server's cursors cut (upstream `instaql.ts` cuts every query with an offset, `after` or `before` at the
+  /// server's `start-cursor` and `end-cursor`) keeps only the rows between them, then its `first`, `last` or `limit`,
+  /// and its page info is the server's. A row outside the cut cannot change it, however the write moved the row, so
+  /// a live timeline's frozen pages skip a save to its newest section. A page still waiting for the server's cursors,
+  /// or one the server answered empty, is empty whatever the store holds. `first` or `limit` together with `last`
+  /// keeps a run from the middle of the cut, which a row leaving the cut shifts, and a cursor without a sort value
+  /// compares by entity ID alone, which does not follow the rows' order, so those pages answer `nil`.
+  func unheldEntityCanEnterPage(
+    _ entityID: String,
+    plan: InstantQueryPlan,
+    attributes: AttributeStore,
+    remotePageInfo: InstantQueryRemotePageInfo?
+  ) -> Bool? {
+    guard requiresRemotePageInfo(plan), let remotePageInfo else { return nil }
+    guard case let .ready(pageInfo) = remotePageInfo, let startCursor = pageInfo.startCursor else {
+      return false
+    }
+    guard isValidPagination(plan) else { return false }
+    guard plan.last == nil || (plan.first == nil && plan.limit == nil),
+      startCursor.sortValue != nil,
+      pageInfo.endCursor.map({ $0.sortValue != nil }) ?? true
+    else { return nil }
+    let order = Self.effectiveOrder(plan.order)
+    var metrics = QueryMaterializationMetrics()
+    // The bounded page's own candidate: its filters, and its sort value from the index or the row.
+    guard
+      let candidate = boundedQuerySnapshot(
+        entityID: entityID,
+        plan: plan,
+        order: order,
+        filtersFullyCoveredByIndex: false,
+        candidateNamespaceIsKnown: false,
+        attributes: attributes,
+        metrics: &metrics
+      )
+    else { return false }
+    return boundedRangePosition(
+      candidate,
+      plan: plan,
+      order: order,
+      attributes: attributes,
+      remotePageInfo: remotePageInfo
+    ) == .inside
   }
 
   /// Materializes one entity against `plan` filters, includes, and selected fields.
@@ -3646,7 +3888,7 @@ private struct PreparedInclude {
         }
         continue
       }
-      if let value = materializedValue(slot, attribute: attribute) {
+      if let value = materializedValue(slot, attribute: attribute, entityID: entityID, attributeID: attribute.id) {
         if values[attribute.name] != value {
           values[attribute.name] = value
           didChange = true
@@ -3674,6 +3916,7 @@ private struct PreparedInclude {
     let namespaceAttributes = attributes.attributes(namespace: namespace)
     if namespaceAttributes.isEmpty {
       return materializedValuesByScanningEntityAttributes(
+        entityID: entityID,
         namespace: namespace,
         attributesByID: attributesByID,
         attributes: attributes
@@ -3694,7 +3937,12 @@ private struct PreparedInclude {
       guard let valuesByValue = attributesByID[attribute.id] else { continue }
       hasNamespaceData = true
 
-      if let value = materializedValue(valuesByValue, attribute: attribute) {
+      if let value = materializedValue(
+        valuesByValue,
+        attribute: attribute,
+        entityID: entityID,
+        attributeID: attribute.id
+      ) {
         values[attribute.name] = value
       }
     }
@@ -3703,6 +3951,7 @@ private struct PreparedInclude {
   }
 
   private func materializedValuesByScanningEntityAttributes(
+    entityID: String,
     namespace: String,
     attributesByID: [String: AttrSlot],
     attributes: AttributeStore
@@ -3713,7 +3962,12 @@ private struct PreparedInclude {
       guard let attribute = attributes[attributeID], attribute.namespace == namespace
       else { continue }
 
-      if let value = materializedValue(valuesByValue, attribute: attribute) {
+      if let value = materializedValue(
+        valuesByValue,
+        attribute: attribute,
+        entityID: entityID,
+        attributeID: attributeID
+      ) {
         values[attribute.name] = value
       }
     }
@@ -3723,7 +3977,9 @@ private struct PreparedInclude {
 
   private func materializedValue(
     _ slot: AttrSlot,
-    attribute: InstantAttribute
+    attribute: InstantAttribute,
+    entityID: String,
+    attributeID: String
   ) -> InstantMaterializedValue? {
     switch attribute.cardinality {
     case .one:
@@ -3731,9 +3987,12 @@ private struct PreparedInclude {
       return .one(value)
 
     case .many:
-      return .many(
-        slot.keys.sorted { $0.comparableKey < $1.comparableKey }
-      )
+      switch slot {
+      case let .one(value, _):
+        return .many([value])
+      case let .many(values):
+        return .many(manyCardinalityOrders.sortedValues(values, entityID: entityID, attributeID: attributeID))
+      }
     }
   }
 
@@ -4216,18 +4475,30 @@ private struct PreparedInclude {
     pendingInternValues[attribute.name] = materialized
   }
 
-  private func pendingInternOmitsExistingCardinalityOneFields(
-    entityID: String,
-    namespace: String
-  ) -> Bool {
+  /// How the pending snapshot's fields cover the entity's stored slots.
+  private enum PendingInternCoverage {
+    /// Every stored slot is a field the write set.
+    case everySlot
+    /// One stored slot is not: the entity's id slot, or a field of an entity that stores no id slot (#577).
+    case allButOneSlot
+    /// Two or more stored slots are not, so at least one is not the id slot and may be a field.
+    case missingFields
+  }
+
+  private func pendingInternCoverage(entityID: String) -> PendingInternCoverage {
     // Attribute IDs may be canonical UUIDs instead of "namespace/name" strings,
     // so completeness cannot be derived from id prefixes. Compare the pending
-    // snapshot's field count (written fields plus the synthesized id) against
-    // every stored slot of the entity. Any leftover slot may hold an
-    // uninterned cardinality-one field, so treat it as omitting and skip
-    // interning rather than serve a partial snapshot later.
-    guard let existingCount = eavStorage.rows[entityID]?.count else { return false }
-    return existingCount > pendingInternValues.count + 1
+    // snapshot's written fields against every stored slot of the entity. Of
+    // two leftover slots at least one may hold an uninterned cardinality-one
+    // field, so skip interning rather than serve a partial snapshot later. One
+    // leftover slot is the id slot of an entity that stores one, or a field of
+    // an entity that stores none, and only the attribute store tells them apart.
+    guard let existingCount = eavStorage.rows[entityID]?.count else { return .everySlot }
+    switch existingCount - pendingInternValues.count {
+    case ...0: return .everySlot
+    case 1: return .allButOneSlot
+    default: return .missingFields
+    }
   }
 
   private mutating func flushPendingIntern() {
@@ -4235,10 +4506,8 @@ private struct PreparedInclude {
       let entityID = pendingInternEntityID,
       let namespace = pendingInternNamespace
     else { return }
-    if pendingInternOmitsExistingCardinalityOneFields(
-      entityID: entityID,
-      namespace: namespace
-    ) {
+    switch pendingInternCoverage(entityID: entityID) {
+    case .missingFields:
       pendingInternEntityID = nil
       pendingInternNamespace = nil
       pendingInternValues = [:]
@@ -4249,6 +4518,12 @@ private struct PreparedInclude {
         internInvalidationIDs.insert(entityID)
       }
       return
+    case .allButOneSlot:
+      // Kept, and completed from the entity's slots when the write finishes, where a
+      // leftover field is filled in and a leftover id slot changes nothing (#577).
+      pendingInternNeedsEAVCompletion = true
+    case .everySlot:
+      break
     }
     pendingInternValues["id"] = .one(.string(entityID))
     let snapshot = InstantEntitySnapshot(
@@ -4541,6 +4816,11 @@ private struct PreparedInclude {
     internCaches.internedEntityCount
   }
 
+  /// How many many-cardinality slots these indexes and their copies sorted while materializing (#570).
+  var manyCardinalitySortCount: Int {
+    manyCardinalityOrders.sortCount
+  }
+
   mutating func internChangedEntities(
     _ entityIDs: Set<String>,
     attributes: AttributeStore
@@ -4559,7 +4839,9 @@ private struct PreparedInclude {
       for (attributeID, slot) in attributesByID {
         guard let attribute = attributes[attributeID] else { continue }
         guard attribute.cardinality == .one, !attribute.primaryKey else { continue }
-        guard let materialized = materializedValue(slot, attribute: attribute) else { continue }
+        guard
+          let materialized = materializedValue(slot, attribute: attribute, entityID: entityID, attributeID: attributeID)
+        else { continue }
         if snapshotNamespace == nil || snapshotNamespace == attribute.namespace {
           snapshotNamespace = attribute.namespace
           values[attribute.name] = materialized

@@ -5,7 +5,7 @@ import Testing
 
 @testable import InstantSwiftDataCore
 
-@Suite(.serialized)
+@Suite(.serialized, .timeLimit(.minutes(3)))
 struct InstantTerminalFailureComponentTests {
   @Test
   func footprintIncludesForwardRollbackAndReferenceTargets() throws {
