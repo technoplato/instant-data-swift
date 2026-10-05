@@ -1,3 +1,6 @@
+## 2026-10-05 04:49:22 EDT — instant-data-swift `fb022ceee757e15970e10f39547de06852bd2d23`
+A focused test for #540's pages that keep both ends of the server's cut: a row they do not show that leaves the cut refreshes them
+
 ## 2026-10-05 03:34:29 EDT — instant-data-swift `841fb0146a6b0ad07c2cfd83c401a462430583d9`
 A row's interned snapshot keeps every stored field when the write leaves one slot unset: an id slot, or a field (#577)
 

@@ -10,6 +10,18 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## October 5th, 2026 at 4:49:36 a.m. EDT — `fb022ceee757` A focused test for #540's pages that keep both ends of the server's cut: a row they do not show that leaves the cut refreshes them
+
+- **Implementation commit:** `fb022ceee757e15970e10f39547de06852bd2d23`
+- **Change:** A focused test for #540's pages that keep both ends of the server's cut: a row they do not show that leaves the cut refreshes them (#540)
+- **Details:**
+  - dev-199's mutation M1 (both-ends pages skipped by range) failed only the differential test at seed 15, which #577 caused, so nothing showed M1 caught.
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantStorePageSkipTests.swift` — aRowThatLeavesTheCutOfAPageThatKeepsBothEndsRefreshesIt
+- **User context (verbatim):**
+  > fix this please so it works efficiently as as well as the typescript core library
+- **SpecStory:** unavailable — unavailable — Claude Code agent session (library-79 subagent under main); no SpecStory capture configured for this session.
+
 ## October 5th, 2026 at 3:42:37 a.m. EDT — `841fb0146a6b` A row's interned snapshot keeps every stored field when the write leaves one slot unset: an id slot, or a field (#577)
 
 - **Implementation commit:** `841fb0146a6b0ad07c2cfd83c401a462430583d9`
