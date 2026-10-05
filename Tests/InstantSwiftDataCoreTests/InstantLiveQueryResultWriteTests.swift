@@ -176,7 +176,7 @@ struct InstantLiveQueryResultWriteTests {
   }
 
   /// Sends the server's refresh of the todo query with `texts` and waits until the runtime has saved its result.
-  static func refresh(_ texts: [String], in fixture: Fixture) async throws {
+  static func refresh(_ texts: [String], in fixture: Fixture, timeout: Duration = .seconds(10)) async throws {
     let savesBefore = await fixture.runtime.liveQueryResultJSONWriteStatsForTesting().saves
     let number = fixture.clock.now().milliseconds
     await fixture.session.enqueue(
@@ -196,7 +196,7 @@ struct InstantLiveQueryResultWriteTests {
         ]
       )
     )
-    try await waitFor("the refresh's result to be saved") {
+    try await waitFor("the refresh's result to be saved", timeout: timeout) {
       await fixture.runtime.liveQueryResultJSONWriteStatsForTesting().saves > savesBefore
     }
   }
@@ -372,7 +372,9 @@ struct InstantLiveQueryResultWriteTests {
     for revision in 1...100 {
       fixture.clock.advance(by: 1_000)
       texts[1_099 - (revision % 50)] = Self.longText(1_099 - (revision % 50), revision: revision)
-      try await Self.refresh(texts, in: fixture)
+      // A debug build applies a 1,100-row refresh in about a second, and in more than 10 s on a loaded Mac
+      // (library-79's dev-198c, load 160): the measurement waits longer than the other tests.
+      try await Self.refresh(texts, in: fixture, timeout: .seconds(60))
     }
     let after = await fixture.runtime.liveQueryResultJSONWriteStatsForTesting()
     let pagesAfter = await fixture.runtime.sqlitePagesWrittenForTesting()
