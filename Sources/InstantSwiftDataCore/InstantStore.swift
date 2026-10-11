@@ -348,6 +348,16 @@ package struct InstantStorePublishMetrics: Equatable, Sendable {
   }
 }
 
+/// One observer's plan, the result it holds, and the result it was last handed: for tests (#654).
+package struct InstantStoreObserverResultForTesting: Sendable {
+  package var plan: InstantQueryPlan
+  package var remotePageInfo: InstantQueryRemotePageInfo?
+  package var values: [InstantEntitySnapshot]
+  package var pageInfo: InstantQueryPageInfo?
+  package var handedValues: [InstantEntitySnapshot]
+  package var handedPageInfo: InstantQueryPageInfo?
+}
+
 /// A commit's claim on the publication that refreshes observers for it (#473).
 struct InstantStorePublicationTicket: Hashable, Sendable {
   var id: Int64
@@ -3026,6 +3036,23 @@ public actor InstantStore {
   package func observerYieldCountsForTesting() -> [String: Int] {
     publishPendingChanges()
     return yieldCountByQueryID
+  }
+
+  /// Each observer's plan, the result it holds, and the result it was last handed, after publishing any pending change
+  /// (#654).
+  package func observerResultsForTesting() -> [InstantStoreObserverResultForTesting] {
+    publishPendingChanges()
+    return observers.values.map { observer in
+      InstantStoreObserverResultForTesting(
+        plan: observer.plan,
+        remotePageInfo: observer.remotePageInfo,
+        values: observer.lastValues,
+        pageInfo: observer.lastPageInfo,
+        handedValues: observer.lastHandedValues,
+        handedPageInfo: observer.lastHandedPageInfo
+      )
+    }
+    .sorted { $0.plan.id < $1.plan.id }
   }
 
   func currentTripleCount() -> Int {
