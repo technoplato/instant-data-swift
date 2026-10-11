@@ -10,6 +10,76 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## October 11th, 2026 at 10:10:57 a.m. EDT — `8a1f40689214` Reuse prepared statements per connection: a bounded cache keyed by SQL, reset after each use, finalized before close (#653)
+
+- **Implementation commit:** `8a1f40689214635a7425e961742e738f7f5614b0`
+- **Change:** Reuse prepared statements per connection: a bounded cache keyed by SQL, reset after each use, finalized before close (#653)
+- **Details:**
+  - At most 64 idle statements, least recently used out; DDL and statements with more than 32 parameters are not kept; a nested use of the same SQL gets its own statement; a memory warning finalizes the idle ones; close() finalizes them before sqlite3_close_v2.
+  - Measured (release harness, medians of two interleaved rounds, 1-min load 6-8): the echo of a 32-segment chunk 184.0 -> 177.9 M instructions (-3.3%), over a pending overlay 175.5 -> 167.6 M (-4.5%), an interim upsert -0.6%, the 4,344-write replay 1,918 -> 1,903 G (-0.8%); logical writes unchanged.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — SQLiteStatementCache, check-out and check-in around every statement, close before sqlite3_close_v2, the page cache comment corrected
+  - `Tests/InstantSwiftDataCoreTests/InstantWritePathEnergyTests.swift` — the statement cache's unit test and the reopened connection
+- **User context (verbatim):**
+  > We want all of our functionality but to reduce and eliminate any waste or spurious processor etc behavior
+  > Don’t remove any functionality, fix the underlying problems
+- **SpecStory:** unavailable — Claude Code agent session (energy-99 library helper, continuing the energy-98 write helper's work); no SpecStory capture configured for this session.
+
+## October 11th, 2026 at 10:10:57 a.m. EDT — `cfb980b26a6e` Red test for #653's prepared statements: once warm, repeated saves prepare no statement
+
+- **Implementation commit:** `cfb980b26a6e39af15ca8b083be14cc9d11edb1f`
+- **Change:** Red test for #653's prepared statements: once warm, repeated saves prepare no statement
+- **Files:**
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — preparedStatementCountForTesting
+  - `Tests/InstantSwiftDataCoreTests/InstantWritePathEnergyTests.swift` — repeatedSavesReuseTheirPreparedStatements
+- **User context (verbatim):**
+  > We want all of our functionality but to reduce and eliminate any waste or spurious processor etc behavior
+  > Don’t remove any functionality, fix the underlying problems
+- **SpecStory:** unavailable — Claude Code agent session (energy-99 library helper, continuing the energy-98 write helper's work); no SpecStory capture configured for this session.
+
+## October 11th, 2026 at 10:10:57 a.m. EDT — `bad65eaf83b6` SQLite keeps a bounded 2 MiB page cache per connection instead of cache_size = 0, and releases it on a memory warning instead of shrinking after every save (#653)
+
+- **Implementation commit:** `bad65eaf83b6a2ab1bdeb22546350d1d6ae5814b`
+- **Change:** SQLite keeps a bounded 2 MiB page cache per connection instead of cache_size = 0, and releases it on a memory warning instead of shrinking after every save (#653)
+- **Details:**
+  - On Apple's SQLite cache_size = 0 did not bound the cache (a 20,000-fact read left 8.8 MB in it) and every local save and live refresh ran PRAGMA shrink_memory.
+  - Measured in the release write-path harness (a 4,344-write replay sent, acknowledged and echoed): 1,997 -> 1,977 G instructions (-1%), 1,764 -> 1,755 MB written (-0.5%); the win is the 2 MiB memory bound, not CPU or disk.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — cache_size at open, no shrink per save, releaseMemory and the memory-pressure monitor
+  - `Tests/InstantSwiftDataCoreTests/InstantWritePathEnergyTests.swift` — a memory warning releases the cache
+- **User context (verbatim):**
+  > We want all of our functionality but to reduce and eliminate any waste or spurious processor etc behavior
+  > Don’t remove any functionality, fix the underlying problems
+- **SpecStory:** unavailable — Claude Code agent session (energy-99 library helper, continuing the energy-98 write helper's work); no SpecStory capture configured for this session.
+
+## October 11th, 2026 at 10:10:57 a.m. EDT — `65338a80394e` Red tests for #653's page cache: a local save spills no page to the WAL mid-transaction, the cache is bounded at 2 MiB and stays warm between saves, and a large read stays within the bound
+
+- **Implementation commit:** `65338a80394e72d35b7d14e99907cd5a6af021cc`
+- **Change:** Red tests for #653's page cache: a local save spills no page to the WAL mid-transaction, the cache is bounded at 2 MiB and stays warm between saves, and a large read stays within the bound
+- **Details:**
+  - pageCacheStatusForTesting reads PRAGMA cache_size, SQLITE_DBSTATUS_CACHE_USED and SQLITE_DBSTATUS_CACHE_SPILL.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — pageCacheStatusForTesting and InstantSQLitePageCacheStatus
+  - `Tests/InstantSwiftDataCoreTests/InstantWritePathEnergyTests.swift` — the page cache tests
+- **User context (verbatim):**
+  > We want all of our functionality but to reduce and eliminate any waste or spurious processor etc behavior
+  > Don’t remove any functionality, fix the underlying problems
+- **SpecStory:** unavailable — Claude Code agent session (energy-99 library helper, continuing the energy-98 write helper's work); no SpecStory capture configured for this session.
+
+## October 11th, 2026 at 10:10:57 a.m. EDT — `c08895a5116e` Claim the files of #653's write-path waste fixes for energy-98: the page cache, reused statements, identical values, equal emissions, and the echo (#653 #669)
+
+- **Implementation commit:** `c08895a5116e4c74e9413b12b15bbb862ae0ea2a`
+- **Change:** Claim the files of #653's write-path waste fixes for energy-98: the page cache, reused statements, identical values, equal emissions, and the echo (#653 #669)
+- **Files:**
+  - `agent-presence/claude-opus-5.5/plans/2026-10-10-energy-98-write/PLAN.md` — the energy-98 write plan
+  - `_touching/Sources@InstantSwiftDataCore@SQLitePersistenceStore.swift/Sources@InstantSwiftDataCore@SQLitePersistenceStore.swift/.agents/agents.txt` — the persistence claim (the page cache, statements)
+  - `_touching/Sources@InstantSwiftDataCore@InstantStore.swift/Sources@InstantSwiftDataCore@InstantStore.swift/.agents/agents.txt` — the store claim (equal emissions)
+  - `_touching/Sources@InstantSwiftDataCore@TripleIndexes.swift/Sources@InstantSwiftDataCore@TripleIndexes.swift/.agents/agents.txt` — the index claim (identical values)
+- **User context (verbatim):**
+  > We want all of our functionality but to reduce and eliminate any waste or spurious processor etc behavior
+  > Don’t remove any functionality, fix the underlying problems
+- **SpecStory:** unavailable — Claude Code agent session (energy-99 library helper, continuing the energy-98 write helper's work); no SpecStory capture configured for this session.
+
 ## October 5th, 2026 at 1:30:28 a.m. EDT — `6c28904ab7eb` Document the v1.9.8 release: a live result's JSON written at most once per 30 s, a dead connection's results skipped, the kickstart's pages kept, the missing field named, and rooms with one ordered lane per room (#566 #474 #516 #522 #461)
 
 - **Implementation commit:** `6c28904ab7ebc6331ac0b45fe54c5625472e423e`
