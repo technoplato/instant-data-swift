@@ -1227,6 +1227,11 @@ public struct InstantLiveTransportClient: Sendable {
 
   private var makeAttempt: MakeConnectionAttempt
 
+  /// The network route this transport needs (#669): the reconnect loop makes no attempt while it is missing, and makes
+  /// one as soon as it comes back, as upstream `Reactor.js` does with its `NetworkListener`. ``live`` uses
+  /// ``InstantNetworkPath/system``; a transport that needs no network keeps ``InstantNetworkPath/alwaysSatisfied``.
+  public var networkPath: InstantNetworkPath = .alwaysSatisfied
+
   public var connect: Connect {
     get {
       let client = self
@@ -1293,9 +1298,11 @@ public struct InstantLiveTransportClient: Sendable {
       @escaping @Sendable (InstantLiveWebSocketSession) throws
         -> InstantLiveWebSocketSession
   ) -> Self {
-    Self.connectionAttempts { request in
+    var mapped = Self.connectionAttempts { request in
       try makeConnectionAttempt(request).mapSession(transform)
     }
+    mapped.networkPath = networkPath
+    return mapped
   }
 
   package func connectSession(
@@ -1502,23 +1509,27 @@ extension InstantLiveTransportClient {
     )
   }
 
-  public static let live = Self.immediate { request in
-    let socket = try InstantURLSessionLiveWebSocket(url: request.sessionURL())
-    return InstantLiveWebSocketSession(
-      send: { message in
-        try await socket.send(message)
-      },
-      receive: {
-        try await socket.receive()
-      },
-      close: {
-        await socket.close()
-      },
-      abort: {
-        socket.abort()
-      }
-    )
-  }
+  public static let live: Self = {
+    var live = Self.immediate { request in
+      let socket = try InstantURLSessionLiveWebSocket(url: request.sessionURL())
+      return InstantLiveWebSocketSession(
+        send: { message in
+          try await socket.send(message)
+        },
+        receive: {
+          try await socket.receive()
+        },
+        close: {
+          await socket.close()
+        },
+        abort: {
+          socket.abort()
+        }
+      )
+    }
+    live.networkPath = .system
+    return live
+  }()
 }
 
 private struct InstantLiveDynamicCodingKey: CodingKey {

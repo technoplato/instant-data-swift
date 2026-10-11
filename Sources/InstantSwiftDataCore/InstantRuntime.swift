@@ -6425,6 +6425,12 @@ public final class InstantRuntime: Sendable {
     await reconnectController.isIdleForTesting()
   }
 
+  /// The scheduled reconnect waits for the transport's network path to come back (#669). Not read yet.
+  @concurrent
+  package func liveReconnectControllerIsWaitingForNetworkForTesting() async -> Bool {
+    false
+  }
+
   /// The live receiver has applied every frame it took from the socket and is waiting for the next one (#296).
   @concurrent
   package func liveReceiverIsWaitingForAFrameForTesting() async -> Bool {
