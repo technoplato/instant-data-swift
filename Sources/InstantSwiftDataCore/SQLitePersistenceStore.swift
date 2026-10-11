@@ -17142,6 +17142,30 @@ public actor SQLitePersistenceStore {
     try selectScalar("PRAGMA synchronous")
   }
 
+  /// What SQLite's page cache holds on this connection (#653).
+  package func pageCacheStatusForTesting(
+    resettingSpillCount: Bool = false
+  ) throws -> InstantSQLitePageCacheStatus {
+    try ensureOpenConnection()
+    let cacheSize = try selectInt64("PRAGMA cache_size")
+    var usedBytes: Int32 = 0
+    var spilledPageCount: Int32 = 0
+    var highwater: Int32 = 0
+    sqlite3_db_status(connection.raw, SQLITE_DBSTATUS_CACHE_USED, &usedBytes, &highwater, 0)
+    sqlite3_db_status(
+      connection.raw,
+      SQLITE_DBSTATUS_CACHE_SPILL,
+      &spilledPageCount,
+      &highwater,
+      resettingSpillCount ? 1 : 0
+    )
+    return InstantSQLitePageCacheStatus(
+      cacheSize: cacheSize,
+      usedBytes: Int(usedBytes),
+      spilledPageCount: Int(spilledPageCount)
+    )
+  }
+
   private func persistenceError(operation: String, message: String) -> InstantError {
     InstantError(
       code: .persistenceFailed,
@@ -17187,6 +17211,17 @@ private enum SQLiteBinding: Sendable {
   case int(Int64)
   case text(String)
   case null
+}
+
+/// What SQLite's page cache holds on one connection (#653).
+package struct InstantSQLitePageCacheStatus: Equatable, Sendable {
+  /// `PRAGMA cache_size`: a negative value bounds the cache in KiB, a positive one in pages.
+  package var cacheSize: Int64
+  /// The heap bytes the connection's page cache holds now (`SQLITE_DBSTATUS_CACHE_USED`).
+  package var usedBytes: Int
+  /// Dirty pages written to the WAL in the middle of a transaction to make room in the cache
+  /// (`SQLITE_DBSTATUS_CACHE_SPILL`), since the count was last reset. Each is written again at commit.
+  package var spilledPageCount: Int
 }
 
 private struct DeclaredRelationStorageReconciliationMarker: Codable, Equatable {
