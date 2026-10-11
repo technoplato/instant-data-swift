@@ -457,6 +457,9 @@ public actor InstantStore {
   /// Commits skip observers their changes cannot affect, so the global sequence moving past an
   /// emission does not mean that query has a newer result. See `wasRefreshed(queryID:after:)`.
   private var lastRefreshSequenceByQueryID: [String: Int64] = [:]
+  /// How many emissions each observed query's observers were handed, by plan ID, for tests (#653). A query's count
+  /// goes when its last observer does.
+  private var yieldCountByQueryID: [String: Int] = [:]
   package private(set) var lastPublishMetrics = InstantStorePublishMetrics()
   /// Changes committed with ``commitDeferringPublication(_:installingLiveQueryPageInfo:)`` and not yet published.
   private var pendingPublication: PendingPublication?
@@ -817,6 +820,7 @@ public actor InstantStore {
       observers[observerID] = observer
       guard publishing else { continue }
       lastRefreshSequenceByQueryID[observer.plan.id] = sequence
+      yieldCountByQueryID[observer.plan.id, default: 0] += 1
       observer.continuation.yield(emission)
     }
     lastPublishMetrics = metrics
@@ -1892,6 +1896,7 @@ public actor InstantStore {
       observers[observerID] = observer
       if publishing {
         lastRefreshSequenceByQueryID[observer.plan.id] = sequence
+        yieldCountByQueryID[observer.plan.id, default: 0] += 1
         observer.continuation.yield(emission)
       }
     }
@@ -2882,6 +2887,7 @@ public actor InstantStore {
       lastPageInfo: initialEmission.pageInfo,
       continuation: continuation
     )
+    yieldCountByQueryID[plan.id, default: 0] += 1
     continuation.yield(initialEmission)
     InstantDiagnostics.shared.record(
       .trace,
@@ -2905,6 +2911,7 @@ public actor InstantStore {
       !observers.values.contains(where: { $0.plan.id == queryID })
     {
       lastRefreshSequenceByQueryID[queryID] = nil
+      yieldCountByQueryID[queryID] = nil
     }
     InstantDiagnostics.shared.record(
       .trace,
@@ -2922,6 +2929,12 @@ public actor InstantStore {
 
   package func activeObservationCount() -> Int {
     observers.count
+  }
+
+  /// How many emissions each query's observers were handed, by plan ID, after publishing any pending change (#653).
+  package func observerYieldCountsForTesting() -> [String: Int] {
+    publishPendingChanges()
+    return yieldCountByQueryID
   }
 
   func currentTripleCount() -> Int {
