@@ -1,7 +1,7 @@
 import Foundation
 import os
 
-#if canImport(Network) && !os(watchOS)
+#if canImport(Network) && !os(watchOS) && !targetEnvironment(simulator)
   import Network
 #endif
 
@@ -39,9 +39,10 @@ public struct InstantNetworkPath: Sendable {
   /// The system's path, from one `NWPathMonitor` that starts the first time a reconnect reads it.
   ///
   /// A path the system reports as `requiresConnection` (a VPN on demand, for one) counts as there: an attempt can bring
-  /// it up. watchOS uses ``alwaysSatisfied``: an app's requests there usually travel through the paired iPhone, which a
-  /// path monitor on the Watch may not describe (TN3135), and a path that wrongly reads as missing would stop every
-  /// reconnect.
+  /// it up. watchOS and the simulators use ``alwaysSatisfied``, because a path that wrongly reads as missing would stop
+  /// every reconnect: an app's requests on a Watch usually travel through the paired iPhone, which a path monitor on the
+  /// Watch may not describe (TN3135), and a simulator's monitor can keep a stale answer after the host's network
+  /// changes.
   public static let system = Self(.system)
 
   /// The monitor that answers for this path, or nil when the path is always there.
@@ -50,7 +51,7 @@ public struct InstantNetworkPath: Sendable {
     case .alwaysSatisfied:
       return nil
     case .system:
-      #if canImport(Network) && !os(watchOS)
+      #if canImport(Network) && !os(watchOS) && !targetEnvironment(simulator)
         return InstantSystemNetworkPath.shared.monitor
       #else
         return nil
@@ -176,7 +177,7 @@ final class InstantNetworkPathMonitor: Sendable {
   }
 }
 
-#if canImport(Network) && !os(watchOS)
+#if canImport(Network) && !os(watchOS) && !targetEnvironment(simulator)
   /// The one `NWPathMonitor` behind ``InstantNetworkPath/system``.
   // SAFETY: `pathMonitor` is configured and started in `init` and never mutated afterwards; the system calls its
   // handler on `queue`, and the handler only writes `monitor`, which is `Sendable`.

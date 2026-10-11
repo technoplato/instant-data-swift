@@ -756,68 +756,6 @@ private final class InstantFileUploadProgressCancellation: @unchecked Sendable {
   }
 }
 
-private actor InstantRuntimeReconnectController {
-  private let taskOwner = InstantRuntimeExactTaskOwner()
-  private var lifecycleGeneration = 0
-  private var acceptsStarts = true
-
-  func start(
-    sleep: @escaping @Sendable (UInt64) async throws -> Void,
-    reconnect: @escaping @Sendable () async throws -> Void
-  ) {
-    guard acceptsStarts else { return }
-    _ = taskOwner.start(restartIfRunning: true) { [weak self] in
-      await self?.run(sleep: sleep, reconnect: reconnect)
-    }
-  }
-
-  func cancelAndWait() async {
-    lifecycleGeneration += 1
-    let lifecycleGeneration = lifecycleGeneration
-    acceptsStarts = false
-    let handle = taskOwner.requestStop()
-    await handle.wait()
-    guard lifecycleGeneration == self.lifecycleGeneration else { return }
-    taskOwner.resume()
-    acceptsStarts = true
-  }
-
-  func requestStop() -> InstantRuntimeExactTaskOwner.Handle {
-    lifecycleGeneration += 1
-    acceptsStarts = false
-    return taskOwner.requestStop()
-  }
-
-  func isIdleForTesting() -> Bool {
-    taskOwner.isIdle
-  }
-
-  /// A reconnect is waiting out its backoff or connecting, so it owns the next connection (#296).
-  var ownsNextConnection: Bool {
-    !taskOwner.isIdle
-  }
-
-  private func run(
-    sleep: @escaping @Sendable (UInt64) async throws -> Void,
-    reconnect: @escaping @Sendable () async throws -> Void
-  ) async {
-    var attempt: UInt64 = 0
-    while !Task.isCancelled {
-      let delay = min(attempt * 1_000, 10_000)
-      do {
-        try await sleep(delay)
-        try Task.checkCancellation()
-        try await reconnect()
-        return
-      } catch is CancellationError {
-        return
-      } catch {
-        attempt += 1
-      }
-    }
-  }
-}
-
 /// Coalesces failed-mutation retry and local-write delivery requests into one
 /// fair live-session pump.
 ///
@@ -6425,10 +6363,10 @@ public final class InstantRuntime: Sendable {
     await reconnectController.isIdleForTesting()
   }
 
-  /// The scheduled reconnect waits for the transport's network path to come back (#669). Not read yet.
+  /// The scheduled reconnect waits for the transport's network path to come back (#669).
   @concurrent
   package func liveReconnectControllerIsWaitingForNetworkForTesting() async -> Bool {
-    false
+    await reconnectController.isWaitingForNetwork
   }
 
   /// The live receiver has applied every frame it took from the socket and is waiting for the next one (#296).
@@ -6565,6 +6503,9 @@ public final class InstantRuntime: Sendable {
     guard configuration.liveTransport != nil else { return }
     guard configuration.autoConnectLiveTransport else { return }
     guard (try? await persistedConnectionState()) != .closed else { return }
+    // Upstream `updateUser`, run by `changeCurrentUser`, resets `_reconnectTimeoutMs` before it closes the socket (#669).
+    recordActorHop(.reconnectController)
+    await reconnectController.resetBackoff()
     do {
       _ = try await connectLiveSession(reportsFailure: false)
     } catch {
@@ -6763,6 +6704,9 @@ public final class InstantRuntime: Sendable {
             transport: liveTransport,
             makeID: configuration.makeID
           )
+          // The server answered `init-ok`, where upstream resets `_reconnectTimeoutMs` (#669).
+          recordActorHop(.reconnectController)
+          await reconnectController.recordSessionOpened()
           recordActorHop(.liveSession)
           let openedServerAttributes = await liveSession.currentServerAttributes()
           recordActorHop(.operationGate)
@@ -7855,7 +7799,9 @@ public final class InstantRuntime: Sendable {
     }
     if shouldReconnect {
       await reconnectController.start(
+        appID: configuration.appID,
         sleep: configuration.liveReconnectSleep,
+        networkPath: configuration.liveTransport?.networkPath ?? .alwaysSatisfied,
         reconnect: { [weak self] in
           guard let self else { throw CancellationError() }
           _ = try await self.connectLiveSession(
