@@ -1,5 +1,6 @@
 import CustomDump
 import Foundation
+import SQLite3
 import Testing
 
 @testable import InstantSwiftDataCore
@@ -79,6 +80,73 @@ struct InstantWritePathEnergyTests {
     let pendingCount = await runtime.pendingMutationCount()
     expectNoDifference(preparedAfter - preparedBefore, 0)
     expectNoDifference(pendingCount, 12, "every write is still durable in the outbox")
+  }
+
+  /// A statement in use is never handed out twice, an idle one is reset, DDL is not kept, and the cache stays within
+  /// its capacity (#653).
+  @Test
+  func theStatementCacheHandsOutEachStatementOnceAndStaysBounded() throws {
+    var database: OpaquePointer?
+    try #require(sqlite3_open(":memory:", &database) == SQLITE_OK)
+    defer { sqlite3_close_v2(database) }
+    var cache = SQLiteStatementCache(capacity: 2)
+
+    let outer = cache.checkOut("SELECT 1", on: database)
+    let nested = cache.checkOut("SELECT 1", on: database)
+    #expect(outer.statement != nil)
+    #expect(nested.statement != nil)
+    #expect(outer.statement != nested.statement, "a nested use of the same SQL gets its own statement")
+    #expect(sqlite3_step(outer.statement) == SQLITE_ROW)
+    cache.checkIn(nested.statement)
+    cache.checkIn(outer.statement)
+    expectNoDifference(cache.idleCount, 1)
+    let reused = cache.checkOut("SELECT 1", on: database)
+    #expect(reused.statement == nested.statement)
+    #expect(sqlite3_stmt_busy(reused.statement) == 0, "a statement comes back reset")
+    cache.checkIn(reused.statement)
+
+    for sql in ["SELECT 2", "SELECT 3", "SELECT 4"] {
+      let statement = cache.checkOut(sql, on: database)
+      cache.checkIn(statement.statement)
+    }
+    expectNoDifference(cache.idleCount, 2)
+    expectNoDifference(cache.preparedCount, 5)
+
+    // DDL runs once: it is not kept.
+    let ddl = cache.checkOut("CREATE TABLE kept_once (value INTEGER)", on: database)
+    #expect(sqlite3_step(ddl.statement) == SQLITE_DONE)
+    cache.checkIn(ddl.statement)
+    expectNoDifference(cache.idleCount, 2)
+
+    // A statement checked out when its connection closes is finalized when it comes back, not kept.
+    let open = cache.checkOut("SELECT 5", on: database)
+    cache.finalizeAll()
+    cache.checkIn(open.statement)
+    expectNoDifference(cache.idleCount, 0)
+    let invalid = cache.checkOut("SELECT FROM", on: database)
+    #expect(invalid.statement == nil)
+    #expect(invalid.resultCode != SQLITE_OK)
+  }
+
+  /// The statements a store keeps are finalized when its connection closes, and the reopened connection prepares its
+  /// own (#653).
+  @Test
+  func aReopenedConnectionPreparesItsOwnStatements() async throws {
+    let runtime = try await InstantOfflineRuntimeFixture.offlineRuntime("statement-reopen")
+    try await InstantOfflineRuntimeFixture.createTodo("before-close", in: runtime)
+    let before = await runtime.persistence.statementCacheStatusForTesting()
+    print("#653 statement cache: \(before.idleCount) statements kept, \(before.statementBytes) B")
+    #expect(before.idleCount > 0)
+    #expect(before.idleCount <= SQLiteStatementCache.defaultCapacity)
+    #expect(before.statementBytes < 2_097_152, "the kept statements use \(before.statementBytes) B")
+
+    await runtime.persistence.simulateUnexpectedConnectionCloseForTesting()
+    try await InstantOfflineRuntimeFixture.createTodo("after-close", in: runtime)
+
+    let pendingCount = await runtime.pendingMutationCount()
+    expectNoDifference(pendingCount, 2)
+    let todos = try await runtime.query(TodoExample.query)
+    expectNoDifference(Set(todos.map(\.id)), ["todo-before-close", "todo-after-close"])
   }
 
   // MARK: - Helpers
