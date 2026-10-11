@@ -1927,15 +1927,7 @@ actor InstantURLSessionLiveWebSocket {
 
   func send(_ message: InstantLiveMessage) async throws {
     do {
-      let data = try JSONEncoder().encode(message)
-      guard let string = String(data: data, encoding: .utf8) else {
-        throw InstantError(
-          code: .decodeFailed,
-          operation: "send Instant live WebSocket message",
-          message: "Encoded WebSocket message was not valid UTF-8.",
-          recovery: "Inspect the live WebSocket message encoder."
-        )
-      }
+      let (string, byteCount) = try Self.encodedFrame(message)
       try await task.send(.string(string))
       InstantDiagnostics.shared.record(
         .trace,
@@ -1945,7 +1937,7 @@ actor InstantURLSessionLiveWebSocket {
         message: "URLSession sent a WebSocket text frame.",
         metadata: [
           "op": message.op,
-          "byteCount": String(data.count),
+          "byteCount": String(byteCount),
         ],
         correlationID: message.clientEventID
       )
@@ -1965,33 +1957,8 @@ actor InstantURLSessionLiveWebSocket {
 
   func receive() async throws -> InstantLiveMessage {
     do {
-      let message: InstantLiveMessage
-      let byteCount: Int
-      switch try await task.receive() {
-      case .string(let string):
-        guard let data = string.data(using: .utf8) else {
-          throw InstantError(
-            code: .decodeFailed,
-            operation: "decode Instant live WebSocket string",
-            message: "Received WebSocket string was not valid UTF-8.",
-            recovery: "Inspect the Instant live WebSocket response payload."
-          )
-        }
-        byteCount = data.count
-        message = try JSONDecoder().decode(InstantLiveMessage.self, from: data)
-
-      case .data(let data):
-        byteCount = data.count
-        message = try JSONDecoder().decode(InstantLiveMessage.self, from: data)
-
-      @unknown default:
-        throw InstantError(
-          code: .decodeFailed,
-          operation: "decode Instant live WebSocket message",
-          message: "Received an unsupported WebSocket message kind.",
-          recovery: "Update the live transport to handle new WebSocket message kinds."
-        )
-      }
+      let received = try await task.receive()
+      let (message, byteCount) = try Self.decodedFrame(received)
       InstantDiagnostics.shared.record(
         .trace,
         subsystem: "instant-swift-data-core",
@@ -2024,6 +1991,53 @@ actor InstantURLSessionLiveWebSocket {
         )
       }
       throw error
+    }
+  }
+
+  /// Encodes one frame for the wire, a synchronous section the energy meter counts (#669).
+  private static func encodedFrame(_ message: InstantLiveMessage) throws -> (string: String, byteCount: Int) {
+    let energy = InstantEnergyMeter.begin(.frameEncode)
+    defer { energy.end() }
+    let data = try JSONEncoder().encode(message)
+    guard let string = String(data: data, encoding: .utf8) else {
+      throw InstantError(
+        code: .decodeFailed,
+        operation: "send Instant live WebSocket message",
+        message: "Encoded WebSocket message was not valid UTF-8.",
+        recovery: "Inspect the live WebSocket message encoder."
+      )
+    }
+    return (string, data.count)
+  }
+
+  /// Decodes one received frame, a synchronous section the energy meter counts (#669).
+  private static func decodedFrame(
+    _ received: URLSessionWebSocketTask.Message
+  ) throws -> (message: InstantLiveMessage, byteCount: Int) {
+    let energy = InstantEnergyMeter.begin(.frameDecode)
+    defer { energy.end() }
+    switch received {
+    case .string(let string):
+      guard let data = string.data(using: .utf8) else {
+        throw InstantError(
+          code: .decodeFailed,
+          operation: "decode Instant live WebSocket string",
+          message: "Received WebSocket string was not valid UTF-8.",
+          recovery: "Inspect the Instant live WebSocket response payload."
+        )
+      }
+      return (try JSONDecoder().decode(InstantLiveMessage.self, from: data), data.count)
+
+    case .data(let data):
+      return (try JSONDecoder().decode(InstantLiveMessage.self, from: data), data.count)
+
+    @unknown default:
+      throw InstantError(
+        code: .decodeFailed,
+        operation: "decode Instant live WebSocket message",
+        message: "Received an unsupported WebSocket message kind.",
+        recovery: "Update the live transport to handle new WebSocket message kinds."
+      )
     }
   }
 

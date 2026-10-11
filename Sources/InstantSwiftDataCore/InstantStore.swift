@@ -1139,6 +1139,7 @@ public actor InstantStore {
     capturePreviousChangedEntityTriples: Bool,
     insertReplayPolicy: InstantTripleInsertReplayPolicy = .replaceAndInvalidate
   ) throws -> PreparedStoreMutation {
+    let energy = InstantEnergyMeter.begin(.storePrepare); defer { energy.end() }
     indexes.discardInternedQueryResultsBeforeWrite()
     indexes.reserveCapacity(
       entityCapacity: transaction.operations.count,
@@ -1824,6 +1825,7 @@ public actor InstantStore {
     storeChanged: Bool,
     publishing: Bool
   ) -> (emissions: [InstantQueryEmission], metrics: InstantStorePublishMetrics, duration: Duration) {
+    let energy = InstantEnergyMeter.begin(.observerRefresh); defer { energy.end() }
     let startedAt = ContinuousClock.now
     var metrics = InstantStorePublishMetrics()
     var emissionsByObservation: [StoreObservationKey: InstantQueryEmission] = [:]

@@ -5,6 +5,7 @@ enum InstantLiveMutationEncoder {
     in steps: [InstantTransportStep],
     attrs: [InstantLiveJSONValue]
   ) throws -> [InstantTransportStep] {
+    let energy = InstantEnergyMeter.begin(.mutationEncode); defer { energy.end() }
     guard !attrs.isEmpty else { return steps }
     let resolver = AttributeIDResolver(attrs: attrs)
     return try steps.map { step in

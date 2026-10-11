@@ -2319,6 +2319,8 @@ public final class InstantRuntime: Sendable {
         state: state
       )
       if saved.didSave {
+        InstantEnergyMeter.record(.transaction)
+        InstantEnergyMeter.record(supersededTail == nil ? .outboxRowWritten : .outboxRowSuperseded)
         await configuration.onLocalMutationPersistedBeforeStorePublicationForTesting?(
           transaction.id
         )
@@ -6675,6 +6677,9 @@ public final class InstantRuntime: Sendable {
           "websocketHost": configuration.websocketURI.host ?? "unknown",
         ]
       )
+      // One attempt to open a session, from here to the end of this block (#669).
+      let connectAttempt = InstantEnergyMeter.beginSpan(.connectAttempt)
+      defer { connectAttempt.end() }
       if let liveTransport = configuration.liveTransport {
         recordActorHop(.persistence)
         if let blocker = try await persistence.synchronizationBlocker() {

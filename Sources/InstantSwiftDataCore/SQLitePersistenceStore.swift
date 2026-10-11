@@ -4118,6 +4118,7 @@ public actor SQLitePersistenceStore {
     excludesWatermarkRoots: Bool = false,
     receiptPatchMutationIDs: Set<String> = []
   ) throws -> InstantServerApplyPlanLoad {
+    let energy = InstantEnergyMeter.begin(.serverApplyPlan); defer { energy.end() }
     precondition(
       (confirmingMutationID == nil) == (confirmingClaimantID == nil),
       "A confirming server apply must identify both its mutation and durable claimant."
@@ -4861,6 +4862,7 @@ public actor SQLitePersistenceStore {
     direction: InstantServerApplyBodyDirection,
     after position: InstantOutboxDeliveryPosition?
   ) throws -> InstantServerApplyBodyPage {
+    let energy = InstantEnergyMeter.begin(.serverApplyPlan); defer { energy.end() }
     let page = try transaction {
       try loadServerApplyBodyPageWithoutTransaction(
         planID: planID,
@@ -4884,6 +4886,7 @@ public actor SQLitePersistenceStore {
     planID: String,
     dispositions: [InstantServerApplyStagedDisposition]
   ) throws {
+    let energy = InstantEnergyMeter.begin(.serverApplyPlan); defer { energy.end() }
     guard !dispositions.isEmpty else { return }
     try transaction {
       for disposition in dispositions {
@@ -5086,7 +5089,8 @@ public actor SQLitePersistenceStore {
     after previousTail: InstantOutboxDeliveryPosition?,
     baselineOutboxRowCount: Int
   ) throws -> InstantServerApplyCatchUpLoad {
-    try transaction {
+    let energy = InstantEnergyMeter.begin(.serverApplyPlan); defer { energy.end() }
+    return try transaction {
       guard let control = try loadServerApplyPlanControlWithoutTransaction(id: planID),
         try serverApplyPlanRowsStillMatchWithoutTransaction(id: planID)
       else { return .stale }
@@ -5273,6 +5277,7 @@ public actor SQLitePersistenceStore {
     metadataValue: String,
     metadataUpdatedAt: InstantTimestamp
   ) throws -> InstantServerApplyCommit? {
+    let energy = InstantEnergyMeter.begin(.serverApplyCommit); defer { energy.end() }
     serverApplyMetrics.commitAttemptCount += 1
     let commit: InstantServerApplyCommit? = try transaction {
       guard let plan = try loadServerApplyPlanControlWithoutTransaction(id: planID),
@@ -8618,6 +8623,7 @@ public actor SQLitePersistenceStore {
   func claimAutomaticOutboxDeliveryWindow(
     _ request: InstantAutomaticOutboxClaimRequest
   ) throws -> InstantAutomaticOutboxClaimWindow {
+    let energy = InstantEnergyMeter.begin(.outboxClaim); defer { energy.end() }
     precondition(request.maximumMutationCount >= 0)
     precondition(request.maximumStepCount >= 0)
     precondition(request.maximumBodyDecodeCount >= 0)
@@ -9325,6 +9331,7 @@ public actor SQLitePersistenceStore {
     claimToken: String?,
     expectedOutboxRevision: Int64
   ) throws -> InstantOutboxRowAcceptance? {
+    let energy = InstantEnergyMeter.begin(.acknowledgement); defer { energy.end() }
     let previousState = cachedState
     let acceptance: InstantOutboxRowAcceptance? = try transaction {
       guard
@@ -9495,6 +9502,7 @@ public actor SQLitePersistenceStore {
     id: String,
     expectedOutboxRevision: Int64
   ) throws -> InstantOutboxRowAcceptance? {
+    let energy = InstantEnergyMeter.begin(.acknowledgement); defer { energy.end() }
     let previousState = cachedState
     let confirmation: InstantOutboxRowAcceptance? = try transaction {
       guard try loadMetadataRevisionWithoutTransaction(Self.outboxRevisionKey)
@@ -9945,6 +9953,7 @@ public actor SQLitePersistenceStore {
     attributeIDs: Set<String>,
     entityIDs: Set<String>
   ) throws -> [InstantTriple] {
+    let energy = InstantEnergyMeter.begin(.deferredHydrate); defer { energy.end() }
     let attributeIDs = attributeIDs.intersection(deferredValueResidency.attributeIDs)
     guard !attributeIDs.isEmpty, !entityIDs.isEmpty else { return [] }
     let attributePlaceholders = Array(
@@ -10398,7 +10407,8 @@ public actor SQLitePersistenceStore {
     now: InstantTimestamp,
     preservingCacheKeys: Set<String> = []
   ) throws -> InstantQueryCachePruningResult {
-    try transaction {
+    let energy = InstantEnergyMeter.begin(.prune); defer { energy.end() }
+    return try transaction {
       var rows = try loadQueryCacheRowsWithoutTransaction()
       var removedCacheKeys: [String] = []
 
@@ -11453,6 +11463,7 @@ public actor SQLitePersistenceStore {
     maximumRemovedTripleCount: Int? = nil,
     carriedReleasedIdentities: Set<InstantLiveTripleIdentity> = []
   ) throws -> InstantLiveQueryResultPruningApplication {
+    let energy = InstantEnergyMeter.begin(.prune); defer { energy.end() }
     let application = try transaction {
       let storeRevision = try loadMetadataRevisionWithoutTransaction(Self.storeRevisionKey)
       let attributeRevision = try loadMetadataRevisionWithoutTransaction(
@@ -12078,6 +12089,7 @@ public actor SQLitePersistenceStore {
     expectedAttributeRevision: Int64,
     expectedOutboxRevision: Int64
   ) throws -> Bool {
+    let energy = InstantEnergyMeter.begin(.localSave); defer { energy.end() }
     guard try pendingMutation.optimisticEffectReceiptFingerprint() != nil else {
       throw persistenceError(
         operation: "persist local mutation",
