@@ -358,6 +358,22 @@ package struct InstantStoreObserverResultForTesting: Sendable {
   package var handedPageInfo: InstantQueryPageInfo?
 }
 
+/// The store as it was before the commits a publication covers (#654): what each observer's result was computed from,
+/// so a changed entity's place in a result set can be compared before and after.
+private struct StorePublicationBaseline {
+  var indexes: TripleIndexes
+  var attributes: AttributeStore
+}
+
+/// Whether a publication refreshes an observer (#654).
+private enum ObserverRefreshDecision {
+  case refresh
+  /// Nothing the changes touched can reach the result; the observer's result stays verified.
+  case skip
+  /// The pre-#654 check skipped it without proving that, so its result is no longer trusted as a baseline.
+  case skipUnverified
+}
+
 /// A commit's claim on the publication that refreshes observers for it (#473).
 struct InstantStorePublicationTicket: Hashable, Sendable {
   var id: Int64
@@ -369,6 +385,8 @@ private struct PendingPublication {
   var changedEntityIDs: Set<String> = []
   /// The entities whose deferred values the covered commits wrote, retracted or read back (#653).
   var deferredValueChangedEntityIDs: Set<String> = []
+  /// The store before the first covered commit (#654).
+  var baseline: StorePublicationBaseline?
   /// The namespaces the changed entities belong to, or nil when every observer must refresh.
   var changedNamespaces: Set<String>? = []
   /// Whether a commit changed the store; a publication of page info alone refreshes only the observers it names.
@@ -447,6 +465,9 @@ private struct StoreObserver: Sendable {
   /// A refresh that did not publish showed an entity whose deferred value changed, and nothing was handed since: the
   /// observer's reader still holds the value from before (#653).
   var hasUnhandedDeferredValueChange = false
+  /// The store's observer epoch when `lastValues` was last materialized from the whole store, or nil when it may be
+  /// stale (#654). Only a verified result is a baseline the unreachable-observer skip may compare against.
+  var verifiedEpoch: Int?
 }
 
 /// One refreshed observer's emission in a publication, and whether it equals what the observer was last handed (#653).
@@ -491,6 +512,9 @@ public actor InstantStore {
   /// Commits skip observers their changes cannot affect, so the global sequence moving past an
   /// emission does not mean that query has a newer result. See `wasRefreshed(queryID:after:)`.
   private var lastRefreshSequenceByQueryID: [String: Int64] = [:]
+  /// Moves whenever the store changes without refreshing its observers (a replaced snapshot or attribute set, a
+  /// sequential prepare), so no observer's result counts as verified across it (#654).
+  private var observerEpoch = 0
   /// How many emissions each observed query's observers were handed, by plan ID, for tests (#653). A query's count
   /// goes when its last observer does.
   private var yieldCountByQueryID: [String: Int] = [:]
@@ -517,6 +541,7 @@ public actor InstantStore {
 
   public func replaceAttributes(_ attributes: [InstantAttribute]) -> InstantStoreSnapshot {
     publishPendingChanges()
+    observerEpoch += 1
     self.attributes.replaceAll(attributes)
     self.indexes = TripleIndexes(triples: self.indexes.triples, attributes: self.attributes)
     return snapshot()
@@ -524,6 +549,7 @@ public actor InstantStore {
 
   public func replaceSnapshot(_ snapshot: InstantStoreSnapshot) {
     publishPendingChanges()
+    observerEpoch += 1
     let changed = snapshot != self.snapshot()
     self.attributes = AttributeStore(attributes: snapshot.attributes)
     self.indexes = TripleIndexes(
@@ -547,6 +573,7 @@ public actor InstantStore {
     mergedAttributes.merge(attributes)
     guard mergedAttributes != self.attributes else { return nil }
     publishPendingChanges()
+    observerEpoch += 1
     _ = indexes.reconcileRelationStorage(
       previousAttributes: self.attributes,
       mergedAttributes: mergedAttributes
@@ -852,6 +879,7 @@ public actor InstantStore {
         emissionsByObservation[key] = emission
       }
       observer.apply(emission)
+      observer.verifiedEpoch = observerEpoch
       observers[observerID] = observer
       guard publishing else { continue }
       handOvers.append(
@@ -897,6 +925,7 @@ public actor InstantStore {
     count: Int,
     transactionAtIndex: (Int) throws -> InstantStoreTransaction
   ) throws {
+    observerEpoch += 1
     for index in 0..<count {
       let prepared = try prepareMutating(
         transactionAtIndex(index),
@@ -1633,6 +1662,7 @@ public actor InstantStore {
     // A change committed earlier and not yet published goes out first, so observers see commits in order.
     publishPendingChanges()
     var prepared = prepared
+    let baseline = StorePublicationBaseline(indexes: indexes, attributes: attributes)
     let changedNamespaces = install(&prepared)
     if observers.isEmpty {
       lastPublishMetrics = InstantStorePublishMetrics()
@@ -1649,6 +1679,7 @@ public actor InstantStore {
       changedEntityIDs: prepared.result.changedEntityIDs,
       deferredValueChangedEntityIDs: prepared.deferredValueChangedEntityIDs,
       changedNamespaces: changedNamespaces,
+      baseline: baseline,
       pageInfoByKey: Self.liveQueryPageInfoByKey(replacements),
       storeChanged: true,
       publishing: shouldPublish
@@ -1686,6 +1717,7 @@ public actor InstantStore {
     installingLiveQueryPageInfo replacements: [InstantLiveQueryResultReplacement] = []
   ) -> (prepared: PreparedStoreMutation, publication: InstantStorePublicationTicket?) {
     var prepared = prepared
+    let baseline = StorePublicationBaseline(indexes: indexes, attributes: attributes)
     let changedNamespaces = install(&prepared)
     guard !observers.isEmpty else {
       lastPublishMetrics = InstantStorePublishMetrics()
@@ -1710,6 +1742,9 @@ public actor InstantStore {
       pending.commits.append(commit)
       pending.changedEntityIDs.formUnion(changedEntityIDs)
       pending.deferredValueChangedEntityIDs.formUnion(deferredValueChangedEntityIDs)
+      if pending.commits.count == 1 {
+        pending.baseline = baseline
+      }
       if let changed = changedNamespaces, let pendingNamespaces = pending.changedNamespaces {
         pending.changedNamespaces = pendingNamespaces.union(changed)
       } else {
@@ -1761,6 +1796,7 @@ public actor InstantStore {
       changedEntityIDs: pending.changedEntityIDs,
       deferredValueChangedEntityIDs: pending.deferredValueChangedEntityIDs,
       changedNamespaces: pending.changedNamespaces,
+      baseline: pending.baseline,
       pageInfoByKey: pending.pageInfoByKey,
       storeChanged: pending.storeChanged,
       publishing: true
@@ -1874,6 +1910,7 @@ public actor InstantStore {
     changedEntityIDs: Set<String>,
     deferredValueChangedEntityIDs: Set<String>,
     changedNamespaces: Set<String>?,
+    baseline: StorePublicationBaseline? = nil,
     pageInfoByKey: [String: InstantQueryRemotePageInfo],
     storeChanged: Bool,
     publishing: Bool
@@ -1881,6 +1918,8 @@ public actor InstantStore {
     let startedAt = ContinuousClock.now
     var metrics = InstantStorePublishMetrics()
     var emissionsByObservation: [StoreObservationKey: InstantQueryEmission] = [:]
+    // The emissions this publication computed from the whole store, or spliced into a verified result (#654).
+    var verifiedEmissionKeys: Set<StoreObservationKey> = []
     var handOvers: [ObserverHandOver] = []
     for observerID in Array(observers.keys) {
       guard var observer = observers[observerID] else { continue }
@@ -1894,19 +1933,30 @@ public actor InstantStore {
       } else {
         pageInfoChanged = false
       }
-      guard
-        pageInfoChanged
-          || (storeChanged
-            && Self.shouldRefresh(
-              observer,
-              changedNamespaces: changedNamespaces,
-              changedEntityIDs: changedEntityIDs,
-              indexes: indexes,
-              attributes: attributes
-            ))
-      else {
-        metrics.skippedObserverCount += 1
-        continue
+      if !pageInfoChanged {
+        let decision: ObserverRefreshDecision = storeChanged
+          ? Self.refreshDecision(
+            for: observer,
+            changedNamespaces: changedNamespaces,
+            changedEntityIDs: changedEntityIDs,
+            indexes: indexes,
+            attributes: attributes,
+            baseline: baseline,
+            observerEpoch: observerEpoch
+          )
+          : .skip
+        switch decision {
+        case .refresh:
+          break
+        case .skip:
+          metrics.skippedObserverCount += 1
+          continue
+        case .skipUnverified:
+          metrics.skippedObserverCount += 1
+          observer.verifiedEpoch = nil
+          observers[observerID] = observer
+          continue
+        }
       }
       let key = StoreObservationKey(
         plan: observer.plan,
@@ -1915,6 +1965,7 @@ public actor InstantStore {
       let emission: InstantQueryEmission
       if let existing = emissionsByObservation[key] {
         emission = existing
+        observer.verifiedEpoch = verifiedEmissionKeys.contains(key) ? observerEpoch : nil
       } else if !pageInfoChanged,
         let spliced = Self.splicedEmission(
           observer,
@@ -1927,6 +1978,12 @@ public actor InstantStore {
         metrics.materializedSnapshotCount += changedEntityIDs.count
         emission = spliced
         emissionsByObservation[key] = emission
+        // A splice edits the result the observer held, so it is exactly as verified as that result was (#654).
+        if observer.verifiedEpoch == observerEpoch {
+          verifiedEmissionKeys.insert(key)
+        } else {
+          observer.verifiedEpoch = nil
+        }
       } else {
         let page = indexes.materializePageWithMetrics(
           observer.plan,
@@ -1942,6 +1999,8 @@ public actor InstantStore {
           pageInfo: page.page.pageInfo
         )
         emissionsByObservation[key] = emission
+        verifiedEmissionKeys.insert(key)
+        observer.verifiedEpoch = observerEpoch
       }
       observer.apply(emission)
       if !publishing, !deferredValueChangedEntityIDs.isEmpty,
@@ -2072,38 +2131,74 @@ public actor InstantStore {
     return components.seconds * 1_000 + components.attoseconds / 1_000_000_000_000_000
   }
 
-  private static func shouldRefresh(
-    _ observer: StoreObserver,
+  /// The most changed entities whose places in a result set a publication compares before refreshing an observer
+  /// anyway (#654): past it, one refresh costs less than the comparisons.
+  static let resultSetComparisonLimit = 256
+
+  /// Whether the changes a publication covers can change `observer`'s result.
+  ///
+  /// A plan that reads only its own namespace's fields (no includes, no link paths) shows a page that is a function of
+  /// its ordered result set (the namespace's entities its filters admit, ordered by its order value and then by id),
+  /// its window (offset, limit, cursors, the server's page info), and the shown entities' snapshots. When no changed
+  /// entity is shown and each one's place in the ordered set is the same before and after (in it or not, and with the
+  /// same order value), the set and the window hold the same entities in the same order, and none of them changed: the
+  /// result cannot change, so the observer is not refreshed (#654). A write to the newest row of a long paged list, and
+  /// the server's echo of it, touch one entity that only the first page shows; before, every other page re-ran its
+  /// query for both. The comparison needs the result the observer holds to match the store the publication started
+  /// from (`verifiedEpoch`); a result the pre-#654 check below left stale, or that predates a store change made without
+  /// refreshing observers, is refreshed by that check alone until it is materialized again.
+  private static func refreshDecision(
+    for observer: StoreObserver,
     changedNamespaces: Set<String>?,
     changedEntityIDs: Set<String>,
     indexes: TripleIndexes,
-    attributes: AttributeStore
-  ) -> Bool {
-    guard let changedNamespaces else { return true }
+    attributes: AttributeStore,
+    baseline: StorePublicationBaseline?,
+    observerEpoch: Int
+  ) -> ObserverRefreshDecision {
+    guard let changedNamespaces else { return .refresh }
     if let observerNamespaces = observer.plan.dependentNamespaces {
       if observerNamespaces.isDisjoint(with: changedNamespaces) {
-        return false
+        return .skip
       }
     } else if observer.plan.hasOnlyNamespaceLocalDependencies {
-      guard changedNamespaces.contains(observer.plan.namespace) else { return false }
+      guard changedNamespaces.contains(observer.plan.namespace) else { return .skip }
     } else {
-      return true
-    }
-    if observer.plan.filters.isEmpty && (observer.plan.includes?.isEmpty ?? true) {
-      return true
+      return .refresh
     }
     if observer.lastValues.contains(anyEntityID: changedEntityIDs) {
-      return true
+      return .refresh
+    }
+    if observer.plan.hasOnlyNamespaceLocalDependencies,
+      let baseline,
+      observer.verifiedEpoch == observerEpoch
+    {
+      guard changedEntityIDs.count <= resultSetComparisonLimit else { return .refresh }
+      for entityID in changedEntityIDs {
+        let before = baseline.indexes.resultSetMembership(
+          entityID,
+          plan: observer.plan,
+          attributes: baseline.attributes
+        )
+        let after = indexes.resultSetMembership(entityID, plan: observer.plan, attributes: attributes)
+        if before != after {
+          return .refresh
+        }
+      }
+      return .skip
+    }
+    if observer.plan.filters.isEmpty && (observer.plan.includes?.isEmpty ?? true) {
+      return .refresh
     }
     if observer.plan.hasOnlyNamespaceLocalDependencies {
       for entityID in changedEntityIDs {
         if indexes.entityMatches(entityID, plan: observer.plan, attributes: attributes) {
-          return true
+          return .refresh
         }
       }
-      return false
+      return .skipUnverified
     }
-    return true
+    return .refresh
   }
 
   private static func splicedEmission(
@@ -2986,7 +3081,8 @@ public actor InstantStore {
       lastPageInfo: initialEmission.pageInfo,
       continuation: continuation,
       lastHandedValues: initialEmission.values,
-      lastHandedPageInfo: initialEmission.pageInfo
+      lastHandedPageInfo: initialEmission.pageInfo,
+      verifiedEpoch: observerEpoch
     )
     yieldCountByQueryID[plan.id, default: 0] += 1
     continuation.yield(initialEmission)
