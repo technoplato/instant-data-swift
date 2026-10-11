@@ -6,3 +6,4 @@ claude-opus-5.5 2026-09-26T18:02:58-0400 mower plan=2026-09-26-write-scope-relea
 claude-opus-5.5 2026-09-26T22:58:48-0400 mower plan=2026-09-26-perf-concurrency-audit #250 #155
 claude-opus-5.5-library-79 2026-10-03T01:11:03-04:00 mower plan=2026-10-02-library-79-hops #431
 claude-opus-5.5-energy-98-write 2026-10-10T23:40:00-04:00 mower plan=2026-10-10-energy-98-write #653 #669
+claude-opus-5.5-energy-99-lib 2026-10-11T10:56:53-04:00 mower plan=2026-10-11-energy-99-pages #654 #669
