@@ -905,6 +905,8 @@ public actor SQLitePersistenceStore {
   /// Bumped by every write to `instant_attributes` on this connection.
   private var attributeWriteGeneration = 0
   private var liveResultAttributeLoads = 0
+  /// Releases SQLite's memory when the system warns of memory pressure (#653).
+  private let memoryPressureMonitor: SQLiteMemoryPressureMonitor
   /// Live-query result saves, and the result JSON they wrote (#566): for tests and the release's measurements.
   private var liveQueryResultJSONWriteStats = (saves: 0, writes: 0, bytes: 0)
   /// What this process knows about each live query's stored result JSON (#566). A server apply used to rewrite a
@@ -1467,10 +1469,35 @@ public actor SQLitePersistenceStore {
     cachedMaterializedStore = nil
   }
 
-  private func adoptCachedState(
-    _ state: InstantPersistenceState,
-    shrinkingSQLiteMemory: Bool = true
-  ) {
+  /// Releases the memory SQLite holds for this connection: its page cache, which is bounded at 2 MiB, and whatever
+  /// else `sqlite3_db_release_memory` frees (#653). The store calls it when the system warns of memory pressure;
+  /// SQLite reads the pages it needs again afterwards. A save used to run `PRAGMA shrink_memory` every time.
+  package func releaseMemory() {
+    guard let raw = connection.raw else { return }
+    var usedBefore: Int32 = 0
+    var highwater: Int32 = 0
+    sqlite3_db_status(raw, SQLITE_DBSTATUS_CACHE_USED, &usedBefore, &highwater, 0)
+    // On Apple's SQLite `sqlite3_db_release_memory` leaves the page cache as it was (411 KB before and after, measured);
+    // lowering the bound to one page drops the rest, and the 2 MiB bound comes back for the next reads.
+    _ = sqlite3_exec(raw, "PRAGMA cache_size = 1", nil, nil, nil)
+    _ = sqlite3_exec(raw, "PRAGMA cache_size = \(sqlitePageCacheSizeKibibytes)", nil, nil, nil)
+    sqlite3_db_release_memory(raw)
+    var usedAfter: Int32 = 0
+    sqlite3_db_status(raw, SQLITE_DBSTATUS_CACHE_USED, &usedAfter, &highwater, 0)
+    InstantDiagnostics.shared.record(
+      .info,
+      subsystem: "instant-swift-data-core",
+      category: "persistence",
+      event: "sqlite.memory-released",
+      message: "Released SQLite's page cache under memory pressure.",
+      metadata: [
+        "cacheBytesBefore": String(usedBefore),
+        "cacheBytesAfter": String(usedAfter),
+      ]
+    )
+  }
+
+  private func adoptCachedState(_ state: InstantPersistenceState) {
     var thin = state
     // Durable outbox rows are cursor-addressed in SQLite. Keeping even compact
     // lifecycle shells here makes cold-start memory proportional to queue depth.
@@ -1489,9 +1516,6 @@ public actor SQLitePersistenceStore {
       storeRevision: thin.storeRevision,
       attributeRevision: thin.attributeRevision
     )
-    if shrinkingSQLiteMemory {
-      try? execute("PRAGMA shrink_memory")
-    }
   }
 
   private func advanceCachedRevisionDomains(
@@ -1541,7 +1565,7 @@ public actor SQLitePersistenceStore {
       state.attributeRevision = resultingAttributeRevision
       state.outboxRevision = resultingOutboxRevision
       state.queryResultRevision = resultingQueryResultRevision
-      adoptCachedState(state, shrinkingSQLiteMemory: false)
+      adoptCachedState(state)
       return
     }
 
@@ -1586,6 +1610,7 @@ public actor SQLitePersistenceStore {
     )
     do {
       self.connection = SQLiteConnection(try Self.openRawConnection(fileURL: fileURL))
+      self.memoryPressureMonitor = SQLiteMemoryPressureMonitor()
       startupTrace.completed(
         "sqlite.open",
         since: stopwatch,
@@ -1615,6 +1640,10 @@ public actor SQLitePersistenceStore {
         metadata: ["path": fileURL.path]
       )
       throw error
+    }
+    memoryPressureMonitor.start { [weak self] in
+      guard let self else { return }
+      Task { await self.releaseMemory() }
     }
   }
 
@@ -1679,6 +1708,11 @@ public actor SQLitePersistenceStore {
         recovery: "Check that the cache directory is writable, or choose another persistence path."
       )
     }
+    // A 2 MiB page cache, bounded per connection (#653), instead of `cache_size = 0` and a `PRAGMA shrink_memory` after
+    // every save. With 0, reading a 20,000-fact store still left 8.8 MB in the cache, and on a device database's copy a
+    // write cost 992 KB of logical writes against 609 KB with this cache, with 17% more SQLite instructions. A failure
+    // here leaves SQLite's default cache, so it does not fail the open.
+    _ = sqlite3_exec(opened, "PRAGMA cache_size = \(sqlitePageCacheSizeKibibytes)", nil, nil, nil)
     return opened
   }
 
@@ -1748,9 +1782,6 @@ public actor SQLitePersistenceStore {
     }
     try withSQLiteBusyRetry {
       try execute("PRAGMA journal_mode = WAL")
-    // Keep SQLite page cache tiny once InstantStore holds the hot corpus.
-    try execute("PRAGMA cache_size = 0")  // ~2MiB
-
     }
     try execute("PRAGMA foreign_keys = ON")
     recordDurabilitySettings()
@@ -9743,10 +9774,7 @@ public actor SQLitePersistenceStore {
       }
       let state = loaded.state
       if loaded.source != .memory || cachedState != state {
-        adoptCachedState(
-          state,
-          shrinkingSQLiteMemory: loaded.source == .sqlite
-        )
+        adoptCachedState(state)
       }
       InstantDiagnostics.shared.record(
         .trace,
@@ -17143,27 +17171,13 @@ public actor SQLitePersistenceStore {
   }
 
   /// What SQLite's page cache holds on this connection (#653).
-  package func pageCacheStatusForTesting(
-    resettingSpillCount: Bool = false
-  ) throws -> InstantSQLitePageCacheStatus {
+  package func pageCacheStatusForTesting() throws -> InstantSQLitePageCacheStatus {
     try ensureOpenConnection()
     let cacheSize = try selectInt64("PRAGMA cache_size")
     var usedBytes: Int32 = 0
-    var spilledPageCount: Int32 = 0
     var highwater: Int32 = 0
     sqlite3_db_status(connection.raw, SQLITE_DBSTATUS_CACHE_USED, &usedBytes, &highwater, 0)
-    sqlite3_db_status(
-      connection.raw,
-      SQLITE_DBSTATUS_CACHE_SPILL,
-      &spilledPageCount,
-      &highwater,
-      resettingSpillCount ? 1 : 0
-    )
-    return InstantSQLitePageCacheStatus(
-      cacheSize: cacheSize,
-      usedBytes: Int(usedBytes),
-      spilledPageCount: Int(spilledPageCount)
-    )
+    return InstantSQLitePageCacheStatus(cacheSize: cacheSize, usedBytes: Int(usedBytes))
   }
 
   private func persistenceError(operation: String, message: String) -> InstantError {
@@ -17219,9 +17233,6 @@ package struct InstantSQLitePageCacheStatus: Equatable, Sendable {
   package var cacheSize: Int64
   /// The heap bytes the connection's page cache holds now (`SQLITE_DBSTATUS_CACHE_USED`).
   package var usedBytes: Int
-  /// Dirty pages written to the WAL in the middle of a transaction to make room in the cache
-  /// (`SQLITE_DBSTATUS_CACHE_SPILL`), since the count was last reset. Each is written again at commit.
-  package var spilledPageCount: Int
 }
 
 private struct DeclaredRelationStorageReconciliationMarker: Codable, Equatable {
@@ -17264,3 +17275,26 @@ private final class SQLiteConnection: @unchecked Sendable {
 }
 
 private let sqliteTransient = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
+
+/// `PRAGMA cache_size` for every connection: negative, so it bounds the page cache in KiB (2 MiB) (#653).
+private let sqlitePageCacheSizeKibibytes = -2_048
+
+/// Calls a handler when the system warns of memory pressure, from a dispatch memory-pressure source, which UIKit's
+/// memory warning also comes from; it runs no timer (#653).
+// SAFETY: the source is created, started and cancelled by its owner only; its handler runs on a dispatch queue and
+// only starts a task.
+private final class SQLiteMemoryPressureMonitor: @unchecked Sendable {
+  private let source = DispatchSource.makeMemoryPressureSource(
+    eventMask: [.warning, .critical],
+    queue: .global(qos: .utility)
+  )
+
+  func start(_ handler: @escaping @Sendable () -> Void) {
+    source.setEventHandler(handler: handler)
+    source.activate()
+  }
+
+  deinit {
+    source.cancel()
+  }
+}
