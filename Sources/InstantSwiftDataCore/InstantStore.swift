@@ -229,6 +229,10 @@ struct PreparedStoreMutation: Sendable {
   var attributes: AttributeStore
   var indexes: TripleIndexes
   var deferredValueRemovalMetrics: TripleIndexes.DeferredValueRemovalMetrics
+  /// The entities whose deferred values this mutation wrote, retracted or read back, recorded as it is installed while
+  /// observers exist (#653). Deferred values are not kept in memory, so a result that shows them can change while the
+  /// store's copy of it stays equal.
+  var deferredValueChangedEntityIDs: Set<String> = []
   private var previousCapture = PreviousChangedEntityCapture()
   private var preparedSnapshot: InstantStoreSnapshot?
   /// Which facts of each changed entity this mutation may have changed. Both
@@ -332,12 +336,15 @@ package struct InstantStorePublishMetrics: Equatable, Sendable {
   package var splicedObserverCount = 0
   package var rematerializedObserverCount = 0
   package var materializedSnapshotCount = 0
+  /// Refreshed observers whose result equaled the one they were last handed, so it was not handed again (#653).
+  package var unchangedObserverCount = 0
 
   mutating func add(_ other: Self) {
     skippedObserverCount += other.skippedObserverCount
     splicedObserverCount += other.splicedObserverCount
     rematerializedObserverCount += other.rematerializedObserverCount
     materializedSnapshotCount += other.materializedSnapshotCount
+    unchangedObserverCount += other.unchangedObserverCount
   }
 }
 
@@ -350,6 +357,8 @@ struct InstantStorePublicationTicket: Hashable, Sendable {
 private struct PendingPublication {
   var id: Int64
   var changedEntityIDs: Set<String> = []
+  /// The entities whose deferred values the covered commits wrote, retracted or read back (#653).
+  var deferredValueChangedEntityIDs: Set<String> = []
   /// The namespaces the changed entities belong to, or nil when every observer must refresh.
   var changedNamespaces: Set<String>? = []
   /// Whether a commit changed the store; a publication of page info alone refreshes only the observers it names.
@@ -421,6 +430,21 @@ private struct StoreObserver: Sendable {
   var lastValues: [InstantEntitySnapshot]
   var lastPageInfo: InstantQueryPageInfo?
   var continuation: AsyncStream<InstantQueryEmission>.Continuation
+  /// The result this observer was last handed (#653). A refresh that does not publish moves `lastValues` without
+  /// handing anything over, so the two can differ.
+  var lastHandedValues: [InstantEntitySnapshot]
+  var lastHandedPageInfo: InstantQueryPageInfo?
+  /// A refresh that did not publish showed an entity whose deferred value changed, and nothing was handed since: the
+  /// observer's reader still holds the value from before (#653).
+  var hasUnhandedDeferredValueChange = false
+}
+
+/// One refreshed observer's emission in a publication, and whether it equals what the observer was last handed (#653).
+private struct ObserverHandOver {
+  var observerID: UUID
+  var planID: String
+  var emission: InstantQueryEmission
+  var isUnchanged: Bool
 }
 
 private struct StoreObservationKey: Hashable {
@@ -781,6 +805,7 @@ public actor InstantStore {
     guard !pageInfoByKey.isEmpty else { return [] }
     var metrics = InstantStorePublishMetrics()
     var emissionsByObservation: [StoreObservationKey: InstantQueryEmission] = [:]
+    var handOvers: [ObserverHandOver] = []
     for observerID in Array(observers.keys) {
       guard var observer = observers[observerID],
         let liveQueryKey = observer.liveQueryKey,
@@ -819,10 +844,16 @@ public actor InstantStore {
       observer.apply(emission)
       observers[observerID] = observer
       guard publishing else { continue }
-      lastRefreshSequenceByQueryID[observer.plan.id] = sequence
-      yieldCountByQueryID[observer.plan.id, default: 0] += 1
-      observer.continuation.yield(emission)
+      handOvers.append(
+        ObserverHandOver(
+          observerID: observerID,
+          planID: observer.plan.id,
+          emission: emission,
+          isUnchanged: observer.wasLastHanded(emission, deferredValueChangedEntityIDs: [])
+        )
+      )
     }
+    metrics.unchangedObserverCount += handOver(handOvers)
     lastPublishMetrics = metrics
     return emissionsByObservation
       .sorted { lhs, rhs in Self.emissionSortKey(lhs.key) < Self.emissionSortKey(rhs.key) }
@@ -1606,6 +1637,7 @@ public actor InstantStore {
     }
     let refreshed = refreshObservers(
       changedEntityIDs: prepared.result.changedEntityIDs,
+      deferredValueChangedEntityIDs: prepared.deferredValueChangedEntityIDs,
       changedNamespaces: changedNamespaces,
       pageInfoByKey: Self.liveQueryPageInfoByKey(replacements),
       storeChanged: true,
@@ -1663,9 +1695,11 @@ public actor InstantStore {
       sequence: sequence
     )
     let changedEntityIDs = prepared.result.changedEntityIDs
+    let deferredValueChangedEntityIDs = prepared.deferredValueChangedEntityIDs
     let ticket = joinPendingPublication { pending in
       pending.commits.append(commit)
       pending.changedEntityIDs.formUnion(changedEntityIDs)
+      pending.deferredValueChangedEntityIDs.formUnion(deferredValueChangedEntityIDs)
       if let changed = changedNamespaces, let pendingNamespaces = pending.changedNamespaces {
         pending.changedNamespaces = pendingNamespaces.union(changed)
       } else {
@@ -1715,6 +1749,7 @@ public actor InstantStore {
     }
     let refreshed = refreshObservers(
       changedEntityIDs: pending.changedEntityIDs,
+      deferredValueChangedEntityIDs: pending.deferredValueChangedEntityIDs,
       changedNamespaces: pending.changedNamespaces,
       pageInfoByKey: pending.pageInfoByKey,
       storeChanged: pending.storeChanged,
@@ -1742,6 +1777,7 @@ public actor InstantStore {
             "splicedObserverCount": String(refreshed.metrics.splicedObserverCount),
             "rematerializedObserverCount": String(refreshed.metrics.rematerializedObserverCount),
             "materializedSnapshotCount": String(refreshed.metrics.materializedSnapshotCount),
+            "unchangedObserverCount": String(refreshed.metrics.unchangedObserverCount),
             "sequence": String(commit.sequence),
             "tripleCount": String(commit.tripleCount),
             "publicationCommitCount": String(pending.commitCount),
@@ -1786,6 +1822,9 @@ public actor InstantStore {
   /// Installs a prepared mutation's state and returns the namespaces its changed entities belong to before and after,
   /// or nil when its attributes changed or an entity's namespace could not be resolved, so every observer refreshes.
   private func install(_ prepared: inout PreparedStoreMutation) -> Set<String>? {
+    if !observers.isEmpty, prepared.indexes.pendingDeferredValueRemovalCount > 0 {
+      prepared.deferredValueChangedEntityIDs = prepared.indexes.entityIDsWithMarkedDeferredValues
+    }
     prepared.deferredValueRemovalMetrics = prepared.indexes.removeMarkedDeferredValues(
       attributes: prepared.attributes
     )
@@ -1818,11 +1857,12 @@ public actor InstantStore {
     return resolvedNamespaces
   }
 
-  /// Refreshes each observer the changes can affect from the current store, and yields its emission when
-  /// `publishing`. A publication that only carries live queries' page info (`storeChanged` false) refreshes only the
-  /// observers whose page info changed.
+  /// Refreshes each observer the changes can affect from the current store, and hands it its emission when
+  /// `publishing`, unless the emission equals what it was last handed (``handOver(_:)``). A publication that only
+  /// carries live queries' page info (`storeChanged` false) refreshes only the observers whose page info changed.
   private func refreshObservers(
     changedEntityIDs: Set<String>,
+    deferredValueChangedEntityIDs: Set<String>,
     changedNamespaces: Set<String>?,
     pageInfoByKey: [String: InstantQueryRemotePageInfo],
     storeChanged: Bool,
@@ -1831,6 +1871,7 @@ public actor InstantStore {
     let startedAt = ContinuousClock.now
     var metrics = InstantStorePublishMetrics()
     var emissionsByObservation: [StoreObservationKey: InstantQueryEmission] = [:]
+    var handOvers: [ObserverHandOver] = []
     for observerID in Array(observers.keys) {
       guard var observer = observers[observerID] else { continue }
       let pageInfoChanged: Bool
@@ -1893,18 +1934,64 @@ public actor InstantStore {
         emissionsByObservation[key] = emission
       }
       observer.apply(emission)
+      if !publishing, !deferredValueChangedEntityIDs.isEmpty,
+        emission.values.contains(anyEntityID: deferredValueChangedEntityIDs)
+      {
+        observer.hasUnhandedDeferredValueChange = true
+      }
       observers[observerID] = observer
       if publishing {
-        lastRefreshSequenceByQueryID[observer.plan.id] = sequence
-        yieldCountByQueryID[observer.plan.id, default: 0] += 1
-        observer.continuation.yield(emission)
+        handOvers.append(
+          ObserverHandOver(
+            observerID: observerID,
+            planID: observer.plan.id,
+            emission: emission,
+            isUnchanged: observer.wasLastHanded(
+              emission,
+              deferredValueChangedEntityIDs: deferredValueChangedEntityIDs
+            )
+          )
+        )
       }
     }
+    metrics.unchangedObserverCount += handOver(handOvers)
     let emissions =
       emissionsByObservation
       .sorted { lhs, rhs in Self.emissionSortKey(lhs.key) < Self.emissionSortKey(rhs.key) }
       .map(\.value)
     return (emissions, metrics, ContinuousClock.now - startedAt)
+  }
+
+  /// Hands each refreshed observer its emission, except one whose emission equals what it was last handed (#653), and
+  /// returns how many were not handed theirs.
+  ///
+  /// Every refreshed observer of a query whose result changed for any of its observers is handed its emission, equal
+  /// or not. Handing one over moves the query's refresh sequence, and deferred hydration drops an emission its query
+  /// was refreshed after, trusting that a newer one is queued (``wasRefreshed(queryID:after:)``). A query none of
+  /// whose observers changed keeps its refresh sequence, so an emission still being hydrated stays current.
+  private func handOver(_ handOvers: [ObserverHandOver]) -> Int {
+    guard !handOvers.isEmpty else { return 0 }
+    var changedPlanIDs: Set<String> = []
+    for handOver in handOvers where !handOver.isUnchanged {
+      changedPlanIDs.insert(handOver.planID)
+    }
+    var unchangedCount = 0
+    for handOver in handOvers {
+      guard var observer = observers[handOver.observerID] else { continue }
+      guard !handOver.isUnchanged || changedPlanIDs.contains(handOver.planID) else {
+        unchangedCount += 1
+        // The refreshed result equals the one handed over: keep one copy of it, not two.
+        observer.lastValues = observer.lastHandedValues
+        observers[handOver.observerID] = observer
+        continue
+      }
+      lastRefreshSequenceByQueryID[handOver.planID] = sequence
+      yieldCountByQueryID[handOver.planID, default: 0] += 1
+      observer.continuation.yield(handOver.emission)
+      observer.recordHanded(handOver.emission)
+      observers[handOver.observerID] = observer
+    }
+    return unchangedCount
   }
 
   /// One line per commit published or committed at once. Scribe's memory fenceposts and soak sampler read it, so it
@@ -1933,6 +2020,7 @@ public actor InstantStore {
         "splicedObserverCount": String(metrics.splicedObserverCount),
         "rematerializedObserverCount": String(metrics.rematerializedObserverCount),
         "materializedSnapshotCount": String(metrics.materializedSnapshotCount),
+        "unchangedObserverCount": String(metrics.unchangedObserverCount),
         "sequence": String(sequence),
         "tripleCount": String(result.tripleCount),
       ],
@@ -1958,6 +2046,7 @@ public actor InstantStore {
         "splicedObserverCount": String(summary.metrics.splicedObserverCount),
         "rematerializedObserverCount": String(summary.metrics.rematerializedObserverCount),
         "materializedSnapshotCount": String(summary.metrics.materializedSnapshotCount),
+        "unchangedObserverCount": String(summary.metrics.unchangedObserverCount),
         "publishMilliseconds": String(Self.milliseconds(summary.totalDuration)),
         "maximumPublishMilliseconds": String(Self.milliseconds(summary.maximumDuration)),
         "slowPublicationCount": String(summary.slowPublicationCount),
@@ -2885,7 +2974,9 @@ public actor InstantStore {
       liveQueryKey: liveQueryKey,
       lastValues: initialEmission.values,
       lastPageInfo: initialEmission.pageInfo,
-      continuation: continuation
+      continuation: continuation,
+      lastHandedValues: initialEmission.values,
+      lastHandedPageInfo: initialEmission.pageInfo
     )
     yieldCountByQueryID[plan.id, default: 0] += 1
     continuation.yield(initialEmission)
@@ -2950,6 +3041,26 @@ private extension StoreObserver {
   mutating func apply(_ emission: InstantQueryEmission) {
     lastValues = emission.values
     lastPageInfo = emission.pageInfo
+  }
+
+  /// Whether `emission` shows exactly what this observer was last handed (#653): the same values and page info, and no
+  /// entity in it whose deferred value changed since. Upstream `Reactor.js` `notifyOne` returns without calling a
+  /// query's callbacks when its new data is `areObjectsDeepEqual` to the previous result. Deferred values are not kept
+  /// in memory, so an entity whose deferred value a commit wrote, retracted or read back counts as changed, whether or
+  /// not the observer reads that value.
+  func wasLastHanded(_ emission: InstantQueryEmission, deferredValueChangedEntityIDs: Set<String>) -> Bool {
+    guard !hasUnhandedDeferredValueChange,
+      emission.pageInfo == lastHandedPageInfo,
+      emission.values == lastHandedValues
+    else { return false }
+    return deferredValueChangedEntityIDs.isEmpty
+      || !emission.values.contains(anyEntityID: deferredValueChangedEntityIDs)
+  }
+
+  mutating func recordHanded(_ emission: InstantQueryEmission) {
+    lastHandedValues = emission.values
+    lastHandedPageInfo = emission.pageInfo
+    hasUnhandedDeferredValueChange = false
   }
 }
 

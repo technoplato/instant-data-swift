@@ -1480,6 +1480,12 @@ struct TripleIndexes: Codable, Sendable {
     deferredValueKeysToRemove.count
   }
 
+  /// The entities with a deferred value marked for removal: the ones the pending mutation wrote, merged, retracted or
+  /// read back to prepare (#653).
+  var entityIDsWithMarkedDeferredValues: Set<String> {
+    Set(deferredValueKeysToRemove.lazy.map(\.entityID))
+  }
+
   @discardableResult
   mutating func removeMarkedDeferredValues(
     attributes: AttributeStore
