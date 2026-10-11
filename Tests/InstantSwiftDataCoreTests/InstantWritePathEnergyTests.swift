@@ -59,6 +59,28 @@ struct InstantWritePathEnergyTests {
     expectNoDifference(pendingCount, 3, "the store keeps working after the release")
   }
 
+  // MARK: - Prepared statements
+
+  /// Every statement was prepared and finalized on each call, so SQLite parsed and planned the same SQL again for
+  /// every save. On a device database's copy SQLite ran 17% fewer instructions per write with a 2 MiB page cache, and
+  /// 23% fewer with reused statements as well (#653).
+  @Test
+  func repeatedSavesReuseTheirPreparedStatements() async throws {
+    let runtime = try await InstantOfflineRuntimeFixture.offlineRuntime("statement-reuse")
+    try await InstantOfflineRuntimeFixture.createTodo("warm-1", in: runtime)
+    try await InstantOfflineRuntimeFixture.createTodo("warm-2", in: runtime)
+    let preparedBefore = await runtime.persistence.preparedStatementCountForTesting()
+
+    for index in 0..<10 {
+      try await InstantOfflineRuntimeFixture.createTodo("reuse-\(index)", in: runtime)
+    }
+
+    let preparedAfter = await runtime.persistence.preparedStatementCountForTesting()
+    let pendingCount = await runtime.pendingMutationCount()
+    expectNoDifference(preparedAfter - preparedBefore, 0)
+    expectNoDifference(pendingCount, 12, "every write is still durable in the outbox")
+  }
+
   // MARK: - Helpers
 
   static func temporaryCacheURL(_ name: String) throws -> URL {

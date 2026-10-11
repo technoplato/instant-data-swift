@@ -905,6 +905,7 @@ public actor SQLitePersistenceStore {
   /// Bumped by every write to `instant_attributes` on this connection.
   private var attributeWriteGeneration = 0
   private var liveResultAttributeLoads = 0
+  private var preparedStatementCount = 0
   /// Releases SQLite's memory when the system warns of memory pressure (#653).
   private let memoryPressureMonitor: SQLiteMemoryPressureMonitor
   /// Live-query result saves, and the result JSON they wrote (#566): for tests and the release's measurements.
@@ -17076,9 +17077,15 @@ public actor SQLitePersistenceStore {
 
   private func prepare(_ sql: String, statement: inout OpaquePointer?) throws {
     try ensureOpenConnection()
+    preparedStatementCount += 1
     guard sqlite3_prepare_v2(connection.raw, sql, -1, &statement, nil) == SQLITE_OK else {
       throw persistenceError(operation: "prepare SQL", message: lastErrorMessage())
     }
+  }
+
+  /// How many statements SQLite has prepared on this store's connections (#653).
+  package func preparedStatementCountForTesting() -> Int {
+    preparedStatementCount
   }
 
   private func ensureOpenConnection() throws {
