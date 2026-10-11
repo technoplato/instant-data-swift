@@ -2307,7 +2307,15 @@ public final class InstantRuntime: Sendable {
       // empty one. The hot indexes are therefore the single preparation source for both cache hits
       // and cross-runtime revision changes.
       let supersededTail: PendingMutation? = immediateTail.mutation.flatMap { predecessor in
-        guard predecessor.rollbackTransaction != nil,
+        // A predecessor that repeated every value it wrote has no rollback and no current effect (#653): there is
+        // nothing to peel, so the newcomer prepares on the current store, which is the predecessor's baseline. While
+        // an identical value took the writer's transaction id, such a write carried a rollback and was superseded the
+        // same way.
+        let hasNoCurrentEffect = switch predecessor.optimisticEffectReceipt {
+        case .noCurrentMaterializedEffect: true
+        case .unknown, .materialized: false
+        }
+        guard predecessor.rollbackTransaction != nil || hasNoCurrentEffect,
           OutboxSameEntitySupersession.canReplaceImmediateTail(
             predecessor,
             with: pendingMutation,

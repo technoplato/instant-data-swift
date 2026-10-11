@@ -827,15 +827,12 @@ struct TripleIndexes: Codable, Sendable {
       case let .one(existingValue, existingStamp)?:
         let value = Self.normalizedValue(triple.value, attribute: attribute)
         if existingValue == value {
-          if existingStamp.txTime <= triple.txTime {
-            eav[triple.entityID, default: [:]][triple.attributeID] = .one(
-              value: existingValue,
-              stamp: InstantTripleStamp(
-                txIDIndex: internTxID(triple.txID),
-                txTimeMilliseconds: existingStamp.txTimeMilliseconds
-              )
-            )
-          }
+          // An identical value keeps its fact, stamp and all (#653). It used to take the writer's transaction id (its
+          // time was kept), which changed nothing a reader sees, yet persistence rewrote the fact's row and the
+          // write's rollback carried a retract and an insert for it: an upsert that repeats most of an entity's values
+          // rewrote every one of their rows. Upstream `store.ts` `addTriple` keeps an existing triple's `created_at`
+          // for the same value, and its triples carry no transaction id. The entity still counts as changed, so
+          // observers and `changedEntityIDs` are as before, and the outbox keeps the write as submitted.
           rememberChangedEntity(triple.entityID, into: &changed)
           if attribute?.valueType == .ref, let targetID = value.refValue {
             changed.insert(targetID)
