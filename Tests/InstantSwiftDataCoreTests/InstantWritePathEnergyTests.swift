@@ -169,10 +169,15 @@ struct InstantWritePathEnergyTests {
     defer { reading.cancel() }
     try await Self.createTodo("a", at: 1, in: runtime)
     try await Self.createTodo("b", at: 2, in: runtime)
+    // A third todo fills the window past its limit, so the page already has a next page. The first version of this
+    // test made the third todo the equal write, but it turns the page's `hasNextPage` from false to true, which a
+    // reader can see, so that result is not equal and is rightly handed over.
+    try await Self.createTodo("c", at: 3, in: runtime)
     let handedBefore = await runtime.store.observerYieldCountsForTesting()[plan.id] ?? 0
 
-    // A later todo falls outside the first two: the query runs again and its result is the same.
-    try await Self.createTodo("c", at: 3, in: runtime)
+    // A later todo falls outside the first two and the page still has a next page: the query runs again and its
+    // result, values and page info, is the same.
+    try await Self.createTodo("d", at: 4, in: runtime)
     let handedAfterEqual = await runtime.store.observerYieldCountsForTesting()[plan.id] ?? 0
     expectNoDifference(handedAfterEqual - handedBefore, 0, "an equal result is not handed again")
 
@@ -183,11 +188,11 @@ struct InstantWritePathEnergyTests {
         operations: TodoExample.updateTextOperations(
           id: "todo-a",
           text: "a2",
-          updatedAt: Self.todoTime(4),
+          updatedAt: Self.todoTime(5),
           transactionID: "tx-a2"
         )
       ),
-      createdAt: Self.todoTime(4)
+      createdAt: Self.todoTime(5)
     )
     let handedAfterChange = await runtime.store.observerYieldCountsForTesting()[plan.id] ?? 0
     expectNoDifference(handedAfterChange - handedBefore, 1)
