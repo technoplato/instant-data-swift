@@ -1,3 +1,16 @@
+## 2026-10-14 18:46:43 EDT — v1.9.9: a write refreshes only the pages it can reach, an observer is not handed an equal result, a bounded page cache, reused statements, upstream's reconnect backoff with a network-path gate, and an energy meter; main's merge of energy-98 is the release (#653 #654 #669)
+
+- **Owner:** the build-99 release agent (workLog agentId `claude-code/d417e89e`), under direct maintainer authorization
+  typed 2026-10-14 16:03 EDT ("Land all this performance work ...", quoted in `docs/releases/v1.9.9.md`).
+- **Commits on `agent/claude/release-1.9.9`** (from `main` at `69119ed1`): `c6c5b5d9` merges `agent/claude/energy-98`
+  at `ba4bea67` (only CHANGELOG.md conflicted; every entry of both sides kept; the merged code equals `ba4bea67`'s);
+  this commit adds `docs/releases/v1.9.9.md` and this entry; the ledger commit follows. `main` fast-forwards to the
+  ledger commit, which is tagged `v1.9.9`.
+- **Checks:** the energy-98 entry below (the full suite on a clean build, 2,090 tests in 207 suites; every failure one
+  test at a time at the branch and at v1.9.8: the same 7 at both). No code changed after `d488769b`.
+- **Left out:** #653's fix 3 (identical values keep their stamp), reverted in `71edafd2`; see the release document.
+- **Continue:** the consuming app pins `exact: "1.9.9"` and reads `InstantEnergyMeter` in its energy ledger.
+
 ## 2026-10-14 18:36:15 EDT — energy-98 for Scribe's build 99: #653's page cache, reused statements and equal results, #654's page refresh, the reconnect gate and the energy meter, verified and merged on `agent/claude/energy-98` (not pushed, not tagged)
 
 - **Owner:** #669 agent 2 (Claude Code session d417e89e, workLog agentId `claude-code/d417e89e`), continuing the
