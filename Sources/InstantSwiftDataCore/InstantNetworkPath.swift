@@ -180,7 +180,8 @@ final class InstantNetworkPathMonitor: Sendable {
 #if canImport(Network) && !os(watchOS) && !targetEnvironment(simulator)
   /// The one `NWPathMonitor` behind ``InstantNetworkPath/system``.
   // SAFETY: `pathMonitor` is configured and started in `init` and never mutated afterwards; the system calls its
-  // handler on `queue`, and the handler only writes `monitor`, which is `Sendable`.
+  // handler on `queue`, a serial dispatch queue that is its only executor, and the handler only writes `monitor`, which
+  // keeps its state behind its own lock.
   private final class InstantSystemNetworkPath: @unchecked Sendable {
     static let shared = InstantSystemNetworkPath()
 

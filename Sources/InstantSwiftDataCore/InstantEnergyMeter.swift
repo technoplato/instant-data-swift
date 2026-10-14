@@ -246,6 +246,8 @@ package final class InstantEnergyMeterStorage: Sendable {
   /// The dynamic-tracing category keeps the signposts off until a performance tool records them (`os/signpost.h`,
   /// `OS_LOG_CATEGORY_DYNAMIC_TRACING`): a plain category enables them whenever logging is enabled, and each section
   /// would then pay for an id and two signposts on every call.
+  // SAFETY: `log` is a `let` set once at initialization and never mutated, and the os_signpost functions that read it
+  // are safe to call from any thread or executor, so sharing the handle needs no lock.
   private struct SignpostLog: @unchecked Sendable {
     let log = OSLog(subsystem: "com.instantdb.swift", category: .dynamicTracing)
   }

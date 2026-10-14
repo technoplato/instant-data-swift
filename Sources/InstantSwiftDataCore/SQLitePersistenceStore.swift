@@ -17441,8 +17441,9 @@ private let sqlitePageCacheSizeKibibytes = -2_048
 
 /// Calls a handler when the system warns of memory pressure, from a dispatch memory-pressure source, which UIKit's
 /// memory warning also comes from; it runs no timer (#653).
-// SAFETY: the source is created, started and cancelled by its owner only; its handler runs on a dispatch queue and
-// only starts a task.
+// SAFETY: `source` is a `let`: the store creates it, starts it once in its initializer, and cancels it in `deinit`, and
+// a dispatch source is safe to call from any thread or executor (dispatch synchronizes it, no lock of ours is needed);
+// its handler runs on a global dispatch queue and only starts a task.
 private final class SQLiteMemoryPressureMonitor: @unchecked Sendable {
   private let source = DispatchSource.makeMemoryPressureSource(
     eventMask: [.warning, .critical],
