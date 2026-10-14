@@ -10,6 +10,21 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## October 14th, 2026 at 6:47:33 p.m. EDT — `bbe1ecfe31d6` Document the v1.9.9 release: a write refreshes only the pages it can reach, an observer is not handed an equal result, a bounded page cache, reused statements, upstream's reconnect backoff with a network-path gate, and an energy meter (#653 #654 #669)
+
+- **Implementation commit:** `bbe1ecfe31d67a3d6af9e1c150b2930418f2085a`
+- **Change:** Document the v1.9.9 release, after main's merge of energy-98 (c6c5b5d9) (#653 #654 #669)
+- **Details:**
+  - c6c5b5d9 merges agent/claude/energy-98 at ba4bea67 into main: the bounded page cache, reused statements, equal results not handed again (#653), the page refresh (#654), the reconnect gate and the energy meter (#669); fix 3 reverted on the branch (71edafd2). Only CHANGELOG.md conflicted; every entry of both sides kept. The merged code equals ba4bea67's.
+  - docs/releases/v1.9.9.md: what changed, the one visible correction (#654), fix 3 left out and why, the checks and the measurements (32 page observers: 5,879.8 M -> 374.7 M instructions a write, -93.6%).
+- **Files:**
+  - `docs/releases/v1.9.9.md` — the release document
+  - `PROGRESS.md` — the release entry
+  - `_touching/docs@releases@v1.9.9.md/docs@releases@v1.9.9.md/.agents/agents.txt` — the claim
+- **User context (verbatim):**
+  > Land all this performance work and then install that in the next build as a developer build and as a production build. So build both. I want to just compare.
+- **SpecStory:** unavailable — Claude Code session, no SpecStory capture
+
 ## October 14th, 2026 at 6:35:49 p.m. EDT — `d488769b6465` Write the 2026-10-14 status of the energy-98-sync and energy-99-pages plans: merged for build 99, and #654 measured (#654 #669)
 
 - **Implementation commit:** `d488769b64654e5af95f3bee7a1c7b949c8fe3b5`

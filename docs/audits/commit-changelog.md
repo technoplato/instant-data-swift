@@ -1,3 +1,9 @@
+## 2026-10-14 18:47:00 EDT — instant-data-swift `bbe1ecfe31d67a3d6af9e1c150b2930418f2085a`
+Document the v1.9.9 release: a write refreshes only the pages it can reach, an observer is not handed an equal result, a bounded page cache, reused statements, upstream's reconnect backoff with a network-path gate, and an energy meter (#653 #654 #669)
+
+## 2026-10-14 18:44:11 EDT — instant-data-swift `c6c5b5d910776084a15cd3fc68487de71bb1f4ae`
+Merge agent/claude/energy-98 into main for v1.9.9 (#653 #654 #669)
+
 ## 2026-10-14 18:35:21 EDT — realtime-voice-sqlite-instant `68fa7186cfdbfa1a7b6d1ce13949abb34a124d92`
 Audit: the library fixes verified and measured for build 99, fix 3 reverted, H6 fixed in the harness, section 5's reasons nothing visible changes, and the merge order (#669)
 
