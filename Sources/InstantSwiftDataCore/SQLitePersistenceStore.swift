@@ -905,6 +905,8 @@ public actor SQLitePersistenceStore {
   /// Bumped by every write to `instant_attributes` on this connection.
   private var attributeWriteGeneration = 0
   private var liveResultAttributeLoads = 0
+  /// Releases SQLite's memory when the system warns of memory pressure (#653).
+  private let memoryPressureMonitor: SQLiteMemoryPressureMonitor
   /// Live-query result saves, and the result JSON they wrote (#566): for tests and the release's measurements.
   private var liveQueryResultJSONWriteStats = (saves: 0, writes: 0, bytes: 0)
   /// What this process knows about each live query's stored result JSON (#566). A server apply used to rewrite a
@@ -1158,7 +1160,7 @@ public actor SQLitePersistenceStore {
       "SELECT key FROM instant_sync_metadata WHERE key >= ? AND key < ? ORDER BY key",
       statement: &statement
     )
-    defer { sqlite3_finalize(statement) }
+    defer { finishStatement(statement) }
     try bind([.text(prefix), .text(prefix + "\u{10FFFF}")], to: statement)
     while sqlite3_step(statement) == SQLITE_ROW {
       if let key = sqlite3_column_text(statement, 0) {
@@ -1397,7 +1399,7 @@ public actor SQLitePersistenceStore {
       """,
       statement: &statement
     )
-    defer { sqlite3_finalize(statement) }
+    defer { finishStatement(statement) }
     try bind([.text(id)], to: statement)
     guard sqlite3_step(statement) == SQLITE_ROW,
       let stateBytes = sqlite3_column_text(statement, 0),
@@ -1467,10 +1469,37 @@ public actor SQLitePersistenceStore {
     cachedMaterializedStore = nil
   }
 
-  private func adoptCachedState(
-    _ state: InstantPersistenceState,
-    shrinkingSQLiteMemory: Bool = true
-  ) {
+  /// Releases the memory SQLite holds for this connection: its page cache, which is bounded at 2 MiB, the prepared
+  /// statements waiting for reuse, and whatever else `sqlite3_db_release_memory` frees (#653). The store calls it when
+  /// the system warns of memory pressure; SQLite reads the pages it needs again afterwards, and prepares the statements
+  /// again on their next use. A save used to run `PRAGMA shrink_memory` every time.
+  package func releaseMemory() {
+    guard let raw = connection.raw else { return }
+    var usedBefore: Int32 = 0
+    var highwater: Int32 = 0
+    sqlite3_db_status(raw, SQLITE_DBSTATUS_CACHE_USED, &usedBefore, &highwater, 0)
+    // On Apple's SQLite `sqlite3_db_release_memory` leaves the page cache as it was (411 KB before and after, measured);
+    // lowering the bound to one page drops the rest, and the 2 MiB bound comes back for the next reads.
+    connection.statements.finalizeIdle()
+    _ = sqlite3_exec(raw, "PRAGMA cache_size = 1", nil, nil, nil)
+    _ = sqlite3_exec(raw, "PRAGMA cache_size = \(sqlitePageCacheSizeKibibytes)", nil, nil, nil)
+    sqlite3_db_release_memory(raw)
+    var usedAfter: Int32 = 0
+    sqlite3_db_status(raw, SQLITE_DBSTATUS_CACHE_USED, &usedAfter, &highwater, 0)
+    InstantDiagnostics.shared.record(
+      .info,
+      subsystem: "instant-swift-data-core",
+      category: "persistence",
+      event: "sqlite.memory-released",
+      message: "Released SQLite's page cache under memory pressure.",
+      metadata: [
+        "cacheBytesBefore": String(usedBefore),
+        "cacheBytesAfter": String(usedAfter),
+      ]
+    )
+  }
+
+  private func adoptCachedState(_ state: InstantPersistenceState) {
     var thin = state
     // Durable outbox rows are cursor-addressed in SQLite. Keeping even compact
     // lifecycle shells here makes cold-start memory proportional to queue depth.
@@ -1489,9 +1518,6 @@ public actor SQLitePersistenceStore {
       storeRevision: thin.storeRevision,
       attributeRevision: thin.attributeRevision
     )
-    if shrinkingSQLiteMemory {
-      try? execute("PRAGMA shrink_memory")
-    }
   }
 
   private func advanceCachedRevisionDomains(
@@ -1541,7 +1567,7 @@ public actor SQLitePersistenceStore {
       state.attributeRevision = resultingAttributeRevision
       state.outboxRevision = resultingOutboxRevision
       state.queryResultRevision = resultingQueryResultRevision
-      adoptCachedState(state, shrinkingSQLiteMemory: false)
+      adoptCachedState(state)
       return
     }
 
@@ -1586,6 +1612,7 @@ public actor SQLitePersistenceStore {
     )
     do {
       self.connection = SQLiteConnection(try Self.openRawConnection(fileURL: fileURL))
+      self.memoryPressureMonitor = SQLiteMemoryPressureMonitor()
       startupTrace.completed(
         "sqlite.open",
         since: stopwatch,
@@ -1615,6 +1642,10 @@ public actor SQLitePersistenceStore {
         metadata: ["path": fileURL.path]
       )
       throw error
+    }
+    memoryPressureMonitor.start { [weak self] in
+      guard let self else { return }
+      Task { await self.releaseMemory() }
     }
   }
 
@@ -1679,6 +1710,12 @@ public actor SQLitePersistenceStore {
         recovery: "Check that the cache directory is writable, or choose another persistence path."
       )
     }
+    // A page cache bounded at 2 MiB per connection (#653), instead of `cache_size = 0` and a `PRAGMA shrink_memory`
+    // after every save. On Apple's SQLite 0 did not bound the cache: reading a 20,000-fact store left 8.8 MB in it, and
+    // the shrink did not lower it. In the release write-path harness the change left CPU and logical writes about the
+    // same (a 4,344-write replay: -1% instructions, -0.5% bytes); the #653 audit's estimate of 992 to 609 KB per write
+    // did not reproduce there. A failure here leaves SQLite's default cache, so it does not fail the open.
+    _ = sqlite3_exec(opened, "PRAGMA cache_size = \(sqlitePageCacheSizeKibibytes)", nil, nil, nil)
     return opened
   }
 
@@ -1748,9 +1785,6 @@ public actor SQLitePersistenceStore {
     }
     try withSQLiteBusyRetry {
       try execute("PRAGMA journal_mode = WAL")
-    // Keep SQLite page cache tiny once InstantStore holds the hot corpus.
-    try execute("PRAGMA cache_size = 0")  // ~2MiB
-
     }
     try execute("PRAGMA foreign_keys = ON")
     recordDurabilitySettings()
@@ -2793,7 +2827,7 @@ public actor SQLitePersistenceStore {
       bindings = []
     }
     try prepare(sql, statement: &statement)
-    defer { sqlite3_finalize(statement) }
+    defer { finishStatement(statement) }
     try bind(bindings, to: statement)
     let code = sqlite3_step(statement)
     if code == SQLITE_DONE { return nil }
@@ -3341,7 +3375,7 @@ public actor SQLitePersistenceStore {
       bindings = []
     }
     try prepare(sql, statement: &statement)
-    defer { sqlite3_finalize(statement) }
+    defer { finishStatement(statement) }
     try bind(bindings, to: statement)
     let code = sqlite3_step(statement)
     if code == SQLITE_DONE { return nil }
@@ -3433,7 +3467,7 @@ public actor SQLitePersistenceStore {
       """,
       statement: &statement
     )
-    defer { sqlite3_finalize(statement) }
+    defer { finishStatement(statement) }
     try bind([.int(rowID)] + sortedAttributeIDs.map(SQLiteBinding.text), to: statement)
     let code = sqlite3_step(statement)
     if code == SQLITE_DONE { return nil }
@@ -3500,7 +3534,7 @@ public actor SQLitePersistenceStore {
       LIMIT 1
       """
     try prepare(sql, statement: &statement)
-    defer { sqlite3_finalize(statement) }
+    defer { finishStatement(statement) }
     try bind(bindings, to: statement)
     let code = sqlite3_step(statement)
     if code == SQLITE_DONE { return nil }
@@ -3753,8 +3787,7 @@ public actor SQLitePersistenceStore {
   }
 
   func simulateUnexpectedConnectionCloseForTesting() {
-    sqlite3_close(connection.raw)
-    connection.raw = nil
+    connection.close()
   }
 
   public func loadSnapshot() throws -> InstantPersistenceSnapshot {
@@ -4489,7 +4522,7 @@ public actor SQLitePersistenceStore {
           """,
           statement: &statement
         )
-        defer { sqlite3_finalize(statement) }
+        defer { finishStatement(statement) }
         try bind([.int(Int64(InstantServerApplyReductionLimits.maximumFailedOverlays + 1))], to: statement)
         while sqlite3_step(statement) == SQLITE_ROW {
           guard let idBytes = sqlite3_column_text(statement, 0) else { continue }
@@ -4587,7 +4620,7 @@ public actor SQLitePersistenceStore {
         """,
         statement: &newestPrunedStatement
       )
-      defer { sqlite3_finalize(newestPrunedStatement) }
+      defer { finishStatement(newestPrunedStatement) }
       try bind(prunable.bindings, to: newestPrunedStatement)
       if sqlite3_step(newestPrunedStatement) == SQLITE_ROW,
         let newestPrunedIDBytes = sqlite3_column_text(newestPrunedStatement, 1)
@@ -4669,7 +4702,7 @@ public actor SQLitePersistenceStore {
           """,
           statement: &statement
         )
-        defer { sqlite3_finalize(statement) }
+        defer { finishStatement(statement) }
         let afterBindings: [SQLiteBinding] = position.map {
           [.int($0.createdAtMilliseconds), .int($0.createdAtMilliseconds), .text($0.mutationID)]
         } ?? []
@@ -4736,7 +4769,7 @@ public actor SQLitePersistenceStore {
         )
         var keys: [InstantVisibleWriteKey] = []
         do {
-          defer { sqlite3_finalize(statement) }
+          defer { finishStatement(statement) }
           try bind([.text(failed.mutationID)], to: statement)
           while sqlite3_step(statement) == SQLITE_ROW {
             guard let entityBytes = sqlite3_column_text(statement, 0),
@@ -4954,7 +4987,7 @@ public actor SQLitePersistenceStore {
               """,
               statement: &statement
             )
-            defer { sqlite3_finalize(statement) }
+            defer { finishStatement(statement) }
             try bind([.text(planID), .text(mutation.id)], to: statement)
             guard sqlite3_step(statement) == SQLITE_ROW else {
               throw persistenceError(
@@ -5550,7 +5583,7 @@ public actor SQLitePersistenceStore {
     sql += " ORDER BY created_at_ms, mutation_id LIMIT 51"
     var statement: OpaquePointer?
     try prepare(sql, statement: &statement)
-    defer { sqlite3_finalize(statement) }
+    defer { finishStatement(statement) }
     try bind(bindings, to: statement)
     var candidates: [InstantServerApplyResidentPatchCandidate] = []
     var totalLifecycleByteCount = 0
@@ -5713,7 +5746,7 @@ public actor SQLitePersistenceStore {
       """,
       statement: &statement
     )
-    defer { sqlite3_finalize(statement) }
+    defer { finishStatement(statement) }
     try bind([.text(id)], to: statement)
     guard sqlite3_step(statement) == SQLITE_ROW,
       let processedTransactionIDBytes = sqlite3_column_text(statement, 4)
@@ -6125,7 +6158,7 @@ public actor SQLitePersistenceStore {
 
     var statement: OpaquePointer?
     try prepare(sql, statement: &statement)
-    defer { sqlite3_finalize(statement) }
+    defer { finishStatement(statement) }
     try bind(bindings, to: statement)
     var candidates: [InstantServerApplyBodyCandidate] = []
     var componentFlags: [String: Bool] = [:]
@@ -6157,7 +6190,7 @@ public actor SQLitePersistenceStore {
       componentFlags[mutationID] = sqlite3_column_int64(statement, 3) != 0
       totalByteCount += byteCount
     }
-    sqlite3_finalize(statement)
+    finishStatement(statement)
     statement = nil
     if let oversizedMutationID {
       let blocker = try revokeMismatchedPreparedReceiptWithoutTransaction(
@@ -7071,7 +7104,7 @@ public actor SQLitePersistenceStore {
         """,
         statement: &statement
       )
-      defer { sqlite3_finalize(statement) }
+      defer { finishStatement(statement) }
       let code = sqlite3_step(statement)
       if code == SQLITE_DONE {
         return InstantOutboxImmediateTailLoad(matchesRevisions: true, mutation: nil)
@@ -7283,7 +7316,7 @@ public actor SQLitePersistenceStore {
         """,
         statement: &statement
       )
-      defer { sqlite3_finalize(statement) }
+      defer { finishStatement(statement) }
       try bind([.text(mutationID)], to: statement)
       let code = sqlite3_step(statement)
       if code == SQLITE_DONE {
@@ -7345,7 +7378,7 @@ public actor SQLitePersistenceStore {
         """,
         statement: &statement
       )
-      defer { sqlite3_finalize(statement) }
+      defer { finishStatement(statement) }
       try bind([.text(lifecycleID)], to: statement)
       if sqlite3_step(statement) == SQLITE_ROW {
         if let currentBytes = sqlite3_column_text(statement, 0) {
@@ -8013,7 +8046,7 @@ public actor SQLitePersistenceStore {
       """,
       statement: &statement
     )
-    defer { sqlite3_finalize(statement) }
+    defer { finishStatement(statement) }
     try bind(
       [
         .text(mutationID),
@@ -8377,7 +8410,7 @@ public actor SQLitePersistenceStore {
         """,
         statement: &statement
       )
-      defer { sqlite3_finalize(statement) }
+      defer { finishStatement(statement) }
       try bind([.text(InstantMutationStatus.failed.rawValue), .int(Int64(max(0, limit)))], to: statement)
       while true {
         let code = sqlite3_step(statement)
@@ -8548,7 +8581,7 @@ public actor SQLitePersistenceStore {
       """,
       statement: &statement
     )
-    defer { sqlite3_finalize(statement) }
+    defer { finishStatement(statement) }
     try bind(
       [
         .text(key.entityID),
@@ -8602,7 +8635,7 @@ public actor SQLitePersistenceStore {
       """,
       statement: &statement
     )
-    defer { sqlite3_finalize(statement) }
+    defer { finishStatement(statement) }
     try bind([.text(queryKey), .text(triple.entityID), .text(triple.attributeID)], to: statement)
     var values: [InstantValue] = []
     while true {
@@ -9743,10 +9776,7 @@ public actor SQLitePersistenceStore {
       }
       let state = loaded.state
       if loaded.source != .memory || cachedState != state {
-        adoptCachedState(
-          state,
-          shrinkingSQLiteMemory: loaded.source == .sqlite
-        )
+        adoptCachedState(state)
       }
       InstantDiagnostics.shared.record(
         .trace,
@@ -12627,7 +12657,7 @@ public actor SQLitePersistenceStore {
       """,
       statement: &statement
     )
-    defer { sqlite3_finalize(statement) }
+    defer { finishStatement(statement) }
 
     var localIDs: [InstantLocalID] = []
     while true {
@@ -12799,7 +12829,7 @@ public actor SQLitePersistenceStore {
         sql,
         statement: &statement
       )
-      defer { sqlite3_finalize(statement) }
+      defer { finishStatement(statement) }
       try bind(bindings, to: statement)
       let code = sqlite3_step(statement)
       if code == SQLITE_DONE { break }
@@ -13281,7 +13311,7 @@ public actor SQLitePersistenceStore {
       """,
       statement: &statement
     )
-    defer { sqlite3_finalize(statement) }
+    defer { finishStatement(statement) }
     try bind(
       [
         .text(InstantMutationStatus.failed.rawValue),
@@ -13463,7 +13493,7 @@ public actor SQLitePersistenceStore {
       """,
       statement: &statement
     )
-    defer { sqlite3_finalize(statement) }
+    defer { finishStatement(statement) }
     try bind(
       [
         .int(expectedAttributeRevision),
@@ -13768,7 +13798,7 @@ public actor SQLitePersistenceStore {
       """,
       statement: &statement
     )
-    defer { sqlite3_finalize(statement) }
+    defer { finishStatement(statement) }
     try bind([.text(InstantMutationStatus.failed.rawValue)], to: statement)
     let code = sqlite3_step(statement)
     if code == SQLITE_DONE { return nil }
@@ -13824,7 +13854,7 @@ public actor SQLitePersistenceStore {
   ) throws -> [InstantOutboxDeliveryCandidateRow] {
     var statement: OpaquePointer?
     try prepare(sql, statement: &statement)
-    defer { sqlite3_finalize(statement) }
+    defer { finishStatement(statement) }
     try bind(bindings, to: statement)
 
     var rows: [InstantOutboxDeliveryCandidateRow] = []
@@ -13892,7 +13922,7 @@ public actor SQLitePersistenceStore {
       """,
       statement: &statement
     )
-    defer { sqlite3_finalize(statement) }
+    defer { finishStatement(statement) }
     try bind([.text(id)], to: statement)
     guard sqlite3_step(statement) == SQLITE_ROW,
       let mutationID = sqlite3_column_text(statement, 1)
@@ -13916,7 +13946,7 @@ public actor SQLitePersistenceStore {
       """,
       statement: &statement
     )
-    defer { sqlite3_finalize(statement) }
+    defer { finishStatement(statement) }
     guard sqlite3_step(statement) == SQLITE_ROW,
       let mutationID = sqlite3_column_text(statement, 1)
     else { return nil }
@@ -13946,7 +13976,7 @@ public actor SQLitePersistenceStore {
       """,
       statement: &statement
     )
-    defer { sqlite3_finalize(statement) }
+    defer { finishStatement(statement) }
     try bind([.text(id)], to: statement)
     guard sqlite3_step(statement) == SQLITE_ROW,
       let mutationIDBytes = sqlite3_column_text(statement, 0),
@@ -14283,7 +14313,7 @@ public actor SQLitePersistenceStore {
   ) throws -> [InstantOptimisticEffectRow] {
     var statement: OpaquePointer?
     try prepare(sql, statement: &statement)
-    defer { sqlite3_finalize(statement) }
+    defer { finishStatement(statement) }
     try bind(bindings, to: statement)
     var rows: [InstantOptimisticEffectRow] = []
     while true {
@@ -14342,7 +14372,7 @@ public actor SQLitePersistenceStore {
       """,
       statement: &statement
     )
-    defer { sqlite3_finalize(statement) }
+    defer { finishStatement(statement) }
     try bind([.text(mutationID)], to: statement)
     var entityIDs: Set<String> = []
     while true {
@@ -15204,7 +15234,7 @@ public actor SQLitePersistenceStore {
           """,
           statement: &statement
         )
-        defer { sqlite3_finalize(statement) }
+        defer { finishStatement(statement) }
         try bind([.text(key.entityID), .text(key.attributeID)], to: statement)
         let code = sqlite3_step(statement)
         if code == SQLITE_ROW {
@@ -15279,7 +15309,7 @@ public actor SQLitePersistenceStore {
       """,
       statement: &statement
     )
-    defer { sqlite3_finalize(statement) }
+    defer { finishStatement(statement) }
     try bind(
       [
         .text(key.entityID),
@@ -15326,7 +15356,7 @@ public actor SQLitePersistenceStore {
   ) throws -> [InstantOutboxBodyRow] {
     var statement: OpaquePointer?
     try prepare(sql, statement: &statement)
-    defer { sqlite3_finalize(statement) }
+    defer { finishStatement(statement) }
     try bind(bindings, to: statement)
 
     var rows: [InstantOutboxBodyRow] = []
@@ -15370,7 +15400,7 @@ public actor SQLitePersistenceStore {
   ) throws -> [Value] {
     var statement: OpaquePointer?
     try prepare(sql, statement: &statement)
-    defer { sqlite3_finalize(statement) }
+    defer { finishStatement(statement) }
     try bind(bindings, to: statement)
 
     var values: [Value] = []
@@ -15403,7 +15433,7 @@ public actor SQLitePersistenceStore {
   ) throws -> (values: [Value], batchCount: Int, encodedByteCount: Int) {
     var statement: OpaquePointer?
     try prepare(sql, statement: &statement)
-    defer { sqlite3_finalize(statement) }
+    defer { finishStatement(statement) }
     try bind(bindings, to: statement)
 
     let decodeResults = JSONBatchDecodeResults<Value>()
@@ -15495,7 +15525,7 @@ public actor SQLitePersistenceStore {
   private func selectScalar(_ sql: String, _ bindings: [SQLiteBinding] = []) throws -> String? {
     var statement: OpaquePointer?
     try prepare(sql, statement: &statement)
-    defer { sqlite3_finalize(statement) }
+    defer { finishStatement(statement) }
     try bind(bindings, to: statement)
 
     let code = sqlite3_step(statement)
@@ -15513,7 +15543,7 @@ public actor SQLitePersistenceStore {
   ) throws -> [String] {
     var statement: OpaquePointer?
     try prepare(sql, statement: &statement)
-    defer { sqlite3_finalize(statement) }
+    defer { finishStatement(statement) }
     try bind(bindings, to: statement)
 
     var values: [String] = []
@@ -15536,7 +15566,7 @@ public actor SQLitePersistenceStore {
   private func selectInt64(_ sql: String, _ bindings: [SQLiteBinding] = []) throws -> Int64 {
     var statement: OpaquePointer?
     try prepare(sql, statement: &statement)
-    defer { sqlite3_finalize(statement) }
+    defer { finishStatement(statement) }
     try bind(bindings, to: statement)
 
     let code = sqlite3_step(statement)
@@ -15557,7 +15587,7 @@ public actor SQLitePersistenceStore {
       """,
       statement: &statement
     )
-    defer { sqlite3_finalize(statement) }
+    defer { finishStatement(statement) }
 
     var rows: [QueryCacheStorageRow] = []
     while true {
@@ -15599,7 +15629,7 @@ public actor SQLitePersistenceStore {
       """,
       statement: &statement
     )
-    defer { sqlite3_finalize(statement) }
+    defer { finishStatement(statement) }
 
     var rows: [LiveQueryResultStorageRow] = []
     while true {
@@ -16066,7 +16096,7 @@ public actor SQLitePersistenceStore {
     let existingDeliveryStarted = hasExisting
       ? sqlite3_column_int64(statement, 5) != 0
       : false
-    sqlite3_finalize(statement)
+    finishStatement(statement)
     if case .publicPersistence = receiptWriteAuthority,
       existingReceiptFingerprint != nil,
       candidateFingerprint != existingReceiptFingerprint
@@ -16631,7 +16661,7 @@ public actor SQLitePersistenceStore {
       """,
       statement: &statement
     )
-    defer { sqlite3_finalize(statement) }
+    defer { finishStatement(statement) }
     try bind([.text(queryKey)], to: statement)
 
     var ownership: Set<LiveQueryOwnershipIdentity> = []
@@ -17015,7 +17045,7 @@ public actor SQLitePersistenceStore {
   private func execute(_ sql: String, _ bindings: [SQLiteBinding] = []) throws {
     var statement: OpaquePointer?
     try prepare(sql, statement: &statement)
-    defer { sqlite3_finalize(statement) }
+    defer { finishStatement(statement) }
     try bind(bindings, to: statement)
     let code = sqlite3_step(statement)
     guard code == SQLITE_DONE || code == SQLITE_ROW else {
@@ -17030,7 +17060,7 @@ public actor SQLitePersistenceStore {
     guard !rows.isEmpty else { return }
     var statement: OpaquePointer?
     try prepare(sql, statement: &statement)
-    defer { sqlite3_finalize(statement) }
+    defer { finishStatement(statement) }
 
     for bindings in rows {
       guard sqlite3_reset(statement) == SQLITE_OK else {
@@ -17046,11 +17076,37 @@ public actor SQLitePersistenceStore {
     }
   }
 
+  /// Checks out a prepared statement for `sql` from the connection's cache, preparing it when the cache has none
+  /// (#653). Every caller returns it with ``finishStatement(_:)``.
   private func prepare(_ sql: String, statement: inout OpaquePointer?) throws {
     try ensureOpenConnection()
-    guard sqlite3_prepare_v2(connection.raw, sql, -1, &statement, nil) == SQLITE_OK else {
+    let checkedOut = connection.statements.checkOut(sql, on: connection.raw)
+    guard checkedOut.resultCode == SQLITE_OK else {
       throw persistenceError(operation: "prepare SQL", message: lastErrorMessage())
     }
+    statement = checkedOut.statement
+  }
+
+  /// Returns a statement from ``prepare(_:statement:)``: reset, its bindings cleared, and kept for the next use of the
+  /// same SQL (#653).
+  private func finishStatement(_ statement: OpaquePointer?) {
+    connection.statements.checkIn(statement)
+  }
+
+  /// How many statements SQLite has prepared on this store's connections (#653).
+  package func preparedStatementCountForTesting() -> Int {
+    connection.statements.preparedCount
+  }
+
+  /// How many prepared statements wait for reuse, and the heap bytes SQLite holds for every statement of the
+  /// connection (`SQLITE_DBSTATUS_STMT_USED`) (#653).
+  package func statementCacheStatusForTesting() -> (idleCount: Int, statementBytes: Int) {
+    var used: Int32 = 0
+    var highwater: Int32 = 0
+    if let raw = connection.raw {
+      sqlite3_db_status(raw, SQLITE_DBSTATUS_STMT_USED, &used, &highwater, 0)
+    }
+    return (connection.statements.idleCount, Int(used))
   }
 
   private func ensureOpenConnection() throws {
@@ -17059,8 +17115,7 @@ public actor SQLitePersistenceStore {
   }
 
   private func reopenConnection() throws {
-    sqlite3_close(connection.raw)
-    connection.raw = nil
+    connection.close()
     connection.raw = try Self.openRawConnection(fileURL: fileURL)
   }
 
@@ -17142,6 +17197,16 @@ public actor SQLitePersistenceStore {
     try selectScalar("PRAGMA synchronous")
   }
 
+  /// What SQLite's page cache holds on this connection (#653).
+  package func pageCacheStatusForTesting() throws -> InstantSQLitePageCacheStatus {
+    try ensureOpenConnection()
+    let cacheSize = try selectInt64("PRAGMA cache_size")
+    var usedBytes: Int32 = 0
+    var highwater: Int32 = 0
+    sqlite3_db_status(connection.raw, SQLITE_DBSTATUS_CACHE_USED, &usedBytes, &highwater, 0)
+    return InstantSQLitePageCacheStatus(cacheSize: cacheSize, usedBytes: Int(usedBytes))
+  }
+
   private func persistenceError(operation: String, message: String) -> InstantError {
     InstantError(
       code: .persistenceFailed,
@@ -17189,6 +17254,14 @@ private enum SQLiteBinding: Sendable {
   case null
 }
 
+/// What SQLite's page cache holds on one connection (#653).
+package struct InstantSQLitePageCacheStatus: Equatable, Sendable {
+  /// `PRAGMA cache_size`: a negative value bounds the cache in KiB, a positive one in pages.
+  package var cacheSize: Int64
+  /// The heap bytes the connection's page cache holds now (`SQLITE_DBSTATUS_CACHE_USED`).
+  package var usedBytes: Int
+}
+
 private struct DeclaredRelationStorageReconciliationMarker: Codable, Equatable {
   var retainedAttributes: [InstantAttribute]
   var declaredAttributes: [InstantAttribute]
@@ -17214,18 +17287,162 @@ extension InstantError {
   }
 }
 
-// SAFETY: SQLite's raw pointer is confined to the `SQLitePersistenceStore` actor.
+// SAFETY: SQLite's raw pointer and its prepared statements are confined to the `SQLitePersistenceStore` actor.
 // The wrapper is immutable outside that actor and only closes the connection when released.
 private final class SQLiteConnection: @unchecked Sendable {
   var raw: OpaquePointer?
+  /// Prepared statements kept for reuse on this connection (#653).
+  var statements = SQLiteStatementCache()
 
   init(_ raw: OpaquePointer?) {
     self.raw = raw
   }
 
+  /// Finalizes the cached statements and closes the connection. `sqlite3_close_v2` closes it once a statement still
+  /// checked out is finalized too, when it is checked in.
+  func close() {
+    statements.finalizeAll()
+    sqlite3_close_v2(raw)
+    raw = nil
+  }
+
   deinit {
-    sqlite3_close(raw)
+    statements.finalizeAll()
+    sqlite3_close_v2(raw)
+  }
+}
+
+/// Prepared statements kept for reuse on one SQLite connection, keyed by their SQL (#653).
+///
+/// Preparing parses and plans the SQL, and a save ran the same few dozen statements every time, each prepared and
+/// finalized on every call. A statement is checked out for one use and checked in afterwards, reset and with its
+/// bindings cleared, so an idle statement holds no read snapshot and no bound value. A nested use of the same SQL while
+/// it is checked out prepares its own statement. DDL, which runs once, and a statement with more than
+/// `maximumParameterCount` parameters, built for one batch size, are not kept. At most `capacity` idle statements are
+/// kept, the least recently used finalized past that. `finalizeAll()` runs before the connection closes; a statement
+/// checked out then is finalized when it is checked in. An unmerged #403 branch (484c4f35) prepared statements once in
+/// the same way.
+struct SQLiteStatementCache {
+  static let defaultCapacity = 64
+  static let maximumParameterCount = 32
+
+  let capacity: Int
+  /// How many statements this cache has prepared.
+  private(set) var preparedCount = 0
+  private var idle: [String: OpaquePointer] = [:]
+  private var lastUse: [String: UInt64] = [:]
+  private var checkedOut: [OpaquePointer: (sql: String, generation: Int, keeps: Bool)] = [:]
+  private var generation = 0
+  private var useClock: UInt64 = 0
+
+  init(capacity: Int = defaultCapacity) {
+    self.capacity = capacity
+  }
+
+  var idleCount: Int {
+    idle.count
+  }
+
+  /// A statement for `sql` on `connection`: an idle one, or a new one. Nil with SQLite's result code when the SQL does
+  /// not prepare.
+  mutating func checkOut(
+    _ sql: String,
+    on connection: OpaquePointer?
+  ) -> (statement: OpaquePointer?, resultCode: Int32) {
+    if let statement = idle.removeValue(forKey: sql) {
+      lastUse[sql] = nil
+      checkedOut[statement] = (sql, generation, true)
+      return (statement, SQLITE_OK)
+    }
+    let mayKeep = !Self.isDDL(sql)
+    var statement: OpaquePointer?
+    let resultCode = sqlite3_prepare_v3(
+      connection,
+      sql,
+      -1,
+      mayKeep ? UInt32(SQLITE_PREPARE_PERSISTENT) : 0,
+      &statement,
+      nil
+    )
+    preparedCount += 1
+    guard resultCode == SQLITE_OK, let statement else {
+      sqlite3_finalize(statement)
+      return (nil, resultCode)
+    }
+    let keeps = mayKeep && Int(sqlite3_bind_parameter_count(statement)) <= Self.maximumParameterCount
+    checkedOut[statement] = (sql, generation, keeps)
+    return (statement, resultCode)
+  }
+
+  /// Takes back a statement from ``checkOut(_:on:)``: reset, bindings cleared, kept for reuse when it may be.
+  mutating func checkIn(_ statement: OpaquePointer?) {
+    guard let statement else { return }
+    guard let use = checkedOut.removeValue(forKey: statement),
+      use.keeps,
+      use.generation == generation,
+      idle[use.sql] == nil
+    else {
+      sqlite3_finalize(statement)
+      return
+    }
+    sqlite3_reset(statement)
+    sqlite3_clear_bindings(statement)
+    useClock &+= 1
+    idle[use.sql] = statement
+    lastUse[use.sql] = useClock
+    if idle.count > capacity,
+      let leastRecentlyUsed = lastUse.min(by: { $0.value < $1.value })?.key,
+      let evicted = idle.removeValue(forKey: leastRecentlyUsed)
+    {
+      lastUse[leastRecentlyUsed] = nil
+      sqlite3_finalize(evicted)
+    }
+  }
+
+  /// Finalizes the statements waiting for reuse.
+  mutating func finalizeIdle() {
+    for statement in idle.values {
+      sqlite3_finalize(statement)
+    }
+    idle.removeAll()
+    lastUse.removeAll()
+  }
+
+  /// Finalizes the statements waiting for reuse before their connection closes; a statement checked out now is
+  /// finalized when it is checked in.
+  mutating func finalizeAll() {
+    finalizeIdle()
+    generation += 1
+  }
+
+  /// `CREATE`, `ALTER` and `DROP` run once, at bootstrap or in a migration.
+  private static func isDDL(_ sql: String) -> Bool {
+    let keyword = sql.drop(while: \.isWhitespace).prefix(6).uppercased()
+    return keyword.hasPrefix("CREATE") || keyword.hasPrefix("ALTER") || keyword.hasPrefix("DROP")
   }
 }
 
 private let sqliteTransient = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
+
+/// `PRAGMA cache_size` for every connection: negative, so it bounds the page cache in KiB (2 MiB) (#653).
+private let sqlitePageCacheSizeKibibytes = -2_048
+
+/// Calls a handler when the system warns of memory pressure, from a dispatch memory-pressure source, which UIKit's
+/// memory warning also comes from; it runs no timer (#653).
+// SAFETY: the source is created, started and cancelled by its owner only; its handler runs on a dispatch queue and
+// only starts a task.
+private final class SQLiteMemoryPressureMonitor: @unchecked Sendable {
+  private let source = DispatchSource.makeMemoryPressureSource(
+    eventMask: [.warning, .critical],
+    queue: .global(qos: .utility)
+  )
+
+  func start(_ handler: @escaping @Sendable () -> Void) {
+    source.setEventHandler(handler: handler)
+    source.activate()
+  }
+
+  deinit {
+    source.cancel()
+  }
+}
