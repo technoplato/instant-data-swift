@@ -618,6 +618,12 @@ private final class TxIDInterner: @unchecked Sendable {
   }
 }
 
+/// An entity's place in a plan's ordered result set (#654): outside it, or in it with its order value.
+enum InstantResultSetMembership: Equatable, Sendable {
+  case absent
+  case member(orderValue: InstantValue?)
+}
+
 struct TripleIndexes: Codable, Sendable {
   private struct DerivedIndexAttributeShape: Hashable, Sendable {
     var namespace: String
@@ -1480,6 +1486,12 @@ struct TripleIndexes: Codable, Sendable {
     deferredValueKeysToRemove.count
   }
 
+  /// The entities with a deferred value marked for removal: the ones the pending mutation wrote, merged, retracted or
+  /// read back to prepare (#653).
+  var entityIDsWithMarkedDeferredValues: Set<String> {
+    Set(deferredValueKeysToRemove.lazy.map(\.entityID))
+  }
+
   @discardableResult
   mutating func removeMarkedDeferredValues(
     attributes: AttributeStore
@@ -2162,6 +2174,25 @@ struct TripleIndexes: Codable, Sendable {
     attributes: AttributeStore
   ) -> Bool {
     entitySnapshot(entityID, plan: plan, attributes: attributes, projecting: false) != nil
+  }
+
+  /// Whether `entityID` is in `plan`'s result set (its namespace and filters) and, if so, its order value: what decides
+  /// the entity's place in the ordered result (#654). The page a plan shows is a function of that ordered set, its
+  /// window, and the shown entities' snapshots, so a change that leaves every changed entity's answer as it was, and
+  /// shows none of them, leaves the page as it was.
+  func resultSetMembership(
+    _ entityID: String,
+    plan: InstantQueryPlan,
+    attributes: AttributeStore
+  ) -> InstantResultSetMembership {
+    guard let snapshot = entitySnapshot(entityID, plan: plan, attributes: attributes, projecting: false) else {
+      return .absent
+    }
+    let order = Self.effectiveOrder(plan.order)
+    let serverCreatedAt = order.isServerCreatedAt
+      ? serverCreatedAtValue(entityID: entityID, namespace: plan.namespace, attributes: attributes)
+      : nil
+    return .member(orderValue: Self.orderValue(snapshot, serverCreatedAt: serverCreatedAt, field: order.field))
   }
 
   /// Materializes one entity against `plan` filters, includes, and selected fields.

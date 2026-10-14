@@ -3166,11 +3166,13 @@ struct InstantStoreTests {
     expectNoDifference(replayMetrics.materializedSnapshotCount, 0)
 
     // Installing the unrelated key now proves neither prior matching-key call queued a value for
-    // this observer.
-    let readyWithoutNext = InstantQueryPageInfo(
+    // this observer. Its page info differs from the empty local page this observer was handed first (no cursors, no
+    // previous or next page): an observer is not handed a result equal to the one it was last handed (#653), so a
+    // server answer that only restates that page would hand it nothing.
+    let readyWithPrevious = InstantQueryPageInfo(
       startCursor: nil,
       endCursor: nil,
-      hasPreviousPage: false,
+      hasPreviousPage: true,
       hasNextPage: false
     )
     let unrelatedEmissions = await store.installLiveQueryPageInfo(
@@ -3178,7 +3180,7 @@ struct InstantStoreTests {
         InstantLiveQueryResultReplacement(
           key: "query-unrelated-page-info",
           triples: [],
-          pageInfo: readyWithoutNext
+          pageInfo: readyWithPrevious
         )
       ],
       publishing: true
@@ -3188,7 +3190,7 @@ struct InstantStoreTests {
       at: 1,
       operation: "await unrelated keyed page-info emission"
     )
-    expectNoDifference(unrelatedEmission.pageInfo, readyWithoutNext)
+    expectNoDifference(unrelatedEmission.pageInfo, readyWithPrevious)
     expectNoDifference(unrelatedEmissions, [unrelatedEmission])
     let matchingEmissionCount = await matchingRecorder.count()
     let unrelatedEmissionCount = await unrelatedRecorder.count()
@@ -20479,12 +20481,12 @@ struct InstantStoreTests {
       .sorted { $0.joined(separator: "|") < $1.joined(separator: "|") }
     expectNoDifference(publishedWindows, [[], ["todo-2"]])
 
-    let waitingUpdate = await waitingIterator.next()
-    expectNoDifference(waitingUpdate?.values.map(\.id), [])
-    expectNoDifference(waitingUpdate?.pageInfo, nil)
-    let readyUpdate = await readyIterator.next()
-    expectNoDifference(readyUpdate?.values.map(\.id), ["todo-2"])
-    expectNoDifference(readyUpdate?.pageInfo, pageInfo)
+    // The optimistic todo sorts before both windows, so neither observer's result changed: the waiting window still
+    // shows nothing and the ready one still shows todo-2 between its cursors, as the commit's emissions above say. An
+    // observer is not handed a result equal to the one it was last handed (#653), so the two streams, which this test
+    // used to read again, hold no new emission: each observer was handed only its first result.
+    let handed = await store.observerYieldCountsForTesting()[plan.id]
+    expectNoDifference(handed, 2)
   }
 
   @Test
