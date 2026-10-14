@@ -10,6 +10,31 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## October 14th, 2026 at 6:35:49 p.m. EDT — `d488769b6465` Write the 2026-10-14 status of the energy-98-sync and energy-99-pages plans: merged for build 99, and #654 measured (#654 #669)
+
+- **Implementation commit:** `d488769b64654e5af95f3bee7a1c7b949c8fe3b5`
+- **Change:** Write the 2026-10-14 status of the energy-98-sync and energy-99-pages plans: merged for build 99, and #654 measured (#654 #669)
+- **Files:**
+  - `agent-presence/claude-opus-5.5/plans/2026-10-10-energy-98-sync/PLAN.md` — status: merged, steps 1, 2 and 4 in
+  - `agent-presence/claude-opus-5.5/plans/2026-10-11-energy-99-pages/PLAN.md` — status: merged, step 4 measured
+- **User context (verbatim):**
+  > We want to make sure that we're not changing any functionality, but improving performance.
+- **SpecStory:** unavailable — Claude Code sub-agent of session d417e89e-9ffc-413e-b12f-78eeaf0cfa20 (agent 2 of #669); no SpecStory capture exists for Claude Code sub-agent sessions.
+
+## October 14th, 2026 at 6:35:48 p.m. EDT — `c4d02561de6b` SAFETY comments for the three @unchecked Sendable types energy-98 added, which SwiftConcurrencyGuidanceTests requires (#653 #669)
+
+- **Implementation commit:** `c4d02561de6bccfe2004d6bc2f8e2d0e5c0d7961`
+- **Change:** SAFETY comments for the three @unchecked Sendable types energy-98 added, which SwiftConcurrencyGuidanceTests requires (#653 #669)
+- **Details:**
+  - SwiftConcurrencyGuidanceTests.uncheckedSendableConformancesDocumentProtectionMechanism failed on the merge's full suite at InstantEnergyMeter's SignpostLog, InstantSystemNetworkPath and SQLiteMemoryPressureMonitor; it passes with the comments (one test at a time, 2026-10-14 18:10)
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantEnergyMeter.swift` — SignpostLog's SAFETY comment
+  - `Sources/InstantSwiftDataCore/InstantNetworkPath.swift` — InstantSystemNetworkPath's SAFETY comment names its executor and lock
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — SQLiteMemoryPressureMonitor's SAFETY comment
+- **User context (verbatim):**
+  > We want to make sure that we're not changing any functionality, but improving performance.
+- **SpecStory:** unavailable — Claude Code sub-agent of session d417e89e-9ffc-413e-b12f-78eeaf0cfa20 (agent 2 of #669); no SpecStory capture exists for Claude Code sub-agent sessions.
+
 ## October 14th, 2026 at 4:37:08 p.m. EDT — `79ba86f42e5d` Three tests that awaited or counted a result equal to the one an observer was last handed, brought in line with #653's equal-result rule (8d912a74)
 
 - **Implementation commit:** `79ba86f42e5d6a1eb271147cd2ee3c95c44f116b`

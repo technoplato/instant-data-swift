@@ -1,3 +1,60 @@
+## 2026-10-14 18:35:21 EDT — realtime-voice-sqlite-instant `68fa7186cfdbfa1a7b6d1ce13949abb34a124d92`
+Audit: the library fixes verified and measured for build 99, fix 3 reverted, H6 fixed in the harness, section 5's reasons nothing visible changes, and the merge order (#669)
+
+## 2026-10-14 17:25:35 EDT — instant-data-swift `d488769b64654e5af95f3bee7a1c7b949c8fe3b5`
+Write the 2026-10-14 status of the energy-98-sync and energy-99-pages plans: merged for build 99, and #654 measured (#654 #669)
+
+## 2026-10-14 17:14:12 EDT — instant-data-swift `c4d02561de6bccfe2004d6bc2f8e2d0e5c0d7961`
+SAFETY comments for the three @unchecked Sendable types energy-98 added, which SwiftConcurrencyGuidanceTests requires (#653 #669)
+
+## 2026-10-14 16:26:14 EDT — realtime-voice-sqlite-instant `94bd9dbf91cbc1a75874ee54a2f5fff003a41dc5`
+Test: a hot snapshot now carries the MetricKit summary too, so it has 7 entries, not 6 (#669)
+
+## 2026-10-14 15:49:27 EDT — realtime-voice-sqlite-instant `4260ec373a6f553a57f26291d4f06c47499ad127`
+Audit: build 99's telemetry, H6's 13x confirmed in the harness, H11 sized, fix 1 measured, P8-P9, and the 2026-10-11 log (#669)
+
+## 2026-10-14 15:49:17 EDT — realtime-voice-sqlite-instant `174f0dc8d2f5e4b818e64d587285042b57bd2b80`
+Green: the ledger names the Instant library's own operations: InstantEnergyOperation's raw values and the snapshot's totals (#669)
+
+## 2026-10-14 15:49:00 EDT — realtime-voice-sqlite-instant `ae85741ad503def7109e0aadf88a1cab11825b84`
+Green: build 99's energy ledger runs: a row a minute at the energy sample, every hot path metered, Send Diagnostics carries it, Settings says it (#669)
+
+## 2026-10-11 10:29:13 EDT — realtime-voice-sqlite-instant `a50fe7f5f625b7c1ac4948577f3f9b21108185b5`
+Red: the ledger names the Instant library's own operations in words and groups them, sync or local (#669)
+
+## 2026-10-11 10:26:30 EDT — realtime-voice-sqlite-instant `454b66121b305ac85e1a695d9c806d21aaf23d4a`
+Merge origin/main (848975ed8, build 98) into energy-98, so its telemetry and fixes go into build 99 (#669)
+
+## 2026-10-11 10:26:15 EDT — realtime-voice-sqlite-instant `4f503a70f46df4e9ac1a24e6a4cd6958761c3906`
+Red: the energy ledger at the minute's energy sample, the store's meter, the durability writes by kind, Send Diagnostics' files, MetricKit's sentences, and Settings' look at now, as seams with no behavior (#669)
+
+## 2026-10-11 10:26:03 EDT — realtime-voice-sqlite-instant `365eb5137656e82c29edc5a1a482995cd599f014`
+Green: EnergyTelemetry counts, builds the minute's row, says it in words, keeps the file, and summarizes MetricKit (#669)
+
+## 2026-10-11 06:06:06 EDT — realtime-voice-sqlite-instant `34d670dac9ffea82be0bb130a3f3af9a54b4181d`
+scripts/energy-ledger-report.py: what cost the most, from a diagnostics bundle's energy ledger (#669)
+
+## 2026-10-11 05:34:05 EDT — realtime-voice-sqlite-instant `d8e5bcde6cd5ba58cbab581ef73e141b3e547947`
+Audit: the reconnect storm and observer growth corrected, Recording 211's online vs offline split, the PiP numbers, the proposals, and the evidence folder (#669)
+
+## 2026-10-11 05:33:09 EDT — realtime-voice-sqlite-instant `a4f4aade6e7b64eacaf3c7dbb88336462be4d938`
+Picture in Picture updates only the rows that changed, in place, instead of rebuilding the window on every interim line (#669)
+
+## 2026-10-11 00:37:39 EDT — realtime-voice-sqlite-instant `f438f02ac521608b9549e6aaf4e00dce2da99a84`
+Red: the Picture-in-Picture window's rows as values, and the smallest edit between two of them (#669)
+
+## 2026-10-11 00:33:32 EDT — realtime-voice-sqlite-instant `ad895f7b909037ce37bf8e381b90493f4bcef883`
+Red tests: build 98's energy telemetry names what costs what, minute by minute, with the seam that holds no behavior yet (#669)
+
+## 2026-10-10 23:40:49 EDT — realtime-voice-sqlite-instant `77ef3d3fe63b0dd6ffa0bf3f19578ac2dfa02add`
+Merge production's Instant schema and rules (schema-push-2026-10-10, f4e0d7620) into energy-98, so the drift gate reads 0 (#669)
+
+## 2026-10-10 23:34:51 EDT — realtime-voice-sqlite-instant `914a1af3ceb011c05c432f17f80a3a3f6285941b`
+Start audits/ with the device-temperature audit, and the rule that audits are appended there and indexed (#669)
+
+## 2026-10-10 23:22:54 EDT — realtime-voice-sqlite-instant `dbcbf0e404324b9e6f7fa497cbb364e6dba74999`
+Plan and claim energy-98 (#669): the hot phone on Michael's lap, build 98's energy and thermal telemetry, and the waste fixes
+
 ## 2026-10-14 16:36:49 EDT — instant-data-swift `3ac540a3e5afd60524d45d4a5e9dc015ed34714f`
 Merge agent/claude/energy-98-sync into energy-98: the reconnect loop keeps upstream's backoff and waits for a network path, and the library meters what its operations cost, for build 99 (#669)
 
