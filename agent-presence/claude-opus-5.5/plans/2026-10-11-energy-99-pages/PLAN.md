@@ -20,3 +20,11 @@
 
 Touching `Sources/InstantSwiftDataCore/InstantStore.swift`, `Sources/InstantSwiftDataCore/TripleIndexes.swift`, and new
 `Tests/InstantSwiftDataCoreTests/InstantPageRefreshEnergyTests.swift`, added 2026-10-11 EDT.
+
+## Status 2026-10-14 (agent 2 of #669, Claude Code session d417e89e)
+
+Steps 1-3 are in (`592bef6c`, `c086d927`) and merged into `agent/claude/energy-98` (`bab45a3c`). Step 4, measured in
+the release harness on the merge (with #653's equal results; `/Users/laptop/Sync/audit/device-temperature-2026-10-10/write-harness/runs/2026-10-14/`):
+with 32 page observers one interim write's lifecycle 5,879.8 -> 374.7 M instructions (-93.6%), the cost of a write with
+no pages; the first 300 writes of Recording 211 with 32 pages 6,384.5 -> 1,781.6 M a write (-72.1%). Without pages,
+unchanged within 1%.

@@ -27,3 +27,10 @@ at the first line of functions in `SQLitePersistenceStore.swift`, `InstantStore.
 `InstantLiveRefreshApplication.swift`, `InstantLiveMutation.swift` (the write helper owns those bodies); new tests
 `InstantReconnectBackoffParityTests.swift`, `InstantEnergyMeterTests.swift`, `InstantObservationLifecycleEnergyTests.swift`;
 and `CHANGELOG.md`. Added 2026-10-11 00:16 EDT.
+
+## Status 2026-10-14 (agent 2 of #669, Claude Code session d417e89e)
+
+Merged into `agent/claude/energy-98` (`3ac540a3`) for build 99, not pushed. Steps 1, 2 and 4 are in (`fe8c3eed`,
+`505fe037`, `6e019138`); step 3 (the outage's outbox) was not started. Verified beside v1.9.8 with the 59 energy-related
+suites, then each failure alone: the line adds no failure. Its three `@unchecked Sendable` types got the SAFETY comments
+the library requires on the merge (`c4d02561`).
