@@ -1,3 +1,36 @@
+## 2026-10-14 19:52:25 EDT — realtime-voice-sqlite-instant `2d8a523e05e4e9b882d50cdc38b2995e45432ea5`
+Record Scribe 0.1 (99) in PROGRESS: main 0e0acf281 with instant-data-swift 1.9.9, the energy telemetry and What's New, built twice (Scribe Dev and the Release production app) and installed on the iPhone, the iPad and the Mac; the production app's August store blocks its sync until Reset Local Cache (#669 #668 #653 #654)
+
+## 2026-10-14 19:00:15 EDT — realtime-voice-sqlite-instant `0e0acf281673f1251c0d57e2584ee8b7604e529c`
+Change log: WHATS-NEW.md's build 99 (f53d93252) and Scribe 0.1 (99)'s build number (2e7a48303)
+
+## 2026-10-14 19:00:06 EDT — realtime-voice-sqlite-instant `2e7a483034544d81626df5493dbb7b992221f182`
+Set Scribe 0.1 (99): CURRENT_PROJECT_VERSION 99 on the 12 lines that carried 98
+
+## 2026-10-14 19:00:01 EDT — realtime-voice-sqlite-instant `f53d93252c1a132bf5dd7bfbeb22560981658793`
+WHATS-NEW.md: build 99 first, newest first, as what Michael can now do: What's New inside the app, the energy work, #654's page refresh, the energy ledger, the reconnect wait and Picture in Picture's rows, every issue a link (#668 #669 #653 #654)
+
+## 2026-10-14 18:59:40 EDT — realtime-voice-sqlite-instant `6abf0ee29f9ad9fb6bf8e5de6780774419065422`
+Merge agent/claude/whats-new into integration-99 for build 99: Settings › What's New reads WHATS-NEW.md as the build bundled it, a card once after an update, and "Scribe, what's new" by voice (#668)
+
+## 2026-10-14 18:59:26 EDT — realtime-voice-sqlite-instant `555b66b2549f86558824ca87a757789bd01b641e`
+Merge agent/claude/energy-98 into integration-99 for build 99: the energy ledger and telemetry, Picture in Picture's in-place rows, instant-data-swift 1.9.9 and the library meter in the ledger (#669 #653 #654)
+
+## 2026-10-14 18:58:47 EDT — realtime-voice-sqlite-instant `27b8bde638686d934be17d5a89365b64412d372c`
+Record Scribe 0.1 (98) in PROGRESS: merged to main at 848975ed8, installed on the iPhone, the iPad and the Mac (Scribe Dev); the TestFlight IPA waits for Michael's yes
+
+## 2026-10-14 18:58:11 EDT — realtime-voice-sqlite-instant `cf28f287e2753aa0f09cefaa4452509ec285759e`
+Change log: the 1.9.9 pin (f78a7cc26) and the library meter's red and green (11698ee8f, 5f000b69e) (#669)
+
+## 2026-10-14 18:57:56 EDT — realtime-voice-sqlite-instant `5f000b69eb604c2e483cd5a8f7168504cde25f41`
+Green: the energy ledger reads the Instant library's meter each minute from launch: each operation under its raw value with its sections, CPU and wall time, and the four totals as counts (#669)
+
+## 2026-10-14 18:50:30 EDT — realtime-voice-sqlite-instant `11698ee8fb8f4f028d16054a0b98d03ca3f4bd20`
+Red: the energy ledger keys the Instant library's meter (InstantEnergyMeter, 1.9.9) by its operations' raw values with its totals as counts, as seams with no behavior (#669)
+
+## 2026-10-14 18:49:36 EDT — realtime-voice-sqlite-instant `f78a7cc2647b5c8c86a48f2101b5dd96dd249634`
+Pin instant-data-swift exactly 1.9.9 instead of 1.9.8: a write refreshes only the pages it can reach, an observer is not handed an equal result, a bounded page cache, reused statements, upstream's reconnect backoff with a network-path gate, and the library's energy meter (#653 #654 #669)
+
 ## 2026-10-14 18:47:00 EDT — instant-data-swift `bbe1ecfe31d67a3d6af9e1c150b2930418f2085a`
 Document the v1.9.9 release: a write refreshes only the pages it can reach, an observer is not handed an equal result, a bounded page cache, reused statements, upstream's reconnect backoff with a network-path gate, and an energy meter (#653 #654 #669)
 
