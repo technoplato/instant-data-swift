@@ -21,3 +21,22 @@
 Touching `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift`, `TripleIndexes.swift`, `InstantStore.swift`,
 `InstantRuntime.swift`, `InstantLiveRefreshApplication.swift`, and new
 `Tests/InstantSwiftDataCoreTests/InstantWritePathEnergyTests.swift`, added 2026-10-10 23:40 EDT.
+
+## Status 2026-10-14 (agent 2 of #669, Claude Code session d417e89e)
+
+Verified by running the same 59-suite filter at v1.9.8 (`61b9c226`), at this branch's tip (`c086d927`), and at the tip
+without step 3, then every failure again one test at a time. The user's rule for this work, typed 2026-10-14 15:45:
+"We want to make sure that we're not changing any functionality, but improving performance."
+
+1. Kept (`bad65eaf`): the memory bound; no CPU or disk change measured.
+2. Kept (`8a1f4068`): the refresh echo 3-5% fewer instructions, the whole replay 0.8%.
+3. Reverted: nine `InstantFastDrainTests` that pass at v1.9.8 failed with it (a server frame that only restates or
+   confirms what the device shows rebased the pending writes again: an unchanged result peeled all 120), and four
+   store tests that pin a writer's stamp on an identical value. A slower drain is the opposite of this plan's goal.
+   Redo only together with the drain planner, which reads a writer's stamp to tell its own writes from the server's.
+4. Kept (`8d912a74`). Three tests waited for, or counted, an emission equal to the last one handed; they are brought
+   in line, each with the reason. Its own test's "equal" write flipped `hasNextPage`, which a reader sees.
+5. Not started. #654's page refresh (`c086d927`, plan `2026-10-11-energy-99-pages`) cuts another part of the echo's
+   cost: the refresh of pages the echo cannot reach.
+
+Touching also `Tests/InstantSwiftDataCoreTests/InstantStoreTests.swift` (the two tests of step 4), added 2026-10-14.
