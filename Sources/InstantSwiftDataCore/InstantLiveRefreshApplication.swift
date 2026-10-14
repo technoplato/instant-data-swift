@@ -167,6 +167,7 @@ enum InstantLiveRefreshTranslator {
     receivedAt: InstantTimestamp,
     attributeContext prebuiltAttributeContext: InstantLiveRefreshAttributeContext? = nil
   ) throws -> InstantLiveRefreshTranslation {
+    let energy = InstantEnergyMeter.begin(.refreshTranslate); defer { energy.end() }
     let processedTransactionID = nonEmpty(refreshOK.processedTransactionID)
       ?? "live-refresh-\(receivedAt.milliseconds)"
     let attributeContext = try prebuiltAttributeContext ?? attributeContext(
