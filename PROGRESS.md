@@ -1,3 +1,28 @@
+## 2026-10-14 18:36:15 EDT — energy-98 for Scribe's build 99: #653's page cache, reused statements and equal results, #654's page refresh, the reconnect gate and the energy meter, verified and merged on `agent/claude/energy-98` (not pushed, not tagged)
+
+- **Owner:** #669 agent 2 (Claude Code session d417e89e, workLog agentId `claude-code/d417e89e`), continuing the
+  energy-98 write and sync helpers (plans `2026-10-10-energy-98-write`, `2026-10-10-energy-98-sync`,
+  `2026-10-11-energy-99-pages`). The user's rule for this work, typed 2026-10-14 15:45: "We want to make sure that we're
+  not changing any functionality, but improving performance."
+- **Commits on `agent/claude/energy-98`:** the write line (`bad65eaf` page cache, `8a1f4068` reused statements,
+  `8d912a74` equal results with `79ba86f4` bringing three tests in line, `c086d927` #654's page refresh; `a2f0e619`
+  identical values reverted by `71edafd2`) merged as `bab45a3c`; the sync line (`fe8c3eed` reconnect gate, `505fe037`
+  meter, `6e019138` observer tests) merged as `3ac540a3`; SAFETY comments `c4d02561`; plans `dc583bc3`, `d488769b`;
+  ledgers `eaa01a23`, `5ef4602f`.
+- **Checks (2026-10-14, all through safe-heavy):** the 59 energy-related suites at v1.9.8, the write tip and the sync
+  tip side by side (load 50-170), every failure again one test at a time; the full suite on a clean build of the merge
+  (2,090 tests in 207 suites), its 45 failures one test at a time on the merge and on a clean v1.9.8 worktree: the same
+  7 fail at both (#304 and six environment checks: the vendored SQLiteData record, three TypeScript contract verifiers,
+  the upstream checkout's pin and inventory). Scribe's Instant-client, energy and app suites in edit mode on the merge:
+  the same failures as at the 1.9.8 pin, one test at a time.
+- **Measured (release write harness, `/Users/laptop/Sync/audit/device-temperature-2026-10-10/write-harness/runs/`):**
+  with 32 transcript page observers, a write's lifecycle 5,879.8 -> 374.7 M instructions (-93.6%) and observer
+  emissions 3,470 -> 269 per 100 writes; without pages, within 1% (the whole 4,344-write replay, three rounds each).
+- **Found:** an incremental build after the merge linked stale `<Target>-tool.build` test objects against the new type
+  layouts and crashed the test bundle (SIGBUS); build clean after merging layout changes.
+- **Continue:** merge `agent/claude/energy-98` into `main`, write `docs/releases/v1.9.9.md`, tag `v1.9.9`, push; then Scribe
+  pins `exact: "1.9.9"` (its audit `audits/2026-10-10-device-temperature.md`, section 8, has the order).
+
 ## 2026-10-05 01:29:53 EDT — v1.9.8: a live result's JSON written at most once per 30 s, a dead connection's buffered results skipped, the kickstart's pages kept, the missing field named, and rooms as Reactor.js keeps them with one ordered lane per room; main's merge of this commit is the release commit (#566 #474 #516 #522 #461)
 
 - **Owner:** library-79 (`claude-opus-5.5-library-79`, workLog agentId `claude-code/claude-opus-5.5/library-79`), plan
