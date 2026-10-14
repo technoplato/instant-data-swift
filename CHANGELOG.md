@@ -10,6 +10,225 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## October 14th, 2026 at 4:37:08 p.m. EDT — `79ba86f42e5d` Three tests that awaited or counted a result equal to the one an observer was last handed, brought in line with #653's equal-result rule (8d912a74)
+
+- **Implementation commit:** `79ba86f42e5d6a1eb271147cd2ee3c95c44f116b`
+- **Change:** Three tests that awaited or counted a result equal to the one an observer was last handed, brought in line with #653's equal-result rule (8d912a74)
+- **Details:**
+  - None of the three shows a reader something different: each waited for, or counted, an emission whose values and page info equal the last one handed.
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantWritePathEnergyTests.swift` — the equal write is a fourth todo once the window is full (a third flips hasNextPage)
+  - `Tests/InstantSwiftDataCoreTests/InstantStoreTests.swift` — the unrelated key installs page info that differs from its empty local page; the windows test counts what each observer was handed
+- **User context (verbatim):**
+  > We want to make sure that we're not changing any functionality, but improving performance.
+- **SpecStory:** unavailable — Claude Code sub-agent of session d417e89e-9ffc-413e-b12f-78eeaf0cfa20 (agent 2 of #669); no SpecStory capture exists for Claude Code sub-agent sessions.
+
+## October 14th, 2026 at 4:37:08 p.m. EDT — `dc583bc3fcca` Claim InstantStoreTests.swift for #653's equal-result tests, and write energy-98-write's 2026-10-14 status into its plan (#653 #669)
+
+- **Implementation commit:** `dc583bc3fcca25d8f3509af092b5281962ce7389`
+- **Change:** Claim InstantStoreTests.swift for #653's equal-result tests, and write energy-98-write's 2026-10-14 status into its plan (#653 #669)
+- **Files:**
+  - `_touching/Tests@InstantSwiftDataCoreTests@InstantStoreTests.swift/Tests@InstantSwiftDataCoreTests@InstantStoreTests.swift/.agents/agents.txt` — claim
+  - `agent-presence/claude-opus-5.5/plans/2026-10-10-energy-98-write/PLAN.md` — the plan's 2026-10-14 status
+- **User context (verbatim):**
+  > We want to make sure that we're not changing any functionality, but improving performance.
+- **SpecStory:** unavailable — Claude Code sub-agent of session d417e89e-9ffc-413e-b12f-78eeaf0cfa20 (agent 2 of #669); no SpecStory capture exists for Claude Code sub-agent sessions.
+
+## October 14th, 2026 at 4:37:08 p.m. EDT — `71edafd24c09` Revert #653's identical-value change (a2f0e619) and its red tests (1492e911): with it, a server frame that only restates or confirms what the device shows rebases the pending writes again
+
+- **Implementation commit:** `71edafd24c094574cdfcbca20ae1712a725f5655`
+- **Change:** Revert #653's identical-value change (a2f0e619) and its red tests (1492e911): with it, a server frame that only restates or confirms what the device shows rebases the pending writes again
+- **Details:**
+  - At c086d927 nine InstantFastDrainTests that pass at v1.9.8 (61b9c226) failed: anUnchangedQueryResultDoesNotRebaseThePendingWrites peeled all 120 pending writes where v1.9.8 peels none, and the confirming, restating, refused, link and deferred-text frames rebased too; four store tests that pin a writer's stamp on an identical value failed as well. Without the change all of them pass.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/TripleIndexes.swift` — an identical cardinality-one value takes the writer's transaction id again
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — the immediate tail again needs a predecessor with a rollback
+  - `Tests/InstantSwiftDataCoreTests/InstantWritePathEnergyTests.swift` — the identical-value tests go with the change
+- **User context (verbatim):**
+  > We want to make sure that we're not changing any functionality, but improving performance.
+- **SpecStory:** unavailable — Claude Code sub-agent of session d417e89e-9ffc-413e-b12f-78eeaf0cfa20 (agent 2 of #669); no SpecStory capture exists for Claude Code sub-agent sessions.
+
+## October 14th, 2026 at 4:37:08 p.m. EDT — `c086d92707d3` A publication refreshes an observer only when a changed entity is shown or changes its place in the observer's ordered result set (#654)
+
+- **Implementation commit:** `c086d92707d3aed99c9f3eae8199863a720acbb3`
+- **Change:** A publication refreshes an observer only when a changed entity is shown or changes its place in the observer's ordered result set (#654)
+- **Details:**
+  - For a plan that reads only its own namespace's fields, a publication refreshes an observer only when a changed entity is shown or changes its place (membership and order value) in the observer's ordered result set, compared against the store the publication started from.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantStore.swift` — the refresh check
+  - `Sources/InstantSwiftDataCore/TripleIndexes.swift` — resultSetMembership
+- **User context (verbatim):**
+  > We want all of our functionality but to reduce and eliminate any waste or spurious processor etc behavior
+  > Don’t remove any functionality, fix the underlying problems
+- **SpecStory:** unavailable — Claude Code agent session (energy-99 library helper of session f00b771a, continuing the energy-98 helpers' work); no SpecStory capture configured for this session.
+
+## October 14th, 2026 at 4:37:08 p.m. EDT — `592bef6c7fe7` Red tests for #654's page refresh: an update that keeps an entity's place refreshes only the page that shows it, and every observer holds a fresh result through random writes
+
+- **Implementation commit:** `592bef6c7fe798024ef3a057e104103fa1634155`
+- **Change:** Red tests for #654's page refresh: an update that keeps an entity's place refreshes only the page that shows it, and every observer holds a fresh result through random writes
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantStore.swift` — the testing hooks the page tests read
+  - `Tests/InstantSwiftDataCoreTests/InstantPageRefreshEnergyTests.swift` — only the page that shows an updated entity refreshes; random writes keep every observer fresh
+- **User context (verbatim):**
+  > We want all of our functionality but to reduce and eliminate any waste or spurious processor etc behavior
+  > Don’t remove any functionality, fix the underlying problems
+- **SpecStory:** unavailable — Claude Code agent session (energy-99 library helper of session f00b771a, continuing the energy-98 helpers' work); no SpecStory capture configured for this session.
+
+## October 14th, 2026 at 4:37:07 p.m. EDT — `f1a882384a56` Claim the files of #654's page refresh for energy-99: the store's refresh check, the result-set membership it compares, and the page tests (#654 #669)
+
+- **Implementation commit:** `f1a882384a569bd0d48946f422957bdb80db6c47`
+- **Change:** Claim the files of #654's page refresh for energy-99: the store's refresh check, the result-set membership it compares, and the page tests (#654 #669)
+- **Files:**
+  - `agent-presence/claude-opus-5.5/plans/2026-10-11-energy-99-pages/PLAN.md` — the pages plan
+  - `_touching/Tests@InstantSwiftDataCoreTests@InstantPageRefreshEnergyTests.swift/Tests@InstantSwiftDataCoreTests@InstantPageRefreshEnergyTests.swift/.agents/agents.txt` — claim
+  - `_touching/Sources@InstantSwiftDataCore@InstantStore.swift/Sources@InstantSwiftDataCore@InstantStore.swift/.agents/agents.txt` — claim
+  - `_touching/Sources@InstantSwiftDataCore@TripleIndexes.swift/Sources@InstantSwiftDataCore@TripleIndexes.swift/.agents/agents.txt` — claim
+- **User context (verbatim):**
+  > We want all of our functionality but to reduce and eliminate any waste or spurious processor etc behavior
+  > Don’t remove any functionality, fix the underlying problems
+- **SpecStory:** unavailable — Claude Code agent session (energy-99 library helper of session f00b771a, continuing the energy-98 helpers' work); no SpecStory capture configured for this session.
+
+## October 14th, 2026 at 4:37:07 p.m. EDT — `a2f0e619fb0f` A written value identical to the stored one keeps its fact and stamp, so its row is not rewritten and the rollback carries nothing for it (#653)
+
+- **Implementation commit:** `a2f0e619fb0fb6fc73714d8262587e7e7d5f0033`
+- **Change:** A written value identical to the stored one keeps its fact and stamp, so its row is not rewritten and the rollback carries nothing for it (#653)
+- **Details:**
+  - Reverted on 2026-10-14 by 71edafd2: nine InstantFastDrainTests that pass at v1.9.8 failed with it (a server frame that only restates or confirms what the device shows rebased the pending writes again).
+- **Files:**
+  - `Sources/InstantSwiftDataCore/TripleIndexes.swift` — an identical cardinality-one value keeps its stamp
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — the immediate tail accepts a predecessor with no current effect
+- **User context (verbatim):**
+  > We want all of our functionality but to reduce and eliminate any waste or spurious processor etc behavior
+  > Don’t remove any functionality, fix the underlying problems
+- **SpecStory:** unavailable — Claude Code agent session (energy-99 library helper of session f00b771a, continuing the energy-98 helpers' work); no SpecStory capture configured for this session.
+
+## October 14th, 2026 at 4:37:07 p.m. EDT — `1492e911a3e4` Red tests for #653's identical values: a repeated value keeps its stored fact and stays out of the rollback; refusals, later pending writes, server changes and the wire stay as they were
+
+- **Implementation commit:** `1492e911a3e46352ce728b4b03288133095bbbf2`
+- **Change:** Red tests for #653's identical values: a repeated value keeps its stored fact and stays out of the rollback; refusals, later pending writes, server changes and the wire stay as they were
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantWritePathEnergyTests.swift` — identical values: the stored fact kept, the rollback, refusals, later writes, server changes, the wire
+- **User context (verbatim):**
+  > We want all of our functionality but to reduce and eliminate any waste or spurious processor etc behavior
+  > Don’t remove any functionality, fix the underlying problems
+- **SpecStory:** unavailable — Claude Code agent session (energy-99 library helper of session f00b771a, continuing the energy-98 helpers' work); no SpecStory capture configured for this session.
+
+## October 14th, 2026 at 4:37:07 p.m. EDT — `8d912a74bd77` An observer is not handed a result equal to the one it was last handed, as Reactor.js notifyOne drops a deep-equal result (#653)
+
+- **Implementation commit:** `8d912a74bd771ad838bcfbdc970c2d077eb80764`
+- **Change:** An observer is not handed a result equal to the one it was last handed, as Reactor.js notifyOne drops a deep-equal result (#653)
+- **Details:**
+  - Each observer keeps the result it was last handed; a refreshed observer whose result equals it (values and page info, no deferred value changed) is not handed it again; every refreshed observer of a query whose result changed for any of its observers still is.
+  - A commit's reported emissions are unchanged; the publication metrics count the observers not handed (unchangedObserverCount).
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantStore.swift` — the last handed result, the hand-over, the deferred-value bookkeeping, unchangedObserverCount
+  - `Sources/InstantSwiftDataCore/TripleIndexes.swift` — entityIDsWithMarkedDeferredValues
+- **User context (verbatim):**
+  > We want all of our functionality but to reduce and eliminate any waste or spurious processor etc behavior
+  > Don’t remove any functionality, fix the underlying problems
+- **SpecStory:** unavailable — Claude Code agent session (energy-99 library helper of session f00b771a, continuing the energy-98 helpers' work); no SpecStory capture configured for this session.
+
+## October 14th, 2026 at 4:37:07 p.m. EDT — `6798a5ec1ef5` Red tests for #653's equal results: an observer is not handed a result equal to the one it was last handed
+
+- **Implementation commit:** `6798a5ec1ef50df4d43a166b426bf3d277179db7`
+- **Change:** Red tests for #653's equal results: an observer is not handed a result equal to the one it was last handed
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantStore.swift` — observerYieldCountsForTesting
+  - `Tests/InstantSwiftDataCoreTests/InstantWritePathEnergyTests.swift` — equal results: one observer, offset pages, a deferred value alone, random writes
+- **User context (verbatim):**
+  > We want all of our functionality but to reduce and eliminate any waste or spurious processor etc behavior
+  > Don’t remove any functionality, fix the underlying problems
+- **SpecStory:** unavailable — Claude Code agent session (energy-99 library helper of session f00b771a, continuing the energy-98 helpers' work); no SpecStory capture configured for this session.
+
+## October 14th, 2026 at 4:37:07 p.m. EDT — `6e019138ab55` Tests that a store's observers go when their readers stop, and that a live query registered again after a reconnect adds none (#669)
+
+- **Implementation commit:** `6e019138ab55846ad82af7f689f7399613fd1390`
+- **Change:** Tests that a store's observers go when their readers stop, and that a live query registered again after a reconnect adds none (#669)
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantObservationLifecycleEnergyTests.swift` — observers go when their readers stop; a re-registered live query adds none
+- **User context (verbatim):**
+  > We want all of our functionality but to reduce and eliminate any waste or spurious processor etc behavior
+  > Don’t remove any functionality, fix the underlying problems
+- **SpecStory:** unavailable — Claude Code agent session (energy-99 library helper of session f00b771a, continuing the energy-98 helpers' work); no SpecStory capture configured for this session.
+
+## October 14th, 2026 at 4:37:07 p.m. EDT — `505fe0378adb` The library meters what its operations cost: counts, thread CPU and wall time per operation, and counters for transactions, outbox rows, supersessions and reconnect attempts (#669)
+
+- **Implementation commit:** `505fe0378adb48e711f96e4bd2c66fccd8f7f159`
+- **Change:** The library meters what its operations cost: counts, thread CPU and wall time per operation, and counters for transactions, outbox rows, supersessions and reconnect attempts (#669)
+- **Details:**
+  - InstantEnergyMeter.snapshot() reads every operation's count, thread CPU and wall time, and the transaction, outbox-row, supersession and reconnect counters; Scribe's per-minute ledger subtracts the previous read.
+  - Sections are synchronous and begin at a function's first line; spans (connectAttempt) keep wall time only. Signposts use the dynamic-tracing category, off until a tool records.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantEnergyMeter.swift` — the meter
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — one-line sections: local save, server apply plan and commit, claims, acknowledgements, deferred reads, prunes
+  - `Sources/InstantSwiftDataCore/InstantStore.swift` — sections: store prepare, observer refresh
+  - `Sources/InstantSwiftDataCore/InstantLiveTransport.swift` — frame encode and decode as their own functions
+  - `Sources/InstantSwiftDataCore/InstantLiveMutation.swift` — the mutation encode section
+  - `Sources/InstantSwiftDataCore/InstantLiveRefreshApplication.swift` — the refresh translate section
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — transaction and outbox-row counters, the connect-attempt span
+- **User context (verbatim):**
+  > We want all of our functionality but to reduce and eliminate any waste or spurious processor etc behavior
+  > Don’t remove any functionality, fix the underlying problems
+- **SpecStory:** unavailable — Claude Code agent session (energy-99 library helper of session f00b771a, continuing the energy-98 helpers' work); no SpecStory capture configured for this session.
+
+## October 14th, 2026 at 4:37:07 p.m. EDT — `fe8c3eed8818` The reconnect loop keeps upstream's backoff on the controller and makes no attempt while the network path is missing (#669)
+
+- **Implementation commit:** `fe8c3eed8818b16398700009d91dbc210cac7c36`
+- **Change:** The reconnect loop keeps upstream's backoff on the controller and makes no attempt while the network path is missing (#669)
+- **Details:**
+  - The delay lives on the controller as upstream keeps it on the reactor: 0, 1 ... 10 s, reset only by init-ok and a user change; a run cancelled without init-ok no longer starts the next one at zero.
+  - No attempt while the transport's network path is missing (NWPathMonitor; watchOS and the simulators read it as always there); a path that returns ends a pending backoff at once.
+  - Virtual-clock replay of the 37-minute outage: attempts while the path was missing 56 -> 1, in 37 min 152 -> 100, in 60 min 244 -> 192.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantRuntimeReconnectController.swift` — the controller, moved out of InstantRuntime, with the delay and the path gate
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — reset on user change, recordSessionOpened at init-ok, the path passed to start
+  - `Sources/InstantSwiftDataCore/InstantNetworkPath.swift` — simulators read the path as always there
+- **User context (verbatim):**
+  > We want all of our functionality but to reduce and eliminate any waste or spurious processor etc behavior
+  > Don’t remove any functionality, fix the underlying problems
+- **SpecStory:** unavailable — Claude Code agent session (energy-99 library helper of session f00b771a, continuing the energy-98 helpers' work); no SpecStory capture configured for this session.
+
+## October 14th, 2026 at 4:37:07 p.m. EDT — `84b577f3ac79` Claim the files of #669's sync work for energy-98: the reconnect loop's backoff and network gating, the energy meter, and the outage's outbox
+
+- **Implementation commit:** `84b577f3ac794f4c37377e0bd21fc03965d6ee1b`
+- **Change:** Claim the files of #669's sync work for energy-98: the reconnect loop's backoff and network gating, the energy meter, and the outage's outbox
+- **Files:**
+  - `agent-presence/claude-opus-5.5/plans/2026-10-10-energy-98-sync/PLAN.md` — the energy-98 sync plan
+  - `_touching/Sources@InstantSwiftDataCore@InstantRuntimeReconnectController.swift/Sources@InstantSwiftDataCore@InstantRuntimeReconnectController.swift/.agents/agents.txt` — the reconnect controller's claim
+  - `_touching/Sources@InstantSwiftDataCore@InstantEnergyMeter.swift/Sources@InstantSwiftDataCore@InstantEnergyMeter.swift/.agents/agents.txt` — the meter's claim
+- **User context (verbatim):**
+  > We want all of our functionality but to reduce and eliminate any waste or spurious processor etc behavior
+  > Don’t remove any functionality, fix the underlying problems
+- **SpecStory:** unavailable — Claude Code agent session (energy-99 library helper of session f00b771a, continuing the energy-98 helpers' work); no SpecStory capture configured for this session.
+
+## October 14th, 2026 at 4:37:06 p.m. EDT — `7b7159499e96` Red tests for #669's energy meter: per-operation counts, thread CPU and wall time, and counters for transactions, outbox rows, supersessions and reconnect attempts
+
+- **Implementation commit:** `7b7159499e967107f7f164a3861d44eb9aba42c1`
+- **Change:** Red tests for #669's energy meter: per-operation counts, thread CPU and wall time, and counters for transactions, outbox rows, supersessions and reconnect attempts
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantEnergyMeter.swift` — the meter's types, every read zero
+  - `Tests/InstantSwiftDataCoreTests/InstantEnergyMeterTests.swift` — the meter tests
+- **User context (verbatim):**
+  > We want all of our functionality but to reduce and eliminate any waste or spurious processor etc behavior
+  > Don’t remove any functionality, fix the underlying problems
+- **SpecStory:** unavailable — Claude Code agent session (energy-99 library helper of session f00b771a, continuing the energy-98 helpers' work); no SpecStory capture configured for this session.
+
+## October 14th, 2026 at 4:37:06 p.m. EDT — `1f19f1f52315` Red tests for #669's reconnect parity: no attempt while the network path is missing, one as soon as it returns, and a backoff that only init-ok resets
+
+- **Implementation commit:** `1f19f1f523151508212656bba4ddee80cc8e78f8`
+- **Change:** Red tests for #669's reconnect parity: no attempt while the network path is missing, one as soon as it returns, and a backoff that only init-ok resets
+- **Details:**
+  - Upstream Reactor.js keeps _reconnectTimeoutMs on the reactor, grows it by a second up to ten, resets it only on init-ok and a user change, and skips the attempt while _isOnline is false.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantNetworkPath.swift` — InstantNetworkPath (alwaysSatisfied, system, a test monitor), not read yet
+  - `Sources/InstantSwiftDataCore/InstantLiveTransport.swift` — InstantLiveTransportClient.networkPath
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — the seams the parity tests drive
+  - `Tests/InstantSwiftDataCoreTests/InstantReconnectBackoffParityTests.swift` — the parity tests and the virtual-clock outage replay
+- **User context (verbatim):**
+  > We want all of our functionality but to reduce and eliminate any waste or spurious processor etc behavior
+  > Don’t remove any functionality, fix the underlying problems
+- **SpecStory:** unavailable — Claude Code agent session (energy-99 library helper of session f00b771a, continuing the energy-98 helpers' work); no SpecStory capture configured for this session.
+
 ## October 11th, 2026 at 10:10:57 a.m. EDT — `8a1f40689214` Reuse prepared statements per connection: a bounded cache keyed by SQL, reset after each use, finalized before close (#653)
 
 - **Implementation commit:** `8a1f40689214635a7425e961742e738f7f5614b0`

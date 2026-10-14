@@ -1,3 +1,72 @@
+## 2026-10-14 16:36:49 EDT — instant-data-swift `3ac540a3e5afd60524d45d4a5e9dc015ed34714f`
+Merge agent/claude/energy-98-sync into energy-98: the reconnect loop keeps upstream's backoff and waits for a network path, and the library meters what its operations cost, for build 99 (#669)
+
+## 2026-10-14 16:36:26 EDT — instant-data-swift `bab45a3cf8af49851097e2bf7892ebc50ce6f920`
+Merge agent/claude/energy-98-write into energy-98: #653's bounded page cache, reused statements and equal results, and #654's page refresh, for build 99 (#653 #654 #669)
+
+## 2026-10-14 16:36:04 EDT — instant-data-swift `79ba86f42e5d6a1eb271147cd2ee3c95c44f116b`
+Three tests that awaited or counted a result equal to the one an observer was last handed, brought in line with #653's equal-result rule (8d912a74)
+
+## 2026-10-14 16:32:08 EDT — instant-data-swift `dc583bc3fcca25d8f3509af092b5281962ce7389`
+Claim InstantStoreTests.swift for #653's equal-result tests, and write energy-98-write's 2026-10-14 status into its plan (#653 #669)
+
+## 2026-10-14 16:31:59 EDT — instant-data-swift `71edafd24c094574cdfcbca20ae1712a725f5655`
+Revert #653's identical-value change (a2f0e619) and its red tests (1492e911): with it, a server frame that only restates or confirms what the device shows rebases the pending writes again
+
+## 2026-10-11 10:59:51 EDT — instant-data-swift `6e019138ab55846ad82af7f689f7399613fd1390`
+Tests that a store's observers go when their readers stop, and that a live query registered again after a reconnect adds none (#669)
+
+## 2026-10-11 10:59:45 EDT — instant-data-swift `505fe0378adb48e711f96e4bd2c66fccd8f7f159`
+The library meters what its operations cost: counts, thread CPU and wall time per operation, and counters for transactions, outbox rows, supersessions and reconnect attempts (#669)
+
+## 2026-10-11 10:59:32 EDT — instant-data-swift `fe8c3eed8818b16398700009d91dbc210cac7c36`
+The reconnect loop keeps upstream's backoff on the controller and makes no attempt while the network path is missing (#669)
+
+## 2026-10-11 10:58:12 EDT — instant-data-swift `c086d92707d3aed99c9f3eae8199863a720acbb3`
+A publication refreshes an observer only when a changed entity is shown or changes its place in the observer's ordered result set (#654)
+
+## 2026-10-11 10:57:35 EDT — instant-data-swift `592bef6c7fe798024ef3a057e104103fa1634155`
+Red tests for #654's page refresh: an update that keeps an entity's place refreshes only the page that shows it, and every observer holds a fresh result through random writes
+
+## 2026-10-11 10:56:59 EDT — instant-data-swift `f1a882384a569bd0d48946f422957bdb80db6c47`
+Claim the files of #654's page refresh for energy-99: the store's refresh check, the result-set membership it compares, and the page tests (#654 #669)
+
+## 2026-10-11 10:56:46 EDT — instant-data-swift `a2f0e619fb0fb6fc73714d8262587e7e7d5f0033`
+A written value identical to the stored one keeps its fact and stamp, so its row is not rewritten and the rollback carries nothing for it (#653)
+
+## 2026-10-11 10:56:08 EDT — instant-data-swift `1492e911a3e46352ce728b4b03288133095bbbf2`
+Red tests for #653's identical values: a repeated value keeps its stored fact and stays out of the rollback; refusals, later pending writes, server changes and the wire stay as they were
+
+## 2026-10-11 10:55:48 EDT — instant-data-swift `8d912a74bd771ad838bcfbdc970c2d077eb80764`
+An observer is not handed a result equal to the one it was last handed, as Reactor.js notifyOne drops a deep-equal result (#653)
+
+## 2026-10-11 10:25:37 EDT — instant-data-swift `6798a5ec1ef50df4d43a166b426bf3d277179db7`
+Red tests for #653's equal results: an observer is not handed a result equal to the one it was last handed
+
+## 2026-10-11 10:10:12 EDT — instant-data-swift `8a1f40689214635a7425e961742e738f7f5614b0`
+Reuse prepared statements per connection: a bounded cache keyed by SQL, reset after each use, finalized before close (#653)
+
+## 2026-10-11 06:21:10 EDT — instant-data-swift `cfb980b26a6e39af15ca8b083be14cc9d11edb1f`
+Red test for #653's prepared statements: once warm, repeated saves prepare no statement
+
+## 2026-10-11 06:21:04 EDT — instant-data-swift `bad65eaf83b6a2ab1bdeb22546350d1d6ae5814b`
+SQLite keeps a bounded 2 MiB page cache per connection instead of cache_size = 0, and releases it on a memory warning instead of shrinking after every save (#653)
+
+## 2026-10-11 00:14:28 EDT — instant-data-swift `84b577f3ac794f4c37377e0bd21fc03965d6ee1b`
+Claim the files of #669's sync work for energy-98: the reconnect loop's backoff and network gating, the energy meter, and the outage's outbox
+
+## 2026-10-11 00:04:33 EDT — instant-data-swift `7b7159499e967107f7f164a3861d44eb9aba42c1`
+Red tests for #669's energy meter: per-operation counts, thread CPU and wall time, and counters for transactions, outbox rows, supersessions and reconnect attempts
+
+## 2026-10-10 23:54:19 EDT — instant-data-swift `1f19f1f523151508212656bba4ddee80cc8e78f8`
+Red tests for #669's reconnect parity: no attempt while the network path is missing, one as soon as it returns, and a backoff that only init-ok resets
+
+## 2026-10-10 23:40:13 EDT — instant-data-swift `65338a80394e72d35b7d14e99907cd5a6af021cc`
+Red tests for #653's page cache: a local save spills no page to the WAL mid-transaction, the cache is bounded at 2 MiB and stays warm between saves, and a large read stays within the bound
+
+## 2026-10-10 23:36:38 EDT — instant-data-swift `c08895a5116e4c74e9413b12b15bbb862ae0ea2a`
+Claim the files of #653's write-path waste fixes for energy-98: the page cache, reused statements, identical values, equal emissions, and the echo (#653 #669)
+
 ## 2026-10-05 01:29:53 EDT — instant-data-swift `6c28904ab7ebc6331ac0b45fe54c5625472e423e`
 Document the v1.9.8 release: a live result's JSON written at most once per 30 s, a dead connection's results skipped, the kickstart's pages kept, the missing field named, and rooms with one ordered lane per room (#566 #474 #516 #522 #461)
 
