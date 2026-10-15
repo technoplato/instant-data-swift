@@ -1,3 +1,102 @@
+## 2026-10-15 09:52:28 EDT — realtime-voice-sqlite-instant `c146a01a14437a9835e3470a8b5ac72a0800ac7c`
+Set Scribe 0.1 (101): CURRENT_PROJECT_VERSION 101 on the 12 lines that carried 100
+
+## 2026-10-15 09:52:28 EDT — realtime-voice-sqlite-instant `d57e1060a03fab06eeccc3e76adcd58adb429567`
+WHATS-NEW.md: Build 101 first, as what Michael can now do: one live subscription and the line in progress in its own row (#694), the status-bar tap to the top in full screen and scrolling to the start offline (#697), speakers named from playback (#699), the Mac's songs and sounds when streaming to Your Mac (#700)
+
+## 2026-10-15 09:51:33 EDT — realtime-voice-sqlite-instant `0bf53e07b096d3577f30dea8406c0c232a924016`
+Merge agent/claude/live-subscriptions: one live subscription for the recording screen, the line in progress in liveLines, and the status-bar tap to the top in full screen (#694, #697)
+
+## 2026-10-15 09:45:07 EDT — realtime-voice-sqlite-instant `5e6a76aa31b63cd4de6e48a81fac50abee360175`
+Merge origin/main (899d5458a: #699 speakers and #701 heartbeat schema slices as production has them, #700's Mac Shazam default, #286's plan) into live subscriptions (#694, #697)
+
+## 2026-10-15 09:44:34 EDT — realtime-voice-sqlite-instant `41be19a5056e70f5aeabf5837d97ae0ecced5d9d`
+Change log: #694's commits on this branch (the ADR, the schema slice, the red, the measurements, the three greens, the production push appendix, the test fixes, the end-to-end tests, the audit) (#694, #697)
+
+## 2026-10-15 09:44:09 EDT — realtime-voice-sqlite-instant `21aa227d56ea9ec588c082470c66512fd287a9f7`
+Audit section 11: one interim write side by side (#669's 380 M, #694's 121.7 M with one observer, #693's TypeScript floor) and the live-follow numbers again (#694)
+
+## 2026-10-15 09:43:55 EDT — realtime-voice-sqlite-instant `1980c186d7acadf374fdb764507eca1887f5ae51`
+Test: with the real library, a 4,000-line recording scrolls to line 1 offline from the store alone, and a second device sees the interim words within about a second (#694, #697)
+
+## 2026-10-15 09:43:45 EDT — realtime-voice-sqlite-instant `1e9c7c723275a870c4e25854c99e2b52d7d63fe0`
+Test: playback's query model observes the recording's lines in progress too, still only scoped plans and no one-shot read (#694)
+
+## 2026-10-15 08:24:01 EDT — realtime-voice-sqlite-instant `754488061b45128214a37e36758981264f2bae54`
+Merge agent/claude/status-bar-top (#697 part 1): in full screen a tap on the status bar goes to the recording's first line and enters scroll-back mode; Back to Live returns
+
+## 2026-10-15 08:23:31 EDT — realtime-voice-sqlite-instant `7d32737724d11650af9917814716bd97a4966c11`
+Merge origin/main (61c668c26: build 100 at 73d0b1792 with the instant-data-swift 1.9.10 pin, #699 speakers, #698 listener control, #689 provenance, #700/#701 Mac sound and health checks) into live subscriptions (#694, #697)
+
+## 2026-10-15 08:22:22 EDT — realtime-voice-sqlite-instant `d755f5c42337ac3c0c7de0c4ddbdd307593c0060`
+Test fix: the liveLines schema test reads the entity's whole block, to its closing line, not to the first ")" (#694)
+
+## 2026-10-15 08:21:58 EDT — realtime-voice-sqlite-instant `2808de0c5406ac4b4fe537ea972ffad24747d947`
+ADR 0069 Appendix A: liveLines reached production 2026-10-14 23:46, quoting Michael's typed yes, and main took the schema slice at once (#694)
+
+## 2026-10-15 08:21:53 EDT — realtime-voice-sqlite-instant `81e395636b41dbfbefacdb2fba4ffa584c5f1d3c`
+Green: every other reader of the line in progress reads liveLines: playback, the launch sweep, the stream agent, the Sync view, a guest's merge and follow-along (#694)
+
+## 2026-10-15 08:21:52 EDT — realtime-voice-sqlite-instant `ab3030ca5bcd9476e7444b4b85af930524fb6cbe`
+Green: the recording screen keeps one window of finals and the lines in progress, and reads every page behind the window from this device's store first (#694, #697)
+
+## 2026-10-15 08:21:52 EDT — realtime-voice-sqlite-instant `699b88474c65843d4b3515d25b1ab1ceeee9281c`
+Green: the line in progress is its liveLines row; its final writes the line once and deletes the row, and Stop and a recording's delete take what is left (#694)
+
+## 2026-10-15 00:00:29 EDT — realtime-voice-sqlite-instant `3c34af6379189f12c14208728c7938b20741fd71`
+Change log: the status bar's tap in full screen, its plan, red and green (61464d03, e927151f, 127f5605) (#697)
+
+## 2026-10-14 23:59:59 EDT — realtime-voice-sqlite-instant `127f560563c6ef36b5151b114488f03fd9976782`
+Green: in full screen a tap on the status bar goes to the recording's first line and enters scroll-back mode; Back to Live returns to the newest words (#697)
+
+## 2026-10-14 23:32:03 EDT — realtime-voice-sqlite-instant `e927151f0faa4d2b02cf608260d834032791761a`
+Red: in full screen a tap on the status bar goes to the recording's first line and enters scroll-back mode, as seams with no behavior (#697)
+
+## 2026-10-14 23:16:30 EDT — realtime-voice-sqlite-instant `84966593022ed0cb1ce0565bd3c35038aff572c9`
+Audit: section 11, one live subscription and the line in progress (#694, ADR 0069): H6 confirmed and removed, what an interim still costs, a final's higher cost, the tail ruled out
+
+## 2026-10-14 23:03:24 EDT — realtime-voice-sqlite-instant `c897a20b1f63c0d8bc626450e9040b7ff5374923`
+Merge origin/main (5e98f1e42: docs/FEATURES.md, the feature contract; #539's offline fallback and Your Mac; #692) into live subscriptions (#694, #697)
+
+## 2026-10-14 23:03:05 EDT — realtime-voice-sqlite-instant `79d7f83bb504b2f39f6b049c9e6675ea336581ce`
+ADR 0069: the window of the newest 64 lines replaces the bounded tail, a line in progress waits on screen for its final, and every page behind the window comes from this device's store first (#694, #697)
+
+## 2026-10-14 23:02:58 EDT — realtime-voice-sqlite-instant `72b321e169891d5b7ecaab9d02661d54fd0e1f7d`
+Measure how soon a device following live sees the line in progress and its final, and how fast the server answers the reads behind the window (#694, #697)
+
+## 2026-10-14 23:02:44 EDT — realtime-voice-sqlite-instant `2e5abb29d6974f4053a4cf144608856143a55c73`
+Red: every reader of the line in progress reads its liveLines row; the screen keeps one window of finals and reads every page behind it from this device's store first (#694, #697)
+
+## 2026-10-14 22:44:46 EDT — realtime-voice-sqlite-instant `61464d03d67f10836ab6af864c98c01040e85c6e`
+Plan and claim the status bar's tap: in full screen it zooms the transcript to the recording's first line and enters scroll-back mode (#697)
+
+## 2026-10-14 21:45:22 EDT — realtime-voice-sqlite-instant `9875c49114e742bc1ee49ae292478bc238860086`
+ADR 0069: the tail also holds lines written since it started and answers at most 4,096; the rules every reader of a line in progress keeps; the playback and the mirror as follow-ups (#694)
+
+## 2026-10-14 21:40:35 EDT — realtime-voice-sqlite-instant `b5e38977f24f1ef3493f96adf496251f6c958e33`
+CHANGELOG: scribe-mirror reads the line in progress from liveLines (7e3b8796b) (#694)
+
+## 2026-10-14 21:40:06 EDT — realtime-voice-sqlite-instant `7e3b8796b0abef8c3ce685c587ee03a961cd8409`
+scribe-mirror reads a recording's line in progress from liveLines, as the open line it showed before (#694)
+
+## 2026-10-14 21:34:46 EDT — realtime-voice-sqlite-instant `0c5df5f9190af948f12940d0e0a6b3d9553f734c`
+Red: scribe-mirror reads a recording's line in progress from liveLines, as the open line it showed before (#694)
+
+## 2026-10-14 21:04:56 EDT — realtime-voice-sqlite-instant `68c81c7b3f3f6623b6fcf4fb8987e22a89ba0107`
+liveLines' delete accepts a row that is not there: a final whose interims never reached the server commits (#694)
+
+## 2026-10-14 21:03:22 EDT — realtime-voice-sqlite-instant `b3e10bb001e746b0513b43b3532f45dc2d8c02fd`
+Red: a final deletes its live row in its own transaction even when the row never reached the server; liveLines' rules matrix (#694)
+
+## 2026-10-14 20:58:16 EDT — realtime-voice-sqlite-instant `ab1d3d79cd39f1962e2245a58773271fa045a174`
+liveLines in instant.schema.ts and instant.perms.ts, written by scripts/schema/generate.ts (#694)
+
+## 2026-10-14 20:57:54 EDT — realtime-voice-sqlite-instant `12d280d9832dbf28d36840162c0573c99db8fe84`
+Red: the line in progress is a liveLines row, an Effect Schema that generates its part of instant.schema.ts and instant.perms.ts (#694)
+
+## 2026-10-14 20:57:38 EDT — realtime-voice-sqlite-instant `82545fcab5723f486ab03a4915d35579a3098670`
+ADR 0069: a live recording keeps one live subscription, and the line in progress has its own row (#694)
+
 ## 2026-10-15 03:48:28 EDT — realtime-voice-sqlite-instant `615aa1d8c5f458939abd9b67926112586752d5ed`
 Change log: the 1.9.10 pin (8fc5a7d70) and the Sync view's held mutations, red 23109b641 and green 29630a2a9 (#696)
 
