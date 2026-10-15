@@ -1,1 +1,2 @@
 claude-opus-5.5-library-79 2026-10-03T01:40:24-04:00 mower plan=2026-10-02-library-79-hops #431
+claude-opus-5.5-live-query-704-d417e89e 2026-10-15T08:47:44-04:00 grower plan=2026-10-15-live-query-compact-ownership #704

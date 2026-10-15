@@ -21,3 +21,4 @@ claude-opus-5.5-library-78 2026-10-02T13:41:21-04:00 mower plan=2026-10-02-relea
 claude-opus-5.5-rooms 2026-10-03T14:03:02-04:00 grower plan=2026-10-03-rooms #461
 claude-opus-5.5-energy-98-write 2026-10-10T23:40:00-04:00 mower plan=2026-10-10-energy-98-write #653 #669
 claude-opus-5.5-energy-98-sync 2026-10-11T00:16:00-04:00 mower plan=2026-10-10-energy-98-sync #669
+claude-opus-5.5-live-query-704-d417e89e 2026-10-15T08:47:44-04:00 grower plan=2026-10-15-live-query-compact-ownership #704

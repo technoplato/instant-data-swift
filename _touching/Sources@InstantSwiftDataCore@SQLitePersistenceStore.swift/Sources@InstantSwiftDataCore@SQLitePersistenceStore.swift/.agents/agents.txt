@@ -46,3 +46,4 @@ claude-opus-5.5-energy-98-write 2026-10-10T23:40:00-04:00 mower plan=2026-10-10-
 claude-opus-5.5-energy-98-sync 2026-10-11T00:16:00-04:00 mower plan=2026-10-10-energy-98-sync #669
 claude-opus-5.5-energy-669-d417e89e 2026-10-14T17:14:12-04:00 mower plan=2026-10-10-energy-98-write #653 #669 (SAFETY comments only)
 claude-opus-5.5-receipt-quarantine-d417e89e 2026-10-14T22:00:38-04:00 grower plan=2026-10-14-retained-mutation-quarantine #696
+claude-opus-5.5-live-query-704-d417e89e 2026-10-15T08:47:44-04:00 grower plan=2026-10-15-live-query-compact-ownership #704
