@@ -1,3 +1,16 @@
+## 2026-10-15 13:45:00 EDT — v1.9.11: live-query ownership rows name their result by an integer id instead of repeating the query's whole key (#704)
+
+- **Why:** on a store copied from a device, 32,555 ownership rows holding 3.7 MB of values took 328.9 MB, because every
+  row and both of its indexes repeated the query's whole InstaQL key (1.7 KB on average) and most index entries spilled
+  to an overflow page of their own.
+- **Commits (branch `agent/claude/live-query-table-704`, merged into main):** plan `57ac9705`; ADR 0020 `2d0c3014`; red
+  `2f776bb5`; green `a6fa6662` (layout, statements, one-transaction conversion at open, ledger row
+  `0026_live_query_compact_ownership`); then the release document, the ledger commit, and the tag v1.9.11.
+- **Checks:** clean build of `a6fa6662`, whole suite 2,101 tests / 209 suites, 29 parallel failures under load; one at a
+  time only the known 7 fail, as at 1.9.10. Device-store probe on copies: 120,726 answers identical, 328.9 MB -> 13.85
+  MB, conversion 514 ms. Details in `docs/releases/v1.9.11.md`.
+- **Next:** the consuming app pins `exact: "1.9.11"` (branch `agent/claude/pin-1.9.11`). No build was cut here.
+
 ## 2026-10-15 02:35:00 EDT — v1.9.10: a retained mutation with no preparation receipt is quarantined at launch instead of refusing every live connection (#696)
 
 - **Why:** a store an earlier version wrote held 5 outbox rows with no SQLite-owned preparation receipt; 1.9.9 refused
