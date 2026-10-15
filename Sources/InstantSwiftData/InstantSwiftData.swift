@@ -1330,7 +1330,9 @@ public struct InstantSwiftDataClient: Sendable {
     return try await runtime.quarantinedMutationCount()
   }
 
-  /// Sends a quarantined mutation again (#696).
+  /// Sends a quarantined mutation again (#696): its transaction becomes a new local write with the same ID, prepared
+  /// against the store as it is now, and the outbox sends it in its order; the quarantine keeps its row. Throws, and
+  /// keeps it held, when it cannot.
   @discardableResult
   public func retryQuarantinedMutation(id: String) async throws -> InstantStoreMutationResult {
     guard let runtime else {

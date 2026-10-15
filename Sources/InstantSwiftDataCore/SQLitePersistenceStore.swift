@@ -4287,6 +4287,11 @@ public actor SQLitePersistenceStore {
 
   // MARK: - Quarantined mutations (#696)
 
+  /// What a quarantined mutation's lifecycle observers are told (#696).
+  static let quarantinedMutationFailureMessage =
+    "Held aside at launch in instant_outbox_quarantined: it has no SQLite-owned preparation receipt, so its local "
+    + "cache effect is unknown. The library sends it only when asked to send it again."
+
   /// The rows ``synchronizationBlocker()`` reports: an active optimistic effect with no SQLite-owned receipt.
   private static let receiptlessRetainedMutationPredicate =
     "optimistic_overlay_active = 1 AND optimistic_effect_receipt_fingerprint IS NULL"
@@ -4429,6 +4434,40 @@ public actor SQLitePersistenceStore {
       return Int(
         try selectInt64("SELECT COUNT(*) FROM instant_outbox_quarantined WHERE resolution IS NULL")
       )
+    }
+  }
+
+  /// The held quarantined mutation with this ID, or nil (#696).
+  func heldQuarantinedOutboxMutation(id: String) throws -> InstantQuarantinedMutation? {
+    try readTransaction {
+      try heldQuarantinedOutboxMutationsWithoutTransaction(
+        """
+        SELECT mutation_id, reason, quarantined_at_ms, created_at_ms, status, json, outbox_row_json
+        FROM instant_outbox_quarantined
+        WHERE resolution IS NULL AND mutation_id = ?
+        ORDER BY quarantine_id
+        LIMIT 1
+        """,
+        [.text(id)]
+      ).first
+    }
+  }
+
+  /// Records that the held rows with this ID were sent again (#696). The rows stay, with `resolution` saying so;
+  /// returns how many it marked.
+  @discardableResult
+  func markQuarantinedOutboxMutationSentAgain(id: String, now: InstantTimestamp) throws -> Int {
+    try transaction {
+      guard try quarantinedOutboxTableExistsWithoutTransaction() else { return 0 }
+      try execute(
+        """
+        UPDATE instant_outbox_quarantined
+        SET resolution = 'sent-again', resolved_at_ms = ?
+        WHERE mutation_id = ? AND resolution IS NULL
+        """,
+        [.int(now.milliseconds), .text(id)]
+      )
+      return Int(try selectInt64("SELECT changes()"))
     }
   }
 
@@ -7664,6 +7703,31 @@ public actor SQLitePersistenceStore {
       }
 
       guard let row = try loadOutboxBodyRowWithoutTransaction(id: currentMutationID) else {
+        // A mutation bootstrap quarantined is never sent by the library on its own, so its observers learn that it
+        // failed, with its effect unknown, instead of waiting forever (#696). Send Again writes it anew.
+        if let held = try heldQuarantinedOutboxMutationsWithoutTransaction(
+          """
+          SELECT mutation_id, reason, quarantined_at_ms, created_at_ms, status, json, outbox_row_json
+          FROM instant_outbox_quarantined
+          WHERE resolution IS NULL AND mutation_id = ?
+          ORDER BY quarantine_id
+          LIMIT 1
+          """,
+          [.text(currentMutationID)]
+        ).first, var mutation = held.mutation {
+          mutation.status = .failed
+          mutation.failureMessage = Self.quarantinedMutationFailureMessage
+          mutation.failure = InstantMutationFailure(
+            code: .persistenceFailed,
+            message: Self.quarantinedMutationFailureMessage
+          )
+          if let event = lifecycleEvent(
+            for: lifecycleMutationForInspection(mutation, hasStoredReceiptFingerprint: false),
+            hasServerAcceptance: false
+          ) {
+            return InstantMutationLifecycleResolution(observationID: lifecycleID, event: event)
+          }
+        }
         return InstantMutationLifecycleResolution(
           observationID: lifecycleID,
           event: .waiting

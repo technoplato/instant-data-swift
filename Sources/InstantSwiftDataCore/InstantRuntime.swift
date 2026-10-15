@@ -12596,17 +12596,40 @@ public final class InstantRuntime: Sendable {
     return try await persistence.quarantinedOutboxMutationCount()
   }
 
-  /// Sends a quarantined mutation again (#696).
+  /// Sends a quarantined mutation again (#696): its transaction becomes a new local write with the same ID, prepared
+  /// against the store as it is now, so it gets its own preparation receipt, and the outbox sends it in its order. The
+  /// quarantine keeps its row and records that it was sent again. Throws, and keeps the mutation held, when no held
+  /// mutation has this ID, its body no longer decodes, or the write fails as any write can.
   @discardableResult
   @concurrent
   public func retryQuarantinedMutation(id: String) async throws -> InstantStoreMutationResult {
-    throw InstantError(
-      code: .implementationFailed,
-      operation: "send a quarantined mutation again",
-      localID: id,
-      message: "Not implemented.",
-      recovery: "None."
+    recordActorHop(.persistence)
+    guard let held = try await persistence.heldQuarantinedOutboxMutation(id: id) else {
+      throw InstantError(
+        code: .validationFailed,
+        operation: "send a quarantined mutation again",
+        localID: id,
+        message: "No held quarantined mutation has the id '\(id)'.",
+        recovery: "List the quarantined mutations and send one of those."
+      )
+    }
+    guard let mutation = held.mutation else {
+      throw InstantError(
+        code: .persistenceFailed,
+        operation: "send a quarantined mutation again",
+        localID: id,
+        message: "The quarantined mutation '\(id)' no longer decodes, so it cannot be sent again.",
+        recovery: "Export it from the quarantine; its row is kept exactly as it was."
+      )
+    }
+    let result = try await transact(
+      mutation.transaction,
+      createdAt: configuration.now(),
+      source: "quarantine-send-again"
     )
+    recordActorHop(.persistence)
+    try await persistence.markQuarantinedOutboxMutationSentAgain(id: id, now: configuration.now())
+    return result
   }
 
   /// The oldest `limit` pending mutations, in send order, read from SQLite without the operation gate and without
