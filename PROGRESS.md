@@ -1,3 +1,16 @@
+## 2026-10-15 02:35:00 EDT — v1.9.10: a retained mutation with no preparation receipt is quarantined at launch instead of refusing every live connection (#696)
+
+- **Why:** a store an earlier version wrote held 5 outbox rows with no SQLite-owned preparation receipt; 1.9.9 refused
+  every live connection on the first one, so every later write on that device waited unsent.
+- **Commits (branch `agent/claude/retained-mutation-quarantine`, fast-forwarded into main):** plan `4fd8a44c`; red
+  `ca789c91`, green `da8ce80e` (quarantine table `instant_outbox_quarantined`, ledger kind); `a6fbc77b` (tests that pin
+  the 1.9.9 wall ask for `.blockSynchronization`); red `03468750`, green `7c30fda4` (Send Again, held lifecycle reports
+  failed); `fe8976a7` (one more caller-shaped test pinned); then the release document and the ledger commit (tag v1.9.10).
+- **Checks:** clean build of `fe8976a7`, whole suite 2,094 tests / 208 suites, 37 parallel failures under load; one at a
+  time only the known 7 fail (#304 and six environment checks), as at 1.9.9. Details in `docs/releases/v1.9.10.md`.
+- **Next:** Scribe pins exactly 1.9.10 and lists the held mutations on its sync screen (Scribe branch
+  `agent/claude/pin-1.9.10`). The resumed agent did not cut or install a build.
+
 ## 2026-10-14 18:46:43 EDT — v1.9.9: a write refreshes only the pages it can reach, an observer is not handed an equal result, a bounded page cache, reused statements, upstream's reconnect backoff with a network-path gate, and an energy meter; main's merge of energy-98 is the release (#653 #654 #669)
 
 - **Owner:** the build-99 release agent (workLog agentId `claude-code/d417e89e`), under direct maintainer authorization
