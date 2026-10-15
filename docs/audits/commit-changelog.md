@@ -1,3 +1,27 @@
+## 2026-10-15 02:32:45 EDT — instant-data-swift `97f3ad1d8080352814b40ae202a3345613aaceb4`
+Document the v1.9.10 release: a retained mutation with no preparation receipt is quarantined at launch, and every other write drains in order, instead of refusing every live connection (#696)
+
+## 2026-10-15 00:02:54 EDT — instant-data-swift `fe8976a76417c61920ae7b5b17daa5f572a5f8b5`
+The caller-shaped acceptance test asks for the 1.9.9 wall: by default its receipt-less row is quarantined and its lifecycle reports failed, never accepted (#696)
+
+## 2026-10-14 23:51:27 EDT — instant-data-swift `7c30fda41340c0c320064db55debb33d4c7ff13a`
+Send Again for a quarantined mutation, and a quarantined mutation's lifecycle reports failed instead of waiting forever (#696)
+
+## 2026-10-14 23:36:19 EDT — instant-data-swift `0346875019f0b6159dd6b73b301f10aa0574e373`
+Red: Send Again for a quarantined mutation, and a quarantined mutation's lifecycle reports failed instead of waiting forever (#696)
+
+## 2026-10-14 23:35:58 EDT — instant-data-swift `a6fbc77b2ed1db3f8ec7f2f537895741179a1aa6`
+Tests that pin 1.9.9's startup wall, or measure a store of 500 or 10,000 receipt-less rows, ask for .blockSynchronization (#696)
+
+## 2026-10-14 22:36:30 EDT — instant-data-swift `da8ce80e400ac758ac871e76c460851e0ff216aa`
+A retained mutation with no preparation receipt is quarantined whole at launch, and every other write drains in order, instead of refusing every live connection (#696)
+
+## 2026-10-14 22:29:49 EDT — instant-data-swift `ca789c910b20cf14dd4ee65f816e25b4269b9ec9`
+Red: a retained mutation with no preparation receipt must not refuse every live connection; it is quarantined whole and the later writes drain in order (#696)
+
+## 2026-10-14 22:00:43 EDT — instant-data-swift `4fd8a44c63efbdc6abba403d13abefec42526ed8`
+Plan and claims for #696: a retained mutation with no preparation receipt is held aside instead of refusing every live connection
+
 ## 2026-10-14 19:52:25 EDT — realtime-voice-sqlite-instant `2d8a523e05e4e9b882d50cdc38b2995e45432ea5`
 Record Scribe 0.1 (99) in PROGRESS: main 0e0acf281 with instant-data-swift 1.9.9, the energy telemetry and What's New, built twice (Scribe Dev and the Release production app) and installed on the iPhone, the iPad and the Mac; the production app's August store blocks its sync until Reset Local Cache (#669 #668 #653 #654)
 

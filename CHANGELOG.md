@@ -10,6 +10,48 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## October 15th, 2026 at 2:33:04 a.m. EDT — `97f3ad1d8080` Document the v1.9.10 release: a retained mutation with no preparation receipt is quarantined at launch, and every other write drains in order, instead of refusing every live connection (#696)
+
+- **Implementation commit:** `97f3ad1d8080352814b40ae202a3345613aaceb4`
+- **Change:** Document the v1.9.10 release (#696)
+- **Details:**
+  - Whole suite on a clean build of fe8976a7: 2,094 tests; one at a time only the 7 that fail on 1.9.9 fail.
+- **Files:**
+  - `docs/releases/v1.9.10.md` — the release document
+  - `PROGRESS.md` — the release entry
+- **User context (verbatim):**
+  > Do 694 release it test it and get it into scribe
+- **SpecStory:** unavailable — Headless resumed run (claude -p) on 2026-10-15; no SpecStory capture exists for it.
+
+## October 15th, 2026 at 2:33:04 a.m. EDT — `7c30fda41340` Send Again for a quarantined mutation, and a quarantined mutation's lifecycle reports failed instead of waiting forever (#696)
+
+- **Implementation commit:** `7c30fda41340c0c320064db55debb33d4c7ff13a`
+- **Change:** Send Again for a quarantined mutation, and its lifecycle reports failed instead of waiting forever (#696)
+- **Details:**
+  - Red first at 03468750 (the two expected failures); fe8976a7 pins one more caller-shaped acceptance test to the 1.9.9 wall.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — move a quarantined row back to the outbox
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — held lifecycle and Send Again
+  - `Sources/InstantSwiftData/InstantSwiftData.swift` — the public Send Again entry
+- **User context (verbatim):**
+  > Do 694 release it test it and get it into scribe
+- **SpecStory:** unavailable — Headless resumed run (claude -p) on 2026-10-15; no SpecStory capture exists for it.
+
+## October 15th, 2026 at 2:33:04 a.m. EDT — `da8ce80e400a` A retained mutation with no preparation receipt is quarantined whole at launch, and every other write drains in order, instead of refusing every live connection (#696)
+
+- **Implementation commit:** `da8ce80e400ac758ac871e76c460851e0ff216aa`
+- **Change:** A retained mutation with no preparation receipt is quarantined whole at launch, and every other write drains in order (#696)
+- **Details:**
+  - Red first at ca789c91: a store with receipt-less rows plus later valid writes made connect() throw persistenceFailed.
+  - Bootstrap moves each receipt-less outbox row, whole, into instant_outbox_quarantined (mutation, original row, reason, time); never sent or deleted by the library; the sync ledger lists it as held: no preparation receipt.
+  - a6fbc77b: twelve tests that pin the 1.9.9 wall or measure 500 / 10,000 receipt-less rows ask for .blockSynchronization.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — the quarantine table and the move at bootstrap
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — bootstrap quarantines instead of refusing the connection
+- **User context (verbatim):**
+  > Do 694 release it test it and get it into scribe
+- **SpecStory:** unavailable — Headless resumed run (claude -p) on 2026-10-15; no SpecStory capture exists for it.
+
 ## October 14th, 2026 at 6:47:33 p.m. EDT — `bbe1ecfe31d6` Document the v1.9.9 release: a write refreshes only the pages it can reach, an observer is not handed an equal result, a bounded page cache, reused statements, upstream's reconnect backoff with a network-path gate, and an energy meter (#653 #654 #669)
 
 - **Implementation commit:** `bbe1ecfe31d67a3d6af9e1c150b2930418f2085a`
