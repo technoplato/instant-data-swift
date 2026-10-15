@@ -340,6 +340,9 @@ public struct InstantRuntimeConfiguration: Sendable {
   public var platformAppClient: InstantPlatformAppClient
   public var appBuilderCodeGenerator: AppBuilderCodeGeneratorClient
   public var startupTrace: InstantStartupTrace = .disabled
+  /// What bootstrap does with a retained mutation that has no SQLite-owned preparation receipt (#696): move it aside,
+  /// whole, and synchronize every other write (the default), or keep refusing every live connection as 1.9.9 did.
+  public var retainedMutationsWithoutPreparationReceipt: InstantRetainedMutationRecovery = .quarantine
   package var actorHopRecorder: InstantActorHopRecorder?
   package var isLocalOnly: Bool
   package var localPersistenceMigrations: [InstantLocalPersistenceMigration] = []
@@ -12558,6 +12561,22 @@ public final class InstantRuntime: Sendable {
       recordActorHop(.outbox)
       return Array(await outbox.all().filter { $0.status == .failed }.prefix(limit))
     }
+  }
+
+  /// The oldest `limit` mutations bootstrap moved aside instead of letting them stop synchronization, in the order they
+  /// had in the outbox (#696). Read from SQLite without the operation gate; the library never sends or deletes them.
+  @concurrent
+  public func quarantinedMutations(limit: Int) async throws -> [InstantQuarantinedMutation] {
+    guard limit > 0 else { return [] }
+    recordActorHop(.persistence)
+    return try await persistence.quarantinedOutboxMutations(limit: limit)
+  }
+
+  /// How many mutations bootstrap moved aside (#696).
+  @concurrent
+  public func quarantinedMutationCount() async throws -> Int {
+    recordActorHop(.persistence)
+    return try await persistence.quarantinedOutboxMutationCount()
   }
 
   /// The oldest `limit` pending mutations, in send order, read from SQLite without the operation gate and without

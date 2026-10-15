@@ -1316,6 +1316,20 @@ public struct InstantSwiftDataClient: Sendable {
     return await runtime.failedMutations(limit: limit)
   }
 
+  /// The oldest `limit` mutations the runtime moved aside at launch instead of letting them stop synchronization, in the
+  /// order they had in the outbox (#696). Each keeps its outbox row exactly as it was, for an export; the library
+  /// never sends, changes, or deletes one. A client without a runtime has none.
+  public func quarantinedMutations(limit: Int) async throws -> [InstantQuarantinedMutation] {
+    guard let runtime else { return [] }
+    return try await runtime.quarantinedMutations(limit: limit)
+  }
+
+  /// How many mutations the runtime moved aside (#696).
+  public func quarantinedMutationCount() async throws -> Int {
+    guard let runtime else { return 0 }
+    return try await runtime.quarantinedMutationCount()
+  }
+
   @discardableResult
   public func retryFailedMutation(id: String) async throws -> InstantFailedMutationResolution {
     guard let runtime else {

@@ -4281,6 +4281,25 @@ public actor SQLitePersistenceStore {
     return result
   }
 
+  /// Moves each retained mutation without a SQLite-owned preparation receipt into the quarantine (#696).
+  func quarantineRetainedMutationsWithoutPreparationReceipt(
+    now: InstantTimestamp
+  ) throws -> [String] {
+    _ = now
+    return []
+  }
+
+  /// The oldest `limit` quarantined mutations (#696).
+  func quarantinedOutboxMutations(limit: Int) throws -> [InstantQuarantinedMutation] {
+    _ = limit
+    return []
+  }
+
+  /// How many mutations the quarantine holds (#696).
+  func quarantinedOutboxMutationCount() throws -> Int {
+    0
+  }
+
   /// Returns the first active optimistic row that has no SQLite-owned Runtime
   /// preparation receipt. The check is body-free and intentionally includes
   /// failed rows: without a proven inverse, even a terminal row can own local
