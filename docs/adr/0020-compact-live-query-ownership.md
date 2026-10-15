@@ -43,8 +43,8 @@ this was found (SQLite `dbstat`, 4 KB pages):
 The table is a rowid table, so its primary key is a second b-tree holding all four columns again. Both indexes
 contain the key, and an index cell keeps at most about 1 KB on a 4 KB page, so most index entries spilled to an
 overflow page of their own: 26,596 overflow pages in each index (for 32,555 entries), 108.9 MB each, 64.6 MB of each
-unused. The store had
-grown from 197 MB to 547 MB within minutes of its first connection after an upgrade, when these results were stored.
+unused. The store had grown from 197 MB to 547 MB within minutes of its first connection after an upgrade, when these
+results were stored.
 
 Upstream keeps the query once per entry too: `Reactor.js` keys `querySubs` by `weakHash(q)`, a 64-bit hash of the
 query, and stores `q` inside the entry (`_startQuerySub`, Reactor.js, pinned `e7101761`).
@@ -103,15 +103,20 @@ the same rows as the statement it replaces.
 
 ### The conversion
 
-`bootstrap()` checks the ownership table's columns after the ledger migrations. When it still has `query_key` (0011's
-layout), one `BEGIN IMMEDIATE` transaction:
+A new store's migration 0011 creates these tables directly. A store that ran 0011 before this change has the key on
+every row, and `bootstrap()` converts it: after the ledger migrations it checks the ownership table's columns, and
+when they still include `query_key`, one `BEGIN IMMEDIATE` transaction
 
-1. creates the new results table and copies every result row into it, in key order (`query_id` 1, 2, …);
-2. creates the new ownership table and copies every ownership row into it, joined to its result by key;
-3. drops the old ownership table (with both of its indexes), then the old results table, renames the new tables to
-   the old names (SQLite rewrites the new table's foreign key to the renamed parent), and creates the identity index;
+1. creates the new results table under a temporary name and copies every result row into it, in key order
+   (`query_id` 1, 2, …);
+2. copies every ownership row, with its result's id instead of its key, into a temporary table;
+3. drops the old ownership table (with both of its indexes), then the old results table (the ownership table first,
+   so no drop deletes a row through the foreign key), renames the new results table, creates the new ownership table
+   under its own name with its final foreign key, fills it from the temporary table in primary-key order, and creates
+   the identity index;
 4. records `0026_live_query_compact_ownership` in `instant_schema_migrations`, and logs what it did
-   (`sqlite.live-query-ownership.compacted`: rows, results, rows without a result, milliseconds).
+   (`sqlite.live-query-ownership.compacted`: rows, results, rows without a result, milliseconds) and a startup-trace
+   phase (`sqlite.live-query-ownership-compaction`).
 
 Properties:
 
@@ -125,7 +130,8 @@ Properties:
   name and is not copied; the log counts such rows.
 - **Nothing else changes.** The outbox, the triples, the metadata and the query cache are not touched; no revision is
   bumped, because what each read returns is the same.
-- **A new store** gets 0011's tables and converts them while they are empty, in the same step.
+- **A failure** (a full disk, say) rolls the transaction back and fails the open, as a failing migration does; the
+  next open tries again from the start.
 
 ### What is not part of this change
 

@@ -133,10 +133,11 @@ private func makeDamagedStore(hasSynced: Bool) async throws -> URL {
     """
     INSERT INTO instant_live_query_results (query_key, triple_count, updated_at_ms, json)
     VALUES ('sections-list', 2, 1, '{}');
-    INSERT INTO instant_live_query_triples (query_key, entity_id, attribute_id, value_json)
-    VALUES
-      ('sections-list', 'section-whole', 'sections/text', 'whole'),
-      ('sections-list', 'section-damaged', 'sections/text', 'damaged');
+    INSERT INTO instant_live_query_triples (query_id, entity_id, attribute_id, value_json)
+    SELECT result.query_id, owned.column1, owned.column2, owned.column3
+    FROM instant_live_query_results AS result,
+      (VALUES ('section-whole', 'sections/text', 'whole'), ('section-damaged', 'sections/text', 'damaged')) AS owned
+    WHERE result.query_key = 'sections-list';
     DELETE FROM instant_schema_migrations WHERE name = '0024_remove_entities_missing_their_id_fact';
     """
   )

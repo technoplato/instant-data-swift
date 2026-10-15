@@ -142,9 +142,11 @@ struct InstantLocalStampShadowsDeviceStoreTests {
     // The four results the Stop's refresh stored, holding the iPhone's `updatedAtMs` from it.
     let keys = try Self.selectStrings(
       store,
-      "SELECT DISTINCT query_key FROM instant_live_query_triples WHERE entity_id = '\(Self.recordingID)'"
-        + #" AND attribute_id = 'recordings/updatedAtMs' AND value_json = '{"number":{"_0":1791000200000}}'"#
-        + " ORDER BY query_key"
+      "SELECT DISTINCT result.query_key FROM instant_live_query_triples AS owned"
+        + " JOIN instant_live_query_results AS result ON result.query_id = owned.query_id"
+        + " WHERE owned.entity_id = '\(Self.recordingID)'"
+        + #" AND owned.attribute_id = 'recordings/updatedAtMs' AND owned.value_json = '{"number":{"_0":1791000200000}}'"#
+        + " ORDER BY result.query_key"
     )
     try #require(!keys.isEmpty)
     let heartbeat = InstantValue.number(1_791_000_300_000)
@@ -187,11 +189,13 @@ struct InstantLocalStampShadowsDeviceStoreTests {
   private static func resultKeys(_ store: URL, refreshingTheOlderResultToo: Bool) throws -> [String] {
     let holders = refreshingTheOlderResultToo
       ? ""
-      : #" AND attribute_id = 'recordings/activityKind' AND value_json = '{"string":{"_0":"playback"}}'"#
+      : #" AND owned.attribute_id = 'recordings/activityKind' AND owned.value_json = '{"string":{"_0":"playback"}}'"#
     let keys = try selectStrings(
       store,
-      "SELECT DISTINCT query_key FROM instant_live_query_triples WHERE entity_id = '\(recordingID)'\(holders)"
-        + " ORDER BY query_key"
+      "SELECT DISTINCT result.query_key FROM instant_live_query_triples AS owned"
+        + " JOIN instant_live_query_results AS result ON result.query_id = owned.query_id"
+        + " WHERE owned.entity_id = '\(recordingID)'\(holders)"
+        + " ORDER BY result.query_key"
     )
     try #require(!keys.isEmpty)
     return keys

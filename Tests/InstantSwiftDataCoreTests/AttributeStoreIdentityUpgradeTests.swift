@@ -879,7 +879,7 @@ struct AttributeStoreIdentityUpgradeTests {
     let rawOwnershipAttributeIDs = try readSQLiteStrings(
       at: databaseURL,
       sql:
-        "SELECT attribute_id FROM instant_live_query_triples WHERE query_key = 'parents-with-children.hot' ORDER BY entity_id, attribute_id, value_json"
+        "SELECT attribute_id FROM instant_live_query_triples WHERE query_id = (SELECT query_id FROM instant_live_query_results WHERE query_key = 'parents-with-children.hot') ORDER BY entity_id, attribute_id, value_json"
     )
     #expect(!rawOwnershipAttributeIDs.contains(reciprocalChildRelation.id))
     #expect(!rawOwnershipAttributeIDs.contains(declaredRelation.id))
@@ -892,7 +892,7 @@ struct AttributeStoreIdentityUpgradeTests {
     let ownershipOnlyAttributeIDs = try readSQLiteStrings(
       at: databaseURL,
       sql:
-        "SELECT attribute_id FROM instant_live_query_triples WHERE query_key = 'parents-with-children.ownership-only-drift' ORDER BY entity_id, attribute_id, value_json"
+        "SELECT attribute_id FROM instant_live_query_triples WHERE query_id = (SELECT query_id FROM instant_live_query_results WHERE query_key = 'parents-with-children.ownership-only-drift') ORDER BY entity_id, attribute_id, value_json"
     )
     #expect(!ownershipOnlyAttributeIDs.contains(reciprocalChildRelation.id))
     #expect(ownershipOnlyAttributeIDs.contains(physicalRelationID))
@@ -1361,7 +1361,7 @@ struct AttributeStoreIdentityUpgradeTests {
     var statement: OpaquePointer?
     defer { sqlite3_finalize(statement) }
     let sql =
-      "UPDATE instant_live_query_triples SET entity_id = ?, attribute_id = ?, value_json = ? WHERE query_key = ? AND entity_id = ? AND attribute_id = ? AND value_json = ?"
+      "UPDATE instant_live_query_triples SET entity_id = ?, attribute_id = ?, value_json = ? WHERE query_id = (SELECT query_id FROM instant_live_query_results WHERE query_key = ?) AND entity_id = ? AND attribute_id = ? AND value_json = ?"
     guard sqlite3_prepare_v2(connection, sql, -1, &statement, nil) == SQLITE_OK else {
       throw InstantError(
         code: .persistenceFailed,

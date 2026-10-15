@@ -1,6 +1,8 @@
 // History:
 // - 2026-10-14: a retained mutation with no SQLite-owned preparation receipt moves, whole, into
 //   instant_outbox_quarantined at runtime bootstrap instead of refusing every live connection (#696).
+// - 2026-10-15: live-query ownership rows name their result by an integer query_id instead of repeating the query's
+//   whole key, and a store in 0011's layout converts once at bootstrap (#704, ADR 0020).
 
 import Foundation
 import IssueReporting
@@ -2157,35 +2159,11 @@ public actor SQLitePersistenceStore {
     }
     try withSQLiteBusyRetry {
       try migrate(name: "0011_live_query_result_ownership") {
-        try execute(
-          """
-          CREATE TABLE IF NOT EXISTS instant_live_query_results (
-            query_key TEXT PRIMARY KEY NOT NULL,
-            triple_count INTEGER NOT NULL,
-            updated_at_ms INTEGER NOT NULL,
-            json TEXT NOT NULL
-          )
-          """
-        )
-        try execute(
-          """
-          CREATE TABLE IF NOT EXISTS instant_live_query_triples (
-            query_key TEXT NOT NULL,
-            entity_id TEXT NOT NULL,
-            attribute_id TEXT NOT NULL,
-            value_json TEXT NOT NULL,
-            PRIMARY KEY (query_key, entity_id, attribute_id, value_json),
-            FOREIGN KEY (query_key) REFERENCES instant_live_query_results (query_key)
-              ON DELETE CASCADE
-          )
-          """
-        )
-        try execute(
-          """
-          CREATE INDEX IF NOT EXISTS instant_live_query_triples_identity_idx
-          ON instant_live_query_triples (entity_id, attribute_id, value_json, query_key)
-          """
-        )
+        // A store that ran this step before #704 keyed every ownership row by its query's whole key;
+        // `compactLiveQueryOwnershipIfNeeded()` converts it. A new store gets the compact tables here (ADR 0020).
+        try execute(Self.liveQueryResultsTableSQL(named: "instant_live_query_results"))
+        try execute(Self.liveQueryOwnershipTableSQL)
+        try execute(Self.liveQueryOwnershipIdentityIndexSQL)
       }
     }
     try withSQLiteBusyRetry {
@@ -2547,6 +2525,9 @@ public actor SQLitePersistenceStore {
         )
       }
     }
+    try withSQLiteBusyRetry {
+      try compactLiveQueryOwnershipIfNeeded()
+    }
     // Test fixtures and app-owned restores can reconstruct `instant_outbox`
     // while retaining newer migration ledger rows. Reassert this column-free
     // index so the body-free blocker query never falls back to a scan/sort.
@@ -2592,6 +2573,169 @@ public actor SQLitePersistenceStore {
       )
       return nil
     }
+  }
+
+  /// The ledger row the conversion below writes. The table's columns, not this row, decide whether it runs (#704).
+  private static let compactLiveQueryOwnershipMigrationName = "0026_live_query_compact_ownership"
+
+  /// A stored live-query result, named by an integer id (its rowid) as well as by its key (#704, ADR 0020).
+  private static func liveQueryResultsTableSQL(named name: String) -> String {
+    """
+    CREATE TABLE IF NOT EXISTS \(name) (
+      query_id INTEGER PRIMARY KEY,
+      query_key TEXT NOT NULL UNIQUE,
+      triple_count INTEGER NOT NULL,
+      updated_at_ms INTEGER NOT NULL,
+      json TEXT NOT NULL
+    )
+    """
+  }
+
+  /// A result's ownership of a fact, one row each, its own primary-key b-tree (#704, ADR 0020).
+  private static let liveQueryOwnershipTableSQL = """
+    CREATE TABLE IF NOT EXISTS instant_live_query_triples (
+      query_id INTEGER NOT NULL,
+      entity_id TEXT NOT NULL,
+      attribute_id TEXT NOT NULL,
+      value_json TEXT NOT NULL,
+      PRIMARY KEY (query_id, entity_id, attribute_id, value_json),
+      FOREIGN KEY (query_id) REFERENCES instant_live_query_results (query_id)
+        ON DELETE CASCADE
+    ) WITHOUT ROWID
+    """
+
+  /// The results that own a fact, by entity, attribute and value (#704, ADR 0020).
+  private static let liveQueryOwnershipIdentityIndexSQL = """
+    CREATE INDEX IF NOT EXISTS instant_live_query_triples_identity_idx
+    ON instant_live_query_triples (entity_id, attribute_id, value_json, query_id)
+    """
+
+  /// Converts migration 0011's live-query tables to ownership rows that name their result by `query_id` (#704,
+  /// ADR 0020).
+  ///
+  /// 0011 keyed every ownership row by the result's `query_key`, the whole InstaQL JSON of its query, and both of the
+  /// table's indexes held it: on a device, 32,555 rows with 3.7 MB of values took 328.9 MB, most index entries on an
+  /// overflow page of their own. Each result row now has an integer `query_id` (its rowid), the ownership table is its
+  /// own primary-key b-tree (`WITHOUT ROWID`), and the identity index ends with the id.
+  ///
+  /// One transaction: a process that dies during it leaves 0011's tables as they were, and the next open converts
+  /// again from the start. Every result row and every ownership row whose result exists is copied as it was; a row
+  /// whose result is missing (the foreign key forbids one) names nothing and is counted, not copied. The check is the
+  /// table's columns rather than the ledger, because fixtures and restores can recreate 0011's tables after the
+  /// ledger recorded this step. A new store's 0011 creates the compact tables, so it has nothing to convert.
+  private func compactLiveQueryOwnershipIfNeeded() throws {
+    guard try liveQueryOwnershipRowsCarryTheirQueryKey() else { return }
+    let stopwatch = startupTrace.started(
+      "sqlite.live-query-ownership-compaction",
+      metadata: ["file": fileURL.lastPathComponent]
+    )
+    let startedAt = DispatchTime.now().uptimeNanoseconds
+    let counts: (rows: Int64, copiedRows: Int64, results: Int64)?
+    do {
+      counts = try transaction { () -> (rows: Int64, copiedRows: Int64, results: Int64)? in
+        // Another connection may have converted the store while this one waited for the write lock.
+        guard try liveQueryOwnershipRowsCarryTheirQueryKey() else { return nil }
+        try execute("DROP TABLE IF EXISTS instant_live_query_results_0026")
+        try execute("DROP TABLE IF EXISTS temp.instant_live_query_triples_0026")
+        try execute(Self.liveQueryResultsTableSQL(named: "instant_live_query_results_0026"))
+        try execute(
+          """
+          INSERT INTO instant_live_query_results_0026 (query_key, triple_count, updated_at_ms, json)
+          SELECT query_key, triple_count, updated_at_ms, json
+          FROM instant_live_query_results
+          ORDER BY query_key
+          """
+        )
+        let results = Int64(sqlite3_changes(connection.raw))
+        let rows = try selectInt64("SELECT COUNT(*) FROM instant_live_query_triples")
+        // The rows wait, with their ids, in a temporary table while the old tables go, so the new ownership table is
+        // created under its own name with its final foreign key.
+        try execute(
+          """
+          CREATE TEMP TABLE instant_live_query_triples_0026 AS
+          SELECT result.query_id AS query_id, owned.entity_id AS entity_id,
+            owned.attribute_id AS attribute_id, owned.value_json AS value_json
+          FROM instant_live_query_triples AS owned
+          JOIN instant_live_query_results_0026 AS result ON result.query_key = owned.query_key
+          """
+        )
+        // The old ownership table first: it is the old results table's only child, so neither drop deletes a row
+        // through a foreign key.
+        try execute("DROP TABLE instant_live_query_triples")
+        try execute("DROP TABLE instant_live_query_results")
+        try execute("ALTER TABLE instant_live_query_results_0026 RENAME TO instant_live_query_results")
+        try execute(Self.liveQueryOwnershipTableSQL)
+        try execute(
+          """
+          INSERT INTO instant_live_query_triples (query_id, entity_id, attribute_id, value_json)
+          SELECT query_id, entity_id, attribute_id, value_json
+          FROM temp.instant_live_query_triples_0026
+          ORDER BY query_id, entity_id, attribute_id, value_json
+          """
+        )
+        let copiedRows = Int64(sqlite3_changes(connection.raw))
+        try execute("DROP TABLE temp.instant_live_query_triples_0026")
+        try execute(Self.liveQueryOwnershipIdentityIndexSQL)
+        try execute(
+          "INSERT OR IGNORE INTO instant_schema_migrations (name, applied_at_ms) VALUES (?, ?)",
+          [.text(Self.compactLiveQueryOwnershipMigrationName), .int(Self.nowMilliseconds())]
+        )
+        return (rows, copiedRows, results)
+      }
+    } catch {
+      startupTrace.failed(
+        "sqlite.live-query-ownership-compaction",
+        error: error,
+        since: stopwatch,
+        metadata: ["file": fileURL.lastPathComponent]
+      )
+      throw error
+    }
+    startupTrace.completed(
+      "sqlite.live-query-ownership-compaction",
+      since: stopwatch,
+      metadata: ["file": fileURL.lastPathComponent]
+    )
+    guard let counts else { return }
+    let milliseconds = (DispatchTime.now().uptimeNanoseconds - startedAt) / 1_000_000
+    InstantDiagnostics.shared.record(
+      .notice,
+      subsystem: "instant-swift-data-core",
+      category: "persistence",
+      event: "sqlite.live-query-ownership.compacted",
+      message: "Live-query ownership rows now name their result by id instead of repeating the query's key.",
+      metadata: [
+        "milliseconds": String(milliseconds),
+        "path": fileURL.path,
+        "results": String(counts.results),
+        "rows": String(counts.copiedRows),
+        "rowsWithoutAResult": String(counts.rows - counts.copiedRows),
+      ]
+    )
+  }
+
+  /// Whether the ownership table still has 0011's `query_key` column (#704).
+  private func liveQueryOwnershipRowsCarryTheirQueryKey() throws -> Bool {
+    try selectInt64(
+      "SELECT COUNT(*) FROM pragma_table_info('instant_live_query_triples') WHERE name = 'query_key'"
+    ) > 0
+  }
+
+  /// The id of the stored result for `key` (#704). Callers have just written or found the row.
+  private func liveQueryResultIDWithoutTransaction(key: String) throws -> Int64 {
+    guard
+      let text = try selectScalar(
+        "SELECT query_id FROM instant_live_query_results WHERE query_key = ? LIMIT 1",
+        [.text(key)]
+      ),
+      let queryID = Int64(text)
+    else {
+      throw persistenceError(
+        operation: "read a live-query result's id",
+        message: "Live-query result '\(key)' has no stored row."
+      )
+    }
+    return queryID
   }
 
   /// Reconciles reciprocal application declarations with the server's durable physical link.
@@ -2781,7 +2925,13 @@ public actor SQLitePersistenceStore {
   /// Deletes one cached live-query result and its ownership rows (#436). Its facts stay in the store; the next refresh of
   /// its query stores the result again.
   private func dropLiveQueryResultWithoutTransaction(queryKey: String) throws {
-    try execute("DELETE FROM instant_live_query_triples WHERE query_key = ?", [.text(queryKey)])
+    try execute(
+      """
+      DELETE FROM instant_live_query_triples
+      WHERE query_id = (SELECT query_id FROM instant_live_query_results WHERE query_key = ?)
+      """,
+      [.text(queryKey)]
+    )
     try execute("DELETE FROM instant_live_query_results WHERE query_key = ?", [.text(queryKey)])
     try forgetLiveQueryResultJSONStateWithoutTransaction(queryKey)
   }
@@ -2923,19 +3073,17 @@ public actor SQLitePersistenceStore {
         message: "Persisted live-query result '\(result.key)' disappeared during reconciliation."
       )
     }
-    try execute(
-      "DELETE FROM instant_live_query_triples WHERE query_key = ?",
-      [.text(result.key)]
-    )
+    let queryID = try liveQueryResultIDWithoutTransaction(key: result.key)
+    try execute("DELETE FROM instant_live_query_triples WHERE query_id = ?", [.int(queryID)])
     try executeRepeated(
       """
       INSERT INTO instant_live_query_triples
-        (query_key, entity_id, attribute_id, value_json)
+        (query_id, entity_id, attribute_id, value_json)
       VALUES (?, ?, ?, ?)
       """,
       bindings: ownership.sorted(by: Self.liveQueryOwnershipOrder).map { identity in
         [
-          .text(result.key),
+          .int(queryID),
           .text(identity.entityID),
           .text(identity.attributeID),
           .text(identity.valueJSON),
@@ -3530,7 +3678,7 @@ public actor SQLitePersistenceStore {
       FROM instant_live_query_results AS result
       WHERE EXISTS (
         SELECT 1 FROM instant_live_query_triples AS owned
-        WHERE owned.query_key = result.query_key
+        WHERE owned.query_id = result.query_id
           AND owned.attribute_id IN (\(placeholders))
       )
       \(cursorClause)
@@ -8414,7 +8562,7 @@ public actor SQLitePersistenceStore {
         """
         SELECT MAX(result.updated_at_ms)
         FROM instant_live_query_triples AS owned
-        JOIN instant_live_query_results AS result ON result.query_key = owned.query_key
+        JOIN instant_live_query_results AS result ON result.query_id = owned.query_id
         WHERE owned.entity_id = ? AND result.updated_at_ms >= ?
         """,
         [.text(triple.entityID), .int(milliseconds)]
@@ -8424,7 +8572,7 @@ public actor SQLitePersistenceStore {
       """
       SELECT MAX(result.updated_at_ms)
       FROM instant_live_query_triples AS owned
-      JOIN instant_live_query_results AS result ON result.query_key = owned.query_key
+      JOIN instant_live_query_results AS result ON result.query_id = owned.query_id
       WHERE owned.entity_id = ? AND owned.attribute_id = ? AND owned.value_json = ?
         AND result.updated_at_ms >= ?
       """,
@@ -8930,30 +9078,31 @@ public actor SQLitePersistenceStore {
   /// The values the newest stored live-query result that holds `triple`'s slot shows for it (#445).
   private func newestServerValuesWithoutTransaction(of triple: InstantTriple) throws -> [InstantValue] {
     guard
-      let queryKey = try selectScalar(
+      let queryIDText = try selectScalar(
         """
-        SELECT owned.query_key
+        SELECT owned.query_id
         FROM instant_live_query_triples AS owned
-        JOIN instant_live_query_results AS result ON result.query_key = owned.query_key
+        JOIN instant_live_query_results AS result ON result.query_id = owned.query_id
         WHERE owned.entity_id = ? AND owned.attribute_id = ?
-        ORDER BY result.updated_at_ms DESC, owned.query_key
+        ORDER BY result.updated_at_ms DESC, result.query_key
         LIMIT 1
         """,
         [.text(triple.entityID), .text(triple.attributeID)]
-      )
+      ),
+      let queryID = Int64(queryIDText)
     else { return [] }
     var statement: OpaquePointer?
     try prepare(
       """
       SELECT value_json FROM instant_live_query_triples
-      WHERE query_key = ? AND entity_id = ? AND attribute_id = ?
+      WHERE query_id = ? AND entity_id = ? AND attribute_id = ?
       ORDER BY value_json
       LIMIT 32
       """,
       statement: &statement
     )
     defer { finishStatement(statement) }
-    try bind([.text(queryKey), .text(triple.entityID), .text(triple.attributeID)], to: statement)
+    try bind([.int(queryID), .text(triple.entityID), .text(triple.attributeID)], to: statement)
     var values: [InstantValue] = []
     while true {
       let code = sqlite3_step(statement)
@@ -16037,7 +16186,7 @@ public actor SQLitePersistenceStore {
   ) throws -> Bool {
     var sql =
       """
-      SELECT query_key
+      SELECT 1
       FROM instant_live_query_triples
       WHERE entity_id = ? AND attribute_id = ? AND value_json = ?
       """
@@ -16047,9 +16196,10 @@ public actor SQLitePersistenceStore {
       .text(try encode(identity.value)),
     ]
     if !excludingQueryKeys.isEmpty {
-      sql += " AND query_key NOT IN ("
+      // A key with no stored result owns no rows, so excluding the stored ones' ids excludes the same rows (#704).
+      sql += " AND query_id NOT IN (SELECT query_id FROM instant_live_query_results WHERE query_key IN ("
         + Array(repeating: "?", count: excludingQueryKeys.count).joined(separator: ", ")
-        + ")"
+        + "))"
       bindings.append(contentsOf: excludingQueryKeys.sorted().map(SQLiteBinding.text))
     }
     sql += " LIMIT 1"
@@ -16936,35 +17086,38 @@ public actor SQLitePersistenceStore {
     let removedOwnership = previousOwnership.subtracting(nextOwnership).sorted(
       by: Self.liveQueryOwnershipOrder
     )
+    let insertedOwnership = nextOwnership.subtracting(previousOwnership).sorted(
+      by: Self.liveQueryOwnershipOrder
+    )
+    guard !removedOwnership.isEmpty || !insertedOwnership.isEmpty else { return }
+    // The row was written above; its id names it in every ownership row (#704).
+    let queryID = try liveQueryResultIDWithoutTransaction(key: key)
     try executeRepeated(
       """
       DELETE FROM instant_live_query_triples
-      WHERE query_key = ?
+      WHERE query_id = ?
         AND entity_id = ?
         AND attribute_id = ?
         AND value_json = ?
       """,
       bindings: removedOwnership.map { identity in
         [
-          .text(result.key),
+          .int(queryID),
           .text(identity.entityID),
           .text(identity.attributeID),
           .text(identity.valueJSON),
         ]
       }
     )
-    let insertedOwnership = nextOwnership.subtracting(previousOwnership).sorted(
-      by: Self.liveQueryOwnershipOrder
-    )
     try executeRepeated(
       """
       INSERT INTO instant_live_query_triples
-        (query_key, entity_id, attribute_id, value_json)
+        (query_id, entity_id, attribute_id, value_json)
       VALUES (?, ?, ?, ?)
       """,
       bindings: insertedOwnership.map { identity in
         [
-          .text(result.key),
+          .int(queryID),
           .text(identity.entityID),
           .text(identity.attributeID),
           .text(identity.valueJSON),
@@ -16981,7 +17134,7 @@ public actor SQLitePersistenceStore {
       """
       SELECT entity_id, attribute_id, value_json
       FROM instant_live_query_triples
-      WHERE query_key = ?
+      WHERE query_id = (SELECT query_id FROM instant_live_query_results WHERE query_key = ?)
       """,
       statement: &statement
     )

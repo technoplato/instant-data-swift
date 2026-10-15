@@ -1400,8 +1400,9 @@ private func liveQueryOwnership(
     guard sqlite3_prepare_v2(
       connection,
       """
-      SELECT query_key, entity_id, attribute_id, value_json
-      FROM instant_live_query_triples
+      SELECT result.query_key, owned.entity_id, owned.attribute_id, owned.value_json
+      FROM instant_live_query_triples AS owned
+      JOIN instant_live_query_results AS result ON result.query_id = owned.query_id
       """,
       -1,
       &statement,

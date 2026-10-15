@@ -249,7 +249,7 @@ struct InstantStoreTests {
     let ownershipValues: [InstantValue] = try persistenceMigrationJSONRows(
       at: cacheURL,
       sql:
-        "SELECT value_json FROM instant_live_query_triples WHERE query_key = 'legacy-priority-live-query'"
+        "SELECT value_json FROM instant_live_query_triples WHERE query_id = (SELECT query_id FROM instant_live_query_results WHERE query_key = 'legacy-priority-live-query')"
     )
     expectNoDifference(ownershipValues, [.number(3)])
 
@@ -431,7 +431,7 @@ struct InstantStoreTests {
     let ownershipBefore: [InstantValue] = try persistenceMigrationJSONRows(
       at: cacheURL,
       sql:
-        "SELECT value_json FROM instant_live_query_triples WHERE query_key = 'live-priority-collision-query' ORDER BY value_json"
+        "SELECT value_json FROM instant_live_query_triples WHERE query_id = (SELECT query_id FROM instant_live_query_results WHERE query_key = 'live-priority-collision-query') ORDER BY value_json"
     )
 
     do {
@@ -450,7 +450,7 @@ struct InstantStoreTests {
     let ownershipAfter: [InstantValue] = try persistenceMigrationJSONRows(
       at: cacheURL,
       sql:
-        "SELECT value_json FROM instant_live_query_triples WHERE query_key = 'live-priority-collision-query' ORDER BY value_json"
+        "SELECT value_json FROM instant_live_query_triples WHERE query_id = (SELECT query_id FROM instant_live_query_results WHERE query_key = 'live-priority-collision-query') ORDER BY value_json"
     )
     expectNoDifference(stateAfter, stateBefore)
     expectNoDifference(liveResultAfter, liveResultBefore)
