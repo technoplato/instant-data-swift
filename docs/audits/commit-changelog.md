@@ -1,3 +1,18 @@
+## 2026-10-15 03:48:28 EDT — realtime-voice-sqlite-instant `615aa1d8c5f458939abd9b67926112586752d5ed`
+Change log: the 1.9.10 pin (8fc5a7d70) and the Sync view's held mutations, red 23109b641 and green 29630a2a9 (#696)
+
+## 2026-10-15 02:58:47 EDT — realtime-voice-sqlite-instant `516d3d0c8d2f5ff8127dab61334801f2b72f7956`
+Merge remote-tracking branch 'origin/main' into agent/claude/pin-1.9.10
+
+## 2026-10-15 02:58:43 EDT — realtime-voice-sqlite-instant `29630a2a9759915c7039e3df18a48ee16f2e8aa3`
+Green: the Sync view lists the writes instant-data-swift 1.9.10 held aside (no preparation receipt), exports each whole, and Send Again sends one through the library's quarantine (#696)
+
+## 2026-10-15 02:47:12 EDT — realtime-voice-sqlite-instant `23109b641df873a23a67274afd3235c809a33cb0`
+Red: the Sync view lists the writes instant-data-swift 1.9.10 held aside (no preparation receipt), exports them whole, and Send Again asks the library's quarantine, as seams with no behavior (#696)
+
+## 2026-10-15 02:35:26 EDT — realtime-voice-sqlite-instant `8fc5a7d706d122a9d587cb8abb93c6bc3d923830`
+Pin instant-data-swift exactly 1.9.10 instead of 1.9.9: a retained mutation with no preparation receipt is quarantined at launch, and every other write drains in order, instead of refusing every live connection (#696)
+
 ## 2026-10-15 02:32:45 EDT — instant-data-swift `97f3ad1d8080352814b40ae202a3345613aaceb4`
 Document the v1.9.10 release: a retained mutation with no preparation receipt is quarantined at launch, and every other write drains in order, instead of refusing every live connection (#696)
 
