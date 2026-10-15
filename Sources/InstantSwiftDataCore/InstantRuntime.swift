@@ -1625,10 +1625,17 @@ public final class InstantRuntime: Sendable {
         // (#403); they were three awaits. With application migrations, each keeps its own await and its notice below.
         let queryCachePruningPolicy = configuration.queryCachePruningPolicy
         let bootstrapNow = configuration.now()
+        let retainedMutationRecovery = configuration.retainedMutationsWithoutPreparationReceipt
         configuration.actorHopRecorder?.record(.persistence)
         let opened = try await persistence.run { persistence in
           let pruningResult = try persistence.bootstrap(
             queryCachePruningPolicy: queryCachePruningPolicy,
+            now: bootstrapNow
+          )
+          // A retained mutation with no preparation receipt is moved aside before the blocker is derived, so it no
+          // longer refuses every connection while the writes behind it wait (#696).
+          persistence.quarantineRetainedMutationsAtBootstrap(
+            recovery: retainedMutationRecovery,
             now: bootstrapNow
           )
           let synchronizationBlocker = try persistence.synchronizationBlocker()
@@ -1662,8 +1669,18 @@ public final class InstantRuntime: Sendable {
             ]
           )
         }
+        let retainedMutationRecovery = configuration.retainedMutationsWithoutPreparationReceipt
+        let quarantineNow = configuration.now()
         configuration.actorHopRecorder?.record(.persistence)
-        bootstrapSynchronizationBlocker = try await persistence.synchronizationBlocker()
+        bootstrapSynchronizationBlocker = try await persistence.run { persistence in
+          // After the application's migrations, which may rewrite the outbox, and before the blocker, in the same
+          // persistence turn the blocker always took (#696).
+          persistence.quarantineRetainedMutationsAtBootstrap(
+            recovery: retainedMutationRecovery,
+            now: quarantineNow
+          )
+          return try persistence.synchronizationBlocker()
+        }
         configuration.actorHopRecorder?.record(.persistence)
         state = try await persistence.loadCompactState()
       }

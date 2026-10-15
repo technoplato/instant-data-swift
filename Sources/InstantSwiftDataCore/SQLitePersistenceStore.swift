@@ -1,3 +1,7 @@
+// History:
+// - 2026-10-14: a retained mutation with no SQLite-owned preparation receipt moves, whole, into
+//   instant_outbox_quarantined at runtime bootstrap instead of refusing every live connection (#696).
+
 import Foundation
 import IssueReporting
 import SQLite3
@@ -4281,23 +4285,248 @@ public actor SQLitePersistenceStore {
     return result
   }
 
-  /// Moves each retained mutation without a SQLite-owned preparation receipt into the quarantine (#696).
+  // MARK: - Quarantined mutations (#696)
+
+  /// The rows ``synchronizationBlocker()`` reports: an active optimistic effect with no SQLite-owned receipt.
+  private static let receiptlessRetainedMutationPredicate =
+    "optimistic_overlay_active = 1 AND optimistic_effect_receipt_fingerprint IS NULL"
+
+  /// Moves each retained mutation that has no SQLite-owned preparation receipt, whole, out of the outbox and into
+  /// `instant_outbox_quarantined`, in one SQLite transaction, and returns their IDs in outbox order (#696).
+  ///
+  /// These are exactly the rows ``synchronizationBlocker()`` reports, so it reports none afterward. Up to 1.9.9 the
+  /// first of them refused every live connection, forever, and every later write waited behind it: a store an earlier
+  /// version wrote held five, and thousands of valid writes made after them never left the device. Each row keeps its
+  /// body byte for byte and every column of its outbox row as one JSON object; its derived write-key and effect-entity
+  /// index rows leave with it, as they do whenever a row leaves the outbox. Local triples are not touched: what such a
+  /// mutation materialized stays until a server result replaces it, which it now can, because no unproven row protects
+  /// every server retraction any more. The library never deletes a quarantined row.
+  ///
+  /// A store with no such row is not written to: the check is one indexed read, and the table is never created.
+  @discardableResult
   func quarantineRetainedMutationsWithoutPreparationReceipt(
     now: InstantTimestamp
   ) throws -> [String] {
-    _ = now
-    return []
+    guard try synchronizationBlocker() != nil else { return [] }
+    let predicate = Self.receiptlessRetainedMutationPredicate
+    let quarantinedIDs: [String] = try transaction {
+      let ids = try selectStrings(
+        """
+        SELECT mutation_id
+        FROM instant_outbox INDEXED BY instant_outbox_synchronization_blocker_idx
+        WHERE \(predicate)
+        ORDER BY created_at_ms, mutation_id
+        """
+      )
+      guard !ids.isEmpty else { return [] }
+      try ensureQuarantinedOutboxTableWithoutTransaction()
+      let rowJSON = try outboxRowJSONObjectExpressionWithoutTransaction()
+      for id in ids {
+        try execute(
+          """
+          INSERT INTO instant_outbox_quarantined (
+            mutation_id, reason, quarantined_at_ms, created_at_ms, status, json, outbox_row_json
+          )
+          SELECT mutation_id, ?, ?, created_at_ms, status, json, \(rowJSON)
+          FROM instant_outbox
+          WHERE mutation_id = ? AND \(predicate)
+          """,
+          [
+            .text(InstantQuarantinedMutation.Reason.noPreparationReceipt.rawValue),
+            .int(now.milliseconds),
+            .text(id),
+          ]
+        )
+        guard try selectInt64("SELECT changes()") == 1 else {
+          throw persistenceError(
+            operation: "quarantine a retained mutation without a preparation receipt",
+            message: "SQLite did not copy outbox row '\(id)' into the quarantine."
+          )
+        }
+        try execute("DELETE FROM instant_outbox_write_keys WHERE mutation_id = ?", [.text(id)])
+        try execute("DELETE FROM instant_outbox_effect_entities WHERE mutation_id = ?", [.text(id)])
+        try execute(
+          "DELETE FROM instant_outbox WHERE mutation_id = ? AND \(predicate)",
+          [.text(id)]
+        )
+        guard try selectInt64("SELECT changes()") == 1 else {
+          throw persistenceError(
+            operation: "quarantine a retained mutation without a preparation receipt",
+            message: "SQLite did not remove outbox row '\(id)' after copying it into the quarantine."
+          )
+        }
+      }
+      _ = try bumpMetadataRevisionWithoutTransaction(Self.outboxRevisionKey)
+      return ids
+    }
+    if !quarantinedIDs.isEmpty {
+      InstantDiagnostics.shared.record(
+        .error,
+        subsystem: "instant-swift-data-core",
+        category: "outbox",
+        event: "outbox.mutation.quarantined-no-preparation-receipt",
+        message: """
+          Moved \(quarantinedIDs.count) retained mutation\(quarantinedIDs.count == 1 ? "" : "s") without a \
+          preparation receipt into the quarantine; every other write synchronizes in its order.
+          """,
+        metadata: [
+          "count": String(quarantinedIDs.count),
+          "firstMutationID": quarantinedIDs[0],
+          "mutationIDs": quarantinedIDs.prefix(20).joined(separator: ","),
+          "table": "instant_outbox_quarantined",
+        ]
+      )
+    }
+    return quarantinedIDs
   }
 
-  /// The oldest `limit` quarantined mutations (#696).
+  /// Bootstrap's call of ``quarantineRetainedMutationsWithoutPreparationReceipt(now:)`` (#696). With
+  /// `.blockSynchronization` it does nothing. A failure rolls back, is recorded, and leaves the rows where they were,
+  /// so the blocker stops synchronization as it did up to 1.9.9; a launch never fails because of this step.
+  @discardableResult
+  func quarantineRetainedMutationsAtBootstrap(
+    recovery: InstantRetainedMutationRecovery,
+    now: InstantTimestamp
+  ) -> [String] {
+    guard recovery == .quarantine else { return [] }
+    do {
+      return try quarantineRetainedMutationsWithoutPreparationReceipt(now: now)
+    } catch {
+      InstantDiagnostics.shared.record(
+        error: error,
+        subsystem: "instant-swift-data-core",
+        category: "outbox",
+        event: "outbox.mutation.quarantine-failed",
+        message:
+          "Could not move retained mutations without a preparation receipt into the quarantine; they still block synchronization."
+      )
+      return []
+    }
+  }
+
+  /// The oldest `limit` quarantined mutations still held, in the order they had in the outbox (#696). A row sent
+  /// again, or whose reason this version does not know (a later version wrote it), is left out.
   func quarantinedOutboxMutations(limit: Int) throws -> [InstantQuarantinedMutation] {
-    _ = limit
-    return []
+    guard limit > 0 else { return [] }
+    return try readTransaction {
+      try heldQuarantinedOutboxMutationsWithoutTransaction(
+        """
+        SELECT mutation_id, reason, quarantined_at_ms, created_at_ms, status, json, outbox_row_json
+        FROM instant_outbox_quarantined
+        WHERE resolution IS NULL
+        ORDER BY created_at_ms, mutation_id, quarantine_id
+        LIMIT ?
+        """,
+        [.int(Int64(limit))]
+      )
+    }
   }
 
-  /// How many mutations the quarantine holds (#696).
+  /// How many quarantined mutations are still held (#696).
   func quarantinedOutboxMutationCount() throws -> Int {
-    0
+    try readTransaction {
+      guard try quarantinedOutboxTableExistsWithoutTransaction() else { return 0 }
+      return Int(
+        try selectInt64("SELECT COUNT(*) FROM instant_outbox_quarantined WHERE resolution IS NULL")
+      )
+    }
+  }
+
+  private func heldQuarantinedOutboxMutationsWithoutTransaction(
+    _ sql: String,
+    _ bindings: [SQLiteBinding]
+  ) throws -> [InstantQuarantinedMutation] {
+    guard try quarantinedOutboxTableExistsWithoutTransaction() else { return [] }
+    var statement: OpaquePointer?
+    try prepare(sql, statement: &statement)
+    defer { finishStatement(statement) }
+    try bind(bindings, to: statement)
+    var mutations: [InstantQuarantinedMutation] = []
+    while true {
+      let code = sqlite3_step(statement)
+      if code == SQLITE_DONE { return mutations }
+      guard code == SQLITE_ROW,
+        let idBytes = sqlite3_column_text(statement, 0),
+        let reasonBytes = sqlite3_column_text(statement, 1),
+        let statusBytes = sqlite3_column_text(statement, 4),
+        let bodyBytes = sqlite3_column_text(statement, 5),
+        let rowBytes = sqlite3_column_text(statement, 6)
+      else {
+        throw persistenceError(operation: "read quarantined mutations", message: lastErrorMessage())
+      }
+      guard let reason = InstantQuarantinedMutation.Reason(rawValue: String(cString: reasonBytes)) else {
+        continue
+      }
+      let body = String(cString: bodyBytes)
+      mutations.append(
+        InstantQuarantinedMutation(
+          id: String(cString: idBytes),
+          reason: reason,
+          quarantinedAt: InstantTimestamp(milliseconds: sqlite3_column_int64(statement, 2)),
+          createdAt: InstantTimestamp(milliseconds: sqlite3_column_int64(statement, 3)),
+          status: InstantMutationStatus(rawValue: String(cString: statusBytes)),
+          body: body,
+          outboxRowJSON: String(cString: rowBytes),
+          mutation: try? decodeOutboxBody(body) as PendingMutation
+        )
+      )
+    }
+  }
+
+  private func quarantinedOutboxTableExistsWithoutTransaction() throws -> Bool {
+    try selectInt64(
+      "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'instant_outbox_quarantined'"
+    ) != 0
+  }
+
+  /// Created by the first quarantine, not by a migration, so a store that never needs it never gains it (#696).
+  /// `quarantine_id` keeps a mutation quarantined twice as two rows: nothing in the table is ever replaced. A row stays
+  /// after Send Again, with `resolution` saying so; until then `resolution` is NULL and the row is held.
+  private func ensureQuarantinedOutboxTableWithoutTransaction() throws {
+    try execute(
+      """
+      CREATE TABLE IF NOT EXISTS instant_outbox_quarantined (
+        quarantine_id INTEGER PRIMARY KEY,
+        mutation_id TEXT NOT NULL,
+        reason TEXT NOT NULL,
+        quarantined_at_ms INTEGER NOT NULL,
+        created_at_ms INTEGER NOT NULL,
+        status TEXT NOT NULL,
+        json TEXT NOT NULL,
+        outbox_row_json TEXT NOT NULL,
+        resolution TEXT,
+        resolved_at_ms INTEGER
+      )
+      """
+    )
+    try execute(
+      """
+      CREATE INDEX IF NOT EXISTS instant_outbox_quarantined_order_idx
+      ON instant_outbox_quarantined (resolution, created_at_ms, mutation_id, quarantine_id)
+      """
+    )
+  }
+
+  /// A `json_object(...)` expression of every column `instant_outbox` has in this store, read from its schema, so a
+  /// quarantined row keeps the columns of whichever version wrote it. A BLOB, which no outbox column holds today, is
+  /// kept as its hex digits.
+  private func outboxRowJSONObjectExpressionWithoutTransaction() throws -> String {
+    let columns = try selectStrings("SELECT name FROM pragma_table_info('instant_outbox') ORDER BY cid")
+    guard !columns.isEmpty,
+      columns.allSatisfy({ name in
+        !name.isEmpty && name.unicodeScalars.allSatisfy { $0 == "_" || CharacterSet.alphanumerics.contains($0) }
+      })
+    else {
+      throw persistenceError(
+        operation: "quarantine a retained mutation without a preparation receipt",
+        message: "instant_outbox has a column name the quarantine cannot copy: \(columns)."
+      )
+    }
+    let pairs = columns.map { column in
+      "'\(column)', CASE typeof(\"\(column)\") WHEN 'blob' THEN json_object('hex', hex(\"\(column)\")) "
+        + "ELSE \"\(column)\" END"
+    }
+    return "json_object(\(pairs.joined(separator: ", ")))"
   }
 
   /// Returns the first active optimistic row that has no SQLite-owned Runtime
