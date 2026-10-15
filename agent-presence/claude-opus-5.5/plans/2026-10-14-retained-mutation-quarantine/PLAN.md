@@ -34,3 +34,13 @@ the startup wall (`InstantStoreTests.swift` and its neighbors), added 2026-10-14
 
 Conflict check: the files above were last claimed by the energy-98 plans (merged into v1.9.9, finished); no open
 channel names them.
+
+Touching also `Tests/InstantSwiftDataCoreTests/InstantOutboxDeliveryStallTests.swift`,
+`InstantOutboxSupersessionIntegrationTests.swift`, `InstantPersistenceCacheResidencyTests.swift` and
+`InstantStartupTraceTests.swift`: their tests seed receipt-less rows before launch to test 1.9.9's wall (or measure a
+store that keeps 500 or 10,000 such rows), so they now ask for `.blockSynchronization`; added 2026-10-14 23:26 EDT.
+
+Step 3 widened (2026-10-14 22:30): Scribe's feature contract (docs/FEATURES.md line 7, its main at 85ed45bd8) says a
+held write shows in the sync screen with Send Again and Export, so 1.9.10 also gets `retryQuarantinedMutation(id:)`
+(the held transaction becomes a new local write with the same ID and its own receipt; the quarantine row stays, marked
+`sent-again`) and a quarantined mutation's lifecycle reports failed instead of waiting forever.

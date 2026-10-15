@@ -116,13 +116,15 @@ struct InstantPersistenceCacheResidencyTests {
     )
     await persistence.simulateUnexpectedConnectionCloseForTesting()
 
-    let runtime = try await InstantRuntime.bootstrap(
-      configuration: InstantRuntimeConfiguration(
-        appID: "cache-residency-public-confirmation",
-        persistenceURL: cacheURL,
-        initialAttributes: cacheResidencyAttributes
-      )
+    var configuration = InstantRuntimeConfiguration(
+      appID: "cache-residency-public-confirmation",
+      persistenceURL: cacheURL,
+      initialAttributes: cacheResidencyAttributes
     )
+    // The 10,000 publicly saved rows have no preparation receipt, which 1.9.10 quarantines at launch (#696); this test
+    // measures the store with them in the outbox, as 1.9.9 kept them.
+    configuration.retainedMutationsWithoutPreparationReceipt = .blockSynchronization
+    let runtime = try await InstantRuntime.bootstrap(configuration: configuration)
     let revisionsBeforeConfirmation = try await runtime.persistence.loadCompactState()
     let queueWideReadCountBeforeConfirmation =
       await runtime.persistence.localMutationQueueWideReadCountForTesting()

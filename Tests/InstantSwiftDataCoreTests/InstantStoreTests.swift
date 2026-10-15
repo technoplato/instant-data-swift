@@ -2002,13 +2002,15 @@ struct InstantStoreTests {
         outbox: [ambiguousMutation]
       )
     )
-    let runtime = try await InstantRuntime.bootstrap(
-      configuration: InstantRuntimeConfiguration(
-        appID: "ambiguous-applied-no-rollback",
-        persistenceURL: cacheURL,
-        initialAttributes: TodoExample.attributes
-      )
+    var configuration = InstantRuntimeConfiguration(
+      appID: "ambiguous-applied-no-rollback",
+      persistenceURL: cacheURL,
+      initialAttributes: TodoExample.attributes
     )
+    // A receipt-less row present at launch is quarantined by default since 1.9.10 (#696); this test pins what
+    // blocking synchronization does with one, which an application can still ask for.
+    configuration.retainedMutationsWithoutPreparationReceipt = .blockSynchronization
+    let runtime = try await InstantRuntime.bootstrap(configuration: configuration)
     let beforeFailure = try await TodoExample.decode(runtime.query(TodoExample.query))
     expectNoDifference(
       beforeFailure.map(\.text),
@@ -2092,6 +2094,9 @@ struct InstantStoreTests {
     configuration.liveReconnectSleep = { _ in
       Issue.record("A local receipt-recovery condition must not schedule reconnect.")
     }
+    // A receipt-less row present at launch is quarantined by default since 1.9.10 (#696); this test pins what
+    // blocking synchronization does with one, which an application can still ask for.
+    configuration.retainedMutationsWithoutPreparationReceipt = .blockSynchronization
     let runtime = try await InstantRuntime.bootstrap(configuration: configuration)
 
     do {
@@ -2146,13 +2151,15 @@ struct InstantStoreTests {
       .optimisticEffectReceiptFingerprintForTesting(id: mutationID)
     expectNoDifference(missingReceipt, nil)
 
-    let runtime = try await InstantRuntime.bootstrap(
-      configuration: InstantRuntimeConfiguration(
-        appID: "same-id-untrusted-public-body",
-        persistenceURL: cacheURL,
-        initialAttributes: TodoExample.attributes
-      )
+    var configuration = InstantRuntimeConfiguration(
+      appID: "same-id-untrusted-public-body",
+      persistenceURL: cacheURL,
+      initialAttributes: TodoExample.attributes
     )
+    // A receipt-less row present at launch is quarantined by default since 1.9.10 (#696); this test pins what
+    // blocking synchronization does with one, which an application can still ask for.
+    configuration.retainedMutationsWithoutPreparationReceipt = .blockSynchronization
+    let runtime = try await InstantRuntime.bootstrap(configuration: configuration)
     let before = try await runtime.persistence.loadState()
     let beforeStore = await runtime.store.snapshot()
 
@@ -2263,6 +2270,9 @@ struct InstantStoreTests {
     configuration.liveReconnectSleep = { _ in
       reconnectSleepCount.withValue { $0 += 1 }
     }
+    // A receipt-less row present at launch is quarantined by default since 1.9.10 (#696); this test pins what
+    // blocking synchronization does with one, which an application can still ask for.
+    configuration.retainedMutationsWithoutPreparationReceipt = .blockSynchronization
     let runtime = try await InstantRuntime.bootstrap(configuration: configuration)
     expectNoDifference(connectionAttemptCount.withValue { $0 }, 0)
     expectNoDifference(reconnectSleepCount.withValue { $0 }, 0)
@@ -2688,13 +2698,15 @@ struct InstantStoreTests {
       isGlobal: true
     )
 
-    let runtime = try await InstantRuntime.bootstrap(
-      configuration: InstantRuntimeConfiguration(
-        appID: "pending-unknown-before-claim",
-        persistenceURL: cacheURL,
-        initialAttributes: TodoExample.attributes
-      )
+    var configuration = InstantRuntimeConfiguration(
+      appID: "pending-unknown-before-claim",
+      persistenceURL: cacheURL,
+      initialAttributes: TodoExample.attributes
     )
+    // A receipt-less row present at launch is quarantined by default since 1.9.10 (#696); this test pins what
+    // blocking synchronization does with one, which an application can still ask for.
+    configuration.retainedMutationsWithoutPreparationReceipt = .blockSynchronization
+    let runtime = try await InstantRuntime.bootstrap(configuration: configuration)
     let applicationError = LockIsolated<InstantError?>(nil)
     try await withKnownIssue {
       do {
@@ -2883,13 +2895,15 @@ struct InstantStoreTests {
       .confirmed
     )
 
-    let runtime = try await InstantRuntime.bootstrap(
-      configuration: InstantRuntimeConfiguration(
-        appID: "server-accepted-unknown-watermark",
-        persistenceURL: cacheURL,
-        initialAttributes: TodoExample.attributes
-      )
+    var configuration = InstantRuntimeConfiguration(
+      appID: "server-accepted-unknown-watermark",
+      persistenceURL: cacheURL,
+      initialAttributes: TodoExample.attributes
     )
+    // A receipt-less row present at launch is quarantined by default since 1.9.10 (#696); this test pins what
+    // blocking synchronization does with one, which an application can still ask for.
+    configuration.retainedMutationsWithoutPreparationReceipt = .blockSynchronization
+    let runtime = try await InstantRuntime.bootstrap(configuration: configuration)
     let watermarkError = LockIsolated<InstantError?>(nil)
     try await withKnownIssue {
       do {

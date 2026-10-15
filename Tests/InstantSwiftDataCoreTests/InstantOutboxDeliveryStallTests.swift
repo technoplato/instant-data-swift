@@ -558,14 +558,16 @@ struct InstantOutboxDeliveryStallTests {
     let liveSession = LiveReactorParitySession(messages: [
       liveReactorInitOK(attrs: liveReactorTodoServerAttrs)
     ])
-    let runtime = try await InstantRuntime.bootstrap(
-      configuration: InstantRuntimeConfiguration(
-        appID: "outbox-stall-legacy-unknown",
-        persistenceURL: cacheURL,
-        initialAttributes: TodoExample.attributes,
-        liveTransport: liveSession.transport
-      )
+    var configuration = InstantRuntimeConfiguration(
+      appID: "outbox-stall-legacy-unknown",
+      persistenceURL: cacheURL,
+      initialAttributes: TodoExample.attributes,
+      liveTransport: liveSession.transport
     )
+    // A receipt-less row present at launch is quarantined by default since 1.9.10 (#696); this test pins what
+    // blocking synchronization does with one, which an application can still ask for.
+    configuration.retainedMutationsWithoutPreparationReceipt = .blockSynchronization
+    let runtime = try await InstantRuntime.bootstrap(configuration: configuration)
 
     do {
       _ = try await runtime.connect()
@@ -660,6 +662,9 @@ struct InstantOutboxDeliveryStallTests {
     )
     configuration.liveReconnectSleep = { _ in }
     configuration.autoConnectLiveTransport = false
+    // A receipt-less row present at launch is quarantined by default since 1.9.10 (#696); this test pins what
+    // blocking synchronization does with one, which an application can still ask for.
+    configuration.retainedMutationsWithoutPreparationReceipt = .blockSynchronization
     let runtime = try await InstantRuntime.bootstrap(configuration: configuration)
     let plan = TodoExample.query
     let stream = await runtime.observe(plan)

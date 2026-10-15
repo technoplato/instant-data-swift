@@ -780,7 +780,12 @@ struct InstantOutboxSupersessionIntegrationTests {
     let originalJSON = try supersessionOutboxRawRow(id: tail.id, cacheURL: cacheURL).json
     await persistence.simulateUnexpectedConnectionCloseForTesting()
 
-    let runtime = try await makeOfflineRuntime(cacheURL: cacheURL)
+    // A receipt-less row present at launch is quarantined by default since 1.9.10 (#696); this test pins what
+    // blocking synchronization does with one, which an application can still ask for.
+    let runtime = try await makeOfflineRuntime(
+      cacheURL: cacheURL,
+      retainedMutationsWithoutPreparationReceipt: .blockSynchronization
+    )
     try await withKnownIssue {
       _ = try await runtime.transact(
         integrationTransaction(id: "after-public-untrusted-tail", value: "new", timestamp: 2),
@@ -957,7 +962,12 @@ struct InstantOutboxSupersessionIntegrationTests {
       )
     )
     try await persistence.saveOutbox([oversized])
-    let runtime = try await makeOfflineRuntime(cacheURL: cacheURL)
+    // A receipt-less row present at launch is quarantined by default since 1.9.10 (#696); this test pins what
+    // blocking synchronization does with one, which an application can still ask for.
+    let runtime = try await makeOfflineRuntime(
+      cacheURL: cacheURL,
+      retainedMutationsWithoutPreparationReceipt: .blockSynchronization
+    )
     let bootstrapDecodeCount = await runtime.persistence.currentDecodedOutboxBodyCount()
     expectNoDifference(
       bootstrapDecodeCount,
@@ -1199,13 +1209,17 @@ private func temporaryCacheURL(_ suffix: String) -> URL {
     .appendingPathComponent("instant-outbox-supersession-\(suffix)-\(UUID().uuidString).sqlite")
 }
 
-private func makeOfflineRuntime(cacheURL: URL) async throws -> InstantRuntime {
+private func makeOfflineRuntime(
+  cacheURL: URL,
+  retainedMutationsWithoutPreparationReceipt: InstantRetainedMutationRecovery = .quarantine
+) async throws -> InstantRuntime {
   var configuration = InstantRuntimeConfiguration(
     appID: "outbox-supersession-\(UUID().uuidString)",
     persistenceURL: cacheURL,
     initialAttributes: TodoExample.attributes
   )
   configuration.autoConnectLiveTransport = false
+  configuration.retainedMutationsWithoutPreparationReceipt = retainedMutationsWithoutPreparationReceipt
   return try await InstantRuntime.bootstrap(configuration: configuration)
 }
 

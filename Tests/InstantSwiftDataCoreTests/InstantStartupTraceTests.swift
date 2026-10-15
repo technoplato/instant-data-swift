@@ -123,6 +123,9 @@ struct InstantStartupTraceTests {
       persistenceURL: persistenceURL
     )
     configuration.startupTrace = trace
+    // The 500 publicly saved rows have no preparation receipt, which 1.9.10 quarantines at launch (#696); this test
+    // traces the load of a store that keeps them in the outbox, as 1.9.9 did.
+    configuration.retainedMutationsWithoutPreparationReceipt = .blockSynchronization
 
     let runtime = try await InstantRuntime.bootstrap(configuration: configuration)
     let state = try await runtime.persistence.loadState()
