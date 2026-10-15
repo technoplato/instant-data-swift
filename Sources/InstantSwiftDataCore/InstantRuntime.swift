@@ -12596,6 +12596,19 @@ public final class InstantRuntime: Sendable {
     return try await persistence.quarantinedOutboxMutationCount()
   }
 
+  /// Sends a quarantined mutation again (#696).
+  @discardableResult
+  @concurrent
+  public func retryQuarantinedMutation(id: String) async throws -> InstantStoreMutationResult {
+    throw InstantError(
+      code: .implementationFailed,
+      operation: "send a quarantined mutation again",
+      localID: id,
+      message: "Not implemented.",
+      recovery: "None."
+    )
+  }
+
   /// The oldest `limit` pending mutations, in send order, read from SQLite without the operation gate and without
   /// decoding the rest of the queue (#445). Scribe's Sync view lists pending writes while a recording keeps writing;
   /// `pendingMutations()` decodes every pending row under the operation gate, and on Michael's iPhone after a relaunch

@@ -190,6 +190,71 @@ struct InstantRetainedMutationQuarantineTests {
     )
   }
 
+  /// Send Again: a quarantined mutation's transaction becomes a new local write with the same ID, prepared against the
+  /// store as it is now with its own preparation receipt, waiting to send. The quarantine keeps the row, marked sent
+  /// again, and no longer lists it as held; a second Send Again finds nothing held and writes nothing. Until then the
+  /// mutation's lifecycle observers see it failed, not waiting forever.
+  @Test
+  func sendAgainWritesAQuarantinedMutationAnewAndKeepsItsRow() async throws {
+    let cacheURL = try quarantineTestCacheURL()
+    let receiptless = quarantineTestReceiptlessMutations(
+      startingAt: InstantTimestamp(milliseconds: 1_754_000_300_000)
+    )
+    let persistence = try SQLitePersistenceStore(fileURL: cacheURL)
+    try await persistence.bootstrap()
+    try await persistence.saveOutbox(receiptless)
+    await persistence.simulateUnexpectedConnectionCloseForTesting()
+
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "retained-mutation-send-again",
+        persistenceURL: cacheURL,
+        initialAttributes: TodoExample.attributes
+      )
+    )
+    let heldBefore = try await runtime.quarantinedMutations(limit: 10)
+    expectNoDifference(heldBefore.map(\.id), receiptless.map(\.id))
+    let pendingBefore = await runtime.pendingMutationCount()
+    expectNoDifference(pendingBefore, 0)
+
+    // A held mutation's observers learn that the library will not send it on its own, instead of waiting forever.
+    let heldLifecycle = try await runtime.observeMutationLifecycle(id: receiptless[0].id)
+    var heldIterator = heldLifecycle.makeAsyncIterator()
+    guard case let .failed(heldEvent)? = await heldIterator.next() else {
+      Issue.record("A quarantined mutation's lifecycle is a failure, not a wait that never ends.")
+      return
+    }
+    expectNoDifference(heldEvent.id, receiptless[0].id)
+    #expect(heldEvent.failureMessage?.contains("instant_outbox_quarantined") == true)
+    #expect(heldEvent.isLegacyUnknownOverlayCandidate)
+
+    // The one the server had refused, as Send Again on a refused write does.
+    let sentAgain = receiptless[2]
+    let result = try await runtime.retryQuarantinedMutation(id: sentAgain.id)
+    expectNoDifference(result.transactionID, sentAgain.id)
+    let pending = await runtime.pendingMutations(limit: 10)
+    expectNoDifference(pending.map(\.id), [sentAgain.id])
+    expectNoDifference(pending.first?.transaction, sentAgain.transaction)
+    let receipt = try await runtime.persistence.optimisticEffectReceiptFingerprintForTesting(id: sentAgain.id)
+    #expect(receipt != nil, "Sent again, the write has its own preparation receipt.")
+    let todos = try await TodoExample.decode(runtime.query(TodoExample.query))
+    expectNoDifference(todos.map(\.text), ["written before preparation receipts 2"])
+
+    let heldAfter = try await runtime.quarantinedMutations(limit: 10)
+    expectNoDifference(heldAfter.map(\.id), [receiptless[0].id, receiptless[1].id])
+    let countAfter = try await runtime.quarantinedMutationCount()
+    expectNoDifference(countAfter, 2)
+    let rows = try quarantineTestQuarantineRows(in: cacheURL)
+    expectNoDifference(rows.map { $0.id }, receiptless.map(\.id))
+    expectNoDifference(rows.map { $0.resolution }, [nil, nil, "sent-again"])
+
+    await #expect(throws: InstantError.self) {
+      try await runtime.retryQuarantinedMutation(id: sentAgain.id)
+    }
+    let pendingAfterSecond = await runtime.pendingMutationCount()
+    expectNoDifference(pendingAfterSecond, 1)
+  }
+
   /// An application that wants the 1.9.9 wall keeps it: the receipt-less mutations stay in the outbox and refuse the
   /// connection, and nothing is quarantined.
   @Test
@@ -306,10 +371,12 @@ private func quarantineTestTransactLaterWrites(
   return ids
 }
 
+/// The waits return as soon as their condition holds; 60 s bounds only a real hang on a crowded machine (a 10 s bound
+/// timed out under a load of about 100).
 private func quarantineTestWaitForTransacts(count: Int, in session: LiveReactorParitySession) async throws {
   try await instantLiveWithTimeout(
     operation: "wait for the later writes to be sent",
-    timeoutMilliseconds: 10_000
+    timeoutMilliseconds: 60_000
   ) {
     while await session.sentMessages().filter({ $0.op == "transact" }).count < count {
       try Task.checkCancellation()
@@ -321,7 +388,7 @@ private func quarantineTestWaitForTransacts(count: Int, in session: LiveReactorP
 private func quarantineTestWaitUntilDrained(_ runtime: InstantRuntime) async throws {
   try await instantLiveWithTimeout(
     operation: "wait for the outbox to drain",
-    timeoutMilliseconds: 10_000
+    timeoutMilliseconds: 60_000
   ) {
     while await runtime.pendingMutationCount() > 0 {
       try Task.checkCancellation()
@@ -442,6 +509,22 @@ private func quarantineTestDatabaseDump(_ cacheURL: URL) throws -> QuarantineTes
       .sorted()
   }
   return QuarantineTestDatabaseDump(schema: schema, rows: rows)
+}
+
+/// Every row of the quarantine table, in the order it was written: its mutation and its resolution.
+private func quarantineTestQuarantineRows(in cacheURL: URL) throws -> [(id: String, resolution: String?)] {
+  let database = try quarantineTestOpen(cacheURL)
+  defer { sqlite3_close(database) }
+  return try quarantineTestQuery(
+    database,
+    "SELECT mutation_id, resolution FROM instant_outbox_quarantined ORDER BY quarantine_id"
+  ).map { row in
+    guard case .text(let id) = row[0].value else {
+      throw QuarantineTestSQLiteError(message: "A quarantine row has no mutation_id.")
+    }
+    if case .text(let resolution) = row[1].value { return (id, resolution) }
+    return (id, nil)
+  }
 }
 
 /// The quarantine's JSON object for a row, read back as SQLite values.

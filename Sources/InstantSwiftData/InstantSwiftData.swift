@@ -1330,6 +1330,21 @@ public struct InstantSwiftDataClient: Sendable {
     return try await runtime.quarantinedMutationCount()
   }
 
+  /// Sends a quarantined mutation again (#696).
+  @discardableResult
+  public func retryQuarantinedMutation(id: String) async throws -> InstantStoreMutationResult {
+    guard let runtime else {
+      throw InstantError(
+        code: .implementationFailed,
+        operation: "send a quarantined mutation again",
+        localID: id,
+        message: "This Instant Swift Data client has no runtime outbox lifecycle.",
+        recovery: "Use a runtime-backed client to send quarantined mutations again."
+      )
+    }
+    return try await runtime.retryQuarantinedMutation(id: id)
+  }
+
   @discardableResult
   public func retryFailedMutation(id: String) async throws -> InstantFailedMutationResolution {
     guard let runtime else {
