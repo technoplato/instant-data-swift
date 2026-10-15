@@ -17018,6 +17018,75 @@ public actor SQLitePersistenceStore {
     }
   }
 
+  // MARK: Live-query ownership reads, for tests (#704)
+  //
+  // Each answers through the private statement the runtime uses, so a test can compare what a store answers before and
+  // after its ownership rows change layout.
+
+  /// The ownership rows of the stored result for `queryKey` as `[entityID, attributeID, valueJSON]`, sorted.
+  package func liveQueryOwnershipForTesting(queryKey: String) throws -> [[String]] {
+    try readTransaction {
+      try liveQueryOwnershipWithoutTransaction(queryKey: queryKey)
+        .sorted(by: Self.liveQueryOwnershipOrder)
+        .map { [$0.entityID, $0.attributeID, $0.valueJSON] }
+    }
+  }
+
+  /// Whether a stored result whose key is not in `excludingQueryKeys` owns `triple`'s fact.
+  package func liveQueryTripleHasOwnerForTesting(
+    _ triple: InstantTriple,
+    excludingQueryKeys: Set<String>
+  ) throws -> Bool {
+    try readTransaction {
+      try liveQueryTripleHasOwnerWithoutTransaction(
+        InstantLiveTripleIdentity(triple),
+        excludingQueryKeys: excludingQueryKeys
+      )
+    }
+  }
+
+  /// #441's read: when the newest result stored at or after `milliseconds` that shows `triple` was stored.
+  func newestServerResultShowingForTesting(
+    _ triple: InstantTriple,
+    attributes: AttributeStore,
+    storedAtOrAfter milliseconds: Int64
+  ) throws -> Int64? {
+    try readTransaction {
+      try newestServerResultShowingWithoutTransaction(triple, attributes: attributes, storedAtOrAfter: milliseconds)
+    }
+  }
+
+  /// #445's read: the values the newest stored result that holds `triple`'s slot shows for it.
+  package func newestServerValuesForTesting(of triple: InstantTriple) throws -> [InstantValue] {
+    try readTransaction {
+      try newestServerValuesWithoutTransaction(of: triple)
+    }
+  }
+
+  /// The result keys an application migration of `affectedAttributeIDs` visits, in its order.
+  package func applicationMigrationLiveQueryResultKeysForTesting(
+    affectedAttributeIDs: Set<String>
+  ) throws -> [String] {
+    try readTransaction {
+      var keys: [String] = []
+      var cursor: String?
+      while let row = try nextApplicationMigrationLiveQueryResultWithoutTransaction(
+        after: cursor,
+        affectedAttributeIDs: affectedAttributeIDs
+      ) {
+        switch row {
+        case let .oversized(queryKey, _):
+          keys.append(queryKey)
+          cursor = queryKey
+        case let .decoded(result):
+          keys.append(result.key)
+          cursor = result.key
+        }
+      }
+      return keys
+    }
+  }
+
   private static func liveQueryOwnershipOrder(
     _ lhs: LiveQueryOwnershipIdentity,
     _ rhs: LiveQueryOwnershipIdentity
