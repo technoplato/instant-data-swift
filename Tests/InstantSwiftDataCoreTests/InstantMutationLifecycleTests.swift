@@ -102,9 +102,12 @@ struct InstantMutationLifecycleTests {
     mutation.confirmationSource = .webSocketTransactOK
     try await persistence.saveOutbox([mutation])
 
+    // The caller-shaped acceptance stays in the outbox only when the 1.9.9 wall is asked for: by default 1.9.10
+    // quarantines the receipt-less row at launch, and its lifecycle then reports it failed, never accepted (#696).
     let runtime = try await mutationLifecycleRuntime(
       "untrusted-accepted",
-      cacheURL: cacheURL
+      cacheURL: cacheURL,
+      retainedMutationsWithoutPreparationReceipt: .blockSynchronization
     )
     let lifecycle = try await runtime.observeMutationLifecycle(id: mutation.id)
     var iterator = lifecycle.makeAsyncIterator()
@@ -307,17 +310,18 @@ struct InstantMutationLifecycleTests {
 private func mutationLifecycleRuntime(
   _ suffix: String,
   cacheURL: URL? = nil,
-  mutationTransport: InstantMutationTransportClient = .local
+  mutationTransport: InstantMutationTransportClient = .local,
+  retainedMutationsWithoutPreparationReceipt: InstantRetainedMutationRecovery = .quarantine
 ) async throws -> InstantRuntime {
   let cacheURL = cacheURL ?? mutationLifecycleCacheURL(suffix)
-  return try await InstantRuntime.bootstrap(
-    configuration: InstantRuntimeConfiguration(
-      appID: "mutation-lifecycle-\(suffix)",
-      persistenceURL: cacheURL,
-      initialAttributes: TodoExample.attributes,
-      mutationTransport: mutationTransport
-    )
+  var configuration = InstantRuntimeConfiguration(
+    appID: "mutation-lifecycle-\(suffix)",
+    persistenceURL: cacheURL,
+    initialAttributes: TodoExample.attributes,
+    mutationTransport: mutationTransport
   )
+  configuration.retainedMutationsWithoutPreparationReceipt = retainedMutationsWithoutPreparationReceipt
+  return try await InstantRuntime.bootstrap(configuration: configuration)
 }
 
 private func mutationLifecycleCacheURL(_ suffix: String) -> URL {
