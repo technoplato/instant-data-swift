@@ -1,3 +1,12 @@
+## 2026-10-15 13:56:36 EDT — realtime-voice-sqlite-instant `f653c28e3adb10b7986835e0726bd01080186011`
+Change log: the 1.9.11 pin (d48792784) and the device temperature audit's section 12 (2771d2316) (#704)
+
+## 2026-10-15 13:52:30 EDT — realtime-voice-sqlite-instant `2771d2316f05b340a2a1a7873e25f5567b00d175`
+Device temperature audit, section 12: the live-query cache's ownership table measured on copies of the iPhone's store, 328.9 MB -> 13.85 MB with instant-data-swift 1.9.11, 120,726 answers identical, conversion about half a second once (#704)
+
+## 2026-10-15 13:45:06 EDT — realtime-voice-sqlite-instant `d48792784a2fa1e7503c13abc579c726c1e9acc6`
+Pin instant-data-swift exactly 1.9.11 instead of 1.9.10: live-query ownership rows name their result by an integer id instead of repeating the query's whole key, so the cache's ownership table on the iPhone's store goes from 329 MB to about 14 MB (#704)
+
 ## 2026-10-15 13:40:44 EDT — instant-data-swift `2e489afc5281a292267ae7259fffd73fb7e1c91d`
 Merge origin/main (e8d0eeb9, audit ledger only) into the #704 branch before its release ledger
 
