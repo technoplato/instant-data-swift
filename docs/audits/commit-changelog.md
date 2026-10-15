@@ -1,3 +1,21 @@
+## 2026-10-15 13:40:44 EDT — instant-data-swift `2e489afc5281a292267ae7259fffd73fb7e1c91d`
+Merge origin/main (e8d0eeb9, audit ledger only) into the #704 branch before its release ledger
+
+## 2026-10-15 13:40:37 EDT — instant-data-swift `a2f6c6f5910ee77bbb2668822011563be8416b6e`
+Document the v1.9.11 release: live-query ownership rows name their result by an integer id instead of repeating the query's whole key (#704)
+
+## 2026-10-15 13:21:05 EDT — instant-data-swift `a6fa6662164daf2985ff578420b24ed33c242765`
+Green: live-query ownership rows name their result by an integer query_id instead of repeating the query's whole key, and a store in 0011's layout converts once at open (#704, ADR 0020)
+
+## 2026-10-15 11:52:18 EDT — instant-data-swift `2f776bb53b9d3a38d6299978446b17ec341a0784`
+Red: live-query ownership keyed by a compact query id: the layout, a long-keyed result's bytes, 0011's layout converted at open and answering every read as 1.9.10 did, an interrupted conversion, a row without a result, and the open budget (#704)
+
+## 2026-10-15 08:51:22 EDT — instant-data-swift `2d0c3014f995a6fa36f0866b92c9a5b83f5d5383`
+ADR 0020: live-query ownership rows carry a compact query id instead of the query's whole JSON key, and a one-time conversion at open (#704)
+
+## 2026-10-15 08:48:00 EDT — instant-data-swift `57ac9705bdff2310d7168ddfcfb1fb4447fb509e`
+Plan and claims for #704: live-query ownership rows keyed by a compact query id instead of the query's whole JSON key
+
 ## 2026-10-15 09:52:28 EDT — realtime-voice-sqlite-instant `c146a01a14437a9835e3470a8b5ac72a0800ac7c`
 Set Scribe 0.1 (101): CURRENT_PROJECT_VERSION 101 on the 12 lines that carried 100
 

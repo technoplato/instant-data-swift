@@ -10,6 +10,70 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## October 15th, 2026 at 1:41:04 p.m. EDT — `a2f6c6f5910e` Document the v1.9.11 release: live-query ownership rows name their result by an integer id instead of repeating the query's whole key (#704)
+
+- **Implementation commit:** `a2f6c6f5910ee77bbb2668822011563be8416b6e`
+- **Change:** Document the v1.9.11 release (#704)
+- **Details:**
+  - Release document and PROGRESS entry.
+- **Files:**
+  - `docs/releases/v1.9.11.md` — the release document
+  - `PROGRESS.md` — the release entry
+- **User context (verbatim):**
+  > Do 704
+- **SpecStory:** unavailable — Claude Code sub-agent run (resumed in a new session on 2026-10-15); no SpecStory capture exists for it.
+
+## October 15th, 2026 at 1:41:04 p.m. EDT — `a6fa6662164d` Green: live-query ownership rows name their result by an integer query_id instead of repeating the query's whole key, and a store in 0011's layout converts once at open (#704, ADR 0020)
+
+- **Implementation commit:** `a6fa6662164daf2985ff578420b24ed33c242765`
+- **Change:** Green: ownership rows name their result by query_id; 0011's layout converts once at open (#704)
+- **Details:**
+  - Whole suite on a clean build: only the known 7 fail; device copy 328.9 MB -> 13.85 MB, 120,726 answers identical.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — layout, statements, conversion
+  - `Tests/InstantSwiftDataCoreTests/InstantStoreTests.swift` — with five other test files, ownership read through the result's id
+  - `docs/adr/0020-compact-live-query-ownership.md` — the conversion as built
+- **User context (verbatim):**
+  > Do 704
+- **SpecStory:** unavailable — Claude Code sub-agent run (resumed in a new session on 2026-10-15); no SpecStory capture exists for it.
+
+## October 15th, 2026 at 1:41:04 p.m. EDT — `2f776bb53b9d` Red: live-query ownership keyed by a compact query id: the layout, a long-keyed result's bytes, 0011's layout converted at open and answering every read as 1.9.10 did, an interrupted conversion, a row without a result, and the open budget (#704)
+
+- **Implementation commit:** `2f776bb53b9d3a38d6299978446b17ec341a0784`
+- **Change:** Red: compact live-query ownership tests (#704)
+- **Details:**
+  - Six of seven fail for the layout's reason; 1.9.10's answer digest recorded as a constant.
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantLiveQueryCompactOwnershipTests.swift` — the red tests
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — read-only test hooks
+- **User context (verbatim):**
+  > Do 704
+- **SpecStory:** unavailable — Claude Code sub-agent run (resumed in a new session on 2026-10-15); no SpecStory capture exists for it.
+
+## October 15th, 2026 at 1:41:04 p.m. EDT — `2d0c3014f995` ADR 0020: live-query ownership rows carry a compact query id instead of the query's whole JSON key, and a one-time conversion at open (#704)
+
+- **Implementation commit:** `2d0c3014f995a6fa36f0866b92c9a5b83f5d5383`
+- **Change:** ADR 0020: compact live-query ownership (#704)
+- **Details:**
+  - query_id INTEGER PRIMARY KEY, WITHOUT ROWID ownership, one-transaction conversion at open.
+- **Files:**
+  - `docs/adr/0020-compact-live-query-ownership.md` — the decision
+- **User context (verbatim):**
+  > Do 704
+- **SpecStory:** unavailable — Claude Code sub-agent run (resumed in a new session on 2026-10-15); no SpecStory capture exists for it.
+
+## October 15th, 2026 at 1:41:04 p.m. EDT — `57ac9705bdff` Plan and claims for #704: live-query ownership rows keyed by a compact query id instead of the query's whole JSON key
+
+- **Implementation commit:** `57ac9705bdff2310d7168ddfcfb1fb4447fb509e`
+- **Change:** Plan and claims for #704: ownership rows keyed by a compact query id
+- **Details:**
+  - Plan before code; measured 328.9 MB for 32,555 rows on a copied store.
+- **Files:**
+  - `_touching/CHANGELOG.md/CHANGELOG.md/.agents/agents.txt` — the plan and path claims
+- **User context (verbatim):**
+  > Do 704
+- **SpecStory:** unavailable — Claude Code sub-agent run (resumed in a new session on 2026-10-15); no SpecStory capture exists for it.
+
 ## October 15th, 2026 at 2:33:04 a.m. EDT — `97f3ad1d8080` Document the v1.9.10 release: a retained mutation with no preparation receipt is quarantined at launch, and every other write drains in order, instead of refusing every live connection (#696)
 
 - **Implementation commit:** `97f3ad1d8080352814b40ae202a3345613aaceb4`
