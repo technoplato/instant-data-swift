@@ -1,3 +1,21 @@
+## 2026-10-19 19:25:30 EDT — realtime-voice `116f1262ced05b6f8ff27d2258c852aaf05acdf7`
+Change log for #904's ffmpeg agent check and unreadable-row reporting (6820f94ff, 30fc4cf30) (#904)
+
+## 2026-10-19 19:25:10 EDT — realtime-voice `df77168473a2f1b3807f42aa98344ffcc4bddeb8`
+ADR 0082 records the live run: 3 of 5 links played, all 3 that yt-dlp fetches without a login (#904)
+
+## 2026-10-19 19:24:47 EDT — realtime-voice `1d89af5c6fdb9a217b0211746659a356446cc143`
+scribe-videos move/remove help says they take a link too (#904)
+
+## 2026-10-19 19:23:14 EDT — realtime-voice `30fc4cf3012710e7161207afb6f1dc7f1d77368e`
+An unreadable queue row is reported (reportIssue on the phone, stderr on the Mac), never dropped silently (#904)
+
+## 2026-10-19 19:23:14 EDT — realtime-voice `ddbc76cd6d21a4049275f8b7c77fea4f39bf9f16`
+Red: a queue row this build cannot read is named, not dropped (#904)
+
+## 2026-10-19 19:10:31 EDT — realtime-voice `6820f94fff46538266a9e8d72c8d513817417feb`
+The prepare LaunchAgent checks ffmpeg and passes it as --ffmpeg (#904)
+
 ## 2026-10-19 19:09:09 EDT — realtime-voice `7968047b66f080329b2f8b04586f2a146c7b0880`
 Change log for #904's any link (24f83b810, 772ddfe4a) (#904)
 
