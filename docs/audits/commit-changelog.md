@@ -1,3 +1,18 @@
+## 2026-10-19 19:09:09 EDT — realtime-voice `7968047b66f080329b2f8b04586f2a146c7b0880`
+Change log for #904's any link (24f83b810, 772ddfe4a) (#904)
+
+## 2026-10-19 19:07:22 EDT — realtime-voice `772ddfe4a2bf78a27142ccdaa5ccf9fa389d9191`
+Scribe Videos declares videoQueueItems.sourceURL, so a link the phone queues writes (#904)
+
+## 2026-10-19 19:07:16 EDT — realtime-voice `b2b676b936bcc6815ce007c3de7c5d36dcde832d`
+Red: a link the phone queues names only declared attributes (#904)
+
+## 2026-10-19 19:07:16 EDT — realtime-voice `24f83b810205695146c1931accbab5f100e86ff1`
+Scribe Videos takes any link (TikTok, SoundCloud, any page yt-dlp fetches): QueueMedia.web, the generic yt-dlp recipe, mediaPlay kind webMedia with site and sourceURL, schema webMedia/sourceURL/web (#904)
+
+## 2026-10-19 19:06:54 EDT — realtime-voice `81ed9d559faf604c711ab98044775aaee0ac9427`
+Red: Scribe Videos takes any link (#904)
+
 ## 2026-10-15 13:56:36 EDT — realtime-voice-sqlite-instant `f653c28e3adb10b7986835e0726bd01080186011`
 Change log: the 1.9.11 pin (d48792784) and the device temperature audit's section 12 (2771d2316) (#704)
 
