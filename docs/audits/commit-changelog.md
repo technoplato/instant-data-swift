@@ -1,3 +1,51 @@
+## 2026-10-19 19:40:36 EDT — realtime-voice `f7370542f56331e8fd94221fa1bf14d729281561`
+audits(#906): index row for the media-catalog audit (#768 rounds 1-2, #906 round 3), which had none
+
+## 2026-10-19 19:40:11 EDT — realtime-voice `c55850c4b2f344e650e468a3cc5c1d67226df21a`
+docs(#906): the catalog step's first live run, the backfill done (20 of 20), one signing one row, heard only on Your Mac (#914)
+
+## 2026-10-19 19:39:56 EDT — realtime-voice `3adfb2233cf483be6a157eadffb2c42278766ff0`
+claims(#906): one index row in audits/README.md for the media-catalog audit (it had none)
+
+## 2026-10-19 19:29:17 EDT — realtime-voice `69a4a01df2983c99b271d96995ce48d40318dfcd`
+changelog(#906): the words step writes the row of the item it signed (d80e72107)
+
+## 2026-10-19 19:27:01 EDT — realtime-voice `d80e721070c409927bd1c3664243b0fae2652846`
+Green: the words step writes the row of the item it signed, whatever its catalog (#906)
+
+## 2026-10-19 19:21:52 EDT — realtime-voice `208668f05bc9ef86d41ca14f8df69c7706e8a794`
+Red: the words step writes the row of the item it signed, whatever its catalog (#906)
+
+## 2026-10-19 19:21:09 EDT — realtime-voice `205f2c92b6ecac860a35a2b32add8eb2090b1cf9`
+plan(#906): the words step writes the row of the item it signed (a link lands in scribe-media); claim words-on-mini.sh; channel note for #904
+
+## 2026-10-19 19:18:29 EDT — realtime-voice `dbf96bf0fed544a204585edb917ff278177613c7`
+changelog(#906): install-launch-agent.sh --binary=PATH (152f14c13)
+
+## 2026-10-19 18:55:24 EDT — realtime-voice `152f14c13724763ddb53cb1052fa599a9cd88a2a`
+install-launch-agent.sh --binary=PATH: install a release scribe-videos built elsewhere (#906)
+
+## 2026-10-19 18:53:28 EDT — realtime-voice `83e1f6594e60e1c1d38515cce2be6032ccc2b3b0`
+changelog(#906): everything Scribe Videos ingests goes into our ShazamKit catalog
+
+## 2026-10-19 18:52:14 EDT — realtime-voice `bf38792c055bc2d75843d66a6911a50188f5fa96`
+docs(#906): ADR 0082 "Catalog on ingest"; audit round 3 (real plays out loud: 20/20, time to match, ads, intros, cold load)
+
+## 2026-10-19 18:51:33 EDT — realtime-voice `ca9792e9dff18cbdc9404c0cfda028a745ee754f`
+Green: everything Scribe Videos ingests is signed into our ShazamKit catalog by its own prepare step (#906)
+
+## 2026-10-19 18:00:28 EDT — realtime-voice `285101464cf3a9677a4004a56440155c240316c6`
+Red: a signing that leaves no catalog entry under the queue's media key is a failure, not done (#906)
+
+## 2026-10-19 17:51:13 EDT — realtime-voice `9ebd006b1edbec60e5acc78e7e86861618eacb67`
+Red: everything Scribe Videos ingests is signed into our ShazamKit catalog by its own prepare step (#906)
+
+## 2026-10-19 17:39:01 EDT — realtime-voice `f962645b03b7c0ca69e9de029fd36529cb80e8a9`
+test(#906): the catalog tests see a Mac with room, so they run on a busy laptop instead of hanging (#887 finding)
+
+## 2026-10-19 17:30:10 EDT — realtime-voice `bd3ea416e44111db2fd70f962d8cd098431f45eb`
+plan(#906): every item Scribe Videos ingests goes into our ShazamKit catalog as its own prepare step; claims
+
 ## 2026-10-19 19:25:30 EDT — realtime-voice `116f1262ced05b6f8ff27d2258c852aaf05acdf7`
 Change log for #904's ffmpeg agent check and unreadable-row reporting (6820f94ff, 30fc4cf30) (#904)
 
