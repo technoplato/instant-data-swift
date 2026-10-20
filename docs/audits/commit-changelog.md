@@ -1,3 +1,81 @@
+## 2026-10-20 02:57:12 EDT — scribe `9aaf875538c532b679a759f19cc60938012c80a8`
+NOW.md is the read-first page; handoff.md keeps active sections (11196dec4) (#833).
+
+## 2026-10-20 02:56:23 EDT — scribe `d4d3bd5f3428a4a2ac2a0ecdfa39f2cb3d7990c0`
+NOW.md is the read-first page; handoff.md keeps active sections; guidance, drill, audit (#833).
+
+## 2026-10-20 02:55:58 EDT — scribe `2d7728257628ee1ebaa63f7fa235764c48d7a455`
+Audit: the read-first set before and after, the archive's proof, every writer, the Background starvation, the drill (#833).
+
+## 2026-10-20 02:53:33 EDT — scribe `11196dec4f2a6bfee639d5ba445272604e5b351f`
+Green: finished sections move after 12 h idle, open ones after 48 h, no-issue ones after 24 h (#833).
+
+## 2026-10-20 02:52:02 EDT — scribe `80b95bb821322645b681d028b912d3abf94f4dd6`
+Red: a finished section moves after 12 h idle, an open one after 48 h, one with no issue after 24 h (#833).
+
+## 2026-10-20 02:49:31 EDT — scribe `167d43239ee630b66f7912ca507789b5e22b6284`
+Green: the page counts the WAITING lines it leaves out and names handoff-now --waiting --all (#833).
+
+## 2026-10-20 02:48:17 EDT — scribe `eefbff4833448eede4507d36b6e0fbbed48d1517`
+Red: the page counts the WAITING lines it leaves out and names the command that explains each (#833).
+
+## 2026-10-20 02:47:27 EDT — scribe `7a8bb0332ed125d34eea8415c4498a7291b0a834`
+Scripts/handoff-now/README.md: commands, where it runs, the lock and the archive, tests (#833).
+
+## 2026-10-20 02:46:21 EDT — scribe `243afb6d15b0cdd0ae9c33bfa26eedd4225a8d1c`
+AGENTS template: read NOW.md first, handoff.md sections on demand, and who keeps them (#833).
+
+## 2026-10-20 02:46:11 EDT — scribe `3c4963df5c5967ce667dae9f09a06970b060ec70`
+Green: the page's opening names handoff-now --add beside --section (#833).
+
+## 2026-10-20 02:45:35 EDT — scribe `93f5af6c1e5b184b9936a155cf65e35faee667ae`
+Red: the page's opening names handoff-now --add beside --section (#833).
+
+## 2026-10-20 02:43:06 EDT — scribe `07214152e04d63d27771283655d359957568d15f`
+Green: the page shows each agent's own last step, not agent-run's resume lines, and reads work-log ids as signers (#833).
+
+## 2026-10-20 02:43:06 EDT — scribe `e81dd17ca8f64fd1ecc28badb36eaf1269a889f3`
+Red: agent-run's resume lines are bookkeeping, and claude-code/<name>@<account> signs for <name> (#833).
+
+## 2026-10-20 02:43:06 EDT — scribe `5aa886040a0c53479ea125ab07a058a919f6fe5b`
+Green: handoff-now --add writes an agent's dated line into its section under the lock (#833).
+
+## 2026-10-20 02:43:05 EDT — scribe `0fdf4aedcb221bd205a3bc52e0ac8412cd701849`
+Red: handoff-now --add puts an agent's dated line in its section under the lock (#833).
+
+## 2026-10-20 02:43:05 EDT — scribe `363815259d96b1d8a70b3cafabbc7924f247fce4`
+Green: the page names each running agent's log and folder: the usual places once, the rest by name (#833).
+
+## 2026-10-20 02:43:05 EDT — scribe `123fd0821c7bb701ada125e736dd36f0f055f081`
+Red: the page says where each running agent logs and works (#833).
+
+## 2026-10-20 02:43:05 EDT — scribe `5131068323372bc8e476a722cfd25378d0793ffe`
+Green: the LaunchAgent runs as a Standard process (Nice 10), so the page's issues stay fresh under load (#833).
+
+## 2026-10-20 02:43:05 EDT — scribe `4c6502b54bcb29179adb34f16e117772f7ad6cf9`
+Red: the LaunchAgent must not run as a Background process (#833).
+
+## 2026-10-20 02:43:05 EDT — scribe `d26f5a5fcfa93dd4c8ef6a951a969e4f139ee097`
+Green: the archive compares again when the file changed after its comparison, and watches the file it replaces (#833).
+
+## 2026-10-20 02:43:05 EDT — scribe `e59f966409516582b097a1cedf46eaa899dab802`
+Red: a file renamed in between the archive's comparison and its swap loses that writer's line (#833).
+
+## 2026-10-20 02:43:05 EDT — scribe `ab7f03182be1adfb844af6e06d4fc84d4bcb4037`
+Green: the page reads the real handoff.md right: negations, a line's own issue, one row per agent (#833).
+
+## 2026-10-20 02:43:05 EDT — scribe `a141cab6acd72bb0b0bf1d3adf19a106486d0ff1`
+Red: what the real handoff.md taught: negated waiting lines, a line's own issue, one row per agent (#833).
+
+## 2026-10-20 02:43:05 EDT — scribe `76b76293a3457f5e6bcb60def20063e63b2e3268`
+Green: tools/handoff-now writes the Now page under 4,000 tokens and archives handoff.md's finished sections (#833).
+
+## 2026-10-20 02:43:05 EDT — scribe `24b0ec1722201d816bd5d1ca708cb4b538ca840d`
+Red: the Now page under 4,000 tokens and an archive that keeps handoff.md to its active sections (#833).
+
+## 2026-10-20 01:10:25 EDT — scribe `7d021abb193deaf5cf38f43c14fc109257bb98a9`
+A generated Now page read first, handoff.md archived to active sections: plan, claims, channel note (#833).
+
 ## 2026-10-20 02:57:06 EDT — scribe `c539dac0ab9907a71d0e9cff5e9f9ae15f0c51ce`
 Change log entries for FoldKit Books' library in Scribe Playback (#929).
 
