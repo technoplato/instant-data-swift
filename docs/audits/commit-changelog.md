@@ -1,3 +1,57 @@
+## 2026-10-20 02:44:30 EDT — scribe `dde79e52ac12bdfc1438bb0bf6e24ef4d4359609`
+Change log and PROGRESS entry for Scribe Playback's full-screen split (#928).
+
+## 2026-10-20 02:44:30 EDT — scribe `b8228d09885a86d82788c10a7025680b229989bc`
+Audit of the full-screen split: the snapshots' frames, the tests on the merged code, the divider's frame-time method (#928).
+
+## 2026-10-20 02:44:30 EDT — scribe `ac6f71a603093b4a234a92280a46c9d564c45736`
+Hide Video and Show Video fold the picture without animation under Reduce Motion; the split's slot roles in their own file (#928, swiftui-pro review).
+
+## 2026-10-20 02:44:30 EDT — scribe `9c026086395fb7c4fb2154a6297f233fef74d558`
+The media timeline harness asks for portrait too, so the divider's frame times measure full screen stacked (#928).
+
+## 2026-10-20 02:44:30 EDT — scribe `04d7cdba285ba5f5958cfaa2c16ba76ae00f88e8`
+Full Screen and Exit Full Screen move the picture and the words without animation under Reduce Motion (#928).
+
+## 2026-10-20 02:44:30 EDT — scribe `96b8e8e13db7fe968851ffb3a534b65377965e11`
+ADR 0086 (the full-screen split), FEATURES.md item 15's draft line, Scribe Playback's What's New for build 110 (#928).
+
+## 2026-10-20 02:44:30 EDT — scribe `e97d4bb2b0571d5eb197494226968b00049ef078`
+The media timeline harness's split mode and autodrag, for the divider's frame times (#928; compiled on the mini before the merge).
+
+## 2026-10-20 02:44:30 EDT — scribe `3a0fd94f8a3fcbcb7f61462faf181dfff22ae153`
+Full screen in Scribe Playback's player: the video beside the words in landscape, over them with a divider in full screen (#928).
+
+## 2026-10-20 02:44:30 EDT — scribe `30ad061d55fc592d62dbac06f9b007cfbc9bec11`
+The split container in the shared read-along: one Layout keeps the picture's identity, a divider with a 44-point target (#928).
+
+## 2026-10-20 02:44:30 EDT — scribe `b33cc598632b808b2d20e3b467671b88d7e67c3c`
+Red test: Scribe Playback's full screen (opens, closes, stays for the next item, the divider kept per orientation, the pinch kept) (#928).
+
+## 2026-10-20 02:44:30 EDT — scribe `81afa4b8e28075b1723c1c78116dd924f7fc80bc`
+Red test: the split drawn, five snapshots (stacked, side by side, the column, no picture, the words' least width) (#928).
+
+## 2026-10-20 02:44:30 EDT — scribe `d126eb2d7975ad41b53e0f48996032c22b6175fe`
+The split's rules: where the picture goes for a space's shape, the divider's share kept per orientation and clamped (#928).
+
+## 2026-10-20 02:44:30 EDT — scribe `fd71af0e42d4a0040fd270d19e8c11e5cac8d10c`
+Red test: the split's rules (#928).
+
+## 2026-10-20 02:44:30 EDT — scribe `e84c76b8eb2b6dacca3068d824e332cae48d18bd`
+Channel note: the rename to Scribe Playback is on main; Build 110's What's New heading (#928).
+
+## 2026-10-20 02:44:30 EDT — scribe `2d37c84aa6a8bc3ec87f7c4cfb08bdef23e0a06f`
+Change log for the rename to Scribe Playback (#928).
+
+## 2026-10-20 02:44:30 EDT — scribe `0fdf26314f3783dba9f550021e13a59748e13295`
+Scribe Videos is Scribe Playback wherever a person reads it; bundle ids, Instant names and the scribe-videos CLI stay (#928).
+
+## 2026-10-20 02:44:30 EDT — scribe `a1d4ed40518003ab76e623dfce4a0a8ffae8379c`
+Red test: the app's name is Scribe Playback on the Home Screen, the share sheet, What's New and Scribe's timeline (#928).
+
+## 2026-10-20 02:44:30 EDT — scribe `6fdab88c90c592233d975ad536d5c612c7191d4c`
+Plan and claims for #928: the rename to Scribe Playback and the full-screen split.
+
 ## 2026-10-20 01:51:57 EDT — scribe `3c64c2e7753ed2bfa956c94e91981955a4b57bbd`
 Changelog entry for the speakerChanges schema slice, pushed to production (#861).
 
