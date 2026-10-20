@@ -1,3 +1,24 @@
+## 2026-10-20 07:44:36 EDT — scribe `67ee18d124ac728d6704d9e4633225d233e71d12`
+Merge of #858 onto main for build 111: a reminder plays the lines that made it (the newest-first logs kept as unions).
+
+## 2026-10-20 07:44:36 EDT — scribe `3b2e64f45324d5b9c5c8d478df6602f00e3646a2`
+Change log and PROGRESS for #858 (c4ac34171).
+
+## 2026-10-20 07:44:36 EDT — scribe `2413ee9f9e1d7cfa5ef175598dc73f77cb3b7241`
+What's New for build 111: a reminder plays the lines that made it (#858).
+
+## 2026-10-20 07:44:36 EDT — scribe `31d20c2122758a08e3c50837b976597a9bbbbd82`
+ADR 0054 amendment 3 and FEATURES line 19's Play (draft) (#858).
+
+## 2026-10-20 07:44:36 EDT — scribe `c4ac341710435a98769d8eae1dbb055a65166031`
+Play plays a moment's lines where its recording is and stops at their end: playback's range, the live player's stretch (headphones only), the list's routing; the Work Log Play button's 44-point target (#858).
+
+## 2026-10-20 07:44:36 EDT — scribe `ee25babe8b63b5dd1d0357646e3b09e2e9c0d33a`
+A moment plays its lines: ReminderMoment.play, his words as heard, Play on a card and in the Work Log (#858).
+
+## 2026-10-20 07:44:36 EDT — scribe `7d099a0a14f42cf51dd07210b136d480ed2f2600`
+Red tests: a reminder's Play plays exactly the lines of its moment, in playback, in the live player, and from the Reminders screen (#858).
+
 ## 2026-10-20 07:41:16 EDT — scribe `0b7b6498ac7b5e87239cbf00e9918a7b40bf48a4`
 Merge of #859 and #862 onto main for build 111: his synced words reach Parakeet on This iPhone and Your Mac, an edit reaches the running stream, and a listener adds a word.
 
