@@ -1,3 +1,45 @@
+## 2026-10-20 02:55:04 EDT — scribe `11201b6e9f34482bff11dfdf259465baa23eadd4`
+PROGRESS entry for the Audible import (#927).
+
+## 2026-10-20 02:55:04 EDT — scribe `3f9da32344278f6958ec879f63a4048fba43e36f`
+Change log for the Audible import (#927).
+
+## 2026-10-20 02:55:04 EDT — scribe `a6cadcf2bcadd82d0cb4febb73d2699f63421e1c`
+ADR 0087 and the Audible import's README (#927).
+
+## 2026-10-20 02:55:04 EDT — scribe `3ac9b31f7acc228aa517c480eee832a4dff40d9d`
+install-launch-agent.sh: com.knophy.scribe-audible-retry every 30 minutes (#927).
+
+## 2026-10-20 02:55:04 EDT — scribe `631fb881e7b3e3aa74bdd22c89740fc7c0562d19`
+audible_import.py queue and retry: spaced retries until Audible grants the license, each try on the issue (#927).
+
+## 2026-10-20 02:55:04 EDT — scribe `7d85f990cd4068ab013a5db7530168a8b14f7b8c`
+audible_import.py check: the import's writes through production's rules as the owner, rolled back (#927).
+
+## 2026-10-20 02:55:04 EDT — scribe `380259398dd52d96456b1376b38bb34d973fc68e`
+Audit: Audible's CustomerThrottled refusals; on a public-domain trial the catalog's match rate and Parakeet's word-time bias (#927).
+
+## 2026-10-20 02:55:04 EDT — scribe `5bcb4752997db96f3250f629545fc20d13beefed`
+word_times.py: the onset looked for near the two starts at the halfway line; median signed difference (#927).
+
+## 2026-10-20 02:55:04 EDT — scribe `2da7f81252a10f32012c9281e920d0349a473212`
+install.sh --align makes the align venv (#927).
+
+## 2026-10-20 02:55:04 EDT — scribe `02e8a423ebe8c63eeb7591c02ec48b5c1982e44a`
+word_times.py: the words after a pause held against the sound's onset (#927).
+
+## 2026-10-20 02:55:04 EDT — scribe `df3b024a03e7e863da9dd031e1817681f98b25ff`
+word_times.py: Parakeet's word starts against a forced alignment (torchaudio MMS_FA) on sampled minutes (#927).
+
+## 2026-10-20 02:55:04 EDT — scribe `108f9e8ed224dfb2cc953df0aba8b070d3ab6470`
+A Books title is filed and signed under Books' own key, audiobook:<rendition id> (#927, #929).
+
+## 2026-10-20 02:55:04 EDT — scribe `bd82580542e8f7e7a80ab70250d7bbcd9d850518`
+media_catalog.py books --only <file>: one audiobook signed, its entry naming the library's rows and ASIN (#927).
+
+## 2026-10-20 02:55:04 EDT — scribe `28065637f5dd3264f2873a05688dae844d6950de`
+audible_import.py: his own Audible purchase into the Books library through Books' saved login (license, .m4b by ffmpeg -c copy, Books' importer, audio, words in hour pieces, read-along segments, catalog) (#927).
+
 ## 2026-10-20 02:44:30 EDT — scribe `dde79e52ac12bdfc1438bb0bf6e24ef4d4359609`
 Change log and PROGRESS entry for Scribe Playback's full-screen split (#928).
 
