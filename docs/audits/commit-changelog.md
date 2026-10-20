@@ -1,3 +1,39 @@
+## 2026-10-20 07:41:16 EDT — scribe `0b7b6498ac7b5e87239cbf00e9918a7b40bf48a4`
+Merge of #859 and #862 onto main for build 111: his synced words reach Parakeet on This iPhone and Your Mac, an edit reaches the running stream, and a listener adds a word.
+
+## 2026-10-20 07:41:16 EDT — scribe `7d52ae2218aac93c7b6ec166fb566ec7c372d3e2`
+Change log and PROGRESS for #859 (a789e1b60, eb6b13a67, ac364f6bf) and #862 (64c46e1b0).
+
+## 2026-10-20 07:41:16 EDT — scribe `ae1c13d659459e1ded2e717d4c18326c11bd72a9`
+What's New for build 111: his vocabulary reaches On This iPhone and Your Mac, the vocabulary model, and a listener adds a word (#859, #862).
+
+## 2026-10-20 07:41:16 EDT — scribe `47c5249689a9d3bc470d0547dc7d133a99ae67d5`
+ADR 0062 amendment C with the word error measurement, ADR 0074 amendment A, FEATURES line 12, and the audit (#859, #862).
+
+## 2026-10-20 07:41:16 EDT — scribe `ac364f6bfc8e8e8a7ba30c062efca680a7b7a66d`
+The booster leaves a phrase around a listed word (in Scribe) to the correction map; measured on his recorded audio (#859).
+
+## 2026-10-20 07:41:16 EDT — scribe `f29136469a8d8eeb98e702bd0d3094ff9be3c1ad`
+Red tests: a phrase around a listed word does not travel to the booster (#859).
+
+## 2026-10-20 07:41:16 EDT — scribe `eb6b13a67a09236d197cbad4b7e91b46b2958361`
+On This iPhone and Your Mac send his synced words as keyterms, send an edit as Configure, log the engine's answer, and download the vocabulary model after the others (#859).
+
+## 2026-10-20 07:41:16 EDT — scribe `a5b52ca6caf43fdb6ba78448486ec2e6c04a01dc`
+Red tests: the app's keyterms, the Configure frame and its outcome, and the vocabulary model download (#859).
+
+## 2026-10-20 07:41:16 EDT — scribe `a789e1b60da20de1e82535cf8140cffebdade9f9`
+The engine boosts his words from the listen request's keyterms, rebuilds on Configure, merges the Mac's file, keeps punctuation, and never needs the vocabulary model (#859).
+
+## 2026-10-20 07:41:16 EDT — scribe `e9bb31fe4bc111e1654bb050bf702a925d62a687`
+Red tests: keyterms and Configure on the wire, the merged list, the punctuation carry, the optional vocabulary model (#859).
+
+## 2026-10-20 07:41:16 EDT — scribe `64c46e1b0e7a3642b24051b2ea54e25111fbd0da`
+A listener adds a word to his vocabulary through scribe, with the line he said it in, and can undo it (#862).
+
+## 2026-10-20 07:41:16 EDT — scribe `ac0f5fd9f0aae7be30f9ff43d3e9df49c417cff9`
+Red tests: the mirror's vocabulary model, the add plan and its change row, and undo (#862).
+
 ## 2026-10-20 03:25:31 EDT — scribe `b502641ba56b854539c07e9369979f32bdd9b64f`
 Changelog and PROGRESS for #815: a reminder tracks the work as it happens; the implementation commit is 6b97bfc79.
 
