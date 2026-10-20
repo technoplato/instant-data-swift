@@ -1,3 +1,9 @@
+## 2026-10-20 03:20:36 EDT — scribe `a2234a936afdcd2282040c6f9119bbcbff790d73`
+Change log for the retry's guarded read-back (#927).
+
+## 2026-10-20 03:20:36 EDT — scribe `a2bde6dfe38b64a1af69b61081034d10cc56d543`
+A failed read-back after an import is told on the issue instead of stopping the retry (#927).
+
 ## 2026-10-20 03:09:47 EDT — scribe `e8f3de6a8ba6734bdc563ec5f78865fdaa00f6dc`
 the narration's measures run after the import; no false matches on the trial (#927).
 
