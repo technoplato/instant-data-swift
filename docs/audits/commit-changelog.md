@@ -1,3 +1,15 @@
+## 2026-10-20 01:42:50 EDT — scribe `4665393dc712c7cf496d4f0422185445e835e47f`
+Change log entry for the /v1/process bookReading media key fix (#922).
+
+## 2026-10-20 01:42:50 EDT — scribe `72a9947e6a6e8e832847565c8e848b0207c2ff03`
+/v1/process takes a camelCase media key kind as the schema's ITEM_KINDS name it, so a book reading's job is no longer refused (#922).
+
+## 2026-10-20 01:42:50 EDT — scribe `2eb5a054c4f0867443b628d654316ff748fe07ff`
+Red test: the server takes bookReading:book-readings:<reading> as a media key (#922).
+
+## 2026-10-20 01:42:50 EDT — scribe `0fbdbe88c086257a063ecf0549e87641080e47f5`
+Plan and claims for #922's server key fix and the book-reading backfill (#922).
+
 ## 2026-10-20 01:27:54 EDT — scribe `d8568dfbb127638616728e7128f53193ef5e01f8`
 Changelog entries name the #922 commits as landed on main (#922).
 
