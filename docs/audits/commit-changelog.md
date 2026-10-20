@@ -1,3 +1,27 @@
+## 2026-10-20 03:05:54 EDT — scribe `9d6eeb25c4b682b45260e765a76ce3dbda1304a0`
+Merge of #701 into main: Settings > Your Mac shows the server's last heartbeat (criterion 2); the health watch tells a busy laptop from a down server.
+
+## 2026-10-20 03:05:54 EDT — scribe `e7f5b8b46db3a7066fa798b02276095aeb687267`
+Change log entries for #701's two greens (56ee10427, 311a01b1d).
+
+## 2026-10-20 03:05:54 EDT — scribe `311a01b1d6cb3f86884a4e1ef4aaab3aab005d43`
+The Mac health watch: a check whose own timer fired over a second late is 'not checked' and changes nothing; the LaunchAgent runs node through taskpolicy -a, Interactive (#701, ADR 0073 amendment D).
+
+## 2026-10-20 03:05:54 EDT — scribe `be08504b8c4be701f936b3aa81e345c52fdded46`
+Red tests for the watch: a busy laptop is not a down server (#701).
+
+## 2026-10-20 03:05:54 EDT — scribe `56ee104270546347bede6b31cdc128ffac2a7f74`
+Settings > Your Mac shows the Mac mini's last heartbeat from Instant under Last Check, followed only while on screen (#701 criterion 2).
+
+## 2026-10-20 03:05:54 EDT — scribe `25ffb3dd6900743a62bbc55cb36cb58d19f44e55`
+Red tests: Settings > Your Mac shows the server's last heartbeat (#701 criterion 2).
+
+## 2026-10-20 03:05:54 EDT — scribe `206a753a4ab4a6dab87d6f01a784a62d85e32209`
+Channel note to #861: ScribeSyncLedgerTests wants a Sync noun for speakerChanges (#701).
+
+## 2026-10-20 03:05:54 EDT — scribe `ca879067009eb06aac0d9cb89d2f43d889acbe91`
+Plan and claims 701-busy-laptop-not-down (#701).
+
 ## 2026-10-20 02:57:12 EDT — scribe `9aaf875538c532b679a759f19cc60938012c80a8`
 NOW.md is the read-first page; handoff.md keeps active sections (11196dec4) (#833).
 
