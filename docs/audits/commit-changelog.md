@@ -1,6 +1,24 @@
 ## 2026-10-20 02:57:06 EDT — scribe `c539dac0ab9907a71d0e9cff5e9f9ae15f0c51ce`
 Change log entries for FoldKit Books' library in Scribe Playback (#929).
 
+## 2026-10-20 02:58:34 EDT — scribe `04f714e1ed223d483695e492a46b70733bffd637`
+Change log entry for a book reading's clip following its recording's audio (#922).
+
+## 2026-10-20 02:58:34 EDT — scribe `d5ab62bed6a15b682458483e62350e06c18e7d3b`
+The media README says a book reading's clip follows its recording's audio: the shift, the second pass, audioShiftSeconds (#922).
+
+## 2026-10-20 02:58:34 EDT — scribe `d3d2a05e2100875584e6055e9165fadf9f0b2941`
+A book reading's clip follows its recording's audio: run measures the shift from its own words after a first pass and cuts it again; five of 31 clips sat 2.96-14.9 s off (#922).
+
+## 2026-10-20 02:58:34 EDT — scribe `343a12ec07b0b63e61fc00c6e6fa0670214cc470`
+Red tests: the audio shift from paired word starts, the half-second threshold, the shifted cut span, the meta keeping the shift (#922).
+
+## 2026-10-20 02:58:34 EDT — scribe `a08ec30a0d0443a3adcea6b38733a0efa6a70b5b`
+Plan step 7 for #922: a clip follows its recording's audio; #934 filed for Recording 187's two overlapping readings (#922).
+
+## 2026-10-20 02:58:34 EDT — scribe `d88b7f9a91e7ec6765e7eb7aeb3b0c86ffc8a8cf`
+Plan and claims for a book reading on a person's page: the speaker index's kinds and list (#922).
+
 ## 2026-10-20 02:57:06 EDT — scribe `42ae263a07f93516ceda5ec0a6e7043e214c31f5`
 Scribe Playback's What's New for build 110 and FEATURES.md line 18 (draft), Books, one library (#929).
 
