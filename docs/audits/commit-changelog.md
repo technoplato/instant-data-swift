@@ -1,3 +1,15 @@
+## 2026-10-20 01:47:03 EDT — scribe `31ae5fe793caa68f159ef02b2f7c7c6339b6889f`
+Merged the page-onset fix onto main (#920).
+
+## 2026-10-20 01:47:03 EDT — scribe `412094258ca9c299e3ec760c087b3bc818973e87`
+Changelog for the spoken-page onset fix (#920). The implementation commit is 97294d801.
+
+## 2026-10-20 01:47:03 EDT — scribe `97294d801db0ab55e6a3858f038a1e5f3916439f`
+A spoken page starts at the page-number word, and a stored page moves onto that word (#920).
+
+## 2026-10-20 01:47:03 EDT — scribe `cd9f7221ffde419a04ff28341a5ab4dec2998cfd`
+Red test: a spoken page must start at its page-number word, not the line (#920).
+
 ## 2026-10-20 01:42:50 EDT — scribe `4665393dc712c7cf496d4f0422185445e835e47f`
 Change log entry for the /v1/process bookReading media key fix (#922).
 
