@@ -1,3 +1,18 @@
+## 2026-10-20 01:27:54 EDT — scribe `d8568dfbb127638616728e7128f53193ef5e01f8`
+Changelog entries name the #922 commits as landed on main (#922).
+
+## 2026-10-20 01:27:54 EDT — scribe `624a0f7b7ecc45093ee4dc56ffc7f5d29974dd6a`
+Document the #922 implementation commits in the change log (#922).
+
+## 2026-10-20 01:27:54 EDT — scribe `8d3c4f0b2d9b20d135242ddcf309725a055892a4`
+A book reading's scribe-books catalog item carries its book, reading, recording, start and transcript ids; measure results keep match properties (#922).
+
+## 2026-10-20 01:27:54 EDT — scribe `2d2fb7b98b8a7aabcecd4793314d4084b56db6f0`
+Each book read aloud becomes a bookReading media item with its clip under the recording, /v1/process words and named speakers, and a scribe-books catalog entry naming its Instant rows; schema pushed to production (#922).
+
+## 2026-10-20 01:27:54 EDT — scribe `c310ff2c9cc71233c2b640e5c892f0e9e00fd7d7`
+Red tests for book readings as media items with catalog ids and word-level resolution (#922).
+
 ## 2026-08-20 14:32:00 EDT — scribe-sqlite-data `a6ed0a8b8f9cdd7f2451bfddd3f091de88769153`
 Document fb7a7c6 in the change log (#228).
 
