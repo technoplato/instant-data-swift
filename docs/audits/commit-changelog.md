@@ -1,6 +1,18 @@
 ## 2026-10-20 03:25:31 EDT — scribe `b502641ba56b854539c07e9369979f32bdd9b64f`
 Changelog and PROGRESS for #815: a reminder tracks the work as it happens; the implementation commit is 6b97bfc79.
 
+## 2026-10-20 03:33:18 EDT — scribe `d34a7e3e3b5733ac612635819f9705e666bf8604`
+Change log entry for book readings matched on demand only (#922).
+
+## 2026-10-20 03:33:18 EDT — scribe `e6e1d2cf3519a9ce6a31bc517308323fb3590b2f`
+Book readings are matched on demand only: their pieces and catalogs sit beside the live folders; the live scribe-books keeps its audiobooks (#922).
+
+## 2026-10-20 03:33:18 EDT — scribe `8e1b07a3ab9f341dcaf1486bc045bc5c2a2446f0`
+Red tests: a book reading's on-demand folders, signing, build, rows and measure; every other kind stays live (#922).
+
+## 2026-10-20 03:33:18 EDT — scribe `19ffd7dfab41d904c858852f0f90c8f5e0f95861`
+Plan step 8 for #922: readings matched on demand only (their bedtime audio false-matched 3.6% of live windows); claims and channel note (#922).
+
 ## 2026-10-20 03:25:31 EDT — scribe `6b7f8a6b1623fd9e98e5e31c712169d4a55d8ef0`
 Tests for the clock a check-off enters: Recording.State.liveClock(now:), LiveRecordingClock, and the live point (#815).
 
