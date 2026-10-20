@@ -1,3 +1,42 @@
+## 2026-10-20 02:57:06 EDT — scribe `c539dac0ab9907a71d0e9cff5e9f9ae15f0c51ce`
+Change log entries for FoldKit Books' library in Scribe Playback (#929).
+
+## 2026-10-20 02:57:06 EDT — scribe `42ae263a07f93516ceda5ec0a6e7043e214c31f5`
+Scribe Playback's What's New for build 110 and FEATURES.md line 18 (draft), Books, one library (#929).
+
+## 2026-10-20 02:57:06 EDT — scribe `4acebb260146e45cc4d91f1f04e4522a118f8c49`
+The live library's save takes its client, so a local Instant store proves the phone's write path (#929).
+
+## 2026-10-20 02:57:06 EDT — scribe `349d9aa7fac0039ffdd718e38e47e88e69d9ec49`
+Red: the live library on a real Instant client with a local store (shelf, a first place, the same row updated, a finish) (#929).
+
+## 2026-10-20 02:57:06 EDT — scribe `f2d0721b850a13741143b8c3740d3a14abc162aa`
+scribe-videos books: Books' shelf from the terminal with Books' own query and rules; the Books list's swiftui-pro fixes (#929).
+
+## 2026-10-20 02:57:06 EDT — scribe `cd97cacaa67b6bcedbe3ffa4d47cfa946a0c1930`
+Red: the admin client reads Books' shelf with Books' query and rules (#929).
+
+## 2026-10-20 02:57:06 EDT — scribe `8f05c27939579a0ba08c362d10292ae5adeeaa5e`
+Red: the terminal reads Books' shelf with the query Books' deployed build uses; the fixture carries it (#929).
+
+## 2026-10-20 02:57:06 EDT — scribe `9531447e43d403f3e12354430d359ba0b1d8f29f`
+Green: Books' library in Scribe Playback (core, the Books list, a book in the one player, the live library on the app's Instant client) (#929).
+
+## 2026-10-20 02:57:06 EDT — scribe `f8eb6a1c7de3dd82f4d0f18d04c68aa574e72ea1`
+Red: the library rows declared as the schema declares them; the library's answer read as Books reads it (#929).
+
+## 2026-10-20 02:57:06 EDT — scribe `6917b468ce82b8981bc9a99e7fa50200a88cc0af`
+WIP from a run that stopped: the Books list, the app's book flows, a book in the one player (made green in 9531447e4) (#929).
+
+## 2026-10-20 02:57:06 EDT — scribe `b99775eec1aeb0543c16e24bdbf83ca41b5dd98c`
+Red: the Books list, the app's book flows and a book in the one player (#929).
+
+## 2026-10-20 02:57:06 EDT — scribe `84b5e124a6f9fb260bbfe0591a105916dd97d69b`
+WIP from a run that stopped: the core's books, words and audiobook cases (made green in 9531447e4) (#929).
+
+## 2026-10-20 02:57:06 EDT — scribe `671ce022d3fe2baef40a583bb1a479935744d980`
+Red: Scribe Playback reads FoldKit Books' library as Books does, held to Books' own deployed code (#929).
+
 ## 2026-10-20 02:55:04 EDT — scribe `11201b6e9f34482bff11dfdf259465baa23eadd4`
 PROGRESS entry for the Audible import (#927).
 
