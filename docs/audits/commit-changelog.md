@@ -1,3 +1,15 @@
+## 2026-10-20 01:51:57 EDT — scribe `3c64c2e7753ed2bfa956c94e91981955a4b57bbd`
+Changelog entry for the speakerChanges schema slice, pushed to production (#861).
+
+## 2026-10-20 01:51:57 EDT — scribe `afc9364d3f79252e520cc36b68448bd5c7e641a3`
+The speakers rules matrix covers speakerChanges: owner-only, closed lists, each kind's fields, never edited (#861).
+
+## 2026-10-20 01:51:57 EDT — scribe `b529aeeacaa0b1ff4cfa31f1844b7c3fa800ff06`
+speakerChanges: one append-only row per edit to a recording's speakers, with who made it and the moment he asked (#861).
+
+## 2026-10-20 01:51:57 EDT — scribe `54024630f83486621b9d307bf5373910f99a2887`
+Red test: speakerChanges in the speakers schema module (#861).
+
 ## 2026-10-20 01:47:03 EDT — scribe `31ae5fe793caa68f159ef02b2f7c7c6339b6889f`
 Merged the page-onset fix onto main (#920).
 
