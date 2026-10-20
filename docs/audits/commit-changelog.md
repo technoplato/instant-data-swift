@@ -1,3 +1,21 @@
+## 2026-10-20 03:09:47 EDT — scribe `e8f3de6a8ba6734bdc563ec5f78865fdaa00f6dc`
+the narration's measures run after the import; no false matches on the trial (#927).
+
+## 2026-10-20 03:09:47 EDT — scribe `d7dd650ea97b21e65eb2eb13192999713c3cbd63`
+the retry's tests, the narration's measure and its hook after the import, the audit's false-match check (c4ad78444..8ca7e75a8) (#927).
+
+## 2026-10-20 03:09:47 EDT — scribe `8ca7e75a884d2825b15d9940c457895dc2c3df58`
+the trial drew no false matches from the live catalog (0 of 40 per condition); the measures run after the import (ADR 0087 decision 9) (#927).
+
+## 2026-10-20 03:09:47 EDT — scribe `fdc31393cef94bdab8a0e145fdf50e209b04c94e`
+green: after an import the retry measures the narration and logs one line on the issue (each catalog condition, the word times, or why they did not run); the installed copy carries word_times.py (#927).
+
+## 2026-10-20 03:09:47 EDT — scribe `d4901a25abff4766c9be7bde6cef6c91b6205e90`
+green: the measure's catalog entry names its source audiobook, one of scribe-catalog's kinds (#927).
+
+## 2026-10-20 03:09:47 EDT — scribe `6023c572e1d49457896c80d084347cd96a1d410b`
+green: `audible_import.py measure` keeps the narration's two numbers in <title>/measure/: the catalog's match rate and offset error on clips from four hour-long excerpts against the live scribe-books (read only), and wor (#927).
+
 ## 2026-10-20 03:05:54 EDT — scribe `9d6eeb25c4b682b45260e765a76ce3dbda1304a0`
 Merge of #701 into main: Settings > Your Mac shows the server's last heartbeat (criterion 2); the health watch tells a busy laptop from a down server.
 
