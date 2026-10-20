@@ -1,3 +1,27 @@
+## 2026-10-20 03:25:31 EDT — scribe `b502641ba56b854539c07e9369979f32bdd9b64f`
+Changelog and PROGRESS for #815: a reminder tracks the work as it happens; the implementation commit is 6b97bfc79.
+
+## 2026-10-20 03:25:31 EDT — scribe `6b7f8a6b1623fd9e98e5e31c712169d4a55d8ef0`
+Tests for the clock a check-off enters: Recording.State.liveClock(now:), LiveRecordingClock, and the live point (#815).
+
+## 2026-10-20 03:25:31 EDT — scribe `fb61d630cabf708979781a88c451f0f9e6305a91`
+ADR 0054 amendment 2, FEATURES line 19 (draft), What's New for 110, and the listener's start and progress (#815).
+
+## 2026-10-20 03:25:31 EDT — scribe `9cb0727df257546aca1bfe758fa5dfdce077abed`
+The moment snapshot test helper builds InstantMaterializedValue values, so the app suite compiles (#815).
+
+## 2026-10-20 03:25:31 EDT — scribe `b29d6895397b75db312e4922c3b5747664f8281a`
+The reminders rules matrix covers a reminder's start and context and a moment's mentionKind; 111/111 on the throwaway app (#815, #823).
+
+## 2026-10-20 03:25:31 EDT — scribe `6b97bfc79c09dd7f32eae9b0121906b709d0f1a6`
+A reminder tracks its work: Start Working, the listener's start and progress, Marked done in the recording this device captures, how long it took, a work log; schema pushed to production (#815).
+
+## 2026-10-20 03:25:31 EDT — scribe `c92a68c7e52800df289cecc262b7cb7fc8806763`
+Red tests: a reminder tracks its work, and the reminders-work schema module (#815).
+
+## 2026-10-20 03:25:31 EDT — scribe `f9a91fb45322e133f66b8b7858021860d32e0605`
+Channel note: one stretch-play action in the live player, shared by a reminder's Play and a tap on a live line (#858, #807).
+
 ## 2026-10-20 03:22:29 EDT — scribe `639f46890a5bbf0d38544704e080b24ad09701f0`
 Change log for the standing listener's start through taskpolicy -a (#870).
 
