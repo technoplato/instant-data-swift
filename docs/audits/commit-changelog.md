@@ -1,3 +1,15 @@
+## 2026-10-20 03:22:29 EDT — scribe `639f46890a5bbf0d38544704e080b24ad09701f0`
+Change log for the standing listener's start through taskpolicy -a (#870).
+
+## 2026-10-20 03:22:29 EDT — scribe `40f6128b5f1d93284cf74de69bef9acc2afe30ef`
+green: the standing listener starts through taskpolicy -a, so its main thread runs at 46-47, not 31 (#870).
+
+## 2026-10-20 03:22:29 EDT — scribe `b2db524a3a316fd437f929726f19ffbdfcb544a3`
+red: the agent run-agent starts must run its main thread above priority 31 (#870).
+
+## 2026-10-20 03:22:29 EDT — scribe `99900d0751812fba7edb8c6425f7f874b8f2849b`
+plan and claims for #870 and #880 (infra-p2).
+
 ## 2026-10-20 03:20:36 EDT — scribe `a2234a936afdcd2282040c6f9119bbcbff790d73`
 Change log for the retry's guarded read-back (#927).
 
