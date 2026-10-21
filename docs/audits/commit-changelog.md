@@ -1,3 +1,24 @@
+## 2026-10-21 19:10:39 EDT — scribe `c6f1ac25269cbeff4d13078cf5c47e4017c915d8`
+Merge to main for build 112 (#924): a text link's chapters list says "From the author's headings"; the audit's production runs and simulator check.
+
+## 2026-10-21 19:10:14 EDT — scribe `b5e33ff4823285c916465c413896a3625ec77116`
+Change log for #924's audit commits (1418af7dd, 9fd99faa8).
+
+## 2026-10-21 19:10:05 EDT — scribe `9fd99faa88cfa8752adba4037420bbd79e01c728`
+Audit (#924): Scribe Playback on the simulator (the credit on the row, the player and a copied line; the chapters' source diagnosed and fixed), One_Hashing's five figures; PROGRESS.
+
+## 2026-10-21 19:07:55 EDT — scribe `33d054a586091e110579db01369028a401672c37`
+Merge of main (192 commits, build 111's cut, #265, #839, #972) into agent/claude/text-links-924b (#924).
+
+## 2026-10-21 19:07:27 EDT — scribe `a3fbe2cf6de889e5daec2a749e14cdc63984c2f3`
+Change log for #924 (587e339ab, 482d1423b).
+
+## 2026-10-21 19:07:01 EDT — scribe `482d1423b093a970ab224701906e2edb13c9f8d6`
+Green (#924): the chapters list reads where its chapters came from off the chapters it shows (MediaTimeline.State.chapterSource); the player no longer hands in a stale source.
+
+## 2026-10-21 18:53:04 EDT — scribe `587e339ab73682055ec8b99506304d6bf19da58c`
+Red test (#924): the timeline's state says where its loaded chapters came from.
+
 ## 2026-10-21 18:41:38 EDT — scribe `642250e8831d92f6e9cff2ff59d90f75eb8fc2a3`
 PROGRESS.md entry for #839.
 
