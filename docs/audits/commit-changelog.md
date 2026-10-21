@@ -1,3 +1,15 @@
+## 2026-10-21 15:55:01 EDT — scribe `7964d57fa53701ce5d5445b163bb98b8513d7f31`
+Change log for the production audit section and the swiftui-pro review's fix (82e920d79, 4fed41731) (#974, #916).
+
+## 2026-10-21 15:55:01 EDT — scribe `4fed41731c82d4d41ef00cabeb4452ecf178b125`
+swiftui-pro review: the clip's refusal line is PlayerFeature's rule (clipRefusal); lengths and log times through format styles; no force unwrap for Twitch's address (#974, #916).
+
+## 2026-10-21 15:55:01 EDT — scribe `24e3cd4d2723ff56e8797a13d1e3d5405ea8ace6`
+Red: the clip's refusal line as PlayerFeature's rule; an hour-long clip says 1:02:05 (#974).
+
+## 2026-10-21 15:55:01 EDT — scribe `82e920d7983087d17e83c14e78ade19d4e94dc9d`
+The audit's production section: the Mac's prepare agent from main kept his three clips under five minutes, read back linked (#974).
+
 ## 2026-10-21 15:32:32 EDT — scribe `8fbff59b6c69e89c1f37aea661b355f28cd8437e`
 Merge to main for build 112: short clips kept as video and played offline; Twitch's picture from its own stream; Dailymotion out (#974, #916).
 
