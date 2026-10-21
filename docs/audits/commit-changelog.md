@@ -1,3 +1,33 @@
+## 2026-10-21 19:22:50 EDT — scribe `48f09628843771dd0878f292e79e68b677e337ed`
+Change log for the Twitch picture's seek fixes, the drift audit and What's New (#916, #974).
+
+## 2026-10-21 19:22:50 EDT — scribe `90a495c98e5da5372d66c340a2ed0a061c9c6ef7`
+Scribe Playback build 112's What's New: a Twitch video's picture finds its place after a jump (#916).
+
+## 2026-10-21 19:22:50 EDT — scribe `b50d4682c96c3d8c2895169c85a8b5ea9fa1c94c`
+Merge origin/main (#839, #972, #265) into agent/claude/short-videos-974; 500 package tests on the merged tree (#916, #974).
+
+## 2026-10-21 19:22:50 EDT — scribe `b7958050517010ab3dd05aff46f27830e1cee939`
+Twitch's drift measured: the simulator per build, a clean table from the Mac mini with the app's rules, three defects, #989 open (#916, #974).
+
+## 2026-10-21 19:22:50 EDT — scribe `b14cba6f55e329be9b5ec1a0adebcdca56824816`
+Green: a Twitch picture's seek is waited for until AVPlayer says it landed, said every five seconds (#916).
+
+## 2026-10-21 19:22:50 EDT — scribe `2c18fe3eff4f1babe8d67bebee6c41ce0ad13d8e`
+Red: a seek the picture's player says is in flight is waited for until it lands (#916).
+
+## 2026-10-21 19:22:50 EDT — scribe `c136f4b816c43145a82017b83f0b60469be34d8d`
+Green: a Twitch picture's player waits for data after a seek again (automaticallyWaitsToMinimizeStalling YES) (#916).
+
+## 2026-10-21 19:22:50 EDT — scribe `350181de3f65db3009764e803225e6c8a85b0e4f`
+Red: the Twitch picture's player keeps AVPlayer's wait for data after a seek (#916).
+
+## 2026-10-21 19:22:50 EDT — scribe `951356cd0dd93f3669f369d6cf8bbe783aaffb6a`
+Green: a Twitch picture's seek is told in milliseconds and known in flight until AVPlayer says it landed (#916).
+
+## 2026-10-21 19:22:50 EDT — scribe `4508a920b9529616878611649c450ae3db0a6dac`
+Red: a Twitch picture's seek reads back as the millisecond target the follower remembers (#916).
+
 ## 2026-10-21 16:42:06 EDT — scribe `6fbe669143df0964d6327be5c58164cac21597e0`
 Merge origin/main (89bd4074d, build 111's cut, which ships #974 and #916's Twitch picture) into agent/claude/short-videos-974; to main (#974, #916).
 
