@@ -1,3 +1,6 @@
+## 2026-10-21 19:14:39 EDT — scribe `12e99841958992dfb66d5f72495be2bd1a060c8a`
+PROGRESS.md (#924): the schema hazard is gone; main holds #924's author fields and #974's clip slice.
+
 ## 2026-10-21 19:10:39 EDT — scribe `c6f1ac25269cbeff4d13078cf5c47e4017c915d8`
 Merge to main for build 112 (#924): a text link's chapters list says "From the author's headings"; the audit's production runs and simulator check.
 
