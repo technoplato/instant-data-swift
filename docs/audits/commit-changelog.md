@@ -1,3 +1,33 @@
+## 2026-10-21 13:21:21 EDT — scribe `e0b1b3a87f1add1fc68d7488d71164764660915c`
+Change log for #972 (302b648be, dddd57470, 901e66b9f, a31e8c72a, a78c1fd18, ff8a104a9).
+
+## 2026-10-21 13:20:32 EDT — scribe `ff8a104a92f1bbb28594a77b06d6c91c1d757a88`
+The books ingest README and the #972 audit: A New Earth 9.24 h in 544 s (61 audio-hours an hour), voices 55% of a job, three books written with speakers.
+
+## 2026-10-21 13:20:32 EDT — scribe `b4c590fef31df77c94a53313aeda93f424a3f726`
+Red tests: with one credited narrator, a voice of under ten seconds in an hour piece is the narrator's (#972).
+
+## 2026-10-21 13:20:32 EDT — scribe `a78c1fd182d395a7b25139c87a06d5fedcafe26a`
+A voice of under ten seconds in a piece is the narrator's: 21 Lessons' seven such voices were chapter-start splits and Audible's closing line (#972).
+
+## 2026-10-21 13:20:32 EDT — scribe `a31e8c72a523de1c514e3c289bfe93af9352b3a5`
+write's last log line named segments twice (#972).
+
+## 2026-10-21 13:20:32 EDT — scribe `a060bf3c7094fe6ed1ea5143a0759b62411a414b`
+Red test: a book's credits outweigh a print's guess (#972).
+
+## 2026-10-21 13:20:32 EDT — scribe `901e66b9f8b799a2cde9eb891b083f55ace7f021`
+A suggestion stays only when it names a credited narrator; A New Earth's one guess was Joe List for the publisher's announcer (#972).
+
+## 2026-10-21 13:20:31 EDT — scribe `dddd574700c55069d7f491e61543203a0502ee76`
+books_ingest.py: status of every Books title, process a rendition through /v1/process in hour pieces, write its words with book-wide speakers into Books' librarySegments and the book's media transcript (#972).
+
+## 2026-10-21 13:20:31 EDT — scribe `1c24c08b8ba3dbf37335f126d90ad62b4eed4760`
+Red tests: books_ingest.py's pure core (Books' own segment ids, the priority rule, speakers across hour pieces, words on the book's clock, merged names, segment rows, the media document, status) (#972).
+
+## 2026-10-21 12:57:57 EDT — scribe `302b648be1b8295b2abc961e74e6219af5e861ba`
+Plan for #972: every Books audiobook through the mini's /v1/process, words with speakers, and which are not processed yet (plan, claims, channel note).
+
 ## 2026-10-20 07:44:36 EDT — scribe `67ee18d124ac728d6704d9e4633225d233e71d12`
 Merge of #858 onto main for build 111: a reminder plays the lines that made it (the newest-first logs kept as unions).
 
