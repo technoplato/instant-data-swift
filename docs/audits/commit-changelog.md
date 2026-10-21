@@ -1,3 +1,27 @@
+## 2026-10-21 17:50:45 EDT — scribe `cc95ef5e2e6852bd03de516ce163e4975516d5de`
+Change log for #972 (9422dbadc).
+
+## 2026-10-21 17:48:42 EDT — scribe `9422dbadc0b2d38b2dfba6f0137f066f5c1c0fce`
+Scribe Playback reads a processed book's speakers (12 Rules reads as Jordan Peterson) and marks books not processed yet; 60 tests pass (#972, build 112).
+
+## 2026-10-21 17:48:12 EDT — scribe `fa2e263d9252f3f2b4b70219db4b6ee2de9c880c`
+Red tests: the Books shelf knows which titles are processed; the list marks those not processed yet (#972).
+
+## 2026-10-21 17:48:12 EDT — scribe `739c7d19df29fd6c8fa56185c48bab3a0f72eebb`
+Red tests: a processed book's words keep each word's speaker, lines split by speaker, the book's media transcript on its words, kept words read again (#972).
+
+## 2026-10-21 16:52:39 EDT — scribe `bff1f97b024aa2aa03bbacb482ff73466e61ee93`
+PROGRESS.md entry for #972.
+
+## 2026-10-21 13:52:02 EDT — scribe `8b7c658e0ebb78129807e102804806483784181e`
+The #972 audit's afternoon section: the catalog re-key, the queue's first try, the app step.
+
+## 2026-10-21 13:50:49 EDT — scribe `22a2d24dc6cf42e7af4a566cc99a480c07facb6a`
+Claims for #972's amendment 1.
+
+## 2026-10-21 13:41:40 EDT — scribe `f9272cd32ffed4f4da05c5930bc1baf125ca072a`
+Plan amendment 1 for #972 (Scribe Playback speakers and the not-processed marker).
+
 ## 2026-10-21 16:04:37 EDT — scribe `b1e09374a837f82a375fd1a3c989a87d1fb80517`
 #965 lands on main for build 111: merge of origin/main (7964d57fa) into agent/claude/active-line-965, pushed as main.
 
