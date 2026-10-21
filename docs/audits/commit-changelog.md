@@ -1,3 +1,27 @@
+## 2026-10-21 18:41:38 EDT — scribe `642250e8831d92f6e9cff2ff59d90f75eb8fc2a3`
+PROGRESS.md entry for #839.
+
+## 2026-10-21 18:40:30 EDT — scribe `ab0cf9eadee06e3b09183b722046728e901fd92c`
+#839 lands on main for build 112: "Scribe, pause playback" and the Pause Playback intent pause whatever plays (Scribe playback, Scribe Playback, other apps through Scribe's own session).
+
+## 2026-10-21 18:14:27 EDT — scribe `42b9b23a37d3a1e3089d347ef159e0bb782c43e0`
+Merge of main (build 111) into agent/claude/pause-playback-839 (#839).
+
+## 2026-10-21 15:40:37 EDT — scribe `d1f8014d0e1340a28507ac50d91cf101b400db28`
+Change log for #839 (311289f9b, 7cbd55431, 69e629f4b).
+
+## 2026-10-21 14:42:54 EDT — scribe `69e629f4b12ce51ae817c15b1b6e5cc6258416ef`
+#839 audit of what iOS allows (shortcuts, AirPod taps, pausing other apps), ADR 0011 amendment, FEATURES draft item 22, What's New 112.
+
+## 2026-10-21 14:42:04 EDT — scribe `7cbd5543171def192d2dd1ca087615438ba2fda1`
+Green (#839): the other-audio pause steps, the store's pause, the voice command on every screen, Scribe Playback's pause.
+
+## 2026-10-21 14:42:04 EDT — scribe `311289f9ba7153a3874e49a359503b53edfc6bc9`
+Red tests (#839): pausing whatever plays, with stubs.
+
+## 2026-10-21 12:53:35 EDT — scribe `b0a97bde3d3d18e1d58ebb04fd85a3d7d6f31067`
+Plan and claims for #839 (pause whatever plays).
+
 ## 2026-10-21 17:50:45 EDT — scribe `cc95ef5e2e6852bd03de516ce163e4975516d5de`
 Change log for #972 (9422dbadc).
 
