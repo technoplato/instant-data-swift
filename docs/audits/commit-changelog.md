@@ -1,3 +1,21 @@
+## 2026-10-21 15:02:28 EDT — scribe `3aa3339857af00a5b392d15a3aa51b867810f33f`
+Merge origin/main (b511deba3) into agent/claude/active-line-965; What's New 111 keeps both sides (#965).
+
+## 2026-10-21 15:01:29 EDT — scribe `36c2195a094f95f36ba6b2a1a81b5041e9122a85`
+Change log for #965 (8443b416f); PROGRESS.
+
+## 2026-10-21 14:33:25 EDT — scribe `4aeae8b53d24f48fb411f36fad4b1d265d6a1176`
+What's New for build 111: the line you're speaking stays at the bottom of the live timeline (#965).
+
+## 2026-10-21 14:33:09 EDT — scribe `7d37badbdb1009132f53bdc1824b41a0f65e13e9`
+The one-clock audit (audits/2026-10-21-one-clock.md) and FEATURES item 2: the line being spoken is the bottom row (#965).
+
+## 2026-10-21 14:33:00 EDT — scribe `8443b416fffa679c1d35497287aa56b4c1cb1981`
+TimelineEntry.liveOrder: a line not final sorts after every row not being spoken; the recording screen and playback following a live recording use it (#965).
+
+## 2026-10-21 14:33:00 EDT — scribe `47eed27c2ea3809bafd6c5667e51ca81cb1a02c4`
+Red tests: the line being spoken stays the bottom row of every live timeline (RecordingLineBeingSpokenTests, RecordingSpeakerRunsTests, PlaybackLineBeingSpokenTests) (#965).
+
 ## 2026-10-21 14:09:52 EDT — scribe `1418af7dda34f15044dfe3a6bdf8420d74701ddc`
 Audit: the production runs of calabro.io/ohbf and One_Hashing.pdf, rows per stage, word times, Kokoro right at line starts (#924).
 
