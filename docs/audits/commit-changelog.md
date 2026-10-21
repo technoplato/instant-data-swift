@@ -1,3 +1,6 @@
+## 2026-10-21 16:04:37 EDT — scribe `b1e09374a837f82a375fd1a3c989a87d1fb80517`
+#965 lands on main for build 111: merge of origin/main (7964d57fa) into agent/claude/active-line-965, pushed as main.
+
 ## 2026-10-21 15:02:28 EDT — scribe `3aa3339857af00a5b392d15a3aa51b867810f33f`
 Merge origin/main (b511deba3) into agent/claude/active-line-965; What's New 111 keeps both sides (#965).
 
