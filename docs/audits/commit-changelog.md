@@ -1,3 +1,57 @@
+## 2026-10-21 14:09:52 EDT — scribe `1418af7dda34f15044dfe3a6bdf8420d74701ddc`
+Audit: the production runs of calabro.io/ohbf and One_Hashing.pdf, rows per stage, word times, Kokoro right at line starts (#924).
+
+## 2026-10-21 14:08:55 EDT — scribe `c111eb0536166fc10b8824fc14766c57edaa4069`
+Merge to main: a figure MuPDF reads among a paper's references stays the document's (#924).
+
+## 2026-10-21 14:08:36 EDT — scribe `b35f62081c994d4b8c38e566e5c79f1a5dfd14f3`
+A figure MuPDF reads among a paper's references stays the document's (One_Hashing.pdf's Fig. 6) (#924).
+
+## 2026-10-21 14:08:18 EDT — scribe `e9997a876f94f682eb3dbce1b05d40e77b9a5f04`
+Red test: a figure read among the references is still the paper's (#924).
+
+## 2026-10-21 13:42:02 EDT — scribe `11aab648608744860e624f2f50d92ca63e15907f`
+Merge to main: whose words a text link's are, everywhere it shows; the reader credits feeds and papers; one library owner (#924, build 112).
+
+## 2026-10-21 13:40:57 EDT — scribe `807fcdfa9fa9077f5f7a0a556312245f08c2793e`
+Change log and PROGRESS for #924's attribution (8dabb1ea2 .. 25e4b2bb9).
+
+## 2026-10-21 13:40:28 EDT — scribe `610f58b109b6fa5e0fa1bf1905f00b1a89fc9ff1`
+ADR 0082 Text links 9, FEATURES item 20's attribution, the audit's attribution section (#924).
+
+## 2026-10-21 13:40:28 EDT — scribe `2b0a4e825aefc507132ee9ee56ebcb521d3f495f`
+Scribe's timeline says whose words a text link read aloud are: RuntimeMediaPlay author and credit, the summary's subtitle (#924).
+
+## 2026-10-21 13:40:28 EDT — scribe `25e4b2bb9f5f53393c7333f110af36f5826e1412`
+swiftui-pro review: the timeline row's own VoiceOver label reads its subtitle; one ShareLink (#924).
+
+## 2026-10-21 13:33:56 EDT — scribe `e297da40f149fd5bcfb5d4aa02ad3369d86e4089`
+Rules matrices check mediaItems.author and videoQueueItems.author (#924).
+
+## 2026-10-21 13:28:03 EDT — scribe `bb7df3dce1009bb2612c3ea95a365d0bb8e00fda`
+One library owner for every writer of a text link's rows: the laptop's SCRIBE_MAIN_ env and the mini's owner (#924).
+
+## 2026-10-21 13:27:10 EDT — scribe `19cb7528fc2aaf32799a0a1c7f047935ad5254d4`
+Red tests: one library owner for every writer (#924).
+
+## 2026-10-21 13:22:05 EDT — scribe `2f52233f00dde59a3cfef966280ce957f896c5c4`
+A paper's byline row in a shared block, small-capital sections, levels by numbering (#924).
+
+## 2026-10-21 13:19:52 EDT — scribe `c8dc24952a1710e0275b2402e91a2a7a7ee11cd0`
+Red tests: a paper's byline in its affiliation's block, small capitals, numbered depth (#924).
+
+## 2026-10-21 13:16:33 EDT — scribe `24327e80bd540008de24a0b13f2d1e555ccb421d`
+scribe-text-links skill credits the writer; installed for Claude, Grok and agents (#924).
+
+## 2026-10-21 13:15:05 EDT — scribe `b2fff1ee0d1e3397878450cca16792211b54edfd`
+Scribe Playback says whose words a text link's are: row, player, Lock Screen, copied and shared lines, chapters (#924).
+
+## 2026-10-21 13:14:55 EDT — scribe `8dabb1ea2caac02c5f6641ccb6fc58a3622eee7b`
+The reader names whose words a text link's are (JSON-LD, citation_author, the page's own feed, a paper's byline); mediaItems.author and videoQueueItems.author (#924).
+
+## 2026-10-21 12:59:39 EDT — scribe `85afa00ab22fe906ef0f670d31524ad6e5540078`
+Red tests: a text link read aloud names whose words they are, everywhere it shows (#924).
+
 ## 2026-10-21 13:38:50 EDT — scribe `f66e218f420208d58599addec383ceb2477a0398`
 Change log for #972 (a185740e3).
 
