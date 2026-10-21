@@ -1,3 +1,21 @@
+## 2026-10-21 13:26:30 EDT — scribe `bd468763781293757e4a1034d08dc9f36dbf5682`
+Change log for #972 (5634dcb15, 2cc934b4c, cbc585543).
+
+## 2026-10-21 13:26:09 EDT — scribe `cbc58554334e92af5beac3910bb1568b191a7793`
+The books queue as a LaunchAgent, com.knophy.scribe-books-ingest, every 30 min in #927's venv (#972).
+
+## 2026-10-21 13:25:31 EDT — scribe `2cc934b4cd34212ffb697c86ce1713d9bec5f1cd`
+Three failures in a row for one title set it aside with its reason (#972).
+
+## 2026-10-21 13:25:21 EDT — scribe `d1842c0da87b148781cec8c22610195bdd966e6e`
+Red tests: three failures in a row set a title aside (#972).
+
+## 2026-10-21 13:25:02 EDT — scribe `5634dcb159127b000392ae8576f8dca008f904c5`
+The Audible queue: one Audible title and at most one license try a pass, under #927's retry lock; the local copy goes after the catalog step (#972).
+
+## 2026-10-21 13:23:06 EDT — scribe `40b004cb83d2679b9b99e53f33ffec3cab5c8f3e`
+Red tests: the Audible queue's order, account-wide license spacing counting #927's tries, each title's ASIN (#972).
+
 ## 2026-10-21 13:21:21 EDT — scribe `e0b1b3a87f1add1fc68d7488d71164764660915c`
 Change log for #972 (302b648be, dddd57470, 901e66b9f, a31e8c72a, a78c1fd18, ff8a104a9).
 
