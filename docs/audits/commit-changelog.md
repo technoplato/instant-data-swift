@@ -1,3 +1,6 @@
+## 2026-10-21 19:23:50 EDT — scribe `f23f647a6bb2aa67615d23483cc59e3575418d82`
+PROGRESS and a channel note: the Twitch picture follows its seeks, its drift measured, PictureSync.Follower.next(seekInFlight:) (#916).
+
 ## 2026-10-21 19:22:50 EDT — scribe `48f09628843771dd0878f292e79e68b677e337ed`
 Change log for the Twitch picture's seek fixes, the drift audit and What's New (#916, #974).
 
