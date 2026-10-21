@@ -1,3 +1,12 @@
+## 2026-10-21 13:38:50 EDT — scribe `f66e218f420208d58599addec383ceb2477a0398`
+Change log for #972 (a185740e3).
+
+## 2026-10-21 13:29:15 EDT — scribe `a185740e351139e80982a05bda52c87ad56e9b68`
+media_catalog.py books --rekey: the three books signed under audiobook:books:<slug> move to audiobook:<rendition id>; run on the mini, the live server matches the new key (#972).
+
+## 2026-10-21 13:28:37 EDT — scribe `7175b5c2aa5aa34ad89518b9295de6ac682ce2c8`
+Red test: media_catalog.py books --rekey (#972).
+
 ## 2026-10-21 13:26:30 EDT — scribe `bd468763781293757e4a1034d08dc9f36dbf5682`
 Change log for #972 (5634dcb15, 2cc934b4c, cbc585543).
 
