@@ -1,3 +1,42 @@
+## 2026-10-21 15:32:32 EDT — scribe `8fbff59b6c69e89c1f37aea661b355f28cd8437e`
+Merge to main for build 112: short clips kept as video and played offline; Twitch's picture from its own stream; Dailymotion out (#974, #916).
+
+## 2026-10-21 15:32:32 EDT — scribe `18aa4fa88cb25d0caea8cb1661e2745639c8d94f`
+Change log and PROGRESS for #974 and #916 (f86d4c4c3 .. 9fed26bd2).
+
+## 2026-10-21 15:32:32 EDT — scribe `9fed26bd2f212c47fbb473eb238b6f9c5979d336`
+An item that may have a clip shows its artwork while the clip is looked up (#974).
+
+## 2026-10-21 15:32:32 EDT — scribe `29b28f1009a05f56bf3e879a515da07ed8faffbd`
+The clip step uses the library owner the installer names (SCRIBE_LIBRARY_OWNER_ID) (#974).
+
+## 2026-10-21 15:32:32 EDT — scribe `edcefd5a78fc0769ab11e33b3f62085dadb3d58f`
+Only a YouTube video or a web link may be a clip, never a text link read aloud (#974).
+
+## 2026-10-21 15:32:32 EDT — scribe `6bb052928b0d4cc0fa18a7d60a644121c1aeaa28`
+A Twitch video's picture is its own HLS in a muted AVPlayer following the clock (#916).
+
+## 2026-10-21 15:32:32 EDT — scribe `311b986ffbbc05a784f5f82f54d94a95930f28f2`
+The audio step says a login wall in plain words (#974).
+
+## 2026-10-21 15:32:32 EDT — scribe `c00dee38aac88ebe354b92b2118a288b35aaa82e`
+A clip's video nearest 1.5 Mb/s at its resolution (#974).
+
+## 2026-10-21 15:32:32 EDT — scribe `952eff05c690823b596b182df002352a71680ea6`
+A clip's new library row goes where the words step writes it (#974).
+
+## 2026-10-21 15:32:32 EDT — scribe `04a3f4426440fbb22f8ab7bcf5166d3abe11e21c`
+Scribe Playback plays a kept clip as the item, offline, and keeps every queued clip on the phone (#974).
+
+## 2026-10-21 15:32:32 EDT — scribe `b85d40e107077c5310a7859ecd5fc81e2005627f`
+Twitch addresses as yt-dlp reads them; Dailymotion no longer a named site (#916).
+
+## 2026-10-21 15:32:32 EDT — scribe `7caa1aebd0d322ef86466d2e9a561ec9f01bf9ed`
+The Mac's prepare step keeps a clip under five minutes as video in his library (#974).
+
+## 2026-10-21 15:32:32 EDT — scribe `f86d4c4c342637cfc98ba692b7cea8be1c4ac3a8`
+Schema: mediaItems video fields and the videoFile link, pushed to production 13:30 (#974).
+
 ## 2026-10-19 19:40:36 EDT — realtime-voice `f7370542f56331e8fd94221fa1bf14d729281561`
 audits(#906): index row for the media-catalog audit (#768 rounds 1-2, #906 round 3), which had none
 
