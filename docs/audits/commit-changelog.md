@@ -1,3 +1,12 @@
+## 2026-10-21 16:42:06 EDT — scribe `6fbe669143df0964d6327be5c58164cac21597e0`
+Merge origin/main (89bd4074d, build 111's cut, which ships #974 and #916's Twitch picture) into agent/claude/short-videos-974; to main (#974, #916).
+
+## 2026-10-21 16:42:06 EDT — scribe `27d54798e814cccd37b4d0e0ca9f4d50375a9d69`
+Change log for ADR 0084 A3 filled from build 111's re-measure (64e75a78c) (#916).
+
+## 2026-10-21 16:42:06 EDT — scribe `64e75a78c1ed7be3ffc928fe3bbaa69e937379a5`
+ADR 0084 A3 filled (main said A3_PENDING): build 111's re-measure after the follower's last fixes, written into #916's audit with its conditions (#916).
+
 ## 2026-10-21 15:55:01 EDT — scribe `7964d57fa53701ce5d5445b163bb98b8513d7f31`
 Change log for the production audit section and the swiftui-pro review's fix (82e920d79, 4fed41731) (#974, #916).
 
