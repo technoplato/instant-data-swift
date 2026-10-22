@@ -10,6 +10,18 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## October 22nd, 2026 at 2:23:51 a.m. EDT — `c53510d6ca4a` Document the v1.9.12 release: a relaunch releases the delivery claims of a process that has ended instead of waiting out their deadlines (#1000, #990)
+
+- **Implementation commit:** `c53510d6ca4ae676616917245046e7aaa4d686ff`
+- **Change:** Document the v1.9.12 release (#1000, #990)
+- **Details:**
+  - Release document: a relaunch releases the delivery claims of a process that has ended; the whole-suite gate against 1.9.11 on the same machine (23 vs 22 failed tests, the one new failure passes alone); not yet device-checked.
+- **Files:**
+  - `docs/releases/v1.9.12.md` — the release document
+- **User context (verbatim):**
+  > Fix things when they're broken. Don't ask me permission.
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run); no SpecStory capture for headless runs.
+
 ## October 21st, 2026 at 10:50:30 p.m. EDT — `fbab661efd0b` Green: a relaunch releases the delivery claims of a process that has ended and offers the head at once (#990)
 
 - **Implementation commit:** `fbab661efd0bb41aa80f4778f4ab39a88d9b8a8d`

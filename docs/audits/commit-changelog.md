@@ -1,3 +1,9 @@
+## 2026-10-22 02:23:16 EDT — instant-data-swift `c53510d6ca4ae676616917245046e7aaa4d686ff`
+Release document for v1.9.12: a relaunch releases the delivery claims of a process that has ended (#1000, #990).
+
+## 2026-10-22 02:23:06 EDT — instant-data-swift `eeacb08f75c9bed77bf7899695b03957b0657fe2`
+Merge of main's ledger-only commits into the claim-lease branch before its v1.9.12 release (#1000).
+
 ## 2026-10-22 02:18:22 EDT — scribe `10f68d9d70ffcbc2c2cfd8956d0bc7af82602b81`
 Merge to main for build 114 (#1001): a Stop whose 5 s transcript deadline passes keeps the unheard tail beside the audio, and the sweep after Stop fills it from audio.wav (from #990's Recording 274).
 

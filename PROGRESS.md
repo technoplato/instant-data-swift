@@ -1,3 +1,17 @@
+## 2026-10-22 02:23:30 EDT — v1.9.12: a relaunch releases the delivery claims of a process that has ended instead of waiting out their deadlines (#990, #1000)
+
+- **Why:** a process that ends while it waits for acknowledgements leaves its durable delivery claims behind, and the
+  next launch offered nothing until the last of them passed (97 s for 18 claims on a device).
+- **Commits:** plan `a15d45f0`, red `d2557a83`, green `fbab661e`, bookkeeping `e468e3ca`; main's ledger-only commits
+  merged into the branch (eeacb08f); the release document (c53510d6); then the ledger commit, main fast-forwarded to
+  it, and the tag v1.9.12.
+- **Checks:** red and green as recorded below; the whole suite against 1.9.11 on the same machine (a Mac with a load
+  near 2): 1.9.11 fails 23 tests, 1.9.12 fails 22, the one 1.9.12-only failure passes 3 of 3 alone (a reconnect timing
+  under parallel load). An earlier attempt on a shared machine at a load of 230-810 hung after about 2,300 tests and
+  was stopped; it is not a gate.
+- **Next:** the consuming app pins exactly 1.9.12; on a device, a forced quit with writes in flight, then the next
+  launch logs `outbox.claims.ended-claimant-released` and no run of acknowledgement timeouts.
+
 ## 2026-10-21 23:00:00 EDT — a relaunch releases the delivery claims of a process that has ended instead of waiting out their deadlines (#990), on branch `agent/claude/claim-lease-990`, not released
 
 - **Why:** a process that ends while it waits for acknowledgements (killed, crashed, replaced by an update) leaves its
