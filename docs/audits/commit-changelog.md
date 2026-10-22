@@ -1,3 +1,9 @@
+## 2026-10-22 08:43:57 EDT — scribe `e9a0354dec2d06b109c9376c3ec139342f8f7334`
+Change log for #990's AirPods verification (5a08dbeb7).
+
+## 2026-10-22 08:43:57 EDT — scribe `5a08dbeb7d3dbd21a24536ca4b5c685e3fa7d7f8`
+Audit and PROGRESS (#990): verified with AirPods too (the microphone moved to AirPods Pro mid-take, restart in 164 ms, words kept coming); #990 Verified.
+
 ## 2026-10-22 08:32:16 EDT — scribe `49df9071ba6b58c2b4cccfe30ca4dcbd846a93c5`
 Change log for #990's iPhone verification (2a6c1c5fd); PROGRESS.
 
