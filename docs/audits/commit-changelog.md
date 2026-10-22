@@ -1,3 +1,24 @@
+## 2026-10-21 23:00:01 EDT — scribe `e8481293fb6b598fd9c402ac3044a440d7d1015b`
+Build 113 cut (#990 hotfix): Scribe 0.1 (113), What's New build 113 dated with "Words appear again while you record" first; Scribe Playback keeps 112.
+
+## 2026-10-21 22:59:37 EDT — scribe `c10da58042f76d2a980936ec8a5af28aa23dadce`
+Merge to main for build 113 (#990, SEV): On This iPhone's models are preparing until this install compiled them, Apple stands in meanwhile, and the recording hands over when they are ready.
+
+## 2026-10-21 22:59:18 EDT — scribe `af0169798e223c44949c454735b419be92e7cbc6`
+Change log for #990 (efc53815e, b9aca8c69, d30066240); PROGRESS names the rebased SHAs.
+
+## 2026-10-21 22:58:45 EDT — scribe `d30066240a2580629230cf92e0825867fab6b802`
+Docs (#990): ADR 0074 amendment B (the Neural Engine compile comes back after every update), the audit, What's New build 113's first story, PROGRESS.
+
+## 2026-10-21 22:58:45 EDT — scribe `b9aca8c69e63e2d3d4410d747ae4f0b2f9ef0ee0`
+Green (#990): the compile stamp per install, the store's preparing state and launch compile, the recording's hand-over through the #484 restart.
+
+## 2026-10-21 22:58:45 EDT — scribe `efc53815e635aa9dff529a7cee459c2e5a97374a`
+Red (#990): SpeechClientLiveTests and RecordingTranscriptionWatchdogTests against stubs that keep build 112's behavior.
+
+## 2026-10-21 21:38:53 EDT — scribe `ebd520d767bdd5d67b46e5de7b67292a3a88dda8`
+Plan, claims and a channel note for #990 (no-words-990).
+
 ## 2026-10-21 20:58:44 EDT — scribe `49432a5c4f9296a070ce983e02b6c8a4a4073b75`
 Change log for the #988 audit (a5fdcccd0).
 
