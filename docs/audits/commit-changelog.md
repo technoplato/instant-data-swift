@@ -1,3 +1,12 @@
+## 2026-10-21 22:48:35 EDT — instant-data-swift `fbab661efd0bb41aa80f4778f4ab39a88d9b8a8d`
+Green: a relaunch releases the delivery claims of a process that has ended and offers the head at once (#990)
+
+## 2026-10-21 22:20:22 EDT — instant-data-swift `d2557a83d5403db8812730268d8460e573a5b400`
+Red: a relaunch waits out every claim an ended launch left behind before it offers the head (#990)
+
+## 2026-10-21 22:20:06 EDT — instant-data-swift `a15d45f05af997f25dabfa9187954b13dcaa6fa0`
+Plan: a relaunch releases the delivery claims of a process that has ended (#990)
+
 ## 2026-10-15 13:40:44 EDT — instant-data-swift `2e489afc5281a292267ae7259fffd73fb7e1c91d`
 Merge origin/main (e8d0eeb9, audit ledger only) into the #704 branch before its release ledger
 

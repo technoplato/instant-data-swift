@@ -10,6 +10,48 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## October 21st, 2026 at 10:50:30 p.m. EDT — `fbab661efd0b` Green: a relaunch releases the delivery claims of a process that has ended and offers the head at once (#990)
+
+- **Implementation commit:** `fbab661efd0bb41aa80f4778f4ab39a88d9b8a8d`
+- **Change:** Green: a relaunch releases the delivery claims of a process that has ended and offers the head at once (#990)
+- **Details:**
+  - Claimant ids name process and launch; the claim transaction releases the claims of an ended claimant before reclaiming expired ones, fenced by that claimant; logged as outbox.claims.ended-claimant-released.
+  - Focused suites (heavy.sh): 282 tests in 11 suites pass except one wall-clock connect-timeout bound under load.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantOutboxClaimant.swift` — the claimant process and its liveness
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — the release in the claim transaction
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — claimant id and the claim request
+- **User context (verbatim):**
+  > I noticed that the last two did not record any transcription.
+- **SpecStory:** unavailable — Claude Code sub-agent run of the #990 incident agent; no SpecStory capture exists for it.
+
+## October 21st, 2026 at 10:50:30 p.m. EDT — `d2557a83d540` Red: a relaunch waits out every claim an ended launch left behind before it offers the head (#990)
+
+- **Implementation commit:** `d2557a83d5403db8812730268d8460e573a5b400`
+- **Change:** Red: a relaunch waits out every claim an ended launch left behind before it offers the head (#990)
+- **Details:**
+  - At v1.9.11 a relaunch with 18 left-behind claims first re-offers the head after 107,500 virtual ms and logs 18 ack-timeout batches; 4 of the 5 new tests fail, the lease-keeping test passes.
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantBoundedOutboxDeliveryTests.swift` — the five #990 tests and a stepped deadline sleep
+  - `Sources/InstantSwiftDataCore/InstantOutboxClaimant.swift` — declarations only
+  - `Sources/InstantSwiftDataCore/BoundedOutboxDelivery.swift` — the claim request seam, unused
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — the configuration seam, unused
+- **User context (verbatim):**
+  > I noticed that the last two did not record any transcription.
+- **SpecStory:** unavailable — Claude Code sub-agent run of the #990 incident agent; no SpecStory capture exists for it.
+
+## October 21st, 2026 at 10:50:30 p.m. EDT — `a15d45f05af9` Plan: a relaunch releases the delivery claims of a process that has ended (#990)
+
+- **Implementation commit:** `a15d45f05af997f25dabfa9187954b13dcaa6fa0`
+- **Change:** Plan: a relaunch releases the delivery claims of a process that has ended (#990)
+- **Details:**
+  - Plan-only commit: PLAN.md and one _touching claim line for each of the five paths, before any code.
+- **Files:**
+  - `agent-presence/claude-opus-5.5/plans/2026-10-21-claim-lease-990/PLAN.md` — the plan
+- **User context (verbatim):**
+  > I noticed that the last two did not record any transcription.
+- **SpecStory:** unavailable — Claude Code sub-agent run of the #990 incident agent; no SpecStory capture exists for it.
+
 ## October 15th, 2026 at 1:41:04 p.m. EDT — `a2f6c6f5910e` Document the v1.9.11 release: live-query ownership rows name their result by an integer id instead of repeating the query's whole key (#704)
 
 - **Implementation commit:** `a2f6c6f5910ee77bbb2668822011563be8416b6e`

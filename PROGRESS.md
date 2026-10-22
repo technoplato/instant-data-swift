@@ -1,3 +1,34 @@
+## 2026-10-21 23:00:00 EDT — a relaunch releases the delivery claims of a process that has ended instead of waiting out their deadlines (#990), on branch `agent/claude/claim-lease-990`, not released
+
+- **Why:** a process that ends while it waits for acknowledgements (killed, crashed, replaced by an update) leaves its
+  durable delivery claims behind. A claim pass admits nothing while another claimant holds a live claim, and each
+  claim's deadline is 6 s times its in-flight ordinal, so the next launch reclaimed one claim per 6 s wake and offered
+  nothing until the last passed. On a device, 18 such claims held a relaunch's delivery for 97 s, and the launch before
+  it waited 65 s on the claims of the build it replaced. Upstream `Reactor.js` re-sends every pending mutation on
+  `init-ok` (`_flushPendingMessages`).
+- **Commits (branch from tag `v1.9.11`):** plan `a15d45f0`; red `d2557a83`; green `fbab661e`; then this bookkeeping
+  commit. Not merged, tagged or released here.
+- **What changed:** claimant ids name process and launch (`process-<pid>-<launch>/<runtime>`). Inside the claim
+  transaction, before expired claims are reclaimed, the claims of every claimant whose process has ended are released,
+  fenced by that claimant: this process's identifier with another launch, or `kill(pid, 0)` answering `ESRCH`. Ids
+  written before this change name no process: ended on iOS, tvOS, watchOS and visionOS (an update ends every process of
+  the old build), kept on macOS and Mac Catalyst. A running claimant, an app extension included, keeps its lease; a
+  reused process identifier keeps the lease too. Released rows keep `delivery_started`. Logged as
+  `outbox.claims.ended-claimant-released` with `waitAvoidedMilliseconds`, not as acknowledgement timeouts.
+- **Checks (heavy.sh, shared laptop, 5-minute load 19-148):** red: the five new tests, 4 fail as designed (the relaunch
+  test measured 107,500 virtual ms before the first re-offer, with 18 ack-timeout batches), the lease-keeping test
+  passes. Green: the five pass; focused suites, 282 tests in 11 suites (bounded delivery, fast drain, hydration,
+  supersession, terminal components, replay gate, server-apply rebase, local stamps, live transport, two store tests),
+  all pass except `connectTimeoutAbortsCancellationInsensitiveAttemptAndLateSession` (a wall-clock bound, 0.306 s, on
+  the connect-timeout path); alone and one at a time (`--no-parallel`), three runs at 23:19, it passed 3 of 3 in
+  1-8 ms: its sleep is injected, so the 306 ms was scheduling under load. The whole suite was not run.
+- **Not changed here:** the refusal of a re-send after a relaunch is still labelled `first-offer` and fails terminally,
+  because which writes an earlier connection offered is remembered in memory only; the rows' durable
+  `delivery_started` bit could drive that. The explicit flush lane still waits out an ended claimant's claims.
+- **Next:** a release agent decides on 1.9.12 from this branch (release document, tag, the consuming app's pin). On a
+  device, after a forced quit with writes in flight, the next launch should log `outbox.claims.ended-claimant-released`
+  and no run of ack-timeout batches.
+
 ## 2026-10-15 13:45:00 EDT — v1.9.11: live-query ownership rows name their result by an integer id instead of repeating the query's whole key (#704)
 
 - **Why:** on a store copied from a device, 32,555 ownership rows holding 3.7 MB of values took 328.9 MB, because every
