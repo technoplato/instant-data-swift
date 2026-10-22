@@ -1,3 +1,9 @@
+## 2026-10-21 20:52:03 EDT — scribe `c07e12aced715fa080d02d5a1641ca036cfd24a8`
+Change log for build 112's cut (97f154092, #988).
+
+## 2026-10-21 20:03:39 EDT — scribe `97f1540928f4fe8f757968c9678e3f33dc496b4d`
+Build 112 cut (#988 hotfix): Scribe 0.1 (112), both What's New files finalized, #988 first, #265 moved from 111 to 112.
+
 ## 2026-10-21 20:02:34 EDT — scribe `5305a7c8a4b702e5885c87ee4ff97a23e9a4c440`
 Merge to main for build 112 (#988, SEV): a planned microphone switch's start leaves the kept audio session untouched, the step iOS refused with Scribe in the background.
 
