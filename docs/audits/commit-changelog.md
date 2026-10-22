@@ -1,3 +1,33 @@
+## 2026-10-22 02:23:09 EDT — scribe `d97c5d3c9899aea9a29dd1342de9c21a0d514bd2`
+Merge to main for build 114 (#992, #993): the speaker's name pinned at the top of the words and Back to Playhead's live-words bubble, one set of views for Scribe Playback and Scribe.
+
+## 2026-10-22 02:21:51 EDT — scribe `18351b8921fa11ac2f362c417089f06deb9d3a24`
+Merge of main (#1001's landing) into agent/claude/playback-ui-992-993 (#992, #993): CHANGELOG and PROGRESS keep both sides.
+
+## 2026-10-22 02:20:33 EDT — scribe `a1e37477242ce8ef8bf5f3f0d8aec897ede69082`
+Docs (#992, #993): What's New in both apps for build 114 (next), PROGRESS.
+
+## 2026-10-22 02:07:48 EDT — scribe `a661cc5b3b0f0d5eb85ec9ccc9d693bcbb16e7da`
+Green (#992): the pinned name hands over when the next name's row reaches its edge (MediaTimelinePinEdge.nameTop, both apps).
+
+## 2026-10-22 02:05:06 EDT — scribe `1100662c7063bad50eab8605f7f442e8106d9eb6`
+Red test (#992): the handoff mark is the top of the next name's row, found on the iPad simulator at AX5.
+
+## 2026-10-22 01:47:51 EDT — scribe `c2f6a176d440dfdc7d05b8896e1d5e7c0b7d644c`
+Merge of main (24 commits: build 113's hotfix, #995, #1001's plan, this plan) into agent/claude/playback-ui-992-993 (#992, #993).
+
+## 2026-10-22 01:47:13 EDT — scribe `41f5cefa7e10fd50da6ba310f303f93def2ac469`
+Green (#992, #993): MediaTimelinePinnedSpeaker and MediaTimelinePlayheadBubble in Scribe Playback and Scribe's playback; Playback's other states unchanged to the pixel.
+
+## 2026-10-22 01:10:30 EDT — scribe `b5a643fb38d97bacd584c580a8a32454bcd2640e`
+Plan (#992, #993): playback-ui-992-993's plan, claims and a channel note, landed before the merge.
+
+## 2026-10-21 22:14:47 EDT — scribe `a542c254db32802e3a445fae5524fe19d437bf01`
+Red tests (#992, #993): who is pinned, the bubble's words and its arrow, with stubs.
+
+## 2026-10-21 22:11:55 EDT — scribe `8347d8a6d31b34b9708df2b8c983fcfb189a355e`
+Before (#992, #993): Scribe Playback's whole player recorded from main 49432a5c4.
+
 ## 2026-10-21 19:14:39 EDT — scribe `12e99841958992dfb66d5f72495be2bd1a060c8a`
 PROGRESS.md (#924): the schema hazard is gone; main holds #924's author fields and #974's clip slice.
 
