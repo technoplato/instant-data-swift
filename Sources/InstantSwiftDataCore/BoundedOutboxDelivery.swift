@@ -100,6 +100,9 @@ struct InstantAutomaticOutboxClaimRequest: Sendable {
   var maximumBodyDecodeCount: Int
   var maximumEncodedBodyByteCount: Int
   var requiresExclusiveLane: Bool
+  /// Whether the process behind another claimant's claims has ended, so that the claim releases those claims first
+  /// (#990). The default ends no claimant, so every claim keeps its lease.
+  var claimantHasEnded: @Sendable (_ claimantID: String) -> Bool
 
   init(
     claimantID: String,
@@ -109,7 +112,8 @@ struct InstantAutomaticOutboxClaimRequest: Sendable {
     maximumStepCount: Int = InstantAutomaticOutboxClaimLimits.maximumStepCount,
     maximumBodyDecodeCount: Int = InstantAutomaticOutboxClaimLimits.maximumBodyDecodeCount,
     maximumEncodedBodyByteCount: Int = InstantAutomaticOutboxClaimLimits.maximumEncodedBodyBytes,
-    requiresExclusiveLane: Bool = false
+    requiresExclusiveLane: Bool = false,
+    claimantHasEnded: @escaping @Sendable (_ claimantID: String) -> Bool = { _ in false }
   ) {
     self.claimantID = claimantID
     self.claimToken = claimToken
@@ -119,6 +123,7 @@ struct InstantAutomaticOutboxClaimRequest: Sendable {
     self.maximumBodyDecodeCount = maximumBodyDecodeCount
     self.maximumEncodedBodyByteCount = maximumEncodedBodyByteCount
     self.requiresExclusiveLane = requiresExclusiveLane
+    self.claimantHasEnded = claimantHasEnded
   }
 }
 

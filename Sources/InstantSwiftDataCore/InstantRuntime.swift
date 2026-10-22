@@ -375,6 +375,9 @@ public struct InstantRuntimeConfiguration: Sendable {
     instantLiveDefaultTimeoutSleep
   var liveMutationDeadlineSleep: @Sendable (UInt64) async throws -> Void =
     instantLiveDefaultTimeoutSleep
+  /// The process this runtime's delivery claims belong to, and how it tells that another claimant's process has ended
+  /// (#990). Tests give each simulated launch its own.
+  var outboxClaimantProcess = InstantOutboxClaimantProcess.current
   /// The backoff for writes and add-queries the server answered with a transient error (#376, #360).
   var liveServerErrorRetryPolicy = InstantServerErrorRetryPolicy()
   /// The longest a refused re-send waits, parked, for a result from the server that shows the values it set (#441).

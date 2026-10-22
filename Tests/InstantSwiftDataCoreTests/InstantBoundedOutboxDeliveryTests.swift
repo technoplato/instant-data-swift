@@ -4653,6 +4653,378 @@ struct InstantBoundedOutboxDeliveryTests {
   }
 }
 
+/// Claims a process left behind when it ended (#990).
+///
+/// A process that ends while it waits for acknowledgements (killed, crashed, replaced by an update) leaves its
+/// durable delivery claims behind. Each claim's deadline is six seconds times its in-flight ordinal, so a relaunch
+/// that waits them out reclaims one claim every six seconds and delivers nothing until the last one passes: 18 such
+/// claims held a relaunched app's delivery for 97 s in #990. Upstream `Reactor.js` sends every pending mutation
+/// again, in order, on `init-ok` of a new socket (`_flushPendingMessages`).
+extension InstantBoundedOutboxDeliveryTests {
+  @Test
+  func relaunchOffersEveryClaimAnEndedLaunchLeftBehindAtOnce() async throws {
+    let cacheURL = try temporaryBoundedOutboxCacheURL()
+    let mutations = (0..<18).map { boundedMutation(index: $0, prefix: "ended-launch") }
+    try await seedBoundedOutbox(mutations, cacheURL: cacheURL)
+    let endedLaunch = InstantOutboxClaimantProcess(
+      processID: 4_001,
+      launchID: "ended-launch",
+      endsUnidentifiedClaimants: false,
+      isRunning: { _ in false }
+    )
+    // The ended launch offered the whole window at 100,000 ms and ended before any answer.
+    try await leaveClaims(
+      on: mutations,
+      claimantID: endedLaunch.claimantID(runtimeID: "ended-runtime"),
+      claimedAt: 100_000,
+      cacheURL: cacheURL
+    )
+
+    let relaunchedAt: Int64 = 100_500
+    let clock = BoundedOutboxLockedClock(milliseconds: relaunchedAt)
+    let deadlineSleep = BoundedOutboxSteppedDeadlineSleep()
+    let liveSession = LiveReactorParitySession(messages: [
+      liveReactorInitOK(attrs: liveReactorTodoServerAttrs)
+    ])
+    var configuration = InstantRuntimeConfiguration(
+      appID: "bounded-outbox-ended-launch",
+      persistenceURL: cacheURL,
+      initialAttributes: TodoExample.attributes,
+      now: { clock.now() },
+      liveTransport: liveSession.transport
+    )
+    configuration.autoConnectLiveTransport = false
+    configuration.liveMutationDeadlineSleep = { milliseconds in
+      try await deadlineSleep.sleep(milliseconds: milliseconds)
+    }
+    configuration.outboxClaimantProcess = InstantOutboxClaimantProcess(
+      processID: 4_002,
+      launchID: "relaunch",
+      endsUnidentifiedClaimants: false,
+      isRunning: { $0 == 4_002 }
+    )
+    let capture = BoundedOutboxPrefixDiagnosticCapture(prefix: "tx-ended-launch-")
+    let handler = InstantDiagnostics.shared.addHandler { capture.record($0) }
+    defer { InstantDiagnostics.shared.removeHandler(handler) }
+    let runtime = try await InstantRuntime.bootstrap(configuration: configuration)
+    _ = try await runtime.connect()
+
+    // Step the virtual clock through every acknowledgement-deadline wake the relaunch waits on, until it offers the
+    // head again. At most one wake per left-behind claim, and one more.
+    var firstOfferAfterMilliseconds: Int64?
+    wakes: for _ in 0...mutations.count {
+      let step = try await instantLiveWithTimeout(
+        operation: "wait for the relaunch to offer the head or to wait on a deadline",
+        timeoutMilliseconds: 5_000
+      ) { () async throws -> BoundedOutboxRelaunchStep in
+        while true {
+          try Task.checkCancellation()
+          let offered = await liveSession.sentMessages().contains {
+            $0.op == "transact" && $0.clientEventID == mutations[0].id
+          }
+          if offered { return .offered }
+          if let delay = await deadlineSleep.pendingDelay(),
+            await runtime.automaticMutationPumpIsIdleForTesting()
+          {
+            return .waiting(milliseconds: delay)
+          }
+          await Task.yield()
+        }
+      }
+      switch step {
+      case .offered:
+        firstOfferAfterMilliseconds = clock.now().milliseconds - relaunchedAt
+        break wakes
+      case let .waiting(milliseconds):
+        clock.advance(by: Int64(milliseconds))
+        await deadlineSleep.resumePending()
+      }
+    }
+
+    expectNoDifference(
+      firstOfferAfterMilliseconds,
+      0,
+      """
+      A claim of a launch that has ended can never be answered. The relaunch offers the head on its first claim, \
+      not 6 s times each left-behind claim's ordinal later.
+      """
+    )
+    try await instantLiveWithTimeout(
+      operation: "wait for the whole re-offered window",
+      timeoutMilliseconds: 5_000
+    ) {
+      await liveSession.waitForSentMessageCount(1 + mutations.count)
+    }
+    let offeredIDs = await liveSession.sentMessages()
+      .filter { $0.op == "transact" }
+      .compactMap(\.clientEventID)
+    expectNoDifference(offeredIDs, mutations.map(\.id), "In creation order, each once.")
+    var claimDeadlines: [Int64?] = []
+    for mutation in mutations {
+      claimDeadlines.append(
+        try await runtime.persistence.outboxDeliveryClaimForTesting(id: mutation.id)?
+          .deadlineMilliseconds
+      )
+    }
+    expectNoDifference(
+      claimDeadlines,
+      (1...mutations.count).map { Optional(relaunchedAt + Int64($0) * 6_000) },
+      "The relaunch's own window starts again at the first in-flight ordinal."
+    )
+    expectNoDifference(
+      capture.entries(named: "outbox.mutation.ack-timeout-batch").count,
+      0,
+      "Releasing an ended launch's claims is not an acknowledgement timeout."
+    )
+    let released = capture.entries(named: "outbox.claims.ended-claimant-released")
+    expectNoDifference(released.map { $0.metadata["releasedMutationCount"] }, ["18"])
+    expectNoDifference(
+      released.map { $0.metadata["waitAvoidedMilliseconds"] },
+      ["107500"],
+      "Without the release the relaunch would have waited until the last claim's deadline, 208,000 ms."
+    )
+    _ = try? await runtime.closeConnection()
+  }
+
+  @Test
+  func claimReleasesTheClaimsOfAnEndedClaimantAndRestartsTheirOrdinals() async throws {
+    let cacheURL = try temporaryBoundedOutboxCacheURL()
+    let mutations = (0..<3).map { boundedMutation(index: $0, prefix: "ended-claimant") }
+    try await seedBoundedOutbox(mutations, cacheURL: cacheURL)
+    try await leaveClaims(
+      on: mutations,
+      claimantID: "process-4001-ended/runtime",
+      claimedAt: 100_000,
+      cacheURL: cacheURL
+    )
+    let store = try SQLitePersistenceStore(fileURL: cacheURL)
+    try await store.bootstrap()
+
+    let window = try await store.claimAutomaticOutboxDeliveryWindow(
+      InstantAutomaticOutboxClaimRequest(
+        claimantID: "process-4002-relaunch/runtime",
+        claimToken: "relaunch-window",
+        now: InstantTimestamp(milliseconds: 100_500),
+        claimantHasEnded: { $0 == "process-4001-ended/runtime" }
+      )
+    )
+
+    expectNoDifference(window.mutations.map(\.id), mutations.map(\.id))
+    expectNoDifference(
+      window.reclaimedMutationIDs,
+      [],
+      "A released claim was never this runtime's, so no live reservation of it timed out."
+    )
+    var claims: [InstantOutboxDeliveryClaim?] = []
+    for mutation in mutations {
+      var claim = try await store.outboxDeliveryClaimForTesting(id: mutation.id)
+      claim?.projectedBodyByteCount = nil
+      claims.append(claim)
+    }
+    expectNoDifference(
+      claims,
+      [106_500, 112_500, 118_500].map { deadline in
+        InstantOutboxDeliveryClaim(
+          state: .claimed,
+          claimToken: "relaunch-window",
+          claimantID: "process-4002-relaunch/runtime",
+          deadlineMilliseconds: deadline,
+          projectedBodyByteCount: nil,
+          deliveryStarted: true
+        )
+      },
+      "Each released row is this runtime's now, from the first in-flight ordinal, and stays marked as offered before."
+    )
+    await store.simulateUnexpectedConnectionCloseForTesting()
+  }
+
+  @Test
+  func claimKeepsTheLeaseOfAClaimantWhoseProcessStillRuns() async throws {
+    let cacheURL = try temporaryBoundedOutboxCacheURL()
+    let mutations = (0..<2).map { boundedMutation(index: $0, prefix: "running-claimant") }
+    try await seedBoundedOutbox(mutations, cacheURL: cacheURL)
+    try await leaveClaims(
+      on: mutations,
+      claimantID: "process-4001-extension/runtime",
+      claimedAt: 100_000,
+      cacheURL: cacheURL
+    )
+    let store = try SQLitePersistenceStore(fileURL: cacheURL)
+    try await store.bootstrap()
+    let before = try await store.outboxDeliveryClaimForTesting(id: mutations[0].id)
+
+    let window = try await store.claimAutomaticOutboxDeliveryWindow(
+      InstantAutomaticOutboxClaimRequest(
+        claimantID: "process-4002-app/runtime",
+        claimToken: "app-window",
+        now: InstantTimestamp(milliseconds: 100_500),
+        claimantHasEnded: { _ in false }
+      )
+    )
+
+    expectNoDifference(
+      window.mutations.map(\.id),
+      [],
+      "A process that still runs, such as an app extension sharing the store, keeps the ordered lane."
+    )
+    let after = try await store.outboxDeliveryClaimForTesting(id: mutations[0].id)
+    expectNoDifference(after, before)
+    expectNoDifference(window.nextClaimDeadlineMilliseconds, 106_000)
+    await store.simulateUnexpectedConnectionCloseForTesting()
+  }
+
+  @Test
+  func claimantProcessTellsAnEndedLaunchFromARunningOne() {
+    let process = InstantOutboxClaimantProcess(
+      processID: 7,
+      launchID: "4c0a3f2e-0d2b-4f39-9f0a-2d6c1b7e8a90",
+      endsUnidentifiedClaimants: false,
+      isRunning: { $0 == 7 || $0 == 8 }
+    )
+    let ownClaimant = process.claimantID(runtimeID: "runtime-a")
+    expectNoDifference(ownClaimant, "process-7-4c0a3f2e-0d2b-4f39-9f0a-2d6c1b7e8a90/runtime-a")
+    let named = InstantOutboxClaimantProcess.process(ofClaimantID: ownClaimant)
+    expectNoDifference(named?.processID, 7)
+    expectNoDifference(named?.launchID, "4c0a3f2e-0d2b-4f39-9f0a-2d6c1b7e8a90")
+
+    let ended: [String: Bool] = [
+      // Another runtime of this launch, or its explicit flush lane, has not ended.
+      process.claimantID(runtimeID: "runtime-b"): false,
+      ownClaimant + "-explicit-flush-token": false,
+      // The same process identifier in another launch: one identifier belongs to one process at a time.
+      "process-7-earlier-launch/runtime-a": true,
+      // Another process that runs keeps its lease; one that does not run has ended.
+      "process-8-extension-launch/runtime-a": false,
+      "process-9-ended-launch/runtime-a": true,
+      "process-9-ended-launch/runtime-a-explicit-flush-token": true,
+      // Ids that name no process, as libraries before #990 wrote them, follow endsUnidentifiedClaimants.
+      "8f14e45f-ceea-467f-a8ef-4f8d9c6a1b2c": false,
+      "runtime-a": false,
+      "process-x-launch/runtime-a": false,
+      "process-0-launch/runtime-a": false,
+      "process-9-/runtime-a": false,
+      "process-9-launch": false,
+    ]
+    expectNoDifference(
+      Dictionary(uniqueKeysWithValues: ended.keys.map { ($0, process.hasEnded(claimantID: $0)) }),
+      ended
+    )
+
+    var unidentifiedEnded = process
+    unidentifiedEnded.endsUnidentifiedClaimants = true
+    expectNoDifference(unidentifiedEnded.hasEnded(claimantID: "8f14e45f-ceea-467f-a8ef-4f8d9c6a1b2c"), true)
+    expectNoDifference(unidentifiedEnded.hasEnded(claimantID: ownClaimant), false)
+  }
+
+  @Test
+  func currentProcessRunsAndAProcessThatDoesNotExistHasEnded() {
+    let current = InstantOutboxClaimantProcess.current
+    expectNoDifference(current.processID, ProcessInfo.processInfo.processIdentifier)
+    expectNoDifference(current.isRunning(current.processID), true)
+    expectNoDifference(current.isRunning(Int32.max), false, "No process has the largest identifier.")
+    expectNoDifference(
+      current.hasEnded(claimantID: "process-\(Int32.max)-ended-launch/runtime"),
+      true
+    )
+    #if os(macOS) || targetEnvironment(macCatalyst)
+      expectNoDifference(
+        current.endsUnidentifiedClaimants,
+        false,
+        "On macOS processes of different builds can share one store, so an unidentified claim keeps its lease."
+      )
+    #endif
+  }
+}
+
+/// Claims every mutation for `claimantID` at `claimedAt`, with the deadlines a real window gives its in-flight
+/// ordinals, and closes the store without releasing them, as a process that ends does.
+private func leaveClaims(
+  on mutations: [PendingMutation],
+  claimantID: String,
+  claimedAt: Int64,
+  cacheURL: URL
+) async throws {
+  let store = try SQLitePersistenceStore(fileURL: cacheURL)
+  try await store.bootstrap()
+  for (offset, mutation) in mutations.enumerated() {
+    let claimed = try await store.claimOutboxMutationWithoutHydrationForTesting(
+      id: mutation.id,
+      claimantID: claimantID,
+      claimToken: "\(claimantID)-window",
+      deadlineMilliseconds: InstantMutationAcknowledgementDeadlinePolicy.deadlineMilliseconds(
+        after: InstantTimestamp(milliseconds: claimedAt),
+        inFlightOrdinal: offset + 1
+      )
+    )
+    #expect(claimed)
+  }
+  await store.simulateUnexpectedConnectionCloseForTesting()
+}
+
+private enum BoundedOutboxRelaunchStep: Sendable {
+  case offered
+  case waiting(milliseconds: UInt64)
+}
+
+/// A deadline sleep the test resumes one wake at a time, for as many wakes as the runtime asks for.
+private actor BoundedOutboxSteppedDeadlineSleep {
+  private var sleepers: [UUID: (milliseconds: UInt64, continuation: CheckedContinuation<Void, Error>)] = [:]
+  private var order: [UUID] = []
+
+  func sleep(milliseconds: UInt64) async throws {
+    let id = UUID()
+    try await withTaskCancellationHandler {
+      try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+        if Task.isCancelled {
+          continuation.resume(throwing: CancellationError())
+        } else {
+          sleepers[id] = (milliseconds, continuation)
+          order.append(id)
+        }
+      }
+    } onCancel: {
+      Task { await self.cancel(id) }
+    }
+  }
+
+  /// The delay of the oldest wake the runtime still waits on, or `nil` when it waits on none.
+  func pendingDelay() -> UInt64? {
+    order.first.flatMap { sleepers[$0]?.milliseconds }
+  }
+
+  func resumePending() {
+    guard let id = order.first else { return }
+    order.removeFirst()
+    sleepers.removeValue(forKey: id)?.continuation.resume()
+  }
+
+  private func cancel(_ id: UUID) {
+    order.removeAll { $0 == id }
+    sleepers.removeValue(forKey: id)?.continuation.resume(throwing: CancellationError())
+  }
+}
+
+/// Keeps the library diagnostics whose metadata mentions one test's mutation ids. Tests run in parallel and share the
+/// handler list.
+private final class BoundedOutboxPrefixDiagnosticCapture: @unchecked Sendable {
+  private let lock = NSLock()
+  private let prefix: String
+  private var captured: [InstantDiagnosticEntry] = []
+
+  init(prefix: String) {
+    self.prefix = prefix
+  }
+
+  func record(_ entry: InstantDiagnosticEntry) {
+    guard entry.metadata.values.contains(where: { $0.contains(prefix) }) else { return }
+    lock.withLock { captured.append(entry) }
+  }
+
+  func entries(named event: String) -> [InstantDiagnosticEntry] {
+    lock.withLock { captured.filter { $0.event == event } }
+  }
+}
+
 private func connectedRuntime(
   appID: String,
   cacheURL: URL,
