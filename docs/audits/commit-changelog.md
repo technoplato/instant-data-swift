@@ -1,3 +1,9 @@
+## 2026-10-21 20:58:44 EDT — scribe `49432a5c4f9296a070ce983e02b6c8a4a4073b75`
+Change log for the #988 audit (a5fdcccd0).
+
+## 2026-10-21 20:54:44 EDT — scribe `a5fdcccd0fcbe85dde0bab56e8add88b6370ca69`
+Audit (#988): which microphone each AirPods recording on build 111 really used; the background switch confirmed on 110; build 112 shipped (iPhone 20:57).
+
 ## 2026-10-21 20:52:03 EDT — scribe `c07e12aced715fa080d02d5a1641ca036cfd24a8`
 Change log for build 112's cut (97f154092, #988).
 
