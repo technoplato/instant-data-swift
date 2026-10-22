@@ -1,3 +1,48 @@
+## 2026-10-22 02:18:22 EDT — scribe `10f68d9d70ffcbc2c2cfd8956d0bc7af82602b81`
+Merge to main for build 114 (#1001): a Stop whose 5 s transcript deadline passes keeps the unheard tail beside the audio, and the sweep after Stop fills it from audio.wav (from #990's Recording 274).
+
+## 2026-10-22 02:18:11 EDT — scribe `ed3173013d95104c754303a9cf03153af6a1e0c7`
+Change log for #1001 (bce21b225, 1c842d807, 7d0da3381) and its PROGRESS entry.
+
+## 2026-10-22 02:17:33 EDT — scribe `7d0da33819f86fcc5ce6c59e601b3f9b8669c3ec`
+Docs (#1001): ADR 0049 decision 4 amended, What's New build 114, the #990 audit's night section (iPhone still on 112, the empty takes' words queued for 113's gap fill).
+
+## 2026-10-22 02:17:33 EDT — scribe `1c842d8074b93c0a2beb88a41047b4c496528b8f`
+Green (#1001): Recording's Stop deadline keeps the stretch after the newest speech line in transcript-gap.json (UnfinishedRecordingSweep.transcriptGap) through unfinishedRecordingClient.handOffTranscriptGap.
+
+## 2026-10-22 02:17:33 EDT — scribe `bce21b22516ea6ed5701a49effa51ed4f21d2dec`
+Red test (#1001): StopDrainTranscriptGapTests, five cases of what a timed-out Stop keeps.
+
+## 2026-10-22 00:39:29 EDT — scribe `68da09ed559c07aae37eb3c36b2cfe128329ce83`
+Plan and claims for #1001 (stop-drain-gap-1001), with a channel note for Recording.swift (#994).
+
+## 2026-10-21 23:59:42 EDT — scribe `783968887b06a25b47cf0faf79637fbdac3fa6d1`
+Change log for build 113's cut (e8481293f) and its install record (59015cbe4), #990.
+
+## 2026-10-21 23:59:41 EDT — scribe `59015cbe4fa6835f1c2160a2b36efaaaa6f66c76`
+Docs (#990): build 113 shipped; the launch compile measured on the iPad (95.1 s) and the Mac (1.0 s).
+
+## 2026-10-21 23:30:45 EDT — scribe `fee91e9b0963803a8bc56385d71c4d701b59870a`
+Merge to main (#995, P0): plays in Scribe Playback reach Scribe's live timeline through the App Group, by Scribe's own clock, with the words heard; What's New build 114 (next) in both apps.
+
+## 2026-10-21 23:30:00 EDT — scribe `817ebbf6d3eedb858611dae15708ca86a870ee1e`
+Change log for #995 (1d3e5a278, 431012560, 4544d1f6e, fde337703, 98c571a57).
+
+## 2026-10-21 23:26:36 EDT — scribe `98c571a5781659be9f38209e39c55d12074f938e`
+Docs (#995): the independent review's outcome and the measurements in the audit, PROGRESS, the channel's landing note.
+
+## 2026-10-21 23:07:44 EDT — scribe `fde337703293c059d009677d39f9424558384088`
+Fix (#995): the review's findings: the recording row's own clock origin, the hand-off first and never waiting, failures kept and logged, no stale clock, no date read per action.
+
+## 2026-10-21 23:07:44 EDT — scribe `4544d1f6ebb186110144f57aeb0413c75631f390`
+Docs (#995): ADR 0044 amendment 2, FEATURES item 11's clause (no line lost), the audit, both apps' What's New for build 114 (next).
+
+## 2026-10-21 23:07:33 EDT — scribe `431012560de7f78140594abe84fb3fdd472768aa`
+Green (#995): Scribe writes its recording's clock to the App Group; Scribe Playback merges it with the server's copy and hands the placed rows back; the live screen shows them at once, with the words heard.
+
+## 2026-10-21 23:07:33 EDT — scribe `1d3e5a2781b5e000d9df7472cd9335c0cb2c7e47`
+Red (#995): the Recording 272 replay (a frozen server heartbeat), the App Group contract, the hand-off, the words, and snapshot tests at default and AX5 on iPhone and iPad.
+
 ## 2026-10-21 22:48:35 EDT — instant-data-swift `fbab661efd0bb41aa80f4778f4ab39a88d9b8a8d`
 Green: a relaunch releases the delivery claims of a process that has ended and offers the head at once (#990)
 
@@ -6,6 +51,243 @@ Red: a relaunch waits out every claim an ended launch left behind before it offe
 
 ## 2026-10-21 22:20:06 EDT — instant-data-swift `a15d45f05af997f25dabfa9187954b13dcaa6fa0`
 Plan: a relaunch releases the delivery claims of a process that has ended (#990)
+
+## 2026-10-21 22:18:48 EDT — scribe `fd5ead63b516b9a16d903474f526f7647842ab07`
+Claims (#995): the play rows' at-rest subtitle, matched words on handed plays, AppFeature's clock share, Scribe Playback's next build number.
+
+## 2026-10-21 21:24:25 EDT — scribe `9a9c316e880c3cb3c648c671c77fd2d8becf5347`
+Plan, claims and a channel note for #995 (playback-timeline-995).
+
+## 2026-10-21 23:00:01 EDT — scribe `e8481293fb6b598fd9c402ac3044a440d7d1015b`
+Build 113 cut (#990 hotfix): Scribe 0.1 (113), What's New build 113 dated with "Words appear again while you record" first; Scribe Playback keeps 112.
+
+## 2026-10-21 22:59:37 EDT — scribe `c10da58042f76d2a980936ec8a5af28aa23dadce`
+Merge to main for build 113 (#990, SEV): On This iPhone's models are preparing until this install compiled them, Apple stands in meanwhile, and the recording hands over when they are ready.
+
+## 2026-10-21 22:59:18 EDT — scribe `af0169798e223c44949c454735b419be92e7cbc6`
+Change log for #990 (efc53815e, b9aca8c69, d30066240); PROGRESS names the rebased SHAs.
+
+## 2026-10-21 22:58:45 EDT — scribe `d30066240a2580629230cf92e0825867fab6b802`
+Docs (#990): ADR 0074 amendment B (the Neural Engine compile comes back after every update), the audit, What's New build 113's first story, PROGRESS.
+
+## 2026-10-21 22:58:45 EDT — scribe `b9aca8c69e63e2d3d4410d747ae4f0b2f9ef0ee0`
+Green (#990): the compile stamp per install, the store's preparing state and launch compile, the recording's hand-over through the #484 restart.
+
+## 2026-10-21 22:58:45 EDT — scribe `efc53815e635aa9dff529a7cee459c2e5a97374a`
+Red (#990): SpeechClientLiveTests and RecordingTranscriptionWatchdogTests against stubs that keep build 112's behavior.
+
+## 2026-10-21 21:38:53 EDT — scribe `ebd520d767bdd5d67b46e5de7b67292a3a88dda8`
+Plan, claims and a channel note for #990 (no-words-990).
+
+## 2026-10-21 20:58:44 EDT — scribe `49432a5c4f9296a070ce983e02b6c8a4a4073b75`
+Change log for the #988 audit (a5fdcccd0).
+
+## 2026-10-21 20:54:44 EDT — scribe `a5fdcccd0fcbe85dde0bab56e8add88b6370ca69`
+Audit (#988): which microphone each AirPods recording on build 111 really used; the background switch confirmed on 110; build 112 shipped (iPhone 20:57).
+
+## 2026-10-21 20:52:03 EDT — scribe `c07e12aced715fa080d02d5a1641ca036cfd24a8`
+Change log for build 112's cut (97f154092, #988).
+
+## 2026-10-21 20:03:39 EDT — scribe `97f1540928f4fe8f757968c9678e3f33dc496b4d`
+Build 112 cut (#988 hotfix): Scribe 0.1 (112), both What's New files finalized, #988 first, #265 moved from 111 to 112.
+
+## 2026-10-21 20:02:34 EDT — scribe `5305a7c8a4b702e5885c87ee4ff97a23e9a4c440`
+Merge to main for build 112 (#988, SEV): a planned microphone switch's start leaves the kept audio session untouched, the step iOS refused with Scribe in the background.
+
+## 2026-10-21 20:02:24 EDT — scribe `5f8f4b27e175e1529f7360f5d52913415829d214`
+Change log for #988 (6023d6cf9, dbe2df8a6).
+
+## 2026-10-21 20:01:43 EDT — scribe `e13aa9f537c4f9f3d7a2db7d06806c1a27f5db1a`
+Docs (#988): ADR 0042 amendment B (in front, build 111 records from the AirPods; the background switch failed at setCategory on 110), the build 112 story, PROGRESS.
+
+## 2026-10-21 20:01:28 EDT — scribe `dbe2df8a633540de2e7a277d11c7252ae6a9fdb3`
+Green (#988): AudioEngineManager keeps the planned switch's session and its start skips the session setup when AudioSessionStartWork allows; audio.engine.started names its input.
+
+## 2026-10-21 20:01:28 EDT — scribe `6023d6cf9970fbddda98af4040fa7a84d30876c1`
+Red (#988): AudioSessionStartWorkTests against a stub; AudioCaptureClientLiveTests links DependenciesTestSupport (Xcode 27, #699).
+
+## 2026-10-21 19:23:50 EDT — scribe `f23f647a6bb2aa67615d23483cc59e3575418d82`
+PROGRESS and a channel note: the Twitch picture follows its seeks, its drift measured, PictureSync.Follower.next(seekInFlight:) (#916).
+
+## 2026-10-21 19:22:50 EDT — scribe `48f09628843771dd0878f292e79e68b677e337ed`
+Change log for the Twitch picture's seek fixes, the drift audit and What's New (#916, #974).
+
+## 2026-10-21 19:22:50 EDT — scribe `90a495c98e5da5372d66c340a2ed0a061c9c6ef7`
+Scribe Playback build 112's What's New: a Twitch video's picture finds its place after a jump (#916).
+
+## 2026-10-21 19:22:50 EDT — scribe `b50d4682c96c3d8c2895169c85a8b5ea9fa1c94c`
+Merge origin/main (#839, #972, #265) into agent/claude/short-videos-974; 500 package tests on the merged tree (#916, #974).
+
+## 2026-10-21 19:22:50 EDT — scribe `b7958050517010ab3dd05aff46f27830e1cee939`
+Twitch's drift measured: the simulator per build, a clean table from the Mac mini with the app's rules, three defects, #989 open (#916, #974).
+
+## 2026-10-21 19:22:50 EDT — scribe `b14cba6f55e329be9b5ec1a0adebcdca56824816`
+Green: a Twitch picture's seek is waited for until AVPlayer says it landed, said every five seconds (#916).
+
+## 2026-10-21 19:22:50 EDT — scribe `2c18fe3eff4f1babe8d67bebee6c41ce0ad13d8e`
+Red: a seek the picture's player says is in flight is waited for until it lands (#916).
+
+## 2026-10-21 19:22:50 EDT — scribe `c136f4b816c43145a82017b83f0b60469be34d8d`
+Green: a Twitch picture's player waits for data after a seek again (automaticallyWaitsToMinimizeStalling YES) (#916).
+
+## 2026-10-21 19:22:50 EDT — scribe `350181de3f65db3009764e803225e6c8a85b0e4f`
+Red: the Twitch picture's player keeps AVPlayer's wait for data after a seek (#916).
+
+## 2026-10-21 19:22:50 EDT — scribe `951356cd0dd93f3669f369d6cf8bbe783aaffb6a`
+Green: a Twitch picture's seek is told in milliseconds and known in flight until AVPlayer says it landed (#916).
+
+## 2026-10-21 19:22:50 EDT — scribe `4508a920b9529616878611649c450ae3db0a6dac`
+Red: a Twitch picture's seek reads back as the millisecond target the follower remembers (#916).
+
+## 2026-10-21 16:42:06 EDT — scribe `6fbe669143df0964d6327be5c58164cac21597e0`
+Merge origin/main (89bd4074d, build 111's cut, which ships #974 and #916's Twitch picture) into agent/claude/short-videos-974; to main (#974, #916).
+
+## 2026-10-21 16:42:06 EDT — scribe `27d54798e814cccd37b4d0e0ca9f4d50375a9d69`
+Change log for ADR 0084 A3 filled from build 111's re-measure (64e75a78c) (#916).
+
+## 2026-10-21 16:42:06 EDT — scribe `64e75a78c1ed7be3ffc928fe3bbaa69e937379a5`
+ADR 0084 A3 filled (main said A3_PENDING): build 111's re-measure after the follower's last fixes, written into #916's audit with its conditions (#916).
+
+## 2026-10-21 15:55:01 EDT — scribe `7964d57fa53701ce5d5445b163bb98b8513d7f31`
+Change log for the production audit section and the swiftui-pro review's fix (82e920d79, 4fed41731) (#974, #916).
+
+## 2026-10-21 15:55:01 EDT — scribe `4fed41731c82d4d41ef00cabeb4452ecf178b125`
+swiftui-pro review: the clip's refusal line is PlayerFeature's rule (clipRefusal); lengths and log times through format styles; no force unwrap for Twitch's address (#974, #916).
+
+## 2026-10-21 15:55:01 EDT — scribe `24e3cd4d2723ff56e8797a13d1e3d5405ea8ace6`
+Red: the clip's refusal line as PlayerFeature's rule; an hour-long clip says 1:02:05 (#974).
+
+## 2026-10-21 15:55:01 EDT — scribe `82e920d7983087d17e83c14e78ade19d4e94dc9d`
+The audit's production section: the Mac's prepare agent from main kept his three clips under five minutes, read back linked (#974).
+
+## 2026-10-21 15:32:32 EDT — scribe `8fbff59b6c69e89c1f37aea661b355f28cd8437e`
+Merge to main for build 112: short clips kept as video and played offline; Twitch's picture from its own stream; Dailymotion out (#974, #916).
+
+## 2026-10-21 15:32:32 EDT — scribe `18aa4fa88cb25d0caea8cb1661e2745639c8d94f`
+Change log and PROGRESS for #974 and #916 (f86d4c4c3 .. 9fed26bd2).
+
+## 2026-10-21 15:32:32 EDT — scribe `9fed26bd2f212c47fbb473eb238b6f9c5979d336`
+An item that may have a clip shows its artwork while the clip is looked up (#974).
+
+## 2026-10-21 15:32:32 EDT — scribe `29b28f1009a05f56bf3e879a515da07ed8faffbd`
+The clip step uses the library owner the installer names (SCRIBE_LIBRARY_OWNER_ID) (#974).
+
+## 2026-10-21 15:32:32 EDT — scribe `edcefd5a78fc0769ab11e33b3f62085dadb3d58f`
+Only a YouTube video or a web link may be a clip, never a text link read aloud (#974).
+
+## 2026-10-21 15:32:32 EDT — scribe `6bb052928b0d4cc0fa18a7d60a644121c1aeaa28`
+A Twitch video's picture is its own HLS in a muted AVPlayer following the clock (#916).
+
+## 2026-10-21 15:32:32 EDT — scribe `311b986ffbbc05a784f5f82f54d94a95930f28f2`
+The audio step says a login wall in plain words (#974).
+
+## 2026-10-21 15:32:32 EDT — scribe `c00dee38aac88ebe354b92b2118a288b35aaa82e`
+A clip's video nearest 1.5 Mb/s at its resolution (#974).
+
+## 2026-10-21 15:32:32 EDT — scribe `952eff05c690823b596b182df002352a71680ea6`
+A clip's new library row goes where the words step writes it (#974).
+
+## 2026-10-21 15:32:32 EDT — scribe `04a3f4426440fbb22f8ab7bcf5166d3abe11e21c`
+Scribe Playback plays a kept clip as the item, offline, and keeps every queued clip on the phone (#974).
+
+## 2026-10-21 15:32:32 EDT — scribe `b85d40e107077c5310a7859ecd5fc81e2005627f`
+Twitch addresses as yt-dlp reads them; Dailymotion no longer a named site (#916).
+
+## 2026-10-21 15:32:32 EDT — scribe `7caa1aebd0d322ef86466d2e9a561ec9f01bf9ed`
+The Mac's prepare step keeps a clip under five minutes as video in his library (#974).
+
+## 2026-10-21 15:32:32 EDT — scribe `f86d4c4c342637cfc98ba692b7cea8be1c4ac3a8`
+Schema: mediaItems video fields and the videoFile link, pushed to production 13:30 (#974).
+
+## 2026-10-19 19:40:36 EDT — realtime-voice `f7370542f56331e8fd94221fa1bf14d729281561`
+audits(#906): index row for the media-catalog audit (#768 rounds 1-2, #906 round 3), which had none
+
+## 2026-10-19 19:40:11 EDT — realtime-voice `c55850c4b2f344e650e468a3cc5c1d67226df21a`
+docs(#906): the catalog step's first live run, the backfill done (20 of 20), one signing one row, heard only on Your Mac (#914)
+
+## 2026-10-19 19:39:56 EDT — realtime-voice `3adfb2233cf483be6a157eadffb2c42278766ff0`
+claims(#906): one index row in audits/README.md for the media-catalog audit (it had none)
+
+## 2026-10-19 19:29:17 EDT — realtime-voice `69a4a01df2983c99b271d96995ce48d40318dfcd`
+changelog(#906): the words step writes the row of the item it signed (d80e72107)
+
+## 2026-10-19 19:27:01 EDT — realtime-voice `d80e721070c409927bd1c3664243b0fae2652846`
+Green: the words step writes the row of the item it signed, whatever its catalog (#906)
+
+## 2026-10-19 19:21:52 EDT — realtime-voice `208668f05bc9ef86d41ca14f8df69c7706e8a794`
+Red: the words step writes the row of the item it signed, whatever its catalog (#906)
+
+## 2026-10-19 19:21:09 EDT — realtime-voice `205f2c92b6ecac860a35a2b32add8eb2090b1cf9`
+plan(#906): the words step writes the row of the item it signed (a link lands in scribe-media); claim words-on-mini.sh; channel note for #904
+
+## 2026-10-19 19:18:29 EDT — realtime-voice `dbf96bf0fed544a204585edb917ff278177613c7`
+changelog(#906): install-launch-agent.sh --binary=PATH (152f14c13)
+
+## 2026-10-19 18:55:24 EDT — realtime-voice `152f14c13724763ddb53cb1052fa599a9cd88a2a`
+install-launch-agent.sh --binary=PATH: install a release scribe-videos built elsewhere (#906)
+
+## 2026-10-19 18:53:28 EDT — realtime-voice `83e1f6594e60e1c1d38515cce2be6032ccc2b3b0`
+changelog(#906): everything Scribe Videos ingests goes into our ShazamKit catalog
+
+## 2026-10-19 18:52:14 EDT — realtime-voice `bf38792c055bc2d75843d66a6911a50188f5fa96`
+docs(#906): ADR 0082 "Catalog on ingest"; audit round 3 (real plays out loud: 20/20, time to match, ads, intros, cold load)
+
+## 2026-10-19 18:51:33 EDT — realtime-voice `ca9792e9dff18cbdc9404c0cfda028a745ee754f`
+Green: everything Scribe Videos ingests is signed into our ShazamKit catalog by its own prepare step (#906)
+
+## 2026-10-19 18:00:28 EDT — realtime-voice `285101464cf3a9677a4004a56440155c240316c6`
+Red: a signing that leaves no catalog entry under the queue's media key is a failure, not done (#906)
+
+## 2026-10-19 17:51:13 EDT — realtime-voice `9ebd006b1edbec60e5acc78e7e86861618eacb67`
+Red: everything Scribe Videos ingests is signed into our ShazamKit catalog by its own prepare step (#906)
+
+## 2026-10-19 17:39:01 EDT — realtime-voice `f962645b03b7c0ca69e9de029fd36529cb80e8a9`
+test(#906): the catalog tests see a Mac with room, so they run on a busy laptop instead of hanging (#887 finding)
+
+## 2026-10-19 17:30:10 EDT — realtime-voice `bd3ea416e44111db2fd70f962d8cd098431f45eb`
+plan(#906): every item Scribe Videos ingests goes into our ShazamKit catalog as its own prepare step; claims
+
+## 2026-10-19 19:25:30 EDT — realtime-voice `116f1262ced05b6f8ff27d2258c852aaf05acdf7`
+Change log for #904's ffmpeg agent check and unreadable-row reporting (6820f94ff, 30fc4cf30) (#904)
+
+## 2026-10-19 19:25:10 EDT — realtime-voice `df77168473a2f1b3807f42aa98344ffcc4bddeb8`
+ADR 0082 records the live run: 3 of 5 links played, all 3 that yt-dlp fetches without a login (#904)
+
+## 2026-10-19 19:24:47 EDT — realtime-voice `1d89af5c6fdb9a217b0211746659a356446cc143`
+scribe-videos move/remove help says they take a link too (#904)
+
+## 2026-10-19 19:23:14 EDT — realtime-voice `30fc4cf3012710e7161207afb6f1dc7f1d77368e`
+An unreadable queue row is reported (reportIssue on the phone, stderr on the Mac), never dropped silently (#904)
+
+## 2026-10-19 19:23:14 EDT — realtime-voice `ddbc76cd6d21a4049275f8b7c77fea4f39bf9f16`
+Red: a queue row this build cannot read is named, not dropped (#904)
+
+## 2026-10-19 19:10:31 EDT — realtime-voice `6820f94fff46538266a9e8d72c8d513817417feb`
+The prepare LaunchAgent checks ffmpeg and passes it as --ffmpeg (#904)
+
+## 2026-10-19 19:09:09 EDT — realtime-voice `7968047b66f080329b2f8b04586f2a146c7b0880`
+Change log for #904's any link (24f83b810, 772ddfe4a) (#904)
+
+## 2026-10-19 19:07:22 EDT — realtime-voice `772ddfe4a2bf78a27142ccdaa5ccf9fa389d9191`
+Scribe Videos declares videoQueueItems.sourceURL, so a link the phone queues writes (#904)
+
+## 2026-10-19 19:07:16 EDT — realtime-voice `b2b676b936bcc6815ce007c3de7c5d36dcde832d`
+Red: a link the phone queues names only declared attributes (#904)
+
+## 2026-10-19 19:07:16 EDT — realtime-voice `24f83b810205695146c1931accbab5f100e86ff1`
+Scribe Videos takes any link (TikTok, SoundCloud, any page yt-dlp fetches): QueueMedia.web, the generic yt-dlp recipe, mediaPlay kind webMedia with site and sourceURL, schema webMedia/sourceURL/web (#904)
+
+## 2026-10-19 19:06:54 EDT — realtime-voice `81ed9d559faf604c711ab98044775aaee0ac9427`
+Red: Scribe Videos takes any link (#904)
+
+## 2026-10-15 13:56:36 EDT — realtime-voice-sqlite-instant `f653c28e3adb10b7986835e0726bd01080186011`
+Change log: the 1.9.11 pin (d48792784) and the device temperature audit's section 12 (2771d2316) (#704)
+
+## 2026-10-15 13:52:30 EDT — realtime-voice-sqlite-instant `2771d2316f05b340a2a1a7873e25f5567b00d175`
+Device temperature audit, section 12: the live-query cache's ownership table measured on copies of the iPhone's store, 328.9 MB -> 13.85 MB with instant-data-swift 1.9.11, 120,726 answers identical, conversion about half a second once (#704)
+
+## 2026-10-15 13:45:06 EDT — realtime-voice-sqlite-instant `d48792784a2fa1e7503c13abc579c726c1e9acc6`
+Pin instant-data-swift exactly 1.9.11 instead of 1.9.10: live-query ownership rows name their result by an integer id instead of repeating the query's whole key, so the cache's ownership table on the iPhone's store goes from 329 MB to about 14 MB (#704)
 
 ## 2026-10-15 13:40:44 EDT — instant-data-swift `2e489afc5281a292267ae7259fffd73fb7e1c91d`
 Merge origin/main (e8d0eeb9, audit ledger only) into the #704 branch before its release ledger
