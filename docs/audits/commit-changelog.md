@@ -1,3 +1,24 @@
+## 2026-10-22 04:50:44 EDT — scribe `6df561066e826302b562b7d5e2b05b8504eb6baf`
+Merge to main for build 114 (#996): the live transcript takes its width the way Scribe Playback's lines do; Scribe's overflowing text frames 146 -> 0 (iPhone) and 1,016 -> 0 (iPad), Scribe Playback's images identical to the pixel.
+
+## 2026-10-22 04:50:29 EDT — scribe `730060bdb73e374fe85d9fa0a96bd7bc68bbe33a`
+Changelog (#996): one entry per commit of the landing.
+
+## 2026-10-22 04:49:59 EDT — scribe `d9425677888edc49541eb5d4097a36a57032a2c8`
+Docs (#996): What's New in both apps for build 114, the audit's landing section and index row, PROGRESS, the channel note.
+
+## 2026-10-22 04:49:40 EDT — scribe `5802537a27d978d07393fc8bf5662d2d1c204bbf`
+Test (#996): the text layout sweep's 48 image references, rendered once the window stops changing (Scribe Playback's player varied run to run since #992).
+
+## 2026-10-22 03:42:25 EDT — scribe `781f3b7afdf5ec2a4c681d4f310319bfe7ad9b96`
+Green (#996): the live transcript's lines take the scroll view's proposal, no measured width; the vertical stamp stops at AX1; list rows' dropped separators get no size; TranscriptLinesShareOneRowTests.
+
+## 2026-10-22 03:42:25 EDT — scribe `bf23ac9b4fd96fcf0544f944ec1af8a3aeaf2ebb`
+Red test (#996): the sweep reads every transcript line from SwiftUI's views and hosts Scribe's screens through the list; build 111's live lines run 324 pt off the screen.
+
+## 2026-10-22 03:42:24 EDT — scribe `86e964f287b1b0a096c484885c50d68548cdab4a`
+Red test (#996): the first text layout sweep (Xcode/TextLayoutSweep) and TranscriptColumnWidthTests' measured-width check.
+
 ## 2026-10-22 02:23:09 EDT — scribe `d97c5d3c9899aea9a29dd1342de9c21a0d514bd2`
 Merge to main for build 114 (#992, #993): the speaker's name pinned at the top of the words and Back to Playhead's live-words bubble, one set of views for Scribe Playback and Scribe.
 
