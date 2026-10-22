@@ -1,3 +1,9 @@
+## 2026-10-21 23:59:42 EDT — scribe `783968887b06a25b47cf0faf79637fbdac3fa6d1`
+Change log for build 113's cut (e8481293f) and its install record (59015cbe4), #990.
+
+## 2026-10-21 23:59:41 EDT — scribe `59015cbe4fa6835f1c2160a2b36efaaaa6f66c76`
+Docs (#990): build 113 shipped; the launch compile measured on the iPad (95.1 s) and the Mac (1.0 s).
+
 ## 2026-10-21 23:30:45 EDT — scribe `fee91e9b0963803a8bc56385d71c4d701b59870a`
 Merge to main (#995, P0): plays in Scribe Playback reach Scribe's live timeline through the App Group, by Scribe's own clock, with the words heard; What's New build 114 (next) in both apps.
 
