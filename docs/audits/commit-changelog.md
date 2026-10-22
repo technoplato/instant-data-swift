@@ -1,3 +1,21 @@
+## 2026-10-22 02:18:22 EDT — scribe `10f68d9d70ffcbc2c2cfd8956d0bc7af82602b81`
+Merge to main for build 114 (#1001): a Stop whose 5 s transcript deadline passes keeps the unheard tail beside the audio, and the sweep after Stop fills it from audio.wav (from #990's Recording 274).
+
+## 2026-10-22 02:18:11 EDT — scribe `ed3173013d95104c754303a9cf03153af6a1e0c7`
+Change log for #1001 (bce21b225, 1c842d807, 7d0da3381) and its PROGRESS entry.
+
+## 2026-10-22 02:17:33 EDT — scribe `7d0da33819f86fcc5ce6c59e601b3f9b8669c3ec`
+Docs (#1001): ADR 0049 decision 4 amended, What's New build 114, the #990 audit's night section (iPhone still on 112, the empty takes' words queued for 113's gap fill).
+
+## 2026-10-22 02:17:33 EDT — scribe `1c842d8074b93c0a2beb88a41047b4c496528b8f`
+Green (#1001): Recording's Stop deadline keeps the stretch after the newest speech line in transcript-gap.json (UnfinishedRecordingSweep.transcriptGap) through unfinishedRecordingClient.handOffTranscriptGap.
+
+## 2026-10-22 02:17:33 EDT — scribe `bce21b22516ea6ed5701a49effa51ed4f21d2dec`
+Red test (#1001): StopDrainTranscriptGapTests, five cases of what a timed-out Stop keeps.
+
+## 2026-10-22 00:39:29 EDT — scribe `68da09ed559c07aae37eb3c36b2cfe128329ce83`
+Plan and claims for #1001 (stop-drain-gap-1001), with a channel note for Recording.swift (#994).
+
 ## 2026-10-21 23:59:42 EDT — scribe `783968887b06a25b47cf0faf79637fbdac3fa6d1`
 Change log for build 113's cut (e8481293f) and its install record (59015cbe4), #990.
 
