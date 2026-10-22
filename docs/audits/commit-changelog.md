@@ -1,3 +1,30 @@
+## 2026-10-21 23:30:45 EDT — scribe `fee91e9b0963803a8bc56385d71c4d701b59870a`
+Merge to main (#995, P0): plays in Scribe Playback reach Scribe's live timeline through the App Group, by Scribe's own clock, with the words heard; What's New build 114 (next) in both apps.
+
+## 2026-10-21 23:30:00 EDT — scribe `817ebbf6d3eedb858611dae15708ca86a870ee1e`
+Change log for #995 (1d3e5a278, 431012560, 4544d1f6e, fde337703, 98c571a57).
+
+## 2026-10-21 23:26:36 EDT — scribe `98c571a5781659be9f38209e39c55d12074f938e`
+Docs (#995): the independent review's outcome and the measurements in the audit, PROGRESS, the channel's landing note.
+
+## 2026-10-21 23:07:44 EDT — scribe `fde337703293c059d009677d39f9424558384088`
+Fix (#995): the review's findings: the recording row's own clock origin, the hand-off first and never waiting, failures kept and logged, no stale clock, no date read per action.
+
+## 2026-10-21 23:07:44 EDT — scribe `4544d1f6ebb186110144f57aeb0413c75631f390`
+Docs (#995): ADR 0044 amendment 2, FEATURES item 11's clause (no line lost), the audit, both apps' What's New for build 114 (next).
+
+## 2026-10-21 23:07:33 EDT — scribe `431012560de7f78140594abe84fb3fdd472768aa`
+Green (#995): Scribe writes its recording's clock to the App Group; Scribe Playback merges it with the server's copy and hands the placed rows back; the live screen shows them at once, with the words heard.
+
+## 2026-10-21 23:07:33 EDT — scribe `1d3e5a2781b5e000d9df7472cd9335c0cb2c7e47`
+Red (#995): the Recording 272 replay (a frozen server heartbeat), the App Group contract, the hand-off, the words, and snapshot tests at default and AX5 on iPhone and iPad.
+
+## 2026-10-21 22:18:48 EDT — scribe `fd5ead63b516b9a16d903474f526f7647842ab07`
+Claims (#995): the play rows' at-rest subtitle, matched words on handed plays, AppFeature's clock share, Scribe Playback's next build number.
+
+## 2026-10-21 21:24:25 EDT — scribe `9a9c316e880c3cb3c648c671c77fd2d8becf5347`
+Plan, claims and a channel note for #995 (playback-timeline-995).
+
 ## 2026-10-21 23:00:01 EDT — scribe `e8481293fb6b598fd9c402ac3044a440d7d1015b`
 Build 113 cut (#990 hotfix): Scribe 0.1 (113), What's New build 113 dated with "Words appear again while you record" first; Scribe Playback keeps 112.
 
