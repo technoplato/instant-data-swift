@@ -1,3 +1,12 @@
+## 2026-10-22 10:16:10 EDT — scribe `8347b98dc33fd9a664cb91e5dc60d845d989056a`
+Fix (#1003): build 114 compiles for the Watch: recordingFixedMoment (190a228ec, #991) moved out of the iOS-only RecordingView.swift into RecordingAudioVisualizer.swift, which the Watch app compiles; build 114 installed from this commit.
+
+## 2026-10-22 10:16:10 EDT — scribe `b0b283ea908e215567ed96c2cc0d68e1327ca2ae`
+Fix attempt (#1003): recordingFixedMoment as a plain EnvironmentKey; wrong diagnosis, superseded by 8347b98dc.
+
+## 2026-10-22 10:16:10 EDT — scribe `aff44c54a6b6db8384484e692cd68be4d7730a39`
+Cut (#1003): Scribe 0.1 (114); both What's New files say Build 114, #996 and #995 first.
+
 ## 2026-10-22 08:43:57 EDT — scribe `e9a0354dec2d06b109c9376c3ec139342f8f7334`
 Change log for #990's AirPods verification (5a08dbeb7).
 
