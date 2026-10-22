@@ -1,3 +1,18 @@
+## 2026-10-21 20:02:34 EDT — scribe `5305a7c8a4b702e5885c87ee4ff97a23e9a4c440`
+Merge to main for build 112 (#988, SEV): a planned microphone switch's start leaves the kept audio session untouched, the step iOS refused with Scribe in the background.
+
+## 2026-10-21 20:02:24 EDT — scribe `5f8f4b27e175e1529f7360f5d52913415829d214`
+Change log for #988 (6023d6cf9, dbe2df8a6).
+
+## 2026-10-21 20:01:43 EDT — scribe `e13aa9f537c4f9f3d7a2db7d06806c1a27f5db1a`
+Docs (#988): ADR 0042 amendment B (in front, build 111 records from the AirPods; the background switch failed at setCategory on 110), the build 112 story, PROGRESS.
+
+## 2026-10-21 20:01:28 EDT — scribe `dbe2df8a633540de2e7a277d11c7252ae6a9fdb3`
+Green (#988): AudioEngineManager keeps the planned switch's session and its start skips the session setup when AudioSessionStartWork allows; audio.engine.started names its input.
+
+## 2026-10-21 20:01:28 EDT — scribe `6023d6cf9970fbddda98af4040fa7a84d30876c1`
+Red (#988): AudioSessionStartWorkTests against a stub; AudioCaptureClientLiveTests links DependenciesTestSupport (Xcode 27, #699).
+
 ## 2026-10-21 19:23:50 EDT — scribe `f23f647a6bb2aa67615d23483cc59e3575418d82`
 PROGRESS and a channel note: the Twitch picture follows its seeks, its drift measured, PictureSync.Follower.next(seekInFlight:) (#916).
 
