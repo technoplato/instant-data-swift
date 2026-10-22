@@ -1,3 +1,9 @@
+## 2026-10-22 08:32:16 EDT — scribe `49df9071ba6b58c2b4cccfe30ca4dcbd846a93c5`
+Change log for #990's iPhone verification (2a6c1c5fd); PROGRESS.
+
+## 2026-10-22 08:32:01 EDT — scribe `2a6c1c5fd34ed85b231b58c42f6fb166aa843ea7`
+Audit (#990): build 113 verified on the iPhone: the first line 2.5 s after Record (112: never), the launch compile at launch (59.1 s), the backlog of 184 writes drained in 42 s.
+
 ## 2026-10-22 05:40:18 EDT — scribe `8aad8a75aaa8d575eb045a6faeae68274ba57ecc`
 Merge to main for build 114 (#991, #994, #893): the landscape screen gives the words two thirds of the width, "Words N s Behind" only when the recognizer answered nothing, the mirror's raw speaker ids.
 
