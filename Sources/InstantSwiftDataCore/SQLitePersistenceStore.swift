@@ -9136,6 +9136,13 @@ public actor SQLitePersistenceStore {
         store: try loadMetadataRevisionWithoutTransaction(Self.storeRevisionKey),
         outbox: try loadMetadataRevisionWithoutTransaction(Self.outboxRevisionKey)
       )
+      // A claim of a process that has ended can never be answered (#990). Released before this claim, its rows go
+      // out now, in order, instead of after each one's acknowledgement deadline; they are not timeouts of this runtime.
+      try releaseClaimsOfEndedClaimantsWithoutTransaction(
+        excludingClaimantID: request.claimantID,
+        now: request.now,
+        hasEnded: request.claimantHasEnded
+      )
       let reclaimedMutationIDs = try reclaimExpiredOutboxClaimsWithoutTransaction(
         nowMilliseconds: request.now.milliseconds
       )
@@ -14973,6 +14980,79 @@ public actor SQLitePersistenceStore {
         message: "The exact durable claim changed before projected-window deferral."
       )
     }
+  }
+
+  /// Releases every claim whose claimant's process has ended, fenced by that exact claimant (#990).
+  ///
+  /// A released row keeps its offer bit (`delivery_started`), so the next claim still treats it as possibly applied.
+  /// Claims without a claimant id keep their lease, as do claims whose claimant `hasEnded` does not end.
+  private func releaseClaimsOfEndedClaimantsWithoutTransaction(
+    excludingClaimantID claimantID: String,
+    now: InstantTimestamp,
+    hasEnded: (String) -> Bool
+  ) throws {
+    let claimed = InstantOutboxDeliveryClaimState.claimed.rawValue
+    let endedClaimantIDs = try selectStrings(
+      """
+      SELECT DISTINCT delivery_claimant_id FROM instant_outbox
+      WHERE delivery_claim_state = ? AND delivery_claimant_id IS NOT NULL
+        AND delivery_claimant_id != ?
+      """,
+      [.text(claimed), .text(claimantID)]
+    ).filter(hasEnded).sorted()
+    guard !endedClaimantIDs.isEmpty else { return }
+    var releasedMutationIDs: [String] = []
+    var latestDeadlineMilliseconds: Int64?
+    for endedClaimantID in endedClaimantIDs {
+      releasedMutationIDs += try selectStrings(
+        """
+        SELECT mutation_id FROM instant_outbox
+        WHERE delivery_claim_state = ? AND delivery_claimant_id = ?
+        ORDER BY created_at_ms, mutation_id
+        """,
+        [.text(claimed), .text(endedClaimantID)]
+      )
+      if let deadline = try selectScalar(
+        """
+        SELECT CAST(MAX(delivery_claim_deadline_ms) AS TEXT) FROM instant_outbox
+        WHERE delivery_claim_state = ? AND delivery_claimant_id = ?
+        """,
+        [.text(claimed), .text(endedClaimantID)]
+      ).flatMap(Int64.init) {
+        latestDeadlineMilliseconds = max(latestDeadlineMilliseconds ?? deadline, deadline)
+      }
+      try execute(
+        """
+        UPDATE instant_outbox
+        SET delivery_claim_state = ?, delivery_claim_token = NULL,
+            delivery_claimant_id = NULL, delivery_claim_deadline_ms = NULL,
+            delivery_claim_projected_body_bytes = NULL,
+            delivery_claim_payload_fingerprint = NULL
+        WHERE delivery_claim_state = ? AND delivery_claimant_id = ?
+        """,
+        [
+          .text(InstantOutboxDeliveryClaimState.ready.rawValue),
+          .text(claimed),
+          .text(endedClaimantID),
+        ]
+      )
+    }
+    InstantDiagnostics.shared.record(
+      .notice,
+      subsystem: "instant-swift-data-core",
+      category: "outbox",
+      event: "outbox.claims.ended-claimant-released",
+      message:
+        "Released the delivery claims of a process that has ended; they go out again now, in order, instead of after their acknowledgement deadlines.",
+      metadata: [
+        "releasedMutationCount": String(releasedMutationIDs.count),
+        "claimantCount": String(endedClaimantIDs.count),
+        "claimantIDs": endedClaimantIDs.prefix(3).joined(separator: ","),
+        "waitAvoidedMilliseconds": latestDeadlineMilliseconds
+          .map { String(max(0, $0 - now.milliseconds)) } ?? "",
+        "mutationIDs": releasedMutationIDs.prefix(12).joined(separator: ","),
+      ]
+    )
   }
 
   private func reclaimExpiredOutboxClaimsWithoutTransaction(

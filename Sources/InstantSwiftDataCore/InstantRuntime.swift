@@ -1494,7 +1494,8 @@ public final class InstantRuntime: Sendable {
   private let streamWriterCatchUpOwner = InstantRuntimeExactTaskOwner()
   private let explicitMutationFlushOwner = InstantExplicitMutationFlushOwner()
   private let mutationDeadlineWake = InstantRuntimeMutationDeadlineWake()
-  private let automaticDeliveryClaimantID = UUID().uuidString.lowercased()
+  /// Names this runtime's process and launch, so that a later launch can tell that this one has ended (#990).
+  private let automaticDeliveryClaimantID: String
   private let acknowledgementDeferral = InstantRuntimeAcknowledgementDeferral()
   private let automaticMutationRetryReservations = InstantAutomaticMutationRetryReservations()
   /// Writes the server answered with a transient error, and the delivery pause they started (#376).
@@ -1517,6 +1518,9 @@ public final class InstantRuntime: Sendable {
     attributeRevision: Int64
   ) {
     self.configuration = configuration
+    self.automaticDeliveryClaimantID = configuration.outboxClaimantProcess.claimantID(
+      runtimeID: UUID().uuidString.lowercased()
+    )
     self.operationGate = AsyncSerialGate(label: "operation", owner: configuration.appID)
     self.store = store
     self.outbox = outbox
@@ -12898,7 +12902,11 @@ public final class InstantRuntime: Sendable {
           now: configuration.now(),
           maximumMutationCount: probesOneWrite
             ? 1
-            : InstantAutomaticOutboxClaimLimits.maximumMutationCount
+            : InstantAutomaticOutboxClaimLimits.maximumMutationCount,
+          // A launch that ended left these claims; nothing can answer them, so they go out again now (#990).
+          claimantHasEnded: { [process = configuration.outboxClaimantProcess] claimantID in
+            process.hasEnded(claimantID: claimantID)
+          }
         )
       )
       recordActorHop(.outbox)

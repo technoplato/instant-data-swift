@@ -1,5 +1,11 @@
 import Foundation
 
+#if canImport(Darwin)
+  import Darwin
+#elseif canImport(Glibc)
+  import Glibc
+#endif
+
 // History:
 // - 2026-10-21: claims left by a process that has ended are released at the next claim instead of waiting out their
 //   acknowledgement deadlines (#990).
@@ -30,9 +36,21 @@ struct InstantOutboxClaimantProcess: Sendable {
   static let current = InstantOutboxClaimantProcess(
     processID: ProcessInfo.processInfo.processIdentifier,
     launchID: UUID().uuidString.lowercased(),
-    endsUnidentifiedClaimants: false,
-    isRunning: { _ in true }
+    endsUnidentifiedClaimants: endsUnidentifiedClaimantsOnThisPlatform,
+    isRunning: processExists
   )
+
+  /// True on iOS, tvOS, watchOS and visionOS. There an app and its extensions are updated together, and the update
+  /// ends every process of the old build, so a claim that an older library wrote belongs to a process that has ended.
+  /// False on macOS and Mac Catalyst, where processes of different builds can share one store, so such a claim keeps
+  /// its lease.
+  static var endsUnidentifiedClaimantsOnThisPlatform: Bool {
+    #if (os(iOS) && !targetEnvironment(macCatalyst)) || os(tvOS) || os(watchOS) || os(visionOS)
+      true
+    #else
+      false
+    #endif
+  }
 
   /// The claimant id of one runtime in this process, `process-<pid>-<launch>/<runtime>`.
   func claimantID(runtimeID: String) -> String {
@@ -40,12 +58,44 @@ struct InstantOutboxClaimantProcess: Sendable {
   }
 
   /// Whether the process that made claims under `claimantID` has ended, so that its claims can only be released.
+  ///
+  /// A claimant of this launch is another runtime of this process, or its explicit flush lane, and has not ended. A
+  /// claimant with this process's identifier but another launch has ended: one identifier belongs to one process at a
+  /// time, and this process holds it. Any other claimant has ended when no process with its identifier exists; when the
+  /// system has given that identifier to another process, the claim keeps its lease, as it did before #990.
   func hasEnded(claimantID: String) -> Bool {
-    false
+    guard let claimant = Self.process(ofClaimantID: claimantID) else {
+      return endsUnidentifiedClaimants
+    }
+    if claimant.launchID == launchID { return false }
+    if claimant.processID == processID { return true }
+    return !isRunning(claimant.processID)
   }
 
   /// The process identifier and launch that a claimant id names, or `nil` for an id that names none.
+  ///
+  /// The explicit flush lane appends `-explicit-<token>` to its runtime's claimant id; the process part is the same.
   static func process(ofClaimantID claimantID: String) -> (processID: Int32, launchID: String)? {
-    nil
+    let prefix = "process-"
+    guard claimantID.hasPrefix(prefix), let slash = claimantID.firstIndex(of: "/") else { return nil }
+    let named = claimantID[claimantID.index(claimantID.startIndex, offsetBy: prefix.count)..<slash]
+    guard let dash = named.firstIndex(of: "-"),
+      let processID = Int32(named[..<dash]), processID > 0
+    else { return nil }
+    let launchID = named[named.index(after: dash)...]
+    guard !launchID.isEmpty else { return nil }
+    return (processID, String(launchID))
+  }
+
+  /// Whether a process with this identifier exists, asked with `kill(_:_:)` and signal 0, which delivers no signal.
+  /// Only `ESRCH` means that none exists. Any other answer, `EPERM` from a sandbox included, means one does.
+  static func processExists(_ processID: Int32) -> Bool {
+    guard processID > 0 else { return true }
+    #if canImport(Darwin) || canImport(Glibc)
+      if kill(processID, 0) == 0 { return true }
+      return errno != ESRCH
+    #else
+      return true
+    #endif
   }
 }
