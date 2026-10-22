@@ -1,3 +1,21 @@
+## 2026-10-22 02:38:59 EDT — scribe `2aa7d0a6eeec68f3c50b80d6a61e4e695a6cedce`
+Merge to main for build 114 (#1000): Scribe and Scribe Playback pin instant-data-swift exactly 1.9.12.
+
+## 2026-10-22 02:38:53 EDT — scribe `825fb27585b58160477728d198cc0b3b2376c7c0`
+Change log for the 1.9.12 pin (ccd1e4b91) and its What's New line (319a9d8ad); PROGRESS (#1000).
+
+## 2026-10-22 02:38:38 EDT — scribe `319a9d8ad9ec3f403d6c6fac17711c4fd0e5217a`
+What's New build 114 (#1000): what Scribe had started sending goes out within seconds of the next launch.
+
+## 2026-10-22 02:38:38 EDT — scribe `ccd1e4b91e8856f8fdd9ba3d75913fa54a9d4932`
+Pin instant-data-swift exactly 1.9.12 in Package.swift and swift-video-queue, both Package.resolved files, the installer's expected version and docs (#1000, #990).
+
+## 2026-10-22 02:30:45 EDT — scribe `f90e63a2dee862002ec26a980a2602036389ab77`
+Claim of WHATS-NEW.md for the 1.9.12 pin's line (#1000).
+
+## 2026-10-22 02:25:24 EDT — scribe `b313d0d19081ba54e75a55015abe9a94a17b99b1`
+Plan and claims for the 1.9.12 pin (pin-1.9.12, #1000).
+
 ## 2026-10-22 02:23:16 EDT — instant-data-swift `c53510d6ca4ae676616917245046e7aaa4d686ff`
 Release document for v1.9.12: a relaunch releases the delivery claims of a process that has ended (#1000, #990).
 
