@@ -25,6 +25,8 @@
 //   no body sizes (#932).
 // - 2026-10-23: a partial index over the lookup attributes, ensured at bootstrap, and a read-only connection beside the
 //   writer, so a local read finds what this device keeps on disk without waiting for writes (#1006).
+// - 2026-10-23: the storage snapshot reports the file's free pages, and `vacuum()` gives them back for compaction, its
+//   dirty pages bounded; new caches stay in auto_vacuum NONE, whose writes cost 3-6% less than INCREMENTAL's (#1015).
 
 import Foundation
 import IssueReporting
@@ -11649,7 +11651,8 @@ public actor SQLitePersistenceStore {
       localCacheSize: localCacheFileSize(),
       streamCacheSize: streamCacheSize,
       downloadedFileSize: files.reduce(0) { $0 + $1.byteCount },
-      downloadedFileCount: files.count
+      downloadedFileCount: files.count,
+      localCacheFile: try localCacheFile()
     )
   }
 
@@ -11674,6 +11677,25 @@ public actor SQLitePersistenceStore {
   /// them out (#1015).
   package func cacheSpillPagesForTesting() throws -> Int64 {
     try selectInt64("PRAGMA cache_spill")
+  }
+
+  /// Rewrites the cache file without its free pages: one `VACUUM` (#1015).
+  ///
+  /// In WAL mode SQLite builds the copy in a temporary file, writes it through the WAL and checkpoints it, so the live
+  /// pages are written three times: on a copy of the phone's cache, 630-645 MB for 197 MB of live pages, in 0.8-1.0 s
+  /// on a Mac mini, with a copy and a WAL as large on the volume meanwhile. Apple's SQLite keeps up to 20,000 dirty
+  /// pages (`cache_spill`) in memory before it writes them out, whatever `cache_size` says: the `VACUUM` peaked at
+  /// 194 MB of memory, and at 21 MB spilling past 256 pages, for 2% more writes. That bound holds for the `VACUUM`
+  /// alone. A passive checkpoint after it shrinks the file at once unless a reader still holds an older snapshot.
+  /// `VACUUM INTO` and a swap would write the live pages once, but the swap needs every connection to the file closed.
+  package func vacuum() throws {
+    let cacheSpill = try selectInt64("PRAGMA cache_spill")
+    try execute("PRAGMA cache_spill = 256")
+    defer { _ = try? execute("PRAGMA cache_spill = \(cacheSpill)") }
+    let interval = InstantEnergyMeter.begin(.localCacheVacuum)
+    defer { interval.end() }
+    try execute("VACUUM")
+    _ = sqlite3_wal_checkpoint_v2(connection.raw, nil, SQLITE_CHECKPOINT_PASSIVE, nil, nil)
   }
 
   public func loadStoredFile(appID: String, fileID: String) throws -> InstantStoredFile? {

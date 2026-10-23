@@ -15,8 +15,58 @@ import Testing
 //   INSTANT_LOCAL_CACHE_WRITE_COST_PENDING_SEGMENTS  pending segments (default 200: 1,200 writes)
 //   INSTANT_LOCAL_CACHE_WRITE_COST_SERVER_SEGMENTS   segments the server already holds (default 300)
 //   INSTANT_LOCAL_CACHE_WRITE_COST_FRAMES            drain frames (default 120)
+//
+// `measureCompactionOnAStoreCopy` runs compaction on a scratch copy of a real store (its credential rows deleted) and
+// prints what it did, what it wrote and the process's peak memory, and checks every table's rows after it. It is
+// skipped unless `INSTANT_LOCAL_CACHE_COMPACTION_STORE` names a store (`<appID>.sqlite` or its directory).
 @Suite(.serialized)
 struct InstantLocalCacheWriteCostTests {
+  @Test(.enabled(if: ProcessInfo.processInfo.environment["INSTANT_LOCAL_CACHE_COMPACTION_STORE"] != nil))
+  func measureCompactionOnAStoreCopy() async throws {
+    let environment = ProcessInfo.processInfo.environment
+    let store = try PhoneReplayGateTests.storeFile(at: try #require(environment["INSTANT_LOCAL_CACHE_COMPACTION_STORE"]))
+    let url = try PhoneReplayGateTests.scratchCopy(of: store, in: FileManager.default.temporaryDirectory)
+    defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+    let runtime = try await PhoneReplayGateTests.runtime(
+      url,
+      appID: store.deletingPathExtension().lastPathComponent,
+      deferred: InstantDeferredValueResidencyPolicy(attributeIDs: PhoneReplayGateTests.scribeDeferredAttributeIDs)
+    )
+    let rows = try InstantLocalCacheCompactionTests.tableChecksums(at: url)
+    let memoryBefore = Self.footprint()
+    let usageBefore = ServerApplyProcessUsage.now()
+
+    let compaction = try await runtime.compactLocalCache()
+
+    let usageAfter = ServerApplyProcessUsage.now()
+    let memoryAfter = Self.footprint()
+    let megabytes = { (bytes: Int64) in String(format: "%.1f MB", Double(bytes) / 1_048_576) }
+    print(
+      """
+      COMPACTION \(compaction.outcome.logDescription): \(compaction.before.pageCount) pages (\(megabytes(compaction.before.byteCount))), \
+      \(compaction.before.freePageCount) free (\(megabytes(compaction.before.freeByteCount))) -> \(compaction.after.pageCount) pages \
+      (\(megabytes(compaction.after.byteCount))), \(compaction.after.freePageCount) free; VACUUM \(compaction.vacuumDuration.map { "\($0)" } ?? "-"); \
+      writes \(megabytes(Int64(usageAfter.logicalWriteBytes - usageBefore.logicalWriteBytes))); \
+      cpu \((usageAfter.cpuNanoseconds - usageBefore.cpuNanoseconds) / 1_000_000) ms; footprint \(megabytes(memoryBefore.current)) before, \
+      peak \(megabytes(memoryBefore.peak)) before and \(megabytes(memoryAfter.peak)) after
+      """
+    )
+    #expect(compaction.outcome == .compacted)
+    let rowsAfter = try InstantLocalCacheCompactionTests.tableChecksums(at: url)
+    #expect(rowsAfter == rows)
+  }
+
+  /// The process's memory footprint now, and the most it has reached.
+  static func footprint() -> (current: Int64, peak: Int64) {
+    var info = rusage_info_v4()
+    _ = withUnsafeMutablePointer(to: &info) { pointer in
+      pointer.withMemoryRebound(to: rusage_info_t?.self, capacity: 1) {
+        proc_pid_rusage(getpid(), RUSAGE_INFO_V4, $0)
+      }
+    }
+    return (Int64(info.ri_phys_footprint), Int64(info.ri_lifetime_max_phys_footprint))
+  }
+
   @Test(.enabled(if: ProcessInfo.processInfo.environment["INSTANT_LOCAL_CACHE_WRITE_COST"] != nil))
   func measureWritesInEachAutoVacuumMode() async throws {
     let environment = ProcessInfo.processInfo.environment

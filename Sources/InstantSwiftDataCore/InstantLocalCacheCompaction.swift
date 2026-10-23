@@ -99,6 +99,31 @@ public struct InstantLocalCacheCompaction: Hashable, Sendable {
   }
 }
 
+extension InstantLocalCacheCompaction.Outcome {
+  /// The outcome in words, for a log line.
+  package var logDescription: String {
+    switch self {
+    case .notNeeded: "not needed"
+    case .compacted: "compacted"
+    case .held(let hold): "held: \(hold.logDescription)"
+    }
+  }
+}
+
+extension InstantLocalCacheCompaction.Hold {
+  /// The reason in words, for a log line.
+  package var logDescription: String {
+    switch self {
+    case .deviceIsHot: "the device is hot"
+    case .lowPowerMode: "Low Power Mode is on"
+    case .insufficientDiskSpace(let available, let required):
+      "the volume has \(available) bytes free of the \(required) the VACUUM needs"
+    case .cancelled: "cancelled"
+    case .application(let reason): reason
+    }
+  }
+}
+
 /// When compaction is worth a `VACUUM` (#1015).
 ///
 /// A `VACUUM` in WAL mode writes the live pages three times (a temporary copy, the WAL, the checkpoint): on a copy of

@@ -6,6 +6,7 @@ import os
 // - #1011: each operation's CPU on the main thread, so a host can name what else the main thread spent; the server
 //   apply's staging and its query-result retractions under their own names, which a device profile showed outside the
 //   plan's name or outside every name.
+// - #1015: the local cache's VACUUM under its own name.
 
 /// A library operation whose cost the energy meter adds up (#669).
 ///
@@ -48,6 +49,8 @@ public enum InstantEnergyOperation: String, CaseIterable, Sendable {
   case serverApplyStage
   /// Reading which cached query facts a server result's replacements retract (#1011).
   case serverApplyRetractions
+  /// The local cache's `VACUUM` (#1015): rare, and every write waits for it.
+  case localCacheVacuum
 
   /// The operation's slot in the meter's storage.
   fileprivate var index: Int {
@@ -68,6 +71,7 @@ public enum InstantEnergyOperation: String, CaseIterable, Sendable {
     case .frameDecode: 13
     case .serverApplyStage: 14
     case .serverApplyRetractions: 15
+    case .localCacheVacuum: 16
     }
   }
 
@@ -90,6 +94,7 @@ public enum InstantEnergyOperation: String, CaseIterable, Sendable {
     case .frameDecode: "frameDecode"
     case .serverApplyStage: "serverApplyStage"
     case .serverApplyRetractions: "serverApplyRetractions"
+    case .localCacheVacuum: "localCacheVacuum"
     }
   }
 }

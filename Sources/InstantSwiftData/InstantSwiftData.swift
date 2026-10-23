@@ -114,6 +114,16 @@ public struct InstantSwiftDataClient: Sendable {
       recovery: "Bootstrap a runtime-backed client before evicting stored files."
     )
   }
+  /// Set by the runtime-backed client only; a client built from closures has no local cache to compact (#1015).
+  private var compactLocalCacheOperation:
+    @Sendable (@escaping @Sendable () async -> String?) async throws -> InstantLocalCacheCompaction = { _ in
+      throw InstantError(
+        code: .implementationFailed,
+        operation: "compact local cache",
+        message: "This InstantSwiftData client has no local cache to compact.",
+        recovery: "Bootstrap a runtime-backed client before compacting its local cache."
+      )
+    }
   private var appendStreamChunkOperation:
     @Sendable (String, JSONValue) async throws -> InstantStreamChunk
   private var streamChunksOperation:
@@ -312,6 +322,9 @@ public struct InstantSwiftDataClient: Sendable {
     }
     self.evictStoredFilesOperation = { ids in
       try await runtime.evictStoredFiles(ids: ids)
+    }
+    self.compactLocalCacheOperation = { hold in
+      try await runtime.compactLocalCache(holdingWhile: hold)
     }
     self.appendStreamChunkOperation = { streamID, payload in
       try await runtime.appendStreamChunk(streamID: streamID, payload: payload)
@@ -1971,6 +1984,27 @@ public struct InstantSwiftDataClient: Sendable {
   @discardableResult
   public func evictStoredFiles(ids: [String]) async throws -> [InstantStoredFileEviction] {
     try await evictStoredFilesOperation(ids)
+  }
+
+  /// Gives the local cache's free pages back to the file system with one `VACUUM`, when they are worth it and nothing
+  /// else needs the store (#1015).
+  ///
+  /// SQLite reuses a free page before it grows the file but never shrinks it on its own; ``storageSnapshot()`` says
+  /// how much of the file is free (``InstantStorageSnapshot/localCacheFile``). When a quarter of the file and 64 MB are
+  /// free, this rewrites it without them. The `VACUUM` holds the store for about a second per 200 MB of live pages, so
+  /// it does not start while the device is hot, in Low Power Mode, short of disk, or cancelled, or while `hold` gives a
+  /// reason of the app's own, such as a recording.
+  ///
+  /// ```swift
+  /// let compaction = try await db.compactLocalCache { recorder.isRecording ? "recording" : nil }
+  /// ```
+  ///
+  /// Success waits for local SQLite work only, never the server.
+  @discardableResult
+  public func compactLocalCache(
+    holdingWhile hold: @escaping @Sendable () async -> String? = { nil }
+  ) async throws -> InstantLocalCacheCompaction {
+    try await compactLocalCacheOperation(hold)
   }
 
   @discardableResult

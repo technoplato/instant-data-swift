@@ -18,6 +18,9 @@
 // - 2026-10-23: the local reader's one-shot read takes no operation gate and writes nothing, reads what this device keeps
 //   on disk by a lookup attribute, and hydrations read deferred values on the read connection, waiting for a holder
 //   only when it may be writing what they read; the server apply names its writes (#1006).
+// - 2026-10-23: compactLocalCache(holdingWhile:) gives the cache's free pages back with one VACUUM when a quarter of
+//   the file and 64 MB are free, under the operation gate, never while the device is hot, in Low Power Mode, short of
+//   disk, cancelled, or held by the app; on one iPhone 676 MB of a 916 MB cache were free pages (#1015).
 
 import Foundation
 import IssueReporting
@@ -11230,6 +11233,20 @@ public final class InstantRuntime: Sendable {
 
   /// Gives the local cache's free pages back to the file system with one `VACUUM`, when they are worth it and nothing
   /// else needs the store (#1015).
+  ///
+  /// SQLite reuses a free page before it grows the file, but never shrinks the file on its own: on one iPhone 676 MB
+  /// of a 916 MB cache were free pages. When at least a quarter of the file and 64 MB are free, this rewrites the file
+  /// without them. The `VACUUM` writes the live pages three times and holds the store meanwhile, about a second for
+  /// 200 MB of live pages on a Mac mini, so every write waits for it: it does not start while the device is hot
+  /// (thermal state serious or critical), in Low Power Mode, short of disk for a copy of the live pages and a WAL as
+  /// large, or cancelled, or while `hold` gives a reason, such as a recording. It takes the operation gate behind every
+  /// other caller, so never while a server apply holds it.
+  ///
+  /// ```swift
+  /// let compaction = try await db.compactLocalCache { recorder.isRecording ? "recording" : nil }
+  /// ```
+  ///
+  /// Success waits for local SQLite work only, never the server.
   @concurrent
   public func compactLocalCache(
     holdingWhile hold: @escaping @Sendable () async -> String? = { nil }
@@ -11242,8 +11259,99 @@ public final class InstantRuntime: Sendable {
     policy: InstantLocalCacheCompactionPolicy,
     holdingWhile hold: @escaping @Sendable () async -> String?
   ) async throws -> InstantLocalCacheCompaction {
-    let file = try await persistence.localCacheFile()
-    return InstantLocalCacheCompaction(outcome: .notNeeded, before: file, after: file)
+    // A first look without the gate: a cache with little free space costs four header reads, and nothing waits.
+    recordActorHop(.persistence)
+    let before = try await persistence.localCacheFile()
+    var compaction = InstantLocalCacheCompaction(outcome: .notNeeded, before: before, after: before)
+    guard policy.needsCompaction(before) else { return compaction }
+    if let reason = await localCacheCompactionHold(hold, requiredDiskBytes: policy.requiredDiskBytes(before)) {
+      compaction.outcome = .held(reason)
+      recordLocalCacheCompaction(compaction)
+      return compaction
+    }
+    do {
+      try await enterOperationGateUnlessCancelled(priority: .background)
+    } catch {
+      compaction.outcome = .held(.cancelled)
+      recordLocalCacheCompaction(compaction)
+      return compaction
+    }
+    do {
+      // Again under the gate: a server apply may have held it for seconds, and the device or the app may have changed.
+      recordActorHop(.persistence)
+      let current = try await persistence.localCacheFile()
+      compaction.after = current
+      guard policy.needsCompaction(current) else {
+        await leaveOperationGate()
+        return compaction
+      }
+      if let reason = await localCacheCompactionHold(hold, requiredDiskBytes: policy.requiredDiskBytes(current)) {
+        await leaveOperationGate()
+        compaction.outcome = .held(reason)
+        recordLocalCacheCompaction(compaction)
+        return compaction
+      }
+      operationGate.markHolderPhase("vacuum")
+      await configuration.onLocalCacheVacuumStartingForTesting?()
+      let started = ContinuousClock.now
+      recordActorHop(.persistence)
+      compaction.after = try await persistence.run { persistence in
+        try persistence.vacuum()
+        return try persistence.localCacheFile()
+      }
+      compaction.vacuumDuration = ContinuousClock.now - started
+      await leaveOperationGate()
+    } catch {
+      await leaveOperationGate()
+      throw error
+    }
+    compaction.outcome = .compacted
+    recordLocalCacheCompaction(compaction)
+    return compaction
+  }
+
+  /// Why the local cache's `VACUUM` must not start now, or nil (#1015): a cancelled task, a hot device, Low Power Mode,
+  /// a volume without room for it, or the application's own reason, in that order.
+  private func localCacheCompactionHold(
+    _ hold: @Sendable () async -> String?,
+    requiredDiskBytes: Int64
+  ) async -> InstantLocalCacheCompaction.Hold? {
+    if Task.isCancelled { return .cancelled }
+    let conditions = configuration.storageMaintenanceConditions(configuration.persistenceURL)
+    if conditions.isHot { return .deviceIsHot }
+    if conditions.isLowPowerModeEnabled { return .lowPowerMode }
+    if let available = conditions.availableDiskBytes, available < requiredDiskBytes {
+      return .insufficientDiskSpace(availableBytes: available, requiredBytes: requiredDiskBytes)
+    }
+    if let reason = await hold() { return .application(reason) }
+    return nil
+  }
+
+  private func recordLocalCacheCompaction(_ compaction: InstantLocalCacheCompaction) {
+    var metadata = [
+      "outcome": compaction.outcome.logDescription,
+      "pageSize": String(compaction.before.pageSize),
+      "pagesBefore": String(compaction.before.pageCount),
+      "freePagesBefore": String(compaction.before.freePageCount),
+      "pagesAfter": String(compaction.after.pageCount),
+      "freePagesAfter": String(compaction.after.freePageCount),
+    ]
+    if let vacuumDuration = compaction.vacuumDuration {
+      metadata["vacuumMilliseconds"] = String(
+        vacuumDuration.components.seconds * 1_000 + vacuumDuration.components.attoseconds / 1_000_000_000_000_000
+      )
+    }
+    let compacted = compaction.outcome == .compacted
+    InstantDiagnostics.shared.record(
+      compacted ? .notice : .info,
+      subsystem: "instant-swift-data-core",
+      category: "persistence",
+      event: compacted ? "local-cache.compacted" : "local-cache.compaction-held",
+      message: compacted
+        ? "Rewrote the local cache without its free pages: \(compaction.before.byteCount - compaction.after.byteCount) bytes back to the file system."
+        : "Left the local cache's free pages for later: \(compaction.outcome.logDescription).",
+      metadata: metadata
+    )
   }
 
   @concurrent
