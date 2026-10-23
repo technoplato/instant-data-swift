@@ -1,6 +1,21 @@
 ## 2026-10-23 19:35:09 EDT — instant-data-swift `0f64acfb24a6854d4122c506b23ae23d97c37619`
 Release document for v1.9.27 (#1007): the statement cache and the fact writer.
 
+## 2026-10-23 19:30:42 EDT — scribe `e14c1437443c0882cdd70a0c337339a11f6cc246`
+Change log for the build 118 cut a6838e211 (#1025).
+
+## 2026-10-23 19:30:42 EDT — scribe `a6838e2118d260a8f00b536c93a593e445ca4895`
+Build 118 cut (#1025, #1005): Scribe 0.1 (118) and Scribe Playback 118 on instant-data-swift 1.9.26 (#1024's connection status, carrying 1.9.23-1.9.25), with recording-screen-412's heat items 1, 5 and 3 and #1022's chunk rows; What's New 118 dated, #1024 and the recording screen first.
+
+## 2026-10-23 19:30:42 EDT — scribe `46e8635f4479904da75ac17c1524351dd86c77e7`
+Build 118 plan (#1025): PLAN.md and touching claims for the cut (version numbers and What's New); release-118.
+
+## 2026-10-23 19:30:26 EDT — scribe `3cd30389c`
+Change log (#1024): the 1.9.26 pin 4614f8add; PROGRESS.
+
+## 2026-10-23 19:30:26 EDT — scribe `4614f8add`
+Scribe and Scribe Playback pin instant-data-swift exactly 1.9.26 (#1024: the live connection's status says what the socket is; carries 1.9.25); both Package.resolved only the pin and originHash; installer 65/65; build 118's What's New line.
+
 ## 2026-10-23 19:27:28 EDT — instant-data-swift `4b5235262ac3105ed671e0a3a001d0d12d948025`
 Tests (#1007, #1021): the prepare cost bound 3 -> 5 for a whole bundle's load.
 
@@ -21,6 +36,7 @@ Green (#1007): the statement cache keeps 256 statements; a live write's cycle pr
 
 ## 2026-10-23 18:43:17 EDT — instant-data-swift `ef64c39bfc88d67ac861113ef40544a313ba6d45`
 Red test (#1007): aLiveWritesCycleReusesItsPreparedStatements, 1,335 statements prepared in five cycles.
+
 
 ## 2026-10-23 19:24:30 EDT — instant-data-swift `48df79da7d77aa2b4ec60fabce4995b60dd9ad3a`
 The v1.9.26 release document (#1024): the live connection's status says what the socket is.
