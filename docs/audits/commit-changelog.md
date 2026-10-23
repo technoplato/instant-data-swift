@@ -1,3 +1,21 @@
+## 2026-10-23 13:47:51 EDT — scribe `3dc09d8166ee4d17d4ab2f8b8dde9400dae52636`
+Scribe and Scribe Playback pin instant-data-swift exactly 1.9.15 (#1007 D3 + #959 1.9.14).
+
+## 2026-10-23 13:40:06 EDT — scribe `a2cf8c21d747a0a1484a662c64e644f43bcadb6c`
+Green (#1007): LogEvent's issue-mention expression compiled once, not per event.
+
+## 2026-10-23 13:40:06 EDT — scribe `eb0ed6af5ead3b41c88f30de63eab6dda196e859`
+Red test (#1007): IssueReferenceExtractionCostTests.
+
+## 2026-10-23 13:19:52 EDT — scribe `7b0ab9a536c79e67acee9518b2af69dd36769cc8`
+Scribe and Scribe Playback pin instant-data-swift exactly 1.9.13 (#1007 F1, F2; #1006 reload); build 115.
+
+## 2026-10-23 13:12:35 EDT — scribe `3aeac0b8e77e4599319dfcce60de4b05469a8fbd`
+The recording hot-path audit (#1007): what recording costs, ranked by code, and the library fixes measured.
+
+## 2026-10-23 12:58:06 EDT — scribe `226a613d132327b2800459bdd1792d43551c90e0`
+Plan hotpath-1007 (#1007): plan and touch claims.
+
 ## 2026-10-23 13:45:09 EDT — instant-data-swift `ce00d12dd84b26ae320bf9e84371ca628c90ab7b`
 Release document for v1.9.15: metadata rows upsert in place and an acknowledgement leaves unchanged write keys alone (#1007); carries 1.9.14 (#959).
 
