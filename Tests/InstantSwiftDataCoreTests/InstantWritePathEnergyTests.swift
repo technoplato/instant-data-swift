@@ -118,6 +118,44 @@ struct InstantWritePathEnergyTests {
     _ = try? await fixture.runtime.closeConnection()
   }
 
+  /// Each step of a live write fingerprints its optimistic effect once (#1007). A fingerprint encodes the write's
+  /// transaction and rollback with `JSONEncoder` and hashes the text, and the save computed it twice and the
+  /// acknowledgement three times for the same write: 5.9% of a write replay's CPU went to fingerprints.
+  @Test
+  func eachStepOfALiveWriteFingerprintsItsEffectOnce() async throws {
+    var fixture = try await FastDrainFixture.make(
+      suffix: "fingerprint-once",
+      serverSegmentCount: 2,
+      pendingSegmentCount: 0
+    )
+    let runtime = fixture.runtime
+    func fingerprints() async -> Int {
+      await runtime.persistence.optimisticEffectFingerprintCountForTesting()
+    }
+    let write = try #require(fixture.script.nextSegmentWrites().first)
+
+    let beforeSave = await fingerprints()
+    _ = try await fixture.runtime.transact(write, createdAt: InstantTimestamp(milliseconds: fixture.script.deviceMilliseconds))
+    let beforeClaim = await fingerprints()
+    let (token, mutations) = try await fixture.claimWindow()
+    let mutation = try #require(mutations.first)
+    expectNoDifference(mutations.count, 1)
+    let beforeAcknowledgement = await fingerprints()
+    let transactionID = fixture.server.accept(mutation.transaction.operations)
+    _ = try await fixture.runtime.acceptMutationIfPresent(
+      id: mutation.id,
+      serverTransactionID: transactionID,
+      claimToken: token
+    )
+    let after = await fingerprints()
+
+    expectNoDifference(
+      ["save": beforeClaim - beforeSave, "claim": beforeAcknowledgement - beforeClaim, "acknowledgement": after - beforeAcknowledgement],
+      ["save": 1, "claim": 1, "acknowledgement": 1]
+    )
+    _ = try? await fixture.runtime.closeConnection()
+  }
+
   /// Reusing a kept statement costs about one hash of its SQL (#1007). The cache took a statement out of its idle map
   /// at check-out and put it back at check-in, hashing the SQL five times a use, and each removal re-hashed the
   /// neighbors it shifted: 6.6% of a write replay's CPU with the cycle's 150 statements kept.

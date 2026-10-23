@@ -1033,6 +1033,7 @@ public actor SQLitePersistenceStore {
   /// Test-visible count of durable outbox JSON bodies decoded by this actor.
   /// This pins acknowledgement and delivery complexity to their selected rows.
   private var decodedOutboxBodyCount = 0
+  private var optimisticEffectFingerprintCount = 0
   private var decodedOutboxBodyByteCount = 0
   private var materializedOutboxBodyCount = 0
   private var materializedOutboxBodyByteCount = 0
@@ -1159,6 +1160,18 @@ public actor SQLitePersistenceStore {
 
   package func currentDecodedOutboxBodyCount() -> Int {
     decodedOutboxBodyCount
+  }
+
+  /// How many optimistic-effect fingerprints this store has computed (#1007).
+  package func optimisticEffectFingerprintCountForTesting() -> Int {
+    optimisticEffectFingerprintCount
+  }
+
+  /// `mutation`'s optimistic-effect receipt fingerprint, counted (#1007). Each one encodes the mutation's transaction and
+  /// rollback with `JSONEncoder` and hashes the text.
+  private func optimisticEffectFingerprint(of mutation: PendingMutation) throws -> String? {
+    optimisticEffectFingerprintCount += 1
+    return try mutation.optimisticEffectReceiptFingerprint()
   }
 
   package func resetTerminalFailureMetadataMetricsForTesting() {
@@ -4196,7 +4209,7 @@ public actor SQLitePersistenceStore {
     _ row: InstantApplicationMigrationOutboxRow
   ) throws -> Bool {
     guard let durableReceipt = row.optimisticEffectReceiptFingerprint,
-      let computedReceipt = try row.mutation.optimisticEffectReceiptFingerprint()
+      let computedReceipt = try optimisticEffectFingerprint(of: row.mutation)
     else { return false }
     guard durableReceipt == computedReceipt else { return false }
     return switch row.mutation.optimisticOverlayState {
@@ -5715,7 +5728,7 @@ public actor SQLitePersistenceStore {
                 "Mutation '\(mutation.id)' has a \(lifecycleByteCount)-byte compact lifecycle body, beyond the 8 MiB resident-patch limit."
             )
           }
-          guard let receiptFingerprint = try mutation.optimisticEffectReceiptFingerprint() else {
+          guard let receiptFingerprint = try optimisticEffectFingerprint(of: mutation) else {
             throw persistenceError(
               operation: "stage bounded server apply",
               message:
@@ -8463,8 +8476,7 @@ public actor SQLitePersistenceStore {
           selectedMutation.status == .pending,
           let row = try loadOutboxBodyRowWithoutTransaction(id: result.mutationID)
         else { continue }
-        let selectedReceiptFingerprint = try selectedMutation
-          .optimisticEffectReceiptFingerprint()
+        let selectedReceiptFingerprint = try optimisticEffectFingerprint(of: selectedMutation)
         var mutation: PendingMutation
         if selectedReceiptFingerprint != nil,
           selectedReceiptFingerprint == row.optimisticEffectReceiptFingerprint
@@ -10181,7 +10193,7 @@ public actor SQLitePersistenceStore {
       if !alreadyAccepted {
         guard let claimPayloadFingerprint = row.deliveryClaimPayloadFingerprint,
           let claimToken,
-          let materializedEffectFingerprint = try mutation.optimisticEffectReceiptFingerprint()
+          let materializedEffectFingerprint = try optimisticEffectFingerprint(of: mutation)
         else {
           return InstantOutboxRowAcceptance(
             mutation: mutation,
@@ -13156,7 +13168,7 @@ public actor SQLitePersistenceStore {
     expectedOutboxRevision: Int64
   ) throws -> Bool {
     let energy = InstantEnergyMeter.begin(.localSave); defer { energy.end() }
-    guard try pendingMutation.optimisticEffectReceiptFingerprint() != nil else {
+    guard try optimisticEffectFingerprint(of: pendingMutation) != nil else {
       throw persistenceError(
         operation: "persist local mutation",
         message:
@@ -13954,7 +13966,7 @@ public actor SQLitePersistenceStore {
       mutation.optimisticEffectReceiptVersion =
         PendingMutation.currentOptimisticEffectReceiptVersion
 
-      guard let fingerprint = try? mutation.optimisticEffectReceiptFingerprint(),
+      guard let fingerprint = try? optimisticEffectFingerprint(of: mutation),
         let effectFootprint = InstantOptimisticEffectFootprint.normalized(for: mutation)
       else { continue }
       let encodedBody = try encode(mutation)
@@ -14716,7 +14728,7 @@ public actor SQLitePersistenceStore {
     originalJSON: String,
     expectedAttributeRevision: Int64
   ) throws {
-    guard let receiptFingerprint = try mutation.optimisticEffectReceiptFingerprint() else {
+    guard let receiptFingerprint = try optimisticEffectFingerprint(of: mutation) else {
       throw persistenceError(
         operation: "retry automatic failed-mutation window",
         message:
@@ -15744,7 +15756,7 @@ public actor SQLitePersistenceStore {
   private func hasStoredPreparedOptimisticEffectReceiptWithoutTransaction(
     _ mutation: PendingMutation
   ) throws -> Bool {
-    guard let candidate = try mutation.optimisticEffectReceiptFingerprint() else {
+    guard let candidate = try optimisticEffectFingerprint(of: mutation) else {
       return false
     }
     return try storedOptimisticEffectReceiptFingerprintWithoutTransaction(id: mutation.id)
@@ -15756,7 +15768,7 @@ public actor SQLitePersistenceStore {
     in row: InstantOutboxBodyRow
   ) throws -> Bool {
     guard row.mutationID == mutation.id,
-      let candidate = try mutation.optimisticEffectReceiptFingerprint()
+      let candidate = try optimisticEffectFingerprint(of: mutation)
     else { return false }
     return row.optimisticEffectReceiptFingerprint == candidate
   }
@@ -17250,7 +17262,7 @@ public actor SQLitePersistenceStore {
     failureAttributeRevision: Int64? = nil,
     receiptWriteAuthority: InstantOptimisticEffectReceiptWriteAuthority
   ) throws {
-    let candidateFingerprint = try mutation.optimisticEffectReceiptFingerprint()
+    let candidateFingerprint = try optimisticEffectFingerprint(of: mutation)
     let candidateWireFingerprint = try mutation.mutationWireIntentFingerprint()
     let durableMutation = mutation
     var statement: OpaquePointer?
