@@ -2018,18 +2018,10 @@ actor InstantURLSessionLiveWebSocket {
     defer { energy.end() }
     switch received {
     case .string(let string):
-      guard let data = string.data(using: .utf8) else {
-        throw InstantError(
-          code: .decodeFailed,
-          operation: "decode Instant live WebSocket string",
-          message: "Received WebSocket string was not valid UTF-8.",
-          recovery: "Inspect the Instant live WebSocket response payload."
-        )
-      }
-      return (try JSONDecoder().decode(InstantLiveMessage.self, from: data), data.count)
+      return (try InstantLiveMessage.decoded(fromFrame: string), string.utf8.count)
 
     case .data(let data):
-      return (try JSONDecoder().decode(InstantLiveMessage.self, from: data), data.count)
+      return (try InstantLiveMessage.decoded(fromFrame: data), data.count)
 
     @unknown default:
       throw InstantError(
