@@ -1,3 +1,9 @@
+## 2026-10-23 19:30:26 EDT — scribe `3cd30389c`
+Change log (#1024): the 1.9.26 pin 4614f8add; PROGRESS.
+
+## 2026-10-23 19:30:26 EDT — scribe `4614f8add`
+Scribe and Scribe Playback pin instant-data-swift exactly 1.9.26 (#1024: the live connection's status says what the socket is; carries 1.9.25); both Package.resolved only the pin and originHash; installer 65/65; build 118's What's New line.
+
 ## 2026-10-23 19:24:30 EDT — instant-data-swift `48df79da7d77aa2b4ec60fabce4995b60dd9ad3a`
 The v1.9.26 release document (#1024): the live connection's status says what the socket is.
 
