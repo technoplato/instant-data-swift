@@ -152,3 +152,43 @@ public struct InstantFileUploadProgress: Hashable, Codable, Sendable, Identifiab
     self.updatedAt = updatedAt
   }
 }
+
+/// What ``InstantRuntime/evictStoredFiles(ids:)`` did with this device's copy of one stored file (#959).
+public struct InstantStoredFileEviction: Hashable, Sendable {
+  /// Why a copy stays.
+  public enum Kept: Hashable, Sendable {
+    /// This device holds no copy: there is no record of the file, or its record has none.
+    case notHeld
+    /// The client has no storage, so the copy is the only one.
+    case noStorage
+    /// Storage has no record of a file with this id.
+    case notOnServer
+    /// Storage's record of the file has another size than the copy.
+    case sizeDiffers(serverByteCount: Int64)
+  }
+
+  public enum Outcome: Hashable, Sendable {
+    /// The copy is gone and the record stays, not downloaded. `freedByteCount` is what the volume got back: the
+    /// blocks only this copy held, which is next to nothing for an APFS clone of a file the app still keeps; nil
+    /// where the file system does not say.
+    case evicted(freedByteCount: Int64?)
+    case kept(Kept)
+  }
+
+  public var id: String
+  /// The name the file was stored under, empty when there is no record.
+  public var name: String
+  /// Where the copy was, empty when there was none.
+  public var localPath: String
+  /// The copy's size.
+  public var byteCount: Int64
+  public var outcome: Outcome
+
+  public init(id: String, name: String, localPath: String, byteCount: Int64, outcome: Outcome) {
+    self.id = id
+    self.name = name
+    self.localPath = localPath
+    self.byteCount = byteCount
+    self.outcome = outcome
+  }
+}

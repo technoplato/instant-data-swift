@@ -10976,6 +10976,20 @@ public final class InstantRuntime: Sendable {
     }
   }
 
+  @concurrent
+  public func evictStoredFiles(ids rawIDs: [String]) async throws -> [InstantStoredFileEviction] {
+    throw InstantError(
+      code: .implementationFailed,
+      operation: "evict files",
+      message: "Not written yet (#959).",
+      recovery: "None."
+    )
+  }
+
+  package func localStoredFiles() async throws -> [InstantStoredFile] {
+    []
+  }
+
   private static let storedFilesQuery = InstantQueryPlan(
     id: "instant.storage.files",
     namespace: "$files",

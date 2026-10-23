@@ -71,6 +71,26 @@ struct InstantStoredFileDownloadTests {
   func heldFileCopiesWithoutDownloading() async throws {
     let fixture = try await Fixture(payload: payload)
     defer { fixture.remove() }
+    // The old read keeps a copy, so the library holds the file now.
+    _ = try await fixture.runtime.storedFileContents(id: "file-1", name: "recordings/audio.wav")
+    let destination = fixture.directory.appendingPathComponent("copy/audio.wav")
+
+    let file = try await fixture.runtime.downloadStoredFile(id: "file-1", to: destination)
+
+    expectNoDifference(try Data(contentsOf: destination), payload)
+    expectNoDifference(file.localPath, destination.path)
+    let dataDownloads = await fixture.recorder.dataDownloads
+    let fileDownloads = await fixture.recorder.fileDownloads
+    expectNoDifference(dataDownloads, 1, "Only the read before it downloaded.")
+    expectNoDifference(fileDownloads, [])
+  }
+
+  // #959: an upload keeps no copy, so the file comes back from storage, by the name it was stored under and without the
+  // live list of every file.
+  @Test("An uploaded file downloads by the name it was stored under: the upload kept no copy")
+  func uploadedFileDownloadsByItsStoredName() async throws {
+    let fixture = try await Fixture(payload: payload)
+    defer { fixture.remove() }
     let source = fixture.directory.appendingPathComponent("upload.bin")
     try payload.write(to: source)
     let uploaded = try await fixture.runtime.uploadFile(from: source, name: "uploads/upload.bin")
@@ -81,9 +101,9 @@ struct InstantStoredFileDownloadTests {
     expectNoDifference(try Data(contentsOf: destination), payload)
     expectNoDifference(file.localPath, destination.path)
     let dataDownloads = await fixture.recorder.dataDownloads
-    let fileDownloads = await fixture.recorder.fileDownloads
+    let fileDownloadPaths = await fixture.recorder.fileDownloads.map(\.path)
     expectNoDifference(dataDownloads, 0)
-    expectNoDifference(fileDownloads, [])
+    expectNoDifference(fileDownloadPaths, ["uploads/upload.bin"])
   }
 
   @Test("A failed download leaves the destination as it was and no temporary file")

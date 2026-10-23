@@ -5,7 +5,11 @@ import Testing
 
 @Suite(.serialized)
 struct InstantStorageRuntimeTests {
-  @Test("Live storage uses the server file id, caches bytes, and deletes remotely first")
+  // #959: an upload keeps no copy of its bytes. Storage holds the file once the upload returns, as upstream's
+  // `StorageAPI.uploadFile`, which keeps nothing; the device keeps the file's record (id, name, size), and a read
+  // downloads it by the name it was stored under. On one device the kept copies came to 25.9 GB of logical size, 10.8
+  // GB of them real blocks.
+  @Test("Live storage uses the server file id, keeps no copy of the bytes, and deletes remotely first")
   func liveUploadAndDelete() async throws {
     let directory = FileManager.default.temporaryDirectory
       .appendingPathComponent("instant-storage-runtime-\(UUID().uuidString)", isDirectory: true)
@@ -39,8 +43,14 @@ struct InstantStorageRuntimeTests {
     expectNoDifference(uploaded.id, "remote-file-id")
     expectNoDifference(uploaded.name, "builds/App.tsx")
     expectNoDifference(uploaded.byteCount, Int64(body.count))
-    let storedContents = try await runtime.storedFileContents(id: uploaded.id)
-    expectNoDifference(storedContents.data, body)
+    expectNoDifference(uploaded.isDownloaded, false)
+    let filesDirectory = directory.appendingPathComponent("files", isDirectory: true)
+    expectNoDifference(regularFiles(under: filesDirectory), [])
+    let listedFiles = try await runtime.storedFiles()
+    expectNoDifference(listedFiles, [uploaded])
+    let snapshot = try await runtime.storageSnapshot()
+    expectNoDifference(snapshot.downloadedFileCount, 0)
+    expectNoDifference(snapshot.downloadedFileSize, 0)
     let upload = try #require(await recorder.uploadRequests().only)
     expectNoDifference(upload.appID, "app-1")
     expectNoDifference(upload.apiURI.absoluteString, "https://api.example.test/custom")
@@ -50,12 +60,18 @@ struct InstantStorageRuntimeTests {
     expectNoDifference(upload.refreshToken, "refresh-token")
     expectNoDifference(upload.contentType, "text/typescript")
 
+    // A read downloads the file by the name it was stored under, with no list of every file.
+    let storedContents = try await runtime.storedFileContents(id: uploaded.id)
+    expectNoDifference(storedContents.data, Data("remote bytes".utf8))
+    let download = try #require(await recorder.downloadFileRequests().only)
+    expectNoDifference(download.path, "builds/App.tsx")
+
     let deleted = try await runtime.deleteStoredFile(id: uploaded.id)
 
-    expectNoDifference(deleted, uploaded)
+    expectNoDifference(deleted.id, uploaded.id)
     let remainingFiles = try await runtime.storedFiles()
     expectNoDifference(remainingFiles, [])
-    expectNoDifference(FileManager.default.fileExists(atPath: uploaded.localPath), false)
+    expectNoDifference(regularFiles(under: filesDirectory), [])
     let delete = try #require(await recorder.deleteRequests().only)
     expectNoDifference(delete.appID, "app-1")
     expectNoDifference(delete.apiURI.absoluteString, "https://api.example.test/custom")
