@@ -2,6 +2,7 @@ import CustomDump
 import Foundation
 @testable import InstantSwiftDataCore
 import Testing
+import os
 
 private let reactorIncomingRoomEventSource =
   "upstream/instant/client/packages/core/src/Reactor.js _onMessage join-room-ok, "
@@ -3586,8 +3587,19 @@ struct InstantLiveTransportTests {
     )
   }
 
+  /// A query that cannot be encoded never reaches the socket, so its error is the query's: it is logged with
+  /// everything needed to fix it, and the connection's state stays what the socket is (#1024). It used to be stored as
+  /// the connection's error.
   @Test
-  func runtimeLiveCursorMismatchRecordsActionableConnectionError() async throws {
+  func runtimeLiveCursorMismatchLogsAnActionableErrorAndLeavesTheConnectionAlone() async throws {
+    let encodingFailures = OSAllocatedUnfairLock<[InstantDiagnosticEntry]>(initialState: [])
+    let token = InstantDiagnostics.shared.addHandler { entry in
+      guard entry.event == "query-observation.encoding-failed",
+        entry.correlationID == "runtime-live-cursor-error"
+      else { return }
+      encodingFailures.withLock { $0.append(entry) }
+    }
+    defer { InstantDiagnostics.shared.removeHandler(token) }
     let runtime = try await InstantRuntime.bootstrap(
       configuration: InstantRuntimeConfiguration(
         appID: "runtime-live-cursor-error",
@@ -3610,11 +3622,13 @@ struct InstantLiveTransportTests {
     var iterator = observation.makeAsyncIterator()
     _ = await iterator.next()
 
+    let failure = try #require(encodingFailures.withLock { $0.first })
+    #expect(failure.metadata["errorMessage"]?.contains("opaque four-element tuples") == true)
+    expectNoDifference(failure.metadata["errorPath"], "after")
+    #expect(failure.metadata["errorDescription"]?.contains("canonical Instant SDK") == true)
     let status = try await runtime.connectionStatus()
-    expectNoDifference(status.state, .errored)
-    #expect(status.lastErrorMessage?.contains("opaque four-element tuples") == true)
-    #expect(status.lastErrorMessage?.contains("path: after") == true)
-    #expect(status.lastErrorMessage?.contains("canonical Instant SDK") == true)
+    #expect(status.state != .errored)
+    expectNoDifference(status.lastErrorMessage, nil)
   }
 
   @Test
