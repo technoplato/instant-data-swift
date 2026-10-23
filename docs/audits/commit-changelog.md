@@ -1,3 +1,9 @@
+## 2026-10-23 17:22:18 EDT — instant-data-swift `9bbe407a2c8121f2542146649984b99ffac6d35b`
+Tests (#1021): a checked-in list of the bundle's failing tests (77 names: 24 idle, 53 only under load, v1.9.22 on the Mac mini), and scripts/known-failing-tests.sh to run the bundle the one way and compare a run against the list instead of a baseline run of main.
+
+## 2026-10-23 17:22:18 EDT — instant-data-swift `004439da4847bd5c1a28d9116c8f1dea4582df9d`
+Tests (#1021): the parity tests find their upstream fixtures, and the CLI tests their executable, wherever the bundle is launched from (12 + ~107 of the ~155 names agents saw failing were the launch environment).
+
 ## 2026-10-23 17:17:35 EDT — realtime-voice `5e0f07b57`
 Changelog (#1015): the 1.9.22 pin, red and green; PROGRESS.
 

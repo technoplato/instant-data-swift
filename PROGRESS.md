@@ -1,3 +1,22 @@
+## 2026-10-23 17:22:18 EDT — #1021: a checked-in list of the bundle's failing tests, and a script that runs and compares against it (test-only, no release)
+
+- **Commits (main):** `004439da` (the parity tests find their upstream fixtures, and the CLI tests their executable,
+  wherever the bundle is launched from), `9bbe407a` (`scripts/known-failing-tests.{sh,py}` and
+  `Tests/known-failing.txt`), merge `f44dde62`; then this ledger commit.
+- **Why:** nothing written down said which InstantSwiftDataCoreTests tests fail on main, so every agent and release ran
+  main's whole bundle as a baseline first. Agents reported ~155 failing names; ~120 were the launch environment: ~107
+  CLI tests built without their `instant-swift-data` executable, 12 parity tests reading fixtures relative to the
+  working directory, 5 reconciliation tests without the upstream checkouts at their pins.
+- **Checks (Mac mini M4, Xcode 27 beta, debug, whole bundle of 1,384 tests through the script):** v1.9.22 idle 19 and 21
+  failing (217 s and 205 s, load 3-10); beside 20 busy loops 73 failing (652 s, load 13-80, server-apply-932's bundle
+  ran alongside) and 28 (478 s, load 12-44). The list: 77 names, 24 that failed idle, 53 only under load.
+- **Use:** `scripts/known-failing-tests.sh run <out-dir> [--load 20]`, then `compare <out-dir>` (exit 1 = a failure the
+  list does not name). Re-record with `record <run-dir>...` when a fix makes a listed test pass.
+- **Next (#1021):** verdicts by cluster, the load-timing ones made deterministic the #1020 way: fixed 5 s and 500 ms
+  live waits, 250 ms wall-clock asserts, whole-process CPU and diagnostics measurements, the CLI tests' pipe-capture
+  race, test teardowns that delete a store a query still reads, infinite-query harnesses that call a list settled
+  before its first answer.
+
 ## 2026-10-23 16:36:40 EDT — v1.9.22: the local cache gives back the pages it frees, with one VACUUM when they are worth it (#1015); carries 1.9.21 (#1006) and 1.9.20 (#1011)
 
 - **Commits:** red `d3da7a73`, green `73ed07b8`; release document `3a14d26e`; then this ledger commit and the tag v1.9.22.

@@ -10,6 +10,34 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## October 23rd, 2026 at 5:22:05 p.m. EDT — `9bbe407a2c81` Tests (#1021): a checked-in list of the bundle's failing tests, and a script that runs and compares against it
+
+- **Implementation commit:** `9bbe407a2c8121f2542146649984b99ffac6d35b`
+- **Change:** Tests (#1021): a checked-in list of the bundle's failing tests, and a script that runs and compares against it
+- **Details:**
+  - scripts/known-failing-tests.sh run builds the bundle and the CLI executable, checks out the upstream sources the parity tests pin, runs every Swift Testing test with an event stream (a killed or hung run still reports), optionally beside N busy loops; compare exits 1 only for a failure the list does not name; record rewrites Tests/known-failing.txt from idle and loaded whole-bundle runs, keeping verdicts. Recorded on the Mac mini at v1.9.22 (fff54403, 004439da), 1,384 tests: idle 19 and 21 failing (217 s, 205 s, load 3-10); 20 busy loops 73 and 28 failing (652 s at load 13-80, 478 s at load 12-44). 77 names: 24 idle, 53 only under load; the ~155 agents reported were mostly the launch environment.
+- **Files:**
+  - `scripts/known-failing-tests.py` — run, compare, failing and record
+  - `scripts/known-failing-tests.sh` — the entry point
+  - `Tests/known-failing.txt` — the list, with the runs it came from
+  - `skills/instant-data-testing/SKILL.md` — compare against the list instead of a baseline run
+- **User context (verbatim):**
+  > We're really working on making this production ready.
+- **SpecStory:** unavailable — unavailable — Headless claude -p session (tools/agent-run); no SpecStory capture for headless runs.
+
+## October 23rd, 2026 at 5:22:04 p.m. EDT — `004439da4847` Tests (#1021): the bundle finds its upstream fixtures and CLI executable wherever it is launched from
+
+- **Implementation commit:** `004439da4847bd5c1a28d9116c8f1dea4582df9d`
+- **Change:** Tests (#1021): the bundle finds its upstream fixtures and CLI executable wherever it is launched from
+- **Details:**
+  - The twelve InstantQueryExecutionParityTests read upstream fixtures relative to the process's working directory, so every test-helper run launched outside the package root failed them; they now resolve INSTANT_UPSTREAM_CHECKOUT, else upstream/instant beside the package, as the reconciliation tests do. CLI tests also take INSTANT_SWIFT_DATA_CLI_EXECUTABLE (builds with their own --scratch-path). Mini: parity 12/12 from /tmp with and without the override, 12 fail at the missing file with a bad override; CLI tests fail with the new message when the executable is missing and pass via the override and the default.
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantQueryExecutionParityTests.swift` — the fixture loader's checkout
+  - `Tests/InstantSwiftDataCoreTests/CLITests.swift` — the executable override and its error
+- **User context (verbatim):**
+  > We're really working on making this production ready.
+- **SpecStory:** unavailable — unavailable — Headless claude -p session (tools/agent-run); no SpecStory capture for headless runs.
+
 ## October 23rd, 2026 at 4:36:26 p.m. EDT — `3a14d26ec6bf` Document the v1.9.22 release: the local cache gives back the pages it frees, with one VACUUM when they are worth it (#1015)
 
 - **Implementation commit:** `3a14d26ec6bf25978b6ecaf1c9fc67d306f3098b`
