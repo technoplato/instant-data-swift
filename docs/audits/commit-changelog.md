@@ -1,3 +1,12 @@
+## 2026-10-23 16:16:37 EDT — instant-data-swift `e5211695cd84a8e60f815df9b65e8826372e8157`
+Release document for v1.9.20 (#1011): InstantEnergySnapshot.serverApplyPaths; carries #1007's frame parser.
+
+## 2026-10-23 16:16:37 EDT — instant-data-swift `a07afa5f3237a3ec8e575f9f2eaa842385c4354a`
+Green (#1011): the energy meter counts each committed server apply under the gate-held event's path.
+
+## 2026-10-23 16:16:37 EDT — instant-data-swift `09468ed38741dd911646c6a68eed4f97dd2b3922`
+Red test (#1011): InstantEnergyMeterTests, the server apply's path counts.
+
 ## 2026-10-23 16:05:00 EDT — instant-data-swift `3dd519c0`
 Green (#1007): a received frame is parsed straight into InstantLiveJSONValue (InstantLiveJSONParser); JSONDecoder answers what it declines. 0.17-0.18x JSONDecoder's CPU on a 95 KB refresh-ok.
 

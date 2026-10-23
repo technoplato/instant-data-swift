@@ -10,6 +10,44 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## October 23rd, 2026 at 4:16:37 p.m. EDT — `e5211695cd84` Document the v1.9.20 release: the energy meter counts each committed server apply under the path it took (#1011)
+
+- **Implementation commit:** `e5211695cd84a8e60f815df9b65e8826372e8157`
+- **Change:** Document the v1.9.20 release (#1011)
+- **Details:**
+  - Release document: serverApplyPaths; carries 1.9.19, 1.9.18 and #1007's frame parser.
+- **Files:**
+  - `docs/releases/v1.9.20.md` — the release document
+- **User context (verbatim):**
+  > Do we have the right Analytics and tracing in place that's not going to impact performance but is going to give us insight into performance even if the device isn't connected.
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run); no SpecStory capture for headless runs.
+
+## October 23rd, 2026 at 4:16:36 p.m. EDT — `a07afa5f3237` Green (#1011): the energy meter counts each committed server apply under the path it took
+
+- **Implementation commit:** `a07afa5f3237a3ec8e575f9f2eaa842385c4354a`
+- **Change:** Green (#1011): the energy meter counts each committed server apply under the path it took
+- **Details:**
+  - One dictionary update per committed apply; the gate-held event's path names.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantEnergyMeter.swift` — the per-path counts
+- **User context (verbatim):**
+  > Do we have the right Analytics and tracing in place that's not going to impact performance but is going to give us insight into performance even if the device isn't connected.
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run); no SpecStory capture for headless runs.
+
+## October 23rd, 2026 at 4:16:36 p.m. EDT — `09468ed38741` test(#1011): red: the energy meter counts each committed server apply under the path it took
+
+- **Implementation commit:** `09468ed38741dd911646c6a68eed4f97dd2b3922`
+- **Change:** Red (#1011): the energy meter counts each committed server apply under the path it took
+- **Details:**
+  - InstantEnergyMeterTests: 2 of 11 fail on 1.9.19's meter; the count's call at the gate-held event.
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantEnergyMeterTests.swift` — the red tests
+  - `Sources/InstantSwiftDataCore/InstantEnergyMeter.swift` — serverApplyPaths and recordServerApply(path:), a stub
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — the count at the gate-held event
+- **User context (verbatim):**
+  > Do we have the right Analytics and tracing in place that's not going to impact performance but is going to give us insight into performance even if the device isn't connected.
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run); no SpecStory capture for headless runs.
+
 ## October 23rd, 2026 at 4:10:17 p.m. EDT — `3dd519c09f71` Green (#1007): a received frame is parsed straight into InstantLiveJSONValue, and JSONDecoder answers what the parser declines
 
 - **Implementation commit:** `3dd519c09f7132dd7d0d1ca1217394572474e269`

@@ -1,3 +1,10 @@
+## 2026-10-23 16:16:37 EDT — v1.9.20: the energy meter counts each committed server apply under the path it took (#1011); carries 1.9.19, 1.9.18 and #1007's frame parser
+
+- **Commits:** red `09468ed3`, green `a07afa5f`, release document `e5211695`; then this ledger commit and the tag v1.9.20.
+- **Checks:** `InstantEnergyMeterTests` red (2 of 11 fail) then green (11 pass); the server apply, live-query replacement,
+  fast-drain and meter suites (68 tests) pass on be04e519 plus these commits.
+- **Next:** the consuming app pins 1.9.20 and maps `serverApplyPaths` into its energy ledger, a count per path a minute.
+
 ## 2026-10-23 16:13:00 EDT — #1007: frames parsed straight into InstantLiveJSONValue (on main, for the next tag)
 
 - **Commits:** red `b949060d`, green `3dd519c0` (F4), plan claims after them.
