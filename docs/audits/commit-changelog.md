@@ -1,3 +1,27 @@
+## 2026-10-23 19:35:09 EDT — instant-data-swift `0f64acfb24a6854d4122c506b23ae23d97c37619`
+Release document for v1.9.27 (#1007): the statement cache and the fact writer.
+
+## 2026-10-23 19:27:28 EDT — instant-data-swift `4b5235262ac3105ed671e0a3a001d0d12d948025`
+Tests (#1007, #1021): the prepare cost bound 3 -> 5 for a whole bundle's load.
+
+## 2026-10-23 19:20:50 EDT — instant-data-swift `4fb1f457ef32e7303f9e347f42228c7d41159396`
+Green (#1007): InstantStoredJSON writes a fact's stored text without JSONEncoder, byte for byte.
+
+## 2026-10-23 19:20:40 EDT — instant-data-swift `9092536016cf39532d6ded4f73470ae45a055388`
+Red test (#1007): InstantStoredJSONTests, a line's facts call JSONEncoder twice each.
+
+## 2026-10-23 19:01:44 EDT — instant-data-swift `0130581a6af6df01d664dc0ac538b74a041d029b`
+Green (#1007): a kept statement's reuse hashes its SQL once (1.36 hashes, from 11.8).
+
+## 2026-10-23 19:01:04 EDT — instant-data-swift `5074b761a6fa180664a23fd71c996199576292fe`
+Red test (#1007): reusingAKeptStatementCostsAboutOneHashOfItsSQL.
+
+## 2026-10-23 18:44:15 EDT — instant-data-swift `baa1796a86150d22b46f893d952a656a214a4056`
+Green (#1007): the statement cache keeps 256 statements; a live write's cycle prepares none.
+
+## 2026-10-23 18:43:17 EDT — instant-data-swift `ef64c39bfc88d67ac861113ef40544a313ba6d45`
+Red test (#1007): aLiveWritesCycleReusesItsPreparedStatements, 1,335 statements prepared in five cycles.
+
 ## 2026-10-23 19:24:30 EDT — instant-data-swift `48df79da7d77aa2b4ec60fabce4995b60dd9ad3a`
 The v1.9.26 release document (#1024): the live connection's status says what the socket is.
 

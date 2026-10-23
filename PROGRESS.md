@@ -1,3 +1,15 @@
+## 2026-10-23 19:35:19 EDT — v1.9.27: a live write costs about 15% less CPU (#1007); carries 1.9.26 and 1.9.25
+
+- **Commits:** red `ef64c39b`, green `baa1796a` (the statement cache keeps 256 statements); red `5074b761`, green
+  `0130581a` (a kept statement's reuse hashes its SQL once); red `90925360`, green `4fb1f457` (a fact's stored text
+  without JSONEncoder); the prepare cost bound `4b523526` (#1021); release document `0f64acfb`; then this ledger
+  commit and the tag v1.9.27.
+- **Checks:** the three red tests red, then green; the outbox, server-apply, energy and stored-JSON suites (569 tests)
+  and the 112 CLI tests pass; the whole bundle against `Tests/known-failing.txt` (see the release document). Write
+  harness: -12.7% instructions and -13.5% CPU per write against 1.9.25 for the cache, then -3.5% instructions for the
+  fact writer.
+- **Next:** the consuming app pins exactly 1.9.27 after build 118 is cut, for build 119.
+
 ## 2026-10-23 19:24:30 EDT — v1.9.26: the live connection's status says what the socket is (#1024); carries 1.9.25 (#932, #590), 1.9.24, 1.9.23, #932's notice level and #1012's progressive media
 
 - **Commits:** red `fa1f1036`, green `8dc5c3ec`; release document `48df79da`; then this ledger commit and the tag v1.9.26.

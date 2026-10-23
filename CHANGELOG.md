@@ -10,6 +10,102 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## October 23rd, 2026 at 7:35:19 p.m. EDT — `0f64acfb24a6` Document the v1.9.27 release: a live write costs about 15% less CPU, the statement cache holding a write's whole cycle and a fact's stored text written without JSONEncoder (#1007); carries 1.9.26 and 1.9.25
+
+- **Implementation commit:** `0f64acfb24a6854d4122c506b23ae23d97c37619`
+- **Change:** Document the v1.9.27 release: a live write costs about 15% less CPU, the statement cache holding a write's whole cycle and a fact's stored text written without JSONEncoder (#1007); carries 1.9.26 and 1.9.25
+- **Details:**
+  - Release document: the statement cache's capacity and entries, the fact writer, their tests and the harness before and after; carries 1.9.26 and 1.9.25.
+- **Files:**
+  - `docs/releases/v1.9.27.md` — the release document
+- **User context (verbatim):**
+  > I want to optimize the performance of the application with its exact feature set.
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run); no SpecStory capture for headless runs.
+
+## October 23rd, 2026 at 7:35:19 p.m. EDT — `4b5235262ac3` Tests (#1007, #1021): the prepare cost bound leaves room for a whole bundle's load
+
+- **Implementation commit:** `4b5235262ac3105ed671e0a3a001d0d12d948025`
+- **Change:** Tests (#1007, #1021): the prepare cost bound leaves room for a whole bundle's load
+- **Details:**
+  - The prepare cost bound 3 -> 5: the sharded indexes measure 2.2-2.3 alone and 3.8 in a whole bundle; whole-map copies measured 9.7 (#1021).
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantPrepareCopyCostTests.swift` — the bound and why
+- **User context (verbatim):**
+  > I want to optimize the performance of the application with its exact feature set.
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run); no SpecStory capture for headless runs.
+
+## October 23rd, 2026 at 7:35:18 p.m. EDT — `4fb1f457ef32` Green (#1007): a fact's stored text is written without JSONEncoder, byte for byte as JSONEncoder writes it
+
+- **Implementation commit:** `4fb1f457ef32e7303f9e347f42228c7d41159396`
+- **Change:** Green (#1007): a fact's stored text is written without JSONEncoder, byte for byte as JSONEncoder writes it
+- **Details:**
+  - InstantStoredJSON writes null, string, number, boolean, ref and date values and facts as JSONEncoder does, the value once; harness -3.5% instructions per write.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantStoredJSON.swift` — the writer
+- **User context (verbatim):**
+  > I want to optimize the performance of the application with its exact feature set.
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run); no SpecStory capture for headless runs.
+
+## October 23rd, 2026 at 7:35:18 p.m. EDT — `9092536016cf` Red (#1007): every fact a write stores runs JSONEncoder twice, for its value and for itself
+
+- **Implementation commit:** `9092536016cf39532d6ded4f73470ae45a055388`
+- **Change:** Red (#1007): every fact a write stores runs JSONEncoder twice, for its value and for itself
+- **Details:**
+  - InstantStoredJSON seam (still JSONEncoder) and its tests: a line's facts call JSONEncoder 20 times; parity over 12,000 random values and facts.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantStoredJSON.swift` — the seam
+- **User context (verbatim):**
+  > I want to optimize the performance of the application with its exact feature set.
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run); no SpecStory capture for headless runs.
+
+## October 23rd, 2026 at 7:35:17 p.m. EDT — `0130581a6af6` Green (#1007): a kept statement's reuse hashes its SQL once
+
+- **Implementation commit:** `0130581a6af6df01d664dc0ac538b74a041d029b`
+- **Change:** Green (#1007): a kept statement's reuse hashes its SQL once
+- **Details:**
+  - One entry per SQL stays in place; the check-in reaches it by the statement pointer: 1.36 hashes per reuse. Harness with both: -12.7% instructions, -13.5% CPU per write against 1.9.25.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — the cache's entries
+- **User context (verbatim):**
+  > I want to optimize the performance of the application with its exact feature set.
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run); no SpecStory capture for headless runs.
+
+## October 23rd, 2026 at 7:35:17 p.m. EDT — `5074b761a6fa` Red (#1007): reusing a kept statement costs twelve hashes of its SQL
+
+- **Implementation commit:** `5074b761a6fa180664a23fd71c996199576292fe`
+- **Change:** Red (#1007): reusing a kept statement costs twelve hashes of its SQL
+- **Details:**
+  - reusingAKeptStatementCostsAboutOneHashOfItsSQL: a reuse cost 11.8 hashes of its SQL (bound 3).
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantWritePathEnergyTests.swift` — the red test
+- **User context (verbatim):**
+  > I want to optimize the performance of the application with its exact feature set.
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run); no SpecStory capture for headless runs.
+
+## October 23rd, 2026 at 7:35:16 p.m. EDT — `baa1796a8615` Green (#1007): the statement cache keeps 256 statements, room for a live write's whole cycle
+
+- **Implementation commit:** `baa1796a86150d22b46f893d952a656a214a4056`
+- **Change:** Green (#1007): the statement cache keeps 256 statements, room for a live write's whole cycle
+- **Details:**
+  - SQLiteStatementCache.defaultCapacity 64 -> 256: the cycle's ~150 statements stay prepared (954 KB); the five cycles prepare none.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — the cache's capacity
+- **User context (verbatim):**
+  > I want to optimize the performance of the application with its exact feature set.
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run); no SpecStory capture for headless runs.
+
+## October 23rd, 2026 at 7:35:15 p.m. EDT — `ef64c39bfc88` Red (#1007): a live write's cycle prepares every statement again, because it runs more distinct statements than the cache keeps
+
+- **Implementation commit:** `ef64c39bfc88d67ac861113ef40544a313ba6d45`
+- **Change:** Red (#1007): a live write's cycle prepares every statement again, because it runs more distinct statements than the cache keeps
+- **Details:**
+  - aLiveWritesCycleReusesItsPreparedStatements: five warm write cycles prepared 1,335 statements with the cache full at 64.
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantWritePathEnergyTests.swift` — the red test
+- **User context (verbatim):**
+  > I want to optimize the performance of the application with its exact feature set.
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run); no SpecStory capture for headless runs.
+
 ## October 23rd, 2026 at 7:24:19 p.m. EDT — `48df79da7d77` Document the v1.9.26 release: the live connection's status says what the socket is (#1024)
 
 - **Implementation commit:** `48df79da7d77aa2b4ec60fabce4995b60dd9ad3a`
