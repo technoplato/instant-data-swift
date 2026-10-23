@@ -82,6 +82,42 @@ struct InstantWritePathEnergyTests {
     expectNoDifference(pendingCount, 12, "every write is still durable in the outbox")
   }
 
+  /// A live write's whole cycle reuses its statements too (#1007). The save, the delivery claim, the acknowledgement and
+  /// the apply of the server's answer ran more distinct statements than the cache kept, so the least recently used one
+  /// was always the next one needed and every statement was prepared again on every write: a Time Profiler trace of a
+  /// write replay put 7% of all CPU in preparing them.
+  @Test
+  func aLiveWritesCycleReusesItsPreparedStatements() async throws {
+    var fixture = try await FastDrainFixture.make(
+      suffix: "statement-reuse-cycle",
+      serverSegmentCount: 4,
+      pendingSegmentCount: 0,
+      scribeLinks: true,
+      liveLines: true
+    )
+    func cycle() async throws {
+      _ = try await fixture.writeSegments(1)
+      let window = try await fixture.claimWindow()
+      #expect(!window.mutations.isEmpty)
+      for mutation in window.mutations {
+        _ = try await fixture.acceptAndRefresh(mutation, claimToken: window.token)
+      }
+    }
+    for _ in 0..<3 { try await cycle() }
+    let preparedBefore = await fixture.runtime.persistence.preparedStatementCountForTesting()
+
+    for _ in 0..<5 { try await cycle() }
+
+    let prepared = await fixture.runtime.persistence.preparedStatementCountForTesting() - preparedBefore
+    let status = await fixture.runtime.persistence.statementCacheStatusForTesting()
+    print(
+      "statement-reuse-cycle: five write cycles prepared \(prepared) statements; \(status.idleCount) idle, "
+        + "\(status.statementBytes) B of statements"
+    )
+    expectNoDifference(prepared, 0)
+    _ = try? await fixture.runtime.closeConnection()
+  }
+
   /// A statement in use is never handed out twice, an idle one is reset, DDL is not kept, and the cache stays within
   /// its capacity (#653).
   @Test
