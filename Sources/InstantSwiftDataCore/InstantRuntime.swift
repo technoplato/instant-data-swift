@@ -342,6 +342,8 @@ public struct InstantRuntimeConfiguration: Sendable {
   public var persistenceURL: URL
   public var initialAttributes: [InstantAttribute]
   public var deferredValueResidency: InstantDeferredValueResidencyPolicy
+  /// Attributes a local read can look up on disk (#1006). See ``InstantLocalLookupPolicy``.
+  public var localLookup: InstantLocalLookupPolicy = .none
   public var now: @Sendable () -> InstantTimestamp
   public var makeID: @Sendable () -> String
   public var refreshTokenVerifier: InstantRefreshTokenVerifier

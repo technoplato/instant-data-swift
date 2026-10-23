@@ -1405,6 +1405,13 @@ public actor SQLitePersistenceStore {
     serverApplyMetrics
   }
 
+  /// Holds this actor for `duration` without suspending, as a long SQLite commit does, after calling `started` (#1006).
+  package func occupyForTesting(_ duration: Duration, started: @Sendable () -> Void) {
+    started()
+    let (seconds, attoseconds) = duration.components
+    Thread.sleep(forTimeInterval: Double(seconds) + Double(attoseconds) / 1e18)
+  }
+
   package func streamContentReadMetricsForTesting() -> InstantStreamContentReadMetrics {
     streamContentReadMetrics
   }
