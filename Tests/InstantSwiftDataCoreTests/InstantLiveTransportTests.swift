@@ -7176,10 +7176,10 @@ private actor InstantRuntimeScriptedLiveSession {
       sentWaiters.append(
         id: id,
         count: count,
+        currentCount: sent.count,
         continuation: continuation,
-        deadline: Task {
-          guard (try? await Task.sleep(for: timeout)) != nil else { return }
-          await self.expireSentWaiter(id, timeout: timeout)
+        deadline: InstantLiveTestWait.stallDeadline(every: timeout) {
+          await self.expireSentWaiterIfStalled(id, timeout: timeout)
         }
       )
     }
@@ -7199,17 +7199,17 @@ private actor InstantRuntimeScriptedLiveSession {
       receiveWaiters.append(
         id: id,
         count: count,
+        currentCount: receiveRequestCountValue,
         continuation: continuation,
-        deadline: Task {
-          guard (try? await Task.sleep(for: timeout)) != nil else { return }
-          await self.expireReceiveWaiter(id, timeout: timeout)
+        deadline: InstantLiveTestWait.stallDeadline(every: timeout) {
+          await self.expireReceiveWaiterIfStalled(id, timeout: timeout)
         }
       )
     }
   }
 
-  private func expireSentWaiter(_ id: UUID, timeout: Duration) {
-    sentWaiters.fail(id) { count in
+  private func expireSentWaiterIfStalled(_ id: UUID, timeout: Duration) -> Bool {
+    sentWaiters.failIfStalled(id, currentCount: sent.count) { count in
       InstantLiveTestWaitTimedOut(
         wait: "\(count) sent messages",
         timeout: timeout,
@@ -7218,8 +7218,8 @@ private actor InstantRuntimeScriptedLiveSession {
     }
   }
 
-  private func expireReceiveWaiter(_ id: UUID, timeout: Duration) {
-    receiveWaiters.fail(id) { count in
+  private func expireReceiveWaiterIfStalled(_ id: UUID, timeout: Duration) -> Bool {
+    receiveWaiters.failIfStalled(id, currentCount: receiveRequestCountValue) { count in
       InstantLiveTestWaitTimedOut(
         wait: "\(count) receive requests",
         timeout: timeout,
