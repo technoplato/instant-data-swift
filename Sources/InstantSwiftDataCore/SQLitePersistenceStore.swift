@@ -8,6 +8,8 @@
 //   query's stored copy (#1006).
 // - 2026-10-23: an uploaded file's record keeps no copy of its bytes (saveUploadedFileRecord), a record without a copy
 //   is not downloaded to reads and the snapshot, and an evicted copy's record stays (forgetStoredFileCopy) (#959).
+// - 2026-10-23: metadata rows upsert in place, and an acknowledgement leaves a write's unchanged key rows alone: both
+//   rewrote unchanged rows to new pages on every write (#1007).
 
 import Foundation
 import IssueReporting
@@ -1155,7 +1157,7 @@ public actor SQLitePersistenceStore {
   private func markDeferredLiveQueryResultJSONWithoutTransaction(_ key: String, at milliseconds: Int64) throws {
     guard liveQueryResultJSON.marked.insert(key).inserted else { return }
     try execute(
-      "INSERT OR REPLACE INTO instant_sync_metadata (key, value, updated_at_ms) VALUES (?, ?, ?)",
+      Self.upsertMetadataSQL,
       [.text(Self.deferredLiveQueryResultJSONMarkerPrefix + key), .text("1"), .int(milliseconds)]
     )
   }
@@ -15832,11 +15834,15 @@ public actor SQLitePersistenceStore {
   private func replaceOutboxWriteKeysWithoutTransaction(
     for mutation: PendingMutation
   ) throws {
+    let writeKeys = InstantOutboxDeliveryMetadata.writeKeys(in: mutation)
+    // An acknowledgement saves the write again with the same keys: deleting and inserting the same rows moved them to
+    // new pages of three b-trees for every write (#1007). The rows are the keys, so an equal set means equal rows.
+    if try storedOutboxWriteKeysWithoutTransaction(mutationID: mutation.id) == writeKeys { return }
     try execute(
       "DELETE FROM instant_outbox_write_keys WHERE mutation_id = ?",
       [.text(mutation.id)]
     )
-    let keys = InstantOutboxDeliveryMetadata.writeKeys(in: mutation)
+    let keys = writeKeys
       .sorted { lhs, rhs in
         (lhs.entityID, lhs.attributeID) < (rhs.entityID, rhs.attributeID)
       }
@@ -15853,6 +15859,29 @@ public actor SQLitePersistenceStore {
         ]
       )
     }
+  }
+
+  private func storedOutboxWriteKeysWithoutTransaction(
+    mutationID: String
+  ) throws -> Set<InstantVisibleWriteKey> {
+    var statement: OpaquePointer?
+    try prepare(
+      "SELECT entity_id, attribute_id FROM instant_outbox_write_keys WHERE mutation_id = ?",
+      statement: &statement
+    )
+    defer { finishStatement(statement) }
+    try bind([.text(mutationID)], to: statement)
+    var keys: Set<InstantVisibleWriteKey> = []
+    while sqlite3_step(statement) == SQLITE_ROW {
+      guard
+        let entityID = sqlite3_column_text(statement, 0),
+        let attributeID = sqlite3_column_text(statement, 1)
+      else { continue }
+      keys.insert(
+        InstantVisibleWriteKey(entityID: String(cString: entityID), attributeID: String(cString: attributeID))
+      )
+    }
+    return keys
   }
 
   private func replaceOutboxEffectEntitiesWithoutTransaction(
@@ -17575,16 +17604,21 @@ public actor SQLitePersistenceStore {
       < (rhs.entityID, rhs.attributeID, rhs.valueJSON)
   }
 
+  /// Writes a metadata row in place (#1007). `INSERT OR REPLACE` deleted the row and inserted it again under a new rowid,
+  /// so every revision bump rewrote the table's leaf and its key index, in every transaction.
+  private static let upsertMetadataSQL = """
+    INSERT INTO instant_sync_metadata (key, value, updated_at_ms)
+    VALUES (?, ?, ?)
+    ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at_ms = excluded.updated_at_ms
+    """
+
   private func saveMetadataValueWithoutTransaction(
     _ value: String,
     key: String,
     updatedAt: InstantTimestamp
   ) throws {
     try execute(
-      """
-      INSERT OR REPLACE INTO instant_sync_metadata (key, value, updated_at_ms)
-      VALUES (?, ?, ?)
-      """,
+      Self.upsertMetadataSQL,
       [
         .text(key),
         .text(value),
@@ -17611,10 +17645,7 @@ public actor SQLitePersistenceStore {
   private func bumpMetadataRevisionWithoutTransaction(_ key: String) throws -> Int64 {
     let revision = try loadMetadataRevisionWithoutTransaction(key) + 1
     try execute(
-      """
-      INSERT OR REPLACE INTO instant_sync_metadata (key, value, updated_at_ms)
-      VALUES (?, ?, ?)
-      """,
+      Self.upsertMetadataSQL,
       [
         .text(key),
         .text(String(revision)),
