@@ -216,7 +216,9 @@ enum InstantFileBlocks {
           &request,
           buffer.baseAddress,
           buffer.count,
-          UInt32(FSOPT_ATTR_CMN_EXTENDED | FSOPT_NOFOLLOW)
+          // The options are UInt32 on LP64 Darwin and UInt on the Watch's arm64_32 (ILP32); numericCast fits
+          // either (#1019, scripts/check-watchos-arm64_32.sh).
+          numericCast(FSOPT_ATTR_CMN_EXTENDED | FSOPT_NOFOLLOW)
         )
       }
       guard result == 0 else { return nil }
