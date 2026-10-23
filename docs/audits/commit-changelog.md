@@ -1,3 +1,12 @@
+## 2026-10-23 16:43:40 EDT — scribe `f758387fe3e3ddbf4e392af8297740b65a0c6e1d`
+Change log (#1016): the audit's offline note a0af6bc6b and repair section c283ea856.
+
+## 2026-10-23 16:43:15 EDT — scribe `c283ea85673db94532370231c469ef430e2e8569`
+The audit (#1016): the production repair of Recording 267's chunk 230 (backup, undo), the second cut's 70 refused versions in the phone's outbox.
+
+## 2026-10-23 16:36:46 EDT — scribe `a0af6bc6b6cec716eb444fa1912f8fd260c6d355`
+The audit (#1016): a take that starts offline cuts once the server answers; the offline share trade-off as a proposal.
+
 ## 2026-10-23 16:41:41 EDT — scribe `157c811cf4836048f86a1a62c18426bb44a9693e`
 The untethered-telemetry audit (#1011): build 116 in the field (every line names its app; 14.0% median unmetered while recording in front).
 
