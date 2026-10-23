@@ -14244,11 +14244,18 @@ public actor SQLitePersistenceStore {
   }
 
   @discardableResult
-  private func transaction<Value>(_ body: () throws -> Value) throws -> Value {
+  /// - Parameter operation: The store call that runs the transaction, under which ``InstantStorageWriteMeter`` counts
+  ///   the pages it writes (#1007).
+  private func transaction<Value>(
+    operation: StaticString = #function,
+    _ body: () throws -> Value
+  ) throws -> Value {
     precondition(
       activeOutboxQuarantineIssueBatch == nil,
       "SQLite persistence transactions must not be nested."
     )
+    let pagesBefore = cacheWritePages()
+    defer { recordStorageWrites(operation: operation, pages: cacheWritePages() - pagesBefore) }
     try execute("BEGIN IMMEDIATE TRANSACTION")
     activeOutboxQuarantineIssueBatch = InstantOutboxQuarantineIssueBatch()
     let liveQueryResultJSONBeforeTransaction = liveQueryResultJSON
@@ -14271,6 +14278,36 @@ public actor SQLitePersistenceStore {
       didLoadDeclaredRelationStorageMarker = false
       throw error
     }
+  }
+
+  /// The pages this connection has written to the write-ahead log and the temporary file since it opened (#1007).
+  private func cacheWritePages() -> Int {
+    var current: Int32 = 0
+    var highwater: Int32 = 0
+    sqlite3_db_status(connection.raw, SQLITE_DBSTATUS_CACHE_WRITE, &current, &highwater, 0)
+    return Int(current)
+  }
+
+  /// Counts one write transaction's pages under its store call, and reports the last 30 s at info when that is due.
+  private func recordStorageWrites(operation: StaticString, pages: Int) {
+    guard let summary = InstantStorageWriteMeter.record(operation: operation, pages: pages),
+      InstantDiagnostics.shared.isEnabled(at: .info)
+    else { return }
+    let ranked = summary.operations.sorted { $0.value.pagesWritten > $1.value.pagesWritten }
+    InstantDiagnostics.shared.record(
+      .info,
+      subsystem: "instant-swift-data-core",
+      category: "persistence",
+      event: "persistence.write-summary",
+      message: "The local store wrote \(summary.bytesWritten / 1_024) KB in \(ranked.reduce(0) { $0 + $1.value.transactions }) write transactions in the last 30 s or more.",
+      metadata: [
+        "bytesWritten": String(summary.bytesWritten),
+        "transactions": String(ranked.reduce(0) { $0 + $1.value.transactions }),
+        // The calls that wrote the most, as call=pages/transactions, largest first.
+        "byCall": ranked.prefix(12).map { "\($0.key)=\($0.value.pagesWritten)/\($0.value.transactions)" }
+          .joined(separator: ";"),
+      ]
+    )
   }
 
   @discardableResult
