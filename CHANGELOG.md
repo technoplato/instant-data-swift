@@ -10,6 +10,70 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## October 23rd, 2026 at 5:37:14 p.m. EDT — `b88cca053b1d` Document the v1.9.23 release: preparing a write no longer copies the store's indexes, and the store says which calls write its disk bytes (#1007)
+
+- **Implementation commit:** `b88cca053b1d1f71ac67f566d20cb26d13535927`
+- **Change:** Document the v1.9.23 release: preparing a write no longer copies the store's indexes, and the store says which calls write its disk bytes (#1007)
+- **Details:**
+  - Release document: the sharded indexes and the storage write meter, their tests, the whole suite on main with the shards, the harness before and after; carries 1.9.22, 1.9.21 and 1.9.20.
+- **Files:**
+  - `docs/releases/v1.9.23.md` — the release document
+- **User context (verbatim):**
+  > I want to optimize the performance of the application with its exact feature set.
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run); no SpecStory capture for headless runs.
+
+## October 23rd, 2026 at 5:37:13 p.m. EDT — `c2582e4bbd97` Green (#1007): the storage write meter counts the pages each store call writes, and the store reports them every 30 s
+
+- **Implementation commit:** `c2582e4bbd971c02616506babbf2089ad85350c4`
+- **Change:** Green (#1007): the storage write meter counts the pages each store call writes, and the store reports them every 30 s
+- **Details:**
+  - Every write transaction counts SQLITE_DBSTATUS_CACHE_WRITE pages under its caller; persistence.write-summary at info every 30 s. Harness: 309 KB of log pages per write (commit 117, save 112, ack 51, claims 27 KB).
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantStorageWriteMeter.swift` — the meter and its summary
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — the transaction wrapper counts pages
+- **User context (verbatim):**
+  > I want to optimize the performance of the application with its exact feature set.
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run); no SpecStory capture for headless runs.
+
+## October 23rd, 2026 at 5:37:13 p.m. EDT — `05bcafd7ce85` Red (#1007): nothing says which store call writes a device's disk bytes
+
+- **Implementation commit:** `05bcafd7ce852f3ddca193ecda3b55899dd21bd8`
+- **Change:** Red (#1007): nothing says which store call writes a device's disk bytes
+- **Details:**
+  - InstantStorageWriteMeterTests: a 200-fact snapshot save was not counted under saveStoreSnapshot(_:) (a public seam that counted nothing).
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantStorageWriteMeterTests.swift` — the red test
+  - `Sources/InstantSwiftDataCore/InstantStorageWriteMeter.swift` — the seam
+- **User context (verbatim):**
+  > I want to optimize the performance of the application with its exact feature set.
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run); no SpecStory capture for headless runs.
+
+## October 23rd, 2026 at 5:37:12 p.m. EDT — `538de9616263` Green (#1007): the store's indexes keep their entries in 64 shards, so preparing a write copies what it changes
+
+- **Implementation commit:** `538de9616263f1b8b696fcf1b8d5b5512f31a0be`
+- **Change:** Green (#1007): the store's indexes keep their entries in 64 shards, so preparing a write copies what it changes
+- **Details:**
+  - ShardedSet and ShardedDictionary (64 copy-on-write shards by hash) for the entity map, reverse refs, indexed value and entity maps, the entity sets under each value and namespace members. Twenty prepares into 20,000 lines 318.6 -> 2.4 ms; harness at 200 lines per recording -45% instructions, observer refresh unchanged.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/ShardedCollections.swift` — the sharded collections
+  - `Sources/InstantSwiftDataCore/TripleIndexes.swift` — the index storage types, coding conversion
+  - `Tests/InstantSwiftDataCoreTests/ShardedCollectionsTests.swift` — equivalence with Set and Dictionary
+- **User context (verbatim):**
+  > I want to optimize the performance of the application with its exact feature set.
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run); no SpecStory capture for headless runs.
+
+## October 23rd, 2026 at 5:37:12 p.m. EDT — `a540e9b6b1ed` Red (#1007): preparing a write copies every index the write touches, so it costs in proportion to the store
+
+- **Implementation commit:** `a540e9b6b1ed5a6f66dbaef24c79042dd5a40c0b`
+- **Change:** Red (#1007): preparing a write copies every index the write touches, so it costs in proportion to the store
+- **Details:**
+  - InstantPrepareCopyCostTests: preparing one line's write into 20,000 lines cost 9.7 times preparing it into 2,000; a Time Profiler trace put 84% of a prepare in copying the indexed maps and 10% in the entity map.
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantPrepareCopyCostTests.swift` — the red test
+- **User context (verbatim):**
+  > I want to optimize the performance of the application with its exact feature set.
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run); no SpecStory capture for headless runs.
+
 ## October 23rd, 2026 at 5:22:05 p.m. EDT — `9bbe407a2c81` Tests (#1021): a checked-in list of the bundle's failing tests, and a script that runs and compares against it
 
 - **Implementation commit:** `9bbe407a2c8121f2542146649984b99ffac6d35b`

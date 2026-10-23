@@ -1,3 +1,15 @@
+## 2026-10-23 17:38:00 EDT — v1.9.23: preparing a write no longer copies the store's indexes, and the store says which calls write its disk bytes (#1007); carries 1.9.22, 1.9.21, 1.9.20
+
+- **Commits:** red `a540e9b6`, green `538de961` (the sharded indexes); red `05bcafd7`, green `c2582e4b` (the storage write
+  meter); release document `b88cca05`; then this ledger commit and the tag v1.9.23.
+- **Checks:** `InstantPrepareCopyCostTests` red then green (twenty prepares into 20,000 lines 318.6 -> 2.4 ms);
+  `ShardedCollectionsTests`; `InstantStorageWriteMeterTests`; the whole suite on main with the shards (1,368 tests, no
+  failure outside the baseline); the meter's related suites (10 tests). The whole bundle with the meter waits in the
+  laptop's build queue. Write harness at 200 lines per recording: instructions -45%, store prepare 9.6-19 -> 0.6-0.9 ms
+  per write, observer refresh unchanged.
+- **Next:** the consuming app pins exactly 1.9.23 (after build 117, which carries 1.9.21); on a device,
+  `persistence.write-summary` names the store calls behind the recording's disk bytes.
+
 ## 2026-10-23 17:22:18 EDT — #1021: a checked-in list of the bundle's failing tests, and a script that runs and compares against it (test-only, no release)
 
 - **Commits (main):** `004439da` (the parity tests find their upstream fixtures, and the CLI tests their executable,

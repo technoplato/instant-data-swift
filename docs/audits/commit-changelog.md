@@ -1,3 +1,21 @@
+## 2026-10-23 17:37:11 EDT — instant-data-swift `b88cca053b1d1f71ac67f566d20cb26d13535927`
+Release document for v1.9.23 (#1007): the sharded indexes and the storage write meter; carries 1.9.22, 1.9.21 and 1.9.20.
+
+## 2026-10-23 16:58:51 EDT — instant-data-swift `c2582e4bbd971c02616506babbf2089ad85350c4`
+Green (#1007): the storage write meter counts SQLite pages per store call; persistence.write-summary at info every 30 s.
+
+## 2026-10-23 16:51:49 EDT — instant-data-swift `05bcafd7ce852f3ddca193ecda3b55899dd21bd8`
+Red test (#1007): InstantStorageWriteMeterTests, nothing counted which store call wrote the pages.
+
+## 2026-10-23 16:41:37 EDT — instant-data-swift `538de9616263f1b8b696fcf1b8d5b5512f31a0be`
+Green (#1007): the store's indexes keep their entries in 64 copy-on-write shards; twenty prepares into 20,000 lines 318.6 -> 2.4 ms.
+
+## 2026-10-23 16:41:37 EDT — instant-data-swift `a540e9b6b1ed5a6f66dbaef24c79042dd5a40c0b`
+Red test (#1007): InstantPrepareCopyCostTests, preparing a write cost in proportion to the store.
+
+## 2026-10-23 17:15:00 EDT — realtime-voice `9f77f9c0e` and `c8f106168`
+The hot-path audit: build 116 in the field, the storage write meter, what is left for build 117; the live-query result row's update cost corrected (#1007).
+
 ## 2026-10-23 17:31:35 EDT — scribe `cbdcf421cd85f13e40cc2d572c09f7e001e6b99c`
 Build 117 plan (#1023): PLAN.md and touching claims for the cut (version numbers and What's New); release-117.
 
