@@ -2223,7 +2223,10 @@ struct TripleIndexes: Codable, Sendable {
     plan: InstantQueryPlan,
     attributes: AttributeStore
   ) -> InstantResultSetMembership {
-    guard let snapshot = entitySnapshot(entityID, plan: plan, attributes: attributes, projecting: false) else {
+    guard
+      let snapshot = membershipSnapshot(entityID, plan: plan, attributes: attributes),
+      matches(snapshot, filters: plan.filters, namespace: plan.namespace, attributes: attributes)
+    else {
       return .absent
     }
     let order = Self.effectiveOrder(plan.order)
@@ -2231,6 +2234,64 @@ struct TripleIndexes: Codable, Sendable {
       ? serverCreatedAtValue(entityID: entityID, namespace: plan.namespace, attributes: attributes)
       : nil
     return .member(orderValue: Self.orderValue(snapshot, serverCreatedAt: serverCreatedAt, field: order.field))
+  }
+
+  /// The part of `entityID`'s snapshot that `resultSetMembership` reads (#1007): the values of the fields `plan`'s
+  /// filters and order name, read from the entity's facts as the whole snapshot reads them, and nil exactly when the
+  /// whole snapshot is nil (no fact of the entity in the plan's namespace).
+  ///
+  /// The whole snapshot materializes every value the entity holds, and a recording holds thousands of refs in its link
+  /// sets. A publication asks this of each changed entity, before and after, for every verified page that does not show
+  /// it, so a long recording's heartbeat materialized its link sets twice per list page.
+  private func membershipSnapshot(
+    _ entityID: String,
+    plan: InstantQueryPlan,
+    attributes: AttributeStore
+  ) -> InstantEntitySnapshot? {
+    let namespaceAttributes = attributes.attributes(namespace: plan.namespace)
+    guard !namespaceAttributes.isEmpty, let fields = Self.membershipFields(of: plan) else {
+      return snapshot(entityID: entityID, namespace: plan.namespace, attributes: attributes)
+    }
+    guard let attributesByID = eav[entityID] else { return nil }
+    var values: [String: InstantMaterializedValue] = [:]
+    var hasNamespaceData = false
+    for attribute in namespaceAttributes {
+      let slot = attributesByID[attribute.id]
+      if slot != nil { hasNamespaceData = true }
+      guard fields.contains(attribute.name) else { continue }
+      if attribute.primaryKey {
+        values[attribute.name] = .one(.string(entityID))
+      } else if let slot, let value = materializedValue(slot, attribute: attribute) {
+        values[attribute.name] = value
+      }
+    }
+    return hasNamespaceData ? InstantEntitySnapshot(id: entityID, namespace: plan.namespace, values: values) : nil
+  }
+
+  /// The fields `plan`'s filters and order read, or nil when one reaches through a link (a dotted path), which the whole
+  /// snapshot answers.
+  private static func membershipFields(of plan: InstantQueryPlan) -> Set<String>? {
+    var fields: Set<String> = []
+    func collect(_ filter: InstantQueryFilter) -> Bool {
+      switch filter {
+      case let .equals(field, _), let .notEquals(field, _),
+        let .greaterThan(field, _), let .greaterThanOrEqual(field, _),
+        let .lessThan(field, _), let .lessThanOrEqual(field, _),
+        let .in(field, _), let .like(field, _), let .iLike(field, _),
+        let .isNull(field), let .isNotNull(field):
+        guard !field.contains(".") else { return false }
+        fields.insert(field)
+        return true
+      case let .and(filters), let .or(filters):
+        return filters.allSatisfy(collect)
+      }
+    }
+    guard plan.filters.allSatisfy(collect) else { return nil }
+    if let order = plan.order {
+      guard !order.field.contains(".") else { return nil }
+      fields.insert(order.field)
+    }
+    return fields
   }
 
   /// Materializes one entity against `plan` filters, includes, and selected fields.
