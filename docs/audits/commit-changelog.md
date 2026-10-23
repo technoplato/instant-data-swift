@@ -1,3 +1,9 @@
+## 2026-10-23 19:59:01 EDT — scribe `32b691e7f33f1fc4b0a496e769de63fb53c3207d`
+The recording-screen audit's item 2 (#1007).
+
+## 2026-10-23 19:58:47 EDT — scribe `0bd5a1d85ad6e5e1914d631f561ab1bb8fa01119`
+The floating bar's voiceprint runs in a SwiftUI graph of its own on iPhone and iPad, the same pixels (#1007, build 119).
+
 ## 2026-10-23 19:56:14 EDT — instant-data-swift `460247957945081242a68d56d0c08d83c443012c`
 Release document for v1.9.28 (#1007): the optimistic-effect fingerprint once per step.
 
