@@ -1,3 +1,6 @@
+## 2026-10-23 12:59:07 EDT — instant-data-swift `a3ecdefabc88507d784b17a592270d785b7acb61`
+Release document for v1.9.13: a gone row refreshes no verified observer, link sets sort by id (#1007), a closed query's stored result answers its reopening (#1006).
+
 ## 2026-10-23 12:58:01 EDT — instant-data-swift `ca14691d314ac580b19a32153275baac9667a74f`
 Measurement (#1006): a 986-line transcript, 256 a page, reopened with the server silent: 256 lines after 5.0 s on v1.9.12, all 986 in 0.13 s with 8e8f25e6.
 

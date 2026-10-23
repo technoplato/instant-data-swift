@@ -10,6 +10,18 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## October 23rd, 2026 at 12:59:20 p.m. EDT — `a3ecdefabc88` Document the v1.9.13 release: a gone row no longer refreshes every observer, link sets sort without building key strings per comparison (#1007), and a closed query's stored result answers its reopening (#1006)
+
+- **Implementation commit:** `a3ecdefabc88507d784b17a592270d785b7acb61`
+- **Change:** Document the v1.9.13 release (#1007, #1006)
+- **Details:**
+  - Release document: gone rows refresh no verified observer; link sets sort by id; a closed query's stored result answers its reopening; the whole suite against 1.9.12 on the same machine (144 vs 145 failing; the three that differ pass alone) and the write harness's before and after; not yet device-checked.
+- **Files:**
+  - `docs/releases/v1.9.13.md` — the release document
+- **User context (verbatim):**
+  > I want to optimize the performance of the application with its exact feature set.
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run); no SpecStory capture for headless runs.
+
 ## October 23rd, 2026 at 12:58:14 p.m. EDT — `ca14691d314a` Measure: a 986-line transcript, 256 a page, reopens from its stored pages (#1006)
 
 - **Implementation commit:** `ca14691d314ac580b19a32153275baac9667a74f`

@@ -1,3 +1,12 @@
+## 2026-10-23 12:59:07 EDT — v1.9.13: a gone row no longer refreshes every observer, link sets sort without building key strings per comparison (#1007), and a closed query's stored result answers its reopening (#1006)
+
+- **Commits:** #1007 red `f55a0cf8`, green `47333e5e`, red `3de06c52`, green `9e813943`; #1006 red `c3b2e6d1`, green
+  `8e8f25e6`, measurement `ca14691d`; the release document `a3ecdefa`; then this ledger commit, and the tag v1.9.13 on it.
+- **Checks:** as in `docs/releases/v1.9.13.md`: the new suites pass; the whole InstantSwiftDataCoreTests bundle against
+  1.9.12 on the same machine fails 145 vs 144 tests, the three that differ pass alone.
+- **Next:** the consuming app pins exactly 1.9.13; on a device, observer refresh per minute while recording, and a
+  reopened long transcript answered from its stored pages.
+
 ## 2026-10-23 12:58:00 EDT — two observer-refresh costs removed on main (#1007): a gone row no longer refreshes every observer, and a link set sorts without building key strings per comparison
 
 - **Why:** device time profiles of the consuming app (Release, idle on its list and recording in front) put the
