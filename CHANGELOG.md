@@ -10,6 +10,44 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## October 23rd, 2026 at 2:33:37 p.m. EDT — `b6db617435c1` Document the v1.9.16 release: the energy meter keeps each operation's main-thread CPU, and the server apply's staging and retractions have their own names (#1011)
+
+- **Implementation commit:** `b6db617435c1b750756040b75e10e482664e2cf3`
+- **Change:** Document the v1.9.16 release (#1011)
+- **Details:**
+  - Release document: the main-thread split per operation, serverApplyStage and serverApplyRetractions; carries 1.9.15 and 1.9.14; its cost and checks.
+- **Files:**
+  - `docs/releases/v1.9.16.md` — the release document
+- **User context (verbatim):**
+  > Do we have the right Analytics and tracing in place that's not going to impact performance but is going to give us insight into performance even if the device isn't connected.
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run); no SpecStory capture for headless runs.
+
+## October 23rd, 2026 at 2:33:37 p.m. EDT — `a05f7c460dff` Green (#1011): the energy meter keeps each operation's main-thread CPU, and the server apply's staging and retractions have their own names
+
+- **Implementation commit:** `a05f7c460dff2a165466ae9f4296973dec5b1aa7`
+- **Change:** Green (#1011): the energy meter keeps each operation's main-thread CPU, and the server apply's staging and retractions have their own names
+- **Details:**
+  - One pthread_main_np read per section end (about 2 ns at -O); stageServerApplyBodyPage under serverApplyStage, liveQueryReplacementRetractions under serverApplyRetractions.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantEnergyMeter.swift` — the main-thread split
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — the two meter lines
+- **User context (verbatim):**
+  > Do we have the right Analytics and tracing in place that's not going to impact performance but is going to give us insight into performance even if the device isn't connected.
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run); no SpecStory capture for headless runs.
+
+## October 23rd, 2026 at 2:33:36 p.m. EDT — `6e54ca7c5fd5` test(#1011): red: the energy meter's main-thread CPU, and the server apply's staging and retractions under their own names
+
+- **Implementation commit:** `6e54ca7c5fd55715866c57eeaec01164c8e9ce46`
+- **Change:** Red (#1011): the energy meter's main-thread CPU, and the server apply's staging and retractions under their own names
+- **Details:**
+  - InstantEnergyMeterTests: 3 of 9 fail on 1.9.15's meter (no main-thread CPU, no staging or retraction counts).
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantEnergyMeterTests.swift` — the red tests
+  - `Sources/InstantSwiftDataCore/InstantEnergyMeter.swift` — Measure.mainThreadCPUNanoseconds and the two operations, unused
+- **User context (verbatim):**
+  > Do we have the right Analytics and tracing in place that's not going to impact performance but is going to give us insight into performance even if the device isn't connected.
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run); no SpecStory capture for headless runs.
+
 ## October 23rd, 2026 at 1:45:29 p.m. EDT — `ce00d12dd84b` Document the v1.9.15 release: a write's cycle rewrites fewer unchanged rows (#1007)
 
 - **Implementation commit:** `ce00d12dd84b26ae320bf9e84371ca628c90ab7b`

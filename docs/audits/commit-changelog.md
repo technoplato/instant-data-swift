@@ -1,3 +1,12 @@
+## 2026-10-23 14:33:45 EDT — instant-data-swift `b6db617435c1b750756040b75e10e482664e2cf3`
+Release document for v1.9.16 (#1011): each operation's main-thread CPU; serverApplyStage and serverApplyRetractions.
+
+## 2026-10-23 14:33:45 EDT — instant-data-swift `a05f7c460dff2a165466ae9f4296973dec5b1aa7`
+Green (#1011): the energy meter keeps each operation's main-thread CPU (one pthread_main_np read per section end), and the server apply's staging and retractions have their own names.
+
+## 2026-10-23 14:33:45 EDT — instant-data-swift `6e54ca7c5fd55715866c57eeaec01164c8e9ce46`
+Red test (#1011): InstantEnergyMeterTests, the main-thread split and the two new operations.
+
 ## 2026-10-23 13:47:51 EDT — scribe `3dc09d8166ee4d17d4ab2f8b8dde9400dae52636`
 Scribe and Scribe Playback pin instant-data-swift exactly 1.9.15 (#1007 D3 + #959 1.9.14).
 

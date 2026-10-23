@@ -1,3 +1,13 @@
+## 2026-10-23 14:33:45 EDT — v1.9.16: the energy meter keeps each operation's main-thread CPU; the server apply's staging and retractions have their own names (#1011); carries 1.9.15 and 1.9.14
+
+- **Commits:** red `6e54ca7c`, green `a05f7c46`, release document `b6db6174`; then this ledger commit and the tag v1.9.16.
+- **Checks:** `InstantEnergyMeterTests` red (3 of 9 fail) then green (9 pass); the server apply and live-query replacement
+  suites pass on the same tree. The main-thread flag costs about 2 ns per section at -O (Mac mini, M4), about 1% of a
+  section's cost.
+- **Next:** the consuming app pins exactly 1.9.16 and reads `mainThreadCPUNanoseconds`, so its ledger can name the main
+  thread's CPU outside every meter; on a device, `serverApplyStage` and `serverApplyRetractions` appear beside
+  `serverApplyPlan`.
+
 ## 2026-10-23 13:45:29 EDT — v1.9.15: a write's cycle rewrites fewer unchanged rows (#1007); carries 1.9.14 (#959)
 
 - **Commits:** red `63aff39b`, green `4512739a`, release document `ce00d12d`; then this ledger commit and the tag v1.9.15.
