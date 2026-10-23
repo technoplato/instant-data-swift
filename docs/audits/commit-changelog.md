@@ -1,3 +1,15 @@
+## 2026-10-23 18:28:36 EDT — instant-data-swift `476e1237458eb9e816010d8b897a8b2386ea2aae`
+Release document for v1.9.24 (#1007): a write's cycle writes about 9% fewer pages to disk.
+
+## 2026-10-23 18:17:56 EDT — instant-data-swift `6b1dd7b4b3c290425eea0580299fa1cff7486419`
+Green (#1007): migration 0028 drops instant_outbox_delivery_window_idx (no plan used it); an acknowledgement sets the overlay flag only when it changes; ack 9 -> 5 pages.
+
+## 2026-10-23 18:06:37 EDT — instant-data-swift `5fc3a128658280597d39718d6eb312a040fc8577`
+Red test (#1007): InstantOutboxPageChurnTests, the unused outbox index and the acknowledgement's rewritten indexes.
+
+## 2026-10-23 18:01:23 EDT — instant-data-swift `210def0eb1bd110988f68166cb0f8619d3f12e57`
+Tests (#1007, #1021): the link-set sort cost bound 10 -> 20 so a whole bundle's load does not fail it.
+
 ## 2026-10-23 18:23:12 EDT — scribe `a5a72de78a9ee9c1db735f4ad84e6b23e3ec683c`
 The recording screen audit and What's New for build 118 (#1007, #412): build 116's SwiftUI trace mapped to code.
 

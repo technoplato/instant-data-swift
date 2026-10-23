@@ -1,3 +1,15 @@
+## 2026-10-23 18:29:15 EDT — v1.9.24: a write's cycle writes about 9% fewer pages to disk (#1007); carries 1.9.23
+
+- **Commits:** test bound `210def0e` (#1021); red `5fc3a128`, green `6b1dd7b4` (the outbox drops
+  `instant_outbox_delivery_window_idx`, which no plan used, in migration 0028; an acknowledgement sets the overlay flag
+  only when it changes); release document `476e1237`; then this ledger commit and the tag v1.9.24.
+- **Checks:** `InstantOutboxPageChurnTests` red then green (one acknowledgement 9 -> 5 pages); the outbox and server-apply
+  suites, 553 tests in 13 suites with the CLI tests run against the CLI built from the tree, pass; the v1.9.23 whole
+  suite against `Tests/known-failing.txt` (two load-only failures pass alone 3/3). Write harness, two interleaved
+  rounds: 318.7, 317.1 -> 288.9, 289.4 KB of log pages per write; the acknowledgement 12.8 -> 8.8 pages; CPU unchanged.
+- **Next:** the consuming app pins exactly 1.9.24 for build 118 (proposal on #1025 and #1024; #1024's connection-status
+  fix takes 1.9.25 on top).
+
 ## 2026-10-23 17:38:00 EDT — v1.9.23: preparing a write no longer copies the store's indexes, and the store says which calls write its disk bytes (#1007); carries 1.9.22, 1.9.21, 1.9.20
 
 - **Commits:** red `a540e9b6`, green `538de961` (the sharded indexes); red `05bcafd7`, green `c2582e4b` (the storage write

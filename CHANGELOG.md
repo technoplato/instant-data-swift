@@ -10,6 +10,54 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## October 23rd, 2026 at 6:28:50 p.m. EDT — `476e1237458e` Document the v1.9.24 release: a write's cycle writes about 9% fewer pages to disk, the outbox dropping an index no statement used and an acknowledgement no longer rewriting three indexes it does not change (#1007)
+
+- **Implementation commit:** `476e1237458eb9e816010d8b897a8b2386ea2aae`
+- **Change:** Document the v1.9.24 release: a write's cycle writes about 9% fewer pages to disk (#1007)
+- **Details:**
+  - Release document: N8 (the dropped index, the acknowledgement's flag), its tests, the v1.9.23 whole suite against the known-failing list, the sort bound, the harness's storage meter before and after.
+- **Files:**
+  - `docs/releases/v1.9.24.md` — the release document
+- **User context (verbatim):**
+  > I want to optimize the performance of the application with its exact feature set.
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run); no SpecStory capture for headless runs.
+
+## October 23rd, 2026 at 6:28:50 p.m. EDT — `6b1dd7b4b3c2` Green (#1007): the outbox drops the index no statement used, and an acknowledgement sets the overlay flag only when it changes
+
+- **Implementation commit:** `6b1dd7b4b3c290425eea0580299fa1cff7486419`
+- **Change:** Green (#1007): the outbox drops the index no statement used, and an acknowledgement sets the overlay flag only when it changes
+- **Details:**
+  - Migration 0028_drop_unused_outbox_delivery_window_index; acceptOutboxMutation sets optimistic_overlay_active in its own UPDATE only when the row holds the other value. One acknowledgement 9 -> 5 pages; harness 318 -> 289 KB of log pages per write; 553 outbox and server-apply tests pass, CLI tests included.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — the migration and the acknowledgement's flag update
+- **User context (verbatim):**
+  > I want to optimize the performance of the application with its exact feature set.
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run); no SpecStory capture for headless runs.
+
+## October 23rd, 2026 at 6:28:49 p.m. EDT — `5fc3a1286582` Red (#1007): every outbox row moves through an index no statement uses, and an acknowledgement rewrites three indexes it does not change
+
+- **Implementation commit:** `5fc3a128658280597d39718d6eb312a040fc8577`
+- **Change:** Red (#1007): every outbox row moves through an index no statement uses, and an acknowledgement rewrites three indexes it does not change
+- **Details:**
+  - InstantOutboxPageChurnTests: instant_outbox_delivery_window_idx is present though no plan uses it; one acknowledgement wrote 9 pages (bound 6) because its UPDATE set optimistic_overlay_active 1 -> 1.
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantOutboxPageChurnTests.swift` — two red tests: the unused index, the acknowledgement's pages
+- **User context (verbatim):**
+  > I want to optimize the performance of the application with its exact feature set.
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run); no SpecStory capture for headless runs.
+
+## October 23rd, 2026 at 6:28:49 p.m. EDT — `210def0eb1bd` Tests (#1007, #1021): the link-set sort cost bound leaves room for a whole bundle's load
+
+- **Implementation commit:** `210def0eb1bd110988f68166cb0f8619d3f12e57`
+- **Change:** Tests (#1007, #1021): the link-set sort cost bound leaves room for a whole bundle's load
+- **Details:**
+  - InstantManyCardinalitySortCostTests bound 10 -> 20: the comparator that built both keys measured 27.9, the fix 3-10, nearer 10 beside a whole bundle's load; still red on the unfixed code, so it can leave Tests/known-failing.txt (#1021).
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantManyCardinalitySortCostTests.swift` — the bound and why
+- **User context (verbatim):**
+  > I want to optimize the performance of the application with its exact feature set.
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run); no SpecStory capture for headless runs.
+
 ## October 23rd, 2026 at 6:04:04 p.m. EDT — `f82fb15aa7e5` Bench: the codec lab behind ADR 0021 measures size, quality, segmenting and live playback of compressed speech (#1012)
 
 - **Implementation commit:** `f82fb15aa7e566907a261337dfcc086de759dad2`
