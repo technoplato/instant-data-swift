@@ -1,3 +1,9 @@
+## 2026-10-23 12:48:39 EDT — instant-data-swift `8e8f25e6449836cfb27199640fe1ee96411be5d4`
+Green (#1006): the session prune unloads a closed query's result into instant_unloaded_live_query_results instead of deleting it, and the query's next live subscription loads it back before the server answers (upstream PersistedObject.unloadKey parity).
+
+## 2026-10-23 12:34:03 EDT — instant-data-swift `c3b2e6d1eeb83bf118a1ef23f4cc5d2b95d2d2a5`
+Red test (#1006): InstantStoredResultReloadTests, a closed and pruned query reopened with the server silent.
+
 ## 2026-10-22 02:23:16 EDT — instant-data-swift `c53510d6ca4ae676616917245046e7aaa4d686ff`
 Release document for v1.9.12: a relaunch releases the delivery claims of a process that has ended (#1000, #990).
 

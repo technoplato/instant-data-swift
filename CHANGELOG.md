@@ -10,6 +10,35 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## October 23rd, 2026 at 12:49:26 p.m. EDT — `8e8f25e64498` Green: a closed query's stored result answers its reopening before the server does (#1006)
+
+- **Implementation commit:** `8e8f25e6449836cfb27199640fe1ee96411be5d4`
+- **Change:** Green: a closed query's stored result answers its reopening before the server does (#1006)
+- **Details:**
+  - The session prune moves a closed query's result into instant_unloaded_live_query_results (migration 0027) instead of deleting it; its facts leave the store as before, so memory and bootstrap stay bounded.
+  - A live observation of the same key loads it back under the operation gate it already holds: it owns its facts again and its entities come back (from SQLite when it still holds them, else from the result), so every cursor page answers from its stored page info.
+  - The policy counts unloaded results and collects them first, oldest first; a saved result supersedes its unloaded copy. Reopened paged query, server silent: 0 rows after 5 s before, 5 rows in 2.6-5.6 ms after; full core bundle 1,318 tests with failures a subset of v1.9.12's.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — unload in the prune, migration 0027, reload, collection
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — reload before a live observation's first local answer
+  - `Sources/InstantSwiftDataCore/InstantStore.swift` — entityIDsWithFacts(among:)
+  - `Tests/InstantSwiftDataCoreTests/InstantStoredResultReloadTests.swift` — deferred values, collection, supersession
+- **User context (verbatim):**
+  > I don't want to remove any features. I don't want to slow anything down. I want to find the issues at the root.
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run); no SpecStory capture for headless runs.
+
+## October 23rd, 2026 at 12:49:25 p.m. EDT — `c3b2e6d1eeb8` Red: a closed query's stored result answers its reopening before the server does (#1006)
+
+- **Implementation commit:** `c3b2e6d1eeb83bf118a1ef23f4cc5d2b95d2d2a5`
+- **Change:** Red: a closed query's stored result answers its reopening before the server does (#1006)
+- **Details:**
+  - Two runtime tests with the scripted server: a standard live query and an accumulated paged query are answered, closed, session-pruned, then reopened with the server silent; the reopened list showed only another open query's row and the paged query 0 rows after 5 s.
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantStoredResultReloadTests.swift` — the red tests
+- **User context (verbatim):**
+  > I want to find the issues at the root.
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run); no SpecStory capture for headless runs.
+
 ## October 22nd, 2026 at 2:23:51 a.m. EDT — `c53510d6ca4a` Document the v1.9.12 release: a relaunch releases the delivery claims of a process that has ended instead of waiting out their deadlines (#1000, #990)
 
 - **Implementation commit:** `c53510d6ca4ae676616917245046e7aaa4d686ff`
