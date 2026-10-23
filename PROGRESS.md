@@ -1,3 +1,11 @@
+## 2026-10-23 19:56:16 EDT — v1.9.28: a live write fingerprints its optimistic effect once per step (#1007); carries 1.9.27
+
+- **Commits:** red `a56c9786`, green `73e3ff7c`; release document `46024795`; then this ledger commit and the tag v1.9.28.
+- **Checks:** `eachStepOfALiveWriteFingerprintsItsEffectOnce` red (save 2, claim 1, acknowledgement 2), then green (1 each);
+  the whole suite (1,401 tests) with no failure the release explains; the 112 CLI tests pass. Write harness: -3.1%
+  instructions per write; the local save 2.09 -> 1.69 ms, the acknowledgement 1.63 -> 1.26 ms.
+- **Next:** the consuming app pins exactly 1.9.28 for build 119.
+
 ## 2026-10-23 19:35:19 EDT — v1.9.27: a live write costs about 15% less CPU (#1007); carries 1.9.26 and 1.9.25
 
 - **Commits:** red `ef64c39b`, green `baa1796a` (the statement cache keeps 256 statements); red `5074b761`, green

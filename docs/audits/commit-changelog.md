@@ -1,3 +1,12 @@
+## 2026-10-23 19:56:14 EDT — instant-data-swift `460247957945081242a68d56d0c08d83c443012c`
+Release document for v1.9.28 (#1007): the optimistic-effect fingerprint once per step.
+
+## 2026-10-23 19:49:17 EDT — instant-data-swift `73e3ff7ca1e5877a2ac02e558997331dc96a0e5d`
+Green (#1007): a save and an acknowledgement fingerprint a write's optimistic effect once each.
+
+## 2026-10-23 19:47:48 EDT — instant-data-swift `a56c978685077d890c497e014640625d7ce67934`
+Red test (#1007): eachStepOfALiveWriteFingerprintsItsEffectOnce, save 2 and acknowledgement 2.
+
 ## 2026-10-23 19:39:44 EDT — realtime-voice `87630fc5c4c8479d978de3e6875cc7bdb9fa81b5`
 Change log for the audit commit 3390f6b28 (#1007).
 

@@ -10,6 +10,44 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## October 23rd, 2026 at 7:56:15 p.m. EDT — `460247957945` Document the v1.9.28 release: a live write fingerprints its optimistic effect once per step, the save and the acknowledgement 2 -> 1 each (#1007)
+
+- **Implementation commit:** `460247957945081242a68d56d0c08d83c443012c`
+- **Change:** Document the v1.9.28 release: a live write fingerprints its optimistic effect once per step (#1007)
+- **Details:**
+  - Release document: the fingerprint once per save and acknowledgement, its test, the whole suite, the harness before and after.
+- **Files:**
+  - `docs/releases/v1.9.28.md` — the release document
+- **User context (verbatim):**
+  > I want to optimize the performance of the application with its exact feature set.
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run); no SpecStory capture for headless runs.
+
+## October 23rd, 2026 at 7:56:15 p.m. EDT — `73e3ff7ca1e5` Green (#1007): a save and an acknowledgement fingerprint a write's optimistic effect once each
+
+- **Implementation commit:** `73e3ff7ca1e5877a2ac02e558997331dc96a0e5d`
+- **Change:** Green (#1007): a save and an acknowledgement fingerprint a write's optimistic effect once each
+- **Details:**
+  - hasOptimisticEffectReceiptFingerprint for the save's check; one fingerprint for the acknowledgement's checks; acceptance from the receipt check on four paths; the claim unchanged. Harness: -3.1% instructions per write, the save -19%, the acknowledgement -22%.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantModels.swift` — the pre-encoding checks as a property
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — one fingerprint per step
+- **User context (verbatim):**
+  > I want to optimize the performance of the application with its exact feature set.
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run); no SpecStory capture for headless runs.
+
+## October 23rd, 2026 at 7:56:14 p.m. EDT — `a56c97868507` Red (#1007): a live write's save and acknowledgement each fingerprint its optimistic effect twice
+
+- **Implementation commit:** `a56c978685077d890c497e014640625d7ce67934`
+- **Change:** Red (#1007): a live write's save and acknowledgement each fingerprint its optimistic effect twice
+- **Details:**
+  - The store counts optimistic-effect fingerprints; one write's save computed 2, its claim 1, its acknowledgement 2 (bound 1 each).
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantWritePathEnergyTests.swift` — the red test
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — the counting wrapper
+- **User context (verbatim):**
+  > I want to optimize the performance of the application with its exact feature set.
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run); no SpecStory capture for headless runs.
+
 ## October 23rd, 2026 at 7:35:19 p.m. EDT — `0f64acfb24a6` Document the v1.9.27 release: a live write costs about 15% less CPU, the statement cache holding a write's whole cycle and a fact's stored text written without JSONEncoder (#1007); carries 1.9.26 and 1.9.25
 
 - **Implementation commit:** `0f64acfb24a6854d4122c506b23ae23d97c37619`
