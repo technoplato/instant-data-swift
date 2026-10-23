@@ -1,3 +1,15 @@
+## 2026-10-23 17:17:35 EDT — realtime-voice `5e0f07b57`
+Changelog (#1015): the 1.9.22 pin, red and green; PROGRESS.
+
+## 2026-10-23 17:17:35 EDT — realtime-voice `ff59f53f951f`
+Green (#1015): the #437 integrity monitor compacts the Instant cache while charging and not recording (daily, and 10 s after a recording stops), and logs scribe.local-cache.compacted with the file's bytes before and after; the recording hook in ScribeSharedApplication; What's New for build 117; the audit.
+
+## 2026-10-23 17:17:35 EDT — realtime-voice `724a849d7c18`
+Red test (#1015): ScribeLocalCacheIntegrityMonitorTests for the compaction step (4 red on stubs, 8 existing green).
+
+## 2026-10-23 17:17:35 EDT — realtime-voice `5b77c692a922`
+Scribe and Scribe Playback pinned instant-data-swift exactly 1.9.22 (#1015), on top of #1006's 1.9.21 pin; both Package.resolved files as SwiftPM resolves them.
+
 ## 2026-10-23 17:16:13 EDT — scribe `db26d3241173b03233230e9b2307e4bfbc2cd1fa`
 Audit (#1006): the transcript-open audit, the path from the tap to the last line, causes, fixes in instant-data-swift 1.9.13 and 1.9.21 and in Scribe, numbers, gaps, and build 117's device check.
 
