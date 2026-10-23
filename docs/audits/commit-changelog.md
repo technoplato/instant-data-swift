@@ -1,3 +1,15 @@
+## 2026-10-23 16:36:40 EDT — instant-data-swift `3a14d26ec6bf25978b6ecaf1c9fc67d306f3098b`
+The v1.9.22 release document (#1015): the local cache gives back the pages it frees, with one VACUUM when they are worth it.
+
+## 2026-10-23 16:36:40 EDT — instant-data-swift `73ed07b8c7c2` (green)
+Green (#1015): compactLocalCache(holdingWhile:): one VACUUM when >= 25% of the file and >= 64 MB are free, under the operation gate, never while hot, in Low Power Mode, short of disk, cancelled or held by the app; the snapshot's localCacheFile; 838 -> 182 MB on a phone-shaped cache.
+
+## 2026-10-23 16:36:40 EDT — instant-data-swift `d3da7a73` (red)
+Red test (#1015): InstantLocalCacheCompactionTests and the env-gated InstantLocalCacheWriteCostTests (INCREMENTAL +2.97%/+5.80% writes on the library's own write path).
+
+## 2026-10-23 16:36:40 EDT — realtime-voice `424a4c7ba`
+Plan (#1015): sqlite-vacuum-1015's plan and claims for the 1.9.22 pin and the #437 monitor's compaction step.
+
 ## 2026-10-23 16:33:26 EDT — scribe `7b64496662aef2a6eb50f1f25d8e00c5cbec975b`
 Change log (#1016): build 117's What's New line ec39b9f0d.
 

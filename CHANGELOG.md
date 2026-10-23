@@ -10,6 +10,47 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## October 23rd, 2026 at 4:36:26 p.m. EDT — `3a14d26ec6bf` Document the v1.9.22 release: the local cache gives back the pages it frees, with one VACUUM when they are worth it (#1015)
+
+- **Implementation commit:** `3a14d26ec6bf25978b6ecaf1c9fc67d306f3098b`
+- **Change:** Document the v1.9.22 release: the local cache gives back the pages it frees, with one VACUUM when they are worth it (#1015)
+- **Details:**
+  - Release focus, the write-cost and compaction measurements, the whole-suite comparison, and what a device must still show.
+- **Files:**
+  - `docs/releases/v1.9.22.md` — the release document
+- **User context (verbatim):**
+  > I want to find the issues at the root.
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run); no SpecStory capture for headless runs.
+
+## October 23rd, 2026 at 4:36:25 p.m. EDT — `73ed07b8c7c2` Green (#1015): one VACUUM gives the local cache's free pages back, when they are worth it and nothing needs the store
+
+- **Implementation commit:** `73ed07b8c7c2256ac648517da7376ebbbd02a49a`
+- **Change:** Green (#1015): one VACUUM gives the local cache's free pages back, when they are worth it and nothing needs the store
+- **Details:**
+  - compactLocalCache(holdingWhile:) on InstantRuntime and InstantSwiftDataClient: one VACUUM when >= 25% of the file and >= 64 MB are free, under the operation gate at background priority, never while hot, in Low Power Mode, short of disk, cancelled or held by the app; cache_spill 256 for the VACUUM alone; the storage snapshot's localCacheFile; the energy meter's localCacheVacuum. Phone-shaped store: 838.3 -> 182.3 MB, VACUUM 0.83-1.2 s, 617 MB written. New caches stay NONE: INCREMENTAL measured +2.97%/+5.80% writes.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — compactLocalCache and its holds
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — vacuum(), localCacheFile(), the snapshot field
+  - `Sources/InstantSwiftData/InstantSwiftData.swift` — the client entry point
+  - `Sources/InstantSwiftDataCore/InstantEnergyMeter.swift` — localCacheVacuum
+- **User context (verbatim):**
+  > I want to find the issues at the root.
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run); no SpecStory capture for headless runs.
+
+## October 23rd, 2026 at 4:36:25 p.m. EDT — `d3da7a731012` Red (#1015): the local cache never gives back its free pages, and nothing reports them
+
+- **Implementation commit:** `d3da7a731012277a6ac07a9c020d04bcd4f38629`
+- **Change:** Red (#1015): the local cache never gives back its free pages, and nothing reports them
+- **Details:**
+  - InstantLocalCacheCompactionTests (9): a cache mostly free is rewritten without its free pages with every row kept; holds for heat, Low Power Mode, the app, cancellation and disk; the snapshot reports the file; a new cache keeps auto_vacuum NONE. InstantLocalCacheWriteCostTests (env-gated): the write cost of each auto_vacuum mode on the library's own write path, and compaction on a store copy.
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantLocalCacheCompactionTests.swift` — the red tests
+  - `Tests/InstantSwiftDataCoreTests/InstantLocalCacheWriteCostTests.swift` — the measurements behind the design
+  - `Sources/InstantSwiftDataCore/InstantLocalCacheCompaction.swift` — the file, report and policy types
+- **User context (verbatim):**
+  > I want to find the issues at the root.
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run); no SpecStory capture for headless runs.
+
 ## October 23rd, 2026 at 4:27:09 p.m. EDT — `db666f577fb3` Document the v1.9.21 release: a read from this device answers from the whole device store, at once (#1006)
 
 - **Implementation commit:** `db666f577fb33de71b08b1fbb155c2b8312dfa11`

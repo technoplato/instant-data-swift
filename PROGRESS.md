@@ -1,3 +1,20 @@
+## 2026-10-23 16:36:40 EDT — v1.9.22: the local cache gives back the pages it frees, with one VACUUM when they are worth it (#1015); carries 1.9.21 (#1006) and 1.9.20 (#1011)
+
+- **Commits:** red `d3da7a73`, green `73ed07b8`; release document `3a14d26e`; then this ledger commit and the tag v1.9.22.
+- **Why:** an iPhone's cache was a 916 MB file of which 676 MB were free pages (auto_vacuum NONE, never a VACUUM).
+  Measured on the library's own write path, auto_vacuum = INCREMENTAL wrote +2.97% (apply and transacts) and +5.80%
+  (drain) on every write, so caches stay NONE and `compactLocalCache(holdingWhile:)` runs one VACUUM when a quarter of
+  the file and 64 MB are free, under the operation gate, never while hot, in Low Power Mode, short of disk, cancelled
+  or held by the app.
+- **Checks (Mac mini M4, Xcode 27 beta, debug):** `InstantLocalCacheCompactionTests` red (7 of 9) then green (9 of 9);
+  on 1.9.21 the storage snapshot, energy meter and #1006's local-read suites pass beside it; the whole bundle on
+  `f7035742` with and without it: 167 vs 180 failing names of 1,365/1,376 under load 18-66, the 21 extra all pass alone
+  but the binary-framing speed comparison that flakes on both trees. Phone-shaped cache through the runtime: 838.3 ->
+  182.3 MB, VACUUM 0.83-1.2 s, 617 MB written, peak memory unchanged, every table's rows identical.
+- **Next:** Scribe and Scribe Playback pin exactly 1.9.22; Scribe's #437 monitor runs compaction while charging and not
+  recording (plan `424a4c7ba` on Scribe main); on the phone, `scribe.local-cache.compacted` with the file's bytes before
+  and after.
+
 ## 2026-10-23 16:20:00 EDT — #1020: the live-transport test that waited forever under load (test-only, no release)
 
 - **Commits (main):** red `ed93cb6b`, green `0974c6cd` (the scripted session's waits fail at a deadline with what it
