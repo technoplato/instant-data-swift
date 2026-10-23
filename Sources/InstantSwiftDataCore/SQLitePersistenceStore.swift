@@ -31,6 +31,8 @@
 //   sets the overlay flag only when it changes: each wrote index pages on every write for nothing (#1007).
 // - 2026-10-23: a server apply's staging keeps no copy of each body as planned: both passes and the stage read the
 //   outbox's body, whose every rewrite bumps the revision each page checks against the plan (#932, the disk map's F1a).
+// - 2026-10-23: the statement cache keeps 256 statements instead of 64, room for a live write's whole cycle, which
+//   prepared every statement again on every write (#1007).
 
 import Foundation
 import IssueReporting
@@ -18670,7 +18672,10 @@ private final class SQLiteConnection: @unchecked Sendable {
 /// checked out then is finalized when it is checked in. An unmerged #403 branch (484c4f35) prepared statements once in
 /// the same way.
 struct SQLiteStatementCache {
-  static let defaultCapacity = 64
+  /// Room for a live write's whole cycle (#1007). Its save, delivery claim, acknowledgement and the apply of the server's
+  /// answer run about 150 distinct statements (956 KB of statement memory in the tests' write cycle), and with 64 kept
+  /// the least recently used one was always the next one needed, so every statement was prepared again on every write.
+  static let defaultCapacity = 256
   static let maximumParameterCount = 32
 
   let capacity: Int
