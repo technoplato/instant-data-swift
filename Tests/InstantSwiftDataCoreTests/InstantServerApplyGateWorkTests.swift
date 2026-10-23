@@ -139,9 +139,10 @@ struct InstantServerApplyGateWorkTests {
     let (measurement, declines) = try await FastDrainDeclineCounter.counting {
       try await fixture.drain(maximumFrames: 40)
     }
+    // The decline counter hears every runtime in the process, so the fixture's own measurement decides.
     print("live-line frames during a backlog: \(measurement); declined reductions: \(declines)")
-    expectNoDifference(declines, [:])
     expectNoDifference(measurement.rebases, 0)
+    expectNoDifference(measurement.plannedBodies, 0)
   }
 
   /// Every refresh restates whole query results, and the commit read each restated result's ownership rows and encoded
