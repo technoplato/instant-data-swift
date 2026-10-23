@@ -2030,8 +2030,8 @@ private struct UpstreamInstantFixture {
   }
 
   private static func loadFixture(named name: String) async throws -> Self {
-    let directory = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
-      .appendingPathComponent("upstream/instant/client/packages/core/__tests__/src/data")
+    let directory = upstreamCheckoutURL()
+      .appendingPathComponent("client/packages/core/__tests__/src/data")
       .appendingPathComponent(name)
     let attrsData = try Data(contentsOf: directory.appendingPathComponent("attrs.json"))
     let triplesData = try Data(contentsOf: directory.appendingPathComponent("triples.json"))
@@ -2055,6 +2055,22 @@ private struct UpstreamInstantFixture {
       store: InstantStore(snapshot: InstantStoreSnapshot(attributes: attributes, triples: triples)),
       attributes: attributes
     )
+  }
+
+  /// The instantdb/instant checkout the fixtures come from, found the way
+  /// `InstantUpstreamParityReconciliationTests` finds it: `INSTANT_UPSTREAM_CHECKOUT`, else
+  /// `upstream/instant` beside this file's package. It was the process's working directory until #1021,
+  /// so every run launched from anywhere but the package root (the test helper run directly, as the
+  /// release and agent scripts do) failed all twelve of these tests before reading a fixture.
+  private static func upstreamCheckoutURL(filePath: String = #filePath) -> URL {
+    if let override = ProcessInfo.processInfo.environment["INSTANT_UPSTREAM_CHECKOUT"], !override.isEmpty {
+      return URL(fileURLWithPath: override)
+    }
+    return URL(fileURLWithPath: filePath)
+      .deletingLastPathComponent()  // InstantSwiftDataCoreTests
+      .deletingLastPathComponent()  // Tests
+      .deletingLastPathComponent()  // package root
+      .appendingPathComponent("upstream/instant")
   }
 
   private static func rawAttributeObjects(from data: Data) throws -> [[String: Any]] {

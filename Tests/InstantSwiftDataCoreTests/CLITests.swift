@@ -11870,10 +11870,11 @@ extension InstantStoreTests {
     ) else {
       throw CLITestError(
         """
-        instant-swift-data executable is missing under .build/release or .build/debug. \
-        Build it with 'swift build -c release --product instant-swift-data' before \
-        process-level CLI tests. Nested 'swift run' deadlocks the package .build.lock \
-        already held by 'swift test'.
+        instant-swift-data executable is missing under .build/release or .build/debug \
+        (or at INSTANT_SWIFT_DATA_CLI_EXECUTABLE). Build it with \
+        'swift build -c release --product instant-swift-data' before process-level CLI tests, \
+        or run the bundle with scripts/known-failing-tests.sh, which builds it. Nested \
+        'swift run' deadlocks the package .build.lock already held by 'swift test'.
         """
       )
     }
@@ -11943,6 +11944,11 @@ extension InstantStoreTests {
   }
 
   private func builtPackageProductURL(named name: String, packageURL: URL) -> URL? {
+    // A build with its own --scratch-path leaves nothing under .build; scripts/known-failing-tests.sh
+    // names the executable it built here (#1021).
+    if let override = ProcessInfo.processInfo.environment["INSTANT_SWIFT_DATA_CLI_EXECUTABLE"], !override.isEmpty {
+      return FileManager.default.isExecutableFile(atPath: override) ? URL(fileURLWithPath: override) : nil
+    }
     let relativePaths = [
       ".build/release/\(name)",
       ".build/debug/\(name)",
