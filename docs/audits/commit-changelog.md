@@ -1,3 +1,24 @@
+## 2026-10-23 14:48:12 EDT — scribe `314c36a6b831f110fba7e0f87191f930fad07df3`
+The storage audit (#959): what held a device's 44.5 GB, what the next build removes (10.66 GB of chunk copies, a 0.69 GB debug-log store), the SQLite store's 676 MB of free pages (#1015), a stale chunk upload (#1016).
+
+## 2026-10-23 14:44:08 EDT — scribe `d2f2eb9091ff212f2acebe04f8933995c9709520`
+Green (#959): on iOS the launch cleanup removes the Instant debug-log store of the lane that is off (687 MB), by the product owner's decision.
+
+## 2026-10-23 14:44:08 EDT — scribe `58a43e105e5d57a1bd4d60c06d7d6bec97550e47`
+Red test (#959): the debug-log store of the lane that is off goes with its WAL and shared memory; one written this week stays.
+
+## 2026-10-23 14:44:08 EDT — scribe `f3d5d365773bdf6190272c12023a245d8fc03ac7`
+Green (#959): a cleanup held by heat or Low Power Mode resumes when the device's conditions change, in the same process.
+
+## 2026-10-23 14:44:08 EDT — scribe `7a2abb9ce6fdf4c38fa8cda24344ed4ac76ea597`
+Red test (#959): a held cleanup runs once the phone cools.
+
+## 2026-10-23 14:35:02 EDT — scribe `350c6f9735a6a7417205c3bafa5f1180d9ad5860`
+Green (#959): at launch Scribe removes the library's copies of uploads (1.9.14 keeps none) once storage ($files by id and size) and the recording's own file hold their bytes; chunk rows read from the server too.
+
+## 2026-10-23 14:35:02 EDT — scribe `f0fb55c1d103f66581d710b38240bfb1fef0bb3b`
+Red test (#959): ScribeStorageCleanupTests, the cleanup's rules.
+
 ## 2026-10-23 14:48:02 EDT — instant-data-swift `acd2c8b41add22cc7dffb2e0915f4cd7b507ac80`
 Release document for v1.9.17 (#1007): a page with includes skips a change it cannot show, and placing an entity in a result set reads only the plan's fields; carries 1.9.16 (#1011).
 
