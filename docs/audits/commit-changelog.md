@@ -1,3 +1,6 @@
+## 2026-10-23 12:58:01 EDT — instant-data-swift `ca14691d314ac580b19a32153275baac9667a74f`
+Measurement (#1006): a 986-line transcript, 256 a page, reopened with the server silent: 256 lines after 5.0 s on v1.9.12, all 986 in 0.13 s with 8e8f25e6.
+
 ## 2026-10-23 12:48:39 EDT — instant-data-swift `8e8f25e6449836cfb27199640fe1ee96411be5d4`
 Green (#1006): the session prune unloads a closed query's result into instant_unloaded_live_query_results instead of deleting it, and the query's next live subscription loads it back before the server answers (upstream PersistedObject.unloadKey parity).
 

@@ -10,6 +10,18 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## October 23rd, 2026 at 12:58:14 p.m. EDT — `ca14691d314a` Measure: a 986-line transcript, 256 a page, reopens from its stored pages (#1006)
+
+- **Implementation commit:** `ca14691d314ac580b19a32153275baac9667a74f`
+- **Change:** Measure: a 986-line transcript, 256 a page, reopens from its stored pages (#1006)
+- **Details:**
+  - Scripted server answering in 300 ms: first open 986 lines in 2.62 s over 9 sequential registrations on v1.9.12 and with 8e8f25e6 alike; reopen after the session prune, server silent: v1.9.12 256 lines after 5.0 s and no more, 8e8f25e6 all 986 in 0.13 s (mini, debug).
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantStoredResultReloadTests.swift` — the timing test and the scripted server's answer delay
+- **User context (verbatim):**
+  > I don't want to slow anything down.
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run); no SpecStory capture for headless runs.
+
 ## October 23rd, 2026 at 12:55:16 p.m. EDT — `9e8139438b11` Green (#1007): a link set sorts by its ids, with no key string built per comparison
 
 - **Implementation commit:** `9e8139438b119cdecf15fc58d18ae5942a4eea69`
