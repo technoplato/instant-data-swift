@@ -647,7 +647,8 @@ struct TripleIndexes: Codable, Sendable {
   // _modify accessor, which takes uniqueness on the owning value before writing.
   // No executor or lock shares this reference across isolation domains.
   private final class EAVStorage: @unchecked Sendable {
-    var rows: [String: [String: AttrSlot]] = [:]
+    // Sharded, so preparing a write copies the shards of the entities it changes, not every entity (#1007).
+    var rows: ShardedDictionary<String, [String: AttrSlot]> = [:]
     func copy() -> EAVStorage {
       let copied = EAVStorage()
       copied.rows = rows
@@ -659,7 +660,7 @@ struct TripleIndexes: Codable, Sendable {
   // _modify accessor, which takes uniqueness on the owning value before writing.
   // No executor or lock shares this reference across isolation domains.
   private final class VAEStorage: @unchecked Sendable {
-    var rows: [InstantValue: [String: [String: InstantTripleStamp]]] = [:]
+    var rows: ShardedDictionary<InstantValue, [String: [String: InstantTripleStamp]]> = [:]
     func copy() -> VAEStorage {
       let copied = VAEStorage()
       copied.rows = rows
@@ -671,8 +672,9 @@ struct TripleIndexes: Codable, Sendable {
   // _modify accessors that take uniqueness on the owning value first. No
   // executor or lock shares this reference across isolation domains.
   private final class IndexedStorage: @unchecked Sendable {
-    var valueEntities: [String: [InstantValue: Set<String>]] = [:]
-    var entityValues: [String: [String: InstantValue]] = [:]
+    // Sharded, so preparing a write copies the shards it changes, not each indexed attribute's whole maps (#1007).
+    var valueEntities: [String: ShardedDictionary<InstantValue, ShardedSet<String>>] = [:]
+    var entityValues: [String: ShardedDictionary<String, InstantValue>] = [:]
     func copy() -> IndexedStorage {
       let copied = IndexedStorage()
       copied.valueEntities = valueEntities
@@ -685,7 +687,7 @@ struct TripleIndexes: Codable, Sendable {
   private var vaeStorage = VAEStorage()
   private var indexedStorage = IndexedStorage()
 
-  private var eav: [String: [String: AttrSlot]] {
+  private var eav: ShardedDictionary<String, [String: AttrSlot]> {
     _read { yield eavStorage.rows }
     _modify {
       uniqueEAV()
@@ -693,7 +695,7 @@ struct TripleIndexes: Codable, Sendable {
     }
   }
 
-  private var vae: [InstantValue: [String: [String: InstantTripleStamp]]] {
+  private var vae: ShardedDictionary<InstantValue, [String: [String: InstantTripleStamp]]> {
     _read { yield vaeStorage.rows }
     _modify {
       uniqueVAE()
@@ -702,7 +704,7 @@ struct TripleIndexes: Codable, Sendable {
   }
   /// Compact secondary index for **schema-indexed** attributes only (not full InstantTriple AEV).
   /// Shape: attributeID → value → entityIDs. Powers equality filters / lookup without scanning eav.
-  private var indexedValueEntities: [String: [InstantValue: Set<String>]] {
+  private var indexedValueEntities: [String: ShardedDictionary<InstantValue, ShardedSet<String>>] {
     _read { yield indexedStorage.valueEntities }
     _modify {
       uniqueIndexed()
@@ -710,7 +712,7 @@ struct TripleIndexes: Codable, Sendable {
     }
   }
   /// attributeID → entityID → value for cardinality-one indexed attrs (sort / ordered page).
-  private var indexedEntityValues: [String: [String: InstantValue]] {
+  private var indexedEntityValues: [String: ShardedDictionary<String, InstantValue>] {
     _read { yield indexedStorage.entityValues }
     _modify {
       uniqueIndexed()
@@ -728,7 +730,8 @@ struct TripleIndexes: Codable, Sendable {
   private var pendingInternNeedsEAVCompletion = false
   private var shouldInternOnWrite = true
   /// namespace → entityIDs that hold at least one attr in that namespace (avoids scanning segments for recordings queries).
-  private var entitiesByNamespace: [String: Set<String>] = [:]
+  /// Sharded, so preparing a write that adds an entity copies one shard of its namespace's members (#1007).
+  private var entitiesByNamespace: [String: ShardedSet<String>] = [:]
   private var lastWrittenEntityID: String?
   private var lastWrittenNamespace: String?
   /// Attribute definitions used to build the derived indexes above. Not encoded: decoding or a
@@ -1027,14 +1030,18 @@ struct TripleIndexes: Codable, Sendable {
       [String: [String: [InstantValue: InstantTriple]]].self,
       forKey: .aev
     )
-    self.eav = try container.decode(
-      [String: [String: AttrSlot]].self,
-      forKey: .eav
+    self.eav = ShardedDictionary(
+      try container.decode(
+        [String: [String: AttrSlot]].self,
+        forKey: .eav
+      )
     )
-    self.vae = try container.decodeIfPresent(
-      [InstantValue: [String: [String: InstantTripleStamp]]].self,
-      forKey: .vae
-    ) ?? [:]
+    self.vae = ShardedDictionary(
+      try container.decodeIfPresent(
+        [InstantValue: [String: [String: InstantTripleStamp]]].self,
+        forKey: .vae
+      ) ?? [:]
+    )
     let interned = try container.decodeIfPresent([String].self, forKey: .internedTxIDs) ?? [""]
     self.internedTxIDsBox = TxIDInterner(internedTxIDs: interned)
     self.storedTripleCount = Self.walkedTripleCount(eav)
@@ -1054,13 +1061,13 @@ struct TripleIndexes: Codable, Sendable {
       [String: [String: [InstantValue: InstantTriple]]](),
       forKey: .aev
     )
-    try container.encode(eav, forKey: .eav)
-    try container.encode(vae, forKey: .vae)
+    try container.encode(eav.dictionary, forKey: .eav)
+    try container.encode(vae.dictionary, forKey: .vae)
     try container.encode(internedTxIDsBox.internedTxIDs, forKey: .internedTxIDs)
   }
 
   private static func walkedTripleCount(
-    _ eav: [String: [String: AttrSlot]]
+    _ eav: ShardedDictionary<String, [String: AttrSlot]>
   ) -> Int {
     eav.values.reduce(into: 0) { count, attributesByID in
       for slot in attributesByID.values {
@@ -1903,8 +1910,7 @@ struct TripleIndexes: Codable, Sendable {
 
   @discardableResult
   private mutating func rebuildDerivedIndexes(attributes: AttributeStore) -> Set<String> {
-    var normalizedEAV: [String: [String: AttrSlot]] = [:]
-    normalizedEAV.reserveCapacity(eav.count)
+    var normalizedEAV: ShardedDictionary<String, [String: AttrSlot]> = [:]
     var changedEntityIDs: Set<String> = []
     for (entityID, attributesByID) in eav {
       var normalizedAttributes: [String: AttrSlot] = [:]
@@ -2510,8 +2516,8 @@ struct TripleIndexes: Codable, Sendable {
   }
 
   private struct BoundedCandidateSource: Sendable {
-    var baseEntityIDs: Set<String>?
-    var additionalMemberships: [Set<String>]
+    var baseEntityIDs: ShardedSet<String>?
+    var additionalMemberships: [ShardedSet<String>]
     var filtersFullyCoveredByIndex: Bool
     var candidateNamespaceIsKnown: Bool
   }
@@ -2627,7 +2633,7 @@ struct TripleIndexes: Codable, Sendable {
     plan: InstantQueryPlan,
     attributes: AttributeStore
   ) -> BoundedCandidateSource {
-    var indexedHitSets: [Set<String>] = []
+    var indexedHitSets: [ShardedSet<String>] = []
     var coveredFilterCount = 0
     for filter in plan.filters {
       guard case let .equals(field, rawValue) = filter,
@@ -2635,7 +2641,7 @@ struct TripleIndexes: Codable, Sendable {
         let attribute = attributes.attribute(namespace: plan.namespace, name: field),
         attribute.isIndexed
       else { continue }
-      let hits: Set<String>
+      let hits: ShardedSet<String>
       if attribute.primaryKey {
         guard let entityID = Self.entityID(fromPrimaryKeyValue: rawValue) else {
           indexedHitSets.append([])
@@ -3044,7 +3050,7 @@ struct TripleIndexes: Codable, Sendable {
     plan: InstantQueryPlan,
     attributes: AttributeStore
   ) -> CandidateResolution {
-    var candidate: Set<String>?
+    var candidate: ShardedSet<String>?
     var coveredFilterCount = 0
     for filter in plan.filters {
       guard case let .equals(field, rawValue) = filter,
@@ -3052,7 +3058,7 @@ struct TripleIndexes: Codable, Sendable {
         let attribute = attributes.attribute(namespace: plan.namespace, name: field),
         attribute.isIndexed
       else { continue }
-      let hits: Set<String>
+      let hits: ShardedSet<String>
       if attribute.primaryKey {
         guard let entityID = Self.entityID(fromPrimaryKeyValue: rawValue) else {
           candidate = []
