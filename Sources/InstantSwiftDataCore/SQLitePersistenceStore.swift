@@ -10,6 +10,8 @@
 //   is not downloaded to reads and the snapshot, and an evicted copy's record stays (forgetStoredFileCopy) (#959).
 // - 2026-10-23: metadata rows upsert in place, and an acknowledgement leaves a write's unchanged key rows alone: both
 //   rewrote unchanged rows to new pages on every write (#1007).
+// - 2026-10-23: a server-apply commit times its parts (validation, facts, outbox, results, bookkeeping, the SQLite
+//   COMMIT) for the gate-held event (#932).
 
 import Foundation
 import IssueReporting
@@ -690,6 +692,54 @@ struct InstantServerApplyCommit: Sendable {
   var didChangeAttributes: Bool
   var didChangeOutbox: Bool
   var didChangeQueryResults: Bool
+  var timing = InstantServerApplyCommitTiming()
+}
+
+/// Where one server-apply commit spends its time inside the persistence actor, in milliseconds (#932).
+///
+/// The phone's gate-held events showed commits of 1-4 s with nothing pending and no entity changed, and 3-6 s with
+/// 2,560 pending, but not whether that was SQLite work, a checkpoint inside `COMMIT`, or waiting for the actor.
+struct InstantServerApplyCommitTiming: Sendable, Equatable {
+  /// The revision checks and the plan's row and closure validation.
+  var validateMilliseconds = 0
+  /// The changed facts and merged attributes.
+  var factsMilliseconds = 0
+  /// The outbox rows the apply removed or rewrote, and their effect entities.
+  var outboxMilliseconds = 0
+  /// The live-query results the frame carried, and the result JSON whose write was due (#566).
+  var resultsMilliseconds = 0
+  /// Metadata, revisions and the pending count.
+  var bookkeepingMilliseconds = 0
+  /// The `COMMIT` statement: the WAL append and, past `wal_autocheckpoint`, the checkpoint SQLite runs inside it.
+  var sqliteCommitMilliseconds = 0
+  /// From entering `commitServerApplyPlan` to leaving it.
+  var insideMilliseconds = 0
+  /// Bytes of live-query result JSON this commit wrote.
+  var resultJSONBytes = 0
+  /// The plan's rows the commit deleted from the outbox (accepted writes the watermark covers, and pruned rows).
+  var deletedOutboxRowCount = 0
+
+  static func milliseconds(from start: ContinuousClock.Instant, to end: ContinuousClock.Instant) -> Int {
+    let duration = start.duration(to: end)
+    return Int(duration.components.seconds * 1_000 + duration.components.attoseconds / 1_000_000_000_000_000)
+  }
+}
+
+/// Times a commit's consecutive sections into an ``InstantServerApplyCommitTiming`` (#932).
+struct InstantServerApplyCommitClock: Sendable {
+  var timing = InstantServerApplyCommitTiming()
+  private var sectionStartedAt: ContinuousClock.Instant
+
+  init(startedAt: ContinuousClock.Instant) {
+    sectionStartedAt = startedAt
+  }
+
+  /// Adds the time since the previous section ended to `section`.
+  mutating func end(_ section: WritableKeyPath<InstantServerApplyCommitTiming, Int>) {
+    let now = ContinuousClock.now
+    timing[keyPath: section] += InstantServerApplyCommitTiming.milliseconds(from: sectionStartedAt, to: now)
+    sectionStartedAt = now
+  }
 }
 
 struct InstantServerApplyResidentPatchPage: Sendable {
@@ -5804,7 +5854,11 @@ public actor SQLitePersistenceStore {
   ) throws -> InstantServerApplyCommit? {
     let energy = InstantEnergyMeter.begin(.serverApplyCommit); defer { energy.end() }
     serverApplyMetrics.commitAttemptCount += 1
-    let commit: InstantServerApplyCommit? = try transaction {
+    // #932: each section's time goes to the gate-held event, so a slow commit names its part.
+    let startedAt = ContinuousClock.now
+    let resultJSONBytesBefore = liveQueryResultJSONWriteStats.bytes
+    let body: (commit: InstantServerApplyCommit?, clock: InstantServerApplyCommitClock) = try transaction {
+      var clock = InstantServerApplyCommitClock(startedAt: startedAt)
       guard let plan = try loadServerApplyPlanControlWithoutTransaction(id: planID),
         try loadMetadataRevisionWithoutTransaction(Self.storeRevisionKey)
           == plan.expectedStoreRevision,
@@ -5823,7 +5877,8 @@ public actor SQLitePersistenceStore {
           """,
           [.text(planID)]
         ) == 0
-      else { return nil }
+      else { return (nil, clock) }
+      clock.end(\.validateMilliseconds)
 
       let didChangeOutbox = try selectInt64(
         """
@@ -5847,6 +5902,7 @@ public actor SQLitePersistenceStore {
         """,
         [.text(planID)]
       ) != 0
+      clock.end(\.outboxMilliseconds)
       let didChangeStore = storeChanged && !changedEntityTriples.isEmpty
       let didChangeAttributes = !attributes.isEmpty
       let didChangeQueryResults = !queryResults.isEmpty
@@ -5871,6 +5927,7 @@ public actor SQLitePersistenceStore {
           )
         }
       }
+      clock.end(\.factsMilliseconds)
 
       if didChangeOutbox {
         try execute(
@@ -5883,6 +5940,7 @@ public actor SQLitePersistenceStore {
           """,
           [.text(planID)]
         )
+        clock.timing.deletedOutboxRowCount = Int(sqlite3_changes(connection.raw))
         try execute(
           """
           UPDATE instant_outbox AS outbox
@@ -5993,12 +6051,14 @@ public actor SQLitePersistenceStore {
           [.text(planID)]
         )
       }
+      clock.end(\.outboxMilliseconds)
 
       for result in queryResults {
         try saveLiveQueryResultWithoutTransaction(result, deferringJSON: true)
       }
       // A query that keeps refreshing writes its newest result once per interval (#566).
       try flushDeferredLiveQueryResultsWithoutTransaction(dueAt: metadataUpdatedAt.milliseconds)
+      clock.end(\.resultsMilliseconds)
       try saveMetadataValueWithoutTransaction(
         metadataValue,
         key: metadataKey,
@@ -6016,11 +6076,13 @@ public actor SQLitePersistenceStore {
       if didChangeQueryResults {
         _ = try bumpMetadataRevisionWithoutTransaction(Self.queryResultRevisionKey)
       }
-      return InstantServerApplyCommit(
-        pendingMutationCount: Int(try selectInt64(
-          "SELECT COUNT(*) FROM instant_outbox WHERE status = ?",
-          [.text(InstantMutationStatus.pending.rawValue)]
-        )),
+      let pendingMutationCount = Int(try selectInt64(
+        "SELECT COUNT(*) FROM instant_outbox WHERE status = ?",
+        [.text(InstantMutationStatus.pending.rawValue)]
+      ))
+      clock.end(\.bookkeepingMilliseconds)
+      let commit = InstantServerApplyCommit(
+        pendingMutationCount: pendingMutationCount,
         expectedStoreRevision: plan.expectedStoreRevision,
         expectedAttributeRevision: plan.expectedAttributeRevision,
         expectedOutboxRevision: plan.expectedOutboxRevision,
@@ -6030,7 +6092,11 @@ public actor SQLitePersistenceStore {
         didChangeOutbox: didChangeOutbox,
         didChangeQueryResults: didChangeQueryResults
       )
+      return (commit, clock)
     }
+    var clock = body.clock
+    clock.end(\.sqliteCommitMilliseconds)
+    var commit = body.commit
     // A result whose JSON write waited is written within one interval, if no later refresh writes it first (#566).
     scheduleDeferredLiveQueryResultFlushIfNeeded()
     if commit == nil {
@@ -6050,6 +6116,9 @@ public actor SQLitePersistenceStore {
         queryResultsChanged: commit.didChangeQueryResults
       )
     }
+    clock.timing.resultJSONBytes = liveQueryResultJSONWriteStats.bytes - resultJSONBytesBefore
+    clock.timing.insideMilliseconds = InstantServerApplyCommitTiming.milliseconds(from: startedAt, to: ContinuousClock.now)
+    commit?.timing = clock.timing
     return commit
   }
 

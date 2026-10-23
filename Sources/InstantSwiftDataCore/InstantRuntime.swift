@@ -1,6 +1,9 @@
 // History:
 // - 2026-10-23: an upload through storage keeps no copy of its file, a record without a copy downloads by its
 //   stored name, and evictStoredFiles(ids:) removes copies whose $files record has their size (#959).
+// - 2026-10-23: the server apply's gate-held event names its path (reduced, or why it peeled and replayed its whole
+//   component), its attempt, the writes it peeled and replayed, and where its commit spent its time inside the
+//   persistence actor (#932).
 
 import Foundation
 import IssueReporting
@@ -2797,7 +2800,8 @@ public final class InstantRuntime: Sendable {
     }
 
     var initialSeed = initialSeed
-    applyAttempts: for _ in 0..<maximumAttempts {
+    applyAttempts: for attemptIndex in 0..<maximumAttempts {
+      let attempt = attemptIndex + 1
       let seed: InstantServerApplySeed
       if let firstSeed = initialSeed {
         seed = firstSeed
@@ -2856,16 +2860,24 @@ public final class InstantRuntime: Sendable {
       var excludesWatermarkRoots = false
       var receiptPatches: [String: [InstantTriple]] = [:]
       var failureSplice = InstantServerApplyFailureSplice()
-      if configuration.reducesServerApplyToAffectedOverlays,
-        mergedAttributeCount == 0,
-        confirmingMutationID == nil,
-        !footprint.isGlobal,
-        let reduced = try await reducedServerApplyOperations(
-          authoritativeTransaction.operations,
-          processedTransactionID: processedTransactionID,
-          seed: seed
-        )
-      {
+      // #932: the path this apply takes, for the gate-held event. The reduction's decline was logged at debug only, so
+      // the phone could not say why a frame peeled and replayed ~2,560 pending writes.
+      var reductionDecline: InstantServerApplyReductionIneligibility?
+      let reductionPath: String
+      if !configuration.reducesServerApplyToAffectedOverlays {
+        reductionPath = "full rebase: reduction off"
+      } else if mergedAttributeCount > 0 {
+        reductionPath = "full rebase: attributes changed"
+      } else if confirmingMutationID != nil {
+        reductionPath = "full rebase: confirming apply"
+      } else if footprint.isGlobal {
+        reductionPath = "full rebase: global footprint"
+      } else if let reduced = try await reducedServerApplyOperations(
+        authoritativeTransaction.operations,
+        processedTransactionID: processedTransactionID,
+        seed: seed,
+        declineReason: &reductionDecline
+      ) {
         authoritativeTransaction.operations = reduced.operations
         receiptPatches = reduced.receiptPatches
         failureSplice = reduced.failureSplice
@@ -2873,6 +2885,9 @@ public final class InstantRuntime: Sendable {
         // reason to peel the linked entity's writes.
         footprint = Self.serverApplyFootprint(operations: reduced.operations, includingReferenceTargets: false)
         excludesWatermarkRoots = true
+        reductionPath = "reduced"
+      } else {
+        reductionPath = "full rebase: \(reductionDecline?.rawValue ?? "declined")"
       }
       let hasAuthoritativeStoreChanges =
         !authoritativeTransaction.operations.isEmpty || mergedAttributeCount > 0
@@ -3537,7 +3552,12 @@ public final class InstantRuntime: Sendable {
           pendingMutationCount: commit.pendingMutationCount,
           catchUpReplayCount: catchUpReplayCount,
           catchUpBodyCount: catchUpBodyCount,
-          changedEntityCount: changedEntityIDs.count
+          changedEntityCount: changedEntityIDs.count,
+          path: reductionPath,
+          attempt: attempt,
+          heldFromSeed: operationGateAlreadyHeld,
+          plan: plan,
+          commitTiming: commit.timing
         )
         if enteredOperationGateForCommit {
           await leaveOperationGate()
@@ -3705,7 +3725,8 @@ public final class InstantRuntime: Sendable {
   private func reducedServerApplyOperations(
     _ operations: [InstantTripleOperation],
     processedTransactionID: String,
-    seed: InstantServerApplySeed
+    seed: InstantServerApplySeed,
+    declineReason: inout InstantServerApplyReductionIneligibility?
   ) async throws -> (
     operations: [InstantTripleOperation],
     receiptPatches: [String: [InstantTriple]],
@@ -3719,6 +3740,7 @@ public final class InstantRuntime: Sendable {
       receiptPatches: [String: [InstantTriple]],
       failureSplice: InstantServerApplyFailureSplice
     )? {
+      declineReason = reason
       var metadata = ["reason": reason.rawValue, "operationCount": String(operations.count)]
       if let fact {
         metadata["entityID"] = fact.entityID
@@ -4314,6 +4336,10 @@ public final class InstantRuntime: Sendable {
   /// One record per server apply: how long it held the operation gate, split by part. Local
   /// writes queue behind every millisecond of it, so an apply past 250 ms is reported at `info`
   /// and past 1 s at `warning` (#277).
+  ///
+  /// #932: it also names the path (`reduced`, or why the apply peeled and replayed its whole component), the attempt,
+  /// how many writes the plan peeled and replayed, and where the commit spent its time inside the persistence actor.
+  /// The commit phase minus `commitInsideMilliseconds` is the wait for that actor.
   private func recordServerApplyGateTimeline(
     _ timeline: InstantServerApplyGateTimeline,
     endedAt: ContinuousClock.Instant,
@@ -4321,7 +4347,12 @@ public final class InstantRuntime: Sendable {
     pendingMutationCount: Int,
     catchUpReplayCount: Int,
     catchUpBodyCount: Int,
-    changedEntityCount: Int
+    changedEntityCount: Int,
+    path: String,
+    attempt: Int,
+    heldFromSeed: Bool,
+    plan: InstantServerApplyPlan,
+    commitTiming: InstantServerApplyCommitTiming
   ) async {
     let heldMilliseconds = InstantServerApplyGateTimeline.milliseconds(
       from: timeline.enteredAt,
@@ -4336,11 +4367,33 @@ public final class InstantRuntime: Sendable {
       "catchUpReplayCount": String(catchUpReplayCount),
       "catchUpBodyCount": String(catchUpBodyCount),
       "changedEntityCount": String(changedEntityCount),
+      "path": path,
+      "attempt": String(attempt),
+      "heldFromSeed": String(heldFromSeed),
+      "plannedBodyCount": String(plan.plannedBodyCount),
+      "plannedComponentBodyCount": String(plan.plannedComponentBodyCount),
+      "commitInsideMilliseconds": String(commitTiming.insideMilliseconds),
+      "commitValidateMilliseconds": String(commitTiming.validateMilliseconds),
+      "commitFactsMilliseconds": String(commitTiming.factsMilliseconds),
+      "commitOutboxMilliseconds": String(commitTiming.outboxMilliseconds),
+      "commitResultsMilliseconds": String(commitTiming.resultsMilliseconds),
+      "commitBookkeepingMilliseconds": String(commitTiming.bookkeepingMilliseconds),
+      "commitSQLiteCommitMilliseconds": String(commitTiming.sqliteCommitMilliseconds),
+      "commitResultJSONBytes": String(commitTiming.resultJSONBytes),
+      "commitDeletedOutboxRowCount": String(commitTiming.deletedOutboxRowCount),
     ]
     for phase in phases {
       metadata["\(phase.name)Milliseconds"] = String(phase.milliseconds)
     }
     let summary = phases.map { "\($0.name) \($0.milliseconds) ms" }.joined(separator: ", ")
+    let commitSummary = [
+      ("validate", commitTiming.validateMilliseconds),
+      ("facts", commitTiming.factsMilliseconds),
+      ("outbox", commitTiming.outboxMilliseconds),
+      ("results", commitTiming.resultsMilliseconds),
+      ("bookkeeping", commitTiming.bookkeepingMilliseconds),
+      ("SQLite commit", commitTiming.sqliteCommitMilliseconds),
+    ].map { "\($0.0) \($0.1) ms" }.joined(separator: ", ")
     InstantDiagnostics.shared.record(
       heldMilliseconds >= 1_000 ? .warning : heldMilliseconds >= 250 ? .info : .debug,
       subsystem: "instant-swift-data-core",
@@ -4348,7 +4401,9 @@ public final class InstantRuntime: Sendable {
       event: "server-apply.operation-gate-held",
       message: """
         Server apply held the operation gate \(heldMilliseconds) ms with \(pendingMutationCount) \
-        pending mutations (\(summary)); \(waiterCount) caller(s) queued behind it.
+        pending mutations (\(summary)); \(waiterCount) caller(s) queued behind it. \(path), attempt \(attempt), \
+        \(plan.plannedComponentBodyCount) writes peeled and replayed; commit inside the store \
+        \(commitTiming.insideMilliseconds) ms (\(commitSummary)).
         """,
       metadata: metadata,
       correlationID: processedTransactionID
