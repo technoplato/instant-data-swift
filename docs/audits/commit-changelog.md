@@ -1,3 +1,21 @@
+## 2026-10-23 17:23:19 EDT — scribe `3751a1b3b60fa11269c2706ae3267a52faf8a919`
+Merge (#1017) of red and green onto main, for build 117.
+
+## 2026-10-23 17:23:19 EDT — scribe `3431fddc65fd214f54d0351bdb1f3d51976f56be`
+The Mac-idle audit (#1017), its index row, and What's New for build 117.
+
+## 2026-10-23 17:00:27 EDT — scribe `2d38bd5b42320f550074593a87dfaeb1fbf1a32e`
+Green (#1017): BreathingSymbol; on the Mac SwiftUI draws the live mark once and Core Animation breathes it (production 115 idle with a live row: 40.5% of a core, 19.1% of it the per-frame redraw; hidden/minimized/off screen 52-119%).
+
+## 2026-10-23 16:10:47 EDT — scribe `9baafc03bf5f850a1ffa04977bd529edaccc8d84`
+Plan follow-up (#1017): claim Styleguide/BreathingSymbol.swift; the breath moves to Core Animation (AppKit's image view changes the look).
+
+## 2026-10-23 15:56:16 EDT — scribe `ef4e62f1d6289cd2e364de83118a9a7206678618`
+Red test (#1017): RecordingRowLiveMarkFrameTests, a live row lays out only when its clock ticks and Core Animation breathes its mark.
+
+## 2026-10-23 15:05:09 EDT — scribe `35bb2fdb08ac8123792c703088f7467b95bcd984`
+Plan mac-idle-1017 (#1017): plan and touch claims.
+
 ## 2026-10-23 17:22:18 EDT — instant-data-swift `9bbe407a2c8121f2542146649984b99ffac6d35b`
 Tests (#1021): a checked-in list of the bundle's failing tests (77 names: 24 idle, 53 only under load, v1.9.22 on the Mac mini), and scripts/known-failing-tests.sh to run the bundle the one way and compare a run against the list instead of a baseline run of main.
 
