@@ -1952,6 +1952,17 @@ public actor SQLitePersistenceStore {
       )
       throw error
     }
+    // #1015: SQLite fixes `auto_vacuum` when it writes a file's first page, which `journal_mode = WAL` does, so a mode
+    // other than NONE goes first; set after it, the mode stays NONE and SQLite says nothing (Apple's SQLite 3.54).
+    if Self.newCacheAutoVacuum != .none {
+      try withSQLiteBusyRetry {
+        if try selectInt64("PRAGMA page_count") == 0 {
+          try execute(
+            Self.newCacheAutoVacuum == .full ? "PRAGMA auto_vacuum = FULL" : "PRAGMA auto_vacuum = INCREMENTAL"
+          )
+        }
+      }
+    }
     try withSQLiteBusyRetry {
       try execute("PRAGMA journal_mode = WAL")
     }
@@ -11640,6 +11651,29 @@ public actor SQLitePersistenceStore {
       downloadedFileSize: files.reduce(0) { $0 + $1.byteCount },
       downloadedFileCount: files.count
     )
+  }
+
+  // MARK: - Free pages (#1015)
+
+  /// The `auto_vacuum` mode a new cache file starts in (#1015): `NONE`, which costs ordinary writes nothing. The write
+  /// cost measurement (`InstantLocalCacheWriteCostTests`) creates caches in each mode with it.
+  @TaskLocal package static var newCacheAutoVacuum: InstantLocalCacheFile.AutoVacuum = .none
+
+  /// The cache file's pages as SQLite counts them: `page_size`, `page_count`, `freelist_count` and `auto_vacuum`, four
+  /// reads of the file's header (#1015).
+  package func localCacheFile() throws -> InstantLocalCacheFile {
+    InstantLocalCacheFile(
+      pageSize: Int(try selectInt64("PRAGMA page_size")),
+      pageCount: Int(try selectInt64("PRAGMA page_count")),
+      freePageCount: Int(try selectInt64("PRAGMA freelist_count")),
+      autoVacuum: InstantLocalCacheFile.AutoVacuum(sqliteValue: try selectInt64("PRAGMA auto_vacuum"))
+    )
+  }
+
+  /// `PRAGMA cache_spill` on this connection: how many dirty pages a transaction keeps in memory before it writes
+  /// them out (#1015).
+  package func cacheSpillPagesForTesting() throws -> Int64 {
+    try selectInt64("PRAGMA cache_spill")
   }
 
   public func loadStoredFile(appID: String, fileID: String) throws -> InstantStoredFile? {

@@ -366,6 +366,12 @@ public struct InstantRuntimeConfiguration: Sendable {
   /// What bootstrap does with a retained mutation that has no SQLite-owned preparation receipt (#696): move it aside,
   /// whole, and synchronize every other write (the default), or keep refusing every live connection as 1.9.9 did.
   public var retainedMutationsWithoutPreparationReceipt: InstantRetainedMutationRecovery = .quarantine
+  /// What local-cache compaction asks of the device before its `VACUUM` (#1015): its heat, Low Power Mode, and the room
+  /// on the cache's volume. Tests replace it.
+  package var storageMaintenanceConditions: @Sendable (_ cacheURL: URL) -> InstantStorageMaintenanceConditions =
+    InstantStorageMaintenanceConditions.current(cacheURL:)
+  /// Runs while compaction holds the operation gate, just before its `VACUUM` (#1015).
+  package var onLocalCacheVacuumStartingForTesting: (@Sendable () async -> Void)? = nil
   package var actorHopRecorder: InstantActorHopRecorder?
   package var isLocalOnly: Bool
   package var localPersistenceMigrations: [InstantLocalPersistenceMigration] = []
@@ -11220,6 +11226,24 @@ public final class InstantRuntime: Sendable {
       await operationGate.leave()
       throw error
     }
+  }
+
+  /// Gives the local cache's free pages back to the file system with one `VACUUM`, when they are worth it and nothing
+  /// else needs the store (#1015).
+  @concurrent
+  public func compactLocalCache(
+    holdingWhile hold: @escaping @Sendable () async -> String? = { nil }
+  ) async throws -> InstantLocalCacheCompaction {
+    try await compactLocalCache(policy: InstantLocalCacheCompactionPolicy(), holdingWhile: hold)
+  }
+
+  @concurrent
+  package func compactLocalCache(
+    policy: InstantLocalCacheCompactionPolicy,
+    holdingWhile hold: @escaping @Sendable () async -> String?
+  ) async throws -> InstantLocalCacheCompaction {
+    let file = try await persistence.localCacheFile()
+    return InstantLocalCacheCompaction(outcome: .notNeeded, before: file, after: file)
   }
 
   @concurrent

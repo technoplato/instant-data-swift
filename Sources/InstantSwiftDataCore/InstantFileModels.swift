@@ -16,17 +16,22 @@ public struct InstantStorageSnapshot: Hashable, Codable, Sendable {
   public var streamCacheSize: Int64
   public var downloadedFileSize: Int64
   public var downloadedFileCount: Int
+  /// The local cache's SQLite file: how much of it is free pages, and whether it gives them back (#1015). `nil` for a
+  /// client without a local cache.
+  public var localCacheFile: InstantLocalCacheFile?
 
   public init(
     localCacheSize: Int64,
     streamCacheSize: Int64,
     downloadedFileSize: Int64,
-    downloadedFileCount: Int
+    downloadedFileCount: Int,
+    localCacheFile: InstantLocalCacheFile? = nil
   ) {
     self.localCacheSize = localCacheSize
     self.streamCacheSize = streamCacheSize
     self.downloadedFileSize = downloadedFileSize
     self.downloadedFileCount = downloadedFileCount
+    self.localCacheFile = localCacheFile
   }
 
   public static let empty = Self(
