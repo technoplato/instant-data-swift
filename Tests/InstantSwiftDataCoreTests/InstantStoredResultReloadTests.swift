@@ -324,6 +324,66 @@ extension InstantStoredResultReloadTests {
   }
 }
 
+extension InstantStoredResultReloadTests {
+  /// The playback transcript's shape (#1006): 986 lines read 256 to a page, all of them, with each server answer taking
+  /// `answerDelay`. Prints how long the first open and the reopen take to hold every line; a silent server on reopen.
+  @Test(arguments: [Duration.milliseconds(300)])
+  func aTranscriptOfNineHundredEightySixLinesOpensAndReopens(answerDelay: Duration) async throws {
+    let lineCount = 986
+    let session = LiveReactorParitySession(messages: [
+      liveReactorInitOK(attrs: liveReactorTodoServerAttrs + Self.itemServerAttributes)
+    ])
+    var configuration = InstantRuntimeConfiguration(
+      appID: "stored-result-reload-transcript",
+      persistenceURL: try Self.temporaryCacheURL(),
+      initialAttributes: TodoExample.attributes + Self.itemAttributes,
+      makeID: { UUID().uuidString.lowercased() },
+      liveTransport: session.transport
+    )
+    configuration.liveReconnectSleep = { _ in }
+    configuration.autoConnectLiveTransport = true
+    let runtime = try await InstantRuntime.bootstrap(configuration: configuration)
+    let server = ItemServer(session: session, itemCount: lineCount, answerDelay: answerDelay)
+    let serving = Task { await server.serve() }
+    defer { serving.cancel() }
+    let keepAlive = await runtime.observeQueryLease(Self.keepAliveTodosQuery)
+    _ = try await Self.emission(of: keepAlive.stream, operation: "answer the open query") {
+      $0.values.map(\.id) == ["todo-keep"]
+    }
+    var transcriptQuery = Self.itemsPageQuery
+    transcriptQuery.limit = 256
+
+    let firstOpenStart = ContinuousClock.now
+    let pages = await runtime.subscribeInfiniteQuery(transcriptQuery, retentionPolicy: .accumulated)
+    let whole = try await Self.loadEveryPage(of: pages, expecting: lineCount, within: .seconds(30))
+    let firstOpen = firstOpenStart.duration(to: .now)
+    expectNoDifference(whole.values.count, lineCount)
+    let itemRegistrations = await session.sentMessages().filter {
+      $0.op == "add-query" && $0.fields["q"]?.objectValue?["items"] != nil
+    }.count
+    pages.unsubscribe()
+    try await Self.waitForOp("remove-query", count: itemRegistrations, in: session)
+    _ = try await runtime.pruneLiveQueryResults(policy: Self.productionPolicy, now: Self.pruneTime)
+
+    await server.goSilent()
+    let reopenStart = ContinuousClock.now
+    let reopened = await runtime.subscribeInfiniteQuery(transcriptQuery, retentionPolicy: .accumulated)
+    let reopenedWhole = try await Self.loadEveryPage(of: reopened, expecting: lineCount, within: .seconds(5))
+    let reopen = reopenStart.duration(to: .now)
+    print(
+      "#1006 transcript of \(lineCount) lines, 256 a page, server answer \(answerDelay): first open \(whole.values.count) "
+        + "lines in \(firstOpen) over \(itemRegistrations) registrations; reopen with the server silent "
+        + "\(reopenedWhole.values.count) lines in \(reopen)"
+    )
+    expectNoDifference(reopenedWhole.values.count, lineCount, "#1006: every line reopens from the device")
+    #expect(reopen < .seconds(1))
+
+    reopened.unsubscribe()
+    await keepAlive.cancel()
+    _ = try await runtime.closeConnection()
+  }
+}
+
 // MARK: - Fixtures
 
 extension InstantStoredResultReloadTests {
@@ -421,14 +481,16 @@ extension InstantStoredResultReloadTests {
   }
 
   /// Loads the next page whenever the query reports one, as the playback's detail observation does, and returns the
-  /// snapshot that holds `expectedCount` rows with no next page; after 5 seconds, the last snapshot.
+  /// snapshot that holds `expectedCount` rows with no next page; after `limit`, the last snapshot.
   static func loadEveryPage(
     of subscription: InstantInfiniteQuerySubscription,
-    expecting expectedCount: Int
+    expecting expectedCount: Int,
+    within limit: Duration = .seconds(5)
   ) async throws -> InstantInfiniteQuerySnapshot {
     let last = LastSnapshot()
+    let limitMilliseconds = UInt64(limit.components.seconds * 1_000)
     do {
-      return try await instantLiveWithTimeout(operation: "load every page", timeoutMilliseconds: 5_000) {
+      return try await instantLiveWithTimeout(operation: "load every page", timeoutMilliseconds: limitMilliseconds) {
         var requestedAtCount = -1
         for await snapshot in subscription.snapshots {
           await last.set(snapshot)
@@ -466,12 +528,15 @@ private struct InstantStoredResultReloadTestFailure: Error, CustomStringConverti
 private actor ItemServer {
   let session: LiveReactorParitySession
   let itemCount: Int
+  /// How long each answer takes, a round trip and the server apply behind it.
+  let answerDelay: Duration
   private var answered = 0
   private var isSilent = false
 
-  init(session: LiveReactorParitySession, itemCount: Int) {
+  init(session: LiveReactorParitySession, itemCount: Int, answerDelay: Duration = .zero) {
     self.session = session
     self.itemCount = itemCount
+    self.answerDelay = answerDelay
   }
 
   func goSilent() { isSilent = true }
@@ -483,6 +548,7 @@ private actor ItemServer {
         let query = queries[answered]
         answered += 1
         guard !isSilent else { continue }
+        if answerDelay > .zero { try? await Task.sleep(for: answerDelay) }
         await session.enqueue(
           liveReactorAddQueryOK(query: query, processedTransactionID: "tx-\(answered)", result: answer(query))
         )
