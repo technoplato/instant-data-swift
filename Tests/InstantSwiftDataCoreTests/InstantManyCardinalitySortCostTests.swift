@@ -40,6 +40,33 @@ struct InstantManyCardinalitySortCostTests {
     )
   }
 
+  /// A link's ids sort as their keys do, whatever Unicode they hold: leading combining marks, decomposed and precomposed
+  /// forms, Hangul jamo, ligatures, emoji sequences.
+  @Test(arguments: [UInt64(2_007), 2_008, 2_009])
+  func linkIDsMaterializeInComparableKeyOrderWhateverUnicodeTheyHold(seed: UInt64) throws {
+    var random = InfiniteWindowRandom(seed: seed)
+    let pieces = [
+      "a", "B", "z", "\u{301}", "\u{301}\u{323}", "\u{323}\u{301}", "e\u{301}", "\u{E9}", "A\u{30A}", "\u{C5}",
+      "\u{1100}", "\u{1161}", "\u{AC00}", "\u{FB01}", "fi", "\u{1F469}\u{200D}\u{1F4BB}", "0", "9", ":", "-", "",
+    ]
+    var ids: [String] = []
+    for index in 0..<400 {
+      var id = ""
+      for _ in 0..<random.int(1...4) { id += pieces[random.int(0...(pieces.count - 1))] }
+      ids.append(id + (random.chance(30) ? "" : "\(index)"))
+    }
+    let values = ids.map(InstantValue.ref)
+    let (indexes, attributes) = Self.store(holding: values, in: Self.linkAttribute)
+    let snapshot = try #require(
+      indexes.entitySnapshot("recording", plan: Self.plan, attributes: attributes)
+    )
+    let unique = Array(Set(values))
+    expectNoDifference(
+      snapshot.values[Self.linkAttribute.name],
+      .many(unique.sorted { $0.comparableKey < $1.comparableKey })
+    )
+  }
+
   /// Materializing a recording with 4,000 linked lines costs about as much CPU as building one sort key per line, not
   /// the dozens per line a comparator that builds both keys spends.
   @Test
@@ -63,7 +90,7 @@ struct InstantManyCardinalitySortCostTests {
       }
     }
     #expect(keyLength > 0)
-    // About 3 with keys built once per value; about 25 when the comparator builds both keys.
+    // About 28 when the comparator builds both keys (v1.9.12); under 10 when no key is built per comparison.
     let ratio = Double(materializing) / Double(max(buildingEachKeyOnce, 1))
     #expect(ratio < 10, "materializing cost \(ratio) times building each sort key once")
   }
