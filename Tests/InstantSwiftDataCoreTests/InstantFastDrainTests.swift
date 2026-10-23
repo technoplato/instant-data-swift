@@ -10,6 +10,9 @@ import Testing
 // took 22.5 s and 24.9 s, and the outbox drained about 33 writes per 55 s. These tests drive a Scribe-shaped outbox
 // through a consistent fake server: it accepts writes in delivery order and answers each with the full results of
 // the queries the write touched, the way Instant's `refresh-ok` does.
+//
+// 2026-10-23 (#932): the fixture can write Scribe's live lines (ADR 0069): interims on a `liveLines` row that the line's
+// final deletes, with the recording screen's live-lines query registered; the differential runs with them too.
 
 // MARK: - Schema
 
@@ -21,6 +24,26 @@ enum FastDrainSchema {
   static func segmentID(_ index: Int) -> String {
     "fast-drain-segment-\(String(format: "%05d", index))"
   }
+
+  /// The line in progress before segment `index` is final (ADR 0069 in the app).
+  static func liveLineID(_ index: Int) -> String {
+    "fast-drain-live-\(String(format: "%05d", index))"
+  }
+
+  /// #932: Scribe's `liveLines` (ADR 0069): one row per line in progress, its words replaced by each interim; the line's
+  /// final writes its segment and deletes the row. A string `recordingID`, no link.
+  static let liveLineAttributes: [InstantAttribute] = [
+    InstantAttribute(
+      id: "liveLines/id", namespace: "liveLines", name: "id", valueType: .string,
+      isRequired: false, isIndexed: true, isUnique: true, primaryKey: true
+    ),
+    InstantAttribute(id: "liveLines/recordingID", namespace: "liveLines", name: "recordingID", valueType: .string, isRequired: false, isIndexed: true),
+    InstantAttribute(id: "liveLines/segmentID", namespace: "liveLines", name: "segmentID", valueType: .string, isRequired: false),
+    InstantAttribute(id: "liveLines/segmentIndex", namespace: "liveLines", name: "segmentIndex", valueType: .number, isRequired: false, isIndexed: true),
+    InstantAttribute(id: "liveLines/text", namespace: "liveLines", name: "text", valueType: .string, isRequired: false),
+    InstantAttribute(id: "liveLines/wordsJSON", namespace: "liveLines", name: "wordsJSON", valueType: .string, isRequired: false),
+    InstantAttribute(id: "liveLines/updatedAtMs", namespace: "liveLines", name: "updatedAtMs", valueType: .number, isRequired: false, isIndexed: true),
+  ]
 
   /// Scribe's own link shape: `recordings/segments` and `recordings/transcriptions` are forward on the recording, with
   /// many values, and each write inserts the reverse form (`transcriptionSegments/recording`), which the store
@@ -102,6 +125,8 @@ struct FastDrainWriteScript {
   var deviceMilliseconds: Int64
   var wordCount = 0
   var writeCount = 0
+  /// #932: interims write the line's `liveLines` row, and the final deletes it (ADR 0069), as Scribe writes today.
+  var usesLiveLines = false
 
   init(firstSegmentIndex: Int, deviceMilliseconds: Int64) {
     nextSegmentIndex = firstSegmentIndex
@@ -115,10 +140,18 @@ struct FastDrainWriteScript {
     var words: [String] = []
     for update in 0..<3 {
       words.append("word\(index)-\(update)")
-      writes.append(segmentWrite(index: index, words: words, isFinal: false, assertsRecording: false))
+      writes.append(
+        usesLiveLines
+          ? liveLineWrite(index: index, words: words)
+          : segmentWrite(index: index, words: words, isFinal: false, assertsRecording: false)
+      )
     }
     words.append("final\(index)")
-    writes.append(segmentWrite(index: index, words: words, isFinal: true, assertsRecording: true))
+    var finalWrite = segmentWrite(index: index, words: words, isFinal: true, assertsRecording: true)
+    if usesLiveLines {
+      finalWrite.operations.append(.deleteEntity(FastDrainSchema.liveLineID(index)))
+    }
+    writes.append(finalWrite)
     wordCount += words.count
     writes.append(summaryWrite(previewSegmentIndex: index))
     writes.append(durationWrite())
@@ -167,6 +200,27 @@ struct FastDrainWriteScript {
       insert("recording", .ref(FastDrainSchema.recordingID)),
     ]
     return InstantStoreTransaction(id: id, operations: operations)
+  }
+
+  /// An interim on the line's live row: every field, as each interim replaces the row's words.
+  private mutating func liveLineWrite(index: Int, words: [String]) -> InstantStoreTransaction {
+    let (id, time, updatedAt) = stamp()
+    let line = FastDrainSchema.liveLineID(index)
+    func insert(_ attribute: String, _ value: InstantValue) -> InstantTripleOperation {
+      .insert(InstantTriple(entityID: line, attributeID: "liveLines/\(attribute)", value: value, txID: id, txTime: time))
+    }
+    return InstantStoreTransaction(
+      id: id,
+      operations: [
+        insert("id", .string(line)),
+        insert("recordingID", .string(FastDrainSchema.recordingID)),
+        insert("segmentID", .string(FastDrainSchema.segmentID(index))),
+        insert("segmentIndex", .number(Double(index))),
+        insert("text", .string(words.joined(separator: " "))),
+        insert("wordsJSON", .string("[" + words.map { "{\"word\":\"\($0)\"}" }.joined(separator: ",") + "]")),
+        insert("updatedAtMs", .number(updatedAt)),
+      ]
+    )
   }
 
   private mutating func summaryWrite(previewSegmentIndex: Int) -> InstantStoreTransaction {
@@ -237,6 +291,11 @@ enum FastDrainQuery: String, CaseIterable, Sendable {
   case timeline
   case list
   case transcription
+  /// #932: the recording screen's live lines (ADR 0069). Only fixtures that write live lines register it.
+  case liveLines
+
+  /// The three queries every fixture registers. Live-line fixtures add ``liveLines``.
+  static var allCases: [Self] { [.timeline, .list, .transcription] }
 
   var key: String { "fast-drain-query-\(rawValue)" }
 
@@ -299,13 +358,20 @@ struct FastDrainServer {
     }
   }
 
-  /// Applies one accepted transaction's inserts and returns its server transaction id.
+  /// Applies one accepted transaction's inserts and entity deletes, and returns its server transaction id.
   mutating func accept(_ operations: [InstantTripleOperation]) -> String {
     lastTransactionNumber += 1
     serverMilliseconds += 3
     for operation in operations {
-      guard case let .insert(triple) = operation else { continue }
-      store(entityID: triple.entityID, attributeID: triple.attributeID, value: triple.value, txTime: serverMilliseconds)
+      switch operation {
+      case let .insert(triple):
+        store(entityID: triple.entityID, attributeID: triple.attributeID, value: triple.value, txTime: serverMilliseconds)
+      case let .deleteEntity(entityID):
+        // #932: a live line's final deletes its row; live rows carry no links.
+        facts[entityID] = nil
+      default:
+        continue
+      }
     }
     return String(lastTransactionNumber)
   }
@@ -343,6 +409,11 @@ struct FastDrainServer {
       return entities
     case .transcription:
       return facts[FastDrainSchema.transcriptionID] == nil ? [] : [FastDrainSchema.transcriptionID]
+    case .liveLines:
+      return facts
+        .filter { $0.value["liveLines/recordingID"]?.keys.first == .string(recording) }
+        .map(\.key)
+        .sorted()
     }
   }
 
@@ -370,10 +441,15 @@ struct FastDrainServer {
     }
   }
 
-  /// The queries a write's entities appear in, as the server's invalidation would select them.
-  func queries(touching entityIDs: Set<String>) -> [FastDrainQuery] {
-    FastDrainQuery.allCases.filter { query in
+  /// The queries the device registered: ``FastDrainQuery/allCases``, and the live lines when it writes them.
+  var registeredQueries: [FastDrainQuery] = FastDrainQuery.allCases
+
+  /// The queries a write's entities appear in, as the server's invalidation would select them. A live line's final
+  /// changes the live-lines result by removing its row, so the result is re-sent then too.
+  func queries(touching entityIDs: Set<String>, deleting deletedEntityIDs: Set<String> = []) -> [FastDrainQuery] {
+    registeredQueries.filter { query in
       !Set(entities(in: query)).isDisjoint(with: entityIDs)
+        || (query == .liveLines && deletedEntityIDs.contains { $0.hasPrefix("fast-drain-live-") })
     }
   }
 
@@ -418,9 +494,11 @@ struct FastDrainFixture {
     timelineWindow: Int? = nil,
     scribeLinks: Bool = false,
     endsWithStop: Bool = false,
-    defersSegmentText: Bool = false
+    defersSegmentText: Bool = false,
+    liveLines: Bool = false
   ) async throws -> Self {
-    let attributes = scribeLinks ? FastDrainSchema.scribeLinkAttributes : FastDrainSchema.attributes
+    let attributes = (scribeLinks ? FastDrainSchema.scribeLinkAttributes : FastDrainSchema.attributes)
+      + (liveLines ? FastDrainSchema.liveLineAttributes : [])
     let cacheURL = FileManager.default.temporaryDirectory.appendingPathComponent(
       "instant-fast-drain-\(suffix)-\(UUID().uuidString).sqlite"
     )
@@ -446,7 +524,9 @@ struct FastDrainFixture {
     // The server's history before this device went offline: the same writes, already accepted.
     var server = FastDrainServer(serverMilliseconds: 1_790_700_000_000, attributes: attributes)
     if let timelineWindow { server.timelineWindow = timelineWindow }
+    if liveLines { server.registeredQueries.append(.liveLines) }
     var history = FastDrainWriteScript(firstSegmentIndex: 0, deviceMilliseconds: 1_790_600_000_000)
+    history.usesLiveLines = liveLines
     if endsWithStop {
       _ = server.accept(history.startWrite().operations)
     }
@@ -456,7 +536,7 @@ struct FastDrainFixture {
       }
     }
     let seedTransactionID = String(server.lastTransactionNumber)
-    let seed = server.frame(queries: FastDrainQuery.allCases, processedTransactionID: seedTransactionID)
+    let seed = server.frame(queries: server.registeredQueries, processedTransactionID: seedTransactionID)
     _ = try await runtime.applyServerTransactionMergingAttributesForTesting(
       seed.transaction,
       attributesToMerge: [],
@@ -467,6 +547,7 @@ struct FastDrainFixture {
       firstSegmentIndex: serverSegmentCount,
       deviceMilliseconds: 1_790_710_000_000
     )
+    script.usesLiveLines = liveLines
     for _ in 0..<pendingSegmentCount {
       for write in script.nextSegmentWrites() {
         _ = try await runtime.transact(write, createdAt: InstantTimestamp(milliseconds: script.deviceMilliseconds))
@@ -525,7 +606,11 @@ struct FastDrainFixture {
       claimToken: claimToken
     )
     let touched = Set(mutation.transaction.operations.compactMap(\.fastDrainInsertedTriple).map(\.entityID))
-    return try await refresh(queries: server.queries(touching: touched), processedTransactionID: transactionID)
+    let deleted = Set(mutation.transaction.operations.compactMap(\.fastDrainDeletedEntityID))
+    return try await refresh(
+      queries: server.queries(touching: touched.union(deleted), deleting: deleted),
+      processedTransactionID: transactionID
+    )
   }
 
   /// Delivers one server frame with the current results of `queries`.
@@ -773,6 +858,11 @@ extension InstantTripleOperation {
     if case let .insert(triple) = self { return triple }
     return nil
   }
+
+  fileprivate var fastDrainDeletedEntityID: String? {
+    if case let .deleteEntity(entityID) = self { return entityID }
+    return nil
+  }
 }
 
 // MARK: - Differential: the reduced apply against the whole-component rebase
@@ -857,7 +947,8 @@ struct FastDrainDifferentialPair {
     pendingSegmentCount: Int,
     scribeLinks: Bool = false,
     endsWithStop: Bool = false,
-    defersSegmentText: Bool = false
+    defersSegmentText: Bool = false,
+    liveLines: Bool = false
   ) async throws -> Self {
     Self(
       reduced: try await FastDrainFixture.make(
@@ -868,7 +959,8 @@ struct FastDrainDifferentialPair {
         timelineWindow: 5,
         scribeLinks: scribeLinks,
         endsWithStop: endsWithStop,
-        defersSegmentText: defersSegmentText
+        defersSegmentText: defersSegmentText,
+        liveLines: liveLines
       ),
       full: try await FastDrainFixture.make(
         suffix: "differential-\(seed)-full",
@@ -878,7 +970,8 @@ struct FastDrainDifferentialPair {
         timelineWindow: 5,
         scribeLinks: scribeLinks,
         endsWithStop: endsWithStop,
-        defersSegmentText: defersSegmentText
+        defersSegmentText: defersSegmentText,
+        liveLines: liveLines
       )
     )
   }
@@ -930,25 +1023,38 @@ struct FastDrainDifferentialPair {
     random: inout FastDrainRandom
   ) async throws {
     var touched: Set<String> = []
+    var deleted: Set<String> = []
     for (reducedToken, fullToken, mutation) in claimed {
       let transactionID = reduced.server.accept(mutation.transaction.operations)
       _ = full.server.accept(mutation.transaction.operations)
       appliedMutationIDs.insert(mutation.id)
       let entities = Set(mutation.transaction.operations.compactMap(\.fastDrainInsertedTriple).map(\.entityID))
+      // #932: a live line's final deletes its row, which changes the live-lines result too.
+      let deletedEntities = Set(mutation.transaction.operations.compactMap(\.fastDrainDeletedEntityID))
       touched.formUnion(entities)
+      deleted.formUnion(deletedEntities)
       let framed = random.chance(framePercent)
       if framed, framesAheadOfAnswers {
-        try await frame(queries: reduced.server.queries(touching: entities), processedTransactionID: transactionID)
+        try await frame(
+          queries: reduced.server.queries(touching: entities.union(deletedEntities), deleting: deletedEntities),
+          processedTransactionID: transactionID
+        )
       }
       if !losesAcknowledgements {
         _ = try await reduced.runtime.acceptMutationIfPresent(id: mutation.id, serverTransactionID: transactionID, claimToken: reducedToken)
         _ = try await full.runtime.acceptMutationIfPresent(id: mutation.id, serverTransactionID: transactionID, claimToken: fullToken)
       }
       if framed, !framesAheadOfAnswers {
-        try await frame(queries: reduced.server.queries(touching: entities), processedTransactionID: transactionID)
+        try await frame(
+          queries: reduced.server.queries(touching: entities.union(deletedEntities), deleting: deletedEntities),
+          processedTransactionID: transactionID
+        )
       }
     }
-    try await frame(queries: reduced.server.queries(touching: touched), processedTransactionID: nil)
+    try await frame(
+      queries: reduced.server.queries(touching: touched.union(deleted), deleting: deleted),
+      processedTransactionID: nil
+    )
   }
 
   mutating func frame(queries: [FastDrainQuery], processedTransactionID: String?) async throws {
@@ -979,7 +1085,14 @@ extension InstantFastDrainTests {
     try await runDifferential(seed: seed, scribeLinks: true)
   }
 
-  private func runDifferential(seed: UInt64, scribeLinks: Bool) async throws {
+  /// #932: the same with Scribe's live lines (ADR 0069): interims write a line's live row and the final deletes it, so
+  /// the server's live-lines results show rows whose deletion is pending on the device.
+  @Test(arguments: [UInt64(21), 22, 23, 24, 25, 26])
+  func theReducedApplyObservesWhatTheFullRebaseObservesWithLiveLines(seed: UInt64) async throws {
+    try await runDifferential(seed: seed, scribeLinks: true, liveLines: true)
+  }
+
+  private func runDifferential(seed: UInt64, scribeLinks: Bool, liveLines: Bool = false) async throws {
     var random = FastDrainRandom(seed: seed)
     // Ten segments of pending writes (60 writes): past the 50-write component bound, so a refusal defers its peel to
     // the next server apply, as Recording 023's refusals did, and the reduced apply removes it there.
@@ -989,7 +1102,8 @@ extension InstantFastDrainTests {
       pendingSegmentCount: 10,
       scribeLinks: scribeLinks,
       endsWithStop: scribeLinks,
-      defersSegmentText: scribeLinks
+      defersSegmentText: scribeLinks,
+      liveLines: liveLines
     )
     guard try await pair.expectSameObservation(after: "setup") else { return }
     for step in 0..<70 {
@@ -1011,7 +1125,7 @@ extension InstantFastDrainTests {
         )
       case 41...50:
         event = "reconnect re-send"
-        for query in FastDrainQuery.allCases where random.chance(70) {
+        for query in pair.reduced.server.registeredQueries where random.chance(70) {
           try await pair.frame(queries: [query], processedTransactionID: nil)
         }
       case 51...62:
@@ -1067,7 +1181,11 @@ extension InstantFastDrainTests {
           }
         }
         let touched = Set(claimed.flatMap { $0.mutation.transaction.operations.compactMap(\.fastDrainInsertedTriple).map(\.entityID) })
-        try await pair.frame(queries: pair.reduced.server.queries(touching: touched), processedTransactionID: nil)
+        let deleted = Set(claimed.flatMap { $0.mutation.transaction.operations.compactMap(\.fastDrainDeletedEntityID) })
+        try await pair.frame(
+          queries: pair.reduced.server.queries(touching: touched.union(deleted), deleting: deleted),
+          processedTransactionID: nil
+        )
       case 63...66:
         guard let claimed = try await pair.claim(random.int(1...6)), !claimed.isEmpty else { continue }
         // Any write of the window can be refused: a segment's create, its updates, a summary, or a duration tick.
@@ -1140,7 +1258,8 @@ extension InstantFastDrainTests {
     let metrics = await pair.reduced.runtime.persistence.serverApplyMetricsForTesting()
     print(
       """
-      differential seed \(seed)\(scribeLinks ? " (Scribe links)" : ""): \(metrics.reductionCount) reductions, \
+      differential seed \(seed)\(scribeLinks ? " (Scribe links)" : "")\(liveLines ? " (live lines)" : ""): \
+      \(metrics.reductionCount) reductions, \
       \(metrics.reducedCount) reduced, \(metrics.receiptPatchCount) receipt patches, \
       \(metrics.plannedComponentBodyCount) component bodies, \(metrics.removedFailedOverlayCount) refused overlays removed
       """
