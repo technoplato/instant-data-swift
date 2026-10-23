@@ -1,3 +1,24 @@
+## 2026-10-23 15:31:52 EDT — instant-data-swift `0329180da7f0bceb9363263821ad840f3d555f04`
+Release document for v1.9.18 (#932): the gate event's path and commit parts, the resident patch, page-scoped validation, the live-line reduction; carries 1.9.17 and the Watch fix (#1019).
+
+## 2026-10-23 15:31:52 EDT — instant-data-swift `17bc06b8b6b71f3866f34e15ef44ee8dc1cf0bf7`
+Green (#932): a frame restating a live line its final deletes is reduced, not a full rebase.
+
+## 2026-10-23 15:31:52 EDT — instant-data-swift `89c462cd960862ae040d6d3076fb2a5ed34a849a`
+Green (#932): a server apply's body page checks only its own rows against the outbox.
+
+## 2026-10-23 15:31:52 EDT — instant-data-swift `0e493cba668ae2286810a81bf46a3e697c3b4409`
+Green (#932): a server apply's resident patch reads only the rows the in-memory outbox holds.
+
+## 2026-10-23 15:31:52 EDT — instant-data-swift `7b468b160b26130f56eb13fda2c8e6f27c04b363`
+Green (#932): the gate-held event names the apply's path and where its commit spent its time.
+
+## 2026-10-23 15:31:52 EDT — instant-data-swift `696f5cc0f41e9ba620fbf04cecd66b10807b6367`
+Red test (#932): InstantServerApplyGateWorkTests, the server-apply cost harness, live lines in the fast-drain fixture.
+
+## 2026-10-23 15:31:52 EDT — instant-data-swift `9be855283d6ba9c0e7c462e3d1966ec35d68b4de`
+Plan server-apply-932 (#932, #998, #590): plan, claims and channel note.
+
 ## 2026-10-23 15:03:09 EDT — scribe `7255ffefa31b2033f6e67e2fbefe28d93fbded07`
 The storage audit's measured writes before (#959): 33.5 MB a minute at thermal serious, no chunk file while uploads are held.
 

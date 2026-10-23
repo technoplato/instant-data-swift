@@ -1,3 +1,23 @@
+## 2026-10-23 15:31:52 EDT — v1.9.18: a server apply costs what its frame changes, and its gate event says what it cost (#932); carries 1.9.17 (#1007)
+
+- **Commits:** plan `9be85528`; red `696f5cc0`; greens `7b468b16` (the gate-held event's path and commit parts),
+  `0e493cba` (the resident patch reads only the in-memory outbox's rows), `89c462cd` (a body page checks only its own
+  rows), `17bc06b8` (a live line its final deletes is reduced); release-116's Watch build fix (#1019: red
+  `32f92123`, green `d165589d`); the release document `0329180d`; then this ledger commit and the tag v1.9.18.
+- **Checks (Mac mini M4, Xcode 27 beta):** InstantServerApplyGateWorkTests red (4 of 4) then green; the fast-drain
+  differential (17 tests, live lines included) and the server-apply, gate, outbox and live-query suites (119 tests) pass;
+  the whole InstantSwiftDataCoreTests bundle (1,351 tests; one live-transport test that waits until stopped under load
+  run alone) fails 158 test names, the 144 of #1007's 1.9.17-era run less one and 15 more that all pass alone (connect,
+  backoff, paging and close timing on a mini at load 14), as does the skipped test; release-116's Watch type-check is
+  green on `d165589d`.
+- **Measured** (InstantServerApplyCostTests, debug): 2,580 pending, every frame a full rebase: gate held 611 -> ~470 ms,
+  plan CPU 4.45 -> 2.2 s per frame; 1,720 pending with live lines, 10 frames: CPU 7.9 -> 0.14 s, writes 114 -> 1.2 MB,
+  gate held at most 308 -> 6 ms.
+- **Next:** Scribe and Scribe Playback pin exactly 1.9.18 for build 116; on the device, the gate-held events' path and
+  commit parts during a backlog and with nothing pending. The next #932 release prepares a refresh's restated results
+  before the gate (the fixed 87-140 ms a frame on a Mac mini, 1-4 s on the phone), then the commit's join and staging
+  layout, the stale-attempt retry, and the sync tasks' priority (#590).
+
 ## 2026-10-23 14:49:00 EDT — v1.9.17: a page with includes skips a change it cannot show (#1007); carries 1.9.16 (#1011)
 
 - **Commits:** plan `9275b02e`; red `3c2c2023`, green `b7e619bf` (the include skip); red `ffbd23d9`, green `023ff4af`

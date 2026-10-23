@@ -10,6 +10,86 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## October 23rd, 2026 at 3:31:52 p.m. EDT — `0329180da7f0` Document the v1.9.18 release: a server apply costs what its frame changes, and its gate event says what it cost (#932)
+
+- **Implementation commit:** `0329180da7f0bceb9363263821ad840f3d555f04`
+- **Change:** Document the v1.9.18 release (#932)
+- **Details:**
+  - Release document: the four greens, what stays the same, checks, measurements, what is not changed here.
+- **Files:**
+  - `docs/releases/v1.9.18.md` — the release document
+- **User context (verbatim):**
+  > I want to find the issues at the root.
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run); no SpecStory capture for headless runs.
+
+## October 23rd, 2026 at 3:31:51 p.m. EDT — `17bc06b8b6b7` Green (#932): a frame restating a live line its final deletes is reduced, not a full rebase
+
+- **Implementation commit:** `17bc06b8b6b71f3866f34e15ef44ee8dc1cf0bf7`
+- **Change:** Green (#932): a frame restating a live line its final deletes is reduced, not a full rebase
+- **Details:**
+  - The reduction context names the surviving write that deletes an entity last; a scalar fact on it patches the receipt holding the slot's base. Live-line backlog 10 -> 0 full rebases; 1,720 pending x 10 frames: CPU 7.9 -> 0.14 s, writes 114 -> 1.2 MB, gate max 308 -> 6 ms.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — classification and receipt rebase
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — the deleting writer in the reduction context
+- **User context (verbatim):**
+  > I want to find the issues at the root.
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run); no SpecStory capture for headless runs.
+
+## October 23rd, 2026 at 3:31:51 p.m. EDT — `89c462cd9608` Green (#932): a server apply's body page checks only its own rows against the outbox
+
+- **Implementation commit:** `89c462cd960862ae040d6d3076fb2a5ed34a849a`
+- **Change:** Green (#932): a server apply's body page checks only its own rows against the outbox
+- **Details:**
+  - About 2R^2/50 whole-plan row checks per full apply removed; plan CPU 4.45 -> 2.2 s per frame at 2,580 pending.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — page-scoped validation
+- **User context (verbatim):**
+  > I want to find the issues at the root.
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run); no SpecStory capture for headless runs.
+
+## October 23rd, 2026 at 3:31:50 p.m. EDT — `0e493cba668a` Green (#932): a server apply's resident patch reads only the rows the in-memory outbox holds
+
+- **Implementation commit:** `0e493cba668ae2286810a81bf46a3e697c3b4409`
+- **Change:** Green (#932): a server apply's resident patch reads only the rows the in-memory outbox holds
+- **Details:**
+  - Patch 145 -> 0 ms per frame at 2,580 pending (Mac mini); 0.8-1.3 s of the phone's gate holds.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — the patch loop
+  - `Sources/InstantSwiftDataCore/Outbox.swift` — resident ids and a one-turn patch
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — the page read among ids
+  - `Tests/InstantSwiftDataCoreTests/InstantBoundedServerApplyRebaseTests.swift` — the 8 MiB paging test holds its rows resident
+- **User context (verbatim):**
+  > I want to find the issues at the root.
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run); no SpecStory capture for headless runs.
+
+## October 23rd, 2026 at 3:31:50 p.m. EDT — `7b468b160b26` Green (#932): the gate-held event names the apply's path and where its commit spent its time
+
+- **Implementation commit:** `7b468b160b26130f56eb13fda2c8e6f27c04b363`
+- **Change:** Green (#932): the gate-held event names the apply's path and where its commit spent its time
+- **Details:**
+  - path (reduced or full rebase: reason), attempt, heldFromSeed, planned and peeled counts, the commit's parts inside the persistence actor (validate, facts, outbox, results, bookkeeping, SQLite COMMIT), result JSON bytes, outbox rows deleted.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — the event's fields and the reduction's decline reason
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — the commit's section timing
+- **User context (verbatim):**
+  > I want to find the issues at the root.
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run); no SpecStory capture for headless runs.
+
+## October 23rd, 2026 at 3:31:49 p.m. EDT — `696f5cc0f41e` Red (#932): a server apply's gate work grows with the outbox, a deleted live line forces the full rebase, and the gate event cannot say why
+
+- **Implementation commit:** `696f5cc0f41e9ba620fbf04cecd66b10807b6367`
+- **Change:** Red (#932): a server apply's gate work grows with the outbox, a deleted live line forces the full rebase, and the gate event cannot say why
+- **Details:**
+  - InstantServerApplyGateWorkTests (4 red tests), InstantServerApplyCostTests (env-gated per-frame cost harness: Scribe-shaped backlog or a copy of a real store), live lines in the fast-drain fixture with six more differential seeds.
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantServerApplyGateWorkTests.swift` — the red tests
+  - `Tests/InstantSwiftDataCoreTests/InstantServerApplyCostTests.swift` — the cost harness
+  - `Tests/InstantSwiftDataCoreTests/InstantFastDrainTests.swift` — live lines (ADR 0069) in the fixture
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — a whole-plan validation counter
+- **User context (verbatim):**
+  > I want to find the issues at the root.
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run); no SpecStory capture for headless runs.
+
 ## October 23rd, 2026 at 2:48:18 p.m. EDT — `acd2c8b41add` Document the v1.9.17 release: a page with includes skips a change it cannot show (#1007)
 
 - **Implementation commit:** `acd2c8b41add22cc7dffb2e0915f4cd7b507ac80`
