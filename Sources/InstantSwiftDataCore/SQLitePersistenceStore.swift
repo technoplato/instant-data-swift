@@ -33,6 +33,8 @@
 //   outbox's body, whose every rewrite bumps the revision each page checks against the plan (#932, the disk map's F1a).
 // - 2026-10-23: the statement cache keeps 256 statements instead of 64, room for a live write's whole cycle, which
 //   prepared every statement again on every write; a reuse hashes its SQL once instead of five times (#1007).
+// - 2026-10-23: a fact's value text and its own text are written by InstantStoredJSON, the value once, as JSONEncoder
+//   writes them (#1007).
 
 import Foundation
 import IssueReporting
