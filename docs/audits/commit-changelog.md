@@ -1,3 +1,9 @@
+## 2026-10-23 18:55:05 EDT — scribe `25b21dfb2f4fee34001b7d8db4c3e3f52526a99e`
+Change log for the 1.9.25 pin 4521201d9 (#932): CHANGELOG and PROGRESS.
+
+## 2026-10-23 18:54:51 EDT — scribe `4521201d96549c8c1c00f981f46e919328cc48f0`
+Pin instant-data-swift exactly 1.9.25 in Scribe and Scribe Playback (#932, #1007): carries 1.9.24; lockfiles from swift package resolve change only the pin and originHash; installer tests 65/65; build 118's What's New line for #932.
+
 ## 2026-10-23 18:46:20 EDT — instant-data-swift `c1307377d22158b396b5367b577990d660d6a6a5`
 Release document for v1.9.25 (#932, #590): the three undocumented 1.9.20 server-apply changes, liveSyncTaskPriority (opt-in) with the loopback bench, F1a with its bytes; carries 1.9.24, 1.9.23 and #1012's red commit.
 
