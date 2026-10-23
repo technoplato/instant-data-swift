@@ -1,3 +1,7 @@
+// History:
+// - 2026-10-23: an upload through storage keeps no copy of its file, a record without a copy downloads by its
+//   stored name, and evictStoredFiles(ids:) removes copies whose $files record has their size (#959).
+
 import Foundation
 import IssueReporting
 
@@ -10538,12 +10542,19 @@ public final class InstantRuntime: Sendable {
         )
       )
       file.id = response.id
+      file.byteCount = byteCount
       uploadedPath = file.name
       uploadedRefreshToken = refreshToken
     }
     await operationGate.enter()
     do {
-      let savedFile = try await persistence.saveStoredFile(file, contentsOf: sourceURL)
+      // #959: storage holds an uploaded file, so the device keeps its record and no copy, as upstream's
+      // `StorageAPI.uploadFile` keeps none. Every upload used to be copied here and kept for good: on one device 3,754
+      // files, 25.9 GB of logical size, 10.8 GB of it real blocks. Without storage the copy is the only one.
+      let savedFile =
+        uploadedPath == nil
+        ? try await persistence.saveStoredFile(file, contentsOf: sourceURL)
+        : try await persistence.saveUploadedFileRecord(file)
       let files = try await persistence.loadStoredFiles(appID: configuration.appID)
       await storedFilesObservers.publish(
         files,
@@ -10682,7 +10693,7 @@ public final class InstantRuntime: Sendable {
       operation: "read file",
       recovery: "Pass the id returned by 'instant-swift-data files list'."
     )
-    let name = try rawName.map {
+    let requestedName = try rawName.map {
       try validatedNonEmpty(
         $0,
         label: "File name",
@@ -10707,7 +10718,9 @@ public final class InstantRuntime: Sendable {
         recovery: "Run 'instant-swift-data files list' to inspect available file ids."
       )
     }
-    if let name {
+    // #959: a file this device recorded without a copy (an upload, an evicted copy) downloads by its stored name.
+    let record = try await persistence.loadStoredFile(appID: configuration.appID, fileID: id)
+    if let name = requestedName ?? record?.name {
       let refreshToken = try await storageRefreshToken(operation: "read file")
       let data = try await storageTransport.downloadFile(
         InstantStorageFileDownloadRequest(
@@ -10718,17 +10731,20 @@ public final class InstantRuntime: Sendable {
         )
       )
       let now = configuration.now()
-      let file = InstantStoredFile(
-        id: id,
-        appID: configuration.appID,
-        name: name,
-        contentType: nil,
-        byteCount: Int64(data.count),
-        localPath: "",
-        ownerUserID: userID,
-        createdAt: now,
-        updatedAt: now
-      )
+      var file =
+        record
+        ?? InstantStoredFile(
+          id: id,
+          appID: configuration.appID,
+          name: name,
+          contentType: nil,
+          byteCount: Int64(data.count),
+          localPath: "",
+          ownerUserID: userID,
+          createdAt: now,
+          updatedAt: now
+        )
+      file.name = name
       let saved = try await persistence.saveDownloadedFile(file, data: data)
       let localFiles = try await persistence.loadStoredFiles(appID: configuration.appID)
       await storedFilesObservers.publish(localFiles, for: storedFilesObservationKey)
@@ -10793,7 +10809,7 @@ public final class InstantRuntime: Sendable {
       operation: "download file",
       recovery: "Pass the id returned by 'instant-swift-data files list'."
     )
-    let name = try rawName.map {
+    let requestedName = try rawName.map {
       try validatedNonEmpty(
         $0,
         label: "File name",
@@ -10811,7 +10827,8 @@ public final class InstantRuntime: Sendable {
     }
 
     let userID = try await resolvedFileUserID(operation: "download file")
-    if var held = try await persistence.loadStoredFile(appID: configuration.appID, fileID: id) {
+    let record = try await persistence.loadStoredFile(appID: configuration.appID, fileID: id)
+    if var held = record, held.isDownloaded {
       try Self.placeDownloadedFile(copying: URL(fileURLWithPath: held.localPath), at: destination)
       held.localPath = destination.path
       return held
@@ -10825,6 +10842,8 @@ public final class InstantRuntime: Sendable {
         recovery: "Run 'instant-swift-data files list' to inspect available file ids."
       )
     }
+    // #959: a file this device recorded without a copy (an upload, an evicted copy) downloads by its stored name.
+    let name = requestedName ?? record?.name
     let temporaryURL: URL
     var file: InstantStoredFile
     if let name {
@@ -10838,17 +10857,20 @@ public final class InstantRuntime: Sendable {
         )
       )
       let now = configuration.now()
-      file = InstantStoredFile(
-        id: id,
-        appID: configuration.appID,
-        name: name,
-        contentType: nil,
-        byteCount: 0,
-        localPath: "",
-        ownerUserID: userID,
-        createdAt: now,
-        updatedAt: now
-      )
+      file =
+        record
+        ?? InstantStoredFile(
+          id: id,
+          appID: configuration.appID,
+          name: name,
+          contentType: nil,
+          byteCount: 0,
+          localPath: "",
+          ownerUserID: userID,
+          createdAt: now,
+          updatedAt: now
+        )
+      file.name = name
     } else {
       guard configuration.liveTransport != nil else {
         throw validationFailed(
@@ -10976,18 +10998,152 @@ public final class InstantRuntime: Sendable {
     }
   }
 
+  /// Removes this device's copies of stored files that storage holds, and keeps their records (#959).
+  ///
+  /// A copy goes only when storage's own record of the file (`$files`, read by id over the open connection) has the
+  /// copy's size: the server holds those bytes, so ``downloadStoredFile(id:name:to:)`` can fetch them again by the
+  /// name the file was stored under. A copy whose record is missing or has another size stays, and so does every copy
+  /// of a client without storage, where it is the only one. Each outcome says what happened and why, with the bytes
+  /// the volume got back.
+  ///
+  /// ```swift
+  /// let held = try await runtime.localStoredFiles().filter(\.isDownloaded)
+  /// for eviction in try await runtime.evictStoredFiles(ids: held.map(\.id)) { print(eviction.outcome) }
+  /// ```
+  ///
+  /// Success waits for storage's records over the connection, unlike `transact`. With the connection closed this
+  /// throws and every copy stays.
   @concurrent
   public func evictStoredFiles(ids rawIDs: [String]) async throws -> [InstantStoredFileEviction] {
-    throw InstantError(
-      code: .implementationFailed,
-      operation: "evict files",
-      message: "Not written yet (#959).",
-      recovery: "None."
+    let ids = try rawIDs.map {
+      try validatedNonEmpty(
+        $0,
+        label: "File id",
+        operation: "evict files",
+        recovery: "Pass the ids of files this device holds, from 'instant-swift-data files list'."
+      )
+    }
+    _ = try await resolvedFileUserID(operation: "evict files")
+    let records = Dictionary(
+      try await persistence.loadStoredFiles(appID: configuration.appID).map { ($0.id, $0) },
+      uniquingKeysWith: { _, newest in newest }
     )
+    var outcomes: [String: InstantStoredFileEviction] = [:]
+    var held: [InstantStoredFile] = []
+    var seen: Set<String> = []
+    for id in ids where seen.insert(id).inserted {
+      let record = records[id]
+      guard var file = record, file.isDownloaded,
+        let attributes = try? FileManager.default.attributesOfItem(atPath: file.localPath),
+        attributes[.type] as? FileAttributeType == .typeRegular,
+        let byteCount = (attributes[.size] as? NSNumber)?.int64Value
+      else {
+        outcomes[id] = InstantStoredFileEviction(
+          id: id,
+          name: record?.name ?? "",
+          localPath: "",
+          byteCount: 0,
+          outcome: .kept(.notHeld)
+        )
+        continue
+      }
+      file.byteCount = byteCount
+      held.append(file)
+    }
+    func eviction(_ file: InstantStoredFile, _ outcome: InstantStoredFileEviction.Outcome) -> InstantStoredFileEviction {
+      InstantStoredFileEviction(
+        id: file.id,
+        name: file.name,
+        localPath: file.localPath,
+        byteCount: file.byteCount,
+        outcome: outcome
+      )
+    }
+    guard !held.isEmpty else { return ids.compactMap { outcomes[$0] } }
+    guard storageTransport != nil else {
+      for file in held { outcomes[file.id] = eviction(file, .kept(.noStorage)) }
+      return ids.compactMap { outcomes[$0] }
+    }
+    // Storage's own records, through the open connection only: a cached answer could name a file the server deleted
+    // since. 100 ids a query keeps each request small.
+    guard configuration.liveTransport != nil, await liveSession.isOpen else {
+      throw InstantError(
+        code: .networkFailed,
+        operation: "evict files",
+        message: "The connection is closed, so storage's records of \(held.count) file(s) cannot be read; every copy stays.",
+        recovery: "Connect, then evict again."
+      )
+    }
+    var serverByteCounts: [String: Int64] = [:]
+    var start = held.startIndex
+    while start < held.endIndex {
+      let end = held.index(start, offsetBy: 100, limitedBy: held.endIndex) ?? held.endIndex
+      let emission = try await queryOnceThroughLive(
+        InstantQueryPlan(
+          id: "instant.storage.files.evict",
+          namespace: "$files",
+          filters: [.in(field: "id", values: held[start..<end].map { .string($0.id) })]
+        )
+      )
+      for snapshot in emission.values {
+        guard case let .number(size)? = snapshot.values["size"]?.first else { continue }
+        serverByteCounts[snapshot.id] = Int64(size)
+      }
+      start = end
+    }
+    var evictedCount = 0
+    for file in held {
+      guard let serverByteCount = serverByteCounts[file.id] else {
+        outcomes[file.id] = eviction(file, .kept(.notOnServer))
+        continue
+      }
+      guard serverByteCount == file.byteCount else {
+        outcomes[file.id] = eviction(file, .kept(.sizeDiffers(serverByteCount: serverByteCount)))
+        continue
+      }
+      // Measured before the copy goes: the blocks only it holds, which a clone of a file the app keeps barely has.
+      let freedByteCount = InstantFileBlocks.privateByteCount(atPath: file.localPath)
+      // The copy goes first, outside the store: freeing a long recording's extents is file-system work no query
+      // should wait behind. Then the record says so. A failed removal leaves both as they were; a record that could
+      // not be written after it names a missing copy, which a read reports loudly instead of returning other bytes.
+      let copyURL = URL(fileURLWithPath: file.localPath)
+      do {
+        try FileManager.default.removeItem(at: copyURL)
+      } catch {
+        throw InstantError(
+          code: .persistenceFailed,
+          operation: "evict files",
+          message: "Could not remove the stored copy '\(copyURL.path)': \(error.localizedDescription)",
+          recovery: "Check the file store's permissions; the copy and its record stay as they were."
+        )
+      }
+      // Its folder (`files/<app>/<file>/`) held only the copy.
+      let folder = copyURL.deletingLastPathComponent()
+      if (try? FileManager.default.contentsOfDirectory(atPath: folder.path))?.isEmpty == true {
+        try? FileManager.default.removeItem(at: folder)
+      }
+      await operationGate.enter()
+      do {
+        _ = try await persistence.forgetStoredFileCopy(appID: configuration.appID, fileID: file.id)
+        await operationGate.leave()
+      } catch {
+        await operationGate.leave()
+        throw error
+      }
+      outcomes[file.id] = eviction(file, .evicted(freedByteCount: freedByteCount))
+      evictedCount += 1
+    }
+    if evictedCount > 0 {
+      let files = try await persistence.loadStoredFiles(appID: configuration.appID)
+      await storedFilesObservers.publish(files, for: storedFilesObservationKey)
+    }
+    return ids.compactMap { outcomes[$0] }
   }
 
+  /// The files this device has records of, read from its store alone: the local reader's ``storedFiles()`` (#959).
   package func localStoredFiles() async throws -> [InstantStoredFile] {
-    []
+    _ = try await resolvedFileUserID(operation: "list files")
+    return try await persistence.loadStoredFiles(appID: configuration.appID)
   }
 
   private static let storedFilesQuery = InstantQueryPlan(

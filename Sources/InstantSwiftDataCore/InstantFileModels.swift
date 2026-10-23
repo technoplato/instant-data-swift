@@ -1,5 +1,9 @@
 import Foundation
 
+#if canImport(Darwin)
+  import Darwin
+#endif
+
 public enum InstantStorageOperationState: String, Hashable, Codable, Sendable {
   case idle
   case loading
@@ -190,5 +194,47 @@ public struct InstantStoredFileEviction: Hashable, Sendable {
     self.localPath = localPath
     self.byteCount = byteCount
     self.outcome = outcome
+  }
+}
+
+/// What a file costs the volume, as APFS counts it (#959).
+enum InstantFileBlocks {
+  /// The bytes only this file holds, which deleting it gives back: `ATTR_CMNEXT_PRIVATESIZE`. An APFS clone shares
+  /// its blocks with the file it was cloned from until either changes, so it holds next to nothing of its own; a file
+  /// written as new bytes holds all of its blocks. Nil where the file system does not say (not APFS, not Darwin).
+  static func privateByteCount(atPath path: String) -> Int64? {
+    #if canImport(Darwin)
+      var request = attrlist()
+      request.bitmapcount = u_short(ATTR_BIT_MAP_COUNT)
+      request.commonattr = attrgroup_t(ATTR_CMN_RETURNED_ATTRS)
+      request.forkattr = attrgroup_t(ATTR_CMNEXT_PRIVATESIZE)
+      // The reply: its length, the attributes returned, then the private size.
+      var reply = [UInt8](repeating: 0, count: 64)
+      let result = reply.withUnsafeMutableBytes { buffer in
+        getattrlist(
+          path,
+          &request,
+          buffer.baseAddress,
+          buffer.count,
+          UInt32(FSOPT_ATTR_CMN_EXTENDED | FSOPT_NOFOLLOW)
+        )
+      }
+      guard result == 0 else { return nil }
+      return reply.withUnsafeBytes { buffer in
+        let returned = buffer.loadUnaligned(
+          fromByteOffset: MemoryLayout<UInt32>.size,
+          as: attribute_set_t.self
+        )
+        guard returned.forkattr & attrgroup_t(ATTR_CMNEXT_PRIVATESIZE) != 0 else { return nil }
+        return Int64(
+          buffer.loadUnaligned(
+            fromByteOffset: MemoryLayout<UInt32>.size + MemoryLayout<attribute_set_t>.size,
+            as: off_t.self
+          )
+        )
+      }
+    #else
+      return nil
+    #endif
   }
 }

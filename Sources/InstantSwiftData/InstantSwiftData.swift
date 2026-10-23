@@ -105,6 +105,15 @@ public struct InstantSwiftDataClient: Sendable {
   private var downloadStoredFileOperation:
     @Sendable (String, String?, URL) async throws -> InstantStoredFile
   private var deleteStoredFileOperation: @Sendable (String) async throws -> InstantStoredFile
+  /// Set by the runtime-backed client only; a client built from closures cannot evict (#959).
+  private var evictStoredFilesOperation: @Sendable ([String]) async throws -> [InstantStoredFileEviction] = { _ in
+    throw InstantError(
+      code: .implementationFailed,
+      operation: "evict files",
+      message: "This InstantSwiftData client has no file store to evict from.",
+      recovery: "Bootstrap a runtime-backed client before evicting stored files."
+    )
+  }
   private var appendStreamChunkOperation:
     @Sendable (String, JSONValue) async throws -> InstantStreamChunk
   private var streamChunksOperation:
@@ -301,6 +310,9 @@ public struct InstantSwiftDataClient: Sendable {
     self.deleteStoredFileOperation = { id in
       try await runtime.deleteStoredFile(id: id)
     }
+    self.evictStoredFilesOperation = { ids in
+      try await runtime.evictStoredFiles(ids: ids)
+    }
     self.appendStreamChunkOperation = { streamID, payload in
       try await runtime.appendStreamChunk(streamID: streamID, payload: payload)
     }
@@ -401,6 +413,10 @@ public struct InstantSwiftDataClient: Sendable {
     )
     client.observeQueryLeaseOperation = { plan in
       await runtime.observeLocallyLease(plan)
+    }
+    // #959: the files this device has records of, with or without a copy, read from its store alone.
+    client.storedFilesOperation = {
+      try await runtime.localStoredFiles()
     }
     return client
   }
@@ -1936,6 +1952,25 @@ public struct InstantSwiftDataClient: Sendable {
   @discardableResult
   public func deleteStoredFile(id: String) async throws -> InstantStoredFile {
     try await deleteStoredFileOperation(id)
+  }
+
+  /// Removes this device's copies of stored files that storage holds, and keeps their records (#959).
+  ///
+  /// A copy goes only when storage's own record of the file, read by id over the open connection, has the copy's
+  /// size; ``downloadStoredFile(id:name:to:)`` fetches it again by the name it was stored under. A copy whose record
+  /// is missing or has another size stays, and so does every copy of a client without storage. An upload keeps no
+  /// copy, so this is for copies kept before it stopped keeping them, and for ``storedFileContents(id:)``'s cache.
+  ///
+  /// ```swift
+  /// let held = try await db.localReader().storedFiles().filter(\.isDownloaded)
+  /// let evictions = try await db.evictStoredFiles(ids: held.map(\.id))
+  /// ```
+  ///
+  /// Success waits for storage's records over the connection, unlike `transact`; with the connection closed it
+  /// throws and every copy stays.
+  @discardableResult
+  public func evictStoredFiles(ids: [String]) async throws -> [InstantStoredFileEviction] {
+    try await evictStoredFilesOperation(ids)
   }
 
   @discardableResult

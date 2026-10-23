@@ -6,6 +6,8 @@
 // - 2026-10-23: the session prune unloads a closed query's result into instant_unloaded_live_query_results instead of
 //   deleting it, and the query's next subscription loads it back, as upstream PersistedObject.unloadKey keeps a closed
 //   query's stored copy (#1006).
+// - 2026-10-23: an uploaded file's record keeps no copy of its bytes (saveUploadedFileRecord), a record without a copy
+//   is not downloaded to reads and the snapshot, and an evicted copy's record stays (forgetStoredFileCopy) (#959).
 
 import Foundation
 import IssueReporting
@@ -11259,26 +11261,48 @@ public actor SQLitePersistenceStore {
     savedFile.byteCount = try regularFileByteCount(at: targetURL, operation: "upload file")
     savedFile.localPath = targetURL.path
     do {
-      try execute(
-        """
-        INSERT OR REPLACE INTO instant_files
-          (app_id, file_id, name, created_at_ms, updated_at_ms, json)
-        VALUES (?, ?, ?, ?, ?, ?)
-        """,
-        [
-          .text(savedFile.appID),
-          .text(savedFile.id),
-          .text(savedFile.name),
-          .int(savedFile.createdAt.milliseconds),
-          .int(savedFile.updatedAt.milliseconds),
-          .text(try encode(savedFile)),
-        ]
-      )
+      try writeStoredFileRecord(savedFile)
     } catch {
       try? FileManager.default.removeItem(at: targetURL)
       throw error
     }
     return savedFile
+  }
+
+  /// Records a file that storage holds, with no copy on this device (#959): an upload's file, whose bytes the caller
+  /// keeps. The record lists the file offline and names it for a later download.
+  public func saveUploadedFileRecord(_ file: InstantStoredFile) throws -> InstantStoredFile {
+    var savedFile = file
+    savedFile.localPath = ""
+    try writeStoredFileRecord(savedFile)
+    return savedFile
+  }
+
+  /// Marks a stored file's record as having no copy on this device, once the caller removed the copy (#959). Nil
+  /// when there is no record.
+  public func forgetStoredFileCopy(appID: String, fileID: String) throws -> InstantStoredFile? {
+    guard var file = try loadStoredFile(appID: appID, fileID: fileID) else { return nil }
+    file.localPath = ""
+    try writeStoredFileRecord(file)
+    return file
+  }
+
+  private func writeStoredFileRecord(_ file: InstantStoredFile) throws {
+    try execute(
+      """
+      INSERT OR REPLACE INTO instant_files
+        (app_id, file_id, name, created_at_ms, updated_at_ms, json)
+      VALUES (?, ?, ?, ?, ?, ?)
+      """,
+      [
+        .text(file.appID),
+        .text(file.id),
+        .text(file.name),
+        .int(file.createdAt.milliseconds),
+        .int(file.updatedAt.milliseconds),
+        .text(try encode(file)),
+      ]
+    )
   }
 
   public func saveDownloadedFile(
@@ -11305,21 +11329,7 @@ public actor SQLitePersistenceStore {
     savedFile.byteCount = Int64(data.count)
     savedFile.localPath = targetURL.path
     do {
-      try execute(
-        """
-        INSERT OR REPLACE INTO instant_files
-          (app_id, file_id, name, created_at_ms, updated_at_ms, json)
-        VALUES (?, ?, ?, ?, ?, ?)
-        """,
-        [
-          .text(savedFile.appID),
-          .text(savedFile.id),
-          .text(savedFile.name),
-          .int(savedFile.createdAt.milliseconds),
-          .int(savedFile.updatedAt.milliseconds),
-          .text(try encode(savedFile)),
-        ]
-      )
+      try writeStoredFileRecord(savedFile)
     } catch {
       try? FileManager.default.removeItem(at: targetURL)
       throw error
@@ -11358,7 +11368,8 @@ public actor SQLitePersistenceStore {
   }
 
   public func storageSnapshot(appID: String) throws -> InstantStorageSnapshot {
-    let files = try loadStoredFiles(appID: appID)
+    // #959: a record without a copy (an upload's, or an evicted one) takes no room here.
+    let files = try loadStoredFiles(appID: appID).filter(\.isDownloaded)
     let streamCacheSize = try selectInt64(
       """
       SELECT COALESCE(SUM(byte_count), 0)
@@ -11391,7 +11402,8 @@ public actor SQLitePersistenceStore {
     appID: String,
     fileID: String
   ) throws -> InstantStoredFileContents? {
-    guard let file = try loadStoredFile(appID: appID, fileID: fileID) else {
+    // #959: a record without a copy is read from storage, like a file this device never had.
+    guard let file = try loadStoredFile(appID: appID, fileID: fileID), file.isDownloaded else {
       return nil
     }
     do {
