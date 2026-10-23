@@ -1,3 +1,12 @@
+## 2026-10-23 19:30:42 EDT — scribe `e14c1437443c0882cdd70a0c337339a11f6cc246`
+Change log for the build 118 cut a6838e211 (#1025).
+
+## 2026-10-23 19:30:42 EDT — scribe `a6838e2118d260a8f00b536c93a593e445ca4895`
+Build 118 cut (#1025, #1005): Scribe 0.1 (118) and Scribe Playback 118 on instant-data-swift 1.9.26 (#1024's connection status, carrying 1.9.23-1.9.25), with recording-screen-412's heat items 1, 5 and 3 and #1022's chunk rows; What's New 118 dated, #1024 and the recording screen first.
+
+## 2026-10-23 19:30:42 EDT — scribe `46e8635f4479904da75ac17c1524351dd86c77e7`
+Build 118 plan (#1025): PLAN.md and touching claims for the cut (version numbers and What's New); release-118.
+
 ## 2026-10-23 19:30:26 EDT — scribe `3cd30389c`
 Change log (#1024): the 1.9.26 pin 4614f8add; PROGRESS.
 
