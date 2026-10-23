@@ -1,3 +1,6 @@
+## 2026-10-23 15:03:09 EDT — scribe `7255ffefa31b2033f6e67e2fbefe28d93fbded07`
+The storage audit's measured writes before (#959): 33.5 MB a minute at thermal serious, no chunk file while uploads are held.
+
 ## 2026-10-23 14:48:12 EDT — scribe `314c36a6b831f110fba7e0f87191f930fad07df3`
 The storage audit (#959): what held a device's 44.5 GB, what the next build removes (10.66 GB of chunk copies, a 0.69 GB debug-log store), the SQLite store's 676 MB of free pages (#1015), a stale chunk upload (#1016).
 
