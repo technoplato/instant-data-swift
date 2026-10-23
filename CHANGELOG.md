@@ -10,6 +10,18 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## October 23rd, 2026 at 6:03:50 p.m. EDT — `b112a2b7253b` ADR 0021 (proposed): progressive media travels as AAC-LC fragmented MP4 segments in $files, listed by rows, played as HLS (#1012)
+
+- **Implementation commit:** `b112a2b7253bec6b77c037081935b6246d6dda63`
+- **Change:** ADR 0021 (proposed): progressive media travels as AAC-LC fragmented MP4 segments in $files, listed by rows, played as HLS (#1012)
+- **Details:**
+  - AAC-LC 24 kHz 32 kbps: 23.7x smaller than the WAV, PESQ 4.32/4.11/4.28; plays in AVPlayer and Chrome (native HLS, MSE); Apple's Opus fMP4 is 44.5 kbps at 24 kbps and Chrome rejects it. AVPlayer follows a growing playlist 37.5-41.7 s behind capture through an AVAssetResourceLoader playlist with redirects. iPhone CPU pending.
+- **Files:**
+  - `docs/adr/0021-progressive-media-over-instant.md` — the decision and its measurements
+- **User context (verbatim):**
+  > It would be nice to have a library primitive for streaming progressive audio file over instant.
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run); no SpecStory capture for headless runs.
+
 ## October 23rd, 2026 at 5:37:14 p.m. EDT — `b88cca053b1d` Document the v1.9.23 release: preparing a write no longer copies the store's indexes, and the store says which calls write its disk bytes (#1007)
 
 - **Implementation commit:** `b88cca053b1d1f71ac67f566d20cb26d13535927`
