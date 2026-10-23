@@ -771,6 +771,9 @@ package struct InstantServerApplyMetrics: Equatable, Sendable {
   package var maximumBodyPageByteCount = 0
   package var residentPatchPageCount = 0
   package var residentPatchRowCount = 0
+  /// Checks of every row of a plan against the outbox (#932): each reads the outbox columns stored after a row's body,
+  /// so a check costs the whole plan's bodies in page reads.
+  package var wholePlanValidationCount = 0
   package var maximumResidentPatchPageCount = 0
   package var maximumResidentPatchPageByteCount = 0
   package var commitAttemptCount = 0
@@ -6847,7 +6850,8 @@ public actor SQLitePersistenceStore {
   }
 
   private func serverApplyPlanRowsStillMatchWithoutTransaction(id planID: String) throws -> Bool {
-    try selectInt64(
+    serverApplyMetrics.wholePlanValidationCount += 1
+    return try selectInt64(
       """
       SELECT COUNT(*)
       FROM instant_server_apply_rows AS planned
