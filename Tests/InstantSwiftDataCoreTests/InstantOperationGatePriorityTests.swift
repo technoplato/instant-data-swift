@@ -243,9 +243,13 @@ extension InstantOperationGatePriorityTests {
     }
     let runtime = try await InstantRuntime.bootstrap(configuration: configuration)
     runtimeBox.setValue(runtime)
-    let stream = await runtime.observe(
+    // A lease, so the test can wait for the observation and its hydration to end before the cache is deleted. With
+    // the plain stream the hydration of a later emission could still be reading when the directory went, and it
+    // reported the "disk I/O error" (SQLite 6922, the file gone) as an issue after the test ended (#1021).
+    let observation = await runtime.observeQueryLease(
       fixture.pageQuery(id: "gate-hydration-read", selectedFields: [fixture.titleAttribute.name, fixture.samplesAttribute.name])
     )
+    let stream = observation.stream
     let results = PriorityTestBox<[InstantQueryEmission]>([])
     let consumer = Task {
       for await emission in stream {
@@ -261,6 +265,7 @@ extension InstantOperationGatePriorityTests {
       results.value.contains { $0.values.first?.values[fixture.samplesAttribute.name] == .one(.json(fixture.payload("a"))) }
     }
     consumer.cancel()
+    await observation.cancel()
     expectNoDifference(queued, 0, "a caller queued behind the hydration's SQLite read")
   }
 }

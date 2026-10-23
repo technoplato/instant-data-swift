@@ -124,6 +124,10 @@ struct InstantDeferredTranscriptPayloadMemoryTests {
     print("primary: \(afterPutBytes)")
     print("hydrated_page_rows: \(firstPage.values.count)")
     print("corpus_payload_bytes: \(siblingCount * payloadByteCount * 2)")
+    // The live put re-hydrates the page; the deferred unsubscribe did not wait for that, so the cache directory
+    // could go while the hydration still read it, and the "disk I/O error" (SQLite 6922, the file gone) was
+    // reported as an issue after the test ended (#1021). Waiting here lets the cleanup run after it.
+    await subscription.unsubscribeAndWait()
   }
 }
 

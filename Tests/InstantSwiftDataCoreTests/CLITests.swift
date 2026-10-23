@@ -11903,23 +11903,26 @@ extension InstantStoreTests {
     process.standardInput = inputPipe
     let outputCapture = CLITestPipeCapture()
     let errorCapture = CLITestPipeCapture()
-    outputPipe.fileHandleForReading.readabilityHandler = { handle in
-      outputCapture.append(handle.availableData)
-    }
-    errorPipe.fileHandleForReading.readabilityHandler = { handle in
-      errorCapture.append(handle.availableData)
-    }
 
     try process.run()
+    // Each pipe is read to its end on its own thread, and both reads finish before the result is built (#1021). With
+    // a readabilityHandler, its last callback could still hold bytes it had read after waitUntilExit returned and the
+    // handler was cleared, so under load a result lost them: an empty stderr, or stdout cut short of valid JSON.
+    let readers = DispatchGroup()
+    for (handle, capture) in [
+      (outputPipe.fileHandleForReading, outputCapture),
+      (errorPipe.fileHandleForReading, errorCapture),
+    ] {
+      DispatchQueue.global().async(group: readers) {
+        capture.append(handle.readDataToEndOfFile())
+      }
+    }
     if let standardInput, let inputPipe {
       inputPipe.fileHandleForWriting.write(Data(standardInput.utf8))
       try inputPipe.fileHandleForWriting.close()
     }
     process.waitUntilExit()
-    outputPipe.fileHandleForReading.readabilityHandler = nil
-    errorPipe.fileHandleForReading.readabilityHandler = nil
-    outputCapture.append(outputPipe.fileHandleForReading.readDataToEndOfFile())
-    errorCapture.append(errorPipe.fileHandleForReading.readDataToEndOfFile())
+    readers.wait()
 
     let output = String(
       decoding: outputCapture.data(),
