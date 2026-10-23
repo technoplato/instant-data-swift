@@ -2879,10 +2879,11 @@ public final class InstantRuntime: Sendable {
       // the gate from its seed to its plan only; writes that land after the plan are the appended tail its catch-up
       // replays, as on the first attempt.
       let holdsGateWhilePlanning = attemptIndex > 0 && !operationGateAlreadyHeld
-      let planningStartedAt = ContinuousClock.now
       if holdsGateWhilePlanning {
         try await enterOperationGateUnlessCancelled(operation: "plan server apply", priority: .interactive)
       }
+      // From entering the gate, so the event reports the hold, not the wait for it.
+      let planningStartedAt = ContinuousClock.now
       var planned: InstantServerApplyAttemptPlan?
       planning: do {
         let seed: InstantServerApplySeed
