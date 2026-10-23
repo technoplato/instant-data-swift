@@ -180,6 +180,81 @@ struct InstantServerApplyGateWorkTests {
     #expect(ownership.contains(["listed-0", "items/value", #"{"string":{"_0":"changed"}}"#]))
     #expect(!ownership.contains { $0.first == "listed-299" })
   }
+
+  /// While a recording writes, every optimistic attempt went stale (a local write landed between the seed and the
+  /// plan), and after five the apply ran again holding the operation gate from seed to commit: every read and write
+  /// waited for the whole apply (25 `server-apply.exclusive-fallback` events on the phone, 2026-10-22..23). A retry
+  /// holds the gate only from its seed to its plan; writes that land after the plan are the appended tail the
+  /// catch-up replays.
+  @Test
+  func localWritesBetweenSeedAndPlanDoNotForceAnExclusiveApply() async throws {
+    let writes = GateWorkWrites()
+    let fixture = try await GateWorkFixture.make(suffix: "seed-plan", chainLength: 20) { configuration in
+      configuration.onServerApplySeedLoadedForTesting = { operationGateHeld in
+        await writes.writeAfterSeed(operationGateHeld: operationGateHeld)
+      }
+    }
+    await writes.attach(fixture.runtime)
+    let fallbacks = ServerApplyGateEvents()
+    fallbacks.start()
+    defer { fallbacks.stop() }
+
+    let applied = try await fixture.runtime.applyServerTransaction(fixture.serverWrite(value: "server"))
+    await writes.finish()
+
+    expectNoDifference(applied.syncState.processedTransactionID, "gate-work-server-server")
+    expectNoDifference(fallbacks.fallbackCount, 0)
+    let written = await writes.writtenIDs()
+    #expect(!written.isEmpty)
+    let state = try await fixture.runtime.persistence.loadState()
+    let shown = Set(state.snapshot.store.triples.map(\.entityID))
+    expectNoDifference(written.filter { !shown.contains("side-\($0)") }, [])
+    expectNoDifference(
+      state.snapshot.store.triples.first { $0.entityID == fixture.entityID }?.value,
+      .string("local-19")
+    )
+  }
+}
+
+/// A local write after each server-apply seed: awaited when the gate is free (the attempt then goes stale), started
+/// without waiting when the apply holds the gate (it lands once the gate is released).
+private actor GateWorkWrites {
+  private var runtime: InstantRuntime?
+  private var written: [String] = []
+  private var started: [Task<Void, Never>] = []
+
+  func attach(_ runtime: InstantRuntime) {
+    self.runtime = runtime
+  }
+
+  func writeAfterSeed(operationGateHeld: Bool) async {
+    guard let runtime, written.count + started.count < 12 else { return }
+    let id = "w\(written.count + started.count)"
+    let write = InstantStoreTransaction(
+      id: "side-write-\(id)",
+      operations: [.insert(gateWorkTriple(entityID: "side-\(id)", value: id, transactionID: "side-write-\(id)", milliseconds: 1_000))]
+    )
+    if operationGateHeld {
+      started.append(Task { [weak self] in
+        _ = try? await runtime.transact(write, createdAt: InstantTimestamp(milliseconds: 1_000))
+        await self?.recordWritten(id)
+      })
+    } else {
+      _ = try? await runtime.transact(write, createdAt: InstantTimestamp(milliseconds: 1_000))
+      written.append(id)
+    }
+  }
+
+  private func recordWritten(_ id: String) {
+    written.append(id)
+  }
+
+  func finish() async {
+    for task in started { await task.value }
+    started = []
+  }
+
+  func writtenIDs() -> [String] { written }
 }
 
 // MARK: - Fixture
