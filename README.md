@@ -1,3 +1,5 @@
+> **Scribe copies index (2026-08-19).** This repo is the Instant Swift Data **library**, not the Scribe app. Scribe product heads: Instant `/Users/laptop/Sync/tools/realtime-voice-sqlite-instant`, SQLite Data `/Users/laptop/Sync/tools/scribe-sqlite-data`. Couchbase Lite full Scribe does not exist. Audit: [docs/scribe-copies-index.md](docs/scribe-copies-index.md) (canonical `/Users/laptop/Sync/tools/docs/scribe-copies-index.md`).
+
 # Instant Swift Data
 
 Instant Swift Data is a fast, modern persistence and real-time synchronization library for Swift, powered by [InstantDB](https://www.instantdb.com) and inspired by Apple's SwiftData and Point-Free's [SQLiteData](https://github.com/pointfreeco/sqlite-data).

@@ -12,6 +12,8 @@ description: >
 
 # Instant Data
 
+**Scribe copies index:** `/Users/laptop/Sync/tools/docs/scribe-copies-index.md` (also `docs/scribe-copies-index.md` in this library). This skill is the library. Scribe product heads are Instant `realtime-voice-sqlite-instant` and SQLite Data `scribe-sqlite-data`. Couchbase Lite full Scribe does not exist.
+
 **Status: in active iteration with the user** while Instant Swift Data and
 Scribe are co-developed. Prefer editing this skill over leaving dual-dev rules
 only in chat. Pair large decisions with `$adr-decision-qanda` and the open
