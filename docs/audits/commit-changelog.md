@@ -1,3 +1,12 @@
+## 2026-10-23 17:31:35 EDT — scribe `cbdcf421cd85f13e40cc2d572c09f7e001e6b99c`
+Build 117 plan (#1023): PLAN.md and touching claims for the cut (version numbers and What's New); release-117.
+
+## 2026-10-23 17:31:35 EDT — scribe `acc010614a9bafd9b4ee94fb879af468a292bc1a`
+Build 117 cut (#1023, #1005): Scribe 0.1 (117) and Scribe Playback 117 on instant-data-swift 1.9.22, with #1006 (transcript from the device), #1015 (cache compaction), #1016 (chunk generations), #1017 (Mac live mark), #1011 (ledger); What's New 117 dated, #1006 and #1017 first.
+
+## 2026-10-23 17:31:35 EDT — scribe `9dba37a8256b1cc4ee0b14875864fe34a4976239`
+Change log for the build 117 cut acc010614 (#1023).
+
 ## 2026-10-23 17:23:19 EDT — scribe `3751a1b3b60fa11269c2706ae3267a52faf8a919`
 Merge (#1017) of red and green onto main, for build 117.
 
