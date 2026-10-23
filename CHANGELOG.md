@@ -10,6 +10,56 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## October 23rd, 2026 at 12:55:16 p.m. EDT — `9e8139438b11` Green (#1007): a link set sorts by its ids, with no key string built per comparison
+
+- **Implementation commit:** `9e8139438b119cdecf15fc58d18ae5942a4eea69`
+- **Change:** Green: a link set sorts by its ids, with no key string built per comparison (#1007)
+- **Details:**
+  - TripleIndexes.sortedByComparableKey: refs sort by id (the same order as their keys), other mixes build each key once; normalizedSlot uses it; the live-query retraction sort uses the field-by-field comparator. Order tests with mixed kinds and adversarial Unicode ids. Measured in the write harness with forward links: observer refresh 4.79 -> 2.60 ms per write on top of the gone-row fix; 9.02 -> 2.60 ms against v1.9.12.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/TripleIndexes.swift` — sortedByComparableKey and its two callers
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — the retraction sort's comparator
+  - `Tests/InstantSwiftDataCoreTests/InstantManyCardinalitySortCostTests.swift` — the Unicode order test and the bound's comment
+- **User context (verbatim):**
+  > I want to optimize the performance of the application with its exact feature set.
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run); no SpecStory capture for headless runs.
+
+## October 23rd, 2026 at 12:55:15 p.m. EDT — `3de06c525399` Red (#1007): materializing a link set builds both sort keys inside every comparison
+
+- **Implementation commit:** `3de06c5253994677db4f5d3a3128f251f91f53b5`
+- **Change:** Red: materializing a link set builds both sort keys inside every comparison (#1007)
+- **Details:**
+  - InstantManyCardinalitySortCostTests: the cost test measures 27.9x the CPU of building one key per value (bound 10); the order test pins the result.
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantManyCardinalitySortCostTests.swift` — the red tests
+- **User context (verbatim):**
+  > I want to optimize the performance of the application with its exact feature set.
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run); no SpecStory capture for headless runs.
+
+## October 23rd, 2026 at 12:55:15 p.m. EDT — `47333e5eec5c` Green (#1007): an entity the store holds neither before nor after a publication refreshes no verified observer
+
+- **Implementation commit:** `47333e5eec5c8b67a325086d853fb4bf771db0ce`
+- **Change:** Green: an entity the store holds neither before nor after a publication refreshes no verified observer (#1007)
+- **Details:**
+  - install() returns the changed entities found in no namespace; the publication keeps those absent before its first commit and after its last; a verified observer that does not show one judges the change without it (skip or splice); a possibly stale observer, or one that shows it, refreshes as before. Measured in the write harness (300 writes, 40 bystander observers): snapshots materialized per final ~2,040 -> ~129, instructions -19%.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantStore.swift` — StoreChangeScope, entityIDsAbsentOnBothSides, refreshObservers' per-observer rule
+- **User context (verbatim):**
+  > I want to optimize the performance of the application with its exact feature set.
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run); no SpecStory capture for headless runs.
+
+## October 23rd, 2026 at 12:55:15 p.m. EDT — `f55a0cf80446` Red (#1007): a commit that names an entity the store holds neither before nor after refreshes every observer
+
+- **Implementation commit:** `f55a0cf80446ea6b3d7aa7e7d1ee2a93425ee21c`
+- **Change:** Red: a commit that names an entity the store holds neither before nor after refreshes every observer (#1007)
+- **Details:**
+  - InstantUnresolvedEntityRefreshTests: 3 of 5 fail on v1.9.12 (every observer re-materialized for a delete of a gone row; no splice beside one); the unverified-observer and six-seed random tests pass before and after.
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantUnresolvedEntityRefreshTests.swift` — the red tests
+- **User context (verbatim):**
+  > I want to optimize the performance of the application with its exact feature set.
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run); no SpecStory capture for headless runs.
+
 ## October 23rd, 2026 at 12:49:26 p.m. EDT — `8e8f25e64498` Green: a closed query's stored result answers its reopening before the server does (#1006)
 
 - **Implementation commit:** `8e8f25e6449836cfb27199640fe1ee96411be5d4`

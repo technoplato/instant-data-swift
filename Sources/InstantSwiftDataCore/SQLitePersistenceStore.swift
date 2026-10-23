@@ -10825,11 +10825,9 @@ public actor SQLitePersistenceStore {
       keptEntityIDs.contains($0.entityID) && departed.contains(InstantLiveTripleIdentity($0))
     }
     return InstantLiveQueryReplacementRetractions(
+      // The tuple order, without building both values' keys on every comparison (#1007).
       operations: retractions
-        .sorted {
-          ($0.entityID, $0.attributeID, $0.value.comparableKey)
-            < ($1.entityID, $1.attributeID, $1.value.comparableKey)
-        }
+        .sorted(by: InstantPersistedLiveQueryResult.storedOrder)
         .map(InstantTripleOperation.retract),
       clearedSlots: clearedSlots
     )

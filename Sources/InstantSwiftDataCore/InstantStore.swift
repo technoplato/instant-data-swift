@@ -1,6 +1,11 @@
 import Darwin
 import Foundation
 
+// History:
+// - 2026-10-23: a commit that names an entity the store holds neither before nor after it (the delete of a row that is
+//   already gone) no longer refreshes every observer from the whole store; a verified observer that does not show it
+//   judges the change without it, and may splice the rest in place (#1007).
+
 public struct InstantStoreMutationResult: Hashable, Codable, Sendable {
   public var transactionID: String
   public var changedEntityIDs: Set<String>
@@ -365,6 +370,17 @@ private struct StorePublicationBaseline {
   var attributes: AttributeStore
 }
 
+/// What a commit can change for observers: the namespaces its changed entities belong to before and after it, or nil
+/// when every observer must refresh (its attributes changed), and the changed entities it found in no namespace either
+/// side (#1007).
+private struct StoreChangeScope {
+  var namespaces: Set<String>?
+  /// Changed entities with no facts and no references before or after the commit, such as the delete of a row that is
+  /// already gone. A publication keeps those it also finds in no namespace before its first commit and after its last
+  /// (``InstantStore/entityIDsAbsentOnBothSides(_:baseline:indexes:attributes:)``): those are in no result either side.
+  var unresolvedEntityIDs: Set<String> = []
+}
+
 /// Whether a publication refreshes an observer (#654).
 private enum ObserverRefreshDecision {
   case refresh
@@ -389,6 +405,8 @@ private struct PendingPublication {
   var baseline: StorePublicationBaseline?
   /// The namespaces the changed entities belong to, or nil when every observer must refresh.
   var changedNamespaces: Set<String>? = []
+  /// The changed entities a covered commit found in no namespace before or after it (#1007).
+  var unresolvedEntityIDs: Set<String> = []
   /// Whether a commit changed the store; a publication of page info alone refreshes only the observers it names.
   var storeChanged = false
   var pageInfoByKey: [String: InstantQueryRemotePageInfo] = [:]
@@ -1664,7 +1682,7 @@ public actor InstantStore {
     publishPendingChanges()
     var prepared = prepared
     let baseline = StorePublicationBaseline(indexes: indexes, attributes: attributes)
-    let changedNamespaces = install(&prepared)
+    let scope = install(&prepared)
     if observers.isEmpty {
       lastPublishMetrics = InstantStorePublishMetrics()
       recordMutation(
@@ -1679,7 +1697,8 @@ public actor InstantStore {
     let refreshed = refreshObservers(
       changedEntityIDs: prepared.result.changedEntityIDs,
       deferredValueChangedEntityIDs: prepared.deferredValueChangedEntityIDs,
-      changedNamespaces: changedNamespaces,
+      changedNamespaces: scope.namespaces,
+      unresolvedEntityIDs: scope.unresolvedEntityIDs,
       baseline: baseline,
       pageInfoByKey: Self.liveQueryPageInfoByKey(replacements),
       storeChanged: true,
@@ -1719,7 +1738,7 @@ public actor InstantStore {
   ) -> (prepared: PreparedStoreMutation, publication: InstantStorePublicationTicket?) {
     var prepared = prepared
     let baseline = StorePublicationBaseline(indexes: indexes, attributes: attributes)
-    let changedNamespaces = install(&prepared)
+    let scope = install(&prepared)
     guard !observers.isEmpty else {
       lastPublishMetrics = InstantStorePublishMetrics()
       recordMutation(
@@ -1746,11 +1765,12 @@ public actor InstantStore {
       if pending.commits.count == 1 {
         pending.baseline = baseline
       }
-      if let changed = changedNamespaces, let pendingNamespaces = pending.changedNamespaces {
+      if let changed = scope.namespaces, let pendingNamespaces = pending.changedNamespaces {
         pending.changedNamespaces = pendingNamespaces.union(changed)
       } else {
         pending.changedNamespaces = nil
       }
+      pending.unresolvedEntityIDs.formUnion(scope.unresolvedEntityIDs)
       pending.storeChanged = true
       pending.pageInfoByKey.merge(Self.liveQueryPageInfoByKey(replacements)) { _, latest in latest }
     }
@@ -1797,6 +1817,7 @@ public actor InstantStore {
       changedEntityIDs: pending.changedEntityIDs,
       deferredValueChangedEntityIDs: pending.deferredValueChangedEntityIDs,
       changedNamespaces: pending.changedNamespaces,
+      unresolvedEntityIDs: pending.unresolvedEntityIDs,
       baseline: pending.baseline,
       pageInfoByKey: pending.pageInfoByKey,
       storeChanged: pending.storeChanged,
@@ -1867,8 +1888,12 @@ public actor InstantStore {
   }
 
   /// Installs a prepared mutation's state and returns the namespaces its changed entities belong to before and after,
-  /// or nil when its attributes changed or an entity's namespace could not be resolved, so every observer refreshes.
-  private func install(_ prepared: inout PreparedStoreMutation) -> Set<String>? {
+  /// nil when its attributes changed so every observer refreshes, and the changed entities in no namespace either side.
+  ///
+  /// Before #1007 one such entity made the namespaces nil, so every observer refreshed from the whole store, and its id
+  /// kept any observer from splicing the others in place. An app that deletes a short-lived row with each write that
+  /// ends it, and replays those pending writes over each server apply, paid that for a change no result can show.
+  private func install(_ prepared: inout PreparedStoreMutation) -> StoreChangeScope {
     if !observers.isEmpty, prepared.indexes.pendingDeferredValueRemovalCount > 0 {
       prepared.deferredValueChangedEntityIDs = prepared.indexes.entityIDsWithMarkedDeferredValues
     }
@@ -1880,11 +1905,12 @@ public actor InstantStore {
     self.attributes = prepared.attributes
     self.indexes = prepared.indexes
     self.sequence = prepared.sequence
-    guard !observers.isEmpty || pendingPublication != nil else { return nil }
+    guard !observers.isEmpty || pendingPublication != nil else { return StoreChangeScope(namespaces: nil) }
     if previousAttributes != prepared.attributes {
-      return nil
+      return StoreChangeScope(namespaces: nil)
     }
     var resolvedNamespaces: Set<String> = []
+    var unresolvedEntityIDs: Set<String> = []
     for entityID in prepared.result.changedEntityIDs {
       let entityNamespaces = previousIndexes.namespaces(
         entityID: entityID,
@@ -1897,11 +1923,29 @@ public actor InstantStore {
         )
       )
       if entityNamespaces.isEmpty {
-        return nil
+        unresolvedEntityIDs.insert(entityID)
+        continue
       }
       resolvedNamespaces.formUnion(entityNamespaces)
     }
-    return resolvedNamespaces
+    return StoreChangeScope(namespaces: resolvedNamespaces, unresolvedEntityIDs: unresolvedEntityIDs)
+  }
+
+  /// The entities in `candidates` the store held in no namespace before the publication's first commit and holds in
+  /// none after its last (#1007). Such an entity had no facts and no references either side, so no result showed it
+  /// before and none can show it after: it changes no result that matched the store before. A candidate a covered
+  /// commit created, or deleted while it still had facts, resolves on that side and stays a change, and that commit
+  /// already added its namespace.
+  private static func entityIDsAbsentOnBothSides(
+    _ candidates: Set<String>,
+    baseline: StorePublicationBaseline,
+    indexes: TripleIndexes,
+    attributes: AttributeStore
+  ) -> Set<String> {
+    candidates.filter { entityID in
+      baseline.indexes.namespaces(entityID: entityID, attributes: baseline.attributes).isEmpty
+        && indexes.namespaces(entityID: entityID, attributes: attributes).isEmpty
+    }
   }
 
   /// Refreshes each observer the changes can affect from the current store, and hands it its emission when
@@ -1911,6 +1955,7 @@ public actor InstantStore {
     changedEntityIDs: Set<String>,
     deferredValueChangedEntityIDs: Set<String>,
     changedNamespaces: Set<String>?,
+    unresolvedEntityIDs candidates: Set<String> = [],
     baseline: StorePublicationBaseline? = nil,
     pageInfoByKey: [String: InstantQueryRemotePageInfo],
     storeChanged: Bool,
@@ -1923,8 +1968,34 @@ public actor InstantStore {
     // The emissions this publication computed from the whole store, or spliced into a verified result (#654).
     var verifiedEmissionKeys: Set<StoreObservationKey> = []
     var handOvers: [ObserverHandOver] = []
+    // #1007: the changed entities in no namespace before the publication and none after, and the changes without them.
+    // Without a baseline to check against, such an entity refreshes every observer, as before.
+    var changedNamespaces = changedNamespaces
+    let absentEntityIDs: Set<String>
+    if candidates.isEmpty {
+      absentEntityIDs = []
+    } else if let baseline {
+      absentEntityIDs = Self.entityIDsAbsentOnBothSides(
+        candidates,
+        baseline: baseline,
+        indexes: indexes,
+        attributes: attributes
+      )
+    } else {
+      absentEntityIDs = []
+      changedNamespaces = nil
+    }
+    let presentChangedEntityIDs = absentEntityIDs.isEmpty
+      ? changedEntityIDs
+      : changedEntityIDs.subtracting(absentEntityIDs)
     for observerID in Array(observers.keys) {
       guard var observer = observers[observerID] else { continue }
+      // An observer whose result may be stale (#654) can still show an entity the store no longer holds, and one that
+      // shows it must drop it: both refresh from the whole change, as before #1007. Any other observer judges the
+      // change without those entities, which no result it matched could show.
+      let judgesWholeChange = !absentEntityIDs.isEmpty
+        && (observer.verifiedEpoch != observerEpoch || observer.lastValues.contains(anyEntityID: absentEntityIDs))
+      let observedChangedEntityIDs = judgesWholeChange ? changedEntityIDs : presentChangedEntityIDs
       let pageInfoChanged: Bool
       if let liveQueryKey = observer.liveQueryKey,
         let replacementPageInfo = pageInfoByKey[liveQueryKey],
@@ -1936,17 +2007,25 @@ public actor InstantStore {
         pageInfoChanged = false
       }
       if !pageInfoChanged {
-        let decision: ObserverRefreshDecision = storeChanged
-          ? Self.refreshDecision(
+        let decision: ObserverRefreshDecision
+        if !storeChanged {
+          decision = .skip
+        } else if judgesWholeChange {
+          decision = .refresh
+        } else if !absentEntityIDs.isEmpty, observedChangedEntityIDs.isEmpty, changedNamespaces != nil {
+          // Only entities in no namespace either side changed: the store holds the same facts as before.
+          decision = .skip
+        } else {
+          decision = Self.refreshDecision(
             for: observer,
             changedNamespaces: changedNamespaces,
-            changedEntityIDs: changedEntityIDs,
+            changedEntityIDs: observedChangedEntityIDs,
             indexes: indexes,
             attributes: attributes,
             baseline: baseline,
             observerEpoch: observerEpoch
           )
-          : .skip
+        }
         switch decision {
         case .refresh:
           break
@@ -1971,13 +2050,13 @@ public actor InstantStore {
       } else if !pageInfoChanged,
         let spliced = Self.splicedEmission(
           observer,
-          changedEntityIDs: changedEntityIDs,
+          changedEntityIDs: observedChangedEntityIDs,
           indexes: indexes,
           attributes: attributes,
           sequence: sequence
         ) {
         metrics.splicedObserverCount += 1
-        metrics.materializedSnapshotCount += changedEntityIDs.count
+        metrics.materializedSnapshotCount += observedChangedEntityIDs.count
         emission = spliced
         emissionsByObservation[key] = emission
         // A splice edits the result the observer held, so it is exactly as verified as that result was (#654).

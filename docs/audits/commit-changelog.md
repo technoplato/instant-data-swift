@@ -4,6 +4,18 @@ Green (#1006): the session prune unloads a closed query's result into instant_un
 ## 2026-10-23 12:34:03 EDT — instant-data-swift `c3b2e6d1eeb83bf118a1ef23f4cc5d2b95d2d2a5`
 Red test (#1006): InstantStoredResultReloadTests, a closed and pruned query reopened with the server silent.
 
+## 2026-10-23 12:33:27 EDT — instant-data-swift `9e8139438b119cdecf15fc58d18ae5942a4eea69`
+Green (#1007): a link set (a forward link's ids on the linking entity) sorts by its ids, with no key string built per comparison; every read of a long recording sorted its links again.
+
+## 2026-10-23 12:27:39 EDT — instant-data-swift `3de06c5253994677db4f5d3a3128f251f91f53b5`
+Red test (#1007): InstantManyCardinalitySortCostTests, the link-set sort costs 27.9x building one key per value.
+
+## 2026-10-23 12:27:09 EDT — instant-data-swift `47333e5eec5c8b67a325086d853fb4bf771db0ce`
+Green (#1007): an entity the store holds neither before nor after a publication (a delete of a row already gone) refreshes no verified observer.
+
+## 2026-10-23 12:06:54 EDT — instant-data-swift `f55a0cf80446ea6b3d7aa7e7d1ee2a93425ee21c`
+Red test (#1007): InstantUnresolvedEntityRefreshTests, a gone row refreshed every observer.
+
 ## 2026-10-22 10:16:10 EDT — scribe `8347b98dc33fd9a664cb91e5dc60d845d989056a`
 Fix (#1003): build 114 compiles for the Watch: recordingFixedMoment (190a228ec, #991) moved out of the iOS-only RecordingView.swift into RecordingAudioVisualizer.swift, which the Watch app compiles; build 114 installed from this commit.
 
@@ -9525,6 +9537,695 @@ Document b08d2c2 in the change log (#230).
 
 ## 2026-08-20 14:37:21 EDT — scribe-sqlite-data `b08d2c29c1ecb22787a0eebc4c359d8c42154235`
 Let the Mac Scribe window shrink to a skinny chrome floor (#230).
+## 2026-10-22 04:50:44 EDT — scribe `6df561066e826302b562b7d5e2b05b8504eb6baf`
+Merge to main for build 114 (#996): the live transcript takes its width the way Scribe Playback's lines do; Scribe's overflowing text frames 146 -> 0 (iPhone) and 1,016 -> 0 (iPad), Scribe Playback's images identical to the pixel.
+
+## 2026-10-22 04:50:29 EDT — scribe `730060bdb73e374fe85d9fa0a96bd7bc68bbe33a`
+Changelog (#996): one entry per commit of the landing.
+
+## 2026-10-22 04:49:59 EDT — scribe `d9425677888edc49541eb5d4097a36a57032a2c8`
+Docs (#996): What's New in both apps for build 114, the audit's landing section and index row, PROGRESS, the channel note.
+
+## 2026-10-22 04:49:40 EDT — scribe `5802537a27d978d07393fc8bf5662d2d1c204bbf`
+Test (#996): the text layout sweep's 48 image references, rendered once the window stops changing (Scribe Playback's player varied run to run since #992).
+
+## 2026-10-22 03:42:25 EDT — scribe `781f3b7afdf5ec2a4c681d4f310319bfe7ad9b96`
+Green (#996): the live transcript's lines take the scroll view's proposal, no measured width; the vertical stamp stops at AX1; list rows' dropped separators get no size; TranscriptLinesShareOneRowTests.
+
+## 2026-10-22 03:42:25 EDT — scribe `bf23ac9b4fd96fcf0544f944ec1af8a3aeaf2ebb`
+Red test (#996): the sweep reads every transcript line from SwiftUI's views and hosts Scribe's screens through the list; build 111's live lines run 324 pt off the screen.
+
+## 2026-10-22 03:42:24 EDT — scribe `86e964f287b1b0a096c484885c50d68548cdab4a`
+Red test (#996): the first text layout sweep (Xcode/TextLayoutSweep) and TranscriptColumnWidthTests' measured-width check.
+
+## 2026-10-22 02:23:09 EDT — scribe `d97c5d3c9899aea9a29dd1342de9c21a0d514bd2`
+Merge to main for build 114 (#992, #993): the speaker's name pinned at the top of the words and Back to Playhead's live-words bubble, one set of views for Scribe Playback and Scribe.
+
+## 2026-10-22 02:21:51 EDT — scribe `18351b8921fa11ac2f362c417089f06deb9d3a24`
+Merge of main (#1001's landing) into agent/claude/playback-ui-992-993 (#992, #993): CHANGELOG and PROGRESS keep both sides.
+
+## 2026-10-22 02:20:33 EDT — scribe `a1e37477242ce8ef8bf5f3f0d8aec897ede69082`
+Docs (#992, #993): What's New in both apps for build 114 (next), PROGRESS.
+
+## 2026-10-22 02:07:48 EDT — scribe `a661cc5b3b0f0d5eb85ec9ccc9d693bcbb16e7da`
+Green (#992): the pinned name hands over when the next name's row reaches its edge (MediaTimelinePinEdge.nameTop, both apps).
+
+## 2026-10-22 02:05:06 EDT — scribe `1100662c7063bad50eab8605f7f442e8106d9eb6`
+Red test (#992): the handoff mark is the top of the next name's row, found on the iPad simulator at AX5.
+
+## 2026-10-22 01:47:51 EDT — scribe `c2f6a176d440dfdc7d05b8896e1d5e7c0b7d644c`
+Merge of main (24 commits: build 113's hotfix, #995, #1001's plan, this plan) into agent/claude/playback-ui-992-993 (#992, #993).
+
+## 2026-10-22 01:47:13 EDT — scribe `41f5cefa7e10fd50da6ba310f303f93def2ac469`
+Green (#992, #993): MediaTimelinePinnedSpeaker and MediaTimelinePlayheadBubble in Scribe Playback and Scribe's playback; Playback's other states unchanged to the pixel.
+
+## 2026-10-22 01:10:30 EDT — scribe `b5a643fb38d97bacd584c580a8a32454bcd2640e`
+Plan (#992, #993): playback-ui-992-993's plan, claims and a channel note, landed before the merge.
+
+## 2026-10-21 22:14:47 EDT — scribe `a542c254db32802e3a445fae5524fe19d437bf01`
+Red tests (#992, #993): who is pinned, the bubble's words and its arrow, with stubs.
+
+## 2026-10-21 22:11:55 EDT — scribe `8347d8a6d31b34b9708df2b8c983fcfb189a355e`
+Before (#992, #993): Scribe Playback's whole player recorded from main 49432a5c4.
+
+## 2026-10-21 19:14:39 EDT — scribe `12e99841958992dfb66d5f72495be2bd1a060c8a`
+PROGRESS.md (#924): the schema hazard is gone; main holds #924's author fields and #974's clip slice.
+
+## 2026-10-21 19:10:39 EDT — scribe `c6f1ac25269cbeff4d13078cf5c47e4017c915d8`
+Merge to main for build 112 (#924): a text link's chapters list says "From the author's headings"; the audit's production runs and simulator check.
+
+## 2026-10-21 19:10:14 EDT — scribe `b5e33ff4823285c916465c413896a3625ec77116`
+Change log for #924's audit commits (1418af7dd, 9fd99faa8).
+
+## 2026-10-21 19:10:05 EDT — scribe `9fd99faa88cfa8752adba4037420bbd79e01c728`
+Audit (#924): Scribe Playback on the simulator (the credit on the row, the player and a copied line; the chapters' source diagnosed and fixed), One_Hashing's five figures; PROGRESS.
+
+## 2026-10-21 19:07:55 EDT — scribe `33d054a586091e110579db01369028a401672c37`
+Merge of main (192 commits, build 111's cut, #265, #839, #972) into agent/claude/text-links-924b (#924).
+
+## 2026-10-21 19:07:27 EDT — scribe `a3fbe2cf6de889e5daec2a749e14cdc63984c2f3`
+Change log for #924 (587e339ab, 482d1423b).
+
+## 2026-10-21 19:07:01 EDT — scribe `482d1423b093a970ab224701906e2edb13c9f8d6`
+Green (#924): the chapters list reads where its chapters came from off the chapters it shows (MediaTimeline.State.chapterSource); the player no longer hands in a stale source.
+
+## 2026-10-21 18:53:04 EDT — scribe `587e339ab73682055ec8b99506304d6bf19da58c`
+Red test (#924): the timeline's state says where its loaded chapters came from.
+
+## 2026-10-21 18:41:38 EDT — scribe `642250e8831d92f6e9cff2ff59d90f75eb8fc2a3`
+PROGRESS.md entry for #839.
+
+## 2026-10-21 18:40:30 EDT — scribe `ab0cf9eadee06e3b09183b722046728e901fd92c`
+#839 lands on main for build 112: "Scribe, pause playback" and the Pause Playback intent pause whatever plays (Scribe playback, Scribe Playback, other apps through Scribe's own session).
+
+## 2026-10-21 18:14:27 EDT — scribe `42b9b23a37d3a1e3089d347ef159e0bb782c43e0`
+Merge of main (build 111) into agent/claude/pause-playback-839 (#839).
+
+## 2026-10-21 15:40:37 EDT — scribe `d1f8014d0e1340a28507ac50d91cf101b400db28`
+Change log for #839 (311289f9b, 7cbd55431, 69e629f4b).
+
+## 2026-10-21 14:42:54 EDT — scribe `69e629f4b12ce51ae817c15b1b6e5cc6258416ef`
+#839 audit of what iOS allows (shortcuts, AirPod taps, pausing other apps), ADR 0011 amendment, FEATURES draft item 22, What's New 112.
+
+## 2026-10-21 14:42:04 EDT — scribe `7cbd5543171def192d2dd1ca087615438ba2fda1`
+Green (#839): the other-audio pause steps, the store's pause, the voice command on every screen, Scribe Playback's pause.
+
+## 2026-10-21 14:42:04 EDT — scribe `311289f9ba7153a3874e49a359503b53edfc6bc9`
+Red tests (#839): pausing whatever plays, with stubs.
+
+## 2026-10-21 12:53:35 EDT — scribe `b0a97bde3d3d18e1d58ebb04fd85a3d7d6f31067`
+Plan and claims for #839 (pause whatever plays).
+
+## 2026-10-21 17:50:45 EDT — scribe `cc95ef5e2e6852bd03de516ce163e4975516d5de`
+Change log for #972 (9422dbadc).
+
+## 2026-10-21 17:48:42 EDT — scribe `9422dbadc0b2d38b2dfba6f0137f066f5c1c0fce`
+Scribe Playback reads a processed book's speakers (12 Rules reads as Jordan Peterson) and marks books not processed yet; 60 tests pass (#972, build 112).
+
+## 2026-10-21 17:48:12 EDT — scribe `fa2e263d9252f3f2b4b70219db4b6ee2de9c880c`
+Red tests: the Books shelf knows which titles are processed; the list marks those not processed yet (#972).
+
+## 2026-10-21 17:48:12 EDT — scribe `739c7d19df29fd6c8fa56185c48bab3a0f72eebb`
+Red tests: a processed book's words keep each word's speaker, lines split by speaker, the book's media transcript on its words, kept words read again (#972).
+
+## 2026-10-21 16:52:39 EDT — scribe `bff1f97b024aa2aa03bbacb482ff73466e61ee93`
+PROGRESS.md entry for #972.
+
+## 2026-10-21 13:52:02 EDT — scribe `8b7c658e0ebb78129807e102804806483784181e`
+The #972 audit's afternoon section: the catalog re-key, the queue's first try, the app step.
+
+## 2026-10-21 13:50:49 EDT — scribe `22a2d24dc6cf42e7af4a566cc99a480c07facb6a`
+Claims for #972's amendment 1.
+
+## 2026-10-21 13:41:40 EDT — scribe `f9272cd32ffed4f4da05c5930bc1baf125ca072a`
+Plan amendment 1 for #972 (Scribe Playback speakers and the not-processed marker).
+
+## 2026-10-21 16:04:37 EDT — scribe `b1e09374a837f82a375fd1a3c989a87d1fb80517`
+#965 lands on main for build 111: merge of origin/main (7964d57fa) into agent/claude/active-line-965, pushed as main.
+
+## 2026-10-21 15:02:28 EDT — scribe `3aa3339857af00a5b392d15a3aa51b867810f33f`
+Merge origin/main (b511deba3) into agent/claude/active-line-965; What's New 111 keeps both sides (#965).
+
+## 2026-10-21 15:01:29 EDT — scribe `36c2195a094f95f36ba6b2a1a81b5041e9122a85`
+Change log for #965 (8443b416f); PROGRESS.
+
+## 2026-10-21 14:33:25 EDT — scribe `4aeae8b53d24f48fb411f36fad4b1d265d6a1176`
+What's New for build 111: the line you're speaking stays at the bottom of the live timeline (#965).
+
+## 2026-10-21 14:33:09 EDT — scribe `7d37badbdb1009132f53bdc1824b41a0f65e13e9`
+The one-clock audit (audits/2026-10-21-one-clock.md) and FEATURES item 2: the line being spoken is the bottom row (#965).
+
+## 2026-10-21 14:33:00 EDT — scribe `8443b416fffa679c1d35497287aa56b4c1cb1981`
+TimelineEntry.liveOrder: a line not final sorts after every row not being spoken; the recording screen and playback following a live recording use it (#965).
+
+## 2026-10-21 14:33:00 EDT — scribe `47eed27c2ea3809bafd6c5667e51ca81cb1a02c4`
+Red tests: the line being spoken stays the bottom row of every live timeline (RecordingLineBeingSpokenTests, RecordingSpeakerRunsTests, PlaybackLineBeingSpokenTests) (#965).
+
+## 2026-10-21 14:09:52 EDT — scribe `1418af7dda34f15044dfe3a6bdf8420d74701ddc`
+Audit: the production runs of calabro.io/ohbf and One_Hashing.pdf, rows per stage, word times, Kokoro right at line starts (#924).
+
+## 2026-10-21 14:08:55 EDT — scribe `c111eb0536166fc10b8824fc14766c57edaa4069`
+Merge to main: a figure MuPDF reads among a paper's references stays the document's (#924).
+
+## 2026-10-21 14:08:36 EDT — scribe `b35f62081c994d4b8c38e566e5c79f1a5dfd14f3`
+A figure MuPDF reads among a paper's references stays the document's (One_Hashing.pdf's Fig. 6) (#924).
+
+## 2026-10-21 14:08:18 EDT — scribe `e9997a876f94f682eb3dbce1b05d40e77b9a5f04`
+Red test: a figure read among the references is still the paper's (#924).
+
+## 2026-10-21 13:42:02 EDT — scribe `11aab648608744860e624f2f50d92ca63e15907f`
+Merge to main: whose words a text link's are, everywhere it shows; the reader credits feeds and papers; one library owner (#924, build 112).
+
+## 2026-10-21 13:40:57 EDT — scribe `807fcdfa9fa9077f5f7a0a556312245f08c2793e`
+Change log and PROGRESS for #924's attribution (8dabb1ea2 .. 25e4b2bb9).
+
+## 2026-10-21 13:40:28 EDT — scribe `610f58b109b6fa5e0fa1bf1905f00b1a89fc9ff1`
+ADR 0082 Text links 9, FEATURES item 20's attribution, the audit's attribution section (#924).
+
+## 2026-10-21 13:40:28 EDT — scribe `2b0a4e825aefc507132ee9ee56ebcb521d3f495f`
+Scribe's timeline says whose words a text link read aloud are: RuntimeMediaPlay author and credit, the summary's subtitle (#924).
+
+## 2026-10-21 13:40:28 EDT — scribe `25e4b2bb9f5f53393c7333f110af36f5826e1412`
+swiftui-pro review: the timeline row's own VoiceOver label reads its subtitle; one ShareLink (#924).
+
+## 2026-10-21 13:33:56 EDT — scribe `e297da40f149fd5bcfb5d4aa02ad3369d86e4089`
+Rules matrices check mediaItems.author and videoQueueItems.author (#924).
+
+## 2026-10-21 13:28:03 EDT — scribe `bb7df3dce1009bb2612c3ea95a365d0bb8e00fda`
+One library owner for every writer of a text link's rows: the laptop's SCRIBE_MAIN_ env and the mini's owner (#924).
+
+## 2026-10-21 13:27:10 EDT — scribe `19cb7528fc2aaf32799a0a1c7f047935ad5254d4`
+Red tests: one library owner for every writer (#924).
+
+## 2026-10-21 13:22:05 EDT — scribe `2f52233f00dde59a3cfef966280ce957f896c5c4`
+A paper's byline row in a shared block, small-capital sections, levels by numbering (#924).
+
+## 2026-10-21 13:19:52 EDT — scribe `c8dc24952a1710e0275b2402e91a2a7a7ee11cd0`
+Red tests: a paper's byline in its affiliation's block, small capitals, numbered depth (#924).
+
+## 2026-10-21 13:16:33 EDT — scribe `24327e80bd540008de24a0b13f2d1e555ccb421d`
+scribe-text-links skill credits the writer; installed for Claude, Grok and agents (#924).
+
+## 2026-10-21 13:15:05 EDT — scribe `b2fff1ee0d1e3397878450cca16792211b54edfd`
+Scribe Playback says whose words a text link's are: row, player, Lock Screen, copied and shared lines, chapters (#924).
+
+## 2026-10-21 13:14:55 EDT — scribe `8dabb1ea2caac02c5f6641ccb6fc58a3622eee7b`
+The reader names whose words a text link's are (JSON-LD, citation_author, the page's own feed, a paper's byline); mediaItems.author and videoQueueItems.author (#924).
+
+## 2026-10-21 12:59:39 EDT — scribe `85afa00ab22fe906ef0f670d31524ad6e5540078`
+Red tests: a text link read aloud names whose words they are, everywhere it shows (#924).
+
+## 2026-10-21 13:38:50 EDT — scribe `f66e218f420208d58599addec383ceb2477a0398`
+Change log for #972 (a185740e3).
+
+## 2026-10-21 13:29:15 EDT — scribe `a185740e351139e80982a05bda52c87ad56e9b68`
+media_catalog.py books --rekey: the three books signed under audiobook:books:<slug> move to audiobook:<rendition id>; run on the mini, the live server matches the new key (#972).
+
+## 2026-10-21 13:28:37 EDT — scribe `7175b5c2aa5aa34ad89518b9295de6ac682ce2c8`
+Red test: media_catalog.py books --rekey (#972).
+
+## 2026-10-21 13:26:30 EDT — scribe `bd468763781293757e4a1034d08dc9f36dbf5682`
+Change log for #972 (5634dcb15, 2cc934b4c, cbc585543).
+
+## 2026-10-21 13:26:09 EDT — scribe `cbc58554334e92af5beac3910bb1568b191a7793`
+The books queue as a LaunchAgent, com.knophy.scribe-books-ingest, every 30 min in #927's venv (#972).
+
+## 2026-10-21 13:25:31 EDT — scribe `2cc934b4cd34212ffb697c86ce1713d9bec5f1cd`
+Three failures in a row for one title set it aside with its reason (#972).
+
+## 2026-10-21 13:25:21 EDT — scribe `d1842c0da87b148781cec8c22610195bdd966e6e`
+Red tests: three failures in a row set a title aside (#972).
+
+## 2026-10-21 13:25:02 EDT — scribe `5634dcb159127b000392ae8576f8dca008f904c5`
+The Audible queue: one Audible title and at most one license try a pass, under #927's retry lock; the local copy goes after the catalog step (#972).
+
+## 2026-10-21 13:23:06 EDT — scribe `40b004cb83d2679b9b99e53f33ffec3cab5c8f3e`
+Red tests: the Audible queue's order, account-wide license spacing counting #927's tries, each title's ASIN (#972).
+
+## 2026-10-21 13:21:21 EDT — scribe `e0b1b3a87f1add1fc68d7488d71164764660915c`
+Change log for #972 (302b648be, dddd57470, 901e66b9f, a31e8c72a, a78c1fd18, ff8a104a9).
+
+## 2026-10-21 13:20:32 EDT — scribe `ff8a104a92f1bbb28594a77b06d6c91c1d757a88`
+The books ingest README and the #972 audit: A New Earth 9.24 h in 544 s (61 audio-hours an hour), voices 55% of a job, three books written with speakers.
+
+## 2026-10-21 13:20:32 EDT — scribe `b4c590fef31df77c94a53313aeda93f424a3f726`
+Red tests: with one credited narrator, a voice of under ten seconds in an hour piece is the narrator's (#972).
+
+## 2026-10-21 13:20:32 EDT — scribe `a78c1fd182d395a7b25139c87a06d5fedcafe26a`
+A voice of under ten seconds in a piece is the narrator's: 21 Lessons' seven such voices were chapter-start splits and Audible's closing line (#972).
+
+## 2026-10-21 13:20:32 EDT — scribe `a31e8c72a523de1c514e3c289bfe93af9352b3a5`
+write's last log line named segments twice (#972).
+
+## 2026-10-21 13:20:32 EDT — scribe `a060bf3c7094fe6ed1ea5143a0759b62411a414b`
+Red test: a book's credits outweigh a print's guess (#972).
+
+## 2026-10-21 13:20:32 EDT — scribe `901e66b9f8b799a2cde9eb891b083f55ace7f021`
+A suggestion stays only when it names a credited narrator; A New Earth's one guess was Joe List for the publisher's announcer (#972).
+
+## 2026-10-21 13:20:31 EDT — scribe `dddd574700c55069d7f491e61543203a0502ee76`
+books_ingest.py: status of every Books title, process a rendition through /v1/process in hour pieces, write its words with book-wide speakers into Books' librarySegments and the book's media transcript (#972).
+
+## 2026-10-21 13:20:31 EDT — scribe `1c24c08b8ba3dbf37335f126d90ad62b4eed4760`
+Red tests: books_ingest.py's pure core (Books' own segment ids, the priority rule, speakers across hour pieces, words on the book's clock, merged names, segment rows, the media document, status) (#972).
+
+## 2026-10-21 12:57:57 EDT — scribe `302b648be1b8295b2abc961e74e6219af5e861ba`
+Plan for #972: every Books audiobook through the mini's /v1/process, words with speakers, and which are not processed yet (plan, claims, channel note).
+
+## 2026-10-20 07:44:36 EDT — scribe `67ee18d124ac728d6704d9e4633225d233e71d12`
+Merge of #858 onto main for build 111: a reminder plays the lines that made it (the newest-first logs kept as unions).
+
+## 2026-10-20 07:44:36 EDT — scribe `3b2e64f45324d5b9c5c8d478df6602f00e3646a2`
+Change log and PROGRESS for #858 (c4ac34171).
+
+## 2026-10-20 07:44:36 EDT — scribe `2413ee9f9e1d7cfa5ef175598dc73f77cb3b7241`
+What's New for build 111: a reminder plays the lines that made it (#858).
+
+## 2026-10-20 07:44:36 EDT — scribe `31d20c2122758a08e3c50837b976597a9bbbbd82`
+ADR 0054 amendment 3 and FEATURES line 19's Play (draft) (#858).
+
+## 2026-10-20 07:44:36 EDT — scribe `c4ac341710435a98769d8eae1dbb055a65166031`
+Play plays a moment's lines where its recording is and stops at their end: playback's range, the live player's stretch (headphones only), the list's routing; the Work Log Play button's 44-point target (#858).
+
+## 2026-10-20 07:44:36 EDT — scribe `ee25babe8b63b5dd1d0357646e3b09e2e9c0d33a`
+A moment plays its lines: ReminderMoment.play, his words as heard, Play on a card and in the Work Log (#858).
+
+## 2026-10-20 07:44:36 EDT — scribe `7d099a0a14f42cf51dd07210b136d480ed2f2600`
+Red tests: a reminder's Play plays exactly the lines of its moment, in playback, in the live player, and from the Reminders screen (#858).
+
+## 2026-10-20 07:41:16 EDT — scribe `0b7b6498ac7b5e87239cbf00e9918a7b40bf48a4`
+Merge of #859 and #862 onto main for build 111: his synced words reach Parakeet on This iPhone and Your Mac, an edit reaches the running stream, and a listener adds a word.
+
+## 2026-10-20 07:41:16 EDT — scribe `7d52ae2218aac93c7b6ec166fb566ec7c372d3e2`
+Change log and PROGRESS for #859 (a789e1b60, eb6b13a67, ac364f6bf) and #862 (64c46e1b0).
+
+## 2026-10-20 07:41:16 EDT — scribe `ae1c13d659459e1ded2e717d4c18326c11bd72a9`
+What's New for build 111: his vocabulary reaches On This iPhone and Your Mac, the vocabulary model, and a listener adds a word (#859, #862).
+
+## 2026-10-20 07:41:16 EDT — scribe `47c5249689a9d3bc470d0547dc7d133a99ae67d5`
+ADR 0062 amendment C with the word error measurement, ADR 0074 amendment A, FEATURES line 12, and the audit (#859, #862).
+
+## 2026-10-20 07:41:16 EDT — scribe `ac364f6bfc8e8e8a7ba30c062efca680a7b7a66d`
+The booster leaves a phrase around a listed word (in Scribe) to the correction map; measured on his recorded audio (#859).
+
+## 2026-10-20 07:41:16 EDT — scribe `f29136469a8d8eeb98e702bd0d3094ff9be3c1ad`
+Red tests: a phrase around a listed word does not travel to the booster (#859).
+
+## 2026-10-20 07:41:16 EDT — scribe `eb6b13a67a09236d197cbad4b7e91b46b2958361`
+On This iPhone and Your Mac send his synced words as keyterms, send an edit as Configure, log the engine's answer, and download the vocabulary model after the others (#859).
+
+## 2026-10-20 07:41:16 EDT — scribe `a5b52ca6caf43fdb6ba78448486ec2e6c04a01dc`
+Red tests: the app's keyterms, the Configure frame and its outcome, and the vocabulary model download (#859).
+
+## 2026-10-20 07:41:16 EDT — scribe `a789e1b60da20de1e82535cf8140cffebdade9f9`
+The engine boosts his words from the listen request's keyterms, rebuilds on Configure, merges the Mac's file, keeps punctuation, and never needs the vocabulary model (#859).
+
+## 2026-10-20 07:41:16 EDT — scribe `e9bb31fe4bc111e1654bb050bf702a925d62a687`
+Red tests: keyterms and Configure on the wire, the merged list, the punctuation carry, the optional vocabulary model (#859).
+
+## 2026-10-20 07:41:16 EDT — scribe `64c46e1b0e7a3642b24051b2ea54e25111fbd0da`
+A listener adds a word to his vocabulary through scribe, with the line he said it in, and can undo it (#862).
+
+## 2026-10-20 07:41:16 EDT — scribe `ac0f5fd9f0aae7be30f9ff43d3e9df49c417cff9`
+Red tests: the mirror's vocabulary model, the add plan and its change row, and undo (#862).
+
+## 2026-10-20 03:25:31 EDT — scribe `b502641ba56b854539c07e9369979f32bdd9b64f`
+Changelog and PROGRESS for #815: a reminder tracks the work as it happens; the implementation commit is 6b97bfc79.
+
+## 2026-10-20 03:33:18 EDT — scribe `d34a7e3e3b5733ac612635819f9705e666bf8604`
+Change log entry for book readings matched on demand only (#922).
+
+## 2026-10-20 03:33:18 EDT — scribe `e6e1d2cf3519a9ce6a31bc517308323fb3590b2f`
+Book readings are matched on demand only: their pieces and catalogs sit beside the live folders; the live scribe-books keeps its audiobooks (#922).
+
+## 2026-10-20 03:33:18 EDT — scribe `8e1b07a3ab9f341dcaf1486bc045bc5c2a2446f0`
+Red tests: a book reading's on-demand folders, signing, build, rows and measure; every other kind stays live (#922).
+
+## 2026-10-20 03:33:18 EDT — scribe `19ffd7dfab41d904c858852f0f90c8f5e0f95861`
+Plan step 8 for #922: readings matched on demand only (their bedtime audio false-matched 3.6% of live windows); claims and channel note (#922).
+
+## 2026-10-20 03:25:31 EDT — scribe `6b7f8a6b1623fd9e98e5e31c712169d4a55d8ef0`
+Tests for the clock a check-off enters: Recording.State.liveClock(now:), LiveRecordingClock, and the live point (#815).
+
+## 2026-10-20 03:25:31 EDT — scribe `fb61d630cabf708979781a88c451f0f9e6305a91`
+ADR 0054 amendment 2, FEATURES line 19 (draft), What's New for 110, and the listener's start and progress (#815).
+
+## 2026-10-20 03:25:31 EDT — scribe `9cb0727df257546aca1bfe758fa5dfdce077abed`
+The moment snapshot test helper builds InstantMaterializedValue values, so the app suite compiles (#815).
+
+## 2026-10-20 03:25:31 EDT — scribe `b29d6895397b75db312e4922c3b5747664f8281a`
+The reminders rules matrix covers a reminder's start and context and a moment's mentionKind; 111/111 on the throwaway app (#815, #823).
+
+## 2026-10-20 03:25:31 EDT — scribe `6b97bfc79c09dd7f32eae9b0121906b709d0f1a6`
+A reminder tracks its work: Start Working, the listener's start and progress, Marked done in the recording this device captures, how long it took, a work log; schema pushed to production (#815).
+
+## 2026-10-20 03:25:31 EDT — scribe `c92a68c7e52800df289cecc262b7cb7fc8806763`
+Red tests: a reminder tracks its work, and the reminders-work schema module (#815).
+
+## 2026-10-20 03:25:31 EDT — scribe `f9a91fb45322e133f66b8b7858021860d32e0605`
+Channel note: one stretch-play action in the live player, shared by a reminder's Play and a tap on a live line (#858, #807).
+
+## 2026-10-20 03:22:29 EDT — scribe `639f46890a5bbf0d38544704e080b24ad09701f0`
+Change log for the standing listener's start through taskpolicy -a (#870).
+
+## 2026-10-20 03:22:29 EDT — scribe `40f6128b5f1d93284cf74de69bef9acc2afe30ef`
+green: the standing listener starts through taskpolicy -a, so its main thread runs at 46-47, not 31 (#870).
+
+## 2026-10-20 03:22:29 EDT — scribe `b2db524a3a316fd437f929726f19ffbdfcb544a3`
+red: the agent run-agent starts must run its main thread above priority 31 (#870).
+
+## 2026-10-20 03:22:29 EDT — scribe `99900d0751812fba7edb8c6425f7f874b8f2849b`
+plan and claims for #870 and #880 (infra-p2).
+
+## 2026-10-20 03:20:36 EDT — scribe `a2234a936afdcd2282040c6f9119bbcbff790d73`
+Change log for the retry's guarded read-back (#927).
+
+## 2026-10-20 03:20:36 EDT — scribe `a2bde6dfe38b64a1af69b61081034d10cc56d543`
+A failed read-back after an import is told on the issue instead of stopping the retry (#927).
+
+## 2026-10-20 03:09:47 EDT — scribe `e8f3de6a8ba6734bdc563ec5f78865fdaa00f6dc`
+the narration's measures run after the import; no false matches on the trial (#927).
+
+## 2026-10-20 03:09:47 EDT — scribe `d7dd650ea97b21e65eb2eb13192999713c3cbd63`
+the retry's tests, the narration's measure and its hook after the import, the audit's false-match check (c4ad78444..8ca7e75a8) (#927).
+
+## 2026-10-20 03:09:47 EDT — scribe `8ca7e75a884d2825b15d9940c457895dc2c3df58`
+the trial drew no false matches from the live catalog (0 of 40 per condition); the measures run after the import (ADR 0087 decision 9) (#927).
+
+## 2026-10-20 03:09:47 EDT — scribe `fdc31393cef94bdab8a0e145fdf50e209b04c94e`
+green: after an import the retry measures the narration and logs one line on the issue (each catalog condition, the word times, or why they did not run); the installed copy carries word_times.py (#927).
+
+## 2026-10-20 03:09:47 EDT — scribe `d4901a25abff4766c9be7bde6cef6c91b6205e90`
+green: the measure's catalog entry names its source audiobook, one of scribe-catalog's kinds (#927).
+
+## 2026-10-20 03:09:47 EDT — scribe `6023c572e1d49457896c80d084347cd96a1d410b`
+green: `audible_import.py measure` keeps the narration's two numbers in <title>/measure/: the catalog's match rate and offset error on clips from four hour-long excerpts against the live scribe-books (read only), and wor (#927).
+
+## 2026-10-20 03:05:54 EDT — scribe `9d6eeb25c4b682b45260e765a76ce3dbda1304a0`
+Merge of #701 into main: Settings > Your Mac shows the server's last heartbeat (criterion 2); the health watch tells a busy laptop from a down server.
+
+## 2026-10-20 03:05:54 EDT — scribe `e7f5b8b46db3a7066fa798b02276095aeb687267`
+Change log entries for #701's two greens (56ee10427, 311a01b1d).
+
+## 2026-10-20 03:05:54 EDT — scribe `311a01b1d6cb3f86884a4e1ef4aaab3aab005d43`
+The Mac health watch: a check whose own timer fired over a second late is 'not checked' and changes nothing; the LaunchAgent runs node through taskpolicy -a, Interactive (#701, ADR 0073 amendment D).
+
+## 2026-10-20 03:05:54 EDT — scribe `be08504b8c4be701f936b3aa81e345c52fdded46`
+Red tests for the watch: a busy laptop is not a down server (#701).
+
+## 2026-10-20 03:05:54 EDT — scribe `56ee104270546347bede6b31cdc128ffac2a7f74`
+Settings > Your Mac shows the Mac mini's last heartbeat from Instant under Last Check, followed only while on screen (#701 criterion 2).
+
+## 2026-10-20 03:05:54 EDT — scribe `25ffb3dd6900743a62bbc55cb36cb58d19f44e55`
+Red tests: Settings > Your Mac shows the server's last heartbeat (#701 criterion 2).
+
+## 2026-10-20 03:05:54 EDT — scribe `206a753a4ab4a6dab87d6f01a784a62d85e32209`
+Channel note to #861: ScribeSyncLedgerTests wants a Sync noun for speakerChanges (#701).
+
+## 2026-10-20 03:05:54 EDT — scribe `ca879067009eb06aac0d9cb89d2f43d889acbe91`
+Plan and claims 701-busy-laptop-not-down (#701).
+
+## 2026-10-20 02:57:12 EDT — scribe `9aaf875538c532b679a759f19cc60938012c80a8`
+NOW.md is the read-first page; handoff.md keeps active sections (11196dec4) (#833).
+
+## 2026-10-20 02:56:23 EDT — scribe `d4d3bd5f3428a4a2ac2a0ecdfa39f2cb3d7990c0`
+NOW.md is the read-first page; handoff.md keeps active sections; guidance, drill, audit (#833).
+
+## 2026-10-20 02:55:58 EDT — scribe `2d7728257628ee1ebaa63f7fa235764c48d7a455`
+Audit: the read-first set before and after, the archive's proof, every writer, the Background starvation, the drill (#833).
+
+## 2026-10-20 02:53:33 EDT — scribe `11196dec4f2a6bfee639d5ba445272604e5b351f`
+Green: finished sections move after 12 h idle, open ones after 48 h, no-issue ones after 24 h (#833).
+
+## 2026-10-20 02:52:02 EDT — scribe `80b95bb821322645b681d028b912d3abf94f4dd6`
+Red: a finished section moves after 12 h idle, an open one after 48 h, one with no issue after 24 h (#833).
+
+## 2026-10-20 02:49:31 EDT — scribe `167d43239ee630b66f7912ca507789b5e22b6284`
+Green: the page counts the WAITING lines it leaves out and names handoff-now --waiting --all (#833).
+
+## 2026-10-20 02:48:17 EDT — scribe `eefbff4833448eede4507d36b6e0fbbed48d1517`
+Red: the page counts the WAITING lines it leaves out and names the command that explains each (#833).
+
+## 2026-10-20 02:47:27 EDT — scribe `7a8bb0332ed125d34eea8415c4498a7291b0a834`
+Scripts/handoff-now/README.md: commands, where it runs, the lock and the archive, tests (#833).
+
+## 2026-10-20 02:46:21 EDT — scribe `243afb6d15b0cdd0ae9c33bfa26eedd4225a8d1c`
+AGENTS template: read NOW.md first, handoff.md sections on demand, and who keeps them (#833).
+
+## 2026-10-20 02:46:11 EDT — scribe `3c4963df5c5967ce667dae9f09a06970b060ec70`
+Green: the page's opening names handoff-now --add beside --section (#833).
+
+## 2026-10-20 02:45:35 EDT — scribe `93f5af6c1e5b184b9936a155cf65e35faee667ae`
+Red: the page's opening names handoff-now --add beside --section (#833).
+
+## 2026-10-20 02:43:06 EDT — scribe `07214152e04d63d27771283655d359957568d15f`
+Green: the page shows each agent's own last step, not agent-run's resume lines, and reads work-log ids as signers (#833).
+
+## 2026-10-20 02:43:06 EDT — scribe `e81dd17ca8f64fd1ecc28badb36eaf1269a889f3`
+Red: agent-run's resume lines are bookkeeping, and claude-code/<name>@<account> signs for <name> (#833).
+
+## 2026-10-20 02:43:06 EDT — scribe `5aa886040a0c53479ea125ab07a058a919f6fe5b`
+Green: handoff-now --add writes an agent's dated line into its section under the lock (#833).
+
+## 2026-10-20 02:43:05 EDT — scribe `0fdf4aedcb221bd205a3bc52e0ac8412cd701849`
+Red: handoff-now --add puts an agent's dated line in its section under the lock (#833).
+
+## 2026-10-20 02:43:05 EDT — scribe `363815259d96b1d8a70b3cafabbc7924f247fce4`
+Green: the page names each running agent's log and folder: the usual places once, the rest by name (#833).
+
+## 2026-10-20 02:43:05 EDT — scribe `123fd0821c7bb701ada125e736dd36f0f055f081`
+Red: the page says where each running agent logs and works (#833).
+
+## 2026-10-20 02:43:05 EDT — scribe `5131068323372bc8e476a722cfd25378d0793ffe`
+Green: the LaunchAgent runs as a Standard process (Nice 10), so the page's issues stay fresh under load (#833).
+
+## 2026-10-20 02:43:05 EDT — scribe `4c6502b54bcb29179adb34f16e117772f7ad6cf9`
+Red: the LaunchAgent must not run as a Background process (#833).
+
+## 2026-10-20 02:43:05 EDT — scribe `d26f5a5fcfa93dd4c8ef6a951a969e4f139ee097`
+Green: the archive compares again when the file changed after its comparison, and watches the file it replaces (#833).
+
+## 2026-10-20 02:43:05 EDT — scribe `e59f966409516582b097a1cedf46eaa899dab802`
+Red: a file renamed in between the archive's comparison and its swap loses that writer's line (#833).
+
+## 2026-10-20 02:43:05 EDT — scribe `ab7f03182be1adfb844af6e06d4fc84d4bcb4037`
+Green: the page reads the real handoff.md right: negations, a line's own issue, one row per agent (#833).
+
+## 2026-10-20 02:43:05 EDT — scribe `a141cab6acd72bb0b0bf1d3adf19a106486d0ff1`
+Red: what the real handoff.md taught: negated waiting lines, a line's own issue, one row per agent (#833).
+
+## 2026-10-20 02:43:05 EDT — scribe `76b76293a3457f5e6bcb60def20063e63b2e3268`
+Green: tools/handoff-now writes the Now page under 4,000 tokens and archives handoff.md's finished sections (#833).
+
+## 2026-10-20 02:43:05 EDT — scribe `24b0ec1722201d816bd5d1ca708cb4b538ca840d`
+Red: the Now page under 4,000 tokens and an archive that keeps handoff.md to its active sections (#833).
+
+## 2026-10-20 01:10:25 EDT — scribe `7d021abb193deaf5cf38f43c14fc109257bb98a9`
+A generated Now page read first, handoff.md archived to active sections: plan, claims, channel note (#833).
+
+## 2026-10-20 02:57:06 EDT — scribe `c539dac0ab9907a71d0e9cff5e9f9ae15f0c51ce`
+Change log entries for FoldKit Books' library in Scribe Playback (#929).
+
+## 2026-10-20 02:58:34 EDT — scribe `04f714e1ed223d483695e492a46b70733bffd637`
+Change log entry for a book reading's clip following its recording's audio (#922).
+
+## 2026-10-20 02:58:34 EDT — scribe `d5ab62bed6a15b682458483e62350e06c18e7d3b`
+The media README says a book reading's clip follows its recording's audio: the shift, the second pass, audioShiftSeconds (#922).
+
+## 2026-10-20 02:58:34 EDT — scribe `d3d2a05e2100875584e6055e9165fadf9f0b2941`
+A book reading's clip follows its recording's audio: run measures the shift from its own words after a first pass and cuts it again; five of 31 clips sat 2.96-14.9 s off (#922).
+
+## 2026-10-20 02:58:34 EDT — scribe `343a12ec07b0b63e61fc00c6e6fa0670214cc470`
+Red tests: the audio shift from paired word starts, the half-second threshold, the shifted cut span, the meta keeping the shift (#922).
+
+## 2026-10-20 02:58:34 EDT — scribe `a08ec30a0d0443a3adcea6b38733a0efa6a70b5b`
+Plan step 7 for #922: a clip follows its recording's audio; #934 filed for Recording 187's two overlapping readings (#922).
+
+## 2026-10-20 02:58:34 EDT — scribe `d88b7f9a91e7ec6765e7eb7aeb3b0c86ffc8a8cf`
+Plan and claims for a book reading on a person's page: the speaker index's kinds and list (#922).
+
+## 2026-10-20 02:57:06 EDT — scribe `42ae263a07f93516ceda5ec0a6e7043e214c31f5`
+Scribe Playback's What's New for build 110 and FEATURES.md line 18 (draft), Books, one library (#929).
+
+## 2026-10-20 02:57:06 EDT — scribe `4acebb260146e45cc4d91f1f04e4522a118f8c49`
+The live library's save takes its client, so a local Instant store proves the phone's write path (#929).
+
+## 2026-10-20 02:57:06 EDT — scribe `349d9aa7fac0039ffdd718e38e47e88e69d9ec49`
+Red: the live library on a real Instant client with a local store (shelf, a first place, the same row updated, a finish) (#929).
+
+## 2026-10-20 02:57:06 EDT — scribe `f2d0721b850a13741143b8c3740d3a14abc162aa`
+scribe-videos books: Books' shelf from the terminal with Books' own query and rules; the Books list's swiftui-pro fixes (#929).
+
+## 2026-10-20 02:57:06 EDT — scribe `cd97cacaa67b6bcedbe3ffa4d47cfa946a0c1930`
+Red: the admin client reads Books' shelf with Books' query and rules (#929).
+
+## 2026-10-20 02:57:06 EDT — scribe `8f05c27939579a0ba08c362d10292ae5adeeaa5e`
+Red: the terminal reads Books' shelf with the query Books' deployed build uses; the fixture carries it (#929).
+
+## 2026-10-20 02:57:06 EDT — scribe `9531447e43d403f3e12354430d359ba0b1d8f29f`
+Green: Books' library in Scribe Playback (core, the Books list, a book in the one player, the live library on the app's Instant client) (#929).
+
+## 2026-10-20 02:57:06 EDT — scribe `f8eb6a1c7de3dd82f4d0f18d04c68aa574e72ea1`
+Red: the library rows declared as the schema declares them; the library's answer read as Books reads it (#929).
+
+## 2026-10-20 02:57:06 EDT — scribe `6917b468ce82b8981bc9a99e7fa50200a88cc0af`
+WIP from a run that stopped: the Books list, the app's book flows, a book in the one player (made green in 9531447e4) (#929).
+
+## 2026-10-20 02:57:06 EDT — scribe `b99775eec1aeb0543c16e24bdbf83ca41b5dd98c`
+Red: the Books list, the app's book flows and a book in the one player (#929).
+
+## 2026-10-20 02:57:06 EDT — scribe `84b5e124a6f9fb260bbfe0591a105916dd97d69b`
+WIP from a run that stopped: the core's books, words and audiobook cases (made green in 9531447e4) (#929).
+
+## 2026-10-20 02:57:06 EDT — scribe `671ce022d3fe2baef40a583bb1a479935744d980`
+Red: Scribe Playback reads FoldKit Books' library as Books does, held to Books' own deployed code (#929).
+
+## 2026-10-20 02:55:04 EDT — scribe `11201b6e9f34482bff11dfdf259465baa23eadd4`
+PROGRESS entry for the Audible import (#927).
+
+## 2026-10-20 02:55:04 EDT — scribe `3f9da32344278f6958ec879f63a4048fba43e36f`
+Change log for the Audible import (#927).
+
+## 2026-10-20 02:55:04 EDT — scribe `a6cadcf2bcadd82d0cb4febb73d2699f63421e1c`
+ADR 0087 and the Audible import's README (#927).
+
+## 2026-10-20 02:55:04 EDT — scribe `3ac9b31f7acc228aa517c480eee832a4dff40d9d`
+install-launch-agent.sh: com.knophy.scribe-audible-retry every 30 minutes (#927).
+
+## 2026-10-20 02:55:04 EDT — scribe `631fb881e7b3e3aa74bdd22c89740fc7c0562d19`
+audible_import.py queue and retry: spaced retries until Audible grants the license, each try on the issue (#927).
+
+## 2026-10-20 02:55:04 EDT — scribe `7d85f990cd4068ab013a5db7530168a8b14f7b8c`
+audible_import.py check: the import's writes through production's rules as the owner, rolled back (#927).
+
+## 2026-10-20 02:55:04 EDT — scribe `380259398dd52d96456b1376b38bb34d973fc68e`
+Audit: Audible's CustomerThrottled refusals; on a public-domain trial the catalog's match rate and Parakeet's word-time bias (#927).
+
+## 2026-10-20 02:55:04 EDT — scribe `5bcb4752997db96f3250f629545fc20d13beefed`
+word_times.py: the onset looked for near the two starts at the halfway line; median signed difference (#927).
+
+## 2026-10-20 02:55:04 EDT — scribe `2da7f81252a10f32012c9281e920d0349a473212`
+install.sh --align makes the align venv (#927).
+
+## 2026-10-20 02:55:04 EDT — scribe `02e8a423ebe8c63eeb7591c02ec48b5c1982e44a`
+word_times.py: the words after a pause held against the sound's onset (#927).
+
+## 2026-10-20 02:55:04 EDT — scribe `df3b024a03e7e863da9dd031e1817681f98b25ff`
+word_times.py: Parakeet's word starts against a forced alignment (torchaudio MMS_FA) on sampled minutes (#927).
+
+## 2026-10-20 02:55:04 EDT — scribe `108f9e8ed224dfb2cc953df0aba8b070d3ab6470`
+A Books title is filed and signed under Books' own key, audiobook:<rendition id> (#927, #929).
+
+## 2026-10-20 02:55:04 EDT — scribe `bd82580542e8f7e7a80ab70250d7bbcd9d850518`
+media_catalog.py books --only <file>: one audiobook signed, its entry naming the library's rows and ASIN (#927).
+
+## 2026-10-20 02:55:04 EDT — scribe `28065637f5dd3264f2873a05688dae844d6950de`
+audible_import.py: his own Audible purchase into the Books library through Books' saved login (license, .m4b by ffmpeg -c copy, Books' importer, audio, words in hour pieces, read-along segments, catalog) (#927).
+
+## 2026-10-20 02:44:30 EDT — scribe `dde79e52ac12bdfc1438bb0bf6e24ef4d4359609`
+Change log and PROGRESS entry for Scribe Playback's full-screen split (#928).
+
+## 2026-10-20 02:44:30 EDT — scribe `b8228d09885a86d82788c10a7025680b229989bc`
+Audit of the full-screen split: the snapshots' frames, the tests on the merged code, the divider's frame-time method (#928).
+
+## 2026-10-20 02:44:30 EDT — scribe `ac6f71a603093b4a234a92280a46c9d564c45736`
+Hide Video and Show Video fold the picture without animation under Reduce Motion; the split's slot roles in their own file (#928, swiftui-pro review).
+
+## 2026-10-20 02:44:30 EDT — scribe `9c026086395fb7c4fb2154a6297f233fef74d558`
+The media timeline harness asks for portrait too, so the divider's frame times measure full screen stacked (#928).
+
+## 2026-10-20 02:44:30 EDT — scribe `04d7cdba285ba5f5958cfaa2c16ba76ae00f88e8`
+Full Screen and Exit Full Screen move the picture and the words without animation under Reduce Motion (#928).
+
+## 2026-10-20 02:44:30 EDT — scribe `96b8e8e13db7fe968851ffb3a534b65377965e11`
+ADR 0086 (the full-screen split), FEATURES.md item 15's draft line, Scribe Playback's What's New for build 110 (#928).
+
+## 2026-10-20 02:44:30 EDT — scribe `e97d4bb2b0571d5eb197494226968b00049ef078`
+The media timeline harness's split mode and autodrag, for the divider's frame times (#928; compiled on the mini before the merge).
+
+## 2026-10-20 02:44:30 EDT — scribe `3a0fd94f8a3fcbcb7f61462faf181dfff22ae153`
+Full screen in Scribe Playback's player: the video beside the words in landscape, over them with a divider in full screen (#928).
+
+## 2026-10-20 02:44:30 EDT — scribe `30ad061d55fc592d62dbac06f9b007cfbc9bec11`
+The split container in the shared read-along: one Layout keeps the picture's identity, a divider with a 44-point target (#928).
+
+## 2026-10-20 02:44:30 EDT — scribe `b33cc598632b808b2d20e3b467671b88d7e67c3c`
+Red test: Scribe Playback's full screen (opens, closes, stays for the next item, the divider kept per orientation, the pinch kept) (#928).
+
+## 2026-10-20 02:44:30 EDT — scribe `81afa4b8e28075b1723c1c78116dd924f7fc80bc`
+Red test: the split drawn, five snapshots (stacked, side by side, the column, no picture, the words' least width) (#928).
+
+## 2026-10-20 02:44:30 EDT — scribe `d126eb2d7975ad41b53e0f48996032c22b6175fe`
+The split's rules: where the picture goes for a space's shape, the divider's share kept per orientation and clamped (#928).
+
+## 2026-10-20 02:44:30 EDT — scribe `fd71af0e42d4a0040fd270d19e8c11e5cac8d10c`
+Red test: the split's rules (#928).
+
+## 2026-10-20 02:44:30 EDT — scribe `e84c76b8eb2b6dacca3068d824e332cae48d18bd`
+Channel note: the rename to Scribe Playback is on main; Build 110's What's New heading (#928).
+
+## 2026-10-20 02:44:30 EDT — scribe `2d37c84aa6a8bc3ec87f7c4cfb08bdef23e0a06f`
+Change log for the rename to Scribe Playback (#928).
+
+## 2026-10-20 02:44:30 EDT — scribe `0fdf26314f3783dba9f550021e13a59748e13295`
+Scribe Videos is Scribe Playback wherever a person reads it; bundle ids, Instant names and the scribe-videos CLI stay (#928).
+
+## 2026-10-20 02:44:30 EDT — scribe `a1d4ed40518003ab76e623dfce4a0a8ffae8379c`
+Red test: the app's name is Scribe Playback on the Home Screen, the share sheet, What's New and Scribe's timeline (#928).
+
+## 2026-10-20 02:44:30 EDT — scribe `6fdab88c90c592233d975ad536d5c612c7191d4c`
+Plan and claims for #928: the rename to Scribe Playback and the full-screen split.
+
+## 2026-10-20 01:51:57 EDT — scribe `3c64c2e7753ed2bfa956c94e91981955a4b57bbd`
+Changelog entry for the speakerChanges schema slice, pushed to production (#861).
+
+## 2026-10-20 01:51:57 EDT — scribe `afc9364d3f79252e520cc36b68448bd5c7e641a3`
+The speakers rules matrix covers speakerChanges: owner-only, closed lists, each kind's fields, never edited (#861).
+
+## 2026-10-20 01:51:57 EDT — scribe `b529aeeacaa0b1ff4cfa31f1844b7c3fa800ff06`
+speakerChanges: one append-only row per edit to a recording's speakers, with who made it and the moment he asked (#861).
+
+## 2026-10-20 01:51:57 EDT — scribe `54024630f83486621b9d307bf5373910f99a2887`
+Red test: speakerChanges in the speakers schema module (#861).
+
+## 2026-10-20 01:47:03 EDT — scribe `31ae5fe793caa68f159ef02b2f7c7c6339b6889f`
+Merged the page-onset fix onto main (#920).
+
+## 2026-10-20 01:47:03 EDT — scribe `412094258ca9c299e3ec760c087b3bc818973e87`
+Changelog for the spoken-page onset fix (#920). The implementation commit is 97294d801.
+
+## 2026-10-20 01:47:03 EDT — scribe `97294d801db0ab55e6a3858f038a1e5f3916439f`
+A spoken page starts at the page-number word, and a stored page moves onto that word (#920).
+
+## 2026-10-20 01:47:03 EDT — scribe `cd9f7221ffde419a04ff28341a5ab4dec2998cfd`
+Red test: a spoken page must start at its page-number word, not the line (#920).
+
+## 2026-10-20 01:42:50 EDT — scribe `4665393dc712c7cf496d4f0422185445e835e47f`
+Change log entry for the /v1/process bookReading media key fix (#922).
+
+## 2026-10-20 01:42:50 EDT — scribe `72a9947e6a6e8e832847565c8e848b0207c2ff03`
+/v1/process takes a camelCase media key kind as the schema's ITEM_KINDS name it, so a book reading's job is no longer refused (#922).
+
+## 2026-10-20 01:42:50 EDT — scribe `2eb5a054c4f0867443b628d654316ff748fe07ff`
+Red test: the server takes bookReading:book-readings:<reading> as a media key (#922).
+
+## 2026-10-20 01:42:50 EDT — scribe `0fbdbe88c086257a063ecf0549e87641080e47f5`
+Plan and claims for #922's server key fix and the book-reading backfill (#922).
+
+## 2026-10-20 01:27:54 EDT — scribe `d8568dfbb127638616728e7128f53193ef5e01f8`
+Changelog entries name the #922 commits as landed on main (#922).
+
+## 2026-10-20 01:27:54 EDT — scribe `624a0f7b7ecc45093ee4dc56ffc7f5d29974dd6a`
+Document the #922 implementation commits in the change log (#922).
+
+## 2026-10-20 01:27:54 EDT — scribe `8d3c4f0b2d9b20d135242ddcf309725a055892a4`
+A book reading's scribe-books catalog item carries its book, reading, recording, start and transcript ids; measure results keep match properties (#922).
+
+## 2026-10-20 01:27:54 EDT — scribe `2d2fb7b98b8a7aabcecd4793314d4084b56db6f0`
+Each book read aloud becomes a bookReading media item with its clip under the recording, /v1/process words and named speakers, and a scribe-books catalog entry naming its Instant rows; schema pushed to production (#922).
+
+## 2026-10-20 01:27:54 EDT — scribe `c310ff2c9cc71233c2b640e5c892f0e9e00fd7d7`
+Red tests for book readings as media items with catalog ids and word-level resolution (#922).
 
 ## 2026-08-20 14:32:00 EDT — scribe-sqlite-data `a6ed0a8b8f9cdd7f2451bfddd3f091de88769153`
 Document fb7a7c6 in the change log (#228).

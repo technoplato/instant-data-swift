@@ -1,5 +1,9 @@
 import Foundation
 
+// History:
+// - 2026-10-23: a many-cardinality value set (a forward link's ids) sorts without building two key strings per
+//   comparison; every read of a long recording sorted its links again (#1007).
+
 struct AttributeStore: Hashable, Codable, Sendable {
   private var attributesByID: [String: InstantAttribute] = [:]
   private var attributesByForwardIdentity: [String: InstantAttribute] = [:]
@@ -1934,7 +1938,7 @@ struct TripleIndexes: Codable, Sendable {
 
     case .many:
       var normalized: [InstantValue: InstantTripleStamp] = [:]
-      for value in slot.keys.sorted(by: { $0.comparableKey < $1.comparableKey }) {
+      for value in Self.sortedByComparableKey(slot.keys) {
         guard let stamp = slot[value] else { continue }
         let normalizedValue = Self.normalizedValue(value, attribute: attribute)
         if let existing = normalized[normalizedValue] {
@@ -3762,10 +3766,32 @@ private struct PreparedInclude {
       return .one(value)
 
     case .many:
-      return .many(
-        slot.keys.sorted { $0.comparableKey < $1.comparableKey }
-      )
+      return .many(Self.sortedByComparableKey(slot.keys))
     }
+  }
+
+  /// `values` in `comparableKey` order, without building a key per comparison (#1007).
+  ///
+  /// A forward link keeps every linked id as one value of a many-cardinality attribute, so a long recording holds
+  /// thousands of values per link, and every read of it sorts them again. A comparator that builds both keys allocated
+  /// two strings per comparison, about 2 n log n of them. A link holds refs only, and a ref's key is "5:" and its id:
+  /// String comparison compares the NFC forms, and ":" composes with nothing after it, so comparing the ids orders
+  /// distinct refs exactly as comparing their keys does, with no key built. Any other mix builds each key once.
+  static func sortedByComparableKey(_ values: [InstantValue]) -> [InstantValue] {
+    guard values.count > 1 else { return values }
+    var ids: [String] = []
+    ids.reserveCapacity(values.count)
+    for value in values {
+      guard case let .ref(id) = value else { break }
+      ids.append(id)
+    }
+    if ids.count == values.count {
+      ids.sort()
+      return ids.map(InstantValue.ref)
+    }
+    var keyed = values.map { (key: $0.comparableKey, value: $0) }
+    keyed.sort { $0.key < $1.key }
+    return keyed.map(\.value)
   }
 
   private func needsServerCreatedAt(_ order: InstantQueryOrder) -> Bool {
