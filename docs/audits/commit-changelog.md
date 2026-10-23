@@ -1,3 +1,27 @@
+## 2026-10-23 15:41:58 EDT — scribe `7bfe5abafb1f9b295d391482e2682e26b755f6c4`
+Changelog (#1018, #1019): build 116 cut 8854000d4 and the Watch fix's red c11577d41 and green d403983c5 recorded in Scribe's CHANGELOG.md.
+
+## 2026-10-23 15:41:58 EDT — scribe `8854000d4d96949e4ba022ef42ade95e2887f18b`
+Build 116 cut (#1018, #1005): Scribe 0.1 (116) and Scribe Playback 116 with instant-data-swift 1.9.18; both What's New files dated 2026-10-23 (room back from upload copies first, the server-apply heat fix second).
+
+## 2026-10-23 15:41:58 EDT — scribe `d403983c5e51d9a3d533e56eb512e848ce1d5ce2`
+Green (#1019): Scribe's storage cleanup passes getattrlist's options by numericCast, so the Watch's arm64_32 slice compiles.
+
+## 2026-10-23 15:41:58 EDT — scribe `c11577d41a6fbcd11bc1da9a2ea2cab9e890e269`
+Red test (#1019): a watchOS arm64_32 type-check of the cleanup's getattrlist helper fails (options are UInt on ILP32).
+
+## 2026-10-23 15:41:58 EDT — scribe `579161182641b52e950dced2fab9314fec910994`
+Plan (#1019): claims for the cleanup's getattrlist line and the Watch type-check, with a channel note for #1016.
+
+## 2026-10-23 15:41:58 EDT — scribe `785817704d9f04ad8c4bd86a83822b1b03549e68`
+Plan (#1018): the build 116 cut's plan and claims (version numbers and What's New).
+
+## 2026-10-23 15:41:58 EDT — instant-data-swift `d165589d88c59f3bc7d74a35aabcc69d7122b7ed`
+Green (#1019): InstantFileBlocks passes getattrlist's options by numericCast, so the package compiles for watchOS arm64_32 (carried in 1.9.18).
+
+## 2026-10-23 15:41:58 EDT — instant-data-swift `32f9212373c04111f4216cc305c7a74ea3d78309`
+Red (#1019): scripts/check-watchos-arm64_32.sh, a watchOS arm64_32 type-check of InstantFileBlocks, fails on 1.9.14-1.9.17's getattrlist call.
+
 ## 2026-10-23 15:40:23 EDT — scribe `fd1c0402db016d5c5e9ef127f7d2cc5d9d46dc8b`
 Scribe and Scribe Playback pin instant-data-swift exactly 1.9.18 (#932's server-apply greens; #1019's Watch fix); build 116.
 
