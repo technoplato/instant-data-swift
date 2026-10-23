@@ -1,3 +1,12 @@
+## 2026-10-23 19:18:20 EDT — scribe `77cabf1a664cca5213d3f7379c4e7a08ce9be947`
+The hidden list's row in the recording-screen audit and What's New for build 118 (#1007).
+
+## 2026-10-23 19:18:05 EDT — scribe `2287ba1c7a36ff3d925006f6d0037c66d4997f19`
+Green (#1007): the recordings list's live row waits while the recording screen covers the list.
+
+## 2026-10-23 19:07:34 EDT — scribe `a95b6d3ffff7ccd37c8010766392eaf30a7add04`
+Red test (#1007): the list's live-row tick tests; an existing tick test's drifted expectations fixed.
+
 ## 2026-10-23 19:13:50 EDT — instant-data-swift `c91e8c0b1072fb1202d96110b11fcb987a97e78e`
 Green (#932): a server apply's gate hold of 250-999 ms is logged at notice, so a host bridge that counts info lines per minute still sends each with its fields.
 
