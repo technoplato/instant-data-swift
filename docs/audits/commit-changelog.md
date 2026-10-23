@@ -1,3 +1,6 @@
+## 2026-10-23 15:34:58 EDT — scribe `662f4d3ad1b647709f3db697f4cc0d46f68d611a`
+The recording screen's vertical stamp drops its never-visible digit roll (#1007 audit rank 2; landed by merge b37aec4f8 for release 116).
+
 ## 2026-10-23 15:31:52 EDT — instant-data-swift `0329180da7f0bceb9363263821ad840f3d555f04`
 Release document for v1.9.18 (#932): the gate event's path and commit parts, the resident patch, page-scoped validation, the live-line reduction; carries 1.9.17 and the Watch fix (#1019).
 
