@@ -5,6 +5,8 @@ import Foundation
 // - 2026-10-23: a commit that names an entity the store holds neither before nor after it (the delete of a row that is
 //   already gone) no longer refreshes every observer from the whole store; a verified observer that does not show it
 //   judges the change without it, and may splice the rest in place (#1007).
+// - 2026-10-23: a verified plan with includes skips a change no shown entity holds, no entity linked to a shown one
+//   makes, and no root moves in or out of its set for (#1007).
 
 public struct InstantStoreMutationResult: Hashable, Codable, Sendable {
   public var transactionID: String
@@ -2256,6 +2258,37 @@ public actor InstantStore {
     {
       guard changedEntityIDs.count <= resultSetComparisonLimit else { return .refresh }
       for entityID in changedEntityIDs {
+        let before = baseline.indexes.resultSetMembership(
+          entityID,
+          plan: observer.plan,
+          attributes: baseline.attributes
+        )
+        let after = indexes.resultSetMembership(entityID, plan: observer.plan, attributes: attributes)
+        if before != after {
+          return .refresh
+        }
+      }
+      return .skip
+    }
+    // #1007: a plan with includes (every include with a sub-query, every field path its own namespace's) shows its root
+    // namespace's ordered set, windowed, and for each shown root the included entities its links reach. A changed entity
+    // no shown entity holds, linked to no shown entity before or after (a link's change marks both of its ends changed,
+    // so a link to or from a shown entity is either side's), and with the same place in the root set before and after,
+    // cannot change the page: a recordings list's other pages skip a heartbeat, a line or an attachment of a recording
+    // they do not show.
+    if !observer.plan.hasOnlyNamespaceLocalDependencies,
+      let baseline,
+      observer.verifiedEpoch == observerEpoch
+    {
+      guard changedEntityIDs.count <= resultSetComparisonLimit else { return .refresh }
+      // No changed entity is shown at any depth (checked above).
+      let shownEntityIDs = observer.lastValues.allEntityIDs()
+      for entityID in changedEntityIDs {
+        if baseline.indexes.hasLink(entityID, toAnyOf: shownEntityIDs, attributes: baseline.attributes)
+          || indexes.hasLink(entityID, toAnyOf: shownEntityIDs, attributes: attributes)
+        {
+          return .refresh
+        }
         let before = baseline.indexes.resultSetMembership(
           entityID,
           plan: observer.plan,

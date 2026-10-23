@@ -141,6 +141,90 @@ struct InstantIncludePlanSkipTests {
     }
   }
 
+  /// A link is found from either end, whichever side of it is smaller: a recording holding more refs than the shown set
+  /// is probed by the shown ids, a smaller one is scanned; a target many entities point to likewise.
+  @Test
+  func aLinkIsFoundFromEitherEndWhicheverSideIsSmaller() {
+    let cover = InstantAttribute(
+      id: "\(Self.recordings)/cover",
+      namespace: Self.recordings,
+      name: "cover",
+      valueType: .ref,
+      cardinality: .one,
+      forwardIdentity: "\(Self.recordings)/cover",
+      reverseIdentity: "\(Self.attachments)/coverOf",
+      linkNamespace: Self.attachments
+    )
+    let attributes = AttributeStore(attributes: Self.attributes + [cover])
+    var triples: [InstantTriple] = []
+    func link(_ source: String, _ attributeID: String, _ target: String) {
+      triples.append(
+        InstantTriple(
+          entityID: source,
+          attributeID: attributeID,
+          value: .ref(target),
+          txID: "tx-\(triples.count)",
+          txTime: InstantTimestamp(milliseconds: Int64(triples.count + 1))
+        )
+      )
+    }
+    let lines = (0..<20).map { "line-\($0)" }
+    for line in lines {
+      link("hub", "\(Self.recordings)/segments", line)
+    }
+    for recording in 0..<5 {
+      link("recording-\(recording)", "\(Self.recordings)/segments", "shared")
+    }
+    link("hub", cover.id, "poster")
+    let indexes = TripleIndexes(triples: triples, attributes: attributes)
+    let strangers = Set((0..<30).map { "stranger-\($0)" })
+
+    let answers: [String: Bool] = [
+      "hub to one of its lines (probe)": indexes.hasLink("hub", toAnyOf: ["line-5"], attributes: attributes),
+      "hub to a line among 30 ids (scan)": indexes.hasLink(
+        "hub",
+        toAnyOf: strangers.union(["line-7"]),
+        attributes: attributes
+      ),
+      "hub to 30 strangers": indexes.hasLink("hub", toAnyOf: strangers, attributes: attributes),
+      "hub to one stranger": indexes.hasLink("hub", toAnyOf: ["stranger-1"], attributes: attributes),
+      "hub to nothing": indexes.hasLink("hub", toAnyOf: [], attributes: attributes),
+      "a line to its hub": indexes.hasLink("line-5", toAnyOf: ["hub"], attributes: attributes),
+      "shared to one of five holders (probe)": indexes.hasLink(
+        "shared",
+        toAnyOf: ["recording-2"],
+        attributes: attributes
+      ),
+      "shared to a holder among 30 ids (scan)": indexes.hasLink(
+        "shared",
+        toAnyOf: strangers.union(["recording-4"]),
+        attributes: attributes
+      ),
+      "shared to a stranger": indexes.hasLink("shared", toAnyOf: ["stranger-2"], attributes: attributes),
+      "hub to its cover": indexes.hasLink("hub", toAnyOf: ["poster"], attributes: attributes),
+      "the cover to its hub": indexes.hasLink("poster", toAnyOf: ["hub"], attributes: attributes),
+      "an unknown entity": indexes.hasLink("nobody", toAnyOf: ["hub", "line-1"], attributes: attributes),
+    ]
+
+    expectNoDifference(
+      answers,
+      [
+        "hub to one of its lines (probe)": true,
+        "hub to a line among 30 ids (scan)": true,
+        "hub to 30 strangers": false,
+        "hub to one stranger": false,
+        "hub to nothing": false,
+        "a line to its hub": true,
+        "shared to one of five holders (probe)": true,
+        "shared to a holder among 30 ids (scan)": true,
+        "shared to a stranger": false,
+        "hub to its cover": true,
+        "the cover to its hub": true,
+        "an unknown entity": false,
+      ]
+    )
+  }
+
   // MARK: - Helpers
 
   static let recordings = "skipRecordings"

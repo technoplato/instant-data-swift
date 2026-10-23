@@ -1667,6 +1667,40 @@ struct TripleIndexes: Codable, Sendable {
     return namespaces
   }
 
+  /// Whether `entityID` holds a ref to any of `entityIDs`, or any of them holds a ref to it (#1007): whether a change of
+  /// `entityID` can reach a result that shows one of `entityIDs` through a link.
+  ///
+  /// Each link is probed from its smaller side: a recording's heartbeat asks this of every list page that does not show
+  /// the recording, and the recording holds thousands of refs (its lines, attachments, events, chunks) while a page shows
+  /// tens of entities.
+  func hasLink(_ entityID: String, toAnyOf entityIDs: Set<String>, attributes: AttributeStore) -> Bool {
+    guard !entityIDs.isEmpty else { return false }
+    if let attributesByID = eav[entityID] {
+      for (attributeID, slot) in attributesByID where attributes[attributeID]?.valueType == .ref {
+        switch slot {
+        case let .one(value, _):
+          if case let .ref(target) = value, entityIDs.contains(target) { return true }
+        case let .many(map):
+          if map.count > entityIDs.count {
+            if entityIDs.contains(where: { map[.ref($0)] != nil }) { return true }
+          } else if map.keys.contains(where: { $0.refValue.map(entityIDs.contains) ?? false }) {
+            return true
+          }
+        }
+      }
+    }
+    if let byAttribute = vae[.ref(entityID)] {
+      for byEntity in byAttribute.values {
+        if byEntity.count > entityIDs.count {
+          if entityIDs.contains(where: { byEntity[$0] != nil }) { return true }
+        } else if byEntity.keys.contains(where: entityIDs.contains) {
+          return true
+        }
+      }
+    }
+    return false
+  }
+
   /// `lazy` matters here: the outbox is rescanned on every inbound server event, and this is asked
   /// once per write key in that scan. Materialising an array per key just to take a maximum made
   /// the scan allocate in proportion to outbox depth × versions per key.
