@@ -66,6 +66,67 @@ struct InstantEnergyMeterTests {
     #expect(perPair < 2_000)
   }
 
+  /// #1011: each operation says how much of its CPU ran on the main thread, so a host can take it from the main thread's
+  /// own CPU and name what is left there.
+  @Test
+  func aSectionOnTheMainThreadSaysSo() async throws {
+    let meter = InstantEnergyMeterStorage()
+    _ = await MainActor.run { energyMeterBusyWork(meter, operation: .observerRefresh, iterations: 200_000) }
+    _ = energyMeterBusyWork(meter, operation: .localSave, iterations: 200_000)
+
+    let refresh = meter.snapshot()[.observerRefresh]
+    let save = meter.snapshot()[.localSave]
+    #expect(refresh.cpuNanoseconds > 0)
+    expectNoDifference(refresh.mainThreadCPUNanoseconds, refresh.cpuNanoseconds)
+    #expect(save.cpuNanoseconds > 0)
+    expectNoDifference(save.mainThreadCPUNanoseconds, 0)
+    expectNoDifference(
+      meter.snapshot().subtracting(InstantEnergySnapshot())[.observerRefresh].mainThreadCPUNanoseconds,
+      refresh.mainThreadCPUNanoseconds
+    )
+  }
+
+  /// #1011: a server result's retractions have their own name; a device profile found them outside every name.
+  @Test
+  func aServerResultsRetractionsAreTheirOwnOperation() async throws {
+    let store = try SQLitePersistenceStore(fileURL: try energyMeterCacheURL())
+    try await store.bootstrap()
+    let before = InstantEnergyMeter.snapshot()
+
+    _ = try await store.liveQueryReplacementRetractions(
+      for: [InstantLiveQueryResultReplacement(key: "list", triples: [], pageInfo: nil)]
+    )
+
+    let delta = InstantEnergyMeter.snapshot().subtracting(before)
+    #expect(delta[.serverApplyRetractions].count >= 1)
+  }
+
+  /// #1011: staging a server apply's page has its own name, apart from the plan: it was the heaviest stack of a device's
+  /// disk-write report.
+  @Test
+  func stagingAServerApplysPageIsItsOwnOperation() async throws {
+    let store = try SQLitePersistenceStore(fileURL: try energyMeterCacheURL())
+    try await store.bootstrap()
+    let load = try await store.beginServerApplyPlan(
+      id: "energy-stage-plan",
+      footprint: InstantServerApplyFootprint(entityIDs: ["energy-stage-entity"], isGlobal: false),
+      hasServerOperations: true,
+      processedTransactionID: "energy-stage-server",
+      confirmingMutationID: nil,
+      confirmingClaimantID: nil
+    )
+    guard case let .ready(plan) = load else {
+      Issue.record("Expected a ready plan, got \(load).")
+      return
+    }
+    let before = InstantEnergyMeter.snapshot()
+
+    try await store.stageServerApplyBodyPage(planID: plan.id, dispositions: [])
+
+    let delta = InstantEnergyMeter.snapshot().subtracting(before)
+    #expect(delta[.serverApplyStage].count >= 1)
+  }
+
   /// Local writes count their transactions and outbox rows; a run of same-entity assignments supersedes the tail.
   @Test
   func localWritesCountTransactionsRowsAndSupersededRows() async throws {
@@ -184,6 +245,14 @@ private actor EnergyMeterFailingTransport {
   private func increment() {
     count += 1
   }
+}
+
+/// A fresh SQLite file for one test.
+private func energyMeterCacheURL() throws -> URL {
+  let directory = FileManager.default.temporaryDirectory
+    .appendingPathComponent("InstantEnergyMeterTests-\(UUID().uuidString)")
+  try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+  return directory.appendingPathComponent("state.sqlite")
 }
 
 /// A runtime with a live transport that never connects on its own, so local writes stay in the durable outbox.

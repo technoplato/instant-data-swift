@@ -1,6 +1,12 @@
 import Foundation
 import os
 
+// History:
+// - #669: the meter, its operations, its counters and its dynamic-tracing signposts.
+// - #1011: each operation's CPU on the main thread, so a host can name what else the main thread spent; the server
+//   apply's staging and its query-result retractions under their own names, which a device profile showed outside the
+//   plan's name or outside every name.
+
 /// A library operation whose cost the energy meter adds up (#669).
 ///
 /// Each case is a synchronous section of the library's work, measured where it runs: its count, the CPU time its thread
@@ -22,8 +28,8 @@ public enum InstantEnergyOperation: String, CaseIterable, Sendable {
   case acknowledgement
   /// Translating a server result (`refresh-ok`) into store operations.
   case refreshTranslate
-  /// Planning a server apply in SQLite: opening the plan, and reading and staging, page by page, the pending writes it
-  /// peels and replays.
+  /// Planning a server apply in SQLite: opening the plan, reading the pending writes it peels and replays page by page,
+  /// and the context its reduction reads.
   case serverApplyPlan
   /// Committing a server apply in SQLite: the server's facts, the rebased writes, and the query results.
   case serverApplyCommit
@@ -38,6 +44,10 @@ public enum InstantEnergyOperation: String, CaseIterable, Sendable {
   case frameEncode
   /// Decoding one received WebSocket frame from JSON.
   case frameDecode
+  /// Staging one page of a server apply's pending writes in SQLite (#1011): the apply's largest disk writer on a device.
+  case serverApplyStage
+  /// Reading which cached query facts a server result's replacements retract (#1011).
+  case serverApplyRetractions
 
   /// The operation's slot in the meter's storage.
   fileprivate var index: Int {
@@ -56,6 +66,8 @@ public enum InstantEnergyOperation: String, CaseIterable, Sendable {
     case .connectAttempt: 11
     case .frameEncode: 12
     case .frameDecode: 13
+    case .serverApplyStage: 14
+    case .serverApplyRetractions: 15
     }
   }
 
@@ -76,6 +88,8 @@ public enum InstantEnergyOperation: String, CaseIterable, Sendable {
     case .connectAttempt: "connectAttempt"
     case .frameEncode: "frameEncode"
     case .frameDecode: "frameDecode"
+    case .serverApplyStage: "serverApplyStage"
+    case .serverApplyRetractions: "serverApplyRetractions"
     }
   }
 }
@@ -98,19 +112,29 @@ public struct InstantEnergySnapshot: Sendable, Equatable {
     public var cpuNanoseconds: UInt64
     /// The wall time of the sections, in nanoseconds.
     public var wallNanoseconds: UInt64
+    /// Of ``cpuNanoseconds``, the sections that ran on the main thread (#1011).
+    public var mainThreadCPUNanoseconds: UInt64
 
-    public init(count: Int = 0, cpuNanoseconds: UInt64 = 0, wallNanoseconds: UInt64 = 0) {
+    public init(
+      count: Int = 0,
+      cpuNanoseconds: UInt64 = 0,
+      wallNanoseconds: UInt64 = 0,
+      mainThreadCPUNanoseconds: UInt64 = 0
+    ) {
       self.count = count
       self.cpuNanoseconds = cpuNanoseconds
       self.wallNanoseconds = wallNanoseconds
+      self.mainThreadCPUNanoseconds = mainThreadCPUNanoseconds
     }
 
     /// What this measure added after `earlier`. A counter never goes back, so each field is at least zero.
     public func subtracting(_ earlier: Self) -> Self {
-      Self(
+      func delta(_ new: UInt64, _ old: UInt64) -> UInt64 { new >= old ? new - old : 0 }
+      return Self(
         count: max(0, count - earlier.count),
-        cpuNanoseconds: cpuNanoseconds >= earlier.cpuNanoseconds ? cpuNanoseconds - earlier.cpuNanoseconds : 0,
-        wallNanoseconds: wallNanoseconds >= earlier.wallNanoseconds ? wallNanoseconds - earlier.wallNanoseconds : 0
+        cpuNanoseconds: delta(cpuNanoseconds, earlier.cpuNanoseconds),
+        wallNanoseconds: delta(wallNanoseconds, earlier.wallNanoseconds),
+        mainThreadCPUNanoseconds: delta(mainThreadCPUNanoseconds, earlier.mainThreadCPUNanoseconds)
       )
     }
   }
