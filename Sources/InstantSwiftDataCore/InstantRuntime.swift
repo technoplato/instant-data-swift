@@ -9,6 +9,9 @@
 // - 2026-10-23: the #296 reduction places a server fact on an entity a surviving pending write deletes last (a live
 //   line its final deletes, while the server still shows the row): the store keeps it deleted, and the fact patches
 //   the receipt that holds the slot's base, instead of peeling and replaying every pending write (#932).
+// - 2026-10-23: a server apply works out its restated live-query results' saves (ownership rows that leave and join,
+//   and the JSON when it is written) before it takes the operation gate, under the revision the commit checks; the
+//   commit diffed them under the gate (#932).
 
 import Foundation
 import IssueReporting
@@ -2851,6 +2854,19 @@ public final class InstantRuntime: Sendable {
         }
       }
       let mergedAttributeCount = changedMergedAttributes.count
+      // #932: the restated results' saves (their ownership rows and, when due, their JSON) are worked out here, outside
+      // the operation gate, under the revisions the commit checks; it read 7,287 restated facts' rows and encoded their
+      // values under the gate on every frame. A frame that changes attributes saves in the commit, as the merged
+      // attributes decide each result's nested limits there.
+      var preparedQueryResults: [InstantPreparedLiveQueryResultSave]?
+      if !persistedLiveQueryResults.isEmpty, mergedAttributeCount == 0 {
+        recordActorHop(.persistence)
+        guard let prepared = try await persistence.prepareLiveQueryResultSaves(
+          persistedLiveQueryResults,
+          expectedQueryResultRevision: compactState.queryResultRevision
+        ) else { continue applyAttempts }
+        preparedQueryResults = prepared
+      }
       // Attribute shape changes can alter every optimistic operation on that attribute, even when
       // refresh-ok carries no triple operation. Treat the schema transition as a global server
       // apply so every active overlay is peeled before canonicalization and replayed afterward.
@@ -3467,6 +3483,7 @@ public final class InstantRuntime: Sendable {
           changedFactScope: preparedForCommit.factScope,
           mergingAttributes: changedMergedAttributes,
           queryResults: persistedLiveQueryResults,
+          preparedQueryResults: preparedQueryResults,
           storeChanged: changesMaterializedStore || didCatchUpLocalMutations,
           metadataKey: processedTransactionIDMetadataKey,
           metadataValue: processedTransactionID,

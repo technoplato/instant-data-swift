@@ -18,6 +18,8 @@
 //   and its commit still check every row (#932).
 // - 2026-10-23: the reduction context names, for each shadowed entity the store does not show, the surviving write
 //   that deletes it last (#932).
+// - 2026-10-23: a live-query result's save splits into preparing (nested limits, ownership difference, JSON when
+//   written) and applying, so a server apply prepares its results before the operation gate (#932).
 
 import Foundation
 import IssueReporting
@@ -757,6 +759,18 @@ struct InstantServerApplyCommitTiming: Sendable, Equatable {
     let duration = start.duration(to: end)
     return Int(duration.components.seconds * 1_000 + duration.components.attoseconds / 1_000_000_000_000_000)
   }
+}
+
+/// One restated live-query result's save, worked out before the server apply takes the operation gate (#932): the
+/// result as stored (nested limits applied), the ownership rows that leave and join, and its JSON when the save writes
+/// it now. The commit applies it without reading the result's ownership rows or encoding its values under the gate,
+/// which cost 87-140 ms a frame for 7,287 restated facts on a Mac mini and 1-4 s on the phone with nothing pending.
+struct InstantPreparedLiveQueryResultSave: Sendable {
+  var result: InstantPersistedLiveQueryResult
+  fileprivate var attributeIDs: Set<String>
+  fileprivate var removedOwnership: [LiveQueryOwnershipIdentity]
+  fileprivate var insertedOwnership: [LiveQueryOwnershipIdentity]
+  fileprivate var json: String?
 }
 
 /// Times a commit's consecutive sections into an ``InstantServerApplyCommitTiming`` (#932).
@@ -5935,6 +5949,7 @@ public actor SQLitePersistenceStore {
     changedFactScope: InstantFactScope = InstantFactScope(),
     mergingAttributes attributes: [InstantAttribute],
     queryResults: [InstantPersistedLiveQueryResult],
+    preparedQueryResults: [InstantPreparedLiveQueryResultSave]? = nil,
     storeChanged: Bool,
     metadataKey: String,
     metadataValue: String,
@@ -6143,8 +6158,15 @@ public actor SQLitePersistenceStore {
 
       let ownershipRowReadsBefore = liveQueryOwnershipRowReadCount
       let valueEncodesBefore = liveQueryResultValueEncodeCount
-      for result in queryResults {
-        try saveLiveQueryResultWithoutTransaction(result, deferringJSON: true)
+      if let preparedQueryResults {
+        // #932: worked out before the gate, under the query-result revision this commit checked above.
+        for save in preparedQueryResults {
+          try applyLiveQueryResultSaveWithoutTransaction(save, deferringJSON: true)
+        }
+      } else {
+        for result in queryResults {
+          try saveLiveQueryResultWithoutTransaction(result, deferringJSON: true)
+        }
       }
       serverApplyMetrics.commitResultOwnershipRowReadCount += liveQueryOwnershipRowReadCount - ownershipRowReadsBefore
       serverApplyMetrics.commitResultValueEncodeCount += liveQueryResultValueEncodeCount - valueEncodesBefore
@@ -17558,11 +17580,51 @@ public actor SQLitePersistenceStore {
     _ result: InstantPersistedLiveQueryResult,
     deferringJSON: Bool = false
   ) throws {
-    try invalidateDeclaredRelationStorageMarkerIfNeeded(
-      forAttributeIDs: Set(result.triples.map(\.attributeID))
+    let prepared = try preparedLiveQueryResultSaveWithoutTransaction(
+      result,
+      previousOwnership: nil,
+      encodingJSONIfWritten: nil
     )
-    // A saved result supersedes the copy a prune unloaded (#1006): a key lives in one of the two tables.
-    try execute("DELETE FROM instant_unloaded_live_query_results WHERE query_key = ?", [.text(result.key)])
+    try applyLiveQueryResultSaveWithoutTransaction(prepared.save, deferringJSON: deferringJSON)
+  }
+
+  /// Works out the saves of a server apply's restated results before the apply takes the operation gate (#932); nil
+  /// when the query-result revision moved since `expectedQueryResultRevision`. The commit checks the same revision, and
+  /// every writer of a result's ownership rows bumps it in the same transaction, so the rows read here are the rows
+  /// the commit replaces. Each save's JSON is encoded here too when, as things stand, the commit would write it.
+  func prepareLiveQueryResultSaves(
+    _ results: [InstantPersistedLiveQueryResult],
+    expectedQueryResultRevision: Int64
+  ) throws -> [InstantPreparedLiveQueryResultSave]? {
+    guard !results.isEmpty else { return [] }
+    let energy = InstantEnergyMeter.begin(.serverApplyPlan); defer { energy.end() }
+    return try readTransaction {
+      guard try loadMetadataRevisionWithoutTransaction(Self.queryResultRevisionKey) == expectedQueryResultRevision
+      else { return nil }
+      // A key restated twice in one frame is saved twice in order: the second save replaces the first's rows.
+      var ownershipByKey: [String: Set<LiveQueryOwnershipIdentity>] = [:]
+      var saves: [InstantPreparedLiveQueryResultSave] = []
+      for result in results {
+        let prepared = try preparedLiveQueryResultSaveWithoutTransaction(
+          result,
+          previousOwnership: ownershipByKey[result.key],
+          encodingJSONIfWritten: ownershipByKey[result.key] == nil ? true : nil
+        )
+        ownershipByKey[result.key] = prepared.nextOwnership
+        saves.append(prepared.save)
+      }
+      return saves
+    }
+  }
+
+  /// One result's save against `previousOwnership`, or the stored rows when nil. With `encodingJSONIfWritten`, the
+  /// JSON too when a deferring save would write it now.
+  private func preparedLiveQueryResultSaveWithoutTransaction(
+    _ result: InstantPersistedLiveQueryResult,
+    previousOwnership knownPreviousOwnership: Set<LiveQueryOwnershipIdentity>?,
+    encodingJSONIfWritten: Bool?
+  ) throws -> (save: InstantPreparedLiveQueryResultSave, nextOwnership: Set<LiveQueryOwnershipIdentity>) {
+    let attributeIDs = Set(result.triples.map(\.attributeID))
     let attributes = try attributesForLiveResultSaveWithoutTransaction()
     var result = result
     result.triples = InstantLiveQueryNestedLimit.limitedTriples(
@@ -17580,8 +17642,36 @@ public actor SQLitePersistenceStore {
         )
       }
     )
-    let previousOwnership = try liveQueryOwnershipWithoutTransaction(queryKey: result.key)
-    liveQueryResultJSONWriteStats.saves += 1
+    let previousOwnership = try knownPreviousOwnership
+      ?? liveQueryOwnershipWithoutTransaction(queryKey: result.key)
+    var json: String?
+    if encodingJSONIfWritten == true,
+      try liveQueryResultJSONWriteWithoutTransaction(
+        result,
+        ownershipUnchanged: previousOwnership == nextOwnership,
+        deferringJSON: true
+      ).writesJSON
+    {
+      json = try encode(result)
+    }
+    return (
+      InstantPreparedLiveQueryResultSave(
+        result: result,
+        attributeIDs: attributeIDs,
+        removedOwnership: previousOwnership.subtracting(nextOwnership).sorted(by: Self.liveQueryOwnershipOrder),
+        insertedOwnership: nextOwnership.subtracting(previousOwnership).sorted(by: Self.liveQueryOwnershipOrder),
+        json: json
+      ),
+      nextOwnership
+    )
+  }
+
+  /// Whether saving `result` writes its JSON now (#566), with what the decision read.
+  private func liveQueryResultJSONWriteWithoutTransaction(
+    _ result: InstantPersistedLiveQueryResult,
+    ownershipUnchanged: Bool,
+    deferringJSON: Bool
+  ) throws -> (writesJSON: Bool, storedJSONIsCurrent: Bool) {
     let key = result.key
     let rowExists = try selectScalar(
       "SELECT 1 FROM instant_live_query_results WHERE query_key = ? LIMIT 1",
@@ -17590,12 +17680,33 @@ public actor SQLitePersistenceStore {
     // The stored JSON already holds this result: the same facts and page info, and no newer result waits (#566).
     let storedJSONIsCurrent = rowExists
       && liveQueryResultJSON.deferred[key] == nil
-      && previousOwnership == nextOwnership
+      && ownershipUnchanged
       && liveQueryResultJSON.writtenPageInfo[key].map { $0 == result.pageInfo } == true
     let writeIsDue = liveQueryResultJSON.writtenAt[key].map {
       result.updatedAt.milliseconds - $0 >= liveQueryResultJSONWriteIntervalMilliseconds
     } ?? true
-    if rowExists, storedJSONIsCurrent || (deferringJSON && !writeIsDue) {
+    return (!(rowExists && (storedJSONIsCurrent || (deferringJSON && !writeIsDue))), storedJSONIsCurrent)
+  }
+
+  private func applyLiveQueryResultSaveWithoutTransaction(
+    _ save: InstantPreparedLiveQueryResultSave,
+    deferringJSON: Bool
+  ) throws {
+    let result = save.result
+    try invalidateDeclaredRelationStorageMarkerIfNeeded(forAttributeIDs: save.attributeIDs)
+    // A saved result supersedes the copy a prune unloaded (#1006): a key lives in one of the two tables.
+    try execute("DELETE FROM instant_unloaded_live_query_results WHERE query_key = ?", [.text(result.key)])
+    liveQueryResultJSONWriteStats.saves += 1
+    let key = result.key
+    let removedOwnership = save.removedOwnership
+    let insertedOwnership = save.insertedOwnership
+    let decision = try liveQueryResultJSONWriteWithoutTransaction(
+      result,
+      ownershipUnchanged: removedOwnership.isEmpty && insertedOwnership.isEmpty,
+      deferringJSON: deferringJSON
+    )
+    let storedJSONIsCurrent = decision.storedJSONIsCurrent
+    if !decision.writesJSON {
       // The row's count and time stay exact: #441's refusal resolution reads when the server last showed a fact.
       try execute(
         "UPDATE instant_live_query_results SET triple_count = ?, updated_at_ms = ? WHERE query_key = ?",
@@ -17606,7 +17717,7 @@ public actor SQLitePersistenceStore {
         try markDeferredLiveQueryResultJSONWithoutTransaction(key, at: result.updatedAt.milliseconds)
       }
     } else {
-      let json = try encode(result)
+      let json = try save.json ?? encode(result)
       try execute(
         """
         INSERT INTO instant_live_query_results
@@ -17631,12 +17742,6 @@ public actor SQLitePersistenceStore {
       liveQueryResultJSON.writtenPageInfo[key] = result.pageInfo
       try clearDeferredLiveQueryResultJSONMarkerWithoutTransaction(key)
     }
-    let removedOwnership = previousOwnership.subtracting(nextOwnership).sorted(
-      by: Self.liveQueryOwnershipOrder
-    )
-    let insertedOwnership = nextOwnership.subtracting(previousOwnership).sorted(
-      by: Self.liveQueryOwnershipOrder
-    )
     guard !removedOwnership.isEmpty || !insertedOwnership.isEmpty else { return }
     // The row was written above; its id names it in every ownership row (#704).
     let queryID = try liveQueryResultIDWithoutTransaction(key: key)
