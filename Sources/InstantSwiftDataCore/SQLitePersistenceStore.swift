@@ -290,6 +290,9 @@ private struct LiveQueryResultStorageRow: Sendable {
   var tripleCount: Int
 }
 
+// #590 (2026-10-23): the queue keeps its own user-initiated QoS. A caller waits for its batches on a dispatch group from
+// a cooperative thread; with no QoS of its own, the batches inherited that thread's QoS, and the whole test bundle
+// stopped with every cooperative thread waiting on a group whose work never got a thread.
 private let instantPersistenceDecodeQueue = DispatchQueue(
   label: "com.instantdb.swift.persistence-decode",
   qos: .userInitiated,

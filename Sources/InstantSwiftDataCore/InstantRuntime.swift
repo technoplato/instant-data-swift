@@ -21,6 +21,9 @@
 // - 2026-10-23: compactLocalCache(holdingWhile:) gives the cache's free pages back with one VACUUM when a quarter of
 //   the file and 64 MB are free, under the operation gate, never while the device is hot, in Low Power Mode, short of
 //   disk, cancelled, or held by the app; on one iPhone 676 MB of a 916 MB cache were free pages (#1015).
+// - 2026-10-23: the steady-state sync tasks (automatic connection, the session's reader and frame applier,
+//   reconnects, the delivery pump, stream catch-up) run at liveSyncTaskPriority when the app sets it; nil, the default,
+//   keeps the priority of the task that opened or connected the runtime (#590).
 
 import Foundation
 import IssueReporting
@@ -361,6 +364,20 @@ public struct InstantRuntimeConfiguration: Sendable {
   public var mutationTransport: InstantMutationTransportClient
   public var liveTransport: InstantLiveTransportClient?
   public var autoConnectLiveTransport: Bool
+  /// The priority of the runtime's steady-state sync tasks: the automatic connection, the live session's reader and
+  /// frame applier (server results, acknowledgements), reconnects, the mutation delivery pump and the stream writers'
+  /// catch-up. `nil`, the default, starts them at the priority of the task that opened the runtime or connected it, as
+  /// before; an app that opens it from a user-initiated task runs them on the performance cores for the process's life
+  /// (#590: 64 of 125 CPU-seconds at user-initiated while recording, build 114). Local writes and reads keep their
+  /// callers' priority whatever this is.
+  ///
+  /// `.utility` moves that work toward the efficiency cores, and also behind every busier task: on a Mac whose cores were
+  /// saturated by higher-priority work, utility sync tasks made almost no progress. Set it only after measuring, on the
+  /// device, that a write still reaches the server and a server change still reaches the screen as fast (#590).
+  ///
+  ///     var configuration = InstantRuntimeConfiguration(appID: appID, persistenceURL: url)
+  ///     configuration.liveSyncTaskPriority = .utility
+  public var liveSyncTaskPriority: TaskPriority?
   public var liveShareContract: InstantLiveShareContract?
   public var userCookieSyncClient: InstantUserCookieSyncClient
   public var platformAppClient: InstantPlatformAppClient
@@ -827,6 +844,7 @@ private actor InstantRuntimeMutationDeliveryPump {
   }
 
   func request(
+    priority: TaskPriority? = nil,
     sleep: @escaping @Sendable (UInt64) async throws -> Void,
     _ deliver: @escaping @Sendable () async -> InstantRuntimeMutationDeliveryPumpPassResult
   ) {
@@ -834,7 +852,7 @@ private actor InstantRuntimeMutationDeliveryPump {
     needsAnotherPass = true
     guard task == nil else { return }
 
-    task = Task { [weak self] in
+    task = Task(priority: priority) { [weak self] in
       await self?.run(sleep: sleep, deliver)
     }
   }
@@ -7000,6 +7018,7 @@ public final class InstantRuntime: Sendable {
     guard configuration.liveTransport != nil else { return }
     recordActorHop(.deliveryPump)
     await mutationDeliveryPump.request(
+      priority: configuration.liveSyncTaskPriority,
       sleep: configuration.liveReconnectSleep
     ) { [weak self] in
       guard let self else { return .finished }
@@ -7165,7 +7184,7 @@ public final class InstantRuntime: Sendable {
     guard configuration.liveTransport != nil else { return }
     guard configuration.autoConnectLiveTransport else { return }
     recordActorHop(.task)
-    _ = automaticLiveConnectionTaskOwner.start { [weak self] in
+    _ = automaticLiveConnectionTaskOwner.start(priority: configuration.liveSyncTaskPriority) { [weak self] in
       guard let self else { return }
       await self.configuration.onAutomaticLiveConnectionTaskStartedForTesting?()
       do {
@@ -7461,6 +7480,7 @@ public final class InstantRuntime: Sendable {
               )
             },
             onEventAcquired: configuration.onLiveReceiverEventAcquiredForTesting,
+            priority: configuration.liveSyncTaskPriority,
             onRoomEvent: { [weak self] event, room, sessionID in
               guard let self else { return }
               await self.handleLiveRoomEvent(event, room: room, sessionID: sessionID)
@@ -8512,6 +8532,7 @@ public final class InstantRuntime: Sendable {
     if shouldReconnect {
       await reconnectController.start(
         appID: configuration.appID,
+        priority: configuration.liveSyncTaskPriority,
         sleep: configuration.liveReconnectSleep,
         networkPath: configuration.liveTransport?.networkPath ?? .alwaysSatisfied,
         reconnect: { [weak self] in
@@ -12524,7 +12545,10 @@ public final class InstantRuntime: Sendable {
   /// Starts the catch-up of the streams this device writes, or runs it again once the current pass ends.
   private func startStreamWriterCatchUp() {
     guard configuration.liveTransport != nil else { return }
-    _ = streamWriterCatchUpOwner.start(restartIfRunning: true) { [weak self] in
+    _ = streamWriterCatchUpOwner.start(
+      priority: configuration.liveSyncTaskPriority,
+      restartIfRunning: true
+    ) { [weak self] in
       await self?.catchUpStreamWriters()
     }
   }

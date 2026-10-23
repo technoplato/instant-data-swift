@@ -6,15 +6,15 @@ import Testing
 
 /// #590: the runtime's steady-state sync tasks inherited the priority of whatever task opened the runtime. An app that
 /// opens it from a user-initiated task ran them on the performance cores for the process's life: while recording, 64 of
-/// Scribe's 125 CPU-seconds in five minutes were user-initiated (build 114, Power Profiler). The live session's reader
-/// and frame applier and the mutation delivery pump run at `liveSyncTaskPriority`, utility unless the app says
-/// otherwise; a call the app awaits (the connect handshake, a write, a read) keeps its own priority.
+/// the app's 125 CPU-seconds in five minutes were user-initiated (build 114, Power Profiler). The live session's reader
+/// and frame applier and the mutation delivery pump run at `liveSyncTaskPriority` when the app sets it; a call the app
+/// awaits (the connect handshake, a write, a read) keeps its own priority.
 @Suite
 struct InstantSyncTaskPriorityTests {
   @Test
   func steadyStateSyncRunsAtTheConfiguredPriorityWhicheverTaskConnects() async throws {
     let loopback = PriorityLoopback()
-    let configuration = InstantRuntimeConfiguration(
+    var configuration = InstantRuntimeConfiguration(
       appID: "sync-task-priority",
       apiURI: URL(string: "http://127.0.0.1:1")!,
       websocketURI: URL(string: "ws://127.0.0.1:1/runtime/session")!,
@@ -24,6 +24,9 @@ struct InstantSyncTaskPriorityTests {
       liveTransport: .immediate { _ in loopback.session() },
       userCookieSyncClient: .local
     )
+    // Nil (inherit) unless the app chooses: utility work also waits behind every busier task.
+    expectNoDifference(configuration.liveSyncTaskPriority, nil)
+    configuration.liveSyncTaskPriority = .utility
     let runtime = try await InstantRuntime.bootstrap(configuration: configuration)
 
     try await Task(priority: .userInitiated) {
