@@ -20,6 +20,9 @@
 //   that deletes it last (#932).
 // - 2026-10-23: a live-query result's save splits into preparing (nested limits, ownership difference, JSON when
 //   written) and applying, so a server apply prepares its results before the operation gate (#932).
+// - 2026-10-23: a server-apply commit updates its changed outbox rows from one join instead of fifteen correlated
+//   lookups each, the staging table keeps its bodies after its small columns, and the commit's closure re-plan reads
+//   no body sizes (#932).
 
 import Foundation
 import IssueReporting
@@ -6047,92 +6050,38 @@ public actor SQLitePersistenceStore {
         try execute(
           """
           UPDATE instant_outbox AS outbox
-          SET status = (
-                SELECT staged_status FROM instant_server_apply_rows
-                WHERE plan_id = ? AND mutation_id = outbox.mutation_id
-              ),
-              delivery_state = (
-                SELECT staged_delivery_state FROM instant_server_apply_rows
-                WHERE plan_id = ? AND mutation_id = outbox.mutation_id
-              ),
+          SET status = planned.staged_status,
+              delivery_state = planned.staged_delivery_state,
               delivery_metadata_version = ?,
-              transport_step_count = (
-                SELECT staged_transport_step_count FROM instant_server_apply_rows
-                WHERE plan_id = ? AND mutation_id = outbox.mutation_id
-              ),
-              encoded_body_bytes = length(CAST((
-                SELECT staged_json FROM instant_server_apply_rows
-                WHERE plan_id = ? AND mutation_id = outbox.mutation_id
-              ) AS BLOB)),
-              lifecycle_json = (
-                SELECT staged_lifecycle_json FROM instant_server_apply_rows
-                WHERE plan_id = ? AND mutation_id = outbox.mutation_id
-              ),
-              failure_message = (
-                SELECT staged_failure_message FROM instant_server_apply_rows
-                WHERE plan_id = ? AND mutation_id = outbox.mutation_id
-              ),
-              confirmation_proven = (
-                SELECT staged_confirmation_proven FROM instant_server_apply_rows
-                WHERE plan_id = ? AND mutation_id = outbox.mutation_id
-              ),
-              optimistic_overlay_active = (
-                SELECT staged_overlay_active FROM instant_server_apply_rows
-                WHERE plan_id = ? AND mutation_id = outbox.mutation_id
-              ),
-              mutation_revision = mutation_revision + 1,
-              optimistic_effect_metadata_version = (
-                SELECT staged_effect_metadata_version FROM instant_server_apply_rows
-                WHERE plan_id = ? AND mutation_id = outbox.mutation_id
-              ),
-              optimistic_effect_is_global = (
-                SELECT staged_effect_is_global FROM instant_server_apply_rows
-                WHERE plan_id = ? AND mutation_id = outbox.mutation_id
-              ),
-              optimistic_effect_receipt_fingerprint = (
-                SELECT staged_effect_receipt_fingerprint FROM instant_server_apply_rows
-                WHERE plan_id = ? AND mutation_id = outbox.mutation_id
-              ),
-              server_acceptance_payload_fingerprint = (
-                SELECT staged_server_acceptance_payload_fingerprint
-                FROM instant_server_apply_rows
-                WHERE plan_id = ? AND mutation_id = outbox.mutation_id
-              ),
-              server_transaction_id = (
-                SELECT staged_server_transaction_id FROM instant_server_apply_rows
-                WHERE plan_id = ? AND mutation_id = outbox.mutation_id
-              ),
-              confirmation_source = (
-                SELECT staged_confirmation_source FROM instant_server_apply_rows
-                WHERE plan_id = ? AND mutation_id = outbox.mutation_id
-              ),
-              json = (
-                SELECT staged_json FROM instant_server_apply_rows
-                WHERE plan_id = ? AND mutation_id = outbox.mutation_id
-              )
-          WHERE mutation_id IN (
-            SELECT mutation_id FROM instant_server_apply_rows
-            WHERE plan_id = ? AND staged = 1 AND staged_delete = 0
-          )
-            AND EXISTS (
-              SELECT 1 FROM instant_server_apply_rows AS planned
-              WHERE planned.plan_id = ? AND planned.mutation_id = outbox.mutation_id
-                AND (
-                  planned.staged_json != outbox.json
-                  OR planned.staged_effect_receipt_fingerprint
-                    IS NOT outbox.optimistic_effect_receipt_fingerprint
-                  OR planned.staged_server_acceptance_payload_fingerprint
-                    IS NOT outbox.server_acceptance_payload_fingerprint
-                )
+              transport_step_count = planned.staged_transport_step_count,
+              encoded_body_bytes = length(CAST(planned.staged_json AS BLOB)),
+              lifecycle_json = planned.staged_lifecycle_json,
+              failure_message = planned.staged_failure_message,
+              confirmation_proven = planned.staged_confirmation_proven,
+              optimistic_overlay_active = planned.staged_overlay_active,
+              mutation_revision = outbox.mutation_revision + 1,
+              optimistic_effect_metadata_version = planned.staged_effect_metadata_version,
+              optimistic_effect_is_global = planned.staged_effect_is_global,
+              optimistic_effect_receipt_fingerprint = planned.staged_effect_receipt_fingerprint,
+              server_acceptance_payload_fingerprint = planned.staged_server_acceptance_payload_fingerprint,
+              server_transaction_id = planned.staged_server_transaction_id,
+              confirmation_source = planned.staged_confirmation_source,
+              json = planned.staged_json
+          FROM instant_server_apply_rows AS planned
+          WHERE planned.plan_id = ? AND planned.staged = 1 AND planned.staged_delete = 0
+            AND outbox.mutation_id = planned.mutation_id
+            AND (
+              planned.staged_json != outbox.json
+              OR planned.staged_effect_receipt_fingerprint
+                IS NOT outbox.optimistic_effect_receipt_fingerprint
+              OR planned.staged_server_acceptance_payload_fingerprint
+                IS NOT outbox.server_acceptance_payload_fingerprint
             )
           """,
-          // The IN set is uncorrelated, so SQLite visits only the plan's rows through the outbox
-          // key; the changed-row test is one primary-key lookup per row. Comparing the outer row
-          // inside the IN made it correlated: every outbox row rescanned every plan row and
-          // compared bodies, 7.4 s for 2,000 pending mutations under the operation gate (#277).
-          Array(repeating: SQLiteBinding.text(planID), count: 2)
-            + [.int(Int64(InstantOutboxDeliveryMetadata.currentVersion))]
-            + Array(repeating: SQLiteBinding.text(planID), count: 15)
+          // #932: one join visits the plan's staged rows and each one's outbox row through its key. The fifteen
+          // correlated lookups this replaces read the staged row once per column, under the operation gate. (Before
+          // #277 a correlated IN rescanned every plan row for each outbox row: 7.4 s for 2,000 pending mutations.)
+          [.int(Int64(InstantOutboxDeliveryMetadata.currentVersion)), .text(planID)]
         )
         try execute(
           """
@@ -6454,6 +6403,7 @@ public actor SQLitePersistenceStore {
   @discardableResult
   private func insertServerApplyRowsWithoutTransaction(
     planID: String,
+    readsBodyBytes: Bool = true,
     componentBody: Bool,
     requiresBody: Bool,
     closureRound: Int = 0,
@@ -6485,10 +6435,9 @@ public actor SQLitePersistenceStore {
              outbox.delivery_claim_payload_fingerprint,
              outbox.delivery_claimant_id,
              outbox.server_acceptance_payload_fingerprint,
-             MAX(
-               COALESCE(outbox.encoded_body_bytes, 0),
-               length(CAST(outbox.json AS BLOB))
-             ),
+             \(readsBodyBytes
+               ? "MAX(COALESCE(outbox.encoded_body_bytes, 0), length(CAST(outbox.json AS BLOB)))"
+               : "0"),
              ?, ?, 0, 0, 0, 0, 0, ?
       \(selectionSQL)
       """,
@@ -6544,7 +6493,12 @@ public actor SQLitePersistenceStore {
     return ("\(serverTransactionID) = ?", [.text(control.processedTransactionID)])
   }
 
-  private func populateServerApplyPlanRowsWithoutTransaction(id planID: String) throws {
+  /// - Parameter readsBodyBytes: Whether each row records its body's size, which reads the whole body. The commit's
+  ///   closure check compares no size, so it passes false (#932).
+  private func populateServerApplyPlanRowsWithoutTransaction(
+    id planID: String,
+    readsBodyBytes: Bool = true
+  ) throws {
     guard let control = try loadServerApplyPlanControlWithoutTransaction(id: planID) else {
       throw persistenceError(
         operation: "plan bounded server apply",
@@ -6568,6 +6522,7 @@ public actor SQLitePersistenceStore {
       if control.rootIsGlobal || hasActiveGlobal {
         try insertServerApplyRowsWithoutTransaction(
           planID: planID,
+          readsBodyBytes: readsBodyBytes,
           componentBody: true,
           requiresBody: true,
           selectionSQL:
@@ -6590,6 +6545,7 @@ public actor SQLitePersistenceStore {
           : ""
         try insertServerApplyRowsWithoutTransaction(
           planID: planID,
+          readsBodyBytes: readsBodyBytes,
           componentBody: true,
           requiresBody: true,
           selectionSQL:
@@ -6613,6 +6569,7 @@ public actor SQLitePersistenceStore {
         if !control.excludesWatermarkRoots {
           try insertServerApplyRowsWithoutTransaction(
             planID: planID,
+            readsBodyBytes: readsBodyBytes,
             componentBody: true,
             requiresBody: true,
             selectionSQL:
@@ -6627,6 +6584,7 @@ public actor SQLitePersistenceStore {
         if !control.excludesWatermarkRoots {
           try insertServerApplyRowsWithoutTransaction(
             planID: planID,
+            readsBodyBytes: readsBodyBytes,
             componentBody: true,
             requiresBody: true,
             selectionSQL:
@@ -6643,6 +6601,7 @@ public actor SQLitePersistenceStore {
         if let confirmingMutationID = control.confirmingMutationID {
           try insertServerApplyRowsWithoutTransaction(
             planID: planID,
+            readsBodyBytes: readsBodyBytes,
             componentBody: true,
             requiresBody: true,
             selectionSQL:
@@ -6670,6 +6629,7 @@ public actor SQLitePersistenceStore {
           if newEntities == 0 { break }
           let inserted = try insertServerApplyRowsWithoutTransaction(
             planID: planID,
+            readsBodyBytes: readsBodyBytes,
             componentBody: true,
             requiresBody: true,
             closureRound: round + 1,
@@ -6700,6 +6660,7 @@ public actor SQLitePersistenceStore {
 
     try insertServerApplyRowsWithoutTransaction(
       planID: planID,
+      readsBodyBytes: readsBodyBytes,
       componentBody: false,
       requiresBody: false,
       selectionSQL:
@@ -6738,6 +6699,7 @@ public actor SQLitePersistenceStore {
     if let confirmingMutationID = control.confirmingMutationID {
       try insertServerApplyRowsWithoutTransaction(
         planID: planID,
+        readsBodyBytes: readsBodyBytes,
         componentBody: false,
         requiresBody: true,
         selectionSQL:
@@ -6762,6 +6724,7 @@ public actor SQLitePersistenceStore {
     // peeled or replayed. Its row is addressed like any other body, so the commit revalidates it.
     try insertServerApplyRowsWithoutTransaction(
       planID: planID,
+      readsBodyBytes: readsBodyBytes,
       componentBody: false,
       requiresBody: true,
       selectionSQL:
@@ -7128,7 +7091,9 @@ public actor SQLitePersistenceStore {
       """,
       [.text(validationID), .text(planID)]
     )
-    try populateServerApplyPlanRowsWithoutTransaction(id: validationID)
+    // #932: the comparison below reads no body size, so the copy does not read every body: under the gate, at the
+    // phone's 2,560 pending writes of 12-25 KB, that was every pending body read once more per commit.
+    try populateServerApplyPlanRowsWithoutTransaction(id: validationID, readsBodyBytes: false)
     let originalMinusValidation = try selectInt64(
       """
       SELECT COUNT(*) FROM (
@@ -14037,6 +14002,9 @@ public actor SQLitePersistenceStore {
       ) WITHOUT ROWID
       """
     )
+    // #932: a row's bodies come last. SQLite stores a row's columns in order, and a body larger than a page spills
+    // into overflow pages, so reading a column stored after it walks the body's overflow chain: every scan of a plan
+    // (staged, staged_delete, closure_round) and each of the commit's per-row reads walked three bodies.
     try execute(
       """
       CREATE TEMP TABLE IF NOT EXISTS instant_server_apply_rows (
@@ -14060,9 +14028,6 @@ public actor SQLitePersistenceStore {
         is_catch_up INTEGER NOT NULL DEFAULT 0,
         prune_at_watermark INTEGER NOT NULL DEFAULT 0,
         confirm_at_apply INTEGER NOT NULL DEFAULT 0,
-        original_json TEXT,
-        staged_json TEXT,
-        staged_lifecycle_json TEXT,
         staged_status TEXT,
         staged_delivery_state TEXT,
         staged_transport_step_count INTEGER,
@@ -14078,6 +14043,9 @@ public actor SQLitePersistenceStore {
         staged_delete INTEGER NOT NULL DEFAULT 0,
         staged INTEGER NOT NULL DEFAULT 0,
         closure_round INTEGER NOT NULL DEFAULT 0,
+        original_json TEXT,
+        staged_json TEXT,
+        staged_lifecycle_json TEXT,
         PRIMARY KEY (plan_id, mutation_id)
       ) WITHOUT ROWID
       """
