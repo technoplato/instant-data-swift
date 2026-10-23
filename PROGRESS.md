@@ -1,3 +1,81 @@
+## 2026-10-23 19:24:30 EDT — v1.9.26: the live connection's status says what the socket is (#1024); carries 1.9.25 (#932, #590), 1.9.24, 1.9.23, #932's notice level and #1012's progressive media
+
+- **Commits:** red `fa1f1036`, green `8dc5c3ec`; release document `48df79da`; then this ledger commit and the tag v1.9.26.
+- **Why:** a one-shot query that was cancelled, answered too late or answered with a server error (and a live
+  observation's, stream reader's or share observation's own failure) stored the connection's state as `.errored`;
+  nothing rewrote it while the socket stayed open. On builds 114-116 the consuming app then read offline for hours
+  while every write was accepted (its recording, playback and list screens said Offline, its storage cleanup waited for
+  `.authenticated`, its health beat read conn=failed every 5 s). Not a 1.9.14-1.9.18 regression: the same test is red
+  on v1.9.13 and v1.9.18, and the defect dates from July. Upstream `Reactor.js` sets `ERRORED` only when `init` fails.
+- **Checks (laptop, Xcode 27 beta, debug):** `InstantConnectionStateTruthTests` red (12 of 12 statuses `.errored` during
+  three accepted writes) then green; 198 tests in 10 related suites pass; the whole bundle on `c372d23b` against #1021's
+  list: 1,394 tests, 30 failing, 28 listed, the other two a footprint bound that passes alone 3/3 and the codec speed
+  comparison that fails alone on 1.9.24 too. Beat replay through the consuming app's own SessionHealth code: 12 -> 2
+  beats a minute, conn=open 0% -> 100%, silentReopens one per accepted write -> 0.
+  After the rebase onto #932's `c91e8c0b`: 198 of 198 related tests pass.
+- **Next:** the consuming app and its Playback app pin exactly 1.9.26 for build 118; the lab checks on the device that
+  every beat reads conn=open at the 30 s cadence with silentReopens 0 while the socket stays open. Candidate follow-up:
+  a stream reader that gives up after 11 file fetches still stores `.errored` without reconnecting.
+
+## 2026-10-23 19:14:11 EDT — #932: a server apply's gate hold of 250-999 ms is logged at notice (on main, no tag; the next tag carries it)
+
+- **Commits (main):** red `872017cd`, green `c91e8c0b`; then this ledger commit.
+- **Why:** since build 116 (1.9.18) the phone's holds fell under 1 s, and a host bridge that counts info lines per
+  minute sent only their counts. The lab, untethered: no hold of 1 s or more from the iPhone (48 min of recording on 116)
+  or the iPad (117), against 38 on 115 (held median 3,974 ms, commit median 3,320 ms). At notice each 250-999 ms hold
+  arrives with its commit's parts, so the lab can read what the remaining holds cost.
+- **Checks (Mac mini, debug):** the level test red then green; the gate, energy meter, diagnostics and feedback-loop
+  suites (35 tests) pass but for `infoHandlerDoesNotAmplifyLargeTransactVolume`, listed in `Tests/known-failing.txt`
+  (idle 2/2), which passes alone 3 of 3 on this tree.
+- **Next:** #1024's tag (1.9.26) carries it; the lab reads `commitInsideMilliseconds` and `commitResultsMilliseconds`
+  from the notices on the build that pins it.
+
+## 2026-10-23 18:48:08 EDT — v1.9.25: a server apply holds the gate for less and writes less, and an app can choose its sync priority (#932, #590); carries 1.9.24 and 1.9.23
+
+- **Commits:** red `84919a03`, green `748f107e` (`liveSyncTaskPriority`, #590); fix `855b082c` (a retried apply's
+  planning hold counts from entering the gate); green `022495f9` (F1a: a full rebase's staging keeps no copy of each
+  planned body); plan `e062328e`; release document `c1307377`; then this ledger commit and the tag v1.9.25. The release
+  document also describes the three #932 greens that shipped inside 1.9.20 without a description.
+- **Why:** a full rebase wrote each pending body into its staging row and again when the stage rewrote the row; the
+  runtime's sync tasks ran at whatever priority opened the runtime (user-initiated in the consuming app).
+- **Checks (Mac mini, debug):** F1a with the cost harness at 2,580 pending, every frame a full rebase, on 1.9.23
+  without and with it: 674,024 -> 524,952 KB written over 7 frames (-22%), instructions 992,218 -> 955,411 M (-3.7%);
+  gate and CPU not compared (load 44-62). `InstantSyncTaskPriorityTests` red then green; on these commits on 1.9.24 the
+  targeted suites pass (6, 6, and 161 tests in 16 suites) and the whole bundle compares clean but for one timing test
+  that fails alone 5 of 10 on plain 1.9.24 (`binaryCodecRemovesBase64AndJSONCPU`, reported on #1005 and #1021).
+  Loopback bench (release, three rounds): beside ten user-initiated busy threads a write reached the server in a median
+  14-30 ms at user-initiated and 24-27 s at utility, so `liveSyncTaskPriority` stays `nil` by default.
+- **Next:** the consuming app pins exactly 1.9.25 (it carries 1.9.24) when the build 118 cut allows; it does not set
+  `liveSyncTaskPriority` to `.utility` without a device measurement of write -> server and server -> screen. Device
+  question on #932: whether the phone's 1-4 s commits with nothing pending fall as the store copy's did (87-140 -> 1-2
+  ms on the Mac mini). Not changed: a declined reduction still peels, re-stamps and rewrites every pending body (about
+  75 MB a frame in the harness); `TripleIndexes.newestTransactionTimeMilliseconds` walks the store per replayed write
+  (#1007's); reads needing the persistence actor can still wait behind an apply's work there.
+
+## 2026-10-23 18:29:15 EDT — v1.9.24: a write's cycle writes about 9% fewer pages to disk (#1007); carries 1.9.23
+
+- **Commits:** test bound `210def0e` (#1021); red `5fc3a128`, green `6b1dd7b4` (the outbox drops
+  `instant_outbox_delivery_window_idx`, which no plan used, in migration 0028; an acknowledgement sets the overlay flag
+  only when it changes); release document `476e1237`; then this ledger commit and the tag v1.9.24.
+- **Checks:** `InstantOutboxPageChurnTests` red then green (one acknowledgement 9 -> 5 pages); the outbox and server-apply
+  suites, 553 tests in 13 suites with the CLI tests run against the CLI built from the tree, pass; the v1.9.23 whole
+  suite against `Tests/known-failing.txt` (two load-only failures pass alone 3/3). Write harness, two interleaved
+  rounds: 318.7, 317.1 -> 288.9, 289.4 KB of log pages per write; the acknowledgement 12.8 -> 8.8 pages; CPU unchanged.
+- **Next:** the consuming app pins exactly 1.9.24 for build 118 (proposal on #1025 and #1024; #1024's connection-status
+  fix takes 1.9.25 on top).
+
+## 2026-10-23 17:38:00 EDT — v1.9.23: preparing a write no longer copies the store's indexes, and the store says which calls write its disk bytes (#1007); carries 1.9.22, 1.9.21, 1.9.20
+
+- **Commits:** red `a540e9b6`, green `538de961` (the sharded indexes); red `05bcafd7`, green `c2582e4b` (the storage write
+  meter); release document `b88cca05`; then this ledger commit and the tag v1.9.23.
+- **Checks:** `InstantPrepareCopyCostTests` red then green (twenty prepares into 20,000 lines 318.6 -> 2.4 ms);
+  `ShardedCollectionsTests`; `InstantStorageWriteMeterTests`; the whole suite on main with the shards (1,368 tests, no
+  failure outside the baseline); the meter's related suites (10 tests). The whole bundle with the meter waits in the
+  laptop's build queue. Write harness at 200 lines per recording: instructions -45%, store prepare 9.6-19 -> 0.6-0.9 ms
+  per write, observer refresh unchanged.
+- **Next:** the consuming app pins exactly 1.9.23 (after build 117, which carries 1.9.21); on a device,
+  `persistence.write-summary` names the store calls behind the recording's disk bytes.
+
 ## 2026-10-23 17:22:18 EDT — #1021: a checked-in list of the bundle's failing tests, and a script that runs and compares against it (test-only, no release)
 
 - **Commits (main):** `004439da` (the parity tests find their upstream fixtures, and the CLI tests their executable,

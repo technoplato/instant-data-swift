@@ -27,6 +27,10 @@
 //   writer, so a local read finds what this device keeps on disk without waiting for writes (#1006).
 // - 2026-10-23: the storage snapshot reports the file's free pages, and `vacuum()` gives them back for compaction, its
 //   dirty pages bounded; new caches stay in auto_vacuum NONE, whose writes cost 3-6% less than INCREMENTAL's (#1015).
+// - 2026-10-23: the outbox drops instant_outbox_delivery_window_idx, which no statement used, and an acknowledgement
+//   sets the overlay flag only when it changes: each wrote index pages on every write for nothing (#1007).
+// - 2026-10-23: a server apply's staging keeps no copy of each body as planned: both passes and the stage read the
+//   outbox's body, whose every rewrite bumps the revision each page checks against the plan (#932, the disk map's F1a).
 
 import Foundation
 import IssueReporting
@@ -288,6 +292,9 @@ private struct LiveQueryResultStorageRow: Sendable {
   var tripleCount: Int
 }
 
+// #590 (2026-10-23): the queue keeps its own user-initiated QoS. A caller waits for its batches on a dispatch group from
+// a cooperative thread; with no QoS of its own, the batches inherited that thread's QoS, and the whole test bundle
+// stopped with every cooperative thread waiting on a group whose work never got a thread.
 private let instantPersistenceDecodeQueue = DispatchQueue(
   label: "com.instantdb.swift.persistence-decode",
   qos: .userInitiated,
@@ -2708,6 +2715,14 @@ public actor SQLitePersistenceStore {
       // reader of that table sees an unloaded result as removed, as before.
       try migrate(name: "0027_unloaded_live_query_results") {
         try execute(Self.unloadedLiveQueryResultsTableSQL)
+      }
+    }
+    try withSQLiteBusyRetry {
+      // No statement's plan used this index, and every insert, claim, acknowledgement and delete of a row wrote a page
+      // of it (#1007). The statements that filter on the claim state alone use `instant_outbox_delivery_deadline_idx`,
+      // which leads with the same column; the ones that name the delivery state hold it inside an `OR`.
+      try migrate(name: "0028_drop_unused_outbox_delivery_window_index") {
+        try execute("DROP INDEX IF EXISTS instant_outbox_delivery_window_idx")
       }
     }
     try withSQLiteBusyRetry {
@@ -5710,13 +5725,16 @@ public actor SQLitePersistenceStore {
             originalJSON: String?, expectedDeliveryStarted: Bool,
             currentDeliveryStarted: Bool
           ) = try {
+            // #932: the body as planned is the outbox's body. The check below refuses only an offered write, and an
+            // offered write's wire intent never changes in place (persisting it with another refuses, and confirming
+            // or retrying it keeps it), so it gives the answer the staged copy of the body gave.
             var statement: OpaquePointer?
             try prepare(
               """
               SELECT planned.expected_server_acceptance_payload_fingerprint,
                      planned.expected_delivery_claim_payload_fingerprint,
                      planned.expected_delivery_claimant_id,
-                     planned.confirm_at_apply, planned.original_json,
+                     planned.confirm_at_apply, outbox.json,
                      planned.expected_delivery_started, outbox.delivery_started
               FROM instant_server_apply_rows AS planned
               JOIN instant_outbox AS outbox
@@ -5969,7 +5987,7 @@ public actor SQLitePersistenceStore {
           expected_delivery_claimant_id,
           expected_server_acceptance_payload_fingerprint,
           expected_body_bytes, is_component_body, requires_body,
-          is_catch_up, prune_at_watermark, confirm_at_apply, original_json,
+          is_catch_up, prune_at_watermark, confirm_at_apply,
           staged_delete, staged
         )
         SELECT ?, outbox.mutation_id, outbox.created_at_ms,
@@ -5987,7 +6005,7 @@ public actor SQLitePersistenceStore {
                  COALESCE(outbox.encoded_body_bytes, 0),
                  length(CAST(outbox.json AS BLOB))
                ),
-               1, 1, 1, 0, 0, outbox.json, 0, 0
+               1, 1, 1, 0, 0, 0, 0
         FROM instant_outbox AS outbox
         WHERE \(positionPredicate)
         ORDER BY outbox.created_at_ms, outbox.mutation_id
@@ -6832,25 +6850,20 @@ public actor SQLitePersistenceStore {
     direction: InstantServerApplyBodyDirection,
     after position: InstantOutboxDeliveryPosition?
   ) throws -> InstantServerApplyBodyPage {
-    let sourceJSON: String
-    let sourceJoin: String
-    switch direction {
-    case .reverse:
-      sourceJSON = "outbox.json"
-      sourceJoin =
-        "JOIN instant_outbox AS outbox ON outbox.mutation_id = planned.mutation_id"
-    case .forward:
-      sourceJSON = "planned.original_json"
-      sourceJoin = ""
-    }
+    // #932: both passes read the body from the outbox. Every statement that rewrites an outbox body also bumps the row's
+    // mutation_revision, and each page compares its rows with the plan, revision included, in the transaction that
+    // reads them, so the forward pass reads the body the reverse pass read or the page is stale. The reverse pass used
+    // to copy each body into its staging row, which the stage then rewrote whole: on Apple's SQLite, with 2,500 pending
+    // bodies of 15 KB, 320 MB of writes for the first apply and 246 MB for the next, against 122 and 39 MB without the
+    // copy (the disk map's F1a).
     var sql =
       """
       SELECT planned.mutation_id, planned.created_at_ms,
-             length(CAST(\(sourceJSON) AS BLOB)),
+             length(CAST(outbox.json AS BLOB)),
              planned.is_component_body, planned.prune_at_watermark,
              planned.confirm_at_apply
       FROM instant_server_apply_rows AS planned
-      \(sourceJoin)
+      JOIN instant_outbox AS outbox ON outbox.mutation_id = planned.mutation_id
       WHERE planned.plan_id = ? AND planned.requires_body = 1
       """
     var bindings: [SQLiteBinding] = [.text(planID)]
@@ -6948,22 +6961,10 @@ public actor SQLitePersistenceStore {
     var entries: [InstantServerApplyBodyEntry] = []
     entries.reserveCapacity(candidates.count)
     for candidate in candidates {
-      let json: String?
-      switch direction {
-      case .reverse:
-        json = try selectScalar(
-          "SELECT json FROM instant_outbox WHERE mutation_id = ? LIMIT 1",
-          [.text(candidate.mutationID)]
-        )
-      case .forward:
-        json = try selectScalar(
-          """
-          SELECT original_json FROM instant_server_apply_rows
-          WHERE plan_id = ? AND mutation_id = ? LIMIT 1
-          """,
-          [.text(planID), .text(candidate.mutationID)]
-        )
-      }
+      let json: String? = try selectScalar(
+        "SELECT json FROM instant_outbox WHERE mutation_id = ? LIMIT 1",
+        [.text(candidate.mutationID)]
+      )
       guard let json, json.utf8.count == candidate.actualBodyByteCount else {
         return InstantServerApplyBodyPage(
           isStale: true,
@@ -7013,16 +7014,6 @@ public actor SQLitePersistenceStore {
           nextPosition: nil,
           decodedBodyByteCount: totalByteCount,
           synchronizationBlocker: blocker
-        )
-      }
-      if direction == .reverse {
-        try execute(
-          """
-          UPDATE instant_server_apply_rows
-          SET original_json = ?
-          WHERE plan_id = ? AND mutation_id = ? AND original_json IS NULL
-          """,
-          [.text(json), .text(planID), .text(candidate.mutationID)]
         )
       }
       entries.append(
@@ -10247,7 +10238,7 @@ public actor SQLitePersistenceStore {
           SET status = ?, delivery_state = ?, delivery_metadata_version = ?,
               transport_step_count = ?, encoded_body_bytes = ?, delivery_started = 1,
               lifecycle_json = ?, failure_message = NULL, confirmation_proven = 1,
-              optimistic_overlay_active = ?, delivery_claim_state = ?,
+              delivery_claim_state = ?,
               server_transaction_id = ?, confirmation_source = ?,
               mutation_revision = mutation_revision + 1,
               delivery_claim_token = NULL, delivery_claimant_id = NULL,
@@ -10267,7 +10258,6 @@ public actor SQLitePersistenceStore {
             .int(Int64(InstantOutboxDeliveryMetadata.stepCount(in: mutation))),
             .int(Int64(encodedBody.utf8.count)),
             .text(try encode(mutation.compactedForMemory)),
-            .int(mutation.optimisticOverlayState == .removed ? 0 : 1),
             .text(InstantOutboxDeliveryClaimState.ready.rawValue),
             .text(serverTransactionID),
             .text(InstantMutationConfirmationSource.webSocketTransactOK.rawValue),
@@ -10281,6 +10271,7 @@ public actor SQLitePersistenceStore {
           ]
         )
         guard sqlite3_changes(connection.raw) == 1 else { return nil }
+        try setOptimisticOverlayActiveIfChangedWithoutTransaction(mutation)
         try replaceOutboxWriteKeysWithoutTransaction(for: mutation)
         try saveMutationLifecycleWithoutTransaction(mutation)
         _ = try bumpMetadataRevisionWithoutTransaction(Self.outboxRevisionKey)
@@ -10311,6 +10302,22 @@ public actor SQLitePersistenceStore {
       cachedState = nil
     }
     return acceptance
+  }
+
+  /// Sets the row's optimistic overlay flag to `mutation`'s overlay state, only when the row holds the other value.
+  ///
+  /// SQLite rewrites a row's entry in every index holding a column an `UPDATE` sets, changed or not, and three of the
+  /// outbox's indexes hold this flag. An acknowledgement nearly always finds the flag at its value already, so it sets
+  /// the flag apart from the row's other columns and writes no index for it then (#1007).
+  private func setOptimisticOverlayActiveIfChangedWithoutTransaction(_ mutation: PendingMutation) throws {
+    let overlayActive = SQLiteBinding.int(mutation.optimisticOverlayState == .removed ? 0 : 1)
+    try execute(
+      """
+      UPDATE instant_outbox SET optimistic_overlay_active = ?
+      WHERE mutation_id = ? AND optimistic_overlay_active != ?
+      """,
+      [overlayActive, .text(mutation.id), overlayActive]
+    )
   }
 
   /// Applies a caller's local confirmation to one addressed row. This is the
@@ -14175,7 +14182,6 @@ public actor SQLitePersistenceStore {
         staged_delete INTEGER NOT NULL DEFAULT 0,
         staged INTEGER NOT NULL DEFAULT 0,
         closure_round INTEGER NOT NULL DEFAULT 0,
-        original_json TEXT,
         staged_json TEXT,
         staged_lifecycle_json TEXT,
         PRIMARY KEY (plan_id, mutation_id)

@@ -1,3 +1,171 @@
+## 2026-10-23 19:30:42 EDT — scribe `e14c1437443c0882cdd70a0c337339a11f6cc246`
+Change log for the build 118 cut a6838e211 (#1025).
+
+## 2026-10-23 19:30:42 EDT — scribe `a6838e2118d260a8f00b536c93a593e445ca4895`
+Build 118 cut (#1025, #1005): Scribe 0.1 (118) and Scribe Playback 118 on instant-data-swift 1.9.26 (#1024's connection status, carrying 1.9.23-1.9.25), with recording-screen-412's heat items 1, 5 and 3 and #1022's chunk rows; What's New 118 dated, #1024 and the recording screen first.
+
+## 2026-10-23 19:30:42 EDT — scribe `46e8635f4479904da75ac17c1524351dd86c77e7`
+Build 118 plan (#1025): PLAN.md and touching claims for the cut (version numbers and What's New); release-118.
+
+## 2026-10-23 19:30:26 EDT — scribe `3cd30389c`
+Change log (#1024): the 1.9.26 pin 4614f8add; PROGRESS.
+
+## 2026-10-23 19:30:26 EDT — scribe `4614f8add`
+Scribe and Scribe Playback pin instant-data-swift exactly 1.9.26 (#1024: the live connection's status says what the socket is; carries 1.9.25); both Package.resolved only the pin and originHash; installer 65/65; build 118's What's New line.
+
+## 2026-10-23 19:24:30 EDT — instant-data-swift `48df79da7d77aa2b4ec60fabce4995b60dd9ad3a`
+The v1.9.26 release document (#1024): the live connection's status says what the socket is.
+
+## 2026-10-23 19:24:30 EDT — instant-data-swift `8dc5c3ec` (green)
+Green (#1024): a live operation's own failure (a cancelled, late or server-errored one-shot query; an observation's, stream reader's or share's) no longer stores the open connection as .errored; drops and failed opens still do. 198/198 related tests; the whole bundle compares clean but for a footprint bound that passes alone and the codec speed comparison that fails on 1.9.24 too.
+
+## 2026-10-23 19:24:30 EDT — instant-data-swift `fa1f1036` (red)
+Red test (#1024): InstantConnectionStateTruthTests: 12 of 12 statuses .errored during three accepted writes after one failed one-shot query; identically red on v1.9.13 and v1.9.18.
+
+## 2026-10-23 19:24:30 EDT — realtime-voice `72610ff33`
+Plan (#1024): conn-status-1024-pin's plan and touch claims for pinning instant-data-swift 1.9.26.
+
+## 2026-10-23 19:18:20 EDT — scribe `77cabf1a664cca5213d3f7379c4e7a08ce9be947`
+The hidden list's row in the recording-screen audit and What's New for build 118 (#1007).
+
+## 2026-10-23 19:18:05 EDT — scribe `2287ba1c7a36ff3d925006f6d0037c66d4997f19`
+Green (#1007): the recordings list's live row waits while the recording screen covers the list.
+
+## 2026-10-23 19:07:34 EDT — scribe `a95b6d3ffff7ccd37c8010766392eaf30a7add04`
+Red test (#1007): the list's live-row tick tests; an existing tick test's drifted expectations fixed.
+
+## 2026-10-23 19:13:50 EDT — instant-data-swift `c91e8c0b1072fb1202d96110b11fcb987a97e78e`
+Green (#932): a server apply's gate hold of 250-999 ms is logged at notice, so a host bridge that counts info lines per minute still sends each with its fields.
+
+## 2026-10-23 19:13:50 EDT — instant-data-swift `872017cdd798071e0d3b79397e856d8095bb52d5`
+Red test (#932): the gate-held event's level as its own function; the test expects notice from 250 ms.
+
+## 2026-10-23 18:55:05 EDT — scribe `25b21dfb2f4fee34001b7d8db4c3e3f52526a99e`
+Change log for the 1.9.25 pin 4521201d9 (#932): CHANGELOG and PROGRESS.
+
+## 2026-10-23 18:54:51 EDT — scribe `4521201d96549c8c1c00f981f46e919328cc48f0`
+Pin instant-data-swift exactly 1.9.25 in Scribe and Scribe Playback (#932, #1007): carries 1.9.24; lockfiles from swift package resolve change only the pin and originHash; installer tests 65/65; build 118's What's New line for #932.
+
+## 2026-10-23 18:46:20 EDT — instant-data-swift `c1307377d22158b396b5367b577990d660d6a6a5`
+Release document for v1.9.25 (#932, #590): the three undocumented 1.9.20 server-apply changes, liveSyncTaskPriority (opt-in) with the loopback bench, F1a with its bytes; carries 1.9.24, 1.9.23 and #1012's red commit.
+
+## 2026-10-23 18:15:44 EDT — instant-data-swift `022495f972e12d92b957e21803d5a7ad0beed972`
+Green (#932): a full rebase's staging keeps no copy of each planned body; 674,024 -> 524,952 KB written over 7 full-rebase frames (-22%), instructions -3.7%.
+
+## 2026-10-23 18:15:32 EDT — instant-data-swift `855b082ccf551659dfad030add43d52b05c9b893`
+Fix (#932): a retried apply's planningHeldMilliseconds counts from entering the operation gate, not from before the wait.
+
+## 2026-10-23 18:15:31 EDT — instant-data-swift `748f107e8dcc22c57f75c52888440f07a25758ae`
+Green (#590): InstantRuntimeConfiguration.liveSyncTaskPriority, nil by default; at utility beside ten busy user-initiated threads a write took 24-27 s to reach a loopback server against 14-30 ms.
+
+## 2026-10-23 16:05:07 EDT — instant-data-swift `84919a03995c16b057bfc4bddc558c45f1975155`
+Red test (#590): InstantSyncTaskPriorityTests, the session's reads after the handshake ran at the connecting task's priority.
+
+## 2026-10-23 18:28:36 EDT — instant-data-swift `476e1237458eb9e816010d8b897a8b2386ea2aae`
+Release document for v1.9.24 (#1007): a write's cycle writes about 9% fewer pages to disk.
+
+## 2026-10-23 18:17:56 EDT — instant-data-swift `6b1dd7b4b3c290425eea0580299fa1cff7486419`
+Green (#1007): migration 0028 drops instant_outbox_delivery_window_idx (no plan used it); an acknowledgement sets the overlay flag only when it changes; ack 9 -> 5 pages.
+
+## 2026-10-23 18:06:37 EDT — instant-data-swift `5fc3a128658280597d39718d6eb312a040fc8577`
+Red test (#1007): InstantOutboxPageChurnTests, the unused outbox index and the acknowledgement's rewritten indexes.
+
+## 2026-10-23 18:01:23 EDT — instant-data-swift `210def0eb1bd110988f68166cb0f8619d3f12e57`
+Tests (#1007, #1021): the link-set sort cost bound 10 -> 20 so a whole bundle's load does not fail it.
+
+## 2026-10-23 18:23:12 EDT — scribe `a5a72de78a9ee9c1db735f4ad84e6b23e3ec683c`
+The recording screen audit and What's New for build 118 (#1007, #412): build 116's SwiftUI trace mapped to code.
+
+## 2026-10-23 18:23:02 EDT — scribe `d2ec4b89cf91d05cf78f187f26e09d09e54d4fb4`
+The vertical stamp reads the recording clock inside its timeline and sets its modifiers once (#1007, build 118).
+
+## 2026-10-23 18:22:57 EDT — scribe `8157e1dff8059c0c7bab997aa8e230578f7b3557`
+Green (#1007): the transcription watchdog notifies no view; words-behind is its own observed value.
+
+## 2026-10-23 18:22:47 EDT — scribe `786b03a77371b87112214564ae0dc06d90b649f1`
+Red test (#1007): RecordingObservationTests.
+
+## 2026-10-23 18:10:19 EDT — scribe `063e7c32f787c72f01280bb96cfcbf4b2aaa1bc9`
+Change log (#1022): red d86ab2f6e, green 83620433f, audit 1e4c54b9b, What's New 87ff2d386.
+
+## 2026-10-23 18:10:04 EDT — scribe `87ff2d3865172a102c4aa525ec6c829f7a8a058d`
+Build 118's What's New line and PROGRESS (#1022): the audio pieces the prune hid no longer wait on the server.
+
+## 2026-10-23 18:08:14 EDT — scribe `1e4c54b9b487342eaa045d1f35b4c6b31269aa96`
+The audit section (#1022): 530 pending chunk rows in 12 recordings, the Sync view, the fix, its cost and tests.
+
+## 2026-10-23 18:08:14 EDT — scribe `83620433ff7e77fb87c3b1431beb4e627cd5f706`
+Green (#1022): supersede and the media scan read the server's chunk rows too; the scan supersedes what the uploaded whole audio covers instead of sending it again.
+
+## 2026-10-23 18:08:01 EDT — scribe `d86ab2f6e5f1b3fed588d76f10477247005ac111`
+Red tests (#1022): supersede and the media scan see the chunk rows the prune took out of this device's store.
+
+## 2026-10-23 18:02:34 EDT — scribe `894c1132b0804d29dc69b8909973cc256ea85d82`
+Touch claim (#1022): one media-scan test's clock.
+
+## 2026-10-23 16:48:09 EDT — scribe `74dc621cc31393556fd82aaee27f693ab1dbdf22`
+Plan chunk-supersede-1022 (#1022): plan.
+
+## 2026-10-23 18:01:23 EDT — scribe `63cad2752080be392bad9d252257249692a00067`
+ADR 0091 (#1012): a recording's audio also travels compressed (AAC-LC 24 kHz, 6 s segments), and other devices play it from that copy.
+
+## 2026-10-23 18:01:00 EDT — instant-data-swift `b112a2b7253bec6b77c037081935b6246d6dda63`
+ADR 0021, proposed (#1012): progressive media as AAC-LC fragmented MP4 segments in $files, listed by rows, played as HLS through an AVAssetResourceLoader playlist with redirects.
+
+## 2026-10-23 18:00:30 EDT — instant-data-swift `f82fb15aa7e566907a261337dfcc086de759dad2`
+The codec lab behind ADR 0021 (#1012): size, PESQ, segmenting and live playback of compressed speech; results without paths or audio.
+
+## 2026-10-23 17:48:50 EDT — scribe `5d5343c82819835c32285dc2bcdf74a037b6bf06`
+Plan and claims (#1012): a compressed copy of each recording's audio, stored as it records and played on other devices.
+
+## 2026-10-23 16:04:23 EDT — instant-data-swift `be04e51938061ddb70e9569375ad84ed6b03f856`
+Plan update (#1012): progressive media's core files (rows, playlist, spool, writer, reader) and the network wait claimed.
+
+## 2026-10-23 17:37:11 EDT — instant-data-swift `b88cca053b1d1f71ac67f566d20cb26d13535927`
+Release document for v1.9.23 (#1007): the sharded indexes and the storage write meter; carries 1.9.22, 1.9.21 and 1.9.20.
+
+## 2026-10-23 16:58:51 EDT — instant-data-swift `c2582e4bbd971c02616506babbf2089ad85350c4`
+Green (#1007): the storage write meter counts SQLite pages per store call; persistence.write-summary at info every 30 s.
+
+## 2026-10-23 16:51:49 EDT — instant-data-swift `05bcafd7ce852f3ddca193ecda3b55899dd21bd8`
+Red test (#1007): InstantStorageWriteMeterTests, nothing counted which store call wrote the pages.
+
+## 2026-10-23 16:41:37 EDT — instant-data-swift `538de9616263f1b8b696fcf1b8d5b5512f31a0be`
+Green (#1007): the store's indexes keep their entries in 64 copy-on-write shards; twenty prepares into 20,000 lines 318.6 -> 2.4 ms.
+
+## 2026-10-23 16:41:37 EDT — instant-data-swift `a540e9b6b1ed5a6f66dbaef24c79042dd5a40c0b`
+Red test (#1007): InstantPrepareCopyCostTests, preparing a write cost in proportion to the store.
+
+## 2026-10-23 17:15:00 EDT — realtime-voice `9f77f9c0e` and `c8f106168`
+The hot-path audit: build 116 in the field, the storage write meter, what is left for build 117; the live-query result row's update cost corrected (#1007).
+
+## 2026-10-23 17:31:35 EDT — scribe `cbdcf421cd85f13e40cc2d572c09f7e001e6b99c`
+Build 117 plan (#1023): PLAN.md and touching claims for the cut (version numbers and What's New); release-117.
+
+## 2026-10-23 17:31:35 EDT — scribe `acc010614a9bafd9b4ee94fb879af468a292bc1a`
+Build 117 cut (#1023, #1005): Scribe 0.1 (117) and Scribe Playback 117 on instant-data-swift 1.9.22, with #1006 (transcript from the device), #1015 (cache compaction), #1016 (chunk generations), #1017 (Mac live mark), #1011 (ledger); What's New 117 dated, #1006 and #1017 first.
+
+## 2026-10-23 17:31:35 EDT — scribe `9dba37a8256b1cc4ee0b14875864fe34a4976239`
+Change log for the build 117 cut acc010614 (#1023).
+
+## 2026-10-23 17:23:19 EDT — scribe `3751a1b3b60fa11269c2706ae3267a52faf8a919`
+Merge (#1017) of red and green onto main, for build 117.
+
+## 2026-10-23 17:23:19 EDT — scribe `3431fddc65fd214f54d0351bdb1f3d51976f56be`
+The Mac-idle audit (#1017), its index row, and What's New for build 117.
+
+## 2026-10-23 17:00:27 EDT — scribe `2d38bd5b42320f550074593a87dfaeb1fbf1a32e`
+Green (#1017): BreathingSymbol; on the Mac SwiftUI draws the live mark once and Core Animation breathes it (production 115 idle with a live row: 40.5% of a core, 19.1% of it the per-frame redraw; hidden/minimized/off screen 52-119%).
+
+## 2026-10-23 16:10:47 EDT — scribe `9baafc03bf5f850a1ffa04977bd529edaccc8d84`
+Plan follow-up (#1017): claim Styleguide/BreathingSymbol.swift; the breath moves to Core Animation (AppKit's image view changes the look).
+
+## 2026-10-23 15:56:16 EDT — scribe `ef4e62f1d6289cd2e364de83118a9a7206678618`
+Red test (#1017): RecordingRowLiveMarkFrameTests, a live row lays out only when its clock ticks and Core Animation breathes its mark.
+
+## 2026-10-23 15:05:09 EDT — scribe `35bb2fdb08ac8123792c703088f7467b95bcd984`
+Plan mac-idle-1017 (#1017): plan and touch claims.
+
 ## 2026-10-23 17:22:18 EDT — instant-data-swift `9bbe407a2c8121f2542146649984b99ffac6d35b`
 Tests (#1021): a checked-in list of the bundle's failing tests (77 names: 24 idle, 53 only under load, v1.9.22 on the Mac mini), and scripts/known-failing-tests.sh to run the bundle the one way and compare a run against the list instead of a baseline run of main.
 

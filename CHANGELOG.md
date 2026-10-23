@@ -10,6 +10,273 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## October 23rd, 2026 at 7:24:19 p.m. EDT — `48df79da7d77` Document the v1.9.26 release: the live connection's status says what the socket is (#1024)
+
+- **Implementation commit:** `48df79da7d77aa2b4ec60fabce4995b60dd9ad3a`
+- **Change:** Document the v1.9.26 release: the live connection's status says what the socket is (#1024)
+- **Details:**
+  - Release focus, the device evidence (builds 114-116), the red/green and whole-bundle checks, the beat replay through the consuming app's own session-health code (12 -> 2 beats a minute, conn=open 0% -> 100%, silentReopens per write -> 0), and what a device must still show.
+- **Files:**
+  - `docs/releases/v1.9.26.md` — the release document
+- **User context (verbatim):**
+  > I want to make sure we're still syncing in real time.
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run); no SpecStory capture for headless runs.
+
+## October 23rd, 2026 at 7:24:19 p.m. EDT — `8dc5c3ec7a69` Green (#1024): a live operation's own failure no longer stores the open connection as errored
+
+- **Implementation commit:** `8dc5c3ec7a69ff31d6f294fcb188490bf6cbea0a`
+- **Change:** Green (#1024): a live operation's own failure no longer stores the open connection as errored
+- **Details:**
+  - queryOnceThroughLive no longer records its answer wait's failure (cancelled, late, a server error) as the connection's and does not log a cancellation as query.live-ack-timeout; queryOnce logs a cancellation at debug as query-once.cancelled; the live observation, stream reader and share paths log their own event (recordLiveOperationFailure) instead of storing .errored. Unchanged: drops, failed opens, the synchronization blocker, and the explicit flush's mutation transport (recordMutationTransportFailure). Upstream Reactor.js sets ERRORED only when init fails.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — recordLiveOperationFailure, recordMutationTransportFailure, the one-shot query catch
+  - `Tests/InstantSwiftDataCoreTests/InstantLiveTransportTests.swift` — the cursor-mismatch test expects the diagnostic, not an errored status
+- **User context (verbatim):**
+  > I want to make sure we're still syncing in real time.
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run); no SpecStory capture for headless runs.
+
+## October 23rd, 2026 at 7:24:19 p.m. EDT — `fa1f10366182` Red (#1024): a cancelled one-shot query, or a server error for one add-query, leaves the open connection reading errored
+
+- **Implementation commit:** `fa1f10366182eeac73fbf39bfab111f595d962fe`
+- **Change:** Red (#1024): a cancelled one-shot query, or a server error for one add-query, leaves the open connection reading errored
+- **Details:**
+  - InstantConnectionStateTruthTests: a scripted socket, a one-shot query cancelled before its answer or answered with a 500 operation-timed-out, then three writes the server accepts; on main all 12 statuses published during the writes said .errored and the status after said .errored with lastErrorMessage CancellationError(); identically red on v1.9.13 and v1.9.18. A dropped socket reads .errored (passes before and after).
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantConnectionStateTruthTests.swift` — the red tests
+- **User context (verbatim):**
+  > I want to make sure we're still syncing in real time.
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run); no SpecStory capture for headless runs.
+
+## October 23rd, 2026 at 7:14:11 p.m. EDT — `c91e8c0b1072` Green (#932): a server apply's gate hold of 250-999 ms is logged at notice, so each arrives with its fields
+
+- **Implementation commit:** `c91e8c0b1072fb1202d96110b11fcb987a97e78e`
+- **Change:** Green (#932): a server apply's gate hold of 250-999 ms is logged at notice, so each arrives with its fields
+- **Details:**
+  - The lab could read only per-minute counts of the phone's sub-second holds since build 116; at notice each arrives with commitInsideMilliseconds and the rest. Lab, untethered: no hold of 1 s or more from the iPhone on 116 or the iPad on 117, against 38 on 115 (median 3,974 ms).
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — notice from 250 ms, the reason, the History line
+- **User context (verbatim):**
+  > I want to find the issues at the root.
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run); no SpecStory capture for headless runs.
+
+## October 23rd, 2026 at 7:14:11 p.m. EDT — `872017cdd798` Red (#932): a server apply's gate hold of 250-999 ms is logged at info, which a host's bridge counts per minute without its fields
+
+- **Implementation commit:** `872017cdd798071e0d3b79397e856d8095bb52d5`
+- **Change:** Red (#932): a server apply's gate hold of 250-999 ms is logged at info, which a host's bridge counts per minute without its fields
+- **Details:**
+  - serverApplyGateHeldLevel(heldMilliseconds:) extracted unchanged; the test expects notice from 250 ms and fails.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — the level as its own function
+  - `Tests/InstantSwiftDataCoreTests/InstantServerApplyGateWorkTests.swift` — the level test
+- **User context (verbatim):**
+  > I want to find the issues at the root.
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run); no SpecStory capture for headless runs.
+
+## October 23rd, 2026 at 6:47:24 p.m. EDT — `c1307377d221` Document the v1.9.25 release: a server apply holds the gate for less and writes less, and an app can choose its sync priority (#932, #590)
+
+- **Implementation commit:** `c1307377d22158b396b5367b577990d660d6a6a5`
+- **Change:** Document the v1.9.25 release: a server apply holds the gate for less and writes less, and an app can choose its sync priority (#932, #590)
+- **Details:**
+  - Release document: the three undocumented 1.9.20 changes, liveSyncTaskPriority with the bench, F1a with its bytes, the targeted suites and the whole bundle against Tests/known-failing.txt.
+- **Files:**
+  - `docs/releases/v1.9.25.md` — the release document
+- **User context (verbatim):**
+  > I want to find the issues at the root.
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run); no SpecStory capture for headless runs.
+
+## October 23rd, 2026 at 6:47:24 p.m. EDT — `022495f972e1` Green (#932): a full rebase's staging keeps no copy of each planned body
+
+- **Implementation commit:** `022495f972e12d92b957e21803d5a7ad0beed972`
+- **Change:** Green (#932): a full rebase's staging keeps no copy of each planned body
+- **Details:**
+  - Both passes and the stage read the outbox's body; every rewrite of a body bumps the revision each page checks. Cost harness, 2,580 pending, every frame a full rebase, Mac mini, 1.9.23 without and with it: 674,024 -> 524,952 KB written over 7 frames (-22%), instructions -3.7%.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — the body page, the stage, the catch-up rows and the staging table
+- **User context (verbatim):**
+  > I want to find the issues at the root.
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run); no SpecStory capture for headless runs.
+
+## October 23rd, 2026 at 6:47:24 p.m. EDT — `855b082ccf55` Fix (#932): a retried apply's planningHeldMilliseconds counts from entering the operation gate
+
+- **Implementation commit:** `855b082ccf551659dfad030add43d52b05c9b893`
+- **Change:** Fix (#932): a retried apply's planningHeldMilliseconds counts from entering the operation gate
+- **Details:**
+  - The clock started before the wait for the gate, so the gate-held event reported the wait plus the hold.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — the planning clock
+- **User context (verbatim):**
+  > I want to find the issues at the root.
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run); no SpecStory capture for headless runs.
+
+## October 23rd, 2026 at 6:47:23 p.m. EDT — `748f107e8dcc` Green (#590): liveSyncTaskPriority lets an app choose the priority of the runtime's steady-state sync
+
+- **Implementation commit:** `748f107e8dcc22c57f75c52888440f07a25758ae`
+- **Change:** Green (#590): liveSyncTaskPriority lets an app choose the priority of the runtime's steady-state sync
+- **Details:**
+  - The automatic connection, the session's reader and frame applier, reconnects, the delivery pump and stream catch-up start at InstantRuntimeConfiguration.liveSyncTaskPriority; nil, the default, keeps the opener's priority. Loopback bench, Mac mini: with ten user-initiated busy threads, write -> server median 14-30 ms at user-initiated against 24-27 s at utility, so the default stays nil. The decode queue's user-initiated QoS keeps its reason beside it.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — the configuration field and the five task starts
+  - `Sources/InstantSwiftDataCore/InstantRuntimeLiveSession.swift` — the receiver's priority
+  - `Sources/InstantSwiftDataCore/InstantRuntimeReconnectController.swift` — the reconnect loop's priority
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — why the decode queue keeps its QoS
+  - `Tests/InstantSwiftDataCoreTests/InstantSyncTaskPriorityTests.swift` — default nil, then .utility
+- **User context (verbatim):**
+  > I want to make sure we're still syncing in real time.
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run); no SpecStory capture for headless runs.
+
+## October 23rd, 2026 at 6:47:23 p.m. EDT — `84919a03995c` Red (#590): the runtime's steady-state sync runs at the priority of whichever task connected it
+
+- **Implementation commit:** `84919a03995c16b057bfc4bddc558c45f1975155`
+- **Change:** Red (#590): the runtime's steady-state sync runs at the priority of whichever task connected it
+- **Details:**
+  - InstantSyncTaskPriorityTests: connecting and writing from a user-initiated task left the session's reads after the handshake at user-initiated; a loopback session records the priority of each receive and each transact send.
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantSyncTaskPriorityTests.swift` — the red test
+- **User context (verbatim):**
+  > I want to make sure we're still syncing in real time.
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run); no SpecStory capture for headless runs.
+
+## October 23rd, 2026 at 6:28:50 p.m. EDT — `476e1237458e` Document the v1.9.24 release: a write's cycle writes about 9% fewer pages to disk, the outbox dropping an index no statement used and an acknowledgement no longer rewriting three indexes it does not change (#1007)
+
+- **Implementation commit:** `476e1237458eb9e816010d8b897a8b2386ea2aae`
+- **Change:** Document the v1.9.24 release: a write's cycle writes about 9% fewer pages to disk (#1007)
+- **Details:**
+  - Release document: N8 (the dropped index, the acknowledgement's flag), its tests, the v1.9.23 whole suite against the known-failing list, the sort bound, the harness's storage meter before and after.
+- **Files:**
+  - `docs/releases/v1.9.24.md` — the release document
+- **User context (verbatim):**
+  > I want to optimize the performance of the application with its exact feature set.
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run); no SpecStory capture for headless runs.
+
+## October 23rd, 2026 at 6:28:50 p.m. EDT — `6b1dd7b4b3c2` Green (#1007): the outbox drops the index no statement used, and an acknowledgement sets the overlay flag only when it changes
+
+- **Implementation commit:** `6b1dd7b4b3c290425eea0580299fa1cff7486419`
+- **Change:** Green (#1007): the outbox drops the index no statement used, and an acknowledgement sets the overlay flag only when it changes
+- **Details:**
+  - Migration 0028_drop_unused_outbox_delivery_window_index; acceptOutboxMutation sets optimistic_overlay_active in its own UPDATE only when the row holds the other value. One acknowledgement 9 -> 5 pages; harness 318 -> 289 KB of log pages per write; 553 outbox and server-apply tests pass, CLI tests included.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — the migration and the acknowledgement's flag update
+- **User context (verbatim):**
+  > I want to optimize the performance of the application with its exact feature set.
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run); no SpecStory capture for headless runs.
+
+## October 23rd, 2026 at 6:28:49 p.m. EDT — `5fc3a1286582` Red (#1007): every outbox row moves through an index no statement uses, and an acknowledgement rewrites three indexes it does not change
+
+- **Implementation commit:** `5fc3a128658280597d39718d6eb312a040fc8577`
+- **Change:** Red (#1007): every outbox row moves through an index no statement uses, and an acknowledgement rewrites three indexes it does not change
+- **Details:**
+  - InstantOutboxPageChurnTests: instant_outbox_delivery_window_idx is present though no plan uses it; one acknowledgement wrote 9 pages (bound 6) because its UPDATE set optimistic_overlay_active 1 -> 1.
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantOutboxPageChurnTests.swift` — two red tests: the unused index, the acknowledgement's pages
+- **User context (verbatim):**
+  > I want to optimize the performance of the application with its exact feature set.
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run); no SpecStory capture for headless runs.
+
+## October 23rd, 2026 at 6:28:49 p.m. EDT — `210def0eb1bd` Tests (#1007, #1021): the link-set sort cost bound leaves room for a whole bundle's load
+
+- **Implementation commit:** `210def0eb1bd110988f68166cb0f8619d3f12e57`
+- **Change:** Tests (#1007, #1021): the link-set sort cost bound leaves room for a whole bundle's load
+- **Details:**
+  - InstantManyCardinalitySortCostTests bound 10 -> 20: the comparator that built both keys measured 27.9, the fix 3-10, nearer 10 beside a whole bundle's load; still red on the unfixed code, so it can leave Tests/known-failing.txt (#1021).
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantManyCardinalitySortCostTests.swift` — the bound and why
+- **User context (verbatim):**
+  > I want to optimize the performance of the application with its exact feature set.
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run); no SpecStory capture for headless runs.
+
+## October 23rd, 2026 at 6:04:04 p.m. EDT — `f82fb15aa7e5` Bench: the codec lab behind ADR 0021 measures size, quality, segmenting and live playback of compressed speech (#1012)
+
+- **Implementation commit:** `f82fb15aa7e566907a261337dfcc086de759dad2`
+- **Change:** Bench: the codec lab behind ADR 0021 measures size, quality, segmenting and live playback of compressed speech (#1012)
+- **Details:**
+  - A separate package (no library dependency): AudioToolbox's AAC-LC, HE-AAC and Opus at speech rates (size, CPU, wideband PESQ), AVAssetWriter's fMP4 HLS segments, AVPlayer following a growing playlist (pauses, resource-loader playlist with redirects), browser playback; results/ holds the 2026-10-23 Mac runs without paths or audio.
+- **Files:**
+  - `benchmarks/AudioCodecLab/Sources/AudioCodecLab/AudioCodecLab.swift` — encoders, decoders, the HLS segmenter and the probe
+  - `benchmarks/AudioCodecLab/Sources/audio-codec-lab/main.swift` — the command: probe, encode, hls, play (loader, redirect, recover), check
+  - `benchmarks/AudioCodecLab/scripts/run_matrix.sh` — the codec matrix and its PESQ scoring
+  - `benchmarks/AudioCodecLab/scripts/live_hls_server.py` — a live EVENT playlist that grows in real time, with pauses
+  - `benchmarks/AudioCodecLab/README.md` — how to rerun each measurement
+  - `benchmarks/AudioCodecLab/results/2026-10-23-mac-codecs.jsonl` — sizes and PESQ, without paths
+- **User context (verbatim):**
+  > Is there a more compressed file format that would be useful there?
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run); no SpecStory capture for headless runs.
+
+## October 23rd, 2026 at 6:03:50 p.m. EDT — `b112a2b7253b` ADR 0021 (proposed): progressive media travels as AAC-LC fragmented MP4 segments in $files, listed by rows, played as HLS (#1012)
+
+- **Implementation commit:** `b112a2b7253bec6b77c037081935b6246d6dda63`
+- **Change:** ADR 0021 (proposed): progressive media travels as AAC-LC fragmented MP4 segments in $files, listed by rows, played as HLS (#1012)
+- **Details:**
+  - AAC-LC 24 kHz 32 kbps: 23.7x smaller than the WAV, PESQ 4.32/4.11/4.28; plays in AVPlayer and Chrome (native HLS, MSE); Apple's Opus fMP4 is 44.5 kbps at 24 kbps and Chrome rejects it. AVPlayer follows a growing playlist 37.5-41.7 s behind capture through an AVAssetResourceLoader playlist with redirects. iPhone CPU pending.
+- **Files:**
+  - `docs/adr/0021-progressive-media-over-instant.md` — the decision and its measurements
+- **User context (verbatim):**
+  > It would be nice to have a library primitive for streaming progressive audio file over instant.
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run); no SpecStory capture for headless runs.
+
+## October 23rd, 2026 at 5:37:14 p.m. EDT — `b88cca053b1d` Document the v1.9.23 release: preparing a write no longer copies the store's indexes, and the store says which calls write its disk bytes (#1007)
+
+- **Implementation commit:** `b88cca053b1d1f71ac67f566d20cb26d13535927`
+- **Change:** Document the v1.9.23 release: preparing a write no longer copies the store's indexes, and the store says which calls write its disk bytes (#1007)
+- **Details:**
+  - Release document: the sharded indexes and the storage write meter, their tests, the whole suite on main with the shards, the harness before and after; carries 1.9.22, 1.9.21 and 1.9.20.
+- **Files:**
+  - `docs/releases/v1.9.23.md` — the release document
+- **User context (verbatim):**
+  > I want to optimize the performance of the application with its exact feature set.
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run); no SpecStory capture for headless runs.
+
+## October 23rd, 2026 at 5:37:13 p.m. EDT — `c2582e4bbd97` Green (#1007): the storage write meter counts the pages each store call writes, and the store reports them every 30 s
+
+- **Implementation commit:** `c2582e4bbd971c02616506babbf2089ad85350c4`
+- **Change:** Green (#1007): the storage write meter counts the pages each store call writes, and the store reports them every 30 s
+- **Details:**
+  - Every write transaction counts SQLITE_DBSTATUS_CACHE_WRITE pages under its caller; persistence.write-summary at info every 30 s. Harness: 309 KB of log pages per write (commit 117, save 112, ack 51, claims 27 KB).
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantStorageWriteMeter.swift` — the meter and its summary
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — the transaction wrapper counts pages
+- **User context (verbatim):**
+  > I want to optimize the performance of the application with its exact feature set.
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run); no SpecStory capture for headless runs.
+
+## October 23rd, 2026 at 5:37:13 p.m. EDT — `05bcafd7ce85` Red (#1007): nothing says which store call writes a device's disk bytes
+
+- **Implementation commit:** `05bcafd7ce852f3ddca193ecda3b55899dd21bd8`
+- **Change:** Red (#1007): nothing says which store call writes a device's disk bytes
+- **Details:**
+  - InstantStorageWriteMeterTests: a 200-fact snapshot save was not counted under saveStoreSnapshot(_:) (a public seam that counted nothing).
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantStorageWriteMeterTests.swift` — the red test
+  - `Sources/InstantSwiftDataCore/InstantStorageWriteMeter.swift` — the seam
+- **User context (verbatim):**
+  > I want to optimize the performance of the application with its exact feature set.
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run); no SpecStory capture for headless runs.
+
+## October 23rd, 2026 at 5:37:12 p.m. EDT — `538de9616263` Green (#1007): the store's indexes keep their entries in 64 shards, so preparing a write copies what it changes
+
+- **Implementation commit:** `538de9616263f1b8b696fcf1b8d5b5512f31a0be`
+- **Change:** Green (#1007): the store's indexes keep their entries in 64 shards, so preparing a write copies what it changes
+- **Details:**
+  - ShardedSet and ShardedDictionary (64 copy-on-write shards by hash) for the entity map, reverse refs, indexed value and entity maps, the entity sets under each value and namespace members. Twenty prepares into 20,000 lines 318.6 -> 2.4 ms; harness at 200 lines per recording -45% instructions, observer refresh unchanged.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/ShardedCollections.swift` — the sharded collections
+  - `Sources/InstantSwiftDataCore/TripleIndexes.swift` — the index storage types, coding conversion
+  - `Tests/InstantSwiftDataCoreTests/ShardedCollectionsTests.swift` — equivalence with Set and Dictionary
+- **User context (verbatim):**
+  > I want to optimize the performance of the application with its exact feature set.
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run); no SpecStory capture for headless runs.
+
+## October 23rd, 2026 at 5:37:12 p.m. EDT — `a540e9b6b1ed` Red (#1007): preparing a write copies every index the write touches, so it costs in proportion to the store
+
+- **Implementation commit:** `a540e9b6b1ed5a6f66dbaef24c79042dd5a40c0b`
+- **Change:** Red (#1007): preparing a write copies every index the write touches, so it costs in proportion to the store
+- **Details:**
+  - InstantPrepareCopyCostTests: preparing one line's write into 20,000 lines cost 9.7 times preparing it into 2,000; a Time Profiler trace put 84% of a prepare in copying the indexed maps and 10% in the entity map.
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantPrepareCopyCostTests.swift` — the red test
+- **User context (verbatim):**
+  > I want to optimize the performance of the application with its exact feature set.
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run); no SpecStory capture for headless runs.
+
 ## October 23rd, 2026 at 5:22:05 p.m. EDT — `9bbe407a2c81` Tests (#1021): a checked-in list of the bundle's failing tests, and a script that runs and compares against it
 
 - **Implementation commit:** `9bbe407a2c8121f2542146649984b99ffac6d35b`

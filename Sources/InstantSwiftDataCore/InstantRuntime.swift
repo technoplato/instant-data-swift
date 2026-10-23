@@ -21,6 +21,14 @@
 // - 2026-10-23: compactLocalCache(holdingWhile:) gives the cache's free pages back with one VACUUM when a quarter of
 //   the file and 64 MB are free, under the operation gate, never while the device is hot, in Low Power Mode, short of
 //   disk, cancelled, or held by the app; on one iPhone 676 MB of a 916 MB cache were free pages (#1015).
+// - 2026-10-23: the steady-state sync tasks (automatic connection, the session's reader and frame applier,
+//   reconnects, the delivery pump, stream catch-up) run at liveSyncTaskPriority when the app sets it; nil, the default,
+//   keeps the priority of the task that opened or connected the runtime (#590).
+// - 2026-10-23: a server apply's gate hold of 250-999 ms is logged at notice, not info, so a host that counts info lines
+//   per minute still receives each such hold with its fields (#932).
+// - 2026-10-23: a live operation's own failure (a one-shot query cancelled or answered with an error, a query's
+//   encoding, registration or removal, a stream reader's, a share observation's) no longer stores the connection as
+//   `.errored`; one failed query left open sockets reading errored for hours on builds 114-116 (#1024).
 
 import Foundation
 import IssueReporting
@@ -361,6 +369,20 @@ public struct InstantRuntimeConfiguration: Sendable {
   public var mutationTransport: InstantMutationTransportClient
   public var liveTransport: InstantLiveTransportClient?
   public var autoConnectLiveTransport: Bool
+  /// The priority of the runtime's steady-state sync tasks: the automatic connection, the live session's reader and
+  /// frame applier (server results, acknowledgements), reconnects, the mutation delivery pump and the stream writers'
+  /// catch-up. `nil`, the default, starts them at the priority of the task that opened the runtime or connected it, as
+  /// before; an app that opens it from a user-initiated task runs them on the performance cores for the process's life
+  /// (#590: 64 of 125 CPU-seconds at user-initiated while recording, build 114). Local writes and reads keep their
+  /// callers' priority whatever this is.
+  ///
+  /// `.utility` moves that work toward the efficiency cores, and also behind every busier task: on a Mac whose cores were
+  /// saturated by higher-priority work, utility sync tasks made almost no progress. Set it only after measuring, on the
+  /// device, that a write still reaches the server and a server change still reaches the screen as fast (#590).
+  ///
+  ///     var configuration = InstantRuntimeConfiguration(appID: appID, persistenceURL: url)
+  ///     configuration.liveSyncTaskPriority = .utility
+  public var liveSyncTaskPriority: TaskPriority?
   public var liveShareContract: InstantLiveShareContract?
   public var userCookieSyncClient: InstantUserCookieSyncClient
   public var platformAppClient: InstantPlatformAppClient
@@ -827,6 +849,7 @@ private actor InstantRuntimeMutationDeliveryPump {
   }
 
   func request(
+    priority: TaskPriority? = nil,
     sleep: @escaping @Sendable (UInt64) async throws -> Void,
     _ deliver: @escaping @Sendable () async -> InstantRuntimeMutationDeliveryPumpPassResult
   ) {
@@ -834,7 +857,7 @@ private actor InstantRuntimeMutationDeliveryPump {
     needsAnotherPass = true
     guard task == nil else { return }
 
-    task = Task { [weak self] in
+    task = Task(priority: priority) { [weak self] in
       await self?.run(sleep: sleep, deliver)
     }
   }
@@ -2861,10 +2884,11 @@ public final class InstantRuntime: Sendable {
       // the gate from its seed to its plan only; writes that land after the plan are the appended tail its catch-up
       // replays, as on the first attempt.
       let holdsGateWhilePlanning = attemptIndex > 0 && !operationGateAlreadyHeld
-      let planningStartedAt = ContinuousClock.now
       if holdsGateWhilePlanning {
         try await enterOperationGateUnlessCancelled(operation: "plan server apply", priority: .interactive)
       }
+      // From entering the gate, so the event reports the hold, not the wait for it.
+      let planningStartedAt = ContinuousClock.now
       var planned: InstantServerApplyAttemptPlan?
       planning: do {
         let seed: InstantServerApplySeed
@@ -4576,9 +4600,18 @@ public final class InstantRuntime: Sendable {
     return value
   }
 
+  /// The level of a server apply's gate-held event: `warning` from 1 s, `notice` from 250 ms, `debug` below (#277).
+  ///
+  /// #932 (2026-10-23): 250-999 ms was `info`, which a host's diagnostics bridge counts per minute without the fields;
+  /// once the phone's holds fell under 1 s they arrived as counts only. A hold that long stalls every read and write
+  /// behind it, so it is a notice, and each arrives with its commit's parts.
+  static func serverApplyGateHeldLevel(heldMilliseconds: Int) -> InstantDiagnosticLevel {
+    heldMilliseconds >= 1_000 ? .warning : heldMilliseconds >= 250 ? .notice : .debug
+  }
+
   /// One record per server apply: how long it held the operation gate, split by part. Local
-  /// writes queue behind every millisecond of it, so an apply past 250 ms is reported at `info`
-  /// and past 1 s at `warning` (#277).
+  /// writes queue behind every millisecond of it, so an apply past 250 ms is reported at `notice`
+  /// and past 1 s at `warning` (#277, #932).
   ///
   /// #932: it also names the path (`reduced`, or why the apply peeled and replayed its whole component), the attempt,
   /// how many writes the plan peeled and replayed, and where the commit spent its time inside the persistence actor.
@@ -4643,7 +4676,7 @@ public final class InstantRuntime: Sendable {
       ("SQLite commit", commitTiming.sqliteCommitMilliseconds),
     ].map { "\($0.0) \($0.1) ms" }.joined(separator: ", ")
     InstantDiagnostics.shared.record(
-      heldMilliseconds >= 1_000 ? .warning : heldMilliseconds >= 250 ? .info : .debug,
+      Self.serverApplyGateHeldLevel(heldMilliseconds: heldMilliseconds),
       subsystem: "instant-swift-data-core",
       category: "concurrency",
       event: "server-apply.operation-gate-held",
@@ -5305,7 +5338,6 @@ public final class InstantRuntime: Sendable {
         )
       } catch {
         liveRegistration = nil
-        await recordConnectionError(error)
         InstantDiagnostics.shared.record(
           error: error,
           subsystem: "instant-swift-data-core",
@@ -5444,7 +5476,6 @@ public final class InstantRuntime: Sendable {
       } catch {
         await self.configuration
           .onLiveQueryUnregisterFailureBeforeConnectionErrorForTesting?()
-        await self.recordConnectionError(error)
         InstantDiagnostics.shared.record(
           error: error,
           subsystem: "instant-swift-data-core",
@@ -5496,7 +5527,6 @@ public final class InstantRuntime: Sendable {
       return Self.finishedQueryObservationLease()
     } catch {
       await leaveOperationGate()
-      await recordConnectionError(error)
       InstantDiagnostics.shared.record(
         error: error,
         subsystem: "instant-swift-data-core",
@@ -5579,8 +5609,12 @@ public final class InstantRuntime: Sendable {
       registrationKey = try InstantLiveQueryEncoder.registrationKey(for: query)
     } catch {
       try Task.checkCancellation()
-      await recordConnectionError(error)
-      try Task.checkCancellation()
+      recordLiveOperationFailure(
+        error,
+        category: "query",
+        event: "query-observation.encoding-failed",
+        message: "Could not encode a live infinite query observation."
+      )
       let storeObservation = await store.observeInfiniteQueryLease(
         plan,
         onCancellationStarted: onCancellationStarted
@@ -5653,7 +5687,12 @@ public final class InstantRuntime: Sendable {
           clientEventID: self.configuration.makeID()
         )
       } catch {
-        await self.recordConnectionError(error)
+        self.recordLiveOperationFailure(
+          error,
+          category: "query",
+          event: "query-observation.unregister-failed",
+          message: "Could not unregister a live Instant infinite query observation."
+        )
       }
     }
     do {
@@ -5690,7 +5729,12 @@ public final class InstantRuntime: Sendable {
       throw CancellationError()
     } catch {
       await leaveOperationGate()
-      await recordConnectionError(error)
+      recordLiveOperationFailure(
+        error,
+        category: "query",
+        event: "query-observation.registration-failed",
+        message: "Could not register a live Instant infinite query observation."
+      )
     }
     let hydration = hydratingDeferredValues(
       in: liveObservation.stream,
@@ -6170,6 +6214,18 @@ public final class InstantRuntime: Sendable {
         correlationID: plan.id
       )
       return emission
+    } catch let error as CancellationError {
+      // The caller cancelled it; nothing failed (#1024).
+      InstantDiagnostics.shared.record(
+        .debug,
+        subsystem: "instant-swift-data-core",
+        category: "query",
+        event: "query-once.cancelled",
+        message: "A one-shot Instant query was cancelled.",
+        metadata: ["namespace": plan.namespace],
+        correlationID: plan.id
+      )
+      throw error
     } catch {
       InstantDiagnostics.shared.record(
         error: error,
@@ -6279,21 +6335,26 @@ public final class InstantRuntime: Sendable {
           )
           throw error
         }
-        InstantDiagnostics.shared.record(
-          error: error,
-          subsystem: "instant-swift-data-core",
-          category: "query",
-          event: "query.live-ack-timeout",
-          message:
-            "Live query did not receive a server acknowledgement within the timeout.",
-          metadata: [
-            "registrationKey": registrationKey,
-            "namespace": plan.namespace,
-            "timeoutMilliseconds": String(liveQueryAcknowledgementTimeoutMilliseconds),
-          ],
-          correlationID: plan.id
-        )
-        await recordConnectionError(error)
+        // #1024: the caller cancelled this query, its answer did not come in time, or the server answered it with an
+        // error. That query fails; the socket does not, so the connection's state stays what the socket is. Upstream
+        // `Reactor.js` rejects only the query's promise (`QUERY_ONCE_TIMEOUT`, `notifyQueryOnceError`) and sets
+        // `ERRORED` only when `init` fails. A cancellation is no timeout, so it is not logged as one.
+        if !(error is CancellationError) {
+          InstantDiagnostics.shared.record(
+            error: error,
+            subsystem: "instant-swift-data-core",
+            category: "query",
+            event: "query.live-ack-timeout",
+            message:
+              "Live query did not receive a server acknowledgement within the timeout.",
+            metadata: [
+              "registrationKey": registrationKey,
+              "namespace": plan.namespace,
+              "timeoutMilliseconds": String(liveQueryAcknowledgementTimeoutMilliseconds),
+            ],
+            correlationID: plan.id
+          )
+        }
         throw error
       }
       try await configuration.onLiveQueryOnceAcknowledgedForTesting?()
@@ -7000,6 +7061,7 @@ public final class InstantRuntime: Sendable {
     guard configuration.liveTransport != nil else { return }
     recordActorHop(.deliveryPump)
     await mutationDeliveryPump.request(
+      priority: configuration.liveSyncTaskPriority,
       sleep: configuration.liveReconnectSleep
     ) { [weak self] in
       guard let self else { return .finished }
@@ -7165,7 +7227,7 @@ public final class InstantRuntime: Sendable {
     guard configuration.liveTransport != nil else { return }
     guard configuration.autoConnectLiveTransport else { return }
     recordActorHop(.task)
-    _ = automaticLiveConnectionTaskOwner.start { [weak self] in
+    _ = automaticLiveConnectionTaskOwner.start(priority: configuration.liveSyncTaskPriority) { [weak self] in
       guard let self else { return }
       await self.configuration.onAutomaticLiveConnectionTaskStartedForTesting?()
       do {
@@ -7461,6 +7523,7 @@ public final class InstantRuntime: Sendable {
               )
             },
             onEventAcquired: configuration.onLiveReceiverEventAcquiredForTesting,
+            priority: configuration.liveSyncTaskPriority,
             onRoomEvent: { [weak self] event, room, sessionID in
               guard let self else { return }
               await self.handleLiveRoomEvent(event, room: room, sessionID: sessionID)
@@ -7918,7 +7981,10 @@ public final class InstantRuntime: Sendable {
     }
   }
 
-  private func recordConnectionError(_ error: Error) async {
+  /// Stores a failure of the configured mutation transport, which an explicit flush meets, as the connection's error;
+  /// the flush's next success stores `.opened` again. A live operation's own failure is not the connection's
+  /// (``recordLiveOperationFailure(_:category:event:message:)``, #1024).
+  private func recordMutationTransportFailure(_ error: Error) async {
     guard Self.callerOwnsLiveSessionFailure(error) else { return }
     await operationGate.enter()
     do {
@@ -7934,6 +8000,32 @@ public final class InstantRuntime: Sendable {
   private static func callerOwnsLiveSessionFailure(_ error: Error) -> Bool {
     !(error is InstantSupersededLiveSessionSend)
       && !(error is InstantReceiverOwnedLiveSessionSendFailure)
+  }
+
+  /// Logs one live operation's own failure: a query's encoding, registration or removal, a stream reader's
+  /// registration or removal, or a share observation's (#1024).
+  ///
+  /// The failure is that operation's, so it leaves the connection's state alone. These failures used to be stored as
+  /// the connection's error, and nothing rewrote it while the socket stayed open: one failed query left the consuming
+  /// app's builds 114 to 116 reading `.errored` for hours while the server accepted every write. Upstream
+  /// `Reactor.js` sets `ERRORED` only when `init` fails. The socket's own failures still reach the state, through
+  /// `scheduleReconnect` and `connectLiveSession`; a cancellation is the caller's, and a send failure the receiver
+  /// owns is the receiver's to report.
+  private func recordLiveOperationFailure(
+    _ error: Error,
+    category: String,
+    event: String,
+    message: String
+  ) {
+    guard Self.callerOwnsLiveSessionFailure(error), !(error is CancellationError) else { return }
+    InstantDiagnostics.shared.record(
+      error: error,
+      subsystem: "instant-swift-data-core",
+      category: category,
+      event: event,
+      message: message,
+      metadata: ["appID": configuration.appID]
+    )
   }
 
   /// A row without SQLite-owned preparation authority is a local persistence
@@ -8512,6 +8604,7 @@ public final class InstantRuntime: Sendable {
     if shouldReconnect {
       await reconnectController.start(
         appID: configuration.appID,
+        priority: configuration.liveSyncTaskPriority,
         sleep: configuration.liveReconnectSleep,
         networkPath: configuration.liveTransport?.networkPath ?? .alwaysSatisfied,
         reconnect: { [weak self] in
@@ -12524,7 +12617,10 @@ public final class InstantRuntime: Sendable {
   /// Starts the catch-up of the streams this device writes, or runs it again once the current pass ends.
   private func startStreamWriterCatchUp() {
     guard configuration.liveTransport != nil else { return }
-    _ = streamWriterCatchUpOwner.start(restartIfRunning: true) { [weak self] in
+    _ = streamWriterCatchUpOwner.start(
+      priority: configuration.liveSyncTaskPriority,
+      restartIfRunning: true
+    ) { [weak self] in
       await self?.catchUpStreamWriters()
     }
   }
@@ -12735,7 +12831,12 @@ public final class InstantRuntime: Sendable {
         clientEventID: configuration.makeID()
       )
     } catch {
-      await recordConnectionError(error)
+      recordLiveOperationFailure(
+        error,
+        category: "stream",
+        event: "stream-reader.registration-failed",
+        message: "Could not register a live Instant stream reader."
+      )
     }
     return Self.liveObservation(stream) { [weak self] in
       guard let self else { return }
@@ -12746,7 +12847,12 @@ public final class InstantRuntime: Sendable {
           clientEventID: self.configuration.makeID()
         )
       } catch {
-        await self.recordConnectionError(error)
+        self.recordLiveOperationFailure(
+          error,
+          category: "stream",
+          event: "stream-reader.unregister-failed",
+          message: "Could not unregister a live Instant stream reader."
+        )
       }
     }
   }
@@ -12944,7 +13050,12 @@ public final class InstantRuntime: Sendable {
       appID: configuration.appID,
       emissions: emissions
     ) { [weak self] error in
-      await self?.recordConnectionError(error)
+      self?.recordLiveOperationFailure(
+        error,
+        category: "share",
+        event: "share-observation.failed",
+        message: "A live Instant share observation failed."
+      )
     }
   }
 
@@ -14295,7 +14406,7 @@ public final class InstantRuntime: Sendable {
       case let .failure(error):
         recordActorHop(.persistence)
         _ = try? await persistence.releaseAutomaticOutboxClaim(token: flushClaimToken)
-        await recordConnectionError(error)
+        await recordMutationTransportFailure(error)
         return .transportFailure(error)
       case .cancelled:
         recordActorHop(.persistence)
@@ -14314,7 +14425,7 @@ public final class InstantRuntime: Sendable {
       throw error
     }
     if let terminalError {
-      await recordConnectionError(terminalError)
+      await recordMutationTransportFailure(terminalError)
       throw terminalError
     }
     if returnsCancellation || Task.isCancelled {

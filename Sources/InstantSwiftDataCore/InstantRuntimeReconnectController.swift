@@ -32,12 +32,13 @@ actor InstantRuntimeReconnectController {
 
   func start(
     appID: String,
+    priority: TaskPriority? = nil,
     sleep: @escaping @Sendable (UInt64) async throws -> Void,
     networkPath: InstantNetworkPath,
     reconnect: @escaping @Sendable () async throws -> Void
   ) {
     guard acceptsStarts else { return }
-    _ = taskOwner.start(restartIfRunning: true) { [weak self] in
+    _ = taskOwner.start(priority: priority, restartIfRunning: true) { [weak self] in
       await self?.run(appID: appID, sleep: sleep, networkPath: networkPath, reconnect: reconnect)
     }
   }
