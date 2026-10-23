@@ -1,0 +1,276 @@
+// History:
+// - 2026-10-23: added (#1006): local reads read SQLite on their own read-only connection, beside the writer.
+
+import Foundation
+import SQLite3
+import os
+
+/// A read-only connection to the store's SQLite file, for reads that must not wait for writes (#1006).
+///
+/// ``SQLitePersistenceStore`` reads and writes through one connection on one actor, so a read there waits behind every
+/// write: on one device a server apply's commit held that actor 3 to 6 seconds while a transcript's text waited to be
+/// read. The store's file is in WAL mode, where a second connection reads the last committed state while the writer
+/// writes; SQLiteData reads the same way, through a `DatabasePool`'s readers. Each call here runs in one read
+/// transaction, so it sees one committed state.
+///
+/// The connection opens on its first use, after the store's bootstrap made the schema. A failed open is tried again
+/// on the next call; until it opens, callers read on the store.
+actor SQLiteReadConnection {
+  private let fileURL: URL
+  private let deferredAttributeIDs: Set<String>
+  private let lookupAttributeIDs: Set<String>
+  private let handle = Handle()
+  private let encoder: JSONEncoder
+  private let decoder = JSONDecoder()
+  /// Deferred values decoded here, added to the store's own count for tests and diagnostics.
+  private let decodeMetrics = OSAllocatedUnfairLock(initialState: InstantDeferredValueDecodeMetrics())
+
+  /// IDs per statement in a batched `IN` list.
+  private static let batchSize = 500
+
+  init(fileURL: URL, deferredAttributeIDs: Set<String>, lookupAttributeIDs: Set<String>) {
+    self.fileURL = fileURL
+    self.deferredAttributeIDs = deferredAttributeIDs
+    self.lookupAttributeIDs = lookupAttributeIDs
+    let encoder = JSONEncoder()
+    // The store writes `value_json` with sorted keys; a lookup must compare the same bytes.
+    encoder.outputFormatting = [.sortedKeys]
+    self.encoder = encoder
+  }
+
+  /// The deferred values decoded on this connection.
+  nonisolated var deferredValueDecodeMetrics: InstantDeferredValueDecodeMetrics {
+    decodeMetrics.withLock { $0 }
+  }
+
+  /// `attributeIDs`' values of `entityIDs`, as ``SQLitePersistenceStore/loadDeferredValues(attributeIDs:entityIDs:)``
+  /// reads them.
+  func loadDeferredValues(attributeIDs: Set<String>, entityIDs: Set<String>) throws -> [InstantTriple] {
+    let energy = InstantEnergyMeter.begin(.deferredHydrate)
+    defer { energy.end() }
+    let attributeIDs = attributeIDs.intersection(deferredAttributeIDs)
+    guard !attributeIDs.isEmpty, !entityIDs.isEmpty else { return [] }
+    let attributeList = attributeIDs.sorted()
+    let attributePlaceholders = Array(repeating: "?", count: attributeList.count).joined(separator: ", ")
+    var triples: [InstantTriple] = []
+    var encodedByteCount = 0
+    try readTransaction { connection in
+      for batch in Self.batches(of: entityIDs) {
+        let entityPlaceholders = Array(repeating: "?", count: batch.count).joined(separator: ", ")
+        let rows = try Self.selectTexts(
+          """
+          SELECT json FROM instant_triples
+          WHERE attribute_id IN (\(attributePlaceholders)) AND entity_id IN (\(entityPlaceholders))
+          ORDER BY entity_id, attribute_id, value_json
+          """,
+          bindings: attributeList + batch,
+          on: connection
+        )
+        encodedByteCount += rows.reduce(0) { $0 + $1.utf8.count }
+        triples.append(contentsOf: try decodeTriples(rows))
+      }
+    }
+    let (valueCount, byteCount) = (triples.count, encodedByteCount)
+    decodeMetrics.withLock {
+      $0.valueCount += valueCount
+      $0.encodedByteCount += byteCount
+    }
+    return triples
+  }
+
+  /// The entities whose `attributeID` holds `value`, read through the lookup index (``InstantLocalLookupPolicy``,
+  /// ``SQLitePersistenceStore/lookupIndexName``).
+  func entityIDs(attributeID: String, value: InstantValue) throws -> Set<String> {
+    let valueJSON = try String(decoding: encoder.encode(value), as: UTF8.self)
+    var ids: Set<String> = []
+    try readTransaction { connection in
+      // The index's own condition comes first, word for word, so SQLite can prove the partial index applies; INDEXED BY
+      // makes a missing index an error instead of a scan of the whole table.
+      let rows = try Self.selectTexts(
+        """
+        SELECT entity_id FROM instant_triples INDEXED BY \(SQLitePersistenceStore.lookupIndexName)
+        WHERE \(SQLitePersistenceStore.lookupIndexCondition(lookupAttributeIDs)) AND attribute_id = ? AND value_json = ?
+        """,
+        bindings: [attributeID, valueJSON],
+        on: connection
+      )
+      ids = Set(rows)
+    }
+    return ids
+  }
+
+  /// The facts of `entityIDs`, deferred values included, from one committed state: every fact, or only those of
+  /// `attributeIDs`.
+  func facts(of entityIDs: Set<String>, attributeIDs: Set<String>? = nil) throws -> [InstantTriple] {
+    guard !entityIDs.isEmpty, attributeIDs?.isEmpty != true else { return [] }
+    let attributeList = attributeIDs?.sorted() ?? []
+    let attributeCondition =
+      attributeIDs == nil
+      ? ""
+      : " AND attribute_id IN (" + Array(repeating: "?", count: attributeList.count).joined(separator: ", ") + ")"
+    var triples: [InstantTriple] = []
+    var deferredCount = 0
+    var deferredByteCount = 0
+    try readTransaction { connection in
+      for batch in Self.batches(of: entityIDs) {
+        let placeholders = Array(repeating: "?", count: batch.count).joined(separator: ", ")
+        let rows = try Self.selectTexts(
+          """
+          SELECT json FROM instant_triples WHERE entity_id IN (\(placeholders))\(attributeCondition)
+          ORDER BY entity_id, attribute_id, value_json
+          """,
+          bindings: batch + attributeList,
+          on: connection
+        )
+        let decoded = try decodeTriples(rows)
+        for (row, triple) in zip(rows, decoded) where deferredAttributeIDs.contains(triple.attributeID) {
+          deferredCount += 1
+          deferredByteCount += row.utf8.count
+        }
+        triples.append(contentsOf: decoded)
+      }
+    }
+    if deferredCount > 0 {
+      let (valueCount, byteCount) = (deferredCount, deferredByteCount)
+      decodeMetrics.withLock {
+        $0.valueCount += valueCount
+        $0.encodedByteCount += byteCount
+      }
+    }
+    return triples
+  }
+
+  // MARK: - SQLite
+
+  /// Runs `body` in one read transaction. A failure closes the connection, so the next read opens the store's file
+  /// again: a file that was replaced or removed keeps failing on the handle that held it.
+  private func readTransaction(_ body: (OpaquePointer) throws -> Void) throws {
+    let connection = try open()
+    do {
+      try Self.execute("BEGIN DEFERRED", on: connection)
+      do {
+        try body(connection)
+        try Self.execute("COMMIT", on: connection)
+      } catch {
+        try? Self.execute("ROLLBACK", on: connection)
+        throw error
+      }
+    } catch {
+      handle.close()
+      throw error
+    }
+  }
+
+  private func open() throws -> OpaquePointer {
+    if let raw = handle.raw { return raw }
+    var opened: OpaquePointer?
+    let flags = SQLITE_OPEN_READONLY | SQLITE_OPEN_NOMUTEX
+    guard sqlite3_open_v2(fileURL.path, &opened, flags, nil) == SQLITE_OK, let opened else {
+      let message = opened.flatMap { sqlite3_errmsg($0) }.map { String(cString: $0) } ?? "SQLite could not open it."
+      sqlite3_close_v2(opened)
+      throw Self.failure(operation: "open the local read connection", message: message, path: fileURL.path)
+    }
+    // Five seconds, the codebase's bound for any wait; a WAL reader waits only while the file recovers.
+    sqlite3_busy_timeout(opened, 5_000)
+    do {
+      try Self.execute("PRAGMA query_only = ON", on: opened)
+      // A small page cache: reads here are pages of rows, and the writer keeps its own cache.
+      try Self.execute("PRAGMA cache_size = -2048", on: opened)
+    } catch {
+      sqlite3_close_v2(opened)
+      throw error
+    }
+    handle.raw = opened
+    return opened
+  }
+
+  private func decodeTriples(_ rows: [String]) throws -> [InstantTriple] {
+    guard !rows.isEmpty else { return [] }
+    let array = "[" + rows.joined(separator: ",") + "]"
+    do {
+      return try decoder.decode([InstantTriple].self, from: Data(array.utf8))
+    } catch {
+      throw Self.failure(
+        operation: "decode rows on the local read connection",
+        message: "\(rows.count) stored rows could not be decoded: \(error)",
+        path: fileURL.path
+      )
+    }
+  }
+
+  private static func batches(of ids: Set<String>) -> [[String]] {
+    let sorted = ids.sorted()
+    return stride(from: 0, to: sorted.count, by: batchSize).map {
+      Array(sorted[$0..<min($0 + batchSize, sorted.count)])
+    }
+  }
+
+  private static func execute(_ sql: String, on connection: OpaquePointer) throws {
+    guard sqlite3_exec(connection, sql, nil, nil, nil) == SQLITE_OK else {
+      throw failure(operation: "run '\(sql)' on the local read connection", message: errorMessage(connection), path: nil)
+    }
+  }
+
+  /// The first column of every row `sql` selects, as text.
+  private static func selectTexts(
+    _ sql: String,
+    bindings: [String],
+    on connection: OpaquePointer
+  ) throws -> [String] {
+    var statement: OpaquePointer?
+    guard sqlite3_prepare_v2(connection, sql, -1, &statement, nil) == SQLITE_OK, let statement else {
+      throw failure(operation: "prepare a local read", message: errorMessage(connection), path: nil)
+    }
+    defer { sqlite3_finalize(statement) }
+    let transient = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
+    for (index, binding) in bindings.enumerated() {
+      guard sqlite3_bind_text(statement, Int32(index + 1), binding, -1, transient) == SQLITE_OK else {
+        throw failure(operation: "bind a local read", message: errorMessage(connection), path: nil)
+      }
+    }
+    var texts: [String] = []
+    while true {
+      let result = sqlite3_step(statement)
+      if result == SQLITE_DONE { break }
+      guard result == SQLITE_ROW else {
+        throw failure(operation: "step a local read", message: errorMessage(connection), path: nil)
+      }
+      if let text = sqlite3_column_text(statement, 0) {
+        texts.append(String(cString: text))
+      }
+    }
+    return texts
+  }
+
+  /// SQLite's message with its extended result code, which names the failure ("disk I/O error" alone does not).
+  private static func errorMessage(_ connection: OpaquePointer) -> String {
+    let message = sqlite3_errmsg(connection).map { String(cString: $0) } ?? "Unknown SQLite error."
+    return "\(message) (SQLite \(sqlite3_extended_errcode(connection)))"
+  }
+
+  private static func failure(operation: String, message: String, path: String?) -> InstantError {
+    InstantError(
+      code: .persistenceFailed,
+      operation: operation,
+      message: message,
+      recovery: path.map { "Inspect the local SQLite cache at \($0); reads use the store's own connection meanwhile." }
+        ?? "Reads use the store's own connection meanwhile."
+    )
+  }
+
+  /// The open connection, closed when the last reference goes.
+  // SAFETY: only the enclosing `SQLiteReadConnection` actor reads or writes `raw`; `deinit` runs once no reference is
+  // left, so no actor turn can use it then.
+  private final class Handle: @unchecked Sendable {
+    var raw: OpaquePointer?
+
+    func close() {
+      sqlite3_close_v2(raw)
+      raw = nil
+    }
+
+    deinit {
+      sqlite3_close_v2(raw)
+    }
+  }
+}

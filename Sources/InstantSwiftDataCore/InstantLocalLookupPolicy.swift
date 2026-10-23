@@ -34,4 +34,47 @@ public struct InstantLocalLookupPolicy: Hashable, Sendable {
   package var isEnabled: Bool {
     !attributeIDs.isEmpty
   }
+
+  /// Checks that each named attribute is in the schema passed at bootstrap, holds one value per entity, and stays in
+  /// memory: a lookup compares one stored value, and a deferred value is never filtered by.
+  package func validate(
+    attributes: [InstantAttribute],
+    deferredValueResidency: InstantDeferredValueResidencyPolicy
+  ) throws {
+    guard isEnabled else { return }
+    let attributesByID = Dictionary(attributes.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+    for attributeID in attributeIDs.sorted() {
+      guard let attribute = attributesByID[attributeID] else {
+        throw Self.invalid(
+          attributeID,
+          message: "Local lookup names attribute '\(attributeID)', which is not in the Instant schema passed at bootstrap.",
+          recovery: "Add '\(attributeID)' to the app's Instant attributes, or remove it from InstantLocalLookupPolicy."
+        )
+      }
+      guard attribute.cardinality == .one else {
+        throw Self.invalid(
+          attributeID,
+          message: "Local lookup attribute '\(attributeID)' holds many values per entity; a lookup compares one.",
+          recovery: "Name a cardinality-one attribute, such as the parent's id on each child row."
+        )
+      }
+      guard !deferredValueResidency.attributeIDs.contains(attributeID) else {
+        throw Self.invalid(
+          attributeID,
+          message: "Local lookup attribute '\(attributeID)' is also a deferred value, which no query filters by.",
+          recovery: "Remove '\(attributeID)' from one of the two policies."
+        )
+      }
+    }
+  }
+
+  private static func invalid(_ attributeID: String, message: String, recovery: String) -> InstantError {
+    InstantError(
+      code: .validationFailed,
+      operation: "validate local lookup",
+      path: attributeID,
+      message: message,
+      recovery: recovery
+    )
+  }
 }

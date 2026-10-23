@@ -3274,6 +3274,12 @@ public actor InstantStore {
     entityIDs.filter { indexes.containsEntity($0, namespace: nil, attributes: attributes) }
   }
 
+  /// The facts the store holds of `entityIDs` (#1006): a local read evaluates its plan over them together with what
+  /// this device keeps on disk.
+  func facts(of entityIDs: Set<String>) -> [InstantTriple] {
+    entityIDs.sorted().flatMap { indexes.triples(entityID: $0) }
+  }
+
   func activeQueryCacheKeys() -> Set<String> {
     Set(observers.values.map(\.plan.cacheKey))
   }

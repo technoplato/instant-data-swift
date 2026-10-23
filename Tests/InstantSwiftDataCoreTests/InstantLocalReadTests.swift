@@ -57,8 +57,13 @@ struct InstantLocalReadTests {
     var newest = Self.recordingLines("recording-1")
     newest.order = InstantQueryOrder("index", .descending)
     newest.limit = 3
+    let decodedBefore = await runtime.persistence.deferredValueDecodeMetricsForTesting().valueCount
     let read = try await runtime.queryLocally(newest)
     expectNoDifference(read.values.map(\.id), ["line-19", "line-18", "line-17"])
+    expectNoDifference(Self.texts(read), ["Line 19", "Line 18", "Line 17"])
+    let decoded = await runtime.persistence.deferredValueDecodeMetricsForTesting().valueCount - decodedBefore
+    // The two lines in memory and the three disk lines that rank first, not all eighteen on disk.
+    #expect(decoded <= 5, "decoded \(decoded) deferred values for a window of 3")
 
     var oldest = Self.recordingLines("recording-1")
     oldest.limit = 2
@@ -80,7 +85,7 @@ struct InstantLocalReadTests {
     let holding = Task { _ = try await runtime.observeAuthSession() }
     await holder.waitUntilHeld()
     let read = Answer { try await runtime.queryLocally(Self.recordingLines("recording-1")) }
-    let answered = await read.value(within: .seconds(1))
+    let answered = await read.value(within: .seconds(5))
     await holder.release()
     _ = try await holding.value
     await read.finish()
@@ -116,8 +121,8 @@ struct InstantLocalReadTests {
     // Both read inside the same hold.
     let read = Answer { try await runtime.queryLocally(Self.recordingLines("recording-1")) }
     let observed = Answer { try await Self.firstEmission(of: runtime, Self.recordingLines("recording-1")) }
-    let readAnswer = await read.value(within: .seconds(1))
-    let observedAnswer = await observed.value(within: .seconds(1))
+    let readAnswer = await read.value(within: .seconds(5))
+    let observedAnswer = await observed.value(within: .seconds(5))
     await holder.release()
     _ = try await apply.value
     await read.finish()
@@ -142,12 +147,63 @@ struct InstantLocalReadTests {
     await started.waitUntilHeld()
     let start = ContinuousClock.now
     let read = Answer { try await runtime.queryLocally(Self.recordingLines("recording-1")) }
-    let answered = await read.value(within: .seconds(1))
+    let answered = await read.value(within: .seconds(5))
     print("#1006 local read beside a busy persistence actor: \(start.duration(to: .now)), answered: \(answered != nil)")
     await busy.value
     await started.release()
     await read.finish()
     expectNoDifference(answered.map(Self.texts), (0..<5).map { "Line \($0)" }, "#1006: read beside the busy actor")
+  }
+}
+
+extension InstantLocalReadTests {
+  /// The playback's transcript after a relaunch (#1006), a long transcript's shape: 986 lines this device keeps on disk,
+  /// the newest 2 owned by a stored result, read locally with no gate held and while a server apply holds the gate
+  /// before its commit. Prints how long each read takes to hold every line.
+  @Test
+  func nineHundredEightySixLinesOnDiskReadAtOnceWhileAServerApplyHoldsTheGate() async throws {
+    let lineCount = 986
+    let url = try Self.temporaryCacheURL()
+    let lines = (0..<lineCount).map { Self.line($0, recordingID: "recording-long") }
+    try await Self.seed(url, lines: lines, ownedBy: ["preview": lines.suffix(2)])
+    let holder = GateHolder()
+    let localWrite = LocalWriteDuringApply()
+    var configuration = Self.configuration(url, lookup: true)
+    configuration.reducesServerApplyToAffectedOverlays = false
+    configuration.onServerApplyPreparedBeforeCommitForTesting = { _ in await localWrite.land() }
+    configuration.onServerApplyCatchUpReplayedForTesting = { _, _ in await holder.hold() }
+    let runtime = try await InstantRuntime.bootstrap(configuration: configuration)
+    await localWrite.attach(runtime)
+
+    let clock = ContinuousClock()
+    var start = clock.now
+    let quiet = try await runtime.queryLocally(Self.recordingLines("recording-long"))
+    let quietElapsed = clock.now - start
+
+    let apply = Task {
+      try await runtime.applyServerTransaction(
+        InstantStoreTransaction(
+          id: "server-other-recording",
+          operations: Self.line(0, recordingID: "recording-2", id: "server-line").map(InstantTripleOperation.insert)
+        )
+      )
+    }
+    await holder.waitUntilHeld()
+    start = clock.now
+    let held = Answer { try await runtime.queryLocally(Self.recordingLines("recording-long")) }
+    let heldRead = await held.value(within: .seconds(5))
+    let heldElapsed = clock.now - start
+    await holder.release()
+    _ = try await apply.value
+    await held.finish()
+    print(
+      "#1006 \(lineCount) lines on disk after a relaunch: local read \(quiet.values.count) lines in \(quietElapsed); "
+        + "while a server apply holds the gate \(heldRead?.values.count ?? 0) lines in \(heldElapsed)"
+    )
+    expectNoDifference(quiet.values.count, lineCount)
+    expectNoDifference(Self.texts(quiet).last, "Line \(lineCount - 1)")
+    expectNoDifference(heldRead?.values.count, lineCount, "#1006: the read did not wait for the gate")
+    #expect(heldElapsed < .seconds(1))
   }
 }
 

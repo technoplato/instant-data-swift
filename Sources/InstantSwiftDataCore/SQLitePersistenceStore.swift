@@ -23,6 +23,8 @@
 // - 2026-10-23: a server-apply commit updates its changed outbox rows from one join instead of fifteen correlated
 //   lookups each, the staging table keeps its bodies after its small columns, and the commit's closure re-plan reads
 //   no body sizes (#932).
+// - 2026-10-23: a partial index over the lookup attributes, ensured at bootstrap, and a read-only connection beside the
+//   writer, so a local read finds what this device keeps on disk without waiting for writes (#1006).
 
 import Foundation
 import IssueReporting
@@ -1002,8 +1004,12 @@ public actor SQLitePersistenceStore {
   private let fileURL: URL
   private let startupTrace: InstantStartupTrace
   private let deferredValueResidency: InstantDeferredValueResidencyPolicy
+  private let localLookup: InstantLocalLookupPolicy
   private let declaredAttributes: [InstantAttribute]
   private let connection: SQLiteConnection
+  /// A read-only connection to this store's file, for local reads that must not wait behind this actor's writes
+  /// (#1006). Reached without a hop onto this actor.
+  nonisolated let readConnection: SQLiteReadConnection
   private let encoder: JSONEncoder
   private let decoder: JSONDecoder
   private var cachedState: InstantPersistenceState?
@@ -1086,7 +1092,12 @@ public actor SQLitePersistenceStore {
     (@Sendable (_ mutationIDs: [String]) async throws -> Void)?
 
   package func deferredValueDecodeMetricsForTesting() -> InstantDeferredValueDecodeMetrics {
-    deferredValueDecodeMetrics
+    // Local reads decode theirs on the read connection (#1006).
+    let local = readConnection.deferredValueDecodeMetrics
+    return InstantDeferredValueDecodeMetrics(
+      valueCount: deferredValueDecodeMetrics.valueCount + local.valueCount,
+      encodedByteCount: deferredValueDecodeMetrics.encodedByteCount + local.encodedByteCount
+    )
   }
 
   package func declaredRelationReconciliationLiveResultScanCountForTesting() -> Int {
@@ -1740,12 +1751,19 @@ public actor SQLitePersistenceStore {
     fileURL: URL,
     startupTrace: InstantStartupTrace = .disabled,
     deferredValueResidency: InstantDeferredValueResidencyPolicy = .none,
+    localLookup: InstantLocalLookupPolicy = .none,
     declaredAttributes: [InstantAttribute] = []
   ) throws {
     self.fileURL = fileURL
     self.startupTrace = startupTrace
     self.deferredValueResidency = deferredValueResidency
+    self.localLookup = localLookup
     self.declaredAttributes = declaredAttributes
+    self.readConnection = SQLiteReadConnection(
+      fileURL: fileURL,
+      deferredAttributeIDs: deferredValueResidency.attributeIDs,
+      lookupAttributeIDs: localLookup.attributeIDs
+    )
     self.encoder = JSONEncoder()
     self.encoder.outputFormatting = [.sortedKeys]
     self.decoder = JSONDecoder()
@@ -2697,6 +2715,9 @@ public actor SQLitePersistenceStore {
       """
     )
     try ensureServerApplyStagingSchema()
+    try withSQLiteBusyRetry {
+      try ensureLookupIndexes()
+    }
     try Self.securePersistenceFiles(at: fileURL)
     InstantDiagnostics.shared.record(
       .notice,
@@ -2705,6 +2726,54 @@ public actor SQLitePersistenceStore {
       event: "sqlite.bootstrap-completed",
       message: "Instant SQLite schema is ready.",
       metadata: ["path": fileURL.path]
+    )
+  }
+
+  /// The partial index local reads look entities up by (#1006). One index for every lookup attribute, so building it
+  /// reads the table once: one device's store held 1.6 GB.
+  static let lookupIndexName = "instant_triples_lookup"
+
+  /// The partial index's WHERE clause for `attributeIDs`. A lookup repeats it word for word, so SQLite can prove the
+  /// index applies.
+  static func lookupIndexCondition(_ attributeIDs: Set<String>) -> String {
+    "attribute_id IN (" + attributeIDs.sorted().map(sqlLiteral).joined(separator: ", ") + ")"
+  }
+
+  /// `text` as a quoted SQL string literal.
+  static func sqlLiteral(_ text: String) -> String {
+    "'" + text.replacingOccurrences(of: "'", with: "''") + "'"
+  }
+
+  /// The lookup index on the facts of the policy's attributes alone (#1006): a local read filtered by
+  /// `attribute == value` finds the entities this device keeps on disk without reading the table. The index is rebuilt
+  /// when the policy names other attributes, and dropped when it names none; building it reads the table once.
+  private func ensureLookupIndexes() throws {
+    let existing = try selectStrings(
+      "SELECT sql FROM sqlite_master WHERE type = 'index' AND name = ?",
+      [.text(Self.lookupIndexName)]
+    ).first
+    guard localLookup.isEnabled else {
+      if existing != nil { try execute("DROP INDEX IF EXISTS \(Self.lookupIndexName)") }
+      return
+    }
+    let condition = Self.lookupIndexCondition(localLookup.attributeIDs)
+    if let existing, existing.hasSuffix("WHERE " + condition) { return }
+    let started = ContinuousClock.now
+    try execute("DROP INDEX IF EXISTS \(Self.lookupIndexName)")
+    try execute(
+      "CREATE INDEX \(Self.lookupIndexName) ON instant_triples (attribute_id, value_json, entity_id) WHERE \(condition)"
+    )
+    let elapsed = started.duration(to: .now).components
+    InstantDiagnostics.shared.record(
+      .notice,
+      subsystem: "instant-swift-data-core",
+      category: "persistence",
+      event: "sqlite.lookup-index-created",
+      message: "#1006 Built the index local reads look entities up by.",
+      metadata: [
+        "attributeIDs": localLookup.attributeIDs.sorted().joined(separator: ","),
+        "elapsedMilliseconds": String(elapsed.seconds * 1_000 + elapsed.attoseconds / 1_000_000_000_000_000),
+      ]
     )
   }
 

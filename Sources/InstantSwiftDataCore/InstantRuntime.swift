@@ -15,6 +15,9 @@
 // - 2026-10-23: after one stale attempt, a server apply's next attempt holds the operation gate from its seed to its
 //   plan only, instead of five stale attempts and then an apply that held the gate from seed to commit; the gate-held
 //   event reports how long it held the gate to plan (#932).
+// - 2026-10-23: the local reader's one-shot read takes no operation gate and writes nothing, reads what this device keeps
+//   on disk by a lookup attribute, and hydrations read deferred values on the read connection, waiting for a holder
+//   only when it may be writing what they read; the server apply names its writes (#1006).
 
 import Foundation
 import IssueReporting
@@ -1645,6 +1648,10 @@ public final class InstantRuntime: Sendable {
         try configuration.deferredValueResidency.validate(
           attributes: configuration.initialAttributes
         )
+        try configuration.localLookup.validate(
+          attributes: configuration.initialAttributes,
+          deferredValueResidency: configuration.deferredValueResidency
+        )
       }
       startupTrace.completed("runtime.validation", since: validationStopwatch)
 
@@ -1652,6 +1659,7 @@ public final class InstantRuntime: Sendable {
         fileURL: configuration.persistenceURL,
         startupTrace: startupTrace,
         deferredValueResidency: configuration.deferredValueResidency,
+        localLookup: configuration.localLookup,
         declaredAttributes: configuration.initialAttributes
       )
       await persistence.configureLiveQueryResultJSONWrites(
@@ -2166,6 +2174,9 @@ public final class InstantRuntime: Sendable {
     for _ in 0..<5 {
       // Each phase is named, so a stall or a slow handoff says which one held the operation gate (#473).
       operationGate.markHolderPhase("read state")
+      // #1006: nothing reaches the store's tables before the save below, so a hydration that read without the gate
+      // need not wait for this write until then.
+      operationGate.markHolderWrites([])
       // Every SQLite read this attempt makes before it prepares the write, in one persistence turn (#403).
       let reads = try await loadLocalWriteReads(transaction, draft: mutation)
       let state = reads.load.state
@@ -2372,6 +2383,8 @@ public final class InstantRuntime: Sendable {
           pendingMutation.id
         )
       }
+      // #1006: the save writes these entities' facts; a hydration that read one of them waits for the store commit.
+      operationGate.markHolderWrites(prepared.result.changedEntityIDs.union(prepared.deferredValueChangedEntityIDs))
       operationGate.markHolderPhase("save")
       let saved = try await saveLocalMutationReadingConnectionStatus(
         prepared: prepared,
@@ -2389,6 +2402,7 @@ public final class InstantRuntime: Sendable {
         operationGate.markHolderPhase("commit store")
         recordActorHop(.store)
         let committed = await store.commitDeferringPublication(prepared)
+        operationGate.markHolderWrites([])
         installedStoreRevisions.install(
           storeRevision: state.storeRevision + 1,
           attributeRevision: state.attributeRevision
@@ -2804,6 +2818,8 @@ public final class InstantRuntime: Sendable {
     initialSeed: InstantServerApplySeed? = nil,
     maximumAttempts: Int = 5
   ) async throws -> InstantAppliedServerTransaction {
+    // #1006: a caller that keeps the gate after this apply may write anything next.
+    defer { if operationGateAlreadyHeld { operationGate.markHolderWrites(nil) } }
     let processedTransactionID = (processedTransactionID ?? transaction.id)
       .trimmingCharacters(in: .whitespacesAndNewlines)
     guard !processedTransactionID.isEmpty else {
@@ -3354,6 +3370,9 @@ public final class InstantRuntime: Sendable {
             gateTimeline = InstantServerApplyGateTimeline(enteredAt: ContinuousClock.now)
           }
           operationGate.markHolderPhase("catch up local writes")
+          // #1006: nothing reaches the store's tables before the commit below, so a hydration that read without the gate
+          // need not wait for this apply until then.
+          operationGate.markHolderWrites([])
           recordActorHop(.persistence)
           let catchUpLoad = try await persistence
             .extendServerApplyPlanWithAppendedLocalMutations(
@@ -3545,6 +3564,12 @@ public final class InstantRuntime: Sendable {
           !authoritativeTransaction.operations.isEmpty || mergedAttributeCount > 0
           || !failureSplice.storeOperations.isEmpty
         gateTimeline.catchUpEndedAt = ContinuousClock.now
+        // #1006: the commit writes these entities' facts, and a hydration that read any of them waits for the store
+        // commit; a refused write's removal or an attribute merge can reach further, so those name none.
+        operationGate.markHolderWrites(
+          failureSplice.storeOperations.isEmpty && mergedAttributeCount == 0
+            ? preparedForCommit.result.changedEntityIDs : nil
+        )
         operationGate.markHolderPhase("commit plan")
         recordActorHop(.persistence)
         guard let commit = try await persistence.commitServerApplyPlan(
@@ -3610,6 +3635,8 @@ public final class InstantRuntime: Sendable {
 
         gateTimeline.publishEndedAt = ContinuousClock.now
         operationGate.markHolderPhase("patch resident outbox")
+        // #1006: the store holds what SQLite does again.
+        operationGate.markHolderWrites([])
         // #932: the resident outbox holds only the claimed delivery window (a cold start holds none), and a row it does
         // not hold is a no-op for `replaceIfPresent` and `remove(id:)`, so only its rows are read. Reading and decoding
         // every staged row, one outbox hop each, cost 0.8-1.3 s of this gate at the phone's 2,560 pending. The gate is
@@ -5840,6 +5867,20 @@ public final class InstantRuntime: Sendable {
     if failure.namespace == nil {
       failure.namespace = plan.namespace
     }
+    // A hydration whose subscriber left can fail as its store's files go away, and nobody waits for its values (#1006):
+    // say so at debug, not as an issue.
+    guard !Task.isCancelled else {
+      InstantDiagnostics.shared.record(
+        .debug,
+        subsystem: "instant-swift-data-core",
+        category: "query",
+        event: "query.deferred-value-hydration-ended-after-cancellation",
+        message: "A cancelled query's deferred-value hydration failed: \(failure.message)",
+        metadata: ["namespace": plan.namespace],
+        correlationID: plan.id
+      )
+      return failure
+    }
     InstantDiagnostics.shared.record(
       error: failure,
       subsystem: "instant-swift-data-core",
@@ -5861,18 +5902,35 @@ public final class InstantRuntime: Sendable {
     rootEntityIDs: Set<String>? = nil,
     attributes: [InstantAttribute]
   ) async throws -> InstantQueryEmission {
+    try await hydrateDeferredValuesReportingEntities(
+      in: emission,
+      plan: plan,
+      rootEntityIDs: rootEntityIDs,
+      attributes: attributes
+    ).emission
+  }
+
+  /// ``hydrateDeferredValues(in:plan:rootEntityIDs:attributes:)``, and the entities whose deferred values it read: a read
+  /// made without the operation gate waits only for a holder that may be writing them (#1006).
+  private func hydrateDeferredValuesReportingEntities(
+    in emission: InstantQueryEmission,
+    plan: InstantQueryPlan,
+    rootEntityIDs: Set<String>? = nil,
+    attributes: [InstantAttribute]
+  ) async throws -> (emission: InstantQueryEmission, readEntityIDs: Set<String>) {
     let requests = configuration.deferredValueResidency.hydrationRequests(
       for: plan,
       values: emission.values,
       rootEntityIDs: rootEntityIDs,
       attributes: attributes
     )
-    return try await hydrateDeferredValues(
+    let hydrated = try await hydrateDeferredValues(
       in: emission,
       requests: requests,
       plan: plan,
       attributes: attributes
     )
+    return (hydrated, requests.reduce(into: Set<String>()) { $0.formUnion($1.entityIDs) })
   }
 
   private func hydrateDeferredValues(
@@ -5882,11 +5940,10 @@ public final class InstantRuntime: Sendable {
     attributes: [InstantAttribute]
   ) async throws -> InstantQueryEmission {
     guard !requests.isEmpty else { return emission }
-    recordActorHop(.persistence)
     var triples: [InstantTriple] = []
     for request in requests {
       triples.append(
-        contentsOf: try await persistence.loadDeferredValues(
+        contentsOf: try await loadDeferredValuesBesideWrites(
           attributeIDs: request.attributeIDs,
           entityIDs: request.entityIDs
         )
@@ -5900,8 +5957,43 @@ public final class InstantRuntime: Sendable {
     )
   }
 
+  /// Deferred values read on the store's read connection, beside the persistence actor's writes (#1006): a device's server
+  /// apply's SQLite commit held that actor 3 to 6 seconds while a transcript's text waited to be read. If the
+  /// read connection fails, the values are read on the persistence actor, as before.
+  private func loadDeferredValuesBesideWrites(
+    attributeIDs: Set<String>,
+    entityIDs: Set<String>
+  ) async throws -> [InstantTriple] {
+    do {
+      return try await persistence.readConnection.loadDeferredValues(attributeIDs: attributeIDs, entityIDs: entityIDs)
+    } catch {
+      InstantDiagnostics.shared.record(
+        error: error,
+        subsystem: "instant-swift-data-core",
+        category: "query",
+        event: "query.local-read-connection-failed",
+        message: "#1006 The local read connection could not read deferred values; reading them on the store instead.",
+        metadata: ["entityCount": String(entityIDs.count)]
+      )
+      recordActorHop(.persistence)
+      do {
+        return try await persistence.loadDeferredValues(attributeIDs: attributeIDs, entityIDs: entityIDs)
+      } catch let fallback {
+        // Both reads failed: say what each one said.
+        var failure = (fallback as? InstantError) ?? InstantError(
+          code: .persistenceFailed,
+          operation: "read deferred values",
+          message: String(describing: fallback),
+          recovery: "Inspect the local SQLite cache, then read again."
+        )
+        failure.message += " The read connection failed first: \(error)."
+        throw failure
+      }
+    }
+  }
+
   /// Whether a query emission can be hydrated as the query's current result. A read made without the operation gate
-  /// checks it again afterwards with ``isStillCurrentAfterUngatedRead(queryID:emittedAt:)``.
+  /// checks it again afterwards with ``isStillCurrentAfterUngatedRead(queryID:emittedAt:readEntityIDs:)``.
   ///
   /// Checking the global sequence alone stranded observations: a write to an unrelated namespace
   /// advances it without refreshing this query, so the emission was dropped and no newer one ever
@@ -5919,7 +6011,8 @@ public final class InstantRuntime: Sendable {
   /// after a 12.3 s write and still held it at the kill, blocked in a SQLite `pread` that disk contention stalled, with
   /// seven callers queued behind it (freeze-185, section 1). A write that lands while the values are read commits to the
   /// store before it leaves the gate, so once no write holds the gate, whether the query was refreshed since the
-  /// emission says whether the values still pair with its metadata (``isStillCurrentAfterUngatedRead(queryID:emittedAt:)``).
+  /// emission says whether the values still pair with its metadata
+  /// (``isStillCurrentAfterUngatedRead(queryID:emittedAt:readEntityIDs:)``).
   private func hydrateDeferredValuesIfCurrent(
     in emission: InstantQueryEmission,
     plan: InstantQueryPlan,
@@ -5931,14 +6024,19 @@ public final class InstantRuntime: Sendable {
     ) else { return emission }
     // A newer emission is already queued: skip the read.
     guard await isStillCurrent(queryID: emission.queryID, emittedAt: emission.sequence) else { return nil }
-    let hydrated = try await hydrateDeferredValues(
+    let hydrated = try await hydrateDeferredValuesReportingEntities(
       in: emission,
       plan: plan,
       attributes: attributes
     )
-    guard try await isStillCurrentAfterUngatedRead(queryID: emission.queryID, emittedAt: emission.sequence)
+    guard
+      try await isStillCurrentAfterUngatedRead(
+        queryID: emission.queryID,
+        emittedAt: emission.sequence,
+        readEntityIDs: hydrated.readEntityIDs
+      )
     else { return nil }
-    return hydrated
+    return hydrated.emission
   }
 
   /// Whether an emission is still its query's current result after its deferred values were read without the
@@ -5950,9 +6048,17 @@ public final class InstantRuntime: Sendable {
   /// if not, none of them touched the query's entities, and the values read pair with the emission. When the gate is
   /// held, the check takes it, for a moment instead of for the read: under the gate, no write is between its SQLite save
   /// and its store commit.
-  private func isStillCurrentAfterUngatedRead(queryID: String, emittedAt sequence: Int64) async throws -> Bool {
+  ///
+  /// A holder that named the entities it writes, and writes none of `readEntityIDs`, is not between a SQLite save and
+  /// a store commit for them, so the check does not wait for it either (#1006): a device's server apply held the gate
+  /// 4 to 7 seconds at a time, and every hydration queued behind it.
+  private func isStillCurrentAfterUngatedRead(
+    queryID: String,
+    emittedAt sequence: Int64,
+    readEntityIDs: Set<String>
+  ) async throws -> Bool {
     await configuration.onDeferredValuesReadWithoutOperationGateForTesting?(queryID)
-    if !operationGate.isHeldSnapshot {
+    if !operationGate.holderMayWrite(any: readEntityIDs) {
       return await isStillCurrent(queryID: queryID, emittedAt: sequence)
     }
     try await enterOperationGateUnlessCancelled(
@@ -5978,7 +6084,7 @@ public final class InstantRuntime: Sendable {
     guard await isStillCurrent(queryID: snapshot.queryID, emittedAt: snapshot.sequence) else { return nil }
     guard !entityIDs.isEmpty else { return snapshot }
     // Read without the operation gate, as `hydrateDeferredValuesIfCurrent` does (#473).
-    let emission = try await hydrateDeferredValues(
+    let read = try await hydrateDeferredValuesReportingEntities(
       in: InstantQueryEmission(
         queryID: snapshot.queryID,
         sequence: snapshot.sequence,
@@ -5989,10 +6095,15 @@ public final class InstantRuntime: Sendable {
       rootEntityIDs: entityIDs,
       attributes: attributes
     )
-    guard try await isStillCurrentAfterUngatedRead(queryID: snapshot.queryID, emittedAt: snapshot.sequence)
+    guard
+      try await isStillCurrentAfterUngatedRead(
+        queryID: snapshot.queryID,
+        emittedAt: snapshot.sequence,
+        readEntityIDs: read.readEntityIDs
+      )
     else { return nil }
     var hydrated = snapshot
-    hydrated.values = emission.values
+    hydrated.values = read.emission.values
     return hydrated
   }
 
@@ -6194,9 +6305,219 @@ public final class InstantRuntime: Sendable {
     return emission
   }
 
+  /// One answer to `plan` from this device's store, for the local reader (#1006).
+  ///
+  /// It answers from the in-memory store, deferred values hydrated as a local observation's first answer's are, and,
+  /// when `plan` filters by an attribute the ``InstantLocalLookupPolicy`` names, from the entities this device keeps on
+  /// disk but not in memory as well, read without loading them into the store. It takes no operation gate and writes
+  /// nothing; its SQLite reads run on the read connection. It used to take the gate for its whole read and save a
+  /// query-cache row, so a device's transcript read waited behind server applies that held the gate 4 to 7
+  /// seconds at a time, and after a relaunch it found only the lines a stored result owned.
   @concurrent
   package func queryLocally(_ plan: InstantQueryPlan) async throws -> InstantQueryEmission {
-    try await materializeLocalQueryOnce(plan, enforcesConnectionFreshness: false)
+    recordActorHop(.store)
+    let attributes = await store.attributeSnapshot()
+    let attributeStore = AttributeStore(attributes: attributes)
+    if let issue = TripleIndexes.validate(plan, attributes: attributeStore) {
+      throw validationFailed(
+        operation: "validate query",
+        namespace: issue.namespace,
+        path: issue.path,
+        message: issue.message,
+        recovery: issue.recovery
+      )
+    }
+    let lookup = localLookupFilter(of: plan, attributes: attributeStore)
+    // Merged with disk, the in-memory answer must hold every row that could fall in the plan's window.
+    var memoryPlan = plan
+    if lookup != nil, let offset = plan.offset, offset > 0 {
+      memoryPlan.offset = nil
+      memoryPlan.limit = plan.limit.map { $0 + offset }
+    }
+    let memory = try await firstLocalAnswer(memoryPlan)
+    guard let lookup else { return memory }
+    return try await mergingEntitiesOnDisk(
+      into: memory,
+      plan: plan,
+      lookup: lookup,
+      attributes: attributes,
+      attributeStore: attributeStore
+    )
+  }
+
+  /// The first answer of a local observation of `plan`, its deferred values hydrated; then the observation ends.
+  private func firstLocalAnswer(_ plan: InstantQueryPlan) async throws -> InstantQueryEmission {
+    let lease = await observeLocallyLease(plan)
+    var answers = lease.stream.makeAsyncIterator()
+    let first = await answers.next()
+    await lease.cancel()
+    try Task.checkCancellation()
+    guard let first else {
+      // The observation ends without an answer only when its deferred values could not be read; that was reported.
+      throw InstantError(
+        code: .persistenceFailed,
+        operation: "query locally",
+        namespace: plan.namespace,
+        message: "The local read of '\(plan.id)' ended without an answer: its deferred values could not be read.",
+        recovery: "Inspect the local SQLite cache, then read again."
+      )
+    }
+    if let error = first.error { throw error }
+    return first
+  }
+
+  /// The attribute and value of `plan`'s first top-level `==` filter on a lookup attribute (#1006), when a merge with
+  /// disk keeps the plan's meaning: no includes and no cursor.
+  private func localLookupFilter(
+    of plan: InstantQueryPlan,
+    attributes: AttributeStore
+  ) -> (attributeID: String, value: InstantValue)? {
+    guard configuration.localLookup.isEnabled,
+      plan.includes?.isEmpty ?? true,
+      plan.after == nil, plan.before == nil, plan.first == nil, plan.last == nil
+    else { return nil }
+    for case let .equals(field, value) in Self.conjuncts(of: plan.filters) {
+      guard let attribute = attributes.attribute(namespace: plan.namespace, name: field),
+        configuration.localLookup.attributeIDs.contains(attribute.id)
+      else { continue }
+      return (attribute.id, value)
+    }
+    return nil
+  }
+
+  private static func conjuncts(of filters: [InstantQueryFilter]) -> [InstantQueryFilter] {
+    filters.flatMap { filter -> [InstantQueryFilter] in
+      if case let .and(nested) = filter { return conjuncts(of: nested) }
+      return [filter]
+    }
+  }
+
+  /// The entities among `diskOnly` that can fall in `plan`'s window (#1006). For a window smaller than them, they are
+  /// ranked by only the facts the plan filters and orders by, and the full facts of the rest are never read: the
+  /// recording screen reads a long recording's history 256 lines at a time.
+  private func diskEntitiesThatCanRank(
+    in plan: InstantQueryPlan,
+    among diskOnly: Set<String>,
+    reader: SQLiteReadConnection,
+    attributes: AttributeStore
+  ) async throws -> Set<String> {
+    guard let limit = plan.limit else { return diskOnly }
+    let window = limit + (plan.offset ?? 0)
+    guard window < diskOnly.count, let ranking = Self.rankingAttributeIDs(of: plan, attributes: attributes) else {
+      return diskOnly
+    }
+    var windowPlan = plan
+    windowPlan.offset = nil
+    windowPlan.limit = window
+    windowPlan.selectedFields = nil
+    let slim = TripleIndexes(
+      triples: try await reader.facts(of: diskOnly, attributeIDs: ranking),
+      attributes: attributes
+    )
+    return Set(slim.materializePage(windowPlan, attributes: attributes).values.map(\.id))
+  }
+
+  /// The attributes `plan`'s filters and order read, with the namespace's id; nil when one is not a plain field of the
+  /// namespace (a link path, or the server's creation time), so the caller reads every fact.
+  private static func rankingAttributeIDs(of plan: InstantQueryPlan, attributes: AttributeStore) -> Set<String>? {
+    var fields: Set<String> = ["id"]
+    func collect(_ filters: [InstantQueryFilter]) {
+      for filter in filters {
+        switch filter {
+        case let .equals(field, _), let .notEquals(field, _), let .greaterThan(field, _),
+          let .greaterThanOrEqual(field, _), let .lessThan(field, _), let .lessThanOrEqual(field, _),
+          let .`in`(field, _), let .like(field, _), let .iLike(field, _), let .isNull(field), let .isNotNull(field):
+          fields.insert(field)
+        case let .and(nested), let .or(nested):
+          collect(nested)
+        }
+      }
+    }
+    collect(plan.filters)
+    if let order = plan.order {
+      guard !order.isServerCreatedAt else { return nil }
+      fields.insert(order.field)
+    }
+    var ids: Set<String> = []
+    for field in fields {
+      guard let attribute = attributes.attribute(namespace: plan.namespace, name: field) else { return nil }
+      ids.insert(attribute.id)
+    }
+    return ids
+  }
+
+  /// `memory`, and the entities this device keeps on disk but not in memory that `lookup` selects, evaluated with `plan`
+  /// together (#1006). The disk's entities, their deferred values with them, come from one read on the read connection
+  /// and stay out of the store. A failed disk read leaves the in-memory answer, and says so.
+  private func mergingEntitiesOnDisk(
+    into memory: InstantQueryEmission,
+    plan: InstantQueryPlan,
+    lookup: (attributeID: String, value: InstantValue),
+    attributes: [InstantAttribute],
+    attributeStore: AttributeStore
+  ) async throws -> InstantQueryEmission {
+    let reader = persistence.readConnection
+    let onDisk: Set<String>
+    let diskFacts: [InstantTriple]
+    let diskOnly: Set<String>
+    do {
+      onDisk = try await reader.entityIDs(attributeID: lookup.attributeID, value: lookup.value)
+      guard !onDisk.isEmpty else { return memory }
+      recordActorHop(.store)
+      diskOnly = onDisk.subtracting(await store.entityIDsWithFacts(among: onDisk))
+      guard !diskOnly.isEmpty else { return memory }
+      diskFacts = try await reader.facts(
+        of: try await diskEntitiesThatCanRank(in: plan, among: diskOnly, reader: reader, attributes: attributeStore)
+      )
+    } catch {
+      InstantDiagnostics.shared.record(
+        error: error,
+        subsystem: "instant-swift-data-core",
+        category: "query",
+        event: "query.local-lookup-failed",
+        message: "#1006 A local read could not read the entities this device keeps on disk; it answered from memory.",
+        metadata: ["attributeID": lookup.attributeID, "namespace": plan.namespace],
+        correlationID: plan.id
+      )
+      return memory
+    }
+    let deferredAttributeIDs = configuration.deferredValueResidency.attributeIDs
+    recordActorHop(.store)
+    let memoryFacts = await store.facts(of: Set(memory.values.map(\.id)))
+    let view = TripleIndexes(
+      triples: memoryFacts + diskFacts.filter { !deferredAttributeIDs.contains($0.attributeID) },
+      attributes: attributeStore
+    )
+    let page = view.materializePage(plan, attributes: attributeStore)
+    let inMemory = Dictionary(memory.values.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+    let fromDisk = page.values.filter { inMemory[$0.id] == nil }
+    let hydratedFromDisk = configuration.deferredValueResidency.hydrating(
+      InstantQueryEmission(queryID: plan.id, sequence: memory.sequence, values: fromDisk),
+      for: plan,
+      with: diskFacts.filter { deferredAttributeIDs.contains($0.attributeID) },
+      attributes: attributes
+    )
+    let onlyOnDisk = Dictionary(hydratedFromDisk.values.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+    InstantDiagnostics.shared.record(
+      .debug,
+      subsystem: "instant-swift-data-core",
+      category: "query",
+      event: "query.local-lookup-merged",
+      message: "#1006 A local read answered with entities this device keeps on disk.",
+      metadata: [
+        "diskEntityCount": String(diskOnly.count),
+        "memoryRowCount": String(memory.values.count),
+        "namespace": plan.namespace,
+        "rowCount": String(page.values.count),
+      ],
+      correlationID: plan.id
+    )
+    return InstantQueryEmission(
+      queryID: plan.id,
+      sequence: memory.sequence,
+      values: page.values.compactMap { inMemory[$0.id] ?? onlyOnDisk[$0.id] },
+      pageInfo: page.pageInfo
+    )
   }
 
   @concurrent

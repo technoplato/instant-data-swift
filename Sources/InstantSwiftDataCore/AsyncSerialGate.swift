@@ -1,3 +1,7 @@
+// History:
+// - 2026-10-23: a holder may name the entities it writes until its store commit, so a read made without the gate
+//   waits only for a holder that may be writing what it read (#1006).
+
 import Foundation
 import IssueReporting
 import os
@@ -187,6 +191,10 @@ actor AsyncSerialGate {
   /// The phase the holder named with ``markHolderPhase(_:)``, without a hop onto this actor (#473). Written by the
   /// holder between its enter and its leave, read and cleared on this actor; the lock makes each read and write whole.
   private let markedPhase = OSAllocatedUnfairLock<String?>(initialState: nil)
+  /// The entities the holder writes from its SQLite save to its store commit, as it named them with
+  /// ``markHolderWrites(_:)`` (#1006); nil until it does. Written by the holder, cleared on this actor when the gate
+  /// changes hands.
+  private let markedWrites = OSAllocatedUnfairLock<Set<String>?>(initialState: nil)
   private var holderAcquiredAt: Date? {
     didSet {
       let heldSince = holderAcquiredAt
@@ -294,6 +302,23 @@ actor AsyncSerialGate {
     markedPhase.withLock { $0 = phase }
   }
 
+  /// Names the entities the holder writes from now until its store commit: an empty set for none, nil for any (#1006).
+  /// A read made without the gate then waits for this holder only when it may be writing what the read paired
+  /// (``holderMayWrite(any:)``). A holder that names nothing is taken to write everything, as every holder was before.
+  /// Call it only while holding the gate; it is cleared when the holder leaves.
+  nonisolated func markHolderWrites(_ entityIDs: Set<String>?) {
+    markedWrites.withLock { $0 = entityIDs }
+  }
+
+  /// Whether a holder may be writing any of `entityIDs`: false when no caller holds the gate, or when the holder named
+  /// its writes and none of `entityIDs` is among them. Like ``isHeldSnapshot``, the answer can change right after it is
+  /// read: a new holder starts by naming nothing, so it reads as writing everything.
+  nonisolated func holderMayWrite(any entityIDs: Set<String>) -> Bool {
+    guard isHeldSnapshot else { return false }
+    guard let writes = markedWrites.withLock({ $0 }) else { return true }
+    return !writes.isDisjoint(with: entityIDs)
+  }
+
   /// The phase the holder named last, by either entry point.
   private var currentHolderPhase: String? {
     holderPhase ?? markedPhase.withLock { $0 }
@@ -308,6 +333,7 @@ actor AsyncSerialGate {
     let previousHolderAcquiredAt = holderAcquiredAt
     holderPhase = nil
     markedPhase.withLock { $0 = nil }
+    markedWrites.withLock { $0 = nil }
     // Cancellation already resumed any waiter that is not waiting; it never took ownership.
     if waiters.contains(where: { !$0.isWaiting }) {
       waiters.removeAll { !$0.isWaiting }
@@ -374,6 +400,7 @@ actor AsyncSerialGate {
     holderOperation = operation
     holderPhase = nil
     markedPhase.withLock { $0 = nil }
+    markedWrites.withLock { $0 = nil }
     holderAcquiredAt = Date()
     stallCount = 0
     stallReportedForHolder = false

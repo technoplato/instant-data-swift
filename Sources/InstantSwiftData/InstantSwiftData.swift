@@ -4350,6 +4350,7 @@ extension DependencyValues {
     context: InstantSwiftDataBootstrapContext = .live,
     initialAttributes: [InstantAttribute] = [],
     deferredValueResidency: InstantDeferredValueResidencyPolicy = .none,
+    localLookup: InstantLocalLookupPolicy = .none,
     liveShareContract: InstantLiveShareContract? = nil,
     startupTrace: InstantStartupTrace = .live()
   ) async throws {
@@ -4362,6 +4363,7 @@ extension DependencyValues {
       context: context,
       initialAttributes: initialAttributes,
       deferredValueResidency: deferredValueResidency,
+      localLookup: localLookup,
       liveShareContract: liveShareContract,
       startupTrace: startupTrace
     )
@@ -4376,6 +4378,7 @@ extension DependencyValues {
     context: InstantSwiftDataBootstrapContext = .live,
     initialAttributes: [InstantAttribute] = [],
     deferredValueResidency: InstantDeferredValueResidencyPolicy = .none,
+    localLookup: InstantLocalLookupPolicy = .none,
     liveShareContract: InstantLiveShareContract? = nil,
     startupTrace: InstantStartupTrace = .live()
   ) async throws {
@@ -4436,6 +4439,7 @@ extension DependencyValues {
         appBuilderCodeGenerator: appBuilderCodeGenerator
       )
     runtimeConfiguration.startupTrace = startupTrace
+    runtimeConfiguration.localLookup = localLookup
     runtimeConfiguration.autoConnectLiveTransport = liveTransport != nil
     startupTrace.completed(
       "dependencies.configuration",
@@ -4470,7 +4474,8 @@ extension DependencyValues {
     persistenceURL: URL? = nil,
     context: InstantSwiftDataBootstrapContext = .live,
     initialAttributes: [InstantAttribute] = [],
-    deferredValueResidency: InstantDeferredValueResidencyPolicy = .none
+    deferredValueResidency: InstantDeferredValueResidencyPolicy = .none,
+    localLookup: InstantLocalLookupPolicy = .none
   ) async throws {
     let date = self.date
     let uuid = self.uuid
@@ -4494,6 +4499,7 @@ extension DependencyValues {
       }
     )
     configuration.isLocalOnly = true
+    configuration.localLookup = localLookup
     self.localInstantSwiftData = try await InstantSwiftDataClient.bootstrap(
       configuration: configuration,
       storageTransport: nil
