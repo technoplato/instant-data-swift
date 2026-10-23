@@ -1,3 +1,18 @@
+## 2026-10-23 18:01:23 EDT — scribe `63cad2752080be392bad9d252257249692a00067`
+ADR 0091 (#1012): a recording's audio also travels compressed (AAC-LC 24 kHz, 6 s segments), and other devices play it from that copy.
+
+## 2026-10-23 18:01:00 EDT — instant-data-swift `b112a2b7253bec6b77c037081935b6246d6dda63`
+ADR 0021, proposed (#1012): progressive media as AAC-LC fragmented MP4 segments in $files, listed by rows, played as HLS through an AVAssetResourceLoader playlist with redirects.
+
+## 2026-10-23 18:00:30 EDT — instant-data-swift `f82fb15aa7e566907a261337dfcc086de759dad2`
+The codec lab behind ADR 0021 (#1012): size, PESQ, segmenting and live playback of compressed speech; results without paths or audio.
+
+## 2026-10-23 17:48:50 EDT — scribe `5d5343c82819835c32285dc2bcdf74a037b6bf06`
+Plan and claims (#1012): a compressed copy of each recording's audio, stored as it records and played on other devices.
+
+## 2026-10-23 16:04:23 EDT — instant-data-swift `be04e51938061ddb70e9569375ad84ed6b03f856`
+Plan update (#1012): progressive media's core files (rows, playlist, spool, writer, reader) and the network wait claimed.
+
 ## 2026-10-23 17:37:11 EDT — instant-data-swift `b88cca053b1d1f71ac67f566d20cb26d13535927`
 Release document for v1.9.23 (#1007): the sharded indexes and the storage write meter; carries 1.9.22, 1.9.21 and 1.9.20.
 
