@@ -2236,6 +2236,50 @@ struct TripleIndexes: Codable, Sendable {
     return .member(orderValue: Self.orderValue(snapshot, serverCreatedAt: serverCreatedAt, field: order.field))
   }
 
+  /// The fields a page materializes of each row it shows (#1007): what it selects, what its filters and order read, and
+  /// the links its includes follow; nil when it selects every field. A page drops every other value when it projects its
+  /// rows to its selection, so materializing them built, among others, every link set a recording holds for nothing.
+  private static func shownFields(of plan: InstantQueryPlan) -> Set<String>? {
+    guard let selectedFields = plan.selectedFields else { return nil }
+    var fields = filterAndOrderFields(of: plan)
+    fields.formUnion(selectedFields)
+    for include in plan.includes ?? [] {
+      fields.insert(include.name)
+    }
+    return fields
+  }
+
+  /// The fields a page reads of a candidate row to decide whether, and where, it shows it: what its filters and its order
+  /// read (#1007). Nil when the page selects every field, so a candidate it keeps is materialized once, whole.
+  private static func candidateFields(of plan: InstantQueryPlan) -> Set<String>? {
+    plan.selectedFields == nil ? nil : filterAndOrderFields(of: plan)
+  }
+
+  /// The fields `plan`'s filters and order read of a row; for a path through a link, the link.
+  private static func filterAndOrderFields(of plan: InstantQueryPlan) -> Set<String> {
+    var fields: Set<String> = ["id"]
+    func leading(_ field: String) -> String {
+      field.firstIndex(of: ".").map { String(field[..<$0]) } ?? field
+    }
+    func collect(_ filter: InstantQueryFilter) {
+      switch filter {
+      case let .equals(field, _), let .notEquals(field, _),
+        let .greaterThan(field, _), let .greaterThanOrEqual(field, _),
+        let .lessThan(field, _), let .lessThanOrEqual(field, _),
+        let .in(field, _), let .like(field, _), let .iLike(field, _),
+        let .isNull(field), let .isNotNull(field):
+        fields.insert(leading(field))
+      case let .and(filters), let .or(filters):
+        filters.forEach(collect)
+      }
+    }
+    plan.filters.forEach(collect)
+    if let order = plan.order {
+      fields.insert(leading(order.field))
+    }
+    return fields
+  }
+
   /// The part of `entityID`'s snapshot that `resultSetMembership` reads (#1007): the values of the fields `plan`'s
   /// filters and order name, read from the entity's facts as the whole snapshot reads them, and nil exactly when the
   /// whole snapshot is nil (no fact of the entity in the plan's namespace).
@@ -2314,7 +2358,8 @@ struct TripleIndexes: Codable, Sendable {
       let snapshot = snapshot(
         entityID: entityID,
         namespace: plan.namespace,
-        attributes: attributes
+        attributes: attributes,
+        fields: projecting ? Self.shownFields(of: plan) : nil
       )
     else { return nil }
     guard
@@ -2395,13 +2440,15 @@ struct TripleIndexes: Codable, Sendable {
       min(candidateResolution.ids.count, plan.limit ?? candidateResolution.ids.count)
     )
     let needsServerCreated = needsServerCreatedAt(effectiveOrder)
+    let fields = Self.shownFields(of: plan)
 
     for entityID in candidateResolution.ids {
       guard
         let snapshot = snapshot(
           entityID: entityID,
           namespace: plan.namespace,
-          attributes: attributes
+          attributes: attributes,
+          fields: fields
         )
       else { continue }
       if !filtersFullyCoveredByIndex {
@@ -2693,6 +2740,7 @@ struct TripleIndexes: Codable, Sendable {
     )
     var removedByStartBound = false
     var removedByEndBound = false
+    let candidateFields = Self.candidateFields(of: plan)
     forEachEntityID(in: candidateSource) { entityID in
       metrics.examinedCandidateCount += 1
       guard
@@ -2702,6 +2750,7 @@ struct TripleIndexes: Codable, Sendable {
           order: order,
           filtersFullyCoveredByIndex: candidateSource.filtersFullyCoveredByIndex,
           candidateNamespaceIsKnown: candidateSource.candidateNamespaceIsKnown,
+          fields: candidateFields,
           attributes: attributes,
           metrics: &metrics
         )
@@ -2791,12 +2840,14 @@ struct TripleIndexes: Codable, Sendable {
     }
   }
 
+  /// - Parameter fields: ``candidateFields(of:)`` of `plan`: what a candidate is materialized with to filter and order it.
   private func boundedQuerySnapshot(
     entityID: String,
     plan: InstantQueryPlan,
     order: InstantQueryOrder,
     filtersFullyCoveredByIndex: Bool,
     candidateNamespaceIsKnown: Bool,
+    fields: Set<String>?,
     attributes: AttributeStore,
     metrics: inout QueryMaterializationMetrics
   ) -> QuerySnapshot? {
@@ -2816,7 +2867,8 @@ struct TripleIndexes: Codable, Sendable {
         let snapshot = snapshot(
           entityID: entityID,
           namespace: plan.namespace,
-          attributes: attributes
+          attributes: attributes,
+          fields: fields
         )
       else { return nil }
       metrics.materializedSnapshotCount += 1
@@ -2860,7 +2912,8 @@ struct TripleIndexes: Codable, Sendable {
         ?? InstantEntitySnapshot(id: entityID, namespace: plan.namespace, values: [:]),
       serverCreatedAt: serverCreatedAt,
       sortValue: sortValue,
-      isFullyMaterialized: materializedSnapshot != nil
+      // A candidate materialized with only the fields that filter and order it is materialized again if the page keeps it.
+      isFullyMaterialized: materializedSnapshot != nil && fields == nil
     )
   }
 
@@ -2960,13 +3013,15 @@ struct TripleIndexes: Codable, Sendable {
 
     var snapshots: [InstantEntitySnapshot] = []
     snapshots.reserveCapacity(paged.values.count)
+    let fields = Self.shownFields(of: plan)
     for candidate in paged.values {
       if candidate.isFullyMaterialized {
         snapshots.append(candidate.snapshot)
       } else if let snapshot = snapshot(
         entityID: candidate.snapshot.id,
         namespace: plan.namespace,
-        attributes: attributes
+        attributes: attributes,
+        fields: fields
       ) {
         metrics.materializedSnapshotCount += 1
         snapshots.append(snapshot)
@@ -3262,12 +3317,14 @@ struct TripleIndexes: Codable, Sendable {
 
     var snapshots: [QuerySnapshot] = []
     snapshots.reserveCapacity(ordered.count)
+    let fields = Self.shownFields(of: plan)
     for (entityID, sortValue) in ordered {
       guard
         let snapshot = snapshot(
           entityID: entityID,
           namespace: plan.namespace,
-          attributes: attributes
+          attributes: attributes,
+          fields: fields
         ),
         matches(snapshot, filters: plan.filters, namespace: plan.namespace, attributes: attributes)
       else { continue }
@@ -3619,6 +3676,7 @@ private struct PreparedInclude {
         capacity: configuration.capacity,
         retainedEnd: configuration.retainedEnd
       )
+      let candidateFields = Self.candidateFields(of: query)
       for entityID in ids {
         metrics.examinedCandidateCount += 1
         guard
@@ -3628,6 +3686,7 @@ private struct PreparedInclude {
             order: effectiveOrder,
             filtersFullyCoveredByIndex: false,
             candidateNamespaceIsKnown: true,
+            fields: candidateFields,
             attributes: attributes,
             metrics: &metrics
           )
@@ -3653,6 +3712,7 @@ private struct PreparedInclude {
 
     var snapshots: [QuerySnapshot] = []
     snapshots.reserveCapacity(ids.count)
+    let fields = Self.shownFields(of: query)
 
     for entityID in ids {
       metrics.examinedCandidateCount += 1
@@ -3660,7 +3720,8 @@ private struct PreparedInclude {
         let snapshot = snapshot(
           entityID: entityID,
           namespace: query.namespace,
-          attributes: attributes
+          attributes: attributes,
+          fields: fields
         ),
         matches(
           snapshot,
@@ -3719,10 +3780,13 @@ private struct PreparedInclude {
     return project(linked, selectedFields: query.selectedFields)
   }
 
+  /// - Parameter fields: The fields to materialize, or nil for every field (#1007). Any other value the snapshot holds is
+  ///   one a caller must not read: a page projects its rows to its selection after it filters, orders and includes them.
   private func snapshot(
     entityID: String,
     namespace: String,
-    attributes: AttributeStore
+    attributes: AttributeStore,
+    fields: Set<String>? = nil
   ) -> InstantEntitySnapshot? {
     if let interned = internCaches.internedSnapshot(
       entityID: entityID,
@@ -3735,7 +3799,8 @@ private struct PreparedInclude {
         interned,
         entityID: entityID,
         namespace: namespace,
-        attributes: attributes
+        attributes: attributes,
+        fields: fields
       )
     }
     guard let attributesByID = eav[entityID] else { return nil }
@@ -3745,7 +3810,8 @@ private struct PreparedInclude {
         entityID: entityID,
         namespace: namespace,
         attributesByID: attributesByID,
-        attributes: attributes
+        attributes: attributes,
+        fields: fields
       )
     else { return nil }
     return InstantEntitySnapshot(id: entityID, namespace: namespace, values: values)
@@ -3755,7 +3821,8 @@ private struct PreparedInclude {
     _ interned: InstantEntitySnapshot,
     entityID: String,
     namespace: String,
-    attributes: AttributeStore
+    attributes: AttributeStore,
+    fields: Set<String>? = nil
   ) -> InstantEntitySnapshot {
     let namespaceAttributes = attributes.attributes(namespace: namespace)
     var hasManyCardinality = false
@@ -3768,7 +3835,8 @@ private struct PreparedInclude {
     }
     var values = interned.values
     var didChange = false
-    for attribute in namespaceAttributes where attribute.cardinality == .many {
+    for attribute in namespaceAttributes
+    where attribute.cardinality == .many && fields?.contains(attribute.name) ?? true {
       guard let slot = attributesByID[attribute.id] else {
         if values[attribute.name] != nil {
           values[attribute.name] = nil
@@ -3799,7 +3867,8 @@ private struct PreparedInclude {
     entityID: String,
     namespace: String,
     attributesByID: [String: AttrSlot],
-    attributes: AttributeStore
+    attributes: AttributeStore,
+    fields: Set<String>? = nil
   ) -> [String: InstantMaterializedValue]? {
     let namespaceAttributes = attributes.attributes(namespace: namespace)
     if namespaceAttributes.isEmpty {
@@ -3823,6 +3892,7 @@ private struct PreparedInclude {
       }
       guard let valuesByValue = attributesByID[attribute.id] else { continue }
       hasNamespaceData = true
+      if let fields, !fields.contains(attribute.name) { continue }
 
       if let value = materializedValue(valuesByValue, attribute: attribute) {
         values[attribute.name] = value
