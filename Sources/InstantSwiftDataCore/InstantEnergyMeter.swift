@@ -188,8 +188,10 @@ public struct InstantEnergySnapshot: Sendable, Equatable {
       outboxRowsWritten: max(0, outboxRowsWritten - earlier.outboxRowsWritten),
       outboxRowsSuperseded: max(0, outboxRowsSuperseded - earlier.outboxRowsSuperseded),
       reconnectAttempts: max(0, reconnectAttempts - earlier.reconnectAttempts),
-      // Red stub (#1011).
-      serverApplyPaths: [:]
+      serverApplyPaths: serverApplyPaths.reduce(into: [:]) { paths, entry in
+        let added = entry.value - (earlier.serverApplyPaths[entry.key] ?? 0)
+        if added > 0 { paths[entry.key] = added }
+      }
     )
   }
 }
@@ -278,6 +280,8 @@ package final class InstantEnergyMeterStorage: Sendable {
     var wallNanoseconds = [UInt64](repeating: 0, count: InstantEnergyOperation.allCases.count)
     var mainThreadCPUNanoseconds = [UInt64](repeating: 0, count: InstantEnergyOperation.allCases.count)
     var events = [Int](repeating: 0, count: InstantEnergyEvent.allCases.count)
+    /// Committed server applies by path (#1011): a handful of names, one update per apply.
+    var serverApplyPaths: [String: Int] = [:]
   }
 
   /// `OSLog` predates `Sendable`; the handle is immutable and the logging calls are thread-safe.
@@ -353,7 +357,9 @@ package final class InstantEnergyMeterStorage: Sendable {
   }
 
   package func recordServerApply(path: String) {
-    // Red stub (#1011).
+    state.withLock { state in
+      state.serverApplyPaths[path, default: 0] &+= 1
+    }
   }
 
   package func snapshot() -> InstantEnergySnapshot {
@@ -373,7 +379,8 @@ package final class InstantEnergyMeterStorage: Sendable {
       transactions: current.events[InstantEnergyEvent.transaction.rawValue],
       outboxRowsWritten: current.events[InstantEnergyEvent.outboxRowWritten.rawValue],
       outboxRowsSuperseded: current.events[InstantEnergyEvent.outboxRowSuperseded.rawValue],
-      reconnectAttempts: current.events[InstantEnergyEvent.reconnectAttempt.rawValue]
+      reconnectAttempts: current.events[InstantEnergyEvent.reconnectAttempt.rawValue],
+      serverApplyPaths: current.serverApplyPaths
     )
   }
 
