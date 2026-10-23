@@ -1,3 +1,21 @@
+## 2026-10-23 16:29:48 EDT — scribe `f8f5a1b5ca278db10e52c6170e9f3c5b9fb03ed8`
+Change log (#1016): red 8bd92b2ae, green 049e4cb9a, the audit ec3c245a6.
+
+## 2026-10-23 16:29:00 EDT — scribe `ec3c245a693f4628dc2b94b9f0194e316cad2062`
+The chunk-generation audit (#1016): one stored chunk file lost to a relaunch's second cut of a generation, 3,244 of 3,245 linked uploads proven to hold their rows' bytes, the fix, its cost, the repair proposals.
+
+## 2026-10-23 16:21:56 EDT — scribe `049e4cb9a3540ee3584072cc1664a34b72c3debe`
+Green (#1016): the chunker's restore reads the server's chunk rows before it cuts, a chunk's file is named by its index and SHA-256, and a file already there is sent only once its bytes are proven; replays 6 wrong-bytes uploads -> 0.
+
+## 2026-10-23 15:36:57 EDT — scribe `8bd92b2aefb0af311cd96a57a1f9a29fa8f9a442`
+Red tests (#1016): leftover and re-cut chunk files, the restore after the prune, replays of continued takes.
+
+## 2026-10-23 15:36:38 EDT — scribe `169b28eb4205e24b82e12503320de7a6d889942a`
+Touch claim (#1016): the mirror's share-audio test.
+
+## 2026-10-23 15:27:17 EDT — scribe `0dd70fb5c8191afd51578529917515e249fa3eee`
+Plan chunk-generation-1016 (#1016): plan and touch claims.
+
 ## 2026-10-23 16:27:23 EDT — instant-data-swift `db666f577fb33de71b08b1fbb155c2b8312dfa11`
 Release document v1.9.21 (#1006): a read from this device answers from the whole device store, at once.
 
