@@ -24,6 +24,9 @@
 // - 2026-10-23: the steady-state sync tasks (automatic connection, the session's reader and frame applier,
 //   reconnects, the delivery pump, stream catch-up) run at liveSyncTaskPriority when the app sets it; nil, the default,
 //   keeps the priority of the task that opened or connected the runtime (#590).
+// - 2026-10-23: a live operation's own failure (a one-shot query cancelled or answered with an error, a query's
+//   encoding, registration or removal, a stream reader's, a share observation's) no longer stores the connection as
+//   `.errored`; one failed query left open sockets reading errored for hours on builds 114-116 (#1024).
 
 import Foundation
 import IssueReporting
@@ -5324,7 +5327,6 @@ public final class InstantRuntime: Sendable {
         )
       } catch {
         liveRegistration = nil
-        await recordConnectionError(error)
         InstantDiagnostics.shared.record(
           error: error,
           subsystem: "instant-swift-data-core",
@@ -5463,7 +5465,6 @@ public final class InstantRuntime: Sendable {
       } catch {
         await self.configuration
           .onLiveQueryUnregisterFailureBeforeConnectionErrorForTesting?()
-        await self.recordConnectionError(error)
         InstantDiagnostics.shared.record(
           error: error,
           subsystem: "instant-swift-data-core",
@@ -5515,7 +5516,6 @@ public final class InstantRuntime: Sendable {
       return Self.finishedQueryObservationLease()
     } catch {
       await leaveOperationGate()
-      await recordConnectionError(error)
       InstantDiagnostics.shared.record(
         error: error,
         subsystem: "instant-swift-data-core",
@@ -5598,8 +5598,12 @@ public final class InstantRuntime: Sendable {
       registrationKey = try InstantLiveQueryEncoder.registrationKey(for: query)
     } catch {
       try Task.checkCancellation()
-      await recordConnectionError(error)
-      try Task.checkCancellation()
+      recordLiveOperationFailure(
+        error,
+        category: "query",
+        event: "query-observation.encoding-failed",
+        message: "Could not encode a live infinite query observation."
+      )
       let storeObservation = await store.observeInfiniteQueryLease(
         plan,
         onCancellationStarted: onCancellationStarted
@@ -5672,7 +5676,12 @@ public final class InstantRuntime: Sendable {
           clientEventID: self.configuration.makeID()
         )
       } catch {
-        await self.recordConnectionError(error)
+        self.recordLiveOperationFailure(
+          error,
+          category: "query",
+          event: "query-observation.unregister-failed",
+          message: "Could not unregister a live Instant infinite query observation."
+        )
       }
     }
     do {
@@ -5709,7 +5718,12 @@ public final class InstantRuntime: Sendable {
       throw CancellationError()
     } catch {
       await leaveOperationGate()
-      await recordConnectionError(error)
+      recordLiveOperationFailure(
+        error,
+        category: "query",
+        event: "query-observation.registration-failed",
+        message: "Could not register a live Instant infinite query observation."
+      )
     }
     let hydration = hydratingDeferredValues(
       in: liveObservation.stream,
@@ -6189,6 +6203,18 @@ public final class InstantRuntime: Sendable {
         correlationID: plan.id
       )
       return emission
+    } catch let error as CancellationError {
+      // The caller cancelled it; nothing failed (#1024).
+      InstantDiagnostics.shared.record(
+        .debug,
+        subsystem: "instant-swift-data-core",
+        category: "query",
+        event: "query-once.cancelled",
+        message: "A one-shot Instant query was cancelled.",
+        metadata: ["namespace": plan.namespace],
+        correlationID: plan.id
+      )
+      throw error
     } catch {
       InstantDiagnostics.shared.record(
         error: error,
@@ -6298,21 +6324,26 @@ public final class InstantRuntime: Sendable {
           )
           throw error
         }
-        InstantDiagnostics.shared.record(
-          error: error,
-          subsystem: "instant-swift-data-core",
-          category: "query",
-          event: "query.live-ack-timeout",
-          message:
-            "Live query did not receive a server acknowledgement within the timeout.",
-          metadata: [
-            "registrationKey": registrationKey,
-            "namespace": plan.namespace,
-            "timeoutMilliseconds": String(liveQueryAcknowledgementTimeoutMilliseconds),
-          ],
-          correlationID: plan.id
-        )
-        await recordConnectionError(error)
+        // #1024: the caller cancelled this query, its answer did not come in time, or the server answered it with an
+        // error. That query fails; the socket does not, so the connection's state stays what the socket is. Upstream
+        // `Reactor.js` rejects only the query's promise (`QUERY_ONCE_TIMEOUT`, `notifyQueryOnceError`) and sets
+        // `ERRORED` only when `init` fails. A cancellation is no timeout, so it is not logged as one.
+        if !(error is CancellationError) {
+          InstantDiagnostics.shared.record(
+            error: error,
+            subsystem: "instant-swift-data-core",
+            category: "query",
+            event: "query.live-ack-timeout",
+            message:
+              "Live query did not receive a server acknowledgement within the timeout.",
+            metadata: [
+              "registrationKey": registrationKey,
+              "namespace": plan.namespace,
+              "timeoutMilliseconds": String(liveQueryAcknowledgementTimeoutMilliseconds),
+            ],
+            correlationID: plan.id
+          )
+        }
         throw error
       }
       try await configuration.onLiveQueryOnceAcknowledgedForTesting?()
@@ -7939,7 +7970,10 @@ public final class InstantRuntime: Sendable {
     }
   }
 
-  private func recordConnectionError(_ error: Error) async {
+  /// Stores a failure of the configured mutation transport, which an explicit flush meets, as the connection's error;
+  /// the flush's next success stores `.opened` again. A live operation's own failure is not the connection's
+  /// (``recordLiveOperationFailure(_:category:event:message:)``, #1024).
+  private func recordMutationTransportFailure(_ error: Error) async {
     guard Self.callerOwnsLiveSessionFailure(error) else { return }
     await operationGate.enter()
     do {
@@ -7955,6 +7989,32 @@ public final class InstantRuntime: Sendable {
   private static func callerOwnsLiveSessionFailure(_ error: Error) -> Bool {
     !(error is InstantSupersededLiveSessionSend)
       && !(error is InstantReceiverOwnedLiveSessionSendFailure)
+  }
+
+  /// Logs one live operation's own failure: a query's encoding, registration or removal, a stream reader's
+  /// registration or removal, or a share observation's (#1024).
+  ///
+  /// The failure is that operation's, so it leaves the connection's state alone. These failures used to be stored as
+  /// the connection's error, and nothing rewrote it while the socket stayed open: one failed query left the consuming
+  /// app's builds 114 to 116 reading `.errored` for hours while the server accepted every write. Upstream
+  /// `Reactor.js` sets `ERRORED` only when `init` fails. The socket's own failures still reach the state, through
+  /// `scheduleReconnect` and `connectLiveSession`; a cancellation is the caller's, and a send failure the receiver
+  /// owns is the receiver's to report.
+  private func recordLiveOperationFailure(
+    _ error: Error,
+    category: String,
+    event: String,
+    message: String
+  ) {
+    guard Self.callerOwnsLiveSessionFailure(error), !(error is CancellationError) else { return }
+    InstantDiagnostics.shared.record(
+      error: error,
+      subsystem: "instant-swift-data-core",
+      category: category,
+      event: event,
+      message: message,
+      metadata: ["appID": configuration.appID]
+    )
   }
 
   /// A row without SQLite-owned preparation authority is a local persistence
@@ -12760,7 +12820,12 @@ public final class InstantRuntime: Sendable {
         clientEventID: configuration.makeID()
       )
     } catch {
-      await recordConnectionError(error)
+      recordLiveOperationFailure(
+        error,
+        category: "stream",
+        event: "stream-reader.registration-failed",
+        message: "Could not register a live Instant stream reader."
+      )
     }
     return Self.liveObservation(stream) { [weak self] in
       guard let self else { return }
@@ -12771,7 +12836,12 @@ public final class InstantRuntime: Sendable {
           clientEventID: self.configuration.makeID()
         )
       } catch {
-        await self.recordConnectionError(error)
+        self.recordLiveOperationFailure(
+          error,
+          category: "stream",
+          event: "stream-reader.unregister-failed",
+          message: "Could not unregister a live Instant stream reader."
+        )
       }
     }
   }
@@ -12969,7 +13039,12 @@ public final class InstantRuntime: Sendable {
       appID: configuration.appID,
       emissions: emissions
     ) { [weak self] error in
-      await self?.recordConnectionError(error)
+      self?.recordLiveOperationFailure(
+        error,
+        category: "share",
+        event: "share-observation.failed",
+        message: "A live Instant share observation failed."
+      )
     }
   }
 
@@ -14320,7 +14395,7 @@ public final class InstantRuntime: Sendable {
       case let .failure(error):
         recordActorHop(.persistence)
         _ = try? await persistence.releaseAutomaticOutboxClaim(token: flushClaimToken)
-        await recordConnectionError(error)
+        await recordMutationTransportFailure(error)
         return .transportFailure(error)
       case .cancelled:
         recordActorHop(.persistence)
@@ -14339,7 +14414,7 @@ public final class InstantRuntime: Sendable {
       throw error
     }
     if let terminalError {
-      await recordConnectionError(terminalError)
+      await recordMutationTransportFailure(terminalError)
       throw terminalError
     }
     if returnsCancellation || Task.isCancelled {
