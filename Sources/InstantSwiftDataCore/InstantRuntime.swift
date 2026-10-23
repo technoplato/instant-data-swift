@@ -4595,6 +4595,11 @@ public final class InstantRuntime: Sendable {
     return value
   }
 
+  /// The level of a server apply's gate-held event: `warning` from 1 s, `info` from 250 ms, `debug` below (#277).
+  static func serverApplyGateHeldLevel(heldMilliseconds: Int) -> InstantDiagnosticLevel {
+    heldMilliseconds >= 1_000 ? .warning : heldMilliseconds >= 250 ? .info : .debug
+  }
+
   /// One record per server apply: how long it held the operation gate, split by part. Local
   /// writes queue behind every millisecond of it, so an apply past 250 ms is reported at `info`
   /// and past 1 s at `warning` (#277).
@@ -4662,7 +4667,7 @@ public final class InstantRuntime: Sendable {
       ("SQLite commit", commitTiming.sqliteCommitMilliseconds),
     ].map { "\($0.0) \($0.1) ms" }.joined(separator: ", ")
     InstantDiagnostics.shared.record(
-      heldMilliseconds >= 1_000 ? .warning : heldMilliseconds >= 250 ? .info : .debug,
+      Self.serverApplyGateHeldLevel(heldMilliseconds: heldMilliseconds),
       subsystem: "instant-swift-data-core",
       category: "concurrency",
       event: "server-apply.operation-gate-held",

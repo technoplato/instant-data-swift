@@ -9,6 +9,17 @@ import Testing
 /// ~30 s with ~2,560 pending writes; the resident-outbox patch alone was 0.8-1.3 s of it.
 @Suite(.serialized)
 struct InstantServerApplyGateWorkTests {
+  /// A hold of 250 ms or more stalls every read and write behind it, so its event goes out one by one with its fields.
+  /// At `info`, a host's diagnostics bridge counted those holds per minute and dropped their fields: the phone's holds
+  /// of 250-999 ms on build 116 arrived as counts, and its commit times could not be read untethered.
+  @Test
+  func aHoldOfAQuarterSecondOrMoreIsLoggedAtNoticeOrAbove() {
+    expectNoDifference(
+      [0, 249, 250, 999, 1_000, 4_000].map { InstantRuntime.serverApplyGateHeldLevel(heldMilliseconds: $0) },
+      [.debug, .debug, .notice, .notice, .warning, .warning]
+    )
+  }
+
   /// The gate-held event names the apply's path, its attempt, the writes it peeled and replayed, and where its commit
   /// spent its time inside the persistence actor. The phone's events said only "commit 3,914 ms" (0 changed entities)
   /// and the reduction's decline was logged at debug, so a slow apply could not say why it was slow.
