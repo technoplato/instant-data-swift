@@ -10,6 +10,70 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## October 23rd, 2026 at 6:47:24 p.m. EDT — `c1307377d221` Document the v1.9.25 release: a server apply holds the gate for less and writes less, and an app can choose its sync priority (#932, #590)
+
+- **Implementation commit:** `c1307377d22158b396b5367b577990d660d6a6a5`
+- **Change:** Document the v1.9.25 release: a server apply holds the gate for less and writes less, and an app can choose its sync priority (#932, #590)
+- **Details:**
+  - Release document: the three undocumented 1.9.20 changes, liveSyncTaskPriority with the bench, F1a with its bytes, the targeted suites and the whole bundle against Tests/known-failing.txt.
+- **Files:**
+  - `docs/releases/v1.9.25.md` — the release document
+- **User context (verbatim):**
+  > I want to find the issues at the root.
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run); no SpecStory capture for headless runs.
+
+## October 23rd, 2026 at 6:47:24 p.m. EDT — `022495f972e1` Green (#932): a full rebase's staging keeps no copy of each planned body
+
+- **Implementation commit:** `022495f972e12d92b957e21803d5a7ad0beed972`
+- **Change:** Green (#932): a full rebase's staging keeps no copy of each planned body
+- **Details:**
+  - Both passes and the stage read the outbox's body; every rewrite of a body bumps the revision each page checks. Cost harness, 2,580 pending, every frame a full rebase, Mac mini, 1.9.23 without and with it: 674,024 -> 524,952 KB written over 7 frames (-22%), instructions -3.7%.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — the body page, the stage, the catch-up rows and the staging table
+- **User context (verbatim):**
+  > I want to find the issues at the root.
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run); no SpecStory capture for headless runs.
+
+## October 23rd, 2026 at 6:47:24 p.m. EDT — `855b082ccf55` Fix (#932): a retried apply's planningHeldMilliseconds counts from entering the operation gate
+
+- **Implementation commit:** `855b082ccf551659dfad030add43d52b05c9b893`
+- **Change:** Fix (#932): a retried apply's planningHeldMilliseconds counts from entering the operation gate
+- **Details:**
+  - The clock started before the wait for the gate, so the gate-held event reported the wait plus the hold.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — the planning clock
+- **User context (verbatim):**
+  > I want to find the issues at the root.
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run); no SpecStory capture for headless runs.
+
+## October 23rd, 2026 at 6:47:23 p.m. EDT — `748f107e8dcc` Green (#590): liveSyncTaskPriority lets an app choose the priority of the runtime's steady-state sync
+
+- **Implementation commit:** `748f107e8dcc22c57f75c52888440f07a25758ae`
+- **Change:** Green (#590): liveSyncTaskPriority lets an app choose the priority of the runtime's steady-state sync
+- **Details:**
+  - The automatic connection, the session's reader and frame applier, reconnects, the delivery pump and stream catch-up start at InstantRuntimeConfiguration.liveSyncTaskPriority; nil, the default, keeps the opener's priority. Loopback bench, Mac mini: with ten user-initiated busy threads, write -> server median 14-30 ms at user-initiated against 24-27 s at utility, so the default stays nil. The decode queue's user-initiated QoS keeps its reason beside it.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — the configuration field and the five task starts
+  - `Sources/InstantSwiftDataCore/InstantRuntimeLiveSession.swift` — the receiver's priority
+  - `Sources/InstantSwiftDataCore/InstantRuntimeReconnectController.swift` — the reconnect loop's priority
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — why the decode queue keeps its QoS
+  - `Tests/InstantSwiftDataCoreTests/InstantSyncTaskPriorityTests.swift` — default nil, then .utility
+- **User context (verbatim):**
+  > I want to make sure we're still syncing in real time.
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run); no SpecStory capture for headless runs.
+
+## October 23rd, 2026 at 6:47:23 p.m. EDT — `84919a03995c` Red (#590): the runtime's steady-state sync runs at the priority of whichever task connected it
+
+- **Implementation commit:** `84919a03995c16b057bfc4bddc558c45f1975155`
+- **Change:** Red (#590): the runtime's steady-state sync runs at the priority of whichever task connected it
+- **Details:**
+  - InstantSyncTaskPriorityTests: connecting and writing from a user-initiated task left the session's reads after the handshake at user-initiated; a loopback session records the priority of each receive and each transact send.
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantSyncTaskPriorityTests.swift` — the red test
+- **User context (verbatim):**
+  > I want to make sure we're still syncing in real time.
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run); no SpecStory capture for headless runs.
+
 ## October 23rd, 2026 at 6:28:50 p.m. EDT — `476e1237458e` Document the v1.9.24 release: a write's cycle writes about 9% fewer pages to disk, the outbox dropping an index no statement used and an acknowledgement no longer rewriting three indexes it does not change (#1007)
 
 - **Implementation commit:** `476e1237458eb9e816010d8b897a8b2386ea2aae`

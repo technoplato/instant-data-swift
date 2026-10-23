@@ -1,3 +1,18 @@
+## 2026-10-23 18:46:20 EDT — instant-data-swift `c1307377d22158b396b5367b577990d660d6a6a5`
+Release document for v1.9.25 (#932, #590): the three undocumented 1.9.20 server-apply changes, liveSyncTaskPriority (opt-in) with the loopback bench, F1a with its bytes; carries 1.9.24, 1.9.23 and #1012's red commit.
+
+## 2026-10-23 18:15:44 EDT — instant-data-swift `022495f972e12d92b957e21803d5a7ad0beed972`
+Green (#932): a full rebase's staging keeps no copy of each planned body; 674,024 -> 524,952 KB written over 7 full-rebase frames (-22%), instructions -3.7%.
+
+## 2026-10-23 18:15:32 EDT — instant-data-swift `855b082ccf551659dfad030add43d52b05c9b893`
+Fix (#932): a retried apply's planningHeldMilliseconds counts from entering the operation gate, not from before the wait.
+
+## 2026-10-23 18:15:31 EDT — instant-data-swift `748f107e8dcc22c57f75c52888440f07a25758ae`
+Green (#590): InstantRuntimeConfiguration.liveSyncTaskPriority, nil by default; at utility beside ten busy user-initiated threads a write took 24-27 s to reach a loopback server against 14-30 ms.
+
+## 2026-10-23 16:05:07 EDT — instant-data-swift `84919a03995c16b057bfc4bddc558c45f1975155`
+Red test (#590): InstantSyncTaskPriorityTests, the session's reads after the handshake ran at the connecting task's priority.
+
 ## 2026-10-23 18:28:36 EDT — instant-data-swift `476e1237458eb9e816010d8b897a8b2386ea2aae`
 Release document for v1.9.24 (#1007): a write's cycle writes about 9% fewer pages to disk.
 

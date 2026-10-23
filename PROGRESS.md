@@ -1,3 +1,25 @@
+## 2026-10-23 18:48:08 EDT — v1.9.25: a server apply holds the gate for less and writes less, and an app can choose its sync priority (#932, #590); carries 1.9.24 and 1.9.23
+
+- **Commits:** red `84919a03`, green `748f107e` (`liveSyncTaskPriority`, #590); fix `855b082c` (a retried apply's
+  planning hold counts from entering the gate); green `022495f9` (F1a: a full rebase's staging keeps no copy of each
+  planned body); plan `e062328e`; release document `c1307377`; then this ledger commit and the tag v1.9.25. The release
+  document also describes the three #932 greens that shipped inside 1.9.20 without a description.
+- **Why:** a full rebase wrote each pending body into its staging row and again when the stage rewrote the row; the
+  runtime's sync tasks ran at whatever priority opened the runtime (user-initiated in the consuming app).
+- **Checks (Mac mini, debug):** F1a with the cost harness at 2,580 pending, every frame a full rebase, on 1.9.23
+  without and with it: 674,024 -> 524,952 KB written over 7 frames (-22%), instructions 992,218 -> 955,411 M (-3.7%);
+  gate and CPU not compared (load 44-62). `InstantSyncTaskPriorityTests` red then green; on these commits on 1.9.24 the
+  targeted suites pass (6, 6, and 161 tests in 16 suites) and the whole bundle compares clean but for one timing test
+  that fails alone 5 of 10 on plain 1.9.24 (`binaryCodecRemovesBase64AndJSONCPU`, reported on #1005 and #1021).
+  Loopback bench (release, three rounds): beside ten user-initiated busy threads a write reached the server in a median
+  14-30 ms at user-initiated and 24-27 s at utility, so `liveSyncTaskPriority` stays `nil` by default.
+- **Next:** the consuming app pins exactly 1.9.25 (it carries 1.9.24) when the build 118 cut allows; it does not set
+  `liveSyncTaskPriority` to `.utility` without a device measurement of write -> server and server -> screen. Device
+  question on #932: whether the phone's 1-4 s commits with nothing pending fall as the store copy's did (87-140 -> 1-2
+  ms on the Mac mini). Not changed: a declined reduction still peels, re-stamps and rewrites every pending body (about
+  75 MB a frame in the harness); `TripleIndexes.newestTransactionTimeMilliseconds` walks the store per replayed write
+  (#1007's); reads needing the persistence actor can still wait behind an apply's work there.
+
 ## 2026-10-23 18:29:15 EDT — v1.9.24: a write's cycle writes about 9% fewer pages to disk (#1007); carries 1.9.23
 
 - **Commits:** test bound `210def0e` (#1021); red `5fc3a128`, green `6b1dd7b4` (the outbox drops
