@@ -1,3 +1,45 @@
+## 2026-10-23 15:53:26 EDT — scribe `b98d90473057bc09e59bc6940cbcafd6f5d700de`
+The untethered-telemetry audit (#1011): the gaps, each addition's cost, the landings for builds 116 and 117, what is left.
+
+## 2026-10-23 15:51:28 EDT — scribe `2c161da32a497cf0df6b8016f404226aceeae15f`
+Green (#1011): the main run loop's turns per minute in energy.ledger, MetricKit's daily hitch ratios, and a full pre-install MetricKit queue keeps its payload lines (build 117).
+
+## 2026-10-23 15:43:03 EDT — scribe `500495349783edcdcb17bf20965fb64f9a7e0ca8`
+Red test (#1011): EnergyMainRunLoopTests, the day's hitch ratios, the MetricKit queue's drop order.
+
+## 2026-10-23 15:38:56 EDT — scribe `a0328419979550999b462ca3d8f3ee7e2d28e2bf`
+Green (#1011): the energy ledger reads instant-data-swift's main-thread split (1.9.16, in the 1.9.17 pin) and names the screen; serverApplyStage and serverApplyRetractions in words.
+
+## 2026-10-23 15:35:30 EDT — scribe `491f1a73385fa27cb7b364137191acacf2faa5ec`
+Red test (#1011): ScribeEnergyLibraryCountersTests and EnergyLibraryOperationTests for the split and the two operations.
+
+## 2026-10-23 15:31:38 EDT — scribe `8527ccf5608bc44ea0c1a5f99a72d6622d898f9e`
+What's New for build 116 (#1011): the device log stops copying itself; untethered diagnostics name the app and each MetricKit report.
+
+## 2026-10-23 15:31:26 EDT — scribe `7c76dccaa2c607f2fe46072e631c8f5f1a214ac0`
+Green (#1011): the device log rotates into scribe-deepgram.previous.log instead of rewriting itself (85% of its writes); the log buffer's drain race fixed.
+
+## 2026-10-23 15:24:45 EDT — scribe `1de2f7aaec7e4374fd2deb6e98306671f8738582`
+Red test (#1011): InstantDBLogRotatingFileTests and the readers of the previous file.
+
+## 2026-10-23 15:08:03 EDT — scribe `a774885d48042de25eb4c053b6affff85f4c3b24`
+Test fix (#1011): two tests that pinned the old shapes expect the app in the Instant lane's metadata and a diagnostic's own line.
+
+## 2026-10-23 15:08:03 EDT — scribe `fe1d66e912f34c4b0a24a7f4b17381f7f5b22881`
+Green (#1011): device-lab.py's ledger reads every cost from the costs key and keeps one app with --app.
+
+## 2026-10-23 15:08:03 EDT — scribe `3634f12a51465ade090c41fe3da25e818033de57`
+Plan (#1011): touch claims for the lab docs' --app line and build 116's What's New lines.
+
+## 2026-10-23 15:07:47 EDT — scribe `d40dce527dcc7fcd73f4e265b560a94985096e3d`
+Red test (#1011): device-lab.py's ledger, the costs key and --app.
+
+## 2026-10-23 15:07:47 EDT — scribe `6ac7658ceed44da43d7e49ad0b73529b39cbe532`
+Green (#1011): every diagnostics line names its app, one loud line per MetricKit diagnostic, the library's infinite-query lines one by one, every cost on energy.ledger, new meters.
+
+## 2026-10-23 15:07:47 EDT — scribe `63464461a5251e33310c3af4fdf1a9d48eac017d`
+Red test (#1011): the app on every line, MetricKit diagnostic lines, infinite-query lines, the costs key, the screen, new meters.
+
 ## 2026-10-23 15:45:51 EDT — instant-data-swift `b52bea02e6f09420fbd8a4253004a9da0e261c4a`
 Release document for v1.9.19 (#1007): a page that selects fields materializes only the fields it reads; carries 1.9.18 (#932).
 
