@@ -262,6 +262,7 @@ package final class InstantEnergyMeterStorage: Sendable {
     var counts = [Int](repeating: 0, count: InstantEnergyOperation.allCases.count)
     var cpuNanoseconds = [UInt64](repeating: 0, count: InstantEnergyOperation.allCases.count)
     var wallNanoseconds = [UInt64](repeating: 0, count: InstantEnergyOperation.allCases.count)
+    var mainThreadCPUNanoseconds = [UInt64](repeating: 0, count: InstantEnergyOperation.allCases.count)
     var events = [Int](repeating: 0, count: InstantEnergyEvent.allCases.count)
   }
 
@@ -308,10 +309,13 @@ package final class InstantEnergyMeterStorage: Sendable {
     let cpu = cpuNow >= interval.cpuStart ? cpuNow - interval.cpuStart : 0
     let wall = wallNow >= interval.wallStart ? wallNow - interval.wallStart : 0
     let index = interval.operation.index
+    // #1011: one flag read; a section begins and ends on one thread (`begin` is unavailable in async code).
+    let isMainThread = pthread_main_np() != 0
     state.withLock { state in
       state.counts[index] &+= 1
       state.cpuNanoseconds[index] &+= cpu
       state.wallNanoseconds[index] &+= wall
+      if isMainThread { state.mainThreadCPUNanoseconds[index] &+= cpu }
     }
     Self.endSignpost(interval.operation, id: interval.signpostID)
   }
@@ -342,7 +346,8 @@ package final class InstantEnergyMeterStorage: Sendable {
       operations[operation] = InstantEnergySnapshot.Measure(
         count: current.counts[index],
         cpuNanoseconds: current.cpuNanoseconds[index],
-        wallNanoseconds: current.wallNanoseconds[index]
+        wallNanoseconds: current.wallNanoseconds[index],
+        mainThreadCPUNanoseconds: current.mainThreadCPUNanoseconds[index]
       )
     }
     return InstantEnergySnapshot(

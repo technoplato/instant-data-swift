@@ -5407,7 +5407,8 @@ public actor SQLitePersistenceStore {
     planID: String,
     dispositions: [InstantServerApplyStagedDisposition]
   ) throws {
-    let energy = InstantEnergyMeter.begin(.serverApplyPlan); defer { energy.end() }
+    // #1011: its own name; an iOS disk-write report's heaviest stack ended here.
+    let energy = InstantEnergyMeter.begin(.serverApplyStage); defer { energy.end() }
     guard !dispositions.isEmpty else { return }
     try transaction {
       for disposition in dispositions {
@@ -10607,6 +10608,8 @@ public actor SQLitePersistenceStore {
     for replacements: [InstantLiveQueryResultReplacement]
   ) throws -> [InstantTripleOperation] {
     guard !replacements.isEmpty else { return [] }
+    // #1011: metered under its own name; a device profile found it outside every name.
+    let energy = InstantEnergyMeter.begin(.serverApplyRetractions); defer { energy.end() }
     return try readTransaction {
       try liveQueryReplacementRetractionsWithoutTransaction(for: replacements).operations
     }
@@ -10619,6 +10622,7 @@ public actor SQLitePersistenceStore {
     guard !replacements.isEmpty else {
       return InstantLiveQueryReplacementRetractions(operations: [], clearedSlots: [])
     }
+    let energy = InstantEnergyMeter.begin(.serverApplyRetractions); defer { energy.end() }
     return try readTransaction {
       guard try loadMetadataRevisionWithoutTransaction(Self.queryResultRevisionKey)
         == expectedQueryResultRevision
