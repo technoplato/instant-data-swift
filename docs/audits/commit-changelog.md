@@ -1,3 +1,12 @@
+## 2026-10-23 16:31:20 EDT — scribe `ed32a89213ac764f25bbbd0147e21099f7e5c6b3`
+Green (#1011): the energy ledger keeps instant-data-swift 1.9.20's server applies by path (instantServerApplyPaths on energy.ledger).
+
+## 2026-10-23 16:28:31 EDT — scribe `ceb20bba2ad16db99bd12ac05c3033ce64fc9957`
+Red test (#1011): the server-apply path counts pass through, a minute's difference, the row and the line.
+
+## 2026-10-23 16:20:12 EDT — scribe `92e625b491d6053873b8a2362598771fc07427d8`
+Scribe and Scribe Playback pin instant-data-swift exactly 1.9.20 (#1011's server-apply path counts; carries #1007's frame parser).
+
 ## 2026-10-23 16:29:48 EDT — scribe `f8f5a1b5ca278db10e52c6170e9f3c5b9fb03ed8`
 Change log (#1016): red 8bd92b2ae, green 049e4cb9a, the audit ec3c245a6.
 
