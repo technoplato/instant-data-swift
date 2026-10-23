@@ -92,7 +92,9 @@ struct InstantManyCardinalitySortCostTests {
     #expect(keyLength > 0)
     // About 28 when the comparator builds both keys (v1.9.12); under 10 when no key is built per comparison.
     let ratio = Double(materializing) / Double(max(buildingEachKeyOnce, 1))
-    #expect(ratio < 10, "materializing cost \(ratio) times building each sort key once")
+    // The comparator that built both keys measured 27.9; the fix about 3-10, nearer 10 while a whole bundle runs beside it
+    // (#1021), so the bound leaves room for that load and still fails on the old comparator.
+    #expect(ratio < 20, "materializing cost \(ratio) times building each sort key once")
   }
 
   // MARK: - Helpers
