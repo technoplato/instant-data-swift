@@ -3,6 +3,9 @@
 //   instant_outbox_quarantined at runtime bootstrap instead of refusing every live connection (#696).
 // - 2026-10-15: live-query ownership rows name their result by an integer query_id instead of repeating the query's
 //   whole key, and a store in 0011's layout converts once at bootstrap (#704, ADR 0020).
+// - 2026-10-23: the session prune unloads a closed query's result into instant_unloaded_live_query_results instead of
+//   deleting it, and the query's next subscription loads it back, as upstream PersistedObject.unloadKey keeps a closed
+//   query's stored copy (#1006).
 
 import Foundation
 import IssueReporting
@@ -206,25 +209,46 @@ public struct InstantLiveQueryResultPruningPolicy: Hashable, Codable, Sendable {
 }
 
 public struct InstantLiveQueryResultPruningResult: Hashable, Codable, Sendable {
+  /// The results that left the stored results: deleted, or unloaded and kept (``unloadedQueryKeys``).
   public var removedQueryKeys: [String]
   public var remainingQueryKeys: [String]
   public var removedOrphanedTripleCount: Int
   public var remainingEntryCount: Int
   public var remainingTripleCount: Int
+  /// The removed results of closed queries kept for their next subscription (#1006), a subset of ``removedQueryKeys``.
+  public var unloadedQueryKeys: [String]
 
   public init(
     removedQueryKeys: [String],
     remainingQueryKeys: [String],
     removedOrphanedTripleCount: Int,
     remainingEntryCount: Int,
-    remainingTripleCount: Int
+    remainingTripleCount: Int,
+    unloadedQueryKeys: [String] = []
   ) {
     self.removedQueryKeys = removedQueryKeys
     self.remainingQueryKeys = remainingQueryKeys
     self.removedOrphanedTripleCount = removedOrphanedTripleCount
     self.remainingEntryCount = remainingEntryCount
     self.remainingTripleCount = remainingTripleCount
+    self.unloadedQueryKeys = unloadedQueryKeys
   }
+}
+
+/// An unloaded result loaded back for its query's new subscription (#1006).
+struct InstantUnloadedLiveQueryResultReload: Sendable {
+  var result: InstantPersistedLiveQueryResult
+  /// The facts of the result's entities that had left the store, for the store in memory; deferred payloads stay in
+  /// SQLite.
+  var restoredTriples: [InstantTriple]
+  /// Entities written back to SQLite from the result.
+  var restoredFromResultEntityCount: Int
+  /// Entities SQLite still held that the store in memory did not.
+  var restoredFromSQLiteEntityCount: Int
+  /// Whether SQLite's facts changed, which moved the store revision.
+  var storeChanged: Bool
+  var storeRevision: Int64
+  var attributeRevision: Int64
 }
 
 struct InstantLiveQueryResultPruningApplication: Sendable {
@@ -2526,6 +2550,15 @@ public actor SQLitePersistenceStore {
       }
     }
     try withSQLiteBusyRetry {
+      // Results of queries that closed, kept for their next subscription (#1006). Upstream
+      // `PersistedObject.unloadKey` unloads a closed query from memory and keeps its stored copy until the age, entry
+      // and size limits collect it. A row lives in this table or in `instant_live_query_results`, never both, so every
+      // reader of that table sees an unloaded result as removed, as before.
+      try migrate(name: "0027_unloaded_live_query_results") {
+        try execute(Self.unloadedLiveQueryResultsTableSQL)
+      }
+    }
+    try withSQLiteBusyRetry {
       try compactLiveQueryOwnershipIfNeeded()
     }
     // Test fixtures and app-owned restores can reconstruct `instant_outbox`
@@ -2590,6 +2623,17 @@ public actor SQLitePersistenceStore {
     )
     """
   }
+
+  /// A closed query's stored result, unloaded from the store and owning no fact, until its query subscribes again or
+  /// the pruning policy collects it (#1006). The columns are `instant_live_query_results`' without its `query_id`.
+  private static let unloadedLiveQueryResultsTableSQL = """
+    CREATE TABLE IF NOT EXISTS instant_unloaded_live_query_results (
+      query_key TEXT PRIMARY KEY NOT NULL,
+      triple_count INTEGER NOT NULL,
+      updated_at_ms INTEGER NOT NULL,
+      json TEXT NOT NULL
+    )
+    """
 
   /// A result's ownership of a fact, one row each, its own primary-key b-tree (#704, ADR 0020).
   private static let liveQueryOwnershipTableSQL = """
@@ -2781,6 +2825,9 @@ public actor SQLitePersistenceStore {
       )
       didLoadDeclaredRelationStorageMarker = true
       guard installedMarkerJSON != marker else { return false }
+      // An unloaded result keeps the storage it was written in; drop them rather than reload one in the old shape
+      // (#1006). Each query asks the server again when it next subscribes.
+      try execute("DELETE FROM instant_unloaded_live_query_results")
 
       let obsoleteAttributeIDs = reconciliation.obsoleteAttributeIDs
       var triplesChanged = false
@@ -3229,6 +3276,8 @@ public actor SQLitePersistenceStore {
         [.text(migration.name)]
       )
       guard alreadyApplied == nil else { return false }
+      // The migration rewrites stored results, not unloaded ones: drop those (#1006).
+      try execute("DELETE FROM instant_unloaded_live_query_results")
 
       var outboxCursor: String?
       var firstUnprovenActiveMutationID: String?
@@ -12025,9 +12074,13 @@ public actor SQLitePersistenceStore {
         return true
       }
 
+      // A closed query's result is unloaded, not deleted (#1006): its facts leave the store as a deleted result's do,
+      // and its stored copy answers the query's next subscription before the server does. Upstream
+      // `PersistedObject.unloadKey` "unloads the key so that it can be garbage collected, but does not delete it".
+      var unloadingKeys: Set<String> = []
       if !preservingQueryKeys.isEmpty {
         for row in Array(rows) where !preservingQueryKeys.contains(row.queryKey) {
-          _ = remove(row)
+          if remove(row) { unloadingKeys.insert(row.queryKey) }
         }
       }
 
@@ -12075,6 +12128,7 @@ public actor SQLitePersistenceStore {
       }
 
       guard !removedRows.isEmpty else {
+        try collectUnloadedLiveQueryResultsWithoutTransaction(policy: policy, now: now, loadedRows: rows)
         return InstantLiveQueryResultPruningApplication(
           result: InstantLiveQueryResultPruningResult(
             removedQueryKeys: [],
@@ -12089,6 +12143,7 @@ public actor SQLitePersistenceStore {
 
       var snapshot = currentState.snapshot
       var removedIdentities = carriedReleasedIdentities
+      var unloadedKeys: [String] = []
       for row in removedRows {
         guard let result = try liveQueryResultWithoutTransaction(key: row.queryKey) else {
           continue
@@ -12096,12 +12151,17 @@ public actor SQLitePersistenceStore {
         for triple in result.triples {
           removedIdentities.insert(InstantLiveTripleIdentity(triple))
         }
+        if unloadingKeys.contains(row.queryKey) {
+          try unloadLiveQueryResultWithoutTransaction(result)
+          unloadedKeys.append(row.queryKey)
+        }
         try execute(
           "DELETE FROM instant_live_query_results WHERE query_key = ?",
           [.text(row.queryKey)]
         )
         try forgetLiveQueryResultJSONStateWithoutTransaction(row.queryKey)
       }
+      try collectUnloadedLiveQueryResultsWithoutTransaction(policy: policy, now: now, loadedRows: rows)
 
       let previousStore = snapshot.store
       let currentTriples = Dictionary(
@@ -12165,7 +12225,8 @@ public actor SQLitePersistenceStore {
           remainingQueryKeys: rows.map(\.queryKey),
           removedOrphanedTripleCount: orphanedIdentities.count,
           remainingEntryCount: rows.count,
-          remainingTripleCount: rows.reduce(0) { $0 + $1.tripleCount }
+          remainingTripleCount: rows.reduce(0) { $0 + $1.tripleCount },
+          unloadedQueryKeys: unloadedKeys
         ),
         state: InstantPersistenceState(
           snapshot: snapshot,
@@ -12180,6 +12241,180 @@ public actor SQLitePersistenceStore {
     }
     adoptCachedState(application.state)
     return application
+  }
+
+  /// Keeps `result`, a closed query's newest result, for its next subscription (#1006).
+  private func unloadLiveQueryResultWithoutTransaction(_ result: InstantPersistedLiveQueryResult) throws {
+    // The stored row is the newest unless a JSON write waits (#566); copying it skips encoding the result again.
+    if liveQueryResultJSON.deferred[result.key] == nil {
+      try execute(
+        """
+        INSERT OR REPLACE INTO instant_unloaded_live_query_results (query_key, triple_count, updated_at_ms, json)
+        SELECT query_key, triple_count, updated_at_ms, json FROM instant_live_query_results WHERE query_key = ?
+        """,
+        [.text(result.key)]
+      )
+      if sqlite3_changes(connection.raw) == 1 { return }
+    }
+    try execute(
+      """
+      INSERT OR REPLACE INTO instant_unloaded_live_query_results (query_key, triple_count, updated_at_ms, json)
+      VALUES (?, ?, ?, ?)
+      """,
+      [
+        .text(result.key),
+        .int(Int64(result.triples.count)),
+        .int(result.updatedAt.milliseconds),
+        .text(try encode(result)),
+      ]
+    )
+  }
+
+  /// Collects unloaded results by the pruning policy, oldest first, as upstream's `PersistedObject` GC collects
+  /// unloaded keys (#1006): past the age limit, then while the stored results, loaded and unloaded, exceed the entry or
+  /// triple limit. `loadedRows` are the stored results that stay; the policy never collects them here.
+  private func collectUnloadedLiveQueryResultsWithoutTransaction(
+    policy: InstantLiveQueryResultPruningPolicy,
+    now: InstantTimestamp,
+    loadedRows: [LiveQueryResultStorageRow]
+  ) throws {
+    if let maxAgeMilliseconds = policy.maxAgeMilliseconds {
+      try execute(
+        "DELETE FROM instant_unloaded_live_query_results WHERE updated_at_ms < ?",
+        [.int(now.milliseconds - Swift.max(0, maxAgeMilliseconds))]
+      )
+    }
+    guard policy.maxEntries != nil || policy.maxTripleCount != nil else { return }
+    var unloaded: [(queryKey: String, tripleCount: Int)] = []
+    do {
+      var statement: OpaquePointer?
+      try prepare(
+        """
+        SELECT query_key, triple_count FROM instant_unloaded_live_query_results
+        ORDER BY updated_at_ms, query_key
+        """,
+        statement: &statement
+      )
+      defer { finishStatement(statement) }
+      while true {
+        let code = sqlite3_step(statement)
+        if code == SQLITE_DONE { break }
+        guard code == SQLITE_ROW, let queryKey = sqlite3_column_text(statement, 0) else {
+          throw persistenceError(operation: "read unloaded live-query results", message: lastErrorMessage())
+        }
+        unloaded.append((String(cString: queryKey), Int(sqlite3_column_int64(statement, 1))))
+      }
+    }
+    var entryCount = loadedRows.count + unloaded.count
+    var tripleCount = loadedRows.reduce(0) { $0 + $1.tripleCount } + unloaded.reduce(0) { $0 + $1.tripleCount }
+    var collected: [String] = []
+    for row in unloaded {
+      let overEntries = policy.maxEntries.map { entryCount > Swift.max(0, $0) } ?? false
+      let overTriples = policy.maxTripleCount.map { tripleCount > Swift.max(0, $0) } ?? false
+      guard overEntries || overTriples else { break }
+      collected.append(row.queryKey)
+      entryCount -= 1
+      tripleCount -= row.tripleCount
+    }
+    try executeRepeated(
+      "DELETE FROM instant_unloaded_live_query_results WHERE query_key = ?",
+      bindings: collected.map { [.text($0)] }
+    )
+  }
+
+  /// The unloaded result of `key`, if a prune unloaded it and nothing since saved or collected it (#1006).
+  func unloadedLiveQueryResult(key: String) throws -> InstantPersistedLiveQueryResult? {
+    try readTransaction {
+      let results: [InstantPersistedLiveQueryResult] = try selectJSON(
+        "SELECT json FROM instant_unloaded_live_query_results WHERE query_key = ? LIMIT 1",
+        [.text(key)]
+      )
+      return results.first
+    }
+  }
+
+  /// Loads `result`, an unloaded result whose query subscribes again, back among the stored results (#1006): it owns
+  /// its facts again, and its entities that left the store come back, from SQLite when it still holds them (facts this
+  /// device wrote that no stored result owned load only when one does), else from the result. An entity the store
+  /// still holds keeps what the store holds.
+  ///
+  /// Returns nil when the result is no longer unloaded.
+  func reloadUnloadedLiveQueryResult(
+    _ result: InstantPersistedLiveQueryResult,
+    residentEntityIDs: Set<String>
+  ) throws -> InstantUnloadedLiveQueryResultReload? {
+    var expected: (store: Int64, attributes: Int64, outbox: Int64, queryResults: Int64) = (0, 0, 0, 0)
+    var restoredEntityTriples: [String: [InstantTriple]] = [:]
+    let reload: InstantUnloadedLiveQueryResultReload? = try transaction {
+      guard
+        try selectScalar(
+          "SELECT 1 FROM instant_unloaded_live_query_results WHERE query_key = ? LIMIT 1",
+          [.text(result.key)]
+        ) != nil
+      else { return nil }
+      expected = (
+        try loadMetadataRevisionWithoutTransaction(Self.storeRevisionKey),
+        try loadMetadataRevisionWithoutTransaction(Self.attributeRevisionKey),
+        try loadMetadataRevisionWithoutTransaction(Self.outboxRevisionKey),
+        try loadMetadataRevisionWithoutTransaction(Self.queryResultRevisionKey)
+      )
+      var wroteTriples = false
+      var restoredFromResultCount = 0
+      var restoredFromSQLiteCount = 0
+      for (entityID, triples) in Dictionary(grouping: result.triples, by: \.entityID)
+      where !residentEntityIDs.contains(entityID) {
+        let stored: [InstantTriple] = try selectJSON(
+          "SELECT json FROM instant_triples WHERE entity_id = ?",
+          [.text(entityID)]
+        )
+        let restored: [InstantTriple]
+        if stored.isEmpty {
+          for triple in triples {
+            try insertTripleWithoutTransaction(triple)
+          }
+          wroteTriples = true
+          restoredFromResultCount += 1
+          restored = triples
+        } else {
+          restoredFromSQLiteCount += 1
+          restored = stored
+        }
+        // Deferred payloads stay in SQLite; the store reads them when a query selects them.
+        let resident = restored.filter { !deferredValueResidency.attributeIDs.contains($0.attributeID) }
+        if !resident.isEmpty {
+          restoredEntityTriples[entityID] = resident
+        }
+      }
+      try saveLiveQueryResultWithoutTransaction(result)
+      let storeRevision = wroteTriples
+        ? try bumpMetadataRevisionWithoutTransaction(Self.storeRevisionKey) : expected.store
+      _ = try bumpMetadataRevisionWithoutTransaction(Self.queryResultRevisionKey)
+      return InstantUnloadedLiveQueryResultReload(
+        result: result,
+        restoredTriples: restoredEntityTriples.values.flatMap { $0 },
+        restoredFromResultEntityCount: restoredFromResultCount,
+        restoredFromSQLiteEntityCount: restoredFromSQLiteCount,
+        storeChanged: wroteTriples,
+        storeRevision: storeRevision,
+        attributeRevision: expected.attributes
+      )
+    }
+    if let reload {
+      advanceCachedRevisionDomains(
+        expectedStoreRevision: expected.store,
+        expectedAttributeRevision: expected.attributes,
+        expectedOutboxRevision: expected.outbox,
+        expectedQueryResultRevision: expected.queryResults,
+        changedEntityTriples: restoredEntityTriples,
+        changedFactScope: InstantFactScope(),
+        mergingAttributes: [],
+        storeChanged: reload.storeChanged,
+        attributesChanged: false,
+        outboxChanged: false,
+        queryResultsChanged: true
+      )
+    }
+    return reload
   }
 
   /// Whether this app has any unrevoked share. Without one, shared-root authorization cannot
@@ -17096,6 +17331,8 @@ public actor SQLitePersistenceStore {
     try invalidateDeclaredRelationStorageMarkerIfNeeded(
       forAttributeIDs: Set(result.triples.map(\.attributeID))
     )
+    // A saved result supersedes the copy a prune unloaded (#1006): a key lives in one of the two tables.
+    try execute("DELETE FROM instant_unloaded_live_query_results WHERE query_key = ?", [.text(result.key)])
     let attributes = try attributesForLiveResultSaveWithoutTransaction()
     var result = result
     result.triples = InstantLiveQueryNestedLimit.limitedTriples(

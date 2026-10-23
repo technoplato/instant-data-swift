@@ -5027,6 +5027,9 @@ public final class InstantRuntime: Sendable {
         return Self.finishedQueryObservationLease()
       }
     }
+    if let liveRegistration {
+      await reloadUnloadedLiveQueryResult(registrationKey: liveRegistration.key, plan: plan)
+    }
     recordActorHop(.store)
     let localRegistrationStopwatch = configuration.startupTrace.stopwatch()
     let storeObservation = await store.observeQueryLease(
@@ -5300,6 +5303,10 @@ public final class InstantRuntime: Sendable {
       priority: .interactive
     )
     await liveQueryResultState.retain(key: registrationKey)
+    // A page whose answer about the rows above it must come from the server never seeds from a stored result.
+    if seedsFromStoredResult {
+      await reloadUnloadedLiveQueryResult(registrationKey: registrationKey, plan: plan)
+    }
     let existingPageInfo: InstantQueryPageInfo?
     do {
       existingPageInfo = try await instantLiveWithTimeout(
@@ -5953,6 +5960,74 @@ public final class InstantRuntime: Sendable {
     }
   }
 
+  /// Loads `registrationKey`'s result back if a prune unloaded it when its query closed, before the query's first
+  /// local answer (#1006). The caller holds the operation gate.
+  ///
+  /// Upstream `subscribeQuery` loads a closed query's stored result (`querySubs.waitForKeyToLoad`) and answers from it
+  /// before the server does. Here the result owns its facts again, and its entities that left the store come back, so
+  /// a reopened list, and every page of a paged one (its page info is stored with it), shows what it showed when it
+  /// closed instead of waiting for the server, one round trip per page. The server's answer replaces it as for any
+  /// stored result.
+  private func reloadUnloadedLiveQueryResult(registrationKey: String, plan: InstantQueryPlan) async {
+    let started = ContinuousClock.now
+    do {
+      recordActorHop(.persistence)
+      guard let unloaded = try await persistence.unloadedLiveQueryResult(key: registrationKey) else { return }
+      recordActorHop(.store)
+      let residentEntityIDs = await store.entityIDsWithFacts(among: Set(unloaded.triples.map(\.entityID)))
+      recordActorHop(.persistence)
+      guard
+        let reload = try await persistence.reloadUnloadedLiveQueryResult(
+          unloaded,
+          residentEntityIDs: residentEntityIDs
+        )
+      else { return }
+      if !reload.restoredTriples.isEmpty {
+        recordActorHop(.store)
+        let prepared = try await store.prepareCurrent(
+          InstantStoreTransaction(
+            id: "reload-\(configuration.makeID())",
+            operations: reload.restoredTriples.map(InstantTripleOperation.insert)
+          )
+        )
+        _ = await store.commitAndPublish(prepared)
+      }
+      if reload.storeChanged {
+        installedStoreRevisions.install(
+          storeRevision: reload.storeRevision,
+          attributeRevision: reload.attributeRevision
+        )
+      }
+      await liveQueryResultState.record(reload.result)
+      InstantDiagnostics.shared.record(
+        .info,
+        subsystem: "instant-swift-data-core",
+        category: "query",
+        event: "live-query-result.reloaded",
+        message: "#1006 Loaded a closed query's stored result back for its new subscription.",
+        metadata: [
+          "elapsedMilliseconds": String(InstantServerApplyGateTimeline.milliseconds(from: started, to: .now)),
+          "namespace": plan.namespace,
+          "registrationKey": registrationKey,
+          "restoredFromResultEntityCount": String(reload.restoredFromResultEntityCount),
+          "restoredFromSQLiteEntityCount": String(reload.restoredFromSQLiteEntityCount),
+          "tripleCount": String(reload.result.triples.count),
+        ],
+        correlationID: plan.id
+      )
+    } catch {
+      InstantDiagnostics.shared.record(
+        error: error,
+        subsystem: "instant-swift-data-core",
+        category: "query",
+        event: "live-query-result.reload-failed",
+        message: "#1006 Could not load a closed query's stored result back; the query waits for the server.",
+        metadata: ["namespace": plan.namespace, "registrationKey": registrationKey],
+        correlationID: plan.id
+      )
+    }
+  }
+
   private func liveQueryPageInfo(for registrationKey: String) async -> InstantQueryPageInfo? {
     if let pageInfo = await liveQueryResultState.pageInfo(for: registrationKey) {
       return pageInfo
@@ -6135,6 +6210,7 @@ public final class InstantRuntime: Sendable {
   ) async throws -> InstantLiveQueryResultPruningResult {
     var carried: Set<InstantLiveTripleIdentity> = []
     var removedQueryKeys: [String] = []
+    var unloadedQueryKeys: [String] = []
     var removedOrphanedTripleCount = 0
     var lastResult: InstantLiveQueryResultPruningResult?
     while true {
@@ -6152,6 +6228,7 @@ public final class InstantRuntime: Sendable {
         throw error
       }
       removedQueryKeys.append(contentsOf: application.result.removedQueryKeys)
+      unloadedQueryKeys.append(contentsOf: application.result.unloadedQueryKeys)
       removedOrphanedTripleCount += application.result.removedOrphanedTripleCount
       lastResult = application.result
       carried = application.retainedReleasedIdentities
@@ -6166,7 +6243,8 @@ public final class InstantRuntime: Sendable {
       remainingQueryKeys: lastResult?.remainingQueryKeys ?? [],
       removedOrphanedTripleCount: removedOrphanedTripleCount,
       remainingEntryCount: lastResult?.remainingEntryCount ?? 0,
-      remainingTripleCount: lastResult?.remainingTripleCount ?? 0
+      remainingTripleCount: lastResult?.remainingTripleCount ?? 0,
+      unloadedQueryKeys: unloadedQueryKeys
     )
   }
 
@@ -6219,6 +6297,7 @@ public final class InstantRuntime: Sendable {
         "remainingCount": String(application.result.remainingEntryCount),
         "remainingTripleCount": String(application.result.remainingTripleCount),
         "removedCount": String(application.result.removedQueryKeys.count),
+        "unloadedCount": String(application.result.unloadedQueryKeys.count),
         "removedOrphanedTripleCount": String(
           application.result.removedOrphanedTripleCount
         ),

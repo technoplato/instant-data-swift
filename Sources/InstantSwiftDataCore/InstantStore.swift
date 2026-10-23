@@ -3157,6 +3157,11 @@ public actor InstantStore {
     indexes.tripleCount
   }
 
+  /// The entities among `entityIDs` that the store holds a fact of (#1006).
+  func entityIDsWithFacts(among entityIDs: Set<String>) -> Set<String> {
+    entityIDs.filter { indexes.containsEntity($0, namespace: nil, attributes: attributes) }
+  }
+
   func activeQueryCacheKeys() -> Set<String> {
     Set(observers.values.map(\.plan.cacheKey))
   }

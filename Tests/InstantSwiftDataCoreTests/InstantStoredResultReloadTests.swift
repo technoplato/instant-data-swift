@@ -14,7 +14,7 @@ import Testing
 /// The session prune deleted a closed query's result and every entity only that result held (6c6760b4). Reopening a long
 /// list then waited on the server: its first page held only the rows other open queries kept, and each later page, a
 /// cursor page, showed nothing until the server answered it, one round trip after another, each answer applied behind
-/// the server applies that hold the operation gate. A transcript of 986 lines opened with 2 of them and a loading notice.
+/// the server applies that hold the operation gate.
 @Suite(.serialized, .timeLimit(.minutes(2)))
 struct InstantStoredResultReloadTests {
   /// The production pruning policy (`InstantRuntimeConfiguration.liveQueryResultPruningPolicy`).
@@ -142,6 +142,185 @@ struct InstantStoredResultReloadTests {
     reopened.unsubscribe()
     await keepAlive.cancel()
     _ = try await runtime.closeConnection()
+  }
+}
+
+extension InstantStoredResultReloadTests {
+  /// A value kept on disk rather than in memory (a transcript line's text and words) comes back with the reopened rows.
+  @Test
+  func aReopenedQueryHydratesTheDeferredValuesItsStoredResultKept() async throws {
+    let session = LiveReactorParitySession(messages: [liveReactorInitOK(attrs: liveReactorTodoServerAttrs)])
+    // A deferred value is one no query filters or orders by, so `text` is not indexed here.
+    let attributes = TodoExample.attributes.map { attribute in
+      var attribute = attribute
+      if attribute.id == "todos/text" { attribute.isIndexed = false }
+      return attribute
+    }
+    var configuration = InstantRuntimeConfiguration(
+      appID: "stored-result-reload-deferred",
+      persistenceURL: try Self.temporaryCacheURL(),
+      initialAttributes: attributes,
+      liveTransport: session.transport
+    )
+    configuration.deferredValueResidency = InstantDeferredValueResidencyPolicy(attributeIDs: ["todos/text"])
+    configuration.liveReconnectSleep = { _ in }
+    let runtime = try await InstantRuntime.bootstrap(configuration: configuration)
+
+    let keepAlive = await runtime.observeQueryLease(
+      InstantQueryPlan(
+        id: "todos.keep-alive",
+        namespace: TodoExample.namespace,
+        filters: [.equals(field: "isCompleted", value: .bool(true))]
+      )
+    )
+    _ = try await runtime.connect()
+    await session.enqueue(
+      liveReactorAddQueryOK(
+        query: try await Self.registeredQuery(number: 1, in: session),
+        processedTransactionID: "tx-keep-alive",
+        result: Self.todoResult([("todo-keep", "keep", 10)])
+      )
+    )
+    let list = await runtime.observeQueryLease(TodoExample.query)
+    await session.enqueue(
+      liveReactorAddQueryOK(
+        query: try await Self.registeredQuery(number: 2, in: session),
+        processedTransactionID: "tx-list",
+        result: Self.todoResult([("todo-1", "one", 1), ("todo-2", "two", 2)])
+      )
+    )
+    _ = try await Self.emission(of: list.stream, operation: "show the server's list") {
+      Set(["todo-1", "todo-2"]).isSubset(of: $0.values.map(\.id))
+    }
+    await list.cancel()
+    try await Self.waitForOp("remove-query", count: 1, in: session)
+    _ = try await runtime.pruneLiveQueryResults(policy: Self.productionPolicy, now: Self.pruneTime)
+
+    let reopened = await runtime.observeQueryLease(TodoExample.query)
+    let first = try await Self.emission(of: reopened.stream, operation: "reopen the list") { _ in true }
+    let texts = try TodoExample.decode(first.values).map(\.text)
+    expectNoDifference(texts, ["one", "two", "keep"], "#1006: deferred values come back with the reopened rows")
+
+    await reopened.cancel()
+    await keepAlive.cancel()
+    _ = try await runtime.closeConnection()
+  }
+
+  /// Unloaded results count toward the policy's limits and go first, oldest first; an open query's result never goes.
+  @Test
+  func thePolicyCollectsUnloadedResultsOldestFirst() async throws {
+    let persistence = try SQLitePersistenceStore(fileURL: try Self.temporaryCacheURL())
+    try await persistence.bootstrap()
+    let results = (0..<5).map { index in
+      InstantPersistedLiveQueryResult(
+        replacement: InstantLiveQueryResultReplacement(
+          key: "query-\(index)",
+          triples: Self.todoTriples(index: index),
+          pageInfo: nil
+        ),
+        updatedAt: InstantTimestamp(milliseconds: Int64(index + 1))
+      )
+    }
+    try await Self.save(results, in: persistence)
+
+    // Query 4 stays open: the session prune unloads 0 through 3.
+    let unload = try await persistence.pruneLiveQueryResults(
+      policy: Self.productionPolicy,
+      now: InstantTimestamp(milliseconds: 10),
+      preservingQueryKeys: ["query-4"]
+    )
+    expectNoDifference(unload.result.unloadedQueryKeys.sorted(), ["query-0", "query-1", "query-2", "query-3"])
+    expectNoDifference(unload.result.remainingQueryKeys, ["query-4"])
+    for index in 0..<4 {
+      #expect(try await persistence.unloadedLiveQueryResult(key: "query-\(index)") != nil)
+    }
+
+    // Three results at most, loaded and unloaded together: the two oldest unloaded go.
+    _ = try await persistence.pruneLiveQueryResults(
+      policy: InstantLiveQueryResultPruningPolicy(maxEntries: 3),
+      now: InstantTimestamp(milliseconds: 11),
+      preservingQueryKeys: ["query-4"]
+    )
+    var kept: [String] = []
+    for index in 0..<4 where try await persistence.unloadedLiveQueryResult(key: "query-\(index)") != nil {
+      kept.append("query-\(index)")
+    }
+    expectNoDifference(kept, ["query-2", "query-3"])
+
+    // Past the age limit, the rest go too.
+    _ = try await persistence.pruneLiveQueryResults(
+      policy: InstantLiveQueryResultPruningPolicy(maxAgeMilliseconds: 5),
+      now: InstantTimestamp(milliseconds: 100),
+      preservingQueryKeys: ["query-4"]
+    )
+    for index in 0..<4 {
+      #expect(try await persistence.unloadedLiveQueryResult(key: "query-\(index)") == nil)
+    }
+  }
+
+  /// A result the server sends again for a key replaces the copy a prune unloaded: a key lives in one table.
+  @Test
+  func aSavedResultSupersedesItsUnloadedCopy() async throws {
+    let persistence = try SQLitePersistenceStore(fileURL: try Self.temporaryCacheURL())
+    try await persistence.bootstrap()
+    let open = InstantPersistedLiveQueryResult(
+      replacement: InstantLiveQueryResultReplacement(key: "query-open", triples: Self.todoTriples(index: 0), pageInfo: nil),
+      updatedAt: InstantTimestamp(milliseconds: 1)
+    )
+    let closed = InstantPersistedLiveQueryResult(
+      replacement: InstantLiveQueryResultReplacement(key: "query-closed", triples: Self.todoTriples(index: 1), pageInfo: nil),
+      updatedAt: InstantTimestamp(milliseconds: 2)
+    )
+    try await Self.save([open, closed], in: persistence)
+    _ = try await persistence.pruneLiveQueryResults(
+      policy: Self.productionPolicy,
+      now: InstantTimestamp(milliseconds: 3),
+      preservingQueryKeys: ["query-open"]
+    )
+    #expect(try await persistence.unloadedLiveQueryResult(key: "query-closed") != nil)
+
+    var answered = closed
+    answered.updatedAt = InstantTimestamp(milliseconds: 4)
+    try await Self.save([answered], in: persistence)
+    #expect(try await persistence.unloadedLiveQueryResult(key: "query-closed") == nil)
+  }
+
+  static func todoTriples(index: Int) -> [InstantTriple] {
+    TodoExample.createOperations(
+      id: "todo-\(index)",
+      text: "Todo \(index)",
+      createdAt: InstantTimestamp(milliseconds: Int64(index + 1)),
+      transactionID: "seed-todo-\(index)"
+    ).compactMap { operation in
+      guard case let .insert(triple) = operation else { return nil }
+      return triple
+    }
+  }
+
+  /// Saves `results` and their facts as a server refresh does.
+  static func save(
+    _ results: [InstantPersistedLiveQueryResult],
+    in persistence: SQLitePersistenceStore
+  ) async throws {
+    let state = try await persistence.loadCompactState()
+    var triples = state.snapshot.store.triples
+    triples.append(contentsOf: results.flatMap(\.triples))
+    let didSave = try await persistence.saveLiveRefresh(
+      InstantPersistenceSnapshot(
+        store: InstantStoreSnapshot(attributes: TodoExample.attributes, triples: triples),
+        outbox: []
+      ),
+      queryResults: results,
+      storeChanged: true,
+      outboxChanged: false,
+      metadataKey: "test.stored-result-reload",
+      metadataValue: "seeded",
+      metadataUpdatedAt: results.map(\.updatedAt).max() ?? InstantTimestamp(milliseconds: 0),
+      expectedStoreRevision: state.storeRevision,
+      expectedOutboxRevision: state.outboxRevision,
+      expectedAttributeRevision: state.attributeRevision
+    )
+    expectNoDifference(didSave, true)
   }
 }
 
