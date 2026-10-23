@@ -310,7 +310,7 @@ struct InstantRoomPresenceRuntimeTests {
       for await messages in stream { await received.record(messages) }
     }
     defer { reader.cancel() }
-    try await waitForRoom("all five broadcasts to be readable after the burst", timeoutMilliseconds: 5_000) {
+    try await waitForRoom("all five broadcasts to be readable after the burst") {
       let indexes = await received.last?.compactMap { message -> Double? in
         guard case let .object(payload) = message.payload, case let .number(index)? = payload["index"] else {
           return nil
@@ -1116,9 +1116,10 @@ struct RoomWaitTimedOut: Error, CustomStringConvertible {
 }
 
 /// Polls `condition` every 2 ms for at most `timeoutMilliseconds` (5 s by default, the codebase's timeout rule).
+// Polls up to the hang bound (#1021: fixed 5 s bounds failed runs that were still moving under the bundle's load).
 func waitForRoom(
   _ description: String,
-  timeoutMilliseconds: Int = 5_000,
+  timeoutMilliseconds: Int = Int(InstantTestWait.hangMilliseconds),
   _ condition: @Sendable () async throws -> Bool
 ) async throws {
   let deadline = ContinuousClock.now + .milliseconds(timeoutMilliseconds)

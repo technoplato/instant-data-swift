@@ -51,7 +51,7 @@ struct InstantSyncTaskPriorityTests {
     }.value
     try await instantLiveWithTimeout(
       operation: "wait for the write and its acknowledgement to pass the loopback",
-      timeoutMilliseconds: 5_000
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds
     ) {
       while loopback.observed().receives.count < 3 || loopback.observed().transactSends.isEmpty {
         try Task.checkCancellation()
