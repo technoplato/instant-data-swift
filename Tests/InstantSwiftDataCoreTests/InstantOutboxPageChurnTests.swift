@@ -93,6 +93,54 @@ struct InstantOutboxPageChurnTests {
     _ = try? await fixture.runtime.closeConnection()
   }
 
+  /// The outbox keeps no index its statements cannot use (#1007): every insert, claim, acknowledgement and delete of a
+  /// row writes a page of each index, and no statement's plan used `instant_outbox_delivery_window_idx` (its leading
+  /// column is the claim state, which the deadline index leads with too and serves).
+  @Test
+  func theOutboxKeepsNoIndexItsStatementsCannotUse() async throws {
+    var fixture = try await FastDrainFixture.make(
+      suffix: "page-churn-indexes",
+      serverSegmentCount: 2,
+      pendingSegmentCount: 1
+    )
+    let indexes = try Self.rows(
+      "SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'instant_outbox' ORDER BY name",
+      in: fixture.configuration.persistenceURL
+    ).map { $0[0] }
+    #expect(indexes.contains("instant_outbox_delivery_deadline_idx"))
+    #expect(!indexes.contains("instant_outbox_delivery_window_idx"), "indexes: \(indexes)")
+    _ = try? await fixture.runtime.closeConnection()
+  }
+
+  /// An acknowledgement moves the row only in the indexes whose columns it changes (#1007). It set the optimistic
+  /// overlay flag to the value it already held, and SQLite rewrites a row's entry in every index holding a column an
+  /// `UPDATE` sets, changed or not: three indexes rewritten for nothing on every acknowledgement.
+  @Test
+  func anAcknowledgementLeavesTheIndexesOfColumnsItDoesNotChange() async throws {
+    var fixture = try await FastDrainFixture.make(
+      suffix: "page-churn-ack-indexes",
+      serverSegmentCount: 4,
+      pendingSegmentCount: 1
+    )
+    let (token, mutations) = try await fixture.claimWindow()
+    let mutation = try #require(mutations.first)
+    let pagesBefore = await fixture.runtime.sqlitePagesWrittenForTesting()
+
+    let transactionID = fixture.server.accept(mutation.transaction.operations)
+    _ = try await fixture.runtime.acceptMutationIfPresent(
+      id: mutation.id,
+      serverTransactionID: transactionID,
+      claimToken: token
+    )
+
+    let pages = await fixture.runtime.sqlitePagesWrittenForTesting().pages - pagesBefore.pages
+    print("outbox-page-churn: one acknowledgement wrote \(pages) pages")
+    // The row's leaf, the deadline, delivery-metadata and watermark indexes it moves, its lifecycle and the revision
+    // row: about six pages, against nine with the unused window index and the three rewritten overlay indexes.
+    #expect(pages <= 6, "one acknowledgement wrote \(pages) pages")
+    _ = try? await fixture.runtime.closeConnection()
+  }
+
   // MARK: - Helpers
 
   /// Every row `sql` returns, each column as text, read through a second, read-only connection.
