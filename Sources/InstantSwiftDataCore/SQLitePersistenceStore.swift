@@ -12,6 +12,7 @@
 //   rewrote unchanged rows to new pages on every write (#1007).
 // - 2026-10-23: a server-apply commit times its parts (validation, facts, outbox, results, bookkeeping, the SQLite
 //   COMMIT) for the gate-held event (#932).
+// - 2026-10-23: the resident-patch page reads only the staged rows among the ids it is given (#932).
 
 import Foundation
 import IssueReporting
@@ -6122,8 +6123,10 @@ public actor SQLitePersistenceStore {
     return commit
   }
 
+  /// One page of the staged rows among `mutationIDs`, the rows the resident outbox holds (#932), in creation order.
   func loadServerApplyResidentPatchPage(
     planID: String,
+    among mutationIDs: Set<String>,
     after position: InstantOutboxDeliveryPosition?
   ) throws -> InstantServerApplyResidentPatchPage {
     var sql =
@@ -6133,8 +6136,9 @@ public actor SQLitePersistenceStore {
                   ELSE length(CAST(staged_lifecycle_json AS BLOB)) END
       FROM instant_server_apply_rows
       WHERE plan_id = ? AND staged = 1
+        AND mutation_id IN (SELECT value FROM json_each(?))
       """
-    var bindings: [SQLiteBinding] = [.text(planID)]
+    var bindings: [SQLiteBinding] = [.text(planID), .text(try encode(mutationIDs.sorted()))]
     if let position {
       sql +=
         """

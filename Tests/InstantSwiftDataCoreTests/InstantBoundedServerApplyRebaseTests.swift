@@ -249,6 +249,10 @@ struct InstantBoundedServerApplyRebaseTests {
         outbox: mutations
       )
     )
+    // The patch reads only the rows the resident outbox holds (#932); hold both, so their pages are read.
+    for mutation in mutations {
+      await runtime.outbox.replace(mutation)
+    }
     await runtime.persistence.resetServerApplyMetricsForTesting()
 
     _ = try await runtime.applyServerTransaction(

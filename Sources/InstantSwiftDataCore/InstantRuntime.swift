@@ -4,6 +4,8 @@
 // - 2026-10-23: the server apply's gate-held event names its path (reduced, or why it peeled and replayed its whole
 //   component), its attempt, the writes it peeled and replayed, and where its commit spent its time inside the
 //   persistence actor (#932).
+// - 2026-10-23: a server apply's resident-outbox patch reads only the rows the in-memory outbox holds, in one outbox
+//   turn per page; it read and decoded every staged row, 0.8-1.3 s of the gate at 2,560 pending (#932).
 
 import Foundation
 import IssueReporting
@@ -3518,22 +3520,24 @@ public final class InstantRuntime: Sendable {
 
         gateTimeline.publishEndedAt = ContinuousClock.now
         operationGate.markHolderPhase("patch resident outbox")
+        // #932: the resident outbox holds only the claimed delivery window (a cold start holds none), and a row it does
+        // not hold is a no-op for `replaceIfPresent` and `remove(id:)`, so only its rows are read. Reading and decoding
+        // every staged row, one outbox hop each, cost 0.8-1.3 s of this gate at the phone's 2,560 pending. The gate is
+        // held, so the window cannot change while it is patched.
+        recordActorHop(.outbox)
+        let residentMutationIDs = await outbox.residentMutationIDs()
         var patchPosition: InstantOutboxDeliveryPosition?
-        while true {
+        while !residentMutationIDs.isEmpty {
           recordActorHop(.persistence)
           let patch = try await persistence.loadServerApplyResidentPatchPage(
             planID: plan.id,
+            among: residentMutationIDs,
             after: patchPosition
           )
           guard !patch.removedMutationIDs.isEmpty || !patch.replacementMutations.isEmpty
           else { break }
           recordActorHop(.outbox)
-          for mutationID in patch.removedMutationIDs {
-            await outbox.remove(id: mutationID)
-          }
-          for mutation in patch.replacementMutations {
-            await outbox.replaceIfPresent(mutation)
-          }
+          await outbox.patch(removing: patch.removedMutationIDs, replacingPresent: patch.replacementMutations)
           patchPosition = patch.nextPosition
         }
         gateTimeline.patchEndedAt = ContinuousClock.now
