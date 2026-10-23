@@ -1,3 +1,22 @@
+## 2026-10-23 19:24:30 EDT — v1.9.26: the live connection's status says what the socket is (#1024); carries 1.9.25 (#932, #590), 1.9.24, 1.9.23, #932's notice level and #1012's progressive media
+
+- **Commits:** red `fa1f1036`, green `8dc5c3ec`; release document `48df79da`; then this ledger commit and the tag v1.9.26.
+- **Why:** a one-shot query that was cancelled, answered too late or answered with a server error (and a live
+  observation's, stream reader's or share observation's own failure) stored the connection's state as `.errored`;
+  nothing rewrote it while the socket stayed open. On builds 114-116 the consuming app then read offline for hours
+  while every write was accepted (its recording, playback and list screens said Offline, its storage cleanup waited for
+  `.authenticated`, its health beat read conn=failed every 5 s). Not a 1.9.14-1.9.18 regression: the same test is red
+  on v1.9.13 and v1.9.18, and the defect dates from July. Upstream `Reactor.js` sets `ERRORED` only when `init` fails.
+- **Checks (laptop, Xcode 27 beta, debug):** `InstantConnectionStateTruthTests` red (12 of 12 statuses `.errored` during
+  three accepted writes) then green; 198 tests in 10 related suites pass; the whole bundle on `c372d23b` against #1021's
+  list: 1,394 tests, 30 failing, 28 listed, the other two a footprint bound that passes alone 3/3 and the codec speed
+  comparison that fails alone on 1.9.24 too. Beat replay through the consuming app's own SessionHealth code: 12 -> 2
+  beats a minute, conn=open 0% -> 100%, silentReopens one per accepted write -> 0.
+  After the rebase onto #932's `c91e8c0b`: 198 of 198 related tests pass.
+- **Next:** the consuming app and its Playback app pin exactly 1.9.26 for build 118; the lab checks on the device that
+  every beat reads conn=open at the 30 s cadence with silentReopens 0 while the socket stays open. Candidate follow-up:
+  a stream reader that gives up after 11 file fetches still stores `.errored` without reconnecting.
+
 ## 2026-10-23 19:14:11 EDT — #932: a server apply's gate hold of 250-999 ms is logged at notice (on main, no tag; the next tag carries it)
 
 - **Commits (main):** red `872017cd`, green `c91e8c0b`; then this ledger commit.

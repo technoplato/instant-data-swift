@@ -1,3 +1,15 @@
+## 2026-10-23 19:24:30 EDT — instant-data-swift `48df79da7d77aa2b4ec60fabce4995b60dd9ad3a`
+The v1.9.26 release document (#1024): the live connection's status says what the socket is.
+
+## 2026-10-23 19:24:30 EDT — instant-data-swift `8dc5c3ec` (green)
+Green (#1024): a live operation's own failure (a cancelled, late or server-errored one-shot query; an observation's, stream reader's or share's) no longer stores the open connection as .errored; drops and failed opens still do. 198/198 related tests; the whole bundle compares clean but for a footprint bound that passes alone and the codec speed comparison that fails on 1.9.24 too.
+
+## 2026-10-23 19:24:30 EDT — instant-data-swift `fa1f1036` (red)
+Red test (#1024): InstantConnectionStateTruthTests: 12 of 12 statuses .errored during three accepted writes after one failed one-shot query; identically red on v1.9.13 and v1.9.18.
+
+## 2026-10-23 19:24:30 EDT — realtime-voice `72610ff33`
+Plan (#1024): conn-status-1024-pin's plan and touch claims for pinning instant-data-swift 1.9.26.
+
 ## 2026-10-23 19:18:20 EDT — scribe `77cabf1a664cca5213d3f7379c4e7a08ce9be947`
 The hidden list's row in the recording-screen audit and What's New for build 118 (#1007).
 

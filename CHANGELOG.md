@@ -10,6 +10,43 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## October 23rd, 2026 at 7:24:19 p.m. EDT — `48df79da7d77` Document the v1.9.26 release: the live connection's status says what the socket is (#1024)
+
+- **Implementation commit:** `48df79da7d77aa2b4ec60fabce4995b60dd9ad3a`
+- **Change:** Document the v1.9.26 release: the live connection's status says what the socket is (#1024)
+- **Details:**
+  - Release focus, the device evidence (builds 114-116), the red/green and whole-bundle checks, the beat replay through the consuming app's own session-health code (12 -> 2 beats a minute, conn=open 0% -> 100%, silentReopens per write -> 0), and what a device must still show.
+- **Files:**
+  - `docs/releases/v1.9.26.md` — the release document
+- **User context (verbatim):**
+  > I want to make sure we're still syncing in real time.
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run); no SpecStory capture for headless runs.
+
+## October 23rd, 2026 at 7:24:19 p.m. EDT — `8dc5c3ec7a69` Green (#1024): a live operation's own failure no longer stores the open connection as errored
+
+- **Implementation commit:** `8dc5c3ec7a69ff31d6f294fcb188490bf6cbea0a`
+- **Change:** Green (#1024): a live operation's own failure no longer stores the open connection as errored
+- **Details:**
+  - queryOnceThroughLive no longer records its answer wait's failure (cancelled, late, a server error) as the connection's and does not log a cancellation as query.live-ack-timeout; queryOnce logs a cancellation at debug as query-once.cancelled; the live observation, stream reader and share paths log their own event (recordLiveOperationFailure) instead of storing .errored. Unchanged: drops, failed opens, the synchronization blocker, and the explicit flush's mutation transport (recordMutationTransportFailure). Upstream Reactor.js sets ERRORED only when init fails.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — recordLiveOperationFailure, recordMutationTransportFailure, the one-shot query catch
+  - `Tests/InstantSwiftDataCoreTests/InstantLiveTransportTests.swift` — the cursor-mismatch test expects the diagnostic, not an errored status
+- **User context (verbatim):**
+  > I want to make sure we're still syncing in real time.
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run); no SpecStory capture for headless runs.
+
+## October 23rd, 2026 at 7:24:19 p.m. EDT — `fa1f10366182` Red (#1024): a cancelled one-shot query, or a server error for one add-query, leaves the open connection reading errored
+
+- **Implementation commit:** `fa1f10366182eeac73fbf39bfab111f595d962fe`
+- **Change:** Red (#1024): a cancelled one-shot query, or a server error for one add-query, leaves the open connection reading errored
+- **Details:**
+  - InstantConnectionStateTruthTests: a scripted socket, a one-shot query cancelled before its answer or answered with a 500 operation-timed-out, then three writes the server accepts; on main all 12 statuses published during the writes said .errored and the status after said .errored with lastErrorMessage CancellationError(); identically red on v1.9.13 and v1.9.18. A dropped socket reads .errored (passes before and after).
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantConnectionStateTruthTests.swift` — the red tests
+- **User context (verbatim):**
+  > I want to make sure we're still syncing in real time.
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run); no SpecStory capture for headless runs.
+
 ## October 23rd, 2026 at 7:14:11 p.m. EDT — `c91e8c0b1072` Green (#932): a server apply's gate hold of 250-999 ms is logged at notice, so each arrives with its fields
 
 - **Implementation commit:** `c91e8c0b1072fb1202d96110b11fcb987a97e78e`
