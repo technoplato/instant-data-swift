@@ -1,3 +1,15 @@
+## 2026-10-23 16:41:41 EDT — scribe `157c811cf4836048f86a1a62c18426bb44a9693e`
+The untethered-telemetry audit (#1011): build 116 in the field (every line names its app; 14.0% median unmetered while recording in front).
+
+## 2026-10-23 16:40:22 EDT — scribe `69d5df963a61559b1c7e7e68bdf02a9b48b9e795`
+Green (#1011): the storage walk (#369, every 10 minutes) is its own cost in the energy ledger, storage.walk.
+
+## 2026-10-23 16:39:33 EDT — scribe `e96c5784ee1d3b8c247e2e26227a86521e9057ac`
+Red test (#1011): theStorageWalkIsMetered; EnergySubsystem.storageWalk.
+
+## 2026-10-23 16:33:02 EDT — scribe `8047dd20673ab17acce5e615ebf81f52b283eaa0`
+The untethered-telemetry audit (#1011): the server apply's paths counted for build 117.
+
 ## 2026-10-23 16:36:40 EDT — instant-data-swift `3a14d26ec6bf25978b6ecaf1c9fc67d306f3098b`
 The v1.9.22 release document (#1015): the local cache gives back the pages it frees, with one VACUUM when they are worth it.
 
