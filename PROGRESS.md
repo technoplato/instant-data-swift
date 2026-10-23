@@ -1,3 +1,15 @@
+## 2026-10-23 14:49:00 EDT — v1.9.17: a page with includes skips a change it cannot show (#1007); carries 1.9.16 (#1011)
+
+- **Commits:** plan `9275b02e`; red `3c2c2023`, green `b7e619bf` (the include skip); red `ffbd23d9`, green `023ff4af`
+  (placement reads only the plan's fields); release document `acd2c8b4`; then this ledger commit and the tag v1.9.17.
+- **Checks:** `InstantIncludePlanSkipTests` and `InstantResultSetMembershipCostTests` red then green; 505 tests of the 12
+  suites that count observer refreshes show no failure the 1.9.15 tree lacks; the whole bundle on a Mac mini fails 147
+  against 144, and the five that differ pass alone three times each; on this tree with 1.9.16 under it, the 10 suites of
+  both releases' fixes (85 tests) pass. The write harness with the recordings list as seven pages: instructions
+  221.6-224.8 -> 163.7-166.3 G (-26%), observer refresh 19.4-22.8 -> 10.0-11.1 ms per write.
+- **Next:** the consuming app pins exactly 1.9.17; on a device, `instant:observerRefresh` while recording with the list's
+  pages open. Then the live-query prune (whole-store copy and index rebuild, #654).
+
 ## 2026-10-23 14:33:45 EDT — v1.9.16: the energy meter keeps each operation's main-thread CPU; the server apply's staging and retractions have their own names (#1011); carries 1.9.15 and 1.9.14
 
 - **Commits:** red `6e54ca7c`, green `a05f7c46`, release document `b6db6174`; then this ledger commit and the tag v1.9.16.

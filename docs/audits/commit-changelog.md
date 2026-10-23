@@ -1,3 +1,21 @@
+## 2026-10-23 14:48:02 EDT — instant-data-swift `acd2c8b41add22cc7dffb2e0915f4cd7b507ac80`
+Release document for v1.9.17 (#1007): a page with includes skips a change it cannot show, and placing an entity in a result set reads only the plan's fields; carries 1.9.16 (#1011).
+
+## 2026-10-23 14:46:34 EDT — instant-data-swift `023ff4afb098eb8d743a0b0a7b6395c46f24e584`
+Green (#1007): resultSetMembership reads only the fields the plan's filters and order name (a 4,000-link recording placed at under 10x a plain row's cost, was 1,070x).
+
+## 2026-10-23 14:46:34 EDT — instant-data-swift `ffbd23d98bad17a69a9977d76d069b90fd62b64c`
+Red test (#1007): InstantResultSetMembershipCostTests, placing a recording materialized every link set it holds.
+
+## 2026-10-23 14:46:34 EDT — instant-data-swift `b7e619bf0678f5c5f8119fb2618e3787b6e5fd5c`
+Green (#1007): a verified page with includes skips a change no shown entity holds, no link to a shown entity makes, and no root moves for; TripleIndexes.hasLink.
+
+## 2026-10-23 14:46:34 EDT — instant-data-swift `3c2c2023ef06b15fe17bde73b1928406ca75a2f0`
+Red test (#1007): InstantIncludePlanSkipTests, every page of a list with includes refreshed for a change only one page, or none, can show.
+
+## 2026-10-23 14:46:34 EDT — instant-data-swift `9275b02e8008ef5276e7460f3a0b853a8e50878c`
+Plan 2026-10-23-hotpath-1007 (#1007): the include skip, field-only placement and the live-query prune claim their files.
+
 ## 2026-10-23 14:33:45 EDT — instant-data-swift `b6db617435c1b750756040b75e10e482664e2cf3`
 Release document for v1.9.16 (#1011): each operation's main-thread CPU; serverApplyStage and serverApplyRetractions.
 

@@ -10,6 +10,81 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## October 23rd, 2026 at 2:48:18 p.m. EDT — `acd2c8b41add` Document the v1.9.17 release: a page with includes skips a change it cannot show (#1007)
+
+- **Implementation commit:** `acd2c8b41add22cc7dffb2e0915f4cd7b507ac80`
+- **Change:** Document the v1.9.17 release: a page with includes skips a change it cannot show (#1007)
+- **Details:**
+  - Release document: the include skip and the field-only placement check; the related suites and the whole suite against 1.9.15's tree on the same machine; the harness's before and after with seven list pages; carries 1.9.16 (#1011).
+- **Files:**
+  - `docs/releases/v1.9.17.md` — the release document
+- **User context (verbatim):**
+  > I want to optimize the performance of the application with its exact feature set.
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run); no SpecStory capture for headless runs.
+
+## October 23rd, 2026 at 2:48:18 p.m. EDT — `023ff4afb098` Green (#1007): placing an entity in a result set reads only the fields its plan's filters and order name
+
+- **Implementation commit:** `023ff4afb098eb8d743a0b0a7b6395c46f24e584`
+- **Change:** Green (#1007): placing an entity in a result set reads only the fields its plan's filters and order name
+- **Details:**
+  - resultSetMembership reads the plan's filter and order fields from the entity's facts and is nil exactly when the whole snapshot is; dotted plans keep the whole snapshot. Harness with 7 list pages: instructions -26%, observer refresh 19.6 -> 10.3 ms per write.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/TripleIndexes.swift` — membershipSnapshot, membershipFields
+- **User context (verbatim):**
+  > I want to optimize the performance of the application with its exact feature set.
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run); no SpecStory capture for headless runs.
+
+## October 23rd, 2026 at 2:48:18 p.m. EDT — `ffbd23d98bad` Red (#1007): placing a recording in a page's result set materializes every link set it holds
+
+- **Implementation commit:** `ffbd23d98bad17a69a9977d76d069b90fd62b64c`
+- **Change:** Red (#1007): placing a recording in a page's result set materializes every link set it holds
+- **Details:**
+  - InstantResultSetMembershipCostTests: placing a 4,000-link recording cost 1,070 times placing a plain row; the include skip alone raised the harness's finals from 1,326 to 1,862 M instructions. A random equivalence test passes before and after.
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantResultSetMembershipCostTests.swift` — the red tests
+- **User context (verbatim):**
+  > I want to optimize the performance of the application with its exact feature set.
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run); no SpecStory capture for headless runs.
+
+## October 23rd, 2026 at 2:48:17 p.m. EDT — `b7e619bf0678` Green (#1007): a page with includes skips a change it cannot show
+
+- **Implementation commit:** `b7e619bf0678f5c5f8119fb2618e3787b6e5fd5c`
+- **Change:** Green (#1007): a page with includes skips a change it cannot show
+- **Details:**
+  - refreshDecision skips a verified plan with includes when no changed entity is shown, none is linked to a shown entity before or after, and none moves in or out of the root set; TripleIndexes.hasLink probes each link from its smaller side. 6/6 plus no new failures in 503 related tests.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantStore.swift` — the include skip in refreshDecision, the history line
+  - `Sources/InstantSwiftDataCore/TripleIndexes.swift` — hasLink
+  - `Tests/InstantSwiftDataCoreTests/InstantIncludePlanSkipTests.swift` — the direct hasLink test
+- **User context (verbatim):**
+  > I want to optimize the performance of the application with its exact feature set.
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run); no SpecStory capture for headless runs.
+
+## October 23rd, 2026 at 2:48:17 p.m. EDT — `3c2c2023ef06` Red (#1007): every page of a list with includes refreshes for a change only one page, or none, can show
+
+- **Implementation commit:** `3c2c2023ef06b15fe17bde73b1928406ca75a2f0`
+- **Change:** Red (#1007): every page of a list with includes refreshes for a change only one page, or none, can show
+- **Details:**
+  - InstantIncludePlanSkipTests: a heartbeat, a line or a hidden attachment of a recording one page shows refreshed all three pages; an attachment linked to no shown recording refreshed all three; four tests failed. A random every-page-current test over six seeds passes before and after.
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantIncludePlanSkipTests.swift` — the red tests
+- **User context (verbatim):**
+  > I want to optimize the performance of the application with its exact feature set.
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run); no SpecStory capture for headless runs.
+
+## October 23rd, 2026 at 2:48:17 p.m. EDT — `9275b02e8008` Plan: #1007's include skip, field-only placement and the live-query prune claim their files
+
+- **Implementation commit:** `9275b02e8008ef5276e7460f3a0b853a8e50878c`
+- **Change:** Plan: #1007's include skip, field-only placement and the live-query prune claim their files
+- **Details:**
+  - Plan 2026-10-23-hotpath-1007 and _touching claims for InstantStore (refreshDecision), TripleIndexes, InstantRuntime and SQLitePersistenceStore (the prune), the tests and the ledgers.
+- **Files:**
+  - `agent-presence/claude-code-hotpath-1007/plans/2026-10-23-hotpath-1007/PLAN.md` — the plan
+  - `_touching/Sources@InstantSwiftDataCore@TripleIndexes.swift/Sources@InstantSwiftDataCore@TripleIndexes.swift/.agents/agents.txt` — one of the plan's claims (each file it names has one)
+- **User context (verbatim):**
+  > I want to optimize the performance of the application with its exact feature set.
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run); no SpecStory capture for headless runs.
+
 ## October 23rd, 2026 at 2:33:37 p.m. EDT — `b6db617435c1` Document the v1.9.16 release: the energy meter keeps each operation's main-thread CPU, and the server apply's staging and retractions have their own names (#1011)
 
 - **Implementation commit:** `b6db617435c1b750756040b75e10e482664e2cf3`
