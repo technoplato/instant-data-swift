@@ -858,6 +858,9 @@ package struct InstantServerApplyMetrics: Equatable, Sendable {
   /// Checks of every row of a plan against the outbox (#932): each reads the outbox columns stored after a row's body,
   /// so a check costs the whole plan's bodies in page reads.
   package var wholePlanValidationCount = 0
+  /// Ownership rows a commit read, and result values it encoded, to save restated results (#932).
+  package var commitResultOwnershipRowReadCount = 0
+  package var commitResultValueEncodeCount = 0
   package var maximumResidentPatchPageCount = 0
   package var maximumResidentPatchPageByteCount = 0
   package var commitAttemptCount = 0
@@ -1049,6 +1052,9 @@ public actor SQLitePersistenceStore {
   }
   private var liveQueryResultJSON = LiveQueryResultJSONState()
   private var liveQueryResultJSONWriteIntervalMilliseconds: Int64 = 30_000
+  /// Ownership rows read and result values encoded to save live-query results, for the commit's metrics (#932).
+  private var liveQueryOwnershipRowReadCount = 0
+  private var liveQueryResultValueEncodeCount = 0
   private var liveQueryResultJSONFlushSleep: @Sendable (_ milliseconds: UInt64) async throws -> Void = { milliseconds in
     try await Task.sleep(nanoseconds: milliseconds * 1_000_000)
   }
@@ -6135,9 +6141,13 @@ public actor SQLitePersistenceStore {
       }
       clock.end(\.outboxMilliseconds)
 
+      let ownershipRowReadsBefore = liveQueryOwnershipRowReadCount
+      let valueEncodesBefore = liveQueryResultValueEncodeCount
       for result in queryResults {
         try saveLiveQueryResultWithoutTransaction(result, deferringJSON: true)
       }
+      serverApplyMetrics.commitResultOwnershipRowReadCount += liveQueryOwnershipRowReadCount - ownershipRowReadsBefore
+      serverApplyMetrics.commitResultValueEncodeCount += liveQueryResultValueEncodeCount - valueEncodesBefore
       // A query that keeps refreshing writes its newest result once per interval (#566).
       try flushDeferredLiveQueryResultsWithoutTransaction(dueAt: metadataUpdatedAt.milliseconds)
       clock.end(\.resultsMilliseconds)
@@ -17560,6 +17570,7 @@ public actor SQLitePersistenceStore {
       triples: Array(result.triples),
       attributes: attributes
     )
+    liveQueryResultValueEncodeCount += result.triples.count
     let nextOwnership = try Set(
       result.triples.map { triple in
         LiveQueryOwnershipIdentity(
@@ -17681,7 +17692,10 @@ public actor SQLitePersistenceStore {
     var ownership: Set<LiveQueryOwnershipIdentity> = []
     while true {
       let code = sqlite3_step(statement)
-      if code == SQLITE_DONE { return ownership }
+      if code == SQLITE_DONE {
+        liveQueryOwnershipRowReadCount += ownership.count
+        return ownership
+      }
       guard code == SQLITE_ROW else {
         throw persistenceError(
           operation: "read live-query ownership",

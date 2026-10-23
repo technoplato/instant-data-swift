@@ -143,6 +143,42 @@ struct InstantServerApplyGateWorkTests {
     expectNoDifference(declines, [:])
     expectNoDifference(measurement.rebases, 0)
   }
+
+  /// Every refresh restates whole query results, and the commit read each restated result's ownership rows and encoded
+  /// every value to diff them, under the gate: 87-140 ms a frame for 7,287 facts on a Mac mini, and the phone's 1-4 s
+  /// commits with nothing pending. The apply works that out before it takes the gate; the commit applies the result.
+  @Test
+  func restatedResultsAreWorkedOutBeforeTheCommit() async throws {
+    let fixture = try await GateWorkFixture.make(suffix: "restated-results", chainLength: 1)
+    let key = #"{"items":{}}"#
+    let listed = (0..<300).map { index in
+      gateWorkTriple(entityID: "listed-\(index)", value: "v\(index)", transactionID: "listed", milliseconds: 50)
+    }
+    func restate(_ triples: [InstantTriple], frame: Int) async throws {
+      _ = try await fixture.runtime.applyServerTransactionMergingAttributesForTesting(
+        InstantStoreTransaction(id: "restated-\(frame)", operations: triples.map(InstantTripleOperation.insert)),
+        attributesToMerge: [],
+        liveQueryResultReplacements: [InstantLiveQueryResultReplacement(key: key, triples: triples, pageInfo: nil)],
+        receivedAt: InstantTimestamp(milliseconds: 1_000 + Int64(frame) * 10_000)
+      )
+    }
+    try await restate(listed, frame: 0)
+    await fixture.runtime.persistence.resetServerApplyMetricsForTesting()
+
+    // Restated unchanged, then with one fact gone and one changed.
+    try await restate(listed, frame: 1)
+    var changed = Array(listed.dropLast())
+    changed[0] = gateWorkTriple(entityID: "listed-0", value: "changed", transactionID: "listed", milliseconds: 60)
+    try await restate(changed, frame: 2)
+
+    let metrics = await fixture.runtime.persistence.serverApplyMetricsForTesting()
+    expectNoDifference(metrics.commitResultOwnershipRowReadCount, 0)
+    expectNoDifference(metrics.commitResultValueEncodeCount, 0)
+    let ownership = try await fixture.runtime.persistence.liveQueryOwnershipForTesting(queryKey: key)
+    expectNoDifference(ownership.count, 299)
+    #expect(ownership.contains(["listed-0", "items/value", #"{"string":{"_0":"changed"}}"#]))
+    #expect(!ownership.contains { $0.first == "listed-299" })
+  }
 }
 
 // MARK: - Fixture

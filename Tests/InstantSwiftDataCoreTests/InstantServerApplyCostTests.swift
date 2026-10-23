@@ -143,6 +143,11 @@ struct ServerApplyFrameCost: CustomStringConvertible {
     let phases = ["catchUp", "commit", "publish", "patch", "finish"].map { phase in
       "\(phase) \(gate?["\(phase)Milliseconds"] ?? "-")"
     }.joined(separator: " ")
+      + "; commit inside \(gate?["commitInsideMilliseconds"] ?? "-"): "
+      + ["Validate", "Facts", "Outbox", "Results", "Bookkeeping", "SQLiteCommit"].map { part in
+        "\(part.lowercased()) \(gate?["commit\(part)Milliseconds"] ?? "-")"
+      }.joined(separator: " ")
+      + "; \(gate?["path"] ?? "-")"
     return String(
       format:
         "COST %@: wall %d ms, gate held %d ms (%@), longest read %d ms, cpu %.0f ms, instr %.0f M, writes %.0f KB, plan cpu %.0f ms, commit cpu %.0f ms, storePrepare cpu %.0f ms, bodies %d, pending %@, changed %@",
