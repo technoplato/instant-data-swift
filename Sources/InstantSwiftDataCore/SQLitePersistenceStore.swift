@@ -16,6 +16,8 @@
 // - 2026-10-23: a server apply's body page checks only its own rows against the outbox; it re-checked the whole plan
 //   on every 51-row page (~2R^2/50 row checks per apply, each walking a body's overflow pages). Extending the plan
 //   and its commit still check every row (#932).
+// - 2026-10-23: the reduction context names, for each shadowed entity the store does not show, the surviving write
+//   that deletes it last (#932).
 
 import Foundation
 import IssueReporting
@@ -549,6 +551,9 @@ enum InstantServerApplyReductionIneligibility: String, Sendable {
   case reverseLinkWriter
   case retractsShadowedFact
   case linksToShadowedEntity
+  /// A fact on an entity a surviving write deletes that the reduction cannot place: a link, a many-valued slot, an
+  /// entity the store still shows, or a receipt that does not name the slot's base (#932).
+  case deletedEntityFact
 }
 
 enum InstantServerApplyReduction: Sendable {
@@ -611,8 +616,33 @@ struct InstantServerApplyReductionContext: Sendable {
   var nextWriterAfterFailed: [String: [InstantVisibleWriteKey: String]] = [:]
   /// For each refused write, the entities it created (its receipt deletes them) that a surviving write after it touches.
   var createdEntitiesTouchedAfterFailed: [String: Set<String>] = [:]
+  /// For each shadowed entity whose latest surviving write deletes it, that write (#932). Scribe's live line is deleted
+  /// by its line's final; while a backlog drains, the server's results still show the row. A delete has no write keys,
+  /// so the slot rules above cannot see it.
+  var deletingWriterByEntity: [String: String] = [:]
   /// The durable bodies of every write named above.
   var bodies: [String: PendingMutation] = [:]
+}
+
+/// What a pending write's own operations say about one entity it deletes (#932).
+enum InstantServerApplyDeletion {
+  /// Whether `operations` delete `entityID` and touch none of its slots afterwards (no re-creation in the same write).
+  static func deletesLast(_ entityID: String, in operations: [InstantTripleOperation]) -> Bool {
+    var deleted = false
+    for operation in operations {
+      switch operation {
+      case let .deleteEntity(deletedID) where deletedID == entityID:
+        deleted = true
+      case let .deleteEntityInNamespace(deletedID, _) where deletedID == entityID:
+        deleted = true
+      case let .insert(triple), let .merge(triple), let .retract(triple):
+        if triple.entityID == entityID { deleted = false }
+      default:
+        continue
+      }
+    }
+    return deleted
+  }
 }
 
 enum InstantServerApplyReductionLimits {
@@ -5031,9 +5061,12 @@ public actor SQLitePersistenceStore {
   /// names, whether a pending write that survives this apply touches it, and for each slot such a write inserts, the
   /// first such write's durable receipt (its before-image is the base value). Everything is read in one transaction
   /// at the revisions the caller's seed was taken at.
+  /// - Parameter absentEntityIDs: The frame's entities the store does not show. For each one a surviving write touches,
+  ///   the context names the write that deletes it last, if any (#932).
   func loadServerApplyReductionContext(
     slots: [String: Set<String>],
     reverseLinkSlots: Set<InstantVisibleWriteKey> = [],
+    absentEntityIDs: Set<String> = [],
     processedTransactionID: String,
     expectedStoreRevision: Int64,
     expectedAttributeRevision: Int64,
@@ -5300,6 +5333,45 @@ public actor SQLitePersistenceStore {
           bodyIDs.insert(firstOverlay)
         }
       }
+      // #932: the latest surviving write on each shadowed entity the store does not show; its body says below whether
+      // it deletes the entity. Only those: a body per shadowed entity would bring a large frame to the body bound.
+      var lastOverlayByEntity: [String: String] = [:]
+      for entityID in context.shadowedEntityIDs.intersection(absentEntityIDs).sorted() {
+        let lastOverlay = try selectStrings(
+          """
+          SELECT effects.mutation_id
+          FROM instant_outbox_effect_entities AS effects
+            INDEXED BY instant_outbox_effect_entities_lookup_idx
+          JOIN instant_outbox AS outbox ON outbox.mutation_id = effects.mutation_id
+          WHERE effects.entity_id = ? AND \(remaining)
+          ORDER BY effects.created_at_ms DESC, effects.mutation_id DESC
+          LIMIT 1
+          """,
+          [.text(entityID)] + prunable.bindings
+        )
+        if let lastOverlay = lastOverlay.first {
+          lastOverlayByEntity[entityID] = lastOverlay
+          bodyIDs.insert(lastOverlay)
+        }
+        if context.firstOverlayByEntity[entityID] == nil {
+          let firstOverlay = try selectStrings(
+            """
+            SELECT effects.mutation_id
+            FROM instant_outbox_effect_entities AS effects
+              INDEXED BY instant_outbox_effect_entities_lookup_idx
+            JOIN instant_outbox AS outbox ON outbox.mutation_id = effects.mutation_id
+            WHERE effects.entity_id = ? AND \(remaining)
+            ORDER BY effects.created_at_ms, effects.mutation_id
+            LIMIT 1
+            """,
+            [.text(entityID)] + prunable.bindings
+          )
+          if let firstOverlay = firstOverlay.first {
+            context.firstOverlayByEntity[entityID] = firstOverlay
+            bodyIDs.insert(firstOverlay)
+          }
+        }
+      }
       // Each refused write's slots (its write keys), and the next surviving writer of each.
       for failed in failedPositions {
         context.failedOverlayIDs.append(failed.mutationID)
@@ -5357,6 +5429,12 @@ public actor SQLitePersistenceStore {
         decodedOutboxBodyCount += 1
         decodedOutboxBodyByteCount += row.json.utf8.count
         context.bodies[mutationID] = mutation
+      }
+      for (entityID, mutationID) in lastOverlayByEntity {
+        guard let body = context.bodies[mutationID],
+          InstantServerApplyDeletion.deletesLast(entityID, in: body.transaction.operations)
+        else { continue }
+        context.deletingWriterByEntity[entityID] = mutationID
       }
       // An entity a refused write created stays only if no surviving write after it touches the entity; the reduction
       // then deletes it, as the full rebase's replay would leave it out.

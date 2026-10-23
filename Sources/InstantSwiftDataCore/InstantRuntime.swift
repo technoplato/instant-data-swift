@@ -6,6 +6,9 @@
 //   persistence actor (#932).
 // - 2026-10-23: a server apply's resident-outbox patch reads only the rows the in-memory outbox holds, in one outbox
 //   turn per page; it read and decoded every staged row, 0.8-1.3 s of the gate at 2,560 pending (#932).
+// - 2026-10-23: the #296 reduction places a server fact on an entity a surviving pending write deletes last (a live
+//   line its final deletes, while the server still shows the row): the store keeps it deleted, and the fact patches
+//   the receipt that holds the slot's base, instead of peeling and replaying every pending write (#932).
 
 import Foundation
 import IssueReporting
@@ -3780,11 +3783,16 @@ public final class InstantRuntime: Sendable {
     }
     guard !slots.isEmpty else { return (operations, [:], InstantServerApplyFailureSplice()) }
     let reverseLinkSlots = Self.reverseLinkSlots(of: operations, attributes: seed.preparedStore.attributes)
+    // #932: entities the store does not show, so the context can name a pending write that deletes one.
+    let absentEntityIDs = Set(
+      slots.keys.filter { seed.preparedStore.indexes.copiedAttributeSlots(entityID: $0)?.isEmpty ?? true }
+    )
     let state = seed.state
     recordActorHop(.persistence)
     let load = try await persistence.loadServerApplyReductionContext(
       slots: slots,
       reverseLinkSlots: reverseLinkSlots,
+      absentEntityIDs: absentEntityIDs,
       processedTransactionID: processedTransactionID,
       expectedStoreRevision: state.storeRevision,
       expectedAttributeRevision: state.attributeRevision,
@@ -3893,6 +3901,23 @@ public final class InstantRuntime: Sendable {
       switch operation {
       case let .insert(triple):
         let factHolds = holds(triple)
+        // #932: an entity a surviving write deletes last stays deleted whatever the server says of it; what the full
+        // rebase would change is the base beneath the writes, in the first writer's receipt or, for a slot no surviving
+        // write sets, in the deleting write's own receipt. Scribe's live line is deleted by its final while the server
+        // still shows the row.
+        if let deleterID = context.deletingWriterByEntity[triple.entityID] {
+          switch Self.deletedEntityReceiptPatch(for: triple, deleterID: deleterID, context: context, attributes: attributes, indexes: indexes) {
+          case .holds:
+            continue
+          case let .patch(mutationIDs):
+            for mutationID in mutationIDs {
+              receiptPatches[mutationID, default: []].append(triple)
+            }
+            continue
+          case .declined:
+            return .declined(.deletedEntityFact, fact: triple)
+          }
+        }
         guard context.shadowedEntityIDs.contains(triple.entityID) else {
           if factHolds { continue }
           if case let .ref(targetEntityID) = triple.value,
@@ -4000,6 +4025,81 @@ public final class InstantRuntime: Sendable {
       }
     }
     return .reduced(kept, receiptPatches: receiptPatches)
+  }
+
+  enum DeletedEntityReceiptPatch: Equatable {
+    /// The receipts already hold the server's fact as the slot's base.
+    case holds
+    /// These writes' receipts take the server's fact as the slot's base.
+    case patch([String])
+    case declined
+  }
+
+  /// Where a server fact on an entity that `deleterID` deletes last lands in the full rebase (#932): the store keeps
+  /// the entity deleted, and only the receipt holding the slot's base changes. That is the slot's first surviving
+  /// writer, when one replaces the slot (the latest writer's value is what the deleting write's receipt restores), or
+  /// the deleting write itself, whose receipt restores the entity as it stood beneath it.
+  static func deletedEntityReceiptPatch(
+    for triple: InstantTriple,
+    deleterID: String,
+    context: InstantServerApplyReductionContext,
+    attributes: AttributeStore,
+    indexes: TripleIndexes
+  ) -> DeletedEntityReceiptPatch {
+    guard attributes[triple.attributeID]?.cardinality == .one,
+      reverseLinkSlot(of: triple, attributes: attributes) == nil
+    else { return .declined }
+    switch triple.value {
+    case .ref, .lookupRef: return .declined
+    case .null, .string, .number, .bool, .date, .json: break
+    }
+    // The store must show the entity deleted, as the deleting write left it.
+    guard indexes.copiedAttributeSlots(entityID: triple.entityID)?.isEmpty ?? true,
+      let deleter = context.bodies[deleterID]
+    else { return .declined }
+    let slot = InstantVisibleWriteKey(entityID: triple.entityID, attributeID: triple.attributeID)
+    if let firstWriterID = context.firstWriterBySlot[slot] {
+      // Every surviving writer replaces the slot, and the first one's receipt holds the base.
+      // The deleting write's receipt must restore the latest writer's value, as the store must show it for a slot of an
+      // entity the store shows: a write that lost to a later-stamped resident fact surfaces only in the full rebase.
+      guard firstWriterID != deleterID,
+        let firstWriter = context.bodies[firstWriterID],
+        insertedValue(of: slot, in: firstWriter) != nil,
+        let lastWriter = context.lastWriterBySlot[slot].flatMap({ context.bodies[$0] }),
+        let lastWrittenValue = insertedValue(of: slot, in: lastWriter),
+        case let .present(restored) = beforeImageState(of: slot, in: deleter),
+        restored.value == lastWrittenValue
+      else { return .declined }
+      // As for a slot the store shows (`reducedServerApplyOperations`): an earliest overlay that created the entity
+      // no longer deletes it on rollback once the server has it.
+      let firstOverlayID = context.firstOverlayByEntity[triple.entityID]
+      let firstOverlayCreatedEntity = firstOverlayID
+        .flatMap { context.bodies[$0] }
+        .map { beforeImageState(of: slot, in: $0) == .entityCreated } ?? false
+      let createdBeneath = firstOverlayCreatedEntity && firstOverlayID != firstWriterID ? [firstOverlayID!] : []
+      switch beforeImageState(of: slot, in: firstWriter) {
+      case let .present(fact) where fact.value == triple.value:
+        return .holds
+      case .present, .entityCreated:
+        return .patch([firstWriterID] + createdBeneath)
+      case .absent where firstOverlayID == firstWriterID || firstOverlayCreatedEntity:
+        return .patch([firstWriterID] + createdBeneath)
+      case .absent, .unknown:
+        return .declined
+      }
+    }
+    // No surviving write sets the slot: its base is what the deleting write's receipt restores.
+    switch beforeImageState(of: slot, in: deleter) {
+    case let .present(fact) where fact.value == triple.value:
+      return .holds
+    case .present:
+      return .patch([deleterID])
+    case .absent where context.firstOverlayByEntity[triple.entityID] == deleterID:
+      // Nothing beneath the deleting write touches the entity, so the slot was empty there.
+      return .patch([deleterID])
+    case .absent, .entityCreated, .unknown:
+      return .declined
+    }
   }
 
   /// The visible values of one slot, without materializing the entity's other facts: an entity can hold 20,000 links
@@ -4303,6 +4403,19 @@ public final class InstantRuntime: Sendable {
         rebased($0, existing: [], isCreated: true)
       }
       operations.insert(contentsOf: replacement, at: min(index, operations.endIndex))
+    }
+    // #932: a slot of an entity this write deletes and does not set: its receipt restores the entity as it stood, so
+    // the server's fact replaces what the receipt restores there.
+    for slot in baseBySlot.keys.sorted(by: { ($0.entityID, $0.attributeID) < ($1.entityID, $1.attributeID) })
+    where written[slot] == nil && !createdEntities.contains(slot.entityID)
+      && InstantServerApplyDeletion.deletesLast(slot.entityID, in: mutation.transaction.operations)
+    {
+      let position = operations.firstIndex { isOn(slot, $0) } ?? operations.endIndex
+      operations.removeAll { isOn(slot, $0) }
+      operations.insert(
+        contentsOf: (baseBySlot[slot] ?? []).prefix(1).map(InstantTripleOperation.insert),
+        at: min(position, operations.endIndex)
+      )
     }
     for slot in baseBySlot.keys.sorted(by: { ($0.entityID, $0.attributeID) < ($1.entityID, $1.attributeID) })
     where !createdEntities.contains(slot.entityID) && written[slot] != nil {
