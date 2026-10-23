@@ -1,3 +1,9 @@
+## 2026-10-23 15:40:23 EDT — scribe `fd1c0402db016d5c5e9ef127f7d2cc5d9d46dc8b`
+Scribe and Scribe Playback pin instant-data-swift exactly 1.9.18 (#932's server-apply greens; #1019's Watch fix); build 116.
+
+## 2026-10-23 15:40:23 EDT — scribe `924b3cba16c0fd249e986b168b1e0a5624e7a819`
+Plan server-apply-932-pin (#932): plan and claims for the 1.9.18 pin.
+
 ## 2026-10-23 15:34:58 EDT — scribe `662f4d3ad1b647709f3db697f4cc0d46f68d611a`
 The recording screen's vertical stamp drops its never-visible digit roll (#1007 audit rank 2; landed by merge b37aec4f8 for release 116).
 

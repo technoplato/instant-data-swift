@@ -13,6 +13,10 @@
 - **Measured** (InstantServerApplyCostTests, debug): 2,580 pending, every frame a full rebase: gate held 611 -> ~470 ms,
   plan CPU 4.45 -> 2.2 s per frame; 1,720 pending with live lines, 10 frames: CPU 7.9 -> 0.14 s, writes 114 -> 1.2 MB,
   gate held at most 308 -> 6 ms.
+- **Whole suite against 1.9.17's tree** (same mini, after the tag): 1.9.17 fails 153 of 1,344 tests, 1.9.18 fails 157
+  of 1,351; the nine that fail only on 1.9.18 pass alone (one, a binary-framing speed comparison, fails 1 run in 3 alone
+  on both trees), and five fail only on 1.9.17.
+- **Pinned:** Scribe and Scribe Playback pin exactly 1.9.18 on Scribe main (`fd1c0402d`, plan `924b3cba1`).
 - **Next:** Scribe and Scribe Playback pin exactly 1.9.18 for build 116; on the device, the gate-held events' path and
   commit parts during a backlog and with nothing pending. The next #932 release prepares a refresh's restated results
   before the gate (the fixed 87-140 ms a frame on a Mac mini, 1-4 s on the phone), then the commit's join and staging
