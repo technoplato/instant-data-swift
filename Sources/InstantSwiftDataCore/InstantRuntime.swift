@@ -24,6 +24,8 @@
 // - 2026-10-23: the steady-state sync tasks (automatic connection, the session's reader and frame applier,
 //   reconnects, the delivery pump, stream catch-up) run at liveSyncTaskPriority when the app sets it; nil, the default,
 //   keeps the priority of the task that opened or connected the runtime (#590).
+// - 2026-10-23: a server apply's gate hold of 250-999 ms is logged at notice, not info, so a host that counts info lines
+//   per minute still receives each such hold with its fields (#932).
 
 import Foundation
 import IssueReporting
@@ -4595,14 +4597,18 @@ public final class InstantRuntime: Sendable {
     return value
   }
 
-  /// The level of a server apply's gate-held event: `warning` from 1 s, `info` from 250 ms, `debug` below (#277).
+  /// The level of a server apply's gate-held event: `warning` from 1 s, `notice` from 250 ms, `debug` below (#277).
+  ///
+  /// #932 (2026-10-23): 250-999 ms was `info`, which a host's diagnostics bridge counts per minute without the fields;
+  /// once the phone's holds fell under 1 s they arrived as counts only. A hold that long stalls every read and write
+  /// behind it, so it is a notice, and each arrives with its commit's parts.
   static func serverApplyGateHeldLevel(heldMilliseconds: Int) -> InstantDiagnosticLevel {
-    heldMilliseconds >= 1_000 ? .warning : heldMilliseconds >= 250 ? .info : .debug
+    heldMilliseconds >= 1_000 ? .warning : heldMilliseconds >= 250 ? .notice : .debug
   }
 
   /// One record per server apply: how long it held the operation gate, split by part. Local
-  /// writes queue behind every millisecond of it, so an apply past 250 ms is reported at `info`
-  /// and past 1 s at `warning` (#277).
+  /// writes queue behind every millisecond of it, so an apply past 250 ms is reported at `notice`
+  /// and past 1 s at `warning` (#277, #932).
   ///
   /// #932: it also names the path (`reduced`, or why the apply peeled and replayed its whole component), the attempt,
   /// how many writes the plan peeled and replayed, and where the commit spent its time inside the persistence actor.
