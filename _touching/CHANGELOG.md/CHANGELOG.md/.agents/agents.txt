@@ -23,3 +23,4 @@ claude-opus-5.5-energy-98-write 2026-10-10T23:40:00-04:00 mower plan=2026-10-10-
 claude-opus-5.5-energy-98-sync 2026-10-11T00:16:00-04:00 mower plan=2026-10-10-energy-98-sync #669
 claude-opus-5.5-live-query-704-d417e89e 2026-10-15T08:47:44-04:00 grower plan=2026-10-15-live-query-compact-ownership #704
 claude-code/transcript-open-1006@halfjew22 2026-10-23T14:44:24-0400 grower plan=2026-10-23-local-reads-1006 #1006
+claude-code/hotpath-1007@halfjew22 2026-10-23T14:52:00-0400 mower plan=2026-10-23-hotpath-1007 #1007
