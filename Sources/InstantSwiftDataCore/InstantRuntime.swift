@@ -4560,6 +4560,9 @@ public final class InstantRuntime: Sendable {
     plan: InstantServerApplyPlan,
     commitTiming: InstantServerApplyCommitTiming
   ) async {
+    // #1011: each committed apply's path, counted, so a host's energy ledger says how often the reduction declined and why
+    // (the decline's own event is debug-level).
+    InstantEnergyMeter.recordServerApply(path: path)
     let heldMilliseconds = InstantServerApplyGateTimeline.milliseconds(
       from: timeline.enteredAt,
       to: endedAt

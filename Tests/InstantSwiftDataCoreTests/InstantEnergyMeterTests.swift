@@ -86,6 +86,58 @@ struct InstantEnergyMeterTests {
     )
   }
 
+  /// #1011: each committed server apply counts under the path it took, so a host's ledger says how often the reduction
+  /// declined and why (the decline's own event is debug-level); a minute's counts are the difference of two reads.
+  @Test
+  func aServerApplysPathIsCountedByItsName() {
+    let meter = InstantEnergyMeterStorage()
+    let earlier = meter.snapshot()
+    meter.recordServerApply(path: "reduced")
+    meter.recordServerApply(path: "reduced")
+    meter.recordServerApply(path: "full rebase: shadowedSlotNotReplaced")
+
+    expectNoDifference(
+      meter.snapshot().serverApplyPaths,
+      ["reduced": 2, "full rebase: shadowedSlotNotReplaced": 1]
+    )
+    let middle = meter.snapshot()
+    meter.recordServerApply(path: "reduced")
+    expectNoDifference(meter.snapshot().subtracting(middle).serverApplyPaths, ["reduced": 1])
+    expectNoDifference(
+      meter.snapshot().subtracting(earlier).serverApplyPaths,
+      ["reduced": 3, "full rebase: shadowedSlotNotReplaced": 1]
+    )
+  }
+
+  /// #1011: the runtime counts each committed server apply's path in the process's meter, under the gate-held event's name.
+  @Test
+  func aCommittedServerApplyCountsItsPath() async throws {
+    var configuration = try energyMeterConfiguration(appID: "energy-server-apply-path")
+    configuration.reducesServerApplyToAffectedOverlays = false
+    let runtime = try await InstantRuntime.bootstrap(configuration: configuration)
+    let before = InstantEnergyMeter.snapshot()
+
+    _ = try await runtime.applyServerTransaction(
+      InstantStoreTransaction(
+        id: "energy-server-apply-path",
+        operations: [
+          .insert(
+            InstantTriple(
+              entityID: "energy-server-apply-todo",
+              attributeID: "todos/text",
+              value: .string("server"),
+              txID: "energy-server-apply-path",
+              txTime: InstantTimestamp(milliseconds: 1_700_000_000_100)
+            )
+          )
+        ]
+      )
+    )
+
+    let delta = InstantEnergyMeter.snapshot().subtracting(before)
+    #expect((delta.serverApplyPaths["full rebase: reduction off"] ?? 0) >= 1, "\(delta.serverApplyPaths)")
+  }
+
   /// #1011: a server result's retractions have their own name; a device profile found them outside every name.
   @Test
   func aServerResultsRetractionsAreTheirOwnOperation() async throws {

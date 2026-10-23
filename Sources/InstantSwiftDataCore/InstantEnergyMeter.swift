@@ -149,19 +149,26 @@ public struct InstantEnergySnapshot: Sendable, Equatable {
   public var outboxRowsSuperseded: Int
   /// Attempts the scheduled reconnect made to open a live session.
   public var reconnectAttempts: Int
+  /// Server applies that committed, by the path each took (#1011): `reduced`, or why the whole component was peeled and
+  /// replayed (`full rebase: reduction off`, `full rebase: attributes changed`, `full rebase: confirming apply`,
+  /// `full rebase: global footprint`, `full rebase: <why the reduction declined>`). The names are the
+  /// `server-apply.operation-gate-held` event's `path`, so a count and an event read the same.
+  public var serverApplyPaths: [String: Int]
 
   public init(
     operations: [InstantEnergyOperation: Measure] = [:],
     transactions: Int = 0,
     outboxRowsWritten: Int = 0,
     outboxRowsSuperseded: Int = 0,
-    reconnectAttempts: Int = 0
+    reconnectAttempts: Int = 0,
+    serverApplyPaths: [String: Int] = [:]
   ) {
     self.operations = operations
     self.transactions = transactions
     self.outboxRowsWritten = outboxRowsWritten
     self.outboxRowsSuperseded = outboxRowsSuperseded
     self.reconnectAttempts = reconnectAttempts
+    self.serverApplyPaths = serverApplyPaths
   }
 
   /// One operation's measure.
@@ -180,7 +187,9 @@ public struct InstantEnergySnapshot: Sendable, Equatable {
       transactions: max(0, transactions - earlier.transactions),
       outboxRowsWritten: max(0, outboxRowsWritten - earlier.outboxRowsWritten),
       outboxRowsSuperseded: max(0, outboxRowsSuperseded - earlier.outboxRowsSuperseded),
-      reconnectAttempts: max(0, reconnectAttempts - earlier.reconnectAttempts)
+      reconnectAttempts: max(0, reconnectAttempts - earlier.reconnectAttempts),
+      // Red stub (#1011).
+      serverApplyPaths: [:]
     )
   }
 }
@@ -212,6 +221,11 @@ public enum InstantEnergyMeter {
   /// Adds `count` to one of the meter's event counters.
   package static func record(_ event: InstantEnergyEvent, count: Int = 1) {
     shared.record(event, count: count)
+  }
+
+  /// Counts one committed server apply under the path it took (#1011).
+  package static func recordServerApply(path: String) {
+    shared.recordServerApply(path: path)
   }
 
   package static let shared = InstantEnergyMeterStorage()
@@ -336,6 +350,10 @@ package final class InstantEnergyMeterStorage: Sendable {
     state.withLock { state in
       state.events[index] &+= count
     }
+  }
+
+  package func recordServerApply(path: String) {
+    // Red stub (#1011).
   }
 
   package func snapshot() -> InstantEnergySnapshot {
