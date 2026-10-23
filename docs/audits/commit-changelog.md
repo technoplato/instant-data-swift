@@ -1,3 +1,24 @@
+## 2026-10-23 19:39:44 EDT — realtime-voice `87630fc5c4c8479d978de3e6875cc7bdb9fa81b5`
+Change log for the audit commit 3390f6b28 (#1007).
+
+## 2026-10-23 19:39:43 EDT — realtime-voice `3390f6b2880b578fa5836a05bdea6d14938a85a2`
+The hot-path audit's N9, N9b and F5 sections, 1.9.27 released and pinned for build 119, what the release harness says is left; PROGRESS and the pin channel (#1007).
+
+## 2026-10-23 19:39:17 EDT — realtime-voice `72bfeef69eab2068a26a8e4591a8800a48e7c75c`
+Change log for the 1.9.27 pin 7aa16df13 (#1007).
+
+## 2026-10-23 19:39:16 EDT — realtime-voice `7aa16df1341bb5e4ba16c334b26c601aad2371fc`
+Scribe and Scribe Playback pin instant-data-swift exactly 1.9.27 for build 119: the statement cache and the fact writer, about 15% less CPU per write (#1007).
+
+## 2026-10-23 18:56:44 EDT — realtime-voice `581c1ef12d3ea3de3f3cc15fda2866adf9f83bf5`
+Change log for fd4ff213e (#1007).
+
+## 2026-10-23 18:56:43 EDT — realtime-voice `a01f63fa43da9d46a6cd15262a948ed0d4e2e272`
+The pin channel and PROGRESS: 1.9.24 inside #932's 1.9.25 pin; the statement cache after #1024's tag (#1007).
+
+## 2026-10-23 18:56:28 EDT — realtime-voice `fd4ff213e390399fca46225eef63b0e11052792d`
+The hot-path audit's N8 section and build 118's What's New line for the outbox index fix (#1007).
+
 ## 2026-10-23 19:35:09 EDT — instant-data-swift `0f64acfb24a6854d4122c506b23ae23d97c37619`
 Release document for v1.9.27 (#1007): the statement cache and the fact writer.
 
