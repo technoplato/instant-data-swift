@@ -1,3 +1,9 @@
+## 2026-10-23 13:25:26 EDT — scribe `5166c0e35becd422b844f982ae7cddcbe02924ff`
+Changelog (#1014): build 115 cut c02cb3fcd recorded in Scribe's CHANGELOG.md.
+
+## 2026-10-23 13:25:26 EDT — scribe `c02cb3fcd74b230a9c605e80880eba53a94d340e`
+Build 115 cut (#1014, #1005): Scribe 0.1 (115) and Scribe Playback 115 with instant-data-swift 1.9.13; both What's New files dated 2026-10-23 (#1007 less battery while syncing, #1006 reopening shows the transcript at once).
+
 ## 2026-10-23 12:59:07 EDT — instant-data-swift `a3ecdefabc88507d784b17a592270d785b7acb61`
 Release document for v1.9.13: a gone row refreshes no verified observer, link sets sort by id (#1007), a closed query's stored result answers its reopening (#1006).
 
