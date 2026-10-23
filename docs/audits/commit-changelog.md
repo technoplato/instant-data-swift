@@ -1,3 +1,15 @@
+## 2026-10-23 18:23:12 EDT — scribe `a5a72de78a9ee9c1db735f4ad84e6b23e3ec683c`
+The recording screen audit and What's New for build 118 (#1007, #412): build 116's SwiftUI trace mapped to code.
+
+## 2026-10-23 18:23:02 EDT — scribe `d2ec4b89cf91d05cf78f187f26e09d09e54d4fb4`
+The vertical stamp reads the recording clock inside its timeline and sets its modifiers once (#1007, build 118).
+
+## 2026-10-23 18:22:57 EDT — scribe `8157e1dff8059c0c7bab997aa8e230578f7b3557`
+Green (#1007): the transcription watchdog notifies no view; words-behind is its own observed value.
+
+## 2026-10-23 18:22:47 EDT — scribe `786b03a77371b87112214564ae0dc06d90b649f1`
+Red test (#1007): RecordingObservationTests.
+
 ## 2026-10-23 18:10:19 EDT — scribe `063e7c32f787c72f01280bb96cfcbf4b2aaa1bc9`
 Change log (#1022): red d86ab2f6e, green 83620433f, audit 1e4c54b9b, What's New 87ff2d386.
 
