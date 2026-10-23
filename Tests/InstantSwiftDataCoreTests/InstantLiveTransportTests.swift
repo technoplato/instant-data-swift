@@ -4508,7 +4508,8 @@ struct InstantLiveTransportTests {
   }
 
   /// A wait fails on a stall, not on a slow run (#1020). Under the bundle's load the runtime sent the oversized test's
-  /// 50 transacts over 27-40 s with gaps up to 3.6 s, so a bound on the whole wait failed a run that was still moving.
+  /// transacts seconds apart (27.4 s for 45 of them, gaps up to 3.6 s), so a bound on the whole wait would fail a run
+  /// that is still moving.
   @Test
   func scriptedLiveSessionSentMessageWaitOutlastsItsBoundWhileMessagesKeepArriving() async throws {
     let session = InstantRuntimeScriptedLiveSession(messages: [])
@@ -4610,14 +4611,23 @@ struct InstantLiveTransportTests {
     let session = InstantRuntimeScriptedLiveSession(messages: [
       .initOK(clientEventID: "event-oversized-terminal", attrs: .todoServerAttrs)
     ])
-    let runtime = try await InstantRuntime.bootstrap(
-      configuration: InstantRuntimeConfiguration(
-        appID: "runtime-live-oversized-terminal-component",
-        persistenceURL: cacheURL,
-        initialAttributes: TodoExample.attributes,
-        liveTransport: session.transport
-      )
+    // The scripted server answers only the target, so every successor's acknowledgement deadline (claim + 6 s x its
+    // place in flight) would pass on the wall clock if the test ran long enough. Under the whole bundle's load it did
+    // (#1020): the sends took over 27 s, six deadlines had passed when the target's error arrived, the runtime
+    // replaced the socket, and this scripted session, which serves one connection, could not send again. The test is
+    // about the terminal disposition, so it owns the clock and no deadline passes.
+    let clock = InstantLiveLockedClock(milliseconds: 100_000)
+    var configuration = InstantRuntimeConfiguration(
+      appID: "runtime-live-oversized-terminal-component",
+      persistenceURL: cacheURL,
+      initialAttributes: TodoExample.attributes,
+      now: { clock.now() },
+      liveTransport: session.transport
     )
+    configuration.liveMutationDeadlineSleep = { _ in
+      try await Task.sleep(for: .seconds(60))
+    }
+    let runtime = try await InstantRuntime.bootstrap(configuration: configuration)
     _ = try await runtime.connect()
     try await session.waitForSentMessageCount(51)
     let initiallySent = await session.sentMessages()

@@ -3,7 +3,7 @@
 //                    mini a run that sent fewer parked the whole InstantSwiftDataCoreTests bundle for 11-16 minutes at
 //                    0% CPU. A live test wait now fails at a deadline with what it saw.
 // 2026-10-23  #1020  The deadline measures a stall, not the whole wait. Under the bundle's load the runtime sent that
-//                    test's 50 transacts over 27-40 s (gaps up to 3.6 s), so a 10 s total bound failed a run that was
+//                    test's transacts paced by seconds (27.4 s for 45 of them, gaps up to 3.6 s), so a 10 s total bound failed a run that was
 //                    still moving; a wait now fails only after 10 s with no new message.
 
 import Foundation
