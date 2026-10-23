@@ -118,6 +118,50 @@ struct InstantWritePathEnergyTests {
     _ = try? await fixture.runtime.closeConnection()
   }
 
+  /// Reusing a kept statement costs about one hash of its SQL (#1007). The cache took a statement out of its idle map
+  /// at check-out and put it back at check-in, hashing the SQL five times a use, and each removal re-hashed the
+  /// neighbors it shifted: 6.6% of a write replay's CPU with the cycle's 150 statements kept.
+  @Test
+  func reusingAKeptStatementCostsAboutOneHashOfItsSQL() throws {
+    var database: OpaquePointer?
+    try #require(sqlite3_open(":memory:", &database) == SQLITE_OK)
+    defer { sqlite3_close_v2(database) }
+    var cache = SQLiteStatementCache()
+    // As many statements as a live write's cycle keeps, each as long as its longer statements.
+    let statements = (0..<150).map { index in
+      "SELECT \(index) /* " + String(repeating: "statement \(index) ", count: 80) + "*/"
+    }
+    for sql in statements {
+      let statement = cache.checkOut(sql, on: database)
+      cache.checkIn(statement.statement)
+    }
+    let preparedBefore = cache.preparedCount
+
+    let start = clock_gettime_nsec_np(CLOCK_THREAD_CPUTIME_ID)
+    for _ in 0..<40 {
+      for sql in statements {
+        let statement = cache.checkOut(sql, on: database)
+        cache.checkIn(statement.statement)
+      }
+    }
+    let reuse = clock_gettime_nsec_np(CLOCK_THREAD_CPUTIME_ID) - start
+    var sink = 0
+    let hashStart = clock_gettime_nsec_np(CLOCK_THREAD_CPUTIME_ID)
+    for _ in 0..<40 {
+      for sql in statements {
+        var hasher = Hasher()
+        hasher.combine(sql)
+        sink &+= hasher.finalize()
+      }
+    }
+    let hashing = clock_gettime_nsec_np(CLOCK_THREAD_CPUTIME_ID) - hashStart
+
+    expectNoDifference(cache.preparedCount, preparedBefore)
+    let ratio = Double(reuse) / Double(max(hashing, 1))
+    print("statement-reuse-cost: \(reuse / 1_000) us to reuse, \(hashing / 1_000) us to hash once (ratio \(ratio), \(sink & 1))")
+    #expect(ratio < 3, "reusing a kept statement cost \(ratio) hashes of its SQL")
+  }
+
   /// A statement in use is never handed out twice, an idle one is reset, DDL is not kept, and the cache stays within
   /// its capacity (#653).
   @Test
