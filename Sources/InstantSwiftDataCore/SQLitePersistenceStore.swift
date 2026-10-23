@@ -35,6 +35,8 @@
 //   prepared every statement again on every write; a reuse hashes its SQL once instead of five times (#1007).
 // - 2026-10-23: a fact's value text and its own text are written by InstantStoredJSON, the value once, as JSONEncoder
 //   writes them (#1007).
+// - 2026-10-23: a save and an acknowledgement fingerprint a write's optimistic effect once each; the save asked whether
+//   there was one before computing the one it stores, and the acknowledgement computed it for two checks (#1007).
 
 import Foundation
 import IssueReporting
@@ -8221,7 +8223,7 @@ public actor SQLitePersistenceStore {
         observationID: lifecycleID,
         event: lifecycleEvent(
           for: lifecycleMutation,
-          hasServerAcceptance: try hasStoredServerAcceptance(mutation, in: row)
+          hasServerAcceptance: hasStoredServerAcceptance(in: row, hasPreparedReceipt: hasPreparedReceipt)
         ) ?? .waiting
       )
     }
@@ -8367,7 +8369,7 @@ public actor SQLitePersistenceStore {
           }
           guard durableDeliveryState(
             for: mutation,
-            hasServerAcceptance: try hasStoredServerAcceptance(mutation, in: row)
+            hasServerAcceptance: hasStoredServerAcceptance(in: row, hasPreparedReceipt: true)
           ) == .needsDelivery else {
             continue
           }
@@ -10185,15 +10187,18 @@ public actor SQLitePersistenceStore {
         )
       }
 
-      let hasPreparedMaterializedEffect = try hasStoredPreparedOptimisticEffectReceipt(
+      // One fingerprint for the acknowledgement's three checks: each encodes the whole transaction (#1007).
+      let effectFingerprint = try optimisticEffectFingerprint(of: mutation)
+      let hasPreparedMaterializedEffect = hasStoredPreparedOptimisticEffectReceipt(
         mutation,
-        in: row
+        in: row,
+        fingerprint: effectFingerprint
       )
-      let alreadyAccepted = try hasStoredServerAcceptance(mutation, in: row)
+      let alreadyAccepted = hasStoredServerAcceptance(in: row, hasPreparedReceipt: hasPreparedMaterializedEffect)
       if !alreadyAccepted {
         guard let claimPayloadFingerprint = row.deliveryClaimPayloadFingerprint,
           let claimToken,
-          let materializedEffectFingerprint = try optimisticEffectFingerprint(of: mutation)
+          let materializedEffectFingerprint = effectFingerprint
         else {
           return InstantOutboxRowAcceptance(
             mutation: mutation,
@@ -13168,7 +13173,8 @@ public actor SQLitePersistenceStore {
     expectedOutboxRevision: Int64
   ) throws -> Bool {
     let energy = InstantEnergyMeter.begin(.localSave); defer { energy.end() }
-    guard try optimisticEffectFingerprint(of: pendingMutation) != nil else {
+    // The fingerprint itself is computed once, where the receipt is stored (#1007).
+    guard pendingMutation.hasOptimisticEffectReceiptFingerprint else {
       throw persistenceError(
         operation: "persist local mutation",
         message:
@@ -15767,10 +15773,22 @@ public actor SQLitePersistenceStore {
     _ mutation: PendingMutation,
     in row: InstantOutboxBodyRow
   ) throws -> Bool {
-    guard row.mutationID == mutation.id,
-      let candidate = try optimisticEffectFingerprint(of: mutation)
-    else { return false }
-    return row.optimisticEffectReceiptFingerprint == candidate
+    guard row.mutationID == mutation.id else { return false }
+    return hasStoredPreparedOptimisticEffectReceipt(
+      mutation,
+      in: row,
+      fingerprint: try optimisticEffectFingerprint(of: mutation)
+    )
+  }
+
+  /// ``hasStoredPreparedOptimisticEffectReceipt(_:in:)`` with the mutation's fingerprint already computed (#1007).
+  private func hasStoredPreparedOptimisticEffectReceipt(
+    _ mutation: PendingMutation,
+    in row: InstantOutboxBodyRow,
+    fingerprint: String?
+  ) -> Bool {
+    guard row.mutationID == mutation.id, let fingerprint else { return false }
+    return row.optimisticEffectReceiptFingerprint == fingerprint
   }
 
   private func hasStoredServerAcceptance(
@@ -15779,6 +15797,12 @@ public actor SQLitePersistenceStore {
   ) throws -> Bool {
     guard row.serverAcceptancePayloadFingerprint != nil else { return false }
     return try hasStoredPreparedOptimisticEffectReceipt(mutation, in: row)
+  }
+
+  /// ``hasStoredServerAcceptance(_:in:)`` once the receipt check has run for the same mutation and row (#1007): an
+  /// acceptance counts only over a prepared receipt, and the receipt check is the part that fingerprints.
+  private func hasStoredServerAcceptance(in row: InstantOutboxBodyRow, hasPreparedReceipt: Bool) -> Bool {
+    row.serverAcceptancePayloadFingerprint != nil && hasPreparedReceipt
   }
 
   private func durableDeliveryState(
@@ -15885,7 +15909,7 @@ public actor SQLitePersistenceStore {
       false
     }
     let hasAcceptedWireIntent = if let row {
-      try hasStoredServerAcceptance(mutation, in: row)
+      hasStoredServerAcceptance(in: row, hasPreparedReceipt: hasPreparedReceipt)
     } else {
       false
     }
@@ -17681,7 +17705,7 @@ public actor SQLitePersistenceStore {
       mutation,
       hasStoredReceiptFingerprint: hasPreparedReceipt
     )
-    let hasServerAcceptance = try hasStoredServerAcceptance(mutation, in: row)
+    let hasServerAcceptance = hasStoredServerAcceptance(in: row, hasPreparedReceipt: hasPreparedReceipt)
     guard lifecycleEvent(
       for: lifecycle,
       hasServerAcceptance: hasServerAcceptance

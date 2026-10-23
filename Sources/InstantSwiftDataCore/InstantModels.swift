@@ -1128,6 +1128,24 @@ public struct PendingMutation: Hashable, Codable, Sendable, Identifiable {
     }
   }
 
+  /// Whether ``optimisticEffectReceiptFingerprint()`` has a digest to compute: the checks it makes before it encodes
+  /// anything (#1007). A save asks only this, and the fingerprint itself is computed once, where it is stored.
+  package var hasOptimisticEffectReceiptFingerprint: Bool {
+    guard let optimisticOverlayState,
+      let optimisticEffectReceiptVersion,
+      optimisticEffectReceiptVersion == Self.currentOptimisticEffectReceiptVersion
+    else { return false }
+    switch optimisticOverlayState {
+    case .applied:
+      return provesReplayableOptimisticEffectReceipt
+    case .removed:
+      // A removed layer is not deliverable, but persistence still needs a
+      // Runtime-owned tombstone proving that no optimistic inverse remains.
+      // Public Codable bytes alone are not authority for this state.
+      return rollbackTransaction == nil
+    }
+  }
+
   /// A canonical SHA-256 digest of the admission payload whose transaction,
   /// ordering, rollback, and overlay-state combination Runtime prepared.
   ///
@@ -1137,19 +1155,10 @@ public struct PendingMutation: Hashable, Codable, Sendable, Identifiable {
   /// confirmation, server acceptance, and failure details are intentionally
   /// excluded so lifecycle-only changes preserve the same admission authority.
   package func optimisticEffectReceiptFingerprint() throws -> String? {
-    guard let optimisticOverlayState,
-      let optimisticEffectReceiptVersion,
-      optimisticEffectReceiptVersion == Self.currentOptimisticEffectReceiptVersion
+    guard hasOptimisticEffectReceiptFingerprint,
+      let optimisticOverlayState,
+      let optimisticEffectReceiptVersion
     else { return nil }
-    switch optimisticOverlayState {
-    case .applied:
-      guard provesReplayableOptimisticEffectReceipt else { return nil }
-    case .removed:
-      // A removed layer is not deliverable, but persistence still needs a
-      // Runtime-owned tombstone proving that no optimistic inverse remains.
-      // Public Codable bytes alone are not authority for this state.
-      guard rollbackTransaction == nil else { return nil }
-    }
     let payload = InstantOptimisticEffectReceiptFingerprintPayload(
       schemaVersion: 1,
       mutationID: id,
