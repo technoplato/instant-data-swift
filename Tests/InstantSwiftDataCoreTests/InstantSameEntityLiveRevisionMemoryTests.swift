@@ -116,7 +116,8 @@ struct InstantSameEntityLiveRevisionMemoryTests {
     expectNoDifference(afterClose.result.emissions, [])
   }
 
-  @Test
+  // The process's physical footprint, which the rest of the bundle moves too (#1021).
+  @Test(.measurement)
   func livePutsDoNotGrowPhysicalFootprintWithRevisionCount() async throws {
     let fixture = try await MemoryFixture.seeded(siblingCount: siblingCount, siblingTextByteCount: siblingTextByteCount)
     let liveLease = await fixture.store.observeQueryLease(fixture.livePlan)

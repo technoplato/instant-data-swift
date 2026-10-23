@@ -4,7 +4,8 @@ import Testing
 
 @Suite(.serialized)
 struct DualResidencyFootprintMeasureTests {
-  @Test
+  // The process's physical footprint, which the rest of the bundle moves too (#1021).
+  @Test(.measurement)
   func publishGatePendingAndColdReopenMetrics() async throws {
     let profile = LinkedInfiniteScribeShapedSoakProfile.publishGate
     let mode = ProcessInfo.processInfo.environment["INSTANT_MEASURE_MODE"] ?? "both"
@@ -17,13 +18,9 @@ struct DualResidencyFootprintMeasureTests {
         withIntermediateDirectories: true
       )
     } else {
-      cacheURL = FileManager.default.temporaryDirectory
-        .appendingPathComponent("DualResidencyMeasure-pg-\(UUID().uuidString)")
+      // Removed when the process exits (#1021: 4.4 GB of these were left on the Mac mini in one day).
+      cacheURL = try InstantTestScratch.directory("DualResidencyMeasure-pg")
         .appendingPathComponent("state.sqlite")
-      try FileManager.default.createDirectory(
-        at: cacheURL.deletingLastPathComponent(),
-        withIntermediateDirectories: true
-      )
     }
 
     if mode == "seed" || mode == "both" {

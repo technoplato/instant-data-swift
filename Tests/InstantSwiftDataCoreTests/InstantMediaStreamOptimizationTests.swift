@@ -226,7 +226,8 @@ struct InstantMediaStreamOptimizationTests {
     expectNoDifference(optimized.hexadecimal, compatibility.hexadecimal)
   }
 
-  @Test("Twenty thousand synchronized audio frames stay inside a fixed memory and CPU envelope")
+  // The process's CPU percent and the wall time: beside the bundle 624% against 200%, 6.3-11.8 s against 5 s (#1021).
+  @Test("Twenty thousand synchronized audio frames stay inside a fixed memory and CPU envelope", .measurement)
   func sustainedAudioStreamHasBoundedResources() async throws {
     let frameCount = 20_000
     let payloadByteCount = 320

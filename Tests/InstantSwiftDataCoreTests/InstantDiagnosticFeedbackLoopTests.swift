@@ -193,7 +193,9 @@ struct InstantDiagnosticFeedbackLoopTests {
     )
   }
 
-  @Test("info-level dual-write handler does not re-enter on large local transact volume")
+  // A count on the process-wide diagnostics hub and a physical-footprint delta: beside the bundle it counted other
+  // tests' entries (59-226 against a bound of 16) and passed alone (#1021).
+  @Test("info-level dual-write handler does not re-enter on large local transact volume", .measurement)
   func infoHandlerDoesNotAmplifyLargeTransactVolume() async throws {
     let cacheURL = try temporaryDiagnosticFeedbackCacheURL()
     defer { try? FileManager.default.removeItem(at: cacheURL.deletingLastPathComponent()) }

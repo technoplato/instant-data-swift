@@ -13,8 +13,15 @@ saturated. This script is the one way to run the bundle, so a run on a branch an
 `run` builds the bundle and the `instant-swift-data` executable its CLI tests launch, checks out the upstream sources
 the parity tests read at the commits those tests pin, and runs every Swift Testing test with an event stream, so a
 killed or hung run still says which tests finished. `--load N` runs N busy loops beside it, at the same priority, to
-show which tests measure the machine rather than the code. Run it at nice 10 on a shared machine
+show which tests measure the machine rather than the code. Tests marked `.measurement` (CPU, footprint, the
+process-wide diagnostics hub, wall-clock thresholds) skip themselves in the bundle and then run in a second pass,
+alone and serially, with no busy loops, so they measure only themselves. Run it at nice 10 on a shared machine
 (`nice -n 10 scripts/known-failing-tests.sh run ...`), or through the machine's heavy-job queue.
+
+After a run it removes what this library's tests left in the user temp dir (stores named `Instant*`, `instant-*`,
+`LinkedInfinite*`, `DualResidency*`), unless another test process is running or `--keep-temp` is given: many tests
+never remove their stores, and on 2026-10-23 a day of agents' runs had left 42 GB there and filled the Mac mini.
+`FileManager.temporaryDirectory` ignores `TMPDIR` on macOS, so a run cannot be given its own.
 
 `record` writes the list from whole-bundle runs, idle ones and loaded ones: `idle k/n` names failed in k of n idle
 runs, `load k/n` names never failed idle and failed in k of n loaded runs. It keeps the verdicts of names already on
@@ -22,6 +29,8 @@ the list.
 
 History:
 - 2026-10-23: written for #1021 (the list, idle and under load, and compare instead of a baseline run of main).
+- 2026-10-23: a run sweeps this library's test leftovers from the user temp dir (#1021: 42 GB on the mini).
+- 2026-10-23: the measurement pass (#1021: whole-process measurements failed beside the bundle, passed alone).
 """
 
 import argparse
@@ -145,6 +154,53 @@ def swift_build(args, jobs, scratch, out):
                           check=True).stdout.strip()
 
 
+LEFTOVER = re.compile(r'^(Instant|instant-|LinkedInfinite|DualResidency)')
+
+
+def other_test_processes():
+    """Test or benchmark processes running now, whose stores a sweep must not take from under them."""
+    listing = subprocess.run(['ps', '-Ao', 'pid=,comm='], stdout=subprocess.PIPE, text=True).stdout
+    found = []
+    for line in listing.splitlines():
+        pid, _, command = line.strip().partition(' ')
+        name = os.path.basename(command.strip())
+        if (name in ('swiftpm-testing-helper', 'xctest') or 'PackageTests' in name
+                or name.startswith(('InstantSwiftData', 'instant-swift-data')) or name.endswith('-bench')):
+            found.append('%s %s' % (pid, name))
+    return found
+
+
+def sweep_leftovers(minimum_age_seconds=120):
+    """Removes this library's test stores from the user temp dir when no test process could still be using one."""
+    others = other_test_processes()
+    if others:
+        return {'removed_entries': 0, 'removed_bytes': 0, 'kept_because': others[:5]}
+    root = subprocess.run(['getconf', 'DARWIN_USER_TEMP_DIR'], stdout=subprocess.PIPE, text=True).stdout.strip()
+    now = time.time()
+    entries, total = 0, 0
+    for entry in os.scandir(root or '/nonexistent'):
+        if not LEFTOVER.match(entry.name):
+            continue
+        try:
+            if now - entry.stat(follow_symlinks=False).st_mtime < minimum_age_seconds:
+                continue
+            if entry.is_dir(follow_symlinks=False):
+                for directory, _, files in os.walk(entry.path):
+                    for name in files:
+                        try:
+                            total += os.lstat(os.path.join(directory, name)).st_blocks * 512
+                        except OSError:
+                            pass
+                shutil.rmtree(entry.path, ignore_errors=True)
+            else:
+                total += entry.stat(follow_symlinks=False).st_blocks * 512
+                os.remove(entry.path)
+            entries += 1
+        except OSError:
+            continue
+    return {'removed_entries': entries, 'removed_bytes': total, 'kept_because': []}
+
+
 def load_average():
     return float(subprocess.run(['sysctl', '-n', 'vm.loadavg'], stdout=subprocess.PIPE, text=True)
                  .stdout.split()[1])
@@ -160,13 +216,46 @@ def commit_and_version(options):
     return commit, dirty, version
 
 
+MEASUREMENT_REASON = 'measurement pass'
+MEASUREMENT_ENV = 'INSTANT_SWIFT_DATA_MEASUREMENTS'
+OUTPUTS = ['console.log', 'events.jsonl', 'console-measurements.log', 'events-measurements.jsonl', 'load.log',
+           'summary.json', 'failing.txt', 'sample.txt']
+
+
+def run_helper(command, env, console_path, out, timeout, loads, load_log):
+    """Runs the test helper, sampling the load every 10 s; past `timeout` it samples the process and kills it."""
+    started = time.time()
+    with open(console_path, 'w') as console:
+        # The tests resolve the package and the upstream checkouts from their own source paths; run from the root anyway.
+        process = subprocess.Popen(command, cwd=ROOT, env=env, stdout=console, stderr=subprocess.STDOUT)
+        next_sample = 0.0
+        while True:
+            status = process.poll()
+            now = time.time()
+            if now >= next_sample:
+                value = load_average()
+                loads.append(value)
+                load_log.write('%s %.2f\n' % (datetime.datetime.now().strftime('%H:%M:%S'), value))
+                load_log.flush()
+                next_sample = now + 10
+            if status is not None:
+                return status, False, now - started
+            if now - started > timeout:
+                subprocess.run(['sample', str(process.pid), '3', '-file', os.path.join(out, 'sample.txt')],
+                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                process.kill()
+                return process.wait(), True, time.time() - started
+            time.sleep(1)
+
+
 def cmd_run(options):
     out = os.path.abspath(options.out)
     os.makedirs(out, exist_ok=True)
-    for name in ['console.log', 'events.jsonl', 'load.log', 'summary.json', 'failing.txt', 'sample.txt']:
+    for name in OUTPUTS:
         if os.path.exists(os.path.join(out, name)):
             os.remove(os.path.join(out, name))
     env = dict(os.environ)
+    env.pop(MEASUREMENT_ENV, None)
     env.update(prepare_upstreams(os.path.abspath(options.cache)))
     if options.no_build:
         bin_path = subprocess.run(
@@ -189,9 +278,9 @@ def cmd_run(options):
         os.path.join(platform_dir, 'Library/Frameworks'), os.path.join(platform_dir, 'Library/PrivateFrameworks'),
     ])
     helper = os.path.join(developer, 'Toolchains/XcodeDefault.xctoolchain/usr/libexec/swift/pm/swiftpm-testing-helper')
-    command = [helper, '--test-bundle-path', os.path.join(bundle, 'Contents/MacOS', BUNDLE),
-               '--testing-library', 'swift-testing',
-               '--event-stream-output-path', os.path.join(out, 'events.jsonl'), '--event-stream-version', '0']
+    base = [helper, '--test-bundle-path', os.path.join(bundle, 'Contents/MacOS', BUNDLE), '--testing-library',
+            'swift-testing', '--event-stream-version', '0']
+    command = base + ['--event-stream-output-path', os.path.join(out, 'events.jsonl')]
     if options.filter:
         command += ['--filter', options.filter]
     if options.skip:
@@ -206,40 +295,37 @@ def cmd_run(options):
     commit, dirty, version = commit_and_version(options)
     started_at = time.time()
     loads = []
-    status = None
-    timed_out = False
+    measurement = {'tests': 0, 'seconds': 0, 'exit': None, 'timed_out': False}
     log('running %s (timeout %d s)' % (BUNDLE, options.timeout))
-    try:
-        with open(os.path.join(out, 'console.log'), 'w') as console, open(os.path.join(out, 'load.log'), 'w') as load_log:
-            # The tests resolve the package and the upstream checkouts from their own source paths; run from the root anyway.
-            process = subprocess.Popen(command, cwd=ROOT, env=env, stdout=console, stderr=subprocess.STDOUT)
-            next_sample = 0.0
-            while True:
-                status = process.poll()
-                now = time.time()
-                if now >= next_sample:
-                    value = load_average()
-                    loads.append(value)
-                    load_log.write('%s %.2f\n' % (datetime.datetime.now().strftime('%H:%M:%S'), value))
-                    load_log.flush()
-                    next_sample = now + 10
-                if status is not None:
-                    break
-                if now - started_at > options.timeout:
-                    timed_out = True
-                    subprocess.run(['sample', str(process.pid), '3', '-file', os.path.join(out, 'sample.txt')],
-                                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                    process.kill()
-                    status = process.wait()
-                    break
-                time.sleep(1)
-    finally:
-        for burner in burners:
-            burner.send_signal(signal.SIGTERM)
-        for burner in burners:
-            burner.wait()
-    seconds = time.time() - started_at
-    results = parse_events(os.path.join(out, 'events.jsonl'))
+    with open(os.path.join(out, 'load.log'), 'w') as load_log:
+        try:
+            status, timed_out, seconds = run_helper(
+                command, env, os.path.join(out, 'console.log'), out, options.timeout, loads, load_log)
+        finally:
+            for burner in burners:
+                burner.send_signal(signal.SIGTERM)
+            for burner in burners:
+                burner.wait()
+        # The measurement tests skipped themselves in the bundle; they run now by themselves, one at a time, in a
+        # process of their own, with no busy loops beside them (#1021).
+        names = sorted(name for name, test in parse_events(os.path.join(out, 'events.jsonl'))['tests'].items()
+                       if test['status'] == 'skipped' and MEASUREMENT_REASON in test.get('skip', ''))
+        if names and not timed_out:
+            log('running %d measurement tests alone, serially' % len(names))
+            measurement_env = dict(env)
+            measurement_env[MEASUREMENT_ENV] = '1'
+            measurement_command = base + [
+                '--event-stream-output-path', os.path.join(out, 'events-measurements.jsonl'), '--no-parallel',
+                '--filter', '|'.join(re.escape(name) for name in names)]
+            m_status, m_timed_out, m_seconds = run_helper(
+                measurement_command, measurement_env, os.path.join(out, 'console-measurements.log'), out,
+                options.timeout, loads, load_log)
+            measurement = {'tests': len(names), 'seconds': round(m_seconds, 1), 'exit': m_status,
+                           'timed_out': m_timed_out}
+    leftovers = {'removed_entries': 0, 'removed_bytes': 0, 'kept_because': ['--keep-temp']}
+    if not options.keep_temp:
+        leftovers = sweep_leftovers()
+    results = parse_run(out)
     failing = sorted(name for name, test in results['tests'].items() if test['status'] in ('failed', 'hung'))
     with open(os.path.join(out, 'failing.txt'), 'w') as f:
         for name in failing:
@@ -253,13 +339,20 @@ def cmd_run(options):
         'cpus': os.cpu_count(), 'filter': options.filter, 'skip': options.skip,
         'tests': len(results['tests']), 'failing': len(failing),
         'hung': sorted(name for name, test in results['tests'].items() if test['status'] == 'hung'),
+        'measurements': measurement,
+        'leftovers': leftovers,
     }
     with open(os.path.join(out, 'summary.json'), 'w') as f:
         json.dump(summary, f, indent=2)
         f.write('\n')
-    log('%s: %d tests, %d failing, %.0f s, load %s-%s (mean %s)%s' % (
-        out, summary['tests'], summary['failing'], seconds, summary['load']['min'], summary['load']['max'],
-        summary['load']['mean'], ', TIMED OUT' if timed_out else ''))
+    if leftovers['kept_because']:
+        log('kept the temp dir\'s test stores: %s' % ', '.join(leftovers['kept_because']))
+    else:
+        log('removed %d test stores from the temp dir (%.1f MB)' % (
+            leftovers['removed_entries'], leftovers['removed_bytes'] / 1e6))
+    log('%s: %d tests, %d failing, %.0f s (+%d measurements alone, %.0f s), load %s-%s (mean %s)%s' % (
+        out, summary['tests'], summary['failing'], seconds, measurement['tests'], measurement['seconds'],
+        summary['load']['min'], summary['load']['max'], summary['load']['mean'], ', TIMED OUT' if timed_out else ''))
     return 0
 
 
@@ -317,6 +410,7 @@ def parse_events(path):
                 test['status'] = 'started'
             elif kind == 'testSkipped':
                 test['status'] = 'skipped'
+                test['skip'] = ' '.join(m.get('text', '') for m in payload.get('messages', []))
             elif kind == 'issueRecorded':
                 issue = payload.get('issue', {})
                 if issue.get('isKnown') or issue.get('severity', 'error') != 'error':
@@ -342,6 +436,14 @@ def parse_events(path):
     # A declared test that never started was filtered out or skipped; it is not part of the run.
     tests = {name: test for name, test in tests.items() if test['status'] != 'declared'}
     return {'tests': tests, 'run_ended': run_ended}
+
+
+def parse_run(out):
+    """A run's tests: the bundle, with each measurement test's result from the pass that ran it alone."""
+    results = parse_events(os.path.join(out, 'events.jsonl'))
+    measured = parse_events(os.path.join(out, 'events-measurements.jsonl'))['tests']
+    results['tests'].update({name: test for name, test in measured.items() if test['status'] != 'skipped'})
+    return results
 
 
 def read_summary(out):
@@ -385,7 +487,7 @@ def cmd_record(options):
         summary = read_summary(run_dir)
         if summary['filter'] or summary['skip']:
             raise SystemExit('record wants whole-bundle runs; %s used --filter/--skip' % run_dir)
-        tests = parse_events(os.path.join(run_dir, 'events.jsonl'))['tests']
+        tests = parse_run(run_dir)['tests']
         summary['failing'] = sum(1 for test in tests.values() if test['status'] in ('failed', 'hung'))
         runs.append((summary, tests))
     runs.sort(key=lambda run: run[0]['started'])
@@ -455,7 +557,7 @@ def first_issue(test):
 
 def cmd_compare(options):
     summary = read_summary(options.out)
-    tests = parse_events(os.path.join(options.out, 'events.jsonl'))['tests']
+    tests = parse_run(options.out)['tests']
     known, _ = read_list(options.list)
     failing = {name for name, test in tests.items() if test['status'] in ('failed', 'hung')}
     summary['failing'] = len(failing)
@@ -490,7 +592,7 @@ def cmd_compare(options):
 
 
 def cmd_failing(options):
-    tests = parse_events(os.path.join(options.out, 'events.jsonl'))['tests']
+    tests = parse_run(options.out)['tests']
     known, _ = read_list(options.list)
     for name, test in sorted(tests.items()):
         if test['status'] in ('failed', 'hung'):
@@ -512,6 +614,7 @@ def main(argv):
     run.add_argument('--skip', default=None)
     run.add_argument('--timeout', type=int, default=2400, help='kill the run after this many seconds (default 2400)')
     run.add_argument('--no-build', action='store_true', help='run what is already built')
+    run.add_argument('--keep-temp', action='store_true', help="leave the tests' stores in the user temp dir")
     run.add_argument('--commit', default=None, help='the commit a copy without .git was exported from')
     run.add_argument('--version', default=None, help='the release that commit belongs to, with --commit')
     record = sub.add_parser('record', help='write the list from idle and loaded whole-bundle runs')

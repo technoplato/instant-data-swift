@@ -10,17 +10,14 @@ import Testing
 /// Issue: https://issues.knophy.com/issues/150
 @Suite(.serialized)
 struct LinkedInfiniteScribeShapedMemorySoakTests {
-  @Test
+  // The process's absolute footprint and its growth, which the rest of the bundle moves too (#1021).
+  @Test(.measurement)
   func scribeShapedInfiniteListStayWithinFootprintBudget() async throws {
     let profile = LinkedInfiniteScribeShapedSoakProfile.publishGate
     let baseline = InstantProcessMemory.sample()
-    let cacheURL = FileManager.default.temporaryDirectory
-      .appendingPathComponent("LinkedInfiniteScribeSoak-\(UUID().uuidString)")
+    // Removed when the process exits (#1021: 4.5 GB of these were left on the Mac mini in one day).
+    let cacheURL = try InstantTestScratch.directory("LinkedInfiniteScribeSoak")
       .appendingPathComponent("state.sqlite")
-    try FileManager.default.createDirectory(
-      at: cacheURL.deletingLastPathComponent(),
-      withIntermediateDirectories: true
-    )
 
     let runtime = try await InstantRuntime.bootstrap(
       configuration: InstantRuntimeConfiguration(

@@ -10,7 +10,8 @@ import Darwin
 
 @Suite(.serialized)
 struct InstantResourceCitizenshipTests {
-  @Test("Accelerated native media remains a healthy realtime citizen")
+  // The process's CPU percent: beside the bundle it measured the other tests too (393% against 200%) (#1021).
+  @Test("Accelerated native media remains a healthy realtime citizen", .measurement)
   func nativeMediaPrimitiveReportsBurstAndRealtimeEquivalentResources() async throws {
     let policy = try ResourceCitizenshipPolicy.load()
       .profiles.nativeMediaPrimitiveBurst

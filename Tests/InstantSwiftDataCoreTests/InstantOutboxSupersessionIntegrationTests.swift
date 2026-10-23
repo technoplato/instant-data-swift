@@ -1205,8 +1205,11 @@ struct InstantOutboxSupersessionIntegrationTests {
 }
 
 private func temporaryCacheURL(_ suffix: String) -> URL {
-  FileManager.default.temporaryDirectory
-    .appendingPathComponent("instant-outbox-supersession-\(suffix)-\(UUID().uuidString).sqlite")
+  // Removed when the process exits (#1021: these stores were never removed and filled the Mac mini).
+  InstantTestScratch.store(
+    FileManager.default.temporaryDirectory
+      .appendingPathComponent("instant-outbox-supersession-\(suffix)-\(UUID().uuidString).sqlite")
+  )
 }
 
 private func makeOfflineRuntime(

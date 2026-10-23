@@ -750,8 +750,11 @@ private func terminalPersistence(
   mutations: [PendingMutation]
 ) async throws -> SQLitePersistenceStore {
   let persistence = try SQLitePersistenceStore(
-    fileURL: FileManager.default.temporaryDirectory.appendingPathComponent(
-      "instant-terminal-component-\(suffix)-\(UUID().uuidString).sqlite"
+    // Removed when the process exits (#1021: these stores were never removed and filled the Mac mini).
+    fileURL: InstantTestScratch.store(
+      FileManager.default.temporaryDirectory.appendingPathComponent(
+        "instant-terminal-component-\(suffix)-\(UUID().uuidString).sqlite"
+      )
     )
   )
   try await persistence.bootstrap()

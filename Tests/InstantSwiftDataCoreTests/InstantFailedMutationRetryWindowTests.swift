@@ -400,8 +400,11 @@ private func retryWindowPersistence(
   mutations: [PendingMutation]
 ) async throws -> SQLitePersistenceStore {
   let persistence = try SQLitePersistenceStore(
-    fileURL: FileManager.default.temporaryDirectory.appendingPathComponent(
-      "instant-failed-retry-window-\(suffix)-\(UUID().uuidString).sqlite"
+    // Removed when the process exits (#1021: these stores were never removed and filled the Mac mini).
+    fileURL: InstantTestScratch.store(
+      FileManager.default.temporaryDirectory.appendingPathComponent(
+        "instant-failed-retry-window-\(suffix)-\(UUID().uuidString).sqlite"
+      )
     )
   )
   try await persistence.bootstrap()
@@ -463,10 +466,8 @@ private func retryWindowMutation(
 }
 
 private func temporaryRetryWindowCacheURL() throws -> URL {
-  let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
-    "InstantFailedMutationRetryWindowTests-\(UUID().uuidString)"
-  )
-  try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+  // Removed when the process exits (#1021: these stores were never removed and filled the Mac mini).
+  let directory = try InstantTestScratch.directory("InstantFailedMutationRetryWindowTests")
   return directory.appendingPathComponent("state.sqlite")
 }
 

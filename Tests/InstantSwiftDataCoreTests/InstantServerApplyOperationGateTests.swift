@@ -15,7 +15,10 @@ struct InstantServerApplyOperationGateTests {
   /// written every 25 ms throughout. Before the fix the component closure and the outbox rewrite
   /// were quadratic in that component and ran under the operation gate; a local write waited
   /// seconds behind them.
-  @Test func localTransactsDoNotWaitBehindAServerApplyOverAHubComponent() async throws {
+  ///
+  /// Its bounds are wall-clock latencies (the quadratic code took seconds), so it runs alone: beside the bundle the
+  /// longest local write took 7.9 s with the fix in place (#1021).
+  @Test(.measurement) func localTransactsDoNotWaitBehindAServerApplyOverAHubComponent() async throws {
     let fixture = try await OperationGateFixture.make(suffix: "hub", pendingCount: 1_000)
     let timelines = GateTimelineRecorder(correlationID: fixture.serverTransactionID)
     let token = InstantDiagnostics.shared.addHandler { entry in
@@ -94,8 +97,11 @@ private struct OperationGateFixture {
 
   static func make(suffix: String, pendingCount: Int, baseTripleCount: Int = 4_000) async throws -> Self {
     let recordingID = "gate-recording"
-    let cacheURL = FileManager.default.temporaryDirectory.appendingPathComponent(
-      "instant-operation-gate-\(suffix)-\(UUID().uuidString).sqlite"
+    // Removed when the process exits (#1021: these stores were never removed and filled the Mac mini).
+    let cacheURL = InstantTestScratch.store(
+      FileManager.default.temporaryDirectory.appendingPathComponent(
+        "instant-operation-gate-\(suffix)-\(UUID().uuidString).sqlite"
+      )
     )
     let persistence = try SQLitePersistenceStore(
       fileURL: cacheURL,

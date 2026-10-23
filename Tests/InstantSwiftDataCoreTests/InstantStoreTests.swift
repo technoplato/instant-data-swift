@@ -21810,9 +21810,8 @@ struct InstantStoreTests {
   }
 
   private func temporaryCacheURL() throws -> URL {
-    let directory = FileManager.default.temporaryDirectory
-      .appendingPathComponent("InstantSwiftDataTests-\(UUID().uuidString)")
-    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    // Removed when the process exits (#1021: these stores were never removed and filled the Mac mini).
+    let directory = try InstantTestScratch.directory("InstantSwiftDataTests")
     return directory.appendingPathComponent("state.sqlite")
   }
 
