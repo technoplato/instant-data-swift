@@ -13,6 +13,9 @@
 // - 2026-10-23: a server-apply commit times its parts (validation, facts, outbox, results, bookkeeping, the SQLite
 //   COMMIT) for the gate-held event (#932).
 // - 2026-10-23: the resident-patch page reads only the staged rows among the ids it is given (#932).
+// - 2026-10-23: a server apply's body page checks only its own rows against the outbox; it re-checked the whole plan
+//   on every 51-row page (~2R^2/50 row checks per apply, each walking a body's overflow pages). Extending the plan
+//   and its commit still check every row (#932).
 
 import Foundation
 import IssueReporting
@@ -6667,14 +6670,6 @@ public actor SQLitePersistenceStore {
     direction: InstantServerApplyBodyDirection,
     after position: InstantOutboxDeliveryPosition?
   ) throws -> InstantServerApplyBodyPage {
-    guard try serverApplyPlanRowsStillMatchWithoutTransaction(id: planID) else {
-      return InstantServerApplyBodyPage(
-        isStale: true,
-        entries: [],
-        nextPosition: nil,
-        decodedBodyByteCount: 0
-      )
-    }
     let sourceJSON: String
     let sourceJoin: String
     switch direction {
@@ -6762,6 +6757,19 @@ public actor SQLitePersistenceStore {
     }
     finishStatement(statement)
     statement = nil
+    // #932: the page checks its own rows, in the transaction that reads them. Checking every row of the plan here cost
+    // ~2R^2/50 row checks a full apply, each reading the outbox columns stored after a row's body (~262,000 at the
+    // phone's 2,560 pending). A row that moves after its page was read still makes the plan stale: extending the plan
+    // and its commit check every row, in the transactions that write.
+    let pageMutationIDs = candidates.map(\.mutationID) + (oversizedMutationID.map { [$0] } ?? [])
+    guard try serverApplyPlanRowsStillMatchWithoutTransaction(id: planID, among: pageMutationIDs) else {
+      return InstantServerApplyBodyPage(
+        isStale: true,
+        entries: [],
+        nextPosition: nil,
+        decodedBodyByteCount: 0
+      )
+    }
     if let oversizedMutationID {
       let blocker = try revokeMismatchedPreparedReceiptWithoutTransaction(
         mutationID: oversizedMutationID
@@ -6922,15 +6930,29 @@ public actor SQLitePersistenceStore {
       )
   }
 
-  private func serverApplyPlanRowsStillMatchWithoutTransaction(id planID: String) throws -> Bool {
-    serverApplyMetrics.wholePlanValidationCount += 1
+  /// Whether every row of the plan, or only those among `mutationIDs`, still matches the outbox row it was planned
+  /// from.
+  private func serverApplyPlanRowsStillMatchWithoutTransaction(
+    id planID: String,
+    among mutationIDs: [String]? = nil
+  ) throws -> Bool {
+    let scope: String
+    var bindings: [SQLiteBinding] = [.text(planID)]
+    if let mutationIDs {
+      guard !mutationIDs.isEmpty else { return true }
+      scope = "AND planned.mutation_id IN (SELECT value FROM json_each(?))"
+      bindings.append(.text(try encode(mutationIDs)))
+    } else {
+      serverApplyMetrics.wholePlanValidationCount += 1
+      scope = ""
+    }
     return try selectInt64(
       """
       SELECT COUNT(*)
       FROM instant_server_apply_rows AS planned
       LEFT JOIN instant_outbox AS outbox
         ON outbox.mutation_id = planned.mutation_id
-      WHERE planned.plan_id = ? AND (
+      WHERE planned.plan_id = ? \(scope) AND (
         outbox.mutation_id IS NULL
         OR outbox.created_at_ms != planned.created_at_ms
         OR outbox.mutation_revision != planned.expected_mutation_revision
@@ -6952,7 +6974,7 @@ public actor SQLitePersistenceStore {
           IS NOT planned.expected_server_acceptance_payload_fingerprint
       )
       """,
-      [.text(planID)]
+      bindings
     ) == 0
   }
 
