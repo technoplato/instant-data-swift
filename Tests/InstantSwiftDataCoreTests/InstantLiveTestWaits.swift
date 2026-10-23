@@ -30,3 +30,48 @@ enum InstantLiveTestWait {
   }
 }
 
+/// The tests waiting for a count a scripted live actor raises (sent messages, receive requests, connections), each
+/// with the task that fails it at its deadline (#1020). The owning actor keeps it in a stored property and touches it
+/// only on its own executor: it appends inside `withCheckedThrowingContinuation`, resumes the waiters a new count
+/// satisfies, and fails one from its deadline task. Each continuation is removed before it is resumed, so it resumes
+/// exactly once whichever comes first.
+struct InstantLiveTestCountWaiters {
+  private struct Waiter {
+    var id: UUID
+    var count: Int
+    var continuation: CheckedContinuation<Void, any Error>
+    var deadline: Task<Void, Never>
+  }
+
+  private var waiters: [Waiter] = []
+
+  mutating func append(
+    id: UUID,
+    count: Int,
+    continuation: CheckedContinuation<Void, any Error>,
+    deadline: Task<Void, Never>
+  ) {
+    waiters.append(Waiter(id: id, count: count, continuation: continuation, deadline: deadline))
+  }
+
+  /// Resumes every waiter whose count `count` reaches and cancels its deadline.
+  mutating func resume(reaching count: Int) {
+    var pending: [Waiter] = []
+    for waiter in waiters {
+      if count >= waiter.count {
+        waiter.deadline.cancel()
+        waiter.continuation.resume()
+      } else {
+        pending.append(waiter)
+      }
+    }
+    waiters = pending
+  }
+
+  /// Fails the waiter `id` with the error its awaited count describes, if it is still waiting.
+  mutating func fail(_ id: UUID, with error: (_ awaitedCount: Int) -> any Error) {
+    guard let index = waiters.firstIndex(where: { $0.id == id }) else { return }
+    let waiter = waiters.remove(at: index)
+    waiter.continuation.resume(throwing: error(waiter.count))
+  }
+}

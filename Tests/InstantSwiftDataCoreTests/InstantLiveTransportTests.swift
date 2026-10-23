@@ -7097,11 +7097,6 @@ private func waitForScriptedSentMessageCount(
 }
 
 private actor InstantRuntimeScriptedLiveSession {
-  private struct SentWaiter {
-    var count: Int
-    var continuation: CheckedContinuation<Void, Never>
-  }
-
   private struct PendingReceive {
     var abortToken: UUID
     var continuation: InstantLiveTestThrowingContinuationBox<InstantLiveMessage>
@@ -7110,9 +7105,9 @@ private actor InstantRuntimeScriptedLiveSession {
   nonisolated private let abortState = InstantLiveTestWireAbortState()
   private var messages: [InstantLiveMessage]
   private var sent: [InstantLiveMessage] = []
-  private var sentWaiters: [SentWaiter] = []
+  private var sentWaiters = InstantLiveTestCountWaiters()
   private var receiveRequestCountValue = 0
-  private var receiveWaiters: [SentWaiter] = []
+  private var receiveWaiters = InstantLiveTestCountWaiters()
   private var receiveContinuation: PendingReceive?
   private var isClosed = false
 
@@ -7152,8 +7147,17 @@ private actor InstantRuntimeScriptedLiveSession {
     timeout: Duration = InstantLiveTestWait.defaultTimeout
   ) async throws {
     guard sent.count < count else { return }
-    await withCheckedContinuation { continuation in
-      sentWaiters.append(SentWaiter(count: count, continuation: continuation))
+    let id = UUID()
+    try await withCheckedThrowingContinuation { continuation in
+      sentWaiters.append(
+        id: id,
+        count: count,
+        continuation: continuation,
+        deadline: Task {
+          guard (try? await Task.sleep(for: timeout)) != nil else { return }
+          await self.expireSentWaiter(id, timeout: timeout)
+        }
+      )
     }
   }
 
@@ -7166,8 +7170,40 @@ private actor InstantRuntimeScriptedLiveSession {
     timeout: Duration = InstantLiveTestWait.defaultTimeout
   ) async throws {
     guard receiveRequestCountValue < count else { return }
-    await withCheckedContinuation { continuation in
-      receiveWaiters.append(SentWaiter(count: count, continuation: continuation))
+    let id = UUID()
+    try await withCheckedThrowingContinuation { continuation in
+      receiveWaiters.append(
+        id: id,
+        count: count,
+        continuation: continuation,
+        deadline: Task {
+          guard (try? await Task.sleep(for: timeout)) != nil else { return }
+          await self.expireReceiveWaiter(id, timeout: timeout)
+        }
+      )
+    }
+  }
+
+  private func expireSentWaiter(_ id: UUID, timeout: Duration) {
+    sentWaiters.fail(id) { count in
+      InstantLiveTestWaitTimedOut(
+        wait: "\(count) sent messages",
+        timeout: timeout,
+        observed: sent.map(InstantLiveTestWait.summary)
+      )
+    }
+  }
+
+  private func expireReceiveWaiter(_ id: UUID, timeout: Duration) {
+    receiveWaiters.fail(id) { count in
+      InstantLiveTestWaitTimedOut(
+        wait: "\(count) receive requests",
+        timeout: timeout,
+        observed: [
+          receiveRequestCountValue == 1
+            ? "1 receive request" : "\(receiveRequestCountValue) receive requests"
+        ]
+      )
     }
   }
 
@@ -7183,28 +7219,12 @@ private actor InstantRuntimeScriptedLiveSession {
 
   private func send(_ message: InstantLiveMessage) {
     sent.append(message)
-    var pending: [SentWaiter] = []
-    for waiter in sentWaiters {
-      if sent.count >= waiter.count {
-        waiter.continuation.resume()
-      } else {
-        pending.append(waiter)
-      }
-    }
-    sentWaiters = pending
+    sentWaiters.resume(reaching: sent.count)
   }
 
   private func receive() async throws -> InstantLiveMessage {
     receiveRequestCountValue += 1
-    var pendingReceiveWaiters: [SentWaiter] = []
-    for waiter in receiveWaiters {
-      if receiveRequestCountValue >= waiter.count {
-        waiter.continuation.resume()
-      } else {
-        pendingReceiveWaiters.append(waiter)
-      }
-    }
-    receiveWaiters = pendingReceiveWaiters
+    receiveWaiters.resume(reaching: receiveRequestCountValue)
     if !messages.isEmpty {
       return messages.removeFirst()
     }
