@@ -4,6 +4,18 @@ Green (#1006): the session prune unloads a closed query's result into instant_un
 ## 2026-10-23 12:34:03 EDT — instant-data-swift `c3b2e6d1eeb83bf118a1ef23f4cc5d2b95d2d2a5`
 Red test (#1006): InstantStoredResultReloadTests, a closed and pruned query reopened with the server silent.
 
+## 2026-10-23 12:33:27 EDT — instant-data-swift `9e8139438b119cdecf15fc58d18ae5942a4eea69`
+Green (#1007): a link set (a forward link's ids on the linking entity) sorts by its ids, with no key string built per comparison; every read of a long recording sorted its links again.
+
+## 2026-10-23 12:27:39 EDT — instant-data-swift `3de06c5253994677db4f5d3a3128f251f91f53b5`
+Red test (#1007): InstantManyCardinalitySortCostTests, the link-set sort costs 27.9x building one key per value.
+
+## 2026-10-23 12:27:09 EDT — instant-data-swift `47333e5eec5c8b67a325086d853fb4bf771db0ce`
+Green (#1007): an entity the store holds neither before nor after a publication (a delete of a row already gone) refreshes no verified observer.
+
+## 2026-10-23 12:06:54 EDT — instant-data-swift `f55a0cf80446ea6b3d7aa7e7d1ee2a93425ee21c`
+Red test (#1007): InstantUnresolvedEntityRefreshTests, a gone row refreshed every observer.
+
 ## 2026-10-22 10:16:10 EDT — scribe `8347b98dc33fd9a664cb91e5dc60d845d989056a`
 Fix (#1003): build 114 compiles for the Watch: recordingFixedMoment (190a228ec, #991) moved out of the iOS-only RecordingView.swift into RecordingAudioVisualizer.swift, which the Watch app compiles; build 114 installed from this commit.
 

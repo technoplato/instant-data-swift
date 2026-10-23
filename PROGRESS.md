@@ -1,3 +1,23 @@
+## 2026-10-23 12:58:00 EDT — two observer-refresh costs removed on main (#1007): a gone row no longer refreshes every observer, and a link set sorts without building key strings per comparison
+
+- **Why:** device time profiles of the consuming app (Release, idle on its list and recording in front) put the
+  observer refresh at 24-26% of the process's CPU, and inside it a many-cardinality sort at 23% of all CPU: a forward
+  link keeps every linked id on the linking entity, every read of that entity sorted them, and the comparator built two
+  key strings per comparison. Separately, a delete of a row the store no longer holds (a line's short-lived row deleted
+  by its final, and the same delete replayed over every server apply while the final is pending) resolved to no
+  namespace, so every observer re-materialized from the whole store.
+- **Commits on main (rebased on #1006's 28f5974f):** red `f55a0cf8`, green `47333e5e` (gone rows); red `3de06c52`,
+  green `9e813943` (link-set sort).
+- **Checks (Mac mini M4, Xcode 27 beta, load 2-4):** the new suites pass (5 + 3 tests); the whole
+  InstantSwiftDataCoreTests bundle fails 145 tests against v1.9.12's 144 on the same machine (missing upstream
+  fixtures, 250 ms timing bounds under parallel load); the three that differ pass alone.
+- **Measured (the write harness, release, 300 writes of a recorded session, 40 bystander observers, link stored as the
+  server schema stores it, 3 interleaved rounds):** instructions 152.0 G -> 123.3 G (gone rows) -> 105.7 G (both),
+  CPU 7.99 -> 5.91 s; per final 1,248 -> 623 M instructions; observer refresh 9.02 -> 2.60 ms per write; snapshots
+  materialized per final ~2,040 -> ~129. Interims and logical writes unchanged.
+- **Next:** release v1.9.13 from main (with #1006's stored-result reload), the consuming app's pin, then a device check:
+  observer refresh per minute while recording.
+
 ## 2026-10-22 02:23:30 EDT — v1.9.12: a relaunch releases the delivery claims of a process that has ended instead of waiting out their deadlines (#990, #1000)
 
 - **Why:** a process that ends while it waits for acknowledgements leaves its durable delivery claims behind, and the
