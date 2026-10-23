@@ -208,17 +208,23 @@ actor AsyncSerialGate {
   private var stallReportedForHolder = false
   private var stallWatchdog: Task<Void, Never>?
 
+  /// The clock waits and holds are timed by. A test that asserts no wait is reported passes one that stands still:
+  /// on the wall clock, a quick handoff took over the 1 s report threshold under the whole test bundle's load (#1021).
+  private let currentDate: @Sendable () -> Date
+
   init(
     label: String,
     owner: String? = nil,
     stallThresholdMilliseconds: UInt64 = 5_000,
     waitReportThresholdMilliseconds: Int = 250,
     agingMilliseconds: Int = 2_000,
+    now: @escaping @Sendable () -> Date = { Date() },
     report: (@Sendable (StallReport) -> Void)? = nil,
     waitReport: (@Sendable (WaitReport) -> Void)? = nil
   ) {
     self.label = label
     self.owner = owner
+    self.currentDate = now
     self.stallThresholdMilliseconds = stallThresholdMilliseconds
     self.waitReportThresholdMilliseconds = waitReportThresholdMilliseconds
     self.agingMilliseconds = agingMilliseconds
@@ -338,7 +344,7 @@ actor AsyncSerialGate {
     if waiters.contains(where: { !$0.isWaiting }) {
       waiters.removeAll { !$0.isWaiting }
     }
-    let now = Date()
+    let now = currentDate()
     if let index = nextWaiterIndex(at: now) {
       let waiter = waiters.remove(at: index)
       guard case .waiting(let continuation) = waiter.state else {
@@ -401,7 +407,7 @@ actor AsyncSerialGate {
     holderPhase = nil
     markedPhase.withLock { $0 = nil }
     markedWrites.withLock { $0 = nil }
-    holderAcquiredAt = Date()
+    holderAcquiredAt = currentDate()
     stallCount = 0
     stallReportedForHolder = false
   }
@@ -411,7 +417,7 @@ actor AsyncSerialGate {
     priority: Priority,
     honoringCancellation: Bool
   ) async throws {
-    let waiter = Waiter(operation: operation, priority: priority, enqueuedAt: Date())
+    let waiter = Waiter(operation: operation, priority: priority, enqueuedAt: currentDate())
     guard honoringCancellation else {
       return try await withCheckedThrowingContinuation { continuation in
         attach(continuation, to: waiter)
@@ -496,7 +502,7 @@ actor AsyncSerialGate {
       return false
     }
 
-    let now = Date()
+    let now = currentDate()
     let longestWaitMilliseconds = Self.milliseconds(since: longestWaiting.enqueuedAt, to: now)
     guard longestWaitMilliseconds >= Int(stallThresholdMilliseconds) else {
       // The current holder only just took the baton. Keep watching instead of

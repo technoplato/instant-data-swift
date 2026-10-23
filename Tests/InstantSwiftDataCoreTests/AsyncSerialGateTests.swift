@@ -269,9 +269,12 @@ struct AsyncSerialGateTests {
   @Test("a quick handoff reports no wait")
   func quickHandoffReportsNoWait() async throws {
     let waits = GateWaitReportRecorder()
+    // The gate's clock stands still, so the handoff is quick by construction: on the wall clock it took over the 1 s
+    // threshold under the whole bundle's load and reported a wait (#1021).
     let gate = AsyncSerialGate(
       label: "operation",
       waitReportThresholdMilliseconds: 1_000,
+      now: { Date(timeIntervalSince1970: 1_700_000_000) },
       waitReport: { report in Task { await waits.record(report) } }
     )
 
