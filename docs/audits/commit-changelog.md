@@ -1,3 +1,12 @@
+## 2026-10-23 16:33:26 EDT — scribe `7b64496662aef2a6eb50f1f25d8e00c5cbec975b`
+Change log (#1016): build 117's What's New line ec39b9f0d.
+
+## 2026-10-23 16:33:08 EDT — scribe `ec39b9f0d2c3405a2aa9fc5793e87e6431a26838`
+Build 117's What's New line (#1016): each minute of audio sent while recording is exactly that minute.
+
+## 2026-10-23 16:32:55 EDT — scribe `e13af7d67c0ccdc6a75955d1ab7ee6f1f17da3eb`
+Touch claim (#1016): build 117's What's New line.
+
 ## 2026-10-23 16:31:20 EDT — scribe `ed32a89213ac764f25bbbd0147e21099f7e5c6b3`
 Green (#1011): the energy ledger keeps instant-data-swift 1.9.20's server applies by path (instantServerApplyPaths on energy.ledger).
 
