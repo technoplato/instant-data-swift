@@ -16956,6 +16956,8 @@ public actor SQLitePersistenceStore {
         [.text(triple.entityID), .text(triple.attributeID)]
       )
     }
+    // The value's text and the fact's, the value written once (#1007).
+    let texts = try InstantStoredJSON.storedTexts(triple, using: encoder)
     try execute(
       """
       INSERT OR REPLACE INTO instant_triples
@@ -16965,10 +16967,10 @@ public actor SQLitePersistenceStore {
       [
         .text(triple.entityID),
         .text(triple.attributeID),
-        .text(try encode(triple.value)),
+        .text(texts.value),
         .text(triple.txID),
         .int(triple.txTime.milliseconds),
-        .text(try encode(triple)),
+        .text(texts.triple),
       ]
     )
   }
@@ -18486,6 +18488,16 @@ public actor SQLitePersistenceStore {
         throw persistenceError(operation: "bind SQL", message: lastErrorMessage())
       }
     }
+  }
+
+  /// A value's stored text, as `JSONEncoder` writes it (#1007): see ``InstantStoredJSON``.
+  private func encode(_ value: InstantValue) throws -> String {
+    try InstantStoredJSON.stored(value, using: encoder)
+  }
+
+  /// A fact's stored text, as `JSONEncoder` writes it (#1007): see ``InstantStoredJSON``.
+  private func encode(_ triple: InstantTriple) throws -> String {
+    try InstantStoredJSON.stored(triple, using: encoder)
   }
 
   private func encode<Value: Encodable>(_ value: Value) throws -> String {
