@@ -10,6 +10,42 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## October 23rd, 2026 at 3:46:10 p.m. EDT — `b52bea02e6f0` Document the v1.9.19 release: a page that selects fields materializes only the fields it reads (#1007)
+
+- **Implementation commit:** `b52bea02e6f09420fbd8a4253004a9da0e261c4a`
+- **Change:** Document the v1.9.19 release: a page that selects fields materializes only the fields it reads (#1007)
+- **Details:**
+  - Release document: the field-restricted materialization, its red and green, the related suites on this tree with 1.9.18 under it, the whole-suite comparison, the app-shaped harness at 4 and 200 lines per recording; carries 1.9.18 (#932).
+- **Files:**
+  - `docs/releases/v1.9.19.md` — the release document
+- **User context (verbatim):**
+  > I want to optimize the performance of the application with its exact feature set.
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run); no SpecStory capture for headless runs.
+
+## October 23rd, 2026 at 3:46:10 p.m. EDT — `73a836cb78a2` Green (#1007): a page that selects fields materializes only what it selects, filters, orders and includes
+
+- **Implementation commit:** `73a836cb78a29eb4686c0e23fd598044cb1c76a1`
+- **Change:** Green (#1007): a page that selects fields materializes only what it selects, filters, orders and includes
+- **Details:**
+  - Candidates are materialized with their filter and order fields, shown rows with selected, filter, order and include fields (shownFields, candidateFields); no selection keeps whole rows. App-shaped list harness: observer refresh -22% (4 lines per recording) to about -50% (200 lines).
+- **Files:**
+  - `Sources/InstantSwiftDataCore/TripleIndexes.swift` — shownFields, candidateFields, the fields parameter of snapshot materialization and its page call sites
+- **User context (verbatim):**
+  > I want to optimize the performance of the application with its exact feature set.
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run); no SpecStory capture for headless runs.
+
+## October 23rd, 2026 at 3:46:10 p.m. EDT — `6a4cab2b1ce3` Red (#1007): a page that selects a few fields materializes every field of its rows, link sets and all
+
+- **Implementation commit:** `6a4cab2b1ce3786c53edcf870e0fb012b27ba7b8`
+- **Change:** Red (#1007): a page that selects a few fields materializes every field of its rows, link sets and all
+- **Details:**
+  - InstantSelectedFieldsMaterializationTests: a twelve-row page selecting two fields, filtered on a field no index covers, cost 117 times as much with one 20,000-link recording as without. A random equivalence test (page equals the every-field page cut to its selection) passes before and after.
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantSelectedFieldsMaterializationTests.swift` — the red tests
+- **User context (verbatim):**
+  > I want to optimize the performance of the application with its exact feature set.
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run); no SpecStory capture for headless runs.
+
 ## October 23rd, 2026 at 3:31:52 p.m. EDT — `0329180da7f0` Document the v1.9.18 release: a server apply costs what its frame changes, and its gate event says what it cost (#932)
 
 - **Implementation commit:** `0329180da7f0bceb9363263821ad840f3d555f04`

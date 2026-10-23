@@ -1,3 +1,13 @@
+## 2026-10-23 15:47:00 EDT — v1.9.19: a page that selects fields materializes only the fields it reads (#1007); carries 1.9.18 (#932)
+
+- **Commits:** red `6a4cab2b`, green `73a836cb`; release document `b52bea02`; then this ledger commit and the tag v1.9.19.
+- **Checks:** `InstantSelectedFieldsMaterializationTests` red then green (a twelve-row page selecting two fields with a
+  20,000-link recording: 117x the page without, now under 3x; random equivalence over five seeds); on this tree with
+  1.9.18 under it, 15 suites (122 tests) pass; whole-bundle failures outside the baseline pass alone or fail the same on
+  1.9.17 under the same load. App-shaped list harness against 1.9.17: observer refresh 9.4-10.5 -> 7.1-8.5 ms per write
+  with 4 lines per recording, 15.1-21.3 -> 8.2-9.8 ms with 200.
+- **Next:** the consuming app pins exactly 1.9.19; on a device, `instant:observerRefresh` while recording.
+
 ## 2026-10-23 15:31:52 EDT — v1.9.18: a server apply costs what its frame changes, and its gate event says what it cost (#932); carries 1.9.17 (#1007)
 
 - **Commits:** plan `9be85528`; red `696f5cc0`; greens `7b468b16` (the gate-held event's path and commit parts),

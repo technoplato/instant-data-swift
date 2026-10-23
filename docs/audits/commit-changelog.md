@@ -1,3 +1,18 @@
+## 2026-10-23 15:45:51 EDT — instant-data-swift `b52bea02e6f09420fbd8a4253004a9da0e261c4a`
+Release document for v1.9.19 (#1007): a page that selects fields materializes only the fields it reads; carries 1.9.18 (#932).
+
+## 2026-10-23 15:44:07 EDT — instant-data-swift `73a836cb78a29eb4686c0e23fd598044cb1c76a1`
+Green (#1007): candidates materialized with filter and order fields, shown rows with selected, filter, order and include fields (a two-field page with a 20,000-link recording: under 3x, was 117x).
+
+## 2026-10-23 15:44:07 EDT — instant-data-swift `6a4cab2b1ce3786c53edcf870e0fb012b27ba7b8`
+Red test (#1007): InstantSelectedFieldsMaterializationTests, a page that selects a few fields materialized every field of its rows.
+
+## 2026-10-23 15:08:00 EDT — realtime-voice `35102d1cf0d8` and `bc5bfcd6b`
+Scribe and Scribe Playback pinned instant-data-swift exactly 1.9.17 (#1007, #1011); changelog and PROGRESS.
+
+## 2026-10-23 15:33:00 EDT — realtime-voice `23d24b852`
+The hot-path audit: N1 and M measured and released in 1.9.17, the prune re-ranked by the ledger, M2 named (#1007).
+
 ## 2026-10-23 15:41:58 EDT — scribe `7bfe5abafb1f9b295d391482e2682e26b755f6c4`
 Changelog (#1018, #1019): build 116 cut 8854000d4 and the Watch fix's red c11577d41 and green d403983c5 recorded in Scribe's CHANGELOG.md.
 
