@@ -1163,11 +1163,12 @@ struct InstantBoundedServerApplyRebaseTests {
   /// #303: this runtime's own local writes landed between each attempt's seed and its plan, so every optimistic
   /// attempt went stale and the apply threw "changed repeatedly". On the live path that ended the receive loop; the
   /// reconnect re-sent in-flight writes, which Scribe's validUpdate rule refused as replays. The experiment agent's
-  /// large-store drop hit it while dictation continued after an outage (pair-large-drop-r1). Once the optimistic
-  /// attempts are spent, one attempt holds the operation gate from its seed to its commit, so the local writes wait
-  /// and the server transaction lands.
+  /// large-store drop hit it while dictation continued after an outage (pair-large-drop-r1). #932: after one stale
+  /// attempt, the next holds the operation gate from its seed to its plan, so the write started there waits for the
+  /// plan and lands as the appended tail the catch-up replays. (Before #932: five stale attempts, then one attempt that
+  /// held the gate from its seed to its commit.)
   @Test
-  func localWritesThatOutpaceEveryAttemptGetOneExclusiveApply() async throws {
+  func localWritesThatOutpaceTheOptimisticAttemptStillLetTheApplyLand() async throws {
     let writer = BoundedServerApplyConcurrentLocalWriter(
       rootEntityID: "outpaced-root",
       writesPerPreparation: 1
@@ -1179,7 +1180,7 @@ struct InstantBoundedServerApplyRebaseTests {
       ),
       onSeedLoaded: { operationGateHeld in
         if operationGateHeld {
-          // The exclusive attempt holds the gate, so this write waits for it, as dictation would.
+          // The attempt holds the gate, so this write waits for it, as dictation would.
           Task { await writer.writeBatchForPreparation() }
         } else {
           await writer.writeBatchForPreparation()
@@ -1194,10 +1195,10 @@ struct InstantBoundedServerApplyRebaseTests {
 
     expectNoDifference(application.syncState.processedTransactionID, "outpaced-server")
     try await instantLiveWithTimeout(
-      operation: "wait for the write that waited behind the exclusive apply",
+      operation: "wait for the write that waited behind the gate-held attempt",
       timeoutMilliseconds: 5_000
     ) {
-      while await writer.mutationIDs().count < 6 {
+      while await writer.mutationIDs().count < 2 {
         try Task.checkCancellation()
         await Task.yield()
       }
@@ -1205,14 +1206,14 @@ struct InstantBoundedServerApplyRebaseTests {
     let writeFailures = await writer.failures()
     expectNoDifference(writeFailures, [])
     let localMutationIDs = await writer.mutationIDs()
-    expectNoDifference(localMutationIDs, (0..<6).map { "continuous-local-\($0)" })
+    expectNoDifference(localMutationIDs, (0..<2).map { "continuous-local-\($0)" })
     let state = try await runtime.persistence.loadState()
     expectNoDifference(state.snapshot.outbox.map(\.id), localMutationIDs)
     expectNoDifference(
       state.snapshot.store.triples.first(where: {
         $0.entityID == "outpaced-root" && $0.attributeID == "items/value"
       })?.value,
-      .string("local-5"),
+      .string("local-1"),
       "The newest pending write stays on top of the server's value."
     )
     let firstWrite = try #require(state.snapshot.outbox.first)

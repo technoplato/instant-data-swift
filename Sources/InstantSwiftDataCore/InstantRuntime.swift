@@ -12,6 +12,9 @@
 // - 2026-10-23: a server apply works out its restated live-query results' saves (ownership rows that leave and join,
 //   and the JSON when it is written) before it takes the operation gate, under the revision the commit checks; the
 //   commit diffed them under the gate (#932).
+// - 2026-10-23: after one stale attempt, a server apply's next attempt holds the operation gate from its seed to its
+//   plan only, instead of five stale attempts and then an apply that held the gate from seed to commit; the gate-held
+//   event reports how long it held the gate to plan (#932).
 
 import Foundation
 import IssueReporting
@@ -1203,6 +1206,20 @@ private struct InstantAppliedServerTransaction: Sendable {
 private struct InstantServerApplySeed: Sendable {
   var state: InstantPersistenceState
   var preparedStore: PreparedStoreMutation
+}
+
+/// What one server-apply attempt planned, carried out of the part that may hold the operation gate (#932).
+private struct InstantServerApplyAttemptPlan: Sendable {
+  var seed: InstantServerApplySeed
+  var authoritativeTransaction: InstantStoreTransaction
+  var reportedAuthoritativeTransaction: InstantStoreTransaction
+  var changedMergedAttributes: [InstantAttribute]
+  var preparedQueryResults: [InstantPreparedLiveQueryResultSave]?
+  var receiptPatches: [String: [InstantTriple]]
+  var failureSplice: InstantServerApplyFailureSplice
+  /// "reduced", or why the attempt peels and replays its whole component, for the gate-held event.
+  var reductionPath: String
+  var plan: InstantServerApplyPlan
 }
 
 /// The outcome of one attempt to record a server refusal of a claimed write.
@@ -2810,172 +2827,223 @@ public final class InstantRuntime: Sendable {
     var initialSeed = initialSeed
     applyAttempts: for attemptIndex in 0..<maximumAttempts {
       let attempt = attemptIndex + 1
-      let seed: InstantServerApplySeed
-      if let firstSeed = initialSeed {
-        seed = firstSeed
-        initialSeed = nil
-      } else {
-        seed = try await loadServerApplySeed(
-          operationGateAlreadyHeld: operationGateAlreadyHeld
-        )
+      // #932: an attempt plans outside the operation gate, and a local write that lands between its seed and its plan
+      // makes it stale. While a recording writes, every attempt went stale, and after five the apply ran again holding
+      // the gate from seed to commit, so every read and write waited for the whole apply (25
+      // `server-apply.exclusive-fallback` events on the phone, 2026-10-22..23). After one stale attempt, the next holds
+      // the gate from its seed to its plan only; writes that land after the plan are the appended tail its catch-up
+      // replays, as on the first attempt.
+      let holdsGateWhilePlanning = attemptIndex > 0 && !operationGateAlreadyHeld
+      let planningStartedAt = ContinuousClock.now
+      if holdsGateWhilePlanning {
+        try await enterOperationGateUnlessCancelled(operation: "plan server apply", priority: .interactive)
       }
-      await configuration.onServerApplySeedLoadedForTesting?(operationGateAlreadyHeld)
-      let compactState = seed.state
-      var authoritativeTransaction = baseAuthoritativeTransaction
-      if !liveQueryResultReplacements.isEmpty {
-        recordActorHop(.persistence)
-        guard let retractions = try await persistence.liveQueryReplacementRetractions(
-          for: liveQueryResultReplacements,
-          expectedQueryResultRevision: compactState.queryResultRevision
-        ) else { continue applyAttempts }
-        guard let protectedRetractions = try await persistence.protectingServerRetractions(
-          retractions.operations,
-          expectedOutboxRevision: compactState.outboxRevision,
-          processedTransactionID: processedTransactionID,
-          clearedSlots: retractions.clearedSlots
-        ) else { continue applyAttempts }
-        authoritativeTransaction.operations.insert(contentsOf: protectedRetractions, at: 0)
-      }
-      var footprint = Self.serverApplyFootprint(
-        operations: authoritativeTransaction.operations
-      )
-      let changedMergedAttributes: [InstantAttribute]
-      if attributesToMerge.isEmpty {
-        changedMergedAttributes = []
-      } else {
-        let currentAttributes = compactState.snapshot.store.attributes
-        let previousAttributes = Dictionary(
-          uniqueKeysWithValues: currentAttributes.map { ($0.id, $0) }
-        )
-        var mergedAttributeStore = AttributeStore(attributes: currentAttributes)
-        mergedAttributeStore.merge(attributesToMerge)
-        changedMergedAttributes = mergedAttributeStore.attributes.filter {
-          previousAttributes[$0.id] != $0
+      var planned: InstantServerApplyAttemptPlan?
+      planning: do {
+        let seed: InstantServerApplySeed
+        if let firstSeed = initialSeed {
+          seed = firstSeed
+          initialSeed = nil
+        } else {
+          seed = try await loadServerApplySeed(
+            operationGateAlreadyHeld: operationGateAlreadyHeld || holdsGateWhilePlanning
+          )
         }
-      }
-      let mergedAttributeCount = changedMergedAttributes.count
-      // #932: the restated results' saves (their ownership rows and, when due, their JSON) are worked out here, outside
-      // the operation gate, under the revisions the commit checks; it read 7,287 restated facts' rows and encoded their
-      // values under the gate on every frame. A frame that changes attributes saves in the commit, as the merged
-      // attributes decide each result's nested limits there.
-      var preparedQueryResults: [InstantPreparedLiveQueryResultSave]?
-      if !persistedLiveQueryResults.isEmpty, mergedAttributeCount == 0 {
-        recordActorHop(.persistence)
-        guard let prepared = try await persistence.prepareLiveQueryResultSaves(
-          persistedLiveQueryResults,
-          expectedQueryResultRevision: compactState.queryResultRevision
-        ) else { continue applyAttempts }
-        preparedQueryResults = prepared
-      }
-      // Attribute shape changes can alter every optimistic operation on that attribute, even when
-      // refresh-ok carries no triple operation. Treat the schema transition as a global server
-      // apply so every active overlay is peeled before canonicalization and replayed afterward.
-      if mergedAttributeCount > 0 {
-        footprint.isGlobal = true
-      }
-      // #296: keep only the server facts that can change the authoritative base beneath the pending
-      // writes. When what remains touches no entity a surviving pending write touches, the plan peels
-      // and replays nothing.
-      // Callers see the whole authoritative transaction, including the facts this apply skipped.
-      let reportedAuthoritativeTransaction = authoritativeTransaction
-      var excludesWatermarkRoots = false
-      var receiptPatches: [String: [InstantTriple]] = [:]
-      var failureSplice = InstantServerApplyFailureSplice()
-      // #932: the path this apply takes, for the gate-held event. The reduction's decline was logged at debug only, so
-      // the phone could not say why a frame peeled and replayed ~2,560 pending writes.
-      var reductionDecline: InstantServerApplyReductionIneligibility?
-      let reductionPath: String
-      if !configuration.reducesServerApplyToAffectedOverlays {
-        reductionPath = "full rebase: reduction off"
-      } else if mergedAttributeCount > 0 {
-        reductionPath = "full rebase: attributes changed"
-      } else if confirmingMutationID != nil {
-        reductionPath = "full rebase: confirming apply"
-      } else if footprint.isGlobal {
-        reductionPath = "full rebase: global footprint"
-      } else if let reduced = try await reducedServerApplyOperations(
-        authoritativeTransaction.operations,
-        processedTransactionID: processedTransactionID,
-        seed: seed,
-        declineReason: &reductionDecline
-      ) {
-        authoritativeTransaction.operations = reduced.operations
-        receiptPatches = reduced.receiptPatches
-        failureSplice = reduced.failureSplice
-        // A reduced apply changes only entities no surviving pending write touches, so a link it changes is no
-        // reason to peel the linked entity's writes.
-        footprint = Self.serverApplyFootprint(operations: reduced.operations, includingReferenceTargets: false)
-        excludesWatermarkRoots = true
-        reductionPath = "reduced"
-      } else {
-        reductionPath = "full rebase: \(reductionDecline?.rawValue ?? "declined")"
-      }
-      let hasAuthoritativeStoreChanges =
-        !authoritativeTransaction.operations.isEmpty || mergedAttributeCount > 0
-      let planID = "server-apply-\(configuration.makeID())"
-      let plan: InstantServerApplyPlan
-      var didChangeOptimisticEffectMetadataDuringPlanning = false
-      normalization: while true {
-        let load = try await persistence.beginServerApplyPlan(
-          id: planID,
-          footprint: footprint,
-          hasServerOperations: hasAuthoritativeStoreChanges,
-          processedTransactionID: processedTransactionID,
-          confirmingMutationID: confirmingMutationID,
-          confirmingClaimantID: confirmingMutationID == nil
-            ? nil
-            : automaticDeliveryClaimantID,
-          excludesWatermarkRoots: excludesWatermarkRoots,
-          receiptPatchMutationIDs: Set(receiptPatches.keys).union(failureSplice.patchedMutationIDs)
+        await configuration.onServerApplySeedLoadedForTesting?(operationGateAlreadyHeld || holdsGateWhilePlanning)
+        let compactState = seed.state
+        var authoritativeTransaction = baseAuthoritativeTransaction
+        if !liveQueryResultReplacements.isEmpty {
+          recordActorHop(.persistence)
+          guard let retractions = try await persistence.liveQueryReplacementRetractions(
+            for: liveQueryResultReplacements,
+            expectedQueryResultRevision: compactState.queryResultRevision
+          ) else { break planning }
+          guard let protectedRetractions = try await persistence.protectingServerRetractions(
+            retractions.operations,
+            expectedOutboxRevision: compactState.outboxRevision,
+            processedTransactionID: processedTransactionID,
+            clearedSlots: retractions.clearedSlots
+          ) else { break planning }
+          authoritativeTransaction.operations.insert(contentsOf: protectedRetractions, at: 0)
+        }
+        var footprint = Self.serverApplyFootprint(
+          operations: authoritativeTransaction.operations
         )
-        switch load {
-        case let .ready(readyPlan):
-          if didChangeOptimisticEffectMetadataDuringPlanning {
-            // Live-query retractions were protected before normalization. A
-            // row that became normalized, quarantined, or watermarked can
-            // change that protection, so discard this body-free plan and
-            // rebuild the authoritative transaction from a fresh compact
-            // snapshot once all bounded normalization work is complete.
-            try? await persistence.finishServerApplyPlan(id: readyPlan.id)
-            continue applyAttempts
+        let changedMergedAttributes: [InstantAttribute]
+        if attributesToMerge.isEmpty {
+          changedMergedAttributes = []
+        } else {
+          let currentAttributes = compactState.snapshot.store.attributes
+          let previousAttributes = Dictionary(
+            uniqueKeysWithValues: currentAttributes.map { ($0.id, $0) }
+          )
+          var mergedAttributeStore = AttributeStore(attributes: currentAttributes)
+          mergedAttributeStore.merge(attributesToMerge)
+          changedMergedAttributes = mergedAttributeStore.attributes.filter {
+            previousAttributes[$0.id] != $0
           }
-          plan = readyPlan
-          break normalization
+        }
+        let mergedAttributeCount = changedMergedAttributes.count
+        // #932: the restated results' saves (their ownership rows and, when due, their JSON) are worked out here, outside
+        // the operation gate, under the revisions the commit checks; it read 7,287 restated facts' rows and encoded their
+        // values under the gate on every frame. A frame that changes attributes saves in the commit, as the merged
+        // attributes decide each result's nested limits there.
+        var preparedQueryResults: [InstantPreparedLiveQueryResultSave]?
+        if !persistedLiveQueryResults.isEmpty, mergedAttributeCount == 0 {
+          recordActorHop(.persistence)
+          guard let prepared = try await persistence.prepareLiveQueryResultSaves(
+            persistedLiveQueryResults,
+            expectedQueryResultRevision: compactState.queryResultRevision
+          ) else { break planning }
+          preparedQueryResults = prepared
+        }
+        // Attribute shape changes can alter every optimistic operation on that attribute, even when
+        // refresh-ok carries no triple operation. Treat the schema transition as a global server
+        // apply so every active overlay is peeled before canonicalization and replayed afterward.
+        if mergedAttributeCount > 0 {
+          footprint.isGlobal = true
+        }
+        // #296: keep only the server facts that can change the authoritative base beneath the pending
+        // writes. When what remains touches no entity a surviving pending write touches, the plan peels
+        // and replays nothing.
+        // Callers see the whole authoritative transaction, including the facts this apply skipped.
+        let reportedAuthoritativeTransaction = authoritativeTransaction
+        var excludesWatermarkRoots = false
+        var receiptPatches: [String: [InstantTriple]] = [:]
+        var failureSplice = InstantServerApplyFailureSplice()
+        // #932: the path this apply takes, for the gate-held event. The reduction's decline was logged at debug only, so
+        // the phone could not say why a frame peeled and replayed ~2,560 pending writes.
+        var reductionDecline: InstantServerApplyReductionIneligibility?
+        let reductionPath: String
+        if !configuration.reducesServerApplyToAffectedOverlays {
+          reductionPath = "full rebase: reduction off"
+        } else if mergedAttributeCount > 0 {
+          reductionPath = "full rebase: attributes changed"
+        } else if confirmingMutationID != nil {
+          reductionPath = "full rebase: confirming apply"
+        } else if footprint.isGlobal {
+          reductionPath = "full rebase: global footprint"
+        } else if let reduced = try await reducedServerApplyOperations(
+          authoritativeTransaction.operations,
+          processedTransactionID: processedTransactionID,
+          seed: seed,
+          declineReason: &reductionDecline
+        ) {
+          authoritativeTransaction.operations = reduced.operations
+          receiptPatches = reduced.receiptPatches
+          failureSplice = reduced.failureSplice
+          // A reduced apply changes only entities no surviving pending write touches, so a link it changes is no
+          // reason to peel the linked entity's writes.
+          footprint = Self.serverApplyFootprint(operations: reduced.operations, includingReferenceTargets: false)
+          excludesWatermarkRoots = true
+          reductionPath = "reduced"
+        } else if reductionDecline == .revisionChanged, !operationGateAlreadyHeld, !holdsGateWhilePlanning {
+          // A local write landed after this attempt's seed, so the whole-component plan would be stale before it was
+          // built; the next attempt plans holding the gate.
+          break planning
+        } else {
+          reductionPath = "full rebase: \(reductionDecline?.rawValue ?? "declined")"
+        }
+        let hasAuthoritativeStoreChanges =
+          !authoritativeTransaction.operations.isEmpty || mergedAttributeCount > 0
+        let planID = "server-apply-\(configuration.makeID())"
+        let plan: InstantServerApplyPlan
+        var didChangeOptimisticEffectMetadataDuringPlanning = false
+        normalization: while true {
+          let load = try await persistence.beginServerApplyPlan(
+            id: planID,
+            footprint: footprint,
+            hasServerOperations: hasAuthoritativeStoreChanges,
+            processedTransactionID: processedTransactionID,
+            confirmingMutationID: confirmingMutationID,
+            confirmingClaimantID: confirmingMutationID == nil
+              ? nil
+              : automaticDeliveryClaimantID,
+            excludesWatermarkRoots: excludesWatermarkRoots,
+            receiptPatchMutationIDs: Set(receiptPatches.keys).union(failureSplice.patchedMutationIDs)
+          )
+          switch load {
+          case let .ready(readyPlan):
+            if didChangeOptimisticEffectMetadataDuringPlanning {
+              // Live-query retractions were protected before normalization. A
+              // row that became normalized, quarantined, or watermarked can
+              // change that protection, so discard this body-free plan and
+              // rebuild the authoritative transaction from a fresh compact
+              // snapshot once all bounded normalization work is complete.
+              try? await persistence.finishServerApplyPlan(id: readyPlan.id)
+              break planning
+            }
+            plan = readyPlan
+            break normalization
 
-        case let .normalizationRequired(firstMutationID):
-          let normalized = try await persistence.normalizeOptimisticEffectMetadata(
-            startingAtMutationID: firstMutationID
-          )
-          if !normalized.normalizedMutationIDs.isEmpty {
-            didChangeOptimisticEffectMetadataDuringPlanning = true
-            continue normalization
-          }
-          if normalized.blockedMutationID == firstMutationID,
-            try await persistence.isolateUnknownServerApplyMutation(
-              id: firstMutationID,
-              processedTransactionID: processedTransactionID
+          case let .normalizationRequired(firstMutationID):
+            let normalized = try await persistence.normalizeOptimisticEffectMetadata(
+              startingAtMutationID: firstMutationID
             )
-          {
-            didChangeOptimisticEffectMetadataDuringPlanning = true
-            continue normalization
+            if !normalized.normalizedMutationIDs.isEmpty {
+              didChangeOptimisticEffectMetadataDuringPlanning = true
+              continue normalization
+            }
+            if normalized.blockedMutationID == firstMutationID,
+              try await persistence.isolateUnknownServerApplyMutation(
+                id: firstMutationID,
+                processedTransactionID: processedTransactionID
+              )
+            {
+              didChangeOptimisticEffectMetadataDuringPlanning = true
+              continue normalization
+            }
+            let error = unknownOptimisticOverlayState(
+              id: normalized.blockedMutationID ?? firstMutationID,
+              operation: "apply server transaction"
+            )
+            reportIssue("\(error)")
+            throw error
           }
-          let error = unknownOptimisticOverlayState(
-            id: normalized.blockedMutationID ?? firstMutationID,
-            operation: "apply server transaction"
-          )
-          reportIssue("\(error)")
-          throw error
         }
+        guard
+          plan.expectedStoreRevision == compactState.storeRevision,
+          plan.expectedAttributeRevision == compactState.attributeRevision,
+          plan.expectedOutboxRevision == compactState.outboxRevision,
+          plan.expectedQueryResultRevision == compactState.queryResultRevision
+        else {
+          try? await persistence.finishServerApplyPlan(id: plan.id)
+          break planning
+        }
+        planned = InstantServerApplyAttemptPlan(
+          seed: seed,
+          authoritativeTransaction: authoritativeTransaction,
+          reportedAuthoritativeTransaction: reportedAuthoritativeTransaction,
+          changedMergedAttributes: changedMergedAttributes,
+          preparedQueryResults: preparedQueryResults,
+          receiptPatches: receiptPatches,
+          failureSplice: failureSplice,
+          reductionPath: reductionPath,
+          plan: plan
+        )
+      } catch {
+        if holdsGateWhilePlanning {
+          await leaveOperationGate()
+        }
+        throw error
       }
-      guard
-        plan.expectedStoreRevision == compactState.storeRevision,
-        plan.expectedAttributeRevision == compactState.attributeRevision,
-        plan.expectedOutboxRevision == compactState.outboxRevision,
-        plan.expectedQueryResultRevision == compactState.queryResultRevision
-      else {
-        try? await persistence.finishServerApplyPlan(id: plan.id)
-        continue applyAttempts
+      let planningHeldMilliseconds = holdsGateWhilePlanning
+        ? InstantServerApplyGateTimeline.milliseconds(from: planningStartedAt, to: ContinuousClock.now)
+        : 0
+      if holdsGateWhilePlanning {
+        await leaveOperationGate()
       }
+      guard let planned else { continue applyAttempts }
+      let seed = planned.seed
+      let authoritativeTransaction = planned.authoritativeTransaction
+      let reportedAuthoritativeTransaction = planned.reportedAuthoritativeTransaction
+      let changedMergedAttributes = planned.changedMergedAttributes
+      let mergedAttributeCount = changedMergedAttributes.count
+      let preparedQueryResults = planned.preparedQueryResults
+      let receiptPatches = planned.receiptPatches
+      let failureSplice = planned.failureSplice
+      let reductionPath = planned.reductionPath
+      let plan = planned.plan
 
       var enteredOperationGateForCommit = false
       // Observers refresh after this apply leaves the operation gate (#473); a publication still owed when the apply
@@ -3580,6 +3648,7 @@ public final class InstantRuntime: Sendable {
           path: reductionPath,
           attempt: attempt,
           heldFromSeed: operationGateAlreadyHeld,
+          planningHeldMilliseconds: planningHeldMilliseconds,
           plan: plan,
           commitTiming: commit.timing
         )
@@ -3622,7 +3691,9 @@ public final class InstantRuntime: Sendable {
 
     if !operationGateAlreadyHeld {
       // #303: each optimistic attempt prepares outside the operation gate, and this runtime's own local writes landed
-      // between its seed and its plan every time (dictation that keeps writing beneath a large frame). Throwing here
+      // between its seed and its plan every time (dictation that keeps writing beneath a large frame). Since #932 the
+      // attempts after the first plan holding the gate, so this runs only when the outbox moved in other ways (a
+      // claim or a refusal beneath a long apply) five times over. Throwing here
       // ended the live receive loop: the reconnect re-sent in-flight writes, and the server refused them as replays.
       // Apply once more holding the operation gate from seed to commit, so local writes wait and this transaction
       // lands. A peer runtime writing the same file is not held by this gate; if it still moves the store, the single
@@ -4485,6 +4556,7 @@ public final class InstantRuntime: Sendable {
     path: String,
     attempt: Int,
     heldFromSeed: Bool,
+    planningHeldMilliseconds: Int,
     plan: InstantServerApplyPlan,
     commitTiming: InstantServerApplyCommitTiming
   ) async {
@@ -4504,6 +4576,7 @@ public final class InstantRuntime: Sendable {
       "path": path,
       "attempt": String(attempt),
       "heldFromSeed": String(heldFromSeed),
+      "planningHeldMilliseconds": String(planningHeldMilliseconds),
       "plannedBodyCount": String(plan.plannedBodyCount),
       "plannedComponentBodyCount": String(plan.plannedComponentBodyCount),
       "commitInsideMilliseconds": String(commitTiming.insideMilliseconds),
