@@ -1,0 +1,95 @@
+# InstantSwiftDataCoreTests: the tests that fail on main, and when (#1021).
+#
+# Compare a run against this list instead of running main's whole bundle as a baseline:
+#   scripts/known-failing-tests.sh run <out-dir> [--load N] && scripts/known-failing-tests.sh compare <out-dir>
+# `compare` exits 1 when the run failed a test this list does not name. Written by
+# `scripts/known-failing-tests.sh record <run-dir>...` from whole-bundle runs; it keeps the verdicts.
+#
+# Runs it was recorded from:
+#   idle at fff54403 (v1.9.22): servers-Mac-mini.local, 2026-10-23T16:49:41-04:00, 1384 tests, 19 failing, 217 s, 10 CPUs, 0 busy loops, load 3.59-9.63.
+#   loaded at fff54403 (v1.9.22): servers-Mac-mini.local, 2026-10-23T16:54:11-04:00, 1384 tests, 73 failing, 652 s, 10 CPUs, 20 busy loops, load 12.51-79.56.
+#   idle at 004439da (v1.9.22): servers-Mac-mini.local, 2026-10-23T17:07:08-04:00, 1384 tests, 21 failing, 205 s, 10 CPUs, 0 busy loops, load 3.07-8.72.
+#   loaded at 004439da (v1.9.22): servers-Mac-mini.local, 2026-10-23T17:11:15-04:00, 1384 tests, 28 failing, 478 s, 10 CPUs, 20 busy loops, load 11.68-44.13.
+#
+# Columns, tab-separated: when, test, last passed, verdict.
+#   when: idle k/n (failed in k of n idle runs) or load k/n (never failed idle; failed in k of n loaded runs)
+#   last passed: the version and commit it last passed in, where known; - when not known
+#   verdict: what is being done about it, with its issue; open until it has one
+
+idle 2/2	InstantDeferredTranscriptPayloadMemoryTests/deferredCorpusLeavesTranscriptPayloadsOutOfTheHotStore()	-	open
+idle 2/2	InstantDiagnosticFeedbackLoopTests/infoHandlerDoesNotAmplifyLargeTransactVolume()	-	open
+idle 2/2	InstantFailedMutationRetryWindowTests/connectReturnsBeforeRetryWindowsAndDeliveryAlternatesAfterEachWindow()	-	open
+idle 2/2	InstantFailedMutationRetryWindowTests/oneHealthyConnectionRetriesOneHundredOneRowsAsFiftyFiftyOne()	-	open
+idle 2/2	InstantInfiniteQueryDuplicateRowsTests/aRowThatLeavesAChunkBeingReplacedIsNeverListedTwice()	-	open
+idle 1/2	InstantInfiniteQueryDuplicateRowsTests/aRowThatMovesBetweenChunksInOneRefreshIsNeverListedTwice()	v1.9.22 fff54403	open
+idle 2/2	InstantInfiniteQueryLeadingRowsTests/aFullWindowWithALeadingRowKeepsLoadingTheNextPage()	-	open
+idle 2/2	InstantInfiniteQueryLeadingRowsTests/aWindowLoadedPastOnePageBeforeTheServerAnswersKeepsItsPagesAtTheKickstart()	-	open
+idle 2/2	InstantLiveTransportTests/boundedGracefulCloseAbortsCancellationInsensitiveClose()	-	open
+idle 2/2	InstantLiveTransportTests/connectTimeoutAbortsCancellationInsensitiveAttemptAndLateSession()	-	open
+idle 2/2	InstantLiveTransportTests/failedOpenAbortsWithoutAwaitingGracefulClose()	-	open
+idle 2/2	InstantLiveTransportTests/liveTimeoutDoesNotAwaitCancellationInsensitiveWork()	-	open
+idle 1/2	InstantLiveTransportTests/parentCancellationAbortsCancellationInsensitiveRuntimeConnect()	v1.9.22 004439da	open
+idle 1/2	InstantManyCardinalitySortCostTests/materializingALinkSetBuildsAboutOneSortKeyPerValue()	v1.9.22 004439da	open
+idle 2/2	InstantMediaStreamOptimizationTests/sustainedAudioStreamHasBoundedResources()	-	open
+idle 2/2	InstantOperationGatePriorityTests/aHydrationsSQLiteReadDoesNotHoldTheOperationGate()	-	open
+idle 2/2	InstantOutboxDeliveryStallTests/queryThatInitiatesReconnectPrecedesPersistedMutations()	-	open
+idle 1/2	InstantOutboxDeliveryStallTests/undeliverableMutationDoesNotBlockLaterMutations()	v1.9.22 fff54403	open
+idle 1/2	InstantReactorParityTests/rejectedQueryOnceFailsPromptlyWithoutClosingTheSocket()	v1.9.22 004439da	open
+idle 1/2	InstantReactorParityTests/runtimeReconnectBacksOffAndFlushesOnlyUnacknowledgedWork()	v1.9.22 004439da	open
+idle 1/2	InstantReactorParityTests/runtimeStreamAppendRetryReconnectsWithoutPublishingAppend()	v1.9.22 004439da	open
+idle 2/2	InstantReactorParityTests/upstreamPythonSubscriptionPostInitFailureSilentlyRetriesAndResubscribes()	-	open
+idle 1/2	InstantReconnectBackoffParityTests/theDelayGrowsToTenSecondsAndOnlyAnOpenedSessionResetsIt()	v1.9.22 004439da	open
+idle 2/2	InstantResourceCitizenshipTests/nativeMediaPrimitiveReportsBurstAndRealtimeEquivalentResources()	-	open
+load 1/2	AsyncSerialGateTests/quickHandoffReportsNoWait()	v1.9.22 004439da	open
+load 1/2	InstantCancelledSendTests/anObservationCancelledWhileItsAddQueryIsWrittenLeavesTheSocketOpen()	v1.9.22 004439da	open
+load 1/2	InstantCrossSDKRuntimeBenchmarkTests/runtimeWorkloadsPinEveryActorHop()	v1.9.22 004439da	open
+load 1/2	InstantDiagnosticFeedbackLoopTests/routineDiagnosticsStayBelowInfo()	v1.9.22 004439da	open
+load 2/2	InstantInfiniteQueryDuplicateRowsTests/theWindowKeepsItsRowsWhileTheKickstartWaitsForItsFirstForwardChunk()	v1.9.22 004439da	open
+load 1/2	InstantInfiniteQueryLeadingRowsTests/aPreviousPageWaitsForTheServerInsteadOfAnEarlierQuerysStoredResult()	v1.9.22 004439da	open
+load 2/2	InstantInfiniteQueryLeadingRowsTests/aRowThatMovesAboveTheTopAfterTheWindowSlidDoesNotBreakTheWindow()	v1.9.22 004439da	open
+load 1/2	InstantInfiniteQueryLeadingRowsTests/aRowThatMovesAboveTheTopWhileTheTopIsEvictedShowsItsOldValuesUntilTheWindowReturns()	v1.9.22 004439da	open
+load 1/2	InstantInfiniteQueryLeadingRowsTests/theWindowFollowsALiveHeadWithinItsPageBound()	v1.9.22 004439da	open
+load 1/2	InstantLiveConnectionSurvivalTests/framesThatArriveDuringALongApplyAreAppliedInArrivalOrder()	v1.9.22 004439da	open
+load 1/2	InstantLiveQueryErrorRecoveryTests/aTimedOutAddQueryIsSentAgainOnTheSameSocketAndRefreshes()	v1.9.22 004439da	open
+load 1/2	InstantLiveTestWaitsTests/reactorParityTransportConnectionWaitFailsWhenNoOtherConnectionStarts()	v1.9.22 004439da	open
+load 1/2	InstantLiveTransportTests/automaticMutationSendFailureLeavesReconnectToExactReceiver()	v1.9.22 004439da	open
+load 1/2	InstantLiveTransportTests/cancellingLiveTimeoutDoesNotAwaitEitherCancellationInsensitiveChild()	v1.9.22 004439da	open
+load 1/2	InstantLiveTransportTests/cancellingStandardObservationQueuedAtOperationGateReturnsFinishedWithoutLateRegistration()	v1.9.22 004439da	open
+load 1/2	InstantLiveTransportTests/currentRemovalFailureReconnectsAndReinstallsSurvivingQuery()	v1.9.22 004439da	open
+load 1/2	InstantLiveTransportTests/equivalentReregistrationPostfixesLateRemoval()	v1.9.22 004439da	open
+load 1/2	InstantLiveTransportTests/explicitCloseSupersedesPendingRemovalFailureWithoutReconnect()	v1.9.22 004439da	open
+load 2/2	InstantLiveTransportTests/preReceiverRemovalFailureCannotReturnOpenedConnection()	v1.9.22 004439da	open
+load 1/2	InstantLiveTransportTests/queryOnceWaitsForExactCleanupBeforeEveryTerminalPath(_:)	v1.9.22 004439da	open
+load 1/2	InstantLiveTransportTests/runtimeLiveMutationEncodingFailureDoesNotBlockTheFollowingMutation()	v1.9.22 004439da	open
+load 1/2	InstantLiveTransportTests/runtimeLiveQueryOnceOpensSessionAndWaitsForServerResult()	v1.9.22 004439da	open
+load 1/2	InstantLiveTransportTests/runtimeLiveQueryOncePreservesOpaqueServerPageInfoCursor()	v1.9.22 004439da	open
+load 1/2	InstantLiveTransportTests/scriptedLiveSessionReceiveRequestWaitFailsWithinItsBound()	v1.9.22 004439da	open
+load 1/2	InstantLiveTransportTests/scriptedLiveSessionSentMessageWaitFailsWithinItsBoundNamingWhatWasSent()	v1.9.22 004439da	open
+load 1/2	InstantLiveTransportTests/staleAcknowledgementCannotAdoptAClaimTokenReofferedDuringResponseRecording()	v1.9.22 004439da	open
+load 1/2	InstantLiveTransportTests/supersededRemovalFailureCannotOverwriteHealthyReplacementStatus()	v1.9.22 004439da	open
+load 1/2	InstantLiveTransportTests/unexpectedCurrentReceiverCancellationReconnectsBeforeLateSendFailure()	v1.9.22 004439da	open
+load 1/2	InstantLocalReadTests/nineHundredEightySixLinesOnDiskReadAtOnceWhileAServerApplyHoldsTheGate()	v1.9.22 004439da	open
+load 1/2	InstantObservationReleaseTests/anObservationEndsWhenItsConsumerReturnsOutOfItsLoop()	v1.9.22 004439da	open
+load 2/2	InstantOperationGateAwaitTests/aMainActorCallerCannotHoldTheOperationGateWhileMainIsBusy()	v1.9.22 004439da	open
+load 1/2	InstantOutboxDeliveryStallTests/quarantinedMutationDeliversAfterTheSchemaIsDeployed()	v1.9.22 004439da	open
+load 1/2	InstantOutboxRevisionGateTests/localWritesDuringEveryAttemptToRecordARefusalGetOneExclusiveAttempt()	v1.9.22 004439da	open
+load 1/2	InstantReconnectBackoffParityTests/aFailedExplicitConnectKeepsTheBackoff()	v1.9.22 004439da	open
+load 2/2	InstantReconnectBackoffParityTests/aPathThatReturnsDuringTheBackoffEndsTheWait()	v1.9.22 004439da	open
+load 1/2	InstantReconnectBackoffParityTests/anOutageWithTheNetworkMissingFor13MinutesMakesNoAttemptsUntilItReturns()	v1.9.22 004439da	open
+load 2/2	InstantReconnectBackoffParityTests/noAttemptWhileThePathIsMissingAndOneAttemptWhenItReturns()	v1.9.22 004439da	open
+load 1/2	InstantRefusalHeldByServerTests/aRefusedReSendWhoseValuesTheServersResultShowsResolvesAsAccepted()	v1.9.22 004439da	open
+load 1/2	InstantServerApplyOperationGateTests/localTransactsDoNotWaitBehindAServerApplyOverAHubComponent()	v1.9.22 004439da	open
+load 1/2	InstantStoreTests/automaticReconnectFailureRemainsRetryableAcrossRelaunchAndFlushesOfflineOutbox()	v1.9.22 004439da	open
+load 1/2	InstantStoreTests/cliMalformedAdminArgumentsDoNotBootstrapState()	v1.9.22 004439da	open
+load 1/2	InstantStoreTests/cliMalformedQueryAndValidationArgumentsDoNotBootstrapState()	v1.9.22 004439da	open
+load 1/2	InstantStoreTests/cliMalformedTodoLinksArgumentsDoNotBootstrapState()	v1.9.22 004439da	open
+load 1/2	InstantStoreTests/cliQueryTodosPrintsDecodedLocalResults()	v1.9.22 004439da	open
+load 1/2	InstantStoreTests/cliReactionsRecipePublishesAndWatchesTopicMessagesAcrossLaunches()	v1.9.22 004439da	open
+load 1/2	InstantStoreTests/cliRoundTripsCanonicalMergeTileGameArtifacts()	v1.9.22 004439da	open
+load 1/2	InstantStoreTests/cliSharesCreateAcceptListAndRevokePersistAcrossLaunches()	v1.9.22 004439da	open
+load 1/2	InstantStoreTests/cliStreamsAppendAndReadPersistAcrossLaunches()	v1.9.22 004439da	open
+load 1/2	InstantStoreTests/localTodoBenchmarkProducesDeterministicMetrics()	v1.9.22 004439da	open
+load 1/2	InstantStoredFileEvictionTests/evictsOnlyTheCopiesStorageHolds()	v1.9.22 004439da	open
+load 2/2	InstantStoredResultReloadTests/aTranscriptOfNineHundredEightySixLinesOpensAndReopens(answerDelay:)	v1.9.22 004439da	open
+load 1/2	InstantStreamRobustnessTests/aReadersCumulativeContentEqualsTheStreamAcrossAReconnect()	v1.9.22 004439da	open
+load 1/2	InstantSupersededReplayTests/aRefusalThatAnAcceptedLaterWriteCoversResolvesAsAcceptedNotFailed()	v1.9.22 004439da	open

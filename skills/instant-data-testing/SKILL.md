@@ -93,6 +93,13 @@ Run focused unit tests first, then the relevant package suite. For behavior that
 claims synchronization, also run the repository validation script and require
 real Swift/TypeScript boundary evidence when credentials are available.
 
+For the whole `InstantSwiftDataCoreTests` bundle, use
+`scripts/known-failing-tests.sh run <out-dir>` (it builds the CLI executable the
+CLI tests launch and checks out the upstream sources the parity tests pin), then
+`scripts/known-failing-tests.sh compare <out-dir>`, which exits 1 only for a
+failure `Tests/known-failing.txt` does not name. Do not run main's bundle as a
+baseline; when a fix makes a listed test pass, re-record the list (#1021).
+
 Report separately:
 
 - deterministic local test evidence;
