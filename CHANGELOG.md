@@ -10,6 +10,31 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## October 23rd, 2026 at 7:14:11 p.m. EDT — `c91e8c0b1072` Green (#932): a server apply's gate hold of 250-999 ms is logged at notice, so each arrives with its fields
+
+- **Implementation commit:** `c91e8c0b1072fb1202d96110b11fcb987a97e78e`
+- **Change:** Green (#932): a server apply's gate hold of 250-999 ms is logged at notice, so each arrives with its fields
+- **Details:**
+  - The lab could read only per-minute counts of the phone's sub-second holds since build 116; at notice each arrives with commitInsideMilliseconds and the rest. Lab, untethered: no hold of 1 s or more from the iPhone on 116 or the iPad on 117, against 38 on 115 (median 3,974 ms).
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — notice from 250 ms, the reason, the History line
+- **User context (verbatim):**
+  > I want to find the issues at the root.
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run); no SpecStory capture for headless runs.
+
+## October 23rd, 2026 at 7:14:11 p.m. EDT — `872017cdd798` Red (#932): a server apply's gate hold of 250-999 ms is logged at info, which a host's bridge counts per minute without its fields
+
+- **Implementation commit:** `872017cdd798071e0d3b79397e856d8095bb52d5`
+- **Change:** Red (#932): a server apply's gate hold of 250-999 ms is logged at info, which a host's bridge counts per minute without its fields
+- **Details:**
+  - serverApplyGateHeldLevel(heldMilliseconds:) extracted unchanged; the test expects notice from 250 ms and fails.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — the level as its own function
+  - `Tests/InstantSwiftDataCoreTests/InstantServerApplyGateWorkTests.swift` — the level test
+- **User context (verbatim):**
+  > I want to find the issues at the root.
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run); no SpecStory capture for headless runs.
+
 ## October 23rd, 2026 at 6:47:24 p.m. EDT — `c1307377d221` Document the v1.9.25 release: a server apply holds the gate for less and writes less, and an app can choose its sync priority (#932, #590)
 
 - **Implementation commit:** `c1307377d22158b396b5367b577990d660d6a6a5`

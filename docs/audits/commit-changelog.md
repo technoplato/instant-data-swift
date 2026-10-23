@@ -1,3 +1,9 @@
+## 2026-10-23 19:13:50 EDT — instant-data-swift `c91e8c0b1072fb1202d96110b11fcb987a97e78e`
+Green (#932): a server apply's gate hold of 250-999 ms is logged at notice, so a host bridge that counts info lines per minute still sends each with its fields.
+
+## 2026-10-23 19:13:50 EDT — instant-data-swift `872017cdd798071e0d3b79397e856d8095bb52d5`
+Red test (#932): the gate-held event's level as its own function; the test expects notice from 250 ms.
+
 ## 2026-10-23 18:55:05 EDT — scribe `25b21dfb2f4fee34001b7d8db4c3e3f52526a99e`
 Change log for the 1.9.25 pin 4521201d9 (#932): CHANGELOG and PROGRESS.
 

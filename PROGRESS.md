@@ -1,3 +1,16 @@
+## 2026-10-23 19:14:11 EDT — #932: a server apply's gate hold of 250-999 ms is logged at notice (on main, no tag; the next tag carries it)
+
+- **Commits (main):** red `872017cd`, green `c91e8c0b`; then this ledger commit.
+- **Why:** since build 116 (1.9.18) the phone's holds fell under 1 s, and a host bridge that counts info lines per
+  minute sent only their counts. The lab, untethered: no hold of 1 s or more from the iPhone (48 min of recording on 116)
+  or the iPad (117), against 38 on 115 (held median 3,974 ms, commit median 3,320 ms). At notice each 250-999 ms hold
+  arrives with its commit's parts, so the lab can read what the remaining holds cost.
+- **Checks (Mac mini, debug):** the level test red then green; the gate, energy meter, diagnostics and feedback-loop
+  suites (35 tests) pass but for `infoHandlerDoesNotAmplifyLargeTransactVolume`, listed in `Tests/known-failing.txt`
+  (idle 2/2), which passes alone 3 of 3 on this tree.
+- **Next:** #1024's tag (1.9.26) carries it; the lab reads `commitInsideMilliseconds` and `commitResultsMilliseconds`
+  from the notices on the build that pins it.
+
 ## 2026-10-23 18:48:08 EDT — v1.9.25: a server apply holds the gate for less and writes less, and an app can choose its sync priority (#932, #590); carries 1.9.24 and 1.9.23
 
 - **Commits:** red `84919a03`, green `748f107e` (`liveSyncTaskPriority`, #590); fix `855b082c` (a retried apply's
