@@ -3076,16 +3076,11 @@ extension InstantFailedMutationDiscardTests {
 }
 
 private actor DiscardReconnectLiveSession {
-  private struct SentWaiter {
-    var count: Int
-    var continuation: CheckedContinuation<Void, Never>
-  }
-
   nonisolated private let abortState = InstantLiveTestWireAbortState()
   private var messages: [InstantLiveMessage] = []
   private var receiveContinuation: InstantLiveTestPendingOperation<InstantLiveMessage>?
   private var sent: [InstantLiveMessage] = []
-  private var sentWaiters: [SentWaiter] = []
+  private var sentWaiters = InstantLiveTestCountWaiters()
   private var isClosed = false
 
   nonisolated var transport: InstantLiveTransportClient {
@@ -3111,8 +3106,27 @@ private actor DiscardReconnectLiveSession {
     timeout: Duration = InstantLiveTestWait.defaultTimeout
   ) async throws {
     guard sent.count < count else { return }
-    await withCheckedContinuation { continuation in
-      sentWaiters.append(SentWaiter(count: count, continuation: continuation))
+    let id = UUID()
+    try await withCheckedThrowingContinuation { continuation in
+      sentWaiters.append(
+        id: id,
+        count: count,
+        currentCount: sent.count,
+        continuation: continuation,
+        deadline: InstantLiveTestWait.stallDeadline(every: timeout) {
+          await self.expireSentWaiterIfStalled(id, timeout: timeout)
+        }
+      )
+    }
+  }
+
+  private func expireSentWaiterIfStalled(_ id: UUID, timeout: Duration) -> Bool {
+    sentWaiters.failIfStalled(id, currentCount: sent.count) { count in
+      InstantLiveTestWaitTimedOut(
+        wait: "\(count) sent messages",
+        timeout: timeout,
+        observed: sent.map(InstantLiveTestWait.summary)
+      )
     }
   }
 
@@ -3171,15 +3185,7 @@ private actor DiscardReconnectLiveSession {
         )
       )
     }
-    var pending: [SentWaiter] = []
-    for waiter in sentWaiters {
-      if sent.count >= waiter.count {
-        waiter.continuation.resume()
-      } else {
-        pending.append(waiter)
-      }
-    }
-    sentWaiters = pending
+    sentWaiters.resume(reaching: sent.count)
   }
 
   private func enqueue(_ message: InstantLiveMessage) {

@@ -319,46 +319,11 @@ actor LiveReactorParityCompletionProbe {
   }
 }
 
-private struct LiveReactorParityCountWaiters {
-  private struct Waiter {
-    var id: UUID
-    var count: Int
-    var continuation: CheckedContinuation<Void, Never>
-  }
-
-  private var waiters: [Waiter] = []
-
-  mutating func append(
-    id: UUID,
-    count: Int,
-    continuation: CheckedContinuation<Void, Never>
-  ) {
-    waiters.append(Waiter(id: id, count: count, continuation: continuation))
-  }
-
-  mutating func resumeSatisfied(by count: Int) {
-    var pending: [Waiter] = []
-    for waiter in waiters {
-      if count >= waiter.count {
-        waiter.continuation.resume()
-      } else {
-        pending.append(waiter)
-      }
-    }
-    waiters = pending
-  }
-
-  mutating func cancel(id: UUID) {
-    guard let index = waiters.firstIndex(where: { $0.id == id }) else { return }
-    waiters.remove(at: index).continuation.resume()
-  }
-}
-
 actor LiveReactorParitySession {
   nonisolated private let abortState = InstantLiveTestWireAbortState()
   private var messages: [InstantLiveMessage]
   private var sent: [InstantLiveMessage] = []
-  private var sentWaiters = LiveReactorParityCountWaiters()
+  private var sentWaiters = InstantLiveTestCountWaiters()
   private var receiveContinuation: InstantLiveTestPendingOperation<InstantLiveMessage>?
   private var receiveFailure: InstantError?
   private var isClosed = false
@@ -395,12 +360,20 @@ actor LiveReactorParitySession {
   ) async throws {
     guard sent.count < count else { return }
     let waiterID = UUID()
-    await withTaskCancellationHandler {
-      await withCheckedContinuation { continuation in
+    try await withTaskCancellationHandler {
+      try await withCheckedThrowingContinuation { continuation in
         if Task.isCancelled {
           continuation.resume()
         } else {
-          sentWaiters.append(id: waiterID, count: count, continuation: continuation)
+          sentWaiters.append(
+            id: waiterID,
+            count: count,
+            currentCount: sent.count,
+            continuation: continuation,
+            deadline: InstantLiveTestWait.stallDeadline(every: timeout) {
+              await self.expireSentWaiterIfStalled(waiterID, timeout: timeout)
+            }
+          )
         }
       }
     } onCancel: {
@@ -433,11 +406,21 @@ actor LiveReactorParitySession {
   private func send(_ message: InstantLiveMessage) throws {
     try abortState.check()
     sent.append(message)
-    sentWaiters.resumeSatisfied(by: sent.count)
+    sentWaiters.resume(reaching: sent.count)
   }
 
   private func cancelSentWaiter(id: UUID) {
-    sentWaiters.cancel(id: id)
+    sentWaiters.cancel(id)
+  }
+
+  private func expireSentWaiterIfStalled(_ id: UUID, timeout: Duration) -> Bool {
+    sentWaiters.failIfStalled(id, currentCount: sent.count) { count in
+      InstantLiveTestWaitTimedOut(
+        wait: "\(count) sent messages",
+        timeout: timeout,
+        observed: sent.map(InstantLiveTestWait.summary)
+      )
+    }
   }
 
   private func receive() async throws -> InstantLiveMessage {
@@ -488,7 +471,7 @@ actor LiveReactorParitySession {
 actor LiveReactorParityTransport {
   private var attempts: [LiveReactorParityTransportAttempt]
   private var requests: [InstantLiveSessionRequest] = []
-  private var waiters = LiveReactorParityCountWaiters()
+  private var waiters = InstantLiveTestCountWaiters()
 
   init(sessions: [LiveReactorParitySession]) {
     self.attempts = sessions.map(LiveReactorParityTransportAttempt.session)
@@ -521,12 +504,20 @@ actor LiveReactorParityTransport {
   ) async throws {
     guard requests.count < count else { return }
     let waiterID = UUID()
-    await withTaskCancellationHandler {
-      await withCheckedContinuation { continuation in
+    try await withTaskCancellationHandler {
+      try await withCheckedThrowingContinuation { continuation in
         if Task.isCancelled {
           continuation.resume()
         } else {
-          waiters.append(id: waiterID, count: count, continuation: continuation)
+          waiters.append(
+            id: waiterID,
+            count: count,
+            currentCount: requests.count,
+            continuation: continuation,
+            deadline: InstantLiveTestWait.stallDeadline(every: timeout) {
+              await self.expireConnectionWaiterIfStalled(waiterID, timeout: timeout)
+            }
+          )
         }
       }
     } onCancel: {
@@ -556,11 +547,22 @@ actor LiveReactorParityTransport {
   }
 
   private func resumeConnectionWaiters() {
-    waiters.resumeSatisfied(by: requests.count)
+    waiters.resume(reaching: requests.count)
   }
 
   private func cancelConnectionWaiter(id: UUID) {
-    waiters.cancel(id: id)
+    waiters.cancel(id)
+  }
+
+  /// A stalled connection wait reports the app ID of each connection that did start.
+  private func expireConnectionWaiterIfStalled(_ id: UUID, timeout: Duration) -> Bool {
+    waiters.failIfStalled(id, currentCount: requests.count) { count in
+      InstantLiveTestWaitTimedOut(
+        wait: "\(count) connections",
+        timeout: timeout,
+        observed: requests.map(\.appID)
+      )
+    }
   }
 }
 

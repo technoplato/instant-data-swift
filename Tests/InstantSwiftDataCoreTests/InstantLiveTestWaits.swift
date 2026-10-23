@@ -5,6 +5,8 @@
 // 2026-10-23  #1020  The deadline measures a stall, not the whole wait. Under the bundle's load the runtime sent that
 //                    test's transacts paced by seconds (27.4 s for 45 of them, gaps up to 3.6 s), so a 10 s total bound failed a run that was
 //                    still moving; a wait now fails only after 10 s with no new message.
+// 2026-10-23  #1020  The shared parity session and transport, and the discard session, wait through it too; a
+//                    cancelled wait still returns as it did.
 
 import Foundation
 @testable import InstantSwiftDataCore
@@ -94,6 +96,14 @@ struct InstantLiveTestCountWaiters {
       }
     }
     waiters = pending
+  }
+
+  /// Resumes the waiter `id` without an error, as the parity waits always did when their task was cancelled.
+  mutating func cancel(_ id: UUID) {
+    guard let index = waiters.firstIndex(where: { $0.id == id }) else { return }
+    let waiter = waiters.remove(at: index)
+    waiter.deadline.cancel()
+    waiter.continuation.resume()
   }
 
   /// At a deadline: fails the waiter `id` with the error its awaited count describes if `currentCount` has not moved
