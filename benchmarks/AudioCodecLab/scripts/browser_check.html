@@ -1,0 +1,88 @@
+<!doctype html>
+<!--
+  What a browser can play of the lab's segments (#1012, ADR 0021). Serve the lab's output folder and this page from
+  one origin, then open browser_check.html?hls=<segment folder>&caf=<file.caf>. The verdict lands in #result as JSON
+  (and in document.title as "done"), so a driven browser can read it.
+-->
+<html>
+<head><meta charset="utf-8"><title>running</title></head>
+<body>
+<pre id="result">running</pre>
+<script>
+const params = new URLSearchParams(location.search);
+const result = { userAgent: navigator.userAgent, mse: {}, canPlay: {}, playback: {} };
+
+function settle(audio, seconds) {
+  return new Promise((resolve) => {
+    const started = performance.now();
+    const timer = setInterval(() => {
+      if (audio.error) { clearInterval(timer); resolve({ ok: false, error: `${audio.error.code} ${audio.error.message}` }); }
+      else if (audio.currentTime >= seconds) { clearInterval(timer); resolve({ ok: true, currentTime: audio.currentTime, afterMs: Math.round(performance.now() - started) }); }
+      else if (performance.now() - started > 20000) { clearInterval(timer); resolve({ ok: false, error: 'timeout', currentTime: audio.currentTime }); }
+    }, 100);
+  });
+}
+
+async function playElement(src) {
+  const audio = new Audio();
+  audio.muted = true;
+  audio.src = src;
+  try { await audio.play(); } catch (e) { return { ok: false, error: String(e) }; }
+  return settle(audio, 3);
+}
+
+async function playMSE(folder) {
+  const playlist = await (await fetch(`${folder}/vod.m3u8`)).text();
+  const lines = playlist.split('\n');
+  const init = lines.find((l) => l.startsWith('#EXT-X-MAP')).match(/URI="([^"]+)"/)[1];
+  const segments = lines.filter((l) => l && !l.startsWith('#'));
+  const probe = new Uint8Array(await (await fetch(`${folder}/${init}`)).arrayBuffer());
+  const text = new TextDecoder('latin1').decode(probe);
+  const codec = text.includes('Opus') ? 'opus' : (text.includes('mp4a') ? 'mp4a.40.2' : 'unknown');
+  const type = `audio/mp4; codecs="${codec}"`;
+  if (!window.MediaSource || !MediaSource.isTypeSupported(type)) return { ok: false, error: `unsupported ${type}` };
+  const media = new MediaSource();
+  const audio = new Audio();
+  audio.muted = true;
+  audio.src = URL.createObjectURL(media);
+  await new Promise((r) => media.addEventListener('sourceopen', r, { once: true }));
+  const buffer = media.addSourceBuffer(type);
+  const append = (bytes) => new Promise((resolve, reject) => {
+    buffer.addEventListener('updateend', resolve, { once: true });
+    buffer.addEventListener('error', reject, { once: true });
+    buffer.appendBuffer(bytes);
+  });
+  await append(probe);
+  for (const name of segments.slice(0, 4)) {
+    await append(new Uint8Array(await (await fetch(`${folder}/${name}`)).arrayBuffer()));
+  }
+  try { await audio.play(); } catch (e) { return { ok: false, error: String(e) }; }
+  const played = await settle(audio, 3);
+  return { ...played, type, bufferedSeconds: buffer.buffered.length ? buffer.buffered.end(0) : 0 };
+}
+
+(async () => {
+  for (const type of ['audio/mp4; codecs="mp4a.40.2"', 'audio/mp4; codecs="mp4a.40.5"', 'audio/mp4; codecs="opus"',
+    'audio/webm; codecs="opus"']) {
+    result.mse[type] = !!(window.MediaSource && MediaSource.isTypeSupported(type));
+    if (window.ManagedMediaSource) result.mse[`managed ${type}`] = ManagedMediaSource.isTypeSupported(type);
+  }
+  const probe = document.createElement('audio');
+  for (const type of ['application/vnd.apple.mpegurl', 'audio/mpegurl', 'audio/mp4; codecs="mp4a.40.2"',
+    'audio/mp4; codecs="opus"', 'audio/ogg; codecs="opus"', 'audio/x-caf', 'audio/wav']) {
+    result.canPlay[type] = probe.canPlayType(type) || 'no';
+  }
+  for (const folder of (params.get('hls') || '').split(',').filter(Boolean)) {
+    result.playback[`mse ${folder}`] = await playMSE(folder).catch((e) => ({ ok: false, error: String(e) }));
+    result.playback[`element ${folder}/whole.mp4`] = await playElement(`${folder}/whole.mp4`);
+    result.playback[`element ${folder}/vod.m3u8`] = await playElement(`${folder}/vod.m3u8`);
+  }
+  for (const file of (params.get('files') || '').split(',').filter(Boolean)) {
+    result.playback[`element ${file}`] = await playElement(file);
+  }
+  document.getElementById('result').textContent = JSON.stringify(result, null, 1);
+  document.title = 'done';
+})();
+</script>
+</body>
+</html>
