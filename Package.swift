@@ -24,6 +24,9 @@ let package = Package(
     .library(name: "InstantSwiftDataCore", targets: ["InstantSwiftDataCore"]),
     .library(name: "InstantSwiftDataSchema", targets: ["InstantSwiftDataSchema"]),
     .library(name: "InstantSwiftDataTesting", targets: ["InstantSwiftDataTesting"]),
+    // Progressive media's AVFoundation half: the HLS segmenter and AVPlayer's resource loader (#1012, ADR 0021). Its
+    // own product, so an app that does not play or record media never links AVFoundation through the library.
+    .library(name: "InstantSwiftDataMedia", targets: ["InstantSwiftDataMedia"]),
     .library(name: "AppBuilderV3App", targets: ["AppBuilderV3App"]),
     .library(name: "AuthV3App", targets: ["AuthV3App"]),
     .library(name: "CloudKitDemoV3App", targets: ["CloudKitDemoV3App"]),
@@ -109,6 +112,11 @@ let package = Package(
       // InstantRuntime was split (LiveSession / ExactTaskOwner / VisibleWrite) so debug
       // no longer needs -sil-disable-pass=closure-lifetime-fixup. Re-add only if
       // ClosureLifetimeFixup hangs again after further growth.
+      swiftSettings: strictConcurrencySettings
+    ),
+    .target(
+      name: "InstantSwiftDataMedia",
+      dependencies: ["InstantSwiftData"],
       swiftSettings: strictConcurrencySettings
     ),
     .target(
@@ -429,6 +437,15 @@ let package = Package(
       name: "InstantSwiftDataTests",
       dependencies: [
         "InstantSwiftData",
+        .product(name: "CustomDump", package: "swift-custom-dump"),
+        .product(name: "DependenciesTestSupport", package: "swift-dependencies"),
+      ],
+      swiftSettings: strictConcurrencySettings
+    ),
+    .testTarget(
+      name: "InstantSwiftDataMediaTests",
+      dependencies: [
+        "InstantSwiftDataMedia",
         .product(name: "CustomDump", package: "swift-custom-dump"),
       ],
       swiftSettings: strictConcurrencySettings
