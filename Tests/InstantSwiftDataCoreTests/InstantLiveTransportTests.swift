@@ -2187,7 +2187,7 @@ struct InstantLiveTransportTests {
       ]
     )
 
-    await session.waitForSentMessageCount(3)
+    try await session.waitForSentMessageCount(3)
     let sentMessages = await session.sentMessages()
     expectNoDifference(sentMessages.map(\.op), ["init", "add-query", "remove-query"])
     expectNoDifference(sentMessages[1].fields["q"], query)
@@ -2332,12 +2332,12 @@ struct InstantLiveTransportTests {
       }
       return emissions
     }
-    await session.waitForSentMessageCount(2)
+    try await session.waitForSentMessageCount(2)
 
     let oneShot = Task {
       try await runtime.queryOnce(TodoExample.query)
     }
-    await session.waitForSentMessageCount(3)
+    try await session.waitForSentMessageCount(3)
     await session.enqueue(
       .addQueryExists(clientEventID: "event-query-once", query: query)
     )
@@ -2352,7 +2352,7 @@ struct InstantLiveTransportTests {
 
     consumer.cancel()
     _ = await consumer.value
-    await session.waitForSentMessageCount(4)
+    try await session.waitForSentMessageCount(4)
     sentMessages = await session.sentMessages()
     expectNoDifference(
       sentMessages.map(\.op),
@@ -2390,7 +2390,7 @@ struct InstantLiveTransportTests {
       )
     )
 
-    await session.waitForSentMessageCount(2)
+    try await session.waitForSentMessageCount(2)
     let sentMessages = await session.sentMessages()
     expectNoDifference(sentMessages.map(\.op), ["init", "transact"])
     expectNoDifference(sentMessages[1].clientEventID, "event-tx")
@@ -2450,7 +2450,7 @@ struct InstantLiveTransportTests {
       try TodoExample.decode(values).map(\.text),
       ["Committed before connectivity"]
     )
-    await session.waitForSentMessageCount(2)
+    try await session.waitForSentMessageCount(2)
     let sentMessages = await session.sentMessages()
     expectNoDifference(sentMessages.map(\.op), ["init", "transact"])
     _ = try await runtime.closeConnection()
@@ -2505,7 +2505,7 @@ struct InstantLiveTransportTests {
       ["Optimistic before slow wire send"]
     )
 
-    await session.waitForSentMessageCount(2)
+    try await session.waitForSentMessageCount(2)
     let sentMessages = await session.sentMessages()
     expectNoDifference(sentMessages.map(\.op), ["init", "transact"])
     _ = try await runtime.closeConnection()
@@ -2655,7 +2655,7 @@ struct InstantLiveTransportTests {
     secondConsumer.cancel()
     await firstConsumer.value
     await secondConsumer.value
-    await session.waitForSentMessageCount(3)
+    try await session.waitForSentMessageCount(3)
 
     sentMessages = await session.sentMessages()
     expectNoDifference(sentMessages.map(\.op), ["init", "add-query", "remove-query"])
@@ -2803,7 +2803,7 @@ struct InstantLiveTransportTests {
     }
     let runtime = try await InstantRuntime.bootstrap(configuration: configuration)
     _ = try await runtime.connect()
-    await session.waitForSentMessageCount(1)
+    try await session.waitForSentMessageCount(1)
 
     let setup = Task {
       await runtime.observe(TodoExample.query)
@@ -3739,7 +3739,7 @@ struct InstantLiveTransportTests {
         ])
       ])
     )
-    await session.waitForSentMessageCount(3)
+    try await session.waitForSentMessageCount(3)
     _ = try await runtime.closeConnection()
 
     let relaunchedSession = InstantRuntimeScriptedLiveSession(messages: [
@@ -3770,7 +3770,7 @@ struct InstantLiveTransportTests {
       relaunchedEmission.pageInfo?.endCursor?.liveTuple,
       cursor
     )
-    await relaunchedSession.waitForSentMessageCount(3)
+    try await relaunchedSession.waitForSentMessageCount(3)
     _ = try await relaunched.closeConnection()
   }
 
@@ -3865,7 +3865,7 @@ struct InstantLiveTransportTests {
     _ = try await runtime.transact(transaction, createdAt: createdAt)
     let pendingStatus = try #require(await statusIterator.next())
     expectNoDifference(pendingStatus.pendingMutationCount, 1)
-    await session.waitForSentMessageCount(2)
+    try await session.waitForSentMessageCount(2)
 
     let pending = try #require(await runtime.pendingMutations().first)
     let sentMessages = await session.sentMessages()
@@ -3946,7 +3946,7 @@ struct InstantLiveTransportTests {
     var iterator = stream.makeAsyncIterator()
     _ = try #require(await iterator.next())
     _ = try await runtime.connect()
-    await session.waitForSentMessageCount(2)
+    try await session.waitForSentMessageCount(2)
     await session.enqueue(
       .addQueryOK(
         clientEventID: "event-query-initial",
@@ -3980,7 +3980,7 @@ struct InstantLiveTransportTests {
       try TodoExample.decode(optimisticEmission.values).map(\.text),
       ["Accepted optimistic value"]
     )
-    await session.waitForSentMessageCount(3)
+    try await session.waitForSentMessageCount(3)
     await session.enqueue(
       .transactOK(clientEventID: mutationID, transactionID: "200")
     )
@@ -4116,7 +4116,7 @@ struct InstantLiveTransportTests {
         operation: "wait for valid mutation after encoding quarantine",
         timeoutMilliseconds: 5_000
       ) {
-        await session.waitForSentMessageCount(2)
+        try await session.waitForSentMessageCount(2)
       }
       _ = try await waitForLiveOutbox(runtime) { mutations in
         mutations.first?.status == .failed && mutations.count == 2
@@ -4159,7 +4159,7 @@ struct InstantLiveTransportTests {
       operation: "wait for post-quarantine live query registration",
       timeoutMilliseconds: 5_000
     ) {
-      await session.waitForSentMessageCount(3)
+      try await session.waitForSentMessageCount(3)
     }
     let postQuarantineQuery = try #require(
       await session.sentMessages().last?.fields["q"]
@@ -4299,7 +4299,7 @@ struct InstantLiveTransportTests {
       ),
       createdAt: createdAt
     )
-    await session.waitForSentMessageCount(2)
+    try await session.waitForSentMessageCount(2)
 
     await session.enqueue(
       InstantLiveMessage(
@@ -4325,7 +4325,7 @@ struct InstantLiveTransportTests {
     expectNoDifference(failedMutation.failureMessage, "permission denied")
 
     _ = try await runtime.retryMutation(id: failedMutation.id)
-    await session.waitForSentMessageCount(3)
+    try await session.waitForSentMessageCount(3)
     let sentOps = await session.sentMessages().map(\.op)
     expectNoDifference(
       sentOps,
@@ -4381,7 +4381,7 @@ struct InstantLiveTransportTests {
     var iterator = stream.makeAsyncIterator()
     _ = try #require(await iterator.next())
     _ = try await runtime.connect()
-    await session.waitForSentMessageCount(2)
+    try await session.waitForSentMessageCount(2)
     await session.enqueue(
       .addQueryOK(
         clientEventID: "event-query-initial",
@@ -4414,7 +4414,7 @@ struct InstantLiveTransportTests {
     // A server can reject only a mutation that this socket has actually
     // offered. Waiting for the transact frame makes the durable claim/token
     // ownership deterministic before the scripted response arrives.
-    await session.waitForSentMessageCount(3)
+    try await session.waitForSentMessageCount(3)
 
     await session.enqueue(
       InstantLiveMessage(
@@ -4460,7 +4460,7 @@ struct InstantLiveTransportTests {
         ]
       )
     )
-    await session.waitForReceiveRequestCount(receiveCountBeforeDuplicate + 1)
+    try await session.waitForReceiveRequestCount(receiveCountBeforeDuplicate + 1)
     try await waitForLiveReceiverToApplyTakenFrames(runtime)
     let duplicateDecodeCount = await runtime.persistence.currentDecodedOutboxBodyCount()
     let revisionAfterDuplicate = try await runtime.persistence.currentOutboxRevision()
@@ -4469,6 +4469,71 @@ struct InstantLiveTransportTests {
     expectNoDifference(revisionAfterDuplicate, revisionBeforeDuplicate)
     expectNoDifference(sentAfterDuplicate, ["init", "add-query", "transact"])
     _ = try await runtime.closeConnection()
+  }
+
+  /// A scripted wait ends by itself (#1020). The oversized-terminal test below waited for 51 sent messages with no
+  /// bound; on a loaded Mac a run that sent fewer parked the whole bundle for 11-16 minutes at 0% CPU.
+  @Test
+  func scriptedLiveSessionSentMessageWaitFailsWithinItsBoundNamingWhatWasSent() async throws {
+    let session = InstantRuntimeScriptedLiveSession(messages: [])
+    let socket = try await session.transport.connect(
+      InstantLiveSessionRequest(appID: "scripted-sent-wait-bound")
+    )
+    try await socket.send(InstantLiveMessage(op: "init", clientEventID: "init"))
+    for index in 1..<50 {
+      try await socket.send(
+        InstantLiveMessage(op: "transact", clientEventID: String(format: "tx-%02d", index))
+      )
+    }
+
+    let timedOut = try await instantLiveWithTimeout(
+      operation: "the scripted sent-message wait must end by itself (#1020)",
+      timeoutMilliseconds: 5_000
+    ) {
+      do {
+        try await session.waitForSentMessageCount(51, timeout: .milliseconds(200))
+        return nil as InstantLiveTestWaitTimedOut?
+      } catch let error as InstantLiveTestWaitTimedOut {
+        return error
+      }
+    }
+
+    let error = try #require(timedOut)
+    expectNoDifference(error.wait, "51 sent messages")
+    expectNoDifference(
+      error.observed,
+      ["init init"] + (1..<50).map { String(format: "transact tx-%02d", $0) }
+    )
+    await socket.close()
+  }
+
+  /// The receive-request wait is bounded the same way (#1020).
+  @Test
+  func scriptedLiveSessionReceiveRequestWaitFailsWithinItsBound() async throws {
+    let session = InstantRuntimeScriptedLiveSession(messages: [])
+    let socket = try await session.transport.connect(
+      InstantLiveSessionRequest(appID: "scripted-receive-wait-bound")
+    )
+    let receive = Task { try await socket.receive() }
+    try await session.waitForReceiveRequestCount(1)
+
+    let timedOut = try await instantLiveWithTimeout(
+      operation: "the scripted receive-request wait must end by itself (#1020)",
+      timeoutMilliseconds: 5_000
+    ) {
+      do {
+        try await session.waitForReceiveRequestCount(2, timeout: .milliseconds(200))
+        return nil as InstantLiveTestWaitTimedOut?
+      } catch let error as InstantLiveTestWaitTimedOut {
+        return error
+      }
+    }
+
+    let error = try #require(timedOut)
+    expectNoDifference(error.wait, "2 receive requests")
+    expectNoDifference(error.observed, ["1 receive request"])
+    await socket.close()
+    _ = try? await receive.value
   }
 
   @Test
@@ -4530,7 +4595,7 @@ struct InstantLiveTransportTests {
       )
     )
     _ = try await runtime.connect()
-    await session.waitForSentMessageCount(51)
+    try await session.waitForSentMessageCount(51)
     let initiallySent = await session.sentMessages()
     expectNoDifference(initiallySent.map(\.op), ["init"] + Array(repeating: "transact", count: 50))
     expectNoDifference(
@@ -4610,7 +4675,7 @@ struct InstantLiveTransportTests {
         ]
       )
     )
-    await session.waitForReceiveRequestCount(receiveCountBeforeDuplicate + 1)
+    try await session.waitForReceiveRequestCount(receiveCountBeforeDuplicate + 1)
     try await waitForLiveReceiverToApplyTakenFrames(runtime)
     let revisionAfterDuplicate = try await runtime.persistence.currentOutboxRevision()
     let decodeCountAfterDuplicate = await runtime.persistence.currentDecodedOutboxBodyCount()
@@ -4622,7 +4687,7 @@ struct InstantLiveTransportTests {
     )
     expectNoDifference(releasedTail, Set([competingTail.id]))
     await runtime.requestLiveMutationDelivery()
-    await session.waitForSentMessageCount(52)
+    try await session.waitForSentMessageCount(52)
     let sentAfterTailRelease = await session.sentMessages()
     expectNoDifference(sentAfterTailRelease.filter { $0.op == "init" }.count, 1)
     expectNoDifference(
@@ -4700,7 +4765,7 @@ struct InstantLiveTransportTests {
       ),
       createdAt: createdAt
     )
-    await session.waitForSentMessageCount(2)
+    try await session.waitForSentMessageCount(2)
     // The automatic pump that offered the mutation can still be finishing its pass. If it sees the expired offer, it
     // reclaims it and reports the expiry outside the known-issue scope below. Let it go idle first, so the explicit
     // flush is the only lane that sees the expiry.
@@ -4782,7 +4847,7 @@ struct InstantLiveTransportTests {
       ),
       createdAt: createdAt
     )
-    await session.waitForSentMessageCount(2)
+    try await session.waitForSentMessageCount(2)
 
     let reclamation = try await runtime.persistence.claimAutomaticOutboxDeliveryWindow(
       InstantAutomaticOutboxClaimRequest(
@@ -4817,7 +4882,7 @@ struct InstantLiveTransportTests {
         ]
       )
     )
-    await session.waitForReceiveRequestCount(receiveCountBeforeError + 1)
+    try await session.waitForReceiveRequestCount(receiveCountBeforeError + 1)
     try await waitForLiveReceiverToApplyTakenFrames(runtime)
 
     let staleErrorDecodeCount = await runtime.persistence.currentDecodedOutboxBodyCount()
@@ -4860,7 +4925,7 @@ struct InstantLiveTransportTests {
       ),
       createdAt: createdAt
     )
-    await session.waitForSentMessageCount(2)
+    try await session.waitForSentMessageCount(2)
 
     let reclamation = try await runtime.persistence.claimAutomaticOutboxDeliveryWindow(
       InstantAutomaticOutboxClaimRequest(
@@ -4888,7 +4953,7 @@ struct InstantLiveTransportTests {
         transactionID: "server-stale-ack"
       )
     )
-    await session.waitForReceiveRequestCount(receiveCountBeforeAcknowledgement + 1)
+    try await session.waitForReceiveRequestCount(receiveCountBeforeAcknowledgement + 1)
     try await waitForLiveReceiverToApplyTakenFrames(runtime)
 
     let durable = try await runtime.persistence.loadState().snapshot.outbox
@@ -4944,7 +5009,7 @@ struct InstantLiveTransportTests {
       ),
       createdAt: createdAt
     )
-    await session.waitForSentMessageCount(2)
+    try await session.waitForSentMessageCount(2)
     // Let every delivery pass the write started finish before the reclaim below (#296). A pass that runs between the
     // reclaim and the stale answer's recording claims the write under a new token but cannot send it while the first
     // offer is still in flight, so the reoffer this test waits for never comes. The reader's hand-off to the applier
@@ -4991,7 +5056,7 @@ struct InstantLiveTransportTests {
       operation: "reoffer the same mutation under a new exact claim token",
       timeoutMilliseconds: 5_000
     ) {
-      await session.waitForSentMessageCount(3)
+      try await session.waitForSentMessageCount(3)
     }
     let replacementClaim = try #require(
       try await runtime.persistence.outboxDeliveryClaimForTesting(id: mutationID)
@@ -5005,7 +5070,7 @@ struct InstantLiveTransportTests {
       operation: "finish the stale acknowledgement disposition",
       timeoutMilliseconds: 5_000
     ) {
-      await session.waitForReceiveRequestCount(receiveCountBeforeAcknowledgement + 1)
+      try await session.waitForReceiveRequestCount(receiveCountBeforeAcknowledgement + 1)
     }
     try await waitForLiveReceiverToApplyTakenFrames(runtime)
 
@@ -7082,7 +7147,10 @@ private actor InstantRuntimeScriptedLiveSession {
     sent
   }
 
-  func waitForSentMessageCount(_ count: Int) async {
+  func waitForSentMessageCount(
+    _ count: Int,
+    timeout: Duration = InstantLiveTestWait.defaultTimeout
+  ) async throws {
     guard sent.count < count else { return }
     await withCheckedContinuation { continuation in
       sentWaiters.append(SentWaiter(count: count, continuation: continuation))
@@ -7093,7 +7161,10 @@ private actor InstantRuntimeScriptedLiveSession {
     receiveRequestCountValue
   }
 
-  func waitForReceiveRequestCount(_ count: Int) async {
+  func waitForReceiveRequestCount(
+    _ count: Int,
+    timeout: Duration = InstantLiveTestWait.defaultTimeout
+  ) async throws {
     guard receiveRequestCountValue < count else { return }
     await withCheckedContinuation { continuation in
       receiveWaiters.append(SentWaiter(count: count, continuation: continuation))
