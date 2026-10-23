@@ -1,3 +1,24 @@
+## 2026-10-23 18:10:19 EDT — scribe `063e7c32f787c72f01280bb96cfcbf4b2aaa1bc9`
+Change log (#1022): red d86ab2f6e, green 83620433f, audit 1e4c54b9b, What's New 87ff2d386.
+
+## 2026-10-23 18:10:04 EDT — scribe `87ff2d3865172a102c4aa525ec6c829f7a8a058d`
+Build 118's What's New line and PROGRESS (#1022): the audio pieces the prune hid no longer wait on the server.
+
+## 2026-10-23 18:08:14 EDT — scribe `1e4c54b9b487342eaa045d1f35b4c6b31269aa96`
+The audit section (#1022): 530 pending chunk rows in 12 recordings, the Sync view, the fix, its cost and tests.
+
+## 2026-10-23 18:08:14 EDT — scribe `83620433ff7e77fb87c3b1431beb4e627cd5f706`
+Green (#1022): supersede and the media scan read the server's chunk rows too; the scan supersedes what the uploaded whole audio covers instead of sending it again.
+
+## 2026-10-23 18:08:01 EDT — scribe `d86ab2f6e5f1b3fed588d76f10477247005ac111`
+Red tests (#1022): supersede and the media scan see the chunk rows the prune took out of this device's store.
+
+## 2026-10-23 18:02:34 EDT — scribe `894c1132b0804d29dc69b8909973cc256ea85d82`
+Touch claim (#1022): one media-scan test's clock.
+
+## 2026-10-23 16:48:09 EDT — scribe `74dc621cc31393556fd82aaee27f693ab1dbdf22`
+Plan chunk-supersede-1022 (#1022): plan.
+
 ## 2026-10-23 18:01:23 EDT — scribe `63cad2752080be392bad9d252257249692a00067`
 ADR 0091 (#1012): a recording's audio also travels compressed (AAC-LC 24 kHz, 6 s segments), and other devices play it from that copy.
 
