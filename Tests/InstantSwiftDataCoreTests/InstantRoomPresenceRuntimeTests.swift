@@ -35,7 +35,7 @@ struct InstantRoomPresenceRuntimeTests {
 
       _ = try await instantLiveWithTimeout(
         operation: "publish presence while the operation gate is held",
-        timeoutMilliseconds: 5_000
+        timeoutMilliseconds: InstantTestWait.hangMilliseconds
       ) {
         try await runtime.setPresence(room: room, userID: "user-self", values: ["state": .string("working")])
       }
@@ -226,7 +226,7 @@ struct InstantRoomPresenceRuntimeTests {
         recovery: "Rejoin without the presence this device stopped publishing."
       )
     )
-    try await instantLiveWithTimeout(operation: "wait for the room reconnect", timeoutMilliseconds: 5_000) {
+    try await instantLiveWithTimeout(operation: "wait for the room reconnect", timeoutMilliseconds: InstantTestWait.hangMilliseconds) {
       try await transport.waitForConnectionCount(2)
     }
     try await second.waitForSentMessageCount(2)
@@ -677,7 +677,7 @@ extension InstantRoomPresenceRuntimeTests {
         recovery: "Rejoin and wait for the server to confirm it."
       )
     )
-    try await instantLiveWithTimeout(operation: "wait for the room reconnect", timeoutMilliseconds: 5_000) {
+    try await instantLiveWithTimeout(operation: "wait for the room reconnect", timeoutMilliseconds: InstantTestWait.hangMilliseconds) {
       try await transport.waitForConnectionCount(2)
     }
     try await second.waitForSentMessageCount(2)

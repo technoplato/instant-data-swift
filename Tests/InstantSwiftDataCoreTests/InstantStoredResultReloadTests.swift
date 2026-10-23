@@ -449,31 +449,31 @@ extension InstantStoredResultReloadTests {
 
   /// The `number`th query the runtime registered with the server.
   static func registeredQuery(number: Int, in session: LiveReactorParitySession) async throws -> InstantLiveJSONValue {
-    let deadline = ContinuousClock.now + .seconds(5)
+    let deadline = ContinuousClock.now + InstantTestWait.hang
     while ContinuousClock.now < deadline {
       let sent = await session.sentMessages().filter { $0.op == "add-query" }
       if sent.count >= number, let query = sent[number - 1].fields["q"] { return query }
       try await Task.sleep(for: .milliseconds(5))
     }
-    throw InstantStoredResultReloadTestFailure("No add-query number \(number) within 5 seconds.")
+    throw InstantStoredResultReloadTestFailure("No add-query number \(number) within \(InstantTestWait.hang).")
   }
 
   static func waitForOp(_ op: String, count: Int, in session: LiveReactorParitySession) async throws {
-    let deadline = ContinuousClock.now + .seconds(5)
+    let deadline = ContinuousClock.now + InstantTestWait.hang
     while ContinuousClock.now < deadline {
       if await session.sentMessages().count(where: { $0.op == op }) >= count { return }
       try await Task.sleep(for: .milliseconds(5))
     }
-    throw InstantStoredResultReloadTestFailure("Fewer than \(count) \(op) messages within 5 seconds.")
+    throw InstantStoredResultReloadTestFailure("Fewer than \(count) \(op) messages within \(InstantTestWait.hang).")
   }
 
-  /// The first emission of `stream` that `matches`, within 5 seconds.
+  /// The first emission of `stream` that `matches`, up to the hang bound (#1021).
   static func emission(
     of stream: AsyncStream<InstantQueryEmission>,
     operation: String,
     matching matches: @escaping @Sendable (InstantQueryEmission) -> Bool
   ) async throws -> InstantQueryEmission {
-    let found = try await instantLiveWithTimeout(operation: operation, timeoutMilliseconds: 5_000) {
+    let found = try await instantLiveWithTimeout(operation: operation, timeoutMilliseconds: InstantTestWait.hangMilliseconds) {
       await stream.first(where: matches)
     }
     guard let found else { throw InstantStoredResultReloadTestFailure("The stream ended before it could \(operation).") }
@@ -485,7 +485,7 @@ extension InstantStoredResultReloadTests {
   static func loadEveryPage(
     of subscription: InstantInfiniteQuerySubscription,
     expecting expectedCount: Int,
-    within limit: Duration = .seconds(5)
+    within limit: Duration = InstantTestWait.hang
   ) async throws -> InstantInfiniteQuerySnapshot {
     let last = LastSnapshot()
     let limitMilliseconds = UInt64(limit.components.seconds * 1_000)

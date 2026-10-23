@@ -202,7 +202,7 @@ private final class DuplicateRowsWindow: Sendable {
     )
     let stored = try await instantLiveWithTimeout(
       operation: "store the list's rows through a plain live query",
-      timeoutMilliseconds: 5_000
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds
     ) {
       for await emission in observation.stream where emission.values.count == values.count {
         return true
@@ -219,33 +219,33 @@ private final class DuplicateRowsWindow: Sendable {
     return Int(value)
   }
 
-  /// Waits at most 5 seconds for a snapshot that satisfies `condition`.
+  /// Waits for a snapshot that satisfies `condition`, up to the hang bound (#1021).
   func waitForSnapshot(
     _ label: String,
     _ condition: @escaping @Sendable (InstantInfiniteQuerySnapshot) -> Bool
   ) async throws {
-    let deadline = ContinuousClock.now + .seconds(5)
+    let deadline = ContinuousClock.now + InstantTestWait.hang
     while ContinuousClock.now < deadline {
       if let latest = await recorder.latest, condition(latest) { return }
       try await Task.sleep(for: .milliseconds(10))
     }
-    Issue.record("Timed out after 5 seconds waiting for \(label).")
+    Issue.record("Timed out after \(InstantTestWait.hang) waiting for \(label).")
   }
 
-  /// Waits at most 5 seconds for `condition`.
+  /// Waits for `condition`, up to the hang bound (#1021).
   func waitUntil(_ label: String, _ condition: @escaping @Sendable () async -> Bool) async throws {
-    let deadline = ContinuousClock.now + .seconds(5)
+    let deadline = ContinuousClock.now + InstantTestWait.hang
     while ContinuousClock.now < deadline {
       if await condition() { return }
       try await Task.sleep(for: .milliseconds(10))
     }
-    Issue.record("Timed out after 5 seconds waiting until \(label).")
+    Issue.record("Timed out after \(InstantTestWait.hang) waiting until \(label).")
   }
 
-  /// Waits at most 5 seconds until nothing is in flight: no navigation, no subscription awaiting or
-  /// retiring, no unread server reply, and every frame applied (the #300 harness's quiet point).
+  /// Waits until nothing is in flight: no navigation, no subscription awaiting or retiring, no unread
+  /// server reply, and every frame applied (the #300 harness's quiet point), up to the hang bound.
   func settled(_ operation: String) async throws -> InstantInfiniteQuerySnapshot {
-    let deadline = ContinuousClock.now + .seconds(5)
+    let deadline = ContinuousClock.now + InstantTestWait.hang
     var previousMarker: [Int]?
     var quietPolls = 0
     while ContinuousClock.now < deadline {
@@ -254,14 +254,21 @@ private final class DuplicateRowsWindow: Sendable {
       let isDrained = await server.isDrained()
       let applierIsWaiting = await runtime.liveReceiverIsWaitingForAFrameForTesting()
       let marker = [await server.receivedMessageCount, await recorder.count]
+      // A query with no chunk subscription yet has nothing in flight either, and a chunk's answer reaches
+      // the recorder a few hops after the chunk has it: under the bundle's load "open the list" settled on
+      // the empty window from before the answer (#1021). Every list here has rows, so a window that shows
+      // none is not settled.
+      let showsRows = await recorder.latest?.values.isEmpty == false
       let isQuiet = commands.runnerTaskCount == 0
         && commands.pendingNavigationCount == 0
+        && residency.activeSubscriptionCount > 0
         && residency.awaitingResultSubscriptionCount == 0
         && residency.retiringSubscriptionCount == 0
         && residency.pendingSubscriptionCount == 0
         && isDrained
         && applierIsWaiting
         && marker == previousMarker
+        && showsRows
       quietPolls = isQuiet ? quietPolls + 1 : 0
       if quietPolls >= 2, let latest = await recorder.latest {
         return latest
@@ -269,7 +276,7 @@ private final class DuplicateRowsWindow: Sendable {
       previousMarker = marker
       try await Task.sleep(for: .milliseconds(10))
     }
-    Issue.record("Waiting to \(operation): the query did not settle within 5 s.")
+    Issue.record("Waiting to \(operation): the query did not settle within \(InstantTestWait.hang).")
     throw DuplicateRowsWindowDidNotSettle()
   }
 
@@ -325,14 +332,14 @@ private actor RetirementHold {
     await withCheckedContinuation { held.append($0) }
   }
 
-  /// Waits at most 5 seconds for a held cleanup.
+  /// Waits for a held cleanup, up to the hang bound (#1021).
   func waitUntilHolding(_ label: String) async throws {
-    let deadline = ContinuousClock.now + .seconds(5)
+    let deadline = ContinuousClock.now + InstantTestWait.hang
     while ContinuousClock.now < deadline {
       if !held.isEmpty { return }
       try await Task.sleep(for: .milliseconds(10))
     }
-    Issue.record("Timed out after 5 seconds waiting for \(label).")
+    Issue.record("Timed out after \(InstantTestWait.hang) waiting for \(label).")
   }
 }
 

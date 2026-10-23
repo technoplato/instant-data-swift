@@ -80,7 +80,7 @@ struct InstantGuestPromotionOutboxTests {
     _ = try await runtime.connect()
     try await instantLiveWithTimeout(
       operation: "wait for the guest write to be sent under the promoted session",
-      timeoutMilliseconds: 5_000
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds
     ) {
       try await liveSession.waitForSentMessageCount(2)
     }

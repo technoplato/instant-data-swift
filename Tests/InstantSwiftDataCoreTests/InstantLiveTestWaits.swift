@@ -7,9 +7,40 @@
 //                    still moving; a wait now fails only after 10 s with no new message.
 // 2026-10-23  #1020  The shared parity session and transport, and the discard session, wait through it too; a
 //                    cancelled wait still returns as it did.
+// 2026-10-23  #1021  InstantTestWait: one hang bound for every wait a test puts around a step it expects, instead of
+//                    a fixed 5 s or 500 ms that failed runs which were still moving.
 
 import Foundation
 @testable import InstantSwiftDataCore
+
+/// How long a test waits for a step it expects before it calls the run stuck (#1021).
+///
+/// These bounds detect hangs; a test asserts on what happened, never on how long the step took. Fixed 5 s and 500 ms
+/// bounds failed runs that were still moving: in four whole-bundle runs on the Mac mini (1,384 tests on 10 cores, idle
+/// and beside 20 busy loops), 37 tests failed at such a bound, and every one of them passed alone. A minute is still
+/// short next to a run that never finishes, and the timed-out error names the step.
+enum InstantTestWait {
+  static let hangMilliseconds: UInt64 = 60_000
+  static let hang: Duration = .milliseconds(Int64(hangMilliseconds))
+}
+
+extension InstantRuntimeConfiguration {
+  /// The test owns the clock the runtime's acknowledgement deadlines read (#1020's pattern, #1021): `now` stands still
+  /// and the deadline wake never comes, so no deadline passes however long the machine takes.
+  ///
+  /// A write's acknowledgement deadline is its claim plus 6 s for each place it holds in flight, on the wall clock. In
+  /// a test whose scripted server never answers some writes, the whole bundle's load let that pass, the runtime
+  /// replaced the socket as designed, and the test, which scripts one connection, failed on something it is not about.
+  /// Use it in tests about anything but acknowledgement timeouts.
+  func holdingAcknowledgementDeadlines(
+    at milliseconds: Int64 = 1_700_000_000_000
+  ) -> Self {
+    var configuration = self
+    configuration.now = { InstantTimestamp(milliseconds: milliseconds) }
+    configuration.liveMutationDeadlineSleep = { _ in try await Task.sleep(for: .seconds(3_600)) }
+    return configuration
+  }
+}
 
 /// Why a live test-support wait gave up (#1020): the count stopped moving for `timeout`, and this is what the scripted
 /// side had seen, so a run that stalls fails in seconds with the messages it did send instead of parking the suite

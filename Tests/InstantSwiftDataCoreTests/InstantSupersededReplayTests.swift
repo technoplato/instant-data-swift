@@ -55,7 +55,7 @@ struct InstantSupersededReplayTests {
   static func waitForTransacts(
     _ count: Int,
     on session: LiveReactorParitySession,
-    within timeout: Duration = .seconds(10)
+    within timeout: Duration = InstantTestWait.hang
   ) async throws -> [String?] {
     let deadline = ContinuousClock.now + timeout
     while true {
@@ -67,7 +67,7 @@ struct InstantSupersededReplayTests {
 
   static func waitUntil(
     _ operation: String,
-    within timeout: Duration = .seconds(10),
+    within timeout: Duration = InstantTestWait.hang,
     _ condition: @Sendable () async throws -> Bool
   ) async throws {
     let deadline = ContinuousClock.now + timeout
@@ -92,6 +92,9 @@ struct InstantSupersededReplayTests {
       liveTransport: transport.transport
     )
     configuration.liveReconnectSleep = { _ in }
+    // These tests are about how a refusal resolves; the writes the scripted server leaves unanswered must not reach an
+    // acknowledgement deadline under load (#1021).
+    configuration = configuration.holdingAcknowledgementDeadlines()
     return (try await InstantRuntime.bootstrap(configuration: configuration), transport)
   }
 

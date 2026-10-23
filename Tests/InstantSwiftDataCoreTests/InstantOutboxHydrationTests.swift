@@ -65,10 +65,13 @@ struct InstantOutboxHydrationTests {
     let liveSession = LiveReactorParitySession(messages: [
       liveReactorInitOK(attrs: liveReactorTodoServerAttrs)
     ])
+    // The scripted server never acknowledges the transact; at load 67 its deadline passed before the test read what
+    // was sent, and the runtime replaced the socket (#1021).
     let runtime = try await makeRuntime(
       appID: "outbox-automatic-live-hydration",
       cacheURL: temporaryOutboxHydrationCacheURL(),
-      liveTransport: liveSession.transport
+      liveTransport: liveSession.transport,
+      holdsAcknowledgementDeadlines: true
     )
     let lifecycle = try await runtime.observeMutationLifecycle(id: transaction.id)
     let lifecycleTask = Task { () -> [InstantMutationLifecycleEvent] in
@@ -84,14 +87,14 @@ struct InstantOutboxHydrationTests {
 
     try await instantLiveWithTimeout(
       operation: "wait for automatic live session initialization",
-      timeoutMilliseconds: 5_000
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds
     ) {
       try await liveSession.waitForSentMessageCount(1)
     }
     try await runtime.transact(transaction, createdAt: now)
     try await instantLiveWithTimeout(
       operation: "wait for automatic live mutation delivery",
-      timeoutMilliseconds: 5_000
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds
     ) {
       try await liveSession.waitForSentMessageCount(2)
     }
@@ -118,7 +121,7 @@ struct InstantOutboxHydrationTests {
     )
     let lifecycleEvents = try await instantLiveWithTimeout(
       operation: "wait for server-accepted mutation lifecycle",
-      timeoutMilliseconds: 5_000
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds
     ) {
       await lifecycleTask.value
     }
@@ -161,7 +164,7 @@ struct InstantOutboxHydrationTests {
 
     try await instantLiveWithTimeout(
       operation: "wait for explicitly connected mutation delivery",
-      timeoutMilliseconds: 5_000
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds
     ) {
       while await liveSession.sentMessages().count < 2 {
         try Task.checkCancellation()
@@ -202,7 +205,7 @@ struct InstantOutboxHydrationTests {
     let todos = try TodoExample.decode(try await runtime.queryOnce(TodoExample.query).values)
     try await instantLiveWithTimeout(
       operation: "wait for explicitly connected one-shot query cleanup",
-      timeoutMilliseconds: 5_000
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds
     ) {
       try await liveSession.waitForSentMessageCount(3)
     }
@@ -238,7 +241,7 @@ struct InstantOutboxHydrationTests {
 
     try await instantLiveWithTimeout(
       operation: "wait for status-400 permission query registration",
-      timeoutMilliseconds: 5_000
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds
     ) {
       try await liveSession.waitForSentMessageCount(2)
     }
@@ -264,7 +267,7 @@ struct InstantOutboxHydrationTests {
     do {
       _ = try await instantLiveWithTimeout(
         operation: "wait for status-400 permission query rejection",
-        timeoutMilliseconds: 5_000
+        timeoutMilliseconds: InstantTestWait.hangMilliseconds
       ) {
         try await queryTask.value
       }
@@ -301,14 +304,14 @@ struct InstantOutboxHydrationTests {
 
     try await instantLiveWithTimeout(
       operation: "wait for permission-service first session initialization",
-      timeoutMilliseconds: 5_000
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds
     ) {
       try await firstSession.waitForSentMessageCount(1)
     }
     try await runtime.transact(transaction, createdAt: now)
     try await instantLiveWithTimeout(
       operation: "wait for permission-service first mutation delivery",
-      timeoutMilliseconds: 5_000
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds
     ) {
       try await firstSession.waitForSentMessageCount(2)
     }
@@ -327,7 +330,7 @@ struct InstantOutboxHydrationTests {
     // #376: a 500 keeps the healthy socket; the write is offered again on the same session after a backoff.
     try await instantLiveWithTimeout(
       operation: "wait for permission-service mutation retry on the same session",
-      timeoutMilliseconds: 5_000
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds
     ) {
       try await firstSession.waitForSentMessageCount(3)
     }
@@ -357,7 +360,7 @@ struct InstantOutboxHydrationTests {
     _ = try #require(
       try await instantLiveWithTimeout(
         operation: "wait for retried permission-timeout mutation acknowledgement",
-        timeoutMilliseconds: 5_000
+        timeoutMilliseconds: InstantTestWait.hangMilliseconds
       ) {
         try await runtime.observeConnectionStatus().first { $0.pendingMutationCount == 0 }
       }
@@ -816,7 +819,7 @@ struct InstantOutboxHydrationTests {
     _ = try await reader.connect()
     try await instantLiveWithTimeout(
       operation: "wait for cross-runtime mutation delivery",
-      timeoutMilliseconds: 5_000
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds
     ) {
       try await liveSession.waitForSentMessageCount(2)
     }
@@ -841,7 +844,7 @@ struct InstantOutboxHydrationTests {
     )
     let rejected = try await instantLiveWithTimeout(
       operation: "wait for cross-runtime terminal rejection",
-      timeoutMilliseconds: 5_000
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds
     ) {
       while true {
         if let mutation = await reader.outboxMutations().first(where: {
@@ -891,7 +894,7 @@ struct InstantOutboxHydrationTests {
     try await runtime.transact(transaction, createdAt: now)
     try await instantLiveWithTimeout(
       operation: "wait for mutation send before explicit close",
-      timeoutMilliseconds: 5_000
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds
     ) {
       await liveTransport.waitForBlockedTransactSend()
     }
@@ -900,7 +903,7 @@ struct InstantOutboxHydrationTests {
     expectNoDifference(closeStatus.lastErrorMessage, nil, upstreamDeliverySource)
     try await instantLiveWithTimeout(
       operation: "wait for in-flight send to observe explicit close",
-      timeoutMilliseconds: 5_000
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds
     ) {
       await liveTransport.waitForTransactSendFailure()
     }
@@ -951,7 +954,7 @@ struct InstantOutboxHydrationTests {
     defer { firstConnect.cancel() }
     try await instantLiveWithTimeout(
       operation: "wait for first connection to hold the serial gate",
-      timeoutMilliseconds: 5_000
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds
     ) {
       await liveTransport.waitForFirstConnection()
     }
@@ -961,14 +964,14 @@ struct InstantOutboxHydrationTests {
     await liveTransport.releaseFirstConnection()
     _ = try await instantLiveWithTimeout(
       operation: "wait for first serialized connection",
-      timeoutMilliseconds: 5_000
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds
     ) {
       try await firstConnect.value
     }
     do {
       _ = try await instantLiveWithTimeout(
         operation: "wait for cancelled queued connection",
-        timeoutMilliseconds: 5_000
+        timeoutMilliseconds: InstantTestWait.hangMilliseconds
       ) {
         try await cancelledConnect.value
       }
@@ -1261,7 +1264,8 @@ struct InstantOutboxHydrationTests {
     cacheURL: URL,
     mutationTransport: InstantMutationTransportClient = .local,
     liveTransport: InstantLiveTransportClient? = nil,
-    autoConnectLiveTransport: Bool? = nil
+    autoConnectLiveTransport: Bool? = nil,
+    holdsAcknowledgementDeadlines: Bool = false
   ) async throws -> InstantRuntime {
     var configuration = InstantRuntimeConfiguration(
       appID: appID,
@@ -1273,6 +1277,9 @@ struct InstantOutboxHydrationTests {
       liveTransport: liveTransport
     )
     configuration.autoConnectLiveTransport = autoConnectLiveTransport ?? (liveTransport != nil)
+    if holdsAcknowledgementDeadlines {
+      configuration = configuration.holdingAcknowledgementDeadlines()
+    }
     return try await InstantRuntime.bootstrap(configuration: configuration)
   }
 

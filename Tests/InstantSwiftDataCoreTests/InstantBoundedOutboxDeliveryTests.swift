@@ -817,7 +817,7 @@ struct InstantBoundedOutboxDeliveryTests {
     _ = try await runtime.connect()
     try await instantLiveWithTimeout(
       operation: "wait for automatic delivery behind the explicit confirmed barrier",
-      timeoutMilliseconds: 5_000
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds
     ) {
       try await liveSession.waitForSentMessageCount(3)
     }
@@ -924,7 +924,7 @@ struct InstantBoundedOutboxDeliveryTests {
     // short test ends. Let it finish first, so the last idle check measures only what the flush leaves behind.
     try await instantLiveWithTimeout(
       operation: "wait for bootstrap's startup cookie sync to finish",
-      timeoutMilliseconds: 5_000
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds
     ) {
       while !(await runtime.exactCloseBackgroundTasksAreIdleForTesting()) {
         try Task.checkCancellation()
@@ -944,7 +944,7 @@ struct InstantBoundedOutboxDeliveryTests {
     }
     try await instantLiveWithTimeout(
       operation: "wait for the prepared explicit mutation operation and its owned timers",
-      timeoutMilliseconds: 5_000
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds
     ) {
       while !transport.didEnter || !deadlineSleep.didEnter || !renewalSleep.didEnter {
         try Task.checkCancellation()
@@ -960,7 +960,7 @@ struct InstantBoundedOutboxDeliveryTests {
     deadlineSleep.release()
     try await instantLiveWithTimeout(
       operation: "wait for explicit mutation timeout to abort transport work",
-      timeoutMilliseconds: 5_000
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds
     ) {
       while transport.abortCount != 1 {
         try Task.checkCancellation()
@@ -983,7 +983,7 @@ struct InstantBoundedOutboxDeliveryTests {
     transport.releaseWithServerAcceptance()
     try await instantLiveWithTimeout(
       operation: "wait for cancellation-ignoring explicit transport to return",
-      timeoutMilliseconds: 5_000
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds
     ) {
       while transport.runCompletionCount != 1 {
         try Task.checkCancellation()
@@ -992,7 +992,7 @@ struct InstantBoundedOutboxDeliveryTests {
     }
     try await instantLiveWithTimeout(
       operation: "wait for late authoritative acceptance disposition before timeout returns",
-      timeoutMilliseconds: 5_000
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds
     ) {
       while try await runtime.persistence.countOutboxMutations(status: .confirmed) != 1 {
         try Task.checkCancellation()
@@ -1018,7 +1018,7 @@ struct InstantBoundedOutboxDeliveryTests {
     #expect(persistedAfterDisposition.provesServerAcceptance)
     try await instantLiveWithTimeout(
       operation: "wait for renewal cancellation after authoritative timeout disposition",
-      timeoutMilliseconds: 5_000
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds
     ) {
       while renewalSleep.cancellationCount != 1 {
         try Task.checkCancellation()
@@ -1031,7 +1031,7 @@ struct InstantBoundedOutboxDeliveryTests {
     do {
       _ = try await instantLiveWithTimeout(
         operation: "wait for explicit timeout to join all exact owned work",
-        timeoutMilliseconds: 5_000
+        timeoutMilliseconds: InstantTestWait.hangMilliseconds
       ) {
         try await flush.value
       }
@@ -1097,7 +1097,7 @@ struct InstantBoundedOutboxDeliveryTests {
     }
     try await instantLiveWithTimeout(
       operation: "wait for active explicit flush before close",
-      timeoutMilliseconds: 5_000
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds
     ) {
       while !transport.didEnter || !deadlineSleep.didEnter || !renewalSleep.didEnter {
         try Task.checkCancellation()
@@ -1113,7 +1113,7 @@ struct InstantBoundedOutboxDeliveryTests {
     defer { close.cancel() }
     try await instantLiveWithTimeout(
       operation: "wait for close to abort explicit transport and deadline work",
-      timeoutMilliseconds: 5_000
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds
     ) {
       while transport.abortCount != 1
         || deadlineSleep.cancellationCount != 1
@@ -1136,7 +1136,7 @@ struct InstantBoundedOutboxDeliveryTests {
     transport.releaseWithServerAcceptance()
     try await instantLiveWithTimeout(
       operation: "wait for aborted explicit transport tail",
-      timeoutMilliseconds: 5_000
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds
     ) {
       while transport.runCompletionCount != 1 {
         try Task.checkCancellation()
@@ -1145,7 +1145,7 @@ struct InstantBoundedOutboxDeliveryTests {
     }
     try await instantLiveWithTimeout(
       operation: "wait for authoritative acceptance disposition before close publishes closed",
-      timeoutMilliseconds: 5_000
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds
     ) {
       while try await runtime.persistence.countOutboxMutations(status: .confirmed) != 1 {
         try Task.checkCancellation()
@@ -1170,7 +1170,7 @@ struct InstantBoundedOutboxDeliveryTests {
     #expect(persistedAfterDisposition.provesServerAcceptance)
     try await instantLiveWithTimeout(
       operation: "wait for renewal cancellation after authoritative close disposition",
-      timeoutMilliseconds: 5_000
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds
     ) {
       while renewalSleep.cancellationCount != 1 {
         try Task.checkCancellation()
@@ -1184,7 +1184,7 @@ struct InstantBoundedOutboxDeliveryTests {
     renewalSleep.release()
     let closedStatus = try await instantLiveWithTimeout(
       operation: "wait for close to join active explicit flush",
-      timeoutMilliseconds: 5_000
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds
     ) {
       try await close.value
     }
@@ -1209,7 +1209,7 @@ struct InstantBoundedOutboxDeliveryTests {
     do {
       _ = try await instantLiveWithTimeout(
         operation: "wait for close-cancelled explicit flush caller",
-        timeoutMilliseconds: 5_000
+        timeoutMilliseconds: InstantTestWait.hangMilliseconds
       ) {
         try await flush.value
       }
@@ -1929,7 +1929,7 @@ struct InstantBoundedOutboxDeliveryTests {
     _ = try await runtime.connect()
     try await instantLiveWithTimeout(
       operation: "wait for bounded ten-thousand-row delivery",
-      timeoutMilliseconds: 5_000
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds
     ) {
       try await liveSession.waitForSentMessageCount(51)
     }
@@ -2116,7 +2116,7 @@ struct InstantBoundedOutboxDeliveryTests {
     _ = try await runtime.connect()
     try await instantLiveWithTimeout(
       operation: "wait for pending tail behind SQLite-authorized accepted heads",
-      timeoutMilliseconds: 5_000
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds
     ) {
       try await liveSession.waitForSentMessageCount(2)
     }
@@ -2172,7 +2172,7 @@ struct InstantBoundedOutboxDeliveryTests {
     await runtime.requestLiveMutationDelivery()
     try await instantLiveWithTimeout(
       operation: "wait for initial fifty-mutation window",
-      timeoutMilliseconds: 5_000
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds
     ) {
       try await liveSession.waitForSentMessageCount(51)
     }
@@ -2194,7 +2194,7 @@ struct InstantBoundedOutboxDeliveryTests {
     )
     try await instantLiveWithTimeout(
       operation: "wait for one freed slot to admit the unsent tail",
-      timeoutMilliseconds: 5_000
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds
     ) {
       try await liveSession.waitForSentMessageCount(52)
     }
@@ -2242,7 +2242,7 @@ struct InstantBoundedOutboxDeliveryTests {
     _ = try await runtime.connect()
     try await instantLiveWithTimeout(
       operation: "wait for the fifty-mutation same-key boundary window",
-      timeoutMilliseconds: 5_000
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds
     ) {
       try await liveSession.waitForSentMessageCount(51)
     }
@@ -2310,7 +2310,7 @@ struct InstantBoundedOutboxDeliveryTests {
     _ = try await runtime.connect()
     try await instantLiveWithTimeout(
       operation: "wait for the older write protected by a failed active overlay",
-      timeoutMilliseconds: 5_000
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds
     ) {
       try await liveSession.waitForSentMessageCount(2)
     }
@@ -2503,7 +2503,7 @@ struct InstantBoundedOutboxDeliveryTests {
     await runtime.requestLiveMutationDelivery()
     try await instantLiveWithTimeout(
       operation: "wait for weighted automatic delivery window",
-      timeoutMilliseconds: 5_000
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds
     ) {
       try await liveSession.waitForSentMessageCount(26)
     }
@@ -2626,7 +2626,7 @@ struct InstantBoundedOutboxDeliveryTests {
     _ = try await runtime.transact(valid.transaction, createdAt: valid.createdAt)
     try await instantLiveWithTimeout(
       operation: "wait for valid write after rejected step-oversize write",
-      timeoutMilliseconds: 5_000
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds
     ) {
       try await liveSession.waitForSentMessageCount(2)
     }
@@ -2669,7 +2669,7 @@ struct InstantBoundedOutboxDeliveryTests {
     _ = try await runtime.transact(valid.transaction, createdAt: valid.createdAt)
     try await instantLiveWithTimeout(
       operation: "wait for valid write after rejected body-oversize write",
-      timeoutMilliseconds: 5_000
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds
     ) {
       try await liveSession.waitForSentMessageCount(2)
     }
@@ -2714,7 +2714,7 @@ struct InstantBoundedOutboxDeliveryTests {
     _ = try await runtime.connect()
     try await instantLiveWithTimeout(
       operation: "wait for first mutation before legacy step blocker",
-      timeoutMilliseconds: 5_000
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds
     ) {
       try await liveSession.waitForSentMessageCount(2)
     }
@@ -2806,7 +2806,7 @@ struct InstantBoundedOutboxDeliveryTests {
     _ = try await runtime.connect()
     try await instantLiveWithTimeout(
       operation: "wait for schema-complete required-foundation delivery",
-      timeoutMilliseconds: 5_000
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds
     ) {
       try await liveSession.waitForSentMessageCount(2)
     }
@@ -2890,7 +2890,7 @@ struct InstantBoundedOutboxDeliveryTests {
     _ = try await runtime.connect()
     try await instantLiveWithTimeout(
       operation: "wait for small tail behind projected-oversize required hydration",
-      timeoutMilliseconds: 5_000
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds
     ) {
       try await liveSession.waitForSentMessageCount(2)
     }
@@ -3008,7 +3008,7 @@ struct InstantBoundedOutboxDeliveryTests {
     _ = try await runtime.connect()
     try await instantLiveWithTimeout(
       operation: "wait for first five-MiB projected mutation",
-      timeoutMilliseconds: 5_000
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds
     ) {
       try await liveSession.waitForSentMessageCount(2)
     }
@@ -3057,7 +3057,7 @@ struct InstantBoundedOutboxDeliveryTests {
     )
     try await instantLiveWithTimeout(
       operation: "wait for deferred five-MiB projection after capacity release",
-      timeoutMilliseconds: 5_000
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds
     ) {
       try await liveSession.waitForSentMessageCount(3)
     }
@@ -3107,7 +3107,7 @@ struct InstantBoundedOutboxDeliveryTests {
     _ = try await runtime.connect()
     try await instantLiveWithTimeout(
       operation: "wait for ordered required-foundation successor delivery",
-      timeoutMilliseconds: 5_000
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds
     ) {
       try await liveSession.waitForSentMessageCount(3)
     }
@@ -3228,7 +3228,7 @@ struct InstantBoundedOutboxDeliveryTests {
     _ = try await runtime.connect()
     try await instantLiveWithTimeout(
       operation: "wait for foundation delivery past an active legacy overlay",
-      timeoutMilliseconds: 5_000
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds
     ) {
       try await liveSession.waitForSentMessageCount(2)
     }
@@ -3301,7 +3301,7 @@ struct InstantBoundedOutboxDeliveryTests {
     _ = try await staleRuntime.connect()
     try await instantLiveWithTimeout(
       operation: "wait for the revision-qualified durable visible write",
-      timeoutMilliseconds: 5_000
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds
     ) {
       try await liveSession.waitForSentMessageCount(2)
     }
@@ -3340,7 +3340,7 @@ struct InstantBoundedOutboxDeliveryTests {
     await runtime.requestLiveMutationDelivery()
     try await instantLiveWithTimeout(
       operation: "wait for byte-bounded automatic delivery",
-      timeoutMilliseconds: 5_000
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds
     ) {
       try await liveSession.waitForSentMessageCount(2)
     }
@@ -3535,7 +3535,7 @@ struct InstantBoundedOutboxDeliveryTests {
       _ = try await runtime.connect()
       _ = try await instantLiveWithTimeout(
         operation: "wait for oversized failed lifecycle blocker",
-        timeoutMilliseconds: 5_000
+        timeoutMilliseconds: InstantTestWait.hangMilliseconds
       ) {
         while true {
           let status = try await runtime.connectionStatus()
@@ -3622,7 +3622,7 @@ struct InstantBoundedOutboxDeliveryTests {
     // background-lane claim can wait behind other callers of the gate).
     try await instantLiveWithTimeout(
       operation: "wait for the connect's delivery pass to finish",
-      timeoutMilliseconds: 5_000
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds
     ) {
       while !(await runtime.automaticMutationPumpIsIdleForTesting()) {
         await Task.yield()
@@ -3650,13 +3650,13 @@ struct InstantBoundedOutboxDeliveryTests {
       await runtime.requestLiveMutationDelivery()
       try await instantLiveWithTimeout(
         operation: "wait for tail behind encoding-failure window",
-        timeoutMilliseconds: 5_000
+        timeoutMilliseconds: InstantTestWait.hangMilliseconds
       ) {
         try await liveSession.waitForSentMessageCount(2)
       }
       try await instantLiveWithTimeout(
         operation: "wait for the encoding-failure delivery pump to become idle",
-        timeoutMilliseconds: 5_000
+        timeoutMilliseconds: InstantTestWait.hangMilliseconds
       ) {
         while !(await runtime.automaticMutationPumpIsIdleForTesting()) {
           await Task.yield()
@@ -3703,7 +3703,7 @@ struct InstantBoundedOutboxDeliveryTests {
     // 4 of 5 runs alone).
     try await instantLiveWithTimeout(
       operation: "wait for the connect's delivery pass to finish",
-      timeoutMilliseconds: 5_000
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds
     ) {
       while !(await runtime.automaticMutationPumpIsIdleForTesting()) {
         await Task.yield()
@@ -3721,7 +3721,7 @@ struct InstantBoundedOutboxDeliveryTests {
       await runtime.requestLiveMutationDelivery()
       try await instantLiveWithTimeout(
         operation: "wait for mixed encoding-window refill",
-        timeoutMilliseconds: 5_000
+        timeoutMilliseconds: InstantTestWait.hangMilliseconds
       ) {
         try await liveSession.waitForSentMessageCount(3)
       }
@@ -3764,7 +3764,7 @@ struct InstantBoundedOutboxDeliveryTests {
     _ = try await runtime.connect()
     try await instantLiveWithTimeout(
       operation: "wait for first strict legacy claim window",
-      timeoutMilliseconds: 5_000
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds
     ) {
       try await liveSession.waitForSentMessageCount(51)
     }
@@ -3815,13 +3815,13 @@ struct InstantBoundedOutboxDeliveryTests {
     _ = try await runtime.connect()
     try await instantLiveWithTimeout(
       operation: "wait for the eight-row acknowledgement window",
-      timeoutMilliseconds: 5_000
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds
     ) {
       try await liveSession.waitForSentMessageCount(9)
     }
     try await instantLiveWithTimeout(
       operation: "wait for the ordinal acknowledgement deadline schedule",
-      timeoutMilliseconds: 5_000
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds
     ) {
       await deadlineSleep.waitForFirstDelay()
     }
@@ -3846,7 +3846,7 @@ struct InstantBoundedOutboxDeliveryTests {
     await deadlineSleep.resumeFirstDelay()
     try await instantLiveWithTimeout(
       operation: "wait for the early deadline wake to finish without reclaiming",
-      timeoutMilliseconds: 5_000
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds
     ) {
       while true {
         let pumpIsIdle = await runtime.automaticMutationPumpIsIdleForTesting()
@@ -3866,7 +3866,7 @@ struct InstantBoundedOutboxDeliveryTests {
     }
     try await instantLiveWithTimeout(
       operation: "wait for all delayed acknowledgements",
-      timeoutMilliseconds: 5_000
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds
     ) {
       while try await runtime.persistence.countOutboxMutations(status: .pending) != 0 {
         await Task.yield()
@@ -3945,7 +3945,7 @@ struct InstantBoundedOutboxDeliveryTests {
       _ = try await runtime.connect()
       try await instantLiveWithTimeout(
         operation: "wait for the predecessor and successor sends",
-        timeoutMilliseconds: 5_000
+        timeoutMilliseconds: InstantTestWait.hangMilliseconds
       ) {
         try await firstSession.waitForSentMessageCount(3)
       }
@@ -3958,7 +3958,7 @@ struct InstantBoundedOutboxDeliveryTests {
       )
       try await instantLiveWithTimeout(
         operation: "wait for the acknowledged successor to leave the outbox",
-        timeoutMilliseconds: 5_000
+        timeoutMilliseconds: InstantTestWait.hangMilliseconds
       ) {
         while try await runtime.persistence.countOutboxMutations(status: .pending) != 1 {
           await Task.yield()
@@ -3977,13 +3977,13 @@ struct InstantBoundedOutboxDeliveryTests {
       )
       try await instantLiveWithTimeout(
         operation: "hold the stale response inside the expiring generation",
-        timeoutMilliseconds: 5_000
+        timeoutMilliseconds: InstantTestWait.hangMilliseconds
       ) {
         await receiverEventGate.waitUntilBlocked()
       }
       try await instantLiveWithTimeout(
         operation: "wait for the durable mutation deadline schedule",
-        timeoutMilliseconds: 5_000
+        timeoutMilliseconds: InstantTestWait.hangMilliseconds
       ) {
         await deadlineSleep.waitForFirstDelay()
       }
@@ -3994,7 +3994,7 @@ struct InstantBoundedOutboxDeliveryTests {
       // load, where a background-lane claim can wait behind other callers of the gate).
       try await instantLiveWithTimeout(
         operation: "wait for the successor's delivery pass to finish",
-        timeoutMilliseconds: 5_000
+        timeoutMilliseconds: InstantTestWait.hangMilliseconds
       ) {
         while !(await runtime.automaticMutationPumpIsIdleForTesting()) {
           await Task.yield()
@@ -4005,7 +4005,7 @@ struct InstantBoundedOutboxDeliveryTests {
       await deadlineSleep.resumeFirstDelay()
       try await instantLiveWithTimeout(
         operation: "wait for reconnect before a second durable claim pass",
-        timeoutMilliseconds: 5_000
+        timeoutMilliseconds: InstantTestWait.hangMilliseconds
       ) {
         await reconnectSleep.waitForFirstDelay()
       }
@@ -4022,7 +4022,7 @@ struct InstantBoundedOutboxDeliveryTests {
       await reconnectSleep.resumeFirstDelay()
       try await instantLiveWithTimeout(
         operation: "wait for the acknowledgement-unknown replacement generation",
-        timeoutMilliseconds: 5_000
+        timeoutMilliseconds: InstantTestWait.hangMilliseconds
       ) {
         try await transport.waitForConnectionCount(2)
         try await replacementSession.waitForSentMessageCount(1)
@@ -4036,7 +4036,7 @@ struct InstantBoundedOutboxDeliveryTests {
     // re-send could only be refused as a replay. It resolves as accepted instead (supersededByAcceptedWrite).
     try await instantLiveWithTimeout(
       operation: "wait for the superseded predecessor to leave the pending outbox",
-      timeoutMilliseconds: 5_000
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds
     ) {
       while try await runtime.persistence.countOutboxMutations(status: .pending) != 0 {
         await Task.yield()
@@ -4108,7 +4108,7 @@ struct InstantBoundedOutboxDeliveryTests {
     _ = try await runtime.connect()
     try await instantLiveWithTimeout(
       operation: "wait for the head's send",
-      timeoutMilliseconds: 5_000
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds
     ) {
       try await firstSession.waitForSentMessageCount(2)
     }
@@ -4125,13 +4125,13 @@ struct InstantBoundedOutboxDeliveryTests {
     )
     try await instantLiveWithTimeout(
       operation: "hold the earlier frame in the receive loop",
-      timeoutMilliseconds: 5_000
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds
     ) {
       await receiverEventGate.waitUntilBlocked()
     }
     try await instantLiveWithTimeout(
       operation: "wait for the head's acknowledgement deadline",
-      timeoutMilliseconds: 5_000
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds
     ) {
       await deadlineSleep.waitForFirstDelay()
     }
@@ -4142,7 +4142,7 @@ struct InstantBoundedOutboxDeliveryTests {
     await deadlineSleep.resumeFirstDelay()
     try await instantLiveWithTimeout(
       operation: "wait for the deadline pass to move the head's claim",
-      timeoutMilliseconds: 5_000
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds
     ) {
       while try await runtime.persistence.outboxDeliveryClaimForTesting(id: head.id)?.deadlineMilliseconds
         ?? 0 <= 106_000
@@ -4159,7 +4159,7 @@ struct InstantBoundedOutboxDeliveryTests {
     await receiverEventGate.releaseBlockedEvent()
     try await instantLiveWithTimeout(
       operation: "wait for the head's acknowledgement on the first connection",
-      timeoutMilliseconds: 5_000
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds
     ) {
       while try await runtime.persistence.countOutboxMutations(status: .pending) != 0 {
         await Task.yield()
@@ -4213,22 +4213,22 @@ struct InstantBoundedOutboxDeliveryTests {
 
     try await withKnownIssue {
       _ = try await runtime.connect()
-      try await instantLiveWithTimeout(operation: "wait for the first offer", timeoutMilliseconds: 5_000) {
+      try await instantLiveWithTimeout(operation: "wait for the first offer", timeoutMilliseconds: InstantTestWait.hangMilliseconds) {
         try await firstSession.waitForSentMessageCount(2)
       }
-      try await instantLiveWithTimeout(operation: "wait for its deadline", timeoutMilliseconds: 5_000) {
+      try await instantLiveWithTimeout(operation: "wait for its deadline", timeoutMilliseconds: InstantTestWait.hangMilliseconds) {
         await deadlineSleep.waitForFirstDelay()
       }
       clock.advance(by: 6_000)
       await deadlineSleep.resumeFirstDelay()
       try await instantLiveWithTimeout(
         operation: "wait for the replacement connection",
-        timeoutMilliseconds: 5_000
+        timeoutMilliseconds: InstantTestWait.hangMilliseconds
       ) {
         await reconnectSleep.waitForFirstDelay()
       }
       await reconnectSleep.resumeFirstDelay()
-      try await instantLiveWithTimeout(operation: "wait for the re-sent offer", timeoutMilliseconds: 5_000) {
+      try await instantLiveWithTimeout(operation: "wait for the re-sent offer", timeoutMilliseconds: InstantTestWait.hangMilliseconds) {
         try await transport.waitForConnectionCount(2)
         try await replacementSession.waitForSentMessageCount(2)
       }
@@ -4253,7 +4253,7 @@ struct InstantBoundedOutboxDeliveryTests {
     )
     try await instantLiveWithTimeout(
       operation: "wait for the refusal to resolve the head",
-      timeoutMilliseconds: 5_000
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds
     ) {
       while try await runtime.persistence.countOutboxMutations(status: .pending) != 0 {
         await Task.yield()
@@ -4715,7 +4715,7 @@ extension InstantBoundedOutboxDeliveryTests {
     wakes: for _ in 0...mutations.count {
       let step = try await instantLiveWithTimeout(
         operation: "wait for the relaunch to offer the head or to wait on a deadline",
-        timeoutMilliseconds: 5_000
+        timeoutMilliseconds: InstantTestWait.hangMilliseconds
       ) { () async throws -> BoundedOutboxRelaunchStep in
         while true {
           try Task.checkCancellation()
@@ -4751,7 +4751,7 @@ extension InstantBoundedOutboxDeliveryTests {
     )
     try await instantLiveWithTimeout(
       operation: "wait for the whole re-offered window",
-      timeoutMilliseconds: 5_000
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds
     ) {
       try await liveSession.waitForSentMessageCount(1 + mutations.count)
     }

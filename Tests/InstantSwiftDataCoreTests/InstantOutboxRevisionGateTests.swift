@@ -78,6 +78,9 @@ struct InstantOutboxRevisionGateTests {
       liveTransport: transport.transport
     )
     configuration.liveReconnectSleep = { _ in }
+    // The ten local writes stay unanswered; under load their acknowledgement deadlines passed and the runtime replaced
+    // the one scripted session (#1021).
+    configuration = configuration.holdingAcknowledgementDeadlines()
     configuration.onClaimedTerminalFailureLoadedForTesting = { operationGateHeld in
       guard !operationGateHeld else {
         reference.recordExclusiveAttempt()
@@ -93,7 +96,7 @@ struct InstantOutboxRevisionGateTests {
     _ = try await runtime.connect()
 
     try await Self.todo(runtime, id: "refused", at: 1_700_000_303_000)
-    try await instantLiveWithTimeout(operation: "wait for the write to be offered", timeoutMilliseconds: 5_000) {
+    try await instantLiveWithTimeout(operation: "wait for the write to be offered", timeoutMilliseconds: InstantTestWait.hangMilliseconds) {
       try await session.waitForSentMessageCount(2)
     }
     await session.enqueue(
@@ -111,7 +114,7 @@ struct InstantOutboxRevisionGateTests {
         ]
       )
     )
-    let deadline = ContinuousClock.now + .seconds(10)
+    let deadline = ContinuousClock.now + InstantTestWait.hang
     var failedIDs: [String] = []
     while !failedIDs.contains("tx-refused"), ContinuousClock.now < deadline {
       try await Task.sleep(for: .milliseconds(20))

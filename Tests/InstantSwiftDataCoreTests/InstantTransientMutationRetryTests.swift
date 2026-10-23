@@ -105,7 +105,7 @@ struct InstantTransientMutationRetryTests {
     await session.enqueue(Self.transactOK(mutationID, transactionID: "server-tx-after-stall"))
     let drained = try await instantLiveWithTimeout(
       operation: "wait for the stalled write to be accepted",
-      timeoutMilliseconds: 10_000
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds
     ) {
       try await runtime.observeConnectionStatus().first { $0.pendingMutationCount == 0 } != nil
     }
@@ -193,7 +193,7 @@ extension InstantTransientMutationRetryTests {
     #expect(try await Self.sentCount(of: "transact", in: session, reaching: 5) == 5)
     await session.enqueue(Self.transactOK(mutationID, transactionID: "server-tx-growing-backoff"))
     _ = try #require(
-      try await instantLiveWithTimeout(operation: "wait for the write", timeoutMilliseconds: 10_000) {
+      try await instantLiveWithTimeout(operation: "wait for the write", timeoutMilliseconds: InstantTestWait.hangMilliseconds) {
         try await runtime.observeConnectionStatus().first { $0.pendingMutationCount == 0 }
       }
     )
@@ -252,7 +252,7 @@ extension InstantTransientMutationRetryTests {
     await session.enqueue(Self.transactOK("tx-probe-b", transactionID: "server-tx-probe-b"))
     await session.enqueue(Self.transactOK("tx-probe-c", transactionID: "server-tx-probe-c"))
     _ = try #require(
-      try await instantLiveWithTimeout(operation: "wait for the outbox to drain", timeoutMilliseconds: 10_000) {
+      try await instantLiveWithTimeout(operation: "wait for the outbox to drain", timeoutMilliseconds: InstantTestWait.hangMilliseconds) {
         try await runtime.observeConnectionStatus().first { $0.pendingMutationCount == 0 }
       }
     )

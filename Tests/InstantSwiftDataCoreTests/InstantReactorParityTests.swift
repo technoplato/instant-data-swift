@@ -64,13 +64,13 @@ struct InstantReactorParityTests {
     // subscription's local result. Swift answers from that same local result without the round trip, because the
     // exact subscription was answered on the open socket (library-78 item 7, #317). The observer saw the rows a moment
     // before the receive loop recorded the answer.
-    let answeredBy = ContinuousClock.now + .seconds(5)
+    let answeredBy = ContinuousClock.now + InstantTestWait.hang
     while try await !runtime.isAnsweredOnCurrentSocketForTesting(plan), ContinuousClock.now < answeredBy {
       try await Task.sleep(for: .milliseconds(5))
     }
     let once = try await instantLiveWithTimeout(
       operation: "answer querySubs parity queryOnce from the device",
-      timeoutMilliseconds: 5_000
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds
     ) {
       try await runtime.queryOnce(plan)
     }
@@ -546,7 +546,7 @@ struct InstantReactorParityTests {
     )
     try await instantLiveWithTimeout(
       operation: "wait for seed create to send",
-      timeoutMilliseconds: 5_000
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds
     ) {
       try await liveSession.waitForSentMessageCount(2)
     }
@@ -559,7 +559,7 @@ struct InstantReactorParityTests {
     )
     try await instantLiveWithTimeout(
       operation: "wait for seed server acceptance",
-      timeoutMilliseconds: 5_000
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds
     ) {
       try await runtime.observeConnectionStatus().first {
         $0.pendingMutationCount == 0
@@ -602,7 +602,7 @@ struct InstantReactorParityTests {
     // init + seed + joe2 + joe3
     try await instantLiveWithTimeout(
       operation: "wait for both pending cleanup parity mutations to send",
-      timeoutMilliseconds: 5_000
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds
     ) {
       try await liveSession.waitForSentMessageCount(4)
     }
@@ -636,7 +636,7 @@ struct InstantReactorParityTests {
     let afterConfirmation = try #require(
       try await instantLiveWithTimeout(
         operation: "wait for pending cleanup parity status",
-        timeoutMilliseconds: 5_000
+        timeoutMilliseconds: InstantTestWait.hangMilliseconds
       ) {
         try await runtime.observeConnectionStatus().first {
           $0.pendingMutationCount == 1
@@ -655,7 +655,7 @@ struct InstantReactorParityTests {
     // init + seed + joe2 + joe3 + queryOnce
     try await instantLiveWithTimeout(
       operation: "wait for pending cleanup parity queryOnce registration",
-      timeoutMilliseconds: 5_000
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds
     ) {
       try await liveSession.waitForSentMessageCount(5)
     }
@@ -671,7 +671,7 @@ struct InstantReactorParityTests {
     )
     let visibleTexts = try await instantLiveWithTimeout(
       operation: "wait for pending cleanup parity queryOnce acknowledgement",
-      timeoutMilliseconds: 5_000
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds
     ) {
       try await queryOnceTask.value
     }
@@ -778,7 +778,9 @@ struct InstantReactorParityTests {
         recovery: "Reconnect the established live subscription."
       )
     )
-    try await Task.sleep(nanoseconds: 50_000_000)
+    // Waits for the reconnect instead of sleeping 50 ms and counting: under the whole bundle's load the silent
+    // reconnect came later than that, and the test failed on an idle machine (#1021).
+    try await transport.waitForConnectionCount(2)
     let requestsAfterDrop = await transport.connectionRequests()
     try #require(
       requestsAfterDrop.count == 2,
@@ -926,7 +928,7 @@ struct InstantReactorParityTests {
     defer { queryTask.cancel() }
     try await instantLiveWithTimeout(
       operation: "wait for rejected one-shot query registration",
-      timeoutMilliseconds: 500
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds
     ) {
       try await session.waitForSentMessageCount(2)
     }
@@ -948,7 +950,9 @@ struct InstantReactorParityTests {
       )
     )
 
-    let deadline = ContinuousClock.now.advanced(by: .milliseconds(500))
+    // "Promptly" is the error's code: a query that waited for its own timeout would fail with that instead. The wait
+    // itself is a hang bound; 500 ms failed under the bundle's load (#1021).
+    let deadline = ContinuousClock.now + InstantTestWait.hang
     while !(await queryResult.isFinished), ContinuousClock.now < deadline {
       try await Task.sleep(for: .milliseconds(1))
     }
@@ -1060,7 +1064,7 @@ struct InstantReactorParityTests {
     _ = try #require(
       try await instantLiveWithTimeout(
         operation: "wait for acknowledged reconnect mutation cleanup",
-        timeoutMilliseconds: 500
+        timeoutMilliseconds: InstantTestWait.hangMilliseconds
       ) {
         try await runtime.observeConnectionStatus().first { $0.pendingMutationCount == 1 }
       }
@@ -1075,7 +1079,7 @@ struct InstantReactorParityTests {
     )
     try await instantLiveWithTimeout(
       operation: "wait for failed and successful reconnect attempts",
-      timeoutMilliseconds: 500
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds
     ) {
       try await transport.waitForConnectionCount(14)
     }
@@ -1124,7 +1128,7 @@ struct InstantReactorParityTests {
     _ = try #require(
       try await instantLiveWithTimeout(
         operation: "wait for reconnected mutation acknowledgement",
-        timeoutMilliseconds: 500
+        timeoutMilliseconds: InstantTestWait.hangMilliseconds
       ) {
         try await runtime.observeConnectionStatus().first { $0.pendingMutationCount == 0 }
       }
@@ -1185,7 +1189,7 @@ struct InstantReactorParityTests {
 
     try await instantLiveWithTimeout(
       operation: "wait for the write to be offered again on the same session",
-      timeoutMilliseconds: 5_000
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds
     ) {
       try await firstSession.waitForSentMessageCount(3)
     }
@@ -1210,7 +1214,7 @@ struct InstantReactorParityTests {
     _ = try #require(
       try await instantLiveWithTimeout(
         operation: "wait for retried mutation acknowledgement",
-        timeoutMilliseconds: 5_000
+        timeoutMilliseconds: InstantTestWait.hangMilliseconds
       ) {
         try await runtime.observeConnectionStatus().first { $0.pendingMutationCount == 0 }
       }
@@ -1277,7 +1281,7 @@ struct InstantReactorParityTests {
 
     try await instantLiveWithTimeout(
       operation: "wait for persisted transient mutation retry",
-      timeoutMilliseconds: 5_000
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds
     ) {
       try await session.waitForSentMessageCount(2)
     }
@@ -1332,7 +1336,7 @@ struct InstantReactorParityTests {
     )
     try await instantLiveWithTimeout(
       operation: "wait for the reconnect delay before explicit close",
-      timeoutMilliseconds: 5_000
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds
     ) {
       while await reconnectSleeper.delays().count < 1 {
         try Task.checkCancellation()
@@ -1349,7 +1353,7 @@ struct InstantReactorParityTests {
 
     try await instantLiveWithTimeout(
       operation: "wait for explicit close to persist closed reconnect state",
-      timeoutMilliseconds: 5_000
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds
     ) {
       while try await runtime.connectionStatus().state != .closed {
         try Task.checkCancellation()
@@ -1358,7 +1362,7 @@ struct InstantReactorParityTests {
     }
     try await instantLiveWithTimeout(
       operation: "wait for reconnect cancellation cleanup to block",
-      timeoutMilliseconds: 5_000
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds
     ) {
       while await reconnectSleeper.cancellationCount() < 1
         || !reconnectCleanupCheckpoint.didEnter
@@ -1374,7 +1378,7 @@ struct InstantReactorParityTests {
     reconnectCleanupCheckpoint.releaseToCancellationObservation()
     try await instantLiveWithTimeout(
       operation: "wait for reconnect cleanup to observe cancellation",
-      timeoutMilliseconds: 5_000
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds
     ) {
       while reconnectCleanupCheckpoint.didObserveCancellation == nil {
         try Task.checkCancellation()
@@ -1388,7 +1392,7 @@ struct InstantReactorParityTests {
     reconnectCleanupCheckpoint.finish()
     let closedStatus = try await instantLiveWithTimeout(
       operation: "wait for explicit close to join reconnect cleanup",
-      timeoutMilliseconds: 5_000
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds
     ) {
       try await closeTask.value
     }
@@ -1461,7 +1465,7 @@ struct InstantReactorParityTests {
     )
     try await instantLiveWithTimeout(
       operation: "wait for the receiver-event mutation send",
-      timeoutMilliseconds: 5_000
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds
     ) {
       try await firstSession.waitForSentMessageCount(2)
     }
@@ -1475,7 +1479,7 @@ struct InstantReactorParityTests {
     )
     try await instantLiveWithTimeout(
       operation: "wait for the live receiver to acquire its event",
-      timeoutMilliseconds: 5_000
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds
     ) {
       while !receiverCheckpoint.didEnter {
         try Task.checkCancellation()
@@ -1492,7 +1496,7 @@ struct InstantReactorParityTests {
 
     try await instantLiveWithTimeout(
       operation: "wait for close to persist state before joining the live receiver",
-      timeoutMilliseconds: 5_000
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds
     ) {
       while try await runtime.connectionStatus().state != .closed {
         try Task.checkCancellation()
@@ -1512,7 +1516,7 @@ struct InstantReactorParityTests {
     receiverCheckpoint.releaseToCancellationObservation()
     try await instantLiveWithTimeout(
       operation: "wait for the live receiver to observe close cancellation",
-      timeoutMilliseconds: 5_000
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds
     ) {
       while receiverCheckpoint.didObserveCancellation == nil {
         try Task.checkCancellation()
@@ -1532,7 +1536,7 @@ struct InstantReactorParityTests {
     receiverCheckpoint.finish()
     let closedStatus = try await instantLiveWithTimeout(
       operation: "wait for close to join the live receiver event",
-      timeoutMilliseconds: 5_000
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds
     ) {
       try await closeTask.value
     }
@@ -1618,7 +1622,7 @@ struct InstantReactorParityTests {
     )
     try await instantLiveWithTimeout(
       operation: "wait for room reconnect",
-      timeoutMilliseconds: 500
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds
     ) {
       try await transport.waitForConnectionCount(2)
     }
@@ -1815,7 +1819,7 @@ struct InstantReactorParityTests {
     let retainedSnapshot = try #require(
       try await instantLiveWithTimeout(
         operation: "wait for the newest cumulative stream snapshot",
-        timeoutMilliseconds: 5_000
+        timeoutMilliseconds: InstantTestWait.hangMilliseconds
       ) {
         await observation.first(where: { _ in true })
       }
@@ -1864,7 +1868,7 @@ struct InstantReactorParityTests {
 
     try await instantLiveWithTimeout(
       operation: "wait for initial live stream subscription",
-      timeoutMilliseconds: 500
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds
     ) {
       try await firstSession.waitForSentMessageCount(2)
     }
@@ -1893,13 +1897,13 @@ struct InstantReactorParityTests {
     )
     try await instantLiveWithTimeout(
       operation: "wait for stream reader reconnect",
-      timeoutMilliseconds: 500
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds
     ) {
       try await transport.waitForConnectionCount(2)
     }
     try await instantLiveWithTimeout(
       operation: "wait for restored live stream subscription",
-      timeoutMilliseconds: 500
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds
     ) {
       try await secondSession.waitForSentMessageCount(2)
     }
@@ -1925,7 +1929,7 @@ struct InstantReactorParityTests {
     expectNoDifference(initialRead.content, "llo", pythonStreamReaderReconnectSource)
     try await instantLiveWithTimeout(
       operation: "wait for live stream unsubscription",
-      timeoutMilliseconds: 500
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds
     ) {
       try await secondSession.waitForSentMessageCount(3)
     }
@@ -1977,7 +1981,7 @@ struct InstantReactorParityTests {
 
     try await instantLiveWithTimeout(
       operation: "wait for retry stream subscription",
-      timeoutMilliseconds: 500
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds
     ) {
       try await firstSession.waitForSentMessageCount(2)
     }
@@ -1998,13 +2002,13 @@ struct InstantReactorParityTests {
 
     try await instantLiveWithTimeout(
       operation: "wait for retryable stream append reconnect",
-      timeoutMilliseconds: 500
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds
     ) {
       try await transport.waitForConnectionCount(2)
     }
     try await instantLiveWithTimeout(
       operation: "wait for retry stream resubscription",
-      timeoutMilliseconds: 500
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds
     ) {
       try await secondSession.waitForSentMessageCount(2)
     }
@@ -2064,7 +2068,7 @@ struct InstantReactorParityTests {
 
     try await instantLiveWithTimeout(
       operation: "wait for inline stream subscription",
-      timeoutMilliseconds: 500
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds
     ) {
       try await firstSession.waitForSentMessageCount(2)
     }
@@ -2085,7 +2089,7 @@ struct InstantReactorParityTests {
 
     let values = try await instantLiveWithTimeout(
       operation: "wait for inline stream append publication",
-      timeoutMilliseconds: 500
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds
     ) {
       await observerTask.value
     }
@@ -2105,13 +2109,13 @@ struct InstantReactorParityTests {
     )
     try await instantLiveWithTimeout(
       operation: "wait for inline stream reconnect",
-      timeoutMilliseconds: 500
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds
     ) {
       try await transport.waitForConnectionCount(2)
     }
     try await instantLiveWithTimeout(
       operation: "wait for inline stream resubscription",
-      timeoutMilliseconds: 500
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds
     ) {
       try await secondSession.waitForSentMessageCount(2)
     }
@@ -2184,7 +2188,7 @@ struct InstantReactorParityTests {
 
     try await instantLiveWithTimeout(
       operation: "wait for file stream subscription",
-      timeoutMilliseconds: 500
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds
     ) {
       try await firstSession.waitForSentMessageCount(2)
     }
@@ -2210,7 +2214,7 @@ struct InstantReactorParityTests {
 
     let values = try await instantLiveWithTimeout(
       operation: "wait for file stream append publication",
-      timeoutMilliseconds: 500
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds
     ) {
       await observerTask.value
     }
@@ -2230,13 +2234,13 @@ struct InstantReactorParityTests {
     )
     try await instantLiveWithTimeout(
       operation: "wait for file stream reconnect",
-      timeoutMilliseconds: 500
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds
     ) {
       try await transport.waitForConnectionCount(2)
     }
     try await instantLiveWithTimeout(
       operation: "wait for file stream resubscription",
-      timeoutMilliseconds: 500
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds
     ) {
       try await secondSession.waitForSentMessageCount(2)
     }
@@ -2293,7 +2297,7 @@ struct InstantReactorParityTests {
 
     try await instantLiveWithTimeout(
       operation: "wait for failing file stream subscription",
-      timeoutMilliseconds: 500
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds
     ) {
       try await firstSession.waitForSentMessageCount(2)
     }
@@ -2319,13 +2323,13 @@ struct InstantReactorParityTests {
 
     try await instantLiveWithTimeout(
       operation: "wait for failed file stream reconnect",
-      timeoutMilliseconds: 500
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds
     ) {
       try await transport.waitForConnectionCount(2)
     }
     try await instantLiveWithTimeout(
       operation: "wait for failed file stream resubscription",
-      timeoutMilliseconds: 500
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds
     ) {
       try await secondSession.waitForSentMessageCount(2)
     }
@@ -2382,7 +2386,7 @@ struct InstantReactorParityTests {
 
     try await instantLiveWithTimeout(
       operation: "wait for remote client-id stream subscription",
-      timeoutMilliseconds: 500
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds
     ) {
       try await session.waitForSentMessageCount(3)
     }
@@ -2420,13 +2424,13 @@ struct InstantReactorParityTests {
 
     let clientValues = try await instantLiveWithTimeout(
       operation: "wait for remote stream metadata bootstrap",
-      timeoutMilliseconds: 500
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds
     ) {
       await clientObserverTask.value
     }
     let streamValues = try await instantLiveWithTimeout(
       operation: "wait for remote stream-id publication",
-      timeoutMilliseconds: 500
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds
     ) {
       await streamObserverTask.value
     }
@@ -2468,7 +2472,7 @@ struct InstantReactorParityTests {
     }
     try await instantLiveWithTimeout(
       operation: "wait for canonical start-stream",
-      timeoutMilliseconds: 500
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds
     ) {
       try await session.waitForSentMessageCount(2)
     }
@@ -2608,7 +2612,7 @@ struct InstantReactorParityTests {
 
     try await instantLiveWithTimeout(
       operation: "wait for resumable writer reconnect",
-      timeoutMilliseconds: 500
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds
     ) {
       try await transport.waitForConnectionCount(2)
     }
@@ -2802,7 +2806,7 @@ struct InstantReactorParityTests {
     )
     let selfTopicMessages = try await instantLiveWithTimeout(
       operation: "wait for Reactor current-session server-broadcast",
-      timeoutMilliseconds: 500
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds
     ) {
       try #require(await selfTopicTask.value)
     }
@@ -3438,7 +3442,7 @@ extension InstantReactorParityTests {
   /// The ops `session` sent, once `predicate` holds or `timeout` passes.
   static func sentOps(
     of session: LiveReactorParitySession,
-    within timeout: Duration = .seconds(3),
+    within timeout: Duration = InstantTestWait.hang,
     until predicate: ([String]) -> Bool
   ) async throws -> [String] {
     let deadline = ContinuousClock.now + timeout
@@ -3854,13 +3858,13 @@ extension InstantReactorParityTests {
 
     let firstValues = try await instantLiveWithTimeout(
       operation: "wait for the first refused stream observation to end",
-      timeoutMilliseconds: 3_000
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds
     ) {
       await firstObserver.value
     }
     let secondValues = try await instantLiveWithTimeout(
       operation: "wait for the second refused stream observation to end",
-      timeoutMilliseconds: 3_000
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds
     ) {
       await secondObserver.value
     }

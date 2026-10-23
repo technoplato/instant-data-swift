@@ -1288,7 +1288,7 @@ private func nestedLimitEmission(
 ) async throws -> InstantQueryEmission {
   try await instantLiveWithTimeout(
     operation: operation,
-    timeoutMilliseconds: 5_000
+    timeoutMilliseconds: InstantTestWait.hangMilliseconds
   ) {
     while true {
       if let emission = await recorder.emission(at: index) {

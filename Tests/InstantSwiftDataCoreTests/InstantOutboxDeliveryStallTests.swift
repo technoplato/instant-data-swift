@@ -64,23 +64,33 @@ struct InstantOutboxDeliveryStallTests {
       initialAttributes: TodoExample.attributes,
       liveTransport: reconnectGate.transport
     )
+    // The persisted write is never acknowledged; at load 67 its deadline passed before the test read the order, and
+    // the runtime replaced the one scripted socket (#1021).
+    configuration = configuration.holdingAcknowledgementDeadlines()
     configuration.autoConnectLiveTransport = true
     let runtime = try await InstantRuntime.bootstrap(configuration: configuration)
 
     await reconnectGate.waitForConnectionAttempt()
     let queryTask = Task { try await runtime.queryOnce(plan) }
     defer { queryTask.cancel() }
-    // The transport remains suspended while the query task registers its
-    // intent. Yielding lets that task reach the reentrant live-session actor
-    // without introducing a wall-clock race.
-    for _ in 0..<100 {
-      await Task.yield()
+    // The transport remains suspended until the query task has registered its
+    // intent with the live session. This waited 100 yields, which under the
+    // whole bundle's load took longer than the library's 5 s connect deadline
+    // on the held attempt (#1021); the registration is the event to wait for.
+    try await instantLiveWithTimeout(
+      operation: "wait for the query to register before the reconnect opens",
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds
+    ) {
+      while await runtime.liveActiveQueryKeysForTesting().isEmpty {
+        try Task.checkCancellation()
+        await Task.yield()
+      }
     }
     await reconnectGate.release()
     _ = try await queryTask.value
     try await instantLiveWithTimeout(
       operation: "wait for persisted mutation after query-priority reconnect",
-      timeoutMilliseconds: 5_000
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds
     ) {
       while !Task.isCancelled {
         let sent = await liveSession.sentMessages()
@@ -157,7 +167,10 @@ struct InstantOutboxDeliveryStallTests {
     // failure was previously invisible until a device database was inspected.
     try await withKnownIssue {
       _ = try await runtime.connect()
-      try? await Task.sleep(nanoseconds: 300_000_000)
+      try await waitForDeliveryPass(of: runtime, "send the healthy writes past the drifted one") {
+        let sent = await liveSession.sentMessages().filter { $0.op == "transact" }.compactMap(\.clientEventID)
+        return (0..<3).allSatisfy { sent.contains("tx-outbox-stall-healthy-\($0)") }
+      }
     } matching: { issue in
       issue.description.contains("quarantined")
         || issue.description.contains("attributeTheServerNeverReceived")
@@ -225,7 +238,7 @@ struct InstantOutboxDeliveryStallTests {
     _ = try await runtime.connect()
     try await instantLiveWithTimeout(
       operation: "wait for the first bounded backlog delivery window",
-      timeoutMilliseconds: 5_000
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds
     ) {
       try await liveSession.waitForSentMessageCount(
         InstantRuntimeLiveSessionLimits.maximumMutationsPerFlush + 1
@@ -293,7 +306,7 @@ struct InstantOutboxDeliveryStallTests {
     _ = try await runtime.connect()
     try await instantLiveWithTimeout(
       operation: "wait for the first weighted backlog mutation",
-      timeoutMilliseconds: 5_000
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds
     ) {
       try await liveSession.waitForSentMessageCount(2)
     }
@@ -311,7 +324,7 @@ struct InstantOutboxDeliveryStallTests {
     )
     try await instantLiveWithTimeout(
       operation: "wait for the second weighted backlog mutation",
-      timeoutMilliseconds: 5_000
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds
     ) {
       try await liveSession.waitForSentMessageCount(3)
     }
@@ -333,7 +346,7 @@ struct InstantOutboxDeliveryStallTests {
     )
     try await instantLiveWithTimeout(
       operation: "wait for the third weighted backlog mutation",
-      timeoutMilliseconds: 5_000
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds
     ) {
       try await liveSession.waitForSentMessageCount(4)
     }
@@ -390,7 +403,7 @@ struct InstantOutboxDeliveryStallTests {
     await liveSession.waitForBlockedTransactSend()
     try await instantLiveWithTimeout(
       operation: "wait for reentrant transaction acknowledgement",
-      timeoutMilliseconds: 500
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds
     ) {
       while !Task.isCancelled {
         if await runtime.pendingMutations().isEmpty {
@@ -447,7 +460,9 @@ struct InstantOutboxDeliveryStallTests {
     )
     try await withKnownIssue {
       _ = try await driftedRuntime.connect()
-      try? await Task.sleep(nanoseconds: 200_000_000)
+      try await waitForDeliveryPass(of: driftedRuntime, "quarantine the drifted write") {
+        await driftedRuntime.outboxMutations().first { $0.id == "tx-outbox-recovery" }?.status == .failed
+      }
     } matching: { issue in
       issue.description.contains("quarantined")
     }
@@ -483,7 +498,9 @@ struct InstantOutboxDeliveryStallTests {
       )
     )
     _ = try await deployedRuntime.connect()
-    try? await Task.sleep(nanoseconds: 200_000_000)
+    try await waitForDeliveryPass(of: deployedRuntime, "send the write the deployed schema can carry") {
+      await deployedSession.sentMessages().contains { $0.op == "transact" && $0.clientEventID == "tx-outbox-recovery" }
+    }
 
     let recoveredEventIDs = await deployedSession.sentMessages()
       .filter { $0.op == "transact" }
@@ -989,5 +1006,26 @@ private actor ImmediateAckBeforeSendReturnSession {
     }
     abortState.unregister(releaseTransactSendContinuation.abortToken)
     self.releaseTransactSendContinuation = nil
+  }
+}
+
+/// Waits until `condition` holds and the runtime's automatic delivery pass is idle (#1021). The quarantine report comes
+/// from the pass that met the drifted write, after that pass's sends; a 200-300 ms sleep ended the known-issue block
+/// before the report under the whole bundle's load, so the issue was both "not recorded" and unexpected.
+private func waitForDeliveryPass(
+  of runtime: InstantRuntime,
+  _ operation: String,
+  until condition: @escaping @Sendable () async -> Bool
+) async throws {
+  try await instantLiveWithTimeout(
+    operation: "wait for the delivery pass to \(operation)",
+    timeoutMilliseconds: InstantTestWait.hangMilliseconds
+  ) {
+    while true {
+      let isMet = await condition()
+      let isIdle = await runtime.automaticMutationPumpIsIdleForTesting()
+      if isMet && isIdle { return }
+      try await Task.sleep(for: .milliseconds(2))
+    }
   }
 }

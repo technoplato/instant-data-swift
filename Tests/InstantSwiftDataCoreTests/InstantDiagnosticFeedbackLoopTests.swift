@@ -122,7 +122,7 @@ struct InstantDiagnosticFeedbackLoopTests {
     for (index, transaction) in transactions.enumerated() {
       try await instantLiveWithTimeout(
         operation: "wait for diagnostic seed mutation \(index)",
-        timeoutMilliseconds: 5_000
+        timeoutMilliseconds: InstantTestWait.hangMilliseconds
       ) {
         try await liveSession.waitForSentMessageCount(index + 2)
       }
@@ -140,7 +140,7 @@ struct InstantDiagnosticFeedbackLoopTests {
     _ = try #require(
       try await instantLiveWithTimeout(
         operation: "wait for diagnostic seed acknowledgements",
-        timeoutMilliseconds: 5_000
+        timeoutMilliseconds: InstantTestWait.hangMilliseconds
       ) {
         try await runtime.observeConnectionStatus().first {
           $0.pendingMutationCount == 0
@@ -158,7 +158,7 @@ struct InstantDiagnosticFeedbackLoopTests {
     defer { queryTask.cancel() }
     try await instantLiveWithTimeout(
       operation: "wait for diagnostic live query registration",
-      timeoutMilliseconds: 5_000
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds
     ) {
       try await liveSession.waitForSentMessageCount(transactions.count + 2)
     }
@@ -174,7 +174,7 @@ struct InstantDiagnosticFeedbackLoopTests {
     )
     _ = try await instantLiveWithTimeout(
       operation: "wait for diagnostic live query acknowledgement",
-      timeoutMilliseconds: 5_000
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds
     ) {
       try await queryTask.value
     }

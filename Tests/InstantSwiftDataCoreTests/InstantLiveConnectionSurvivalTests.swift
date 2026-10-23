@@ -444,9 +444,9 @@ extension InstantLiveConnectionSurvivalTests {
       await socket.push(survivalTransactOK(write))
       try await waitUntil("the reader to buffer every frame") { await socket.isCaughtUp }
       await socket.die(with: survivalSocketNotConnected)
-      // The reader drops the dead connection's results as soon as it sees the socket die; wait for that, at most 2 s
-      // (v1.9.7 drops none), before the applier moves on.
-      let deadline = ContinuousClock.now + .seconds(2)
+      // The reader drops the dead connection's results as soon as it sees the socket die; wait for that, up to the
+      // hang bound (v1.9.7 drops none; #1021: 2 s was short under the bundle's load), before the applier moves on.
+      let deadline = ContinuousClock.now + InstantTestWait.hang
       while await dropped.values.isEmpty, ContinuousClock.now < deadline {
         try await Task.sleep(nanoseconds: 2_000_000)
       }
@@ -788,10 +788,10 @@ private func transactSurvivalTodo(id: String, index: Int, on runtime: InstantRun
   )
 }
 
-/// Polls `condition` every 2 ms for at most 5 s (the codebase's timeout rule).
+/// Polls `condition` every 2 ms, up to the hang bound (#1021: 5 s failed runs that were still moving under load).
 private func waitUntil(
   _ description: String,
-  timeoutMilliseconds: Int = 5_000,
+  timeoutMilliseconds: Int = Int(InstantTestWait.hangMilliseconds),
   _ condition: @Sendable () async throws -> Bool
 ) async throws {
   let deadline = ContinuousClock.now + .milliseconds(timeoutMilliseconds)

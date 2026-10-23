@@ -329,7 +329,7 @@ struct InstantOutboxSupersessionIntegrationTests {
     _ = try await liveRuntime.connect()
     try await instantLiveWithTimeout(
       operation: "wait for supersession survivor delivery",
-      timeoutMilliseconds: 5_000
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds
     ) {
       try await liveSession.waitForSentMessageCount(2)
     }
@@ -459,7 +459,7 @@ struct InstantOutboxSupersessionIntegrationTests {
     )
     let acceptance = try await instantLiveWithTimeout(
       operation: "wait for immutable predecessor alias acceptance",
-      timeoutMilliseconds: 5_000
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds
     ) {
       await lifecycleTask.value
     }
@@ -602,7 +602,7 @@ struct InstantOutboxSupersessionIntegrationTests {
     )
     let acceptance = try await instantLiveWithTimeout(
       operation: "wait for restarted survivor acceptance",
-      timeoutMilliseconds: 5_000
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds
     ) {
       await lifecycleTask.value
     }
@@ -673,7 +673,7 @@ struct InstantOutboxSupersessionIntegrationTests {
     _ = try #require(
       try await instantLiveWithTimeout(
         operation: "wait for ordinary mutation acceptance",
-        timeoutMilliseconds: 5_000
+        timeoutMilliseconds: InstantTestWait.hangMilliseconds
       ) {
         try await runtime.observeConnectionStatus().first {
           $0.pendingMutationCount == 0
@@ -1251,7 +1251,7 @@ private func sendSupersessionServerAcceptance(
   _ = try await runtime.connect()
   try await instantLiveWithTimeout(
     operation: "wait for supersession mutation delivery",
-    timeoutMilliseconds: 5_000
+    timeoutMilliseconds: InstantTestWait.hangMilliseconds
   ) {
     try await session.waitForSentMessageCount(2)
   }

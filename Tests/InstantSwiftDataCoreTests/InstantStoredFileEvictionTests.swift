@@ -48,7 +48,7 @@ struct InstantStoredFileEvictionTests {
     )
     let evictions = try await instantLiveWithTimeout(
       operation: "evict stored files",
-      timeoutMilliseconds: 5_000,
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds,
       onAbandon: { evicting.cancel() }
     ) {
       try await evicting.value
@@ -177,7 +177,7 @@ private struct EvictionFixture {
     if connects {
       _ = try await instantLiveWithTimeout(
         operation: "connect the eviction fixture",
-        timeoutMilliseconds: 5_000
+        timeoutMilliseconds: InstantTestWait.hangMilliseconds
       ) {
         try await runtime.connect()
       }
@@ -191,7 +191,7 @@ private struct EvictionFixture {
   func waitForFilesQuery(sentMessageCount: Int) async throws -> InstantLiveJSONValue {
     try await instantLiveWithTimeout(
       operation: "wait for the $files query",
-      timeoutMilliseconds: 5_000
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds
     ) {
       try await session.waitForSentMessageCount(sentMessageCount)
     }

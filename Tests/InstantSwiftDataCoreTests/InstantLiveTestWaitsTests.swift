@@ -55,7 +55,7 @@ func stalledWait(
 ) async throws -> InstantLiveTestWaitTimedOut? {
   try await instantLiveWithTimeout(
     operation: "the live test wait must end by itself (#1020)",
-    timeoutMilliseconds: 5_000
+    timeoutMilliseconds: InstantTestWait.hangMilliseconds
   ) {
     do {
       try await wait()

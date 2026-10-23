@@ -2479,7 +2479,7 @@ struct InstantStoreTests {
     let blockedStatus = try #require(
       try await instantLiveWithTimeout(
         operation: "wait for rewritten receipt blocker",
-        timeoutMilliseconds: 5_000
+        timeoutMilliseconds: InstantTestWait.hangMilliseconds
       ) {
         try await runtime.observeConnectionStatus().first {
           $0.state == .errored && $0.synchronizationBlocker != nil
@@ -13875,7 +13875,7 @@ struct InstantStoreTests {
 
     let loadingEvent = try await instantLiveWithTimeout(
       operation: "consume upload progress loading state",
-      timeoutMilliseconds: 5_000,
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds,
       onAbandon: { consumer.cancel() }
     ) {
       while true {
@@ -13892,7 +13892,7 @@ struct InstantStoreTests {
     do {
       try await instantLiveWithTimeout(
         operation: "finish cancelled upload progress consumer",
-        timeoutMilliseconds: 5_000,
+        timeoutMilliseconds: InstantTestWait.hangMilliseconds,
         onAbandon: { consumer.cancel() }
       ) {
         try await consumer.value
@@ -13902,7 +13902,7 @@ struct InstantStoreTests {
 
     try await instantLiveWithTimeout(
       operation: "observe upload progress stream cancellation",
-      timeoutMilliseconds: 5_000
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds
     ) {
       while !cancellationCheckpoint.didObserveCancellation {
         try Task.checkCancellation()
@@ -18334,7 +18334,9 @@ struct InstantStoreTests {
     }
     let offlineRuntime = try await InstantRuntime.bootstrap(configuration: offlineConfiguration)
 
-    for _ in 0..<100 where reconnectSleepCalls.withValue({ $0 }) == 0 {
+    // Polls up to the hang bound; 100 polls of 10 ms ran out under the whole bundle's load (#1021).
+    let offlineDeadline = ContinuousClock.now + InstantTestWait.hang
+    while reconnectSleepCalls.withValue({ $0 }) == 0, ContinuousClock.now < offlineDeadline {
       try await Task.sleep(nanoseconds: 10_000_000)
     }
     expectNoDifference(reconnectSleepCalls.withValue { $0 }, 1)
@@ -18371,8 +18373,9 @@ struct InstantStoreTests {
     let relaunchedRuntime = try await InstantRuntime.bootstrap(configuration: onlineConfiguration)
 
     var reconnectedStatus = try await relaunchedRuntime.connectionStatus()
-    for _ in 0..<100 where
-      reconnectedStatus.state != .opened || reconnectedStatus.pendingMutationCount != 0
+    let reconnectDeadline = ContinuousClock.now + InstantTestWait.hang
+    while reconnectedStatus.state != .opened || reconnectedStatus.pendingMutationCount != 0,
+      ContinuousClock.now < reconnectDeadline
     {
       try await Task.sleep(nanoseconds: 10_000_000)
       reconnectedStatus = try await relaunchedRuntime.connectionStatus()
@@ -19734,7 +19737,7 @@ struct InstantStoreTests {
     )
     let retitledEmission = try await instantLiveWithTimeout(
       operation: "wait for nested relation filter invalidation",
-      timeoutMilliseconds: 5_000
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds
     ) { [stream] in
       var iterator = stream.makeAsyncIterator()
       return await iterator.next()
@@ -23437,7 +23440,7 @@ private func storeSemanticEmission(
 ) async throws -> InstantQueryEmission {
   try await instantLiveWithTimeout(
     operation: operation,
-    timeoutMilliseconds: 5_000
+    timeoutMilliseconds: InstantTestWait.hangMilliseconds
   ) {
     while true {
       if let emission = await recorder.emission(at: index) {

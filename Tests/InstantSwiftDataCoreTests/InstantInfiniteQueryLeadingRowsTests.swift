@@ -900,7 +900,7 @@ final class InfiniteWindowHarness: Sendable {
     _ operation: String,
     sourceLocation: SourceLocation = #_sourceLocation
   ) async throws -> InfiniteWindow {
-    let deadline = ContinuousClock.now + .seconds(10)
+    let deadline = ContinuousClock.now + InstantTestWait.hang
     while ContinuousClock.now < deadline {
       if let latest = await recorder.latest, latest.pageInfo?.startCursor?.liveTuple != nil {
         return try await settledWindow(operation, sourceLocation: sourceLocation)
@@ -915,13 +915,13 @@ final class InfiniteWindowHarness: Sendable {
     throw InfiniteWindowDidNotSettle(operation: operation)
   }
 
-  /// The latest window once it shows `rowCount` rows, within 5 s: an offline window's pages come from the local store.
+  /// The latest window once it shows `rowCount` rows: an offline window's pages come from the local store.
   func localWindow(
     withRowCount rowCount: Int,
     _ operation: String,
     sourceLocation: SourceLocation = #_sourceLocation
   ) async throws -> InfiniteWindow {
-    let deadline = ContinuousClock.now + .seconds(5)
+    let deadline = ContinuousClock.now + InstantTestWait.hang
     while ContinuousClock.now < deadline {
       if let latest = await recorder.latest, latest.values.count == rowCount {
         return infiniteWindow(latest)
@@ -1012,17 +1012,19 @@ final class InfiniteWindowHarness: Sendable {
 
   /// Waits until nothing is in flight, then checks the window. A live result can reach the query one actor hop after
   /// the runtime applied its frame, so a window that fails a check is settled and checked again before any issue is
-  /// recorded: a broken window stays broken, a late result does not.
+  /// recorded: a broken window stays broken, a late result does not. It is checked again until the hang bound, not
+  /// five times over 0.75 s, since under the whole bundle's load a late result came later than that (#1021).
   private func settledSnapshot(
     _ operation: String,
     sourceLocation: SourceLocation
   ) async throws -> InstantInfiniteQuerySnapshot {
+    let deadline = ContinuousClock.now + InstantTestWait.hang
     var snapshot = try await quietSnapshot(operation, sourceLocation: sourceLocation)
     var problems = await windowProblems(snapshot)
     var retries = 0
-    while !problems.isEmpty, retries < 5 {
+    while !problems.isEmpty, ContinuousClock.now < deadline {
       retries += 1
-      try await Task.sleep(for: .milliseconds(50 * retries))
+      try await Task.sleep(for: .milliseconds(50 * min(retries, 10)))
       snapshot = try await quietSnapshot(operation, sourceLocation: sourceLocation)
       problems = await windowProblems(snapshot)
     }
@@ -1045,7 +1047,7 @@ final class InfiniteWindowHarness: Sendable {
     _ operation: String,
     sourceLocation: SourceLocation
   ) async throws -> InstantInfiniteQuerySnapshot {
-    let deadline = ContinuousClock.now + .seconds(5)
+    let deadline = ContinuousClock.now + InstantTestWait.hang
     var previousMarker: [Int]?
     var quietPolls = 0
     while ContinuousClock.now < deadline {
@@ -1054,8 +1056,11 @@ final class InfiniteWindowHarness: Sendable {
       let isDrained = await server.isDrained()
       let applierIsWaiting = await runtime.liveReceiverIsWaitingForAFrameForTesting()
       let marker = [await server.receivedMessageCount, await recorder.count]
+      // A query with no chunk subscription yet has nothing in flight either; under load it stayed that way for more
+      // than two polls, so "quiet" needs one subscription that has its answer (#1021).
       let isQuiet = commands.runnerTaskCount == 0
         && commands.pendingNavigationCount == 0
+        && residency.activeSubscriptionCount > 0
         && residency.awaitingResultSubscriptionCount == 0
         && residency.retiringSubscriptionCount == 0
         && residency.pendingSubscriptionCount == 0
@@ -1071,7 +1076,7 @@ final class InfiniteWindowHarness: Sendable {
     }
     let residency = await subscription.residencySnapshotForTesting()
     Issue.record(
-      "Waiting to \(operation): the query did not settle within 5 s (\(residency)).",
+      "Waiting to \(operation): the query did not settle within \(InstantTestWait.hang) (\(residency)).",
       sourceLocation: sourceLocation
     )
     throw InfiniteWindowDidNotSettle(operation: operation)

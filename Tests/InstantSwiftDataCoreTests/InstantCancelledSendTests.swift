@@ -40,10 +40,10 @@ struct InstantCancelledSendTests {
   }
 
   static func eventually(_ label: String, _ condition: () async -> Bool) async throws {
-    let deadline = ContinuousClock.now + .seconds(5)
+    let deadline = ContinuousClock.now + InstantTestWait.hang
     while await !condition() {
       guard ContinuousClock.now < deadline else {
-        Issue.record("Timed out after 5 seconds waiting until \(label).")
+        Issue.record("Timed out after \(InstantTestWait.hang) waiting until \(label).")
         return
       }
       try await Task.sleep(for: .milliseconds(10))

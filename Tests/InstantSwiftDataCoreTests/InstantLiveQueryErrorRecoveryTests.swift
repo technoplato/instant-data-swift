@@ -28,7 +28,7 @@ struct InstantLiveQueryErrorRecoveryTests {
   static func addQueries(
     in session: LiveReactorParitySession,
     reaching count: Int,
-    within timeout: Duration = .seconds(10)
+    within timeout: Duration = InstantTestWait.hang
   ) async throws -> [InstantLiveMessage] {
     let deadline = ContinuousClock.now + timeout
     while true {

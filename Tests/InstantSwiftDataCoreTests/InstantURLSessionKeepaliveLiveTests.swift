@@ -245,7 +245,7 @@ private enum KeepaliveProbe {
   ) async throws -> InstantLiveMessage {
     try await instantLiveWithTimeout(
       operation: answerOperation,
-      timeoutMilliseconds: 5_000,
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds,
       onAbandon: { session.abort() }
     ) {
       try await request()

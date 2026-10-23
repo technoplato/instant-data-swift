@@ -41,6 +41,9 @@ struct InstantFailedMutationRetryWindowTests {
       initialAttributes: TodoExample.attributes,
       liveTransport: liveSession.transport
     )
+    // The 101 retried writes are never acknowledged; under the bundle's load their acknowledgement deadlines passed
+    // and the runtime replaced the one scripted session mid-drain (#1021). The test is about the retry windows.
+    configuration = configuration.holdingAcknowledgementDeadlines()
     configuration.autoConnectLiveTransport = false
     let runtime = try await InstantRuntime.bootstrap(configuration: configuration)
     await runtime.persistence.resetDecodedOutboxBodyCount()
@@ -119,19 +122,21 @@ struct InstantFailedMutationRetryWindowTests {
     let connectTask = Task { try await runtime.connect() }
     do {
       try await waitForRetryWindowPumpEntry(suspension, count: 1)
-      // If the assertion below exposes the old synchronous connect sweep, its
-      // timeout task cannot finish until the suspended connect task unwinds.
-      // Release just after the 500 ms proof boundary so that failure stays
-      // deterministic and the serialized suite cannot hang.
+      // The proof is the state connect returns in: the first window is still
+      // suspended (none completed, all 101 still failed). It was a 500 ms bound
+      // with this release at 750 ms, which under the whole bundle's load fired
+      // during correct runs (#1021). The old synchronous sweep never returns
+      // while the window is held, so the wait below fails at the hang bound;
+      // this release, later still, only lets the suite end.
       let failureRelease = Task {
-        try? await Task.sleep(for: .milliseconds(750))
+        try? await Task.sleep(for: InstantTestWait.hang * 2)
         guard !Task.isCancelled else { return }
         await suspension.releaseAll()
       }
       defer { failureRelease.cancel() }
       let status = try await instantLiveWithTimeout(
         operation: "prove connect returns before the suspended retry window commits",
-        timeoutMilliseconds: 500
+        timeoutMilliseconds: InstantTestWait.hangMilliseconds
       ) {
         try await connectTask.value
       }
@@ -472,7 +477,7 @@ private func waitForFailedMutationRetryDrain(
 ) async throws {
   try await instantLiveWithTimeout(
     operation: "wait for failed-mutation retry pump to drain",
-    timeoutMilliseconds: 5_000
+    timeoutMilliseconds: InstantTestWait.hangMilliseconds
   ) {
     while true {
       let metrics = await persistence.failedMutationRetryMetricsForTesting()
@@ -492,7 +497,7 @@ private func waitForRetryWindowPumpEntry(
 ) async throws {
   try await instantLiveWithTimeout(
     operation: "wait for suspended failed-mutation retry window \(count)",
-    timeoutMilliseconds: 5_000
+    timeoutMilliseconds: InstantTestWait.hangMilliseconds
   ) {
     while await suspension.currentEntryCount() < count {
       try await Task.sleep(for: .milliseconds(1))

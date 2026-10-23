@@ -2098,7 +2098,7 @@ struct InstantFailedMutationDiscardTests {
     _ = try await live.connect()
     try await instantLiveWithTimeout(
       operation: "wait for locally confirmed mutation delivery",
-      timeoutMilliseconds: 5_000
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds
     ) {
       while await session.sentMessages().count < 2 {
         try await Task.sleep(for: .milliseconds(1))
@@ -2193,7 +2193,7 @@ struct InstantFailedMutationDiscardTests {
     _ = try await live.connect()
     try await instantLiveWithTimeout(
       operation: "wait for locally confirmed mutation before rejection",
-      timeoutMilliseconds: 5_000
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds
     ) {
       while await session.sentMessages().count < 2 {
         try await Task.sleep(for: .milliseconds(1))

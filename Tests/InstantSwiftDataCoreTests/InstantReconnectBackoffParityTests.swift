@@ -192,7 +192,8 @@ struct InstantReconnectBackoffParityTests {
         try? await Task.sleep(nanoseconds: 1_000_000)
       }
     }
-    try await backoffParityWait("the virtual hour to pass", timeoutMilliseconds: 30_000) {
+    // About 360 virtual waits, each a few actor hops: twice the hang bound (#1021).
+    try await backoffParityWait("the virtual hour to pass", timeoutMilliseconds: 2 * Int(InstantTestWait.hangMilliseconds)) {
       await clock.reachedEnd
     }
     driver.cancel()
@@ -469,9 +470,11 @@ private struct BackoffParityWaitTimedOut: Error, CustomStringConvertible {
 }
 
 /// Polls `condition` every 2 ms for at most 5 s (the codebase's timeout rule), or `timeoutMilliseconds`.
+/// Polls `condition` until it holds, up to the hang bound (#1021). The waits are virtual; only this poll is on the wall
+/// clock, and its 5 s failed five of these tests under the whole bundle's load while each passed alone.
 private func backoffParityWait(
   _ description: String,
-  timeoutMilliseconds: Int = 5_000,
+  timeoutMilliseconds: Int = Int(InstantTestWait.hangMilliseconds),
   _ condition: @Sendable () async throws -> Bool
 ) async throws {
   let deadline = ContinuousClock.now + .milliseconds(timeoutMilliseconds)

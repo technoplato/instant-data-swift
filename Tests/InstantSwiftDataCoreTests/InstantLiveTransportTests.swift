@@ -101,6 +101,8 @@ struct InstantLiveTransportTests {
       close: { sessionIO.recordClose() },
       abort: { sessionIO.recordAbort() }
     )
+    // The attempt ignores its abort and keeps connecting until the test releases it, so the deadline returning while
+    // it still connects shows the deadline did not wait for it (#1021). The fail-safe ends it only if it did.
     let client = InstantLiveTransportClient.connectionAttempts { _ in
       InstantLiveConnectionAttempt(
         connect: {
@@ -109,14 +111,18 @@ struct InstantLiveTransportTests {
         },
         abort: {
           attemptAborts.increment()
-          connector.release()
         }
       )
     }
-    defer { connector.release() }
+    let failSafe = Task {
+      try? await Task.sleep(for: InstantTestWait.hang)
+      connector.release()
+    }
+    defer {
+      failSafe.cancel()
+      connector.release()
+    }
 
-    let clock = ContinuousClock()
-    let startedAt = clock.now
     do {
       _ = try await client.connectSession(
         InstantLiveSessionRequest(appID: "timeout-late-session"),
@@ -124,7 +130,7 @@ struct InstantLiveTransportTests {
         sleep: { _ in
           try await instantLiveWithTimeout(
             operation: "wait for cancellation-insensitive connector to start",
-            timeoutMilliseconds: 5_000
+            timeoutMilliseconds: InstantTestWait.hangMilliseconds
           ) {
             while !connector.didStart {
               try Task.checkCancellation()
@@ -139,10 +145,12 @@ struct InstantLiveTransportTests {
       expectNoDifference(error.operation, "test cancellation-insensitive connection")
     }
 
-    #expect(startedAt.duration(to: clock.now) < .milliseconds(250))
+    // This was a 250 ms wall-clock bound, which the whole bundle's own load broke on an idle machine (#1021).
+    #expect(!connector.didFinish, "The deadline waited for the attempt it abandoned.")
+    connector.release()
     try await instantLiveWithTimeout(
       operation: "wait for abandoned connection to release its late session",
-      timeoutMilliseconds: 5_000
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds
     ) {
       while !connector.didFinish || sessionIO.snapshot().abortCount != 1 {
         try Task.checkCancellation()
@@ -175,13 +183,20 @@ struct InstantLiveTransportTests {
             abort: { sessionIO.recordAbort() }
           )
         },
+        // Ignores its abort, as in the connect-timeout test above (#1021); the fail-safe outlasts the test's own wait.
         abort: {
           attemptAborts.increment()
-          connector.release()
         }
       )
     }
-    defer { connector.release() }
+    let failSafe = Task {
+      try? await Task.sleep(for: InstantTestWait.hang * 2)
+      connector.release()
+    }
+    defer {
+      failSafe.cancel()
+      connector.release()
+    }
     let runtime = try await InstantRuntime.bootstrap(
       configuration: InstantRuntimeConfiguration(
         appID: "cancel-runtime-connect",
@@ -194,20 +209,18 @@ struct InstantLiveTransportTests {
 
     try await instantLiveWithTimeout(
       operation: "wait for runtime connector to start before cancellation",
-      timeoutMilliseconds: 5_000
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds
     ) {
       while !connector.didStart {
         try Task.checkCancellation()
         await Task.yield()
       }
     }
-    let clock = ContinuousClock()
-    let startedAt = clock.now
     connectTask.cancel()
     do {
       _ = try await instantLiveWithTimeout(
         operation: "wait for canceled runtime connection",
-        timeoutMilliseconds: 5_000,
+        timeoutMilliseconds: InstantTestWait.hangMilliseconds,
         onAbandon: { connectTask.cancel() }
       ) {
         try await connectTask.value
@@ -216,11 +229,13 @@ struct InstantLiveTransportTests {
     } catch is CancellationError {
     }
 
-    #expect(startedAt.duration(to: clock.now) < .milliseconds(250))
+    // This was a 250 ms wall-clock bound, which the whole bundle's own load broke on an idle machine (#1021).
+    #expect(!connector.didFinish, "The cancelled connect waited for the attempt it abandoned.")
     expectNoDifference(attemptAborts.value, 1)
+    connector.release()
     try await instantLiveWithTimeout(
       operation: "wait for canceled runtime connector to unwind",
-      timeoutMilliseconds: 5_000
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds
     ) {
       while !connector.didFinish {
         try Task.checkCancellation()
@@ -410,7 +425,7 @@ struct InstantLiveTransportTests {
 
     try await instantLiveWithTimeout(
       operation: "wait for original connection attempt to start",
-      timeoutMilliseconds: 5_000
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds
     ) {
       while !connector.didStart {
         try Task.checkCancellation()
@@ -431,7 +446,7 @@ struct InstantLiveTransportTests {
     connector.release()
     let connected = try await instantLiveWithTimeout(
       operation: "wait for original connection after duplicate",
-      timeoutMilliseconds: 5_000,
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds,
       onAbandon: { original.cancel() }
     ) {
       try await original.value
@@ -473,7 +488,7 @@ struct InstantLiveTransportTests {
 
     try await instantLiveWithTimeout(
       operation: "wait for original connection attempt before canceled duplicate",
-      timeoutMilliseconds: 5_000
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds
     ) {
       while !connector.didStart {
         try Task.checkCancellation()
@@ -487,7 +502,7 @@ struct InstantLiveTransportTests {
     do {
       _ = try await instantLiveWithTimeout(
         operation: "wait for already-cancelled duplicate connection",
-        timeoutMilliseconds: 5_000,
+        timeoutMilliseconds: InstantTestWait.hangMilliseconds,
         onAbandon: { cancelledDuplicate.cancel() }
       ) {
         try await cancelledDuplicate.value
@@ -501,7 +516,7 @@ struct InstantLiveTransportTests {
     connector.release()
     let connected = try await instantLiveWithTimeout(
       operation: "wait for original connection after canceled duplicate",
-      timeoutMilliseconds: 5_000,
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds,
       onAbandon: { original.cancel() }
     ) {
       try await original.value
@@ -543,7 +558,7 @@ struct InstantLiveTransportTests {
     do {
       _ = try await instantLiveWithTimeout(
         operation: "wait for already-cancelled connection factory check",
-        timeoutMilliseconds: 5_000,
+        timeoutMilliseconds: InstantTestWait.hangMilliseconds,
         onAbandon: { task.cancel() }
       ) {
         try await task.value
@@ -586,7 +601,7 @@ struct InstantLiveTransportTests {
     do {
       _ = try await instantLiveWithTimeout(
         operation: "wait for canceled fresh connection attempt",
-        timeoutMilliseconds: 5_000,
+        timeoutMilliseconds: InstantTestWait.hangMilliseconds,
         onAbandon: { task.cancel() }
       ) {
         try await task.value
@@ -656,7 +671,7 @@ struct InstantLiveTransportTests {
 
     try await instantLiveWithTimeout(
       operation: "wait for original reused connection attempt to start",
-      timeoutMilliseconds: 5_000
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds
     ) {
       while !connector.didStart {
         try Task.checkCancellation()
@@ -673,7 +688,7 @@ struct InstantLiveTransportTests {
     do {
       _ = try await instantLiveWithTimeout(
         operation: "wait for reused-attempt duplicate connection",
-        timeoutMilliseconds: 5_000,
+        timeoutMilliseconds: InstantTestWait.hangMilliseconds,
         onAbandon: { duplicate.cancel() }
       ) {
         try await duplicate.value
@@ -697,7 +712,7 @@ struct InstantLiveTransportTests {
     connector.release()
     let connected = try await instantLiveWithTimeout(
       operation: "wait for original reused connection attempt",
-      timeoutMilliseconds: 5_000,
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds,
       onAbandon: { original.cancel() }
     ) {
       try await original.value
@@ -802,7 +817,7 @@ struct InstantLiveTransportTests {
 
     try await instantLiveWithTimeout(
       operation: "wait for independent connection attempts to start",
-      timeoutMilliseconds: 5_000
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds
     ) {
       while !firstConnector.didStart || !secondConnector.didStart {
         try Task.checkCancellation()
@@ -813,7 +828,7 @@ struct InstantLiveTransportTests {
     do {
       _ = try await instantLiveWithTimeout(
         operation: "wait for aborted independent connection attempt",
-        timeoutMilliseconds: 5_000,
+        timeoutMilliseconds: InstantTestWait.hangMilliseconds,
         onAbandon: { firstTask.cancel() }
       ) {
         try await firstTask.value
@@ -827,7 +842,7 @@ struct InstantLiveTransportTests {
     secondConnector.release()
     let connectedSecond = try await instantLiveWithTimeout(
       operation: "wait for healthy independent connection attempt",
-      timeoutMilliseconds: 5_000,
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds,
       onAbandon: { secondTask.cancel() }
     ) {
       try await secondTask.value
@@ -901,6 +916,17 @@ struct InstantLiveTransportTests {
   @Test
   func failedOpenAbortsWithoutAwaitingGracefulClose() async throws {
     let probe = InstantLiveSessionIOProbe()
+    // A graceful close never finishes until the test ends, so a connect that awaited one could not return before the
+    // fail-safe (#1021: this replaced a 250 ms wall-clock bound that the whole bundle's own load broke).
+    let gracefulClose = InstantLiveSynchronousReleaseSuspension()
+    let failSafe = Task {
+      try? await Task.sleep(for: InstantTestWait.hang)
+      gracefulClose.release()
+    }
+    defer {
+      failSafe.cancel()
+      gracefulClose.release()
+    }
     let session = InstantLiveWebSocketSession(
       send: { _ in
         probe.recordSend()
@@ -910,7 +936,10 @@ struct InstantLiveTransportTests {
         probe.recordReceive()
         throw CancellationError()
       },
-      close: { probe.recordClose() },
+      close: {
+        probe.recordClose()
+        await gracefulClose.suspend()
+      },
       abort: { probe.recordAbort() }
     )
     let runtime = try await InstantRuntime.bootstrap(
@@ -922,15 +951,13 @@ struct InstantLiveTransportTests {
       )
     )
 
-    let clock = ContinuousClock()
-    let startedAt = clock.now
     do {
       _ = try await runtime.connect()
       Issue.record("Expected the scripted opening send to fail.")
     } catch is InstantLiveStreamTestError {
     }
 
-    #expect(startedAt.duration(to: clock.now) < .milliseconds(250))
+    #expect(!gracefulClose.didStart, "The failed open started a graceful close.")
     expectNoDifference(
       probe.snapshot(),
       InstantLiveSessionIOSnapshot(sendCount: 1, abortCount: 1)
@@ -941,6 +968,8 @@ struct InstantLiveTransportTests {
   func boundedGracefulCloseAbortsCancellationInsensitiveClose() async throws {
     let probe = InstantLiveSessionIOProbe()
     let close = InstantLiveSynchronousReleaseSuspension()
+    // The close ignores the abort and runs until the test releases it, so the deadline returning while it still runs
+    // shows the deadline did not wait for it (#1021). The fail-safe ends it only if it did.
     let session = InstantLiveWebSocketSession(
       send: { _ in },
       receive: { throw CancellationError() },
@@ -950,13 +979,17 @@ struct InstantLiveTransportTests {
       },
       abort: {
         probe.recordAbort()
-        close.release()
       }
     )
-    defer { close.release() }
+    let failSafe = Task {
+      try? await Task.sleep(for: InstantTestWait.hang)
+      close.release()
+    }
+    defer {
+      failSafe.cancel()
+      close.release()
+    }
 
-    let clock = ContinuousClock()
-    let startedAt = clock.now
     do {
       try await session.closeGracefully(
         operation: "test bounded graceful close",
@@ -964,7 +997,7 @@ struct InstantLiveTransportTests {
         sleep: { _ in
           try await instantLiveWithTimeout(
             operation: "wait for cancellation-insensitive graceful close to start",
-            timeoutMilliseconds: 5_000
+            timeoutMilliseconds: InstantTestWait.hangMilliseconds
           ) {
             while !close.didStart {
               try Task.checkCancellation()
@@ -979,10 +1012,12 @@ struct InstantLiveTransportTests {
       expectNoDifference(error.operation, "test bounded graceful close")
     }
 
-    #expect(startedAt.duration(to: clock.now) < .milliseconds(250))
+    // This was a 250 ms wall-clock bound, which the whole bundle's own load broke on an idle machine (#1021).
+    #expect(!close.didFinish, "The deadline waited for the close it abandoned.")
+    close.release()
     try await instantLiveWithTimeout(
       operation: "wait for abandoned graceful close to unwind",
-      timeoutMilliseconds: 5_000
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds
     ) {
       while !close.didFinish {
         try Task.checkCancellation()
@@ -999,8 +1034,9 @@ struct InstantLiveTransportTests {
   func liveTimeoutDoesNotAwaitCancellationInsensitiveWork() async throws {
     let work = InstantLiveNoncooperativeSuspension()
     let abandonment = InstantLiveAbandonmentProbe()
+    // Releases the work only if the timeout waited for it, so that regression fails instead of hanging (#1021).
     let failSafe = Task {
-      try? await Task.sleep(for: .milliseconds(750))
+      try? await Task.sleep(for: InstantTestWait.hang)
       await work.release()
     }
     defer {
@@ -1008,8 +1044,6 @@ struct InstantLiveTransportTests {
       Task { await work.release() }
     }
 
-    let clock = ContinuousClock()
-    let startedAt = clock.now
     do {
       _ = try await instantLiveWithTimeout(
         operation: "test cancellation-insensitive live work",
@@ -1025,8 +1059,9 @@ struct InstantLiveTransportTests {
       expectNoDifference(error.code, .networkFailed)
       expectNoDifference(error.operation, "test cancellation-insensitive live work")
     }
-    let elapsed = startedAt.duration(to: clock.now)
-    #expect(elapsed < .milliseconds(250))
+    // The timeout returned while the work it abandoned was still suspended. This was a 250 ms wall-clock bound, which
+    // the whole bundle's own load broke on an idle machine (#1021).
+    #expect(await work.isSuspended, "The timeout waited for the work it abandoned.")
     expectNoDifference(abandonment.value, 1)
   }
 
@@ -1045,8 +1080,9 @@ struct InstantLiveTransportTests {
         await work.suspend()
       }
     }
+    // Releases both only if the cancelled timeout waited for them, so that regression fails instead of hanging (#1021).
     let failSafe = Task {
-      try? await Task.sleep(for: .milliseconds(750))
+      try? await Task.sleep(for: InstantTestWait.hang)
       await work.release()
       await deadline.release()
     }
@@ -1060,16 +1096,16 @@ struct InstantLiveTransportTests {
 
     await work.waitUntilStarted()
     await deadline.waitUntilStarted()
-    let clock = ContinuousClock()
-    let startedAt = clock.now
     timeoutTask.cancel()
     do {
       try await timeoutTask.value
       Issue.record("Expected parent cancellation to end the live timeout.")
     } catch is CancellationError {
     }
-    let elapsed = startedAt.duration(to: clock.now)
-    #expect(elapsed < .milliseconds(250))
+    // Both children were still suspended when the cancelled timeout returned. This was a 250 ms wall-clock bound,
+    // which the whole bundle's load broke (#1021).
+    #expect(await work.isSuspended, "The cancelled timeout waited for its work.")
+    #expect(await deadline.isSuspended, "The cancelled timeout waited for its deadline.")
     expectNoDifference(abandonment.value, 1)
   }
 
@@ -2265,7 +2301,7 @@ struct InstantLiveTransportTests {
     await session.releaseRemove()
     let result = try await instantLiveWithTimeout(
       operation: "finish exact queryOnce cleanup for \(terminalPath.rawValue)",
-      timeoutMilliseconds: 5_000,
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds,
       onAbandon: { queryTask.cancel() }
     ) {
       await queryTask.value
@@ -2704,7 +2740,7 @@ struct InstantLiveTransportTests {
     try await session.waitForSentMessageCount(3)
     try await instantLiveWithTimeout(
       operation: "finish the canceled standard live observation consumer",
-      timeoutMilliseconds: 5_000,
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds,
       onAbandon: { consumer.cancel() }
     ) {
       await consumer.value
@@ -2748,7 +2784,7 @@ struct InstantLiveTransportTests {
     }
     try await instantLiveWithTimeout(
       operation: "wait for standard observation setup at the operation gate",
-      timeoutMilliseconds: 5_000,
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds,
       onAbandon: { setup.cancel() }
     ) {
       while await runtime.operationGateWaiterCountForTesting() != 1 {
@@ -2760,7 +2796,7 @@ struct InstantLiveTransportTests {
     setup.cancel()
     let observation = try await instantLiveWithTimeout(
       operation: "cancel standard observation queued at the operation gate",
-      timeoutMilliseconds: 5_000,
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds,
       onAbandon: { setup.cancel() }
     ) {
       await setup.value
@@ -2819,7 +2855,7 @@ struct InstantLiveTransportTests {
     setup.cancel()
     let observation = try await instantLiveWithTimeout(
       operation: "cancel standard observation after Store installation",
-      timeoutMilliseconds: 5_000,
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds,
       onAbandon: { setup.cancel() }
     ) {
       await setup.value
@@ -2867,7 +2903,7 @@ struct InstantLiveTransportTests {
     await session.releaseRemove()
     try await instantLiveWithTimeout(
       operation: "finish the retired equivalent live query removal",
-      timeoutMilliseconds: 5_000
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds
     ) {
       await firstCancellation.value
     }
@@ -2899,8 +2935,10 @@ struct InstantLiveTransportTests {
     _ = try await runtime.connect()
     let observation = try await runtime.observeLiveInfiniteQueryChunk(TodoExample.query)
     let cancellation = Task { await observation.cancel() }
+    // Releases what the test holds only if the test never does; at 5 s it fired during correct runs under the whole
+    // bundle's load and changed the order the test controls (#1021).
     let failSafe = Task {
-      try? await Task.sleep(for: .seconds(5))
+      try? await Task.sleep(for: InstantTestWait.hang)
       await transport.releaseRemovalFailure()
     }
     defer {
@@ -2918,7 +2956,7 @@ struct InstantLiveTransportTests {
     await transport.releaseRemovalFailure()
     try await instantLiveWithTimeout(
       operation: "finish the superseded remove-query failure",
-      timeoutMilliseconds: 5_000
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds
     ) {
       await cancellation.value
     }
@@ -2948,8 +2986,10 @@ struct InstantLiveTransportTests {
     survivingQuery.limit = 1
     let survivingObservation = try await runtime.observeLiveInfiniteQueryChunk(survivingQuery)
     let cancellation = Task { await removedObservation.cancel() }
+    // Releases what the test holds only if the test never does; at 5 s it fired during correct runs under the whole
+    // bundle's load and changed the order the test controls (#1021).
     let failSafe = Task {
-      try? await Task.sleep(for: .seconds(5))
+      try? await Task.sleep(for: InstantTestWait.hang)
       await transport.releaseRemovalFailure()
       await reconnectBarrier.release()
     }
@@ -2962,14 +3002,14 @@ struct InstantLiveTransportTests {
     await transport.releaseRemovalFailure()
     try await instantLiveWithTimeout(
       operation: "finish the current remove-query failure",
-      timeoutMilliseconds: 5_000
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds
     ) {
       await cancellation.value
     }
 
     try await instantLiveWithTimeout(
       operation: "wait for receiver-owned remove-query reconnect",
-      timeoutMilliseconds: 5_000
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds
     ) {
       await reconnectBarrier.waitUntilStarted()
     }
@@ -3003,7 +3043,7 @@ struct InstantLiveTransportTests {
     expectNoDifference(activeKeys, Set([survivingRegistrationKey]))
     let status = try await instantLiveWithTimeout(
       operation: "wait for opened status after remove-query send failure",
-      timeoutMilliseconds: 5_000
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds
     ) {
       while true {
         let status = try await runtime.connectionStatus()
@@ -3038,8 +3078,10 @@ struct InstantLiveTransportTests {
     configuration.liveReconnectSleep = { _ in await reconnectBarrier.suspend() }
     let runtime = try await InstantRuntime.bootstrap(configuration: configuration)
     _ = try await runtime.connect()
+    // Releases what the test holds only if the test never does; at 5 s it fired during correct runs under the whole
+    // bundle's load and changed the order the test controls (#1021).
     let failSafe = Task {
-      try? await Task.sleep(for: .seconds(5))
+      try? await Task.sleep(for: InstantTestWait.hang)
       await transport.releaseSendFailure()
       await transport.abortFirstSession()
       await reconnectBarrier.release()
@@ -3064,7 +3106,7 @@ struct InstantLiveTransportTests {
     await transport.releaseSendFailure()
     try await instantLiveWithTimeout(
       operation: "wait for receiver-owned mutation sender to finish",
-      timeoutMilliseconds: 5_000
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds
     ) {
       while !(await runtime.automaticMutationPumpIsIdleForTesting()) {
         try Task.checkCancellation()
@@ -3088,7 +3130,7 @@ struct InstantLiveTransportTests {
     await transport.abortFirstSession()
     try await instantLiveWithTimeout(
       operation: "wait for exact receiver-owned mutation reconnect",
-      timeoutMilliseconds: 5_000
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds
     ) {
       await reconnectBarrier.waitUntilStarted()
     }
@@ -3109,7 +3151,7 @@ struct InstantLiveTransportTests {
     expectNoDifference(secondSessionOperations, ["init", "transact"])
     let opened = try await instantLiveWithTimeout(
       operation: "wait for opened status after receiver-owned mutation reconnect",
-      timeoutMilliseconds: 5_000
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds
     ) {
       while true {
         let status = try await runtime.connectionStatus()
@@ -3145,8 +3187,10 @@ struct InstantLiveTransportTests {
     _ = try await runtime.connect()
     let observation = try await runtime.observeLiveInfiniteQueryChunk(TodoExample.query)
     let cancellation = Task { await observation.cancel() }
+    // Releases what the test holds only if the test never does; at 5 s it fired during correct runs under the whole
+    // bundle's load and changed the order the test controls (#1021).
     let failSafe = Task {
-      try? await Task.sleep(for: .seconds(5))
+      try? await Task.sleep(for: InstantTestWait.hang)
       await transport.releaseRemovalFailure()
       await reconnectBarrier.release()
     }
@@ -3159,7 +3203,7 @@ struct InstantLiveTransportTests {
     await transport.abortFirstSession()
     try await instantLiveWithTimeout(
       operation: "wait for reconnect after unexpected receiver cancellation",
-      timeoutMilliseconds: 5_000
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds
     ) {
       await reconnectBarrier.waitUntilStarted()
     }
@@ -3176,7 +3220,7 @@ struct InstantLiveTransportTests {
     await transport.releaseRemovalFailure()
     try await instantLiveWithTimeout(
       operation: "finish the late remove-query send failure",
-      timeoutMilliseconds: 5_000
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds
     ) {
       await cancellation.value
     }
@@ -3184,7 +3228,7 @@ struct InstantLiveTransportTests {
     try await transport.waitForConnectionCount(2)
     let opened = try await instantLiveWithTimeout(
       operation: "wait for opened status after receive-wins reconnect",
-      timeoutMilliseconds: 5_000
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds
     ) {
       while true {
         let status = try await runtime.connectionStatus()
@@ -3215,8 +3259,10 @@ struct InstantLiveTransportTests {
     let runtime = try await InstantRuntime.bootstrap(configuration: configuration)
     let observation = try await runtime.observeLiveInfiniteQueryChunk(TodoExample.query)
     let connection = Task { try await runtime.connect() }
+    // Releases what the test holds only if the test never does; at 5 s it fired during correct runs under the whole
+    // bundle's load and changed the order the test controls (#1021).
     let failSafe = Task {
-      try? await Task.sleep(for: .seconds(5))
+      try? await Task.sleep(for: InstantTestWait.hang)
       await transport.releaseRemovalFailure()
       await receiverStartBarrier.release()
     }
@@ -3227,7 +3273,7 @@ struct InstantLiveTransportTests {
 
     try await instantLiveWithTimeout(
       operation: "wait for pre-receiver live-session checkpoint",
-      timeoutMilliseconds: 5_000
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds
     ) {
       await receiverStartBarrier.waitUntilStarted()
     }
@@ -3249,7 +3295,7 @@ struct InstantLiveTransportTests {
     }
     try await instantLiveWithTimeout(
       operation: "finish the pre-receiver query cancellation",
-      timeoutMilliseconds: 5_000
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds
     ) {
       await cancellation.value
     }
@@ -3280,8 +3326,10 @@ struct InstantLiveTransportTests {
     _ = try await runtime.connect()
     let observation = try await runtime.observeLiveInfiniteQueryChunk(TodoExample.query)
     let cancellation = Task { await observation.cancel() }
+    // Releases what the test holds only if the test never does; at 5 s it fired during correct runs under the whole
+    // bundle's load and changed the order the test controls (#1021).
     let failSafe = Task {
-      try? await Task.sleep(for: .seconds(5))
+      try? await Task.sleep(for: InstantTestWait.hang)
       await transport.releaseRemovalFailure()
     }
     defer {
@@ -3294,7 +3342,7 @@ struct InstantLiveTransportTests {
     await transport.releaseRemovalFailure()
     try await instantLiveWithTimeout(
       operation: "finish remove-query superseded by explicit close",
-      timeoutMilliseconds: 5_000
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds
     ) {
       await cancellation.value
     }
@@ -3332,8 +3380,10 @@ struct InstantLiveTransportTests {
     }
     try await transport.waitForSentMessageCount(2, sessionIndex: 0)
     consumer.cancel()
+    // Releases what the test holds only if the test never does; at 5 s it fired during correct runs under the whole
+    // bundle's load and changed the order the test controls (#1021).
     let failSafe = Task {
-      try? await Task.sleep(for: .seconds(5))
+      try? await Task.sleep(for: InstantTestWait.hang)
       await transport.releaseRemovalFailure()
       await delayedCaller.release()
     }
@@ -3346,13 +3396,13 @@ struct InstantLiveTransportTests {
     await transport.releaseRemovalFailure()
     try await instantLiveWithTimeout(
       operation: "wait for delayed receiver-owned removal failure caller",
-      timeoutMilliseconds: 5_000
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds
     ) {
       await delayedCaller.waitUntilStarted()
     }
     let receiverOwnedError = try await instantLiveWithTimeout(
       operation: "wait for receiver-owned removal failure status",
-      timeoutMilliseconds: 5_000
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds
     ) {
       while true {
         let status = try await runtime.connectionStatus()
@@ -3372,7 +3422,7 @@ struct InstantLiveTransportTests {
     await delayedCaller.release()
     try await instantLiveWithTimeout(
       operation: "finish delayed receiver-owned removal failure caller",
-      timeoutMilliseconds: 5_000
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds
     ) {
       await consumer.value
     }
@@ -3423,8 +3473,10 @@ struct InstantLiveTransportTests {
     ])
 
     await runtime.requestLiveMutationDelivery()
+    // Releases what the test holds only if the test never does; at 5 s it fired during correct runs under the whole
+    // bundle's load and changed the order the test controls (#1021).
     let failSafe = Task {
-      try? await Task.sleep(for: .seconds(5))
+      try? await Task.sleep(for: InstantTestWait.hang)
       await blockerGate.release()
     }
     defer {
@@ -3433,7 +3485,7 @@ struct InstantLiveTransportTests {
     }
     try await instantLiveWithTimeout(
       operation: "wait for manual synchronization blocker persistence checkpoint",
-      timeoutMilliseconds: 5_000
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds
     ) {
       await blockerGate.waitUntilStarted()
     }
@@ -3442,7 +3494,7 @@ struct InstantLiveTransportTests {
     defer { close.cancel() }
     let durableClosed = try await instantLiveWithTimeout(
       operation: "wait for explicit close to persist ahead of delayed blocker",
-      timeoutMilliseconds: 5_000
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds
     ) {
       while true {
         let status = try await runtime.connectionStatus()
@@ -3899,7 +3951,7 @@ struct InstantLiveTransportTests {
     let confirmedStatus = try #require(
       try await instantLiveWithTimeout(
         operation: "wait for confirmed live mutation status",
-        timeoutMilliseconds: 5_000
+        timeoutMilliseconds: InstantTestWait.hangMilliseconds
       ) {
         try await runtime.observeConnectionStatus().first {
           $0.pendingMutationCount == 0
@@ -4062,13 +4114,15 @@ struct InstantLiveTransportTests {
       .initOK(clientEventID: "event-init", attrs: incompleteAttrs)
     ])
     let cacheURL = try temporaryLiveCacheURL()
+    // The valid update is never acknowledged; under load its acknowledgement deadline passed and the runtime replaced
+    // the scripted session (#1021). The test is about the encoding quarantine, so it owns the clock.
     let runtime = try await InstantRuntime.bootstrap(
       configuration: InstantRuntimeConfiguration(
         appID: "runtime-live-outbox-schema-error",
         persistenceURL: cacheURL,
         initialAttributes: TodoExample.attributes,
         liveTransport: session.transport
-      )
+      ).holdingAcknowledgementDeadlines()
     )
     let createdAt = InstantTimestamp(milliseconds: 1_700_000_000_790)
     let updateAt = InstantTimestamp(milliseconds: createdAt.milliseconds + 1)
@@ -4114,7 +4168,7 @@ struct InstantLiveTransportTests {
       _ = try await runtime.connect()
       try await instantLiveWithTimeout(
         operation: "wait for valid mutation after encoding quarantine",
-        timeoutMilliseconds: 5_000
+        timeoutMilliseconds: InstantTestWait.hangMilliseconds
       ) {
         try await session.waitForSentMessageCount(2)
       }
@@ -4123,7 +4177,7 @@ struct InstantLiveTransportTests {
       }
       try await instantLiveWithTimeout(
         operation: "wait for encoding-quarantine delivery pump to become idle",
-        timeoutMilliseconds: 5_000
+        timeoutMilliseconds: InstantTestWait.hangMilliseconds
       ) {
         while !(await runtime.automaticMutationPumpIsIdleForTesting()) {
           await Task.yield()
@@ -4157,7 +4211,7 @@ struct InstantLiveTransportTests {
     defer { queryTask.cancel() }
     try await instantLiveWithTimeout(
       operation: "wait for post-quarantine live query registration",
-      timeoutMilliseconds: 5_000
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds
     ) {
       try await session.waitForSentMessageCount(3)
     }
@@ -4173,7 +4227,7 @@ struct InstantLiveTransportTests {
     )
     let immediateSnapshots = try await instantLiveWithTimeout(
       operation: "wait for post-quarantine live query acknowledgement",
-      timeoutMilliseconds: 5_000
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds
     ) {
       try await queryTask.value
     }
@@ -4245,7 +4299,7 @@ struct InstantLiveTransportTests {
     let pending = try #require(await runtime.pendingMutations().first)
     try await instantLiveWithTimeout(
       operation: "wait for persisted mutation resend",
-      timeoutMilliseconds: 5_000
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds
     ) {
       while await session.sentMessages().count < 2 {
         try await Task.sleep(for: .milliseconds(1))
@@ -4488,7 +4542,7 @@ struct InstantLiveTransportTests {
 
     let timedOut = try await instantLiveWithTimeout(
       operation: "the scripted sent-message wait must end by itself (#1020)",
-      timeoutMilliseconds: 5_000
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds
     ) {
       do {
         try await session.waitForSentMessageCount(51, timeout: .milliseconds(200))
@@ -4544,7 +4598,7 @@ struct InstantLiveTransportTests {
 
     let timedOut = try await instantLiveWithTimeout(
       operation: "the scripted receive-request wait must end by itself (#1020)",
-      timeoutMilliseconds: 5_000
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds
     ) {
       do {
         try await session.waitForReceiveRequestCount(2, timeout: .milliseconds(200))
@@ -4661,7 +4715,7 @@ struct InstantLiveTransportTests {
     )
     try await instantLiveWithTimeout(
       operation: "wait for bounded oversized terminal disposition",
-      timeoutMilliseconds: 5_000
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds
     ) {
       while true {
         let failedCount = try await runtime.persistence.countOutboxMutations(status: .failed)
@@ -4805,7 +4859,7 @@ struct InstantLiveTransportTests {
     // flush is the only lane that sees the expiry.
     try await instantLiveWithTimeout(
       operation: "wait for the automatic pump to finish offering the mutation",
-      timeoutMilliseconds: 5_000
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds
     ) {
       while !(await runtime.automaticMutationPumpIsIdleForTesting()) {
         try Task.checkCancellation()
@@ -4832,7 +4886,7 @@ struct InstantLiveTransportTests {
     )
     try await instantLiveWithTimeout(
       operation: "wait for the aborted live generation to release its replacement claim",
-      timeoutMilliseconds: 5_000
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds
     ) {
       while true {
         let claim = try await runtime.persistence.outboxDeliveryClaimForTesting(id: mutationID)
@@ -5023,10 +5077,9 @@ struct InstantLiveTransportTests {
     configuration.onLiveReceiverEventAcquiredForTesting = {
       await responseGate.suspend()
     }
-    // No acknowledgement-deadline wake may start a delivery pass mid-test (see the settle wait below).
-    configuration.liveMutationDeadlineSleep = { _ in
-      try await Task.sleep(nanoseconds: 3_600_000_000_000)
-    }
+    // No acknowledgement deadline may pass or wake a delivery pass mid-test (see the settle wait below). The wake alone
+    // was held; under load the wall clock still passed the deadline and the runtime replaced the session (#1021).
+    configuration = configuration.holdingAcknowledgementDeadlines()
     let runtime = try await InstantRuntime.bootstrap(configuration: configuration)
     _ = try await runtime.connect()
     let mutationID = "tx-runtime-live-response-token"
@@ -5050,7 +5103,7 @@ struct InstantLiveTransportTests {
     // widened that window enough to hit it under load.
     try await instantLiveWithTimeout(
       operation: "wait for the write's delivery passes to settle",
-      timeoutMilliseconds: 5_000
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds
     ) {
       while await !runtime.automaticMutationPumpIsIdleForTesting() {
         try await Task.sleep(nanoseconds: 1_000_000)
@@ -5080,7 +5133,7 @@ struct InstantLiveTransportTests {
     )
     try await instantLiveWithTimeout(
       operation: "pause after capturing the stale response token",
-      timeoutMilliseconds: 5_000
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds
     ) {
       await responseGate.waitUntilStarted()
     }
@@ -5088,7 +5141,7 @@ struct InstantLiveTransportTests {
     await runtime.requestLiveMutationDelivery()
     try await instantLiveWithTimeout(
       operation: "reoffer the same mutation under a new exact claim token",
-      timeoutMilliseconds: 5_000
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds
     ) {
       try await session.waitForSentMessageCount(3)
     }
@@ -5102,7 +5155,7 @@ struct InstantLiveTransportTests {
     await responseGate.release()
     try await instantLiveWithTimeout(
       operation: "finish the stale acknowledgement disposition",
-      timeoutMilliseconds: 5_000
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds
     ) {
       try await session.waitForReceiveRequestCount(receiveCountBeforeAcknowledgement + 1)
     }
@@ -5614,7 +5667,7 @@ struct InstantLiveTransportTests {
     }
     try await instantLiveWithTimeout(
       operation: "wait for canceled chunk observation to queue at the operation gate",
-      timeoutMilliseconds: 5_000
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds
     ) {
       while await runtime.operationGateWaiterCountForTesting() != 1 {
         try Task.checkCancellation()
@@ -5626,7 +5679,7 @@ struct InstantLiveTransportTests {
     await #expect(throws: CancellationError.self) {
       _ = try await instantLiveWithTimeout(
         operation: "cancel chunk observation before its live lease installs",
-        timeoutMilliseconds: 5_000
+        timeoutMilliseconds: InstantTestWait.hangMilliseconds
       ) {
         try await observation.value
       }
@@ -6936,7 +6989,7 @@ private actor InstantStandardObservationSetupBarrier {
   func waitUntilEntered() async throws {
     try await instantLiveWithTimeout(
       operation: "wait for standard observation setup after Store installation",
-      timeoutMilliseconds: 5_000
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds
     ) {
       while !(await self.didEnter) {
         try Task.checkCancellation()
@@ -6965,7 +7018,7 @@ private func requireFinishedStandardObservation(
   }
   let value = try await instantLiveWithTimeout(
     operation: operation,
-    timeoutMilliseconds: 5_000,
+    timeoutMilliseconds: InstantTestWait.hangMilliseconds,
     onAbandon: { read.cancel() }
   ) {
     await read.value
@@ -6993,7 +7046,7 @@ private func waitForOperationGateHopCount(
 private func waitForLiveReceiverToApplyTakenFrames(_ runtime: InstantRuntime) async throws {
   try await instantLiveWithTimeout(
     operation: "wait for the live receiver to apply the frames it took",
-    timeoutMilliseconds: 5_000
+    timeoutMilliseconds: InstantTestWait.hangMilliseconds
   ) {
     while await !runtime.liveReceiverIsWaitingForAFrameForTesting() {
       try await Task.sleep(nanoseconds: 1_000_000)
@@ -7121,7 +7174,7 @@ private func waitForScriptedSentMessageCount(
 ) async throws {
   try await instantLiveWithTimeout(
     operation: operation,
-    timeoutMilliseconds: 5_000
+    timeoutMilliseconds: InstantTestWait.hangMilliseconds
   ) {
     while await session.sentMessages().count < count {
       try Task.checkCancellation()
@@ -7363,7 +7416,7 @@ private actor InstantQueryRemovalRaceLiveSession {
   func waitForSentMessageCount(_ count: Int) async throws {
     try await instantLiveWithTimeout(
       operation: "wait for query-removal race message count \(count)",
-      timeoutMilliseconds: 5_000
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds
     ) {
       while await self.sent.count < count {
         try Task.checkCancellation()
@@ -7375,7 +7428,7 @@ private actor InstantQueryRemovalRaceLiveSession {
   func waitUntilRemoveEntered() async throws {
     try await instantLiveWithTimeout(
       operation: "wait for the delayed query removal",
-      timeoutMilliseconds: 5_000
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds
     ) {
       while !(await self.didEnterRemove) {
         try Task.checkCancellation()
@@ -7593,7 +7646,7 @@ private actor InstantQueryRemovalFailureRaceTransport {
   func waitForConnectionCount(_ count: Int) async throws {
     try await instantLiveWithTimeout(
       operation: "wait for scripted remove-query replacement session",
-      timeoutMilliseconds: 5_000
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds
     ) {
       while await self.connectionCount() < count {
         try Task.checkCancellation()
@@ -7605,7 +7658,7 @@ private actor InstantQueryRemovalFailureRaceTransport {
   func waitForSentMessageCount(_ count: Int, sessionIndex: Int) async throws {
     try await instantLiveWithTimeout(
       operation: "wait for scripted replacement query registration",
-      timeoutMilliseconds: 5_000
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds
     ) {
       while await self.sentMessageCount(sessionIndex: sessionIndex) < count {
         try Task.checkCancellation()
@@ -7621,7 +7674,7 @@ private actor InstantQueryRemovalFailureRaceTransport {
   func waitUntilSendFailureEntered() async throws {
     try await instantLiveWithTimeout(
       operation: "wait for the scripted send failure",
-      timeoutMilliseconds: 5_000
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds
     ) {
       while !(await self.sendFailureHasEntered()) {
         try Task.checkCancellation()
@@ -7860,7 +7913,7 @@ private final class InstantRuntimeBlockedLiveTransport: @unchecked Sendable {
   func waitUntilConnectStarts() async throws {
     try await instantLiveWithTimeout(
       operation: "wait for blocked live transport connection to start",
-      timeoutMilliseconds: 5_000
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds
     ) {
       while !self.connectionGate.didStart {
         try Task.checkCancellation()
@@ -8131,6 +8184,9 @@ private actor InstantLiveNoncooperativeSuspension {
     guard !didStart else { return }
     await withCheckedContinuation { startWaiters.append($0) }
   }
+
+  /// Whether the work is parked in `suspend()` and nothing has released it (#1021).
+  var isSuspended: Bool { continuation != nil }
 
   func release() {
     continuation?.resume()

@@ -926,7 +926,7 @@ struct InstantInfiniteQueryParityTests {
     if let cleanupWaiter {
       try await instantLiveWithTimeout(
         operation: "finish the exact local primary cleanup waiter",
-        timeoutMilliseconds: 5_000
+        timeoutMilliseconds: InstantTestWait.hangMilliseconds
       ) {
         await cleanupWaiter.value
       }
@@ -1010,7 +1010,7 @@ struct InstantInfiniteQueryParityTests {
     if let cleanupWaiter {
       try await instantLiveWithTimeout(
         operation: "finish the exact local navigation cleanup waiter",
-        timeoutMilliseconds: 5_000
+        timeoutMilliseconds: InstantTestWait.hangMilliseconds
       ) {
         await cleanupWaiter.value
       }
@@ -1074,7 +1074,7 @@ struct InstantInfiniteQueryParityTests {
     await navigationBarrier.release()
     try await instantLiveWithTimeout(
       operation: "finish the one exact live infinite-query command cleanup task",
-      timeoutMilliseconds: 5_000
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds
     ) {
       await owner.cancelAndWait()
       await owner.cancelAndWait()
@@ -1110,7 +1110,7 @@ struct InstantInfiniteQueryParityTests {
 
     try await instantLiveWithTimeout(
       operation: "run infinite-query cleanup before joining its blocked navigation runner",
-      timeoutMilliseconds: 5_000
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds
     ) {
       await owner.cancelAndWait()
     }
@@ -1132,7 +1132,7 @@ struct InstantInfiniteQueryParityTests {
     fixture.subscription.unsubscribe()
     try await instantLiveWithTimeout(
       operation: "finish exact raw infinite-query handle cleanup",
-      timeoutMilliseconds: 5_000
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds
     ) {
       await fixture.subscription.unsubscribeAndWait()
       await fixture.subscription.unsubscribeAndWait()
@@ -1275,7 +1275,7 @@ struct InstantInfiniteQueryParityTests {
     let lease = InstantLiveInfiniteSubscriptionSetupLease()
     try await instantLiveWithTimeout(
       operation: "cancel an infinite-query setup before its cleanup lease installs",
-      timeoutMilliseconds: 5_000
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds
     ) {
       await lease.cancel()
     }
@@ -1441,7 +1441,7 @@ struct InstantInfiniteQueryParityTests {
     await startBarrier.release()
     let subscription = try await instantLiveWithTimeout(
       operation: "return an inert already-cancelled infinite-query subscription",
-      timeoutMilliseconds: 5_000
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds
     ) {
       await subscriptionTask.value
     }
@@ -1499,7 +1499,7 @@ struct InstantInfiniteQueryParityTests {
     defer { subscriptionTask.cancel() }
     try await instantLiveWithTimeout(
       operation: "queue public infinite-query validation at the operation gate",
-      timeoutMilliseconds: 5_000
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds
     ) {
       while await runtime.operationGateWaiterCountForTesting() != 1 {
         try Task.checkCancellation()
@@ -1512,7 +1512,7 @@ struct InstantInfiniteQueryParityTests {
     subscriptionTask.cancel()
     let subscription = try await instantLiveWithTimeout(
       operation: "cancel gate-queued public infinite-query validation",
-      timeoutMilliseconds: 5_000
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds
     ) {
       await subscriptionTask.value
     }
@@ -1524,7 +1524,7 @@ struct InstantInfiniteQueryParityTests {
     )
     try await instantLiveWithTimeout(
       operation: "remove canceled infinite-query setup from the operation gate",
-      timeoutMilliseconds: 5_000
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds
     ) {
       while await runtime.operationGateWaiterCountForTesting() != 0 {
         try Task.checkCancellation()
@@ -1573,7 +1573,7 @@ struct InstantInfiniteQueryParityTests {
     subscriptionTask.cancel()
     let subscription = try await instantLiveWithTimeout(
       operation: "cancel local infinite-query setup after observer installation",
-      timeoutMilliseconds: 5_000
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds
     ) {
       await subscriptionTask.value
     }
@@ -1832,7 +1832,7 @@ struct InstantInfiniteQueryParityTests {
 
     let acquiredValueCount = try await instantLiveWithTimeout(
       operation: "block the live infinite-query deferred hydration after acquiring its payload",
-      timeoutMilliseconds: 5_000
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds
     ) {
       await hydrationBarrier.waitUntilReached()
     }
@@ -1857,7 +1857,7 @@ struct InstantInfiniteQueryParityTests {
     expectNoDifference(blockedResidency.ownedTaskCount, 3)
     let blockedCleanupCount = try await instantLiveWithTimeout(
       operation: "begin the exact deferred-hydration retirement cleanup",
-      timeoutMilliseconds: 5_000
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds
     ) {
       while true {
         try Task.checkCancellation()
@@ -1974,7 +1974,7 @@ struct InstantInfiniteQueryParityTests {
     )
     let watchdogMilliseconds = try await instantLiveWithTimeout(
       operation: "fire the live infinite-query retirement watchdog",
-      timeoutMilliseconds: 5_000
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds
     ) {
       while true {
         try Task.checkCancellation()
@@ -2110,7 +2110,7 @@ struct InstantInfiniteQueryParityTests {
     )
     let watchdogMilliseconds = try await instantLiveWithTimeout(
       operation: "fire the clean-unsubscribe retirement watchdog",
-      timeoutMilliseconds: 5_000
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds
     ) {
       while true {
         try Task.checkCancellation()
@@ -2141,7 +2141,7 @@ struct InstantInfiniteQueryParityTests {
     expectNoDifference(blockedObservationCount, 1)
     let diagnosticText = try await instantLiveWithTimeout(
       operation: "record the inactive live retirement timeout diagnostic",
-      timeoutMilliseconds: 5_000
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds
     ) {
       while true {
         try Task.checkCancellation()
@@ -2162,7 +2162,7 @@ struct InstantInfiniteQueryParityTests {
     if let cleanupWaiter {
       try await instantLiveWithTimeout(
         operation: "complete exact clean-unsubscribe cleanup after releasing its Store lease",
-        timeoutMilliseconds: 5_000
+        timeoutMilliseconds: InstantTestWait.hangMilliseconds
       ) {
         await cleanupWaiter.value
       }
@@ -3199,7 +3199,7 @@ private func waitForInfinitePayloadBarrier(
 ) async throws -> Int {
   try await instantLiveWithTimeout(
     operation: operation,
-    timeoutMilliseconds: 5_000
+    timeoutMilliseconds: InstantTestWait.hangMilliseconds
   ) {
     await barrier.waitUntilReached()
   }
@@ -3212,7 +3212,7 @@ private func waitForInfiniteResidency(
 ) async throws -> InstantInfiniteQueryResidencySnapshot {
   try await instantLiveWithTimeout(
     operation: operation,
-    timeoutMilliseconds: 5_000
+    timeoutMilliseconds: InstantTestWait.hangMilliseconds
   ) {
     while true {
       try Task.checkCancellation()
@@ -3231,7 +3231,7 @@ private func waitForInfiniteSetupBarrier(
 ) async throws {
   try await instantLiveWithTimeout(
     operation: operation,
-    timeoutMilliseconds: 5_000
+    timeoutMilliseconds: InstantTestWait.hangMilliseconds
   ) {
     await barrier.waitUntilReached()
   }
@@ -3242,7 +3242,7 @@ private func waitForInfiniteSetupResidencyToClear(
 ) async throws {
   try await instantLiveWithTimeout(
     operation: "clear canceled infinite-query setup residency",
-    timeoutMilliseconds: 5_000
+    timeoutMilliseconds: InstantTestWait.hangMilliseconds
   ) {
     while true {
       try Task.checkCancellation()
@@ -3261,7 +3261,7 @@ private func requireInfiniteSetupReleasedOperationGate(
 ) async throws {
   _ = try await instantLiveWithTimeout(
     operation: "use the operation gate after canceling infinite-query setup",
-    timeoutMilliseconds: 5_000
+    timeoutMilliseconds: InstantTestWait.hangMilliseconds
   ) {
     try await runtime.materializeLocalInfiniteQueryIdentity(
       infiniteItemsQuery(limit: 1, order: InstantQueryOrder("value"))
@@ -3276,7 +3276,7 @@ private func nextInfiniteSnapshot(
 ) async throws -> InstantInfiniteQuerySnapshot? {
   try await instantLiveWithTimeout(
     operation: operation,
-    timeoutMilliseconds: 5_000
+    timeoutMilliseconds: InstantTestWait.hangMilliseconds
   ) {
     try Task.checkCancellation()
     let snapshot = await snapshots.first(where: { snapshot in
@@ -3388,7 +3388,7 @@ private func waitForInfiniteStoreObservationCount(
 ) async throws -> Int {
   try await instantLiveWithTimeout(
     operation: "wait for \(expectedCount) local store observers during infinite-query termination",
-    timeoutMilliseconds: 5_000
+    timeoutMilliseconds: InstantTestWait.hangMilliseconds
   ) {
     while await runtime.store.activeObservationCount() != expectedCount {
       try Task.checkCancellation()

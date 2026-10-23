@@ -889,7 +889,7 @@ struct InstantBoundedServerApplyRebaseTests {
     do {
       localResult = try await instantLiveWithTimeout(
         operation: "commit a local transaction while server apply is prepared",
-        timeoutMilliseconds: 5_000,
+        timeoutMilliseconds: InstantTestWait.hangMilliseconds,
         onAbandon: {
           localWrite.cancel()
           Task { await barrier.release() }
@@ -958,7 +958,7 @@ struct InstantBoundedServerApplyRebaseTests {
 
     let result = try await instantLiveWithTimeout(
       operation: "apply one server refresh while local recording writes continue",
-      timeoutMilliseconds: 5_000
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds
     ) {
       try await runtime.applyServerTransaction(
         boundedServerApplyServerWrite(
@@ -1100,7 +1100,7 @@ struct InstantBoundedServerApplyRebaseTests {
 
     let result = try await instantLiveWithTimeout(
       operation: "finish a forced second catch-up drain",
-      timeoutMilliseconds: 15_000
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds
     ) {
       try await runtime.applyServerTransaction(
         boundedServerApplyServerWrite(
@@ -1196,7 +1196,7 @@ struct InstantBoundedServerApplyRebaseTests {
     expectNoDifference(application.syncState.processedTransactionID, "outpaced-server")
     try await instantLiveWithTimeout(
       operation: "wait for the write that waited behind the gate-held attempt",
-      timeoutMilliseconds: 5_000
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds
     ) {
       while await writer.mutationIDs().count < 2 {
         try Task.checkCancellation()
@@ -1285,7 +1285,7 @@ struct InstantBoundedServerApplyRebaseTests {
     }
     try await instantLiveWithTimeout(
       operation: "queue close behind the active server refresh",
-      timeoutMilliseconds: 5_000,
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds,
       onAbandon: {
         serverApply.cancel()
         close.cancel()
@@ -1301,7 +1301,7 @@ struct InstantBoundedServerApplyRebaseTests {
 
     let closedStatus = try await instantLiveWithTimeout(
       operation: "close after bounded peer catch-up fallback",
-      timeoutMilliseconds: 15_000,
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds,
       onAbandon: {
         serverApply.cancel()
         close.cancel()

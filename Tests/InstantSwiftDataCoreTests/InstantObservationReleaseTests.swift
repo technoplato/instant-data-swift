@@ -27,7 +27,7 @@ struct InstantObservationReleaseTests {
   }
 
   static func waitForObservationCount(_ count: Int, in runtime: InstantRuntime) async throws -> Int {
-    let deadline = ContinuousClock.now + .seconds(5)
+    let deadline = ContinuousClock.now + InstantTestWait.hang
     while true {
       let current = await runtime.store.activeObservationCount()
       if current == count || ContinuousClock.now >= deadline { return current }

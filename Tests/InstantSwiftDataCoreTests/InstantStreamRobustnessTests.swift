@@ -63,7 +63,7 @@ struct InstantStreamRobustnessTests {
     for (index, consumer) in consumers.enumerated() {
       try await instantLiveWithTimeout(
         operation: "wait for observation \(index) to read the closed stream",
-        timeoutMilliseconds: 10_000
+        timeoutMilliseconds: InstantTestWait.hangMilliseconds
       ) {
         await consumer.value
       }
@@ -145,7 +145,7 @@ struct InstantStreamRobustnessTests {
     }
     try await instantLiveWithTimeout(
       operation: "wait for the reader to read the done stream",
-      timeoutMilliseconds: 10_000
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds
     ) {
       await consumer.value
     }
@@ -199,7 +199,7 @@ struct InstantStreamRobustnessTests {
     )
     let reads = try await instantLiveWithTimeout(
       operation: "wait for the finished stream's observation to end",
-      timeoutMilliseconds: 5_000
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds
     ) {
       await consumer.value
     }
@@ -250,7 +250,7 @@ struct InstantStreamRobustnessTests {
     let observation = try await runtime.observeStreamContent(streamID: stored.metadata.id)
     let reads = try await instantLiveWithTimeout(
       operation: "wait for the done stream's observation to end",
-      timeoutMilliseconds: 5_000
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds
     ) {
       var reads: [InstantStreamContentRead] = []
       for await read in observation { reads.append(read) }
@@ -383,7 +383,7 @@ struct InstantStreamRobustnessTests {
     }
     let final = try await instantLiveWithTimeout(
       operation: "wait for the reader to read the stream written offline",
-      timeoutMilliseconds: 10_000
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds
     ) {
       var last: InstantStreamContentRead?
       for await read in observation {
@@ -472,7 +472,7 @@ struct InstantStreamRobustnessTests {
     _ = try await runtime.appendStreamContent(streamID: metadata.id, content: " world", expectedOffset: 5)
     let closed = try await instantLiveWithTimeout(
       operation: "close a stream while offline",
-      timeoutMilliseconds: 2_000
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds
     ) {
       try await runtime.closeStream(streamID: metadata.id)
     }
@@ -865,7 +865,7 @@ private func sentMessages(
   of session: LiveReactorParitySession,
   op: String,
   count: Int = 1,
-  timeout: Duration = .seconds(10)
+  timeout: Duration = InstantTestWait.hang
 ) async throws -> [InstantLiveMessage] {
   let deadline = ContinuousClock.now + timeout
   while true {
@@ -881,7 +881,7 @@ private func sentMessages(
 
 private func eventually(
   _ description: String,
-  timeout: Duration = .seconds(10),
+  timeout: Duration = InstantTestWait.hang,
   _ condition: () async throws -> Bool
 ) async throws {
   let deadline = ContinuousClock.now + timeout
