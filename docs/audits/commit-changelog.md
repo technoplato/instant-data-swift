@@ -1,3 +1,12 @@
+## 2026-10-23 13:45:09 EDT — instant-data-swift `ce00d12dd84b26ae320bf9e84371ca628c90ab7b`
+Release document for v1.9.15: metadata rows upsert in place and an acknowledgement leaves unchanged write keys alone (#1007); carries 1.9.14 (#959).
+
+## 2026-10-23 13:29:31 EDT — instant-data-swift `4512739ac3557fe2457d43c97eb259ec9c0ea1db`
+Green (#1007): metadata rows upsert in place, and an acknowledgement leaves a write's unchanged key rows alone (one acknowledgement 19 -> 9 SQLite pages).
+
+## 2026-10-23 13:21:14 EDT — instant-data-swift `63aff39ba99478b5aea92ad281f6058560d90142`
+Red test (#1007): InstantOutboxPageChurnTests, an acknowledgement and a revision bump moved unchanged rows to new pages.
+
 ## 2026-10-23 13:30:16 EDT — instant-data-swift `038bc1e25f19c5f40d6757ce1e9f63ebfbd7c8fa`
 Release document for v1.9.14 (#959): an upload keeps no copy of its file; evictStoredFiles(ids:) removes copies kept before once storage's $files record has their size.
 

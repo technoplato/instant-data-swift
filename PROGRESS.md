@@ -1,3 +1,12 @@
+## 2026-10-23 13:45:29 EDT — v1.9.15: a write's cycle rewrites fewer unchanged rows (#1007); carries 1.9.14 (#959)
+
+- **Commits:** red `63aff39b`, green `4512739a`, release document `ce00d12d`; then this ledger commit and the tag v1.9.15.
+- **Checks:** `InstantOutboxPageChurnTests` red then green (one acknowledgement 19 -> 9 SQLite pages); the whole
+  InstantSwiftDataCoreTests bundle on a Mac mini fails 144 tests against 145 on 1.9.13's tree; the write harness's logical
+  writes per write -6% to -7%, CPU unchanged.
+- **Next:** the consuming app pins exactly 1.9.15; on a device, `logicalWriteBytes` per Instant write while the outbox is
+  empty.
+
 ## 2026-10-23 13:31:00 EDT — v1.9.14: an upload keeps no copy of its file, and copies kept before go once storage holds them (#959)
 
 - **Why:** on one device the file store held a copy of every file the consuming app uploaded: 3,754 files, 25.9 GB of

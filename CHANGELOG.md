@@ -10,6 +10,42 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## October 23rd, 2026 at 1:45:29 p.m. EDT — `ce00d12dd84b` Document the v1.9.15 release: a write's cycle rewrites fewer unchanged rows (#1007)
+
+- **Implementation commit:** `ce00d12dd84b26ae320bf9e84371ca628c90ab7b`
+- **Change:** Document the v1.9.15 release (#1007)
+- **Details:**
+  - Release document: metadata rows in place and unchanged write keys left alone; the whole suite against 1.9.13's tree on the same machine; the harness's before and after; carries 1.9.14 (#959).
+- **Files:**
+  - `docs/releases/v1.9.15.md` — the release document
+- **User context (verbatim):**
+  > I want to optimize the performance of the application with its exact feature set.
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run); no SpecStory capture for headless runs.
+
+## October 23rd, 2026 at 1:45:28 p.m. EDT — `4512739ac355` Green (#1007): metadata rows upsert in place, and an acknowledgement leaves a write's unchanged key rows alone
+
+- **Implementation commit:** `4512739ac3557fe2457d43c97eb259ec9c0ea1db`
+- **Change:** Green: metadata rows upsert in place, and an acknowledgement leaves a write's unchanged key rows alone (#1007)
+- **Details:**
+  - INSERT ... ON CONFLICT(key) DO UPDATE for metadata; replaceOutboxWriteKeysWithoutTransaction returns when the stored keys equal the new set. One acknowledgement 19 -> 9 pages; harness logical writes per write -6% to -7%.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — upsertMetadataSQL, storedOutboxWriteKeysWithoutTransaction, the history line
+- **User context (verbatim):**
+  > I want to optimize the performance of the application with its exact feature set.
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run); no SpecStory capture for headless runs.
+
+## October 23rd, 2026 at 1:45:28 p.m. EDT — `63aff39ba994` Red (#1007): an acknowledgement and a revision bump move unchanged bookkeeping rows to new pages
+
+- **Implementation commit:** `63aff39ba99478b5aea92ad281f6058560d90142`
+- **Change:** Red: an acknowledgement and a revision bump move unchanged bookkeeping rows to new pages (#1007)
+- **Details:**
+  - InstantOutboxPageChurnTests: an acknowledgement moved a write's 11 key rows to new rowids and a revision row to a new rowid; one acknowledgement wrote 19 pages.
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantOutboxPageChurnTests.swift` — the red tests
+- **User context (verbatim):**
+  > I want to optimize the performance of the application with its exact feature set.
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run); no SpecStory capture for headless runs.
+
 ## October 23rd, 2026 at 1:30:36 p.m. EDT — `038bc1e25f19` Document the v1.9.14 release: an upload keeps no copy of its file, and copies kept before go once storage holds them (#959)
 
 - **Implementation commit:** `038bc1e25f19c5f40d6757ce1e9f63ebfbd7c8fa`
