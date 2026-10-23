@@ -4507,6 +4507,30 @@ struct InstantLiveTransportTests {
     await socket.close()
   }
 
+  /// A wait fails on a stall, not on a slow run (#1020). Under the bundle's load the runtime sent the oversized test's
+  /// 50 transacts over 27-40 s with gaps up to 3.6 s, so a bound on the whole wait failed a run that was still moving.
+  @Test
+  func scriptedLiveSessionSentMessageWaitOutlastsItsBoundWhileMessagesKeepArriving() async throws {
+    let session = InstantRuntimeScriptedLiveSession(messages: [])
+    let socket = try await session.transport.connect(
+      InstantLiveSessionRequest(appID: "scripted-sent-wait-progress")
+    )
+    let sender = Task {
+      for index in 1...5 {
+        try await Task.sleep(for: .milliseconds(750))
+        try await socket.send(InstantLiveMessage(op: "transact", clientEventID: "tx-\(index)"))
+      }
+    }
+    let clock = ContinuousClock()
+    let start = clock.now
+
+    try await session.waitForSentMessageCount(5, timeout: .seconds(3))
+
+    #expect(start.duration(to: clock.now) > .seconds(3))
+    try await sender.value
+    await socket.close()
+  }
+
   /// The receive-request wait is bounded the same way (#1020).
   @Test
   func scriptedLiveSessionReceiveRequestWaitFailsWithinItsBound() async throws {
