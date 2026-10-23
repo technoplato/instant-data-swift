@@ -94,7 +94,7 @@ struct InstantOutboxRevisionGateTests {
 
     try await Self.todo(runtime, id: "refused", at: 1_700_000_303_000)
     try await instantLiveWithTimeout(operation: "wait for the write to be offered", timeoutMilliseconds: 5_000) {
-      await session.waitForSentMessageCount(2)
+      try await session.waitForSentMessageCount(2)
     }
     await session.enqueue(
       InstantLiveMessage(

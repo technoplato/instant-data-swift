@@ -924,7 +924,7 @@ private func liveQueueWaitForSentMessages(
   operation: String
 ) async throws {
   try await liveQueueWithTimeout(operation) {
-    await session.waitForSentMessageCount(count)
+    try await session.waitForSentMessageCount(count)
   }
 }
 

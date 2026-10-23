@@ -86,14 +86,14 @@ struct InstantOutboxHydrationTests {
       operation: "wait for automatic live session initialization",
       timeoutMilliseconds: 5_000
     ) {
-      await liveSession.waitForSentMessageCount(1)
+      try await liveSession.waitForSentMessageCount(1)
     }
     try await runtime.transact(transaction, createdAt: now)
     try await instantLiveWithTimeout(
       operation: "wait for automatic live mutation delivery",
       timeoutMilliseconds: 5_000
     ) {
-      await liveSession.waitForSentMessageCount(2)
+      try await liveSession.waitForSentMessageCount(2)
     }
 
     let resolvedSteps = try InstantLiveMutationEncoder.resolveAttributeIDs(
@@ -204,7 +204,7 @@ struct InstantOutboxHydrationTests {
       operation: "wait for explicitly connected one-shot query cleanup",
       timeoutMilliseconds: 5_000
     ) {
-      await liveSession.waitForSentMessageCount(3)
+      try await liveSession.waitForSentMessageCount(3)
     }
 
     expectNoDifference(todos.map(\.id), ["todo-explicit-query"], upstreamQuerySource)
@@ -240,7 +240,7 @@ struct InstantOutboxHydrationTests {
       operation: "wait for status-400 permission query registration",
       timeoutMilliseconds: 5_000
     ) {
-      await liveSession.waitForSentMessageCount(2)
+      try await liveSession.waitForSentMessageCount(2)
     }
     let addQuery = try #require(await liveSession.sentMessages().last)
     let eventID = try #require(addQuery.clientEventID)
@@ -303,14 +303,14 @@ struct InstantOutboxHydrationTests {
       operation: "wait for permission-service first session initialization",
       timeoutMilliseconds: 5_000
     ) {
-      await firstSession.waitForSentMessageCount(1)
+      try await firstSession.waitForSentMessageCount(1)
     }
     try await runtime.transact(transaction, createdAt: now)
     try await instantLiveWithTimeout(
       operation: "wait for permission-service first mutation delivery",
       timeoutMilliseconds: 5_000
     ) {
-      await firstSession.waitForSentMessageCount(2)
+      try await firstSession.waitForSentMessageCount(2)
     }
     await firstSession.enqueue(
       InstantLiveMessage(
@@ -329,7 +329,7 @@ struct InstantOutboxHydrationTests {
       operation: "wait for permission-service mutation retry on the same session",
       timeoutMilliseconds: 5_000
     ) {
-      await firstSession.waitForSentMessageCount(3)
+      try await firstSession.waitForSentMessageCount(3)
     }
     let connectionCount = await transport.connectionRequests().count
     expectNoDifference(connectionCount, 1, "a 500 must not reconnect a healthy socket (#376)")
@@ -818,7 +818,7 @@ struct InstantOutboxHydrationTests {
       operation: "wait for cross-runtime mutation delivery",
       timeoutMilliseconds: 5_000
     ) {
-      await liveSession.waitForSentMessageCount(2)
+      try await liveSession.waitForSentMessageCount(2)
     }
     let sentBeforeRejection = await liveSession.sentMessages()
     expectNoDifference(

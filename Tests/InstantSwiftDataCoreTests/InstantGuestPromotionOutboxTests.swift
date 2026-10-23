@@ -82,7 +82,7 @@ struct InstantGuestPromotionOutboxTests {
       operation: "wait for the guest write to be sent under the promoted session",
       timeoutMilliseconds: 5_000
     ) {
-      await liveSession.waitForSentMessageCount(2)
+      try await liveSession.waitForSentMessageCount(2)
     }
     let sent = await liveSession.sentMessages()
     expectNoDifference(sent.map(\.op), ["init", "transact"])

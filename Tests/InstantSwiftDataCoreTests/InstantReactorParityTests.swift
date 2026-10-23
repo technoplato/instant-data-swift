@@ -548,7 +548,7 @@ struct InstantReactorParityTests {
       operation: "wait for seed create to send",
       timeoutMilliseconds: 5_000
     ) {
-      await liveSession.waitForSentMessageCount(2)
+      try await liveSession.waitForSentMessageCount(2)
     }
     await liveSession.enqueue(
       InstantLiveMessage(
@@ -604,7 +604,7 @@ struct InstantReactorParityTests {
       operation: "wait for both pending cleanup parity mutations to send",
       timeoutMilliseconds: 5_000
     ) {
-      await liveSession.waitForSentMessageCount(4)
+      try await liveSession.waitForSentMessageCount(4)
     }
     let sentMessages = await liveSession.sentMessages()
     expectNoDifference(
@@ -657,7 +657,7 @@ struct InstantReactorParityTests {
       operation: "wait for pending cleanup parity queryOnce registration",
       timeoutMilliseconds: 5_000
     ) {
-      await liveSession.waitForSentMessageCount(5)
+      try await liveSession.waitForSentMessageCount(5)
     }
     let pendingCleanupQuery = try #require(
       await liveSession.sentMessages().last?.fields["q"]
@@ -784,7 +784,7 @@ struct InstantReactorParityTests {
       requestsAfterDrop.count == 2,
       "\(pythonSubscriptionReconnectSource) Expected one initial connection and one silent reconnect, got \(requestsAfterDrop.count)."
     )
-    await secondSession.waitForSentMessageCount(2)
+    try await secondSession.waitForSentMessageCount(2)
 
     let postReconnect = try #require(await iterator.next())
     expectNoDifference(
@@ -847,7 +847,7 @@ struct InstantReactorParityTests {
     _ = try #require(await healthyIterator.next())
 
     _ = try await runtime.connect()
-    await firstSession.waitForSentMessageCount(3)
+    try await firstSession.waitForSentMessageCount(3)
     await firstSession.enqueue(
       InstantLiveMessage(
         op: "error",
@@ -928,7 +928,7 @@ struct InstantReactorParityTests {
       operation: "wait for rejected one-shot query registration",
       timeoutMilliseconds: 500
     ) {
-      await session.waitForSentMessageCount(2)
+      try await session.waitForSentMessageCount(2)
     }
     let addQuery = try #require(await session.sentMessages().last)
     let eventID = try #require(addQuery.clientEventID)
@@ -1042,7 +1042,7 @@ struct InstantReactorParityTests {
       createdAt: secondCreatedAt
     )
     _ = try await runtime.connect()
-    await firstSession.waitForSentMessageCount(4)
+    try await firstSession.waitForSentMessageCount(4)
     let initiallySentOps = await firstSession.sentMessages().map(\.op)
     expectNoDifference(
       initiallySentOps,
@@ -1077,9 +1077,9 @@ struct InstantReactorParityTests {
       operation: "wait for failed and successful reconnect attempts",
       timeoutMilliseconds: 500
     ) {
-      await transport.waitForConnectionCount(14)
+      try await transport.waitForConnectionCount(14)
     }
-    await secondSession.waitForSentMessageCount(3)
+    try await secondSession.waitForSentMessageCount(3)
 
     let reconnectDelays = await reconnectSleep.delays()
     expectNoDifference(
@@ -1174,7 +1174,7 @@ struct InstantReactorParityTests {
       ),
       createdAt: createdAt
     )
-    await firstSession.waitForSentMessageCount(2)
+    try await firstSession.waitForSentMessageCount(2)
     await firstSession.enqueue(
       InstantLiveMessage(
         op: "error",
@@ -1187,7 +1187,7 @@ struct InstantReactorParityTests {
       operation: "wait for the write to be offered again on the same session",
       timeoutMilliseconds: 5_000
     ) {
-      await firstSession.waitForSentMessageCount(3)
+      try await firstSession.waitForSentMessageCount(3)
     }
     let connectionRequests = await transport.connectionRequests()
     expectNoDifference(connectionRequests.map(\.appID), ["reactor-transient-mutation-error"])
@@ -1279,7 +1279,7 @@ struct InstantReactorParityTests {
       operation: "wait for persisted transient mutation retry",
       timeoutMilliseconds: 5_000
     ) {
-      await session.waitForSentMessageCount(2)
+      try await session.waitForSentMessageCount(2)
     }
 
     let sentMessages = await session.sentMessages()
@@ -1463,7 +1463,7 @@ struct InstantReactorParityTests {
       operation: "wait for the receiver-event mutation send",
       timeoutMilliseconds: 5_000
     ) {
-      await firstSession.waitForSentMessageCount(2)
+      try await firstSession.waitForSentMessageCount(2)
     }
 
     await firstSession.enqueue(
@@ -1587,7 +1587,7 @@ struct InstantReactorParityTests {
       userID: "user-1",
       payload: .object(["emoji": .string("👋")])
     )
-    await firstSession.waitForSentMessageCount(2)
+    try await firstSession.waitForSentMessageCount(2)
     let firstOpsBeforeJoinOK = await firstSession.sentMessages().map(\.op)
     expectNoDifference(
       firstOpsBeforeJoinOK,
@@ -1600,7 +1600,7 @@ struct InstantReactorParityTests {
         fields: ["room-id": .string(room.id)]
       )
     )
-    await firstSession.waitForSentMessageCount(4)
+    try await firstSession.waitForSentMessageCount(4)
     let firstSent = await firstSession.sentMessages()
     expectNoDifference(
       firstSent.map(\.op),
@@ -1620,9 +1620,9 @@ struct InstantReactorParityTests {
       operation: "wait for room reconnect",
       timeoutMilliseconds: 500
     ) {
-      await transport.waitForConnectionCount(2)
+      try await transport.waitForConnectionCount(2)
     }
-    await secondSession.waitForSentMessageCount(2)
+    try await secondSession.waitForSentMessageCount(2)
     let rejoinMessages = await secondSession.sentMessages()
     expectNoDifference(
       rejoinMessages.map(\.op),
@@ -1658,7 +1658,7 @@ struct InstantReactorParityTests {
         fields: ["room-id": .string(room.id)]
       )
     )
-    await secondSession.waitForSentMessageCount(4)
+    try await secondSession.waitForSentMessageCount(4)
     let flushedMessages = await secondSession.sentMessages()
     expectNoDifference(
       flushedMessages.map(\.op),
@@ -1764,7 +1764,7 @@ struct InstantReactorParityTests {
       reactorRoomReconnectSource
     )
     _ = try await runtime.leaveRoom(room)
-    await secondSession.waitForSentMessageCount(5)
+    try await secondSession.waitForSentMessageCount(5)
     let leaveOp = await secondSession.sentMessages().last?.op
     expectNoDifference(
       leaveOp,
@@ -1866,7 +1866,7 @@ struct InstantReactorParityTests {
       operation: "wait for initial live stream subscription",
       timeoutMilliseconds: 500
     ) {
-      await firstSession.waitForSentMessageCount(2)
+      try await firstSession.waitForSentMessageCount(2)
     }
     let firstMessages = await firstSession.sentMessages()
     expectNoDifference(
@@ -1895,13 +1895,13 @@ struct InstantReactorParityTests {
       operation: "wait for stream reader reconnect",
       timeoutMilliseconds: 500
     ) {
-      await transport.waitForConnectionCount(2)
+      try await transport.waitForConnectionCount(2)
     }
     try await instantLiveWithTimeout(
       operation: "wait for restored live stream subscription",
       timeoutMilliseconds: 500
     ) {
-      await secondSession.waitForSentMessageCount(2)
+      try await secondSession.waitForSentMessageCount(2)
     }
     let secondMessages = await secondSession.sentMessages()
     expectNoDifference(
@@ -1927,7 +1927,7 @@ struct InstantReactorParityTests {
       operation: "wait for live stream unsubscription",
       timeoutMilliseconds: 500
     ) {
-      await secondSession.waitForSentMessageCount(3)
+      try await secondSession.waitForSentMessageCount(3)
     }
     let unsubscribe = try #require(await secondSession.sentMessages().last)
     expectNoDifference(unsubscribe.op, "unsubscribe-stream", pythonStreamReaderReconnectSource)
@@ -1979,7 +1979,7 @@ struct InstantReactorParityTests {
       operation: "wait for retry stream subscription",
       timeoutMilliseconds: 500
     ) {
-      await firstSession.waitForSentMessageCount(2)
+      try await firstSession.waitForSentMessageCount(2)
     }
     let subscribe = try #require(await firstSession.sentMessages().last)
     await firstSession.enqueue(
@@ -2000,13 +2000,13 @@ struct InstantReactorParityTests {
       operation: "wait for retryable stream append reconnect",
       timeoutMilliseconds: 500
     ) {
-      await transport.waitForConnectionCount(2)
+      try await transport.waitForConnectionCount(2)
     }
     try await instantLiveWithTimeout(
       operation: "wait for retry stream resubscription",
       timeoutMilliseconds: 500
     ) {
-      await secondSession.waitForSentMessageCount(2)
+      try await secondSession.waitForSentMessageCount(2)
     }
     let resubscribe = try #require(await secondSession.sentMessages().last)
     expectNoDifference(resubscribe.op, "subscribe-stream", pythonStreamAppendRetrySource)
@@ -2066,7 +2066,7 @@ struct InstantReactorParityTests {
       operation: "wait for inline stream subscription",
       timeoutMilliseconds: 500
     ) {
-      await firstSession.waitForSentMessageCount(2)
+      try await firstSession.waitForSentMessageCount(2)
     }
     let subscribe = try #require(await firstSession.sentMessages().last)
     await firstSession.enqueue(
@@ -2107,13 +2107,13 @@ struct InstantReactorParityTests {
       operation: "wait for inline stream reconnect",
       timeoutMilliseconds: 500
     ) {
-      await transport.waitForConnectionCount(2)
+      try await transport.waitForConnectionCount(2)
     }
     try await instantLiveWithTimeout(
       operation: "wait for inline stream resubscription",
       timeoutMilliseconds: 500
     ) {
-      await secondSession.waitForSentMessageCount(2)
+      try await secondSession.waitForSentMessageCount(2)
     }
     let resubscribe = try #require(await secondSession.sentMessages().last)
     expectNoDifference(
@@ -2186,7 +2186,7 @@ struct InstantReactorParityTests {
       operation: "wait for file stream subscription",
       timeoutMilliseconds: 500
     ) {
-      await firstSession.waitForSentMessageCount(2)
+      try await firstSession.waitForSentMessageCount(2)
     }
     let subscribe = try #require(await firstSession.sentMessages().last)
     await firstSession.enqueue(
@@ -2232,13 +2232,13 @@ struct InstantReactorParityTests {
       operation: "wait for file stream reconnect",
       timeoutMilliseconds: 500
     ) {
-      await transport.waitForConnectionCount(2)
+      try await transport.waitForConnectionCount(2)
     }
     try await instantLiveWithTimeout(
       operation: "wait for file stream resubscription",
       timeoutMilliseconds: 500
     ) {
-      await secondSession.waitForSentMessageCount(2)
+      try await secondSession.waitForSentMessageCount(2)
     }
     let resubscribe = try #require(await secondSession.sentMessages().last)
     expectNoDifference(
@@ -2295,7 +2295,7 @@ struct InstantReactorParityTests {
       operation: "wait for failing file stream subscription",
       timeoutMilliseconds: 500
     ) {
-      await firstSession.waitForSentMessageCount(2)
+      try await firstSession.waitForSentMessageCount(2)
     }
     let subscribe = try #require(await firstSession.sentMessages().last)
     await firstSession.enqueue(
@@ -2321,13 +2321,13 @@ struct InstantReactorParityTests {
       operation: "wait for failed file stream reconnect",
       timeoutMilliseconds: 500
     ) {
-      await transport.waitForConnectionCount(2)
+      try await transport.waitForConnectionCount(2)
     }
     try await instantLiveWithTimeout(
       operation: "wait for failed file stream resubscription",
       timeoutMilliseconds: 500
     ) {
-      await secondSession.waitForSentMessageCount(2)
+      try await secondSession.waitForSentMessageCount(2)
     }
     let resubscribe = try #require(await secondSession.sentMessages().last)
     expectNoDifference(
@@ -2384,7 +2384,7 @@ struct InstantReactorParityTests {
       operation: "wait for remote client-id stream subscription",
       timeoutMilliseconds: 500
     ) {
-      await session.waitForSentMessageCount(3)
+      try await session.waitForSentMessageCount(3)
     }
     let subscriptions = await session.sentMessages().filter { $0.op == "subscribe-stream" }
     let clientSubscribe = try #require(
@@ -2470,7 +2470,7 @@ struct InstantReactorParityTests {
       operation: "wait for canonical start-stream",
       timeoutMilliseconds: 500
     ) {
-      await session.waitForSentMessageCount(2)
+      try await session.waitForSentMessageCount(2)
     }
     let start = try #require(await session.sentMessages().last)
     expectNoDifference(start.op, "start-stream", typescriptStreamWriterSource)
@@ -2503,7 +2503,7 @@ struct InstantReactorParityTests {
       content: "hello 🚀",
       expectedOffset: 0
     )
-    await session.waitForSentMessageCount(3)
+    try await session.waitForSentMessageCount(3)
     let appendMessage = try #require(await session.sentMessages().last)
     expectNoDifference(appendMessage.op, "append-stream", typescriptStreamWriterSource)
     expectNoDifference(appendMessage.fields, [
@@ -2515,7 +2515,7 @@ struct InstantReactorParityTests {
     expectNoDifference(append.chunk.byteCount, 10, typescriptStreamWriterSource)
 
     let closeTask = Task { try await runtime.closeStream(streamID: metadata.id) }
-    await session.waitForSentMessageCount(4)
+    try await session.waitForSentMessageCount(4)
     let closeMessage = try #require(await session.sentMessages().last)
     expectNoDifference(closeMessage.op, "append-stream", typescriptStreamWriterSource)
     expectNoDifference(closeMessage.fields, [
@@ -2561,7 +2561,7 @@ struct InstantReactorParityTests {
     _ = try await runtime.connect()
 
     let createTask = Task { try await runtime.createStream(clientID: "resumable-writer") }
-    await firstSession.waitForSentMessageCount(2)
+    try await firstSession.waitForSentMessageCount(2)
     let firstStart = try #require(await firstSession.sentMessages().last)
     let reconnectToken = try #require(firstStart.fields["reconnect-token"])
     await firstSession.enqueue(
@@ -2596,7 +2596,7 @@ struct InstantReactorParityTests {
       content: " 🚀",
       expectedOffset: 5
     )
-    await firstSession.waitForSentMessageCount(4)
+    try await firstSession.waitForSentMessageCount(4)
     await firstSession.failReceive(
       InstantError(
         code: .networkFailed,
@@ -2610,9 +2610,9 @@ struct InstantReactorParityTests {
       operation: "wait for resumable writer reconnect",
       timeoutMilliseconds: 500
     ) {
-      await transport.waitForConnectionCount(2)
+      try await transport.waitForConnectionCount(2)
     }
-    await secondSession.waitForSentMessageCount(2)
+    try await secondSession.waitForSentMessageCount(2)
     let secondStart = try #require(await secondSession.sentMessages().last)
     expectNoDifference(secondStart.op, "start-stream", typescriptStreamWriterSource)
     expectNoDifference(secondStart.fields, [
@@ -2630,7 +2630,7 @@ struct InstantReactorParityTests {
         ]
       )
     )
-    await secondSession.waitForSentMessageCount(3)
+    try await secondSession.waitForSentMessageCount(3)
     let resent = try #require(await secondSession.sentMessages().last)
     expectNoDifference(resent.op, "append-stream", typescriptStreamWriterSource)
     expectNoDifference(resent.fields, [
@@ -3602,7 +3602,7 @@ extension InstantReactorParityTests {
       )
     )
     _ = try await runtime.connect()
-    await session.waitForSentMessageCount(1)
+    try await session.waitForSentMessageCount(1)
     let initMessage = try #require(await session.sentMessages().first)
     expectNoDifference(initMessage.op, "init")
     expectNoDifference(

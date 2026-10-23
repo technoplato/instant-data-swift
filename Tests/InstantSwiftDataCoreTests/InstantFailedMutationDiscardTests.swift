@@ -596,7 +596,7 @@ struct InstantFailedMutationDiscardTests {
     let session = DiscardReconnectLiveSession()
     let live = try await discardRuntime(cacheURL: cacheURL, liveTransport: session.transport)
     _ = try await live.connect()
-    await session.waitForSentMessageCount(1)
+    try await session.waitForSentMessageCount(1)
     try await Task.sleep(for: .milliseconds(20))
 
     let sent = await session.sentMessages()
@@ -696,10 +696,10 @@ struct InstantFailedMutationDiscardTests {
     expectNoDifference(initialEmissions, [["server refreshed value"]])
 
     _ = try await relaunched.connect()
-    await session.waitForSentMessageCount(2)
+    try await session.waitForSentMessageCount(2)
     let retried = try await relaunched.retryMutation(id: "tx-retry-after-refresh")
     try await recorder.waitForCount(2)
-    await session.waitForSentMessageCount(3)
+    try await session.waitForSentMessageCount(3)
 
     expectNoDifference(retried.status, .pending)
     expectNoDifference(retried.optimisticOverlayState, .applied)
@@ -846,9 +846,9 @@ struct InstantFailedMutationDiscardTests {
           let session = DiscardReconnectLiveSession()
           let runtime = try await discardRuntime(cacheURL: cacheURL, liveTransport: session.transport)
           _ = try await runtime.connect()
-          await session.waitForSentMessageCount(1)
+          try await session.waitForSentMessageCount(1)
           try await enqueueDiscardMutation(id: "tx-retry-atomic-failure", runtime: runtime, offset: 0)
-          await session.waitForSentMessageCount(2)
+          try await session.waitForSentMessageCount(2)
           _ = try await runtime.failMutation(
             id: "tx-retry-atomic-failure",
             message: "retained rejection before retry"
@@ -868,10 +868,10 @@ struct InstantFailedMutationDiscardTests {
     let session = DiscardReconnectLiveSession()
     let runtime = try await discardRuntime(cacheURL: cacheURL, liveTransport: session.transport)
     _ = try await runtime.connect()
-    await session.waitForSentMessageCount(1)
+    try await session.waitForSentMessageCount(1)
 
     try await enqueueDiscardMutation(id: "tx-retry-atomic-failure", runtime: runtime, offset: 0)
-    await session.waitForSentMessageCount(2)
+    try await session.waitForSentMessageCount(2)
     _ = try await runtime.failMutation(
       id: "tx-retry-atomic-failure",
       message: "retained rejection before retry"
@@ -3053,6 +3053,28 @@ private func installRetryMetadataDeletionFailure(in cacheURL: URL) throws {
   }
 }
 
+extension InstantFailedMutationDiscardTests {
+  /// The discard session's sent-message wait ends by itself (#1020).
+  @Test
+  func discardSessionSentMessageWaitFailsWhenNothingMoreIsSent() async throws {
+    let session = DiscardReconnectLiveSession()
+    let socket = try await session.transport.connect(
+      InstantLiveSessionRequest(appID: "discard-sent-wait-bound")
+    )
+    try await socket.send(InstantLiveMessage(op: "transact", clientEventID: "tx-01"))
+
+    let error = try #require(
+      try await stalledWait {
+        try await session.waitForSentMessageCount(2, timeout: .milliseconds(200))
+      }
+    )
+
+    expectNoDifference(error.wait, "2 sent messages")
+    expectNoDifference(error.observed, ["transact tx-01"])
+    await socket.close()
+  }
+}
+
 private actor DiscardReconnectLiveSession {
   private struct SentWaiter {
     var count: Int
@@ -3084,7 +3106,10 @@ private actor DiscardReconnectLiveSession {
     sent
   }
 
-  func waitForSentMessageCount(_ count: Int) async {
+  func waitForSentMessageCount(
+    _ count: Int,
+    timeout: Duration = InstantLiveTestWait.defaultTimeout
+  ) async throws {
     guard sent.count < count else { return }
     await withCheckedContinuation { continuation in
       sentWaiters.append(SentWaiter(count: count, continuation: continuation))

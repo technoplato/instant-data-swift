@@ -819,7 +819,7 @@ struct InstantBoundedOutboxDeliveryTests {
       operation: "wait for automatic delivery behind the explicit confirmed barrier",
       timeoutMilliseconds: 5_000
     ) {
-      await liveSession.waitForSentMessageCount(3)
+      try await liveSession.waitForSentMessageCount(3)
     }
     let sentIDs = await liveSession.sentMessages()
       .filter { $0.op == "transact" }
@@ -1931,7 +1931,7 @@ struct InstantBoundedOutboxDeliveryTests {
       operation: "wait for bounded ten-thousand-row delivery",
       timeoutMilliseconds: 5_000
     ) {
-      await liveSession.waitForSentMessageCount(51)
+      try await liveSession.waitForSentMessageCount(51)
     }
 
     let sentMutationIDs = await liveSession.sentMessages()
@@ -2118,7 +2118,7 @@ struct InstantBoundedOutboxDeliveryTests {
       operation: "wait for pending tail behind SQLite-authorized accepted heads",
       timeoutMilliseconds: 5_000
     ) {
-      await liveSession.waitForSentMessageCount(2)
+      try await liveSession.waitForSentMessageCount(2)
     }
 
     let sentMutationIDs = await liveSession.sentMessages()
@@ -2174,7 +2174,7 @@ struct InstantBoundedOutboxDeliveryTests {
       operation: "wait for initial fifty-mutation window",
       timeoutMilliseconds: 5_000
     ) {
-      await liveSession.waitForSentMessageCount(51)
+      try await liveSession.waitForSentMessageCount(51)
     }
     await runtime.persistence.resetDecodedOutboxBodyCount()
     let sentWithoutFreedCapacity = await runtime.sendOutstandingMutationsToLiveSession()
@@ -2196,7 +2196,7 @@ struct InstantBoundedOutboxDeliveryTests {
       operation: "wait for one freed slot to admit the unsent tail",
       timeoutMilliseconds: 5_000
     ) {
-      await liveSession.waitForSentMessageCount(52)
+      try await liveSession.waitForSentMessageCount(52)
     }
 
     let sentMutationIDs = await liveSession.sentMessages()
@@ -2244,7 +2244,7 @@ struct InstantBoundedOutboxDeliveryTests {
       operation: "wait for the fifty-mutation same-key boundary window",
       timeoutMilliseconds: 5_000
     ) {
-      await liveSession.waitForSentMessageCount(51)
+      try await liveSession.waitForSentMessageCount(51)
     }
     let sent = await liveSession.sentMessages().filter { $0.op == "transact" }
     expectNoDifference(sent.count, 50, boundedOutboxSource)
@@ -2312,7 +2312,7 @@ struct InstantBoundedOutboxDeliveryTests {
       operation: "wait for the older write protected by a failed active overlay",
       timeoutMilliseconds: 5_000
     ) {
-      await liveSession.waitForSentMessageCount(2)
+      try await liveSession.waitForSentMessageCount(2)
     }
     let sent = try #require(
       await liveSession.sentMessages().first {
@@ -2505,7 +2505,7 @@ struct InstantBoundedOutboxDeliveryTests {
       operation: "wait for weighted automatic delivery window",
       timeoutMilliseconds: 5_000
     ) {
-      await liveSession.waitForSentMessageCount(26)
+      try await liveSession.waitForSentMessageCount(26)
     }
 
     let sent = await liveSession.sentMessages().filter { $0.op == "transact" }
@@ -2628,7 +2628,7 @@ struct InstantBoundedOutboxDeliveryTests {
       operation: "wait for valid write after rejected step-oversize write",
       timeoutMilliseconds: 5_000
     ) {
-      await liveSession.waitForSentMessageCount(2)
+      try await liveSession.waitForSentMessageCount(2)
     }
     let sentIDs = await liveSession.sentMessages()
       .filter { $0.op == "transact" }
@@ -2671,7 +2671,7 @@ struct InstantBoundedOutboxDeliveryTests {
       operation: "wait for valid write after rejected body-oversize write",
       timeoutMilliseconds: 5_000
     ) {
-      await liveSession.waitForSentMessageCount(2)
+      try await liveSession.waitForSentMessageCount(2)
     }
     let sentIDs = await liveSession.sentMessages()
       .filter { $0.op == "transact" }
@@ -2716,7 +2716,7 @@ struct InstantBoundedOutboxDeliveryTests {
       operation: "wait for first mutation before legacy step blocker",
       timeoutMilliseconds: 5_000
     ) {
-      await liveSession.waitForSentMessageCount(2)
+      try await liveSession.waitForSentMessageCount(2)
     }
 
     let sent = try #require(
@@ -2808,7 +2808,7 @@ struct InstantBoundedOutboxDeliveryTests {
       operation: "wait for schema-complete required-foundation delivery",
       timeoutMilliseconds: 5_000
     ) {
-      await liveSession.waitForSentMessageCount(2)
+      try await liveSession.waitForSentMessageCount(2)
     }
     let sent = try #require(
       await liveSession.sentMessages().first { $0.op == "transact" }
@@ -2892,7 +2892,7 @@ struct InstantBoundedOutboxDeliveryTests {
       operation: "wait for small tail behind projected-oversize required hydration",
       timeoutMilliseconds: 5_000
     ) {
-      await liveSession.waitForSentMessageCount(2)
+      try await liveSession.waitForSentMessageCount(2)
     }
 
     let sentMutationIDs = await liveSession.sentMessages()
@@ -3010,7 +3010,7 @@ struct InstantBoundedOutboxDeliveryTests {
       operation: "wait for first five-MiB projected mutation",
       timeoutMilliseconds: 5_000
     ) {
-      await liveSession.waitForSentMessageCount(2)
+      try await liveSession.waitForSentMessageCount(2)
     }
 
     let initiallySentMutationIDs = await liveSession.sentMessages()
@@ -3059,7 +3059,7 @@ struct InstantBoundedOutboxDeliveryTests {
       operation: "wait for deferred five-MiB projection after capacity release",
       timeoutMilliseconds: 5_000
     ) {
-      await liveSession.waitForSentMessageCount(3)
+      try await liveSession.waitForSentMessageCount(3)
     }
     let finallySentMutationIDs = await liveSession.sentMessages()
       .filter { $0.op == "transact" }
@@ -3109,7 +3109,7 @@ struct InstantBoundedOutboxDeliveryTests {
       operation: "wait for ordered required-foundation successor delivery",
       timeoutMilliseconds: 5_000
     ) {
-      await liveSession.waitForSentMessageCount(3)
+      try await liveSession.waitForSentMessageCount(3)
     }
     let sent = await liveSession.sentMessages().filter { $0.op == "transact" }
     let olderSent = try #require(sent.first { $0.clientEventID == older.id })
@@ -3230,7 +3230,7 @@ struct InstantBoundedOutboxDeliveryTests {
       operation: "wait for foundation delivery past an active legacy overlay",
       timeoutMilliseconds: 5_000
     ) {
-      await liveSession.waitForSentMessageCount(2)
+      try await liveSession.waitForSentMessageCount(2)
     }
     let sent = try #require(
       await liveSession.sentMessages().first { $0.op == "transact" }
@@ -3303,7 +3303,7 @@ struct InstantBoundedOutboxDeliveryTests {
       operation: "wait for the revision-qualified durable visible write",
       timeoutMilliseconds: 5_000
     ) {
-      await liveSession.waitForSentMessageCount(2)
+      try await liveSession.waitForSentMessageCount(2)
     }
     let sent = try #require(
       await liveSession.sentMessages().first { $0.op == "transact" }
@@ -3342,7 +3342,7 @@ struct InstantBoundedOutboxDeliveryTests {
       operation: "wait for byte-bounded automatic delivery",
       timeoutMilliseconds: 5_000
     ) {
-      await liveSession.waitForSentMessageCount(2)
+      try await liveSession.waitForSentMessageCount(2)
     }
 
     let sentIDs = await liveSession.sentMessages()
@@ -3652,7 +3652,7 @@ struct InstantBoundedOutboxDeliveryTests {
         operation: "wait for tail behind encoding-failure window",
         timeoutMilliseconds: 5_000
       ) {
-        await liveSession.waitForSentMessageCount(2)
+        try await liveSession.waitForSentMessageCount(2)
       }
       try await instantLiveWithTimeout(
         operation: "wait for the encoding-failure delivery pump to become idle",
@@ -3723,7 +3723,7 @@ struct InstantBoundedOutboxDeliveryTests {
         operation: "wait for mixed encoding-window refill",
         timeoutMilliseconds: 5_000
       ) {
-        await liveSession.waitForSentMessageCount(3)
+        try await liveSession.waitForSentMessageCount(3)
       }
     } matching: { issue in
       issue.description.contains("quarantined")
@@ -3766,7 +3766,7 @@ struct InstantBoundedOutboxDeliveryTests {
       operation: "wait for first strict legacy claim window",
       timeoutMilliseconds: 5_000
     ) {
-      await liveSession.waitForSentMessageCount(51)
+      try await liveSession.waitForSentMessageCount(51)
     }
 
     let sentIDs = await liveSession.sentMessages()
@@ -3817,7 +3817,7 @@ struct InstantBoundedOutboxDeliveryTests {
       operation: "wait for the eight-row acknowledgement window",
       timeoutMilliseconds: 5_000
     ) {
-      await liveSession.waitForSentMessageCount(9)
+      try await liveSession.waitForSentMessageCount(9)
     }
     try await instantLiveWithTimeout(
       operation: "wait for the ordinal acknowledgement deadline schedule",
@@ -3947,7 +3947,7 @@ struct InstantBoundedOutboxDeliveryTests {
         operation: "wait for the predecessor and successor sends",
         timeoutMilliseconds: 5_000
       ) {
-        await firstSession.waitForSentMessageCount(3)
+        try await firstSession.waitForSentMessageCount(3)
       }
       await firstSession.enqueue(
         InstantLiveMessage(
@@ -4024,8 +4024,8 @@ struct InstantBoundedOutboxDeliveryTests {
         operation: "wait for the acknowledgement-unknown replacement generation",
         timeoutMilliseconds: 5_000
       ) {
-        await transport.waitForConnectionCount(2)
-        await replacementSession.waitForSentMessageCount(1)
+        try await transport.waitForConnectionCount(2)
+        try await replacementSession.waitForSentMessageCount(1)
       }
     } matching: { issue in
       issue.description.contains("did not acknowledge")
@@ -4110,7 +4110,7 @@ struct InstantBoundedOutboxDeliveryTests {
       operation: "wait for the head's send",
       timeoutMilliseconds: 5_000
     ) {
-      await firstSession.waitForSentMessageCount(2)
+      try await firstSession.waitForSentMessageCount(2)
     }
     // A frame the receive loop is still applying (a long rebase), then the head's answer behind it.
     await firstSession.enqueue(
@@ -4214,7 +4214,7 @@ struct InstantBoundedOutboxDeliveryTests {
     try await withKnownIssue {
       _ = try await runtime.connect()
       try await instantLiveWithTimeout(operation: "wait for the first offer", timeoutMilliseconds: 5_000) {
-        await firstSession.waitForSentMessageCount(2)
+        try await firstSession.waitForSentMessageCount(2)
       }
       try await instantLiveWithTimeout(operation: "wait for its deadline", timeoutMilliseconds: 5_000) {
         await deadlineSleep.waitForFirstDelay()
@@ -4229,8 +4229,8 @@ struct InstantBoundedOutboxDeliveryTests {
       }
       await reconnectSleep.resumeFirstDelay()
       try await instantLiveWithTimeout(operation: "wait for the re-sent offer", timeoutMilliseconds: 5_000) {
-        await transport.waitForConnectionCount(2)
-        await replacementSession.waitForSentMessageCount(2)
+        try await transport.waitForConnectionCount(2)
+        try await replacementSession.waitForSentMessageCount(2)
       }
     } matching: { issue in
       issue.description.contains("did not acknowledge")
@@ -4753,7 +4753,7 @@ extension InstantBoundedOutboxDeliveryTests {
       operation: "wait for the whole re-offered window",
       timeoutMilliseconds: 5_000
     ) {
-      await liveSession.waitForSentMessageCount(1 + mutations.count)
+      try await liveSession.waitForSentMessageCount(1 + mutations.count)
     }
     let offeredIDs = await liveSession.sentMessages()
       .filter { $0.op == "transact" }

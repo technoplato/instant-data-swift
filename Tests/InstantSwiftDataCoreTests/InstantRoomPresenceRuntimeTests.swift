@@ -227,9 +227,9 @@ struct InstantRoomPresenceRuntimeTests {
       )
     )
     try await instantLiveWithTimeout(operation: "wait for the room reconnect", timeoutMilliseconds: 5_000) {
-      await transport.waitForConnectionCount(2)
+      try await transport.waitForConnectionCount(2)
     }
-    await second.waitForSentMessageCount(2)
+    try await second.waitForSentMessageCount(2)
     let rejoin = try #require(await second.sentMessages().first { $0.op == "join-room" })
     #expect(
       rejoin.fields["data"] == nil || rejoin.fields["data"] == .object([:]),
@@ -678,9 +678,9 @@ extension InstantRoomPresenceRuntimeTests {
       )
     )
     try await instantLiveWithTimeout(operation: "wait for the room reconnect", timeoutMilliseconds: 5_000) {
-      await transport.waitForConnectionCount(2)
+      try await transport.waitForConnectionCount(2)
     }
-    await second.waitForSentMessageCount(2)
+    try await second.waitForSentMessageCount(2)
     let joinedAfterDrop = await runtime.isRoomJoined(room)
     #expect(!joinedAfterDrop, "The rejoin was only sent on the new socket.")
     await second.enqueue(InstantLiveMessage(op: "join-room-ok", fields: ["room-id": .string(room.id)]))

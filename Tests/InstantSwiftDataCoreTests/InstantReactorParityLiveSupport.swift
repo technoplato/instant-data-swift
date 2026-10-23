@@ -389,7 +389,10 @@ actor LiveReactorParitySession {
     sent
   }
 
-  func waitForSentMessageCount(_ count: Int) async {
+  func waitForSentMessageCount(
+    _ count: Int,
+    timeout: Duration = InstantLiveTestWait.defaultTimeout
+  ) async throws {
     guard sent.count < count else { return }
     let waiterID = UUID()
     await withTaskCancellationHandler {
@@ -512,7 +515,10 @@ actor LiveReactorParityTransport {
     requests
   }
 
-  func waitForConnectionCount(_ count: Int) async {
+  func waitForConnectionCount(
+    _ count: Int,
+    timeout: Duration = InstantLiveTestWait.defaultTimeout
+  ) async throws {
     guard requests.count < count else { return }
     let waiterID = UUID()
     await withTaskCancellationHandler {

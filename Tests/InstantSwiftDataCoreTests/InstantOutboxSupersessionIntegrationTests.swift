@@ -331,7 +331,7 @@ struct InstantOutboxSupersessionIntegrationTests {
       operation: "wait for supersession survivor delivery",
       timeoutMilliseconds: 5_000
     ) {
-      await liveSession.waitForSentMessageCount(2)
+      try await liveSession.waitForSentMessageCount(2)
     }
     let sentIDs = await liveSession.sentMessages()
       .filter { $0.op == "transact" }
@@ -1253,7 +1253,7 @@ private func sendSupersessionServerAcceptance(
     operation: "wait for supersession mutation delivery",
     timeoutMilliseconds: 5_000
   ) {
-    await session.waitForSentMessageCount(2)
+    try await session.waitForSentMessageCount(2)
   }
   let sentMutationIDs = await session.sentMessages()
     .filter { $0.op == "transact" }

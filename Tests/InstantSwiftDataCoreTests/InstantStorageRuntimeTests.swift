@@ -350,7 +350,7 @@ struct InstantStorageRuntimeTests {
       timeoutMilliseconds: 5_000,
       onAbandon: { setup.cancel() }
     ) {
-      await liveSession.waitForSentMessageCount(2)
+      try await liveSession.waitForSentMessageCount(2)
     }
     let queryOnceMessages = await liveSession.sentMessages()
     let storedFilesQuery = try #require(queryOnceMessages.last?.fields["q"])
@@ -372,7 +372,7 @@ struct InstantStorageRuntimeTests {
       operation: "wait for persistent stored-files live registration",
       timeoutMilliseconds: 5_000
     ) {
-      await liveSession.waitForSentMessageCount(4)
+      try await liveSession.waitForSentMessageCount(4)
     }
 
     let firstRemoteFile = StorageRemoteFileFixture(

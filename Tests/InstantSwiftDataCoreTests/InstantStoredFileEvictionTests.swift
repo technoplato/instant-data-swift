@@ -193,7 +193,7 @@ private struct EvictionFixture {
       operation: "wait for the $files query",
       timeoutMilliseconds: 5_000
     ) {
-      await session.waitForSentMessageCount(sentMessageCount)
+      try await session.waitForSentMessageCount(sentMessageCount)
     }
     let message = try #require(await session.sentMessages().last)
     expectNoDifference(message.op, "add-query")

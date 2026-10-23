@@ -227,7 +227,7 @@ struct InstantOutboxDeliveryStallTests {
       operation: "wait for the first bounded backlog delivery window",
       timeoutMilliseconds: 5_000
     ) {
-      await liveSession.waitForSentMessageCount(
+      try await liveSession.waitForSentMessageCount(
         InstantRuntimeLiveSessionLimits.maximumMutationsPerFlush + 1
       )
     }
@@ -295,7 +295,7 @@ struct InstantOutboxDeliveryStallTests {
       operation: "wait for the first weighted backlog mutation",
       timeoutMilliseconds: 5_000
     ) {
-      await liveSession.waitForSentMessageCount(2)
+      try await liveSession.waitForSentMessageCount(2)
     }
     var sentTransactionIDs = await liveSession.sentMessages()
       .filter { $0.op == "transact" }
@@ -313,7 +313,7 @@ struct InstantOutboxDeliveryStallTests {
       operation: "wait for the second weighted backlog mutation",
       timeoutMilliseconds: 5_000
     ) {
-      await liveSession.waitForSentMessageCount(3)
+      try await liveSession.waitForSentMessageCount(3)
     }
     sentTransactionIDs = await liveSession.sentMessages()
       .filter { $0.op == "transact" }
@@ -335,7 +335,7 @@ struct InstantOutboxDeliveryStallTests {
       operation: "wait for the third weighted backlog mutation",
       timeoutMilliseconds: 5_000
     ) {
-      await liveSession.waitForSentMessageCount(4)
+      try await liveSession.waitForSentMessageCount(4)
     }
     sentTransactionIDs = await liveSession.sentMessages()
       .filter { $0.op == "transact" }

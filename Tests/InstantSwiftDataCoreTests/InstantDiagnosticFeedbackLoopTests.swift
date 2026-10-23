@@ -124,7 +124,7 @@ struct InstantDiagnosticFeedbackLoopTests {
         operation: "wait for diagnostic seed mutation \(index)",
         timeoutMilliseconds: 5_000
       ) {
-        await liveSession.waitForSentMessageCount(index + 2)
+        try await liveSession.waitForSentMessageCount(index + 2)
       }
       let sentMutation = try #require(await liveSession.sentMessages().last)
       #expect(sentMutation.op == "transact")
@@ -160,7 +160,7 @@ struct InstantDiagnosticFeedbackLoopTests {
       operation: "wait for diagnostic live query registration",
       timeoutMilliseconds: 5_000
     ) {
-      await liveSession.waitForSentMessageCount(transactions.count + 2)
+      try await liveSession.waitForSentMessageCount(transactions.count + 2)
     }
     let sentQuery = try #require(await liveSession.sentMessages().last)
     #expect(sentQuery.op == "add-query")
