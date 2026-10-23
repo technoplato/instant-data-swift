@@ -36,8 +36,10 @@
       expectNoDifference(segments.count, 3)
       expectNoDifference(segments.map { ($0.1 * 10).rounded() / 10 }.prefix(2), [6, 6])
       #expect(abs(segments.map(\.1).reduce(0, +) - 13) < 0.1)
-      // 32 kbps is 4,000 bytes a second: a 6 s segment holds about 24 KB.
-      #expect(segments[0].0.count > 20_000 && segments[0].0.count < 30_000)
+      // The encoder aims at 32 kbps: it may spend less on a plain tone, but never the 128 kbps of a default AAC encoder
+      // or the 384 kbps of 24 kHz PCM.
+      let kilobitsPerSecond = Double(segments.map(\.0.count).reduce(0, +) * 8) / 13 / 1_000
+      #expect(kilobitsPerSecond > 4 && kilobitsPerSecond < 36, "\(kilobitsPerSecond) kbps")
 
       var joined = initialization
       for (data, _) in segments { joined.append(data) }

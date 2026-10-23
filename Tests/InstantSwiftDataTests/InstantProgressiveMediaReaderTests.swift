@@ -111,15 +111,18 @@ struct InstantProgressiveMediaReaderTests {
     let source = SourceDouble(stream: stream)
     source.store(state: .recording, durations: [6])
     let now = LockIsolated(Date(timeIntervalSince1970: 1_000))
-    let reader = withDependencies {
+    // The clock is the reader's whole life's, not only its creation's: the suite's fixed date would win otherwise.
+    try await withDependencies {
       $0.date = DateGenerator { now.value }
     } operation: {
-      InstantProgressiveMediaReader(streamID: stream.id, source: source.source)
+      let reader = InstantProgressiveMediaReader(streamID: stream.id, source: source.source)
+      _ = try await reader.refresh()
+      _ = try await reader.url(forSegment: 0)
+      now.setValue(Date(timeIntervalSince1970: 1_000 + 86_400 - 1))
+      _ = try await reader.url(forSegment: 0)
+      now.setValue(Date(timeIntervalSince1970: 1_000 + 86_400 + 1))
+      _ = try await reader.url(forSegment: 0)
     }
-    _ = try await reader.refresh()
-    _ = try await reader.url(forSegment: 0)
-    now.setValue(Date(timeIntervalSince1970: 1_000 + 86_400 + 1))
-    _ = try await reader.url(forSegment: 0)
 
     expectNoDifference(source.urlRequests.count, 2)
   }

@@ -47,7 +47,36 @@ public struct InstantProgressiveMediaPlaylist: Hashable, Sendable {
     self.isFinished = isFinished
   }
 
-  public var targetDurationSeconds: Int { 0 }
+  /// The longest segment rounded to the nearest second, and at least 1 (RFC 8216 4.3.3.1). Rounding up instead would
+  /// add three seconds to a live player's hold-back, which is three target durations (measured 2026-10-23, #1012).
+  public var targetDurationSeconds: Int {
+    let longest = segments.lazy.map(\.durationSeconds).max() ?? 0
+    return max(1, Int(longest.rounded(.toNearestOrAwayFromZero)))
+  }
 
-  public var text: String { "" }
+  /// The playlist's text. A window that starts past the stream's first segment carries no playlist type: an `EVENT`
+  /// playlist may only grow at its end.
+  public var text: String {
+    var lines = [
+      "#EXTM3U",
+      "#EXT-X-VERSION:7",
+      "#EXT-X-TARGETDURATION:\(targetDurationSeconds)",
+      "#EXT-X-MEDIA-SEQUENCE:\(mediaSequence)",
+    ]
+    if isFinished {
+      lines.append("#EXT-X-PLAYLIST-TYPE:VOD")
+    } else if mediaSequence == 0 {
+      lines.append("#EXT-X-PLAYLIST-TYPE:EVENT")
+    }
+    lines.append("#EXT-X-INDEPENDENT-SEGMENTS")
+    lines.append("#EXT-X-MAP:URI=\"\(initializationURI)\"")
+    for segment in segments {
+      lines.append("#EXTINF:\(String(format: "%.5f", segment.durationSeconds)),")
+      lines.append(segment.uri)
+    }
+    if isFinished {
+      lines.append("#EXT-X-ENDLIST")
+    }
+    return lines.joined(separator: "\n") + "\n"
+  }
 }

@@ -231,3 +231,204 @@ public struct InstantProgressiveMediaSegmentRow: Hashable, Sendable {
     self.createdAtMs = createdAtMs
   }
 }
+
+// MARK: - Schema
+
+extension InstantProgressiveMediaStreamRow: InstantEntityModel {
+  public static let instantNamespace = "progressiveMediaStreams"
+
+  public static let ownerUserIDAttribute = InstantAttributePath<Self, String>("ownerUserID")
+  public static let codecsAttribute = InstantAttributePath<Self, String>("codecs")
+  public static let sampleRateAttribute = InstantAttributePath<Self, Int>("sampleRate")
+  public static let channelCountAttribute = InstantAttributePath<Self, Int>("channelCount")
+  public static let bitRateAttribute = InstantAttributePath<Self, Int>("bitRate")
+  public static let segmentSecondsAttribute = InstantAttributePath<Self, Double>("segmentSeconds")
+  public static let initializationPathAttribute = InstantAttributePath<Self, String>("initializationPath")
+  public static let stateAttribute = InstantAttributePath<Self, String>("state")
+  public static let segmentCountAttribute = InstantAttributePath<Self, Int>("segmentCount")
+  public static let durationSecondsAttribute = InstantAttributePath<Self, Double>("durationSeconds")
+  public static let createdAtMsAttribute = InstantAttributePath<Self, Double>("createdAtMs")
+  public static let updatedAtMsAttribute = InstantAttributePath<Self, Double>("updatedAtMs")
+
+  /// The attributes an app's schema declares for `progressiveMediaStreams` (ADR 0021 shows the TypeScript).
+  public static let instantAttributes: [InstantAttribute] = [
+    .primaryKey(namespace: instantNamespace),
+    progressiveMediaAttribute(instantNamespace, "ownerUserID", .string, isIndexed: true),
+    progressiveMediaAttribute(instantNamespace, "codecs", .string),
+    progressiveMediaAttribute(instantNamespace, "sampleRate", .number),
+    progressiveMediaAttribute(instantNamespace, "channelCount", .number),
+    progressiveMediaAttribute(instantNamespace, "bitRate", .number),
+    progressiveMediaAttribute(instantNamespace, "segmentSeconds", .number),
+    progressiveMediaAttribute(instantNamespace, "initializationPath", .string),
+    progressiveMediaAttribute(instantNamespace, "state", .string, isIndexed: true),
+    progressiveMediaAttribute(instantNamespace, "segmentCount", .number),
+    progressiveMediaAttribute(instantNamespace, "durationSeconds", .number),
+    progressiveMediaAttribute(instantNamespace, "createdAtMs", .number, isIndexed: true),
+    progressiveMediaAttribute(instantNamespace, "updatedAtMs", .number, isIndexed: true),
+  ]
+
+  public init(snapshot: InstantEntitySnapshot) throws {
+    id = InstantID(rawValue: snapshot.id.lowercased())
+    ownerUserID = try snapshot.progressiveMediaValue("ownerUserID")
+    codecs = try snapshot.progressiveMediaValue("codecs")
+    sampleRate = try snapshot.progressiveMediaValue("sampleRate")
+    channelCount = try snapshot.progressiveMediaValue("channelCount")
+    bitRate = try snapshot.progressiveMediaValue("bitRate")
+    segmentSeconds = try snapshot.progressiveMediaValue("segmentSeconds")
+    initializationPath = try snapshot.progressiveMediaValue("initializationPath")
+    let rawState: String = try snapshot.progressiveMediaValue("state")
+    guard let state = InstantProgressiveMediaState(rawValue: rawState) else {
+      throw InstantError(
+        code: .decodeFailed,
+        operation: "decode progressive media stream",
+        namespace: snapshot.namespace,
+        path: "state",
+        localID: snapshot.id,
+        message: "Unknown progressive media state \"\(rawState)\".",
+        recovery: "Write one of \(InstantProgressiveMediaState.allCases.map(\.rawValue))."
+      )
+    }
+    self.state = state
+    segmentCount = try snapshot.progressiveMediaValue("segmentCount")
+    durationSeconds = try snapshot.progressiveMediaValue("durationSeconds")
+    createdAtMs = try snapshot.progressiveMediaValue("createdAtMs")
+    updatedAtMs = try snapshot.progressiveMediaValue("updatedAtMs")
+  }
+
+  /// The whole row: the first write creates it and every later one restates it, so a replayed write is harmless.
+  public var upsertMutation: InstantMutation {
+    Self.update(
+      id: id,
+      [
+        Self.ownerUserIDAttribute.set(ownerUserID),
+        Self.codecsAttribute.set(codecs),
+        Self.sampleRateAttribute.set(sampleRate),
+        Self.channelCountAttribute.set(channelCount),
+        Self.bitRateAttribute.set(bitRate),
+        Self.segmentSecondsAttribute.set(segmentSeconds),
+        Self.initializationPathAttribute.set(initializationPath),
+        Self.stateAttribute.set(state.rawValue),
+        Self.segmentCountAttribute.set(segmentCount),
+        Self.durationSecondsAttribute.set(durationSeconds),
+        Self.createdAtMsAttribute.set(createdAtMs),
+        Self.updatedAtMsAttribute.set(updatedAtMs),
+      ]
+    )
+  }
+
+  /// The format the row describes.
+  public var format: InstantProgressiveMediaFormat {
+    InstantProgressiveMediaFormat(
+      codecs: codecs,
+      sampleRate: sampleRate,
+      channelCount: channelCount,
+      bitRate: bitRate,
+      segmentSeconds: segmentSeconds
+    )
+  }
+}
+
+extension InstantProgressiveMediaSegmentRow: InstantEntityModel {
+  public static let instantNamespace = "progressiveMediaSegments"
+
+  public static let ownerUserIDAttribute = InstantAttributePath<Self, String>("ownerUserID")
+  public static let streamIDAttribute = InstantAttributePath<Self, String>("streamID")
+  public static let indexAttribute = InstantAttributePath<Self, Int>("index")
+  public static let startSecondsAttribute = InstantAttributePath<Self, Double>("startSeconds")
+  public static let durationSecondsAttribute = InstantAttributePath<Self, Double>("durationSeconds")
+  public static let byteCountAttribute = InstantAttributePath<Self, Int>("byteCount")
+  public static let pathAttribute = InstantAttributePath<Self, String>("path")
+  public static let createdAtMsAttribute = InstantAttributePath<Self, Double>("createdAtMs")
+
+  /// The attributes an app's schema declares for `progressiveMediaSegments`: `streamID` and `index` are indexed, so a
+  /// reader asks for one stream's segments in order.
+  public static let instantAttributes: [InstantAttribute] = [
+    .primaryKey(namespace: instantNamespace),
+    progressiveMediaAttribute(instantNamespace, "ownerUserID", .string, isIndexed: true),
+    progressiveMediaAttribute(instantNamespace, "streamID", .string, isIndexed: true),
+    progressiveMediaAttribute(instantNamespace, "index", .number, isIndexed: true),
+    progressiveMediaAttribute(instantNamespace, "startSeconds", .number),
+    progressiveMediaAttribute(instantNamespace, "durationSeconds", .number),
+    progressiveMediaAttribute(instantNamespace, "byteCount", .number),
+    progressiveMediaAttribute(instantNamespace, "path", .string),
+    progressiveMediaAttribute(instantNamespace, "createdAtMs", .number, isIndexed: true),
+  ]
+
+  public init(snapshot: InstantEntitySnapshot) throws {
+    id = InstantID(rawValue: snapshot.id.lowercased())
+    ownerUserID = try snapshot.progressiveMediaValue("ownerUserID")
+    streamID = try snapshot.progressiveMediaValue("streamID")
+    index = try snapshot.progressiveMediaValue("index")
+    startSeconds = try snapshot.progressiveMediaValue("startSeconds")
+    durationSeconds = try snapshot.progressiveMediaValue("durationSeconds")
+    byteCount = try snapshot.progressiveMediaValue("byteCount")
+    path = try snapshot.progressiveMediaValue("path")
+    createdAtMs = try snapshot.progressiveMediaValue("createdAtMs")
+  }
+
+  /// The whole row; a replayed write restates the same values.
+  public var upsertMutation: InstantMutation {
+    Self.update(
+      id: id,
+      [
+        Self.ownerUserIDAttribute.set(ownerUserID),
+        Self.streamIDAttribute.set(streamID),
+        Self.indexAttribute.set(index),
+        Self.startSecondsAttribute.set(startSeconds),
+        Self.durationSecondsAttribute.set(durationSeconds),
+        Self.byteCountAttribute.set(byteCount),
+        Self.pathAttribute.set(path),
+        Self.createdAtMsAttribute.set(createdAtMs),
+      ]
+    )
+  }
+
+  /// The segment the row lists.
+  public var segment: InstantProgressiveMediaSegment {
+    InstantProgressiveMediaSegment(
+      index: index,
+      startSeconds: startSeconds,
+      durationSeconds: durationSeconds,
+      byteCount: byteCount,
+      path: path
+    )
+  }
+}
+
+extension InstantProgressiveMediaRow {
+  /// The row's write.
+  public var mutation: InstantMutation {
+    switch self {
+    case let .stream(row): row.upsertMutation
+    case let .segment(row): row.upsertMutation
+    }
+  }
+}
+
+private func progressiveMediaAttribute(
+  _ namespace: String,
+  _ name: String,
+  _ valueType: InstantValueType,
+  isIndexed: Bool = false
+) -> InstantAttribute {
+  InstantAttribute(
+    id: "\(namespace)/\(name)",
+    namespace: namespace,
+    name: name,
+    valueType: valueType,
+    isRequired: true,
+    isIndexed: isIndexed
+  )
+}
+
+extension InstantEntitySnapshot {
+  fileprivate func progressiveMediaValue<Value: InstantValueDecodable>(_ path: String) throws -> Value {
+    try Value.decodeInstantValue(
+      values[path]?.first,
+      namespace: namespace,
+      path: path,
+      localID: id,
+      operation: "decode progressive media row"
+    )
+  }
+}

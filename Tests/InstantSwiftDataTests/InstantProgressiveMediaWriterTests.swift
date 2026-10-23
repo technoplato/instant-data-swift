@@ -245,7 +245,8 @@ struct InstantProgressiveMediaWriterTests {
     expectNoDifference(writers.map { $0.stream }.sorted { $0.pathPrefix < $1.pathPrefix }, [stream, other])
     expectNoDifference(writers.map { $0.ownerUserID }.sorted(), ["other-owner", "owner"])
     expectNoDifference(try spool.streams(), [])
-    expectNoDifference(storage.events.count, 6)
+    // Each stream: its initialization segment, its row, its one segment, and that segment's rows.
+    expectNoDifference(storage.events.count, 8)
   }
 
   func streamRow(
@@ -306,12 +307,13 @@ private final class StorageDouble: Sendable {
       case let .failedUpload(path):
         "upload \(path.split(separator: "/").last!) failed"
       case let .write(rows):
-        rows.map {
-          switch $0 {
-          case .stream: "stream"
-          case let .segment(row): "+\(row.index)"
-          }
-        }.joined()
+        "write "
+          + rows.map {
+            switch $0 {
+            case .stream: "stream"
+            case let .segment(row): "+\(row.index)"
+            }
+          }.joined()
       }
     }
 
