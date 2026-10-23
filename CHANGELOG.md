@@ -10,6 +10,33 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## October 23rd, 2026 at 4:10:17 p.m. EDT — `3dd519c09f71` Green (#1007): a received frame is parsed straight into InstantLiveJSONValue, and JSONDecoder answers what the parser declines
+
+- **Implementation commit:** `3dd519c09f7132dd7d0d1ca1217394572474e269`
+- **Change:** Green (#1007): a received frame is parsed straight into InstantLiveJSONValue, and JSONDecoder answers what the parser declines
+- **Details:**
+  - InstantLiveJSONParser parses strict JSON from the frame's UTF-8 into InstantLiveJSONValue and declines anything it does not take whole; 0.17-0.18 times JSONDecoder's thread CPU on the 95 KB frame (debug).
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantLiveJSONParser.swift` — the parser
+  - `Sources/InstantSwiftDataCore/InstantLiveFrameDecoding.swift` — the seam parses first, then JSONDecoder
+- **User context (verbatim):**
+  > I want to optimize the performance of the application with its exact feature set.
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run); no SpecStory capture for headless runs.
+
+## October 23rd, 2026 at 4:10:16 p.m. EDT — `b949060dcea6` Red (#1007): a received frame decodes through JSONDecoder, which throws errors for every object, array and number
+
+- **Implementation commit:** `b949060dcea6971d53a2665a9e8a76603c07cffd`
+- **Change:** Red (#1007): a received frame decodes through JSONDecoder, which throws errors for every object, array and number
+- **Details:**
+  - InstantLiveFrameDecodeTests: a 95 KB refresh-ok decodes at 0.97 times JSONDecoder's thread CPU through the frame decoder (bound a third). Random and unusual frames keep JSONDecoder's outcome (pass). The transport decodes through the decoded(fromFrame:) seam.
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantLiveFrameDecodeTests.swift` — the red tests
+  - `Sources/InstantSwiftDataCore/InstantLiveFrameDecoding.swift` — the seam, JSONDecoder as before
+  - `Sources/InstantSwiftDataCore/InstantLiveTransport.swift` — decodedFrame calls the seam
+- **User context (verbatim):**
+  > I want to optimize the performance of the application with its exact feature set.
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run); no SpecStory capture for headless runs.
+
 ## October 23rd, 2026 at 3:46:10 p.m. EDT — `b52bea02e6f0` Document the v1.9.19 release: a page that selects fields materializes only the fields it reads (#1007)
 
 - **Implementation commit:** `b52bea02e6f09420fbd8a4253004a9da0e261c4a`

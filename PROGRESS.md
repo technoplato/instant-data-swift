@@ -1,3 +1,13 @@
+## 2026-10-23 16:13:00 EDT — #1007: frames parsed straight into InstantLiveJSONValue (on main, for the next tag)
+
+- **Commits:** red `b949060d`, green `3dd519c0` (F4), plan claims after them.
+- **Checks:** `InstantLiveFrameDecodeTests` red then green: a 95 KB refresh-ok restating 64 lines of 16 facts decodes at
+  0.17-0.18 times JSONDecoder's thread CPU (debug build), and random frames over six seeds and unusual frames keep
+  JSONDecoder's outcome; 134 tests of the transport, refresh and #1007 suites: the three that fail are cancellation-timing
+  tests that fail on the 1.9.15 baseline too (the mini at load 89).
+- **Next:** the next library tag carries it; the consuming app's ledger should show `instant:frameDecode` (3% of a core on
+  0.1 (114) while recording) fall by about four fifths.
+
 ## 2026-10-23 15:47:00 EDT — v1.9.19: a page that selects fields materializes only the fields it reads (#1007); carries 1.9.18 (#932)
 
 - **Commits:** red `6a4cab2b`, green `73a836cb`; release document `b52bea02`; then this ledger commit and the tag v1.9.19.

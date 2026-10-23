@@ -1,3 +1,12 @@
+## 2026-10-23 16:05:00 EDT — instant-data-swift `3dd519c0`
+Green (#1007): a received frame is parsed straight into InstantLiveJSONValue (InstantLiveJSONParser); JSONDecoder answers what it declines. 0.17-0.18x JSONDecoder's CPU on a 95 KB refresh-ok.
+
+## 2026-10-23 16:02:14 EDT — instant-data-swift `b949060d`
+Red test (#1007): InstantLiveFrameDecodeTests, a frame decoded through JSONDecoder at 0.97x its cost; the decoded(fromFrame:) seam.
+
+## 2026-10-23 16:10:00 EDT — realtime-voice `db43d8c00` and `ec7eab612`
+Scribe and Scribe Playback pinned instant-data-swift exactly 1.9.19 (#1007); changelog and PROGRESS.
+
 ## 2026-10-23 15:53:26 EDT — scribe `b98d90473057bc09e59bc6940cbcafd6f5d700de`
 The untethered-telemetry audit (#1011): the gaps, each addition's cost, the landings for builds 116 and 117, what is left.
 
