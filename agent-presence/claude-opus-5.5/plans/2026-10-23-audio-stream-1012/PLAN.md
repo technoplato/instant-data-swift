@@ -37,3 +37,23 @@
   `uploadFile` and adds no stored-file code. The segment spool is plain files, so no SQLite migration and no edit to
   `SQLitePersistenceStore.swift`.
 - #1007 (InstantStore publication, server apply), #1006 (prune and gate), #1011 (meter lines): no shared files.
+
+## Update 2026-10-23 16:04 (resumed as `claude-code/audio-stream-1012b@strangelearning`)
+
+The first measurements (benchmarks/AudioCodecLab, on the Mac) chose AAC-LC in fragmented MP4 over Opus: Apple's Opus
+fMP4 is 44.5 kbps for a 24 kbps setting and Chrome 155 rejects it in MSE and native HLS, while AAC-LC plays in AVPlayer,
+Chrome (native HLS, MSE, whole file) and Safari. The core splits into files, all new:
+
+- `Sources/InstantSwiftData/InstantProgressiveMediaRows.swift`: the stream and segment rows (`progressiveMediaStreams`,
+  `progressiveMediaSegments`), the format value and the deterministic ids and paths.
+- `Sources/InstantSwiftData/InstantProgressiveMediaPlaylist.swift`: rows to an HLS media playlist (pure).
+- `Sources/InstantSwiftData/InstantProgressiveMediaSpool.swift`: the on-disk spool of segments not yet stored.
+- `Sources/InstantSwiftData/InstantProgressiveMediaWriter.swift`: append, finish, and the ordered uploader.
+- `Sources/InstantSwiftData/InstantProgressiveMediaReader.swift`: history pages, the live tail, lazy URLs.
+- `Sources/InstantSwiftDataCore/InstantNetworkPathWaiting.swift`: a public wait for the network path (#669's monitor),
+  so the uploader skips attempts while the device is offline, as the socket does.
+- Tests: `InstantProgressiveMediaPlaylistTests.swift`, `InstantProgressiveMediaWriterTests.swift`,
+  `InstantProgressiveMediaReaderTests.swift` (InstantSwiftDataTests), and `Tests/InstantSwiftDataMediaTests/`.
+- Bookkeeping: `CHANGELOG.md`, `PROGRESS.md`, `docs/audits/commit-changelog.md` (append-only entries).
+
+#1007 and #1011 merged, #959 landed (VerificationNeeded); #1006 is still open but shares no file with this plan.
