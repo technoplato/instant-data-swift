@@ -69,6 +69,22 @@ actor InstantOutbox {
     mutations.removeAll { $0.id == id }
   }
 
+  /// The ids of the rows this actor holds: the claimed delivery window, which a server apply's patch refreshes (#932).
+  func residentMutationIDs() -> Set<String> {
+    Set(mutations.map(\.id))
+  }
+
+  /// A server apply's patch of the rows this actor holds, in one actor turn (#932): ``remove(id:)`` for each removed
+  /// row, then ``replaceIfPresent(_:)`` for each replacement.
+  func patch(removing removedIDs: [String], replacingPresent replacements: [PendingMutation]) {
+    for id in removedIDs {
+      remove(id: id)
+    }
+    for mutation in replacements {
+      replaceIfPresent(mutation)
+    }
+  }
+
   /// Removes one confirmed transport window with one actor hop. SQLite remains
   /// the durable authority; this compact actor must not turn a bounded bulk
   /// acknowledgement into one cross-actor call per mutation.
