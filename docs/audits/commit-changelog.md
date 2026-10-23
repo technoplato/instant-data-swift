@@ -4,6 +4,123 @@ Green (#1006): the session prune unloads a closed query's result into instant_un
 ## 2026-10-23 12:34:03 EDT — instant-data-swift `c3b2e6d1eeb83bf118a1ef23f4cc5d2b95d2d2a5`
 Red test (#1006): InstantStoredResultReloadTests, a closed and pruned query reopened with the server silent.
 
+## 2026-10-22 10:16:10 EDT — scribe `8347b98dc33fd9a664cb91e5dc60d845d989056a`
+Fix (#1003): build 114 compiles for the Watch: recordingFixedMoment (190a228ec, #991) moved out of the iOS-only RecordingView.swift into RecordingAudioVisualizer.swift, which the Watch app compiles; build 114 installed from this commit.
+
+## 2026-10-22 10:16:10 EDT — scribe `b0b283ea908e215567ed96c2cc0d68e1327ca2ae`
+Fix attempt (#1003): recordingFixedMoment as a plain EnvironmentKey; wrong diagnosis, superseded by 8347b98dc.
+
+## 2026-10-22 10:16:10 EDT — scribe `aff44c54a6b6db8384484e692cd68be4d7730a39`
+Cut (#1003): Scribe 0.1 (114); both What's New files say Build 114, #996 and #995 first.
+
+## 2026-10-22 08:43:57 EDT — scribe `e9a0354dec2d06b109c9376c3ec139342f8f7334`
+Change log for #990's AirPods verification (5a08dbeb7).
+
+## 2026-10-22 08:43:57 EDT — scribe `5a08dbeb7d3dbd21a24536ca4b5c685e3fa7d7f8`
+Audit and PROGRESS (#990): verified with AirPods too (the microphone moved to AirPods Pro mid-take, restart in 164 ms, words kept coming); #990 Verified.
+
+## 2026-10-22 08:32:16 EDT — scribe `49df9071ba6b58c2b4cccfe30ca4dcbd846a93c5`
+Change log for #990's iPhone verification (2a6c1c5fd); PROGRESS.
+
+## 2026-10-22 08:32:01 EDT — scribe `2a6c1c5fd34ed85b231b58c42f6fb166aa843ea7`
+Audit (#990): build 113 verified on the iPhone: the first line 2.5 s after Record (112: never), the launch compile at launch (59.1 s), the backlog of 184 writes drained in 42 s.
+
+## 2026-10-22 05:40:18 EDT — scribe `8aad8a75aaa8d575eb045a6faeae68274ba57ecc`
+Merge to main for build 114 (#991, #994, #893): the landscape screen gives the words two thirds of the width, "Words N s Behind" only when the recognizer answered nothing, the mirror's raw speaker ids.
+
+## 2026-10-22 05:39:56 EDT — scribe `d08b780a01883d4ae1d330c925f9a5f38ffff307`
+PROGRESS (#991, #994, #893): the final verification on main with #996.
+
+## 2026-10-22 05:39:36 EDT — scribe `190a228ec8517b1a5d38b9f1fa687a29fcfb0cd5`
+Snapshot tests (#991, #994) hold one moment: the voiceprint still; references recorded on main with #996.
+
+## 2026-10-22 04:54:37 EDT — scribe `f2301c2ec7ad30d091b00a1a7cd2520230c83280`
+Merge main (#996) into agent/claude/landscape-status-991: doc conflicts only.
+
+## 2026-10-22 04:53:33 EDT — scribe `14570b6155c84702b099035c3ddb91e52ac71c23`
+PROGRESS (#991, #994, #893): the landscape screen, Words N s Behind, the mirror's raw ids.
+
+## 2026-10-22 04:24:39 EDT — scribe `12a088e2a4e5d045ec6ecc3fcedc7cda8ea6a827`
+Snapshot tests of the live recording (#991, #994): iPhone 17 Pro both ways and iPad Pro 12.9-inch, default and AX5.
+
+## 2026-10-22 04:15:28 EDT — scribe `33cf54f2b96f9e4349342276abe05ad01f45c7b2`
+Merge main (#1001, #992, #993) into agent/claude/landscape-status-991.
+
+## 2026-10-22 04:02:17 EDT — scribe `394dccba6feedcc4fbf8bb7254ebda9bc813868d`
+Docs (#991, #994, #893): What's New for build 114 (next), ADR 0015 section 24's snapshots, the landscape audit.
+
+## 2026-10-22 00:53:04 EDT — scribe `ef313d4d82ac510cae7098b0f55de30463cd1b3d`
+The install skill runs the mirror's --drift before a build is called shipped (#893).
+
+## 2026-10-22 00:43:11 EDT — scribe `7dd63d91b48447f1dd99368717230c396312dd92`
+Merge main into agent/claude/landscape-status-991 (#990's watchdog test client kept with #994's).
+
+## 2026-10-22 00:41:44 EDT — scribe `4b634b9232193abdd6a25db3bb652dd4754bae7d`
+Merge agent/claude/landscape-status-994 (#994) into agent/claude/landscape-status-991.
+
+## 2026-10-22 00:41:34 EDT — scribe `0ffa57c2e13e68696e59a9289cdf5db0e6d96233`
+ADR 0015 section 24 (#991): the landscape column gives the words most of the width.
+
+## 2026-10-22 00:40:54 EDT — scribe `25d4a4313bce0eb6ad4f992ac1bbf7af6cd2410d`
+Docs (#994): ADR 0049 amendment A, ADR 0066's note, the Recording 272 audit.
+
+## 2026-10-22 00:40:48 EDT — scribe `6818404e0a75156df8632f8ec7208174ecc91a80`
+Green (#994): "Words N s Behind" only when the recognizer answered nothing, with how far behind.
+
+## 2026-10-21 23:32:59 EDT — scribe `4ae3d010c34fd37d64fcb69b7eb8357d0f06d4d7`
+Layout harness (#991): the list with the recording open, and two broadcast frames.
+
+## 2026-10-21 23:01:30 EDT — scribe `e71362385b0e5ad328756972ecb76344b435cc6e`
+Green (#991): the landscape column is 240 points, its bar in two rows, the words 68 percent.
+
+## 2026-10-21 22:38:22 EDT — scribe `caabc53871eff45ea3457846ff35e8e31b9f51bb`
+Replay (#994): Recording 272's notice under build 111's rule (7 false) and #994's (0).
+
+## 2026-10-21 22:36:31 EDT — scribe `68c4d4ee64a06dcd56107314e9af80764534985c`
+Red (#994): words behind only when the recognizer answered nothing, with the lag.
+
+## 2026-10-21 22:09:56 EDT — scribe `521cc304e7b3277e1633d47abfb30af308a6fe2f`
+Red (#991): iPhone landscape's metadata column gives the words two thirds of the width.
+
+## 2026-10-21 21:36:07 EDT — scribe `e712f1ed7d08b45be8d33c8f8969d96a484020e7`
+Green, verified (#855): a landscape frame is stored upright and wide, with a wide slot.
+
+## 2026-10-21 21:29:38 EDT — scribe `93603989515ee57e13f2446897922f8adc04b31d`
+Green (#893): --drift names an AGENTS.md that a mirror restart would rewrite.
+
+## 2026-10-21 21:28:52 EDT — scribe `f6f8fb2ff330a607cb6ccd38626024f48148eced`
+Red (#893): --drift names an AGENTS.md that a mirror restart would rewrite.
+
+## 2026-10-21 21:27:28 EDT — scribe `484312dcdf4e7845c4ae6d6f54c9ac2f20380704`
+Green (#893): install-launch-agent.sh --drift names every installed mirror file behind the checkout.
+
+## 2026-10-21 21:24:08 EDT — scribe `e32b0439cd1803d4a1da5fa380333581e1e4e333`
+Red (#893): --drift names an installed mirror file behind the checkout.
+
+## 2026-10-21 21:15:14 EDT — scribe `50b6f05ac21d5e1480cc9d4ae2fe1786212f81ab`
+Green before its build (#855): the encoder turns a landscape frame upright; the strip's wide slot.
+
+## 2026-10-21 21:15:14 EDT — scribe `0104c76c237e2d6c3c83fcf2026d82a6216dfaf9`
+Red (#855): a frame taken in landscape is stored upright and wide, with a wide slot.
+
+## 2026-10-22 02:38:59 EDT — scribe `2aa7d0a6eeec68f3c50b80d6a61e4e695a6cedce`
+Merge to main for build 114 (#1000): Scribe and Scribe Playback pin instant-data-swift exactly 1.9.12.
+
+## 2026-10-22 02:38:53 EDT — scribe `825fb27585b58160477728d198cc0b3b2376c7c0`
+Change log for the 1.9.12 pin (ccd1e4b91) and its What's New line (319a9d8ad); PROGRESS (#1000).
+
+## 2026-10-22 02:38:38 EDT — scribe `319a9d8ad9ec3f403d6c6fac17711c4fd0e5217a`
+What's New build 114 (#1000): what Scribe had started sending goes out within seconds of the next launch.
+
+## 2026-10-22 02:38:38 EDT — scribe `ccd1e4b91e8856f8fdd9ba3d75913fa54a9d4932`
+Pin instant-data-swift exactly 1.9.12 in Package.swift and swift-video-queue, both Package.resolved files, the installer's expected version and docs (#1000, #990).
+
+## 2026-10-22 02:30:45 EDT — scribe `f90e63a2dee862002ec26a980a2602036389ab77`
+Claim of WHATS-NEW.md for the 1.9.12 pin's line (#1000).
+
+## 2026-10-22 02:25:24 EDT — scribe `b313d0d19081ba54e75a55015abe9a94a17b99b1`
+Plan and claims for the 1.9.12 pin (pin-1.9.12, #1000).
+
 ## 2026-10-22 02:23:16 EDT — instant-data-swift `c53510d6ca4ae676616917245046e7aaa4d686ff`
 Release document for v1.9.12: a relaunch releases the delivery claims of a process that has ended (#1000, #990).
 
