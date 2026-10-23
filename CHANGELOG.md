@@ -117,6 +117,99 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
   > I want to optimize the performance of the application with its exact feature set.
 - **SpecStory:** unavailable — Headless claude -p session (tools/agent-run); no SpecStory capture for headless runs.
 
+## October 23rd, 2026 at 4:02:03 p.m. EDT — `1863fd56e583` Green (#1020): the shared live test sessions' count waits fail once their count stands still
+
+- **Implementation commit:** `1863fd56e583e5641b1312bc3719f52f428f2c4d`
+- **Change:** Green (#1020): the shared live test sessions' count waits fail once their count stands still
+- **Details:**
+  - The three actors wait through InstantLiveTestCountWaiters with the stall deadline; a cancelled parity wait still returns without an error. At load 23-29 the bound tests and the FailedMutationDiscard, ReactorParity, BoundedOutboxDelivery and OutboxHydration suites pass.
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantReactorParityLiveSupport.swift` — LiveReactorParityCountWaiters replaced
+  - `Tests/InstantSwiftDataCoreTests/InstantFailedMutationDiscardTests.swift` — DiscardReconnectLiveSession
+  - `Tests/InstantSwiftDataCoreTests/InstantLiveTestWaits.swift` — cancel
+- **User context (verbatim):**
+  > I want to find the issues at the root.
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run); no SpecStory capture for headless runs.
+
+## October 23rd, 2026 at 4:02:03 p.m. EDT — `8441e90458f2` Red (#1020): the shared live test sessions' count waits can also wait forever
+
+- **Implementation commit:** `8441e90458f21c9f15d555392b8b91c557070f8e`
+- **Change:** Red (#1020): the shared live test sessions' count waits can also wait forever
+- **Details:**
+  - Three tests for LiveReactorParitySession, LiveReactorParityTransport and DiscardReconnectLiveSession; the waits take a timeout and throw (109 call sites in 13 suites gain try) but ignore it, so all fail at the 5 s guard.
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantLiveTestWaitsTests.swift` — the parity bound tests and stalledWait
+  - `Tests/InstantSwiftDataCoreTests/InstantFailedMutationDiscardTests.swift` — the discard bound test
+  - `Tests/InstantSwiftDataCoreTests/InstantReactorParityLiveSupport.swift` — throwing signatures
+  - `Tests/InstantSwiftDataCoreTests/InstantReactorParityTests.swift` — try at call sites (as in 12 other suites)
+- **User context (verbatim):**
+  > I want to find the issues at the root.
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run); no SpecStory capture for headless runs.
+
+## October 23rd, 2026 at 4:02:02 p.m. EDT — `96257cffa4ad` Fix (#1020): the oversized-terminal live test owns its clock, so no acknowledgement deadline passes mid-test
+
+- **Implementation commit:** `96257cffa4adb82f929bcdb9eda1ccfd85ce8741`
+- **Change:** Fix (#1020): the oversized-terminal live test owns its clock, so no acknowledgement deadline passes mid-test
+- **Details:**
+  - Root cause: wall-clock ack deadlines (claim + 6 s x ordinal) passed under load (6 expired), the runtime replaced the socket and the one-connection scripted session could not reopen, so the test parked. Test-only; no runtime gap. The test uses InstantLiveLockedClock and a 60 s deadline sleep.
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantLiveTransportTests.swift` — the oversized test's configuration
+  - `Tests/InstantSwiftDataCoreTests/InstantLiveTestWaits.swift` — history line numbers
+- **User context (verbatim):**
+  > I want to find the issues at the root.
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run); no SpecStory capture for headless runs.
+
+## October 23rd, 2026 at 4:02:02 p.m. EDT — `006537dd284b` Green (#1020): a scripted wait fails after its count stands still for the bound, not after the bound
+
+- **Implementation commit:** `006537dd284b369af1818384dff84cebcbcd62ad`
+- **Change:** Green (#1020): a scripted wait fails after its count stands still for the bound, not after the bound
+- **Details:**
+  - Each waiter remembers the count at its last check; the deadline task re-checks every bound and fails only on no progress. Progressing-sender test passes in 3.8 s; InstantLiveTransportTests passes (113).
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantLiveTestWaits.swift` — stallDeadline and failIfStalled
+  - `Tests/InstantSwiftDataCoreTests/InstantLiveTransportTests.swift` — the scripted session's expire-if-stalled checks
+- **User context (verbatim):**
+  > I want to find the issues at the root.
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run); no SpecStory capture for headless runs.
+
+## October 23rd, 2026 at 4:02:01 p.m. EDT — `44e5f19ab334` Red (#1020): a scripted wait whose count keeps moving still fails once the whole wait outlasts its bound
+
+- **Implementation commit:** `44e5f19ab3345e5a2919ce6e99af369ec815e762`
+- **Change:** Red (#1020): a scripted wait whose count keeps moving still fails once the whole wait outlasts its bound
+- **Details:**
+  - Measured under the bundle's load: the runtime sent the oversized test's transacts seconds apart (45 in 27.4 s; gap median 168 ms, p90 2.4 s, max 3.6 s). A test sends 5 messages 750 ms apart under a 3 s bound; it fails at 3.0 s having seen 3.
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantLiveTransportTests.swift` — the progressing-sender test
+- **User context (verbatim):**
+  > I want to find the issues at the root.
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run); no SpecStory capture for headless runs.
+
+## October 23rd, 2026 at 4:02:01 p.m. EDT — `0974c6cd4686` Green (#1020): the scripted live session's waits fail at a deadline with what the session saw
+
+- **Implementation commit:** `0974c6cd46860576d7eeb1e16b26a252944259a7`
+- **Change:** Green (#1020): the scripted live session's waits fail at a deadline with what the session saw
+- **Details:**
+  - InstantLiveTestCountWaiters holds each wait with a deadline task; the waiter leaves the registry before it resumes, so it resumes once. Both bound tests pass in 0.2 s; InstantLiveTransportTests passes (112).
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantLiveTestWaits.swift` — InstantLiveTestCountWaiters
+  - `Tests/InstantSwiftDataCoreTests/InstantLiveTransportTests.swift` — InstantRuntimeScriptedLiveSession waits through it
+- **User context (verbatim):**
+  > I want to find the issues at the root.
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run); no SpecStory capture for headless runs.
+
+## October 23rd, 2026 at 4:02:00 p.m. EDT — `ed93cb6b91b3` Red (#1020): a scripted live wait that can never be satisfied parks the suite instead of failing
+
+- **Implementation commit:** `ed93cb6b91b3e5636ee303579b6b1e1d7500f8d3`
+- **Change:** Red (#1020): a scripted live wait that can never be satisfied parks the suite instead of failing
+- **Details:**
+  - Two tests wait for one more sent message or receive request than will come, with a 200 ms bound; the waits take a timeout and throw but ignore it, so both fail at their 5 s guard on the Mac mini.
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantLiveTransportTests.swift` — the two bound tests; the scripted waits take a timeout and throw; call sites gain try
+  - `Tests/InstantSwiftDataCoreTests/InstantLiveTestWaits.swift` — InstantLiveTestWaitTimedOut and the default bound
+- **User context (verbatim):**
+  > I want to find the issues at the root.
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run); no SpecStory capture for headless runs.
+
 ## October 23rd, 2026 at 3:46:10 p.m. EDT — `b52bea02e6f0` Document the v1.9.19 release: a page that selects fields materializes only the fields it reads (#1007)
 
 - **Implementation commit:** `b52bea02e6f09420fbd8a4253004a9da0e261c4a`

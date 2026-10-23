@@ -1,3 +1,29 @@
+## 2026-10-23 16:20:00 EDT — #1020: the live-transport test that waited forever under load (test-only, no release)
+
+- **Commits (main):** red `ed93cb6b`, green `0974c6cd` (the scripted session's waits fail at a deadline with what it
+  saw); red `44e5f19a`, green `006537dd` (the deadline measures a stall: 10 s with no new message); fix `96257cff` (the
+  oversized-terminal test owns its clock); red `8441e904`, green `1863fd56` (the parity session, parity transport and
+  discard session waits take the same stall bound; 109 call sites gain `try`); then this ledger commit.
+- **Root cause (measured, Mac mini, debug diagnostics, whole bundle):** the runtime sent the test's transacts seconds
+  apart under the bundle's load (45 sends in 27.4 s; gap median 168 ms, p90 2.4 s, max 3.6 s; alone, all 50 in about
+  3 ms). The scripted server answers only the target, so when its error arrived six successors' acknowledgement
+  deadlines (claim + 6 s x place in flight, wall clock) had passed (`ack-timeout-batch` expiredCount 6, i.e. 42-48 s
+  after the claim). The runtime replaced the socket, as designed; `InstantRuntimeScriptedLiveSession` serves one
+  connection and shares one abort flag, so both reopens failed with CancellationError (4.2 s apart), the runtime went
+  quiet, and the test parked in an unbounded wait at 0-4% CPU. A test timing assumption, not a runtime gap: every
+  claimed write was sent without waiting for anything else; the 51st is held only by the 50-per-window cap.
+- **Whole InstantSwiftDataCoreTests bundle, no --skip, mini at load 24-30 beside a looping `swift build -j 8`:**
+  baseline `d165589d` hung twice (stopped by hand at 16 and 15 min, the oversized test the only one unfinished); the
+  fixed tree `96257cff` finished in 468 s (1,358 tests; the oversized test passed in 26.6 s; 155 failing names are the
+  load-timing set other agents see, none from the new bound).
+  Main `1863fd56` (with the sibling waits and #932's newest greens), same setup at load 21-65: finished in 735 s
+  (1,361 tests; the oversized test passed in 52 s; 173 failing names under the heavier load; none from the new bound).
+- **Also found:** under load, four InstantLiveTransportTests fail their 250 ms wall-clock asserts
+  (connectTimeoutAborts..., boundedGracefulClose..., failedOpenAborts..., liveTimeoutDoesNotAwait...); other
+  unbounded barrier waits remain (e.g. `waitForCapture`, `waitUntilStarted` in InstantLiveTransportTests and the
+  `waitUntil...` actors listed on #1020).
+- **Next:** #932, #1006 and #1007 drop the `--skip`. No release: test-only.
+
 ## 2026-10-23 16:27:23 EDT — v1.9.21: a read from this device answers from the whole device store, at once (#1006); carries 1.9.20, 1.9.19 and 1.9.18
 
 - **Commits:** plan `85cc972f`; red `0e7abb57`, green `9984997d`, release document `db666f57`; then this ledger commit and the tag v1.9.21.

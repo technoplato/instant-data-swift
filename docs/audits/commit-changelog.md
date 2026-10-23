@@ -61,6 +61,27 @@ Red test (#1007): InstantLiveFrameDecodeTests, a frame decoded through JSONDecod
 ## 2026-10-23 16:10:00 EDT — realtime-voice `db43d8c00` and `ec7eab612`
 Scribe and Scribe Playback pinned instant-data-swift exactly 1.9.19 (#1007); changelog and PROGRESS.
 
+## 2026-10-23 15:58:02 EDT — instant-data-swift `1863fd56e583e5641b1312bc3719f52f428f2c4d`
+Green (#1020): LiveReactorParitySession, LiveReactorParityTransport and DiscardReconnectLiveSession waits fail after 10 s with no progress, naming what they saw; a cancelled parity wait still returns.
+
+## 2026-10-23 15:58:02 EDT — instant-data-swift `8441e90458f21c9f15d555392b8b91c557070f8e`
+Red (#1020): the shared parity and discard sessions' count waits could wait forever; three bound tests fail at their 5 s guard; 109 call sites gain try.
+
+## 2026-10-23 15:50:37 EDT — instant-data-swift `96257cffa4adb82f929bcdb9eda1ccfd85ce8741`
+Fix (#1020): the oversized-terminal live test owns its clock; under bundle load its wall-clock ack deadlines passed, the socket was replaced and the one-connection scripted session could not reopen, so it parked. Test-only, no runtime gap.
+
+## 2026-10-23 15:50:37 EDT — instant-data-swift `006537dd284b369af1818384dff84cebcbcd62ad`
+Green (#1020): a scripted wait fails after its count stands still for the bound, not after the bound (under load the runtime sent 45 transacts in 27.4 s).
+
+## 2026-10-23 15:50:37 EDT — instant-data-swift `44e5f19ab3345e5a2919ce6e99af369ec815e762`
+Red (#1020): a wait whose count keeps moving still failed once the whole wait outlasted its bound.
+
+## 2026-10-23 15:43:47 EDT — instant-data-swift `0974c6cd46860576d7eeb1e16b26a252944259a7`
+Green (#1020): InstantRuntimeScriptedLiveSession's waits fail at a deadline with what the session saw (InstantLiveTestCountWaiters).
+
+## 2026-10-23 15:43:47 EDT — instant-data-swift `ed93cb6b91b3e5636ee303579b6b1e1d7500f8d3`
+Red (#1020): a scripted live wait that can never be satisfied parked the whole InstantSwiftDataCoreTests bundle at 0% CPU instead of failing.
+
 ## 2026-10-23 15:53:26 EDT — scribe `b98d90473057bc09e59bc6940cbcafd6f5d700de`
 The untethered-telemetry audit (#1011): the gaps, each addition's cost, the landings for builds 116 and 117, what is left.
 
