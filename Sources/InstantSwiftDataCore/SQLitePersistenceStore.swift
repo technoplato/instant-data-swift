@@ -32,7 +32,7 @@
 // - 2026-10-23: a server apply's staging keeps no copy of each body as planned: both passes and the stage read the
 //   outbox's body, whose every rewrite bumps the revision each page checks against the plan (#932, the disk map's F1a).
 // - 2026-10-23: the statement cache keeps 256 statements instead of 64, room for a live write's whole cycle, which
-//   prepared every statement again on every write (#1007).
+//   prepared every statement again on every write; a reuse hashes its SQL once instead of five times (#1007).
 
 import Foundation
 import IssueReporting
@@ -18678,21 +18678,35 @@ struct SQLiteStatementCache {
   static let defaultCapacity = 256
   static let maximumParameterCount = 32
 
+  /// One SQL text's place in the cache. It stays in place while its statement is checked out, and the check-in reaches
+  /// it through the statement, so a reuse hashes the SQL once (#1007). Taking a statement out of a dictionary and
+  /// putting it back hashed the SQL five times, and each removal re-hashed the neighbors it shifted: SQL keys are
+  /// hundreds of characters long.
+  private final class Entry {
+    let sql: String
+    /// The statement waiting for reuse, or nil while it is checked out.
+    var idle: OpaquePointer?
+    var lastUse: UInt64 = 0
+    /// False once the entry has left the cache; a statement of it that comes back is finalized.
+    var isKept = true
+
+    init(sql: String) {
+      self.sql = sql
+    }
+  }
+
   let capacity: Int
   /// How many statements this cache has prepared.
   private(set) var preparedCount = 0
-  private var idle: [String: OpaquePointer] = [:]
-  private var lastUse: [String: UInt64] = [:]
-  private var checkedOut: [OpaquePointer: (sql: String, generation: Int, keeps: Bool)] = [:]
+  /// How many statements wait for reuse.
+  private(set) var idleCount = 0
+  private var entries: [String: Entry] = [:]
+  private var checkedOut: [OpaquePointer: (entry: Entry?, generation: Int)] = [:]
   private var generation = 0
   private var useClock: UInt64 = 0
 
   init(capacity: Int = defaultCapacity) {
     self.capacity = capacity
-  }
-
-  var idleCount: Int {
-    idle.count
   }
 
   /// A statement for `sql` on `connection`: an idle one, or a new one. Nil with SQLite's result code when the SQL does
@@ -18701,9 +18715,11 @@ struct SQLiteStatementCache {
     _ sql: String,
     on connection: OpaquePointer?
   ) -> (statement: OpaquePointer?, resultCode: Int32) {
-    if let statement = idle.removeValue(forKey: sql) {
-      lastUse[sql] = nil
-      checkedOut[statement] = (sql, generation, true)
+    let entry = entries[sql]
+    if let entry, let statement = entry.idle {
+      entry.idle = nil
+      idleCount -= 1
+      checkedOut[statement] = (entry, generation)
       return (statement, SQLITE_OK)
     }
     let mayKeep = !Self.isDDL(sql)
@@ -18721,18 +18737,29 @@ struct SQLiteStatementCache {
       sqlite3_finalize(statement)
       return (nil, resultCode)
     }
-    let keeps = mayKeep && Int(sqlite3_bind_parameter_count(statement)) <= Self.maximumParameterCount
-    checkedOut[statement] = (sql, generation, keeps)
+    var kept: Entry?
+    if mayKeep, Int(sqlite3_bind_parameter_count(statement)) <= Self.maximumParameterCount {
+      if let entry {
+        kept = entry
+      } else {
+        let created = Entry(sql: sql)
+        entries[sql] = created
+        kept = created
+      }
+    }
+    checkedOut[statement] = (kept, generation)
     return (statement, resultCode)
   }
 
-  /// Takes back a statement from ``checkOut(_:on:)``: reset, bindings cleared, kept for reuse when it may be.
+  /// Takes back a statement from ``checkOut(_:on:)``: reset, bindings cleared, kept for reuse when it may be. A nested
+  /// use's statement that comes back while the first one is already idle again is finalized.
   mutating func checkIn(_ statement: OpaquePointer?) {
     guard let statement else { return }
     guard let use = checkedOut.removeValue(forKey: statement),
-      use.keeps,
+      let entry = use.entry,
+      entry.isKept,
       use.generation == generation,
-      idle[use.sql] == nil
+      entry.idle == nil
     else {
       sqlite3_finalize(statement)
       return
@@ -18740,24 +18767,39 @@ struct SQLiteStatementCache {
     sqlite3_reset(statement)
     sqlite3_clear_bindings(statement)
     useClock &+= 1
-    idle[use.sql] = statement
-    lastUse[use.sql] = useClock
-    if idle.count > capacity,
-      let leastRecentlyUsed = lastUse.min(by: { $0.value < $1.value })?.key,
-      let evicted = idle.removeValue(forKey: leastRecentlyUsed)
-    {
-      lastUse[leastRecentlyUsed] = nil
-      sqlite3_finalize(evicted)
+    entry.idle = statement
+    entry.lastUse = useClock
+    idleCount += 1
+    if idleCount > capacity {
+      evictLeastRecentlyUsed()
     }
+  }
+
+  /// Finalizes the idle statement used longest ago, and its entry leaves the cache.
+  private mutating func evictLeastRecentlyUsed() {
+    var leastRecentlyUsed: Entry?
+    for entry in entries.values where entry.idle != nil {
+      if entry.lastUse < leastRecentlyUsed?.lastUse ?? .max {
+        leastRecentlyUsed = entry
+      }
+    }
+    guard let leastRecentlyUsed, let statement = leastRecentlyUsed.idle else { return }
+    sqlite3_finalize(statement)
+    leastRecentlyUsed.idle = nil
+    leastRecentlyUsed.isKept = false
+    idleCount -= 1
+    entries[leastRecentlyUsed.sql] = nil
   }
 
   /// Finalizes the statements waiting for reuse.
   mutating func finalizeIdle() {
-    for statement in idle.values {
-      sqlite3_finalize(statement)
+    for entry in entries.values {
+      if let statement = entry.idle {
+        sqlite3_finalize(statement)
+        entry.idle = nil
+      }
     }
-    idle.removeAll()
-    lastUse.removeAll()
+    idleCount = 0
   }
 
   /// Finalizes the statements waiting for reuse before their connection closes; a statement checked out now is
