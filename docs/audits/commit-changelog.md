@@ -1,3 +1,12 @@
+## 2026-10-23 13:30:16 EDT — instant-data-swift `038bc1e25f19c5f40d6757ce1e9f63ebfbd7c8fa`
+Release document for v1.9.14 (#959): an upload keeps no copy of its file; evictStoredFiles(ids:) removes copies kept before once storage's $files record has their size.
+
+## 2026-10-23 13:28:51 EDT — instant-data-swift `b8ad00760f82e318a779b17e0848579841f0ed74`
+Green (#959): uploadFile with storage keeps the record and no copy (upstream parity); reads of a record without a copy download by its stored name; evictStoredFiles(ids:) verifies each copy against $files by id and size before removing it.
+
+## 2026-10-23 13:08:14 EDT — instant-data-swift `eb314c342d59e923208d982c060d7be2ec2e621f`
+Red test (#959): InstantStoredFileUploadTests and InstantStoredFileEvictionTests, an upload kept a copy for good and nothing removed copies storage holds.
+
 ## 2026-10-23 13:25:26 EDT — scribe `5166c0e35becd422b844f982ae7cddcbe02924ff`
 Changelog (#1014): build 115 cut c02cb3fcd recorded in Scribe's CHANGELOG.md.
 

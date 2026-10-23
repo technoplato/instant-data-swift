@@ -10,6 +10,49 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## October 23rd, 2026 at 1:30:36 p.m. EDT — `038bc1e25f19` Document the v1.9.14 release: an upload keeps no copy of its file, and copies kept before go once storage holds them (#959)
+
+- **Implementation commit:** `038bc1e25f19c5f40d6757ce1e9f63ebfbd7c8fa`
+- **Change:** Document the v1.9.14 release (#959)
+- **Details:**
+  - Release document: an upload keeps no copy; evictStoredFiles(ids:) for copies kept before; upgrade notes (an uploaded record's localPath is empty); the checks that ran; not yet device-checked.
+- **Files:**
+  - `docs/releases/v1.9.14.md` — the release document
+- **User context (verbatim):**
+  > Make sure we're cleaning that up appropriately. I think that's probably a library issue.
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run); no SpecStory capture for headless runs.
+
+## October 23rd, 2026 at 1:30:36 p.m. EDT — `b8ad00760f82` Green: an upload keeps no copy of its file, and kept copies go once storage holds them (#959)
+
+- **Implementation commit:** `b8ad00760f82e318a779b17e0848579841f0ed74`
+- **Change:** Green: an upload keeps no copy of its file, and kept copies go once storage holds them (#959)
+- **Details:**
+  - uploadFile with storage saves the record only (saveUploadedFileRecord); reads and downloads of a record without a copy fetch it by its stored name; storageSnapshot counts held copies; evictStoredFiles(ids:) checks $files by id 100 at a time over the open connection, removes a copy whose server size matches, keeps the record (forgetStoredFileCopy), reports APFS private bytes freed; the local reader's storedFiles reads records alone. 18 stored-file tests pass; the whole package fails nothing the base does not (166 vs 178 names).
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — upload record, reads by stored name, evictStoredFiles, localStoredFiles
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — saveUploadedFileRecord, forgetStoredFileCopy, held-only snapshot and reads
+  - `Sources/InstantSwiftDataCore/InstantFileModels.swift` — InstantFileBlocks.privateByteCount (ATTR_CMNEXT_PRIVATESIZE)
+  - `Sources/InstantSwiftData/InstantSwiftData.swift` — client evictStoredFiles and the local reader's storedFiles
+- **User context (verbatim):**
+  > Make sure we're cleaning that up appropriately. I think that's probably a library issue.
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run); no SpecStory capture for headless runs.
+
+## October 23rd, 2026 at 1:30:35 p.m. EDT — `eb314c342d59` Test: an upload keeps no copy of its file, and kept copies go once storage holds them, red (#959)
+
+- **Implementation commit:** `eb314c342d59e923208d982c060d7be2ec2e621f`
+- **Change:** Red: an upload keeps no copy of its file, and kept copies go once storage holds them (#959)
+- **Details:**
+  - Red tests: an upload through storage leaves no file in the store and a record that is not downloaded; a read and a download of that record fetch it by its stored name; the snapshot counts held copies only; evictStoredFiles(ids:) evicts a copy only when its $files record (by id, over the open connection) has its size, keeps the record, keeps the rest with a reason, and throws offline. 5 issues on the mini.
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantStoredFileUploadTests.swift` — an upload keeps the record and no copy
+  - `Tests/InstantSwiftDataCoreTests/InstantStoredFileEvictionTests.swift` — eviction by $files size, offline, and without storage
+  - `Tests/InstantSwiftDataCoreTests/InstantStoredFileDownloadTests.swift` — an uploaded file downloads by its stored name
+  - `Sources/InstantSwiftDataCore/InstantFileModels.swift` — InstantStoredFileEviction, declared so the red compiles
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — stub evictStoredFiles and localStoredFiles
+- **User context (verbatim):**
+  > Make sure we're cleaning that up appropriately. I think that's probably a library issue.
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run); no SpecStory capture for headless runs.
+
 ## October 23rd, 2026 at 12:59:20 p.m. EDT — `a3ecdefabc88` Document the v1.9.13 release: a gone row no longer refreshes every observer, link sets sort without building key strings per comparison (#1007), and a closed query's stored result answers its reopening (#1006)
 
 - **Implementation commit:** `a3ecdefabc88507d784b17a592270d785b7acb61`

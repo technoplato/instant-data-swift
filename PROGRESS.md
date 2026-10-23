@@ -1,3 +1,15 @@
+## 2026-10-23 13:31:00 EDT — v1.9.14: an upload keeps no copy of its file, and copies kept before go once storage holds them (#959)
+
+- **Why:** on one device the file store held a copy of every file the consuming app uploaded: 3,754 files, 25.9 GB of
+  logical size, 10.8 GB of real blocks (chunks written only to be sent, whose clone in the store became the only holder
+  of their blocks). Upstream's `StorageAPI.uploadFile` keeps nothing.
+- **Commits on main (rebased on d03ede6e):** red `eb314c34`, green `b8ad0076`, release document `038bc1e2`; then this
+  ledger commit, and the tag v1.9.14 on it.
+- **Checks (Mac mini M4, Xcode 27 beta):** the 18 stored-file tests pass, red first with 5 issues; the whole package
+  fails nothing the untouched base does not (166 vs 178 failing names, all environment or load).
+- **Next:** the consuming app pins exactly 1.9.14 and runs its launch cleanup through `evictStoredFiles(ids:)`; on a
+  device, the gigabytes freed and the writes per recording before and after (#959).
+
 ## 2026-10-23 12:59:07 EDT — v1.9.13: a gone row no longer refreshes every observer, link sets sort without building key strings per comparison (#1007), and a closed query's stored result answers its reopening (#1006)
 
 - **Commits:** #1007 red `f55a0cf8`, green `47333e5e`, red `3de06c52`, green `9e813943`; #1006 red `c3b2e6d1`, green
