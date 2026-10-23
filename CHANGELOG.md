@@ -10,6 +10,23 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## October 23rd, 2026 at 6:04:04 p.m. EDT — `f82fb15aa7e5` Bench: the codec lab behind ADR 0021 measures size, quality, segmenting and live playback of compressed speech (#1012)
+
+- **Implementation commit:** `f82fb15aa7e566907a261337dfcc086de759dad2`
+- **Change:** Bench: the codec lab behind ADR 0021 measures size, quality, segmenting and live playback of compressed speech (#1012)
+- **Details:**
+  - A separate package (no library dependency): AudioToolbox's AAC-LC, HE-AAC and Opus at speech rates (size, CPU, wideband PESQ), AVAssetWriter's fMP4 HLS segments, AVPlayer following a growing playlist (pauses, resource-loader playlist with redirects), browser playback; results/ holds the 2026-10-23 Mac runs without paths or audio.
+- **Files:**
+  - `benchmarks/AudioCodecLab/Sources/AudioCodecLab/AudioCodecLab.swift` — encoders, decoders, the HLS segmenter and the probe
+  - `benchmarks/AudioCodecLab/Sources/audio-codec-lab/main.swift` — the command: probe, encode, hls, play (loader, redirect, recover), check
+  - `benchmarks/AudioCodecLab/scripts/run_matrix.sh` — the codec matrix and its PESQ scoring
+  - `benchmarks/AudioCodecLab/scripts/live_hls_server.py` — a live EVENT playlist that grows in real time, with pauses
+  - `benchmarks/AudioCodecLab/README.md` — how to rerun each measurement
+  - `benchmarks/AudioCodecLab/results/2026-10-23-mac-codecs.jsonl` — sizes and PESQ, without paths
+- **User context (verbatim):**
+  > Is there a more compressed file format that would be useful there?
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run); no SpecStory capture for headless runs.
+
 ## October 23rd, 2026 at 6:03:50 p.m. EDT — `b112a2b7253b` ADR 0021 (proposed): progressive media travels as AAC-LC fragmented MP4 segments in $files, listed by rows, played as HLS (#1012)
 
 - **Implementation commit:** `b112a2b7253bec6b77c037081935b6246d6dda63`
