@@ -10,6 +10,48 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## October 23rd, 2026 at 4:27:09 p.m. EDT — `db666f577fb3` Document the v1.9.21 release: a read from this device answers from the whole device store, at once (#1006)
+
+- **Implementation commit:** `db666f577fb33de71b08b1fbb155c2b8312dfa11`
+- **Change:** Document the v1.9.21 release: a read from this device answers from the whole device store, at once (#1006)
+- **Files:**
+  - `docs/releases/v1.9.21.md` — the release document
+- **User context (verbatim):**
+  > I don't want to slow anything down. I want to find the issues at the root.
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run); no SpecStory capture for headless runs.
+
+## October 23rd, 2026 at 4:27:08 p.m. EDT — `9984997d61b1` Green (#1006): local reads answer from the whole device store, without the operation gate, beside the writer
+
+- **Implementation commit:** `9984997d61b106d2ca45fef35ffba4943e03b854`
+- **Change:** Green (#1006): local reads answer from the whole device store, without the operation gate, beside the writer
+- **Details:**
+  - The local reader's one-shot read answers from memory plus the entities a lookup attribute selects on disk, through a temporary TripleIndexes view, with no operation gate and no query-cache write; limited reads rank by filter and order facts first.
+  - SQLiteReadConnection: a read-only WAL connection on its own actor for local reads and every hydration's deferred values, falling back to the persistence actor.
+  - AsyncSerialGate.markHolderWrites: the server apply and local writes name what they write until their store commit; a hydration waits only for a holder that may write what it read. One partial index instant_triples_lookup for the policy's attributes, ensured at bootstrap.
+  - Measured (Mac mini, debug): 986 lines on disk after a relaunch: 2 of 986 before, all in 67-89 ms after; 76-120 ms while a server apply holds the gate; 6-17 ms beside a persistence actor held 3 s.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — queryLocally, hydration, the gate check, the writers' marks
+  - `Sources/InstantSwiftDataCore/SQLiteReadConnection.swift` — the read connection
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — the lookup index and the read connection's home
+  - `Sources/InstantSwiftDataCore/AsyncSerialGate.swift` — the write annotation
+- **User context (verbatim):**
+  > I don't want to slow anything down. I want to find the issues at the root.
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run); no SpecStory capture for headless runs.
+
+## October 23rd, 2026 at 4:27:08 p.m. EDT — `0e7abb575b0d` Red (#1006): a local read finds what this device keeps on disk, and answers while the gate is held or the persistence actor is busy
+
+- **Implementation commit:** `0e7abb575b0d81ea296902941a83eede5fb94f3b`
+- **Change:** Red (#1006): a local read finds what this device keeps on disk, and answers while the gate is held or the persistence actor is busy
+- **Details:**
+  - InstantLocalReadTests, five tests on the real store: a relaunched store's local read returned 2 of 300 lines (memory only); order and limit missed the disk lines; a local read waited for a gate another caller held, and for a server apply holding it before its commit; a read got no answer within 1 s beside a persistence actor held 3 s.
+  - Behavior-free seams: InstantLocalLookupPolicy, InstantRuntimeConfiguration.localLookup, SQLitePersistenceStore.occupyForTesting.
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantLocalReadTests.swift` — the red tests
+  - `Sources/InstantSwiftDataCore/InstantLocalLookupPolicy.swift` — the policy type, unused until the green
+- **User context (verbatim):**
+  > I don't want to slow anything down. I want to find the issues at the root.
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run); no SpecStory capture for headless runs.
+
 ## October 23rd, 2026 at 4:16:37 p.m. EDT — `e5211695cd84` Document the v1.9.20 release: the energy meter counts each committed server apply under the path it took (#1011)
 
 - **Implementation commit:** `e5211695cd84a8e60f815df9b65e8826372e8157`

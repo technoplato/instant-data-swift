@@ -1,3 +1,13 @@
+## 2026-10-23 16:27:23 EDT — v1.9.21: a read from this device answers from the whole device store, at once (#1006); carries 1.9.20, 1.9.19 and 1.9.18
+
+- **Commits:** plan `85cc972f`; red `0e7abb57`, green `9984997d`, release document `db666f57`; then this ledger commit and the tag v1.9.21.
+- **Checks:** `InstantLocalReadTests` red then green (6 tests: 986 lines on disk after a relaunch read in 67-89 ms, 76-120 ms
+  while a server apply holds the gate; before, 2 of 986 and no answer within 1 s); 124 tests in 14 related suites pass on
+  09edde18 plus these commits; the whole core bundle against its base found three faults, fixed, and 27 load-only
+  failures that pass alone.
+- **Next:** the consuming app pins exactly 1.9.21 and names its lookup attributes; on a device, a long recording opened
+  after a relaunch shows every line at once (`recording.query.detail.transcript-projected`).
+
 ## 2026-10-23 16:16:37 EDT — v1.9.20: the energy meter counts each committed server apply under the path it took (#1011); carries 1.9.19, 1.9.18 and #1007's frame parser
 
 - **Commits:** red `09468ed3`, green `a07afa5f`, release document `e5211695`; then this ledger commit and the tag v1.9.20.

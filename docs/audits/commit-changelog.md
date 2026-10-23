@@ -1,3 +1,12 @@
+## 2026-10-23 16:27:23 EDT — instant-data-swift `db666f577fb33de71b08b1fbb155c2b8312dfa11`
+Release document v1.9.21 (#1006): a read from this device answers from the whole device store, at once.
+
+## 2026-10-23 16:27:23 EDT — instant-data-swift `9984997d61b106d2ca45fef35ffba4943e03b854`
+Green (#1006): the local reader's one-shot read answers from memory plus what a lookup attribute finds on disk, with no operation gate and no query-cache write; deferred values read on a read-only WAL connection; gate holders name their writes, so a hydration waits only for one that may write what it read. 986 lines on disk after a relaunch: 2 before, all in 67-89 ms after.
+
+## 2026-10-23 16:27:23 EDT — instant-data-swift `0e7abb575b0d81ea296902941a83eede5fb94f3b`
+Red (#1006): InstantLocalReadTests, a relaunched store's local read finds 2 of 300 lines, and local reads wait for the gate and for a busy persistence actor.
+
 ## 2026-10-23 16:16:37 EDT — instant-data-swift `e5211695cd84a8e60f815df9b65e8826372e8157`
 Release document for v1.9.20 (#1011): InstantEnergySnapshot.serverApplyPaths; carries #1007's frame parser.
 
