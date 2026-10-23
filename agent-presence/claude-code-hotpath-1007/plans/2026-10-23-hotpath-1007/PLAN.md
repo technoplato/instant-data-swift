@@ -12,9 +12,11 @@
 1. A verified page of a list with includes skips a change it cannot show (a heartbeat, a line or an attachment of a
    recording another page shows), and the placement check behind every skip reads only the fields its plan names
    instead of the entity's whole snapshot (a recording's whole snapshot materializes thousands of refs). Release 1.9.17.
-2. The live-query prune (#654) stops copying the whole store on every call, and removes a closed query's orphaned facts
-   from the hot store and SQLite by identity instead of rewriting and re-indexing the whole store (which un-verifies
-   every observer, so the next publication re-materializes them all).
+2. A page that selects fields materializes only what it selects, filters, orders and includes (v1.9.19).
+3. A received frame is parsed straight into InstantLiveJSONValue, with JSONDecoder answering what the parser declines
+   (F4, on main for the next tag).
+4. Later: the live-query prune's whole-store copy and rebuild (#654; its duty cycle on a device is small), and the
+   prepare path's whole-index copy (N7: a write's prepare copies every index it touches, so it grows with the store).
 
 ## Steps
 
@@ -27,7 +29,10 @@
 Sources/InstantSwiftDataCore/InstantStore.swift (refreshDecision only), Sources/InstantSwiftDataCore/TripleIndexes.swift
 (hasLink, resultSetMembership, and read helpers for the prune), Sources/InstantSwiftDataCore/InstantRuntime.swift
 (pruneLiveQueryResults and performPruneLiveQueryResults only), Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift
-(pruneLiveQueryResults and its helpers only), Tests/InstantSwiftDataCoreTests/InstantIncludePlanSkipTests.swift,
+(pruneLiveQueryResults and its helpers only), Sources/InstantSwiftDataCore/InstantLiveTransport.swift (decodedFrame only),
+Sources/InstantSwiftDataCore/InstantLiveJSONParser.swift and InstantLiveFrameDecoding.swift (new),
+Tests/InstantSwiftDataCoreTests/InstantIncludePlanSkipTests.swift, InstantSelectedFieldsMaterializationTests.swift,
+InstantLiveFrameDecodeTests.swift,
 Tests/InstantSwiftDataCoreTests/InstantResultSetMembershipCostTests.swift, Tests/InstantSwiftDataCoreTests/ (new prune
 tests), CHANGELOG.md, PROGRESS.md, docs/audits/commit-changelog.md, docs/releases/ (the release documents).
 
