@@ -23,7 +23,9 @@ struct InstantPrepareCopyCostTests {
     let largeCost = try await Self.cost(of: transaction, in: large)
     let ratio = Double(largeCost) / Double(max(smallCost, 1))
     print("prepare: \(smallCost / 1_000) us into 2,000 lines, \(largeCost / 1_000) us into 20,000 (ratio \(ratio))")
-    #expect(ratio < 3, "preparing into the larger store cost \(ratio) times as much")
+    // Copying whole maps measured 9.7; the shards about 2 alone and 3.8 while a whole bundle runs beside it (#1021), so
+    // the bound leaves room for that load and still fails on whole-map copies.
+    #expect(ratio < 5, "preparing into the larger store cost \(ratio) times as much")
   }
 
   // MARK: - Helpers

@@ -31,6 +31,12 @@
 //   sets the overlay flag only when it changes: each wrote index pages on every write for nothing (#1007).
 // - 2026-10-23: a server apply's staging keeps no copy of each body as planned: both passes and the stage read the
 //   outbox's body, whose every rewrite bumps the revision each page checks against the plan (#932, the disk map's F1a).
+// - 2026-10-23: the statement cache keeps 256 statements instead of 64, room for a live write's whole cycle, which
+//   prepared every statement again on every write; a reuse hashes its SQL once instead of five times (#1007).
+// - 2026-10-23: a fact's value text and its own text are written by InstantStoredJSON, the value once, as JSONEncoder
+//   writes them (#1007).
+// - 2026-10-23: a save and an acknowledgement fingerprint a write's optimistic effect once each; the save asked whether
+//   there was one before computing the one it stores, and the acknowledgement computed it for two checks (#1007).
 
 import Foundation
 import IssueReporting
@@ -1029,6 +1035,7 @@ public actor SQLitePersistenceStore {
   /// Test-visible count of durable outbox JSON bodies decoded by this actor.
   /// This pins acknowledgement and delivery complexity to their selected rows.
   private var decodedOutboxBodyCount = 0
+  private var optimisticEffectFingerprintCount = 0
   private var decodedOutboxBodyByteCount = 0
   private var materializedOutboxBodyCount = 0
   private var materializedOutboxBodyByteCount = 0
@@ -1155,6 +1162,18 @@ public actor SQLitePersistenceStore {
 
   package func currentDecodedOutboxBodyCount() -> Int {
     decodedOutboxBodyCount
+  }
+
+  /// How many optimistic-effect fingerprints this store has computed (#1007).
+  package func optimisticEffectFingerprintCountForTesting() -> Int {
+    optimisticEffectFingerprintCount
+  }
+
+  /// `mutation`'s optimistic-effect receipt fingerprint, counted (#1007). Each one encodes the mutation's transaction and
+  /// rollback with `JSONEncoder` and hashes the text.
+  private func optimisticEffectFingerprint(of mutation: PendingMutation) throws -> String? {
+    optimisticEffectFingerprintCount += 1
+    return try mutation.optimisticEffectReceiptFingerprint()
   }
 
   package func resetTerminalFailureMetadataMetricsForTesting() {
@@ -4192,7 +4211,7 @@ public actor SQLitePersistenceStore {
     _ row: InstantApplicationMigrationOutboxRow
   ) throws -> Bool {
     guard let durableReceipt = row.optimisticEffectReceiptFingerprint,
-      let computedReceipt = try row.mutation.optimisticEffectReceiptFingerprint()
+      let computedReceipt = try optimisticEffectFingerprint(of: row.mutation)
     else { return false }
     guard durableReceipt == computedReceipt else { return false }
     return switch row.mutation.optimisticOverlayState {
@@ -5711,7 +5730,7 @@ public actor SQLitePersistenceStore {
                 "Mutation '\(mutation.id)' has a \(lifecycleByteCount)-byte compact lifecycle body, beyond the 8 MiB resident-patch limit."
             )
           }
-          guard let receiptFingerprint = try mutation.optimisticEffectReceiptFingerprint() else {
+          guard let receiptFingerprint = try optimisticEffectFingerprint(of: mutation) else {
             throw persistenceError(
               operation: "stage bounded server apply",
               message:
@@ -8204,7 +8223,7 @@ public actor SQLitePersistenceStore {
         observationID: lifecycleID,
         event: lifecycleEvent(
           for: lifecycleMutation,
-          hasServerAcceptance: try hasStoredServerAcceptance(mutation, in: row)
+          hasServerAcceptance: hasStoredServerAcceptance(in: row, hasPreparedReceipt: hasPreparedReceipt)
         ) ?? .waiting
       )
     }
@@ -8350,7 +8369,7 @@ public actor SQLitePersistenceStore {
           }
           guard durableDeliveryState(
             for: mutation,
-            hasServerAcceptance: try hasStoredServerAcceptance(mutation, in: row)
+            hasServerAcceptance: hasStoredServerAcceptance(in: row, hasPreparedReceipt: true)
           ) == .needsDelivery else {
             continue
           }
@@ -8459,8 +8478,7 @@ public actor SQLitePersistenceStore {
           selectedMutation.status == .pending,
           let row = try loadOutboxBodyRowWithoutTransaction(id: result.mutationID)
         else { continue }
-        let selectedReceiptFingerprint = try selectedMutation
-          .optimisticEffectReceiptFingerprint()
+        let selectedReceiptFingerprint = try optimisticEffectFingerprint(of: selectedMutation)
         var mutation: PendingMutation
         if selectedReceiptFingerprint != nil,
           selectedReceiptFingerprint == row.optimisticEffectReceiptFingerprint
@@ -10169,15 +10187,18 @@ public actor SQLitePersistenceStore {
         )
       }
 
-      let hasPreparedMaterializedEffect = try hasStoredPreparedOptimisticEffectReceipt(
+      // One fingerprint for the acknowledgement's three checks: each encodes the whole transaction (#1007).
+      let effectFingerprint = try optimisticEffectFingerprint(of: mutation)
+      let hasPreparedMaterializedEffect = hasStoredPreparedOptimisticEffectReceipt(
         mutation,
-        in: row
+        in: row,
+        fingerprint: effectFingerprint
       )
-      let alreadyAccepted = try hasStoredServerAcceptance(mutation, in: row)
+      let alreadyAccepted = hasStoredServerAcceptance(in: row, hasPreparedReceipt: hasPreparedMaterializedEffect)
       if !alreadyAccepted {
         guard let claimPayloadFingerprint = row.deliveryClaimPayloadFingerprint,
           let claimToken,
-          let materializedEffectFingerprint = try mutation.optimisticEffectReceiptFingerprint()
+          let materializedEffectFingerprint = effectFingerprint
         else {
           return InstantOutboxRowAcceptance(
             mutation: mutation,
@@ -13152,7 +13173,8 @@ public actor SQLitePersistenceStore {
     expectedOutboxRevision: Int64
   ) throws -> Bool {
     let energy = InstantEnergyMeter.begin(.localSave); defer { energy.end() }
-    guard try pendingMutation.optimisticEffectReceiptFingerprint() != nil else {
+    // The fingerprint itself is computed once, where the receipt is stored (#1007).
+    guard pendingMutation.hasOptimisticEffectReceiptFingerprint else {
       throw persistenceError(
         operation: "persist local mutation",
         message:
@@ -13950,7 +13972,7 @@ public actor SQLitePersistenceStore {
       mutation.optimisticEffectReceiptVersion =
         PendingMutation.currentOptimisticEffectReceiptVersion
 
-      guard let fingerprint = try? mutation.optimisticEffectReceiptFingerprint(),
+      guard let fingerprint = try? optimisticEffectFingerprint(of: mutation),
         let effectFootprint = InstantOptimisticEffectFootprint.normalized(for: mutation)
       else { continue }
       let encodedBody = try encode(mutation)
@@ -14712,7 +14734,7 @@ public actor SQLitePersistenceStore {
     originalJSON: String,
     expectedAttributeRevision: Int64
   ) throws {
-    guard let receiptFingerprint = try mutation.optimisticEffectReceiptFingerprint() else {
+    guard let receiptFingerprint = try optimisticEffectFingerprint(of: mutation) else {
       throw persistenceError(
         operation: "retry automatic failed-mutation window",
         message:
@@ -15740,7 +15762,7 @@ public actor SQLitePersistenceStore {
   private func hasStoredPreparedOptimisticEffectReceiptWithoutTransaction(
     _ mutation: PendingMutation
   ) throws -> Bool {
-    guard let candidate = try mutation.optimisticEffectReceiptFingerprint() else {
+    guard let candidate = try optimisticEffectFingerprint(of: mutation) else {
       return false
     }
     return try storedOptimisticEffectReceiptFingerprintWithoutTransaction(id: mutation.id)
@@ -15751,10 +15773,22 @@ public actor SQLitePersistenceStore {
     _ mutation: PendingMutation,
     in row: InstantOutboxBodyRow
   ) throws -> Bool {
-    guard row.mutationID == mutation.id,
-      let candidate = try mutation.optimisticEffectReceiptFingerprint()
-    else { return false }
-    return row.optimisticEffectReceiptFingerprint == candidate
+    guard row.mutationID == mutation.id else { return false }
+    return hasStoredPreparedOptimisticEffectReceipt(
+      mutation,
+      in: row,
+      fingerprint: try optimisticEffectFingerprint(of: mutation)
+    )
+  }
+
+  /// ``hasStoredPreparedOptimisticEffectReceipt(_:in:)`` with the mutation's fingerprint already computed (#1007).
+  private func hasStoredPreparedOptimisticEffectReceipt(
+    _ mutation: PendingMutation,
+    in row: InstantOutboxBodyRow,
+    fingerprint: String?
+  ) -> Bool {
+    guard row.mutationID == mutation.id, let fingerprint else { return false }
+    return row.optimisticEffectReceiptFingerprint == fingerprint
   }
 
   private func hasStoredServerAcceptance(
@@ -15763,6 +15797,12 @@ public actor SQLitePersistenceStore {
   ) throws -> Bool {
     guard row.serverAcceptancePayloadFingerprint != nil else { return false }
     return try hasStoredPreparedOptimisticEffectReceipt(mutation, in: row)
+  }
+
+  /// ``hasStoredServerAcceptance(_:in:)`` once the receipt check has run for the same mutation and row (#1007): an
+  /// acceptance counts only over a prepared receipt, and the receipt check is the part that fingerprints.
+  private func hasStoredServerAcceptance(in row: InstantOutboxBodyRow, hasPreparedReceipt: Bool) -> Bool {
+    row.serverAcceptancePayloadFingerprint != nil && hasPreparedReceipt
   }
 
   private func durableDeliveryState(
@@ -15869,7 +15909,7 @@ public actor SQLitePersistenceStore {
       false
     }
     let hasAcceptedWireIntent = if let row {
-      try hasStoredServerAcceptance(mutation, in: row)
+      hasStoredServerAcceptance(in: row, hasPreparedReceipt: hasPreparedReceipt)
     } else {
       false
     }
@@ -16954,6 +16994,8 @@ public actor SQLitePersistenceStore {
         [.text(triple.entityID), .text(triple.attributeID)]
       )
     }
+    // The value's text and the fact's, the value written once (#1007).
+    let texts = try InstantStoredJSON.storedTexts(triple, using: encoder)
     try execute(
       """
       INSERT OR REPLACE INTO instant_triples
@@ -16963,10 +17005,10 @@ public actor SQLitePersistenceStore {
       [
         .text(triple.entityID),
         .text(triple.attributeID),
-        .text(try encode(triple.value)),
+        .text(texts.value),
         .text(triple.txID),
         .int(triple.txTime.milliseconds),
-        .text(try encode(triple)),
+        .text(texts.triple),
       ]
     )
   }
@@ -17244,7 +17286,7 @@ public actor SQLitePersistenceStore {
     failureAttributeRevision: Int64? = nil,
     receiptWriteAuthority: InstantOptimisticEffectReceiptWriteAuthority
   ) throws {
-    let candidateFingerprint = try mutation.optimisticEffectReceiptFingerprint()
+    let candidateFingerprint = try optimisticEffectFingerprint(of: mutation)
     let candidateWireFingerprint = try mutation.mutationWireIntentFingerprint()
     let durableMutation = mutation
     var statement: OpaquePointer?
@@ -17663,7 +17705,7 @@ public actor SQLitePersistenceStore {
       mutation,
       hasStoredReceiptFingerprint: hasPreparedReceipt
     )
-    let hasServerAcceptance = try hasStoredServerAcceptance(mutation, in: row)
+    let hasServerAcceptance = hasStoredServerAcceptance(in: row, hasPreparedReceipt: hasPreparedReceipt)
     guard lifecycleEvent(
       for: lifecycle,
       hasServerAcceptance: hasServerAcceptance
@@ -18486,6 +18528,16 @@ public actor SQLitePersistenceStore {
     }
   }
 
+  /// A value's stored text, as `JSONEncoder` writes it (#1007): see ``InstantStoredJSON``.
+  private func encode(_ value: InstantValue) throws -> String {
+    try InstantStoredJSON.stored(value, using: encoder)
+  }
+
+  /// A fact's stored text, as `JSONEncoder` writes it (#1007): see ``InstantStoredJSON``.
+  private func encode(_ triple: InstantTriple) throws -> String {
+    try InstantStoredJSON.stored(triple, using: encoder)
+  }
+
   private func encode<Value: Encodable>(_ value: Value) throws -> String {
     let data = try encoder.encode(value)
     guard let string = String(data: data, encoding: .utf8) else {
@@ -18670,24 +18722,41 @@ private final class SQLiteConnection: @unchecked Sendable {
 /// checked out then is finalized when it is checked in. An unmerged #403 branch (484c4f35) prepared statements once in
 /// the same way.
 struct SQLiteStatementCache {
-  static let defaultCapacity = 64
+  /// Room for a live write's whole cycle (#1007). Its save, delivery claim, acknowledgement and the apply of the server's
+  /// answer run about 150 distinct statements (956 KB of statement memory in the tests' write cycle), and with 64 kept
+  /// the least recently used one was always the next one needed, so every statement was prepared again on every write.
+  static let defaultCapacity = 256
   static let maximumParameterCount = 32
+
+  /// One SQL text's place in the cache. It stays in place while its statement is checked out, and the check-in reaches
+  /// it through the statement, so a reuse hashes the SQL once (#1007). Taking a statement out of a dictionary and
+  /// putting it back hashed the SQL five times, and each removal re-hashed the neighbors it shifted: SQL keys are
+  /// hundreds of characters long.
+  private final class Entry {
+    let sql: String
+    /// The statement waiting for reuse, or nil while it is checked out.
+    var idle: OpaquePointer?
+    var lastUse: UInt64 = 0
+    /// False once the entry has left the cache; a statement of it that comes back is finalized.
+    var isKept = true
+
+    init(sql: String) {
+      self.sql = sql
+    }
+  }
 
   let capacity: Int
   /// How many statements this cache has prepared.
   private(set) var preparedCount = 0
-  private var idle: [String: OpaquePointer] = [:]
-  private var lastUse: [String: UInt64] = [:]
-  private var checkedOut: [OpaquePointer: (sql: String, generation: Int, keeps: Bool)] = [:]
+  /// How many statements wait for reuse.
+  private(set) var idleCount = 0
+  private var entries: [String: Entry] = [:]
+  private var checkedOut: [OpaquePointer: (entry: Entry?, generation: Int)] = [:]
   private var generation = 0
   private var useClock: UInt64 = 0
 
   init(capacity: Int = defaultCapacity) {
     self.capacity = capacity
-  }
-
-  var idleCount: Int {
-    idle.count
   }
 
   /// A statement for `sql` on `connection`: an idle one, or a new one. Nil with SQLite's result code when the SQL does
@@ -18696,9 +18765,11 @@ struct SQLiteStatementCache {
     _ sql: String,
     on connection: OpaquePointer?
   ) -> (statement: OpaquePointer?, resultCode: Int32) {
-    if let statement = idle.removeValue(forKey: sql) {
-      lastUse[sql] = nil
-      checkedOut[statement] = (sql, generation, true)
+    let entry = entries[sql]
+    if let entry, let statement = entry.idle {
+      entry.idle = nil
+      idleCount -= 1
+      checkedOut[statement] = (entry, generation)
       return (statement, SQLITE_OK)
     }
     let mayKeep = !Self.isDDL(sql)
@@ -18716,18 +18787,29 @@ struct SQLiteStatementCache {
       sqlite3_finalize(statement)
       return (nil, resultCode)
     }
-    let keeps = mayKeep && Int(sqlite3_bind_parameter_count(statement)) <= Self.maximumParameterCount
-    checkedOut[statement] = (sql, generation, keeps)
+    var kept: Entry?
+    if mayKeep, Int(sqlite3_bind_parameter_count(statement)) <= Self.maximumParameterCount {
+      if let entry {
+        kept = entry
+      } else {
+        let created = Entry(sql: sql)
+        entries[sql] = created
+        kept = created
+      }
+    }
+    checkedOut[statement] = (kept, generation)
     return (statement, resultCode)
   }
 
-  /// Takes back a statement from ``checkOut(_:on:)``: reset, bindings cleared, kept for reuse when it may be.
+  /// Takes back a statement from ``checkOut(_:on:)``: reset, bindings cleared, kept for reuse when it may be. A nested
+  /// use's statement that comes back while the first one is already idle again is finalized.
   mutating func checkIn(_ statement: OpaquePointer?) {
     guard let statement else { return }
     guard let use = checkedOut.removeValue(forKey: statement),
-      use.keeps,
+      let entry = use.entry,
+      entry.isKept,
       use.generation == generation,
-      idle[use.sql] == nil
+      entry.idle == nil
     else {
       sqlite3_finalize(statement)
       return
@@ -18735,24 +18817,39 @@ struct SQLiteStatementCache {
     sqlite3_reset(statement)
     sqlite3_clear_bindings(statement)
     useClock &+= 1
-    idle[use.sql] = statement
-    lastUse[use.sql] = useClock
-    if idle.count > capacity,
-      let leastRecentlyUsed = lastUse.min(by: { $0.value < $1.value })?.key,
-      let evicted = idle.removeValue(forKey: leastRecentlyUsed)
-    {
-      lastUse[leastRecentlyUsed] = nil
-      sqlite3_finalize(evicted)
+    entry.idle = statement
+    entry.lastUse = useClock
+    idleCount += 1
+    if idleCount > capacity {
+      evictLeastRecentlyUsed()
     }
+  }
+
+  /// Finalizes the idle statement used longest ago, and its entry leaves the cache.
+  private mutating func evictLeastRecentlyUsed() {
+    var leastRecentlyUsed: Entry?
+    for entry in entries.values where entry.idle != nil {
+      if entry.lastUse < leastRecentlyUsed?.lastUse ?? .max {
+        leastRecentlyUsed = entry
+      }
+    }
+    guard let leastRecentlyUsed, let statement = leastRecentlyUsed.idle else { return }
+    sqlite3_finalize(statement)
+    leastRecentlyUsed.idle = nil
+    leastRecentlyUsed.isKept = false
+    idleCount -= 1
+    entries[leastRecentlyUsed.sql] = nil
   }
 
   /// Finalizes the statements waiting for reuse.
   mutating func finalizeIdle() {
-    for statement in idle.values {
-      sqlite3_finalize(statement)
+    for entry in entries.values {
+      if let statement = entry.idle {
+        sqlite3_finalize(statement)
+        entry.idle = nil
+      }
     }
-    idle.removeAll()
-    lastUse.removeAll()
+    idleCount = 0
   }
 
   /// Finalizes the statements waiting for reuse before their connection closes; a statement checked out now is

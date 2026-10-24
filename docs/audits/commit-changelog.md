@@ -1,3 +1,57 @@
+## 2026-10-23 20:00:32 EDT — realtime-voice `a87616be9d2364a9a7b0bea811a210f4f090d701`
+Change log for the audit commit 7d9189d1d (#1007).
+
+## 2026-10-23 20:00:30 EDT — realtime-voice `7d9189d1d40ae06e253a63327b7dd7ecddfc017b`
+The hot-path audit's N11 section and 1.9.28 released and pinned for build 119 (#1007).
+
+## 2026-10-23 20:00:04 EDT — realtime-voice `34eea4a7cc0ab982b571ecfdb8face863b041128`
+Merge of main's recording-screen-412 item 2 into the 1.9.28 pin; What's New and change log kept both (#1007).
+
+## 2026-10-23 19:59:26 EDT — realtime-voice `9d2936d61b9c676a33edbf8e06208c0f6ed3258d`
+Change log for the 1.9.28 pin dca8adcb9 (#1007).
+
+## 2026-10-23 19:59:26 EDT — realtime-voice `dca8adcb9d8a0411f5e0fbcc4b432efc89deff5d`
+Scribe and Scribe Playback pin instant-data-swift exactly 1.9.28 for build 119: the optimistic-effect fingerprint once per step (#1007).
+
+## 2026-10-23 19:59:01 EDT — scribe `32b691e7f33f1fc4b0a496e769de63fb53c3207d`
+The recording-screen audit's item 2 (#1007).
+
+## 2026-10-23 19:58:47 EDT — scribe `0bd5a1d85ad6e5e1914d631f561ab1bb8fa01119`
+The floating bar's voiceprint runs in a SwiftUI graph of its own on iPhone and iPad, the same pixels (#1007, build 119).
+
+## 2026-10-23 19:56:14 EDT — instant-data-swift `460247957945081242a68d56d0c08d83c443012c`
+Release document for v1.9.28 (#1007): the optimistic-effect fingerprint once per step.
+
+## 2026-10-23 19:49:17 EDT — instant-data-swift `73e3ff7ca1e5877a2ac02e558997331dc96a0e5d`
+Green (#1007): a save and an acknowledgement fingerprint a write's optimistic effect once each.
+
+## 2026-10-23 19:47:48 EDT — instant-data-swift `a56c978685077d890c497e014640625d7ce67934`
+Red test (#1007): eachStepOfALiveWriteFingerprintsItsEffectOnce, save 2 and acknowledgement 2.
+
+## 2026-10-23 19:39:44 EDT — realtime-voice `87630fc5c4c8479d978de3e6875cc7bdb9fa81b5`
+Change log for the audit commit 3390f6b28 (#1007).
+
+## 2026-10-23 19:39:43 EDT — realtime-voice `3390f6b2880b578fa5836a05bdea6d14938a85a2`
+The hot-path audit's N9, N9b and F5 sections, 1.9.27 released and pinned for build 119, what the release harness says is left; PROGRESS and the pin channel (#1007).
+
+## 2026-10-23 19:39:17 EDT — realtime-voice `72bfeef69eab2068a26a8e4591a8800a48e7c75c`
+Change log for the 1.9.27 pin 7aa16df13 (#1007).
+
+## 2026-10-23 19:39:16 EDT — realtime-voice `7aa16df1341bb5e4ba16c334b26c601aad2371fc`
+Scribe and Scribe Playback pin instant-data-swift exactly 1.9.27 for build 119: the statement cache and the fact writer, about 15% less CPU per write (#1007).
+
+## 2026-10-23 18:56:44 EDT — realtime-voice `581c1ef12d3ea3de3f3cc15fda2866adf9f83bf5`
+Change log for fd4ff213e (#1007).
+
+## 2026-10-23 18:56:43 EDT — realtime-voice `a01f63fa43da9d46a6cd15262a948ed0d4e2e272`
+The pin channel and PROGRESS: 1.9.24 inside #932's 1.9.25 pin; the statement cache after #1024's tag (#1007).
+
+## 2026-10-23 18:56:28 EDT — realtime-voice `fd4ff213e390399fca46225eef63b0e11052792d`
+The hot-path audit's N8 section and build 118's What's New line for the outbox index fix (#1007).
+
+## 2026-10-23 19:35:09 EDT — instant-data-swift `0f64acfb24a6854d4122c506b23ae23d97c37619`
+Release document for v1.9.27 (#1007): the statement cache and the fact writer.
+
 ## 2026-10-23 19:30:42 EDT — scribe `e14c1437443c0882cdd70a0c337339a11f6cc246`
 Change log for the build 118 cut a6838e211 (#1025).
 
@@ -12,6 +66,28 @@ Change log (#1024): the 1.9.26 pin 4614f8add; PROGRESS.
 
 ## 2026-10-23 19:30:26 EDT — scribe `4614f8add`
 Scribe and Scribe Playback pin instant-data-swift exactly 1.9.26 (#1024: the live connection's status says what the socket is; carries 1.9.25); both Package.resolved only the pin and originHash; installer 65/65; build 118's What's New line.
+
+## 2026-10-23 19:27:28 EDT — instant-data-swift `4b5235262ac3105ed671e0a3a001d0d12d948025`
+Tests (#1007, #1021): the prepare cost bound 3 -> 5 for a whole bundle's load.
+
+## 2026-10-23 19:20:50 EDT — instant-data-swift `4fb1f457ef32e7303f9e347f42228c7d41159396`
+Green (#1007): InstantStoredJSON writes a fact's stored text without JSONEncoder, byte for byte.
+
+## 2026-10-23 19:20:40 EDT — instant-data-swift `9092536016cf39532d6ded4f73470ae45a055388`
+Red test (#1007): InstantStoredJSONTests, a line's facts call JSONEncoder twice each.
+
+## 2026-10-23 19:01:44 EDT — instant-data-swift `0130581a6af6df01d664dc0ac538b74a041d029b`
+Green (#1007): a kept statement's reuse hashes its SQL once (1.36 hashes, from 11.8).
+
+## 2026-10-23 19:01:04 EDT — instant-data-swift `5074b761a6fa180664a23fd71c996199576292fe`
+Red test (#1007): reusingAKeptStatementCostsAboutOneHashOfItsSQL.
+
+## 2026-10-23 18:44:15 EDT — instant-data-swift `baa1796a86150d22b46f893d952a656a214a4056`
+Green (#1007): the statement cache keeps 256 statements; a live write's cycle prepares none.
+
+## 2026-10-23 18:43:17 EDT — instant-data-swift `ef64c39bfc88d67ac861113ef40544a313ba6d45`
+Red test (#1007): aLiveWritesCycleReusesItsPreparedStatements, 1,335 statements prepared in five cycles.
+
 
 ## 2026-10-23 19:24:30 EDT — instant-data-swift `48df79da7d77aa2b4ec60fabce4995b60dd9ad3a`
 The v1.9.26 release document (#1024): the live connection's status says what the socket is.

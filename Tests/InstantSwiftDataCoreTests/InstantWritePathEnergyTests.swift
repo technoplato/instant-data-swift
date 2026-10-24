@@ -82,6 +82,124 @@ struct InstantWritePathEnergyTests {
     expectNoDifference(pendingCount, 12, "every write is still durable in the outbox")
   }
 
+  /// A live write's whole cycle reuses its statements too (#1007). The save, the delivery claim, the acknowledgement and
+  /// the apply of the server's answer ran more distinct statements than the cache kept, so the least recently used one
+  /// was always the next one needed and every statement was prepared again on every write: a Time Profiler trace of a
+  /// write replay put 7% of all CPU in preparing them.
+  @Test
+  func aLiveWritesCycleReusesItsPreparedStatements() async throws {
+    var fixture = try await FastDrainFixture.make(
+      suffix: "statement-reuse-cycle",
+      serverSegmentCount: 4,
+      pendingSegmentCount: 0,
+      scribeLinks: true,
+      liveLines: true
+    )
+    func cycle() async throws {
+      _ = try await fixture.writeSegments(1)
+      let window = try await fixture.claimWindow()
+      #expect(!window.mutations.isEmpty)
+      for mutation in window.mutations {
+        _ = try await fixture.acceptAndRefresh(mutation, claimToken: window.token)
+      }
+    }
+    for _ in 0..<3 { try await cycle() }
+    let preparedBefore = await fixture.runtime.persistence.preparedStatementCountForTesting()
+
+    for _ in 0..<5 { try await cycle() }
+
+    let prepared = await fixture.runtime.persistence.preparedStatementCountForTesting() - preparedBefore
+    let status = await fixture.runtime.persistence.statementCacheStatusForTesting()
+    print(
+      "statement-reuse-cycle: five write cycles prepared \(prepared) statements; \(status.idleCount) idle, "
+        + "\(status.statementBytes) B of statements"
+    )
+    expectNoDifference(prepared, 0)
+    _ = try? await fixture.runtime.closeConnection()
+  }
+
+  /// Each step of a live write fingerprints its optimistic effect once (#1007). A fingerprint encodes the write's
+  /// transaction and rollback with `JSONEncoder` and hashes the text, and the save computed it twice and the
+  /// acknowledgement three times for the same write: 5.9% of a write replay's CPU went to fingerprints.
+  @Test
+  func eachStepOfALiveWriteFingerprintsItsEffectOnce() async throws {
+    var fixture = try await FastDrainFixture.make(
+      suffix: "fingerprint-once",
+      serverSegmentCount: 2,
+      pendingSegmentCount: 0
+    )
+    let runtime = fixture.runtime
+    func fingerprints() async -> Int {
+      await runtime.persistence.optimisticEffectFingerprintCountForTesting()
+    }
+    let write = try #require(fixture.script.nextSegmentWrites().first)
+
+    let beforeSave = await fingerprints()
+    _ = try await fixture.runtime.transact(write, createdAt: InstantTimestamp(milliseconds: fixture.script.deviceMilliseconds))
+    let beforeClaim = await fingerprints()
+    let (token, mutations) = try await fixture.claimWindow()
+    let mutation = try #require(mutations.first)
+    expectNoDifference(mutations.count, 1)
+    let beforeAcknowledgement = await fingerprints()
+    let transactionID = fixture.server.accept(mutation.transaction.operations)
+    _ = try await fixture.runtime.acceptMutationIfPresent(
+      id: mutation.id,
+      serverTransactionID: transactionID,
+      claimToken: token
+    )
+    let after = await fingerprints()
+
+    expectNoDifference(
+      ["save": beforeClaim - beforeSave, "claim": beforeAcknowledgement - beforeClaim, "acknowledgement": after - beforeAcknowledgement],
+      ["save": 1, "claim": 1, "acknowledgement": 1]
+    )
+    _ = try? await fixture.runtime.closeConnection()
+  }
+
+  /// Reusing a kept statement costs about one hash of its SQL (#1007). The cache took a statement out of its idle map
+  /// at check-out and put it back at check-in, hashing the SQL five times a use, and each removal re-hashed the
+  /// neighbors it shifted: 6.6% of a write replay's CPU with the cycle's 150 statements kept.
+  @Test
+  func reusingAKeptStatementCostsAboutOneHashOfItsSQL() throws {
+    var database: OpaquePointer?
+    try #require(sqlite3_open(":memory:", &database) == SQLITE_OK)
+    defer { sqlite3_close_v2(database) }
+    var cache = SQLiteStatementCache()
+    // As many statements as a live write's cycle keeps, each as long as its longer statements.
+    let statements = (0..<150).map { index in
+      "SELECT \(index) /* " + String(repeating: "statement \(index) ", count: 80) + "*/"
+    }
+    for sql in statements {
+      let statement = cache.checkOut(sql, on: database)
+      cache.checkIn(statement.statement)
+    }
+    let preparedBefore = cache.preparedCount
+
+    let start = clock_gettime_nsec_np(CLOCK_THREAD_CPUTIME_ID)
+    for _ in 0..<40 {
+      for sql in statements {
+        let statement = cache.checkOut(sql, on: database)
+        cache.checkIn(statement.statement)
+      }
+    }
+    let reuse = clock_gettime_nsec_np(CLOCK_THREAD_CPUTIME_ID) - start
+    var sink = 0
+    let hashStart = clock_gettime_nsec_np(CLOCK_THREAD_CPUTIME_ID)
+    for _ in 0..<40 {
+      for sql in statements {
+        var hasher = Hasher()
+        hasher.combine(sql)
+        sink &+= hasher.finalize()
+      }
+    }
+    let hashing = clock_gettime_nsec_np(CLOCK_THREAD_CPUTIME_ID) - hashStart
+
+    expectNoDifference(cache.preparedCount, preparedBefore)
+    let ratio = Double(reuse) / Double(max(hashing, 1))
+    print("statement-reuse-cost: \(reuse / 1_000) us to reuse, \(hashing / 1_000) us to hash once (ratio \(ratio), \(sink & 1))")
+    #expect(ratio < 3, "reusing a kept statement cost \(ratio) hashes of its SQL")
+  }
+
   /// A statement in use is never handed out twice, an idle one is reset, DDL is not kept, and the cache stays within
   /// its capacity (#653).
   @Test
