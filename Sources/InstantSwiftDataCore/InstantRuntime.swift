@@ -1,4 +1,8 @@
 // History:
+// - 2026-10-24: an upload, a read by id, a delete and an eviction read and publish the device's file records only while
+//   an observation of them is open, and a failed publish no longer fails the call; each read every record (4,264 on
+//   one phone, about 3 MB of JSON), the upload under the operation gate about eleven times a minute while recording,
+//   and one record that did not decode failed them all after their work was done (#1072).
 // - 2026-10-24: deleteStoredFile(id:) finds its file in the device's own record, else by a `$files` query on its id; it
 //   listed every file the account holds, and on build 123 that list timed out while a chunk was being removed (#654).
 // - 2026-10-24: the add-query-ok of a one-shot query that ended before it landed is not applied, as upstream drops an
@@ -11336,11 +11340,8 @@ public final class InstantRuntime: Sendable {
         uploadedPath == nil
         ? try await persistence.saveStoredFile(file, contentsOf: sourceURL)
         : try await persistence.saveUploadedFileRecord(file)
-      let files = try await persistence.loadStoredFiles(appID: configuration.appID)
-      await storedFilesObservers.publish(
-        files,
-        for: storedFilesObservationKey
-      )
+      // Under the gate, so uploads publish in the order they saved.
+      await publishStoredFileRecordsIfObserved()
       await operationGate.leave()
       return savedFile
     } catch {
@@ -11650,8 +11651,7 @@ public final class InstantRuntime: Sendable {
         )
       file.name = name
       let saved = try await persistence.saveDownloadedFile(file, data: data)
-      let localFiles = try await persistence.loadStoredFiles(appID: configuration.appID)
-      await storedFilesObservers.publish(localFiles, for: storedFilesObservationKey)
+      await publishStoredFileRecordsIfObserved()
       return InstantStoredFileContents(file: saved, data: data)
     }
     guard configuration.liveTransport != nil else {
@@ -11674,8 +11674,7 @@ public final class InstantRuntime: Sendable {
       InstantStorageDownloadRequest(url: remoteURL)
     )
     let saved = try await persistence.saveDownloadedFile(file, data: data)
-    let localFiles = try await persistence.loadStoredFiles(appID: configuration.appID)
-    await storedFilesObservers.publish(localFiles, for: storedFilesObservationKey)
+    await publishStoredFileRecordsIfObserved()
     return InstantStoredFileContents(file: saved, data: data)
   }
 
@@ -11901,11 +11900,7 @@ public final class InstantRuntime: Sendable {
         appID: configuration.appID,
         fileID: id
       )
-      let files = try await persistence.loadStoredFiles(appID: configuration.appID)
-      await storedFilesObservers.publish(
-        files,
-        for: storedFilesObservationKey
-      )
+      await publishStoredFileRecordsIfObserved()
       return file
     } catch {
       throw error
@@ -12047,10 +12042,7 @@ public final class InstantRuntime: Sendable {
       outcomes[file.id] = eviction(file, .evicted(freedByteCount: freedByteCount))
       evictedCount += 1
     }
-    if evictedCount > 0 {
-      let files = try await persistence.loadStoredFiles(appID: configuration.appID)
-      await storedFilesObservers.publish(files, for: storedFilesObservationKey)
-    }
+    if evictedCount > 0 { await publishStoredFileRecordsIfObserved() }
     return ids.compactMap { outcomes[$0] }
   }
 
@@ -12120,6 +12112,31 @@ public final class InstantRuntime: Sendable {
       updatedAt: unknownTimestamp,
       remoteURL: url
     )
+  }
+
+  /// Hands the device's file records to the open observations of them (``observeStoredFiles()`` offline or local-only),
+  /// reading them only when one is open. Called after a change to the records is written, as the publish always was.
+  ///
+  /// #1072 (2026-10-24): an upload, a read by id, a delete and an eviction each read every record and decoded it to
+  /// publish them, whether an observation was open or not: 4,264 records on one phone, about 3 MB of JSON per upload,
+  /// read under the operation gate about eleven times a minute while recording, though Scribe never observes them. A
+  /// record that did not decode failed each call after its work was done, and a failed upload deleted the file storage
+  /// had just taken. A publish that fails now leaves the call's result alone: the file was stored, read or deleted.
+  private func publishStoredFileRecordsIfObserved() async {
+    guard await storedFilesObservers.activeCount(for: storedFilesObservationKey) > 0 else { return }
+    do {
+      let files = try await persistence.loadStoredFiles(appID: configuration.appID)
+      await storedFilesObservers.publish(files, for: storedFilesObservationKey)
+    } catch {
+      InstantDiagnostics.shared.record(
+        error: error,
+        subsystem: "instant-swift-data-core",
+        category: "storage",
+        event: "stored-files.publish-failed",
+        message: "Could not read the device's file records for their observations; they keep their last value.",
+        metadata: ["appID": configuration.appID]
+      )
+    }
   }
 
   func activeStoredFilesObservationCount() async -> Int {
