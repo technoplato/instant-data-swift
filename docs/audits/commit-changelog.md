@@ -1,3 +1,30 @@
+## 2026-10-24 10:24:55 EDT — realtime-voice `0f222e5a7ec5d9d5691bbb62c0867c3545d00763`
+Merge (#1045 #1046 #1047 #811) to main for build 122: ui-121's four screen fixes from Recording 292.
+
+## 2026-10-24 10:23:35 EDT — realtime-voice `c6da026ef5f657eca8f8e6e26bb01d907d503a57`
+Docs (#1045 #1046 #1047 #811): the audit, ADR 0015 section 25, ADR 0032 and ADR 0085 amendments, What's New 122, PROGRESS.
+
+## 2026-10-24 10:22:47 EDT — realtime-voice `cb3fa8e33cb7e3deec68a034ff6e0bc90bf4fe2e`
+Test (#1045): the layout harness's references at 8 points smaller and 20 larger.
+
+## 2026-10-24 09:58:11 EDT — realtime-voice `bc00329b664ab94e3bf80f703a9a536e079c0700`
+Refactor (#1046): RecordingFollowScrollUp in its own file (swiftui-pro: one type per file).
+
+## 2026-10-24 09:41:01 EDT — realtime-voice `173a928cceeadfc258aa5e02e7fdf6cd2da4839a`
+Green (#811): every sheet the floating bar covers gives its root page the bar's room, Settings first.
+
+## 2026-10-24 09:40:52 EDT — realtime-voice `86517b086c581d9f56ea1479976c48a20b609626`
+Green (#1047): the build pill rests in the live recording's leading margin instead of stepping aside.
+
+## 2026-10-24 09:40:44 EDT — realtime-voice `e2b9590947a59617226c137a4959b74ca76df03d`
+Green (#1046): only his own scroll up stops following the newest words, and a text size pinch never does.
+
+## 2026-10-24 09:40:33 EDT — realtime-voice `07f9f98d11d170b39e4d086941a1bac208f982c6`
+Green (#1045): the room around the run's name and above the first line follows the text size; no transcript text under 11 points.
+
+## 2026-10-24 09:39:52 EDT — realtime-voice `64d6dc310c0a9f92e5132745cf9d3a1f7a3dfd8f`
+Red (#1045 #1046 #1047 #811): text-size spacing, his own scroll releases following, the pill on the live screen, the bar's room on every sheet root.
+
 ## 2026-10-24 02:30:37 EDT — scribe `ed617f569a865cbc3ecb96eee42c9e7073253856`
 Change log for the build 121 cut e6c3ee7b1 (#1043).
 
