@@ -1,3 +1,18 @@
+## 2026-10-24 00:14:37 EDT — scribe `665656d477b32a857c8caddb399cf92f3db87ff4`
+Merge (#1013) to main, for build 121: the live recording screen's header without the date line (the vertical stamp says it), with Share, Answers and the sync status in one Share and Sync menu; hide-on-scroll not landed (the threads panel's closed inspector stops the navigation bar's return).
+
+## 2026-10-24 00:09:24 EDT — scribe `a7cefc6425281daab159788e398710039bbdec5c`
+Change log for dd3b8bbb5 and 089b957c2 (#1013).
+
+## 2026-10-24 00:09:09 EDT — scribe `089b957c242ba9f88ab5ff1f9b409cc61bd5590c`
+Docs (#1013): the recording-screen audit's section 2 (the experiments: a plain ScrollView restores the bar, the inspector stops it), its index row, What's New for build 121 and PROGRESS.
+
+## 2026-10-23 23:57:02 EDT — scribe `dd3b8bbb5eb538d66b87fcafae1c2ca190b49762`
+Green (#1013): RecordingHeaderLayout.showsClock/showsSection, the Share and Sync menu and its button; SwiftUI body runs the same as main's.
+
+## 2026-10-23 23:56:46 EDT — scribe `068d967f9460ffa12ba0a91dd5f180c48d90b635`
+Red (#1013): RecordingMoreMenuTests, RecordingHeaderClockTests, RecordingHeaderOverlapTests, and the harness's 12 header snapshot references, which main's header fails.
+
 ## 2026-10-23 23:55:17 EDT — instant-data-swift `c2ad634c15eecdf9e69587facbfed1a5dad1a0e7`
 ADR 0021's verification (#1012): the end-to-end run over a live Instant app.
 
