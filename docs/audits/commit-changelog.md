@@ -1,3 +1,9 @@
+## 2026-10-24 17:54:16 EDT — scribe `e3f4559c9c67f42af77652cf283e439a132fb933`
+Build 128 cut (#1126): CURRENT_PROJECT_VERSION 128 for Scribe and Scribe Playback; carries #1057 amendment A; instant-data-swift exactly 1.9.34.
+
+## 2026-10-24 17:54:16 EDT — scribe `3237d1f8c9a9a5e8d1f29f3c65ab80b299b26430`
+changelog(#1126): build 128 cut e3f4559c9.
+
 ## 2026-10-24 17:48:48 EDT — scribe `7ec05f39a865c4a4a74b21f90473eb30f30dddd6`
 Docs (#1057): reinstalling the identical Dev 127 app on the iPad recompiled all eight Neural Engine programs (97.95 s, stamp Ready): they are keyed on the install's location, not the code; the regression of 126/127 reproduced (n=2).
 
