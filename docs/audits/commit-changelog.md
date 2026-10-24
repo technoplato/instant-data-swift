@@ -1,3 +1,12 @@
+## 2026-10-24 18:16:57 EDT — instant-data-swift `062b798c3063cc84486859237daf7df08bf0d3a4`
+Docs (#1074): the concurrency audit: 17 anti-patterns ranked by measured cost while recording (the prune's one-result batches and its run inside the frame applier first), a design and a labelled hypothesis for each, the exercises' two-run baseline on fixture version 3, and issues #1127-#1143.
+
+## 2026-10-24 18:15:33 EDT — instant-data-swift `5de2da8bf6b098d1a99a18374ea171f8a6900048`
+Test (#1074): seven contention exercises on the real-size store (Scribe's recording load, prunes, a large answer, observer registration over a slow socket, compaction, a launch) printing every caller's gate wait, every holder's hold, executor probes and each write's acknowledgement latency as stable CONTENTION lines; the run script.
+
+## 2026-10-24 16:15:07 EDT — instant-data-swift `e3fa1490e026f08bedff5e9a7c9866349b5dd1f2`
+Feat (#1074): the operation gate reports every request, acquisition, release and cancellation to an optional timeline (nil by default), so exercises can measure every wait and hold instead of only waits past 250 ms.
+
 ## 2026-10-24 18:02:52 EDT — scribe `af5da1557a5dff2a1012923a0e161b3cabf23933`
 Merge (#641) for build 129: heat holds back nothing he uses; only background work waits.
 

@@ -10,6 +10,49 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## October 24th, 2026 at 6:18:12 p.m. EDT — `062b798c3063` docs(#1074): the concurrency audit: 17 anti-patterns ranked by measured cost while recording, a design and a labelled hypothesis for each, and the exercises' baseline
+
+- **Implementation commit:** `062b798c3063cc84486859237daf7df08bf0d3a4`
+- **Change:** docs(#1074): the concurrency audit: 17 anti-patterns ranked by measured cost while recording, a design and a labelled hypothesis for each, and the exercises' baseline
+- **Details:**
+  - Measured on the Mac mini (release, fixture version 3; the iPhone's numbers are its own diagnostics): a prune of a closed 75,640-fact list is one 1,721 ms batch, and while it runs writes wait 1.5-1.9 s, acknowledgements 1.8-2.5 s, server reads 2.7-2.9 s; an observer's registration holds the gate for its socket send; the list's first answer plans for 746 ms. A first baseline on fixture version 2 overstated steady costs and is withdrawn. Fixes filed as #1127-#1143.
+- **Files:**
+  - `docs/audits/2026-10-24-concurrency-audit.md` — new: the audit
+  - `docs/audits/2026-10-24-concurrency-baseline.txt` — new: every CONTENTION line of the two baseline runs
+  - `agent-presence/_channels/2026-10-24-lib-audit-1072.md` — asks #1072 for deferred segment attributes and a stream answer in the fixture
+  - `agent-presence/_channels/2026-10-24-audit-concurrency-1074.md` — how siblings measure a fix with the exercises
+- **User context (verbatim):**
+  > Michael, Claude chat 2026-10-24 15:52 EDT: "Can you actually dispatch some auditing agents to find any anti patterns and design solutions with hypothesized savings and then write real exercises of the poor hot paths"
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run audit-concurrency-1074 on claude/ld, claude/strangelearning, claude/halfjew22); no SpecStory capture for headless runs.
+
+## October 24th, 2026 at 6:18:12 p.m. EDT — `5de2da8bf6b0` test(#1074): contention exercises on the real-size store: every caller's wait, every holder's hold, and each write's acknowledgement under Scribe's recording load
+
+- **Implementation commit:** `5de2da8bf6b098d1a99a18374ea171f8a6900048`
+- **Change:** test(#1074): contention exercises on the real-size store: every caller's wait, every holder's hold, and each write's acknowledgement under Scribe's recording load
+- **Details:**
+  - Seven exercises on #1072's generated store (recording, prune, prune-inline, server-apply, observers, compaction, launch) print stable CONTENTION lines: gate waits per caller, holds per holder, waits split among the holds they spanned, probes of the persistence, store and main actors, and each write's acknowledgement latency from the runtime's own record. All seven pass at 5% and at full scale on the Mac mini (release); gated by INSTANT_CONTENTION=1.
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/RealSize/ContentionExercises.swift` — new: the seven exercises and their harness
+  - `Tests/InstantSwiftDataCoreTests/RealSize/ContentionInstruments.swift` — new: the timeline analysis, probes, acknowledgement timing and the stable report
+  - `scripts/contention-exercises/run-contention-exercises.sh` — new: builds in release and runs the exercises the same way each time
+- **User context (verbatim):**
+  > Michael, Claude chat 2026-10-24 15:52 EDT: "Can you actually dispatch some auditing agents to find any anti patterns and design solutions with hypothesized savings and then write real exercises of the poor hot paths"
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run audit-concurrency-1074 on claude/ld, claude/strangelearning, claude/halfjew22); no SpecStory capture for headless runs.
+
+## October 24th, 2026 at 6:18:12 p.m. EDT — `e3fa1490e026` feat(#1074): the operation gate reports every request, acquisition, release and cancellation to an optional timeline
+
+- **Implementation commit:** `e3fa1490e026f08bedff5e9a7c9866349b5dd1f2`
+- **Change:** feat(#1074): the operation gate reports every request, acquisition, release and cancellation to an optional timeline
+- **Details:**
+  - The gate reported a wait only past 250 ms and a hold only as the wait it caused; the timeline (nil by default, one nil check per step) lets the contention exercises and #1072's meter measure every caller's wait and every holder's hold. Red: AsyncSerialGateTimelineTests did not compile on main; green: the 4 timeline tests and 12 gate tests pass (Mac mini, Xcode-beta).
+- **Files:**
+  - `Sources/InstantSwiftDataCore/AsyncSerialGate.swift` — the timeline hook and a clock a test can move
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — InstantRuntimeConfiguration.operationGateTimeline, handed to the operation gate
+  - `Tests/InstantSwiftDataCoreTests/AsyncSerialGateTimelineTests.swift` — new: the timeline's four tests
+- **User context (verbatim):**
+  > Michael, Claude chat 2026-10-24 15:52 EDT: "Can you actually dispatch some auditing agents to find any anti patterns and design solutions with hypothesized savings and then write real exercises of the poor hot paths"
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run audit-concurrency-1074 on claude/ld, claude/strangelearning, claude/halfjew22); no SpecStory capture for headless runs.
+
 ## October 24th, 2026 at 5:47:56 p.m. EDT — `1cdd8383f6b7` docs(#1076): the storage, disk and network audit: eleven anti-patterns worst first, each with its design, its saving as a hypothesis, its exercise and today's baseline
 
 - **Implementation commit:** `1cdd8383f6b78284ebdb3231798783968a772d27`

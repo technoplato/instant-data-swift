@@ -1,3 +1,30 @@
+## 2026-10-24 18:20:00 EDT — #1074: the concurrency audit, its exercises and today's baseline; 17 fixes filed
+
+- **Commits (instant-data-swift main):** plan `a6a2633e`; the gate's timeline `e3fa1490`; exercises `5de2da8b`; the
+  audit and its baseline `062b798c`; then the ledger.
+- **Measured (Mac mini M4, release, fixture version 3; the iPhone's numbers are its own diagnostics):** a prune of the
+  closed 75,640-fact `$files` list is one batch holding the operation gate 1,721-1,757 ms, and while it runs writes wait
+  1.5-1.9 s, acknowledgements 1.8-2.5 s, server reads 2.7-2.9 s and gate-free local reads 0.56-0.76 s; the cadence
+  prune runs inside the frame applier, so the refresh behind it applies after 1,815 ms (45 ms before it); an observer's
+  registration holds the gate for its socket send (153 ms over a 150 ms socket) and 1,718 ms to reload the `$files`
+  list; that list's first answer plans for 746 ms. Between prunes a recording runs fast (acknowledgement p99 145 ms).
+- **Filed, ranked:** #1129 (P1, prune), #1128 (P1, server apply), #1131 (P1, observer registration), #1127 (P1, one
+  frame applier), #1132 (P1, reads queued on the gate), #1130 (P2, two delivery passes per write), #1133 (P1,
+  undeclared writes), #1134 (P2, local one-shot reads), #1135 (P2, network waits under the gate), #1136 (P2,
+  compaction), #1137 (P2, connect), #1138 (P2, executors), #1139 (P2, priority), #1140 (P2, cancellation), #1141 (P1,
+  a data race in the transaction-id interner), #1142 (P3, task churn), #1143 (P3, diagnostics and status).
+- **Exercises:** `Tests/InstantSwiftDataCoreTests/RealSize/ContentionExercises.swift` (`INSTANT_CONTENTION=1`), instruments
+  in `ContentionInstruments.swift`, `scripts/contention-exercises/run-contention-exercises.sh`. Audit:
+  `docs/audits/2026-10-24-concurrency-audit.md`; raw lines: `docs/audits/2026-10-24-concurrency-baseline.txt`.
+- **Withdrawn:** a first baseline on fixture version 2 (its server's ids never passed the watermark, #1072) overstated
+  steady acknowledgements about fifteen times; the issues were corrected to version 3's numbers.
+- **Not reproduced or not covered:** the phone's 5.0-7.8 s observer holds and 5.5-6.8 s connects at launch; its 13 s
+  plan and 436 s catch-up; hydration (no deferred attributes in the fixture); stream frames; writes as Scribe makes
+  them (the fixture's merges change nothing in memory before the echo, #1075's finding), so transact's costs are lower
+  bounds and the write lane should become Scribe's with a new baseline.
+- **Next:** the lab dispatches the fixes; each issue names its exercise and the baseline line it should move.
+- **Cleanup:** listed on #1074 (the worktree, the Mac mini's build and source copy).
+
 ## 2026-10-24 17:47:12 EDT — #1076: the storage, disk and network audit, its exercises and today's baseline; 12 fixes filed
 
 - **Commits (instant-data-swift main):** plan `e423a137` and amendment `cb449154`; exercises `c5a5f69c` (ledger
