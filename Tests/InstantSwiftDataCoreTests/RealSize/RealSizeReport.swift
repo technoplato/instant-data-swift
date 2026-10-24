@@ -137,7 +137,10 @@ struct RealSizeRecordingReport {
           + " cpuMs=\(String(format: "%.1f", Double(after.cpuNanoseconds - before.cpuNanoseconds) / 1e6))"
           + " wallMs=\(ms(wall)) writtenKB=\((after.logicalWriteBytes - before.logicalWriteBytes) / 1_024)"
           + " gateHoldMaxMs=\(ms(gate.longestHold)) gateHolder=\(gate.longestHolder.replacingOccurrences(of: " ", with: "_"))"
-          + " gateHoldTotalMs=\(ms(gate.totalHold)) footprintMB=\(after.footprint / 1_048_576)"
+          + " gateHoldTotalMs=\(ms(gate.totalHold))"
+          + " gateTop=\(gate.topHolders(3).map { "\($0.holder.replacingOccurrences(of: " ", with: "_")):\(ms($0.hold))" }.joined(separator: ","))"
+          + " uploadGateMs=\(ms(gate.holdByHolder["savePreparedStoredFile(_:contentsOf:)"] ?? .zero))"
+          + " footprintMB=\(after.footprint / 1_048_576)"
           + " footprintPeakMB=\(max(after.footprintIntervalPeak, after.footprint) / 1_048_576)"
         RealSizeOperations.line(report)
         if [5, 60, 120, minutes].contains(minute) { kept[minute] = report }
