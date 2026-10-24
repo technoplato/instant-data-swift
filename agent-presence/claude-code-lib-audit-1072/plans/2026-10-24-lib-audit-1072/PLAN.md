@@ -63,3 +63,18 @@ functions of `Sources/InstantSwiftDataCore/InstantRuntime.swift` before they are
 private helper that reads and publishes the records only while an observation is open. The red and green go in
 `Tests/InstantSwiftDataCoreTests/InstantStoredFileLookupTests.swift` (already claimed). `storedFiles()` and
 `observeStoredFiles()` stay claimed for their bounded form or their issue.
+
+## Amendment 2 (2026-10-24 18:40 EDT, claude-code/lib-audit-1072@halfjew22): the outbox claim (#1108, #1114), as 1.9.36
+
+After 1.9.35 the largest operation-gate holder while recording is the delivery pump's claim: 402-524 ms of every
+recording minute on the phone-shaped store, about 60% of the gate. Its candidate read and its continuation check filter
+`delivery_claim_state = ? AND (delivery_state = ? OR (status IN (?, ?) AND delivery_metadata_version < ?))`; the `OR`
+leaves SQLite one plan, a search on the claim state alone (instant_outbox_delivery_deadline_idx) and a sort, so every
+ready row is visited, the 663 refused writes included, each through its body's overflow pages. #1007 dropped the index
+on (claim state, delivery state) because that `OR` kept any statement from using it. The fix splits each read into its
+two branches (a UNION for the candidates, two EXISTS for the check) and adds that index back under a new name in a
+migration; on a copy of the phone-shaped store the plans then search only needs-delivery rows and legacy rows. Claims:
+`Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` (the two automatic candidate reads and their SQL, one
+migration, one test hook counting a read's SQLite steps), `Tests/InstantSwiftDataCoreTests/RealSize/OutboxClaimScaleTests.swift`
+(new: the red and green), `docs/releases/v1.9.36.md` (new). Then the Scribe pin moves to 1.9.36 (the same files as the
+1.9.35 pin; Scribe plan amended there).
