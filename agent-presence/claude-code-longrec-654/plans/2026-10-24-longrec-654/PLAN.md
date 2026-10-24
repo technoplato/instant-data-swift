@@ -42,3 +42,11 @@ docs/audits/commit-changelog.md, docs/releases/v1.9.33.md.
 InstantRuntime.swift carries earlier claims (#990, #959, #1006, #1007, #932, #654's prune); all have landed. The running
 agents today are this one and stamp-412 (Scribe's recording screen, not the library). #959 (storage-959) last changed
 the stored-file functions and has landed; nothing else is on a branch in them.
+
+## Amendment, 2026-10-24 13:40 (build 123's first minutes)
+
+The device lab saw one whole-`$files` query left on build 123: `deleteStoredFile(id:)` finds its file through
+`storedFiles()`, every file the account holds; Scribe calls it to remove a chunk it uploaded when the chunk's row could
+not be written, and it timed out at 5 s (the chunk then stayed in storage). Step 6: red, then green, for
+`deleteStoredFile(id:)`: the device's own record (an upload always leaves one), else a `$files` query on that id;
+release v1.9.34 and pin it. Touching adds: `deleteStoredFile(id:)` in InstantRuntime.swift, docs/releases/v1.9.34.md.
