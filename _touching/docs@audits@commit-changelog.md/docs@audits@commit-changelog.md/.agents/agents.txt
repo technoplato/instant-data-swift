@@ -26,3 +26,4 @@ claude-code/hotpath-1007@halfjew22 2026-10-23T14:52:00-0400 mower plan=2026-10-2
 claude-code/server-apply-932@halfjew22 2026-10-23T14:52:59-0400 grower plan=2026-10-23-server-apply-932 #932 #998 #590
 claude-code/audio-stream-1012b@strangelearning 2026-10-23T16:04:02-0400 grower plan=2026-10-23-audio-stream-1012 #1012 (new)
 claude-code/prune-654@strangelearning 2026-10-23T21:59:38-0400 mower plan=2026-10-23-prune-654 #654 (the live-query prune: pruneLiveQueryResults and its batch helpers, retractFactsReleasedByPrune, the bootstrap prune call)
+claude-code/longrec-654@ld 2026-10-24T10:43:09-0400 mower plan=2026-10-24-longrec-654 #654 #932 
