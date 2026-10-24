@@ -1,4 +1,7 @@
 // History:
+// - 2026-10-24: a file read or downloaded by id without a name, which this device holds no record of, is looked up by a
+//   `$files` query on its id; it was a query of every file the account holds (9,455 files, about 27 MB on one phone),
+//   whose answer the server apply and then the prune loaded and dropped again once a minute while recording (#654, #932).
 // - 2026-10-23: a live-query prune batch reads the hot store's facts of only the entities its results held and retracts
 //   the ones it drops in place, at bootstrap too; it copied the store, then replaced and indexed it again (#654).
 // - 2026-10-23: a refused write's rollback is prepared from the hot store's indexes as the operation gate leaves them,
@@ -11624,8 +11627,7 @@ public final class InstantRuntime: Sendable {
         recovery: "Run 'instant-swift-data files list' to inspect available file ids."
       )
     }
-    let remoteFiles = try await remoteStoredFiles()
-    guard let file = remoteFiles.first(where: { $0.id == id }), let remoteURL = file.remoteURL else {
+    guard let file = try await remoteStoredFile(id: id), let remoteURL = file.remoteURL else {
       throw validationFailed(
         operation: "read file",
         localID: id,
@@ -11660,7 +11662,8 @@ public final class InstantRuntime: Sendable {
   ///
   /// - Parameters:
   ///   - name: the storage path the file was uploaded under. With it, the download asks storage for a signed URL
-  ///     directly; without it, the file's remote URL comes from the live file list.
+  ///     directly; without it, the file's remote URL comes from storage's record of that file, a `$files` query on its
+  ///     id (#654).
   ///   - destination: a file URL; its directory is created if it does not exist.
   @discardableResult
   @concurrent
@@ -11746,8 +11749,7 @@ public final class InstantRuntime: Sendable {
           recovery: "Run 'instant-swift-data files list' to inspect available file ids."
         )
       }
-      let remoteFiles = try await remoteStoredFiles()
-      guard let remote = remoteFiles.first(where: { $0.id == id }), let remoteURL = remote.remoteURL else {
+      guard let remote = try await remoteStoredFile(id: id), let remoteURL = remote.remoteURL else {
         throw validationFailed(
           operation: "download file",
           localID: id,
@@ -12018,18 +12020,25 @@ public final class InstantRuntime: Sendable {
     order: .serverCreatedAt
   )
 
-  private func remoteStoredFiles() async throws -> [InstantStoredFile] {
-    let emission = try await queryOnce(Self.storedFilesQuery)
-    return try await mergedStoredFiles(
-      remoteSnapshots: emission.values,
-      includeLocalOnly: false
+  /// Storage's record of the file `id`, from a `$files` query on that id, which the server answers with that file alone
+  /// (#654, #932).
+  ///
+  /// A read or download by id of a file this device holds no record of used to query every `$files` row and search the
+  /// answer. That list grows with everything the account uploads: on build 121 an iPhone's was 9,455 files and about
+  /// 27 MB. Its answer outlasted the query's 5 s, landed anyway (a server apply held the operation gate 2.3-5.8 s), and
+  /// the next prune dropped the closed result again (3.8-6.0 s), once a minute while a recording's media downloaded.
+  private func remoteStoredFile(id: String) async throws -> InstantStoredFile? {
+    let emission = try await queryOnce(
+      InstantQueryPlan(
+        id: "instant.storage.files.by-id",
+        namespace: "$files",
+        filters: [.equals(field: "id", value: .string(id))]
+      )
     )
+    return emission.values.first { $0.id == id }.flatMap(remoteStoredFile(from:))
   }
 
-  private func mergedStoredFiles(
-    remoteSnapshots: [InstantEntitySnapshot],
-    includeLocalOnly: Bool = true
-  ) async throws -> [InstantStoredFile] {
+  private func mergedStoredFiles(remoteSnapshots: [InstantEntitySnapshot]) async throws -> [InstantStoredFile] {
     let remote = remoteSnapshots.compactMap(remoteStoredFile(from:))
     let local = try await persistence.loadStoredFiles(appID: configuration.appID)
     var filesByID = Dictionary(uniqueKeysWithValues: remote.map { ($0.id, $0) })
@@ -12039,9 +12048,7 @@ public final class InstantRuntime: Sendable {
         file.contentType = discovered.contentType ?? file.contentType
         file.remoteURL = discovered.remoteURL
       }
-      if includeLocalOnly || filesByID[file.id] != nil {
-        filesByID[file.id] = file
-      }
+      filesByID[file.id] = file
     }
     return filesByID.values.sorted {
       ($0.name, $0.id) < ($1.name, $1.id)
