@@ -1,4 +1,6 @@
 // History:
+// - 2026-10-24: deleteStoredFile(id:) finds its file in the device's own record, else by a `$files` query on its id; it
+//   listed every file the account holds, and on build 123 that list timed out while a chunk was being removed (#654).
 // - 2026-10-24: the add-query-ok of a one-shot query that ended before it landed is not applied, as upstream drops an
 //   answer for a query `querySubs` no longer holds; the whole $files list's late answer was applied, then pruned, every
 //   minute (#654).
@@ -11855,7 +11857,18 @@ public final class InstantRuntime: Sendable {
     )
 
     _ = try await resolvedFileUserID(operation: "delete file")
-    let file = try await storedFiles().first(where: { $0.id == id })
+    // #654 (2026-10-24): one file's record, not every file's. The device's own record names the file (an upload always
+    // leaves one); else storage's, from a `$files` query on its id, read as the whole list was: offline, it reads as
+    // missing. The delete listed every file the account holds (9,455 on one phone, about 27 MB) to find one, and on
+    // build 123 that list timed out at 5 s while Scribe removed a chunk whose row could not be written.
+    var file = try await persistence.loadStoredFile(appID: configuration.appID, fileID: id)
+    if file == nil, storageTransport != nil, configuration.liveTransport != nil {
+      do {
+        file = try await remoteStoredFile(id: id)
+      } catch let error as InstantError where error.code == .networkFailed {
+        file = nil
+      }
+    }
     guard let file else {
       throw validationFailed(
         operation: "delete file",
