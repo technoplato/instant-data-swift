@@ -1,4 +1,4 @@
-## 2026-10-24 17:02:25 EDT — instant-data-swift `7a1438d3462cc4aa66e7bbc386507226ac25a70d`
+## 2026-10-24 17:02:25 EDT — instant-data-swift `c5a5f69cea6507c81b936aba85ebb9f7b30a1600`
 Test (#1076): the storage audit's exercises: a VFS shim that counts what SQLite writes, syncs and truncates per file and the b-tree behind every write-ahead-log frame; each step of a live write, an hour of recording, and the phone-shaped store, printed as stable STORAGEIO lines; the SQL-level page script for a copy of a real store.
 
 ## 2026-10-24 16:40:24 EDT — instant-data-swift `0f404f0ba629f4fc609dd90d568f61ca2bb6c673`

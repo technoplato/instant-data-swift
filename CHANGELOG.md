@@ -10,9 +10,9 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
-## October 24th, 2026 at 5:02:16 p.m. EDT — `7a1438d3462c` test(#1076): what SQLite writes, syncs and truncates for each step of a live write, over an hour of recording, and on the phone-shaped store
+## October 24th, 2026 at 5:02:16 p.m. EDT — `c5a5f69cea65` test(#1076): what SQLite writes, syncs and truncates for each step of a live write, over an hour of recording, and on the phone-shaped store
 
-- **Implementation commit:** `7a1438d3462cc4aa66e7bbc386507226ac25a70d`
+- **Implementation commit:** `c5a5f69cea6507c81b936aba85ebb9f7b30a1600`
 - **Change:** Test (#1076): what SQLite writes, syncs and truncates for each step of a live write, over an hour of recording, and on the phone-shaped store
 - **Details:**
   - A pass-through VFS shim counts write calls and bytes, reads, syncs, full syncs, truncates and deletes per kind of file, the page behind every write-ahead-log frame and every page a checkpoint copies, and the b-tree each page belongs to. Exercises (STORAGEIO_EXERCISES=1): each step of a live write on a 7,000-line store, an hour of recording at 90 writes a minute, and Scribe's writes on #1072's phone-shaped store; each prints stable STORAGEIO lines. First baseline (Mac mini, release): 62.5 frames (251 KB) of write-ahead log and 29 KB of database per write for 2.25 KB of facts, 125x; the hour wrote 1,528 MB for 11.8 MB of facts with 1,036 full syncs.
