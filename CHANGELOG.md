@@ -10,6 +10,52 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## October 23rd, 2026 at 8:53:14 p.m. EDT — `0f1d2ebcd123` Fix (#1012): the resource loader's request box says what protects it, so SwiftConcurrencyGuidanceTests passes on main again
+
+- **Implementation commit:** `0f1d2ebcd123f00549681ffd4d3642716c461c03`
+- **Change:** Fix (#1012): the resource loader's request box says what protects it, so SwiftConcurrencyGuidanceTests passes on main again
+- **Details:**
+  - The one @unchecked Sendable 0fe995b2 added lacked the SAFETY: comment the guidance test requires; SwiftConcurrencyGuidanceTests and the progressive media suites pass, 30 tests in 6 suites.
+- **Files:**
+  - `Sources/InstantSwiftDataMedia/InstantProgressiveMediaResourceLoader.swift` — the SAFETY comment
+- **User context (verbatim):**
+  > It would be nice to have a library primitive for streaming progressive audio file over instant.
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run); no SpecStory capture for headless runs.
+
+## October 23rd, 2026 at 8:53:13 p.m. EDT — `0fe995b2caac` Green (#1012): progressive media appends on this device, stores each segment before its rows, and plays as HLS through AVPlayer
+
+- **Implementation commit:** `0fe995b2caac5b0b67f9d0a9158f634f74ad1dc7`
+- **Change:** Green (#1012): progressive media appends on this device, stores each segment before its rows, and plays as HLS through AVPlayer
+- **Details:**
+  - Spool, writer (offline-gated, 1-60 s backoff reset on success, permission isolation, resumable), reader (paged rows, lazy URL pages), playlist, InstantNetworkPath.waitUntilSatisfied, and InstantSwiftDataMedia (AVAssetWriter HLS segmenter, AVAssetResourceLoader playlist with redirects). 27 tests in 5 suites pass; four test mistakes corrected while greening, listed in the commit.
+- **Files:**
+  - `Sources/InstantSwiftData/InstantProgressiveMediaWriter.swift` — append, finish, deliver, resumable, the backoff
+  - `Sources/InstantSwiftData/InstantProgressiveMediaSpool.swift` — the on-device spool
+  - `Sources/InstantSwiftData/InstantProgressiveMediaReader.swift` — rows to segments, URLs, the live source
+  - `Sources/InstantSwiftData/InstantProgressiveMediaRows.swift` — the rows' schema and mutations
+  - `Sources/InstantSwiftDataMedia/InstantAudioSegmenter.swift` — the HLS segmenter
+  - `Sources/InstantSwiftDataMedia/InstantProgressiveMediaResourceLoader.swift` — AVPlayer's playlist and redirects
+  - `Sources/InstantSwiftDataCore/InstantNetworkPathWaiting.swift` — the socket's network rule for other code
+- **User context (verbatim):**
+  > It would be nice to have a library primitive for streaming progressive audio file over instant.
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run); no SpecStory capture for headless runs.
+
+## October 23rd, 2026 at 8:53:13 p.m. EDT — `b1d48365e69f` Red (#1012): progressive media's rows, playlist, spool, writer, reader, segmenter and resource loader are stubs; 27 tests in 5 suites say what they must do
+
+- **Implementation commit:** `b1d48365e69f6340373d2de3478f946df79fa34b`
+- **Change:** Red (#1012): progressive media's rows, playlist, spool, writer, reader, segmenter and resource loader are stubs; 27 tests in 5 suites say what they must do
+- **Details:**
+  - Red run (heavy.sh, laptop, 128 s): 22 of 27 fail, 34 issues; the 5 passing check plain values (ids, paths, the format). New InstantSwiftDataMedia target and its test target; InstantSwiftDataTests links DependenciesTestSupport.
+- **Files:**
+  - `Tests/InstantSwiftDataTests/InstantProgressiveMediaWriterTests.swift` — the writer's contract: spool first, files before rows, offline gate, backoff, isolation, relaunch
+  - `Tests/InstantSwiftDataTests/InstantProgressiveMediaReaderTests.swift` — the reader: unread rows only, contiguous listing, URL pages kept a day
+  - `Tests/InstantSwiftDataTests/InstantProgressiveMediaPlaylistTests.swift` — EVENT and VOD playlists, the target duration, ids and paths
+  - `Tests/InstantSwiftDataMediaTests/InstantProgressiveMediaSegmenterTests.swift` — PCM to AAC-LC fMP4 segments that play joined
+  - `Package.swift` — the InstantSwiftDataMedia product, target and test target
+- **User context (verbatim):**
+  > It would be nice to have a library primitive for streaming progressive audio file over instant.
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run); no SpecStory capture for headless runs.
+
 ## October 23rd, 2026 at 8:44:38 p.m. EDT — `c6bd5358df46` Document the v1.9.29 release: a refused write is rolled back at the cost of the rows it touched, not of the whole store (#1035)
 
 - **Implementation commit:** `c6bd5358df46dfdd032b4db424c3211847628af2`

@@ -1,3 +1,12 @@
+## 2026-10-23 20:51:30 EDT — instant-data-swift `0f1d2ebcd123f00549681ffd4d3642716c461c03`
+Fix (#1012): the resource loader's request box carries its SAFETY: comment, so SwiftConcurrencyGuidanceTests passes on main again.
+
+## 2026-10-23 19:21:36 EDT — instant-data-swift `0fe995b2caac5b0b67f9d0a9158f634f74ad1dc7`
+Green (#1012): progressive media's spool, writer, reader, playlist and the InstantSwiftDataMedia target (AVAssetWriter HLS segmenter, AVAssetResourceLoader playlist with redirects); 27 tests in 5 suites pass. Released in 1.9.26.
+
+## 2026-10-23 18:45:07 EDT — instant-data-swift `b1d48365e69f6340373d2de3478f946df79fa34b`
+Red test (#1012): 27 tests in 5 suites for progressive media against stubs; 22 fail.
+
 ## 2026-10-23 20:48:27 EDT — scribe `c39dcc69121c8f50b149349bab38f1012d9f6958`
 Green (#1036): a fallback speech session attaches no engine before its first audio, so the iPhone's silent system-audio lane no longer holds a second Your Mac socket or runs On This iPhone on nothing.
 

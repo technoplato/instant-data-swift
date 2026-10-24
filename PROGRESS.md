@@ -1,3 +1,20 @@
+## 2026-10-23 20:58:00 EDT — #1012: progressive media over Instant, in the library (released in 1.9.26); the consuming app's adoption next
+
+- **Commits (main):** plan `be04e519`; the codec lab `f82fb15a`; ADR 0021 (proposed) `b112a2b7`; red `b1d48365`, green
+  `0fe995b2` (carried by v1.9.26, released by #1024's agent), fix `0f1d2ebc` (the SAFETY comment the guidance test
+  requires; main failed that one test from 1.9.26 to here); ledgers `18241598`, `d3a6b73e`, `e3fc6249` and this one.
+- **What it is:** a writer appends compressed segments on the device and delivers them (each `$files` file before its
+  rows, oldest first, offline-gated, backoff reset only on success, resumable from its spool); a reader lists the rows
+  and reads URLs a page at a time; AVPlayer plays the stream through an `AVAssetResourceLoader` playlist with redirects.
+  AAC-LC 24 kHz 32 kbps, 6 s fMP4 segments: 23.7 times smaller than the WAV, PESQ 4.32 / 4.11 / 4.28.
+- **Checks:** the progressive media suites, 27 tests in 5 suites, and SwiftConcurrencyGuidanceTests (30 in 6), pass on
+  this Mac; the whole bundle on the laptop at load 236-520: 66 of 1,392 failing, 56 listed, of the 10 new only the
+  SAFETY check was this work's (fixed). watchOS and iOS builds of InstantSwiftDataMedia run on the mini.
+- **Not measured yet:** the iPhone's encoding CPU (the phone's developer disk image is not mounted: plug in and unlock
+  once); a live recording heard on another device through Instant's storage (needs the app's adoption).
+- **Next:** the consuming app (#1012, its ADR 0091): RecordingAudioStream red and green on the 1.9.28 pin, the two
+  namespaces and the storage rule pushed, then playback from the compressed copy on another device.
+
 ## 2026-10-23 20:44:54 EDT — v1.9.29: a refused write is rolled back at the cost of the rows it touched, not of the whole store (#1035); carries 1.9.28
 
 - **Commits:** red `99459a0a`, green `fcced1ec` (the rollback advances the memory cache); red `4ff7f805`, green `10345339`
