@@ -1,3 +1,9 @@
+## 2026-10-24 15:25:36 EDT — scribe `25e44d70d3d66f04388cc378f32c059871d76c02`
+Build 126 cut: CURRENT_PROJECT_VERSION 126 for Scribe and Scribe Playback, What's New 126 dated; instant-data-swift exactly 1.9.34, models-1057 (#1057) and chunk-link-1064 (#1064, from never-shipped 125). (#1070)
+
+## 2026-10-24 15:25:36 EDT — scribe `bde9629855abde86287fed5ed28d940e50fb8e0b`
+changelog(#1070): build 126 cut 25e44d70d.
+
 ## 2026-10-24 15:17:24 EDT — scribe `cb98b87131bbb4ed8855e635c18efec03b9da2a8`
 Merge (#1057) to main for build 126: On This iPhone's compiled models survive an update (the App Group folder, a stamp of what Core ML keys on).
 
