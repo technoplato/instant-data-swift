@@ -1,6 +1,7 @@
 import CustomDump
 import Foundation
 @testable import InstantSwiftDataCore
+import SQLite3
 import Testing
 
 /// #654, #932 (2026-10-24): a file the device holds no record of, read or downloaded by id without a name, was found by a
@@ -9,6 +10,9 @@ import Testing
 /// longer than the query's 5 s, landed anyway (a server apply held the operation gate 2.3-5.8 s), and the next session
 /// prune dropped the closed result again (3.8-6.0 s), once a minute while a recording's media downloaded. A lookup by id
 /// now asks storage for that one file, so its cost does not grow with what the account has uploaded.
+///
+/// #1072 (2026-10-24): while nothing observes the device's files, an upload, a read by id and a delete read no other
+/// file's record.
 @Suite(.serialized)
 struct InstantStoredFileLookupTests {
   private let payload = Data((0..<4_096).map { UInt8($0 % 239) })
@@ -168,6 +172,48 @@ struct InstantStoredFileLookupTests {
     expectNoDifference(deletedPaths, [wanted.path])
     let stored = try await fixture.runtime.queryLocally(LookupFixture.everyFile)
     expectNoDifference(stored.values.map(\.id), [wanted.id])
+  }
+
+  // #1072 (2026-10-24): every upload, delete and download by id read back every file record this device keeps, only to
+  // hand them to observations of its files, whether one was open or not; the upload did it holding the operation gate.
+  // Scribe opens none and uploads about eleven times a minute while recording (a 60 s audio chunk and 6 s media
+  // segments); with 4,264 records on one phone, each upload decoded about 3 MB of JSON. One record no reader can decode
+  // stands in for that read here: a call that reads every record fails on it, after its work is done, and a failed
+  // upload deletes the file storage just took.
+  @Test("While nothing observes the device's files, an upload, a read by id and a delete read no other file's record")
+  func fileCallsReadNoOtherRecordWhileUnobserved() async throws {
+    let fixture = try await LookupFixture(payload: payload, accountFileCount: 40)
+    defer { fixture.remove() }
+    let storeURL = await fixture.runtime.persistence.fileURLForTesting()
+    try insertUndecodableFileRecord(into: storeURL)
+    let source = fixture.directory.appendingPathComponent("chunk.wav")
+    try payload.write(to: source)
+
+    let uploaded = try await fixture.runtime.uploadFile(
+      from: source,
+      name: "scribe/recording/generation-1/audio-chunks/000008.wav"
+    )
+    let deletedAfterUpload = await fixture.storage.deletedPaths
+    expectNoDifference(deletedAfterUpload, [])
+
+    let wanted = fixture.files[9]
+    let mark = await fixture.addQueryCount()
+    let reading = Task { try await fixture.runtime.storedFileContents(id: wanted.id) }
+    defer { reading.cancel() }
+    _ = try await fixture.answerFilesQuery(after: mark)
+    let contents = try await instantLiveWithTimeout(
+      operation: "read a stored file by id beside an undecodable record",
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds,
+      onAbandon: { reading.cancel() }
+    ) {
+      try await reading.value
+    }
+    expectNoDifference(contents.data, payload)
+
+    let deleted = try await fixture.runtime.deleteStoredFile(id: uploaded.id)
+    expectNoDifference(deleted.id, uploaded.id)
+    let deletedPaths = await fixture.storage.deletedPaths
+    expectNoDifference(deletedPaths, ["scribe/recording/generation-1/audio-chunks/000008.wav"])
   }
 
   // The amplifier in the same loop: the whole list's answer outlasted its one-shot query's 5 s and was applied anyway,
@@ -350,6 +396,19 @@ private struct LookupFixture {
   func remove() {
     try? FileManager.default.removeItem(at: directory)
   }
+}
+
+/// Writes a file record no reader can decode beside the device's own, through a second connection to the store's file.
+private func insertUndecodableFileRecord(into storeURL: URL) throws {
+  var connection: OpaquePointer?
+  defer { sqlite3_close(connection) }
+  try #require(sqlite3_open_v2(storeURL.path, &connection, SQLITE_OPEN_READWRITE, nil) == SQLITE_OK)
+  sqlite3_busy_timeout(connection, 5_000)
+  let insert = """
+    INSERT INTO instant_files (app_id, file_id, name, created_at_ms, updated_at_ms, json)
+    VALUES ('app-1', 'undecodable-record', 'undecodable.bin', 0, 0, '{"not": "a stored file"}')
+    """
+  try #require(sqlite3_exec(connection, insert, nil, nil, nil) == SQLITE_OK)
 }
 
 private actor LookupStorageRecorder {
