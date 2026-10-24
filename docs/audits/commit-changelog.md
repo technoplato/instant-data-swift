@@ -1,3 +1,12 @@
+## 2026-10-24 18:02:52 EDT — scribe `af5da1557a5dff2a1012923a0e161b3cabf23933`
+Merge (#641) for build 129: heat holds back nothing he uses; only background work waits.
+
+## 2026-10-24 18:02:52 EDT — scribe `25b2ae94f805ddd5729a38dd1b27273579f7f41c`
+Green (#641): live audio upload, broadcast frames, the movie, interim saves, the camera feed and voice actions' model go on at serious and critical.
+
+## 2026-10-24 18:02:52 EDT — scribe `7cc816095119a59a07d2aa9fddab6c4ebf2af975`
+Red (#641): the #639 heat tests turned to the rule that heat holds back nothing he uses.
+
 ## 2026-10-24 17:54:16 EDT — scribe `e3f4559c9c67f42af77652cf283e439a132fb933`
 Build 128 cut (#1126): CURRENT_PROJECT_VERSION 128 for Scribe and Scribe Playback; carries #1057 amendment A; instant-data-swift exactly 1.9.34.
 
