@@ -100,3 +100,16 @@ about 1 MB allocated per write, which most writes (merges, links) can never use.
 then only their own attribute ids looked up), `Tests/InstantSwiftDataCoreTests/RealSize/RealSizeMeter.swift` (already
 this plan's: counting one thread's allocations), `Tests/InstantSwiftDataCoreTests/OutboxSupersessionSchemaCostTests.swift`
 (new: the red and green).
+
+## Amendment 5 (2026-10-24 19:50 EDT, claude-code/lib-audit-1072@halfjew22): #1108/#1114, the overlay check and the tail read
+
+After the claim fix, #1076's exercise still read 1.87 MB of the outbox per write in delivery on the phone-shaped store
+(fixture version 3): two more statements walk every row. The delivery's unknown-overlay check filters
+`optimistic_overlay_active != 0`, which no index can seek, so its plan is `SCAN outbox`, reading each refused row's late
+columns through its body; written `= 1` (the flag holds only 0 and 1) it searches `instant_outbox_global_effect_order_idx`.
+The supersession tail read (every eligible write) selects the newest row with its body size, a scan of the table and a
+sort; finding the newest id first from a covering index and then that one row by its key reads 24 pages instead of
+1,336 on a copy of the phone-shaped store. Claims: `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift`
+(`hasUnknownActiveOverlayAfterWithoutTransaction` and `readImmediateSupersessionTail`, their SQL as constants, a step
+hook for the overlay check), `Tests/InstantSwiftDataCoreTests/RealSize/OutboxClaimScaleTests.swift` (already this
+plan's: the scale and plan tests).
