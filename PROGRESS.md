@@ -1,3 +1,22 @@
+## 2026-10-24 13:55:15 EDT — #654, #932: v1.9.34, deleteStoredFile(id:) by its own record or id (build 123's last whole-list query)
+
+- **Commits:** plan amendment `ee396676`; red `78e0c30d`, green `607d64bf`; release document `dd0589bf`; then this
+  ledger commit and the tag v1.9.34.
+- **Why (measured, the lab on build 123 = 1.9.33):** one whole-`$files` query a minute was left: Scribe's
+  LiveAudioChunker uploads a chunk, its link transact fails ('strict update entity', no existing entity), and its
+  compensation `deleteStoredFile(id:)` found the file through `storedFiles()`; the list timed out at 5 s (13:18:51,
+  13:32:42, 13:33:44, 13:34:52), so the delete failed and the chunk stayed in storage. Why the chunk row is missing is a
+  Scribe question (the lab files it).
+- **Two-hour measurement of 1.9.33** (scratch harness `~/Sync/audit/longrec-654/scripts/LongRecordingStoreHarness.swift`):
+  idle Mac mini, release, a made-up 9,455-file account, minutes 5/60/120: the lookup's apply 523/816/959 ms -> 0/0/0 ms,
+  the prune 1,509/1,846/2,043 -> 0/5/0 ms, a read's wait 1.5/1.8/2.0 s -> 4/10/17 ms, 465/441/512 -> 8.3/9.9/11.8 MB
+  written a minute, peak 559 -> 61-107 MB. On the iPhone store copy (laptop, debug): 2.4/2.6/7.1 s -> 0/1/1 ms and
+  6.4/5.7/12.6 s -> 1/2/2 ms. CPU per minute after still grows (0.63/1.54/2.36 s): filed as #1056 (a new line
+  re-materializes its page from every line of the recording).
+- **Checks:** stored-file suites 6/6, 7/7, 3/3, 1/1; whole bundle on `607d64bf` 1,411 tests, 1 failing (listed), no new
+  failures (two earlier runs: one load-timing flake that passes alone 3/3, one temp-store loss).
+- **Next:** Scribe and Scribe Playback pin exactly 1.9.34; the lab's check on the build that carries it.
+
 ## 2026-10-24 12:35:57 EDT — #654, #932: v1.9.33 pinned in Scribe for build 123; the device check is next
 
 - **Scribe main:** plan `018bfb830`, pin `2ad1eaefc` (Package.swift and Playback's exact 1.9.33; both Package.resolved

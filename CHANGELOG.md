@@ -10,6 +10,42 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## October 24th, 2026 at 1:55:15 p.m. EDT — `dd0589bf5f75` Document the v1.9.34 release: a stored file deleted by id is found by its own record or its id, not in every file the account holds (#654, #932); carries 1.9.33
+
+- **Implementation commit:** `dd0589bf5f759e63766e6cef0dc9229bc1eecb5d`
+- **Change:** Document the v1.9.34 release: a stored file deleted by id is found by its own record or its id (#654, #932); carries 1.9.33
+- **Details:**
+  - Release focus, the two-hour measurement of 1.9.33's changes (idle Mac mini release: lookup apply 523-959 ms -> 0 ms, prune 1.5-2.0 s -> 0-5 ms; iPhone store copy debug: 2.4-7.1 s -> 0-1 ms, 5.7-12.6 s -> 1-2 ms), what stays the same, checks, not run.
+- **Files:**
+  - `docs/releases/v1.9.34.md` — new: the 1.9.34 release document
+- **User context (verbatim):**
+  > Michael, Recording 292 #513 (2026-10-24 09:53): "phone is probably gonna burn a hole in my pocket, literally."
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run longrec-654, claude/ld); no SpecStory capture for headless runs.
+
+## October 24th, 2026 at 1:55:14 p.m. EDT — `607d64bf62d1` Green (#654, #932): deleteStoredFile(id:) finds its file in the device's own record, else by a $files query on its id
+
+- **Implementation commit:** `607d64bf62d1e4ad45ccc031226e8d33744161e3`
+- **Change:** Green (#654, #932): deleteStoredFile(id:) finds its file in the device's own record, else by a $files query on its id
+- **Details:**
+  - An upload always leaves a record, so Scribe's compensation delete asks no query; a file with no record is one row; offline it reads as missing, as the list's local fallback did. Whole bundle: 1,411 tests, 1 failing (listed), no new failures.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — deleteStoredFile(id:) and the history line
+- **User context (verbatim):**
+  > Michael, Recording 292 #513 (2026-10-24 09:53): "phone is probably gonna burn a hole in my pocket, literally."
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run longrec-654, claude/ld); no SpecStory capture for headless runs.
+
+## October 24th, 2026 at 1:55:14 p.m. EDT — `78e0c30d9792` Red (#654, #932): a stored file deleted by id is found in every file the account holds
+
+- **Implementation commit:** `78e0c30d9792aad375692a98c14da2cc17e45e4b`
+- **Change:** Red (#654, #932): a stored file deleted by id is found in every file the account holds
+- **Details:**
+  - Build 123's last whole-$files query: deleteStoredFile(id:) found its file through storedFiles(); a delete of an uploaded file waited out the list's 5 s, a delete of a file with no record stored all 400 scripted files.
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantStoredFileLookupTests.swift` — two delete tests; the recorder records deletes
+- **User context (verbatim):**
+  > Michael, Recording 292 #513 (2026-10-24 09:53): "phone is probably gonna burn a hole in my pocket, literally."
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run longrec-654, claude/ld); no SpecStory capture for headless runs.
+
 ## October 24th, 2026 at 12:26:21 p.m. EDT — `267b0116b44c` Document the v1.9.33 release: a stored file looked up by id costs one file's work, and a one-shot query's late answer is not applied (#654, #932); carries 1.9.32
 
 - **Implementation commit:** `267b0116b44c30249864fbaa8eb6b9a8ecc3f80d`

@@ -1,3 +1,15 @@
+## 2026-10-24 13:54:50 EDT — instant-data-swift `dd0589bf5f759e63766e6cef0dc9229bc1eecb5d`
+Release document (#654, #932): v1.9.34, deleteStoredFile(id:) by its own record or id; the two-hour measurement of 1.9.33 (idle mini release: lookup apply 523-959 ms -> 0, prune 1.5-2.0 s -> 0-5 ms).
+
+## 2026-10-24 13:34:08 EDT — instant-data-swift `607d64bf62d1e4ad45ccc031226e8d33744161e3`
+Green (#654, #932): deleteStoredFile(id:) uses the device's own record, else a $files query on its id; it listed every file (build 123's last whole-list query, from Scribe's chunk compensation delete).
+
+## 2026-10-24 13:33:11 EDT — instant-data-swift `78e0c30d9792aad375692a98c14da2cc17e45e4b`
+Red (#654, #932): a delete by id waited out the whole $files list's 5 s, or stored every file of the account.
+
+## 2026-10-24 13:32:13 EDT — instant-data-swift `ee39667662b7eb745f8ff0ed02ad5b52825c0a47`
+Plan amendment (#654, #932): deleteStoredFile(id:) and the v1.9.34 release document claimed.
+
 ## 2026-10-24 12:57:45 EDT — scribe `a398de5e6be2c8cadc7addb99397c2c6cdbd7c78`
 Build 123 cut: Scribe 0.1 (123) and Scribe Playback 123, CURRENT_PROJECT_VERSION 123 and What's New 123 dated, from main d9b14c053; pins instant-data-swift exactly 1.9.33 (#654, #932) (#1054).
 
