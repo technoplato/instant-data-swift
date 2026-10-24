@@ -37,6 +37,8 @@
 //   writes them (#1007).
 // - 2026-10-23: a save and an acknowledgement fingerprint a write's optimistic effect once each; the save asked whether
 //   there was one before computing the one it stores, and the acknowledgement computed it for two checks (#1007).
+// - 2026-10-23: a refused write's rollback advances the memory cache to the revision it commits, as a server apply and a
+//   local write do; it dropped the cache, and the next read rebuilt the whole store from SQLite (#1035).
 
 import Foundation
 import IssueReporting
@@ -7268,7 +7270,11 @@ public actor SQLitePersistenceStore {
     changedFactScope: InstantFactScope = InstantFactScope(),
     metadataEntries: [InstantPersistenceMetadataEntry]
   ) throws -> InstantTerminalFailureCommit? {
-    let result: InstantTerminalFailureCommit? = try transaction {
+    let committed: (
+      commit: InstantTerminalFailureCommit,
+      outboxRevision: Int64,
+      queryResultRevision: Int64
+    )? = try transaction {
       guard
         try loadMetadataRevisionWithoutTransaction(Self.storeRevisionKey)
           == expectedStoreRevision,
@@ -7280,14 +7286,18 @@ public actor SQLitePersistenceStore {
       if target.status == .failed
         || (target.status == .confirmed && target.confirmationProven)
       {
-        return InstantTerminalFailureCommit(
-          failedMutation: nil,
-          rebasedSuccessors: [],
-          pendingMutationCount: Int(try selectInt64(
-            "SELECT COUNT(*) FROM instant_outbox WHERE status = ?",
-            [.text(InstantMutationStatus.pending.rawValue)]
-          )),
-          didChange: false
+        return (
+          commit: InstantTerminalFailureCommit(
+            failedMutation: nil,
+            rebasedSuccessors: [],
+            pendingMutationCount: Int(try selectInt64(
+              "SELECT COUNT(*) FROM instant_outbox WHERE status = ?",
+              [.text(InstantMutationStatus.pending.rawValue)]
+            )),
+            didChange: false
+          ),
+          outboxRevision: 0,
+          queryResultRevision: 0
         )
       }
       guard target.status == .pending || target.status == .confirmed,
@@ -7371,22 +7381,45 @@ public actor SQLitePersistenceStore {
           updatedAt: entry.updatedAt
         )
       }
+      let outboxRevision = try loadMetadataRevisionWithoutTransaction(Self.outboxRevisionKey)
+      let queryResultRevision = try loadMetadataRevisionWithoutTransaction(
+        Self.queryResultRevisionKey
+      )
       _ = try bumpMetadataRevisionWithoutTransaction(Self.storeRevisionKey)
       _ = try bumpMetadataRevisionWithoutTransaction(Self.outboxRevisionKey)
-      return InstantTerminalFailureCommit(
-        failedMutation: failedMutation,
-        rebasedSuccessors: rebasedSuccessors,
-        pendingMutationCount: Int(try selectInt64(
-          "SELECT COUNT(*) FROM instant_outbox WHERE status = ?",
-          [.text(InstantMutationStatus.pending.rawValue)]
-        )),
-        didChange: true
+      return (
+        commit: InstantTerminalFailureCommit(
+          failedMutation: failedMutation,
+          rebasedSuccessors: rebasedSuccessors,
+          pendingMutationCount: Int(try selectInt64(
+            "SELECT COUNT(*) FROM instant_outbox WHERE status = ?",
+            [.text(InstantMutationStatus.pending.rawValue)]
+          )),
+          didChange: true
+        ),
+        outboxRevision: outboxRevision,
+        queryResultRevision: queryResultRevision
       )
     }
-    if result?.didChange == true {
-      cachedState = nil
+    if let committed, committed.commit.didChange {
+      // #1035: the runtime installs this rollback in its hot store and records the next store revision, so the cache
+      // moves with it. Dropping it made the next read of a 39,507-fact store rebuild every fact from SQLite (12.9 MB,
+      // 242-338 ms on a phone) and replace the hot store, once per refused write.
+      advanceCachedRevisionDomains(
+        expectedStoreRevision: expectedStoreRevision,
+        expectedAttributeRevision: expectedAttributeRevision,
+        expectedOutboxRevision: committed.outboxRevision,
+        expectedQueryResultRevision: committed.queryResultRevision,
+        changedEntityTriples: changedEntityTriples,
+        changedFactScope: changedFactScope,
+        mergingAttributes: [],
+        storeChanged: true,
+        attributesChanged: false,
+        outboxChanged: true,
+        queryResultsChanged: false
+      )
     }
-    return result
+    return committed?.commit
   }
 
   func mutationDeliveryBarrierSummary() throws
