@@ -1,3 +1,17 @@
+## 2026-10-23 23:58:00 EDT — #1012: progressive media proven end to end over a live Instant app
+
+- **Commits:** plan `af5f1b7e`, benchmark `c0918732` (benchmarks/ProgressiveMediaLive), ADR 0021 verification
+  `c2ad634c` (plan `e4fdfc1c`); Scribe pins 1.9.32 at `ec3c8df9d` (plan `a2e8d3138`, change log `c0137c2e3`).
+- **Measured** (throwaway app, Mac mini, credentialed boundary evidence): a recording written in real time by one
+  client is listed on a second client 22.0-22.8 s after it starts; AVPlayer plays it 29.5 s behind the live edge
+  when it opens at the first segment and 37.0 s when it opens 90 s in, no stall over 3 minutes; the finished stream
+  plays from its start and middle; every run deleted its rows and files.
+- **Found:** storage refuses an upload outside the rules with HTTP 400, which `InstantStorageTransport` reports as
+  `networkFailed` (only 401/403 are `permissionRejected`), so the writer retries a refused segment with its backoff
+  instead of ending delivery. Not changed: the mapping is shared by every upload in the consuming app. Follow-up.
+- **Next:** the consuming app's playback on a second device once its build 121 is installed; the iPhone's encoding
+  CPU when its developer disk image is mounted.
+
 ## 2026-10-23 23:27:00 EDT — #1012: v1.9.32, the progressive media writer tries a failed row write again
 
 - **Commits:** plan `53eb0e16`; red `e1fd868d`, green `9e07d624`; release document `cbabda40`; then this ledger

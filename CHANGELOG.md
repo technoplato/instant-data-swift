@@ -10,6 +10,33 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## October 23rd, 2026 at 11:55:36 p.m. EDT — `c2ad634c15ee` ADR 0021's verification: the end-to-end run over a live Instant app (listed in 22 s, played 29.5 s behind, 37.0 s joining late, no stall) (#1012)
+
+- **Implementation commit:** `c2ad634c15eecdf9e69587facbfed1a5dad1a0e7`
+- **Change:** ADR 0021's verification: the end-to-end run over a live Instant app (#1012)
+- **Details:**
+  - Listed in 22 s, played 29.5 s behind, 37.0 s joining late, no stall; pending: the iPhone's encoding CPU and the consuming app's playback on a second device.
+- **Files:**
+  - `docs/adr/0021-progressive-media-over-instant.md` — the verification section
+- **User context (verbatim):**
+  > Michael, typed 2026-10-23 12:30: "It would be nice to have a library primitive for streaming progressive audio file over instant. Because right now, if I'm remote, I can't play back the audio. I'd like to be able to play it back."
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run audio-stream-1012b, claude/strangelearning); no SpecStory capture for headless runs.
+
+## October 23rd, 2026 at 11:55:36 p.m. EDT — `c0918732bacd` Progressive media end to end over a live Instant app (#1012): one client records, another plays it 29.5 s behind (37.0 s when it joins 90 s in), no stall
+
+- **Implementation commit:** `c0918732bacde774f079003e9e2660ff278133fe`
+- **Change:** Progressive media end to end over a live Instant app (#1012): one client records, another plays it 29.5 s behind (37.0 s joining 90 s in), no stall
+- **Details:**
+  - benchmarks/ProgressiveMediaLive against the throwaway app: listed on the other client 22.0-22.8 s after the start; finished stream plays from start and middle; every row and file deleted. Found: a storage refusal comes back as HTTP 400, which the library reports as networkFailed (retried, not ended).
+- **Files:**
+  - `benchmarks/ProgressiveMediaLive/Package.swift` — new: the package (depends on the checkout by path)
+  - `benchmarks/ProgressiveMediaLive/Sources/progressive-media-live/main.swift` — new: the writer and player clients and the gap
+  - `benchmarks/ProgressiveMediaLive/README.md` — new: how to run it and the results
+  - `benchmarks/ProgressiveMediaLive/results/live-instant.jsonl` — new: three runs' summaries
+- **User context (verbatim):**
+  > Michael, typed 2026-10-23 12:30: "It would be nice to have a library primitive for streaming progressive audio file over instant. Because right now, if I'm remote, I can't play back the audio. I'd like to be able to play it back."
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run audio-stream-1012b, claude/strangelearning); no SpecStory capture for headless runs.
+
 ## October 23rd, 2026 at 11:24:25 p.m. EDT — `cbabda402be8` Document the v1.9.32 release: a progressive media row write that fails is tried again after the writer's backoff (#1012); carries 1.9.31
 
 - **Implementation commit:** `cbabda402be8abb71e1a968a93600fdc375f69bd`

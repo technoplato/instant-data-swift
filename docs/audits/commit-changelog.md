@@ -1,8 +1,26 @@
+## 2026-10-23 23:55:17 EDT — instant-data-swift `c2ad634c15eecdf9e69587facbfed1a5dad1a0e7`
+ADR 0021's verification (#1012): the end-to-end run over a live Instant app.
+
+## 2026-10-23 23:55:16 EDT — instant-data-swift `e4fdfc1c13259c7f56be4b8213c7dbecbaef6c20`
+Plan (#1012): claims ADR 0021's verification section.
+
+## 2026-10-23 23:54:32 EDT — instant-data-swift `c0918732bacde774f079003e9e2660ff278133fe`
+Progressive media end to end over a live Instant app (#1012): listed on a second client in 22.0-22.8 s, played 29.5 s behind (37.0 s joining 90 s in), no stall; the finished stream plays; all rows and files deleted.
+
 ## 2026-10-23 23:46:56 EDT — scribe `33c6d0550`
 Scribe Playback's Build 120 What's New story begins 'Now you can' (#1040; the cut check's one new failure).
 
 ## 2026-10-23 23:46:56 EDT — scribe `662a3c28e`
 progress(#1040): build 120 installed on the iPhone, iPad and Mac.
+
+## 2026-10-23 23:28:33 EDT — scribe `c0137c2e3ebc38c8c44a76b7b92c8fd8e96c724c`
+changelog(#1012): CHANGELOG.md entries for 58576d66e and ec3c8df9d.
+
+## 2026-10-23 23:28:08 EDT — scribe `ec3c8df9d86d80a19370894cb0f929c2132425e7`
+Pin instant-data-swift exactly 1.9.32 in Scribe and Scribe Playback (#1012: a progressive media row write that fails is tried again); the installer expects 1.9.32. For build 121.
+
+## 2026-10-23 23:25:36 EDT — scribe `a2e8d3138296ba045ee301eb70d5b7b9990c1879`
+Plan (#1012): claims the 1.9.32 pin files.
 
 ## 2026-10-23 23:24:01 EDT — instant-data-swift `cbabda402be8abb71e1a968a93600fdc375f69bd`
 Release document for v1.9.32 (#1012): a progressive media row write that fails is tried again after the writer's backoff; carries 1.9.31.
