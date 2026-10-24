@@ -1,6 +1,7 @@
 // History:
-// - 2026-10-24: an add-query-ok whose query ended before it landed is not applied, as upstream drops an answer for a
-//   query `querySubs` no longer holds; the whole $files list's late answer was applied, then pruned, every minute (#654).
+// - 2026-10-24: the add-query-ok of a one-shot query that ended before it landed is not applied, as upstream drops an
+//   answer for a query `querySubs` no longer holds; the whole $files list's late answer was applied, then pruned, every
+//   minute (#654).
 // - 2026-10-24: a file read or downloaded by id without a name, which this device holds no record of, is looked up by a
 //   `$files` query on its id; it was a query of every file the account holds (9,455 files, about 27 MB on one phone),
 //   whose answer the server apply and then the prune loaded and dropped again once a minute while recording (#654, #932).
@@ -1552,6 +1553,7 @@ public final class InstantRuntime: Sendable {
   /// The in-memory counters behind ``connectionHealth()`` (#482).
   private let connectionHealthRecorder = InstantConnectionHealthRecorder()
   private let liveQueryResultState = InstantLiveQueryResultState()
+  private let endedOneShotQueries = InstantEndedOneShotQueries()
   /// The attribute context of the latest live refresh, reused across frames that share the session's attrs (#303).
   private let liveRefreshAttributeContexts = InstantLiveRefreshAttributeContextCache()
   private let liveQueryAcknowledgements = InstantLiveQueryAcknowledgementState()
@@ -6285,10 +6287,11 @@ public final class InstantRuntime: Sendable {
       cancelAndWait: { [self] in
         await liveQueryResultState.release(key: registrationKey)
         _ = try? await persistence.flushDeferredLiveQueryResults(keys: [registrationKey])
-        _ = try? await liveSession.unregisterQuery(
+        let ended = try? await liveSession.unregisterQuery(
           key: registrationKey,
           clientEventID: configuration.makeID()
         )
+        if ended == true { await endedOneShotQueries.insert(registrationKey) }
       }
     )
     let emission: InstantQueryEmission
@@ -8706,12 +8709,14 @@ public final class InstantRuntime: Sendable {
         )
       }
       let registrationKey = try InstantLiveQueryEncoder.registrationKey(for: query)
-      // #654, #932: an answer whose query ended before it landed (a one-shot query that waited past its 5 s, or was
+      // #654, #932: the answer of a one-shot query that ended before it landed (it waited past its 5 s, or was
       // cancelled) is not applied: no query wants its facts, and the next prune would drop them again. On build 121 the
       // whole $files list's answer, about 27 MB, landed that way once a minute: a server apply held the operation gate
       // 2.3-5.8 s for it and the prune 3.8-6.0 s to drop it. Upstream `Reactor.js` keeps an add-query-ok's result only
-      // for a query `querySubs` still holds.
-      guard await liveSession.activeQueryKeys().contains(registrationKey) else {
+      // for a query `querySubs` still holds. An answer for a query this runtime never registered is applied as before.
+      if await !liveSession.activeQueryKeys().contains(registrationKey),
+        await endedOneShotQueries.contains(registrationKey)
+      {
         InstantDiagnostics.shared.record(
           .info,
           subsystem: "instant-swift-data-core",
@@ -16780,5 +16785,24 @@ private extension InstantTripleOperation {
 private extension String {
   var nilIfEmpty: String? {
     isEmpty ? nil : self
+  }
+}
+
+/// One-shot queries that ended on this runtime, so the answer of one that lands after it ended is dropped (#654, #932).
+///
+/// Bounded to the newest 256: a query that ended earlier than that has its late answer applied, as every late answer
+/// was before.
+actor InstantEndedOneShotQueries {
+  private var order: [String] = []
+  private var keys: Set<String> = []
+
+  func insert(_ key: String) {
+    guard keys.insert(key).inserted else { return }
+    order.append(key)
+    if order.count > 256 { keys.remove(order.removeFirst()) }
+  }
+
+  func contains(_ key: String) -> Bool {
+    keys.contains(key)
   }
 }
