@@ -113,3 +113,16 @@ sort; finding the newest id first from a covering index and then that one row by
 (`hasUnknownActiveOverlayAfterWithoutTransaction` and `readImmediateSupersessionTail`, their SQL as constants, a step
 hook for the overlay check), `Tests/InstantSwiftDataCoreTests/RealSize/OutboxClaimScaleTests.swift` (already this
 plan's: the scale and plan tests).
+
+## Amendment 6 (2026-10-24 20:15 EDT, claude-code/lib-audit-1072@halfjew22): #1103, a discard of a refused write
+
+A discard of a refused write whose receipt says it left no materialized effect (a live refusal's rollback already ran)
+still loads and decodes the whole durable outbox, copies every resident fact (`authoritativeStoreSnapshot`), diffs both
+copies into SQLite, bumps the store, attribute and outbox revisions and drops the cached state, so the next read
+reloads the whole store: 112 ms of the operation gate on the phone-shaped store as launched and 1.7 s after the whole
+`$files` list loaded (fixture version 3), up to 32 a recovery sweep. For that case the discard reads its one row, deletes
+it through the outbox diff of that row alone, bumps only the outbox revision and keeps the cached store. Claims:
+`Sources/InstantSwiftDataCore/InstantRuntime.swift` (`discardFailedMutation(id:allowingActiveDisposition:)` and one new
+private helper), `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` (one row-addressed removal of a failed
+mutation with no materialized effect), `Tests/InstantSwiftDataCoreTests/InstantFailedMutationDiscardCostTests.swift`
+(new: the red and green). The existing `InstantFailedMutationDiscardTests` must stay green.
