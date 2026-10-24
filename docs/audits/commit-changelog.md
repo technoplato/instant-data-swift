@@ -1,3 +1,12 @@
+## 2026-10-24 13:57:29 EDT — realtime-voice `e2f33da21a13ef0a556b5adeb339c4fccf75a790`
+Change log (#654 #932): the instant-data-swift 1.9.34 pin 972ac0bd9 (plan amendment 64a6d9ff5).
+
+## 2026-10-24 13:57:14 EDT — realtime-voice `972ac0bd9db785f680ecc018eaa56c82dd4402fb`
+Pin (#654 #932): Scribe and Scribe Playback pin instant-data-swift exactly 1.9.34 (607fe73e): deleteStoredFile(id:) by its own record or id; lock files (pin + originHash), installer 65/65, version docs, a Build 124 (next) story.
+
+## 2026-10-24 13:55:56 EDT — realtime-voice `64a6d9ff53a6028c87f96fdfd93dfe5ace2e330a`
+Plan amendment (#654 #932): longrec-654's pin plan moves to 1.9.34 (same files).
+
 ## 2026-10-24 13:54:50 EDT — instant-data-swift `dd0589bf5f759e63766e6cef0dc9229bc1eecb5d`
 Release document (#654, #932): v1.9.34, deleteStoredFile(id:) by its own record or id; the two-hour measurement of 1.9.33 (idle mini release: lookup apply 523-959 ms -> 0, prune 1.5-2.0 s -> 0-5 ms).
 
