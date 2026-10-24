@@ -1,3 +1,25 @@
+## 2026-10-24 17:47:12 EDT — #1076: the storage, disk and network audit, its exercises and today's baseline; 12 fixes filed
+
+- **Commits (instant-data-swift main):** plan `e423a137` and amendment `cb449154`; exercises `c5a5f69c` (ledger
+  `fbb20e75`, SHA fix `e06f54bf`) and `34eb1570`; this commit (the audit, its baseline, this entry); then the ledger.
+- **Measured (Mac mini M4, release, Apple SQLite 3.54.0; the iPhone not measured):** a logical write (2.25 KB of facts)
+  writes 62.5 log pages (251 KB) and 29 KB of checkpoint, 125 times the data; an hour at 90 writes a minute: SQLite
+  1,540 MB, the drive 1,729 MB, 1,039 full fsyncs (2.0 s), 759 MB received against 6.1 MB sent. On the phone's store
+  copy a claim's candidate query reads 3,711 of the outbox's 3,914 pages (33 with the bodies split out); on the
+  phone-shaped store delivery reads 339-355 MB and the echo 61-79 MB of the outbox per write.
+- **Filed, worst first:** #1114 (P1, every claim reads every queued body), #1115 (P1, the outbox row's 14
+  b-trees), #1116 (P1, the echo's in-memory diff), #1117 (P2, Scribe: a 16-line live tail), #1118 (P2, the checkpoint
+  interval), #1119 (P2, temp_store), #1120 (P2, in-place upsert), #1121 (P2, the fact table's layout), #1122 (P3,
+  unload in place), #1123 (P3, the result JSON), #1124 (P2, a wire-byte counter), #1125 (P3, stream resume by Range).
+- **Exercises:** `Tests/InstantSwiftDataCoreTests/RealSize/StorageIOExercises.swift` (`STORAGEIO_EXERCISES=1`) on the
+  VFS shim in `StorageIOCounters.swift`; `scripts/storage-io/phone-store-pages.sh`. Audit:
+  `docs/audits/2026-10-24-storage-disk-network-audit.md`; raw lines: `docs/audits/2026-10-24-storage-io-baseline.txt`.
+- **Not measured:** anything on the iPhone; the real server's frame for a 16-line page; reconnect, download and
+  stream-resume bytes; whether temp-file writes reach the flash; 32-36 MB an hour the process writes beside SQLite.
+- **Next:** the lab dispatches the fixes; each issue names its exercise and the baseline line it should move.
+- **Cleanup:** listed on #1076 (the worktree, the Mac mini's build and source copy, the local copy of the phone's
+  store).
+
 ## 2026-10-24 14:00:20 EDT — #654, #932: v1.9.34 pinned in Scribe for build 124; longrec-654 done, cleanup
 
 - **Scribe main:** plan amendment `64a6d9ff5`, pin `972ac0bd9` (exact 1.9.34 in Scribe and Scribe Playback, lock files
