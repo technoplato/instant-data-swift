@@ -225,7 +225,11 @@ nothing across a reload and an always-on recorder must.
 - Library: `InstantProgressiveMediaPlaylistTests`, `InstantProgressiveMediaWriterTests` and
   `InstantProgressiveMediaReaderTests` (InstantSwiftDataTests); `InstantProgressiveMediaSegmenterTests` and
   `InstantProgressiveMediaResourceTests` (InstantSwiftDataMediaTests).
-- Pending: the iPhone's encoding CPU, and a live recording heard on another device through Instant's storage.
+- End to end through a live Instant app's storage and rows (`benchmarks/ProgressiveMediaLive`, a throwaway app,
+  2026-10-23): a recording written in real time by one client is listed on a second client 22.0-22.8 s after it
+  starts, and AVPlayer plays it 29.5 s behind its live edge when it opens at the first segment, 37.0 s behind when it
+  opens 90 s in, with no stall over 3 minutes; the finished stream plays from its start and middle.
+- Pending: the iPhone's encoding CPU, and the consuming app's own playback on a second device.
 
 ## References
 
