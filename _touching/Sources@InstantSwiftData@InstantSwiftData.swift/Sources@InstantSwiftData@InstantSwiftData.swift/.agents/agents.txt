@@ -17,3 +17,4 @@ claude-opus-5.5-library-79 2026-10-04T16:23:54-04:00 mower plan=2026-10-02-libra
 claude-opus-5.5-receipt-quarantine-d417e89e 2026-10-14T22:00:38-04:00 grower plan=2026-10-14-retained-mutation-quarantine #696
 claude-code/storage-959@ld 2026-10-23T13:01:37-0400 mower plan=2026-10-23-storage-959 #959 (stored-file functions only)
 claude-code/transcript-open-1006@halfjew22 2026-10-23T14:44:24-0400 grower plan=2026-10-23-local-reads-1006 #1006
+claude-code/lib-audit-1072@ld 2026-10-24T15:58:40-0400 mower plan=2026-10-24-lib-audit-1072 #1072 (doc comments of the stored-file calls the fix changes)

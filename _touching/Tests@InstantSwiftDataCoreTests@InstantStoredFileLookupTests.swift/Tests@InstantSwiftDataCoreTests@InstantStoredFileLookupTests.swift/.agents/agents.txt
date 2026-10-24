@@ -1,1 +1,2 @@
 claude-code/longrec-654@ld 2026-10-24T10:43:09-0400 mower plan=2026-10-24-longrec-654 #654 #932 (new)
+claude-code/lib-audit-1072@ld 2026-10-24T15:58:40-0400 mower plan=2026-10-24-lib-audit-1072 #1072 (the fix's red and green)
