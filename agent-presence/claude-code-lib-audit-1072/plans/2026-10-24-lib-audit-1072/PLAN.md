@@ -78,3 +78,15 @@ migration; on a copy of the phone-shaped store the plans then search only needs-
 migration, one test hook counting a read's SQLite steps), `Tests/InstantSwiftDataCoreTests/RealSize/OutboxClaimScaleTests.swift`
 (new: the red and green), `docs/releases/v1.9.36.md` (new). Then the Scribe pin moves to 1.9.36 (the same files as the
 1.9.35 pin; Scribe plan amended there).
+
+## Amendment 3 (2026-10-24 19:05 EDT, claude-code/lib-audit-1072@halfjew22): #1141, the interner data race, first
+
+The lab's order of 18:45 puts #1141 first: every copy of `TripleIndexes` shares one `TxIDInterner` class box, and
+`internTxID` appends to its array and dictionary with no uniqueness check, so a copy written off the store actor (a
+refused claimed write's component hydrated between the gate's turns) races the store's own writes on the actor. Copy on
+write would copy every interned transaction id into each prepared write, a whole-store cost; interning is append-only
+and an index never changes, so the box stays shared and takes a small lock (`OSAllocatedUnfairLock`) around its state.
+Claims: `Sources/InstantSwiftDataCore/TripleIndexes.swift` (the `TxIDInterner` class and its two call sites' comments
+only), `Tests/InstantSwiftDataCoreTests/TripleIndexesInternerRaceTests.swift` (new: two copies interning on two threads,
+a stress test that crashes or misreads without the lock, and a Thread Sanitizer run of it). Released with the next
+version through this plan.
