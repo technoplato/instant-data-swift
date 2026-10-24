@@ -1,3 +1,6 @@
+## 2026-10-24 18:26:27 EDT — instant-data-swift `6732e4653f42f68832ae9868216e2a5eb5439dd3`
+Test (#1074): the contention instruments' tests assert whole values with expectNoDifference (the Point-Free testing review); no measurement code changed.
+
 ## 2026-10-24 18:24:12 EDT — instant-data-swift `7dec49c91509d761d54af4470451f6b4000959ec`
 docs(#1072): the v1.9.35 release document names the gated performance lanes it did not run
 

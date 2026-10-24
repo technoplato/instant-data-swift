@@ -10,6 +10,19 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## October 24th, 2026 at 6:26:29 p.m. EDT — `6732e4653f42` test(#1074): the contention instruments' tests assert whole values with expectNoDifference
+
+- **Implementation commit:** `6732e4653f42f68832ae9868216e2a5eb5439dd3`
+- **Change:** test(#1074): the contention instruments' tests assert whole values with expectNoDifference
+- **Details:**
+  - Exhaustive assertions with readable diffs for the timeline analysis and the statistics, from the Point-Free testing review; no measurement code changed, so the baseline stands.
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/RealSize/ContentionExercises.swift` — the instruments' tests use expectNoDifference over whole values
+  - `Tests/InstantSwiftDataCoreTests/RealSize/ContentionInstruments.swift` — a memberwise initializer for ContentionStats, for those tests
+- **User context (verbatim):**
+  > Michael, Claude chat 2026-10-24 15:52 EDT: "Can you actually dispatch some auditing agents to find any anti patterns and design solutions with hypothesized savings and then write real exercises of the poor hot paths"
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run audit-concurrency-1074, continued across three accounts); no SpecStory capture for headless runs.
+
 ## October 24th, 2026 at 6:24:23 p.m. EDT — `7dec49c91509` docs(#1072): the v1.9.35 release document names the gated performance lanes it did not run
 
 - **Implementation commit:** `7dec49c91509d761d54af4470451f6b4000959ec`
