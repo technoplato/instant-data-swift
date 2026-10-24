@@ -117,6 +117,59 @@ struct InstantStoredFileLookupTests {
     expectNoDifference(downloadedURLs, [])
   }
 
+  // Build 123's first minutes: the one whole-list query left. Scribe deletes a chunk it uploaded when the chunk's row could
+  // not be written, and the delete found its file in every file the account holds; it timed out at 5 s, so the chunk
+  // also stayed in storage.
+  @Test("A delete of a file this device uploaded asks no query: its own record names the file")
+  func deleteOfAnUploadedFileAsksNoQuery() async throws {
+    let fixture = try await LookupFixture(payload: payload, accountFileCount: 400)
+    defer { fixture.remove() }
+    let source = fixture.directory.appendingPathComponent("chunk.wav")
+    try payload.write(to: source)
+    let uploaded = try await fixture.runtime.uploadFile(from: source, name: "scribe/recording/generation-1/audio-chunks/000007.wav")
+    let queriesBefore = await fixture.addQueryCount()
+
+    let deleted = try await fixture.runtime.deleteStoredFile(id: uploaded.id)
+
+    expectNoDifference(deleted.id, uploaded.id)
+    expectNoDifference(deleted.name, "scribe/recording/generation-1/audio-chunks/000007.wav")
+    let deletedPaths = await fixture.storage.deletedPaths
+    expectNoDifference(deletedPaths, ["scribe/recording/generation-1/audio-chunks/000007.wav"])
+    let queriesAfter = await fixture.addQueryCount()
+    expectNoDifference(queriesAfter - queriesBefore, 0)
+    let records = try await fixture.runtime.localStoredFiles()
+    expectNoDifference(records.map(\.id), [])
+  }
+
+  @Test("A delete of a file this device holds no record of asks storage for that file alone")
+  func deleteOfARemoteFileQueriesOnlyThatFile() async throws {
+    let fixture = try await LookupFixture(payload: payload, accountFileCount: 400)
+    defer { fixture.remove() }
+    let wanted = fixture.files[3]
+
+    let mark = await fixture.addQueryCount()
+    let deleting = Task { try await fixture.runtime.deleteStoredFile(id: wanted.id) }
+    defer { deleting.cancel() }
+    let query = try await fixture.answerFilesQuery(after: mark)
+    let deleted = try await instantLiveWithTimeout(
+      operation: "delete a stored file by id",
+      timeoutMilliseconds: InstantTestWait.hangMilliseconds,
+      onAbandon: { deleting.cancel() }
+    ) {
+      try await deleting.value
+    }
+
+    expectNoDifference(
+      query,
+      .object(["$files": .object(["$": .object(["where": .object(["id": .string(wanted.id)])])])])
+    )
+    expectNoDifference(deleted.id, wanted.id)
+    let deletedPaths = await fixture.storage.deletedPaths
+    expectNoDifference(deletedPaths, [wanted.path])
+    let stored = try await fixture.runtime.queryLocally(LookupFixture.everyFile)
+    expectNoDifference(stored.values.map(\.id), [wanted.id])
+  }
+
   // The amplifier in the same loop: the whole list's answer outlasted its one-shot query's 5 s and was applied anyway,
   // its facts and result written under the operation gate for no query, then dropped again by the next prune.
   // Upstream `Reactor.js` drops an add-query-ok whose query it no longer holds (`querySubs` has no entry for its hash).
@@ -303,6 +356,7 @@ private actor LookupStorageRecorder {
   private let directory: URL
   private let payload: Data
   private(set) var downloadedURLs: [URL] = []
+  private(set) var deletedPaths: [String] = []
 
   init(directory: URL, payload: Data) {
     self.directory = directory
@@ -312,7 +366,10 @@ private actor LookupStorageRecorder {
   nonisolated var client: InstantStorageTransportClient {
     InstantStorageTransportClient(
       upload: { _ in InstantStorageUploadResponse(id: "uploaded-file-id") },
-      delete: { _ in InstantStorageDeleteResponse(id: nil) },
+      delete: { request in
+        await self.recordDelete(request.path)
+        return InstantStorageDeleteResponse(id: nil)
+      },
       downloadToFile: { request in
         await self.record(request.url)
         return try await self.writeTemporaryFile()
@@ -330,6 +387,10 @@ private actor LookupStorageRecorder {
 
   private func record(_ url: URL) {
     downloadedURLs.append(url)
+  }
+
+  private func recordDelete(_ path: String) {
+    deletedPaths.append(path)
   }
 
   private func writeTemporaryFile() throws -> URL {
