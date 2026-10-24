@@ -159,12 +159,9 @@ public enum OutboxSameEntitySupersession: Sendable {
     _ transaction: InstantStoreTransaction,
     attributes: [InstantAttribute]
   ) -> Bool {
-    let attributesByID = Dictionary(
-      uniqueKeysWithValues: attributes.map { ($0.id, $0) }
-    )
-    return immediateTailShape(
+    immediateTailShape(
       transaction,
-      attributesByID: attributesByID
+      attributesByID: insertedAttributesByID([transaction], in: attributes)
     ) != nil
   }
 
@@ -193,9 +190,7 @@ public enum OutboxSameEntitySupersession: Sendable {
       PendingMutation.creationOrder(predecessor, newcomer)
     else { return false }
 
-    let attributesByID = Dictionary(
-      uniqueKeysWithValues: attributes.map { ($0.id, $0) }
-    )
+    let attributesByID = insertedAttributesByID([predecessor.transaction, newcomer.transaction], in: attributes)
     guard
       let predecessorShape = immediateTailShape(
         predecessor.transaction,
@@ -286,6 +281,31 @@ public enum OutboxSameEntitySupersession: Sendable {
   }
 
   // MARK: Private
+
+  /// The attributes `transactions` insert, by id, and none at all when one of their operations is not an insert: only
+  /// a write made wholly of inserts can replace a tail, and `immediateTailShape` turns any other operation down first.
+  ///
+  /// #1108 (2026-10-24): the checks built a dictionary of every attribute in the schema on every transact, 2,283 on one
+  /// phone, about 1 MB allocated per write that most writes (merges, links) could never use.
+  private static func insertedAttributesByID(
+    _ transactions: [InstantStoreTransaction],
+    in attributes: [InstantAttribute]
+  ) -> [String: InstantAttribute] {
+    var wanted: Set<String> = []
+    for transaction in transactions {
+      for operation in transaction.operations {
+        guard case let .insert(triple) = operation else { return [:] }
+        wanted.insert(triple.attributeID)
+      }
+    }
+    guard !wanted.isEmpty else { return [:] }
+    var attributesByID: [String: InstantAttribute] = [:]
+    attributesByID.reserveCapacity(wanted.count)
+    for attribute in attributes where wanted.contains(attribute.id) {
+      attributesByID[attribute.id] = attribute
+    }
+    return attributesByID
+  }
 
   private struct ImmediateTailShape: Sendable {
     var entityID: String

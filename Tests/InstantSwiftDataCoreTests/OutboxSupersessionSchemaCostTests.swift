@@ -35,6 +35,10 @@ struct OutboxSupersessionSchemaCostTests {
         OutboxSameEntitySupersession.isEligibleImmediateTailNewcomer(transaction, attributes: large),
         OutboxSameEntitySupersession.isEligibleImmediateTailNewcomer(transaction, attributes: small)
       )
+      // An eligible write still reads the schema once to find its own attributes, which allocates nothing when the code
+      // is optimized; an unoptimized build copies each attribute out of the array onto the heap, so there only a write
+      // that can never replace a tail, which no longer reads the schema at all, is held to the bound.
+      guard transaction.id == merge.id || RealSizeBudget.isOptimized else { continue }
       let withSmall = Self.bytesAllocatedPerCheck(transaction, attributes: small)
       let withLarge = Self.bytesAllocatedPerCheck(transaction, attributes: large)
       #expect(
