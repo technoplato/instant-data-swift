@@ -90,3 +90,13 @@ Claims: `Sources/InstantSwiftDataCore/TripleIndexes.swift` (the `TxIDInterner` c
 only), `Tests/InstantSwiftDataCoreTests/TripleIndexesInternerRaceTests.swift` (new: two copies interning on two threads,
 a stress test that crashes or misreads without the lock, and a Thread Sanitizer run of it). Released with the next
 version through this plan.
+
+## Amendment 4 (2026-10-24 19:20 EDT, claude-code/lib-audit-1072@halfjew22): #1108's per-write attribute map
+
+Every transact asks `OutboxSameEntitySupersession.isEligibleImmediateTailNewcomer` whether it may replace the outbox's
+tail, and the check built a dictionary of every attribute (2,283 on the phone) before looking at the write's shape:
+about 1 MB allocated per write, which most writes (merges, links) can never use. Claims:
+`Sources/InstantSwiftDataCore/OutboxSameEntitySupersession.swift` (the two shape checks: the operations' shape first,
+then only their own attribute ids looked up), `Tests/InstantSwiftDataCoreTests/RealSize/RealSizeMeter.swift` (already
+this plan's: counting one thread's allocations), `Tests/InstantSwiftDataCoreTests/OutboxSupersessionSchemaCostTests.swift`
+(new: the red and green).

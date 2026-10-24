@@ -1,0 +1,1 @@
+claude-code/lib-audit-1072@halfjew22 2026-10-24T19:14:23-0400 mower plan=2026-10-24-lib-audit-1072 #1108 amendment 4 (the supersession shape checks look up only the write's own attributes)
