@@ -1,3 +1,9 @@
+## 2026-10-23 23:46:56 EDT — scribe `33c6d0550`
+Scribe Playback's Build 120 What's New story begins 'Now you can' (#1040; the cut check's one new failure).
+
+## 2026-10-23 23:46:56 EDT — scribe `662a3c28e`
+progress(#1040): build 120 installed on the iPhone, iPad and Mac.
+
 ## 2026-10-23 23:24:01 EDT — instant-data-swift `cbabda402be8abb71e1a968a93600fdc375f69bd`
 Release document for v1.9.32 (#1012): a progressive media row write that fails is tried again after the writer's backoff; carries 1.9.31.
 
