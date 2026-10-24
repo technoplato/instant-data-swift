@@ -29,3 +29,4 @@ claude-code/audio-stream-1012b@strangelearning 2026-10-23T16:04:02-0400 grower p
 claude-code/prune-654@strangelearning 2026-10-23T21:59:38-0400 mower plan=2026-10-23-prune-654 #654 (the live-query prune: pruneLiveQueryResults and its batch helpers, retractFactsReleasedByPrune, the bootstrap prune call)
 claude-code/longrec-654@ld 2026-10-24T10:43:09-0400 mower plan=2026-10-24-longrec-654 #654 #932 
 claude-code/lib-audit-1072@ld 2026-10-24T15:58:40-0400 mower plan=2026-10-24-lib-audit-1072 #1072 
+claude-code/audit-memory-1075@ld 2026-10-24T16:00:45-0400 grower plan=2026-10-24-audit-memory-1075 #1075 (memory audit: new exercise files under Tests/InstantSwiftDataCoreTests/RealSize/Memory*, the audit document; no library source change)
