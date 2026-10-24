@@ -308,6 +308,14 @@ struct ContentionStats: Equatable {
   var worst: Double
   var total: Double
 
+  init(count: Int, median: Double, p99: Double, worst: Double, total: Double) {
+    self.count = count
+    self.median = median
+    self.p99 = p99
+    self.worst = worst
+    self.total = total
+  }
+
   init(_ samples: [Double]) {
     let sorted = samples.sorted()
     count = sorted.count

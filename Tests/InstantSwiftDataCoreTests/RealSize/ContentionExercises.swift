@@ -6,6 +6,7 @@
 //                    hold, so each fix the concurrency audit names is measured against the same run before and after.
 //                    Each write's acknowledgement is timed too: it queues in the frame applier, where no gate sees it.
 
+import CustomDump
 import Foundation
 import Testing
 
@@ -1033,19 +1034,21 @@ struct ContentionInstrumentsTests {
     ]
     let analysis = ContentionGateAnalysis(events, window: (5 * ms)...(100 * ms))
 
-    #expect(analysis.waits()["transact|interactive"] == [70])
-    #expect(analysis.holds()["transact"] == [5])
-    #expect(analysis.holds()["prune"] == nil)
-    #expect(analysis.behind()[.init(waiter: "transact", holder: "prune")] == [40])
-    #expect(analysis.behind()[.init(waiter: "transact", holder: "apply")] == [30])
+    // The prune asked before the window: its hold splits the transact's wait but is not reported itself.
+    expectNoDifference(analysis.waits(), ["transact|interactive": [70], "apply|interactive": [0]])
+    expectNoDifference(analysis.holds(), ["transact": [5], "apply": [30]])
+    expectNoDifference(
+      analysis.behind(),
+      [.init(waiter: "transact", holder: "prune"): [40], .init(waiter: "transact", holder: "apply"): [30]]
+    )
   }
 
   @Test("percentiles are nearest-rank")
   func nearestRank() {
-    let stats = ContentionStats((1...100).map(Double.init))
-    #expect(stats.median == 50)
-    #expect(stats.p99 == 99)
-    #expect(stats.worst == 100)
-    #expect(ContentionStats([]).count == 0)
+    expectNoDifference(
+      ContentionStats((1...100).map(Double.init)),
+      ContentionStats(count: 100, median: 50, p99: 99, worst: 100, total: 5_050)
+    )
+    expectNoDifference(ContentionStats([]), ContentionStats(count: 0, median: 0, p99: 0, worst: 0, total: 0))
   }
 }
