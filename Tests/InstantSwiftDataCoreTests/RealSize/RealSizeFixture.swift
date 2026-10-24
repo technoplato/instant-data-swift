@@ -22,6 +22,11 @@ import SQLite3
 //
 // History:
 // - 2026-10-24: #1072: the fixture, its scripted server and storage, the cache.
+// - 2026-10-24: #1072: a session's gate log records each gate event once, not twice (#1075's note).
+// - 2026-10-24: #1072: the scripted server's transaction ids are integers that only grow, as Instant's are, so its
+//   answers' watermark covers the writes it accepted (version 3); the text ids left every accepted write in the outbox.
+// - 2026-10-24: #1072: the scripted server keeps its newest 1,024 frames and the apply log its newest 4,096 applies, so
+//   a long recording's footprint is the library's, not the fixture's history (#1075's note).
 
 /// How big the generated store is, in the dimensions that the library's costs depend on.
 struct RealSizeShape: Sendable, Hashable, CustomStringConvertible {
@@ -398,14 +403,15 @@ actor RealSizeServer {
   private let account: RealSizeAccount
   /// The newest connection: the one that sent the last frame. A reconnect gets a new one.
   private var connection: RealSizeConnection?
+  /// The newest frames the runtime sent, at most `sentHistoryLimit`: a two-hour recording sends tens of thousands, and a
+  /// whole history would grow the process footprint the measurements read as the library's (#1075's note).
   private var sent: [InstantLiveMessage] = []
+  private static let sentHistoryLimit = 1_024
+  private var newestAddQuery: InstantLiveJSONValue = .null
   private var addQueryCount = 0
   /// The processed transaction id of each query's newest answer, by its key: the runtime's apply of that answer reports
   /// it (`RealSizeApplyLog`).
   private var answerTransactions: [String: String] = [:]
-  private var transactionNumber = 0
-  /// Makes this server's transaction ids unique in the process: the apply log of every session sees every event.
-  private let prefix = UUID().uuidString.prefix(8).lowercased()
   private(set) var openQueries: [String: InstantLiveJSONValue] = [:]
   private(set) var answeredWrites = 0
   private(set) var heldWrites: [String] = []
@@ -434,7 +440,7 @@ actor RealSizeServer {
   func setWriteAnswer(_ answer: WriteAnswer) { writeAnswer = answer }
   func setAnswersQueries(_ answers: Bool) { answersQueries = answers }
 
-  /// Every frame the runtime sent, oldest first.
+  /// The newest frames the runtime sent (at most 1,024), oldest first.
   func sentMessages() -> [InstantLiveMessage] { sent }
 
   /// How many `add-query` frames the runtime sent.
@@ -453,7 +459,7 @@ actor RealSizeServer {
       }
       try await Task.sleep(for: .milliseconds(1))
     }
-    return sent.last(where: { $0.op == "add-query" })?.fields["q"] ?? .null
+    return newestAddQuery
   }
 
   /// The processed transaction id of the newest answer this server sent for `query`.
@@ -518,6 +524,7 @@ actor RealSizeServer {
   private func received(_ message: InstantLiveMessage, from connection: RealSizeConnection) {
     self.connection = connection
     sent.append(message)
+    if sent.count > 2 * Self.sentHistoryLimit { sent.removeFirst(sent.count - Self.sentHistoryLimit) }
     if let onFrame { onFrame(RealSizeFrame(direction: .toServer, op: message.op, encodedBytes: Self.encodedSize(message))) }
     switch message.op {
     case "init":
@@ -535,6 +542,7 @@ actor RealSizeServer {
     case "add-query":
       addQueryCount += 1
       let query = message.fields["q"] ?? .null
+      newestAddQuery = query
       openQueries[Self.key(query)] = query
       if answersQueries { answer(query, rows: rows(answering: query)) }
     case "remove-query":
@@ -570,10 +578,17 @@ actor RealSizeServer {
     }
   }
 
+  /// The next transaction id, as Instant's are: an integer that only grows, so an answer's `processed-tx-id` covers
+  /// every write the server accepted before it. The runtime keeps an accepted write's optimistic layer until that
+  /// watermark passes the write's `tx-id`, comparing them as integers; the first fixture's text ids were never passed,
+  /// so its stores kept every accepted write (783 rows, 84 MB of bodies at the phone's size, where the phone held 4)
+  /// and every server apply read them again. Process-wide, so the apply log tells every session's applies apart, and
+  /// started from the clock, so a store generated earlier never holds a watermark newer than a later session sends.
   private func nextTransactionID() -> String {
-    transactionNumber += 1
-    return "real-size-\(prefix)-tx-\(transactionNumber)"
+    String(RealSizeServer.transactionNumbers.next())
   }
+
+  private static let transactionNumbers = RealSizeTransactionNumbers()
 
   // MARK: - Answering queries
 
@@ -659,6 +674,21 @@ actor RealSizeServer {
 
   private static func encodedSize(_ message: InstantLiveMessage) -> Int {
     (try? JSONEncoder().encode(message).count) ?? 0
+  }
+}
+
+/// Instant-like transaction numbers for every scripted server in the process: microseconds since 1970 at the first one,
+/// then one more each time.
+final class RealSizeTransactionNumbers: @unchecked Sendable {
+  // SAFETY: `lock` guards `newest`.
+  private let lock = NSLock()
+  private var newest = Int64(Date().timeIntervalSince1970 * 1_000_000)
+
+  func next() -> Int64 {
+    lock.withLock {
+      newest += 1
+      return newest
+    }
   }
 }
 
@@ -809,15 +839,25 @@ struct RealSizeSession: Sendable {
 /// Every server apply the runtime finished, by its processed transaction id: the runtime's own
 /// `server-apply.operation-gate-held` event, with its gate hold and commit parts.
 final class RealSizeApplyLog: @unchecked Sendable {
-  // SAFETY: `lock` guards `finished` and `token`.
+  // SAFETY: `lock` guards `finished`, `order` and `token`.
   private let lock = NSLock()
   private var finished: [String: [String: String]] = [:]
+  /// The ids in `finished`, oldest first: the log keeps the newest `limit`, so the applies nobody waits for (a write's
+  /// acknowledgement) do not grow it for the length of a recording.
+  private var order: [String] = []
+  private static let limit = 4_096
   private var token: UUID?
 
   init() {
     let token = InstantDiagnostics.shared.addHandler { [weak self] entry in
       guard let self, entry.event == "server-apply.operation-gate-held", let id = entry.correlationID else { return }
-      self.lock.withLock { self.finished[id] = entry.metadata }
+      self.lock.withLock {
+        if self.finished.updateValue(entry.metadata, forKey: id) == nil { self.order.append(id) }
+        if self.order.count > 2 * Self.limit {
+          for old in self.order.prefix(self.order.count - Self.limit) { self.finished[old] = nil }
+          self.order.removeFirst(self.order.count - Self.limit)
+        }
+      }
     }
     lock.withLock { self.token = token }
   }
@@ -861,7 +901,7 @@ final class RealSizeClock: @unchecked Sendable {
 
 enum RealSizeFixture {
   /// Bump when the generator changes what it writes: the cached stores of older versions are not reused.
-  static let version = 2
+  static let version = 3
 
   /// Opens a runtime over a fresh copy of the generated store, in a directory the session removes when it closes.
   static func open(_ shape: RealSizeShape = .phone, label: String) async throws -> RealSizeSession {
@@ -965,14 +1005,14 @@ enum RealSizeFixture {
     configuration.liveQueryResultPruningWriteInterval = Int.max
     configuration.liveMutationDeadlineSleep = { _ in try await Task.sleep(for: .seconds(36_000)) }
     configuration.liveReconnectSleep = { _ in try await Task.sleep(for: .seconds(36_000)) }
+    // The gate log wraps whatever timeline `configure` sets, once. It used to set its own closure first and then wrap
+    // it, so a session whose `configure` left the timeline alone recorded every gate event twice (#1075's note).
     let gate = RealSizeGateLog()
-    configuration.operationGateTimeline = { gate.record($0) }
     configure(&configuration)
-    if let theirs = configuration.operationGateTimeline {
-      configuration.operationGateTimeline = { event in
-        gate.record(event)
-        theirs(event)
-      }
+    let theirs = configuration.operationGateTimeline
+    configuration.operationGateTimeline = { event in
+      gate.record(event)
+      theirs?(event)
     }
     let runtime = try await InstantRuntime.bootstrap(configuration: configuration, storageTransport: storage.client)
     _ = try await runtime.signInWithRefreshToken(RealSizeAccount.refreshToken, userID: RealSizeAccount.userID)

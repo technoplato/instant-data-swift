@@ -20,6 +20,8 @@ import Foundation
 // History:
 // - 2026-10-24: #1072: the meter of the whole-store cost audit and its CI budgets; extra counters plug in through
 //   `RealSizeCounter` (the sibling audits' SQLite VFS and wire-byte counters, #1076).
+// - 2026-10-24: #1072: the gate's whole hold per iteration and the holders that took most of it, besides the longest
+//   hold: the outbox claim after each write held it 39 ms at most at the phone's size, and only a total says how often.
 
 /// A counter another audit plugs into the meter, such as a SQLite VFS that counts the bytes each file kind wrote.
 ///
@@ -92,6 +94,13 @@ struct RealSizeMeasurement: Sendable {
       fields.append(("gateHoldMaxMs", ms(gate.longestHold)))
       fields.append(("gateHolder", gate.longestHolder.replacingOccurrences(of: " ", with: "_")))
       fields.append(("gateEntries", String(gate.acquisitions / max(1, iterations))))
+      // Per iteration: the gate's whole hold, and the two holders that took most of it.
+      fields.append(("gateHoldTotalMs", ms(gate.totalHold / max(1, iterations))))
+      fields.append((
+        "gateTop",
+        gate.topHolders(2).map { "\($0.holder.replacingOccurrences(of: " ", with: "_")):\(ms($0.hold / max(1, iterations)))" }
+          .joined(separator: ",")
+      ))
     }
     for key in extra.keys.sorted() { fields.append((key, String(extra[key]!))) }
     return "REALSIZE \(label) " + fields.map { "\($0.0)=\($0.1)" }.joined(separator: " ")
@@ -104,6 +113,11 @@ enum RealSizeMeter {
   /// `body` gets a running index (unique across the warm-up and both passes) so each call can make its own change,
   /// such as a new transcript line. Pass `gateProbe` to also report how long a read waited behind the operation gate
   /// during the timed pass; the probe's own reads take the gate briefly, so leave it off where that matters.
+  ///
+  /// `prepare`, when given, runs before each call of `body` with the same index, outside the time, the process
+  /// counters, the gate's window and the allocation count: a prune measured on the result a query closed just before
+  /// it, for one. Without it the counters and the gate's window span the whole pass, so they also see what an operation
+  /// leaves running after it returns, such as the outbox pump a write starts.
   static func measure(
     _ operation: String,
     label: String,
@@ -112,11 +126,13 @@ enum RealSizeMeter {
     gateProbe runtime: InstantRuntime? = nil,
     gate: RealSizeGateLog? = nil,
     counters: [any RealSizeCounter] = [],
+    prepare: ((Int) async throws -> Void)? = nil,
     _ body: (Int) async throws -> Void
   ) async throws -> RealSizeMeasurement {
     precondition(iterations > 0)
     var index = 0
     for _ in 0..<warmup {
+      try await prepare?(index)
       try await body(index)
       index += 1
     }
@@ -124,26 +140,54 @@ enum RealSizeMeter {
     RealSizeProcess.resetFootprintPeak()
     let footprintBefore = RealSizeProcess.usage().footprint
     let probe = runtime.map(RealSizeGateProbe.init)
-    gate?.begin()
-    let usageBefore = RealSizeProcess.usage()
     var wall: [Duration] = []
-    for _ in 0..<iterations {
-      let started = ContinuousClock.now
-      try await body(index)
-      wall.append(ContinuousClock.now - started)
-      index += 1
+    var usage = RealSizeProcess.UsageDelta()
+    var gateSummary: RealSizeGateLog.Summary?
+    if let prepare {
+      for _ in 0..<iterations {
+        try await prepare(index)
+        gate?.begin()
+        let before = RealSizeProcess.usage()
+        let started = ContinuousClock.now
+        try await body(index)
+        wall.append(ContinuousClock.now - started)
+        usage.add(from: before, to: RealSizeProcess.usage())
+        if let window = gate?.end() { gateSummary = gateSummary.map { $0.merged(with: window) } ?? window }
+        index += 1
+      }
+    } else {
+      gate?.begin()
+      let before = RealSizeProcess.usage()
+      for _ in 0..<iterations {
+        let started = ContinuousClock.now
+        try await body(index)
+        wall.append(ContinuousClock.now - started)
+        index += 1
+      }
+      usage.add(from: before, to: RealSizeProcess.usage())
+      gateSummary = gate?.end()
     }
-    let usageAfter = RealSizeProcess.usage()
-    let gateSummary = gate?.end()
     let longestGateWait = await probe?.stop()
 
     for counter in counters { counter.start() }
     let liveBefore = RealSizeProcess.zoneBytesInUse()
-    RealSizeAllocations.start()
     do {
-      for _ in 0..<iterations {
-        try await body(index)
-        index += 1
+      if let prepare {
+        RealSizeAllocations.start()
+        RealSizeAllocations.pause()
+        for _ in 0..<iterations {
+          try await prepare(index)
+          RealSizeAllocations.resume()
+          try await body(index)
+          RealSizeAllocations.pause()
+          index += 1
+        }
+      } else {
+        RealSizeAllocations.start()
+        for _ in 0..<iterations {
+          try await body(index)
+          index += 1
+        }
       }
     } catch {
       _ = RealSizeAllocations.stop()
@@ -162,9 +206,9 @@ enum RealSizeMeter {
       operation: operation,
       iterations: iterations,
       wall: wall.sorted(),
-      cpuNanoseconds: (usageAfter.cpuNanoseconds - usageBefore.cpuNanoseconds) / UInt64(iterations),
-      instructions: (usageAfter.instructions - usageBefore.instructions) / UInt64(iterations),
-      logicalWriteBytes: (usageAfter.logicalWriteBytes - usageBefore.logicalWriteBytes) / UInt64(iterations),
+      cpuNanoseconds: usage.cpuNanoseconds / UInt64(iterations),
+      instructions: usage.instructions / UInt64(iterations),
+      logicalWriteBytes: usage.logicalWriteBytes / UInt64(iterations),
       allocations: counts.allocations / iterations,
       allocatedBytes: counts.allocatedBytes / iterations,
       frees: counts.frees / iterations,
@@ -190,6 +234,19 @@ enum RealSizeProcess {
     var logicalWriteBytes: UInt64
     var footprint: UInt64
     var footprintIntervalPeak: UInt64
+  }
+
+  /// What the counters of `Usage` grew by, over one or more windows.
+  struct UsageDelta {
+    var cpuNanoseconds: UInt64 = 0
+    var instructions: UInt64 = 0
+    var logicalWriteBytes: UInt64 = 0
+
+    mutating func add(from before: Usage, to after: Usage) {
+      cpuNanoseconds += after.cpuNanoseconds - before.cpuNanoseconds
+      instructions += after.instructions - before.instructions
+      logicalWriteBytes += after.logicalWriteBytes - before.logicalWriteBytes
+    }
   }
 
   static func usage() -> Usage {
@@ -240,6 +297,27 @@ final class RealSizeGateLog: @unchecked Sendable {
     var longestHolder = "-"
     var longestWait: Duration = .zero
     var acquisitions = 0
+    /// Every hold in the window, summed by holder: what the gate spent on each, however short each hold was.
+    var holdByHolder: [String: Duration] = [:]
+
+    var totalHold: Duration { holdByHolder.values.reduce(.zero, +) }
+
+    /// This window and `other` as one: the longest of each, the sums of the rest.
+    func merged(with other: Summary) -> Summary {
+      var merged = other.longestHold > longestHold
+        ? Summary(longestHold: other.longestHold, longestHolder: other.longestHolder)
+        : Summary(longestHold: longestHold, longestHolder: longestHolder)
+      merged.longestWait = max(longestWait, other.longestWait)
+      merged.acquisitions = acquisitions + other.acquisitions
+      merged.holdByHolder = holdByHolder.merging(other.holdByHolder, uniquingKeysWith: +)
+      return merged
+    }
+
+    /// The holders that held the gate longest in total, longest first.
+    func topHolders(_ count: Int) -> [(holder: String, hold: Duration)] {
+      holdByHolder.sorted { $0.value > $1.value || ($0.value == $1.value && $0.key < $1.key) }
+        .prefix(count).map { (holder: $0.key, hold: $0.value) }
+    }
   }
 
   // SAFETY: `lock` guards `events` and `recording`.
@@ -283,9 +361,11 @@ final class RealSizeGateLog: @unchecked Sendable {
       case .released:
         guard let start = acquired[event.ticket] else { continue }
         let hold = Duration.nanoseconds(Int64(event.uptimeNanoseconds - start))
+        let holder = event.operation + (event.phase.map { " [\($0)]" } ?? "")
+        summary.holdByHolder[holder, default: .zero] += hold
         if hold > summary.longestHold {
           summary.longestHold = hold
-          summary.longestHolder = event.operation + (event.phase.map { " [\($0)]" } ?? "")
+          summary.longestHolder = holder
         }
       case .cancelled:
         break
@@ -349,6 +429,16 @@ enum RealSizeAllocations {
     tally.pointee.counts = Counts()
     os_unfair_lock_unlock(&tally.pointee.lock)
     slot.pointee = hook
+  }
+
+  /// Removes the hook and keeps the counts, for work that must not be counted (a measurement's `prepare`).
+  static func pause() {
+    loggerSlot?.pointee = nil
+  }
+
+  /// Installs the hook again, adding to the counts since `start()`.
+  static func resume() {
+    loggerSlot?.pointee = hook
   }
 
   /// Removes the hook and returns the counts since `start()`.
