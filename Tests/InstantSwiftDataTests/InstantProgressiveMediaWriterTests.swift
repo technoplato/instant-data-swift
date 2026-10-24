@@ -152,6 +152,32 @@ struct InstantProgressiveMediaWriterTests {
     )
   }
 
+  /// A row write that fails is tried again after the same backoff as an upload, and nothing after it moves first: a
+  /// store that does not know the namespaces yet (before its first `init-ok` taught them) refuses the rows until it
+  /// does, and delivery used to end there for good.
+  @Test func aFailedRowWriteIsRetriedBeforeAnythingAfterIt() async throws {
+    let storage = StorageDouble(network: .open, writeFailures: 2)
+    let writer = try InstantProgressiveMediaWriter(
+      stream: stream, ownerUserID: "owner", spool: spool, storage: storage.storage
+    )
+    try await writer.start(initialization: Data(count: 612))
+    try await writer.append(Data(count: 100), durationSeconds: 6)
+    try await writer.finish()
+
+    try await writer.deliver()
+
+    expectNoDifference(
+      storage.events.map(\.label),
+      [
+        "upload init.mp4", "write stream failed", "write stream failed", "write stream",
+        "upload 000000.m4s", "write stream+0",
+      ]
+    )
+    expectNoDifference(storage.writtenStreamStates, [.recording, .finished])
+    let failure = await writer.lastFailure
+    #expect(failure == nil)
+  }
+
   /// The wait between attempts doubles to a ceiling, and goes back to the start only after an upload succeeds
   /// (upstream's reconnect delay likewise resets only on `init-ok`, `Reactor.js` `_scheduleReconnect`).
   @Test func theRetryDelayDoublesToItsCeilingAndResetsOnSuccess() {
@@ -332,6 +358,7 @@ private final class StorageDouble: Sendable {
     case upload(path: String, byteCount: Int, contentType: String)
     case failedUpload(path: String)
     case write([InstantProgressiveMediaRow])
+    case failedWrite([InstantProgressiveMediaRow])
 
     var label: String {
       switch self {
@@ -340,33 +367,46 @@ private final class StorageDouble: Sendable {
       case let .failedUpload(path):
         "upload \(path.split(separator: "/").last!) failed"
       case let .write(rows):
-        "write "
-          + rows.map {
-            switch $0 {
-            case .stream: "stream"
-            case let .segment(row): "+\(row.index)"
-            }
-          }.joined()
+        "write " + Self.names(rows)
+      case let .failedWrite(rows):
+        "write " + Self.names(rows) + " failed"
       }
+    }
+
+    static func names(_ rows: [InstantProgressiveMediaRow]) -> String {
+      rows.map {
+        switch $0 {
+        case .stream: "stream"
+        case let .segment(row): "+\(row.index)"
+        }
+      }.joined()
     }
 
     var description: String { label }
   }
 
-  private let state: LockIsolated<(events: [Event], failures: [String: Int], uploaded: [String: Int])>
+  private let state: LockIsolated<
+    (events: [Event], failures: [String: Int], writeFailures: Int, uploaded: [String: Int])
+  >
   private let refusedPrefixes: [String]
   private let gate: AsyncStream<Void>
   private let opener: AsyncStream<Void>.Continuation
   private let isOpen: LockIsolated<Bool>
 
-  init(network: Network, failures: [String: Int] = [:], refusedPrefixes: [String] = []) {
-    state = LockIsolated((events: [], failures: failures, uploaded: [:]))
+  init(network: Network, failures: [String: Int] = [:], writeFailures: Int = 0, refusedPrefixes: [String] = []) {
+    state = LockIsolated((events: [], failures: failures, writeFailures: writeFailures, uploaded: [:]))
     self.refusedPrefixes = refusedPrefixes
     (gate, opener) = AsyncStream<Void>.makeStream(bufferingPolicy: .bufferingNewest(1))
     isOpen = LockIsolated(network == .open)
   }
 
   var events: [Event] { state.value.events }
+  var writtenStreamStates: [InstantProgressiveMediaState] {
+    events.flatMap { event -> [InstantProgressiveMediaState] in
+      guard case let .write(rows) = event else { return [] }
+      return rows.compactMap { if case let .stream(row) = $0 { row.state } else { nil } }
+    }
+  }
   var uploadedByteCounts: [String: Int] { state.value.uploaded }
 
   func openNetwork() {
@@ -404,7 +444,23 @@ private final class StorageDouble: Sendable {
         }
       },
       write: { rows in
-        self.state.withValue { $0.events.append(.write(rows)) }
+        let failed = self.state.withValue { state -> Bool in
+          if state.writeFailures > 0 {
+            state.writeFailures -= 1
+            state.events.append(.failedWrite(rows))
+            return true
+          }
+          state.events.append(.write(rows))
+          return false
+        }
+        if failed {
+          throw InstantError(
+            code: .validationFailed,
+            operation: "transact",
+            message: "Entity namespace 'progressiveMediaStreams' does not exist in the local schema.",
+            recovery: "Declare the namespace."
+          )
+        }
       },
       waitForNetwork: {
         guard !self.isOpen.value else { return }
