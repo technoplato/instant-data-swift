@@ -1,3 +1,15 @@
+## 2026-10-23 21:08:50 EDT — realtime-voice `0b16668632bf67a7d6cfc0b5f060e302a057f175`
+Merge (#1035) to main: the instant-data-swift 1.9.29 pin and the flap-reload audit.
+
+## 2026-10-23 21:08:39 EDT — realtime-voice `e083b077f4a091158406980ec3168da6c8f94088`
+Change log for the 1.9.29 pin a57c220ae and the audit 72bbd1e76 (#1035).
+
+## 2026-10-23 21:08:18 EDT — realtime-voice `72bbd1e76223441e91f13f5ba24f16041159a8a3`
+The flap-reload audit (#1035): refused writes, not engine flips, cost the 2 W; its index row; the pin channel note.
+
+## 2026-10-23 21:08:18 EDT — realtime-voice `a57c220aee14427198c033fb1e1dd97c61a3d080`
+Pin instant-data-swift exactly 1.9.29 in Scribe and Scribe Playback (#1035).
+
 ## 2026-10-23 20:59:52 EDT — scribe `6fb587936c1022700fd771cf4b424020fb9c5c3e`
 Merge (#760) to main: capture that iOS interrupts comes back by itself while Scribe is in front.
 
