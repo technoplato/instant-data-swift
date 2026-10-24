@@ -1,0 +1,1 @@
+claude-code/prune-654@strangelearning 2026-10-23T21:59:38-0400 mower plan=2026-10-23-prune-654 #654 (the live-query prune: pruneLiveQueryResults and its batch helpers, retractFactsReleasedByPrune, the bootstrap prune call)
