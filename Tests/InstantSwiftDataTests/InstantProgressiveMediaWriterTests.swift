@@ -249,6 +249,39 @@ struct InstantProgressiveMediaWriterTests {
     expectNoDifference(storage.events.count, 8)
   }
 
+  /// A device clock that steps back never makes the writer stamp a stream row earlier than its last one, or than the
+  /// stream's start: an app's rules may refuse an update whose updatedAtMs moves back (the consuming app's generated
+  /// rules do), and with it the segment row written in the same transaction, so the segment would never be listed.
+  @Test func aClockThatStepsBackNeverStampsARowEarlier() async throws {
+    let storage = StorageDouble(network: .open)
+    let clock = LockIsolated(Date(timeIntervalSince1970: 1_000))
+    try await withDependencies {
+      // Each read of the clock is a second earlier than the one before.
+      $0.date = DateGenerator {
+        clock.withValue { now in
+          defer { now = now.addingTimeInterval(-1) }
+          return now
+        }
+      }
+    } operation: {
+      let writer = try InstantProgressiveMediaWriter(
+        stream: stream, ownerUserID: "owner", spool: spool, storage: storage.storage
+      )
+      try await writer.start(initialization: Data(count: 612))
+      for _ in 0..<3 { try await writer.append(Data(count: 100), durationSeconds: 6) }
+      try await writer.finish()
+      try await writer.deliver()
+    }
+
+    let rows = storage.events.flatMap { event -> [InstantProgressiveMediaStreamRow] in
+      guard case let .write(rows) = event else { return [] }
+      return rows.compactMap { if case let .stream(row) = $0 { row } else { nil } }
+    }
+    expectNoDifference(rows.count, 4)
+    expectNoDifference(rows.map(\.updatedAtMs), rows.map(\.updatedAtMs).sorted())
+    #expect(rows.allSatisfy { $0.updatedAtMs >= $0.createdAtMs })
+  }
+
   func streamRow(
     _ state: InstantProgressiveMediaState,
     segmentCount: Int,
