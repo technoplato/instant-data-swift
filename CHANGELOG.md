@@ -23,7 +23,7 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
   - `agent-presence/_channels/2026-10-24-audit-concurrency-1074.md` — how siblings measure a fix with the exercises
 - **User context (verbatim):**
   > Michael, Claude chat 2026-10-24 15:52 EDT: "Can you actually dispatch some auditing agents to find any anti patterns and design solutions with hypothesized savings and then write real exercises of the poor hot paths"
-- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run audit-concurrency-1074 on claude/ld, claude/strangelearning, claude/halfjew22); no SpecStory capture for headless runs.
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run audit-concurrency-1074, continued across three accounts); no SpecStory capture for headless runs.
 
 ## October 24th, 2026 at 6:18:12 p.m. EDT — `5de2da8bf6b0` test(#1074): contention exercises on the real-size store: every caller's wait, every holder's hold, and each write's acknowledgement under Scribe's recording load
 
@@ -37,7 +37,7 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
   - `scripts/contention-exercises/run-contention-exercises.sh` — new: builds in release and runs the exercises the same way each time
 - **User context (verbatim):**
   > Michael, Claude chat 2026-10-24 15:52 EDT: "Can you actually dispatch some auditing agents to find any anti patterns and design solutions with hypothesized savings and then write real exercises of the poor hot paths"
-- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run audit-concurrency-1074 on claude/ld, claude/strangelearning, claude/halfjew22); no SpecStory capture for headless runs.
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run audit-concurrency-1074, continued across three accounts); no SpecStory capture for headless runs.
 
 ## October 24th, 2026 at 6:18:12 p.m. EDT — `e3fa1490e026` feat(#1074): the operation gate reports every request, acquisition, release and cancellation to an optional timeline
 
@@ -51,7 +51,7 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
   - `Tests/InstantSwiftDataCoreTests/AsyncSerialGateTimelineTests.swift` — new: the timeline's four tests
 - **User context (verbatim):**
   > Michael, Claude chat 2026-10-24 15:52 EDT: "Can you actually dispatch some auditing agents to find any anti patterns and design solutions with hypothesized savings and then write real exercises of the poor hot paths"
-- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run audit-concurrency-1074 on claude/ld, claude/strangelearning, claude/halfjew22); no SpecStory capture for headless runs.
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run audit-concurrency-1074, continued across three accounts); no SpecStory capture for headless runs.
 
 ## October 24th, 2026 at 5:47:56 p.m. EDT — `1cdd8383f6b7` docs(#1076): the storage, disk and network audit: eleven anti-patterns worst first, each with its design, its saving as a hypothesis, its exercise and today's baseline
 
