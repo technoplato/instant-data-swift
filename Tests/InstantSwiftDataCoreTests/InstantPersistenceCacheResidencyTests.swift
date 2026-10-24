@@ -300,6 +300,64 @@ struct InstantPersistenceCacheResidencyTests {
     )
   }
 
+  /// #1035: a device whose store held 39,507 facts reloaded all of them from SQLite (12.9 MB, 242-338 ms) and replaced
+  /// its hot store after every write the server refused, about 20 times a minute. Rolling back a refused write changes
+  /// only the entities that write touched, so the next local write must find the cache where the rollback left it.
+  @Test
+  func aRefusedWriteRollsBackWithoutReloadingTheLargeStore() async throws {
+    let cacheURL = try temporaryCacheResidencyURL("refused-write")
+    let seed = try SQLitePersistenceStore(fileURL: cacheURL)
+    try await seed.bootstrap()
+    try await seed.saveStoreSnapshot(
+      InstantStoreSnapshot(
+        attributes: cacheResidencyAttributes,
+        triples: cacheResidencyTriples(count: 10_000)
+      )
+    )
+    await seed.simulateUnexpectedConnectionCloseForTesting()
+    var configuration = InstantRuntimeConfiguration(
+      appID: "cache-residency-refused-write",
+      persistenceURL: cacheURL,
+      initialAttributes: cacheResidencyAttributes
+    )
+    configuration.autoConnectLiveTransport = false
+    let runtime = try await InstantRuntime.bootstrap(configuration: configuration)
+    _ = try await runtime.transact(
+      cacheResidencyWrite(id: "refused-write", entityID: "refused-entity", milliseconds: 40_001)
+    )
+    let claimantID = await runtime.automaticDeliveryClaimantIDForTesting()
+    let claim = try await runtime.persistence.claimAutomaticOutboxDeliveryWindow(
+      InstantAutomaticOutboxClaimRequest(
+        claimantID: claimantID,
+        claimToken: "refused-write-claim",
+        now: InstantTimestamp(milliseconds: 40_002),
+        maximumMutationCount: 1
+      )
+    )
+    expectNoDifference(claim.mutations.map(\.id), ["refused-write"])
+    await runtime.resetPersistenceCacheResidencyMetricsForTesting()
+
+    let refused = try await runtime.failClaimedMutationForTesting(
+      id: "refused-write",
+      message: "Permission denied: not perms-pass?",
+      claimToken: "refused-write-claim"
+    )
+    _ = try await runtime.transact(
+      cacheResidencyWrite(id: "next-write", entityID: "next-entity", milliseconds: 40_003)
+    )
+
+    expectNoDifference(refused?.status, .failed)
+    let metrics = await runtime.persistenceCacheResidencyMetricsForTesting()
+    expectNoDifference(metrics, InstantPersistenceCacheResidencyMetrics())
+    let entityIDs = Set(await runtime.store.snapshot().triples.map(\.entityID))
+    #expect(!entityIDs.contains("refused-entity"), "The refused write is rolled back.")
+    #expect(entityIDs.contains("next-entity"))
+    #expect(entityIDs.contains("large-entity-9999"))
+    let persisted = try await runtime.persistence.loadState().snapshot.store.triples
+    #expect(!persisted.contains { $0.entityID == "refused-entity" }, "SQLite holds the rollback too.")
+    #expect(persisted.contains { $0.entityID == "next-entity" })
+  }
+
   @Test
   func directPersistenceInspectionCannotAdvancePastTheRuntimeStore() async throws {
     let cacheURL = try temporaryCacheResidencyURL("direct-inspection-runtime-lag")
@@ -860,6 +918,27 @@ private func cacheResidencyTriples(count: Int) -> [InstantTriple] {
       txTime: InstantTimestamp(milliseconds: Int64(index + 1))
     )
   }
+}
+
+private func cacheResidencyWrite(
+  id: String,
+  entityID: String,
+  milliseconds: Int64
+) -> InstantStoreTransaction {
+  InstantStoreTransaction(
+    id: id,
+    operations: [
+      .insert(
+        InstantTriple(
+          entityID: entityID,
+          attributeID: "cache-residency/value",
+          value: .string(id),
+          txID: id,
+          txTime: InstantTimestamp(milliseconds: milliseconds)
+        )
+      )
+    ]
+  )
 }
 
 private func cacheResidencyRetryableMutation(index: Int) -> PendingMutation {
