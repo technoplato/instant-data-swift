@@ -1,3 +1,9 @@
+## 2026-10-24 15:00:34 EDT — scribe `298e168f1`
+Build 125 cut (#1069): Scribe 0.1 (125) and Scribe Playback 125, instant-data-swift exactly 1.9.34; carries chunk-link-1064 (#1064).
+
+## 2026-10-24 15:00:34 EDT — scribe `540c4f3f3`
+changelog(#1069): the build 125 cut's CHANGELOG.md entry.
+
 ## 2026-10-24 14:35:06 EDT — scribe `0e6ee7711f56f23a6cd4678285561309c36dd217`
 Build 124 cut: CURRENT_PROJECT_VERSION 124 for Scribe and Scribe Playback, What's New 124 dated; instant-data-swift exactly 1.9.34 (#654, #932) and stamp-412 (#412). (#1066)
 
