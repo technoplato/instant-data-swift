@@ -1,6 +1,8 @@
 // History:
 // - 2026-10-23: a holder may name the entities it writes until its store commit, so a read made without the gate
 //   waits only for a holder that may be writing what it read (#1006).
+// - 2026-10-24: an optional timeline reports every request, acquisition, release and cancellation, so an exercise can
+//   measure each caller's wait and each holder's hold, the short ones too (#1074).
 
 import Foundation
 import IssueReporting
@@ -108,6 +110,36 @@ actor AsyncSerialGate {
     var owner: String? = nil
   }
 
+  /// One step in the gate's life, reported to the timeline closure given at `init` (#1074). The wait and stall reports
+  /// name only waits past their thresholds; a timeline names every request, acquisition, release and cancellation, so
+  /// an exercise can measure each caller's wait (acquisition minus request) and each holder's hold (release minus
+  /// acquisition) under contention, the short ones too.
+  struct TimelineEvent: Sendable, Equatable {
+    enum Kind: String, Sendable {
+      /// A caller asked for the gate.
+      case requested
+      /// The caller took the gate: at once when it was free, or when the holder before it left.
+      case acquired
+      /// The holder left.
+      case released
+      /// A queued caller was cancelled and never took the gate.
+      case cancelled
+    }
+
+    var kind: Kind
+    /// The gate's label, such as `operation`.
+    var gate: String
+    /// One per call to enter, shared by its request, its acquisition, and its release or cancellation.
+    var ticket: UInt64
+    /// The caller, as the wait and stall reports name it.
+    var operation: String
+    var priority: Priority
+    /// On a release, the phase the holder named last.
+    var phase: String? = nil
+    /// When the step happened, on the gate's monotonic clock.
+    var uptimeNanoseconds: UInt64
+  }
+
   // SAFETY: every stored property is read and written only on the enclosing
   // `AsyncSerialGate` actor, which owns the reference for its whole lifetime.
   private final class Waiter: @unchecked Sendable {
@@ -127,11 +159,13 @@ actor AsyncSerialGate {
     let operation: String
     let priority: Priority
     let enqueuedAt: Date
+    let ticket: UInt64
 
-    init(operation: String, priority: Priority, enqueuedAt: Date) {
+    init(operation: String, priority: Priority, enqueuedAt: Date, ticket: UInt64) {
       self.operation = operation
       self.priority = priority
       self.enqueuedAt = enqueuedAt
+      self.ticket = ticket
     }
 
     var isWaiting: Bool {
@@ -212,6 +246,17 @@ actor AsyncSerialGate {
   /// on the wall clock, a quick handoff took over the 1 s report threshold under the whole test bundle's load (#1021).
   private let currentDate: @Sendable () -> Date
 
+  /// Receives every step of the gate's life (#1074), on this actor and in the same turn as the step, so it must only
+  /// record. Nil in production: each step then costs one nil check.
+  private let timeline: (@Sendable (TimelineEvent) -> Void)?
+  /// The monotonic clock the timeline is stamped with; a test passes one it moves by hand.
+  private let uptimeNanoseconds: @Sendable () -> UInt64
+  /// The last ticket given out; each call to enter takes the next.
+  private var lastTicket: UInt64 = 0
+  /// The holder's ticket and priority, for its release on the timeline.
+  private var holderTicket: UInt64 = 0
+  private var holderPriority: Priority = .standard
+
   init(
     label: String,
     owner: String? = nil,
@@ -220,7 +265,9 @@ actor AsyncSerialGate {
     agingMilliseconds: Int = 2_000,
     now: @escaping @Sendable () -> Date = { Date() },
     report: (@Sendable (StallReport) -> Void)? = nil,
-    waitReport: (@Sendable (WaitReport) -> Void)? = nil
+    waitReport: (@Sendable (WaitReport) -> Void)? = nil,
+    timeline: (@Sendable (TimelineEvent) -> Void)? = nil,
+    uptimeNanoseconds: @escaping @Sendable () -> UInt64 = { DispatchTime.now().uptimeNanoseconds }
   ) {
     self.label = label
     self.owner = owner
@@ -230,6 +277,8 @@ actor AsyncSerialGate {
     self.agingMilliseconds = agingMilliseconds
     self.report = report ?? { AsyncSerialGate.reportStallLoudly($0) }
     self.waitReport = waitReport ?? { AsyncSerialGate.reportWait($0) }
+    self.timeline = timeline
+    self.uptimeNanoseconds = uptimeNanoseconds
   }
 
   deinit {
@@ -269,13 +318,14 @@ actor AsyncSerialGate {
   /// another caller still holds the gate. Callers in a throwing context should
   /// prefer ``enterUnlessCancelled(operation:)``.
   func enter(operation: String = #function, priority: Priority = .standard) async {
+    let ticket = request(operation: operation, priority: priority)
     if holderOperation == nil {
-      acquire(operation: operation)
+      acquire(operation: operation, priority: priority, ticket: ticket)
       return
     }
     // Only `enterUnlessCancelled` installs a cancellation handler, so no waiter
     // reached from here can be resumed with an error.
-    try? await waitForBaton(operation: operation, priority: priority, honoringCancellation: false)
+    try? await waitForBaton(operation: operation, priority: priority, ticket: ticket, honoringCancellation: false)
   }
 
   /// Acquires the gate, waiting if another caller holds it, and throws
@@ -287,11 +337,12 @@ actor AsyncSerialGate {
   /// cannot leave half-applied optimistic state behind.
   func enterUnlessCancelled(operation: String = #function, priority: Priority = .standard) async throws {
     if Task.isCancelled { throw CancellationError() }
+    let ticket = request(operation: operation, priority: priority)
     if holderOperation == nil {
-      acquire(operation: operation)
+      acquire(operation: operation, priority: priority, ticket: ticket)
       return
     }
-    try await waitForBaton(operation: operation, priority: priority, honoringCancellation: true)
+    try await waitForBaton(operation: operation, priority: priority, ticket: ticket, honoringCancellation: true)
   }
 
   /// Names what the current holder is doing, so stall and wait reports can say which part of a
@@ -337,6 +388,9 @@ actor AsyncSerialGate {
     let previousHolder = holderOperation
     let previousHolderPhase = currentHolderPhase
     let previousHolderAcquiredAt = holderAcquiredAt
+    if let previousHolder {
+      record(.released, ticket: holderTicket, operation: previousHolder, priority: holderPriority, phase: previousHolderPhase)
+    }
     holderPhase = nil
     markedPhase.withLock { $0 = nil }
     markedWrites.withLock { $0 = nil }
@@ -357,6 +411,9 @@ actor AsyncSerialGate {
       waiter.state = .resumed
       holderOperation = waiter.operation
       holderAcquiredAt = now
+      holderTicket = waiter.ticket
+      holderPriority = waiter.priority
+      record(.acquired, ticket: waiter.ticket, operation: waiter.operation, priority: waiter.priority)
       let waitMilliseconds = Self.milliseconds(since: waiter.enqueuedAt, to: now)
       // The report runs off this actor (#473): it records a diagnostics line and runs the app's handlers, and the
       // next holder, which resumes on this actor, must never wait for them.
@@ -402,22 +459,54 @@ actor AsyncSerialGate {
     return best?.index
   }
 
-  private func acquire(operation: String) {
+  private func acquire(operation: String, priority: Priority, ticket: UInt64) {
     holderOperation = operation
     holderPhase = nil
     markedPhase.withLock { $0 = nil }
     markedWrites.withLock { $0 = nil }
     holderAcquiredAt = currentDate()
+    holderTicket = ticket
+    holderPriority = priority
     stallCount = 0
     stallReportedForHolder = false
+    record(.acquired, ticket: ticket, operation: operation, priority: priority)
+  }
+
+  /// Gives a caller its ticket and reports its request.
+  private func request(operation: String, priority: Priority) -> UInt64 {
+    lastTicket &+= 1
+    record(.requested, ticket: lastTicket, operation: operation, priority: priority)
+    return lastTicket
+  }
+
+  private func record(
+    _ kind: TimelineEvent.Kind,
+    ticket: UInt64,
+    operation: String,
+    priority: Priority,
+    phase: String? = nil
+  ) {
+    guard let timeline else { return }
+    timeline(
+      TimelineEvent(
+        kind: kind,
+        gate: label,
+        ticket: ticket,
+        operation: operation,
+        priority: priority,
+        phase: phase,
+        uptimeNanoseconds: uptimeNanoseconds()
+      )
+    )
   }
 
   private func waitForBaton(
     operation: String,
     priority: Priority,
+    ticket: UInt64,
     honoringCancellation: Bool
   ) async throws {
-    let waiter = Waiter(operation: operation, priority: priority, enqueuedAt: currentDate())
+    let waiter = Waiter(operation: operation, priority: priority, enqueuedAt: currentDate(), ticket: ticket)
     guard honoringCancellation else {
       return try await withCheckedThrowingContinuation { continuation in
         attach(continuation, to: waiter)
@@ -439,6 +528,7 @@ actor AsyncSerialGate {
     switch waiter.state {
     case .cancelledBeforeWaiting:
       waiter.state = .resumed
+      record(.cancelled, ticket: waiter.ticket, operation: waiter.operation, priority: waiter.priority)
       continuation.resume(throwing: CancellationError())
     case .pending:
       waiter.state = .waiting(continuation)
@@ -465,6 +555,7 @@ actor AsyncSerialGate {
     case .waiting(let continuation):
       waiters.removeAll { $0 === waiter }
       waiter.state = .resumed
+      record(.cancelled, ticket: waiter.ticket, operation: waiter.operation, priority: waiter.priority)
       if waiters.isEmpty { stopStallWatchdog() }
       continuation.resume(throwing: CancellationError())
     case .cancelledBeforeWaiting, .resumed:

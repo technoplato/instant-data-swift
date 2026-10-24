@@ -410,6 +410,10 @@ public struct InstantRuntimeConfiguration: Sendable {
   /// Runs while compaction holds the operation gate, just before its `VACUUM` (#1015).
   package var onLocalCacheVacuumStartingForTesting: (@Sendable () async -> Void)? = nil
   package var actorHopRecorder: InstantActorHopRecorder?
+  /// Every request, acquisition, release and cancellation on the operation gate, so an exercise can measure each
+  /// caller's wait and each holder's hold under contention (#1074). It runs on the gate's actor, in the same turn as
+  /// the step it reports, so it must only record. Nil, the default, costs one nil check per step.
+  var operationGateTimeline: (@Sendable (AsyncSerialGate.TimelineEvent) -> Void)? = nil
   package var isLocalOnly: Bool
   package var localPersistenceMigrations: [InstantLocalPersistenceMigration] = []
   var queryCachePruningPolicy = InstantQueryCachePruningPolicy(
@@ -1603,7 +1607,11 @@ public final class InstantRuntime: Sendable {
     self.automaticDeliveryClaimantID = configuration.outboxClaimantProcess.claimantID(
       runtimeID: UUID().uuidString.lowercased()
     )
-    self.operationGate = AsyncSerialGate(label: "operation", owner: configuration.appID)
+    self.operationGate = AsyncSerialGate(
+      label: "operation",
+      owner: configuration.appID,
+      timeline: configuration.operationGateTimeline
+    )
     self.store = store
     self.outbox = outbox
     self.persistence = persistence
