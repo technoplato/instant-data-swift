@@ -10,6 +10,87 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## October 23rd, 2026 at 8:12:22 p.m. EDT — `4d907e4e1117` Tests (#1021): the known-failing list, re-recorded with the fixes: 8 names, each with an issue or an owner
+
+- **Implementation commit:** `4d907e4e111761035a785eb75ca0e5a551b1557d`
+- **Change:** Tests (#1021): the known-failing list, re-recorded with the fixes: 8 names, each with an issue or an owner
+- **Details:**
+  - From six whole-bundle runs (ed238e19 x4, 0aac1e02 x2): 77 names -> 8 (#1028, #1012, #1026, #1029 x2, #1030, #1006, #1007). Tests/known-failing-verdicts.md keeps every first-listed name's verdict.
+- **Files:**
+  - `Tests/known-failing.txt` — the list
+  - `Tests/known-failing-verdicts.md` — the verdicts
+- **User context (verbatim):**
+  > We're really working on making this production ready.
+- **SpecStory:** unavailable — unavailable — Headless claude -p session (tools/agent-run); no SpecStory capture for headless runs.
+
+## October 23rd, 2026 at 8:12:22 p.m. EDT — `0aac1e02e4f6` Tests (#1021): the two fixed waits main gained since get the hang bound too
+
+- **Implementation commit:** `0aac1e02e4f6fe5ca961fdaebd65037c5b6dfd7f`
+- **Change:** Tests (#1021): the two fixed waits main gained since get the hang bound too
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantSyncTaskPriorityTests.swift` — the hang bound
+  - `Tests/InstantSwiftDataCoreTests/InstantRoomPresenceRuntimeTests.swift` — waitForRoom's default
+- **User context (verbatim):**
+  > We're really working on making this production ready.
+- **SpecStory:** unavailable — unavailable — Headless claude -p session (tools/agent-run); no SpecStory capture for headless runs.
+
+## October 23rd, 2026 at 8:12:22 p.m. EDT — `ed238e19dcb0` Tests (#1021): measurements run alone, in a second pass, and the biggest test-store makers clean up at exit
+
+- **Implementation commit:** `ed238e19dcb04ed55ad82dc2f5140e22b392c36f`
+- **Change:** Tests (#1021): measurements run alone, in a second pass, and the biggest test-store makers clean up at exit
+- **Details:**
+  - .measurement trait (7 whole-process tests skip in the bundle and run alone, serially, in the script's second pass: 23-38 s, all passing); InstantTestScratch removes registered stores at process exit; the script sweeps this library's temp leftovers when no other test process runs (42 GB had filled the mini).
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantTestMeasurement.swift` — the trait
+  - `Tests/InstantSwiftDataCoreTests/InstantTestScratch.swift` — stores removed at exit
+  - `scripts/known-failing-tests.py` — the measurement pass and the sweep
+- **User context (verbatim):**
+  > We're really working on making this production ready.
+- **SpecStory:** unavailable — unavailable — Headless claude -p session (tools/agent-run); no SpecStory capture for headless runs.
+
+## October 23rd, 2026 at 8:12:21 p.m. EDT — `d54112b341de` Tests (#1021): two harness races fixed: the CLI tests' output capture, and stores deleted under their hydration
+
+- **Implementation commit:** `d54112b341def3743b57f0b13e19dd1ad94a18b1`
+- **Change:** Tests (#1021): two harness races fixed: the CLI tests' output capture, and stores deleted under their hydration
+- **Details:**
+  - CLITests read both pipes to their end before building the result (a readabilityHandler's last callback lost output under load); two tests wait for their hydration to end before deleting its store (SQLite 6922 reported after the test).
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/CLITests.swift` — the pipe capture
+  - `Tests/InstantSwiftDataCoreTests/InstantDeferredTranscriptPayloadMemoryTests.swift` — the teardown
+  - `Tests/InstantSwiftDataCoreTests/InstantOperationGatePriorityTests.swift` — the teardown
+- **User context (verbatim):**
+  > We're really working on making this production ready.
+- **SpecStory:** unavailable — unavailable — Headless claude -p session (tools/agent-run); no SpecStory capture for headless runs.
+
+## October 23rd, 2026 at 8:12:21 p.m. EDT — `e850e1384907` Tests (#1021): the bundle's waits and timing checks hold under load instead of measuring the machine
+
+- **Implementation commit:** `e850e138490731fffcb3c9aae0381f11a600b102`
+- **Change:** Tests (#1021): the bundle's waits and timing checks hold under load instead of measuring the machine
+- **Details:**
+  - InstantTestWait.hang (60 s) for 283 instantLiveWithTimeout sites and ~20 harness polls and fail-safes; six '< 250 ms' tests and the main-actor gate test assert state; holdingAcknowledgementDeadlines() for seven places whose scripted server never answers; sleeps and yields replaced by the events; infinite-query harnesses settle on an answered chunk showing rows. Mini: idle 19/21 -> 1-2 failing, loaded 73/28 -> 3-5.
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantLiveTestWaits.swift` — InstantTestWait and holdingAcknowledgementDeadlines
+  - `Tests/InstantSwiftDataCoreTests/InstantLiveTransportTests.swift` — hang bounds, state assertions, clock holds
+  - `Tests/InstantSwiftDataCoreTests/InstantInfiniteQueryDuplicateRowsTests.swift` — the settle condition
+  - `Tests/InstantSwiftDataCoreTests/InstantInfiniteQueryLeadingRowsTests.swift` — the settle condition
+  - `Tests/InstantSwiftDataCoreTests/InstantOutboxDeliveryStallTests.swift` — waits for events, a clock hold
+- **User context (verbatim):**
+  > We're really working on making this production ready.
+- **SpecStory:** unavailable — unavailable — Headless claude -p session (tools/agent-run); no SpecStory capture for headless runs.
+
+## October 23rd, 2026 at 8:12:21 p.m. EDT — `89be61be2f2d` AsyncSerialGate (#1021): the gate takes a clock, so a test can assert a quick handoff reports no wait
+
+- **Implementation commit:** `89be61be2f2d376507d0ac34c5232a451323e7d2`
+- **Change:** AsyncSerialGate (#1021): the gate takes a clock, so a test can assert a quick handoff reports no wait
+- **Details:**
+  - now: parameter (default Date()); the quick-handoff test passes a clock that stands still (it failed under the bundle's load: the handoff took over the 1 s report threshold on the wall clock).
+- **Files:**
+  - `Sources/InstantSwiftDataCore/AsyncSerialGate.swift` — the clock seam
+  - `Tests/InstantSwiftDataCoreTests/AsyncSerialGateTests.swift` — the frozen clock
+- **User context (verbatim):**
+  > We're really working on making this production ready.
+- **SpecStory:** unavailable — unavailable — Headless claude -p session (tools/agent-run); no SpecStory capture for headless runs.
+
 ## October 23rd, 2026 at 7:56:15 p.m. EDT — `460247957945` Document the v1.9.28 release: a live write fingerprints its optimistic effect once per step, the save and the acknowledgement 2 -> 1 each (#1007)
 
 - **Implementation commit:** `460247957945081242a68d56d0c08d83c443012c`

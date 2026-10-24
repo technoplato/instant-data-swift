@@ -1,3 +1,26 @@
+## 2026-10-23 20:12:43 EDT — #1021: a verdict for every failing test; the bundle holds under load (test-only, plus a gate clock seam; no release)
+
+- **Commits (main):** `89be61be` (AsyncSerialGate takes a clock), `e850e138` (the bundle's waits and timing checks hold
+  under load), `d54112b3` (the CLI capture race and two teardown races), `ed238e19` (measurements run alone; test stores
+  removed at exit; the script's sweep), merges `8a22e7c9` and `5efe8e01`, `0aac1e02` (main's two new fixed waits),
+  `4d907e4e` (the list re-recorded: 8 names; Tests/known-failing-verdicts.md); then this ledger commit.
+- **Before -> after (Mac mini M4, whole InstantSwiftDataCoreTests bundle through scripts/known-failing-tests.sh):** idle
+  19 and 21 of 1,384 failing at v1.9.22 -> 1, 2, 1 of 1,388 (the series on v1.9.22) and 1 of 1,395-1,401 on v1.9.26 and
+  v1.9.28 (fully idle, load 1.6-6.9: 344 s + 23 s for the measurements alone); beside 20 busy loops 73 (mean load 52) and
+  28 (36) -> 5 (45) and 3 (42) on the series, 1 (44) on v1.9.26. Loaded wall time 470-855 s (a slow step now finishes
+  instead of failing at 5 s). The list: 77 names -> 8, every one with an issue or an owner.
+- **Clusters:** load-timing (fixed hang bounds 30, harness settles 9, wall-clock asserts 8, acknowledgement deadlines on
+  the wall clock 6, sleeps instead of events 4, a gate's wall clock 1); harness races (CLI pipe capture 8, teardown 2);
+  whole-process measurements (now a second, serial pass: 7 tests, all passing alone); leaks (42 GB of test stores had
+  filled the mini's disk; removed with a ledger, and now cleaned at exit and by the script's sweep).
+- **Filed:** #1026 (actor-hop counts under heavy load), #1027 (a held refusal re-checked only on the wall-clock deadline
+  wake), #1028 (the binary codec is not faster than JSON/Base64 for 4 KB: ratio median 0.98), #1029 (tests cannot own
+  the 5 s live connect/open timeout; a backoff gate that parks once), #1030 (a leading watcher stuck while a retirement
+  is held). Told #1012 (its new @unchecked Sendable lacks the SAFETY: line), #1006 and #1007 (their measurement bounds).
+- **Use:** `scripts/known-failing-tests.sh run <out-dir> [--load 20]` then `compare <out-dir>`; tests waiting on a step
+  use `InstantTestWait.hang`, tests with scripted servers that never answer use `holdingAcknowledgementDeadlines()`,
+  whole-process measurements use `.measurement`, stores use `InstantTestScratch`.
+
 ## 2026-10-23 19:56:16 EDT — v1.9.28: a live write fingerprints its optimistic effect once per step (#1007); carries 1.9.27
 
 - **Commits:** red `a56c9786`, green `73e3ff7c`; release document `46024795`; then this ledger commit and the tag v1.9.28.

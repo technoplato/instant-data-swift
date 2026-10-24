@@ -1,3 +1,21 @@
+## 2026-10-23 20:12:43 EDT — instant-data-swift `4d907e4e111761035a785eb75ca0e5a551b1557d`
+Tests (#1021): the known-failing list re-recorded with the fixes, 8 names each with an issue or an owner (was 77), and Tests/known-failing-verdicts.md.
+
+## 2026-10-23 20:12:43 EDT — instant-data-swift `0aac1e02e4f6fe5ca961fdaebd65037c5b6dfd7f`
+Tests (#1021): the two fixed waits main gained since (InstantSyncTaskPriorityTests, waitForRoom) get the hang bound.
+
+## 2026-10-23 20:12:43 EDT — instant-data-swift `ed238e19dcb04ed55ad82dc2f5140e22b392c36f`
+Tests (#1021): whole-process measurements run alone in the script's second pass; the biggest test-store makers clean up at exit; the script sweeps this library's temp leftovers.
+
+## 2026-10-23 20:12:43 EDT — instant-data-swift `d54112b341def3743b57f0b13e19dd1ad94a18b1`
+Tests (#1021): the CLI tests' pipe capture race and two teardown races (stores deleted under their hydration) fixed.
+
+## 2026-10-23 20:12:43 EDT — instant-data-swift `e850e138490731fffcb3c9aae0381f11a600b102`
+Tests (#1021): one hang bound for every wait around an expected step, state instead of wall-clock asserts, tests own the acknowledgement clock, waits for events instead of sleeps; idle 19/21 -> 1-2 and loaded 73/28 -> 3-5 failing on the mini.
+
+## 2026-10-23 20:12:43 EDT — instant-data-swift `89be61be2f2d376507d0ac34c5232a451323e7d2`
+AsyncSerialGate (#1021): the gate takes a clock (now:, default Date()), so the quick-handoff test can stand its clock still.
+
 ## 2026-10-23 20:00:32 EDT — realtime-voice `a87616be9d2364a9a7b0bea811a210f4f090d701`
 Change log for the audit commit 7d9189d1d (#1007).
 
