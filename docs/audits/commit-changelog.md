@@ -1,3 +1,21 @@
+## 2026-10-23 21:15:20 EDT — realtime-voice `ffe6193bde5e065fc8c797240de08679bde5f81c`
+Merge (#1035) to main: the audit's 21:20 section.
+
+## 2026-10-23 21:15:06 EDT — realtime-voice `dfce806446fb1e9cece7ae7d83af2b2edda078c2`
+Change log for the audit's 21:20 section (#1035).
+
+## 2026-10-23 21:15:06 EDT — realtime-voice `70078618f17e03f7595ae67c0ecb3600ee0e4d4c`
+The flap-reload audit's 21:20 section (#1035): the Mac learner's half of the owner rule.
+
+## 2026-10-23 21:14:46 EDT — realtime-voice `e024961b579aae20c4b75f797c0de5edf5553a9f`
+Merge (#1035) to main: the Mac's learner keeps the owner of a row his other sign-in wrote.
+
+## 2026-10-23 21:14:33 EDT — realtime-voice `bebe1dcaeea99197f08640dc4c6b876a2dab12e3`
+Green (#1035): InstantSpeakers writes an existing speaker row's owner back.
+
+## 2026-10-23 21:14:33 EDT — realtime-voice `81f1edd6f595788402c9b47c610400e1c7d3aec0`
+Red tests (#1035): the Mac's learner keeps the owner of a row his other sign-in wrote.
+
 ## 2026-10-23 21:11:44 EDT — scribe `b736b1492e2c176601693b6bd1b156df71c069a2`
 realtime-voice: Scribe 0.1 (119) cut on main (#1038): CURRENT_PROJECT_VERSION 119, What's New 119 dated; pins instant-data-swift exactly 1.9.29 (#1035: a refused write no longer reloads or copies the store).
 
