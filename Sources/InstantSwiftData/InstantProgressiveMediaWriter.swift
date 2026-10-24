@@ -5,6 +5,8 @@
 // - 2026-10-23: first version (#1012). Appends never wait for the server (ADR 0010's contract for writes); delivery
 //   stores each file before its row, retries with a doubling delay that resets only after a success, and makes no
 //   attempt while the device has no network, as the socket's reconnect does (`Reactor.js` `_scheduleReconnect`).
+// - 2026-10-23: a stream row's updatedAtMs never moves back, whatever the device clock does (#1012): an app's rules may
+//   refuse such an update, and with it the segment row in the same transaction.
 
 import Dependencies
 import Foundation
@@ -237,7 +239,9 @@ public actor InstantProgressiveMediaWriter {
       }
       if !record.initializationStored {
         try await store(spool.initializationURL(stream), at: stream.initializationPath)
-        try await storage.write([.stream(streamRow(.recording, segmentCount: 0, durationSeconds: 0))])
+        try await storage.write([
+          .stream(streamRow(.recording, segmentCount: 0, durationSeconds: 0, updatedAtMs: try nextStamp()))
+        ])
         try markInitializationStored()
         continue
       }
@@ -251,7 +255,8 @@ public actor InstantProgressiveMediaWriter {
             streamRow(
               isLast ? .finished : .recording,
               segmentCount: segment.index + 1,
-              durationSeconds: segment.endSeconds
+              durationSeconds: segment.endSeconds,
+              updatedAtMs: try nextStamp()
             )
           ),
           .segment(segmentRow(segment, createdAtMs: next.createdAtMs)),
@@ -265,7 +270,14 @@ public actor InstantProgressiveMediaWriter {
       }
       if record.finished {
         try await storage.write([
-          .stream(streamRow(.finished, segmentCount: record.nextIndex, durationSeconds: record.appendedSeconds))
+          .stream(
+            streamRow(
+              .finished,
+              segmentCount: record.nextIndex,
+              durationSeconds: record.appendedSeconds,
+              updatedAtMs: try nextStamp()
+            )
+          )
         ])
         try spool.remove(stream)
         return
@@ -332,10 +344,21 @@ public actor InstantProgressiveMediaWriter {
     self.record = record
   }
 
+  /// The next stamp for the stream's row: never earlier than the last one written, nor than the stream's start.
+  private func nextStamp() throws -> Double {
+    guard var record else { return milliseconds(now) }
+    let stamp = max(milliseconds(now), record.updatedAtMs ?? record.createdAtMs)
+    record.updatedAtMs = stamp
+    try spool.save(record)
+    self.record = record
+    return stamp
+  }
+
   private func streamRow(
     _ state: InstantProgressiveMediaState,
     segmentCount: Int,
-    durationSeconds: Double
+    durationSeconds: Double,
+    updatedAtMs: Double
   ) -> InstantProgressiveMediaStreamRow {
     InstantProgressiveMediaStreamRow(
       id: stream.id,
@@ -349,8 +372,8 @@ public actor InstantProgressiveMediaWriter {
       state: state,
       segmentCount: segmentCount,
       durationSeconds: durationSeconds,
-      createdAtMs: record?.createdAtMs ?? milliseconds(now),
-      updatedAtMs: milliseconds(now)
+      createdAtMs: record?.createdAtMs ?? updatedAtMs,
+      updatedAtMs: updatedAtMs
     )
   }
 

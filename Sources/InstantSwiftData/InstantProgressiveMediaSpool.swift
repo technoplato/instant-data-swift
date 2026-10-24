@@ -38,6 +38,8 @@ public struct InstantProgressiveMediaSpool: Sendable {
     var appendedSeconds: Double
     var initializationStored: Bool
     var finished: Bool
+    /// The last updatedAtMs written to the stream's row, so the next is never earlier (nil in a spool from 1.9.26-1.9.29).
+    var updatedAtMs: Double? = nil
   }
 
   /// A waiting segment's place on the timeline, beside its bytes.
