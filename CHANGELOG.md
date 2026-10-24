@@ -10,6 +10,68 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## October 23rd, 2026 at 8:44:38 p.m. EDT — `c6bd5358df46` Document the v1.9.29 release: a refused write is rolled back at the cost of the rows it touched, not of the whole store (#1035)
+
+- **Implementation commit:** `c6bd5358df46dfdd032b4db424c3211847628af2`
+- **Change:** Document the v1.9.29 release (#1035)
+- **Details:**
+  - Release focus, what stays the same, checks (red/green, the whole suite against its base, the 40,000-fact measurement).
+- **Files:**
+  - `docs/releases/v1.9.29.md` — the release document
+- **User context (verbatim):**
+  > I want to make sure we're still syncing in real time.
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run flap-reload-1035); no SpecStory capture for headless runs.
+
+## October 23rd, 2026 at 8:44:38 p.m. EDT — `103453390a37` Green (#1035): a refused write's rollback is prepared from the hot store, not from a copy of it
+
+- **Implementation commit:** `103453390a375d576759482937acce1f3f5e907d`
+- **Change:** Green (#1035): a refused write's rollback is prepared from the hot store, not from a copy of it
+- **Details:**
+  - failClaimedMutationAttempt takes an InstantStorePreparationBase (copy-on-write AttributeStore and TripleIndexes) instead of snapshot(); deferred values hydrate into its copy.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — the claimed rollback prepares from the base
+  - `Sources/InstantSwiftDataCore/InstantStore.swift` — InstantStorePreparationBase, preparationBase(), prepare(_:applyingTo: base)
+- **User context (verbatim):**
+  > I want to make sure we're still syncing in real time.
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run flap-reload-1035); no SpecStory capture for headless runs.
+
+## October 23rd, 2026 at 8:44:38 p.m. EDT — `4ff7f80509b2` Red (#1035): a refused write's rollback copies the whole store twice
+
+- **Implementation commit:** `4ff7f80509b281bd1f058c61b9bb5d04f43dda5d`
+- **Change:** Red (#1035): a refused write's rollback copies the whole store twice
+- **Details:**
+  - aRefusedWritesRollbackCopiesNoFactOfTheLargeStore: 2 full copies for one rollback; InstantStore counts its full copies for tests.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantStore.swift` — fullCopyCountForTesting
+  - `Tests/InstantSwiftDataCoreTests/InstantPersistenceCacheResidencyTests.swift` — the copy test
+- **User context (verbatim):**
+  > I want to make sure we're still syncing in real time.
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run flap-reload-1035); no SpecStory capture for headless runs.
+
+## October 23rd, 2026 at 8:44:37 p.m. EDT — `fcced1ec6691` Green (#1035): a refused write's rollback advances the memory cache instead of dropping it
+
+- **Implementation commit:** `fcced1ec6691a986896de5fb689875ff24953edf`
+- **Change:** Green (#1035): a refused write's rollback advances the memory cache instead of dropping it
+- **Details:**
+  - commitClaimedTerminalFailure calls advanceCachedRevisionDomains with the rollback's changed facts; the next read no longer rebuilds the store from SQLite.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — the terminal-failure commit advances the cache
+- **User context (verbatim):**
+  > I want to make sure we're still syncing in real time.
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run flap-reload-1035); no SpecStory capture for headless runs.
+
+## October 23rd, 2026 at 8:44:37 p.m. EDT — `99459a0a3571` Red (#1035): a refused write's rollback reloads the whole store on the next write
+
+- **Implementation commit:** `99459a0a3571ce357b4255b8d192a7f39b2e3b44`
+- **Change:** Red (#1035): a refused write's rollback reloads the whole store on the next write
+- **Details:**
+  - aRefusedWriteRollsBackWithoutReloadingTheLargeStore: residency metrics 1/1/1 after one refused write and one local write on a 10,000-fact store.
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantPersistenceCacheResidencyTests.swift` — the refused-write residency test and its write helper
+- **User context (verbatim):**
+  > I want to make sure we're still syncing in real time.
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run flap-reload-1035); no SpecStory capture for headless runs.
+
 ## October 23rd, 2026 at 8:12:22 p.m. EDT — `4d907e4e1117` Tests (#1021): the known-failing list, re-recorded with the fixes: 8 names, each with an issue or an owner
 
 - **Implementation commit:** `4d907e4e111761035a785eb75ca0e5a551b1557d`

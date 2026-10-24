@@ -1,3 +1,36 @@
+## 2026-10-23 20:44:07 EDT — instant-data-swift `c6bd5358df46dfdd032b4db424c3211847628af2`
+Release document for v1.9.29 (#1035): a refused write is rolled back at the cost of the rows it touched.
+
+## 2026-10-23 20:42:32 EDT — instant-data-swift `103453390a375d576759482937acce1f3f5e907d`
+Green (#1035): a refused write's rollback is prepared from the hot store, not from a copy.
+
+## 2026-10-23 20:42:32 EDT — instant-data-swift `4ff7f80509b281bd1f058c61b9bb5d04f43dda5d`
+Red test (#1035): aRefusedWritesRollbackCopiesNoFactOfTheLargeStore, 2 full copies.
+
+## 2026-10-23 20:42:32 EDT — instant-data-swift `fcced1ec6691a986896de5fb689875ff24953edf`
+Green (#1035): a refused write's rollback advances the memory cache instead of dropping it.
+
+## 2026-10-23 20:42:32 EDT — instant-data-swift `99459a0a3571ce357b4255b8d192a7f39b2e3b44`
+Red test (#1035): aRefusedWriteRollsBackWithoutReloadingTheLargeStore, residency 1/1/1.
+
+## 2026-10-23 20:36:32 EDT — realtime-voice `4adac23be5522eb4bcdd2f6aae86e5ef99924970`
+Merge (#1035) to main: a speaker row keeps the owner that wrote it, a write reads the session, the learner writes a decision once.
+
+## 2026-10-23 20:36:18 EDT — realtime-voice `4f2d480059eab9c150da094604486b9f724bc428`
+Change log for 93e32f120, 787122f95 and 1a96d9478 (#1035).
+
+## 2026-10-23 20:35:47 EDT — realtime-voice `1a96d94786e2a67b4720f962d372eeb0d84fa5f9`
+What's New for build 119 (#1035).
+
+## 2026-10-23 20:35:29 EDT — realtime-voice `787122f95d8287d1b668a9e5bb1b412196097fd2`
+Green (#1035): speaker rows keep their owner; a write reads the session; the re-match skips a decision it already wrote.
+
+## 2026-10-23 20:35:29 EDT — realtime-voice `93e32f120951d4bd8e23518fa4415e52320ef563`
+Red tests (#1035): six speaker-owner tests and the learner's repeated decision.
+
+## 2026-10-23 20:30:09 EDT — realtime-voice `93b12fbce9224a258956632085f53a3688344b12`
+Plan-only commit flap-reload-1035 (#1035): plan and claims.
+
 ## 2026-10-23 20:34:26 EDT — scribe `314e1aab9ac9079d0a0f4124829a43c7fc787575`
 The blank transcript's rescue in the recording-screen audit and What's New (#412).
 

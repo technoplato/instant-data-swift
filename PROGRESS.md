@@ -1,3 +1,13 @@
+## 2026-10-23 20:44:54 EDT — v1.9.29: a refused write is rolled back at the cost of the rows it touched, not of the whole store (#1035); carries 1.9.28
+
+- **Commits:** red `99459a0a`, green `fcced1ec` (the rollback advances the memory cache); red `4ff7f805`, green `10345339`
+  (the rollback prepares from the hot store); release document `c6bd5358`; then this ledger commit and the tag v1.9.29.
+- **Checks:** residency 1/1/1 -> 0/0/0 after a refused write and a local write; full copies 2 -> 0 per rollback; the whole
+  suite (1,403 tests) with no failure the release explains (5 branch-only failures pass alone; one is on
+  Tests/known-failing.txt). 40,000-fact store, 20 refusal cycles: the refusal 269.6 -> 0.65 ms, the next write
+  330.4 -> 0.49 ms, process CPU 694 -> 2.8 ms per cycle.
+- **Next:** the consuming app pins exactly 1.9.29.
+
 ## 2026-10-23 20:12:43 EDT — #1021: a verdict for every failing test; the bundle holds under load (test-only, plus a gate clock seam; no release)
 
 - **Commits (main):** `89be61be` (AsyncSerialGate takes a clock), `e850e138` (the bundle's waits and timing checks hold
