@@ -14624,29 +14624,30 @@ public actor SQLitePersistenceStore {
     }
   }
 
-  private func loadAutomaticDeliveryCandidateRowsWithoutTransaction(
-    limit: Int
-  ) throws -> [InstantOutboxDeliveryCandidateRow] {
-    let sql =
-      """
-      SELECT
-        mutation_id,
-        created_at_ms,
-        delivery_metadata_version,
-        transport_step_count,
-        COALESCE(encoded_body_bytes, length(CAST(json AS BLOB))),
-        status,
-        delivery_started
-      FROM instant_outbox
-      WHERE delivery_claim_state = ?
-        AND (
-          delivery_state = ?
-          OR (status IN (?, ?) AND delivery_metadata_version < ?)
-        )
-      ORDER BY created_at_ms, mutation_id
-      LIMIT ?
-      """
-    let bindings: [SQLiteBinding] = [
+  /// The automatic pump's next writes to deliver, oldest first: the ready rows that need delivery, and the legacy rows
+  /// whose delivery metadata predates the current version.
+  private static let automaticDeliveryCandidatesSQL =
+    """
+    SELECT
+      mutation_id,
+      created_at_ms,
+      delivery_metadata_version,
+      transport_step_count,
+      COALESCE(encoded_body_bytes, length(CAST(json AS BLOB))),
+      status,
+      delivery_started
+    FROM instant_outbox
+    WHERE delivery_claim_state = ?
+      AND (
+        delivery_state = ?
+        OR (status IN (?, ?) AND delivery_metadata_version < ?)
+      )
+    ORDER BY created_at_ms, mutation_id
+    LIMIT ?
+    """
+
+  private static func automaticDeliveryCandidateBindings(limit: Int) -> [SQLiteBinding] {
+    [
       .text(InstantOutboxDeliveryClaimState.ready.rawValue),
       .text(InstantOutboxDeliveryState.needsDelivery.rawValue),
       .text(InstantMutationStatus.pending.rawValue),
@@ -14654,7 +14655,58 @@ public actor SQLitePersistenceStore {
       .int(Int64(InstantOutboxDeliveryMetadata.currentVersion)),
       .int(Int64(limit)),
     ]
-    return try loadOutboxDeliveryCandidateRowsWithoutTransaction(sql, bindings)
+  }
+
+  /// Whether the automatic pump has another write to deliver: the continuation check of a claim pass.
+  private static let automaticDeliveryCandidateExistsSQL =
+    """
+    SELECT EXISTS(
+      SELECT 1
+      FROM instant_outbox
+      WHERE delivery_claim_state = ?
+        AND (
+          delivery_state = ?
+          OR (status IN (?, ?) AND delivery_metadata_version < ?)
+        )
+      LIMIT 1
+    )
+    """
+
+  private static var automaticDeliveryCandidateExistsBindings: [SQLiteBinding] {
+    [
+      .text(InstantOutboxDeliveryClaimState.ready.rawValue),
+      .text(InstantOutboxDeliveryState.needsDelivery.rawValue),
+      .text(InstantMutationStatus.pending.rawValue),
+      .text(InstantMutationStatus.confirmed.rawValue),
+      .int(Int64(InstantOutboxDeliveryMetadata.currentVersion)),
+    ]
+  }
+
+  private func loadAutomaticDeliveryCandidateRowsWithoutTransaction(
+    limit: Int
+  ) throws -> [InstantOutboxDeliveryCandidateRow] {
+    try loadOutboxDeliveryCandidateRowsWithoutTransaction(
+      Self.automaticDeliveryCandidatesSQL,
+      Self.automaticDeliveryCandidateBindings(limit: limit)
+    )
+  }
+
+  /// The SQLite virtual-machine steps the automatic pump's candidate read and continuation check take on this store,
+  /// for tests (#1108): a read that visits every outbox row takes steps in proportion to them.
+  package func automaticDeliveryCandidateReadStepsForTesting(limit: Int = 50) throws -> (candidates: Int, check: Int) {
+    func steps(_ sql: String, _ bindings: [SQLiteBinding]) throws -> Int {
+      var statement: OpaquePointer?
+      try prepare(sql, statement: &statement)
+      defer { finishStatement(statement) }
+      try bind(bindings, to: statement)
+      _ = sqlite3_stmt_status(statement, SQLITE_STMTSTATUS_VM_STEP, 1)
+      while sqlite3_step(statement) == SQLITE_ROW {}
+      return Int(sqlite3_stmt_status(statement, SQLITE_STMTSTATUS_VM_STEP, 0))
+    }
+    return (
+      candidates: try steps(Self.automaticDeliveryCandidatesSQL, Self.automaticDeliveryCandidateBindings(limit: limit)),
+      check: try steps(Self.automaticDeliveryCandidateExistsSQL, Self.automaticDeliveryCandidateExistsBindings)
+    )
   }
 
   private func loadFailedOutboxLifecycleCandidatesWithoutTransaction(
@@ -16658,27 +16710,7 @@ public actor SQLitePersistenceStore {
   }
 
   private func hasAutomaticDeliveryCandidateWithoutTransaction() throws -> Bool {
-    let sql =
-      """
-      SELECT EXISTS(
-        SELECT 1
-        FROM instant_outbox
-        WHERE delivery_claim_state = ?
-          AND (
-            delivery_state = ?
-            OR (status IN (?, ?) AND delivery_metadata_version < ?)
-          )
-        LIMIT 1
-      )
-      """
-    let bindings: [SQLiteBinding] = [
-      .text(InstantOutboxDeliveryClaimState.ready.rawValue),
-      .text(InstantOutboxDeliveryState.needsDelivery.rawValue),
-      .text(InstantMutationStatus.pending.rawValue),
-      .text(InstantMutationStatus.confirmed.rawValue),
-      .int(Int64(InstantOutboxDeliveryMetadata.currentVersion)),
-    ]
-    return try selectInt64(sql, bindings) != 0
+    try selectInt64(Self.automaticDeliveryCandidateExistsSQL, Self.automaticDeliveryCandidateExistsBindings) != 0
   }
 
   private func loadVisibleWriteFilterWithoutTransaction(
