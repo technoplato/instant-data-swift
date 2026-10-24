@@ -1,3 +1,18 @@
+## 2026-10-24 14:30:44 EDT — scribe `eb42941d88a8a38b19ffb69f50116cc0214920c1`
+Merge (#412) for build 124: the live recording screen's vertical stamp drawn by a UIKit label that a display link changes, outside SwiftUI's graph (iPhone and iPad; SwiftUI's own pixels at 3x).
+
+## 2026-10-24 14:30:44 EDT — scribe `ab157f7a9347e6336ab72eb9b926c1fbf47291eb`
+Docs (#412): the stamp's audit (audits/2026-10-24-stamp-412.md): build 121's display-link breakdown, SwiftUI's shrink rule and placement measured, the look tests' numbers.
+
+## 2026-10-24 14:30:44 EDT — scribe `e11f8c3e71e097cdf16a165afcca4d5587ff7643`
+Test (#412): the stamp at 2x (edge shading within 28 levels), per-case measurements, and 11 layout references re-recorded where only the stamp's 2x shading changed.
+
+## 2026-10-24 14:30:44 EDT — scribe `cdcd3e29279f8564f508e844223d96ad6e67ea71`
+Green (#412): RecordingStampLabel, a UILabel in a view sized as SwiftUI sized the stamp's Text, its text changed by a CADisplayLink (60/s, 10/s under Reduce Motion, off when not visible); the clock read once a second.
+
+## 2026-10-24 14:30:44 EDT — scribe `c80be889de0f173c4fa125a63598ae4ff927b67d`
+Red (#412): RecordingStampTests: the stamp against SwiftUI's own drawing (references from SwiftUI's stamp), its frames, VoiceOver; declarations only.
+
 ## 2026-10-24 13:57:29 EDT — realtime-voice `e2f33da21a13ef0a556b5adeb339c4fccf75a790`
 Change log (#654 #932): the instant-data-swift 1.9.34 pin 972ac0bd9 (plan amendment 64a6d9ff5).
 
