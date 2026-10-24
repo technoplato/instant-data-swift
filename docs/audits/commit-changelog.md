@@ -1,3 +1,9 @@
+## 2026-10-24 14:35:06 EDT — scribe `0e6ee7711f56f23a6cd4678285561309c36dd217`
+Build 124 cut: CURRENT_PROJECT_VERSION 124 for Scribe and Scribe Playback, What's New 124 dated; instant-data-swift exactly 1.9.34 (#654, #932) and stamp-412 (#412). (#1066)
+
+## 2026-10-24 14:35:06 EDT — scribe `c5d5449add5ff0d8f005c22f255fc05e444de55f`
+changelog(#1066): build 124 cut 0e6ee7711.
+
 ## 2026-10-24 14:30:44 EDT — scribe `eb42941d88a8a38b19ffb69f50116cc0214920c1`
 Merge (#412) for build 124: the live recording screen's vertical stamp drawn by a UIKit label that a display link changes, outside SwiftUI's graph (iPhone and iPad; SwiftUI's own pixels at 3x).
 
