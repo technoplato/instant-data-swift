@@ -1,3 +1,14 @@
+## 2026-10-23 23:27:00 EDT — #1012: v1.9.32, the progressive media writer tries a failed row write again
+
+- **Commits:** plan `53eb0e16`; red `e1fd868d`, green `9e07d624`; release document `cbabda40`; then this ledger
+  commit and the tag v1.9.32. Scribe main: `58576d66e` (red `3ee47753f`) registers the copy's namespaces in the app's
+  schema and logs a take's delivery that ends; the 1.9.32 pin follows.
+- **Why:** code reading while preparing the end-to-end check found that a store without the namespaces (before its
+  first `init-ok`) refused the copy's rows, and the writer's delivery then ended for good. Not seen on a device.
+- **Checks:** the progressive media suites and SwiftConcurrencyGuidanceTests on the Mac mini.
+- **Next:** pin 1.9.32 in Scribe; the end-to-end check over the throwaway app (benchmarks/ProgressiveMediaLive); the
+  device proof after build 121.
+
 ## 2026-10-23 23:12:00 EDT — #1012: progressive media in Scribe: the copy is written in build 120, played on other devices from 121
 
 - **Library:** nothing new since v1.9.30 (`738d0560`); 1.9.31 (#654) carries it. ADR 0021 stays Proposed until the

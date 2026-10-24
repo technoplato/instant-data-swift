@@ -10,6 +10,42 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## October 23rd, 2026 at 11:24:25 p.m. EDT — `cbabda402be8` Document the v1.9.32 release: a progressive media row write that fails is tried again after the writer's backoff (#1012); carries 1.9.31
+
+- **Implementation commit:** `cbabda402be8abb71e1a968a93600fdc375f69bd`
+- **Change:** Document the v1.9.32 release: a progressive media row write that fails is tried again (#1012); carries 1.9.31
+- **Details:**
+  - Release focus, what stays the same, checks (red e1fd868d, green 9e07d624, the progressive media suites and SwiftConcurrencyGuidanceTests), not run (the whole core bundle, the iPhone CPU).
+- **Files:**
+  - `docs/releases/v1.9.32.md` — new: the 1.9.32 release document
+- **User context (verbatim):**
+  > Michael, typed 2026-10-23 12:30: "It would be nice to have a library primitive for streaming progressive audio file over instant. Because right now, if I'm remote, I can't play back the audio. I'd like to be able to play it back."
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run audio-stream-1012b, claude/strangelearning); no SpecStory capture for headless runs.
+
+## October 23rd, 2026 at 11:24:25 p.m. EDT — `9e07d6240389` Green (#1012): a progressive media row write that fails is tried again after the writer's backoff, like a failed upload
+
+- **Implementation commit:** `9e07d6240389f0ba811f333f5abd04036dca6ecf`
+- **Change:** Green (#1012): a progressive media row write that fails is tried again after the writer's backoff, like a failed upload
+- **Details:**
+  - deliver() writes every row through write(_:), which retries with Backoff (1-60 s, reset only by a success); permissionRejected still ends delivery. A store that did not know the namespaces before its first init-ok refused the rows, and delivery ended for good.
+- **Files:**
+  - `Sources/InstantSwiftData/InstantProgressiveMediaWriter.swift` — row writes retry with the backoff
+- **User context (verbatim):**
+  > Michael, typed 2026-10-23 12:30: "It would be nice to have a library primitive for streaming progressive audio file over instant. Because right now, if I'm remote, I can't play back the audio. I'd like to be able to play it back."
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run audio-stream-1012b, claude/strangelearning); no SpecStory capture for headless runs.
+
+## October 23rd, 2026 at 11:24:24 p.m. EDT — `e1fd868df0e1` Red (#1012): a progressive media row write that fails ends the writer's delivery for good
+
+- **Implementation commit:** `e1fd868df0e19afd77cdf924f2dd892f7aa3de40`
+- **Change:** Red (#1012): a progressive media row write that fails ends the writer's delivery for good
+- **Details:**
+  - aFailedRowWriteIsRetriedBeforeAnythingAfterIt: a store refuses the stream's first row twice, then accepts it; deliver() threw at the first refusal. 1 of 11 failed on the Mac mini.
+- **Files:**
+  - `Tests/InstantSwiftDataTests/InstantProgressiveMediaWriterTests.swift` — the red test and the double's write failures
+- **User context (verbatim):**
+  > Michael, typed 2026-10-23 12:30: "It would be nice to have a library primitive for streaming progressive audio file over instant. Because right now, if I'm remote, I can't play back the audio. I'd like to be able to play it back."
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run audio-stream-1012b, claude/strangelearning); no SpecStory capture for headless runs.
+
 ## October 23rd, 2026 at 10:36:24 p.m. EDT — `00e6445e129d` v1.9.31's release document says what did not run: the performance gate, the cross-SDK boundary checks, the version check, and the device measurement the lab takes next (#654)
 
 - **Implementation commit:** `00e6445e129d06299415b18743bb6b49cd244fa6`

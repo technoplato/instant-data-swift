@@ -1,3 +1,27 @@
+## 2026-10-23 23:24:01 EDT — instant-data-swift `cbabda402be8abb71e1a968a93600fdc375f69bd`
+Release document for v1.9.32 (#1012): a progressive media row write that fails is tried again after the writer's backoff; carries 1.9.31.
+
+## 2026-10-23 23:23:40 EDT — instant-data-swift `9e07d6240389f0ba811f333f5abd04036dca6ecf`
+Green (#1012): InstantProgressiveMediaWriter writes every row through write(_:), which retries with the 1-60 s backoff until the store takes them; permissionRejected still ends delivery.
+
+## 2026-10-23 23:22:24 EDT — instant-data-swift `e1fd868df0e19afd77cdf924f2dd892f7aa3de40`
+Red test (#1012): a store that refuses the stream's first row twice ended the writer's delivery at the first refusal.
+
+## 2026-10-23 23:19:41 EDT — instant-data-swift `53eb0e166a5df44958f4ee2defcb10dd67790553`
+Plan (#1012): claims the writer's row-write retry and the v1.9.32 release document.
+
+## 2026-10-23 23:19:11 EDT — scribe `58576d66e8a70b91c5ec35273beaa84d04f74d88`
+Fix (#1012): ScribeSharedSchema registers the compressed copy's two namespaces (a fresh store's first rows were refused as unknown before its first init-ok), and RecordingAudioStream logs a take's delivery that ends with an error.
+
+## 2026-10-23 23:17:06 EDT — scribe `3ee47753f99a56c6b16fe2b9ddc10ee894dc6aad`
+Red test (#1012): the app's schema lacked the copy's attributes, and a refused upload ended a take's delivery with no report.
+
+## 2026-10-23 23:15:10 EDT — scribe `353beacdc2c1b05e3e14695e3470e79ed6a7db69`
+Plan (#1012): claims ScribeInstantStore.swift for the copy's namespaces.
+
+## 2026-10-23 23:11:18 EDT — instant-data-swift `af5f1b7e9dd275af2dfa80888d02fc8d025bc6bf`
+Plan (#1012): claims benchmarks/ProgressiveMediaLive, progressive media end to end over a live throwaway Instant app.
+
 ## 2026-10-23 23:06:44 EDT — scribe `c92ee7dd08c4343939f9975ec5a7e6f1fa2e2ad9`
 changelog(#1012): CHANGELOG.md entries for the compressed copy's six Scribe commits and PROGRESS.md's 23:10 checkpoint.
 
