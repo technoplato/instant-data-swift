@@ -1,3 +1,12 @@
+## 2026-10-23 22:36:23 EDT — instant-data-swift `00e6445e129d06299415b18743bb6b49cd244fa6`
+v1.9.31's release document gains a 'Not run' section: the performance gate, the cross-SDK boundary checks, the version check's wording, the device measurement next (#654).
+
+## 2026-10-23 22:35:27 EDT — realtime-voice `179d9a5e4a7bc5bc6565c1fe51f1ee26a4479d1e`
+Pin instant-data-swift exactly 1.9.31 in Scribe and Scribe Playback (#654: the live-query prune no longer copies, diffs and re-indexes the whole store); the installer expects 1.9.31 (it still expected 1.9.29); build 120's What's New story.
+
+## 2026-10-23 22:32:00 EDT — realtime-voice `0155627e9911a47a97a3d3416bba4befa4e5fb82`
+Plan (#654): prune-654 claims the 1.9.31 pin files (both packages and lock files, the installer and its tests, the version docs, one Build 120 story).
+
 ## 2026-10-23 22:28:48 EDT — instant-data-swift `af3be52d38bd34ab2d9afb33780f357a30181123`
 Release document for v1.9.31 (#654): the live-query prune costs in proportion to what it drops, not to the store; carries 1.9.30.
 

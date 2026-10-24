@@ -10,6 +10,18 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## October 23rd, 2026 at 10:36:24 p.m. EDT — `00e6445e129d` v1.9.31's release document says what did not run: the performance gate, the cross-SDK boundary checks, the version check, and the device measurement the lab takes next (#654)
+
+- **Implementation commit:** `00e6445e129d06299415b18743bb6b49cd244fa6`
+- **Change:** v1.9.31's release document says what did not run (#654)
+- **Details:**
+  - A 'Not run' section: validation/run-performance-gate.sh and the Swift/TypeScript boundary checks (no wire, schema or delivery change), the version check's wording failure before the section, and the device measurement the lab takes on the next build.
+- **Files:**
+  - `docs/releases/v1.9.31.md` — the Not run section
+- **User context (verbatim):**
+  > I want to make sure that audit is, uh, is really diving deep into the library as well.
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run); no SpecStory capture for headless runs.
+
 ## October 23rd, 2026 at 10:29:13 p.m. EDT — `af3be52d38bd` Document the v1.9.31 release: the live-query prune costs in proportion to what it drops, not to the store (#654)
 
 - **Implementation commit:** `af3be52d38bd34ab2d9afb33780f357a30181123`
