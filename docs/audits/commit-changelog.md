@@ -1,3 +1,9 @@
+## 2026-10-24 17:48:05 EDT — instant-data-swift `1cdd8383f6b78284ebdb3231798783968a772d27`
+Docs (#1076): the storage, disk and network audit (eleven anti-patterns worst first, each with its design, its saving as a hypothesis, its exercise and today's baseline), the raw baseline lines, PROGRESS; twelve fixes filed, #1114-#1125.
+
+## 2026-10-24 17:48:05 EDT — instant-data-swift `34eb1570cdd35025beb98f32a568be0c590391b4`
+Test (#1076): the storage exercises map every database read to its b-tree, time every sync, count the outbox's share of each step's log, print each prune, and replay a live write under four checkpoint settings; the phone-store script runs the real claim and acknowledgement and counts the claim query's page reads.
+
 ## 2026-10-24 17:42:49 EDT — scribe `55f2ed4aa119252a7c615acba67ca87433a9132f`
 Docs (#1057): the device results and a correction: on iOS an install recompiles On This iPhone's Neural Engine programs even at an unchanged path (Scribe Dev 127 on the iPad: 96.99 s load while the stamp said Ready); ADR 0074 amendment C correction, the audit's device section and proposals (Core AI's App Group cache), the provider doc, WHATS-NEW Build 128 (next).
 

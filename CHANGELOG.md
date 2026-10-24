@@ -10,6 +10,34 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## October 24th, 2026 at 5:47:56 p.m. EDT — `1cdd8383f6b7` docs(#1076): the storage, disk and network audit: eleven anti-patterns worst first, each with its design, its saving as a hypothesis, its exercise and today's baseline
+
+- **Implementation commit:** `1cdd8383f6b78284ebdb3231798783968a772d27`
+- **Change:** Docs (#1076): the storage, disk and network audit: eleven anti-patterns worst first, each with its design, its saving as a hypothesis, its exercise and today's baseline
+- **Details:**
+  - Measured on the Mac mini (release, Apple SQLite 3.54.0; the iPhone not measured): a logical write of 2.25 KB of facts writes 62.5 log pages and 29 KB of checkpoint (125x); an hour at 90 writes a minute writes 1,540 MB through SQLite and 1,729 MB to the drive, asks for 1,039 full fsyncs and receives 759 MB. Worst first: every claim reads every queued body (#1114), the outbox row's 14 b-trees (#1115), the echo's re-reads (#1116) and Scribe's 256-line live page (#1117), the checkpoint interval (#1118), temp files (#1119), INSERT OR REPLACE re-saves (#1120), the fact table's layout (#1121), the prune's unload copy (#1122), the result JSON (#1123), no wire-byte counter (#1124), stream resume (#1125).
+- **Files:**
+  - `docs/audits/2026-10-24-storage-disk-network-audit.md` — new: the audit
+  - `docs/audits/2026-10-24-storage-io-baseline.txt` — new: the raw lines of every run it cites
+  - `PROGRESS.md` — the checkpoint and the twelve issues filed
+- **User context (verbatim):**
+  > Michael, Claude chat 2026-10-24 15:52 EDT: "Can you actually dispatch some auditing agents to find any anti patterns and design solutions with hypothesized savings and then write real exercises of the poor hot paths"
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run audit-storage-1076, claude/halfjew22); no SpecStory capture for headless runs.
+
+## October 24th, 2026 at 5:47:56 p.m. EDT — `34eb1570cdd3` test(#1076): the storage exercises name the table behind every read, time every sync, and replay the checkpoint settings
+
+- **Implementation commit:** `34eb1570cdd35025beb98f32a568be0c590391b4`
+- **Change:** Test (#1076): the storage exercises name the table behind every read, time every sync, and replay the checkpoint settings
+- **Details:**
+  - The first baseline showed a phone-shaped store reading about 416 MB of its file per write and an hour asking for about 1,040 full syncs. The shim now maps every page read from the database file to its b-tree and times each sync; the exercises print each step's reads by b-tree, the outbox's share of each step's log frames (34.0 of 62.5 per write), the drive's bytes beside the logical ones, each prune on its own, and a replay of a live write's four transactions under four checkpoint settings (4,000 frames: -76% full fsyncs, -2% bytes). watch(directory:) compares real paths (the temporary directory is a symbolic link). phone-store-pages.sh runs the real claim and acknowledgement updates (9 and 11 pages on a 19.9 KB row) and counts the claim query's page reads (3,711 today, 33 with the bodies split out). All five exercises pass on the Mac mini with these files.
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/RealSize/StorageIOCounters.swift` — the read map, sync time, the watched directory's real path
+  - `Tests/InstantSwiftDataCoreTests/RealSize/StorageIOExercises.swift` — reads by b-tree, the outbox share, drive bytes, per-prune lines, the checkpoint-settings replay
+  - `scripts/storage-io/phone-store-pages.sh` — E2 as the real claim and acknowledgement, E6 the claim query's page reads
+- **User context (verbatim):**
+  > Michael, Claude chat 2026-10-24 15:52 EDT: "Can you actually dispatch some auditing agents to find any anti patterns and design solutions with hypothesized savings and then write real exercises of the poor hot paths"
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run audit-storage-1076, claude/halfjew22); no SpecStory capture for headless runs.
+
 ## October 24th, 2026 at 5:02:16 p.m. EDT — `c5a5f69cea65` test(#1076): what SQLite writes, syncs and truncates for each step of a live write, over an hour of recording, and on the phone-shaped store
 
 - **Implementation commit:** `c5a5f69cea6507c81b936aba85ebb9f7b30a1600`
