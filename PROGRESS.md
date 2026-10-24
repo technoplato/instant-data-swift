@@ -1,3 +1,17 @@
+## 2026-10-24 19:21:12 EDT — #1141: v1.9.37, the shared transaction-id interner no longer races; Scribe pinned to 1.9.36
+
+- **Commits (instant-data-swift main):** plan amendment 3 `019b2f37`; red `c8277988`, green `bb562397`; release
+  document `f74a67eb`; then this ledger commit and the tag v1.9.37. **Scribe main:** the 1.9.36 pin `1fcf0a631`
+  (plan amendment `2a5c6b1d7`, change log `1f023213f`, a Build 130 (next) story).
+- **Measured:** four copies of one TripleIndexes interning on four threads crashed (segmentation fault, debug and under
+  Thread Sanitizer) on the unlocked box; with the lock the race test passes in debug, release and 3/3 under Thread
+  Sanitizer; the real-size budgets show no measurable cost (fixture version 3).
+- **Checks:** index and store suites; budgets; whole bundle 1,453 tests, 1 failing (the memory audit's smoke test, as on
+  1.9.36, passes alone; on #1075).
+- **In progress:** #1108's per-write attribute map (red `49b25734` and a green candidate on local branch
+  `lib-audit-1108-attrs`, not on main), then #1114/#1115, then #1103 (the lab's order of 18:45).
+- **Next:** pin Scribe and Playback to 1.9.37; verify and land the attribute-map fix.
+
 ## 2026-10-24 18:53:50 EDT — #1108: v1.9.36, the delivery pump's claim searches only the writes it may claim; Scribe pinned to 1.9.35
 
 - **Commits (instant-data-swift main):** plan amendment 2 `88dcc484`; red `d59cf398`, green `a4ee2959`; release document

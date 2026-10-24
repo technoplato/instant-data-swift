@@ -1,3 +1,18 @@
+## 2026-10-24 19:20:49 EDT — instant-data-swift `f74a67ebbfbecf8effe0c6fcbccb07578026c951`
+docs(#1141): the v1.9.37 release document: the transaction-id interner every copy of the store's indexes shares no longer races; carries 1.9.36
+
+## 2026-10-24 19:00:38 EDT — instant-data-swift `bb562397c4d5128bf94d8fb790ee51218a6d78e8`
+fix(#1141): green: the transaction-id interner every copy of TripleIndexes shares takes a lock around its state
+
+## 2026-10-24 18:58:07 EDT — instant-data-swift `c8277988e27a7592ffbeaed51c2c84e33778b654`
+test(#1141): red: copies of the same indexes take new transaction ids on four threads at once, and each reads back its own
+
+## 2026-10-24 18:55:32 EDT — scribe `1f023213fd3ddb04d84f93eac33324445984367a`
+changelog(#1108): the instant-data-swift 1.9.36 pin 1fcf0a631 (plan amendment 2a5c6b1d7)
+
+## 2026-10-24 18:55:28 EDT — scribe `1fcf0a6313ae5416ff863ff7573c25bf59c2812c`
+Pin instant-data-swift exactly 1.9.36 instead of 1.9.35 in Scribe and Scribe Playback: the delivery pump's claim searches only the writes it may claim, not every refused one (#1108)
+
 ## 2026-10-24 18:53:32 EDT — instant-data-swift `99dcc80448ff04599e72b52b9c4033166f1cd31c`
 docs(#1108): the v1.9.36 release document: the delivery pump's claim searches only the writes it may claim; carries 1.9.35
 

@@ -10,6 +10,42 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## October 24th, 2026 at 7:21:12 p.m. EDT — `f74a67ebbfbe` docs(#1141): the v1.9.37 release document: the transaction-id interner every copy of the store's indexes shares no longer races; carries 1.9.36
+
+- **Implementation commit:** `f74a67ebbfbecf8effe0c6fcbccb07578026c951`
+- **Change:** Docs (#1141): the v1.9.37 release document
+- **Details:**
+  - Release focus, the race and its cost, what stays the same, checks (whole bundle 1,453 tests, 1 failing: the memory audit's smoke test, as on 1.9.36), not run.
+- **Files:**
+  - `docs/releases/v1.9.37.md` — new: the release document
+- **User context (verbatim):**
+  > Michael, Claude chat 2026-10-24 15:40 EDT: "Also what would a top expert on swift performance engineering and ergonomics and actor isolation do to continue to improve the performance and decrease the memory footprint of the library?"
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run lib-audit-1072, claude/halfjew22); no SpecStory capture for headless runs.
+
+## October 24th, 2026 at 7:21:12 p.m. EDT — `bb562397c4d5` fix(#1141): green: the transaction-id interner every copy of TripleIndexes shares takes a lock around its state
+
+- **Implementation commit:** `bb562397c4d5128bf94d8fb790ee51218a6d78e8`
+- **Change:** Fix (#1141): green: the transaction-id interner every copy of TripleIndexes shares takes a lock around its state
+- **Details:**
+  - Copies are written on the store actor and off it (a refused write's component hydrated between the gate's turns); the shared box appended to its array and dictionary unguarded. Copy on write would copy every interned id into each prepared write; interning is append-only, so the box stays shared behind an OSAllocatedUnfairLock and is Sendable without @unchecked. Green in debug, release and 3/3 under Thread Sanitizer; no measurable cost on the real-size budgets.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/TripleIndexes.swift` — the locked TxIDInterner, import os, history
+- **User context (verbatim):**
+  > Michael, Claude chat 2026-10-24 15:40 EDT: "Also what would a top expert on swift performance engineering and ergonomics and actor isolation do to continue to improve the performance and decrease the memory footprint of the library?"
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run lib-audit-1072, claude/halfjew22); no SpecStory capture for headless runs.
+
+## October 24th, 2026 at 7:21:12 p.m. EDT — `c8277988e27a` test(#1141): red: copies of the same indexes take new transaction ids on four threads at once, and each reads back its own
+
+- **Implementation commit:** `c8277988e27a7592ffbeaed51c2c84e33778b654`
+- **Change:** Test (#1141): red: copies of the same indexes take new transaction ids on four threads at once, and each reads back its own
+- **Details:**
+  - Four copies of one TripleIndexes, 20,000 triples each with new transaction ids on four threads: on the unlocked shared interner the process died with a segmentation fault within a second (debug, and under Thread Sanitizer).
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/TripleIndexesInternerRaceTests.swift` — new: the race test
+- **User context (verbatim):**
+  > Michael, Claude chat 2026-10-24 15:40 EDT: "Also what would a top expert on swift performance engineering and ergonomics and actor isolation do to continue to improve the performance and decrease the memory footprint of the library?"
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run lib-audit-1072, claude/halfjew22); no SpecStory capture for headless runs.
+
 ## October 24th, 2026 at 6:53:34 p.m. EDT — `99dcc80448ff` docs(#1108): the v1.9.36 release document: the delivery pump's claim searches only the writes it may claim; carries 1.9.35
 
 - **Implementation commit:** `99dcc80448ff04599e72b52b9c4033166f1cd31c`
