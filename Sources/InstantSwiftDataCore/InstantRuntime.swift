@@ -1,4 +1,6 @@
 // History:
+// - 2026-10-23: a refused write's rollback is prepared from the hot store's indexes as the operation gate leaves them,
+//   not from a snapshot of every fact indexed again (#1035).
 // - 2026-10-23: an upload through storage keeps no copy of its file, a record without a copy downloads by its
 //   stored name, and evictStoredFiles(ids:) removes copies whose $files record has their size (#959).
 // - 2026-10-23: the server apply's gate-held event names its path (reduced, or why it peeled and replayed its whole
@@ -14773,11 +14775,13 @@ public final class InstantRuntime: Sendable {
     operationGateHeld: Bool
   ) async throws -> InstantClaimedTerminalFailureAttempt {
     let state: InstantPersistenceState
-    let storeSnapshot: InstantStoreSnapshot
+    let base: InstantStorePreparationBase
     if !operationGateHeld { await operationGate.enter() }
     do {
       state = try await loadCompactStateSynchronizingStore()
-      storeSnapshot = await authoritativeStoreSnapshot(from: state)
+      // #1035: the hot store as the gate leaves it, without copying it. A snapshot materialized every fact (sorting every
+      // entity) and the rollback indexed that copy again, work in proportion to the store for a one-row rollback.
+      base = await store.preparationBase()
       if !operationGateHeld { await operationGate.leave() }
     } catch {
       if !operationGateHeld { await operationGate.leave() }
@@ -14887,7 +14891,7 @@ public final class InstantRuntime: Sendable {
       let removal = try await prepareClaimedTerminalFailureComponent(
         component,
         failure: failure,
-        snapshot: storeSnapshot
+        base: base
       )
       if !operationGateHeld { await operationGate.enter() }
       do {
@@ -15215,7 +15219,7 @@ public final class InstantRuntime: Sendable {
   private func prepareClaimedTerminalFailureComponent(
     _ component: InstantTerminalFailureComponent,
     failure: InstantMutationFailure,
-    snapshot: InstantStoreSnapshot
+    base: InstantStorePreparationBase
   ) async throws -> (
     prepared: PreparedStoreMutation?,
     failedMutation: PendingMutation,
@@ -15254,10 +15258,12 @@ public final class InstantRuntime: Sendable {
         + rebasedSuccessors.compactMap(\.rollbackTransaction)
         + rebasedSuccessors.map(\.transaction)
     )
-    let hydratedSnapshot = configuration.deferredValueResidency.hydrating(
-      snapshot,
-      with: deferredTriples
-    )
+    // Deferred values join a copy of the base's indexes, marked for removal again when the result is installed, as
+    // `prepareCurrent(_:hydratingDeferredValues:)` does for a local write.
+    var hydratedBase = base
+    if !deferredTriples.isEmpty {
+      hydratedBase.indexes.hydrateDeferredValues(deferredTriples, attributes: hydratedBase.attributes)
+    }
     var prepared: PreparedStoreMutation?
     var changedEntityIDs: Set<String> = []
     var changedFactScope = InstantFactScope()
@@ -15285,7 +15291,7 @@ public final class InstantRuntime: Sendable {
       let next = if let prepared {
         try await store.prepare(rollback, applyingTo: prepared)
       } else {
-        try await store.prepare(rollback, applyingTo: hydratedSnapshot)
+        try await store.prepare(rollback, applyingTo: hydratedBase)
       }
       changedEntityIDs.formUnion(next.result.changedEntityIDs)
       changedFactScope.formUnion(next.factScope.completed(over: next.result.changedEntityIDs))
@@ -15297,7 +15303,7 @@ public final class InstantRuntime: Sendable {
     let removedFailure = if let prepared {
       try await store.prepare(restoredFailure, applyingTo: prepared)
     } else {
-      try await store.prepare(restoredFailure, applyingTo: hydratedSnapshot)
+      try await store.prepare(restoredFailure, applyingTo: hydratedBase)
     }
     changedEntityIDs.formUnion(removedFailure.result.changedEntityIDs)
     changedFactScope.formUnion(

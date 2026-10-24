@@ -7,6 +7,8 @@ import Foundation
 //   judges the change without it, and may splice the rest in place (#1007).
 // - 2026-10-23: a verified plan with includes skips a change no shown entity holds, no entity linked to a shown one
 //   makes, and no root moves in or out of its set for (#1007).
+// - 2026-10-23: a preparation base (the schema and indexes as they are, copy-on-write) lets a refused write's rollback be
+//   prepared off the actor's turn without a snapshot; tests count the store's full copies (#1035).
 
 public struct InstantStoreMutationResult: Hashable, Codable, Sendable {
   public var transactionID: String
@@ -228,6 +230,13 @@ private final class PreviousChangedEntityCapture: @unchecked Sendable {
     materialized = triples
     lastNotedEntityID = nil
   }
+}
+
+/// The store's schema and facts at one moment, to prepare a change against later without copying them (#1035). Both
+/// are copy-on-write values: holding one costs nothing until a preparation changes its own copy.
+struct InstantStorePreparationBase: Sendable {
+  var attributes: AttributeStore
+  var indexes: TripleIndexes
 }
 
 struct PreparedStoreMutation: Sendable {
@@ -1017,6 +1026,18 @@ public actor InstantStore {
       }
     }
     return entityIDs
+  }
+
+  /// The schema and facts as they are now, for a preparation that runs later, off this actor's turn (#1035).
+  func preparationBase() -> InstantStorePreparationBase {
+    InstantStorePreparationBase(attributes: attributes, indexes: indexes)
+  }
+
+  func prepare(
+    _ transaction: InstantStoreTransaction,
+    applyingTo base: InstantStorePreparationBase
+  ) throws -> PreparedStoreMutation {
+    try prepare(transaction, attributes: base.attributes, indexes: base.indexes)
   }
 
   func prepare(
