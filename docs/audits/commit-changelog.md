@@ -1,3 +1,6 @@
+## 2026-10-24 12:57:45 EDT — scribe `a398de5e6be2c8cadc7addb99397c2c6cdbd7c78`
+Build 123 cut: Scribe 0.1 (123) and Scribe Playback 123, CURRENT_PROJECT_VERSION 123 and What's New 123 dated, from main d9b14c053; pins instant-data-swift exactly 1.9.33 (#654, #932) (#1054).
+
 ## 2026-10-24 12:34:49 EDT — realtime-voice `d9b14c05377e6ebb83ed37f150bc80f95063098c`
 Change log (#654 #932): the instant-data-swift 1.9.33 pin 2ad1eaefc (plan 018bfb830).
 
