@@ -1,3 +1,19 @@
+## 2026-10-24 18:53:50 EDT — #1108: v1.9.36, the delivery pump's claim searches only the writes it may claim; Scribe pinned to 1.9.35
+
+- **Commits (instant-data-swift main):** plan amendment 2 `88dcc484`; red `d59cf398`, green `a4ee2959`; release document
+  `99dcc804`; then this ledger commit and the tag v1.9.36. **Scribe main:** plan `1157b6f49`, the 1.9.35 pin
+  `c8bc40aa2` (both packages and lock files at `c0a57a53`, installer 65/65, a Build 129 (next) story), change log
+  `0b876db39`.
+- **Measured (fixture version 3, Mac mini M4, release):** the claim reads' SQLite steps beside 400 refused writes 3,218
+  and 3,223 against 74 and 79 beside 7, now equal; a refused write's claim at the phone's size 8.0 -> 3.4 ms of gate; a
+  recording's claim gate time 475 -> 298 ms a minute (median over 120 minutes; the second run's machine was busier).
+- **Checks:** red and green; 214 outbox, delivery, refusal, retry, lifecycle, supersession and reconnect tests; budgets;
+  whole bundle 1,452 tests, 1 failing (the memory audit's new smoke test, passes alone 2/2, told on #1075).
+- **Lab order (18:45):** #1141 (the TripleIndexes interner data race) next, then #1114/#1115 with the rest of #1108,
+  then #1103; lib-audit-1072 batches landed fixes into versions and pins Scribe and Playback; the gate-fix and
+  memory-fix agents (21:00) agree file ownership on agent-presence/_channels/2026-10-24-lib-audit-1072.md.
+- **Next:** pin Scribe and Playback to 1.9.36; then #1141, test first (a stress test or TSan that catches the race).
+
 ## 2026-10-24 18:25:23 EDT — #1075: the memory audit, its exercises and today's baseline; 10 fixes filed
 
 - **Commits (instant-data-swift main):** plan `37e09a91`, amendments `e1d8ac9b` and `9b5107e3`; exercises `0593a9ec`;

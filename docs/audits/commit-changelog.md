@@ -1,3 +1,18 @@
+## 2026-10-24 18:53:32 EDT — instant-data-swift `99dcc80448ff04599e72b52b9c4033166f1cd31c`
+docs(#1108): the v1.9.36 release document: the delivery pump's claim searches only the writes it may claim; carries 1.9.35
+
+## 2026-10-24 18:36:47 EDT — instant-data-swift `a4ee295937c61d9b9a4946a3b468f10e8f4fdaaa`
+fix(#1108): green: the delivery pump's candidate read and continuation check search only the rows it may claim
+
+## 2026-10-24 18:36:47 EDT — instant-data-swift `d59cf3983ed6ba7b6f4fc1c6402b3faab24618f5`
+test(#1108): red: the delivery pump's candidate read and continuation check visit every refused write
+
+## 2026-10-24 18:28:13 EDT — scribe `0b876db39a5936cee1b65dba86167e03bc8db538`
+changelog(#1072): the instant-data-swift 1.9.35 pin c8bc40aa2 (plan 1157b6f49)
+
+## 2026-10-24 18:27:56 EDT — scribe `c8bc40aa25bd626ab86a84de86a53d7b38500782`
+Pin instant-data-swift exactly 1.9.35 instead of 1.9.34 in Scribe and Scribe Playback: an upload, a read by id, a delete and an eviction read no other file's record while nothing observes the files (#1072)
+
 ## 2026-10-24 18:46:31 EDT — scribe `43a5ebc28db9da3ba00508d7f280fed7e9a0abd3`
 Docs (#1057): build 128 on the iPad with the fix: every install is Preparing at launch (95-97 s compile) with a 0.00 s stream wait; a relaunch is Ready (first words 2.36 s); no silent wait.
 

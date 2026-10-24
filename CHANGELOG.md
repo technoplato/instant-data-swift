@@ -10,6 +10,43 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## October 24th, 2026 at 6:53:34 p.m. EDT — `99dcc80448ff` docs(#1108): the v1.9.36 release document: the delivery pump's claim searches only the writes it may claim; carries 1.9.35
+
+- **Implementation commit:** `99dcc80448ff04599e72b52b9c4033166f1cd31c`
+- **Change:** Docs (#1108): the v1.9.36 release document
+- **Details:**
+  - Release focus, measurements, what stays the same, checks (whole bundle 1,452 tests, 1 failing: the memory audit's new smoke test, passes alone 2/2), not run.
+- **Files:**
+  - `docs/releases/v1.9.36.md` — new: the release document
+- **User context (verbatim):**
+  > Michael, Claude chat 2026-10-24 15:40 EDT: "It seems like there's so many times where the library is just doing naive \"I'll read/upload/download everything\" that you've fixed today for one off things that need to happen had you audited that?"
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run lib-audit-1072, claude/halfjew22); no SpecStory capture for headless runs.
+
+## October 24th, 2026 at 6:53:33 p.m. EDT — `a4ee295937c6` fix(#1108): green: the delivery pump's candidate read and continuation check search only the rows it may claim
+
+- **Implementation commit:** `a4ee295937c61d9b9a4946a3b468f10e8f4fdaaa`
+- **Change:** Fix (#1108): green: the delivery pump's candidate read and continuation check search only the rows it may claim
+- **Details:**
+  - Each read is its two branches: claimable rows by a new partial index (instant_outbox_delivery_candidate_idx, migration 0029, reasserted at bootstrap, condition repeated as literals) and legacy rows by the metadata index. A refused write's claim at the phone's size 8.0 -> 3.4 ms of gate; a recording's claim gate time 475 -> 298 ms a minute (median, busier second run). 214 outbox tests green; an acknowledgement writes 5 pages.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — split reads, partial index, migration 0029, history
+- **User context (verbatim):**
+  > Michael, Claude chat 2026-10-24 15:40 EDT: "It seems like there's so many times where the library is just doing naive \"I'll read/upload/download everything\" that you've fixed today for one off things that need to happen had you audited that?"
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run lib-audit-1072, claude/halfjew22); no SpecStory capture for headless runs.
+
+## October 24th, 2026 at 6:53:33 p.m. EDT — `d59cf3983ed6` test(#1108): red: the delivery pump's candidate read and continuation check visit every refused write
+
+- **Implementation commit:** `d59cf3983ed6ba7b6f4fc1c6402b3faab24618f5`
+- **Change:** Test (#1108): red: the delivery pump's candidate read and continuation check visit every refused write
+- **Details:**
+  - The two reads' SQL moves into constants unchanged and a test hook counts their SQLite steps: 3,218 and 3,223 beside 400 refused writes against 74 and 79 beside 7 (fixture version 3).
+- **Files:**
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — the claim reads' SQL as constants; automaticDeliveryCandidateReadStepsForTesting
+  - `Tests/InstantSwiftDataCoreTests/RealSize/OutboxClaimScaleTests.swift` — new: the scale test
+- **User context (verbatim):**
+  > Michael, Claude chat 2026-10-24 15:40 EDT: "It seems like there's so many times where the library is just doing naive \"I'll read/upload/download everything\" that you've fixed today for one off things that need to happen had you audited that?"
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run lib-audit-1072, claude/halfjew22); no SpecStory capture for headless runs.
+
 ## October 24th, 2026 at 6:30:29 p.m. EDT — `01209210516e` docs(#1075): the memory audit: fifteen anti-patterns worst first, each with where it runs, its measured cost at the phone's size, its design and its saving as a hypothesis with the exercise that measures it; ten fixes filed
 
 - **Implementation commit:** `01209210516e7442ef3b3fe1c6f3a787aeee0754`
