@@ -2,6 +2,7 @@
 # #1076: the pages one logical write dirties on a real store, measured as write-ahead-log frames (each frame is one
 # 4 KiB page plus a 24-byte header; a page dirtied twice in one transaction is written once). One sqlite3 session, so
 # the log is not checkpointed away when a connection closes; `.shell stat` reads the log's size after each write.
+# 2026-10-24: E6, the pages the automatic claim's candidate query reads, today and with the bodies in their own table.
 # usage: phone-store-pages.sh <copy of a store> <scratch dir>   (never the original: it rewrites its scratch copy)
 set -euo pipefail
 src=$1; dir=$2
@@ -46,10 +47,14 @@ mark() { printf '.shell printf "%s "; stat -f %%z exp.sqlite-wal\nPRAGMA wal_che
     mark "e1-upsert-$i"
   done
   # E1c: only what changed: nothing (the values are the same), so no statement at all.
-  # E2: one small column of an outbox row whose json spills to overflow pages.
-  echo "BEGIN; UPDATE instant_outbox SET delivery_claim_state='claimed', delivery_claim_token='storage-io-claim-token-0001', delivery_claimant_id='storage-io-claimant', delivery_claim_deadline_ms=1792900000000 WHERE mutation_id='$mid'; COMMIT;"
+  # E2: the claim's two updates of an outbox row whose json spills to overflow pages, as the store runs them in one
+  # transaction (SQLitePersistenceStore.swift:15794-15799, then :15829-15833); the acknowledgement's update, which
+  # re-encodes the body into json (:10368-10383); and the release a closed socket runs (:10199-10213).
+  echo "BEGIN; UPDATE instant_outbox SET delivery_started = 1, delivery_claim_state = 'claimed', delivery_claim_token = 'storage-io-claim-token-0001', delivery_claimant_id = 'storage-io-claimant', delivery_claim_deadline_ms = 1792900000000, delivery_claim_projected_body_bytes = length(json), delivery_claim_payload_fingerprint = hex(randomblob(32)) WHERE mutation_id = '$mid'; UPDATE instant_outbox SET delivery_claim_projected_body_bytes = length(json), delivery_claim_payload_fingerprint = hex(randomblob(32)) WHERE mutation_id = '$mid' AND delivery_claim_token = 'storage-io-claim-token-0001'; COMMIT;"
   mark "e2-outbox-claim"
-  echo "BEGIN; UPDATE instant_outbox SET delivery_claim_state='ready', delivery_claim_token=NULL, delivery_claimant_id=NULL, delivery_claim_deadline_ms=NULL WHERE mutation_id='$mid'; COMMIT;"
+  echo "BEGIN; UPDATE instant_outbox SET status = 'confirmed', delivery_state = 'server_accepted', delivery_claim_state = 'ready', server_transaction_id = '991234', confirmation_source = 'transact-ok', mutation_revision = mutation_revision + 1, delivery_claim_token = NULL, delivery_claimant_id = NULL, delivery_claim_deadline_ms = NULL, delivery_claim_projected_body_bytes = NULL, delivery_claim_payload_fingerprint = NULL, server_acceptance_payload_fingerprint = hex(randomblob(32)), confirmation_proven = 1, json = replace(json, '\"failed\"', '\"confirmed\"') WHERE mutation_id = '$mid'; COMMIT;"
+  mark "e2-outbox-ack"
+  echo "BEGIN; UPDATE instant_outbox SET delivery_claim_state = 'ready', delivery_claim_token = NULL, delivery_claimant_id = NULL, delivery_claim_deadline_ms = NULL, delivery_claim_projected_body_bytes = NULL, delivery_claim_payload_fingerprint = NULL WHERE mutation_id = '$mid'; COMMIT;"
   mark "e2-outbox-release"
   echo "BEGIN; UPDATE instant_outbox SET delivery_metadata_version = delivery_metadata_version + 1 WHERE mutation_id='$mid'; COMMIT;"
   mark "e2-outbox-same-size"
@@ -92,13 +97,29 @@ mark() { printf '.shell printf "%s "; stat -f %%z exp.sqlite-wal\nPRAGMA wal_che
   echo "SELECT length(json) FROM instant_live_query_results WHERE query_id=$qid;"
 } > script.sql
 
+# E6 (cold cache, a new connection each, the library's 2 MiB cache): the pages the automatic claim's candidate query
+# reads (SQLitePersistenceStore.loadAutomaticDeliveryCandidateRowsWithoutTransaction, its bindings as literals). Every
+# delivery column was added after the body, so testing delivery_state on a row walks the row's overflow pages; then the
+# same query on a copy of the rows without their bodies (the outbox_meta layout), the split-body design.
+claim_sql() {
+  printf "SELECT mutation_id, created_at_ms, delivery_metadata_version, transport_step_count, %s, status, delivery_started FROM %s WHERE delivery_claim_state = 'ready' AND (delivery_state = 'needs_delivery' OR (status IN ('pending', 'confirmed') AND delivery_metadata_version < 2)) ORDER BY created_at_ms, mutation_id LIMIT 50" "$1" "$2"
+}
+cold_misses() { printf 'PRAGMA cache_size=-2048;\n.stats on\n%s;\n' "$1" | sqlite3 -batch exp.sqlite 2>&1 | awk '/Page cache misses/ { print $NF }' | tail -1; }
+sqlite3 -batch exp.sqlite "CREATE TABLE outbox_meta AS SELECT mutation_id, status, created_at_ms, delivery_state, delivery_metadata_version, transport_step_count, encoded_body_bytes, delivery_started, delivery_claim_state, delivery_claim_deadline_ms FROM instant_outbox ORDER BY rowid; CREATE INDEX outbox_meta_deadline ON outbox_meta (delivery_claim_state, delivery_claim_deadline_ms, created_at_ms, mutation_id); PRAGMA wal_checkpoint(TRUNCATE);" > /dev/null
+claim_rows=$(sqlite3 -batch exp.sqlite "SELECT count(*) FROM instant_outbox WHERE delivery_claim_state = 'ready'")
+outbox_pages=$(sqlite3 -batch exp.sqlite "SELECT count(*) FROM dbstat WHERE name = 'instant_outbox'")
+claim_today=$(cold_misses "$(claim_sql 'COALESCE(encoded_body_bytes, length(CAST(json AS BLOB)))' instant_outbox)")
+claim_split=$(cold_misses "$(claim_sql 'encoded_body_bytes' outbox_meta)")
+
 sqlite3 -batch exp.sqlite < script.sql | awk -F'|' '
   /^e[0-9]/ { split($0, part, " "); size = part[2]; frames = (size > 32) ? int((size - 32) / 4120) : 0
               printf "PHONEPAGES %s walBytes=%d frames=%d\n", part[1], size, frames; next }
-  /^0\|0\|0$/ || /^wal$/ { next }
+  /^0\|0\|0$/ || /^wal$/ || /^0$/ { next }
   NF == 4 { printf "PHONEPAGES layout btree=%s pages=%s mb=%s unusedPct=%s\n", $1, $2, $3, $4; next }
   /^(segmentFacts|layouts|outboxRowBytes|resultJSONBytes)$/ { label = $0; next }
   label != "" && NF == 1 { printf "PHONEPAGES %s value=%s\n", label, $1; label = ""; next }
   { print "PHONEPAGES other " $0 }'
+echo "PHONEPAGES e6-claim-candidates layout=today readyRows=$claim_rows outboxPages=$outbox_pages pagesRead=$claim_today"
+echo "PHONEPAGES e6-claim-candidates layout=split-body readyRows=$claim_rows pagesRead=$claim_split"
 rm -f exp.sqlite exp.sqlite-wal exp.sqlite-shm script.sql
 echo "PHONEPAGES done"

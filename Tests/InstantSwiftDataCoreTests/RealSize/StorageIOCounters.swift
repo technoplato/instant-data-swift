@@ -2,6 +2,10 @@
 // - 2026-10-24: what SQLite asks the file system to do, for the storage audit's exercises (#1076): a VFS shim that
 //   counts write calls and bytes, syncs, reads and truncates per kind of file, the page behind every frame the
 //   write-ahead log takes and every page a checkpoint copies, and the b-tree each of those pages belongs to.
+// - 2026-10-24: the page behind every read of the database file too (#1076): on the phone-shaped store a write read
+//   about 416 MB of it, and the b-tree those reads land on names the statement to look at. And the time each sync
+//   takes: an hour of recording asked for about 1,040 full syncs, and their cost is the time a commit waits for the
+//   drive.
 
 import Foundation
 import SQLite3
@@ -53,6 +57,8 @@ struct StorageIOCounts: Equatable, Sendable {
   var syncs = 0
   /// The syncs SQLite asked to be full: on Apple's file systems, `F_FULLFSYNC` flushes the drive's own cache too.
   var fullSyncs = 0
+  /// Time spent inside the syncs: the caller (a commit or a checkpoint) waits this long for the drive.
+  var syncNanoseconds: UInt64 = 0
   var truncates = 0
 
   func subtracting(_ earlier: Self) -> Self {
@@ -64,6 +70,7 @@ struct StorageIOCounts: Equatable, Sendable {
       bytesRead: bytesRead - earlier.bytesRead,
       syncs: syncs - earlier.syncs,
       fullSyncs: fullSyncs - earlier.fullSyncs,
+      syncNanoseconds: syncNanoseconds &- earlier.syncNanoseconds,
       truncates: truncates - earlier.truncates
     )
   }
@@ -77,6 +84,9 @@ struct StorageIOSnapshot: Equatable, Sendable {
   var walFramesByPage: [UInt32: Int] = [:]
   /// Pages a checkpoint copied from the write-ahead log into the database file, by page.
   var databaseWritesByPage: [UInt32: Int] = [:]
+  /// Whole pages read from the database file, by page: what the page cache did not hold. A page the write-ahead log
+  /// holds is read from the log instead, and is not counted here.
+  var databaseReadsByPage: [UInt32: Int] = [:]
   /// Times the write-ahead log started over at its first frame (SQLite wrote its 32-byte header).
   var walRestarts = 0
   /// Files SQLite deleted: temporary files, journals, a write-ahead log at close.
@@ -88,8 +98,11 @@ struct StorageIOSnapshot: Equatable, Sendable {
 
   var walFrames: Int { walFramesByPage.values.reduce(0, +) }
   var databasePagesWritten: Int { databaseWritesByPage.values.reduce(0, +) }
+  var databasePagesRead: Int { databaseReadsByPage.values.reduce(0, +) }
   var bytesWritten: Int { files.values.reduce(0) { $0 + $1.bytesWritten } }
   var syncs: Int { files.values.reduce(0) { $0 + $1.syncs } }
+  var fullSyncs: Int { files.values.reduce(0) { $0 + $1.fullSyncs } }
+  var syncNanoseconds: UInt64 { files.values.reduce(0) { $0 + $1.syncNanoseconds } }
 
   func subtracting(_ earlier: Self) -> Self {
     var files: [StorageIOFileKind: StorageIOCounts] = [:]
@@ -101,6 +114,7 @@ struct StorageIOSnapshot: Equatable, Sendable {
       files: files,
       walFramesByPage: Self.subtracting(walFramesByPage, earlier.walFramesByPage),
       databaseWritesByPage: Self.subtracting(databaseWritesByPage, earlier.databaseWritesByPage),
+      databaseReadsByPage: Self.subtracting(databaseReadsByPage, earlier.databaseReadsByPage),
       walRestarts: walRestarts - earlier.walRestarts,
       deletes: deletes - earlier.deletes,
       pageSize: pageSize
@@ -138,8 +152,16 @@ enum StorageIOCounters {
   }
 
   /// Counts only files under `directory` (temporary files, which have no name, always count). `nil` counts every file.
+  ///
+  /// SQLite opens a file by its resolved path, and the temporary directory is a symbolic link (`/var` is
+  /// `/private/var`), so the prefix is the directory's real path; the first run compared the link and counted nothing.
   static func watch(directory: URL?) {
-    storageIOShimState.withLock { $0.pathPrefix = directory?.standardizedFileURL.path }
+    let prefix = directory.map { directory -> String in
+      guard let resolved = realpath(directory.path, nil) else { return directory.standardizedFileURL.path }
+      defer { free(resolved) }
+      return String(cString: resolved)
+    }
+    storageIOShimState.withLock { $0.pathPrefix = prefix }
   }
 
   static func snapshot() -> StorageIOSnapshot {
@@ -223,6 +245,9 @@ struct StorageIOLine {
       add("\(kind.rawValue)Writes", Double(counts.writes) / divisor)
       add("\(kind.rawValue)Syncs", Double(counts.syncs) / divisor, digits: 3)
       if counts.fullSyncs > 0 { add("\(kind.rawValue)FullSyncs", Double(counts.fullSyncs) / divisor, digits: 3) }
+      if counts.syncs > 0 {
+        add("\(kind.rawValue)SyncMs", Double(counts.syncNanoseconds) / 1_000_000 / divisor, digits: 3)
+      }
       if counts.truncates > 0 { add("\(kind.rawValue)Truncates", Double(counts.truncates) / divisor, digits: 3) }
       if counts.bytesRead > 0 { add("\(kind.rawValue)ReadKB", Double(counts.bytesRead) / 1_024 / divisor) }
     }
@@ -371,6 +396,22 @@ private enum StorageIOShim {
     }
   }
 
+  /// Counts one read, and for the database file the page a whole-page read fetched.
+  static func countRead(_ file: UnsafeMutablePointer<sqlite3_file>?, _ amount: Int32, _ offset: sqlite3_int64) {
+    let header = shim(file).pointee
+    guard header.counted else { return }
+    let kind = header.kind
+    storageIOShimState.withLockUnchecked { state in
+      var counts = state.snapshot.files[kind] ?? StorageIOCounts()
+      counts.reads += 1
+      counts.bytesRead += Int(amount)
+      state.snapshot.files[kind] = counts
+      let pageSize = Int64(state.snapshot.pageSize)
+      guard kind == .database, offset % pageSize == 0, Int64(amount) == pageSize else { return }
+      state.snapshot.databaseReadsByPage[UInt32(offset / pageSize + 1), default: 0] += 1
+    }
+  }
+
   static func makeVFS(real: UnsafeMutablePointer<sqlite3_vfs>) -> sqlite3_vfs {
     var vfs = sqlite3_vfs()
     vfs.iVersion = real.pointee.iVersion
@@ -386,7 +427,7 @@ private enum StorageIOShim {
       let path = name.map { String(cString: $0) }
       let counted = storageIOShimState.withLock { state in
         guard let prefix = state.pathPrefix, let path else { return true }
-        return URL(fileURLWithPath: path).standardizedFileURL.path.hasPrefix(prefix)
+        return path.hasPrefix(prefix)
       }
       let header = raw.bindMemory(to: StorageIOShimFile.self, capacity: 1)
       header.initialize(
@@ -408,11 +449,7 @@ private enum StorageIOShim {
       guard let real = StorageIOShim.realVFS else { return SQLITE_ERROR }
       let path = name.map { String(cString: $0) }
       storageIOShimState.withLock { state in
-        if let prefix = state.pathPrefix, let path,
-          !URL(fileURLWithPath: path).standardizedFileURL.path.hasPrefix(prefix)
-        {
-          return
-        }
+        if let prefix = state.pathPrefix, let path, !path.hasPrefix(prefix) { return }
         state.snapshot.deletes += 1
       }
       return real.pointee.xDelete(real, name, syncDirectory)
@@ -465,10 +502,7 @@ private enum StorageIOShim {
     }
     methods.xRead = { file, buffer, amount, offset in
       let result = StorageIOShim.realMethods(file).xRead(StorageIOShim.real(file), buffer, amount, offset)
-      StorageIOShim.count(file) {
-        $0.reads += 1
-        $0.bytesRead += Int(amount)
-      }
+      StorageIOShim.countRead(file, amount, offset)
       return result
     }
     methods.xWrite = { file, buffer, amount, offset in
@@ -481,11 +515,15 @@ private enum StorageIOShim {
       return StorageIOShim.realMethods(file).xTruncate(StorageIOShim.real(file), size)
     }
     methods.xSync = { file, flags in
+      let started = DispatchTime.now().uptimeNanoseconds
+      let result = StorageIOShim.realMethods(file).xSync(StorageIOShim.real(file), flags)
+      let elapsed = DispatchTime.now().uptimeNanoseconds &- started
       StorageIOShim.count(file) {
         $0.syncs += 1
         if flags & 0x0F == SQLITE_SYNC_FULL { $0.fullSyncs += 1 }
+        $0.syncNanoseconds &+= elapsed
       }
-      return StorageIOShim.realMethods(file).xSync(StorageIOShim.real(file), flags)
+      return result
     }
     methods.xFileSize = { file, size in
       StorageIOShim.realMethods(file).xFileSize(StorageIOShim.real(file), size)

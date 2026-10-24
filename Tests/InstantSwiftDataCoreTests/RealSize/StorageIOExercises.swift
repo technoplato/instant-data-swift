@@ -3,6 +3,10 @@
 //   claim, acknowledgement, the server's echo, the prune) and on the wire, and what an hour of recording does to the
 //   store file, on a store holding as many transcript lines as the phone's; and the same writes delivered by the live
 //   session on #1072's phone-shaped store.
+// - 2026-10-24: each step's reads of the database file by b-tree (#1076): the phone-shaped store read about 416 MB a
+//   write, and which table those pages belong to points at the statement. The time spent in syncs, and the bytes the
+//   process's I/O wrote to the drive beside the logical bytes. And a replay of a live write's four transactions under
+//   each checkpoint setting, because the store's own connection has no way to set them from a test.
 
 import Compression
 import Foundation
@@ -74,6 +78,27 @@ struct StorageIOExercises {
 
     let map = try StorageIOPageMap.read(store: url)
     #expect((map.byName(written.walFramesByPage)["counted"] ?? 0) > 0)
+
+    // A second connection starts with an empty page cache, so it reads the checkpointed table from the file.
+    var reader: OpaquePointer?
+    try #require(sqlite3_open_v2(url.path, &reader, SQLITE_OPEN_READONLY, StorageIOCounters.vfsName) == SQLITE_OK)
+    defer { sqlite3_close_v2(reader) }
+    let beforeRead = StorageIOCounters.snapshot()
+    #expect(try storageIOInteger(reader, "SELECT sum(length(body)) FROM counted") == 200_000)
+    let read = StorageIOCounters.snapshot().subtracting(beforeRead)
+    #expect((map.byName(read.databaseReadsByPage)["counted"] ?? 0) >= (map.pagesByName["counted"]?.pages ?? 0))
+    #expect(read[.database].bytesRead >= read.databasePagesRead * read.pageSize)
+
+    // Watching the run's directory still counts the files a connection opens afterwards: SQLite names them by their
+    // resolved path, and the temporary directory is a symbolic link.
+    StorageIOCounters.watch(directory: run.directory)
+    defer { StorageIOCounters.watch(directory: nil) }
+    var watched: OpaquePointer?
+    try #require(sqlite3_open_v2(url.path, &watched, SQLITE_OPEN_READWRITE, StorageIOCounters.vfsName) == SQLITE_OK)
+    defer { sqlite3_close_v2(watched) }
+    let beforeWatched = StorageIOCounters.snapshot()
+    try storageIOExecute(watched, "INSERT INTO counted (body) VALUES ('watched')")
+    #expect(StorageIOCounters.snapshot().subtracting(beforeWatched)[.wal].writes > 0)
   }
 
   /// One live write's steps, each measured on its own: the local save, the claim that hands it to delivery, the
@@ -133,6 +158,7 @@ struct StorageIOExercises {
     perWrite.add("logicalKB", Double(ledger.logicalBytes(.save)) / 1_024 / Double(max(1, writes)), digits: 2)
     perWrite.add("amplification", Double(total.io.bytesWritten) / Double(max(1, ledger.logicalBytes(.save))))
     perWrite.add("processLogicalWriteKB", Double(total.process.logicalWriteBytes) / 1_024 / Double(max(1, writes)))
+    perWrite.add("processDiskWriteKB", Double(total.process.diskWriteBytes) / 1_024 / Double(max(1, writes)))
     perWrite.add("cpuMs", Double(total.process.cpuNanoseconds) / 1_000_000 / Double(max(1, writes)), digits: 2)
     perWrite.print()
     var wire = StorageIOLine("steps", "wire")
@@ -149,7 +175,10 @@ struct StorageIOExercises {
         line.add("framesPerWrite", Double(count) / Double(max(1, writes)), digits: 2)
         line.print()
       }
+      StorageIOLine.printReads("steps-reads", step.rawValue, ledger.io(step), map: map, per: writes)
+      StorageIOLine.printOutboxShare("steps-outbox", step.rawValue, frames, per: writes)
     }
+    StorageIOLine.printOutboxShare("steps-outbox", "all", map.byName(total.io.walFramesByPage), per: writes)
     let file = try StorageIOStoreFile.read(store)
     var fileLine = StorageIOLine("steps", "file")
     fileLine.add(file: file)
@@ -206,6 +235,7 @@ struct StorageIOExercises {
         "processLogicalWriteKB",
         Double(measured.process.logicalWriteBytes) / 1_024 / Double(max(1, intervalWrites))
       )
+      line.add("processDiskWriteKB", Double(measured.process.diskWriteBytes) / 1_024 / Double(max(1, intervalWrites)))
       line.add(wire: intervalLedger.wire, per: intervalWrites)
       line.print()
       interval = StorageIOProbe.start()
@@ -223,9 +253,11 @@ struct StorageIOExercises {
     end.add("dbWrittenMB", Double(total.io[.database].bytesWritten) / 1_048_576)
     end.add("tempWrittenMB", Double(total.io[.temporary].bytesWritten) / 1_048_576)
     end.add("processLogicalWriteMB", Double(total.process.logicalWriteBytes) / 1_048_576)
+    end.add("processDiskWriteMB", Double(total.process.diskWriteBytes) / 1_048_576)
     end.add("amplification", Double(total.io.bytesWritten) / Double(max(1, ledger.logicalBytes(.save))))
     end.add("syncs", total.io.syncs)
-    end.add("fullSyncs", total.io.files.values.reduce(0) { $0 + $1.fullSyncs })
+    end.add("fullSyncs", total.io.fullSyncs)
+    end.add("syncSeconds", Double(total.io.syncNanoseconds) / 1_000_000_000, digits: 2)
     end.add("walRestarts", total.io.walRestarts)
     end.add("fileGrowthMB", Double(endFile.databaseBytes - startFile.databaseBytes) / 1_048_576, digits: 2)
     end.add("pagesEnd", endFile.pageCount)
@@ -285,7 +317,19 @@ struct StorageIOExercises {
             policy: session.configuration.liveQueryResultPruningPolicy,
             now: session.clock.now()
           )
-          ledger.record(.prune, prune.stop())
+          let pruned = prune.stop()
+          ledger.record(.prune, pruned)
+          // Each prune on its own: a backlog cleared once reads differently from a cost paid every minute.
+          var pruneLine = StorageIOLine("phone-shaped-prune", "line\(line)")
+          pruneLine.add("walFrames", pruned.io.walFrames)
+          pruneLine.add("walWriteKB", Double(pruned.io[.wal].bytesWritten) / 1_024)
+          pruneLine.add("dbReadKB", Double(pruned.io[.database].bytesRead) / 1_024)
+          pruneLine.add("cpuMs", Double(pruned.process.cpuNanoseconds) / 1_000_000, digits: 2)
+          let calls = pruned.calls.operations.sorted(by: { $0.key < $1.key })
+          for (call, measure) in calls where measure.transactions > 0 {
+            pruneLine.add(String(call.prefix(while: { $0 != "(" })), measure.pagesWritten)
+          }
+          pruneLine.print()
         }
       }
       let total = started.stop()
@@ -313,6 +357,7 @@ struct StorageIOExercises {
       all.add("count", writes)
       all.add(io: total.io, per: writes)
       all.add("processLogicalWriteKB", Double(total.process.logicalWriteBytes) / 1_024 / Double(writes))
+      all.add("processDiskWriteKB", Double(total.process.diskWriteBytes) / 1_024 / Double(writes))
       all.add("cpuMs", Double(total.process.cpuNanoseconds) / 1_000_000 / Double(writes), digits: 2)
       all.print()
       for (call, measure) in total.calls.operations.sorted(by: { $0.key < $1.key }) where measure.transactions > 0 {
@@ -337,6 +382,13 @@ struct StorageIOExercises {
         line.add("framesPerWrite", Double(count) / Double(writes), digits: 2)
         line.print()
       }
+      for step in StorageIOStep.allCases where ledger.count(step) > 0 {
+        StorageIOLine.printReads("phone-shaped-reads", step.rawValue, ledger.io(step), map: map, per: writes)
+        StorageIOLine.printOutboxShare(
+          "phone-shaped-outbox", step.rawValue, map.byName(ledger.io(step).walFramesByPage), per: writes
+        )
+      }
+      StorageIOLine.printOutboxShare("phone-shaped-outbox", "all", byTree, per: writes)
       let endFile = try StorageIOStoreFile.read(store)
       var fileLine = StorageIOLine("phone-shaped", "file")
       fileLine.add(file: endFile)
@@ -345,6 +397,156 @@ struct StorageIOExercises {
       fileLine.print()
       await lease.cancel()
     }
+  }
+}
+
+// MARK: - Checkpoint settings
+
+extension StorageIOExercises {
+  /// The store never sets `wal_autocheckpoint` or `journal_size_limit`, so Apple's defaults decide how often a commit
+  /// checkpoints (1,000 frames) and that the log is cut back to 32 KB after each restart; and Apple's SQLite syncs
+  /// every checkpoint with `F_FULLFSYNC`. The store's own connection offers no way to set them from a test, so this
+  /// replays a live write's four transactions (save, claim, acknowledgement, echo) on a scratch store shaped like the
+  /// store's hot tables, under each setting, and counts what reaches the files (#1076).
+  ///
+  /// `STORAGEIO_SETTINGS_WRITES` logical writes per setting (2,000).
+  @Test
+  func checkpointSettingsOnALiveWritePattern() throws {
+    guard StorageIOExerciseSettings.current != nil else { return }
+    StorageIOCounters.install(asDefault: false)
+    let writes = max(100, ProcessInfo.processInfo.environment["STORAGEIO_SETTINGS_WRITES"].flatMap(Int.init) ?? 2_000)
+    let candidates: [(name: String, pragmas: [String])] = [
+      ("apple-defaults", []),
+      ("no-truncate", ["PRAGMA journal_size_limit = -1"]),
+      ("autocheckpoint-4000", ["PRAGMA wal_autocheckpoint = 4000", "PRAGMA journal_size_limit = -1"]),
+      ("autocheckpoint-16000", ["PRAGMA wal_autocheckpoint = 16000", "PRAGMA journal_size_limit = -1"]),
+    ]
+    for candidate in candidates {
+      let run = try StorageIORun(label: "settings-\(candidate.name)")
+      defer { run.remove() }
+      StorageIOCounters.watch(directory: run.directory)
+      defer { StorageIOCounters.watch(directory: nil) }
+      let url = run.directory.appendingPathComponent("replay.sqlite")
+      var connection: OpaquePointer?
+      try #require(
+        sqlite3_open_v2(url.path, &connection, SQLITE_OPEN_CREATE | SQLITE_OPEN_READWRITE, StorageIOCounters.vfsName)
+          == SQLITE_OK
+      )
+      defer { sqlite3_close_v2(connection) }
+      try storageIOExecute(connection, "PRAGMA journal_mode = WAL")
+      try storageIOExecute(connection, "PRAGMA cache_size = -2048")
+      for pragma in candidate.pragmas { try storageIOExecute(connection, pragma) }
+      try StorageIOReplay.createSchema(connection)
+      try StorageIOReplay.seed(connection, facts: 120_000)
+      try storageIOExecute(connection, "PRAGMA wal_checkpoint(TRUNCATE)")
+
+      let started = StorageIOProbe.start()
+      for write in 0..<writes { try StorageIOReplay.logicalWrite(write, on: connection) }
+      let measured = started.stop()
+      var line = StorageIOLine("settings", candidate.name)
+      line.add("writes", writes)
+      line.add(io: measured.io, per: writes)
+      line.add("processDiskWriteKB", Double(measured.process.diskWriteBytes) / 1_024 / Double(writes))
+      line.add("fullSyncsPerHour", Double(measured.io.fullSyncs) / Double(writes) * 5_400, digits: 0)
+      line.add("syncSecondsPerHour", Double(measured.io.syncNanoseconds) / 1e9 / Double(writes) * 5_400, digits: 2)
+      line.add("writtenMBPerHour", Double(measured.io.bytesWritten) / 1_048_576 / Double(writes) * 5_400, digits: 0)
+      line.print()
+    }
+  }
+}
+
+/// A live write's four transactions on tables shaped like the store's hot ones: a fact table with a text primary key
+/// and its row copy, an outbox row with a 2 KB body and nine indexes, a metadata row, and a query result rewritten
+/// whole. Its frames per write land near the library's own (#1076's first baseline: 62.5).
+enum StorageIOReplay {
+  static func createSchema(_ connection: OpaquePointer?) throws {
+    try storageIOExecute(
+      connection,
+      """
+      CREATE TABLE facts (entity_id TEXT NOT NULL, attribute_id TEXT NOT NULL, value_json TEXT NOT NULL,
+        tx_id TEXT NOT NULL, tx_time_ms INTEGER NOT NULL, json TEXT NOT NULL,
+        PRIMARY KEY (entity_id, attribute_id, value_json))
+      """
+    )
+    try storageIOExecute(
+      connection,
+      """
+      CREATE TABLE box (mutation_id TEXT PRIMARY KEY NOT NULL, status TEXT NOT NULL, created_at_ms INTEGER NOT NULL,
+        json TEXT NOT NULL, claim_state TEXT NOT NULL DEFAULT 'ready', claim_token TEXT, deadline_ms INTEGER,
+        version INTEGER NOT NULL DEFAULT 0, overlay INTEGER NOT NULL DEFAULT 1, fingerprint TEXT, server_tx TEXT)
+      """
+    )
+    for (index, columns) in [
+      "claim_state, deadline_ms, created_at_ms", "status, version, created_at_ms", "overlay, version, created_at_ms",
+      "overlay, fingerprint, created_at_ms", "status, server_tx, overlay, created_at_ms",
+      "status, overlay, created_at_ms",
+      "created_at_ms, version", "claim_state, created_at_ms", "fingerprint, created_at_ms",
+    ].enumerated() {
+      try storageIOExecute(connection, "CREATE INDEX box_\(index) ON box (\(columns), mutation_id)")
+    }
+    try storageIOExecute(connection, "CREATE TABLE meta (key TEXT PRIMARY KEY NOT NULL, value TEXT NOT NULL)")
+    try storageIOExecute(connection, "INSERT INTO meta VALUES ('cursor', '0')")
+    try storageIOExecute(connection, "CREATE TABLE results (query_id INTEGER PRIMARY KEY, json TEXT NOT NULL)")
+    try storageIOExecute(connection, "INSERT INTO results VALUES (1, hex(randomblob(4000)))")
+  }
+
+  static func seed(_ connection: OpaquePointer?, facts: Int) throws {
+    try storageIOExecute(connection, "BEGIN")
+    try storageIOExecute(
+      connection,
+      """
+      WITH RECURSIVE n(i) AS (SELECT 0 UNION ALL SELECT i + 1 FROM n WHERE i + 1 < \(facts))
+      INSERT INTO facts SELECT printf('entity-%08d', i / 16), printf('attribute-%02d', i % 16), hex(randomblob(12)),
+        'seed', i, hex(randomblob(60)) FROM n
+      """
+    )
+    try storageIOExecute(connection, "COMMIT")
+  }
+
+  /// Save (16 facts re-inserted, the outbox row, the cursor), claim, acknowledgement, echo (the row deleted, the
+  /// result rewritten): four transactions, as the library commits them.
+  static func logicalWrite(_ write: Int, on connection: OpaquePointer?) throws {
+    let entity = String(format: "live-%08d", write / 6)
+    let mutation = String(format: "mutation-%08d", write)
+    try storageIOExecute(connection, "BEGIN IMMEDIATE")
+    try storageIOExecute(
+      connection,
+      """
+      WITH RECURSIVE n(i) AS (SELECT 0 UNION ALL SELECT i + 1 FROM n WHERE i + 1 < 16)
+      INSERT OR REPLACE INTO facts SELECT '\(entity)', printf('attribute-%02d', i), printf('"value-%d"', i),
+        '\(mutation)', \(write), hex(randomblob(60)) FROM n
+      """
+    )
+    try storageIOExecute(
+      connection,
+      """
+      INSERT INTO box (mutation_id, status, created_at_ms, json, fingerprint)
+      VALUES ('\(mutation)', 'pending', \(write), hex(randomblob(1024)), hex(randomblob(16)))
+      """
+    )
+    try storageIOExecute(connection, "UPDATE meta SET value = '\(write)' WHERE key = 'cursor'")
+    try storageIOExecute(connection, "COMMIT")
+    try storageIOExecute(
+      connection,
+      """
+      UPDATE box SET claim_state = 'claimed', claim_token = 'token-\(write)', deadline_ms = \(write + 5_000)
+      WHERE mutation_id = '\(mutation)'
+      """
+    )
+    try storageIOExecute(connection, "BEGIN IMMEDIATE")
+    try storageIOExecute(
+      connection,
+      """
+      UPDATE box SET status = 'confirmed', server_tx = '\(write)', version = version + 1
+      WHERE mutation_id = '\(mutation)'
+      """
+    )
+    try storageIOExecute(connection, "UPDATE meta SET value = '\(write)-acked' WHERE key = 'cursor'")
+    try storageIOExecute(connection, "COMMIT")
+    try storageIOExecute(connection, "BEGIN IMMEDIATE")
+    try storageIOExecute(connection, "DELETE FROM box WHERE mutation_id = '\(mutation)'")
+    try storageIOExecute(connection, "UPDATE results SET json = hex(randomblob(4000)) WHERE query_id = 1")
+    try storageIOExecute(connection, "COMMIT")
   }
 }
 
@@ -1077,9 +1279,13 @@ struct StorageIOProbe {
   }
 }
 
-/// The process's own accounting (`proc_pid_rusage`): logical bytes written to every file, and CPU time.
+/// The process's own accounting (`proc_pid_rusage`): logical bytes written to every file, the bytes its I/O wrote
+/// to the drive, and CPU time.
 struct StorageIOProcess {
   var logicalWriteBytes: UInt64
+  /// `ri_diskio_byteswritten`: what reached the drive on the process's behalf, after the file system's own
+  /// coalescing and metadata.
+  var diskWriteBytes: UInt64
   var cpuNanoseconds: UInt64
 
   static func now() -> Self {
@@ -1089,12 +1295,13 @@ struct StorageIOProcess {
         proc_pid_rusage(getpid(), RUSAGE_INFO_V4, $0)
       }
     }
-    guard result == 0 else { return Self(logicalWriteBytes: 0, cpuNanoseconds: 0) }
+    guard result == 0 else { return Self(logicalWriteBytes: 0, diskWriteBytes: 0, cpuNanoseconds: 0) }
     var timebase = mach_timebase_info_data_t()
     mach_timebase_info(&timebase)
     let ticks = info.ri_user_time + info.ri_system_time
     return Self(
       logicalWriteBytes: info.ri_logical_writes,
+      diskWriteBytes: info.ri_diskio_byteswritten,
       cpuNanoseconds: ticks * UInt64(timebase.numer) / UInt64(max(1, timebase.denom))
     )
   }
@@ -1102,6 +1309,7 @@ struct StorageIOProcess {
   func subtracting(_ earlier: Self) -> Self {
     Self(
       logicalWriteBytes: logicalWriteBytes &- earlier.logicalWriteBytes,
+      diskWriteBytes: diskWriteBytes &- earlier.diskWriteBytes,
       cpuNanoseconds: cpuNanoseconds &- earlier.cpuNanoseconds
     )
   }
@@ -1169,6 +1377,7 @@ extension StorageIOSnapshot {
       total.bytesRead += counts.bytesRead
       total.syncs += counts.syncs
       total.fullSyncs += counts.fullSyncs
+      total.syncNanoseconds &+= counts.syncNanoseconds
       total.truncates += counts.truncates
       files[kind] = total
     }
@@ -1176,6 +1385,7 @@ extension StorageIOSnapshot {
       files: files,
       walFramesByPage: walFramesByPage.merging(other.walFramesByPage, uniquingKeysWith: +),
       databaseWritesByPage: databaseWritesByPage.merging(other.databaseWritesByPage, uniquingKeysWith: +),
+      databaseReadsByPage: databaseReadsByPage.merging(other.databaseReadsByPage, uniquingKeysWith: +),
       walRestarts: walRestarts + other.walRestarts,
       deletes: deletes + other.deletes,
       pageSize: other.pageSize
@@ -1232,6 +1442,39 @@ struct StorageIOStoreFile {
 }
 
 extension StorageIOLine {
+  /// The b-trees whose pages a step read from the database file, the most read first, in KB per write.
+  static func printReads(
+    _ exercise: String,
+    _ step: String,
+    _ io: StorageIOSnapshot,
+    map: StorageIOPageMap,
+    per count: Int,
+    limit: Int = 8
+  ) {
+    let reads = map.byName(io.databaseReadsByPage)
+    for (name, pages) in reads.sorted(by: { ($0.value, $1.key) > ($1.value, $0.key) }).prefix(limit) {
+      var line = StorageIOLine(exercise, step)
+      line.add("btree", name)
+      line.add("readKBPerWrite", Double(pages * io.pageSize) / 1_024 / Double(max(1, count)))
+      let distinct = io.databaseReadsByPage.keys.filter { (map.nameByPage[$0] ?? "(free or other)") == name }
+      line.add("distinctPages", distinct.count)
+      line.print()
+    }
+  }
+
+  /// The frames a step wrote on the outbox's own b-trees (its table, indexes, write keys and effect entities) against
+  /// all its frames: the outbox's share of a write's log (#1076's finding 2).
+  static func printOutboxShare(_ exercise: String, _ step: String, _ framesByName: [String: Int], per count: Int) {
+    let outbox = framesByName.filter {
+      $0.key.hasPrefix("instant_outbox") || $0.key.hasPrefix("sqlite_autoindex_instant_outbox")
+    }
+    var line = StorageIOLine(exercise, step)
+    line.add("outboxFramesPerWrite", Double(outbox.values.reduce(0, +)) / Double(max(1, count)), digits: 2)
+    line.add("framesPerWrite", Double(framesByName.values.reduce(0, +)) / Double(max(1, count)), digits: 2)
+    line.add("outboxBtrees", outbox.count)
+    line.print()
+  }
+
   mutating func add(file: StorageIOStoreFile) {
     add("dbMB", Double(file.databaseBytes) / 1_048_576, digits: 2)
     add("walMB", Double(file.walBytes) / 1_048_576, digits: 2)
