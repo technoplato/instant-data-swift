@@ -1,3 +1,21 @@
+## 2026-10-23 20:59:52 EDT — scribe `6fb587936c1022700fd771cf4b424020fb9c5c3e`
+Merge (#760) to main: capture that iOS interrupts comes back by itself while Scribe is in front.
+
+## 2026-10-23 20:54:39 EDT — scribe `272ca45913a86aa431945d9559dbac40b5e2a5a4`
+What's New 119 (#760): capture comes back by itself while Scribe is open.
+
+## 2026-10-23 20:54:12 EDT — scribe `d599ceaf42e277f6d24cd00dd6a959d220f95f62`
+Docs (#760): ADR 0011's 2026-10-23 amendment with the lab's device check, ADR 0034's pointer, perf-lab S7, the budget line.
+
+## 2026-10-23 20:54:12 EDT — scribe `ea378e7fc1e11126d44b8740ac45d1dd6229f135`
+Green (#760): in front Scribe tries the microphone again 1 s after capture stopped, every 2 s, every 5 s after 30 s, until it is free; a device change tries at once; behind another app it waits for iOS; telemetry names each attempt's signal.
+
+## 2026-10-23 20:54:12 EDT — scribe `ac72eaf567315bc49e1e743fc9ad2e669cdad4c5`
+Plan (#760): capture-resume-760's plan and touch claims.
+
+## 2026-10-23 20:54:07 EDT — scribe `baf5ecd856e839bd92bb70d65778d71e6033d9b0`
+Red (#760): RecordingCaptureComesBackTests: an interruption iOS never ends, with Scribe in front, brings capture back by itself.
+
 ## 2026-10-23 20:51:30 EDT — instant-data-swift `0f1d2ebcd123f00549681ffd4d3642716c461c03`
 Fix (#1012): the resource loader's request box carries its SAFETY: comment, so SwiftConcurrencyGuidanceTests passes on main again.
 
