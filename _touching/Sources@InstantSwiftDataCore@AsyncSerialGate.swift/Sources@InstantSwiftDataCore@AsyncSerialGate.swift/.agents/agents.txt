@@ -3,3 +3,4 @@ claude-opus-5.5-library-79 2026-10-02T09:11:29-04:00 mower plan=2026-10-02-libra
 claude-opus-5.5-library-79 2026-10-03T14:20:54-04:00 mower plan=2026-10-02-library-79-hops #473 #445
 claude-opus-5.5-library-79 2026-10-03T19:41:49-04:00 mower plan=2026-10-02-library-79-hops #473 #482
 claude-code/transcript-open-1006@halfjew22 2026-10-23T14:44:24-0400 grower plan=2026-10-23-local-reads-1006 #1006
+claude-code/audit-concurrency-1074@ld 2026-10-24T16:04:08-0400 grower plan=2026-10-24-audit-concurrency-1074 #1074 (the timeline hook only)

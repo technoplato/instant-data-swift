@@ -30,3 +30,4 @@ claude-code/longrec-654@ld 2026-10-24T10:43:09-0400 mower plan=2026-10-24-longre
 claude-code/lib-audit-1072@ld 2026-10-24T15:58:40-0400 mower plan=2026-10-24-lib-audit-1072 #1072 
 claude-code/audit-memory-1075@ld 2026-10-24T16:00:45-0400 grower plan=2026-10-24-audit-memory-1075 #1075 (memory audit: new exercise files under Tests/InstantSwiftDataCoreTests/RealSize/Memory*, the audit document; no library source change)
 claude-code/audit-storage-1076@ld 2026-10-24T16:00:47-0400 grower plan=2026-10-24-audit-storage-1076 #1076 (append the audit's entries)
+claude-code/audit-concurrency-1074@ld 2026-10-24T16:04:08-0400 grower plan=2026-10-24-audit-concurrency-1074 #1074 
