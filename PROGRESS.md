@@ -1,3 +1,16 @@
+## 2026-10-24 14:00:20 EDT — #654, #932: v1.9.34 pinned in Scribe for build 124; longrec-654 done, cleanup
+
+- **Scribe main:** plan amendment `64a6d9ff5`, pin `972ac0bd9` (exact 1.9.34 in Scribe and Scribe Playback, lock files
+  at `607fe73e`, installer 65/65, a Build 124 (next) story), change log `e2f33da21`. Build 123 carries 1.9.33.
+- **Open:** the device lab's check on build 124 (#654's device question); #1056, the per-write CPU that a new transcript
+  line's page re-materialization still adds as a recording grows; #932 is VerificationNeeded.
+- **Removed:** the copy of the iPhone's store and its scratch (laptop ~/scribe-builds/longrec-654, 3.0 GB: the 471 MB
+  store copy, a 490 MB inspection copy, two debug builds 2.0 GB, two source exports 44 MB); the Mac mini's
+  ~/Library/Caches/longrec654 (7.2 GB: release, debug and bundle builds, two Scribe resolve scratches, source copies)
+  and ~/Library/Caches/instant-data-swift-known-failing (6.1 MB); the worktrees instant-longrec-654 (384 MB with its
+  .build) and scribe-longrec-654-pin (126 MB). Kept: ~/Sync/audit/longrec-654 (3.1 MB: the harness, runs, the synthetic
+  profile sample).
+
 ## 2026-10-24 13:55:15 EDT — #654, #932: v1.9.34, deleteStoredFile(id:) by its own record or id (build 123's last whole-list query)
 
 - **Commits:** plan amendment `ee396676`; red `78e0c30d`, green `607d64bf`; release document `dd0589bf`; then this
