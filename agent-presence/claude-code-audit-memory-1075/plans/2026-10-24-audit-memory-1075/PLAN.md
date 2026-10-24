@@ -41,3 +41,14 @@ Changed: `CHANGELOG.md`, `PROGRESS.md`, `docs/audits/commit-changelog.md`.
 `RealSizeReport.swift` beside these files; this plan only calls them and asks on
 `agent-presence/_channels/2026-10-24-lib-audit-1072.md` for any change. #1074 (concurrency) and #1076 (storage) hold no
 claims on these paths. No library source file is claimed.
+
+## Amendment 1 (2026-10-24 16:50 EDT, claude-code/audit-memory-1075@strangelearning)
+
+Continued on another account after the first stopped on quota at 16:22; nothing it committed is redone. #1072's
+fixture, meter and report landed on main (0f404f0b), and its meter already counts what the exercises need (allocations,
+bytes, net live bytes, peak live bytes, footprint peak), so `MemoryAllocationCounter.swift` is dropped. Added:
+`Tests/InstantSwiftDataCoreTests/RealSize/MemoryReplayServer.swift`, a scripted server for the memory exercises that
+keeps no frame history (#1072's `RealSizeServer.sent` and `RealSizeApplyLog` grow by every frame and apply, which a
+two-hour replay would read as the library's growth) and hands the runtime JSON text frames through the production
+decoder (`InstantLiveMessage.decoded(fromFrame:)`), so a frame's decode is in the measurement. It plugs into the
+fixture through `RealSizeFixture.open(configure:)`; no change to #1072's files. Still no library source change.
