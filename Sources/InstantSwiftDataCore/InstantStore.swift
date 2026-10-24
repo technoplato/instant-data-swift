@@ -623,7 +623,16 @@ public actor InstantStore {
   }
 
   public func snapshot() -> InstantStoreSnapshot {
-    InstantStoreSnapshot(attributes: attributes.attributes, triples: indexes.triples)
+    fullCopyCountForTesting += 1
+    return InstantStoreSnapshot(attributes: attributes.attributes, triples: indexes.triples)
+  }
+
+  /// How many times this store copied every fact it holds (#1035): a snapshot, or indexes built from one. A change
+  /// prepared against such a copy costs work in proportion to the store, not to the change.
+  package private(set) var fullCopyCountForTesting = 0
+
+  package func resetFullCopyCountForTesting() {
+    fullCopyCountForTesting = 0
   }
 
   func visibleWriteFilter(
@@ -1014,6 +1023,7 @@ public actor InstantStore {
     _ transaction: InstantStoreTransaction,
     applyingTo snapshot: InstantStoreSnapshot
   ) throws -> PreparedStoreMutation {
+    fullCopyCountForTesting += 1
     let attributes = AttributeStore(attributes: snapshot.attributes)
     let indexes = TripleIndexes(
       triples: snapshot.triples,
@@ -1057,6 +1067,7 @@ public actor InstantStore {
     thenApplying serverTransaction: InstantStoreTransaction,
     to snapshot: InstantStoreSnapshot
   ) throws -> PreparedStoreMutation {
+    fullCopyCountForTesting += 1
     var attributes = AttributeStore(attributes: snapshot.attributes)
     var indexes = TripleIndexes(
       triples: snapshot.triples,

@@ -358,6 +358,54 @@ struct InstantPersistenceCacheResidencyTests {
     #expect(persisted.contains { $0.entityID == "next-entity" })
   }
 
+  /// #1035: the rollback of a refused write is prepared from the store as it is, not from a copy: copying every fact
+  /// (sorting every entity) and indexing the copy again cost work in proportion to the store for a one-row rollback.
+  @Test
+  func aRefusedWritesRollbackCopiesNoFactOfTheLargeStore() async throws {
+    let cacheURL = try temporaryCacheResidencyURL("refused-write-copies")
+    let seed = try SQLitePersistenceStore(fileURL: cacheURL)
+    try await seed.bootstrap()
+    try await seed.saveStoreSnapshot(
+      InstantStoreSnapshot(
+        attributes: cacheResidencyAttributes,
+        triples: cacheResidencyTriples(count: 10_000)
+      )
+    )
+    await seed.simulateUnexpectedConnectionCloseForTesting()
+    var configuration = InstantRuntimeConfiguration(
+      appID: "cache-residency-refused-write-copies",
+      persistenceURL: cacheURL,
+      initialAttributes: cacheResidencyAttributes
+    )
+    configuration.autoConnectLiveTransport = false
+    let runtime = try await InstantRuntime.bootstrap(configuration: configuration)
+    _ = try await runtime.transact(
+      cacheResidencyWrite(id: "refused-write", entityID: "large-entity-17", milliseconds: 40_001)
+    )
+    let claimantID = await runtime.automaticDeliveryClaimantIDForTesting()
+    _ = try await runtime.persistence.claimAutomaticOutboxDeliveryWindow(
+      InstantAutomaticOutboxClaimRequest(
+        claimantID: claimantID,
+        claimToken: "refused-write-copies-claim",
+        now: InstantTimestamp(milliseconds: 40_002),
+        maximumMutationCount: 1
+      )
+    )
+    await runtime.store.resetFullCopyCountForTesting()
+
+    let refused = try await runtime.failClaimedMutationForTesting(
+      id: "refused-write",
+      message: "Permission denied: not perms-pass?",
+      claimToken: "refused-write-copies-claim"
+    )
+
+    expectNoDifference(refused?.status, .failed)
+    let copies = await runtime.store.fullCopyCountForTesting
+    expectNoDifference(copies, 0)
+    let restored = await runtime.store.snapshot().triples.first { $0.entityID == "large-entity-17" }?.value
+    expectNoDifference(restored, .string("value-17"), "The rollback restores the fact the refused write replaced.")
+  }
+
   @Test
   func directPersistenceInspectionCannotAdvancePastTheRuntimeStore() async throws {
     let cacheURL = try temporaryCacheResidencyURL("direct-inspection-runtime-lag")
