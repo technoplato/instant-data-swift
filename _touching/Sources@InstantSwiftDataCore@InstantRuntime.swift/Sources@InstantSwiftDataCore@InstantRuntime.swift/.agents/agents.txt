@@ -75,3 +75,4 @@ claude-code/longrec-654@ld 2026-10-24T10:43:09-0400 mower plan=2026-10-24-longre
 claude-code/longrec-654@ld 2026-10-24T13:32:13-0400 mower plan=2026-10-24-longrec-654 #654 #932 (deleteStoredFile(id:): the device's record, else a $files query on that id)
 claude-code/lib-audit-1072@ld 2026-10-24T15:58:40-0400 mower plan=2026-10-24-lib-audit-1072 #1072 (the worst finding's fix, starting with storedFiles() and observeStoredFiles(); amended when the table names it)
 claude-code/audit-concurrency-1074@ld 2026-10-24T16:04:08-0400 grower plan=2026-10-24-audit-concurrency-1074 #1074 (InstantRuntimeConfiguration.operationGateTimeline and the line that builds the operation gate only)
+claude-code/lib-audit-1072@halfjew22 2026-10-24T17:08:42-0400 mower plan=2026-10-24-lib-audit-1072 #1072 amendment 1 (savePreparedStoredFile, storedFileContents, deleteStoredFile, evictStoredFiles' publish, and a new helper: publish the stored-file records only while an observation is open)

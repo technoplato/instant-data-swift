@@ -50,3 +50,16 @@ InstantRuntime.swift's earlier claims (#1007, #932, #654's prune, longrec-654's 
 (v1.9.34). The sibling audits started at 15:55 (#1074, #1075, #1076, #1077) hold no claims yet; they add their own files
 under `Tests/InstantSwiftDataCoreTests/RealSize/` and call the fixture and meter, whose files this plan owns (changes to
 them through the channel `agent-presence/_channels/2026-10-24-lib-audit-1072.md`).
+
+## Amendment 1 (2026-10-24 17:08 EDT, claude-code/lib-audit-1072@halfjew22)
+
+The worst file call Scribe makes while recording is not `storedFiles()` (Scribe never calls it, nor
+`observeStoredFiles()`) but the upload: every `uploadFile` read and decoded every `instant_files` record under the
+operation gate to hand them to stored-file observers, whether one was open or not (4,264 records, about 3 MB of JSON, on
+the phone; about eleven uploads a minute while recording). Deletes, reads by id and evictions read them all again the
+same way, and one record that does not decode fails each of them after its work is done. This amendment names the
+functions of `Sources/InstantSwiftDataCore/InstantRuntime.swift` before they are edited: `savePreparedStoredFile`,
+`storedFileContents(id:name:)`, `deleteStoredFile(id:)`, the publish at the end of `evictStoredFiles(ids:)`, and one new
+private helper that reads and publishes the records only while an observation is open. The red and green go in
+`Tests/InstantSwiftDataCoreTests/InstantStoredFileLookupTests.swift` (already claimed). `storedFiles()` and
+`observeStoredFiles()` stay claimed for their bounded form or their issue.
