@@ -99,7 +99,10 @@ import os
       task?.cancel()
     }
 
-    /// A loading request, handed to the task that answers it; AVFoundation lets any thread answer one.
+    /// A loading request, handed to the task that answers it.
+    // SAFETY: one task owns each request. The resource loader's executor (the delegate queue) hands the request to
+    // exactly one Task and keeps no reference of its own; that task alone answers it, and AVFoundation accepts the
+    // answer from any thread.
     private struct LoadingRequest: @unchecked Sendable {
       let value: AVAssetResourceLoadingRequest
     }
