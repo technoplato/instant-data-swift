@@ -1,3 +1,27 @@
+## 2026-10-24 12:26:49 EDT — #654, #932: v1.9.33, the stored-file lookup that drove the prune and the server apply every minute
+
+- **Commits:** plan `49e42c2e`; red `adfaa4bb`, green `47d980a8` (a stored file looked up by id is a `$files` query on
+  that id); red `146334dd`, green `f8f39ca0`, narrowed `7699425a` (the late answer of a one-shot query that ended is not
+  applied); release document `267b0116`; then this ledger commit and the tag v1.9.33.
+- **Cause (measured, the collector's rows, build 121, iPhone and Mac):** `downloadStoredFile(id:name:nil)` and
+  `storedFileContents(id:name:nil)` for a file with no local record ran a one-shot query of every `$files` row
+  (correlation id `instant.storage.files`; 9,455 files, 75,640 facts, about 27 MB). It timed out at 5 s
+  (`query-once.failed` 22 times on the iPhone and 193 on the Mac that morning), its answer was applied anyway (server
+  apply 2.3-5.8 s, `commitResultJSONBytes` about 27 MB, about 10,300 changed entities; resident facts 54k -> 137k), and
+  the next prune dropped it (3.8-6.0 s; facts 137k -> 54k), once a minute on the iPhone and every 10-20 s on the Mac.
+  Scribe's media cache calls the download without a name.
+- **Measured** (a copy of the iPhone's store, laptop, debug, scratch harness
+  `~/Sync/audit/longrec-654/scripts/LongRecordingStoreHarness.swift`; a recording's minute = 75 transcript writes, one
+  lookup by id, one prune): before, the lookup fails at 5 s, its apply holds the gate 3.0-6.0 s, the prune 6.6-6.8 s,
+  a read waits 6.6-6.8 s, 15 s CPU and 700-860 MB written a minute, peak 598 MB; after, at minutes 5 / 60 / 120: the
+  lookup 44 / 35 / 44 ms, its apply 0 / 1 / 1 ms, the prune 1 / 2 / 2 ms, the longest server-apply hold 70 / 32 / 43 ms,
+  7.3 / 9.5 / 12.7 MB written, peak 282 MB.
+- **Checks:** the stored-file suites (lookup 4/4, download 7/7, eviction 3/3, upload 1/1); the whole core bundle on
+  `7699425a` 1,409 tests, 0 failing, no new failures (Mac mini).
+- **Owner:** longrec-654 (#654, #932). **Next:** pin 1.9.33 in Scribe and Scribe Playback (pin files only); the
+  device lab's check on the build that carries it; a 120-minute run of the before tree for the record; per-write CPU
+  that follows the live transcript page's lines (bounded by its 256 lines, unchanged here) is the next steady cost.
+
 ## 2026-10-23 23:58:00 EDT — #1012: progressive media proven end to end over a live Instant app
 
 - **Commits:** plan `af5f1b7e`, benchmark `c0918732` (benchmarks/ProgressiveMediaLive), ADR 0021 verification

@@ -10,6 +10,80 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## October 24th, 2026 at 12:26:21 p.m. EDT — `267b0116b44c` Document the v1.9.33 release: a stored file looked up by id costs one file's work, and a one-shot query's late answer is not applied (#654, #932); carries 1.9.32
+
+- **Implementation commit:** `267b0116b44c30249864fbaa8eb6b9a8ecc3f80d`
+- **Change:** Document the v1.9.33 release: a stored file looked up by id costs one file's work, and a one-shot query's late answer is not applied (#654, #932); carries 1.9.32
+- **Details:**
+  - Release focus, the measurement on a copy of an iPhone's store (before: lookup apply 3.0-6.0 s and prune 6.6-6.8 s a minute; after: 0-1 ms and 1-2 ms at minutes 5, 60 and 120), what stays the same, checks, not run.
+- **Files:**
+  - `docs/releases/v1.9.33.md` — new: the 1.9.33 release document
+- **User context (verbatim):**
+  > Michael, Recording 292 #513 (2026-10-24 09:53): "phone is probably gonna burn a hole in my pocket, literally."
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run longrec-654, claude/ld); no SpecStory capture for headless runs.
+
+## October 24th, 2026 at 12:24:55 p.m. EDT — `7699425a6561` Narrow the late-answer drop (#654, #932) to one-shot queries that ended and are not registered again
+
+- **Implementation commit:** `7699425a65619cb5e8ae7aa3bc4ddd3eb487cab0`
+- **Change:** Narrow the late-answer drop (#654, #932) to one-shot queries that ended and are not registered again
+- **Details:**
+  - The whole bundle hung in two tests that answer with a hand-written q for a query the runtime registered under its own encoding; the drop now applies only to a key a one-shot query registered and removed (the newest 256), and an answer for a key the runtime never registered is applied as before. Whole bundle: 1,409 tests, 0 failing, no new failures.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — InstantEndedOneShotQueries, queryOnce's cleanup records an ended query, the add-query-ok check
+- **User context (verbatim):**
+  > Michael, Recording 292 #513 (2026-10-24 09:53): "phone is probably gonna burn a hole in my pocket, literally."
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run longrec-654, claude/ld); no SpecStory capture for headless runs.
+
+## October 24th, 2026 at 12:24:55 p.m. EDT — `f8f39ca07631` Green (#654, #932): an add-query-ok whose query ended before it landed is not applied
+
+- **Implementation commit:** `f8f39ca07631585d0fd7b61c63751365ddcd4921`
+- **Change:** Green (#654, #932): an add-query-ok whose query ended before it landed is not applied
+- **Details:**
+  - The answer is dropped with an info event (query.answer-dropped); parked refused re-sends are checked as for any answer (#441). Narrowed in 7699425a.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — the add-query-ok check and the history line
+- **User context (verbatim):**
+  > Michael, Recording 292 #513 (2026-10-24 09:53): "phone is probably gonna burn a hole in my pocket, literally."
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run longrec-654, claude/ld); no SpecStory capture for headless runs.
+
+## October 24th, 2026 at 12:24:55 p.m. EDT — `146334dd8a5e` Red (#654, #932): an answer that lands after its one-shot query ended is applied anyway
+
+- **Implementation commit:** `146334dd8a5e05ab3757a5863e3421b9ccce65ed`
+- **Change:** Red (#654, #932): an answer that lands after its one-shot query ended is applied anyway
+- **Details:**
+  - storedFiles()'s one-shot query is cancelled (the same cleanup as its 5 s timeout), its 400-file answer lands, and the store holds all 400; upstream Reactor.js keeps an add-query-ok result only for a query querySubs still holds.
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantStoredFileLookupTests.swift` — the late-answer test and fixture helpers
+- **User context (verbatim):**
+  > Michael, Recording 292 #513 (2026-10-24 09:53): "phone is probably gonna burn a hole in my pocket, literally."
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run longrec-654, claude/ld); no SpecStory capture for headless runs.
+
+## October 24th, 2026 at 12:24:54 p.m. EDT — `47d980a8a4a9` Green (#654, #932): look up a stored file by id with a $files query on that id
+
+- **Implementation commit:** `47d980a8a4a97dd56862f787d30e493aa6048700`
+- **Change:** Green (#654, #932): look up a stored file by id with a $files query on that id
+- **Details:**
+  - remoteStoredFile(id:) replaces remoteStoredFiles() in storedFileContents(id:name:) and downloadStoredFile(id:name:to:); storedFiles() and observeStoredFiles() keep the list. On build 121 the list was 9,455 files and ~27 MB; its late answer held the operation gate 2.3-5.8 s and the prune 3.8-6.0 s once a minute while recording.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — the one-file lookup, the doc of downloadStoredFile's name, mergedStoredFiles without its unused parameter, the history line
+- **User context (verbatim):**
+  > Michael, Recording 292 #513 (2026-10-24 09:53): "phone is probably gonna burn a hole in my pocket, literally."
+  > Michael, typed 2026-10-23 12:14: "I want to make sure we're still syncing in real time."
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run longrec-654, claude/ld); no SpecStory capture for headless runs.
+
+## October 24th, 2026 at 12:24:54 p.m. EDT — `adfaa4bbf9b1` Red (#654, #932): a stored file looked up by id asks storage for that file alone, however many files the account holds
+
+- **Implementation commit:** `adfaa4bbf9b195cb03e02ce03fb5c45d99ba4ee9`
+- **Change:** Red (#654, #932): a stored file looked up by id asks storage for that file alone, however many files the account holds
+- **Details:**
+  - On main a download by id without a name sends the whole $files list query, stores all 40 or 400 scripted files, and the prune after it drops 160 or 1,600 facts instead of 4; the third test pins today's failure for a file storage does not hold.
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantStoredFileLookupTests.swift` — new: the lookup suite (parameterized by account size)
+- **User context (verbatim):**
+  > Michael, Recording 292 #513 (2026-10-24 09:53): "phone is probably gonna burn a hole in my pocket, literally."
+  > Michael, typed 2026-10-23 12:14: "I want to make sure we're still syncing in real time."
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run longrec-654, claude/ld); no SpecStory capture for headless runs.
+
 ## October 23rd, 2026 at 11:55:36 p.m. EDT — `c2ad634c15ee` ADR 0021's verification: the end-to-end run over a live Instant app (listed in 22 s, played 29.5 s behind, 37.0 s joining late, no stall) (#1012)
 
 - **Implementation commit:** `c2ad634c15eecdf9e69587facbfed1a5dad1a0e7`

@@ -1,11 +1,32 @@
+## 2026-10-24 12:26:04 EDT — instant-data-swift `267b0116b44c30249864fbaa8eb6b9a8ecc3f80d`
+Release document (#654, #932): v1.9.33, a stored file looked up by id costs one file's work and a one-shot query's late answer is not applied; measured on a copy of an iPhone's store (before: lookup apply 3.0-6.0 s and prune 6.6-6.8 s a minute; after 0-1 ms and 1-2 ms at minutes 5, 60, 120).
+
 ## 2026-10-24 12:23:46 EDT — scribe `1b71515e8bd`
 Scribe Playback's Build 122 What's New story starts 'Now you can' (#1051): the build 122 cut check's one new failure.
+
+## 2026-10-24 11:48:34 EDT — instant-data-swift `7699425a65619cb5e8ae7aa3bc4ddd3eb487cab0`
+Narrow (#654, #932): the late-answer drop applies only to a one-shot query that ended and is not registered again; answers for keys the runtime never registered apply as before (two tests answered with a hand-written q and hung).
+
+## 2026-10-24 11:26:35 EDT — instant-data-swift `f8f39ca07631585d0fd7b61c63751365ddcd4921`
+Green (#654, #932): an add-query-ok whose query ended before it landed is not applied (upstream Reactor.js keeps a result only for a query querySubs holds); info event query.answer-dropped.
+
+## 2026-10-24 11:26:12 EDT — instant-data-swift `146334dd8a5e05ab3757a5863e3421b9ccce65ed`
+Red (#654, #932): an answer that lands after its one-shot query ended (storedFiles() cancelled, 400 files) is applied anyway.
 
 ## 2026-10-24 11:05:44 EDT — scribe `94c6bc9173cf952933e62ef250770e41825c608a`
 Build 122 cut (#1051): CURRENT_PROJECT_VERSION 122 for Scribe and Scribe Playback, What's New 122 dated; from main 0f222e5a7, instant-data-swift 1.9.32.
 
 ## 2026-10-24 11:05:44 EDT — scribe `fcc5c6773db10e51686257ee1e930d7c6244177b`
 Change log for the build 122 cut 94c6bc917 (#1051).
+
+## 2026-10-24 10:50:26 EDT — instant-data-swift `47d980a8a4a97dd56862f787d30e493aa6048700`
+Green (#654, #932): a stored file looked up by id is a $files query on that id; it was a query of every file the account holds (9,455 files, ~27 MB on a phone), applied and pruned again once a minute while recording.
+
+## 2026-10-24 10:48:47 EDT — instant-data-swift `adfaa4bbf9b195cb03e02ce03fb5c45d99ba4ee9`
+Red (#654, #932): a download by id without a name sends the whole $files list query and stores every file (40/400 here); the prune after it drops them all.
+
+## 2026-10-24 10:43:17 EDT — instant-data-swift `49e42c2e59cfde35593b4f5ab2f0ad52cee64c2a`
+Plan (#654, #932): longrec-654 claims the stored-file lookup's functions, its test and the v1.9.33 release document.
 
 ## 2026-10-24 10:24:55 EDT — realtime-voice `0f222e5a7ec5d9d5691bbb62c0867c3545d00763`
 Merge (#1045 #1046 #1047 #811) to main for build 122: ui-121's four screen fixes from Recording 292.
