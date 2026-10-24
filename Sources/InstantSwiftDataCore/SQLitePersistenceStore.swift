@@ -7513,6 +7513,53 @@ public actor SQLitePersistenceStore {
     return committed?.commit
   }
 
+  /// Removes the failed mutation `id` by its row alone, for a discard whose receipt records no materialized effect: the
+  /// row and what cascades from it, the outbox revision bumped, and the cached store kept, since nothing in the store
+  /// changes (#1103). False, changing nothing, when a revision moved since the caller read the row or the row is no
+  /// longer a failed one.
+  ///
+  /// #1103 (2026-10-24): such a discard went through the whole-snapshot save, a diff of every resident fact against
+  /// an identical copy, three revisions bumped and the cache dropped, so the next read rebuilt the store from SQLite:
+  /// 112 ms to 1.7 s of the operation gate on a phone-shaped store, up to 32 times a recovery sweep. The outbox diff of
+  /// that save deleted this one row and nothing else.
+  func removeFailedMutationWithoutEffect(
+    id: String,
+    expectedStoreRevision: Int64,
+    expectedAttributeRevision: Int64,
+    expectedOutboxRevision: Int64
+  ) throws -> Bool {
+    let queryResultRevision: Int64? = try transaction {
+      guard
+        try loadMetadataRevisionWithoutTransaction(Self.storeRevisionKey) == expectedStoreRevision,
+        try loadMetadataRevisionWithoutTransaction(Self.attributeRevisionKey) == expectedAttributeRevision,
+        try loadMetadataRevisionWithoutTransaction(Self.outboxRevisionKey) == expectedOutboxRevision,
+        try selectInt64(
+          "SELECT COUNT(*) FROM instant_outbox WHERE mutation_id = ? AND status = ?",
+          [.text(id), .text(InstantMutationStatus.failed.rawValue)]
+        ) == 1
+      else { return nil }
+      let queryResultRevision = try loadMetadataRevisionWithoutTransaction(Self.queryResultRevisionKey)
+      try execute("DELETE FROM instant_outbox WHERE mutation_id = ?", [.text(id)])
+      _ = try bumpMetadataRevisionWithoutTransaction(Self.outboxRevisionKey)
+      return queryResultRevision
+    }
+    guard let queryResultRevision else { return false }
+    advanceCachedRevisionDomains(
+      expectedStoreRevision: expectedStoreRevision,
+      expectedAttributeRevision: expectedAttributeRevision,
+      expectedOutboxRevision: expectedOutboxRevision,
+      expectedQueryResultRevision: queryResultRevision,
+      changedEntityTriples: [:],
+      changedFactScope: InstantFactScope(),
+      mergingAttributes: [],
+      storeChanged: false,
+      attributesChanged: false,
+      outboxChanged: true,
+      queryResultsChanged: false
+    )
+    return true
+  }
+
   func mutationDeliveryBarrierSummary() throws
     -> InstantMutationDeliveryBarrierSummary
   {

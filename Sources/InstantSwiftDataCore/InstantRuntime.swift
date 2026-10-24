@@ -1,4 +1,6 @@
 // History:
+// - 2026-10-24: a discard of a failed write whose receipt records no materialized effect removes its row alone and keeps
+//   the cached store; it read the whole outbox, copied and diffed every resident fact and dropped the cache (#1103).
 // - 2026-10-24: an upload, a read by id, a delete and an eviction read and publish the device's file records only while
 //   an observation of them is open, and a failed publish no longer fails the call; each read every record (4,264 on
 //   one phone, about 3 MB of JSON), the upload under the operation gate about eleven times a minute while recording,
@@ -15648,6 +15650,11 @@ public final class InstantRuntime: Sendable {
           operation: "discard failed outbox mutation"
         )
       }
+      if let discarded = try await discardFailedMutationByItsRow(id: id) {
+        _ = try? await publishConnectionStatusWithGateHeld()
+        await operationGate.leave()
+        return discarded
+      }
       for _ in 0..<5 {
         let state = try await loadStateWithDurableOutboxSynchronizingStore()
         guard let mutation = state.snapshot.outbox.first(where: { $0.id == id }) else {
@@ -15748,6 +15755,47 @@ public final class InstantRuntime: Sendable {
       await operationGate.leave()
       throw error
     }
+  }
+
+  /// Discards the failed mutation `id` by its row alone when its receipt records no materialized effect (a live
+  /// refusal's rollback already ran), or returns nil for the general path below: a row this cannot prove (missing, not
+  /// failed, an effect still materialized or unknown, a receipt it cannot trust, an outbox that changed under it).
+  /// Later writes are not read: a discard that changes nothing in the store touches none of them. Call with the
+  /// operation gate held.
+  ///
+  /// #1103 (2026-10-24): every discard loaded and decoded the whole durable outbox, copied every resident fact, diffed
+  /// both copies into SQLite and dropped the cache, though for this case the store does not change: 112 ms of the
+  /// operation gate on the phone-shaped store as launched and 1.7 s once the whole `$files` list had loaded (#1072's
+  /// fixture), and the consuming app's recovery discards up to 32 refused writes at a time.
+  private func discardFailedMutationByItsRow(id: String) async throws -> PendingMutation? {
+    let state = try await loadCompactStateSynchronizingStore()
+    guard
+      let mutation = try await persistence.loadOutboxMutations(
+        statuses: [.failed],
+        ids: [id],
+        limit: 1,
+        expectedStoreRevision: state.storeRevision,
+        expectedOutboxRevision: state.outboxRevision
+      )?.first,
+      mutation.status == .failed,
+      case .noCurrentMaterializedEffect = mutation.optimisticEffectReceipt
+    else { return nil }
+    recordActorHop(.persistence)
+    let validation = try await persistence.validatePreparedOptimisticEffectReceipts(
+      [mutation],
+      expectedOutboxRevision: state.outboxRevision
+    )
+    guard validation.matchesOutboxRevision, validation.firstUntrustedMutationID == nil else { return nil }
+    guard
+      try await persistence.removeFailedMutationWithoutEffect(
+        id: id,
+        expectedStoreRevision: state.storeRevision,
+        expectedAttributeRevision: state.attributeRevision,
+        expectedOutboxRevision: state.outboxRevision
+      )
+    else { return nil }
+    await outbox.remove(id: id)
+    return mutation
   }
 
   @concurrent
