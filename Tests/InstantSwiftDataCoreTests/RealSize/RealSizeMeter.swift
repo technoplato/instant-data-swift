@@ -22,6 +22,8 @@ import Foundation
 //   `RealSizeCounter` (the sibling audits' SQLite VFS and wire-byte counters, #1076).
 // - 2026-10-24: #1072: the gate's whole hold per iteration and the holders that took most of it, besides the longest
 //   hold: the outbox claim after each write held it 39 ms at most at the phone's size, and only a total says how often.
+// - 2026-10-24: #1108: the allocation hook can count one thread's allocations only, for synchronous work measured beside
+//   a parallel bundle.
 
 /// A counter another audit plugs into the meter, such as a SQLite VFS that counts the bytes each file kind wrote.
 ///
@@ -421,12 +423,16 @@ enum RealSizeAllocations {
   }
 
   /// Installs the hook with fresh counts. Not reentrant: one counted pass at a time.
-  static func start() {
+  ///
+  /// `onCurrentThreadOnly` counts only the calling thread's allocations: synchronous work measured that way is immune
+  /// to the other tests a parallel bundle runs beside it.
+  static func start(onCurrentThreadOnly: Bool = false) {
     guard let slot = loggerSlot else {
       preconditionFailure("libmalloc's malloc_logger is missing: allocations cannot be counted on this system.")
     }
     os_unfair_lock_lock(&tally.pointee.lock)
     tally.pointee.counts = Counts()
+    tally.pointee.thread = onCurrentThreadOnly ? UInt(bitPattern: pthread_self()) : 0
     os_unfair_lock_unlock(&tally.pointee.lock)
     slot.pointee = hook
   }
@@ -455,6 +461,8 @@ enum RealSizeAllocations {
   private struct Tally {
     var lock = os_unfair_lock()
     var counts = Counts()
+    /// The one thread whose allocations count, or 0 for every thread.
+    var thread: UInt = 0
   }
 
   // libmalloc's malloc_logger types (malloc/malloc.h's MALLOC_LOG_TYPE_*, private): a realloc logs once, with both
@@ -477,6 +485,8 @@ enum RealSizeAllocations {
 
   private static let hook: Logger = { type, _, argument2, argument3, result, _ in
     guard type & RealSizeAllocations.hasZoneBit != 0 else { return }
+    let thread = RealSizeAllocations.tally.pointee.thread
+    guard thread == 0 || thread == UInt(bitPattern: pthread_self()) else { return }
     let allocates = type & RealSizeAllocations.allocateBit != 0
     let deallocates = type & RealSizeAllocations.deallocateBit != 0
     let tally = RealSizeAllocations.tally
