@@ -1,3 +1,9 @@
+## 2026-10-23 22:38:14 EDT — scribe `929a84bb9d7f6850b460332fdaa2b0da15cf9a13`
+Build 120 cut (#1040): CURRENT_PROJECT_VERSION 120 for Scribe and Scribe Playback, What's New 120 dated (#654 first). Carries instant-data-swift exactly 1.9.31 (the live-query prune, #654) and #1012's compressed audio copy switched on.
+
+## 2026-10-23 22:38:14 EDT — scribe `4d5ec819a1297604b327a5610350bc029314689b`
+changelog(#1040): the build 120 cut's CHANGELOG.md entry.
+
 ## 2026-10-23 22:36:23 EDT — instant-data-swift `00e6445e129d06299415b18743bb6b49cd244fa6`
 v1.9.31's release document gains a 'Not run' section: the performance gate, the cross-SDK boundary checks, the version check's wording, the device measurement next (#654).
 
