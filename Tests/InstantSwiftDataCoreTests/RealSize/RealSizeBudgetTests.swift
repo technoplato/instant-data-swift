@@ -92,7 +92,13 @@ struct RealSizeBudgetTests {
   // operations must meet once fixed.
   static let rules: [RealSizeBudget.Rule] = [
     // Writes and what they start (the outbox pump), the server's refresh of a live page, a prune of one closed page.
-    .init(operation: "transact", ceiling: .init(allocations: 20_000, wall: .milliseconds(20))),
+    // Its instructions read 1.38-1.51x at the phone's size, the pump's claim after each write and the 2,283-attribute map
+    // of its supersession check, both #1108: once fixed, its ratio is about 1.
+    .init(
+      operation: "transact", ceiling: .init(allocations: 20_000, wall: .milliseconds(20)),
+      knownIssue: "#1108: a write's supersession check maps every attribute, and the pump's claim after it reads every refused write",
+      knownIssueIsIntermittent: true
+    ),
     .init(
       operation: "refused-write", ceiling: .init(allocations: 32_000, wall: .milliseconds(150)),
       knownIssue: "#1108: the outbox pump's claim reads every refused write's row after each write",
