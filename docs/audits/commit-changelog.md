@@ -1,4 +1,4 @@
-## 2026-10-23 21:11:44 EDT — scribe `b736b14922e2c176601693b6bd1b156df71c069a2`
+## 2026-10-23 21:11:44 EDT — scribe `b736b1492e2c176601693b6bd1b156df71c069a2`
 realtime-voice: Scribe 0.1 (119) cut on main (#1038): CURRENT_PROJECT_VERSION 119, What's New 119 dated; pins instant-data-swift exactly 1.9.29 (#1035: a refused write no longer reloads or copies the store).
 
 ## 2026-10-23 21:11:44 EDT — scribe `09374f8457a33d1cf9cabd48238cc3a0b5d53e38`
