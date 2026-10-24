@@ -1,4 +1,6 @@
 // History:
+// - 2026-10-24: an add-query-ok whose query ended before it landed is not applied, as upstream drops an answer for a
+//   query `querySubs` no longer holds; the whole $files list's late answer was applied, then pruned, every minute (#654).
 // - 2026-10-24: a file read or downloaded by id without a name, which this device holds no record of, is looked up by a
 //   `$files` query on its id; it was a query of every file the account holds (9,455 files, about 27 MB on one phone),
 //   whose answer the server apply and then the prune loaded and dropped again once a minute while recording (#654, #932).
@@ -8704,6 +8706,24 @@ public final class InstantRuntime: Sendable {
         )
       }
       let registrationKey = try InstantLiveQueryEncoder.registrationKey(for: query)
+      // #654, #932: an answer whose query ended before it landed (a one-shot query that waited past its 5 s, or was
+      // cancelled) is not applied: no query wants its facts, and the next prune would drop them again. On build 121 the
+      // whole $files list's answer, about 27 MB, landed that way once a minute: a server apply held the operation gate
+      // 2.3-5.8 s for it and the prune 3.8-6.0 s to drop it. Upstream `Reactor.js` keeps an add-query-ok's result only
+      // for a query `querySubs` still holds.
+      guard await liveSession.activeQueryKeys().contains(registrationKey) else {
+        InstantDiagnostics.shared.record(
+          .info,
+          subsystem: "instant-swift-data-core",
+          category: "query",
+          event: "query.answer-dropped",
+          message: "Dropped a live query's answer that landed after its query ended.",
+          metadata: ["registrationKey": registrationKey]
+        )
+        // A refused re-send waiting for this connection's answers may resolve or stand now (#441).
+        await resolveParkedRefusalsIfNeeded()
+        return
+      }
       guard !queryOK.result.isEmpty else {
         await recordLiveQueryAnswered(key: registrationKey)
         await liveQueryAcknowledgements.record(key: registrationKey)
