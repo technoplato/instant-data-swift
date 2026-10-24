@@ -1,3 +1,15 @@
+## 2026-10-23 22:28:48 EDT — instant-data-swift `af3be52d38bd34ab2d9afb33780f357a30181123`
+Release document for v1.9.31 (#654): the live-query prune costs in proportion to what it drops, not to the store; carries 1.9.30.
+
+## 2026-10-23 22:00:01 EDT — instant-data-swift `0ae10a954212647e90e9da06101aa12f2b67ec3f`
+Plan (#654): the live-query prune claims its files, its cost test and the v1.9.31 release document.
+
+## 2026-10-23 21:56:16 EDT — instant-data-swift `f4dfb8eec2fc381b9e816b1b9e88701cf03953e8`
+Green (#654): a prune batch reads only the released entities' facts, drops results and unowned entities in one SQLite transaction by entity id, and retracts in place; the bootstrap prune runs the same batch.
+
+## 2026-10-23 21:50:32 EDT — instant-data-swift `add72672f3b4be5006e8bd2b1964f3369eea5492`
+Red test (#654): a live-query prune on a 40,000-fact store made 6 full store copies and 3 replace-and-reindex passes.
+
 ## 2026-10-23 21:42:29 EDT — instant-data-swift `3bf4d9df9d8aba21917fe90f39426244bf460f83`
 Release document for v1.9.30 (#1012): a progressive media stream row's updatedAtMs never moves back; the resource loader's SAFETY comment; carries 1.9.29.
 

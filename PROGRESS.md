@@ -1,3 +1,19 @@
+## 2026-10-23 22:29:27 EDT — v1.9.31: the live-query prune costs in proportion to what it drops, not to the store (#654); carries 1.9.30
+
+- **Commits:** plan `0ae10a95` (claims); red `add72672`, green `f4dfb8ee` (a batch reads only the released entities'
+  facts, drops results and unowned entities in one SQLite transaction by entity id, retracts in place; the bootstrap
+  prune runs the same batch); release document `af3be52d`; then this ledger commit and the tag v1.9.31.
+- **Checks:** InstantPruneCostTests red on 1.9.30 (6 full store copies and 3 store replacements per prune at 40,002
+  facts) then green (0 and 0, same kept/dropped sets, indexes equal to a rebuild); the whole core bundle on the Mac mini
+  (1,405 tests, only the listed #1028 failure, compare: no new failures); the prune suites on the rebased tree (61 tests).
+- **Measured** (release build, Mac mini, 10,803 facts dropped in 3 batches, medians of 3): longest gate hold 108.2 ->
+  77.6 ms at 10,002 kept facts, 236.8 -> 80.0 ms at 40,002, 522.5 -> 84.8 ms at 100,002; process CPU 238 -> 157,
+  615 -> 164, 1,460 -> 174 ms; malloc peak +18.7 -> +3.5, +64.0 -> +3.5, +141.4 -> +3.2 MB.
+- **Left:** the in-place retraction is now most of a batch (about 7-8 µs a fact in release, about half of it in the
+  indexed attributes' indexes), and each removed result's JSON is still decoded; both grow with what a batch drops (#654).
+- **Next:** Scribe and Scribe Playback pin exactly 1.9.31 (with the installer's expected versions); the lab checks idle and
+  recording CPU and the gate holds behind the prune on the next build (#1005).
+
 ## 2026-10-23 21:45:00 EDT — v1.9.30: a progressive media stream row's updatedAtMs never moves back (#1012); carries 1.9.29
 
 - **Commits:** red `c5da394b`, green `2f3d735a` (the writer's never-backward stamps); `0f1d2ebc` (the resource loader's

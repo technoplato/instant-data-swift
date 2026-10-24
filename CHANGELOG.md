@@ -10,6 +10,44 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## October 23rd, 2026 at 10:29:13 p.m. EDT — `af3be52d38bd` Document the v1.9.31 release: the live-query prune costs in proportion to what it drops, not to the store (#654)
+
+- **Implementation commit:** `af3be52d38bd34ab2d9afb33780f357a30181123`
+- **Change:** Document the v1.9.31 release: the live-query prune costs in proportion to what it drops, not to the store (#654)
+- **Details:**
+  - Release document: the four steps, what stays the same, the checks (red/green, the whole suite, the release-build harness at 10k/40k/100k facts) and what is not changed.
+- **Files:**
+  - `docs/releases/v1.9.31.md` — the release document
+- **User context (verbatim):**
+  > I want to make sure that audit is, uh, is really diving deep into the library as well.
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run); no SpecStory capture for headless runs.
+
+## October 23rd, 2026 at 10:29:13 p.m. EDT — `f4dfb8eec2fc` Green (#654): a live-query prune costs in proportion to what it drops, not to the store
+
+- **Implementation commit:** `f4dfb8eec2fc381b9e816b1b9e88701cf03953e8`
+- **Change:** Green (#654): a live-query prune costs in proportion to what it drops, not to the store
+- **Details:**
+  - A batch is chosen from the results' rows, reads the hot store's facts of only the released entities, drops results and unowned entities in one SQLite transaction (by entity id), and retracts in place; the bootstrap prune runs the same batch. Release build, 10,803 facts dropped beside 40,002 kept: longest gate hold 236.8 -> 80.0 ms, process CPU 615 -> 164 ms, malloc peak +64.0 -> +3.5 MB; whole bundle: no new failures.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — the batch flow and the bootstrap prune
+  - `Sources/InstantSwiftDataCore/SQLitePersistenceStore.swift` — batch choice and application, cache advance
+  - `Sources/InstantSwiftDataCore/InstantStore.swift` — retractFactsReleasedByPrune
+- **User context (verbatim):**
+  > I want to make sure that audit is, uh, is really diving deep into the library as well.
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run); no SpecStory capture for headless runs.
+
+## October 23rd, 2026 at 10:29:12 p.m. EDT — `add72672f3b4` Red (#654): a live-query prune on a 40,000-fact store copies and re-indexes the whole store
+
+- **Implementation commit:** `add72672f3b4be5006e8bd2b1964f3369eea5492`
+- **Change:** Red (#654): a live-query prune on a 40,000-fact store copies and re-indexes the whole store
+- **Details:**
+  - aPruneOnAFortyThousandFactStoreCopiesNothingTheSizeOfTheStore: kept and dropped sets right on 1.9.30, but 6 full store copies and 3 replace-and-reindex per prune; the measurement test's longest gate hold 515 ms at 40,002 facts vs 167 ms at 4,002 (Mac mini, debug).
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantPruneCostTests.swift` — the cost test and its measurement
+- **User context (verbatim):**
+  > I want to make sure that audit is, uh, is really diving deep into the library as well.
+- **SpecStory:** unavailable — Headless claude -p session (tools/agent-run); no SpecStory capture for headless runs.
+
 ## October 23rd, 2026 at 9:42:42 p.m. EDT — `3bf4d9df9d8a` Document the v1.9.30 release: a progressive media stream row's updatedAtMs never moves back (#1012), and the resource loader's request box says what protects it
 
 - **Implementation commit:** `3bf4d9df9d8aba21917fe90f39426244bf460f83`
