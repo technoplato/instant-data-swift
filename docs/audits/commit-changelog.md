@@ -1,3 +1,18 @@
+## 2026-10-24 15:17:24 EDT — scribe `cb98b87131bbb4ed8855e635c18efec03b9da2a8`
+Merge (#1057) to main for build 126: On This iPhone's compiled models survive an update (the App Group folder, a stamp of what Core ML keys on).
+
+## 2026-10-24 15:09:56 EDT — scribe `85ccdcb80273354f57ffbe8c6709617e5b9ead28`
+Green (#1057): the models move by rename(2) only; a move across volumes fails fast and keeps the old folder instead of copying 930 MB at launch.
+
+## 2026-10-24 15:09:56 EDT — scribe `0003f1d959a995430bd6e4ff8393700a68ff2f8c`
+Docs (#1057): ADR 0074 amendment C, the provider doc, the audit of what an update invalidates (Core ML keys on the model's absolute path; iOS moves the app container per install), the Build 126 story.
+
+## 2026-10-24 15:09:19 EDT — scribe `504779b74a23cdaa09145050b0c28790d1d83b6c`
+Green (#1057): on iOS the models live in the App Group container, moved once by a rename; the stamp names the models' path, the system, the engine and the model files, never the build.
+
+## 2026-10-24 15:09:19 EDT — scribe `3c1903dd0db7202f34477008730cecb46eb3c62a`
+Red (#1057): an update that keeps the models keeps them compiled; they move once to a folder an update keeps (six tests, stubs keep today's behavior).
+
 ## 2026-10-24 15:00:34 EDT — scribe `298e168f1`
 Build 125 cut (#1069): Scribe 0.1 (125) and Scribe Playback 125, instant-data-swift exactly 1.9.34; carries chunk-link-1064 (#1064).
 
