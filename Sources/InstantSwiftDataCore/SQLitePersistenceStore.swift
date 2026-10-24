@@ -45,6 +45,8 @@
 // - 2026-10-24: the delivery pump's candidate read and continuation check search their two branches by index
 //   (instant_outbox_delivery_candidate_idx, migration 0029) instead of visiting every ready row, refused writes and
 //   their bodies' overflow pages included, after every write and acknowledgement (#1108).
+// - 2026-10-24: the delivery's unknown-overlay check seeks the overlay flag (= 1) instead of scanning the table, and the
+//   supersession tail read finds the newest id in a covering index before it reads that one row (#1108, #1114).
 
 import Foundation
 import IssueReporting
@@ -7966,6 +7968,11 @@ public actor SQLitePersistenceStore {
   /// to repair before the caller prepares its write. Synchronous, so `transact`
   /// reads it in the same persistence turn as its other reads (#403).
   /// The outbox's newest row, with what the supersession tail check needs of it.
+  ///
+  /// #1108, #1114 (2026-10-24): the newest id first, from an index that holds every row's creation time and id (a
+  /// covering scan of its small pages), then that one row by its key. Chosen in one step, with the row's other columns
+  /// and its body size, the read scanned the table, every row through its body, and sorted it, before every eligible
+  /// write: 1,336 page reads on a copy of the phone-shaped store against 24.
   package static let immediateSupersessionTailSQL =
     """
     SELECT mutation_id, status, optimistic_overlay_active,
@@ -7973,8 +7980,12 @@ public actor SQLitePersistenceStore {
            delivery_metadata_version, encoded_body_bytes,
            created_at_ms, length(CAST(json AS BLOB))
     FROM instant_outbox
-    ORDER BY created_at_ms DESC, mutation_id DESC
-    LIMIT 1
+    WHERE mutation_id = (
+      SELECT mutation_id
+      FROM instant_outbox
+      ORDER BY created_at_ms DESC, mutation_id DESC
+      LIMIT 1
+    )
     """
 
   func readImmediateSupersessionTail(
@@ -16683,6 +16694,10 @@ public actor SQLitePersistenceStore {
   }
 
   /// Whether a later write's locally visible overlay has no trustworthy normalized write-key proof.
+  ///
+  /// #1108, #1114 (2026-10-24): the overlay flag is tested `= 1` (it holds only 0 and 1), which an index on it can seek,
+  /// so the check visits active overlays alone. Tested `!= 0`, it scanned the table in every claim pass: each refused
+  /// write's late columns read through its body, 5,709 SQLite steps beside 400 of them against 58 beside 7.
   private static let unknownActiveOverlayAfterSQL =
     """
     SELECT EXISTS(
@@ -16692,7 +16707,7 @@ public actor SQLitePersistenceStore {
         outbox.created_at_ms > ?
         OR (outbox.created_at_ms = ? AND outbox.mutation_id > ?)
       )
-      AND outbox.optimistic_overlay_active != 0
+      AND outbox.optimistic_overlay_active = 1
       AND COALESCE(outbox.confirmation_proven, 0) = 0
       AND NOT (
         outbox.delivery_claim_state = ?

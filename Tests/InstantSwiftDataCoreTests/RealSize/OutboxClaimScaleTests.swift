@@ -40,9 +40,13 @@ struct OutboxClaimScaleTests {
 
   // After the claim, #1076's exercise still read 1.87 MB of the outbox per write in delivery on the phone-shaped store:
   // the unknown-overlay check filtered `optimistic_overlay_active != 0`, which no index seeks, so it scanned the table.
+  //
+  // One refused write a recording, as on the phone (663 over 352 recordings), so each one's overlay is gone once it is
+  // refused: stacked on a few rows (400 over 4), about half keep an active overlay, which the check must still visit.
   @Test("The delivery's overlay check visits no refused write: 400 of them cost what 7 do")
   func overlayCheckDoesNotGrowWithRefusedWrites() async throws {
-    let few = RealSizeShape.phone.scaled(0.01)
+    var few = RealSizeShape.phone.scaled(0.01)
+    few.recordings = 400
     var many = few
     many.refusedWrites = 400
     let fewSteps = try await Self.overlayCheckSteps(few, label: "overlay-few")
